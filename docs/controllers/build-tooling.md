@@ -1,6 +1,6 @@
 # Build, Tooling & Test Infrastructure — Master Controller Context
 
-> **Domain owner:** `build-tooling-controller` · **Reports to:** Admin · **Phase:** pre-build · **Status:** Created (idle until build greenlit) · **Last updated:** 2026-06-14
+> **Domain owner:** `build-tooling-controller` · **Reports to:** Admin · **Phase:** build · **Status:** Both builds GREEN — headless harness (g++/CMake/Ninja, 7 suites) + UE 5.7 project (MSVC 14.44) · **Last updated:** 2026-06-15
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[EXECUTION-PLAN](../EXECUTION-PLAN.md)** (the plan that created this domain)
 > Created 2026-06-14 to own the execution layer the [review](../REVIEW-2026-06-14.md) found unowned (Q7).
 
@@ -18,9 +18,12 @@ Make the project buildable, testable, and reproducible. Own version control, the
 ## 3. Key design decisions
 | # | Decision | Rationale | Status | Date |
 |---|----------|-----------|--------|------|
-| BT-1 | Standalone **headless C++ test harness** built BEFORE the UE5 project | The Wave-0 cores (coord/rebase, crack-free terrain, Kepler, 100k bench) are engine-independent; retire the biggest claims cheaply first (EXECUTION-PLAN §3) | Proposed | 2026-06-14 |
-| BT-2 | **git from day one** + Git LFS for binaries | ~20 design docs are currently un-versioned (real risk); UE projects need LFS | Proposed (awaits Reid's go-ahead to init/commit) | 2026-06-14 |
-| BT-3 | UE5 latest stable (5.4/5.5), VS2022/MSVC on Windows | Mirrors D-001; LWC is the load-bearing engine feature | Proposed | 2026-06-14 |
+| BT-1 | Standalone **headless C++ test harness** built BEFORE the UE5 project | Wave-0 cores are engine-independent; retire the biggest claims cheaply first | **Accepted** — dependency-free harness; 7 suites green under g++/CMake/Ninja | 2026-06-14 |
+| BT-2 | **git from day one** | docs+code were un-versioned (real risk) | **Accepted** — `git init` done; 8 commits on `main`; `.gitignore`/`.gitattributes` set (Git LFS deferred until binary assets exist) | 2026-06-14 |
+| BT-3 | **UE 5.7** + VS2022/MSVC on Windows | Mirrors D-001; LWC is load-bearing | **Accepted** — UE 5.7.4 at `D:\UnrealEngine\UE_5.7`; editor target builds green | 2026-06-15 |
+| BT-4 | **UE 5.7 Windows build prerequisites** — install via the **"Game development with C++" workload** to get them all: MSVC **≥14.44.35207** (UBT **BANS 14.40–14.43**); **Windows 11 SDK 10.0.22621**; **.NET Framework SDK 4.6.2+** (SwarmInterface needs the NetFxSDK). VS **17.13**'s channel offered only banned toolchains → had to update VS to **17.14** first. | The first UE build hit each of these one at a time; documenting so it is never re-debugged | **Accepted** | 2026-06-15 |
+| BT-5 | **Install VS components via the GUI (self-elevating), NOT CLI `setup.exe modify --quiet`** | `--quiet` refuses to self-elevate from a non-elevated shell (exit **5007**, no UAC); `--wait` is also rejected by this installer version (exit 87) | **Accepted** | 2026-06-15 |
+| BT-6 | **UE build command (reproducible):** `D:\UnrealEngine\UE_5.7\Engine\Build\BatchFiles\Build.bat OrbitalFoundryEditor Win64 Development -Project="<repo>\ue\OrbitalFoundry.uproject" -WaitMutex` | The headless cores build separately via `cmake -S core -B core/build -G Ninja -DCMAKE_CXX_COMPILER=g++` | **Accepted** | 2026-06-15 |
 
 ## 4. Architecture & approach
 - **Two build targets:** (1) the **headless core lib + tests** — pure C++, CMake or minimal MSVC solution, no UE; each domain's Wave-0 core compiles here and is unit/bench-tested. (2) the **UE5 project** — created after the headless cores pass, links the core libs.

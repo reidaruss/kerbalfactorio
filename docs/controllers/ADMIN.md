@@ -23,7 +23,8 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 - **gameplay logic core BUILT + GREEN ✓** — item registry + slice content (12 items / 5 recipes / 7 machines), inventory, node mining + depletion, build validation + placement (drives factory-sim), recipe I/O, and the objective state machine; 14 tests / 137 checks, ctest 6/6, zero changes to other cores. (GP-15)
 - **persistence logic core BUILT + GREEN ✓** — seed+diff save/load; the full slice state round-trips through a **276-byte buffer** (terrain not stored — regenerates from seed bit-identically; 88 checks, PS-9).
 - **🏁🏁 HEADLESS SLICE LOGIC COMPLETE — ctest 7/7 green.** The entire MVP *logic* now exists, compiles, and is tested with no engine: precision (core-engine) · 100k factory @ 535 UPS (factory-sim) · crack-free terrain (world-gen) · no-drift orbits (physics) · the composed flight loop (integration) · the player loop—items/mining/build/objective (gameplay) · seed+diff save/load (persistence). 8 commits on `main`.
-- **Only the UE5 visual shell (M2.1+) remains** — engine-gated (Reid setting up UE5 + programmatic integration). **Next:** prep the UE5 project scaffolding + the C++ module wrappers around these cores (writable now, compiles when the engine lands), then rendering / physics-vehicle / UX layers.
+- **🏁🏁🏁 UE 5.7 PROJECT BUILDS GREEN (2026-06-15).** `OrbitalFoundry.uproject` + the **`OrbitalFoundryCore` plugin** (a `UTickableWorldSubsystem` wrapping the header-only cores / `SimWorld`, via pImpl + `THIRD_PARTY_INCLUDES`) compile clean against UE 5.7 with MSVC 14.44 — `Build.bat OrbitalFoundryEditor` = **Result: Succeeded**, first real compile, zero C++ errors in the wrapper or cores. The cores run in-engine. Env-setup saga + UE 5.7 prereqs captured in [build-tooling.md](build-tooling.md). Commit `81c1d08` (scaffold; binaries gitignored).
+- **Next:** a minimal default level + an actor/Blueprint driving `UOrbitalFoundrySubsystem` (so Play shows the sim live — altitude climbing, factory producing, rebases), then the real visual shell (scaled-space rendering, vessel pawn, terrain, build/fly UX — M2.1→M2.4).
 
 ## 3. Controller status dashboard
 | # | Controller | Phase | Status | Owner of | Blocking / blocked by |
@@ -36,7 +37,7 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 | 6 | networking | 0 | Scoping | server authority, AOI, replication, prediction | Cross-cutting; constrains all from day one |
 | 7 | gameplay | 1 | **Logic core BUILT + GREEN ✓** | research, quests, loot, UI | Item registry/inventory/mining/build/recipes/objective FSM (14 tests/137 checks, GP-15); UI awaits UE5 |
 | 8 | persistence | 1 | **Logic core BUILT + GREEN ✓** | seed+diff, streaming, serialization | Seed+diff round-trip proven (276-byte save, no terrain stored; 88 checks, PS-9); file container = next |
-| 9 | build-tooling | build | **Harness LIVE ✓** | git, toolchain, headless harness, CI, assets | git + CMake/Ninja/g++ harness up; core-engine core green; CI wiring = next |
+| 9 | build-tooling | build | **UE 5.7 builds GREEN ✓** | git, toolchain, headless harness, CI, assets | headless harness (g++) + UE 5.7 (MSVC 14.44) both build clean; UE prereqs documented (BT-4) |
 
 ## 4. Dependency graph (quick reference)
 ```
