@@ -31,3 +31,6 @@
 - #4 DONE ✓ (persistence) — `core/include/of/persistence_file.h` atomic single-slot save (PS-6): write-temp-then-rename, .bak rotation, footer-magic commit, torn-write survival. ctest **8/8** (45 new checks). PS-10 logged.
 - **Strategy note:** two visible artifacts banked (enriched in-engine demo + journey plot). Pivoting the rest of the night to FULLY-VERIFIABLE headless breadth (run core agents sequentially, each self-tested + committed): networking RC-9 validation → factory on-rails → world-gen deposits → gameplay research (Phase 2) → … The real *rendering* shell (graphics) is deferred to a session where Reid can see PIE (I can't verify visuals).
 - Dispatching #5: networking RC-9 validation (headless replication/determinism prototype).
+- #5 DONE ✓ (networking — first netcode) — `core/include/of/net_replication.h` + test: StateHash divergence detector + DeltaLog (FFactoryDelta-style, TickIndex-keyed) replay. Proves chunk-local determinism (NW-4) + client-replays-inputs stays in perfect sync + divergence detect/re-sync. ctest **9/9**. RC-9 verdict: delta/TickIndex seam IS sufficient. NW-4 Accepted, NW-6 logged.
+- (chore: gitignored build logs, untracked a stray ue log.)
+- Dispatching #6: factory-sim on-rails abstraction (FS-4 / gate G2) — demote→snapshot rate→advance off→promote→reconstruct, no dupes.

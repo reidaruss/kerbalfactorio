@@ -63,6 +63,16 @@ target_link_libraries(integration_tests PRIVATE of_core)
 target_include_directories(integration_tests PRIVATE tests)
 add_test(NAME integration_tests COMMAND integration_tests)
 
+# --- Networking: replication seam (RC-9) — chunk-local determinism + delta-replay
+#     client sync over the factory sim. Headless, no sockets: validates that the
+#     FFactoryDelta/TickIndex input stream is a sufficient client-sync seam (NW-4).
+add_executable(net_replication_tests
+  tests/test_main.cpp
+  tests/test_net_replication.cpp)
+target_link_libraries(net_replication_tests PRIVATE of_core)
+target_include_directories(net_replication_tests PRIVATE tests)
+add_test(NAME net_replication_tests COMMAND net_replication_tests)
+
 # --- Persistence: seed+diff save/load round-trip over the slice state ---
 add_executable(persistence_tests
   tests/test_main.cpp
