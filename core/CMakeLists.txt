@@ -71,6 +71,20 @@ target_link_libraries(persistence_tests PRIVATE of_core)
 target_include_directories(persistence_tests PRIVATE tests)
 add_test(NAME persistence_tests COMMAND persistence_tests)
 
+# --- Persistence FILE container: atomic single-slot save FILE on disk (PS-6) ---
+#     Layers the write-temp-then-rename atomic commit (persistence_file.h) over
+#     the in-memory format above. Uses <filesystem> — link stdc++fs on the older
+#     GCC/Clang runtimes that still split it out (a no-op on modern toolchains).
+add_executable(persistence_file_tests
+  tests/test_main.cpp
+  tests/test_persistence_file.cpp)
+target_link_libraries(persistence_file_tests PRIVATE of_core)
+target_include_directories(persistence_file_tests PRIVATE tests)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+  target_link_libraries(persistence_file_tests PRIVATE stdc++fs)
+endif()
+add_test(NAME persistence_file_tests COMMAND persistence_file_tests)
+
 # --- Tools: journey_dump — flies the full Forge→Cinder slice headless and dumps
 #     a per-tick CSV (docs/phase1/artifacts/journey.csv) for plotting. A pure
 #     CONSUMER of of_core (no test framework, not registered with ctest). ---
