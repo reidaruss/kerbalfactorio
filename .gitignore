@@ -1,6 +1,7 @@
 # Build output
 /core/build/
 build/
+*.log
 *.o
 *.obj
 *.exe
