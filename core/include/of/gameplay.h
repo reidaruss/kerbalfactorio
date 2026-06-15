@@ -814,5 +814,407 @@ class ObjectiveTracker {
   bool done_ = false;
 };
 
+// =============================================================================
+// §S — PRIMITIVE SURVIVAL-CRAFTING SLICE (WP1).
+//
+// A coherent "first hour" content set authored ON TOP of the registries above:
+// raw resources harvested by hand from terrestrial nodes (deposits.h §S),
+// hand-crafted tools + structures, and fuel-driven furnace/smelter smelting.
+// Everything is additive — the pinned §7.1 ids (…0x0016), science (0x0020+) and
+// science recipes (0x0120+) are untouched. The survival block lives at:
+//   items   0x0030+   entity types 0x30+   recipes 0x0130+
+// (the deposit/node Resource ids mirror the item ids — Resource IS the ItemId,
+// WG-11; the node KINDS live in worldgen::survival).
+//
+// DESIGN — the three mechanics this section adds over the existing core:
+//   1. CONTENT  — RegisterSurvivalContent() appends the items / smelting recipes
+//                 (and tool/structure HAND recipes) into a SliceRegistry, reusing
+//                 the additive registerItem/registerRecipe extension points.
+//   2. HAND-CRAFT — HandCrafter turns an Inventory + a CraftRecipe (multi-input)
+//                 into output, consuming inputs only if ALL are present. Tools,
+//                 furnace and smelter are made this way (no machine needed).
+//   3. SMELTING  — a focused gameplay-layer `Furnace` type: ore-in + a FUEL-BURN
+//                 pool, tick-driven, ore→ingot at the tier's rate; smelter is the
+//                 faster tier. (See the Furnace doc-comment for WHY this is its
+//                 own type and not a factory-sim machine.)
+//
+// TOOL / BOOTSTRAP (no deadlock): hand harvest always works (slow, low yield);
+// the matching tool (axe for wood, pickaxe for stone/coal/ore) raises the yield.
+// "Tool helps but isn't required" — encoded in harvestNode() below.
+// =============================================================================
+namespace survival {
+
+// --- Survival ItemId block (append-only at 0x0030+, stable, never reused). -----
+namespace items {
+// raw resources (mirror worldgen::survival::kItem* — Resource IS the ItemId).
+static constexpr ItemId Wood          = 0x0030;
+static constexpr ItemId Stone         = 0x0031;
+static constexpr ItemId Coal          = 0x0032;  // also a fuel
+static constexpr ItemId RawIron       = 0x0033;
+static constexpr ItemId RawCopper     = 0x0034;
+static constexpr ItemId Water         = 0x0035;
+static constexpr ItemId Oil           = 0x0036;
+// smelted ingots.
+static constexpr ItemId Iron          = 0x0037;
+static constexpr ItemId Copper        = 0x0038;
+// tools (hand-crafted from the pack).
+static constexpr ItemId CrudePickaxe  = 0x0039;
+static constexpr ItemId CrudeAxe      = 0x003A;
+// structures (hand-crafted, then placeable).
+static constexpr ItemId PrimitiveFurnace = 0x003B;
+static constexpr ItemId SurvivalSmelter  = 0x003C;
+}  // namespace items
+
+// --- Survival entity TypeId block (0x30+, for the placeable structures). -------
+namespace types {
+static constexpr TypeId PrimitiveFurnace = 0x30;
+static constexpr TypeId SurvivalSmelter  = 0x31;
+}  // namespace types
+
+// --- Survival smelting RecipeId block (0x0130+, append-only). ------------------
+// These are the FUEL-DRIVEN smelts the Furnace runs (NOT factory-sim recipes —
+// the Furnace owns its own fuel-pool tick; see below). They are still registered
+// as RecipeDefs so the registry/UE layer can list "what a furnace can smelt".
+namespace recipes {
+static constexpr RecipeId SmeltIron   = 0x0130;  // raw_iron  -> iron
+static constexpr RecipeId SmeltCopper = 0x0131;  // raw_copper -> copper
+}  // namespace recipes
+
+// --- Tool kind (for the tool-assisted harvest rule). ---------------------------
+// Which hand-tool speeds up which node kind. None = bare hands (always allowed).
+enum class ToolKind : uint8_t { None = 0, Axe = 1, Pickaxe = 2 };
+
+// The tool that ASSISTS a given node kind (axe for wood, pickaxe for the hard
+// resources). Water/oil need no tool — bare-hands collect at the base rate.
+inline ToolKind assistingToolFor(worldgen::survival::NodeKind k) {
+  using NK = worldgen::survival::NodeKind;
+  switch (k) {
+    case NK::Tree:      return ToolKind::Axe;
+    case NK::Rock:      return ToolKind::Pickaxe;
+    case NK::CoalSeam:  return ToolKind::Pickaxe;
+    case NK::IronOre:   return ToolKind::Pickaxe;
+    case NK::CopperOre: return ToolKind::Pickaxe;
+    case NK::WaterPool: return ToolKind::None;
+    case NK::OilSeep:   return ToolKind::None;
+  }
+  return ToolKind::None;
+}
+
+// The item form of a tool kind (so harvestNode can check the pack for it).
+inline ItemId itemForTool(ToolKind t) {
+  switch (t) {
+    case ToolKind::Axe:      return items::CrudeAxe;
+    case ToolKind::Pickaxe:  return items::CrudePickaxe;
+    case ToolKind::None:     return kNoItem;
+  }
+  return kNoItem;
+}
+
+// =============================================================================
+// §S.1 — Content registration. Appends the survival items + smelting recipes
+// into an existing SliceRegistry (the SAME additive registerItem/registerRecipe
+// the science layer uses; pinned ids untouched). Idempotent — re-registering a
+// present id is a no-op. Call once after constructing the registry.
+// =============================================================================
+inline RecipeDef makeSmeltIronRecipe() {
+  RecipeDef r;
+  r.recipeId = recipes::SmeltIron;
+  r.machineTypeId = types::PrimitiveFurnace;
+  r.inputItem = items::RawIron;
+  r.inputCount = 1;
+  r.outputItem = items::Iron;
+  r.outputCount = 1;
+  r.timeTicks = 180;   // furnace tier (slow); smelter runs the same recipe faster
+  r.powerW = 0;        // survival smelting is FUEL-driven, not power-driven
+  return r;
+}
+inline RecipeDef makeSmeltCopperRecipe() {
+  RecipeDef r = makeSmeltIronRecipe();
+  r.recipeId = recipes::SmeltCopper;
+  r.inputItem = items::RawCopper;
+  r.outputItem = items::Copper;
+  return r;
+}
+
+inline bool RegisterSurvivalContent(SliceRegistry& reg) {
+  using namespace items;
+  auto mk = [](ItemId id, const char* name, ItemCategory cat, uint16_t stackMax,
+               uint8_t flags, TypeId places) {
+    return ItemDef{id, name, cat, stackMax, flags, places};
+  };
+  // raw resources
+  reg.registerItem(mk(Wood, "Wood", ItemCategory::Material, 100, kFlagFuel, kNoType));
+  reg.registerItem(mk(Stone, "Stone", ItemCategory::Material, 100, kFlagNone, kNoType));
+  reg.registerItem(mk(Coal, "Coal", ItemCategory::Fuel, 100, kFlagFuel, kNoType));
+  reg.registerItem(mk(RawIron, "Raw iron", ItemCategory::Ore, 100, kFlagNone, kNoType));
+  reg.registerItem(mk(RawCopper, "Raw copper", ItemCategory::Ore, 100, kFlagNone, kNoType));
+  reg.registerItem(mk(Water, "Water", ItemCategory::Material, 100, kFlagNone, kNoType));
+  reg.registerItem(mk(Oil, "Oil", ItemCategory::Material, 100, kFlagNone, kNoType));
+  // smelted ingots
+  reg.registerItem(mk(Iron, "Iron", ItemCategory::Material, 100, kFlagNone, kNoType));
+  reg.registerItem(mk(Copper, "Copper", ItemCategory::Material, 100, kFlagNone, kNoType));
+  // tools
+  reg.registerItem(mk(CrudePickaxe, "Crude pickaxe", ItemCategory::Part, 1, kFlagNone, kNoType));
+  reg.registerItem(mk(CrudeAxe, "Crude axe", ItemCategory::Part, 1, kFlagNone, kNoType));
+  // structures (buildable item forms -> survival entity TypeIds)
+  reg.registerItem(mk(PrimitiveFurnace, "Primitive furnace", ItemCategory::Buildable,
+                      10, kFlagBuildable, types::PrimitiveFurnace));
+  reg.registerItem(mk(SurvivalSmelter, "Smelter", ItemCategory::Buildable, 10,
+                      kFlagBuildable, types::SurvivalSmelter));
+  // smelting recipes (fuel-driven; registered so the UE layer can list them)
+  reg.registerRecipe(makeSmeltIronRecipe());
+  reg.registerRecipe(makeSmeltCopperRecipe());
+
+  return reg.item(Wood) && reg.item(Iron) && reg.item(SurvivalSmelter) &&
+         reg.recipe(recipes::SmeltIron) && reg.recipe(recipes::SmeltCopper);
+}
+
+// =============================================================================
+// §S.2 — Hand harvest (no machine; the tool-assisted-but-not-required rule).
+//
+// Harvest a worldgen::survival node by hand into an inventory. ALWAYS works while
+// the node has resource (no bootstrap deadlock); holding the matching tool raises
+// the yield. baseYield is the bare-hands pull; with the tool the pull is
+// toolYield (>= baseYield). The node's RemainingAmount is decremented by what the
+// player actually keeps (same "deplete only what's kept" rule as mineDeposit).
+// =============================================================================
+struct HarvestResult {
+  uint16_t granted = 0;       // units added to inventory
+  bool usedTool = false;      // the assisting tool was present (improved yield)
+  bool nodeEmpty = false;     // node hit 0 (or was already empty)
+};
+
+inline HarvestResult harvestNode(worldgen::FDepositNode& node,
+                                 worldgen::survival::NodeKind kind, Inventory& inv,
+                                 uint16_t baseYield = 1, uint16_t toolYield = 3) {
+  HarvestResult res;
+  if (node.RemainingAmount <= 0.0 || node.Resource == kNoItem) {
+    res.nodeEmpty = true;
+    return res;
+  }
+  // Tool helps but isn't required: if the pack holds the assisting tool, the pull
+  // is the higher toolYield; otherwise bare-hands baseYield (still > 0).
+  const ToolKind tool = assistingToolFor(kind);
+  const ItemId toolItem = itemForTool(tool);
+  const bool hasTool = (toolItem != kNoItem) && inv.has(toolItem, 1);
+  uint16_t pull = hasTool ? toolYield : baseYield;
+  if (pull == 0) pull = 1;
+  if (static_cast<double>(pull) > node.RemainingAmount)
+    pull = static_cast<uint16_t>(node.RemainingAmount);
+
+  const uint16_t overflow = inv.add(node.Resource, pull);
+  const uint16_t kept = static_cast<uint16_t>(pull - overflow);
+  node.RemainingAmount -= static_cast<double>(kept);
+  if (node.RemainingAmount < 0.0) node.RemainingAmount = 0.0;
+
+  res.granted = kept;
+  res.usedTool = hasTool;
+  res.nodeEmpty = (node.RemainingAmount <= 0.0);
+  return res;
+}
+
+// =============================================================================
+// §S.3 — Hand-crafting (tools / furnace / smelter are made this way).
+//
+// A CraftRecipe is a small multi-input -> single-output bill of materials (the
+// factory-sim Recipe is single-input; tools/structures need 2 inputs). HandCrafter
+// crafts it against an Inventory: succeeds (consuming ALL inputs, adding the
+// output) ONLY if every input is present; otherwise consumes nothing.
+// =============================================================================
+struct CraftRecipe {
+  ItemId output = kNoItem;
+  uint16_t outputCount = 1;
+  std::vector<ItemStack> inputs;  // every stack must be present to craft
+};
+
+// The pinned survival HAND recipes (data; the UE layer lists/offers these).
+inline CraftRecipe recipeCrudePickaxe() {
+  return CraftRecipe{items::CrudePickaxe, 1,
+                     {ItemStack{items::RawIron, 1}, ItemStack{items::Wood, 1}}};
+}
+inline CraftRecipe recipeCrudeAxe() {
+  return CraftRecipe{items::CrudeAxe, 1,
+                     {ItemStack{items::RawIron, 1}, ItemStack{items::Wood, 1}}};
+}
+inline CraftRecipe recipePrimitiveFurnace() {
+  return CraftRecipe{items::PrimitiveFurnace, 1,
+                     {ItemStack{items::Wood, 5}, ItemStack{items::RawIron, 2}}};
+}
+inline CraftRecipe recipeSurvivalSmelter() {
+  return CraftRecipe{items::SurvivalSmelter, 1,
+                     {ItemStack{items::Iron, 5}, ItemStack{items::Stone, 5}}};
+}
+
+// All the hand recipes the survival slice offers (the UE craft menu binds to this).
+inline std::vector<CraftRecipe> handRecipes() {
+  return {recipeCrudePickaxe(), recipeCrudeAxe(), recipePrimitiveFurnace(),
+          recipeSurvivalSmelter()};
+}
+
+class HandCrafter {
+ public:
+  // Can this recipe be crafted from `inv` right now? (Every input present.)
+  static bool canCraft(const CraftRecipe& r, const Inventory& inv) {
+    if (r.output == kNoItem) return false;
+    for (const ItemStack& in : r.inputs)
+      if (in.item != kNoItem && !inv.has(in.item, in.count)) return false;
+    return true;
+  }
+
+  // Craft it: ALL-OR-NOTHING. Consumes every input + adds the output iff canCraft;
+  // returns true on success (false consumes nothing). The output is added through
+  // the normal stack rules; any overflow that doesn't fit is dropped (tools and
+  // structures stack small, so this is effectively never hit in the slice).
+  static bool craft(const CraftRecipe& r, Inventory& inv) {
+    if (!canCraft(r, inv)) return false;
+    for (const ItemStack& in : r.inputs)
+      if (in.item != kNoItem) inv.remove(in.item, in.count);
+    inv.add(r.output, r.outputCount);
+    return true;
+  }
+};
+
+// =============================================================================
+// §S.4 — Furnace / smelter: tick-driven, FUEL-pool smelting.
+//
+// WHY ITS OWN TYPE (not a factory-sim machine) — the design decision:
+//   factory_sim.h's machine model converts ore->ingot over time gated by a POWER
+//   NETWORK (per-tick supply/demand → brownout). The survival furnace is gated by
+//   a consumable SOLID-FUEL pool instead: each smelt burns "fuel ticks" from a
+//   pool topped up by inserting wood/coal, where coal yields far more smelts per
+//   unit than wood. That fuel-burn pool has no representation in the power model,
+//   and bolting it on would distort factory-sim's hot SoA path. A small, focused,
+//   deterministic gameplay-layer Furnace is cleaner and self-contained; the only
+//   difference between the two tiers (furnace vs smelter) is a data parameter —
+//   ticksPerSmelt — so "smelter is faster" is one number, not new code.
+//
+// FUEL MODEL: a fuel item contributes `fuelTicksPerUnit` ticks of burn time when
+// inserted (the pool, `fuelTicks_`). One smelt costs `ticksPerSmelt` of BOTH craft
+// progress AND fuel burn. Per the brief's "smelts per unit" framing: with
+// furnace ticksPerSmelt=180, wood gives ~2 smelts/unit (360 fuel ticks) and coal
+// ~8 (1440 fuel ticks); the smelter (ticksPerSmelt=60) gets MORE smelts per unit
+// of the same fuel because each smelt is cheaper — the fuel pool is in ticks, so
+// the "smelts per unit" scales naturally with the tier. The furnace only makes
+// progress on a tick when it has BOTH an ore loaded AND fuel remaining, so it
+// stalls deterministically when starved of either.
+// =============================================================================
+
+// Fuel burn-time (in furnace ticks) a unit of a fuel item contributes. Coal burns
+// far longer than wood. Non-fuel items contribute nothing (cannot be loaded).
+inline uint32_t fuelTicksPerUnit(ItemId item) {
+  if (item == items::Coal) return 1440;  // ~8 furnace smelts (180t) / unit
+  if (item == items::Wood) return 360;   // ~2 furnace smelts (180t) / unit
+  return 0;                               // not a fuel
+}
+
+// The furnace tier — only difference is ticks per smelt (smelter is faster).
+enum class FurnaceTier : uint8_t { Furnace = 0, Smelter = 1 };
+inline uint32_t ticksPerSmeltFor(FurnaceTier t) {
+  return t == FurnaceTier::Smelter ? 60u : 180u;  // smelter 3x faster (brief: ~60 vs ~180)
+}
+
+// What a furnace smelts: ore in -> ingot out (the two survival smelts).
+inline ItemId smeltOutputFor(ItemId ore) {
+  if (ore == items::RawIron) return items::Iron;
+  if (ore == items::RawCopper) return items::Copper;
+  return kNoItem;
+}
+
+class Furnace {
+ public:
+  explicit Furnace(FurnaceTier tier = FurnaceTier::Furnace)
+      : tier_(tier), ticksPerSmelt_(ticksPerSmeltFor(tier)) {}
+
+  FurnaceTier tier() const { return tier_; }
+  uint32_t ticksPerSmelt() const { return ticksPerSmelt_; }
+
+  // --- Loading (scene/UI ops, not the tick) --------------------------------
+  // Load ore into the input buffer (only smeltable ore is accepted). Returns the
+  // amount actually accepted.
+  uint16_t loadOre(ItemId ore, uint16_t count) {
+    if (smeltOutputFor(ore) == kNoItem || count == 0) return 0;
+    if (oreItem_ != kNoItem && oreItem_ != ore && oreCount_ > 0) return 0;  // one ore type at a time
+    oreItem_ = ore;
+    oreCount_ = static_cast<uint16_t>(oreCount_ + count);
+    return count;
+  }
+
+  // Insert fuel: adds the item's burn time to the fuel pool. Returns true if the
+  // item was a valid fuel (and was burned into the pool).
+  bool loadFuel(ItemId fuel, uint16_t count = 1) {
+    const uint32_t per = fuelTicksPerUnit(fuel);
+    if (per == 0 || count == 0) return false;
+    fuelTicks_ += per * count;
+    return true;
+  }
+
+  // Pull finished ingots out of the output buffer (e.g. into an inventory).
+  uint16_t takeOutput(uint16_t want) {
+    const uint16_t take = want < outCount_ ? want : outCount_;
+    outCount_ = static_cast<uint16_t>(outCount_ - take);
+    if (outCount_ == 0) outItem_ = kNoItem;
+    return take;
+  }
+
+  // --- The deterministic tick ----------------------------------------------
+  // Advance one tick. Progress is made ONLY when there is ore loaded AND fuel in
+  // the pool; each progressing tick burns one fuel tick. On reaching ticksPerSmelt
+  // a unit of ore becomes a unit of ingot. Returns true on the tick a smelt
+  // completes. Idle (no ore / no fuel) ticks are no-ops — deterministic stalls.
+  bool tick() {
+    // Need ore to smelt and fuel to burn; otherwise stall (no progress).
+    if (oreCount_ == 0 || fuelTicks_ == 0) {
+      smelting_ = false;
+      return false;
+    }
+    smelting_ = true;
+    ++progress_;
+    --fuelTicks_;
+    if (progress_ >= ticksPerSmelt_) {
+      // complete one smelt: one ore -> one ingot.
+      const ItemId ingot = smeltOutputFor(oreItem_);
+      --oreCount_;
+      if (outItem_ == kNoItem) outItem_ = ingot;
+      if (outItem_ == ingot) ++outCount_;
+      progress_ = 0;
+      if (oreCount_ == 0) oreItem_ = kNoItem;
+      smelting_ = false;
+      return true;
+    }
+    return false;
+  }
+
+  // Run N ticks; returns the number of smelts completed in the window.
+  uint32_t run(uint32_t ticks) {
+    uint32_t done = 0;
+    for (uint32_t i = 0; i < ticks; ++i)
+      if (tick()) ++done;
+    return done;
+  }
+
+  // --- Read state (tests / UI) ---------------------------------------------
+  uint16_t oreCount() const { return oreCount_; }
+  ItemId oreItem() const { return oreItem_; }
+  uint16_t outputCount() const { return outCount_; }
+  ItemId outputItem() const { return outItem_; }
+  uint32_t fuelTicks() const { return fuelTicks_; }
+  uint32_t progress() const { return progress_; }
+  bool smelting() const { return smelting_; }
+  bool hasFuel() const { return fuelTicks_ > 0; }
+
+ private:
+  FurnaceTier tier_;
+  uint32_t ticksPerSmelt_ = 180;
+  ItemId oreItem_ = kNoItem;
+  uint16_t oreCount_ = 0;
+  ItemId outItem_ = kNoItem;
+  uint16_t outCount_ = 0;
+  uint32_t fuelTicks_ = 0;   // the fuel burn-time pool (ticks remaining)
+  uint32_t progress_ = 0;    // current smelt progress in ticks
+  bool smelting_ = false;    // true while actively progressing (ore+fuel present)
+};
+
+}  // namespace survival
+
 }  // namespace gameplay
 }  // namespace of

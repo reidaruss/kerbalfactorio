@@ -272,5 +272,154 @@ class DepositCatalog {
   std::vector<FDepositNode> nodes_;
 };
 
+// =============================================================================
+// §S — Primitive-survival terrestrial resource nodes (WP1 survival slice).
+//
+// The pinned slice ships ONE on-planet ore (Ferrite, §0). The survival-crafting
+// slice needs a richer terrestrial harvest set — trees, rocks, coal seams, two
+// ore kinds, water pools, oil seeps — each yielding its raw `ItemId` directly
+// (the SAME WG-11 rule: `Resource` IS the opaque gameplay item id; world-gen
+// owns only PLACEMENT). These constants are REFERENCED here (named for the
+// placement code) but gameplay's SliceRegistry remains the source of truth for
+// the ids — they mirror the survival ItemId block authored in gameplay.h §S.
+//
+// This is deliberately a SMALL, deterministic TEST-AREA layout — NOT a planet-
+// wide population pass like GenerateDeposits. WP2 (the UE layer) just needs a
+// handful of nodes laid out in a small patch to harvest by hand; LayoutTestArea
+// gives exactly that, position-hashed from (seed, ring index) so it is
+// reproducible bit-for-bit (the same determinism discipline as the catalog).
+// =============================================================================
+namespace survival {
+
+// The raw-resource ItemIds the survival nodes yield. OPAQUE here (WG-11) — these
+// are referenced, gameplay's registry (gameplay.h §S) is authoritative. Block at
+// 0x0030+ so it never collides with the pinned slice (…0x0016) or science (0x0020+).
+constexpr ItemId kItemWood      = 0x0030;  // tree
+constexpr ItemId kItemStone     = 0x0031;  // rock
+constexpr ItemId kItemCoal      = 0x0032;  // coal seam (also a fuel)
+constexpr ItemId kItemRawIron   = 0x0033;  // iron ore
+constexpr ItemId kItemRawCopper = 0x0034;  // copper ore
+constexpr ItemId kItemWater     = 0x0035;  // water pool
+constexpr ItemId kItemOil       = 0x0036;  // oil seep
+
+// The harvestable node KINDS — one per terrestrial resource. Kept as an explicit
+// enum (not just the ItemId) so the layout helper can vary base amount / grade by
+// kind, and so the UE layer can pick an icon/mesh per kind without decoding the id.
+enum class NodeKind : uint8_t {
+  Tree = 0,    // -> wood
+  Rock,        // -> stone
+  CoalSeam,    // -> coal
+  IronOre,     // -> raw_iron
+  CopperOre,   // -> raw_copper
+  WaterPool,   // -> water
+  OilSeep,     // -> oil
+};
+
+// The ItemId a NodeKind yields when harvested (the WG-11 Resource).
+inline ItemId resourceOf(NodeKind k) {
+  switch (k) {
+    case NodeKind::Tree:      return kItemWood;
+    case NodeKind::Rock:      return kItemStone;
+    case NodeKind::CoalSeam:  return kItemCoal;
+    case NodeKind::IronOre:   return kItemRawIron;
+    case NodeKind::CopperOre: return kItemRawCopper;
+    case NodeKind::WaterPool: return kItemWater;
+    case NodeKind::OilSeep:   return kItemOil;
+  }
+  return 0;
+}
+
+// Per-kind seed amount before the grade multiplier (item units). Renewable-ish
+// kinds (trees/water) are smaller per node; ore/coal seams are deeper. Balance
+// numbers — simple, deterministic, tweak freely.
+inline double baseAmountOf(NodeKind k) {
+  switch (k) {
+    case NodeKind::Tree:      return 40.0;
+    case NodeKind::Rock:      return 60.0;
+    case NodeKind::CoalSeam:  return 200.0;
+    case NodeKind::IronOre:   return 250.0;
+    case NodeKind::CopperOre: return 250.0;
+    case NodeKind::WaterPool: return 1000.0;  // a pool refills conceptually; big
+    case NodeKind::OilSeep:   return 500.0;
+  }
+  return 0.0;
+}
+
+// Lay out a small DETERMINISTIC test-area patch of survival nodes around a centre
+// direction on a body. `kinds` lists which node kinds to place (one node each, in
+// order); they are spread on a tiny geodesic ring so they sit in a walkable patch.
+// Position-hashed from (bodySeed, ringIndex) for grade/jitter so the patch is
+// reproducible bit-for-bit (re-running with the same inputs gives identical ids/
+// positions/grades). Each node is snapped to the terrain via the SAME
+// sampleHeightField the mesh uses, exactly like GenerateDeposits.
+//
+// `centerDir` is a unit direction on the body (the patch centre); `ringRadiusRad`
+// is the angular spread of the ring (small — a few hundred metres at planetary
+// radius). Returns a freshly-built node vector (mutable RemainingAmount).
+inline std::vector<FDepositNode> LayoutTestArea(const BodyParams& body,
+                                                uint64_t bodySeed,
+                                                FrameId bodyFrame,
+                                                const Vec3& centerDir,
+                                                const std::vector<NodeKind>& kinds,
+                                                double ringRadiusRad = 0.002) {
+  std::vector<FDepositNode> out;
+  out.reserve(kinds.size());
+
+  // Normalise the centre direction + build a tangent basis to place the ring.
+  const double clen = centerDir.length();
+  const Vec3 c = (clen > 0.0) ? Vec3(centerDir.x / clen, centerDir.y / clen,
+                                     centerDir.z / clen)
+                              : Vec3(0, 1, 0);
+  Vec3 up = (std::fabs(c.y) < 0.99) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+  Vec3 t1(up.y * c.z - up.z * c.y, up.z * c.x - up.x * c.z,
+          up.x * c.y - up.y * c.x);
+  const double t1l = t1.length();
+  t1 = (t1l > 0.0) ? Vec3(t1.x / t1l, t1.y / t1l, t1.z / t1l) : Vec3(1, 0, 0);
+  Vec3 t2(c.y * t1.z - c.z * t1.y, c.z * t1.x - c.x * t1.z,
+          c.x * t1.y - c.y * t1.x);
+
+  const int n = static_cast<int>(kinds.size());
+  for (int i = 0; i < n; ++i) {
+    const NodeKind kind = kinds[i];
+    // Even ring placement + a small position-hashed jitter so it's not a perfect
+    // circle (still fully deterministic from seed + index).
+    const double ang = (n > 0) ? (2.0 * 3.14159265358979323846 * i / n) : 0.0;
+    Vec3 ringDir(c.x + ringRadiusRad * (std::cos(ang) * t1.x + std::sin(ang) * t2.x),
+                 c.y + ringRadiusRad * (std::cos(ang) * t1.y + std::sin(ang) * t2.y),
+                 c.z + ringRadiusRad * (std::cos(ang) * t1.z + std::sin(ang) * t2.z));
+    const double jx = hashToSigned(hashPos(bodySeed, ringDir, 0x5A1u)) * 0.0003;
+    const double jy = hashToSigned(hashPos(bodySeed, ringDir, 0x5A2u)) * 0.0003;
+    const double jz = hashToSigned(hashPos(bodySeed, ringDir, 0x5A3u)) * 0.0003;
+    Vec3 p(ringDir.x + jx, ringDir.y + jy, ringDir.z + jz);
+    const double invLen = 1.0 / p.length();
+    const Vec3 dir(p.x * invLen, p.y * invLen, p.z * invLen);
+
+    FDepositNode node;
+    const double h = sampleHeightField(body, dir);
+    const double radius = body.radiusM + h;
+    node.Position = UniverseCoord(dir * radius, bodyFrame);
+    dirToLatLon(dir, node.Lat, node.Lon);
+    node.SurfaceNormal = dir;  // approx outward normal (patch is locally flat)
+    node.Body = body.bodyId;
+    node.Resource = resourceOf(kind);
+    // Grade in (0.5, 1.0], position-hashed — survival nodes are richer/less spread
+    // than the catalog so a hand harvest is workable.
+    node.Grade = static_cast<float>(
+        0.5 + 0.5 * hashToUnit(hashPos(bodySeed, dir, 0x57A47u)));
+    node.InitialAmount = baseAmountOf(kind) * node.Grade;
+    node.RemainingAmount = node.InitialAmount;
+    // Stable id: hash of (bodySeed, kind, index) — reproducible across runs.
+    uint64_t id = mix64(bodySeed ^ 0x5E2D17ull);
+    id = hashCombine(id, static_cast<uint64_t>(kind));
+    id = hashCombine(id, static_cast<uint64_t>(i));
+    node.Id = id;
+
+    out.push_back(node);
+  }
+  return out;
+}
+
+}  // namespace survival
+
 }  // namespace worldgen
 }  // namespace of

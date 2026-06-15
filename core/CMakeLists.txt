@@ -96,6 +96,22 @@ target_link_libraries(gameplay_tests PRIVATE of_core)
 target_include_directories(gameplay_tests PRIVATE tests)
 add_test(NAME gameplay_tests COMMAND gameplay_tests)
 
+# --- Survival-crafting slice (WP1): the primitive survival content + mechanics
+#     layered on the gameplay/world-gen cores — raw resources harvested from
+#     terrestrial nodes (deposits.h §S), hand-crafted tools/structures, and a
+#     FUEL-driven Furnace/Smelter (gameplay.h §S). The furnace is a focused
+#     gameplay-layer type (a consumable solid-fuel pool, not a power network), so
+#     "smelter is faster" is one data parameter. Headless; proves content
+#     registration, deterministic test-area layout, tool-assisted-but-not-required
+#     hand harvest, all-or-nothing hand-crafting, and fuel-burn smelting (coal >
+#     wood per unit, smelter > furnace rate). Consumes gameplay.h + deposits.h.
+add_executable(survival_slice_tests
+  tests/test_main.cpp
+  tests/test_survival_slice.cpp)
+target_link_libraries(survival_slice_tests PRIVATE of_core)
+target_include_directories(survival_slice_tests PRIVATE tests)
+add_test(NAME survival_slice_tests COMMAND survival_slice_tests)
+
 # --- Research / tech tree (Phase 2, GP-1/GP-2): factory-produced science is
 #     spent to unlock recipes/entities, with OFF-WORLD gating — a mid/late tech
 #     (CinderiteRefining) costs a Cinderite-derived item, so it is unreachable
