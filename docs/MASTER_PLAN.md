@@ -1,0 +1,208 @@
+# Master Plan — Orbital Foundry (working title)
+
+> **Status:** Living design document · **Owner:** Admin Master Controller · **Last updated:** 2026-06-14
+> This is the cross-domain source of truth. Domain detail lives in [controllers/](controllers/). Process lives in [AGENT_ARCHITECTURE.md](AGENT_ARCHITECTURE.md).
+
+---
+
+## 1. Vision & pillars
+
+A 3D game that fuses the two hardest-to-engineer indie games ever shipped:
+
+- **KSP** — continuous, seamless, physics-driven flight from a planet's surface to orbit to another world, with no loading screens or "zone gates."
+- **Factorio** — deep resource extraction, belts/automation, power management, research trees, all at scale.
+
+Plus **procedural worlds, exploration/loot, a questline, and multiplayer.**
+
+**Design pillars (in priority order):**
+1. **Seamless traversal.** Surface → orbit → interplanetary → another surface, continuous. No loading screens.
+2. **Real automation depth.** Mining → refining → assembly → power → logistics, Factorio-grade, in 3D.
+3. **Physical credibility.** Orbits, thrust, and structures obey believable physics (KSP-grade, not necessarily NASA-grade).
+4. **Progression & exploration.** Research trees, procedural POIs/loot, a guiding questline that pushes you off-world.
+5. **Co-op multiplayer.** Shared persistent worlds for a small group of players.
+
+**Perspective:** First- or third-person on-foot/in-vehicle (decision deferred to [gameplay](controllers/gameplay.md) + [rendering](controllers/rendering.md); leaning first-person on foot, third-person/IVA in vehicles).
+
+---
+
+## 2. The core technical tension (read this before anything else)
+
+KSP and Factorio are optimized for **opposite** things. This conflict drives nearly every architectural decision.
+
+| | KSP | Factorio |
+|---|---|---|
+| Precision | 64-bit doubles, planetary scale | 32-bit / fixed-point, small grid |
+| Entity count | A handful of vessels matter at once | 1,000,000+ active entities |
+| Sim model | Continuous floating-point physics | Deterministic integer lockstep |
+| Time | Time-warp / analytic on-rails propagation | Fixed 60 UPS |
+| Networking | Barely multiplayer (*because* float physics) | Flawless MP (*because* deterministic) |
+
+**Key consequence:** Factorio's multiplayer works via **deterministic lockstep** — every client runs an identical sim, only *inputs* cross the wire, and floating-point is banned from the sim. KSP's continuous flight is **non-deterministic float physics**. **You cannot have both at full scale in one simulation.** We therefore do **not** attempt a million-entity deterministic factory *and* continuous float physics in lockstep. See §3 for how we sidestep this, and [networking](controllers/networking.md) for the netcode consequences.
+
+---
+
+## 3. The unifying principle: "Active" vs. "On-Rails"
+
+KSP's real trick is not physics — it is that **only the active vessel gets full physics**; everything else is "on rails," propagated analytically. **We generalize this to the entire game, including the factory.**
+
+- **Active zone** (near a player): full per-entity simulation — rigid-body vehicle physics, per-item belt sim, per-machine crafting ticks.
+- **On-rails zone** (far / unloaded / time-warped): abstracted models. A vessel becomes an orbit equation. A distant factory becomes a **production-rate model** ("consumes X iron/s, produces Y gears/s"), not a million simulated items.
+
+This single principle is what makes the whole concept tractable: Factorio-scale *bases* without Factorio-scale *active simulation everywhere at once*. It is owned jointly by [core-engine](controllers/core-engine.md) (the framework) and applied by [physics](controllers/physics.md) and [factory-sim](controllers/factory-sim.md).
+
+---
+
+## 4. Engine & tech stack decision
+
+**Recommended starting point: Unreal Engine 5.** Decisive factor: UE5 has **native Large World Coordinates (double-precision world positions)**, which solves KSP's single hardest problem out of the box. Plus Nanite/Lumen for dense factory rendering and **Mass Entity** (ECS) for factory-scale simulation.
+
+Alternatives considered:
+- **Unity + DOTS/ECS** — what KSP used; strongest "Factorio-in-an-engine" ECS path; but double precision is bolt-on and fights planetary scale.
+- **Custom engine** — what Factorio & Dyson Sphere Program did; maximum control over the sim/render split (the reason they scale); multi-year prerequisite before there's a game.
+
+> **DECISION D-001 (provisional):** Prototype in UE5. The factory simulation is treated as a *semi-custom data-oriented subsystem* running inside Mass Entity, not vanilla Actors. Revisit after the Phase-0 spikes. Owner: [core-engine](controllers/core-engine.md). See decision log §11.
+
+---
+
+## 5. System architecture
+
+### 5.1 Layered model
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Gameplay / Progression / UI   (research, quests, loot, HUD)  │
+├──────────────────────────────────────────────────────────────┤
+│  Factory & Automation Sim      (belts, machines, power)       │
+│  Physics & Orbital Mechanics   (patched conics, rigid bodies) │
+│  World Generation & Terrain    (cubed-sphere LOD, deposits)   │
+├──────────────────────────────────────────────────────────────┤
+│  Rendering & Graphics          (scaled space, LOD, shaders)   │
+├──────────────────────────────────────────────────────────────┤
+│  Core Engine & Sim Framework   (coords, floating origin,      │
+│                                 active/on-rails, tick, frames)│
+├──────────────────────────────────────────────────────────────┤
+│  Persistence & Data            (seed+diff, streaming, saves)  │
+├──────────────────────────────────────────────────────────────┤
+│  Networking & Multiplayer      (cross-cutting: wraps all sim) │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 Domain ownership → controller files
+| Domain | Owns | Controller |
+|---|---|---|
+| Core Engine & Sim Framework | 64-bit coords, floating origin, reference frames, active/on-rails framework, tick loop, time-warp, ECS foundation | [core-engine.md](controllers/core-engine.md) |
+| Rendering & Graphics | scaled space, dual cameras, log depth, LOD, terrain render, GPU instancing, atmospheric scattering, materials/VFX | [rendering.md](controllers/rendering.md) |
+| Physics & Orbital Mechanics | patched conics, orbital propagation, rigid-body vessels, surface/character physics, collision, SOI transitions | [physics.md](controllers/physics.md) |
+| World Generation & Terrain | procedural planet gen, biomes, noise, deposit placement, voxel deformation patches, POI placement | [world-gen.md](controllers/world-gen.md) |
+| Factory & Automation Sim | data-oriented factory sim, belts/inserters/machines, recipes, power network, on-rails factory abstraction | [factory-sim.md](controllers/factory-sim.md) |
+| Networking & Multiplayer | authoritative server, interest management, replication, prediction/reconciliation, factory delta compression, MP time-warp | [networking.md](controllers/networking.md) |
+| Gameplay, Progression & UI | research tree, quests, loot, exploration/science, structures, inventory, build UX, HUD, map view | [gameplay.md](controllers/gameplay.md) |
+| Persistence & Data | seed+diff save model, chunked streaming, serialization, world DB, versioning/migration | [persistence.md](controllers/persistence.md) |
+| Build, Tooling & Test Infra *(added 2026-06-14)* | version control, UE5 toolchain, the headless test harness, CI, asset pipeline | [build-tooling.md](controllers/build-tooling.md) |
+
+### 5.3 Dependency graph (who depends on whom)
+- **core-engine** → foundational; *everyone* depends on it (coords, frames, tick, active/on-rails).
+- **world-gen** → feeds rendering (meshes), physics (collision), factory-sim (build surfaces, deposits), gameplay (POIs), persistence (seed).
+- **physics** → depends on core-engine (frames) + world-gen (terrain collision); feeds rendering (transforms).
+- **factory-sim** → depends on core-engine (active/on-rails, tick) + world-gen (placement, deposits); feeds rendering, persistence, gameplay.
+- **rendering** → depends on core-engine (origin/frames), world-gen, physics, factory-sim.
+- **gameplay** → depends on factory-sim (research/recipes), world-gen (content), persistence (progress).
+- **persistence** → depends on world-gen (seed), factory-sim (state), gameplay (progress).
+- **networking** → **cross-cutting**; wraps all sim; requires server-authoritative design from every domain. Treated as a first-class constraint from day one even though it is *implemented* late (§8).
+
+---
+
+## 6. Subsystem summaries
+
+> Brief here; full technical detail in each controller file. Link, don't duplicate.
+
+- **Coordinate system & seamless "magic"** — 64-bit universe coords in a reference-frame hierarchy; **floating origin** (move the universe, not the player) so GPU/physics only see near-origin floats; **scaled space** dual-camera trick for distant bodies; **log/cascaded depth buffer**; quadtree streaming LOD; **atmospheric scattering** for the surface→space visual sell. → [core-engine](controllers/core-engine.md) + [rendering](controllers/rendering.md).
+- **Orbital mechanics** — **patched conics, not n-body** (analytically propagatable → time-warp works, orbits stable, cheap, deterministic). Full rigid-body physics only for the active vessel + nearby; everything else on rails. → [physics](controllers/physics.md).
+- **Terrain** — cubed-sphere quadtree (KSP PQS-style) heightmap for the bulk planet; **voxel/SDF patches only where players dig** to keep the cheap heightmap for the untouched 99.9%. v1 may ship node-based mining with no deformation. → [world-gen](controllers/world-gen.md).
+- **Factory** — data-oriented ECS (not Actors), **update-on-demand / sleeping entities**, **belt compression**, GPU instancing + LOD for the *render* wall (every 3D item is a mesh — naive = GPU death), and on-rails abstraction for distant bases. → [factory-sim](controllers/factory-sim.md).
+- **Power** — Factorio's graph model: per-network sum generation vs consumption, brownout (proportional scale-down) on deficit. **Solar output = f(day/night, distance from star, atmosphere)** — ties power to the orbital sim. → [factory-sim](controllers/factory-sim.md).
+- **Persistence** — **universe = seed** (regenerates identically); **player changes = diffs** vs the procedural baseline; chunked + streamed; custom binary for factory state at scale. → [persistence](controllers/persistence.md).
+- **Networking** — Factorio lockstep is impossible here (non-deterministic float physics). Use **authoritative server + area-of-interest replication + client prediction/reconciliation + snapshot interpolation + factory delta compression**. **MP time-warp is a known-hard, unsolved-ish design problem** — flagged early. → [networking](controllers/networking.md).
+- **Progression** — Factorio-style research (factory produces science → unlocks); KSP-style science from biomes/anomalies; loot from procedural ruins; a lightweight questline threading planets together. → [gameplay](controllers/gameplay.md).
+
+---
+
+## 7. Reference games — what to steal
+
+| Game | Steal this | Limitation they accepted |
+|---|---|---|
+| **KSP** | Patched conics, floating origin, scaled space, active-vessel physics, science system | MP barely exists — float physics is why |
+| **Factorio** | ECS data layout, update-on-demand, belt compression, power-graph, deterministic sim | 2D, fixed grid — that's how it hits 1M entities |
+| **Dyson Sphere Program** | "Factorio in space" proof; interplanetary logistics; distance-based factory abstraction | Planets fixed; travel is a short scripted flight, **not** KSP physics — a deliberate, instructive scope cut |
+| **Astroneer** | Deformable voxel terrain + seamless planet↔space + co-op together | Small factories, low entity counts |
+| **Space Engineers** | Voxel planets + grid-built physics ships + MP | Heavy; struggles with scale/netcode |
+| **No Man's Sky** | Seamless planet↔space at galaxy scale, MP, procedural gen | Shallow automation |
+| **Satisfactory** | First-person 3D factory in UE at real scale | Single planet, no orbit |
+
+**Lesson:** DSP and Astroneer both made the cut we should consider — none of them attempted continuous KSP-grade traversal **and** million-entity factories **and** deformable terrain **and** MP at once. Each picked a subset. So do we (§9).
+
+---
+
+## 8. Development roadmap
+
+Build **vertical slices that retire the riskiest tech first.** No content before the hard tech is proven.
+
+**Phase 0 — Tech spikes (prove the scary stuff in isolation):**
+1. Floating-origin + scaled-space: walk a planet, fly to orbit, land on a moon — seamless, single-player, placeholder art. *If this fails, nothing else matters.* → core-engine + rendering.
+2. Patched-conics propagation + one rigid-body craft. → physics.
+3. 100k-entity belt/factory sim at 60 UPS in isolation. → factory-sim.
+
+**Phase 1 — Single-player vertical slice:** one planet + one moon, node-based mining (no voxel), basic belts/assemblers/power, manual flight between bodies. Integrate the spikes. Proves the *fusion feels good*.
+
+**Phase 2 — Depth:** research tree, more recipes, automated mining, the active/on-rails factory abstraction, persistence (seed + diffs).
+
+**Phase 3 — Networking:** co-op (2–8 players), authoritative-server model. *Architecturally present since Phase 0; implemented here.*
+
+**Phase 4 — Content & systems:** voxel digging (if pursued), POIs/loot, questline, more planets, atmospheric/visual polish.
+
+**Phase 5 — Scale & optimization:** push factory entity counts, interest-management tuning, MP time-warp resolution.
+
+> **Current phase: Phase 0 — Planning.** Spikes not yet greenlit. See [ADMIN.md](controllers/ADMIN.md) for live status.
+
+---
+
+## 9. Scope guardrails (v1 cuts — loosen later)
+
+Each pillar has individually consumed *years* from talented teams. To stay shippable rather than a forever-prototype, v1 adopts these cuts:
+- **Node-based mining, not voxel deformation** (add digging in Phase 4 if at all).
+- **Co-op (2–8), not massive MP.**
+- **Thousands of active entities per loaded area, not a million** — lean on on-rails abstraction for the rest.
+- **One planet + one moon**, not a full solar system.
+- **Patched conics, never n-body.**
+- **No time-warp in MP for v1** (or vote-to-warp), pending the hard design problem.
+
+The through-line that makes all of it tractable is the **active vs. on-rails principle (§3)** generalized from vessels to factories. The floating-origin/scaled-space spike must work first — highest risk, and it proves the premise is even possible.
+
+---
+
+## 10. Glossary
+
+- **Active / on-rails** — fully-simulated vs analytically-propagated entities. The core scalability lever (§3).
+- **Floating origin** — keep the player near (0,0,0) and move the universe; avoids float precision loss at planetary scale.
+- **Scaled space** — distant bodies rendered small by a second camera at huge scale, swapped for real terrain on approach (KSP technique).
+- **Patched conics** — two-body orbital model that switches dominant body at sphere-of-influence (SOI) boundaries.
+- **SOI** — sphere of influence; the region where one body dominates gravity.
+- **PQS** — Procedural Quad Sphere; KSP's cubed-sphere quadtree terrain LOD.
+- **Brownout** — proportional power scale-down when demand exceeds supply (Factorio model).
+- **Seed+diff** — persistence model: regenerate the world from a seed, store only player modifications.
+- **Interest management / AOI** — replicating only entities near each player.
+- **UPS / FPS** — updates (sim) per second / frames (render) per second; decoupled.
+
+---
+
+## 11. Global decision log
+
+| ID | Date | Decision | Rationale | Status | Owner |
+|----|------|----------|-----------|--------|-------|
+| D-001 | 2026-06-14 | Prototype in **Unreal Engine 5** | Native double-precision world coords solves KSP-scale; Nanite + Mass Entity help factory render/sim | Provisional (revisit post-Phase-0) | core-engine |
+| D-002 | 2026-06-14 | **Patched conics**, not n-body | Time-warp + stable orbits + cheap + deterministic | Accepted | physics |
+| D-003 | 2026-06-14 | Generalize **active/on-rails** to the factory, not just vessels | Only tractable path to Factorio-scale bases without Factorio-scale active sim | Accepted | core-engine |
+| D-004 | 2026-06-14 | **No deterministic lockstep**; authoritative server + AOI replication | Float physics is non-deterministic across machines | Accepted | networking |
+| D-005 | 2026-06-14 | v1 = **node-based mining, 1 planet + 1 moon, co-op 2–8** | Scope control; ship a vertical slice before scaling | Accepted | gameplay/admin |
+| D-006 | 2026-06-14 | **Single canonical Body Definition** for all physical body constants (radius, μ, surface g, SOI radius, rotation, atmosphere profile). One shared data asset: core-engine owns schema + load and exposes via `FReferenceFrame`; world-gen `FBodyParams`, physics, and rendering all *consume* it — no domain hardcodes its own copy. v1 adopts world-gen's proposed values: **Forge** (planet, R=600 km, g≈9.81 m/s², atmo scale-height ≈5.6 km) · **Cinder** (moon, R=200 km, g≈1.63 m/s², airless). | Resolves Spike-1 R4: world-gen and core-engine both carried body constants; duplication risks divergence (g = μ/r² must stay consistent) | Accepted | core-engine (loader) + world-gen (terrain/atmo) |
+
+> Append-only. Superseded decisions are marked, not deleted. New cross-domain decisions are added here by Admin; domain-local decisions live in the controller file's own decision log.

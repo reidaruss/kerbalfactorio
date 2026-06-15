@@ -1,0 +1,104 @@
+# Rendering & Graphics — Master Controller Context
+
+> **Domain owner:** `rendering-controller` · **Reports to:** Admin · **Phase:** 0 · **Status:** Spike 1 designed (ready to build); **RC-8 render-wall reconciliation CONFIRMED** (factory→render stream sufficient for RN-3, one additive field requested) · **Last updated:** 2026-06-14
+> Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[Spike 1 rendering design](../spikes/spike1-rendering.md)** (the buildable plan)
+
+## 1. Mission
+Make surface→orbit→interplanetary→surface look seamless and run fast. Own the "rendering magic" that sells continuous traversal, plus the techniques that let a dense 3D factory render without melting the GPU.
+
+## 2. Scope & owned subsystems
+- **Scaled space** — distant celestial bodies via a second camera at huge scale; swap to real terrain on approach.
+- **Multi-range depth** — logarithmic or cascaded depth buffer (draw a 1 m object and a 100,000 km planet in one frame, no z-fighting).
+- **Terrain rendering** — consume world-gen's cubed-sphere quadtree; stream/blend LOD; horizon curvature.
+- **Atmospheric scattering** — Rayleigh/Mie post-process; the sky-fades-to-black sell of leaving a planet.
+- **Factory rendering at scale** — GPU instancing of identical parts/items; LOD that collapses distant belts to flowing textures/decals; cull/abstract un-observed item meshes.
+- **Materials, lighting, VFX** — engine pipeline (Lumen/Nanite under D-001), thrust/dust/weather FX.
+- **Non-goals:** what to render (world-gen, factory-sim, physics produce the data); UI/HUD (→ gameplay).
+
+## 3. Key design decisions
+| # | Decision | Rationale | Status | Date |
+|---|----------|-----------|--------|------|
+| RN-1 | Dual-camera scaled-space (near scene + scaled scene composited) | Proven KSP technique for seamless distance | **Accepted** (Spike 1) | 2026-06-14 |
+| RN-2 | Logarithmic **or cascaded** depth buffer; near camera only | Single-frame coverage of cm→planetary scales. Spike 1: measure reversed-Z float first; cascaded passes preferred over `SV_Depth` log because Nanite can't take a custom per-pixel depth write | **Accepted** (Spike 1) | 2026-06-14 |
+| RN-5 | Terrain = **classic streamed meshes (RealtimeMesh), NOT Nanite** | World-gen already does LOD (Nanite's headline feature redundant); Nanite-on-terrain conflicts with the cascaded/`SV_Depth` depth path. Nanite's payoff is later **factory** meshes, not terrain | **Accepted** (Spike 1) | 2026-06-14 |
+| RN-3 | Factory items: GPU-instanced near, texture/decal flow far, none when unobserved | Only way 3D belts survive at scale | **Accepted; render-wall fit CONFIRMED vs factory-sim §6 stream (RC-8, §5)** | 2026-06-14 |
+| RN-4 | Lean on Nanite for factory mesh density (D-001) | Offloads LOD/triangle budget | Provisional | 2026-06-14 |
+
+## 4. Architecture & approach
+- **Scaled space transition:** maintain two representations per body — a far proxy (low-poly + baked) rendered by the scaled camera, and near streamed terrain. As the observer enters a body's approach band, cross-fade proxy→terrain; floating-origin keeps near terrain at small coords. The handoff is the "no loading screen" moment.
+- **Depth:** log **or cascaded** depth in the near camera only (RN-2); the scaled camera uses plain depth at its own scale; the two are composited, not depth-merged (near always over scaled). Spike 1 measures UE's reversed-Z float first — cascaded preferred over `SV_Depth` (Nanite-compat). See [spike1-rendering §3](../spikes/spike1-rendering.md).
+- **Factory LOD ladder (conceptual, not built before Phase 1):** (0) full instanced meshes + animated items near; (1) instanced machines, items as scrolling material far; (2) machines as impostors, no items; (3) not rendered — sim is on-rails anyway ([core-engine](core-engine.md) SimProxy). LOD band ties to the same active/on-rails distance bands. **Nanite's intended home** (RN-5).
+- **Atmosphere:** UE5 **Sky Atmosphere** component (Rayleigh/Mie, surface→space fade-to-black out of the box) driven by camera altitude + sun direction + `FAtmosphereProfile` from [world-gen](world-gen.md) (D-006). Custom analytic LUT is a Phase-1 fallback. Forge only; Cinder airless. See [spike1-rendering §4](../spikes/spike1-rendering.md).
+
+## 5. Interfaces & dependencies
+**Depends on (inbound) — Spike-1 contracts now PINNED (code against these, not the prose):**
+- **core-engine** ([spike1-core-engine.md §5](../spikes/spike1-core-engine.md)): `FUniverseCoord`+`FFrameId` & `ToEngine/FromEngine`/`FFloatingOrigin`; `FReferenceFrame`/`IFrameGraph` (`ToUniverse(SimTime)` for body/star positions); `ISimProxy.Position()/Velocity()`; `ISimClock.Alpha()/TickIndex()`. **Events: `OnOriginRebased(DeltaEngine, NewOrigin)`** (re-anchor near scene + atmosphere transform; scaled scene untouched) and **`OnSOIChange(FSOIChangeEvent)`** (re-target approach body). A `UniverseCoord` carries its frame — never a bare `FVector`.
+- **world-gen** ([spike1-worldgen.md §4–§5](../spikes/spike1-worldgen.md)): `FTerrainChunk` (center as `FUniverseCoord`, chunk-local positions, skirts, `MaterialId`); `ITerrainProvider::OnChunkReady`/`OnChunkEvicted`/`UpdateStreaming`; `FBodyParams`/`FAtmosphereProfile` (we consume radius/atmosphere — D-006, hardcode nothing). Re-project chunk transforms on `OnOriginRebased` via `CenterUniverse.ToEngine`.
+- **physics** (later): entity transforms (interpolated) for vehicles/parts.
+- **factory-sim** ([spike3-factory-sim.md §6](../spikes/spike3-factory-sim.md)): the **factory→render stream — now PINNED by factory-sim, CONFIRMED here (RC-8)**. `FFactoryEntityState` (~32B/visible entity: `Id`,`TypeId`,`Position` as `UniverseCoord`,`FQuat16` orient, `VisualState`,`AnimPhase`,`Lod` hint,`Flags`), `FFactoryBeltFlowState` (per visible line: `ItemTypeDominant`,`FlowSpeedQuant`,`Density`,`Compressed`), and on-demand `GetLineItems(LineId)→{itemType,unitOffset}[]` — **the only O(items) call, pulled ONLY at RN-3 LOD-0**. Stream is **delta-only**, drained at render FPS, transforms interpolated via `ISimClock::Alpha()`. Belts emit `FFactoryBeltFlowState` only on flow-state *change* (a steady belt is silent). We evaluate items' world placement via the sim's baked `pathUnitToWorld` (sim never evaluates it; only we do, only for LOD-0 items). **See RC-8 resolution below + §5.4 factory-LOD-ladder mapping.**
+**Provides to (outbound):** the rendered frame; camera/observer transform feedback for LOD/AOI; screenshot/observation hooks (useful to [networking](networking.md) AOI tuning).
+**Open contract gaps flagged to Admin (Spike 1):**
+- `FAtmosphereProfile` has Rayleigh fields but **no Mie params** — request world-gen add `MieScaleHeightM`/`MieScatteringScale`/`MieAnisotropy` (non-breaking; D-006-owned by world-gen). Placeholder Mie used meanwhile.
+- UE5 Sky Atmosphere renders **only one atmosphere on screen at once** — fine now (only Forge has one), a constraint for the multi-atmospheric-body future.
+**~~Still to negotiate later~~ → NEGOTIATED & CONFIRMED:** the factory→render stream schema (fields, update rate) was pinned by factory-sim Spike 3 §6 and is **confirmed sufficient for RN-3 here (RC-8, below)** — with one *non-breaking* field-add requested (`AABB`/bounds for culling; see RC-8 §4).
+
+---
+
+### RC-8 resolution — does the factory→render stream clear the render wall? **CONFIRMED (with one additive field request).**
+> *Owner: rendering · Closes reconciliation item [RC-8](../spikes/PHASE0-SUMMARY.md#4-consolidated-reconciliation-register) (the #1 open Phase-0 cross-risk). Co-validation of the integrated case stays a Phase-1 joint task with factory-sim. Date: 2026-06-14.*
+
+**1. LOD-band → stream mapping (RN-3 ladder, §5.4, against factory-sim §6.2).** Each band pulls strictly less from the stream as distance grows — the mechanism that decouples sim-scale (millions of items) from render-scale:
+
+| RN-3 band | What we draw | What it pulls from the stream | Per-item cost |
+|---|---|---|---|
+| **LOD-0 (near)** | Full instanced machine meshes + **discrete animated item meshes** on belts; inserter/craft anim from `AnimPhase` | `FFactoryEntityState` per machine (one instance row) **+ `GetLineItems(LineId)`** to place item instances along the sim's baked `pathUnitToWorld` | **O(visible items)** — the *only* band that pays it |
+| **LOD-1 (mid)** | Instanced machines; belt items as a **scrolling-flow material** (no discrete item meshes) | `FFactoryEntityState` + `FFactoryBeltFlowState`: `FlowSpeedQuant`→material scroll rate, `Density`→fill look, `Compressed`→cheaper path. **No `GetLineItems`, no per-item data.** | **O(visible lines)** |
+| **LOD-2 (far)** | Machine **impostors** (billboard/octahedral); no items, no belt material | `FFactoryEntityState`: `TypeId`,`Position`,`VisualState` only (one tiny instance row); belts collapse into the impostor field | **~0** |
+| **LOD-3 (on-rails)** | **Not rendered** — chunk is demoted to `ISimProxy` rate-model (factory-sim §5) | **nothing** — proxy emits no per-entity stream when on-rails | **0** |
+
+The load-bearing guarantee we are confirming: **`GetLineItems` (the lone O(items) call) is pulled only at LOD-0, on demand, per line we *chose* to draw discretely.** The instant the camera pushes a line past LOD-0, its item cost collapses to one `FFactoryBeltFlowState` material param set (O(lines)), then to nothing. `Lod` in `FFactoryEntityState` is the sim's *hint*; **we own the final band decision** (screen-space size / distance), and the contract explicitly lets rendering override it — correct division of authority.
+
+**2. Rough budget (assumptions stated).**
+*Assumptions:* one commodity desktop GPU + UE5 instancing (HISM/Nanite-backed machine meshes per RN-4/RN-5); ~2 M instances/frame is a sane GPU-instance ceiling; target 60 FPS / ~16.6 ms; belt physics from factory-sim §2 (**256 sub-units/tile, 64-unit saturation spacing → 4 items/tile/lane × 2 lanes = up to 8 items/tile saturated**; lines capped at 100 tiles).
+
+- **LOD-0 item ceiling (where `GetLineItems` O(items) starts to hurt).** A fully saturated 100-tile line = ~800 items (both lanes); a realistic visible near-field rarely shows whole 100-tile lines saturated. Budget the *discrete-item* draw, not the line count: aim to keep **LOD-0 discrete belt items in view ≲ ~50–100k item instances**. At that range the per-frame work is (a) the `GetLineItems` pulls — O(items) but a flat read of the sim's gap arrays, cheap relative to (b) building/refreshing ~50–100k instance transforms via `pathUnitToWorld`. **`pathUnitToWorld` evaluation, not `GetLineItems` itself, is the LOD-0 cost** (each visible item = one arc-length→transform eval + one instance write). So LOD-0 should cover roughly **a few hundred to ~1–2k machines + the belts physically near the player** (the foreground bay), which at 8 items/tile yields tens of thousands of item instances — comfortably inside the instance ceiling. Past that, LOD-1.
+- **Where LOD-1+ must engage.** LOD-0 ends at the distance where a belt item subtends **≲ ~1–2 px** (discrete items no longer legible — the scrolling material is indistinguishable and far cheaper). For ~0.5 m items at 1080p/60° FOV that is on the order of **a few tens of meters**; we drive it on **screen-space size, not a hard metric distance**, so it auto-scales with zoom/FOV. LOD-1→LOD-2 at the distance a *machine* drops below ~a few px (impostor indistinguishable from mesh). LOD-2→LOD-3 is **not ours** — it coincides with core-engine's on-rails demote band (factory-sim §5 / FS-4), so "far enough to be on-rails" and "far enough to not render" are the *same* band by construction.
+- **Draw-call / instance / bandwidth ballpark for a realistic base (thousands near, 100k total, most far/on-rails):**
+  - *Draw calls:* machines instanced **per `TypeId`** → draw calls = O(distinct machine types in view) ≈ **tens, not thousands** (one instanced draw per type per LOD bucket). Belt LOD-1 material = one instanced/merged draw per material. This is the whole point of RN-3 + instancing: **draw calls scale with *type variety*, not entity count.**
+  - *Instances:* LOD-0 ≲ ~1–2k machine instances + tens of thousands of item instances; LOD-1 machines = instanced rows (cheap); LOD-2 impostors = up to ~tens of thousands of 2-tri billboards (trivial). Total live instances comfortably **< the ~2 M ceiling**.
+  - *Stream bandwidth:* `FFactoryEntityState` ~32B, **delta-only**. Machines don't move → `Position` is silent; only `AnimPhase`/`VisualState` (≤~3B) tick for *active* machines in view. A few thousand visible active entities × a few bytes × 60 Hz = **single-digit MB/s** — negligible. Belts emit `FFactoryBeltFlowState` only on flow-state change → near-silent in steady flow. The only heavy pull is `GetLineItems` at LOD-0, and it is **read-only, bounded by visible-item count, and never per-tick-pushed.**
+  - **Conclusion:** a realistic factory (thousands near, 100k total with most far/on-rails) **clears the wall**: only the small foreground set ever hits the O(items) path, draw calls stay in the tens via instancing, and stream bandwidth is trivial. The 100k entities are mostly LOD-2 impostors (≈0) or LOD-3 on-rails (0). The contract's LOD-0-only `GetLineItems` rule is exactly what makes this hold.
+
+**3. Verdict + residual risk.** **CONFIRMED — the contract plausibly clears the render wall.** The §6 stream gives us everything RN-3 needs and, critically, *lets us stop pulling per-item data the instant we zoom out* — the precise mechanism the render wall demands. The contract is sufficient **as-is** to build LOD-0/1/2/3; the one addition below is an *optimization for culling/band-selection*, not a correctness gap. **Residual render-wall risk → must be measured in the Phase-1 integrated co-validation (jointly with factory-sim):**
+  - (a) **Instance build/refresh cost at LOD-0** — whether ~50–100k `pathUnitToWorld` evals + instance-transform writes/frame fit the frame budget on real hardware (this, not `GetLineItems` itself, is the suspect hot spot). Measure with a saturated near-field bay.
+  - (b) **Nanite on thousands of small factory meshes** (RN-4/RN-5, rendering.md R1) — Nanite's cost on many small static-ish machine meshes is still unmeasured; this is *the* open Nanite question (terrain already settled to classic).
+  - (c) **LOD-band hysteresis / popping** at the LOD-0↔1 boundary (discrete-items → scrolling-material swap) — must cross-fade or it pops, the factory analogue of R2.
+  - (d) **Stream drain vs. camera-cut spikes** — a fast pan that promotes many lines to LOD-0 in one frame causes a burst of `GetLineItems` + instance builds; need amortized/budgeted promotion (spread builds across frames, like world-gen's per-tick mesh budget).
+
+**4. Field requests to factory-sim (non-breaking; routed to Admin).** `FFactoryEntityState`/`FFactoryBeltFlowState` are **sufficient as-is for correctness**. One *additive* request would materially help our band-selection/culling and is cheap for the sim (it already stores `StaticDef.AABB`, §1.3 / `bounds`):
+  - **`AABB Bounds` (or a packed bound-radius) on `FFactoryEntityState`** — lets us frustum-cull and compute screen-space size for LOD-band selection **without** a per-type asset-bounds lookup on the render side, and without evaluating geometry. Sim already carries `StaticDef.bounds`; surfacing it (or a 2-byte bound radius) in the stream row is non-breaking and removes a render-side indirection. *Nice-to-have, not a blocker.*
+  - **(Already in contract, just affirming we rely on it):** the `Lod` hint field and rendering's right to override it; `Compressed` on the flow state (cheaper LOD-1 path); `FlowSpeedQuant`/`Density` for the scrolling material. **No other additions needed.** If the `AABB` add is declined, we fall back to a render-side per-`TypeId` bounds table — slightly more render bookkeeping, zero contract change.
+
+---
+
+## 6. Task backlog / roadmap
+- **[Phase 0 / Spike 1 — DESIGNED, ready to build]** Scaled-space dual-camera + depth + terrain LOD + atmosphere so walk→orbit→land→walk is *visually* seamless. Full buildable plan + validation in [spike1-rendering.md](../spikes/spike1-rendering.md). Build order: rig → depth → scaled proxies → terrain → transition → atmosphere → integrate. Blocked-on: core-engine/world-gen Wave-1 build landing the demo to hook into (contracts already pinned).
+- [Phase 0] Atmospheric scattering: folded into Spike 1 (§4) via UE Sky Atmosphere; custom analytic LUT is a Phase-1 fallback if the built-in is too inflexible.
+- [Phase 1] Factory LOD ladder v1 (instancing + far texture flow) — conceptual sketch in spike1-rendering §5.4; **stream contract confirmed sufficient (RC-8, §5)**; **Nanite's intended home** (RN-5). Phase-1 build + the integrated 100k-rendered co-validation with factory-sim (the RC-8 residual measurements: LOD-0 instance-build cost, Nanite-on-small-meshes, LOD-band hysteresis, camera-cut burst budgeting).
+- [Phase 4] Visual polish, weather, advanced VFX; multi-atmosphere path (Sky-Atmosphere single-atmo limit).
+
+## 7. Open questions & risks
+- **R1 (terrain Nanite — RESOLVED for Spike 1):** terrain uses **classic streamed meshes, not Nanite** (RN-5) — world-gen already LODs and Nanite blocks the depth path. **Nanite cost on thousands of small *factory* meshes is the surviving open Nanite question** → now scoped as a named RC-8 Phase-1 residual (§5, item b): measure in the integrated factory-render co-validation, not Spike-3 (which is sim-only).
+- **R5 (new — render-wall LOD-0 hot spot, from RC-8 §5):** the suspect cost is **not** factory-sim's `GetLineItems` (a cheap flat read) but **our** per-frame `pathUnitToWorld` evals + instance-transform writes for the ~50–100k discrete belt items at LOD-0, plus burst spikes when a camera cut promotes many lines to LOD-0 at once. Mitigation direction: screen-space-driven LOD-0 band kept tight (foreground bay only), amortized/budgeted line-promotion (spread instance builds across frames), LOD-0↔1 cross-fade to kill the discrete-items→scrolling-material pop. **Measured in the Phase-1 integrated co-validation (jointly owned with factory-sim).**
+- **R2 (cross-fade — mitigation DESIGNED, pass/fail set):** scaled↔near pop + lighting mismatch on fast approach. Addressed structurally in spike1-rendering §2 (proxy-as-backdrop + occlusion-first cross-fade + single shared sun + depth-aware horizon haze). Retired by validation **RV3/RV8** (frame-stepped orbital-speed descent: no silhouette jump, no terminator discontinuity, no band-edge flicker). **Primary residual visual risk until the build runs.**
+- **R4 (new — depth × Nanite):** Nanite can't take a custom per-pixel `SV_Depth` write → log-depth and Nanite-on-terrain partly incompatible. Resolved by RN-5 (classic terrain) + measuring reversed-Z-float-first (RN-2). Flagged to Admin as a standing UE5 constraint.
+- **R3 (Admin Q3):** 1st vs 3rd person affects camera rig and near-field detail budget. Rig (spike1-rendering §1) is perspective-agnostic — NearCam parents the pawn either way; decision still pending gameplay.
+
+## 8. Subagent delegation log
+| Date | Subagent task | Status | Outcome |
+|------|---------------|--------|---------|
+| 2026-06-14 | Research thread (run inline via WebSearch/WebFetch — Agent-spawn tool unavailable in this session): scaled-space dual-camera + log-depth techniques for planetary renderers; Rayleigh/Mie scattering in UE5 | Done | Outerra log-depth formula + fragment-shader-depth requirement + 24-bit→cosmic-range precision; UE5 Sky Atmosphere does surface→space fade-to-black out of the box but renders **only one atmosphere on screen at once**; UE default **reversed-Z float** depth may suffice (measure first); **Nanite blocks custom `SV_Depth`** → drove RN-5 (classic terrain). Folded into [spike1-rendering.md](../spikes/spike1-rendering.md) §3–§5. |
+| 2026-06-14 | RC-8 render-wall reconciliation (run inline): evaluate factory-sim Spike-3 §6 stream (`FFactoryEntityState`/`FFactoryBeltFlowState`/`GetLineItems`) against RN-3 LOD ladder; map each band→stream, budget LOD-0 item ceiling + band-engage distances + draw-call/bandwidth, render verdict | Done | **CONFIRMED**: stream sufficient as-is for RN-3; `GetLineItems`-at-LOD-0-only is exactly the O(items)→O(lines) collapse the wall needs. Draw calls scale with type-variety (tens), not entity count; stream is delta-only/near-silent; realistic factory clears the wall. **One non-breaking field requested** (`AABB`/bound-radius on `FFactoryEntityState` for cull/band-select). Real hot spot is **our** LOD-0 `pathUnitToWorld` instance builds (new R5), not the sim's call. Folded into §5 (RC-8 resolution + budget) + R1/R5. |
+
+## 9. References
+MASTER_PLAN §6 (seamless magic), §7 (No Man's Sky/Astroneer references). KSP dual-camera scaled space; log-depth-buffer techniques; UE5 Nanite/Lumen.

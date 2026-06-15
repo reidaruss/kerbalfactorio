@@ -1,0 +1,28 @@
+# Build output
+/core/build/
+build/
+*.o
+*.obj
+*.exe
+*.lib
+*.a
+*.dll
+
+# Unreal Engine (future /ue project)
+/ue/Binaries/
+/ue/Intermediate/
+/ue/Saved/
+/ue/DerivedDataCache/
+/ue/.vs/
+
+# IDE / editor
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
