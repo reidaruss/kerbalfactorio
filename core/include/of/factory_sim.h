@@ -325,6 +325,15 @@ class FactorySim {
   uint32_t machineProgress(EntityHandle h) const { return progressTicks_[h.index]; }
   uint64_t tickIndex() const { return clock_.tickIndex(); }
 
+  // Cumulative count of items ever produced by any machine (monotonic; never
+  // decremented when an inserter drains an out-slot). Added for the headless
+  // integration harness so it can assert "the factory keeps producing" across a
+  // whole flight (the active/on-rails journey). Non-breaking, additive: the hot
+  // loop already increments outSlotCount_ on craft completion; this just sums
+  // the same events into a separate never-decreasing counter. (INT-1, flagged
+  // to Admin — see docs/phase1/M2-integration.md.)
+  uint64_t producedCount() const { return totalProduced_; }
+
   // Manually feed a machine input (for inserter-free correctness tests).
   void feedMachine(EntityHandle h, uint16_t count) { inSlotCount_[h.index] += count; }
 
@@ -380,6 +389,7 @@ class FactorySim {
   std::vector<uint32_t> active_;
   std::vector<uint32_t> freeList_;
   size_t liveCount_ = 0;
+  uint64_t totalProduced_ = 0;  // lifetime items produced (monotonic; INT-1)
 
   SimClock clock_;
 
@@ -499,6 +509,7 @@ class FactorySim {
       if (progressTicks_[i] >= target) {
         // complete: emit output, reset, allow immediate restart next tick.
         outSlotCount_[i] += r.outputCount;
+        totalProduced_ += r.outputCount;  // monotonic lifetime counter (INT-1)
         progressTicks_[i] = 0;
         crafting_[i] = 0;
       }

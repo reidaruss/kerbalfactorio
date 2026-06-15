@@ -46,3 +46,11 @@ add_executable(physics_tests
 target_link_libraries(physics_tests PRIVATE of_core)
 target_include_directories(physics_tests PRIVATE tests)
 add_test(NAME physics_tests COMMAND physics_tests)
+
+# --- Headless integration: composes all four cores into the slice-loop logic ---
+add_executable(integration_tests
+  tests/test_main.cpp
+  tests/test_integration.cpp)
+target_link_libraries(integration_tests PRIVATE of_core)
+target_include_directories(integration_tests PRIVATE tests)
+add_test(NAME integration_tests COMMAND integration_tests)
