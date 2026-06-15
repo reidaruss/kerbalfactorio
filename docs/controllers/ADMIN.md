@@ -15,7 +15,8 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 **BUILD STARTED 2026-06-14** (Reid: *"git init and start building, iterate until MVP"* — resourcing handled by the agent studio, no schedule needed). Progress:
 - **git repo initialized** (`main`, commit `7fd1e6f`); headless C++ harness live (g++/CMake/Ninja installed and working); `.gitattributes`/`.gitignore` set.
 - **core-engine Wave-0 core BUILT + GREEN ✓** — `UniverseCoord` / `FloatingOrigin` / `FrameGraph` / `SimClock` in `core/include/of/`; 5 gate tests / 28 checks, 0 failures. **The #1 project risk is now retired on real hardware:** 64-bit authority + floating origin preserves sub-metre precision at 1,000,000 km (naive float32 loses it).
-- **Next cores (built by their domain agents on this proven base):** factory-sim 100k benchmark → world-gen crack-free terrain → physics conics+integrator → then UE5 project (M2.1).
+- **factory-sim Wave-0 core BUILT + GREEN ✓** — SoA belt/factory sim (transport-line belts, inserters, machines, power graph w/ brownout); **100,000 entities @ ~535 UPS measured** (8.9× over the 60 UPS bar — gate G1 retired, bandwidth-bound as predicted); belt transport, update-on-demand, and brownout all tested. (FS-11)
+- **Next:** world-gen crack-free terrain core → physics conics+integrator core → then the UE5 project (M2.1).
 
 ## 3. Controller status dashboard
 | # | Controller | Phase | Status | Owner of | Blocking / blocked by |
@@ -24,7 +25,7 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 | 2 | rendering | 0 | **Spike 1 designed ✓ (ready to build)** | scaled space, LOD, instancing, shaders | Consumed Wave-1 contracts OK; RN-5 added; flagged RC-2 (Mie) |
 | 3 | physics | 0 | **Spike 2 designed ✓** | patched conics, rigid bodies, collision | RC-4 resolved → PH-4 hybrid integrator; provides `FVesselOrbitalState`; owns RC-11 (solar) |
 | 4 | world-gen | 0 | **Spike 1 designed ✓ (ready to build)** | planet gen, deposits, POIs, voxel patches | Contracts pinned; owns RC-2 (add Mie fields) + RC-3 (collision-mesh negotiation) |
-| 5 | factory-sim | 0 | **Spike 3 designed ✓** | belts, machines, power, on-rails factory | 100k @ 60 UPS (bandwidth-bound); pinned render/network streams (RC-8/9); render wall open |
+| 5 | factory-sim | 1 | **Wave-0 core BUILT + GREEN ✓** | belts, machines, power, on-rails factory | 100k @ **535 UPS** measured (8.9× headroom — G1 retired); SoA sim + brownout + update-on-demand tested |
 | 6 | networking | 0 | Scoping | server authority, AOI, replication, prediction | Cross-cutting; constrains all from day one |
 | 7 | gameplay | 1 | **Phase-1 designed ✓** | research, quests, loot, UI | Slice designed (GP-6…14); C-1/2/3/5 closed; research tree = Phase 2 |
 | 8 | persistence | 1 | **Phase-1 designed ✓** | seed+diff, streaming, serialization | Slice save/load designed (PS-5…8); C-6/7/8 closed (RegionDepth 9/8) |

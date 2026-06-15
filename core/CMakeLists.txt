@@ -25,3 +25,10 @@ add_executable(core_engine_tests
 target_link_libraries(core_engine_tests PRIVATE of_core)
 target_include_directories(core_engine_tests PRIVATE tests)
 add_test(NAME core_engine_tests COMMAND core_engine_tests)
+
+add_executable(factory_sim_tests
+  tests/test_main.cpp
+  tests/test_factory_sim.cpp)
+target_link_libraries(factory_sim_tests PRIVATE of_core)
+target_include_directories(factory_sim_tests PRIVATE tests)
+add_test(NAME factory_sim_tests COMMAND factory_sim_tests)
