@@ -48,6 +48,61 @@ using ItemId = uint16_t;
 static constexpr ItemId kNoItem = 0;
 
 // =============================================================================
+// §6 — RENDER/NETWORK STREAM CONTRACT (G7, spike3 §6.2). Pinned here; rendering
+// consumes it (RC-8). The sim owns *state*; the stream is a *view* — these are
+// plain PODs the StreamSystem fills each tick. Emission is purely ADDITIVE
+// (read-only over the SoA): producing the stream never mutates sim state and
+// never changes the hot tick, so the 13 prior suites are untouched.
+//
+// FEntityId is gameplay's opaque entity handle on the stream side. Headless,
+// we key it to the dense entity index (the same key rendering instances by).
+// =============================================================================
+using FEntityId = uint32_t;
+
+// One compact, instancing-friendly record — ~32-34 B, the spike's pinned size.
+// SoA on the sim side; rendering reads it as one GPU instance row.
+//   sizeof: 4 (Id) +2 (TypeId) +12 (Position f32x3) +6 (Orient i16x3) +4
+//   (state bytes) +2 (BoundRadius) = 30 B packed; padded to 32 B — within the
+//   "~32 B / ~34 B with BoundRadius" budget pinned in §6.2 (RC-12 append-only).
+struct FFactoryEntityState {
+  FEntityId Id = 0;           // dense entity index (rendering's instance key)
+  uint16_t TypeId = 0;        // which mesh/material set — draw calls bucket by this
+  float Position[3] = {0, 0, 0};  // authority position (headless: a plain f32x3)
+  int16_t Orientation[3] = {0, 0, 0};  // packed quat-ish (unused headless; 6 B slot)
+  uint8_t VisualState = 0;    // idle / working / blocked / no-power
+  uint8_t AnimPhase = 0;      // 0..255 normalized craft/swing progress
+  uint8_t Lod = 0;            // sim's band *hint* (rendering may override) — 0..3
+  uint8_t Flags = 0;          // dirty bits: poweredOff, jammed, selected, ...
+  uint16_t BoundRadius = 0;   // RC-12: packed bound-radius (cm) about Position
+};
+
+// LOD bands (RN-3, §6.2). 0 = near (instanced meshes + discrete items),
+// 1 = mid (instanced machines + scrolling-flow material), 2 = far (impostors),
+// 3 = on-rails (not rendered — chunk demoted, §5).
+enum class Lod : uint8_t { Near0 = 0, Mid1 = 1, Far2 = 2, OnRails3 = 3 };
+
+// One per VISIBLE transport line (NOT per item) — the belt's render view.
+// Belts carry items as offsets (§2), never as entities; at LOD-1+ the whole
+// line is just these few scalars (a scrolling-flow material), so render item
+// cost collapses to O(lines). Per-item meshes come ONLY from GetLineItems at
+// LOD-0 (the lone O(items) call).
+struct FFactoryBeltFlowState {
+  FEntityId LineId = 0;
+  uint16_t ItemTypeDominant = kNoItem;  // most-common item (scrolling material)
+  uint8_t FlowSpeedQuant = 0;           // units/tick quantized → scroll rate
+  uint8_t Density = 0;                  // 0..255 fill fraction → "fullness"
+  uint8_t Compressed = 0;               // latched flag (cheaper render path)
+};
+
+// One discrete item on a line — returned ONLY by GetLineItems at LOD-0, where
+// rendering places an item mesh along the sim's baked pathUnitToWorld. This is
+// the single O(items) pull in the whole contract (§6.2).
+struct FLineItem {
+  ItemId ItemType = kNoItem;
+  uint32_t UnitOffset = 0;  // distance from the line head, in §2 sub-tile units
+};
+
+// =============================================================================
 // §2 — Transport line: belt compression via terminal gaps + item-offset gaps.
 //
 // One TransportLine replaces N belt tiles. Items are stored as the *gap before*
@@ -502,6 +557,143 @@ class FactorySim {
     rails_ = FRailState{};
   }
 
+  // ==========================================================================
+  // §6 — RENDER/NETWORK STREAM EMISSION (G7). Additive, read-only over the SoA.
+  //
+  // These produce the pinned §6.2 stream rows for rendering (+ networking can
+  // reuse the same accessors). NONE of them mutate sim state, so the hot tick
+  // and the 13 prior suites are entirely unaffected. The render-cost model
+  // (render_cost.h) consumes exactly these outputs to prove RC-8 headlessly.
+  // ==========================================================================
+
+  // Optional render metadata the stream surfaces (all default to harmless
+  // values so legacy scenes — which never call these — stream as TypeId 0 at
+  // the origin with a 1 m bound). Additive: existing callers set nothing.
+  void setEntityTypeId(EntityHandle h, uint16_t typeId) {
+    if (h.valid()) typeId_[h.index] = typeId;
+  }
+  void setEntityPosition(EntityHandle h, float x, float y, float z) {
+    if (!h.valid()) return;
+    posX_[h.index] = x; posY_[h.index] = y; posZ_[h.index] = z;
+  }
+  // Bound-radius in centimetres (the §6.2 BoundRadius packing). 0 → defaulted
+  // to ~1 m on emit so culling/screen-size math never divides by a zero bound.
+  void setEntityBoundRadiusCm(EntityHandle h, uint16_t cm) {
+    if (h.valid()) boundCm_[h.index] = cm;
+  }
+  uint16_t entityTypeId(EntityHandle h) const { return typeId_[h.index]; }
+
+  // VisualState hint from the live SoA (§6.2): no-power < blocked < working <
+  // idle. Read-only; rendering maps it to anim/emissive. Belt lines report
+  // "working" while flowing. (Cheap, derived; not stored.)
+  uint8_t entityVisualState(EntityHandle h) const {
+    if (!h.valid()) return 0;
+    uint32_t i = h.index;
+    if (kind_[i] == EntityKind::Machine) {
+      uint16_t net = networkId_[i];
+      uint32_t brown = (net < netBrownoutQ16_.size()) ? netBrownoutQ16_[net]
+                                                       : 65536u;
+      if (brown == 0) return 3;             // no-power
+      if (crafting_[i]) return 1;           // working
+      const Recipe& r = recipes_[recipeId_[i]];
+      bool starved = inSlotCount_[i] < r.inputCount;
+      bool blocked = (outCap_[i] != 0) &&
+                     (outSlotCount_[i] + r.outputCount > outCap_[i]);
+      return (starved || blocked) ? 2 : 0;  // blocked : idle
+    }
+    return 0;
+  }
+
+  // --- Per-tick entity-state stream (§6.2). One row per LIVE entity, in dense
+  // index order (deterministic). `lodOf` lets the caller stamp the band hint
+  // (default: everything Near0); rendering owns the final band decision but the
+  // sim provides the hint. Read-only; allocates only the returned vector. ----
+  std::vector<FFactoryEntityState> EmitEntityStates() const {
+    return EmitEntityStates([](const FactorySim&, EntityHandle) {
+      return Lod::Near0;
+    });
+  }
+  template <typename LodFn>
+  std::vector<FFactoryEntityState> EmitEntityStates(LodFn lodOf) const {
+    std::vector<FFactoryEntityState> out;
+    out.reserve(liveCount_);
+    for (uint32_t i = 0; i < kind_.size(); ++i) {
+      if (kind_[i] == EntityKind::None) continue;
+      EntityHandle h{i, generation_[i]};
+      FFactoryEntityState s;
+      s.Id = i;
+      s.TypeId = typeId_[i];
+      s.Position[0] = posX_[i];
+      s.Position[1] = posY_[i];
+      s.Position[2] = posZ_[i];
+      s.VisualState = entityVisualState(h);
+      s.AnimPhase = animPhaseOf(i);
+      s.Lod = static_cast<uint8_t>(lodOf(*this, h));
+      s.Flags = 0;
+      s.BoundRadius = boundCm_[i] ? boundCm_[i] : 100;  // default ~1 m
+      out.push_back(s);
+    }
+    return out;
+  }
+
+  // --- Per-tick belt-flow stream (§6.2). One row per LIVE transport line. This
+  // is what a belt looks like at LOD-1+ (a scrolling-flow material) — O(lines),
+  // NO per-item data. A steady belt is summarized by these few scalars. ----
+  std::vector<FFactoryBeltFlowState> EmitBeltFlowStates() const {
+    std::vector<FFactoryBeltFlowState> out;
+    for (uint32_t i = 0; i < kind_.size(); ++i) {
+      if (kind_[i] != EntityKind::BeltLine) continue;
+      const TransportLine& l = lines_[i];
+      FFactoryBeltFlowState f;
+      f.LineId = i;
+      f.ItemTypeDominant = dominantItem(l);
+      // quantize speed (units/tick) to a byte scroll-rate.
+      f.FlowSpeedQuant = static_cast<uint8_t>(
+          l.speedUnitsPerTick > 255 ? 255 : l.speedUnitsPerTick);
+      // density = fraction of capacity occupied by item bodies (0..255).
+      uint64_t occupied =
+          static_cast<uint64_t>(l.itemCount()) * kItemSpacing;
+      uint32_t dens = l.capacityUnits
+                          ? static_cast<uint32_t>((occupied * 255) /
+                                                  l.capacityUnits)
+                          : 0;
+      f.Density = static_cast<uint8_t>(dens > 255 ? 255 : dens);
+      f.Compressed = l.fullyCompressed ? 1 : 0;
+      out.push_back(f);
+    }
+    return out;
+  }
+
+  // --- The ONLY O(items) call (§6.2). Pulled ON DEMAND, by LineId, and per the
+  // render-wall contract ONLY at LOD-0 for lines the renderer chose to draw
+  // discretely. Returns each live item's type + its unit-offset from the head
+  // (reconstructed from the §2 gap arrays — read-only, never per-tick-pushed).
+  // This is the lone call whose cost is O(items on the line); the whole point
+  // of RC-8 is that it is invoked only for the small near-field set. ----
+  std::vector<FLineItem> GetLineItems(FEntityId lineId) const {
+    std::vector<FLineItem> out;
+    if (lineId >= kind_.size() || kind_[lineId] != EntityKind::BeltLine)
+      return out;
+    const TransportLine& l = lines_[lineId];
+    out.reserve(l.itemCount());
+    // Walk live items [head_, size). The lead item sits headGap units from the
+    // head; each subsequent item is kItemSpacing + its extra gap further back.
+    uint32_t offset = l.headGap;
+    for (size_t k = l.head_; k < l.itemTypes.size(); ++k) {
+      if (k > l.head_) offset += kItemSpacing + l.itemGaps[k];
+      out.push_back(FLineItem{l.itemTypes[k], offset});
+    }
+    return out;
+  }
+
+  // Count of live items on a line — O(1) (the §2 head-cursor count). Lets the
+  // render-cost model bound LOD-0 item work without pulling the full list.
+  uint32_t lineItemCount(FEntityId lineId) const {
+    if (lineId >= kind_.size() || kind_[lineId] != EntityKind::BeltLine)
+      return 0;
+    return static_cast<uint32_t>(lines_[lineId].itemCount());
+  }
+
  private:
   // ---- SoA tables (parallel, indexed by handle.index) ----------------------
   std::vector<EntityKind> kind_;
@@ -531,6 +723,14 @@ class FactorySim {
 
   // Belt lines (§2) — one TransportLine per BeltLine entity.
   std::vector<TransportLine> lines_;
+
+  // §6 render-stream metadata (cold; touched only by stream emission, never by
+  // the hot tick). Additive: defaulted so legacy scenes stream sanely. typeId_
+  // buckets draw calls (rendering instances per TypeId); pos*_ is the authority
+  // position the stream surfaces; boundCm_ is the §6.2 BoundRadius (0 → ~1 m).
+  std::vector<uint16_t> typeId_;
+  std::vector<float> posX_, posY_, posZ_;
+  std::vector<uint16_t> boundCm_;
 
   // Recipes (cold; indexed by recipeId_).
   std::vector<Recipe> recipes_;
@@ -613,6 +813,41 @@ class FactorySim {
     insPhase_.resize(n, InserterPhase::Idle);
     insHeld_.resize(n, kNoItem);
     lines_.resize(n);
+    typeId_.resize(n, 0);
+    posX_.resize(n, 0.0f);
+    posY_.resize(n, 0.0f);
+    posZ_.resize(n, 0.0f);
+    boundCm_.resize(n, 0);
+  }
+
+  // ---- §6 stream helpers (read-only; never on the hot path) -----------------
+
+  // AnimPhase byte (§6.2): a machine's craft progress 0..255; a flowing belt's
+  // head travel; 0 otherwise. Purely derived from live state, never stored.
+  uint8_t animPhaseOf(uint32_t i) const {
+    if (kind_[i] == EntityKind::Machine) {
+      const Recipe& r = recipes_[recipeId_[i]];
+      uint32_t target = r.craftTimeTicks * 1000u;
+      if (target == 0) return 0;
+      uint64_t p = static_cast<uint64_t>(progressTicks_[i]) * 255u / target;
+      return static_cast<uint8_t>(p > 255 ? 255 : p);
+    }
+    if (kind_[i] == EntityKind::BeltLine) {
+      const TransportLine& l = lines_[i];
+      if (l.capacityUnits == 0 || l.empty()) return 0;
+      // how far the lead item has travelled toward the head, normalized.
+      uint64_t travelled = l.capacityUnits - l.headGap;
+      uint64_t p = travelled * 255u / l.capacityUnits;
+      return static_cast<uint8_t>(p > 255 ? 255 : p);
+    }
+    return 0;
+  }
+
+  // Dominant item on a line (§6.2 ItemTypeDominant) for the scrolling material.
+  // The slice's lines are single-item; we take the head item as representative
+  // (O(1)) — a steady belt carries one item type, the realistic case.
+  static ItemId dominantItem(const TransportLine& l) {
+    return l.empty() ? kNoItem : l.itemTypes[l.head_];
   }
 
   void ensureNetwork(uint16_t network) {

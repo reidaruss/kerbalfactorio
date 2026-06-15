@@ -34,6 +34,8 @@ Progress by domain overnight:
 ## 🛠️ The one rough patch: UE toolchain setup
 Getting UE 5.7 to build took sorting three missing prerequisites (you approved/installed them): **MSVC 14.44** (UE bans 14.40–14.43), **Windows 11 SDK 10.0.22621**, and the **.NET Framework SDK 4.6.2** — all in the "Game development with C++" VS workload. It's all documented in `docs/controllers/build-tooling.md` (BT-4/5/6) so it's never re-debugged. *None of it was the code* — the moment the compiler was right, everything built clean first try.
 
+**Practical tip worth doing:** the repo lives in your **Nextcloud** folder, and the sync client intermittently locks build outputs (`core/build/`, and UE's `Binaries`/`Intermediate`) mid-build — it caused a few transient "permission denied" / hangs overnight. Add those build dirs to Nextcloud's ignore list (Settings → General → Edit Ignored Files), or move the project out of the synced folder. They're already git-ignored; this is just the Nextcloud sync layer. The small `docs/` + `core/include/` (source) are fine to keep syncing.
+
 ---
 
 ## 🧭 Where this leaves us / recommended next

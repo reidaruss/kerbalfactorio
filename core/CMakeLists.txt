@@ -45,6 +45,22 @@ target_link_libraries(factory_rails_tests PRIVATE of_core)
 target_include_directories(factory_rails_tests PRIVATE tests)
 add_test(NAME factory_rails_tests COMMAND factory_rails_tests)
 
+# --- Factory RENDER-COST model (Q6 / RC-8, gate G7): numerically back the
+#     render-wall claim HEADLESSLY. The factory's §6 stream (additive emission
+#     from FactorySim — FFactoryEntityState/FFactoryBeltFlowState/GetLineItems)
+#     feeds a pure render-cost model (render_cost.h) that proves item-render
+#     cost collapses O(items)→O(lines) above LOD-0 and draw calls scale with
+#     machine-TYPE count (tens via instancing), not entity count — so a slice
+#     factory AND a 100k-entity stress factory both fit a per-frame budget.
+#     This is RC-8 (rendering "confirmed on paper") validated without a GUI.
+#     Header-only; consumes factory_sim.h + render_cost.h read-only.
+add_executable(render_cost_tests
+  tests/test_main.cpp
+  tests/test_render_cost.cpp)
+target_link_libraries(render_cost_tests PRIVATE of_core)
+target_include_directories(render_cost_tests PRIVATE tests)
+add_test(NAME render_cost_tests COMMAND render_cost_tests)
+
 add_executable(world_gen_tests
   tests/test_main.cpp
   tests/test_world_gen.cpp)
