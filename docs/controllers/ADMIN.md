@@ -17,14 +17,16 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 - **core-engine Wave-0 core BUILT + GREEN ✓** — `UniverseCoord` / `FloatingOrigin` / `FrameGraph` / `SimClock` in `core/include/of/`; 5 gate tests / 28 checks, 0 failures. **The #1 project risk is now retired on real hardware:** 64-bit authority + floating origin preserves sub-metre precision at 1,000,000 km (naive float32 loses it).
 - **factory-sim Wave-0 core BUILT + GREEN ✓** — SoA belt/factory sim (transport-line belts, inserters, machines, power graph w/ brownout); **100,000 entities @ ~535 UPS measured** (8.9× over the 60 UPS bar — gate G1 retired, bandwidth-bound as predicted); belt transport, update-on-demand, and brownout all tested. (FS-11)
 - **world-gen Wave-0 core BUILT + GREEN ✓** — cubed-sphere quadtree heightfield; **crack-free determinism proven BITWISE** (shared-edge vertices bit-identical via integer lattice + position-hashed noise; 10 tests/3582 checks, gates WV1–WV3); Forge + Cinder generation. (WG-13)
-- **Next:** physics conics+integrator core → then the UE5 project (M2.1).
+- **physics Wave-0 core BUILT + GREEN ✓** — universal-variable Kepler (elliptic+hyperbolic) + custom symplectic integrator; **no-drift proven: 2.4e-11 energy drift over 30 orbits** (vs Euler 0.40 — ~25 trillion× better; gates G1/G3/G6 retired at the math level). (PH-6)
+- **🏁 MILESTONE — all FOUR Wave-0 headless cores BUILT + GREEN (ctest 4/4).** The project's four biggest technical risks are now retired on real hardware with compiling, tested code: planetary-scale precision (core-engine), 100k @ ~535 UPS (factory-sim), crack-free terrain bitwise (world-gen), no-kraken orbits (physics). The "prove it headless first" thesis is **fully validated**; the D-001/UE5 path is de-risked.
+- **Next:** headless integration (compose the 4 cores into the slice-loop *logic*, no rendering) + gameplay/persistence logic cores, then the **UE5 project (M2.1)** — which needs the engine installed (environment boundary).
 
 ## 3. Controller status dashboard
 | # | Controller | Phase | Status | Owner of | Blocking / blocked by |
 |---|---|---|---|---|---|
 | 1 | core-engine | 1 | **Wave-0 core BUILT + GREEN ✓** | coords, floating origin, frames, active/on-rails, tick | `core/include/of/` compiled+tested (g++); the substrate other cores build on |
 | 2 | rendering | 0 | **Spike 1 designed ✓ (ready to build)** | scaled space, LOD, instancing, shaders | Consumed Wave-1 contracts OK; RN-5 added; flagged RC-2 (Mie) |
-| 3 | physics | 0 | **Spike 2 designed ✓** | patched conics, rigid bodies, collision | RC-4 resolved → PH-4 hybrid integrator; provides `FVesselOrbitalState`; owns RC-11 (solar) |
+| 3 | physics | 1 | **Wave-0 core BUILT + GREEN ✓** | patched conics, rigid bodies, collision | Universal-var Kepler (ellip+hyperbolic) + symplectic integrator; **no-drift 2.4e-11/30 orbits** (G1/3/6); PH-6 |
 | 4 | world-gen | 1 | **Wave-0 core BUILT + GREEN ✓** | planet gen, deposits, POIs, voxel patches | Cubed-sphere quadtree; **crack-free proven BITWISE** (10 tests/3582 checks, WV1–3); Forge+Cinder gen |
 | 5 | factory-sim | 1 | **Wave-0 core BUILT + GREEN ✓** | belts, machines, power, on-rails factory | 100k @ **535 UPS** measured (8.9× headroom — G1 retired); SoA sim + brownout + update-on-demand tested |
 | 6 | networking | 0 | Scoping | server authority, AOI, replication, prediction | Cross-cutting; constrains all from day one |

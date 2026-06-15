@@ -39,3 +39,10 @@ add_executable(world_gen_tests
 target_link_libraries(world_gen_tests PRIVATE of_core)
 target_include_directories(world_gen_tests PRIVATE tests)
 add_test(NAME world_gen_tests COMMAND world_gen_tests)
+
+add_executable(physics_tests
+  tests/test_main.cpp
+  tests/test_physics.cpp)
+target_link_libraries(physics_tests PRIVATE of_core)
+target_include_directories(physics_tests PRIVATE tests)
+add_test(NAME physics_tests COMMAND physics_tests)
