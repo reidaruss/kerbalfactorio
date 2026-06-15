@@ -44,6 +44,7 @@
 #include "of/universe_coord.h"
 #include "of/factory_sim.h"
 #include "of/cubed_sphere.h"
+#include "of/deposits.h"
 
 namespace of {
 namespace gameplay {
@@ -68,7 +69,12 @@ using RecipeId = uint16_t;
 static constexpr RecipeId kNoRecipe = 0;
 
 // A stable deposit id (world-gen's FDepositNode key; C-1). 0 = none.
-using DepositId = uint32_t;
+// GAP-1: this IS world-gen's FDepositNode::Id type (a shared `using`, not a
+// parallel narrower type) — a uint64 deposit key carries verbatim from the
+// catalog through gameplay mining and into the persistence depletion diff, with
+// NO truncating bridge. Unifying the id width is what lets gameplay consume a
+// worldgen::FDepositNode directly (see the mineDeposit overload below).
+using DepositId = worldgen::DepositId;            // uint64_t (was a narrower uint32)
 static constexpr DepositId kNoDeposit = 0;
 
 // Item category — HUD grouping / filters (§7.1).
@@ -246,6 +252,18 @@ class SliceRegistry {
   bool registerItem(const ItemDef& def) {
     if (item(def.id) != nullptr) return false;  // never reuse/override an id
     items_.push_back(def);
+    return true;
+  }
+
+  // Register a recipe def outside the pinned slice block — the research layer's
+  // SCIENCE recipes (research.h), which turn intermediates/off-world ore into
+  // science packs (e.g. Ferrite plate → AutomationScience, Cinderite →
+  // CinderScience). Same discipline as registerItem: append-only in the shared
+  // RecipeId space, never reuse/override an id. Returns false if already present.
+  // (GAP-3 — the off-world science chain is authored as data, GP-12.)
+  bool registerRecipe(const RecipeDef& def) {
+    if (recipe(def.recipeId) != nullptr) return false;
+    recipes_.push_back(def);
     return true;
   }
 
@@ -503,6 +521,37 @@ inline MineResult mineDeposit(DepositNode& node, Inventory& inv,
   res.extracted = kept;
   res.granted = kept;
   res.depositEmpty = node.depleted();
+  return res;
+}
+
+// GAP-1: mine a world-gen FDepositNode DIRECTLY (no gameplay::DepositNode bridge).
+// The slice's mining loop holds the catalog's own FDepositNode (uint64 Id, opaque
+// uint16 Resource — the SAME id space, C-3/WG-11); since gameplay::DepositId now
+// IS worldgen::DepositId there is nothing to truncate. This overload reads/decrements
+// the FDepositNode's RemainingAmount in place — identical extraction semantics to
+// the gameplay::DepositNode path above, just over the world-gen consumable shape.
+// (Same grade-scaled pull, same "deplete only what the player keeps" rule.)
+inline MineResult mineDeposit(worldgen::FDepositNode& node, Inventory& inv,
+                              uint16_t baseRate = 1) {
+  MineResult res;
+  if (node.RemainingAmount <= 0.0 || node.Resource == kNoItem) {
+    res.depositEmpty = true;
+    return res;
+  }
+  double want = static_cast<double>(baseRate) * static_cast<double>(node.Grade);
+  if (want < 1.0) want = 1.0;
+  if (want > node.RemainingAmount) want = node.RemainingAmount;
+  uint16_t pull = static_cast<uint16_t>(want);
+  if (pull == 0) pull = 1;
+
+  uint16_t overflow = inv.add(node.Resource, pull);
+  uint16_t kept = static_cast<uint16_t>(pull - overflow);
+  node.RemainingAmount -= static_cast<double>(kept);
+  if (node.RemainingAmount < 0.0) node.RemainingAmount = 0.0;
+
+  res.extracted = kept;
+  res.granted = kept;
+  res.depositEmpty = (node.RemainingAmount <= 0.0);
   return res;
 }
 

@@ -4,45 +4,36 @@
 // Every other suite proves ONE core in isolation (deposits, factory, research,
 // persistence, the SimWorld flight spine). This suite proves they COMPOSE into
 // the whole Phase-1 + research-slice game loop end-to-end, driving the REAL
-// public APIs of each domain core (no core header is modified — all wiring is
-// done here, read-only against the cores):
+// public APIs of each domain core. The four integration GAPS the first cut of
+// this capstone had to work around are now CLOSED in the cores, so the loop is a
+// clean typed chain — no bridges, no casts, no off-table magic:
 //
-//   1. MINE        GenerateDeposits on Forge -> pick a Ferrite node -> extract
-//                  ore into an Inventory (both gameplay::mineDeposit on a bridged
-//                  node AND worldgen::DepositCatalog::ExtractFromDeposit), and
-//                  assert the node depletes.
-//   2. AUTOMATE    Stand up a factory (mirroring journey_dump's standUpFactory):
-//                  feed it the mined ore, step it, assert producedCount climbs
-//                  (ore -> product). A SECOND machine produces a *science* item
-//                  (AutomationScience) the research layer will spend.
-//   3. RESEARCH    Put the produced science into a science Inventory and
-//                  tryResearch(BasicSmelting) -> unlocked; assert a recipe that
-//                  was gated (SmeltFerrite) is now unlocked (GP-1 end-to-end).
-//   4. FLY         Run a SimWorld journey Forge -> Cinder (the same schedule the
-//                  integration test / journey_dump use): assert it crosses the
-//                  SOI exactly once (soiSwitchCount()==1) and lands on Cinder,
-//                  with the factory still producing throughout.
-//   5. OFF-WORLD   GenerateDeposits on Cinder -> assert Cinderite is Cinder-ONLY
-//                  (WG-4) -> extract it -> derive CinderScience. CinderiteRefining
-//                  was BLOCKED before (no Cinder science); tryResearch now SUCCEEDS
-//                  (GP-2, the off-world gate, end-to-end).
-//   6. PERSIST     Capture the whole played-slice state into a SliceState,
-//                  SaveToSlot to a unique temp dir, LoadFromSlot + SaveGame::load,
-//                  and assert key state survives: deposit depletion, factory
-//                  produced, research unlocked (re-derived), vessel conic/frame,
-//                  inventory, objective step.
+//   GAP-1  deposit id unified: gameplay::DepositId IS worldgen::FDepositNode::Id
+//          (one uint64), so we mine a worldgen::FDepositNode DIRECTLY via the new
+//          gameplay::mineDeposit(FDepositNode&, ...) overload — no bridge struct,
+//          no uint64→uint32 truncation anywhere on the path or into the save.
+//   GAP-2  per-item production: FactorySim::producedCountOf(ItemId) lets us ask
+//          the factory "how many AutomationScience / CinderScience did you make?"
+//          so science is a DISTINCT producible item the research layer consumes —
+//          not inferred from a single monotonic total.
+//   GAP-3  science recipes authored as data: CraftAutomationScience (plate →
+//          AutomationScience) and the OFF-WORLD RefineCinderScience (Cinderite →
+//          CinderScience). The factory crafts science with a real recipe; the
+//          off-world refine is the conversion the off-world gate (GP-2) needs.
+//   GAP-4  research unlocks persist: SliceState carries the unlocked-tech id list
+//          and ResearchState::restoreUnlocked() RESTORES it on reload — so the
+//          unlock set survives save→reload WITHOUT re-deriving it.
 //
-// The point is COMPOSITION: that the public surfaces of deposits.h, gameplay.h,
+// The point is COMPOSITION: the public surfaces of deposits.h, gameplay.h,
 // factory_sim.h, research.h, sim_world.h, persistence.h + persistence_file.h
-// hand off to one another to walk the full loop. Where a hand-off needed an
-// explicit bridge (a real integration finding), it is flagged with an
-// "INTEGRATION GAP" comment inline.
+// hand off to one another to walk the full loop as a typed chain.
 // =============================================================================
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "test_framework.h"
@@ -108,23 +99,6 @@ static void keepFed(SimWorld& world, factory::EntityHandle machine) {
     world.factory().feedMachine(machine, 1000);
 }
 
-// Bridge a world-gen FDepositNode (uint64 id, opaque Resource) to the gameplay
-// DepositNode mineDeposit() consumes (uint32 id). The Resource id is the SAME
-// uint16 in both layers (the C-3 single id space / WG-11), so it carries across
-// directly; ONLY the DepositId width differs (uint64 vs uint32). The truncation
-// here is the same one persistence.h's SaveGame applies (DepositDepletion uses
-// gameplay::DepositId == uint32), so the bridge is faithful to the save path.
-static gameplay::DepositNode bridgeNode(const worldgen::FDepositNode& wn) {
-  gameplay::DepositNode g;
-  g.id = static_cast<gameplay::DepositId>(wn.Id);  // INTEGRATION GAP #1 (see report)
-  g.position = wn.Position;
-  g.surfaceNormal = wn.SurfaceNormal;
-  g.resource = wn.Resource;  // shared uint16 id space — carries across as-is
-  g.grade = wn.Grade;
-  g.remainingAmount = wn.RemainingAmount;
-  return g;
-}
-
 // =============================================================================
 // THE LOOP — one continuous walk through all six stages, asserting composition.
 // =============================================================================
@@ -132,10 +106,17 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   const uint64_t kSeed = 0xABCDEFull;
 
   // A single shared registry for the whole gameplay/research layer. Register the
-  // research-layer science items up front so a science Inventory can hold them
-  // (RegisterScienceItems is the additive C-3 0x0020+ extension point).
+  // research-layer science ITEMS up front (so a science Inventory can hold them)
+  // AND the research-layer science RECIPES (GAP-3) so the factory can craft them.
   gameplay::SliceRegistry reg;
   CHECK(gameplay::RegisterScienceItems(reg));
+  CHECK(gameplay::RegisterScienceRecipes(reg));  // GAP-3: science recipes are data
+  // The off-world refine recipe exists in the registry (Cinderite → CinderScience).
+  CHECK(reg.recipe(gameplay::recipes::RefineCinderScience) != nullptr);
+  CHECK(reg.recipe(gameplay::recipes::RefineCinderScience)->inputItem ==
+        gameplay::items::Cinderite);
+  CHECK(reg.recipe(gameplay::recipes::RefineCinderScience)->outputItem ==
+        gameplay::items::CinderScience);
 
   // ----------------------------------------------------------------------- //
   // STAGE 1 — MINE: GenerateDeposits on Forge -> pick a Ferrite node -> grant //
@@ -161,18 +142,30 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   const double forgeInitialRemaining = ferritePick->RemainingAmount;
   CHECK(forgeInitialRemaining > 0.0);
 
-  // (a) Mine via gameplay::mineDeposit into a player Inventory (the gameplay
-  //     mining path: grants ItemId into slots, decrements the node).
+  // GAP-1: the deposit id is the SAME uint64 type in world-gen, gameplay, and
+  // the persistence depletion diff — assert that statically (no truncating
+  // bridge exists anymore). gameplay::DepositId == worldgen::DepositId == the
+  // FDepositNode::Id type, and persist::DepositDepletion keys on the same width.
+  static_assert(std::is_same<gameplay::DepositId, worldgen::DepositId>::value,
+                "GAP-1: gameplay + world-gen deposit ids must be one type");
+  static_assert(sizeof(gameplay::DepositId) == sizeof(decltype(forgeNodeId)),
+                "GAP-1: no id-width narrowing across the slice");
+
+  // (a) Mine via gameplay::mineDeposit into a player Inventory — DIRECTLY on the
+  //     world-gen FDepositNode (GAP-1: no bridgeNode). We mine a mutable copy of
+  //     the catalog's node (the catalog itself is depleted via ExtractFromDeposit
+  //     below — the two mining surfaces, hand-mining vs the catalog mutator).
   gameplay::Inventory pack(reg);
-  gameplay::DepositNode bridged = bridgeNode(*ferritePick);
+  worldgen::FDepositNode forgeMineNode = *ferritePick;  // a mutable working copy
   uint32_t totalMined = 0;
-  for (int k = 0; k < 50 && !bridged.depleted(); ++k) {
-    gameplay::MineResult mr = gameplay::mineDeposit(bridged, pack, /*baseRate*/ 4);
+  for (int k = 0; k < 50 && forgeMineNode.RemainingAmount > 0.0; ++k) {
+    gameplay::MineResult mr =
+        gameplay::mineDeposit(forgeMineNode, pack, /*baseRate*/ 4);
     totalMined += mr.granted;
   }
   CHECK(totalMined > 0);
   CHECK(pack.count(gameplay::items::FerriteOre) == totalMined);  // ore is in the pack
-  CHECK(bridged.remainingAmount < forgeInitialRemaining);        // node depleted
+  CHECK(forgeMineNode.RemainingAmount < forgeInitialRemaining);  // node depleted
 
   // (b) Also exercise the world-gen catalog's own ExtractFromDeposit (the query-
   //     surface mutator persistence saves as the depletion diff). Extract a chunk
@@ -186,24 +179,23 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   const double forgeDepletedRemaining = afterExtract.RemainingAmount;  // for the save
 
   // ----------------------------------------------------------------------- //
-  // STAGE 2 — AUTOMATE: a factory consumes ore and produces a product (and a   //
-  //           science item). producedCount climbs as it crafts.                //
+  // STAGE 2 — AUTOMATE: a factory consumes ore and produces a product, AND a    //
+  //           SECOND machine produces *science* as a DISTINCT item type. We      //
+  //           read the typed science count straight off the factory (GAP-2).     //
   // ----------------------------------------------------------------------- //
   SimWorld world(kSeed);
   factory::EntityHandle plateMachine = standUpFactory(world);  // ore -> plate
 
-  // A SECOND machine that produces *science* (AutomationScience). "Produce
-  // science in the factory" needs no new mechanism — it is just an item the
-  // factory crafts (research.h §intro), so we model it as a recipe whose output
-  // is the science item, fed from a buffer (a stand-in for the plate->science
-  // chain). It rides the same network + clock as the plate machine.
-  factory::Recipe sci;
-  sci.inputItem = gameplay::items::FerritePlate;   // consume a plate
-  sci.inputCount = 1;
-  sci.outputItem = gameplay::items::AutomationScience;  // -> 1 automation science
-  sci.outputCount = 1;
-  sci.craftTimeTicks = 5;
-  sci.powerW = 1000;
+  // A SECOND machine that produces *science* via the AUTHORED basic-science
+  // recipe (GAP-3): CraftAutomationScience (Ferrite plate -> AutomationScience).
+  // It rides the same network + clock as the plate machine, fed from a buffer of
+  // "plates" (a stand-in for the plate->lab chain). Its output is a science item.
+  const gameplay::RecipeDef* autoSciDef =
+      reg.recipe(gameplay::recipes::CraftAutomationScience);
+  CHECK(autoSciDef != nullptr);
+  CHECK(autoSciDef->outputItem == gameplay::items::AutomationScience);
+  factory::Recipe sci = autoSciDef->toFactoryRecipe();
+  sci.craftTimeTicks = 5;  // fast for the headless run (recipe times are TBD-playtest)
   factory::EntityHandle sciMachine = world.factory().addMachine(sci);
   world.factory().setMachineNetwork(sciMachine, 1);
   world.factory().feedMachine(sciMachine, 30000);  // big buffer of "plates"
@@ -216,6 +208,8 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
 
   const uint64_t producedAtStart = world.factory().producedCount();
   CHECK(producedAtStart == 0);
+  // GAP-2: no science yet — the per-item counter starts at zero too.
+  CHECK(world.factory().producedCountOf(gameplay::items::AutomationScience) == 0);
 
   // Run the factory on the world clock for a while; production must climb.
   for (int k = 0; k < 600; ++k) {
@@ -225,21 +219,32 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
     world.step();
   }
   const uint64_t producedAfterAutomate = world.factory().producedCount();
-  CHECK(producedAfterAutomate > producedAtStart);  // ore -> product climbed
+  CHECK(producedAfterAutomate > producedAtStart);  // total climbed
 
-  // We crafted enough science to afford BasicSmelting (cost: 10 AutomationScience).
-  // producedCount is a LIFETIME total across BOTH machines; the science machine
-  // crafted 1 science per 5 ticks for 600 ticks, so there is plenty. We model the
-  // "produced science is now inventory" hand-off by granting the science the
-  // factory made into a science pool (in the real game an inserter+box would).
-  // INTEGRATION GAP #2: FactorySim::producedCount() is a single monotonic total,
-  // not per-item-type, so a consumer cannot ask "how many AutomationScience did
-  // we make?" from the factory alone — the slice tracks per-item production in
-  // gameplay (Inventory), not the sim. We mirror that here.
-  const int scienceMade = 600 / 5;  // 1 craft / 5 ticks (sciMachine)
+  // GAP-2 — THE TYPED CHAIN: the factory produced AutomationScience as a DISTINCT
+  // item type, and we read exactly how much straight off the sim (no inference
+  // from a single total). It also produced FerritePlate; the two partition the
+  // total, and neither equals the whole (both machines ran).
+  const uint64_t scienceMade =
+      world.factory().producedCountOf(gameplay::items::AutomationScience);
+  const uint64_t platesMade =
+      world.factory().producedCountOf(gameplay::items::FerritePlate);
+  CHECK(scienceMade > 0);  // <-- science is a real, queryable producible
+  CHECK(platesMade > 0);
+  // The per-item breakdown sums to the monotonic total (Σ == producedCount()).
+  CHECK(scienceMade + platesMade == world.factory().producedCount());
+  // A type the factory never output reads zero (the breakdown is per-key).
+  CHECK(world.factory().producedCountOf(gameplay::items::Cinderite) == 0);
+
+  // Move the science the factory actually made into a science pool the research
+  // layer spends (in the full game an inserter+box would; the COUNT is the
+  // factory's typed producedCountOf, not a guessed number). Plenty for the
+  // BasicSmelting cost (10 AutomationScience).
   gameplay::Inventory sciencePool(reg);
-  sciencePool.add(gameplay::items::AutomationScience,
-                  static_cast<uint16_t>(scienceMade));
+  uint16_t toPool = scienceMade > 0xFFFF ? 0xFFFF
+                                         : static_cast<uint16_t>(scienceMade);
+  sciencePool.add(gameplay::items::AutomationScience, toPool);
+  CHECK(sciencePool.count(gameplay::items::AutomationScience) == toPool);
   CHECK(sciencePool.has(gameplay::items::AutomationScience, 10));  // affordable
 
   // ----------------------------------------------------------------------- //
@@ -347,9 +352,10 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   CHECK(world.factory().producedCount() > producedBeforeFlight);
 
   // ----------------------------------------------------------------------- //
-  // STAGE 5 — OFF-WORLD UNLOCK: mine Cinderite on Cinder, derive CinderScience, //
-  //           and research CinderiteRefining — which was BLOCKED on Forge       //
-  //           (GP-2 end-to-end).                                                //
+  // STAGE 5 — OFF-WORLD UNLOCK: mine Cinderite on Cinder, REFINE it into        //
+  //           CinderScience IN THE FACTORY (the authored off-world recipe,      //
+  //           GAP-3), and research CinderiteRefining — which was BLOCKED on      //
+  //           Forge (GP-2 end-to-end).                                          //
   // ----------------------------------------------------------------------- //
   const worldgen::BodyParams cinder = worldgen::makeCinder(kSeed);
   const FrameId cinderDepFrame = static_cast<FrameId>(cinder.bodyId + 1);
@@ -372,12 +378,13 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   const worldgen::DepositId cinderNodeId = cinderitePick->Id;
   const double cinderInitialRemaining = cinderitePick->RemainingAmount;
 
-  // Mine Cinderite into the player's pack (gameplay mining path again).
-  gameplay::DepositNode cinderBridged = bridgeNode(*cinderitePick);
+  // Mine Cinderite into the player's pack (gameplay mining path again — GAP-1,
+  // directly on the world-gen FDepositNode, no bridge).
+  worldgen::FDepositNode cinderMineNode = *cinderitePick;  // mutable working copy
   uint32_t cinderiteMined = 0;
-  for (int k = 0; k < 50 && !cinderBridged.depleted(); ++k) {
+  for (int k = 0; k < 50 && cinderMineNode.RemainingAmount > 0.0; ++k) {
     gameplay::MineResult mr =
-        gameplay::mineDeposit(cinderBridged, pack, /*baseRate*/ 4);
+        gameplay::mineDeposit(cinderMineNode, pack, /*baseRate*/ 4);
     cinderiteMined += mr.granted;
   }
   CHECK(cinderiteMined > 0);
@@ -392,19 +399,39 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   CHECK(cinderAfter.RemainingAmount < cinderInitialRemaining);
   const double cinderDepletedRemaining = cinderAfter.RemainingAmount;
 
-  // Derive CinderScience from the mined Cinderite (the "refine off-world ore into
-  // off-world science" step — in the full game a recipe; here we credit science
-  // proportional to the Cinderite we extracted, which is ONLY possible because we
-  // reached + mined Cinder, exactly the GP-2 gate). Top up the automation science
-  // too so the cost (20 AutomationScience + 5 CinderScience) is affordable.
-  // INTEGRATION GAP #3: there is no Cinderite -> CinderScience recipe in the data
-  // tables (gameplay.h recipes / research.h) — the off-world *science* item
-  // exists (items::CinderScience) and the tech costs it, but the conversion that
-  // turns mined Cinderite into that science is not authored. The slice closes the
-  // loop, but this refining recipe is a content gap (see report).
-  CHECK(cinderiteMined >= 5);  // enough raw ore to "refine" into >= 5 science
-  sciencePool.add(gameplay::items::CinderScience, 5);
+  // GAP-3 — REFINE off-world ore into off-world science IN THE FACTORY using the
+  // authored RefineCinderScience recipe (Cinderite -> CinderScience). This is the
+  // conversion the off-world gate needs, and it is ONLY possible because we
+  // reached + mined Cinder (the GP-2 gate). We stand up a refine machine on a
+  // fresh powered factory, feed it the Cinderite we actually mined, run it, and
+  // read the typed CinderScience straight off the sim (GAP-2 again).
+  CHECK(cinderiteMined >= 5);  // enough raw ore to refine into >= 5 science
+  factory::FactorySim refinery;
+  factory::Recipe refine = reg.recipe(gameplay::recipes::RefineCinderScience)
+                               ->toFactoryRecipe();
+  refine.craftTimeTicks = 5;  // fast for the headless run
+  factory::EntityHandle refineMachine = refinery.addMachine(refine);
+  factory::EntityHandle refineGen = refinery.addGenerator(/*network*/ 1, 100000);
+  (void)refineGen;
+  refinery.setMachineNetwork(refineMachine, 1);
+  refinery.feedMachine(refineMachine, static_cast<uint16_t>(cinderiteMined));
+  for (int k = 0; k < 600; ++k) refinery.step();
+  const uint64_t cinderScienceMade =
+      refinery.producedCountOf(gameplay::items::CinderScience);
+  CHECK(cinderScienceMade > 0);  // <-- off-world science is a real factory output
+  CHECK(cinderScienceMade ==
+        refinery.producedCount());  // the refinery makes ONLY CinderScience
+  CHECK(cinderScienceMade >= 5);    // at least the off-world gate cost
+
+  // Bank the refined off-world science into the research pool (typed count from
+  // the sim). Top up the automation science too so the full cost (20 Automation +
+  // 5 Cinder) is affordable.
+  uint16_t cinderToPool = cinderScienceMade > 0xFFFF
+                              ? 0xFFFF
+                              : static_cast<uint16_t>(cinderScienceMade);
+  sciencePool.add(gameplay::items::CinderScience, cinderToPool);
   sciencePool.add(gameplay::items::AutomationScience, 20);
+  CHECK(sciencePool.count(gameplay::items::CinderScience) == cinderToPool);
 
   // NOW the off-world tech is researchable (prereq met on Forge, cost affordable
   // only after Cinder). This is the crossover-making moment: progression forced
@@ -417,7 +444,8 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
 
   // ----------------------------------------------------------------------- //
   // STAGE 6 — PERSIST: capture the whole played slice, save to disk, reload,   //
-  //           and assert key state survives.                                   //
+  //           and assert key state survives — INCLUDING the research unlocks    //
+  //           (GAP-4: restored, not re-derived).                                //
   // ----------------------------------------------------------------------- //
   persist::SliceState st;
   st.worldSeed = kSeed;
@@ -427,12 +455,12 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   st.observerFrame = world.vesselFrame();
 
   // World-gen diff: the depleted deposits (seed+diff — placement regenerates).
-  // The id width narrows uint64 -> uint32 here (the same bridge as stage 1);
-  // for the slice's small touched set the low 32 bits are a stable key.
-  st.depletions.push_back(persist::DepositDepletion{
-      static_cast<gameplay::DepositId>(forgeNodeId), forgeDepletedRemaining});
-  st.depletions.push_back(persist::DepositDepletion{
-      static_cast<gameplay::DepositId>(cinderNodeId), cinderDepletedRemaining});
+  // GAP-1: the id is the SAME uint64 across the catalog, gameplay, and the diff —
+  // NO truncation, the full FDepositNode::Id is the persistence key.
+  st.depletions.push_back(
+      persist::DepositDepletion{forgeNodeId, forgeDepletedRemaining});
+  st.depletions.push_back(
+      persist::DepositDepletion{cinderNodeId, cinderDepletedRemaining});
 
   // Physics: the craft is ACTIVE-on-surface on Cinder (landed). Persist the conic
   // (park the live state for the elements) AND the live (r,v) (craftActiveOnSurface).
@@ -459,6 +487,13 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   st.avatarBody = 1;  // Cinder
   st.avatarFrame = world.vesselFrame();
   st.avatarControlMode = 1;  // in-craft
+
+  // GAP-4: capture the research UNLOCK SET into the persist state (the tech id
+  // list). On reload it is RESTORED directly — not re-derived by replaying the
+  // spend sequence — so unlocks survive save→quit→reload.
+  for (gameplay::TechId t : research.unlockedTechs())
+    st.unlockedTechs.push_back(t);
+  CHECK(st.unlockedTechs.size() == 2);  // BasicSmelting + CinderiteRefining
 
   // Objective FSM: advance through the chain from the facts we accumulated.
   gameplay::ObjectiveTracker objective;
@@ -499,13 +534,12 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   CHECK(back.worldSeed == kSeed);
   CHECK(back.tickIndex == st.tickIndex);
   CHECK_NEAR(back.simTime, st.simTime, 1e-9);
-  // world-gen depletion diff (deposit depletion — the seed+diff property).
+  // world-gen depletion diff (deposit depletion — the seed+diff property). The id
+  // is the full uint64 FDepositNode::Id, round-tripped without narrowing (GAP-1).
   CHECK(back.depletions.size() == 2);
-  CHECK(back.depletions[0].depositId ==
-        static_cast<gameplay::DepositId>(forgeNodeId));
+  CHECK(back.depletions[0].depositId == forgeNodeId);
   CHECK_NEAR(back.depletions[0].remaining, forgeDepletedRemaining, 1e-6);
-  CHECK(back.depletions[1].depositId ==
-        static_cast<gameplay::DepositId>(cinderNodeId));
+  CHECK(back.depletions[1].depositId == cinderNodeId);
   CHECK_NEAR(back.depletions[1].remaining, cinderDepletedRemaining, 1e-6);
   // physics: craft conic + mode + frame + live state.
   CHECK(back.craftDominantFrame == world.cinderFrame());
@@ -533,32 +567,50 @@ TEST(slice_e2e_full_loop_composes_all_domains) {
   CHECK(reloadedCinderite == cinderiteMined);
   CHECK(reloadedOre == totalMined);
 
-  // Research unlocks are DERIVED, not stored (research.h has no IPersistable and
-  // SliceState carries no tech bitset — INTEGRATION GAP #4): on reload, re-running
-  // the SAME tryResearch sequence from the reloaded science/resource state
-  // reproduces the unlock set deterministically (monotonic + deterministic, the
-  // research.h guarantee). We prove the *re-derivation* composes: a fresh
-  // ResearchState, given the same science, reaches the same unlocked techs.
+  // GAP-4 — RESEARCH UNLOCKS RESTORED (not re-derived). The persisted tech id
+  // list round-tripped through the save; we RESTORE it into a fresh ResearchState
+  // with an EMPTY science pool (proving no spend is replayed) and assert the full
+  // unlock set — techs AND the recipes/entities they gate — is reconstructed.
+  CHECK(back.unlockedTechs.size() == 2);
   {
     gameplay::TechTree tree2;
-    gameplay::ResearchState research2(tree2);
-    gameplay::Inventory pool2(reg);
-    pool2.add(gameplay::items::AutomationScience, 30);  // >= both costs
-    pool2.add(gameplay::items::CinderScience, 5);
-    CHECK(research2.tryResearch(gameplay::techs::BasicSmelting, pool2));
-    CHECK(research2.tryResearch(gameplay::techs::CinderiteRefining, pool2));
-    CHECK(research2.isUnlocked(gameplay::techs::BasicSmelting));
-    CHECK(research2.isUnlocked(gameplay::techs::CinderiteRefining));
-    CHECK(research2.isRecipeUnlocked(gameplay::recipes::SmeltFerrite));
-    CHECK(research2.isRecipeUnlocked(gameplay::recipes::MineCinderite));
+    gameplay::ResearchState restored(tree2);
+    gameplay::Inventory emptyPool(reg);  // NO science — restore must not spend any
+    CHECK(emptyPool.empty());
+
+    // Nothing is unlocked until we restore.
+    CHECK(!restored.isUnlocked(gameplay::techs::BasicSmelting));
+    CHECK(!restored.isUnlocked(gameplay::techs::CinderiteRefining));
+
+    // Restore the persisted unlock set directly.
+    const size_t applied = restored.restoreUnlocked(back.unlockedTechs);
+    CHECK(applied == back.unlockedTechs.size());  // every id resolved + applied
+
+    // Both techs are unlocked again — WITHOUT any tryResearch / science spend.
+    CHECK(restored.isUnlocked(gameplay::techs::BasicSmelting));
+    CHECK(restored.isUnlocked(gameplay::techs::CinderiteRefining));
+    CHECK(emptyPool.empty());  // restore consumed nothing
+    // ...and the recipes/entities those techs gate are unlocked too (the build/
+    // craft UX would reopen exactly as before the save).
+    CHECK(restored.isRecipeUnlocked(gameplay::recipes::SmeltFerrite));
+    CHECK(restored.isEntityUnlocked(gameplay::types::Smelter));
+    CHECK(restored.isRecipeUnlocked(gameplay::recipes::MineCinderite));
+
+    // The restored set matches the pre-save set exactly (same techs, no extras).
+    CHECK(restored.unlockedTechs().size() == research.unlockedTechs().size());
+    for (gameplay::TechId t : research.unlockedTechs())
+      CHECK(restored.isUnlocked(t));
   }
 
   std::printf(
       "    [slice-e2e] mined_ore=%u  mined_cinderite=%u  produced=%llu  "
-      "soi_switches=%d  ticks=%llu  obj_step=%u  save_bytes=%zu\n",
+      "auto_sci=%llu  cinder_sci=%llu  soi_switches=%d  ticks=%llu  obj_step=%u  "
+      "techs=%zu  save_bytes=%zu\n",
       totalMined, cinderiteMined, (unsigned long long)producedFinal,
+      (unsigned long long)scienceMade, (unsigned long long)cinderScienceMade,
       world.soiSwitchCount(), (unsigned long long)world.clock().tickIndex(),
-      static_cast<unsigned>(st.objectiveStep), bytes.size());
+      static_cast<unsigned>(st.objectiveStep), back.unlockedTechs.size(),
+      bytes.size());
 
   cleanup(dir);
 }

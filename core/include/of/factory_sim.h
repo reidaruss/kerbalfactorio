@@ -336,6 +336,21 @@ class FactorySim {
   // to Admin — see docs/phase1/M2-integration.md.)
   uint64_t producedCount() const { return totalProduced_; }
 
+  // Cumulative count of items of a SPECIFIC output ItemId ever produced
+  // (monotonic; same craft events as producedCount(), partitioned per
+  // outputItem). The slice loop's mine→factory→science→research chain needs to
+  // ask "how many AutomationScience did the factory make?" — a single monotonic
+  // total can't answer that. This accumulates per recipe.outputItem in lockstep
+  // with totalProduced_, so Σ producedCountOf(id) over all ids == producedCount()
+  // (kNoItem outputs — e.g. the generator's power-only "recipe" — contribute to
+  // neither, since outputCount is 0 there). Backward-compatible + additive: the
+  // existing total is untouched; this is a parallel per-key breakdown. (GAP-2.)
+  uint64_t producedCountOf(ItemId item) const {
+    for (const ItemProduced& p : producedByItem_)
+      if (p.item == item) return p.count;
+    return 0;
+  }
+
   // Manually feed a machine input (for inserter-free correctness tests).
   void feedMachine(EntityHandle h, uint16_t count) { inSlotCount_[h.index] += count; }
 
@@ -385,6 +400,7 @@ class FactorySim {
   struct FMachineRail {
     uint32_t index = 0;        // dense entity index of the machine
     uint16_t recipeId = 0;     // its recipe (rates derive from this)
+    ItemId outputItem = kNoItem;  // recipe.outputItem (for per-item tally, GAP-2)
     uint16_t inputCount = 1;   // units consumed per craft
     uint16_t outputCount = 1;  // units produced per craft
     uint32_t craftTimeTicks = 60;  // ticks per craft at full power
@@ -401,6 +417,11 @@ class FactorySim {
     uint64_t snapshotTick = 0;           // TickIndex() at demotion (exact Δt)
     uint64_t producedAtSnapshot = 0;     // producedCount() at demotion (anchor)
     uint64_t elapsedOnRails = 0;         // total ticks advanced on-rails (§5.3)
+    // Per-output-item production accrued WHILE ON-RAILS (GAP-2). advanceRail folds
+    // each completed craft's outputItem here in lockstep with producedAtSnapshot;
+    // promoteFrom merges it into the live per-item breakdown so producedCountOf()
+    // is continuous across demote→advance→promote, exactly like the total.
+    std::vector<std::pair<ItemId, uint64_t>> producedByItem;
     bool valid = false;
   };
 
@@ -426,6 +447,7 @@ class FactorySim {
       FMachineRail m;
       m.index = i;
       m.recipeId = recipeId_[i];
+      m.outputItem = r.outputItem;  // per-item tally key (GAP-2)
       m.inputCount = r.inputCount;
       m.outputCount = r.outputCount;
       m.craftTimeTicks = r.craftTimeTicks;
@@ -522,6 +544,29 @@ class FactorySim {
   std::vector<uint32_t> freeList_;
   size_t liveCount_ = 0;
   uint64_t totalProduced_ = 0;  // lifetime items produced (monotonic; INT-1)
+
+  // Per-output-item lifetime production (GAP-2). A tiny associative list keyed by
+  // ItemId — the slice has a handful of distinct outputs, so a linear scan on the
+  // (cold) completion event is cheaper than a hash map and stays allocation-light
+  // / deterministic. Σ over entries == totalProduced_ (kNoItem outputs excluded).
+  struct ItemProduced {
+    ItemId item = kNoItem;
+    uint64_t count = 0;
+  };
+  std::vector<ItemProduced> producedByItem_;
+
+  // Record `n` produced units of `item` into BOTH the monotonic total and the
+  // per-item breakdown. The single place craft completions are tallied so the two
+  // counters never drift. (GAP-2; called from the live machineSystem + the
+  // on-rails promote merge.)
+  void recordProduced(ItemId item, uint64_t n) {
+    totalProduced_ += n;
+    if (item == kNoItem || n == 0) return;
+    for (ItemProduced& p : producedByItem_) {
+      if (p.item == item) { p.count += n; return; }
+    }
+    producedByItem_.push_back(ItemProduced{item, n});
+  }
 
   // On-rails snapshot (§5). valid == this factory is demoted; step() then skips
   // the snapshotted machines and AdvanceOnRails/Promote drive them instead.
@@ -652,7 +697,8 @@ class FactorySim {
       if (progressTicks_[i] >= target) {
         // complete: emit output, reset, allow immediate restart next tick.
         outSlotCount_[i] += r.outputCount;
-        totalProduced_ += r.outputCount;  // monotonic lifetime counter (INT-1)
+        // monotonic lifetime counter (INT-1) + per-item breakdown (GAP-2).
+        recordProduced(r.outputItem, r.outputCount);
         progressTicks_[i] = 0;
         crafting_[i] = 0;
       }
@@ -734,6 +780,17 @@ class FactorySim {
   // the instant the FIRST stall (no input / no output room) would occur — at
   // which point the live loop also freezes, accumulating nothing further.
   // ==========================================================================
+  // Accumulate `n` produced units of `item` into an FRailState's per-item rail
+  // tally (the on-rails analogue of recordProduced; static so the const-qualified
+  // advanceRail can call it). Skips kNoItem so power-only "recipes" don't tally.
+  static void railAddProduced(FRailState& s, ItemId item, uint64_t n) {
+    if (item == kNoItem || n == 0) return;
+    for (std::pair<ItemId, uint64_t>& p : s.producedByItem) {
+      if (p.first == item) { p.second += n; return; }
+    }
+    s.producedByItem.push_back({item, n});
+  }
+
   void advanceRail(FRailState& s, uint64_t elapsedTicks) const {
     if (!s.valid || elapsedTicks == 0) return;
     s.elapsedOnRails += elapsedTicks;  // track total Δt for the clock re-sync
@@ -776,6 +833,7 @@ class FactorySim {
         ticksLeft -= need;
         outLvl += m.outputCount;
         s.producedAtSnapshot += m.outputCount;  // running rail total
+        railAddProduced(s, m.outputItem, m.outputCount);  // per-item rail tally
         progress = 0;  // reset; next loop iteration tries to start again
       }
       m.progressMilliticks = progress;
@@ -809,6 +867,16 @@ class FactorySim {
     // emitted). totalProduced_ is authoritative; the snapshot carried the delta.
     if (s.producedAtSnapshot > totalProduced_)
       totalProduced_ = s.producedAtSnapshot;
+    // Merge the per-item rail tally (the GAP-2 breakdown) the same way: each
+    // entry is the on-rails delta for that outputItem, folded into the live map
+    // so Σ producedCountOf(id) stays == producedCount() across the cycle.
+    for (const std::pair<ItemId, uint64_t>& p : s.producedByItem) {
+      bool merged = false;
+      for (ItemProduced& q : producedByItem_)
+        if (q.item == p.first) { q.count += p.second; merged = true; break; }
+      if (!merged && p.first != kNoItem)
+        producedByItem_.push_back(ItemProduced{p.first, p.second});
+    }
     // Advance the clock to (demote tick + elapsed on-rails) so TickIndex() is
     // continuous across the demote→advance→promote cycle: the same number of
     // ticks pass whether the chunk ran active or on-rails (§5.3 determinism

@@ -80,7 +80,11 @@ static constexpr uint16_t kSchemaCoreEngine = 1;
 static constexpr uint16_t kSchemaWorldGen = 1;
 static constexpr uint16_t kSchemaPhysics = 1;
 static constexpr uint16_t kSchemaFactorySim = 1;
-static constexpr uint16_t kSchemaGameplay = 1;
+// Gameplay schema = 2 (GAP-4): added the unlocked-tech id list to the gameplay
+// record. Phase-1 has no migration (readAndValidate requires an exact match), so
+// the bump simply marks the new field's format; in-process round-trips are
+// unaffected. (Was 1 before the research-unlock persist field.)
+static constexpr uint16_t kSchemaGameplay = 2;
 
 // Thrown by SaveReader / SaveGame::load on a malformed or rejected buffer
 // (wrong magic, unsupported version, truncation). Phase-1 policy: refuse to
@@ -313,6 +317,16 @@ struct SliceState {
   uint8_t avatarControlMode = 0;   // 0 = on-foot, 1 = in-craft
   uint8_t objectiveStep = 1;       // ObjectiveStep index (1..7)
   bool objectiveDone = false;
+
+  // -- research (GLOBAL): the unlocked-tech set (GAP-4). --
+  // The list of unlocked TechId (research.h's gameplay::TechId, an opaque uint16
+  // — persistence stores it as a bare id list, the C-3 "cross-ref by opaque id"
+  // discipline, without depending on research.h). Research unlocks are monotonic
+  // + deterministic, BUT re-deriving them on load means replaying the whole spend
+  // sequence; persisting the set lets unlocks be RESTORED directly so they survive
+  // save→reload without re-running tryResearch (the §2.1 FGameplayPersistState
+  // research-state field the slice deferred). Empty = nothing researched yet.
+  std::vector<uint16_t> unlockedTechs;
 };
 
 // =============================================================================
@@ -501,6 +515,9 @@ inline void saveGameplay(const SliceState& s, SaveWriter& out) {
   out.u8(s.avatarControlMode);
   out.u8(s.objectiveStep);
   out.u8(s.objectiveDone ? 1 : 0);
+  // research unlock set (GAP-4): a varint count + each unlocked TechId (u16).
+  out.varint(s.unlockedTechs.size());
+  for (uint16_t t : s.unlockedTechs) out.u16(t);
 }
 inline void loadGameplay(SliceState& s, SaveReader& in) {
   const uint64_t n = in.varint();
@@ -518,6 +535,11 @@ inline void loadGameplay(SliceState& s, SaveReader& in) {
   s.avatarControlMode = in.u8();
   s.objectiveStep = in.u8();
   s.objectiveDone = (in.u8() != 0);
+  // research unlock set (GAP-4): restored directly (NOT re-derived from science).
+  const uint64_t nTechs = in.varint();
+  s.unlockedTechs.clear();
+  s.unlockedTechs.reserve(nTechs);
+  for (uint64_t i = 0; i < nTechs; ++i) s.unlockedTechs.push_back(in.u16());
 }
 
 }  // namespace domain

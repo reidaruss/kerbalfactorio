@@ -73,6 +73,66 @@ inline bool RegisterScienceItems(SliceRegistry& reg) {
 }
 
 // =============================================================================
+// §A.2 — Science RECIPES (GAP-3): the content that turns intermediates / off-
+// world ore into the science packs above. "Produce science in the factory" is
+// just a recipe whose OUTPUT is a science ItemId (research.h §intro) — so these
+// are ordinary RecipeDefs the factory executes, authored as data (GP-12). They
+// append in the shared RecipeId space at 0x0120+ (mirroring the 0x0020+ science
+// item block; the playable-slice recipes end at 0x0105, never renumbered).
+//
+//   CraftAutomationScience : 1 Ferrite plate  -> 1 AutomationScience   (basic)
+//   RefineCinderScience    : 1 Cinderite      -> 1 CinderScience     (OFF-WORLD)
+//
+// RefineCinderScience is the missing conversion the slice's off-world gate needs:
+// CinderiteRefining costs CinderScience (GP-2), and CinderScience can ONLY be made
+// from Cinderite, which is Cinder-only (WG-4) — so this recipe closes the
+// mine-Cinder → refine → research-off-world-tech chain as real content.
+// =============================================================================
+namespace recipes {
+static constexpr RecipeId CraftAutomationScience = 0x0120;  // plate -> automation sci
+static constexpr RecipeId RefineCinderScience = 0x0121;     // Cinderite -> cinder sci (off-world)
+}  // namespace recipes
+
+// Build the basic science recipe def (Ferrite plate -> AutomationScience).
+inline RecipeDef makeAutomationScienceRecipe() {
+  RecipeDef r;
+  r.recipeId = recipes::CraftAutomationScience;
+  r.machineTypeId = types::Assembler;  // crafted in an assembler (a "lab", slice-level)
+  r.inputItem = items::FerritePlate;
+  r.inputCount = 1;
+  r.outputItem = items::AutomationScience;
+  r.outputCount = 1;
+  r.timeTicks = 60;
+  r.powerW = 1200;
+  return r;
+}
+
+// Build the OFF-WORLD science recipe def (Cinderite -> CinderScience). This is
+// the GP-2 refining step: only runnable once the player has mined Cinderite.
+inline RecipeDef makeCinderScienceRecipe() {
+  RecipeDef r;
+  r.recipeId = recipes::RefineCinderScience;
+  r.machineTypeId = types::Assembler;
+  r.inputItem = items::Cinderite;       // off-world ore in
+  r.inputCount = 1;
+  r.outputItem = items::CinderScience;  // off-world science out
+  r.outputCount = 1;
+  r.timeTicks = 90;
+  r.powerW = 1500;
+  return r;
+}
+
+// Register the science recipes into a SliceRegistry (append-only, GP-12). Call
+// once after RegisterScienceItems. Idempotent: re-registering is a no-op. Returns
+// true once both science recipes are present in the registry.
+inline bool RegisterScienceRecipes(SliceRegistry& reg) {
+  reg.registerRecipe(makeAutomationScienceRecipe());
+  reg.registerRecipe(makeCinderScienceRecipe());
+  return reg.recipe(recipes::CraftAutomationScience) &&
+         reg.recipe(recipes::RefineCinderScience);
+}
+
+// =============================================================================
 // §B — TechId + TechDef (the data-driven tech tree, GP-12).
 // =============================================================================
 
@@ -247,6 +307,30 @@ class ResearchState {
       if (c.item != kNoItem) science.remove(c.item, c.count);
     apply(*def);
     return true;
+  }
+
+  // ---- Restore-from-persistence (GAP-4) ------------------------------------
+  // Mark a tech unlocked DIRECTLY (no science spend, no prereq/affordability
+  // check) and apply its recipe/entity unlocks. This is the save→reload path:
+  // persistence carries the unlocked-tech id list, and on load we RESTORE the
+  // unlock set rather than re-deriving it by replaying tryResearch (the latter
+  // would require reconstructing the exact science the player spent). Monotonic +
+  // dedup-safe like apply(); an unknown/zero id is ignored. Idempotent.
+  bool restoreUnlocked(TechId id) {
+    const TechDef* def = tree_->tech(id);
+    if (!def) return false;
+    apply(*def);  // adds to unlockedTechs_ + unlockedRecipes_ + unlockedEntities_
+    return true;
+  }
+
+  // Restore a whole persisted unlock set in one call (load order is irrelevant —
+  // apply() is order-independent because restore skips prereq checks). Returns
+  // the number of ids that resolved to a real tech and were applied.
+  size_t restoreUnlocked(const std::vector<TechId>& techs) {
+    size_t applied = 0;
+    for (TechId t : techs)
+      if (restoreUnlocked(t)) ++applied;
+    return applied;
   }
 
  private:
