@@ -171,3 +171,13 @@ add_test(NAME slice_e2e_tests COMMAND slice_e2e_tests)
 add_executable(journey_dump
   tools/journey_dump.cpp)
 target_link_libraries(journey_dump PRIVATE of_core)
+
+# --- Tools: render_scale_dump — sweeps factory entity count (1k..200k) through
+#     the render-cost model (render_cost.h) and dumps a CSV
+#     (docs/phase1/artifacts/render_scale.csv) showing draw calls stay FLAT and
+#     item-eval work scales O(lines), while a naive O(items) baseline explodes —
+#     the RC-8 "render wall cleared" verdict, made visible. A pure CONSUMER of
+#     of_core (no test framework, not registered with ctest). ---
+add_executable(render_scale_dump
+  tools/render_scale_dump.cpp)
+target_link_libraries(render_scale_dump PRIVATE of_core)

@@ -8,6 +8,8 @@ You said: *work overnight, make as much progress as possible, ideally something 
 
 1. **The journey plot** → [`docs/phase1/artifacts/journey.png`](docs/phase1/artifacts/journey.png) — a 3-panel chart of the *entire* Forge→orbit→Cinder→land flight, rendered from the real sim: altitude with ACTIVE/ON-RAILS phases shaded, the exact SOI-switch moment marked, the factory's output ramping the whole trip, and speed/distance-to-Cinder closing as it crosses. **This is the KSP×Factorio fusion in one image.** Just open it.
 
+   *Bonus chart:* [`docs/phase1/artifacts/render_scale.png`](docs/phase1/artifacts/render_scale.png) — proof the project's scariest open risk (the "render wall") is cleared: as the factory scales to 100k+ entities, draw calls stay **flat at ~72** and per-frame item work stays flat, while the naive approach would explode to **24M** (~133× more). Validated in code, drawn as a chart.
+
 2. **The in-engine demo** — open the UE project and press **Play**:
    ```
    D:\UnrealEngine\UE_5.7\Engine\Binaries\Win64\UnrealEditor.exe "C:\Users\reida\Nextcloud\Kerbal Factorio\ue\OrbitalFoundry.uproject"
