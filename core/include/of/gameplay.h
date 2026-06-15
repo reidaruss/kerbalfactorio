@@ -237,6 +237,18 @@ class SliceRegistry {
     return d ? d->placesEntityTypeId : kNoType;
   }
 
+  // --- Extension point (additive) -------------------------------------------
+  // Register an item def that lives outside the pinned playable-slice block —
+  // e.g. the Phase-2 research-layer science packs (research.h), which append in
+  // the same opaque ItemId space (C-3) at 0x0020+. Keeps the pinned §7.1 table
+  // untouched while letting later content reuse the registry/Inventory plumbing
+  // (stack caps, lookups). Returns false if the id is already registered.
+  bool registerItem(const ItemDef& def) {
+    if (item(def.id) != nullptr) return false;  // never reuse/override an id
+    items_.push_back(def);
+    return true;
+  }
+
  private:
   std::vector<ItemDef> items_;
   std::vector<RecipeDef> recipes_;

@@ -80,6 +80,18 @@ target_link_libraries(gameplay_tests PRIVATE of_core)
 target_include_directories(gameplay_tests PRIVATE tests)
 add_test(NAME gameplay_tests COMMAND gameplay_tests)
 
+# --- Research / tech tree (Phase 2, GP-1/GP-2): factory-produced science is
+#     spent to unlock recipes/entities, with OFF-WORLD gating — a mid/late tech
+#     (CinderiteRefining) costs a Cinderite-derived item, so it is unreachable
+#     until the player mines Cinder. The progression spine that makes the
+#     KSP×Factorio crossover matter. Header-only; consumes gameplay.h verbatim.
+add_executable(research_tests
+  tests/test_main.cpp
+  tests/test_research.cpp)
+target_link_libraries(research_tests PRIVATE of_core)
+target_include_directories(research_tests PRIVATE tests)
+add_test(NAME research_tests COMMAND research_tests)
+
 # --- Headless integration: composes all four cores into the slice-loop logic ---
 add_executable(integration_tests
   tests/test_main.cpp
