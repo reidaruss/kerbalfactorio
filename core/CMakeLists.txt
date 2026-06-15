@@ -132,6 +132,23 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_L
 endif()
 add_test(NAME persistence_file_tests COMMAND persistence_file_tests)
 
+# --- End-to-end slice loop (CAPSTONE): composes ALL the domain cores into the
+#     complete vertical-slice game loop — mine -> automate -> research -> fly
+#     Forge→Cinder -> mine off-world Cinderite -> research the off-world-gated
+#     tech -> save the whole played state and reload it -> verify consistency.
+#     Proves the cores fit together end-to-end (not just individually). Consumes
+#     deposits/gameplay/factory_sim/research/sim_world/persistence read-only.
+#     Uses <filesystem> (link stdc++fs on older GCC, a no-op on modern toolchains).
+add_executable(slice_e2e_tests
+  tests/test_main.cpp
+  tests/test_slice_e2e.cpp)
+target_link_libraries(slice_e2e_tests PRIVATE of_core)
+target_include_directories(slice_e2e_tests PRIVATE tests)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+  target_link_libraries(slice_e2e_tests PRIVATE stdc++fs)
+endif()
+add_test(NAME slice_e2e_tests COMMAND slice_e2e_tests)
+
 # --- Tools: journey_dump — flies the full Forge→Cinder slice headless and dumps
 #     a per-tick CSV (docs/phase1/artifacts/journey.csv) for plotting. A pure
 #     CONSUMER of of_core (no test framework, not registered with ctest). ---
