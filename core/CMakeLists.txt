@@ -47,6 +47,14 @@ target_link_libraries(physics_tests PRIVATE of_core)
 target_include_directories(physics_tests PRIVATE tests)
 add_test(NAME physics_tests COMMAND physics_tests)
 
+# --- Gameplay logic: the player-facing rules over the closed sim substrate ---
+add_executable(gameplay_tests
+  tests/test_main.cpp
+  tests/test_gameplay.cpp)
+target_link_libraries(gameplay_tests PRIVATE of_core)
+target_include_directories(gameplay_tests PRIVATE tests)
+add_test(NAME gameplay_tests COMMAND gameplay_tests)
+
 # --- Headless integration: composes all four cores into the slice-loop logic ---
 add_executable(integration_tests
   tests/test_main.cpp

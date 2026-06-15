@@ -20,7 +20,8 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 - **physics Wave-0 core BUILT + GREEN ✓** — universal-variable Kepler (elliptic+hyperbolic) + custom symplectic integrator; **no-drift proven: 2.4e-11 energy drift over 30 orbits** (vs Euler 0.40 — ~25 trillion× better; gates G1/G3/G6 retired at the math level). (PH-6)
 - **🏁 MILESTONE — all FOUR Wave-0 headless cores BUILT + GREEN (ctest 4/4).** The project's four biggest technical risks are now retired on real hardware with compiling, tested code: planetary-scale precision (core-engine), 100k @ ~535 UPS (factory-sim), crack-free terrain bitwise (world-gen), no-kraken orbits (physics). The "prove it headless first" thesis is **fully validated**; the D-001/UE5 path is de-risked.
 - **🏁 HEADLESS INTEGRATION GREEN ✓ (ctest 5/5)** — `SimWorld` composes all four cores into the Phase-1 flight loop: a craft flies Forge surface → orbit → Cinder SOI → landing (67 floating-origin rebases with engine coords <4 km though 1.5e11 m from the star; on-rails energy drift 1.2e-15 over 4000 ticks; SOI frame+μ switch continuous to 25 m) while a factory produces 2563 items monotonically. **The active/on-rails principle (MASTER_PLAN §3) works end-to-end.** → [M2-integration.md](../phase1/M2-integration.md). Interface note **INT-1**: factory-sim `producedCount()` lifetime accessor added (additive, non-breaking).
-- **Next:** gameplay logic core (mining / inventory / build rules) + persistence logic core (seed+diff save/load) — both headless-testable — then the **UE5 visual shell (M2.1)**, engine-gated (Reid downloading UE5 + exploring programmatic integration).
+- **gameplay logic core BUILT + GREEN ✓** — item registry + slice content (12 items / 5 recipes / 7 machines), inventory, node mining + depletion, build validation + placement (drives factory-sim), recipe I/O, and the objective state machine; 14 tests / 137 checks, ctest 6/6, zero changes to other cores. (GP-15)
+- **Next:** persistence logic core (seed+diff save/load round-trip) — the last headless slice piece — then the **UE5 visual shell (M2.1)**, engine-gated (Reid downloading UE5).
 
 ## 3. Controller status dashboard
 | # | Controller | Phase | Status | Owner of | Blocking / blocked by |
@@ -31,7 +32,7 @@ Own the global plan, the cross-domain interfaces, the dependency graph, and inte
 | 4 | world-gen | 1 | **Wave-0 core BUILT + GREEN ✓** | planet gen, deposits, POIs, voxel patches | Cubed-sphere quadtree; **crack-free proven BITWISE** (10 tests/3582 checks, WV1–3); Forge+Cinder gen |
 | 5 | factory-sim | 1 | **Wave-0 core BUILT + GREEN ✓** | belts, machines, power, on-rails factory | 100k @ **535 UPS** measured (8.9× headroom — G1 retired); SoA sim + brownout + update-on-demand tested |
 | 6 | networking | 0 | Scoping | server authority, AOI, replication, prediction | Cross-cutting; constrains all from day one |
-| 7 | gameplay | 1 | **Phase-1 designed ✓** | research, quests, loot, UI | Slice designed (GP-6…14); C-1/2/3/5 closed; research tree = Phase 2 |
+| 7 | gameplay | 1 | **Logic core BUILT + GREEN ✓** | research, quests, loot, UI | Item registry/inventory/mining/build/recipes/objective FSM (14 tests/137 checks, GP-15); UI awaits UE5 |
 | 8 | persistence | 1 | **Phase-1 designed ✓** | seed+diff, streaming, serialization | Slice save/load designed (PS-5…8); C-6/7/8 closed (RegionDepth 9/8) |
 | 9 | build-tooling | build | **Harness LIVE ✓** | git, toolchain, headless harness, CI, assets | git + CMake/Ninja/g++ harness up; core-engine core green; CI wiring = next |
 
