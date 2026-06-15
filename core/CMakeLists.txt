@@ -33,6 +33,18 @@ target_link_libraries(factory_sim_tests PRIVATE of_core)
 target_include_directories(factory_sim_tests PRIVATE tests)
 add_test(NAME factory_sim_tests COMMAND factory_sim_tests)
 
+# --- Factory ON-RAILS abstraction (FS-4, gate G2): demote a distant chunk to a
+#     steady-state production-rate model, advance it by rate x elapsed (bounded
+#     by input/output storage), promote it back with buffers reconstructed —
+#     deterministically, with NO duplication. Headless; proves G2 fidelity +
+#     the storage bound against the continuous-active baseline.
+add_executable(factory_rails_tests
+  tests/test_main.cpp
+  tests/test_factory_rails.cpp)
+target_link_libraries(factory_rails_tests PRIVATE of_core)
+target_include_directories(factory_rails_tests PRIVATE tests)
+add_test(NAME factory_rails_tests COMMAND factory_rails_tests)
+
 add_executable(world_gen_tests
   tests/test_main.cpp
   tests/test_world_gen.cpp)

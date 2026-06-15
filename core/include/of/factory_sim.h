@@ -235,6 +235,8 @@ class FactorySim {
     inSlotCount_[h.index] = 0;
     outSlotItem_[h.index] = recipe.outputItem;
     outSlotCount_[h.index] = 0;
+    outCap_[h.index] = 0;  // unbounded by default (legacy behaviour)
+    onRails_[h.index] = 0;
     demandW_[h.index] = 0;
     networkId_[h.index] = 0;
     crafting_[h.index] = 0;
@@ -350,6 +352,134 @@ class FactorySim {
     netBaseDemandW_[network] += watts;
   }
 
+  // Set the per-machine output buffer cap (max units the out-slot can hold).
+  // 0 (the default) means "no cap" — the legacy live behaviour, kept so the 9
+  // existing suites are unchanged. A finite cap is what lets a base STALL when
+  // its output backs up, both on-rails (§5.3 storage bound) and, for parity,
+  // in the live machineSystem. Additive: existing callers never set it.
+  void setMachineOutputCap(EntityHandle h, uint16_t cap) {
+    if (h.valid()) outCap_[h.index] = cap;
+  }
+  uint16_t machineOutputCap(EntityHandle h) const { return outCap_[h.index]; }
+
+  // ==========================================================================
+  // §5 — ON-RAILS FACTORY ABSTRACTION (FS-4, D-003, gate G2).
+  //
+  // When a factory (chunk) leaves the active band, core-engine demotes it: we
+  // STOP per-entity stepping and collapse each machine to its steady-state
+  // production-rate model (items/tick + buffer levels). While on-rails we
+  // advance producedCount by rate x elapsed, consuming inputs and filling
+  // outputs, CLAMPED by available input and output storage so a distant base
+  // stalls realistically (input empty / output full) and can NEVER duplicate
+  // (R2). On promote, we reconstruct the live per-entity buffers from the
+  // rail-advanced totals — deterministically in TickIndex.
+  //
+  // Fidelity (G2): the rail model replays the SAME integer craft accounting the
+  // live machineSystem uses (consume inputCount per craft, one craft per
+  // craftTimeTicks ticks at the snapshot's power factor, emit outputCount). So
+  // advancing M ticks on-rails yields EXACTLY what running active for M ticks
+  // would — bounded by storage, never more. No float rate, no drift.
+  // ==========================================================================
+
+  // Per-machine steady-state snapshot taken at demotion (§5.2).
+  struct FMachineRail {
+    uint32_t index = 0;        // dense entity index of the machine
+    uint16_t recipeId = 0;     // its recipe (rates derive from this)
+    uint16_t inputCount = 1;   // units consumed per craft
+    uint16_t outputCount = 1;  // units produced per craft
+    uint32_t craftTimeTicks = 60;  // ticks per craft at full power
+    uint16_t inputLevel = 0;   // current input units (the consumable buffer)
+    uint16_t outputLevel = 0;  // current output units (fills toward cap)
+    uint16_t outputCap = 0;    // 0 = unbounded; else the storage bound
+    uint32_t progressMilliticks = 0;  // in-flight craft progress (carried exactly)
+    uint32_t brownoutQ16 = 65536;     // power factor at snapshot (§5.2 brownoutAvg)
+  };
+
+  // Whole-chunk rail snapshot: the rate model + buffer levels (§5.2).
+  struct FRailState {
+    std::vector<FMachineRail> machines;  // one per machine in the chunk
+    uint64_t snapshotTick = 0;           // TickIndex() at demotion (exact Δt)
+    uint64_t producedAtSnapshot = 0;     // producedCount() at demotion (anchor)
+    uint64_t elapsedOnRails = 0;         // total ticks advanced on-rails (§5.3)
+    bool valid = false;
+  };
+
+  // Is this factory currently on-rails (demoted)? While on-rails, step() is a
+  // no-op for the demoted machines — they are advanced only by AdvanceOnRails.
+  bool onRails() const { return rails_.valid; }
+
+  // --- Demote (§5.2): snapshot steady-state rates + buffer levels, stop sim. --
+  // Captures every machine's recipe-derived rate and its current in/out buffer
+  // levels + in-flight craft progress, exactly. After this, step() will not
+  // advance the snapshotted machines (they're on-rails); call AdvanceOnRails to
+  // run them cheaply, then Promote to bring them back.
+  FRailState Demote() {
+    FRailState s;
+    s.snapshotTick = clock_.tickIndex();
+    s.producedAtSnapshot = totalProduced_;
+    for (uint32_t i = 0; i < kind_.size(); ++i) {
+      if (kind_[i] != EntityKind::Machine) continue;
+      const Recipe& r = recipes_[recipeId_[i]];
+      uint16_t net = networkId_[i];
+      uint32_t brown = (net < netBrownoutQ16_.size()) ? netBrownoutQ16_[net]
+                                                       : 65536u;
+      FMachineRail m;
+      m.index = i;
+      m.recipeId = recipeId_[i];
+      m.inputCount = r.inputCount;
+      m.outputCount = r.outputCount;
+      m.craftTimeTicks = r.craftTimeTicks;
+      m.inputLevel = inSlotCount_[i];
+      m.outputLevel = outSlotCount_[i];
+      m.outputCap = outCap_[i];
+      m.progressMilliticks = progressTicks_[i];
+      m.brownoutQ16 = brown;
+      s.machines.push_back(m);
+      onRails_[i] = 1;  // step() now skips this machine; rails drive it
+    }
+    s.valid = true;
+    rails_ = s;  // remember it so step() skips these machines while on-rails
+    return s;
+  }
+
+  // --- Advance on-rails (§5.2 EvalOnRails): rate x elapsed, storage-bounded. --
+  // Advances the rail state by `elapsedTicks`, replaying the exact integer craft
+  // accounting the live sim uses, but analytically (no per-tick loop over the
+  // chunk). Consumes inputs as crafts run, fills outputs toward each machine's
+  // cap, and updates producedCount. A machine STALLS the instant its input runs
+  // out OR its output buffer fills — so a distant base cannot run forever or
+  // dupe (R2). Operates on the FRailState in place; pass the controller's own
+  // snapshot (the one returned by Demote, kept in rails_).
+  void AdvanceOnRails(uint64_t elapsedTicks) {
+    if (!rails_.valid) return;
+    advanceRail(rails_, elapsedTicks);
+  }
+
+  // Same advance, but on an external FRailState (for time-warp / persistence
+  // reconstruction that owns its own snapshot). Deterministic in elapsedTicks.
+  void AdvanceOnRails(FRailState& s, uint64_t elapsedTicks) const {
+    advanceRail(s, elapsedTicks);
+  }
+
+  // --- Promote (§5.3 OnPromote): reconstruct live buffers from the rail totals.
+  // Writes the rail-advanced input/output/progress levels back into the live SoA
+  // (bounded by each machine's storage — overflow is discarded at the cap, never
+  // created), re-syncs producedCount, advances the clock to the rail time, and
+  // clears the on-rails flag so step() resumes per-entity simulation. After this,
+  // the live state is consistent with continuous active running for the elapsed
+  // time, with zero duplication.
+  void Promote() {
+    if (!rails_.valid) return;
+    promoteFrom(rails_);
+    rails_ = FRailState{};  // back to active; step() resumes for these machines
+  }
+
+  // Reconstruct directly from an external rail snapshot (time-warp / load path).
+  void Promote(const FRailState& s) {
+    promoteFrom(s);
+    rails_ = FRailState{};
+  }
+
  private:
   // ---- SoA tables (parallel, indexed by handle.index) ----------------------
   std::vector<EntityKind> kind_;
@@ -364,6 +494,8 @@ class FactorySim {
   std::vector<ItemId> outSlotItem_;
   std::vector<uint16_t> outSlotCount_;
   std::vector<uint8_t> crafting_;   // 1 while a craft is in progress this tick
+  std::vector<uint16_t> outCap_;    // out-slot storage cap (0 = unbounded; §5)
+  std::vector<uint8_t> onRails_;    // 1 while this machine is demoted (§5)
   std::vector<int32_t> demandW_;    // this tick's wanted draw (§4)
   std::vector<uint16_t> networkId_;
   std::vector<int32_t> supplyW_;    // generators only
@@ -390,6 +522,10 @@ class FactorySim {
   std::vector<uint32_t> freeList_;
   size_t liveCount_ = 0;
   uint64_t totalProduced_ = 0;  // lifetime items produced (monotonic; INT-1)
+
+  // On-rails snapshot (§5). valid == this factory is demoted; step() then skips
+  // the snapshotted machines and AdvanceOnRails/Promote drive them instead.
+  FRailState rails_;
 
   SimClock clock_;
 
@@ -421,6 +557,8 @@ class FactorySim {
     outSlotItem_.resize(n, kNoItem);
     outSlotCount_.resize(n, 0);
     crafting_.resize(n, 0);
+    outCap_.resize(n, 0);
+    onRails_.resize(n, 0);
     demandW_.resize(n, 0);
     networkId_.resize(n, 0);
     supplyW_.resize(n, 0);
@@ -459,6 +597,7 @@ class FactorySim {
       if (k == EntityKind::PowerGen) {
         supply[net] += supplyW_[i];
       } else if (k == EntityKind::Machine) {
+        if (onRails_[i]) continue;  // demoted: not in the live power solve (§5)
         // a machine wants power if it can craft this tick (has input or is mid).
         const Recipe& r = recipes_[recipeId_[i]];
         bool wants = (inSlotCount_[i] >= r.inputCount) || progressTicks_[i] > 0;
@@ -486,18 +625,22 @@ class FactorySim {
   void machineSystem() {
     for (uint32_t i : active_) {
       if (sleeping_[i] || kind_[i] != EntityKind::Machine) continue;
+      if (onRails_[i]) continue;  // demoted: advanced by AdvanceOnRails, not here
       const Recipe& r = recipes_[recipeId_[i]];
       uint16_t net = networkId_[i];
       uint32_t brown = (net < netBrownoutQ16_.size()) ? netBrownoutQ16_[net]
                                                        : 65536;
 
-      // Start a craft if idle and inputs are available.
+      // Start a craft if idle and inputs are available AND the output buffer has
+      // room for the result (cap 0 = unbounded → always room, legacy behaviour).
       if (progressTicks_[i] == 0 && crafting_[i] == 0) {
-        if (inSlotCount_[i] >= r.inputCount) {
+        bool outRoom = (outCap_[i] == 0) ||
+                       (outSlotCount_[i] + r.outputCount <= outCap_[i]);
+        if (inSlotCount_[i] >= r.inputCount && outRoom) {
           inSlotCount_[i] -= r.inputCount;
           crafting_[i] = 1;
         } else {
-          continue;  // starved: no work
+          continue;  // starved (no input) or blocked (output full): no work
         }
       }
 
@@ -568,6 +711,110 @@ class FactorySim {
       if (sleeping_[i] || kind_[i] != EntityKind::BeltLine) continue;
       lines_[i].advance();
     }
+  }
+
+  // ==========================================================================
+  // §5.2/§5.3 — ON-RAILS advance + reconstruct (the gate-G2 machinery).
+  //
+  // advanceRail replays, ANALYTICALLY, the exact integer craft accounting the
+  // live machineSystem performs each tick — but in closed form, so a base that
+  // sat unobserved for a million ticks costs O(machines), not O(ticks). The
+  // fidelity guarantee (G2): for the same elapsedTicks and the same starting
+  // state, advanceRail produces EXACTLY the producedCount the live per-tick
+  // loop would, never more (so no duplication), bounded by input/output storage
+  // (so a starved/backed-up base stalls just as it would live).
+  //
+  // Per machine, per tick, the live loop does:
+  //   - if idle: start a craft iff inputLevel>=inputCount AND output has room;
+  //     on start, inputLevel -= inputCount.
+  //   - accumulate adv = (1000*brownoutQ16)>>16 milliticks of progress.
+  //   - on progress>=craftTimeTicks*1000: outputLevel += outputCount; produced
+  //     += outputCount; reset progress.
+  // We fold the repeated "start→fill→complete" cycle into arithmetic, stopping
+  // the instant the FIRST stall (no input / no output room) would occur — at
+  // which point the live loop also freezes, accumulating nothing further.
+  // ==========================================================================
+  void advanceRail(FRailState& s, uint64_t elapsedTicks) const {
+    if (!s.valid || elapsedTicks == 0) return;
+    s.elapsedOnRails += elapsedTicks;  // track total Δt for the clock re-sync
+    for (FMachineRail& m : s.machines) {
+      const uint32_t target = m.craftTimeTicks * 1000u;  // milliticks per craft
+      // Per-tick progress at the snapshot's power factor (matches live exactly).
+      const uint32_t adv =
+          static_cast<uint32_t>((1000ull * m.brownoutQ16) >> 16);
+      if (adv == 0 || target == 0) continue;  // no power / instant: nothing sane
+
+      uint64_t ticksLeft = elapsedTicks;
+      uint32_t progress = m.progressMilliticks;
+      uint32_t inLvl = m.inputLevel;
+      uint32_t outLvl = m.outputLevel;
+      const uint32_t cap = m.outputCap;  // 0 = unbounded
+
+      // If a craft is already in flight (progress>0) finish it first; it needs
+      // no fresh input/output check at start (it already started), only output
+      // room at completion — which the live loop does NOT re-check (it always
+      // emits on completion), so neither do we, for exact parity.
+      while (ticksLeft > 0) {
+        // Are we mid-craft (progress>0 means a craft is running) or idle?
+        if (progress == 0) {
+          // Idle: the live loop tries to START. Gate on input + output room.
+          bool outRoom = (cap == 0) || (outLvl + m.outputCount <= cap);
+          if (inLvl < m.inputCount || !outRoom) {
+            break;  // stalled — frozen for the rest of the window (no progress)
+          }
+          inLvl -= m.inputCount;  // consume at craft start (live semantics)
+        }
+        // Ticks needed to reach the completion target from current progress.
+        uint64_t need = (target - progress + adv - 1) / adv;  // ceil
+        if (need > ticksLeft) {
+          // Window ends mid-craft: advance progress, stop.
+          progress += static_cast<uint32_t>(adv * ticksLeft);
+          ticksLeft = 0;
+          break;
+        }
+        // Craft completes this many ticks in.
+        ticksLeft -= need;
+        outLvl += m.outputCount;
+        s.producedAtSnapshot += m.outputCount;  // running rail total
+        progress = 0;  // reset; next loop iteration tries to start again
+      }
+      m.progressMilliticks = progress;
+      m.inputLevel = static_cast<uint16_t>(inLvl);
+      m.outputLevel = static_cast<uint16_t>(outLvl);
+    }
+  }
+
+  // §5.3 — write the rail-advanced totals back into the live SoA, bounded by
+  // storage (overflow discarded at cap, never created), and re-sync the clock +
+  // producedCount. Deterministic in elapsedTicks. Clears each machine's on-rails
+  // flag so the live systems resume for it.
+  void promoteFrom(const FRailState& s) {
+    if (!s.valid) return;
+    for (const FMachineRail& m : s.machines) {
+      const uint32_t i = m.index;
+      if (i >= kind_.size() || kind_[i] != EntityKind::Machine) continue;
+      // Reconstruct the live per-entity buffers from the rail levels, clamped to
+      // the machine's storage cap (overflow discarded — never minted beyond
+      // storage, the §5.3 no-dupe bound).
+      uint32_t outLvl = m.outputLevel;
+      if (m.outputCap != 0 && outLvl > m.outputCap) outLvl = m.outputCap;
+      inSlotCount_[i] = m.inputLevel;
+      outSlotCount_[i] = static_cast<uint16_t>(outLvl);
+      progressTicks_[i] = m.progressMilliticks;
+      crafting_[i] = (m.progressMilliticks > 0) ? 1 : 0;
+      onRails_[i] = 0;  // live systems resume for this machine
+    }
+    // Re-sync the monotonic produced counter to the rail total (it only ever
+    // grew while on-rails — the same craft events the live loop would have
+    // emitted). totalProduced_ is authoritative; the snapshot carried the delta.
+    if (s.producedAtSnapshot > totalProduced_)
+      totalProduced_ = s.producedAtSnapshot;
+    // Advance the clock to (demote tick + elapsed on-rails) so TickIndex() is
+    // continuous across the demote→advance→promote cycle: the same number of
+    // ticks pass whether the chunk ran active or on-rails (§5.3 determinism
+    // anchor — exact in integer ticks).
+    const uint64_t targetTick = s.snapshotTick + s.elapsedOnRails;
+    while (clock_.tickIndex() < targetTick) clock_.advance(clock_.fixedDt());
   }
 };
 
