@@ -70,3 +70,10 @@ add_executable(persistence_tests
 target_link_libraries(persistence_tests PRIVATE of_core)
 target_include_directories(persistence_tests PRIVATE tests)
 add_test(NAME persistence_tests COMMAND persistence_tests)
+
+# --- Tools: journey_dump — flies the full Forge→Cinder slice headless and dumps
+#     a per-tick CSV (docs/phase1/artifacts/journey.csv) for plotting. A pure
+#     CONSUMER of of_core (no test framework, not registered with ctest). ---
+add_executable(journey_dump
+  tools/journey_dump.cpp)
+target_link_libraries(journey_dump PRIVATE of_core)

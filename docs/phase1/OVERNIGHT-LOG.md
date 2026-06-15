@@ -25,3 +25,5 @@
 - 05:0x — Overnight started. Created this log. Dispatching task #1 (in-engine live demo).
 - #1 DONE ✓ — `AOrbitalFoundryGameMode` + on-screen readout + autopilot + primitive visuals; UE editor target builds clean. Caveats to enrich later: factory-produced reads 0 (subsystem builds a bare SimWorld, no machine fed) and the autopilot loop doesn't reach the Cinder SOI. → backlog: "enrich demo: working factory + full journey (needs a small subsystem/SimWorld setup API)".
 - Dispatching #2 (guaranteed artifact: headless full-journey CSV + matplotlib plots).
+- #2 DONE ✓ — `core/tools/journey_dump.cpp` + `plot_journey.py` → `docs/phase1/artifacts/journey.{csv,png}` (png 199 KB, 3-panel: altitude+mode shading+SOI marker, factory ramp to 2563, speed/dist-to-Cinder). Full journey: peak 9235 km, 1 SOI switch, landed. ctest still 7/7. **Two visible artifacts now exist (in-engine demo + the plot).**
+- Next: #3 enrich the in-engine demo (producing factory + full journey via a subsystem autopilot), then pivot to breadth (other phases, headless-verifiable).
