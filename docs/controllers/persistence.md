@@ -1,6 +1,6 @@
 # Persistence & Data — Master Controller Context
 
-> **Domain owner:** `persistence-controller` · **Reports to:** Admin · **Phase:** 1 · **Status:** Phase-1 designed · **Last updated:** 2026-06-14
+> **Domain owner:** `persistence-controller` · **Reports to:** Admin · **Phase:** 1 · **Status:** Wave-0 headless core built + green (seed+diff save/load round-trip proven) · **Last updated:** 2026-06-14
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[persistence-phase1.md](../phase1/persistence-phase1.md)** (the Phase-1 slice save/load design — gates M2.5)
 
 ## 1. Mission
@@ -26,6 +26,7 @@ Save and restore arbitrarily large worlds cheaply and reliably: regenerate the n
 | PS-6 | **Single slot = one directory; atomic commit via write-temp-then-rename**, header written last as the commit record, `save0.bak/` retained until swap | Crash mid-save leaves the old *or* new complete slot, never a torn mix (P1-D5) | Accepted (Phase-1 §4.3) | 2026-06-14 |
 | PS-7 | **Slice terrain is NOT a diff** — node mining only (D-005/WG-2), so terrain+deposit *placement* regenerate from seed; only **deposit depletion** is a world-gen diff | Headline slice simplification: the whole surface is free to persist | Accepted (Phase-1 §1.2) | 2026-06-14 |
 | PS-8 | **On-rails factory chunks persist as `FRailState`**; load restores the proxy state and lets factory-sim's existing `OnPromote` reconstruct (bounded by `bufferCaps`, no dupes) | Reuses factory-sim's demote/promote machinery — persistence adds no new dupe surface (retires R1) | Accepted (Phase-1 §4.4) | 2026-06-14 |
+| PS-9 | **Wave-0 headless save/load core BUILT** (`core/include/of/persistence.h` + `core/tests/test_persistence.cpp`): `SaveWriter`/`SaveReader` LE byte cursors (POD + LEB128 varint), versioned envelope `SaveHeader` (PS-4: magic `OFSV` + `formatVersion`=1 + `minReaderVersion` + per-domain `schemaVersion` table), per-domain serialize/deserialize over the 5 domains' OWN pinned types, and a `SaveGame::save(state)->bytes` / `load(bytes)->state` bundling them in the §4.5 load order with length-prefixed skip-capable records (§5.1). Proves M2.5 round-trip in-memory: build a non-trivial slice (deplete deposit, run factory `produced>0`, park craft conic, fill inventory, advance objective), save→load into a fresh state, every field matches; PS-7 verified (buffer **276 B** for the test scene — terrain never stored, regenerates bit-identically from seed); PS-4 header rejects bad magic / too-new version / truncation; save is byte-deterministic. **No additive core hooks needed** — consumes the green cores entirely through existing public APIs. **persistence_tests green; all 7 ctest suites pass.** Atomic single-slot *file* container (§4.3) layers above this in-memory format — deferred to the file-I/O wave. | The format is the gate-critical piece; it round-trips with zero terrain bytes and is forward-compat by construction | Accepted | 2026-06-14 |
 
 ## 4. Architecture & approach
 - **Seed+diff:** store the world seed + a sparse set of diffs keyed by chunk: terrain edits (voxel patches), deposit depletion, placed/removed factory entities + their state, looted-POI flags, player inventory/progress. On load, regenerate from seed, then apply diffs.
@@ -59,7 +60,8 @@ Save and restore arbitrarily large worlds cheaply and reliably: regenerate the n
 
 ## 6. Task backlog / roadmap
 - [Phase 0] ✅ Define `Persistable` interface + chunk-key scheme + version header convention (paper design).
-- [Phase 1] ✅ **DESIGNED** — concrete seed+diff save/load for the "First Foundry" slice: `IPersistable`, `FChunkKey`, atomic single-slot container, on-rails restore via `FRailState`, versioned header. → [persistence-phase1.md](../phase1/persistence-phase1.md). **Gates M2.5.** Next: Wave-2 *build* (each domain implements `IPersistable`; persistence builds the container/streaming/atomic-write).
+- [Phase 1] ✅ **DESIGNED** — concrete seed+diff save/load for the "First Foundry" slice: `IPersistable`, `FChunkKey`, atomic single-slot container, on-rails restore via `FRailState`, versioned header. → [persistence-phase1.md](../phase1/persistence-phase1.md). **Gates M2.5.**
+- [Phase 1] ✅ **BUILT (Wave-0 headless core)** — `core/include/of/persistence.h` + `core/tests/test_persistence.cpp` (PS-9): the seed+diff save/load FORMAT round-trips the slice state in memory (round-trip / PS-7 seed+diff / PS-4 versioned-header / determinism — all green; 7/7 ctest suites pass). Next: layer the atomic single-slot *file* container (§4.1/§4.3 write-temp-then-rename) above this in-memory format, and wire chunk-keyed region files (`FChunkKey`) once factory-sim/world-gen expose their per-chunk `IPersistable` payloads at scale (the headless core currently carries the slice's tiny diff set as global+depletion records).
 - [Phase 2] Extend slice save/load to research/tech state; chunk streaming at scale; deposit-diff compaction.
 - [Phase 3] Server-side canonical store; client seed+diff sync with networking.
 - [Phase 4+] Migration *machinery* at the load boundary (header already designed for it — PS-4); voxel-edit diffs (digging); compression tuning (Phase 5).
@@ -75,6 +77,7 @@ Save and restore arbitrarily large worlds cheaply and reliably: regenerate the n
 |------|---------------|--------|---------|
 | 2026-06-14 | Phase-1 slice save/load design (this controller, direct — no subagent spawned) | Done | [persistence-phase1.md](../phase1/persistence-phase1.md) — settled PS-3, added PS-5..PS-8, published `IPersistable`/`FChunkKey`/load-order, routed per-domain Wave-2 asks. |
 | 2026-06-14 | Web research (1 scoped thread, direct WebSearch — no subagent): "seed+delta world persistence; chunked save streaming; atomic write; versioned header" | Done | Validated the seed+diff + region-chunk files + versioned envelope + write-temp-then-rename pattern (Minecraft level format/seed; indie versioned/atomic save systems). No design change — confirmed PS-1..PS-4. |
+| 2026-06-14 | Wave-0 BUILD (this controller, direct — no subagent): implement the headless seed+diff save/load core + tests; build with g++/CMake/Ninja; verify all 7 suites | Done | `persistence.h` (`SaveWriter`/`SaveReader`/`SaveHeader`/`SaveGame` + per-domain serialize over the 5 green cores' pinned types) + `test_persistence.cpp` (4 groups, 88 checks). `persistence_tests` green; **7/7 ctest suites pass** (no regression). Save buffer = 276 B for the built test scene (PS-7: terrain regenerates from seed, never stored). No additive core hooks required. → PS-9. |
 
 ## 9. References
 MASTER_PLAN §6 (persistence), §9 (seed+diff), D-005. Factorio save format (custom binary); chunked-world streaming; schema versioning/migration patterns.

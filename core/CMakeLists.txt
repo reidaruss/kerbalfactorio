@@ -62,3 +62,11 @@ add_executable(integration_tests
 target_link_libraries(integration_tests PRIVATE of_core)
 target_include_directories(integration_tests PRIVATE tests)
 add_test(NAME integration_tests COMMAND integration_tests)
+
+# --- Persistence: seed+diff save/load round-trip over the slice state ---
+add_executable(persistence_tests
+  tests/test_main.cpp
+  tests/test_persistence.cpp)
+target_link_libraries(persistence_tests PRIVATE of_core)
+target_include_directories(persistence_tests PRIVATE tests)
+add_test(NAME persistence_tests COMMAND persistence_tests)
