@@ -20,6 +20,11 @@ ue/.vs/
 *.opensdf
 *.sdf
 
+# soft-ue-cli dev bridge (local tooling — not part of the game; the .uproject
+# enables it locally but the plugin itself is regenerable from `pip` + setup)
+ue/Plugins/SoftUEBridge/
+.soft-ue-bridge/
+
 # IDE / editor
 .vs/
 .vscode/
