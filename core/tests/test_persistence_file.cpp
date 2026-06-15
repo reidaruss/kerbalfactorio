@@ -24,6 +24,8 @@
 // Uses a UNIQUE temp dir under std::filesystem::temp_directory_path(), cleaned
 // up at the end of each test.
 // =============================================================================
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -50,10 +52,17 @@ namespace fs = std::filesystem;
 // never collide even on the same clock tick.
 static fs::path makeUniqueSlotDir(const char* tag) {
   static int counter = 0;
+  // Process-unique token so two CONCURRENT ctest runs never collide on the same
+  // temp path (high-res clock at first call ^ the address of a static, which
+  // differs per process under ASLR). Plus a per-call counter within a process.
+  static const unsigned long long procToken =
+      static_cast<unsigned long long>(
+          std::chrono::high_resolution_clock::now().time_since_epoch().count()) ^
+      static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(&counter));
   ++counter;
   fs::path base = fs::temp_directory_path() /
                   ("of_persist_file_test_" + std::string(tag) + "_" +
-                   std::to_string(counter));
+                   std::to_string(procToken) + "_" + std::to_string(counter));
   std::error_code ec;
   fs::remove_all(base, ec);  // clean any stale leftover from a previous run
   return base;
