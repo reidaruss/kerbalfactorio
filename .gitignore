@@ -8,12 +8,16 @@ build/
 *.a
 *.dll
 
-# Unreal Engine (future /ue project)
-/ue/Binaries/
-/ue/Intermediate/
-/ue/Saved/
-/ue/DerivedDataCache/
-/ue/.vs/
+# Unreal Engine — generated build output (anywhere under /ue, incl. plugins)
+ue/**/Binaries/
+ue/**/Intermediate/
+ue/Saved/
+ue/DerivedDataCache/
+ue/.vs/
+*.sln
+*.VC.db
+*.opensdf
+*.sdf
 
 # IDE / editor
 .vs/
