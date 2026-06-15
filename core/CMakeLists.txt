@@ -52,6 +52,19 @@ target_link_libraries(world_gen_tests PRIVATE of_core)
 target_include_directories(world_gen_tests PRIVATE tests)
 add_test(NAME world_gen_tests COMMAND world_gen_tests)
 
+# --- World-gen deposits (C-1 / WG-11): seeded resource-deposit placement +
+#     the mining query surface (FDepositNode / DepositCatalog). Deterministic-
+#     from-seed depletable ore nodes snapped to the cubed-sphere surface, with
+#     Cinderite found ONLY on Cinder (WG-4 off-world hook). Headless; proves
+#     determinism, Cinder-only, on-surface, queries, and extraction/depletion
+#     (the seed+diff property). Consumes cubed_sphere.h read-only.
+add_executable(deposits_tests
+  tests/test_main.cpp
+  tests/test_deposits.cpp)
+target_link_libraries(deposits_tests PRIVATE of_core)
+target_include_directories(deposits_tests PRIVATE tests)
+add_test(NAME deposits_tests COMMAND deposits_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)
