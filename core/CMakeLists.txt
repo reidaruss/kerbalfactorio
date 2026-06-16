@@ -112,6 +112,26 @@ target_link_libraries(terrain_stream_tests PRIVATE of_core)
 target_include_directories(terrain_stream_tests PRIVATE tests)
 add_test(NAME terrain_stream_tests COMMAND terrain_stream_tests)
 
+# --- World-gen BIOMES + terrain design + planet-wide RESOURCES (Wave-3, Spike 1
+#     §2 biomes/materials, §4.5 resources): biome.h layers a designed, varied
+#     planet on top of the raw heightfield — oceans/plains/hills/mountains/polar
+#     (planet) + regolith/highland/crater-floor (moon), each with a per-biome
+#     surface material id (feeds terrain_stream chunk + renderer) and per-biome
+#     RELIEF modulation (mountains ridge high, plains flatten, ocean basins below
+#     datum) layered ADDITIVELY so the pinned crack-free heights are unchanged —
+#     plus a planet-WIDE biome-biased resource distribution (ore concentrates in
+#     hills/mountains) queryable by cube-quad region. Headless; proves biome
+#     determinism, latitude->polar, low-elevation->ocean, relief-varies-by-biome,
+#     designed-height shared-edge bit-identity, material-id stability, and
+#     resource determinism + plausibility + region query. Consumes
+#     cubed_sphere.h + deposits.h read-only (+ adds biome.h).
+add_executable(biome_tests
+  tests/test_main.cpp
+  tests/test_biome.cpp)
+target_link_libraries(biome_tests PRIVATE of_core)
+target_include_directories(biome_tests PRIVATE tests)
+add_test(NAME biome_tests COMMAND biome_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)

@@ -44,6 +44,7 @@
 #include "of/vec3.h"
 #include "of/universe_coord.h"
 #include "of/cubed_sphere.h"
+#include "of/biome.h"
 
 namespace of {
 namespace worldgen {
@@ -85,7 +86,12 @@ struct TerrainChunk {
   double         chunkRadiusM = 0.0;    // bounding radius (culling / LOD)
   int            gridDim = kGridDim;     // verts per side (33)
   int            depth = 0;             // LOD depth (== key.depth, convenience)
-  uint8_t        materialId = 0;        // 0=planet-rock 1=moon-regolith (§4.1)
+  // Per-BIOME surface material id (biome.h materialForBiome). Was a 2-value
+  // planet/moon flag; now widened to the full biome material palette so the
+  // renderer textures each chunk by its biome (§4.1; additive — value source
+  // changed, field semantics unchanged: it is still "which material to draw").
+  uint16_t       materialId = 0;        // == materialForBiome(biomeAt(centre))
+  Biome          biome = Biome::Unknown;  // the chunk's centre biome (convenience)
   uint64_t       contentHash = 0;       // determinism / cache key
 
   // Interior grid geometry — gridDim*gridDim, body-center-relative metres.
@@ -380,7 +386,10 @@ inline TerrainChunk buildChunk(const BodyParams& body, const FQuadKey& key,
   ch.chunkRadiusM = m.chunkRadiusM;
   ch.gridDim = m.gridDim;
   ch.depth = key.depth;
-  ch.materialId = static_cast<uint8_t>(body.kind == kPlanet ? 0 : 1);
+  // Material from the biome at the quad's centre direction (biome.h). Deterministic
+  // (pure function of body + dir), so a chunk's material is reproducible from seed.
+  ch.biome = biomeAt(body, quadCenterDir(key));
+  ch.materialId = materialForBiome(ch.biome);
   ch.contentHash = m.contentHash;
   ch.positions = m.vertices;
   ch.normals = m.normals;
