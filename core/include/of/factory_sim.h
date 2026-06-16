@@ -240,19 +240,29 @@ struct TransportLine {
 
 enum class EntityKind : uint8_t {
   None = 0,
-  Machine,    // miner / smelter / assembler: recipe progress
+  Machine,    // smelter / assembler: timed recipe progress (powered)
   Inserter,   // moves one item per swing between src and dst
   BeltLine,   // a transport line (its own TransportLine record)
   PowerGen,   // generator (supply)
+  Miner,      // bound to a deposit: extracts raw ore at a rate into its out-slot
 };
 
 // Inserter phase: a simple two-phase swing (pick -> drop).
 enum class InserterPhase : uint8_t { Idle = 0, Holding = 1 };
 
 // A synthetic recipe: consume N input items, take T ticks, produce M output.
+//
+// Multi-input (assembler): a SECOND optional input ingredient (input2Item /
+// input2Count) is additive — it defaults to kNoItem (count 0), so every existing
+// single-input caller is unchanged (the machine ignores a kNoItem second input).
+// A smelter is a single-input recipe (ore->ingot); an assembler is a multi-input
+// recipe (e.g. iron + copper ingots -> a crafted part). Both run on the SAME
+// powered SoA machine path — see the §1.4(3) MachineSystem.
 struct Recipe {
   ItemId inputItem = kNoItem;
   uint16_t inputCount = 1;
+  ItemId input2Item = kNoItem;   // optional 2nd ingredient (assembler); kNoItem=unused
+  uint16_t input2Count = 0;      // units of the 2nd ingredient per craft
   ItemId outputItem = kNoItem;
   uint16_t outputCount = 1;
   uint32_t craftTimeTicks = 60;
@@ -288,6 +298,8 @@ class FactorySim {
     progressTicks_[h.index] = 0;
     inSlotItem_[h.index] = recipe.inputItem;
     inSlotCount_[h.index] = 0;
+    in2SlotItem_[h.index] = recipe.input2Item;
+    in2SlotCount_[h.index] = 0;
     outSlotItem_[h.index] = recipe.outputItem;
     outSlotCount_[h.index] = 0;
     outCap_[h.index] = 0;  // unbounded by default (legacy behaviour)
@@ -316,6 +328,37 @@ class FactorySim {
     networkId_[h.index] = network;
     supplyW_[h.index] = supplyW;
     ensureNetwork(network);
+    return h;
+  }
+
+  // Add a MINER bound to a depletable deposit (§Phase-1 mining). The miner holds
+  // `depositAmount` units of ore item `item`, and extracts `ratePerSecond` units
+  // per second (converted to milli-units/tick at the clock's fixed dt) into its
+  // out-slot each powered tick — depleting the deposit and STOPPING when empty.
+  // The UE placement layer binds an `FDepositNode` (deposits.h) to this: pass the
+  // node's RemainingAmount + Resource id (and, optionally, a grade-scaled rate).
+  // Output drains via the SAME inserter path as a machine out-slot, so a miner
+  // feeds a belt with no special case. Starts asleep until the active set wakes
+  // it (placeMiner in automation.h forces it active).
+  EntityHandle addMiner(uint64_t depositAmount, ItemId item,
+                        double ratePerSecond = 1.0, uint16_t outCap = 0) {
+    EntityHandle h = alloc(EntityKind::Miner);
+    minerRemaining_[h.index] = depositAmount;
+    minerItem_[h.index] = item;
+    // rate (units/s) -> milli-units/tick = ratePerSecond * 1000 * fixedDt.
+    double milliPerTick = ratePerSecond * 1000.0 * clock_.fixedDt();
+    if (milliPerTick < 0.0) milliPerTick = 0.0;
+    minerRateMilliPerTick_[h.index] =
+        static_cast<uint32_t>(milliPerTick + 0.5);
+    if (minerRateMilliPerTick_[h.index] == 0 && ratePerSecond > 0.0)
+      minerRateMilliPerTick_[h.index] = 1;  // floor at 1 milli/tick if any rate
+    minerAccum_[h.index] = 0;
+    minerOutCap_[h.index] = outCap;
+    // The miner's out-slot lives in the shared machine arrays (so inserters drain
+    // it identically). Tag the out item; leave count at 0 (filled by mining).
+    outSlotItem_[h.index] = item;
+    outSlotCount_[h.index] = 0;
+    networkId_[h.index] = 0;
     return h;
   }
 
@@ -365,9 +408,10 @@ class FactorySim {
   // --------------------------------------------------------------------------
   void step() {
     powerSolveSystem();    // 1. per-network supply/demand -> brownout (§4)
-    machineSystem();       // 2. advance recipe progress (x brownout), produce
-    inserterSystem();      // 3. pick from src head -> drop into dst input
-    beltSystem();          // 4. advance transport lines (the §2 O(1) case)
+    minerSystem();         // 2. extract ore from bound deposits into out-slots
+    machineSystem();       // 3. advance recipe progress (x brownout), produce
+    inserterSystem();      // 4. pick from src head -> drop into dst input
+    beltSystem();          // 5. advance transport lines (the §2 O(1) case)
     // (wake/stream systems are no-ops in the forced-active benchmark)
     clock_.advance(clock_.fixedDt());
   }
@@ -379,7 +423,24 @@ class FactorySim {
   const TransportLine& line(EntityHandle h) const { return lines_[h.index]; }
   uint16_t machineOutput(EntityHandle h) const { return outSlotCount_[h.index]; }
   uint16_t machineInput(EntityHandle h) const { return inSlotCount_[h.index]; }
+  uint16_t machineInput2(EntityHandle h) const { return in2SlotCount_[h.index]; }
   uint32_t machineProgress(EntityHandle h) const { return progressTicks_[h.index]; }
+
+  // Miner read accessors (out-slot count reuses machineOutput()). minerRemaining
+  // is the units of ore left in the bound deposit; 0 == depleted (miner stalled).
+  uint64_t minerRemaining(EntityHandle h) const { return minerRemaining_[h.index]; }
+  uint16_t minerOutput(EntityHandle h) const { return outSlotCount_[h.index]; }
+  bool minerDepleted(EntityHandle h) const { return minerRemaining_[h.index] == 0; }
+
+  // Item-id accessors for the buildable-network wiring layer (automation.h):
+  // the out item a miner/machine yields, and the slot-1 input item a machine
+  // consumes. Cheap reads of the SoA tag fields; used to infer inserter item ids.
+  ItemId outputItemOf(EntityHandle h) const { return outSlotItem_[h.index]; }
+  ItemId inputItemOf(EntityHandle h) const { return inSlotItem_[h.index]; }
+  ItemId input2ItemOf(EntityHandle h) const { return in2SlotItem_[h.index]; }
+  // The item currently at a belt line's head (kNoItem if empty) — lets the
+  // wiring layer infer what a belt carries when connecting it to a sink.
+  ItemId lineHeadItem(EntityHandle h) const { return lines_[h.index].headItem(); }
   uint64_t tickIndex() const { return clock_.tickIndex(); }
 
   // Cumulative count of items ever produced by any machine (monotonic; never
@@ -408,6 +469,8 @@ class FactorySim {
 
   // Manually feed a machine input (for inserter-free correctness tests).
   void feedMachine(EntityHandle h, uint16_t count) { inSlotCount_[h.index] += count; }
+  // Feed the 2nd ingredient slot (assembler correctness tests).
+  void feedMachine2(EntityHandle h, uint16_t count) { in2SlotCount_[h.index] += count; }
 
   // Network brownout factor as a ratio (read after a step) — float for tests.
   double brownoutRatio(uint16_t network) const {
@@ -705,6 +768,8 @@ class FactorySim {
   std::vector<uint32_t> progressTicks_;
   std::vector<ItemId> inSlotItem_;
   std::vector<uint16_t> inSlotCount_;
+  std::vector<ItemId> in2SlotItem_;   // assembler 2nd ingredient slot (kNoItem=unused)
+  std::vector<uint16_t> in2SlotCount_;
   std::vector<ItemId> outSlotItem_;
   std::vector<uint16_t> outSlotCount_;
   std::vector<uint8_t> crafting_;   // 1 while a craft is in progress this tick
@@ -723,6 +788,19 @@ class FactorySim {
 
   // Belt lines (§2) — one TransportLine per BeltLine entity.
   std::vector<TransportLine> lines_;
+
+  // Miner components: a miner is bound to a depletable deposit. It extracts
+  // `minerRateMilliPerTick_` thousandths-of-a-unit per powered tick (fixed-point,
+  // deterministic — no float in the discrete state), accumulating into
+  // minerAccum_ until a whole unit is freed, then granting it from minerRemaining_
+  // into the out-slot. When minerRemaining_ hits 0 the miner stalls (deposit
+  // depleted). Output goes to the out-slot (outSlotItem_/outSlotCount_, shared
+  // with the machine arrays) so the SAME inserter path drains a miner head.
+  std::vector<uint64_t> minerRemaining_;     // units of ore left in the bound deposit
+  std::vector<ItemId>   minerItem_;          // ore id the deposit yields
+  std::vector<uint32_t> minerRateMilliPerTick_;  // extraction rate (milli-units/tick)
+  std::vector<uint32_t> minerAccum_;         // sub-unit extraction accumulator (milli)
+  std::vector<uint16_t> minerOutCap_;        // out-slot cap (0 = unbounded)
 
   // §6 render-stream metadata (cold; touched only by stream emission, never by
   // the hot tick). Additive: defaulted so legacy scenes stream sanely. typeId_
@@ -799,6 +877,8 @@ class FactorySim {
     progressTicks_.resize(n, 0);
     inSlotItem_.resize(n, kNoItem);
     inSlotCount_.resize(n, 0);
+    in2SlotItem_.resize(n, kNoItem);
+    in2SlotCount_.resize(n, 0);
     outSlotItem_.resize(n, kNoItem);
     outSlotCount_.resize(n, 0);
     crafting_.resize(n, 0);
@@ -813,6 +893,11 @@ class FactorySim {
     insPhase_.resize(n, InserterPhase::Idle);
     insHeld_.resize(n, kNoItem);
     lines_.resize(n);
+    minerRemaining_.resize(n, 0);
+    minerItem_.resize(n, kNoItem);
+    minerRateMilliPerTick_.resize(n, 0);
+    minerAccum_.resize(n, 0);
+    minerOutCap_.resize(n, 0);
     typeId_.resize(n, 0);
     posX_.resize(n, 0.0f);
     posY_.resize(n, 0.0f);
@@ -897,6 +982,40 @@ class FactorySim {
   }
 
   // ==========================================================================
+  // MinerSystem (Phase-1 mining). Each powered miner accumulates milli-units of
+  // extraction per tick (scaled by its network's brownout) and, once a whole unit
+  // accrues, draws it from the bound deposit into the out-slot — STOPPING when the
+  // deposit is empty or the out-slot is at its cap. Fixed-point (milli-units), so
+  // the rate is deterministic and a fractional rate still accumulates exactly.
+  // Output lands in the shared out-slot, drained by an inserter like any machine.
+  // ==========================================================================
+  void minerSystem() {
+    for (uint32_t i : active_) {
+      if (sleeping_[i] || kind_[i] != EntityKind::Miner) continue;
+      if (minerRemaining_[i] == 0) continue;            // deposit depleted: stall
+      // Out-slot full? (cap 0 = unbounded.) Then don't extract (back-pressure).
+      if (minerOutCap_[i] != 0 && outSlotCount_[i] >= minerOutCap_[i]) continue;
+      uint16_t net = networkId_[i];
+      uint32_t brown = (net < netBrownoutQ16_.size()) ? netBrownoutQ16_[net]
+                                                      : 65536u;
+      // milli-units mined this tick = rate * brownout (Q16.16).
+      uint64_t add = (static_cast<uint64_t>(minerRateMilliPerTick_[i]) * brown)
+                     >> 16;
+      minerAccum_[i] += static_cast<uint32_t>(add);
+      // Free as many whole units as have accrued (bounded by deposit + out cap).
+      while (minerAccum_[i] >= 1000) {
+        if (minerRemaining_[i] == 0) break;             // deposit emptied mid-tick
+        if (minerOutCap_[i] != 0 && outSlotCount_[i] >= minerOutCap_[i]) break;
+        minerAccum_[i] -= 1000;
+        minerRemaining_[i] -= 1;
+        outSlotCount_[i] += 1;
+        // a mined unit counts as a produced item (mine->factory chain tally).
+        recordProduced(minerItem_[i], 1);
+      }
+    }
+  }
+
+  // ==========================================================================
   // §1.4(3) — MachineSystem. Advance recipe progress scaled by brownout, then
   // consume inputs at craft start and emit outputs at completion.
   // Progress is integer "milliticks" so a fractional brownout still accumulates
@@ -913,14 +1032,21 @@ class FactorySim {
 
       // Start a craft if idle and inputs are available AND the output buffer has
       // room for the result (cap 0 = unbounded → always room, legacy behaviour).
+      // Multi-input (assembler): a recipe with a 2nd ingredient also requires
+      // in2SlotCount_ >= input2Count, and consumes both at craft start. A recipe
+      // with input2Item==kNoItem (count 0) gates on the first input only — exactly
+      // the legacy single-input behaviour, so existing suites are unchanged.
       if (progressTicks_[i] == 0 && crafting_[i] == 0) {
         bool outRoom = (outCap_[i] == 0) ||
                        (outSlotCount_[i] + r.outputCount <= outCap_[i]);
-        if (inSlotCount_[i] >= r.inputCount && outRoom) {
+        bool have2 = (r.input2Item == kNoItem) ||
+                     (in2SlotCount_[i] >= r.input2Count);
+        if (inSlotCount_[i] >= r.inputCount && have2 && outRoom) {
           inSlotCount_[i] -= r.inputCount;
+          if (r.input2Item != kNoItem) in2SlotCount_[i] -= r.input2Count;
           crafting_[i] = 1;
         } else {
-          continue;  // starved (no input) or blocked (output full): no work
+          continue;  // starved (either input) or blocked (output full): no work
         }
       }
 
@@ -952,9 +1078,16 @@ class FactorySim {
       EntityHandle dst = insDst_[i];
 
       if (insPhase_[i] == InserterPhase::Holding) {
-        // drop into dst machine input.
+        // drop into dst machine input. Route by item type: a held item matching
+        // the machine's 2nd ingredient goes to the 2nd input slot (assembler),
+        // otherwise to the 1st. Single-input machines only ever take slot 1.
         if (dst.valid() && kind_[dst.index] == EntityKind::Machine) {
-          inSlotCount_[dst.index] += 1;
+          if (in2SlotItem_[dst.index] != kNoItem &&
+              insHeld_[i] == in2SlotItem_[dst.index]) {
+            in2SlotCount_[dst.index] += 1;
+          } else {
+            inSlotCount_[dst.index] += 1;
+          }
           insHeld_[i] = kNoItem;
           insPhase_[i] = InserterPhase::Idle;
         } else if (dst.valid() && kind_[dst.index] == EntityKind::BeltLine) {
@@ -973,7 +1106,9 @@ class FactorySim {
           insHeld_[i] = sl.popHead();
           insPhase_[i] = InserterPhase::Holding;
         }
-      } else if (src.valid() && kind_[src.index] == EntityKind::Machine) {
+      } else if (src.valid() && (kind_[src.index] == EntityKind::Machine ||
+                                 kind_[src.index] == EntityKind::Miner)) {
+        // Drain a machine OR a miner out-slot (both live in outSlotCount_).
         if (outSlotCount_[src.index] > 0) {
           outSlotCount_[src.index] -= 1;
           insHeld_[i] = outSlotItem_[src.index];

@@ -61,6 +61,21 @@ target_link_libraries(render_cost_tests PRIVATE of_core)
 target_include_directories(render_cost_tests PRIVATE tests)
 add_test(NAME render_cost_tests COMMAND render_cost_tests)
 
+# --- Factory AUTO-LINE (Phase 1): the buildable production-network logic the UE
+#     placement layer binds to (automation.h over factory_sim.h). Composes miner
+#     (bound to a depletable deposit), belts, inserters, and powered smelter +
+#     multi-input assembler machines into a connected line that flows END-TO-END
+#     on step() with NO manual feeding: deposit -> miner -> belt -> smelter ->
+#     belt -> assembler -> output. Proves end-to-end flow, deposit depletion +
+#     miner stop, the multi-input assembler gate, miner-rate exactness, and
+#     determinism. Header-only; consumes factory_sim.h + automation.h.
+add_executable(automation_tests
+  tests/test_main.cpp
+  tests/test_automation.cpp)
+target_link_libraries(automation_tests PRIVATE of_core)
+target_include_directories(automation_tests PRIVATE tests)
+add_test(NAME automation_tests COMMAND automation_tests)
+
 add_executable(world_gen_tests
   tests/test_main.cpp
   tests/test_world_gen.cpp)
