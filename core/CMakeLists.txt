@@ -152,6 +152,26 @@ target_link_libraries(surface_walk_tests PRIVATE of_core)
 target_include_directories(surface_walk_tests PRIVATE tests)
 add_test(NAME surface_walk_tests COMMAND surface_walk_tests)
 
+# --- World-gen TERRAIN-DEFORMATION layer (Valheim-style digging): terrain_deform.h
+#     is the headless edit layer the UE pickaxe + automated-miner + collision pass
+#     binds to. A sparse map from a quantized cubed-sphere deform cell -> an
+#     accumulated lowering (metres) over the procedural base; deformedHeight =
+#     sampleDesignedHeight − edit, clamped to a DEEP bedrock floor (base − maxDig).
+#     digBrush carves soft-falloff holes (pickaxe/terraform), drillStep sinks a
+#     narrow shaft (automated miner) toward bedrock over many calls, and a
+#     quad-overlap query tells the renderer which chunks to re-mesh. Edits are
+#     explicit ops (deterministic), the undeformed path is BIT-IDENTICAL to the
+#     procedural terrain, and the edit map persists as a compact diff. Headless;
+#     proves brush-falloff + max-depth clamp, base bit-identity, drill-to-bedrock,
+#     the quad query, persistence round-trip, and op determinism. Consumes
+#     cubed_sphere.h + biome.h read-only (+ adds terrain_deform.h).
+add_executable(terrain_deform_tests
+  tests/test_main.cpp
+  tests/test_terrain_deform.cpp)
+target_link_libraries(terrain_deform_tests PRIVATE of_core)
+target_include_directories(terrain_deform_tests PRIVATE tests)
+add_test(NAME terrain_deform_tests COMMAND terrain_deform_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)
