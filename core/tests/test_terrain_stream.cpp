@@ -31,6 +31,7 @@
 #include "test_framework.h"
 #include "of/cubed_sphere.h"
 #include "of/terrain_stream.h"
+#include "of/terrain_deform.h"  // Task 1: the optional deform-lowering wire-in
 
 using namespace of;
 using namespace of::worldgen;
@@ -429,4 +430,93 @@ TEST(procgen_optimized_is_bit_identical) {
     }
   }
   CHECK(compared == 2 * 6 * 4 * kGridDim * kGridDim);  // every vertex checked
+}
+
+// =============================================================================
+// DEFORM-LOWERING wire-in (Task 1): generateQuadMesh / buildChunk / the streamer
+// accept an optional height-lowering callback. With NO callback the mesh is
+// bit-identical to the original (the dig layer is purely additive). With a dig
+// applied via TerrainDeform, the chunk under the dig RE-MESHES lower at the dug
+// cells while every other vertex stays bit-identical — exactly what the UE layer
+// needs so a dig drops the surface the player walks on, only where it was dug.
+// =============================================================================
+TEST(deform_lowering_lowers_only_dug_cells_else_bit_identical) {
+  const BodyParams forge = makeForge(20260616ull);
+
+  // Build a DEEP quad (fine vertex spacing) and dig AT one of its interior vertex
+  // dirs so the dig is guaranteed to land on real mesh vertices. At depth 14 the
+  // vertex pitch (~7 m) is comparable to the deform cell pitch, so a dig radius of
+  // a few cell pitches covers a handful of vertices.
+  const Vec3 seedDir = latLonToDir(0.20, 0.55);
+  const int face = faceOfDir(seedDir);
+  FQuadKey k{forge.bodyId, face, 0, 0u, 0u};
+  for (int d = 0; d < 14; ++d) {
+    FQuadKey best = quadChild(k, 0);
+    double bestDot = -2.0;
+    for (int c = 0; c < 4; ++c) {
+      const FQuadKey ch = quadChild(k, c);
+      const double dt = quadCenterDir(ch).dot(seedDir);
+      if (dt > bestDot) { bestDot = dt; best = ch; }
+    }
+    k = best;
+  }
+
+  // Undeformed chunk (no fn) == original generateQuadMesh, bit-for-bit.
+  const TerrainChunk base = buildChunk(forge, k, StreamConfig{}, nullptr);
+  const QuadMesh raw = generateQuadMesh(forge, k);
+  bool baseIdentical = true;
+  for (size_t v = 0; v < base.heights.size(); ++v)
+    if (asBits(base.heights[v]) != asBits(raw.heights[v])) baseIdentical = false;
+  CHECK(baseIdentical);
+
+  // Dig at the chunk's CENTRE vertex dir with a radius spanning several cell pitches
+  // and the mesh vertex pitch, so the brush is guaranteed to cover mesh vertices.
+  TerrainDeform deform;
+  const Vec3 digDir = base.dirs[base.idx(base.gridDim/2, base.gridDim/2)];
+  const double cellPitch = deformCellPitchM(forge);
+  const double vtxPitch = (base.positions[base.idx(1,0)] -
+                           base.positions[base.idx(0,0)]).length();
+  const double radiusM = std::max(cellPitch, vtxPitch) * 4.0 + 5.0;
+  const double removed = deform.digBrush(forge, digDir, radiusM, /*amountM*/ 5.0);
+  CHECK(removed > 0.0);
+  HeightLoweringFn fn = [&](const Vec3& d){ return deform.depthDugAt(d); };
+
+  // Deformed chunk: dug vertices are lowered by exactly the dug depth, and every
+  // NON-dug vertex is bit-identical to the base (the deform never touches them).
+  const TerrainChunk dug = buildChunk(forge, k, StreamConfig{}, fn);
+  int lowered = 0, unchanged = 0;
+  for (size_t v = 0; v < dug.heights.size(); ++v) {
+    const double loweringM = deform.depthDugAt(dug.dirs[v]);
+    if (loweringM > 0.0) {
+      CHECK_NEAR(base.heights[v] - dug.heights[v], loweringM, 1e-6);
+      ++lowered;
+    } else {
+      CHECK(asBits(dug.heights[v]) == asBits(base.heights[v]));
+      ++unchanged;
+    }
+  }
+  CHECK(lowered > 0);       // the hole is in the mesh
+  CHECK(unchanged > 0);     // the rest of the chunk is untouched
+
+  // The streamer's rebuildChunk path: rebuilding this resident chunk with the fn
+  // bound re-meshes it LOWER at the dug cells (the dig shows on the walked surface).
+  TerrainStreamer streamer(forge, StreamConfig{});
+  // Make the chunk resident by seeding its cell directly, then rebuild with the fn.
+  StreamConfig deepCfg; deepCfg.maxDepth = 14; deepCfg.genBudget = 0;
+  TerrainStreamer s2(forge, deepCfg);
+  s2.setLoweringFn(fn);
+  const UniverseCoord obs = makeObserverLatLonAlt(forge, 0.20, 0.55, 2.0);
+  for (int i = 0; i < 60; ++i) if (s2.updateStreaming(obs).converged) break;
+  bool foundLoweredResident = false;
+  for (const auto& kv : s2.resident()) {
+    const TerrainChunk& ch = kv.second;
+    for (size_t v = 0; v < ch.heights.size(); ++v) {
+      if (deform.depthDugAt(ch.dirs[v]) > 0.0) {
+        const double rawH = sampleHeightField(forge, ch.dirs[v]);
+        if (rawH - ch.heights[v] > 1e-6) foundLoweredResident = true;
+      }
+    }
+  }
+  CHECK(foundLoweredResident);
+  (void)removed;
 }

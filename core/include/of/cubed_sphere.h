@@ -33,6 +33,7 @@
 #include <cmath>
 #include <vector>
 #include <array>
+#include <functional>
 
 #include "of/vec3.h"
 #include "of/universe_coord.h"
@@ -475,6 +476,15 @@ struct QuadMesh {
   int idx(int i, int j) const { return j * gridDim + i; }
 };
 
+// Optional per-vertex DEFORM lowering callback (terrain_deform.h binds this).
+// Given a vertex's unit dir, returns the metres of terrain REMOVED at that spot
+// (>= 0). The mesh lowers the RAW sampleHeightField by this amount so a dig hole
+// appears in the SAME surface the player walks on. Default = null => the loop
+// below is BIT-IDENTICAL to the original (no edit contributes exactly nothing),
+// so the undeformed mesh + all determinism proofs are unchanged. ADDITIVE: the
+// header stays leaf (no terrain_deform dependency); the caller supplies the fn.
+using HeightLoweringFn = std::function<double(const Vec3& dir)>;
+
 // Generate the heightfield mesh for a quad at a given resolution (spike §1.3).
 //
 // Determinism: each vertex's unitDir is named by its INTEGER lattice point
@@ -482,7 +492,13 @@ struct QuadMesh {
 // function of those integers. A shared edge vertex therefore resolves to the
 // IDENTICAL lattice point — and identical bits — from a neighbour or a parent/
 // child. Height is then position-hashed from that bit-identical dir (WG-6).
-inline QuadMesh generateQuadMesh(const BodyParams& body, const FQuadKey& key) {
+//
+// `lowering` (optional): when set, each vertex height is reduced by lowering(dir)
+// metres (the deform layer's accumulated dig). Null = the original behaviour,
+// bit-for-bit. The reduction is applied AFTER the raw sample so the mesh + its
+// collision reflect the player's dig on the very surface they stand on.
+inline QuadMesh generateQuadMesh(const BodyParams& body, const FQuadKey& key,
+                                 const HeightLoweringFn& lowering = nullptr) {
   QuadMesh m;
   m.key = key;
   m.gridDim = kGridDim;
@@ -508,7 +524,11 @@ inline QuadMesh generateQuadMesh(const BodyParams& body, const FQuadKey& key) {
       const uint64_t iy = m.baseIy + static_cast<uint64_t>(j);
       // THE shared-edge guarantee: dir is a pure function of (faceId,ix,iy,L).
       const Vec3 dir = latticeDir(key.faceId, ix, iy, m.latticeLevel);
-      const double h = sampleHeightField(body, dir);
+      double h = sampleHeightField(body, dir);
+      if (lowering) {                       // deform layer: subtract dug depth
+        const double dug = lowering(dir);
+        if (dug > 0.0) h -= dug;            // lower the SAME surface the mesh draws
+      }
       const double radius = body.radiusM + h;
       const Vec3 pos = dir * radius;  // body-center-relative
       const int vi = m.idx(i, j);

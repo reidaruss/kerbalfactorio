@@ -377,9 +377,15 @@ inline void buildSkirt(const BodyParams& body, TerrainChunk& ch,
 
 // Build a full TerrainChunk from a quad key: the generateQuadMesh data (READ-ONLY
 // use of cubed_sphere.h) + skirt + material + neighbour context.
+//
+// `lowering` (optional): a per-vertex deform-lowering callback (terrain_deform.h
+// binds it to a TerrainDeform). Null = the original undeformed chunk, bit-for-bit
+// — so existing callers and all determinism proofs are unchanged. When set, the
+// mesh + skirt heights reflect the player's digs on the surface they walk on.
 inline TerrainChunk buildChunk(const BodyParams& body, const FQuadKey& key,
-                              const StreamConfig& cfg) {
-  const QuadMesh m = generateQuadMesh(body, key);
+                              const StreamConfig& cfg,
+                              const HeightLoweringFn& lowering = nullptr) {
+  const QuadMesh m = generateQuadMesh(body, key, lowering);
   TerrainChunk ch;
   ch.key = key;
   ch.centerUniverse = m.centerUniverse;
@@ -422,6 +428,25 @@ class TerrainStreamer {
   const BodyParams& body() const { return body_; }
   const StreamConfig& config() const { return cfg_; }
 
+  // Bind the DEFORM lowering callback (terrain_deform.h). Chunks built from now on
+  // (and any rebuildChunk) lower their heights by lowering(dir) metres so digs show
+  // in the streamed mesh + collision. Null restores the undeformed mesh. ADDITIVE —
+  // a streamer with no lowering fn is bit-identical to the original.
+  void setLoweringFn(HeightLoweringFn fn) { lowering_ = std::move(fn); }
+  bool hasLoweringFn() const { return static_cast<bool>(lowering_); }
+
+  // Rebuild ONE resident chunk's geometry in place (re-runs generateQuadMesh with
+  // the current lowering fn) — the renderer calls this for each chunk whose region
+  // gained a dig edit (TerrainDeform::editedCellsInQuad / quadHasEdits), so only the
+  // affected chunk re-meshes, not the whole patch. Returns the fresh chunk (also
+  // stored as the resident copy) or nullptr if the key isn't resident.
+  const TerrainChunk* rebuildChunk(const FQuadKey& key) {
+    auto it = resident_.find(cellOf(key));
+    if (it == resident_.end()) return nullptr;
+    it->second = buildChunk(body_, key, cfg_, lowering_);
+    return &it->second;
+  }
+
   // Resident chunks, keyed by quad cell. Stable across updates.
   const std::map<CellKey, TerrainChunk>& resident() const { return resident_; }
   size_t residentCount() const { return resident_.size(); }
@@ -462,7 +487,7 @@ class TerrainStreamer {
         ++pending;
         continue;  // deferred to a later update (budget spent)
       }
-      TerrainChunk ch = buildChunk(body_, kv.second, cfg_);
+      TerrainChunk ch = buildChunk(body_, kv.second, cfg_, lowering_);
       resident_[kv.first] = ch;
       up.ready.push_back(ch);
       ++built;
@@ -511,6 +536,7 @@ class TerrainStreamer {
   BodyParams body_;
   StreamConfig cfg_;
   std::map<CellKey, TerrainChunk> resident_;
+  HeightLoweringFn lowering_ = nullptr;  // optional deform lowering (digs)
 };
 
 }  // namespace worldgen
