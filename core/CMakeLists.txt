@@ -172,6 +172,27 @@ target_link_libraries(terrain_deform_tests PRIVATE of_core)
 target_include_directories(terrain_deform_tests PRIVATE tests)
 add_test(NAME terrain_deform_tests COMMAND terrain_deform_tests)
 
+# --- World-gen TRUE VOXEL TUNNELING layer (1 m^3 destruction): voxel_terrain.h is
+#     the headless voxel edit layer the UE cube-mesher + dig + voxel-collision pass
+#     binds to. It SUPERSEDES the heightfield deform for digging: solidity =
+#     procedural-solid (cell centre at/below sampleHeightField's surface) XOR a
+#     sparse REMOVED cell set, over a 1 m^3 body-frame Cartesian lattice. dig()
+#     carves ARBITRARY cells (incl. horizontally below the surface) so a run of digs
+#     makes a real TUNNEL / overhang the heightfield can't; exposedFaces() emits the
+#     solid<->air boundary quads for the cube mesher, a region iterator builds voxel
+#     collision from the same solid set, and a dirty AABB scopes the re-mesh. Edits
+#     are explicit (deterministic), procedural-solid is a pure function of the height
+#     field, and the removed set persists as a compact sparse diff. Headless; proves
+#     the solidity model, dig membership/count, the TUNNEL/overhang, exposed-face
+#     boundaries, the dirty region, persistence round-trip, and determinism.
+#     Consumes cubed_sphere.h read-only (+ adds voxel_terrain.h).
+add_executable(voxel_terrain_tests
+  tests/test_main.cpp
+  tests/test_voxel_terrain.cpp)
+target_link_libraries(voxel_terrain_tests PRIVATE of_core)
+target_include_directories(voxel_terrain_tests PRIVATE tests)
+add_test(NAME voxel_terrain_tests COMMAND voxel_terrain_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)
