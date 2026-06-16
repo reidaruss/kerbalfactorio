@@ -132,6 +132,26 @@ target_link_libraries(biome_tests PRIVATE of_core)
 target_include_directories(biome_tests PRIVATE tests)
 add_test(NAME biome_tests COMMAND biome_tests)
 
+# --- World-gen SURFACE-WALK data layer (Phase-3 character mode): surface_walk.h
+#     is the headless math/queries the UE whole-planet PLAYER controller binds to
+#     when the player stands / walks ON a body surface (distinct from the orbital
+#     vessel path). A SurfaceObserver maps geodetic (lat,lon,heading,eyeHeight) <->
+#     a body-frame UniverseCoord, exposes radial UP + centre-pointing GRAVITY, snaps
+#     the player onto the DESIGNED terrain (biome.h SampleDesignedTerrainHeight),
+#     moves by GREAT-CIRCLE steps, drives a FloatingOrigin rebase as the walker
+#     travels (one-shot consumeRebased() event for chunk re-anchor), yields the
+#     TerrainStreamer observer that follows the walker, and answers local biome /
+#     hardness / nearby-deposit queries. Headless; proves up==radial &
+#     gravity-to-centre, great-circle steps, on-designed-surface snap, >=1 rebase +
+#     bounded engine pos, stream-observer tracking, and deterministic local queries.
+#     Consumes cubed_sphere.h + biome.h + terrain_stream.h + floating_origin.h.
+add_executable(surface_walk_tests
+  tests/test_main.cpp
+  tests/test_surface_walk.cpp)
+target_link_libraries(surface_walk_tests PRIVATE of_core)
+target_include_directories(surface_walk_tests PRIVATE tests)
+add_test(NAME surface_walk_tests COMMAND surface_walk_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)
