@@ -96,6 +96,22 @@ target_link_libraries(deposits_tests PRIVATE of_core)
 target_include_directories(deposits_tests PRIVATE tests)
 add_test(NAME deposits_tests COMMAND deposits_tests)
 
+# --- World-gen terrain STREAMING + LOD (Wave-1, Spike 1 §3, §4.1–§4.2): the
+#     headless terrain-streaming manager the UE renderer binds to for "player on a
+#     whole planet" — selectResidentSet (distance-based LOD, deepens toward the
+#     observer, balanced <=1-level seam) + TerrainStreamer.updateStreaming
+#     (ready/evict events under a per-update generation budget) + crack-free skirts.
+#     Headless; proves selection determinism, LOD-deepens, crack-free bit-identical
+#     shared edges across a LOD boundary, eviction on recede, budget respected, and
+#     the optimized procgen sampler is bit-identical to the original. Consumes
+#     cubed_sphere.h read-only (+ adds terrain_stream.h).
+add_executable(terrain_stream_tests
+  tests/test_main.cpp
+  tests/test_terrain_stream.cpp)
+target_link_libraries(terrain_stream_tests PRIVATE of_core)
+target_include_directories(terrain_stream_tests PRIVATE tests)
+add_test(NAME terrain_stream_tests COMMAND terrain_stream_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)
@@ -212,3 +228,13 @@ target_link_libraries(journey_dump PRIVATE of_core)
 add_executable(render_scale_dump
   tools/render_scale_dump.cpp)
 target_link_libraries(render_scale_dump PRIVATE of_core)
+
+# --- Tools: procgen_bench — micro-benchmark for the world-gen procedural hot
+#     path (generateQuadMesh sampler). Times the OPTIMIZED cubed_sphere.h noise
+#     stack vs a self-contained REFERENCE copy of the ORIGINAL stack in ONE binary,
+#     reports verts/sec before->after + speedup, and asserts the two are
+#     BIT-IDENTICAL (exit non-zero on any bit mismatch). A pure CONSUMER of of_core
+#     (no test framework, not registered with ctest). ---
+add_executable(procgen_bench
+  tools/procgen_bench.cpp)
+target_link_libraries(procgen_bench PRIVATE of_core)

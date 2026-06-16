@@ -278,24 +278,48 @@ inline double fade(double t) {  // quintic smoothstep (C2)
 inline double lerp(double a, double b, double t) { return a + (b - a) * t; }
 
 // 3D value noise on a lattice of the scaled direction. Position-hashed corners.
+//
+// HOT-PATH OPTIMIZATION (bit-identical): the original computed the full 4-step
+// hash chain (base mix + 3 hashCombines) independently for all 8 corners — but
+// the chain shares prefixes. Because dx,dy,dz are each in {0,1}, there are only:
+//   * ONE base hash  = mix64(seed ^ channel*C)           (was computed 8x)
+//   * TWO x-stage     = hashCombine(base, ix+{0,1})        (was 8x -> 2x)
+//   * FOUR xy-stage   = hashCombine(hx,   iy+{0,1})        (was 8x -> 4x)
+//   * EIGHT final     = hashCombine(hxy,  iz+{0,1})        (the unavoidable leaf)
+// We precompute the shared prefixes ONCE. Identical operands in identical order
+// => identical bits, but ~ half the mix64/hashCombine calls per valueNoise(). The
+// integer-cast operands are also hoisted (ix..iz+1 computed once each).
 inline double valueNoise(uint64_t seed, const Vec3& p, uint64_t channel) {
   const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
   const int ix = static_cast<int>(fx), iy = static_cast<int>(fy),
             iz = static_cast<int>(fz);
   const double tx = fade(p.x - fx), ty = fade(p.y - fy), tz = fade(p.z - fz);
 
-  auto corner = [&](int dx, int dy, int dz) -> double {
-    uint64_t h = mix64(seed ^ (channel * 0x9E3779B97F4A7C15ull));
-    h = hashCombine(h, static_cast<uint64_t>(static_cast<int64_t>(ix + dx)));
-    h = hashCombine(h, static_cast<uint64_t>(static_cast<int64_t>(iy + dy)));
-    h = hashCombine(h, static_cast<uint64_t>(static_cast<int64_t>(iz + dz)));
-    return hashToSigned(h);
-  };
+  // Integer corner operands (each used in 4 of the 8 corners) — hoisted.
+  const uint64_t ix0 = static_cast<uint64_t>(static_cast<int64_t>(ix));
+  const uint64_t ix1 = static_cast<uint64_t>(static_cast<int64_t>(ix + 1));
+  const uint64_t iy0 = static_cast<uint64_t>(static_cast<int64_t>(iy));
+  const uint64_t iy1 = static_cast<uint64_t>(static_cast<int64_t>(iy + 1));
+  const uint64_t iz0 = static_cast<uint64_t>(static_cast<int64_t>(iz));
+  const uint64_t iz1 = static_cast<uint64_t>(static_cast<int64_t>(iz + 1));
 
-  const double c000 = corner(0, 0, 0), c100 = corner(1, 0, 0);
-  const double c010 = corner(0, 1, 0), c110 = corner(1, 1, 0);
-  const double c001 = corner(0, 0, 1), c101 = corner(1, 0, 1);
-  const double c011 = corner(0, 1, 1), c111 = corner(1, 1, 1);
+  // Shared prefixes (computed once, not per corner).
+  const uint64_t base = mix64(seed ^ (channel * 0x9E3779B97F4A7C15ull));
+  const uint64_t hx0 = hashCombine(base, ix0);
+  const uint64_t hx1 = hashCombine(base, ix1);
+  const uint64_t hx0y0 = hashCombine(hx0, iy0);
+  const uint64_t hx0y1 = hashCombine(hx0, iy1);
+  const uint64_t hx1y0 = hashCombine(hx1, iy0);
+  const uint64_t hx1y1 = hashCombine(hx1, iy1);
+
+  const double c000 = hashToSigned(hashCombine(hx0y0, iz0));
+  const double c100 = hashToSigned(hashCombine(hx1y0, iz0));
+  const double c010 = hashToSigned(hashCombine(hx0y1, iz0));
+  const double c110 = hashToSigned(hashCombine(hx1y1, iz0));
+  const double c001 = hashToSigned(hashCombine(hx0y0, iz1));
+  const double c101 = hashToSigned(hashCombine(hx1y0, iz1));
+  const double c011 = hashToSigned(hashCombine(hx0y1, iz1));
+  const double c111 = hashToSigned(hashCombine(hx1y1, iz1));
 
   const double x00 = lerp(c000, c100, tx), x10 = lerp(c010, c110, tx);
   const double x01 = lerp(c001, c101, tx), x11 = lerp(c011, c111, tx);
