@@ -42,6 +42,7 @@
 #include <vector>
 
 #include "of/factory_sim.h"
+#include "of/deposits.h"  // worldgen::survival::NodeKind -> ItemId (resourceOf)
 
 namespace of {
 namespace automation {
@@ -98,6 +99,21 @@ class BuildableNetwork {
     EntityHandle e = sim_.addMiner(depositAmount, item, ratePerSecond, outCap);
     sim_.setActive(e, true);
     return BuildId{e, BuildKind::Miner};
+  }
+
+  // Place a MINER on a worldgen survival node, inferring the mined ItemId from
+  // the node's KIND (deposits.h §S survival::resourceOf). The UE survival/harvest
+  // layer holds an `of::worldgen::survival::NodeKind` per harvestable node (Tree,
+  // Rock, CoalSeam, IronOre, CopperOre, WaterPool, OilSeep) and previously had to
+  // map kind->item by hand before calling placeMinerOnDeposit. This overload owns
+  // that mapping inside the facade so the binding is one call: pass the node kind +
+  // its RemainingAmount and the miner yields the right raw resource id. Otherwise
+  // identical to placeMinerOnDeposit (same rate/cap/depletion semantics).
+  BuildId placeMinerForNode(of::worldgen::survival::NodeKind kind,
+                            uint64_t depositAmount, double ratePerSecond = 2.0,
+                            uint16_t outCap = 50) {
+    const ItemId item = of::worldgen::survival::resourceOf(kind);
+    return placeMinerOnDeposit(depositAmount, item, ratePerSecond, outCap);
   }
 
   // Place a BELT line of `tiles` tiles at `speed` units/tick (8 basic..32 turbo).
@@ -205,6 +221,54 @@ class BuildableNetwork {
   // extraction + machine crafts both tally here) — the chain's throughput probe.
   uint64_t producedCountOf(ItemId item) const { return sim_.producedCountOf(item); }
   uint64_t producedCount() const { return sim_.producedCount(); }
+
+  // --------------------------------------------------------------------------
+  // PER-BUILDING CRAFT STATE (the UE HUD/anim probe). These give the UE layer a
+  // building-level "is it busy + how far along" WITHOUT it reaching past the
+  // facade into sim().entityVisualState(...) / the recipe table by hand.
+  // --------------------------------------------------------------------------
+
+  // Is this building actively doing work this tick?
+  //   * Smelter / Assembler: mid-craft (the FactorySim crafting_ flag is set —
+  //     inputs consumed, a craft in flight).
+  //   * Miner: extracting (its bound deposit is not yet depleted).
+  //   * Belt: flowing (it currently carries at least one item).
+  // false for an invalid handle.
+  bool working(const BuildId& b) const {
+    if (!b.valid()) return false;
+    switch (b.kind) {
+      case BuildKind::Smelter:
+      case BuildKind::Assembler:
+        return sim_.machineCrafting(b.entity);
+      case BuildKind::Miner:
+        return !sim_.minerDepleted(b.entity);
+      case BuildKind::Belt:
+        return sim_.lineItemCount(b.entity.index) > 0;
+      default:
+        return false;
+    }
+  }
+
+  // Normalized craft progress in [0,1] for this building:
+  //   * Smelter / Assembler: the in-flight craft's fraction-complete
+  //     (machineProgress / craftTimeTicks*1000), clamped to [0,1]; 0 when idle,
+  //     rising as the craft advances, ~1.0 the tick before it completes + emits.
+  //   * Miner: 0 (no discrete craft cycle — use minerRemaining() for fill).
+  //   * Belt: 0 (a belt has no craft; use beltItemCount() for occupancy).
+  // 0 for an invalid handle.
+  double progress01(const BuildId& b) const {
+    if (!b.valid()) return 0.0;
+    if (b.kind == BuildKind::Smelter || b.kind == BuildKind::Assembler) {
+      const uint32_t target = sim_.machineProgressTarget(b.entity);
+      if (target == 0) return 0.0;
+      double p = static_cast<double>(sim_.machineProgress(b.entity)) /
+                 static_cast<double>(target);
+      if (p < 0.0) p = 0.0;
+      if (p > 1.0) p = 1.0;
+      return p;
+    }
+    return 0.0;  // Miner / Belt: no craft cycle (see minerRemaining/beltItemCount).
+  }
 
  private:
   // Infer the carried item for an auto-created inserter:

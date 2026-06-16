@@ -425,6 +425,20 @@ class FactorySim {
   uint16_t machineInput(EntityHandle h) const { return inSlotCount_[h.index]; }
   uint16_t machineInput2(EntityHandle h) const { return in2SlotCount_[h.index]; }
   uint32_t machineProgress(EntityHandle h) const { return progressTicks_[h.index]; }
+  // Milliticks for ONE craft of this machine's recipe (craftTimeTicks * 1000) —
+  // the denominator machineProgress() counts up toward. Lets a facade (automation.h)
+  // report normalized craft progress without reaching into the recipe table. 0 for
+  // a non-machine handle (no recipe). Additive, read-only.
+  uint32_t machineProgressTarget(EntityHandle h) const {
+    if (!h.valid() || kind_[h.index] != EntityKind::Machine) return 0;
+    return recipes_[recipeId_[h.index]].craftTimeTicks * 1000u;
+  }
+  // Is this machine mid-craft RIGHT NOW (the §1.4(3) crafting_ flag)? True only
+  // between a craft starting (inputs consumed) and completing this tick. Read-only.
+  bool machineCrafting(EntityHandle h) const {
+    if (!h.valid() || kind_[h.index] != EntityKind::Machine) return false;
+    return crafting_[h.index] != 0;
+  }
 
   // Miner read accessors (out-slot count reuses machineOutput()). minerRemaining
   // is the units of ore left in the bound deposit; 0 == depleted (miner stalled).

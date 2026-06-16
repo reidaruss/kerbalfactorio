@@ -16,8 +16,10 @@
 
 #include "test_framework.h"
 #include "of/automation.h"
+#include "of/deposits.h"
 
 using namespace of::automation;
+namespace survival = of::worldgen::survival;
 
 namespace {
 
@@ -215,4 +217,114 @@ TEST(miner_rate_is_exact_and_deposit_bounded) {
   // Further ticks add nothing (depleted).
   for (int t = 0; t < 100; ++t) net.step();
   CHECK(net.producedCountOf(kOre) == deposit);
+}
+
+// =============================================================================
+// placeMinerForNode: the miner infers the mined ItemId from the worldgen survival
+// NodeKind (deposits.h §S resourceOf) — no hand mapping in the UE layer. The mined
+// item must equal survival::resourceOf(kind) for several kinds, and the miner must
+// otherwise behave exactly like placeMinerOnDeposit (extract + deplete + stop).
+// =============================================================================
+TEST(place_miner_for_node_mines_kinds_resource) {
+  struct Case { survival::NodeKind kind; ItemId expect; };
+  const Case cases[] = {
+      {survival::NodeKind::IronOre,   survival::kItemRawIron},
+      {survival::NodeKind::CopperOre, survival::kItemRawCopper},
+      {survival::NodeKind::CoalSeam,  survival::kItemCoal},
+      {survival::NodeKind::Tree,      survival::kItemWood},
+  };
+  for (const Case& cs : cases) {
+    BuildableNetwork net;
+    const uint64_t deposit = 30;
+    BuildId miner = net.placeMinerForNode(cs.kind, deposit, /*rate/s*/ 60.0,
+                                          /*outCap*/ 0);
+    // resourceOf is the contract the overload binds to.
+    CHECK(survival::resourceOf(cs.kind) == cs.expect);
+    // Drain the deposit: every produced unit is the kind's resource id, and the
+    // miner stops exactly at the deposit amount (same depletion as placeMinerOnDeposit).
+    for (uint64_t t = 0; t < deposit + 50; ++t) net.step();
+    std::printf("    [node] kind=%u item=0x%04X mined=%llu left=%llu\n",
+                (unsigned)cs.kind, (unsigned)cs.expect,
+                (unsigned long long)net.producedCountOf(cs.expect),
+                (unsigned long long)net.minerRemaining(miner));
+    CHECK(net.producedCountOf(cs.expect) == deposit);   // mined the right item
+    CHECK(net.minerDepleted(miner));                    // and stopped at empty
+  }
+}
+
+// =============================================================================
+// working() / progress01(): the per-building craft probe the UE HUD reads through
+// the facade (no sim().entityVisualState reach-through). A smelter reports
+// not-working / progress 0 while idle, then working / rising progress mid-craft,
+// reaching ~1.0 just before completion; a miner reports working while it has ore;
+// a belt reports working while it carries items. Deterministic across two builds.
+// =============================================================================
+TEST(working_and_progress01_track_craft_state) {
+  BuildableNetwork net;
+  // A lone smelter with a LONG craft so we can watch progress climb. Hand-feed it
+  // one ore so it crafts exactly once (no upstream noise).
+  const uint32_t craftTicks = 100;
+  BuildId smelter = net.placeSmelter(kOre, kIngot, craftTicks);
+
+  // Idle (unfed): not working, progress 0.
+  CHECK(!net.working(smelter));
+  CHECK(net.progress01(smelter) == 0.0);
+
+  // Feed one ore -> the craft starts on the next step.
+  net.sim().feedMachine(smelter.entity, 1);
+  net.step();                          // craft begins this tick
+  CHECK(net.working(smelter));         // now crafting
+  const double pEarly = net.progress01(smelter);
+  CHECK(pEarly > 0.0);                 // some progress accrued
+  CHECK(pEarly < 0.5);                 // but early in a 100-tick craft
+
+  // Step to near the END of the craft and watch progress rise toward 1.0.
+  for (uint32_t t = 0; t < craftTicks - 3; ++t) net.step();
+  const double pLate = net.progress01(smelter);
+  std::printf("    [progress] early=%.3f late=%.3f produced=%llu\n", pEarly, pLate,
+              (unsigned long long)net.producedCountOf(kIngot));
+  CHECK(pLate > pEarly);               // monotonically rising
+  CHECK(pLate > 0.9);                  // ~1.0 just before completion
+  CHECK(net.progress01(smelter) <= 1.0);  // always clamped
+
+  // Finish the craft: output emitted, machine returns to idle (not working, 0).
+  for (int t = 0; t < 5; ++t) net.step();
+  CHECK(net.producedCountOf(kIngot) >= 1);
+  CHECK(!net.working(smelter));
+  CHECK(net.progress01(smelter) == 0.0);
+
+  // Miner: working while it has ore, progress01 is 0 (no craft cycle).
+  BuildId miner = net.placeMinerForNode(survival::NodeKind::IronOre, 5, 60.0, 0);
+  CHECK(net.working(miner));
+  CHECK(net.progress01(miner) == 0.0);
+  for (int t = 0; t < 50; ++t) net.step();   // drain the 5-unit deposit
+  CHECK(!net.working(miner));                // depleted -> not working
+
+  // Belt: working only while it carries items.
+  BuildId belt = net.placeBelt(2, 32);
+  CHECK(!net.working(belt));                  // empty belt: idle
+  net.sim().line(belt.entity).fillSaturated(kOre);
+  CHECK(net.working(belt));                   // now carrying items
+  CHECK(net.progress01(belt) == 0.0);         // belts have no craft progress
+
+  // Invalid handle is safe.
+  BuildId none;
+  CHECK(!net.working(none));
+  CHECK(net.progress01(none) == 0.0);
+}
+
+// =============================================================================
+// DETERMINISM of the new probes: two identical lone-smelter builds report
+// bit-identical working()/progress01() at the same tick.
+// =============================================================================
+TEST(working_and_progress01_are_deterministic) {
+  BuildableNetwork na, nb;
+  BuildId sa = na.placeSmelter(kOre, kIngot, 80);
+  BuildId sb = nb.placeSmelter(kOre, kIngot, 80);
+  na.sim().feedMachine(sa.entity, 1);
+  nb.sim().feedMachine(sb.entity, 1);
+  for (int t = 0; t < 40; ++t) { na.step(); nb.step(); }
+  CHECK(na.working(sa) == nb.working(sb));
+  CHECK(na.progress01(sa) == nb.progress01(sb));   // exact bit-for-bit (fixed-point)
+  CHECK(na.progress01(sa) > 0.0);                  // non-trivial
 }
