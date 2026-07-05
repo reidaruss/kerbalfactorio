@@ -12,6 +12,17 @@ if(NOT MSVC)
   add_compile_options(-Wall -Wextra -O2)
 endif()
 
+# Static-link the GNU runtime into every target (tests + tools) so the exes do
+# not depend on whichever libstdc++-6.dll is first on PATH. Git for Windows
+# ships an older libstdc++-6.dll on the system PATH that lacks the
+# <filesystem> symbols, which made the two <filesystem> suites die at load
+# (0xc0000139) or pass depending on the shell. Static linking makes ctest
+# results shell-independent (PowerShell, Git Bash, CI). `-static` also pulls
+# in winpthread statically.
+if(MINGW)
+  add_link_options(-static-libstdc++ -static-libgcc -static)
+endif()
+
 # Header-only shared core library (the substrate every domain core builds on).
 add_library(of_core INTERFACE)
 target_include_directories(of_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -319,3 +330,9 @@ target_link_libraries(render_scale_dump PRIVATE of_core)
 add_executable(procgen_bench
   tools/procgen_bench.cpp)
 target_link_libraries(procgen_bench PRIVATE of_core)
+
+# --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
+#     means a future loader/DLL failure fails FAST instead of stalling ~1000 s
+#     in Windows Error Reporting (the historical "hung overnight run" mode). ---
+get_property(_of_all_tests DIRECTORY PROPERTY TESTS)
+set_tests_properties(${_of_all_tests} PROPERTIES TIMEOUT 120)
