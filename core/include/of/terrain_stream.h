@@ -378,14 +378,26 @@ inline void buildSkirt(const BodyParams& body, TerrainChunk& ch,
 // Build a full TerrainChunk from a quad key: the generateQuadMesh data (READ-ONLY
 // use of cubed_sphere.h) + skirt + material + neighbour context.
 //
-// `lowering` (optional): a per-vertex deform-lowering callback (terrain_deform.h
-// binds it to a TerrainDeform). Null = the original undeformed chunk, bit-for-bit
-// — so existing callers and all determinism proofs are unchanged. When set, the
-// mesh + skirt heights reflect the player's digs on the surface they walk on.
+// WG-21 (single surface authority): the chunk mesh draws the DESIGNED surface
+// (biome.h sampleDesignedHeight), NOT the raw heightfield — so the streamed mesh
+// + its cooked collision finally match the walker (surface_walk.h), the deposit
+// pass, and the voxel solid shell, all of which read the designed surface. The
+// designed base is a pure function of the (bit-identical shared) dir, so
+// shared-edge heights stay bit-identical across quads / LOD (the crack-free proof
+// holds; test_terrain_stream re-baselined onto the designed base).
+//
+// `lowering` (optional): a per-vertex dig-lowering callback (bind to a
+// SurfaceField::loweringFn(), the voxel-derived top-anchored open-column depth).
+// Null = no digs. When set, the mesh + skirt heights drop into the player's digs
+// on the surface they walk on. The undug mesh is the pure designed surface.
 inline TerrainChunk buildChunk(const BodyParams& body, const FQuadKey& key,
                               const StreamConfig& cfg,
                               const HeightLoweringFn& lowering = nullptr) {
-  const QuadMesh m = generateQuadMesh(body, key, lowering);
+  // WG-21: sample the designed surface as the mesh base (single authority).
+  const HeightFieldFn designedBase = [&body](const Vec3& dir) {
+    return sampleDesignedHeight(body, dir);
+  };
+  const QuadMesh m = generateQuadMesh(body, key, lowering, designedBase);
   TerrainChunk ch;
   ch.key = key;
   ch.centerUniverse = m.centerUniverse;

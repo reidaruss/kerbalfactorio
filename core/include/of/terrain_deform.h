@@ -2,10 +2,19 @@
 // =============================================================================
 // terrain_deform.h — headless TERRAIN-DEFORMATION layer (Valheim-style digging).
 //
-// The deterministic, persistable edit layer that lets the player's pickaxe and
-// automated miners LOWER / REMOVE terrain — dig holes and sink mine shafts — on
-// top of the otherwise pure-procedural cubed-sphere surface. It is the headless
-// foundation the UE digging/mining + collision layer binds to:
+// DEMOTED (WG-21, 2026-07-05): this layer is NO LONGER the surface authority nor
+// an independent edit store. The single surface authority is surface_field.h
+// (the "surface oracle"): the ONE surface = designed base − VOXEL-derived
+// lowering, with the ONE bedrock clamp. Digging writes VOXELS ONLY
+// (voxel_terrain.h); the far-field heightfield lowering is DERIVED from the voxel
+// removed-set (surface_field.h derivedLoweringAt), not read from this store. This
+// header is kept COMPILING (deprecated) so the UE layer still links during the R2
+// migration — its edit store / deformedHeight are still callable but are no longer
+// on the canonical surface path. Do not add new consumers; read surface_field.h.
+//
+// (Historical purpose, retained below for reference:) the deterministic,
+// persistable edit layer that let the player's pickaxe and automated miners
+// LOWER / REMOVE terrain on top of the pure-procedural cubed-sphere surface:
 //
 //   * EDIT STORE — a sparse map from a QUANTIZED surface cell (a fine angular
 //     lattice on the cubed sphere, a stable integer (face, ix, iy) cell id) to an
@@ -15,8 +24,10 @@
 //   * DEFORMED SAMPLER — deformedHeight(body, dir, deform) = baseDesignedHeight −
 //     edit(cell), CLAMPED so you can never dig below base − maxDigDepthM. Where
 //     there is no edit it returns the base height BIT-IDENTICALLY (no regression
-//     to the existing procedural terrain). terrain_stream + UE collision sample
-//     this so holes appear in mesh AND collision.
+//     to the existing procedural terrain). (WG-21 CORRECTION: this is NOT the
+//     surface the mesh/collision read anymore — they read surface_field.h's
+//     surfaceHeight = designed base − VOXEL-derived lowering. This deform sampler
+//     is a demoted, self-contained view over this layer's own edit store.)
 //   * DIG BRUSH (pickaxe / terraform) — digBrush(centerDir, radiusM, amountM):
 //     lowers cells within the radius by `amount` with a SOFT FALLOFF toward the
 //     edge (natural-looking holes), clamped to max depth; returns the volume-ish

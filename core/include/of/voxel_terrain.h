@@ -15,9 +15,10 @@
 //     sphere deform lattice) — that is what lets a cell be ANYWHERE in the solid
 //     volume, including horizontally adjacent below the surface (a tunnel).
 //   * SOLIDITY = PROCEDURAL-SOLID xor REMOVED (the seed+diff property): a cell is
-//     solid iff its centre is at/below the terrain surface (cubed_sphere.h's
-//     sampleHeightField at the cell-centre direction) AND it is not in the
-//     removed set. Cells above the surface are AIR. We never store the (enormous)
+//     solid iff its centre is at/below the terrain surface (the DESIGNED surface,
+//     biome.h's sampleDesignedHeight at the cell-centre direction — WG-21: the
+//     single surface authority; RAW sampleHeightField is NOT the voxel surface)
+//     AND it is not in the removed set. Cells above the surface are AIR. We never store the (enormous)
 //     full volume — only the sparse REMOVED diff. The procedural-solid half is a
 //     PURE function of the height field, so the same (body, edits) -> the same
 //     solidity, bit-for-bit, on any machine.
@@ -40,12 +41,19 @@
 // DETERMINISM: procedural-solid is a pure function of sampleHeightField; edits are
 // EXPLICIT ops (a removed cell-id set). Same ops -> same state, bit-for-bit.
 //
-// ADDITIVE / NON-DESTRUCTIVE: sampleHeightField (cubed_sphere.h) is consumed
-// READ-ONLY and unchanged. This is a NEW layer alongside terrain_deform.h, not a
-// replacement of any existing output.
+// ADDITIVE / NON-DESTRUCTIVE: sampleHeightField / sampleDesignedHeight
+// (cubed_sphere.h / biome.h) are consumed READ-ONLY and unchanged. This is the
+// destruction layer; terrain_deform.h is now a DERIVED far-field view (WG-21), no
+// longer an independent edit authority.
 //
-// Header-only C++17. Consumes cubed_sphere.h READ-ONLY. No UE, no rendering, no
-// physics — the isolation harness the UE voxel layer mirrors.
+// WG-21 (single surface authority): solidity is sampled against the DESIGNED
+// surface (sampleDesignedHeight), NOT the raw heightfield. This makes the voxel
+// solid shell agree with the rendered/collision mesh and the walker, which all
+// read the designed surface — retiring the UE 18 m "surface-snap" hack whose root
+// cause was the raw-vs-designed gap.
+//
+// Header-only C++17. Consumes cubed_sphere.h + biome.h READ-ONLY. No UE, no
+// rendering, no physics — the isolation harness the UE voxel layer mirrors.
 // =============================================================================
 #include <cstdint>
 #include <cmath>
@@ -55,6 +63,7 @@
 
 #include "of/vec3.h"
 #include "of/cubed_sphere.h"
+#include "of/biome.h"
 
 namespace of {
 namespace worldgen {
@@ -124,9 +133,10 @@ inline Vec3 cellCenter(const VoxelCell& c) {
 // §2 — PROCEDURAL solidity (the seed+diff base, before any edits).
 //
 // A cell is procedurally solid iff its centre lies at/below the terrain surface:
-//   |cellCentre| <= body.radiusM + sampleHeightField(body, dir(cellCentre)).
-// i.e. the cell sits inside the planet's solid shell. PURE function of the height
-// field -> deterministic & bit-stable. (The far interior is solid too — for a real
+//   |cellCentre| <= body.radiusM + sampleDesignedHeight(body, dir(cellCentre)).
+// i.e. the cell sits inside the planet's solid shell (the DESIGNED surface, WG-21
+// — the SAME base the mesh/collision/walker read, so the voxel shell agrees with
+// them). PURE function of the height field -> deterministic & bit-stable. (The far interior is solid too — for a real
 // game UE only ever meshes/queries a thin region around the player, so the
 // "everything below the surface is solid" model costs nothing: we only ever
 // iterate a bounded region, never the whole volume.)
@@ -142,8 +152,10 @@ inline Vec3 unitOf(const Vec3& p) {
 
 // Surface radius (metres from body centre) under the direction of a point. `p`
 // may be any body-frame vector; it is normalized to a unit dir before sampling.
+// WG-21: samples the DESIGNED surface (sampleDesignedHeight) — the single surface
+// authority — so voxel solidity agrees with the mesh/collision/walker.
 inline double surfaceRadiusAt(const BodyParams& body, const Vec3& p) {
-  return body.radiusM + sampleHeightField(body, unitOf(p));
+  return body.radiusM + sampleDesignedHeight(body, unitOf(p));
 }
 
 // Is this cell solid in the PURE procedural world (ignoring edits)?

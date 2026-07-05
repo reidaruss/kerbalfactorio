@@ -461,12 +461,15 @@ TEST(deform_lowering_lowers_only_dug_cells_else_bit_identical) {
     k = best;
   }
 
-  // Undeformed chunk (no fn) == original generateQuadMesh, bit-for-bit.
+  // Undeformed chunk (no fn) == generateQuadMesh with the SAME DESIGNED base the
+  // chunk now draws (WG-21: the mesh samples sampleDesignedHeight, not RAW), bit-
+  // for-bit. Re-baselined from the old RAW reference to the designed base.
+  const HeightFieldFn designedBase = [&](const Vec3& d){ return sampleDesignedHeight(forge, d); };
   const TerrainChunk base = buildChunk(forge, k, StreamConfig{}, nullptr);
-  const QuadMesh raw = generateQuadMesh(forge, k);
+  const QuadMesh designed = generateQuadMesh(forge, k, nullptr, designedBase);
   bool baseIdentical = true;
   for (size_t v = 0; v < base.heights.size(); ++v)
-    if (asBits(base.heights[v]) != asBits(raw.heights[v])) baseIdentical = false;
+    if (asBits(base.heights[v]) != asBits(designed.heights[v])) baseIdentical = false;
   CHECK(baseIdentical);
 
   // Dig at the chunk's CENTRE vertex dir with a radius spanning several cell pitches
@@ -512,8 +515,10 @@ TEST(deform_lowering_lowers_only_dug_cells_else_bit_identical) {
     const TerrainChunk& ch = kv.second;
     for (size_t v = 0; v < ch.heights.size(); ++v) {
       if (deform.depthDugAt(ch.dirs[v]) > 0.0) {
-        const double rawH = sampleHeightField(forge, ch.dirs[v]);
-        if (rawH - ch.heights[v] > 1e-6) foundLoweredResident = true;
+        // WG-21: the mesh base is the DESIGNED surface; a dug vertex is lower than
+        // its designed base by the lowering amount.
+        const double baseH = sampleDesignedHeight(forge, ch.dirs[v]);
+        if (baseH - ch.heights[v] > 1e-6) foundLoweredResident = true;
       }
     }
   }

@@ -25,14 +25,18 @@
 //     (BiomeResourceField::QueryRegionDeposits): "what's around me".
 //
 // DETERMINISM (WG-6 discipline, inherited): every query is a PURE function of
-// (BodyParams, player state). Movement is a closed-form great-circle step, and
-// the terrain snap routes through the SAME sampleDesignedHeight the mesh + the
-// deposit pass use — so a walk reproduces bit-for-bit and the character always
-// sits on the same shaped terrain the renderer draws.
+// (BodyParams, player state[, voxel edits]). Movement is a closed-form great-
+// circle step, and the terrain snap routes through surface_field.h's ONE
+// surfaceHeight (WG-21) — the SAME surface the mesh, collision, and deposit pass
+// read (designed base − voxel-derived lowering) — so a walk reproduces bit-for-bit
+// and the character always sits on the same shaped terrain the renderer draws AND
+// drops into its own digs (no more hovering over a hole). The undug snap is
+// bit-identical to the designed base (surfaceHeight with no lowering == baseHeight
+// == sampleDesignedHeight), so an edit-free walk is unchanged.
 //
 // Header-only C++17. Consumes cubed_sphere.h / biome.h / terrain_stream.h /
-// floating_origin.h READ-ONLY. No UE, no rendering, no physics — the isolation
-// harness the UE character controller mirrors.
+// surface_field.h / floating_origin.h READ-ONLY. No UE, no rendering, no physics —
+// the isolation harness the UE character controller mirrors.
 // =============================================================================
 #include <cstdint>
 #include <cmath>
@@ -44,6 +48,8 @@
 #include "of/cubed_sphere.h"
 #include "of/biome.h"
 #include "of/terrain_stream.h"
+#include "of/voxel_terrain.h"
+#include "of/surface_field.h"
 
 namespace of {
 namespace worldgen {
@@ -85,6 +91,14 @@ class SurfaceObserver {
   void setHeading(double headingRad) { heading_ = headingRad; }
   void setEyeHeight(double m) { eyeHeight_ = m; }
 
+  // Bind the player's VOXEL destruction diff (WG-21) so the surface snap drops
+  // into the player's own digs: surfaceHeightM() reads the oracle's ONE surface
+  // (designed base − voxel-derived lowering) instead of the bare designed base.
+  // Null (the default) = the undug designed base, bit-identical to before. The
+  // pointer is borrowed (the UE layer owns the VoxelEdits); pass nullptr to unbind.
+  void setVoxelEdits(const VoxelEdits* edits) { voxels_ = edits; }
+  const VoxelEdits* voxelEdits() const { return voxels_; }
+
   // Body frame id for this walker's UniverseCoords (== bodyId+1).
   FrameId frame() const { return static_cast<FrameId>(body_.bodyId + 1); }
 
@@ -124,10 +138,15 @@ class SurfaceObserver {
     return (r > 0.0) ? mu / (r * r) : 0.0;
   }
 
-  // DESIGNED terrain relief (metres above the datum) under the player — the
-  // shaped surface the renderer draws + deposits snap to (biome.h).
+  // The ONE surface relief (metres above the datum) under the player (WG-21):
+  // surface_field.h's surfaceHeight = designed base − voxel-derived lowering,
+  // bedrock-clamped. With no voxel edits bound this is exactly the designed base
+  // (SampleDesignedTerrainHeight), bit-for-bit — so an undug walk is unchanged;
+  // with edits bound the player stands on / drops into their own digs.
   double surfaceHeightM() const {
-    return SampleDesignedTerrainHeight(body_, lat_, lon_);
+    const Vec3 d = dir();
+    return voxels_ ? surfaceHeight(body_, d, *voxels_)
+                   : baseHeight(body_, d);  // == sampleDesignedHeight(body_, d)
   }
   // Absolute surface radius (body radius + designed relief) under the player.
   double surfaceRadiusM() const { return body_.radiusM + surfaceHeightM(); }
@@ -349,6 +368,7 @@ class SurfaceObserver {
   double eyeHeight_;  // metres above the designed surface
   FloatingOrigin origin_;
   int lastSeenRebase_ = 0;
+  const VoxelEdits* voxels_ = nullptr;  // borrowed player dig diff (WG-21); null = undug base
 };
 
 }  // namespace worldgen

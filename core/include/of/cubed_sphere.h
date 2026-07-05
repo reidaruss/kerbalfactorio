@@ -485,6 +485,16 @@ struct QuadMesh {
 // header stays leaf (no terrain_deform dependency); the caller supplies the fn.
 using HeightLoweringFn = std::function<double(const Vec3& dir)>;
 
+// Optional per-vertex BASE-HEIGHT callback (WG-21). Given a vertex's unit dir,
+// returns the metres of relief BEFORE any dig lowering — i.e. the surface the mesh
+// should draw. Default = null => the mesh samples the RAW sampleHeightField as it
+// always did (bit-identical). terrain_stream.h's buildChunk binds this to
+// biome.h's sampleDesignedHeight so the STREAMED MESH draws the DESIGNED surface
+// (the single surface authority), finally matching the walker + collision + voxel
+// shell. Kept as a callback so this header stays LEAF (no biome.h dependency); the
+// caller (which already includes biome.h) supplies the designed sampler.
+using HeightFieldFn = std::function<double(const Vec3& dir)>;
+
 // Generate the heightfield mesh for a quad at a given resolution (spike §1.3).
 //
 // Determinism: each vertex's unitDir is named by its INTEGER lattice point
@@ -494,11 +504,15 @@ using HeightLoweringFn = std::function<double(const Vec3& dir)>;
 // child. Height is then position-hashed from that bit-identical dir (WG-6).
 //
 // `lowering` (optional): when set, each vertex height is reduced by lowering(dir)
-// metres (the deform layer's accumulated dig). Null = the original behaviour,
-// bit-for-bit. The reduction is applied AFTER the raw sample so the mesh + its
-// collision reflect the player's dig on the very surface they stand on.
+// metres (the voxel-derived dig depth, surface_field.h). Null = no lowering.
+// `baseHeight` (optional, WG-21): when set, replaces the RAW sampleHeightField as
+// the base surface (buildChunk passes sampleDesignedHeight). Null = RAW, so the
+// no-arg call is BIT-IDENTICAL to the original. A designed base is still a pure
+// function of the (bit-identical shared) dir, so shared-edge heights stay
+// bit-identical across quads / LOD — the crack-free proof survives the switch.
 inline QuadMesh generateQuadMesh(const BodyParams& body, const FQuadKey& key,
-                                 const HeightLoweringFn& lowering = nullptr) {
+                                 const HeightLoweringFn& lowering = nullptr,
+                                 const HeightFieldFn& baseHeight = nullptr) {
   QuadMesh m;
   m.key = key;
   m.gridDim = kGridDim;
@@ -524,8 +538,9 @@ inline QuadMesh generateQuadMesh(const BodyParams& body, const FQuadKey& key,
       const uint64_t iy = m.baseIy + static_cast<uint64_t>(j);
       // THE shared-edge guarantee: dir is a pure function of (faceId,ix,iy,L).
       const Vec3 dir = latticeDir(key.faceId, ix, iy, m.latticeLevel);
-      double h = sampleHeightField(body, dir);
-      if (lowering) {                       // deform layer: subtract dug depth
+      double h = baseHeight ? baseHeight(dir)          // WG-21: designed base
+                            : sampleHeightField(body, dir);  // null = RAW (bit-identical)
+      if (lowering) {                       // subtract voxel-derived dug depth
         const double dug = lowering(dir);
         if (dug > 0.0) h -= dug;            // lower the SAME surface the mesh draws
       }

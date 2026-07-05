@@ -204,6 +204,24 @@ target_link_libraries(voxel_terrain_tests PRIVATE of_core)
 target_include_directories(voxel_terrain_tests PRIVATE tests)
 add_test(NAME voxel_terrain_tests COMMAND voxel_terrain_tests)
 
+# --- World-gen SINGLE SURFACE AUTHORITY ("surface oracle", WG-21): surface_field.h
+#     is the ONE sanctioned surface API — baseHeight ≡ sampleDesignedHeight (RAW is
+#     an internal ingredient only), voxel solidity derived from the SAME base, a
+#     voxel-derived far-field lowering (top-anchored open-column depth, the UE
+#     OpenColumn logic promoted into core), surfaceHeight = base − lowering with the
+#     ONE bedrock clamp, and a SurfaceField binder. Replaces the five competing
+#     surface definitions that caused the floating/air-gap experience bugs (RC-A).
+#     Headless; proves base≡designed bit-identity, designed-based voxel solidity
+#     (the raw/designed gap case), dig-column lowering, the single bedrock clamp,
+#     tunnel-produces-no-lowering (ceiling intact), and determinism. Consumes
+#     cubed_sphere.h + biome.h + voxel_terrain.h read-only (+ adds surface_field.h).
+add_executable(surface_field_tests
+  tests/test_main.cpp
+  tests/test_surface_field.cpp)
+target_link_libraries(surface_field_tests PRIVATE of_core)
+target_include_directories(surface_field_tests PRIVATE tests)
+add_test(NAME surface_field_tests COMMAND surface_field_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)

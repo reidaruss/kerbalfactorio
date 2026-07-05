@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 #include "of/vec3.h"
 #include "of/universe_coord.h"
@@ -122,12 +123,23 @@ inline Vec3 fibonacciDir(int n, int count) {
   return Vec3(std::cos(theta) * r, y, std::sin(theta) * r);
 }
 
+// Optional surface-snap height callback (WG-21). Given a node's unit dir, returns
+// the relief (metres) the node should sit on. Default null = RAW sampleHeightField
+// (bit-identical to the original placement). The oracle-aligned callers (the UE
+// local-deposit pass) pass biome.h's sampleDesignedHeight so nodes snap to the
+// DESIGNED surface the mesh/collision/walker read — no more floating nodes (the
+// M4.4 bug). This header stays LEAF (no biome.h dependency); the caller supplies
+// the sampler. The planet-WIDE path (biome.h GenerateBiomeDeposits) already snaps
+// to sampleDesignedHeight directly.
+using SnapHeightFn = std::function<double(const Vec3& dir)>;
+
 // Generate the full deposit catalog for one body. DETERMINISTIC from
 // (bodySeed, body): same inputs -> identical vector (ids, positions, resources,
 // amounts) bitwise; a different seed -> a different catalog.
 inline std::vector<FDepositNode> GenerateDeposits(const BodyParams& body,
                                                   uint64_t bodySeed,
-                                                  FrameId bodyFrame) {
+                                                  FrameId bodyFrame,
+                                                  const SnapHeightFn& snapH = nullptr) {
   std::vector<FDepositNode> out;
   const int count = detail::candidateCount(body);
   const double density = detail::depositDensity(body);
@@ -149,9 +161,10 @@ inline std::vector<FDepositNode> GenerateDeposits(const BodyParams& body,
 
     FDepositNode node;
 
-    // Snap to the surface: the SAME sampleHeightField the mesh uses (so the node
-    // sits exactly on the terrain at its dir — within float error of the mesh).
-    const double h = sampleHeightField(body, dir);
+    // Snap to the surface (WG-21): the oracle base if a sampler is supplied
+    // (sampleDesignedHeight — the mesh/collision/walker surface), else RAW
+    // sampleHeightField (bit-identical default). Node sits exactly on that surface.
+    const double h = snapH ? snapH(dir) : sampleHeightField(body, dir);
     const double radius = body.radiusM + h;
     node.Position = UniverseCoord(dir * radius, bodyFrame);
     dirToLatLon(dir, node.Lat, node.Lon);
@@ -220,8 +233,9 @@ class DepositCatalog {
 
   // Generate + hold the catalog for a body in one step.
   static DepositCatalog ForBody(const BodyParams& body, uint64_t bodySeed,
-                                FrameId bodyFrame) {
-    return DepositCatalog(GenerateDeposits(body, bodySeed, bodyFrame));
+                                FrameId bodyFrame,
+                                const SnapHeightFn& snapH = nullptr) {
+    return DepositCatalog(GenerateDeposits(body, bodySeed, bodyFrame, snapH));
   }
 
   // ---- Queries (Spike 1 §4.5.2) -------------------------------------------
@@ -361,7 +375,8 @@ inline std::vector<FDepositNode> LayoutTestArea(const BodyParams& body,
                                                 FrameId bodyFrame,
                                                 const Vec3& centerDir,
                                                 const std::vector<NodeKind>& kinds,
-                                                double ringRadiusRad = 0.002) {
+                                                double ringRadiusRad = 0.002,
+                                                const SnapHeightFn& snapH = nullptr) {
   std::vector<FDepositNode> out;
   out.reserve(kinds.size());
 
@@ -395,7 +410,7 @@ inline std::vector<FDepositNode> LayoutTestArea(const BodyParams& body,
     const Vec3 dir(p.x * invLen, p.y * invLen, p.z * invLen);
 
     FDepositNode node;
-    const double h = sampleHeightField(body, dir);
+    const double h = snapH ? snapH(dir) : sampleHeightField(body, dir);  // WG-21 oracle base if supplied
     const double radius = body.radiusM + h;
     node.Position = UniverseCoord(dir * radius, bodyFrame);
     dirToLatLon(dir, node.Lat, node.Lon);
