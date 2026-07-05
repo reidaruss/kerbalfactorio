@@ -32,6 +32,11 @@ ue/Plugins/SoftUEBridge/
 *.suo
 *.sln.docstates
 
+# imported Fab packs, not yet wired — remove from ignore when used
+ue/Content/B3D/
+ue/Content/Megaplant_Library/
+ue/Content/WaterMaterials/
+
 # OS
 Thumbs.db
 .DS_Store
