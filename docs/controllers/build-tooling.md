@@ -1,6 +1,6 @@
 # Build, Tooling & Test Infrastructure — Master Controller Context
 
-> **Domain owner:** `build-tooling-controller` · **Reports to:** Admin · **Phase:** build · **Status:** Both builds GREEN — headless harness (g++/CMake/Ninja, 7 suites) + UE 5.7 project (MSVC 14.44) · **Last updated:** 2026-06-15
+> **Domain owner:** `build-tooling-controller` · **Reports to:** Admin · **Phase:** build · **Status:** Both builds GREEN · headless harness (g++/CMake/Ninja, **21 suites, 21/21 green, shell-independent** since BT-8) + UE 5.7 project (MSVC 14.44) · repo history rewritten onto **git LFS** (BT-7); **no remote yet, adding one is the next repo task** · **Last updated:** 2026-07-05
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md) · [ADMIN](ADMIN.md) · **[EXECUTION-PLAN](../EXECUTION-PLAN.md)** (the plan that created this domain)
 > Created 2026-06-14 to own the execution layer the [review](../REVIEW-2026-06-14.md) found unowned (Q7).
 
@@ -24,6 +24,8 @@ Make the project buildable, testable, and reproducible. Own version control, the
 | BT-4 | **UE 5.7 Windows build prerequisites** — install via the **"Game development with C++" workload** to get them all: MSVC **≥14.44.35207** (UBT **BANS 14.40–14.43**); **Windows 11 SDK 10.0.22621**; **.NET Framework SDK 4.6.2+** (SwarmInterface needs the NetFxSDK). VS **17.13**'s channel offered only banned toolchains → had to update VS to **17.14** first. | The first UE build hit each of these one at a time; documenting so it is never re-debugged | **Accepted** | 2026-06-15 |
 | BT-5 | **Install VS components via the GUI (self-elevating), NOT CLI `setup.exe modify --quiet`** | `--quiet` refuses to self-elevate from a non-elevated shell (exit **5007**, no UAC); `--wait` is also rejected by this installer version (exit 87) | **Accepted** | 2026-06-15 |
 | BT-6 | **UE build command (reproducible):** `D:\UnrealEngine\UE_5.7\Engine\Build\BatchFiles\Build.bat OrbitalFoundryEditor Win64 Development -Project="<repo>\ue\OrbitalFoundry.uproject" -WaitMutex` | The headless cores build separately via `cmake -S core -B core/build -G Ninja -DCMAKE_CXX_COMPILER=g++` | **Accepted** | 2026-06-15 |
+| BT-7 | **Repo surgery (RETHINK R3): one-time history rewrite onto git LFS, done PRE-remote.** `git lfs migrate import --include="*.uasset,*.umap,*.png,*.jpg,*.zip,*.fbx,*.exr,*.wav" --everything` over all 96 commits; 10 vendor demo maps (+BuiltData) untracked and gitignored first; the 3 unwired Fab packs (B3D, Megaplant_Library, WaterMaterials) gitignored; reflog expired + `gc --aggressive --prune=now`. Result: 1,060 LFS objects; git object store 2.43 GiB loose / 0 packs → **1.14 MiB packed** (binaries live in `.git/lfs`, ~2.7 GB). Rollback bundle: `C:\Users\reida\of-backup-pre-lfs-2026-06-16.bundle` (2.47 GB, verified). **No remote exists yet; adding one (LFS-capable host) is the next repo task, and is now safe.** All pre-rewrite hashes are dead; do not cite them. | 2.55 GB of binary blobs in plain git history could never be pushed to a normal host (GitHub 100 MB/file cap); rewrite was cheap only while no remote/collaborators existed. Reid approved the one-time rewrite. | **Done** | 2026-07-05 |
+| BT-8 | **Static-link the GNU runtime in all headless test/tool exes** (`add_link_options(-static-libstdc++ -static-libgcc -static)` for MinGW in `core/CMakeLists.txt`) **+ ctest `TIMEOUT 120` on all 21 suites.** | Exes dynamically linked `libstdc++-6.dll`; Git for Windows ships an older DLL on the system PATH missing the `<filesystem>` symbols, so the two `<filesystem>` suites died at load (0xc0000139) or passed depending on the shell, and each loader death stalled ~1000 s in WER (the "hung overnight run"). Root cause proven in [core-docs-audit Task A](../review-2026-06-16/core-docs-audit.md). Verified after fix: fresh configure+build, **21/21 green from plain PowerShell AND Git Bash**, no PATH setup needed. | **Done** | 2026-07-05 |
 
 ## 4. Architecture & approach
 - **Two build targets:** (1) the **headless core lib + tests** — pure C++, CMake or minimal MSVC solution, no UE; each domain's Wave-0 core compiles here and is unit/bench-tested. (2) the **UE5 project** — created after the headless cores pass, links the core libs.
@@ -41,6 +43,8 @@ Make the project buildable, testable, and reproducible. Own version control, the
 - [Wave 0] Build/test the four headless cores with the domains: core-engine coord/rebase, world-gen crack-free terrain, physics Kepler+integrator, factory-sim 100k bench.
 - [M2.1+] Scaffold the UE5 project; link cores; set up UE build CI + packaging.
 - [Later] Asset pipeline/cooking; perf-capture tooling for the render-wall + perf-budget gates.
+- [Next repo task] **Add a remote** (LFS-capable host) and push; safe now that BT-7 landed. Until then the only off-machine copy is the BT-7 bundle.
+- [Deferred] Wire or delete the three gitignored Fab packs (B3D ~71 MB, WaterMaterials ~88 MB, Megaplant_Library ~694 MB skeletal-only); remove from `.gitignore` when wired.
 
 ## 7. Open questions & risks
 - **R1:** does the user's machine have the VS2022/MSVC + UE5 toolchain installed? (Verify before the build greenlight.)
@@ -50,7 +54,7 @@ Make the project buildable, testable, and reproducible. Own version control, the
 ## 8. Subagent delegation log
 | Date | Subagent task | Status | Outcome |
 |------|---------------|--------|---------|
-| — | *(none yet — idle until build greenlit)* | — | — |
+| 2026-07-05 | RETHINK R3: repo surgery (LFS history rewrite, vendor-map untrack, bundle backup) + test-env static-link fix (BT-7/BT-8) | Done | 1,060 LFS objects, git store 2.43 GiB → 1.14 MiB; 21/21 ctest green from PowerShell and Git Bash |
 
 ## 9. References
 [EXECUTION-PLAN](../EXECUTION-PLAN.md) (§2–4, §8), [REVIEW-2026-06-14](../REVIEW-2026-06-14.md) (Q7 finding). The spike gate lists (V/WV/RV/G-series) across docs/spikes/.
