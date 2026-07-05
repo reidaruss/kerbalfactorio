@@ -37,6 +37,17 @@ ue/Content/B3D/
 ue/Content/Megaplant_Library/
 ue/Content/WaterMaterials/
 
+# vendor demo/sample maps shipped inside Fab packs (kept on disk, never committed;
+# OUR maps live in ue/Content/Maps/ which is NOT ignored)
+ue/Content/Abelia_x_grandiflora_Free_Nanite/Maps/
+ue/Content/BarkWillow/Map/
+ue/Content/Lolium_perenne_Nanite_Free/Maps/
+ue/Content/Materials_TreeBark/Maps/
+ue/Content/OWD_Flowers_Pack/Maps/
+ue/Content/RockSample/Maps/
+ue/Content/RockyGround/Maps/
+ue/Content/Vitex_agnus_Wind_PP2/Maps/
+
 # OS
 Thumbs.db
 .DS_Store
