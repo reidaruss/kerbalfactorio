@@ -32,5 +32,6 @@ Work is delegated across **three tiers** to keep any single context window focus
 - **Detail down, summary up.** Briefs to subagents are exhaustive; reports back are concise.
 - **Single source of truth.** Cross-domain facts and decisions live in `MASTER_PLAN.md`; domain detail lives in the controller file. **Link, don't duplicate.**
 - **Interfaces are contracts.** A controller may not change a published interface (see each controller's §5) without an Admin-logged decision, because other domains depend on it.
-- **Planning repo for now.** No engine/code is committed yet. Code spikes begin only when Admin greenlights them in the roadmap. This repo currently holds design + process.
-- **Absolute dates** in all docs (today: 2026-06-14).
+- **This is a working codebase.** The headless engine cores live in `core/` (21 green ctest suites) and the playable UE 5.7 project lives in `ue/` (milestones M2.1 through M5.2 shipped). Design docs and code evolve together; a doc that contradicts the code is a bug.
+- **Plan of record:** [docs/review-2026-06-16/RETHINK.md](docs/review-2026-06-16/RETHINK.md) is the current plan (Phase R consolidation, then P progression, then S seam), approved 2026-07-05. It supersedes the MASTER_PLAN roadmap phasing where they differ.
+- **Absolute dates** in all docs (today: 2026-07-05).

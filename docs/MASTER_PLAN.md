@@ -1,6 +1,7 @@
 # Master Plan — Orbital Foundry (working title)
 
-> **Status:** Living design document · **Owner:** Admin Master Controller · **Last updated:** 2026-06-14
+> **Status:** Living design document · **Owner:** Admin Master Controller · **Last updated:** 2026-07-05 (R5 docs re-sync)
+> **Plan of record for current work:** [review-2026-06-16/RETHINK.md](review-2026-06-16/RETHINK.md) (Phase R consolidation, then P, then S; approved by Reid 2026-07-05). §8 below records the roadmap status; the vision sections (§1 to §7, §9, §10) stand unchanged.
 > This is the cross-domain source of truth. Domain detail lives in [controllers/](controllers/). Process lives in [AGENT_ARCHITECTURE.md](AGENT_ARCHITECTURE.md).
 
 ---
@@ -161,7 +162,31 @@ Build **vertical slices that retire the riskiest tech first.** No content before
 
 **Phase 5 — Scale & optimization:** push factory entity counts, interest-management tuning, MP time-warp resolution.
 
-> **Current phase: Phase 0 — Planning.** Spikes not yet greenlit. See [ADMIN.md](controllers/ADMIN.md) for live status.
+### 8.1 Roadmap status (re-synced to reality, 2026-07-05)
+
+The original phase ladder above is kept for the record, but development did not follow it linearly. What actually happened:
+
+- **Phase 0 + the headless Phase-1 logic: DONE.** All four Wave-0 cores plus integration, gameplay, persistence, research, networking seam, automation, deform, and voxel logic are built and green: **21 ctest suites** (the once-reported "2 failures" were a PATH/DLL environment artifact, root-caused in [review-2026-06-16/core-docs-audit.md](review-2026-06-16/core-docs-audit.md) Task A).
+- **The UE game shipped a ground-first survival/automation slice** (direction pivot, see D-007). Milestones, one line each:
+  - **M2.1** first in-engine terrain render (Forge + Cinder from `generateQuadMesh`, scaled preview).
+  - **M2.2** the full flight spine (Forge → orbit → SOI transfer → Cinder landing) rendered in-engine in scaled space.
+  - **M2.3** factory rendered live from the FS-14 emission stream (render-wall collapse proven).
+  - **M2.5–M2.9** survival-crafting shell: inventory, crafting, menus, dropped items, tools in hand.
+  - **M3.0–M3.1b** graphics/atmosphere pass (Lumen re-enabled, textured PBR) + first-person view-model; Fab/Megascans import found to be UI-only.
+  - **M3.2** Factorio automation in-world: running auto-line + player build-and-place.
+  - **M4.0** player walks the real streamed 1:1 procedural planet (floating origin, 99 rebases / 180 km, no jitter).
+  - **M4.1** polished planet surface + harvestable biome deposits.
+  - **M4.2** level-ground FrameRot fix + real Megascans textures wired in.
+  - **M4.3** solid PMC collision ground + physical smooth walking (see D-010).
+  - **M4.4** harvest nodes grounded + stable id-keyed streaming.
+  - **M4.5** sprint + nodes perpendicular to / emerging from the ground.
+  - **M4.6** Valheim-style destructive digging + drilling miners (heightfield deform).
+  - **M5.0** world building grid: snap placement + visible grid + edge-to-edge connection.
+  - **M5.1** biome foliage scatter (the planet is alive with Fab trees/shrubs/grass/boulders).
+  - **M5.2** true 1 m³ voxel tunneling (dig down then sideways, walk in) + voxel miners + edit persistence.
+- **Not yet built:** the seamless surface↔orbit seam in-engine (RN-1 scaled space over the 1:1 planet), research wired into UE play, placement costs/real power, a unified UE save.
+
+> **Current phase: Phase R, Consolidation** (per [RETHINK.md](review-2026-06-16/RETHINK.md) §4, approved 2026-07-05), then **Phase P** (a game, not a sandbox: research wiring, costs/power, the launch-pad objective), then **Phase S** (the namesake surface↔orbit seam). See [ADMIN.md](controllers/ADMIN.md) for live status.
 
 ---
 
@@ -204,5 +229,12 @@ The through-line that makes all of it tractable is the **active vs. on-rails pri
 | D-004 | 2026-06-14 | **No deterministic lockstep**; authoritative server + AOI replication | Float physics is non-deterministic across machines | Accepted | networking |
 | D-005 | 2026-06-14 | v1 = **node-based mining, 1 planet + 1 moon, co-op 2–8** | Scope control; ship a vertical slice before scaling | Accepted | gameplay/admin |
 | D-006 | 2026-06-14 | **Single canonical Body Definition** for all physical body constants (radius, μ, surface g, SOI radius, rotation, atmosphere profile). One shared data asset: core-engine owns schema + load and exposes via `FReferenceFrame`; world-gen `FBodyParams`, physics, and rendering all *consume* it — no domain hardcodes its own copy. v1 adopts world-gen's proposed values: **Forge** (planet, R=600 km, g≈9.81 m/s², atmo scale-height ≈5.6 km) · **Cinder** (moon, R=200 km, g≈1.63 m/s², airless). | Resolves Spike-1 R4: world-gen and core-engine both carried body constants; duplication risks divergence (g = μ/r² must stay consistent) | Accepted | core-engine (loader) + world-gen (terrain/atmo) |
+| D-007 | 2026-06-15 to 2026-06-16 | **Ground-first direction pivot** (user-directed): build the walkable-planet survival/automation game first (M4.x/M5.x); the orbital half stays headless + demo-rendered until Phase S | Reid steered the slice toward the on-foot ground game; it proved the floating-origin spine and the fusion feel | Accepted | admin/gameplay |
+| D-008 | 2026-06-16, logged 2026-07-05 | **Voxel terraforming NOW**: 1 m³ voxel tunneling shipped in Phase 1 (M5.2, WG-20). Supersedes the "no voxel until Phase 4" timing in D-005 and Q4 (the D-005 scope line is otherwise intact) | Digging proved core to the ground-game fantasy; the seam world-gen kept open (Q4) absorbed it | Accepted (retro-logged; was an unlogged inversion) | world-gen + rendering |
+| D-009 | logged 2026-07-05 | **Terrain meshes = `UProceduralMeshComponent` in practice.** RN-5's RealtimeMesh was never adopted; every shipped mesh path (chunks, voxel near-field, factory visuals) is PMC | Engineering reality, not a design choice; PMC was sufficient to ship M2.1 through M5.2. Revisit for perf (RealtimeMesh or equivalent) if PMC becomes the bottleneck | Accepted (supersedes RN-5's mesh-library clause) | rendering |
+| D-010 | 2026-06-16, logged 2026-07-05 | **Cooked PMC collision for the near-field**: chunk + voxel meshes cook complex-as-simple collision and the character physically stands on it (M4.3/M5.2). Supersedes PH-5's analytic-only stance for the character near-field; the vessel path stays analytic | The float/teleport bugs died the day the capsule got real geometry to stand on | Accepted (retro-logged; was an unlogged reversal) | physics + rendering |
+| D-011 | 2026-07-05 | **Single surface authority** (WG-21 / RETHINK R1): one `/core` `SurfaceField` oracle, `height = designed − voxelLowering` with one bedrock clamp; voxel solidity derived from the same function; `terrain_deform` demoted to a derived view; every consumer reads the oracle | The audits proved five surface definitions caused every floating/air-gap bug; one truth removes the whole hack family | Accepted, **in flight (R1)** | world-gen (core) + rendering (consumers) |
+| D-012 | 2026-07-05 | **Repo LFS surgery DONE** (RETHINK R3, BT-7/BT-8): `git lfs migrate` over `ue/Content` history, vendor demo maps untracked, done before any remote existed | 2.55 GB of binary history was a one-way door closing; cheapest possible day to fix it | Accepted, executed | build-tooling |
+| D-013 | 2026-07-05 | **R → P → S roadmap approved by Reid**: Phase R consolidation (no new features) → Phase P progression (research/costs/objective) → Phase S seam (RN-1 scaled space, boardable vessel). SurvivalTest demoted to a regression-only map; repo surgery greenlit | Reid approved all three decisions requested in [RETHINK.md](review-2026-06-16/RETHINK.md) §6 | Accepted | admin |
 
 > Append-only. Superseded decisions are marked, not deleted. New cross-domain decisions are added here by Admin; domain-local decisions live in the controller file's own decision log.
