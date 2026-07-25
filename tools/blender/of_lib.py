@@ -185,15 +185,18 @@ def _rot_axis(p, axis):
     raise ValueError("axis must be X, Y or Z")
 
 
-def _cyl_data(radius, depth, loc, axis="Z", segments=12, smooth_sides=True):
+def _cyl_data(radius, depth, loc, axis="Z", segments=12, smooth_sides=True,
+              radius_top=None):
     n = segments
     h = depth * 0.5
+    r_b = radius
+    r_t = radius if radius_top is None else radius_top
     ring_b, ring_t = [], []
     for i in range(n):
         a = 2.0 * math.pi * i / n
-        x, y = radius * math.cos(a), radius * math.sin(a)
-        ring_b.append(_rot_axis((x, y, -h), axis))
-        ring_t.append(_rot_axis((x, y, h), axis))
+        ca, sa = math.cos(a), math.sin(a)
+        ring_b.append(_rot_axis((r_b * ca, r_b * sa, -h), axis))
+        ring_t.append(_rot_axis((r_t * ca, r_t * sa, h), axis))
     cx, cy, cz = loc
     verts = [(p[0] + cx, p[1] + cy, p[2] + cz) for p in ring_b + ring_t]
     faces, smooth = [], []
@@ -246,6 +249,26 @@ class MeshBuilder:
         v, f, sm = _cyl_data(radius, depth, loc, axis, segments, smooth_sides)
         return self._add(v, f, sm, role)
 
+    def frustum(self, radius, radius_top, depth, loc=(0, 0, 0), axis="Z",
+                segments=8, role="Steel", smooth_sides=True):
+        """Tapered cylinder. radius_top 0 gives a cone (the drill bit, the
+        insulator caps); a non-zero top gives a taper (chimney collars, hoppers)."""
+        v, f, sm = _cyl_data(radius, depth, loc, axis, segments, smooth_sides,
+                             radius_top=radius_top)
+        return self._add(v, f, sm, role)
+
+    def ring_boxes(self, size, radius, count, loc=(0, 0, 0), role="Steel",
+                   phase=0.0):
+        """`count` axis-aligned boxes spaced evenly around a Z circle. Used for
+        drill flutes, flywheel spokes and rivet rows: a small axis-aligned box
+        reads correctly at any angle and costs no rotation machinery."""
+        for i in range(count):
+            a = 2.0 * math.pi * i / count + phase
+            self.box(size, (loc[0] + radius * math.cos(a),
+                            loc[1] + radius * math.sin(a),
+                            loc[2]), role)
+        return self
+
     def repeat_box(self, size, start, step, count, role="Steel"):
         """count boxes marching from `start` by `step`. Belt slats, ribs, teeth."""
         for i in range(count):
@@ -287,6 +310,20 @@ def add_root(name):
     return root
 
 
+def add_pivot(name, loc=(0, 0, 0), parent=None):
+    """A bare Empty used as an animation pivot. A part that needs two motions
+    (the miner drill spins AND bobs) hangs its spin mesh under a bob pivot, so
+    each clip still drives exactly one object - see add_clip_multi."""
+    e = bpy.data.objects.new(name, None)
+    e.empty_display_type = "PLAIN_AXES"
+    e.empty_display_size = 0.15
+    e.location = loc
+    bpy.context.scene.collection.objects.link(e)
+    if parent is not None:
+        e.parent = parent
+    return e
+
+
 def add_socket(name, loc, rot=(0.0, 0.0, 0.0), parent=None, extras=None):
     """An attachment point. Exports as a childless glTF node; three.js finds it
     with root.getObjectByName('socket_...'). `name` must start with 'socket_'."""
@@ -305,11 +342,15 @@ def add_socket(name, loc, rot=(0.0, 0.0, 0.0), parent=None, extras=None):
     return e
 
 
-def add_collision_box(name, size, loc=(0, 0, 0), parent=None):
-    """Convex proxy. Name must start with 'col_'; the renderer hides these."""
+def add_collision_box(name, size, loc=(0, 0, 0), parent=None, role="SteelDark"):
+    """Convex proxy. Name must start with 'col_'; the renderer hides these.
+
+    `role` never reaches a pixel, but it DOES count against the asset's
+    material budget in contracts.json, so a stone asset passes a stone role
+    rather than dragging OF_SteelDark into a file that has no steel in it."""
     if not name.startswith("col_"):
         raise ValueError("collision proxies must start with 'col_': %r" % name)
-    mb = MeshBuilder().box(size, loc, role="SteelDark")
+    mb = MeshBuilder().box(size, loc, role=role)
     return mb.build(name, parent)
 
 
@@ -357,25 +398,53 @@ def _fcurves_for(act, obj):
 
 
 def add_clip(obj, clip_name, channel, keys, interpolation="LINEAR"):
-    """Author one animation clip.
+    """Author one animation clip on ONE channel of ONE object.
 
     obj            the object to animate
     clip_name      the three.js AnimationClip name, e.g. 'Belt_Scroll'
     channel        'location' | 'rotation_euler' | 'scale'
     keys           [(frame, (x, y, z)), ...]
+
+    ROTATION WARNING: glTF stores rotation as a quaternion, so a two-key
+    0 -> 360 degree euler curve exports as "no rotation at all" (both keys are
+    the same quaternion) and a 0 -> 180 curve has an ambiguous direction. Any
+    turn of half a revolution or more must be keyed in steps below 180 degrees;
+    the spin clips in this repo use 120 degree steps.
+    """
+    return add_clip_multi(obj, clip_name, {channel: keys}, interpolation)
+
+
+def add_clip_multi(obj, clip_name, channels, interpolation="LINEAR"):
+    """Author one clip that drives SEVERAL channels of ONE object.
+
+    channels       {'rotation_euler': [(frame, vec), ...], 'location': [...]}
+
+    One object per clip is deliberate. In ACTIONS export mode one Blender
+    Action becomes one named AnimationClip, and two same-named Actions on two
+    different objects are not guaranteed to merge into a single clip - the
+    validator checks the clip name set EXACTLY, so a silent '.001' suffix is a
+    build failure. A machine whose motion needs two moving parts therefore
+    either builds them as one object or uses one clip each.
     """
     act = bpy.data.actions.new(clip_name)
     act.use_fake_user = True                      # survives to ACTIONS export
     fcurves = _fcurves_for(act, obj)
-    for axis in range(3):
-        fc = fcurves.new(data_path=channel, index=axis)
-        for frame, vec in keys:
-            kp = fc.keyframe_points.insert(float(frame), float(vec[axis]))
-            kp.interpolation = interpolation
-    last = max(int(f) for f, _ in keys)
+    last = 1
+    for channel, keys in channels.items():
+        for axis in range(3):
+            fc = fcurves.new(data_path=channel, index=axis)
+            for frame, vec in keys:
+                kp = fc.keyframe_points.insert(float(frame), float(vec[axis]))
+                kp.interpolation = interpolation
+        last = max(last, max(int(f) for f, _ in keys))
     scn = bpy.context.scene
     scn.frame_end = max(scn.frame_end, last)
     return act
+
+
+def deg3(x=0.0, y=0.0, z=0.0):
+    """Degrees to the radians tuple rotation_euler keys want."""
+    return (math.radians(x), math.radians(y), math.radians(z))
 
 
 # ---------------------------------------------------------------------------

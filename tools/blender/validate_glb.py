@@ -20,7 +20,7 @@ What it proves, per asset:
   polys      LOD0 triangle budget and whole-file triangle budget
   materials  count within budget and every name is an OF_ palette role
   sockets    every required socket_* node is present
-  clips      the animation clip name set matches exactly
+  clips      the animation clip name set matches exactly, and every clip moves
   hygiene    no cameras, no lights, no Draco, collision proxy present
 """
 
@@ -51,7 +51,7 @@ def read_glb(path):
         raise ValueError("glTF version %d, expected 2" % version)
     if total != len(data):
         raise ValueError("header length %d != file length %d" % (total, len(data)))
-    off, gltf, has_bin = 12, None, False
+    off, gltf, binc = 12, None, None
     while off + 8 <= len(data):
         clen, ctype = struct.unpack_from("<I4s", data, off)
         off += 8
@@ -59,13 +59,35 @@ def read_glb(path):
         if ctype == b"JSON":
             gltf = json.loads(chunk.decode("utf-8"))
         elif ctype == b"BIN\x00":
-            has_bin = True
+            binc = chunk
         off += clen + ((4 - clen % 4) % 4 if clen % 4 else 0)
     if gltf is None:
         raise ValueError("no JSON chunk")
-    if not has_bin:
+    if binc is None:
         raise ValueError("no BIN chunk (geometry is not embedded)")
-    return gltf, len(data)
+    return gltf, binc, len(data)
+
+
+# --------------------------------------------------------------------------
+# Accessor reading. Only needed to prove an animation channel actually moves.
+# --------------------------------------------------------------------------
+
+_COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2),
+              5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
+_NCOMP = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
+
+
+def read_accessor(gltf, binc, index):
+    a = gltf["accessors"][index]
+    if "bufferView" not in a:
+        return []
+    bv = gltf["bufferViews"][a["bufferView"]]
+    fmt, sz = _COMPONENT[a["componentType"]]
+    n = _NCOMP[a["type"]]
+    base = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
+    stride = bv.get("byteStride") or sz * n
+    return [struct.unpack_from("<" + fmt * n, binc, base + k * stride)
+            for k in range(a["count"])]
 
 
 # --------------------------------------------------------------------------
@@ -208,7 +230,7 @@ def validate(asset, spec, verbose=False):
         r.check("file", False, "missing: %s" % spec["glb"])
         return r
     try:
-        gltf, nbytes = read_glb(path)
+        gltf, binc, nbytes = read_glb(path)
     except Exception as exc:
         r.check("container", False, str(exc))
         return r
@@ -283,6 +305,33 @@ def validate(asset, spec, verbose=False):
     clips = sorted(a.get("name", "") for a in gltf.get("animations", []))
     want_clips = sorted(spec.get("clips", []))
     r.check("clips", clips == want_clips, "%s (want %s)" % (clips, want_clips))
+
+    # --- every clip must actually move something ---
+    # glTF stores rotation as a quaternion, so a two-key 0 -> 360 degree euler
+    # curve exports as a pair of IDENTICAL quaternions: a spin clip that reads
+    # perfectly in Blender and does nothing in three.js. That is invisible in
+    # the name check above, so check the sampler outputs.
+    dead = []
+    for anim in gltf.get("animations", []):
+        moved = False
+        for ch in anim.get("channels", []):
+            samp = anim["samplers"][ch["sampler"]]
+            try:
+                vals = read_accessor(gltf, binc, samp["output"])
+            except Exception:
+                vals = []
+            if len(vals) < 2:
+                continue
+            if any(max(v[k] for v in vals) - min(v[k] for v in vals) > 1e-5
+                   for k in range(len(vals[0]))):
+                moved = True
+                break
+        if not moved:
+            dead.append(anim.get("name", "?"))
+    if gltf.get("animations"):
+        r.check("anim_live", not dead,
+                "%d clip(s) move%s" % (len(gltf["animations"]),
+                                       "" if not dead else "; DEAD: %s" % dead))
 
     # --- collision proxy ---
     if spec.get("collision"):

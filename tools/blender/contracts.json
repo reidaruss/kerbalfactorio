@@ -29,6 +29,26 @@
       ],
       "clips": ["Belt_Scroll"],
       "collision": "col_BeltSegment"
+    },
+    "miner": {
+      "glb": "assets/models/dist/machines/miner.glb",
+      "type_id": "0x10",
+      "footprint_cells": [2, 2],
+      "lod0_node": "Miner_LOD0",
+      "lod_nodes": ["Miner_LOD0", "Miner_LOD1", "Miner_LOD2"],
+      "dims_xyz_m": [2.0, 2.40, 2.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 900,
+      "max_tris_total": 1600,
+      "max_materials": 5,
+      "sockets": [
+        "socket_item_out",
+        "socket_power_in",
+        "socket_status",
+        "socket_drill_tip"
+      ],
+      "clips": ["Drill_Spin", "Drill_Bob"],
+      "collision": "col_Miner"
     }
   }
 }
