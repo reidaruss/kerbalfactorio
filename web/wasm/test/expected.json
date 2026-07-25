@@ -1,0 +1,41 @@
+{
+  "abi": 1,
+  "seedLo": 200281345, "seedHi": 0,
+  "forgeRadius": "41224f8000000000",
+  "cinderRadius": "41086a0000000000",
+  "forgeSeedLo": 1238091061,
+  "forgeSeedHi": 468707404,
+  "heights": [
+    {"dirX": "3ff0000000000000", "dirY": "0000000000000000", "dirZ": "0000000000000000", "raw": "0000000000000000", "designed": "c096d05dc6c5ed2d", "base": "c096d05dc6c5ed2d", "surface": "c096d05dc6c5ed2d", "moonRaw": "4088c2c4cc8f03a0", "moonBase": "4088c2c4cc8f03a0"},
+    {"dirX": "3fe761be7bc854c2", "dirY": "3fd2e9cd95baba33", "dirZ": "3fe3b1b901cf6051", "raw": "40a01634f4b11199", "designed": "40a41bc231dd55ff", "base": "40a41bc231dd55ff", "surface": "40a41bc231dd55ff", "moonRaw": "40a260454cabea39", "moonBase": "40a521e94b5f4d5b"},
+    {"dirX": "bfdd17f4f633d5b8", "dirY": "bfdbd679adf94625", "dirZ": "3fe8df6e817718b5", "raw": "40820c515dd99d5d", "designed": "40703e493add7407", "base": "40703e493add7407", "surface": "40703e493add7407", "moonRaw": "c0a115fb899f50f5", "moonBase": "c0a2cb617dc8d90e"},
+    {"dirX": "3fbf0fe7839a43cf", "dirY": "3fec84c54c2d6338", "dirZ": "bfdbf8e4be934648", "raw": "40a3d2cad67ae4a3", "designed": "40a8c77d8c199dcc", "base": "40a8c77d8c199dcc", "surface": "40a8c77d8c199dcc", "moonRaw": "c09357fd912b35a1", "moonBase": "c09547308615ee32"},
+    {"dirX": "3fbe3bd9922a35bb", "dirY": "3fefc44e08da43dc", "dirZ": "3f9883c7ee6493bc", "raw": "0000000000000000", "designed": "406e000000000000", "base": "406e000000000000", "surface": "406e000000000000", "moonRaw": "4087924e75e73e30", "moonBase": "4087924e75e73e30"},
+    {"dirX": "bfc309534c19865c", "dirY": "bfefa3090592969a", "dirZ": "3f95b567ce28caf4", "raw": "4083df0ff0175d12", "designed": "408568f18e76c126", "base": "408568f18e76c126", "surface": "408568f18e76c126", "moonRaw": "4092f4ec8fe81164", "moonBase": "4095ccdcd8b14733"},
+    {"dirX": "bfe59e35a59a7045", "dirY": "3fe297d70c8aaec7", "dirZ": "bfdd0c7b11067f5f", "raw": "40841668c9c0f2c2", "designed": "40851787a0a43219", "base": "40851787a0a43219", "surface": "40851787a0a43219", "moonRaw": "40612c27c6ed391d", "moonBase": "40612c27c6ed391d"},
+    {"dirX": "3fdf7ca9e0b09f05", "dirY": "bfc320c9e9dfed22", "dirZ": "3feb72239d3bff03", "raw": "0000000000000000", "designed": "c0913408b7bdec5a", "base": "c0913408b7bdec5a", "surface": "c0913408b7bdec5a", "moonRaw": "407087e2024d2af0", "moonBase": "407087e2024d2af0"}
+  ],
+  "biomes": [
+    {"planet": 0, "moon": 7, "planetMat": 0, "moonMat": 7, "hardness": "3fb999999999999a", "temp": "3fe92a78d401a600", "moist": "3fddad03d67844c8"},
+    {"planet": 4, "moon": 8, "planetMat": 4, "moonMat": 8, "hardness": "3fe4cccccccccccd", "temp": "3fe5833bedef5576", "moist": "3fe7786c1b037490"},
+    {"planet": 2, "moon": 9, "planetMat": 2, "moonMat": 9, "hardness": "3fdccccccccccccd", "temp": "3fe50820dcde455a", "moist": "3fdca463f89e980f"},
+    {"planet": 4, "moon": 9, "planetMat": 4, "moonMat": 9, "hardness": "3fe4cccccccccccd", "temp": "3fd52db5e610cb1a", "moist": "3fe0ddde89a5186c"},
+    {"planet": 6, "moon": 7, "planetMat": 6, "moonMat": 7, "hardness": "3fe999999999999a", "temp": "3fd6231ba9ee9c5e", "moist": "3fca9ec62b1fac84"},
+    {"planet": 6, "moon": 8, "planetMat": 6, "moonMat": 8, "hardness": "3fe999999999999a", "temp": "3fd352b3d6df54a6", "moist": "3fdbe303c653adca"},
+    {"planet": 3, "moon": 7, "planetMat": 3, "moonMat": 7, "hardness": "3fe0000000000000", "temp": "3fe4538933664d01", "moist": "3fe21d751de72e17"},
+    {"planet": 0, "moon": 7, "planetMat": 0, "moonMat": 7, "hardness": "3fb999999999999a", "temp": "3fe67ef4b2040f3f", "moist": "3fdd29e185e9d739"}
+  ],
+  "quadmesh": {"gridDim": 33, "vertexCount": 1089, "contentHashLo": 1379230981, "contentHashHi": 3624422500, "rawContentHashLo": 4034740517, "rawContentHashHi": 173770550, "heightHash": 1581082329, "posHash": 600208699, "nrmHash": 1603247709, "centerX": "c10d187e43d5be04", "centerY": "412068c64e7d995d", "centerZ": "c0fd7ac0d1a80e09", "chunkRadius": "40d448840121cda3", "h0": "4096cd50af9b7f8c", "h544": "407937d0b31411c3", "h1088": "4075f055226aed11", "seamOk": 1},
+  "indices": {"count": 6144, "hash": 2014026705},
+  "digColumn": {"cells": 6, "before": "c0925457652656f4", "after": "c0926c57652656f4", "lowering": "4018000000000000", "removed": 6},
+  "tunnel": {"removed": 109, "columns": 10, "noLoweringColumns": 10, "ceilingSolid": 1, "hash": 748632641},
+  "voxel": {"removed": 229, "dirtyValid": 1, "dirty": [185762,341565,455422,185769,341572,455429], "faces": 375, "faceHash": 3961851798, "saveBytes": 2063, "saveHash": 3557665550},
+  "streaming": {"obsX": "411bbdfcb02e2e12", "obsY": "410670b84745c059", "obsZ": "41175debd28ef347", "updates": [
+    {"ready": 16, "generated": 16, "converged": 0, "resident": 16, "evicted": 0, "keyHash": 2994706501, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2391916783,4277595019,3217462027,3888022511,990683114,3839370254,281487916,2073845955,1297374692,2010058720,152425187,1552791347,495652397,349826179,2637517559,2366263607], "chunkBiomes": [3,4,0,0,0,0,0,0,2,2,4,0,0,3,4,2]},
+    {"ready": 16, "generated": 16, "converged": 0, "resident": 32, "evicted": 0, "keyHash": 505937014, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2558675447,279008052,2141234350,3972022229,2209371651,1326134406,140772313,4255292297,3188615790,480034642,2690146676,762059346,265712179,449693665,3035395095,708026266], "chunkBiomes": [0,0,2,0,5,6,0,2,0,0,4,0,0,0,0,4]},
+    {"ready": 16, "generated": 16, "converged": 0, "resident": 48, "evicted": 0, "keyHash": 2189225573, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [214388846,4082199055,2872988811,1704737695,3704840557,2075475139,2576417676,704446318,3186372056,1057497303,530461053,622646282,3863315051,689718566,3901649224,1794157591], "chunkBiomes": [0,4,0,2,0,4,4,4,0,2,2,3,4,3,4,3]}
+  ]},
+  "factory": {"ore": 384, "ingot": 248, "part": 197, "minerRemaining": 99616, "belt1Items": 1, "smelterOut": 0, "asmIn": 50, "tick": 5000, "stateRows": 9, "stateHash": 2547301955, "flows": 2, "flowHash": 1450565499, "lineItems": 1, "itemHash": 1886708342, "asmProgress": "3fe3333333333333", "smelterWorking": 1},
+  "factoryDeplete": {"mined": 40, "remaining": 0, "depleted": 1, "exactRateMined": 600, "exactRateRemaining": 0},
+  "selfCheck": 1
+}

@@ -1,0 +1,1262 @@
+// =============================================================================
+// of_core_api.cpp — the flat C ABI shim that exposes the headless /core C++17
+// simulation to JavaScript (browser / Node) via WebAssembly.
+//
+// WHY A FLAT C ABI AND NOT EMBIND
+//   The three hot paths (quad-mesh generation, terrain-chunk streaming, voxel
+//   face extraction) all produce BULK ARRAYS that the renderer wants to hand
+//   straight to a GPU buffer. embind marshals every value through a JS object
+//   graph and would copy each array element-by-element; it also drags ~40 KB of
+//   glue and an RTTI/exception dependency into the module. A flat C ABI plus a
+//   scratch arena inside the WASM heap lets JS build a typed-array VIEW over the
+//   result with ZERO copies (see §0). We use no embind at all: even the handful
+//   of cold calls are cheap enough as flat functions, so the whole module stays
+//   one uniform, easily-bound surface for the renderer agent.
+//
+// OWNERSHIP MODEL (the two rules JS must follow)
+//   1. HANDLES. Stateful objects (bodies, voxel edit sets, terrain streamers,
+//      factory networks, quad meshes) live in WASM-side registries. JS holds an
+//      int32 handle, never a raw pointer, and calls the matching *_destroy to
+//      free. A handle is never reused while live; destroyed handles return the
+//      sentinel values documented per function.
+//   2. SCRATCH ARENA. Every array-returning call writes into one of three
+//      module-level scratch vectors (f32 / f64 / i32 / u8) and returns the
+//      element COUNT. JS then calls of_scratch_*() to get the CURRENT base
+//      pointer and builds a view. The view is valid only until the next
+//      array-producing call. Because the scratch vectors can reallocate AND
+//      because -sALLOW_MEMORY_GROWTH can detach every existing ArrayBuffer, JS
+//      MUST re-read both the pointer and Module.HEAPF32/HEAPF64/HEAP32 after
+//      every call. See docs/web/WASM-BRIDGE.md §"memory views".
+//
+// EXCLUDED: of/persistence_file.h (std::filesystem — no browser FS). The pure
+// byte serializer of/persistence.h IS included and works; saving in the browser
+// means handing those bytes to IndexedDB/OPFS on the JS side.
+//
+// Determinism: this file adds no math. Every numeric result is produced by the
+// unmodified /core headers. Build with -O3 and WITHOUT -ffast-math (see
+// build.ps1) so the IEEE-754 semantics the position-hash determinism relies on
+// are preserved bit-for-bit.
+// =============================================================================
+#include <cstdint>
+#include <cstring>
+#include <cmath>
+#include <vector>
+#include <map>
+#include <memory>
+#include <string>
+
+#include "of/vec3.h"
+#include "of/universe_coord.h"
+#include "of/cubed_sphere.h"
+#include "of/biome.h"
+#include "of/deposits.h"
+#include "of/voxel_terrain.h"
+#include "of/surface_field.h"
+#include "of/terrain_stream.h"
+#include "of/factory_sim.h"
+#include "of/automation.h"
+#include "of/persistence.h"   // byte serializer only — works fine in WASM
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#define OF_API extern "C" EMSCRIPTEN_KEEPALIVE
+#else
+#define OF_API extern "C"
+#endif
+
+using of::Vec3;
+using of::UniverseCoord;
+using of::FrameId;
+namespace wg = of::worldgen;
+namespace au = of::automation;
+namespace fs = of::factory;
+
+// =============================================================================
+// §0 — The scratch arena. One buffer per element type; every array-returning
+// call fills exactly one of them. Reserved generously up-front so the common
+// path never reallocates (a realloc is safe, it just moves the pointer — which
+// is why JS re-reads of_scratch_*() after every call anyway).
+// =============================================================================
+namespace {
+std::vector<float>    g_f32;
+std::vector<double>   g_f64;
+std::vector<int32_t>  g_i32;
+std::vector<uint8_t>  g_u8;
+
+inline void resetF32(size_t n) { g_f32.clear(); g_f32.reserve(n); }
+inline void resetF64(size_t n) { g_f64.clear(); g_f64.reserve(n); }
+inline void resetI32(size_t n) { g_i32.clear(); g_i32.reserve(n); }
+
+// Split a uint64 into two uint32 halves. We deliberately do NOT use -sWASM_BIGINT:
+// forcing every 64-bit value through JS BigInt is a papercut for the renderer and
+// a silent-truncation hazard when mixed with Numbers. lo/hi pairs are explicit.
+uint32_t g_hiWord = 0;   // set by any function returning a uint64 as lo + hi
+
+inline uint32_t splitLo(uint64_t v) { g_hiWord = static_cast<uint32_t>(v >> 32);
+                                      return static_cast<uint32_t>(v); }
+
+// Rebuild a uint64 from a JS-supplied lo/hi pair.
+inline uint64_t joinU64(uint32_t lo, uint32_t hi) {
+  return (static_cast<uint64_t>(hi) << 32) | static_cast<uint64_t>(lo);
+}
+
+inline Vec3 vec(double x, double y, double z) { return Vec3(x, y, z); }
+
+// A generic dense handle registry: ids are 1-based, 0/-1 are "invalid".
+template <typename T>
+struct Registry {
+  std::vector<std::unique_ptr<T>> slots;
+  int add(T* p) {
+    for (size_t i = 0; i < slots.size(); ++i) {
+      if (!slots[i]) { slots[i].reset(p); return static_cast<int>(i) + 1; }
+    }
+    slots.emplace_back(p);
+    return static_cast<int>(slots.size());
+  }
+  T* get(int id) const {
+    if (id <= 0 || static_cast<size_t>(id) > slots.size()) return nullptr;
+    return slots[static_cast<size_t>(id) - 1].get();
+  }
+  void remove(int id) {
+    if (id <= 0 || static_cast<size_t>(id) > slots.size()) return;
+    slots[static_cast<size_t>(id) - 1].reset();
+  }
+};
+}  // namespace
+
+// The 64-bit companion accessor: after ANY call documented as "returns the low
+// word of a uint64", read the high word here (before making another such call).
+OF_API uint32_t of_last_hi(void) { return g_hiWord; }
+
+OF_API float*   of_scratch_f32(void) { return g_f32.empty() ? nullptr : g_f32.data(); }
+OF_API double*  of_scratch_f64(void) { return g_f64.empty() ? nullptr : g_f64.data(); }
+OF_API int32_t* of_scratch_i32(void) { return g_i32.empty() ? nullptr : g_i32.data(); }
+OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.data();  }
+
+// ABI/version probe so JS can fail loudly against a stale .wasm.
+OF_API int of_abi_version(void) { return 1; }
+
+// =============================================================================
+// §1 — Bodies (cubed_sphere.h BodyParams).
+// =============================================================================
+namespace { Registry<wg::BodyParams> g_bodies; }
+
+OF_API int of_body_create_forge(uint32_t seedLo, uint32_t seedHi) {
+  return g_bodies.add(new wg::BodyParams(wg::makeForge(joinU64(seedLo, seedHi))));
+}
+OF_API int of_body_create_cinder(uint32_t seedLo, uint32_t seedHi) {
+  return g_bodies.add(new wg::BodyParams(wg::makeCinder(joinU64(seedLo, seedHi))));
+}
+// Fully explicit body (for future bodies beyond the two spike ones).
+OF_API int of_body_create(uint32_t bodyId, uint32_t seedLo, uint32_t seedHi,
+                          double radiusM, int kind, double maxReliefM,
+                          double seaLevelM) {
+  wg::BodyParams* b = new wg::BodyParams();
+  b->bodyId = bodyId;
+  b->bodySeed = joinU64(seedLo, seedHi);
+  b->radiusM = radiusM;
+  b->kind = (kind == 1) ? wg::kMoon : wg::kPlanet;
+  b->maxReliefM = maxReliefM;
+  b->seaLevelM = seaLevelM;
+  return g_bodies.add(b);
+}
+OF_API void of_body_destroy(int body) { g_bodies.remove(body); }
+
+OF_API double of_body_radius(int body) {
+  const wg::BodyParams* b = g_bodies.get(body);
+  return b ? b->radiusM : 0.0;
+}
+OF_API uint32_t of_body_seed_lo(int body) {
+  const wg::BodyParams* b = g_bodies.get(body);
+  return splitLo(b ? b->bodySeed : 0);
+}
+OF_API int of_body_kind(int body) {
+  const wg::BodyParams* b = g_bodies.get(body);
+  return b ? static_cast<int>(b->kind) : -1;
+}
+OF_API double of_body_max_relief(int body) {
+  const wg::BodyParams* b = g_bodies.get(body);
+  return b ? b->maxReliefM : 0.0;
+}
+
+// =============================================================================
+// §2 — Voxel edit sets (voxel_terrain.h VoxelEdits). The destruction diff.
+// =============================================================================
+namespace { Registry<wg::VoxelEdits> g_edits; }
+
+OF_API int of_edits_create(void) { return g_edits.add(new wg::VoxelEdits()); }
+OF_API void of_edits_destroy(int e) { g_edits.remove(e); }
+
+// dig(): remove every currently-solid cell within radiusM of a body-frame point.
+// Returns the count of cells newly carved (drives harvest yield).
+OF_API int of_edits_dig(int editsId, int bodyId, double x, double y, double z,
+                        double radiusM) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  return e->dig(*b, vec(x, y, z), radiusM);
+}
+// Carve exactly one cell (used by tests / precise tools). 1 if newly removed.
+OF_API int of_edits_dig_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  if (!e) return -1;
+  return e->digCell(wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+}
+// Carve the cell containing a body-frame position.
+OF_API int of_edits_dig_cell_at(int editsId, double x, double y, double z) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  if (!e) return -1;
+  return e->digCell(wg::cellForPos(vec(x, y, z))) ? 1 : 0;
+}
+OF_API int of_edits_removed_count(int editsId) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  return e ? static_cast<int>(e->removedCount()) : -1;
+}
+OF_API int of_edits_is_removed_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  if (!e) return -1;
+  return e->isRemoved(wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+}
+// Dirty AABB since the last clear. Fills i32 scratch with 6 ints
+// [minX,minY,minZ,maxX,maxY,maxZ]; returns 1 if valid, 0 if nothing touched.
+OF_API int of_edits_dirty_region(int editsId) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  resetI32(6);
+  if (!e) return -1;
+  wg::VoxelEdits::CellAABB r = e->dirtyRegion();
+  if (!r.valid) return 0;
+  g_i32.push_back(r.min.cx); g_i32.push_back(r.min.cy); g_i32.push_back(r.min.cz);
+  g_i32.push_back(r.max.cx); g_i32.push_back(r.max.cy); g_i32.push_back(r.max.cz);
+  return 1;
+}
+OF_API void of_edits_clear_dirty(int editsId) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  if (e) e->clearDirty();
+}
+
+// The cell containing a body-frame position -> i32 scratch [cx,cy,cz].
+OF_API void of_cell_for_pos(double x, double y, double z) {
+  const wg::VoxelCell c = wg::cellForPos(vec(x, y, z));
+  resetI32(3);
+  g_i32.push_back(c.cx); g_i32.push_back(c.cy); g_i32.push_back(c.cz);
+}
+// The body-frame centre of a cell -> f64 scratch [x,y,z].
+OF_API void of_cell_center(int32_t cx, int32_t cy, int32_t cz) {
+  const Vec3 p = wg::cellCenter(wg::VoxelCell{cx, cy, cz});
+  resetF64(3);
+  g_f64.push_back(p.x); g_f64.push_back(p.y); g_f64.push_back(p.z);
+}
+OF_API double of_voxel_size(void) { return wg::kVoxelSizeM; }
+
+// exposedFaces(): the solid->air boundary quads the cube mesher draws. Returns
+// the FACE COUNT; i32 scratch holds 5 ints per face: [cx, cy, cz, axis, sign].
+OF_API int of_exposed_faces(int bodyId, int editsId, double x, double y, double z,
+                            double radiusM) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  resetI32(1024);
+  if (!b) return -1;
+  static const wg::VoxelEdits kEmpty;
+  const wg::VoxelEdits& ed = e ? *e : kEmpty;
+  const std::vector<wg::FaceQuad> faces =
+      wg::exposedFaces(*b, ed, vec(x, y, z), radiusM);
+  g_i32.reserve(faces.size() * 5);
+  for (const wg::FaceQuad& f : faces) {
+    g_i32.push_back(f.cell.cx); g_i32.push_back(f.cell.cy);
+    g_i32.push_back(f.cell.cz); g_i32.push_back(f.axis); g_i32.push_back(f.sign);
+  }
+  return static_cast<int>(faces.size());
+}
+
+// --- persistence (persistence.h byte cursors, no filesystem) ------------------
+// Serialize the removed-cell diff to bytes in the u8 scratch. Returns byte count.
+// JS persists these to IndexedDB / OPFS.
+OF_API int of_edits_serialize(int editsId) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  g_u8.clear();
+  if (!e) return -1;
+  of::persist::SaveWriter w;
+  e->serialize(w);
+  g_u8 = w.bytes();
+  return static_cast<int>(g_u8.size());
+}
+// Load a removed-cell diff from `n` bytes previously written into the u8 scratch
+// (JS: call of_edits_alloc_bytes(n), copy into HEAPU8 at of_scratch_u8(), then
+// call this). Returns the removed-cell count on success, -1 on failure.
+OF_API void of_edits_alloc_bytes(int n) { g_u8.assign(n > 0 ? n : 0, 0); }
+OF_API int of_edits_deserialize(int editsId) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  if (!e) return -1;
+  of::persist::SaveReader r(g_u8);
+  e->deserialize(r);
+  return static_cast<int>(e->removedCount());
+}
+
+// =============================================================================
+// §3 — The SURFACE ORACLE (surface_field.h). The single surface authority.
+// `editsId <= 0` means "no digs" (the pure designed base).
+// =============================================================================
+namespace {
+const wg::VoxelEdits* editsOrNull(int id) { return g_edits.get(id); }
+}  // namespace
+
+OF_API double of_base_height(int bodyId, double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::baseHeight(*b, vec(dx, dy, dz));
+}
+OF_API double of_surface_height(int bodyId, int editsId,
+                                double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  return e ? wg::surfaceHeight(*b, vec(dx, dy, dz), *e)
+           : wg::surfaceHeight(*b, vec(dx, dy, dz));
+}
+OF_API double of_surface_radius(int bodyId, int editsId,
+                                double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  return e ? wg::surfaceRadius(*b, vec(dx, dy, dz), *e)
+           : b->radiusM + wg::baseHeight(*b, vec(dx, dy, dz));
+}
+OF_API double of_derived_lowering(int bodyId, int editsId,
+                                  double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  return e ? wg::derivedLoweringAt(*b, vec(dx, dy, dz), *e) : 0.0;
+}
+OF_API double of_max_dig_depth(void) { return wg::kSurfaceMaxDigDepthM; }
+
+// Voxel solidity through the oracle (designed base XOR removed).
+OF_API int of_solid_at(int bodyId, int editsId, double x, double y, double z) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return -1;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  if (e) return wg::solidAt(*b, vec(x, y, z), *e) ? 1 : 0;
+  return wg::isProcSolid(*b, wg::cellForPos(vec(x, y, z))) ? 1 : 0;
+}
+OF_API int of_solid_cell(int bodyId, int editsId,
+                         int32_t cx, int32_t cy, int32_t cz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return -1;
+  const wg::VoxelCell c{cx, cy, cz};
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  if (e) return wg::solidCell(*b, c, *e) ? 1 : 0;
+  return wg::isProcSolid(*b, c) ? 1 : 0;
+}
+
+// Geodetic conveniences (raw + designed) for the walker / spawn logic.
+OF_API double of_sample_raw_height_latlon(int bodyId, double lat, double lon) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::SampleTerrainHeight(*b, lat, lon);
+}
+OF_API double of_sample_designed_height_latlon(int bodyId, double lat, double lon) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::SampleDesignedTerrainHeight(*b, lat, lon);
+}
+// lat/lon (radians) -> unit dir, into f64 scratch [x,y,z].
+OF_API void of_latlon_to_dir(double lat, double lon) {
+  const Vec3 d = wg::latLonToDir(lat, lon);
+  resetF64(3);
+  g_f64.push_back(d.x); g_f64.push_back(d.y); g_f64.push_back(d.z);
+}
+// unit dir -> lat/lon (radians), into f64 scratch [lat,lon].
+OF_API void of_dir_to_latlon(double dx, double dy, double dz) {
+  double lat = 0, lon = 0;
+  wg::dirToLatLon(vec(dx, dy, dz), lat, lon);
+  resetF64(2);
+  g_f64.push_back(lat); g_f64.push_back(lon);
+}
+
+// =============================================================================
+// §4 — Biomes (biome.h).
+// =============================================================================
+OF_API int of_biome_at(int bodyId, double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return -1;
+  return static_cast<int>(wg::biomeAt(*b, vec(dx, dy, dz)));
+}
+OF_API int of_biome_at_latlon(int bodyId, double lat, double lon) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return -1;
+  return static_cast<int>(wg::biomeAtLatLon(*b, lat, lon));
+}
+OF_API int of_material_for_biome(int biome) {
+  return static_cast<int>(wg::materialForBiome(static_cast<wg::Biome>(biome)));
+}
+OF_API double of_hardness_for_biome(int biome) {
+  return wg::hardnessForBiome(static_cast<wg::Biome>(biome));
+}
+OF_API double of_temperature_at(int bodyId, double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::temperatureAt(*b, vec(dx, dy, dz));
+}
+OF_API double of_moisture_at(int bodyId, double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::moistureAt(*b, vec(dx, dy, dz));
+}
+
+// =============================================================================
+// §5 — Quad-mesh generation (cubed_sphere.h generateQuadMesh).
+//
+// The mesh is retained WASM-side so JS can pull several array views from it with
+// no copies. Positions are also offered PRE-CENTRED as f32 (position minus the
+// chunk centre) — that is what a Three.js BufferGeometry wants, and it keeps f32
+// precision sane at a 600 km body radius (raw f32 positions there would quantize
+// to ~0.06 m; centre-relative they are sub-millimetre).
+// =============================================================================
+namespace {
+struct MeshRec {
+  wg::QuadMesh mesh;
+  Vec3 center;                 // == mesh.centerUniverse.pos
+  std::vector<float> posF32;   // centre-relative, 3 per vertex
+  std::vector<float> nrmF32;   // 3 per vertex
+  std::vector<float> dirF32;   // 3 per vertex (sphere normal / UV basis)
+};
+Registry<MeshRec> g_meshes;
+std::vector<uint16_t> g_gridIndices;   // shared 32x32-cell triangle index buffer
+
+void buildMeshFloats(MeshRec& r) {
+  const size_t n = r.mesh.vertices.size();
+  r.posF32.resize(n * 3);
+  r.nrmF32.resize(n * 3);
+  r.dirF32.resize(n * 3);
+  for (size_t i = 0; i < n; ++i) {
+    const Vec3& p = r.mesh.vertices[i];
+    r.posF32[i * 3 + 0] = static_cast<float>(p.x - r.center.x);
+    r.posF32[i * 3 + 1] = static_cast<float>(p.y - r.center.y);
+    r.posF32[i * 3 + 2] = static_cast<float>(p.z - r.center.z);
+    const Vec3& nv = r.mesh.normals[i];
+    r.nrmF32[i * 3 + 0] = static_cast<float>(nv.x);
+    r.nrmF32[i * 3 + 1] = static_cast<float>(nv.y);
+    r.nrmF32[i * 3 + 2] = static_cast<float>(nv.z);
+    const Vec3& d = r.mesh.dirs[i];
+    r.dirF32[i * 3 + 0] = static_cast<float>(d.x);
+    r.dirF32[i * 3 + 1] = static_cast<float>(d.y);
+    r.dirF32[i * 3 + 2] = static_cast<float>(d.z);
+  }
+}
+}  // namespace
+
+// Generate one quad mesh. `editsId <= 0` = undug. `designedBase != 0` uses the
+// DESIGNED surface (what terrain_stream's buildChunk does, and what everything
+// else in the engine reads); 0 uses the RAW heightfield (the historical path,
+// kept only so the pinned cubed_sphere determinism tests can be reproduced).
+// Returns a mesh handle, or 0 on bad args.
+OF_API int of_quadmesh_generate(int bodyId, int faceId, int depth,
+                                uint32_t qx, uint32_t qy, int editsId,
+                                int designedBase) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return 0;
+  wg::FQuadKey key{b->bodyId, faceId, depth, qx, qy};
+
+  wg::HeightLoweringFn lowering = nullptr;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  if (e) lowering = wg::SurfaceField(*b, e).loweringFn();
+
+  wg::HeightFieldFn base = nullptr;
+  if (designedBase) {
+    const wg::BodyParams body = *b;
+    base = [body](const Vec3& dir) { return wg::sampleDesignedHeight(body, dir); };
+  }
+
+  MeshRec* r = new MeshRec();
+  r->mesh = wg::generateQuadMesh(*b, key, lowering, base);
+  r->center = r->mesh.centerUniverse.pos;
+  buildMeshFloats(*r);
+  return g_meshes.add(r);
+}
+OF_API void of_quadmesh_destroy(int m) { g_meshes.remove(m); }
+
+OF_API int of_quadmesh_grid_dim(int m) {
+  MeshRec* r = g_meshes.get(m); return r ? r->mesh.gridDim : -1;
+}
+OF_API int of_quadmesh_vertex_count(int m) {
+  MeshRec* r = g_meshes.get(m);
+  return r ? static_cast<int>(r->mesh.vertices.size()) : -1;
+}
+OF_API double of_quadmesh_chunk_radius(int m) {
+  MeshRec* r = g_meshes.get(m); return r ? r->mesh.chunkRadiusM : NAN;
+}
+OF_API uint32_t of_quadmesh_content_hash_lo(int m) {
+  MeshRec* r = g_meshes.get(m);
+  return splitLo(r ? r->mesh.contentHash : 0);
+}
+// Direct pointers into the RETAINED mesh (not the scratch arena) — stable for
+// the lifetime of the mesh handle, but still invalidated by memory GROWTH, so
+// JS must re-derive the view from the current HEAP buffer on every use.
+OF_API float*  of_quadmesh_positions_f32(int m) {
+  MeshRec* r = g_meshes.get(m); return r ? r->posF32.data() : nullptr;
+}
+OF_API float*  of_quadmesh_normals_f32(int m) {
+  MeshRec* r = g_meshes.get(m); return r ? r->nrmF32.data() : nullptr;
+}
+OF_API float*  of_quadmesh_dirs_f32(int m) {
+  MeshRec* r = g_meshes.get(m); return r ? r->dirF32.data() : nullptr;
+}
+OF_API double* of_quadmesh_heights_f64(int m) {
+  MeshRec* r = g_meshes.get(m); return r ? r->mesh.heights.data() : nullptr;
+}
+// Chunk centre (body-frame metres, doubles) -> f64 scratch [x,y,z].
+OF_API void of_quadmesh_center(int m) {
+  MeshRec* r = g_meshes.get(m);
+  resetF64(3);
+  if (!r) return;
+  g_f64.push_back(r->center.x); g_f64.push_back(r->center.y);
+  g_f64.push_back(r->center.z);
+}
+// Exact double vertex positions (body-frame) -> f64 scratch, 3 per vertex.
+// For physics/collision that needs full precision; the renderer uses the f32 path.
+OF_API int of_quadmesh_positions_f64(int m) {
+  MeshRec* r = g_meshes.get(m);
+  resetF64(3 * 1089);
+  if (!r) return -1;
+  for (const Vec3& p : r->mesh.vertices) {
+    g_f64.push_back(p.x); g_f64.push_back(p.y); g_f64.push_back(p.z);
+  }
+  return static_cast<int>(r->mesh.vertices.size());
+}
+
+// The shared triangle index buffer for a gridDim x gridDim vertex grid
+// (row-major, idx = j*gridDim + i). Built once; returns the index COUNT.
+// Pointer via of_grid_indices_ptr(). u16 is safe: 33*33 = 1089 < 65536.
+OF_API int of_grid_indices(int gridDim) {
+  const int G = gridDim > 1 ? gridDim : wg::kGridDim;
+  const size_t want = static_cast<size_t>(G - 1) * (G - 1) * 6;
+  if (g_gridIndices.size() != want) {
+    g_gridIndices.clear();
+    g_gridIndices.reserve(want);
+    for (int j = 0; j < G - 1; ++j) {
+      for (int i = 0; i < G - 1; ++i) {
+        const uint16_t a = static_cast<uint16_t>(j * G + i);
+        const uint16_t b2 = static_cast<uint16_t>(j * G + i + 1);
+        const uint16_t c = static_cast<uint16_t>((j + 1) * G + i);
+        const uint16_t d = static_cast<uint16_t>((j + 1) * G + i + 1);
+        g_gridIndices.push_back(a); g_gridIndices.push_back(c); g_gridIndices.push_back(b2);
+        g_gridIndices.push_back(b2); g_gridIndices.push_back(c); g_gridIndices.push_back(d);
+      }
+    }
+  }
+  return static_cast<int>(g_gridIndices.size());
+}
+OF_API uint16_t* of_grid_indices_ptr(void) {
+  return g_gridIndices.empty() ? nullptr : g_gridIndices.data();
+}
+
+// =============================================================================
+// §6 — Terrain streaming (terrain_stream.h TerrainStreamer).
+//
+// The streamer owns the resident chunk set. updateStreaming returns ready +
+// evicted lists; we retain the last StreamUpdate so JS can pull each ready
+// chunk's buffers by index before calling update again.
+// =============================================================================
+namespace {
+struct StreamerRec {
+  std::unique_ptr<wg::TerrainStreamer> s;
+  wg::BodyParams body;
+  wg::StreamUpdate last;
+  int editsId = 0;
+  // Per-chunk f32 staging (rebuilt on demand into the scratch arena).
+};
+Registry<StreamerRec> g_streamers;
+}  // namespace
+
+OF_API int of_streamer_create(int bodyId, double splitRatio, double mergeHysteresis,
+                              int maxDepth, int minResidentDepth,
+                              double skirtFraction, int genBudget) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return 0;
+  wg::StreamConfig cfg;
+  if (splitRatio > 0.0) cfg.splitRatio = splitRatio;
+  if (mergeHysteresis > 0.0) cfg.mergeHysteresis = mergeHysteresis;
+  if (maxDepth > 0) cfg.maxDepth = maxDepth;
+  cfg.minResidentDepth = minResidentDepth;
+  if (skirtFraction >= 0.0) cfg.skirtFraction = skirtFraction;
+  cfg.genBudget = genBudget;
+  StreamerRec* r = new StreamerRec();
+  r->body = *b;
+  r->s.reset(new wg::TerrainStreamer(*b, cfg));
+  return g_streamers.add(r);
+}
+OF_API void of_streamer_destroy(int s) { g_streamers.remove(s); }
+
+// Bind (or clear, with editsId <= 0) the voxel-derived dig lowering so newly
+// built chunks drop into the player's digs. Mirrors SurfaceField::loweringFn().
+OF_API void of_streamer_set_edits(int sId, int editsId) {
+  StreamerRec* r = g_streamers.get(sId);
+  if (!r) return;
+  r->editsId = editsId;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  if (e) r->s->setLoweringFn(wg::SurfaceField(r->body, e).loweringFn());
+  else   r->s->setLoweringFn(nullptr);
+}
+
+// Drive LOD from the observer's body-frame authority position (metres).
+// Returns the number of chunks READY this call.
+OF_API int of_streamer_update(int sId, double ox, double oy, double oz) {
+  StreamerRec* r = g_streamers.get(sId);
+  if (!r) return -1;
+  const UniverseCoord obs(vec(ox, oy, oz),
+                          static_cast<FrameId>(r->body.bodyId + 1));
+  r->last = r->s->updateStreaming(obs);
+  return static_cast<int>(r->last.ready.size());
+}
+// Convenience observer builder: lat/lon (rad) + altitude above the RAW surface.
+// Fills f64 scratch [x,y,z] so JS can feed of_streamer_update.
+OF_API void of_observer_latlon_alt(int bodyId, double lat, double lon, double altM) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  resetF64(3);
+  if (!b) return;
+  const UniverseCoord c = wg::makeObserverLatLonAlt(*b, lat, lon, altM);
+  g_f64.push_back(c.pos.x); g_f64.push_back(c.pos.y); g_f64.push_back(c.pos.z);
+}
+
+OF_API int of_streamer_ready_count(int sId) {
+  StreamerRec* r = g_streamers.get(sId);
+  return r ? static_cast<int>(r->last.ready.size()) : -1;
+}
+OF_API int of_streamer_evicted_count(int sId) {
+  StreamerRec* r = g_streamers.get(sId);
+  return r ? static_cast<int>(r->last.evicted.size()) : -1;
+}
+OF_API int of_streamer_generated(int sId) {
+  StreamerRec* r = g_streamers.get(sId); return r ? r->last.generated : -1;
+}
+OF_API int of_streamer_converged(int sId) {
+  StreamerRec* r = g_streamers.get(sId); return r ? (r->last.converged ? 1 : 0) : -1;
+}
+OF_API int of_streamer_resident_count(int sId) {
+  StreamerRec* r = g_streamers.get(sId);
+  return r ? static_cast<int>(r->s->residentCount()) : -1;
+}
+// O(resident) re-anchor cost probe on a floating-origin rebase (geometry is
+// rebase-invariant by contract; centerUniverse is the anchor).
+OF_API int of_streamer_on_origin_rebased(int sId) {
+  StreamerRec* r = g_streamers.get(sId);
+  return r ? static_cast<int>(r->s->onOriginRebased()) : -1;
+}
+
+// Ready / evicted key lists -> i32 scratch, 4 ints per key [faceId,depth,qx,qy].
+OF_API int of_streamer_ready_keys(int sId) {
+  StreamerRec* r = g_streamers.get(sId);
+  resetI32(256);
+  if (!r) return -1;
+  for (const wg::TerrainChunk& c : r->last.ready) {
+    g_i32.push_back(c.key.faceId); g_i32.push_back(c.key.depth);
+    g_i32.push_back(static_cast<int32_t>(c.key.qx));
+    g_i32.push_back(static_cast<int32_t>(c.key.qy));
+  }
+  return static_cast<int>(r->last.ready.size());
+}
+OF_API int of_streamer_evicted_keys(int sId) {
+  StreamerRec* r = g_streamers.get(sId);
+  resetI32(256);
+  if (!r) return -1;
+  for (const wg::FQuadKey& k : r->last.evicted) {
+    g_i32.push_back(k.faceId); g_i32.push_back(k.depth);
+    g_i32.push_back(static_cast<int32_t>(k.qx));
+    g_i32.push_back(static_cast<int32_t>(k.qy));
+  }
+  return static_cast<int>(r->last.evicted.size());
+}
+
+namespace {
+const wg::TerrainChunk* readyChunk(int sId, int i) {
+  StreamerRec* r = g_streamers.get(sId);
+  if (!r || i < 0 || static_cast<size_t>(i) >= r->last.ready.size()) return nullptr;
+  return &r->last.ready[static_cast<size_t>(i)];
+}
+}  // namespace
+
+// Scalar metadata for ready chunk `i` -> i32 scratch, 11 ints:
+// [faceId, depth, qx, qy, gridDim, materialId, biome, hashLo, hashHi,
+//  skirtVertexCount, vertexCount]. Returns 1 on success.
+OF_API int of_chunk_meta(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetI32(16);
+  if (!c) return 0;
+  g_i32.push_back(c->key.faceId);
+  g_i32.push_back(c->key.depth);
+  g_i32.push_back(static_cast<int32_t>(c->key.qx));
+  g_i32.push_back(static_cast<int32_t>(c->key.qy));
+  g_i32.push_back(c->gridDim);
+  g_i32.push_back(static_cast<int32_t>(c->materialId));
+  g_i32.push_back(static_cast<int32_t>(c->biome));
+  g_i32.push_back(static_cast<int32_t>(c->contentHash & 0xFFFFFFFFull));
+  g_i32.push_back(static_cast<int32_t>(c->contentHash >> 32));
+  g_i32.push_back(static_cast<int32_t>(c->skirtPositions.size()));
+  g_i32.push_back(static_cast<int32_t>(c->positions.size()));
+  return 1;
+}
+// Chunk centre + radius + skirt depth -> f64 scratch [cx,cy,cz,radiusM,skirtM].
+OF_API int of_chunk_anchor(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetF64(5);
+  if (!c) return 0;
+  g_f64.push_back(c->centerUniverse.pos.x);
+  g_f64.push_back(c->centerUniverse.pos.y);
+  g_f64.push_back(c->centerUniverse.pos.z);
+  g_f64.push_back(c->chunkRadiusM);
+  g_f64.push_back(c->skirtDepthM);
+  return 1;
+}
+// Chunk neighbour LOD depths -> i32 scratch [-X, +X, -Y, +Y].
+OF_API int of_chunk_neighbour_depths(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetI32(4);
+  if (!c) return 0;
+  for (int e = 0; e < 4; ++e) g_i32.push_back(c->neighbourDepth[e]);
+  return 1;
+}
+// Interleaved CENTRE-RELATIVE f32 positions -> f32 scratch, 3 per vertex.
+// Returns the vertex count. Centre-relative keeps f32 sub-mm at 600 km radius.
+OF_API int of_chunk_positions_f32(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetF32(3 * 1089);
+  if (!c) return -1;
+  const Vec3& o = c->centerUniverse.pos;
+  for (const Vec3& p : c->positions) {
+    g_f32.push_back(static_cast<float>(p.x - o.x));
+    g_f32.push_back(static_cast<float>(p.y - o.y));
+    g_f32.push_back(static_cast<float>(p.z - o.z));
+  }
+  return static_cast<int>(c->positions.size());
+}
+OF_API int of_chunk_normals_f32(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetF32(3 * 1089);
+  if (!c) return -1;
+  for (const Vec3& n : c->normals) {
+    g_f32.push_back(static_cast<float>(n.x));
+    g_f32.push_back(static_cast<float>(n.y));
+    g_f32.push_back(static_cast<float>(n.z));
+  }
+  return static_cast<int>(c->normals.size());
+}
+OF_API int of_chunk_dirs_f32(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetF32(3 * 1089);
+  if (!c) return -1;
+  for (const Vec3& d : c->dirs) {
+    g_f32.push_back(static_cast<float>(d.x));
+    g_f32.push_back(static_cast<float>(d.y));
+    g_f32.push_back(static_cast<float>(d.z));
+  }
+  return static_cast<int>(c->dirs.size());
+}
+OF_API int of_chunk_skirt_f32(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetF32(3 * 256);
+  if (!c) return -1;
+  const Vec3& o = c->centerUniverse.pos;
+  for (const Vec3& p : c->skirtPositions) {
+    g_f32.push_back(static_cast<float>(p.x - o.x));
+    g_f32.push_back(static_cast<float>(p.y - o.y));
+    g_f32.push_back(static_cast<float>(p.z - o.z));
+  }
+  return static_cast<int>(c->skirtPositions.size());
+}
+// Exact per-vertex relief (metres) -> f64 scratch. The parity/physics path.
+OF_API int of_chunk_heights_f64(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  resetF64(1089);
+  if (!c) return -1;
+  for (double h : c->heights) g_f64.push_back(h);
+  return static_cast<int>(c->heights.size());
+}
+
+// =============================================================================
+// §6b — THE PACKED CHUNK VERTEX BUFFER (R1 — the renderer's critical path).
+//
+// ONE pre-interleaved, GPU-ready buffer per chunk, written straight into the
+// WASM heap. JS makes a zero-copy Uint8Array view over it and hands it to a
+// THREE.InterleavedBuffer / BufferGeometry. Nothing is traversed element by
+// element across the boundary; the whole chunk crosses as one memcpy-able span.
+//
+// LAYOUT — 28 bytes per vertex, little-endian (bind these exact offsets):
+//   off  0  float32[3]  position      metres, RELATIVE TO chunkCenter (see below)
+//   off 12  int8[4]     normal        normalized signed: n = v/127, w unused (0)
+//   off 16  uint16[2]   uv            normalized: uv = v/65535, over the quad
+//   off 20  uint8[4]    biome         [biomeId, materialId, hardness*255, flags]
+//                                     flags bit0 = 1 -> this is a SKIRT vertex
+//   off 24  float32     height        relief in metres above the body datum
+//
+// VERTEX COUNT is constant: kGridDim is constexpr 33, so every chunk is
+// 33*33 = 1089 interior + 128 skirt = 1217 vertices = 34,076 bytes. Buffers are
+// therefore poolable and reusable on the JS side with a fixed stride.
+//
+// PRECISION AT PLANET SCALE (the thing that repeatedly broke in UE): positions
+// are float32 but RELATIVE TO THE CHUNK'S OWN 64-bit anchor (centerUniverse,
+// available exactly via of_chunk_anchor). Absolute float32 at Forge's 600 km
+// radius quantizes to ~0.06 m; relative to a chunk centre the magnitudes are
+// bounded by chunkRadiusM, so the quantization is ~0.03 m on the coarsest
+// (depth-0) chunk and ~2 mm at depth 5+. The renderer must place the mesh at
+// (centerUniverse - floatingOrigin) and never bake the absolute position into
+// the vertex data. The exact double positions remain available via
+// of_quadmesh_positions_f64 / of_chunk_heights_f64 for physics.
+//
+// NOTE on "biome weights": /core's biomeAt is a HARD classifier (one biome per
+// direction), so there is no 4-way weight vector to pack. We hand the renderer
+// the per-vertex biomeId + materialId + hardness instead; a smooth blend can be
+// derived in the fragment shader from the three corner biomeIds of a triangle
+// (barycentric weights), which is where a blend belongs anyway. If world-gen
+// later grows a weighted classifier, the 4 bytes at offset 20 are the slot.
+// =============================================================================
+static constexpr int kPackedStride = 28;
+
+OF_API int of_packed_stride(void) { return kPackedStride; }
+OF_API int of_packed_offset_position(void) { return 0; }
+OF_API int of_packed_offset_normal(void) { return 12; }
+OF_API int of_packed_offset_uv(void) { return 16; }
+OF_API int of_packed_offset_biome(void) { return 20; }
+OF_API int of_packed_offset_height(void) { return 24; }
+
+namespace {
+inline void putF32(uint8_t* p, float v) { std::memcpy(p, &v, 4); }
+inline int8_t packUnit(double v) {
+  double s = v * 127.0;
+  if (s > 127.0) s = 127.0;
+  if (s < -127.0) s = -127.0;
+  return static_cast<int8_t>(s >= 0 ? (s + 0.5) : (s - 0.5));
+}
+inline void putU16(uint8_t* p, uint16_t v) { std::memcpy(p, &v, 2); }
+
+// The skirt ring's pairing with interior grid coords, matching terrain_stream.h
+// buildSkirt's emission order: south row, north row, west interior, east
+// interior. Returns the interior (i,j) that skirt vertex `s` hangs from.
+inline void skirtPair(int s, int G, int& gi, int& gj) {
+  if (s < G)            { gi = s;          gj = 0;     return; }
+  if (s < 2 * G)        { gi = s - G;      gj = G - 1; return; }
+  const int w = G - 2;
+  if (s < 2 * G + w)    { gi = 0;          gj = s - 2 * G + 1;     return; }
+  gi = G - 1;           gj = s - 2 * G - w + 1;
+}
+}  // namespace
+
+// Pack ready chunk `i` into the u8 scratch. Returns the BYTE LENGTH (0 on bad
+// args). JS: `const n = M._of_chunk_packed(s, i);
+//            const buf = M.HEAPU8.subarray(M._of_scratch_u8(), M._of_scratch_u8() + n);`
+// then copy/upload it BEFORE the next WASM call (see the memory-view rules).
+OF_API int of_chunk_packed(int sId, int i) {
+  StreamerRec* r = g_streamers.get(sId);
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  if (!r || !c) { g_u8.clear(); return 0; }
+  const int G = c->gridDim;
+  const size_t nIn = c->positions.size();
+  const size_t nSk = c->skirtPositions.size();
+  const size_t n = nIn + nSk;
+  g_u8.assign(n * kPackedStride, 0);
+  uint8_t* out = g_u8.data();
+  const Vec3& o = c->centerUniverse.pos;
+  const double invG = 1.0 / static_cast<double>(G - 1);
+
+  // Interior grid. biomeAt is evaluated once per vertex here; the skirt reuses
+  // its paired interior vertex's classification (a skirt is hidden geometry).
+  std::vector<uint8_t> biomeOf(nIn), matOf(nIn), hardOf(nIn);
+  for (size_t v = 0; v < nIn; ++v) {
+    uint8_t* p = out + v * kPackedStride;
+    const Vec3& pos = c->positions[v];
+    putF32(p + 0, static_cast<float>(pos.x - o.x));
+    putF32(p + 4, static_cast<float>(pos.y - o.y));
+    putF32(p + 8, static_cast<float>(pos.z - o.z));
+    const Vec3& nv = c->normals[v];
+    p[12] = static_cast<uint8_t>(packUnit(nv.x));
+    p[13] = static_cast<uint8_t>(packUnit(nv.y));
+    p[14] = static_cast<uint8_t>(packUnit(nv.z));
+    p[15] = 0;
+    const int gi = static_cast<int>(v) % G;
+    const int gj = static_cast<int>(v) / G;
+    putU16(p + 16, static_cast<uint16_t>(gi * invG * 65535.0 + 0.5));
+    putU16(p + 18, static_cast<uint16_t>(gj * invG * 65535.0 + 0.5));
+    const wg::Biome b = wg::biomeAt(r->body, c->dirs[v]);
+    const uint8_t bid = static_cast<uint8_t>(b);
+    const uint8_t mid = static_cast<uint8_t>(wg::materialForBiome(b) & 0xFF);
+    const uint8_t hrd = static_cast<uint8_t>(wg::hardnessForBiome(b) * 255.0 + 0.5);
+    biomeOf[v] = bid; matOf[v] = mid; hardOf[v] = hrd;
+    p[20] = bid; p[21] = mid; p[22] = hrd; p[23] = 0;
+    putF32(p + 24, static_cast<float>(c->heights[v]));
+  }
+  // Skirt ring (flags bit0 set) — same dir/normal/uv/biome as its interior pair,
+  // just dropped radially inward by skirtDepthM.
+  for (size_t s = 0; s < nSk; ++s) {
+    uint8_t* p = out + (nIn + s) * kPackedStride;
+    const Vec3& pos = c->skirtPositions[s];
+    putF32(p + 0, static_cast<float>(pos.x - o.x));
+    putF32(p + 4, static_cast<float>(pos.y - o.y));
+    putF32(p + 8, static_cast<float>(pos.z - o.z));
+    int gi = 0, gj = 0;
+    skirtPair(static_cast<int>(s), G, gi, gj);
+    const size_t pair = static_cast<size_t>(gj) * G + gi;
+    const Vec3& nv = c->normals[pair];
+    p[12] = static_cast<uint8_t>(packUnit(nv.x));
+    p[13] = static_cast<uint8_t>(packUnit(nv.y));
+    p[14] = static_cast<uint8_t>(packUnit(nv.z));
+    p[15] = 0;
+    putU16(p + 16, static_cast<uint16_t>(gi * invG * 65535.0 + 0.5));
+    putU16(p + 18, static_cast<uint16_t>(gj * invG * 65535.0 + 0.5));
+    p[20] = biomeOf[pair]; p[21] = matOf[pair]; p[22] = hardOf[pair];
+    p[23] = 1;                                     // flags bit0 = skirt
+    putF32(p + 24, static_cast<float>(c->heights[pair]));
+  }
+  return static_cast<int>(g_u8.size());
+}
+OF_API int of_packed_vertex_count(void) { return wg::kGridDim * wg::kGridDim + 128; }
+
+// The chunk INDEX buffer: interior triangles followed by the skirt apron
+// triangles, uint16 (1217 < 65536). Built once and reused for every chunk,
+// because kGridDim is constexpr. Returns the TOTAL index count; the interior
+// portion is the first of_chunk_interior_index_count() entries, so the renderer
+// can draw interior and skirt as separate draw ranges if it wants.
+// Triangle order per cell (a=(i,j) b=(i+1,j) c=(i,j+1) d=(i+1,j+1)):
+//   (a, c, b) then (b, c, d).
+namespace { std::vector<uint16_t> g_chunkIndices; int g_interiorIdx = 0; }
+
+OF_API int of_chunk_interior_index_count(void) { return g_interiorIdx; }
+OF_API uint16_t* of_chunk_index_ptr(void) {
+  return g_chunkIndices.empty() ? nullptr : g_chunkIndices.data();
+}
+OF_API int of_chunk_index_buffer(void) {
+  if (!g_chunkIndices.empty()) return static_cast<int>(g_chunkIndices.size());
+  const int G = wg::kGridDim;
+  g_chunkIndices.reserve((G - 1) * (G - 1) * 6 + 4 * (G - 1) * 6);
+  for (int j = 0; j < G - 1; ++j) {
+    for (int i = 0; i < G - 1; ++i) {
+      const uint16_t a = static_cast<uint16_t>(j * G + i);
+      const uint16_t b = static_cast<uint16_t>(j * G + i + 1);
+      const uint16_t cc = static_cast<uint16_t>((j + 1) * G + i);
+      const uint16_t d = static_cast<uint16_t>((j + 1) * G + i + 1);
+      g_chunkIndices.push_back(a); g_chunkIndices.push_back(cc); g_chunkIndices.push_back(b);
+      g_chunkIndices.push_back(b); g_chunkIndices.push_back(cc); g_chunkIndices.push_back(d);
+    }
+  }
+  g_interiorIdx = static_cast<int>(g_chunkIndices.size());
+
+  // Skirt apron: for each perimeter edge, a quad joining the two interior
+  // vertices to their two skirt vertices. Skirt base index = G*G.
+  const int SB = G * G;
+  // Map an interior perimeter (i,j) to its skirt slot (inverse of skirtPair).
+  auto skirtSlot = [&](int i, int j) -> int {
+    if (j == 0) return i;
+    if (j == G - 1) return G + i;
+    if (i == 0) return 2 * G + (j - 1);
+    return 2 * G + (G - 2) + (j - 1);
+  };
+  auto edgeQuad = [&](int i0, int j0, int i1, int j1) {
+    const uint16_t a = static_cast<uint16_t>(j0 * G + i0);
+    const uint16_t b = static_cast<uint16_t>(j1 * G + i1);
+    const uint16_t sa = static_cast<uint16_t>(SB + skirtSlot(i0, j0));
+    const uint16_t sb = static_cast<uint16_t>(SB + skirtSlot(i1, j1));
+    g_chunkIndices.push_back(a);  g_chunkIndices.push_back(sa); g_chunkIndices.push_back(b);
+    g_chunkIndices.push_back(b);  g_chunkIndices.push_back(sa); g_chunkIndices.push_back(sb);
+  };
+  for (int i = 0; i < G - 1; ++i) edgeQuad(i, 0, i + 1, 0);                  // south
+  for (int i = 0; i < G - 1; ++i) edgeQuad(i + 1, G - 1, i, G - 1);          // north
+  for (int j = 0; j < G - 1; ++j) edgeQuad(0, j + 1, 0, j);                  // west
+  for (int j = 0; j < G - 1; ++j) edgeQuad(G - 1, j, G - 1, j + 1);          // east
+  return static_cast<int>(g_chunkIndices.size());
+}
+
+// The maximum |vertex - chunkCentre| for ready chunk `i`, in metres. The
+// renderer/physics can use it to bound the float32 quantization of the packed
+// positions: quantum ~= maxOffset * 2^-23.
+OF_API double of_chunk_max_offset(int sId, int i) {
+  const wg::TerrainChunk* c = readyChunk(sId, i);
+  if (!c) return -1.0;
+  const Vec3& o = c->centerUniverse.pos;
+  double m = 0.0;
+  for (const Vec3& p : c->positions) {
+    const double d = std::fabs(p.x - o.x);
+    const double e = std::fabs(p.y - o.y);
+    const double f = std::fabs(p.z - o.z);
+    if (d > m) m = d;
+    if (e > m) m = e;
+    if (f > m) m = f;
+  }
+  return m;
+}
+
+// =============================================================================
+// §7 — Factory / automation (factory_sim.h + automation.h).
+//
+// One BuildableNetwork per handle; buildings are addressed by a per-network
+// build index (JS never sees an EntityHandle).
+// =============================================================================
+namespace {
+struct NetRec {
+  std::unique_ptr<au::BuildableNetwork> net;
+  std::vector<au::BuildId> builds;
+  au::BuildId* build(int i) {
+    if (i < 0 || static_cast<size_t>(i) >= builds.size()) return nullptr;
+    return &builds[static_cast<size_t>(i)];
+  }
+};
+Registry<NetRec> g_nets;
+}  // namespace
+
+OF_API int of_net_create(double fixedDt) {
+  NetRec* r = new NetRec();
+  r->net.reset(new au::BuildableNetwork(fixedDt > 0.0 ? fixedDt : 1.0 / 60.0));
+  return g_nets.add(r);
+}
+OF_API void of_net_destroy(int n) { g_nets.remove(n); }
+
+// depositAmount is passed as a double (exact for < 2^53 units — far beyond any
+// real deposit). Returns the build index, or -1.
+OF_API int of_net_place_miner(int nId, double depositAmount, int item,
+                              double ratePerSecond, int outCap) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  au::BuildId b = r->net->placeMinerOnDeposit(
+      static_cast<uint64_t>(depositAmount), static_cast<fs::ItemId>(item),
+      ratePerSecond, static_cast<uint16_t>(outCap));
+  r->builds.push_back(b);
+  return static_cast<int>(r->builds.size()) - 1;
+}
+OF_API int of_net_place_belt(int nId, int tiles, int speed) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  r->builds.push_back(r->net->placeBelt(static_cast<uint32_t>(tiles),
+                                        static_cast<uint32_t>(speed)));
+  return static_cast<int>(r->builds.size()) - 1;
+}
+OF_API int of_net_place_smelter(int nId, int ore, int ingot, int craftTicks,
+                                int powerW, int outCap) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  r->builds.push_back(r->net->placeSmelter(
+      static_cast<fs::ItemId>(ore), static_cast<fs::ItemId>(ingot),
+      static_cast<uint32_t>(craftTicks), powerW, static_cast<uint16_t>(outCap)));
+  return static_cast<int>(r->builds.size()) - 1;
+}
+OF_API int of_net_place_assembler(int nId, int inA, int countA, int inB, int countB,
+                                  int out, int outCount, int craftTicks,
+                                  int powerW, int outCap) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  r->builds.push_back(r->net->placeAssembler(
+      static_cast<fs::ItemId>(inA), static_cast<uint16_t>(countA),
+      static_cast<fs::ItemId>(inB), static_cast<uint16_t>(countB),
+      static_cast<fs::ItemId>(out), static_cast<uint16_t>(outCount),
+      static_cast<uint32_t>(craftTicks), powerW, static_cast<uint16_t>(outCap)));
+  return static_cast<int>(r->builds.size()) - 1;
+}
+// Wire two buildings. `item` 0 = auto-infer. Returns 1 on success, 0 on failure.
+OF_API int of_net_connect(int nId, int from, int to, int item) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return 0;
+  au::BuildId* a = r->build(from);
+  au::BuildId* b = r->build(to);
+  if (!a || !b) return 0;
+  fs::EntityHandle e = r->net->connect(*a, *b, static_cast<fs::ItemId>(item));
+  return e.valid() ? 1 : 0;
+}
+// Pre-fill a belt to saturation with `item` (test/debug helper mirroring
+// FactorySim::line(h).fillSaturated). Returns the item count placed.
+OF_API int of_net_belt_fill_saturated(int nId, int belt, int item) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  au::BuildId* b = r->build(belt);
+  if (!b || !b->valid()) return -1;
+  return static_cast<int>(
+      r->net->sim().line(b->entity).fillSaturated(static_cast<fs::ItemId>(item)));
+}
+// Hand-feed a machine's slot-1 input (test/debug helper).
+OF_API int of_net_feed_machine(int nId, int build, int count) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  au::BuildId* b = r->build(build);
+  if (!b || !b->valid()) return -1;
+  r->net->sim().feedMachine(b->entity, static_cast<uint16_t>(count));
+  return 1;
+}
+
+OF_API void of_net_step(int nId) {
+  NetRec* r = g_nets.get(nId); if (r) r->net->step();
+}
+OF_API void of_net_step_n(int nId, double n) {
+  NetRec* r = g_nets.get(nId);
+  if (r) r->net->stepN(static_cast<uint64_t>(n));
+}
+OF_API double of_net_tick_index(int nId) {
+  NetRec* r = g_nets.get(nId);
+  return r ? static_cast<double>(r->net->tickIndex()) : -1.0;
+}
+OF_API double of_net_produced_of(int nId, int item) {
+  NetRec* r = g_nets.get(nId);
+  return r ? static_cast<double>(r->net->producedCountOf(static_cast<fs::ItemId>(item)))
+           : -1.0;
+}
+OF_API double of_net_produced_total(int nId) {
+  NetRec* r = g_nets.get(nId);
+  return r ? static_cast<double>(r->net->producedCount()) : -1.0;
+}
+OF_API double of_net_miner_remaining(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1.0;
+  au::BuildId* b = r->build(build); if (!b) return -1.0;
+  return static_cast<double>(r->net->minerRemaining(*b));
+}
+OF_API int of_net_miner_depleted(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b) return -1;
+  return r->net->minerDepleted(*b) ? 1 : 0;
+}
+OF_API int of_net_output_buffer(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b) return -1;
+  return static_cast<int>(r->net->outputBuffer(*b));
+}
+OF_API int of_net_input_buffer(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b) return -1;
+  return static_cast<int>(r->net->inputBuffer(*b));
+}
+OF_API int of_net_input2_buffer(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b) return -1;
+  return static_cast<int>(r->net->input2Buffer(*b));
+}
+OF_API int of_net_belt_item_count(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b) return -1;
+  return static_cast<int>(r->net->beltItemCount(*b));
+}
+OF_API int of_net_working(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b) return -1;
+  return r->net->working(*b) ? 1 : 0;
+}
+OF_API double of_net_progress01(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1.0;
+  au::BuildId* b = r->build(build); if (!b) return -1.0;
+  return r->net->progress01(*b);
+}
+
+// --- The §6 render stream ----------------------------------------------------
+// EmitEntityStates: one row per live entity. Returns the ROW COUNT and fills
+// BOTH scratch buffers:
+//   i32 scratch, 6 ints/row : [Id, TypeId, VisualState, AnimPhase, Lod, BoundRadius]
+//   f32 scratch, 3 floats/row: [x, y, z]
+// JS reads the i32 view first, then the f32 view (neither call invalidates the
+// other — they are separate arenas).
+OF_API int of_net_emit_entity_states(int nId) {
+  NetRec* r = g_nets.get(nId);
+  resetI32(256); resetF32(128);
+  if (!r) return -1;
+  const std::vector<fs::FFactoryEntityState> rows = r->net->sim().EmitEntityStates();
+  g_i32.reserve(rows.size() * 6);
+  g_f32.reserve(rows.size() * 3);
+  for (const fs::FFactoryEntityState& s : rows) {
+    g_i32.push_back(static_cast<int32_t>(s.Id));
+    g_i32.push_back(static_cast<int32_t>(s.TypeId));
+    g_i32.push_back(static_cast<int32_t>(s.VisualState));
+    g_i32.push_back(static_cast<int32_t>(s.AnimPhase));
+    g_i32.push_back(static_cast<int32_t>(s.Lod));
+    g_i32.push_back(static_cast<int32_t>(s.BoundRadius));
+    g_f32.push_back(s.Position[0]); g_f32.push_back(s.Position[1]);
+    g_f32.push_back(s.Position[2]);
+  }
+  return static_cast<int>(rows.size());
+}
+// EmitBeltFlowStates: the O(lines) belt view (LOD-1+). Returns the row count;
+// i32 scratch, 5 ints/row: [LineId, ItemTypeDominant, FlowSpeedQuant, Density,
+// Compressed].
+OF_API int of_net_emit_belt_flows(int nId) {
+  NetRec* r = g_nets.get(nId);
+  resetI32(64);
+  if (!r) return -1;
+  const std::vector<fs::FFactoryBeltFlowState> rows =
+      r->net->sim().EmitBeltFlowStates();
+  for (const fs::FFactoryBeltFlowState& f : rows) {
+    g_i32.push_back(static_cast<int32_t>(f.LineId));
+    g_i32.push_back(static_cast<int32_t>(f.ItemTypeDominant));
+    g_i32.push_back(static_cast<int32_t>(f.FlowSpeedQuant));
+    g_i32.push_back(static_cast<int32_t>(f.Density));
+    g_i32.push_back(static_cast<int32_t>(f.Compressed));
+  }
+  return static_cast<int>(rows.size());
+}
+// GetLineItems: the ONE O(items) pull, LOD-0 only. `build` is a belt build index.
+// Returns the item count; i32 scratch, 2 ints/item: [ItemType, UnitOffset].
+OF_API int of_net_get_line_items(int nId, int build) {
+  NetRec* r = g_nets.get(nId);
+  resetI32(128);
+  if (!r) return -1;
+  au::BuildId* b = r->build(build);
+  if (!b || !b->valid()) return -1;
+  const std::vector<fs::FLineItem> items =
+      r->net->sim().GetLineItems(b->entity.index);
+  for (const fs::FLineItem& it : items) {
+    g_i32.push_back(static_cast<int32_t>(it.ItemType));
+    g_i32.push_back(static_cast<int32_t>(it.UnitOffset));
+  }
+  return static_cast<int>(items.size());
+}
+OF_API int of_net_units_per_tile(void) { return static_cast<int>(fs::kUnitsPerTile); }
+
+// =============================================================================
+// §8 — DETERMINISM DIAGNOSTICS.
+//
+// Not part of the game API. These exist because cross-toolchain bit-parity can
+// only fail in two places: the compiler's float codegen, or libm. The two probes
+// below separate those cases so a future divergence can be pinned in minutes
+// instead of bisected. Keep them exported — they cost ~200 bytes.
+// =============================================================================
+
+// Single libm call, so a native/WASM diff isolates WHICH function differs.
+OF_API double of_diag_libm(int fn, double a, double b) {
+  switch (fn) {
+    case 0:  return std::sin(a);
+    case 1:  return std::cos(a);
+    case 2:  return std::tan(a);
+    case 3:  return std::asin(a);
+    case 4:  return std::acos(a);
+    case 5:  return std::atan2(a, b);
+    case 6:  return std::sqrt(a);
+    case 7:  return std::floor(a);
+    case 8:  return std::fabs(a);
+    case 9:  return std::exp(a);
+    case 10: return std::log(a);
+    case 11: return std::pow(a, b);
+    default: return NAN;
+  }
+}
+
+// Walk a quad's 33x33 vertex lattice and report every intermediate the terrain
+// pipeline computes, so a mismatch localises to a stage:
+//   f64 scratch, 8 doubles per vertex:
+//     [dirX, dirY, dirZ, latitude, temperature, moisture, rawHeight, designedHeight]
+//   i32 scratch, 1 int per vertex: the biome id
+// Returns the vertex count.
+OF_API int of_diag_scan_quad(int bodyId, int faceId, int depth,
+                             uint32_t qx, uint32_t qy) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  resetF64(8 * 1089); resetI32(1089);
+  if (!b) return -1;
+  const int level = depth + wg::kCellBits;
+  const uint64_t bx = static_cast<uint64_t>(qx) << wg::kCellBits;
+  const uint64_t by = static_cast<uint64_t>(qy) << wg::kCellBits;
+  int n = 0;
+  for (int j = 0; j < wg::kGridDim; ++j) {
+    for (int i = 0; i < wg::kGridDim; ++i) {
+      const Vec3 d = wg::latticeDir(faceId, bx + i, by + j, level);
+      double lat = 0, lon = 0;
+      wg::dirToLatLon(d, lat, lon);
+      g_f64.push_back(d.x); g_f64.push_back(d.y); g_f64.push_back(d.z);
+      g_f64.push_back(lat);
+      g_f64.push_back(wg::temperatureAt(*b, d));
+      g_f64.push_back(wg::moistureAt(*b, d));
+      g_f64.push_back(wg::sampleHeightField(*b, d));
+      g_f64.push_back(wg::sampleDesignedHeight(*b, d));
+      g_i32.push_back(static_cast<int32_t>(wg::biomeAt(*b, d)));
+      ++n;
+    }
+  }
+  return n;
+}
