@@ -1,0 +1,6 @@
+node_modules/
+dist/
+
+# Synced from web/wasm/dist by scripts/sync-wasm.mjs (npm run sync-wasm).
+# The canonical copy is committed under web/wasm/dist; do not commit a second one.
+public/wasm/

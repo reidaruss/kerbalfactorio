@@ -1,0 +1,36 @@
+// The scene handles and the layer constants. Nothing else.
+// ARCHITECTURE.md section 3.1: four passes, one canvas, depth cleared between.
+
+import * as THREE from 'three';
+
+/** Far-scene units per metre. Forge (R = 600 km) becomes a 6-unit sphere. */
+export const FAR_SCALE = 1e-5;
+
+export const LAYER_DEFAULT = 0;
+export const LAYER_PLAYER_BODY = 1;
+export const LAYER_SHADOW_ONLY = 2;
+
+export class Scenes {
+  /** Pass 1: stars, sun disc, atmosphere quad. Rotation-only camera. */
+  readonly sky = new THREE.Scene();
+  /** Pass 2: planet proxies and coarse terrain shells, scaled by FAR_SCALE. */
+  readonly far = new THREE.Scene();
+  /** Pass 3: metres, 1:1, floating origin. Fine terrain, factory, player. */
+  readonly near = new THREE.Scene();
+  /** Pass 4: FP arms and held tool. Its own depth range, so it cannot clip. */
+  readonly viewModel = new THREE.Scene();
+
+  constructor() {
+    this.sky.name = 'skyScene';
+    this.far.name = 'farScene';
+    this.near.name = 'nearScene';
+    this.viewModel.name = 'vmScene';
+    // Compositing is by clear order, never by depth merge, so no scene has a
+    // background of its own: pass 1 paints every pixel.
+    this.sky.background = null;
+    this.far.background = null;
+    this.near.background = null;
+  }
+
+  all(): THREE.Scene[] { return [this.sky, this.far, this.near, this.viewModel]; }
+}
