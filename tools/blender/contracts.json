@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Machine-readable acceptance contract for every exported model.",
+    "Hand-authored to mirror docs/web/ASSET-SPECS.md. Deliberately NOT generated",
+    "from the build scripts: a checker derived from the builder only ever proves",
+    "the builder agrees with itself.",
+    "dims_xyz_m are in THREE.JS axes (X right, Y up, Z forward) after the",
+    "Blender +Z-up -> glTF +Y-up conversion, so a Blender footprint of",
+    "(X=1.0, Y=1.0 flow, Z=0.30 tall) is written here as [1.0, 0.30, 1.0].",
+    "Checking it in three.js axes is what proves export_yup actually fired.",
+    "Run: python tools/blender/validate_glb.py --all"
+  ],
+  "assets": {
+    "belt_segment": {
+      "glb": "assets/models/dist/machines/belt_segment.glb",
+      "type_id": "0x11",
+      "lod0_node": "BeltSegment_LOD0",
+      "lod_nodes": ["BeltSegment_LOD0", "BeltSegment_LOD1", "BeltSegment_LOD2"],
+      "dims_xyz_m": [1.0, 0.30, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 200,
+      "max_tris_total": 420,
+      "max_materials": 4,
+      "sockets": [
+        "socket_belt_in",
+        "socket_belt_out",
+        "socket_item",
+        "socket_status"
+      ],
+      "clips": ["Belt_Scroll"],
+      "collision": "col_BeltSegment"
+    }
+  }
+}

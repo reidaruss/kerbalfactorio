@@ -52,3 +52,7 @@ ue/Content/Vitex_agnus_Wind_PP2/Maps/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# Python bytecode from the headless Blender asset scripts (tools/blender/)
+__pycache__/
+*.pyc

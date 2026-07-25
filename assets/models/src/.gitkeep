@@ -1,0 +1,3 @@
+# GUI-authored .blend files land here ONLY when a script cannot express the
+# shape (sculpted rock, hand-weighted character). The scripted path in
+# tools/blender/ is the default; see docs/web/ASSET-SPECS.md.

@@ -1,0 +1,341 @@
+#!/usr/bin/env python3
+"""
+validate_glb.py - the automated acceptance gate for Orbital Foundry models.
+
+    python tools/blender/validate_glb.py --all
+    python tools/blender/validate_glb.py belt_segment
+
+Reads tools/blender/contracts.json (hand-authored, mirrors
+docs/web/ASSET-SPECS.md) and checks each exported .glb against it. The contract
+is authored INDEPENDENTLY of the build script on purpose: if the checker were
+generated from the builder it would only ever prove the builder agrees with
+itself.
+
+Stdlib only - no Blender, no npm, no pip. Runs in CI as a plain python3 step.
+
+What it proves, per asset:
+  scale      world bounding box of the LOD0 subtree matches the spec in metres
+  up axis    ...which is only true if export_yup actually put +Y up
+  pivot      LOD0 sits on y = 0 and is centred on x = z = 0 (grid snapping)
+  polys      LOD0 triangle budget and whole-file triangle budget
+  materials  count within budget and every name is an OF_ palette role
+  sockets    every required socket_* node is present
+  clips      the animation clip name set matches exactly
+  hygiene    no cameras, no lights, no Draco, collision proxy present
+"""
+
+import argparse
+import json
+import os
+import struct
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+CONTRACTS = os.path.join(HERE, "contracts.json")
+
+
+# --------------------------------------------------------------------------
+# GLB container
+# --------------------------------------------------------------------------
+
+def read_glb(path):
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if len(data) < 12:
+        raise ValueError("file is too small to be a GLB")
+    magic, version, total = struct.unpack_from("<4sII", data, 0)
+    if magic != b"glTF":
+        raise ValueError("bad magic %r (not a GLB)" % magic)
+    if version != 2:
+        raise ValueError("glTF version %d, expected 2" % version)
+    if total != len(data):
+        raise ValueError("header length %d != file length %d" % (total, len(data)))
+    off, gltf, has_bin = 12, None, False
+    while off + 8 <= len(data):
+        clen, ctype = struct.unpack_from("<I4s", data, off)
+        off += 8
+        chunk = data[off:off + clen]
+        if ctype == b"JSON":
+            gltf = json.loads(chunk.decode("utf-8"))
+        elif ctype == b"BIN\x00":
+            has_bin = True
+        off += clen + ((4 - clen % 4) % 4 if clen % 4 else 0)
+    if gltf is None:
+        raise ValueError("no JSON chunk")
+    if not has_bin:
+        raise ValueError("no BIN chunk (geometry is not embedded)")
+    return gltf, len(data)
+
+
+# --------------------------------------------------------------------------
+# Minimal 4x4 matrix maths (column-major, as glTF stores it)
+# --------------------------------------------------------------------------
+
+IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+
+def mat_mul(a, b):
+    out = [0.0] * 16
+    for c in range(4):
+        for r in range(4):
+            out[c * 4 + r] = sum(a[k * 4 + r] * b[c * 4 + k] for k in range(4))
+    return out
+
+
+def trs_matrix(node):
+    if "matrix" in node:
+        return list(node["matrix"])
+    t = node.get("translation", [0, 0, 0])
+    r = node.get("rotation", [0, 0, 0, 1])
+    s = node.get("scale", [1, 1, 1])
+    x, y, z, w = r
+    rot = [
+        1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w), 0,
+        2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w), 0,
+        2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y), 0,
+        0, 0, 0, 1,
+    ]
+    for c in range(3):
+        for r_ in range(3):
+            rot[c * 4 + r_] *= s[c]
+    rot[12], rot[13], rot[14] = t
+    return rot
+
+
+def xform(m, p):
+    return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+            m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+            m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]
+
+
+# --------------------------------------------------------------------------
+# Scene walk
+# --------------------------------------------------------------------------
+
+def walk(gltf):
+    """-> {node_index: (name, world_matrix, parent_index)} for every node."""
+    nodes = gltf.get("nodes", [])
+    scene = gltf.get("scenes", [{}])[gltf.get("scene", 0)]
+    out = {}
+
+    def rec(idx, parent_m, parent_idx):
+        n = nodes[idx]
+        m = mat_mul(parent_m, trs_matrix(n))
+        out[idx] = (n.get("name", "<unnamed>"), m, parent_idx)
+        for c in n.get("children", []):
+            rec(c, m, idx)
+
+    for rootIdx in scene.get("nodes", []):
+        rec(rootIdx, IDENT, None)
+    return out
+
+
+def prim_tris(gltf, prim):
+    if prim.get("mode", 4) != 4:
+        return 0
+    accs = gltf.get("accessors", [])
+    if "indices" in prim:
+        return accs[prim["indices"]]["count"] // 3
+    return accs[prim["attributes"]["POSITION"]]["count"] // 3
+
+
+def node_bbox(gltf, walked, idx, acc):
+    """Accumulate the world-space AABB of node `idx` and its descendants."""
+    nodes = gltf.get("nodes", [])
+    meshes = gltf.get("meshes", [])
+    accs = gltf.get("accessors", [])
+    n = nodes[idx]
+    _, m, _ = walked[idx]
+    if "mesh" in n:
+        for prim in meshes[n["mesh"]].get("primitives", []):
+            a = accs[prim["attributes"]["POSITION"]]
+            lo, hi = a.get("min"), a.get("max")
+            if not lo or not hi:
+                continue
+            for i in range(8):
+                p = [hi[0] if i & 1 else lo[0],
+                     hi[1] if i & 2 else lo[1],
+                     hi[2] if i & 4 else lo[2]]
+                w = xform(m, p)
+                for k in range(3):
+                    acc[0][k] = min(acc[0][k], w[k])
+                    acc[1][k] = max(acc[1][k], w[k])
+    for c in n.get("children", []):
+        node_bbox(gltf, walked, c, acc)
+    return acc
+
+
+def subtree_tris(gltf, idx):
+    nodes = gltf.get("nodes", [])
+    meshes = gltf.get("meshes", [])
+    n = nodes[idx]
+    t = 0
+    if "mesh" in n:
+        t += sum(prim_tris(gltf, p) for p in meshes[n["mesh"]]["primitives"])
+    for c in n.get("children", []):
+        t += subtree_tris(gltf, c)
+    return t
+
+
+# --------------------------------------------------------------------------
+# Checks
+# --------------------------------------------------------------------------
+
+class Result:
+    def __init__(self, asset):
+        self.asset = asset
+        self.rows = []
+
+    def check(self, label, ok, detail=""):
+        self.rows.append((label, bool(ok), detail))
+        return ok
+
+    @property
+    def passed(self):
+        return all(ok for _, ok, _ in self.rows)
+
+    def dump(self):
+        print("\n%s  %s" % ("PASS" if self.passed else "FAIL", self.asset))
+        for label, ok, detail in self.rows:
+            print("  [%s] %-14s %s" % ("ok" if ok else "XX", label, detail))
+
+
+def validate(asset, spec, verbose=False):
+    r = Result(asset)
+    path = os.path.join(ROOT, spec["glb"].replace("/", os.sep))
+    if not os.path.isfile(path):
+        r.check("file", False, "missing: %s" % spec["glb"])
+        return r
+    try:
+        gltf, nbytes = read_glb(path)
+    except Exception as exc:
+        r.check("container", False, str(exc))
+        return r
+    r.check("container", True, "valid GLB2, %d bytes" % nbytes)
+
+    walked = walk(gltf)
+    by_name = {}
+    for idx, (name, _, _) in walked.items():
+        by_name.setdefault(name, idx)
+
+    # --- LOD0 present, and its bounding box == the spec, in metres, Y up ---
+    lod0 = spec.get("lod0_node", asset + "_LOD0")
+    if lod0 not in by_name:
+        r.check("lod0", False, "no node named %s" % lod0)
+        return r
+    tol = spec.get("tolerance_m", 0.005)
+    acc = node_bbox(gltf, walked, by_name[lod0],
+                    [[1e9] * 3, [-1e9] * 3])
+    lo, hi = acc
+    dims = [hi[k] - lo[k] for k in range(3)]
+    want = spec["dims_xyz_m"]
+    r.check("scale",
+            all(abs(dims[k] - want[k]) <= tol for k in range(3)),
+            "%s m (want %s, +/-%g)" % ([round(d, 4) for d in dims], want, tol))
+
+    # --- pivot: base on the ground plane, centred on the grid cell ---
+    r.check("pivot",
+            abs(lo[1]) <= tol
+            and abs((lo[0] + hi[0]) * 0.5) <= tol
+            and abs((lo[2] + hi[2]) * 0.5) <= tol,
+            "base y=%.4f centre x=%.4f z=%.4f"
+            % (lo[1], (lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5))
+
+    # --- triangle budgets ---
+    t0 = subtree_tris(gltf, by_name[lod0])
+    r.check("tris_lod0", t0 <= spec["max_tris_lod0"],
+            "%d <= %d" % (t0, spec["max_tris_lod0"]))
+    # Render budget excludes col_* proxies - they never reach the GPU.
+    render = sum(subtree_tris(gltf, i) for i, (n, _, p) in walked.items()
+                 if p is None and not n.startswith("col_"))
+    col = sum(subtree_tris(gltf, i) for i, (n, _, _) in walked.items()
+              if n.startswith("col_"))
+    r.check("tris_total", render <= spec["max_tris_total"],
+            "%d render <= %d (+%d collision)"
+            % (render, spec["max_tris_total"], col))
+    r.check("tris_col", col <= spec.get("max_tris_collision", 64),
+            "%d <= %d" % (col, spec.get("max_tris_collision", 64)))
+
+    # --- LOD chain ---
+    lods = spec.get("lod_nodes", [])
+    missing = [n for n in lods if n not in by_name]
+    r.check("lods", not missing,
+            "%d present%s" % (len(lods) - len(missing),
+                              "" if not missing else ", missing %s" % missing))
+
+    # --- materials: budget + every name is a palette role ---
+    mats = [m.get("name", "") for m in gltf.get("materials", [])]
+    bad = [m for m in mats if not m.startswith("OF_")]
+    r.check("materials",
+            len(mats) <= spec["max_materials"] and not bad,
+            "%d <= %d %s%s" % (len(mats), spec["max_materials"], mats,
+                               "" if not bad else " BAD:%s" % bad))
+
+    # --- sockets ---
+    want_sock = spec.get("sockets", [])
+    missing = [s for s in want_sock if s not in by_name]
+    r.check("sockets", not missing,
+            "%d/%d present%s" % (len(want_sock) - len(missing), len(want_sock),
+                                 "" if not missing else ", missing %s" % missing))
+
+    # --- animation clips: exact name set ---
+    clips = sorted(a.get("name", "") for a in gltf.get("animations", []))
+    want_clips = sorted(spec.get("clips", []))
+    r.check("clips", clips == want_clips, "%s (want %s)" % (clips, want_clips))
+
+    # --- collision proxy ---
+    if spec.get("collision"):
+        r.check("collision", spec["collision"] in by_name, spec["collision"])
+
+    # --- hygiene ---
+    exts = set(gltf.get("extensionsUsed", []))
+    r.check("hygiene",
+            not gltf.get("cameras") and "KHR_lights_punctual" not in exts
+            and "KHR_draco_mesh_compression" not in exts,
+            "no cameras/lights/draco; ext=%s" % (sorted(exts) or "none"))
+
+    # Backface culling everywhere except the roles that genuinely need two
+    # sides (glass, foliage, water). A stray doubleSided doubles fragment cost.
+    two_sided = [m.get("name", "") for m in gltf.get("materials", [])
+                 if m.get("doubleSided")]
+    allowed = set(spec.get("double_sided_ok", []))
+    r.check("culling", set(two_sided) <= allowed,
+            "doubleSided=%s (allowed %s)" % (two_sided or "none",
+                                             sorted(allowed) or "none"))
+
+    if verbose:
+        print("  nodes: %s" % sorted(by_name))
+    return r
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("assets", nargs="*", help="asset keys from contracts.json")
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args()
+
+    with open(CONTRACTS, "r", encoding="utf-8") as fh:
+        contracts = json.load(fh)["assets"]
+
+    keys = sorted(contracts) if (args.all or not args.assets) else args.assets
+    results = []
+    for k in keys:
+        if k not in contracts:
+            print("FAIL  %s  (no contract entry)" % k)
+            return 1
+        results.append(validate(k, contracts[k], args.verbose))
+
+    for r in results:
+        r.dump()
+    bad = [r.asset for r in results if not r.passed]
+    print("\n%d/%d assets pass." % (len(results) - len(bad), len(results)))
+    if bad:
+        print("failing: %s" % ", ".join(bad))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
