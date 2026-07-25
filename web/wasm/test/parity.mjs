@@ -147,12 +147,12 @@ eqBits('cinder.radius', M._of_body_radius(cinder), expected.cinderRadius);
 // This is the property the game actually needs: one binary, reproducible world.
 {
   // (a) The same quad generated twice must be bit-identical.
-  const m1 = M._of_quadmesh_generate(forge, 4, 7, 53, 91, 0, 1);
+  const m1 = M._of_quadmesh_generate(forge, 4, 7, 53, 91, 0, 0);
   const n1 = M._of_quadmesh_vertex_count(m1);
   const h1 = viewF64(M, M._of_quadmesh_heights_f64(m1), n1);
   const a = fnv(); for (let i = 0; i < n1; ++i) a.f64(h1[i]);
   const lo1 = M._of_quadmesh_content_hash_lo(m1) >>> 0, hi1 = M._of_last_hi() >>> 0;
-  const m2 = M._of_quadmesh_generate(forge, 4, 7, 53, 91, 0, 1);
+  const m2 = M._of_quadmesh_generate(forge, 4, 7, 53, 91, 0, 0);
   const h2 = viewF64(M, M._of_quadmesh_heights_f64(m2), n1);
   const b = fnv(); for (let i = 0; i < n1; ++i) b.f64(h2[i]);
   const lo2 = M._of_quadmesh_content_hash_lo(m2) >>> 0, hi2 = M._of_last_hi() >>> 0;
@@ -164,7 +164,7 @@ eqBits('cinder.radius', M._of_body_radius(cinder), expected.cinderRadius);
   // from a PARENT at a coarser LOD (the property the whole streaming design
   // rests on). This is asserted purely inside WASM.
   const G = M._of_quadmesh_grid_dim(m1);
-  const me = M._of_quadmesh_generate(forge, 4, 7, 54, 91, 0, 1);
+  const me = M._of_quadmesh_generate(forge, 4, 7, 54, 91, 0, 0);
   const he = viewF64(M, M._of_quadmesh_heights_f64(me), n1);
   const hm = viewF64(M, M._of_quadmesh_heights_f64(m1), n1);
   let seam = 0;
@@ -299,7 +299,7 @@ for (let i = 0; i < SAMPLES.length; ++i) {
 // --- CASE 3: full generateQuadMesh ------------------------------------------
 {
   const e = expected.quadmesh;
-  const m = M._of_quadmesh_generate(forge, 2, 5, 7, 11, 0, 1);
+  const m = M._of_quadmesh_generate(forge, 2, 5, 7, 11, 0, 0);   // rawBase 0 = the oracle
   const G = M._of_quadmesh_grid_dim(m);
   const n = M._of_quadmesh_vertex_count(m);
   eq('quadmesh.gridDim', G, e.gridDim);
@@ -329,7 +329,7 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   eqBits('quadmesh.centerY', c[1], e.centerY, TIER.B);
   eqBits('quadmesh.centerZ', c[2], e.centerZ, TIER.B);
 
-  const mr = M._of_quadmesh_generate(forge, 2, 5, 7, 11, 0, 0);
+  const mr = M._of_quadmesh_generate(forge, 2, 5, 7, 11, 0, 1);  // rawBase 1 = the RAW baseline
   const rlo = M._of_quadmesh_content_hash_lo(mr) >>> 0;
   const rhi = M._of_last_hi() >>> 0;
   eq('quadmesh.rawContentHashLo', rlo, e.rawContentHashLo);
@@ -337,7 +337,7 @@ for (let i = 0; i < SAMPLES.length; ++i) {
 
   // CRACK-FREE: the shared edge with the east neighbour must be bit-identical
   // IN WASM TOO (this is the property the whole streaming design rests on).
-  const me = M._of_quadmesh_generate(forge, 2, 5, 8, 11, 0, 1);
+  const me = M._of_quadmesh_generate(forge, 2, 5, 8, 11, 0, 0);
   const heN = viewF64(M, M._of_quadmesh_heights_f64(me), n);
   const hmN = viewF64(M, M._of_quadmesh_heights_f64(m), n);
   let seamOk = 1;
@@ -445,7 +445,7 @@ const streamChunkDiffs = [];
 {
   const e = expected.streaming;
   const s = M._of_streamer_create(forge, 1.0, 0.6, 6, 0, 0.5, 16);
-  M._of_observer_latlon_alt(forge, 0.30, 0.70, 20000.0);
+  M._of_observer_latlon_alt(forge, 0, 0.30, 0.70, 20000.0);
   const o = scratchF64(M, 3);
   const [ox, oy, oz] = [o[0], o[1], o[2]];
   eqBits('streaming.obsX', ox, e.obsX);
@@ -494,7 +494,116 @@ const streamChunkDiffs = [];
       eq(`streaming[${u}].neighboursOk`, M._of_chunk_neighbour_depths(s, 0), 1);
     }
   }
+  // --- CASE 7c: of_chunk_max_offset is a REAL bounding radius ---------------
+  // It must equal the largest |vertex - centre| over EVERY vertex the chunk
+  // emits, skirt included. The pre-ABI-2 version returned the largest single
+  // AXIS offset over the INTERIOR only: 52,639 m for a depth-3 chunk whose
+  // furthest emitted vertex is 108,403 m out, which frustum-culled on-screen
+  // chunks. The packed buffer is the ground truth here because it is exactly
+  // what the renderer uploads. Tolerance is f32 rounding of the packed
+  // positions, nothing more.
+  {
+    const ready = M._of_streamer_ready_count(s);
+    const stride = M._of_packed_stride();
+    let worstRel = 0, checked = 0, skirtBeatsInterior = 0;
+    for (let ci = 0; ci < ready; ++ci) {
+      const nBytes = M._of_chunk_packed(s, ci);
+      const nV = nBytes / stride;
+      const u8 = scratchU8(M, nBytes).slice();
+      const f32 = new Float32Array(u8.buffer);
+      const F = stride / 4;
+      let allMax = 0, interiorMax = 0;
+      for (let v = 0; v < nV; ++v) {
+        const f = v * F;
+        const r = Math.hypot(f32[f], f32[f + 1], f32[f + 2]);
+        if (r > allMax) allMax = r;
+        // flags byte (offset 20 + 3) bit0 marks a skirt vertex
+        if ((u8[v * stride + 23] & 1) === 0 && r > interiorMax) interiorMax = r;
+      }
+      const got = M._of_chunk_max_offset(s, ci);
+      const rel = Math.abs(got - allMax) / (allMax || 1);
+      if (rel > worstRel) worstRel = rel;
+      if (allMax > interiorMax * 1.000001) skirtBeatsInterior++;
+      checked++;
+    }
+    eq(`maxOffset.chunksChecked`, checked > 0, true, TIER.SELF);
+    eq(`maxOffset.matchesPackedBound (worst rel ${worstRel.toExponential(2)})`,
+       worstRel < 1e-6, true, TIER.SELF);
+    // If the skirt never reached further than the interior the check above
+    // could not tell the two definitions apart; say so rather than pass quietly.
+    eq(`maxOffset.skirtIsTheBound (${skirtBeatsInterior}/${checked} chunks)`,
+       skirtBeatsInterior > 0, true, TIER.SELF);
+  }
   M._of_streamer_destroy(s);
+}
+
+// --- CASE 7b: THE SURFACE-AUTHORITY GUARD -----------------------------------
+//
+// The regression this exists to make impossible: of_observer_latlon_alt was
+// built on terrain_stream.h's makeObserverLatLonAlt, i.e. the RAW heightfield,
+// so an "altitude 60 m" observer at lat 48 / lon 18 on Forge spawned ~2.4 km
+// UNDERGROUND and every terrain chunk rendered behind the camera. WG-21 made
+// surface_field.h the single authority and DECISIONS.md standing rule 1 says no
+// module re-derives terrain height; the bridge broke that rule anyway.
+//
+// Pinned identity: observer === dir * (of_surface_radius + alt) BIT-EXACT, and
+// NOT dir * (R + rawHeight + alt). The inequality half matters as much as the
+// equality half: if raw and designed ever agreed at this sample the test would
+// be passing vacuously, so the gap is asserted too.
+{
+  const e = expected.observer;
+  const DEG = Math.PI / 180;
+  const lat = e.latDeg * DEG, lon = e.lonDeg * DEG, alt = e.altM;
+
+  const raw = M._of_sample_raw_height_latlon(forge, lat, lon);
+  const des = M._of_sample_designed_height_latlon(forge, lat, lon);
+  eqBits('observer.raw', raw, e.raw, TIER.B);
+  eqBits('observer.designed', des, e.designed, TIER.B);
+
+  M._of_latlon_to_dir(lat, lon);
+  const d = scratchF64(M, 3).slice();
+  const base = M._of_base_height(forge, d[0], d[1], d[2]);
+  const surfR = M._of_surface_radius(forge, 0, d[0], d[1], d[2]);
+  eq('observer.base === designed', bits(base), bits(des), TIER.SELF);
+  eqBits('observer.surfaceR', surfR, e.surfaceR, TIER.B);
+
+  M._of_observer_latlon_alt(forge, 0, lat, lon, alt);
+  const o = scratchF64(M, 3).slice();
+  // THE identity, component-wise and bit-exact.
+  const want = surfR + alt;
+  eq('observer.x === dir.x*(surfaceRadius+alt)', bits(o[0]), bits(d[0] * want), TIER.SELF);
+  eq('observer.y === dir.y*(surfaceRadius+alt)', bits(o[1]), bits(d[1] * want), TIER.SELF);
+  eq('observer.z === dir.z*(surfaceRadius+alt)', bits(o[2]), bits(d[2] * want), TIER.SELF);
+
+  // And the negative half: it must NOT be the raw surface.
+  const R = M._of_body_radius(forge);
+  const obsR = Math.hypot(o[0], o[1], o[2]);
+  const rawR = R + raw + alt;
+  const gap = des - raw;
+  eq(`observer.rawGapIsReal (${gap.toFixed(2)} m designed - raw)`,
+     Math.abs(gap) > 100, true, TIER.SELF);
+  eq(`observer.notRawDerived (would be ${(obsR - rawR).toFixed(2)} m off)`,
+     Math.abs(obsR - rawR) > 100, true, TIER.SELF);
+  eqBits('observer.rawGapM', gap, e.rawGapM, TIER.B);
+  eqBits('observer.obsX', o[0], e.obsX, TIER.B);
+  eqBits('observer.obsY', o[1], e.obsY, TIER.B);
+  eqBits('observer.obsZ', o[2], e.obsZ, TIER.B);
+
+  // The dug half: the observer follows the FULL oracle (base minus the
+  // voxel-derived lowering), not merely the designed base.
+  const ge = M._of_edits_create();
+  for (let k = 0; k < 6; ++k) {
+    const r = surfR - 0.5 - k;
+    M._of_edits_dig_cell_at(ge, d[0] * r, d[1] * r, d[2] * r);
+  }
+  const low = M._of_derived_lowering(forge, ge, d[0], d[1], d[2]);
+  M._of_observer_latlon_alt(forge, ge, lat, lon, alt);
+  const o2 = scratchF64(M, 3).slice();
+  const dugR = Math.hypot(o2[0], o2[1], o2[2]);
+  eq('observer.digLowersObserver', Math.abs((obsR - dugR) - low) < 1e-6, true, TIER.SELF);
+  eqBits('observer.lowering', low, e.lowering, TIER.B);
+  eqBits('observer.dugDropM', obsR - dugR, e.dugDropM, TIER.B);
+  M._of_edits_destroy(ge);
 }
 
 // --- CASE 8: the factory auto-line (mirrors test_automation.cpp) -------------
@@ -633,7 +742,7 @@ if (process.argv.includes('--bench')) {
     const depth = 3 + (q % 5);
     const qx = q % (1 << depth);
     const qy = (q * 7) % (1 << depth);
-    const m = M._of_quadmesh_generate(b2, face, depth, qx, qy, 0, 1);
+    const m = M._of_quadmesh_generate(b2, face, depth, qx, qy, 0, 0);
     verts += M._of_quadmesh_vertex_count(m);
     M._of_quadmesh_destroy(m);
   }
@@ -684,7 +793,7 @@ if (process.argv.includes('--bench')) {
   // normals + skirt) THEN pack into the 28 B/vertex interleaved buffer.
   {
     const s = M._of_streamer_create(b2, 1.0, 0.6, 8, 0, 0.5, 16);
-    M._of_observer_latlon_alt(b2, 0.30, 0.70, 3000.0);
+    M._of_observer_latlon_alt(b2, 0, 0.30, 0.70, 3000.0);
     const p = M._of_scratch_f64() >>> 3;
     const [ox, oy, oz] = [M.HEAPF64[p], M.HEAPF64[p + 1], M.HEAPF64[p + 2]];
     let chunks = 0, buildNs = 0n, packNs = 0n, bytes = 0, maxOff = 0;

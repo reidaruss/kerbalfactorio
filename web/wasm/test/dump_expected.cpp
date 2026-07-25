@@ -92,7 +92,7 @@ static int runBench() {
     const int depth = 3 + (q % 5);
     const uint32_t qx = static_cast<uint32_t>(q) % (1u << depth);
     const uint32_t qy = static_cast<uint32_t>(q * 7) % (1u << depth);
-    const int m = of_quadmesh_generate(forge, face, depth, qx, qy, 0, 1);
+    const int m = of_quadmesh_generate(forge, face, depth, qx, qy, 0, /*rawBase*/ 0);
     verts += of_quadmesh_vertex_count(m);
     of_quadmesh_destroy(m);
   }
@@ -183,7 +183,7 @@ static int runDiag() {
   if (!fp) fp = std::fopen("diag_scan.bin", "wb");
   if (fp) {
     const int s = of_streamer_create(forge, 1.0, 0.6, 6, 0, 0.5, 16);
-    of_observer_latlon_alt(forge, 0.30, 0.70, 20000.0);
+    of_observer_latlon_alt(forge, 0, 0.30, 0.70, 20000.0);
     const double* o = of_scratch_f64();
     const double ox = o[0], oy = o[1], oz = o[2];
     std::vector<int32_t> keys;
@@ -301,7 +301,7 @@ int main(int argc, char** argv) {
   // f32 position/normal hashes + a few exact vertex heights.
   // =========================================================================
   {
-    const int m = of_quadmesh_generate(forge, 2, 5, 7, 11, 0, /*designed*/ 1);
+    const int m = of_quadmesh_generate(forge, 2, 5, 7, 11, 0, /*rawBase*/ 0);
     const int n = of_quadmesh_vertex_count(m);
     const uint32_t hlo = of_quadmesh_content_hash_lo(m);
     const uint32_t hhi = of_last_hi();
@@ -319,13 +319,13 @@ int main(int argc, char** argv) {
     const double cx = c[0], cy = c[1], cz = c[2];
 
     // RAW-base variant (the historical cubed_sphere path) as a second probe.
-    const int mr = of_quadmesh_generate(forge, 2, 5, 7, 11, 0, /*designed*/ 0);
+    const int mr = of_quadmesh_generate(forge, 2, 5, 7, 11, 0, /*rawBase*/ 1);
     const uint32_t rlo = of_quadmesh_content_hash_lo(mr);
     const uint32_t rhi = of_last_hi();
 
     // Crack-free proof: the shared edge between this quad and its east
     // neighbour must be bit-identical. Sample both and hash the shared column.
-    const int me = of_quadmesh_generate(forge, 2, 5, 8, 11, 0, 1);
+    const int me = of_quadmesh_generate(forge, 2, 5, 8, 11, 0, /*rawBase*/ 0);
     const double* he = of_quadmesh_heights_f64(me);
     const double* hm = of_quadmesh_heights_f64(m);
     const int G = of_quadmesh_grid_dim(m);
@@ -479,7 +479,7 @@ int main(int argc, char** argv) {
   {
     const int s = of_streamer_create(forge, 1.0, 0.6, /*maxDepth*/ 6,
                                      /*minResidentDepth*/ 0, 0.5, /*budget*/ 16);
-    of_observer_latlon_alt(forge, 0.30, 0.70, 20000.0);
+    of_observer_latlon_alt(forge, 0, 0.30, 0.70, 20000.0);
     const double* o = of_scratch_f64();
     const double ox = o[0], oy = o[1], oz = o[2];
     std::printf("  \"streaming\": {\"obsX\": %s, \"obsY\": %s, \"obsZ\": %s, "
@@ -522,6 +522,73 @@ int main(int argc, char** argv) {
     }
     std::printf("  ]},\n");
     of_streamer_destroy(s);
+  }
+
+  // =========================================================================
+  // CASE 7b: THE SURFACE-AUTHORITY GUARD (bridge audit, 2026-07-25).
+  //
+  // of_observer_latlon_alt used to be built on terrain_stream.h's
+  // makeObserverLatLonAlt, which samples the RAW heightfield. At lat 48 / lon 18
+  // on Forge raw is ~2.4 km BELOW the designed surface, so an "altitude 60 m"
+  // observer spawned 2.4 km underground and every chunk rendered behind the
+  // camera: the multiple-surfaces failure WG-21 exists to delete, reintroduced
+  // by the bridge one commit after the standing rule was written.
+  //
+  // The identity pinned here makes that unrepresentable:
+  //   observer(lat,lon,alt) === dir * (of_surface_radius(dir) + alt), BIT-EXACT,
+  //   and it is NOT dir * (R + rawHeight + alt). The two must still differ by
+  //   hundreds of metres, or the guard would be passing vacuously.
+  // The dug half proves the observer tracks the FULL oracle, not just the base.
+  // =========================================================================
+  {
+    const double kDeg = 0.017453292519943295;
+    const double lat = 48.0 * kDeg, lon = 18.0 * kDeg, alt = 60.0;
+    const double raw = of_sample_raw_height_latlon(forge, lat, lon);
+    const double des = of_sample_designed_height_latlon(forge, lat, lon);
+    of_latlon_to_dir(lat, lon);
+    const double* dd = of_scratch_f64();
+    const double dx = dd[0], dy = dd[1], dz = dd[2];
+    const double base = of_base_height(forge, dx, dy, dz);
+    const double surfR = of_surface_radius(forge, 0, dx, dy, dz);
+    of_observer_latlon_alt(forge, 0, lat, lon, alt);
+    const double* oo = of_scratch_f64();
+    const double ox = oo[0], oy = oo[1], oz = oo[2];
+    const double want = surfR + alt;
+    const double ex = dx * want, ey = dy * want, ez = dz * want;
+    SELF(std::memcmp(&ox, &ex, 8) == 0 && std::memcmp(&oy, &ey, 8) == 0 &&
+         std::memcmp(&oz, &ez, 8) == 0,
+         "observer != dir*(surfaceRadius+alt) - the bridge left the oracle");
+    SELF(std::memcmp(&base, &des, 8) == 0, "baseHeight != designed at the guard point");
+    const double rawGap = des - raw;   // > 0 => a raw-derived observer is BURIED
+    SELF(std::fabs(rawGap) > 100.0,
+         "raw and designed agree at the guard point - the guard is vacuous");
+    const double obsR = std::sqrt(ox * ox + oy * oy + oz * oz);
+    SELF(std::fabs(obsR - (of_body_radius(forge) + raw + alt)) > 100.0,
+         "observer matches the RAW surface - the defect is back");
+
+    // The dug half: carve a 6 m column at the guard point; the observer must
+    // drop by EXACTLY the oracle's derived lowering.
+    const int gedits = of_edits_create();
+    for (int k = 0; k < 6; ++k) {
+      const double r = surfR - 0.5 - static_cast<double>(k);
+      of_edits_dig_cell_at(gedits, dx * r, dy * r, dz * r);
+    }
+    const double low = of_derived_lowering(forge, gedits, dx, dy, dz);
+    of_observer_latlon_alt(forge, gedits, lat, lon, alt);
+    const double* o2 = of_scratch_f64();
+    const double dugR = std::sqrt(o2[0] * o2[0] + o2[1] * o2[1] + o2[2] * o2[2]);
+    SELF(low > 0.0, "guard dig produced no derived lowering");
+    SELF(std::fabs((obsR - dugR) - low) < 1e-6, "observer ignores voxel digs");
+    of_edits_destroy(gedits);
+
+    std::printf("  \"observer\": {\"latDeg\": 48, \"lonDeg\": 18, \"altM\": 60, "
+                "\"raw\": %s, \"designed\": %s, \"surfaceR\": %s, "
+                "\"obsX\": %s, \"obsY\": %s, \"obsZ\": %s, "
+                "\"rawGapM\": %s, \"lowering\": %s, \"dugDropM\": %s},\n",
+                bits(raw).c_str(), bits(des).c_str(), bits(surfR).c_str(),
+                bits(ox).c_str(), bits(oy).c_str(), bits(oz).c_str(),
+                bits(rawGap).c_str(), bits(low).c_str(),
+                bits(obsR - dugR).c_str());
   }
 
   // =========================================================================

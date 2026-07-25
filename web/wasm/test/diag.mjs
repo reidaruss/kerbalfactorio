@@ -109,7 +109,7 @@ let quadsWithAnyDiff = 0;
 // The exact quads the streamer produced in the parity fixture (3 budgeted
 // updates around the same observer) — the set whose content diverged.
 const sId = M._of_streamer_create(body, 1.0, 0.6, 6, 0, 0.5, 16);
-M._of_observer_latlon_alt(body, 0.30, 0.70, 20000.0);
+M._of_observer_latlon_alt(body, 0, 0.30, 0.70, 20000.0);
 {
   const p = M._of_scratch_f64() >>> 3;
   var OX = M.HEAPF64[p], OY = M.HEAPF64[p + 1], OZ = M.HEAPF64[p + 2];

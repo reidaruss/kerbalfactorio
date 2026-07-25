@@ -1,5 +1,5 @@
 {
-  "abi": 1,
+  "abi": 2,
   "seedLo": 200281345, "seedHi": 0,
   "forgeRadius": "41224f8000000000",
   "cinderRadius": "41086a0000000000",
@@ -30,11 +30,12 @@
   "digColumn": {"cells": 6, "before": "c0925457652656f4", "after": "c0926c57652656f4", "lowering": "4018000000000000", "removed": 6},
   "tunnel": {"removed": 109, "columns": 10, "noLoweringColumns": 10, "ceilingSolid": 1, "hash": 748632641},
   "voxel": {"removed": 229, "dirtyValid": 1, "dirty": [185762,341565,455422,185769,341572,455429], "faces": 375, "faceHash": 3961851798, "saveBytes": 2063, "saveHash": 3557665550},
-  "streaming": {"obsX": "411bbdfcb02e2e12", "obsY": "410670b84745c059", "obsZ": "41175debd28ef347", "updates": [
+  "streaming": {"obsX": "411bc3dd3cbf6acf", "obsY": "410675794ab0213d", "obsZ": "411762df1632b21e", "updates": [
     {"ready": 16, "generated": 16, "converged": 0, "resident": 16, "evicted": 0, "keyHash": 2994706501, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2391916783,4277595019,3217462027,3888022511,990683114,3839370254,281487916,2073845955,1297374692,2010058720,152425187,1552791347,495652397,349826179,2637517559,2366263607], "chunkBiomes": [3,4,0,0,0,0,0,0,2,2,4,0,0,3,4,2]},
     {"ready": 16, "generated": 16, "converged": 0, "resident": 32, "evicted": 0, "keyHash": 505937014, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2558675447,279008052,2141234350,3972022229,2209371651,1326134406,140772313,4255292297,3188615790,480034642,2690146676,762059346,265712179,449693665,3035395095,708026266], "chunkBiomes": [0,0,2,0,5,6,0,2,0,0,4,0,0,0,0,4]},
     {"ready": 16, "generated": 16, "converged": 0, "resident": 48, "evicted": 0, "keyHash": 2189225573, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [214388846,4082199055,2872988811,1704737695,3704840557,2075475139,2576417676,704446318,3186372056,1057497303,530461053,622646282,3863315051,689718566,3901649224,1794157591], "chunkBiomes": [0,4,0,2,0,4,4,4,0,2,2,3,4,3,4,3]}
   ]},
+  "observer": {"latDeg": 48, "lonDeg": 18, "altM": 60, "raw": "40afd70385674b02", "designed": "40b978cf9dec3c02", "surfaceR": "412282719f3bd878", "obsX": "41178f8211b6f2b5", "obsY": "411b836590503e39", "obsZ": "40fe9f05e9a4afc7", "rawGapM": "40a31a9bb6712d02", "lowering": "4018000000000000", "dugDropM": "4018000000000000"},
   "factory": {"ore": 384, "ingot": 248, "part": 197, "minerRemaining": 99616, "belt1Items": 1, "smelterOut": 0, "asmIn": 50, "tick": 5000, "stateRows": 9, "stateHash": 2547301955, "flows": 2, "flowHash": 1450565499, "lineItems": 1, "itemHash": 1886708342, "asmProgress": "3fe3333333333333", "smelterWorking": 1},
   "factoryDeplete": {"mined": 40, "remaining": 0, "depleted": 1, "exactRateMined": 600, "exactRateRemaining": 0},
   "selfCheck": 1

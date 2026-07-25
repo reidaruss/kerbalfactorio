@@ -36,6 +36,31 @@
 // unmodified /core headers. Build with -O3 and WITHOUT -ffast-math (see
 // build.ps1) so the IEEE-754 semantics the position-hash determinism relies on
 // are preserved bit-for-bit.
+//
+// SURFACE AUTHORITY (WG-21 / DECISIONS.md standing rule 1): READ BEFORE EDITING
+//   There is ONE surface: of/surface_field.h. baseHeight (== sampleDesignedHeight)
+//   is the designed relief; surfaceHeight is that minus the voxel-derived
+//   lowering with the single bedrock clamp. RAW `sampleHeightField` is an
+//   INTERNAL INGREDIENT of the designed shaping and of the biome classifier. It
+//   is NOT a surface: nothing stands on it, collides with it, or is positioned
+//   relative to it. On Forge the two differ by kilometres (lat 48 / lon 18:
+//   raw 4,075.51 m vs designed 6,520.81 m), so a single raw-derived position is
+//   a player 2.4 km underground.
+//
+//   Rules this file now obeys, and every future export must:
+//     1. Any export that returns or consumes "where the ground is" calls the
+//        oracle (of/surface_field.h), never sampleHeightField/SampleTerrainHeight.
+//     2. An export MAY expose RAW only if RAW is in its NAME and it is documented
+//        as a diagnostic (today: of_sample_raw_height_latlon, of_diag_scan_quad,
+//        of_quadmesh_generate's rawBase flag).
+//     3. ZERO MEANS CORRECT. Where a flag selects between authorities, 0/default
+//        must select the oracle, so a caller that forgets the flag is right.
+//     4. NEVER mix bases: a voxel-derived lowering is defined against the
+//        DESIGNED base, so applying it to a RAW base reconstructs the exact
+//        "mesh vs edits use different bases" bug WG-21 deleted. Such a call is
+//        rejected, not silently served.
+//   Guarded by parity.mjs CASE 7b (oracle-vs-raw) and dump_expected.cpp's
+//   SELF-CHECK of the same identity, so a regression cannot land quietly.
 // =============================================================================
 #include <cstdint>
 #include <cstring>
@@ -134,7 +159,12 @@ OF_API int32_t* of_scratch_i32(void) { return g_i32.empty() ? nullptr : g_i32.da
 OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.data();  }
 
 // ABI/version probe so JS can fail loudly against a stale .wasm.
-OF_API int of_abi_version(void) { return 1; }
+//   1: W0/W1 bridge.
+//   2: surface-authority audit: of_observer_latlon_alt gained an `edits`
+//       parameter and now reads the oracle; of_quadmesh_generate's last
+//       parameter flipped to `rawBase` (0 = the oracle, the safe default);
+//       of_chunk_max_offset became a true Euclidean bound including skirts.
+OF_API int of_abi_version(void) { return 2; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -348,7 +378,13 @@ OF_API int of_solid_cell(int bodyId, int editsId,
   return wg::isProcSolid(*b, c) ? 1 : 0;
 }
 
-// Geodetic conveniences (raw + designed) for the walker / spawn logic.
+// Geodetic conveniences.
+//
+// of_sample_raw_height_latlon is a DIAGNOSTIC, NOT A SURFACE. It exposes the raw
+// heightfield ingredient so a test can prove the raw/designed gap is still there
+// (and that nothing is accidentally reading it). Never position anything with it:
+// use of_surface_radius / of_observer_latlon_alt. of_sample_designed_height_latlon
+// IS the oracle's base at a geo coord (== of_base_height of the same dir).
 OF_API double of_sample_raw_height_latlon(int bodyId, double lat, double lon) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return NAN;
@@ -445,26 +481,38 @@ void buildMeshFloats(MeshRec& r) {
 }
 }  // namespace
 
-// Generate one quad mesh. `editsId <= 0` = undug. `designedBase != 0` uses the
-// DESIGNED surface (what terrain_stream's buildChunk does, and what everything
-// else in the engine reads); 0 uses the RAW heightfield (the historical path,
-// kept only so the pinned cubed_sphere determinism tests can be reproduced).
+// Generate one quad mesh. `editsId <= 0` = undug.
+//
+// LAST PARAMETER IS `rawBase`, AND 0 IS THE CORRECT ANSWER (ABI 2). 0 builds the
+// mesh on the surface authority: the DESIGNED base, exactly what buildChunk /
+// the walker / voxel solidity read. Nonzero selects the RAW heightfield and
+// exists ONLY to reproduce the historical cubed_sphere.h determinism baselines;
+// it is not a surface anything else in the engine agrees with. (Before ABI 2
+// this flag was `designedBase`, so 0 (the value a forgetful caller passes)
+// silently produced a raw mesh. Zero now means correct.)
+//
+// rawBase != 0 WITH edits bound is REJECTED (returns 0): the voxel-derived
+// lowering is defined against the DESIGNED base, so subtracting it from a RAW
+// base is the "mesh and edits use different bases" defect WG-21 removed.
 // Returns a mesh handle, or 0 on bad args.
 OF_API int of_quadmesh_generate(int bodyId, int faceId, int depth,
                                 uint32_t qx, uint32_t qy, int editsId,
-                                int designedBase) {
+                                int rawBase) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return 0;
   wg::FQuadKey key{b->bodyId, faceId, depth, qx, qy};
 
   wg::HeightLoweringFn lowering = nullptr;
   const wg::VoxelEdits* e = editsOrNull(editsId);
-  if (e) lowering = wg::SurfaceField(*b, e).loweringFn();
+  if (e) {
+    if (rawBase) return 0;                     // mixed authority: refuse
+    lowering = wg::SurfaceField(*b, e).loweringFn();
+  }
 
-  wg::HeightFieldFn base = nullptr;
-  if (designedBase) {
+  wg::HeightFieldFn base = nullptr;            // null == RAW inside /core
+  if (!rawBase) {
     const wg::BodyParams body = *b;
-    base = [body](const Vec3& dir) { return wg::sampleDesignedHeight(body, dir); };
+    base = [body](const Vec3& dir) { return wg::baseHeight(body, dir); };
   }
 
   MeshRec* r = new MeshRec();
@@ -608,14 +656,31 @@ OF_API int of_streamer_update(int sId, double ox, double oy, double oz) {
   r->last = r->s->updateStreaming(obs);
   return static_cast<int>(r->last.ready.size());
 }
-// Convenience observer builder: lat/lon (rad) + altitude above the RAW surface.
-// Fills f64 scratch [x,y,z] so JS can feed of_streamer_update.
-OF_API void of_observer_latlon_alt(int bodyId, double lat, double lon, double altM) {
+// Convenience observer builder: lat/lon (RADIANS) + altitude above THE SURFACE.
+// Fills f64 scratch [x,y,z] so JS can feed of_streamer_update / place a camera.
+//
+// altM is measured from the ONE surface (surface_field.h): with `editsId > 0`
+// that is surfaceRadius (designed base minus the voxel-derived lowering, bedrock
+// clamped); with `editsId <= 0` it is the pristine designed base. Identical, bit
+// for bit, to of_surface_radius(body, edits, dir) + altM.
+//
+// It deliberately does NOT call terrain_stream.h's makeObserverLatLonAlt, which
+// is built on the RAW heightfield: on Forge that helper put an "altitude 60 m"
+// observer 2.4 km UNDERGROUND (raw 4,075.51 m vs designed 6,520.81 m at
+// lat 48 / lon 18), which is the multiple-surfaces failure WG-21 exists to
+// delete. /core keeps the raw helper for its own historical baselines; the
+// bridge does not export it. Guarded by parity CASE 7b.
+OF_API void of_observer_latlon_alt(int bodyId, int editsId,
+                                   double lat, double lon, double altM) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   resetF64(3);
   if (!b) return;
-  const UniverseCoord c = wg::makeObserverLatLonAlt(*b, lat, lon, altM);
-  g_f64.push_back(c.pos.x); g_f64.push_back(c.pos.y); g_f64.push_back(c.pos.z);
+  const Vec3 dir = wg::latLonToDir(lat, lon);        // already unit length
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const double surfR = e ? wg::surfaceRadius(*b, dir, *e)
+                         : b->radiusM + wg::baseHeight(*b, dir);
+  const Vec3 p = dir * (surfR + altM);
+  g_f64.push_back(p.x); g_f64.push_back(p.y); g_f64.push_back(p.z);
 }
 
 OF_API int of_streamer_ready_count(int sId) {
@@ -963,23 +1028,36 @@ OF_API int of_chunk_index_buffer(void) {
   return static_cast<int>(g_chunkIndices.size());
 }
 
-// The maximum |vertex - chunkCentre| for ready chunk `i`, in metres. The
-// renderer/physics can use it to bound the float32 quantization of the packed
-// positions: quantum ~= maxOffset * 2^-23.
+// The BOUNDING RADIUS of ready chunk `i`: max Euclidean |vertex - chunkCentre|
+// in metres, over EVERY vertex the chunk emits: interior grid AND skirt ring.
+//
+// SEMANTICS FIXED IN ABI 2. It used to return the largest single-AXIS offset
+// (an L-infinity half-extent, up to sqrt(3) short of the real radius) over the
+// INTERIOR ONLY (the skirt hangs radially inward by skirtDepthM and is routinely
+// the furthest geometry). Measured on a depth-3 Forge chunk it reported
+// 52,639 m for a chunk whose furthest emitted vertex is at 108,403 m, so a
+// renderer using it as a bounding sphere frustum-culled chunks that were on
+// screen. It is now exactly the value the worker's de-interleave loop computes,
+// so the renderer can take this instead of recomputing it.
+//
+// Two uses, both correct with this definition:
+//   * bounding sphere: centre = of_chunk_anchor's centre, radius = this.
+//   * float32 quantization bound of the packed positions: quantum <= r * 2^-23
+//     (a Euclidean radius bounds every per-axis component, so this is
+//     conservative in the safe direction).
 OF_API double of_chunk_max_offset(int sId, int i) {
   const wg::TerrainChunk* c = readyChunk(sId, i);
   if (!c) return -1.0;
   const Vec3& o = c->centerUniverse.pos;
-  double m = 0.0;
-  for (const Vec3& p : c->positions) {
-    const double d = std::fabs(p.x - o.x);
-    const double e = std::fabs(p.y - o.y);
-    const double f = std::fabs(p.z - o.z);
-    if (d > m) m = d;
-    if (e > m) m = e;
-    if (f > m) m = f;
-  }
-  return m;
+  double m2 = 0.0;
+  auto acc = [&](const Vec3& p) {
+    const double dx = p.x - o.x, dy = p.y - o.y, dz = p.z - o.z;
+    const double r2 = dx * dx + dy * dy + dz * dz;
+    if (r2 > m2) m2 = r2;
+  };
+  for (const Vec3& p : c->positions) acc(p);
+  for (const Vec3& p : c->skirtPositions) acc(p);
+  return std::sqrt(m2);
 }
 
 // =============================================================================
