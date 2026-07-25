@@ -104,6 +104,64 @@
       "sockets": ["socket_belt_in", "socket_item"],
       "clips": [],
       "collision": "col_BeltEndCap"
+    },
+    "smelter": {
+      "glb": "assets/models/dist/machines/smelter.glb",
+      "type_id": "0x12",
+      "footprint_cells": [2, 2],
+      "lod0_node": "Smelter_LOD0",
+      "lod_nodes": ["Smelter_LOD0", "Smelter_LOD1", "Smelter_LOD2"],
+      "dims_xyz_m": [2.0, 2.60, 2.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 700,
+      "max_tris_total": 1200,
+      "max_materials": 5,
+      "sockets": [
+        "socket_item_in",
+        "socket_item_out",
+        "socket_power_in",
+        "socket_smoke",
+        "socket_status"
+      ],
+      "clips": ["Furnace_Glow"],
+      "collision": "col_Smelter"
+    },
+    "assembler": {
+      "glb": "assets/models/dist/machines/assembler.glb",
+      "type_id": "0x13",
+      "footprint_cells": [3, 3],
+      "lod0_node": "Assembler_LOD0",
+      "lod_nodes": ["Assembler_LOD0", "Assembler_LOD1", "Assembler_LOD2"],
+      "dims_xyz_m": [3.0, 2.80, 3.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 1100,
+      "max_tris_total": 1800,
+      "max_materials": 5,
+      "sockets": [
+        "socket_item_in_a",
+        "socket_item_in_b",
+        "socket_item_out",
+        "socket_power_in",
+        "socket_arm_grip",
+        "socket_status"
+      ],
+      "clips": ["Assembler_Arm_Cycle"],
+      "collision": "col_Assembler"
+    },
+    "box": {
+      "glb": "assets/models/dist/machines/box.glb",
+      "type_id": "0x14",
+      "footprint_cells": [1, 1],
+      "lod0_node": "Box_LOD0",
+      "lod_nodes": ["Box_LOD0", "Box_LOD1", "Box_LOD2"],
+      "dims_xyz_m": [1.0, 1.00, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 300,
+      "max_tris_total": 520,
+      "max_materials": 4,
+      "sockets": ["socket_item_in", "socket_item_out", "socket_status"],
+      "clips": ["Box_Lid"],
+      "collision": "col_Box"
     }
   }
 }
