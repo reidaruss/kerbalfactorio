@@ -1,0 +1,1031 @@
+# Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
+
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** pipeline proven, specs ready to build.
+
+This is the buildable half of the art direction. It says exactly **what** models the
+game needs, **how big** each one is, and **how** an agent produces one so that it
+loads into three.js correctly the first time.
+
+Content is derived from the shipped headless cores, not invented:
+
+| Where the content comes from | Header |
+|---|---|
+| Items, recipes, tools, structures, the survival `Furnace` | `core/include/of/gameplay.h` |
+| Harvestable `NodeKind` set and resource mapping | `core/include/of/deposits.h` |
+| Machine kinds, `VisualState`, `AnimPhase`, LOD bands | `core/include/of/factory_sim.h` |
+| Biome set that drives environment props | `core/include/of/biome.h` |
+| Tech gates | `core/include/of/research.h` |
+| Vessel / flight side (Phase S) | `core/include/of/orbital.h`, `sim_world.h` |
+| 1 m voxel grid (`kVoxelSizeM = 1.0`) | `core/include/of/voxel_terrain.h` |
+
+Do not add an asset that has no referent in those headers without logging it as a
+decision with Admin first.
+
+---
+
+## 1. Art direction
+
+**Clean, readable, stylized-industrial sci-fi.** Every object states its function in
+its silhouette before you can read a label: a miner straddles the ground it eats, a
+generator is a boiler with a turning flywheel, a furnace is a stone box with a lit
+mouth. Forms are low-poly and hard-edged with grounded hard-sci-fi proportions (KSP
+and Satisfactory, not Halo), lit by physically-based materials drawn from one small
+palette, with colour carried by the material rather than by texture maps.
+
+**Emissive is reserved for state, never for decoration.** The only glowing surfaces
+in the game are the machine-state panels and genuine fire, so a player scanning a
+factory at 50 m reads green / amber / red and instantly knows what is running, what
+is starved, and what has lost power. That single rule is what buys Factorio's
+at-a-glance clarity in 3D.
+
+Practical consequences, all load-bearing:
+
+- **No image textures in Tier 0.** Flat base colour plus metallic/roughness
+  constants. Files stay tiny, there is no UV work, no KTX2 step, and no texture
+  memory budget to police.
+- **Palette roles, not per-asset colours.** An asset picks from `of_lib.PALETTE`.
+  Retinting the whole game is one file.
+- **Silhouette over surface detail.** Poly budget goes into the outline, not into
+  bevels nobody sees at 20 m.
+- **Everything is a box or a cylinder until it needs not to be.** The scripted
+  authoring path (section 6) makes primitive assembly cheap and organic sculpting
+  expensive, and the art direction is chosen so that is the right trade.
+
+---
+
+## 2. World conventions every asset obeys
+
+### 2.1 Units, axes, pivot
+
+| Rule | Value |
+|---|---|
+| Unit | 1 Blender unit = **1 metre**, metric, `scale_length = 1.0` |
+| Up (authoring) | Blender **+Z** |
+| Up (runtime) | three.js **+Y**, produced by the exporter's `export_yup=True` |
+| Forward (authoring) | Blender **-Y** |
+| Forward (runtime) | three.js **+Z**, which is what `Object3D.lookAt()` aims for a non-camera object |
+| Right | Blender **+X** to three.js **+X** |
+| Axis map | Blender `(x, y, z)` becomes glTF `(x, z, -y)` |
+| Pivot | footprint **centre** in X/Y, **base at Z = 0** |
+| Frame rate | **60 fps**, so one animation frame equals one `of::SimClock` tick |
+
+The pivot rule is what makes placement code trivial: a machine's origin is the point
+that sits on the terrain, so there is never a per-asset height offset, and grid
+snapping is pure arithmetic.
+
+### 2.2 The build grid
+
+The world uses a **1 m building grid** and a **1 m^3 voxel grid**
+(`voxel_terrain.h: kVoxelSizeM = 1.0`). Therefore:
+
+- **Every machine footprint is a whole number of metres.** No 1.5 m machines, ever.
+- Snap rule for a footprint `w x d` metres, in three.js axes:
+  `centre = (floor(x) + w/2, floor(z) + d/2)`.
+  Odd sizes land on a cell centre, even sizes on a cell corner. This is the Factorio
+  rule and it is why the pivot is the footprint centre rather than a corner.
+- **A mesh must never exceed its declared footprint.** An overhanging part z-fights
+  the neighbouring tile. The validator enforces this; it caught it on the very first
+  asset (belt rollers protruding 10 mm past their cell).
+
+### 2.3 Machine state materials
+
+`FactorySim::entityVisualState()` emits one byte per entity. Each machine carries
+exactly one `OF_EmissiveState` material on a small dedicated status surface, and the
+renderer recolours its `emissive`:
+
+| `VisualState` | Meaning | Emissive | Intensity |
+|---|---|---|---|
+| 0 | idle | `#1E5A66` dim cyan | 0.6 |
+| 1 | working | `#3BE07A` green | 1.6 |
+| 2 | blocked (starved or output full) | `#FFB020` amber | 1.4 |
+| 3 | no-power (brownout at zero) | `#FF3B30` red | 1.2 |
+
+Combustion machines (smelter, primitive furnace, survival smelter, generator) override
+**working** only, to fire orange `#FF7A1E` at intensity 2.2, because a green-glowing
+furnace reads wrong. Idle, blocked and no-power stay standard so the scanning rule
+still holds.
+
+For instanced machines a shared material cannot vary per instance. Feed the state
+through a per-instance attribute and patch it in with `onBeforeCompile`; the four
+colours above become a `vec3[4]` uniform lookup.
+
+### 2.4 LOD bands
+
+The LOD chain maps 1:1 onto `factory_sim.h`'s `enum class Lod`, so the renderer never
+invents its own bands:
+
+| Sim band | Mesh | Tri ratio | Distance | Notes |
+|---|---|---|---|---|
+| `Near0` | `<Name>_LOD0` | 100% | 0 to 25 m | discrete belt items drawn (`GetLineItems`) |
+| `Mid1` | `<Name>_LOD1` | ~45% | 25 to 80 m | belts become a scrolling flow, no discrete items |
+| `Far2` | `<Name>_LOD2` | ~15% | 80 to 250 m | or a billboard impostor |
+| `OnRails3` | not rendered | 0 | > 250 m | chunk demoted |
+
+LOD0 is mandatory. LOD1 and LOD2 are mandatory for anything a player will see a
+hundred of (machines, nodes, props) and optional for one-off assets. Hard-surface
+LODs are **hand-built**, not decimated: a collapse decimator wrecks a box silhouette
+long before it saves anything. `of_lib.add_lod_decimate()` exists for organic assets
+(rock, tree, character) where it does work.
+
+### 2.5 Collision
+
+One convex proxy per asset, named `col_<Name>`, at most 64 triangles, never rendered
+(the renderer hides any node whose name starts with `col_`). A machine's proxy is a
+box matching its footprint. The player capsule is generated in code, not exported.
+
+### 2.6 Sockets
+
+Attachment points are Blender Empties exported as childless glTF nodes and found at
+runtime with `root.getObjectByName('socket_...')`. A socket's local **-Y** is its
+facing (three.js +Z), matching the asset forward convention. `export_extras=True`
+carries a custom `of_role` property through to `object.userData.of_role`.
+
+Canonical socket names:
+
+| Socket | Meaning |
+|---|---|
+| `socket_item_in`, `socket_item_in_a/b` | where an inserter or belt delivers |
+| `socket_item_out` | where product leaves |
+| `socket_belt_in`, `socket_belt_out` | belt line endpoints |
+| `socket_item` | where a discrete item mesh rides on a belt at LOD0 |
+| `socket_power_in`, `socket_power_out`, `socket_wire_a/b` | power network attachment |
+| `socket_fuel_in` | solid-fuel loading (survival `Furnace` fuel pool) |
+| `socket_status` | the state light |
+| `socket_smoke` | particle emitter origin |
+| `socket_hand_R`, `socket_hand_L`, `socket_back`, `socket_head_cam` | character attachment |
+| `socket_hit` | where tool-impact VFX plays on a harvest node |
+| `socket_item_pop` | where a harvested item pops out |
+| `socket_muzzle` | rocket engine plume origin |
+
+### 2.7 Texture policy (Tier 1 onward)
+
+Tier 0 ships without UVs at all. When a texture is genuinely needed:
+
+- **Texel density:** 512 px/m for hand-held and first-person assets, 256 px/m for
+  machines, 128 px/m for terrain props. Maximum 1024 x 1024 per asset.
+- **Channels:** albedo, and an ORM pack (occlusion / roughness / metallic) only if
+  the flat constant is not enough. Normal maps are a last resort at this poly count.
+- **Encoding:** KTX2 via `gltf-transform`, ETC1S for albedo and UASTC for ORM/normal,
+  loaded with three.js `KTX2Loader`. Do **not** add this step until the total
+  texture payload crosses 1 MB, because the transcoder itself costs more than that.
+
+---
+
+## 3. Asset manifest
+
+**Totals: 99 distinct meshes across 42 `.glb` files.** Tier 0 is 40 meshes in 27
+files, Tier 1 is 41 meshes in 10 files, Tier 2 is 18 meshes in 5 files.
+
+### 3.1 Tier 0: blocks the playable loop (27 files, 40 meshes)
+
+Poly budgets are LOD0 triangles. Dimensions are metres, given as
+`X (width) x Y (depth/flow) x Z (height)` in Blender axes.
+
+#### Character and tools (4 files)
+
+| # | Asset | File | Dims (m) | Tris | LODs | Col | Anim | Emissive |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Player body (rigged) | `player/player_body.glb` | 0.60 x 0.40 x **1.80** | 3500 | 3 | box | 14 clips | yes |
+| 2 | First-person arms | `player/player_fp_arms.glb` | 0.90 x 0.70 x 0.55 | 1200 | 1 | none | 8 clips | no |
+| 3 | Crude pickaxe | `tools/crude_pickaxe.glb` | 0.34 x 0.10 x 0.95 | 260 | 2 | box | none | no |
+| 4 | Crude axe | `tools/crude_axe.glb` | 0.22 x 0.09 x 0.80 | 240 | 2 | box | none | no |
+
+#### Harvest nodes, one per `worldgen::survival::NodeKind` (9 files)
+
+| # | Asset | File | `NodeKind` | Dims (m) | Tris | LODs | Anim |
+|---|---|---|---|---|---|---|---|
+| 5 | Conifer tree | `nodes/tree_conifer.glb` | `Tree` | 2.4 x 2.4 x 6.5 | 600 | 3 | sway, fall |
+| 6 | Broadleaf tree | `nodes/tree_broadleaf.glb` | `Tree` | 4.0 x 4.0 x 5.0 | 700 | 3 | sway, fall |
+| 7 | Scrub bush | `nodes/bush_scrub.glb` | `Tree` (low yield) | 1.0 x 1.0 x 0.9 | 200 | 2 | sway |
+| 8 | Stone boulder | `nodes/boulder_stone.glb` | `Rock` | 1.4 x 1.2 x 0.9 | 200 | 3 | none |
+| 9 | Iron boulder | `nodes/boulder_iron.glb` | `IronOre` | 1.6 x 1.4 x 1.1 | 220 | 3 | none |
+| 10 | Copper boulder | `nodes/boulder_copper.glb` | `CopperOre` | 1.5 x 1.3 x 1.0 | 220 | 3 | none |
+| 11 | Coal seam boulder | `nodes/boulder_coal.glb` | `CoalSeam` | 1.7 x 1.4 x 1.0 | 240 | 3 | none |
+| 12 | Water pool | `nodes/water_pool.glb` | `WaterPool` | 3.0 x 3.0 x 0.25 | 280 | 2 | ripple |
+| 13 | Oil seep | `nodes/oil_seep.glb` | `OilSeep` | 2.2 x 2.2 x 0.35 | 260 | 2 | bubble |
+
+Every node ships three **depletion variants** as sibling meshes in the same file
+(`_Full`, `_Half`, `_Low`, plus `_Stump` for trees), swapped by
+`RemainingAmount / InitialAmount` at 0.66 and 0.33. Depletion is the one piece of
+`FDepositNode` state a player must be able to see from across a clearing.
+
+#### Dropped-item props (1 file, 14 meshes)
+
+`items/items_atlas.glb`. Every item fits inside a 0.30 m cube (a log is the one
+exception at 0.60 m along its length) so it rides a 1 m belt cleanly and renders
+legibly into a 64 px inventory icon. 40 to 120 tris each, 1200 total. No LODs: the
+sim stops emitting discrete items above `Lod::Near0`, so they simply vanish.
+
+| Mesh | Item (`gameplay.h`) | Dims (m) | Materials |
+|---|---|---|---|
+| `Item_OreChunk_Iron` | `RawIron` 0x0033 | 0.26 x 0.22 x 0.20 | Rock, Iron |
+| `Item_OreChunk_Copper` | `RawCopper` 0x0034 | 0.26 x 0.22 x 0.20 | Rock, Copper |
+| `Item_CoalLump` | `Coal` 0x0032 | 0.24 x 0.20 x 0.18 | Coal |
+| `Item_StoneChunk` | `Stone` 0x0031 | 0.24 x 0.22 x 0.18 | Rock |
+| `Item_Log` | `Wood` 0x0030 | 0.60 x 0.18 x 0.18 | Bark |
+| `Item_IngotIron` | `Iron` 0x0037 | 0.28 x 0.14 x 0.08 | Iron |
+| `Item_IngotCopper` | `Copper` 0x0038 | 0.28 x 0.14 x 0.08 | Copper |
+| `Item_FerriteOre` | `FerriteOre` 0x0001 | 0.26 x 0.22 x 0.20 | Rock, Accent |
+| `Item_FerritePlate` | `FerritePlate` 0x0002 | 0.28 x 0.28 x 0.02 | Iron |
+| `Item_FramePart` | `FramePart` 0x0003 | 0.28 x 0.28 x 0.10 | Iron, Steel |
+| `Item_Cinderite` | `Cinderite` 0x0004 | 0.24 x 0.22 x 0.20 | RockDark, EmissiveState |
+| `Item_Combustite` | `Combustite` 0x0005 | 0.22 x 0.20 x 0.18 | Coal, Accent |
+| `Item_WaterCanister` | `Water` 0x0035 | 0.18 x 0.18 x 0.30 | Steel, Glass |
+| `Item_OilFlask` | `Oil` 0x0036 | 0.16 x 0.16 x 0.28 | Glass, Oil |
+
+`Item_Cinderite` is the only item allowed an emissive: it is the off-world identity
+hook (`WG-4`, Cinder-only) and a faint glow is how the player knows the moon trip
+paid off. Tool pickups reuse the tool meshes; they are not separate assets.
+
+#### Machines and structures (13 files)
+
+Footprints are whole metres, as required by section 2.2.
+
+| # | Asset | File | TypeId | Footprint | Height | Tris | Anim |
+|---|---|---|---|---|---|---|---|
+| 14 | Miner | `machines/miner.glb` | 0x10 | **2 x 2** | 2.4 | 900 | spin, bob |
+| 15 | Belt segment | `machines/belt_segment.glb` | 0x11 | **1 x 1** | 0.30 | 148 | scroll |
+| 16 | Belt curve left | `machines/belt_curve_l.glb` | 0x11 | **1 x 1** | 0.30 | 200 | scroll |
+| 17 | Belt curve right | `machines/belt_curve_r.glb` | 0x11 | **1 x 1** | 0.30 | 200 | scroll |
+| 18 | Belt end cap | `machines/belt_end_cap.glb` | 0x11 | **1 x 1** | 0.30 | 120 | none |
+| 19 | Smelter | `machines/smelter.glb` | 0x12 | **2 x 2** | 2.6 | 700 | glow |
+| 20 | Assembler | `machines/assembler.glb` | 0x13 | **3 x 3** | 2.8 | 1100 | arm cycle |
+| 21 | Box | `machines/box.glb` | 0x14 | **1 x 1** | 1.0 | 300 | lid |
+| 22 | Generator | `machines/generator.glb` | 0x15 | **3 x 2** | 2.6 | 900 | flywheel |
+| 23 | Power pole | `machines/power_pole.glb` | 0x16 | **1 x 1** | 4.0 | 350 | none |
+| 24 | Inserter | `machines/inserter.glb` | sim-internal | **1 x 1** | 0.9 | 400 | swing |
+| 25 | Primitive furnace | `machines/primitive_furnace.glb` | 0x30 | **1 x 1** | 1.4 | 500 | glow |
+| 26 | Survival smelter | `machines/survival_smelter.glb` | 0x31 | **2 x 2** | 2.0 | 700 | bellows, glow |
+
+Note on the inserter: `automation.h`'s `BuildKind` has no inserter, but
+`FactorySim::addInserter` exists and the wiring layer places them automatically, so
+they appear in the world and need a mesh even though the player never selects one.
+
+Two build-UX meshes are **generated in code, not authored**: the 1 m^3 voxel dig
+marker (`BoxGeometry` + `EdgesGeometry`) and the placement ghost (the machine's own
+LOD0 with a ghost material). Do not model them.
+
+### 3.2 Tier 1: richness (10 files, 41 meshes)
+
+Shipped as **per-biome atlases**, because the scatter system wants one file per biome
+and one `InstancedMesh` per prop. Budgets: 60 to 400 tris each, LOD0 and LOD2 only
+(props skip the middle band; they are either near enough to matter or gone).
+
+| File | Biome (`biome.h`) | Meshes |
+|---|---|---|
+| `props/props_beach.glb` | `Beach` | beach rock, driftwood, shell cluster, dune grass |
+| `props/props_plains.glb` | `Plains` | grass tuft A/B, flower cluster, pebble A/B, shrub |
+| `props/props_forest.glb` | `Forest` | fern, dead tree, fallen log, mushroom cluster, forest rock |
+| `props/props_hills.glb` | `Hills` | large boulder, scree patch, hill shrub |
+| `props/props_mountains.glb` | `Mountains` | rock spire, talus chunk, snow patch |
+| `props/props_polar.glb` | `Polar` | ice shard, snow drift, ice boulder |
+| `props/props_ocean.glb` | `Ocean` | kelp, seabed rock |
+| `props/props_moon.glb` | `Regolith`, `MoonHighland`, `CraterFloor` | moon rock small/large, regolith ripple, highland outcrop, crater rim rock, impact glass |
+| `props/props_cave.glb` | voxel tunnels | stalagmite, crystal cluster, rubble, tunnel support frame, ore vein wall panel |
+| `props/detail_cards.glb` | terrain detail | grass card A/B/C, pebble scatter |
+
+`detail_cards.glb` holds the only double-sided meshes in the game outside glass and
+water: crossed-quad foliage cards for dense ground cover, drawn with alpha test.
+
+The cave set is what makes 1 m^3 voxel tunnels feel like places rather than holes.
+The `ore vein wall panel` is a shallow decal mesh placed against a dug voxel face when
+the voxel it replaced contained ore, which is the only way a player reads ore density
+underground.
+
+### 3.3 Tier 2: Phase S, space (5 files, 18 meshes)
+
+Built on a **1.25 m standard stack diameter** so any tank, engine and decoupler
+combine without a per-pair adapter. Every part exposes `socket_stack_top` and
+`socket_stack_bottom` on the stack axis, and dry mass and thrust come from the
+physics domain, not from art.
+
+| File | Meshes | Notes |
+|---|---|---|
+| `rocket/rocket_parts.glb` | command pod (1.25 x 1.25 x 2.5), fuel tank small (x 2.0), fuel tank large (x 4.0), main engine (x 1.6), vernier engine, decoupler (x 0.25), landing leg, nose cone, fin, solar panel, RCS block, parachute, cargo bay | 13 meshes, 300 to 1400 tris each; landing leg and solar panel carry deploy clips |
+| `rocket/launch_pad.glb` | launch pad (8 x 8 m platform, 12 m tower), launch clamp | grid-snapped like a machine |
+| `rocket/lander_landed.glb` | pre-assembled landed lander | the Cinder outpost beat (`ObjectiveStep::OutpostComplete`) |
+| `rocket/vfx_engine_plume.glb` | plume cone | geometry only; the shader is rendering's |
+| `world/body_sphere_lod.glb` | unit icosphere, 3 subdivision levels | the far-scene scaled body; radius comes from `BodyParams` (Forge 600 km, Cinder 200 km), never from the mesh |
+
+---
+
+## 4. Tier 0 per-asset specs
+
+Everything below is precise enough to build without asking a follow-up question.
+Dimensions are Blender axes (`X` width, `Y` depth with **-Y forward**, `Z` up),
+metres. All clips are 60 fps, frame 1 inclusive.
+
+### 4.1 Player body, `player/player_body.glb`
+
+**Dimensions.** 1.80 m tall in T-pose. Arm span 1.80 m, shoulder width 0.46 m,
+shoulder height 1.45 m, hip height 0.95 m, eye height 1.65 m, head 0.24 m tall,
+foot 0.28 m long. Origin at the point between the feet, on the ground.
+
+**Silhouette.** A bulky EVA-lite work suit, not a spacesuit and not a soldier. Broad
+squared chest pack, a cylindrical helmet ring with a wide horizontal visor band,
+oversized gloves and boots, tapered legs. The read at 50 m is "engineer": wide on top,
+narrow at the ankle, one bright accent stripe running shoulder to hip.
+
+**Key shapes.** Helmet as a chamfered cylinder with a `Glass` visor band; chest pack
+as a box with two recessed vents; shoulder pads as bevelled wedges; gloves and boots
+as chunky boxes with a single chamfer; a hip tool loop on the right that the stowed
+pickaxe hangs from.
+
+**Poly budget.** LOD0 3500, LOD1 1600, LOD2 500. LOD1 and LOD2 by decimation
+(`add_lod_decimate` at 0.45 and 0.14), which is appropriate here because the form is
+organic.
+
+**Materials (6).** `OF_Suit` body, `OF_SuitAccent` stripe and shoulder pads,
+`OF_SteelDark` helmet ring, joints, boot soles, `OF_Glass` visor, `OF_Skin` chin and
+neck, `OF_EmissiveState` helmet lamp and a chest indicator (drives the player's own
+power/oxygen readout, same four-colour scheme).
+
+**Rig.** 44 bones, structurally identical to the Mixamo skeleton (same hierarchy,
+same T-pose rest) so any CC0 Mixamo clip retargets with a rename map, but with clean
+unprefixed names.
+
+```
+Root
+`- Hips
+   |- Spine -> Spine1 -> Spine2
+   |  |- Neck -> Head -> HeadTop_End
+   |  |- LeftShoulder  -> LeftArm  -> LeftForeArm  -> LeftHand
+   |  |     `- LeftHandThumb1..3, LeftHandIndex1..3, LeftHandMiddle1..3
+   |  `- RightShoulder -> RightArm -> RightForeArm -> RightHand
+   |        `- RightHandThumb1..3, RightHandIndex1..3, RightHandMiddle1..3
+   |- LeftUpLeg  -> LeftLeg  -> LeftFoot  -> LeftToeBase  -> LeftToe_End
+   `- RightUpLeg -> RightLeg -> RightFoot -> RightToeBase -> RightToe_End
+```
+
+Three finger chains per hand, not five: thumb, index, and one merged middle block.
+That is enough to sell a tool grip and saves 12 bones. Maximum 4 weights per vertex.
+
+**Sockets** (bone-parented empties): `socket_hand_R` (right palm, oriented so a tool's
+own origin mates with identity transform), `socket_hand_L`, `socket_back` (on `Spine2`,
+stowed tool), `socket_hip_R` (tool loop), `socket_head_cam` (eye point at 1.65 m, the
+first-person camera anchor), `socket_lamp` (helmet lamp).
+
+**Collision.** `col_Player`, box 0.70 x 0.50 x 1.80. The real character controller uses
+a code-generated capsule (radius 0.35, height 1.80); the box is a broadphase fallback.
+
+**Clips (14).**
+
+| Clip | Frames | Loop | Notes |
+|---|---|---|---|
+| `Idle` | 1 to 121 | yes | 2 s breathing cycle |
+| `Walk` | 1 to 33 | yes | 1.4 m/s, stride 0.75 m |
+| `Run` | 1 to 25 | yes | 4.5 m/s, stride 1.35 m |
+| `Jump_Start` | 1 to 13 | no | crouch and launch |
+| `Jump_Loop` | 1 to 21 | yes | airborne |
+| `Jump_Land` | 1 to 17 | no | absorb |
+| `Fall` | 1 to 21 | yes | long fall, arms out |
+| `Swing_Pickaxe` | 1 to 33 | no | impact on frame 17 |
+| `Swing_Axe` | 1 to 35 | no | impact on frame 18 |
+| `Dig` | 1 to 31 | no | voxel mining, impact on frame 16 |
+| `Place` | 1 to 25 | no | build placement |
+| `Craft` | 1 to 61 | yes | hand-craft loop |
+| `Crouch_Idle` | 1 to 91 | yes | |
+| `Crouch_Walk` | 1 to 37 | yes | 0.7 m/s |
+
+Impact frames are contract: gameplay fires `harvestNode()` on those frames, so moving
+one desynchronises feel from logic.
+
+### 4.2 First-person arms, `player/player_fp_arms.glb`
+
+Right and left arm from shoulder to fingertip plus a shallow chest stub, proportioned
+to fill the lower third of a 70 degree vertical FOV at 0.35 m from the camera. Bounds
+about 0.90 x 0.70 x 0.55 m. Origin at the camera point, so the model attaches to the
+camera with an identity transform.
+
+1200 tris, no LOD chain (first-person is always near). Materials: `OF_Suit`,
+`OF_SuitAccent`, `OF_SteelDark`, `OF_Skin`. Bones: the arm subset of the body rig with
+**identical names** (`LeftShoulder` through `RightHandMiddle3`) plus `Root`, 27 bones,
+so body and first-person clips are authored against the same skeleton.
+
+Sockets: `socket_hand_R`, `socket_hand_L`.
+
+Clips (8): `FP_Idle` 1 to 121, `FP_Walk_Bob` 1 to 33, `FP_Run_Bob` 1 to 25,
+`FP_Swing_Pickaxe` 1 to 33 (impact 17), `FP_Swing_Axe` 1 to 35 (impact 18), `FP_Dig`
+1 to 31 (impact 16), `FP_Place` 1 to 25, `FP_Craft` 1 to 61. Impact frames match the
+third-person clips exactly.
+
+**Render note (rendering domain, recorded here because it constrains the model):** the
+arms draw on their own camera layer with a 0.01 m near plane, so they never clip world
+geometry and the model does not need to be artificially shortened.
+
+### 4.3 Crude pickaxe, `tools/crude_pickaxe.glb`
+
+Haft 0.85 m along **+Z**, head 0.34 m wide across **X**, pick tip pointing **-Y**
+(forward). **Origin at the grip point**, 0.30 m up the haft, so `hand.add(tool)` with
+an identity transform puts it in the fist. This grip-point-origin rule applies to every
+hand-held asset.
+
+Silhouette: a lashed field tool, not a forged one. A slightly tapered branch haft, an
+asymmetric iron head (long pick on one side, short adze on the other), and a visible
+rawhide binding at the joint. It must read as *crude* next to the machines.
+
+260 tris. Materials: `OF_Bark` haft, `OF_Iron` head, `OF_Accent` binding.
+Sockets: `socket_grip` (at the origin, for validation), `socket_head` (pick tip, the
+impact point). No clips: the animation lives on the player.
+Collision: `col_CrudePickaxe`, box 0.34 x 0.10 x 0.95.
+
+### 4.4 Crude axe, `tools/crude_axe.glb`
+
+Haft 0.72 m along **+Z**, blade 0.22 m across **X** facing **-Y**. Origin at the grip
+point 0.24 m up the haft. Same construction language as the pickaxe: branch haft,
+single wedge blade, rawhide binding.
+
+240 tris. Materials: `OF_Bark`, `OF_Iron`, `OF_Accent`.
+Sockets: `socket_grip`, `socket_head` (blade edge centre).
+Collision: `col_CrudeAxe`, box 0.22 x 0.09 x 0.80.
+
+### 4.5 Ore boulders, `nodes/boulder_{stone,iron,copper,coal}.glb`
+
+One base form, four material dressings. Pivot at the base centre of the mesh bounds,
+`Z = 0`; boulders are world scatter and are not grid-snapped.
+
+**Silhouette.** An angular multi-lobe rock: one dominant mass with two smaller lobes
+crowding it, 5 to 7 large flat facets, no small detail. Facets are the whole design,
+because flat facets catch directional light and give the rock a readable form at
+distance where a noisy sculpt turns to mush.
+
+**Ore read.** The ore is not a texture. Three to five facets are split out as separate
+faces assigned the ore material, so raw metal catches specular highlights while the
+host rock stays matte. From 30 m an iron boulder reads as a rock with bright chips in
+it; a stone boulder reads as uniformly matte. That contrast is the whole gameplay
+signal.
+
+| File | Dims (m) | Ore material | Tris |
+|---|---|---|---|
+| `boulder_stone.glb` | 1.4 x 1.2 x 0.9 | none (Rock + RockDark only) | 200 |
+| `boulder_iron.glb` | 1.6 x 1.4 x 1.1 | `OF_Iron` | 220 |
+| `boulder_copper.glb` | 1.5 x 1.3 x 1.0 | `OF_Copper` | 220 |
+| `boulder_coal.glb` | 1.7 x 1.4 x 1.0 | `OF_Coal` | 240 |
+
+LODs: 100% / 45% / 15% by `add_lod_decimate` (organic, so decimation is correct).
+Materials (3): `OF_Rock`, `OF_RockDark`, plus the ore role.
+Sockets: `socket_hit` (the largest facet centre, where impact VFX plays),
+`socket_item_pop` (top centre, where harvested chunks spawn).
+Collision: `col_Boulder<Kind>`, one box at the mesh bounds.
+Depletion variants: `<Name>_Full` / `_Half` / `_Low` sibling meshes at roughly 100%,
+70% and 40% of full height, swapped at `RemainingAmount / InitialAmount` of 0.66 and
+0.33. No clips.
+
+### 4.6 Conifer tree, `nodes/tree_conifer.glb`
+
+6.5 m tall, canopy 2.4 m across. Trunk: a tapered 8-sided cylinder, radius 0.18 at the
+base to 0.10 at 5.0 m. Canopy: three stacked 8-sided cones (radii 1.2, 0.95, 0.6 at
+heights 2.2, 3.6, 4.8), each slightly rotated so the silhouette is not radially
+symmetric. Origin at the trunk base centre.
+
+600 tris LOD0, 260 LOD1, 70 LOD2 (LOD2 is two crossed quads plus a trunk box).
+Materials (2): `OF_Bark`, `OF_Leaf`.
+Sockets: `socket_hit` (1.2 m up the trunk, chest height), `socket_fell_pivot` (base
+centre), `socket_item_pop`.
+Collision: `col_TreeConifer`, box 0.50 x 0.50 x 6.5 (trunk only; a player walks through
+the canopy).
+
+Clips: `Tree_Sway` 1 to 181, loop, canopy group rotates plus or minus 1.5 degrees about
+X and Y out of phase; `Tree_Fall` 1 to 45, one-shot, whole tree rotates 88 degrees
+about `socket_fell_pivot` with a settle. Depletion variants: `Tree_Full`, `Tree_Stump`.
+
+### 4.7 Broadleaf tree, `nodes/tree_broadleaf.glb`
+
+5.0 m tall, canopy 4.0 m across. Trunk splits into two forks at 2.2 m, each carrying a
+faceted canopy blob (a 12-sided low-poly sphere squashed to 0.6 vertical). 700 / 300 /
+80 tris. Same materials, sockets, clips and depletion variants as the conifer.
+
+### 4.8 Scrub bush, `nodes/bush_scrub.glb`
+
+1.0 x 1.0 x 0.9 m. Five faceted lobes on a stub stem. 200 / 80 tris.
+Materials `OF_Bark`, `OF_Leaf`. `socket_hit`, `socket_item_pop`. `Tree_Sway` 1 to 181.
+Low wood yield: this is the bootstrap harvest before the player has an axe.
+
+### 4.9 Water pool, `nodes/water_pool.glb`
+
+3.0 x 3.0 m, rim 0.25 m above the water. A shallow rock-rimmed basin: an 8-sided
+irregular rock rim, an inner basin floor at `Z = 0.02`, and a flat water plane at
+`Z = 0.20`, 0.05 m below the rim. Origin at basin centre on the ground.
+
+280 tris. Materials (2): `OF_Rock`, `OF_Water` (double-sided, alpha 0.65).
+Sockets: `socket_draw` (water plane centre, where the collect prompt anchors).
+Collision: `col_WaterPool`, box 3.0 x 3.0 x 0.25.
+Clip: `Water_Ripple` 1 to 121, loop, water plane translates plus or minus 0.01 in Z.
+**Preferred at runtime:** replace the clip with a vertex-displacement shader; the clip
+exists so the asset is complete without shader work.
+
+### 4.10 Oil seep, `nodes/oil_seep.glb`
+
+2.2 x 2.2 x 0.35 m. A dark tar pool in a cracked crust: an irregular 10-sided crust
+ring, a flat oil surface at `Z = 0.06`, and two low pressure-mound bulges.
+
+260 tris. Materials (3): `OF_Rock`, `OF_Oil`, `OF_Soil`.
+Sockets: `socket_draw`, `socket_item_pop`.
+Clip: `Oil_Bubble` 1 to 97, loop, the two bulges scale 1.0 to 1.12 to 1.0, offset half
+a cycle apart so the pool never pulses as one.
+
+### 4.11 Items atlas, `items/items_atlas.glb`
+
+Fourteen meshes, listed in section 3.1. Each has its **origin at its own volumetric
+centre**, not at its base, because items tumble in the air when dropped and ride
+centred on a belt. 40 to 120 tris each, 1200 total, no LODs, no collision (the ground
+drop uses a code-generated sphere), no clips.
+
+Materials come from the palette only. The ore chunks share the boulder language at
+1/6 scale: a few flat facets, ore facets split out to catch specular. Ingots are
+chamfered trapezoid bars. The `Item_Log` is an 8-sided cylinder with visible end grain
+as a darker `OF_Bark` cap.
+
+Every item must be legible in a 64 px orthographic icon render, which is the real
+constraint: if you cannot tell the iron ingot from the copper ingot at 64 px, the
+material contrast is wrong, not the mesh.
+
+### 4.12 Belt segment, `machines/belt_segment.glb` (BUILT, reference asset)
+
+This one is built. See `tools/blender/build_belt_segment.py`, which is the template
+every other build script copies.
+
+Footprint **1 x 1 m**, height 0.30 m, flow along **-Y** (three.js +Z). Origin at cell
+centre on the ground.
+
+**Key shapes.** Two 0.10 m side rails full height; a dark under-frame that ties it to
+the ground; an 0.80 m rubber deck with its top at `Z = 0.25`; two end rollers (radius
+0.055, 12 segments) **tangent to the cell edge, not past it**; a flush state chip in
+the +X rail top.
+
+**Poly budget (actual).** LOD0 148, LOD1 72, LOD2 12, animated slat strip 108, collision
+12. Total render 352.
+
+**Materials (4).** `OF_Steel` rails and rollers, `OF_SteelDark` under-frame,
+`OF_Rubber` deck and slats, `OF_EmissiveState` chip.
+
+**Sockets (4).** `socket_belt_in` (0, +0.5, 0.25), `socket_belt_out` (0, -0.5, 0.25),
+`socket_item` (0, 0, 0.28), `socket_status` (0.45, 0, 0.30).
+
+**Clip.** `Belt_Scroll`, frames 1 to 61 (1.000 s), the 9-slat strip translates exactly
+one slat pitch (0.125 m) in -Y. The strip carries 8 slats on the tile plus a 9th
+entering from the inlet, so the loop is seamless; the mid-loop overhang past the front
+edge tucks under the next tile's roller. The strip is a **sibling** of `_LOD0`, not a
+child, so `_LOD0`'s bounding box stays exactly 1 x 1 x 0.30 and the scale check is
+exact. Retiming:
+
+```js
+action.timeScale = beltSpeedMetresPerSecond / 0.125;   // tier-1 belt: 1.875 / 0.125 = 15
+```
+
+**Alternative at scale (recommended for the shipping renderer):** per-belt
+`AnimationMixer` instances do not scale to thousands of lines. Group belts into one
+`InstancedMesh` per belt tier and scroll a shared material instead, driven by
+`FFactoryBeltFlowState.FlowSpeedQuant`. The baked clip stays for the LOD0 hero path
+and for any belt the player is standing on.
+
+### 4.13 Belt curves and end cap
+
+`belt_curve_l.glb` / `belt_curve_r.glb`: same 1 x 1 x 0.30 cell, same rails and deck
+language, quarter-turn deck with a wedge-shaped slat fan. Flow enters +Y and exits -X
+(left) or +X (right). 200 tris. Same four materials, same four sockets, same
+`Belt_Scroll` clip (the fan rotates instead of translating, 1 to 61).
+
+`belt_end_cap.glb`: a closed roller housing that terminates a line head or tail so a
+belt never ends in a visible hole. 120 tris, three materials (no chip), sockets
+`socket_belt_in` and `socket_item`. No clip.
+
+### 4.14 Miner, `machines/miner.glb` (TypeId 0x10)
+
+Footprint **2 x 2 m**, height 2.4 m. Requires a deposit under the footprint
+(`EntityDef.requiresDeposit`), so the design must say "it eats the ground".
+
+**Silhouette.** A squat four-legged gantry straddling the ore with a vertical drill
+column down the middle and a chunky output chute on the forward face. From any angle
+you can see straight through the legs to the ground it is working, which is what makes
+the deposit binding legible.
+
+**Key shapes.** Four corner legs 0.25 x 0.25 x 0.90; body box 1.80 x 1.80 x 0.90 sitting
+at `Z = 0.9` to `1.8`; drill column, a 12-sided cylinder radius 0.28, height 1.4,
+centred; drill bit, an 8-sided cone radius 0.30 to 0.06 with the tip at `Z = 0.05`; a
+hazard-striped collar ring where the column meets the body; output chute 0.50 x 0.70 x
+0.50 on the -Y face; status panel 0.30 x 0.05 x 0.20 on the +X face at `Z = 1.5`.
+
+**Poly budget.** LOD0 900, LOD1 400, LOD2 120 (hand-built).
+**Materials (5).** `OF_Steel`, `OF_SteelDark`, `OF_Accent`, `OF_Hazard`,
+`OF_EmissiveState`.
+**Sockets.** `socket_item_out` (0, -1.0, 0.55), `socket_power_in` (0.9, 0.9, 1.8),
+`socket_status` (1.0, 0, 1.5), `socket_drill_tip` (0, 0, 0.0).
+**Collision.** `col_Miner`, box 2.0 x 2.0 x 2.4.
+
+**Clips.** `Drill_Spin` 1 to 31 (loop; 30 frames = `MineFerrite.timeTicks`; the column
+rotates one full turn about Z) and `Drill_Bob` 1 to 61 (loop; the column translates
+0 to -0.08 to 0 in Z). Both play together; `Drill_Spin` retimes with
+`timeScale = 30 / recipe.craftTimeTicks`.
+
+### 4.15 Smelter, `machines/smelter.glb` (TypeId 0x12)
+
+Footprint **2 x 2 m**, height 2.6 m.
+
+**Silhouette.** A brick-and-steel kiln: a wide base tapering to a short chimney offset
+toward the back, with a glowing firebox door on the forward face. The offset chimney is
+what stops it reading as a generic box.
+
+**Key shapes.** Base plinth 2.0 x 2.0 x 0.25; body 1.70 x 1.70 x 1.60 from `Z = 0.25` to
+`1.85` with a chamfered top collar; chimney, a 10-sided cylinder radius 0.22, height
+0.75, at `(0, +0.5)`; firebox door 0.70 x 0.06 x 0.60 on the -Y face at `Z = 0.75`;
+input hopper on +Y at `Z = 0.9`; output chute on -Y at `Z = 0.35`; status chip on +X.
+
+**Poly budget.** 700 / 320 / 100.
+**Materials (5).** `OF_Steel` jacket, `OF_SteelDark` plinth and bands, `OF_Accent` trim,
+`OF_Rock` exposed refractory brick, `OF_EmissiveState` firebox door and vent slot.
+**Emissive.** Combustion machine: `working` overrides to fire orange `#FF7A1E` at
+intensity 2.2.
+**Sockets.** `socket_item_in` (0, +1.0, 0.9), `socket_item_out` (0, -1.0, 0.45),
+`socket_power_in` (0.85, 0.85, 1.85), `socket_smoke` (0, 0.5, 2.6), `socket_status`.
+**Collision.** `col_Smelter`, box 2.0 x 2.0 x 2.6.
+**Clip.** `Furnace_Glow` 1 to 61 (loop; 60 frames = `SmeltFerrite.timeTicks`), a glow
+card behind the firebox door scales 1.0 to 1.08 to 1.0. Preferred at runtime: drive
+`emissiveIntensity` from `AnimPhase` instead and drop the clip.
+
+### 4.16 Assembler, `machines/assembler.glb` (TypeId 0x13)
+
+Footprint **3 x 3 m**, height 2.8 m.
+
+**Silhouette.** An open-topped work cell with a corner-mounted articulated arm sweeping
+over a central platen. The moving arm is the entire read at distance, so it must break
+the machine's outline: at full extension the gripper reaches past the frame line.
+
+**Key shapes.** Base 3.0 x 3.0 x 0.30; four corner posts 0.25 square by 2.50; an upper
+frame ring tying the posts; central platen 1.40 x 1.40 x 0.15 at `Z = 0.9`; arm base, a
+12-sided cylinder radius 0.28, height 0.35, at `(-1.0, -1.0, 1.2)`; upper arm 0.18
+square by 1.10; forearm 0.14 square by 0.90; two-finger gripper 0.22 x 0.10 x 0.25; two
+input hoppers on +Y and +X; output chute on -Y; a status bar along the front frame rail.
+
+**Poly budget.** 1100 / 480 / 140.
+**Materials (5).** `OF_Steel`, `OF_SteelDark`, `OF_Accent`, `OF_Hazard`,
+`OF_EmissiveState`.
+**Sockets.** `socket_item_in_a` (0, +1.5, 1.0), `socket_item_in_b` (+1.5, 0, 1.0),
+`socket_item_out` (0, -1.5, 0.6), `socket_power_in` (1.4, 1.4, 2.5),
+`socket_arm_grip` (on the gripper), `socket_status` (0, -1.5, 1.3).
+**Collision.** `col_Assembler`, box 3.0 x 3.0 x 2.8.
+**Clip.** `Assembler_Arm_Cycle` 1 to 91 (loop; 90 frames = `AssembleFrame.timeTicks`).
+One full pick-place-return sweep: reach to input A on frames 1 to 25, to the platen on
+26 to 50, press on 51 to 60, return on 61 to 90. Retimes with
+`timeScale = 90 / recipe.craftTimeTicks`.
+
+### 4.17 Box, `machines/box.glb` (TypeId 0x14)
+
+Footprint **1 x 1 m**, height 1.0 m. A ribbed steel crate with a hinged lid, corner
+posts, and a narrow fill-level bar on the front face.
+
+300 / 140 / 40 tris. Materials (4): `OF_Steel`, `OF_SteelDark`, `OF_Accent`,
+`OF_EmissiveState` (the fill bar; it uses the standard four state colours, and its
+*length* is driven from the buffer level).
+Sockets: `socket_item_in` (0, +0.5, 0.6), `socket_item_out` (0, -0.5, 0.6),
+`socket_status` (0, -0.5, 0.8).
+Collision: `col_Box`, box 1.0 x 1.0 x 1.0.
+Clip: `Box_Lid` 1 to 15, one-shot, lid rotates 0 to 72 degrees about its +X hinge;
+played in reverse to close.
+
+### 4.18 Generator, `machines/generator.glb` (TypeId 0x15)
+
+Footprint **3 x 2 m**, height 2.6 m. The only machine whose animation must be visible
+from across the base, because "is my power on" is the question players ask most.
+
+**Silhouette.** A horizontal cylindrical boiler on a skid with a large flywheel on one
+end and a tall offset exhaust stack. The flywheel is deliberately oversized: it is the
+power-status indicator you can read at 100 m, before the state chip is even resolvable.
+
+**Key shapes.** Skid 3.0 x 2.0 x 0.30; boiler, a 16-sided cylinder radius 0.65, length
+2.20, axis X, at `Z = 1.1`; flywheel, a 16-sided disc radius 0.60, thickness 0.18, axis
+X, at `X = +1.35` with six cut-out spokes; exhaust stack, a 10-sided cylinder radius
+0.20, height 1.30, at `(-0.9, +0.55)`; fuel hopper 0.70 x 0.60 x 0.70 at `(0.6, -0.7)`;
+firebox grate 0.60 x 0.05 x 0.35 on the -Y face.
+
+**Poly budget.** 900 / 400 / 120.
+**Materials (5).** `OF_Steel`, `OF_SteelDark`, `OF_Accent`, `OF_Hazard`,
+`OF_EmissiveState` (firebox grate; combustion override applies).
+**Sockets.** `socket_fuel_in` (0.6, -1.0, 0.9), `socket_power_out` (-1.4, 0, 2.0),
+`socket_smoke` (-0.9, 0.55, 2.6), `socket_status` (1.5, 0, 1.8).
+**Collision.** `col_Generator`, box 3.0 x 2.0 x 2.6.
+**Clip.** `Gen_Flywheel` 1 to 121 (loop; 120 frames = `BurnCombustite.timeTicks`), two
+full turns about X per burn.
+
+### 4.19 Power pole, `machines/power_pole.glb` (TypeId 0x16)
+
+Footprint **1 x 1 m**, height 4.0 m. A slim four-leg lattice mast (legs 0.06 square,
+splayed from 0.35 m at the base to 0.14 m at the top) with a 1.10 m crossarm at
+`Z = 3.75`, two insulator caps, and a small supply lamp at 0.6 m where a player
+standing next to it can see it.
+
+350 / 160 / 40 tris. Materials (3): `OF_Steel`, `OF_SteelDark`, `OF_EmissiveState`.
+Sockets: `socket_wire_a` (-0.55, 0, 3.75), `socket_wire_b` (+0.55, 0, 3.75),
+`socket_status` (0.12, -0.12, 0.6).
+Collision: `col_PowerPole`, box 0.40 x 0.40 x 4.0.
+No clips. Wires are runtime catenary `THREE.Line` geometry drawn between the
+`socket_wire_*` nodes of connected poles.
+
+### 4.20 Inserter, `machines/inserter.glb`
+
+Footprint **1 x 1 m**, height 0.9 m. The classic Factorio read, in 3D: a base disc, a
+single swing arm, and a two-finger grip that is clearly holding something.
+
+**Key shapes.** Base disc, a 12-sided cylinder radius 0.35, height 0.12; a rotating
+column radius 0.10, height 0.25; swing arm 0.08 x 0.55 x 0.08 pivoting at the column
+top; grip 0.14 x 0.10 x 0.16 at the arm tip; a status chip on the base rim.
+
+400 / 180 / 50 tris. Materials (4): `OF_Steel`, `OF_SteelDark`, `OF_Accent`,
+`OF_EmissiveState`.
+Sockets: `socket_pick` (0, +0.5, 0.35), `socket_drop` (0, -0.5, 0.35), `socket_grip`
+(on the grip, where the carried item mesh parents), `socket_status`.
+Collision: `col_Inserter`, box 0.6 x 0.6 x 0.9.
+Clip: `Inserter_Swing` 1 to 31, one-shot, arm rotates +90 to -90 degrees about Z; play
+with negative `timeScale` for the return, matching the sim's two-phase
+`InserterPhase::Idle` / `Holding`.
+
+### 4.21 Primitive furnace, `machines/primitive_furnace.glb` (TypeId 0x30)
+
+Footprint **1 x 1 m**, height 1.4 m. This is the player's first structure and it must
+read *pre-industrial* standing next to the steel machines, because the visual jump from
+furnace to smelter is how progression is felt.
+
+**Silhouette.** Stacked field stone with a rough clay cap, an open fire mouth on the
+forward face, and a small fuel shelf. Irregular, hand-piled, no straight lines: every
+edge is off-axis by a few degrees.
+
+**Key shapes.** Eight to ten irregular stone blocks (0.25 to 0.45 m) stacked in a rough
+ring; a clay cap dome at `Z = 1.15` to `1.40`; a fire mouth opening 0.40 x 0.35 on -Y at
+`Z = 0.25`; a fuel shelf 0.45 x 0.20 x 0.06 below it.
+
+500 / 220 / 60 tris. Materials (4): `OF_Rock`, `OF_RockDark`, `OF_Soil` (clay cap),
+`OF_EmissiveState` (a fire card recessed in the mouth; combustion override applies).
+Sockets: `socket_item_in` (0, +0.5, 0.9), `socket_item_out` (0, -0.5, 0.30),
+`socket_fuel_in` (0, -0.5, 0.55), `socket_smoke` (0, 0, 1.4), `socket_status` (the fire
+card itself).
+Collision: `col_PrimitiveFurnace`, box 1.0 x 1.0 x 1.4.
+Clip: `Furnace_Glow` 1 to 181 (loop; 180 frames = `ticksPerSmeltFor(Furnace)`), the fire
+card scales 1.0 to 1.10 to 1.0 with an irregular, non-sinusoidal curve so it flickers
+rather than pulses.
+
+**Fuel state matters here.** The survival `Furnace` stalls with no fuel, and that is
+distinct from blocked. Map `fuelTicks == 0` to `VisualState = 3` (no-power red) and let
+the fire card go fully dark; a cold furnace must look cold.
+
+### 4.22 Survival smelter, `machines/survival_smelter.glb` (TypeId 0x31)
+
+Footprint **2 x 2 m**, height 2.0 m. The furnace grown up: the same stone core, now
+wrapped in a riveted iron jacket with a proper flue and a bellows box on the side. It
+must be visibly the *same lineage* as the primitive furnace (stone still showing through
+the jacket seams) while clearly being three times the machine, since it runs the same
+recipes at 3x the rate.
+
+**Key shapes.** Base plinth 2.0 x 2.0 x 0.20; a stone core visible through jacket gaps;
+riveted iron jacket panels 1.7 x 1.7 x 1.4; flue, a 10-sided cylinder radius 0.18,
+height 0.55, at `(0, +0.45)`; bellows box 0.50 x 0.70 x 0.60 on +X with a concertina
+face; fire mouth 0.55 x 0.45 on -Y.
+
+700 / 300 / 90 tris. Materials (5): `OF_Steel`, `OF_Rock`, `OF_SteelDark`, `OF_Accent`,
+`OF_EmissiveState`.
+Sockets: `socket_item_in` (0, +1.0, 1.0), `socket_item_out` (0, -1.0, 0.35),
+`socket_fuel_in` (0, -1.0, 0.7), `socket_bellows` (1.0, 0, 0.9), `socket_smoke`
+(0, 0.45, 2.0), `socket_status`.
+Collision: `col_SurvivalSmelter`, box 2.0 x 2.0 x 2.0.
+Clips: `Smelter_Bellows` 1 to 61 (loop; 60 frames = `ticksPerSmeltFor(Smelter)`, the
+concertina face scales 1.0 to 0.55 to 1.0 in Y) and `Furnace_Glow` 1 to 61, phase-locked
+so the fire brightens on the bellows compression.
+
+---
+
+## 5. Repository layout
+
+```
+tools/blender/
+  of_lib.py                 shared helpers: units, pivot and orientation convention,
+                            the OF_ palette, MeshBuilder primitives, socket empties,
+                            LOD helpers, clip authoring, pinned glTF export settings
+  build_<asset>.py          one script per asset; build_belt_segment.py is the template
+  contracts.json            hand-authored per-asset acceptance contract
+  validate_glb.py           stdlib-only automated checker
+
+assets/models/
+  src/                      .blend files ONLY where a script cannot express the shape
+                            (sculpted rock, hand-weighted character). Normally empty.
+  dist/                     committed .glb output, the runtime load path
+    player/  tools/  nodes/  items/  machines/  props/  rocket/  world/
+```
+
+**Naming.**
+
+| Thing | Convention | Example |
+|---|---|---|
+| File | `snake_case.glb` under a group dir | `machines/belt_segment.glb` |
+| Build script | `build_<file stem>.py` | `build_belt_segment.py` |
+| Root node | `PascalCase` | `BeltSegment` |
+| Render mesh | `<Root>_LOD0/1/2` | `BeltSegment_LOD1` |
+| Collision proxy | `col_<Root>` | `col_BeltSegment` |
+| Socket | `socket_snake_case` | `socket_belt_out` |
+| Material | `OF_<PaletteRole>` | `OF_EmissiveState` |
+| Clip | `<Subject>_<Action>` | `Belt_Scroll`, `Assembler_Arm_Cycle` |
+
+---
+
+## 6. The authoring pipeline
+
+### 6.1 Why headless scripts
+
+Blender 5.0.1 is installed at
+`C:\Program Files\Blender Foundation\Blender 5.0\blender.exe`.
+
+Assets are authored as **headless Python scripts**, not by hand in the GUI:
+
+- **Deterministic.** The same script produces the same bytes on any machine.
+- **Diffable.** A reviewer reads a 60-line script, not a binary `.blend`.
+- **Re-runnable.** Change one palette value and rebuild all 42 files.
+- **Agent-executable.** An agent can write, run and verify a script in one turn.
+
+A Blender MCP would be an interactive fallback for shapes a script genuinely cannot
+express (a sculpted hero rock, hand-weighted character skinning). **One is not
+connected today, and it is not the pipeline.** Anything produced that way lands in
+`assets/models/src/` as a `.blend` with a build script that imports and exports it, so
+the dist path stays uniform.
+
+### 6.2 The command an agent runs
+
+Build one asset:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" --background --python tools/blender/build_belt_segment.py
+```
+
+Build everything, then gate it:
+
+```bash
+for f in tools/blender/build_*.py; do
+  "/c/Program Files/Blender Foundation/Blender 5.0/blender.exe" --background --python "$f" || exit 1
+done
+python tools/blender/validate_glb.py --all
+```
+
+`validate_glb.py` exits non-zero on any failure, so it drops straight into CI as a
+plain `python3` step with no Blender and no npm.
+
+### 6.3 The three.js-facing export contract
+
+Pinned in `of_lib.GLTF_SETTINGS`. Unknown keys are dropped with a printed warning
+rather than crashing, so one script survives a Blender point release.
+
+| Setting | Value | Why |
+|---|---|---|
+| `export_format` | `GLB` | one self-contained binary per asset |
+| `export_yup` | **`True`** | **the flag**: Blender +Z up becomes glTF and three.js +Y up |
+| `export_apply` | `True` | bake modifiers (decimate, mirror) so dist matches the script |
+| `export_materials` | `EXPORT` | full metallic-roughness PBR |
+| `export_extras` | `True` | `of_role` custom props reach `object.userData` |
+| `export_animations` | `True` | |
+| `export_animation_mode` | `ACTIONS` | one Blender Action becomes one named `AnimationClip` |
+| `export_force_sampling` | `True` (override to `False`) | sampling is correct for rigs; plain object transforms override so a 2-key linear curve stays 2 keys |
+| `export_cameras` / `export_lights` | `False` | the scene owns lighting, never the asset |
+| `export_draco_mesh_compression_enable` | `False` | see below |
+| `use_selection` | `False` | export the whole scene; the script controls what is in it |
+
+Materials are backface-culled by default (`use_backface_culling = True`), which
+exports as `doubleSided: false`. Only `Glass`, `Leaf`, `LeafDry` and `Water` are
+exempt. This is roughly half the fragment work on a scene made of boxes.
+
+**Compression decision: none at author time.** Assets run 150 to 3500 triangles and
+about 25 KB each, so the whole Tier-0 payload is under 1.5 MB uncompressed. Draco costs
+a roughly 200 KB WASM decoder plus a decode stall per asset, and it makes a `.glb`
+opaque to inspection. That trade is clearly negative here. **Revisit at a 4 MB total
+dist payload**, and when it flips, prefer meshopt (`gltfpack -cc`,
+`EXT_meshopt_compression`) as a **bundle-time post-pass**, not an author-time setting:
+it decodes an order of magnitude faster than Draco, and keeping it out of Blender means
+`dist/` stays readable and diffable.
+
+**KTX2: not applicable at Tier 0** (no textures). Policy from Tier 1 is in section 2.7.
+
+### 6.4 How the conventions survive into three.js
+
+| Authored as | Arrives as | Accessed by |
+|---|---|---|
+| Blender +Z up | three.js +Y up | automatic (`export_yup`) |
+| Blender -Y forward | three.js +Z forward | `Object3D.lookAt()` directly |
+| Metres | metres | scene scale 1.0, no unit conversion anywhere |
+| Empty `socket_x` | childless `Object3D` named `socket_x` | `root.getObjectByName('socket_x')` |
+| Custom prop `of_role` | `object.userData.of_role` | `export_extras` |
+| Action `Belt_Scroll` | `AnimationClip` named `Belt_Scroll` | `AnimationClip.findByName(gltf.animations, 'Belt_Scroll')` |
+| 60 fps authoring | clip seconds | `timeScale = referenceTicks / recipe.craftTimeTicks` |
+| Material `OF_EmissiveState` | `MeshStandardMaterial.emissive` | recolour per `VisualState` |
+| `<Name>_LOD0/1/2` | three sibling meshes | assembled into a `THREE.LOD` in code |
+| `col_<Name>` | a mesh node | hidden by the loader, handed to physics |
+
+The `MSFT_lod` extension is deliberately **not** used: three.js has no first-class
+support for it, and building a `THREE.LOD` from three named children is five lines with
+no extension dependency.
+
+---
+
+## 7. Validation
+
+### 7.1 The contract
+
+`tools/blender/contracts.json` holds one entry per asset. It is **hand-authored to
+mirror this document and deliberately not generated from the build scripts**, because a
+checker derived from the builder only ever proves the builder agrees with itself.
+
+```json
+"belt_segment": {
+  "glb": "assets/models/dist/machines/belt_segment.glb",
+  "type_id": "0x11",
+  "lod0_node": "BeltSegment_LOD0",
+  "lod_nodes": ["BeltSegment_LOD0", "BeltSegment_LOD1", "BeltSegment_LOD2"],
+  "dims_xyz_m": [1.0, 0.30, 1.0],
+  "tolerance_m": 0.005,
+  "max_tris_lod0": 200,
+  "max_tris_total": 420,
+  "max_materials": 4,
+  "sockets": ["socket_belt_in", "socket_belt_out", "socket_item", "socket_status"],
+  "clips": ["Belt_Scroll"],
+  "collision": "col_BeltSegment"
+}
+```
+
+`dims_xyz_m` is written in **three.js axes** (X right, Y up, Z forward). A Blender
+footprint of `X 1.0 by Y 1.0 flow by Z 0.30 tall` is therefore `[1.0, 0.30, 1.0]`.
+Checking dimensions in three.js axes is exactly what proves `export_yup` fired: if the
+up axis were wrong, the 0.30 would land on Z and the check would fail.
+
+Optional keys: `max_tris_collision` (default 64), `double_sided_ok` (default empty).
+
+### 7.2 What the checker proves
+
+`python tools/blender/validate_glb.py --all`. Stdlib only, no Blender, no npm.
+
+| Check | Proves |
+|---|---|
+| `container` | valid GLB2, header length matches, geometry embedded in a BIN chunk |
+| `scale` | world AABB of the LOD0 subtree matches the spec in metres, within tolerance |
+| (implicit) | **the up axis**, since the height must land on Y |
+| `pivot` | LOD0 base sits on `y = 0` and is centred on `x = z = 0`, so grid snapping works |
+| `tris_lod0` | LOD0 triangle budget |
+| `tris_total` | whole-file render budget, **excluding** `col_*` proxies |
+| `tris_col` | collision proxy stays a proxy |
+| `lods` | every declared LOD node exists |
+| `materials` | count within budget and every name is an `OF_` palette role |
+| `sockets` | every required `socket_*` node is present |
+| `clips` | the animation clip name set matches **exactly** (no extras, none missing) |
+| `collision` | `col_<Name>` present |
+| `hygiene` | no cameras, no lights, no Draco |
+| `culling` | nothing is `doubleSided` except roles that need it |
+
+The bounding box is computed properly: the node hierarchy is walked, each node's TRS or
+matrix is composed, and the eight corners of each POSITION accessor's `min`/`max` are
+transformed into world space. That is why the scale and pivot checks catch real bugs
+instead of just reading numbers back out of the file.
+
+### 7.3 It already earned its keep
+
+On the very first asset the checker failed the belt segment:
+
+```
+[XX] scale   [1.0, 0.3, 1.01] m (want [1.0, 0.30, 1.0], +/-0.005)
+```
+
+The end rollers (radius 0.055, centred at `y = +/-0.45`) protruded 10 mm past the 1 m
+cell on each end, which would have z-fought the neighbouring belt tile on the grid. The
+roller is now positioned at `L/2 - ROLLER_R`, tangent to the cell edge by construction.
+That class of bug is invisible in a render and obvious in a factory, which is exactly
+the case for automating the check.
+
+---
+
+## 8. Build order
+
+1. **Belt segment.** Done. It is the template.
+2. **Remaining machines** (12 files): miner, smelter, assembler, box, generator, power
+   pole, inserter, primitive furnace, survival smelter, belt curves, end cap. These plus
+   the belt unblock the whole factory loop.
+3. **Harvest nodes** (9 files) and the **items atlas**. Unblocks harvest and hand-craft.
+4. **Tools** (2 files). Unblocks tool-assisted harvest.
+5. **Player body and first-person arms.** Last of Tier 0 because they are the only
+   assets needing a rig, and everything else can be tested with a capsule.
+6. **Tier 1 biome atlases.** Only after Tier 0 validates green.
+7. **Tier 2** with Phase S.
+
+Steps 2 to 4 are 23 files of pure primitive assembly with no rigging and no organic
+sculpting. They parallelise cleanly across agents: one script per asset, one contract
+entry per asset, and the validator is the merge gate.
+
+---
+
+## 9. Open questions for Admin
+
+1. **Rig sourcing.** The player rig is the only Tier-0 asset a script cannot fully
+   author (skin weights need either a GUI pass or an automatic-weights operator run
+   headless, which is doable but lower quality). Options: accept headless automatic
+   weights, allow one `.blend` in `assets/models/src/`, or connect a Blender MCP for
+   that one asset. **Recommendation: headless automatic weights first**, escalate only
+   if deformation is visibly bad at this poly count.
+2. **Belt animation strategy at scale.** Section 4.12 specifies both a baked clip and a
+   runtime instanced-material scroll. The instanced path is the one that scales, but it
+   belongs to the rendering domain. Confirm rendering owns it so this document does not
+   over-specify their side.
+3. **Inserter as a player-facing buildable.** `FactorySim` has inserters but
+   `automation.h`'s `BuildKind` does not, so today they are auto-placed by the wiring
+   layer. If gameplay intends inserters to become a selectable buildable, they need an
+   item id and a `TypeId`, which is a gameplay decision, not an art one.

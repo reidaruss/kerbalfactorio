@@ -113,6 +113,13 @@ def reset_scene():
     scn.unit_settings.system = "METRIC"
     scn.unit_settings.scale_length = 1.0
     scn.unit_settings.length_unit = "METERS"
+    # 60 fps so ONE animation frame == ONE sim tick (of::SimClock runs at
+    # 1/60 s). A machine's work clip is then authored with exactly as many
+    # frames as its reference recipe has craftTimeTicks, and the renderer
+    # retimes to any other recipe with
+    #     action.timeScale = referenceTicks / recipe.craftTimeTicks
+    scn.render.fps = 60
+    scn.render.fps_base = 1.0
     scn.frame_start = 1
     scn.frame_end = 1
     return scn
@@ -387,9 +394,14 @@ GLTF_SETTINGS = dict(
     export_lights=False,
     export_extras=True,             # custom props ride along on nodes
     export_animations=True,
-    export_animation_mode="ACTIONS",
+    export_animation_mode="ACTIONS",    # one Action -> one named AnimationClip
     export_bake_animation=False,
-    export_optimize_animation_size=False,
+    export_optimize_animation_size=True,
+    # Sampling is correct for skinned rigs (IK, constraints, drivers). Assets
+    # whose clips are plain object transforms should override this to False in
+    # their build script: a 2-key LINEAR curve then stays 2 keys instead of
+    # being baked out to one key per frame.
+    export_force_sampling=True,
     export_skins=True,
     export_morph=True,
     export_texcoords=True,

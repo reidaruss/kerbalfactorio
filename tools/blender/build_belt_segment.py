@@ -109,15 +109,19 @@ def main():
     of.add_socket("socket_status", ((W - RAIL_W) * 0.5, 0.0, H), parent=root,
                   extras={"of_role": "state_light"})
 
-    # One clip: the slat strip walks exactly one slat pitch over 24 frames at
-    # 24 fps, so the loop is seamless and the clip is 1.000 s == 0.125 m of
+    # One clip: the slat strip walks exactly one slat pitch over 60 frames at
+    # 60 fps, so the loop is seamless and the clip is 1.000 s == 0.125 m of
     # travel. three.js: action.timeScale = beltSpeedMetresPerSecond / 0.125.
+    # A tier-1 belt (8 units/tick, 256 units/tile, 60 tps) runs 1.875 m/s,
+    # so timeScale = 15.
     of.add_clip(slats, "Belt_Scroll", "location",
-                [(1, (0.0, 0.0, 0.0)), (25, (0.0, -SLAT_PITCH, 0.0))])
+                [(1, (0.0, 0.0, 0.0)), (61, (0.0, -SLAT_PITCH, 0.0))])
 
     of.report(NAME, [("LOD0", mb0), ("LOD1", mb1), ("LOD2", mb2),
                      ("Belt_Slats", mbs)])
-    of.export_glb(OUT)
+    # No rig here, just an object translation, so keep the F-curve keys instead
+    # of baking 60 of them.
+    of.export_glb(OUT, export_force_sampling=False)
 
 
 if __name__ == "__main__":
