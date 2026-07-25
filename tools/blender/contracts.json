@@ -49,6 +49,61 @@
       ],
       "clips": ["Drill_Spin", "Drill_Bob"],
       "collision": "col_Miner"
+    },
+    "belt_curve_l": {
+      "glb": "assets/models/dist/machines/belt_curve_l.glb",
+      "type_id": "0x11",
+      "footprint_cells": [1, 1],
+      "lod0_node": "BeltCurveL_LOD0",
+      "lod_nodes": ["BeltCurveL_LOD0", "BeltCurveL_LOD1", "BeltCurveL_LOD2"],
+      "dims_xyz_m": [1.0, 0.30, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 200,
+      "max_tris_total": 500,
+      "max_materials": 4,
+      "sockets": [
+        "socket_belt_in",
+        "socket_belt_out",
+        "socket_item",
+        "socket_status"
+      ],
+      "clips": ["Belt_Scroll"],
+      "collision": "col_BeltCurveL"
+    },
+    "belt_curve_r": {
+      "glb": "assets/models/dist/machines/belt_curve_r.glb",
+      "type_id": "0x11",
+      "footprint_cells": [1, 1],
+      "lod0_node": "BeltCurveR_LOD0",
+      "lod_nodes": ["BeltCurveR_LOD0", "BeltCurveR_LOD1", "BeltCurveR_LOD2"],
+      "dims_xyz_m": [1.0, 0.30, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 200,
+      "max_tris_total": 500,
+      "max_materials": 4,
+      "sockets": [
+        "socket_belt_in",
+        "socket_belt_out",
+        "socket_item",
+        "socket_status"
+      ],
+      "clips": ["Belt_Scroll"],
+      "collision": "col_BeltCurveR"
+    },
+    "belt_end_cap": {
+      "glb": "assets/models/dist/machines/belt_end_cap.glb",
+      "type_id": "0x11",
+      "footprint_cells": [1, 1],
+      "lod0_node": "BeltEndCap_LOD0",
+      "lod_nodes": ["BeltEndCap_LOD0", "BeltEndCap_LOD1", "BeltEndCap_LOD2"],
+      "dims_xyz_m": [1.0, 0.30, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 120,
+      "max_tris_total": 260,
+      "max_materials": 3,
+      "sockets": ["socket_belt_in", "socket_item"],
+      "clips": [],
+      "collision": "col_BeltEndCap"
     }
   }
 }

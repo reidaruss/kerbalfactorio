@@ -211,6 +211,48 @@ def _cyl_data(radius, depth, loc, axis="Z", segments=12, smooth_sides=True,
     return verts, faces, smooth
 
 
+def _arc_band_data(r_in, r_out, depth, loc, a0_deg, a1_deg, segments):
+    """A prism swept along an arc: the quarter-annulus a belt curve is made of.
+
+    Angles are degrees in the XY plane, 0 along +X, increasing CCW. a0/a1 are
+    normalised so winding (and therefore backface culling) is direction
+    independent. r_in must be > 0; a zero inner radius collapses the inner wall
+    into degenerate faces that mesh.validate() silently deletes, which would
+    make the reported triangle count a lie."""
+    if r_in <= 0.0:
+        raise ValueError("arc_band needs r_in > 0 (got %r)" % r_in)
+    a0, a1 = (a0_deg, a1_deg) if a0_deg <= a1_deg else (a1_deg, a0_deg)
+    n = max(1, segments)
+    h = depth * 0.5
+    cx, cy, cz = loc
+    ib, ob, it, ot = [], [], [], []
+    for i in range(n + 1):
+        a = math.radians(a0 + (a1 - a0) * i / n)
+        ca, sa = math.cos(a), math.sin(a)
+        ib.append((cx + r_in * ca, cy + r_in * sa, cz - h))
+        ob.append((cx + r_out * ca, cy + r_out * sa, cz - h))
+        it.append((cx + r_in * ca, cy + r_in * sa, cz + h))
+        ot.append((cx + r_out * ca, cy + r_out * sa, cz + h))
+    verts = ib + ob + it + ot
+    N = n + 1
+    IB, OB, IT, OT = 0, N, 2 * N, 3 * N
+    faces, smooth = [], []
+    for i in range(n):
+        faces.append((IT + i, OT + i, OT + i + 1, IT + i + 1))       # top
+        smooth.append(False)
+        faces.append((IB + i, IB + i + 1, OB + i + 1, OB + i))       # bottom
+        smooth.append(False)
+        faces.append((OB + i, OB + i + 1, OT + i + 1, OT + i))       # outer
+        smooth.append(True)
+        faces.append((IB + i, IT + i, IT + i + 1, IB + i + 1))       # inner
+        smooth.append(True)
+    faces.append((IB, OB, OT, IT))                                   # start cap
+    smooth.append(False)
+    faces.append((IB + n, IT + n, OT + n, OB + n))                   # end cap
+    smooth.append(False)
+    return verts, faces, smooth
+
+
 class MeshBuilder:
     """Accumulate primitives into ONE mesh with one material slot per role.
 
@@ -255,6 +297,13 @@ class MeshBuilder:
         insulator caps); a non-zero top gives a taper (chimney collars, hoppers)."""
         v, f, sm = _cyl_data(radius, depth, loc, axis, segments, smooth_sides,
                              radius_top=radius_top)
+        return self._add(v, f, sm, role)
+
+    def arc_band(self, r_in, r_out, depth, loc=(0, 0, 0), a0_deg=0.0,
+                 a1_deg=90.0, segments=6, role="Steel"):
+        """Quarter-annulus prism. Belt curve decks, rails and slat fans."""
+        v, f, sm = _arc_band_data(r_in, r_out, depth, loc, a0_deg, a1_deg,
+                                  segments)
         return self._add(v, f, sm, role)
 
     def ring_boxes(self, size, radius, count, loc=(0, 0, 0), role="Steel",
