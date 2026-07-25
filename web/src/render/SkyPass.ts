@@ -20,6 +20,7 @@ const STAR_COUNT = 4000;
 export class SkyPass {
   readonly group = new THREE.Group();
   readonly sunDirection = new THREE.Vector3(1, 0.3, 0).normalize();
+  sunT = 0;
   private readonly sunSprite: THREE.Sprite;
 
   constructor(seedLo: number, sunT: number) {
@@ -69,9 +70,32 @@ export class SkyPass {
 
   /** Sun angle in turns, [0,1). Deterministic: __of.setTime() drives this. */
   setSunT(t: number): void {
-    const a = t * Math.PI * 2;
-    this.sunDirection.set(Math.cos(a), 0.42, Math.sin(a)).normalize();
+    this.sunT = ((t % 1) + 1) % 1;
+    SkyPass.dirForT(this.sunT, this.sunDirection);
     this.sunSprite.position.copy(this.sunDirection).multiplyScalar(7);
+  }
+
+  static dirForT(t: number, out: THREE.Vector3): THREE.Vector3 {
+    const a = t * Math.PI * 2;
+    return out.set(Math.cos(a), 0.42, Math.sin(a)).normalize();
+  }
+
+  /**
+   * The sun angle that puts `targetDot` of light on a given local up. Solved
+   * rather than hand-tuned, so ANY ?lat=/?lon=/?scenario= combination is lit
+   * without someone re-guessing a magic t. ?t= still overrides absolutely.
+   */
+  static solveSunT(up: THREE.Vector3, targetDot: number): number {
+    const d = new THREE.Vector3();
+    let bestT = 0;
+    let bestErr = Infinity;
+    for (let i = 0; i < 720; ++i) {
+      const t = i / 720;
+      SkyPass.dirForT(t, d);
+      const err = Math.abs(d.dot(up) - targetDot);
+      if (err < bestErr) { bestErr = err; bestT = t; }
+    }
+    return bestT;
   }
 
   private static discTexture(): THREE.Texture {

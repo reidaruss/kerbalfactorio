@@ -16,6 +16,9 @@ import type { PlanetBody } from '../world/PlanetBody.js';
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { PlanetProxy } from '../world/PlanetProxy.js';
+import type { TerrainStream } from '../world/TerrainStream.js';
+import type { Regime } from '../world/Regime.js';
+import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
 import type { ObserverCamera } from '../player/ObserverCamera.js';
 import type { Input } from '../player/Input.js';
 import type { Hud } from '../ui/Hud.js';
@@ -29,6 +32,12 @@ export interface BootMetrics {
   workerAgrees: boolean;
   workerMismatches: number;
   proxyBuildMs: number;
+  terrainWorkerLoadMs: number;
+  terrainBootMs: number;
+  chunkVerts: number;
+  chunkBytes: number;
+  indexCount: number;
+  pooledBytes: number;
   bootMs: number;
 }
 
@@ -47,8 +56,18 @@ export interface Services {
   readonly oracle: SurfaceOracle;
   readonly origin: FloatingOrigin;
   readonly proxy: PlanetProxy;
+  readonly terrain: TerrainStream;
+  readonly regime: Regime;
+  readonly materials: TerrainMaterials;
   readonly observer: ObserverCamera;
   readonly input: Input;
   readonly hud: Hud;
+  readonly sunLights: DirectionalLightLike[];
   readonly boot: BootMetrics;
+}
+
+/** Just enough of THREE.DirectionalLight for Systems to aim it, no import. */
+export interface DirectionalLightLike {
+  position: { copy(v: { x: number; y: number; z: number }): { multiplyScalar(s: number): unknown } };
+  userData: Record<string, unknown>;
 }

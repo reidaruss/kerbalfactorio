@@ -30,7 +30,7 @@ const waitMs = Number(args.get('wait') ?? 0);
 const evalScript = args.get('eval');
 
 const params = new URLSearchParams();
-for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth', 't', 'gnomon']) {
+for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth', 't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');
@@ -45,7 +45,19 @@ const CHROME_CANDIDATES = [
 const exe = CHROME_CANDIDATES.find((p) => existsSync(p));
 if (!exe) { console.error('smoke: no Chrome or Edge found'); process.exit(2); }
 
-const errors = [];
+// Deduped: one bad shader emits hundreds of identical useProgram warnings, and
+// a wall of them buries the single line that says what actually broke.
+const seen = new Map();
+const errors = {
+  push(msg) {
+    const key = msg.slice(0, 160);
+    seen.set(key, (seen.get(key) ?? 0) + 1);
+  },
+  get length() { return seen.size; },
+  list() {
+    return [...seen.entries()].map(([m, n]) => (n > 1 ? `${m}   (x${n})` : m));
+  },
+};
 const browser = await chromium.launch({
   executablePath: exe,
   headless: true,
@@ -71,7 +83,11 @@ try {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: 60000 });
   await page.evaluate(() => window.__of.ready);
-  if (evalScript) await page.evaluate(evalScript);
+  // --eval runs against the live page and its return value lands in the report,
+  // so a probe can drive the world (teleport, tapes) and hand back its own
+  // measurements without the runner knowing anything about the scenario.
+  let evalResult;
+  if (evalScript) evalResult = await page.evaluate(evalScript);
   if (waitMs > 0) await page.waitForTimeout(waitMs);
   await page.evaluate((n) => window.__of.settle(n), settleFrames);
 
@@ -80,6 +96,7 @@ try {
     world: window.__of.world(),
     scene: window.__of.scene(),
   }));
+  if (evalResult !== undefined) report.eval = evalResult;
 
   if (out) {
     const p = isAbsolute(out) ? out : resolve(repoRoot, out);
@@ -96,8 +113,10 @@ try {
 }
 
 if (errors.length) {
-  console.error('smoke: FAILURES');
-  for (const e of errors) console.error('  ' + e);
+  console.error(`smoke: FAILURES (${errors.length} distinct)`);
+  for (const e of errors.list()) console.error('  ' + e);
   exitCode = 1;
+} else {
+  console.error('smoke: PASS (no console errors, no failed requests)');
 }
 process.exit(exitCode);

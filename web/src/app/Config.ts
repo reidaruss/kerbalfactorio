@@ -10,26 +10,32 @@ export interface Scenario {
   readonly lat: number;
   readonly lon: number;
   readonly alt: number;
-  /** Sun angle in turns, [0,1). */
-  readonly sunT: number;
+  /**
+   * Target dot(sunDir, localUp) at the start point. Boot SOLVES the sun angle
+   * for this, so any lat/lon is lit without re-guessing a magic time of day.
+   * ?t= overrides it with an absolute angle in turns.
+   */
+  readonly sunDot: number;
 }
 
-// lat 48 / lon 18 is a Mountains biome on Forge at seed 0x0bf00d01 with 6.5 km
-// of relief, found by sweeping biomeAt through the oracle. The default start is
-// deliberately on land: an ocean start makes every terrain screenshot useless.
-const HOME = { lat: 48, lon: 18 };
+// lat 2 / lon 144 on Forge at seed 0x0bf00d01: a Hills valley floor at 2,963 m
+// with 3,200 m of relief and peaks 2,668 m above it inside a 6 km box, found by
+// sweeping baseHeight and biomeAt through the oracle. The default start is
+// deliberately on rugged land: an ocean or plateau start makes every terrain
+// screenshot useless.
+const HOME = { lat: 2, lon: 144 };
 
 export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   // Whole planet in frame, everything in the far scaled scene.
-  space: { ...HOME, alt: 2.4e6, sunT: 0.3 },
+  space: { ...HOME, alt: 1.6e6, sunDot: 0.85 },
   // Low orbit: the planet fills the frame, the near/far split is active.
-  orbit: { ...HOME, alt: 3.0e5, sunT: 0.3 },
+  orbit: { ...HOME, alt: 3.0e5, sunDot: 0.85 },
   // Boots on the ground, all fine terrain in the near 1:1 scene.
-  surface: { ...HOME, alt: 60, sunT: 0.35 },
+  surface: { ...HOME, alt: 40, sunDot: 0.55 },
   // Mid-ascent, deliberately straddling the near/far chunk cutoff.
-  ascent: { ...HOME, alt: 1.2e4, sunT: 0.35 },
+  ascent: { ...HOME, alt: 1.2e4, sunDot: 0.70 },
   // Depth-precision probe (ARCHITECTURE.md section 3.3).
-  zfight: { ...HOME, alt: 900, sunT: 0.35 },
+  zfight: { ...HOME, alt: 900, sunDot: 0.55 },
 };
 
 export interface Config {
@@ -38,6 +44,8 @@ export interface Config {
   readonly seedText: string;
   readonly scenarioName: string;
   readonly scenario: Scenario;
+  /** Absolute sun angle in turns from ?t=, or null to solve from sunDot. */
+  readonly sunTExplicit: number | null;
   readonly quality: QualityTier;
   readonly debug: boolean;
   readonly forceLogDepth: boolean;
@@ -46,6 +54,10 @@ export interface Config {
   readonly chunkPoolSize: number;
   /** TerrainStreamer maxDepth. */
   readonly maxDepth: number;
+  /** Draw the skirt index range as well as the interior. ?skirts=1 enables. */
+  readonly skirts: boolean;
+  /** StreamConfig.skirtFraction override; 0 keeps the default. */
+  readonly skirtFraction: number;
 }
 
 const DEFAULT_SEED_LO = 0x0bf00d01;
@@ -91,11 +103,12 @@ export function parseConfig(search: string): Config {
   const seed = parseSeed(p.get('seed'));
   const scenarioName = p.get('scenario') ?? 'space';
   const base = SCENARIOS[scenarioName] ?? SCENARIOS.space;
+  const tRaw = p.get('t');
   const scenario: Scenario = {
     lat: num(p, 'lat', base.lat),
     lon: num(p, 'lon', base.lon),
     alt: num(p, 'alt', base.alt),
-    sunT: num(p, 't', base.sunT),
+    sunDot: num(p, 'sundot', base.sunDot),
   };
   return {
     seedLo: seed.lo,
@@ -103,11 +116,20 @@ export function parseConfig(search: string): Config {
     seedText: seed.text,
     scenarioName,
     scenario,
+    sunTExplicit: tRaw === null || !Number.isFinite(Number(tRaw)) ? null : Number(tRaw),
     quality: parseQuality(p.get('quality')),
     debug: p.get('debug') !== '0',
     forceLogDepth: p.get('depth') === 'log',
     forcePlainDepth: p.get('depth') === 'plain',
     chunkPoolSize: Math.max(64, num(p, 'pool', 384) | 0),
     maxDepth: Math.min(14, Math.max(4, num(p, 'maxdepth', 12) | 0)),
+    // OFF by default at W1. of::TerrainStreamer sizes the skirt apron in
+    // proportion to the chunk, so even at skirtFraction 0.02 the rings render as
+    // ribbons and shelves lying across the landscape rather than as hidden
+    // crack plugs. The resident set is a complete quadtree partition, so the
+    // only cracks are LOD T-junctions; revisit at W2 when a walk makes them
+    // observable. ?skirts=1 turns them back on for that comparison.
+    skirts: p.get('skirts') === '1',
+    skirtFraction: num(p, 'skirtfrac', 0),
   };
 }

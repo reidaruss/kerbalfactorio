@@ -4,6 +4,7 @@ import './ui/styles/app.css';
 import { parseConfig } from './app/Config.js';
 import { boot } from './app/Boot.js';
 import { Loop } from './app/Loop.js';
+import { registerSystems } from './app/Systems.js';
 import { installDebugApi } from './app/Debug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
@@ -19,7 +20,12 @@ const ready = new Promise<void>((r) => { resolveReady = r; });
 
 boot(cfg, host, hud).then(({ services }) => {
   const loop = new Loop(services);
-  const api = installDebugApi(services, loop, ready);
+  registerSystems(services, loop);
+  const api = installDebugApi(
+    services, loop, ready,
+    () => services.terrain.report(),
+    (n, nearOnly) => services.terrain.dump(n, nearOnly),
+  );
 
   let hudFrame = 0;
   loop.onDrain.push(() => {
@@ -34,6 +40,13 @@ boot(cfg, host, hud).then(({ services }) => {
   loop.start();
   loop.settle(2).then(resolveReady);
 
+  console.info(
+    `[of] W1 terrain  chunk ${services.boot.chunkVerts} verts / ` +
+    `${services.boot.chunkBytes | 0} B  index ${services.boot.indexCount} (shared)  ` +
+    `pool ${cfg.chunkPoolSize} geometries = ` +
+    `${(services.boot.pooledBytes / 1048576).toFixed(1)} MB preallocated  ` +
+    `terrain.worker load ${services.boot.terrainWorkerLoadMs.toFixed(0)} ms`,
+  );
   console.info(
     `[of] W0 handshake  abi=1  wasm ${services.boot.wasmLoadMs.toFixed(0)} ms  ` +
     `oracle base/surface/biome/solid = ` +

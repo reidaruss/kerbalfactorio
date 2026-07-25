@@ -8,10 +8,10 @@ import * as THREE from 'three';
 export function createViewModelPlaceholder(): THREE.Object3D {
   const g = new THREE.Group();
   const box = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.14, 0.5),
+    new THREE.BoxGeometry(0.09, 0.06, 0.20),
     new THREE.MeshLambertMaterial({ color: 0xb56a2a }),
   );
-  box.position.set(0.3, -0.24, -0.75);
+  box.position.set(0.42, -0.30, -0.85);
   box.rotation.set(0.1, -0.25, 0.06);
   g.add(box);
   g.add(new THREE.AmbientLight(0xffffff, 1.4));

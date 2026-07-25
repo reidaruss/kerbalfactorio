@@ -18,6 +18,8 @@ import { PlanetBody } from '../world/PlanetBody.js';
 import { SurfaceOracle } from '../world/SurfaceOracle.js';
 import { FloatingOrigin } from '../world/FloatingOrigin.js';
 import { PlanetProxy } from '../world/PlanetProxy.js';
+import { Regime } from '../world/Regime.js';
+import { bootTerrain } from '../world/TerrainBoot.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
 import { Input } from '../player/Input.js';
 import { Hud } from '../ui/Hud.js';
@@ -26,6 +28,7 @@ import { probeWorkerOracle } from './WorkerProbe.js';
 function addLighting(scene: THREE.Scene, sunDir: THREE.Vector3, dist: number): THREE.DirectionalLight {
   const sun = new THREE.DirectionalLight(0xfff2df, 3.0);
   sun.position.copy(sunDir).multiplyScalar(dist);
+  sun.userData.distance = dist;
   scene.add(sun);
   scene.add(sun.target);
   scene.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
@@ -34,7 +37,6 @@ function addLighting(scene: THREE.Scene, sunDir: THREE.Vector3, dist: number): T
 
 export interface Booted {
   services: Services;
-  sunLights: THREE.DirectionalLight[];
   canvas: HTMLCanvasElement;
 }
 
@@ -61,7 +63,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const rig = new CameraRig(renderer.depth);
   const frame = new Frame(renderer, scenes, rig);
   const stats = new StatsProbe();
-  const sky = new SkyPass(cfg.seedLo, cfg.scenario.sunT);
+  const sky = new SkyPass(cfg.seedLo, 0);
   scenes.sky.add(sky.group);
 
   const sunLights = [
@@ -83,12 +85,23 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const observer = new ObserverCamera(oracle);
   observer.teleport(cfg.scenario.lat, cfg.scenario.lon, cfg.scenario.alt);
   origin.step(observer.position);
+  sky.setSunT(cfg.sunTExplicit ?? SkyPass.solveSunT(observer.up, cfg.scenario.sunDot));
 
   const input = new Input();
   input.attach(canvas);
 
   hud.banner('starting the worker WASM instance ...');
   const wp = await probeWorkerOracle(core, body, cfg);
+
+  hud.banner('starting terrain.worker and preallocating the chunk pool ...');
+  const tTerrain = performance.now();
+  const regime = new Regime(renderer.depth.nearDepthCutoff());
+  regime.update(observer.altM);
+  const t = await bootTerrain(cfg, quality, renderer.depth, events, scenes, origin, body);
+  const terrain = t.stream;
+  terrain.setNearDepthCutoff(regime.state.nearDepthCutoff);
+  const terrainBootMs = performance.now() - tTerrain;
+  stats.extraVramBytes = t.pooledBytes + t.indexBytes;
 
   const boot: BootMetrics = {
     wasmLoadMs,
@@ -103,12 +116,19 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     workerAgrees: wp.agrees,
     workerMismatches: wp.mismatches,
     proxyBuildMs: proxy.buildMs,
+    terrainWorkerLoadMs: t.workerLoadMs,
+    terrainBootMs,
+    chunkVerts: t.verts,
+    chunkBytes: t.pooledBytes / cfg.chunkPoolSize,
+    indexCount: t.indexCount,
+    pooledBytes: t.pooledBytes,
     bootMs: performance.now() - t0,
   };
 
   const services: Services = {
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
-    core, body, oracle, origin, proxy, observer, input, hud, boot,
+    core, body, oracle, origin, proxy, terrain, regime,
+    materials: terrain.materials, observer, input, hud, sunLights, boot,
   };
-  return { services, sunLights, canvas };
+  return { services, canvas };
 }

@@ -381,6 +381,16 @@ Packed layout, `V = 1089 core verts + 128 skirt verts = 1217`:
 | `aTerrain` | `Float32Array` × 2 | 8 | x = relief height (m) for snowline/tint, y = slope dot(normal, dir) for triplanar blend |
 | **total** | | **28 B** | **34.1 kB per chunk** |
 
+> **W1 implementation note (2026-07-25): the chunk does NOT cross as one interleaved buffer.**
+> `THREE.InterleavedBufferAttribute` takes its GL type from the `InterleavedBuffer`'s array, so a
+> single buffer cannot carry float32 positions *and* int8 normals *and* uint16 uvs; the snippet in
+> WASM-BRIDGE.md §4.8 would upload every attribute as float32. `terrain.worker` therefore
+> **de-interleaves** `of_chunk_packed`'s 28 B/vertex span into ONE contiguous `ArrayBuffer` with five
+> fixed-offset sections (position f32×3, height f32, uv u16×2, biome u8×4, normal i8×3 — see
+> `src/world/ChunkFormat.ts`). It is still one transferable per chunk, still constant size
+> (32,859 B), still zero-copy on the wire, and the pool still preallocates it. Measured cost of the
+> de-interleave loop is inside the pack figure below.
+
 Indices are **identical for every chunk** (33×33 grid + skirt ring): one `Uint16Array` of 2,304 triangles built once in `render/geometry/SharedIndex.ts` and assigned to every chunk geometry. 200 resident chunks share **one** index buffer instead of 200 copies. Triangles per chunk: 32×32×2 = 2,048 core + 256 skirt = **2,304**.
 
 **Biome weights.** `TerrainChunk` gives one `biome` and one `materialId` for the whole chunk, which is too coarse to look good. The worker computes `biomeAt(body, dirs[i])` per vertex (the `dirs` array is right there, and this is the same `/core` call the UE layer used), maps to a slot in the 8-layer terrain array texture, then runs a **2-pass box blur over the grid** to feather boundaries into a transition band. This is the M4.1 technique that killed the hard diagonal seam, reproduced here as a worker-side step instead of a per-frame engine step.
@@ -412,7 +422,18 @@ This is the single highest-leverage decision in the terrain pipeline and it is o
 
 Three mechanisms, layered:
 
-1. **Skirts (always on).** `StreamConfig.skirtFraction` = **0.9** (the M4.1 value; the `/core` default of 0.5 left visible cracks). 128 skirt verts per chunk, already in the payload.
+1. ~~**Skirts (always on).** `StreamConfig.skirtFraction` = **0.9**~~ **Withdrawn at W1 (2026-07-25).**
+   `of::TerrainStreamer` sizes the skirt apron in **proportion to the chunk**, so 0.9 gives an
+   **82 km** drop on a depth-3 chunk (measured: `chunkRadius` 78,815 m, `skirtDepth` 82,306 m). Those
+   aprons render as vertical walls and flat shelves lying across the landscape, not as hidden crack
+   plugs; at 0.02 they become ribbons and at 0.005 hairlines, and at no value do they plug the
+   far-scene cracks. W1 therefore draws **the interior index range only**
+   (`geometry.setDrawRange(0, of_chunk_interior_index_count())` — the interior indices come first
+   precisely so this is possible), and `?skirts=1&skirtfrac=` re-enables them for comparison.
+   **Consequence, stated honestly: LOD T-junction cracks are visible at chunk boundaries in the
+   scaled scene** (see `docs/screenshots/W1_streaming.png`, the dark slivers on the distant mesa).
+   Mechanism 2 below is the real fix and is a W2 task; `of_chunk_neighbour_depths` is already
+   exposed for it.
 2. **Edge stitching.** `TerrainChunk.neighbourDepth[4]` is already populated. When a neighbour is coarser, the worker snaps this chunk's shared-edge vertices onto the coarser edge's interpolated line, removing the T-junction properly rather than hiding it. Free, because the data is already there.
 3. **Cross-fade.** A per-chunk `aFade` value ramps 0 to 1 over 250 ms on stream-in, driving a dithered (Bayer 4×4) alpha-test in the fragment shader. Dithering rather than blending keeps it opaque, keeps Early-Z, and needs no sorting. This kills the pop that skirts cannot address.
 
@@ -882,3 +903,102 @@ W0 through W3 are the tech-risk retirement phase and should not accrue content. 
 | **WR-9** | **glTF Transform 4.4.1, meshopt not Draco** | npm gltfpack cannot do `-tc` (needs a native binary); glTF Transform bundles its encoders; meshopt's decoder is far smaller and SIMD-accelerated | Proposed |
 | **WR-10** | **Voxel edits are an append-only op log** mirrored to every WASM instance | The only mutable state both main thread and workers need; a set is order-independent so convergence is bit-exact; it is also the save format and the future replication format | Proposed |
 | **WR-11** | **`window.__of` is a first-class deliverable**, and `__of.settle()` gates every capture | The dev loop is the reason for the pivot. Race-free captures and JSON assertions are what make a headless agent loop possible at all | Proposed |
+
+---
+
+## 15. W0 / W1 implementation record (2026-07-25)
+
+What the `web/` client actually does after milestones W0 and W1, and every place reality diverged
+from the design above. Written from measurements on Chrome / ANGLE D3D11 / RTX 4060 Ti at
+1600 x 900, captured by `web/tools/smoke/run.mjs`.
+
+### 15.1 Measured numbers
+
+| Thing | Budget (section 10) | Measured |
+|---|---|---|
+| Main-thread oracle, per call | single-digit us | `baseHeight` 2.1 to 3.2 us · `surfaceHeight` 1.9 to 2.9 · `biomeAt` 1.2 to 2.0 · `solidAt` 1.9 to 2.5 |
+| Chunk build + pack, per chunk (worker) | <= 12 ms (DW-13) | **1.8 to 3.5 ms** (streamer walk plus pack plus de-interleave, batches of 16) |
+| Chunk upload to the pool, per frame | inside 1.5 ms main thread | **0.3 to 0.9 ms** for a whole 16-chunk batch |
+| Worker round trip | | 8 to 130 ms depending on batch size |
+| Draw calls, surface | <= 150 target | **70 to 107** |
+| Draw calls, from 1,600 km | <= 150 target | **95 to 99** |
+| Triangles | <= 2.7 M | **145k to 250k** |
+| Frame p50 / p99 | 16.6 / 25 ms | **0.2 to 0.4 / 0.6 to 1.1 ms** (W1 has no shadows, atmosphere, foliage or factory yet) |
+| Pooled terrain VRAM | 13 MB | **12.0 MB** (384 x 32,859 B) plus one 13.8 kB shared index |
+| Resident chunks | 200 | 96 in orbit · 183 to 273 on the surface · pool never exhausted |
+| WASM module load | | 16 to 38 ms main thread, 5 to 9 ms per worker |
+
+### 15.2 Divergences from the design, and why
+
+1. **Chunk vertex delivery is de-interleaved, not interleaved** (section 4.2 note). three.js cannot
+   bind mixed attribute types from one `InterleavedBuffer`.
+2. **`of_observer_latlon_alt` is NOT used, and should be treated as a bridge defect.** It is built
+   on `sampleRawHeight`: at lat 48 / lon 18 on Forge it returns **4,075.51 m** where the designed
+   surface (`baseHeight` === `sampleDesignedHeight`, WG-21) is **6,520.81 m**. An "altitude 60 m"
+   observer therefore starts **2.4 km underground** and every terrain mesh renders behind the
+   camera. This is precisely the multiple-surfaces failure D-011 exists to prevent.
+   `SurfaceOracle.observerPos` derives the position from `surfaceRadius` instead. **Raised to
+   core-engine: either rebase the helper on the designed surface or delete it.**
+3. **`of_chunk_max_offset` excludes the skirt ring** and cannot be used as a bounding-sphere radius:
+   it reports 52,639 m for a depth-3 chunk whose furthest vertex is at 108,403 m, which
+   frustum-culls chunks that are genuinely on screen. The exact radius is computed for free in the
+   worker's de-interleave loop instead.
+4. **Skirts are off** (section 4.5, mechanism 1 withdrawn).
+5. **A custom `ShaderMaterial` must not include `<tonemapping_pars_fragment>` or
+   `<colorspace_pars_fragment>`.** `WebGLProgram` already injects both into every ShaderMaterial
+   prefix when `toneMapping` and `outputColorSpace` are set; including them again is a hard compile
+   failure ("function already has a body") and the material then draws nothing while still counting
+   draw calls. Only the BODY chunks belong in the shader. `DepthPolicy` follows the same rule for
+   the log-depth chunks.
+6. **`renderer.info.autoReset` must be false.** three resets `info` at the top of every `render()`,
+   so with the four-pass ladder the counters would only ever describe pass 4.
+7. **`/core` has no runtime setter for `maxDepth` or `genBudget`**, so `Regime` tunes the near/far
+   split only; the streamer is created once from `Config`.
+8. **`nearDepthCutoff` is "the finest depth still allowed in the far scene, plus one".** The design
+   text says orbit uses cutoff 0, but a chunk is near when `depth >= cutoff`, so 0 would put the
+   entire planet in the near scene where the 100 km far plane culls it. `Regime.ALL_FAR` (99) is the
+   orbit value.
+9. **`src/workers/` lives under `src/`**, not beside it, so it is inside the TypeScript project and
+   Vite's worker resolution.
+10. **The chunk key comes from `of_chunk_meta`, never `of_streamer_ready_keys`.** Meta is the same
+    indexed per-chunk accessor family as the anchor and the packed buffer, so key, anchor and
+    vertices are guaranteed to describe the same quad.
+
+### 15.3 The dev loop, concretely
+
+```
+# once per session (or use the .claude/launch.json entry "of-web")
+npm --prefix web run dev
+
+# then, per capture, from web/
+node tools/smoke/run.mjs --scenario=surface --out=docs/screenshots/x.png
+node tools/smoke/run.mjs --scenario=space --seed=1234 --settle=30
+node tools/smoke/run.mjs --scenario=surface --eval='(async()=>{ ...window.__of... })()'
+```
+
+Headless Chrome via `playwright-core` against the locally installed browser (no download). The
+runner waits for `__of.ready`, runs an optional `--eval` probe whose return value is included in the
+report, waits for `__of.settle(n)` (which gates on `StreamUpdate.converged`), screenshots, prints
+`__of.stats()` / `__of.world()` / `__of.scene()` as JSON, and **fails on any `console.error`,
+`pageerror`, failed request or WebGL warning**. That last rule is what caught divergence 5 above:
+the terrain material was submitting 70 draw calls per frame and painting nothing.
+
+### 15.4 Verified at W1
+
+* The planet renders from 1,600 km and from 40 m, from real streamed `/core` geometry.
+* Streaming adds and removes: a 110 km teleport streamed **66 new chunks in and evicted 48**, pool
+  219 in use / 165 free, never exhausted, zero reallocation.
+* Determinism: `?seed=1234` produced **byte-identical PNGs across two separate page loads**, and
+  `?seed=9999` produced a different planet.
+* Cross-instance determinism in the browser: a second `/core` instance in a Web Worker agrees with
+  the main-thread instance **bit-for-bit** over 512 sampled directions (IEEE-754 patterns compared).
+* Reversed-Z is active (`EXT_clip_control` present), so the log-depth path is untested in practice.
+
+### 15.5 Outstanding into W2
+
+* `?scenario=zfight` exists as a start state but the five-scale probe scene and the frame-diff
+  assertion are not built.
+* LOD T-junction cracks (section 4.5 mechanism 2, edge stitching in the worker).
+* Cross-fade on stream-in (section 4.5 mechanism 3) is not implemented; chunks pop.
+* `FloatingOrigin` is wired with the one broadcast and one subscriber and rebases correctly on a
+  teleport, but has not been exercised by a sustained walk. That is the W2 risk.

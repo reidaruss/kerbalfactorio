@@ -48,11 +48,22 @@ export class SurfaceOracle {
     return out;
   }
 
-  /** Body-frame position at lat/lon (RADIANS) and altitude above the surface. */
+  /**
+   * Body-frame position at lat/lon (RADIANS) and altitude above the surface.
+   *
+   * NOT of_observer_latlon_alt. That shim helper is built on sampleRawHeight,
+   * which is the pre-design heightfield: at lat 48 / lon 18 on Forge it returns
+   * 4,075.51 m where the DESIGNED surface (baseHeight === sampleDesignedHeight,
+   * WG-21) is 6,520.81 m, so an "altitude 60 m" observer starts 2.4 km
+   * underground and the terrain mesh renders entirely behind the camera. This
+   * is exactly the multiple-surfaces failure D-011 exists to prevent, so the
+   * position is derived from the ONE surface authority instead. Reported to
+   * core-engine as a bridge gap; see docs/web/ARCHITECTURE.md section 4.2.
+   */
   observerPos(lat: number, lon: number, altM: number, out: Vec3d): Vec3d {
-    this.M._of_observer_latlon_alt(this.body.handle, lat, lon, altM);
-    const s = scratchF64(this.M, 3);
-    out.x = s[0]; out.y = s[1]; out.z = s[2];
+    this.dirFromLatLon(lat, lon, out);
+    const r = this.surfaceRadius(out.x, out.y, out.z) + altM;
+    out.x *= r; out.y *= r; out.z *= r;
     return out;
   }
 
