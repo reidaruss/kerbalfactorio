@@ -162,6 +162,61 @@
       "sockets": ["socket_item_in", "socket_item_out", "socket_status"],
       "clips": ["Box_Lid"],
       "collision": "col_Box"
+    },
+    "generator": {
+      "glb": "assets/models/dist/machines/generator.glb",
+      "type_id": "0x15",
+      "footprint_cells": [3, 2],
+      "lod0_node": "Generator_LOD0",
+      "lod_nodes": ["Generator_LOD0", "Generator_LOD1", "Generator_LOD2"],
+      "dims_xyz_m": [3.0, 2.60, 2.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 900,
+      "max_tris_total": 1500,
+      "max_materials": 5,
+      "sockets": [
+        "socket_fuel_in",
+        "socket_power_out",
+        "socket_smoke",
+        "socket_status"
+      ],
+      "clips": ["Gen_Flywheel"],
+      "collision": "col_Generator"
+    },
+    "power_pole": {
+      "glb": "assets/models/dist/machines/power_pole.glb",
+      "type_id": "0x16",
+      "footprint_cells": [1, 1],
+      "lod0_node": "PowerPole_LOD0",
+      "lod_nodes": ["PowerPole_LOD0", "PowerPole_LOD1", "PowerPole_LOD2"],
+      "dims_xyz_m": [1.0, 4.00, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 350,
+      "max_tris_total": 550,
+      "max_materials": 3,
+      "sockets": ["socket_wire_a", "socket_wire_b", "socket_status"],
+      "clips": [],
+      "collision": "col_PowerPole"
+    },
+    "inserter": {
+      "glb": "assets/models/dist/machines/inserter.glb",
+      "type_id": "sim-internal",
+      "footprint_cells": [1, 1],
+      "lod0_node": "Inserter_LOD0",
+      "lod_nodes": ["Inserter_LOD0", "Inserter_LOD1", "Inserter_LOD2"],
+      "dims_xyz_m": [0.70, 0.90, 0.70],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 400,
+      "max_tris_total": 700,
+      "max_materials": 4,
+      "sockets": [
+        "socket_pick",
+        "socket_drop",
+        "socket_grip",
+        "socket_status"
+      ],
+      "clips": ["Inserter_Swing"],
+      "collision": "col_Inserter"
     }
   }
 }

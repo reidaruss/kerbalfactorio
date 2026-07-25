@@ -161,14 +161,21 @@ def get_material(role):
 # operator context, selection state, or the 3D cursor.
 # ---------------------------------------------------------------------------
 
-def _box_data(size, loc):
+def _box_data(size, loc, rot_z=0.0):
+    """rot_z (degrees) yaws the box about its own centre. Hand-piled stone
+    reads as piled precisely because no two blocks share an edge angle, and a
+    few degrees of yaw is the cheapest way to buy that. Note the yawed box has
+    a LARGER world AABB than its size: half-extent becomes
+    h*(|cos| + |sin|), so a block near the cell edge must be checked."""
     sx, sy, sz = (s * 0.5 for s in size)
     cx, cy, cz = loc
-    x0, x1 = cx - sx, cx + sx
-    y0, y1 = cy - sy, cy + sy
-    z0, z1 = cz - sz, cz + sz
-    v = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
-         (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+    corners = [(-sx, -sy), (sx, -sy), (sx, sy), (-sx, sy)]
+    if rot_z:
+        a = math.radians(rot_z)
+        ca, sa = math.cos(a), math.sin(a)
+        corners = [(x * ca - y * sa, x * sa + y * ca) for x, y in corners]
+    v = ([(cx + x, cy + y, cz - sz) for x, y in corners]
+         + [(cx + x, cy + y, cz + sz) for x, y in corners])
     f = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
          (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
     return v, f, [False] * len(f)
@@ -283,8 +290,8 @@ class MeshBuilder:
             self.face_role.append(ri)
         return self
 
-    def box(self, size, loc=(0, 0, 0), role="Steel"):
-        return self._add(*_box_data(size, loc), role)
+    def box(self, size, loc=(0, 0, 0), role="Steel", rot_z=0.0):
+        return self._add(*_box_data(size, loc, rot_z), role)
 
     def cylinder(self, radius, depth, loc=(0, 0, 0), axis="Z", segments=12,
                  role="Steel", smooth_sides=True):
