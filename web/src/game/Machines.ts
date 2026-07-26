@@ -72,6 +72,9 @@ export class Machines {
   readonly group = new THREE.Group();
   readonly list: Machine[] = [];
   readonly smoke = new Smoke();
+  /** Demolition ledger: machines pulled up, and ore that went with them. */
+  removals = 0;
+  oreLost = 0;
   private readonly templates = new Map<string, THREE.Object3D>();
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
@@ -171,6 +174,34 @@ export class Machines {
     return m;
   }
 
+  /**
+   * Pull a placed machine back up. Returns the ledger, or null if it is gone.
+   *
+   * The MACHINE ITEM comes back, because that is what the player paid; the
+   * finished ingots come back, because they exist. The ore already loaded into
+   * the pool does NOT: gameplay.h's Furnace has loadOre and no unloadOre, and
+   * inventing a JS-side eject would be a second authority over the pool. It is
+   * reported as `oreLost` instead, so the number is visible rather than absent.
+   */
+  remove(m: Machine): { item: number; refunded: number; ingots: number;
+                        oreLost: number } | null {
+    const at = this.list.indexOf(m);
+    if (at < 0) return null;
+    const st = this.core.furnaceState(m.handle);
+    const ingots = this.core.furnaceCollect(m.handle, 999);
+    const oreLost = st?.oreCount ?? 0;
+    this.core.furnaceDestroy(m.handle);
+    // clone(true) SHARES geometry and material with the template, so nothing
+    // here may be disposed: doing so would blank every furnace placed after it.
+    this.group.remove(m.group);
+    this.list.splice(at, 1);
+    const item = m.tier === 1 ? this.core.ids.smelter : this.core.ids.furnace;
+    const over = this.core.add(item, 1);
+    this.removals++;
+    this.oreLost += oreLost;
+    return { item, refunded: 1 - over, ingots, oreLost };
+  }
+
   /** Yaw `stand` about the ground normal until local +Z points back at the eye. */
   private faceMouth(stand: THREE.Quaternion, up: THREE.Vector3,
                     eye: { x: number; y: number; z: number },
@@ -188,10 +219,20 @@ export class Machines {
     return new THREE.Quaternion().setFromAxisAngle(up, angle).multiply(stand);
   }
 
-  /** Advance every machine by `ticks`. Returns the smelts completed. */
+  /**
+   * Advance every machine by `ticks`. Returns the smelts completed.
+   * `onSmelt` fires PER MACHINE, because the cue for a finished ingot has to
+   * land on the furnace that made it and a total cannot say which one that was.
+   */
+  onSmelt: ((m: Machine, n: number) => void) | null = null;
+
   tick(ticks: number): number {
     let done = 0;
-    for (const m of this.list) done += this.core.furnaceRun(m.handle, ticks);
+    for (const m of this.list) {
+      const n = this.core.furnaceRun(m.handle, ticks);
+      if (n > 0) this.onSmelt?.(m, n);
+      done += n;
+    }
     return done;
   }
 
@@ -249,7 +290,8 @@ export class Machines {
   }
 
   report(): unknown {
-    return this.list.map((m) => ({
+    return this.list.map((m, i) => ({
+      id: i,
       handle: m.handle, tier: m.tier, state: this.core.furnaceState(m.handle),
       burning: m.burning, lit: Number(m.glow.lit.toFixed(3)),
       smokePuffs: this.smoke.live,

@@ -18,6 +18,8 @@ export interface HudTarget {
   fraction: number;
   empty: boolean;
   distanceM: number;
+  /** A second line of available verbs, e.g. "X remove". Optional. */
+  action?: string;
 }
 
 export interface HudCarry { name: string; count: number }
@@ -28,11 +30,13 @@ export class GameHud {
   private readonly carry: HTMLElement;
   private readonly toast: HTMLElement;
   private readonly gainEl: HTMLElement;
+  private readonly bannerEl: HTMLElement;
   private lastPrompt = '';
   private lastCarry = '';
   private toastLeft = 0;
   private visible = true;
   gains = 0;
+  banners = 0;
 
   constructor(parent: HTMLElement) {
     this.cross = this.div(parent, 'of-cross', '');
@@ -40,6 +44,7 @@ export class GameHud {
     this.carry = this.div(parent, 'of-carry', 'of-ui');
     this.toast = this.div(parent, 'of-toast', 'of-ui');
     this.gainEl = this.div(parent, 'of-gain', 'of-ui');
+    this.bannerEl = this.div(parent, 'of-banner', 'of-ui');
   }
 
   private div(parent: HTMLElement, id: string, cls: string): HTMLElement {
@@ -56,6 +61,7 @@ export class GameHud {
     this.cross.style.display = d;
     this.carry.style.display = d;
     this.gainEl.style.display = d;
+    this.bannerEl.style.display = d;
     if (!v) this.prompt.style.display = 'none';
   }
 
@@ -81,6 +87,24 @@ export class GameHud {
     void this.gainEl.offsetWidth;
     this.gainEl.classList.add('pop');
     this.cross.classList.add('hit');
+  }
+
+  /**
+   * THE BANNER: a moment, not a message. Clearing a node and finishing an ingot
+   * are the two events a player should notice from across the clearing, and
+   * neither of them fits the gain readout (which is a per-swing tally that has
+   * to be gone before the next swing) or the toast (which is where errors live).
+   * It sits above the crosshair, holds for a beat, and drifts up as it fades.
+   */
+  banner(text: string, colour: string): void {
+    this.banners++;
+    this.bannerEl.textContent = text;
+    this.bannerEl.style.color = colour;
+    // Same reflow trick as gain(): without it two banners inside the animation
+    // window coalesce into one write and the second is never seen.
+    this.bannerEl.classList.remove('rise');
+    void this.bannerEl.offsetWidth;
+    this.bannerEl.classList.add('rise');
   }
 
   /** Show `text` for `secs`. The toast is the "something happened" channel. */
@@ -109,10 +133,19 @@ export class GameHud {
       return;
     }
     const pct = Math.round(Math.max(0, Math.min(1, t.fraction)) * 100);
-    const key = `${t.name}|${pct}|${t.empty ? 1 : 0}`;
+    const act = t.action ?? '';
+    const key = `${t.name}|${pct}|${t.empty ? 1 : 0}|${act}`;
     if (key === this.lastPrompt) return;
     this.lastPrompt = key;
     this.prompt.style.display = 'block';
+    // A BUILDING IS NOT HARVESTED. It carries its own verbs in `action`, so the
+    // "E Harvest" chip is a node-only prefix; without this split a belt read
+    // "E Harvest belt", which is a sentence about nothing.
+    if (act !== '') {
+      this.prompt.innerHTML = `${esc(t.name)}<div class="sub">${esc(act)}</div>`
+        + `<div id="of-bar"><i style="width:${pct}%"></i></div>`;
+      return;
+    }
     this.prompt.innerHTML = t.empty
       ? `<span class="sub">${esc(t.name)} node depleted</span>`
       : `<span class="k">E</span>Harvest ${esc(t.name)}`

@@ -21,11 +21,14 @@ import { GameHud } from '../ui/GameHud.js';
 import { InventoryPanel } from '../ui/InventoryPanel.js';
 import { FurnacePanel } from '../ui/FurnacePanel.js';
 import { Machines, type Machine } from './Machines.js';
-import { CameraKick, Debris } from './HarvestFx.js';
+import { Feedback } from './Feedback.js';
+import { Sfx } from '../audio/Sfx.js';
 import { Factory, type Placed } from './Factory.js';
 import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
-import { furnaceView, nodeDump, readable, recipeRows, slotRows } from './GameplayViews.js';
+import { demolishBuild, demolishMachine } from './Demolition.js';
+import { buildPrompt } from './FactoryReport.js';
+import { furnaceView, nodeDump, recipeRows, slotRows } from './GameplayViews.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
@@ -52,8 +55,9 @@ export class Gameplay {
   readonly panel: InventoryPanel;
   readonly machines: Machines;
   readonly furnacePanel: FurnacePanel;
-  readonly debris = new Debris();
-  readonly kick = new CameraKick();
+  /** Chips, kick, captions and sound: everything an event does but the rule. */
+  readonly fx: Feedback;
+  readonly sfx = new Sfx();
   /** W6 automation: the plan, its art, and the build menu that edits it. */
   readonly factory: Factory;
   readonly factoryView: FactoryView;
@@ -66,6 +70,8 @@ export class Gameplay {
   private panelHeld = false;
   private placeHeld = false;
   private mineHeld = false;
+  private razeHeld = false;
+  private muteHeld = false;
   private openMachine: Machine | null = null;
   private aimedMachine: Machine | null = null;
   private aimedBuild: Placed | null = null;
@@ -75,6 +81,7 @@ export class Gameplay {
     this.field = new NodeField(this.game, d.origin);
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     this.hud = new GameHud(d.host);
+    this.fx = new Feedback(this.hud, this.field, this.sfx);
     this.panel = new InventoryPanel(d.host, (i) => this.craft(i));
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle);
     this.furnacePanel = new FurnacePanel(
@@ -83,6 +90,11 @@ export class Gameplay {
     this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60);
     this.factoryView = new FactoryView(d.origin);
     this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView);
+    // A hand furnace announces its own ingots, at the furnace that made them.
+    this.machines.onSmelt = (m, n) => {
+      this.fx.ingot(n, m.pos, m.up,
+        this.game.itemName(this.game.furnaceState(m.handle)?.outItem ?? 0));
+    };
   }
 
   static async create(d: GameplayDeps): Promise<Gameplay> {
@@ -90,8 +102,11 @@ export class Gameplay {
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load()]);
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
-    d.scene.add(g.debris.mesh);
+    d.scene.add(g.fx.debris.mesh);
     d.scene.add(g.factoryView.group);
+    // Browsers refuse audio until the player has interacted; the listener arms
+    // itself on the first pointer or key event and then removes itself.
+    g.sfx.attach();
     g.populate();
     return g;
   }
@@ -129,6 +144,15 @@ export class Gameplay {
     // that makes "walk away and iron accumulates" true: nothing here waits on a
     // frame, a panel or the player being anywhere near the machines.
     this.factory.tick(1);
+    this.fx.watchSmelters(this.factory, this.game);
+
+    // M mutes. Edge-detected here like every other open-ended key, so a driven
+    // tape that holds it for ten frames toggles once.
+    const mute = this.d.input.held('KeyM');
+    if (mute && !this.muteHeld) {
+      this.hud.flash(this.sfx.bus.toggleMute() ? 'sound off  (M)' : 'sound on  (M)');
+    }
+    this.muteHeld = mute;
 
     // ONE edge for the mine key, read once. It used to be edge-detected inside
     // the "panel is open" branch and taken as a LEVEL inside the "aiming at a
@@ -156,7 +180,7 @@ export class Gameplay {
     // holding a belt in hand who presses G means the belt, not the furnace, and
     // guessing wrong is the sort of thing that makes a game feel unlistening.
     const built = this.build.step((c) => this.d.input.held(c), f.place, ray);
-    if (built) this.hud.flash(`placed ${this.build.label}`);
+    if (built) { this.hud.flash(`placed ${this.build.label}`); this.sfx.confirm(); }
     else if (this.build.selected === null) {
       if (f.place && !this.placeHeld) this.placeMachine(ray);
     } else if (f.place && !this.placeHeld && this.build.target?.ok === false) {
@@ -165,8 +189,17 @@ export class Gameplay {
     this.placeHeld = f.place;
 
     this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
+    // Belts ARE included here, because a belt is demolishable even though it is
+    // not interactive; `collectFrom` on one is a no-op with its own message.
     this.aimedBuild = this.aimedMachine !== null ? null
-      : this.factory.pick(ray.origin, ray.dir, 3.5);
+      : this.factory.pick(ray.origin, ray.dir, 3.5, true);
+
+    // X pulls up whatever is under the crosshair, and it is read BEFORE the mine
+    // key so that "remove" can never be mistaken for "open".
+    const raze = this.d.input.held('KeyX');
+    const razePressed = raze && !this.razeHeld;
+    this.razeHeld = raze;
+    if (razePressed && this.demolish()) return false;
 
     // A machine under the crosshair takes the key: you cannot harvest a furnace.
     if (this.aimedMachine !== null) {
@@ -183,41 +216,37 @@ export class Gameplay {
     }
 
     const got = this.interact.step(f.mine, tick);
-    if (got && this.interact.last !== null) this.impact(this.interact.last);
+    if (got && this.interact.last !== null) {
+      this.fx.impact(this.interact.last, ray.origin, this.interact.swings);
+      this.panel.invalidate();
+    }
     // The kick runs on the FIXED tick and is applied through the same additive
     // Controller.look the mouse uses, so a driven tape kicks exactly as often as
     // a human does and the offsets still sum to zero.
-    const [ky, kp] = this.kick.step(this.d.player.view.pitch);
+    const [ky, kp] = this.fx.kick.step(this.d.player.view.pitch);
     if (kp !== 0 || ky !== 0) this.d.player.look(ky, kp);
     return got;
   }
 
   /**
-   * Everything a landed swing does that is not the grant itself: the node
-   * reacts, chips fly in the resource's own colour, the camera kicks, and the
-   * gain is read out beside the crosshair. All of it hangs off the authored
-   * impact frame (17 of 33) because that is when the tool visibly connects.
+   * Remove whatever the crosshair is on. Returns true if something went.
+   * The machine is tried first for the same reason it takes the mine key: it is
+   * the nearer, larger object and a belt tile behind it must not steal the press.
    */
-  private impact(l: { granted: number; name: string; usedTool: boolean; index: number }): void {
-    const hit = this.field.hitPoint(l.index);
-    if (hit !== null) {
-      const e = this.d.player.aimRay().origin;
-      // Back towards the eye, flattened into the ground plane, so chips come at
-      // the player rather than through the node they were struck from.
-      const b = new THREE.Vector3(e.x - hit.pos.x, e.y - hit.pos.y, e.z - hit.pos.z);
-      const u = new THREE.Vector3(hit.up.x, hit.up.y, hit.up.z);
-      b.addScaledVector(u, -b.dot(u));
-      if (b.lengthSq() < 1e-9) b.set(u.y, -u.x, 0);
-      b.normalize();
-      // More chips on a bigger pull, so a tooled swing visibly hits harder.
-      const n = Math.min(22, 8 + Math.round(Math.min(30, l.granted) * 0.45));
-      this.debris.burst({ pos: hit.pos, up: hit.up, back: b, colour: hit.colour, count: n });
-      this.hud.gain(`+${l.granted} ${l.name}`, readable(hit.colour));
-    } else {
-      this.hud.gain(`+${l.granted} ${l.name}`, '#e8eef3');
-    }
-    this.kick.fire(this.interact.swings);
+  private demolish(): boolean {
+    const r = this.aimedMachine !== null
+      ? demolishMachine(this.machines, this.game, this.aimedMachine)
+      : this.aimedBuild !== null
+        ? demolishBuild(this.factory, this.factoryView, this.game, this.aimedBuild)
+        : null;
+    if (r === null) { this.hud.flash('nothing to remove'); return false; }
+    this.aimedMachine = null;
+    this.aimedBuild = null;
+    this.fx.forgetSmelters();
+    this.hud.flash(r.message, 2.2);
+    this.sfx.undo();
     this.panel.invalidate();
+    return true;
   }
 
   /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
@@ -226,7 +255,10 @@ export class Gameplay {
     this.field.update(dt);
     this.machines.update();
     this.machines.updateFx(dt);
-    this.debris.update(dt, this.d.origin);
+    this.fx.update(dt, this.d.origin);
+    const eye = this.d.player.aimRay().origin;
+    this.sfx.walk(dt, this.d.player.body.speedMps, this.d.player.body.grounded);
+    this.fx.beds(this.factory, this.machines, eye);
     // The belt scroll is driven by SIM seconds, not performance.now(), for the
     // same reason the terrain cross-dissolve is: a headless driven run then
     // scrolls at exactly the rate a real one does and a capture is reproducible.
@@ -235,48 +267,29 @@ export class Gameplay {
       this.furnacePanel.render(
         furnaceView(this.game, this.openMachine.handle, this.openMachine.tier));
     }
-    if (this.aimedBuild !== null && !this.panel.isOpen && !this.furnacePanel.isOpen) {
-      this.hud.render(dt, this.buildPrompt(this.aimedBuild),
-        this.game.carried().map((c) => ({ name: c.name, count: c.count })));
+    const carried = this.game.carried().map((c) => ({ name: c.name, count: c.count }));
+    if (this.uiOpen) {
+      if (this.panel.isOpen) this.panel.render(slotRows(this.game), recipeRows(this.game));
+      this.hud.render(dt, null, carried);
       return;
     }
-    if (this.aimedMachine !== null && !this.panel.isOpen && !this.furnacePanel.isOpen) {
+    if (this.aimedBuild !== null) {
+      this.hud.render(dt, buildPrompt(this.factory, this.game, this.aimedBuild), carried);
+      return;
+    }
+    if (this.aimedMachine !== null) {
       const st = this.game.furnaceState(this.aimedMachine.handle);
       this.hud.render(dt, {
         name: st !== null && st.smelting ? 'furnace (smelting)' : 'furnace',
         fraction: st === null ? 0 : st.progress / Math.max(1, st.ticksPerSmelt),
-        empty: false, distanceM: 0,
-      }, this.game.carried().map((c) => ({ name: c.name, count: c.count })));
+        empty: false, distanceM: 0, action: 'E open    X remove',
+      }, carried);
       return;
     }
     const t = this.interact.target;
     this.hud.render(dt, t === null ? null : {
       name: t.name, fraction: t.fraction, empty: t.empty, distanceM: t.distanceM,
-    }, this.game.carried().map((c) => ({ name: c.name, count: c.count })));
-    if (this.panel.isOpen) this.panel.render(slotRows(this.game), recipeRows(this.game));
-  }
-
-  /** What an automated machine says about itself under the crosshair. */
-  private buildPrompt(b: Placed) {
-    const out = b.build < 0 ? 0 : this.factory.line.outputBuffer(b.build);
-    const item = this.factory.outputItemOf(b);
-    const name = item > 0 ? this.game.itemName(item) : b.kind;
-    if (b.kind === 'miner') {
-      const left = b.build < 0 ? 0 : this.factory.line.minerRemaining(b.build);
-      const n = this.game.node(b.nodeIndex);
-      return {
-        name: `miner  ${Math.round(left)} ${name} left`,
-        fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
-        // `empty` is the HARVEST NODE's depleted caption; a machine has its own
-        // words for being empty and does not want "node depleted" under them.
-        empty: false, distanceM: 0,
-      };
-    }
-    return {
-      name: out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  working`,
-      fraction: b.build < 0 ? 0 : this.factory.line.progress01(b.build),
-      empty: false, distanceM: 0,
-    };
+    }, carried);
   }
 
   /** Take an automated machine's finished stock into the pack. */
@@ -285,6 +298,7 @@ export class Gameplay {
     if (n <= 0) { this.hud.flash('nothing to take yet'); return; }
     this.autoCollected += n;
     this.hud.flash(`took ${n} ${this.game.itemName(this.factory.outputItemOf(b))}`);
+    this.sfx.confirm();
     this.panel.invalidate();
   }
 
@@ -307,6 +321,7 @@ export class Gameplay {
     if (m === null) { this.hud.flash('cannot place there'); return; }
     this.placements++;
     this.hud.flash(`placed ${this.game.itemName(item)}`);
+    this.sfx.confirm();
   }
 
   /** Open the furnace UI on `m`, or close it with null. THE pointer transition. */
@@ -337,6 +352,7 @@ export class Gameplay {
     if (!ok) return;
     const r = this.game.recipes()[index];
     if (r !== undefined) this.hud.flash(`crafted ${this.game.itemName(r.output)}`);
+    this.sfx.confirm();
   }
 
   /** Every node with its world position, nearest first. The probe's eyes. */
@@ -360,9 +376,16 @@ export class Gameplay {
       view: this.factoryView.stats(),
       autoCollected: this.autoCollected,
       fx: {
-        debrisLive: this.debris.live, debrisSpawned: this.debris.spawned,
+        ...(this.fx.report() as object),
         smokeLive: this.machines.smoke.live, smokePuffs: this.machines.smoke.emitted,
-        gains: this.hud.gains, kicking: this.kick.active, kickTicks: this.kick.applied,
+        gains: this.hud.gains, banners: this.hud.banners,
+      },
+      audio: this.sfx.stats(),
+      demolition: {
+        buildings: this.factory.removals, machines: this.machines.removals,
+        refunded: this.factory.refunded,
+        itemsLost: this.factory.demolishedInFlight,
+        oreLost: this.machines.oreLost,
       },
       interact: this.interact.report(),
       carried: this.game.carried(),

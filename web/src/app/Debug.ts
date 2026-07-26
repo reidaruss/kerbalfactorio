@@ -3,6 +3,7 @@
 // settle() gates every capture, so a screenshot cannot race streaming.
 
 import { assetStats } from '../assets/Loaders.js';
+import { gameplayApi } from './DebugGameplay.js';
 import type { Services } from './Services.js';
 import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
@@ -114,6 +115,20 @@ export interface OfDebugApi {
   build(index?: number): unknown;
   /** W6. Take an automated machine's output by its plan id. Returns what moved. */
   collect(id: number): number;
+  /**
+   * W6. Demolish by plan id, or the hand-placed machine at `machine` index.
+   * Goes through the SAME path the X key does, so a probe cannot remove
+   * something a player could not.
+   */
+  demolish(sel: { id?: number; machine?: number }): unknown;
+  /** W6 audio: stats, or 'mute' / 'unmute' / 'unlock' / a 0..1 volume. */
+  audio(op?: string | number): unknown;
+  /**
+   * W6 audio acceptance: render every synthesised voice into an
+   * OfflineAudioContext and measure the waveform. A counter proves a call was
+   * made; this proves a sound exists (DW-20).
+   */
+  audioRender(): Promise<unknown>;
 }
 
 export interface AimRay {
@@ -344,31 +359,7 @@ export function installDebugApi(
 
     zprobe: () => s.zfight?.result(s.renderer.depth.mode) ?? null,
 
-    game: () => s.gameplay?.report() ?? null,
-    nodes: () => s.gameplay?.nodes() ?? [],
-    panel(open) { s.gameplay?.setPanel(open); return s.gameplay?.report() ?? null; },
-    craft: (index) => s.gameplay?.game.craft(index) ?? false,
-    lamp(on) {
-      if (on !== undefined && on !== s.headlamp.enabled) s.headlamp.toggle();
-      return s.headlamp.stats();
-    },
-
-    build(index) {
-      if (index !== undefined) s.gameplay?.build.select(index);
-      return s.gameplay?.build.report() ?? null;
-    },
-
-    collect(id) {
-      const f = s.gameplay?.factory;
-      const b = f?.placed.find((p) => p.id === id);
-      return f === undefined || b === undefined ? 0 : f.collect(b);
-    },
-
-    harvest(index) {
-      if (s.gameplay === null) return null;
-      const ok = s.gameplay.interact.harvestNow(index, loop.tickIndex);
-      return { ok, node: s.gameplay.game.node(index), carried: s.gameplay.game.carried() };
-    },
+    ...gameplayApi(s, loop),
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
   return api;

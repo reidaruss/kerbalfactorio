@@ -1,0 +1,81 @@
+// What the factory says about itself, for the HUD and for a driven probe.
+//
+// A pure read, split out of Factory for the same reason GameplayViews was split
+// out of Gameplay: shaping rows is not a responsibility, and Factory was at the
+// 400-line cap with the demolition path still to land.
+//
+// EVERY CONSERVATION COUNTER IS HERE and none of them is optional.
+// `itemsLostToRebuild` and `demolishedInFlight` exist because a topology change
+// throws away the items riding a belt, and a loss that is not counted is a
+// conservation claim that has already rotted. `refunded` and `spilled` are the
+// other two ends of the same ledger: what demolition gave back, and what the
+// pack had no room for.
+
+import type { Factory, Placed } from './Factory.js';
+import type { GameCore } from './GameCore.js';
+import type { HudTarget } from '../ui/GameHud.js';
+
+export interface RefundLine { item: number; count: number }
+
+/**
+ * What an automated machine says about itself under the crosshair, including
+ * that it can be pulled up: a player who cannot see that removal exists has it
+ * only in the same sense that an undocumented console command exists.
+ */
+export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
+  const item = f.outputItemOf(b);
+  const name = item > 0 ? game.itemName(item) : b.kind;
+  if (b.kind === 'miner') {
+    const left = b.build < 0 ? 0 : f.line.minerRemaining(b.build);
+    const n = game.node(b.nodeIndex);
+    return {
+      name: `miner  ${Math.round(left)} ${name} left`,
+      fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
+      // `empty` is the HARVEST NODE's depleted caption; a machine has its own
+      // words for being empty and does not want "node depleted" under them.
+      empty: false, distanceM: 0, action: 'X remove',
+    };
+  }
+  const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
+  return {
+    name: b.kind === 'belt' ? 'belt'
+      : out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  working`,
+    fraction: b.build < 0 ? 0 : f.line.progress01(b.build),
+    empty: false, distanceM: 0, action: 'X remove',
+  };
+}
+
+export function factoryReport(f: Factory): unknown {
+  return {
+    buildings: f.placed.length,
+    runs: f.runs.map((r, i) => ({
+      tiles: r.length, items: f.line.beltItems(f.runBuilds[i] ?? -1),
+    })),
+    ticks: f.line.ticks,
+    coreTicks: f.line.coreTicks,
+    rebuilds: f.line.rebuilds,
+    itemsLostToRebuild: f.line.itemsLostToRebuild,
+    minedFromNodes: f.minedFromNodes,
+    collected: f.collected,
+    spilled: f.spilled,
+    removals: f.removals,
+    refunded: f.refunded,
+    demolishedInFlight: f.demolishedInFlight,
+    list: f.placed.map((p) => row(f, p)),
+    flows: f.line.beltFlows(),
+  };
+}
+
+function row(f: Factory, p: Placed): unknown {
+  const live = p.build >= 0;
+  const machine = live && p.kind !== 'belt';
+  return {
+    id: p.id, kind: p.kind, build: p.build, entity: p.entity, run: p.run,
+    node: p.nodeIndex, outputItem: f.outputItemOf(p),
+    cell: p.cell,
+    remaining: p.kind === 'miner' && live ? f.line.minerRemaining(p.build) : null,
+    input: p.kind === 'smelter' && live ? f.line.inputBuffer(p.build) : null,
+    output: machine ? f.line.outputBuffer(p.build) : null,
+    working: live ? f.line.working(p.build) : false,
+  };
+}

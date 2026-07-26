@@ -132,6 +132,18 @@ export class FactoryView {
     return { flow: 0, density: 0, state: visual, level };
   }
 
+  /**
+   * Drop a demolished building's instance. Without this the slot keeps drawing
+   * the machine at its last transform for ever, which is the exact shape of the
+   * "I removed it and it is still there" bug.
+   */
+  release(id: number): void {
+    const slot = this.slots.get(id);
+    if (slot === undefined) return;
+    this.batch.release(slot);
+    this.slots.delete(id);
+  }
+
   /** DW-9: one inserter wherever the plan recorded a connection. */
   private syncLinks(f: Factory): void {
     for (let i = 0; i < f.links.length; ++i) {
@@ -145,6 +157,12 @@ export class FactoryView {
       this.m.compose(this.p, orient(l.up, l.fwd), this.one);
       this.batch.place(this.linkSlots[i], this.m);
       this.batch.setFx(this.linkSlots[i], { flow: 0, density: 0, state: 1, level: 0.5 });
+    }
+    // A removal UNWIRES connections, so the surplus inserters have to go. They
+    // are kept (hidden) rather than released because the count oscillates as a
+    // line is edited and re-acquiring per edit would churn the batch.
+    for (let i = f.links.length; i < this.linkSlots.length; ++i) {
+      this.batch.hide(this.linkSlots[i]);
     }
   }
 

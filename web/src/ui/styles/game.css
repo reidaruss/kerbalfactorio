@@ -137,6 +137,34 @@
   70%  { opacity: 1; transform: translate(0, -18px) scale(1); }
   100% { opacity: 0; transform: translate(0, -34px) scale(0.94); }
 }
+/* --- the moment banner --------------------------------------------------- */
+/* A node cleared and an ingot finished are the two events worth looking up for,
+   and neither belongs in the per-swing gain readout (which must be gone before
+   the next swing) or in the toast (which is the error channel). It sits above
+   the crosshair, larger and wider-tracked, and drifts up as it goes. */
+#of-banner {
+  left: 50%;
+  top: calc(50% - 116px);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 2.2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px #000, 0 2px 8px rgba(0, 0, 0, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 22;
+  transform: translateX(-50%);
+}
+#of-banner.rise { animation: of-banner 1.9s cubic-bezier(0.16, 0.9, 0.3, 1) forwards; }
+@keyframes of-banner {
+  0%   { opacity: 0; transform: translate(-50%, 16px) scale(0.82); }
+  10%  { opacity: 1; transform: translate(-50%, 0) scale(1.1); }
+  22%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  72%  { opacity: 1; transform: translate(-50%, -14px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -34px) scale(0.96); }
+}
+
 /* The crosshair takes the hit too: a quick bloom outward, then back. */
 #of-cross.hit { animation: of-hit 0.22s ease-out; }
 @keyframes of-hit {

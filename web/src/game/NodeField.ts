@@ -61,9 +61,12 @@ function variantFor(fraction: number): number {
 
 /** Seconds the hit reaction lasts. Short: a swing lands, it does not bounce. */
 const PUNCH_SECS = 0.26;
+/** Seconds the felled collapse takes to settle. It never plays backwards. */
+const FELL_SECS = 0.9;
 
 interface Placed {
   index: number;
+  kind: number;
   art: NodeArt;
   parts: readonly NodePart[];
   slots: number[];
@@ -74,6 +77,10 @@ interface Placed {
   variant: number;
   /** Seconds left in the hit reaction. */
   punch: number;
+  /** Seconds left in the FELLED collapse. Runs once, when the node empties. */
+  fell: number;
+  /** Tangent axis the collapse leans about, fixed per node so it never jitters. */
+  lean: THREE.Vector3;
   empty: boolean;
 }
 
@@ -98,9 +105,13 @@ export class NodeField {
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
   private readonly qYaw = new THREE.Quaternion();
+  private readonly qFell = new THREE.Quaternion();
   private readonly m = new THREE.Matrix4();
   private readonly s = new THREE.Vector3();
+  private readonly engineUp = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
+  /** Nodes that have visibly collapsed, for the HUD counters and the probe. */
+  felled = 0;
 
   constructor(private readonly core: GameCore, private readonly origin: FloatingOrigin) {
     this.group.name = 'harvestNodes';
@@ -182,12 +193,17 @@ export class NodeField {
     const parts = this.batch.partsOf(art.file);
     if (parts === null) return;
     const slots = parts.map((p) => this.batch.acquire(p.material));
+    const up = new THREE.Vector3(st.x, st.y, st.z).normalize();
+    // A fixed tangent axis per node: the direction a felled tree goes over.
+    const lean = new THREE.Vector3(-up.y, up.x, 0);
+    if (lean.lengthSq() < 1e-9) lean.set(1, 0, 0);
+    lean.normalize().applyAxisAngle(up, frac(hash32(h, 9)) * Math.PI * 2);
     const pl: Placed = {
-      index, art, parts, slots,
+      index, kind, art, parts, slots,
       pos: { x: st.x, y: st.y, z: st.z },
-      up: new THREE.Vector3(st.x, st.y, st.z).normalize(),
+      up,
       yaw: frac(hash32(h, 5)) * Math.PI * 2,
-      variant: -1, punch: 0, empty: st.remaining <= 0,
+      variant: -1, punch: 0, fell: 0, lean, empty: st.remaining <= 0,
     };
     this.placed.push(pl);
     this.setVariant(pl, variantFor(st.initial > 0 ? st.remaining / st.initial : 0));
@@ -214,13 +230,54 @@ export class NodeField {
     this.q.multiply(this.qYaw);
     // Squash, not shrink: a struck tree compresses along its own trunk.
     this.s.set(1 + 0.05 * punch, 1 - 0.11 * punch, 1 + 0.05 * punch);
+    if (pl.fell > 0) this.collapse(pl);
     this.m.compose(this.p, this.q, this.s);
+  }
+
+  /**
+   * THE FELLED MOTION, folded into the same compose the hit reaction uses.
+   *
+   * A tree goes OVER: it leans about a fixed tangent axis, accelerating, which
+   * is the one motion that reads as felling from any angle. A boulder cannot
+   * topple, so it drops and shrinks into its own footprint instead. Both end at
+   * the `_Low` silhouette the variant swap already produces, so the collapse
+   * hands over to the stump rather than fighting it.
+   */
+  private collapse(pl: Placed): void {
+    // `fell` counts UP and SATURATES: it is elapsed time since the last swing,
+    // not a countdown. A countdown would run out and the node would spring back
+    // upright, which is the one thing a felled node must never do.
+    const k = Math.min(1, pl.fell / FELL_SECS);
+    const ease = k * k;
+    if (pl.kind === NODE_KIND.Tree) {
+      this.qFell.setFromAxisAngle(pl.lean, ease * 1.35);
+      this.q.premultiply(this.qFell);
+      this.s.multiplyScalar(1 - 0.18 * ease);
+    } else {
+      // Sink along the node's own up, so a boulder settles into the ground.
+      const drop = ease * 0.42;
+      this.p.addScaledVector(this.engineUp.set(pl.up.x, pl.up.y, pl.up.z), -drop);
+      this.s.multiplyScalar(1 - 0.42 * ease);
+      this.qFell.setFromAxisAngle(pl.lean, Math.sin(ease * 9) * 0.16 * (1 - ease));
+      this.q.premultiply(this.qFell);
+    }
   }
 
   /** Start the hit reaction on a node. Purely visual; the sim already moved. */
   punch(index: number): void {
     const pl = this.placed.find((n) => n.index === index);
     if (pl !== undefined) pl.punch = PUNCH_SECS;
+  }
+
+  /** Start the collapse. Called once, on the swing that emptied the node. */
+  fell(index: number): void {
+    const pl = this.placed.find((n) => n.index === index);
+    if (pl !== undefined && pl.fell <= 0) { pl.fell = 1e-4; this.felled++; }
+  }
+
+  /** worldgen::survival::NodeKind of a placed node, or -1. */
+  kindOf(index: number): number {
+    return this.placed.find((n) => n.index === index)?.kind ?? -1;
   }
 
   /**
@@ -249,6 +306,7 @@ export class NodeField {
         pl.empty = st.remaining <= 0;
       }
       if (pl.punch > 0) pl.punch = Math.max(0, pl.punch - dt);
+      if (pl.fell > 0) pl.fell = Math.min(FELL_SECS, pl.fell + dt);
       this.compose(pl, pl.punch / PUNCH_SECS);
       for (let i = 0; i < pl.parts.length; ++i)
         this.batch.move(pl.parts[i].material, pl.slots[i], this.m);
@@ -285,11 +343,14 @@ export class NodeField {
     return best;
   }
 
-  stats(): { nodes: number; empty: number; batches: number; instances: number } {
+  stats(): { nodes: number; empty: number; felled: number; collapsing: number;
+             batches: number; instances: number } {
     const b = this.batch.stats();
     return {
       nodes: this.placed.length,
       empty: this.placed.filter((p) => p.empty).length,
+      felled: this.felled,
+      collapsing: this.placed.filter((p) => p.fell > 0 && p.fell < FELL_SECS).length,
       batches: b.batches, instances: b.instances,
     };
   }

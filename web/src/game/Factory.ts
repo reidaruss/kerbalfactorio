@@ -23,7 +23,9 @@
 
 import * as THREE from 'three';
 import { AutoLine } from './AutoLine.js';
-import { cellKeyOf, orient, snapToGround, type Snapped } from './Grid.js';
+import { orient, snapToGround, type Snapped } from './Grid.js';
+import { factoryReport } from './FactoryReport.js';
+import { chainRuns, wire } from './FactoryWiring.js';
 import type { GameCore } from './GameCore.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
@@ -86,6 +88,10 @@ export class Factory {
   /** Ingots collected by hand into the pack, and what would not fit. */
   collected = 0;
   spilled = 0;
+  /** Demolition: buildings pulled up, items handed back, items lost on belts. */
+  removals = 0;
+  refunded = 0;
+  demolishedInFlight = 0;
 
   constructor(private readonly M: OfCoreModule, private readonly core: GameCore,
               private readonly bodyHandle: number, fixedDt: number) {
@@ -141,6 +147,51 @@ export class Factory {
   }
 
   /**
+   * Take one building out of the PLAN and re-commit. Returns what came back.
+   *
+   * REMOVAL IS THE SAME PATH AS PLACEMENT, deliberately: the plan is edited and
+   * the network is rebuilt from it. FactorySim is append-only, so there is no
+   * removeEntity to get subtly wrong, and the property that a placement gets for
+   * free is the one a removal needs most: after the rebuild the network is
+   * EXACTLY what the plan says, so a half-unwired line cannot survive.
+   *
+   * WHAT COMES BACK is only what physically existed. A machine's finished stock
+   * and a smelter's un-smelted input are real units and go to the pack; a
+   * miner's `remaining` is a claim on the world node, which never left it, so a
+   * pulled miner refunds nothing and the node is untouched. Items riding a belt
+   * ARE lost, and they are counted (`demolishedInFlight`), because that is the
+   * one number a silent implementation would swallow.
+   *
+   * Placement is still free (build costs are W7), so nothing else is owed back.
+   */
+  remove(p: Placed): { refunded: { item: number; count: number }[];
+                       lostInFlight: number } | null {
+    const at = this.placed.indexOf(p);
+    if (at < 0) return null;
+    const back: { item: number; count: number }[] = [];
+    // Its OWN output first: commit() empties the survivors, not this one.
+    const out = this.collect(p, true);
+    if (out > 0) back.push({ item: this.outputItemOf(p), count: out });
+    if (p.kind === 'smelter' && p.build >= 0) {
+      const held = this.line.inputBuffer(p.build);
+      const ore = this.oreFedTo(p) || this.core.ids.rawIron;
+      if (held > 0) {
+        const over = this.core.add(ore, held);
+        this.spilled += over;
+        this.refunded += held - over;
+        if (held - over > 0) back.push({ item: ore, count: held - over });
+      }
+    }
+    const lost0 = this.line.itemsLostToRebuild;
+    this.placed.splice(at, 1);
+    this.commit();
+    const lost = this.line.itemsLostToRebuild - lost0;
+    this.removals++;
+    this.demolishedInFlight += lost;
+    return { refunded: back, lostInFlight: lost };
+  }
+
+  /**
    * Rebuild the /core network from the plan.
    *
    * Order matters exactly once: belts are grouped into RUNS first, because a run
@@ -161,7 +212,7 @@ export class Factory {
     for (const b of this.runBuilds) inFlight += this.line.beltItems(b);
     this.line.recreate(inFlight);
 
-    this.runs = this.chainRuns();
+    this.runs = chainRuns(this.M, this.placed);
     this.runBuilds = this.runs.map((r) =>
       this.line.placeBelt(r.length, BELT_SPEED_UNITS_PER_TICK));
     this.runs.forEach((r, i) => r.forEach((t) => { t.run = i; }));
@@ -192,41 +243,7 @@ export class Factory {
     });
 
     this.stampPlacements();
-    this.wire();
-  }
-
-  /** Group belts into contiguous runs by following each tile's flow direction. */
-  private chainRuns(): Placed[][] {
-    const belts = this.placed.filter((p) => p.kind === 'belt');
-    const byCell = new Map<string, Placed>();
-    for (const b of belts) byCell.set(b.cell, b);
-    const next = new Map<number, Placed>();
-    const hasPrev = new Set<number>();
-    for (const b of belts) {
-      const ahead = byCell.get(this.cellAhead(b));
-      if (ahead === undefined || ahead === b) continue;
-      next.set(b.id, ahead);
-      hasPrev.add(ahead.id);
-    }
-    const out: Placed[][] = [];
-    for (const b of belts) {
-      if (hasPrev.has(b.id)) continue;
-      const run: Placed[] = [];
-      const seen = new Set<number>();
-      let cur: Placed | undefined = b;
-      while (cur !== undefined && !seen.has(cur.id)) {
-        seen.add(cur.id);
-        run.push(cur);
-        cur = next.get(cur.id);
-      }
-      out.push(run);
-    }
-    return out;
-  }
-
-  /** The lattice cell one metre along a tile's flow direction. */
-  private cellAhead(b: Placed): string {
-    return cellKeyOf(this.M, b.pos.x + b.fwd.x, b.pos.y + b.fwd.y, b.pos.z + b.fwd.z);
+    wire(this);
   }
 
   /** What ore reaches this smelter: the kind of the nearest miner's node. */
@@ -260,49 +277,6 @@ export class Factory {
   }
 
   /**
-   * The wiring itself: one connect() per adjacency, and never a hand-fed slot.
-   * A source feeds a run whose TAIL it touches; a run's HEAD feeds a sink it
-   * touches; and a source touching a sink directly hands off with no belt.
-   */
-  private wire(): void {
-    const touch = (a: Placed, b: Placed): boolean => {
-      const reach = (FOOTPRINT[a.kind] + FOOTPRINT[b.kind]) * 0.5 + 0.75;
-      return Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y, a.pos.z - b.pos.z) <= reach;
-    };
-    this.links = [];
-    const link = (a: Placed, b: Placed, ok: boolean): void => {
-      if (!ok) return;
-      const fwd = new THREE.Vector3(b.pos.x - a.pos.x, b.pos.y - a.pos.y, b.pos.z - a.pos.z);
-      if (fwd.lengthSq() < 1e-9) return;
-      this.links.push({
-        pos: { x: (a.pos.x + b.pos.x) * 0.5, y: (a.pos.y + b.pos.y) * 0.5,
-               z: (a.pos.z + b.pos.z) * 0.5 },
-        up: a.up.clone(), fwd: fwd.normalize(),
-      });
-    };
-    const sources = this.placed.filter((p) => p.kind === 'miner' || p.kind === 'smelter');
-    const sinks = this.placed.filter((p) => p.kind === 'smelter');
-    this.runs.forEach((run, i) => {
-      const build = this.runBuilds[i];
-      if (build === undefined || run.length === 0) return;
-      for (const s of sources) {
-        if (s.build >= 0 && touch(s, run[0])) link(s, run[0], this.line.connect(s.build, build));
-      }
-      const head = run[run.length - 1];
-      for (const k of sinks) {
-        if (k.build >= 0 && touch(k, head)) link(head, k, this.line.connect(build, k.build));
-      }
-    });
-    for (const s of sources) {
-      for (const k of sinks) {
-        if (s !== k && s.build >= 0 && k.build >= 0 && touch(s, k)) {
-          link(s, k, this.line.connect(s.build, k.build));
-        }
-      }
-    }
-  }
-
-  /**
    * Advance the network and keep the world nodes honest.
    *
    * The drain is the delta of the MINER's own remaining, so the node loses
@@ -321,8 +295,13 @@ export class Factory {
     }
   }
 
-  /** Empty a building's output buffer into the pack. Returns what moved. */
-  collect(p: Placed): number {
+  /**
+   * Empty a building's output buffer into the pack. Returns what moved.
+   * `refund` only chooses which ledger it lands in: taking stock by hand and
+   * getting stock back off a demolished machine are different events and a
+   * probe that cannot tell them apart cannot check either.
+   */
+  collect(p: Placed, refund = false): number {
     if (p.build < 0) return 0;
     const have = this.line.outputBuffer(p.build);
     if (have <= 0) return 0;
@@ -330,7 +309,7 @@ export class Factory {
     if (took <= 0) return 0;
     const item = this.outputItemOf(p);
     const over = item > 0 ? this.core.add(item, took) : took;
-    this.collected += took - over;
+    if (refund) this.refunded += took - over; else this.collected += took - over;
     this.spilled += over;
     return took - over;
   }
@@ -346,14 +325,16 @@ export class Factory {
 
   /** Nearest building the aim ray enters, within `reachM`. */
   pick(eye: { x: number; y: number; z: number },
-       dir: { x: number; y: number; z: number }, reachM: number): Placed | null {
+       dir: { x: number; y: number; z: number }, reachM: number,
+       belts = false): Placed | null {
     let best: Placed | null = null;
     let bestT = reachM;
     for (const p of this.placed) {
       // Belts are not interactive: there is nothing to take out of one, and a
       // 1 m tile under the crosshair otherwise steals the prompt from the
-      // machine behind it every time the player looks down the line.
-      if (p.kind === 'belt') continue;
+      // machine behind it every time the player looks down the line. They ARE
+      // demolishable, which is the one caller that passes `belts`.
+      if (p.kind === 'belt' && !belts) continue;
       const r = FOOTPRINT[p.kind] * 0.6 + 0.4;
       const ox = p.pos.x + p.up.x * 0.7 - eye.x;
       const oy = p.pos.y + p.up.y * 0.7 - eye.y;
@@ -366,32 +347,5 @@ export class Factory {
     return best;
   }
 
-  report(): unknown {
-    return {
-      buildings: this.placed.length,
-      runs: this.runs.map((r, i) => ({
-        tiles: r.length, items: this.line.beltItems(this.runBuilds[i] ?? -1),
-      })),
-      ticks: this.line.ticks,
-      coreTicks: this.line.coreTicks,
-      rebuilds: this.line.rebuilds,
-      itemsLostToRebuild: this.line.itemsLostToRebuild,
-      minedFromNodes: this.minedFromNodes,
-      collected: this.collected,
-      spilled: this.spilled,
-      list: this.placed.map((p) => {
-        const live = p.build >= 0;
-        const machine = live && p.kind !== 'belt';
-        return {
-          id: p.id, kind: p.kind, build: p.build, entity: p.entity, run: p.run,
-          node: p.nodeIndex, outputItem: this.outputItemOf(p),
-          remaining: p.kind === 'miner' && live ? this.line.minerRemaining(p.build) : null,
-          input: p.kind === 'smelter' && live ? this.line.inputBuffer(p.build) : null,
-          output: machine ? this.line.outputBuffer(p.build) : null,
-          working: live ? this.line.working(p.build) : false,
-        };
-      }),
-      flows: this.line.beltFlows(),
-    };
-  }
+  report(): unknown { return factoryReport(this); }
 }

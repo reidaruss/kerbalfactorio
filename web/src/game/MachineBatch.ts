@@ -78,6 +78,8 @@ export class MachineBatch {
   private readonly geomId = new Map<string, number>();
   private readonly fxData = new Float32Array(CAPACITY * 4);
   private readonly fxTex: THREE.DataTexture;
+  /** Slots released by demolition, reused before any new one is added. */
+  private readonly free: number[] = [];
   private live = 0;
 
   constructor() {
@@ -202,15 +204,39 @@ if ( vRole > 1.5 ) {
     const g = this.geomId.get(key);
     if (this.mesh === null || g === undefined || this.live >= CAPACITY) return -1;
     this.live++;
+    // A FREED SLOT IS REUSED rather than a new one added. Demolition made this
+    // load bearing: addInstance only ever grows, so a player who put down and
+    // pulled up belts for a while would exhaust CAPACITY with invisible slots
+    // and the next real building would silently fail to draw.
+    const reuse = this.free.pop();
+    if (reuse !== undefined) {
+      this.mesh.setGeometryIdAt(reuse, g);
+      return reuse;
+    }
     const slot = this.mesh.addInstance(g);
     this.mesh.setGeometryIdAt(slot, g);
     return slot;
+  }
+
+  /** Hide a slot and give it back to the pool. Idempotent. */
+  release(slot: number): void {
+    if (this.mesh === null || slot < 0 || this.free.includes(slot)) return;
+    this.mesh.setVisibleAt(slot, false);
+    this.setFx(slot, { flow: 0, density: 0, state: 0, level: 0 });
+    this.free.push(slot);
+    this.live = Math.max(0, this.live - 1);
   }
 
   place(slot: number, m: THREE.Matrix4): void {
     if (this.mesh === null || slot < 0) return;
     this.mesh.setMatrixAt(slot, m);
     this.mesh.setVisibleAt(slot, true);
+  }
+
+  /** Stop drawing a slot without giving it back. For churny link instances. */
+  hide(slot: number): void {
+    if (this.mesh === null || slot < 0) return;
+    this.mesh.setVisibleAt(slot, false);
   }
 
   /** ONE texel per instance. This is the whole of DW-8's per-instance channel. */
