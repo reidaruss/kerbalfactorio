@@ -761,6 +761,133 @@
         {"node": "Forest_MushroomCluster_LOD0", "dims_xyz_m": [0.46, 0.26, 0.42], "max_tris": 200, "pivot": "ground"},
         {"node": "Forest_Rock_LOD0", "dims_xyz_m": [1.45, 0.85, 1.25], "max_tris": 160, "pivot": "ground"}
       ]
+    },
+
+    "props_hills": {
+      "glb": "assets/models/dist/props/props_hills.glb",
+      "_comment": [
+        "TIER 1, Biome::Hills - the prime ore zone. Hills_LargeBoulder is",
+        "2.3 m across, deliberately bigger than the 1.7 m coal boulder that",
+        "is the largest harvest node, so scenery and node are never confused.",
+        "Only the boulder collides."
+      ],
+      "lod0_node": "Hills_LargeBoulder_LOD0",
+      "lod_nodes": [
+        "Hills_LargeBoulder_LOD0", "Hills_LargeBoulder_LOD2",
+        "Hills_ScreePatch_LOD0", "Hills_ScreePatch_LOD2",
+        "Hills_Shrub_LOD0", "Hills_Shrub_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [2.30, 1.55, 1.95],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 180,
+      "max_tris_total": 620,
+      "max_tris_collision": 12,
+      "max_materials": 4,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Leaf"],
+      "collision": ["col_Hills_LargeBoulder"],
+      "parts": [
+        {"node": "Hills_LargeBoulder_LOD0", "dims_xyz_m": [2.30, 1.55, 1.95], "max_tris": 180, "pivot": "ground"},
+        {"node": "Hills_ScreePatch_LOD0", "dims_xyz_m": [1.70, 0.24, 1.45], "max_tris": 220, "pivot": "ground"},
+        {"node": "Hills_Shrub_LOD0", "dims_xyz_m": [1.15, 0.78, 1.05], "max_tris": 200, "pivot": "ground"}
+      ]
+    },
+
+    "props_mountains": {
+      "glb": "assets/models/dist/props/props_mountains.glb",
+      "_comment": [
+        "TIER 1, Biome::Mountains. Three roles is the smallest palette of any",
+        "atlas and it is deliberate: above the tree line there is stone and",
+        "snow and nothing else, and the renderer batches by material.",
+        "Mtn_RockSpire is the only Tier-1 prop that reads at 200 m.",
+        "The snow patch is a surface, not an obstacle: walk-through."
+      ],
+      "lod0_node": "Mtn_RockSpire_LOD0",
+      "lod_nodes": [
+        "Mtn_RockSpire_LOD0", "Mtn_RockSpire_LOD2",
+        "Mtn_TalusChunk_LOD0", "Mtn_TalusChunk_LOD2",
+        "Mtn_SnowPatch_LOD0", "Mtn_SnowPatch_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [1.25, 3.40, 1.10],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 180,
+      "max_tris_total": 400,
+      "max_tris_collision": 24,
+      "max_materials": 3,
+      "sockets": [],
+      "clips": [],
+      "collision": ["col_Mtn_RockSpire", "col_Mtn_TalusChunk"],
+      "parts": [
+        {"node": "Mtn_RockSpire_LOD0", "dims_xyz_m": [1.25, 3.40, 1.10], "max_tris": 180, "pivot": "ground"},
+        {"node": "Mtn_TalusChunk_LOD0", "dims_xyz_m": [0.95, 0.72, 0.85], "max_tris": 100, "pivot": "ground"},
+        {"node": "Mtn_SnowPatch_LOD0", "dims_xyz_m": [2.60, 0.22, 2.10], "max_tris": 100, "pivot": "ground"}
+      ]
+    },
+
+    "props_polar": {
+      "glb": "assets/models/dist/props/props_polar.glb",
+      "_comment": [
+        "TIER 1, Biome::Polar. The one biome where prop and terrain share a",
+        "colour, so silhouette carries everything: the shard is sharply",
+        "vertical, the drift strongly directional, and the ice boulder keeps",
+        "dark stone showing on its flanks so it is visible at all.",
+        "The drift is walk-over."
+      ],
+      "lod0_node": "Polar_IceBoulder_LOD0",
+      "lod_nodes": [
+        "Polar_IceShard_LOD0", "Polar_IceShard_LOD2",
+        "Polar_SnowDrift_LOD0", "Polar_SnowDrift_LOD2",
+        "Polar_IceBoulder_LOD0", "Polar_IceBoulder_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [1.55, 1.15, 1.35],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 160,
+      "max_tris_total": 460,
+      "max_tris_collision": 24,
+      "max_materials": 3,
+      "sockets": [],
+      "clips": [],
+      "collision": ["col_Polar_IceShard", "col_Polar_IceBoulder"],
+      "parts": [
+        {"node": "Polar_IceShard_LOD0", "dims_xyz_m": [0.75, 1.70, 0.62], "max_tris": 100, "pivot": "ground"},
+        {"node": "Polar_SnowDrift_LOD0", "dims_xyz_m": [3.20, 0.50, 1.30], "max_tris": 200, "pivot": "ground"},
+        {"node": "Polar_IceBoulder_LOD0", "dims_xyz_m": [1.55, 1.15, 1.35], "max_tris": 160, "pivot": "ground"}
+      ]
+    },
+
+    "props_ocean": {
+      "glb": "assets/models/dist/props/props_ocean.glb",
+      "_comment": [
+        "TIER 1, Biome::Ocean. Two props is correct, not thin: biome.h gives",
+        "ocean a spawn probability of zero, so nothing is harvested there and",
+        "the seabed is scenery seen through water.",
+        "Kelp is walk-through - a player or submersible passes straight",
+        "through it."
+      ],
+      "lod0_node": "Ocean_Kelp_LOD0",
+      "lod_nodes": [
+        "Ocean_Kelp_LOD0", "Ocean_Kelp_LOD2",
+        "Ocean_SeabedRock_LOD0", "Ocean_SeabedRock_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [0.98, 3.20, 0.88],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 150,
+      "max_tris_total": 280,
+      "max_tris_collision": 12,
+      "max_materials": 3,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Leaf"],
+      "collision": ["col_Ocean_SeabedRock"],
+      "parts": [
+        {"node": "Ocean_Kelp_LOD0", "dims_xyz_m": [0.98, 3.20, 0.88], "max_tris": 150, "pivot": "ground"},
+        {"node": "Ocean_SeabedRock_LOD0", "dims_xyz_m": [1.85, 0.75, 1.55], "max_tris": 110, "pivot": "ground"}
+      ]
     }
   }
 }
