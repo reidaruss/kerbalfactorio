@@ -823,6 +823,8 @@ class ObjectiveTracker {
 // Everything is additive — the pinned §7.1 ids (…0x0016), science (0x0020+) and
 // science recipes (0x0120+) are untouched. The survival block lives at:
 //   items   0x0030+   entity types 0x30+   recipes 0x0130+
+// and the base-building structural set (§S.6) takes the next free blocks:
+//   items   0x0040+   entity types 0x40+
 // (the deposit/node Resource ids mirror the item ids — Resource IS the ItemId,
 // WG-11; the node KINDS live in worldgen::survival).
 //
@@ -863,12 +865,24 @@ static constexpr ItemId CrudeAxe      = 0x003A;
 // structures (hand-crafted, then placeable).
 static constexpr ItemId PrimitiveFurnace = 0x003B;
 static constexpr ItemId SurvivalSmelter  = 0x003C;
+// base-building structural set (§S.6). A separate 0x0040 block so the structural
+// parts read as their own family rather than as a tail of the machine items.
+static constexpr ItemId Foundation    = 0x0040;
+static constexpr ItemId Floor         = 0x0041;
+static constexpr ItemId Wall          = 0x0042;
+static constexpr ItemId Door          = 0x0043;
 }  // namespace items
 
 // --- Survival entity TypeId block (0x30+, for the placeable structures). -------
 namespace types {
 static constexpr TypeId PrimitiveFurnace = 0x30;
 static constexpr TypeId SurvivalSmelter  = 0x31;
+// Base-building structural set (§S.6). ASSET-SPECS §4 is the TypeId authority:
+// machines own 0x10..0x16 and 0x30/0x31, structures own the 0x40 block.
+static constexpr TypeId Foundation = 0x40;
+static constexpr TypeId Floor      = 0x41;
+static constexpr TypeId Wall       = 0x42;
+static constexpr TypeId Door       = 0x43;
 }  // namespace types
 
 // --- Survival smelting RecipeId block (0x0130+, append-only). ------------------
@@ -961,11 +975,21 @@ inline bool RegisterSurvivalContent(SliceRegistry& reg) {
                       10, kFlagBuildable, types::PrimitiveFurnace));
   reg.registerItem(mk(SurvivalSmelter, "Smelter", ItemCategory::Buildable, 10,
                       kFlagBuildable, types::SurvivalSmelter));
+  // base-building structural set (§S.6): placeable, never ticked, no ports.
+  reg.registerItem(mk(Foundation, "Foundation", ItemCategory::Buildable, 50,
+                      kFlagBuildable, types::Foundation));
+  reg.registerItem(mk(Floor, "Floor", ItemCategory::Buildable, 50,
+                      kFlagBuildable, types::Floor));
+  reg.registerItem(mk(Wall, "Wall", ItemCategory::Buildable, 50,
+                      kFlagBuildable, types::Wall));
+  reg.registerItem(mk(Door, "Door", ItemCategory::Buildable, 50,
+                      kFlagBuildable, types::Door));
   // smelting recipes (fuel-driven; registered so the UE layer can list them)
   reg.registerRecipe(makeSmeltIronRecipe());
   reg.registerRecipe(makeSmeltCopperRecipe());
 
   return reg.item(Wood) && reg.item(Iron) && reg.item(SurvivalSmelter) &&
+         reg.item(Foundation) && reg.item(Door) &&
          reg.recipe(recipes::SmeltIron) && reg.recipe(recipes::SmeltCopper);
 }
 
@@ -1162,6 +1186,18 @@ class HandCrafter {
     inv.add(r.output, r.outputCount);
     return true;
   }
+
+  // PAY the inputs of a recipe WITHOUT producing its output (§S.6). This is what
+  // placing a structure costs: a foundation is raised straight out of the pack
+  // against its bill of materials, it is never crafted into a carried item first.
+  // Same all-or-nothing rule as craft(), and deliberately expressed in terms of
+  // canCraft() so the rule lives in exactly one place: false consumes nothing.
+  static bool payInputs(const CraftRecipe& r, Inventory& inv) {
+    if (!canCraft(r, inv)) return false;
+    for (const ItemStack& in : r.inputs)
+      if (in.item != kNoItem) inv.remove(in.item, in.count);
+    return true;
+  }
 };
 
 // =============================================================================
@@ -1303,6 +1339,61 @@ class Furnace {
   uint32_t progress_ = 0;    // current smelt progress in ticks
   bool smelting_ = false;    // true while actively progressing (ore+fuel present)
 };
+
+// =============================================================================
+// §S.6 — STRUCTURAL BUILDING SET (base building).
+//
+// Four placeable structural parts (foundation, floor, wall, door) authored as
+// DATA (GP-12), so balance iterates without a recompile of any system.
+//
+// WHY THESE ARE NOT automation.h BuildKinds — the decision, already taken:
+//   a foundation never ticks, has no input or output ports, draws no power and
+//   holds no inventory. Handing it to FactorySim would put a permanently inert
+//   row in the hot SoA entity arrays and make "does this entity do anything?" a
+//   runtime question instead of a type-level one. So the structural set is a
+//   gameplay-layer type, exactly as GP-19 made the survival Furnace a
+//   gameplay-layer type rather than a factory-sim machine. The renderer/placement
+//   layer binds to the TypeId; the sim never sees it.
+//
+// WHY THE COST IS A CraftRecipe BUT NOT A HAND RECIPE — a structure is placed
+// from the build menu straight against its bill of materials; it is never
+// crafted into a carried item first. Reusing CraftRecipe keeps one id space and
+// one all-or-nothing rule (HandCrafter::payInputs, §S.3, which pays the inputs
+// and adds nothing). handRecipes() deliberately does NOT list these four: they
+// are not in the craft menu.
+//
+// Ids: items 0x0040..0x0043, entity TypeIds 0x40..0x43 (ASSET-SPECS §4 is the
+// TypeId authority; the shipped art is assets/models/dist/structures/*.glb).
+// =============================================================================
+enum class StructureKind : uint8_t { Foundation = 0, Floor = 1, Wall = 2, Door = 3 };
+
+struct StructureDef {
+  StructureKind kind;
+  ItemId item;        // the item form (items::Foundation, ...)
+  uint16_t typeId;    // the placed entity TypeId (types::Foundation, ...)
+  const char* name;   // display name
+  CraftRecipe cost;   // output = this structure's own item; inputs = BUILD COST
+};
+
+// The four structural parts. Tier-0 costs: cheap, legible, and payable from a
+// first-hour pack (stone from rocks, wood from trees, one iron ingot for a door).
+inline std::vector<StructureDef> structureDefs() {
+  return {
+      StructureDef{StructureKind::Foundation, items::Foundation, types::Foundation,
+                   "Foundation",
+                   CraftRecipe{items::Foundation, 1,
+                               {ItemStack{items::Stone, 4}}}},
+      StructureDef{StructureKind::Floor, items::Floor, types::Floor, "Floor",
+                   CraftRecipe{items::Floor, 1,
+                               {ItemStack{items::Wood, 2}, ItemStack{items::Stone, 2}}}},
+      StructureDef{StructureKind::Wall, items::Wall, types::Wall, "Wall",
+                   CraftRecipe{items::Wall, 1,
+                               {ItemStack{items::Wood, 3}}}},
+      StructureDef{StructureKind::Door, items::Door, types::Door, "Door",
+                   CraftRecipe{items::Door, 1,
+                               {ItemStack{items::Wood, 4}, ItemStack{items::Iron, 1}}}},
+  };
+}
 
 }  // namespace survival
 

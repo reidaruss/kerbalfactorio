@@ -19,6 +19,9 @@
 //                     faster than the FURNACE tier; deterministic stalls.
 //   6. Determinism  — same seed/inputs -> identical layout + identical furnace
 //                     run (bit-for-bit reproducible).
+//   7. Structures   — the base-building set (§S.6) is DATA: four defs with pinned
+//                     item/entity ids and a build cost paid all-or-nothing by
+//                     payInputs, which never leaks into the hand-craft menu.
 // =============================================================================
 #include <cstdio>
 
@@ -52,6 +55,9 @@ using surv::recipeCrudeAxe;
 using surv::recipePrimitiveFurnace;
 using surv::recipeSurvivalSmelter;
 using surv::handRecipes;
+using surv::StructureKind;
+using surv::StructureDef;
+using surv::structureDefs;
 
 // Short aliases for the survival id blocks (used pervasively below).
 namespace sitems = of::gameplay::survival::items;
@@ -83,8 +89,9 @@ TEST(survival_content_registers_additively) {
 
   CHECK(RegisterSurvivalContent(reg));
 
-  // 13 survival items (7 raw + 2 ingot + 2 tool + 2 structure) appended.
-  CHECK(reg.allItems().size() == 12 + 13);
+  // 17 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 4 structural)
+  // appended.
+  CHECK(reg.allItems().size() == 12 + 17);
   // 2 smelting recipes appended.
   CHECK(reg.allRecipes().size() == 5 + 2);
 
@@ -125,7 +132,7 @@ TEST(survival_content_registers_additively) {
 
   // Re-registering is idempotent (no duplicates added).
   RegisterSurvivalContent(reg);
-  CHECK(reg.allItems().size() == 12 + 13);
+  CHECK(reg.allItems().size() == 12 + 17);
   CHECK(reg.allRecipes().size() == 5 + 2);
 }
 
@@ -681,4 +688,175 @@ TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
   HarvestResult r4 = survival::harvestPatch(patch, a, NK::IronOre, inv);
   CHECK(r4.granted == 0);
   CHECK(r4.nodeEmpty);
+}
+
+// =============================================================================
+// 7. STRUCTURAL BUILDING SET (gameplay.h §S.6) — the base-building parts are
+//    DATA: four defs with pinned item/entity ids and a build COST that is paid
+//    all-or-nothing on placement, and that never leaks into the craft menu.
+// =============================================================================
+TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
+  const std::vector<StructureDef> defs = structureDefs();
+  CHECK(defs.size() == 4);
+
+  // Pinned ids: items 0x0040.. , entity TypeIds 0x40.. (ASSET-SPECS §4).
+  CHECK(defs[0].kind == StructureKind::Foundation);
+  CHECK(defs[0].item == sitems::Foundation);
+  CHECK(defs[0].item == 0x0040);
+  CHECK(defs[0].typeId == stypes::Foundation);
+  CHECK(defs[0].typeId == 0x40);
+
+  CHECK(defs[1].kind == StructureKind::Floor);
+  CHECK(defs[1].item == sitems::Floor);
+  CHECK(defs[1].item == 0x0041);
+  CHECK(defs[1].typeId == 0x41);
+
+  CHECK(defs[2].kind == StructureKind::Wall);
+  CHECK(defs[2].item == sitems::Wall);
+  CHECK(defs[2].item == 0x0042);
+  CHECK(defs[2].typeId == 0x42);
+
+  CHECK(defs[3].kind == StructureKind::Door);
+  CHECK(defs[3].item == sitems::Door);
+  CHECK(defs[3].item == 0x0043);
+  CHECK(defs[3].typeId == 0x43);
+
+  // Every def carries a name and a non-empty cost whose output is its own item
+  // (one coherent id space: the cost is a CraftRecipe, not a second concept).
+  for (const StructureDef& d : defs) {
+    CHECK(d.name != nullptr);
+    CHECK(d.name[0] != '\0');
+    CHECK(!d.cost.inputs.empty());
+    CHECK(d.cost.output == d.item);
+    CHECK(d.cost.outputCount == 1);
+    for (const ItemStack& in : d.cost.inputs) {
+      CHECK(in.item != kNoItem);
+      CHECK(in.count > 0);
+    }
+  }
+
+  // The authored Tier-0 costs.
+  CHECK(defs[0].cost.inputs.size() == 1);
+  CHECK(defs[0].cost.inputs[0].item == sitems::Stone);
+  CHECK(defs[0].cost.inputs[0].count == 4);
+
+  CHECK(defs[1].cost.inputs.size() == 2);
+  CHECK(defs[1].cost.inputs[0].item == sitems::Wood);
+  CHECK(defs[1].cost.inputs[0].count == 2);
+  CHECK(defs[1].cost.inputs[1].item == sitems::Stone);
+  CHECK(defs[1].cost.inputs[1].count == 2);
+
+  CHECK(defs[2].cost.inputs.size() == 1);
+  CHECK(defs[2].cost.inputs[0].item == sitems::Wood);
+  CHECK(defs[2].cost.inputs[0].count == 3);
+
+  CHECK(defs[3].cost.inputs.size() == 2);
+  CHECK(defs[3].cost.inputs[0].item == sitems::Wood);
+  CHECK(defs[3].cost.inputs[0].count == 4);
+  CHECK(defs[3].cost.inputs[1].item == sitems::Iron);
+  CHECK(defs[3].cost.inputs[1].count == 1);
+}
+
+// The four structural items land in the registry, buildable, and cross-linked to
+// their entity TypeIds — and their ids collide with nothing already registered.
+TEST(structure_items_register_and_do_not_collide) {
+  SliceRegistry reg = makeSurvivalRegistry();
+
+  const ItemDef* fnd = reg.item(sitems::Foundation);
+  const ItemDef* flr = reg.item(sitems::Floor);
+  const ItemDef* wal = reg.item(sitems::Wall);
+  const ItemDef* dor = reg.item(sitems::Door);
+  CHECK(fnd != nullptr);
+  CHECK(flr != nullptr);
+  CHECK(wal != nullptr);
+  CHECK(dor != nullptr);
+
+  CHECK(fnd->displayName == "Foundation");
+  CHECK(flr->displayName == "Floor");
+  CHECK(wal->displayName == "Wall");
+  CHECK(dor->displayName == "Door");
+
+  // Placeables stack 50 and place their entity TypeId.
+  CHECK(fnd->stackMax == 50);
+  CHECK(dor->stackMax == 50);
+  CHECK(fnd->isBuildable());
+  CHECK(dor->isBuildable());
+  CHECK(reg.entityForItem(sitems::Foundation) == stypes::Foundation);
+  CHECK(reg.entityForItem(sitems::Floor) == stypes::Floor);
+  CHECK(reg.entityForItem(sitems::Wall) == stypes::Wall);
+  CHECK(reg.entityForItem(sitems::Door) == stypes::Door);
+
+  // NO COLLISION: every registered item id is distinct, and the four structural
+  // ids sit past every previously pinned id (survival tops out at 0x003C).
+  const std::vector<ItemDef>& all = reg.allItems();
+  for (size_t i = 0; i < all.size(); ++i)
+    for (size_t j = i + 1; j < all.size(); ++j)
+      CHECK(all[i].id != all[j].id);
+  CHECK(sitems::Foundation > sitems::SurvivalSmelter);
+  CHECK(sitems::Foundation == 0x0040);
+  CHECK(sitems::Door == 0x0043);
+  // ... and the entity TypeIds sit past the survival machine block (0x30/0x31).
+  CHECK(stypes::Foundation > stypes::SurvivalSmelter);
+}
+
+// payInputs is the PLACEMENT payment: all-or-nothing, and it adds NO item (a
+// structure is raised in the world, it is never crafted into the pack first).
+TEST(structure_pay_inputs_is_all_or_nothing_and_adds_nothing) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  const CraftRecipe foundation = structureDefs()[0].cost;
+
+  // Three stone: one short. Nothing is consumed, nothing is produced.
+  Inventory poor(reg);
+  poor.add(sitems::Stone, 3);
+  CHECK(!HandCrafter::canCraft(foundation, poor));
+  CHECK(!HandCrafter::payInputs(foundation, poor));
+  CHECK(poor.count(sitems::Stone) == 3);
+  CHECK(poor.count(sitems::Foundation) == 0);
+
+  // Four stone: pays exactly, and the pack is left with NO foundation item.
+  Inventory rich(reg);
+  rich.add(sitems::Stone, 4);
+  CHECK(HandCrafter::canCraft(foundation, rich));
+  CHECK(HandCrafter::payInputs(foundation, rich));
+  CHECK(rich.count(sitems::Stone) == 0);
+  CHECK(rich.count(sitems::Foundation) == 0);
+  // A second placement is no longer affordable and still consumes nothing.
+  CHECK(!HandCrafter::payInputs(foundation, rich));
+  CHECK(rich.count(sitems::Stone) == 0);
+
+  // craft() on the same recipe DOES yield the item — payInputs is the same rule
+  // minus the output, not a different rule.
+  Inventory both(reg);
+  both.add(sitems::Stone, 4);
+  CHECK(HandCrafter::craft(foundation, both));
+  CHECK(both.count(sitems::Foundation) == 1);
+
+  // Multi-input all-or-nothing: a door needs wood AND iron.
+  const CraftRecipe door = structureDefs()[3].cost;
+  Inventory woodOnly(reg);
+  woodOnly.add(sitems::Wood, 10);
+  CHECK(!HandCrafter::payInputs(door, woodOnly));
+  CHECK(woodOnly.count(sitems::Wood) == 10);
+  woodOnly.add(sitems::Iron, 1);
+  CHECK(HandCrafter::payInputs(door, woodOnly));
+  CHECK(woodOnly.count(sitems::Wood) == 6);
+  CHECK(woodOnly.count(sitems::Iron) == 0);
+  CHECK(woodOnly.count(sitems::Door) == 0);
+}
+
+// The structural set did NOT leak into the hand-craft menu: still the four
+// original hand recipes (pickaxe, axe, furnace, smelter).
+TEST(structures_do_not_leak_into_hand_recipes) {
+  const std::vector<CraftRecipe> hand = handRecipes();
+  CHECK(hand.size() == 4);
+  for (const CraftRecipe& r : hand) {
+    CHECK(r.output != sitems::Foundation);
+    CHECK(r.output != sitems::Floor);
+    CHECK(r.output != sitems::Wall);
+    CHECK(r.output != sitems::Door);
+  }
+  CHECK(hand[0].output == sitems::CrudePickaxe);
+  CHECK(hand[1].output == sitems::CrudeAxe);
+  CHECK(hand[2].output == sitems::PrimitiveFurnace);
+  CHECK(hand[3].output == sitems::SurvivalSmelter);
 }
