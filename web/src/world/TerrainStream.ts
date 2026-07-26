@@ -343,6 +343,9 @@ export class TerrainStream {
     };
   }
 
+  /** The live resident set. Scatter reads it; nothing else may mutate it. */
+  get residentViews(): Map<string, ChunkView> { return this.views; }
+
   /** JitterProbe stake rows from the chunks nearest the camera. See TerrainDebug. */
   probeStakes(out: Float64Array, maxStakes: number, cam: THREE.Vector3): number {
     return probeStakes(this.views.values(), out, maxStakes, cam, this.nearest, this.nearestD2, this.pool);

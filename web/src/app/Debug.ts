@@ -50,7 +50,7 @@ export interface OfDebugApi {
   stats(): FrameStats & {
     boot: BootMetrics; gpu: string; terrain: StreamMetricsReport;
     pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
-    shadow: unknown; ibl: unknown; avatar: unknown; assets: unknown;
+    shadow: unknown; ibl: unknown; props: unknown; avatar: unknown; assets: unknown;
     sky: { sunT: number; daylight: number; elevationDot: number };
     caps: unknown;
   };
@@ -147,6 +147,7 @@ export function installDebugApi(
         stitch: st.stitch,
         shadow: s.shadows.stats(),
         ibl: s.ibl.stats(),
+        props: { ...s.props.stats(), ...s.scatter.stats() },
         avatar: s.avatar?.report() ?? null,
         assets: { ...assetStats, ms: Math.round(assetStats.ms) },
         sky: {

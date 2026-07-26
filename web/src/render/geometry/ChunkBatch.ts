@@ -157,6 +157,13 @@ export class ChunkBatch extends THREE.BatchedMesh {
     return (a.array as Float32Array).subarray(s, s + this.verts * 3);
   }
 
+  /** Live view of the slot's int8 vertex normals, for the scatter slope test. */
+  normals(slot: number): Int8Array {
+    const a = this.geometry.getAttribute('normal') as THREE.BufferAttribute;
+    const s = this.info[slot].vertexStart * 3;
+    return (a.array as Int8Array).subarray(s, s + this.verts * 3);
+  }
+
   heights(slot: number): Float32Array {
     const a = this.geometry.getAttribute('aHeight') as THREE.BufferAttribute;
     const s = this.info[slot].vertexStart;

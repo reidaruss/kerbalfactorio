@@ -23,6 +23,9 @@ import { FloatingOrigin } from '../world/FloatingOrigin.js';
 import { PlanetProxy } from '../world/PlanetProxy.js';
 import { Regime } from '../world/Regime.js';
 import { bootTerrain } from '../world/TerrainBoot.js';
+import { Scatter } from '../world/Scatter.js';
+import { PropLibrary } from '../render/instancing/PropLibrary.js';
+import { BIOME_ATLAS } from '../assets/Registry.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
 import { Controller } from '../player/Controller.js';
 import { Avatar } from '../player/Avatar.js';
@@ -179,6 +182,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const terrainBootMs = performance.now() - tTerrain;
   stats.extraVramBytes = t.pooledBytes + t.indexBytes + shadows.vramBytes();
 
+  hud.banner('loading the biome prop atlases ...');
+  // Every atlas, not just the biome under the observer: a walk crosses biome
+  // boundaries continuously and a mid-walk fetch would hitch. Ten files, 392 kB.
+  const props = await PropLibrary.load(cfg.props ? BIOME_ATLAS : [], scenes.near);
+  props.arm();
+  const scatter = new Scatter(props, t.pool, cfg.props, cfg.density);
+
   const boot: BootMetrics = {
     wasmLoadMs,
     oracleUs: {
@@ -205,7 +215,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, ibl, boot,
+    hud, sunLights, shadows, ibl, props, scatter, boot,
   };
   return { services, canvas };
 }

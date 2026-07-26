@@ -90,6 +90,10 @@ export interface Config {
   readonly atmosphere: boolean;
   /** Star field. ?stars=0 disables it. */
   readonly stars: boolean;
+  /** Tier 1 biome prop scatter. ?props=0 isolates the terrain (standing rule 7). */
+  readonly props: boolean;
+  /** Scatter density multiplier. ?density=2 doubles every biome's count. */
+  readonly density: number;
   /**
    * Override the SURFACE-band nearDepthCutoff. 0 keeps DepthPolicy's answer.
    * Lowering it pulls coarser chunks into the near 1:1 scene, which is how the
@@ -204,6 +208,8 @@ export function parseConfig(search: string): Config {
     shadows: p.get('shadows') !== '0',
     atmosphere: p.get('atmos') !== '0',
     stars: p.get('stars') !== '0',
+    props: p.get('props') !== '0',
+    density: Math.max(0, num(p, 'density', 1)),
     nearCutoff: Math.max(0, num(p, 'cutoff', 0) | 0),
     // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run
     // can force many rebases inside a walk that fits in a smoke budget, which

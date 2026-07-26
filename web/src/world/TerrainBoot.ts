@@ -31,6 +31,7 @@ const SKIRT_FRACTION_DEFAULT = 0.15;
 
 export interface TerrainBootResult {
   stream: TerrainStream;
+  pool: ChunkGeometryPool;
   pooledBytes: number;
   indexBytes: number;
   workerLoadMs: number;
@@ -98,6 +99,7 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
 
   return {
     stream,
+    pool,
     pooledBytes: pool.bytes,
     indexBytes: index.bytes,
     workerLoadMs: inited.loadMs,

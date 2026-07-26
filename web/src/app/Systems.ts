@@ -82,6 +82,10 @@ export function registerSystems(s: Services, loop: Loop): void {
   loop.onPreRender.push(() => {
     const cam = s.rig.nearCam;
     eye.setFromMatrixPosition(cam.matrixWorld);
+    // Scatter follows the EYE, not the origin: the floating origin is only
+    // rebased every 4 km, so a radius measured from it would put the foliage
+    // ring kilometres away from the player.
+    s.scatter.update(s.terrain.residentViews.values(), eye);
     cam.getWorldDirection(fwd);
     // Two reasons to skip the whole pass, both worth 58 draw calls:
     // nothing on the ground casts onto anything at orbital range (section 3.5,
