@@ -13,6 +13,8 @@ export interface InputFrame {
   toggleView: boolean;
   /** KeyE. Held state; DigAction turns it into one dig per cooldown (W5). */
   mine: boolean;
+  /** Tab. Held state; the UI edge-detects it into one open/close per press. */
+  panel: boolean;
 }
 
 export interface TapeEntry {
@@ -32,20 +34,36 @@ export class Input {
   private dPitch = 0;
   private zoomAccum = 0;
   private dragging = false;
+  /**
+   * POINTER LOCK. Drag-to-look was fine for a camera probe and is wrong for a
+   * game: a player who has to hold a button to turn cannot turn and act at the
+   * same time. Locked, movementX arrives with no button held and with no
+   * window edge to run into. The drag path stays for the orbit-camera
+   * scenarios and for anyone whose browser refuses the lock.
+   */
+  private locked = false;
+  /** False while the UI owns the pointer: no look, no movement, no interact. */
+  private lookEnabled = true;
+  private uiHeld = false;
+  private el: HTMLElement | null = null;
   private tape: TapeEntry[] = [];
   private tapeIdx = 0;
   private tapeHeld = 0;
 
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
-    jump: false, toggleView: false, mine: false,
+    jump: false, toggleView: false, mine: false, panel: false,
   };
 
   attach(el: HTMLElement): void {
+    this.el = el;
     const stop = (e: Event) => e.preventDefault();
     window.addEventListener('keydown', (e) => {
       this.down.add(e.code);
-      if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+      // Tab moves focus and Space scrolls; both would leak out of the canvas.
+      if (e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'Tab') {
+        e.preventDefault();
+      }
     });
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
     window.addEventListener('blur', () => this.down.clear());
@@ -59,9 +77,19 @@ export class Input {
       el.releasePointerCapture(e.pointerId);
     });
     el.addEventListener('pointermove', (e) => {
-      if (!this.dragging) return;
+      if (!this.lookEnabled) return;
+      if (!this.dragging && !this.locked) return;
       this.dYaw -= e.movementX * MOUSE_SENS;
       this.dPitch -= e.movementY * MOUSE_SENS;
+    });
+    el.addEventListener('click', () => {
+      if (this.lookEnabled && !this.locked) void el.requestPointerLock?.();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === el;
+      // Escape also exits the lock, and the accumulated deltas from the frame
+      // the lock dropped would otherwise land as a spin on the next sample.
+      if (!this.locked) { this.dYaw = 0; this.dPitch = 0; }
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -77,6 +105,31 @@ export class Input {
   }
 
   tapePending(): boolean { return this.tapeIdx < this.tape.length; }
+
+  /** True while the pointer is locked to the canvas (flight-smooth mouse look). */
+  get pointerLocked(): boolean { return this.locked; }
+
+  /**
+   * Hand the pointer to the UI, or take it back. Everything except the panel
+   * key is muted while the UI holds it, tape-driven runs included, so a
+   * scripted probe sees exactly what a player sees.
+   */
+  setUiCapture(on: boolean): void {
+    this.uiHeld = on;
+    this.lookEnabled = !on;
+    this.down.clear();
+    this.dYaw = 0;
+    this.dPitch = 0;
+    if (on) { if (this.locked) document.exitPointerLock(); }
+    else if (this.el !== null) void this.el.requestPointerLock?.();
+  }
+
+  /** Zero everything the UI is swallowing, but keep `panel` so Tab can close. */
+  private mute(f: InputFrame): void {
+    f.fwd = 0; f.right = 0; f.up = 0;
+    f.dYaw = 0; f.dPitch = 0; f.zoom = 0;
+    f.boost = false; f.jump = false; f.toggleView = false; f.mine = false;
+  }
 
   private axis(neg: string[], pos: string[]): number {
     let v = 0;
@@ -101,6 +154,8 @@ export class Input {
       f.jump = keys.has('Space');
       f.toggleView = keys.has('KeyV');
       f.mine = keys.has('KeyE');
+      f.panel = keys.has('Tab');
+      if (this.uiHeld) this.mute(f);
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
     }
@@ -114,6 +169,8 @@ export class Input {
     f.jump = this.down.has('Space');
     f.toggleView = this.down.has('KeyV');
     f.mine = this.down.has('KeyE');
+    f.panel = this.down.has('Tab');
+    if (this.uiHeld) this.mute(f);
     this.dYaw = 0;
     this.dPitch = 0;
     this.zoomAccum = 0;

@@ -25,11 +25,18 @@ export function registerSystems(s: Services, loop: Loop): void {
       s.events.emit('RegimeChanged', { band: s.regime.state.band });
     }
     s.terrain.request(s.observer.position);
-    // W5. On the FIXED tick, not the frame: a dig is a simulation event, so a
-    // driven tape digs exactly as often as a human holding the key would.
+    // W5. On the FIXED tick, not the frame: a dig and a harvest are simulation
+    // events, so a driven tape acts exactly as often as a human holding the key.
+    //
+    // ONE key, two verbs, resolved by what is under the crosshair. Harvest wins
+    // when a node is in reach, because a player looking at a tree who presses
+    // the mine key means the tree, and digging a crater under it instead is the
+    // sort of thing that makes a game feel like it is not listening.
+    const onNode = s.gameplay !== null && s.gameplay.fixedStep(loop.tickIndex - 1)
+      ? true : s.gameplay?.interact.hasTarget ?? false;
     if (s.dig !== null && s.player !== null) {
       const ray = s.player.aimRay();
-      s.dig.step(s.input.frame.mine, ray.origin, ray.dir);
+      s.dig.step(s.input.frame.mine && !onNode, ray.origin, ray.dir);
     }
   });
 
@@ -68,6 +75,7 @@ export function registerSystems(s: Services, loop: Loop): void {
     // The body centre in engine space is simply -origin; the far scene puts it
     // at the scaled origin, which TerrainMaterials.update handles itself.
     bodyCenterEngine.set(-s.origin.origin.x, -s.origin.origin.y, -s.origin.origin.z);
+    s.gameplay?.frame(loop.fixedDt);
     s.materials.update(bodyCenterEngine, loop.simSecs);
     s.sky.update(s.observer.position, s.observer.up, s.observer.altM);
 

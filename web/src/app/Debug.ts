@@ -91,6 +91,14 @@ export interface OfDebugApi {
   jitter(on?: boolean): JitterStats;
   /** The ?scenario=zfight verdict. null when the probe scene is not built. */
   zprobe(): ZFightResult | null;
+  /** W5 gameplay: pack, clearing, swing counters, pointer state. */
+  game(): unknown;
+  /** Open or close the Tab panel from a probe, with the real transition. */
+  panel(open: boolean): unknown;
+  /** Craft by recipe index. Returns true only if /core actually crafted. */
+  craft(index: number): boolean;
+  /** Harvest node `i` now, ignoring reach. Proves the grant path in isolation. */
+  harvest(index: number): unknown;
 }
 
 export interface AimRay {
@@ -304,6 +312,15 @@ export function installDebugApi(
     },
 
     zprobe: () => s.zfight?.result(s.renderer.depth.mode) ?? null,
+
+    game: () => s.gameplay?.report() ?? null,
+    panel(open) { s.gameplay?.setPanel(open); return s.gameplay?.report() ?? null; },
+    craft: (index) => s.gameplay?.game.craft(index) ?? false,
+    harvest(index) {
+      if (s.gameplay === null) return null;
+      const ok = s.gameplay.interact.harvestNow(index, loop.tickIndex);
+      return { ok, node: s.gameplay.game.node(index), carried: s.gameplay.game.carried() };
+    },
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
   return api;

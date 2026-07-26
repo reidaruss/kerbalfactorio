@@ -1554,6 +1554,43 @@ OF_API int of_gp_nodes_layout(int bodyId, int editsId, double dx, double dy,
   return static_cast<int>(g_gpNodes.size());
 }
 
+// Add ONE node at a caller-chosen direction, snapped to the oracle surface.
+// Returns its index, or -1 if the body is unknown.
+//
+// WHY THIS EXISTS ALONGSIDE of_gp_nodes_layout. LayoutTestArea jitters each node
+// by up to 0.0003 rad, which is 180 m at Forge's 600 km radius. That is sane for
+// the "test area" it was written for (a 1.2 km ring) and useless for a walkable
+// clearing: at a 20 m ring radius the jitter is nine times the ring and the
+// patch is a random 360 m smear. So the CHOICE of position is the caller's, and
+// everything that is a rule stays /core's: resourceOf, baseAmountOf, the same
+// position-hashed Grade, and wg::surfaceHeight for where the ground is.
+OF_API int of_gp_node_add(int bodyId, int editsId, int kind,
+                          double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b || kind < 0 || kind > 6) return -1;
+  const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+  if (!(len > 0.0)) return -1;
+  const Vec3 dir(dx / len, dy / len, dz / len);
+  const auto nk = static_cast<wg::survival::NodeKind>(kind);
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const double h = e ? wg::surfaceHeight(*b, dir, *e) : wg::surfaceHeight(*b, dir);
+  wg::FDepositNode n;
+  n.Position = UniverseCoord(dir * (b->radiusM + h), FrameId(0));
+  wg::dirToLatLon(dir, n.Lat, n.Lon);
+  n.SurfaceNormal = dir;
+  n.Body = b->bodyId;
+  n.Resource = wg::survival::resourceOf(nk);
+  n.Grade = static_cast<float>(
+      0.5 + 0.5 * wg::hashToUnit(wg::hashPos(b->bodySeed, dir, 0x57A47u)));
+  n.InitialAmount = wg::survival::baseAmountOf(nk) * n.Grade;
+  n.RemainingAmount = n.InitialAmount;
+  n.Id = wg::hashCombine(wg::mix64(b->bodySeed ^ 0x5E2D17ull),
+                         static_cast<uint64_t>(g_gpNodes.size()));
+  g_gpNodes.push_back(n);
+  g_gpKinds.push_back(static_cast<uint8_t>(kind));
+  return static_cast<int>(g_gpNodes.size()) - 1;
+}
+
 // f64 scratch [x, y, z, remaining, initial, grade, kind, resource]. Returns 8,
 // or 0 for an out-of-range index. Position is body-frame metres.
 OF_API int of_gp_node_state(int i) {

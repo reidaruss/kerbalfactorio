@@ -1,0 +1,213 @@
+/* The game UI overlay (DW-2: HTML/CSS, never canvas-drawn). Stylized
+   industrial: gunmetal panels, one amber accent, hairline rules, monospace.
+   The palette is the OF_* material palette read back out of ASSET-SPECS, so the
+   interface and the machines belong to the same world. */
+
+:root {
+  --of-ink: #dfe8ef;
+  --of-dim: #8b9aa6;
+  --of-panel: rgba(16, 20, 24, 0.90);
+  --of-panel-2: rgba(26, 32, 38, 0.94);
+  --of-edge: #3a464f;
+  --of-accent: #ff9a3c;
+  --of-good: #7ddc7d;
+  --of-bad: #ff6b5a;
+}
+
+.of-ui {
+  position: absolute;
+  z-index: 20;
+  color: var(--of-ink);
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* --- crosshair ---------------------------------------------------------- */
+#of-cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  z-index: 19;
+  pointer-events: none;
+  opacity: 0.75;
+}
+#of-cross::before, #of-cross::after {
+  content: "";
+  position: absolute;
+  background: #e8eef3;
+  box-shadow: 0 0 3px #000;
+}
+#of-cross::before { left: 8px; top: 0; width: 2px; height: 18px; }
+#of-cross::after { top: 8px; left: 0; height: 2px; width: 18px; }
+#of-cross.on::before, #of-cross.on::after { background: var(--of-accent); }
+
+/* --- the aim prompt ----------------------------------------------------- */
+#of-prompt {
+  left: 50%;
+  top: calc(50% + 34px);
+  transform: translateX(-50%);
+  min-width: 190px;
+  padding: 7px 12px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  border-left: 3px solid var(--of-accent);
+  text-align: center;
+  pointer-events: none;
+  display: none;
+}
+#of-prompt .k {
+  display: inline-block;
+  min-width: 17px;
+  padding: 0 4px;
+  margin-right: 6px;
+  border: 1px solid var(--of-edge);
+  border-bottom-width: 2px;
+  background: #222a31;
+  color: var(--of-accent);
+}
+#of-prompt .sub { color: var(--of-dim); font-size: 11px; }
+#of-bar { height: 4px; margin-top: 6px; background: #2b343b; }
+#of-bar > i { display: block; height: 100%; background: var(--of-accent); }
+
+/* --- carried items, bottom right ---------------------------------------- */
+#of-carry {
+  right: 14px;
+  bottom: 12px;
+  min-width: 170px;
+  padding: 8px 10px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  pointer-events: none;
+}
+#of-carry h4 {
+  margin: 0 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--of-dim);
+  text-transform: uppercase;
+}
+#of-carry .row { display: flex; justify-content: space-between; gap: 14px; }
+#of-carry .row b { font-weight: 600; color: var(--of-accent); }
+#of-carry .none { color: var(--of-dim); font-style: italic; }
+
+/* --- the grant toast ---------------------------------------------------- */
+#of-toast {
+  left: 50%;
+  top: calc(50% - 78px);
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  background: rgba(16, 20, 24, 0.75);
+  border: 1px solid var(--of-accent);
+  color: var(--of-accent);
+  font-size: 16px;
+  opacity: 0;
+  transition: opacity 0.25s linear;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#of-toast.show { opacity: 1; transition: none; }
+
+/* --- the Tab panel ------------------------------------------------------ */
+#of-panel {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.55);
+  z-index: 30;
+}
+#of-panel.open { display: flex; }
+#of-panel .frame {
+  display: flex;
+  gap: 0;
+  width: min(920px, 92vw);
+  max-height: 86vh;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+#of-panel .col { padding: 16px 18px; overflow-y: auto; }
+#of-panel .col.pack { flex: 1 1 55%; border-right: 1px solid var(--of-edge); }
+#of-panel .col.craft { flex: 1 1 45%; }
+#of-panel h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+  padding-bottom: 7px;
+}
+#of-panel h3 span { color: var(--of-accent); float: right; letter-spacing: 0; }
+
+.of-slots {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.of-slot {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 5px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+.of-slot.filled { border-color: #4a5862; background: #1c242b; }
+.of-slot .nm {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--of-ink);
+  word-break: break-word;
+}
+.of-slot .ct {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--of-accent);
+}
+.of-slot.empty .nm { color: #39434b; }
+
+.of-recipe {
+  padding: 9px 10px;
+  margin-bottom: 8px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  border-left: 3px solid #3a464f;
+}
+.of-recipe.can { border-left-color: var(--of-good); }
+.of-recipe .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.of-recipe .nm { font-weight: 600; }
+.of-recipe .ing { margin-top: 5px; font-size: 11px; color: var(--of-dim); }
+.of-recipe .ing i { font-style: normal; }
+.of-recipe .ing i.ok { color: var(--of-good); }
+.of-recipe .ing i.no { color: var(--of-bad); }
+.of-recipe button {
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: #101418;
+  background: var(--of-accent);
+  border: 0;
+  cursor: pointer;
+}
+.of-recipe button:disabled {
+  background: #2c353d;
+  color: #667581;
+  cursor: not-allowed;
+}
+#of-panel .hint {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--of-dim);
+}

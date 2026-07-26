@@ -38,6 +38,7 @@ import { JitterProbe } from '../render/debug/JitterProbe.js';
 import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { Hud } from '../ui/Hud.js';
 import { probeWorkerOracle } from './WorkerProbe.js';
+import { Gameplay } from '../game/Gameplay.js';
 
 /**
  * The stock-material lighting: PlanetProxy (Lambert) and the Avatar (Standard)
@@ -202,6 +203,18 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const dig = voxels === null || voxelMesh === null ? null
     : new DigAction(voxels, voxelMesh, terrain);
 
+  // W5 gameplay. Also player-gated: the pack, the clearing and the swing all
+  // hang off a character, and a free camera has no hands. It is built LAST
+  // because it scatters its nodes around wherever the player already stands.
+  let gameplay: Gameplay | null = null;
+  if (player !== null && cfg.gameplay) {
+    hud.banner('growing the harvest clearing ...');
+    gameplay = await Gameplay.create({
+      core, origin, player, avatar, input, host, scene: scenes.near,
+      bodyHandle: body.handle, seed: cfg.seedLo,
+    });
+  }
+
   const boot: BootMetrics = {
     wasmLoadMs,
     oracleUs: {
@@ -228,7 +241,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, ibl, props, scatter, voxels, voxelMesh, dig, boot,
+    hud, sunLights, shadows, ibl, props, scatter, voxels, voxelMesh, dig,
+    gameplay, boot,
   };
   return { services, canvas };
 }

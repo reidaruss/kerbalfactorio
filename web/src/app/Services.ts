@@ -33,6 +33,7 @@ import type { Input } from '../player/Input.js';
 import type { JitterProbe } from '../render/debug/JitterProbe.js';
 import type { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import type { Hud } from '../ui/Hud.js';
+import type { Gameplay } from '../game/Gameplay.js';
 
 /** One-off numbers measured at boot, surfaced through window.__of.stats(). */
 export interface BootMetrics {
@@ -89,6 +90,8 @@ export interface Services {
   readonly voxels: VoxelWorld | null;
   readonly voxelMesh: VoxelMesh | null;
   readonly dig: DigAction | null;
+  /** W5. Null with no character, or with ?gameplay=0. */
+  readonly gameplay: Gameplay | null;
   readonly boot: BootMetrics;
 }
 

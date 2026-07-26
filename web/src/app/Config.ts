@@ -96,6 +96,8 @@ export interface Config {
   readonly props: boolean;
   /** Scatter density multiplier. ?density=2 doubles every biome's count. */
   readonly density: number;
+  /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
+  readonly gameplay: boolean;
   /**
    * Override the SURFACE-band nearDepthCutoff. 0 keeps DepthPolicy's answer.
    * Lowering it pulls coarser chunks into the near 1:1 scene, which is how the
@@ -222,6 +224,7 @@ export function parseConfig(search: string): Config {
     stars: p.get('stars') !== '0',
     props: p.get('props') !== '0',
     density: Math.max(0, num(p, 'density', 1)),
+    gameplay: p.get('gameplay') !== '0',
     nearCutoff: Math.max(0, num(p, 'cutoff', 0) | 0),
     // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run
     // can force many rebases inside a walk that fits in a smoke budget, which
