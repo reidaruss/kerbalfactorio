@@ -256,13 +256,44 @@ def validate(asset, spec, verbose=False):
             all(abs(dims[k] - want[k]) <= tol for k in range(3)),
             "%s m (want %s, +/-%g)" % ([round(d, 4) for d in dims], want, tol))
 
-    # --- pivot: base on the ground plane, centred on the grid cell ---
-    r.check("pivot",
-            abs(lo[1]) <= tol
-            and abs((lo[0] + hi[0]) * 0.5) <= tol
-            and abs((lo[2] + hi[2]) * 0.5) <= tol,
-            "base y=%.4f centre x=%.4f z=%.4f"
-            % (lo[1], (lo[0] + hi[0]) * 0.5, (lo[2] + hi[2]) * 0.5))
+    # --- pivot ---
+    # Four pivot rules, because the game has four kinds of thing:
+    #   ground  a placed object. Base on y = 0, centred on x = z = 0, so grid
+    #           snapping is pure arithmetic and there is no per-asset offset.
+    #   centre  a dropped item. Origin at the volumetric centre, because items
+    #           tumble in the air and ride centred on a belt (ASSET-SPECS 4.11).
+    #   grip    a hand-held tool. Origin at the grip point so hand.add(tool)
+    #           with an IDENTITY transform puts it in the fist (4.3). Proved by
+    #           checking socket_grip actually lands on the origin, which is the
+    #           thing that silently breaks if the mesh is nudged.
+    #   none    a view model. The first-person arms hang off the camera point,
+    #           which is by construction outside the mesh.
+    pmode = spec.get("pivot_mode", "ground")
+    ptol = spec.get("pivot_tolerance_m", tol)
+    cx, cy, cz = ((lo[k] + hi[k]) * 0.5 for k in range(3))
+    if pmode == "ground":
+        r.check("pivot", abs(lo[1]) <= ptol and abs(cx) <= ptol
+                and abs(cz) <= ptol,
+                "ground: base y=%.4f centre x=%.4f z=%.4f" % (lo[1], cx, cz))
+    elif pmode == "centre":
+        r.check("pivot", all(abs(v) <= ptol for v in (cx, cy, cz)),
+                "centre: %.4f %.4f %.4f" % (cx, cy, cz))
+    elif pmode == "grip":
+        gs = spec.get("grip_socket", "socket_grip")
+        if gs not in by_name:
+            r.check("pivot", False, "grip: no node named %s" % gs)
+        else:
+            _, gm, _ = walked[by_name[gs]]
+            gp = [gm[12], gm[13], gm[14]]
+            inside = all(lo[k] - ptol <= 0.0 <= hi[k] + ptol for k in range(3))
+            r.check("pivot",
+                    all(abs(v) <= ptol for v in gp) and inside,
+                    "grip: %s at %s, origin inside LOD0 bounds=%s"
+                    % (gs, [round(v, 4) for v in gp], inside))
+    elif pmode == "none":
+        r.check("pivot", True, "none (view model)")
+    else:
+        r.check("pivot", False, "unknown pivot_mode %r" % pmode)
 
     # --- triangle budgets ---
     t0 = subtree_tris(gltf, by_name[lod0])
@@ -285,6 +316,36 @@ def validate(asset, spec, verbose=False):
     r.check("lods", not missing,
             "%d present%s" % (len(lods) - len(missing),
                               "" if not missing else ", missing %s" % missing))
+
+    # --- named parts: an atlas is N independent meshes in one file ---
+    # items_atlas.glb has fourteen sibling meshes and no LOD chain, so the
+    # single lod0_node check proves almost nothing about it. Each part is
+    # checked for existence, its own bounding box, its own tri budget, and the
+    # centred-origin rule, which is what actually keeps an item legible on a
+    # belt and inside a 64 px icon.
+    parts = spec.get("parts", [])
+    if parts:
+        bad = []
+        for p in parts:
+            node = p["node"]
+            if node not in by_name:
+                bad.append("%s missing" % node)
+                continue
+            pacc = node_bbox(gltf, walked, by_name[node], [[1e9] * 3, [-1e9] * 3])
+            plo, phi = pacc
+            pd = [phi[k] - plo[k] for k in range(3)]
+            pw = p["dims_xyz_m"]
+            ptl = p.get("tolerance_m", tol)
+            if any(abs(pd[k] - pw[k]) > ptl for k in range(3)):
+                bad.append("%s dims %s want %s" % (node, [round(d, 4) for d in pd], pw))
+            if p.get("centred", True) and any(
+                    abs((plo[k] + phi[k]) * 0.5) > ptl for k in range(3)):
+                bad.append("%s not centred on its origin" % node)
+            pt = subtree_tris(gltf, by_name[node])
+            if pt > p.get("max_tris", spec["max_tris_lod0"]):
+                bad.append("%s %d tris > %d" % (node, pt, p.get("max_tris")))
+        r.check("parts", not bad, "%d checked%s"
+                % (len(parts), "" if not bad else "; " + "; ".join(bad)))
 
     # --- materials: budget + every name is a palette role ---
     mats = [m.get("name", "") for m in gltf.get("materials", [])]

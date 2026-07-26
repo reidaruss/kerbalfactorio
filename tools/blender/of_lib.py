@@ -261,6 +261,23 @@ def _arc_band_data(r_in, r_out, depth, loc, a0_deg, a1_deg, segments):
     return verts, faces, smooth
 
 
+def box_data(size, loc=(0, 0, 0), rot_z=0.0):
+    """Raw (verts, faces, smooth) for a box: the Parts-pile form of
+    MeshBuilder.box. An asset that needs PER-FACE roles (an ore facet, a log's
+    end grain) accumulates raw tuples in a harvest_common.Parts pile instead of
+    calling MeshBuilder directly, and until now that pile could not express a
+    box without re-implementing one."""
+    return _box_data(size, loc, rot_z)
+
+
+def cyl_data(radius, depth, loc=(0, 0, 0), axis="Z", segments=12,
+             smooth_sides=True, radius_top=None, phase_deg=0.0):
+    """Raw (verts, faces, smooth) for a cylinder or frustum. Same reason as
+    box_data: the Parts pile needs the primitives too."""
+    return _cyl_data(radius, depth, loc, axis, segments, smooth_sides,
+                     radius_top, phase_deg)
+
+
 class MeshBuilder:
     """Accumulate primitives into ONE mesh with one material slot per role.
 

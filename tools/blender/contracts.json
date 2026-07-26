@@ -459,6 +459,83 @@
       "sockets": ["socket_draw", "socket_item_pop"],
       "clips": ["Oil_Bubble"],
       "collision": "col_OilSeep"
+    },
+
+    "crude_pickaxe": {
+      "glb": "assets/models/dist/tools/crude_pickaxe.glb",
+      "_comment": [
+        "pivot_mode 'grip': the origin is the grip point 0.30 m up the haft,",
+        "so hand.add(tool) with an identity transform puts it in the fist.",
+        "The check asserts socket_grip lands on the origin AND that the origin",
+        "is inside the mesh bounds, which is the pair of facts that make the",
+        "identity attach correct rather than merely plausible."
+      ],
+      "lod0_node": "CrudePickaxe_LOD0",
+      "lod_nodes": ["CrudePickaxe_LOD0", "CrudePickaxe_LOD1"],
+      "pivot_mode": "grip",
+      "dims_xyz_m": [0.34, 0.95, 0.10],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 260,
+      "max_tris_total": 400,
+      "max_materials": 3,
+      "sockets": ["socket_grip", "socket_head"],
+      "clips": [],
+      "collision": "col_CrudePickaxe"
+    },
+
+    "crude_axe": {
+      "glb": "assets/models/dist/tools/crude_axe.glb",
+      "lod0_node": "CrudeAxe_LOD0",
+      "lod_nodes": ["CrudeAxe_LOD0", "CrudeAxe_LOD1"],
+      "pivot_mode": "grip",
+      "dims_xyz_m": [0.22, 0.80, 0.09],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 240,
+      "max_tris_total": 380,
+      "max_materials": 3,
+      "sockets": ["socket_grip", "socket_head"],
+      "clips": [],
+      "collision": "col_CrudeAxe"
+    },
+
+    "items_atlas": {
+      "glb": "assets/models/dist/items/items_atlas.glb",
+      "_comment": [
+        "Fourteen sibling meshes, no LOD chain, no collision, no clips.",
+        "pivot_mode 'centre': an item's origin is its volumetric centre, not",
+        "its base, because items tumble when dropped and ride centred on a",
+        "belt. Every mesh sits ON the origin (they overlap) so a consumer can",
+        "clone one by name with no offset to subtract back out.",
+        "The per-part block is the real gate here: one lod0_node check would",
+        "prove nothing about the other thirteen."
+      ],
+      "lod0_node": "Item_Log",
+      "lod_nodes": [],
+      "pivot_mode": "centre",
+      "dims_xyz_m": [0.60, 0.18, 0.18],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 120,
+      "max_tris_total": 1200,
+      "max_materials": 12,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Glass", "OF_LeafDry"],
+      "parts": [
+        {"node": "Item_OreChunk_Iron", "dims_xyz_m": [0.26, 0.20, 0.22], "max_tris": 120},
+        {"node": "Item_OreChunk_Copper", "dims_xyz_m": [0.26, 0.20, 0.22], "max_tris": 120},
+        {"node": "Item_CoalLump", "dims_xyz_m": [0.24, 0.18, 0.20], "max_tris": 120},
+        {"node": "Item_StoneChunk", "dims_xyz_m": [0.24, 0.18, 0.22], "max_tris": 120},
+        {"node": "Item_Log", "dims_xyz_m": [0.60, 0.18, 0.18], "max_tris": 120},
+        {"node": "Item_IngotIron", "dims_xyz_m": [0.28, 0.08, 0.14], "max_tris": 120},
+        {"node": "Item_IngotCopper", "dims_xyz_m": [0.28, 0.08, 0.14], "max_tris": 120},
+        {"node": "Item_FerriteOre", "dims_xyz_m": [0.26, 0.20, 0.22], "max_tris": 120},
+        {"node": "Item_FerritePlate", "dims_xyz_m": [0.28, 0.02, 0.28], "max_tris": 120},
+        {"node": "Item_FramePart", "dims_xyz_m": [0.28, 0.10, 0.28], "max_tris": 120},
+        {"node": "Item_Cinderite", "dims_xyz_m": [0.24, 0.20, 0.22], "max_tris": 120},
+        {"node": "Item_Combustite", "dims_xyz_m": [0.22, 0.18, 0.20], "max_tris": 120},
+        {"node": "Item_WaterCanister", "dims_xyz_m": [0.18, 0.30, 0.18], "max_tris": 120},
+        {"node": "Item_OilFlask", "dims_xyz_m": [0.16, 0.28, 0.16], "max_tris": 120}
+      ]
     }
   }
 }

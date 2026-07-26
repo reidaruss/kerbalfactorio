@@ -1,8 +1,8 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
-**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** 22 of 27 Tier-0
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** 25 of 27 Tier-0
 files built and green under `validate_glb.py --all` (13 machines, 9 harvest
-nodes). Remaining: items atlas, two tools, player body, first-person arms.
+nodes, the items atlas, two tools). Remaining: player body, first-person arms.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -479,7 +479,17 @@ rawhide binding at the joint. It must read as *crude* next to the machines.
 260 tris. Materials: `OF_Bark` haft, `OF_Iron` head, `OF_Accent` binding.
 Sockets: `socket_grip` (at the origin, for validation), `socket_head` (pick tip, the
 impact point). No clips: the animation lives on the player.
-Collision: `col_CrudePickaxe`, box 0.34 x 0.10 x 0.95.
+Collision: `col_CrudePickaxe`, box 0.34 x 0.10 x 0.95, `OF_Iron` role so the
+proxy does not drag a fourth material into a three-material file.
+
+The grip-point origin is not merely validated by `socket_grip`, it is validated
+*as* `socket_grip`: `pivot_mode: "grip"` (section 7.1) asserts the socket lands
+on the origin **and** that the origin is inside the mesh bounds. Those two facts
+together are what make `hand.add(tool)` correct rather than coincidental.
+
+**Built.** LOD0 126 tris, LOD1 48, 186 render tris. Exact bounds 0.340 x 0.100 x
+0.950 by construction, no `fit()` pass: at this size every vertex is placed by
+hand, and exactness is what puts the grip on the origin to the micrometre.
 
 ### 4.4 Crude axe, `tools/crude_axe.glb`
 
@@ -489,7 +499,14 @@ single wedge blade, rawhide binding.
 
 240 tris. Materials: `OF_Bark`, `OF_Iron`, `OF_Accent`.
 Sockets: `socket_grip`, `socket_head` (blade edge centre).
-Collision: `col_CrudeAxe`, box 0.22 x 0.09 x 0.80.
+Collision: `col_CrudeAxe`, box 0.22 x 0.09 x 0.80, `OF_Iron` role.
+
+The head is built as a single flared wedge: a narrow back face in the `+Y`
+plane opening out to the full 0.22 m cutting edge at `-Y`, which is the literal
+reading of "blade 0.22 across X facing -Y" and costs six quads.
+
+**Built.** LOD0 96 tris, LOD1 24, 132 render tris. Exact bounds 0.220 x 0.090 x
+0.800.
 
 ### 4.5 Ore boulders, `nodes/boulder_{stone,iron,copper,coal}.glb`
 
@@ -653,6 +670,26 @@ as a darker `OF_Bark` cap.
 Every item must be legible in a 64 px orthographic icon render, which is the real
 constraint: if you cannot tell the iron ingot from the copper ingot at 64 px, the
 material contrast is wrong, not the mesh.
+
+**All fourteen meshes sit ON the origin and overlap** (**added 2026-07-25**; the
+section never said where the meshes live relative to each other). There is no
+atlas layout, because a layout offset rides along on the node transform and every
+consumer would have to subtract it back out. The renderer picks one item by name
+and clones it, and they are never all visible at once, so the overlap costs
+nothing. `validate_glb.py`'s `pivot_mode: "centre"` checks the centred-origin rule
+per mesh, and the new `parts` block checks all fourteen bounding boxes and tri
+budgets: a single `lod0_node` check would prove nothing about the other thirteen.
+
+**Corrected 2026-07-25:** `Item_Log`'s end grain is `OF_LeafDry` (pale sapwood),
+not "a darker `OF_Bark`". Dark end grain on dark bark is invisible at 64 px, and
+`OF_LeafDry` is already the conifer stump's cut face (section 4.6), so the two
+cut-wood surfaces in the game now match. `Item_FerriteOre`'s chips are `OF_Accent`
+orange rather than a metal so it is never mistaken for raw iron.
+
+**Built.** 560 render tris against the 1200 budget: 40 tris per ore chunk, 76 for
+the oil flask, 72 for the frame part, 52 for the canister, 12 for the plate. The
+smaller items land under the "40 to 120 each" guide because a chamfered slab is
+genuinely 12 triangles; the budget is a ceiling, not a quota.
 
 ### 4.12 Belt segment, `machines/belt_segment.glb` (BUILT, reference asset)
 
@@ -1067,7 +1104,15 @@ footprint of `X 1.0 by Y 1.0 flow by Z 0.30 tall` is therefore `[1.0, 0.30, 1.0]
 Checking dimensions in three.js axes is exactly what proves `export_yup` fired: if the
 up axis were wrong, the 0.30 would land on Z and the check would fail.
 
-Optional keys: `max_tris_collision` (default 64), `double_sided_ok` (default empty).
+Optional keys: `max_tris_collision` (default 64), `double_sided_ok` (default
+empty), and the four added on 2026-07-25 for the items atlas and the hand tools:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `pivot_mode` | `"ground"` | `ground` base on `y = 0` and centred on `x = z = 0`; `centre` origin at the volumetric centre (dropped items); `grip` origin at the grip point, asserted through `socket_grip` (hand tools); `none` a view model hung off the camera point |
+| `pivot_tolerance_m` | `tolerance_m` | separate slack for the pivot check, because an organic character's mesh centroid is not its ground pivot |
+| `grip_socket` | `"socket_grip"` | which socket `pivot_mode: "grip"` asserts against |
+| `parts` | none | `[{node, dims_xyz_m, max_tris, centred}]`, one entry per sibling mesh in a multi-mesh file |
 
 ### 7.2 What the checker proves
 
@@ -1119,7 +1164,8 @@ the case for automating the check.
    the belt unblock the whole factory loop. **Done 2026-07-25.**
 3. **Harvest nodes** (9 files). **Done 2026-07-25**, all seven `NodeKind`
    values covered. Then the **items atlas**, which unblocks hand-craft.
-4. **Tools** (2 files). Unblocks tool-assisted harvest.
+   **Done 2026-07-25.**
+4. **Tools** (2 files). Unblocks tool-assisted harvest. **Done 2026-07-25.**
 5. **Player body and first-person arms.** Last of Tier 0 because they are the only
    assets needing a rig, and everything else can be tested with a capsule.
 6. **Tier 1 biome atlases.** Only after Tier 0 validates green.
