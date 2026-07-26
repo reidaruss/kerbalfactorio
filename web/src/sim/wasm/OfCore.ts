@@ -7,7 +7,11 @@
 
 import type { OfCoreModule } from './heap.js';
 
-export const OF_ABI_VERSION = 1;
+// ABI 2 (2026-07-25, the surface-authority audit): of_observer_latlon_alt gained
+// an `edits` parameter and now reads the oracle, of_quadmesh_generate's last
+// parameter became `rawBase` so 0 is the safe value, and of_chunk_max_offset
+// became a true Euclidean bound including the skirt (WASM-BRIDGE.md section 4.1).
+export const OF_ABI_VERSION = 2;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

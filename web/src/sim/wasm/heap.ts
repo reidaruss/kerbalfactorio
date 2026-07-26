@@ -46,7 +46,11 @@ export interface OfCoreModule {
                       maxDepth: number, minResidentDepth: number,
                       skirtFraction: number, genBudget: number): number;
   _of_streamer_destroy(s: number): void;
-  _of_observer_latlon_alt(body: number, lat: number, lon: number, altM: number): void;
+  // ABI 2: takes the edits handle and derives from of_surface_radius, so it is
+  // now on the one surface authority. SurfaceOracle.observerPos still computes
+  // the position itself, which keeps the oracle the single caller of record.
+  _of_observer_latlon_alt(body: number, edits: number, lat: number, lon: number,
+                          altM: number): void;
   _of_streamer_update(s: number, ox: number, oy: number, oz: number): number;
   _of_streamer_evicted_count(s: number): number;
   _of_streamer_generated(s: number): number;
