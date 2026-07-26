@@ -129,7 +129,10 @@
   for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyW']); sample(); }
   for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyS']); sample(); }
 
-  // Frame the capture: level, down the passage, from inside it.
+  // Frame the capture: level, down the passage, from inside it. `shotView` runs
+  // the whole A/B in third person, which is the case where a lamp bolted to the
+  // CAMERA rather than to the player's own head is instantly obvious.
+  if (OF_ARGS.shotView === 'TP') of.setView('TP');
   of.look(yaw, 0);
   await settle(0.8);
   const p = eye();

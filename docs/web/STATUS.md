@@ -280,6 +280,15 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
   Cost underground **43 draw calls, p50 1.6 ms, p99 2.5 ms**; surface unchanged at **39 draws,
   p99 2.4 ms**, and at full sky visibility the ambient is numerically the same one W3 shipped.
   **No new custom shader: DW-10's cap of 5 is untouched.** The stall this closed is 15.2 item 83.
+- **Third person is broken INSIDE a tunnel, and it is the spring arm, not the light.**
+  `ViewMode.springArm` probes only `oracle.surfaceRadius`, so under a hillside every candidate
+  point is already below the heightfield and the arm collapses to 0 on the first step: the camera
+  sits inside the player's own head and the daylit terrain above fills the top of the frame. The
+  lamp itself is correct in TP (it rides the player's eye and aim, not the camera: luma 11.2 off
+  to 22.9 on). The fix is to make the probe voxel-aware (`oracle.solidAt`) instead of
+  heightfield-only, which also has to stop the heightfield test from firing when the eye is
+  already under rock. Reproduce with
+  `--evalfile=tools/smoke/probes/tunnellit.js --evalargs='{"shotView":"TP"}'`.
 - **W5 remaining:** voxel edits are not persisted (DW-17) and dug volume is not in the inventory
   UI. The tunnel mouth still relies on the shallow radial push, which is the one path 15.2
   item 48 is about.
