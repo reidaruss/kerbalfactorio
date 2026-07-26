@@ -238,7 +238,7 @@ class BuildableNetwork {
     sim_.setEntityBoundRadiusCm(b.entity, boundCm);
   }
 
-  // The dense entity index behind a building — the key EmitEntityStates stamps
+  // The dense entity index behind a building: the key EmitEntityStates stamps
   // into FFactoryEntityState::Id and EmitBeltFlowStates into LineId. The render
   // layer holds BuildIds and receives stream rows, so it needs the join.
   uint32_t entityIndex(const BuildId& b) const {

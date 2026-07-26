@@ -18,7 +18,7 @@ export interface Snapped {
   pos: { x: number; y: number; z: number };
   /** The ground normal at the snapped point. */
   up: THREE.Vector3;
-  /** "cx,cy,cz" — the lattice cell, and the identity a placement is keyed by. */
+  /** "cx,cy,cz": the lattice cell, and the identity a placement is keyed by. */
   cell: string;
 }
 
