@@ -633,6 +633,51 @@ int of_net_get_line_items(int net, int beltBuild);
 `VisualState`: `0 idle, 1 working, 2 blocked, 3 no-power`.
 `Lod`: `0 near, 1 mid, 2 far, 3 on-rails`.
 
+### 4.9b Ore patches — what a deposit IS (ABI 3, `deposits.h` section P)
+
+A deposit is a piece of GROUND, not an object: an irregular lobed area, 6 to
+11 m across, holding ONE pool of one ore, with coverage falling from a rich
+centre to a thin rim. Everything about its shape, its richness, its amount and
+its outcrops is `/core`'s; the shim only copies numbers into the scratch arena.
+
+```c
+void   of_gp_patches_clear(void);
+int    of_gp_patches_count(void);
+// One patch per kind queued with of_gp_kinds_push, around `dir`. -> total count.
+int    of_gp_patch_layout(int body, int edits, double dx, double dy, double dz,
+                          double spreadM);
+// f64 scratch, 18: centre[3], dir[3], t1[3], t2[3], radiusM, kind, resource,
+//                  grade, initial, remaining.
+int    of_gp_patch_state(int i);
+// The drawable skin: (rings+1)*segs vertices of [dirX, dirY, dirZ, coverage].
+int    of_gp_patch_mesh(int i, int rings, int segs);
+// The pieces that break the surface: [dirX, dirY, dirZ, scale, sink, coverage].
+int    of_gp_patch_outcrops(int i);
+double of_gp_patch_cover(int i, double x, double y, double z);   // 0 = not here
+int    of_gp_patch_find(double x, double y, double z);           // -1 = no ore
+double of_gp_patch_drill_rate(int i, double x, double y, double z);  // units/s
+double of_gp_patch_drain(int i, double units);                   // -> removed
+// A harvest node that is an OUTCROP of a patch, in the same node index space.
+int    of_gp_node_add_outcrop(int body, int edits, int patch,
+                              double dx, double dy, double dz);
+```
+
+**`of_gp_patch_find` is THE placement question.** A mining drill is refused when
+it returns -1, and that refusal is what teaches the mechanic.
+
+**Directions, never heights.** Every vector these calls hand back is a UNIT
+direction. The caller multiplies by `of_surface_radius` along that direction, so
+a patch that has been dug into or levelled is still drawn on the ground it is
+actually in and this file keeps no second opinion about where the surface is.
+
+**One pool, and the outcrops are a VIEW of it.** A node created with
+`of_gp_node_add_outcrop` holds no ore of its own: `of_gp_node_state` re-derives
+its remaining and initial amounts from the patch on every read, and
+`of_gp_node_drain` mutates the patch. `of_gp_node_harvest` on such a node routes
+through `gameplay.h` section S.5, which is `harvestNode` with the patch's pool
+handed in and exactly what it removed taken back out of the patch, so the tool
+rule and the no-bootstrap-deadlock rule are the same ones a tree obeys.
+
 ### 4.10 Determinism diagnostics
 
 Not game API; ~200 bytes, kept exported so a future divergence can be pinned in

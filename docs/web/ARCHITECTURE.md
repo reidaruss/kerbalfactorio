@@ -1725,6 +1725,111 @@ Added at W4 (2026-07-25):
     shaft) is why the replacement (`CAPSULE.stepUpM` + `climbGate`) can be
     trusted at all.
 
+95. **An ore deposit was a pebble, and a pebble is not a place to put a machine.**
+    Twenty-four boulders were scattered on the grass and a miner bound to
+    whichever one was within 3.2 m. Nothing about that reads as ore: the player
+    could not tell a resource from scenery, there was no ground under the
+    machine that the machine was about, and "deposit" meant an object rather
+    than a piece of the world. `deposits.h` section P replaces it with a PATCH:
+    an irregular lobed area 6 to 11 m across holding ONE pool, with coverage
+    falling from a rich centre to a thin rim. That single coverage function is
+    both the drill's rate multiplier and the tint the ground is drawn with, so
+    what the player reads off the terrain is exactly what the machine is
+    standing in, and where on a deposit a drill goes becomes a decision. The
+    outcrops that break the surface are ordinary `/core` harvest nodes LINKED to
+    the patch: same aim, same swing, same `of_gp_node_harvest`, but their
+    remaining amount is re-derived from the patch on every read, so a deposit
+    has one number however many outcrops stand on it. `probes/deposit.js` is the
+    acceptance and its most important assertion is the negative one: a drill
+    aimed at ground measured 14 m clear of every patch is refused with "you
+    cannot place a drill here, there is no ore" and the place key builds
+    nothing.
+
+96. **The depth buffer is REVERSED, so a decal's polygon offset means the
+    opposite of what every article about decals says.** The patch skin was
+    written with the conventional `polygonOffsetFactor: -3` to pull it in front
+    of the terrain. Under reversed-Z that pushes it BEHIND, and the result is
+    the worst kind of failure: the mesh reports visible, 448 vertices, alpha 1,
+    correct dark vertex colours, one draw call, and it is nowhere on screen. Two
+    more of the same class were in the same twenty lines: a ring mesh wound the
+    wrong way is invisible under `FrontSide` and reports equally healthy (it is
+    `DoubleSide` now, which costs nothing for one flat sheet), and
+    `MeshStandardMaterial`'s image-based lighting term, computed from the sky
+    environment on a nearly flat upward-facing surface, swamped an albedo that
+    dark: a deep blue-grey ore body rendered as pale wash and read as snow.
+    `MeshLambertMaterial`, and ore is matte anyway. The lift is 0.25 m of real
+    geometry, which no depth convention can invert.
+
+97. **A second dev server, with hot reload OFF, because probes and other people
+    editing files cannot share one.** A sixty-second driven run against the
+    normal 5173 server dies the moment anybody saves a file: vite reloads the
+    page and playwright reports "Execution context was destroyed" with a minute
+    of work and nothing to show. It looked like a probe bug for two runs.
+    `web/vite.probe.config.ts` serves the same sources on 5199 with `hmr: false`
+    and the watcher disabled, so a run measures the build it started with; pass
+    `--url=http://127.0.0.1:5199/` to `tools/smoke/run.mjs`. It has to be
+    restarted to pick up an edit, which is the whole point.
+
+98. **The voxel layer was SUBTRACTIVE BY CONSTRUCTION, and nobody noticed until
+    someone asked to build a base.** `VoxelEdits` held one set, `removed_`, so
+    "the player put a cell of ground here" was not a sentence the data model
+    could say. Digging worked, tunnels worked, persistence worked, and the whole
+    thing looked like a general terrain-editing layer right up until levelling a
+    slope needed fill as well as cut. That is a **core data-model** change, not a
+    client one, and it is the kind that is cheap early and expensive late: it
+    moved the save format, the ABI, the mesh callback's sign convention and the
+    surface function itself. The tell was in the header the whole time, a comment
+    reading "an `added` set is reserved for later placed-voxel support" over a
+    class that had no such member. **A reserved-for-later note in a comment is
+    not a seam. A seam is a type.** (WG-22.)
+
+99. **A pad is flat to about one voxel and never to zero, and that is the
+    MEDIUM.** A Cartesian 1 m lattice cut by a plane that is not axis-aligned
+    terminates on a staircase, so `levelArea` produces a floor whose sampled
+    height spread lands near one cell however perfectly it runs. Measured on a
+    26 degree hillside: 7.703 m of spread collapses to 1.511 m in `/core` and
+    2.893 m to 1.279 m in the browser. Two consequences worth writing down.
+    First, **a levelling tool cannot be verified on flat ground**: the spawn
+    clearing spans 1.5 m across a 12 m disc, which is inside the lattice's own
+    resolution, so levelling it and levelling nothing produce the same numbers,
+    and `probes/level.js` searches 610 candidate sites for a slope before it
+    measures anything. Second, the residual is worst at the **rim**, where the
+    column the oracle probes and the cell `levelArea` decides on can fall on
+    opposite sides of the disc boundary: a rim column is legitimately half cut
+    and reports its original height. Measure the pad, not its edge.
+
+100. **The op log is a history and a restore is a state, and replaying one over
+    the other quietly corrupts.** `VoxelSave.restoreEdits` deserializes /core's
+    bytes into the authoritative handle and *then* replays every recorded op
+    into the worker as a `digAt`. For a dig that is redundant. For a LEVEL it is
+    wrong in a way nothing would have reported: the log records a level with a
+    radius that bounds its whole touched cylinder, so replayed as a dig it
+    carves a 13 m sphere out of the pad it was supposed to describe. The fix is
+    not to teach the save layer about every future verb, it is to stop
+    reconciling the worker against a history of how the authority got to its
+    state: `of_streamer_load_edits` takes the same persistence bytes and
+    re-meshes near the observer, and `VoxelWorld.driftedFromCore()` is two
+    integer reads a tick that notice when the edit set moved by a route that
+    was not an op. **A replica kept in step by replaying commands is correct
+    only while commands are the only thing that writes.**
+
+101. **A probe that walks the wrong way measures open ground and reports it as a
+    tunnel.** `tunnelwalk.js` was read as a WG-22 regression and was not: the
+    parity fixture shows the terraforming change moved exactly two numbers in
+    `expected.json`, the save byte count and its hash, from a 7-byte format
+    header, while `voxel.removed`, the dirty AABB, the face count and hash,
+    `digColumn`, the tunnel-ceiling case and every streamed chunk hash are
+    bit-identical. What actually happens is that **the bore climbs**: at a
+    -12 deg aim each strike leaves a floor the walker steps up onto, so the eye
+    rises from 7.38 m below the designed base at the first forward strike to
+    0.62 m above it at the last, and the drive finishes standing in a second
+    mouth in daylight. The walk then pressed `KeyW`, which from there is away
+    across open ground: 17.25 m, 10/10 grounded, 0 blocked, **0/10 with rock
+    overhead, because there was no rock to be under**. Its own comment already
+    said "retreat along the tunnel, THEN walk back in"; the code pressed the
+    keys in the opposite order. A probe's premise can rot while every one of its
+    assertions stays correct, and the assertions are the part everybody reads.
+
 ### 15.3 The dev loop, concretely
 
 ```

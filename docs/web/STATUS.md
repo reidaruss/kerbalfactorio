@@ -297,6 +297,50 @@ needed was already there.
 Screenshots: `docs/screenshots/W7_tunnel_persisted.png`, `W7_icons.png`,
 `W7_belt_curve.png`, `W7_objectives.png`, `W7_ambience.png`.
 
+## An ore deposit is now a patch of ground (2026-07-26)
+
+**You put a mining drill ON a deposit.** A deposit used to be a boulder on the
+grass that a miner bound to if it was within 3.2 m. It is now a PATCH
+(`deposits.h` section P, DW-25): an irregular lobed area 6 to 11 m across
+holding ONE pool of one ore, deterministic from the seed, richest in the middle
+and thinning to nothing at the rim. The ground itself is tinted the resource's
+colour, so copper reads orange, iron grey-blue, coal black and stone pale from
+tens of metres away, and pieces of the ore body break the surface as outcrops.
+
+**The same coverage number is the tint and the rate**, so where on a patch a
+drill goes is a real decision and the ghost answers it before the key is
+pressed: "2.1 ore/s here", or, off the ore, **"you cannot place a drill here,
+there is no ore"**. Several drills on one patch is allowed; it is a piece of
+ground, not a socket.
+
+**Hand mining still bootstraps.** An outcrop is an ordinary `/core` harvest node
+LINKED to its patch, so the aim, the swing and `of_gp_node_harvest` are the ones
+a tree already takes. Bare hands always pay (3 raw ore a swing, 9 with the
+pickaxe), which is what makes the iron a drill costs reachable from an empty
+pack. The outcrop is a VIEW: its remaining amount is re-derived from the patch
+on every read, so a deposit has one number however many outcrops stand on it.
+
+Driven acceptance (`probes/deposit.js`, `valid: true`): a patch measured
+**8.14 m radius, 11.99 m of span across its own outcrops, 1,531 units at grade
+0.459**; one bare-handed swing granted **3 raw iron and the patch fell by
+exactly 3**; a drill left alone for 18 s took **17 units, the patch lost 17, the
+drain moved 17 and 17 arrived in the buffer**; a ghost on ground measured
+**14.26 m clear of every patch** was refused by name and the place key built
+**nothing** (0 buildings before, 0 after); and the depletion came back across a
+save with the world **regrown from the seed to 1,531 in between** and restored
+to 1,516. `/core` ticked 1,081 against an expected 1,080 (DW-20).
+
+**Draw calls: the whole ore field costs 1.** 40 on the surface against 39 before
+it, 44 to 47 with a drill and its patch filling the frame, against a budget of
+150. One merged geometry, one material, colours in a vertex attribute.
+
+22/22 ctest (4 new patch suites in `deposits_tests`, 1 in `survival_slice_tests`),
+self-determinism 119/119, cross-toolchain 94/94, ABI 3 (the `of_gp_patch_*`
+surface).
+
+Screenshots: `docs/screenshots/W7_ore_patch.png` (a drill standing on an iron
+patch), `W7_ore_patches_wide.png` (a copper patch reading orange at 26 m).
+
 ## Commands
 
 ```
