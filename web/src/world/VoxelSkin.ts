@@ -33,7 +33,9 @@
 // mouth and untouched ground are all ON the derived surface, so they do not,
 // and the terrain chunk draws them with the terrain's own colour and light.
 
+import * as THREE from 'three';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
+import { biomeColorArray, terrainAlbedo } from '../render/materials/BiomePalette.js';
 
 /** 5 i32 per face as /core hands them over: [cx, cy, cz, axis, sign]. */
 export const FACE_STRIDE = 5;
@@ -105,43 +107,36 @@ export function filterDrawnFaces(
   return { i32: out.subarray(0, kept * FACE_STRIDE), count: kept, dropped: count - kept };
 }
 
-export interface TerrainAttributes {
-  /** aBiome: [biomeId, materialId, hardness, flags] as unnormalized uint8. */
-  biome: Uint8Array;
-  /** aHeight: relief above the datum in metres, what drives the snow band. */
-  height: Float32Array;
-  /** aFadeT0: 0 = "arrived at time 0", i.e. fully faded in for the whole run. */
-  fade: Float32Array;
-}
-
 /**
- * The three per-vertex attributes `TerrainMaterial` reads, derived for a voxel
- * mesh so it can use that material rather than a look-alike of its own.
+ * PER-VERTEX ALBEDO for the near voxel mesh, from the SAME palette and the same
+ * slope-to-rock rule the terrain chunk beside it uses (BiomePalette).
  *
- * This is standing rule 1 applied to shading: cut rock gets the biome palette
- * entry, the slope-to-rock mix, the snow band, the cascaded shadow and the
- * aerial perspective from the SAME program the terrain chunk beside it runs, so
- * a tunnel mouth and the hillside it is cut into cannot be a different colour
- * under any lighting.
+ * The mesh keeps a `MeshLambertMaterial`, so `Headlamp` stays the one lighting
+ * authority and a tunnel still goes dark and still lifts when the lamp comes
+ * on. Only the colour is imported. Getting this from anywhere else is how cut
+ * rock ends up reading as a different substance from the hillside it is in.
  *
- * `positions` are metres relative to `anchorAbs` (standing rule 6); the height
- * is recovered in body-frame metres, the same quantity a chunk vertex carries.
+ * `positions` are metres relative to `anchorAbs` (standing rule 6). The normal
+ * of every vertex is an axis of the body frame, so `dot(n, up)` varies across
+ * the mesh and a face that happens to point up takes the biome's surface colour
+ * while a wall takes rock, exactly as the terrain shader does it.
  */
-export function terrainAttributes(
-  positions: Float32Array, anchorAbs: readonly [number, number, number],
-  bodyRadiusM: number, biomeId: number,
-): TerrainAttributes {
-  const n = positions.length / 3;
-  const biome = new Uint8Array(n * 4);
-  const height = new Float32Array(n);
-  const fade = new Float32Array(n);
+export function faceColours(
+  positions: Float32Array, normals: Float32Array,
+  anchorAbs: readonly [number, number, number],
+  bodyRadiusM: number, maxReliefM: number, biomeId: number,
+): Float32Array {
+  const palette = biomeColorArray();
+  const biome = palette[Math.min(palette.length - 1, Math.max(0, biomeId))];
+  const out = new Float32Array(positions.length);
+  const c = new THREE.Color();
   const [ax, ay, az] = anchorAbs;
-  for (let i = 0; i < n; ++i) {
-    const x = ax + positions[i * 3];
-    const y = ay + positions[i * 3 + 1];
-    const z = az + positions[i * 3 + 2];
-    height[i] = Math.hypot(x, y, z) - bodyRadiusM;
-    biome[i * 4] = biomeId;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = ax + positions[i], y = ay + positions[i + 1], z = az + positions[i + 2];
+    const r = Math.hypot(x, y, z) || 1;
+    const flat = (normals[i] * x + normals[i + 1] * y + normals[i + 2] * z) / r;
+    terrainAlbedo(biome, Math.max(0, flat), (r - bodyRadiusM) / Math.max(1, maxReliefM), c);
+    out[i] = c.r; out[i + 1] = c.g; out[i + 2] = c.b;
   }
-  return { biome, height, fade };
+  return out;
 }

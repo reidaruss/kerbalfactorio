@@ -210,8 +210,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const voxels = player === null ? null : new VoxelWorld(core, oracle);
   const voxelMesh = voxels === null ? null
     : new VoxelMesh(core, body.handle, voxels.handle, origin, {
-      material: t.materials.near,
       bodyRadiusM: body.radiusM,
+      maxReliefM: body.maxReliefM,
       surfaceRadiusAt: (dx, dy, dz) => oracle.surfaceRadius(dx, dy, dz),
       editFacesOnly: cfg.voxelSkinEditsOnly,
     });

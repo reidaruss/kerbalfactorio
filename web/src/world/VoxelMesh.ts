@@ -6,8 +6,10 @@
 // levelled pad, is the terrain chunk's and always was (VoxelSkin, and the field
 // of dark pyramids that motivated it).
 //
-// It is shaded with the terrain's OWN material, so a tunnel mouth and the
-// hillside it is cut into are the same program, palette and light.
+// Its COLOUR comes from the terrain's own biome palette and slope-to-rock rule
+// (VoxelSkin.faceColours), so a tunnel mouth and the hillside it is cut into
+// read as one substance; its LIGHT stays Headlamp's, which is why the material
+// is still a Lambert and not the terrain's own program.
 //
 // One responsibility: geometry + placement. It does not dig (VoxelWorld), does
 // not decide the box, and does not collide (KinematicBody resolves against
@@ -19,7 +21,7 @@ import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import type { CellBox } from './VoxelWorld.js';
 import { greedyMesh, type GreedyMesh } from './VoxelGreedy.js';
-import { filterDrawnFaces, terrainAttributes, FACE_STRIDE } from './VoxelSkin.js';
+import { filterDrawnFaces, faceColours, FACE_STRIDE } from './VoxelSkin.js';
 import type { SurfaceRadiusFn } from './VoxelSkin.js';
 
 /**
@@ -56,14 +58,15 @@ export interface VoxelMeshStats {
   dropped: number;
   /** false with `?voxelskin=0`: the whole solid-to-air shell, as W5 drew it. */
   editFacesOnly: boolean;
+  /** The /core biome the vertex colours were taken from. */
+  biome: number;
 }
 
 export interface VoxelMeshOptions {
-  /** The terrain's own material. Shading a levelled pad with anything else is
-   *  how it stops looking like ground. */
-  readonly material: THREE.Material;
-  /** Datum radius, so a vertex can carry the same relief a chunk vertex does. */
+  /** Datum radius and max relief: the two numbers the terrain's own albedo rule
+   *  needs to place a vertex in the snow band (BiomePalette.terrainAlbedo). */
   readonly bodyRadiusM: number;
+  readonly maxReliefM: number;
   /** The ONE surface, so this mesh can tell what the terrain chunk already
    *  draws from what only it can (standing rule 1). */
   readonly surfaceRadiusAt: SurfaceRadiusFn;
@@ -77,8 +80,7 @@ export interface VoxelMeshOptions {
 
 export class VoxelMesh {
   readonly mesh: THREE.Mesh;
-  /** Non-null only under `?voxelskin=0`, where this mesh owns its own look. */
-  private readonly ownMaterial: THREE.Material | null;
+  private readonly ownMaterial: THREE.Material;
   private readonly geo = new THREE.BufferGeometry();
   /** Body-frame anchor the f32 vertices are relative to (standing rule 6). */
   private readonly anchor: Vec3d = { x: 0, y: 0, z: 0 };
@@ -89,6 +91,7 @@ export class VoxelMesh {
   readonly stats: VoxelMeshStats = {
     rebuilds: 0, faces: 0, quads: 0, triangles: 0, lastMs: 0, mergeRatio: 0,
     boxes: 0, bricks: 0, remeshed: 0, exposed: 0, dropped: 0, editFacesOnly: true,
+    biome: -1,
   };
 
   constructor(
@@ -98,17 +101,16 @@ export class VoxelMesh {
     private readonly origin: FloatingOrigin,
     private readonly opts: VoxelMeshOptions,
   ) {
-    // The TERRAIN material, not a look-alike. A voxel face and the chunk vertex
-    // beside it then share the biome palette entry, the slope-to-rock mix, the
-    // snow band, the cascade and the aerial perspective, so "the pad is the
-    // same colour as the ground" is structural rather than a tuned constant.
-    // It costs no new shader against the DW-10 cap of five: three compiles the
-    // non-batched variant of a program it already has.
-    // `?voxelskin=0` also restores the OLD look, or the isolation would only
-    // show half of what changed.
-    this.ownMaterial = opts.editFacesOnly ? null
-      : new THREE.MeshLambertMaterial({ color: 0x8a7a63, flatShading: true });
-    this.mesh = new THREE.Mesh(this.geo, this.ownMaterial ?? opts.material);
+    // Lambert, because Headlamp is the lighting authority underground and the
+    // terrain's own program ignores three's light list entirely: shading this
+    // mesh with it made a tunnel stop responding to the lamp (lift 3.46x ->
+    // 1.12x, measured). Colour is imported instead of light. `?voxelskin=0`
+    // restores the flat brown W5 shipped, or the isolation would show only half
+    // of what changed.
+    this.ownMaterial = new THREE.MeshLambertMaterial(opts.editFacesOnly
+      ? { vertexColors: true, flatShading: true }
+      : { color: 0x8a7a63, flatShading: true });
+    this.mesh = new THREE.Mesh(this.geo, this.ownMaterial);
     this.stats.editFacesOnly = opts.editFacesOnly;
     this.mesh.name = 'voxelNear';
     this.mesh.frustumCulled = false;
@@ -221,15 +223,15 @@ export class VoxelMesh {
     const ar = Math.hypot(this.anchor.x, this.anchor.y, this.anchor.z) || 1;
     const biomeId = this.M._of_biome_at(
       this.bodyHandle, this.anchor.x / ar, this.anchor.y / ar, this.anchor.z / ar);
-    const attrs = terrainAttributes(
-      mesh.positions, [this.anchor.x, this.anchor.y, this.anchor.z],
-      this.opts.bodyRadiusM, biomeId);
+    this.stats.biome = biomeId;
 
     this.geo.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
     this.geo.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
-    this.geo.setAttribute('aBiome', new THREE.BufferAttribute(attrs.biome, 4, false));
-    this.geo.setAttribute('aHeight', new THREE.BufferAttribute(attrs.height, 1));
-    this.geo.setAttribute('aFadeT0', new THREE.BufferAttribute(attrs.fade, 1));
+    if (this.opts.editFacesOnly) {
+      this.geo.setAttribute('color', new THREE.BufferAttribute(faceColours(
+        mesh.positions, mesh.normals, [this.anchor.x, this.anchor.y, this.anchor.z],
+        this.opts.bodyRadiusM, this.opts.maxReliefM, biomeId), 3));
+    }
     this.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     this.geo.computeBoundingSphere();
     this.mesh.visible = mesh.indices.length > 0;
@@ -243,10 +245,9 @@ export class VoxelMesh {
     this.stats.bricks = this.bricks.size;
   }
 
-  /** The terrain material belongs to whoever made it; only ours is disposed. */
   dispose(): void {
     this.geo.dispose();
-    this.ownMaterial?.dispose();
+    this.ownMaterial.dispose();
     this.mesh.removeFromParent();
   }
 }

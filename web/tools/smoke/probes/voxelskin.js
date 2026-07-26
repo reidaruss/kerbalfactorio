@@ -22,7 +22,7 @@
 //      swing or a levelling disc used to land, in metres.
 //   3. COLOUR. Rendered pixels of the levelled pad against rendered pixels of
 //      untouched terrain at the same pitch and a similar range. Two aims, two
-//      canvas captures, mean RGB of a 64 px box at each. "Looks like terrain"
+//      canvas captures, mean RGB of a 240 px box at each. "Looks like terrain"
 //      is an opinion; a per-channel difference with a stated tolerance is not.
 //   4. COST. Draw calls, frame p50/p99 and the re-mesh time a level costs.
 //
@@ -305,10 +305,10 @@
   if (aimPad !== null && aimGround !== null) {
     of.look(aimPad.yaw, aimPad.pitch);
     await settle(0.5);
-    const padRGB = await meanRGB(A.sampleHalfPx ?? 32);
+    const padRGB = await meanRGB(A.sampleHalfPx ?? 120);
     of.look(aimGround.yaw, aimGround.pitch);
     await settle(0.5);
-    const groundRGB = await meanRGB(A.sampleHalfPx ?? 32);
+    const groundRGB = await meanRGB(A.sampleHalfPx ?? 120);
     const dR = padRGB.map((v, i) => Math.abs(v - groundRGB[i]));
     const lum = (c) => (c[0] * 77 + c[1] * 151 + c[2] * 28) / 256;
     const rel = Math.max(...dR) / Math.max(1, Math.max(...groundRGB));

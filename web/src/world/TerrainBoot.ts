@@ -33,8 +33,8 @@ const SKIRT_FRACTION_DEFAULT = 0.15;
 export interface TerrainBootResult {
   stream: TerrainStream;
   pool: ChunkGeometryPool;
-  /** The near/far terrain materials, so the near voxel mesh can use the same
-   *  program the chunks do rather than inventing a second look for ground. */
+  /** The near/far terrain materials. Exposed so a caller can reach the one
+   *  program the ground is drawn with rather than growing a second. */
   materials: TerrainMaterials;
   pooledBytes: number;
   indexBytes: number;
