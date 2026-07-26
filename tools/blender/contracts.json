@@ -217,6 +217,57 @@
       ],
       "clips": ["Inserter_Swing"],
       "collision": "col_Inserter"
+    },
+    "primitive_furnace": {
+      "glb": "assets/models/dist/machines/primitive_furnace.glb",
+      "type_id": "0x30",
+      "footprint_cells": [1, 1],
+      "lod0_node": "PrimitiveFurnace_LOD0",
+      "lod_nodes": [
+        "PrimitiveFurnace_LOD0",
+        "PrimitiveFurnace_LOD1",
+        "PrimitiveFurnace_LOD2"
+      ],
+      "dims_xyz_m": [1.0, 1.40, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 500,
+      "max_tris_total": 780,
+      "max_materials": 4,
+      "sockets": [
+        "socket_item_in",
+        "socket_item_out",
+        "socket_fuel_in",
+        "socket_smoke",
+        "socket_status"
+      ],
+      "clips": ["Furnace_Glow"],
+      "collision": "col_PrimitiveFurnace"
+    },
+    "survival_smelter": {
+      "glb": "assets/models/dist/machines/survival_smelter.glb",
+      "type_id": "0x31",
+      "footprint_cells": [2, 2],
+      "lod0_node": "SurvivalSmelter_LOD0",
+      "lod_nodes": [
+        "SurvivalSmelter_LOD0",
+        "SurvivalSmelter_LOD1",
+        "SurvivalSmelter_LOD2"
+      ],
+      "dims_xyz_m": [2.0, 2.00, 2.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 700,
+      "max_tris_total": 1150,
+      "max_materials": 5,
+      "sockets": [
+        "socket_item_in",
+        "socket_item_out",
+        "socket_fuel_in",
+        "socket_bellows",
+        "socket_smoke",
+        "socket_status"
+      ],
+      "clips": ["Smelter_Bellows", "Furnace_Glow"],
+      "collision": "col_SurvivalSmelter"
     }
   }
 }

@@ -74,7 +74,9 @@ node web/wasm/test/diag.mjs             # determinism diagnostic (needs --diag d
 `parity.mjs` gates on two tiers and reports a third:
 
 * **Tier 0 — self-determinism** (gating): the WASM module reproduces itself
-  bit-for-bit, and shared quad edges are bit-identical (crack-free).
+  bit-for-bit, shared quad edges are bit-identical (crack-free), and **every
+  export that answers "where is the ground" reads the surface oracle** (CASE 7b,
+  the guard for the audit in WASM-BRIDGE.md §4.0).
 * **Tier A — cross-toolchain, transcendental-free** (gating): factory sim, voxel
   layer, persistence bytes, LOD selection, index buffers.
 * **Tier B — cross-toolchain, transcendental-dependent** (informational): the

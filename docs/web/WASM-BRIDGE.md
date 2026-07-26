@@ -149,16 +149,78 @@ Signatures below are the C declarations; call them in JS as `M._of_name(...)`.
 position in metres. `editsId <= 0` everywhere means "no digs" (the pristine
 procedural world).
 
+### 4.0 Surface authority: which export reads what
+
+**One surface: [`surface_field.h`](../../core/include/of/surface_field.h) (WG-21,
+[DECISIONS.md](DECISIONS.md) standing rule 1).** `baseHeight` (identically
+`sampleDesignedHeight`) is the designed relief; `surfaceHeight` is that minus the
+voxel-derived lowering with the single bedrock clamp. RAW `sampleHeightField` is
+an **internal ingredient** of the designed shaping and of the biome classifier.
+Nothing stands on it, collides with it or is positioned relative to it. On Forge
+the two disagree by kilometres.
+
+The audit of 2026-07-25 walked every export and found **three** places the bridge
+had drifted off the authority. Fixed in ABI 2; the table is the contract.
+
+| Export | Reads | Notes |
+|---|---|---|
+| `of_base_height` | **oracle** `baseHeight` | the designed base |
+| `of_surface_height` / `of_surface_radius` | **oracle** `surfaceHeight` | base minus lowering, one clamp |
+| `of_derived_lowering` | **oracle** | top-anchored open-column depth |
+| `of_solid_at` / `of_solid_cell` | **oracle** | designed shell XOR removed |
+| `of_edits_dig` / `of_exposed_faces` | **oracle** (via `VoxelEdits::isSolid`) | designed since WG-21 |
+| `of_sample_designed_height_latlon` | **oracle** base at a geo coord | same value as `of_base_height` |
+| `of_chunk_*` (streamed chunk data) | **oracle** (via `buildChunk`) | designed base + bound lowering |
+| `of_chunk_packed` | **oracle** | positions/heights from the chunk above |
+| `of_quadmesh_generate` | **oracle when `rawBase == 0`** | **was a violation:** the flag used to be `designedBase`, so `0` (the value a forgetful caller passes) selected RAW. Zero now means correct, and raw-base + edits is rejected |
+| `of_observer_latlon_alt` | **oracle** `surfaceRadius` | **was a violation:** built on `makeObserverLatLonAlt`, i.e. RAW. See below |
+| `of_chunk_max_offset` | geometry only | **was wrong as a bound:** largest single AXIS offset, interior only. Now the true Euclidean radius over interior + skirt |
+| `of_biome_at`, `of_temperature_at`, `of_moisture_at` | RAW **as a classifier input** | legitimate: `biome.h` defines climate on the raw field. Not a surface |
+| `of_sample_raw_height_latlon` | RAW | **diagnostic only**, RAW is in the name. Never position anything with it |
+| `of_diag_scan_quad` | RAW **and** designed, side by side | diagnostic: its whole job is to expose the gap |
+| `of_body_radius`, `of_quadmesh_chunk_radius`, `of_chunk_anchor` | neither | datum / geometric extents, no relief |
+
+**The observer defect, concretely.** `of_observer_latlon_alt` called
+`terrain_stream.h`'s `makeObserverLatLonAlt`, which samples the raw heightfield.
+At lat 48 / lon 18 on Forge (seed `0x0BF00D01`) that is **4,075.51 m** where the
+designed surface is **6,520.81 m**, so an "altitude 60 m" observer was placed
+**2,445.30 m underground** and every terrain chunk rendered behind the camera.
+It now returns `dir * (of_surface_radius(body, edits, dir) + altM)` bit-exactly,
+and takes the `edits` handle so altitude is measured above the surface the player
+actually walks on, digs included.
+
+Two things keep it fixed: `dump_expected.cpp` **CASE 7b** self-checks the
+identity natively and refuses to emit a fixture if it breaks, and `parity.mjs`
+**CASE 7b** asserts both halves in WASM: the observer *equals* the oracle
+position, and it *does not* equal the raw one (that negative half matters. If raw
+and designed ever agreed at the sample point the test would pass vacuously, so
+the gap itself is asserted).
+
+Rules for any export added later:
+
+1. Anything that answers "where is the ground" calls the oracle.
+2. RAW may be exposed only with RAW in the name, documented as a diagnostic.
+3. **Zero means correct.** If a flag picks an authority, `0` picks the oracle.
+4. Never mix bases. A lowering computed against the designed base must never be
+   applied to a raw base; that is the original WG-21 bug rebuilt by hand.
+
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 1
+int      of_abi_version(void);                 // 2
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
 int32_t* of_scratch_i32(void);
 uint8_t* of_scratch_u8(void);
 ```
+
+`of_abi_version` is checked at load (`OfCore.ts`) and a mismatch throws, so a
+stale `.wasm` fails loudly instead of misbehaving. **ABI 2** (2026-07-25, the
+surface-authority audit) changed three things: `of_observer_latlon_alt` gained an
+`edits` parameter and now reads the oracle; `of_quadmesh_generate`'s last
+parameter became `rawBase`, inverting its polarity so `0` is the safe value; and
+`of_chunk_max_offset` became a true Euclidean bound including the skirt.
 
 ### 4.2 Bodies
 
@@ -201,6 +263,11 @@ void   of_dir_to_latlon(double dx, double dy, double dz); // -> f64 scratch [lat
 `baseHeight ≡ sampleDesignedHeight` (WG-21: the single surface authority).
 `surfaceHeight = clamp(base − derivedLowering, base − 80 m)`. With no edits
 bound, `surfaceHeight` returns `baseHeight` **bit-identically**.
+
+`of_sample_raw_height_latlon` is a **diagnostic, not a surface** ([§4.0](#40-surface-authority-which-export-reads-what)).
+It exists so a test can prove the raw/designed gap is still there and that
+nothing is reading it by accident. To position anything, use `of_surface_radius`
+or `of_observer_latlon_alt`.
 
 ### 4.4 Biomes
 
@@ -252,7 +319,7 @@ lowering** over an intact ceiling (proven in parity, [§6](#6-parity-the-result-
 
 ```c
 int of_quadmesh_generate(int body, int faceId, int depth, uint32_t qx, uint32_t qy,
-                         int edits, int designedBase);   // -> mesh handle
+                         int edits, int rawBase);        // -> mesh handle, 0 on error
 void of_quadmesh_destroy(int mesh);
 int  of_quadmesh_grid_dim(int mesh);        // 33
 int  of_quadmesh_vertex_count(int mesh);    // 1089
@@ -266,9 +333,17 @@ void    of_quadmesh_center(int mesh);             // -> f64 scratch [x,y,z]
 int     of_quadmesh_positions_f64(int mesh);      // -> f64 scratch, 3N exact
 ```
 
-Pass `designedBase = 1` for the surface everything else in the engine reads.
-`designedBase = 0` selects the raw heightfield and exists only to reproduce the
-historical `cubed_sphere.h` determinism baselines.
+**`rawBase = 0` is the surface everything else in the engine reads** (the oracle's
+designed base, exactly what `buildChunk` uses). `rawBase = 1` selects the raw
+heightfield and exists only to reproduce the historical `cubed_sphere.h`
+determinism baselines. Before ABI 2 this parameter was `designedBase`, so a
+caller passing `0` silently got a raw mesh; the polarity was inverted so the
+default value is the correct one.
+
+`rawBase = 1` **with an edits handle bound returns 0** (refused). The
+voxel-derived lowering is defined against the designed base, so subtracting it
+from a raw base recreates the "mesh and edits disagree about the base" defect
+WG-21 removed.
 
 ### 4.7 Terrain streaming
 
@@ -279,7 +354,8 @@ int  of_streamer_create(int body, double splitRatio, double mergeHysteresis,
 void of_streamer_destroy(int s);
 void of_streamer_set_edits(int s, int edits);   // bind voxel dig lowering (0 = none)
 
-void of_observer_latlon_alt(int body, double lat, double lon, double altM);
+void of_observer_latlon_alt(int body, int edits,
+                            double lat, double lon, double altM);
                                                 // -> f64 scratch [x,y,z]
 int  of_streamer_update(int s, double ox, double oy, double oz);  // -> ready count
 int  of_streamer_ready_count(int s);
@@ -297,6 +373,12 @@ Defaults if you pass 0: `splitRatio 1.0`, `mergeHysteresis 0.6`, `maxDepth 14`,
 `skirtFraction 0.5`. `genBudget` caps meshes built per update (0 = unlimited);
 the resident set converges to the same set over several budgeted updates.
 
+`of_observer_latlon_alt` takes lat/lon in **radians** and `altM` **above the
+surface oracle**: it returns exactly `dir * (of_surface_radius(body, edits, dir)
++ altM)`, so with an edits handle bound the altitude follows the player's digs.
+See [§4.0](#40-surface-authority-which-export-reads-what) for why this is the one
+export the audit was opened for.
+
 Per-ready-chunk accessors, indexed `0..readyCount-1`, **valid until the next
 `of_streamer_update`**:
 
@@ -311,8 +393,21 @@ int of_chunk_normals_f32(int s, int i);
 int of_chunk_dirs_f32(int s, int i);
 int of_chunk_skirt_f32(int s, int i);
 int of_chunk_heights_f64(int s, int i);       // exact, for physics
-double of_chunk_max_offset(int s, int i);     // max |vertex - centre|, metres
+double of_chunk_max_offset(int s, int i);     // bounding radius, metres
 ```
+
+`of_chunk_max_offset` is the chunk's **bounding radius**: the largest Euclidean
+`|vertex − centre|` over **every vertex the chunk emits, interior grid and skirt
+ring**. Pair it with `of_chunk_anchor`'s centre for a bounding sphere, and use it
+to bound the float32 quantization of the packed positions (`quantum ≤ r · 2⁻²³`).
+
+Before ABI 2 it returned the largest single-**axis** offset (an L∞ half-extent,
+up to √3 short of the radius) over the **interior only**, while the skirt hangs
+radially inward and is routinely the furthest geometry: 52,639 m reported for a
+depth-3 Forge chunk whose furthest emitted vertex is 108,403 m out. Used as a
+bounding sphere that frustum-culled chunks that were on screen. It now equals,
+to f32 rounding, the maximum the renderer's own de-interleave loop measures over
+the packed buffer, which is what `parity.mjs` CASE 7c asserts.
 
 `of_chunk_anchor`'s centre is the chunk's **64-bit authority position**. The
 renderer places the mesh at `centre − floatingOrigin`; the vertex data never
@@ -364,17 +459,43 @@ Triangle order per cell, with `a=(i,j) b=(i+1,j) c=(i,j+1) d=(i+1,j+1)`:
 `(a,c,b)` then `(b,c,d)`. Interior indices come first so the renderer can draw
 interior and skirt as separate ranges.
 
-Binding it:
+**Consuming it: de-interleave, do not bind the interleaved buffer directly.**
+
+An earlier revision of this section showed a `THREE.InterleavedBuffer` over the
+28-byte stride with one `InterleavedBufferAttribute` per attribute. **That does
+not work and never did.** `InterleavedBufferAttribute` takes its GL type from the
+*backing array of the shared `InterleavedBuffer`*, not per attribute, so one
+buffer cannot carry float32 positions **and** int8 normals **and** uint16 UVs.
+Only a single-type layout can be bound that way. The snippet is corrected here
+because W1 hit it in practice.
+
+What the client actually ships (`web/src/world/ChunkFormat.ts`,
+`web/src/workers/terrain.worker.ts`, `web/src/render/geometry/ChunkGeometryPool.ts`):
+the worker copies the packed span out of the heap and **de-interleaves it in one
+pass into a single `ArrayBuffer` with five contiguous, 4-byte-aligned sections**
+(position f32×3, height f32, uv u16×2, biome u8×4, normal i8×3, int8 last). That
+is still exactly **one transferable per chunk**, still a constant size, and the
+pass is not wasted work: it also computes the chunk's exact bounding radius while
+it is already touching every vertex. The main thread never re-reads the WASM heap
+for chunk geometry.
 
 ```js
+// worker: WASM heap -> one transferable blob (five sections)
 const nBytes = M._of_chunk_packed(streamer, i);
-const p = M._of_scratch_u8();
-const raw = M.HEAPU8.subarray(p, p + nBytes).slice();   // copy: it must outlive the next call
-const ib  = new THREE.InterleavedBuffer(new Float32Array(raw.buffer), 28 / 4);
-geom.setAttribute('position', new THREE.InterleavedBufferAttribute(ib, 3, 0));
-// normal: Int8, normalized, byteOffset 12 | uv: Uint16, normalized, byteOffset 16
-// biome:  Uint8,  byteOffset 20          | height: Float32, byteOffset 24
+const packed = scratchU8(M, nBytes).slice().buffer;   // copy out; also 4-byte aligned
+const blob   = new ArrayBuffer(layout.byteLength);
+const radius = deinterleave(packed, chunkBlobViews(blob, layout), verts);
+postMessage({ ...meta, blob, maxOffsetM: radius }, [blob]);
+
+// main thread: five plain BufferAttributes, pre-allocated once per pool slot
+pool.upload(slot, blob, layout, maxOffsetM);   // attr.array.set(section) + needsUpdate
 ```
+
+The pool allocates every attribute once at construction (`kGridDim` is
+`constexpr`, so all chunks are 1,217 vertices), so stream-in is `set` plus
+`needsUpdate` with zero allocation and zero `dispose` during play. Interior
+indices come first in `of_chunk_index_buffer`, which lets the pool draw the skirt
+as a separate range via `setDrawRange`.
 
 **A note on "biome weights":** `/core`'s `biomeAt` is a *hard* classifier — one
 biome per direction — so there is no 4-way weight vector to pack. The four bytes
@@ -530,9 +651,22 @@ before emitting, and refuses to write a fixture if any of them break.
 
 | Tier | Result | Gating |
 |---|---|---|
-| **0 — self-determinism** (WASM vs itself) | **19 / 19** | yes |
+| **0 — self-determinism** (WASM vs itself) | **29 / 29** | yes |
 | **A — cross-toolchain, transcendental-free** | **94 / 94** | yes |
-| **B — cross-toolchain, transcendental-dependent** | 138 / 141 | no |
+| **B — cross-toolchain, transcendental-dependent** | 147 / 150 | no |
+
+Tier 0 grew from 19 to 29 in the 2026-07-25 surface-authority audit: **CASE 7b**
+(the observer equals the oracle position bit-exactly, does *not* equal the raw
+one, the raw/designed gap is real, and a dug column lowers the observer by
+exactly the derived lowering) and **CASE 7c** (`of_chunk_max_offset` equals the
+bound measured over the packed buffer, and the skirt is what sets it). Tier B
+grew by the nine fixture-pinned doubles those cases emit; all nine pass.
+
+The audit re-baselined the fixture by exactly three lines, and *what did not
+change* is the evidence the fix is scoped: `abi` 1 → 2, the parity observer's
+`obsX/Y/Z` (it now sits 514.78 m higher, on the designed surface), and the new
+`observer` block. Every streaming update hash, per-chunk content hash, LOD
+`keyHash` and both quad-mesh content hashes are byte-identical to before.
 
 ### 6.1 Tier 0 — the property that actually matters: PASS
 
@@ -546,7 +680,9 @@ Inside one WASM binary, everything reproduces exactly:
   counts, miner state, belt occupancy;
 * two identical voxel edit sets → identical removed sets, identical
   `surfaceHeight`, identical serialized bytes;
-* two independent module instances agree, and their heaps are isolated.
+* two independent module instances agree, and their heaps are isolated;
+* **the observer position is the surface oracle's, bit-exactly, and provably not
+  the raw heightfield's** (CASE 7b, [§4.0](#40-surface-authority-which-export-reads-what)).
 
 This is the property multiplayer determinism and seed-and-diff persistence
 require, and every client runs this same binary.
@@ -765,3 +901,19 @@ Open items for Admin:
 3. **Op-log plumbing** between the main-thread `VoxelEdits` and worker instances
    ([§5.2](#52-the-ownership-corollary--plan-for-it)) is a renderer/networking
    integration task; the shim provides everything it needs.
+4. **ABI 2 requires a two-line client change** (W2): bump `OF_ABI_VERSION` in
+   `web/src/sim/wasm/OfCore.ts` to `2`, and update the
+   `_of_observer_latlon_alt(body, edits, lat, lon, altM)` declaration in
+   `web/src/sim/wasm/heap.ts`. Until then `loadOfCore` throws on the version
+   check, which is the intended loud failure.
+
+### 9.1 Process finding from the 2026-07-25 audit
+
+[DECISIONS.md](DECISIONS.md) standing rule 1 ("one surface authority; no module
+re-derives terrain height") was written, and the very next component built
+against it (this bridge) broke it in three places on the first pass, including
+one that put the player 2.4 km underground. A rule in a document is not a
+control. Every authority-sensitive contract now needs an executable guard that
+fails the build, which is what CASE 7b/7c are. The pattern worth copying: assert
+the positive identity **and** the negative one, so the test cannot start passing
+because both sides quietly became the same wrong thing.
