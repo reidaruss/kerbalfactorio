@@ -139,6 +139,8 @@ export interface OfDebugApi {
   repopulate(): unknown;
   /** DW-17. Put the rock back: the voxel layer's `repopulate`. */
   forgetTunnels(): unknown;
+  /** W7. The first-minute checklist, and the H key that hides it. */
+  goals(show?: boolean): unknown;
 }
 
 export interface AimRay {

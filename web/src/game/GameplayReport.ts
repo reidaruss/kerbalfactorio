@@ -32,6 +32,10 @@ export function gameplayReport(g: Gameplay): unknown {
       // of 0 bytes is a render that produced nothing, which is exactly the
       // failure "14 icons loaded" would hide.
       icons: { ...g.icons.stats, bytes: g.icons.sizes() },
+      // W7. The checklist reports the WORLD's verdict, not a stored flag: the
+      // predicates are re-asked, so a report that says an objective is done is
+      // the same evidence the panel drew.
+      goals: g.goals.report(),
       persist: { saves: g.saves, restored: g.restored },
       demolition: {
         buildings: g.factory.removals, machines: g.machines.removals,

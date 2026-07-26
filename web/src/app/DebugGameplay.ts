@@ -11,6 +11,7 @@ import { renderVoices } from '../audio/Sfx.js';
 import { renderBeds } from '../audio/Beds.js';
 import { clearSlot } from '../game/SaveGame.js';
 import { clearEdits } from '../game/VoxelSave.js';
+import { showGoals } from '../game/Objectives.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 
@@ -78,6 +79,15 @@ export function gameplayApi(s: Services, loop: Loop) {
     // generated world, so restoring onto a world that is already more depleted
     // than the save is a state a real boot can never be in.
     repopulate() { s.gameplay?.populate(); return s.gameplay?.report() ?? null; },
+
+    // W7. The H key's own handler, so a probe cannot hide the checklist by a
+    // path a player has no access to.
+    goals(show?: boolean) {
+      const g = s.gameplay;
+      if (g === undefined || g === null) return null;
+      if (show !== undefined) showGoals(g, show);
+      return g.goals.report();
+    },
 
     // DW-17, the voxel half of `repopulate`: put the rock back, so a restore is
     // verified against a world with no digs in it, which is the only state a

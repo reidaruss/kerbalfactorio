@@ -367,3 +367,46 @@
   margin-right: 4px;
 }
 #of-carry .row span { display: inline-flex; align-items: center; }
+
+/* --- W7 the first-minute checklist --------------------------------------
+   Top right, no panel chrome heavy enough to sit over the world, and
+   pointer-events off so it can never eat a click meant for the game. */
+#of-goals {
+  right: 14px;
+  top: 12px;
+  width: 232px;
+  padding: 8px 10px;
+  background: rgba(12, 16, 20, 0.62);
+  border: 1px solid var(--of-edge);
+  border-left: 2px solid var(--of-accent);
+  pointer-events: none;
+}
+#of-goals h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--of-dim);
+  text-transform: uppercase;
+}
+#of-goals h4 span { float: right; letter-spacing: 0; color: #4d5a65; }
+#of-goals ul { margin: 0; padding: 0; list-style: none; }
+#of-goals li {
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 2px 0 2px 15px;
+  position: relative;
+  color: var(--of-dim);
+}
+#of-goals li::before { position: absolute; left: 0; content: "\00b7"; }
+#of-goals li.ok { color: #4d5a65; text-decoration: line-through; }
+#of-goals li.ok::before { content: "\2713"; color: var(--of-accent); }
+#of-goals li.now { color: var(--of-ink); font-weight: 600; }
+#of-goals li.now::before { content: "\25b8"; color: var(--of-accent); }
+#of-goals li.soon { opacity: 0.55; }
+#of-goals .hint {
+  display: block;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--of-dim);
+}

@@ -28,9 +28,13 @@ import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
 import { demolishAimed } from './Demolition.js';
 import { aimPrompt } from './FactoryReport.js';
-import { furnaceView, nodeDump, recipeRows, slotRows } from './GameplayViews.js';
+import { nodeDump } from './GameplayViews.js';
+import { collectFrom, craft, loadFurnace, machineView, placeMachine, recipes, slots,
+  takeFurnace } from './GameplayActions.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
+import { Objectives, showGoals, stepGoals } from './Objectives.js';
+import { ObjectivePanel } from '../ui/ObjectivePanel.js';
 import { gameplayReport } from './GameplayReport.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -72,6 +76,10 @@ export class Gameplay {
   readonly icons = new ItemIcons();
   /** W7: the world's own sound bed. A silent planet reads as a tech demo. */
   readonly ambience: Ambience;
+  /** W7: the first minute. A checklist that watches, never a tutorial. */
+  readonly goals = new Objectives();
+  readonly goalPanel: ObjectivePanel;
+  private goalHeld = false;
   /** W6 automation: the plan, its art, and the build menu that edits it. */
   readonly factory: Factory;
   readonly factoryView: FactoryView;
@@ -110,10 +118,13 @@ export class Gameplay {
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     this.hud = new GameHud(d.host);
     this.fx = new Feedback(this.hud, this.field, this.sfx);
-    this.panel = new InventoryPanel(d.host, (i) => this.craft(i));
+    this.panel = new InventoryPanel(d.host, (i) => craft(this, i));
+    this.goalPanel = new ObjectivePanel(d.host);
+    showGoals(this, this.goals.wasVisible());
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle);
     this.furnacePanel = new FurnacePanel(
-      d.host, (item) => this.loadFurnace(item), () => this.takeFurnace());
+      d.host, (item) => loadFurnace(this, this.openMachine, item),
+      () => takeFurnace(this, this.openMachine));
     // The factory ticks on the SIM clock, like everything else that is a rule.
     this.ambience = new Ambience(d.core, d.bodyHandle);
     this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60);
@@ -203,6 +214,13 @@ export class Gameplay {
     }
     this.muteHeld = mute;
 
+    // H hides the checklist. Edge-detected like every other open-ended key, and
+    // the choice survives a reload: a player who dismissed it did not mean
+    // "until the next refresh".
+    const gk = this.d.input.held('KeyH');
+    if (gk && !this.goalHeld) showGoals(this, !this.goals.visible);
+    this.goalHeld = gk;
+
     // ONE edge for the mine key, read once. It used to be edge-detected inside
     // the "panel is open" branch and taken as a LEVEL inside the "aiming at a
     // machine" branch, and the two disagreed: pressing E to close a furnace you
@@ -227,7 +245,7 @@ export class Gameplay {
     const built = this.build.step((c) => this.d.input.held(c), f.place, ray);
     if (built) { this.hud.flash(`placed ${this.build.label}`); this.sfx.confirm(); }
     else if (this.build.selected === null) {
-      if (f.place && !this.placeHeld) this.placeMachine(ray);
+      if (f.place && !this.placeHeld) placeMachine(this, ray);
     } else if (f.place && !this.placeHeld && this.build.target?.ok === false) {
       this.hud.flash(this.build.target.reason);
     }
@@ -255,7 +273,7 @@ export class Gameplay {
     // An automated machine hands over its finished stock instead of a panel:
     // there is nothing to load, so a screen would be a screen about nothing.
     if (this.aimedBuild !== null) {
-      if (minePressed) this.collectFrom(this.aimedBuild);
+      if (minePressed) collectFrom(this, this.aimedBuild);
       this.interact.target = null;
       return false;
     }
@@ -306,8 +324,7 @@ export class Gameplay {
     // scrolls at exactly the rate a real one does and a capture is reproducible.
     this.factoryView.sync(this.factory, this.simSecs);
     if (this.openMachine !== null) {
-      this.furnacePanel.render(
-        furnaceView(this.game, this.openMachine.handle, this.openMachine.tier));
+      this.furnacePanel.render(machineView(this, this.openMachine));
     }
     const carried = this.game.carried().map((c) => ({
       name: c.name, count: c.count, icon: this.icons.for(c.name),
@@ -316,17 +333,8 @@ export class Gameplay {
     // here, and every one of them had to remember the two panel conditions.
     this.hud.render(dt, this.uiOpen ? null : aimPrompt(this.factory, this.game,
       this.aimedBuild, this.aimedMachine, this.interact.target), carried);
-    if (this.panel.isOpen) this.panel.render(this.slots(), this.recipes());
-  }
-
-  /** Take an automated machine's finished stock into the pack. */
-  private collectFrom(b: Placed): void {
-    const n = this.factory.collect(b);
-    if (n <= 0) { this.hud.flash('nothing to take yet'); return; }
-    this.autoCollected += n;
-    this.hud.flash(`took ${n} ${this.game.itemName(this.factory.outputItemOf(b))}`);
-    this.sfx.confirm();
-    this.panel.invalidate();
+    stepGoals(this, dt);
+    if (this.panel.isOpen) this.panel.render(slots(this), recipes(this));
   }
 
   /** THE pointer transition. One place, both halves. */
@@ -337,59 +345,14 @@ export class Gameplay {
     if (open) this.panel.invalidate();
   }
 
-  /** Put a furnace or a smelter from the pack on the 1 m grid ahead of the eye. */
-  private placeMachine(ray: { origin: { x: number; y: number; z: number };
-                              dir: { x: number; y: number; z: number } }): void {
-    const ids = this.game.ids;
-    const tier = this.game.count(ids.furnace) > 0 ? 0
-      : this.game.count(ids.smelter) > 0 ? 1 : -1;
-    if (tier < 0) { this.hud.flash('nothing to place  (craft a furnace)'); return; }
-    const item = tier === 0 ? ids.furnace : ids.smelter;
-    if (this.machines.place(item, tier, ray.origin, ray.dir) === null) {
-      this.hud.flash('cannot place there');
-      return;
-    }
-    this.placements++;
-    this.hud.flash(`placed ${this.game.itemName(item)}`);
-    this.sfx.confirm();
-  }
-
   /** Open the furnace UI on `m`, or close it with null. THE pointer transition. */
   openFurnace(m: Machine | null): void {
     this.openMachine = m;
     this.furnacePanel.setOpen(m !== null);
     this.d.input.setUiCapture(m !== null);
     this.hud.setVisible(m === null);
-    if (m !== null) this.furnacePanel.render(furnaceView(this.game, m.handle, m.tier));
+    if (m !== null) this.furnacePanel.render(machineView(this, m));
   }
-
-  private loadFurnace(item: number): void {
-    const h = this.openMachine?.handle;
-    if (h === undefined) return;
-    const n = this.game.furnaceInsert(h, item, 5);
-    if (n > 0) { this.hud.flash(`loaded ${n} ${this.game.itemName(item)}`); this.sfx.confirm(); }
-  }
-
-  private takeFurnace(): void {
-    const h = this.openMachine?.handle;
-    if (h === undefined) return;
-    const n = this.game.furnaceCollect(h, 99);
-    if (n > 0) { this.hud.flash(`took ${n}`); this.sfx.confirm(); }
-  }
-
-  private craft(index: number): void {
-    const ok = this.game.craft(index);
-    this.panel.invalidate();
-    this.panel.render(this.slots(), this.recipes());
-    const r = ok ? this.game.recipes()[index] : undefined;
-    if (r === undefined) return;
-    this.hud.flash(`crafted ${this.game.itemName(r.output)}`);
-    this.sfx.confirm();
-  }
-
-  /** The two panel views, with the item pictures bound in one place. */
-  private slots() { return slotRows(this.game, (n) => this.icons.for(n)); }
-  private recipes() { return recipeRows(this.game, (n) => this.icons.for(n)); }
 
   /** Every node with its world position, nearest first. The probe's eyes. */
   nodes(): unknown[] {
