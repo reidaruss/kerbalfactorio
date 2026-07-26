@@ -17,8 +17,18 @@ import type { Vec3d } from './PlanetBody.js';
 import type { CellBox } from './VoxelWorld.js';
 import { greedyMesh, type GreedyMesh } from './VoxelGreedy.js';
 
-/** Metres of margin added around a dirty box before re-meshing it. */
-const PAD_M = 3;
+/**
+ * Cells per side of a BRICK: the unit this mesh re-meshes and caches.
+ *
+ * The old shape re-meshed the UNION of every box ever dug, as one cube, on every
+ * strike. That is O(tunnelLength^3) work per swing for O(1) new geometry, and it
+ * is where 27 to 69 ms came from. Bricks are a fixed, disjoint lattice, so a
+ * strike re-meshes only the one or two bricks it touched and the rest are served
+ * from cache: the cost of a swing stops growing with the length of the tunnel.
+ * 8 keeps a brick's padded region at 10^3 cells, small enough that touching
+ * eight of them at once is still cheaper than one 20 m cube was.
+ */
+const BRICK = 8;
 
 export interface VoxelMeshStats {
   rebuilds: number;
@@ -29,6 +39,9 @@ export interface VoxelMeshStats {
   /** faces / quads. 1 means the greedy pass merged nothing. */
   mergeRatio: number;
   boxes: number;
+  /** Bricks holding geometry, and how many the last strike had to re-mesh. */
+  bricks: number;
+  remeshed: number;
 }
 
 export class VoxelMesh {
@@ -36,10 +49,13 @@ export class VoxelMesh {
   private readonly geo = new THREE.BufferGeometry();
   /** Body-frame anchor the f32 vertices are relative to (standing rule 6). */
   private readonly anchor: Vec3d = { x: 0, y: 0, z: 0 };
-  /** Union of every box dug so far, in cells. Re-meshed as one region. */
-  private box: CellBox | null = null;
+  /** Cached exposed faces per brick, keyed `bx,by,bz`. Empty bricks are dropped. */
+  private readonly bricks = new Map<string, Int32Array>();
+  /** Lowest brick corner seen, in cells. The f32 anchor (standing rule 6). */
+  private anchorCell: [number, number, number] | null = null;
   readonly stats: VoxelMeshStats = {
-    rebuilds: 0, faces: 0, quads: 0, triangles: 0, lastMs: 0, mergeRatio: 0, boxes: 0,
+    rebuilds: 0, faces: 0, quads: 0, triangles: 0, lastMs: 0, mergeRatio: 0,
+    boxes: 0, bricks: 0, remeshed: 0,
   };
 
   constructor(
@@ -63,23 +79,63 @@ export class VoxelMesh {
     this.mesh.visible = false;
   }
 
-  /** Grow the meshed region by a dirty box and rebuild. Returns the mesh stats. */
+  /**
+   * Re-mesh the bricks a dirty box touched, then rebuild the geometry from the
+   * brick cache. The box is expanded by one cell first: a cell carved on a brick
+   * boundary exposes a face belonging to the NEIGHBOURING brick, and skipping
+   * that is a one-cell hole in the tunnel wall exactly where two bricks meet.
+   */
   applyDirty(dirty: CellBox): void {
-    this.box = this.box === null ? { ...dirty } : {
-      minX: Math.min(this.box.minX, dirty.minX),
-      minY: Math.min(this.box.minY, dirty.minY),
-      minZ: Math.min(this.box.minZ, dirty.minZ),
-      maxX: Math.max(this.box.maxX, dirty.maxX),
-      maxY: Math.max(this.box.maxY, dirty.maxY),
-      maxZ: Math.max(this.box.maxZ, dirty.maxZ),
-    };
+    const t0 = performance.now();
+    const b0 = Math.floor((dirty.minX - 1) / BRICK), b1 = Math.floor((dirty.maxX + 1) / BRICK);
+    const c0 = Math.floor((dirty.minY - 1) / BRICK), c1 = Math.floor((dirty.maxY + 1) / BRICK);
+    const d0 = Math.floor((dirty.minZ - 1) / BRICK), d1 = Math.floor((dirty.maxZ + 1) / BRICK);
+    let remeshed = 0;
+    for (let bz = d0; bz <= d1; ++bz)
+      for (let by = c0; by <= c1; ++by)
+        for (let bx = b0; bx <= b1; ++bx) { this.meshBrick(bx, by, bz); remeshed++; }
     this.stats.boxes++;
+    this.stats.remeshed = remeshed;
     this.rebuild();
+    this.stats.lastMs = +(performance.now() - t0).toFixed(3);
+  }
+
+  /**
+   * Ask /core for the exposed faces of ONE brick and cache them. The radius is
+   * (BRICK-1)/2, not BRICK/2, because exposedFaces builds its cell box from
+   * floor(centre +/- radius): half a brick would spill one cell into the next
+   * brick and every boundary face would be emitted twice, drawn twice, and
+   * z-fight with itself.
+   */
+  private meshBrick(bx: number, by: number, bz: number): void {
+    const cellM = this.M._of_voxel_size();
+    const half = (BRICK - 1) * 0.5 * cellM;
+    const count = this.M._of_exposed_faces(
+      this.bodyHandle, this.editsHandle,
+      (bx * BRICK + BRICK * 0.5) * cellM,
+      (by * BRICK + BRICK * 0.5) * cellM,
+      (bz * BRICK + BRICK * 0.5) * cellM,
+      half,
+    );
+    const key = `${bx},${by},${bz}`;
+    if (count <= 0) { this.bricks.delete(key); return; }
+    // Standing rule 5: the scratch pointer and HEAP32 are re-read here, after
+    // the call that may have grown the heap, and copied out before anything
+    // else can call into WASM.
+    const ptr = this.M._of_scratch_i32() >> 2;
+    this.bricks.set(key, new Int32Array(this.M.HEAP32.subarray(ptr, ptr + count * 5)));
+    const cx = bx * BRICK, cy = by * BRICK, cz = bz * BRICK;
+    if (this.anchorCell === null) this.anchorCell = [cx, cy, cz];
+    else {
+      this.anchorCell[0] = Math.min(this.anchorCell[0], cx);
+      this.anchorCell[1] = Math.min(this.anchorCell[1], cy);
+      this.anchorCell[2] = Math.min(this.anchorCell[2], cz);
+    }
   }
 
   /** Re-derive the engine transform from the 64-bit anchor. Rebase handler. */
   place(): void {
-    if (this.box === null) return;
+    if (this.anchorCell === null) return;
     const p = new THREE.Vector3();
     this.origin.toEngine(this.anchor, p);
     this.mesh.position.copy(p);
@@ -87,33 +143,19 @@ export class VoxelMesh {
     this.mesh.updateMatrixWorld(true);
   }
 
+  /** Greedy-mesh the concatenation of every cached brick. No WASM call here. */
   private rebuild(): void {
-    const b = this.box;
-    if (b === null) return;
-    const t0 = performance.now();
+    const aCell = this.anchorCell;
+    if (aCell === null) return;
     const cellM = this.M._of_voxel_size();
 
-    // exposedFaces takes a sphere, so cover the box with one that contains it,
-    // padded: a dig at the edge of the box exposes faces one cell OUTSIDE it.
-    const cx = (b.minX + b.maxX + 1) * 0.5 * cellM;
-    const cy = (b.minY + b.maxY + 1) * 0.5 * cellM;
-    const cz = (b.minZ + b.maxZ + 1) * 0.5 * cellM;
-    const half = 0.5 * cellM * Math.hypot(
-      b.maxX - b.minX + 1, b.maxY - b.minY + 1, b.maxZ - b.minZ + 1,
-    );
-    const count = this.M._of_exposed_faces(
-      this.bodyHandle, this.editsHandle, cx, cy, cz, half + PAD_M,
-    );
-    if (count < 0) return;
+    let total = 0;
+    for (const f of this.bricks.values()) total += f.length;
+    const i32 = new Int32Array(total);
+    let at = 0;
+    for (const f of this.bricks.values()) { i32.set(f, at); at += f.length; }
+    const count = total / 5;
 
-    // Standing rule 5: the scratch pointer and HEAP32 are re-read here, after
-    // the call that may have grown the heap, and copied out before anything
-    // else can call into WASM.
-    const ptr = this.M._of_scratch_i32() >> 2;
-    const src = this.M.HEAP32.subarray(ptr, ptr + count * 5);
-    const i32 = new Int32Array(src);
-
-    const aCell: [number, number, number] = [b.minX, b.minY, b.minZ];
     const mesh: GreedyMesh = greedyMesh({ i32, count }, aCell, cellM);
 
     this.anchor.x = aCell[0] * cellM;
@@ -132,7 +174,7 @@ export class VoxelMesh {
     this.stats.quads = mesh.quads;
     this.stats.triangles = mesh.indices.length / 3;
     this.stats.mergeRatio = mesh.quads > 0 ? +(mesh.faces / mesh.quads).toFixed(2) : 0;
-    this.stats.lastMs = +(performance.now() - t0).toFixed(3);
+    this.stats.bricks = this.bricks.size;
   }
 
   dispose(): void {
