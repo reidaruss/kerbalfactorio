@@ -634,6 +634,11 @@ any size, 49 with a base, against 150.** DW-11's model was never the constraint.
 the sweep's own slope (2,119 per plan row) puts at about **1,180 machines**. Not
 draw calls, not frame time, not the pool.
 
+Screenshot: `docs/screenshots/FS_scale_pool.png`, 330 machines in frame at 45
+draw calls and 681 k triangles with the HUD reading
+`instances  factoryMachines 374/512  structures 0/512  (grows, ceiling 16384)`.
+Every lane is on screen; before the fix the sixth lane onwards simply was not.
+
 **And the HUD says it out loud.** A full pool does not get slower, it stops
 drawing, so it is invisible in every other number on that HUD: there is now an
 `instances` line under draw calls and triangles showing every live pool as
