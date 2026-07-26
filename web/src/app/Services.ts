@@ -13,6 +13,9 @@ import type { SkyPass } from '../render/SkyPass.js';
 import type { ShadowRig } from '../render/ShadowRig.js';
 import type { SkyIbl } from '../render/SkyIbl.js';
 import type { PropLibrary } from '../render/instancing/PropLibrary.js';
+import type { VoxelWorld } from '../world/VoxelWorld.js';
+import type { VoxelMesh } from '../world/VoxelMesh.js';
+import type { DigAction } from '../player/DigAction.js';
 import type { Scatter } from '../world/Scatter.js';
 import type { StatsProbe } from '../render/debug/StatsProbe.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -82,6 +85,10 @@ export interface Services {
   readonly ibl: SkyIbl;
   readonly props: PropLibrary;
   readonly scatter: Scatter;
+  /** W5. Null in scenarios with no character (there is nobody to dig). */
+  readonly voxels: VoxelWorld | null;
+  readonly voxelMesh: VoxelMesh | null;
+  readonly dig: DigAction | null;
   readonly boot: BootMetrics;
 }
 

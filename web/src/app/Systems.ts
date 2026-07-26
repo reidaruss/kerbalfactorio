@@ -25,7 +25,18 @@ export function registerSystems(s: Services, loop: Loop): void {
       s.events.emit('RegimeChanged', { band: s.regime.state.band });
     }
     s.terrain.request(s.observer.position);
+    // W5. On the FIXED tick, not the frame: a dig is a simulation event, so a
+    // driven tape digs exactly as often as a human holding the key would.
+    if (s.dig !== null && s.player !== null) {
+      const ray = s.player.aimRay();
+      s.dig.step(s.input.frame.mine, ray.origin, ray.dir);
+    }
   });
+
+  // The voxel mesh re-derives its engine transform from its 64-bit anchor, the
+  // same contract every other subscriber honours (ARCHITECTURE.md 3.6): nobody
+  // applies the delta by hand.
+  s.events.on('OriginRebased', () => { s.voxelMesh?.place(); });
 
   loop.onDrain.push(() => {
     // The cross-fade ramp is SIM time, not wall clock, so a driven run on the

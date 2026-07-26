@@ -61,6 +61,10 @@ export interface OfDebugApi {
   chunks(n?: number, nearOnly?: boolean): unknown[];
   /** Gravity at radius rM, from /core (DW-18). The walker reads the same call. */
   gravity(rM: number): number;
+  /** W5. Dig once along the current aim ray. Returns null with no character. */
+  dig(): unknown;
+  /** W5 voxel state: edits, near mesh, mouth reconciliation, harvest. */
+  voxels(): unknown;
   settle(n?: number): Promise<void>;
   /** Advance `seconds` of sim on a synthetic clock. See Loop.run. */
   run(seconds: number, renderHz?: number): Promise<void>;
@@ -218,6 +222,31 @@ export function installDebugApi(
 
     chunks: (n = 4, nearOnly = false) => chunkDump(n, nearOnly),
     gravity: (rM: number) => s.body.gravityAccel(rM),
+
+    dig() {
+      const p = s.player;
+      if (p === null || s.dig === null) return null;
+      const ray = p.aimRay();
+      const r = s.dig.digOnce(ray.origin, ray.dir);
+      return { ...r, aim: { origin: ray.origin, dir: ray.dir } };
+    },
+
+    voxels() {
+      if (s.voxels === null || s.voxelMesh === null || s.dig === null) return null;
+      return {
+        // removedCount comes from /core, not from a JS tally: if the two ever
+        // disagree the browser has an edit set the simulation does not.
+        removedCells: s.voxels.removedCount(),
+        harvestedM3: s.dig.stats.volumeM3,
+        ops: s.voxels.ops.length,
+        action: s.dig.stats,
+        mesh: s.voxelMesh.stats,
+        meshVisible: s.voxelMesh.mesh.visible,
+        // sent != applied means a dig never reached the heightfield, so the
+        // voxel layer and the surface would silently disagree.
+        mouth: { sent: s.terrain.digsSent, applied: s.terrain.digsApplied },
+      };
+    },
 
     settle: (n = 8) => loop.settle(n),
     run: (seconds, renderHz) => loop.run(seconds, renderHz),

@@ -23,6 +23,9 @@ import { FloatingOrigin } from '../world/FloatingOrigin.js';
 import { PlanetProxy } from '../world/PlanetProxy.js';
 import { Regime } from '../world/Regime.js';
 import { bootTerrain } from '../world/TerrainBoot.js';
+import { VoxelWorld } from '../world/VoxelWorld.js';
+import { VoxelMesh } from '../world/VoxelMesh.js';
+import { DigAction } from '../player/DigAction.js';
 import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
 import { BIOME_ATLAS } from '../assets/Registry.js';
@@ -188,6 +191,17 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const props = await PropLibrary.load(cfg.props ? BIOME_ATLAS : [], scenes.near);
   const scatter = new Scatter(props, t.pool, cfg.props, cfg.density);
 
+  // W5. Created only when there is a character: with no player nobody digs, and
+  // an unbound edits handle would arm voxel collision for a flying camera. The
+  // handle is bound to the oracle in the VoxelWorld constructor, which is the
+  // moment surfaceHeight starts subtracting derivedLoweringAt.
+  const voxels = player === null ? null : new VoxelWorld(core, oracle);
+  const voxelMesh = voxels === null ? null
+    : new VoxelMesh(core, body.handle, voxels.handle, origin);
+  if (voxelMesh !== null) scenes.near.add(voxelMesh.mesh);
+  const dig = voxels === null || voxelMesh === null ? null
+    : new DigAction(voxels, voxelMesh, terrain);
+
   const boot: BootMetrics = {
     wasmLoadMs,
     oracleUs: {
@@ -214,7 +228,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, ibl, props, scatter, boot,
+    hud, sunLights, shadows, ibl, props, scatter, voxels, voxelMesh, dig, boot,
   };
   return { services, canvas };
 }

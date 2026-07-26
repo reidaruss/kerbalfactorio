@@ -11,6 +11,8 @@ export interface InputFrame {
   jump: boolean;
   /** KeyV. Held state; Controller turns it into one toggle per press. */
   toggleView: boolean;
+  /** KeyE. Held state; DigAction turns it into one dig per cooldown (W5). */
+  mine: boolean;
 }
 
 export interface TapeEntry {
@@ -36,7 +38,7 @@ export class Input {
 
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
-    jump: false, toggleView: false,
+    jump: false, toggleView: false, mine: false,
   };
 
   attach(el: HTMLElement): void {
@@ -98,6 +100,7 @@ export class Input {
       f.boost = keys.has('ShiftLeft');
       f.jump = keys.has('Space');
       f.toggleView = keys.has('KeyV');
+      f.mine = keys.has('KeyE');
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
     }
@@ -110,6 +113,7 @@ export class Input {
     f.boost = this.down.has('ShiftLeft') || this.down.has('ShiftRight');
     f.jump = this.down.has('Space');
     f.toggleView = this.down.has('KeyV');
+    f.mine = this.down.has('KeyE');
     this.dYaw = 0;
     this.dPitch = 0;
     this.zoomAccum = 0;
