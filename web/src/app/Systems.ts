@@ -130,10 +130,16 @@ export function registerSystems(s: Services, loop: Loop): void {
     // nothing on the ground casts onto anything at orbital range (section 3.5,
     // cascades 0 in ORBIT), and below the horizon the sun casts nothing at all.
     // Measured at night without this: 164 draws against a 150 target.
-    // Three reasons now: nothing on the ground casts at orbital range, the sun
-    // below the horizon casts nothing, and under rock the sun has already been
-    // scaled to zero so its shadow map would be 58 draw calls of nothing.
-    const lit = s.sky.elevation(s.observer.up) > -0.03 && !s.headlamp.sunOccluded;
+    //
+    // Being under rock is deliberately NOT a third reason, though the shadow
+    // map down there is 58 draw calls of nothing. ShadowRig turns off by
+    // clearing `visible` and `castShadow`, which changes three's lights state
+    // hash and recompiles every material in the near scene; doing that on the
+    // step where the player first ducks under a roof cost a measured 441 ms
+    // stall. Underground the frame has 19 draw calls of its own, so those 58
+    // are affordable and the stall is not. The sun is already at intensity 0
+    // there (Headlamp.sunScale), so the map it renders is invisible anyway.
+    const lit = s.sky.elevation(s.observer.up) > -0.03;
     s.shadows.update(eye, fwd, s.sky.sunDirection, lit && s.regime.state.band !== 'ORBIT');
   });
 

@@ -154,6 +154,14 @@ export class Headlamp {
     // No shadow map. A second shadowed light would double the 48 MB the cascades
     // already cost and buy nothing in a corridor two metres wide.
     this.spot.castShadow = false;
+    // AND `visible` STAYS TRUE FOR THE WHOLE SESSION. three's projectObject
+    // drops an invisible light before it reaches the lights state, so the
+    // program cache key changes and EVERY material in the near scene recompiles
+    // the frame the lamp switches. Measured: the first entry into a tunnel cost
+    // a 441 ms stall and 30 new programs. An off lamp is therefore intensity 0,
+    // never hidden: one spot light's worth of fragment maths, always, in
+    // exchange for one lights configuration that compiles once at boot.
+    this.spot.visible = true;
     near.add(this.spot);
     near.add(this.spot.target);
   }
@@ -220,9 +228,10 @@ export class Headlamp {
     const dark = 1 - this.skyVis;
     const lampK = this.enabled ? THREE.MathUtils.smoothstep(dark, 0.18, 0.55) : 0;
     this.spot.intensity = LAMP_CD * lampK;
-    this.spot.visible = lampK > 0.001;
 
-    if (this.spot.visible) {
+    // Placing it is skipped while it is dark, not because of the cost but
+    // because a stale position on a light contributing nothing is invisible.
+    if (lampK > 0.001) {
       this.right.crossVectors(aim, up);
       if (this.right.lengthSq() < 1e-9) this.right.set(1, 0, 0);
       this.right.normalize();
@@ -279,7 +288,12 @@ export class Headlamp {
     return THREE.MathUtils.smoothstep(this.skyVis, 0.42, 0.85);
   }
 
-  /** True while the cascade pass can be skipped entirely: 58 draw calls. */
+  /**
+   * True while the sun contributes nothing. It is REPORTED, not acted on: the
+   * obvious saving (skip the cascade pass, 58 draw calls) turned out to cost a
+   * full material recompile at the tunnel mouth, so Systems leaves the shadow
+   * rig alone and only the intensity goes to zero. See ARCHITECTURE 15.2.
+   */
   get sunOccluded(): boolean { return this.sunScale <= 0.002; }
 
   stats(): HeadlampStats {
