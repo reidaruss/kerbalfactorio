@@ -20,6 +20,9 @@ export interface HudTarget {
   distanceM: number;
   /** A second line of available verbs, e.g. "X remove". Optional. */
   action?: string;
+  /** What the "use" button is CALLED, handed in rather than typed here, so the
+   *  chip cannot go on saying E after the binding table has moved on. */
+  verb?: string;
 }
 
 export interface HudCarry { name: string; count: number; icon?: string }
@@ -134,7 +137,8 @@ export class GameHud {
     }
     const pct = Math.round(Math.max(0, Math.min(1, t.fraction)) * 100);
     const act = t.action ?? '';
-    const key = `${t.name}|${pct}|${t.empty ? 1 : 0}|${act}`;
+    const verb = t.verb ?? '';
+    const key = `${t.name}|${pct}|${t.empty ? 1 : 0}|${act}|${verb}`;
     if (key === this.lastPrompt) return;
     this.lastPrompt = key;
     this.prompt.style.display = 'block';
@@ -146,11 +150,12 @@ export class GameHud {
         + `<div id="of-bar"><i style="width:${pct}%"></i></div>`;
       return;
     }
-    // LEFT CLICK, not E. The verb chip has to name the button that actually
-    // does the thing, and E stopped being harvest (GP-26).
+    // The verb chip names the button that actually does the thing, and it is
+    // handed in from the binding table rather than typed, because E stopped
+    // being harvest (GP-26) and a HUD that says otherwise is a lie on screen.
     this.prompt.innerHTML = t.empty
       ? `<span class="sub">${esc(t.name)} node depleted</span>`
-      : `<span class="k">LMB</span>Harvest ${esc(t.name)}`
+      : `<span class="k">${esc(verb)}</span>Harvest ${esc(t.name)}`
         + `<div class="sub">${pct}% remaining</div>`
         + `<div id="of-bar"><i style="width:${pct}%"></i></div>`;
   }

@@ -36,13 +36,6 @@ export type SlotContent =
   | { kind: 'furnace' }
   | { kind: 'empty' };
 
-export interface HotbarSlot {
-  content: SlotContent;
-  label: string;
-  /** The /core display name whose baked icon stands for this slot, or ''. */
-  iconName: string;
-}
-
 export const SLOT_COUNT = 9;
 
 /** Label and icon for every part, in one table so the HUD restates nothing. */

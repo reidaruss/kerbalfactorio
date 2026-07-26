@@ -11,11 +11,19 @@
 // other two ends of the same ledger: what demolition gave back, and what the
 // pack had no room for.
 
+import { labelOf } from '../player/Bindings.js';
 import type { Factory, Placed } from './Factory.js';
 import type { GameCore } from './GameCore.js';
 import type { HudTarget } from '../ui/GameHud.js';
 
 export interface RefundLine { item: number; count: number }
+
+/** The verbs, spelled the way the binding table currently spells them. One
+ *  source, so a remap never leaves a stale key name on screen. */
+const USE = labelOf('use');
+const TAKE = `${labelOf('interact')} take`;
+const OPEN = `${labelOf('interact')} open`;
+const REMOVE = `${labelOf('demolish')} remove`;
 
 /**
  * What an automated machine says about itself under the crosshair, including
@@ -33,15 +41,16 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
       fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
       // `empty` is the HARVEST NODE's depleted caption; a machine has its own
       // words for being empty and does not want "node depleted" under them.
-      empty: false, distanceM: 0, action: 'E take    X remove',
+      empty: false, distanceM: 0, action: `${TAKE}    ${REMOVE}`,
     };
   }
   const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
   return {
     name: b.kind === 'belt' ? 'belt'
-      : out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  working`,
+      : out > 0 ? `${b.kind}  ${labelOf('interact')} to take ${out} ${name}`
+        : `${b.kind}  working`,
     fraction: b.build < 0 ? 0 : f.line.progress01(b.build),
-    empty: false, distanceM: 0, action: 'E take    X remove',
+    empty: false, distanceM: 0, action: `${TAKE}    ${REMOVE}`,
   };
 }
 
@@ -100,12 +109,12 @@ export function aimPrompt(f: Factory, game: GameCore, build: Placed | null,
     return {
       name: st !== null && st.smelting ? 'furnace (smelting)' : 'furnace',
       fraction: st === null ? 0 : st.progress / Math.max(1, st.ticksPerSmelt),
-      empty: false, distanceM: 0, action: 'E open    X remove',
+      empty: false, distanceM: 0, action: `${OPEN}    ${REMOVE}`,
     };
   }
   if (node === null) return null;
   return {
     name: node.name, fraction: node.fraction,
-    empty: node.empty, distanceM: node.distanceM,
+    empty: node.empty, distanceM: node.distanceM, verb: USE,
   };
 }

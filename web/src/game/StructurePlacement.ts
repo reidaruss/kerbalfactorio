@@ -16,6 +16,7 @@
 
 import * as THREE from 'three';
 import { orient } from './Grid.js';
+import { labelOf } from '../player/Bindings.js';
 import { MAX_LEVEL, addrKey, addressAt, anchorOf, footprintOf,
   isDeck, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
@@ -60,7 +61,8 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
   return {
     name: `${t.kind}${t.freePlaced ? '  (free)' : ''}  ${t.reason}`,
     fraction: 0, empty: !t.ok, distanceM: 0,
-    action: 'left click place  (hold to drag)    R turn    B snap',
+    action: `${labelOf('use')} place  (hold to drag)`
+      + `    ${labelOf('rotate')} turn    ${labelOf('freeSnap')} snap`,
   };
 }
 
