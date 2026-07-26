@@ -73,9 +73,17 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
 - **DW-18 is not yet implemented:** Forge should take Kerbin-like gravity (600 km radius, about
   9.81 m/s^2). Current 0.587 m/s^2 gives a 4.8 second jump, which reads as broken. This is a
   `core/` body-parameter change and it affects orbital mechanics, so do it deliberately.
-- **DW-19 is not yet implemented:** terrain LOD gives a 7.2 m grid at the player's feet and must
-  reach 2 m or finer **before W5 digging**, or the heightfield and the 1 m voxel grid become two
-  disagreeing versions of the ground.
+- **DW-19 is half done.** Root cause found and fixed in `43a0fda` (WG-22): the LOD distance metric
+  sampled the RAW heightfield for quad centres while the player stands on the DESIGNED surface, a
+  590 m to 3,100 m constant offset that put an irreducible floor on distance, so the quadtree
+  saturated and ignored `maxDepth` entirely (proof: maxDepth 12 and 16 gave byte-identical
+  resident sets). 22 of 22 suites green with the fix. **Remaining: measure the achieved cell size
+  at the player's feet in-browser and the chunk-count and frame-cost curve**, then confirm 2 m or
+  finer before W5 digging starts. `core/tools/lod_probe` (commit `cc246f2`) exists for this.
+- **This was the five-surfaces failure for the third time** (UE build, then the WASM bridge
+  observer, now the LOD metric). Standing rule 1 says every consumer reads `surface_field.h`, and
+  three separate components have still broken it. When touching anything that computes a height,
+  a radius, or a distance to the ground, check which surface it samples **first**.
 - **DW-15 gate:** before any native peer (multiplayer server or native port) exists, vendor
   `tan`/`asin`/`atan2`/`cos` into `/core` and re-baseline. A 1 ULP libm difference grows a
   different planet from the same seed.
