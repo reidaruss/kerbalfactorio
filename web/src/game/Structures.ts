@@ -22,7 +22,7 @@
 
 import * as THREE from 'three';
 import { orient } from './Grid.js';
-import { STRUCTURE_KINDS, makeSite, measureModule,
+import { STRUCTURE_KINDS, localOf, makeSite, measureModule,
   type Addr, type Site, type StructureKind, type StructureModule }
   from './StructureGrid.js';
 import { StructureBodies, boundOf, leafProxy, proxiesOf,
@@ -40,11 +40,45 @@ const FILES: Record<StructureKind, string> = {
 };
 
 /**
- * DW-24's number: how far the ground under a footprint may deviate from the
- * part's own base plane before the ghost refuses. StructurePlacement.ts applies
- * it and `probes/build.js` is where it was measured.
+ * DW-24's numbers, and there are TWO of them because the two ways a part can sit
+ * wrong on the ground are not the same failure.
+ *
+ * FLOAT is ground BELOW the part's base plane: a visible gap of daylight under a
+ * hovering slab, which is the thing DW-24 is protecting against.
+ *
+ * The terrain is NOT what sets it. `probes/buildtol.js` samples 400 one-metre
+ * footprints at four sites on the shipped world and the worst spread across a
+ * deck's five footprint points is 0.0013 and 0.0069 m on two plains and 0.118
+ * and 0.127 m on two slopes, so 0.13 m would carry every ordinary foundation.
+ * What sets it is the coarsest thing that can MOVE the terrain. The levelling
+ * tool edits whole 1 m voxel cells, so it has a dead band of half a cell inside
+ * which it changes nothing at all: measured, one press of Q left 0 of 12 refused
+ * cells buildable at a 0.22 m tolerance, and the residual over a levelled disc
+ * is p05 -0.536 m, p50 +0.027 m, p95 +0.588 m. A tolerance tighter than that
+ * dead band makes DW-24's own loop unclosable by construction, however good the
+ * terrain is. 0.55 m is half a voxel plus a tenth, and it is a number about the
+ * TOOL. It should come down the day the tool can fill less than a whole cell.
+ *
+ * BURY is ground ABOVE the base plane. It disappears INSIDE the slab and reads
+ * as a pad set into the soil, which is what a foundation on real ground looks
+ * like, so it costs nothing until the ground would break through the top face.
+ * The bound is therefore the deck thickness itself, taken from the asset's own
+ * `socket_top` rather than typed, and the constant here is only the fallback for
+ * a module that failed to load.
+ *
+ * WHY ASYMMETRIC AND NOT ONE NUMBER. Measured (see the report): one press of Q
+ * leaves the ground at the target plus or minus about half a metre, because the
+ * terraforming tool moves whole 1 m voxel cells and cannot do better. A single
+ * symmetric tolerance therefore has to be either tighter than the tool can hit,
+ * which makes a levelled pad unbuildable, or looser than a slab is thick, which
+ * makes a floating foundation legal. Splitting it takes the forgiving half of
+ * the tool's residual for free and keeps the visible half tight.
  */
-export const GROUND_TOLERANCE_M = 0.22;
+export const FLOAT_TOLERANCE_M = 0.55;
+
+/** What a not-yet-placed free part is keyed by, until it has an id. */
+export const FREE_KEY = 'free:0';
+export const BURY_TOLERANCE_FALLBACK_M = 0.50;
 
 export interface StructurePart {
   id: number;
@@ -129,7 +163,11 @@ export class Structures {
   // --- what the placement rules ask of this file ----------------------------
 
   get ready(): boolean { return this.defs.length === STRUCTURE_KINDS.length; }
-  get groundToleranceM(): number { return GROUND_TOLERANCE_M; }
+  /** How far a corner may HANG, and how far the ground may rise into the slab. */
+  get floatToleranceM(): number { return FLOAT_TOLERANCE_M; }
+  get buryToleranceM(): number {
+    return this.module.deckH > 0 ? this.module.deckH : BURY_TOLERANCE_FALLBACK_M;
+  }
 
   defFor(kind: StructureKind): StructureDef | null {
     return this.defs[STRUCTURE_KINDS.indexOf(kind)] ?? null;
@@ -157,9 +195,19 @@ export class Structures {
     return this.M._of_surface_radius(this.body, this.edits(), x / r, y / r, z / r);
   }
 
+  /** Site-local (east, north, up) metres of a body-frame point. The probe's
+   *  eyes: "did the player get past the wall line" is a coordinate, not a vibe. */
+  localIn(siteId: number, p: Vec3d): [number, number, number] | null {
+    const s = this.sites.find((q) => q.id === siteId);
+    if (s === undefined) return null;
+    const l = localOf(s, p, new THREE.Vector3());
+    return [l.x, l.y, l.z];
+  }
+
   /** A site founded on the world lattice cell containing `p`, not yet adopted. */
   prospectiveSite(p: Vec3d): Site {
-    return makeSite(this.M, this.body, this.nextSite, p, this.module);
+    return makeSite(this.M, this.body, this.nextSite, p, this.module,
+      (x, y, z) => this.groundRadius(x, y, z));
   }
 
   // --- the world ------------------------------------------------------------
@@ -181,7 +229,10 @@ export class Structures {
     };
     const p: StructurePart = {
       id, kind, def, siteId, addr,
-      key: key.startsWith('free:') ? `free:${id}` : key,
+      // A FREE part has no address to be keyed by, so it takes its own id. The
+      // placeholder is re-keyed and an already-keyed one is not, or a restore
+      // would rename every free part and a save would stop matching itself.
+      key: key === FREE_KEY ? `free:${id}` : key,
       pos, up: up.clone(), fwd: fwd.clone(), quat, swing: 0, wantOpen: false, solid,
     };
     this.parts.push(p);

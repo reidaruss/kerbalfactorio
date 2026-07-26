@@ -130,8 +130,9 @@ export function addrKey(a: Addr): string {
  * grid uses, so a site's east is the direction a belt at that spot would run.
  * One tangent convention for the whole game, not two.
  */
-export function makeSite(M: OfCoreModule, body: number, id: number,
-                         p: Vec3d, m: StructureModule): Site {
+export function makeSite(M: OfCoreModule, body: number, id: number, p: Vec3d,
+                         m: StructureModule,
+                         ground: (x: number, y: number, z: number) => number): Site {
   const s = snapToGround(M, body, p.x, p.y, p.z);
   const up = s.up.clone();
   const basis = new THREE.Vector3(-up.y, up.x, 0);
@@ -139,13 +140,29 @@ export function makeSite(M: OfCoreModule, body: number, id: number,
   const east = snapToAxes(up, basis, basis);
   const north = new THREE.Vector3().crossVectors(up, east).normalize();
   const half = m.cellM * 0.5;
+  // THE PLANE SITS AT THE LOWEST GROUND UNDER THE FOUNDING CELL, not at its
+  // centre. Both choices are defensible on flat ground and they part company on
+  // a slope, where the centre would leave one corner hanging in the air and the
+  // minimum leaves one corner buried instead. Buried is invisible (it is inside
+  // 0.50 m of slab) and hanging is a gap of daylight, so the base of a whole
+  // base is founded on its own worst case rather than on its average.
+  const centreR = Math.hypot(s.pos.x, s.pos.y, s.pos.z) || 1;
+  let drop = 0;
+  for (const [de, dn] of [[0, 0], [-half, -half], [half, -half], [-half, half],
+    [half, half]]) {
+    const x = s.pos.x + east.x * de + north.x * dn;
+    const y = s.pos.y + east.y * de + north.y * dn;
+    const z = s.pos.z + east.z * de + north.z * dn;
+    drop = Math.min(drop, ground(x, y, z) - Math.hypot(x, y, z));
+  }
+  const baseR = centreR + drop;
+  const k = baseR / centreR;
   return {
-    id, up, east, north,
-    baseR: Math.hypot(s.pos.x, s.pos.y, s.pos.z),
+    id, up, east, north, baseR,
     o: {
-      x: s.pos.x - east.x * half - north.x * half,
-      y: s.pos.y - east.y * half - north.y * half,
-      z: s.pos.z - east.z * half - north.z * half,
+      x: s.pos.x * k - east.x * half - north.x * half,
+      y: s.pos.y * k - east.y * half - north.y * half,
+      z: s.pos.z * k - east.z * half - north.z * half,
     },
   };
 }

@@ -19,7 +19,7 @@ import { orient } from './Grid.js';
 import { MAX_LEVEL, SITE_REACH_M, addrKey, addressAt, anchorOf, footprintOf,
   isDeck, localOf, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
-import type { Structures } from './Structures.js';
+import { FREE_KEY, type Structures } from './Structures.js';
 import type { HudTarget } from '../ui/GameHud.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
@@ -139,7 +139,7 @@ function freeTarget(s: Structures, kind: StructureKind, hit: Vec3d, dir: Vec3d,
   fwd.normalize().applyAxisAngle(up, (flip % 4) * Math.PI * 0.5);
   const r = s.groundRadius(up.x, up.y, up.z);
   const t: StructureTarget = {
-    kind, site: null, addr: null, key: 'free:0',
+    kind, site: null, addr: null, key: FREE_KEY,
     pos: { x: up.x * r, y: up.y * r, z: up.z * r },
     up, fwd, quat: orient(up, fwd), ok: true, reason: '', unevennessM: 0,
     freePlaced: true,
@@ -179,23 +179,34 @@ function hasDeck(s: Structures, site: Site, i: number, j: number,
  * reading with the base plane the part would stand on.
  *
  * The samples are in the PART's local frame, so a freely placed part is judged
- * by exactly the same rule as a snapped one. The deviation is signed: positive
- * ground would bury the corner, negative would leave it hanging in the air.
+ * by exactly the same rule as a snapped one. The deviation is signed, and the
+ * two signs are judged against DIFFERENT bounds: ground BELOW the base leaves a
+ * visible gap under a hovering slab and is held to `floatToleranceM`, ground
+ * ABOVE it disappears inside the slab and is allowed all the way to the deck
+ * thickness. See Structures.ts for why that is not a fudge.
  */
 function checkGround(s: Structures, t: StructureTarget): void {
-  let worst = 0;
+  let low = 0;
+  let high = 0;
   const v = new THREE.Vector3();
   for (const [lx, lz] of footprintOf(s.module, t.kind)) {
     v.set(lx, 0, lz).applyQuaternion(t.quat);
     const x = t.pos.x + v.x, y = t.pos.y + v.y, z = t.pos.z + v.z;
     const dev = s.groundRadius(x, y, z) - Math.hypot(x, y, z);
-    if (Math.abs(dev) > Math.abs(worst)) worst = dev;
+    if (dev < low) low = dev;
+    if (dev > high) high = dev;
   }
-  t.unevennessM = worst;
-  if (Math.abs(worst) <= s.groundToleranceM) return;
+  // The reported number is whichever side is closest to refusing, so a probe
+  // and a player are both looking at the binding constraint.
+  const floatSlack = -low / s.floatToleranceM;
+  const burySlack = high / s.buryToleranceM;
+  t.unevennessM = floatSlack >= burySlack ? low : high;
+  if (floatSlack <= 1 && burySlack <= 1) return;
   t.ok = false;
-  t.reason = `ground too uneven here (${worst >= 0 ? '+' : ''}${worst.toFixed(2)} m)`
-    + ', level it with Q';
+  const gap = floatSlack > burySlack
+    ? `it would hang ${(-low).toFixed(2)} m clear`
+    : `the ground stands ${high.toFixed(2)} m into it`;
+  t.reason = `ground too uneven here, ${gap}, level it with Q`;
 }
 
 function checkCost(s: Structures, t: StructureTarget): void {

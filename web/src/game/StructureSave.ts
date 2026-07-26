@@ -111,7 +111,7 @@ export function structureReport(s: Structures): unknown {
   return {
     ready: s.ready,
     module: s.module,
-    tolerance: s.groundToleranceM,
+    tolerance: { floatM: s.floatToleranceM, buryM: s.buryToleranceM },
     swing: { secs: s.swingSecs, rad: +s.swingRad.toFixed(5) },
     placements: s.placements,
     refusals: s.refusals,

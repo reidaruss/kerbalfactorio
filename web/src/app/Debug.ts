@@ -20,7 +20,8 @@ export interface WorldState {
   scenario: string;
   observer: ObserverState;
   player: {
-    mode: string; grounded: boolean; speedMps: number; slopeCos: number;
+    mode: string; feet: number[]; grounded: boolean; speedMps: number;
+    slopeCos: number;
     toggles: number; armLengthM: number;
     /** W5. Underground state: on a voxel floor, and refused by rock this tick. */
     underRock: boolean; blockedByRock: boolean; voxelPushM: number;
@@ -257,6 +258,9 @@ export function installDebugApi(
         observer: o.state(),
         player: pl === null || ray === null ? null : {
           mode: pl.view.mode,
+          /** Body-frame metres. The one thing a probe cannot derive from the
+           *  aim ray, because the eye is 1.62 m up a curved radial. */
+          feet: [pl.body.feet.x, pl.body.feet.y, pl.body.feet.z],
           grounded: pl.body.grounded,
           speedMps: pl.body.speedMps,
           slopeCos: pl.body.slopeCos,

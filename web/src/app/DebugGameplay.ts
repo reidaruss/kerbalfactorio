@@ -6,7 +6,7 @@
 // that reached past these into the sim would be verifying a path no player can
 // take, which is the quiet way an acceptance test stops meaning anything.
 
-import { demolishBuild, demolishMachine } from '../game/Demolition.js';
+import { demolishBuild, demolishMachine, demolishStructure } from '../game/Demolition.js';
 import { renderVoices } from '../audio/Sfx.js';
 import { renderBeds } from '../audio/Beds.js';
 import { clearSlot } from '../game/SaveGame.js';
@@ -33,6 +33,19 @@ export function gameplayApi(s: Services, loop: Loop) {
 
     /** The base: every part, every site, the module and the costs. */
     structures: () => s.gameplay?.structures ?? null,
+
+    /**
+     * Snap a body-frame point to /core's own 1 m voxel lattice and put it back
+     * on the ground, exactly as a machine placement does. Exposed so a probe can
+     * MEASURE how many metres of ground one unit step of a cell key covers,
+     * which is the claim the structural grid is built on top of.
+     */
+    snapCell(x: number, y: number, z: number) {
+      const f = s.gameplay?.factory;
+      if (f === undefined) return null;
+      const p = f.snap(x, y, z);
+      return [p.pos.x, p.pos.y, p.pos.z];
+    },
 
     /**
      * Open or shut a placed door by part id, through the SAME toggle the E key
@@ -64,9 +77,14 @@ export function gameplayApi(s: Services, loop: Loop) {
       return f === undefined || b === undefined ? 0 : f.collect(b);
     },
 
-    demolish(sel: { id?: number; machine?: number }) {
+    demolish(sel: { id?: number; machine?: number; part?: number }) {
       const g = s.gameplay;
       if (g === null) return null;
+      if (sel.part !== undefined) {
+        const p = g.structures.parts.find((q) => q.id === sel.part);
+        return p === undefined ? null
+          : demolishStructure(g.structures, g.structView, g.game, p);
+      }
       if (sel.machine !== undefined) {
         const m = g.machines.list[sel.machine];
         return m === undefined ? null
