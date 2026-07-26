@@ -13,16 +13,22 @@
 // changed is. That is PS-7 and it is why a slot is a few hundred bytes rather
 // than a planet.
 //
-// NOT SAVED YET, and said out loud rather than left to be discovered: voxel
-// edits (the `VoxelEdits` handle lives in Services, outside this module's
-// ownership; `of_edits_serialize` already exists for whoever wires it) and a
+// VOXEL EDITS ARE NOW IN (W7). They were the one glaring gap: a player dug a
+// tunnel, reloaded, and walked on flat ground. The diff comes from
+// `of_edits_serialize`, the same SaveWriter format as the pack; see VoxelSave.ts
+// for why the strike log rides along beside it.
+//
+// STILL NOT SAVED, and said out loud rather than left to be discovered: a
 // furnace's burning fuel, which is a tick countdown with no item to give back.
-// Both are counted in the report.
+// It is counted in the report.
 
 const DB = 'orbital-foundry';
 const STORE = 'saves';
 const SLOT = 'auto';
-export const SAVE_VERSION = 1;
+/** 2: voxel edits joined the slot, so a v1 slot cannot describe the tunnels. */
+export const SAVE_VERSION = 2;
+
+import type { SavedEdits } from './VoxelSave.js';
 
 export interface SaveBuilding {
   kind: string;
@@ -54,6 +60,8 @@ export interface SaveSlot {
   depletion: [number, number][];
   buildings: SaveBuilding[];
   machines: SaveMachine[];
+  /** The dug tunnels: /core's removed-cell bytes plus the strike log. */
+  voxels: SavedEdits;
 }
 
 function open(): Promise<IDBDatabase> {

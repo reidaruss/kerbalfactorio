@@ -30,7 +30,7 @@ import { demolishAimed } from './Demolition.js';
 import { aimPrompt } from './FactoryReport.js';
 import { furnaceView, nodeDump, recipeRows, slotRows } from './GameplayViews.js';
 import { gameplayReport } from './GameplayReport.js';
-import { loadSlot, saveSlot, type RestoreLedger } from './Persist.js';
+import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
@@ -51,6 +51,8 @@ export interface GameplayDeps {
   scene: THREE.Object3D;
   bodyHandle: number;
   seed: number;
+  /** DW-17: the voxel, mesh and terrain handles a whole-world save needs. */
+  ports?: Partial<WorldPorts>;
 }
 
 export class Gameplay {
@@ -89,6 +91,14 @@ export class Gameplay {
   /** What a save needs: the module handle and the seed the world grew from. */
   get core(): OfCoreModule { return this.d.core; }
   get seed(): number { return this.d.seed; }
+  /** The voxel layer, which lives in Services. Nulls in a headless scenario. */
+  get ports(): WorldPorts {
+    return {
+      voxels: this.d.ports?.voxels ?? null,
+      voxelMesh: this.d.ports?.voxelMesh ?? null,
+      terrain: this.d.ports?.terrain ?? null,
+    };
+  }
 
   private constructor(private readonly d: GameplayDeps) {
     this.game = new GameCore(d.core);

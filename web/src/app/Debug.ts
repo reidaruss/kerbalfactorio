@@ -137,6 +137,8 @@ export interface OfDebugApi {
   wipe(): Promise<void>;
   /** DW-17. Regrow the clearing from the seed, exactly as boot does. */
   repopulate(): unknown;
+  /** DW-17. Put the rock back: the voxel layer's `repopulate`. */
+  forgetTunnels(): unknown;
 }
 
 export interface AimRay {

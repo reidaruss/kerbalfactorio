@@ -9,6 +9,7 @@
 import { demolishBuild, demolishMachine } from '../game/Demolition.js';
 import { renderVoices } from '../audio/Sfx.js';
 import { clearSlot } from '../game/SaveGame.js';
+import { clearEdits } from '../game/VoxelSave.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 
@@ -71,6 +72,14 @@ export function gameplayApi(s: Services, loop: Loop) {
     // generated world, so restoring onto a world that is already more depleted
     // than the save is a state a real boot can never be in.
     repopulate() { s.gameplay?.populate(); return s.gameplay?.report() ?? null; },
+
+    // DW-17, the voxel half of `repopulate`: put the rock back, so a restore is
+    // verified against a world with no digs in it, which is the only state a
+    // reloaded page can actually be in.
+    forgetTunnels() {
+      const left = clearEdits(s.core, s.voxels, s.voxelMesh);
+      return { removedCells: left, meshVisible: s.voxelMesh?.mesh.visible ?? false };
+    },
 
     harvest(index: number) {
       if (s.gameplay === null) return null;

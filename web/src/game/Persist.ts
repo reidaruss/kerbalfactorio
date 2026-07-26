@@ -20,7 +20,16 @@ import type { GameCore } from './GameCore.js';
 import type { Machines } from './Machines.js';
 import type { NodeField } from './NodeField.js';
 import type { Gameplay } from './Gameplay.js';
+import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
+  type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
+
+/** The three Services handles a whole-world save needs and gameplay does not own. */
+export interface WorldPorts {
+  voxels: VoxelPort | null;
+  voxelMesh: VoxelMeshPort | null;
+  terrain: TerrainDigPort | null;
+}
 
 export interface RestoreLedger {
   buildings: number;
@@ -29,12 +38,18 @@ export interface RestoreLedger {
   packUnits: number;
   /** Fuel a furnace was burning. There is no item to give back for a tick. */
   fuelTicksLost: number;
+  /** The tunnels: cells /core has back, strikes replayed, and the re-mesh cost. */
+  voxels: VoxelRestore;
   savedAt: number;
 }
 
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
-                         seed: number): SaveSlot {
+                         seed: number, ports: WorldPorts): SaveSlot {
+  // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
+  // write into the SAME u8 scratch: the second call would silently overwrite the
+  // first one's bytes if they were not copied out one at a time.
+  const voxels = snapshotEdits(M, ports.voxels);
   const n = M._of_gp_inventory_serialize();
   // Copied out of the heap IMMEDIATELY (standing rule 5): every call below
   // re-enters WASM and any growth detaches the view.
@@ -51,6 +66,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     seed,
     savedAt: Date.now(),
     pack,
+    voxels,
     depletion,
     buildings: factory.placed.map((p) => ({
       kind: p.kind, cell: p.cell, node: p.nodeIndex,
@@ -74,8 +90,14 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
 
 export function apply(M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
-                      slot: SaveSlot): RestoreLedger {
-  // 1. THE NODES FIRST. of_gp_node_drain is the same call a miner uses, so the
+                      slot: SaveSlot, ports: WorldPorts): RestoreLedger {
+  // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
+  //    surface the oracle reports, and a miner or a machine placed against the
+  //    old, un-dug column would sit at the wrong height.
+  const voxels = restoreEdits(M, ports.voxels, ports.voxelMesh, ports.terrain,
+    slot.voxels ?? NO_VOXELS);
+
+  // 1. THE NODES. of_gp_node_drain is the same call a miner uses, so the
   //    restored world is depleted through the one path that can deplete it.
   let depleted = 0;
   for (const [index, remaining] of slot.depletion) {
@@ -126,7 +148,7 @@ export function apply(M: OfCoreModule, game: GameCore,
 
   return {
     buildings, machines: restoredMachines, nodesDepleted: depleted,
-    packUnits, fuelTicksLost, savedAt: slot.savedAt,
+    packUnits, fuelTicksLost, voxels, savedAt: slot.savedAt,
   };
 }
 
@@ -136,12 +158,14 @@ export function apply(M: OfCoreModule, game: GameCore,
  * type import is erased, so the apparent cycle costs nothing at runtime.
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
-  const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines, g.seed);
+  const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
+    g.seed, g.ports);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
     bytes: slot.pack.length, buildings: slot.buildings.length,
     machines: slot.machines.length, depletion: slot.depletion.length,
+    voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
   } : null;
 }
 
@@ -150,9 +174,11 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // A slot from another seed is a different planet, and loading it would drop
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
-  g.restored = apply(g.core, g.game, g.factory, g.machines, slot);
+  g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports);
   g.panel.invalidate();
+  const dug = g.restored.voxels.cells;
   g.hud.flash(`restored ${g.restored.buildings} buildings, `
-    + `${g.restored.packUnits} items`, 2.6);
+    + `${g.restored.packUnits} items`
+    + (dug > 0 ? `, ${dug} m³ of tunnel` : ''), 2.6);
   return g.restored;
 }

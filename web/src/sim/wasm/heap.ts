@@ -53,6 +53,12 @@ export interface OfCoreModule {
   /** Fills i32 scratch [minX,minY,minZ,maxX,maxY,maxZ]; 1 = valid, 0 = untouched. */
   _of_edits_dirty_region(edits: number): number;
   _of_edits_clear_dirty(edits: number): void;
+  /** DW-17. Write the removed-cell diff into the u8 scratch. Byte count, or -1. */
+  _of_edits_serialize(edits: number): number;
+  /** Size the u8 scratch to `n` bytes so JS can copy a saved diff in. */
+  _of_edits_alloc_bytes(n: number): void;
+  /** Load the diff from the u8 scratch. Returns the removed-cell count, or -1. */
+  _of_edits_deserialize(edits: number): number;
   /** Face count; i32 scratch holds 5 ints per face [cx,cy,cz,axis,sign]. */
   _of_exposed_faces(body: number, edits: number, x: number, y: number, z: number,
                     radiusM: number): number;

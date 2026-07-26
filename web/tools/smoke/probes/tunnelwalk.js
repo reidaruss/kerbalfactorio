@@ -35,6 +35,10 @@
 
   await settle(1.5);
   const t0 = of.world();
+  // The DAYLIGHT baseline, before anything is dug. Every underground lighting
+  // claim below is a DELTA against this, because "the lamp is on" proves
+  // nothing on its own: it has to be on where the sky is not.
+  const litSurface = of.stats().lamp;
   if (of.voxels() === null) return { valid: false, why: 'no character, nothing can dig' };
 
   // --- DRIVE: sink a shaft, then cut forward, stepping into the cut. ---------
@@ -60,6 +64,11 @@
   let metres = 0;
   let prev = eye();
   let grounded = 0, underRock = 0, blocked = 0, ceilingSolid = 0, columnClosed = 0;
+  let darkSamples = 0, lampSamples = 0, sunOut = 0;
+  // 15.2 item 48: the old radial push was sized from the CAPSULE and reached
+  // 2.8 m. The exact face push can never exceed one cell, so anything above
+  // ~1.05 m means the approximation is back.
+  let maxPushM = 0;
   const sample = () => {
     const w = of.world();
     const p = eye();
@@ -77,8 +86,21 @@
     if (w.player.grounded) grounded++;
     if (w.player.underRock) underRock++;
     if (w.player.blockedByRock) blocked++;
+    if (w.player.voxelPushM > maxPushM) maxPushM = w.player.voxelPushM;
     if (ceilM !== null) ceilingSolid++;
     if (col.loweringM < 0.001) columnClosed++;
+    // The lighting, sampled at the same instants as the walk. skyVis is what
+    // the eye can see of the sky through four solidAt probes straight up; the
+    // lamp and the sun scale are derived from it, so all three moving together
+    // is the assertion, not any one of them.
+    const lamp = of.stats().lamp;
+    if (lamp.skyVis <= 0.4) darkSamples++;
+    if (lamp.lampCd > 1) lampSamples++;
+    if (lamp.sunScale <= 0.01) sunOut++;
+    // Metres of ROCK between the head and the sky, which is the thing the
+    // lighting is supposed to be a function of. Anything under a metre is a
+    // thin lid near the mouth and is SUPPOSED to let light through.
+    const roofM = ceilM === null ? 0 : Math.max(0, eyeBelowM - ceilM);
     walk.push({
       stepM: +d.toFixed(2),
       grounded: w.player.grounded,
@@ -88,6 +110,12 @@
       ceilingM: ceilM,
       eyeBelowM: +eyeBelowM.toFixed(2),
       loweringM: +col.loweringM.toFixed(3),
+      roofM: +roofM.toFixed(2),
+      skyVis: lamp.skyVis,
+      rawVis: +lamp.rawVis.toFixed(3),
+      lampCd: lamp.lampCd,
+      ambient: lamp.ambient,
+      sunScale: lamp.sunScale,
     });
   };
 
@@ -125,6 +153,8 @@
   const r = Math.hypot(p[0], p[1], p[2]);
   const up = [p[0] / r, p[1] / r, p[2] / r];
   const col = of.surface(up[0], up[1], up[2]);
+  // Samples with a real roof over them, which is where the darkness claim lives.
+  const buried = walk.filter((x) => x.roofM >= 1.0);
 
   return {
     // DW-20 first: if the simulation did not advance, nothing below counts.
@@ -143,6 +173,33 @@
     // overhead and the heightfield above still closed, for every sample.
     walkableTunnel: metres >= 6 && grounded >= n - 1 && ceilingSolid === n
       && columnClosed === n && underRock >= n - 1,
+    // --- THE LIGHTING TEST ---------------------------------------------------
+    // The claim is NOT "it is dark underground", which a globally dimmed build
+    // would also satisfy. It is that darkness is a function of the rock: where
+    // there is a metre or more of roof the sky ambient is gone, the sun is out
+    // and the lamp is what the player sees by, while the same run on the
+    // surface is untouched. The lamp is on for the WHOLE walk either way,
+    // because a mouth with half a metre of lid over it is supposed to leak.
+    undergroundIsDark: buried.length >= 6
+      && buried.every((x) => x.rawVis <= 0.4 && x.lampCd > 20
+        && x.sunScale <= 0.01 && x.ambient < litSurface.ambient * 0.35)
+      && lampSamples === n
+      && litSurface.skyVis >= 0.99 && litSurface.lampCd === 0
+      && litSurface.sunScale >= 0.999,
+    lighting: {
+      surface: litSurface,
+      buriedSamples: buried.length,
+      darkSamples, lampSamples, sunOut,
+      minRawVis: Math.min(...walk.map((x) => x.rawVis)),
+      maxLampCd: Math.max(...walk.map((x) => x.lampCd)),
+      caveAmbient: Math.min(...walk.map((x) => x.ambient)),
+      surfaceAmbient: litSurface.ambient,
+      // Correlation, stated so a reader can check it by eye: more rock, less sky.
+      byRoof: walk.map((x) => [x.roofM, x.rawVis]).sort((a, b) => a[0] - b[0]),
+    },
+    // 15.2 item 48. One cell is the ceiling for an exact face push.
+    mouthPushExact: maxPushM <= 1.05,
+    maxVoxelPushM: +maxPushM.toFixed(3),
     metresWalked: +metres.toFixed(2),
     metresIn: outM,
     metresBack: +(metres - outM).toFixed(2),
