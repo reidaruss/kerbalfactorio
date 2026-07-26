@@ -434,7 +434,14 @@ Three mechanisms, layered:
    scaled scene** (see `docs/screenshots/W1_streaming.png`, the dark slivers on the distant mesa).
    Mechanism 2 below is the real fix and is a W2 task; `of_chunk_neighbour_depths` is already
    exposed for it.
-2. **Edge stitching.** `TerrainChunk.neighbourDepth[4]` is already populated. When a neighbour is coarser, the worker snaps this chunk's shared-edge vertices onto the coarser edge's interpolated line, removing the T-junction properly rather than hiding it. Free, because the data is already there.
+2. **Edge stitching. SHIPPED at W2, on the main thread.** When a neighbour is coarser, this chunk's
+   shared-edge vertices are snapped onto the coarser edge's interpolated line, removing the
+   T-junction properly rather than hiding it. It is exact: `cubed_sphere.h` derives every vertex from
+   its integer lattice point, so the coincident vertices on both sides are bit-identical and a lerp
+   between two of them lies exactly on the coarse triangle's edge. Measured: **139 crack pixels to
+   0** in the `W1_streaming.png` framing, 0.1 to 0.2 ms, only when the resident set changes.
+   **It does NOT use `TerrainChunk.neighbourDepth[4]`,** because /core annotates that only on
+   freshly-ready chunks and it goes stale the moment a neighbour merges. See section 15.2 item 16.
 3. **Cross-fade.** A per-chunk `aFade` value ramps 0 to 1 over 250 ms on stream-in, driving a dithered (Bayer 4×4) alpha-test in the fragment shader. Dithering rather than blending keeps it opaque, keeps Early-Z, and needs no sorting. This kills the pop that skirts cannot address.
 
 ### 4.6 Re-mesh on dig
@@ -964,6 +971,66 @@ from the design above. Written from measurements on Chrome / ANGLE D3D11 / RTX 4
     indexed per-chunk accessor family as the anchor and the packed buffer, so key, anchor and
     vertices are guaranteed to describe the same quad.
 
+Added at W2 (2026-07-25):
+
+11. **Headless Chrome does not pump `requestAnimationFrame` continuously, and W1's numbers were
+    measured in a burst.** A 20 second scripted walk advanced **90 fixed ticks**: rAF fired for
+    roughly a second after load and then stalled, and `Loop`'s `dt` clamp (0.25 s) plus `MAX_CATCHUP`
+    (5) threw away every real-time gap. Any driven verification written the obvious way is silently
+    measuring a **standing still** player. `Loop.run(seconds, renderHz)` advances a synthetic clock
+    instead: same `fixedTick`, same drain, same render, but deterministic and about 15x faster than
+    wall clock. `renderHz` defaults to **144.3**, deliberately not a multiple of 60, so
+    `of::SimClock`'s alpha sweeps its whole range rather than sitting at one value.
+12. **`--evalfile` probes silently returned `undefined`.** The wrapper was `((OF_ARGS) => { return
+    <file> })(args)` and every probe starts with a comment block, so ASI turned it into `return;`.
+    The file body is now wrapped in parentheses. Worth knowing because the failure mode is a
+    **passing** smoke run with no result rather than an error.
+13. **The float32 `matrixWorld` risk the W1 handoff raised does not exist in the form predicted, and
+    the rebase threshold is irrelevant to it.** three composes `modelViewMatrix` in **f64** as
+    `camera.matrixWorldInverse * object.matrixWorld` and downcasts only the CAMERA-RELATIVE result on
+    upload, so the quantization scales with camera-to-anchor distance and never with distance from
+    the floating origin. Replaying that pipeline exactly (`Math.fround` on the 16 elements and on the
+    vertex, multiplied in f32) over a 5 km walk on real resident chunks: **max 0.139 mm, mean
+    0.024 mm, frame-to-frame 0.188 mm = 0.033 px**, and **identical to 8 significant figures** at
+    rebase thresholds of 250 m and 4,000 m. The predicted 7.8 mm applies to an object at the 100 km
+    near plane, where it subtends 0.00007 px. **Do not "fix" this by rebasing harder.**
+14. **The real walk jitter was fixed-tick aliasing, and it is 19,000x larger.** The capsule advances
+    at 60 Hz and rendering samples it at vsync; without interpolation the eye traces a staircase
+    whose step is exactly one tick of travel. Second difference of the eye over a 60 s walk:
+    **mean 64.76 mm / max 77.99 mm before, mean 0.0034 mm / max 3.69 mm after**. `?interp=0`
+    reproduces the before. Any new world-anchored, tick-driven visual (W3's shadows, W6's machines)
+    needs the same alpha treatment or it will judder against the terrain.
+15. **The "LOD T-junction cracks" in `W1_streaming.png` were a MISDIAGNOSIS.** The wide dark vertical
+    slits in the mesa are steep, unlit gullies, not holes: rendering the same framing with
+    `?clear=ff00ff` shows **not one void pixel** in them. Real cracks were there, but they are thin
+    and elsewhere: **139 void pixels** in that framing, gone to **0** with edge stitching on. A dark
+    slit and a hole are indistinguishable against a black sky, so `?clear=` and
+    `Loop.frameHash().holePixels` now exist and any future crack claim should carry a number.
+16. **Edge stitching reads the LIVE resident set, not `of_chunk_neighbour_depths`.** `/core`
+    annotates neighbour depths only on freshly-**ready** chunks, so an already-resident chunk whose
+    neighbour later merges keeps a stale answer and its crack reopens with nothing to trigger a
+    rebuild. `TerrainStream.stitchAll` derives the four strides from the resident map (skipping
+    chunks hidden by coverage, or the always-resident depth-2 shells would be found as everyone's
+    coarse neighbour and snap the planet to a 7 km grid). Snapping is destructive and a stride can
+    go back DOWN, so `ChunkView` retains the pristine payload: 32,859 B per resident chunk, 12.6 MB
+    at a 384 pool.
+17. **The default framebuffer's depth attachment is 24-bit FIXED POINT** (`DEPTH_BITS` 24,
+    `FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE` is not `FLOAT`), so reversed-Z cannot deliver its
+    headline win, which needs a float depth buffer. It is still clearly worth having: measured at
+    2 km with a 2 m separation, reversed-Z bleeds **2.1%** where plain depth bleeds **100%**, because
+    reversed-Z keeps the depth value near 0 where f32 in the pipeline is dense. See section 16.2 for
+    the full curve.
+18. **Cube-face seams are not stitchable and are not stitched.** Chunks on adjacent cube faces share
+    no vertex lattice, so `neighbourStrides` skips off-face neighbours exactly as `/core`'s own
+    `annotateNeighbours` does. No crack from a face seam was observed at W2; if one appears it needs
+    a different mechanism.
+19. **A limb artefact exists in the far scene and is NOT a LOD crack.** From orbit, `?clear=ff00ff`
+    shows **279 void pixels (194 ppm)**, all in a ragged fringe on the planet's silhouette, and edge
+    stitching does not change the number by one pixel (at that altitude every resident chunk is
+    depth 2, so there are no LOD boundaries at all). It is the coarse terrain shell and the
+    `PlanetProxy` sphere interleaving at grazing angles, both carrying relief at different
+    resolutions. W3/W8 item.
+
 ### 15.3 The dev loop, concretely
 
 ```
@@ -1002,3 +1069,97 @@ the terrain material was submitting 70 draw calls per frame and painting nothing
 * Cross-fade on stream-in (section 4.5 mechanism 3) is not implemented; chunks pop.
 * `FloatingOrigin` is wired with the one broadcast and one subscriber and rebases correctly on a
   teleport, but has not been exercised by a sustained walk. That is the W2 risk.
+
+*(All three closed at W2. Edge stitching landed on the MAIN THREAD, not in the worker; see 15.2
+item 16 for why.)*
+
+---
+
+## 16. W2 implementation record (2026-07-25)
+
+Character controller, sustained-walk floating origin, LOD edge stitching and the depth probe.
+Same machine as section 15: Chrome / ANGLE D3D11 / RTX 4060 Ti at 1600 x 900.
+
+### 16.1 Measured numbers
+
+| Thing | Budget (section 10) | Measured |
+|---|---|---|
+| Character step, oracle calls per tick | ~20 us (section 2.3) | **3 calls** (`surfaceRadius` + a 2-tap slope gradient) at 2.1 to 3.3 us |
+| Grounded, over a driven 5 km walk | every tick | **100%** of polled ticks, eye alt 1.62 m at every sample |
+| Walk speed held | 4.6 m/s | **4.60 m/s**, 5,014 m of ground travel in 1,090 s |
+| Streaming during the walk | ring add/evict | **372 chunks built**, 18 added and 18 evicted, pool 252/384, never exhausted |
+| Rebases over 5 km | >= 3 (exit gate) | **1** at the production 4,000 m threshold, **20** at 250 m |
+| Rebase visibility | invisible | **1 of 1,296 luminance tiles differs, by 0.01 of 255** between a 1-rebase and a 20-rebase run of the same walk |
+| Walk jitter (fixed-tick aliasing) | not budgeted | **64.76 mm mean before, 0.0034 mm after** (second difference of the eye) |
+| Walk jitter (float32 modelView) | not budgeted | **0.024 mm mean, 0.139 mm max, 0.033 px** |
+| LOD crack pixels, surface framing | 0 | **139 without stitching, 0 with** |
+| Edge stitch cost | inside 1.5 ms main thread | **0.1 to 0.2 ms**, and only when the resident set changes |
+| Draw calls, walking | <= 150 | **69 to 81** |
+| Triangles, walking | <= 2.7 M | **157k to 161k** |
+| Frame p50 / p95 / p99, walking | 16.6 / 18 / 25 ms | **0.3 / 0.6 / 0.8 ms**, worst 1.7 ms including rebase frames |
+| Pooled terrain VRAM | 13 MB | **12.0 MB**, flat |
+| Chunk payload retained for restitching | not budgeted | **12.6 MB** JS heap at a 384 pool (alert 384 MB) |
+
+### 16.2 The depth probe: DW-3 closed by measurement
+
+`?scenario=zfight` builds the five scales from section 3.3 as GREEN front / RED back quad pairs and
+reads each pair's interior back with `gl.readPixels` every rendered frame while the camera sweeps.
+Correct depth ordering is **0% red**; a tie reads 100% red, because the later draw wins. That is
+stronger than a frame diff (it is unambiguous in a single frame), and the frame-to-frame change in
+the same number is the frame-diff assertion.
+
+Minimum separation each scale resolves, as a fraction of its distance, swept with `?zsep=`:
+
+| Scale | reversed-Z (default) | log depth | plain |
+|---|---|---|---|
+| decal @ 1 m | **1e-4** (0.1 mm) | 1e-5 (10 um) | ok |
+| machine @ 30 m | **1e-4** (3 mm) | 1e-5 (0.3 mm) | ok |
+| cliff @ 2 km | **1e-2** (20 m); 1e-3 bleeds 2.1% | 1e-5 (20 mm) | **fails at 1e-3 (100%)** |
+| mountain @ 60 km | **1e-1** (6 km) | 1e-5 (0.6 m) | out of range (far plane 30 km) |
+| moon @ 400,000 km (far cam) | **3e-2** (12,000 km) | 1e-5 (4,000 km) | 1e-3 bleeds 70.8% |
+
+**Verdict: DW-3 stands, with a documented ceiling.** The camera split plus reversed-Z resolves
+everything content actually sits at. Reversed-Z beats plain depth by roughly 50x at 2 km even though
+the buffer is fixed point (15.2 item 17), and log depth remains a working, measured fallback that is
+clean at 1e-5 at every scale if W3 ever needs far-field separation inside the near camera.
+
+The near camera's weak half is 20 km to 100 km, where it cannot separate surfaces closer than about
+0.4% of the distance. Nothing is at risk today because `nearDepthCutoff` moves anything coarser than
+depth 6 (chunks beyond roughly 15 km) into the far scene. **If W3 puts anything thin and layered at
+20 km or more in the NEAR scene, re-run this probe first.**
+
+A default run (`?zsep` absent) uses each scale's measured budget, so it is a regression gate rather
+than an arbitrary threshold, and it currently returns `verdict: PASS` with 0% bleed and 0% delta.
+
+### 16.3 Verified at W2
+
+* It walks. A driven 5 km walk at 4.6 m/s, grounded 100% of the way, terrain streaming around the
+  walker, at 0.3 ms p50.
+* FP is the default and V toggles to TP. The aim ray is **identical bit for bit** across four
+  toggles including one with the spring arm fully extended, at yaw 54.774765 / pitch -20.540537.
+  The own body is on `LAYER_PLAYER_BODY` and is culled by CAMERA layer in FP, not by object
+  visibility, so a W3 shadow caster will still see it.
+* Rebasing is invisible as PIXELS, not as an argument: the same walk at a 4,000 m and a 250 m
+  threshold ends at a bit-identical lat/lon with origins 1 km apart and presents the same frame to
+  within one tile of 1,296, by 0.01 of 255.
+* LOD cracks are gone in the near scene, counted rather than eyeballed: 139 void pixels to 0.
+* The depth probe passes at every scale's budget and the whole precision curve is recorded above.
+
+### 16.4 Outstanding into W3
+
+* **Cross-fade on stream-in (section 4.5 mechanism 3) is still not implemented; chunks pop.** It is
+  now the most visible remaining terrain artefact during a walk.
+* **The far-scene limb fringe** (15.2 item 19): 279 void pixels from orbit where the coarse terrain
+  shell and the `PlanetProxy` interleave. Cosmetic today, ugly against a lit atmosphere.
+* **`maxDepth` defaults to 12, not the 14 in section 3.2.** Ground under the player is a 7.2 m
+  vertex grid, which reads as smooth and featureless up close. Raising it multiplies the resident
+  set; measure before changing.
+* **Gravity is transcribed, not bridged.** `KinematicBody.gravityAccel` copies
+  `of::SurfaceObserver::gravityAccel()` including its constants, because the bridge does not export
+  it. On Forge that is 0.587 m/s^2, so jumps are deliberately floaty. Raised to core-engine.
+* **The near-field voxel sweep is written but dormant.** `KinematicBody.resolveVoxels` runs only
+  when an edit set is bound, because on a pristine world `solidAt` is just "below the heightfield"
+  and the ground resolve has already handled it. W5 arms it, and W5 is where face-axis resolution
+  and step-up have to be finished.
+* **Aim rays, placement and harvest** (`player/Interaction.ts`) are not built. The aim ray exists and
+  is asserted; nothing consumes it yet.

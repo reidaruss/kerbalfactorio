@@ -10,6 +10,7 @@ import type { PooledGeometry } from '../render/geometry/ChunkGeometryPool.js';
 import { FAR_SCALE } from '../render/Scenes.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
+import { NO_STITCH, type EdgeStrides } from './EdgeStitch.js';
 import type { TerrainChunkMsg } from '../workers/TerrainProtocol.js';
 
 export class ChunkView {
@@ -23,10 +24,29 @@ export class ChunkView {
   readonly pooled: PooledGeometry;
   /** True when this chunk lives in the near 1:1 scene. */
   isNear = false;
+  readonly faceId: number;
+  readonly qx: number;
+  readonly qy: number;
+  maxOffsetM: number;
+  /**
+   * The PRISTINE payload, retained so an edge stitch can be recomputed from
+   * source when a neighbour subdivides or merges. Snapping is destructive and a
+   * stride can go back down, so the un-snapped vertices have to survive. It is
+   * one already-transferred ArrayBuffer per resident chunk (32,859 B), which is
+   * 12.6 MB of JS heap at a 384 pool against a 384 MB budget.
+   */
+  blob: ArrayBuffer;
+  /** Current edge stitch strides, in neighbourDepth order [-X, +X, -Y, +Y]. */
+  strides: EdgeStrides = [...NO_STITCH] as EdgeStrides;
 
   constructor(msg: TerrainChunkMsg, pooled: PooledGeometry, material: THREE.Material) {
     this.key = msg.key;
     this.depth = msg.depth;
+    this.faceId = msg.faceId;
+    this.qx = msg.qx;
+    this.qy = msg.qy;
+    this.maxOffsetM = msg.maxOffsetM;
+    this.blob = msg.blob;
     this.anchor = { x: msg.cx, y: msg.cy, z: msg.cz };
     this.chunkRadiusM = msg.chunkRadiusM;
     this.biome = msg.biome;
@@ -49,6 +69,10 @@ export class ChunkView {
     this.chunkRadiusM = msg.chunkRadiusM;
     this.biome = msg.biome;
     this.materialId = msg.materialId;
+    this.maxOffsetM = msg.maxOffsetM;
+    this.blob = msg.blob;
+    // Fresh vertices are un-snapped, so the stitch has to be recomputed.
+    this.strides = [...NO_STITCH] as EdgeStrides;
   }
 
   /** Re-derive the engine transform from the anchor. Also the rebase handler. */

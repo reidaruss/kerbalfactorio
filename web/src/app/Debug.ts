@@ -48,7 +48,8 @@ export interface OfDebugApi {
   boot: BootMetrics;
   stats(): FrameStats & {
     boot: BootMetrics; gpu: string; terrain: StreamMetricsReport;
-    pool: { inUse: number; free: number; exhausted: number };
+    pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
+    caps: unknown;
   };
   world(): WorldState;
   scene(): SceneDump;
@@ -85,9 +86,14 @@ export interface StreamMetricsReport {
   chunksBuilt: number; poolExhausted: number; roundTripMs: number;
 }
 
+export interface StitchReport {
+  restitched: number; verticesMoved: number; ms: number; totalRestitched: number;
+}
+
 export interface StreamReport {
   resident: number; near: number; far: number; pending: number; converged: boolean;
   poolInUse: number; poolFree: number; hidden: number; metrics: StreamMetricsReport;
+  stitch: StitchReport;
 }
 
 const EMPTY_STREAM: StreamReport = {
@@ -96,6 +102,7 @@ const EMPTY_STREAM: StreamReport = {
     updateMs: 0, packMs: 0, uploadMs: 0, bytesLastUpdate: 0,
     bytesTotal: 0, chunksBuilt: 0, poolExhausted: 0, roundTripMs: 0,
   },
+  stitch: { restitched: 0, verticesMoved: 0, ms: 0, totalRestitched: 0 },
 };
 
 export function installDebugApi(
@@ -128,8 +135,10 @@ export function installDebugApi(
         ...s.stats.stats(s.renderer, s.frame.timings),
         boot: s.boot,
         gpu: s.renderer.caps.gpu,
+        caps: s.renderer.caps,
         terrain: st.metrics,
         pool: { inUse: st.poolInUse, free: st.poolFree, exhausted: st.metrics.poolExhausted },
+        stitch: st.stitch,
       };
     },
 

@@ -13,8 +13,13 @@ export type Drain = () => void;
 
 export interface FrameHash {
   w: number; h: number; hash: number; litPct: number;
+  /** Clear-colour pixels with terrain above them. See Loop.countHoles. */
+  holePixels: number;
   tilesX: number; tilesY: number; tiles: number[];
 }
+
+/** Consecutive opaque pixels that mark the horizon in countHoles. */
+const HORIZON_RUN_PX = 6;
 
 const FIXED_DT = 1 / 60;
 const MAX_CATCHUP = 5;
@@ -143,7 +148,43 @@ export class Loop {
     }
     const tiles: number[] = [];
     for (let i = 0; i < sum.length; ++i) tiles.push(Math.round((sum[i] / Math.max(1, n[i])) * 100) / 100);
-    return { w, h, hash, litPct: Math.round((lit / (w * h)) * 10000) / 100, tilesX, tilesY, tiles };
+    return {
+      w, h, hash, litPct: Math.round((lit / (w * h)) * 10000) / 100,
+      holePixels: this.countHoles(buf, w, h), tilesX, tilesY, tiles,
+    };
+  }
+
+  /**
+   * Pixels showing the clear colour with terrain ABOVE them: sky seen THROUGH
+   * the world. Run with ?clear=ff00ff and this is an exact crack count, which
+   * is the only way to tell a hole from a dark-shaded steep face. The W1 handoff
+   * read one as the other.
+   *
+   * readPixels is bottom-left origin, so the scan runs from the top down and a
+   * column starts counting only after it has hit something opaque.
+   */
+  private countHoles(buf: Uint8Array, w: number, h: number): number {
+    const c = this.s.cfg.clearColor;
+    const cr = (c >> 16) & 0xff, cg = (c >> 8) & 0xff, cb = c & 0xff;
+    let holes = 0;
+    for (let x = 0; x < w; ++x) {
+      let seenSolid = false;
+      let run = 0;
+      for (let y = h - 1; y >= 0; --y) {
+        const i = (y * w + x) * 4;
+        const isVoid = Math.abs(buf[i] - cr) < 12
+          && Math.abs(buf[i + 1] - cg) < 12 && Math.abs(buf[i + 2] - cb) < 12;
+        if (!isVoid) {
+          // Stars are one or two pixels. Only a RUN of opaque pixels counts as
+          // the horizon, or every star would make the sky below it a "hole".
+          if (++run >= HORIZON_RUN_PX) seenSolid = true;
+          continue;
+        }
+        run = 0;
+        if (seenSolid) holes++;
+      }
+    }
+    return holes;
   }
 
   /** Captured inside the rAF callback, so preserveDrawingBuffer is not needed. */

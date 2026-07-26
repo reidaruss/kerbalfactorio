@@ -72,7 +72,9 @@ export async function bootTerrain(
   const index = new SharedIndex(new Uint16Array(inited.index), inited.interiorIndexCount);
   const pool = new ChunkGeometryPool(cfg.chunkPoolSize, layout, index);
   const materials = createTerrainMaterials(depth, body.maxReliefM);
-  const stream = new TerrainStream(worker, pool, layout, materials, scenes, origin, events, cfg.skirts);
+  const stream = new TerrainStream(
+    worker, pool, layout, materials, scenes, origin, events, cfg.skirts, cfg.stitch,
+  );
   stream.setNearDepthCutoff(depth.nearDepthCutoff());
 
   return {

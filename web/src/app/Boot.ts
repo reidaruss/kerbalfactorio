@@ -102,6 +102,9 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     ? new Controller(oracle, cfg.view, cfg.walkSpeedMps, cfg.interpolate) : null;
   const observer: ViewSource = player ?? new ObserverCamera(oracle);
   observer.teleport(cfg.scenario.lat, cfg.scenario.lon, cfg.scenario.alt);
+  if (cfg.scenario.pitchDeg !== undefined) {
+    observer.look(0, THREE.MathUtils.degToRad(cfg.scenario.pitchDeg - observer.state().pitchDeg));
+  }
   origin.step(observer.position);
   sky.setSunT(cfg.sunTExplicit ?? SkyPass.solveSunT(observer.up, cfg.scenario.sunDot));
 
@@ -113,7 +116,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const jitter = new JitterProbe();
   const zfight = cfg.scenarioName === 'zfight'
     ? new ZFightProbe(scenes, origin, observer.position,
-      forwardOf(observer), rightOf(observer), observer.up)
+      forwardOf(observer), rightOf(observer), observer.up, cfg.zSepRatio)
     : null;
   // Both probes are world-anchored, so both subscribe to the ONE broadcast.
   if (zfight !== null) events.on('OriginRebased', () => zfight.place(origin));

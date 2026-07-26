@@ -53,12 +53,20 @@ interface Probe {
   pixels: number;
 }
 
+/**
+ * `sep` is the BUDGET: the separation, as a fraction of the distance, that this
+ * scale is required to resolve. The numbers are the measured reversed-Z limits
+ * on a 24-bit fixed-point default framebuffer (see ARCHITECTURE.md 15.2), so a
+ * default run is a regression gate and not an arbitrary threshold. ?zsep=
+ * overrides all five with one absolute ratio, which is how the limits were
+ * swept in the first place.
+ */
 const SCALES: { label: string; d: number; sep: number; far: boolean }[] = [
-  { label: 'decal 1 mm @ 1 m', d: 1, sep: 0.001, far: false },
-  { label: 'machine @ 30 m', d: 30, sep: 0.005, far: false },
-  { label: 'cliff @ 2 km', d: 2e3, sep: 0.2, far: false },
-  { label: 'mountain @ 60 km', d: 6e4, sep: 5, far: false },
-  { label: 'moon @ 400,000 km', d: 4e8, sep: 1e3, far: true },
+  { label: 'decal @ 1 m', d: 1, sep: 1e-4, far: false },
+  { label: 'machine @ 30 m', d: 30, sep: 1e-4, far: false },
+  { label: 'cliff @ 2 km', d: 2e3, sep: 1e-2, far: false },
+  { label: 'mountain @ 60 km', d: 6e4, sep: 1e-1, far: false },
+  { label: 'moon @ 400,000 km', d: 4e8, sep: 3e-2, far: true },
 ];
 
 function quad(color: number, size: number, order: number): THREE.Mesh {
@@ -75,6 +83,9 @@ export class ZFightProbe {
   private readonly probes: Probe[] = [];
   private readonly px = new Uint8Array(256 * 256 * 4);
   private readonly v = new THREE.Vector3();
+  /** Boot view direction. The BACK quad is offset along this and nothing else:
+   *  "behind" is along the view ray, not radially inward. */
+  private readonly fwd = new THREE.Vector3();
   private frames = 0;
 
   /**
@@ -86,7 +97,10 @@ export class ZFightProbe {
   constructor(
     scenes: Scenes, origin: FloatingOrigin,
     eye: Vec3d, fwd: THREE.Vector3, right: THREE.Vector3, up: THREE.Vector3,
+    /** Absolute override for every scale's budgeted ratio, or 0 for budgets. */
+    readonly sepRatio: number,
   ) {
+    this.fwd.copy(fwd).normalize();
     const look = new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd.clone().negate(), up);
     const rot = new THREE.Quaternion().setFromRotationMatrix(look);
     SCALES.forEach((s, i) => {
@@ -108,7 +122,8 @@ export class ZFightProbe {
       target.add(front);
       target.add(back);
       this.probes.push({
-        label: s.label, distanceM: s.d, separationM: s.sep, far: s.far,
+        label: s.label, distanceM: s.d, separationM: s.d * (sepRatio > 0 ? sepRatio : s.sep),
+        far: s.far,
         anchor, front, back, bleed: 0, lastBleed: -1, maxDelta: 0, pixels: 0,
       });
     });
@@ -120,22 +135,20 @@ export class ZFightProbe {
     for (const p of this.probes) {
       const sep = p.separationM;
       const a = p.anchor;
-      const n = Math.hypot(a.x, a.y, a.z) || 1;
+      const f = this.fwd;
       if (p.far) {
         p.front.position.set(a.x * FAR_SCALE, a.y * FAR_SCALE, a.z * FAR_SCALE);
         p.back.position.set(
-          (a.x + (a.x / n) * sep) * FAR_SCALE,
-          (a.y + (a.y / n) * sep) * FAR_SCALE,
-          (a.z + (a.z / n) * sep) * FAR_SCALE,
+          (a.x + f.x * sep) * FAR_SCALE,
+          (a.y + f.y * sep) * FAR_SCALE,
+          (a.z + f.z * sep) * FAR_SCALE,
         );
         p.front.scale.setScalar(FAR_SCALE);
         p.back.scale.setScalar(FAR_SCALE);
       } else {
         origin.toEngine(a, p.front.position);
-        // "Behind" means further from the body centre here, which for a
-        // camera near the ground is the away-from-viewer direction.
         origin.toEngine(a, p.back.position);
-        p.back.position.addScaledVector(this.v.set(a.x / n, a.y / n, a.z / n), -sep);
+        p.back.position.addScaledVector(f, sep);
       }
       p.front.updateMatrix();
       p.back.updateMatrix();

@@ -14,6 +14,14 @@ export interface RendererCaps {
   readonly anisotropy: number;
   readonly precision: string;
   readonly gpu: string;
+  /**
+   * Bits in the DEFAULT framebuffer's depth attachment, and whether it is a
+   * float format. This decides whether reversed-Z buys anything at all:
+   * reversing only concentrates precision when the mantissa can follow it, so
+   * on a fixed-point buffer it is numerically identical to standard depth.
+   */
+  readonly depthBits: number;
+  readonly depthIsFloat: boolean;
 }
 
 export interface RenderInfo {
@@ -82,6 +90,13 @@ class WebGLSeam implements OFRenderer {
       anisotropy: caps.getMaxAnisotropy(),
       precision: caps.precision,
       gpu: gpuName(gl),
+      depthBits: gl.getParameter(gl.DEPTH_BITS) as number,
+      depthIsFloat: (() => {
+        const t = gl.getFramebufferAttachmentParameter(
+          gl.FRAMEBUFFER, gl.DEPTH, gl.FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE,
+        ) as number;
+        return t === gl.FLOAT;
+      })(),
     };
     this.depth = new DepthPolicy(resolveDepthMode(this.caps.reversedDepthAvailable, cfg, q.tier));
 
@@ -91,7 +106,7 @@ class WebGLSeam implements OFRenderer {
     this.r.autoClear = false;
     this.r.info.autoReset = false;
     this.r.setPixelRatio(Math.min(window.devicePixelRatio, q.maxPixelRatio));
-    this.r.setClearColor(0x000000, 1);
+    this.r.setClearColor(cfg.clearColor, 1);
     this.r.outputColorSpace = THREE.SRGBColorSpace;
     this.r.toneMapping = THREE.ACESFilmicToneMapping;
     this.r.toneMappingExposure = 1.0;

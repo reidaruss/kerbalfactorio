@@ -48,6 +48,8 @@ export class Controller implements ViewSource {
     this.interpolate(1);
   }
 
+  look(dYaw: number, dPitch: number): void { this.view.look(dYaw, dPitch); }
+
   setMode(mode: CameraMode): void {
     if (this.view.mode !== mode) this.view.toggle();
   }

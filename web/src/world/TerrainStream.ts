@@ -14,7 +14,17 @@ import type { ChunkBlobLayout } from './ChunkFormat.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import { ChunkView } from './ChunkView.js';
+import { anyStitch, neighbourStrides, stitchEdges, stridesEqual } from './EdgeStitch.js';
 import type { FromTerrain, TerrainObserveMsg, TerrainUpdateMsg } from '../workers/TerrainProtocol.js';
+
+export interface StitchMetrics {
+  /** Chunks whose seam mask changed on the last resident-set change. */
+  restitched: number;
+  /** Edge vertices snapped onto a coarser neighbour on that pass. */
+  verticesMoved: number;
+  ms: number;
+  totalRestitched: number;
+}
 
 export interface StreamMetrics {
   updateMs: number;
@@ -50,6 +60,9 @@ export class TerrainStream {
   /** Preallocated selection buffers for probeStakes (2.2 rule 6). */
   private readonly nearest: (ChunkView | null)[] = new Array(8).fill(null);
   private readonly nearestD2 = new Float64Array(8);
+  readonly stitchMetrics: StitchMetrics = {
+    restitched: 0, verticesMoved: 0, ms: 0, totalRestitched: 0,
+  };
 
   constructor(
     private readonly worker: Worker,
@@ -60,6 +73,7 @@ export class TerrainStream {
     private readonly origin: FloatingOrigin,
     private readonly events: Events,
     private readonly skirts: boolean,
+    private readonly stitching = true,
   ) {
     this.worker.addEventListener('message', (e) => this.onMessage(e as MessageEvent<FromTerrain>));
     // Exactly one subscriber to the one broadcast (ARCHITECTURE.md 3.6).
@@ -120,9 +134,55 @@ export class TerrainStream {
       });
     }
     if (this.cutoffDirty) { this.resort(); this.cutoffDirty = false; }
-    if (uploaded > 0 || this.evictedSinceCover) { this.updateCoverage(); this.evictedSinceCover = false; }
+    if (uploaded > 0 || this.evictedSinceCover) {
+      this.updateCoverage();
+      // Coverage first: a chunk hidden by its four children must not be found
+      // as anyone's coarse neighbour (EdgeStitch.neighbourStrides).
+      this.stitchAll();
+      this.evictedSinceCover = false;
+    }
     if (uploaded > 0) this.metrics.uploadMs = performance.now() - t0;
     this.recount();
+  }
+
+  /**
+   * Recompute every resident chunk's LOD seam. Runs only when the resident set
+   * changed, which is what makes it affordable: about 250 views x 4 edges x 3
+   * probes of a Map.
+   *
+   * The neighbour depths come from the LIVE resident set rather than from
+   * of_chunk_neighbour_depths, deliberately. /core annotates neighbours only on
+   * freshly-ready chunks, so an already-resident chunk whose neighbour later
+   * merges keeps a stale answer and its crack reopens with nothing to trigger a
+   * rebuild. The resident set is always current, needs no bridge call, and lets
+   * a stride go back DOWN as well as up.
+   */
+  private stitchAll(): void {
+    if (!this.stitching) return;
+    const t0 = performance.now();
+    const visible = (key: string): boolean => this.views.get(key)?.mesh.visible === true;
+    let restitched = 0;
+    let moved = 0;
+    for (const v of this.views.values()) {
+      const want = neighbourStrides(v.faceId, v.depth, v.qx, v.qy, visible);
+      if (stridesEqual(want, v.strides)) continue;
+      v.strides = want;
+      restitched++;
+      // Re-upload the pristine payload first: snapping is destructive and a
+      // stride can shrink as well as grow.
+      this.pool.upload(v.pooled, v.blob, this.layout, v.maxOffsetM);
+      if (!anyStitch(want)) continue;
+      const g = v.mesh.geometry;
+      const pos = (g.getAttribute('position') as THREE.BufferAttribute);
+      const h = (g.getAttribute('aHeight') as THREE.BufferAttribute);
+      moved += stitchEdges(pos.array as Float32Array, h.array as Float32Array, want);
+      pos.needsUpdate = true;
+      h.needsUpdate = true;
+    }
+    this.stitchMetrics.restitched = restitched;
+    this.stitchMetrics.verticesMoved = moved;
+    this.stitchMetrics.ms = performance.now() - t0;
+    if (restitched > 0) this.stitchMetrics.totalRestitched += restitched;
   }
 
   /**
@@ -226,9 +286,11 @@ export class TerrainStream {
   report(): {
     resident: number; near: number; far: number; pending: number; converged: boolean;
     poolInUse: number; poolFree: number; hidden: number; metrics: StreamMetrics;
+    stitch: StitchMetrics;
   } {
     return {
       hidden: this.hiddenCount,
+      stitch: { ...this.stitchMetrics },
       resident: this.views.size,
       near: this.nearCount,
       far: this.farCount,

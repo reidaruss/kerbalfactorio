@@ -32,6 +32,8 @@ export interface ViewSource {
   /** Altitude of the eye above the designed surface, metres. */
   readonly altM: number;
   step(inp: InputFrame, dt: number): void;
+  /** Aim, in radians, relative to the current yaw/pitch. */
+  look(dYaw: number, dPitch: number): void;
   interpolate(alpha: number): void;
   teleport(latDeg: number, lonDeg: number, altM: number): void;
   state(): ObserverState;

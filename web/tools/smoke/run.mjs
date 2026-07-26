@@ -41,7 +41,7 @@ const evalScript = evalFile
 const params = new URLSearchParams();
 for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',
   't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
-  'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp']) {
+  'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

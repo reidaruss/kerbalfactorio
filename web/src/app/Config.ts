@@ -18,6 +18,8 @@ export interface Scenario {
   readonly sunDot: number;
   /** 'walk' spawns the kinematic capsule; 'fly' keeps the free/orbit camera. */
   readonly mode?: PlayerMode;
+  /** Overrides the horizon-framing pitch. The depth probe needs a clear ray. */
+  readonly pitchDeg?: number;
 }
 
 export type PlayerMode = 'walk' | 'fly';
@@ -38,8 +40,10 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   surface: { ...HOME, alt: 40, sunDot: 0.55 },
   // Mid-ascent, deliberately straddling the near/far chunk cutoff.
   ascent: { ...HOME, alt: 1.2e4, sunDot: 0.70 },
-  // Depth-precision probe (ARCHITECTURE.md section 3.3).
-  zfight: { ...HOME, alt: 900, sunDot: 0.55 },
+  // Depth-precision probe. The pitch is deliberately ABOVE the horizon: the
+  // probe pairs sit along the view ray out to 60 km and terrain must not bury
+  // them (ARCHITECTURE.md section 3.3).
+  zfight: { ...HOME, alt: 900, sunDot: 0.55, pitchDeg: 8 },
   // W2: boots on the ground with the kinematic capsule driving the observer.
   // alt is ignored (the capsule spawns ON the surface); it is kept so the
   // scenario record has one shape.
@@ -80,6 +84,20 @@ export interface Config {
   readonly walkSpeedMps: number;
   /** Render-time interpolation of the 60 Hz capsule. ?interp=0 is the W1 behaviour. */
   readonly interpolate: boolean;
+  /**
+   * Clear colour as 0xRRGGBB. ?clear=ff00ff paints the void magenta, which is
+   * the only way to tell a HOLE in the terrain from a dark-shaded steep face:
+   * against the default black sky the two look identical.
+   */
+  readonly clearColor: number;
+  /**
+   * Depth-probe separation as a FRACTION of each scale's distance. The five
+   * scales span 1 m to 400,000 km, so one absolute separation cannot test them
+   * all. 0 (the default) uses each scale's measured budget, which makes a plain
+   * run a regression gate; ?zsep=0.001 overrides all five, which is how those
+   * budgets were swept in the first place.
+   */
+  readonly zSepRatio: number;
 }
 
 const DEFAULT_SEED_LO = 0x0bf00d01;
@@ -131,6 +149,7 @@ export function parseConfig(search: string): Config {
     lon: num(p, 'lon', base.lon),
     alt: num(p, 'alt', base.alt),
     sunDot: num(p, 'sundot', base.sunDot),
+    pitchDeg: base.pitchDeg,
   };
   return {
     seedLo: seed.lo,
@@ -166,5 +185,12 @@ export function parseConfig(search: string): Config {
     // ?interp=0 reproduces the un-interpolated behaviour so the jitter fix has a
     // measured BEFORE in the same build, not an argument.
     interpolate: p.get('interp') !== '0',
+    zSepRatio: Math.max(0, num(p, 'zsep', 0)),
+    clearColor: (() => {
+      const v = p.get('clear');
+      if (v === null) return 0x000000;
+      const n = Number.parseInt(v.replace('#', ''), 16);
+      return Number.isFinite(n) ? n : 0x000000;
+    })(),
   };
 }
