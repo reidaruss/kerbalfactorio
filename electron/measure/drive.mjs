@@ -50,6 +50,7 @@ const shellArgs = ['.', `--remote-debugging-port=${PORT}`, '--offscreen', '--wid
 if (args.has('url')) shellArgs.push(`--url=${args.get('url')}`);
 else shellArgs.push('--origin=protocol');
 if (args.has('isolate')) shellArgs.push('--isolate');
+if (args.has('focusable')) shellArgs.push('--focusable');
 
 const child = spawn(electronBin, shellArgs, { cwd: shellDir, stdio: ['pipe', 'pipe', 'pipe'] });
 child.stdout.on('data', (d) => process.stderr.write(`[shell] ${d}`));

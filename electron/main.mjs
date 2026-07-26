@@ -14,14 +14,19 @@
 //
 // Nothing in here is game code. The renderer is the unmodified Vite build.
 
-import { app, BrowserWindow, protocol, net, session } from 'electron';
+import { app, BrowserWindow, protocol } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, normalize, resolve, sep } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, '..');
-const webDist = resolve(repoRoot, 'web', 'dist');
+// Two layouts, one file. In the repo, main.mjs sits at electron/ and the client
+// is at ../web/dist. Packaged, measure/pack.mjs stages the client to web/dist
+// INSIDE the app root, which is an asar archive. `app.isPackaged` is the only
+// honest discriminator; guessing from the path would break the first time the
+// repo moved.
+const packaged = app.isPackaged;
+const webDist = packaged ? resolve(here, 'web', 'dist') : resolve(here, '..', 'web', 'dist');
 const shellRoot = resolve(here, 'shell');
 
 const argOf = (name, fallback) => {
@@ -43,6 +48,12 @@ const QUERY = argOf('query', 'debug=1');
 // is not guaranteed to composite, which would be the same trap by a different
 // door. See docs/web/PACKAGING.md section "Why offscreen and not headless".
 const OFFSCREEN = process.argv.includes('--offscreen');
+// Pointer lock is refused on a non-focusable window (Chromium throws
+// WrongDocumentError), and mouse look is the whole control scheme of a first
+// person game, so `--focusable` keeps the window offscreen but focusable. That
+// separates "Electron cannot pointer lock" from "the measurement window could
+// not pointer lock", which are opposite conclusions.
+const FOCUSABLE = process.argv.includes('--focusable');
 const WIDTH = Number(argOf('width', '1600'));
 const HEIGHT = Number(argOf('height', '900'));
 const KEEP_OPEN = process.argv.includes('--keep-open');
@@ -106,14 +117,20 @@ app.whenReady().then(async () => {
     let file = safeJoin(root, u.pathname === '/' ? '/index.html' : u.pathname);
     if (file === null) return new Response('bad path', { status: 403 });
     if (!existsSync(file)) return new Response('not found', { status: 404 });
-    const res = await net.fetch(pathToFileURL(file).toString());
-    const headers = new Headers(res.headers);
+    // readFileSync rather than net.fetch(file://): Electron patches fs to read
+    // THROUGH an asar archive, and the file:// loader does not. A packaged build
+    // serves every one of these bytes out of app.asar.
+    let body;
+    try { body = readFileSync(file); }
+    catch (e) { return new Response(`read failed: ${e.message}`, { status: 500 }); }
+    const headers = new Headers();
     headers.set('Content-Type', mime(file));
+    headers.set('Content-Length', String(body.byteLength));
     if (ISOLATE) {
       headers.set('Cross-Origin-Opener-Policy', 'same-origin');
       headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
     }
-    return new Response(res.body, { status: 200, headers });
+    return new Response(body, { status: 200, headers });
   });
 
   const win = new BrowserWindow({
@@ -124,7 +141,7 @@ app.whenReady().then(async () => {
     // and refusing focus, so a measurement run does not steal the machine from
     // whoever is using it.
     show: true,
-    ...(OFFSCREEN ? { x: -3200, y: -3200, focusable: false, skipTaskbar: true } : {}),
+    ...(OFFSCREEN ? { x: -3200, y: -3200, focusable: !!FOCUSABLE, skipTaskbar: true } : {}),
     backgroundColor: '#000000',
     webPreferences: {
       contextIsolation: true,
@@ -138,7 +155,7 @@ app.whenReady().then(async () => {
     },
   });
   win.setMenuBarVisibility(false);
-  if (OFFSCREEN) { win.setPosition(-3200, -3200); win.blur(); }
+  if (OFFSCREEN) { win.setPosition(-3200, -3200); if (!FOCUSABLE) win.blur(); }
 
   const target = (() => {
     // --url= points the shell at a live vite server instead of the packaged
@@ -182,12 +199,20 @@ app.whenReady().then(async () => {
         const waitFor = (fn) => new Promise((r) => {
           const i = setInterval(() => { try { if (fn()) { clearInterval(i); r(); } } catch (_) {} }, 2);
         });
+        // Three marks, not one. The first run of this measurement said "cold
+        // start is 7 s" and left it there, which is useless: did-finish-load is
+        // 0.7 s and the client's own bootMs is 1.0 s, so five seconds were
+        // unaccounted for and could have been blamed on Electron. Splitting the
+        // wait shows exactly which phase owns them, and the browser shows the
+        // same split, which is what proves the shell is not the cause.
         await waitFor(() => typeof window.__of !== 'undefined');
+        const tApi = Date.now();
         await window.__of.ready;
+        const tReady = Date.now();
         await waitFor(() => window.__of.world().frames >= 1);
         const w = window.__of.world();
         console.log('OF_FIRSTFRAME ' + JSON.stringify({
-          t: Date.now(), frames: w.frames, tick: w.tick,
+          t: Date.now(), tApi, tReady, frames: w.frames, tick: w.tick,
           origin: location.origin, protocol: location.protocol,
           boot: window.__of.boot, gpu: window.__of.stats().gpu,
         }));

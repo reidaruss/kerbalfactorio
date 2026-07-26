@@ -19,6 +19,7 @@
   "devDependencies": {
     "@electron/packager": "^18.4.2",
     "electron": "^40.0.0",
-    "playwright-core": "^1.62.0"
+    "playwright-core": "^1.62.0",
+    "steamworks.js": "^0.4.0"
   }
 }

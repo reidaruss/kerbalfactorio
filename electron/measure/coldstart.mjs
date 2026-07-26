@@ -37,6 +37,13 @@ for (const a of process.argv.slice(2)) {
 const RUNS = Number(args.get('runs') ?? 5);
 const BROWSER_URL = args.get('url') ?? 'http://127.0.0.1:4173/?debug=1';
 const SKIP_BROWSER = args.has('shell-only');
+// --exe points at the PACKAGED application instead of the dev electron binary.
+// The two are not the same measurement: the dev run loads main.mjs and web/dist
+// off the filesystem, the packaged run reads every byte out of an asar archive.
+// The packaged number is the one a Steam player would see.
+const EXE = args.get('exe');
+const bin = EXE ? resolve(EXE) : electronBin;
+const leadArgs = EXE ? [] : ['.'];
 
 const CHROME_CANDIDATES = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -68,7 +75,7 @@ function shellRun(fresh) {
     const profile = resolve(tmpdir(), `of-shell-profile-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const extra = fresh ? [`--user-data-dir=${profile}`] : [];
     const t0 = Date.now();
-    const child = spawn(electronBin, ['.', '--origin=protocol', '--offscreen', '--width=1600', '--height=900', ...extra],
+    const child = spawn(bin, [...leadArgs, '--origin=protocol', '--offscreen', '--width=1600', '--height=900', ...extra],
       { cwd: shellDir, stdio: ['pipe', 'pipe', 'pipe'] });
     const marks = { spawn: t0 };
     let buf = '';
@@ -113,8 +120,11 @@ async function browserRun() {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1 });
   const tLaunched = Date.now();
   await page.goto(BROWSER_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const tDom = Date.now();
   await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: 60000 });
+  const tApi = Date.now();
   await page.evaluate(() => window.__of.ready);
+  const tReady = Date.now();
   await page.waitForFunction(() => window.__of.world().frames >= 1, null, { timeout: 60000 });
   const firstFrame = Date.now();
   const page1 = await page.evaluate(() => ({
@@ -123,7 +133,7 @@ async function browserRun() {
   }));
   await browser.close();
   assertHardwareGpu('browser cold start', page1.gpu);
-  return { spawn: t0, browserLaunched: tLaunched, firstFrame, page: page1 };
+  return { spawn: t0, browserLaunched: tLaunched, tDom, tApi, tReady, firstFrame, page: page1 };
 }
 
 const out = { shell: [], shellWarm: [], browser: [] };
@@ -150,12 +160,18 @@ const bootOf = (rs) => stat(rs.filter((r) => r.page?.boot?.bootMs).map((r) => r.
 
 console.log(JSON.stringify({
   runs: RUNS,
+  shellBinary: bin,
   shell: {
     profile: 'FRESH --user-data-dir per run, like-for-like with playwright Chrome',
     spawnToFirstFrameMs: stat(shellMs),
     spawnToAppReadyMs: shellToReady.length ? stat(shellToReady) : null,
     spawnToDidFinishLoadMs: shellToLoad.length ? stat(shellToLoad) : null,
     inPageBootMs: bootOf(out.shell),
+    phaseMs: {
+      spawnToApiPresent: stat(out.shell.filter((r) => r.page?.tApi).map((r) => r.page.tApi - r.spawn)),
+      apiPresentToOfReady: stat(out.shell.filter((r) => r.page?.tReady).map((r) => r.page.tReady - r.page.tApi)),
+      ofReadyToFirstFrame: stat(out.shell.filter((r) => r.page?.tReady).map((r) => r.firstFrame - r.page.tReady)),
+    },
     gpu: out.shell.find((r) => r.page)?.page?.gpu ?? null,
     origin: out.shell.find((r) => r.page)?.page?.origin ?? null,
     firstFrameTick: out.shell.map((r) => r.page?.tick ?? null),
