@@ -353,6 +353,74 @@
       "sockets": ["socket_hit", "socket_item_pop"],
       "clips": [],
       "collision": "col_BoulderCoal"
+    },
+
+    "tree_conifer": {
+      "glb": "assets/models/dist/nodes/tree_conifer.glb",
+      "node_kind": "Tree",
+      "lod0_node": "TreeConifer_Full_LOD0",
+      "lod_nodes": [
+        "TreeConifer_Full_LOD0", "TreeConifer_Full_LOD1",
+        "TreeConifer_Full_LOD2",
+        "TreeConifer_Half_LOD0", "TreeConifer_Half_LOD1",
+        "TreeConifer_Half_LOD2",
+        "TreeConifer_Low_LOD0", "TreeConifer_Low_LOD1",
+        "TreeConifer_Low_LOD2",
+        "TreeConifer_Stump_LOD0", "TreeConifer_Stump_LOD1",
+        "TreeConifer_Stump_LOD2"
+      ],
+      "dims_xyz_m": [2.4, 6.50, 2.4],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 600,
+      "max_tris_total": 1400,
+      "max_materials": 3,
+      "sockets": ["socket_hit", "socket_fell_pivot", "socket_item_pop"],
+      "clips": ["Tree_Sway", "Tree_Fall"],
+      "collision": "col_TreeConifer",
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDry"]
+    },
+    "tree_broadleaf": {
+      "glb": "assets/models/dist/nodes/tree_broadleaf.glb",
+      "node_kind": "Tree",
+      "lod0_node": "TreeBroadleaf_Full_LOD0",
+      "lod_nodes": [
+        "TreeBroadleaf_Full_LOD0", "TreeBroadleaf_Full_LOD1",
+        "TreeBroadleaf_Full_LOD2",
+        "TreeBroadleaf_Half_LOD0", "TreeBroadleaf_Half_LOD1",
+        "TreeBroadleaf_Half_LOD2",
+        "TreeBroadleaf_Low_LOD0", "TreeBroadleaf_Low_LOD1",
+        "TreeBroadleaf_Low_LOD2",
+        "TreeBroadleaf_Stump_LOD0", "TreeBroadleaf_Stump_LOD1",
+        "TreeBroadleaf_Stump_LOD2"
+      ],
+      "dims_xyz_m": [4.0, 5.00, 4.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 700,
+      "max_tris_total": 1300,
+      "max_materials": 3,
+      "sockets": ["socket_hit", "socket_fell_pivot", "socket_item_pop"],
+      "clips": ["Tree_Sway", "Tree_Fall"],
+      "collision": "col_TreeBroadleaf",
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDry"]
+    },
+    "bush_scrub": {
+      "glb": "assets/models/dist/nodes/bush_scrub.glb",
+      "node_kind": "Tree",
+      "lod0_node": "BushScrub_Full_LOD0",
+      "lod_nodes": [
+        "BushScrub_Full_LOD0", "BushScrub_Full_LOD1",
+        "BushScrub_Half_LOD0", "BushScrub_Half_LOD1",
+        "BushScrub_Low_LOD0", "BushScrub_Low_LOD1"
+      ],
+      "dims_xyz_m": [1.0, 0.90, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 200,
+      "max_tris_total": 600,
+      "max_materials": 3,
+      "sockets": ["socket_hit", "socket_item_pop"],
+      "clips": ["Tree_Sway"],
+      "collision": "col_BushScrub",
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDry"]
     }
   }
 }

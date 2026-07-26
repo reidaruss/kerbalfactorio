@@ -215,6 +215,76 @@ def lobe(rx, ry, rz, loc=(0.0, 0.0, 0.0), seg=7, seed=1, jit=0.17,
     return verts, faces, [smooth] * len(faces), roles
 
 
+def blob(rx, ry, rz, loc=(0.0, 0.0, 0.0), seg=8, seed=1, jit=0.15,
+         rings=(0.22, 0.50, 0.80), radii=(0.62, 1.00, 0.70), smooth=False):
+    """A closed faceted spheroid centred on `loc`: broadleaf canopy masses,
+    bush lobes, oil pressure mounds.
+
+    rz is the FULL height, rx/ry the radii, so a canopy 'squashed to 0.6
+    vertical' is rz = 1.2 * rx. Bottom apex, jittered rings, top apex, all
+    flat shaded: 2 * seg * len(rings) triangles."""
+    nxt = rng(seed)
+    n = max(3, seg)
+    z0 = loc[2] - rz * 0.5
+    verts = [(loc[0], loc[1], z0)]
+    for frac, rf in zip(rings, radii):
+        z = z0 + rz * frac * _wob(nxt, 0.06)
+        for i in range(n):
+            a = 2.0 * math.pi * i / n + (nxt() - 0.5) * (2.0 * math.pi / n) * 0.6
+            r = rf * _wob(nxt, jit)
+            verts.append((loc[0] + rx * r * math.cos(a),
+                          loc[1] + ry * r * math.sin(a), z))
+    top = len(verts)
+    verts.append((loc[0] + rx * (nxt() - 0.5) * 0.2,
+                  loc[1] + ry * (nxt() - 0.5) * 0.2, z0 + rz))
+
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((0, 1 + j, 1 + i))                    # bottom fan
+    for b in range(len(rings) - 1):
+        lo, hi = 1 + b * n, 1 + (b + 1) * n
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((lo + i, lo + j, hi + j, hi + i))
+    last = 1 + (len(rings) - 1) * n
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((last + i, last + j, top))            # top fan
+    return verts, faces, [smooth] * len(faces)
+
+
+def taper(r_bot, r_top, z0, z1, loc=(0.0, 0.0, 0.0), seg=8, phase_deg=0.0,
+          smooth=True, lean=(0.0, 0.0)):
+    """A tapered cylinder along +Z as raw geometry: trunks, conifer tiers,
+    fork limbs.
+
+    of_lib.MeshBuilder.frustum does the same thing, but a Parts pile has to
+    own its vertices to be refittable, so the harvest nodes need the raw form.
+
+    `lean` offsets the TOP ring in X/Y, which is how a broadleaf fork limb
+    leaves the trunk at an angle without any rotation machinery.
+
+    r_top must be > 0. A zero top radius collapses the top cap into degenerate
+    faces that mesh.validate() silently deletes, which would make the reported
+    triangle count a lie."""
+    n = max(3, seg)
+    ph = math.radians(phase_deg)
+    verts = []
+    for r, z, dx, dy in ((r_bot, z0, 0.0, 0.0), (r_top, z1, lean[0], lean[1])):
+        for i in range(n):
+            a = 2.0 * math.pi * i / n + ph
+            verts.append((loc[0] + dx + r * math.cos(a),
+                          loc[1] + dy + r * math.sin(a), loc[2] + z))
+    faces = [tuple(range(n - 1, -1, -1)), tuple(range(n, 2 * n))]
+    sm = [False, False]
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((i, j, n + j, n + i))
+        sm.append(smooth)
+    return verts, faces, sm
+
+
 def rim_ring(n, r_out, r_in, z_top, loc=(0.0, 0.0, 0.0), seed=1, jit=0.11,
              z_jit=0.22, z_bottom=0.0, include_bottom=False):
     """An irregular annular prism: the rock rim of a water pool, the cracked
