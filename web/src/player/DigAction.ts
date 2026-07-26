@@ -12,14 +12,32 @@ import type { VoxelMesh } from '../world/VoxelMesh.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
-/** Reach and brush, metres. A 1.2 m brush cuts a passage a capsule fits down. */
+/**
+ * Reach and brush, metres.
+ *
+ * The brush was 1.2 m and the tunnel it cut was NARROWER THAN THE PLAYER: a
+ * sphere of radius 1.2 about a point takes cells whose CENTRES are inside it, so
+ * off-lattice it clears only two cells on an axis, which is 2 m of bore for a
+ * 1.8 m capsule with nothing to spare, and the passage ran on ahead of a player
+ * who could not follow it (STATUS.md, W5 remaining).
+ *
+ * 1.5 m is the value that guarantees a 3x3 cell cross-section at the strike
+ * centre whatever the phase against the lattice: offsets of 1 cell on two axes
+ * are 1.414 m and land inside, offsets of 2 cells do not. That is 3 m of
+ * headroom over a 1.8 m capsule and 3 m of width over a 0.8 m one.
+ */
 export const DIG = {
   reachM: 4.5,
-  radiusM: 1.2,
+  radiusM: 1.5,
   /** Ray march step. Finer than the 1 m voxel so a thin wall cannot be missed. */
   stepM: 0.25,
-  /** Ticks between digs while the key is held. */
-  cooldownTicks: 12,
+  /**
+   * Ticks between digs while the key is held, at 60 Hz. 12 was two thirds of a
+   * second per swing and read as a machine with a duty cycle; 9 is 6.7 strikes a
+   * second, which is a person hitting a rock, and it matches the impact frame of
+   * the mine clips (ASSET-SPECS: frames 16 to 18 of a 24 frame swing).
+   */
+  cooldownTicks: 9,
 };
 
 export interface DigStats {

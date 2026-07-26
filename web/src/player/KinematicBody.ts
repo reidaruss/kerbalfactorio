@@ -49,6 +49,21 @@ const VOXEL_FLOOR_SEARCH_M = 6;
  * than a capsule (so a tunnel floor is never mistaken for the surface).
  */
 const DEEP_UNDERGROUND_M = 1.5;
+/**
+ * Capsule sample heights above the feet, in metres. Three points up the capsule,
+ * because a single feet test lets the player walk their head through a ceiling,
+ * and a full swept capsule is not affordable in-frame (DW-12: no physics engine).
+ */
+const CAPSULE_SAMPLES_M = [0.15, 0.9, 1.65];
+/** Ledge heights a blocked step retries at, metres. A voxel is 1 m. */
+const STEP_UP_M = [0.55, 1.1];
+/**
+ * Step-DOWN snap while standing on a voxel floor. A dug tunnel floor is a
+ * staircase of whole cells, so the walking snap (0.35 m) leaves the player
+ * ballistic for a tick at every step down and the walk reads as a stutter.
+ * Just over a cell, so it follows a dug floor and still falls down a shaft.
+ */
+const DEEP_SNAP_M = 1.1;
 
 export class KinematicBody {
   /** Feet, on the surface. Body-frame f64 metres. */
@@ -152,22 +167,26 @@ export class KinematicBody {
     this.blockedByRock = false;
     const deep = this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
     if (deep) {
-      if (this.oracle.solidAt(qx, qy, qz)) {
-        // Into a wall. Undo the step and drop the tangential velocity; step 2
-        // still pushes out of anything the previous tick left us inside of.
-        qx = p.x; qy = p.y; qz = p.z;
-        qr = Math.hypot(qx, qy, qz) || 1;
-        dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
-        tx = 0; ty = 0; tz = 0;
-        this.blockedByRock = true;
-      }
+      // A refused step used to mean a refused TICK: the whole displacement was
+      // undone and the tangential velocity zeroed, so brushing a tunnel wall at
+      // any angle stopped the player dead and the tunnel ran on ahead of them
+      // (STATUS.md, W5 remaining). Now the step is resolved: climb a ledge if
+      // one is in the way, otherwise slide along the wall by dropping the
+      // body-frame axis that is blocked. Voxel walls ARE axis aligned, so
+      // dropping an axis is exactly sliding along the face.
+      const s = this.resolveDeepStep(p, qx, qy, qz, ux, uy, uz);
+      qx = s.x; qy = s.y; qz = s.z;
+      qr = Math.hypot(qx, qy, qz) || 1;
+      dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
+      if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByRock = true; }
       const floorR = this.voxelFloor(qr, dxn, dyn, dzn);
       // No floor within reach is an open shaft, so fall. Never snap to the roof.
       groundR = floorR === null ? -Infinity : floorR;
       this.underRock = floorR !== null;
     }
     const gap = qr - groundR;
-    const landing = gap <= 0 || (this.grounded && gap <= CAPSULE.groundSnapM && vUp <= 0);
+    const snapM = this.underRock ? DEEP_SNAP_M : CAPSULE.groundSnapM;
+    const landing = gap <= 0 || (this.grounded && gap <= snapM && vUp <= 0);
     if (landing && Number.isFinite(groundR)) {
       qx = dxn * groundR; qy = dyn * groundR; qz = dzn * groundR;
       qr = groundR;
@@ -242,6 +261,69 @@ export class KinematicBody {
    * Marched at 0.1 m, an order finer than the 1 m cell, so the landing radius is
    * accurate to a tenth of a voxel without a per-cell plane intersection.
    */
+  /**
+   * Is the whole capsule in air at this foot position? Three samples up the
+   * radial. The feet-only test this replaces let the player walk their head
+   * through a ceiling, which mattered the moment the bore got wide enough to
+   * walk down at all.
+   */
+  private capsuleFree(x: number, y: number, z: number,
+    ux: number, uy: number, uz: number): boolean {
+    for (const h of CAPSULE_SAMPLES_M) {
+      this.oracleCalls++;
+      if (this.oracle.solidAt(x + ux * h, y + uy * h, z + uz * h)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Resolve one underground step against solid voxels: take it, climb it, slide
+   * it, or refuse it, in that order.
+   *
+   * Sliding drops ONE body-frame axis of the displacement at a time and keeps
+   * the best survivor. That is correct rather than approximate here, because a
+   * voxel face is always perpendicular to a body-frame axis, so the wall's
+   * normal IS one of the three axes and "drop the blocked axis" is the exact
+   * projection onto the wall plane. Ordered by how much displacement each
+   * candidate keeps, so a glancing contact loses the least.
+   */
+  private resolveDeepStep(p: Vec3d, qx: number, qy: number, qz: number,
+    ux: number, uy: number, uz: number):
+    { x: number; y: number; z: number; blocked: boolean } {
+    if (this.capsuleFree(qx, qy, qz, ux, uy, uz)) {
+      return { x: qx, y: qy, z: qz, blocked: false };
+    }
+    // Already embedded (spawned into rock, or a dig closed around us): refusing
+    // would be a permanent lock, and the destination cannot be worse than here.
+    if (!this.capsuleFree(p.x, p.y, p.z, ux, uy, uz)) {
+      return { x: qx, y: qy, z: qz, blocked: false };
+    }
+    // A ledge. Lifting the feet is enough: the floor march below re-seats them
+    // on whatever they actually landed on, so this never levitates (15.2 #48).
+    for (const h of STEP_UP_M) {
+      const sx = qx + ux * h, sy = qy + uy * h, sz = qz + uz * h;
+      if (this.capsuleFree(sx, sy, sz, ux, uy, uz)) {
+        return { x: sx, y: sy, z: sz, blocked: false };
+      }
+    }
+    const dx = qx - p.x, dy = qy - p.y, dz = qz - p.z;
+    // Drop-one-axis first (keeps two), then single-axis (keeps one).
+    const tries: [number, number, number][] = [
+      [0, dy, dz], [dx, 0, dz], [dx, dy, 0], [dx, 0, 0], [0, dy, 0], [0, 0, dz],
+    ];
+    tries.sort((a, b) => (b[0] * b[0] + b[1] * b[1] + b[2] * b[2])
+      - (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]));
+    for (const [ax, ay, az] of tries) {
+      if (ax === dx && ay === dy && az === dz) continue;   // already refused
+      if (ax === 0 && ay === 0 && az === 0) continue;
+      const sx = p.x + ax, sy = p.y + ay, sz = p.z + az;
+      if (this.capsuleFree(sx, sy, sz, ux, uy, uz)) {
+        return { x: sx, y: sy, z: sz, blocked: false };
+      }
+    }
+    return { x: p.x, y: p.y, z: p.z, blocked: true };
+  }
+
   private voxelFloor(r: number, ux: number, uy: number, uz: number): number | null {
     for (let d = 0; d <= VOXEL_FLOOR_SEARCH_M; d += 0.1) {
       const rr = r - d;

@@ -56,8 +56,10 @@
 // rendering, no physics — the isolation harness the UE voxel layer mirrors.
 // =============================================================================
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <vector>
+#include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
 
@@ -193,8 +195,44 @@ class VoxelEdits {
   // ---- SOLIDITY = procedural-solid AND NOT removed ------------------------
   bool isSolid(const BodyParams& body, const VoxelCell& c) const {
     if (isRemoved(c)) return false;          // carved to air
-    return isProcSolid(body, c);
+    return procSolidMemo(body, c);
   }
+
+  /**
+   * MEMOIZED isProcSolid. isProcSolid evaluates the designed-height noise stack
+   * (about 2 us), and the callers ask the same question about the same cell over
+   * and over: exposedFaces tests a cell plus its six neighbours, every neighbour
+   * is itself a cell, and the whole region is re-meshed after every dig; the
+   * walker's floor march re-samples the same column 60 times a tick. That is why
+   * a modest dirty box cost 27 to 69 ms of oracle and microseconds of mesher
+   * (ARCHITECTURE.md 15.2 item 50).
+   *
+   * Memoizing a PURE function of (body, cell) cannot change a result, so
+   * determinism and the seed+diff property are untouched: this is a cache, not a
+   * second authority (standing rule 1). It is keyed on the world-generation
+   * fields of BodyParams, so a different body clears it rather than answering
+   * for the wrong planet, and it is bounded so a long walk cannot grow it
+   * without limit.
+   */
+  bool procSolidMemo(const BodyParams& body, const VoxelCell& c) const {
+    const uint64_t sig = worldSig(body);
+    if (!procValid_ || sig != procSig_) {
+      proc_.clear();
+      procSig_ = sig;
+      procValid_ = true;
+    } else if (proc_.size() >= kProcMemoMax) {
+      proc_.clear();
+    }
+    const uint64_t id = voxelCellId(c);
+    const auto it = proc_.find(id);
+    if (it != proc_.end()) return it->second != 0;
+    const bool s = isProcSolid(body, c);
+    proc_.emplace(id, static_cast<uint8_t>(s ? 1 : 0));
+    return s;
+  }
+
+  /** Cells currently memoized. Diagnostic only; never a gameplay input. */
+  size_t procMemoSize() const { return proc_.size(); }
   // Solidity at a body-frame position (the cell containing it).
   bool isSolidAt(const BodyParams& body, const Vec3& pos) const {
     return isSolid(body, cellForPos(pos));
@@ -284,9 +322,33 @@ class VoxelEdits {
     dirtyMax_.cz = std::max(dirtyMax_.cz, c.cz);
   }
 
+  // The world-generation identity of a body: the ONLY fields solidity reads
+  // (see BodyParams — mu and bodyId take no part in world generation). Two
+  // bodies that agree on all four produce the same solid shell, so the memo is
+  // valid across them; anything else clears it.
+  static uint64_t worldSig(const BodyParams& body) {
+    uint64_t h = body.bodySeed;
+    const double f[3] = {body.radiusM, body.maxReliefM, body.seaLevelM};
+    for (int i = 0; i < 3; ++i) {
+      uint64_t bits = 0;
+      static_assert(sizeof(bits) == sizeof(f[i]), "double is 64 bits");
+      std::memcpy(&bits, &f[i], sizeof(bits));
+      h ^= bits + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+    }
+    return h;
+  }
+  // 4 M cells is roughly a 160 m cube of terrain, far more than the near field
+  // ever holds, and bounds the memo at a few tens of MB.
+  static constexpr size_t kProcMemoMax = 4u << 20;
+
   std::unordered_set<uint64_t> removed_;   // carved-to-air cell ids (the diff)
   VoxelCell dirtyMin_{}, dirtyMax_{};      // inclusive touched-cell AABB
   bool dirtyValid_ = false;
+  // Pure-function memo (procSolidMemo). `mutable` because it is a cache: it can
+  // be filled through a const VoxelEdits without changing what that object means.
+  mutable std::unordered_map<uint64_t, uint8_t> proc_;
+  mutable uint64_t procSig_ = 0;
+  mutable bool procValid_ = false;
 };
 
 // =============================================================================
@@ -335,20 +397,65 @@ inline void forSolidCellsInRegion(const BodyParams& body, const VoxelEdits& edit
 }
 
 // Emit the exposed faces (solid->air boundaries) within an inclusive cell AABB.
-// Efficient: iterates the region once; per solid cell tests its 6 neighbours.
+//
+// Solidity is resolved ONCE per cell into a dense slab covering the region
+// padded by one, and the six-neighbour test then reads the slab. The naive form
+// below (kept as the fallback) asks isSolid up to SEVEN times per cell — its own
+// test plus once as each of its six neighbours' neighbour — and every one of
+// those was a hash probe or a noise evaluation. Emission order is unchanged
+// (z,y,x then axis,sign), so the face list is byte-identical to the old path.
 inline std::vector<FaceQuad> exposedFaces(const BodyParams& body,
                                           const VoxelEdits& edits,
                                           const VoxelCell& cmin,
                                           const VoxelCell& cmax) {
   std::vector<FaceQuad> faces;
-  forSolidCellsInRegion(body, edits, cmin, cmax, [&](const VoxelCell& c) {
-    for (int axis = 0; axis < 3; ++axis)
-      for (int sign = -1; sign <= 1; sign += 2) {
-        const VoxelCell nb = voxelNeighbour(c, axis, sign);
-        if (!edits.isSolid(body, nb))        // neighbour is AIR -> face is visible
-          faces.push_back(FaceQuad{c, axis, sign});
+  if (cmax.cx < cmin.cx || cmax.cy < cmin.cy || cmax.cz < cmin.cz) return faces;
+
+  // +2 for the one-cell pad the neighbour test reaches into.
+  const int64_t nx = static_cast<int64_t>(cmax.cx) - cmin.cx + 3;
+  const int64_t ny = static_cast<int64_t>(cmax.cy) - cmin.cy + 3;
+  const int64_t nz = static_cast<int64_t>(cmax.cz) - cmin.cz + 3;
+  const int64_t total = nx * ny * nz;
+  // A region big enough to blow the slab out is not a near-field re-mesh; take
+  // the direct path rather than allocate hundreds of MB.
+  static constexpr int64_t kMaxSlabCells = 8ll << 20;
+  if (total > kMaxSlabCells) {
+    forSolidCellsInRegion(body, edits, cmin, cmax, [&](const VoxelCell& c) {
+      for (int axis = 0; axis < 3; ++axis)
+        for (int sign = -1; sign <= 1; sign += 2)
+          if (!edits.isSolid(body, voxelNeighbour(c, axis, sign)))
+            faces.push_back(FaceQuad{c, axis, sign});
+    });
+    return faces;
+  }
+
+  std::vector<uint8_t> slab(static_cast<size_t>(total), 0);
+  const auto at = [&](int64_t x, int64_t y, int64_t z) -> int64_t {
+    return ((z - cmin.cz + 1) * ny + (y - cmin.cy + 1)) * nx + (x - cmin.cx + 1);
+  };
+  for (int64_t z = cmin.cz - 1; z <= static_cast<int64_t>(cmax.cz) + 1; ++z)
+    for (int64_t y = cmin.cy - 1; y <= static_cast<int64_t>(cmax.cy) + 1; ++y)
+      for (int64_t x = cmin.cx - 1; x <= static_cast<int64_t>(cmax.cx) + 1; ++x) {
+        const VoxelCell c{static_cast<int32_t>(x), static_cast<int32_t>(y),
+                          static_cast<int32_t>(z)};
+        slab[static_cast<size_t>(at(x, y, z))] = edits.isSolid(body, c) ? 1 : 0;
       }
-  });
+
+  for (int64_t z = cmin.cz; z <= cmax.cz; ++z)
+    for (int64_t y = cmin.cy; y <= cmax.cy; ++y)
+      for (int64_t x = cmin.cx; x <= cmax.cx; ++x) {
+        if (!slab[static_cast<size_t>(at(x, y, z))]) continue;
+        const VoxelCell c{static_cast<int32_t>(x), static_cast<int32_t>(y),
+                          static_cast<int32_t>(z)};
+        for (int axis = 0; axis < 3; ++axis)
+          for (int sign = -1; sign <= 1; sign += 2) {
+            const int64_t ax = x + (axis == 0 ? sign : 0);
+            const int64_t ay = y + (axis == 1 ? sign : 0);
+            const int64_t az = z + (axis == 2 ? sign : 0);
+            if (!slab[static_cast<size_t>(at(ax, ay, az))])
+              faces.push_back(FaceQuad{c, axis, sign});
+          }
+      }
   return faces;
 }
 
