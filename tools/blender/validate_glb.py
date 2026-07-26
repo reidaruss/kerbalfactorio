@@ -299,11 +299,14 @@ def validate(asset, spec, verbose=False):
     t0 = subtree_tris(gltf, by_name[lod0])
     r.check("tris_lod0", t0 <= spec["max_tris_lod0"],
             "%d <= %d" % (t0, spec["max_tris_lod0"]))
-    # Render budget excludes col_* proxies - they never reach the GPU.
-    render = sum(subtree_tris(gltf, i) for i, (n, _, p) in walked.items()
-                 if p is None and not n.startswith("col_"))
+    # Render budget excludes col_* proxies - they never reach the GPU. They are
+    # subtracted rather than skipped at the top level, because a proxy is a
+    # CHILD of the asset root (and, on a rigged asset, a child of the armature),
+    # so a top-level filter never actually excluded them.
     col = sum(subtree_tris(gltf, i) for i, (n, _, _) in walked.items()
               if n.startswith("col_"))
+    render = sum(subtree_tris(gltf, i) for i, (n, _, p) in walked.items()
+                 if p is None and not n.startswith("col_")) - col
     r.check("tris_total", render <= spec["max_tris_total"],
             "%d render <= %d (+%d collision)"
             % (render, spec["max_tris_total"], col))
@@ -393,6 +396,118 @@ def validate(asset, spec, verbose=False):
         r.check("anim_live", not dead,
                 "%d clip(s) move%s" % (len(gltf["animations"]),
                                        "" if not dead else "; DEAD: %s" % dead))
+
+    # --- rig: bones, skin weights, bone-parented sockets, bind pose ---
+    # A rigged asset can pass every check above and still be broken in ways
+    # that are invisible in a static render: a limb with no weights follows
+    # nothing, a socket parented to the armature instead of to a bone does not
+    # ride the hand, and a character exported mid-pose is permanently mid-pose.
+    skins = gltf.get("skins", [])
+    joint_idx = set()
+    for sk in skins:
+        joint_idx.update(sk.get("joints", []))
+
+    want_bones = spec.get("bones", [])
+    if want_bones:
+        joint_names = {walked[j][0] for j in joint_idx if j in walked}
+        missing = [b for b in want_bones if b not in by_name]
+        unskinned = [b for b in want_bones
+                     if b in by_name and b not in joint_names]
+        extra = sorted(joint_names - set(want_bones))
+        r.check("bones",
+                not missing and not unskinned and not extra,
+                "%d joints%s%s%s" % (
+                    len(joint_names),
+                    "" if not missing else "; MISSING %s" % missing,
+                    "" if not unskinned else "; not in skin %s" % unskinned,
+                    "" if not extra else "; UNDECLARED %s" % extra))
+
+    if skins:
+        # Every vertex of every skinned mesh must have weight. An unweighted
+        # vertex is pinned to joint 0 forever, which is the exact failure mode
+        # bone-heat automatic weights produces on intersecting geometry, and it
+        # renders as a shard of the mesh left behind when the character moves.
+        bad = []
+        njoints = max(joint_idx) + 1 if joint_idx else 0
+        for nidx, n in enumerate(gltf.get("nodes", [])):
+            if "mesh" not in n or "skin" not in n:
+                continue
+            for prim in gltf["meshes"][n["mesh"]].get("primitives", []):
+                attrs = prim.get("attributes", {})
+                if "WEIGHTS_0" not in attrs or "JOINTS_0" not in attrs:
+                    bad.append("%s has no skin attributes" % n.get("name"))
+                    continue
+                ws = read_accessor(gltf, binc, attrs["WEIGHTS_0"])
+                js = read_accessor(gltf, binc, attrs["JOINTS_0"])
+                zero = sum(1 for w in ws if sum(w) < 0.999 or sum(w) > 1.001)
+                if zero:
+                    bad.append("%s: %d/%d vertices without unit weight"
+                               % (n.get("name"), zero, len(ws)))
+                if any(j >= njoints for jv in js for j in jv):
+                    bad.append("%s: joint index out of range" % n.get("name"))
+        r.check("skin_weights", not bad,
+                "%d skin(s), every vertex weighted" % len(skins)
+                if not bad else "; ".join(bad))
+
+    want_bs = spec.get("bone_sockets", {})
+    if want_bs:
+        parent_of = {}
+        for idx, (nm, _, pidx) in walked.items():
+            parent_of[nm] = walked[pidx][0] if pidx is not None else None
+        bad = ["%s -> %s (want %s)" % (s, parent_of.get(s), bone)
+               for s, bone in want_bs.items() if parent_of.get(s) != bone]
+        r.check("bone_sockets", not bad, "%d bone-parented%s"
+                % (len(want_bs), "" if not bad else "; " + "; ".join(bad)))
+
+    if spec.get("rest_pose"):
+        # world(joint) * inverseBindMatrix must be the identity, which says the
+        # exported static pose IS the bind pose. This is the rigged form of the
+        # frame-1 identity rule: a clip cannot start at the identity when its
+        # frame 1 is mid-stride, so instead the ARMATURE is exported at rest and
+        # every clip is relative to it.
+        worst, where = 0.0, ""
+        for sk in skins:
+            if "inverseBindMatrices" not in sk:
+                continue
+            ibms = read_accessor(gltf, binc, sk["inverseBindMatrices"])
+            for j, ibm in zip(sk["joints"], ibms):
+                m = mat_mul(walked[j][1], list(ibm))
+                d = max(abs(m[k] - IDENT[k]) for k in range(16))
+                if d > worst:
+                    worst, where = d, walked[j][0]
+        r.check("rest_pose", worst <= 1e-4,
+                "max |world*inverseBind - I| = %.2e%s"
+                % (worst, "" if worst <= 1e-4 else " at %s" % where))
+
+    if spec.get("frame1_identity"):
+        # ASSET-SPECS 2.7: assigning an Action makes the depsgraph evaluate the
+        # object and the exporter bakes THAT into the node TRS, so a clip whose
+        # frame 1 is off the identity bakes a permanent offset into the asset.
+        # Joints are exempt: their equivalent guarantee is rest_pose above.
+        base = {"translation": [0, 0, 0], "rotation": [0, 0, 0, 1],
+                "scale": [1, 1, 1]}
+        bad = []
+        for anim in gltf.get("animations", []):
+            for ch in anim.get("channels", []):
+                tgt = ch.get("target", {})
+                nidx, path = tgt.get("node"), tgt.get("path")
+                if nidx is None or nidx in joint_idx or path == "weights":
+                    continue
+                samp = anim["samplers"][ch["sampler"]]
+                vals = read_accessor(gltf, binc, samp["output"])
+                if not vals:
+                    continue
+                node = gltf["nodes"][nidx]
+                want = node.get(path, base[path])
+                got = vals[0]
+                if any(abs(got[k] - want[k]) > 1e-4 for k in range(len(want))):
+                    bad.append("%s/%s %s != node %s"
+                               % (anim.get("name"), walked[nidx][0],
+                                  [round(v, 4) for v in got],
+                                  [round(v, 4) for v in want]))
+        r.check("frame1_identity", not bad,
+                "first key == node TRS"
+                if not bad else "; ".join(bad[:3]))
 
     # --- collision proxy ---
     if spec.get("collision"):

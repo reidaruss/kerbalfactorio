@@ -278,6 +278,13 @@ def cyl_data(radius, depth, loc=(0, 0, 0), axis="Z", segments=12,
                      radius_top, phase_deg)
 
 
+def arc_band_data(r_in, r_out, depth, loc=(0, 0, 0), a0_deg=0.0, a1_deg=90.0,
+                  segments=6):
+    """Raw (verts, faces, smooth) for a quarter-annulus prism: belt curve decks,
+    and the helmet's wrap-around visor band."""
+    return _arc_band_data(r_in, r_out, depth, loc, a0_deg, a1_deg, segments)
+
+
 class MeshBuilder:
     """Accumulate primitives into ONE mesh with one material slot per role.
 
@@ -292,6 +299,26 @@ class MeshBuilder:
         self.smooth = []
         self.face_role = []
         self.roles = []
+        # Per-vertex bone whitelist for skinned assets, filled from bind().
+        # None for every static asset, so nothing about the 25 unrigged files
+        # changes.
+        self.vert_bones = []
+        self._bind = None
+
+    def bind(self, bones):
+        """Set the bone whitelist applied to every vertex added AFTER this call.
+
+        Skinning a character built out of separate boxes is where automatic
+        weights fall over: bone heat needs a closed manifold, and a pile of
+        overlapping primitives is the opposite of one. A whitelist turns the
+        problem into a solved one - a glove considers only the hand bone, an
+        arm tube considers only that arm's chain - so distance weighting inside
+        the whitelist gives a smooth joint blend with structurally zero chance
+        of the left thigh picking up weight from the right one.
+
+        Pass None to clear (the vertex then considers every deform bone)."""
+        self._bind = None if bones is None else list(bones)
+        return self
 
     def _role_index(self, role):
         if role not in self.roles:
@@ -302,6 +329,7 @@ class MeshBuilder:
         base = len(self.verts)
         ri = self._role_index(role)
         self.verts.extend(v)
+        self.vert_bones.extend([self._bind] * len(v))
         for face, s in zip(f, sm):
             self.faces.append(tuple(i + base for i in face))
             self.smooth.append(s)
@@ -463,6 +491,277 @@ def add_lod_decimate(src, level, ratio, parent=None):
 
 
 # ---------------------------------------------------------------------------
+# Armatures, skinning and bone-parented sockets.
+#
+# WHY THIS EXISTS AT ALL (decision DW-7): the player is the one Tier-0 asset a
+# script cannot fully author, because skin weights normally need either a GUI
+# pass or Blender's bone-heat "automatic weights" operator. Automatic weights
+# solve a Laplacian over a CLOSED MANIFOLD surface; every asset in this game is
+# a pile of intersecting boxes and tubes, which is exactly the input bone heat
+# refuses ("failed to find solution for one or more bones").
+#
+# So the pipeline stays scripted and the weights are solved here, from bone
+# SEGMENT DISTANCE inside a per-part bone whitelist (MeshBuilder.bind). That is
+# deterministic, diffable and re-runnable like the rest of the pipeline, and it
+# is better than envelope weights because the whitelist removes cross-limb
+# bleed rather than trying to tune it away with falloff radii.
+# ---------------------------------------------------------------------------
+
+def add_armature(name, bones, parent=None):
+    """Create an armature object.
+
+    bones is a list of (bone_name, head_xyz, tail_xyz, parent_name_or_None),
+    parents first. Bone names are the runtime contract: the engine binds tools
+    to `socket_hand_R`, but a retarget map or an IK solver binds to the bone
+    names themselves, so they are as load-bearing as a socket name.
+
+    Bones are left DISCONNECTED (use_connect False) even where head meets tail.
+    A connected bone cannot be translated independently, and the hips
+    translation is what carries every walk and jump clip."""
+    data = bpy.data.armatures.new(name)
+    obj = bpy.data.objects.new(name, data)
+    bpy.context.scene.collection.objects.link(obj)
+    if parent is not None:
+        obj.parent = parent
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    made = {}
+    for bname, head, tail, pname in bones:
+        eb = data.edit_bones.new(bname)
+        eb.head = head
+        eb.tail = tail
+        eb.roll = 0.0
+        eb.use_connect = False
+        if pname is not None:
+            if pname not in made:
+                raise KeyError("bone %r declared before its parent %r"
+                               % (bname, pname))
+            eb.parent = made[pname]
+        made[bname] = eb
+    bpy.ops.object.mode_set(mode="OBJECT")
+    obj.select_set(False)
+    return obj
+
+
+def bone_segments(bones):
+    """{name: (head, tail)} from the same list add_armature() takes."""
+    return {b[0]: (tuple(b[1]), tuple(b[2])) for b in bones}
+
+
+def _point_segment_dist(p, a, b):
+    ab = [b[k] - a[k] for k in range(3)]
+    ap = [p[k] - a[k] for k in range(3)]
+    denom = sum(c * c for c in ab)
+    t = 0.0 if denom < 1e-12 else max(0.0, min(1.0, sum(
+        ap[k] * ab[k] for k in range(3)) / denom))
+    d = [ap[k] - ab[k] * t for k in range(3)]
+    return math.sqrt(sum(c * c for c in d))
+
+
+def solve_weights(verts, vert_bones, segments, power=4.0, max_influences=4,
+                  eps=0.02):
+    """Distance-to-bone-segment skin weights. Returns {bone: [(vert, w), ...]}.
+
+    `power` is the whole character of the deformation. Too low and a shin picks
+    up thigh weight and the knee turns to rubber; too high and the blend
+    collapses to rigid parts with a visible crack at every joint. 4 puts the
+    50/50 blend band roughly one bone-radius either side of a joint, which is
+    what a hard-surface suit wants: panels stay panels, joints bend.
+
+    max_influences is 4 because that is what glTF's JOINTS_0/WEIGHTS_0 carries
+    and what ASSET-SPECS 4.1 declares."""
+    groups = {}
+    names_all = list(segments)
+    for i, p in enumerate(verts):
+        allow = vert_bones[i] if i < len(vert_bones) and vert_bones[i] else names_all
+        ws = []
+        for name in allow:
+            a, b = segments[name]
+            ws.append((name, 1.0 / (_point_segment_dist(p, a, b) + eps) ** power))
+        ws.sort(key=lambda t: (-t[1], t[0]))
+        ws = ws[:max_influences]
+        total = sum(w for _, w in ws) or 1.0
+        for name, w in ws:
+            groups.setdefault(name, []).append((i, w / total))
+    return groups
+
+
+def bind_skin(obj, arm, groups=None):
+    """Parent `obj` to armature `arm` and add its vertex groups.
+
+    groups=None attaches the modifier only, for an LOD copy that already
+    inherited its vertex groups from the object it was decimated from."""
+    if groups is not None:
+        n = len(obj.data.vertices)
+        for bone, pairs in groups.items():
+            vg = obj.vertex_groups.get(bone) or obj.vertex_groups.new(name=bone)
+            for idx, w in pairs:
+                if idx >= n:
+                    raise IndexError(
+                        "weight for vertex %d but the mesh has %d - "
+                        "mesh.validate() deleted a loose vertex" % (idx, n))
+                vg.add([idx], w, "REPLACE")
+    obj.parent = arm
+    mod = obj.modifiers.new("Armature", "ARMATURE")
+    mod.object = arm
+    mod.use_vertex_groups = True
+    return obj
+
+
+def skin_mesh(obj, mb, arm, segments, **kw):
+    """Solve and apply weights for a MeshBuilder-built object in one call.
+
+    The MeshBuilder is needed as well as the object because the whitelist rides
+    on the builder (MeshBuilder.bind) and because the builder's vertex ORDER is
+    the mesh's vertex order - which holds only as long as no vertex is loose,
+    since mesh.validate() deletes those."""
+    groups = solve_weights(mb.verts, mb.vert_bones, segments, **kw)
+    return bind_skin(obj, arm, groups)
+
+
+def skin_auto(obj, arm):
+    """Blender's own bone-heat automatic weights.
+
+    Returns (ok, note). `ok` is False if the operator refused OR if it returned
+    but left vertices with no weight at all, because a silent partial solve is
+    the failure mode that matters: it exports, it validates, and it renders as
+    a limb that stays behind when the character walks.
+
+    Kept because DW-7 says to try it first and because it is the honest
+    baseline to measure the scripted solver against."""
+    for o in list(bpy.context.selected_objects):
+        o.select_set(False)
+    obj.select_set(True)
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    note = ""
+    try:
+        res = bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+        ok = "FINISHED" in res
+        if not ok:
+            note = "operator returned %s" % sorted(res)
+    except Exception as exc:
+        ok, note = False, str(exc).strip().splitlines()[-1]
+    if ok:
+        bone_names = {b.name for b in arm.data.bones}
+        idx = {g.index for g in obj.vertex_groups if g.name in bone_names}
+        unweighted = sum(
+            1 for v in obj.data.vertices
+            if not any(g.group in idx and g.weight > 1e-6 for g in v.groups))
+        if unweighted:
+            ok = False
+            note = "%d of %d vertices came back unweighted" % (
+                unweighted, len(obj.data.vertices))
+    obj.select_set(False)
+    arm.select_set(False)
+    return ok, note
+
+
+def add_bone_socket(name, arm, bone, loc, rot=(0.0, 0.0, 0.0), extras=None):
+    """A socket Empty parented to a BONE, so it rides the animation.
+
+    `loc` is in ARMATURE space (the same coordinates the bones were declared
+    in), not bone space, because that is the space an author can reason about:
+    'the right palm is at x = -0.75, z = 1.45'. Blender bone-parents to the
+    bone TAIL with the bone's own axes, so the basis is solved back out here
+    rather than being a number the author has to guess."""
+    e = add_socket(name, (0.0, 0.0, 0.0), rot, parent=None, extras=extras)
+    e.parent = arm
+    e.parent_type = "BONE"
+    e.parent_bone = bone
+    bpy.context.view_layer.update()
+    from mathutils import Euler, Matrix
+    e.matrix_world = (Matrix.Translation(loc)
+                      @ Euler(rot, "XYZ").to_matrix().to_4x4())
+    bpy.context.view_layer.update()
+    return e
+
+
+def _rot_matrix(rot):
+    """(rx, ry, rz) degrees in XYZ order, or [(axis, degrees), ...] applied
+    innermost first. See pose_clip for why both forms exist."""
+    from mathutils import Euler, Matrix
+    if (len(rot) == 3
+            and all(isinstance(v, (int, float)) for v in rot)):
+        return Euler((math.radians(rot[0]), math.radians(rot[1]),
+                      math.radians(rot[2])), "XYZ").to_matrix()
+    m = Matrix.Identity(3)
+    for axis, deg in rot:
+        m = Matrix.Rotation(math.radians(deg), 3, axis) @ m
+    return m
+
+
+def pose_clip(arm, clip_name, tracks, interpolation="BEZIER"):
+    """One Action on an armature: the rig's answer to add_clip_multi.
+
+    tracks = {bone_name: {"rot": [(frame, rotation), ...],
+                          "loc": [(frame, (x, y, z)), ...]}}
+
+    A rotation is either an (rx, ry, rz) triple of DEGREES applied in XYZ order,
+    or an ordered list of (axis, degrees) pairs applied innermost first:
+
+        ("LeftArm", [("Y", 76), ("X", -20)])   down to the side, then swung
+
+    The ordered form exists because composition order is the whole difference
+    between an arm swinging and an arm twisting. Bringing a T-posed arm down is
+    a rotation about Y; swinging the arm that now hangs is a rotation about X
+    applied AFTER it. An XYZ euler applies X first, so (-20, 76, 0) is a
+    different, wrong pose, and the difference is invisible until the clip plays.
+
+    Angles are degrees about the ARMATURE-space axes (+X right, -Y forward,
+    +Z up) and translations are metres in armature space, both converted into
+    the bone's own basis here. Authoring in bone-local space is unusable: for an
+    arm bone pointing along +X, 'raise the arm' is a rotation about local Z or
+    local X depending on the bone roll.
+
+    Because a bone's parent is already posed when its own basis is applied, a
+    rotation reads as 'relative to my parent', which is what an animator means:
+    yawing the hips carries the legs, and an elbow delta on a forearm whose
+    parent is already posed bends the elbow.
+    """
+    from mathutils import Euler, Vector
+
+    act = bpy.data.actions.new(clip_name)
+    act.use_fake_user = True                  # survives to ACTIONS export
+    fcurves = _fcurves_for(act, arm)
+    last = 1
+    for bone_name, chans in tracks.items():
+        pb = arm.pose.bones[bone_name]
+        pb.rotation_mode = "QUATERNION"
+        basis = arm.data.bones[bone_name].matrix_local.to_3x3()
+        inv = basis.inverted()
+        if chans.get("rot"):
+            path = 'pose.bones["%s"].rotation_quaternion' % bone_name
+            fcs = [fcurves.new(data_path=path, index=i) for i in range(4)]
+            prev = None
+            for frame, rot in chans["rot"]:
+                q = (inv @ _rot_matrix(rot) @ basis).to_quaternion()
+                # Quaternion double cover: q and -q are the same rotation, but
+                # component-wise interpolation between them takes the long way
+                # round. Keep the sign continuous along the curve.
+                if prev is not None and q.dot(prev) < 0.0:
+                    q.negate()
+                prev = q
+                for i in range(4):
+                    kp = fcs[i].keyframe_points.insert(float(frame), q[i])
+                    kp.interpolation = interpolation
+                last = max(last, int(frame))
+        if chans.get("loc"):
+            path = 'pose.bones["%s"].location' % bone_name
+            fcs = [fcurves.new(data_path=path, index=i) for i in range(3)]
+            for frame, vec in chans["loc"]:
+                local = inv @ Vector(vec)
+                for i in range(3):
+                    kp = fcs[i].keyframe_points.insert(float(frame), local[i])
+                    kp.interpolation = interpolation
+                last = max(last, int(frame))
+    scn = bpy.context.scene
+    scn.frame_end = max(scn.frame_end, last)
+    return act
+
+
+# ---------------------------------------------------------------------------
 # Animation. One Action per clip; the exporter turns each Action into a named
 # three.js AnimationClip. Clip names are part of the asset contract.
 # ---------------------------------------------------------------------------
@@ -564,6 +863,13 @@ GLTF_SETTINGS = dict(
     # being baked out to one key per frame.
     export_force_sampling=True,
     export_skins=True,
+    # Bones export in their REST pose, so the exported static node transforms
+    # are the bind pose and every clip is relative to it. This is the rigged
+    # form of the frame-1 identity rule (ASSET-SPECS 2.7): without it the
+    # armature's evaluated pose at export time is baked into the joint nodes,
+    # and a character exported mid-stride is permanently mid-stride when no
+    # clip is playing. validate_glb.py's rest_pose check asserts the result.
+    export_rest_position_armature=True,
     export_morph=True,
     export_texcoords=True,
     export_normals=True,

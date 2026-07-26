@@ -461,6 +461,66 @@
       "collision": "col_OilSeep"
     },
 
+    "player_body": {
+      "glb": "assets/models/dist/player/player_body.glb",
+      "_comment": [
+        "dims_xyz_m is the T-POSE bounding box: 1.80 m of arm span across X and",
+        "1.80 m of height. ASSET-SPECS 3.1 lists 0.60 x 0.40 x 1.80, which is",
+        "the standing FOOTPRINT and is carried by col_Player, not by the mesh.",
+        "pivot_tolerance_m 0.03: the feet sit exactly on y = 0 and the mesh is",
+        "exactly centred on x, but a character's depth centroid is not its",
+        "ground pivot - the chest pack and the boots run forward of it.",
+        "rest_pose is the rigged form of the frame-1 identity rule: a walk",
+        "cycle's frame 1 is mid-stride and cannot be the identity, so instead",
+        "the armature exports at bind and every clip is relative to it."
+      ],
+      "lod0_node": "Player_LOD0",
+      "lod_nodes": ["Player_LOD0", "Player_LOD1", "Player_LOD2"],
+      "pivot_mode": "ground",
+      "pivot_tolerance_m": 0.03,
+      "dims_xyz_m": [1.80, 1.80, 0.39],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 3500,
+      "max_tris_total": 5600,
+      "max_materials": 6,
+      "sockets": [
+        "socket_hand_R", "socket_hand_L", "socket_back",
+        "socket_hip_R", "socket_head_cam", "socket_lamp"
+      ],
+      "bone_sockets": {
+        "socket_hand_R": "RightHand",
+        "socket_hand_L": "LeftHand",
+        "socket_back": "Spine2",
+        "socket_hip_R": "Hips",
+        "socket_head_cam": "Head",
+        "socket_lamp": "Head"
+      },
+      "rest_pose": true,
+      "frame1_identity": true,
+      "bones": [
+        "Root", "Hips", "Spine", "Spine1", "Spine2",
+        "Neck", "Head", "HeadTop_End",
+        "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+        "LeftHandThumb1", "LeftHandThumb2", "LeftHandThumb3",
+        "LeftHandIndex1", "LeftHandIndex2", "LeftHandIndex3",
+        "LeftHandMiddle1", "LeftHandMiddle2", "LeftHandMiddle3",
+        "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+        "RightHandThumb1", "RightHandThumb2", "RightHandThumb3",
+        "RightHandIndex1", "RightHandIndex2", "RightHandIndex3",
+        "RightHandMiddle1", "RightHandMiddle2", "RightHandMiddle3",
+        "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase", "LeftToe_End",
+        "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase", "RightToe_End"
+      ],
+      "clips": [
+        "Idle", "Walk", "Run",
+        "Jump_Start", "Jump_Loop", "Jump_Land", "Fall",
+        "Swing_Pickaxe", "Swing_Axe", "Dig", "Place", "Craft",
+        "Crouch_Idle", "Crouch_Walk"
+      ],
+      "collision": "col_Player",
+      "double_sided_ok": ["OF_Glass"]
+    },
+
     "crude_pickaxe": {
       "glb": "assets/models/dist/tools/crude_pickaxe.glb",
       "_comment": [
