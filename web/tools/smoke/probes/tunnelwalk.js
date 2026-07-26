@@ -47,11 +47,11 @@
     await settle(0.35);
   }
   for (let i = 0; i < strikes; ++i) {
-    of.look(yaw, OF_ARGS.pitchDeg ?? -8);
+    of.look(yaw, OF_ARGS.pitchDeg ?? -12);
     shots.push(of.dig());
     remesh.push(of.voxels().mesh.lastMs);
-    await of.run(0.15, 60);
-    await hold(OF_ARGS.stepSecs ?? 0.3, ['KeyW']);
+    await of.run(0.2, 60);
+    await hold(OF_ARGS.stepSecs ?? 0.22, ['KeyW']);
   }
   await settle(1.0);
 
@@ -96,12 +96,12 @@
   // slice budget is deliberately short of the shaft, because climbing back out
   // into daylight would end the test with samples that are not in a tunnel at
   // all and would say nothing about walking down one.
-  const slices = OF_ARGS.slices ?? 4;
+  const slices = OF_ARGS.slices ?? 5;
   const sliceSecs = OF_ARGS.sliceSecs ?? 0.4;
   prev = eye();
-  for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyS']); sample(); }
-  const outM = +metres.toFixed(2);
   for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyW']); sample(); }
+  const outM = +metres.toFixed(2);
+  for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyS']); sample(); }
   await settle(0.6);
   // Frame the capture: third person, looking down the tunnel, so the shot shows
   // the player inside the passage rather than a wall filling the lens.
@@ -136,7 +136,7 @@
     walkableTunnel: metres >= 6 && grounded >= n - 1 && ceilingSolid === n
       && columnClosed === n && underRock >= n - 1,
     metresWalked: +metres.toFixed(2),
-    metresOut: outM,
+    metresIn: outM,
     metresBack: +(metres - outM).toFixed(2),
     samples: n,
     groundedSamples: grounded,
