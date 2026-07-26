@@ -35,6 +35,14 @@ export interface OfCoreModule {
   _of_body_kind(body: number): number;
 
   _of_base_height(body: number, dx: number, dy: number, dz: number): number;
+  /** WG-22. Metres of PLACED ground stacked on the base under this dir. */
+  _of_derived_raising(body: number, edits: number, dx: number, dy: number,
+                      dz: number): number;
+  /** Signed metres the edited surface sits BELOW the base; negative = raised. */
+  _of_surface_offset(body: number, edits: number, dx: number, dy: number,
+                     dz: number): number;
+  /** The fill cap the oracle clamps the heightfield view to, in metres. */
+  _of_max_fill(): number;
   _of_surface_height(body: number, edits: number, dx: number, dy: number, dz: number): number;
   _of_surface_radius(body: number, edits: number, dx: number, dy: number, dz: number): number;
   _of_solid_at(body: number, edits: number, x: number, y: number, z: number): number;
@@ -50,6 +58,23 @@ export interface OfCoreModule {
   _of_edits_dig_cell(edits: number, cx: number, cy: number, cz: number): number;
   _of_edits_removed_count(edits: number): number;
   _of_edits_is_removed_cell(edits: number, cx: number, cy: number, cz: number): number;
+  // --- WG-22 terraforming: the FILL half. `added` is the second sparse set, so
+  //     ground the player PUT DOWN is a first class citizen of the same diff.
+  _of_edits_fill(edits: number, body: number, x: number, y: number, z: number,
+                 radiusM: number): number;
+  _of_edits_fill_cell(edits: number, body: number, cx: number, cy: number,
+                      cz: number): number;
+  _of_edits_added_count(edits: number): number;
+  _of_edits_is_added_cell(edits: number, cx: number, cy: number, cz: number): number;
+  /**
+   * THE LEVELLING OP. Inside a cylinder of `radiusM` about (x,y,z) aligned with
+   * the local up, every cell above `targetHeightM` becomes air and every cell
+   * below it becomes solid. Returns total cells changed; i32 scratch holds
+   * [dug, filled, scanned]. Pass 0 for either bound to take /core's default.
+   */
+  _of_level_area(edits: number, body: number, x: number, y: number, z: number,
+                 radiusM: number, targetHeightM: number,
+                 maxCutM: number, maxFillM: number): number;
   /** Fills i32 scratch [minX,minY,minZ,maxX,maxY,maxZ]; 1 = valid, 0 = untouched. */
   _of_edits_dirty_region(edits: number): number;
   _of_edits_clear_dirty(edits: number): void;
@@ -69,6 +94,10 @@ export interface OfCoreModule {
   /** Replay one dig into the streamer's own edits and re-mesh the chunks it
    *  opened, publishing them through the normal ready path. Returns the count. */
   _of_streamer_dig(s: number, x: number, y: number, z: number, radiusM: number): number;
+  /** The same replay for a LEVEL op (WG-22). Returns chunks re-meshed. */
+  _of_streamer_level(s: number, x: number, y: number, z: number, radiusM: number,
+                     targetHeightM: number, maxCutM: number,
+                     maxFillM: number): number;
   _of_material_for_biome(biome: number): number;
   _of_latlon_to_dir(lat: number, lon: number): void;
   _of_dir_to_latlon(dx: number, dy: number, dz: number): void;

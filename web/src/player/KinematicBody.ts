@@ -26,6 +26,27 @@ export const CAPSULE = {
   eyeHeightM: 1.62,
   /** Below this gap the feet re-attach to the ground instead of free-falling. */
   groundSnapM: 0.35,
+  /**
+   * THE STEP UP, and therefore THE WALL. The tallest the ground may be above
+   * where the feet started a tick and still be walked onto. A lip under this is
+   * a step; anything over it is a cliff and the horizontal move into it is
+   * refused (`climbGate`).
+   *
+   * Before this existed the heightfield had no walls at all: `gap <= 0` read
+   * "below the ground, therefore landing", so ONE tick's 7.7 cm of travel into
+   * the foot of a cliff snapped the capsule to the top of it. Measured: the
+   * walker climbed 12 m straight up out of a 10.4 m shaft it had just dug,
+   * with rock 1.75 m ahead at eye height (walkfeel.js negative control). The
+   * slope limit below did not catch it and cannot: it is sampled AFTER the
+   * snap, so it reads the flat ground at the top of the cliff.
+   *
+   * 0.6 m is knee height on a 1.8 m capsule. It is over an order of magnitude
+   * more than the 3.4 cm of real relief a walk across this terrain presents in
+   * one tick, so it never fires on ordinary ground, and it is well under the
+   * 1 m quantum the derived lowering moves in, so a hole you dig still needs a
+   * jump or a ramp to get out of.
+   */
+  stepUpM: 0.6,
   /** cos(50 deg): steeper than this is a slide, not a walk (section 8.1). */
   slopeLimitCos: 0.6428,
   /**
@@ -159,12 +180,27 @@ export class KinematicBody {
     //    surface_field.h; neither invents a height.
     let qr = Math.hypot(qx, qy, qz);
     let dxn = qx / qr, dyn = qy / qr, dzn = qz / qr;
-    const surfaceR = this.oracle.surfaceRadius(dxn, dyn, dzn);
+    let surfaceR = this.oracle.surfaceRadius(dxn, dyn, dzn);
     this.oracleCalls++;
     let groundR = surfaceR;
     this.underRock = false;
     this.blockedByRock = false;
     const deep = this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
+    if (!deep) {
+      // The heightfield's own wall. See CAPSULE.stepUpM.
+      const gate = this.climbGate(p, qx, qy, qz, r, ux, uy, uz, surfaceR);
+      if (gate.moved) {
+        qx = gate.x; qy = gate.y; qz = gate.z;
+        qr = Math.hypot(qx, qy, qz) || 1;
+        dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
+        surfaceR = gate.surfaceR;
+        groundR = gate.surfaceR;
+        // Velocity IS the accepted displacement over dt, so a capsule pressed
+        // into a cliff does not keep a hidden into-the-wall speed that fires
+        // it sideways the moment the wall runs out.
+        tx = gate.tx / dt; ty = gate.ty / dt; tz = gate.tz / dt;
+      }
+    }
     if (deep) {
       // A refused step used to mean a refused TICK: the whole displacement was
       // undone and the tangential velocity zeroed, so brushing a tunnel wall at
@@ -260,6 +296,63 @@ export class KinematicBody {
     const k = (r + CAPSULE.eyeHeightM) / r;
     out.x = p.x * k; out.y = p.y * k; out.z = p.z * k;
     return out;
+  }
+
+  /**
+   * Refuse a horizontal move onto ground more than `CAPSULE.stepUpM` above where
+   * the feet started this tick. `r` is that starting radius and `surfaceR` is
+   * the ground already sampled at the destination, so the common case (every
+   * ordinary walking tick) costs nothing but the comparison.
+   *
+   * Only the TANGENTIAL half of the move is judged. The radial half is a jump or
+   * a fall, and rising 0.6 m under your own power is exactly how you are meant
+   * to reach ground that is more than a step up.
+   */
+  private climbGate(
+    p: Vec3d, qx: number, qy: number, qz: number, r: number,
+    ux: number, uy: number, uz: number, surfaceR: number,
+  ): { x: number; y: number; z: number; surfaceR: number; moved: boolean;
+    tx: number; ty: number; tz: number } {
+    const keep = { x: qx, y: qy, z: qz, surfaceR, moved: false, tx: 0, ty: 0, tz: 0 };
+    if (surfaceR - r <= CAPSULE.stepUpM) return keep;
+    const mx = qx - p.x, my = qy - p.y, mz = qz - p.z;
+    const mr = mx * ux + my * uy + mz * uz;
+    const sx0 = p.x + ux * mr, sy0 = p.y + uy * mr, sz0 = p.z + uz * mr;
+    const dx = mx - ux * mr, dy = my - uy * mr, dz = mz - uz * mr;
+    // Tangent basis, built exactly as sampleSlopeCos builds it: ONE basis.
+    let ex = -uz, ey = 0, ez = ux;
+    const el = Math.hypot(ex, ey, ez);
+    if (el < 1e-9) { ex = 1; ey = 0; ez = 0; } else { ex /= el; ez /= el; }
+    const nx = uy * ez - uz * ey, ny = uz * ex - ux * ez, nz = ux * ey - uy * ex;
+    const a = dx * ex + dy * ey + dz * ez;
+    const b = dx * nx + dy * ny + dz * nz;
+    // Slide by keeping one tangent axis at a time, the larger first. A
+    // heightfield wall has no axis to drop the way a voxel face does, so this
+    // is an approximation, but it is the cheapest one that lets a player walk
+    // ALONG the foot of a cliff instead of being pinned to it, and it costs an
+    // oracle call only on a tick that actually hit a wall.
+    const tries: [number, number][] = Math.abs(a) >= Math.abs(b)
+      ? [[a, 0], [0, b]] : [[0, b], [a, 0]];
+    for (const [ca, cb] of tries) {
+      if (ca === 0 && cb === 0) continue;
+      const tX = ex * ca + nx * cb, tY = ey * ca + ny * cb, tZ = ez * ca + nz * cb;
+      const sx = sx0 + tX, sy = sy0 + tY, sz = sz0 + tZ;
+      const sr = Math.hypot(sx, sy, sz) || 1;
+      this.oracleCalls++;
+      const g = this.oracle.surfaceRadius(sx / sr, sy / sr, sz / sr);
+      if (g - r <= CAPSULE.stepUpM) {
+        return { x: sx, y: sy, z: sz, surfaceR: g, moved: true, tx: tX, ty: tY, tz: tZ };
+      }
+    }
+    // Nothing horizontal survives. Keep the radial half: a player pressed into
+    // a cliff still falls, still lands and can still jump onto it.
+    const sr = Math.hypot(sx0, sy0, sz0) || 1;
+    this.oracleCalls++;
+    return {
+      x: sx0, y: sy0, z: sz0,
+      surfaceR: this.oracle.surfaceRadius(sx0 / sr, sy0 / sr, sz0 / sr),
+      moved: true, tx: 0, ty: 0, tz: 0,
+    };
   }
 
   /**

@@ -21,7 +21,7 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 /** Number keys, in menu order. 0 (or Escape) leaves build mode. */
 const MENU: { key: string; kind: BuildKind; label: string }[] = [
-  { key: 'Digit1', kind: 'miner', label: 'miner' },
+  { key: 'Digit1', kind: 'miner', label: 'mining drill' },
   { key: 'Digit2', kind: 'belt', label: 'belt' },
   { key: 'Digit3', kind: 'smelter', label: 'smelter' },
 ];
@@ -135,10 +135,13 @@ export class BuildMode {
     let reason = '';
     if (this.factory.occupied(s.cell)) { ok = false; reason = 'cell taken'; }
     else if (this.selected === 'miner') {
-      const n = this.factory.nodeUnder(s.pos);
-      if (n < 0) { ok = false; reason = 'no ore deposit here'; }
-      else if (this.factory.placed.some((p) => p.nodeIndex === n)) {
-        ok = false; reason = 'that deposit already has a miner';
+      // THE SENTENCE THAT TEACHES THE MECHANIC. A drill eats the ground under
+      // itself, so the only question is whether there is ore in that ground, and
+      // the answer is on the ghost before the key is pressed rather than in an
+      // error message after it. Several drills on one patch are fine: a deposit
+      // is a piece of ground, not a socket.
+      if (this.factory.patchUnder(s.pos) < 0) {
+        ok = false; reason = 'you cannot place a drill here, there is no ore';
       }
     }
     return { pos: s.pos, up: s.up, fwd, cell: s.cell, ok, reason };

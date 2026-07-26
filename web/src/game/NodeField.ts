@@ -20,44 +20,12 @@
 import * as THREE from 'three';
 import { loadGlb } from '../assets/Loaders.js';
 import { NodeBatch, type NodePart } from './NodeBatch.js';
+import { ART, frac, hash32, variantFor, type NodeArt } from './NodeArt.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore, NodeState } from './GameCore.js';
 import { NODE_KIND } from './GameCore.js';
 
 const ROOT = 'assets/nodes/';
-
-/** One .glb per node kind, plus the root node name the meshes are prefixed with. */
-interface NodeArt { file: string; root: string; radiusM: number; hitUpM: number; colour: number }
-
-/**
- * Kind -> art. Trees alternate between two files so a stand is not a clone army.
- * `colour` is what the debris burst is made of, taken from the role palette the
- * asset itself is authored against (of_lib.py): wood is bark brown, iron is the
- * pale metal, coal is near black. A player should be able to name the resource
- * from the chips alone.
- */
-const ART: Record<number, NodeArt[]> = {
-  [NODE_KIND.Tree]: [
-    { file: 'tree_conifer.glb', root: 'TreeConifer', radiusM: 1.6, hitUpM: 1.15, colour: 0x6d5238 },
-    { file: 'tree_broadleaf.glb', root: 'TreeBroadleaf', radiusM: 2.2, hitUpM: 1.25, colour: 0x6d5238 },
-  ],
-  [NODE_KIND.Rock]: [{ file: 'boulder_stone.glb', root: 'BoulderStone', radiusM: 1.0, hitUpM: 0.6, colour: 0x8d887e }],
-  [NODE_KIND.CoalSeam]: [{ file: 'boulder_coal.glb', root: 'BoulderCoal', radiusM: 1.1, hitUpM: 0.6, colour: 0x35353c }],
-  [NODE_KIND.IronOre]: [{ file: 'boulder_iron.glb', root: 'BoulderIron', radiusM: 1.1, hitUpM: 0.6, colour: 0xb4bac0 }],
-  [NODE_KIND.CopperOre]: [{ file: 'boulder_copper.glb', root: 'BoulderCopper', radiusM: 1.0, hitUpM: 0.6, colour: 0xc06b3e }],
-};
-
-/**
- * Depletion thresholds, from ASSET-SPECS 3.1: remaining/initial at 0.66 and
- * 0.33. `Stump` exists only for the conifer, so `Low` is the floor everywhere
- * and an emptied node keeps its `Low` silhouette rather than vanishing, which
- * is what tells a player "this one is done" instead of "this one moved".
- */
-function variantFor(fraction: number): number {
-  if (fraction > 0.66) return 0;
-  if (fraction > 0.33) return 1;
-  return 2;
-}
 
 /** Seconds the hit reaction lasts. Short: a swing lands, it does not bounce. */
 const PUNCH_SECS = 0.26;
@@ -82,14 +50,16 @@ interface Placed {
   /** Tangent axis the collapse leans about, fixed per node so it never jitters. */
   lean: THREE.Vector3;
   empty: boolean;
+  /** Art scale. An outcrop varies with the richness of the ground it sits in. */
+  scale: number;
+  /**
+   * Metres pushed INWARD along the ground normal. Zero for a tree; positive for
+   * an outcrop, which is the part of a buried ore body that breaks the surface
+   * and therefore has to be seen coming out of the ground rather than resting
+   * on it.
+   */
+  sinkM: number;
 }
-
-function hash32(a: number, b: number): number {
-  let h = (a ^ Math.imul(b + 0x9e3779b9, 0x85ebca6b)) >>> 0;
-  h = Math.imul(h ^ (h >>> 15), 0x2545f491) >>> 0;
-  return (h ^ (h >>> 13)) >>> 0;
-}
-const frac = (h: number): number => (h >>> 8) / 16777216;
 
 export interface HitPoint {
   pos: { x: number; y: number; z: number };
@@ -130,14 +100,19 @@ export class NodeField {
   }
 
   /**
-   * Scatter a clearing of nodes around `dir` and build their instances.
+   * Scatter the clearing's STANDALONE nodes around `dir` and build them.
+   *
+   * Ore does not come from here any more. A tree is a thing you chop and it is
+   * gone; ore is a patch of ground (OreField), and the pieces of it that break
+   * the surface are added afterwards through `addOutcrop`. So what this lays out
+   * is scenery you can harvest, and everything that is a RULE is still /core's:
+   * the resource, the amount, the grade, and through of_gp_node_add the surface
+   * the node stands on.
    *
    * Placement is ours, not `/core`'s, and that is a measured choice rather than
    * a shortcut: worldgen::survival::LayoutTestArea jitters every node by up to
    * 0.0003 rad, which is 180 m at Forge's 600 km radius, so at any walkable ring
-   * radius the jitter is an order of magnitude larger than the ring. What stays
-   * `/core`'s is everything that is a RULE: the resource, the amount, the grade,
-   * and, through of_gp_node_add, the surface the node stands on.
+   * radius the jitter is an order of magnitude larger than the ring.
    */
   populate(body: number, edits: number, dir: THREE.Vector3, seed: number): number {
     this.core.clearNodes();
@@ -175,18 +150,33 @@ export class NodeField {
     return this.placed.length;
   }
 
-  /** The clearing's contents. Enough wood and iron in reach to craft the tools. */
+  /**
+   * The clearing's standalone contents: trees, and nothing else. Wood is one
+   * half of every starting tool; the other half is ore, and ore now comes out of
+   * the ground the drills stand on.
+   */
   private plan(): number[] {
-    const K = NODE_KIND;
-    return [
-      K.Tree, K.IronOre, K.Tree, K.Rock, K.Tree, K.CoalSeam,
-      K.Tree, K.IronOre, K.Rock, K.Tree, K.CopperOre, K.Tree,
-      K.Rock, K.Tree, K.IronOre, K.CoalSeam, K.Tree, K.Rock,
-      K.Tree, K.CopperOre, K.Tree, K.IronOre, K.Rock, K.Tree,
-    ];
+    return new Array<number>(14).fill(NODE_KIND.Tree);
   }
 
-  private build(index: number, st: NodeState, kind: number, h: number): void {
+  /**
+   * Add one OUTCROP: a piece of an ore patch breaking the surface.
+   *
+   * The node index is already /core's (of_gp_node_add_outcrop made it and linked
+   * it to its patch), so this is presentation only. `scale` and `sink` come from
+   * deposits.h §P, which means a piece standing in rich ground is bigger and a
+   * piece at the rim is a stub, and every one of them is part buried.
+   */
+  addOutcrop(index: number, scale: number, sink: number): boolean {
+    const st = this.core.node(index);
+    if (st === null) return false;
+    const before = this.placed.length;
+    this.build(index, st, st.kind, hash32(index, 0x0c40b), scale, sink);
+    return this.placed.length > before;
+  }
+
+  private build(index: number, st: NodeState, kind: number, h: number,
+                scale = 1, sinkM = 0): void {
     const list = ART[kind];
     if (list === undefined) return;
     const art = list[Math.floor(frac(hash32(h, 3)) * list.length) % list.length];
@@ -204,6 +194,7 @@ export class NodeField {
       up,
       yaw: frac(hash32(h, 5)) * Math.PI * 2,
       variant: -1, punch: 0, fell: 0, lean, empty: st.remaining <= 0,
+      scale, sinkM,
     };
     this.placed.push(pl);
     this.setVariant(pl, variantFor(st.initial > 0 ? st.remaining / st.initial : 0));
@@ -230,6 +221,13 @@ export class NodeField {
     this.q.multiply(this.qYaw);
     // Squash, not shrink: a struck tree compresses along its own trunk.
     this.s.set(1 + 0.05 * punch, 1 - 0.11 * punch, 1 + 0.05 * punch);
+    this.s.multiplyScalar(pl.scale);
+    // An outcrop is pushed INTO the ground along its own normal, so the ore
+    // reads as rock breaking through the surface rather than a boulder somebody
+    // put down. The offset is metres of the node's own size, not a constant.
+    if (pl.sinkM > 0) {
+      this.p.addScaledVector(this.engineUp.set(pl.up.x, pl.up.y, pl.up.z), -pl.sinkM);
+    }
     if (pl.fell > 0) this.collapse(pl);
     this.m.compose(this.p, this.q, this.s);
   }
@@ -303,7 +301,7 @@ export class NodeField {
   hitPoint(index: number): HitPoint | null {
     const pl = this.placed.find((n) => n.index === index);
     if (pl === undefined) return null;
-    const u = pl.up, r = pl.art.hitUpM;
+    const u = pl.up, r = pl.art.hitUpM * pl.scale - pl.sinkM;
     return {
       pos: { x: pl.pos.x + u.x * r, y: pl.pos.y + u.y * r, z: pl.pos.z + u.z * r },
       up: { x: u.x, y: u.y, z: u.z },
@@ -345,14 +343,17 @@ export class NodeField {
     for (const pl of this.placed) {
       const ox = pl.pos.x - eye.x, oy = pl.pos.y - eye.y, oz = pl.pos.z - eye.z;
       const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      const surfaceT = Math.max(0, t - pl.art.radiusM);
-      if (t < -pl.art.radiusM || surfaceT > bestT) continue;
+      // The pick sphere follows the art: an outcrop standing in rich ground is
+      // bigger than a stub at the rim, and aiming at what you can see has to hit.
+      const rad = pl.art.radiusM * pl.scale;
+      const surfaceT = Math.max(0, t - rad);
+      if (t < -rad || surfaceT > bestT) continue;
       const cx = ox - dir.x * t, cy = oy - dir.y * t, cz = oz - dir.z * t;
       // A tree is tall and its origin is at the base, so the pick sphere is
       // raised and widened rather than centred on the pivot; aiming at a trunk
       // at chest height must hit, and it does not with a base-centred sphere.
       const perp = Math.hypot(cx, cy, cz);
-      if (perp > pl.art.radiusM * 1.35 + 0.6) continue;
+      if (perp > rad * 1.35 + 0.6) continue;
       best = pl; bestT = surfaceT;
     }
     return best;

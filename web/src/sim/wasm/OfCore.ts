@@ -11,7 +11,16 @@ import type { OfCoreModule } from './heap.js';
 // an `edits` parameter and now reads the oracle, of_quadmesh_generate's last
 // parameter became `rawBase` so 0 is the safe value, and of_chunk_max_offset
 // became a true Euclidean bound including the skirt (WASM-BRIDGE.md section 4.1).
-export const OF_ABI_VERSION = 2;
+// ABI 3 (2026-07-26): the of_gp_patch_* ore-body surface over deposits.h.
+// ABI 4 (2026-07-26): TERRAFORMING (WG-22). VoxelEdits gained a second sparse
+// set so fill is representable; of_edits_fill, of_level_area, of_derived_raising
+// and of_surface_offset are new, and of_edits_serialize writes a new
+// self-describing format that carries BOTH sets (old slots still load).
+//
+// This constant is the only thing standing between a browser and a wasm that
+// answers a different question than the one the client is asking. It was left at
+// 2 while the shim already returned 3, which is the failure it exists to catch.
+export const OF_ABI_VERSION = 4;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

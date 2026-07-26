@@ -15,11 +15,16 @@
 // pack. Items physically on a belt are lost, and that count is REPORTED rather
 // than swallowed, because a silent loss is how a conservation claim rots.
 //
-// THE DEPOSIT IS ONE POOL. A miner is seeded from its node's remaining amount,
-// and every tick the node is drained by exactly what the miner extracted
-// (of_gp_node_drain). Two counters for the same ore is the five-surfaces
-// failure in miniature, and it would show as a node standing full for ever
-// while its ore rides away on a belt.
+// THE DEPOSIT IS ONE POOL. A drill is placed ON an ore patch (deposits.h S.P),
+// seeded from that patch's remaining amount, and every tick the patch is drained
+// by exactly what the drill extracted (of_gp_patch_drain). Two counters for the
+// same ore is the five-surfaces failure in miniature, and it would show as a
+// deposit standing full for ever while its ore rides away on a belt.
+//
+// AND THE RATE IS THE GROUND'S. A drill mines at /core's authored rate times the
+// RICHNESS where it stands, so putting it in the middle of a patch is worth more
+// than putting it on the rim. That is the same coverage number the ground is
+// tinted with, which is what makes the tint an instruction rather than a decal.
 
 import * as THREE from 'three';
 import { AutoLine } from './AutoLine.js';
@@ -27,6 +32,7 @@ import { orient, snapToGround, type Snapped } from './Grid.js';
 import { factoryReport } from './FactoryReport.js';
 import { chainRuns, wire } from './FactoryWiring.js';
 import type { GameCore } from './GameCore.js';
+import type { OrePatches } from './OrePatches.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 export type BuildKind = 'miner' | 'belt' | 'smelter';
@@ -38,16 +44,12 @@ export const TYPE_ID: Record<BuildKind, number> = {
 /** Footprint in whole metres (ASSET-SPECS), and the interaction bound. */
 export const FOOTPRINT: Record<BuildKind, number> = { miner: 2, belt: 1, smelter: 2 };
 
-/** Extraction rate, belt tier and craft time all come from one place. */
-// 3 ore a second against a smelter that eats 1: the belt fills, which is both
-// the honest Factorio lesson (one smelter is never enough) and the only way the
-// flow material has anything to show. A miner that exactly matched its smelter
-// would run a permanently empty belt.
-const MINER_UNITS_PER_SEC = 3.0;
+/** Belt tier and craft time. The DRILL's rate is not here: it comes out of
+ * /core per position (of_gp_patch_drill_rate, the authored units per second
+ * times the richness under the machine), which is why a drill in the middle of
+ * a patch outruns one on the rim. */
 const BELT_SPEED_UNITS_PER_TICK = 8;      // tier 1: 1.875 m/s (ASSET-SPECS 4.12)
 const SMELT_TICKS = 60;                    // the survival smelter's own rate
-/** How far from a miner a harvest node may be and still be its deposit. */
-const MINER_BIND_M = 3.2;
 
 export interface Placed {
   id: number;
@@ -59,8 +61,8 @@ export interface Placed {
   /** Flow direction, in the tangent plane. Belts flow along it. */
   fwd: THREE.Vector3;
   quat: THREE.Quaternion;
-  /** Miner only: the harvest node it eats, and the ore it had last tick. */
-  nodeIndex: number;
+  /** Drill only: the ore PATCH it stands on, and what it had left last tick. */
+  patch: number;
   lastRemaining: number;
   /** Filled by commit(): the /core build index, and the stream entity id. */
   build: number;
@@ -94,7 +96,8 @@ export class Factory {
   demolishedInFlight = 0;
 
   constructor(private readonly M: OfCoreModule, private readonly core: GameCore,
-              private readonly bodyHandle: number, fixedDt: number) {
+              private readonly bodyHandle: number, fixedDt: number,
+              readonly ore: OrePatches) {
     this.line = new AutoLine(M, fixedDt);
   }
 
@@ -109,36 +112,36 @@ export class Factory {
   }
 
   /**
-   * The nearest ore node within binding range of `pos`, or -1. A miner without
-   * one is refused: "it eats the ground" is the whole idea of the machine, and
-   * a miner standing on nothing would need a deposit invented for it here.
+   * The ore patch UNDER `pos`, or -1. This is /core's own containment test
+   * (of_gp_patch_find over the lobed outline), not a distance to something.
+   *
+   * A drill without one is refused, and that refusal is where the mechanic
+   * teaches itself: "you cannot place a drill here, there is no ore" is the one
+   * sentence that tells a player the ground is what matters. A drill standing on
+   * nothing would need a deposit invented for it right here, which is exactly
+   * how a second source of ore gets born.
    */
-  nodeUnder(pos: { x: number; y: number; z: number }): number {
-    let best = -1;
-    let bestD = MINER_BIND_M;
-    for (let i = 0; i < this.core.nodeCount; ++i) {
-      const n = this.core.node(i);
-      if (n === null || n.remaining <= 0) continue;
-      // Trees are not a deposit. Rock, coal, iron and copper are.
-      if (n.kind === 0) continue;
-      const d = Math.hypot(n.x - pos.x, n.y - pos.y, n.z - pos.z);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    return best;
+  patchUnder(pos: { x: number; y: number; z: number }): number {
+    const i = this.ore.find(pos.x, pos.y, pos.z);
+    if (i < 0) return -1;
+    const p = this.ore.patch(i);
+    return p !== null && p.remaining > 0 ? i : -1;
   }
 
   /** Add one building to the PLAN and re-commit. Returns it, or null. */
   add(kind: BuildKind, s: Snapped, fwd: THREE.Vector3): Placed | null {
     if (this.occupied(s.cell)) return null;
-    let nodeIndex = -1;
+    let patch = -1;
     if (kind === 'miner') {
-      nodeIndex = this.nodeUnder(s.pos);
-      if (nodeIndex < 0) return null;
-      if (this.placed.some((p) => p.nodeIndex === nodeIndex)) return null;
+      patch = this.patchUnder(s.pos);
+      if (patch < 0) return null;
+      // SEVERAL DRILLS ON ONE PATCH IS ALLOWED, and that is the point of a
+      // patch: it is a piece of ground, not a socket. They share the one pool,
+      // so covering a deposit in drills only makes it run out sooner.
     }
     const p: Placed = {
       id: this.nextId++, kind, pos: s.pos, cell: s.cell, up: s.up.clone(),
-      fwd: fwd.clone(), quat: orient(s.up, fwd), nodeIndex, lastRemaining: 0,
+      fwd: fwd.clone(), quat: orient(s.up, fwd), patch, lastRemaining: 0,
       build: -1, entity: -1, run: -1,
     };
     this.placed.push(p);
@@ -155,7 +158,7 @@ export class Factory {
    */
   restore(rows: readonly { kind: BuildKind; pos: [number, number, number];
                            cell: string; up: [number, number, number];
-                           fwd: [number, number, number]; node: number }[]): number {
+                           fwd: [number, number, number]; patch: number }[]): number {
     this.placed.length = 0;
     for (const r of rows) {
       const up = new THREE.Vector3(r.up[0], r.up[1], r.up[2]);
@@ -164,7 +167,7 @@ export class Factory {
         id: this.nextId++, kind: r.kind,
         pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] },
         cell: r.cell, up, fwd, quat: orient(up, fwd),
-        nodeIndex: r.node, lastRemaining: 0, build: -1, entity: -1, run: -1,
+        patch: r.patch, lastRemaining: 0, build: -1, entity: -1, run: -1,
       });
     }
     this.commit();
@@ -182,8 +185,8 @@ export class Factory {
    *
    * WHAT COMES BACK is only what physically existed. A machine's finished stock
    * and a smelter's un-smelted input are real units and go to the pack; a
-   * miner's `remaining` is a claim on the world node, which never left it, so a
-   * pulled miner refunds nothing and the node is untouched. Items riding a belt
+   * drill's `remaining` is a claim on the patch, which never left it, so a
+   * pulled drill refunds nothing and the deposit is untouched. Items riding a belt
    * ARE lost, and they are counted (`demolishedInFlight`), because that is the
    * one number a silent implementation would swallow.
    *
@@ -245,14 +248,16 @@ export class Factory {
     const ids = this.core.ids;
     this.placed.forEach((p, i) => {
       if (p.kind === 'miner') {
-        const node = this.core.node(p.nodeIndex);
-        // The deposit is the NODE's remaining ore on the first build, and the
-        // miner's own remaining on every rebuild after it, so re-laying a belt
+        const patch = p.patch >= 0 ? this.ore.patch(p.patch) : null;
+        // The deposit is the PATCH's remaining ore on the first build, and the
+        // drill's own remaining on every rebuild after it, so re-laying a belt
         // does not refill the mountain.
         const amount = carry[i].remaining > 0 ? carry[i].remaining
-          : Math.floor(node?.remaining ?? 0);
-        p.build = this.line.placeMinerForNode(
-          node?.kind ?? 3, amount, MINER_UNITS_PER_SEC);
+          : Math.floor(patch?.remaining ?? 0);
+        // The rate is the GROUND's, asked where this drill actually stands.
+        const rate = p.patch < 0 ? 0
+          : this.ore.drillRate(p.patch, p.pos.x, p.pos.y, p.pos.z);
+        p.build = this.line.placeMinerForNode(patch?.kind ?? 3, amount, rate);
         p.lastRemaining = this.line.minerRemaining(p.build);
       } else if (p.kind === 'smelter') {
         // The ORE the smelter takes is whatever a miner in this plan produces,
@@ -271,13 +276,13 @@ export class Factory {
     wire(this);
   }
 
-  /** What ore reaches this smelter: the kind of the nearest miner's node. */
+  /** What ore reaches this smelter: the resource of the nearest drill's patch. */
   private oreFedTo(s: Placed): number {
     let best = 0;
     let bestD = Infinity;
     for (const p of this.placed) {
-      if (p.kind !== 'miner') continue;
-      const n = this.core.node(p.nodeIndex);
+      if (p.kind !== 'miner' || p.patch < 0) continue;
+      const n = this.ore.patch(p.patch);
       if (n === null) continue;
       const d = Math.hypot(p.pos.x - s.pos.x, p.pos.y - s.pos.y, p.pos.z - s.pos.z);
       if (d < bestD) { bestD = d; best = n.resource; }
@@ -310,11 +315,11 @@ export class Factory {
   tick(ticks: number): void {
     this.line.step(ticks);
     for (const p of this.placed) {
-      if (p.kind !== 'miner' || p.build < 0) continue;
+      if (p.kind !== 'miner' || p.build < 0 || p.patch < 0) continue;
       const now = this.line.minerRemaining(p.build);
       const took = p.lastRemaining - now;
       if (took > 0) {
-        this.minedFromNodes += this.M._of_gp_node_drain(p.nodeIndex, took);
+        this.minedFromNodes += this.ore.drain(p.patch, took);
         p.lastRemaining = now;
       }
     }
@@ -344,7 +349,7 @@ export class Factory {
       return this.M._of_gp_smelt_output_for(this.oreFedTo(p) || this.core.ids.rawIron)
         || this.core.ids.iron;
     }
-    const n = p.nodeIndex >= 0 ? this.core.node(p.nodeIndex) : null;
+    const n = p.patch >= 0 ? this.ore.patch(p.patch) : null;
     return n?.resource ?? 0;
   }
 

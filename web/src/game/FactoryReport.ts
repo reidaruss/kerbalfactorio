@@ -27,9 +27,9 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
   const name = item > 0 ? game.itemName(item) : b.kind;
   if (b.kind === 'miner') {
     const left = b.build < 0 ? 0 : f.line.minerRemaining(b.build);
-    const n = game.node(b.nodeIndex);
+    const n = b.patch >= 0 ? f.ore.patch(b.patch) : null;
     return {
-      name: `miner  ${Math.round(left)} ${name} left`,
+      name: `mining drill  ${Math.round(left)} ${name} left`,
       fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
       // `empty` is the HARVEST NODE's depleted caption; a machine has its own
       // words for being empty and does not want "node depleted" under them.
@@ -71,7 +71,7 @@ function row(f: Factory, p: Placed): unknown {
   const machine = live && p.kind !== 'belt';
   return {
     id: p.id, kind: p.kind, build: p.build, entity: p.entity, run: p.run,
-    node: p.nodeIndex, outputItem: f.outputItemOf(p),
+    patch: p.patch, outputItem: f.outputItemOf(p),
     cell: p.cell,
     remaining: p.kind === 'miner' && live ? f.line.minerRemaining(p.build) : null,
     input: p.kind === 'smelter' && live ? f.line.inputBuffer(p.build) : null,

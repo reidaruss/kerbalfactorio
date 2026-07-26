@@ -25,8 +25,11 @@
 const DB = 'orbital-foundry';
 const STORE = 'saves';
 const SLOT = 'auto';
-/** 2: voxel edits joined the slot, so a v1 slot cannot describe the tunnels. */
-export const SAVE_VERSION = 2;
+/** 2: voxel edits joined the slot, so a v1 slot cannot describe the tunnels.
+ *  3: a deposit is an ore PATCH rather than a boulder, so the depletion diff is
+ *     keyed by patch and a building carries the patch it stands on. A v2 slot
+ *     names nodes that no longer hold any ore. */
+export const SAVE_VERSION = 3;
 
 import type { SavedEdits } from './VoxelSave.js';
 
@@ -36,7 +39,8 @@ export interface SaveBuilding {
   cell: string;
   up: [number, number, number];
   fwd: [number, number, number];
-  node: number;
+  /** Drill only: the ore patch it stands on. -1 for anything else. */
+  patch: number;
 }
 
 export interface SaveMachine {
@@ -56,8 +60,12 @@ export interface SaveSlot {
   savedAt: number;
   /** persistence.h bytes from of_gp_inventory_serialize. */
   pack: number[];
-  /** Harvest-node depletion: [index, remaining] for every node below full. */
+  /** Harvest-node depletion: [index, remaining] for every node below full.
+   *  Trees only now: an outcrop holds no ore of its own. */
   depletion: [number, number][];
+  /** ORE PATCH depletion: [index, remaining] for every patch below full. This
+   *  is the diff that matters, because one patch is the whole deposit. */
+  patches: [number, number][];
   buildings: SaveBuilding[];
   machines: SaveMachine[];
   /** The dug tunnels: /core's removed-cell bytes plus the strike log. */

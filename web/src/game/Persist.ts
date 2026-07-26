@@ -2,11 +2,12 @@
 // world. The container and the byte format are SaveGame.ts's; what lives here is
 // what counts as state.
 //
-// THE ORDER ON RESTORE IS NOT FREE. Nodes have to be drained BEFORE the miners
-// are placed, because a miner is seeded from its node's remaining ore and would
-// otherwise be handed a full deposit and start the world with ore that was mined
-// out before the reload. Getting this backwards is the persistence version of
-// the two-counters-for-one-pool failure Factory's header is about.
+// THE ORDER ON RESTORE IS NOT FREE. The ore PATCHES have to be drained BEFORE
+// the drills are placed, because a drill is seeded from its patch's remaining
+// ore and would otherwise be handed a full deposit and start the world with ore
+// that was mined out before the reload. Getting this backwards is the
+// persistence version of the two-counters-for-one-pool failure Factory's header
+// is about.
 //
 // AND WHAT IS NOT SAVED IS SAID OUT LOUD. `apply` returns a ledger with every
 // unit it could not bring back, so "my fuel is gone" is a documented number
@@ -19,6 +20,7 @@ import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
 import type { Machines } from './Machines.js';
 import type { NodeField } from './NodeField.js';
+import type { OrePatches } from './OrePatches.js';
 import type { Gameplay } from './Gameplay.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
@@ -35,6 +37,7 @@ export interface RestoreLedger {
   buildings: number;
   machines: number;
   nodesDepleted: number;
+  patchesDepleted: number;
   packUnits: number;
   /** Fuel a furnace was burning. There is no item to give back for a tick. */
   fuelTicksLost: number;
@@ -45,7 +48,8 @@ export interface RestoreLedger {
 
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
-                         seed: number, ports: WorldPorts): SaveSlot {
+                         seed: number, ports: WorldPorts,
+                         ore: OrePatches): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -55,10 +59,20 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   // re-enters WASM and any growth detaches the view.
   const pack = n > 0 ? Array.from(scratchU8(M, n)) : [];
 
+  // Nodes first. An OUTCROP reports its patch's pool, so writing it here would
+  // record the same ore once per outcrop and drain it that many times on load:
+  // the diff is keyed by what OWNS the ore, and for ore that is the patch.
   const depletion: [number, number][] = [];
   for (const pl of field.placed) {
     const st = game.node(pl.index);
-    if (st !== null && st.remaining < st.initial) depletion.push([pl.index, st.remaining]);
+    if (st === null || st.remaining >= st.initial) continue;
+    if (ore.find(st.x, st.y, st.z) >= 0) continue;   // an outcrop: its patch owns it
+    depletion.push([pl.index, st.remaining]);
+  }
+  const patches: [number, number][] = [];
+  for (let i = 0; i < ore.count; ++i) {
+    const p = ore.patch(i);
+    if (p !== null && p.remaining < p.initial) patches.push([i, p.remaining]);
   }
 
   return {
@@ -68,8 +82,9 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     pack,
     voxels,
     depletion,
+    patches,
     buildings: factory.placed.map((p) => ({
-      kind: p.kind, cell: p.cell, node: p.nodeIndex,
+      kind: p.kind, cell: p.cell, patch: p.patch,
       pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
       up: [p.up.x, p.up.y, p.up.z] as [number, number, number],
       fwd: [p.fwd.x, p.fwd.y, p.fwd.z] as [number, number, number],
@@ -90,15 +105,26 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
 
 export function apply(M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
-                      slot: SaveSlot, ports: WorldPorts): RestoreLedger {
+                      slot: SaveSlot, ports: WorldPorts,
+                      ore: OrePatches): RestoreLedger {
   // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
   //    surface the oracle reports, and a miner or a machine placed against the
   //    old, un-dug column would sit at the wrong height.
   const voxels = restoreEdits(M, ports.voxels, ports.voxelMesh, ports.terrain,
     slot.voxels ?? NO_VOXELS);
 
-  // 1. THE NODES. of_gp_node_drain is the same call a miner uses, so the
-  //    restored world is depleted through the one path that can deplete it.
+  // 1. THE ORE PATCHES, and then the standalone nodes. Both go back through the
+  //    SAME extraction call the live world uses (of_gp_patch_drain /
+  //    of_gp_node_drain), so a restored world is depleted through the one path
+  //    that can deplete it and a save can never invent a state mining cannot
+  //    reach. Patches first, because a drill placed in step 3 is seeded from one.
+  let patchesDepleted = 0;
+  for (const [index, remaining] of slot.patches ?? []) {
+    const p = ore.patch(index);
+    if (p === null) continue;
+    const take = p.remaining - remaining;
+    if (take > 0) { ore.drain(index, take); patchesDepleted++; }
+  }
   let depleted = 0;
   for (const [index, remaining] of slot.depletion) {
     const st = game.node(index);
@@ -148,7 +174,7 @@ export function apply(M: OfCoreModule, game: GameCore,
 
   return {
     buildings, machines: restoredMachines, nodesDepleted: depleted,
-    packUnits, fuelTicksLost, voxels, savedAt: slot.savedAt,
+    patchesDepleted, packUnits, fuelTicksLost, voxels, savedAt: slot.savedAt,
   };
 }
 
@@ -159,12 +185,13 @@ export function apply(M: OfCoreModule, game: GameCore,
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports);
+    g.seed, g.ports, g.oreField.patches);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
     bytes: slot.pack.length, buildings: slot.buildings.length,
     machines: slot.machines.length, depletion: slot.depletion.length,
+    patches: slot.patches.length,
     voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
   } : null;
 }
@@ -174,7 +201,8 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // A slot from another seed is a different planet, and loading it would drop
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
-  g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports);
+  g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports,
+    g.oreField.patches);
   g.panel.invalidate();
   const dug = g.restored.voxels.cells;
   g.hud.flash(`restored ${g.restored.buildings} buildings, `

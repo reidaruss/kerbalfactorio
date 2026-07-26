@@ -47,7 +47,7 @@ export const OBJECTIVES: Objective[] = [
     done: (g) => g.game.count(g.game.ids.pickaxe) >= 1,
   },
   {
-    id: 'ore', text: 'Mine iron ore', hint: 'the rust-coloured boulders',
+    id: 'ore', text: 'Mine iron ore', hint: 'the grey-blue patch of ground',
     done: (g) => g.game.count(g.game.ids.rawIron) >= 5,
   },
   {
@@ -55,7 +55,7 @@ export const OBJECTIVES: Objective[] = [
     done: (g) => g.game.count(g.game.ids.iron) >= 1,
   },
   {
-    id: 'miner', text: 'Put a miner on an ore deposit', hint: 'press 1, then G',
+    id: 'miner', text: 'Put a drill on an ore patch', hint: 'press 1, then G',
     done: (g) => g.factory.placed.some((p) => p.kind === 'miner'),
   },
   {

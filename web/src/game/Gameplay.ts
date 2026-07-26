@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
 import { NodeField } from './NodeField.js';
+import { OreField } from './OreField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
 import { InventoryPanel } from '../ui/InventoryPanel.js';
@@ -46,6 +47,8 @@ import type { Input } from '../player/Input.js';
 /** Ticks between autosaves. 20 seconds: often enough to matter, rare enough
  * that a slot write is invisible against a 16 ms frame. */
 const AUTOSAVE_TICKS = 20 * 60;
+/** Seconds between re-snapping ONE ore patch's skin to the live ground. */
+const RESNAP_SECS = 0.75;
 
 export interface GameplayDeps {
   core: OfCoreModule;
@@ -64,6 +67,8 @@ export interface GameplayDeps {
 export class Gameplay {
   readonly game: GameCore;
   readonly field: NodeField;
+  /** The ore in the ground: the patches, their skin and their outcrops. */
+  readonly oreField: OreField;
   readonly interact: Interact;
   readonly hud: GameHud;
   readonly panel: InventoryPanel;
@@ -85,10 +90,12 @@ export class Gameplay {
   readonly factoryView: FactoryView;
   readonly build: BuildMode;
   nodesPlaced = 0;
+  patchesPlaced = 0;
   placements = 0;
   /** Ingots taken out of automated machines by hand, for the HUD and probes. */
   autoCollected = 0;
   private simSecs = 0;
+  private sinceResnap = 0;
   private panelHeld = false;
   private placeHeld = false;
   private mineHeld = false;
@@ -115,6 +122,7 @@ export class Gameplay {
   private constructor(private readonly d: GameplayDeps) {
     this.game = new GameCore(d.core);
     this.field = new NodeField(this.game, d.origin);
+    this.oreField = new OreField(d.core, d.bodyHandle, this.field, d.origin);
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     this.hud = new GameHud(d.host);
     this.fx = new Feedback(this.hud, this.field, this.sfx);
@@ -127,7 +135,8 @@ export class Gameplay {
       () => takeFurnace(this, this.openMachine));
     // The factory ticks on the SIM clock, like everything else that is a rule.
     this.ambience = new Ambience(d.core, d.bodyHandle);
-    this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60);
+    this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60,
+      this.oreField.patches);
     this.factoryView = new FactoryView(d.origin);
     this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView);
     // A hand furnace announces its own ingots, at the furnace that made them.
@@ -143,6 +152,7 @@ export class Gameplay {
       g.icons.load()]);
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
+    d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
     d.scene.add(g.factoryView.group);
     // Browsers refuse audio until the player has interacted; the listener arms
@@ -176,7 +186,11 @@ export class Gameplay {
   populate(): void {
     const p = this.d.player.body.feet;
     const dir = new THREE.Vector3(p.x, p.y, p.z).normalize();
+    // NodeField FIRST: it clears the whole node array, and the ore field's
+    // outcrops are nodes in that same array.
     this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed);
+    this.patchesPlaced = this.oreField.populate(dir, 0);
+    this.nodesPlaced = this.field.placed.length;
   }
 
   /** True while the pointer is locked to the canvas, for the report. */
@@ -312,6 +326,17 @@ export class Gameplay {
   frame(dt: number): void {
     this.simSecs += dt;
     this.field.update(dt);
+    this.oreField.update();
+    // The ground under a patch can be dug into or levelled, so the skin is
+    // re-asked of the surface oracle: ONE patch per interval, round robin,
+    // because doing all of them every frame is thousands of synchronous oracle
+    // calls a second to answer a question that changes when somebody digs.
+    this.sinceResnap += dt;
+    if (this.sinceResnap >= RESNAP_SECS) {
+      this.sinceResnap = 0;
+      const v = this.d.ports?.voxels;
+      if (v !== null && v !== undefined) this.oreField.resnap(v.handle);
+    }
     this.machines.update();
     this.machines.updateFx(dt);
     this.fx.update(dt, this.d.origin);

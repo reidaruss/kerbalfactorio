@@ -11,6 +11,10 @@ export function gameplayReport(g: Gameplay): unknown {
   return {
       nodes: g.field.stats(),
       placed: g.nodesPlaced,
+      // THE DEPOSITS. A patch is the whole ore body, so `remaining` here is the
+      // number a conservation check has to balance against: what a drill
+      // extracted plus what a hand mined must equal what the patch lost.
+      ore: g.oreField.report(),
       panelOpen: g.panel.isOpen,
       furnaceOpen: g.furnacePanel.isOpen,
       placements: g.placements,

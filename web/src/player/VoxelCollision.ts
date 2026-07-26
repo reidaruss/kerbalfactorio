@@ -57,14 +57,54 @@ export class VoxelCollider {
   resetCalls(): void { this.calls = 0; }
 
   /**
+   * Is this point rock the WALKER has to resolve against? Both of the oracle's
+   * answers, about the same point, and they are not the same answer.
+   *
+   * `solidAt` quantises to the 1 m cell and a cell is solid when its CENTRE is
+   * at or below the designed surface (surface_field.h section 5). The walkable
+   * ground is the smooth `surfaceRadius`. So the solid shell is a staircase
+   * around the surface, and a cell whose centre is a few centimetres under the
+   * ground is solid all the way up to its top face, which can stand most of a
+   * metre PROUD of the ground the player is walking on. Measured on ordinary
+   * terrain: the air 0.15 m above the walkable surface reads solid on 60.6% of
+   * ticks (walkfeel.js).
+   *
+   * That phantom rock was the whole "you get stuck unless you jump" complaint.
+   * The capsule's lowest sample is inside it on most ticks, `resolveEmbedded`
+   * ejects along the minimum translation, and the minimum translation out of a
+   * cell you have just barely entered is back through the face you entered by,
+   * which is exactly the 7.7 cm you had just walked. Every tick. The walker
+   * advanced and was pushed back to where it started, at full commanded speed,
+   * grounded, with no flag raised anywhere.
+   *
+   * A point ABOVE its own column's walkable surface is therefore air, whatever
+   * the cell quantisation says. This does not invent a second surface: it makes
+   * the walker require BOTH of the oracle's answers to agree before it treats
+   * something as rock, and above the ground it is the heightfield that is
+   * authoritative (it is the thing the ground snap stands the player on).
+   *
+   * Below the surface nothing changes, so the dig mouth (15.2 item 48) and the
+   * tunnel interior are untouched: a rim wall beside a shaft belongs to an
+   * UNDUG column whose surface is metres higher, so a capsule embedded in it is
+   * still solidly inside rock and still gets pushed out.
+   */
+  private solidForWalker(px: number, py: number, pz: number): boolean {
+    this.calls++;
+    if (!this.oracle.solidAt(px, py, pz)) return false;
+    const r = Math.hypot(px, py, pz);
+    if (r < 1e-6) return true;
+    this.calls++;
+    return r <= this.oracle.surfaceRadius(px / r, py / r, pz / r);
+  }
+
+  /**
    * Is the whole capsule in air at this foot position? The feet-only test this
    * replaces let the player walk their head through a ceiling, which mattered
    * the moment the bore got wide enough to walk down at all.
    */
   free(x: number, y: number, z: number, ux: number, uy: number, uz: number): boolean {
     for (const h of CAPSULE_SAMPLES_M) {
-      this.calls++;
-      if (this.oracle.solidAt(x + ux * h, y + uy * h, z + uz * h)) return false;
+      if (this.solidForWalker(x + ux * h, y + uy * h, z + uz * h)) return false;
     }
     return true;
   }
@@ -127,8 +167,7 @@ export class VoxelCollider {
     const solid: [number, number, number][] = [];
     for (const h of CAPSULE_SAMPLES_M) {
       const px = x + ux * h, py = y + uy * h, pz = z + uz * h;
-      this.calls++;
-      if (this.oracle.solidAt(px, py, pz)) solid.push([px, py, pz]);
+      if (this.solidForWalker(px, py, pz)) solid.push([px, py, pz]);
     }
     if (solid.length === 0) return null;
 
