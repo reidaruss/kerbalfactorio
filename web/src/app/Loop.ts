@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import type { Services } from './Services.js';
 import { STAKE_STRIDE } from '../render/debug/JitterProbe.js';
+import { FrameDiff, type FrameDiffStats } from '../render/debug/FrameDiff.js';
 
 export type FixedStep = (dt: number, tick: number) => void;
 export type Drain = () => void;
@@ -16,6 +17,8 @@ export interface FrameHash {
   /** Clear-colour pixels with terrain above them. See Loop.countHoles. */
   holePixels: number;
   tilesX: number; tilesY: number; tiles: number[];
+  /** Per-pixel second difference against the two previous frameHash calls. */
+  diff: FrameDiffStats;
 }
 
 /** Consecutive opaque pixels that mark the horizon in countHoles. */
@@ -56,6 +59,7 @@ export class Loop {
   private captureWaiters: { resolve: (b: Blob) => void; reject: (e: unknown) => void }[] = [];
   /** Preallocated jitter stakes: [anchor xyz, local xyz] per stake (rule 6). */
   private readonly stakes = new Float64Array(16 * STAKE_STRIDE);
+  private readonly frameDiff = new FrameDiff();
 
   constructor(private readonly s: Services) {}
 
@@ -161,6 +165,7 @@ export class Loop {
     return {
       w, h, hash, litPct: Math.round((lit / (w * h)) * 10000) / 100,
       holePixels: this.countHoles(buf, w, h), tilesX, tilesY, tiles,
+      diff: this.frameDiff.sample(buf, w, h),
     };
   }
 

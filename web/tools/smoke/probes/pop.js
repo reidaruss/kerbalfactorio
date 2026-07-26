@@ -24,13 +24,24 @@
 
   const t0 = of.world();
   const builtStart = of.stats().terrain.chunksBuilt;
-  of.input.tape([{ hold: frames + warm + 600, keys: OF_ARGS.keys ?? ['KeyW'] }]);
-  for (let i = 0; i < warm; ++i) { await of.run(1 / 60, 60); await new Promise((r) => { setTimeout(r, 0); }); }
+  // Two drivers. WALK is the shipping case. TELEPORT is the stress case: it
+  // dumps a large resident-set change on a STATIONARY camera, so every pixel
+  // that changes afterwards is terrain changing and nothing else.
+  if (OF_ARGS.teleport) {
+    const [dLat, dLon, alt] = OF_ARGS.teleport;
+    await of.settle(10);
+    of.teleport(t0.observer.latDeg + dLat, t0.observer.lonDeg + dLon, alt ?? t0.observer.altM);
+    for (let i = 0; i < warm; ++i) { await of.run(1 / 60, 60); await new Promise((r) => { setTimeout(r, 0); }); }
+  } else {
+    of.input.tape([{ hold: frames + warm + 600, keys: OF_ARGS.keys ?? ['KeyW'] }]);
+    for (let i = 0; i < warm; ++i) { await of.run(1 / 60, 60); await new Promise((r) => { setTimeout(r, 0); }); }
+  }
 
   let p1 = null; let p2 = null;
   const series = [];
   let sumOfMax = 0;
   let spike = null;
+  let pxJump = 0; let pxMax = 0; const pxJumpSeries = [];
   for (let i = 0; i < frames; ++i) {
     // Exactly one fixed tick and one rendered frame, so the sample rate is the
     // sim rate and a 250 ms cross-fade is 15 samples wide.
@@ -64,7 +75,11 @@
           n++;
         }
         spike = { i, tilesChanged: n, boxTiles: [x0, y0, x1, y1], meanSignedDelta: +(signed / Math.max(1, n)).toFixed(2) };
+        if (OF_ARGS.dumpSpike) { spike.prev = p1.map((v) => Math.round(v)); spike.cur = f.tiles.map((v) => Math.round(v)); }
       }
+      pxJump = Math.max(pxJump, f.diff.jumpPx);
+      pxMax = Math.max(pxMax, f.diff.maxD2);
+      pxJumpSeries.push(f.diff.jumpPx);
       const ww = of.world();
       const ss = of.stats();
       series.push({
@@ -117,6 +132,18 @@
     framesOver25: series.filter((r) => r.maxD2 > 25).length,
     worst: series.slice().sort((a, b) => b.maxD2 - a.maxD2).slice(0, 4),
     window: OF_ARGS.window ? series.slice(OF_ARGS.window[0], OF_ARGS.window[1]) : undefined,
+    // Per-PIXEL second difference: the sharp instrument. A tile mean over 8x8
+    // pixels divides a chunk swap by 64 and hides it.
+    pixel: {
+      worstJumpPx: pxJump,
+      worstJumpPpm: Math.round((pxJump / (800 * 450)) * 1e6),
+      maxD2: pxMax,
+      framesOver2000px: pxJumpSeries.filter((v) => v > 2000).length,
+      framesOver500px: pxJumpSeries.filter((v) => v > 500).length,
+      p999JumpPx: pxJumpSeries.slice().sort((a, b) => a - b)[Math.round(0.999 * (pxJumpSeries.length - 1))],
+      p99JumpPx: pxJumpSeries.slice().sort((a, b) => a - b)[Math.round(0.99 * (pxJumpSeries.length - 1))],
+      medianJumpPx: pxJumpSeries.slice().sort((a, b) => a - b)[Math.round(0.5 * (pxJumpSeries.length - 1))],
+    },
     spike,
     residentEnd: w.chunks.resident,
     draw: of.stats().draw,

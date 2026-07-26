@@ -49,9 +49,16 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       // The SIGN of aFadeT0 selects the half of the dissolve: positive is the
       // incoming chunk fading in, negative is the outgoing one fading out. One
       // attribute, written once, carries both.
+      //
+      // The outgoing ramp is offset to [-2,-1] rather than negated into [-1,0]
+      // because a negated zero is -0.0, and in GLSL -0.0 >= 0.0 is TRUE. That
+      // put the outgoing chunk on the INCOMING branch for exactly the first
+      // frame of every dissolve, both halves discarded everything, and the
+      // bright far-scene terrain showed through the ground for one frame.
+      // Measured as a 191-unit tile impulse on a driven walk.
       float fadeT = uFadeDur <= 0.0 ? 1.0
         : clamp((uTime - abs(aFadeT0)) / uFadeDur, 0.0, 1.0);
-      vFade = aFadeT0 < 0.0 ? -fadeT : fadeT;
+      vFade = aFadeT0 < 0.0 ? -1.0 - fadeT : fadeT;
       vec4 mv = viewMatrix * worldPosition;
       vViewZ = -mv.z;
       vec3 transformedNormal = normalMatrix * normal;
@@ -144,8 +151,8 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // chunks and they never z-fight against each other mid-dissolve.
       if (vFade < 1.0) {
         float b = ofBayer4(gl_FragCoord.xy);
-        if (vFade >= 0.0) { if (vFade < b) discard; }
-        else if (-vFade >= b) discard;
+        if (vFade < 0.0) { if (-vFade - 1.0 >= b) discard; }
+        else if (vFade < b) discard;
       }
 
       vec3 n = normalize(vNormalW);
