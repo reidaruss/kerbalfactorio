@@ -7,6 +7,10 @@ export interface InputFrame {
   dYaw: number; dPitch: number;
   zoom: number;
   boost: boolean;
+  /** Space. Held state; the controller edge-detects what it needs. */
+  jump: boolean;
+  /** KeyV. Held state; Controller turns it into one toggle per press. */
+  toggleView: boolean;
 }
 
 export interface TapeEntry {
@@ -32,6 +36,7 @@ export class Input {
 
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
+    jump: false, toggleView: false,
   };
 
   attach(el: HTMLElement): void {
@@ -91,6 +96,8 @@ export class Input {
       f.dPitch = e.dPitch ?? 0;
       f.zoom = e.zoom ?? 0;
       f.boost = keys.has('ShiftLeft');
+      f.jump = keys.has('Space');
+      f.toggleView = keys.has('KeyV');
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
     }
@@ -101,6 +108,8 @@ export class Input {
     f.dPitch = this.dPitch;
     f.zoom = this.zoomAccum;
     f.boost = this.down.has('ShiftLeft') || this.down.has('ShiftRight');
+    f.jump = this.down.has('Space');
+    f.toggleView = this.down.has('KeyV');
     this.dYaw = 0;
     this.dPitch = 0;
     this.zoomAccum = 0;

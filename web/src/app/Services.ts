@@ -19,8 +19,12 @@ import type { PlanetProxy } from '../world/PlanetProxy.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import type { Regime } from '../world/Regime.js';
 import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
-import type { ObserverCamera } from '../player/ObserverCamera.js';
+import type { ViewSource } from '../player/ViewSource.js';
+import type { Controller } from '../player/Controller.js';
+import type { Avatar } from '../player/Avatar.js';
 import type { Input } from '../player/Input.js';
+import type { JitterProbe } from '../render/debug/JitterProbe.js';
+import type { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import type { Hud } from '../ui/Hud.js';
 
 /** One-off numbers measured at boot, surfaced through window.__of.stats(). */
@@ -59,8 +63,15 @@ export interface Services {
   readonly terrain: TerrainStream;
   readonly regime: Regime;
   readonly materials: TerrainMaterials;
-  readonly observer: ObserverCamera;
+  /** Whatever drives the eye this run: the free camera or the walking capsule. */
+  readonly observer: ViewSource;
+  /** Non-null only when the capsule is driving (?mode=walk). */
+  readonly player: Controller | null;
+  /** The player's own body mesh. Non-null exactly when `player` is. */
+  readonly avatar: Avatar | null;
   readonly input: Input;
+  readonly jitter: JitterProbe;
+  readonly zfight: ZFightProbe | null;
   readonly hud: Hud;
   readonly sunLights: DirectionalLightLike[];
   readonly boot: BootMetrics;

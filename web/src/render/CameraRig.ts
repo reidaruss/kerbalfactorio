@@ -28,8 +28,16 @@ export class CameraRig {
     this.farCam.name = 'farCam';
     this.nearCam.name = 'nearCam';
     this.vmCam.name = 'vmCam';
-    // The character mesh renders in TP only; the shadow caster keeps it enabled.
+    // The character mesh renders in TP only; the shadow caster keeps it enabled
+    // (section 3.4), which is the M3.1b "FP black slab self-shadow" bug fixed by
+    // construction instead of by a workaround.
     this.nearCam.layers.enable(LAYER_PLAYER_BODY);
+  }
+
+  /** FP disables the layer on the CAMERA, never on the object. */
+  setOwnBodyVisible(visible: boolean): void {
+    if (visible) this.nearCam.layers.enable(LAYER_PLAYER_BODY);
+    else this.nearCam.layers.disable(LAYER_PLAYER_BODY);
   }
 
   cameras(): THREE.PerspectiveCamera[] {

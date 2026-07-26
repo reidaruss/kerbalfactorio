@@ -10,7 +10,7 @@
 // The dev server must already be listening; start it with `npm run dev`.
 
 import { chromium } from 'playwright-core';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,10 +27,21 @@ const width = Number(args.get('width') ?? 1600);
 const height = Number(args.get('height') ?? 900);
 const settleFrames = Number(args.get('settle') ?? 20);
 const waitMs = Number(args.get('wait') ?? 0);
-const evalScript = args.get('eval');
+// --evalfile is --eval for probes that are too long to live on a command line.
+// --evalargs is JSON, exposed to the probe as the global OF_ARGS.
+const evalFile = args.get('evalfile');
+const evalArgs = args.get('evalargs') ?? '{}';
+// The parentheses around the file body are load-bearing: probes start with a
+// comment block, and `return` followed by a newline is `return;` under ASI, so
+// without them every probe silently resolves to undefined.
+const evalScript = evalFile
+  ? `((OF_ARGS) => (\n${readFileSync(resolve(process.cwd(), evalFile), 'utf8')}\n))(${evalArgs})`
+  : args.get('eval');
 
 const params = new URLSearchParams();
-for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth', 't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac']) {
+for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',
+  't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
+  'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

@@ -19,6 +19,13 @@ export function registerSystems(s: Services, loop: Loop): void {
 
   loop.onDrain.push(() => {
     s.terrain.drain();
+    const p = s.player;
+    if (p !== null && s.avatar !== null) {
+      s.avatar.place(s.origin, p.body.feet, p.view.up, p.view.aim);
+      // The body is culled by CAMERA layer in FP, not by object visibility, so
+      // a future shadow caster still sees it.
+      s.rig.setOwnBodyVisible(p.view.mode === 'TP');
+    }
     // The body centre in engine space is simply -origin; the far scene puts it
     // at the scaled origin, which TerrainMaterials.update handles itself.
     bodyCenterEngine.set(-s.origin.origin.x, -s.origin.origin.y, -s.origin.origin.z);

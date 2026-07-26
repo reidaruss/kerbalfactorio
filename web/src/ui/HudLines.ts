@@ -20,7 +20,8 @@ interface StatsLike {
 interface WorldLike {
   seed: string;
   scenario: string;
-  observer: { latDeg: number; lonDeg: number; altM: number };
+  observer: { latDeg: number; lonDeg: number; altM: number; mode: string };
+  player: { grounded: boolean; speedMps: number; slopeCos: number; armLengthM: number } | null;
   surfaceHeightM: number;
   biome: number;
   origin: { rebases: number };
@@ -42,6 +43,10 @@ function m(v: number): string {
 export function hudLines(
   s: StatsLike, w: WorldLike, gpu: string, oracleUs: number,
 ): HudLine[] {
+  const p = w.player;
+  const keys = p === null
+    ? 'drag=look  WASD=move  R/F=alt  wheel=zoom  shift=fast  `=hud'
+    : 'drag=look  WASD=walk  space=jump  shift=sprint  V=FP/TP  `=hud';
   return [
     { label: 'seed', value: `${w.seed}  scenario=${w.scenario}` },
     { label: 'fps', value: `${s.fps.toFixed(0)}  p50 ${s.frameMs.p50.toFixed(1)} ms  p99 ${s.frameMs.p99.toFixed(1)} ms`, warn: s.budget.frameP99 !== 'ok' },
@@ -59,7 +64,14 @@ export function hudLines(
     { label: 'stream ms', value: `walk ${s.terrain.updateMs.toFixed(2)}  pack ${s.terrain.packMs.toFixed(2)}  upload ${s.terrain.uploadMs.toFixed(2)}  rtt ${s.terrain.roundTripMs.toFixed(1)}` },
     { label: 'pool', value: `${s.pool.inUse} used / ${s.pool.free} free  built ${s.terrain.chunksBuilt}  last ${(s.terrain.bytesLastUpdate / 1024).toFixed(0)} kB`, warn: s.pool.exhausted > 0 },
     { label: 'rebases', value: `${w.origin.rebases}` },
+    ...(p === null ? [] : [{
+      label: 'player',
+      value: `${w.observer.mode}  ${p.grounded ? 'GROUNDED' : 'airborne'}  `
+        + `${p.speedMps.toFixed(2)} m/s  slope ${(Math.acos(Math.min(1, p.slopeCos)) * 57.2958).toFixed(0)} deg`
+        + (w.observer.mode === 'TP' ? `  arm ${p.armLengthM.toFixed(2)} m` : ''),
+      warn: !p.grounded,
+    }]),
     { label: 'gpu', value: gpu.slice(0, 52) },
-    { label: 'keys', value: 'drag=look  WASD=move  R/F=alt  wheel=zoom  shift=fast  `=hud' },
+    { label: 'keys', value: keys },
   ];
 }

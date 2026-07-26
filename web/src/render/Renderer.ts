@@ -39,6 +39,12 @@ export interface OFRenderer {
   resetInfo(): void;
   /** Must be called inside the same task as the render, or the buffer is gone. */
   capture(): Promise<Blob>;
+  /**
+   * RGBA8 read-back of the default framebuffer, origin BOTTOM-LEFT. Same
+   * same-task rule as capture(). Only the depth probe uses this; it stays on
+   * the seam so no other module ever reaches for the raw GL context.
+   */
+  readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void;
   dispose(): void;
 }
 
@@ -50,6 +56,7 @@ function gpuName(gl: WebGL2RenderingContext): string {
 
 class WebGLSeam implements OFRenderer {
   private readonly r: THREE.WebGLRenderer;
+  private readonly gl: WebGL2RenderingContext;
   readonly caps: RendererCaps;
   readonly depth: DepthPolicy;
 
@@ -67,6 +74,7 @@ class WebGLSeam implements OFRenderer {
     });
     const caps = this.r.capabilities;
     const gl = this.r.getContext() as WebGL2RenderingContext;
+    this.gl = gl;
     this.caps = {
       reversedDepthAvailable: caps.reversedDepthBuffer === true,
       maxTextureSize: caps.maxTextureSize,
@@ -115,6 +123,13 @@ class WebGLSeam implements OFRenderer {
     return new Promise((resolve, reject) => {
       this.r.domElement.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
     });
+  }
+
+  readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void {
+    const gl = this.gl;
+    // three may leave a render target bound; the probe wants what was presented.
+    this.r.setRenderTarget(null);
+    gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
   }
 
   dispose(): void { this.r.dispose(); }

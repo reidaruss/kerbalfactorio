@@ -21,7 +21,12 @@ import { PlanetProxy } from '../world/PlanetProxy.js';
 import { Regime } from '../world/Regime.js';
 import { bootTerrain } from '../world/TerrainBoot.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
+import { Controller } from '../player/Controller.js';
+import { Avatar } from '../player/Avatar.js';
+import type { ViewSource } from '../player/ViewSource.js';
 import { Input } from '../player/Input.js';
+import { JitterProbe } from '../render/debug/JitterProbe.js';
+import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { Hud } from '../ui/Hud.js';
 import { probeWorkerOracle } from './WorkerProbe.js';
 
@@ -38,6 +43,14 @@ function addLighting(scene: THREE.Scene, sunDir: THREE.Vector3, dist: number): T
 export interface Booted {
   services: Services;
   canvas: HTMLCanvasElement;
+}
+
+/** Camera basis from the orientation quaternion: -Z is forward, +X is right. */
+function forwardOf(v: ViewSource): THREE.Vector3 {
+  return new THREE.Vector3(0, 0, -1).applyQuaternion(v.orientation).normalize();
+}
+function rightOf(v: ViewSource): THREE.Vector3 {
+  return new THREE.Vector3(1, 0, 0).applyQuaternion(v.orientation).normalize();
 }
 
 export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Booted> {
@@ -81,14 +94,29 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     scenes.near.add(createGnomon());
   }
 
-  const origin = new FloatingOrigin(events, 4000);
-  const observer = new ObserverCamera(oracle);
+  const origin = new FloatingOrigin(events, cfg.rebaseM);
+  // Two ViewSource implementations, one contract. The capsule and the free
+  // camera are BOTH the streaming observer when active, so what is drawn and
+  // what is resident can never drift apart (the W1 rule, carried forward).
+  const player = cfg.mode === 'walk'
+    ? new Controller(oracle, cfg.view, cfg.walkSpeedMps, cfg.interpolate) : null;
+  const observer: ViewSource = player ?? new ObserverCamera(oracle);
   observer.teleport(cfg.scenario.lat, cfg.scenario.lon, cfg.scenario.alt);
   origin.step(observer.position);
   sky.setSunT(cfg.sunTExplicit ?? SkyPass.solveSunT(observer.up, cfg.scenario.sunDot));
 
+  const avatar = player === null ? null : new Avatar();
+  if (avatar !== null) scenes.near.add(avatar.group);
+
   const input = new Input();
   input.attach(canvas);
+  const jitter = new JitterProbe();
+  const zfight = cfg.scenarioName === 'zfight'
+    ? new ZFightProbe(scenes, origin, observer.position,
+      forwardOf(observer), rightOf(observer), observer.up)
+    : null;
+  // Both probes are world-anchored, so both subscribe to the ONE broadcast.
+  if (zfight !== null) events.on('OriginRebased', () => zfight.place(origin));
 
   hud.banner('starting the worker WASM instance ...');
   const wp = await probeWorkerOracle(core, body, cfg);
@@ -128,7 +156,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const services: Services = {
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
-    materials: terrain.materials, observer, input, hud, sunLights, boot,
+    materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
+    hud, sunLights, boot,
   };
   return { services, canvas };
 }

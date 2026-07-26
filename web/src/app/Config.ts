@@ -16,7 +16,11 @@ export interface Scenario {
    * ?t= overrides it with an absolute angle in turns.
    */
   readonly sunDot: number;
+  /** 'walk' spawns the kinematic capsule; 'fly' keeps the free/orbit camera. */
+  readonly mode?: PlayerMode;
 }
+
+export type PlayerMode = 'walk' | 'fly';
 
 // lat 2 / lon 144 on Forge at seed 0x0bf00d01: a Hills valley floor at 2,963 m
 // with 3,200 m of relief and peaks 2,668 m above it inside a 6 km box, found by
@@ -36,6 +40,12 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   ascent: { ...HOME, alt: 1.2e4, sunDot: 0.70 },
   // Depth-precision probe (ARCHITECTURE.md section 3.3).
   zfight: { ...HOME, alt: 900, sunDot: 0.55 },
+  // W2: boots on the ground with the kinematic capsule driving the observer.
+  // alt is ignored (the capsule spawns ON the surface); it is kept so the
+  // scenario record has one shape.
+  walk: { ...HOME, alt: 2, sunDot: 0.55, mode: 'walk' },
+  // The sustained-walk streaming and rebase test starts from the same place.
+  long_walk: { ...HOME, alt: 2, sunDot: 0.55, mode: 'walk' },
 };
 
 export interface Config {
@@ -58,6 +68,18 @@ export interface Config {
   readonly skirts: boolean;
   /** StreamConfig.skirtFraction override; 0 keeps the default. */
   readonly skirtFraction: number;
+  /** Which ViewSource drives the frame. ?mode=walk|fly overrides the scenario. */
+  readonly mode: PlayerMode;
+  /** Start camera mode for the character. FP is the default (section 3.4). */
+  readonly view: 'FP' | 'TP';
+  /** Snap LOD T-junction edges onto the coarser neighbour. ?stitch=0 disables. */
+  readonly stitch: boolean;
+  /** of::FloatingOrigin rebase threshold in metres. ?rebase= for walk tests. */
+  readonly rebaseM: number;
+  /** Character ground speed in m/s; sprint is 2x. ?walkspeed= for walk tests. */
+  readonly walkSpeedMps: number;
+  /** Render-time interpolation of the 60 Hz capsule. ?interp=0 is the W1 behaviour. */
+  readonly interpolate: boolean;
 }
 
 const DEFAULT_SEED_LO = 0x0bf00d01;
@@ -131,5 +153,18 @@ export function parseConfig(search: string): Config {
     // observable. ?skirts=1 turns them back on for that comparison.
     skirts: p.get('skirts') === '1',
     skirtFraction: num(p, 'skirtfrac', 0),
+    mode: p.get('mode') === 'walk' ? 'walk'
+      : p.get('mode') === 'fly' ? 'fly'
+        : base.mode ?? 'fly',
+    view: p.get('view') === 'tp' || p.get('view') === 'TP' ? 'TP' : 'FP',
+    stitch: p.get('stitch') !== '0',
+    // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run
+    // can force many rebases inside a walk that fits in a smoke budget, which
+    // makes the invisibility assertion STRICTER, not weaker.
+    rebaseM: Math.max(16, num(p, 'rebase', 4000)),
+    walkSpeedMps: Math.max(0.5, num(p, 'walkspeed', 4.6)),
+    // ?interp=0 reproduces the un-interpolated behaviour so the jitter fix has a
+    // measured BEFORE in the same build, not an argument.
+    interpolate: p.get('interp') !== '0',
   };
 }

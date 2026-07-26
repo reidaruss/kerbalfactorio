@@ -47,6 +47,9 @@ export class TerrainStream {
   private cutoff = 6;
   private cutoffDirty = false;
   private readonly lastObserved: Vec3d = { x: NaN, y: NaN, z: NaN };
+  /** Preallocated selection buffers for probeStakes (2.2 rule 6). */
+  private readonly nearest: (ChunkView | null)[] = new Array(8).fill(null);
+  private readonly nearestD2 = new Float64Array(8);
 
   constructor(
     private readonly worker: Worker,
@@ -238,6 +241,43 @@ export class TerrainStream {
       // as "nothing changed".
       metrics: { ...this.metrics },
     };
+  }
+
+  /**
+   * Fill JitterProbe stake rows from the chunks nearest the engine origin:
+   * [anchor xyz (engine metres), local xyz (the f32 vertex offset)] per stake.
+   * Two stakes per chunk, the corner vertex and the centre vertex, because the
+   * quantization the GPU sees depends on BOTH the camera-to-anchor distance and
+   * the vertex's own offset from that anchor.
+   */
+  probeStakes(out: Float64Array, maxStakes: number): number {
+    const slots = this.nearest;
+    const d2s = this.nearestD2;
+    slots.fill(null);
+    d2s.fill(Infinity);
+    for (const v of this.views.values()) {
+      if (!v.isNear || !v.mesh.visible) continue;
+      const d2 = v.mesh.position.lengthSq();
+      if (d2 >= d2s[slots.length - 1]) continue;
+      let i = slots.length - 1;
+      while (i > 0 && d2s[i - 1] > d2) { d2s[i] = d2s[i - 1]; slots[i] = slots[i - 1]; i--; }
+      d2s[i] = d2; slots[i] = v;
+    }
+    const centre = (33 * 16 + 16) * 3;
+    let s = 0;
+    for (let k = 0; k < slots.length && s + 1 < maxStakes; ++k) {
+      const v = slots[k];
+      if (v === null) break;
+      const arr = (v.mesh.geometry.getAttribute('position') as THREE.BufferAttribute)
+        .array as Float32Array;
+      for (const base of [0, centre]) {
+        const o = s * 6;
+        out[o] = v.mesh.position.x; out[o + 1] = v.mesh.position.y; out[o + 2] = v.mesh.position.z;
+        out[o + 3] = arr[base]; out[o + 4] = arr[base + 1]; out[o + 5] = arr[base + 2];
+        s++;
+      }
+    }
+    return s;
   }
 
   /** Agent-facing dump of live chunk state, surfaced as window.__of.chunks(). */

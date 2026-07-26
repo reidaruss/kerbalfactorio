@@ -1,19 +1,18 @@
-// W1 free/orbit camera. It is deliberately ALSO the streaming observer, so there
-// is one position driving both what is drawn and what is resident, and they
-// cannot drift apart. The kinematic character controller replaces the movement
-// half of this at W2; the tangent-frame maths here is the same maths it needs.
+// The free/orbit camera. It is deliberately ALSO the streaming observer, so
+// there is one position driving both what is drawn and what is resident, and
+// they cannot drift apart. At W2 it is one of TWO ViewSource implementations
+// (the other is player/Controller, the walking capsule); Loop.ts consumes the
+// interface and never branches on which is active.
 
 import * as THREE from 'three';
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { Vec3d } from '../world/PlanetBody.js';
+import type { InputFrame } from './Input.js';
+import type { ObserverState, ViewSource } from './ViewSource.js';
 
 const POLAR = new THREE.Vector3(0, 1, 0);
 
-export interface ObserverState {
-  latDeg: number; lonDeg: number; altM: number; yawDeg: number; pitchDeg: number;
-}
-
-export class ObserverCamera {
+export class ObserverCamera implements ViewSource {
   /** Geodetic, radians. */
   lat = 0;
   lon = 0;
@@ -63,8 +62,30 @@ export class ObserverCamera {
       altM: this.altM,
       yawDeg: THREE.MathUtils.radToDeg(this.yaw),
       pitchDeg: THREE.MathUtils.radToDeg(this.pitch),
+      mode: 'FLY',
+      grounded: false,
+      speedMps: 0,
     };
   }
+
+  /** The ViewSource fixed-tick step: look, zoom, then move, then re-derive. */
+  step(inp: InputFrame, dt: number): void {
+    if (inp.dYaw !== 0 || inp.dPitch !== 0) this.look(inp.dYaw, inp.dPitch);
+    if (inp.zoom !== 0) this.zoom(Math.pow(1.22, inp.zoom));
+    this.update();
+    if (inp.fwd !== 0 || inp.right !== 0 || inp.up !== 0) {
+      const v = this.moveSpeed(inp.boost) * dt;
+      this.move(inp.fwd * v, inp.right * v, inp.up * v);
+      this.update();
+    }
+  }
+
+  /**
+   * No-op by design. The free camera's speed spans 12 m/s to 400 km/s, so a
+   * lerp between two ticks is meaningless at the top of that range and
+   * invisible at the bottom. The character interpolates; this does not.
+   */
+  interpolate(_alpha: number): void {}
 
   /** Metres per second of tangential travel, scaled so orbit is not a crawl. */
   moveSpeed(boost: boolean): number {

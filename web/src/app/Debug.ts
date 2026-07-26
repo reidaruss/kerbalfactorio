@@ -3,15 +3,24 @@
 // settle() gates every capture, so a screenshot cannot race streaming.
 
 import type { Services } from './Services.js';
-import type { Loop } from './Loop.js';
+import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
 import type { BootMetrics } from './Services.js';
 import type { TapeEntry } from '../player/Input.js';
+import type { ObserverState } from '../player/ViewSource.js';
+import type { CameraMode } from '../player/ViewMode.js';
+import type { JitterStats } from '../render/debug/JitterProbe.js';
+import type { ZFightResult } from '../render/debug/ZFightProbe.js';
 
 export interface WorldState {
   seed: string;
   scenario: string;
-  observer: { latDeg: number; lonDeg: number; altM: number; yawDeg: number; pitchDeg: number };
+  observer: ObserverState;
+  player: {
+    mode: string; grounded: boolean; speedMps: number; slopeCos: number;
+    toggles: number; armLengthM: number;
+    aim: { origin: [number, number, number]; dir: [number, number, number] };
+  } | null;
   bodyRadiusM: number;
   surfaceHeightM: number;
   biome: number;
@@ -45,10 +54,29 @@ export interface OfDebugApi {
   scene(): SceneDump;
   chunks(n?: number, nearOnly?: boolean): unknown[];
   settle(n?: number): Promise<void>;
+  /** Advance `seconds` of sim on a synthetic clock. See Loop.run. */
+  run(seconds: number, renderHz?: number): Promise<void>;
+  /** Render + hash the presented frame. See Loop.frameHash. */
+  framehash(): FrameHash;
   screenshot(): Promise<Blob>;
   teleport(latDeg: number, lonDeg: number, altM: number): void;
   setTime(t: number): void;
   input: { tape(t: TapeEntry[]): void; press(code: string, frames?: number): void };
+  /** FP/TP control. setView returns the aim ray so a toggle can be asserted. */
+  setView(mode: CameraMode): AimRay | null;
+  aim(): AimRay | null;
+  /** Arm or disarm the float32 / fixed-tick jitter measurement. */
+  jitter(on?: boolean): JitterStats;
+  /** The ?scenario=zfight verdict. null when the probe scene is not built. */
+  zprobe(): ZFightResult | null;
+}
+
+export interface AimRay {
+  origin: [number, number, number];
+  dir: [number, number, number];
+  yawDeg: number;
+  pitchDeg: number;
+  mode: string;
 }
 
 export interface StreamMetricsReport {
@@ -75,9 +103,22 @@ export function installDebugApi(
   streamReport: () => StreamReport = () => EMPTY_STREAM,
   chunkDump: (n: number, nearOnly: boolean) => unknown[] = () => [],
 ): OfDebugApi {
+  const aimRay = (): AimRay | null => {
+    const p = s.player;
+    if (p === null) return null;
+    const r = p.aimRay();
+    return {
+      origin: [r.origin.x, r.origin.y, r.origin.z],
+      dir: [r.dir.x, r.dir.y, r.dir.z],
+      yawDeg: (p.view.yaw * 180) / Math.PI,
+      pitchDeg: (p.view.pitch * 180) / Math.PI,
+      mode: p.view.mode,
+    };
+  };
+
   const api: OfDebugApi = {
     ready,
-    version: 'W1',
+    version: 'W2',
     config: s.cfg,
     boot: s.boot,
 
@@ -97,10 +138,21 @@ export function installDebugApi(
       const p = o.position;
       const r = Math.hypot(p.x, p.y, p.z) || 1;
       const st = streamReport();
+      const pl = s.player;
+      const ray = aimRay();
       return {
         seed: s.cfg.seedText,
         scenario: s.cfg.scenarioName,
         observer: o.state(),
+        player: pl === null || ray === null ? null : {
+          mode: pl.view.mode,
+          grounded: pl.body.grounded,
+          speedMps: pl.body.speedMps,
+          slopeCos: pl.body.slopeCos,
+          toggles: pl.view.toggles,
+          armLengthM: pl.view.armLength,
+          aim: { origin: ray.origin, dir: ray.dir },
+        },
         bodyRadiusM: s.body.radiusM,
         surfaceHeightM: s.oracle.surfaceHeight(p.x / r, p.y / r, p.z / r),
         biome: s.oracle.biomeAt(p.x / r, p.y / r, p.z / r),
@@ -132,6 +184,8 @@ export function installDebugApi(
     chunks: (n = 4, nearOnly = false) => chunkDump(n, nearOnly),
 
     settle: (n = 8) => loop.settle(n),
+    run: (seconds, renderHz) => loop.run(seconds, renderHz),
+    framehash: () => loop.frameHash(),
     screenshot: () => loop.capture(),
 
     teleport(latDeg, lonDeg, altM) {
@@ -144,6 +198,21 @@ export function installDebugApi(
       tape: (t) => s.input.playTape(t),
       press: (code, frames = 30) => s.input.playTape([{ hold: frames, keys: [code] }]),
     },
+
+    setView(mode) {
+      s.player?.setMode(mode);
+      return aimRay();
+    },
+
+    aim: aimRay,
+
+    jitter(on) {
+      if (on === true) { s.jitter.reset(); s.jitter.enabled = true; }
+      if (on === false) s.jitter.enabled = false;
+      return s.jitter.stats();
+    },
+
+    zprobe: () => s.zfight?.result(s.renderer.depth.mode) ?? null,
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
   return api;
