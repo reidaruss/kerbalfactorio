@@ -17,10 +17,17 @@
 import * as THREE from 'three';
 import type { OFRenderer } from './Renderer.js';
 
-/** Frames between refreshes. 30 at 60 fps is half a second (section 7.1). */
-const REFRESH_FRAMES = 30;
+/**
+ * Frames between refreshes. Section 7.1 proposed 30, half a second, on a
+ * projected 0.2 ms. MEASURED at 64^2 on an RTX 4060 Ti it is **10.5 ms**, six
+ * cube faces plus the PMREM chain plus a fresh render target, and at every 30
+ * frames it WAS the frame-time p95: 24.4 ms against a 16.6 ms budget, from a
+ * subsystem that is not in the budget table at all. The sky changes over
+ * minutes, so 240 frames plus an elevation trigger loses nothing visible.
+ */
+const REFRESH_FRAMES = 240;
 /** Sun-elevation change that forces an immediate rebuild. */
-const ELEVATION_EPS = 0.02;
+const ELEVATION_EPS = 0.05;
 
 export class SkyIbl {
   private texture: THREE.Texture | null = null;
