@@ -1263,6 +1263,143 @@
         {"node": "BodySphere_LOD1", "dims_xyz_m": [2.00, 2.00, 2.00], "max_tris": 320, "pivot": "centre"},
         {"node": "BodySphere_LOD2", "dims_xyz_m": [2.00, 2.00, 2.00], "max_tris": 80, "pivot": "centre"}
       ]
+    },
+
+    "foundation": {
+      "glb": "assets/models/dist/structures/foundation.glb",
+      "_comment": [
+        "TIER 0 BASE BUILDING, the deck family. Module 1 x 1 x 0.50 m.",
+        "ANCHOR: a CELL CENTRE, floor(x) + 0.5, exactly like a 1x1 machine.",
+        "The parts list checks LOD1 and LOD2 on the same box as LOD0, because",
+        "a tiling part whose far LOD is a different size shows a seam opening",
+        "up as the player walks away, and the single lod0_node check would",
+        "never see it.",
+        "0.50 m is half the storey pitch identity DECK_H + WALL_H = 3.00 m",
+        "asserted in structure_common.py."
+      ],
+      "footprint_cells": [1, 1],
+      "lod0_node": "Foundation_LOD0",
+      "lod_nodes": ["Foundation_LOD0", "Foundation_LOD1", "Foundation_LOD2"],
+      "dims_xyz_m": [1.0, 0.50, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 140,
+      "max_tris_total": 180,
+      "max_materials": 4,
+      "sockets": [
+        "socket_top",
+        "socket_edge_n",
+        "socket_edge_e",
+        "socket_edge_s",
+        "socket_edge_w"
+      ],
+      "clips": [],
+      "collision": "col_Foundation",
+      "parts": [
+        {"node": "Foundation_LOD1", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 60, "pivot": "ground"},
+        {"node": "Foundation_LOD2", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 20, "pivot": "ground"}
+      ]
+    },
+
+    "floor": {
+      "glb": "assets/models/dist/structures/floor.glb",
+      "_comment": [
+        "TIER 0 BASE BUILDING. The SAME 1 x 1 x 0.50 m envelope as the",
+        "foundation, deliberately: a deck of two thicknesses would give the",
+        "storey pitch two values.",
+        "THIS PART IS ALSO THE CEILING. There is no ceiling.glb; storey N's",
+        "ceiling is storey N+1's floor at z = 3(N+1), same part, same origin.",
+        "That is why the ribs are underneath and the plate on top."
+      ],
+      "footprint_cells": [1, 1],
+      "lod0_node": "Floor_LOD0",
+      "lod_nodes": ["Floor_LOD0", "Floor_LOD1", "Floor_LOD2"],
+      "dims_xyz_m": [1.0, 0.50, 1.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 140,
+      "max_tris_total": 200,
+      "max_materials": 3,
+      "sockets": [
+        "socket_top",
+        "socket_edge_n",
+        "socket_edge_e",
+        "socket_edge_s",
+        "socket_edge_w"
+      ],
+      "clips": [],
+      "collision": "col_Floor",
+      "parts": [
+        {"node": "Floor_LOD1", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 60, "pivot": "ground"},
+        {"node": "Floor_LOD2", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 20, "pivot": "ground"}
+      ]
+    },
+
+    "wall": {
+      "glb": "assets/models/dist/structures/wall.glb",
+      "_comment": [
+        "TIER 0 BASE BUILDING, the wall family. Module 1.00 wide x 0.25 thick",
+        "x 2.50 m tall.",
+        "ANCHOR: a CELL EDGE MIDPOINT, not a cell centre. The panel is centred",
+        "on its own origin across the thickness (which is what the ground",
+        "pivot check asserts), so putting that origin on the edge line makes",
+        "one wall serve both cells it divides and makes four walls close",
+        "exactly around one foundation.",
+        "dims [1.0, 2.50, 0.25]: the 2.50 landing on three.js Y is what proves",
+        "export_yup fired, and it is the number that must equal STOREY - DECK_H."
+      ],
+      "footprint_cells": [1, 1],
+      "lod0_node": "Wall_LOD0",
+      "lod_nodes": ["Wall_LOD0", "Wall_LOD1", "Wall_LOD2"],
+      "dims_xyz_m": [1.0, 2.50, 0.25],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 140,
+      "max_tris_total": 220,
+      "max_materials": 3,
+      "sockets": ["socket_top", "socket_end_l", "socket_end_r"],
+      "clips": [],
+      "collision": "col_Wall",
+      "parts": [
+        {"node": "Wall_LOD1", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 80, "pivot": "ground"},
+        {"node": "Wall_LOD2", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 20, "pivot": "ground"}
+      ]
+    },
+
+    "door": {
+      "glb": "assets/models/dist/structures/door.glb",
+      "_comment": [
+        "TIER 0 BASE BUILDING. The wall module with a 0.76 x 2.10 m opening,",
+        "so it drops into any cell of any wall run with no special case.",
+        "THREE collision proxies, not one: a convex hull of a doorway is a",
+        "sealed wall. Two jambs and a header leave the opening walk-through.",
+        "The 40 mm hazard threshold is a step-over and carries none.",
+        "Door_Leaf hangs off door_hinge at x = -0.38 (the left jamb's inner",
+        "face) and is the only animated node. frame1_identity asserts the",
+        "exported static pose is a CLOSED door.",
+        "OF_Accent appears here and NOWHERE else in the structural set: the",
+        "orange lintel band is what makes the way in findable across a base."
+      ],
+      "footprint_cells": [1, 1],
+      "lod0_node": "Door_LOD0",
+      "lod_nodes": ["Door_LOD0", "Door_LOD1", "Door_LOD2", "Door_Leaf"],
+      "dims_xyz_m": [1.0, 2.50, 0.25],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 150,
+      "max_tris_total": 340,
+      "max_tris_collision": 40,
+      "max_materials": 5,
+      "sockets": [
+        "socket_top",
+        "socket_end_l",
+        "socket_end_r",
+        "socket_hinge"
+      ],
+      "clips": ["Door_Swing"],
+      "frame1_identity": true,
+      "collision": ["col_Door_JambL", "col_Door_JambR", "col_Door_Header"],
+      "parts": [
+        {"node": "Door_LOD1", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 80, "pivot": "ground"},
+        {"node": "Door_LOD2", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 48, "pivot": "ground"},
+        {"node": "Door_Leaf", "dims_xyz_m": [0.75, 2.02, 0.125], "max_tris": 90, "pivot": "none"}
+      ]
     }
   }
 }
