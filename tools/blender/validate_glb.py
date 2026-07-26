@@ -323,9 +323,14 @@ def validate(asset, spec, verbose=False):
     # --- named parts: an atlas is N independent meshes in one file ---
     # items_atlas.glb has fourteen sibling meshes and no LOD chain, so the
     # single lod0_node check proves almost nothing about it. Each part is
-    # checked for existence, its own bounding box, its own tri budget, and the
-    # centred-origin rule, which is what actually keeps an item legible on a
-    # belt and inside a 64 px icon.
+    # checked for existence, its own bounding box, its own tri budget, and its
+    # own pivot rule, which is what actually keeps an item legible on a belt
+    # and a scatter prop sitting ON the terrain instead of floating over it.
+    #
+    # A part declares `pivot`: "ground" (base on y = 0, centred on x/z - every
+    # Tier-1 scatter prop, so a placement matrix is pure terrain data),
+    # "centre" (a dropped item, which tumbles), or "none". The older boolean
+    # `centred` still means "centre", so the items atlas is untouched.
     parts = spec.get("parts", [])
     if parts:
         bad = []
@@ -341,9 +346,16 @@ def validate(asset, spec, verbose=False):
             ptl = p.get("tolerance_m", tol)
             if any(abs(pd[k] - pw[k]) > ptl for k in range(3)):
                 bad.append("%s dims %s want %s" % (node, [round(d, 4) for d in pd], pw))
-            if p.get("centred", True) and any(
-                    abs((plo[k] + phi[k]) * 0.5) > ptl for k in range(3)):
+            ppiv = p.get("pivot", "centre" if p.get("centred", True) else "none")
+            pc = [(plo[k] + phi[k]) * 0.5 for k in range(3)]
+            if ppiv == "centre" and any(abs(v) > ptl for v in pc):
                 bad.append("%s not centred on its origin" % node)
+            elif ppiv == "ground" and (abs(plo[1]) > ptl or abs(pc[0]) > ptl
+                                       or abs(pc[2]) > ptl):
+                bad.append("%s not ground-pivoted (base y=%.4f x=%.4f z=%.4f)"
+                           % (node, plo[1], pc[0], pc[2]))
+            elif ppiv not in ("centre", "ground", "none"):
+                bad.append("%s unknown pivot %r" % (node, ppiv))
             pt = subtree_tris(gltf, by_name[node])
             if pt > p.get("max_tris", spec["max_tris_lod0"]):
                 bad.append("%s %d tris > %d" % (node, pt, p.get("max_tris")))
@@ -510,8 +522,17 @@ def validate(asset, spec, verbose=False):
                 if not bad else "; ".join(bad[:3]))
 
     # --- collision proxy ---
+    # One name for a single-asset file; a LIST for a biome atlas, where only
+    # the props that are genuinely solid carry a proxy and everything soft or
+    # ankle-height is walk-through by design (see props_common.py).
     if spec.get("collision"):
-        r.check("collision", spec["collision"] in by_name, spec["collision"])
+        want_col = spec["collision"]
+        if isinstance(want_col, str):
+            want_col = [want_col]
+        missing = [c for c in want_col if c not in by_name]
+        r.check("collision", not missing, "%d/%d present%s"
+                % (len(want_col) - len(missing), len(want_col),
+                   "" if not missing else ", missing %s" % missing))
 
     # --- hygiene ---
     exts = set(gltf.get("extensionsUsed", []))

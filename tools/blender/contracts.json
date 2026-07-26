@@ -640,6 +640,127 @@
         {"node": "Item_WaterCanister", "dims_xyz_m": [0.18, 0.30, 0.18], "max_tris": 120},
         {"node": "Item_OilFlask", "dims_xyz_m": [0.16, 0.28, 0.16], "max_tris": 120}
       ]
+    },
+
+    "props_beach": {
+      "glb": "assets/models/dist/props/props_beach.glb",
+      "_comment": [
+        "TIER 1. One atlas per biome (ASSET-SPECS 3.2): the scatter system",
+        "wants one file per biome and one InstancedMesh per prop.",
+        "Every prop is a sibling mesh sitting ON the origin, base at y = 0,",
+        "so a scatter placement matrix is pure terrain data with no per-prop",
+        "offset. The per-part block with pivot 'ground' is what proves that,",
+        "and it is the real gate here - one lod0_node check would say nothing",
+        "about the other three.",
+        "LOD0 and LOD2 only: props skip the middle band.",
+        "Collision is per-prop and DELIBERATELY PARTIAL. Only solid obstacles",
+        "carry a proxy; shells and dune grass are walk-through, because a",
+        "collider on ankle-height dressing is the player snagging on scenery."
+      ],
+      "lod0_node": "Beach_Rock_LOD0",
+      "lod_nodes": [
+        "Beach_Rock_LOD0", "Beach_Rock_LOD2",
+        "Beach_Driftwood_LOD0", "Beach_Driftwood_LOD2",
+        "Beach_ShellCluster_LOD0", "Beach_ShellCluster_LOD2",
+        "Beach_DuneGrass_LOD0", "Beach_DuneGrass_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [1.10, 0.55, 0.95],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 180,
+      "max_tris_total": 620,
+      "max_tris_collision": 24,
+      "max_materials": 4,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_LeafDry"],
+      "collision": ["col_Beach_Rock", "col_Beach_Driftwood"],
+      "parts": [
+        {"node": "Beach_Rock_LOD0", "dims_xyz_m": [1.10, 0.55, 0.95], "max_tris": 180, "pivot": "ground"},
+        {"node": "Beach_Driftwood_LOD0", "dims_xyz_m": [2.20, 0.36, 0.60], "max_tris": 160, "pivot": "ground"},
+        {"node": "Beach_ShellCluster_LOD0", "dims_xyz_m": [0.58, 0.11, 0.50], "max_tris": 180, "pivot": "ground"},
+        {"node": "Beach_DuneGrass_LOD0", "dims_xyz_m": [0.78, 0.88, 0.74], "max_tris": 100, "pivot": "ground"}
+      ]
+    },
+
+    "props_plains": {
+      "glb": "assets/models/dist/props/props_plains.glb",
+      "_comment": [
+        "TIER 1, Biome::Plains. Six props across three scale bands.",
+        "Only Plains_PebbleB collides. Both grass tufts, the flowers, the",
+        "small pebble and the shrub are walk-through: plains scatter is the",
+        "densest in the game and a player pushing through grass must not",
+        "feel it."
+      ],
+      "lod0_node": "Plains_Shrub_LOD0",
+      "lod_nodes": [
+        "Plains_GrassTuftA_LOD0", "Plains_GrassTuftA_LOD2",
+        "Plains_GrassTuftB_LOD0", "Plains_GrassTuftB_LOD2",
+        "Plains_FlowerCluster_LOD0", "Plains_FlowerCluster_LOD2",
+        "Plains_PebbleA_LOD0", "Plains_PebbleA_LOD2",
+        "Plains_PebbleB_LOD0", "Plains_PebbleB_LOD2",
+        "Plains_Shrub_LOD0", "Plains_Shrub_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [1.05, 0.80, 0.95],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 200,
+      "max_tris_total": 640,
+      "max_tris_collision": 12,
+      "max_materials": 4,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDry"],
+      "collision": ["col_Plains_PebbleB"],
+      "parts": [
+        {"node": "Plains_GrassTuftA_LOD0", "dims_xyz_m": [0.44, 0.38, 0.42], "max_tris": 100, "pivot": "ground"},
+        {"node": "Plains_GrassTuftB_LOD0", "dims_xyz_m": [0.66, 0.68, 0.62], "max_tris": 100, "pivot": "ground"},
+        {"node": "Plains_FlowerCluster_LOD0", "dims_xyz_m": [0.54, 0.52, 0.50], "max_tris": 110, "pivot": "ground"},
+        {"node": "Plains_PebbleA_LOD0", "dims_xyz_m": [0.34, 0.18, 0.30], "max_tris": 60, "pivot": "ground"},
+        {"node": "Plains_PebbleB_LOD0", "dims_xyz_m": [0.85, 0.50, 0.72], "max_tris": 100, "pivot": "ground"},
+        {"node": "Plains_Shrub_LOD0", "dims_xyz_m": [1.05, 0.80, 0.95], "max_tris": 200, "pivot": "ground"}
+      ]
+    },
+
+    "props_forest": {
+      "glb": "assets/models/dist/props/props_forest.glb",
+      "_comment": [
+        "TIER 1, Biome::Forest. Explicitly the FLOOR of the forest and the",
+        "DEAD wood in it: the two live trees are harvest nodes, and a scatter",
+        "prop that looked like one would read as a node the player cannot",
+        "chop.",
+        "col_Forest_DeadTree is the TRUNK box only (0.50 x 0.50 x 4.20), the",
+        "same rule the conifer follows: a player walks through where the",
+        "branches were."
+      ],
+      "lod0_node": "Forest_DeadTree_LOD0",
+      "lod_nodes": [
+        "Forest_Fern_LOD0", "Forest_Fern_LOD2",
+        "Forest_DeadTree_LOD0", "Forest_DeadTree_LOD2",
+        "Forest_FallenLog_LOD0", "Forest_FallenLog_LOD2",
+        "Forest_MushroomCluster_LOD0", "Forest_MushroomCluster_LOD2",
+        "Forest_Rock_LOD0", "Forest_Rock_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [1.36, 4.20, 1.22],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 180,
+      "max_tris_total": 780,
+      "max_tris_collision": 36,
+      "max_materials": 4,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDry"],
+      "collision": [
+        "col_Forest_DeadTree", "col_Forest_FallenLog", "col_Forest_Rock"
+      ],
+      "parts": [
+        {"node": "Forest_Fern_LOD0", "dims_xyz_m": [1.20, 0.66, 1.14], "max_tris": 100, "pivot": "ground"},
+        {"node": "Forest_DeadTree_LOD0", "dims_xyz_m": [1.36, 4.20, 1.22], "max_tris": 180, "pivot": "ground"},
+        {"node": "Forest_FallenLog_LOD0", "dims_xyz_m": [2.60, 0.62, 0.68], "max_tris": 140, "pivot": "ground"},
+        {"node": "Forest_MushroomCluster_LOD0", "dims_xyz_m": [0.46, 0.26, 0.42], "max_tris": 200, "pivot": "ground"},
+        {"node": "Forest_Rock_LOD0", "dims_xyz_m": [1.45, 0.85, 1.25], "max_tris": 160, "pivot": "ground"}
+      ]
     }
   }
 }
