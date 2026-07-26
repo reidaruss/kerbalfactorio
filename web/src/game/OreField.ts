@@ -26,7 +26,7 @@
 // has been dug into or levelled does not leave the ore floating.
 
 import * as THREE from 'three';
-import { GROUND_COLOUR, PATCH_KINDS } from './NodeArt.js';
+import { GROUND_COLOUR, PATCH_KINDS, mottle } from './NodeArt.js';
 import { OrePatches, type PatchState } from './OrePatches.js';
 import type { NodeField } from './NodeField.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
@@ -36,7 +36,7 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 const RINGS = 3;
 const SEGS = 28;
 /** Metres the skin floats above the ground, so it never fights the terrain. */
-const LIFT_M = 0.09;
+const LIFT_M = 0.25;
 /** How far apart the patches are laid out around the spawn point. */
 const SPREAD_M = 40;
 
@@ -107,7 +107,8 @@ export class OreField {
           v.z * r - this.anchor.z);
         dirs.push(v.x, v.y, v.z);
         covers.push(v.cover);
-        col.push(tint.r, tint.g, tint.b, 0);   // alpha filled by stain()
+        const k = mottle(v.x, v.y, v.z);
+        col.push(tint.r * k, tint.g * k, tint.b * k, 0);   // alpha: stain()
       }
       // Ring r to ring r+1, two triangles a segment. Ring 0 is the centre point
       // repeated, so half of that first band is degenerate and costs nothing.
@@ -156,14 +157,30 @@ export class OreField {
     this.dirs = new Float64Array(dirs);
     this.covers = new Float32Array(covers);
 
-    // Unlit-ish and translucent at the rim so the patch DISSOLVES into the
-    // terrain instead of ending on a hard circle, which is what makes it read as
-    // ore in the ground rather than a sticker on it. depthWrite off because it
-    // is a skin lying on another surface; polygonOffset for the same reason.
-    const material = new THREE.MeshStandardMaterial({
+    // Translucent at the rim so the patch DISSOLVES into the terrain instead of
+    // ending on a hard circle, which is what makes it read as ore IN the ground
+    // rather than a sticker on it. depthWrite off because it is a skin lying on
+    // another surface.
+    //
+    // DOUBLE SIDED deliberately: one flat sheet costs nothing to draw twice, and
+    // a winding-order mistake in a ring mesh is otherwise invisible in the way
+    // that costs an hour, because the patch simply is not there while every
+    // number about it reports healthy.
+    //
+    // NO polygonOffset, and that is not an oversight. The depth buffer here is
+    // REVERSED, so the sign of an offset means the opposite of what it means
+    // everywhere else: the conventional negative factor that pulls a decal in
+    // front of its surface pushes this one BEHIND. The lift is metres of real
+    // geometry instead, which no depth convention can invert.
+    //
+    // LAMBERT, not Standard. Standard's image-based lighting term is computed
+    // from the sky environment and, on a nearly flat upward-facing sheet under
+    // an open sky, it swamped an albedo this dark: a deep blue-grey ore body
+    // rendered as pale wash and read as snow. Ore is matte. There is nothing
+    // for a physically based specular lobe to do here.
+    const material = new THREE.MeshLambertMaterial({
       vertexColors: true, transparent: true, depthWrite: false,
-      roughness: 0.92, metalness: 0.0,
-      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+      side: THREE.DoubleSide,
     });
     material.name = 'oreField';
     const mesh = new THREE.Mesh(g, material);
@@ -195,10 +212,12 @@ export class OreField {
       if (Math.abs(f - s.drawnAt) < 0.02) continue;
       s.drawnAt = f;
       touched = true;
-      const fade = 0.22 + 0.78 * f;
+      const fade = 0.25 + 0.75 * f;
       for (let i = 0; i < s.count; ++i) {
-        const cover = this.covers[s.first + i];
-        c[(s.first + i) * 4 + 3] = Math.min(1, cover * 1.7) * fade;
+        const at = s.first + i;
+        const cover = this.covers[at];
+        const k = mottle(this.dirs[at * 3], this.dirs[at * 3 + 1], this.dirs[at * 3 + 2]);
+        c[at * 4 + 3] = Math.min(0.93, cover * 2.3 * k) * fade;
       }
     }
     if (touched) this.colours.needsUpdate = true;
@@ -256,10 +275,30 @@ export class OreField {
   }
 
   report(): unknown {
+    // The skin is REPORTED IN NUMBERS, not as "it exists". A mesh with zero
+    // vertices, zero alpha or visible=false is the failure a patch count hides.
+    const c = this.colours === null ? null : (this.colours.array as Float32Array);
+    let maxAlpha = 0;
+    if (c !== null) for (let i = 3; i < c.length; i += 4) maxAlpha = Math.max(maxAlpha, c[i]);
     return {
       patches: this.skins.length,
       resnaps: this.resnaps,
       drawCalls: this.mesh === null ? 0 : 1,
+      skin: {
+        vertices: this.positions === null ? 0 : this.positions.count,
+        visible: this.mesh?.visible ?? false,
+        maxAlpha: +maxAlpha.toFixed(3),
+        liftM: LIFT_M,
+        // What the shader is actually being handed. "the patch is drawn" is not
+        // the claim; "it is drawn in the resource's colour" is, and a material
+        // that quietly ignored the vertex attribute would look identical to a
+        // colour choice that was simply too pale.
+        itemSize: this.colours?.itemSize ?? 0,
+        vertexColors: (this.mesh?.material as THREE.MeshStandardMaterial | undefined)
+          ?.vertexColors ?? false,
+        centreRGBA: c === null ? null : [+c[0].toFixed(3), +c[1].toFixed(3),
+          +c[2].toFixed(3), +c[3].toFixed(3)],
+      },
       list: this.skins.map((s) => {
         const live = this.patches.patch(s.patch.index) ?? s.patch;
         return {

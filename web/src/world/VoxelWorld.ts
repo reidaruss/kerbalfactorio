@@ -71,6 +71,9 @@ export class VoxelWorld {
   totalCells = 0;
   /** Ray steps taken by the last aim, so a miss can be told from a no-op. */
   lastRaySteps = 0;
+  /** Cell counts this object has accounted for. See driftedFromCore(). */
+  private knownRemoved = 0;
+  private knownAdded = 0;
 
   constructor(private readonly M: OfCoreModule, private readonly oracle: SurfaceOracle) {
     this.handle = M._of_edits_create();
@@ -100,6 +103,7 @@ export class VoxelWorld {
     if (cells <= 0) return { cells: 0, hit: hit.p, dirty: null, distM: hit.distM };
     this.totalCells += cells;
     this.ops.push({ x: hit.p.x, y: hit.p.y, z: hit.p.z, radiusM });
+    this.noteCounts();
     return { cells, hit: hit.p, dirty: this.readDirty(), distM: hit.distM };
   }
 
@@ -130,7 +134,12 @@ export class VoxelWorld {
     out.dug = i32[p]; out.filled = i32[p + 1]; out.scanned = i32[p + 2];
     if (changed === 0) return out;
     this.totalCells += changed;
-    this.ops.push({ x: centre.x, y: centre.y, z: centre.z, radiusM, targetHeightM });
+    // Recorded with a radius that BOUNDS the touched cylinder, not the disc: the
+    // near mesher rebuilds the brush box of every op, and a 6 m box around a cut
+    // that reached 12 m down would leave a ring of stale geometry.
+    const reach = Math.hypot(radiusM, Math.max(maxCutM, maxFillM) || radiusM);
+    this.ops.push({ x: centre.x, y: centre.y, z: centre.z, radiusM: reach, targetHeightM });
+    this.noteCounts();
     out.dirty = this.readDirty();
     return out;
   }
@@ -138,6 +147,45 @@ export class VoxelWorld {
   /** Cells placed so far. From /core, like removedCount, never a JS tally. */
   addedCount(): number {
     return this.M._of_edits_added_count(this.handle);
+  }
+
+  /**
+   * Has the edit set changed by a route that did NOT go through this object?
+   *
+   * The worker keeps its own copy by replaying an op log (DW-16), which works
+   * only while every mutation is an op it was told about. A SAVE RESTORE is not:
+   * `VoxelSave` deserializes straight into `handle`, and so does the "put the
+   * rock back" reset. Replaying the stored op log on top of that is redundant for
+   * a dig and WRONG for a level, which the log records with a bounding radius:
+   * replayed as a dig it would carve a 13 m sphere out of the pad it describes.
+   *
+   * So the worker is reconciled against the AUTHORITY instead of against a
+   * history of how the authority got there. This is the detector: two integer
+   * reads from /core per tick, against the counts this object last accounted
+   * for. Polling beats asking every future mutation site to remember.
+   */
+  driftedFromCore(): boolean {
+    const removed = this.M._of_edits_removed_count(this.handle);
+    const added = this.M._of_edits_added_count(this.handle);
+    if (removed === this.knownRemoved && added === this.knownAdded) return false;
+    this.knownRemoved = removed;
+    this.knownAdded = added;
+    return true;
+  }
+
+  /** Serialize the authoritative diff. The bytes are COPIED out of the heap
+   *  immediately (standing rule 5), so the caller may hold them. */
+  snapshotBytes(): Uint8Array | null {
+    const n = this.M._of_edits_serialize(this.handle);
+    if (n <= 0) return null;
+    const p = this.M._of_scratch_u8();
+    return this.M.HEAPU8.slice(p, p + n);
+  }
+
+  /** Bring the accounting up to date after a local op. */
+  private noteCounts(): void {
+    this.knownRemoved = this.M._of_edits_removed_count(this.handle);
+    this.knownAdded = this.M._of_edits_added_count(this.handle);
   }
 
   /** First solid point along a ray, or null. Public so aim UI can preview it. */

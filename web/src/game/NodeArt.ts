@@ -43,11 +43,24 @@ export const ART: Record<number, NodeArt[]> = {
  * see an outcrop's shape.
  */
 export const GROUND_COLOUR: Record<number, number> = {
-  [NODE_KIND.Rock]: 0x9c968a,       // pale
-  [NODE_KIND.CoalSeam]: 0x1f1f26,   // black
-  [NODE_KIND.IronOre]: 0x6b7d8f,    // grey blue
-  [NODE_KIND.CopperOre]: 0xb5622c,  // orange
+  [NODE_KIND.Rock]: 0x8a8477,       // pale
+  [NODE_KIND.CoalSeam]: 0x17171d,   // black
+  [NODE_KIND.IronOre]: 0x53687d,    // grey blue
+  [NODE_KIND.CopperOre]: 0xa04c19,  // orange
 };
+
+/**
+ * Ore-bearing ground is MOTTLED, not a smooth gradient. /core's coverage is a
+ * clean 1 - u^2 because it is a rule the drill rate reads; a smooth ramp painted
+ * on the terrain reads as a projected decal, which is precisely the thing this
+ * patch is not. So the skin's own vertices are jittered a few per cent about
+ * that number, deterministically from the vertex direction, purely for the eye.
+ */
+export function mottle(x: number, y: number, z: number): number {
+  const h = hash32(Math.round(x * 8191) ^ Math.round(y * 4093),
+    Math.round(z * 6151));
+  return 0.82 + 0.36 * frac(h);
+}
 
 /** The kinds that are ore bodies rather than scenery. Trees are not a deposit. */
 export const PATCH_KINDS: number[] = [

@@ -65,6 +65,21 @@ export interface TerrainLevelMsg {
   maxFillM: number;
 }
 
+/**
+ * Replace the worker's whole edit set from /core's own persistence bytes, and
+ * re-mesh what is near the observer. Sent whenever the authoritative set changed
+ * by a route that is not an op the worker was told about: a save restore, or the
+ * "put the rock back" reset. An op log is a history; this is the state.
+ */
+export interface TerrainEditsMsg {
+  type: 'edits';
+  seq: number;
+  bytes: ArrayBuffer;
+  /** Observer position, so the re-mesh is scoped to what can be seen. */
+  x: number; y: number; z: number;
+  radiusM: number;
+}
+
 export interface TerrainChunkMsg {
   key: string;
   faceId: number;
@@ -97,5 +112,5 @@ export interface TerrainUpdateMsg {
 export interface TerrainErrorMsg { type: 'error'; message: string; }
 
 export type ToTerrain = TerrainInitMsg | TerrainObserveMsg | TerrainDigMsg
-  | TerrainLevelMsg;
+  | TerrainLevelMsg | TerrainEditsMsg;
 export type FromTerrain = TerrainInitedMsg | TerrainUpdateMsg | TerrainErrorMsg;

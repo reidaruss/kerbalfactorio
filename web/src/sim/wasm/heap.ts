@@ -94,6 +94,13 @@ export interface OfCoreModule {
   /** Replay one dig into the streamer's own edits and re-mesh the chunks it
    *  opened, publishing them through the normal ready path. Returns the count. */
   _of_streamer_dig(s: number, x: number, y: number, z: number, radiusM: number): number;
+  /**
+   * Replace the streamer's own edit set from the u8 scratch and re-mesh every
+   * resident chunk within radiusM of (x,y,z). The RESTORE path: a worker
+   * reconciled against the authority, not against a history of ops.
+   */
+  _of_streamer_load_edits(s: number, x: number, y: number, z: number,
+                          radiusM: number): number;
   /** The same replay for a LEVEL op (WG-22). Returns chunks re-meshed. */
   _of_streamer_level(s: number, x: number, y: number, z: number, radiusM: number,
                      targetHeightM: number, maxCutM: number,

@@ -18,7 +18,8 @@ import {
 } from '../world/ChunkFormat.js';
 import type {
   TerrainChunkMsg, TerrainDigMsg, TerrainInitMsg, TerrainInitedMsg,
-  TerrainLevelMsg, TerrainObserveMsg, TerrainUpdateMsg, ToTerrain,
+  TerrainEditsMsg, TerrainLevelMsg, TerrainObserveMsg, TerrainUpdateMsg,
+  ToTerrain,
 } from './TerrainProtocol.js';
 
 const ctx = self as unknown as {
@@ -104,6 +105,30 @@ function level(msg: TerrainLevelMsg): void {
   const t0 = performance.now();
   const n = mod._of_streamer_level(streamer, msg.x, msg.y, msg.z, msg.radiusM,
     msg.targetHeightM, msg.maxCutM, msg.maxFillM);
+  if (n < 0) return;
+  const t1 = performance.now();
+  drain(msg.seq, n, t0, t1, 'digged', [],
+    n, true, mod._of_streamer_resident_count(streamer));
+}
+
+/**
+ * Replace this worker's edit set wholesale and re-mesh near the observer.
+ * See TerrainEditsMsg: the restore path reconciles against the authority.
+ */
+function loadEdits(msg: TerrainEditsMsg): void {
+  const mod = M;
+  if (mod === null) return;
+  if (workerEdits === 0) {
+    workerEdits = mod._of_edits_create();
+    mod._of_streamer_set_edits(streamer, workerEdits);
+  }
+  const src = new Uint8Array(msg.bytes);
+  const t0 = performance.now();
+  mod._of_edits_alloc_bytes(src.length);
+  // Standing rule 5: the view is taken AFTER the alloc that sized it and used
+  // before anything else re-enters WASM.
+  scratchU8(mod, src.length).set(src);
+  const n = mod._of_streamer_load_edits(streamer, msg.x, msg.y, msg.z, msg.radiusM);
   if (n < 0) return;
   const t1 = performance.now();
   drain(msg.seq, n, t0, t1, 'digged', [],
@@ -205,6 +230,7 @@ ctx.onmessage = (e: MessageEvent<ToTerrain>) => {
     if (msg.type === 'observe') observe(msg);
     if (msg.type === 'dig') dig(msg);
     if (msg.type === 'level') level(msg);
+    if (msg.type === 'edits') loadEdits(msg);
   } catch (err) {
     fail(err);
   }

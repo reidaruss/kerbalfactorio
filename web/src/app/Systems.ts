@@ -51,6 +51,16 @@ export function registerSystems(s: Services, loop: Loop): void {
       s.level.step(s.input.frame.level && !busy, ray.origin, ray.dir,
         s.player.body.feet);
     }
+    // WG-22. Reconcile the worker against the AUTHORITY when the edit set moved
+    // by a route that was not an op: a save restore, or "put the rock back".
+    // Two integer reads a tick, and it makes the worker's copy correct for any
+    // future mutation site instead of only for the ones that remembered to
+    // report. `digAt`/`levelAt` already told it about their own ops, so this
+    // only fires on a foreign change.
+    if (s.voxels !== null && s.voxels.driftedFromCore()) {
+      const bytes = s.voxels.snapshotBytes();
+      if (bytes !== null) s.terrain.syncEdits(bytes, s.observer.position);
+    }
     // L is edge-detected here rather than held: a lamp that only shines while
     // the key is down is a torch button, and the player needs both hands.
     if (s.input.frame.lamp && !lampHeld) s.headlamp.toggle();

@@ -17,6 +17,7 @@ import { ChunkView } from './ChunkView.js';
 import { anyStitch, neighbourStrides, stitchEdges, stridesEqual, NO_STITCH, type EdgeStrides } from './EdgeStitch.js';
 import { dumpChunks, probeStakes } from './TerrainDebug.js';
 import { ChunkRetire } from './ChunkRetire.js';
+import { TerrainEditChannel } from './TerrainEdits.js';
 import { updateCoverage as coverage } from './ChunkCoverage.js';
 import type { FromTerrain, TerrainObserveMsg, TerrainUpdateMsg } from '../workers/TerrainProtocol.js';
 
@@ -76,8 +77,9 @@ export class TerrainStream {
   private cutoffDirty = false;
   private readonly lastObserved: Vec3d = { x: NaN, y: NaN, z: NaN };
   /** Mouth reconciliation counters. sent != applied means an edit was lost. */
-  digsSent = 0;
-  digsApplied = 0;
+  get digsSent(): number { return this.edits.sent; }
+  get digsApplied(): number { return this.edits.applied; }
+  private readonly edits: TerrainEditChannel;
   /** Preallocated selection buffers for probeStakes (2.2 rule 6). */
   private readonly nearest: (ChunkView | null)[] = new Array(8).fill(null);
   private readonly nearestD2 = new Float64Array(8);
@@ -100,6 +102,7 @@ export class TerrainStream {
     this.scenes.near.add(pool.nearBatch);
     this.scenes.far.add(pool.farBatch);
     this.retiring = new ChunkRetire(pool, opts.fadeSecs);
+    this.edits = new TerrainEditChannel(worker, () => ++this.seq);
     this.worker.addEventListener('message', (e) => this.onMessage(e as MessageEvent<FromTerrain>));
     // Exactly one subscriber to the one broadcast (ARCHITECTURE.md 3.6).
     this.events.on('OriginRebased', () => this.onOriginRebased());
@@ -112,7 +115,7 @@ export class TerrainStream {
       // A dig reply is NOT an observe reply: it does not clear inFlight (no
       // observe was outstanding) and it does not touch roundTripMs. It carries
       // re-meshed chunks that go through the identical drain path.
-      this.digsApplied++;
+      this.edits.applied++;
       this.inbox.push(msg);
       return;
     }
@@ -129,25 +132,20 @@ export class TerrainStream {
     this.cutoffDirty = true;
   }
 
-  /**
-   * W5/WG-22. Ask the worker to replay a terrain edit and re-mesh the chunks it
-   * changed. Sent unconditionally and out of band: unlike an observe it is not
-   * idempotent, so it can never be coalesced or dropped for "nothing moved".
-   * Both verbs count on the same pair: an edit that never reached the worker
-   * leaves the heightfield believing in ground the voxel layer already moved,
-   * which is what `digsSent != digsApplied` exists to expose. */
+  /** The edit channel (TerrainEdits.ts). Ops for live play, state for a
+   *  restore; these three are delegates so `terrain.digAt(...)` keeps working
+   *  for every existing caller. */
   digAt(x: number, y: number, z: number, radiusM: number): void {
-    this.digsSent++;
-    this.worker.postMessage({ type: 'dig', seq: ++this.seq, x, y, z, radiusM });
+    this.edits.digAt(x, y, z, radiusM);
   }
 
   levelAt(x: number, y: number, z: number, radiusM: number, targetHeightM: number,
           maxCutM: number, maxFillM: number): void {
-    this.digsSent++;
-    this.worker.postMessage({
-      type: 'level', seq: ++this.seq, x, y, z, radiusM,
-      targetHeightM, maxCutM, maxFillM,
-    });
+    this.edits.levelAt(x, y, z, radiusM, targetHeightM, maxCutM, maxFillM);
+  }
+
+  syncEdits(bytes: Uint8Array, observer: Vec3d, radiusM = 64): void {
+    this.edits.syncEdits(bytes, observer, radiusM);
   }
 
   /** Post the observer. Skipped while a request is in flight or nothing moved. */
