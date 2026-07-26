@@ -36,6 +36,13 @@ export class SurfaceOracle {
     return this.M._of_solid_at(this.body.handle, this.editsHandle, x, y, z) !== 0;
   }
 
+  /**
+   * Voxel cell size in metres. /core quantizes with `floor(pos / kVoxelSizeM)`,
+   * so a cell spans [c * size, (c + 1) * size); anything resolving against a
+   * voxel FACE needs this number and must not assume 1.0.
+   */
+  voxelSizeM(): number { return this.M._of_voxel_size(); }
+
   solidCell(cx: number, cy: number, cz: number): boolean {
     return this.M._of_solid_cell(this.body.handle, this.editsHandle, cx | 0, cy | 0, cz | 0) !== 0;
   }

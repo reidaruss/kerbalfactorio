@@ -9,6 +9,7 @@
 
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { Vec3d } from '../world/PlanetBody.js';
+import { VoxelCollider } from './VoxelCollision.js';
 
 export interface MoveIntent {
   /** Desired tangent direction, body frame, unit or zero. */
@@ -50,14 +51,6 @@ const VOXEL_FLOOR_SEARCH_M = 6;
  */
 const DEEP_UNDERGROUND_M = 1.5;
 /**
- * Capsule sample heights above the feet, in metres. Three points up the capsule,
- * because a single feet test lets the player walk their head through a ceiling,
- * and a full swept capsule is not affordable in-frame (DW-12: no physics engine).
- */
-const CAPSULE_SAMPLES_M = [0.15, 0.9, 1.65];
-/** Ledge heights a blocked step retries at, metres. A voxel is 1 m. */
-const STEP_UP_M = [0.55, 1.1];
-/**
  * Step-DOWN snap while standing on a voxel floor. A dug tunnel floor is a
  * staircase of whole cells, so the walking snap (0.35 m) leaves the player
  * ballistic for a tick at every step down and the walk reads as a stutter.
@@ -81,7 +74,12 @@ export class KinematicBody {
   speedMps = 0;
   oracleCalls = 0;
 
-  constructor(private readonly oracle: SurfaceOracle) {}
+  /** Everything that touches the voxel lattice. See VoxelCollision.ts. */
+  private readonly col: VoxelCollider;
+
+  constructor(private readonly oracle: SurfaceOracle) {
+    this.col = new VoxelCollider(oracle);
+  }
 
   /** Drop the capsule onto the surface at a geodetic coordinate. */
   spawn(latRad: number, lonRad: number): void {
@@ -112,6 +110,7 @@ export class KinematicBody {
     if (r < 1e-6) return;
     let ux = p.x / r, uy = p.y / r, uz = p.z / r;
     this.oracleCalls = 0;
+    this.col.resetCalls();
 
     // Split velocity into radial and tangential once; everything below works on
     // the two halves and they are recombined at the end.
@@ -174,12 +173,12 @@ export class KinematicBody {
       // one is in the way, otherwise slide along the wall by dropping the
       // body-frame axis that is blocked. Voxel walls ARE axis aligned, so
       // dropping an axis is exactly sliding along the face.
-      const s = this.resolveDeepStep(p, qx, qy, qz, ux, uy, uz);
+      const s = this.col.resolveStep(p, qx, qy, qz, ux, uy, uz);
       qx = s.x; qy = s.y; qz = s.z;
       qr = Math.hypot(qx, qy, qz) || 1;
       dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
       if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByRock = true; }
-      const floorR = this.voxelFloor(qr, dxn, dyn, dzn);
+      const floorR = this.col.floorBelow(qr, dxn, dyn, dzn, VOXEL_FLOOR_SEARCH_M);
       // No floor within reach is an open shaft, so fall. Never snap to the roof.
       groundR = floorR === null ? -Infinity : floorR;
       this.underRock = floorR !== null;
@@ -196,26 +195,36 @@ export class KinematicBody {
       this.grounded = false;
     }
 
-    // 2. Near-field voxel walls, for the SHALLOW case only: a dig mouth whose
-    //    heightfield has reconciled but whose rim still has a solid cell in the
-    //    capsule. On a pristine world solidCell is simply "below the
-    //    heightfield", so step 1 has already resolved it.
+    // 2. THE MOUTH (15.2 item 48, now closed). A dig that breaks the surface
+    //    leaves a rim: the heightfield has reconciled down to the shaft floor
+    //    while cells beside it are still solid, so the capsule can end a tick
+    //    standing inside the wall of the opening.
     //
-    //    It is skipped entirely when deep, and that is load-bearing. The push is
-    //    RADIAL and sized from the whole capsule, so inside a tunnel the head
-    //    sample sits under the ceiling, the push fires at 2.8 m, and the player
-    //    is levitated up through their own roof one tick at a time. Measured:
-    //    the drive phase ejected to open sky on the third strike, every time.
-    //    Under rock the floor and the walls are already resolved above.
+    //    This USED to be a radial push sized from the whole capsule, which
+    //    resolved nothing geometrically: it lifted the player until the deepest
+    //    sample happened to clear, up to 2.8 m, straight up. It had to be
+    //    skipped underground to stop it levitating people through their own
+    //    ceiling, so the mouth and the tunnel were two different resolvers with
+    //    a 1.5 m seam between them. It is now the exact minimum translation out
+    //    of the offending cell FACE (VoxelCollision.resolveEmbedded), which is
+    //    correct rather than approximate because a voxel's contact normal is
+    //    always a body-frame axis. It can never exceed one cell, so it needs no
+    //    depth special case and runs in both regimes.
     this.voxelPushM = 0;
-    if (this.oracle.editsHandle !== 0 && !deep) {
-      const push = this.resolveVoxels(qx, qy, qz, dxn, dyn, dzn);
-      if (push > 0) {
-        this.voxelPushM = push;
-        qx = dxn * (qr + push); qy = dyn * (qr + push); qz = dzn * (qr + push);
-        qr += push;
-        if (vUp < 0) vUp = 0;
-        this.grounded = true;
+    if (this.oracle.editsHandle !== 0) {
+      const push = this.col.resolveEmbedded(qx, qy, qz, dxn, dyn, dzn);
+      if (push !== null) {
+        this.voxelPushM = push.dist;
+        qx += push.x; qy += push.y; qz += push.z;
+        qr = Math.hypot(qx, qy, qz) || 1;
+        dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
+        // Only a push with an UPWARD component is a landing. A sideways nudge
+        // out of a rim wall must not ground a falling player, or stepping off
+        // the lip of a shaft would catch them on the way down.
+        if (push.x * dxn + push.y * dyn + push.z * dzn > 0.05 * push.dist) {
+          if (vUp < 0) vUp = 0;
+          this.grounded = true;
+        }
       }
     }
 
@@ -239,6 +248,9 @@ export class KinematicBody {
     tx -= ux * tDotU; ty -= uy * tDotU; tz -= uz * tDotU;
     v.x = tx + ux * vUp; v.y = ty + uy * vUp; v.z = tz + uz * vUp;
     this.speedMps = Math.hypot(tx, ty, tz);
+    // The collider does most of the oracle work now; fold it in or the tick
+    // budget this reports is only the half of it that stayed here.
+    this.oracleCalls += this.col.calls;
   }
 
   /** Eye position for a given feet position. */
@@ -248,102 +260,6 @@ export class KinematicBody {
     const k = (r + CAPSULE.eyeHeightM) / r;
     out.x = p.x * k; out.y = p.y * k; out.z = p.z * k;
     return out;
-  }
-
-  /**
-   * Six capsule sample points (feet / mid / head, each front and back along the
-   * radial axis is meaningless, so they are spread over the capsule's height).
-   * Returns how far the capsule must move OUT along the radial to clear solid.
-   */
-  /**
-   * The radius of the first SOLID cell below `r` along the radial, or null if
-   * there is none within the search depth (an open shaft, so the player falls).
-   * Marched at 0.1 m, an order finer than the 1 m cell, so the landing radius is
-   * accurate to a tenth of a voxel without a per-cell plane intersection.
-   */
-  /**
-   * Is the whole capsule in air at this foot position? Three samples up the
-   * radial. The feet-only test this replaces let the player walk their head
-   * through a ceiling, which mattered the moment the bore got wide enough to
-   * walk down at all.
-   */
-  private capsuleFree(x: number, y: number, z: number,
-    ux: number, uy: number, uz: number): boolean {
-    for (const h of CAPSULE_SAMPLES_M) {
-      this.oracleCalls++;
-      if (this.oracle.solidAt(x + ux * h, y + uy * h, z + uz * h)) return false;
-    }
-    return true;
-  }
-
-  /**
-   * Resolve one underground step against solid voxels: take it, climb it, slide
-   * it, or refuse it, in that order.
-   *
-   * Sliding drops ONE body-frame axis of the displacement at a time and keeps
-   * the best survivor. That is correct rather than approximate here, because a
-   * voxel face is always perpendicular to a body-frame axis, so the wall's
-   * normal IS one of the three axes and "drop the blocked axis" is the exact
-   * projection onto the wall plane. Ordered by how much displacement each
-   * candidate keeps, so a glancing contact loses the least.
-   */
-  private resolveDeepStep(p: Vec3d, qx: number, qy: number, qz: number,
-    ux: number, uy: number, uz: number):
-    { x: number; y: number; z: number; blocked: boolean } {
-    if (this.capsuleFree(qx, qy, qz, ux, uy, uz)) {
-      return { x: qx, y: qy, z: qz, blocked: false };
-    }
-    // Already embedded (spawned into rock, or a dig closed around us): refusing
-    // would be a permanent lock, and the destination cannot be worse than here.
-    if (!this.capsuleFree(p.x, p.y, p.z, ux, uy, uz)) {
-      return { x: qx, y: qy, z: qz, blocked: false };
-    }
-    // A ledge. Lifting the feet is enough: the floor march below re-seats them
-    // on whatever they actually landed on, so this never levitates (15.2 #48).
-    for (const h of STEP_UP_M) {
-      const sx = qx + ux * h, sy = qy + uy * h, sz = qz + uz * h;
-      if (this.capsuleFree(sx, sy, sz, ux, uy, uz)) {
-        return { x: sx, y: sy, z: sz, blocked: false };
-      }
-    }
-    const dx = qx - p.x, dy = qy - p.y, dz = qz - p.z;
-    // Drop-one-axis first (keeps two), then single-axis (keeps one).
-    const tries: [number, number, number][] = [
-      [0, dy, dz], [dx, 0, dz], [dx, dy, 0], [dx, 0, 0], [0, dy, 0], [0, 0, dz],
-    ];
-    tries.sort((a, b) => (b[0] * b[0] + b[1] * b[1] + b[2] * b[2])
-      - (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]));
-    for (const [ax, ay, az] of tries) {
-      if (ax === dx && ay === dy && az === dz) continue;   // already refused
-      if (ax === 0 && ay === 0 && az === 0) continue;
-      const sx = p.x + ax, sy = p.y + ay, sz = p.z + az;
-      if (this.capsuleFree(sx, sy, sz, ux, uy, uz)) {
-        return { x: sx, y: sy, z: sz, blocked: false };
-      }
-    }
-    return { x: p.x, y: p.y, z: p.z, blocked: true };
-  }
-
-  private voxelFloor(r: number, ux: number, uy: number, uz: number): number | null {
-    for (let d = 0; d <= VOXEL_FLOOR_SEARCH_M; d += 0.1) {
-      const rr = r - d;
-      this.oracleCalls++;
-      if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return rr + 0.1;
-    }
-    return null;
-  }
-
-  private resolveVoxels(x: number, y: number, z: number, ux: number, uy: number, uz: number): number {
-    let push = 0;
-    for (let i = 0; i < 6; ++i) {
-      const h = (i / 5) * CAPSULE.heightM;
-      const px = x + ux * h, py = y + uy * h, pz = z + uz * h;
-      if (!this.oracle.solidAt(px, py, pz)) continue;
-      // 1 m cells, so one cell of clearance always resolves a single face.
-      const need = CAPSULE.heightM - h + 1.0;
-      if (need > push) push = need;
-    }
-    return push;
   }
 
   /**
