@@ -1,0 +1,126 @@
+// WHERE A MACHINE ACTUALLY GOES, and why it is no longer /core's voxel lattice.
+//
+// THE BUG THE PLAYER REPORTED was "belts don't smoothly line up with each
+// other", and it is the same defect the base-building lane hit and solved
+// (GP-22, ARCHITECTURE 15.2 item 102). It is measured, not suspected. The build
+// grid was `of_cell_for_pos`, a 1 m cube lattice in the BODY frame, and the
+// ground sphere cuts through it obliquely, so one unit step of a cell key covers
+// a different amount of GROUND on each axis. Measured on Forge at the spawn,
+// with `__of.snapCell`:
+//
+//     body X   0.5903 m        body Y   1.0167 m        body Z   0.8110 m
+//
+// A belt tile is a 1.00 m mesh. Laid on those centres, two tiles that the player
+// put down side by side OVERLAP by 0.41 m along one axis and leave a 0.017 m
+// seam along another, and a run walking a staircase of all three is visibly
+// ragged. The same arithmetic is why `chainRuns` kept splitting one run into
+// three: the tile ahead was not where a metre said it was.
+//
+// THE FIX IS TO REUSE WHAT ALREADY WORKS rather than to invent a second answer.
+// A machine now snaps to a SITE, exactly as a foundation does: a local metric
+// tangent frame whose ORIGIN is a world lattice cell centre, inside which the
+// spacing is exactly the module the assets ship. Adjacent tiles are then 1.000 m
+// apart by construction. It also means a base and a belt run finally agree about
+// where things are, because they are the same frame, which matters the first
+// time anybody runs a belt into a building.
+//
+// The height is still the ground's, not the site plane's: a machine follows the
+// terrain (a belt over a rise must go over it), so the site fixes the two
+// TANGENT coordinates and `of_surface_radius` fixes the radius. Standing rule 1,
+// one more time.
+
+import * as THREE from 'three';
+import { SITE_REACH_M, localOf, worldOf, type Site, type StructureModule }
+  from './StructureGrid.js';
+import type { Vec3d } from '../world/PlanetBody.js';
+
+/** What a placement needs of the site registry. A port, so Factory does not
+ *  have to know the whole base-building module. */
+export interface SiteHost {
+  readonly module: StructureModule;
+  nearestSite(p: Vec3d): Site | null;
+  prospectiveSite(p: Vec3d): Site;
+  adoptSite(s: Site): void;
+  groundRadius(x: number, y: number, z: number): number;
+}
+
+/** A machine cell: which site, and which square of its metric grid. */
+export interface MachineAddr { site: Site; i: number; j: number }
+
+/** The occupancy key. Namespaced by site, or two sites would share cell 0,0. */
+export function machineCellKey(a: MachineAddr): string {
+  return `m${a.site.id}:${a.i},${a.j}`;
+}
+
+/** The site whose grid reaches `p`, or a fresh one founded on the lattice cell
+ *  containing it. NOT adopted: a ghost must not found sites by being looked at. */
+export function siteAt(host: SiteHost, p: Vec3d): Site {
+  return host.nearestSite(p) ?? host.prospectiveSite(p);
+}
+
+/** Which square of a site's grid a point falls in. */
+export function addressIn(site: Site, m: StructureModule, p: Vec3d): MachineAddr {
+  const l = localOf(site, p, new THREE.Vector3());
+  return { site, i: Math.floor(l.x / m.cellM), j: Math.floor(l.y / m.cellM) };
+}
+
+/**
+ * Where a machine at this address stands, and which way is up there.
+ *
+ * The two tangent coordinates are the site's, EXACT to the module; the radius is
+ * the oracle's. That split is the whole fix: spacing comes from a metric frame
+ * that cannot drift, height comes from the one surface authority.
+ */
+export function anchorIn(host: SiteHost, a: MachineAddr):
+{ pos: Vec3d; up: THREE.Vector3 } {
+  const c = host.module.cellM;
+  const p = worldOf(a.site, (a.i + 0.5) * c, (a.j + 0.5) * c, 0,
+    { x: 0, y: 0, z: 0 });
+  const r = Math.hypot(p.x, p.y, p.z) || 1;
+  const up = new THREE.Vector3(p.x / r, p.y / r, p.z / r);
+  const ground = host.groundRadius(p.x, p.y, p.z);
+  return {
+    pos: { x: up.x * ground, y: up.y * ground, z: up.z * ground },
+    up,
+  };
+}
+
+/**
+ * The site tangent axis nearest `dir`, then `quarters` quarter turns off it.
+ *
+ * The axes are the SITE's east and north, not a basis rebuilt per tile, so every
+ * tile of a run shares one heading exactly rather than to within whatever the
+ * local frame reconstruction happened to give. A belt at 37 degrees has no cell
+ * ahead of it to chain to, which is why this is four directions and not a yaw.
+ */
+export function headingIn(site: Site, dir: Vec3d, quarters: number): THREE.Vector3 {
+  const de = dir.x * site.east.x + dir.y * site.east.y + dir.z * site.east.z;
+  const dn = dir.x * site.north.x + dir.y * site.north.y + dir.z * site.north.z;
+  let axis: THREE.Vector3;
+  if (Math.abs(de) >= Math.abs(dn)) {
+    axis = de >= 0 ? site.east.clone() : site.east.clone().negate();
+  } else {
+    axis = dn >= 0 ? site.north.clone() : site.north.clone().negate();
+  }
+  return axis.applyAxisAngle(site.up, (quarters % 4) * Math.PI * 0.5).normalize();
+}
+
+/** The address one step from `a` towards `to`, or null when they are the same. */
+export function stepToward(a: MachineAddr, to: MachineAddr): MachineAddr | null {
+  if (a.site.id !== to.site.id) return null;
+  const di = to.i - a.i;
+  const dj = to.j - a.j;
+  if (di === 0 && dj === 0) return null;
+  // The dominant axis first, so a drag that wandered diagonally comes out as an
+  // L of straight runs rather than as a staircase of corners.
+  if (Math.abs(di) >= Math.abs(dj)) {
+    return { site: a.site, i: a.i + Math.sign(di), j: a.j };
+  }
+  return { site: a.site, i: a.i, j: a.j + Math.sign(dj) };
+}
+
+/** Is this point still inside a site's reach? Past it, a new site is founded. */
+export function withinSite(site: Site, p: Vec3d): boolean {
+  const l = localOf(site, p, new THREE.Vector3());
+  return Math.hypot(l.x, l.y) < SITE_REACH_M;
+}

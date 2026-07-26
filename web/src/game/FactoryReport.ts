@@ -33,7 +33,7 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
       fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
       // `empty` is the HARVEST NODE's depleted caption; a machine has its own
       // words for being empty and does not want "node depleted" under them.
-      empty: false, distanceM: 0, action: 'X remove',
+      empty: false, distanceM: 0, action: 'E take    X remove',
     };
   }
   const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
@@ -41,7 +41,7 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
     name: b.kind === 'belt' ? 'belt'
       : out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  working`,
     fraction: b.build < 0 ? 0 : f.line.progress01(b.build),
-    empty: false, distanceM: 0, action: 'X remove',
+    empty: false, distanceM: 0, action: 'E take    X remove',
   };
 }
 
@@ -73,6 +73,10 @@ function row(f: Factory, p: Placed): unknown {
     id: p.id, kind: p.kind, build: p.build, entity: p.entity, run: p.run,
     patch: p.patch, outputItem: f.outputItemOf(p),
     cell: p.cell,
+    // THE POSITION IS PART OF THE REPORT, because "belts line up" is a distance
+    // and not a screenshot: the acceptance measures tile to tile (GP-27).
+    pos: [p.pos.x, p.pos.y, p.pos.z],
+    fwd: [p.fwd.x, p.fwd.y, p.fwd.z],
     remaining: p.kind === 'miner' && live ? f.line.minerRemaining(p.build) : null,
     input: p.kind === 'smelter' && live ? f.line.inputBuffer(p.build) : null,
     output: machine ? f.line.outputBuffer(p.build) : null,

@@ -31,16 +31,18 @@ export function registerSystems(s: Services, loop: Loop): void {
     // W5. On the FIXED tick, not the frame: a dig and a harvest are simulation
     // events, so a driven tape acts exactly as often as a human holding the key.
     //
-    // ONE key, two verbs, resolved by what is under the crosshair. Harvest wins
-    // when a node is in reach, because a player looking at a tree who presses
-    // the mine key means the tree, and digging a crater under it instead is the
-    // sort of thing that makes a game feel like it is not listening.
+    // ONE BUTTON, THREE VERBS, and the HOTBAR picks which (GP-26). A part in
+    // hand places and never digs, which is what `digAllowed` says. With the bare
+    // hand, harvest still wins over digging when a node is in reach, because a
+    // player looking at a tree who clicks means the tree, and digging a crater
+    // under it instead is the sort of thing that makes a game feel unlistening.
     const busy = s.gameplay !== null && s.gameplay.fixedStep(loop.tickIndex - 1)
       ? true
       : (s.gameplay?.interact.hasTarget ?? false) || (s.gameplay?.uiOpen ?? false);
+    const digArmed = s.gameplay?.digAllowed ?? true;
     if (s.dig !== null && s.player !== null) {
       const ray = s.player.aimRay();
-      s.dig.step(s.input.frame.mine && !busy, ray.origin, ray.dir);
+      s.dig.step(s.input.frame.use && !busy && digArmed, ray.origin, ray.dir);
     }
     // WG-22 terraforming, on the same fixed tick and behind the same `busy`
     // gate: a player rummaging in a furnace is not reshaping the hillside. The

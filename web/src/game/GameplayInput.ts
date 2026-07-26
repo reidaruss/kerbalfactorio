@@ -1,0 +1,166 @@
+// EVERY KEY AND BUTTON THE GAMEPLAY LAYER LISTENS TO, in one place and in one
+// order. Split out of Gameplay when the controls were brought in line with the
+// genre (GP-25 to GP-27) and Gameplay crossed its 400-line cap; the seam was
+// already there, because Gameplay owns ORDER and the POINTER and this owns WHAT
+// A PRESS MEANS.
+//
+// THE THREE RULES THIS FILE EXISTS TO STATE ONCE:
+//
+//   ESCAPE closes the top open menu, whatever it is, from the DERIVED list
+//   (ModalStack). With nothing open it drops the part in hand; with nothing in
+//   hand it lets the browser's own pointer-lock exit stand, which it was going
+//   to do anyway and which we must not fight.
+//
+//   LEFT CLICK is "use what is in hand". The HOTBAR decides which: a part in
+//   hand places (and HOLDING it drags a run), the bare hand swings at a node or
+//   digs. Nothing here inspects what is under the crosshair to guess the verb.
+//
+//   E IS INTERACT and only interact: open a furnace, take a machine's stock,
+//   work a door. It stopped being harvest, which is the specific thing the
+//   player objected to.
+//
+// Every press is EDGE-DETECTED here rather than in Input, so a driven tape that
+// holds a key for ten frames acts once, exactly like a human press.
+
+import { collectFrom, stepBuild } from './GameplayActions.js';
+import { showGoals } from './Objectives.js';
+import type { Gameplay } from './Gameplay.js';
+import type { Action } from '../player/Bindings.js';
+
+const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5',
+  'slot6', 'slot7', 'slot8', 'slot9'];
+
+export class GameplayInput {
+  private pack = false;
+  private cancel = false;
+  private use = false;
+  private interact = false;
+  private raze = false;
+  private mute = false;
+  private goals = false;
+  private readonly slots = new Set<Action>();
+  /** What Escape last did, so the acceptance can read it back. */
+  lastEscape = '';
+  escapes = 0;
+
+  /**
+   * The half that runs whether or not a panel is open: the pack key, Escape,
+   * mute and the checklist. Everything else is muted by the UI capture.
+   */
+  chrome(g: Gameplay): void {
+    const act = (a: Action): boolean => g.input.act(a);
+
+    const pack = act('pack');
+    if (pack && !this.pack) g.setPanel(!g.panel.isOpen);
+    this.pack = pack;
+
+    const cancel = act('cancel');
+    if (cancel && !this.cancel) this.escape(g);
+    this.cancel = cancel;
+
+    const mute = act('mute');
+    if (mute && !this.mute) {
+      g.hud.flash(g.sfx.bus.toggleMute() ? 'sound off  (M)' : 'sound on  (M)');
+    }
+    this.mute = mute;
+
+    // H hides the checklist, and the choice survives a reload: a player who
+    // dismissed it did not mean "until the next refresh".
+    const goals = act('goals');
+    if (goals && !this.goals) showGoals(g, !g.goals.visible);
+    this.goals = goals;
+  }
+
+  /**
+   * ESCAPE, whole. One handler that knows the modal stack, which is the point:
+   * five handlers that each guess give you four that work and one that was
+   * written after the rule was forgotten.
+   */
+  private escape(g: Gameplay): void {
+    this.escapes++;
+    const closed = g.modals.closeTop();
+    if (closed !== null) { this.lastEscape = `closed ${closed}`; return; }
+    // Nothing open. The next most useful thing is to empty the hand, because a
+    // player holding a wall they no longer want has nowhere else to put it.
+    if (g.hotbar.clearHand()) { this.lastEscape = 'cleared the hand'; }
+    else {
+      // And with nothing to close and nothing in hand, Escape means what the
+      // browser has already made it mean: give the pointer back. Fighting that
+      // by re-locking would produce a key that visibly does nothing.
+      this.lastEscape = 'released the pointer';
+    }
+    g.modals.lastFallback = this.lastEscape;
+  }
+
+  /**
+   * The half that only runs with the world in front of the player. Returns true
+   * when the tick was consumed by a placement or a removal.
+   */
+  world(g: Gameplay, ray: { origin: { x: number; y: number; z: number };
+                            dir: { x: number; y: number; z: number } },
+        tick: number): boolean {
+    const act = (a: Action): boolean => g.input.act(a);
+    const f = g.input.frame;
+
+    // --- the hotbar: number keys, then the wheel ----------------------------
+    for (let i = 0; i < SLOT_ACTIONS.length; ++i) {
+      const a = SLOT_ACTIONS[i];
+      const down = act(a);
+      if (down && !this.slots.has(a)) g.hotbar.select(i);
+      if (down) this.slots.add(a); else this.slots.delete(a);
+    }
+    if (f.wheel !== 0) g.hotbar.cycle(f.wheel);
+    g.build.arm(g.hotbar.partInHand);
+
+    // --- left button: use whatever the selected slot holds -------------------
+    const usePressed = f.use && !this.use;
+    this.use = f.use;
+    if (stepBuild(g, ray, f.use, usePressed)) return true;
+
+    g.aim(ray);
+
+    // X pulls up whatever is under the crosshair, and it is read BEFORE the
+    // interact key so that "remove" can never be mistaken for "open".
+    const raze = act('demolish');
+    const razePressed = raze && !this.raze;
+    this.raze = raze;
+    if (razePressed && g.demolish()) return true;
+
+    // --- E: interact, and never harvest -------------------------------------
+    const interactPressed = f.interact && !this.interact;
+    this.interact = f.interact;
+    if (interactPressed && this.doInteract(g)) return false;
+
+    // --- the bare hand swings -----------------------------------------------
+    // A part in hand does NOT swing: a player carrying a wall who clicks means
+    // the wall. The dig action is gated on the same question in Systems.
+    if (g.hotbar.partInHand !== null) { g.interact.target = null; return false; }
+    return g.swing(f.use, tick, ray);
+  }
+
+  /** What E does, in the order a player expects: machine, then output, then door. */
+  private doInteract(g: Gameplay): boolean {
+    if (g.aimedMachine !== null) { g.openFurnace(g.aimedMachine); return true; }
+    if (g.aimedBuild !== null) { collectFrom(g, g.aimedBuild); return true; }
+    if (g.aimedPart !== null) {
+      const open = g.structures.toggle(g.aimedPart);
+      if (open !== null) {
+        g.hud.flash(open ? 'opened' : 'closed');
+        g.sfx.confirm();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** E while a machine screen is up closes it, with the key that opened it. */
+  closeWithInteract(g: Gameplay): void {
+    const held = g.input.act('interact');
+    if (held && !this.interact && g.furnacePanel.isOpen) g.openFurnace(null);
+    this.interact = held;
+  }
+
+  report(): unknown {
+    return { escapes: this.escapes, lastEscape: this.lastEscape };
+  }
+}

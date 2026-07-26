@@ -16,8 +16,8 @@
 
 import * as THREE from 'three';
 import { orient } from './Grid.js';
-import { MAX_LEVEL, SITE_REACH_M, addrKey, addressAt, anchorOf, footprintOf,
-  isDeck, localOf, type Addr, type Site, type StructureKind }
+import { MAX_LEVEL, addrKey, addressAt, anchorOf, footprintOf,
+  isDeck, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
 import { FREE_KEY, type Structures } from './Structures.js';
 import type { HudTarget } from '../ui/GameHud.js';
@@ -60,7 +60,7 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
   return {
     name: `${t.kind}${t.freePlaced ? '  (free)' : ''}  ${t.reason}`,
     fraction: 0, empty: !t.ok, distanceM: 0,
-    action: 'G place    R turn    B snap',
+    action: 'left click place  (hold to drag)    R turn    B snap',
   };
 }
 
@@ -85,26 +85,13 @@ function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec3d {
   return { x: o.x + d.x * t, y: o.y + d.y * t, z: o.z + d.z * t };
 }
 
-/** The nearest site whose grid still reaches this point. */
-function siteNear(s: Structures, p: Vec3d): Site | null {
-  const v = new THREE.Vector3();
-  let best: Site | null = null;
-  let bestD = SITE_REACH_M;
-  for (const site of s.sites) {
-    const l = localOf(site, p, v);
-    const d = Math.hypot(l.x, l.y);
-    if (d < bestD) { bestD = d; best = site; }
-  }
-  return best;
-}
-
 /** Where a part would go and whether it would be accepted. */
 export function resolveTarget(s: Structures, kind: StructureKind,
                               ray: { origin: Vec3d; dir: Vec3d },
                               flip: number, freePlaced: boolean): StructureTarget {
   const hit = aimPoint(s, ray);
   if (freePlaced) return freeTarget(s, kind, hit, ray.dir, flip);
-  const site = siteNear(s, hit) ?? s.prospectiveSite(hit);
+  const site = s.nearestSite(hit) ?? s.prospectiveSite(hit);
   const addr = addressAt(site, s.module, kind, hit, flip);
   const a = anchorOf(site, s.module, addr);
   const t: StructureTarget = {

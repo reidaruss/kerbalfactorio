@@ -28,9 +28,11 @@
 
 import * as THREE from 'three';
 import { AutoLine } from './AutoLine.js';
-import { orient, snapToGround, type Snapped } from './Grid.js';
+import { orient, type Snapped } from './Grid.js';
+import { addressIn, anchorIn, machineCellKey, siteAt,
+  type MachineAddr, type SiteHost } from './MachinePlacement.js';
 import { factoryReport } from './FactoryReport.js';
-import { chainRuns, wire } from './FactoryWiring.js';
+import { commitPlan, oreFedTo } from './FactoryCommit.js';
 import type { GameCore } from './GameCore.js';
 import type { OrePatches } from './OrePatches.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -43,13 +45,6 @@ export const TYPE_ID: Record<BuildKind, number> = {
 };
 /** Footprint in whole metres (ASSET-SPECS), and the interaction bound. */
 export const FOOTPRINT: Record<BuildKind, number> = { miner: 2, belt: 1, smelter: 2 };
-
-/** Belt tier and craft time. The DRILL's rate is not here: it comes out of
- * /core per position (of_gp_patch_drill_rate, the authored units per second
- * times the richness under the machine), which is why a drill in the middle of
- * a patch outruns one on the rim. */
-const BELT_SPEED_UNITS_PER_TICK = 8;      // tier 1: 1.875 m/s (ASSET-SPECS 4.12)
-const SMELT_TICKS = 60;                    // the survival smelter's own rate
 
 export interface Placed {
   id: number;
@@ -95,16 +90,36 @@ export class Factory {
   refunded = 0;
   demolishedInFlight = 0;
 
-  constructor(private readonly M: OfCoreModule, private readonly core: GameCore,
-              private readonly bodyHandle: number, fixedDt: number,
-              readonly ore: OrePatches) {
+  constructor(readonly M: OfCoreModule, readonly core: GameCore,
+              readonly bodyHandle: number, fixedDt: number,
+              readonly ore: OrePatches, private readonly host: SiteHost) {
     this.line = new AutoLine(M, fixedDt);
   }
 
-  /** Snap a body-frame point to the 1 m lattice and put it on the ground. */
-  snap(x: number, y: number, z: number): Snapped {
-    return snapToGround(this.M, this.bodyHandle, x, y, z);
+  /**
+   * Snap a body-frame point to the SITE grid and put it on the ground.
+   *
+   * Not `of_cell_for_pos` any more, and MachinePlacement.ts opens with the
+   * measurement that says why: a unit step of the voxel cell key is 0.59 to
+   * 1.02 m of ground depending on the axis, so 1.00 m belt tiles laid on it
+   * cannot line up. A site's grid is metric and exact.
+   */
+  snap(x: number, y: number, z: number): Snapped & { addr: MachineAddr } {
+    const p = { x, y, z };
+    const site = siteAt(this.host, p);
+    const addr = addressIn(site, this.host.module, p);
+    const a = anchorIn(this.host, addr);
+    return { pos: a.pos, up: a.up, cell: machineCellKey(addr), addr };
   }
+
+  /** The same snap, for a cell already named. The drag fill's path. */
+  snapAddr(addr: MachineAddr): Snapped & { addr: MachineAddr } {
+    const a = anchorIn(this.host, addr);
+    return { pos: a.pos, up: a.up, cell: machineCellKey(addr), addr };
+  }
+
+  /** Adopt the site a placement landed in, so the next one snaps to it too. */
+  adoptSite(addr: MachineAddr): void { this.host.adoptSite(addr.site); }
 
   /** Is this cell already taken? Placement refuses to stack. */
   occupied(cell: string): boolean {
@@ -130,6 +145,21 @@ export class Factory {
 
   /** Add one building to the PLAN and re-commit. Returns it, or null. */
   add(kind: BuildKind, s: Snapped, fwd: THREE.Vector3): Placed | null {
+    const p = this.stage(kind, s, fwd);
+    if (p !== null) this.commit();
+    return p;
+  }
+
+  /**
+   * Push a building into the plan WITHOUT committing.
+   *
+   * Drag-placing a belt run lays up to a couple of dozen tiles in one tick, and
+   * `commit()` throws the whole /core network away and rebuilds it from the
+   * plan. Doing that per tile would rebuild it twenty-four times for one drag,
+   * and every rebuild loses the items riding the belts, so the drag would
+   * silently eat ore as it was laid. Staging and committing once fixes both.
+   */
+  stage(kind: BuildKind, s: Snapped, fwd: THREE.Vector3): Placed | null {
     if (this.occupied(s.cell)) return null;
     let patch = -1;
     if (kind === 'miner') {
@@ -145,8 +175,21 @@ export class Factory {
       build: -1, entity: -1, run: -1,
     };
     this.placed.push(p);
-    this.commit();
     return p;
+  }
+
+  /**
+   * Turn an already-placed tile to face `fwd`.
+   *
+   * Factorio's drag lays the FIRST tile before the drag has a direction, so its
+   * heading is the one the crosshair happened to have. The second tile is what
+   * says which way the run goes, and the first is turned to match it. Without
+   * this the head of every dragged run points somewhere else and the run is two
+   * runs, which is precisely the bug being fixed.
+   */
+  reface(p: Placed, fwd: THREE.Vector3): void {
+    p.fwd = fwd.clone();
+    p.quat = orient(p.up, p.fwd);
   }
 
   /**
@@ -202,7 +245,7 @@ export class Factory {
     if (out > 0) back.push({ item: this.outputItemOf(p), count: out });
     if (p.kind === 'smelter' && p.build >= 0) {
       const held = this.line.inputBuffer(p.build);
-      const ore = this.oreFedTo(p) || this.core.ids.rawIron;
+      const ore = oreFedTo(this, p) || this.core.ids.rawIron;
       if (held > 0) {
         const over = this.core.add(ore, held);
         this.spilled += over;
@@ -220,87 +263,10 @@ export class Factory {
   }
 
   /**
-   * Rebuild the /core network from the plan.
-   *
-   * Order matters exactly once: belts are grouped into RUNS first, because a run
-   * is ONE transport line however many tiles the player laid, which is the whole
-   * point of the section 2 model. Then sources and sinks are wired to the runs'
-   * ends: a run's FIRST tile is its tail (where items enter) and its LAST tile
-   * is its head (where they leave), matching addInserter's direction.
+   * Rebuild the /core network from the plan. The work is `FactoryCommit`'s;
+   * what lives here is the plan and its lifecycle.
    */
-  commit(): void {
-    const carry = this.placed.map((p) => ({
-      remaining: p.build < 0 ? 0 : this.line.minerRemaining(p.build),
-      input: p.build < 0 || p.kind === 'belt' ? 0 : this.line.inputBuffer(p.build),
-    }));
-    // Empty every output into the pack BEFORE the network goes away: those are
-    // finished ingots, and a rebuild is not allowed to eat them.
-    for (const p of this.placed) if (p.kind === 'smelter' && p.build >= 0) this.collect(p);
-    let inFlight = 0;
-    for (const b of this.runBuilds) inFlight += this.line.beltItems(b);
-    this.line.recreate(inFlight);
-
-    this.runs = chainRuns(this.placed);
-    this.runBuilds = this.runs.map((r) =>
-      this.line.placeBelt(r.length, BELT_SPEED_UNITS_PER_TICK));
-    this.runs.forEach((r, i) => r.forEach((t) => { t.run = i; }));
-
-    const ids = this.core.ids;
-    this.placed.forEach((p, i) => {
-      if (p.kind === 'miner') {
-        const patch = p.patch >= 0 ? this.ore.patch(p.patch) : null;
-        // The deposit is the PATCH's remaining ore on the first build, and the
-        // drill's own remaining on every rebuild after it, so re-laying a belt
-        // does not refill the mountain.
-        const amount = carry[i].remaining > 0 ? carry[i].remaining
-          : Math.floor(patch?.remaining ?? 0);
-        // The rate is the GROUND's, asked where this drill actually stands.
-        const rate = p.patch < 0 ? 0
-          : this.ore.drillRate(p.patch, p.pos.x, p.pos.y, p.pos.z);
-        p.build = this.line.placeMinerForNode(patch?.kind ?? 3, amount, rate);
-        p.lastRemaining = this.line.minerRemaining(p.build);
-      } else if (p.kind === 'smelter') {
-        // The ORE the smelter takes is whatever a miner in this plan produces,
-        // and what it becomes is gameplay.h's smeltOutputFor, never a JS table.
-        const ore = this.oreFedTo(p) || ids.rawIron;
-        const ingot = this.M._of_gp_smelt_output_for(ore) || ids.iron;
-        p.build = this.line.placeSmelter(ore, ingot, SMELT_TICKS);
-        if (carry[i].input > 0) this.line.feed(p.build, carry[i].input);
-      } else {
-        p.build = this.runBuilds[p.run] ?? -1;
-      }
-      p.entity = p.build < 0 ? -1 : this.line.entityIndex(p.build);
-    });
-
-    this.stampPlacements();
-    wire(this);
-  }
-
-  /** What ore reaches this smelter: the resource of the nearest drill's patch. */
-  private oreFedTo(s: Placed): number {
-    let best = 0;
-    let bestD = Infinity;
-    for (const p of this.placed) {
-      if (p.kind !== 'miner' || p.patch < 0) continue;
-      const n = this.ore.patch(p.patch);
-      if (n === null) continue;
-      const d = Math.hypot(p.pos.x - s.pos.x, p.pos.y - s.pos.y, p.pos.z - s.pos.z);
-      if (d < bestD) { bestD = d; best = n.resource; }
-    }
-    return best;
-  }
-
-  private stampPlacements(): void {
-    for (const p of this.placed) {
-      if (p.build < 0) continue;
-      // The stream carries LOCAL metres about the plan's first building, not
-      // planet-scale absolutes: the field is float32 (standing rule 6).
-      const a = this.anchor();
-      this.line.setPlacement(p.build, TYPE_ID[p.kind],
-        p.pos.x - a.x, p.pos.y - a.y, p.pos.z - a.z,
-        Math.round(FOOTPRINT[p.kind] * 70));
-    }
-  }
+  commit(): void { commitPlan(this); }
 
   anchor(): { x: number; y: number; z: number } {
     return this.placed.length > 0 ? this.placed[0].pos : { x: 0, y: 0, z: 0 };
@@ -346,7 +312,7 @@ export class Factory {
 
   outputItemOf(p: Placed): number {
     if (p.kind === 'smelter') {
-      return this.M._of_gp_smelt_output_for(this.oreFedTo(p) || this.core.ids.rawIron)
+      return this.M._of_gp_smelt_output_for(oreFedTo(this, p) || this.core.ids.rawIron)
         || this.core.ids.iron;
     }
     const n = p.patch >= 0 ? this.ore.patch(p.patch) : null;

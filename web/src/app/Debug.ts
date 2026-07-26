@@ -9,6 +9,7 @@ import type { Services } from './Services.js';
 import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
 import type { BootMetrics } from './Services.js';
+import { BINDINGS } from '../player/Bindings.js';
 import type { TapeEntry } from '../player/Input.js';
 import type { ObserverState } from '../player/ViewSource.js';
 import type { CameraMode } from '../player/ViewMode.js';
@@ -99,7 +100,22 @@ export interface OfDebugApi {
   /** Absolute aim, in degrees. Framing a capture should not need an input tape. */
   look(yawDeg: number, pitchDeg: number): void;
   setTime(t: number): void;
-  input: { tape(t: TapeEntry[]): void; press(code: string, frames?: number): void };
+  /**
+   * The input tape, and it speaks ACTIONS as well as key codes.
+   *
+   * `press('use')` keeps working through the next remap; `press('KeyG')` does
+   * not, and roughly twenty probes learned that the hard way when placing moved
+   * off G (Bindings.ts). Both forms resolve through the one binding table.
+   */
+  input: {
+    tape(t: TapeEntry[]): void;
+    press(name: string, frames?: number): void;
+    /** Hold a set of actions for `frames`, then release. The probe's click. */
+    act(names: string[], frames?: number): void;
+    /** Turn the wheel `n` notches. Positive is one slot to the right. */
+    wheel(n: number): void;
+    bindings(): Record<string, readonly string[]>;
+  };
   /** FP/TP control. setView returns the aim ray so a toggle can be asserted. */
   setView(mode: CameraMode): AimRay | null;
   aim(): AimRay | null;
@@ -340,7 +356,12 @@ export function installDebugApi(
 
     input: {
       tape: (t) => s.input.playTape(t),
-      press: (code, frames = 30) => s.input.playTape([{ hold: frames, keys: [code] }]),
+      press: (name, frames = 30) => s.input.playTape(
+        [{ hold: frames, actions: [name] }, { hold: 2, keys: [] }]),
+      act: (names, frames = 6) => s.input.playTape(
+        [{ hold: frames, actions: names }, { hold: 2, keys: [] }]),
+      wheel: (n) => s.input.playTape([{ hold: 1, wheel: n }, { hold: 2, keys: [] }]),
+      bindings: () => BINDINGS,
     },
 
     setView(mode) {

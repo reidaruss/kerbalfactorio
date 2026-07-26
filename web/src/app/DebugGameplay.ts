@@ -12,6 +12,8 @@ import { renderBeds } from '../audio/Beds.js';
 import { clearSlot } from '../game/SaveGame.js';
 import { clearEdits } from '../game/VoxelSave.js';
 import { showGoals } from '../game/Objectives.js';
+import { isPart } from '../game/Hotbar.js';
+import { snapToGround } from '../game/Grid.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 
@@ -26,24 +28,88 @@ export function gameplayApi(s: Services, loop: Loop) {
       return s.headlamp.stats();
     },
 
+    /**
+     * The old build-menu index, kept as a name for the seven BUILDABLE parts.
+     *
+     * It is now a view onto the hotbar, because the hotbar is what a number key
+     * actually moves (GP-26): 0 puts the hands back and 1 to 7 are drill, belt,
+     * smelter, foundation, floor, wall, door, which live in hotbar slots 3 to 9.
+     * Probes written against the old menu keep meaning what they meant.
+     */
     build(index?: number) {
-      if (index !== undefined) s.gameplay?.build.select(index);
+      const h = s.gameplay?.hotbar;
+      if (index !== undefined && h !== undefined) {
+        h.select(index <= 0 ? 0 : Math.min(index + 1, 8));
+        s.gameplay?.build.arm(h.partInHand);
+      }
       return s.gameplay?.build.report() ?? null;
+    },
+
+    /**
+     * The hotbar itself. `n` is 1-based, exactly as the number keys are, and it
+     * goes through the SAME `select` a key press does.
+     */
+    hotbar(n?: number) {
+      const g = s.gameplay;
+      if (g === null) return null;
+      if (n !== undefined) { g.hotbar.select(n - 1); g.build.arm(g.hotbar.partInHand); }
+      return g.hotbar.report();
+    },
+
+    /** Put something in a hotbar slot, 1-based. The "put things in it" half. */
+    assignSlot(n: number, what: string) {
+      const g = s.gameplay;
+      if (g === null) return null;
+      const content = what === 'hand' ? { kind: 'hand' as const }
+        : what === 'furnace' ? { kind: 'furnace' as const }
+          : what === 'empty' || !isPart(what) ? { kind: 'empty' as const }
+            : { kind: 'part' as const, part: what };
+      g.hotbar.assign(n - 1, content);
+      g.build.arm(g.hotbar.partInHand);
+      return g.hotbar.report();
+    },
+
+    /**
+     * Every modal that EXISTS, derived from the registry rather than listed, so
+     * a probe asserting Escape against all of them cannot miss a new menu.
+     */
+    modals: () => s.gameplay?.modals.report() ?? null,
+
+    /** Escape, through the one handler a key press reaches. */
+    escape() {
+      const g = s.gameplay;
+      if (g === null) return null;
+      g.input.playTape([{ hold: 2, actions: ['cancel'] }, { hold: 2, keys: [] }]);
+      return g.modals.report();
     },
 
     /** The base: every part, every site, the module and the costs. */
     structures: () => s.gameplay?.structures ?? null,
 
     /**
-     * Snap a body-frame point to /core's own 1 m voxel lattice and put it back
-     * on the ground, exactly as a machine placement does. Exposed so a probe can
-     * MEASURE how many metres of ground one unit step of a cell key covers,
-     * which is the claim the structural grid is built on top of.
+     * Snap a body-frame point exactly as a MACHINE placement does: the metric
+     * site grid, then back onto the ground (GP-27). This is the number a belt
+     * run is laid on, so measuring it is measuring the alignment itself.
      */
     snapCell(x: number, y: number, z: number) {
       const f = s.gameplay?.factory;
       if (f === undefined) return null;
       const p = f.snap(x, y, z);
+      return [p.pos.x, p.pos.y, p.pos.z];
+    },
+
+    /**
+     * Snap to /core's own 1 m VOXEL lattice, which is what machines used to use.
+     *
+     * Kept precisely so the claim behind the change stays measurable: one unit
+     * step of a cell key covers 0.59 to 1.02 m of ground depending on the axis,
+     * because a body-frame cube grid is cut obliquely by the ground sphere. The
+     * acceptance measures both and reports the difference.
+     */
+    latticeCell(x: number, y: number, z: number) {
+      const f = s.gameplay?.factory;
+      if (f === undefined) return null;
+      const p = snapToGround(s.core, f.bodyHandle, x, y, z);
       return [p.pos.x, p.pos.y, p.pos.z];
     },
 

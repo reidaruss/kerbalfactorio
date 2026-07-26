@@ -31,8 +31,12 @@ const SLOT = 'auto';
  *     names nodes that no longer hold any ore.
  *  4: BASE BUILDING. The structural parts and their build SITES join the slot.
  *     A v3 slot simply has no base in it, which loads correctly, but the reader
- *     is versioned anyway so a later change to the site frame has a hinge. */
-export const SAVE_VERSION = 4;
+ *     is versioned anyway so a later change to the site frame has a hinge.
+ *  5: MACHINES MOVED OFF THE VOXEL LATTICE onto the same metric site grid the
+ *     base uses (GP-27). A v4 slot's building positions and cell keys are on
+ *     the old lattice, so a belt run restored from one would be laid out to the
+ *     old spacing and would never chain to anything placed after the load. */
+export const SAVE_VERSION = 5;
 
 import type { SavedEdits } from './VoxelSave.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';

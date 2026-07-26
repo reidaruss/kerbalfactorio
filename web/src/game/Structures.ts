@@ -22,7 +22,7 @@
 
 import * as THREE from 'three';
 import { orient } from './Grid.js';
-import { STRUCTURE_KINDS, localOf, makeSite, measureModule,
+import { SITE_REACH_M, STRUCTURE_KINDS, localOf, makeSite, measureModule,
   type Addr, type Site, type StructureKind, type StructureModule }
   from './StructureGrid.js';
 import { StructureBodies, boundOf, leafProxy, proxiesOf,
@@ -208,6 +208,27 @@ export class Structures {
   prospectiveSite(p: Vec3d): Site {
     return makeSite(this.M, this.body, this.nextSite, p, this.module,
       (x, y, z) => this.groundRadius(x, y, z));
+  }
+
+  /**
+   * The nearest site whose grid still reaches `p`, or null.
+   *
+   * MACHINES ASK THIS TOO, and that is the point of it living here rather than
+   * inside the structural placement rules. A belt and a foundation snapping to
+   * two different frames is exactly the class of defect that made belts fail to
+   * line up in the first place (GP-27); one registry means a base and a factory
+   * cannot disagree about where a metre starts.
+   */
+  nearestSite(p: Vec3d): Site | null {
+    const v = new THREE.Vector3();
+    let best: Site | null = null;
+    let bestD = SITE_REACH_M;
+    for (const site of this.sites) {
+      const l = localOf(site, p, v);
+      const d = Math.hypot(l.x, l.y);
+      if (d < bestD) { bestD = d; best = site; }
+    }
+    return best;
   }
 
   // --- the world ------------------------------------------------------------

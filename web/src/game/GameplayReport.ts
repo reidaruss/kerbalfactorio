@@ -18,6 +18,12 @@ export function gameplayReport(g: Gameplay): unknown {
       ore: g.oreField.report(),
       panelOpen: g.panel.isOpen,
       furnaceOpen: g.furnacePanel.isOpen,
+      // GP-25 to GP-27: what is in hand, every menu that EXISTS, and what
+      // Escape last did with them. Derived, so a new menu shows up here without
+      // anybody adding a line.
+      hotbar: g.hotbar.report(),
+      modals: g.modals.report(),
+      controls: g.keys.report(),
       placements: g.placements,
       machines: g.machines.report(),
       pointerLocked: g.pointerLocked,

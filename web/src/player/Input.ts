@@ -1,6 +1,14 @@
 // DOM/pointer -> an input tape. Every consumer reads the tape, never the DOM, so
 // a scripted tape from window.__of.input is indistinguishable from a human
 // (ARCHITECTURE.md section 11.2). That is what makes replays deterministic.
+//
+// AND EVERY CONSUMER ASKS FOR AN ACTION, never for a key. The binding table is
+// Bindings.ts and nothing else in the client names a key code, so a remap costs
+// one file. Mouse buttons are codes in the same held set (`Mouse0`), which is
+// what lets "left click" be a tape entry.
+
+import { BINDINGS, UI_ALLOWED, codesFor, isAction, type Action }
+  from './Bindings.js';
 
 export interface InputFrame {
   fwd: number; right: number; up: number;
@@ -9,28 +17,40 @@ export interface InputFrame {
   boost: boolean;
   /** Space. Held state; the controller edge-detects what it needs. */
   jump: boolean;
-  /** KeyV. Held state; Controller turns it into one toggle per press. */
+  /** Held state; Controller turns it into one toggle per press. */
   toggleView: boolean;
-  /** KeyE. Held state; DigAction turns it into one dig per cooldown (W5). */
-  mine: boolean;
+  /**
+   * THE HAND. Held state; consumers edge-detect a press and HOLD is meaningful
+   * too, because dragging a belt run is one held button (GP-27).
+   */
+  use: boolean;
+  /** Open a furnace, take from a machine, work a door. Never harvests (GP-26). */
+  interact: boolean;
   /** Tab. Held state; the UI edge-detects it into one open/close per press. */
   panel: boolean;
-  /** KeyG. Held state; the build system edge-detects it into one placement. */
-  place: boolean;
-  /** KeyL. Held state; Systems edge-detects it into one headlamp toggle (W5). */
+  /** Escape. Held state; the modal stack edge-detects it (GP-25). */
+  cancel: boolean;
+  /** Held state; Systems edge-detects it into one headlamp toggle (W5). */
   lamp: boolean;
-  /** KeyQ. Held state; LevelAction latches a floor on the press and repeats
-   *  on a cooldown, so a terraforming pass is one held key (WG-22). */
+  /** Held state; LevelAction latches a floor on the press and repeats on a
+   *  cooldown, so a terraforming pass is one held key (WG-22). */
   level: boolean;
+  /** Wheel notches since the last sample. Positive is one slot to the right. */
+  wheel: number;
 }
 
 export interface TapeEntry {
   /** Frames to hold this state for. */
   hold: number;
+  /** Raw codes. `Mouse0` is the left button. */
   keys?: string[];
+  /** Actions, resolved through the binding table. Prefer these. */
+  actions?: string[];
   dYaw?: number;
   dPitch?: number;
   zoom?: number;
+  /** Wheel notches applied on the FIRST frame of this entry, not every frame. */
+  wheel?: number;
 }
 
 const MOUSE_SENS = 0.0025;
@@ -40,6 +60,7 @@ export class Input {
   private dYaw = 0;
   private dPitch = 0;
   private zoomAccum = 0;
+  private wheelAccum = 0;
   private dragging = false;
   /**
    * POINTER LOCK. Drag-to-look was fine for a camera probe and is wrong for a
@@ -49,9 +70,11 @@ export class Input {
    * scenarios and for anyone whose browser refuses the lock.
    */
   private locked = false;
-  /** False while the UI owns the pointer: no look, no movement, no interact. */
+  /** False while the UI owns the pointer: no look, no movement, no use. */
   private lookEnabled = true;
   private uiHeld = false;
+  /** True for the press that is only buying the pointer lock back. */
+  private swallowClick = false;
   private el: HTMLElement | null = null;
   private tape: TapeEntry[] = [];
   private tapeIdx = 0;
@@ -59,8 +82,8 @@ export class Input {
 
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
-    jump: false, toggleView: false, mine: false, panel: false, place: false,
-    lamp: false, level: false,
+    jump: false, toggleView: false, use: false, interact: false, panel: false,
+    cancel: false, lamp: false, level: false, wheel: 0,
   };
 
   attach(el: HTMLElement): void {
@@ -69,6 +92,8 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       this.down.add(e.code);
       // Tab moves focus and Space scrolls; both would leak out of the canvas.
+      // Escape is NOT prevented: the browser's own pointer-lock exit is a
+      // guarantee we must not fight, only cooperate with (GP-25).
       if (e.code.startsWith('Arrow') || e.code === 'Space' || e.code === 'Tab') {
         e.preventDefault();
       }
@@ -79,9 +104,17 @@ export class Input {
     el.addEventListener('pointerdown', (e) => {
       this.dragging = true;
       el.setPointerCapture(e.pointerId);
+      // THE CLICK THAT BUYS THE LOCK IS NOT A SWING. Without this the press
+      // that re-captures the pointer after Escape also places a building under
+      // the crosshair, which reads as the game acting on a click the player
+      // made at the menu.
+      this.swallowClick = this.lookEnabled && !this.locked;
+      if (!this.swallowClick) this.down.add(`Mouse${e.button}`);
     });
     el.addEventListener('pointerup', (e) => {
       this.dragging = false;
+      this.swallowClick = false;
+      this.down.delete(`Mouse${e.button}`);
       el.releasePointerCapture(e.pointerId);
     });
     el.addEventListener('pointermove', (e) => {
@@ -97,7 +130,7 @@ export class Input {
       this.dPitch -= e.movementY * MOUSE_SENS;
     });
     el.addEventListener('click', () => {
-      if (this.lookEnabled && !this.locked) void el.requestPointerLock?.();
+      if (this.lookEnabled && !this.locked) this.requestLock();
     });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === el;
@@ -107,8 +140,20 @@ export class Input {
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.zoomAccum += e.deltaY > 0 ? 1 : -1;
+      const n = e.deltaY > 0 ? 1 : -1;
+      this.zoomAccum += n;
+      this.wheelAccum += n;
     }, { passive: false });
+  }
+
+  /**
+   * Ask for the lock back. The promise is CAUGHT rather than voided: Chrome
+   * rejects a re-lock made outside a user gesture and an unhandled rejection is
+   * a console error, which fails every driven probe in the suite.
+   */
+  private requestLock(): void {
+    const p = this.el?.requestPointerLock?.() as unknown;
+    if (p instanceof Promise) p.catch(() => undefined);
   }
 
   /** Queue a scripted tape. Replaces anything still playing. */
@@ -124,9 +169,9 @@ export class Input {
   get pointerLocked(): boolean { return this.locked; }
 
   /**
-   * Hand the pointer to the UI, or take it back. Everything except the panel
-   * key is muted while the UI holds it, tape-driven runs included, so a
-   * scripted probe sees exactly what a player sees.
+   * Hand the pointer to the UI, or take it back. Everything except the actions
+   * on UI_ALLOWED is muted while the UI holds it, tape-driven runs included, so
+   * a scripted probe sees exactly what a player sees.
    */
   setUiCapture(on: boolean): void {
     this.uiHeld = on;
@@ -134,37 +179,37 @@ export class Input {
     this.down.clear();
     this.dYaw = 0;
     this.dPitch = 0;
+    this.wheelAccum = 0;
     if (on) { if (this.locked) document.exitPointerLock(); }
-    else if (this.el !== null) void this.el.requestPointerLock?.();
+    else this.requestLock();
   }
 
-  /**
-   * Zero everything the UI is swallowing. `panel` and `mine` survive on
-   * purpose: Tab has to be able to close the panel it opened, and a machine
-   * screen has to close with the same key that opened it. Consumers behind an
-   * open panel must therefore ignore `mine` themselves, which Gameplay does by
-   * returning before the interaction step.
-   */
+  /** Zero everything the UI is swallowing. See UI_ALLOWED for what survives. */
   private mute(f: InputFrame): void {
     f.fwd = 0; f.right = 0; f.up = 0;
-    f.dYaw = 0; f.dPitch = 0; f.zoom = 0;
+    f.dYaw = 0; f.dPitch = 0; f.zoom = 0; f.wheel = 0;
     f.boost = false; f.jump = false; f.toggleView = false;
-    f.place = false; f.lamp = false; f.level = false;
+    f.use = false; f.lamp = false; f.level = false;
   }
 
-  private axis(neg: string[], pos: string[]): number {
-    let v = 0;
-    for (const k of neg) if (this.down.has(k)) v -= 1;
-    for (const k of pos) if (this.down.has(k)) v += 1;
-    return v;
+  private axis(neg: Action, pos: Action): number {
+    return (this.act(pos) ? 1 : 0) - (this.act(neg) ? 1 : 0);
   }
 
   /**
-   * Raw held-key test, for consumers whose keys are open-ended enough that a
-   * named InputFrame field per key would be silly: the build menu's digits and
-   * its rotate key. It reads the SAME source `sample()` did, live or taped, so a
-   * scripted tape drives the build menu exactly as a human does.
+   * Is this ACTION held right now? The one question every consumer asks.
+   *
+   * It reads the SAME source `sample()` did, live or taped, so a scripted tape
+   * drives the build menu exactly as a human does, and it honours the UI
+   * capture so a consumer cannot act behind an open panel by accident.
    */
+  act(a: Action): boolean {
+    if (this.uiHeld && !UI_ALLOWED.includes(a)) return false;
+    for (const c of BINDINGS[a]) if (this.active.has(c)) return true;
+    return false;
+  }
+
+  /** Raw held-code test. Only the debug HUD's backtick still needs one. */
   held(code: string): boolean {
     return !this.uiHeld && this.active.has(code);
   }
@@ -177,45 +222,58 @@ export class Input {
     const f = this.frame;
     if (this.tapePending()) {
       const e = this.tape[this.tapeIdx];
-      const keys = new Set(e.keys ?? []);
+      const keys = new Set<string>(e.keys ?? []);
+      for (const name of e.actions ?? []) for (const c of codesFor(name)) keys.add(c);
       this.active = keys;
-      f.fwd = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
-      f.right = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-      f.up = (keys.has('KeyR') ? 1 : 0) - (keys.has('KeyF') ? 1 : 0);
       f.dYaw = e.dYaw ?? 0;
       f.dPitch = e.dPitch ?? 0;
       f.zoom = e.zoom ?? 0;
-      f.boost = keys.has('ShiftLeft');
-      f.jump = keys.has('Space');
-      f.toggleView = keys.has('KeyV');
-      f.mine = keys.has('KeyE');
-      f.panel = keys.has('Tab');
-      f.place = keys.has('KeyG');
-      f.lamp = keys.has('KeyL');
-      f.level = keys.has('KeyQ');
+      // The wheel is a DELTA, so it fires on the entry's first frame only. A
+      // tape holding `wheel: 1` for thirty frames would otherwise spin the
+      // hotbar thirty slots, which is not what one notch means.
+      f.wheel = this.tapeHeld === 0 ? this.tapeWheel(e) : 0;
+      this.fill(f);
       if (this.uiHeld) this.mute(f);
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
     }
     this.active = this.down;
-    f.fwd = this.axis(['KeyS'], ['KeyW']);
-    f.right = this.axis(['KeyA'], ['KeyD']);
-    f.up = this.axis(['KeyF'], ['KeyR']);
     f.dYaw = this.dYaw;
     f.dPitch = this.dPitch;
     f.zoom = this.zoomAccum;
-    f.boost = this.down.has('ShiftLeft') || this.down.has('ShiftRight');
-    f.jump = this.down.has('Space');
-    f.toggleView = this.down.has('KeyV');
-    f.mine = this.down.has('KeyE');
-    f.panel = this.down.has('Tab');
-    f.place = this.down.has('KeyG');
-    f.lamp = this.down.has('KeyL');
-    f.level = this.down.has('KeyQ');
+    f.wheel = this.wheelAccum;
+    this.fill(f);
     if (this.uiHeld) this.mute(f);
     this.dYaw = 0;
     this.dPitch = 0;
     this.zoomAccum = 0;
+    this.wheelAccum = 0;
     return f;
   }
+
+  /** A tape entry's wheel, from the explicit field or from a slot action. */
+  private tapeWheel(e: TapeEntry): number {
+    if (e.wheel !== undefined) return e.wheel;
+    const a = e.actions ?? [];
+    return (a.includes('slotNext') ? 1 : 0) - (a.includes('slotPrev') ? 1 : 0);
+  }
+
+  /** The named fields, from whichever held set `active` currently points at. */
+  private fill(f: InputFrame): void {
+    f.fwd = this.axis('back', 'forward');
+    f.right = this.axis('strafeLeft', 'strafeRight');
+    f.up = this.axis('flyDown', 'flyUp');
+    f.boost = this.act('sprint');
+    f.jump = this.act('jump');
+    f.toggleView = this.act('view');
+    f.use = this.act('use');
+    f.interact = this.act('interact');
+    f.panel = this.act('pack');
+    f.cancel = this.act('cancel');
+    f.lamp = this.act('lamp');
+    f.level = this.act('level');
+  }
 }
+
+export { isAction };
+export type { Action };

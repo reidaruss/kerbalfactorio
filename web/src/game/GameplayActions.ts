@@ -55,42 +55,60 @@ export function placeMachine(g: Gameplay,
 }
 
 /**
- * The build key, whole. Build mode takes G while it is armed, whatever is in
- * hand: a player holding a wall who presses G means the wall, not the furnace,
- * and guessing wrong is the sort of thing that makes a game feel unlistening.
+ * THE LEFT BUTTON, whole. What it does is decided by the HOTBAR and by nothing
+ * else: a player holding a wall who clicks means the wall, and guessing from
+ * what happens to be under the crosshair is the sort of thing that makes a game
+ * feel unlistening.
+ *
+ * `use` is the held state and `pressed` the rising edge, because they mean
+ * different things: a press puts one part down, and a HOLD drags a run (GP-27).
  *
  * Returns true if anything was put down, so the caller can skip the rest of the
  * tick's interaction.
  */
-export function stepBuild(g: Gameplay, ray: BuildRay, place: boolean,
-                          placeHeld: boolean): boolean {
-  const built = g.build.step((c) => g.input.held(c), place, ray);
-  if (built) {
-    const part = g.build.lastPart;
-    if (g.build.structTarget !== null && part !== null) {
-      // The COST is said out loud on placement, because a player who cannot see
-      // what a wall costs cannot plan a room.
-      g.hud.flash(`placed ${part.kind}  -${g.structures.costText(part.kind)}`);
-    } else {
-      // The RATE is said out loud, because richness varies across a deposit and
-      // a player who cannot see what a spot is worth cannot choose.
-      const r = g.build.lastRate;
-      g.hud.flash(r > 0 ? `placed ${g.build.label}  ${r.toFixed(1)} ore/s`
-        : `placed ${g.build.label}`);
-    }
+export function stepBuild(g: Gameplay, ray: BuildRay, use: boolean,
+                          pressed: boolean): boolean {
+  // A hand furnace comes out of the PACK and goes down through Machines, not
+  // through the factory plan (GP-19), so it is its own slot kind and its own
+  // branch rather than a fake `BuildKind`.
+  if (g.hotbar.held.kind === 'furnace') {
+    if (!pressed) return false;
+    placeMachine(g, ray);
+    return true;
+  }
+  const n = g.build.step((a) => g.input.act(a), use, ray);
+  if (n > 0) {
+    announce(g, n, pressed);
     g.sfx.confirm();
     g.panel.invalidate();
     return true;
   }
-  if (g.build.selected === null) {
-    if (place && !placeHeld) placeMachine(g, ray);
-    return false;
-  }
+  if (g.build.selected === null) return false;
   const refused = g.build.structTarget !== null
     ? (g.build.structTarget.ok ? null : g.build.structTarget.reason)
     : (g.build.target?.ok === false ? g.build.target.reason : null);
-  if (place && !placeHeld && refused !== null) g.hud.flash(refused);
+  if (pressed && refused !== null) g.hud.flash(refused);
   return false;
+}
+
+/** What a placement says out loud. A drag says the RUN, not each tile. */
+function announce(g: Gameplay, n: number, pressed: boolean): void {
+  if (!pressed || n > 1) {
+    g.hud.flash(`${g.build.dragLength + n} ${g.build.label}`);
+    return;
+  }
+  const part = g.build.lastPart;
+  if (g.build.structTarget !== null && part !== null) {
+    // The COST is said out loud on placement, because a player who cannot see
+    // what a wall costs cannot plan a room.
+    g.hud.flash(`placed ${part.kind}  -${g.structures.costText(part.kind)}`);
+    return;
+  }
+  // The RATE is said out loud, because richness varies across a deposit and a
+  // player who cannot see what a spot is worth cannot choose.
+  const r = g.build.lastRate;
+  g.hud.flash(r > 0 ? `placed ${g.build.label}  ${r.toFixed(1)} ore/s`
+    : `placed ${g.build.label}`);
 }
 
 /**

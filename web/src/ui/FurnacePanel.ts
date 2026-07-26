@@ -6,6 +6,7 @@
 // left" is information and a flickering fire is decoration.
 
 import { esc } from './GameHud.js';
+import { Modal, type ModalStack } from './ModalStack.js';
 
 export interface FurnaceView {
   title: string;
@@ -21,16 +22,18 @@ export interface FurnaceView {
   loadable: { item: number; name: string; count: number; fuel: boolean }[];
 }
 
-export class FurnacePanel {
+export class FurnacePanel extends Modal {
   private readonly root: HTMLElement;
   private open = false;
   private last = '';
 
   constructor(
     parent: HTMLElement,
+    stack: ModalStack,
     private readonly onLoad: (item: number) => void,
     private readonly onTake: () => void,
   ) {
+    super('furnace', stack);
     this.root = document.createElement('div');
     this.root.id = 'of-furnace';
     this.root.className = 'of-ui';
@@ -80,7 +83,7 @@ export class FurnacePanel {
       + `<div class="acts">${load}`
       + `<button data-take="1"${v.outCount > 0 ? '' : ' disabled'}>Take output</button>`
       + '</div>'
-      + '<div class="hint">E closes. Fuel and ore both come out of the pack.</div>'
+      + '<div class="hint">E or Escape closes. Fuel and ore both come out of the pack.</div>'
       + '</div>';
   }
 }

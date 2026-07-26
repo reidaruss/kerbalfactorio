@@ -146,9 +146,11 @@ export class GameHud {
         + `<div id="of-bar"><i style="width:${pct}%"></i></div>`;
       return;
     }
+    // LEFT CLICK, not E. The verb chip has to name the button that actually
+    // does the thing, and E stopped being harvest (GP-26).
     this.prompt.innerHTML = t.empty
       ? `<span class="sub">${esc(t.name)} node depleted</span>`
-      : `<span class="k">E</span>Harvest ${esc(t.name)}`
+      : `<span class="k">LMB</span>Harvest ${esc(t.name)}`
         + `<div class="sub">${pct}% remaining</div>`
         + `<div id="of-bar"><i style="width:${pct}%"></i></div>`;
   }

@@ -1,17 +1,18 @@
-// The gameplay layer, assembled: the pack, the clearing, the swing, the HUD and
-// the Tab panel, plus the one thing none of them can own alone, which is who has
-// the pointer.
+// The gameplay layer, assembled: the pack, the clearing, the swing, the HUD, the
+// hotbar and the panels, plus the one thing none of them can own alone, which is
+// who has the pointer.
 //
 // It is a COMPOSITION, not a god object: every rule lives in `/core` behind
-// GameCore, every mesh in NodeField, every pixel in src/ui, and the reach and
-// impact timing in Interact. What is left here is order and the pointer.
+// GameCore, every mesh in NodeField, every pixel in src/ui, the reach and impact
+// timing in Interact, and WHAT A PRESS MEANS in GameplayInput. What is left here
+// is order and the pointer.
 //
-// THE POINTER TRANSITION is the part worth being careful about. Opening the
-// panel must release the lock, show the cursor and stop the camera dead in the
-// same frame; closing it must take the lock back without the mouse having
-// "moved" while the cursor was free. Input.setUiCapture does both halves,
-// including clearing the accumulated deltas, because a frame's worth of
-// unlocked movement applied on re-lock is a visible snap and reads as a bug.
+// THE POINTER TRANSITION is the part worth being careful about. Opening a panel
+// must release the lock, show the cursor and stop the camera dead in the same
+// frame; closing it must take the lock back without the mouse having "moved"
+// while the cursor was free. Input.setUiCapture does both halves, including
+// clearing the accumulated deltas, because a frame's worth of unlocked movement
+// applied on re-lock is a visible snap and reads as a bug.
 
 import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
@@ -19,6 +20,8 @@ import { NodeField } from './NodeField.js';
 import { OreField } from './OreField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
+import { HotbarBar } from '../ui/HotbarBar.js';
+import { ModalStack } from '../ui/ModalStack.js';
 import { InventoryPanel } from '../ui/InventoryPanel.js';
 import { FurnacePanel } from '../ui/FurnacePanel.js';
 import { Machines, type Machine } from './Machines.js';
@@ -27,13 +30,15 @@ import { Sfx } from '../audio/Sfx.js';
 import { Factory, type Placed } from './Factory.js';
 import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
+import { Hotbar } from './Hotbar.js';
+import { GameplayInput } from './GameplayInput.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
 import { aimPrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
-import { collectFrom, craft, loadFurnace, machineView, raze, recipes, slots,
-  stepBuild, takeFurnace } from './GameplayActions.js';
+import { craft, loadFurnace, machineView, raze, recipes, slots,
+  takeFurnace } from './GameplayActions.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
@@ -71,9 +76,15 @@ export class Gameplay {
   readonly oreField: OreField;
   readonly interact: Interact;
   readonly hud: GameHud;
+  /** THE derived list of menus, so Escape cannot miss one (GP-25). */
+  readonly modals = new ModalStack();
   readonly panel: InventoryPanel;
   readonly machines: Machines;
   readonly furnacePanel: FurnacePanel;
+  /** Nine slots, the wheel, and therefore what the left button does (GP-26). */
+  readonly hotbar = new Hotbar();
+  readonly hotbarBar: HotbarBar;
+  readonly keys = new GameplayInput();
   /** Chips, kick, captions and sound: everything an event does but the rule. */
   readonly fx: Feedback;
   readonly sfx = new Sfx();
@@ -84,8 +95,7 @@ export class Gameplay {
   /** W7: the first minute. A checklist that watches, never a tutorial. */
   readonly goals = new Objectives();
   readonly goalPanel: ObjectivePanel;
-  private goalHeld = false;
-  /** W6 automation: the plan, its art, and the build menu that edits it. */
+  /** W6 automation: the plan, its art, and the build mode that edits it. */
   readonly factory: Factory;
   readonly factoryView: FactoryView;
   readonly build: BuildMode;
@@ -100,19 +110,14 @@ export class Gameplay {
   private simSecs = 0;
   /** Where the clearing was grown. Fixed on the first populate (see below). */
   private spawnDir: THREE.Vector3 | null = null;
-  private panelHeld = false;
-  private placeHeld = false;
-  private mineHeld = false;
   /** DW-17 autosave: slots written, and what the last load brought back. */
   saves = 0;
   restored: RestoreLedger | null = null;
   private sinceSaveTicks = 0;
-  private razeHeld = false;
-  private muteHeld = false;
   private openMachine: Machine | null = null;
-  private aimedMachine: Machine | null = null;
-  private aimedBuild: Placed | null = null;
-  private aimedPart: StructurePart | null = null;
+  aimedMachine: Machine | null = null;
+  aimedBuild: Placed | null = null;
+  aimedPart: StructurePart | null = null;
 
   /** What a save needs: the module handle, the seed, and the voxel handles,
    * which live in Services and are null in a scenario with no character. */
@@ -130,24 +135,36 @@ export class Gameplay {
     this.oreField = new OreField(d.core, d.bodyHandle, this.field, d.origin);
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     this.hud = new GameHud(d.host);
+    this.hotbarBar = new HotbarBar(d.host);
     this.fx = new Feedback(this.hud, this.field, this.sfx);
-    this.panel = new InventoryPanel(d.host, (i) => craft(this, i));
+    this.panel = new InventoryPanel(d.host, this.modals, (i) => craft(this, i));
+    this.panel.closer = () => this.setPanel(false);
     this.goalPanel = new ObjectivePanel(d.host);
     showGoals(this, this.goals.wasVisible());
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle);
     this.furnacePanel = new FurnacePanel(
-      d.host, (item) => loadFurnace(this, this.openMachine, item),
+      d.host, this.modals, (item) => loadFurnace(this, this.openMachine, item),
       () => takeFurnace(this, this.openMachine));
-    // The factory ticks on the SIM clock, like everything else that is a rule.
+    this.furnacePanel.closer = () => this.openFurnace(null);
+    // THE HAND IS A MODAL TOO, and registering it here rather than special-casing
+    // it in the Escape handler is what keeps the guarantee derived: the probe
+    // walks `modals.all()` and would catch a menu, or a mode, that skipped it.
+    const hotbar = this.hotbar;
+    this.modals.register({
+      modalName: 'hand',
+      get isOpen(): boolean { return hotbar.partInHand !== null; },
+      requestClose: () => { hotbar.clearHand(); },
+    });
     this.ambience = new Ambience(d.core, d.bodyHandle);
-    this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60,
-      this.oreField.patches);
-    this.factoryView = new FactoryView(d.origin);
+    // The factory ticks on the SIM clock, like everything else that is a rule.
     // DW-24: the edits handle is read LIVE, so a pad flattened with Q reads as
     // flat on the very next tick and the invalid ghost turns valid in the frame
     // the player levels it.
     this.structures = new Structures(d.core, this.game, d.bodyHandle,
       () => d.ports?.voxels?.handle ?? 0);
+    this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60,
+      this.oreField.patches, this.structures);
+    this.factoryView = new FactoryView(d.origin);
     this.structView = new StructureView(d.origin);
     this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView,
       this.structures, this.structView);
@@ -163,6 +180,7 @@ export class Gameplay {
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
       g.structures.load(), g.icons.load()]);
     g.structView.build(g.structures);
+    g.hotbarBar.invalidate();
     d.scene.add(g.structView.group);
     // The walker learns about the base through a PORT and not an import: a
     // structure rests on the terrain and must never become a second definition
@@ -196,15 +214,12 @@ export class Gameplay {
    *
    * The edits handle is 0 on purpose: nodes are placed before anything has been
    * dug, so the oracle's designed base IS the surface at that moment, and
-   * passing an empty edit set would say the same thing more expensively. A node
-   * placed after digging starts must pass the live handle.
+   * passing an empty edit set would say the same thing more expensively.
    */
   populate(): void {
     // THE CLEARING DOES NOT FOLLOW THE PLAYER. The direction is remembered from
     // the first call, so regrowing from the seed reproduces the SAME world
-    // rather than a new one centred whereever the player happens to be standing.
-    // Without this a save's depletion diff comes back onto a differently shaped
-    // field, which is the quiet way a persistence test stops meaning anything.
+    // rather than a new one centred wherever the player happens to be standing.
     if (this.spawnDir === null) {
       const p = this.d.player.body.feet;
       this.spawnDir = new THREE.Vector3(p.x, p.y, p.z).normalize();
@@ -217,21 +232,22 @@ export class Gameplay {
     this.nodesPlaced = this.field.placed.length;
   }
 
-  /** True while the pointer is locked to the canvas. Also the key reader, so
-   *  the verbs in GameplayActions can ask about a key without a second path. */
+  /** True while the pointer is locked to the canvas. */
   get pointerLocked(): boolean { return this.d.input.pointerLocked; }
   get input(): Input { return this.d.input; }
 
-  /** True while any panel owns the pointer, so the dig action stands down. */
+  /** True while a panel owns the pointer, so the dig action stands down. */
   get uiOpen(): boolean { return this.panel.isOpen || this.furnacePanel.isOpen; }
+
+  /** True when the left button should reach the DIGGING tool: no panel up, and
+   *  the hand is empty of parts. A player carrying a wall is not digging. */
+  get digAllowed(): boolean {
+    return !this.uiOpen && this.hotbar.partInHand === null;
+  }
 
   /** Fixed tick. Returns true on the tick a harvest actually granted items. */
   fixedStep(tick: number): boolean {
-    const f = this.d.input.frame;
-    // Tab is edge-detected here rather than in Input, so a driven tape that
-    // holds Tab for ten frames toggles once, exactly like a key press.
-    if (f.panel && !this.panelHeld) this.setPanel(!this.panel.isOpen);
-    this.panelHeld = f.panel;
+    this.keys.chrome(this);
 
     // Machines and the automation network tick on the SIM clock, like
     // everything else that is a rule: a furnace on a synthetic-clock probe
@@ -244,43 +260,19 @@ export class Gameplay {
     // one does.
     if (++this.sinceSaveTicks >= AUTOSAVE_TICKS) { this.sinceSaveTicks = 0; void this.save(); }
 
-    // M mutes. Edge-detected here like every other open-ended key, so a driven
-    // tape that holds it for ten frames toggles once.
-    const mute = this.d.input.held('KeyM');
-    if (mute && !this.muteHeld) {
-      this.hud.flash(this.sfx.bus.toggleMute() ? 'sound off  (M)' : 'sound on  (M)');
-    }
-    this.muteHeld = mute;
-
-    // H hides the checklist. Edge-detected like every other open-ended key, and
-    // the choice survives a reload: a player who dismissed it did not mean
-    // "until the next refresh".
-    const gk = this.d.input.held('KeyH');
-    if (gk && !this.goalHeld) showGoals(this, !this.goals.visible);
-    this.goalHeld = gk;
-
-    // ONE edge for the mine key, read once. It used to be edge-detected inside
-    // the "panel is open" branch and taken as a LEVEL inside the "aiming at a
-    // machine" branch, and the two disagreed: pressing E to close a furnace you
-    // are standing in front of closed it on that tick and the still-held key
-    // reopened it on the next, so the panel could not be closed by the key that
-    // opened it. A press is a press wherever it is read.
-    const minePressed = f.mine && !this.mineHeld;
-    this.mineHeld = f.mine;
-
     if (this.uiOpen) {
-      // A machine screen closes with the key that opened it; the Tab panel is
-      // handled above. Either way nothing in the world is aimed at.
-      if (minePressed && this.furnacePanel.isOpen) this.openFurnace(null);
+      // A machine screen closes with the key that opened it; the pack is handled
+      // by `chrome`. Either way nothing in the world is aimed at.
+      this.keys.closeWithInteract(this);
       this.interact.target = null;
       return false;
     }
+    return this.keys.world(this, this.d.player.aimRay(), tick);
+  }
 
-    const ray = this.d.player.aimRay();
-    const built = stepBuild(this, ray, f.place, this.placeHeld);
-    this.placeHeld = f.place;
-    if (built) return false;
-
+  /** Re-pick what the crosshair is on. Machine, then building, then structure. */
+  aim(ray: { origin: { x: number; y: number; z: number };
+             dir: { x: number; y: number; z: number } }): void {
     this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
     // Belts ARE included here, because a belt is demolishable even though it is
     // not interactive; `collectFrom` on one is a no-op with its own message.
@@ -288,38 +280,12 @@ export class Gameplay {
       : this.factory.pick(ray.origin, ray.dir, 3.5, true);
     this.aimedPart = this.aimedMachine !== null || this.aimedBuild !== null ? null
       : this.structures.pick(ray.origin, ray.dir, 3.5);
+  }
 
-    // X pulls up whatever is under the crosshair, and it is read BEFORE the mine
-    // key so that "remove" can never be mistaken for "open".
-    const raze = this.d.input.held('KeyX');
-    const razePressed = raze && !this.razeHeld;
-    this.razeHeld = raze;
-    if (razePressed && this.demolish()) return false;
-
-    // A machine under the crosshair takes the key: you cannot harvest a furnace.
-    if (this.aimedMachine !== null) {
-      if (minePressed) this.openFurnace(this.aimedMachine);
-      this.interact.target = null;
-      return false;
-    }
-    // An automated machine hands over its finished stock instead of a panel:
-    // there is nothing to load, so a screen would be a screen about nothing.
-    if (this.aimedBuild !== null) {
-      if (minePressed) collectFrom(this, this.aimedBuild);
-      this.interact.target = null;
-      return false;
-    }
-    // A DOOR opens with the same key everything else is used with. Aiming at
-    // any other structural part takes the key too and does nothing, because a
-    // wall that could be mined would be a wall made of wood at the wrong moment.
-    if (this.aimedPart !== null) {
-      const open = minePressed ? this.structures.toggle(this.aimedPart) : null;
-      if (open !== null) { this.hud.flash(open ? 'opened' : 'closed'); this.sfx.confirm(); }
-      this.interact.target = null;
-      return false;
-    }
-
-    const got = this.interact.step(f.mine, tick);
+  /** The bare hand. Returns true on the tick a harvest granted items. */
+  swing(use: boolean, tick: number,
+        ray: { origin: { x: number; y: number; z: number } }): boolean {
+    const got = this.interact.step(use, tick);
     if (got && this.interact.last !== null) {
       this.fx.impact(this.interact.last, ray.origin, this.interact.swings);
       this.panel.invalidate();
@@ -333,7 +299,7 @@ export class Gameplay {
   }
 
   /** Remove whatever the crosshair is on. Returns true if something went. */
-  private demolish(): boolean {
+  demolish(): boolean {
     const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart);
     if (gone) { this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null; }
     return gone;
@@ -368,6 +334,7 @@ export class Gameplay {
     this.hud.render(dt, this.uiOpen ? null : ghostPrompt(this.build.structTarget)
       ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
         this.interact.target), carried);
+    this.hotbarBar.render(this.hotbar.rows((n) => this.icons.for(n)));
     stepGoals(this, dt);
     if (this.panel.isOpen) this.panel.render(slots(this), recipes(this));
   }
@@ -375,8 +342,10 @@ export class Gameplay {
   /** THE pointer transition. One place, both halves. */
   setPanel(open: boolean): void {
     this.panel.setOpen(open);
+    if (open) this.modals.touch(this.panel);
     this.d.input.setUiCapture(open);
     this.hud.setVisible(!open);
+    this.hotbarBar.setVisible(!open);
     if (open) this.panel.invalidate();
   }
 
@@ -384,8 +353,10 @@ export class Gameplay {
   openFurnace(m: Machine | null): void {
     this.openMachine = m;
     this.furnacePanel.setOpen(m !== null);
+    if (m !== null) this.modals.touch(this.furnacePanel);
     this.d.input.setUiCapture(m !== null);
     this.hud.setVisible(m === null);
+    this.hotbarBar.setVisible(m === null);
     if (m !== null) this.furnacePanel.render(machineView(this, m));
   }
 

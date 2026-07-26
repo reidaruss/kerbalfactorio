@@ -11,6 +11,7 @@
 // camera that is still turning.
 
 import { esc, iconTag } from './GameHud.js';
+import { Modal, type ModalStack } from './ModalStack.js';
 
 /** `icon` is a baked data URL (ItemIcons) or '' when the item has no mesh. */
 export interface SlotRow { name: string; count: number; icon?: string }
@@ -26,7 +27,7 @@ export interface RecipeRow {
   icon?: string;
 }
 
-export class InventoryPanel {
+export class InventoryPanel extends Modal {
   private readonly root: HTMLElement;
   private readonly pack: HTMLElement;
   private readonly craft: HTMLElement;
@@ -34,14 +35,16 @@ export class InventoryPanel {
   private lastPack = '';
   private lastCraft = '';
 
-  constructor(parent: HTMLElement, private readonly onCraft: (index: number) => void) {
+  constructor(parent: HTMLElement, stack: ModalStack,
+              private readonly onCraft: (index: number) => void) {
+    super('pack', stack);
     this.root = document.createElement('div');
     this.root.id = 'of-panel';
     this.root.className = 'of-ui';
     this.root.innerHTML =
       '<div class="frame">'
       + '<div class="col pack"><h3>Pack<span></span></h3><div class="of-slots"></div>'
-      + '<div class="hint">Tab closes. Harvest with E while aiming at a node.</div></div>'
+      + '<div class="hint">Tab or Escape closes. Left click swings at whatever you are aiming at.</div></div>'
       + '<div class="col craft"><h3>Hand crafting<span></span></h3><div class="list"></div>'
       + '<div class="hint">Tools are not required to harvest: they multiply the '
       + 'yield, so there is no bootstrap deadlock.</div></div>'
