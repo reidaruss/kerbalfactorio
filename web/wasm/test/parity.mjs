@@ -783,6 +783,24 @@ function buildChain(deposit) {
     const dead = harvest(1, 9, 9);
     eq('gp.emptyNodeGrantsNothing', dead.granted, 0, TIER.SELF);
     eq('gp.emptyNodeFlag', dead.nodeEmpty, 1, TIER.SELF);
+
+    // The AUTHORED pacing path: yields of 0 mean "gameplay.h decides", which
+    // derives the per-swing pull from the node's own size so every node is the
+    // same handful of swings. Node 2 is an iron-ore node, roughly ten times a
+    // tree, and it must still clear in the same few swings.
+    const p0 = nodeState(2);
+    const ironBefore = invOf(I.rawIron);
+    let paced = 0;
+    while (nodeState(2).remaining > 0 && paced++ < 64) harvest(2, 0, 0);
+    eq('gp.pacedNodeDrains', nodeState(2).remaining, 0, TIER.SELF);
+    eq('gp.pacedIsAHandfulOfSwings', paced >= 4 && paced <= 6, true, TIER.SELF);
+    eq('gp.pacedPackHoldsTheNode',
+       invOf(I.rawIron) - ironBefore >= Math.floor(p0.initial), true, TIER.SELF);
+    // Put the pack back exactly as it was: the crafting assertions below count
+    // raw iron, and a probe that quietly changes shared state is a probe that
+    // fails somewhere else.
+    M._of_gp_remove(I.rawIron, invOf(I.rawIron) - ironBefore);
+    eq('gp.pacedPackRestored', invOf(I.rawIron), ironBefore, TIER.SELF);
   }
 
   // --- hand crafting: all-or-nothing, and it consumes ----------------------

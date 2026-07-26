@@ -247,6 +247,108 @@ TEST(tool_assisted_harvest_yields_more_than_hand) {
   CHECK(w.granted == 1);
 }
 
+// A node's RemainingAmount is a double — InitialAmount is baseAmountOf(kind)
+// times a FRACTIONAL Grade — so the last pull on every node in the world is a
+// sub-unit remainder. Truncating that to a uint16 gave 0: no grant, no
+// decrement, nodeEmpty never fired, and the node parked just above empty
+// forever. This pins the fix: a positive remainder always yields at least one
+// unit and always drains the node.
+TEST(hand_harvest_finishes_a_sub_unit_remainder) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+
+  // Exactly the shape LayoutTestArea/of_gp_node_add produce: base 40 * grade.
+  worldgen::FDepositNode tree;
+  tree.Id = 20;
+  tree.Resource = sitems::Wood;
+  tree.Grade = 0.518f;
+  tree.InitialAmount = 40.0 * 0.518;   // 20.72 — never an integer
+  tree.RemainingAmount = tree.InitialAmount;
+
+  // Drain everything but the fraction with whole-unit pulls, and check that the
+  // node loses EXACTLY what the pack gains while there is a whole unit left.
+  int guard = 0;
+  while (tree.RemainingAmount >= 1.0 && guard++ < 100) {
+    const double before = tree.RemainingAmount;
+    const uint32_t held = inv.count(sitems::Wood);
+    HarvestResult r = harvestNode(tree, wsv::NodeKind::Tree, inv, 4, 8);
+    CHECK(r.granted > 0);                                   // never an empty swing
+    CHECK(inv.count(sitems::Wood) == held + r.granted);
+    if (before >= static_cast<double>(r.granted))
+      CHECK(std::fabs((before - tree.RemainingAmount) -
+                      static_cast<double>(r.granted)) < 1e-9);
+  }
+  CHECK(guard < 100);
+  // The old defect: a remainder in (0, 1) that no swing could ever remove.
+  CHECK(tree.RemainingAmount > 0.0);
+  CHECK(tree.RemainingAmount < 1.0);
+
+  const uint32_t held = inv.count(sitems::Wood);
+  HarvestResult last = harvestNode(tree, wsv::NodeKind::Tree, inv, 4, 8);
+  CHECK(last.granted == 1);                       // the crumb rounds up to a unit
+  CHECK(last.nodeEmpty);                          // and the node reports finished
+  CHECK(tree.RemainingAmount == 0.0);
+  CHECK(inv.count(sitems::Wood) == held + 1);
+
+  // A node can now actually be finished: the total taken is the node's amount
+  // rounded up, never more than one unit over.
+  const double total = static_cast<double>(inv.count(sitems::Wood));
+  CHECK(total >= tree.InitialAmount);
+  CHECK(total < tree.InitialAmount + 1.0);
+}
+
+// The authored pacing: swings-to-clear is the constant, the per-swing yield is
+// derived from the node's own size. Every kind clears in the same handful of
+// swings, and the matching tool halves it.
+TEST(harvest_pacing_clears_every_node_in_a_handful_of_swings) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  const wsv::NodeKind kinds[] = {wsv::NodeKind::Tree, wsv::NodeKind::Rock,
+                                 wsv::NodeKind::CoalSeam, wsv::NodeKind::IronOre,
+                                 wsv::NodeKind::CopperOre};
+  for (const wsv::NodeKind k : kinds) {
+    // Grade 0.5 and 1.0 bracket the whole range LayoutTestArea can produce.
+    for (const double grade : {0.5, 1.0}) {
+      for (const bool withTool : {false, true}) {
+        Inventory inv(reg, 20);
+        if (withTool) {
+          inv.add(sitems::CrudePickaxe, 1);
+          inv.add(sitems::CrudeAxe, 1);
+        }
+        worldgen::FDepositNode n;
+        n.Id = 30;
+        n.Resource = wsv::resourceOf(k);
+        n.Grade = static_cast<float>(grade);
+        n.InitialAmount = wsv::baseAmountOf(k) * grade;
+        n.RemainingAmount = n.InitialAmount;
+        const uint32_t want = static_cast<uint32_t>(n.InitialAmount);
+
+        int swings = 0;
+        while (n.RemainingAmount > 0.0 && swings < 64) {
+          HarvestResult r = harvestNode(n, k, inv);  // 0,0 = authored pacing
+          CHECK(r.granted > 0);
+          CHECK(r.usedTool == withTool);
+          ++swings;
+        }
+        // The authored count, for every kind and every grade. It is a ceiling,
+        // never an overrun: one fewer only when the amount divides the swing
+        // count exactly (grade 0.5 on a 40-unit tree is 20 / 4 = 5), which is a
+        // rounding gift, not a grind.
+        const int want_swings =
+            static_cast<int>(withTool ? surv::kToolSwings : surv::kBareHandSwings);
+        CHECK(swings <= want_swings);
+        CHECK(swings >= want_swings - 1);
+        CHECK(n.RemainingAmount == 0.0);
+        // Nothing lost on the way: the pack holds the whole node.
+        CHECK(inv.count(n.Resource) >= want);
+      }
+    }
+  }
+  // Bare hands always work — the no-bootstrap-deadlock property.
+  CHECK(surv::kBareHandSwings > 0);
+  CHECK(surv::kToolSwings > 0);
+  CHECK(surv::kToolSwings < surv::kBareHandSwings);
+}
+
 // =============================================================================
 // 4. HAND-CRAFT — crafts iff ALL inputs present; a missing input crafts nothing.
 // =============================================================================

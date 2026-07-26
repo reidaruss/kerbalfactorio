@@ -19,9 +19,16 @@ import type { Controller } from './Controller.js';
 export const HARVEST = {
   /** Metres. Slightly under the dig reach so the two never fight over one press. */
   reachM: 4.0,
-  /** Bare hands, and with the assisting tool. gameplay.h applies the choice. */
-  baseYield: 2,
-  toolYield: 5,
+  /**
+   * 0 and 0 mean "gameplay.h decides", and that is the point: §S.2a authors
+   * SWINGS-TO-CLEAR, not units per swing, and derives the pull from the node's
+   * own size. A tree and a coal seam are then the same handful of swings even
+   * though the seam holds ten times as much, and the browser keeps no balance
+   * opinion of its own. Non-zero would override /core, which is what a probe
+   * that wants a fixed pull passes.
+   */
+  baseYield: 0,
+  toolYield: 0,
   /** Ticks from keydown to the grant. Frame 17 of 33 at 60 Hz. */
   impactTicks: 17,
   /** Ticks between swings while the key is held. The clip is 33 frames long. */

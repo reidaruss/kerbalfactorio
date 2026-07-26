@@ -977,6 +977,11 @@ inline bool RegisterSurvivalContent(SliceRegistry& reg) {
 // the yield. baseYield is the bare-hands pull; with the tool the pull is
 // toolYield (>= baseYield). The node's RemainingAmount is decremented by what the
 // player actually keeps (same "deplete only what's kept" rule as mineDeposit).
+//
+// PACING (§S.2a below): pass 0 for either yield and the pull is DERIVED from the
+// node's own size, so every node clears in the same satisfying handful of swings
+// whatever its kind. Passing an explicit yield overrides the pacing, which is how
+// the unit tests pin the tool rule independently of the balance constants.
 // =============================================================================
 struct HarvestResult {
   uint16_t granted = 0;       // units added to inventory
@@ -984,9 +989,36 @@ struct HarvestResult {
   bool nodeEmpty = false;     // node hit 0 (or was already empty)
 };
 
+// -----------------------------------------------------------------------------
+// §S.2a — Harvest pacing: the AUTHORED number is swings-to-clear, not the yield.
+//
+// A flat per-swing yield cannot serve both a ~30 unit tree and a ~200 unit coal
+// seam: whatever number makes the tree a handful of swings makes the seam a
+// chore. So the constant that is authored is how many swings a node should take,
+// and the per-swing yield falls out of the node's own InitialAmount. Big nodes
+// pay big per swing; every node is the same satisfying commitment; and the
+// matching tool halves the swings AND doubles the number on the readout, which
+// is what makes a tool read as an upgrade rather than a rounding error.
+//
+// Bare hands still always work (no bootstrap deadlock) — the tool only changes
+// which of the two swing counts is used.
+// -----------------------------------------------------------------------------
+static constexpr uint16_t kBareHandSwings = 6;  // swings to clear a node by hand
+static constexpr uint16_t kToolSwings     = 3;  // ... with the matching tool
+
+// Units per swing so that `swings` swings clear `initialAmount`. Rounds UP, so
+// the count is a ceiling and never an off-by-one extra swing.
+inline uint16_t yieldPerSwing(double initialAmount, uint16_t swings) {
+  if (swings == 0) swings = 1;
+  double y = std::ceil(initialAmount / static_cast<double>(swings));
+  if (y < 1.0) y = 1.0;
+  if (y > 65535.0) y = 65535.0;
+  return static_cast<uint16_t>(y);
+}
+
 inline HarvestResult harvestNode(worldgen::FDepositNode& node,
                                  worldgen::survival::NodeKind kind, Inventory& inv,
-                                 uint16_t baseYield = 1, uint16_t toolYield = 3) {
+                                 uint16_t baseYield = 0, uint16_t toolYield = 0) {
   HarvestResult res;
   if (node.RemainingAmount <= 0.0 || node.Resource == kNoItem) {
     res.nodeEmpty = true;
@@ -998,9 +1030,29 @@ inline HarvestResult harvestNode(worldgen::FDepositNode& node,
   const ItemId toolItem = itemForTool(tool);
   const bool hasTool = (toolItem != kNoItem) && inv.has(toolItem, 1);
   uint16_t pull = hasTool ? toolYield : baseYield;
+  if (pull == 0)  // 0 = "use the authored pacing", derived from this node's size.
+    pull = yieldPerSwing(node.InitialAmount > 0.0 ? node.InitialAmount
+                                                  : node.RemainingAmount,
+                         hasTool ? kToolSwings : kBareHandSwings);
   if (pull == 0) pull = 1;
-  if (static_cast<double>(pull) > node.RemainingAmount)
-    pull = static_cast<uint16_t>(node.RemainingAmount);
+
+  // Clamp to what the node still holds — and this is where the node used to get
+  // stuck. RemainingAmount is a double (InitialAmount is baseAmountOf(kind) times
+  // a FRACTIONAL Grade), so the last pull is almost always a sub-unit remainder.
+  // Truncating that to a uint16 gives 0: the swing then grants nothing, the node
+  // is decremented by nothing, nodeEmpty never fires, and a node parks at e.g.
+  // 0.72 forever — a resource that can never be finished. One unit is the
+  // granularity of the whole item system, so a positive remainder is rounded UP
+  // and the node drains in that one swing. The player is never handed an empty
+  // swing, and the over-grant is bounded by strictly less than one unit per node
+  // over its whole life. (mineDeposit applies the same "always at least a unit
+  // while non-empty" rule; this is that rule stated once for the harvest path.)
+  if (static_cast<double>(pull) > node.RemainingAmount) {
+    const double whole = std::ceil(node.RemainingAmount);
+    pull = (whole >= 65535.0) ? static_cast<uint16_t>(65535)
+                              : static_cast<uint16_t>(whole);
+    if (pull == 0) pull = 1;  // unreachable while RemainingAmount > 0; belt+braces
+  }
 
   const uint16_t overflow = inv.add(node.Resource, pull);
   const uint16_t kept = static_cast<uint16_t>(pull - overflow);
