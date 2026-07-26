@@ -1547,6 +1547,36 @@ Added at W4 (2026-07-25):
     exactly. Restore ORDER matters for the same reason: nodes are drained before
     miners are placed, or a miner is seeded from a full deposit.
 
+83. **A light that switches `visible` recompiles the world, and the frame it
+    picks to do it on is the one where the player first ducks under a roof.**
+    three's `projectObject` drops an invisible light before it reaches the
+    lights state, so the program cache key changes and every material in the
+    near scene is rebuilt. The W5 headlamp did exactly that (`spot.visible =
+    lampK > 0.001`), and so did the cascade rig, which W5 had gated on
+    `Headlamp.sunOccluded` to save 58 draw calls under rock. The two landed on
+    the same step. Measured at the mouth: **441.2 ms** in one frame and **30 new
+    programs**. The lamp now stays visible for the whole session at intensity 0,
+    and the sun keeps its shadow rig underground, where the frame has only 43
+    draw calls of a 150 budget and can afford a shadow map nobody can see (the
+    sun is already at intensity 0 through `sunScale`). Worst frame at the
+    transition is now **3.9 ms** and the only programs built are the **3** the
+    voxel mesh's own materials need. One spot light's worth of always-on
+    fragment maths is the price, and it is not measurable: the surface is 39
+    draw calls at p99 2.4 ms either way.
+
+84. **"It is lit" has to be a number, or it is an opinion.** W5's underground
+    lighting was committed unverified, and the honest question ("is a tunnel
+    actually darker than daylight, and does the lamp actually do anything")
+    cannot be answered by a stats field that reports what the code intended.
+    `probes/tunnellit.js` reads `__of.framehash()`, which already returns mean
+    luminance per tile off the presented pixels, and takes the A/B on the SAME
+    eye, aim and frame with only `__of.lamp()` changed, so sky occlusion cannot
+    drift between the halves. Measured on a walked 8.37 m passage: daylight
+    **118.6**, tunnel with the lamp off **6.8** (5.7% of daylight), lamp on
+    **23.6**, a **3.46x** lift. The HUD's tile columns are excluded from the
+    mean, because a white text overlay puts a floor under "dark" that has
+    nothing to do with the scene and would have hidden the whole effect.
+
 ### 15.3 The dev loop, concretely
 
 ```

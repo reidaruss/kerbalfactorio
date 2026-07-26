@@ -266,9 +266,23 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
   3.8 ms** (item 59: memoized `isProcSolid`, a dense solidity slab in `exposedFaces`, and
   `VoxelMesh` caching 8-cell bricks instead of re-meshing every box ever dug). Strike debris
   (`render/DigFx.ts`) is one draw call and no new shader. Screenshot `W5_tunnel_walk.png`.
+- **Underground is DARK and the headlamp does the work (W5, verified 2026-07-26).** One
+  measurement drives everything: how much sky the eye can still see, sampled straight up through
+  `surface_field.h` (`render/Headlamp.ts`). It feeds a `SpotLight` on the rig's `socket_lamp`
+  offset, the near and view-model hemisphere ambient, `scene.environmentIntensity`, and a
+  `sunScale` that Systems multiplies into every sun light. **L** toggles the lamp; it also comes
+  on by itself as the sky closes over, and the fade back to daylight is a slower constant than
+  the fade to dark (0.6 s against 0.12 s), so stepping out of a mouth reads as relief.
+  Acceptance is `tools/smoke/probes/tunnellit.js`, which digs, walks **8.37 m** of finished
+  passage (10/10 grounded, rock overhead, column still closed) and then measures the SAME frame
+  with the lamp off and on using `__of.framehash()` tile luminance: **daylight 118.6, tunnel
+  6.8 off, 23.6 on, a 3.46x lift**. Screenshots `W5_tunnel_lit.png` and `W5_surface_daylight.png`.
+  Cost underground **43 draw calls, p50 1.6 ms, p99 2.5 ms**; surface unchanged at **39 draws,
+  p99 2.4 ms**, and at full sky visibility the ambient is numerically the same one W3 shipped.
+  **No new custom shader: DW-10's cap of 5 is untouched.** The stall this closed is 15.2 item 83.
 - **W5 remaining:** voxel edits are not persisted (DW-17) and dug volume is not in the inventory
-  UI. Tunnel lighting is the near scene's ambient only, so a deep tunnel reads flat. The tunnel
-  mouth still relies on the shallow radial push, which is the one path 15.2 item 48 is about.
+  UI. The tunnel mouth still relies on the shallow radial push, which is the one path 15.2
+  item 48 is about.
 - **A rebuild is not a deploy.** `web/wasm/build.ps1` writes `web/wasm/dist`; the client serves
   `web/public/wasm`, which is gitignored and only refreshed by `npm run sync-wasm`. A stale copy
   cost most of a session: the browser reproduced the exact DW-19 saturation signature that `/core`
