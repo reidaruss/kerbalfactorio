@@ -1,22 +1,23 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
-**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** **THE ART
-MANIFEST IS COMPLETE.** Tiers 0, 1 and 2 are all built: 42 of 42 files green
-under `validate_glb.py --all`, and a full rebuild of every `build_*.py`
-produces a **zero-byte diff**, so the pipeline is proven deterministic end to
-end.
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-26. **Status:** **THE ART
+MANIFEST IS COMPLETE**, plus the base-building set added 2026-07-26: 46 of 46
+files green under `validate_glb.py --all`, and a full rebuild of every
+`build_*.py` produces a **zero-byte diff**, so the pipeline is proven
+deterministic end to end.
 
 | Tier | Files | Meshes | Payload |
 |---|---|---|---|
 | 0: the playable loop | 27 | 40 base (83 counting depletion variants) | 1.8 MB |
+| 0: base building (added 2026-07-26) | 4 | 4 parts, 13 render meshes | 59 KB |
 | 1: biome scatter props | 10 | 41 props, 78 render meshes with LOD2 | 367 KB |
 | 2: space | 5 | 18 parts, 28 render meshes | 372 KB |
-| **Total `dist/`** | **42** | | **2.43 MB** |
+| **Total `dist/`** | **46** | | **2.48 MB** |
 
 Tier 0 is 13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged
-player body and the first-person arms. Tier 1 is one scatter atlas per biome.
-Tier 2 is the 13 rocket parts, the launch pad, the landed lander, the far-scene
-body sphere and the engine plume shell.
+player body, the first-person arms and the 4-part structural building set.
+Tier 1 is one scatter atlas per biome. Tier 2 is the 13 rocket parts, the launch
+pad, the landed lander, the far-scene body sphere and the engine plume shell.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -196,6 +197,18 @@ canonical in exactly the same sense as the ones above:
 | `socket_vessel` | the launch pad's vessel mating point: where a vessel's `socket_stack_bottom` goes |
 | `socket_clamp` | the launch pad's clamp mounting circle |
 | `socket_chute` | where a parachute canopy spawns |
+
+**Added 2026-07-26 for the base-building set.** These are the placement lane's
+whole interface to the structural parts: a build system that reads them never
+does arithmetic on module constants, so a change to `structure_common.py`
+propagates without a code change.
+
+| Socket | Meaning |
+|---|---|
+| `socket_top` | the plane the NEXT module's origin sits on. On a deck that is its walkable surface (`y = 0.50`); on a wall or door it is the head (`y = 2.50`), which is the base plane of the deck above |
+| `socket_edge_n/e/s/w` | a deck's four edge midpoints, **on the deck top**. This is exactly where a wall's origin goes, so "put a wall on this foundation's north edge" is one `getObjectByName` and one assignment. Each faces outward |
+| `socket_end_l`, `socket_end_r` | a wall's two end faces, for collinear continuation: a wall run walks `socket_end_r` to the next wall's origin |
+| `socket_hinge` | the door's hinge axis, on the left jamb's inner face |
 
 **Socket names are scoped to the PART, not to the file** (Tier 2 only, and only
 in `rocket_parts.glb`). Thirteen parts each carry a `socket_stack_top`, so the
@@ -384,6 +397,26 @@ they appear in the world and need a mesh even though the player never selects on
 Two build-UX meshes are **generated in code, not authored**: the 1 m^3 voxel dig
 marker (`BoxGeometry` + `EdgesGeometry`) and the placement ghost (the machine's own
 LOD0 with a ghost material). Do not model them.
+
+#### Base building structures (4 files). **Built 2026-07-26.**
+
+| # | Asset | File | Anchor | Module (m) | Tris | LODs | Anim |
+|---|---|---|---|---|---|---|---|
+| 27 | Foundation | `structures/foundation.glb` | cell centre | **1 x 1 x 0.50** | 84 | 3 | none |
+| 28 | Floor / ceiling | `structures/floor.glb` | cell centre | **1 x 1 x 0.50** | 84 | 3 | none |
+| 29 | Wall | `structures/wall.glb` | cell **edge** | **1 x 0.25 x 2.50** | 84 | 3 | none |
+| 30 | Door | `structures/door.glb` | cell **edge** | **1 x 0.25 x 2.50** | 96 | 3 + leaf | swing |
+
+Full spec in section 4.23. These are the first Tier-0 assets with **no referent
+in the headless headers**: `automation.h`'s `BuildKind` has no structural kinds
+and `gameplay.h` has no structural items, so they were built on Reid's direct
+request and are logged as decision **BT-9**. They need `BuildKind` values, item
+ids and `TypeId`s before a player can select one, which is a gameplay and
+factory-sim decision rather than an art one.
+
+**There is no `ceiling.glb`, deliberately.** Storey N's ceiling is storey N+1's
+floor: the same part, the same origin, placed at `y = 3(N+1)`. Shipping a second
+flipped file would double the payload to make the same picture.
 
 ### 3.2 Tier 1: richness (10 files, 41 props). **Built 2026-07-25.**
 
@@ -1369,6 +1402,146 @@ Clips: `Smelter_Bellows` 1 to 61 (loop; 60 frames = `ticksPerSmeltFor(Smelter)`,
 concertina face scales 1.0 to 0.55 to 1.0 in Y) and `Furnace_Glow` 1 to 61, phase-locked
 so the fire brightens on the bellows compression.
 
+### 4.23 Base building set, `structures/*.glb`. **Built 2026-07-26.**
+
+Four parts that tile: `foundation`, `floor` (which is also the ceiling), `wall`
+and `door`. Every number below lives once, in `tools/blender/structure_common.py`,
+and the four build scripts import it. A tiling set is only correct as a whole:
+if the wall height and the deck thickness are typed separately into four files,
+the storey pitch is a number nobody owns and it drifts the first time somebody
+nudges a wall.
+
+#### The module
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `CELL` | **1.00 m** | plan module, matching `kVoxelSizeM = 1.0` and the 1x1 machines |
+| `DECK_H` | **0.50 m** | foundation, floor and ceiling are ONE thickness |
+| `WALL_H` | **2.50 m** | wall height, deck top to next deck base; clear head height |
+| `WALL_T` | **0.25 m** | wall thickness, centred on the cell edge |
+| `STOREY` | **3.00 m** | `DECK_H + WALL_H`, asserted at import time |
+
+Level N's deck base is at `y = 3N` for every N, with no accumulated error and no
+per-level offset. That identity is why the deck is 0.50 and not 0.25: a thinner
+floor would put the storey pitch at two different values depending on which one
+you were standing on.
+
+#### The two anchors
+
+Structural parts do not all snap to the same thing, and pretending they do is
+where a build system goes wrong:
+
+| Family | Anchor | Snap rule (three.js axes) |
+|---|---|---|
+| deck (`foundation`, `floor`) | cell **centre** | `(floor(x) + 0.5, deckY, floor(z) + 0.5)` |
+| wall (`wall`, `door`) | cell **edge midpoint**, straddled | X-running: `(floor(x) + 0.5, deckY + 0.5, round(z))`, yaw 0. Z-running: `(round(x), deckY + 0.5, floor(z) + 0.5)`, yaw 90 degrees |
+
+Both still obey section 2.1 exactly: pivot centred in X/Z, base on `y = 0`. A
+wall is centred on its own origin across its 0.25 m thickness, so putting that
+origin on the edge line is what makes one wall serve **both** cells it divides,
+and what makes four walls close exactly around one foundation.
+
+#### The tiling, measured
+
+Measured off the shipped `.glb` files by walking the node hierarchy, not
+asserted. All values are exact to the printed precision.
+
+| Claim | Evidence |
+|---|---|
+| decks tile in a row | cells 0..3 occupy `x` `[0,1] [1,2] [2,3] [3,4]`; gap between neighbours `+0.000000000 m` |
+| walls tile in a row | same, `[0,1] [1,2] [2,3] [3,4]`; gap `+0.000000000 m` |
+| four walls enclose one foundation | foundation `x[0,1] z[0,1]`; S wall `z[-0.125, +0.125]`, N wall `z[0.875, 1.125]`, W wall `x[-0.125, +0.125]`, E wall `x[0.875, 1.125]`. Clear interior **0.750 x 0.750 m** |
+| a wall reaches the deck it stands on | foundation top `y = 0.500`; wall base `y = 0.500`, wall top `y = 3.000` = next deck base. Storey pitch **3.000 m exact** |
+| a door drops into a wall cell | `wall` and `door` LOD0 AABBs are both `[1.0, 2.50, 0.25]`, identical to 1e-9 |
+
+**Collinear parts touch, perpendicular parts interpenetrate.** Two walls in a
+row share the plane `x = k` exactly: zero gap, zero overlap, and no z-fighting,
+because two opaque faces back to back are one culled and one occluded (this is
+the same arrangement two belt tiles have already shipped with). Two walls
+meeting at a right-angled corner necessarily share a `WALL_T/2` square,
+**0.125 x 0.125 m**, of volume. That is unavoidable for edge-centred walls of
+finite thickness and it is invisible, because the shared volume is inside solid
+geometry on both parts. Do not "fix" it by shortening the panels: that would
+open a real gap between collinear walls, which IS visible.
+
+A wall on a foundation edge puts **0.125 m on the deck and 0.125 m
+overhanging**, by construction. With a foundation next door the overhang lands
+on it; on an outside edge it reads as a fascia, which is what a wall sitting on
+a slab edge looks like.
+
+#### The parts
+
+**`structures/foundation.glb`** - 1 x 1 x 0.50 m, 84 / 24 / 12 tris.
+A poured stone pad on a stepped footing, edged with a steel kerb. The kerb is
+not decoration: it is what makes the tile boundary legible, so a 20 x 20 m
+platform reads as a grid of placed modules rather than one grey sheet. Only the
+deck plate and its kerb reach the full 1.00 m; the footing and body are inset,
+so two neighbours meet on the kerb line and show a shallow reveal below it.
+Materials (3): `OF_Rock`, `OF_RockDark`, `OF_SteelDark`. Collision `col_Foundation`.
+Sockets `socket_top`, `socket_edge_n/e/s/w`. No clips.
+
+**`structures/floor.glb`** - 1 x 1 x 0.50 m, 84 / 36 / 12 tris. **Also the ceiling.**
+A steel deck plate on a perimeter beam frame with two cross ribs. The ribs are on
+the UNDERSIDE and the plate on top because the part is authored to be seen from
+both sides at once: plate from above, structure from below. Distinct from the
+foundation on purpose - stone-and-kerb means ground, steel-and-beam means
+suspended, and a player should be able to tell from the material alone whether
+the thing under their feet is on soil or over a drop.
+Materials (2): `OF_Steel`, `OF_SteelDark`. Collision `col_Floor`. Same five sockets.
+
+**`structures/wall.glb`** - 1 x 0.25 x 2.50 m, 84 / 60 / 12 tris.
+A framed panel, not a slab: two full-depth corner posts, bottom and top rails, a
+centre stile and a mid rail, with the `OF_Steel` field recessed 45 mm behind the
+`OF_SteelDark` frame on both faces. All the cost is in that one depth step, and
+it is what makes a 2.5 m wall read as built rather than extruded from 1 m away,
+which is where the player is standing.
+Materials (2): `OF_Steel`, `OF_SteelDark`. Collision `col_Wall`.
+Sockets `socket_top`, `socket_end_l`, `socket_end_r`. No clips.
+
+**`structures/door.glb`** - 1 x 0.25 x 2.50 m, 96 / 60 / 36 tris + a 72-tri leaf.
+The wall module with a **0.76 m wide by 2.10 m tall** clear opening, which passes
+the 0.60 m player body with 80 mm either side.
+
+*Why one cell and not two.* Two cells would buy a 1.0 m opening and cost the
+property that makes the set usable: that every structural part is one module, so
+a wall run is a list of cells and any cell can become a door without re-planning
+the run. A 0.76 m opening is a real door (interior doors are 0.7 to 0.8 m); a
+build system where the door is the one part that does not fit the grid is not.
+
+*It has to read as a door from outside,* and at 30 m the opening itself is a dark
+smudge that reads exactly like a shadow. So the frame's outward face is built as a
+facia layer 50 mm proud of a recessed core, and the top 160 mm of that facia is
+the **only `OF_Accent` in the whole structural set**: an orange lintel band over
+the opening. That band is the entire reason `wall.glb` is deliberately
+monochrome - a wall run is the background a base is read against, and if every
+panel carried a stripe the one thing a player needs to find would stop standing
+out. Up close, the recessed leaf, its push bar and the `OF_Hazard` threshold
+finish the read. At LOD1 and LOD2 the accent takes the whole header, because at
+80 m the band IS the door.
+
+Materials (4): `OF_SteelDark`, `OF_Steel`, `OF_Accent`, `OF_Hazard`.
+Sockets `socket_top`, `socket_end_l`, `socket_end_r`, `socket_hinge` (-0.38, 0, 0).
+Clip `Door_Swing` 1 to 25, one-shot, `door_hinge` rotates 0 to -95 degrees about
+up; play with negative `timeScale` to close. `frame1_identity` asserts the
+exported static pose is a CLOSED door, which is what a door at rest is.
+
+*Collision is three boxes, not one.* One convex proxy per asset (section 2.5) is
+the rule for a solid machine; a convex hull of a doorway is a sealed wall.
+`col_Door_JambL`, `col_Door_JambR` and `col_Door_Header` leave the opening
+genuinely walk-through, which is the only thing the part exists to do. The 40 mm
+hazard threshold is a step-over and carries no proxy. The leaf carries none
+either: a swinging collider is a physics decision, and until the placement lane
+says otherwise the doorway is open.
+
+#### Verification
+
+`tools/blender/render_structures.py` assembles the **shipped** GLBs into a 3 x 3
+cell room using nothing but the anchors above, and renders it to
+`docs/screenshots/structures_*.png`. It exists because every part here passes
+`validate_glb.py` in isolation and the interesting failure is *between* parts: a
+seam, an overlap, a wall that does not reach its deck. That only exists in an
+assembly, so the assembly is what gets rendered.
+
 ---
 
 ## 5. Repository layout
@@ -1389,15 +1562,21 @@ tools/blender/
   rocket_common.py          Tier 2: the 1.25 m stack contract, the 13 part
                             builders, and the deploy constants the landed
                             lander re-uses to bake the same pose statically
+  structure_common.py       the base-building module (CELL, DECK_H, WALL_H,
+                            WALL_T, STOREY), the two placement anchors and the
+                            shared deck/wall socket sets
   contracts.json            hand-authored per-asset acceptance contract
   validate_glb.py           stdlib-only automated checker
   render_check.py           imports a shipped .glb and renders clip frames
+  render_structures.py      assembles the shipped structural .glb files into a
+                            room and renders it: the tiling check a per-file
+                            validator structurally cannot do
 
 assets/models/
   src/                      .blend files ONLY where a script cannot express the shape
                             (sculpted rock, hand-weighted character). Normally empty.
   dist/                     committed .glb output, the runtime load path
-    player/  tools/  nodes/  items/  machines/  props/  rocket/  world/
+    player/  tools/  nodes/  items/  machines/  props/  rocket/  world/  structures/
 ```
 
 **Naming.**
@@ -1662,6 +1841,12 @@ the case for automating the check.
    them), then `body_sphere_lod.glb` and `vfx_engine_plume.glb`.
    **The art manifest is complete: 42/42 green, and a full rebuild of all 42
    produces a zero-byte diff.**
+8. **Base building** (4 files). **Done 2026-07-26.** Added after the manifest,
+   on Reid's direct request, so it is the one Tier-0 group with no header
+   referent (decision BT-9). Built as a set rather than four assets, because a
+   tiling set is only correct as a whole: `structure_common.py` first, then the
+   two decks, then the wall, then the door on the wall's envelope.
+   **46/46 green, and a full rebuild of all 46 produces a zero-byte diff.**
 
 Steps 2 to 4 are 23 files of pure primitive assembly with no rigging and no organic
 sculpting. They parallelise cleanly across agents: one script per asset, one contract
@@ -1696,3 +1881,13 @@ halves can be written independently and still meet.
    `automation.h`'s `BuildKind` does not, so today they are auto-placed by the wiring
    layer. If gameplay intends inserters to become a selectable buildable, they need an
    item id and a `TypeId`, which is a gameplay decision, not an art one.
+4. **The structural set has no header referent (opened 2026-07-26).** The four
+   base-building parts were built on Reid's direct request, ahead of any sim
+   support: `automation.h`'s `BuildKind` has no `Foundation`/`Wall`/`Floor`/`Door`,
+   `gameplay.h` has no structural items and there are no `TypeId`s. The art is the
+   easy half. Before a player can place one, **factory-sim** needs the `BuildKind`
+   values and `TypeId`s, **gameplay** needs item ids and recipes, and
+   **physics/world-gen** needs to say whether a foundation deforms terrain or just
+   sits on it. Art has published the geometry and the anchors and nothing about
+   cost, health or terrain interaction. Section 4.23 is the contract those lanes
+   should code against.
