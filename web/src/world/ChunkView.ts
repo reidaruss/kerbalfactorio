@@ -25,8 +25,16 @@ export class ChunkView {
   pooled: PooledSlot;
   /** True when this chunk lives in the near 1:1 scene. */
   isNear: boolean;
-  /** Drawn this frame. Coverage hides a parent whose four children are in. */
-  visible = true;
+  /**
+   * Drawn this frame. Coverage hides a parent whose four children are in.
+   *
+   * It starts FALSE to match the slot it was just handed: ChunkBatch allocates
+   * every instance invisible, and a view that claimed to be visible already
+   * would make the first setVisible(true) a no-op and leave the chunk undrawn.
+   * That is exactly what happened, and the symptom was a 3-draw-call frame with
+   * no terrain in it, which reads like a triumph until you look at the picture.
+   */
+  visible = false;
   /** Engine-space instance translation, kept for the jitter probe and the dump. */
   readonly pos = new THREE.Vector3();
   scale = 1;
