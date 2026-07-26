@@ -1,10 +1,13 @@
 // The near-field voxel surface: one THREE.Mesh holding the greedy-meshed
 // exposed faces around the player, rebuilt from the DIRTY REGION only.
 //
-// It draws the cut faces a dig exposes. The untouched planet is still the
-// heightfield's job, and it stays that way: this mesh only ever contains faces
-// inside a box that a dig has actually touched, so a pristine world costs one
-// empty draw call, not a voxelised planet.
+// It draws only what the heightfield CANNOT express: the cavities a dig opened
+// and any ground placed above the surface. Everything else, including a
+// levelled pad, is the terrain chunk's and always was (VoxelSkin, and the field
+// of dark pyramids that motivated it).
+//
+// It is shaded with the terrain's OWN material, so a tunnel mouth and the
+// hillside it is cut into are the same program, palette and light.
 //
 // One responsibility: geometry + placement. It does not dig (VoxelWorld), does
 // not decide the box, and does not collide (KinematicBody resolves against
@@ -16,6 +19,8 @@ import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import type { CellBox } from './VoxelWorld.js';
 import { greedyMesh, type GreedyMesh } from './VoxelGreedy.js';
+import { filterDrawnFaces, terrainAttributes, FACE_STRIDE } from './VoxelSkin.js';
+import type { SurfaceRadiusFn } from './VoxelSkin.js';
 
 /**
  * Cells per side of a BRICK: the unit this mesh re-meshes and caches.
@@ -42,10 +47,38 @@ export interface VoxelMeshStats {
   /** Bricks holding geometry, and how many the last strike had to re-mesh. */
   bricks: number;
   remeshed: number;
+  /**
+   * Faces /core exposed in the re-meshed bricks, and how many of those the
+   * heightfield already draws and were therefore dropped. `dropped / exposed`
+   * is the size of the redundant skin this mesh used to paint over the terrain.
+   */
+  exposed: number;
+  dropped: number;
+  /** false with `?voxelskin=0`: the whole solid-to-air shell, as W5 drew it. */
+  editFacesOnly: boolean;
+}
+
+export interface VoxelMeshOptions {
+  /** The terrain's own material. Shading a levelled pad with anything else is
+   *  how it stops looking like ground. */
+  readonly material: THREE.Material;
+  /** Datum radius, so a vertex can carry the same relief a chunk vertex does. */
+  readonly bodyRadiusM: number;
+  /** The ONE surface, so this mesh can tell what the terrain chunk already
+   *  draws from what only it can (standing rule 1). */
+  readonly surfaceRadiusAt: SurfaceRadiusFn;
+  /**
+   * `?voxelskin=0` restores the mesh exactly as W5 shipped it: the WHOLE
+   * solid-to-air shell of every re-meshed brick, in its own flat brown Lambert.
+   * That is the layer being accused, so it has to stay switchable (rule 7).
+   */
+  readonly editFacesOnly: boolean;
 }
 
 export class VoxelMesh {
   readonly mesh: THREE.Mesh;
+  /** Non-null only under `?voxelskin=0`, where this mesh owns its own look. */
+  private readonly ownMaterial: THREE.Material | null;
   private readonly geo = new THREE.BufferGeometry();
   /** Body-frame anchor the f32 vertices are relative to (standing rule 6). */
   private readonly anchor: Vec3d = { x: 0, y: 0, z: 0 };
@@ -55,7 +88,7 @@ export class VoxelMesh {
   private anchorCell: [number, number, number] | null = null;
   readonly stats: VoxelMeshStats = {
     rebuilds: 0, faces: 0, quads: 0, triangles: 0, lastMs: 0, mergeRatio: 0,
-    boxes: 0, bricks: 0, remeshed: 0,
+    boxes: 0, bricks: 0, remeshed: 0, exposed: 0, dropped: 0, editFacesOnly: true,
   };
 
   constructor(
@@ -63,15 +96,20 @@ export class VoxelMesh {
     private readonly bodyHandle: number,
     private readonly editsHandle: number,
     private readonly origin: FloatingOrigin,
+    private readonly opts: VoxelMeshOptions,
   ) {
-    this.mesh = new THREE.Mesh(this.geo, new THREE.MeshLambertMaterial({
-      color: 0x8a7a63,
-      // Cut rock is seen from BOTH sides during a dissolve frame: the wall you
-      // are tunnelling into becomes the wall behind you. Backface culling here
-      // costs nothing visually and hides the moment a face flips.
-      side: THREE.FrontSide,
-      flatShading: true,
-    }));
+    // The TERRAIN material, not a look-alike. A voxel face and the chunk vertex
+    // beside it then share the biome palette entry, the slope-to-rock mix, the
+    // snow band, the cascade and the aerial perspective, so "the pad is the
+    // same colour as the ground" is structural rather than a tuned constant.
+    // It costs no new shader against the DW-10 cap of five: three compiles the
+    // non-batched variant of a program it already has.
+    // `?voxelskin=0` also restores the OLD look, or the isolation would only
+    // show half of what changed.
+    this.ownMaterial = opts.editFacesOnly ? null
+      : new THREE.MeshLambertMaterial({ color: 0x8a7a63, flatShading: true });
+    this.mesh = new THREE.Mesh(this.geo, this.ownMaterial ?? opts.material);
+    this.stats.editFacesOnly = opts.editFacesOnly;
     this.mesh.name = 'voxelNear';
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = true;
@@ -91,6 +129,8 @@ export class VoxelMesh {
     const c0 = Math.floor((dirty.minY - 1) / BRICK), c1 = Math.floor((dirty.maxY + 1) / BRICK);
     const d0 = Math.floor((dirty.minZ - 1) / BRICK), d1 = Math.floor((dirty.maxZ + 1) / BRICK);
     let remeshed = 0;
+    this.stats.exposed = 0;
+    this.stats.dropped = 0;
     for (let bz = d0; bz <= d1; ++bz)
       for (let by = c0; by <= c1; ++by)
         for (let bx = b0; bx <= b1; ++bx) { this.meshBrick(bx, by, bz); remeshed++; }
@@ -119,11 +159,24 @@ export class VoxelMesh {
     );
     const key = `${bx},${by},${bz}`;
     if (count <= 0) { this.bricks.delete(key); return; }
+    this.stats.exposed += count;
     // Standing rule 5: the scratch pointer and HEAP32 are re-read here, after
     // the call that may have grown the heap, and copied out before anything
     // else can call into WASM.
     const ptr = this.M._of_scratch_i32() >> 2;
-    this.bricks.set(key, new Int32Array(this.M.HEAP32.subarray(ptr, ptr + count * 5)));
+    const raw = new Int32Array(this.M.HEAP32.subarray(ptr, ptr + count * FACE_STRIDE));
+    // The filter is the fix for the pyramid field: everything /core exposes on
+    // the derived surface is already drawn, better and smoothly, by the chunk.
+    let kept: Int32Array = raw;
+    let keptCount = count;
+    if (this.opts.editFacesOnly) {
+      const f = filterDrawnFaces(this.M, this.editsHandle, this.opts.surfaceRadiusAt,
+        cellM, raw, count);
+      kept = f.i32; keptCount = f.count;
+      this.stats.dropped += f.dropped;
+    }
+    if (keptCount <= 0) { this.bricks.delete(key); return; }
+    this.bricks.set(key, new Int32Array(kept));
     const cx = bx * BRICK, cy = by * BRICK, cz = bz * BRICK;
     if (this.anchorCell === null) this.anchorCell = [cx, cy, cz];
     else {
@@ -154,7 +207,7 @@ export class VoxelMesh {
     const i32 = new Int32Array(total);
     let at = 0;
     for (const f of this.bricks.values()) { i32.set(f, at); at += f.length; }
-    const count = total / 5;
+    const count = total / FACE_STRIDE;
 
     const mesh: GreedyMesh = greedyMesh({ i32, count }, aCell, cellM);
 
@@ -162,8 +215,21 @@ export class VoxelMesh {
     this.anchor.y = aCell[1] * cellM;
     this.anchor.z = aCell[2] * cellM;
 
+    // One biome for the whole near mesh, from the SAME `of_biome_at` a chunk
+    // vertex reads. The mesh spans tens of metres and a biome spans kilometres,
+    // so a per-face call would buy nothing but calls.
+    const ar = Math.hypot(this.anchor.x, this.anchor.y, this.anchor.z) || 1;
+    const biomeId = this.M._of_biome_at(
+      this.bodyHandle, this.anchor.x / ar, this.anchor.y / ar, this.anchor.z / ar);
+    const attrs = terrainAttributes(
+      mesh.positions, [this.anchor.x, this.anchor.y, this.anchor.z],
+      this.opts.bodyRadiusM, biomeId);
+
     this.geo.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
     this.geo.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
+    this.geo.setAttribute('aBiome', new THREE.BufferAttribute(attrs.biome, 4, false));
+    this.geo.setAttribute('aHeight', new THREE.BufferAttribute(attrs.height, 1));
+    this.geo.setAttribute('aFadeT0', new THREE.BufferAttribute(attrs.fade, 1));
     this.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
     this.geo.computeBoundingSphere();
     this.mesh.visible = mesh.indices.length > 0;
@@ -177,9 +243,10 @@ export class VoxelMesh {
     this.stats.bricks = this.bricks.size;
   }
 
+  /** The terrain material belongs to whoever made it; only ours is disposed. */
   dispose(): void {
     this.geo.dispose();
-    (this.mesh.material as THREE.Material).dispose();
+    this.ownMaterial?.dispose();
     this.mesh.removeFromParent();
   }
 }

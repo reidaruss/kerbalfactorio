@@ -98,6 +98,16 @@ export interface Config {
   readonly density: number;
   /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
   readonly gameplay: boolean;
+  /**
+   * Near voxel mesh: draw only the faces of an EDIT. `?voxelskin=0` restores
+   * the whole solid-to-air shell W5 drew, which is the layer that put a field
+   * of dark 1 m pyramids over untouched ground (standing rule 7: the isolation
+   * that proves the diagnosis has to survive in the build).
+   */
+  readonly voxelSkinEditsOnly: boolean;
+  /** `?voxelnear=0` keeps the near voxel mesh out of the scene entirely, so a
+   *  capture can attribute geometry to it or to the terrain chunks. */
+  readonly voxelNear: boolean;
   /** WG-22. Draw the levelling footprint decal. `?levelring=0` isolates it. */
   readonly levelRing: boolean;
   /**
@@ -231,6 +241,8 @@ export function parseConfig(search: string): Config {
     props: p.get('props') !== '0',
     density: Math.max(0, num(p, 'density', 1)),
     gameplay: p.get('gameplay') !== '0',
+    voxelSkinEditsOnly: p.get('voxelskin') !== '0',
+    voxelNear: p.get('voxelnear') !== '0',
     levelRing: p.get('levelring') !== '0',
     nearCutoff: Math.max(0, num(p, 'cutoff', 0) | 0),
     // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run

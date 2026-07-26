@@ -11,6 +11,7 @@ import type { AtmosphereUniforms } from '../render/materials/Atmosphere.glsl.js'
 import { SharedIndex } from '../render/geometry/SharedIndex.js';
 import { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js';
 import { createTerrainMaterials } from '../render/materials/TerrainMaterial.js';
+import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
 import { chunkBlobLayout } from './ChunkFormat.js';
 import { TerrainStream } from './TerrainStream.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
@@ -32,6 +33,9 @@ const SKIRT_FRACTION_DEFAULT = 0.15;
 export interface TerrainBootResult {
   stream: TerrainStream;
   pool: ChunkGeometryPool;
+  /** The near/far terrain materials, so the near voxel mesh can use the same
+   *  program the chunks do rather than inventing a second look for ground. */
+  materials: TerrainMaterials;
   pooledBytes: number;
   indexBytes: number;
   workerLoadMs: number;
@@ -100,6 +104,7 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
   return {
     stream,
     pool,
+    materials,
     pooledBytes: pool.bytes,
     indexBytes: index.bytes,
     workerLoadMs: inited.loadMs,

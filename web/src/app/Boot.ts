@@ -209,8 +209,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // moment surfaceHeight starts subtracting derivedLoweringAt.
   const voxels = player === null ? null : new VoxelWorld(core, oracle);
   const voxelMesh = voxels === null ? null
-    : new VoxelMesh(core, body.handle, voxels.handle, origin);
-  if (voxelMesh !== null) scenes.near.add(voxelMesh.mesh);
+    : new VoxelMesh(core, body.handle, voxels.handle, origin, {
+      material: t.materials.near,
+      bodyRadiusM: body.radiusM,
+      surfaceRadiusAt: (dx, dy, dz) => oracle.surfaceRadius(dx, dy, dz),
+      editFacesOnly: cfg.voxelSkinEditsOnly,
+    });
+  if (voxelMesh !== null && cfg.voxelNear) scenes.near.add(voxelMesh.mesh);
   // Debris. Reads gravity from the body, never from a constant (DW-18), and
   // costs one draw call that is skipped while nothing is in the air.
   const digFx = voxels === null ? null : new DigFx(origin, (r) => body.gravityAccel(r));
