@@ -35,6 +35,8 @@ export interface JitterStats {
   eyeJerkMm: { max: number; mean: number };
   /** Largest camera-to-anchor distance sampled: what drives term 1. */
   worstAnchorDistM: number;
+  /** Frames skipped because the stake set changed under us (chunk churn). */
+  skipped: number;
 }
 
 const f = Math.fround;
@@ -42,6 +44,7 @@ const f = Math.fround;
 export class JitterProbe {
   enabled = false;
   private readonly prevErr = new Float64Array(MAX_STAKES * 3);
+  private readonly prevAnchor = new Float64Array(MAX_STAKES * 3);
   private readonly mv = new Float64Array(16);
   private readonly eyeHist = new Float64Array(9);
   private eyeCount = 0;
@@ -52,6 +55,7 @@ export class JitterProbe {
   private stepPxMax = 0;
   private jerkMax = 0; private jerkSum = 0; private jerkN = 0;
   private anchorMax = 0;
+  private skipped = 0;
   private primed = false;
 
   reset(): void {
@@ -61,7 +65,9 @@ export class JitterProbe {
     this.stepPxMax = 0;
     this.jerkMax = 0; this.jerkSum = 0; this.jerkN = 0;
     this.anchorMax = 0;
+    this.skipped = 0;
     this.eyeCount = 0;
+    this.prevAnchor.fill(NaN);
     this.primed = false;
   }
 
@@ -71,10 +77,13 @@ export class JitterProbe {
    * @param nStakes    how many of them are populated
    * @param viewportH  pixels of viewport height, for the screen-space figure
    */
-  sample(cam: THREE.PerspectiveCamera, stakes: Float64Array, nStakes: number, viewportH: number): void {
+  sample(
+    cam: THREE.PerspectiveCamera, stakes: Float64Array, nStakes: number,
+    viewportH: number, origin: { x: number; y: number; z: number },
+  ): void {
     if (!this.enabled) return;
     this.samples++;
-    this.sampleEye(cam);
+    this.sampleEye(cam, origin);
     const n = Math.min(nStakes, MAX_STAKES);
     this.stakeCount = n;
     if (n === 0) return;
@@ -112,7 +121,16 @@ export class JitterProbe {
       this.errSum += err; this.errN++;
 
       const p = s * 3;
-      if (this.primed) {
+      // A stake is only comparable with itself. The stake set is re-selected
+      // from the nearest chunks every frame, so when streaming swaps one out the
+      // difference below would compare two different points on the planet and
+      // report it as jitter.
+      const sameStake = this.primed
+        && this.prevAnchor[p] === ax && this.prevAnchor[p + 1] === ay
+        && this.prevAnchor[p + 2] === az;
+      this.prevAnchor[p] = ax; this.prevAnchor[p + 1] = ay; this.prevAnchor[p + 2] = az;
+      if (!sameStake) this.skipped++;
+      if (sameStake) {
         const sx = ex - this.prevErr[p], sy = ey - this.prevErr[p + 1], sz = ez - this.prevErr[p + 2];
         const step = Math.hypot(sx, sy, sz) * 1000;
         if (step > this.stepMax) this.stepMax = step;
@@ -125,12 +143,19 @@ export class JitterProbe {
     this.primed = true;
   }
 
-  /** Second difference of the rendered eye position: the fixed-tick staircase. */
-  private sampleEye(cam: THREE.PerspectiveCamera): void {
+  /**
+   * Second difference of the rendered eye position: the fixed-tick staircase.
+   * The engine position is put BACK into the body frame first, because a rebase
+   * legitimately moves the engine origin by up to the threshold and that jump is
+   * not jitter; whether it is visible is what Loop.frameHash answers.
+   */
+  private sampleEye(cam: THREE.PerspectiveCamera, origin: { x: number; y: number; z: number }): void {
     const h = this.eyeHist;
     h[6] = h[3]; h[7] = h[4]; h[8] = h[5];
     h[3] = h[0]; h[4] = h[1]; h[5] = h[2];
-    h[0] = cam.position.x; h[1] = cam.position.y; h[2] = cam.position.z;
+    h[0] = cam.position.x + origin.x;
+    h[1] = cam.position.y + origin.y;
+    h[2] = cam.position.z + origin.z;
     if (this.eyeCount < 3) { this.eyeCount++; return; }
     const jx = h[0] - 2 * h[3] + h[6];
     const jy = h[1] - 2 * h[4] + h[7];
@@ -149,6 +174,7 @@ export class JitterProbe {
       stepPx: { max: this.stepPxMax },
       eyeJerkMm: { max: this.jerkMax, mean: this.jerkN > 0 ? this.jerkSum / this.jerkN : 0 },
       worstAnchorDistM: this.anchorMax,
+      skipped: this.skipped,
     };
   }
 }

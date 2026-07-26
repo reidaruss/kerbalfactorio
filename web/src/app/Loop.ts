@@ -47,7 +47,7 @@ export class Loop {
   /** Fills the stake rows from live chunks only while the probe is armed. */
   private stakeCount(): number {
     if (!this.s.jitter.enabled) return 0;
-    return this.s.terrain.probeStakes(this.stakes, 16);
+    return this.s.terrain.probeStakes(this.stakes, 16, this.eye);
   }
 
   start(): void {
@@ -88,7 +88,9 @@ export class Loop {
     const total = Math.max(1, Math.round(seconds * renderHz));
     let now = performance.now();
     this.lastMs = now;
-    this.acc = 0;
+    // The accumulator is NOT reset. Zeroing it snaps alpha to 0, which is a
+    // one-tick discontinuity in the interpolated eye, and a probe that calls
+    // run() in slices would then measure its own slicing as jitter.
     for (let i = 0; i < total; ++i) {
       now += dtMs;
       this.frame(now);
@@ -97,7 +99,7 @@ export class Loop {
       // driven walk look like it streams nothing.
       if ((i & 7) === 7) await new Promise<void>((r) => { setTimeout(r, 0); });
     }
-    if (wasRunning) { this.lastMs = performance.now(); this.acc = 0; this.start(); }
+    if (wasRunning) { this.lastMs = performance.now(); this.start(); }
   }
 
   /** Resolve after `n` rendered frames with nothing pending. Race-free captures. */
@@ -191,7 +193,7 @@ export class Loop {
     observer.interpolate(this.acc / FIXED_DT);
     origin.toEngine(observer.position, this.eye);
     rig.setView(this.eye, observer.position, observer.orientation);
-    jitter.sample(rig.nearCam, this.stakes, this.stakeCount(), this.lastH);
+    jitter.sample(rig.nearCam, this.stakes, this.stakeCount(), this.lastH, origin.origin);
 
     const cpuMs = performance.now() - t0;
     frame.render();

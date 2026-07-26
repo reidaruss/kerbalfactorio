@@ -64,6 +64,18 @@
   samples.push(...done);
 
   const j = of.jitter(false);
+
+  // Stop, then converge on the synthetic clock (rAF is not reliable headless),
+  // so the frame hash below describes a settled world and not a race.
+  of.input.tape([{ hold: 600, keys: [] }]);
+  let spin = 0;
+  while (!of.world().chunks.converged && spin++ < 60) await of.run(0.5);
+  await of.run(0.5);
+  // THE floating-origin invisibility test: this hash must match a run of the
+  // same walk at a different rebase threshold. Same walk, different origin
+  // history, same pixels.
+  const frame = OF_ARGS.hash === false ? null : of.framehash();
+
   const s = of.stats();
   const w = of.world();
   const a = samples[0], b = samples[samples.length - 1];
@@ -82,6 +94,11 @@
     chunksBuilt: b.built - a.built,
     residentDelta: { added, evicted },
     worstFrameMs: +worstFrameMs.toFixed(2),
+    rebaseThresholdM: of.config.rebaseM,
+    endLat: +w.observer.latDeg.toFixed(9),
+    endLon: +w.observer.lonDeg.toFixed(9),
+    originAtEnd: [Math.round(w.origin.x), Math.round(w.origin.y), Math.round(w.origin.z)],
+    frame,
     jitter: j,
     frameMs: s.frameMs,
     draw: s.draw,

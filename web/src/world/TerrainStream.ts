@@ -250,14 +250,19 @@ export class TerrainStream {
    * quantization the GPU sees depends on BOTH the camera-to-anchor distance and
    * the vertex's own offset from that anchor.
    */
-  probeStakes(out: Float64Array, maxStakes: number): number {
+  probeStakes(out: Float64Array, maxStakes: number, cam: THREE.Vector3): number {
     const slots = this.nearest;
     const d2s = this.nearestD2;
     slots.fill(null);
     d2s.fill(Infinity);
     for (const v of this.views.values()) {
       if (!v.isNear || !v.mesh.visible) continue;
-      const d2 = v.mesh.position.lengthSq();
+      // Distance from the CAMERA, not from the engine origin. The float32 error
+      // the GPU sees is a function of the camera-relative modelView magnitude
+      // (three composes modelViewMatrix in f64 and only downcasts on upload), so
+      // selecting by origin distance would silently measure a different thing at
+      // every rebase threshold.
+      const d2 = v.mesh.position.distanceToSquared(cam);
       if (d2 >= d2s[slots.length - 1]) continue;
       let i = slots.length - 1;
       while (i > 0 && d2s[i - 1] > d2) { d2s[i] = d2s[i - 1]; slots[i] = slots[i - 1]; i--; }
