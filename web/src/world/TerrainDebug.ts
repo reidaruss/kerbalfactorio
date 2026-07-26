@@ -5,6 +5,7 @@
 
 import type * as THREE from 'three';
 import type { ChunkView } from './ChunkView.js';
+import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js';
 
 /** Index of the centre vertex of a 33x33 grid, in position-array elements. */
 const CENTRE_ELEMENT = (33 * 16 + 16) * 3;
@@ -24,13 +25,13 @@ const NEAREST_SLOTS = 8;
  */
 export function probeStakes(
   views: Iterable<ChunkView>, out: Float64Array, maxStakes: number, cam: THREE.Vector3,
-  slots: (ChunkView | null)[], d2s: Float64Array,
+  slots: (ChunkView | null)[], d2s: Float64Array, pool: ChunkGeometryPool,
 ): number {
   slots.fill(null);
   d2s.fill(Infinity);
   for (const v of views) {
-    if (!v.isNear || !v.mesh.visible) continue;
-    const d2 = v.mesh.position.distanceToSquared(cam);
+    if (!v.isNear || !v.visible) continue;
+    const d2 = v.pos.distanceToSquared(cam);
     if (d2 >= d2s[NEAREST_SLOTS - 1]) continue;
     let i = NEAREST_SLOTS - 1;
     while (i > 0 && d2s[i - 1] > d2) { d2s[i] = d2s[i - 1]; slots[i] = slots[i - 1]; i--; }
@@ -40,11 +41,10 @@ export function probeStakes(
   for (let k = 0; k < NEAREST_SLOTS && s + 1 < maxStakes; ++k) {
     const v = slots[k];
     if (v === null) break;
-    const arr = (v.mesh.geometry.getAttribute('position') as THREE.BufferAttribute)
-      .array as Float32Array;
+    const arr = pool.positions(v.pooled);
     for (const base of [0, CENTRE_ELEMENT]) {
       const o = s * 6;
-      out[o] = v.mesh.position.x; out[o + 1] = v.mesh.position.y; out[o + 2] = v.mesh.position.z;
+      out[o] = v.pos.x; out[o + 1] = v.pos.y; out[o + 2] = v.pos.z;
       out[o + 3] = arr[base]; out[o + 4] = arr[base + 1]; out[o + 5] = arr[base + 2];
       s++;
     }
@@ -55,30 +55,32 @@ export function probeStakes(
 /** window.__of.chunks(): live chunk state, for diagnosing placement by hand. */
 export function dumpChunks(
   views: Iterable<ChunkView>, limit: number, nearOnly: boolean, nowSecs: number,
+  pool: ChunkGeometryPool,
 ): unknown[] {
   const out: unknown[] = [];
   for (const v of views) {
     if (out.length >= limit) break;
     if (nearOnly && !v.isNear) continue;
-    const attr = v.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const arr = attr.array as Float32Array;
+    const arr = pool.positions(v.pooled);
     let maxLocal = 0;
     for (let i = 0; i < arr.length; i += 3) {
       const r = arr[i] * arr[i] + arr[i + 1] * arr[i + 1] + arr[i + 2] * arr[i + 2];
       if (r > maxLocal) maxLocal = r;
     }
+    const batch = pool.batch(v.pooled);
     out.push({
       key: v.key, depth: v.depth, near: v.isNear, biome: v.biome,
-      parent: v.mesh.parent?.name ?? null,
-      visible: v.mesh.visible,
+      batch: batch.name,
+      slot: v.pooled.slot,
+      visible: v.visible,
       fadeAgeSecs: Math.round((nowSecs - v.fadeT0) * 1000) / 1000,
-      material: (v.mesh.material as THREE.Material).name,
-      meshPos: v.mesh.position.toArray().map((n) => Math.round(n)),
-      scale: v.mesh.scale.x,
-      distFromCamOriginM: Math.round(v.mesh.position.length() / (v.isNear ? 1 : 1e-5)),
+      material: (batch.material as THREE.Material).name,
+      meshPos: v.pos.toArray().map((n) => Math.round(n)),
+      scale: v.scale,
+      distFromCamOriginM: Math.round(v.pos.length() / (v.isNear ? 1 : 1e-5)),
       maxLocalM: Math.round(Math.sqrt(maxLocal)),
-      bsRadius: Math.round(v.mesh.geometry.boundingSphere?.radius ?? -1),
-      indexCount: v.mesh.geometry.getIndex()?.count ?? -1,
+      bsRadius: Math.round(batch.boundingRadius(v.pooled.slot)),
+      indexCount: batch.drawCount(v.pooled.slot),
       v0: [arr[0], arr[1], arr[2]].map((n) => Math.round(n)),
     });
   }

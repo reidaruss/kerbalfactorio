@@ -5,16 +5,16 @@
 // One observe request is in flight at a time, so the worker is never queued
 // behind stale observer positions.
 
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import type { Events } from '../app/Events.js';
 import type { Scenes } from '../render/Scenes.js';
-import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js';
+import type { ChunkGeometryPool, PooledSlot } from '../render/geometry/ChunkGeometryPool.js';
 import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
 import type { ChunkBlobLayout } from './ChunkFormat.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import { ChunkView } from './ChunkView.js';
-import { anyStitch, neighbourStrides, stitchEdges, stridesEqual } from './EdgeStitch.js';
+import { anyStitch, neighbourStrides, stitchEdges, stridesEqual, NO_STITCH, type EdgeStrides } from './EdgeStitch.js';
 import { dumpChunks, probeStakes } from './TerrainDebug.js';
 import { ChunkRetire } from './ChunkRetire.js';
 import type { FromTerrain, TerrainObserveMsg, TerrainUpdateMsg } from '../workers/TerrainProtocol.js';
@@ -91,6 +91,10 @@ export class TerrainStream {
     private readonly events: Events,
     private readonly opts: TerrainStreamOptions,
   ) {
+    // The two batches ARE the terrain scene graph: two Object3Ds for the whole
+    // resident set, added once and never re-parented (DW-11).
+    this.scenes.near.add(pool.nearBatch);
+    this.scenes.far.add(pool.farBatch);
     this.retiring = new ChunkRetire(pool, opts.fadeSecs);
     this.worker.addEventListener('message', (e) => this.onMessage(e as MessageEvent<FromTerrain>));
     // Exactly one subscriber to the one broadcast (ARCHITECTURE.md 3.6).
@@ -179,7 +183,7 @@ export class TerrainStream {
   private stitchAll(): void {
     if (!this.opts.stitching) return;
     const t0 = performance.now();
-    const visible = (key: string): boolean => this.views.get(key)?.mesh.visible === true;
+    const visible = (key: string): boolean => this.views.get(key)?.visible === true;
     let restitched = 0;
     let moved = 0;
     for (const v of this.views.values()) {
@@ -191,12 +195,10 @@ export class TerrainStream {
       // stride can shrink as well as grow.
       this.pool.upload(v.pooled, v.blob, this.layout, v.maxOffsetM);
       if (!anyStitch(want)) continue;
-      const g = v.mesh.geometry;
-      const pos = (g.getAttribute('position') as THREE.BufferAttribute);
-      const h = (g.getAttribute('aHeight') as THREE.BufferAttribute);
-      moved += stitchEdges(pos.array as Float32Array, h.array as Float32Array, want);
-      pos.needsUpdate = true;
-      h.needsUpdate = true;
+      // These are LIVE windows into the batch's attribute buffers, so the snap
+      // happens in place exactly as it did against a per-chunk pooled geometry.
+      moved += stitchEdges(this.pool.positions(v.pooled), this.pool.heights(v.pooled), want);
+      this.pool.stitched(v.pooled);
     }
     this.stitchMetrics.restitched = restitched;
     this.stitchMetrics.verticesMoved = moved;
@@ -242,7 +244,7 @@ export class TerrainStream {
         && faded(`${face}:${cd}:${cx + 1}:${cy}`)
         && faded(`${face}:${cd}:${cx}:${cy + 1}`)
         && faded(`${face}:${cd}:${cx + 1}:${cy + 1}`);
-      v.mesh.visible = !covered && (v.isNear || this.opts.shell);
+      v.setVisible(this.pool, !covered && (v.isNear || this.opts.shell));
       if (covered) hidden++;
     }
     this.hiddenCount = hidden;
@@ -259,6 +261,7 @@ export class TerrainStream {
   }
 
   private apply(c: import('../workers/TerrainProtocol.js').TerrainChunkMsg): void {
+    const near = c.depth >= this.cutoff;
     let view = this.views.get(c.key);
     if (view !== undefined) {
       // Same key regenerated (a dig or a neighbour-depth restitch): reuse the slot.
@@ -267,19 +270,12 @@ export class TerrainStream {
       this.placeInScene(view);
       return;
     }
-    let pooled = this.pool.acquire();
-    if (pooled === null) {
-      // Retiring chunks are the only slack the pool has; give them up before
-      // dropping a chunk that is actually needed.
-      this.retiring.reap(this.nowSecs, true);
-      pooled = this.pool.acquire();
-    }
+    const pooled = this.take(near);
     if (pooled === null) {
       this.metrics.poolExhausted = this.pool.exhausted;
       return;
     }
-    const near = c.depth >= this.cutoff;
-    view = new ChunkView(c, pooled, near ? this.materials.near : this.materials.far);
+    view = new ChunkView(c, pooled);
     // A recycled slot still carries the previous tenant's fade stamp, so this is
     // written for every NEW view and never for a refresh (same terrain, no fade).
     view.fadeT0 = this.nowSecs;
@@ -291,21 +287,41 @@ export class TerrainStream {
     this.events.emit('ChunkReady', { key: c.key, depth: c.depth, near });
   }
 
+  /** Free-list pop, with the retiring set as the only slack worth reclaiming. */
+  private take(near: boolean): PooledSlot | null {
+    const p = this.pool.acquire(near);
+    if (p !== null) return p;
+    // Retiring chunks are the only slack the pool has; give them up before
+    // dropping a chunk that is actually needed.
+    this.retiring.reap(this.nowSecs, true);
+    return this.pool.acquire(near);
+  }
+
   private placeInScene(view: ChunkView): void {
     const near = view.depth >= this.cutoff;
-    const target = near ? this.scenes.near : this.scenes.far;
-    const material = near ? this.materials.near : this.materials.far;
-    if (view.mesh.parent !== target) {
-      view.mesh.removeFromParent();
-      target.add(view.mesh);
+    if (near !== view.pooled.near) {
+      // The chunk crossed the nearDepthCutoff, so it moves to the other BATCH:
+      // one BatchedMesh has one material and one parent. It is re-uploaded from
+      // the retained pristine payload, which is one of the reasons that payload
+      // is retained. Only a regime change does this.
+      const next = this.take(near);
+      if (next !== null) {
+        this.pool.release(view.pooled);
+        view.pooled = next;
+        this.pool.setFadeStart(next, view.fadeT0);
+        this.pool.upload(next, view.blob, this.layout, view.maxOffsetM);
+        view.visible = false;
+        view.strides = [...NO_STITCH] as EdgeStrides;
+      }
     }
     // Skirts are NEAR-scene only. The apron depth is proportional to chunk
     // size, so on a depth-3 far chunk it is an 82 km vertical wall that drapes
     // over the entire landscape (measured, and visible in the W1 diagnosis).
     // In the scaled scene the quadtree is a complete partition and any residual
     // T-junction crack is subpixel, so the skirt buys nothing there.
-    this.pool.setSkirtVisible(view.pooled, this.opts.skirts && near);
-    view.place(this.origin, near, material);
+    this.pool.setSkirtVisible(view.pooled, this.opts.skirts && view.pooled.near);
+    view.place(this.origin, this.pool);
+    view.setVisible(this.pool, view.pooled.near || this.opts.shell);
   }
 
   private evict(key: string): void {
@@ -314,11 +330,10 @@ export class TerrainStream {
     this.views.delete(key);
     this.evictedSinceCover = true;
     this.events.emit('ChunkEvicted', { key });
-    if (this.opts.fadeSecs > 0 && view.mesh.visible) {
+    if (this.opts.fadeSecs > 0 && view.visible) {
       this.retiring.push(view, this.nowSecs);
       return;
     }
-    view.mesh.removeFromParent();
     this.pool.release(view.pooled);
   }
 
@@ -329,9 +344,7 @@ export class TerrainStream {
   /** The ONE rebase contract. Re-derive, never patch. Retiring chunks are still
    *  on screen for a quarter of a second, so they re-derive too. */
   onOriginRebased(): void {
-    for (const view of this.views.values()) {
-      view.place(this.origin, view.isNear, view.mesh.material as THREE.Material);
-    }
+    for (const view of this.views.values()) view.place(this.origin, this.pool);
     this.retiring.onOriginRebased(this.origin);
   }
 
@@ -370,17 +383,18 @@ export class TerrainStream {
 
   /** JitterProbe stake rows from the chunks nearest the camera. See TerrainDebug. */
   probeStakes(out: Float64Array, maxStakes: number, cam: THREE.Vector3): number {
-    return probeStakes(this.views.values(), out, maxStakes, cam, this.nearest, this.nearestD2);
+    return probeStakes(this.views.values(), out, maxStakes, cam, this.nearest, this.nearestD2, this.pool);
   }
 
   /** Agent-facing dump of live chunk state, surfaced as window.__of.chunks(). */
   dump(limit = 4, nearOnly = false): unknown[] {
-    return dumpChunks(this.views.values(), limit, nearOnly, this.nowSecs);
+    return dumpChunks(this.views.values(), limit, nearOnly, this.nowSecs, this.pool);
   }
 
   dispose(): void {
     this.worker.terminate();
-    for (const v of this.views.values()) v.mesh.removeFromParent();
+    this.pool.nearBatch.removeFromParent();
+    this.pool.farBatch.removeFromParent();
     this.views.clear();
     this.pool.disposeAll();
     this.materials.dispose();

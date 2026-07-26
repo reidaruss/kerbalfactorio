@@ -1,132 +1,107 @@
-// Fixed-size geometry pooling with ZERO reallocation (ARCHITECTURE.md 4.3, WR-6).
+// Fixed-size chunk slot pooling with ZERO reallocation (ARCHITECTURE.md 4.3,
+// WR-6), now over two BatchedMeshes instead of 384 THREE.Mesh objects (DW-11).
 //
 // This is only possible because /core fixed kGridDim at 33, so every chunk that
-// will ever stream in is exactly 1,217 vertices. The pool allocates all of its
-// attribute storage once at construction; stream-in is attr.array.set(view) plus
-// needsUpdate, and eviction is a push onto a free list. Nothing is disposed
-// during play, so renderer.info.memory.geometries is FLAT and a leak is visible
-// at a glance.
+// will ever stream in is exactly 1,217 vertices. Both batches allocate all of
+// their attribute storage once; stream-in is a typed-array set into the slot's
+// window, and eviction is a push onto a free list. Nothing is disposed during
+// play, so renderer.info.memory.geometries is FLAT (2) and a leak is visible at
+// a glance.
+//
+// There are TWO free lists because there are two batches: the near 1:1 scene and
+// the scaled far scene use different materials AND different cameras, and one
+// BatchedMesh has one material and one parent. A chunk that crosses the
+// nearDepthCutoff therefore swaps slots and is re-uploaded from its retained
+// pristine payload, which happens only on a regime change.
 
-import * as THREE from 'three';
+import type * as THREE from 'three';
 import type { SharedIndex } from './SharedIndex.js';
-import type { ChunkBlobLayout, ChunkBlobViews } from '../../world/ChunkFormat.js';
+import type { ChunkBlobLayout } from '../../world/ChunkFormat.js';
 import { chunkBlobViews } from '../../world/ChunkFormat.js';
+import { ChunkBatch } from './ChunkBatch.js';
 
-export interface PooledGeometry {
+/** A slot is (which batch, which index in it). Nothing else identifies a chunk. */
+export interface PooledSlot {
   readonly slot: number;
-  readonly geometry: THREE.BufferGeometry;
+  readonly near: boolean;
 }
 
 export class ChunkGeometryPool {
-  readonly capacity: number;
-  readonly bytesPerChunk: number;
-  private readonly slots: PooledGeometry[] = [];
-  private readonly free: number[] = [];
+  readonly nearBatch: ChunkBatch;
+  readonly farBatch: ChunkBatch;
+  private readonly freeNear: number[] = [];
+  private readonly freeFar: number[] = [];
+  private readonly slotsNear: PooledSlot[] = [];
+  private readonly slotsFar: PooledSlot[] = [];
   private exhaustedCount = 0;
+  readonly layout: ChunkBlobLayout;
 
-  private readonly indexCount: number;
-  private readonly interiorIndexCount: number;
-  private readonly index: SharedIndex;
-
-  constructor(capacity: number, layout: ChunkBlobLayout, index: SharedIndex) {
-    this.capacity = capacity;
-    this.index = index;
-    this.bytesPerChunk = layout.byteLength;
-    this.indexCount = index.indexCount;
-    this.interiorIndexCount = index.interiorIndexCount;
-    const v = layout.verts;
-    for (let i = 0; i < capacity; ++i) {
-      const g = new THREE.BufferGeometry();
-      const position = new THREE.BufferAttribute(new Float32Array(v * 3), 3);
-      const normal = new THREE.BufferAttribute(new Int8Array(v * 3), 3, true);
-      const uv = new THREE.BufferAttribute(new Uint16Array(v * 2), 2, true);
-      const aBiome = new THREE.BufferAttribute(new Uint8Array(v * 4), 4, false);
-      const aHeight = new THREE.BufferAttribute(new Float32Array(v), 1);
-      // The sim time this chunk became visible, constant across the chunk.
-      //
-      // It is a per-VERTEX attribute rather than a uniform on purpose: one
-      // ShaderMaterial is shared by every chunk (section 4.4), so a per-chunk
-      // uniform would mean either a material clone per chunk or a forced
-      // uniform re-upload per draw. Storing the fade START (not the fade value)
-      // means it is written ONCE at stream-in and the ramp comes for free from
-      // the global uTime, so the steady state costs nothing at all.
-      const aFadeT0 = new THREE.BufferAttribute(new Float32Array(v), 1);
-      // three docs: "after the initial use of a buffer, its usage cannot be
-      // changed", so DynamicDrawUsage is set here, before any render.
-      for (const a of [position, normal, uv, aBiome, aHeight, aFadeT0]) {
-        a.setUsage(THREE.DynamicDrawUsage);
-      }
-      g.setAttribute('position', position);
-      g.setAttribute('normal', normal);
-      g.setAttribute('uv', uv);
-      g.setAttribute('aBiome', aBiome);
-      g.setAttribute('aHeight', aHeight);
-      g.setAttribute('aFadeT0', aFadeT0);
-      g.setIndex(index.attribute);
-      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
-      this.slots.push({ slot: i, geometry: g });
-      this.free.push(i);
+  constructor(
+    capacity: number, layout: ChunkBlobLayout, index: SharedIndex,
+    materials: { near: THREE.Material; far: THREE.Material },
+  ) {
+    this.layout = layout;
+    // Measured at W4a on the surface: 106 near / 146 far of 252 resident, and 96
+    // all-far in orbit. 60% of the old single pool on each side leaves headroom
+    // on both without paying for a full pool twice.
+    const per = Math.max(128, Math.round(capacity * 0.6));
+    this.nearBatch = new ChunkBatch(per, layout, index, materials.near, 'terrainNear');
+    this.farBatch = new ChunkBatch(per, layout, index, materials.far, 'terrainFar');
+    for (let i = per - 1; i >= 0; --i) {
+      this.slotsNear[i] = { slot: i, near: true };
+      this.slotsFar[i] = { slot: i, near: false };
+      this.freeNear.push(i);
+      this.freeFar.push(i);
     }
   }
 
-  get inUse(): number { return this.capacity - this.free.length; }
-  get freeCount(): number { return this.free.length; }
+  get capacity(): number { return this.nearBatch.capacity + this.farBatch.capacity; }
+  get inUse(): number { return this.capacity - this.freeCount; }
+  get freeCount(): number { return this.freeNear.length + this.freeFar.length; }
   get exhausted(): number { return this.exhaustedCount; }
-  get bytes(): number { return this.capacity * this.bytesPerChunk; }
+  get bytes(): number { return this.nearBatch.bytes + this.farBatch.bytes; }
+  /** Vertex sections plus the slot's OWN index range: a batch cannot share one. */
+  get bytesPerChunk(): number { return this.bytes / this.capacity; }
 
-  acquire(): PooledGeometry | null {
-    const i = this.free.pop();
+  batch(p: PooledSlot): ChunkBatch { return p.near ? this.nearBatch : this.farBatch; }
+
+  acquire(near: boolean): PooledSlot | null {
+    const free = near ? this.freeNear : this.freeFar;
+    const i = free.pop();
     if (i === undefined) { this.exhaustedCount++; return null; }
-    return this.slots[i];
+    return near ? this.slotsNear[i] : this.slotsFar[i];
   }
 
-  release(p: PooledGeometry): void {
-    this.free.push(p.slot);
+  release(p: PooledSlot): void {
+    this.batch(p).setVisibleAt(p.slot, false);
+    (p.near ? this.freeNear : this.freeFar).push(p.slot);
   }
 
-  /**
-   * Interior indices come first in /core's buffer precisely so the skirt can be
-   * a separate draw range. Skirts hide LOD cracks, but on a coarse chunk the
-   * apron is a kilometres-deep vertical wall, so they are drawn only where a
-   * crack can actually appear.
-   */
-  setSkirtVisible(p: PooledGeometry, skirt: boolean): void {
-    p.geometry.setDrawRange(0, skirt ? this.indexCount : this.interiorIndexCount);
+  setSkirtVisible(p: PooledSlot, skirt: boolean): void {
+    this.batch(p).setSkirtVisible(p.slot, skirt);
   }
 
-  /** Copy one chunk's five sections into the pooled attributes. No allocation. */
-  upload(p: PooledGeometry, blob: ArrayBuffer, layout: ChunkBlobLayout, boundingRadiusM: number): void {
-    const src: ChunkBlobViews = chunkBlobViews(blob, layout);
-    const g = p.geometry;
-    // Three of /core's six cube faces are parametrized left-handed, so they need
-    // the mirrored index buffer or FrontSide culls them away entirely. Measured
-    // per chunk from the vertex normal, so no face table can go stale.
-    const wanted = this.index.needsFlip(src.position, src.normal)
-      ? this.index.flipped : this.index.attribute;
-    if (g.getIndex() !== wanted) g.setIndex(wanted);
-    ChunkGeometryPool.write(g, 'position', src.position);
-    ChunkGeometryPool.write(g, 'normal', src.normal);
-    ChunkGeometryPool.write(g, 'uv', src.uv);
-    ChunkGeometryPool.write(g, 'aBiome', src.biome);
-    ChunkGeometryPool.write(g, 'aHeight', src.height);
-    const bs = g.boundingSphere;
-    if (bs !== null) { bs.center.set(0, 0, 0); bs.radius = boundingRadiusM * 1.1; }
+  /** Copy one chunk's five sections into the slot. No allocation. */
+  upload(p: PooledSlot, blob: ArrayBuffer, layout: ChunkBlobLayout, boundingRadiusM: number): void {
+    this.batch(p).upload(p.slot, chunkBlobViews(blob, layout), boundingRadiusM);
   }
 
-  /** Stamp the cross-fade start time (sim seconds) across the whole chunk. */
-  setFadeStart(p: PooledGeometry, tSecs: number): void {
-    const a = p.geometry.getAttribute('aFadeT0') as THREE.BufferAttribute;
-    (a.array as Float32Array).fill(tSecs);
-    a.needsUpdate = true;
+  setFadeStart(p: PooledSlot, tSecs: number): void {
+    this.batch(p).setFadeStart(p.slot, tSecs);
   }
 
-  private static write(g: THREE.BufferGeometry, name: string, src: ArrayLike<number>): void {
-    const a = g.getAttribute(name) as THREE.BufferAttribute;
-    (a.array as unknown as { set(s: ArrayLike<number>): void }).set(src);
-    a.needsUpdate = true;
+  setVisible(p: PooledSlot, v: boolean): void { this.batch(p).setVisibleAt(p.slot, v); }
+
+  place(p: PooledSlot, x: number, y: number, z: number, scale: number): void {
+    this.batch(p).place(p.slot, x, y, z, scale);
   }
+
+  positions(p: PooledSlot): Float32Array { return this.batch(p).positions(p.slot); }
+  heights(p: PooledSlot): Float32Array { return this.batch(p).heights(p.slot); }
+  stitched(p: PooledSlot): void { this.batch(p).stitched(p.slot); }
 
   disposeAll(): void {
-    for (const s of this.slots) s.geometry.dispose();
+    this.nearBatch.dispose();
+    this.farBatch.dispose();
   }
 }

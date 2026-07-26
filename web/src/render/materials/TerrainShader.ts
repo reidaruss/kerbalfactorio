@@ -22,6 +22,11 @@ export function terrainVertexShader(depth: DepthPolicy): string {
   return /* glsl */`
     #include <common>
     ${depth.vertexPars}
+    // BatchedMesh (DW-11): three declares the matrix textures and the multi-draw
+    // index lookup here, and sets USE_BATCHING itself from object.isBatchedMesh.
+    // A ShaderMaterial does its own vertex transform, so applying batchingMatrix
+    // is OUR job; the stock <project_vertex> path is not in play.
+    #include <batching_pars_vertex>
     #include <shadowmap_pars_vertex>
     attribute vec4 aBiome;
     attribute float aHeight;
@@ -37,13 +42,22 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     varying float vViewZ;
 
     void main() {
+      #include <batching_vertex>
+      // The per-chunk placement now lives in the batch's matrix texture rather
+      // than in an object matrix, so the model matrix is the product of the two.
+      // Both are translation plus uniform scale, so the upper 3x3 still
+      // preserves direction after a normalize.
+      mat4 ofModel = modelMatrix;
+      mat3 ofNormalRot = mat3(modelMatrix);
+      #ifdef USE_BATCHING
+        ofModel = modelMatrix * batchingMatrix;
+        ofNormalRot = mat3(ofModel);
+      #endif
       // aBiome.x is the /core Biome enum as an unnormalized uint8.
       int bi = int(aBiome.x + 0.5);
       vBiomeColor = uBiomeColor[bi];
-      // Chunk meshes are translated and uniformly scaled only, so the model
-      // matrix's upper 3x3 preserves direction after a normalize.
-      vNormalW = normalize(mat3(modelMatrix) * normal);
-      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vNormalW = normalize(ofNormalRot * normal);
+      vec4 worldPosition = ofModel * vec4(position, 1.0);
       vWorld = worldPosition.xyz;
       vRelief = aHeight;
       // The SIGN of aFadeT0 selects the half of the dissolve: positive is the
@@ -61,7 +75,10 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       vFade = aFadeT0 < 0.0 ? -1.0 - fadeT : fadeT;
       vec4 mv = viewMatrix * worldPosition;
       vViewZ = -mv.z;
-      vec3 transformedNormal = normalMatrix * normal;
+      // Only <shadowmap_vertex>'s normal-bias offset reads this, and the bias is
+      // in world units, so the batch rotation has to be in it or a chunk's
+      // contact shadow detaches from its caster.
+      vec3 transformedNormal = normalize(normalMatrix * normal);
       #include <shadowmap_vertex>
       gl_Position = projectionMatrix * mv;
       ${depth.vertexBody}

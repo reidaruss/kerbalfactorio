@@ -16,7 +16,6 @@
 import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { ChunkView } from './ChunkView.js';
-import type * as THREE from 'three';
 
 export class ChunkRetire {
   private readonly list: { view: ChunkView; until: number }[] = [];
@@ -36,7 +35,6 @@ export class ChunkRetire {
     for (let i = this.list.length - 1; i >= 0; --i) {
       const r = this.list[i];
       if (!force && nowSecs < r.until) continue;
-      r.view.mesh.removeFromParent();
       this.pool.release(r.view.pooled);
       this.list.splice(i, 1);
     }
@@ -44,8 +42,6 @@ export class ChunkRetire {
 
   /** Retiring chunks are on screen for a quarter of a second, so they rebase. */
   onOriginRebased(origin: FloatingOrigin): void {
-    for (const r of this.list) {
-      r.view.place(origin, r.view.isNear, r.view.mesh.material as THREE.Material);
-    }
+    for (const r of this.list) r.view.place(origin, this.pool);
   }
 }

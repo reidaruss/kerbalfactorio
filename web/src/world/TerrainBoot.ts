@@ -81,7 +81,6 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
 
   const layout = chunkBlobLayout(inited.verts);
   const index = new SharedIndex(new Uint16Array(inited.index), inited.interiorIndexCount);
-  const pool = new ChunkGeometryPool(cfg.chunkPoolSize, layout, index);
   const materials = createTerrainMaterials({
     depth,
     maxReliefM: body.maxReliefM,
@@ -89,6 +88,9 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     cascadeSplits: d.cascadeSplits,
     fadeSecs: cfg.fadeSecs,
   });
+  // The pool now OWNS the two BatchedMeshes, so it needs the two materials at
+  // construction: a BatchedMesh binds one material for its whole lifetime.
+  const pool = new ChunkGeometryPool(cfg.chunkPoolSize, layout, index, materials);
   const stream = new TerrainStream(worker, pool, layout, materials, scenes, origin, events, {
     skirts: cfg.skirts, stitching: cfg.stitch, fadeSecs: cfg.fadeSecs, shell: cfg.shell,
   });

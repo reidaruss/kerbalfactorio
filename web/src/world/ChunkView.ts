@@ -1,13 +1,15 @@
-// One resident terrain chunk: a pooled geometry, a Mesh, and its 64-bit anchor.
+// One resident terrain chunk: a pooled BATCH SLOT and its 64-bit anchor. There
+// is no THREE.Mesh here any more (DW-11); the whole resident set is two
+// BatchedMeshes and a chunk is an instance id inside one of them.
 //
 // The anchor is the ONLY absolute position anywhere in the chunk path. Vertices
-// are float32 relative to it (standing rule 6), and the engine-space transform
-// is always RE-DERIVED from the anchor rather than patched by a delta, which is
-// why an origin rebase cannot accumulate error here.
+// are float32 relative to it (standing rule 6), and the instance matrix is always
+// RE-DERIVED from the anchor rather than patched by a delta, which is why an
+// origin rebase cannot accumulate error here.
 
 import * as THREE from 'three';
-import type { PooledGeometry } from '../render/geometry/ChunkGeometryPool.js';
 import { FAR_SCALE } from '../render/Scenes.js';
+import type { ChunkGeometryPool, PooledSlot } from '../render/geometry/ChunkGeometryPool.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import { NO_STITCH, type EdgeStrides } from './EdgeStitch.js';
@@ -20,20 +22,25 @@ export class ChunkView {
   chunkRadiusM: number;
   biome: number;
   materialId: number;
-  readonly mesh: THREE.Mesh;
-  readonly pooled: PooledGeometry;
+  pooled: PooledSlot;
   /** True when this chunk lives in the near 1:1 scene. */
-  isNear = false;
+  isNear: boolean;
+  /** Drawn this frame. Coverage hides a parent whose four children are in. */
+  visible = true;
+  /** Engine-space instance translation, kept for the jitter probe and the dump. */
+  readonly pos = new THREE.Vector3();
+  scale = 1;
   readonly faceId: number;
   readonly qx: number;
   readonly qy: number;
   maxOffsetM: number;
   /**
    * The PRISTINE payload, retained so an edge stitch can be recomputed from
-   * source when a neighbour subdivides or merges. Snapping is destructive and a
-   * stride can go back down, so the un-snapped vertices have to survive. It is
-   * one already-transferred ArrayBuffer per resident chunk (32,859 B), which is
-   * 12.6 MB of JS heap at a 384 pool against a 384 MB budget.
+   * source when a neighbour subdivides or merges, and so a chunk crossing the
+   * near/far cutoff can be re-uploaded into the other batch. Snapping is
+   * destructive and a stride can go back down, so the un-snapped vertices have
+   * to survive. One already-transferred ArrayBuffer per resident chunk
+   * (32,859 B), 12.6 MB of JS heap at a 384 pool against a 384 MB budget.
    */
   blob: ArrayBuffer;
   /** Current edge stitch strides, in neighbourDepth order [-X, +X, -Y, +Y]. */
@@ -41,12 +48,10 @@ export class ChunkView {
   /**
    * Sim time (seconds) this chunk started dithering in. The fragment shader
    * derives the ramp from it and the global uTime, so the CPU writes it once.
-   * -Infinity means "already fully faded in", which is what an evicted-then-
-   * recycled slot must NOT inherit.
    */
   fadeT0 = 0;
 
-  constructor(msg: TerrainChunkMsg, pooled: PooledGeometry, material: THREE.Material) {
+  constructor(msg: TerrainChunkMsg, pooled: PooledSlot) {
     this.key = msg.key;
     this.depth = msg.depth;
     this.faceId = msg.faceId;
@@ -59,13 +64,7 @@ export class ChunkView {
     this.biome = msg.biome;
     this.materialId = msg.materialId;
     this.pooled = pooled;
-    this.mesh = new THREE.Mesh(pooled.geometry, material);
-    this.mesh.name = `chunk ${msg.key}`;
-    this.mesh.matrixAutoUpdate = true;
-    // Terrain self-shadowing (a ridge onto the valley below it) is the visible
-    // half of the shadow milestone; the player casting onto it is the other.
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
+    this.isNear = pooled.near;
   }
 
   /**
@@ -86,19 +85,24 @@ export class ChunkView {
     this.strides = [...NO_STITCH] as EdgeStrides;
   }
 
-  /** Re-derive the engine transform from the anchor. Also the rebase handler. */
-  place(origin: FloatingOrigin, near: boolean, material: THREE.Material): void {
-    this.isNear = near;
-    if (this.mesh.material !== material) this.mesh.material = material;
-    if (near) {
-      origin.toEngine(this.anchor, this.mesh.position);
-      this.mesh.scale.setScalar(1);
+  /** Re-derive the instance matrix from the anchor. Also the rebase handler. */
+  place(origin: FloatingOrigin, pool: ChunkGeometryPool): void {
+    if (this.pooled.near) {
+      origin.toEngine(this.anchor, this.pos);
+      this.scale = 1;
     } else {
-      this.mesh.position.set(
+      this.pos.set(
         this.anchor.x * FAR_SCALE, this.anchor.y * FAR_SCALE, this.anchor.z * FAR_SCALE,
       );
-      this.mesh.scale.setScalar(FAR_SCALE);
+      this.scale = FAR_SCALE;
     }
-    this.mesh.updateMatrix();
+    this.isNear = this.pooled.near;
+    pool.place(this.pooled, this.pos.x, this.pos.y, this.pos.z, this.scale);
+  }
+
+  setVisible(pool: ChunkGeometryPool, v: boolean): void {
+    if (this.visible === v) return;
+    this.visible = v;
+    pool.setVisible(this.pooled, v);
   }
 }
