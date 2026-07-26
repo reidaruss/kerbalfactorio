@@ -402,8 +402,9 @@ second door is refused with **"need 4 Wood + 1 Iron"**; and **5 parts survive a
 save with the live world emptied to 0 in between, worst move 0.000e+0 m**. Slot
 version 4 carries the parts and their site frames.
 
-**Draw calls: the whole base costs 1.** 31 on the surface, 51 with a base and a
-levelled pad filling the frame, against 150. One `BatchedMesh` for every part
+**Draw calls: the whole base costs 1.** 41 on the surface against the 40 this
+work started from, and 51 with a base and a levelled pad filling the frame,
+against a budget of 150. One `BatchedMesh` for every part
 (DW-11), 512 instances, and a door is two of them because the leaf is animated
 by writing its matrix rather than by an `AnimationMixer` (DW-8 still holds: no
 mixer exists anywhere).
