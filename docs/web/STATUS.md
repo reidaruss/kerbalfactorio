@@ -35,7 +35,7 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 | W4 look and feel: BatchedMesh terrain, rigged player, biome props | done |
 | **W5 voxel digging and tunnels** | **in flight: dig, mesh, collision, mouth and a WALKABLE tunnel all verified** |
 | **W5g gameplay slice: harvest, inventory, hand crafting, placeable furnace** | **done and driven-verified 2026-07-26** |
-| W6 building and automation in-world (also the WebGPU re-evaluation gate) | pending |
+| **W6 building and automation in-world** (also the WebGPU re-evaluation gate) | **automation slice done and driven-verified 2026-07-26; power and build costs are W7** |
 | W7 progression: research wired to play, build costs, power | pending |
 | W8 **the seam**: boardable vessel, launch to orbit | pending, the signature milestone |
 | W9 Cinder | pending |
@@ -106,6 +106,49 @@ node and will not close further (`grounded true`, `blockedByRock false`, slope
 11 deg), which is why reach is now measured to the node rather than to its
 pivot. `probes/impact.js` logs the per-iteration distance for whoever owns the
 character controller.
+
+## Automation: a line that runs while you walk away (W6, 2026-07-26)
+
+**Press 1, 2 or 3 to take a miner, a belt or a smelter in hand.** A ghost snaps
+to /core's own 1 m lattice, **R** turns it in quarter turns and **G** puts it
+down; the ghost is RED with the reason before the key is pressed, not an error
+message after it. Put a miner on an ore node, lay belts back to a smelter, then
+walk away: **E** on the smelter takes the iron out. The automated iron is what
+makes the survival smelter (5 Iron + 5 Stone) craftable, so the loop ends in a
+recipe rather than in a shrug.
+
+**Driven acceptance** (`probes/autoline.js`, `valid: true`, 26 unattended
+seconds): /core ticked **1562 against an expected 1560** (DW-20), the world node
+lost **64** ore, the miner extracted **64**, the drain moved **64**, the smelter
+produced **16** iron with nobody feeding it, and collecting took 16 while the
+buffer fell 16 and the pack grew 16. Then Smelter craftable **false -> true ->
+crafted**, pack `Stone:6 Iron:16` -> `Stone:1 Iron:11 Smelter:1`.
+`probes/buildghost.js` covers build mode before anything is placed: quarter
+turns perpendicular to 1e-3 and closing to 1.0 after four, a lattice cell that
+changes 1.017 m at a time, and the two refusals ("no ore deposit here", "cell
+taken") reported by the ghost itself.
+
+**Every rule is /core's.** `automation.h`'s `BuildableNetwork` does the placing,
+the wiring (`connect` auto-creates the inserters, DW-9) and the tick;
+`of_core_api.cpp` section 7 is the shim, extended with the placement surface
+(`place_miner_for_node`, `set_placement`, `entity_index`, `take_output`) plus
+`of_gp_node_drain`, which is what keeps the world node and the miner deposit ONE
+pool of ore. Parity CASE 10 covers it: self-determinism 88 -> **119**,
+cross-toolchain 94/94, 22/22 ctest.
+
+**DW-8 is kept as an absence.** There is no `AnimationMixer`, no per-belt clock
+and no per-item object anywhere: a tile's flow speed and fill fraction are one
+texel read from ONE `FFactoryBeltFlowState` row via three's own batching id. One
+`BatchedMesh` and one material draw the whole factory, so a six-building line
+plus its inserters costs **43 draw calls of 150** (39 before it).
+
+Screenshots: `docs/screenshots/W6_autoline.png`, `W6_build_ghost.png`.
+
+**What is missing, plainly.** Placement is free (build costs are W7, with
+power); a belt that turns a corner still chains but the tiles are drawn as
+straight segments, so the curve assets are unused; there is no way to REMOVE a
+building; and belts hold at most one or two items at these rates, so the flow
+material is proving itself on a trickle rather than on a saturated line.
 
 ## Commands
 

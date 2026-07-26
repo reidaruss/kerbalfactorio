@@ -1422,6 +1422,59 @@ Added at W4 (2026-07-25):
     the mine key and the "aiming at a machine" branch did not. The panel could
     not be closed by the key that opened it. One edge, computed once at the top
     of the tick, used by every branch.
+69. **`FactorySim` has no entity removal, and should not grow one.** The dense
+    entity index IS the render key and the SoA is append-only by design, so a
+    belt run cannot gain a tile in place. The build layer therefore holds the
+    PLAN as plain JS records and re-creates the whole network on any topology
+    change, which is cheap (a handful of entities, only ever on a placement) and
+    buys one property free: the network is always exactly what the plan says, so
+    a wiring bug cannot survive one rebuild and hide. State is carried across
+    explicitly (the miner keeps the ore it had LEFT, machine inputs are re-fed,
+    finished output goes to the pack) and belt items in flight are genuinely
+    lost, which is reported as a counter rather than swallowed. A silent loss is
+    how a conservation claim rots.
+70. **Two counters for the same ore is the five-surfaces failure in miniature.**
+    A miner is seeded from its harvest node's remaining amount, and from then on
+    the `FDepositNode` the world draws and the miner's bound deposit inside the
+    sim describe the SAME ore. Without `of_gp_node_drain` the node stands full
+    for ever while the ore it holds rides away on a belt. The drain is the delta
+    of the miner's own remaining, so the pair conserves by construction: the
+    driven probe measures node loss 64, miner extraction 64, drain 64.
+71. **A float32 deposit does not reach zero by subtraction.** `RemainingAmount`
+    is a float; `remaining -= (float)remaining` at deposit scale leaves a 3.6e-7
+    crumb, and a node reading 0.00000036 is not empty. This is exactly the
+    "node parks just above empty for ever" defect item 61 deleted from
+    `harvestNode`, walking back in through a different door six weeks later. The
+    drain subtracts in double and stores once, with a 1e-3 floor.
+72. **The ghost's DIRECTION is snapped to a lattice axis and its POSITION is
+    not, so a heading off the axis lays a diagonal.** Consecutive tiles are then
+    not each other's neighbour, and `/core` correctly treats the result as two
+    transport lines rather than one. It still runs (both fragments get wired),
+    which is why it took a driven run to notice: the acceptance passed while the
+    thing on the ground was two belts, not one. A player aligns by eye once the
+    ghost shows the direction; the probe aligns by maximising the dot of the aim
+    with the ghost's own `fwd`.
+73. **A conservation snapshot taken when the line is FINISHED is not the start
+    of the unattended window.** The factory has been ticking since the miner
+    went down, including through the step back to frame the capture, so a
+    snapshot taken earlier attributes those ticks' ore to the window and the
+    check misses by exactly that much. It did, by 2 units of 64.
+74. **Perpendicular distance to a LINE does not care which way along it the
+    target lies.** The probe's yaw search scored a heading 180 degrees wrong as
+    well as the right one, so it walked away from the deposit reporting a good
+    aim. A DW-20 failure inside the verification harness, which is the class the
+    decision exists for. The fix is one guard: infinite miss behind the eye.
+75. **Belt animation costs one texel per tile (DW-8, kept as an ABSENCE).**
+    There is no `AnimationMixer`, no per-belt clock and no per-item object
+    anywhere in `web/src/game`. A tile's flow speed and fill fraction come from
+    ONE `FFactoryBeltFlowState` row, written into a `DataTexture` indexed by
+    three's own batching id (`getIndirectIndex(gl_DrawID)`, the same mechanism
+    three uses for per-instance colour, so it cannot fall out of step with the
+    matrix texture). A per-vertex `aRole` attribute lets ONE material serve the
+    machine body, the emissive status chip and the scrolling deck, so the whole
+    factory is one `BatchedMesh`: measured 39 -> **43 draw calls** of 150 for a
+    six-building line plus its inserters, which is one batch times the main pass
+    plus three shadow cascades and nothing else.
 
 ### 15.3 The dev loop, concretely
 
