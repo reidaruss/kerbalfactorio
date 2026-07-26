@@ -1986,7 +1986,7 @@ Added at W4 (2026-07-25):
     0.25 m march step. `?aimshell=1` restores the old march, and it is what
     proved that two other red probes on the same branch were not caused by this.
 
-108. **The belt complaint was THREE defects, and only two of them were about
+115. **The belt complaint was THREE defects, and only two of them were about
     belts lining up with each other.** Worth recording as a set, because the
     first fix made the second visible and the third was routed in from another
     lane while both were in flight.
@@ -2022,7 +2022,7 @@ Added at W4 (2026-07-25):
     because the default is what let three call sites make the same mistake
     silently.
 
-109. **Do not put a junction inside a git worktree, because `worktree remove`
+116. **Do not put a junction inside a git worktree, because `worktree remove`
     follows it.** Proving that a red probe pre-dated a change is worth doing
     properly, and a detached worktree at the old commit is the right tool. It
     needs `node_modules` and `public`, so both were linked in with `mklink /J`.
