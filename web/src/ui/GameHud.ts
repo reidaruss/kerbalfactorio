@@ -22,7 +22,7 @@ export interface HudTarget {
   action?: string;
 }
 
-export interface HudCarry { name: string; count: number }
+export interface HudCarry { name: string; count: number; icon?: string }
 
 export class GameHud {
   private readonly cross: HTMLElement;
@@ -159,9 +159,22 @@ export class GameHud {
     this.lastCarry = key;
     const rows = items.length === 0
       ? '<div class="none">empty</div>'
-      : items.map((i) => `<div class="row"><span>${esc(i.name)}</span><b>${i.count}</b></div>`).join('');
+      : items.map((i) => `<div class="row"><span>${iconTag(i.icon, 'ico-sm')}`
+        + `${esc(i.name)}</span><b>${i.count}</b></div>`).join('');
     this.carry.innerHTML = `<h4>Pack &nbsp;<span style="float:right">Tab</span></h4>${rows}`;
   }
+}
+
+/**
+ * An `<img>` for a baked item icon (ItemIcons), or nothing.
+ *
+ * The `data:image/` guard is the whole security story: a slot's picture is a
+ * string this module put in a src attribute, so it is checked to be a data URL
+ * and never a name, a path or anything a /core string could reach.
+ */
+export function iconTag(url: string | undefined, cls: string): string {
+  return url !== undefined && url.startsWith('data:image/')
+    ? `<img class="${cls}" src="${url}" alt="">` : '';
 }
 
 /** Item names come from /core, but they still reach innerHTML, so escape them. */

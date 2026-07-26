@@ -333,3 +333,37 @@
 }
 #of-furnace button:disabled { background: #2c353d; color: #667581; cursor: not-allowed; }
 #of-furnace .hint { margin-top: 8px; font-size: 11px; color: var(--of-dim); }
+
+/* --- W7 item icons -------------------------------------------------------
+   Baked once at boot from the item's own mesh (game/ItemIcons.ts) and handed
+   to these panels as a data URL, so src/ui still imports zero three.js. The
+   slot icon fills its cell and sits UNDER the count and the name, which stay
+   readable: a picture is a faster read than a word, and a word is the one that
+   survives a missing mesh. */
+.of-slot .ico {
+  position: absolute;
+  inset: 8% 8% 16% 8%;
+  width: 84%;
+  height: 76%;
+  object-fit: contain;
+  image-rendering: auto;
+  opacity: 0.96;
+  pointer-events: none;
+}
+.of-slot.filled .nm {
+  position: relative;
+  background: linear-gradient(to top, rgba(12, 16, 20, 0.92), rgba(12, 16, 20, 0));
+  width: 100%;
+  padding-top: 6px;
+}
+.of-slot .ct { text-shadow: 0 0 4px #0c1014, 0 0 4px #0c1014; }
+
+/* The inline icon, for a recipe line and the carried-items readout. */
+.ico-sm {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+#of-carry .row span { display: inline-flex; align-items: center; }

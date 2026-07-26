@@ -10,16 +10,20 @@
 // and the character controller is how you get a cursor that is visible over a
 // camera that is still turning.
 
-import { esc } from './GameHud.js';
+import { esc, iconTag } from './GameHud.js';
 
-export interface SlotRow { name: string; count: number }
-export interface IngredientRow { name: string; have: number; need: number }
+/** `icon` is a baked data URL (ItemIcons) or '' when the item has no mesh. */
+export interface SlotRow { name: string; count: number; icon?: string }
+export interface IngredientRow {
+  name: string; have: number; need: number; icon?: string;
+}
 export interface RecipeRow {
   index: number;
   name: string;
   outputCount: number;
   craftable: boolean;
   inputs: IngredientRow[];
+  icon?: string;
 }
 
 export class InventoryPanel {
@@ -73,7 +77,8 @@ export class InventoryPanel {
       this.lastPack = packKey;
       const used = slots.filter((s) => s.count > 0).length;
       this.pack.innerHTML = slots.map((s) => (s.count > 0
-        ? `<div class="of-slot filled"><span class="ct">${s.count}</span>`
+        ? `<div class="of-slot filled">${iconTag(s.icon, 'ico')}`
+          + `<span class="ct">${s.count}</span>`
           + `<span class="nm">${esc(s.name)}</span></div>`
         : '<div class="of-slot empty"><span class="nm">.</span></div>')).join('');
       const h = this.root.querySelector('.pack h3 span');
@@ -85,10 +90,12 @@ export class InventoryPanel {
     this.lastCraft = craftKey;
     this.craft.innerHTML = recipes.map((r) => {
       const ing = r.inputs.map((i) => `<i class="${i.have >= i.need ? 'ok' : 'no'}">`
-        + `${esc(i.name)} ${i.have}/${i.need}</i>`).join(' &nbsp;+&nbsp; ');
+        + `${iconTag(i.icon, 'ico-sm')}${esc(i.name)} ${i.have}/${i.need}</i>`)
+        .join(' &nbsp;+&nbsp; ');
       const n = r.outputCount > 1 ? ` x${r.outputCount}` : '';
       return `<div class="of-recipe${r.craftable ? ' can' : ''}">`
-        + `<div class="top"><span class="nm">${esc(r.name)}${n}</span>`
+        + `<div class="top"><span class="nm">${iconTag(r.icon, 'ico-sm')}`
+        + `${esc(r.name)}${n}</span>`
         + `<button data-i="${r.index}"${r.craftable ? '' : ' disabled'}>Craft</button></div>`
         + `<div class="ing">${ing}</div></div>`;
     }).join('');

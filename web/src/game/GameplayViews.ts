@@ -8,22 +8,33 @@
 import type { GameCore } from './GameCore.js';
 import type { RecipeRow, SlotRow } from '../ui/InventoryPanel.js';
 
-export function slotRows(game: GameCore): SlotRow[] {
-  return game.inventory().map((s) => ({
-    name: s.count > 0 ? game.itemName(s.item) : '', count: s.count,
-  }));
+/** Name -> baked icon data URL. Empty string means "no mesh, use the text". */
+export type IconFor = (name: string) => string;
+
+const NO_ICON: IconFor = () => '';
+
+export function slotRows(game: GameCore, icon: IconFor = NO_ICON): SlotRow[] {
+  return game.inventory().map((s) => {
+    const name = s.count > 0 ? game.itemName(s.item) : '';
+    return { name, count: s.count, icon: name === '' ? '' : icon(name) };
+  });
 }
 
-export function recipeRows(game: GameCore): RecipeRow[] {
-  return game.recipes().map((r) => ({
-    index: r.index,
-    name: game.itemName(r.output),
-    outputCount: r.outputCount,
-    craftable: r.craftable,
-    inputs: r.inputs.map((i) => ({
-      name: game.itemName(i.item), have: i.have, need: i.need,
-    })),
-  }));
+export function recipeRows(game: GameCore, icon: IconFor = NO_ICON): RecipeRow[] {
+  return game.recipes().map((r) => {
+    const name = game.itemName(r.output);
+    return {
+      index: r.index,
+      name,
+      icon: icon(name),
+      outputCount: r.outputCount,
+      craftable: r.craftable,
+      inputs: r.inputs.map((i) => {
+        const n = game.itemName(i.item);
+        return { name: n, have: i.have, need: i.need, icon: icon(n) };
+      }),
+    };
+  });
 }
 
 /** What the pack can feed this machine: the ores it smelts and the fuels. */

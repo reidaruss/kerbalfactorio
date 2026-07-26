@@ -29,6 +29,7 @@ import { BuildMode } from './BuildMode.js';
 import { demolishAimed } from './Demolition.js';
 import { aimPrompt } from './FactoryReport.js';
 import { furnaceView, nodeDump, recipeRows, slotRows } from './GameplayViews.js';
+import { ItemIcons } from './ItemIcons.js';
 import { gameplayReport } from './GameplayReport.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -66,6 +67,8 @@ export class Gameplay {
   /** Chips, kick, captions and sound: everything an event does but the rule. */
   readonly fx: Feedback;
   readonly sfx = new Sfx();
+  /** W7: one baked picture per item, so a slot is not a word in a box. */
+  readonly icons = new ItemIcons();
   /** W6 automation: the plan, its art, and the build menu that edits it. */
   readonly factory: Factory;
   readonly factoryView: FactoryView;
@@ -123,7 +126,8 @@ export class Gameplay {
 
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
-    await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load()]);
+    await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
+      g.icons.load()]);
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
     d.scene.add(g.fx.debris.mesh);
@@ -302,12 +306,14 @@ export class Gameplay {
       this.furnacePanel.render(
         furnaceView(this.game, this.openMachine.handle, this.openMachine.tier));
     }
-    const carried = this.game.carried().map((c) => ({ name: c.name, count: c.count }));
+    const carried = this.game.carried().map((c) => ({
+      name: c.name, count: c.count, icon: this.icons.for(c.name),
+    }));
     // ONE prompt decision, made in one place. It used to be four early returns
     // here, and every one of them had to remember the two panel conditions.
     this.hud.render(dt, this.uiOpen ? null : aimPrompt(this.factory, this.game,
       this.aimedBuild, this.aimedMachine, this.interact.target), carried);
-    if (this.panel.isOpen) this.panel.render(slotRows(this.game), recipeRows(this.game));
+    if (this.panel.isOpen) this.panel.render(this.slots(), this.recipes());
   }
 
   /** Take an automated machine's finished stock into the pack. */
@@ -371,12 +377,16 @@ export class Gameplay {
   private craft(index: number): void {
     const ok = this.game.craft(index);
     this.panel.invalidate();
-    this.panel.render(slotRows(this.game), recipeRows(this.game));
+    this.panel.render(this.slots(), this.recipes());
     const r = ok ? this.game.recipes()[index] : undefined;
     if (r === undefined) return;
     this.hud.flash(`crafted ${this.game.itemName(r.output)}`);
     this.sfx.confirm();
   }
+
+  /** The two panel views, with the item pictures bound in one place. */
+  private slots() { return slotRows(this.game, (n) => this.icons.for(n)); }
+  private recipes() { return recipeRows(this.game, (n) => this.icons.for(n)); }
 
   /** Every node with its world position, nearest first. The probe's eyes. */
   nodes(): unknown[] {

@@ -28,6 +28,10 @@ export function gameplayReport(g: Gameplay): unknown {
         gains: g.hud.gains, banners: g.hud.banners,
       },
       audio: g.sfx.stats(),
+      // W7 icons. The BYTES of each baked picture, not just a count: a data URL
+      // of 0 bytes is a render that produced nothing, which is exactly the
+      // failure "14 icons loaded" would hide.
+      icons: { ...g.icons.stats, bytes: g.icons.sizes() },
       persist: { saves: g.saves, restored: g.restored },
       demolition: {
         buildings: g.factory.removals, machines: g.machines.removals,
