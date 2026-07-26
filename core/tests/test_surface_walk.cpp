@@ -26,6 +26,7 @@
 #include "of/biome.h"
 #include "of/terrain_stream.h"
 #include "of/surface_walk.h"
+#include "of/orbital.h"
 
 using namespace of;
 using namespace of::worldgen;
@@ -34,6 +35,61 @@ static uint64_t asBits(double d) {
   uint64_t u;
   std::memcpy(&u, &d, sizeof(u));
   return u;
+}
+
+// =============================================================================
+// DW-18 — ONE GRAVITY AUTHORITY. BodyParams::muM3S2 and of::orbital's canonical
+// mu constants are two definition sites for the same physical fact, in two files
+// that deliberately do not include each other. This test is the only translation
+// unit that sees both, so it is where they are pinned together. If it fails, the
+// walker and the orbit propagator have started to disagree about the same planet
+// -- which is exactly the 0.587 vs 9.81 m/s^2 split this decision closed.
+// =============================================================================
+TEST(walk_gravity_matches_the_orbital_mu) {
+  const BodyParams forge  = makeForge(4242ull);
+  const BodyParams cinder = makeCinder(4242ull);
+  CHECK(asBits(forge.muM3S2)  == asBits(of::orbital::kForgeMu));
+  CHECK(asBits(cinder.muM3S2) == asBits(of::orbital::kCinderMu));
+
+  // Surface gravity is Kerbin-like on Forge: 9.81 m/s^2 at the datum, and only
+  // slightly weaker on top of the tallest relief (6 km of 600 km is 1%).
+  CHECK_NEAR(forge.muM3S2 / (forge.radiusM * forge.radiusM), 9.81, 1e-9);
+
+  // The walker reads the body, not a density model. Sampled around the planet,
+  // g stays within 3% of 9.81: the only variation is relief, which runs from an
+  // ocean basin BELOW the datum (so g is slightly stronger than 9.81 there) to
+  // an 8 km summit above it, against a 600 km radius.
+  for (int i = 0; i < 24; ++i) {
+    const double lat = -1.2 + 0.1 * i;
+    SurfaceObserver obs(forge, lat, 0.35 * i, 1.62);
+    CHECK_NEAR(obs.gravityAccel(), 9.81, 0.03 * 9.81);
+  }
+
+  // A jump reads as a jump: v = 4 m/s gives about 0.8 s of airtime, not 4.8 s.
+  {
+    SurfaceObserver obs(forge, 0.03, 2.51, 1.62);
+    const double airtime = 2.0 * 4.0 / obs.gravityAccel();
+    CHECK(airtime > 0.6);
+    CHECK(airtime < 1.0);
+  }
+
+  // Low orbit lands near 2.3 km/s, the KSP-scale figure DW-18 is buying.
+  {
+    const double r = forge.radiusM + 1.0e4;   // 10 km circular
+    const double v = std::sqrt(of::orbital::kForgeMu / r);
+    CHECK(v > 2200.0);
+    CHECK(v < 2450.0);
+  }
+
+  // The uniform-density fallback still answers for a body with no mu, so an
+  // unconfigured body gets a finite g rather than weightlessness.
+  {
+    BodyParams noMu = forge;
+    noMu.muM3S2 = 0.0;
+    SurfaceObserver obs(noMu, 0.0, 0.0, 1.62);
+    CHECK(obs.gravityAccel() > 0.0);
+    CHECK(obs.gravityAccel() < 1.0);
+  }
 }
 
 // =============================================================================

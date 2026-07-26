@@ -208,6 +208,26 @@ OF_API double of_body_max_relief(int body) {
   const wg::BodyParams* b = g_bodies.get(body);
   return b ? b->maxReliefM : 0.0;
 }
+// DW-18 — the body's gravitational parameter mu = G*M (m^3/s^2). THE gravity
+// authority. Before this existed KinematicBody.ts transcribed /core's
+// uniform-density model into JS, which was a second rule pretending to be a
+// copy: when /core switched to mu the transcription would have kept the browser
+// at 0.587 m/s^2 while the propagator ran at 9.81. Read this; do not re-derive.
+OF_API double of_body_mu(int body) {
+  const wg::BodyParams* b = g_bodies.get(body);
+  return b ? b->muM3S2 : 0.0;
+}
+// Gravitational acceleration (m/s^2) at radius rM from the body centre. Exactly
+// of::worldgen::SurfaceObserver::gravityAccel(), fallback included, so the
+// walker in the browser and the walker in /core cannot disagree.
+OF_API double of_gravity_accel(int body, double rM) {
+  const wg::BodyParams* b = g_bodies.get(body);
+  if (!b || rM <= 0.0) return 0.0;
+  if (b->muM3S2 > 0.0) return b->muM3S2 / (rM * rM);
+  constexpr double kG = 6.67430e-11;
+  constexpr double kRho = 3500.0;
+  return (4.0 / 3.0) * 3.14159265358979323846 * kG * kRho * rM;
+}
 
 // =============================================================================
 // §2 — Voxel edit sets (voxel_terrain.h VoxelEdits). The destruction diff.

@@ -28,14 +28,13 @@ export const CAPSULE = {
   /** cos(50 deg): steeper than this is a slide, not a walk (section 8.1). */
   slopeLimitCos: 0.6428,
   /**
-   * Sized for APEX, not for feel. Forge's modelled surface g is 0.587 m/s^2
-   * (of::SurfaceObserver::gravityAccel with its 3,500 kg/m^3 uniform sphere), so
-   * v^2/2g means an Earth-like 4 m/s launch clears 13.6 m and hangs for 13.6 s.
-   * 1.4 m/s gives a 1.7 m apex. The airtime is still 4.8 s, which is correct for
-   * the body and probably wrong for the game: raised to gameplay as a balance
-   * question about the gravity model, not something to fudge here.
+   * Sized for FEEL, now that DW-18 has given Forge 9.81 m/s^2. 4.0 m/s gives a
+   * 0.82 m apex and 0.82 s of airtime: a jump that clears a knee-high ledge and
+   * lands, instead of the 4.8 second float the 0.587 m/s^2 density model
+   * produced. Apex = v^2/2g, airtime = 2v/g; both are read back by the jump
+   * probe rather than asserted here.
    */
-  jumpSpeedMps: 1.4,
+  jumpSpeedMps: 4.0,
   groundAccel: 34.0,
   airAccel: 6.0,
   groundDrag: 11.0,
@@ -69,15 +68,15 @@ export class KinematicBody {
   }
 
   /**
-   * Newtonian surface g for a uniform sphere, mirroring
-   * of::SurfaceObserver::gravityAccel() EXACTLY, constants included.
-   * /core owns the model; the bridge does not export it yet, so this is a
-   * transcription and not a second rule. Raised as a bridge gap for W3.
+   * Gravity from /core through the bridge (`of_gravity_accel`), never derived
+   * here. This USED to transcribe /core's uniform-density model constant for
+   * constant, which read as harmless duplication right up until DW-18 moved
+   * /core to mu: the copy would have kept the browser at 0.587 m/s^2 while the
+   * orbit propagator ran at 9.81 on the same planet. Standing rule 1 covers
+   * gravity too.
    */
   gravityAccel(rM: number): number {
-    const kG = 6.6743e-11;
-    const kRho = 3500.0;
-    return (4.0 / 3.0) * Math.PI * kG * kRho * rM;
+    return this.oracle.body.gravityAccel(rM);
   }
 
   step(dt: number, intent: MoveIntent): void {

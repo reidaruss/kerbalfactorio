@@ -59,6 +59,8 @@ export interface OfDebugApi {
   world(): WorldState;
   scene(): SceneDump;
   chunks(n?: number, nearOnly?: boolean): unknown[];
+  /** Gravity at radius rM, from /core (DW-18). The walker reads the same call. */
+  gravity(rM: number): number;
   settle(n?: number): Promise<void>;
   /** Advance `seconds` of sim on a synthetic clock. See Loop.run. */
   run(seconds: number, renderHz?: number): Promise<void>;
@@ -215,6 +217,7 @@ export function installDebugApi(
     },
 
     chunks: (n = 4, nearOnly = false) => chunkDump(n, nearOnly),
+    gravity: (rM: number) => s.body.gravityAccel(rM),
 
     settle: (n = 8) => loop.settle(n),
     run: (seconds, renderHz) => loop.run(seconds, renderHz),

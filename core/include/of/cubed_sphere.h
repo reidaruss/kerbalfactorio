@@ -237,6 +237,21 @@ struct BodyParams {
   BodyKind kind = kPlanet;
   double maxReliefM = 6000.0;
   double seaLevelM = 0.0;   // relief clamp datum (planet); ignored for moon
+  // DW-18 — the body's gravitational parameter mu = G*M (m^3/s^2), and THE ONE
+  // authority for gravity on this body. Read it; never re-derive g from a
+  // density model. 0 means "unknown", which makes surface_walk.h fall back to
+  // its uniform-sphere estimate for a body nobody has given a mu.
+  //
+  // It is NOT derived from radiusM: Forge is deliberately an artificially dense
+  // world (600 km across with 9.81 m/s^2 at the surface) so that walking reads
+  // correctly while orbital velocity stays near 2.3 km/s, exactly the trade KSP
+  // makes with Kerbin and for exactly the same reason. Deriving mass from radius
+  // is what produced the 0.587 m/s^2 / 4.8 second jump.
+  //
+  // NOTE: mu takes no part in world generation. Height, biome and voxel solidity
+  // read bodySeed / radiusM / maxReliefM / seaLevelM only, so this field cannot
+  // move a vertex and no terrain baseline changes with it.
+  double muM3S2 = 0.0;
 };
 
 // Spike §5.1 — planet "Forge".
@@ -248,6 +263,10 @@ inline BodyParams makeForge(uint64_t worldSeed) {
   b.kind = kPlanet;
   b.maxReliefM = 6000.0;      // ~6 km continents + mountains
   b.seaLevelM = 0.0;
+  // DW-18: mu = g * R^2 with g = 9.81 m/s^2 at R = 600 km -> 3.5316e12.
+  // MUST equal of::orbital::kForgeMu; world_gen_tests pins the two together so
+  // the walker and the propagator can never disagree about the same planet.
+  b.muM3S2 = 9.81 * 6.0e5 * 6.0e5;
   return b;
 }
 
@@ -260,6 +279,8 @@ inline BodyParams makeCinder(uint64_t worldSeed) {
   b.kind = kMoon;
   b.maxReliefM = 4000.0;      // ~4 km craters + rolling
   b.seaLevelM = 0.0;
+  // mu = 1.63 * 200e3^2 = 6.52e10. MUST equal of::orbital::kCinderMu.
+  b.muM3S2 = 1.63 * 2.0e5 * 2.0e5;
   return b;
 }
 

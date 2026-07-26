@@ -30,6 +30,8 @@ export interface OfCoreModule {
   _of_body_destroy(body: number): void;
   _of_body_radius(body: number): number;
   _of_body_max_relief(body: number): number;
+  _of_body_mu(body: number): number;
+  _of_gravity_accel(body: number, rM: number): number;
   _of_body_kind(body: number): number;
 
   _of_base_height(body: number, dx: number, dy: number, dz: number): number;

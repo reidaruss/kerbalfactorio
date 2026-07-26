@@ -121,15 +121,25 @@ class SurfaceObserver {
   Vec3 gravityDir() const { const Vec3 u = dir(); return Vec3(-u.x, -u.y, -u.z); }
 
   // Gravitational acceleration magnitude at the player (m/s^2), Newtonian point
-  // mass: g = mu / r^2 if a mu is known, else a simple surface-g model. We do not
-  // depend on the orbital mu constants here (additive isolation); the UE layer can
-  // override via gravityAccel(mu). Default: a plausible surface g from the body's
-  // radius using a fixed mean density so it is deterministic + body-scaled.
+  // mass: g = mu / r^2, with mu read from the BODY (BodyParams::muM3S2, DW-18).
+  //
+  // WAS: a uniform-sphere density model, (4/3)*pi*G*rho*R at rho = 3500, which
+  // is where Forge's 0.587 m/s^2 and its 4.8 second jump came from. That made
+  // gravity a SECOND authority disagreeing with of::orbital's kForgeMu (9.81
+  // m/s^2 at the surface) about the same planet: the walker fell at one g and
+  // the propagator orbited at another, sixteen times apart. Same shape of defect
+  // as the five surfaces, so it is resolved the same way: one authority, on the
+  // body, and everybody reads it.
+  //
+  // The density fallback survives ONLY for a body with no mu set (muM3S2 == 0),
+  // so a caller who forgets still gets a finite, body-scaled number rather than
+  // zero gravity.
   double gravityAccel() const {
+    const double r = surfaceRadiusM();
+    if (body_.muM3S2 > 0.0 && r > 0.0) return body_.muM3S2 / (r * r);
     // g = (4/3) * pi * G * rho * R  for a uniform sphere at the surface.
     constexpr double kG = 6.67430e-11;       // gravitational constant
     constexpr double kRho = 3500.0;          // mean rocky density (kg/m^3)
-    const double r = surfaceRadiusM();
     return (4.0 / 3.0) * 3.14159265358979323846 * kG * kRho * r;
   }
   // Explicit-mu variant for callers that carry the body's GM (mu = G*M).
