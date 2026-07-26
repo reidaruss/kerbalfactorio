@@ -421,6 +421,44 @@
       "clips": ["Tree_Sway"],
       "collision": "col_BushScrub",
       "double_sided_ok": ["OF_Leaf", "OF_LeafDry"]
+    },
+
+    "water_pool": {
+      "glb": "assets/models/dist/nodes/water_pool.glb",
+      "node_kind": "WaterPool",
+      "lod0_node": "WaterPool_Full_LOD0",
+      "lod_nodes": [
+        "WaterPool_Full_LOD0", "WaterPool_Full_LOD1", "WaterPool_Full_Water",
+        "WaterPool_Half_LOD0", "WaterPool_Half_LOD1", "WaterPool_Half_Water",
+        "WaterPool_Low_LOD0", "WaterPool_Low_LOD1", "WaterPool_Low_Water"
+      ],
+      "dims_xyz_m": [3.0, 0.25, 3.0],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 280,
+      "max_tris_total": 1100,
+      "max_materials": 3,
+      "sockets": ["socket_draw"],
+      "clips": ["Water_Ripple"],
+      "collision": "col_WaterPool",
+      "double_sided_ok": ["OF_Water"]
+    },
+    "oil_seep": {
+      "glb": "assets/models/dist/nodes/oil_seep.glb",
+      "node_kind": "OilSeep",
+      "lod0_node": "OilSeep_Full_LOD0",
+      "lod_nodes": [
+        "OilSeep_Full_LOD0", "OilSeep_Full_LOD1", "OilSeep_Full_Bulges",
+        "OilSeep_Half_LOD0", "OilSeep_Half_LOD1", "OilSeep_Half_Bulges",
+        "OilSeep_Low_LOD0", "OilSeep_Low_LOD1"
+      ],
+      "dims_xyz_m": [2.2, 0.35, 2.2],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 260,
+      "max_tris_total": 1000,
+      "max_materials": 3,
+      "sockets": ["socket_draw", "socket_item_pop"],
+      "clips": ["Oil_Bubble"],
+      "collision": "col_OilSeep"
     }
   }
 }
