@@ -1598,6 +1598,64 @@ Added at W4 (2026-07-25):
     resolver's magnitude comes from the mover instead of from the obstacle, it
     is a heuristic wearing a formula's clothes.
 
+86. **The serializer existed for eight weeks and was never called, because the
+    handle was in the wrong module.** `of_edits_serialize` shipped with W5 and
+    DW-17 shipped without it, so a player dug a tunnel, reloaded, and walked on
+    flat ground. Nothing was missing: `VoxelEdits` lives in `Services` and the
+    save lives in `src/game`, and no one owned the line between them. The fix is
+    a PORT (`game/VoxelSave.ts`): three structural interfaces narrow enough that
+    `src/game` still imports nothing from `src/world`, and one line in Boot. The
+    lesson is not about voxels. **A capability that is finished but unreachable
+    from the module that needs it is indistinguishable from one that does not
+    exist**, and it will be re-discovered as missing rather than as unwired.
+
+87. **The bytes are the state and the op log is the history, and they are not
+    the same thing.** /core's removed-cell diff is what the world IS; the strike
+    log is what HAPPENED. Both are saved because both are consumed: the near
+    mesher and `TerrainStream.digAt` (and, under DW-16, a worker replaying into
+    its own WASM instance) take strikes, not cells, so a slot carrying only the
+    cells cannot reconcile the heightfield mouth. That is not two authorities
+    for one fact, and the test of that claim is that nothing ever asks the ops
+    what is solid. **Restoring re-meshes per strike, over the brush's own box,
+    which is the live path**: handing the tunnel's union box to one `applyDirty`
+    would re-mesh every brick between its two ends, which is the shape of the
+    55 ms hitch item 59 removed. Cost measured at 12.9 ms for 18 strikes.
+    The one asymmetry is stated in the probe: a live strike re-meshes /core's
+    DIRTY REGION (the cells actually removed) and a restore has only the brush,
+    whose box is a superset, so the restored mesh holds a few extra
+    natural-surface faces (1016 -> 1043) from bricks the live pass never visited.
+
+88. **A canvas that rendered nothing still produces a valid PNG.** The item
+    icons are baked once at boot into 64 px data URLs, and the first version of
+    `probes/icons.js` asserted the COUNT, which is true of twenty-one blank
+    squares. The assertion is now BYTES against a floor no empty render can
+    reach (a transparent 64x64 PNG is a few hundred bytes; a drawn one is
+    thousands: measured 954 to 2,914). The same trap caught the mesh face count
+    in `probes/tunnelpersist.js`, where `of.voxels().mesh` is the LIVE stats
+    object by reference, so holding it and comparing later compares a reading
+    with itself and "unchanged" was three views of one number. **Copy the scalar
+    at the instant you read it, or the probe is measuring its own aliasing.**
+
+89. **A checklist is not a tutorial, and the difference is structural rather
+    than editorial.** `game/Objectives.ts` holds ONE integer and seven
+    predicates asked of the live world four times a second. There is no step
+    machine, no gating and nothing to skip, so a player who builds a smelting
+    line before the list gets there finds it has ticked itself off behind them;
+    `probes/objectives.js` asserts exactly that (crafting the pickaxe advances
+    the list by TWO, because the ore was already in the pack). The check that
+    matters is the negative one: four seconds of doing nothing must leave it
+    where it was, because a list that counts up on a timer is indistinguishable
+    from this one in a screenshot.
+
+90. **Changing the SHAPE of a `__of` entry breaks probes that are not in the
+    diff.** Wrapping the new bed measurement around `audioRender()` as
+    `{voices, beds}` was a one-line convenience and it failed in
+    `probes/moments.js`, which had read the old shape since W6. `__of` is a
+    published interface (WR-11), so the beds got their own `bedsRender()` entry
+    and `audioRender()` returns what it always did. **Adding an entry is free;
+    re-shaping one is a contract change and belongs in a decision log, not in a
+    convenience.**
+
 ### 15.3 The dev loop, concretely
 
 ```

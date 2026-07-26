@@ -36,7 +36,8 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 | **W5 voxel digging and tunnels** | **in flight: dig, mesh, collision, mouth and a WALKABLE tunnel all verified** |
 | **W5g gameplay slice: harvest, inventory, hand crafting, placeable furnace** | **done and driven-verified 2026-07-26** |
 | **W6 building and automation in-world** (also the WebGPU re-evaluation gate) | **automation, demolition, audio and a save slot done and driven-verified 2026-07-26; power and build costs are W7** |
-| W7 progression: research wired to play, build costs, power | pending |
+| **W7 polish: tunnel persistence, item icons, belt curves, ambience, objectives** | **done and driven-verified 2026-07-26** |
+| W7b progression: research wired to play, build costs, power | pending |
 | W8 **the seam**: boardable vessel, launch to orbit | pending, the signature milestone |
 | W9 Cinder | pending |
 
@@ -215,6 +216,85 @@ countdown with no item to give back. Both are counted in the restore ledger.
 Screenshots: `docs/screenshots/W6_demolish.png`, `W6_felled.png`,
 `W6_persist.png`. Probes: `demolish.js`, `moments.js`, `persist.js`.
 
+## W7 polish: the tunnels persist, the assets get used, the world has a bed and a shape (2026-07-26)
+
+Four gaps closed, all driven-verified. ARCHITECTURE 15.2 items 86 to 90.
+
+**The tunnels survive a reload.** `of_edits_serialize` had existed since W5 and
+was never called, because the `VoxelEdits` handle lives in `Services` and the
+save lives in `src/game`, so nobody owned the line between them. `game/VoxelSave.ts`
+is that line: three structural interfaces, one `ports` record handed in by Boot,
+and `src/game` still imports nothing from `src/world`. /core's removed-cell bytes
+are the STATE; the strike log rides beside them as the HISTORY, because the near
+mesher and `TerrainStream.digAt` consume strikes and not cells. Slot version 2.
+
+Driven acceptance (`probes/tunnelpersist.js`, `valid: true`): 146 cells over 18
+strikes, and 8 sample points inside the passage read AIR. The rock is then put
+back through /core's own `deserialize` (an LEB128 zero) and the same 8 points
+read ROCK with the near mesh down **1016 to 745 faces**; the slot is loaded and
+they read AIR again with 146 cells and 1043 faces. Then **9.37 m walked with the
+dig key released**, 8/8 grounded, 0 blocked. 1,316 voxel bytes, 12.9 ms to
+re-mesh 18 restored strikes. The middle step is what makes the last one mean
+anything: a save that "worked" because the live world still held the answer is
+the classic false pass.
+
+**Three shipped assets that the code ignored.** `items_atlas.glb`'s fourteen item
+meshes are now baked once at boot into 64 px data URLs, so the pack shows objects
+instead of rows of text; tools and buildables borrow the LOD0 of the thing they
+place. 21 icons, **33.6 kB of PNG**, 220 ms of bake that overlaps the other boot
+loads, and the temporary WebGL context is disposed before the game's own does any
+work. `src/ui` still imports zero three.js, because an icon is a string.
+`belt_curve_l/r.glb` are DERIVED, never placed: a run is ordered, so a tile turns
+exactly when the heading it inherits is not the heading it sends on, and the hand
+is the sign of `(up x in) . out`. The band scrolls along the ARC on a curve, with
+which corner it is riding in the vertex role, so there is still ONE material and
+ONE batch. `Cave_OreVeinPanel` is NOT wired: it needs per-face placement in the
+voxel mesher, which is the rendering domain's file.
+
+Driven: `probes/icons.js` (`iconsAreReal`) asserts BYTES and not a count, because
+a canvas that rendered nothing still yields a valid PNG (smallest 954, largest
+2,914, floor 900). `probes/beltcurve.js` (`cornersAreCurved`) lays two legs
+through the build ghost and the R key and gets turns `"lr"`; both hands are
+tested because a sign error would draw them as each other.
+
+**The planet is not silent between actions.** Three continuous beds, synthesised
+like everything else and shipping no audio bytes: wind that opens with altitude
+and shuts under rock, a low room tone plus a narrow high band underground, and a
+cicada chorus in the Forest (insects and not birds: a bird call is a melody).
+Levels are 0.055 to 0.085 of master. Where the level comes from is
+`game/Ambience.ts` and nowhere else, from the body radius, the walker's own
+`underRock` and `of_biome_at`; the audio layer holds no opinion about terrain. A
+one-second ease makes stepping under a lip a fade. **M still mutes**, and a muted
+game still builds no graph.
+
+Driven (`probes/ambience.js`, `bedsMakeSound` and `levelsFollowTheWorld`): the
+beds rendered offline measure RMS **0.0515 to 0.0909**, none silent, and on a
+driven walk the levels CROSS OVER: surface wind 0.636 / cave 0 / life 1, under
+rock wind 0 / cave 0.999 / life 0.001, back out wind 0.631 / cave 0.007. A build
+that played all three at a constant level passes the first check and fails the
+second. Live cost measured at **32 plays for 4.1 ms** with two beds running.
+
+**The first minute has a shape.** Seven objectives top right: harvest a tree,
+craft a pickaxe, mine iron, smelt it, place a miner, run a belt to a smelter,
+walk away and take what it made. It is not a tutorial system structurally: one
+integer and seven predicates asked of the live world four times a second, no
+gating and nothing to skip, so a player who ignores it finds it ticked off
+behind them. **H** hides it and the choice survives a reload; the list removes
+itself when the last objective is met.
+
+Driven (`probes/objectives.js`, `advancesOnlyOnTheWorld` and `hidesWithH`): four
+seconds of doing nothing leaves it at 0, a harvested tree takes it to 1, and
+crafting the pickaxe takes it to **3 in one go** because the ore was already in
+the pack. A list that counted up on a timer would look identical in a screenshot.
+
+**Budget: draw calls 39 on the surface, 43 with a six-tile line including two
+curves, 19 underground, against 150.** 22/22 ctest, self-determinism 119/119,
+cross-toolchain 94/94, `npm run check` green. No wasm rebuild: every export this
+needed was already there.
+
+Screenshots: `docs/screenshots/W7_tunnel_persisted.png`, `W7_icons.png`,
+`W7_belt_curve.png`, `W7_objectives.png`, `W7_ambience.png`.
+
 ## Commands
 
 ```
@@ -313,11 +393,11 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
 - **DW-15 gate:** before any native peer (multiplayer server or native port) exists, vendor
   `tan`/`asin`/`atan2`/`cos` into `/core` and re-baseline. A 1 ULP libm difference grows a
   different planet from the same seed.
-- **DW-17 is DONE for the pack, the buildings and the node depletion** (IndexedDB, autosave every
-  20 s and on `pagehide`, `probes/persist.js` green). **Voxel edits are still not persisted:**
-  `of_edits_serialize` exists and works, but the `VoxelEdits` handle lives in `Services`, so
-  wiring it belongs to whoever owns the voxel layer. Research is not persisted either (it is not
-  wired to play yet: W7).
+- **DW-17 is DONE for the pack, the buildings, the node depletion AND the voxel edits**
+  (IndexedDB, autosave every 20 s and on `pagehide`, slot version 2, `probes/persist.js` and
+  `probes/tunnelpersist.js` green). Research is not persisted (it is not wired to play yet), and
+  a furnace's burning fuel is not: it is a tick countdown with no item to give back, and it is
+  counted in the restore ledger rather than hidden.
 
 ## Process rules that have earned their place
 
