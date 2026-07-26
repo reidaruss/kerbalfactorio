@@ -1232,6 +1232,35 @@ Added at W4 (2026-07-25):
     Standing rule 1 is not only about terrain height: anything the browser can
     ask `/core` for, it must ask for. `of_body_mu` / `of_gravity_accel` are the
     additive ABI-2 exports that closed it.
+47. **"Below the ground" is not "landing" once tunnels exist.** The W2 walker
+    snapped the feet to `surfaceRadius` whenever `gap <= 0`, which is correct for
+    every world without an overhang. Two strikes into a tunnel wall and the next
+    step teleported the player out through their own ceiling, because a sideways
+    tunnel leaves the top of its column solid, `derivedLoweringAt` correctly
+    reports no lowering, and `surfaceRadius` still names the hillside metres
+    overhead. Once the feet are DEEP below the heightfield (1.5 m, more than a
+    voxel and less than a capsule) the voxel world is the only authority: floor
+    from `solidCell`, and a step into rock REFUSED rather than resolved upward.
+48. **A radial push sized from the whole capsule levitates the player out of a
+    tunnel.** `resolveVoxels` samples six points up the capsule and pushes the
+    feet outward far enough to clear the deepest one. That is right for a dig
+    rim; inside a tunnel the HEAD sample sits under the ceiling, the push fires
+    at 2.8 m, and the player rises through the roof one tick at a time. It
+    ejected to open sky on the third strike, every time, and it looked like the
+    dig failing rather than the collision resolving. Skipped entirely when deep.
+49. **Both of the above were found by a PER-STRIKE TRACE, not by reading the
+    code.** The dig probe records altitude, grounded and surface height after
+    every strike; "hits 7, misses 15" said nothing, while the trace showed the
+    surface height jumping 7 m between two consecutive samples and named the
+    failure immediately. When a driven probe reports a bad aggregate, the next
+    move is to make it report a sequence.
+50. **The voxel re-mesh cost is the surface ORACLE, not the mesher.**
+    `exposedFaces` tests six neighbours per cell and every `isSolid` evaluates
+    the designed-height noise stack at about 2 us, so a modest dirty box costs
+    27 to 69 ms for a few hundred faces while the greedy merge itself is
+    microseconds. The fix is a per-column base-height cache over the dirty box,
+    not a faster mesher; the greedy pass is already returning a 1.4x to 2.2x
+    merge and is not where the time goes.
 
 ### 15.3 The dev loop, concretely
 
