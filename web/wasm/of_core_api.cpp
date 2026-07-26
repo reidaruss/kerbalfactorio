@@ -1572,15 +1572,30 @@ OF_API int of_gp_node_state(int i) {
 
 // One hand harvest. i32 scratch [granted, usedTool, nodeEmpty, resource].
 // Returns the granted count (0 when the node is empty or the pack is full).
+//
+// SUB-UNIT REMAINDER (a /core defect this shim absorbs, ARCHITECTURE 15.2).
+// InitialAmount is baseAmountOf(kind) * Grade, and Grade is fractional, so every
+// node's amount is fractional. gameplay.h's harvestNode clamps the pull with
+// `pull = (uint16_t)RemainingAmount`, which is 0 once less than one unit is
+// left, and it then grants 0 and decrements by 0. The node is stuck at, say,
+// 0.72 forever, never reports nodeEmpty, and the depletion mesh can never reach
+// its final state: a resource that can never be finished. One unit is the
+// granularity of the whole item system, so a remainder below one unit is not a
+// unit; this collapses it to zero rather than leaving an unreachable crumb. The
+// real fix belongs in gameplay.h and is logged for core-engine.
 OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
   resetI32(4);
   if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpNodes.size()) return 0;
   wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
   const auto kind =
       static_cast<wg::survival::NodeKind>(g_gpKinds[static_cast<size_t>(i)]);
-  const sv::HarvestResult r = sv::harvestNode(
+  sv::HarvestResult r = sv::harvestNode(
       n, kind, *g_inv, static_cast<uint16_t>(baseYield),
       static_cast<uint16_t>(toolYield));
+  if (r.granted == 0 && n.RemainingAmount > 0.0 && n.RemainingAmount < 1.0) {
+    n.RemainingAmount = 0.0;
+    r.nodeEmpty = true;
+  }
   g_i32.push_back(static_cast<int32_t>(r.granted));
   g_i32.push_back(r.usedTool ? 1 : 0);
   g_i32.push_back(r.nodeEmpty ? 1 : 0);

@@ -1,5 +1,5 @@
 // =============================================================================
-// parity.mjs — the point of the whole spike.
+// parity.mjs â€” the point of the whole spike.
 //
 // Loads the WASM build of the headless /core simulation and replays, from
 // JavaScript, the exact scenario that web/wasm/test/dump_expected.cpp ran
@@ -24,7 +24,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 // (strip a UTF-8 BOM: Windows PowerShell 5.1's Out-File -Encoding utf8 emits one,
 // and JSON.parse rejects it)
 const expected = JSON.parse(
-    readFileSync(join(here, 'expected.json'), 'utf8').replace(/^﻿/, ''));
+    readFileSync(join(here, 'expected.json'), 'utf8').replace(/^ï»¿/, ''));
 
 // --- bit-exact helpers -------------------------------------------------------
 const _dv = new DataView(new ArrayBuffer(8));
@@ -72,7 +72,7 @@ function fnv() {
 //   emscripten's musl libm differ by 1 ULP at ~2.8% of the lattice arguments.
 //   Because height is deliberately POSITION-HASHED from the direction's raw bits
 //   (WG-6), a 1-ULP direction difference yields a completely unrelated height.
-//   PASSING TIER B AT THESE SAMPLE POINTS DOES NOT PROVE UNIVERSAL IDENTITY —
+//   PASSING TIER B AT THESE SAMPLE POINTS DOES NOT PROVE UNIVERSAL IDENTITY â€”
 //   run `node web/wasm/test/diag.mjs` for the true population rate (~1.7% of
 //   terrain vertices differ). Tier B is here so any NEW divergence is visible
 //   next to the known one, not to certify the terrain field.
@@ -669,6 +669,177 @@ function buildChain(deposit) {
   eq('factoryDeplete.exactRateRemaining', M._of_net_miner_remaining(net2, m2),
      e.exactRateRemaining);
   M._of_net_destroy(net2);
+}
+
+// --- CASE 9: the gameplay slice (inventory, harvest, craft, furnace) --------
+//
+// TIER 0 only, and deliberately so: gameplay.h is integer/fixed logic with no
+// transcendental anywhere, so it has no cross-toolchain question to answer. What
+// it DOES have is the failure mode DW-20 names: a call that returns cleanly
+// while nothing moved. Every assertion below therefore checks a DELTA (the pack
+// grew by exactly what the node lost, the craft consumed its inputs, the furnace
+// completed on the tick it should and stalls on the tick it runs dry), not that
+// the entry point returned a number.
+{
+  const ids = () => { M._of_gp_item_ids(); const p = scratchI32(M, 13); return {
+    wood: p[0], stone: p[1], coal: p[2], rawIron: p[3], rawCopper: p[4],
+    iron: p[7], pickaxe: p[9], axe: p[10], furnaceItem: p[11] }; };
+  const invOf = (item) => M._of_gp_count(item);
+  const nodeState = (i) => { M._of_gp_node_state(i); const p = scratchF64(M, 8); return {
+    x: p[0], y: p[1], z: p[2], remaining: p[3], initial: p[4],
+    grade: p[5], kind: p[6], resource: p[7] }; };
+  const harvest = (i, base, tool) => { M._of_gp_node_harvest(i, base, tool);
+    const p = scratchI32(M, 4);
+    return { granted: p[0], usedTool: p[1], nodeEmpty: p[2], resource: p[3] }; };
+  const furnace = (f) => { M._of_gp_furnace_state(f); const p = scratchI32(M, 8); return {
+    oreItem: p[0], oreCount: p[1], outItem: p[2], outCount: p[3],
+    fuelTicks: p[4], progress: p[5], ticksPerSmelt: p[6], smelting: p[7] }; };
+
+  eq('gp.init', M._of_gp_init(), 1, TIER.SELF);
+  eq('gp.initIdempotent', M._of_gp_init(), 1, TIER.SELF);
+  eq('gp.slots', M._of_gp_slot_count(), 20, TIER.SELF);
+  M._of_gp_clear();
+  const I = ids();
+  eq('gp.itemIdWood', I.wood, 0x0030, TIER.SELF);
+  eq('gp.itemIdIron', I.iron, 0x0037, TIER.SELF);
+
+  // --- item metadata comes from /core, so the UI cannot invent a name -------
+  {
+    const n = M._of_gp_item_name(I.wood);
+    const name = new TextDecoder().decode(scratchU8(M, n).slice());
+    eq('gp.itemName', name, 'Wood', TIER.SELF);
+    M._of_gp_item_at(0);
+    eq('gp.itemDefRows', M._of_gp_item_count() > 12, true, TIER.SELF);
+  }
+
+  // --- node layout sits on THE surface, not on the raw heightfield ---------
+  // WG-21 in miniature. LayoutTestArea's default snap is sampleHeightField; if
+  // of_gp_nodes_layout ever stops passing the oracle, |node| lands kilometres
+  // off the ground and this is the assertion that says so.
+  M._of_gp_nodes_clear();
+  M._of_gp_kinds_reset();
+  for (const k of [0, 1, 3, 2]) M._of_gp_kinds_push(k);   // Tree Rock IronOre Coal
+  const [ndx, ndy, ndz] = digDir();
+  eq('gp.nodesLaid', M._of_gp_nodes_layout(forge, 0, ndx, ndy, ndz, 1e-4), 4, TIER.SELF);
+  {
+    const n0 = nodeState(0);
+    const r = Math.hypot(n0.x, n0.y, n0.z);
+    const want = M._of_surface_radius(forge, 0, n0.x / r, n0.y / r, n0.z / r);
+    eq('gp.nodeOnOracleSurface', Math.abs(r - want) < 1e-6, true, TIER.SELF);
+    const raw = M._of_body_radius(forge)
+      + M._of_sample_raw_height_latlon(forge, ...(() => {
+        M._of_dir_to_latlon(n0.x / r, n0.y / r, n0.z / r);
+        const ll = scratchF64(M, 2); return [ll[0], ll[1]];
+      })());
+    // The guard is only worth anything if the two surfaces actually differ here.
+    eq('gp.rawIsADifferentSurface', Math.abs(raw - want) > 1.0, true, TIER.SELF);
+    eq('gp.nodeKind', n0.kind, 0, TIER.SELF);
+    eq('gp.nodeResource', n0.resource, I.wood, TIER.SELF);
+    eq('gp.nodeFull', n0.remaining === n0.initial && n0.initial > 0, true, TIER.SELF);
+  }
+
+  // --- self-determinism: the same ring lays out bit-identically ------------
+  {
+    const before = nodeState(2);
+    M._of_gp_nodes_clear();
+    M._of_gp_kinds_reset();
+    for (const k of [0, 1, 3, 2]) M._of_gp_kinds_push(k);
+    M._of_gp_nodes_layout(forge, 0, ndx, ndy, ndz, 1e-4);
+    const after = nodeState(2);
+    eqBits('gp.layoutDeterministicX', after.x, bits(before.x), TIER.SELF);
+    eqBits('gp.layoutDeterministicAmount', after.initial, bits(before.initial), TIER.SELF);
+  }
+
+  // --- hand harvest: bare hands work, the tool raises the yield ------------
+  {
+    const b0 = nodeState(0);
+    const h1 = harvest(0, 2, 5);
+    eq('gp.harvestBareHands', h1.granted, 2, TIER.SELF);
+    eq('gp.harvestNoTool', h1.usedTool, 0, TIER.SELF);
+    eq('gp.harvestGrantedToPack', invOf(I.wood), 2, TIER.SELF);
+    // THE delta assertion: the node lost exactly what the pack gained.
+    eq('gp.harvestDepletedNode', b0.remaining - nodeState(0).remaining, 2, TIER.SELF);
+
+    M._of_gp_add(I.axe, 1);
+    const h2 = harvest(0, 2, 5);
+    eq('gp.harvestWithAxe', h2.granted, 5, TIER.SELF);
+    eq('gp.harvestUsedTool', h2.usedTool, 1, TIER.SELF);
+    eq('gp.harvestPackTotal', invOf(I.wood), 7, TIER.SELF);
+    // A pickaxe is the WRONG tool for a tree, so it must not raise the yield.
+    M._of_gp_remove(I.axe, 1);
+    M._of_gp_add(I.pickaxe, 1);
+    eq('gp.harvestWrongTool', harvest(0, 2, 5).granted, 2, TIER.SELF);
+    M._of_gp_remove(I.pickaxe, 1);
+
+    // Drain node 1 (Rock) to empty and check it reports empty and stays at 0.
+    // This is the assertion that caught the sub-unit remainder: InitialAmount is
+    // baseAmount * a fractional Grade, so the last fraction of a unit is
+    // unreachable through gameplay.h's uint16 pull clamp and the node would
+    // otherwise sit at 0.72 for ever, never empty and never fully depleted.
+    let guard = 0;
+    while (nodeState(1).remaining > 0 && guard++ < 400) harvest(1, 9, 9);
+    eq('gp.nodeFullyDrains', nodeState(1).remaining, 0, TIER.SELF);
+    eq('gp.nodeDrainTerminates', guard < 400, true, TIER.SELF);
+    const dead = harvest(1, 9, 9);
+    eq('gp.emptyNodeGrantsNothing', dead.granted, 0, TIER.SELF);
+    eq('gp.emptyNodeFlag', dead.nodeEmpty, 1, TIER.SELF);
+  }
+
+  // --- hand crafting: all-or-nothing, and it consumes ----------------------
+  {
+    eq('gp.recipeCount', M._of_gp_recipe_count(), 4, TIER.SELF);
+    M._of_gp_recipe_info(0);
+    let r = scratchI32(M, 13).slice();
+    eq('gp.recipeOutput', r[0], I.pickaxe, TIER.SELF);
+    eq('gp.recipeInputs', r[3], 2, TIER.SELF);
+    eq('gp.recipeNotCraftable', r[2], 0, TIER.SELF);      // no raw iron yet
+    M._of_gp_add(I.rawIron, 1);
+    M._of_gp_recipe_info(0);
+    r = scratchI32(M, 13).slice();
+    eq('gp.recipeCraftable', r[2], 1, TIER.SELF);
+    const woodBefore = invOf(I.wood);
+    eq('gp.craft', M._of_gp_craft(0), 1, TIER.SELF);
+    eq('gp.craftMadeTool', invOf(I.pickaxe), 1, TIER.SELF);
+    eq('gp.craftConsumedIron', invOf(I.rawIron), 0, TIER.SELF);
+    eq('gp.craftConsumedWood', woodBefore - invOf(I.wood), 1, TIER.SELF);
+    eq('gp.craftAgainFails', M._of_gp_craft(0), 0, TIER.SELF);
+    eq('gp.craftFailConsumedNothing', invOf(I.wood), woodBefore - 1, TIER.SELF);
+  }
+
+  // --- the furnace: completes on the tick it should, stalls when starved ---
+  {
+    const f = M._of_gp_furnace_create(0);
+    M._of_gp_add(I.rawIron, 3);
+    M._of_gp_add(I.coal, 1);
+    eq('gp.furnaceInsertOre', M._of_gp_furnace_insert(f, I.rawIron, 3), 3, TIER.SELF);
+    eq('gp.furnaceOreLeftPack', invOf(I.rawIron), 0, TIER.SELF);
+    eq('gp.furnaceInsertFuel', M._of_gp_furnace_insert(f, I.coal, 1), 1, TIER.SELF);
+    const s0 = furnace(f);
+    eq('gp.furnaceTicksPerSmelt', s0.ticksPerSmelt, 180, TIER.SELF);
+    eq('gp.furnaceFuelPool', s0.fuelTicks, 1440, TIER.SELF);
+    eq('gp.furnaceNoEarlySmelt', M._of_gp_furnace_run(f, 179), 0, TIER.SELF);
+    eq('gp.furnaceProgress179', furnace(f).progress, 179, TIER.SELF);
+    eq('gp.furnaceSmeltOnTick180', M._of_gp_furnace_run(f, 1), 1, TIER.SELF);
+    const s1 = furnace(f);
+    eq('gp.furnaceOutput', s1.outCount, 1, TIER.SELF);
+    eq('gp.furnaceOutputIsIron', s1.outItem, I.iron, TIER.SELF);
+    eq('gp.furnaceBurnedFuel', s0.fuelTicks - s1.fuelTicks, 180, TIER.SELF);
+    eq('gp.furnaceCollect', M._of_gp_furnace_collect(f, 5), 1, TIER.SELF);
+    eq('gp.furnaceIngotInPack', invOf(I.iron), 1, TIER.SELF);
+    eq('gp.furnaceOutputDrained', furnace(f).outCount, 0, TIER.SELF);
+    M._of_gp_furnace_destroy(f);
+
+    // Starved: ore but no fuel makes no progress at all, forever.
+    const g = M._of_gp_furnace_create(1);
+    M._of_gp_add(I.rawCopper, 1);
+    M._of_gp_furnace_insert(g, I.rawCopper, 1);
+    eq('gp.smelterTicksPerSmelt', furnace(g).ticksPerSmelt, 60, TIER.SELF);
+    eq('gp.furnaceStarvedNoSmelt', M._of_gp_furnace_run(g, 5000), 0, TIER.SELF);
+    eq('gp.furnaceStarvedNoProgress', furnace(g).progress, 0, TIER.SELF);
+    M._of_gp_furnace_destroy(g);
+  }
+  M._of_gp_clear();
+  M._of_gp_nodes_clear();
 }
 
 // =============================================================================
