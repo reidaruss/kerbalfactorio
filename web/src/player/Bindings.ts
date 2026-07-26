@@ -47,7 +47,12 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   cancel: ['Escape'],
   pack: ['Tab'],
   level: ['KeyQ'],
-  demolish: ['KeyX'],
+  // RIGHT CLICK is the genre's demolish and X is kept because it was already
+  // documented. Neither belongs on the hotbar: levelling and removing apply to
+  // whatever is under the crosshair whatever is in hand, so putting them in
+  // slots would cost two of nine and force a swap-and-swap-back for a two
+  // second action, exactly when the player is mid-way through laying a base.
+  demolish: ['KeyX', 'Mouse2'],
   view: ['KeyV'],
   lamp: ['KeyL'],
   rotate: ['KeyR'],

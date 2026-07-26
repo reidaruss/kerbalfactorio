@@ -498,7 +498,8 @@ solved.
 | **Escape** | close whatever menu is open. Nothing open, drop the part in hand. Nothing in hand, take the pointer back. |
 | **1 to 9** and the **mouse wheel** | choose a hotbar slot: hands, furnace, drill, belt, smelter, foundation, floor, wall, door |
 | Tab | pack and hand crafting |
-| Q level ground · X demolish · R turn the ghost · B free placement | |
+| **right click** or X | demolish whatever is under the crosshair |
+| Q level ground · R turn the ghost · B free placement | |
 | WASD walk · Space jump · Shift sprint · V first/third person · L headlamp · M mute · H hide the checklist · ` debug HUD | |
 
 **Escape has ONE handler over a DERIVED list.** Every panel joins
