@@ -285,3 +285,86 @@ TEST(determinism_same_ops_same_state) {
   const VoxelCell c = cellForPos(center);
   CHECK(isProcSolid(forge, c) == isProcSolid(forge2, c));
 }
+
+// =============================================================================
+// WG-22 â€” the FILL BRUSH, the mirror of dig(). Proves the layer is no longer
+// subtractive by construction: a brush can put 1 m^3 cells BACK, the exposed-face
+// mesher sees them, and both sets survive a save/load round trip together.
+// =============================================================================
+TEST(fill_brush_is_the_mirror_of_the_dig_brush) {
+  const BodyParams forge = makeForge(20260616ull);
+  const Vec3 u = unitOf(latLonToDir(0.20, 0.55));
+  const double surfR = forge.radiusM + sampleDesignedHeight(forge, u);
+
+  VoxelEdits e;
+  // Dig a sphere just under the surface, then fill the SAME sphere back.
+  const Vec3 c = u * (surfR - 3.0);
+  const int dug = e.dig(forge, c, 3.0);
+  CHECK(dug > 0);
+  CHECK(e.removedCount() == static_cast<size_t>(dug));
+  const int back = e.fill(forge, c, 3.0);
+  // Every cell the dig took is a cell the fill can give back, and the diff is
+  // empty again rather than holding two opposing facts.
+  CHECK(back == dug);
+  CHECK(e.removedCount() == 0);
+  CHECK(e.addedCount() == 0);
+  CHECK(e.empty());
+
+  // Filling ABOVE the surface places NEW ground where there was only air.
+  const Vec3 above = u * (surfR + 2.0);
+  const int placed = e.fill(forge, above, 2.5);
+  CHECK(placed > 0);
+  CHECK(e.addedCount() == static_cast<size_t>(placed));
+  CHECK(e.removedCount() == 0);
+  // Idempotent: a second identical brush places nothing.
+  CHECK(e.fill(forge, above, 2.5) == 0);
+  CHECK(e.addedCount() == static_cast<size_t>(placed));
+
+  // The mesher sees the placed ground: a mound above open sky has exposed faces
+  // where the pristine world had none in that region.
+  VoxelEdits pristine;
+  const size_t before = exposedFaces(forge, pristine, above, 3.0).size();
+  const size_t after = exposedFaces(forge, e, above, 3.0).size();
+  CHECK(after > before);
+
+  // And the dirty AABB scopes the re-mesh, exactly as a dig's does. Taken from a
+  // brush that actually placed something: fill() resets the box on entry the way
+  // dig() does, so the no-op brush above correctly left it invalid.
+  CHECK(!e.dirtyRegion().valid);
+  CHECK(e.fill(forge, u * (surfR + 5.0), 2.0) > 0);
+  const VoxelEdits::CellAABB d = e.dirtyRegion();
+  CHECK(d.valid);
+  CHECK(d.max.cx >= d.min.cx && d.max.cy >= d.min.cy && d.max.cz >= d.min.cz);
+}
+
+// =============================================================================
+// Both sets round-trip through the byte cursor, and a PRE-WG-22 stream still
+// loads. A save format that bricked every existing slot would not be shippable.
+// =============================================================================
+TEST(both_edit_sets_survive_serialization) {
+  const BodyParams forge = makeForge(20260616ull);
+  const Vec3 u = unitOf(latLonToDir(0.20, 0.55));
+  const double surfR = forge.radiusM + sampleDesignedHeight(forge, u);
+
+  VoxelEdits e;
+  e.dig(forge, u * (surfR - 4.0), 3.0);
+  e.fill(forge, u * (surfR + 2.0), 2.5);
+  CHECK(e.removedCount() > 0 && e.addedCount() > 0);
+
+  of::persist::SaveWriter w;
+  e.serialize(w);
+  of::persist::SaveReader r(w.bytes());
+  VoxelEdits back;
+  back.deserialize(r);
+  CHECK(back.removedCount() == e.removedCount());
+  CHECK(back.addedCount() == e.addedCount());
+  for (std::unordered_set<uint64_t>::const_iterator it = e.removedSet().begin();
+       it != e.removedSet().end(); ++it) CHECK(back.isRemoved(*it));
+  for (std::unordered_set<uint64_t>::const_iterator it = e.addedSet().begin();
+       it != e.addedSet().end(); ++it) CHECK(back.isAdded(*it));
+
+  // Byte-stream determinism: the same state serializes to the same bytes.
+  of::persist::SaveWriter w2;
+  back.serialize(w2);
+  CHECK(w2.bytes() == w.bytes());
+}

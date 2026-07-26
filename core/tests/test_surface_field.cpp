@@ -11,14 +11,19 @@
 //   - a horizontal TUNNEL below the surface produces NO surface lowering (no top-
 //     anchored open run -> the ceiling/heightfield is intact).
 //   - determinism: same (body, edits) -> same surface bits.
+// WG-22 adds the TERRAFORMING half: fill is representable at all, it raises the
+// same one surface, dig and fill are inverses, and levelArea flattens a disc and
+// only that disc.
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include "test_framework.h"
 #include "of/cubed_sphere.h"
 #include "of/biome.h"
 #include "of/voxel_terrain.h"
 #include "of/surface_field.h"
+#include "of/persistence.h"  // reuse SaveWriter/SaveReader as the byte cursor
 
 using namespace of;
 using namespace of::worldgen;
@@ -240,4 +245,225 @@ TEST(determinism_and_surfacefield_view) {
   // The bound loweringFn matches derivedLoweringAt (what buildChunk consumes).
   auto fn = field.loweringFn();
   CHECK_NEAR(fn(u), derivedLoweringAt(forge, u, a), 1e-12);
+}
+
+// =============================================================================
+// WG-22 â€” TERRAFORMING. Fill is representable, it moves the ONE surface, and
+// levelArea collapses the height spread inside its disc and nowhere else.
+// =============================================================================
+static Vec3 crossOf(const Vec3& a, const Vec3& b) {
+  return Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
+// A ring of dirs at `metresOut` tangential metres from `u`, for sampling a disc.
+static void ringDirs(const BodyParams& body, const Vec3& u, double metresOut,
+                     int n, std::vector<Vec3>& out) {
+  const Vec3 seed = (std::fabs(u.x) < 0.9) ? Vec3(1, 0, 0) : Vec3(0, 1, 0);
+  Vec3 e1 = crossOf(u, seed);
+  e1 = e1 * (1.0 / e1.length());
+  const Vec3 e2 = crossOf(u, e1);
+  const double R = body.radiusM;
+  for (int i = 0; i < n; ++i) {
+    const double a = (2.0 * 3.14159265358979323846 * i) / n;
+    const Vec3 p = u * R + (e1 * std::cos(a) + e2 * std::sin(a)) * metresOut;
+    out.push_back(unitOf(p));
+  }
+}
+
+// =============================================================================
+// FILL IS REPRESENTABLE AT ALL. Before WG-22 the model was subtractive by
+// construction: a removed set can only take rock away. This is the assertion the
+// whole feature rests on, so it is stated on its own.
+// =============================================================================
+TEST(fill_makes_air_solid_and_raises_the_one_surface) {
+  const BodyParams forge = makeForge(20260616ull);
+  const Vec3 u = unitOf(sampleDir());
+  const double surfR = forge.radiusM + baseHeight(forge, u);
+
+  VoxelEdits edits;
+  // The three cells directly above the designed surface are AIR to begin with.
+  for (int k = 0; k < 3; ++k)
+    CHECK(!edits.isSolid(forge, cellForPos(u * (surfR + (k + 0.5) * kVoxelSizeM))));
+  CHECK_NEAR(surfaceHeight(forge, u, edits), baseHeight(forge, u), 1e-12);
+
+  for (int k = 0; k < 3; ++k)
+    CHECK(edits.fillCell(forge, cellForPos(u * (surfR + (k + 0.5) * kVoxelSizeM))));
+  CHECK(edits.addedCount() == 3);
+
+  // Solidity says solid...
+  for (int k = 0; k < 3; ++k)
+    CHECK(edits.isSolid(forge, cellForPos(u * (surfR + (k + 0.5) * kVoxelSizeM))));
+  // ...and the SAME oracle the mesh, the walker and collision read says the
+  // surface came up with it. Anything less is the five-surfaces failure.
+  const double raised = surfaceHeight(forge, u, edits);
+  CHECK_NEAR(raised - baseHeight(forge, u), 3.0, 1e-9);
+  CHECK_NEAR(derivedRaisingAt(forge, u, edits), 3.0, 1e-9);
+  CHECK_NEAR(surfaceRadius(forge, u, edits), forge.radiusM + raised, 1e-9);
+  // The signed offset the chunk mesher consumes is negative when ground rose.
+  CHECK_NEAR(surfaceOffsetAt(forge, u, edits), -3.0, 1e-9);
+
+  // A cell floating with a gap under it does NOT raise the heightfield, exactly
+  // as a sideways tunnel does not lower it.
+  VoxelEdits floating;
+  floating.fillCell(forge, cellForPos(u * (surfR + 5.5 * kVoxelSizeM)));
+  CHECK(floating.addedCount() == 1);
+  CHECK_NEAR(derivedRaisingAt(forge, u, floating), 0.0, 1e-12);
+  CHECK(asBits(surfaceHeight(forge, u, floating)) == asBits(baseHeight(forge, u)));
+}
+
+// =============================================================================
+// dig and fill are INVERSES cell for cell, and the two sets stay disjoint, so
+// undoing an edit SHRINKS the save instead of growing it.
+// =============================================================================
+TEST(dig_and_fill_are_inverses_and_the_diff_shrinks) {
+  const BodyParams forge = makeForge(20260616ull);
+  const Vec3 u = unitOf(sampleDir());
+  const double surfR = forge.radiusM + baseHeight(forge, u);
+  const VoxelCell under = cellForPos(u * (surfR - 2.5 * kVoxelSizeM));
+  const VoxelCell over  = cellForPos(u * (surfR + 0.5 * kVoxelSizeM));
+
+  VoxelEdits e;
+  CHECK(e.digCell(under));
+  CHECK(e.removedCount() == 1 && e.addedCount() == 0);
+  CHECK(!e.isSolid(forge, under));
+  // Filling a dug cell forgets the dig rather than storing a second fact.
+  CHECK(e.fillCell(forge, under));
+  CHECK(e.removedCount() == 0 && e.addedCount() == 0);
+  CHECK(e.isSolid(forge, under));
+  CHECK(e.empty());
+
+  CHECK(e.fillCell(forge, over));
+  CHECK(e.addedCount() == 1 && e.removedCount() == 0);
+  // Digging placed ground takes it back and again stores nothing.
+  CHECK(e.digCell(over));
+  CHECK(e.addedCount() == 0 && e.removedCount() == 0);
+  CHECK(!e.isSolid(forge, over));
+
+  // Filling rock that is already there is a no-op, not a stored fact.
+  CHECK(!e.fillCell(forge, under));
+  CHECK(e.empty());
+}
+
+// =============================================================================
+// THE HEADLINE: levelArea collapses the height spread inside its radius, leaves
+// the ground outside it untouched, and is idempotent.
+// =============================================================================
+TEST(level_area_flattens_the_disc_and_only_the_disc) {
+  const BodyParams forge = makeForge(20260616ull);
+  // A site with REAL relief. sampleDir() is a smooth spot whose 8 m disc spans
+  // 0.73 m — less than one voxel — so levelling it could only prove that a 1 m
+  // lattice cannot beat 1 m. This dir was found by scanning the body for the
+  // steepest 8 m disc under 12 m of spread: 7.70 m across 16 m, a 26 degree
+  // slope, which is a hillside a player would actually want to flatten.
+  const Vec3 u = unitOf(latLonToDir(1.00, -0.90));
+  const double radiusM = 8.0;
+
+  // Sample points: rings inside the disc, and a ring well outside it.
+  std::vector<Vec3> in, out;
+  in.push_back(u);
+  ringDirs(forge, u, radiusM * 0.4, 8, in);
+  ringDirs(forge, u, radiusM * 0.8, 8, in);
+  ringDirs(forge, u, radiusM * 3.0, 12, out);
+
+  VoxelEdits edits;
+  const auto spread = [&](const std::vector<Vec3>& pts) {
+    double lo = 1e30, hi = -1e30;
+    for (size_t i = 0; i < pts.size(); ++i) {
+      const double h = surfaceHeight(forge, pts[i], edits);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+    return hi - lo;
+  };
+  const double beforeIn = spread(in);
+  const double beforeOut = spread(out);
+  std::vector<double> outBefore;
+  for (size_t i = 0; i < out.size(); ++i)
+    outBefore.push_back(surfaceHeight(forge, out[i], edits));
+
+  // Stand at the centre; level to the height under the player's own feet.
+  const double target = baseHeight(forge, u);
+  const LevelResult r = levelArea(forge, edits, u * (forge.radiusM + target),
+                                  radiusM, target);
+  CHECK(r.scanned > 0);
+  CHECK(r.cells() > 0);                       // it actually moved ground
+
+  const double afterIn = spread(in);
+  // A pad, not a suggestion. The floor is the MEDIUM, not the algorithm: a
+  // Cartesian 1 m lattice cut by a plane that is not axis-aligned terminates on a
+  // staircase, so a pad is flat to about one voxel and never to zero. Measured
+  // 7.703 m -> 1.511 m here. The threshold is two voxels, and the collapse factor
+  // is asserted as well, because "under 2 m" would also pass on ground that was
+  // already under 2 m.
+  CHECK(afterIn <= 2.0 * kVoxelSizeM);
+  CHECK(afterIn * 3.0 < beforeIn);
+
+  // THE NEGATIVE CONTROL. Outside the radius nothing moved AT ALL, bitwise.
+  for (size_t i = 0; i < out.size(); ++i)
+    CHECK(asBits(surfaceHeight(forge, out[i], edits)) == asBits(outBefore[i]));
+  CHECK_NEAR(spread(out), beforeOut, 1e-12);
+
+  // Every sampled point on the pad reads the target height, and the cell just
+  // under it is SOLID while the cell just over it is AIR: the surface the mesh
+  // draws and the solidity collision reads are the same answer.
+  for (size_t i = 0; i < in.size(); ++i) {
+    const double h = surfaceHeight(forge, in[i], edits);
+    CHECK(std::fabs(h - target) <= kVoxelSizeM + 1e-9);
+    // THE AGREEMENT THAT MATTERS. If these two ever disagree the player floats
+    // above the pad or sinks into it, which is the five-surfaces bug returning.
+    const double rr = forge.radiusM + h;
+    CHECK(edits.isSolid(forge, cellForPos(in[i] * (rr - 0.5 * kVoxelSizeM))));
+    CHECK(!edits.isSolid(forge, cellForPos(in[i] * (rr + 1.5 * kVoxelSizeM))));
+  }
+
+  // IDEMPOTENT: a held key must not make the pad creep.
+  const size_t cellsAfter = edits.removedCount() + edits.addedCount();
+  const LevelResult again = levelArea(forge, edits, u * (forge.radiusM + target),
+                                      radiusM, target);
+  CHECK(again.cells() == 0);
+  CHECK(edits.removedCount() + edits.addedCount() == cellsAfter);
+}
+
+// =============================================================================
+// Levelling is deterministic, and it survives a save/load round trip with BOTH
+// sets intact â€” including a legacy stream that predates the added set.
+// =============================================================================
+TEST(level_is_deterministic_and_round_trips) {
+  const BodyParams forge = makeForge(20260616ull);
+  const Vec3 u = unitOf(latLonToDir(1.00, -0.90));   // the sloped site again
+  const double target = baseHeight(forge, u) - 1.0;
+  const Vec3 centre = u * (forge.radiusM + target);
+
+  VoxelEdits a, b;
+  const LevelResult ra = levelArea(forge, a, centre, 6.0, target);
+  const LevelResult rb = levelArea(forge, b, centre, 6.0, target);
+  CHECK(ra.dug == rb.dug && ra.filled == rb.filled);
+  CHECK(a.removedCount() == b.removedCount() && a.addedCount() == b.addedCount());
+  CHECK(asBits(surfaceHeight(forge, u, a)) == asBits(surfaceHeight(forge, u, b)));
+  CHECK(a.addedCount() > 0);        // the pad really needed fill, not only cut
+
+  of::persist::SaveWriter w;
+  a.serialize(w);
+  of::persist::SaveReader rd(w.bytes());
+  VoxelEdits back;
+  back.deserialize(rd);
+  CHECK(back.removedCount() == a.removedCount());
+  CHECK(back.addedCount() == a.addedCount());
+  CHECK(asBits(surfaceHeight(forge, u, back)) == asBits(surfaceHeight(forge, u, a)));
+  for (std::unordered_set<uint64_t>::const_iterator it = a.addedSet().begin();
+       it != a.addedSet().end(); ++it) CHECK(back.isAdded(*it));
+  for (std::unordered_set<uint64_t>::const_iterator it = a.removedSet().begin();
+       it != a.removedSet().end(); ++it) CHECK(back.isRemoved(*it));
+
+  // A PRE-WG-22 stream (bare [count][ids...], no magic) still loads, and arrives
+  // with no added cells. Slots written before fill existed must not be bricked.
+  of::persist::SaveWriter legacy;
+  legacy.varint(2);
+  legacy.varint(1234567ull);
+  legacy.varint(7654321ull);
+  of::persist::SaveReader lr(legacy.bytes());
+  VoxelEdits old;
+  old.deserialize(lr);
+  CHECK(old.removedCount() == 2 && old.addedCount() == 0);
+  CHECK(old.isRemoved(1234567ull) && old.isRemoved(7654321ull));
 }
