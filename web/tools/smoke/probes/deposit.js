@@ -269,7 +269,9 @@
   if (written === null) return { fail: 'the slot could not be written', log };
   const savedRemaining = patchOf(patchIndex).remaining;
 
+  const batchBefore = of.game().nodes;
   of.repopulate();
+  const batchAfter = of.game().nodes;
   const regrown = patchOf(patchIndex);
   const regrownRemaining = regrown === undefined ? -1 : regrown.remaining;
 
@@ -282,6 +284,14 @@
     afterLoad: +loadedRemaining.toFixed(3),
     patchesInSlot: written.patches,
     patchesDepleted: ledger?.patchesDepleted ?? 0,
+  };
+  // A regrow must cost NOTHING. A BatchedMesh instance cannot be deleted, so a
+  // clearing that hands its slots back only by hiding them leaks one per node
+  // per regrow and eventually comes back with pieces of itself not drawn.
+  const batch = {
+    nodesBefore: batchBefore.nodes, nodesAfter: batchAfter.nodes,
+    instancesBefore: batchBefore.instances, instancesAfter: batchAfter.instances,
+    capacity: batchAfter.capacity,
   };
   log.push(`persist: ${persistence.saved} -> regrown ${persistence.afterRegrow} `
     + `-> loaded ${persistence.afterLoad}`);
@@ -357,9 +367,14 @@
       persistence.patchesInSlot > 0
       && persistence.afterRegrow > persistence.saved + 1
       && Math.abs(persistence.afterLoad - persistence.saved) < 1.01
-      && persistence.patchesDepleted > 0,
+      && persistence.patchesDepleted > 0
+      // ... and regrowing the world reuses its art rather than leaking it.
+      && batch.instancesAfter === batch.instancesBefore
+      && batch.nodesAfter === batch.nodesBefore
+      && batch.instancesAfter <= batch.capacity,
 
     extent,
+    batch,
     hand,
     refusal,
     conservation,

@@ -116,9 +116,11 @@ export class NodeField {
    */
   populate(body: number, edits: number, dir: THREE.Vector3, seed: number): number {
     this.core.clearNodes();
+    // RELEASED, not just hidden. A slot that is only hidden is never handed out
+    // again, so regrowing the clearing leaks one instance per node per regrow.
     for (const pl of this.placed)
       for (let i = 0; i < pl.parts.length; ++i)
-        this.batch.set(pl.parts[i].material, pl.slots[i], -1, this.m);
+        this.batch.release(pl.parts[i].material, pl.slots[i]);
     this.placed.length = 0;
 
     // A tangent basis at the spawn direction, so a metre offset is a metre.
@@ -360,14 +362,20 @@ export class NodeField {
   }
 
   stats(): { nodes: number; empty: number; felled: number; collapsing: number;
-             batches: number; instances: number } {
+             batches: number; instances: number; free: number;
+             capacity: number; slots: number } {
     const b = this.batch.stats();
+    let slots = 0;
+    for (const p of this.placed) slots += p.slots.filter((s) => s >= 0).length;
     return {
       nodes: this.placed.length,
       empty: this.placed.filter((p) => p.empty).length,
       felled: this.felled,
       collapsing: this.placed.filter((p) => p.fell > 0 && p.fell < FELL_SECS).length,
       batches: b.batches, instances: b.instances,
+      // `instances` is what the batch thinks is live and `slots` is what the
+      // nodes actually hold. They must agree; a gap is a leak.
+      free: b.free, capacity: b.capacity, slots,
     };
   }
 }

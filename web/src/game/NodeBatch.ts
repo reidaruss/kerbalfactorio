@@ -50,6 +50,17 @@ export interface NodePart {
 interface Batch {
   mesh: THREE.BatchedMesh;
   live: number;
+  /**
+   * Slots handed back by `release`, ready to be handed out again.
+   *
+   * A BatchedMesh instance cannot be deleted, so a re-populated clearing used to
+   * consume a fresh slot for every node it laid and never give the old ones
+   * back. That was survivable at 24 nodes and is not now that a patch's outcrops
+   * are nodes too: the third regrow would cross the capacity, `acquire` would
+   * start returning -1, and the world would come back with pieces of it simply
+   * not drawn, silently and only sometimes.
+   */
+  free: number[];
 }
 
 /** Instances per material. 24 nodes today, and the ring is authored, not streamed. */
@@ -198,7 +209,7 @@ export class NodeBatch {
     mesh.sortObjects = false;
     mesh.perObjectFrustumCulled = false;
     this.group.add(mesh);
-    return { mesh, live: 0 };
+    return { mesh, live: 0, free: [] };
   }
 
   partsOf(file: string): readonly NodePart[] | null { return this.parts.get(file) ?? null; }
@@ -206,9 +217,21 @@ export class NodeBatch {
   /** A slot in `material`'s batch, or -1 if the batch is full or unknown. */
   acquire(material: string): number {
     const b = this.batches.get(material);
-    if (b === undefined || b.live >= CAPACITY) return -1;
+    if (b === undefined) return -1;
+    const reused = b.free.pop();
+    if (reused !== undefined) { b.live++; return reused; }
+    if (b.live >= CAPACITY) return -1;
     b.live++;
     return b.mesh.addInstance(0);
+  }
+
+  /** Hand a slot back: hidden now, reusable by the next acquire. */
+  release(material: string, slot: number): void {
+    const b = this.batches.get(material);
+    if (b === undefined || slot < 0 || b.free.includes(slot)) return;
+    b.mesh.setVisibleAt(slot, false);
+    b.free.push(slot);
+    b.live--;
   }
 
   /** Point a slot at a variant's geometry and place it. -1 geometry hides it. */
@@ -228,9 +251,12 @@ export class NodeBatch {
     b.mesh.setMatrixAt(slot, m);
   }
 
-  stats(): { batches: number; materials: string[]; instances: number } {
+  stats(): { batches: number; materials: string[]; instances: number;
+             free: number; capacity: number } {
     let n = 0;
-    for (const b of this.batches.values()) n += b.live;
-    return { batches: this.batches.size, materials: [...this.batches.keys()], instances: n };
+    let free = 0;
+    for (const b of this.batches.values()) { n += b.live; free += b.free.length; }
+    return { batches: this.batches.size, materials: [...this.batches.keys()],
+      instances: n, free, capacity: CAPACITY };
   }
 }

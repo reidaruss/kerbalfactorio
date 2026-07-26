@@ -101,23 +101,29 @@
   // Pitch controls how far down the aim the ghost lands, so sweeping pitch walks
   // the ghost along ONE heading from the reach limit back towards the player's
   // feet. The belts are rotated 180 degrees so they flow back towards the
-  // smelter, which means the drill goes at the FAR end and the smelter nearest.
+  // smelter, which means the DRILL goes at the far end and the smelter nearest.
   //
-  // TWO THINGS HAVE TO BE TRUE FOR THAT WALK TO BE ONE TRANSPORT LINE, and both
-  // are measured here rather than assumed:
+  // WHAT MAKES THAT WALK ONE TRANSPORT LINE rather than three, which is the
+  // thing this probe kept getting wrong. chainRuns follows each belt to the cell
+  // ONE METRE ALONG ITS OWN FLOW DIRECTION, and that direction is snapped to a
+  // tangent axis. Two separate things have to line up for the tile it points at
+  // to be the tile that is actually there:
   //
-  //   the heading is a LATTICE AXIS. A belt's flow direction is snapped to one
-  //   of the four tangent axes (BuildMode.resolve), but the ground point is not,
-  //   so on a heading 30 degrees off the axis the cells step diagonally and the
-  //   tile ahead of each belt is empty. chainRuns then correctly reports two or
-  //   three separate lines and the ore never reaches the smelter.
+  //   the HEADING has to be one of those tangent axes. Off-axis the ground point
+  //   steps diagonally and the tile ahead of each belt is empty ground.
   //
-  //   each tile is the PREVIOUS tile's NEIGHBOUR. Pitch is not linear in ground
-  //   distance: near the 9 m reach limit a degree is most of a metre, so a
-  //   coarse sweep skips whole cells and leaves gaps. The sweep therefore steps
-  //   pitch finely and accepts a cell only when its ghost lands about 1 m from
-  //   the last one it accepted. A jump means a cell was skipped, and a gap is
-  //   worse than a short belt, so the run ends there instead.
+  //   the CELL SPACING along that axis has to be about a metre on the GROUND.
+  //   The lattice is a 1 m grid in body-frame XYZ and the ground is a sphere, so
+  //   a step along a lattice axis that leans into the local vertical loses most
+  //   of its length to the projection: measured here, a step along one axis is
+  //   0.59 m of ground and along another 1.00 m. On the 0.59 m axis a belt's own
+  //   1 m flow vector overshoots its neighbour and lands two cells away, and the
+  //   run shatters. THIS IS NOT VISIBLE IN THE CELL KEYS, which are unit steps
+  //   either way; it is only visible in the ghost positions, so the probe
+  //   measures the spacing rather than trusting the lattice.
+  //
+  // So: sweep all four axes, keep the one whose cells are a metre apart on the
+  // ground AND has the richest ore under its far end, and lay the line on it.
   let yaw = of.world().observer.yawDeg;
   const placeHere = async () => {
     of.input.tape([{ hold: 3, keys: ['KeyG'] }, { hold: 4, keys: [] }]);
@@ -136,8 +142,13 @@
   };
   const gdist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   const fromEye = (g) => { const e = eye(); return gdist(g.pos, [e.x, e.y, e.z]); };
+  // A step is "a neighbour" when the ghost moved about one metre of ground. Wider
+  // than that and a cell was skipped; narrower and the lattice axis is leaning
+  // into the vertical, which is the case a belt cannot chain across.
+  const NEAR = 0.86;
+  const FAR = 1.2;
 
-  // 1: the flow axis, measured off the ghost itself.
+  // 1: which yaw is a tangent axis, measured off the ghost's own flow direction.
   of.build(2);
   await rotateTo(2);
   {
@@ -165,99 +176,133 @@
     yaw = bestYaw;
   }
 
-  // 2: WHICH of the four axes. They are all equally straight, so the question is
-  // purely which one has ore under it, and how much: the rate is the authored
-  // rate times the RICHNESS under the machine, so where on the patch the drill
-  // stands is a real decision. The ghost answers it before the key is pressed,
-  // so the probe asks all four and takes the best rate that still leaves the
-  // line room to run back to the player.
+  // 2: walk each of the four axes with the DRILL ghost up, recording every
+  // distinct cell it lands on. The drill's ghost is the one that answers both
+  // questions at once: where the cells are, and what the ore under them is worth.
   of.build(1);
+  const sweep = async (y) => {
+    const seen = [];
+    for (let p = -11; p >= -36; p -= 0.4) {
+      const g = await ghostAt(y, p);
+      if (g === null) continue;
+      const last = seen[seen.length - 1];
+      if (last !== undefined && last.cell === g.cell) { last.pitchTo = p; continue; }
+      seen.push({ cell: g.cell, pos: g.pos, pitchFrom: p, pitchTo: p, ok: g.ok,
+                  patch: g.patch, rate: g.ratePerSec, reachM: +fromEye(g).toFixed(2) });
+    }
+    // Aim at the MIDDLE of each cell's pitch band, not at the edge where it was
+    // first seen: a boundary sample lands on either side depending on the frame.
+    for (const s of seen) s.pitch = (s.pitchFrom + s.pitchTo) * 0.5;
+    return seen;
+  };
+  // How far a straight, chainable line reaches inwards from cell `i`.
+  const reachFrom = (seen, i) => {
+    let n = 0;
+    while (i + n + 1 < seen.length) {
+      const d = gdist(seen[i + n].pos, seen[i + n + 1].pos);
+      if (d < NEAR || d > FAR) break;
+      n++;
+    }
+    return n;
+  };
   const headings = [];
   for (const turn of [0, 90, 180, 270]) {
     const y = yaw + turn;
+    const seen = await sweep(y);
     let pick = null;
-    for (let p = -11; p >= -33; p -= 0.5) {
-      const g = await ghostAt(y, p);
-      if (g === null || !g.ok || g.patch < 0) continue;
-      const d = fromEye(g);
-      // Room for at least two belts and a smelter between the drill and the
-      // player, or the rate is worth nothing.
-      const score = g.ratePerSec * (d >= 4.6 ? 1 : 0.25);
+    for (let i = 0; i < seen.length; ++i) {
+      if (!seen[i].ok || seen[i].patch < 0) continue;
+      // Five cells of line is a drill, four belts and a smelter; two is the
+      // least this probe accepts. Length dominates rate, because a rich drill
+      // feeding nothing produces no iron at all.
+      const cells = Math.min(reachFrom(seen, i), 5);
+      if (cells < 3) continue;
+      const score = cells * 4 + seen[i].rate;
       if (pick === null || score > pick.score) {
-        pick = { yaw: y, pitch: p, score, rate: g.ratePerSec, reachM: +d.toFixed(2),
-                 cell: g.cell, patch: g.patch };
+        pick = { yaw: y, turn, at: i, cells, score, seen,
+                 rate: seen[i].rate, reachM: seen[i].reachM };
       }
     }
     if (pick !== null) headings.push(pick);
   }
   headings.sort((a, b) => b.score - a.score);
-  log.push('headings: ' + headings.map((h) =>
-    `${(h.yaw - yaw).toFixed(0)}deg ${h.rate.toFixed(2)}/s at ${h.reachM}m`).join(', '));
+  log.push('axes: ' + (headings.length === 0 ? 'none' : headings.map((h) =>
+    `+${h.turn} ${h.cells} cells ${h.rate.toFixed(2)}/s at ${h.reachM}m`).join(', ')));
   if (headings.length === 0) {
-    return { fail: 'no heading put an acceptable drill ghost on the patch',
+    return { fail: 'no lattice axis carries a chainable line off the patch',
              build: of.build(), ore: of.game().ore, log };
   }
-  yaw = headings[0].yaw;
+  const chosen = headings[0];
+  yaw = chosen.yaw;
+  const line = chosen.seen.slice(chosen.at, chosen.at + chosen.cells + 1);
+  log.push('line: ' + line.map((s) => s.cell).join(' | '));
 
-  // 3: the drill, at the far end of the chosen heading.
+  // 3: the drill, on the first cell of that line.
+  of.build(1);
   let placedMiner = null;
-  for (let p = headings[0].pitch; p >= -33 && placedMiner === null; p -= 0.5) {
-    const g = await ghostAt(yaw, p);
-    if (g === null || !g.ok || g.patch < 0) continue;
+  for (const nudge of [0, -0.2, 0.2, -0.4]) {
+    const g = await ghostAt(yaw, line[0].pitch + nudge);
+    if (g === null || !g.ok || g.patch < 0 || g.cell !== line[0].cell) continue;
     const before = of.game().factory.buildings;
     await placeHere();
     if (of.game().factory.buildings > before) {
-      placedMiner = { pitch: p, cell: g.cell, pos: g.pos,
+      placedMiner = { pitch: line[0].pitch + nudge, cell: g.cell, pos: g.pos,
                       rate: g.ratePerSec, reachM: +fromEye(g).toFixed(2) };
+      break;
     }
   }
   if (placedMiner === null) {
-    return { fail: 'no pitch put an acceptable drill ghost on the patch',
-             build: of.build(), nodes: of.nodes().slice(0, 3), headings, log };
+    return { fail: 'the drill would not go down on the cell the sweep chose',
+             build: of.build(), line, headings: headings.length, log };
   }
   log.push(`drill at pitch ${placedMiner.pitch.toFixed(1)} cell ${placedMiner.cell}, `
     + `${placedMiner.rate.toFixed(2)} ore/s, ${placedMiner.reachM} m out`);
 
-  // 4: belts, one per NEIGHBOURING cell, walking back towards the player.
+  // 4: belts, one per cell of the line, each one its predecessor's neighbour.
+  // The last cell is left for the smelter.
   of.build(2);
   await rotateTo(2);
   const beltCells = [];
   const steps = [];
   let prev = placedMiner.pos;
-  let lastPitch = placedMiner.pitch;
-  for (let p = placedMiner.pitch - 0.3; p >= -52 && beltCells.length < 4; p -= 0.3) {
-    const g = await ghostAt(yaw, p);
-    if (g === null) continue;
-    const d = gdist(g.pos, prev);
-    if (d < 0.55) continue;                 // still the cell already dealt with
-    if (d > 1.6) break;                     // a cell was skipped: do not lay a gap
-    if (!g.ok) break;                       // the neighbour is blocked
-    const before = of.game().factory.buildings;
-    await placeHere();
-    if (of.game().factory.buildings <= before) break;
-    beltCells.push(g.cell);
-    steps.push(+d.toFixed(2));
-    prev = g.pos;
-    lastPitch = p;
+  let tail = 1;
+  while (tail < line.length - 1 && beltCells.length < 4) {
+    const want = line[tail];
+    let laid = false;
+    for (const nudge of [0, -0.2, 0.2]) {
+      const g = await ghostAt(yaw, want.pitch + nudge);
+      if (g === null || !g.ok || g.cell !== want.cell) continue;
+      const d = gdist(g.pos, prev);
+      if (d < NEAR || d > FAR) break;   // not a neighbour: a gap is worse than a short run
+      const before = of.game().factory.buildings;
+      await placeHere();
+      if (of.game().factory.buildings <= before) break;
+      beltCells.push(g.cell);
+      steps.push(+d.toFixed(2));
+      prev = g.pos;
+      laid = true;
+      break;
+    }
+    if (!laid) break;
+    tail++;
   }
   log.push(`belts ${beltCells.length}, steps ${steps.join('/')} m: `
     + beltCells.join(' | '));
 
-  // 5: the smelter, touching the HEAD of the run. Reach for a belt and a smelter
-  // is (1 + 2) / 2 + 0.75 m (FactoryWiring.touch), so the tile it is wired to
-  // has to be the one right in front of it, not merely somewhere down the line.
+  // 5: the smelter, on the cell in front of the run's HEAD. Reach for a belt and
+  // a smelter is (1 + 2) / 2 + 0.75 m (FactoryWiring.touch), so it has to be the
+  // very next cell, not merely somewhere down the line.
   of.build(3);
   let smelterCell = null;
-  for (let p = lastPitch - 0.3; p >= -60 && smelterCell === null; p -= 0.3) {
-    const g = await ghostAt(yaw, p);
-    if (g === null) continue;
-    const d = gdist(g.pos, prev);
-    if (d < 0.55) continue;
-    if (d > 2.2) break;                     // beyond the belt head's reach
-    if (!g.ok) continue;
-    const before = of.game().factory.buildings;
-    await placeHere();
-    if (of.game().factory.buildings > before) smelterCell = g.cell;
+  if (tail < line.length) {
+    for (const nudge of [0, -0.2, 0.2, -0.4]) {
+      const g = await ghostAt(yaw, line[tail].pitch + nudge);
+      if (g === null || !g.ok || g.cell !== line[tail].cell) continue;
+      if (gdist(g.pos, prev) > 2.2) break;
+      const before = of.game().factory.buildings;
+      await placeHere();
+      if (of.game().factory.buildings > before) { smelterCell = g.cell; break; }
+    }
   }
   of.build(0);
   log.push(`smelter cell ${smelterCell}`);
