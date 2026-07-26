@@ -9,7 +9,24 @@ import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js'
 
 /** Index of the centre vertex of a 33x33 grid, in position-array elements. */
 const CENTRE_ELEMENT = (33 * 16 + 16) * 3;
+/** Its right-hand neighbour in the same row: the DW-19 ground-resolution ruler. */
+const CENTRE_NEXT_ELEMENT = (33 * 16 + 17) * 3;
 const NEAREST_SLOTS = 8;
+
+/**
+ * DW-19: the ACHIEVED ground cell size of a chunk, measured off the packed
+ * vertices rather than derived from the depth. `R * (pi/2) / 2^d / 32` is what
+ * the quadtree intends; this is what arrived in the buffer, in chunk-local
+ * metres, so a wrong depth or a wrong warp shows up here. Pool vertices are
+ * always chunk-local METRES (the far scene applies FAR_SCALE on the instance
+ * matrix, not to the buffer), so this needs no scale correction.
+ */
+function measuredCellM(arr: Float32Array): number {
+  const dx = arr[CENTRE_NEXT_ELEMENT] - arr[CENTRE_ELEMENT];
+  const dy = arr[CENTRE_NEXT_ELEMENT + 1] - arr[CENTRE_ELEMENT + 1];
+  const dz = arr[CENTRE_NEXT_ELEMENT + 2] - arr[CENTRE_ELEMENT + 2];
+  return Math.hypot(dx, dy, dz);
+}
 
 /**
  * Fill JitterProbe stake rows from the chunks nearest the CAMERA:
@@ -78,6 +95,7 @@ export function dumpChunks(
       meshPos: v.pos.toArray().map((n) => Math.round(n)),
       scale: v.scale,
       distFromCamOriginM: Math.round(v.pos.length() / (v.isNear ? 1 : 1e-5)),
+      cellM: Math.round(measuredCellM(arr) * 1000) / 1000,
       maxLocalM: Math.round(Math.sqrt(maxLocal)),
       bsRadius: Math.round(batch.boundingRadius(v.pooled.slot)),
       indexCount: batch.drawCount(v.pooled.slot),

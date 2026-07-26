@@ -40,6 +40,7 @@ const evalScript = evalFile
 
 const params = new URLSearchParams();
 for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',
+  'split',
   't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
   'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff']) {

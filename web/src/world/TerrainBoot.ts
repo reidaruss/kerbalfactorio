@@ -71,7 +71,7 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     const init: TerrainInitMsg = {
       type: 'init',
       seedLo: cfg.seedLo, seedHi: cfg.seedHi,
-      splitRatio: 1.0, mergeHysteresis: 0.6,
+      splitRatio: cfg.splitRatio, mergeHysteresis: 0.6,
       maxDepth: cfg.maxDepth,
       minResidentDepth: MIN_RESIDENT_DEPTH,
       skirtFraction: cfg.skirtFraction > 0 ? cfg.skirtFraction : SKIRT_FRACTION_DEFAULT,

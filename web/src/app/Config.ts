@@ -68,6 +68,8 @@ export interface Config {
   readonly chunkPoolSize: number;
   /** TerrainStreamer maxDepth. */
   readonly maxDepth: number;
+  /** TerrainStreamer splitRatio (DW-19). Higher = coarser far field. */
+  readonly splitRatio: number;
   /** Draw the skirt index range as well as the interior. ?skirts=1 enables. */
   readonly skirts: boolean;
   /** StreamConfig.skirtFraction override; 0 keeps the default. */
@@ -186,7 +188,17 @@ export function parseConfig(search: string): Config {
     forceLogDepth: p.get('depth') === 'log',
     forcePlainDepth: p.get('depth') === 'plain',
     chunkPoolSize: Math.max(64, num(p, 'pool', 384) | 0),
-    maxDepth: Math.min(14, Math.max(4, num(p, 'maxdepth', 12) | 0)),
+    // DW-19: maxDepth 14 gives a measured 1.80 m cell at the feet on a plain
+    // and 1.65 m on a mountain, finer than the 2 m the 1 m voxel layer needs.
+    // The ceiling is 16 so the probe can sweep past the shipping value.
+    maxDepth: Math.min(16, Math.max(4, num(p, 'maxdepth', 14) | 0)),
+    // DW-19: 1.4 is the highest ratio that still refines on a MOUNTAIN. The
+    // split metric measures the observer to the quad CENTRE, so a coarse quad
+    // the observer stands inside reports up to a half-diagonal of distance and
+    // s/d tops out near 2; at splitRatio 2.0 the mountain root stops splitting
+    // and the whole set collapses to 108 chunks at depth 4. Measured cliff, not
+    // a guess: see ARCHITECTURE.md 15.2.
+    splitRatio: Math.min(4, Math.max(0.25, num(p, 'split', 1.4))),
     // OFF by default at W1. of::TerrainStreamer sizes the skirt apron in
     // proportion to the chunk, so even at skirtFraction 0.02 the rings render as
     // ribbons and shelves lying across the landscape rather than as hidden
