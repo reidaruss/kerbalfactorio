@@ -40,6 +40,26 @@ export interface OfCoreModule {
   _of_solid_at(body: number, edits: number, x: number, y: number, z: number): number;
   _of_solid_cell(body: number, edits: number, cx: number, cy: number, cz: number): number;
   _of_biome_at(body: number, dx: number, dy: number, dz: number): number;
+
+  // --- W5 voxel edits. The main thread owns the ONE handle (DW-16); workers
+  //     replay the op log into their own instance, they never share this one.
+  _of_edits_create(): number;
+  _of_edits_destroy(edits: number): void;
+  _of_edits_dig(edits: number, body: number, x: number, y: number, z: number,
+                radiusM: number): number;
+  _of_edits_dig_cell(edits: number, cx: number, cy: number, cz: number): number;
+  _of_edits_removed_count(edits: number): number;
+  _of_edits_is_removed_cell(edits: number, cx: number, cy: number, cz: number): number;
+  /** Fills i32 scratch [minX,minY,minZ,maxX,maxY,maxZ]; 1 = valid, 0 = untouched. */
+  _of_edits_dirty_region(edits: number): number;
+  _of_edits_clear_dirty(edits: number): void;
+  /** Face count; i32 scratch holds 5 ints per face [cx,cy,cz,axis,sign]. */
+  _of_exposed_faces(body: number, edits: number, x: number, y: number, z: number,
+                    radiusM: number): number;
+  _of_voxel_size(): number;
+  _of_cell_for_pos(x: number, y: number, z: number): void;
+  _of_cell_center(cx: number, cy: number, cz: number): void;
+  _of_streamer_set_edits(s: number, edits: number): void;
   _of_material_for_biome(biome: number): number;
   _of_latlon_to_dir(lat: number, lon: number): void;
   _of_dir_to_latlon(dx: number, dy: number, dz: number): void;
