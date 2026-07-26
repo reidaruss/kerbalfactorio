@@ -76,9 +76,11 @@ def build_mesh(name, arm):
     mb.bind(["Spine2"])
     mb.add_raw(*of.box_data((0.300, 0.095, 0.260), (0.0, -0.1525, 1.300)),
                role=SUIT)
-    for sx in (-1, 1):
-        mb.add_raw(*of.box_data((0.090, 0.020, 0.120),
-                                (sx * 0.070, -0.188, 1.320)), role=DARK)
+    # Four narrow slots, not two wide panels: two wide dark rectangles merge
+    # into one black blob at 20 m and the chest stops reading as a machine.
+    for sx in (-3, -1, 1, 3):
+        mb.add_raw(*of.box_data((0.032, 0.020, 0.120),
+                                (sx * 0.042, -0.188, 1.320)), role=DARK)
     mb.add_raw(*of.box_data((0.070, 0.020, 0.035), (0.0, -0.190, 1.395)),
                role=EM)
     # Back mount plate: what socket_back actually stows a tool against, and
@@ -387,13 +389,20 @@ def _swing(n, impact, high, low, lean_back, lean_fwd, bend_hi, bend_lo):
         (settle, low - 14, -40, 3, bend_lo + 18),
         (n, 44, -26, 6, 40),
     ])
-    t["Spine1"] = {"rot": [(1, (-4, 0, 0)), (wind, (lean_back, 0, 0)),
-                           (impact, (lean_fwd, 0, 0)),
-                           (settle, (lean_fwd * 0.6, 0, 0)), (n, (-4, 0, 0))]}
-    t["Hips"] = {"loc": [(1, (0, 0, 0)), (wind, (0, 0, 0.02)),
-                         (impact, (0, 0, -0.06)), (n, (0, 0, 0))],
-                 "rot": [(1, (0, 0, -8)), (wind, (0, 0, -16)),
-                         (impact, (0, 0, 6)), (n, (0, 0, -8))]}
+    # The lean is spread over the whole spine, not dumped on one joint: a strike
+    # driven from one vertebra reads as a nod, and the follow-through past the
+    # impact frame is what sells the weight of the tool.
+    for bone, share in (("Spine", 0.30), ("Spine1", 0.42), ("Spine2", 0.28)):
+        t[bone] = {"rot": [(1, (-2 * share, 0, 0)),
+                           (wind, (lean_back * share, 0, 0)),
+                           (impact, (lean_fwd * share, 0, 0)),
+                           (settle, (lean_fwd * share * 0.55, 0, 0)),
+                           (n, (-2 * share, 0, 0))]}
+    t["Hips"] = {"loc": [(1, (0, 0, 0)), (wind, (0, 0.06, 0.02)),
+                         (impact, (0, -0.03, -0.09)), (settle, (0, 0, -0.04)),
+                         (n, (0, 0, 0))],
+                 "rot": [(1, (0, 0, -8)), (wind, (-8, 0, -16)),
+                         (impact, (10, 0, 6)), (n, (0, 0, -8))]}
     for pre, _ in SIDES:
         t[pre + "UpLeg"] = {"rot": [(1, (-6, 0, 0)), (wind, (2, 0, 0)),
                                     (impact, (-14, 0, 0)), (n, (-6, 0, 0))]}
@@ -404,19 +413,23 @@ def _swing(n, impact, high, low, lean_back, lean_fwd, bend_hi, bend_lo):
 
 
 def clip_swing_pickaxe(n=33):
-    return _swing(n, 17, high=-38, low=88, lean_back=-16, lean_fwd=26,
-                  bend_hi=96, bend_lo=26)
+    """Overhead, driven down past the knees: the pick tip lands at the ore,
+    which is on the ground."""
+    return _swing(n, 17, high=-38, low=104, lean_back=-18, lean_fwd=42,
+                  bend_hi=96, bend_lo=18)
 
 
 def clip_swing_axe(n=35):
-    return _swing(n, 18, high=-24, low=80, lean_back=-12, lean_fwd=22,
-                  bend_hi=84, bend_lo=30)
+    """Shallower and more horizontal than the pickaxe: an axe lands on a trunk
+    at chest height, not on the floor."""
+    return _swing(n, 18, high=-24, low=86, lean_back=-14, lean_fwd=26,
+                  bend_hi=84, bend_lo=26)
 
 
 def clip_dig(n=31):
     """Voxel mining: a short downward jab at the ground, not a felling swing."""
-    return _swing(n, 16, high=6, low=96, lean_back=-6, lean_fwd=34,
-                  bend_hi=70, bend_lo=34)
+    return _swing(n, 16, high=12, low=112, lean_back=-6, lean_fwd=48,
+                  bend_hi=70, bend_lo=26)
 
 
 def clip_place(n=25):
