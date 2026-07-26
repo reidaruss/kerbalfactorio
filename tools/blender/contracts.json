@@ -1093,7 +1093,7 @@
         {"node": "Fin_LOD0", "dims_xyz_m": [0.85, 1.10, 0.10], "max_tris": 200, "pivot": "none"},
         {"node": "RcsBlock_LOD0", "dims_xyz_m": [0.245, 0.50, 0.50], "max_tris": 200, "pivot": "none"},
         {"node": "LandingLeg_LOD0", "dims_xyz_m": [0.20, 0.42, 0.34], "max_tris": 200, "pivot": "none"},
-        {"node": "LandingLeg_Strut", "dims_xyz_m": [0.333, 1.537, 0.48], "max_tris": 200, "pivot": "none"},
+        {"node": "LandingLeg_Strut", "dims_xyz_m": [0.433, 2.556, 0.48], "max_tris": 200, "pivot": "none"},
         {"node": "SolarPanel_LOD0", "dims_xyz_m": [0.18, 0.30, 0.44], "max_tris": 200, "pivot": "none"},
         {"node": "SolarPanel_Array", "dims_xyz_m": [0.065, 1.26, 0.56], "max_tris": 200, "pivot": "none"}
       ],
@@ -1109,9 +1109,97 @@
         "EngineVernier": {"socket_radial_mount": [0, 0, 0], "socket_muzzle": [0.22, -0.30, 0]},
         "Fin": {"socket_radial_mount": [0, 0, 0]},
         "RcsBlock": {"socket_radial_mount": [0, 0, 0]},
-        "LandingLeg": {"socket_radial_mount": [0, 0, 0], "socket_leg_foot": [0.26, 1.34, 0]},
+        "LandingLeg": {"socket_radial_mount": [0, 0, 0], "socket_leg_foot": [0.26, 2.42, 0]},
         "SolarPanel": {"socket_radial_mount": [0, 0, 0]}
       }
+    },
+
+    "launch_pad": {
+      "glb": "assets/models/dist/rocket/launch_pad.glb",
+      "_comment": [
+        "TIER 2. A placed structure, so section 2.2 applies exactly as it does",
+        "to a smelter: an 8 x 8 WHOLE-METRE footprint, pivot at the footprint",
+        "centre, base on y = 0, nothing overhanging the cell. 8 is even, so it",
+        "snaps to a cell corner.",
+        "The clamp is a SEPARATE ground-pivoted part on the file origin,",
+        "following the Tier-1 atlas convention: the renderer clones it and",
+        "places three around the circle socket_clamp marks.",
+        "Clamp_Release is authored HOLDING, because frame 1 is the exported",
+        "static pose and a pad at rest is a pad holding a rocket.",
+        "Three proxies: the deck, the tower and the clamp. One convex box",
+        "cannot describe a slab with a 12 m mast on one corner."
+      ],
+      "lod0_node": "LaunchPad_LOD0",
+      "lod_nodes": [
+        "LaunchPad_LOD0", "LaunchPad_LOD1", "LaunchPad_LOD2",
+        "LaunchClamp_LOD0", "LaunchClamp_LOD2", "LaunchClamp_Arm"
+      ],
+      "footprint_cells": [8, 8],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [8.00, 12.00, 8.00],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 900,
+      "max_tris_total": 1300,
+      "max_tris_collision": 36,
+      "max_materials": 6,
+      "sockets": [
+        "socket_vessel",
+        "socket_clamp",
+        "socket_smoke",
+        "socket_status"
+      ],
+      "clips": ["Clamp_Release"],
+      "frame1_identity": true,
+      "collision": ["col_LaunchPad", "col_LaunchTower", "col_LaunchClamp"],
+      "parts": [
+        {"node": "LaunchPad_LOD0", "dims_xyz_m": [8.00, 12.00, 8.00], "max_tris": 900, "pivot": "ground"},
+        {"node": "LaunchPad_LOD1", "dims_xyz_m": [8.00, 12.00, 8.00], "max_tris": 400, "pivot": "ground"},
+        {"node": "LaunchPad_LOD2", "dims_xyz_m": [8.00, 12.00, 8.00], "max_tris": 100, "pivot": "ground"},
+        {"node": "LaunchClamp_LOD0", "dims_xyz_m": [1.24, 1.50, 0.50], "max_tris": 100, "pivot": "ground"},
+        {"node": "LaunchClamp_LOD2", "dims_xyz_m": [1.24, 1.50, 0.50], "max_tris": 60, "pivot": "ground"},
+        {"node": "LaunchClamp_Arm", "dims_xyz_m": [1.00, 0.44, 0.30], "max_tris": 60, "pivot": "none"}
+      ],
+      "part_sockets": {
+        "LaunchPad": {"socket_vessel": [0, 1.60, 0], "socket_clamp": [1.25, 0.40, 0]}
+      }
+    },
+
+    "lander_landed": {
+      "glb": "assets/models/dist/rocket/lander_landed.glb",
+      "_comment": [
+        "TIER 2, the Cinder outpost beat (ObjectiveStep::OutpostComplete).",
+        "A LANDMARK rather than a part, so it carries the full LOD chain that",
+        "rocket_parts.glb deliberately does not: this is what a player",
+        "navigates back to from 200 m away.",
+        "Assembled from the SHIPPED parts through hc.Parts transforms, with",
+        "the legs and panels in their deployed pose, so it cannot drift away",
+        "from the flyable vessel.",
+        "6.40 m tall and 4.08 m across the feet. The stack heights are what",
+        "the legs allow: the foot lands 2.13 m below its hinge, so the hinge",
+        "sits 2.20 m up and the engine bell clears the ground by 0.30 m.",
+        "All three LODs sit on exactly the same ground plane; a LOD switch",
+        "that sinks the lander two centimetres is visible from the hatch.",
+        "The proxy is the CORE STACK, not the leg span: a convex box over 4 m",
+        "of mostly air is a wall the player cannot walk under."
+      ],
+      "lod0_node": "LanderLanded_LOD0",
+      "lod_nodes": [
+        "LanderLanded_LOD0", "LanderLanded_LOD1", "LanderLanded_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [4.0802, 6.40, 4.0802],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 2200,
+      "max_tris_total": 2800,
+      "max_materials": 7,
+      "sockets": ["socket_hatch", "socket_item_out", "socket_muzzle"],
+      "clips": [],
+      "double_sided_ok": ["OF_Glass"],
+      "collision": "col_LanderLanded",
+      "parts": [
+        {"node": "LanderLanded_LOD1", "dims_xyz_m": [4.0402, 6.40, 4.0402], "max_tris": 500, "pivot": "ground"},
+        {"node": "LanderLanded_LOD2", "dims_xyz_m": [4.0402, 6.40, 4.0402], "max_tris": 260, "pivot": "ground"}
+      ]
     }
   }
 }

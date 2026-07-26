@@ -79,8 +79,14 @@ ROLES = ["SteelLight", "Steel", "SteelDark", "Accent", "Hazard", "Glass",
 
 # Deploy geometry, shared with the landed lander so the static assembly and the
 # animated part agree to the millimetre.
-LEG_DEPLOY_DEG = 125.0     # leg_pivot rotation about +Y, stowed -> deployed
-LEG_PAD_LOC = (0.26, 0.0, 1.34)   # foot pad centre, STOWED, leg-pivot local
+# A LEG MUST OUT-REACH THE ENGINE BELL. The first version of this part folded
+# 1.34 m of strut and dropped its foot 0.98 m below the hinge, and the landed
+# lander is what proved that useless: a 1.60 m engine hangs below the tank the
+# legs mount on, so a leg that drops less than about 2.1 m puts the bell
+# through the ground before the feet touch it. 2.42 m of strut at 145 degrees
+# drops 2.13 m and reaches 1.18 m out, which lands the bell 0.26 m clear.
+LEG_DEPLOY_DEG = 145.0     # leg_pivot rotation about +Y, stowed -> deployed
+LEG_PAD_LOC = (0.26, 0.0, 2.42)   # foot pad centre, STOWED, leg-pivot local
 SOLAR_DEPLOY_DEG = 90.0    # solar_pivot rotation about +Y
 SOLAR_HINGE_X = 0.13       # array hinge, on the outboard face of its mount
 
@@ -301,9 +307,9 @@ def landing_leg_strut():
     horizontal and lands flat. Stowed, it lies flat against the tank, which is
     also what a real folded leg does."""
     p = hc.Parts()
-    slab(p, (0.14, 0.16, 1.28), (0.20, 0.0, 0.66), "Steel")        # strut
-    slab(p, (0.19, 0.21, 0.44), (0.20, 0.0, 0.30), "SteelDark")    # shock
-    slab(p, (0.09, 0.09, 0.90), (0.31, 0.0, 0.80), "SteelDark")    # brace
+    slab(p, (0.14, 0.16, 2.30), (0.20, 0.0, 1.18), "Steel")        # strut
+    slab(p, (0.19, 0.21, 0.60), (0.20, 0.0, 0.40), "SteelDark")    # shock
+    slab(p, (0.09, 0.09, 1.60), (0.31, 0.0, 1.30), "SteelDark")    # brace
     pad = hc.Parts()
     disc(pad, 0.24, 0.07, (0.0, 0.0, 0.0), "SteelDark", seg=8)
     disc(pad, 0.15, 0.10, (0.0, 0.0, 0.02), "Steel", seg=8)

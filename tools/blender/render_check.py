@@ -36,6 +36,10 @@ VIEWS = {
     # 0.01 m near plane so nothing is clipped at arm's length.
     "eye": ((0.0, 0.0, 0.0), (0.0, -1.0, -0.22), 24.0),
     "eyeoff": ((0.55, -0.30, 0.30), (0.0, -0.35, -0.28), 35.0),
+    # Tier 2. The views above frame a 1.8 m player; a 6.4 m lander or a 12 m
+    # launch tower is off the top of every one of them.
+    "vessel34": ((7.2, -8.6, 4.6), (0.0, 0.0, 3.0), 50.0),
+    "site34": ((14.0, -16.0, 8.5), (0.0, 0.0, 4.2), 50.0),
 }
 
 
