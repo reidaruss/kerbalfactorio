@@ -30,6 +30,7 @@ import { demolishAimed } from './Demolition.js';
 import { aimPrompt } from './FactoryReport.js';
 import { furnaceView, nodeDump, recipeRows, slotRows } from './GameplayViews.js';
 import { ItemIcons } from './ItemIcons.js';
+import { Ambience } from './Ambience.js';
 import { gameplayReport } from './GameplayReport.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -69,6 +70,8 @@ export class Gameplay {
   readonly sfx = new Sfx();
   /** W7: one baked picture per item, so a slot is not a word in a box. */
   readonly icons = new ItemIcons();
+  /** W7: the world's own sound bed. A silent planet reads as a tech demo. */
+  readonly ambience: Ambience;
   /** W6 automation: the plan, its art, and the build menu that edits it. */
   readonly factory: Factory;
   readonly factoryView: FactoryView;
@@ -91,16 +94,14 @@ export class Gameplay {
   private aimedMachine: Machine | null = null;
   private aimedBuild: Placed | null = null;
 
-  /** What a save needs: the module handle and the seed the world grew from. */
+  /** What a save needs: the module handle, the seed, and the voxel handles,
+   * which live in Services and are null in a scenario with no character. */
   get core(): OfCoreModule { return this.d.core; }
   get seed(): number { return this.d.seed; }
-  /** The voxel layer, which lives in Services. Nulls in a headless scenario. */
   get ports(): WorldPorts {
-    return {
-      voxels: this.d.ports?.voxels ?? null,
-      voxelMesh: this.d.ports?.voxelMesh ?? null,
-      terrain: this.d.ports?.terrain ?? null,
-    };
+    const p = this.d.ports;
+    return { voxels: p?.voxels ?? null, voxelMesh: p?.voxelMesh ?? null,
+      terrain: p?.terrain ?? null };
   }
 
   private constructor(private readonly d: GameplayDeps) {
@@ -114,6 +115,7 @@ export class Gameplay {
     this.furnacePanel = new FurnacePanel(
       d.host, (item) => this.loadFurnace(item), () => this.takeFurnace());
     // The factory ticks on the SIM clock, like everything else that is a rule.
+    this.ambience = new Ambience(d.core, d.bodyHandle);
     this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60);
     this.factoryView = new FactoryView(d.origin);
     this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView);
@@ -297,7 +299,8 @@ export class Gameplay {
     this.fx.update(dt, this.d.origin);
     const eye = this.d.player.aimRay().origin;
     this.sfx.walk(dt, this.d.player.body.speedMps, this.d.player.body.grounded);
-    this.fx.beds(this.factory, this.machines, eye);
+    this.fx.beds(this.factory, this.machines, eye, (base) =>
+      this.ambience.step(dt, eye, this.d.player.body.underRock, base));
     // The belt scroll is driven by SIM seconds, not performance.now(), for the
     // same reason the terrain cross-dissolve is: a headless driven run then
     // scrolls at exactly the rate a real one does and a capture is reproducible.

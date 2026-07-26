@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { CameraKick, Debris } from './HarvestFx.js';
 import { readable } from './GameplayViews.js';
-import type { Sfx } from '../audio/Sfx.js';
+import type { Ambient, Sfx } from '../audio/Sfx.js';
 import type { GameHud } from '../ui/GameHud.js';
 import type { NodeField } from './NodeField.js';
 import type { Factory } from './Factory.js';
@@ -146,7 +146,8 @@ export class Feedback {
    * hum and crackle cannot drift apart, and it stays O(buildings) per frame with
    * no per-machine voice anywhere (the DW-8 argument, applied to sound).
    */
-  beds(f: Factory, machines: Machines, eye: { x: number; y: number; z: number }): void {
+  beds(f: Factory, machines: Machines, eye: { x: number; y: number; z: number },
+       world: (base: Ambient) => Ambient = (b) => b): void {
     const d = (p: { x: number; y: number; z: number }): number =>
       Math.hypot(p.x - eye.x, p.y - eye.y, p.z - eye.z);
     let machineM = Infinity;
@@ -156,7 +157,10 @@ export class Feedback {
       if (f.line.working(b.build)) machineM = Math.min(machineM, d(b.pos));
     }
     for (const m of machines.list) if (m.burning) fireM = Math.min(fireM, d(m.pos));
-    this.sfx.ambience({ machineM, fireM });
+    // The machines are what THIS module can see; the wind, the underground and
+    // the Forest are the world's, and they are folded in by whoever knows where
+    // the player is standing (Ambience.ts).
+    this.sfx.ambience(world({ machineM, fireM }));
   }
 
   /** Flatten "towards the eye" into the ground plane, so chips come at you. */

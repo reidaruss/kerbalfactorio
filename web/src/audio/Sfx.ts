@@ -15,6 +15,9 @@
 
 import { AudioBus } from './AudioBus.js';
 import { VOICES, jit, noiseBuffer, type Voice } from './Voices.js';
+import { makeBed, windFilterOf } from './Beds.js';
+
+function clamp01(v: number): number { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
 /** Metres of ground per footstep, and the speed below which walking is silent. */
 const STRIDE_M = 1.75;
@@ -22,14 +25,37 @@ const WALK_MIN_MPS = 0.45;
 /** Beyond this a machine contributes nothing to the beds. */
 export const AUDIBLE_M = 26;
 
-export interface Ambient { machineM: number; fireM: number }
+/**
+ * What the world sounds like right now, all 0..1 except the two distances.
+ *
+ * W7: the game had event sounds and nothing else, so between two swings it was
+ * SILENT, which is the single clearest tell that a thing is a tech demo. The
+ * three new levels are the world's own bed: wind that opens up with altitude
+ * and shuts when there is rock overhead, a subterranean rumble that does the
+ * opposite, and insects in the Forest. Gameplay works the levels out (Ambience.ts)
+ * and this file only knows how to make the noise.
+ */
+export interface Ambient {
+  machineM: number;
+  fireM: number;
+  /** 0..1. Strength of the open-air wind, and how bright it is (gust/altitude). */
+  wind?: number;
+  windBright?: number;
+  /** 0..1. Underground: a low rumble and the room it implies. */
+  cave?: number;
+  /** 0..1. Forest insects, out in the open. */
+  life?: number;
+}
+
+type BedName = 'hum' | 'fire' | 'wind' | 'cave' | 'life';
 
 export class Sfx {
   readonly bus = new AudioBus();
   private strideLeft = STRIDE_M;
   private seq = 0;
-  private hum: GainNode | null = null;
-  private fire: GainNode | null = null;
+  private readonly beds = new Map<BedName, GainNode>();
+  /** The wind's own lowpass, so a gust can open the filter and not just the gain. */
+  private windTone: BiquadFilterNode | null = null;
 
   attach(): void { this.bus.attach(); }
 
@@ -75,19 +101,41 @@ export class Sfx {
     };
     this.setBed('hum', level(a.machineM) * 0.16, o);
     this.setBed('fire', level(a.fireM) * 0.22, o);
+    // THE WORLD'S OWN BED. Quiet on purpose: these run for ever, so anything
+    // loud enough to notice as a sound is loud enough to hate within a minute.
+    this.setBed('wind', clamp01(a.wind ?? 0) * 0.075, o);
+    this.setBed('cave', clamp01(a.cave ?? 0) * 0.085, o);
+    this.setBed('life', clamp01(a.life ?? 0) * 0.055, o);
+    if (this.windTone !== null) {
+      // Altitude and exposure open the filter, not just the gain: a ridge top
+      // is a BRIGHTER wind, and a gain-only version reads as the same sound
+      // turned up, which is exactly what a canned loop sounds like.
+      this.windTone.frequency.setTargetAtTime(
+        360 + 900 * clamp01(a.windBright ?? 0), o.ctx.currentTime, 0.8);
+    }
   }
 
-  private setBed(which: 'hum' | 'fire', level: number,
+  private setBed(which: BedName, level: number,
                  o: { ctx: BaseAudioContext; dest: AudioNode }): void {
-    let g = which === 'hum' ? this.hum : this.fire;
-    if (g === null) {
+    let g = this.beds.get(which);
+    if (g === undefined) {
       if (level <= 0.0005) return;        // never build a bed nobody can hear
-      g = which === 'hum' ? this.buildHum(o) : this.buildFire(o);
-      if (which === 'hum') this.hum = g; else this.fire = g;
+      g = this.build(which, o);
+      this.beds.set(which, g);
       this.bus.loops++;
     }
     // A quarter-second constant: walking past a machine fades, it does not cut.
     g.gain.setTargetAtTime(level, o.ctx.currentTime, 0.25);
+  }
+
+  private build(which: BedName,
+                o: { ctx: BaseAudioContext; dest: AudioNode }): GainNode {
+    if (which === 'hum') return this.buildHum(o);
+    if (which === 'fire') return this.buildFire(o);
+    const g = makeBed(which, o.ctx);
+    g.connect(o.dest);
+    if (which === 'wind') this.windTone = windFilterOf(g);
+    return g;
   }
 
   /** A machine at work: a low pair of saws under a lowpass. Four nodes, once. */

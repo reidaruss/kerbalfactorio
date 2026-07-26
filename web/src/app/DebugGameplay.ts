@@ -8,6 +8,7 @@
 
 import { demolishBuild, demolishMachine } from '../game/Demolition.js';
 import { renderVoices } from '../audio/Sfx.js';
+import { renderBeds } from '../audio/Beds.js';
 import { clearSlot } from '../game/SaveGame.js';
 import { clearEdits } from '../game/VoxelSave.js';
 import type { Services } from './Services.js';
@@ -59,7 +60,12 @@ export function gameplayApi(s: Services, loop: Loop) {
       return sfx.stats();
     },
 
-    audioRender: () => renderVoices(),
+    // DW-20 for sound, both halves: the one-shots and the continuous beds are
+    // rendered offline and measured, because a bed that runs for ever producing
+    // silence is exactly the failure a play counter cannot see.
+    audioRender: async () => ({
+      voices: await renderVoices(), beds: await renderBeds(),
+    }),
 
     // DW-17. `save` writes the autosave slot NOW and `load` applies it over the
     // live world, which is what makes a reload testable without one: a probe
