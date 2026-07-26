@@ -76,15 +76,23 @@ export class Feedback {
   private felled(g: Grant, eye: { x: number; y: number; z: number }): void {
     this.felledCount++;
     const hit = this.field.hitPoint(g.index);
-    this.field.fell(g.index);
+    const kind = this.field.kindOf(g.index);
+    // NAME THE THING, not the item it drops. "Wood cleared" is a caption about
+    // an inventory row; "tree felled" is a caption about what just happened in
+    // front of you, and only one of those is a moment.
+    const what = kind === 0 ? 'tree felled'
+      : kind === 1 ? 'boulder cleared' : `${g.name} deposit cleared`;
     if (hit !== null) {
       const back = this.awayFromNode(hit, eye);
+      // The chips come back at the player and the TRUNK goes the other way.
+      this.field.fell(g.index, { x: -back.x, y: -back.y, z: -back.z });
       this.debris.burst({
         pos: hit.pos, up: hit.up, back, colour: hit.colour, count: 44,
       });
-      this.hud.banner(`${g.name} cleared`, readable(hit.colour));
+      this.hud.banner(what, readable(hit.colour));
     } else {
-      this.hud.banner(`${g.name} cleared`, '#e8eef3');
+      this.field.fell(g.index);
+      this.hud.banner(what, '#e8eef3');
     }
     this.sfx.collapse();
   }

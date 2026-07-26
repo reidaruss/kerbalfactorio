@@ -269,10 +269,25 @@ export class NodeField {
     if (pl !== undefined) pl.punch = PUNCH_SECS;
   }
 
-  /** Start the collapse. Called once, on the swing that emptied the node. */
-  fell(index: number): void {
+  /**
+   * Start the collapse. Called once, on the swing that emptied the node.
+   *
+   * `away` is the tangent direction the node should go over in, which is away
+   * from whoever felled it. A hashed axis was tried first and a tree that falls
+   * ON the player fills the whole screen with bark: dramatic once, obstructive
+   * every time after. Rotating `up` about `up x away` tips the trunk along
+   * `away` exactly, because `(up x away) x up == away` for a tangent `away`.
+   */
+  fell(index: number, away?: { x: number; y: number; z: number }): void {
     const pl = this.placed.find((n) => n.index === index);
-    if (pl !== undefined && pl.fell <= 0) { pl.fell = 1e-4; this.felled++; }
+    if (pl === undefined || pl.fell > 0) return;
+    if (away !== undefined) {
+      const a = new THREE.Vector3(away.x, away.y, away.z);
+      a.addScaledVector(pl.up, -a.dot(pl.up));
+      if (a.lengthSq() > 1e-9) pl.lean.crossVectors(pl.up, a.normalize()).normalize();
+    }
+    pl.fell = 1e-4;
+    this.felled++;
   }
 
   /** worldgen::survival::NodeKind of a placed node, or -1. */
