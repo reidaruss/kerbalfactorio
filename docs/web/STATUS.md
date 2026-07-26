@@ -1,7 +1,7 @@
 # Orbital Foundry: current status and resume point
 
 **Read this first after any session break.** Living status doc, updated at milestone boundaries.
-Last updated 2026-07-26.
+Last updated 2026-07-26 (FS-16 to FS-19: the instance pools grow and a full one is loud).
 
 ## What this project is now
 
@@ -591,6 +591,92 @@ probes. Save slot version 5.
 **Draw calls: 41 on the surface, 49 with a 16-tile belt run filling the frame,
 against a budget of 150.** The hotbar is DOM and costs none. Screenshots
 `docs/screenshots/GP_belt_run.png`, `GP_controls.png`.
+
+## The factory stops lying about how big it is (FS-16 to FS-19, 2026-07-26)
+
+Four defects, all found and measured by other lanes, all in files those lanes
+did not own. ARCHITECTURE 15.2 items 111 to 114.
+
+**The ceiling that reported success.** `MachineBatch` had a fixed 256-instance
+pool shared by machines, belt tiles and DW-9's inserters, and past it a building
+existed in the plan, existed in `/core`, ticked, produced, persisted and was
+**never drawn**. The packaging spike's own table is the whole story: from 150
+machines to 900, draw calls frozen at exactly 45, triangles frozen at exactly
+602,994, p50 barely moving, every budget indicator `ok`. A 900-machine base and a
+150-machine base were byte-identical on screen.
+
+The pool now **doubles on demand** through `BatchedMesh.setInstanceCount`, which
+reallocates the indirect and matrix textures and block-copies the old contents,
+so every live instance keeps its transform and its geometry id and nothing is
+re-added; the vertex and index pools never move, because growth adds instances of
+geometry that is already resident. Doubling is O(1) amortised and makes capacity
+follow the PLAN rather than a second guessed constant. `StructureView` had the
+same shape at 512 and was fixed with it rather than after it bit (484 parts drew
+fine). The hard ceiling of 16,384 is a memory guard only, and reaching it is
+counted, printed once and shown on the HUD.
+
+**The honest curve**, `node measure/browser.mjs --evalfile=probes/scale.js`
+unchanged, RTX 4060 Ti, 1600x900:
+
+| machines | instances | draws | triangles | p50 | p99 |
+|---|---|---|---|---|---|
+| 0 | 0 / 256 | 41 | 421,682 | 1.7 | 2.4 |
+| 140 | 219 / 256 | 45 | 574,498 | 1.8 | 2.6 |
+| **500** | **564 / 1024** | **45** | **821,202** | **1.8** | **2.5** |
+| 600 | 1,535 / 2048 | 45 | 1,476,034 | 1.9 | 3.0 |
+| 900 | 2,465 / 4096 | 45 | 2,111,874 | 2.0 | 3.0 |
+| 900 + a 140-part base | 2,465 + 140 | 49 | 2,158,914 | 2.0 | 3.4 |
+
+Triangles TRACK now instead of freezing, four doublings, **zero refusals**, zero
+shortfall on every rung. **Draw calls never moved: 45 for the whole factory at
+any size, 49 with a base, against 150.** DW-11's model was never the constraint.
+**The next limit is the TRIANGLE budget**, 2.11 M against an ALERT of 2.7 M, which
+the sweep's own slope (2,119 per plan row) puts at about **1,180 machines**. Not
+draw calls, not frame time, not the pool.
+
+**And the HUD says it out loud.** A full pool does not get slower, it stops
+drawing, so it is invisible in every other number on that HUD: there is now an
+`instances` line under draw calls and triangles showing every live pool as
+`used/capacity`, warning at half the ceiling and shouting `POOL FULL: n NOT
+DRAWN` if anything is ever refused. `probes/scale.js` asserts the same two
+numbers, and both assertions **fail against the old code**, where a frame-time
+check passes.
+
+**A line of five buildings could deadlock for ever.** `wire()` treats a smelter
+as a SOURCE, because its ingots may legitimately ride a belt away, and
+belt-to-smelter reach is 2.25 m, so a smelter at the head of a SHORT run was also
+within reach of that run's TAIL and was wired onto it. Its first ingot went out
+onto the belt that feeds it, rode to the head and stuck there, because the head
+inserter carries ore and will not pick up an ingot and a `TransportLine` accepts
+exactly one item until its head is popped. A machine is now never wired to the
+tail of a run whose head already feeds it, and a smelter never hands directly to
+another smelter. The shape that reaches it is a drill plus **two** belts plus a
+smelter (tail 2.004 m, inside 2.25 m), not four: four was measured before
+machines moved onto the metric site grid. `probes/shortline.js`, negative control
+on the same seed and site with one line changed: **linksToTail 1, ironMade 1,
+minerOut pinned at 20, belt items stuck at 1** against **linksToTail 0, ironMade
+18, minerOut 0 to 2** with the fix. `probes/demolish.js` goes back to four belts.
+
+**R is honest now.** Corners are purely geometric and stay that way, because
+`pitchRuns` re-deriving every heading from the run's own positions is what chains
+a dragged run by construction and what the curve renderer reads. So a tile with a
+predecessor has no heading of its own and R cannot change it. The machine ghost
+gets a prompt of its own (it had none, so the drill's ore-per-second was computed
+every tick and shown only after a refusal) and it reads `R turn: the run sets
+this heading` exactly where the run decides.
+
+**And a ghost address admits when it is a placeholder.** Before the first
+placement every ghost founds a prospective site on the lattice cell under its own
+aim point, so the address is always 0,0 and the id is always the next one the
+registry would hand out: two aims eight metres apart returned the identical key
+`m1:0,0`, and three probes tripped over it. The address carries `prospective`
+now, the ghost report publishes it, a prospective key is namespaced by its
+founding lattice cell, and `Factory.stage` claims the site before it keys a
+placement so nothing persists in that form.
+
+22/22 ctest, self-determinism 119/119, cross-toolchain 106/106, `npm run check`
+green (132 files), 19 probes re-run green plus the new `shortline.js`. No `/core`
+change, no wasm rebuild, ABI still 5.
 
 ## Commands
 

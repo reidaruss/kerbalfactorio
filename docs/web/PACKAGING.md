@@ -16,10 +16,15 @@ not build a Steam depot, an installer, code signing, or an update channel.
 
 1. **Electron is fine.** Cold start, frame time, draw calls and persistence are indistinguishable
    from Chrome running the same bytes. It costs 330 MB of disk and about 60 MB of JS heap.
-2. **The scale wall is not Electron and not the GPU. It is a constant.**
-   `MachineBatch`'s `CAPACITY = 256` is the whole ceiling, it is reached at about **150 machines**,
-   and it fails **silently**: machines past it exist in the plan, exist in `/core`, tick correctly,
-   and are simply never drawn. Draw calls, triangles and frame time all stay flat and green.
+2. **The scale wall is not Electron and not the GPU. It was a constant.**
+   `MachineBatch`'s `CAPACITY = 256` was the whole ceiling, it was reached at about **150 machines**,
+   and it failed **silently**: machines past it existed in the plan, existed in `/core`, ticked
+   correctly, and were simply never drawn. Draw calls, triangles and frame time all stayed flat and
+   green. **FIXED 2026-07-26 (FS-16): the pool doubles on demand and exhaustion is loud. Re-measured
+   at 500 machines (45 draws, 821 k triangles, p50 1.8 ms) and at 900 (45 draws, 2.11 M triangles,
+   p50 2.0 ms), zero refusals; the next limit is the TRIANGLE budget at about 1,180 machines. Every
+   number below the fold in section 7 that predates that fix is kept as the evidence for it, not as
+   a live claim.**
 3. **DW-11's model held, and beat itself.** The entire factory is one `BatchedMesh` costing **4
    draw calls**, and the entire base is another **4**. 41 to 49 draw calls against a budget of 150,
    with 740 live instances and 765k triangles on screen.
@@ -324,6 +329,62 @@ Two honest gaps, both of which make the picture rosier than it will eventually b
 `probes/scale.js` unchanged. It is a rendering-domain change; this spike reports it rather than
 making it.
 
+### FIXED 2026-07-26 (FS-16), and here is the honest curve
+
+The pool now **doubles on demand** through `BatchedMesh.setInstanceCount`, which reallocates the
+indirect and matrix textures and block-copies the old contents, so every live instance keeps its
+transform and its geometry id and nothing is re-added. The vertex and index pools never move,
+because growth adds instances of geometry that is already resident. Starting size is unchanged (256
+for the factory, 512 for the base) so a small factory costs exactly what it did; the hard ceiling of
+16,384 is a memory guard only and reaching it is counted, printed once and shown on the HUD.
+`StructureView` was fixed the same way rather than waiting for 512 to bite.
+
+`node measure/browser.mjs --evalfile=probes/scale.js`, same machine, same layout, **unchanged**:
+
+| machines | batch instances | draw calls | triangles | p50 | p99 |
+|---|---|---|---|---|---|
+| 0 | 0 / 256 | 41 | 421,682 | 1.7 | 2.4 |
+| 60 | 68 / 256 | 45 | 469,970 | 1.8 | 2.5 |
+| 140 | 219 / 256 | 45 | 574,498 | 1.8 | 2.6 |
+| 260 | 496 / 512 | 45 | 765,842 | 1.8 | 2.6 |
+| 400 | 912 / 1024 | 45 | 1,050,002 | 1.8 | 2.6 |
+| **500** (separate run) | **564 / 1024** | **45** | **821,202** | **1.8** | **2.5** |
+| 600 | 1,535 / 2048 | 45 | 1,476,034 | 1.9 | 3.0 |
+| 900 | 2,465 / 4096 | 45 | 2,111,874 | 2.0 | 3.0 |
+| 900 + a 140-part base | 2,465 + 140 | 49 | 2,158,914 | 2.0 | 3.4 |
+
+**Triangles now track the plan instead of freezing**, which is the whole point: the column that was
+constant at 602,994 from 150 machines to 900 climbs from 421 k to 2.11 M. Four doublings, **zero
+refusals**, zero shortfall on every rung, and `restore()` costs 20.7 ms for 900 rows.
+
+**Draw calls did not move.** 45 for the whole factory at any size and 49 with a base, against a
+budget of 150. DW-11's instancing model was never the constraint and still is not.
+
+**500 machines: 45 draw calls, 821,202 triangles, p50 1.8 ms, p99 2.5 ms, 564 of 1024 instances,
+nothing refused.** Reid asked whether 200 to 500 holds. It does now, comfortably, and the answer
+before this fix was that it did not.
+
+### What breaks next, and it is the triangle budget
+
+Not draw calls (flat at 45), not frame time (2.0 ms p50 at 900 machines), not the instance pool
+(4,096 allocated, 2,465 used, ceiling 16,384). **Triangles.** The 900-machine rung stands at
+2,111,874 against an ALERT of 2.7 M and a FAIL of 4.0 M (ARCHITECTURE 10.3). The sweep's own slope
+between the 600 and 900 rungs is **2,119 triangles per plan row**, so ALERT lands at roughly
+**1,180 machines** and FAIL at roughly **2,080** in this layout. That is a real budget with a real
+number attached, which is what the previous curve could not produce.
+
+**A second finding, and it is about the WIRING rather than the renderer.** 900 plan rows drew 2,465
+instances, so **more than half of the instances on screen are DW-9 inserters**. `FactoryWiring.touch`
+gives belt-to-smelter a reach of 2.25 m and this layout puts lanes 2.2 m apart, so every smelter
+wires into its neighbouring lanes as well as its own. It is not wrong (those connections are real),
+but it means the triangle cost of a dense parallel layout is dominated by auto-created inserters
+rather than by the machines the player placed. Worth a look before anyone tunes the machine meshes.
+
+**The two honest gaps from the original run are unchanged:** the seeded belts are still empty, so
+/core's per-tick work is understated; and `FactoryView.syncLinks` keeps surplus inserter slots
+hidden rather than releasing them, so `instances` includes a high-water mark of link slots from
+earlier rungs of a cumulative sweep. Both are visible in the numbers rather than hidden by them.
+
 ### Would SharedArrayBuffer or WebGPU clear this wall?
 
 **No, and this is worth stating plainly so nobody spends a milestone on it.** DW-27 notes that a
@@ -493,19 +554,21 @@ DW-17 survives. It costs 330 MB of disk, about 60 MB of JS heap, and a 600 MB pr
 that does not grow. Steamworks loads and initialises with a stable Node-API binding that needs no
 rebuild step. **Nothing in DW-27 bites.**
 
-The caveat is that the scale question found a real wall at **about 150 machines**, it is a
-`const CAPACITY = 256` in `MachineBatch.ts`, and it fails silently with every indicator green.
+The caveat is that the scale question found a real wall at **about 150 machines**, it was a
+`const CAPACITY = 256` in `MachineBatch.ts`, and it failed silently with every indicator green.
 That was worth finding today rather than in two months, which was the entire point of running this
-spike early.
+spike early. **It was fixed the same day (FS-16) and re-measured: 900 machines now draw in 45 calls
+at 2.0 ms, and the next limit is the triangle budget at roughly 1,180 machines.**
 
 **What I would do next, in order:**
 
-1. **Give `MachineBatch` a growth path** (rendering domain, small). Then re-run
-   `node measure/browser.mjs --evalfile=probes/scale.js` unchanged and get the real 500-machine
-   number. Until then, no performance claim about a large factory means anything.
-2. **Add an instance-pool exhaustion alarm to the HUD budget line**, next to draw calls and
-   triangles. A ceiling that is invisible is a ceiling that will be hit in a playtest and
-   misdiagnosed as a save bug.
+1. ~~**Give `MachineBatch` a growth path**~~ **DONE 2026-07-26, FS-16.** The pool doubles on demand;
+   the sweep was re-run unchanged and the 500-machine number is 45 draw calls, 821,202 triangles and
+   p50 1.8 ms. Section 7 carries the full curve and names the triangle budget as the next limit.
+2. ~~**Add an instance-pool exhaustion alarm to the HUD budget line**~~ **DONE 2026-07-26, FS-16.**
+   The debug HUD carries an `instances` line under draw calls and triangles showing every live pool
+   as `used/capacity`, warning at half the ceiling and shouting `POOL FULL: n NOT DRAWN` if anything
+   is ever refused. `probes/scale.js` asserts the same two numbers per rung.
 3. **Look at the 7-second cold start**, which is the client and not the shell: 0.9 s to
    `did-finish-load`, then 4.2 s before `window.__of` exists.
 4. Leave DW-4 and DW-10 alone. Neither shared memory nor WebGPU is anywhere near being the

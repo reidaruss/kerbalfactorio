@@ -2033,6 +2033,88 @@ Added at W4 (2026-07-25):
     not be. Copy what a throwaway checkout needs, or point its vite config at
     the real tree, and never link out of one.
 
+111. **A FIXED-SIZE INSTANCE POOL DOES NOT GET SLOWER WHEN IT FILLS, IT STOPS
+    DRAWING, AND EVERY BUDGET INDICATOR GOES ON READING `ok`.** `MachineBatch`
+    shipped with `CAPACITY = 256` and no growth path, shared by machines, belt
+    tiles and DW-9's inserters. Past it `acquire()` returned -1, `FactoryView.sync`
+    skipped the building, and the machine went on existing in the plan, existing
+    in `/core`, ticking, producing and persisting while never being on screen.
+    The DW-27 spike measured the signature: from 150 machines to 900, **draw
+    calls frozen at exactly 45, triangles frozen at exactly 602,994**, p50 barely
+    moving. A 900-machine base and a 150-machine base were byte-identical on
+    screen. This is the worst class of defect this project can have, because the
+    obvious test ("does 900 machines hold 60 fps") returns an enthusiastic and
+    completely wrong yes. **The pool now doubles on demand through
+    `BatchedMesh.setInstanceCount`**, which reallocates the indirect and matrix
+    textures and block-copies the old contents, so every live instance keeps its
+    transform and geometry id; the vertex and index pools never move because
+    growth adds instances of resident geometry. `StructureView` had the identical
+    shape at 512 and was fixed with it rather than after it bit at 484 parts. Two
+    things follow and both are the real lesson. **An invisible ceiling needs a
+    visible number:** the debug HUD carries an `instances` line under draw calls
+    and triangles, because nothing else on that HUD can see it. **And an
+    acceptance test must be able to fail for the original reason:**
+    `probes/scale.js` asserts the pool grew past the old constant and that
+    nothing was ever refused, both of which fail against the old code, where a
+    frame-time or draw-call check passes. Re-measured: 500 machines at 45 draws /
+    821,202 triangles / 1.8 ms, 900 at 45 draws / 2,111,874 triangles / 2.0 ms,
+    four doublings, zero refusals. The next limit is the TRIANGLE budget at about
+    1,180 machines. See `docs/web/PACKAGING.md` section 7.
+
+112. **A MACHINE THAT CAN SOURCE AND SINK THE SAME BELT WILL EVENTUALLY WIRE
+    ITSELF INTO A DEADLOCK.** `FactoryWiring.wire` treats a smelter as a SOURCE
+    (its ingots may legitimately ride a belt away) as well as a SINK, and
+    belt-to-smelter reach is 2.25 m. On a short run the smelter standing at the
+    HEAD is also within reach of the TAIL, so it was wired onto the tail of the
+    very run whose head feeds it. Its first ingot went out onto that belt, rode
+    to the head and stuck there **for ever**: the head inserter is carrying ore
+    and will not pick up an ingot, and a `TransportLine` accepts exactly one item
+    until its head is popped. Measured on the deadlocked line: `minerOut` pinned
+    while `mined` kept climbing, belt items stuck at 1, smelter input 0, output 0,
+    iron 0. The rule is now that a machine is never wired to the tail of a run
+    whose head already feeds it, and a smelter never hands directly to another
+    smelter (nothing eats an ingot, so that inserter can only stall the
+    receiver). **The shape that reaches it is a drill plus TWO belts plus a
+    smelter, not four**: four was right when machines snapped to the voxel
+    lattice at 0.59 to 1.02 m a step, and tiles are exactly 1.002 m apart on the
+    metric site grid now, so a four-tile run puts the tail 4.0 m out and cannot
+    form the loop at all. `probes/demolish.js` had been quietly stretched from
+    four belts to five so the loop could not form, which was correct for that
+    probe and left the defect live for the player; it is back on four and asserts
+    the wiring by id. `probes/shortline.js` is the two-belt case and it fails
+    against the old wiring for the original reason: linksToTail 1, ironMade 1,
+    minerOut pinned at 20, against linksToTail 0 and ironMade 18 with the fix.
+
+113. **A KEY THAT THE GAME IGNORES MUST NOT BE ADVERTISED, EVEN WHEN THE
+    BEHAVIOUR IS RIGHT.** R turns the belt ghost through four quarters perfectly
+    well, and `FactoryCommit.pitchRuns` then rewrites every tile's heading from
+    the run's own geometry on the next commit, so a tile placed beside an
+    existing run comes back facing exactly like its neighbours and its
+    predecessor is retroactively refaced too. That is the DESIGN, not an
+    oversight: geometric cornering is what chains a dragged run by construction
+    and what the belt-curve renderer reads. So the behaviour stays and the
+    advertising changes. The machine ghost now has a prompt of its own (it had
+    none, so the drill's "2.1 ore/s here" was computed every tick and shown only
+    after a refused press) and that prompt reads `R turn: the run sets this
+    heading` exactly where the run decides, asked of `aheadOf` itself so the
+    ghost cannot answer a different question from the commit.
+
+114. **A PLACEHOLDER ADDRESS MUST SAY THAT IT IS ONE.** Until a build site is
+    adopted, `MachinePlacement.siteAt` founds a PROSPECTIVE one on the lattice
+    cell under the aim point, correctly, because a ghost must not found sites by
+    being looked at. But an unadopted site's id is whatever the registry would
+    hand out next, and the site is centred on the query point, so **every point
+    in the world answered `m1:0,0`** and two aims eight metres apart were
+    indistinguishable. Three separate probes tripped over this independently and
+    one concluded "no lattice axis carries a chainable line", which was simply
+    false; a fourth, written during this fix, laid its second belt two cells
+    along and left a hole in its own run. The address now carries `prospective`,
+    the ghost report publishes it next to `cell`, a prospective key is
+    namespaced by its founding lattice cell so it discriminates, and
+    `Factory.stage` claims the site before it keys a placement, so nothing is
+    ever persisted in the prospective form and saved cells keep the shape they
+    always had.
+
 ### 15.3 The dev loop, concretely
 
 ```
