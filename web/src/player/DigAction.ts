@@ -41,6 +41,19 @@ export const DIG = {
   cooldownTicks: 9,
 };
 
+/**
+ * What a dig strike into an ore body pays.
+ *
+ * A PORT, not an import: `src/player` knows nothing about deposits, and the ore
+ * pool has exactly one owner (`OrePatches`, over /core). Without this a pickaxe
+ * swing at an outcrop pays and a dig strike into the SAME ground pays nothing,
+ * which reads as a bug the first time anybody tries it.
+ */
+export interface DigOrePort {
+  strike(x: number, y: number, z: number, cells: number):
+  { item: number; name: string; granted: number } | null;
+}
+
 export interface DigStats {
   digs: number;
   misses: number;
@@ -49,12 +62,20 @@ export interface DigStats {
   lastCells: number;
   lastDistM: number;
   lastMs: number;
+  /** Ore units the last strike granted, and how many in total. */
+  lastOre: number;
+  oreUnits: number;
 }
 
 export class DigAction {
   readonly stats: DigStats = {
     digs: 0, misses: 0, volumeM3: 0, lastCells: 0, lastDistM: 0, lastMs: 0,
+    lastOre: 0, oreUnits: 0,
   };
+  /** Set by the gameplay layer once the ore field exists. Null with no deposits. */
+  ore: DigOrePort | null = null;
+  /** The last strike that actually paid, for the HUD and for a probe. */
+  lastGrant: { item: number; name: string; granted: number } | null = null;
   private cooldown = 0;
 
   constructor(
@@ -100,6 +121,18 @@ export class DigAction {
     this.stats.digs++;
     this.stats.volumeM3 += r.cells;   // 1 m^3 per cell (of_voxel_size)
     this.stats.lastCells = r.cells;
+    // DIGGING INTO AN ORE BODY PAYS. The amount is the port's business and the
+    // pool is /core's; all this class does is tell it where the strike landed.
+    this.stats.lastOre = 0;
+    this.lastGrant = null;
+    if (r.hit !== null && this.ore !== null) {
+      const g = this.ore.strike(r.hit.x, r.hit.y, r.hit.z, r.cells);
+      if (g !== null && g.granted > 0) {
+        this.lastGrant = g;
+        this.stats.lastOre = g.granted;
+        this.stats.oreUnits += g.granted;
+      }
+    }
     this.stats.lastDistM = +r.distM.toFixed(2);
     this.stats.lastMs = +(performance.now() - t0).toFixed(3);
     return r;

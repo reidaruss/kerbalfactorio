@@ -236,6 +236,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // parsed and bundled whether or not a single node is placed, so a probe
     // that means to measure the renderer alone cannot actually get there.
     const { Gameplay } = await import('../game/Gameplay.js');
+    const { digOrePort } = await import('../game/DigOre.js');
     gameplay = await Gameplay.create({
       core, origin, player, avatar, input, host, scene: scenes.near,
       bodyHandle: body.handle, seed: cfg.seedLo,
@@ -243,6 +244,18 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       // rather than gameplay reaching for a global.
       ports: { voxels, voxelMesh, terrain },
     });
+    // DIGGING INTO AN ORE BODY PAYS. The dig action lives in Services and the
+    // ore pool lives in the gameplay layer, so this line is the seam between
+    // them; without it a pickaxe swing at an outcrop grants ore and a dig strike
+    // into the same ground grants nothing.
+    if (dig !== null) {
+      const g = gameplay;
+      dig.ore = digOrePort(g.oreField.patches, g.game, (n, name, at) => {
+        const r = Math.hypot(at.x, at.y, at.z) || 1;
+        g.fx.ingot(n, at, { x: at.x / r, y: at.y / r, z: at.z / r }, name);
+        g.panel.invalidate();
+      });
+    }
   }
 
   const boot: BootMetrics = {
