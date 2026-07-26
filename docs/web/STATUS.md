@@ -102,11 +102,13 @@ Screenshots: `docs/screenshots/W6_harvest_impact.png`, `W6_furnace_lit.png`.
 Probes: `web/tools/smoke/probes/{impact,furnacelit,balance}.js`, all
 `valid: true`.
 
-**Known, and not gameplay's to fix:** the walk stalls about 3.8 m short of a
-node and will not close further (`grounded true`, `blockedByRock false`, slope
-11 deg), which is why reach is now measured to the node rather than to its
-pivot. `probes/impact.js` logs the per-iteration distance for whoever owns the
-character controller.
+**~~Known, and not gameplay's to fix:~~ FIXED 2026-07-26.** The walk stalled
+about 3.8 m short of a node and would not close (`grounded true`,
+`blockedByRock false`, slope 11 deg). Those three symptoms were the whole
+signature: the walker was resolving against voxel rock that stands proud of the
+walkable surface, and being pushed back exactly as far as it had stepped. See
+15.2 item 93 and `probes/walkfeel.js`. `impact.js` now closes to **2.15 m**,
+which is the node's own radius.
 
 ## Automation: a line that runs while you walk away (W6, 2026-07-26)
 
@@ -380,6 +382,26 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
   with the ceiling property intact (**10/10 rock overhead, 10/10 `derivedLoweringAt` 0, 0
   blocked, 8.38 m walked, 899 ticks, 22 strikes, 186 cells**), so a horizontal tunnel under
   solid ground still leaves the surface closed. See 15.2 item 85.
+- **Walking across ordinary ground is smooth, and the ground now has walls
+  (2026-07-26).** The playtest complaint was "you are always getting stuck
+  unless you jump". Cause: `solidAt` is quantised to the 1 m cell (a cell is
+  solid when its CENTRE is under the designed surface) while the walkable
+  ground is the smooth `surfaceRadius`, so the solid shell is a staircase
+  standing up to 0.87 m PROUD of the ground being walked on. The capsule's
+  lowest sample was inside it on **60.6% of ticks**, and `resolveEmbedded`'s
+  minimum translation out of a just-entered cell is back through the face just
+  crossed, i.e. exactly the 7.7 cm walked. Driven (`probes/walkfeel.js`, four
+  bearings, jump never pressed): **metres travelled per commanded metre 0.442 ->
+  1.000, stalled ticks 527/917 -> 1/902, embedded pushes 688 -> 0**. The walker
+  now needs BOTH oracle answers to agree before treating a point as rock.
+  Two guards came with it, both of which had been broken since the walker was
+  written: the heightfield had **no wall at all** (`gap <= 0` meant "landing",
+  so one tick into a cliff snapped the capsule to the top of it, and the slope
+  limit is a no-op because it projects onto the radial up), and `floorBelow`
+  returned a radius ABOVE its query when the query point was solid, ratcheting
+  an embedded capsule up a vertical face at 6 m/s. Negative control (dig a
+  shaft, walk into its wall from the bottom): **climbed 12.00 m -> 0.23 m**,
+  zero rise over the last quarter of the leg. 15.2 items 93 and 94.
 - **W5 remaining:** dug volume is not in the inventory UI.
 - **A rebuild is not a deploy.** `web/wasm/build.ps1` writes `web/wasm/dist`; the client serves
   `web/public/wasm`, which is gitignored and only refreshed by `npm run sync-wasm`. A stale copy
