@@ -109,19 +109,25 @@ export class Gameplay {
     // gameplay.h says it does, which is what makes the timing assertable.
     this.machines.tick(1);
 
+    // ONE edge for the mine key, read once. It used to be edge-detected inside
+    // the "panel is open" branch and taken as a LEVEL inside the "aiming at a
+    // machine" branch, and the two disagreed: pressing E to close a furnace you
+    // are standing in front of closed it on that tick and the still-held key
+    // reopened it on the next, so the panel could not be closed by the key that
+    // opened it. A press is a press wherever it is read.
+    const minePressed = f.mine && !this.mineHeld;
+    this.mineHeld = f.mine;
+
     if (this.panel.isOpen) {
-      this.mineHeld = f.mine;
       this.interact.target = null;
       return false;
     }
 
     if (this.furnacePanel.isOpen) {
-      if (f.mine && !this.mineHeld) this.openFurnace(null);
-      this.mineHeld = f.mine;
+      if (minePressed) this.openFurnace(null);
       this.interact.target = null;
       return false;
     }
-    this.mineHeld = f.mine;
 
     // Placement, and the machine prompt, both want the aim ray.
     const ray = this.d.player.aimRay();
@@ -131,7 +137,7 @@ export class Gameplay {
 
     // A machine under the crosshair takes the key: you cannot harvest a furnace.
     if (this.aimedMachine !== null) {
-      if (f.mine) this.openFurnace(this.aimedMachine);
+      if (minePressed) this.openFurnace(this.aimedMachine);
       this.interact.target = null;
       return false;
     }
@@ -171,7 +177,6 @@ export class Gameplay {
       this.hud.gain(`+${l.granted} ${l.name}`, '#e8eef3');
     }
     this.kick.fire(this.interact.swings);
-    if (l.usedTool) this.hud.flash('tool', 0.7);
     this.panel.invalidate();
   }
 

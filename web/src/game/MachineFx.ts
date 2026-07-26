@@ -43,7 +43,11 @@ export class MachineGlow {
       const m = o as THREE.Mesh;
       if (m.isMesh !== true) return;
       const mat = m.material as THREE.Material;
-      if (mat.name !== 'EmissiveState') return;
+      // of_lib names every material OF_<Role>, and the EmissiveState role ships
+      // a WHITE emissive at full strength: unclaimed, the fire card renders as a
+      // white rectangle that reads as a hole in the mesh. Matching the bare role
+      // name found nothing, which is exactly how that white rectangle shipped.
+      if (!mat.name.endsWith('EmissiveState')) return;
       const c = (mat as THREE.MeshStandardMaterial).clone();
       c.emissive = new THREE.Color(0, 0, 0);
       c.emissiveIntensity = 0;
@@ -72,8 +76,12 @@ export class MachineGlow {
     const c = s.burning ? FIRE : EMBER;
     for (const m of this.mats) {
       m.emissive.copy(c);
-      m.emissiveIntensity = k * 2.6;
-      m.color.copy(c).multiplyScalar(0.12 + 0.5 * k);
+      // 1.15, not the 2.6 the first pass used. ACES tone mapping at exposure 1
+      // pushes anything much past 1 to white, and a WHITE rectangle in the mouth
+      // reads as a hole in the mesh, not as fire. The colour has to survive the
+      // curve, so the emissive stays inside it and the flicker does the work.
+      m.emissiveIntensity = k * 1.15;
+      m.color.copy(c).multiplyScalar(0.05 + 0.16 * k);
     }
     if (this.card !== null) this.card.scale.setScalar(Math.max(0.001, k * (1 + 0.09 * flicker)));
   }

@@ -58,6 +58,8 @@ export interface Machine {
   tier: number;
   pos: { x: number; y: number; z: number };
   up: THREE.Vector3;
+  /** Ground normal AND the yaw that turns the mouth towards whoever placed it. */
+  quat: THREE.Quaternion;
   group: THREE.Group;
   glow: MachineGlow;
   /** Body-frame point the flue smokes from, derived from the file's socket. */
@@ -147,21 +149,43 @@ export class Machines {
     g.add(clone);
     this.group.add(g);
     const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
-    // The socket is authored in the machine's own frame, and a placed machine is
-    // only rotated (local +Y onto the ground normal), so rotating the socket
+    // THE MOUTH FACES THE PLAYER WHO PUT IT THERE. Standing local +Y on the
+    // ground normal is only half a placement: the fire card is recessed in the
+    // mouth, so a machine dropped at an arbitrary yaw shows a player its blank
+    // back and the one signal that says "this thing is working" is invisible.
+    // The mouth is Blender -Y, which glTF's Z-up conversion makes local +Z.
+    this.q.setFromUnitVectors(this.yAxis, stand);
+    const quat = this.faceMouth(this.q, stand, eye, pos);
+    // The socket is authored in the machine's own frame, so rotating the socket
     // offset by that same quaternion is the whole transform. Falling back to the
     // asset height keeps a machine smoking even if a file ever drops the socket.
-    this.q.setFromUnitVectors(this.yAxis, stand);
     const socket = findNode(clone, 'socket_smoke');
-    this.v.copy(socket?.position ?? new THREE.Vector3(0, 1.4, 0)).applyQuaternion(this.q);
+    this.v.copy(socket?.position ?? new THREE.Vector3(0, 1.4, 0)).applyQuaternion(quat);
     const m: Machine = {
-      handle, tier, pos, group: g, up: stand,
+      handle, tier, pos, group: g, up: stand, quat,
       glow: new MachineGlow(clone, f.card),
       smokeAt: { x: pos.x + this.v.x, y: pos.y + this.v.y, z: pos.z + this.v.z },
       puffIn: 0, burning: false,
     };
     this.list.push(m);
     return m;
+  }
+
+  /** Yaw `stand` about the ground normal until local +Z points back at the eye. */
+  private faceMouth(stand: THREE.Quaternion, up: THREE.Vector3,
+                    eye: { x: number; y: number; z: number },
+                    pos: { x: number; y: number; z: number }): THREE.Quaternion {
+    const want = new THREE.Vector3(eye.x - pos.x, eye.y - pos.y, eye.z - pos.z);
+    want.addScaledVector(up, -want.dot(up));
+    if (want.lengthSq() < 1e-9) return stand.clone();
+    want.normalize();
+    const face = new THREE.Vector3(0, 0, 1).applyQuaternion(stand);
+    face.addScaledVector(up, -face.dot(up));
+    if (face.lengthSq() < 1e-9) return stand.clone();
+    face.normalize();
+    const cross = new THREE.Vector3().crossVectors(face, want);
+    const angle = Math.atan2(cross.dot(up), face.dot(want));
+    return new THREE.Quaternion().setFromAxisAngle(up, angle).multiply(stand);
   }
 
   /** Advance every machine by `ticks`. Returns the smelts completed. */
@@ -200,8 +224,7 @@ export class Machines {
     for (const m of this.list) {
       this.origin.toEngine(m.pos, this.p);
       m.group.position.copy(this.p);
-      this.q.setFromUnitVectors(this.yAxis, m.up);
-      m.group.quaternion.copy(this.q);
+      m.group.quaternion.copy(m.quat);
       m.group.updateMatrixWorld(true);
     }
   }
