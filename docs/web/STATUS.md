@@ -534,7 +534,25 @@ and the whole tick is ONE commit because a commit rebuilds the network and would
 otherwise eat the ore riding the belts. Pressing on a tile that is already there
 starts a drag FROM it, so the end of a run can be grabbed and extended.
 
-Driven acceptance `probes/controls.js`, `valid: true`, 616 ticks: the wheel
+**And a run is a RAMP, not a staircase**, which was the second half of the same
+complaint and survived the grid fix untouched. A belt follows the ground, so
+consecutive tiles differ in height by the local slope: 0.19 m per 1.00 m tile on
+the 11 degree hillside outside the spawn. Left upright, each tile is a
+horizontal plank at its own height and the run reads as a flight of steps. Every
+tile now takes the run's own 3D direction and a normal perpendicular to it,
+which is what a conveyor on a slope looks like; the residual is the kink between
+two rigid 1.00 m planks whose centres are 1.0176 m apart, **0.018 m** against
+the 0.189 m step it replaces. `Grid.orient` still only yaws and is still right
+for a machine: a smelter stands upright whatever the slope.
+
+**The bar can be rearranged, and the loadout persists.** A click selects a slot
+and a drag from one onto another swaps them, and it only works while the pack is
+open, which looks like a limitation and is not: during play the pointer is
+locked to the canvas, so the pack is the one moment there is a cursor. The
+loadout and the selected slot ride in the save slot, because once a bar can be
+arranged it is player state.
+
+Driven acceptance `probes/controls.js`, `valid: true`, 1,180 ticks: the wheel
 moved the slot 4 -> 7 -> 4; a click with the bare hand dug 7 cells and placed
 nothing (15 -> 15 buildings); a drill off the ore was refused by name and built
 nothing; E opened the furnace and granted **nothing** (27 -> 27 harvest grants),
@@ -542,9 +560,20 @@ asserted in a world where a left click demonstrably does grant; one press held
 while walking laid **15 belts that /core reports as ONE transport line**; and
 Escape closed 3 of 3 modals from the derived list.
 
+A furnace held down dug **0** cells and an empty slot did nothing at all (0
+cells, 0 built) where the bare hand in the same place dug **37**, which is the
+acceptance for a real defect: `digAllowed` asked "is there no PART in hand" and
+a hand furnace is not a part, so holding the button with it selected placed the
+furnace and then dug a crater under it. And the bar was saved, SCRAMBLED, and
+loaded back exactly.
+
 Every consumer now asks for an ACTION and never for a key
 (`player/Bindings.ts`), so the next remap costs one file rather than twenty
 probes. Save slot version 5.
+
+**Draw calls: 41 on the surface, 49 with a 16-tile belt run filling the frame,
+against a budget of 150.** The hotbar is DOM and costs none. Screenshots
+`docs/screenshots/GP_belt_run.png`, `GP_controls.png`.
 
 ## Commands
 
