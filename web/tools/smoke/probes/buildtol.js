@@ -72,14 +72,22 @@
     }
   }
 
-  // 3. one unit step of a /core cell key, in metres of ground. Sampled by
-  //    walking the machine grid's own snap, which is what a belt uses.
+  // 3. one unit step of a /core cell key, in metres of ground. This is the
+  //    measurement the structural site frame exists BECAUSE of, so it is taken
+  //    from `latticeCell`, which is the voxel lattice and nothing else.
+  //
+  //    It used to call `snapCell`, which was the same thing until machines moved
+  //    onto the site grid (GP-27) and is now only accidentally the same: with no
+  //    site adopted yet, every call founds a prospective one on the lattice cell
+  //    it was handed, so it reproduces these numbers. Place one belt and it
+  //    silently starts reporting 1.000 instead, and this line would then be
+  //    measuring a different quantity under the same name.
   const steps = [];
   const g = of.game();
   const base = { x: feet[0], y: feet[1], z: feet[2] };
   for (const ax of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
-    const a = of.snapCell(base.x, base.y, base.z);
-    const b = of.snapCell(base.x + ax[0], base.y + ax[1], base.z + ax[2]);
+    const a = of.latticeCell(base.x, base.y, base.z);
+    const b = of.latticeCell(base.x + ax[0], base.y + ax[1], base.z + ax[2]);
     if (a === null || b === null) continue;
     steps.push(+Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]).toFixed(3));
   }

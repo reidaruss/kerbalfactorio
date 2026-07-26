@@ -90,6 +90,12 @@ export function gameplayApi(s: Services, loop: Loop) {
      * Snap a body-frame point exactly as a MACHINE placement does: the metric
      * site grid, then back onto the ground (GP-27). This is the number a belt
      * run is laid on, so measuring it is measuring the alignment itself.
+     *
+     * READ THIS BEFORE MEASURING WITH IT. Until a site has been ADOPTED, every
+     * call founds a prospective one on the lattice cell it was handed, so two
+     * calls a metre apart land in two different frames and it reproduces the
+     * voxel lattice's own uneven steps. Place something first, or use
+     * `latticeCell` if the lattice is what you actually wanted.
      */
     snapCell(x: number, y: number, z: number) {
       const f = s.gameplay?.factory;

@@ -2022,6 +2022,17 @@ Added at W4 (2026-07-25):
     because the default is what let three call sites make the same mistake
     silently.
 
+109. **Do not put a junction inside a git worktree, because `worktree remove`
+    follows it.** Proving that a red probe pre-dated a change is worth doing
+    properly, and a detached worktree at the old commit is the right tool. It
+    needs `node_modules` and `public`, so both were linked in with `mklink /J`.
+    `git worktree remove --force` then failed with "Invalid argument" and
+    deleted THROUGH the junctions on its way out, taking most of the real
+    `web/node_modules` with it. Nothing tracked was touched and `npm install`
+    restored it in three seconds, so the cost was small, but the next one might
+    not be. Copy what a throwaway checkout needs, or point its vite config at
+    the real tree, and never link out of one.
+
 ### 15.3 The dev loop, concretely
 
 ```
