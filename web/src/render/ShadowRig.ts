@@ -62,7 +62,12 @@ export class ShadowRig {
       // section 3.4 promise ("the shadow-casting light keeps it enabled, so the
       // player still casts a shadow without rendering a slab in front of the
       // camera"), and it is a one-line difference between kept and broken.
-      light.shadow.camera.layers.enable(LAYER_PLAYER_BODY);
+      //
+      // Cascade 0 ONLY, from W4. The rigged player is 9 meshes (six material
+      // slots plus a three-material tool), so letting all three cascades see him
+      // is 27 shadow draws for a 1.8 m object, and cascades 1 and 2 cover 80 m
+      // and 300 m where he is a handful of texels. Measured: 45 draw calls to 27.
+      if (i === 0) light.shadow.camera.layers.enable(LAYER_PLAYER_BODY);
       light.name = `shadowCascade${i}`;
       scene.add(light);
       scene.add(light.target);

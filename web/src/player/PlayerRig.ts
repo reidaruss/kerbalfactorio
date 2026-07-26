@@ -72,7 +72,7 @@ export class PlayerRig {
    * this is genuinely `socket.add(tool)` and no per-tool offset table exists to
    * go stale.
    */
-  async holdTool(url: string, lod = '_LOD0'): Promise<boolean> {
+  async holdTool(url: string, lod = '_LOD0', carryTilt: THREE.Euler | null = null): Promise<boolean> {
     if (this.heldName === url) return true;
     const socket = this.sockets.get('socket_hand_R');
     if (socket === undefined) return false;
@@ -90,6 +90,12 @@ export class PlayerRig {
         m.frustumCulled = false;
       }
     });
+    // carryTilt is a VIEW decision, not an asset offset. The FP arms' bind pose
+    // is the view-model rest (ASSET-SPECS 4.2), so a tool mated at identity
+    // stands the haft straight up through the middle of the screen. The body's
+    // T-pose socket needs no tilt at all and gets none, which is why this is a
+    // parameter rather than a per-tool table that would go stale.
+    if (carryTilt !== null) tool.rotation.copy(carryTilt);
     if (this.held !== null) this.held.removeFromParent();
     socket.add(tool);
     this.held = tool;

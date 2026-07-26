@@ -101,13 +101,20 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // gets NO directional here: ShadowRig's cascade 0 is the near sun from W4, so
   // the one light that lights the player is the one that shadows him. Two lights
   // is exactly why the character was never shadowed by the ground (section 17.4).
-  const sunLights = [addLighting(scenes.far, sky.sunDirection, 1e4)];
+  const sunLights = [
+    addLighting(scenes.far, sky.sunDirection, 1e4),
+    addLighting(scenes.viewModel, sky.sunDirection, 3),
+  ];
   scenes.near.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
   const shadows = new ShadowRig(scenes.near, quality, cfg.shadows);
   // Stock PBR materials (the player, the tools, the biome props) have no
   // scattering integral of their own, so they need an environment or they
   // render as black silhouettes on a lit hillside. Section 7.1, due at W4.
-  const ibl = new SkyIbl(renderer, scenes.near);
+  const ibl = new SkyIbl(renderer, [scenes.near, scenes.viewModel]);
+  // The view-model pass has NO lights of its own. One hemisphere plus the sun
+  // direction is enough: the arms are 0.35 m from the eye, always front-lit, and
+  // a cascade fitted to a 22 m box would be wasted on them.
+  scenes.viewModel.add(new THREE.HemisphereLight(0x8fb0d8, 0x35301f, 1.1));
   const nearSun = shadows.sunLight;
   // distance 0 means "colour and intensity only": ShadowRig owns its position.
   if (nearSun !== null) { nearSun.userData.distance = 0; sunLights.push(nearSun); }

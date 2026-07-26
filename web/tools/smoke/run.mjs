@@ -84,7 +84,14 @@ const page = await browser.newPage({ viewport: { width, height }, deviceScaleFac
 page.on('console', (m) => {
   const t = m.type();
   if (t === 'error') errors.push(`console.error: ${m.text()}`);
-  else if (t === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())) errors.push(`console.warn: ${m.text()}`);
+  else if (t === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())) {
+    // ANGLE's HLSL backend emits X4122 for three's own PMREM shader: a literal
+    // sum it cannot fold exactly in double precision. It is a compiler note on
+    // stock three.js source, not our shader and not a fallback, and it is the
+    // ONLY warning on this allowlist. Everything else still fails the run,
+    // which is the rule that caught the silent no-op terrain material at W1.
+    if (!/warning X4122/.test(m.text())) errors.push(`console.warn: ${m.text()}`);
+  }
   else if (t === 'info' || t === 'log') console.error(`[page] ${m.text()}`);
 });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

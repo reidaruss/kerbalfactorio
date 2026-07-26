@@ -26,6 +26,9 @@ import { BODY_CLIPS, FP_CLIPS, resolveAnim, SWING_DURATION_SECS, type AnimInput 
  */
 const MODEL_FORWARD_IS_PLUS_Z = true;
 
+/** See PlayerRig.holdTool. Swings the haft down and out of the frame centre. */
+const FP_CARRY_TILT = new THREE.Euler(-1.15, 0.0, 0.35);
+
 export class Avatar {
   readonly group = new THREE.Group();
   readonly viewModel = new THREE.Group();
@@ -62,7 +65,7 @@ export class Avatar {
     this.arms = arms;
     await Promise.all([
       body.holdTool(ASSETS.crudePickaxe),
-      arms.holdTool(ASSETS.crudePickaxe),
+      arms.holdTool(ASSETS.crudePickaxe, '_LOD0', FP_CARRY_TILT),
     ]);
     this.group.add(body.group);
     this.viewModel.add(arms.group);

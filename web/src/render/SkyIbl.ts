@@ -29,7 +29,13 @@ export class SkyIbl {
   builds = 0;
   lastMs = 0;
 
-  constructor(private readonly renderer: OFRenderer, private readonly scene: THREE.Scene) {}
+  /**
+   * `targets` is every scene whose stock materials need an environment. The view
+   * model is one of them and it is easy to forget: its own pass has no lights at
+   * all, so the first-person arms rendered as a black silhouette holding a black
+   * pickaxe against a lit landscape (W4_fp_tools, first capture).
+   */
+  constructor(private readonly renderer: OFRenderer, private readonly targets: THREE.Scene[]) {}
 
   /**
    * Rebuild if it is stale, then assign. `target.environment` is assigned every
@@ -44,7 +50,7 @@ export class SkyIbl {
       if (next !== null) {
         this.texture?.dispose();
         this.texture = next;
-        this.scene.environment = next;
+        for (const t of this.targets) t.environment = next;
         this.builds++;
         this.lastMs = performance.now() - t0;
       }
