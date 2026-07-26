@@ -1682,6 +1682,49 @@ Added at W4 (2026-07-25):
     smoke runner only forwards params it is given, so a plain `run.mjs` with no
     flags is now the regression test for the default path.
 
+93. **The ONE surface authority gives two answers with different SHAPES, and the
+    walker believed the wrong one.** R1 says every consumer asks
+    `surface_field.h`, and the walker did: `surfaceRadius` for the ground and
+    `solidAt` for the walls. Both are the oracle, so this looked compliant, and
+    it was the source of the "you get stuck unless you jump" playtest
+    complaint. `solidAt` is quantised to the 1 m cell and a cell is solid when
+    its **centre** is at or below the designed surface (§5), while the walkable
+    ground is the smooth heightfield. The solid shell is therefore a staircase
+    that stands up to 0.87 m **proud** of the ground being walked on: measured,
+    the air 0.15 m above the walkable surface reads solid on **60.6%** of
+    ordinary walking ticks. `resolveEmbedded` ejected the capsule out of that
+    phantom rock by the minimum translation, and the minimum translation out of
+    a cell you have just barely entered is back through the face you entered
+    by, i.e. **exactly the 7.7 cm you had walked**. Walk returned 0.44 m per
+    commanded metre, grounded the whole time, at full commanded speed, with no
+    flag raised anywhere. **Agreeing on the authority is not the same as
+    agreeing on the answer. When two queries of the one oracle describe the
+    same surface at different resolutions, a consumer that mixes them needs a
+    rule for which one wins where** (here: above the ground the heightfield
+    wins, because the heightfield is what the ground snap stands the player
+    on). Fixed in `player/VoxelCollision.ts` (`solidForWalker`); the phantom
+    counter in `probes/walkfeel.js` samples the air above the GROUND rather
+    than above the player, because the resolver has already pushed the player
+    clear by the time anything can be read from them, which is why this was
+    invisible for two milestones.
+
+94. **A safety check that has never fired is not a safety check.** The capsule's
+    slope limit was written to stop the walker climbing a cliff like a ladder,
+    was reported in `__of` and read plausible for two milestones. It did
+    nothing at all, twice over: it rejects the uphill velocity by projecting
+    onto the **radial up**, which the tangential velocity is orthogonal to by
+    construction (it removed ~6e-7 of 4.6 m/s), and it is sampled **after** the
+    ground snap has already moved the capsule, so on a cliff it reads the flat
+    ground on top. The heightfield had no wall of any kind: `gap <= 0` meant
+    "landing", so one tick's 7.7 cm of travel into a cliff face snapped the
+    capsule to the top of it. Driven: the walker climbed **12 m out of a 10.4 m
+    shaft it had just dug**. Nothing detected this because no probe had ever
+    asked the negative question. **Every guard needs a test that would fail if
+    the guard were deleted**; `probes/walkfeel.js` is that test, and its
+    negative control (dig a shaft, walk at the wall, assert you are still in the
+    shaft) is why the replacement (`CAPSULE.stepUpM` + `climbGate`) can be
+    trusted at all.
+
 ### 15.3 The dev loop, concretely
 
 ```
