@@ -244,8 +244,12 @@
       // first.
       pools: {
         factory: { instances: g.view?.instances ?? null, capacity: g.view?.capacity ?? null,
+          ceiling: g.view?.ceiling ?? null, grows: g.view?.grows ?? null,
+          refused: g.view?.refused ?? null,
           batches: g.view?.batches ?? null, links: g.view?.links ?? null, curves: g.view?.curves ?? null },
         base: { instances: g.baseView?.instances ?? null, capacity: g.baseView?.capacity ?? null,
+          ceiling: g.baseView?.ceiling ?? null, grows: g.baseView?.grows ?? null,
+          refused: g.baseView?.refused ?? null,
           batches: g.baseView?.batches ?? null },
       },
       sim: {
@@ -312,8 +316,46 @@
   withBase.base = base;
   results.push(withBase);
 
+  // ---- THE POOL ASSERTION, which is what this probe exists for now ---------
+  //
+  // The first run of this sweep found a wall that reported success: past about
+  // 150 machines `MachineBatch`'s fixed 256-instance pool was full, `acquire`
+  // returned -1, `FactoryView.sync` skipped the building, and the machine went
+  // on existing in the plan, existing in /core, ticking and producing while
+  // never being drawn. Draw calls froze at exactly 45 and triangles at exactly
+  // 602,994 from 150 machines to 900, p50 barely moved, and every budget
+  // indicator read `ok`. NOTHING ELSE ON THIS REPORT CAN SEE THAT: a frame-time
+  // check passes, a draw-call check passes, a triangle check passes.
+  //
+  // So the assertions are on the pool itself, and both of them fail against the
+  // fixed-capacity code:
+  //   nothing was ever REFUSED (a refusal is a building that is not on screen)
+  //   and the pool actually grew past the old constant when the plan did.
+  const rungs = results.filter((r) => typeof r === 'object' && r.pools);
+  const refused = rungs.reduce((a, r) =>
+    a + (r.pools.factory.refused ?? 0) + (r.pools.base.refused ?? 0), 0);
+  const peak = rungs.reduce((a, r) => Math.max(a, r.pools.factory.instances ?? 0), 0);
+  const peakPlan = rungs.reduce((a, r) => Math.max(a, r.sim?.planRows ?? 0), 0);
+  // The instance count has to TRACK the plan rather than flatten against a
+  // ceiling. Belts, machines and DW-9's inserters all draw from one pool, so
+  // instances always exceed the machine count on a belt-heavy layout; the claim
+  // is only that the biggest plan drew more instances than the old cap allowed.
+  const pool = {
+    refusedAcrossTheSweep: refused,
+    peakInstances: peak,
+    peakPlanRows: peakPlan,
+    oldFixedCapacity: 256,
+    grewPastTheOldCap: peak > 256,
+    finalCapacity: rungs.length === 0 ? null : rungs[rungs.length - 1].pools.factory.capacity,
+    doublings: rungs.length === 0 ? null : rungs[rungs.length - 1].pools.factory.grows,
+  };
+  say(`pool: peak ${peak} instances for ${peakPlan} plan rows, `
+    + `${pool.doublings} doublings, ${refused} refused`);
+
   return {
-    valid: results.every((r) => r.seedError === undefined) && results.some((r) => r.advanced && r.advanced.valid),
+    pool,
+    valid: results.every((r) => r.seedError === undefined) && results.some((r) => r.advanced && r.advanced.valid)
+      && refused === 0 && pool.grewPastTheOldCap,
     client: /Electron/.test(navigator.userAgent) ? 'electron' : 'chrome',
     origin: location.origin,
     gpu: of.stats().gpu,
