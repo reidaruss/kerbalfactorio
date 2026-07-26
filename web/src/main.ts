@@ -8,6 +8,7 @@ import { registerSystems } from './app/Systems.js';
 import { installDebugApi } from './app/Debug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
+import { instancePools } from './game/InstancePools.js';
 
 const host = document.getElementById('app');
 if (host === null) throw new Error('#app is missing from index.html');
@@ -33,6 +34,10 @@ boot(cfg, host, hud).then(({ services }) => {
     hud.render(hudLines(
       api.stats(), api.world(), services.renderer.caps.gpu,
       services.boot.oracleUs.surfaceHeight,
+      // The instancing pools, straight off the batches. A full pool is
+      // INVISIBLE in every other number on this HUD (MachineBatch's header),
+      // which is the whole reason it gets a line of its own.
+      instancePools(),
     ));
   });
 

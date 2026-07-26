@@ -17,6 +17,19 @@ interface StatsLike {
   pool: { inUse: number; free: number; exhausted: number };
 }
 
+/**
+ * One instancing pool, as `MachineBatch.stats()` reports it.
+ *
+ * This line exists because of the one defect the packaging spike found: a full
+ * instance pool does not get slower, it stops DRAWING, so it hides as a flat
+ * line in the draw-call column while machines go on ticking and producing. Draw
+ * calls and triangles cannot show it, which is exactly why it sits next to them.
+ */
+export interface PoolLike {
+  name: string; instances: number; capacity: number; ceiling: number;
+  grows: number; refused: number;
+}
+
 interface WorldLike {
   seed: string;
   scenario: string;
@@ -40,8 +53,24 @@ function m(v: number): string {
   return `${v.toFixed(1)} m`;
 }
 
+/** `factory 741/1024  base 148/512`, plus a shout if anything was refused. */
+function poolLine(pools: readonly PoolLike[]): HudLine[] {
+  if (pools.length === 0) return [];
+  const refused = pools.reduce((a, q) => a + q.refused, 0);
+  const near = pools.some((q) => q.instances >= q.ceiling * 0.5);
+  const body = pools.map((q) => `${q.name} ${q.instances}/${q.capacity}`).join('  ');
+  return [{
+    label: 'instances',
+    value: refused > 0
+      ? `${body}  POOL FULL: ${refused} NOT DRAWN (ceiling ${pools[0].ceiling})`
+      : `${body}  (grows, ceiling ${pools[0].ceiling})`,
+    warn: refused > 0 || near,
+  }];
+}
+
 export function hudLines(
   s: StatsLike, w: WorldLike, gpu: string, oracleUs: number,
+  pools: readonly PoolLike[] = [],
 ): HudLine[] {
   const p = w.player;
   const keys = p === null
@@ -54,6 +83,7 @@ export function hudLines(
     { label: 'cpu ms', value: s.cpuMs.toFixed(2) },
     { label: 'draw calls', value: `${s.draw.calls}  (budget 150 / alert 300)`, warn: s.budget.drawCalls !== 'ok' },
     { label: 'triangles', value: `${(s.draw.triangles / 1000).toFixed(0)}k`, warn: s.budget.triangles !== 'ok' },
+    ...poolLine(pools),
     { label: 'geometries', value: `${s.draw.geometries}  programs ${s.draw.programs}` },
     { label: 'vram est', value: `${s.vramEstimateMB.toFixed(1)} MB` },
     { label: 'depth', value: `${w.depthMode}   regime ${w.regime}` },

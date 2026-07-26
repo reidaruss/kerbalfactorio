@@ -18,12 +18,16 @@
 // The per-instance channel is a DataTexture indexed by three's own batching id
 // (`getIndirectIndex(gl_DrawID)`), which is exactly the mechanism three uses for
 // per-instance colour, so it cannot fall out of step with the matrix texture.
+//
+// FS-16: THE POOL GROWS, AND WHEN IT CANNOT IT SAYS SO. This class shipped with
+// `CAPACITY = 256` and no growth path, and past it a machine existed in the
+// plan, existed in /core, ticked, produced and was never drawn. The measurement
+// and the argument for doubling are in `InstancePools.ts`; the fix is here.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-
-/** Instances, and the width of the per-instance fx texture. */
-const CAPACITY = 256;
+import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
+  from './InstancePools.js';
 
 /**
  * aRole: what a vertex is, so one material can serve the authored roles.
@@ -92,29 +96,60 @@ export class MachineBatch {
   readonly merged = new Map<string, THREE.BufferGeometry>();
   private mesh: THREE.BatchedMesh | null = null;
   private readonly geomId = new Map<string, number>();
-  private readonly fxData: Float32Array;
-  private readonly fxTex: THREE.DataTexture;
+  private fxData!: Float32Array;
+  private fxTex!: THREE.DataTexture;
+  private readonly uniforms = {
+    uFx: { value: null as THREE.DataTexture | null },
+    uFxW: { value: 1 },
+    uTime: { value: 0 },
+  };
   /** Slots released by demolition, reused before any new one is added. */
   private readonly free: number[] = [];
   private live = 0;
+  private cap: number;
+  private grows = 0;
+  private refused = 0;
+  private warned = false;
 
-  /** `capacity` is a parameter because a BASE is many more instances than a
-   *  factory: 256 covers a six-building line and would cap a 10 x 10 platform
-   *  with its walls at about a third of it. */
-  constructor(private readonly capacity = CAPACITY, name = 'factoryMachines') {
+  /** `capacity` is a parameter because a BASE reaches many more instances than
+   *  a factory does and there is no point paying for the first two doublings.
+   *  It is a STARTING size, not a limit: see the header. */
+  constructor(capacity = CAPACITY, private readonly name = 'factoryMachines',
+              private readonly ceiling = MAX_CAPACITY) {
     this.group.name = name;
-    this.fxData = new Float32Array(capacity * 4);
-    this.fxTex = new THREE.DataTexture(this.fxData, capacity, 1,
-      THREE.RGBAFormat, THREE.FloatType);
-    this.fxTex.magFilter = THREE.NearestFilter;
-    this.fxTex.minFilter = THREE.NearestFilter;
-    this.fxTex.needsUpdate = true;
+    this.cap = Math.max(1, Math.min(capacity, ceiling));
+    this.allocFx(this.cap);
     this.material = this.makeMaterial();
+    registerPool(this);
   }
 
+  /** Instances this pool can currently hold. Grows; never shrinks. */
+  get capacity(): number { return this.cap; }
+
   /** Wall-independent sim time, so a driven run scrolls at the real rate. */
-  setTime(t: number): void {
-    (this.material.userData.uniforms as { uTime: { value: number } }).uTime.value = t;
+  setTime(t: number): void { this.uniforms.uTime.value = t; }
+
+  /**
+   * (Re)allocate the per-instance fx texture for `cap` instances.
+   *
+   * Square, and the old contents are copied FLAT. That is exact, not lucky: the
+   * shader reads texel (id % w, id / w), whose flat offset is id * 4 whatever
+   * `w` is, so the array is indexed by instance id and a plain `set` preserves
+   * every live slot across a resize.
+   */
+  private allocFx(cap: number): void {
+    const w = Math.max(1, Math.ceil(Math.sqrt(cap)));
+    const data = new Float32Array(w * w * 4);
+    if (this.fxData !== undefined) data.set(this.fxData.subarray(0, data.length));
+    const tex = new THREE.DataTexture(data, w, w, THREE.RGBAFormat, THREE.FloatType);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.needsUpdate = true;
+    this.fxTex?.dispose();
+    this.fxData = data;
+    this.fxTex = tex;
+    this.uniforms.uFx.value = tex;
+    this.uniforms.uFxW.value = w;
   }
 
   private makeMaterial(): THREE.MeshStandardMaterial {
@@ -122,17 +157,16 @@ export class MachineBatch {
       color: 0xffffff, vertexColors: true, metalness: 0.45, roughness: 0.55,
     });
     m.name = 'factory:machines';
-    const uniforms = {
-      uFx: { value: this.fxTex },
-      uTime: { value: 0 },
-    };
+    const uniforms = this.uniforms;
     m.userData.uniforms = uniforms;
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uFx = uniforms.uFx;
+      shader.uniforms.uFxW = uniforms.uFxW;
       shader.uniforms.uTime = uniforms.uTime;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>
 uniform sampler2D uFx;
+uniform int uFxW;
 attribute float aRole;
 varying float vRole;
 varying vec4 vFx;
@@ -141,7 +175,8 @@ varying vec3 vLocalPos;`)
 vRole = aRole;
 vLocalPos = position;
 #ifdef USE_BATCHING
-vFx = texelFetch( uFx, ivec2( int( getIndirectIndex( gl_DrawID ) ), 0 ), 0 );
+int fxId = int( getIndirectIndex( gl_DrawID ) );
+vFx = texelFetch( uFx, ivec2( fxId % uFxW, fxId / uFxW ), 0 );
 #else
 vFx = vec4( 0.0 );
 #endif`);
@@ -233,23 +268,59 @@ if ( vRole > 2.5 ) {
     this.group.add(mesh);
   }
 
-  /** A slot drawing `key`'s geometry, or -1 when the batch is full. */
+  /**
+   * A slot drawing `key`'s geometry, or -1 when the CEILING has been reached.
+   *
+   * -1 used to mean "the pool is 256 and you are the 257th", which is the
+   * silent wall the packaging spike measured. It now only ever means the
+   * template is unknown or the hard ceiling is exhausted, and the second of
+   * those is counted and shouted.
+   */
   acquire(key: string): number {
     const g = this.geomId.get(key);
-    if (this.mesh === null || g === undefined || this.live >= this.capacity) return -1;
-    this.live++;
+    if (this.mesh === null || g === undefined) return -1;
     // A FREED SLOT IS REUSED rather than a new one added. Demolition made this
     // load bearing: addInstance only ever grows, so a player who put down and
-    // pulled up belts for a while would exhaust CAPACITY with invisible slots
+    // pulled up belts for a while would exhaust the pool with invisible slots
     // and the next real building would silently fail to draw.
     const reuse = this.free.pop();
     if (reuse !== undefined) {
+      this.live++;
       this.mesh.setGeometryIdAt(reuse, g);
       return reuse;
     }
+    if (this.live >= this.cap && !this.grow()) return -1;
+    this.live++;
     const slot = this.mesh.addInstance(g);
     this.mesh.setGeometryIdAt(slot, g);
     return slot;
+  }
+
+  /**
+   * Double the pool. False only at the ceiling, and then LOUDLY.
+   *
+   * `setInstanceCount` keeps every live instance: it copies the indirect and
+   * matrix texture data across, so no slot is re-added and no transform is
+   * lost. The geometry pools are untouched because growth adds instances of
+   * geometry that is already resident.
+   */
+  private grow(): boolean {
+    if (this.mesh === null) return false;
+    const next = Math.min(this.ceiling, this.cap * 2);
+    if (next <= this.cap) {
+      this.refused++;
+      if (!this.warned) {
+        this.warned = true;
+        console.error(`[of] instance pool '${this.name}' is FULL at ${this.cap}`
+          + ' instances: buildings past this exist and tick but are NOT DRAWN');
+      }
+      return false;
+    }
+    this.mesh.setInstanceCount(next);
+    this.cap = next;
+    this.allocFx(next);
+    this.grows++;
+    return true;
   }
 
   /**
@@ -290,7 +361,7 @@ if ( vRole > 2.5 ) {
 
   /** ONE texel per instance. This is the whole of DW-8's per-instance channel. */
   setFx(slot: number, fx: Fx): void {
-    if (slot < 0 || slot >= this.capacity) return;
+    if (slot < 0 || slot >= this.cap) return;
     const i = slot * 4;
     this.fxData[i] = fx.flow;
     this.fxData[i + 1] = fx.density;
@@ -305,7 +376,16 @@ if ( vRole > 2.5 ) {
     return this.merged.get(key) ?? null;
   }
 
-  stats(): { batches: number; instances: number; capacity: number } {
-    return { batches: this.mesh === null ? 0 : 1, instances: this.live, capacity: this.capacity };
+  /**
+   * What this pool is doing. `refused` is the number that matters: it is the
+   * count of buildings that exist, tick and produce and are NOT on screen, and
+   * it is what the HUD budget line and `probes/scale.js` assert on.
+   */
+  stats(): PoolReport {
+    return {
+      name: this.name, batches: this.mesh === null ? 0 : 1,
+      instances: this.live, capacity: this.cap, ceiling: this.ceiling,
+      grows: this.grows, refused: this.refused,
+    };
   }
 }

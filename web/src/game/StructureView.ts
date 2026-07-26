@@ -25,7 +25,16 @@ import type { Structures, StructurePart } from './Structures.js';
 import type { StructureTarget } from './StructurePlacement.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 
-/** Instances. A part is one, a door is two, so this is about 250 parts. */
+/**
+ * Instances to START with. A part is one, a door is two, so this covers about
+ * 250 parts before the pool doubles itself.
+ *
+ * It used to be a hard cap with no growth path, exactly like the factory's 256,
+ * and it had simply not been reached: the packaging spike drew 484 parts fine
+ * and would have hit this at 512 with every budget indicator still green. Fixed
+ * with the factory's rather than after it bit, because the failure mode is
+ * invisible by construction (MachineBatch's header).
+ */
 const CAPACITY = 512;
 /** The leaf's own batch key. It is not a placeable part, it is half of one. */
 const LEAF = 'door_leaf';
