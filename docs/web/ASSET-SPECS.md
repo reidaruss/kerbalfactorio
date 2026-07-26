@@ -1,9 +1,19 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
-**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** **Tier 0 is
-complete.** 27 of 27 files built and green under `validate_glb.py --all`
-(13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged player body
-and the first-person arms). Total `dist/` payload 1.8 MB.
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** **Tier 0 and
+Tier 1 are complete.** 37 of 37 files built and green under
+`validate_glb.py --all`, and a full rebuild of every `build_*.py` produces a
+**zero-byte diff**, so the pipeline is proven deterministic end to end.
+
+| Tier | Files | Meshes | Payload |
+|---|---|---|---|
+| 0: the playable loop | 27 | 40 base (83 counting depletion variants) | 1.8 MB |
+| 1: biome scatter props | 10 | 41 props, 78 render meshes with LOD2 | 367 KB |
+| **Total `dist/`** | **37** | | **2.06 MB** |
+
+Tier 0 is 13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged
+player body and the first-person arms. Tier 1 is one scatter atlas per biome.
+Tier 2 (rocket parts, launch pad) is not started.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -136,6 +146,17 @@ One convex proxy per asset, named `col_<Name>`, at most 64 triangles, never rend
 (the renderer hides any node whose name starts with `col_`). A machine's proxy is a
 box matching its footprint. The player capsule is generated in code, not exported.
 
+**Amended 2026-07-25 for Tier 1 (scatter).** "One proxy per asset" is the wrong default
+for a biome atlas, where an asset is a file holding several props drawn by the
+thousand. A grass tuft with a collider is a player snagging on grass, and a thousand
+proxies per chunk is a physics bill nobody wants for decoration. So an atlas authors a
+`col_<Prop>` box **only where the prop is a solid obstacle a player must not walk
+through** (rocks, boulders, spires, logs, dead trees, ice, timber frames), and
+everything soft or ankle-height is deliberately NoCollision. Which is which is a
+render-and-physics contract, so it is declared: `contracts.json`'s `collision` key
+takes a **list** for these files and the validator checks every name in it. The
+per-file split is tabulated in section 3.2.
+
 ### 2.6 Sockets
 
 Attachment points are Blender Empties exported as childless glTF nodes and found at
@@ -208,7 +229,11 @@ permanent lean into the asset. It surfaced as a 2.483 m wide conifer failing a
 
 ### 2.8 Texture policy (Tier 1 onward)
 
-Tier 0 ships without UVs at all. When a texture is genuinely needed:
+Tier 0 ships without UVs at all. **Tier 1 shipped the same way**: 41 scatter props,
+zero textures, 367 KB. The one place a texture looked mandatory was alpha-tested
+foliage cards, and that turned out to be cheaper as geometry (section 3.2). So the
+threshold below is still unmet and the KTX2 step is still deferred. When a texture is
+genuinely needed:
 
 - **Texel density:** 512 px/m for hand-held and first-person assets, 256 px/m for
   machines, 128 px/m for terrain props. Maximum 1024 x 1024 per asset.
@@ -318,32 +343,100 @@ Two build-UX meshes are **generated in code, not authored**: the 1 m^3 voxel dig
 marker (`BoxGeometry` + `EdgesGeometry`) and the placement ghost (the machine's own
 LOD0 with a ghost material). Do not model them.
 
-### 3.2 Tier 1: richness (10 files, 41 meshes)
+### 3.2 Tier 1: richness (10 files, 41 props). **Built 2026-07-25.**
 
 Shipped as **per-biome atlases**, because the scatter system wants one file per biome
 and one `InstancedMesh` per prop. Budgets: 60 to 400 tris each, LOD0 and LOD2 only
 (props skip the middle band; they are either near enough to matter or gone).
 
-| File | Biome (`biome.h`) | Meshes |
-|---|---|---|
-| `props/props_beach.glb` | `Beach` | beach rock, driftwood, shell cluster, dune grass |
-| `props/props_plains.glb` | `Plains` | grass tuft A/B, flower cluster, pebble A/B, shrub |
-| `props/props_forest.glb` | `Forest` | fern, dead tree, fallen log, mushroom cluster, forest rock |
-| `props/props_hills.glb` | `Hills` | large boulder, scree patch, hill shrub |
-| `props/props_mountains.glb` | `Mountains` | rock spire, talus chunk, snow patch |
-| `props/props_polar.glb` | `Polar` | ice shard, snow drift, ice boulder |
-| `props/props_ocean.glb` | `Ocean` | kelp, seabed rock |
-| `props/props_moon.glb` | `Regolith`, `MoonHighland`, `CraterFloor` | moon rock small/large, regolith ripple, highland outcrop, crater rim rock, impact glass |
-| `props/props_cave.glb` | voxel tunnels | stalagmite, crystal cluster, rubble, tunnel support frame, ore vein wall panel |
-| `props/detail_cards.glb` | terrain detail | grass card A/B/C, pebble scatter |
+**The binding an engine agent needs.** One atlas per `Biome`, loaded once and
+instanced per prop. `Prop` here is the node stem: the file holds `<Prop>_LOD0` and,
+except in `detail_cards.glb`, `<Prop>_LOD2`. All 41 props are ground-pivoted and
+sit on the file origin, so a scatter placement matrix is pure terrain data.
 
-`detail_cards.glb` holds the only double-sided meshes in the game outside glass and
-water: crossed-quad foliage cards for dense ground cover, drawn with alpha test.
+| File | Biome (`biome.h`) | Props | Tris (LOD0 sum) | Mats | KB |
+|---|---|---|---|---|---|
+| `props/props_beach.glb` | `Beach` | `Beach_Rock`, `Beach_Driftwood`, `Beach_ShellCluster`, `Beach_DuneGrass` | 411 | 4 | 40 |
+| `props/props_plains.glb` | `Plains` | `Plains_GrassTuftA`, `Plains_GrassTuftB`, `Plains_FlowerCluster`, `Plains_PebbleA`, `Plains_PebbleB`, `Plains_Shrub` | 438 | 4 | 45 |
+| `props/props_forest.glb` | `Forest` | `Forest_Fern`, `Forest_DeadTree`, `Forest_FallenLog`, `Forest_MushroomCluster`, `Forest_Rock` | 527 | 4 | 53 |
+| `props/props_hills.glb` | `Hills` | `Hills_LargeBoulder`, `Hills_ScreePatch`, `Hills_Shrub` | 430 | 4 | 39 |
+| `props/props_mountains.glb` | `Mountains` | `Mtn_RockSpire`, `Mtn_TalusChunk`, `Mtn_SnowPatch` | 254 | 3 | 26 |
+| `props/props_polar.glb` | `Polar` | `Polar_IceShard`, `Polar_SnowDrift`, `Polar_IceBoulder` | 306 | 3 | 29 |
+| `props/props_ocean.glb` | `Ocean` | `Ocean_Kelp`, `Ocean_SeabedRock` | 169 | 3 | 18 |
+| `props/props_moon.glb` | `Regolith`, `MoonHighland`, `CraterFloor` | `Moon_RockSmall`, `Moon_RockLarge`, `Moon_RegolithRipple`, `Moon_HighlandOutcrop`, `Moon_CraterRimRock`, `Moon_ImpactGlass` | 510 | 4 | 52 |
+| `props/props_cave.glb` | voxel tunnels | `Cave_Stalagmite`, `Cave_CrystalCluster`, `Cave_Rubble`, `Cave_SupportFrame`, `Cave_OreVeinPanel` | 548 | 5 | 54 |
+| `props/detail_cards.glb` | terrain detail | `Detail_GrassCardA/B/C`, `Detail_PebbleScatter` | 118 | 3 | 11 |
 
-The cave set is what makes 1 m^3 voxel tunnels feel like places rather than holes.
-The `ore vein wall panel` is a shallow decal mesh placed against a dug voxel face when
-the voxel it replaced contained ore, which is the only way a player reads ore density
-underground.
+Every LOD0 lands between 18 and 162 triangles against the 400 ceiling. The budget is a
+ceiling, not a quota: these are drawn by the thousand, and the real budget is the
+**material count**, because the renderer batches by material and an atlas that uses six
+roles costs six draws per chunk where one that uses three costs three.
+
+**The moon is one file for three biomes**, which is right rather than lazy. `biome.h`
+classifies a moon by elevation band alone (`rel < -0.10` crater floor, `rel > 0.20`
+highland, regolith otherwise), the bands abut with no transition zone, and the surface
+material is the same dust everywhere. The scatter pass loads one file and picks a
+subset: Regolith takes `RockSmall`/`RockLarge`/`RegolithRipple`, MoonHighland takes
+`HighlandOutcrop`/`RockLarge`/`RockSmall`, CraterFloor takes
+`CraterRimRock`/`ImpactGlass`/`RockSmall`.
+
+**Collision is per-prop and deliberately partial** (see the amendment in section 2.5).
+These eighteen carry a `col_<Prop>` box; the other twenty-three are walk-through:
+
+| Collides | Walk-through |
+|---|---|
+| `Beach_Rock`, `Beach_Driftwood`, `Plains_PebbleB`, `Forest_DeadTree`, `Forest_FallenLog`, `Forest_Rock`, `Hills_LargeBoulder`, `Mtn_RockSpire`, `Mtn_TalusChunk`, `Polar_IceShard`, `Polar_IceBoulder`, `Ocean_SeabedRock`, `Moon_RockLarge`, `Moon_HighlandOutcrop`, `Moon_CraterRimRock`, `Cave_Stalagmite`, `Cave_CrystalCluster`, `Cave_SupportFrame` | all grass, flowers, ferns, kelp, both shrubs, shells, mushrooms, scree, rubble, snow patch, snow drift, regolith ripple, impact glass, small pebbles, the ore vein panel, and every detail card |
+
+`col_Forest_DeadTree` is the **trunk box only** (0.50 x 0.50 x 4.20), the same rule the
+conifer follows: a player walks through where the branches were.
+
+**Two props have a non-standard contract.**
+
+`Cave_OreVeinPanel` is a shallow decal placed flat against a dug voxel face when the
+voxel it replaced held ore, so its pivot is its **volumetric centre**, not the ground:
+it mates with a 1 m face, not with a floor. It carries exactly two material slots in
+pinned order, `OF_RockDark` host then `OF_Iron` vein, and **the renderer overrides slot
+1 per ore type** (iron / copper / coal / ferrite). One mesh, four ores, no extra
+geometry. Its vein runs corner to corner so a rich seam tiles across several dug faces
+as one continuous streak instead of a row of identical stamps.
+
+`Cave_SupportFrame` is 2.40 m tall against a 1.80 m player, and that is its whole job:
+a raw voxel tunnel is a corridor of identical cubes with no scale reference at all, and
+a frame is what gives it a readable height.
+
+**Cave crystals are `OF_Glass`, never `OF_EmissiveState`.** Section 1 reserves emissive
+for machine state and genuine fire, and a glowing decorative crystal would break the
+one rule that buys this game its at-a-glance clarity. The player has a helmet lamp for
+exactly this reason.
+
+**Corrected 2026-07-25 (foliage is geometry, not alpha-tested cards).** This section
+described `detail_cards.glb` as crossed quads drawn with alpha test. There is no
+texture pipeline (section 2.8 defers one until the texture payload would cross 1 MB,
+and 41 untextured props never get close), and **an untextured crossed quad renders as a
+solid rectangle standing in the grass**. Every foliage prop in Tier 1 is therefore
+built as real tapered blade geometry: `props_common.blade()` is five triangles for a
+shape that reads as grass from any angle, which is cheaper than the alpha-test fragment
+cost would have been and needs no UVs, no mask authoring and no KTX2 step.
+
+**Corrected 2026-07-25 (double-sided).** This section called the detail cards "the only
+double-sided meshes in the game outside glass and water". `OF_Leaf` and `OF_LeafDry`
+have been in `of_lib.DOUBLE_SIDED` since the trees shipped, because a single-sided leaf
+disappears from half the angles you look at it from. Tier 1 adds no new double-sided
+role; it uses `OF_Leaf`, `OF_LeafDry` and `OF_Glass`, all already exempt.
+
+**Corrected 2026-07-25 (detail-card budget and LODs).** The 60-to-400 band and the
+LOD0/LOD2 chain do not apply to `detail_cards.glb`. Those four are the layer *under*
+the biome props, stamped by the square metre where a biome prop is placed by the
+handful, so their instance count is one to two orders of magnitude higher. They run
+18 to 42 triangles and carry **no LOD chain at all**: an 18-triangle card is already at
+the floor, and the renderer culls the whole layer at its own detail distance, which is
+one test rather than one LOD switch per instance.
+
+**`OF_Oil` on `Moon_ImpactGlass` is a PBR role, not a substance.** Impact melt glass is
+dark and *glossy*, and `OF_Oil` is the palette's only dark low-roughness ground surface
+(0.25 against every other ground role's 0.9+). `OF_Glass` was the alternative and is
+alpha-blended; thousands of alpha-blended instances is a sorting problem bought for
+nothing.
 
 ### 3.3 Tier 2: Phase S, space (5 files, 18 meshes)
 
@@ -1037,8 +1130,16 @@ tools/blender/
                             the OF_ palette, MeshBuilder primitives, socket empties,
                             LOD helpers, clip authoring, pinned glTF export settings
   build_<asset>.py          one script per asset; build_belt_segment.py is the template
+  harvest_common.py         organic geometry: seeded jitter, Parts.fit, lobe/blob/taper
+  boulder_common.py         the four ore boulders: one form, four dressings
+  tree_common.py            shared tree parts
+  tool_common.py            the two hand tools
+  rig_common.py             the player skeleton, shared by body and first-person arms
+  props_common.py           Tier 1: blade/tuft/rock/chips/prism primitives and the
+                            per-biome atlas driver (Prop, build_atlas)
   contracts.json            hand-authored per-asset acceptance contract
   validate_glb.py           stdlib-only automated checker
+  render_check.py           imports a shipped .glb and renders clip frames
 
 assets/models/
   src/                      .blend files ONLY where a script cannot express the shape
@@ -1057,6 +1158,8 @@ assets/models/
 | Render mesh | `<Root>_LOD0/1/2` | `BeltSegment_LOD1` |
 | Harvest-node render mesh | `<Root>_<Variant>_LOD0/1/2` | `BoulderIron_Half_LOD1` |
 | Harvest-node animated part | `<Root>_<Variant>_<Part>` | `WaterPool_Full_Water` |
+| Tier-1 scatter prop | `<Biome>_<Prop>_LOD0/2` | `Forest_FallenLog_LOD0` |
+| Tier-1 prop proxy | `col_<Biome>_<Prop>` | `col_Forest_FallenLog` |
 | Animation pivot | `<role>_pivot` | `sway_pivot`, `ripple_pivot` |
 | Collision proxy | `col_<Root>` | `col_BeltSegment` |
 | Socket | `socket_snake_case` | `socket_belt_out` |
@@ -1198,7 +1301,15 @@ empty), and the four added on 2026-07-25 for the items atlas and the hand tools:
 | `pivot_mode` | `"ground"` | `ground` base on `y = 0` and centred on `x = z = 0`; `centre` origin at the volumetric centre (dropped items); `grip` origin at the grip point, asserted through `socket_grip` (hand tools); `none` a view model hung off the camera point |
 | `pivot_tolerance_m` | `tolerance_m` | separate slack for the pivot check, because an organic character's mesh centroid is not its ground pivot |
 | `grip_socket` | `"socket_grip"` | which socket `pivot_mode: "grip"` asserts against |
-| `parts` | none | `[{node, dims_xyz_m, max_tris, centred}]`, one entry per sibling mesh in a multi-mesh file |
+| `parts` | none | `[{node, dims_xyz_m, max_tris, pivot}]`, one entry per sibling mesh in a multi-mesh file |
+
+Two more were added on 2026-07-25 for the Tier-1 biome atlases, where a file holds
+several independent props rather than one asset:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `parts[].pivot` | `"centre"` | per-part pivot rule: `ground`, `centre` or `none`. **This is the real gate on Tier 1**: all 41 scatter props must be ground-pivoted, because a scatter placement matrix is only pure terrain data if there is no per-prop offset to subtract back out, and a single `lod0_node` check would prove that for one prop out of forty-one. The older boolean `parts[].centred` still means `centre`, so the items atlas is untouched |
+| `collision` | none | now accepts a **list** as well as a string. An atlas declares the subset of its props that are genuinely solid (section 2.5), and the checker requires every named proxy. `max_tris_collision` is set per file rather than left at 64, because N boxes cost 12N triangles |
 
 Five more were added the same day for the two rigged assets. A rig can pass
 every geometric check above and still be broken in ways that are invisible in a
@@ -1230,10 +1341,10 @@ happened:
 | `materials` | count within budget and every name is an `OF_` palette role |
 | `sockets` | every required `socket_*` node is present |
 | `clips` | the animation clip name set matches **exactly** (no extras, none missing) |
-| `collision` | `col_<Name>` present |
+| `collision` | every declared `col_<Name>` present (a string, or a list for an atlas) |
 | `hygiene` | no cameras, no lights, no Draco |
 | `culling` | nothing is `doubleSided` except roles that need it |
-| `parts` | every sibling mesh of a multi-mesh file, individually |
+| `parts` | every sibling mesh of a multi-mesh file, individually: bounds, tri budget **and its own pivot rule**. This is what proves all 41 Tier-1 scatter props sit on their ground contact point |
 | `bones` / `skin_weights` / `bone_sockets` / `rest_pose` / `frame1_identity` | the rig, see the table above |
 
 **What the checker still cannot prove: that a rigged asset deforms well.**
@@ -1279,8 +1390,12 @@ the case for automating the check.
 5. **Player body and first-person arms.** Last of Tier 0 because they are the only
    assets needing a rig, and everything else can be tested with a capsule.
    **Done 2026-07-25. Tier 0 is complete at 27/27 green.**
-6. **Tier 1 biome atlases.** Only after Tier 0 validates green.
-7. **Tier 2** with Phase S.
+6. **Tier 1 biome atlases** (10 files, 41 props). **Done 2026-07-25. 37/37
+   green, and a full rebuild of all 37 produces a zero-byte diff.**
+7. **Tier 2** with Phase S. Not started. The orbital milestone needs
+   `rocket/rocket_parts.glb` and `rocket/launch_pad.glb` first; the other three
+   files (the landed lander, the plume cone, the body icosphere) are downstream
+   of them and of decisions the physics and rendering domains have not made yet.
 
 Steps 2 to 4 are 23 files of pure primitive assembly with no rigging and no organic
 sculpting. They parallelise cleanly across agents: one script per asset, one contract
