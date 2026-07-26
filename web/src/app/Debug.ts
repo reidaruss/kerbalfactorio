@@ -106,6 +106,14 @@ export interface OfDebugApi {
   harvest(index: number): unknown;
   /** W5. Headlamp on/off, or read it. Same toggle the L key drives. */
   lamp(on?: boolean): unknown;
+  /**
+   * W6 build mode. `select(n)` is the number key, `rotate()` is R, and both go
+   * through the SAME code a keypress does, so a probe cannot drive a path a
+   * player has no access to.
+   */
+  build(index?: number): unknown;
+  /** W6. Take an automated machine's output by its plan id. Returns what moved. */
+  collect(id: number): number;
 }
 
 export interface AimRay {
@@ -343,6 +351,17 @@ export function installDebugApi(
     lamp(on) {
       if (on !== undefined && on !== s.headlamp.enabled) s.headlamp.toggle();
       return s.headlamp.stats();
+    },
+
+    build(index) {
+      if (index !== undefined) s.gameplay?.build.select(index);
+      return s.gameplay?.build.report() ?? null;
+    },
+
+    collect(id) {
+      const f = s.gameplay?.factory;
+      const b = f?.placed.find((p) => p.id === id);
+      return f === undefined || b === undefined ? 0 : f.collect(b);
     },
 
     harvest(index) {

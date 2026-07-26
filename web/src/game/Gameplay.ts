@@ -18,10 +18,14 @@ import { GameCore } from './GameCore.js';
 import { NodeField } from './NodeField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
-import { InventoryPanel, type RecipeRow, type SlotRow } from '../ui/InventoryPanel.js';
+import { InventoryPanel } from '../ui/InventoryPanel.js';
 import { FurnacePanel } from '../ui/FurnacePanel.js';
 import { Machines, type Machine } from './Machines.js';
 import { CameraKick, Debris } from './HarvestFx.js';
+import { Factory, type Placed } from './Factory.js';
+import { FactoryView } from './FactoryView.js';
+import { BuildMode } from './BuildMode.js';
+import { furnaceView, nodeDump, readable, recipeRows, slotRows } from './GameplayViews.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
@@ -50,13 +54,21 @@ export class Gameplay {
   readonly furnacePanel: FurnacePanel;
   readonly debris = new Debris();
   readonly kick = new CameraKick();
+  /** W6 automation: the plan, its art, and the build menu that edits it. */
+  readonly factory: Factory;
+  readonly factoryView: FactoryView;
+  readonly build: BuildMode;
   nodesPlaced = 0;
   placements = 0;
+  /** Ingots taken out of automated machines by hand, for the HUD and probes. */
+  autoCollected = 0;
+  private simSecs = 0;
   private panelHeld = false;
   private placeHeld = false;
   private mineHeld = false;
   private openMachine: Machine | null = null;
   private aimedMachine: Machine | null = null;
+  private aimedBuild: Placed | null = null;
 
   private constructor(private readonly d: GameplayDeps) {
     this.game = new GameCore(d.core);
@@ -67,14 +79,19 @@ export class Gameplay {
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle);
     this.furnacePanel = new FurnacePanel(
       d.host, (item) => this.loadFurnace(item), () => this.takeFurnace());
+    // The factory ticks on the SIM clock, like everything else that is a rule.
+    this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60);
+    this.factoryView = new FactoryView(d.origin);
+    this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView);
   }
 
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
-    await Promise.all([g.field.load(), g.machines.load()]);
+    await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load()]);
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
     d.scene.add(g.debris.mesh);
+    d.scene.add(g.factoryView.group);
     g.populate();
     return g;
   }
@@ -108,6 +125,10 @@ export class Gameplay {
     // furnace on a synthetic-clock probe smelts in exactly the tick count
     // gameplay.h says it does, which is what makes the timing assertable.
     this.machines.tick(1);
+    // ONE tick of the automation network, on the same clock. This is the line
+    // that makes "walk away and iron accumulates" true: nothing here waits on a
+    // frame, a panel or the player being anywhere near the machines.
+    this.factory.tick(1);
 
     // ONE edge for the mine key, read once. It used to be edge-detected inside
     // the "panel is open" branch and taken as a LEVEL inside the "aiming at a
@@ -131,13 +152,32 @@ export class Gameplay {
 
     // Placement, and the machine prompt, both want the aim ray.
     const ray = this.d.player.aimRay();
-    this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
-    if (f.place && !this.placeHeld) this.placeMachine(ray);
+    // BUILD MODE FIRST, and it takes the place key while it is armed. A player
+    // holding a belt in hand who presses G means the belt, not the furnace, and
+    // guessing wrong is the sort of thing that makes a game feel unlistening.
+    const built = this.build.step((c) => this.d.input.held(c), f.place, ray);
+    if (built) this.hud.flash(`placed ${this.build.label}`);
+    else if (this.build.selected === null) {
+      if (f.place && !this.placeHeld) this.placeMachine(ray);
+    } else if (f.place && !this.placeHeld && this.build.target?.ok === false) {
+      this.hud.flash(this.build.target.reason);
+    }
     this.placeHeld = f.place;
+
+    this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
+    this.aimedBuild = this.aimedMachine !== null ? null
+      : this.factory.pick(ray.origin, ray.dir, 3.5);
 
     // A machine under the crosshair takes the key: you cannot harvest a furnace.
     if (this.aimedMachine !== null) {
       if (minePressed) this.openFurnace(this.aimedMachine);
+      this.interact.target = null;
+      return false;
+    }
+    // An automated machine hands over its finished stock instead of a panel:
+    // there is nothing to load, so a screen would be a screen about nothing.
+    if (this.aimedBuild !== null) {
+      if (minePressed) this.collectFrom(this.aimedBuild);
       this.interact.target = null;
       return false;
     }
@@ -182,11 +222,24 @@ export class Gameplay {
 
   /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
   frame(dt: number): void {
+    this.simSecs += dt;
     this.field.update(dt);
     this.machines.update();
     this.machines.updateFx(dt);
     this.debris.update(dt, this.d.origin);
-    if (this.openMachine !== null) this.furnacePanel.render(this.furnaceView(this.openMachine));
+    // The belt scroll is driven by SIM seconds, not performance.now(), for the
+    // same reason the terrain cross-dissolve is: a headless driven run then
+    // scrolls at exactly the rate a real one does and a capture is reproducible.
+    this.factoryView.sync(this.factory, this.simSecs);
+    if (this.openMachine !== null) {
+      this.furnacePanel.render(
+        furnaceView(this.game, this.openMachine.handle, this.openMachine.tier));
+    }
+    if (this.aimedBuild !== null && !this.panel.isOpen && !this.furnacePanel.isOpen) {
+      this.hud.render(dt, this.buildPrompt(this.aimedBuild),
+        this.game.carried().map((c) => ({ name: c.name, count: c.count })));
+      return;
+    }
     if (this.aimedMachine !== null && !this.panel.isOpen && !this.furnacePanel.isOpen) {
       const st = this.game.furnaceState(this.aimedMachine.handle);
       this.hud.render(dt, {
@@ -200,7 +253,37 @@ export class Gameplay {
     this.hud.render(dt, t === null ? null : {
       name: t.name, fraction: t.fraction, empty: t.empty, distanceM: t.distanceM,
     }, this.game.carried().map((c) => ({ name: c.name, count: c.count })));
-    if (this.panel.isOpen) this.panel.render(this.slotRows(), this.recipeRows());
+    if (this.panel.isOpen) this.panel.render(slotRows(this.game), recipeRows(this.game));
+  }
+
+  /** What an automated machine says about itself under the crosshair. */
+  private buildPrompt(b: Placed) {
+    const out = b.build < 0 ? 0 : this.factory.line.outputBuffer(b.build);
+    const item = this.factory.outputItemOf(b);
+    const name = item > 0 ? this.game.itemName(item) : b.kind;
+    if (b.kind === 'miner') {
+      const left = b.build < 0 ? 0 : this.factory.line.minerRemaining(b.build);
+      const n = this.game.node(b.nodeIndex);
+      return {
+        name: `miner  ${Math.round(left)} ${name} left`,
+        fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
+        empty: left <= 0, distanceM: 0,
+      };
+    }
+    return {
+      name: out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  empty`,
+      fraction: b.build < 0 ? 0 : this.factory.line.progress01(b.build),
+      empty: out <= 0, distanceM: 0,
+    };
+  }
+
+  /** Take an automated machine's finished stock into the pack. */
+  private collectFrom(b: Placed): void {
+    const n = this.factory.collect(b);
+    if (n <= 0) { this.hud.flash('nothing to take yet'); return; }
+    this.autoCollected += n;
+    this.hud.flash(`took ${n} ${this.game.itemName(this.factory.outputItemOf(b))}`);
+    this.panel.invalidate();
   }
 
   /** THE pointer transition. One place, both halves. */
@@ -230,7 +313,7 @@ export class Gameplay {
     this.furnacePanel.setOpen(m !== null);
     this.d.input.setUiCapture(m !== null);
     this.hud.setVisible(m === null);
-    if (m !== null) this.furnacePanel.render(this.furnaceView(m));
+    if (m !== null) this.furnacePanel.render(furnaceView(this.game, m.handle, m.tier));
   }
 
   private loadFurnace(item: number): void {
@@ -245,84 +328,19 @@ export class Gameplay {
     if (n > 0) this.hud.flash(`took ${n}`);
   }
 
-  /** What the pack can feed this machine: the ores it smelts and the fuels. */
-  private furnaceView(m: Machine) {
-    const st = this.game.furnaceState(m.handle);
-    const I = this.game.ids;
-    const loadable = [];
-    for (const [item, fuel] of [[I.rawIron, false], [I.rawCopper, false],
-      [I.coal, true], [I.wood, true]] as [number, boolean][]) {
-      const c = this.game.count(item);
-      if (c > 0) loadable.push({ item, name: this.game.itemName(item), count: c, fuel });
-    }
-    return {
-      title: m.tier === 1 ? 'Smelter' : 'Primitive furnace',
-      oreName: st === null ? '' : this.game.itemName(st.oreItem),
-      oreCount: st?.oreCount ?? 0,
-      outName: st === null || st.outItem === 0 ? '' : this.game.itemName(st.outItem),
-      outCount: st?.outCount ?? 0,
-      fuelTicks: st?.fuelTicks ?? 0,
-      progress: st?.progress ?? 0,
-      ticksPerSmelt: st?.ticksPerSmelt ?? 180,
-      smelting: st?.smelting ?? false,
-      loadable,
-    };
-  }
-
   private craft(index: number): void {
     const ok = this.game.craft(index);
     this.panel.invalidate();
-    this.panel.render(this.slotRows(), this.recipeRows());
+    this.panel.render(slotRows(this.game), recipeRows(this.game));
     if (!ok) return;
     const r = this.game.recipes()[index];
     if (r !== undefined) this.hud.flash(`crafted ${this.game.itemName(r.output)}`);
   }
 
-  private slotRows(): SlotRow[] {
-    return this.game.inventory().map((s) => ({
-      name: s.count > 0 ? this.game.itemName(s.item) : '', count: s.count,
-    }));
-  }
-
-  private recipeRows(): RecipeRow[] {
-    return this.game.recipes().map((r) => ({
-      index: r.index,
-      name: this.game.itemName(r.output),
-      outputCount: r.outputCount,
-      craftable: r.craftable,
-      inputs: r.inputs.map((i) => ({
-        name: this.game.itemName(i.item), have: i.have, need: i.need,
-      })),
-    }));
-  }
-
-  /**
-   * Every node with its 64-bit body-frame position, sorted by distance from the
-   * eye. This is the probe's eyes: without world positions a driven run cannot
-   * tell "I aimed at nothing" from "the pick is broken", which is exactly the
-   * silent success DW-20 is about.
-   */
+  /** Every node with its world position, nearest first. The probe's eyes. */
   nodes(): unknown[] {
-    const e = this.d.player.aimRay().origin;
-    const out = [];
-    for (const pl of this.field.placed) {
-      const st = this.game.node(pl.index);
-      if (st === null) continue;
-      out.push({
-        index: pl.index,
-        x: st.x, y: st.y, z: st.z,
-        name: this.game.itemName(st.resource),
-        kind: st.kind,
-        remaining: st.remaining,
-        initial: st.initial,
-        fraction: st.initial > 0 ? st.remaining / st.initial : 0,
-        distanceM: Math.hypot(st.x - e.x, st.y - e.y, st.z - e.z),
-      });
-    }
-    out.sort((a, b) => a.distanceM - b.distanceM);
-    return out;
+    return nodeDump(this.game, this.field.placed, this.d.player.aimRay().origin);
   }
-
 
   report(): unknown {
     return {
@@ -333,6 +351,12 @@ export class Gameplay {
       placements: this.placements,
       machines: this.machines.report(),
       pointerLocked: this.d.input.pointerLocked,
+      // W6 automation. `factory` is the plan and what /core says about it;
+      // `build` is the menu and the ghost; `view` is what is actually drawn.
+      factory: this.factory.report(),
+      build: this.build.report(),
+      view: this.factoryView.stats(),
+      autoCollected: this.autoCollected,
       fx: {
         debrisLive: this.debris.live, debrisSpawned: this.debris.spawned,
         smokeLive: this.machines.smoke.live, smokePuffs: this.machines.smoke.emitted,
@@ -345,21 +369,4 @@ export class Gameplay {
       })),
     };
   }
-}
-
-/**
- * The resource's own colour, lifted until it can be read as text over terrain.
- * Coal is authored at #35353c, which is correct for a chip in the air and
- * invisible as a caption, so the hue is kept and only the luminance is raised.
- */
-function readable(hex: number): string {
-  let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
-  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-  if (lum < 150) {
-    const k = 150 / Math.max(24, lum);
-    r = Math.min(255, Math.round(r * k + 40));
-    g = Math.min(255, Math.round(g * k + 40));
-    b = Math.min(255, Math.round(b * k + 40));
-  }
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }

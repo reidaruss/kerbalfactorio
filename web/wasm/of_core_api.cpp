@@ -1716,6 +1716,15 @@ OF_API int of_gp_node_drain(int i, double units) {
   return static_cast<int>(take);
 }
 
+// What `ore` smelts into (gameplay.h smeltOutputFor), or 0 if it is not an ore.
+// A placed smelter needs an input AND an output item to be given a recipe, and
+// the pairing is a RULE: transcribing "raw iron becomes iron" into JS is exactly
+// the second-authority mistake, one furnace-tier balance pass away from being
+// wrong. The auto-line smelter and the hand furnace now read the same table.
+OF_API int of_gp_smelt_output_for(int ore) {
+  return static_cast<int>(sv::smeltOutputFor(static_cast<gp::ItemId>(ore)));
+}
+
 // --- Hand crafting -----------------------------------------------------------
 OF_API int of_gp_recipe_count(void) { return static_cast<int>(g_gpRecipes.size()); }
 

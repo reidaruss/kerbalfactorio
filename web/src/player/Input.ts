@@ -150,12 +150,26 @@ export class Input {
     return v;
   }
 
+  /**
+   * Raw held-key test, for consumers whose keys are open-ended enough that a
+   * named InputFrame field per key would be silly: the build menu's digits and
+   * its rotate key. It reads the SAME source `sample()` did, live or taped, so a
+   * scripted tape drives the build menu exactly as a human does.
+   */
+  held(code: string): boolean {
+    return !this.uiHeld && this.active.has(code);
+  }
+
+  /** Whatever was down for the frame `sample()` last produced. */
+  private active: ReadonlySet<string> = new Set();
+
   /** Collapse everything accumulated since the last call into one frame. */
   sample(): InputFrame {
     const f = this.frame;
     if (this.tapePending()) {
       const e = this.tape[this.tapeIdx];
       const keys = new Set(e.keys ?? []);
+      this.active = keys;
       f.fwd = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
       f.right = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
       f.up = (keys.has('KeyR') ? 1 : 0) - (keys.has('KeyF') ? 1 : 0);
@@ -173,6 +187,7 @@ export class Input {
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
     }
+    this.active = this.down;
     f.fwd = this.axis(['KeyS'], ['KeyW']);
     f.right = this.axis(['KeyA'], ['KeyD']);
     f.up = this.axis(['KeyF'], ['KeyR']);

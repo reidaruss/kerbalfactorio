@@ -139,6 +139,50 @@ export interface OfCoreModule {
   _of_gp_furnace_run(f: number, ticks: number): number;
   /** i32 scratch [oreItem,oreN,outItem,outN,fuel,progress,perSmelt,on]. 8. */
   _of_gp_furnace_state(f: number): number;
+  /** Remove ore from a node WITHOUT granting it. Returns the units removed. */
+  _of_gp_node_drain(i: number, units: number): number;
+  /** What `ore` smelts into (gameplay.h smeltOutputFor), or 0 if not an ore. */
+  _of_gp_smelt_output_for(ore: number): number;
+
+  // --- W6 automation (of_core_api.cpp section 7, over automation.h). One
+  //     BuildableNetwork per handle; buildings are per-network build indices.
+  _of_net_create(fixedDt: number): number;
+  _of_net_destroy(n: number): void;
+  _of_net_place_miner(n: number, deposit: number, item: number,
+                      ratePerSecond: number, outCap: number): number;
+  _of_net_place_miner_for_node(n: number, kind: number, deposit: number,
+                               ratePerSecond: number, outCap: number): number;
+  _of_net_place_belt(n: number, tiles: number, speed: number): number;
+  _of_net_place_smelter(n: number, ore: number, ingot: number, craftTicks: number,
+                        powerW: number, outCap: number): number;
+  _of_net_place_assembler(n: number, inA: number, countA: number, inB: number,
+                          countB: number, out: number, outCount: number,
+                          craftTicks: number, powerW: number, outCap: number): number;
+  /** Wire two buildings; item 0 auto-infers. 1 on success. */
+  _of_net_connect(n: number, from: number, to: number, item: number): number;
+  _of_net_step_n(n: number, ticks: number): void;
+  _of_net_tick_index(n: number): number;
+  _of_net_produced_of(n: number, item: number): number;
+  _of_net_miner_remaining(n: number, build: number): number;
+  _of_net_miner_depleted(n: number, build: number): number;
+  _of_net_output_buffer(n: number, build: number): number;
+  _of_net_input_buffer(n: number, build: number): number;
+  _of_net_belt_item_count(n: number, build: number): number;
+  _of_net_working(n: number, build: number): number;
+  _of_net_progress01(n: number, build: number): number;
+  _of_net_feed_machine(n: number, build: number, count: number): number;
+  _of_net_take_output(n: number, build: number, want: number): number;
+  _of_net_set_placement(n: number, build: number, typeId: number,
+                        x: number, y: number, z: number, boundCm: number): void;
+  _of_net_entity_index(n: number, build: number): number;
+  _of_net_build_count(n: number): number;
+  /** Rows; i32 [Id,TypeId,VisualState,AnimPhase,Lod,BoundRadius], f32 [x,y,z]. */
+  _of_net_emit_entity_states(n: number): number;
+  /** Rows; i32 [LineId,ItemDominant,FlowSpeedQuant,Density,Compressed]. */
+  _of_net_emit_belt_flows(n: number): number;
+  /** Items; i32 [ItemType,UnitOffset] per item. LOD-0 only (the O(items) pull). */
+  _of_net_get_line_items(n: number, build: number): number;
+  _of_net_units_per_tile(): number;
 }
 
 /** Read the f64 scratch arena. Call AFTER the producing call, never before. */
