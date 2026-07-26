@@ -300,8 +300,76 @@
   const idleEscape = of.game().controls.lastEscape;
   check('Escape with nothing open is not a no-op', idleEscape !== '', idleEscape);
 
+  // ======================================================================
+  // G. ONLY THE HAND SWINGS AND DIGS
+  // ======================================================================
+  // "no PART in hand" is not the same question as "the HAND in hand", and the
+  // difference was a real bug: a hand furnace is not a part, so holding the
+  // button with the furnace slot selected placed the furnace and then dug a
+  // crater under it for as long as the button was held.
+  const holdAndMeasure = async (slot) => {
+    of.hotbar(slot);
+    await sleep(0.2);
+    of.look(of.world().observer.yawDeg, -70);
+    await sleep(0.2);
+    const v = of.voxels();
+    const b = of.game().factory.buildings;
+    of.input.tape([{ hold: 140, actions: ['use'] }]);
+    await sleep(2.2);
+    of.input.tape([{ hold: 5, keys: [] }]);
+    await sleep(0.3);
+    return { cells: of.voxels().removedCells - v.removedCells,
+      built: of.game().factory.buildings - b };
+  };
+  of.assignSlot(9, 'empty');
+  const digs = {
+    furnaceSlot: await holdAndMeasure(2),
+    emptySlot: await holdAndMeasure(9),
+    handSlot: await holdAndMeasure(1),
+  };
+  check('a furnace held down does not dig', digs.furnaceSlot.cells === 0,
+    `${digs.furnaceSlot.cells} cells`);
+  check('an empty slot does nothing at all',
+    digs.emptySlot.cells === 0 && digs.emptySlot.built === 0,
+    `${digs.emptySlot.cells} cells, ${digs.emptySlot.built} built`);
+  // The two negatives above only mean something because this positive holds.
+  check('the hand held down DOES dig', digs.handSlot.cells > 0,
+    `${digs.handSlot.cells} cells`);
+
+  // ======================================================================
+  // H. THE LOADOUT IS PLAYER STATE AND SURVIVES A RELOAD
+  // ======================================================================
+  of.assignSlot(1, 'wall');
+  of.assignSlot(2, 'hand');
+  of.hotbar(5);
+  await sleep(0.2);
+  const barSaved = of.hotbar();
+  await of.save();
+  // SCRAMBLE IT before loading. A restore that "worked" because the live bar
+  // still held the answer is the classic false pass.
+  of.assignSlot(1, 'hand');
+  of.assignSlot(2, 'furnace');
+  of.hotbar(1);
+  await sleep(0.2);
+  const barScrambled = of.hotbar();
+  const ledger = await of.load();
+  await sleep(0.3);
+  const barLoaded = of.hotbar();
+  const bar2 = {
+    saved: [barSaved.selected, barSaved.slots[0].label, barSaved.slots[1].label],
+    scrambled: [barScrambled.selected, barScrambled.slots[0].label,
+      barScrambled.slots[1].label],
+    loaded: [barLoaded.selected, barLoaded.slots[0].label, barLoaded.slots[1].label],
+    restored: ledger === null ? null : ledger.hotbarRestored,
+  };
+  check('the bar was really scrambled before the load',
+    barScrambled.slots[0].kind === 'hand' && barScrambled.selected === 1);
+  check('the loadout came back', barLoaded.selected === barSaved.selected
+    && barLoaded.slots[0].part === 'wall' && barLoaded.slots[1].kind === 'hand',
+    JSON.stringify(bar2));
+
   const ticks = of.world().tick - t0;
-  check('the simulation advanced', ticks > 400, `${ticks} ticks`);
+  check('the simulation advanced', ticks > 900, `${ticks} ticks`);
 
   return {
     valid: fails.length === 0,
@@ -321,6 +389,8 @@
       withNothingOpen: idleEscape,
       closedByEscape: of.modals().closedByEscape,
     },
+    digs,
+    bar: bar2,
     drag: {
       tilesLaid: laid,
       runs: f.runs.map((r) => r.tiles),
