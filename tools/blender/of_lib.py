@@ -193,14 +193,15 @@ def _rot_axis(p, axis):
 
 
 def _cyl_data(radius, depth, loc, axis="Z", segments=12, smooth_sides=True,
-              radius_top=None):
+              radius_top=None, phase_deg=0.0):
     n = segments
     h = depth * 0.5
     r_b = radius
     r_t = radius if radius_top is None else radius_top
+    ph = math.radians(phase_deg)
     ring_b, ring_t = [], []
     for i in range(n):
-        a = 2.0 * math.pi * i / n
+        a = 2.0 * math.pi * i / n + ph
         ca, sa = math.cos(a), math.sin(a)
         ring_b.append(_rot_axis((r_b * ca, r_b * sa, -h), axis))
         ring_t.append(_rot_axis((r_t * ca, r_t * sa, h), axis))
@@ -290,20 +291,38 @@ class MeshBuilder:
             self.face_role.append(ri)
         return self
 
+    def add_raw(self, verts, faces, smooth=None, role="Steel"):
+        """Append an arbitrary vertex/face list under one role.
+
+        The escape hatch for shapes the named primitives cannot express: rock
+        lobes, canopy blobs, irregular pool rims. Faces index into `verts`
+        locally; the builder rebases them. Every vertex in `verts` must be
+        referenced by some face, because mesh.validate() deletes loose
+        vertices and that would silently desync the reported triangle count
+        from the exported one."""
+        if smooth is None:
+            smooth = [False] * len(faces)
+        return self._add(verts, faces, smooth, role)
+
     def box(self, size, loc=(0, 0, 0), role="Steel", rot_z=0.0):
         return self._add(*_box_data(size, loc, rot_z), role)
 
     def cylinder(self, radius, depth, loc=(0, 0, 0), axis="Z", segments=12,
-                 role="Steel", smooth_sides=True):
-        v, f, sm = _cyl_data(radius, depth, loc, axis, segments, smooth_sides)
+                 role="Steel", smooth_sides=True, phase_deg=0.0):
+        v, f, sm = _cyl_data(radius, depth, loc, axis, segments, smooth_sides,
+                             phase_deg=phase_deg)
         return self._add(v, f, sm, role)
 
     def frustum(self, radius, radius_top, depth, loc=(0, 0, 0), axis="Z",
-                segments=8, role="Steel", smooth_sides=True):
+                segments=8, role="Steel", smooth_sides=True, phase_deg=0.0):
         """Tapered cylinder. radius_top 0 gives a cone (the drill bit, the
-        insulator caps); a non-zero top gives a taper (chimney collars, hoppers)."""
+        insulator caps); a non-zero top gives a taper (chimney collars, hoppers).
+
+        phase_deg rotates the ring about its own axis. Stacked conifer tiers
+        use it so the canopy is not radially symmetric, which is what stops a
+        procedural tree from reading as procedural."""
         v, f, sm = _cyl_data(radius, depth, loc, axis, segments, smooth_sides,
-                             radius_top=radius_top)
+                             radius_top=radius_top, phase_deg=phase_deg)
         return self._add(v, f, sm, role)
 
     def arc_band(self, r_in, r_out, depth, loc=(0, 0, 0), a0_deg=0.0,

@@ -268,6 +268,91 @@
       ],
       "clips": ["Smelter_Bellows", "Furnace_Glow"],
       "collision": "col_SurvivalSmelter"
+    },
+
+    "boulder_stone": {
+      "glb": "assets/models/dist/nodes/boulder_stone.glb",
+      "node_kind": "Rock",
+      "lod0_node": "BoulderStone_Full_LOD0",
+      "lod_nodes": [
+        "BoulderStone_Full_LOD0", "BoulderStone_Full_LOD1",
+        "BoulderStone_Full_LOD2",
+        "BoulderStone_Half_LOD0", "BoulderStone_Half_LOD1",
+        "BoulderStone_Half_LOD2",
+        "BoulderStone_Low_LOD0", "BoulderStone_Low_LOD1",
+        "BoulderStone_Low_LOD2"
+      ],
+      "dims_xyz_m": [1.4, 0.90, 1.2],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 200,
+      "max_tris_total": 800,
+      "max_materials": 2,
+      "sockets": ["socket_hit", "socket_item_pop"],
+      "clips": [],
+      "collision": "col_BoulderStone"
+    },
+    "boulder_iron": {
+      "glb": "assets/models/dist/nodes/boulder_iron.glb",
+      "node_kind": "IronOre",
+      "lod0_node": "BoulderIron_Full_LOD0",
+      "lod_nodes": [
+        "BoulderIron_Full_LOD0", "BoulderIron_Full_LOD1",
+        "BoulderIron_Full_LOD2",
+        "BoulderIron_Half_LOD0", "BoulderIron_Half_LOD1",
+        "BoulderIron_Half_LOD2",
+        "BoulderIron_Low_LOD0", "BoulderIron_Low_LOD1",
+        "BoulderIron_Low_LOD2"
+      ],
+      "dims_xyz_m": [1.6, 1.10, 1.4],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 220,
+      "max_tris_total": 800,
+      "max_materials": 3,
+      "sockets": ["socket_hit", "socket_item_pop"],
+      "clips": [],
+      "collision": "col_BoulderIron"
+    },
+    "boulder_copper": {
+      "glb": "assets/models/dist/nodes/boulder_copper.glb",
+      "node_kind": "CopperOre",
+      "lod0_node": "BoulderCopper_Full_LOD0",
+      "lod_nodes": [
+        "BoulderCopper_Full_LOD0", "BoulderCopper_Full_LOD1",
+        "BoulderCopper_Full_LOD2",
+        "BoulderCopper_Half_LOD0", "BoulderCopper_Half_LOD1",
+        "BoulderCopper_Half_LOD2",
+        "BoulderCopper_Low_LOD0", "BoulderCopper_Low_LOD1",
+        "BoulderCopper_Low_LOD2"
+      ],
+      "dims_xyz_m": [1.5, 1.00, 1.3],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 220,
+      "max_tris_total": 800,
+      "max_materials": 3,
+      "sockets": ["socket_hit", "socket_item_pop"],
+      "clips": [],
+      "collision": "col_BoulderCopper"
+    },
+    "boulder_coal": {
+      "glb": "assets/models/dist/nodes/boulder_coal.glb",
+      "node_kind": "CoalSeam",
+      "lod0_node": "BoulderCoal_Full_LOD0",
+      "lod_nodes": [
+        "BoulderCoal_Full_LOD0", "BoulderCoal_Full_LOD1",
+        "BoulderCoal_Full_LOD2",
+        "BoulderCoal_Half_LOD0", "BoulderCoal_Half_LOD1",
+        "BoulderCoal_Half_LOD2",
+        "BoulderCoal_Low_LOD0", "BoulderCoal_Low_LOD1",
+        "BoulderCoal_Low_LOD2"
+      ],
+      "dims_xyz_m": [1.7, 1.00, 1.4],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 240,
+      "max_tris_total": 800,
+      "max_materials": 3,
+      "sockets": ["socket_hit", "socket_item_pop"],
+      "clips": [],
+      "collision": "col_BoulderCoal"
     }
   }
 }
