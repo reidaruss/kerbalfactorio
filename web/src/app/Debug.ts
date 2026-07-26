@@ -129,6 +129,11 @@ export interface OfDebugApi {
    * made; this proves a sound exists (DW-20).
    */
   audioRender(): Promise<unknown>;
+  /**
+   * W7. The same measurement for the three CONTINUOUS beds (wind, underground,
+   * Forest), which is where a silent-forever bug would hide.
+   */
+  bedsRender(): Promise<unknown>;
   /** DW-17. Write the autosave slot now. Returns what was written, or null. */
   save(): Promise<unknown>;
   /** DW-17. Apply the autosave slot over the live world. The reload path. */

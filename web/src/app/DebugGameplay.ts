@@ -61,12 +61,13 @@ export function gameplayApi(s: Services, loop: Loop) {
       return sfx.stats();
     },
 
-    // DW-20 for sound, both halves: the one-shots and the continuous beds are
-    // rendered offline and measured, because a bed that runs for ever producing
-    // silence is exactly the failure a play counter cannot see.
-    audioRender: async () => ({
-      voices: await renderVoices(), beds: await renderBeds(),
-    }),
+    // DW-20 for sound, in two calls and not one. The published shape of
+    // audioRender is a CONTRACT that probes already read; the beds get their
+    // own entry rather than being wrapped around it. Both exist for the same
+    // reason: a bed that runs for ever producing silence is exactly the failure
+    // a play counter reports as working.
+    audioRender: () => renderVoices(),
+    bedsRender: () => renderBeds(),
 
     // DW-17. `save` writes the autosave slot NOW and `load` applies it over the
     // live world, which is what makes a reload testable without one: a probe

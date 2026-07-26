@@ -25,9 +25,8 @@
   if (of.voxels() === null) return { valid: false, why: 'no character' };
 
   // --- 1. the beds, rendered and measured ----------------------------------
-  const rendered = await of.audioRender();
-  const beds = rendered.beds.beds ?? {};
-  const voices = rendered.voices.voices ?? {};
+  const beds = (await of.bedsRender()).beds ?? {};
+  const voices = (await of.audioRender()).voices ?? {};
   const bedNames = Object.keys(beds);
   const silentBeds = bedNames.filter((n) => beds[n].rms < 0.01);
 
