@@ -1,6 +1,8 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
-**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** pipeline proven, specs ready to build.
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** 22 of 27 Tier-0
+files built and green under `validate_glb.py --all` (13 machines, 9 harvest
+nodes). Remaining: items atlas, two tools, player body, first-person arms.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -157,7 +159,53 @@ Canonical socket names:
 | `socket_item_pop` | where a harvested item pops out |
 | `socket_muzzle` | rocket engine plume origin |
 
-### 2.7 Texture policy (Tier 1 onward)
+### 2.7 Depletion variants and the harvest-node node graph
+
+**(Added 2026-07-25 by ART-PRODUCTION during the harvest-node batch. Section 3.1
+mandated depletion variants but never said how they compose with the LOD chain
+or with animation, and three separate build failures came out of that gap.
+This is the resolved contract; the nine shipped nodes obey it.)**
+
+A harvest node ships every depletion variant in one `.glb`:
+
+```
+<Root>                              root Empty
+  [fell_pivot]                      Tree_Fall drives this  (trees only)
+    [sway_pivot]                    Tree_Sway drives this  (tree family only)
+      <Root>_<Variant>_LOD0..n      one full LOD chain PER variant
+  [<anim>_pivot]                    Water_Ripple / Oil_Bubble drive this
+    <Root>_<Variant>_<Part>         the animated part for that variant
+  col_<Root>
+  socket_*
+```
+
+| Rule | Value |
+|---|---|
+| Variant set | `Full`, `Half`, `Low`, and `Stump` for the two trees |
+| Swap thresholds | `RemainingAmount / InitialAmount` at 0.66 and 0.33 |
+| Node name | `<Root>_<Variant>_LOD<n>`, every variant carrying the same LOD depth |
+| Renderer rule | show every node whose name starts with `<Root>_<Variant>_`, then pick the `_LOD<n>` band by distance |
+| Pivot | identical in every variant: base centre, `Z = 0`, no per-variant offset |
+| Bounds | no variant exceeds the `_Full` footprint, so a swap never needs a re-snap |
+| Contract `lod0_node` | always the `_Full` LOD0; it defines the declared dimensions |
+
+**One clip drives one object, and the pivots are shared across variants.**
+`export_animation_mode = ACTIONS` turns one Blender Action into one named
+`AnimationClip`, and `validate_glb.py` checks the clip name set **exactly**, so
+a second Action called `Tree_Sway` would export as `Tree_Sway.001` and fail the
+build. Per-variant animated objects are therefore impossible: every variant's
+meshes hang under the *same* pivot, and one `Tree_Sway` sways whichever variant
+is currently visible. Where the spec asked for two parts moving out of phase
+(the oil seep's mounds) the group is tipped as well as scaled, which produces
+the alternation from a single object.
+
+**A clip's frame 1 must be the identity pose.** Assigning an Action makes the
+depsgraph evaluate the object at the current frame and the exporter writes
+*that* into the node's TRS, so a sway clip starting one degree off axis bakes a
+permanent lean into the asset. It surfaced as a 2.483 m wide conifer failing a
+2.400 m scale check, which is exactly the class of bug section 7.3 is about.
+
+### 2.8 Texture policy (Tier 1 onward)
 
 Tier 0 ships without UVs at all. When a texture is genuinely needed:
 
@@ -207,7 +255,11 @@ Poly budgets are LOD0 triangles. Dimensions are metres, given as
 Every node ships three **depletion variants** as sibling meshes in the same file
 (`_Full`, `_Half`, `_Low`, plus `_Stump` for trees), swapped by
 `RemainingAmount / InitialAmount` at 0.66 and 0.33. Depletion is the one piece of
-`FDepositNode` state a player must be able to see from across a clearing.
+`FDepositNode` state a player must be able to see from across a clearing. The
+`Tris` and `LODs` columns above are the **`_Full` LOD0 budget and the LOD depth
+per variant**; every variant carries the full chain, so the nine node files hold
+83 meshes between them. See section 2.7 for the node graph, the naming and why
+the animation pivots are shared rather than per-variant.
 
 #### Dropped-item props (1 file, 14 meshes)
 
@@ -463,13 +515,21 @@ signal.
 | `boulder_coal.glb` | 1.7 x 1.4 x 1.0 | `OF_Coal` | 240 |
 
 LODs: 100% / 45% / 15% by `add_lod_decimate` (organic, so decimation is correct).
-Materials (3): `OF_Rock`, `OF_RockDark`, plus the ore role.
+Materials (3): `OF_Rock`, `OF_RockDark`, plus the ore role. **Stone carries only
+two**, because "no ore" is its identity: its split-out facets are `OF_RockDark`
+on an `OF_Rock` body, so it reads uniformly matte next to the specular ores.
+Coal inverts the pair (dark host, `OF_Coal` facets).
 Sockets: `socket_hit` (the largest facet centre, where impact VFX plays),
 `socket_item_pop` (top centre, where harvested chunks spawn).
 Collision: `col_Boulder<Kind>`, one box at the mesh bounds.
-Depletion variants: `<Name>_Full` / `_Half` / `_Low` sibling meshes at roughly 100%,
-70% and 40% of full height, swapped at `RemainingAmount / InitialAmount` of 0.66 and
-0.33. No clips.
+Depletion variants: `<Name>_Full` / `_Half` / `_Low`, each with its own LOD chain
+(section 2.7). **Corrected 2026-07-25:** height alone was not a strong enough
+read, so the variants drop lobe *count* as well as volume, at bounding-box
+scales of `1.00` / `0.86 x 0.86 x 0.70` / `0.66 x 0.66 x 0.40` with 3 / 2 / 1
+lobes. Ore facets stay proportional so the mineral is still identifiable when
+the boulder is nearly spent. No clips.
+
+**Built.** LOD0 164 tris (budget 200 to 240), 586 render tris per file.
 
 ### 4.6 Conifer tree, `nodes/tree_conifer.glb`
 
@@ -479,27 +539,57 @@ heights 2.2, 3.6, 4.8), each slightly rotated so the silhouette is not radially
 symmetric. Origin at the trunk base centre.
 
 600 tris LOD0, 260 LOD1, 70 LOD2 (LOD2 is two crossed quads plus a trunk box).
-Materials (2): `OF_Bark`, `OF_Leaf`.
+Materials (3): `OF_Bark`, `OF_Leaf`, `OF_LeafDry`. **Corrected 2026-07-25:** the
+spec said two. The third role is what lets depletion read by colour as well as
+by silhouette (needles go brown before they go away) and it gives the stump a
+pale sapwood cut face; without it a `_Low` tree and a `_Full` tree are the same
+green at 40 m.
 Sockets: `socket_hit` (1.2 m up the trunk, chest height), `socket_fell_pivot` (base
 centre), `socket_item_pop`.
 Collision: `col_TreeConifer`, box 0.50 x 0.50 x 6.5 (trunk only; a player walks through
 the canopy).
 
-Clips: `Tree_Sway` 1 to 181, loop, canopy group rotates plus or minus 1.5 degrees about
-X and Y out of phase; `Tree_Fall` 1 to 45, one-shot, whole tree rotates 88 degrees
-about `socket_fell_pivot` with a settle. Depletion variants: `Tree_Full`, `Tree_Stump`.
+Clips: `Tree_Sway` 1 to 181, loop; `Tree_Fall` 1 to 45, one-shot, whole tree
+rotates 88 degrees about `socket_fell_pivot` with a settle. **Corrected
+2026-07-25:** the sway is one X cycle at plus or minus 1.5 degrees against two
+Y cycles at plus or minus 0.9, not two quarter-phase-offset cycles. Both
+channels must be **zero at frame 1** (section 2.7), and a quarter-phase Y curve
+is not; the figure eight the double-frequency curve traces also reads better
+than an ellipse.
+
+Depletion variants (**corrected 2026-07-25**; this section said `Tree_Full` and
+`Tree_Stump`, contradicting the four-variant rule in section 3.1):
+`_Full` full skirt and three branch lobes; `_Half` skirt gone, tiers a third
+narrower, upper tiers dry; `_Low` bare trunk with branch stubs and one dry crown
+tuft; `_Stump` cut at 0.62 m with a sapwood face. Roughly 100 / 55 / 25 / 4
+percent of volume.
+
+**Built.** LOD0 308 tris, 1084 render tris across all twelve meshes.
 
 ### 4.7 Broadleaf tree, `nodes/tree_broadleaf.glb`
 
-5.0 m tall, canopy 4.0 m across. Trunk splits into two forks at 2.2 m, each carrying a
-faceted canopy blob (a 12-sided low-poly sphere squashed to 0.6 vertical). 700 / 300 /
-80 tris. Same materials, sockets, clips and depletion variants as the conifer.
+5.0 m tall, canopy 4.0 m across. Trunk splits at 2.0 m into **three** unequal
+forks (**corrected 2026-07-25:** two forks made the canopy read as a symmetric
+pair of balls; the third, shorter limb is what breaks it), each carrying a
+faceted canopy blob squashed to 0.6 vertical. 700 / 300 / 80 tris. Same
+materials, sockets, clips and depletion variants as the conifer. The silhouette
+is deliberately the conifer's opposite (short, wide, forked) so the two tree
+kinds are never confused at distance.
+
+**Built.** LOD0 280 tris, 972 render tris across all twelve meshes.
 
 ### 4.8 Scrub bush, `nodes/bush_scrub.glb`
 
 1.0 x 1.0 x 0.9 m. Five faceted lobes on a stub stem. 200 / 80 tris.
-Materials `OF_Bark`, `OF_Leaf`. `socket_hit`, `socket_item_pop`. `Tree_Sway` 1 to 181.
+Materials (3) `OF_Bark`, `OF_Leaf`, `OF_LeafDry`. `socket_hit`,
+`socket_item_pop`. `Tree_Sway` 1 to 181, and **no `Tree_Fall` and no `_Stump`**:
+a bush is stripped, never felled, so it also carries no `socket_fell_pivot`.
+Depletion 5 lobes / 3 lobes with one dry / 2 small dry lobes.
+Collision (**added 2026-07-25**, the section omitted it while section 2.5
+requires one per asset): `col_BushScrub`, box 0.90 x 0.90 x 0.90.
 Low wood yield: this is the bootstrap harvest before the player has an axe.
+
+**Built.** LOD0 128 tris, 440 render tris.
 
 ### 4.9 Water pool, `nodes/water_pool.glb`
 
@@ -507,22 +597,46 @@ Low wood yield: this is the bootstrap harvest before the player has an axe.
 irregular rock rim, an inner basin floor at `Z = 0.02`, and a flat water plane at
 `Z = 0.20`, 0.05 m below the rim. Origin at basin centre on the ground.
 
-280 tris. Materials (2): `OF_Rock`, `OF_Water` (double-sided, alpha 0.65).
+280 tris. Materials (3): `OF_Rock` rim and rim rocks, `OF_Soil` bed and exposed
+mud, `OF_Water` (double-sided, alpha 0.65). **Corrected 2026-07-25:** the spec
+said two. Depletion needs a mud role, because the only way a draining pool
+reads at distance is a *widening brown ring* where the water used to be; a bed
+made of the same rock as the rim shows nothing.
 Sockets: `socket_draw` (water plane centre, where the collect prompt anchors).
 Collision: `col_WaterPool`, box 3.0 x 3.0 x 0.25.
+Depletion is the waterline: `_Full` 0.200 m, `_Half` 0.125 m, `_Low` 0.055 m,
+each drop uncovering the mud shelf ring beneath the old shoreline.
 Clip: `Water_Ripple` 1 to 121, loop, water plane translates plus or minus 0.01 in Z.
+The three variants' water planes are siblings of the LOD meshes, parented to one
+shared `ripple_pivot` (section 2.7), and are named `WaterPool_<Variant>_Water`.
 **Preferred at runtime:** replace the clip with a vertex-displacement shader; the clip
 exists so the asset is complete without shader work.
+
+**Built.** LOD0 192 tris, 948 render tris.
 
 ### 4.10 Oil seep, `nodes/oil_seep.glb`
 
 2.2 x 2.2 x 0.35 m. A dark tar pool in a cracked crust: an irregular 10-sided crust
 ring, a flat oil surface at `Z = 0.06`, and two low pressure-mound bulges.
 
-260 tris. Materials (3): `OF_Rock`, `OF_Oil`, `OF_Soil`.
+260 tris. Materials (3): `OF_Rock`, `OF_Oil`, `OF_Soil`. `OF_Oil` is the only
+glossy ground surface in the palette (roughness 0.25 against everything else's
+0.9), which is what makes a seep unmistakable at any distance.
 Sockets: `socket_draw`, `socket_item_pop`.
-Clip: `Oil_Bubble` 1 to 97, loop, the two bulges scale 1.0 to 1.12 to 1.0, offset half
-a cycle apart so the pool never pulses as one.
+Collision (**added 2026-07-25**, omitted here while section 2.5 requires one):
+`col_OilSeep`, box 2.2 x 2.2 x 0.35.
+Depletion is the tar line: slick radius 0.68 / 0.46 / 0.26 m with a widening
+ring of dried crust, and 2 / 1 / 0 pressure mounds. A dead seep is flat, dry
+and matte.
+Clip: `Oil_Bubble` 1 to 97, loop. **Corrected 2026-07-25:** the spec asked for
+two bulges scaling half a cycle apart, which needs two animated objects and
+therefore two clips, and the validator checks the clip name set exactly. The
+mounds are instead one group on a shared `bubble_pivot` that **scales and tips
+about Y** together: the mound at -X rises as the mound at +X sinks, which is
+the requested alternation out of one clip on one object. The mound groups are
+named `OilSeep_<Variant>_Bulges`.
+
+**Built.** LOD0 152 tris, 870 render tris.
 
 ### 4.11 Items atlas, `items/items_atlas.glb`
 
@@ -818,6 +932,9 @@ assets/models/
 | Build script | `build_<file stem>.py` | `build_belt_segment.py` |
 | Root node | `PascalCase` | `BeltSegment` |
 | Render mesh | `<Root>_LOD0/1/2` | `BeltSegment_LOD1` |
+| Harvest-node render mesh | `<Root>_<Variant>_LOD0/1/2` | `BoulderIron_Half_LOD1` |
+| Harvest-node animated part | `<Root>_<Variant>_<Part>` | `WaterPool_Full_Water` |
+| Animation pivot | `<role>_pivot` | `sway_pivot`, `ripple_pivot` |
 | Collision proxy | `col_<Root>` | `col_BeltSegment` |
 | Socket | `socket_snake_case` | `socket_belt_out` |
 | Material | `OF_<PaletteRole>` | `OF_EmissiveState` |
@@ -897,7 +1014,7 @@ dist payload**, and when it flips, prefer meshopt (`gltfpack -cc`,
 it decodes an order of magnitude faster than Draco, and keeping it out of Blender means
 `dist/` stays readable and diffable.
 
-**KTX2: not applicable at Tier 0** (no textures). Policy from Tier 1 is in section 2.7.
+**KTX2: not applicable at Tier 0** (no textures). Policy from Tier 1 is in section 2.8.
 
 ### 6.4 How the conventions survive into three.js
 
@@ -999,8 +1116,9 @@ the case for automating the check.
 1. **Belt segment.** Done. It is the template.
 2. **Remaining machines** (12 files): miner, smelter, assembler, box, generator, power
    pole, inserter, primitive furnace, survival smelter, belt curves, end cap. These plus
-   the belt unblock the whole factory loop.
-3. **Harvest nodes** (9 files) and the **items atlas**. Unblocks harvest and hand-craft.
+   the belt unblock the whole factory loop. **Done 2026-07-25.**
+3. **Harvest nodes** (9 files). **Done 2026-07-25**, all seven `NodeKind`
+   values covered. Then the **items atlas**, which unblocks hand-craft.
 4. **Tools** (2 files). Unblocks tool-assisted harvest.
 5. **Player body and first-person arms.** Last of Tier 0 because they are the only
    assets needing a rig, and everything else can be tested with a capsule.
