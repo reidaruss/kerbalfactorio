@@ -34,7 +34,7 @@ import { Hotbar } from './Hotbar.js';
 import { GameplayInput } from './GameplayInput.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
-import { aimPrompt } from './FactoryReport.js';
+import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
 import { craft, loadFurnace, machineView, raze, recipes, slots,
@@ -345,6 +345,7 @@ export class Gameplay {
     // ONE prompt decision, made in one place. It used to be four early returns
     // here, and every one of them had to remember the two panel conditions.
     this.hud.render(dt, this.uiOpen ? null : ghostPrompt(this.build.structTarget)
+      ?? ghostMachinePrompt(this.build.label, this.build.target)
       ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
         this.interact.target), carried);
     this.hotbarBar.render(this.hotbar.rows((n) => this.icons.for(n)));

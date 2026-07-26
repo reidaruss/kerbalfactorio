@@ -22,6 +22,7 @@
 import * as THREE from 'three';
 import { addressIn, headingIn, stepToward, type MachineAddr }
   from './MachinePlacement.js';
+import { chainsInto } from './FactoryWiring.js';
 import { FOOTPRINT, type BuildKind, type Factory, type Placed } from './Factory.js';
 import { commitTarget, resolveTarget, type StructureTarget }
   from './StructurePlacement.js';
@@ -67,6 +68,21 @@ export interface BuildTarget {
   fwd: THREE.Vector3;
   cell: string;
   addr: MachineAddr;
+  /**
+   * FS-19. The site under this ghost does not exist yet: it was founded on the
+   * lattice cell under the aim point purely so the ghost has a frame, and it
+   * becomes real only if something is placed. `cell` and the site id are
+   * PLACEHOLDERS while this is true, so a consumer comparing two ghosts must
+   * read it. Three probes learned that the hard way.
+   */
+  prospective: boolean;
+  /**
+   * FS-18. A run already chains into this cell, so the tile's heading will be
+   * taken from the run's geometry on the next commit and the R key cannot change
+   * it. Reported, and said on the ghost, because the alternative is a key the
+   * HUD offers and the game ignores.
+   */
+  headingLocked: boolean;
   ok: boolean;
   reason: string;
   /** Drill only: the ore patch under the ghost, or -1. */
@@ -188,10 +204,13 @@ export class BuildMode {
       if (!t.ok) { this.refusals++; return 0; }
       const made = this.factory.add(kind, t, t.fwd);
       if (made === null) { this.refusals++; return 0; }
+      // The site is founded by `Factory.stage` (FS-19), so this is now only a
+      // belt and braces: `adoptSite` is idempotent by id.
       this.factory.adoptSite(t.addr);
       this.lastRate = t.ratePerSec;
       this.placements++;
-      this.dragLast = { addr: t.addr, placed: made, step: null };
+      this.dragLast = { addr: { ...t.addr, prospective: false }, placed: made,
+        step: null };
       return 1;
     }
     if (!held || this.dragLast === null || t.addr.site.id !== this.dragLast.addr.site.id) {
@@ -310,6 +329,11 @@ export class BuildMode {
     let reason = '';
     let patch = -1;
     let ratePerSec = 0;
+    // FS-18. Asked of the wiring rule itself, so the ghost cannot promise a
+    // heading the next commit will overwrite.
+    const headingLocked = kind === 'belt'
+      && chainsInto(this.factory.placed, s.pos);
+    if (headingLocked) reason = 'heading set by the run';
     if (this.factory.occupied(s.cell)) { ok = false; reason = 'cell taken'; }
     else if (kind === 'miner') {
       // THE SENTENCE THAT TEACHES THE MECHANIC. A drill eats the ground under
@@ -325,8 +349,9 @@ export class BuildMode {
         reason = `${ratePerSec.toFixed(1)} ore/s here`;
       }
     }
-    return { pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr, ok, reason,
-      patch, ratePerSec };
+    return { pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr,
+      prospective: s.addr.prospective, headingLocked, ok, reason, patch,
+      ratePerSec };
   }
 
   report(): unknown {
@@ -349,6 +374,11 @@ export class BuildMode {
       },
       ghost: this.target === null ? null : {
         cell: this.target.cell, ok: this.target.ok, reason: this.target.reason,
+        // FS-19. `cell`, `site` and `ij` above are PLACEHOLDERS while this is
+        // true: no site has been adopted, so the address was derived in a frame
+        // centred on the aim point itself and two aims metres apart agree.
+        prospective: this.target.prospective,
+        headingLocked: this.target.headingLocked,
         footprint: this.selected === null || isStructure(this.selected) ? 0
           : FOOTPRINT[this.selected],
         site: this.target.addr.site.id,

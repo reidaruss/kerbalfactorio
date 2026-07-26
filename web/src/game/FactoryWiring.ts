@@ -68,9 +68,13 @@ export function chainRuns(placed: readonly Placed[]): Placed[][] {
   return out;
 }
 
+/** The least a chain test needs of a tile. Structural, so the build ghost can
+ *  be asked the same question a placed tile is. */
+interface Tile { pos: { x: number; y: number; z: number }; fwd: THREE.Vector3 }
+
 /** The nearest belt tile AHEAD of `b` along its own flow, or undefined. */
-function aheadOf(b: Placed, belts: readonly Placed[]): Placed | undefined {
-  let best: Placed | undefined;
+function aheadOf<T extends Tile>(b: T, belts: readonly T[]): T | undefined {
+  let best: T | undefined;
   let bestD = Infinity;
   for (const o of belts) {
     if (o === b) continue;
@@ -84,6 +88,43 @@ function aheadOf(b: Placed, belts: readonly Placed[]): Placed | undefined {
 }
 
 /**
+ * FS-18: would an existing run chain INTO a tile put at `pos`, and so decide
+ * its heading for it?
+ *
+ * CORNERS ARE PURELY GEOMETRIC in this game, and that is the design rather than
+ * an oversight: `FactoryCommit.pitchRuns` re-derives every tile's heading from
+ * the run's own positions on every commit, which is what makes a dragged run
+ * chained BY CONSTRUCTION and what the belt-curve renderer reads to decide which
+ * tiles are corners. The consequence is that a tile with a PREDECESSOR has no
+ * heading of its own to set: it borrows the one coming into it, and the R key,
+ * which turns the ghost through four quarters perfectly well, is overwritten the
+ * instant the tile lands. Measured: a tile placed at rotation 1 beside an
+ * existing run's head came back with `fwd` identical to its neighbours, and its
+ * predecessor's `fwd` was retroactively rewritten too.
+ *
+ * The behaviour stays. Advertising a key that does nothing does not: this is
+ * what the ghost reads to say so BEFORE the button is pressed, which is the same
+ * rule the refusals already follow.
+ *
+ * It is `aheadOf` asked of the neighbours, not a re-implementation of it, so the
+ * ghost cannot answer a different question from the one the commit will ask.
+ * Only tiles within a chain step of `pos` are candidates, so this is a handful
+ * of neighbours times one O(belts) scan and not an O(belts squared) per frame.
+ */
+export function chainsInto(placed: readonly Placed[],
+                           pos: { x: number; y: number; z: number }): boolean {
+  const belts = placed.filter((p) => p.kind === 'belt');
+  const ghost: Tile = { pos, fwd: new THREE.Vector3() };
+  const all: Tile[] = [...belts, ghost];
+  for (const b of belts) {
+    const d = Math.hypot(b.pos.x - pos.x, b.pos.y - pos.y, b.pos.z - pos.z);
+    if (d < 1e-6 || d > CHAIN_MAX_M) continue;
+    if (aheadOf<Tile>(b, all) === ghost) return true;
+  }
+  return false;
+}
+
+/**
  * The wiring itself: one connect() per adjacency, and never a hand-fed slot.
  * A source feeds a run whose TAIL it touches; a run's HEAD feeds a sink it
  * touches; and a source touching a sink directly hands off with no belt.
@@ -92,6 +133,22 @@ function aheadOf(b: Placed, belts: readonly Placed[]): Placed | undefined {
  * run splits it in two, and the halves have different heads and tails than
  * anything that existed before, so there is nothing to patch: the plan is asked
  * again from scratch and the answer is correct by construction.
+ *
+ * FS-17: A MACHINE IS NEVER WIRED TO THE TAIL OF A RUN WHOSE HEAD ALREADY FEEDS
+ * IT, and that one sentence is a deadlock the player could reach in five
+ * buildings. A smelter counts as a SOURCE (its ingots can ride a belt away) as
+ * well as a SINK, and belt-to-smelter reach is about 2.25 m, so a smelter placed
+ * at the end of a SHORT run was within reach of that run's tail as well as its
+ * head. It then put its first ingot onto the belt that feeds it. The ingot rode
+ * to the head and stuck there for ever, because the head inserter is carrying
+ * ore and will not pick up an ingot, and a `TransportLine` accepts exactly one
+ * item until its head is popped. Measured on a drill plus FOUR belts plus a
+ * smelter: `minerOut` pinned at 13 to 16 while `mined` kept climbing 19 a
+ * window, belt items stuck at 1, smelter input 0, output 0, iron 0. Forever.
+ *
+ * `probes/demolish.js` had been changed to five belts so the short circuit could
+ * not form, which was right for that probe and left the defect live. It is back
+ * on four belts and asserts the line RUNS.
  */
 export function wire(f: Factory): void {
   const touch = (a: Placed, b: Placed): boolean => {
@@ -106,7 +163,7 @@ export function wire(f: Factory): void {
     f.links.push({
       pos: { x: (a.pos.x + b.pos.x) * 0.5, y: (a.pos.y + b.pos.y) * 0.5,
              z: (a.pos.z + b.pos.z) * 0.5 },
-      up: a.up.clone(), fwd: fwd.normalize(),
+      up: a.up.clone(), fwd: fwd.normalize(), from: a.id, to: b.id,
     });
   };
   const sources = f.placed.filter((p) => p.kind === 'miner' || p.kind === 'smelter');
@@ -114,15 +171,23 @@ export function wire(f: Factory): void {
   f.runs.forEach((run, i) => {
     const build = f.runBuilds[i];
     if (build === undefined || run.length === 0) return;
+    const head = run[run.length - 1];
+    // Decided BEFORE any source is wired, and only used to exclude. Doing the
+    // sink links here as well would swap the order the two connect() calls
+    // reach /core, which is the order the inserters tick in.
+    const fedByHead = sinks.filter((k) => k.build >= 0 && touch(k, head));
     for (const s of sources) {
+      if (fedByHead.includes(s)) continue;
       if (s.build >= 0 && touch(s, run[0])) link(s, run[0], f.line.connect(s.build, build));
     }
-    const head = run[run.length - 1];
-    for (const k of sinks) {
-      if (k.build >= 0 && touch(k, head)) link(head, k, f.line.connect(build, k.build));
-    }
+    for (const k of fedByHead) link(head, k, f.line.connect(build, k.build));
   });
   for (const s of sources) {
+    // A SMELTER NEVER HANDS DIRECTLY TO ANOTHER SMELTER. Nothing in the recipe
+    // set eats an ingot, so such an inserter can only fill the receiver's ore
+    // slot with the wrong item and stall it: the same defect as above without
+    // the belt. Two smelters are within `touch` at 2.75 m, which is three cells.
+    if (s.kind === 'smelter') continue;
     for (const k of sinks) {
       if (s !== k && s.build >= 0 && k.build >= 0 && touch(s, k)) {
         link(s, k, f.line.connect(s.build, k.build));

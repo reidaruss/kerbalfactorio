@@ -103,6 +103,16 @@ export interface Site {
   north: THREE.Vector3;
   /** Distance from the planet centre to the site plane. */
   baseR: number;
+  /**
+   * The world lattice cell this site was founded on, `"cx,cy,cz"`.
+   *
+   * It is the site's only position-derived IDENTITY, and it exists for the
+   * PROSPECTIVE case: until a site is adopted its `id` is whatever the registry
+   * would hand out next, so every unadopted site in the world answers with the
+   * same one and two aim points eight metres apart key identically. See
+   * `MachinePlacement.machineCellKey`.
+   */
+  cell: string;
 }
 
 /** A structural cell address inside a site. */
@@ -158,7 +168,7 @@ export function makeSite(M: OfCoreModule, body: number, edits: number, id: numbe
   const baseR = centreR + drop;
   const k = baseR / centreR;
   return {
-    id, up, east, north, baseR,
+    id, up, east, north, baseR, cell: s.cell,
     o: {
       x: s.pos.x * k - east.x * half - north.x * half,
       y: s.pos.y * k - east.y * half - north.y * half,

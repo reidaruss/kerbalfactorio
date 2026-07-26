@@ -54,12 +54,50 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
   };
 }
 
+/**
+ * FS-18: what the MACHINE ghost says, including whether R does anything here.
+ *
+ * A structural ghost has had a prompt since base building landed
+ * (`StructurePlacement.ghostPrompt`) and a machine ghost has had none, so the
+ * drill's "2.1 ore/s here" was computed every tick and shown only if the player
+ * pressed and was refused. Same argument as DW-24's: a message that arrives
+ * after the key is pressed teaches nothing.
+ *
+ * And the turn key is described rather than merely offered. Corners in this game
+ * are purely geometric: `FactoryCommit.pitchRuns` re-derives every tile's
+ * heading from its run's own positions on every commit, so a belt laid against
+ * an existing run takes the run's heading and R cannot change it. That is the
+ * behaviour we want (it is what chains a dragged run by construction and what
+ * the curve renderer reads), so the ghost says so instead of the HUD offering a
+ * key that silently does nothing.
+ */
+export function ghostMachinePrompt(
+  label: string,
+  t: { reason: string; ok: boolean; headingLocked: boolean } | null,
+): HudTarget | null {
+  if (t === null || label === '') return null;
+  return {
+    name: `${label}${t.reason === '' ? '' : `  ${t.reason}`}`,
+    fraction: 0, empty: !t.ok, distanceM: 0,
+    action: `${USE} place  (hold to drag)    `
+      + (t.headingLocked ? `${labelOf('rotate')} turn: the run sets this heading`
+        : `${labelOf('rotate')} turn`),
+  };
+}
+
 export function factoryReport(f: Factory): unknown {
   return {
     buildings: f.placed.length,
+    // TAIL AND HEAD BY ID, because a run is ordered and both ends are wired
+    // differently: a source feeds the TAIL and the HEAD feeds a sink. Naming
+    // them is what lets a probe say "the smelter is wired onto the tail of the
+    // belt whose head feeds it", which is FS-17's deadlock stated exactly.
     runs: f.runs.map((r, i) => ({
       tiles: r.length, items: f.line.beltItems(f.runBuilds[i] ?? -1),
+      tail: r[0]?.id ?? -1, head: r[r.length - 1]?.id ?? -1,
     })),
+    /** Every inserter connect() created, and the two plan ids it sits between. */
+    links: f.links.map((l) => ({ from: l.from, to: l.to })),
     ticks: f.line.ticks,
     coreTicks: f.line.coreTicks,
     rebuilds: f.line.rebuilds,

@@ -191,23 +191,32 @@
   const tailAim = beltSweep.filter((s) => s.ok && s.reachM <= 7.7)
     .reduce((a, b) => (a === null || b.reachM > a.reachM ? b : a), null);
   if (tailAim === null) return { fail: 'no belt cell inside the reach band', log };
-  // THE HEAD comes back towards the feet. Five belts, not four, and the reason
-  // is not margin: `wire` links any SOURCE that touches a run's tail, a smelter
-  // is a source, and belt-to-smelter reach is 2.25 m. Four tiles put the tail
-  // 2.21 m from the smelter, so the smelter was wired onto the tail of the very
-  // belt whose head feeds it. Its first ingot went out onto that belt, rode to
-  // the head and stuck there, because the head inserter carries ore and will not
-  // pick up an ingot. One item is all a transport line accepts before its head
-  // is popped, so the whole line deadlocked on ingot number one. Five tiles put
-  // the tail three metres out and the loop cannot form.
+  // THE HEAD comes back towards the feet. FOUR belts, which is what this probe
+  // asked for before it was stretched to five to dodge FS-17.
+  //
+  // It was stretched because `wire` linked any SOURCE that touched a run's tail,
+  // a smelter is a source, and belt-to-smelter reach is 2.25 m: on a short line
+  // the smelter ended up wired onto the TAIL of the very run whose head feeds it,
+  // its first ingot rode to the head and stuck there for ever, and the line
+  // deadlocked. The wiring is fixed now, so the length is chosen for what this
+  // probe is actually about (a run long enough to HAVE a middle) rather than to
+  // stay clear of a defect, and `linksToTail` below asserts the fix directly.
+  //
+  // FOUR NO LONGER REACHES THE SHORT-CIRCUIT GEOMETRY, and that is worth saying
+  // out loud. The "four belts" figure was measured before machines moved onto the
+  // metric site grid, when a lattice step was 0.59 to 1.02 m of ground. Tiles are
+  // exactly 1.002 m apart now, so the tail of a four-tile run stands 4.0 m from
+  // the smelter and cannot be linked to it whatever the wiring says. The shape
+  // that DOES form the loop today is a drill plus TWO belts plus a smelter
+  // (tail 2.0 m, inside 2.25 m), and `probes/shortline.js` is that case.
   let headAim = null;
   for (const s of beltSweep) {
     if (!s.ok || s.pitch >= tailAim.pitch) continue;
-    if (gdist(s.pos, tailAim.pos) > 5.6) break;
+    if (gdist(s.pos, tailAim.pos) > 3.35) break;
     headAim = s;
   }
-  if (headAim === null || gdist(headAim.pos, tailAim.pos) < 4.4) {
-    return { fail: 'no room for five belts on this heading', tailAim, headAim, log };
+  if (headAim === null || gdist(headAim.pos, tailAim.pos) < 2.6) {
+    return { fail: 'no room for four belts on this heading', tailAim, headAim, log };
   }
   of.look(yaw, tailAim.pitch);
   await sleep(0.25);
@@ -242,8 +251,8 @@
   }
   log.push(`drag laid ${laid.length} belts, steps ${steps.join('/')} m: `
     + laid.map((b) => b.cell).join(' | '));
-  if (laid.length < 5) {
-    return { fail: 'the drag did not carry five belts', steps, tailAim, headAim, log };
+  if (laid.length < 4) {
+    return { fail: 'the drag did not carry four belts', steps, tailAim, headAim, log };
   }
 
   // 3: the smelter, on the cell in front of the run's HEAD. Reach for a belt and
@@ -297,22 +306,45 @@
   // tiles look like a straight line either way.
   const tailToSmelter = gdist(laid[0].pos, smelterAt.pos);
   const drillToSmelter = gdist(drill.pos, smelterAt.pos);
+  // WHICH BUILDINGS ARE WIRED TO WHICH, by plan id, straight off the report.
+  // The deadlock is a WIRING fact, not a throughput one: an inserter between
+  // the smelter and the tail of the run whose head feeds it. Asserting the
+  // wiring means this probe fails for the original REASON and not merely
+  // because some number came out low.
+  const smelterId = () => fac().list.find((b) => b.kind === 'smelter')?.id ?? -1;
+  const wiring = () => {
+    const f = fac();
+    const s = smelterId();
+    const tails = new Set(f.runs.map((r) => r.tail));
+    const heads = new Set(f.runs.map((r) => r.head));
+    return {
+      links: f.links,
+      // The defect, stated exactly. Must be 0.
+      linksToTail: f.links.filter((l) => l.from === s && tails.has(l.to)).length,
+      linksFromHead: f.links.filter((l) => heads.has(l.from) && l.to === s).length,
+    };
+  };
+  const wired = wiring();
   const shape = {
     runs: fac().runs, tailToSmelter: +tailToSmelter.toFixed(2),
     drillToSmelter: +drillToSmelter.toFixed(2),
     drillToTail: +gdist(drill.pos, laid[0].pos).toFixed(2),
     headToSmelter: +gdist(laid[laid.length - 1].pos, smelterAt.pos).toFixed(2),
+    // Is the smelter actually inside belt-to-smelter reach of the TAIL? When
+    // this is true the old wiring DID form the loop, so the run below is a
+    // regression test rather than a hopeful one.
+    shortCircuitGeometry: tailToSmelter <= 2.25,
+    ...wired,
   };
   log.push('shape: ' + JSON.stringify(shape));
-  // 2.25 m is belt-to-smelter reach and 2.75 m is drill-to-smelter reach
-  // (FactoryWiring.touch on FOOTPRINT). Inside the first the smelter feeds the
-  // belt it eats from; inside the second the drill hands ore straight to the
-  // smelter and the belts are decoration the removal cannot interrupt.
+  // 2.75 m is drill-to-smelter reach (FactoryWiring.touch on FOOTPRINT). Inside
+  // it the drill hands ore straight to the smelter and the belts are decoration
+  // the removal cannot interrupt, which would make the stall window meaningless.
   if (fac().runs.length !== 1 || fac().runs[0].tiles !== laid.length) {
     return { fail: 'the belts did not chain into one run', shape, plan: fac().list, log };
   }
-  if (tailToSmelter <= 2.3 || drillToSmelter <= 2.8) {
-    return { fail: 'the line is short enough for the smelter to short-circuit it',
+  if (drillToSmelter <= 2.8) {
+    return { fail: 'the drill hands straight to the smelter, the belts are decoration',
              shape, log };
   }
 
@@ -492,9 +524,15 @@
       packIron,
       refundOfRemoval: removal,
     },
+    wiring: shape,
     valid:
       // every window actually ran, by /core's own counter
       [running, stalled, rebuilt].every((w) => Math.abs(w.coreTicks - w.expected) <= 90)
+      // FS-17. The smelter is NOT wired onto the tail of the run that feeds it,
+      // and the head IS wired into the smelter. Both, because a wiring pass that
+      // simply linked nothing would satisfy the first on its own.
+      && wired.linksToTail === 0
+      && wired.linksFromHead === 1
       // the line worked, then the removal stopped it, then it worked again
       && running.produced > 0
       && stalled.produced === 0

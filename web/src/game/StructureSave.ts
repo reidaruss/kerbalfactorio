@@ -78,6 +78,10 @@ export function restoreStructures(s: Structures, sites: readonly SaveSite[],
       east: new THREE.Vector3(t.east[0], t.east[1], t.east[2]),
       north: new THREE.Vector3(t.north[0], t.north[1], t.north[2]),
       baseR: t.baseR,
+      // A RESTORED SITE IS ADOPTED BY DEFINITION, so it never needs the
+      // founding-cell identity a prospective one does; its id is already real.
+      // Saying so beats storing a lattice cell the save has never carried.
+      cell: `restored:${t.id}`,
     };
     s.adoptSite(site);
   }

@@ -44,24 +44,57 @@ export interface SiteHost {
   groundRadius(x: number, y: number, z: number): number;
 }
 
-/** A machine cell: which site, and which square of its metric grid. */
-export interface MachineAddr { site: Site; i: number; j: number }
+/**
+ * A machine cell: which site, and which square of its metric grid.
+ *
+ * `prospective` means the site does not exist yet: it was founded on the lattice
+ * cell under the query point purely so the ghost has a frame to stand in, and it
+ * will only become real if something is placed. It is NOT a detail a consumer may
+ * ignore, which is why it sits on the address rather than being inferred, and
+ * why it appears on the ghost report. See `siteAt`.
+ */
+export interface MachineAddr {
+  site: Site;
+  i: number;
+  j: number;
+  prospective: boolean;
+}
 
-/** The occupancy key. Namespaced by site, or two sites would share cell 0,0. */
+/**
+ * The occupancy key. Namespaced by site, or two sites would share cell 0,0.
+ *
+ * FS-19: A PROSPECTIVE ADDRESS IS KEYED BY THE CELL IT WAS FOUNDED ON, not by
+ * the site id. An unadopted site's id is whatever the registry would hand out
+ * next, so EVERY unadopted site in the world answers `m1`, and a prospective
+ * site is centred on the query point so the address inside it is always 0,0 (or
+ * -1,0 on a boundary). Two aim points eight metres apart therefore returned the
+ * identical key `m1:0,0`. Three separate probes tripped over that independently
+ * and one of them concluded "no lattice axis carries a chainable line", which was
+ * simply false. The founding cell discriminates, and nothing persists in this
+ * form: `Factory.stage` claims the site (which adopts it) before it keys a
+ * placement, so a saved `Placed.cell` is always the `m<id>` shape it always was.
+ */
 export function machineCellKey(a: MachineAddr): string {
-  return `m${a.site.id}:${a.i},${a.j}`;
+  return a.prospective ? `m~${a.site.cell}:${a.i},${a.j}`
+    : `m${a.site.id}:${a.i},${a.j}`;
 }
 
 /** The site whose grid reaches `p`, or a fresh one founded on the lattice cell
  *  containing it. NOT adopted: a ghost must not found sites by being looked at. */
-export function siteAt(host: SiteHost, p: Vec3d): Site {
-  return host.nearestSite(p) ?? host.prospectiveSite(p);
+export function siteAt(host: SiteHost, p: Vec3d): { site: Site; prospective: boolean } {
+  const near = host.nearestSite(p);
+  return near !== null ? { site: near, prospective: false }
+    : { site: host.prospectiveSite(p), prospective: true };
 }
 
 /** Which square of a site's grid a point falls in. */
-export function addressIn(site: Site, m: StructureModule, p: Vec3d): MachineAddr {
+export function addressIn(site: Site, m: StructureModule, p: Vec3d,
+                          prospective = false): MachineAddr {
   const l = localOf(site, p, new THREE.Vector3());
-  return { site, i: Math.floor(l.x / m.cellM), j: Math.floor(l.y / m.cellM) };
+  return {
+    site, prospective,
+    i: Math.floor(l.x / m.cellM), j: Math.floor(l.y / m.cellM),
+  };
 }
 
 /**
@@ -114,9 +147,11 @@ export function stepToward(a: MachineAddr, to: MachineAddr): MachineAddr | null 
   // The dominant axis first, so a drag that wandered diagonally comes out as an
   // L of straight runs rather than as a staircase of corners.
   if (Math.abs(di) >= Math.abs(dj)) {
-    return { site: a.site, i: a.i + Math.sign(di), j: a.j };
+    return { site: a.site, i: a.i + Math.sign(di), j: a.j,
+      prospective: a.prospective };
   }
-  return { site: a.site, i: a.i, j: a.j + Math.sign(dj) };
+  return { site: a.site, i: a.i, j: a.j + Math.sign(dj),
+    prospective: a.prospective };
 }
 
 /** Is this point still inside a site's reach? Past it, a new site is founded. */

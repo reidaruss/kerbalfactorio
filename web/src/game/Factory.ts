@@ -78,7 +78,11 @@ export class Factory {
    * (DW-9: the player never places one, but a connection has to be legible).
    */
   links: { pos: { x: number; y: number; z: number };
-           up: THREE.Vector3; fwd: THREE.Vector3 }[] = [];
+           up: THREE.Vector3; fwd: THREE.Vector3;
+           /** The two plan ids the inserter sits between. REPORTED, because
+            *  "which building feeds which" is the one thing a wiring defect
+            *  gets wrong and the only thing a screenshot cannot show. */
+           from: number; to: number }[] = [];
   private nextId = 1;
   /** Ore drained out of world nodes by miners. The conservation counter. */
   minedFromNodes = 0;
@@ -106,10 +110,24 @@ export class Factory {
    */
   snap(x: number, y: number, z: number): Snapped & { addr: MachineAddr } {
     const p = { x, y, z };
-    const site = siteAt(this.host, p);
-    const addr = addressIn(site, this.host.module, p);
+    const s = siteAt(this.host, p);
+    const addr = addressIn(s.site, this.host.module, p, s.prospective);
     const a = anchorIn(this.host, addr);
     return { pos: a.pos, up: a.up, cell: machineCellKey(addr), addr };
+  }
+
+  /**
+   * Turn a PROSPECTIVE address into a real one by founding its site.
+   *
+   * Looking founds nothing (`siteAt`); PLACING founds. That is the whole rule,
+   * and putting it here rather than in the caller is what stops a placement
+   * being keyed `m~12,-4,7:0,0` and then persisted in a form nothing else
+   * speaks. Idempotent, because `adoptSite` is.
+   */
+  private claim(a: MachineAddr): MachineAddr {
+    if (!a.prospective) return a;
+    this.host.adoptSite(a.site);
+    return { site: a.site, i: a.i, j: a.j, prospective: false };
   }
 
   /** The same snap, for a cell already named. The drag fill's path. */
@@ -164,8 +182,13 @@ export class Factory {
    * and every rebuild loses the items riding the belts, so the drag would
    * silently eat ore as it was laid. Staging and committing once fixes both.
    */
-  stage(kind: BuildKind, s: Snapped, fwd: THREE.Vector3): Placed | null {
-    if (this.occupied(s.cell)) return null;
+  stage(kind: BuildKind, s: Snapped & { addr?: MachineAddr },
+        fwd: THREE.Vector3): Placed | null {
+    // The site is founded HERE, before the cell is keyed, so a placement is
+    // never recorded under a prospective key (see `claim` and FS-19).
+    const addr = s.addr === undefined ? undefined : this.claim(s.addr);
+    const cell = addr === undefined ? s.cell : machineCellKey(addr);
+    if (this.occupied(cell)) return null;
     let patch = -1;
     if (kind === 'miner') {
       patch = this.patchUnder(s.pos);
@@ -175,7 +198,7 @@ export class Factory {
       // so covering a deposit in drills only makes it run out sooner.
     }
     const p: Placed = {
-      id: this.nextId++, kind, pos: s.pos, cell: s.cell, up: s.up.clone(),
+      id: this.nextId++, kind, pos: s.pos, cell, up: s.up.clone(),
       fwd: fwd.clone(), quat: orient(s.up, fwd), patch, lastRemaining: 0,
       build: -1, entity: -1, run: -1,
     };
