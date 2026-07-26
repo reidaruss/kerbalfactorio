@@ -440,6 +440,23 @@ class FactorySim {
     return crafting_[h.index] != 0;
   }
 
+  // Remove up to `want` units from a machine's / miner's output buffer, and
+  // return how many were actually removed. This is the MANUAL-COLLECTION verb:
+  // it is exactly what inserterSystem already does internally (§3 drains a
+  // source out-slot one unit at a time), lifted to a public call so a player can
+  // empty a smelter by hand. Exposing it here rather than letting a UI layer
+  // reach into the SoA is what keeps ONE accounting of these units: the buffer
+  // that shrinks is the same buffer the belt would have drained, so a collected
+  // ingot cannot also flow onwards. Non-hot, additive, no tick side effects.
+  uint16_t takeMachineOutput(EntityHandle h, uint16_t want) {
+    if (!h.valid() || want == 0) return 0;
+    if (static_cast<size_t>(h.index) >= outSlotCount_.size()) return 0;
+    const uint16_t have = outSlotCount_[h.index];
+    const uint16_t took = have < want ? have : want;
+    outSlotCount_[h.index] = static_cast<uint16_t>(have - took);
+    return took;
+  }
+
   // Miner read accessors (out-slot count reuses machineOutput()). minerRemaining
   // is the units of ore left in the bound deposit; 0 == depleted (miner stalled).
   uint64_t minerRemaining(EntityHandle h) const { return minerRemaining_[h.index]; }

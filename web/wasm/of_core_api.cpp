@@ -1161,6 +1161,20 @@ OF_API int of_net_place_miner(int nId, double depositAmount, int item,
   r->builds.push_back(b);
   return static_cast<int>(r->builds.size()) - 1;
 }
+// Place a miner on a worldgen survival NODE KIND, letting deposits.h map the
+// kind to the mined ItemId (automation.h placeMinerForNode). The build layer
+// holds a node's kind, never an item id, so this is the call it wants: pass the
+// kind and the units left in the node and /core decides what comes out.
+OF_API int of_net_place_miner_for_node(int nId, int kind, double depositAmount,
+                                       double ratePerSecond, int outCap) {
+  NetRec* r = g_nets.get(nId);
+  if (!r || kind < 0 || kind > 6) return -1;
+  r->builds.push_back(r->net->placeMinerForNode(
+      static_cast<wg::survival::NodeKind>(kind),
+      static_cast<uint64_t>(depositAmount), ratePerSecond,
+      static_cast<uint16_t>(outCap)));
+  return static_cast<int>(r->builds.size()) - 1;
+}
 OF_API int of_net_place_belt(int nId, int tiles, int speed) {
   NetRec* r = g_nets.get(nId);
   if (!r) return -1;
@@ -1278,6 +1292,46 @@ OF_API double of_net_progress01(int nId, int build) {
   NetRec* r = g_nets.get(nId); if (!r) return -1.0;
   au::BuildId* b = r->build(build); if (!b) return -1.0;
   return r->net->progress01(*b);
+}
+
+// Take up to `want` units out of a building's output buffer by hand. Returns the
+// count actually removed (automation.h takeOutput). This is how the last machine
+// in a line gets emptied: nothing downstream drains it, so without a collection
+// verb the ingots accumulate where no player can reach them.
+OF_API int of_net_take_output(int nId, int build, int want) {
+  NetRec* r = g_nets.get(nId); if (!r || want <= 0) return 0;
+  au::BuildId* b = r->build(build); if (!b) return 0;
+  return static_cast<int>(r->net->takeOutput(*b, static_cast<uint16_t>(want)));
+}
+
+// Stamp §6 render metadata on a building: TypeId (which mesh set), position, and
+// bound radius in centimetres. WITHOUT THIS EVERY ROW STREAMS AT THE ORIGIN,
+// because FactorySim defaults the position to (0,0,0) and never derives one.
+//
+// POSITION IS LOCAL METRES, not planet-scale (standing rule 6). The stream field
+// is float32; at Forge's 600 km radius an absolute f32 quantizes to ~64 mm, so
+// the JS build layer keeps the 64-bit anchor and passes offsets from it. Passing
+// an absolute body-frame metre here would reproduce the floating-machine bug.
+OF_API void of_net_set_placement(int nId, int build, int typeId,
+                                 double x, double y, double z, int boundCm) {
+  NetRec* r = g_nets.get(nId); if (!r) return;
+  au::BuildId* b = r->build(build); if (!b) return;
+  r->net->setPlacement(*b, static_cast<uint16_t>(typeId),
+                       static_cast<float>(x), static_cast<float>(y),
+                       static_cast<float>(z),
+                       static_cast<uint16_t>(boundCm <= 0 ? 100 : boundCm));
+}
+
+// The dense entity index behind a build handle — the key EmitEntityStates writes
+// as FFactoryEntityState::Id and EmitBeltFlowStates as LineId. -1 if unknown.
+OF_API int of_net_entity_index(int nId, int build) {
+  NetRec* r = g_nets.get(nId); if (!r) return -1;
+  au::BuildId* b = r->build(build); if (!b || !b->valid()) return -1;
+  return static_cast<int>(r->net->entityIndex(*b));
+}
+OF_API int of_net_build_count(int nId) {
+  NetRec* r = g_nets.get(nId);
+  return r ? static_cast<int>(r->builds.size()) : -1;
 }
 
 // --- The §6 render stream ----------------------------------------------------
@@ -1633,6 +1687,33 @@ OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
   g_i32.push_back(r.nodeEmpty ? 1 : 0);
   g_i32.push_back(static_cast<int32_t>(n.Resource));
   return static_cast<int>(r.granted);
+}
+
+// Drain `units` of ore out of a node WITHOUT granting them to the pack, and
+// return the units actually removed (clamped at the node's remaining amount).
+//
+// WHY THIS EXISTS. A miner placed on a node is seeded from that node's remaining
+// amount, and from then on TWO counters describe the same ore: the FDepositNode
+// the world draws and the miner's bound deposit inside the sim. If only the
+// second one falls, the node stands full for ever while the ore it holds is
+// carried away on a belt, which is the same class of defect as two surfaces or
+// two gravities. The build layer syncs the node down by exactly what the miner
+// consumed, so the pair conserves: node loss == miner extraction, always. It
+// deliberately grants nothing (that is harvestNode's job) — this is a transfer
+// between two ledgers, not a source of items.
+OF_API int of_gp_node_drain(int i, double units) {
+  if (i < 0 || static_cast<size_t>(i) >= g_gpNodes.size() || units <= 0.0) return 0;
+  wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
+  // Subtract in DOUBLE and store once. `RemainingAmount` is a float, so
+  // `remaining -= (float)remaining` at deposit scale leaves a 3.6e-7 crumb, and
+  // a node that reads 0.00000036 is not empty: it is the same "node parks just
+  // above empty for ever" defect §S.2a already deleted from harvestNode, walked
+  // back in through a different door.
+  const double rem = static_cast<double>(n.RemainingAmount);
+  const double take = units < rem ? units : rem;
+  const double left = rem - take;
+  n.RemainingAmount = static_cast<float>(left < 1e-3 ? 0.0 : left);
+  return static_cast<int>(take);
 }
 
 // --- Hand crafting -----------------------------------------------------------

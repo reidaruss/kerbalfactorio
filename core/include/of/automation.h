@@ -213,6 +213,38 @@ class BuildableNetwork {
   uint16_t input2Buffer(const BuildId& b) const {
     return b.valid() ? sim_.machineInput2(b.entity) : 0;
   }
+  // Take up to `want` units out of a building's output buffer BY HAND, and
+  // return how many were actually taken. The placement layer needs this because
+  // the last machine in a line has nothing downstream to drain it: without a
+  // collection verb the ingots pile up in a buffer no player can reach, and the
+  // whole point of automating a smelter is that the output goes somewhere. It
+  // drains the SAME out-slot an inserter would, so a unit cannot be collected
+  // and also flow onwards.
+  uint16_t takeOutput(const BuildId& b, uint16_t want) {
+    return b.valid() ? sim_.takeMachineOutput(b.entity, want) : 0;
+  }
+
+  // Stamp the §6 render metadata for a building: which mesh set it draws
+  // (TypeId), where it stands, and its bound radius. The sim does not care, but
+  // EmitEntityStates is the ONE stream the renderer reads, so a building whose
+  // position is never set streams at the origin and every machine in the world
+  // draws in the same place. Position is metres in whatever local frame the
+  // caller anchors to (standing rule 6: never planet-scale absolutes in f32).
+  void setPlacement(const BuildId& b, uint16_t typeId, float x, float y, float z,
+                    uint16_t boundCm = 100) {
+    if (!b.valid()) return;
+    sim_.setEntityTypeId(b.entity, typeId);
+    sim_.setEntityPosition(b.entity, x, y, z);
+    sim_.setEntityBoundRadiusCm(b.entity, boundCm);
+  }
+
+  // The dense entity index behind a building — the key EmitEntityStates stamps
+  // into FFactoryEntityState::Id and EmitBeltFlowStates into LineId. The render
+  // layer holds BuildIds and receives stream rows, so it needs the join.
+  uint32_t entityIndex(const BuildId& b) const {
+    return b.valid() ? b.entity.index : 0xFFFFFFFFu;
+  }
+
   // Live items currently on a belt line.
   uint32_t beltItemCount(const BuildId& b) const {
     return b.valid() ? sim_.lineItemCount(b.entity.index) : 0;

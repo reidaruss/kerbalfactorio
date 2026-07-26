@@ -860,6 +860,140 @@ function buildChain(deposit) {
   M._of_gp_nodes_clear();
 }
 
+// --- CASE 10: the PLACED auto-line (the W6 build layer's whole surface) ------
+//
+// TIER 0 only, and for the same reason CASE 9 is: automation.h over factory_sim.h
+// is integer and fixed-point end to end, so it has no cross-toolchain question
+// to answer (CASE 8 already pins the chain itself against the native build).
+// What CASE 8 does NOT cover is the surface a PLACEMENT layer calls: binding a
+// miner to a world node by KIND, stamping §6 render metadata so the stream is
+// not a pile of rows at the origin, collecting a machine's output by hand, and
+// draining the world node by exactly what the miner took.
+//
+// Every assertion below is a DELTA (DW-20). "The call returned 1" proves
+// nothing; "the deposit lost exactly what the miner produced" is the claim.
+{
+  const NODE_IRON = 3;                    // survival::NodeKind::IronOre
+  M._of_gp_init();
+  M._of_gp_clear();
+  M._of_gp_item_ids();
+  const gid = scratchI32(M, 13).slice();
+  const RAW_IRON = gid[3], IRON = gid[7];
+
+  const DEPOSIT = 400;
+  const net = M._of_net_create(1 / 60);
+  // The KIND decides the item (deposits.h resourceOf), so the build layer never
+  // maps kind->item by hand. If that mapping ever moves, RAW_IRON stops flowing.
+  const miner = M._of_net_place_miner_for_node(net, NODE_IRON, DEPOSIT, 4.0, 50);
+  const belt = M._of_net_place_belt(net, 6, 8);
+  const smelter = M._of_net_place_smelter(net, RAW_IRON, IRON, 60, 0, 0);
+  eq('auto.buildCount', M._of_net_build_count(net), 3, TIER.SELF);
+  eq('auto.wireMinerToBelt', M._of_net_connect(net, miner, belt, 0), 1, TIER.SELF);
+  eq('auto.wireBeltToSmelter', M._of_net_connect(net, belt, smelter, 0), 1, TIER.SELF);
+
+  // --- §6 placement metadata: without it every machine draws at the origin ---
+  M._of_net_set_placement(net, miner, 0x10, 4, 0.5, -3, 120);
+  M._of_net_set_placement(net, belt, 0x11, 4, 0.5, 0, 30);
+  M._of_net_set_placement(net, smelter, 0x12, 4, 0.5, 3, 130);
+  const smelterId = M._of_net_entity_index(net, smelter);
+  const beltId = M._of_net_entity_index(net, belt);
+  eq('auto.entityIndexIsReal', smelterId >= 0 && beltId >= 0 && smelterId !== beltId,
+     true, TIER.SELF);
+
+  // --- run it unattended ----------------------------------------------------
+  const before = {
+    ore: M._of_net_produced_of(net, RAW_IRON),
+    ingot: M._of_net_produced_of(net, IRON),
+    remaining: M._of_net_miner_remaining(net, miner),
+    tick: M._of_net_tick_index(net),
+  };
+  M._of_net_step_n(net, 4000);
+  const after = {
+    ore: M._of_net_produced_of(net, RAW_IRON),
+    ingot: M._of_net_produced_of(net, IRON),
+    remaining: M._of_net_miner_remaining(net, miner),
+    tick: M._of_net_tick_index(net),
+  };
+  eq('auto.simAdvanced', after.tick - before.tick, 4000, TIER.SELF);
+  eq('auto.minerExtracted', after.ore - before.ore > 0, true, TIER.SELF);
+  // THE conservation claim: the deposit lost EXACTLY what the miner produced.
+  eq('auto.depositConserved', (before.remaining - after.remaining) === (after.ore - before.ore),
+     true, TIER.SELF);
+  // End to end with nobody feeding anything: ore crossed a belt and came out as
+  // ingots. This is the acceptance the whole milestone is about, in one line.
+  eq('auto.ingotsFromNobody', after.ingot > 0, true, TIER.SELF);
+  // ...and no ingot appeared that no ore paid for.
+  eq('auto.noFreeIngots', after.ingot <= after.ore, true, TIER.SELF);
+
+  // --- the stream carries what was stamped, keyed by entity index -----------
+  {
+    const rows = M._of_net_emit_entity_states(net);
+    const ip = scratchI32(M, rows * 6).slice();
+    const fp = scratchF32(M, rows * 3).slice();
+    let found = -1;
+    for (let i = 0; i < rows; ++i) if (ip[i * 6] === smelterId) found = i;
+    eq('auto.smelterInStream', found >= 0, true, TIER.SELF);
+    eq('auto.streamTypeId', found < 0 ? 0 : ip[found * 6 + 1], 0x12, TIER.SELF);
+    eq('auto.streamBoundCm', found < 0 ? 0 : ip[found * 6 + 5], 130, TIER.SELF);
+    eq('auto.streamPosition',
+       found < 0 ? '' : `${fp[found * 3]},${fp[found * 3 + 1]},${fp[found * 3 + 2]}`,
+       '4,0.5,3', TIER.SELF);
+    // VisualState is the emissive authority: a smelter mid-craft is "working".
+    eq('auto.streamVisualStateIsLive',
+       found < 0 ? -1 : (ip[found * 6 + 2] <= 3 ? 1 : -1), 1, TIER.SELF);
+  }
+  {
+    const flows = M._of_net_emit_belt_flows(net);
+    eq('auto.oneFlowRowPerLine', flows, 1, TIER.SELF);
+    const p = scratchI32(M, flows * 5).slice();
+    eq('auto.flowLineId', p[0], beltId, TIER.SELF);
+    eq('auto.flowSpeedQuant', p[2], 8, TIER.SELF);
+    // The O(items) pull agrees with the O(1) count — the two must not diverge.
+    const items = M._of_net_get_line_items(net, belt);
+    eq('auto.lineItemsMatchCount', items, M._of_net_belt_item_count(net, belt), TIER.SELF);
+  }
+
+  // --- hand collection drains the SAME buffer a belt would have drained -----
+  {
+    const out0 = M._of_net_output_buffer(net, smelter);
+    eq('auto.smelterHasOutput', out0 > 0, true, TIER.SELF);
+    const took = M._of_net_take_output(net, smelter, 3);
+    eq('auto.tookWhatItSaid', out0 - M._of_net_output_buffer(net, smelter), took, TIER.SELF);
+    eq('auto.tookAtMostAsked', took <= 3 && took > 0, true, TIER.SELF);
+    M._of_net_take_output(net, smelter, 9999);
+    eq('auto.drainedToEmpty', M._of_net_output_buffer(net, smelter), 0, TIER.SELF);
+    eq('auto.emptyTakeTakesNothing', M._of_net_take_output(net, smelter, 5), 0, TIER.SELF);
+  }
+  M._of_net_destroy(net);
+
+  // --- the world node and the miner deposit are ONE pool of ore -------------
+  // of_gp_node_drain is what keeps them one. Without it the node stands full
+  // for ever while the ore it holds rides away on a belt.
+  {
+    M._of_gp_nodes_clear();
+    const [ax, ay, az] = digDir();
+    const n = M._of_gp_node_add(forge, 0, NODE_IRON, ax, ay, az);
+    eq('auto.nodeAdded', n, 0, TIER.SELF);
+    M._of_gp_node_state(n);
+    const full = scratchF64(M, 8)[3];
+    eq('auto.nodeStartsFull', full > 0, true, TIER.SELF);
+    const drained = M._of_gp_node_drain(n, 7);
+    M._of_gp_node_state(n);
+    const left = scratchF64(M, 8)[3];
+    eq('auto.drainTook', drained, 7, TIER.SELF);
+    eq('auto.drainConserved', Math.abs((full - left) - 7) < 1e-3, true, TIER.SELF);
+    // It grants nothing: a drain is a transfer between ledgers, not a source.
+    eq('auto.drainGrantsNothing', M._of_gp_count(RAW_IRON), 0, TIER.SELF);
+    // And it cannot go negative however hard it is asked.
+    eq('auto.drainClamps', M._of_gp_node_drain(n, 1e9) > 0, true, TIER.SELF);
+    M._of_gp_node_state(n);
+    eq('auto.nodeFloorsAtZero', scratchF64(M, 8)[3], 0, TIER.SELF);
+    eq('auto.emptyNodeDrainsNothing', M._of_gp_node_drain(n, 5), 0, TIER.SELF);
+    M._of_gp_nodes_clear();
+  }
+  M._of_gp_clear();
+}
+
 // =============================================================================
 // RESULT
 // =============================================================================
