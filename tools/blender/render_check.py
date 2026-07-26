@@ -26,13 +26,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 VIEWS = {
-    # name: (camera position, look-at target)
-    "front": ((0.0, -4.6, 1.10), (0.0, 0.0, 0.95)),
-    "side": ((3.6, -0.5, 1.25), (0.0, 0.0, 0.95)),
-    "threequarter": ((2.4, -2.7, 1.55), (0.0, 0.0, 0.95)),
-    "hand": ((0.95, -0.80, 1.66), (0.79, 0.0, 1.44)),
-    "close": ((0.0, -1.15, 0.10), (0.0, 0.0, -0.15)),
-    "closeside": ((1.15, -0.55, 0.05), (0.0, -0.15, -0.20)),
+    # name: (camera position, look-at target, focal length mm)
+    "front": ((0.0, -4.6, 1.10), (0.0, 0.0, 0.95), 55.0),
+    "side": ((3.6, -0.5, 1.25), (0.0, 0.0, 0.95), 55.0),
+    "threequarter": ((2.4, -2.7, 1.55), (0.0, 0.0, 0.95), 55.0),
+    "hand": ((0.95, -0.80, 1.66), (0.79, 0.0, 1.44), 55.0),
+    # The view model as the PLAYER sees it: camera on the asset origin, a 24 mm
+    # lens for roughly the 70 degree vertical FOV of ASSET-SPECS 4.2, and a
+    # 0.01 m near plane so nothing is clipped at arm's length.
+    "eye": ((0.0, 0.0, 0.0), (0.0, -1.0, -0.22), 24.0),
+    "eyeoff": ((0.55, -0.30, 0.30), (0.0, -0.35, -0.28), 35.0),
 }
 
 
@@ -71,18 +74,25 @@ def setup_world():
     look_at(fill, (0, 0, 1.0))
     bpy.context.scene.collection.objects.link(fill)
 
-    # A ground plane: without one, a walk cycle's foot contact is unjudgeable.
-    mesh = bpy.data.meshes.new("Ground")
-    mesh.from_pydata([(-8, -8, 0), (8, -8, 0), (8, 8, 0), (-8, 8, 0)], [],
-                     [(0, 1, 2, 3)])
-    mesh.update()
-    bpy.context.scene.collection.objects.link(bpy.data.objects.new("Ground", mesh))
-
     cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam"))
     cam.data.lens = 55.0
     bpy.context.scene.collection.objects.link(cam)
     scn.camera = cam
     return cam
+
+
+def add_ground():
+    """A ground plane, so a walk cycle's foot contact is judgeable.
+
+    Only for assets that stand ON the ground. A view model hangs BELOW its
+    origin (the origin is the camera point), so a plane at z = 0 would both
+    occlude it and put it in shadow - which is what a first attempt at the
+    first-person render looked like."""
+    mesh = bpy.data.meshes.new("Ground")
+    mesh.from_pydata([(-8, -8, 0), (8, -8, 0), (8, 8, 0), (-8, 8, 0)], [],
+                     [(0, 1, 2, 3)])
+    mesh.update()
+    bpy.context.scene.collection.objects.link(bpy.data.objects.new("Ground", mesh))
 
 
 def find_armature():
@@ -152,6 +162,11 @@ def main():
                 or "_Half_" in n or "_Low_" in n or "_Stump_" in n)
         if hide:
             o.hide_render = True
+    lowest = min([(o.matrix_world @ v.co).z
+                  for o in bpy.data.objects if o.type == "MESH" and not o.hide_render
+                  for v in o.data.vertices] or [0.0])
+    if lowest > -0.05:
+        add_ground()
     arm = find_armature()
     print("[render_check] armature %s, actions %s"
           % (arm.name if arm else None, sorted(a.name for a in bpy.data.actions)))
@@ -160,7 +175,9 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     for shot in shots:
         clip, frame, view = shot.split(":")
-        pos, tgt = VIEWS[view]
+        pos, tgt, lens = VIEWS[view]
+        cam.data.lens = lens
+        cam.data.clip_start = 0.01
         cam.location = pos
         look_at(cam, tgt)
         play(arm, clip, frame)

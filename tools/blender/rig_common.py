@@ -104,10 +104,62 @@ BODY_BONES = (_SPINE
               + _arm_bones("L", 1.0, "Spine2") + _arm_bones("R", -1.0, "Spine2")
               + _leg_bones("L", 1.0, "Hips") + _leg_bones("R", -1.0, "Hips"))
 
-# The first-person arms carry the SAME bone names and the same hierarchy from
-# the shoulders down, plus a Root, and nothing else: 27 bones. See ASSET-SPECS
-# 4.2 for why its BIND POSE is the view-model rest rather than the T-pose.
-FP_ARM_BONES = (_arm_bones("L", 1.0, "Root") + _arm_bones("R", -1.0, "Root"))
+# ---------------------------------------------------------------------------
+# The first-person arms: the SAME bone names and the same hierarchy from the
+# shoulders down, plus a Root, and nothing else. 27 bones.
+#
+# Its BIND POSE is the view-model rest - arms held forward into the lower third
+# of the view - not the T-pose. Three reasons, recorded in ASSET-SPECS 4.2:
+# the declared bounds (0.90 x 0.70 x 0.55) are the posed bounds and a T-posed
+# arm subset is 1.80 m wide; a view model is never retargeted from Mixamo, so
+# the T-pose buys nothing here; and weights authored in the pose the model will
+# actually be seen in are better weights. What the two assets share is the NAME
+# and hierarchy contract, which is what lets one animation layer drive both.
+#
+# The origin is the CAMERA POINT, so the model attaches to the camera with an
+# identity transform.
+# ---------------------------------------------------------------------------
+
+_FP_SHOULDER = (0.105, 0.055, -0.150)
+_FP_ELBOW_IN = (0.245, 0.040, -0.195)      # deltoid, where the upper arm starts
+_FP_ELBOW = (0.388, -0.150, -0.320)
+_FP_WRIST = (0.190, -0.370, -0.238)
+_FP_HAND = (0.156, -0.435, -0.220)
+
+# finger root offsets from the hand tip, and the direction they continue in
+_FP_FINGER_DIR = (-0.026, -0.058, 0.012)
+_FP_FINGER_OFF = {"Thumb": (0.014, -0.004, -0.030),
+                  "Index": (-0.010, 0.006, 0.006),
+                  "Middle": (0.024, 0.014, -0.004)}
+
+
+def _fp_arm(side, s):
+    pre = "Left" if side == "L" else "Right"
+    out = [
+        (pre + "Shoulder", _mirror_pt(_FP_SHOULDER, s),
+         _mirror_pt(_FP_ELBOW_IN, s), "Root"),
+        (pre + "Arm", _mirror_pt(_FP_ELBOW_IN, s), _mirror_pt(_FP_ELBOW, s),
+         pre + "Shoulder"),
+        (pre + "ForeArm", _mirror_pt(_FP_ELBOW, s), _mirror_pt(_FP_WRIST, s),
+         pre + "Arm"),
+        (pre + "Hand", _mirror_pt(_FP_WRIST, s), _mirror_pt(_FP_HAND, s),
+         pre + "ForeArm"),
+    ]
+    for fname, off in _FP_FINGER_OFF.items():
+        head = tuple(_FP_HAND[k] + off[k] for k in range(3))
+        prev_name, prev_pt = pre + "Hand", head
+        for i in range(3):
+            tail = tuple(prev_pt[k] + _FP_FINGER_DIR[k] * (1.0 - 0.15 * i)
+                         for k in range(3))
+            bname = "%sHand%s%d" % (pre, fname, i + 1)
+            out.append((bname, _mirror_pt(prev_pt, s), _mirror_pt(tail, s),
+                        prev_name))
+            prev_name, prev_pt = bname, tail
+    return out
+
+
+FP_BONES = ([("Root", (0.0, 0.0, 0.0), (0.0, -0.12, 0.0), None)]
+            + _fp_arm("L", 1.0) + _fp_arm("R", -1.0))
 
 ARM_CHAIN = ["Shoulder", "Arm", "ForeArm", "Hand"]
 FINGER_CHAINS = ["Thumb", "Index", "Middle"]

@@ -521,6 +521,50 @@
       "double_sided_ok": ["OF_Glass"]
     },
 
+    "player_fp_arms": {
+      "glb": "assets/models/dist/player/player_fp_arms.glb",
+      "_comment": [
+        "pivot_mode 'none': the origin is the CAMERA POINT, so the model",
+        "attaches to the camera with an identity transform and the mesh hangs",
+        "below and in front of an origin that is deliberately outside it.",
+        "The bone names and hierarchy are the body rig's arm subset exactly,",
+        "which is the contract that lets one animation layer drive both. The",
+        "BIND POSE is not shared: this one is the view-model rest.",
+        "No collision and no LOD chain: first person is always near."
+      ],
+      "lod0_node": "PlayerFPArms_LOD0",
+      "lod_nodes": ["PlayerFPArms_LOD0"],
+      "pivot_mode": "none",
+      "dims_xyz_m": [0.900, 0.550, 0.710],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 1200,
+      "max_tris_total": 1200,
+      "max_materials": 4,
+      "sockets": ["socket_hand_R", "socket_hand_L"],
+      "bone_sockets": {
+        "socket_hand_R": "RightHand",
+        "socket_hand_L": "LeftHand"
+      },
+      "rest_pose": true,
+      "frame1_identity": true,
+      "bones": [
+        "Root",
+        "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+        "LeftHandThumb1", "LeftHandThumb2", "LeftHandThumb3",
+        "LeftHandIndex1", "LeftHandIndex2", "LeftHandIndex3",
+        "LeftHandMiddle1", "LeftHandMiddle2", "LeftHandMiddle3",
+        "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+        "RightHandThumb1", "RightHandThumb2", "RightHandThumb3",
+        "RightHandIndex1", "RightHandIndex2", "RightHandIndex3",
+        "RightHandMiddle1", "RightHandMiddle2", "RightHandMiddle3"
+      ],
+      "clips": [
+        "FP_Idle", "FP_Walk_Bob", "FP_Run_Bob",
+        "FP_Swing_Pickaxe", "FP_Swing_Axe", "FP_Dig",
+        "FP_Place", "FP_Craft"
+      ]
+    },
+
     "crude_pickaxe": {
       "glb": "assets/models/dist/tools/crude_pickaxe.glb",
       "_comment": [

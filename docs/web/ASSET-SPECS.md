@@ -1,8 +1,9 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
-**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** 25 of 27 Tier-0
-files built and green under `validate_glb.py --all` (13 machines, 9 harvest
-nodes, the items atlas, two tools). Remaining: player body, first-person arms.
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** **Tier 0 is
+complete.** 27 of 27 files built and green under `validate_glb.py --all`
+(13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged player body
+and the first-person arms). Total `dist/` payload 1.8 MB.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -442,6 +443,59 @@ a code-generated capsule (radius 0.35, height 1.80); the box is a broadphase fal
 Impact frames are contract: gameplay fires `harvestNode()` on those frames, so moving
 one desynchronises feel from logic.
 
+**Corrected 2026-07-25 (dimensions).** The manifest row says 0.60 x 0.40 x 1.80.
+That is the standing **footprint**, and it is carried by `col_Player`
+(0.70 x 0.50 x 1.80), not by the mesh: a T-pose with a 1.80 m arm span has a
+1.80 m wide bounding box by definition. The contract declares the measured
+T-pose AABB, `[1.80, 1.80, 0.39]` in three.js axes, with
+`pivot_tolerance_m: 0.03`. The feet sit exactly on `y = 0` and the mesh is
+exactly centred on X; the 25 mm of forward bias in depth is the chest pack and
+the boots, and a character's depth centroid is not its ground pivot.
+
+**How it is skinned (DW-7, answered 2026-07-25).** Blender's bone-heat
+automatic weights are attempted first, inside `build_player_body.py`, and they
+**fail**: they return without raising and leave 144 of 698 vertices with no
+weight at all. That is the worst possible failure mode, because an unweighted
+vertex is pinned to joint 0 forever, the file still exports, and it still
+passes every geometric check; it shows up only as shards of mesh left behind
+when the character moves. Bone heat solves a Laplacian over a closed manifold
+surface, and this character, like every asset in this game, is a pile of
+intersecting tubes and boxes.
+
+The shipped weights are scripted: `of_lib.solve_weights` takes the distance
+from each vertex to each bone SEGMENT, inside a per-part bone whitelist set by
+`MeshBuilder.bind`, with a fourth-power falloff and at most 4 influences. The
+whitelist is what makes it work, and it is something automatic weights cannot
+express: an arm tube considers only that arm's chain, so the elbow gets a real
+50/50 blend while the left thigh is structurally incapable of picking up weight
+from the right one. Limbs are authored as tubes with a ring exactly on each
+joint, which is where that blend lands. **This is not the `.blend` escalation
+DW-7 permits**: the pipeline stays fully script-authored, deterministic and
+diffable, and `assets/models/src/` stays empty.
+
+**Why the exported pose is the bind pose.** Section 2.7's frame-1 identity rule
+cannot apply literally to a rig, because a walk cycle's frame 1 is mid-stride.
+The rigged form of the same rule is `export_rest_position_armature`: joints
+export at bind and every clip is relative to it. `validate_glb.py`'s
+`rest_pose` check proves it by multiplying each joint's world matrix by its own
+inverse bind matrix and demanding the identity (measured 2.7e-07).
+
+**Built.** LOD0 1228 tris against the 3500 budget, LOD1 536, LOD2 166,
+1912 render tris, 6 materials, 44 joints, 14 clips, 581 KB. The file is
+dominated by animation: 14 clips x 44 bones x 3 paths is 1,848 channels, and
+their accessor metadata is about 340 KB of JSON against 240 KB of actual
+sampled data. Dropping the channels that do not move would cut it by roughly
+40%, and it is deliberately **not** done: a clip that omits a bone leaves that
+bone wherever the previous clip left it, which is how a character ends up
+walking with its arms still in a swing. Self-contained clips are worth the
+bytes, and the right lever for the size is the meshopt bundle-time post-pass
+already described in section 6.3.
+
+Visual check (`tools/blender/render_check.py`, renders in
+`docs/screenshots/T0_player_*.png`): T-pose clean, walk contact and knee bend
+correct, no shearing at any joint, no detached geometry, hands read as gloves
+with a thumb and two finger blocks.
+
 ### 4.2 First-person arms, `player/player_fp_arms.glb`
 
 Right and left arm from shoulder to fingertip plus a shallow chest stub, proportioned
@@ -464,6 +518,38 @@ third-person clips exactly.
 **Render note (rendering domain, recorded here because it constrains the model):** the
 arms draw on their own camera layer with a 0.01 m near plane, so they never clip world
 geometry and the model does not need to be artificially shortened.
+
+**Corrected 2026-07-25 (bind pose).** The bone names and the hierarchy are the
+body rig's arm subset **exactly**, which is the contract that lets one
+animation layer drive both assets. The **bind pose is not shared**: this one is
+the view-model rest, arms held forward into the lower third of the view, not
+the T-pose. Three reasons. The declared bounds are the posed bounds, and a
+T-posed arm subset is 1.80 m wide, not 0.90. A view model is never retargeted
+from Mixamo, so a T-pose rest buys nothing here. And weights authored in the
+pose the model will actually be seen in are better weights. The FP clip set is
+self-contained, so no clip is ever played on both skeletons; the impact frames
+still match the third-person clips exactly, because those are a gameplay
+contract rather than an animation preference.
+
+**Every part overlaps the joint it crosses.** A part that starts exactly on its
+bone's head swings away from its neighbour the moment that bone rotates and
+opens a visible crack. On a machine that is invisible; at 0.35 m it is the
+first thing the player sees. So the skin band runs past the wrist into the
+palm, the glove starts behind the wrist, and every finger starts half a segment
+inside the hand. This was found by the visual check, not by the validator.
+
+**The hands must stay in frame.** The camera is bolted to the eye, so the pose
+amplitudes that read as powerful on the third-person body render as an empty
+screen here: a 54 degree drive at the impact frame put both hands below the
+bottom edge. The travel belongs to the tool, which is held at `socket_hand_*`
+and sweeps well ahead of the hands. Final values are a 13 degree windup and a
+14 degree drive, verified frame by frame through a camera on the asset origin
+with a 24 mm lens (`render_check.py`'s `eye` view).
+
+**Built.** 964 tris against the 1200 budget, 4 materials, 27 joints, 8 clips,
+220 KB. Measured bounds `[0.900, 0.550, 0.710]` in three.js axes against the
+"about 0.90 x 0.70 x 0.55" the section asks for. `pivot_mode: "none"`: the
+origin is the camera point and is deliberately outside the mesh.
 
 ### 4.3 Crude pickaxe, `tools/crude_pickaxe.glb`
 
@@ -1114,6 +1200,19 @@ empty), and the four added on 2026-07-25 for the items atlas and the hand tools:
 | `grip_socket` | `"socket_grip"` | which socket `pivot_mode: "grip"` asserts against |
 | `parts` | none | `[{node, dims_xyz_m, max_tris, centred}]`, one entry per sibling mesh in a multi-mesh file |
 
+Five more were added the same day for the two rigged assets. A rig can pass
+every geometric check above and still be broken in ways that are invisible in a
+static render, so each of these exists for a specific failure that has actually
+happened:
+
+| Key | Proves |
+|---|---|
+| `bones` | the declared bone set is present as nodes AND in the skin's joint list, with no undeclared joints. The bone names are as load-bearing as a socket name: a retarget map binds to them |
+| (implicit, when the file has a skin) | every vertex of every skinned mesh carries unit weight. An unweighted vertex is pinned to joint 0 forever and renders as a shard left behind when the character moves. This is exactly what bone-heat automatic weights produced |
+| `bone_sockets` | `{socket: bone}`; the socket's parent node is that BONE, not the armature. A socket parented to the armature validates, exports and does not ride the hand |
+| `rest_pose` | `world(joint) * inverseBindMatrix == identity` for every joint: the exported static pose IS the bind pose |
+| `frame1_identity` | the first sample of every non-joint animation channel equals the node's own TRS, which is section 2.7's rule made machine-checkable |
+
 ### 7.2 What the checker proves
 
 `python tools/blender/validate_glb.py --all`. Stdlib only, no Blender, no npm.
@@ -1134,6 +1233,17 @@ empty), and the four added on 2026-07-25 for the items atlas and the hand tools:
 | `collision` | `col_<Name>` present |
 | `hygiene` | no cameras, no lights, no Draco |
 | `culling` | nothing is `doubleSided` except roles that need it |
+| `parts` | every sibling mesh of a multi-mesh file, individually |
+| `bones` / `skin_weights` / `bone_sockets` / `rest_pose` / `frame1_identity` | the rig, see the table above |
+
+**What the checker still cannot prove: that a rigged asset deforms well.**
+Weights are numbers and deformation is a picture. `tools/blender/render_check.py`
+closes that gap: it imports a shipped `.glb` and renders named clip frames to
+`docs/screenshots/`, so the thing judged is what is actually in `dist/`. It
+renders what the RUNTIME renders (one LOD band, the `_Full` variant, no `col_*`
+proxy), because a `.glb` holds every band as siblings and drawing LOD0, LOD1
+and LOD2 on top of each other z-fights in a way that reads exactly like broken
+geometry on a small detail such as a hand.
 
 The bounding box is computed properly: the node hierarchy is walked, each node's TRS or
 matrix is composed, and the eight corners of each POSITION accessor's `min`/`max` are
@@ -1168,6 +1278,7 @@ the case for automating the check.
 4. **Tools** (2 files). Unblocks tool-assisted harvest. **Done 2026-07-25.**
 5. **Player body and first-person arms.** Last of Tier 0 because they are the only
    assets needing a rig, and everything else can be tested with a capsule.
+   **Done 2026-07-25. Tier 0 is complete at 27/27 green.**
 6. **Tier 1 biome atlases.** Only after Tier 0 validates green.
 7. **Tier 2** with Phase S.
 
@@ -1179,12 +1290,14 @@ entry per asset, and the validator is the merge gate.
 
 ## 9. Open questions for Admin
 
-1. **Rig sourcing.** The player rig is the only Tier-0 asset a script cannot fully
-   author (skin weights need either a GUI pass or an automatic-weights operator run
-   headless, which is doable but lower quality). Options: accept headless automatic
-   weights, allow one `.blend` in `assets/models/src/`, or connect a Blender MCP for
-   that one asset. **Recommendation: headless automatic weights first**, escalate only
-   if deformation is visibly bad at this poly count.
+1. ~~**Rig sourcing.**~~ **Closed 2026-07-25.** Decision DW-7 said to try headless
+   automatic weights first and escalate to a `.blend` only if the deformation
+   was visibly bad. Automatic weights were tried and **failed** (144 of 698
+   vertices came back unweighted, silently), and the escalation was **not**
+   needed: `of_lib.solve_weights` skins the character from bone-segment
+   distance inside a per-part whitelist, every vertex carries unit weight, and
+   the visual check is clean. `assets/models/src/` stays empty and the whole
+   pipeline stays script-authored. See section 4.1.
 2. **Belt animation strategy at scale.** Section 4.12 specifies both a baked clip and a
    runtime instanced-material scroll. The instanced path is the one that scales, but it
    belongs to the rendering domain. Confirm rendering owns it so this document does not
