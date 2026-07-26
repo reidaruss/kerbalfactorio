@@ -1,0 +1,7 @@
+node_modules/
+# @electron/packager output: a 300 MB unpacked Chromium per build.
+out/
+# steam_appid.txt is a DEVELOPMENT file that Valve documents must not ship in a
+# depot, and it names an App ID. It is written by measure/steamcheck.mjs and is
+# never committed.
+steam_appid.txt

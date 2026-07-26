@@ -1,0 +1,24 @@
+{
+  "name": "orbital-foundry-shell",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DW-27 spike: the Steam desktop shell for the Orbital Foundry web client. Deliberately a SEPARATE package manifest so electron never enters web/'s dependency tree or its dev loop.",
+  "main": "main.mjs",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "build:web": "npm --prefix ../web run build",
+    "start": "electron .",
+    "coldstart": "node measure/coldstart.mjs",
+    "origincheck": "node measure/origincheck.mjs",
+    "pack": "node measure/pack.mjs",
+    "steamcheck": "node measure/steamcheck.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.4.2",
+    "electron": "^40.0.0",
+    "playwright-core": "^1.62.0"
+  }
+}

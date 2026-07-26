@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Orbital Foundry shell: origin capability probe</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body style="font:13px/1.5 monospace;background:#111;color:#ddd;padding:12px">
+    <pre id="out">running...</pre>
+    <script type="module">
+      // The four things the client cannot live without, asked of whatever origin
+      // this page happens to be on. Loaded twice by measure/origincheck.mjs:
+      // once over file:// and once over the shell's of:// scheme. A capability
+      // matrix beats an argument about what file:// "should" do.
+      const R = {
+        href: location.href,
+        origin: location.origin,
+        protocol: location.protocol,
+        isSecureContext: window.isSecureContext,
+        crossOriginIsolated: window.crossOriginIsolated,
+        hasSharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
+        hasCryptoSubtle: typeof crypto !== 'undefined' && typeof crypto.subtle === 'object',
+      };
+
+      const attempt = async (name, fn) => {
+        const t0 = performance.now();
+        try { R[name] = { ok: true, value: await fn(), ms: +(performance.now() - t0).toFixed(1) }; }
+        catch (e) { R[name] = { ok: false, error: String(e && e.message ? e.message : e) }; }
+      };
+
+      // 1. IndexedDB. DW-17 puts the ENTIRE save system here, so this is the
+      //    single most load-bearing capability in the list. Opening is not
+      //    enough: an opaque origin can hand back a database that then refuses
+      //    to commit, so this writes a record and reads it back.
+      await attempt('indexedDB', () => new Promise((res, rej) => {
+        if (typeof indexedDB === 'undefined' || indexedDB === null) return rej(new Error('indexedDB is not exposed'));
+        let req;
+        try { req = indexedDB.open('of_origincheck', 1); }
+        catch (e) { return rej(e); }
+        req.onerror = () => rej(req.error ?? new Error('open failed'));
+        req.onupgradeneeded = () => { req.result.createObjectStore('kv'); };
+        req.onsuccess = () => {
+          const db = req.result;
+          try {
+            const tx = db.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put({ n: 1234 }, 'probe');
+            tx.oncomplete = () => {
+              const rtx = db.transaction('kv', 'readonly');
+              const g = rtx.objectStore('kv').get('probe');
+              g.onsuccess = () => { db.close(); res({ roundTripped: g.result?.n ?? null }); };
+              g.onerror = () => rej(g.error ?? new Error('read failed'));
+            };
+            tx.onerror = () => rej(tx.error ?? new Error('write failed'));
+          } catch (e) { rej(e); }
+        };
+      }));
+
+      // 2. Module worker. DW-4 puts terrain meshing, voxel meshing and the
+      //    factory tick in workers, built by vite with `worker.format: 'es'`.
+      await attempt('moduleWorker', () => new Promise((res, rej) => {
+        const w = new Worker(new URL('./probe.worker.js', import.meta.url), { type: 'module' });
+        const timer = setTimeout(() => { w.terminate(); rej(new Error('worker never replied (5 s)')); }, 5000);
+        w.onmessage = (e) => { clearTimeout(timer); w.terminate(); res(e.data); };
+        w.onerror = (e) => { clearTimeout(timer); w.terminate(); rej(new Error(e.message || 'worker error event')); };
+      }));
+
+      // 3. fetch() + WebAssembly.instantiateStreaming of a same-directory .wasm.
+      //    This is exactly how Emscripten loads of-core.wasm.
+      await attempt('wasmStreaming', async () => {
+        const url = new URL('./tiny.wasm', import.meta.url);
+        const r = await WebAssembly.instantiateStreaming(fetch(url), {});
+        return { instantiated: typeof r.instance === 'object' };
+      });
+
+      // 4. WebGL2 and the ANGLE string, so the shell's GPU path can be compared
+      //    with the browser's rather than assumed identical.
+      await attempt('webgl2', async () => {
+        const c = document.createElement('canvas');
+        const gl = c.getContext('webgl2', { antialias: false });
+        if (gl === null) throw new Error('no webgl2 context');
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        return {
+          version: gl.getParameter(gl.VERSION),
+          renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+          vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
+          clipControl: gl.getExtension('EXT_clip_control') !== null,
+          maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+        };
+      });
+
+      // 5. localStorage, which the client uses for settings (mute, goals hidden).
+      await attempt('localStorage', async () => {
+        localStorage.setItem('of_origincheck', 'x');
+        const v = localStorage.getItem('of_origincheck');
+        localStorage.removeItem('of_origincheck');
+        return { roundTripped: v };
+      });
+
+      document.getElementById('out').textContent = JSON.stringify(R, null, 2);
+      console.log('OF_ORIGINCHECK ' + JSON.stringify(R));
+    </script>
+  </body>
+</html>
