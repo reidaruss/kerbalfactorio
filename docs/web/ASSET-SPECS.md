@@ -1,19 +1,22 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
-**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** **Tier 0 and
-Tier 1 are complete.** 37 of 37 files built and green under
-`validate_glb.py --all`, and a full rebuild of every `build_*.py` produces a
-**zero-byte diff**, so the pipeline is proven deterministic end to end.
+**Owner:** ART-PIPELINE agent. **Date:** 2026-07-25. **Status:** **THE ART
+MANIFEST IS COMPLETE.** Tiers 0, 1 and 2 are all built: 42 of 42 files green
+under `validate_glb.py --all`, and a full rebuild of every `build_*.py`
+produces a **zero-byte diff**, so the pipeline is proven deterministic end to
+end.
 
 | Tier | Files | Meshes | Payload |
 |---|---|---|---|
 | 0: the playable loop | 27 | 40 base (83 counting depletion variants) | 1.8 MB |
 | 1: biome scatter props | 10 | 41 props, 78 render meshes with LOD2 | 367 KB |
-| **Total `dist/`** | **37** | | **2.06 MB** |
+| 2: space | 5 | 18 parts, 28 render meshes | 372 KB |
+| **Total `dist/`** | **42** | | **2.43 MB** |
 
 Tier 0 is 13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged
 player body and the first-person arms. Tier 1 is one scatter atlas per biome.
-Tier 2 (rocket parts, launch pad) is not started.
+Tier 2 is the 13 rocket parts, the launch pad, the landed lander, the far-scene
+body sphere and the engine plume shell.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -181,6 +184,34 @@ Canonical socket names:
 | `socket_item_pop` | where a harvested item pops out |
 | `socket_muzzle` | rocket engine plume origin |
 
+**Added 2026-07-25 for Tier 2.** The space assets need seven more, and they are
+canonical in exactly the same sense as the ones above:
+
+| Socket | Meaning |
+|---|---|
+| `socket_stack_top`, `socket_stack_bottom` | the 1.25 m stack mating planes, facing away from the part along the stack axis |
+| `socket_radial_mount` | a radial part's origin, on its mount plane, facing outward |
+| `socket_leg_foot` | a landing leg's ground-contact point. It hangs under `leg_pivot`, so it rides the deploy clip |
+| `socket_hatch` | crew hatch / EVA point |
+| `socket_vessel` | the launch pad's vessel mating point: where a vessel's `socket_stack_bottom` goes |
+| `socket_clamp` | the launch pad's clamp mounting circle |
+| `socket_chute` | where a parachute canopy spawns |
+
+**Socket names are scoped to the PART, not to the file** (Tier 2 only, and only
+in `rocket_parts.glb`). Thirteen parts each carry a `socket_stack_top`, so the
+runtime rule is: clone the part node and query the clone. Calling
+`getObjectByName('socket_stack_top')` on the file root returns whichever part
+happens to be first in the scene.
+
+Blender cannot express that on its own, because `bpy.data.objects` names are
+unique per **file**: the second part to ask for the name gets
+`socket_stack_top.001` and the thirteenth gets `.012`. glTF node names are
+non-normative and duplicates are legal, so the fix is an export post-pass,
+`of_lib.export_glb(dedupe_socket_names=True)`, which strips the numeric suffix
+from **socket** nodes only. It is off by default, so the other 41 files are
+untouched, and a mesh or a proxy that ever picks up a suffix still shows it,
+because that would be a real bug rather than a scoping artefact.
+
 ### 2.7 Depletion variants and the harvest-node node graph
 
 **(Added 2026-07-25 by ART-PRODUCTION during the harvest-node batch. Section 3.1
@@ -232,8 +263,17 @@ permanent lean into the asset. It surfaced as a 2.483 m wide conifer failing a
 Tier 0 ships without UVs at all. **Tier 1 shipped the same way**: 41 scatter props,
 zero textures, 367 KB. The one place a texture looked mandatory was alpha-tested
 foliage cards, and that turned out to be cheaper as geometry (section 3.2). So the
-threshold below is still unmet and the KTX2 step is still deferred. When a texture is
-genuinely needed:
+threshold below is still unmet and the KTX2 step is still deferred.
+
+**Tier 2 adds UVs to exactly one asset and still no textures.**
+`vfx_engine_plume.glb` carries a UV set because a plume with no length
+parameter cannot be shaded at all, not because it has an image: V is the
+shader's distance-down-the-plume input. `MeshBuilder` takes an optional
+per-vertex `uvs` list and writes a UV layer **only** when one is supplied, so
+the other 41 files still export with no `TEXCOORD_0` accessor. Total texture
+payload is still zero bytes.
+
+When a texture is genuinely needed:
 
 - **Texel density:** 512 px/m for hand-held and first-person assets, 256 px/m for
   machines, 128 px/m for terrain props. Maximum 1024 x 1024 per asset.
@@ -248,7 +288,9 @@ genuinely needed:
 ## 3. Asset manifest
 
 **Totals: 99 distinct meshes across 42 `.glb` files.** Tier 0 is 40 meshes in 27
-files, Tier 1 is 41 meshes in 10 files, Tier 2 is 18 meshes in 5 files.
+files, Tier 1 is 41 meshes in 10 files, Tier 2 is 18 parts in 5 files. All 42
+are built and green; counting LOD bands and depletion variants, those 42 files
+hold **262 render mesh nodes** (measured, excluding `col_*` proxies).
 
 ### 3.1 Tier 0: blocks the playable loop (27 files, 40 meshes)
 
@@ -438,20 +480,227 @@ dark and *glossy*, and `OF_Oil` is the palette's only dark low-roughness ground 
 alpha-blended; thousands of alpha-blended instances is a sorting problem bought for
 nothing.
 
-### 3.3 Tier 2: Phase S, space (5 files, 18 meshes)
+### 3.3 Tier 2: Phase S, space (5 files, 18 parts). **Built 2026-07-25.**
 
-Built on a **1.25 m standard stack diameter** so any tank, engine and decoupler
-combine without a per-pair adapter. Every part exposes `socket_stack_top` and
-`socket_stack_bottom` on the stack axis, and dry mass and thrust come from the
-physics domain, not from art.
+| File | Parts | Tris (render) | Mats | KB |
+|---|---|---|---|---|
+| `rocket/rocket_parts.glb` | 13 parts, 15 meshes | 3264 | 7 | 151 |
+| `rocket/launch_pad.glb` | pad + clamp, 6 meshes | 1000 | 6 | 65 |
+| `rocket/lander_landed.glb` | 1 assembly, 3 meshes | 2580 | 7 | 119 |
+| `rocket/vfx_engine_plume.glb` | 1 mesh | 142 | 1 | 5 |
+| `world/body_sphere_lod.glb` | 1 sphere, 3 meshes | 1680 | 1 | 32 |
 
-| File | Meshes | Notes |
-|---|---|---|
-| `rocket/rocket_parts.glb` | command pod (1.25 x 1.25 x 2.5), fuel tank small (x 2.0), fuel tank large (x 4.0), main engine (x 1.6), vernier engine, decoupler (x 0.25), landing leg, nose cone, fin, solar panel, RCS block, parachute, cargo bay | 13 meshes, 300 to 1400 tris each; landing leg and solar panel carry deploy clips |
-| `rocket/launch_pad.glb` | launch pad (8 x 8 m platform, 12 m tower), launch clamp | grid-snapped like a machine |
-| `rocket/lander_landed.glb` | pre-assembled landed lander | the Cinder outpost beat (`ObjectiveStep::OutpostComplete`) |
-| `rocket/vfx_engine_plume.glb` | plume cone | geometry only; the shader is rendering's |
-| `world/body_sphere_lod.glb` | unit icosphere, 3 subdivision levels | the far-scene scaled body; radius comes from `BodyParams` (Forge 600 km, Cinder 200 km), never from the mesh |
+#### The stack contract
+
+This is what the engine binds to, and everything else in Tier 2 composes out of
+it. It lives in code in `tools/blender/rocket_common.py` and is checked per
+part by `contracts.json`'s `part_sockets` block.
+
+| Rule | Value |
+|---|---|
+| Stack diameter | **1.25 m exactly** (R = 0.625), on every stack part |
+| Stack axis | Blender **+Z**, which is three.js **+Y**: a vessel assembles up the world up axis and needs no rotation to stand on a pad |
+| Stack part origin | its **bottom mating plane**, centred on the axis: `pivot_mode: "ground"`, the same rule a machine obeys |
+| `socket_stack_bottom` | always local `(0, 0, 0)`, facing three.js **-Y** (down, away from the part) |
+| `socket_stack_top` | local `(0, H, 0)` in three.js axes, facing **+Y** (up, away from the part) |
+| To stack B on A | `B.position = A.position + A.socket_stack_top.position`. No per-part offset table exists anywhere |
+| Mating test | two mated sockets are **anti-parallel**, so "do these faces mate" is a dot product rather than a naming convention |
+| Terminators | an **engine** has no `socket_stack_bottom` and a **nose cone** has no `socket_stack_top`: they end a stack |
+| Radial parts | origin on the **mount plane**, body extending three.js **+X**. Attach with `position = (R cos a, y, R sin a)` and `rotateY(-a)`; `pivot_mode: "none"`, because neither `ground` nor `centre` describes a part whose origin is on its own side face |
+
+**Why 16 segments.** A polygon whose segment count is divisible by 4 puts
+vertices exactly on ±X and ±Y, so a 16-gon of radius 0.625 measures exactly
+1.25 x 1.25. A 14-gon of the same radius measures 1.250 x 1.244 and misses the
+dimension check by 6 mm. The cargo bay proved it on the first build: hinge rods
+at 0.585 with a 0.05 radius pushed the box to 1.27.
+
+Barrels are built at **0.600** and the collars at **0.625**, so the mating
+diameter is carried by the rings and a stringer standing proud of the barrel
+can never touch the bounding box.
+
+#### The 13 parts
+
+Dimensions are three.js axes (X right, Y up, Z forward), metres.
+
+| Part | Dims | Tris | Pivot | Sockets |
+|---|---|---|---|---|
+| `CommandPod` | 1.25 x 2.50 x 1.25 | 392 | ground | stack top/bottom, `socket_hatch` |
+| `TankSmall` | 1.25 x 2.00 x 1.25 | 288 | ground | stack top/bottom |
+| `TankLarge` | 1.25 x 4.00 x 1.25 | 348 | ground | stack top/bottom |
+| `EngineMain` | 1.25 x 1.60 x 1.25 | 512 | ground | stack top, `socket_muzzle` |
+| `Decoupler` | 1.25 x 0.25 x 1.25 | 312 | ground | stack top/bottom |
+| `NoseCone` | 1.25 x 1.20 x 1.25 | 360 | ground | stack bottom |
+| `Parachute` | 1.25 x 0.75 x 1.25 | 288 | ground | stack top/bottom, `socket_chute` |
+| `CargoBay` | 1.25 x 1.60 x 1.25 | 284 | ground | stack top/bottom |
+| `EngineVernier` | 0.36 x 0.43 x 0.28 | 96 | none | radial mount, `socket_muzzle` |
+| `Fin` | 0.85 x 1.10 x 0.10 | 24 | none | radial mount |
+| `RcsBlock` | 0.245 x 0.50 x 0.50 | 136 | none | radial mount |
+| `LandingLeg` | 0.20 x 0.42 x 0.34 yoke + 0.43 x 2.56 x 0.48 strut | 24 + 92 | none | radial mount, `socket_leg_foot` |
+| `SolarPanel` | 0.18 x 0.30 x 0.44 mount + 0.065 x 1.26 x 0.56 array | 24 + 84 | none | radial mount |
+
+They land at 24 to 512 triangles against the "300 to 1400 each" this section
+used to ask for. The budget is a ceiling, not a quota, and a tank genuinely is
+a tube with three rings on it.
+
+**LOD0 only, and that is a decision.** A vessel is either near you (you are
+flying it, or standing next to it building it) or it is in the scaled far
+scene, where it is an impostor and not a mesh at all. There is no middle band
+for a rocket part to be in. `lander_landed.glb`, which IS a distant surface
+landmark, carries the full chain.
+
+**Collision is partial, on the Tier-1 precedent.** Ten proxies: every stack
+part plus the leg and the fin, which are the parts that form the hull or touch
+the ground. The vernier, the RCS block and the solar array carry none, because
+a vessel colliding by its RCS nozzle is not a collision anybody wants resolved.
+
+#### The two deploy clips
+
+| Clip | Object | Frames | Motion |
+|---|---|---|---|
+| `Leg_Deploy` | `leg_pivot` | 1 to 41 | rotate +145 degrees about Y (keyed in two steps), and settle 30 mm in Z |
+| `Solar_Deploy` | `solar_pivot` | 1 to 61 | rotate +90 degrees about Y, and lift 60 mm |
+
+Both are **authored stowed**, because the exported static pose is frame 1
+(section 2.7) and a vessel flies stowed. Both drive two channels of one object
+through `add_clip_multi`, so each stays one Action and therefore one clip.
+Stowing is the same clip at a negative `timeScale`.
+
+Two details that are easy to get backwards and impossible to see in a static
+render:
+
+- **The solar cells face INBOARD when stowed.** The deploy maps local -X onto
+  world +Z, so cells authored on the outboard face present their *back* to the
+  star once deployed. Stowing them face-in is also what a real panel does.
+- **The foot pad is authored pre-rotated by -145 degrees**, so that after the
+  deploy it is exactly horizontal and lands flat. `socket_leg_foot` is
+  pre-composed the same way and hangs **under** the pivot, so it rides the
+  clip: physics reads the contact point off the animation instead of owning a
+  copy of the deploy kinematics.
+
+**The landing leg has to out-reach the engine bell.** The first version folded
+1.34 m of strut and dropped its foot 0.98 m below the hinge, and the landed
+lander is what proved that useless: a 1.60 m engine hangs below the tank the
+legs mount on, so anything under about 2.1 m of drop puts the bell through the
+ground before the feet touch. The shipped leg is 2.42 m of strut through 145
+degrees: 2.13 m down, 1.18 m out.
+
+#### `rocket/launch_pad.glb`
+
+A **placed structure**, so section 2.2 applies exactly as it does to a smelter:
+an **8 x 8 m whole-metre footprint**, pivot at the footprint centre, base on
+`y = 0`, nothing overhanging. 8 is even, so it snaps to a cell **corner**.
+12.00 m tall at the tower crown. 572 tris LOD0, full LOD chain.
+
+Deck at 0.40 m, built as four concrete slabs around a 2.4 m square flame
+opening with a deflector cone entirely below the deck top. Tower at
+`(-3.2, +3.2)` in Blender, a four-leg lattice with ties every 2 m, a lift
+shaft, an umbilical swing arm at 8 m reaching to 1.35 m from the stack axis,
+and a state beacon at the crown on the standard four-colour `OF_EmissiveState`.
+
+`socket_vessel` is at `(0, 1.60, 0)`: the vessel mates **1.20 m above the
+deck**, held there by the clamps so the engine bell fires into the flame
+opening rather than onto the concrete. Place a vessel by putting its
+`socket_stack_bottom` on that point, which is the same rule the parts publish.
+
+`LaunchClamp` is a **separate ground-pivoted part on the file origin**,
+following the Tier-1 atlas convention: the renderer clones the one mesh and
+places three of them at 120 degree intervals on the circle `socket_clamp`
+marks (radius 1.25 m on the deck top), each rotated to face the axis. Its arm
+reaches exactly to 0.63 m from the axis, touching a 1.25 m hull.
+`Clamp_Release` (frames 1 to 25) swings the arm 70 degrees up and back and is
+**authored holding**, because a pad at rest is a pad holding a rocket.
+
+Three proxies, not one: `col_LaunchPad` (the deck), `col_LaunchTower` and
+`col_LaunchClamp`. A single convex box cannot describe a slab with a 12 m mast
+on one corner.
+
+#### `rocket/lander_landed.glb`
+
+The Cinder outpost beat (`ObjectiveStep::OutpostComplete`). **6.40 m tall,
+4.08 m across the feet**, 2040 tris LOD0 with a full LOD chain, because unlike
+a part this is what a player navigates back to from 200 m away.
+
+**It is assembled from the shipped parts, not modelled again.** Every piece
+comes out of `rocket_common` through `hc.Parts.rotate/translate`, with the legs
+and panels in the pose their deploy clips end in, so the landmark and the
+flyable vessel cannot drift apart. That is why `rocket_common` exposes
+`LEG_DEPLOY_DEG` and `leg_foot_offset()` rather than hiding them in the clip.
+
+    EngineMain  z 0.30 .. 1.90     bell 0.30 m clear of the ground
+    TankSmall   z 1.90 .. 3.90     four legs hinged 0.30 m up its side
+    CommandPod  z 3.90 .. 6.40     hatch on +X, ladder to the ground
+
+Every height is derived from the leg: the foot lands 2.13 m below its hinge, so
+the hinge is at 2.20 m and the rest follows. Four legs at 0/90/180/270, two
+solar panels at 45/225 so the panels tuck inside the leg span. A ladder from
+the hatch to the ground is the one piece that is not a rocket part: a 6.4 m
+vessel with no way down reads as scenery rather than as the thing the player
+climbed out of.
+
+**All three LODs sit on exactly the same ground plane.** The simplified leg
+stops 60 mm short of the foot centre so its end-face *corner* cannot dip below
+the pad, because a LOD switch that sinks the lander two centimetres is visible
+from the hatch. The proxy is the **core stack**, not the leg span: a convex box
+over 4 m of mostly air is a wall the player cannot walk under, which is the
+opposite of what a lander on legs should feel like. Same rule as the Tier-1
+dead tree, whose proxy is its trunk.
+
+#### `rocket/vfx_engine_plume.glb`
+
+**Geometry only; the shader is the rendering domain's.** The whole point of the
+file is the handoff, so every assumption behind it is stated:
+
+| Assumption | Value |
+|---|---|
+| Size | a **unit** plume: 1.00 m across the **mouth**, 1.00 m long, filling the unit box exactly |
+| Direction | down three.js **+Z**, which is what a socket's facing is, so `socket_muzzle.add(plume)` at **identity** aims it and no per-engine rotation exists |
+| Scaling | `plume.scale.set(exitDiameter, exitDiameter, plumeLength)`. The mouth is the widest ring, so a plume scaled by the nozzle's exit diameter meets the bell lip with no seam |
+| Origin | the **mouth**, so `pivot_mode: "none"` and throttle is a scale on Z alone |
+| U | wraps 0..1 around the plume, seam on +X, with a duplicated seam column so no shader has to `fract()` around it |
+| V | **0 at the mouth, 1 at the tip, linear in LENGTH** rather than in radius, so scrolling noise travels at constant speed and a `mix(hot, cool, v)` gradient is the right shape |
+| Material | one slot, `OF_EmissiveState` (near-black base, white emission), expected to be **replaced** by an additive `ShaderMaterial`: `blending: Additive`, `depthWrite: false`, and `side: DoubleSide` if the camera can fly through the plume |
+| Culling | authored **backface-culled**, because `of_lib.DOUBLE_SIDED` is palette-wide and adding `EmissiveState` to it would quietly double-side the state chip on all thirteen machines |
+| Normals | smooth, so a lit fallback reads as a cone rather than a faceted funnel. An additive shader ignores them |
+| Not authored | shock diamonds and the vacuum flare. Both are a function of ambient pressure, which the shader knows and a static mesh does not |
+
+**This is the first and only asset in the game with UVs**, and section 2.8's
+texture threshold is still unmet: it has UVs because a plume with no length
+parameter cannot be shaded, not because it has a texture. `MeshBuilder` takes
+an optional per-vertex `uvs` list and creates a UV layer **only** when one is
+supplied, so the other 41 files still export with no `TEXCOORD_0` at all.
+
+**The V axis is authored flipped.** glTF's texture origin is the top left and
+Blender's is the bottom left, so the exporter writes `1 - v` for every UV it
+touches. The flip is applied in the builder so the **shipped** file reads the
+way this table says, and it was confirmed by reading `TEXCOORD_0` back out of
+the `.glb` rather than by trusting the exporter.
+
+#### `world/body_sphere_lod.glb`
+
+A **unit icosphere** at three subdivision levels: 1280 / 320 / 80 triangles,
+one material, one mesh for every body.
+
+**Radius comes from `BodyParams`, never from the mesh.** The sphere is authored
+at radius 1.0 and the renderer scales by `radiusM` (Forge 600 km, Cinder
+200 km, `orbital.h`'s `kForgeRadiusM` / `kCinderRadiusM`), so its declared
+dimensions are `[2, 2, 2]` by definition. `pivot_mode: "centre"`: a body is
+positioned by its centre, not stood on the ground.
+
+**Icosphere, not UV sphere.** A UV sphere puts half its vertices in a pinch at
+each pole and stretches its quads to nothing there, which on a planet is
+exactly where a polar orbit flies over. A geodesic sphere has no poles.
+
+**The mesh is inscribed, not circumscribed.** Every vertex is exactly on radius
+1.0, so every face sags below it: **0.45% at LOD0, 1.78% at LOD1, 6.58% at
+LOD2**. On Forge that is 2.7 km at LOD0, at a distance where the body is
+already hundreds of kilometres away. A renderer that needs the horizon exact
+(a horizon-clipped atmosphere shell, say) scales by `radiusM * (1 + sag)`.
+
+The build prints that sag, and it earned its keep immediately: the first build
+read **16%** at LOD0, which is the signature of a face table applied to the
+wrong arrangement of the twelve icosahedron vertices. That mistake still builds
+twenty triangles, still exports and still passes every check in section 7; it
+is a folded tangle, and nothing else in the pipeline would have caught it.
 
 ---
 
@@ -1137,6 +1386,9 @@ tools/blender/
   rig_common.py             the player skeleton, shared by body and first-person arms
   props_common.py           Tier 1: blade/tuft/rock/chips/prism primitives and the
                             per-biome atlas driver (Prop, build_atlas)
+  rocket_common.py          Tier 2: the 1.25 m stack contract, the 13 part
+                            builders, and the deploy constants the landed
+                            lander re-uses to bake the same pose statically
   contracts.json            hand-authored per-asset acceptance contract
   validate_glb.py           stdlib-only automated checker
   render_check.py           imports a shipped .glb and renders clip frames
@@ -1156,6 +1408,8 @@ assets/models/
 | Build script | `build_<file stem>.py` | `build_belt_segment.py` |
 | Root node | `PascalCase` | `BeltSegment` |
 | Render mesh | `<Root>_LOD0/1/2` | `BeltSegment_LOD1` |
+| Tier-2 part group | `PascalCase` Empty holding one part's meshes, sockets and proxy | `TankSmall` |
+| Tier-2 animated part | `<Part>_<Piece>` | `LandingLeg_Strut` |
 | Harvest-node render mesh | `<Root>_<Variant>_LOD0/1/2` | `BoulderIron_Half_LOD1` |
 | Harvest-node animated part | `<Root>_<Variant>_<Part>` | `WaterPool_Full_Water` |
 | Tier-1 scatter prop | `<Biome>_<Prop>_LOD0/2` | `Forest_FallenLog_LOD0` |
@@ -1220,6 +1474,7 @@ rather than crashing, so one script survives a Blender point release.
 | `export_apply` | `True` | bake modifiers (decimate, mirror) so dist matches the script |
 | `export_materials` | `EXPORT` | full metallic-roughness PBR |
 | `export_extras` | `True` | `of_role` custom props reach `object.userData` |
+| `dedupe_socket_names` | `False` (Tier 2 overrides) | a post-pass, not an exporter flag: strips Blender's `.001` uniquing suffix from **socket** nodes so thirteen parts can each publish `socket_stack_top` (section 2.6) |
 | `export_animations` | `True` | |
 | `export_animation_mode` | `ACTIONS` | one Blender Action becomes one named `AnimationClip` |
 | `export_force_sampling` | `True` (override to `False`) | sampling is correct for rigs; plain object transforms override so a 2-key linear curve stays 2 keys |
@@ -1324,6 +1579,13 @@ happened:
 | `rest_pose` | `world(joint) * inverseBindMatrix == identity` for every joint: the exported static pose IS the bind pose |
 | `frame1_identity` | the first sample of every non-joint animation channel equals the node's own TRS, which is section 2.7's rule made machine-checkable |
 
+One more was added on 2026-07-25 for Tier 2, and it is the gate on the stack
+contract:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `part_sockets` | none | `{part_group: {socket_name: [x, y, z]}}` in three.js axes. Each socket must be a **descendant of its own part group** and must land on the declared point. `rocket_parts.glb` holds thirteen nodes called `socket_stack_top`, so the flat `sockets` list proves only that one of them exists; what the engine binds to is "this part's stack top is at this height on the stack axis", and that is what this asserts. It caught the Blender name-uniquing collision described in section 2.6 on its first run |
+
 ### 7.2 What the checker proves
 
 `python tools/blender/validate_glb.py --all`. Stdlib only, no Blender, no npm.
@@ -1345,6 +1607,7 @@ happened:
 | `hygiene` | no cameras, no lights, no Draco |
 | `culling` | nothing is `doubleSided` except roles that need it |
 | `parts` | every sibling mesh of a multi-mesh file, individually: bounds, tri budget **and its own pivot rule**. This is what proves all 41 Tier-1 scatter props sit on their ground contact point |
+| `part_sockets` | every Tier-2 part's own sockets: present, under that part, and on the declared point. The stack contract, made machine-checkable |
 | `bones` / `skin_weights` / `bone_sockets` / `rest_pose` / `frame1_identity` | the rig, see the table above |
 
 **What the checker still cannot prove: that a rigged asset deforms well.**
@@ -1392,14 +1655,26 @@ the case for automating the check.
    **Done 2026-07-25. Tier 0 is complete at 27/27 green.**
 6. **Tier 1 biome atlases** (10 files, 41 props). **Done 2026-07-25. 37/37
    green, and a full rebuild of all 37 produces a zero-byte diff.**
-7. **Tier 2** with Phase S. Not started. The orbital milestone needs
-   `rocket/rocket_parts.glb` and `rocket/launch_pad.glb` first; the other three
-   files (the landed lander, the plume cone, the body icosphere) are downstream
-   of them and of decisions the physics and rendering domains have not made yet.
+7. **Tier 2, space** (5 files, 18 parts). **Done 2026-07-25.** Built in
+   dependency order, because every other space asset composes from the first:
+   `rocket_parts.glb` (the 1.25 m stack contract), then `launch_pad.glb`, then
+   `lander_landed.glb` (an assembly of the parts, so it had to come after
+   them), then `body_sphere_lod.glb` and `vfx_engine_plume.glb`.
+   **The art manifest is complete: 42/42 green, and a full rebuild of all 42
+   produces a zero-byte diff.**
 
 Steps 2 to 4 are 23 files of pure primitive assembly with no rigging and no organic
 sculpting. They parallelise cleanly across agents: one script per asset, one contract
 entry per asset, and the validator is the merge gate.
+
+**What Tier 2 does not include, and deliberately so.** Dry mass, thrust,
+specific impulse and fuel capacity are physics-domain numbers, not art ones;
+this document publishes the geometry each part occupies and the points it mates
+on, and nothing about what it weighs. A deployed parachute canopy is cloth,
+which is a shader-and-simulation problem rather than a static mesh, so only the
+canister is authored. The plume's shader is the rendering domain's, and the
+assumptions its geometry makes are tabulated in section 3.3 so that the two
+halves can be written independently and still meet.
 
 ---
 

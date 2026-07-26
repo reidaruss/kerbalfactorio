@@ -22,8 +22,8 @@ no poles at all: every triangle is within a few percent of every other one.
 THE MESH IS INSCRIBED, NOT CIRCUMSCRIBED. Every vertex sits exactly on radius
 1.0, so every FACE sags below it, and the horizon of the drawn sphere is
 slightly inside the true one. The sag is printed per level below and is in the
-contract comment: at LOD0 it is about 0.3%, which on Forge is 1.9 km at a
-distance where the body is already hundreds of kilometres away. A renderer that
+contract comment: at LOD0 it is 0.45%, which on Forge is 2.7 km at a distance
+where the body is already hundreds of kilometres away. A renderer that
 cares (a horizon-clipped atmosphere shell, say) scales by radiusM * (1 + sag)
 rather than by radiusM.
 """
@@ -53,7 +53,7 @@ def icosahedron():
     vertices applied to another arrangement still builds twenty triangles,
     still exports, still validates, and is a folded tangle rather than a
     sphere. The sag readout is what catches it (a real subdiv-3 sphere sags
-    0.3%, a scrambled one reads 16%)."""
+    0.45%, a scrambled one reads 16%)."""
     x = 1.0 / math.sqrt(1.0 + PHI * PHI)      # 0.5257311
     z = PHI * x                               # 0.8506508
     v = [(-x, 0.0, z), (x, 0.0, z), (-x, 0.0, -z), (x, 0.0, -z),
