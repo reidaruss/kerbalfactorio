@@ -53,6 +53,11 @@ export interface OFRenderer {
    * the seam so no other module ever reaches for the raw GL context.
    */
   readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void;
+  /**
+   * A pre-filtered environment map of `scene`, for Scene.environment. It lives
+   * on the seam because PMREMGenerator is renderer-specific; SkyIbl owns WHEN.
+   */
+  environmentFrom(scene: THREE.Scene): THREE.Texture | null;
   dispose(): void;
 }
 
@@ -67,6 +72,7 @@ class WebGLSeam implements OFRenderer {
   private readonly gl: WebGL2RenderingContext;
   readonly caps: RendererCaps;
   readonly depth: DepthPolicy;
+  private pmrem: THREE.PMREMGenerator | null = null;
 
   constructor(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs) {
     const dp = depthRendererParams(cfg, q.tier);
@@ -145,6 +151,14 @@ class WebGLSeam implements OFRenderer {
     });
   }
 
+  environmentFrom(scene: THREE.Scene): THREE.Texture | null {
+    this.pmrem ??= new THREE.PMREMGenerator(this.r);
+    // fromScene renders the scene into a small cube and pre-filters it. The sky
+    // box is centred on the origin and the sky camera never translates, so the
+    // default 0.1 to 100 range covers it exactly.
+    return this.pmrem.fromScene(scene, 0, 0.1, 100).texture;
+  }
+
   readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void {
     const gl = this.gl;
     // three may leave a render target bound; the probe wants what was presented.
@@ -152,7 +166,7 @@ class WebGLSeam implements OFRenderer {
     gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
   }
 
-  dispose(): void { this.r.dispose(); }
+  dispose(): void { this.pmrem?.dispose(); this.r.dispose(); }
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs): OFRenderer {

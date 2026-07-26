@@ -12,6 +12,7 @@ import { CameraRig } from '../render/CameraRig.js';
 import { Frame } from '../render/Frame.js';
 import { SkyPass } from '../render/SkyPass.js';
 import { ShadowRig } from '../render/ShadowRig.js';
+import { SkyIbl } from '../render/SkyIbl.js';
 import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
@@ -103,6 +104,10 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const sunLights = [addLighting(scenes.far, sky.sunDirection, 1e4)];
   scenes.near.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
   const shadows = new ShadowRig(scenes.near, quality, cfg.shadows);
+  // Stock PBR materials (the player, the tools, the biome props) have no
+  // scattering integral of their own, so they need an environment or they
+  // render as black silhouettes on a lit hillside. Section 7.1, due at W4.
+  const ibl = new SkyIbl(renderer, scenes.near);
   const nearSun = shadows.sunLight;
   // distance 0 means "colour and intensity only": ShadowRig owns its position.
   if (nearSun !== null) { nearSun.userData.distance = 0; sunLights.push(nearSun); }
@@ -193,7 +198,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, boot,
+    hud, sunLights, shadows, ibl, boot,
   };
   return { services, canvas };
 }

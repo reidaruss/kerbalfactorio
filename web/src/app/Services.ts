@@ -11,6 +11,7 @@ import type { CameraRig } from '../render/CameraRig.js';
 import type { Frame } from '../render/Frame.js';
 import type { SkyPass } from '../render/SkyPass.js';
 import type { ShadowRig } from '../render/ShadowRig.js';
+import type { SkyIbl } from '../render/SkyIbl.js';
 import type { StatsProbe } from '../render/debug/StatsProbe.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
@@ -76,6 +77,7 @@ export interface Services {
   readonly hud: Hud;
   readonly sunLights: DirectionalLightLike[];
   readonly shadows: ShadowRig;
+  readonly ibl: SkyIbl;
   readonly boot: BootMetrics;
 }
 

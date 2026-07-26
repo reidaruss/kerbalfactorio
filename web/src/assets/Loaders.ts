@@ -63,13 +63,22 @@ export function renderMeshes(root: THREE.Object3D): THREE.Mesh[] {
   return out;
 }
 
-/** Hide every LOD level except `keep` (`_LOD0` / `_LOD2`), and drop `col_*`. */
+/**
+ * Hide every LOD level except `keep` (`_LOD0` / `_LOD2`), and drop `col_*`.
+ *
+ * The trailing `(_\d+)?` is load-bearing. GLTFLoader splits a multi-PRIMITIVE
+ * mesh into one three.Mesh per primitive named `<mesh>_0`, `<mesh>_1`, ..., and
+ * the player body has six materials, so its LOD0 arrives as `Player_LOD0_0`
+ * through `Player_LOD0_5`. A `_LOD(\d)$` anchor matches none of them, every LOD
+ * level draws at once, and the only symptom is the draw count: 103 instead of
+ * 49, with LOD1 and LOD2 z-fighting invisibly inside LOD0.
+ */
 export function selectLod(root: THREE.Object3D, keep: string): void {
   root.traverse((o) => {
     const m = o as THREE.Mesh;
     if (m.isMesh !== true) return;
     if (m.name.startsWith('col_')) { m.visible = false; return; }
-    const lod = /_LOD(\d)$/.exec(m.name);
-    if (lod !== null) m.visible = m.name.endsWith(keep);
+    const lod = /_LOD(\d)(_\d+)?$/.exec(m.name);
+    if (lod !== null) m.visible = `_LOD${lod[1]}` === keep;
   });
 }

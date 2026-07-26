@@ -64,6 +64,7 @@ export function registerSystems(s: Services, loop: Loop): void {
     // not. Driving them from the SAME sun elevation the sky uses is what stops
     // the avatar staying noon-lit on the night side.
     const elev = s.sky.elevation(s.observer.up);
+    s.ibl.update(s.scenes.sky, elev);
     const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
     sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
     for (const light of s.sunLights) {

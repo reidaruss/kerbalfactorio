@@ -2,6 +2,7 @@
 // first-class deliverable rather than a debugging afterthought (WR-11).
 // settle() gates every capture, so a screenshot cannot race streaming.
 
+import { assetStats } from '../assets/Loaders.js';
 import type { Services } from './Services.js';
 import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
@@ -49,7 +50,8 @@ export interface OfDebugApi {
   stats(): FrameStats & {
     boot: BootMetrics; gpu: string; terrain: StreamMetricsReport;
     pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
-    shadow: unknown; sky: { sunT: number; daylight: number; elevationDot: number };
+    shadow: unknown; ibl: unknown; avatar: unknown; assets: unknown;
+    sky: { sunT: number; daylight: number; elevationDot: number };
     caps: unknown;
   };
   world(): WorldState;
@@ -129,7 +131,7 @@ export function installDebugApi(
 
   const api: OfDebugApi = {
     ready,
-    version: 'W3',
+    version: 'W4',
     config: s.cfg,
     boot: s.boot,
 
@@ -144,6 +146,9 @@ export function installDebugApi(
         pool: { inUse: st.poolInUse, free: st.poolFree, exhausted: st.metrics.poolExhausted },
         stitch: st.stitch,
         shadow: s.shadows.stats(),
+        ibl: s.ibl.stats(),
+        avatar: s.avatar?.report() ?? null,
+        assets: { ...assetStats, ms: Math.round(assetStats.ms) },
         sky: {
           sunT: s.sky.sunT,
           daylight: Math.round(s.sky.daylight * 1000) / 1000,
