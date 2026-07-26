@@ -41,14 +41,14 @@ boot(cfg, host, hud).then(({ services }) => {
   loop.settle(2).then(resolveReady);
 
   console.info(
-    `[of] W1 terrain  chunk ${services.boot.chunkVerts} verts / ` +
+    `[of] W2 terrain  chunk ${services.boot.chunkVerts} verts / ` +
     `${services.boot.chunkBytes | 0} B  index ${services.boot.indexCount} (shared)  ` +
     `pool ${cfg.chunkPoolSize} geometries = ` +
     `${(services.boot.pooledBytes / 1048576).toFixed(1)} MB preallocated  ` +
     `terrain.worker load ${services.boot.terrainWorkerLoadMs.toFixed(0)} ms`,
   );
   console.info(
-    `[of] W0 handshake  abi=1  wasm ${services.boot.wasmLoadMs.toFixed(0)} ms  ` +
+    `[of] W0 handshake  abi=2  wasm ${services.boot.wasmLoadMs.toFixed(0)} ms  ` +
     `oracle base/surface/biome/solid = ` +
     Object.values(services.boot.oracleUs).map((v) => v.toFixed(2)).join(' / ') + ' us  ' +
     `worker instance agrees=${services.boot.workerAgrees} ` +

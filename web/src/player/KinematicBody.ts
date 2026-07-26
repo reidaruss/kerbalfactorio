@@ -27,7 +27,15 @@ export const CAPSULE = {
   groundSnapM: 0.35,
   /** cos(50 deg): steeper than this is a slide, not a walk (section 8.1). */
   slopeLimitCos: 0.6428,
-  jumpSpeedMps: 4.0,
+  /**
+   * Sized for APEX, not for feel. Forge's modelled surface g is 0.587 m/s^2
+   * (of::SurfaceObserver::gravityAccel with its 3,500 kg/m^3 uniform sphere), so
+   * v^2/2g means an Earth-like 4 m/s launch clears 13.6 m and hangs for 13.6 s.
+   * 1.4 m/s gives a 1.7 m apex. The airtime is still 4.8 s, which is correct for
+   * the body and probably wrong for the game: raised to gameplay as a balance
+   * question about the gravity model, not something to fudge here.
+   */
+  jumpSpeedMps: 1.4,
   groundAccel: 34.0,
   airAccel: 6.0,
   groundDrag: 11.0,
