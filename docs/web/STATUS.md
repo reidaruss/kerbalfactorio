@@ -546,6 +546,22 @@ two rigid 1.00 m planks whose centres are 1.0176 m apart, **0.018 m** against
 the 0.189 m step it replaces. `Grid.orient` still only yaws and is still right
 for a machine: a smelter stands upright whatever the slope.
 
+**And a third defect, routed in from the rendering lane while the first two were
+in flight.** `_of_surface_radius` takes the voxel edit set as its second
+argument, and three call sites in `src/game` passed a literal 0 while two passed
+the real handle: over ground the player had dug or levelled, half the build
+system read the world as it was before they touched it, and after eight strikes
+the surface under the feet had moved **4.00 m**. The HEIGHT half was closed
+incidentally by the site grid, because the anchor routes through the one call
+site that was always right; the TARGETING half was not, and a -25 degree aim
+across a cut put the ghost **1.807 m** from where the aim actually meets the
+ground. Now **0.459 m**, which is no longer error but the grid snap itself,
+bounded by half a 1 m cell diagonal. `snapToGround` takes the edit set as a
+required argument with no default, because a default is what let three call sites
+make the same mistake silently. This one is NOT "belts don't line up with each
+other": it puts a belt in the wrong place relative to the ground and the
+crosshair, not relative to its neighbour. See 15.2 item 108 for the whole split.
+
 **The bar can be rearranged, and the loadout persists.** A click selects a slot
 and a drag from one onto another swaps them, and it only works while the pack is
 open, which looks like a limitation and is not: during play the pointer is

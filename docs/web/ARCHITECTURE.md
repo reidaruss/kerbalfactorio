@@ -1986,6 +1986,42 @@ Added at W4 (2026-07-25):
     0.25 m march step. `?aimshell=1` restores the old march, and it is what
     proved that two other red probes on the same branch were not caused by this.
 
+108. **The belt complaint was THREE defects, and only two of them were about
+    belts lining up with each other.** Worth recording as a set, because the
+    first fix made the second visible and the third was routed in from another
+    lane while both were in flight.
+
+    (a) **Horizontal spacing**, the oblique lattice of items 102 and 105:
+    0.5903 / 0.8110 / 1.0167 m per unit cell step against a 1.00 m tile, so
+    neighbouring tiles overlapped by up to **0.41 m**. On ALL ground, dug or
+    not. This is the reported symptom, literally, and the dominant cause. Fixed
+    to 4.006e-6 m by moving machines onto the base's metric site grid.
+
+    (b) **The vertical staircase**: tiles stood upright on the radial, so on the
+    11 degree slope outside the spawn consecutive tiles stepped **0.189 m** and
+    the run read as a flight of stairs. Also on all ground. It survived (a)
+    entirely and was found by LOOKING AT A SCREENSHOT of the fix, which is the
+    lesson: a measurement that says 4e-6 m can be completely true and still not
+    be the thing the player is complaining about. Fixed by giving each tile the
+    run's own 3D direction, residual kink 0.018 m.
+
+    (c) **Pristine versus live surface**: `_of_surface_radius` takes the voxel
+    edit set as its second argument, and three call sites in `src/game` passed a
+    literal 0 while two passed the real handle. Only on ground the player has
+    dug or levelled, where the surface had moved 4.00 m after eight strikes.
+    TWO halves with different fates: the HEIGHT half (a belt hovering by the
+    whole lowering) was closed incidentally by (a), because the site anchor
+    routes through the one call site that was always right, and the TARGETING
+    half needed its own fix, the ghost landing **1.807 m** from where the aim
+    actually met the ground at a shallow aim, now 0.459 m, which is no longer
+    error but the grid snap itself (bounded by half a 1 m cell diagonal,
+    0.707 m). **(c) is NOT the reported symptom**: it puts a belt in the wrong
+    place relative to the ground and the crosshair, not in the wrong place
+    relative to its neighbour, and the complaint came from virgin ground.
+    `snapToGround` now takes the edit set as a required argument with no default,
+    because the default is what let three call sites make the same mistake
+    silently.
+
 ### 15.3 The dev loop, concretely
 
 ```
