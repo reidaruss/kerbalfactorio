@@ -29,13 +29,18 @@ const CELLS = DIM - 1;
  * exactly nothing while reporting success. DW-19's finer LOD is what shrinks
  * this, and the prop's own placement error shrinks with it.
  */
-const MAX_CELL_M = 40;
+const MAX_CELL_M = 64;
 /** Instances per chunk ceiling, and how far from the eye scatter reaches. */
 const MAX_PER_CHUNK = 2600;
 const MAX_PER_CELL = 20;
 const RADIUS_M = 170;
-/** cos of the steepest ground a prop will stand on (about 40 degrees). */
-const MIN_SLOPE_COS = 0.76;
+/**
+ * cos of the steepest ground a prop will stand on, about 57 degrees. 40 degrees
+ * was the first guess and it emptied the Mountains biome: a mountain FLANK is
+ * steeper than that almost everywhere, so the one biome whose whole identity is
+ * loose rock had no loose rock on it.
+ */
+const MIN_SLOPE_COS = 0.55;
 /** Screen-space-free LOD: props past this distance draw their LOD2 geometry. */
 const LOD2_M = 45;
 

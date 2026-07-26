@@ -1131,6 +1131,74 @@ Added at W3 (2026-07-25):
     hole census silently reads zero. `Boot` disables the sky whenever `clearColor` is set,
     rather than requiring every crack probe to remember `--atmos=0`.
 
+Added at W4 (2026-07-25):
+
+31. **`BatchedMesh` costs the shared index buffer, and that is the price of the
+    draw-call collapse.** Each slot needs its OWN index range inside the batch
+    (offset by its `vertexStart`), so `SharedIndex`'s one 13.5 kB buffer for 384
+    chunks becomes 6,912 x 4 B per slot. Pooled terrain went **12.0 MB to
+    28.4 MB** at 2 x 230 slots. Draw calls went **118 to 8** on the same framing,
+    with the same 241,312 triangles, so it is clearly worth it, but the §10.2
+    line "Near terrain 13 MB pooled" is now wrong by design.
+32. **Terrain needs TWO batches, not one.** A `BatchedMesh` has one material and
+    one parent, and the near 1:1 scene and the scaled far scene differ in both.
+    `ChunkGeometryPool` therefore has two free lists, and a chunk crossing
+    `nearDepthCutoff` swaps slots and is re-uploaded from its retained pristine
+    payload. That is a second reason the payload is retained (the first was edge
+    stitching) and it only happens on a regime change.
+33. **`setGeometryAt` is not the upload path.** It copies the index one element
+    at a time (6,912 `setX` calls per chunk) and re-derives the bounding sphere
+    by scanning every vertex. `ChunkBatch` writes the slot's window with
+    `array.set()` plus an explicit `addUpdateRange`, and touches three's private
+    `_geometryInfo` to set the bounding sphere and the skirt draw range. That is
+    the only private access in the codebase and it is contained in one file.
+34. **A view must not claim to be visible before its slot is.** `ChunkBatch`
+    allocates every instance invisible; `ChunkView.visible` started `true`, so
+    the first `setVisible(true)` was a no-op and the terrain never drew. The
+    frame reported **3 draw calls** and looked like a triumph in the JSON. Any
+    handle over a pooled GPU slot must initialise to the slot's actual state.
+35. **`GLTFLoader` splits a multi-primitive mesh into `<name>_0`, `<name>_1`...**,
+    so the player body's six materials arrive as `Player_LOD0_0` through
+    `Player_LOD0_5` and a `_LOD(\d)$` anchor matches none of them. All three LOD
+    levels drew at once: 103 draw calls where 49 was the truth, with LOD1 and
+    LOD2 z-fighting invisibly inside LOD0. Every LOD selector needs `(_\d+)?`.
+36. **A `MeshStandardMaterial` is only shadowed by a light that CASTS.** W3's
+    near scene had a non-casting sun plus three intensity-0 cascades, so the
+    player was lit and never shadowed by the ground under him (§17.4). Cascade 0
+    is now also the sun and Boot adds no second directional. **The view-model
+    pass has no lights at all**, which is separate and easy to miss: the FP arms
+    rendered as a black silhouette until that scene got its own hemisphere, its
+    own sun and the same IBL.
+37. **`PMREMGenerator.fromScene` allocates a new render target every call and
+    offers no way to reuse one.** Disposing only `.texture` leaks the target:
+    `info.memory.textures` climbed past 50 and the near pass hit **170 ms**. The
+    renderer seam owns the target now, and the IBL is 64^2 per §7.1.
+38. **`BatchedMesh` per-instance frustum culling is a LOSS for small props**,
+    against §6.2's prediction that it "matters most here". `onBeforeRender` walks
+    every live slot once per pass doing a `getMatrixAt`, a bounding-sphere copy,
+    a transform and a frustum test. At 9,340 props over four passes (main plus
+    three cascades) that measured **8.2 ms** of near pass with sorting on and
+    **11.1 ms** with it off; with culling AND sorting off the method early-returns
+    and the cost is zero for roughly twice the triangles. Terrain keeps culling
+    on (33 x 33 chunks are worth testing); the factory at W6 should re-measure.
+39. **Prop slots are allocated LAZILY.** Priming 7,000 per material up front cost
+    **2.5 s** at boot and made every pass walk 70,000 slots for a scene holding
+    9,340 props in five batches.
+40. **Scatter placement is limited by the LOD the streamer actually reaches, not
+    by `maxDepth`.** Under a walking player at `maxDepth` 12 the finest resident
+    chunk is **depth 11**, about 900 m across, so its grid cell is about 28 m and
+    on high mountains it is coarser still. The first scatter used a 14 m cell
+    limit, rejected every chunk on the planet, and reported success with zero
+    instances. Props are placed by bilinear interpolation inside a cell, so the
+    cell size IS the placement accuracy, and DW-19's finer LOD is what fixes both.
+41. **Scatter walks CELLS inside the radius, not the chunk.** A uniform draw over
+    a 900 m chunk puts nine props in ten outside a 170 m scatter radius, and the
+    ground under the player reads as empty. Per-cell placement also makes density
+    mean instances per square kilometre of GROUND, independent of chunk depth.
+42. **A 40-degree slope limit empties the Mountains biome.** A mountain flank is
+    steeper than that almost everywhere, so the one biome whose identity is loose
+    rock had no loose rock on it. 57 degrees is the shipped value.
+
 ### 15.3 The dev loop, concretely
 
 ```
