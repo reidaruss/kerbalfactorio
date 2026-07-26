@@ -5,6 +5,7 @@
 // a claim that cannot be checked. Split out of Gameplay for the usual reason:
 // shaping rows is not a responsibility, and the composition was at the cap.
 
+import { structureReport } from './StructureSave.js';
 import type { Gameplay } from './Gameplay.js';
 
 export function gameplayReport(g: Gameplay): unknown {
@@ -25,6 +26,11 @@ export function gameplayReport(g: Gameplay): unknown {
       factory: g.factory.report(),
       build: g.build.report(),
       view: g.factoryView.stats(),
+      // BASE BUILDING. `structures` is what stands and what it cost; `baseView`
+      // is what is actually drawn, which is where a batch that has silently run
+      // out of instances would show up.
+      structures: structureReport(g.structures),
+      baseView: g.structView.stats(),
       autoCollected: g.autoCollected,
       fx: {
         ...(g.fx.report() as object),

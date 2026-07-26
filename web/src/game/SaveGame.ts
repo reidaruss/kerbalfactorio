@@ -28,10 +28,14 @@ const SLOT = 'auto';
 /** 2: voxel edits joined the slot, so a v1 slot cannot describe the tunnels.
  *  3: a deposit is an ore PATCH rather than a boulder, so the depletion diff is
  *     keyed by patch and a building carries the patch it stands on. A v2 slot
- *     names nodes that no longer hold any ore. */
-export const SAVE_VERSION = 3;
+ *     names nodes that no longer hold any ore.
+ *  4: BASE BUILDING. The structural parts and their build SITES join the slot.
+ *     A v3 slot simply has no base in it, which loads correctly, but the reader
+ *     is versioned anyway so a later change to the site frame has a hinge. */
+export const SAVE_VERSION = 4;
 
 import type { SavedEdits } from './VoxelSave.js';
+import type { SaveSite, SaveStructure } from './StructureSave.js';
 
 export interface SaveBuilding {
   kind: string;
@@ -70,6 +74,9 @@ export interface SaveSlot {
   machines: SaveMachine[];
   /** The dug tunnels: /core's removed-cell bytes plus the strike log. */
   voxels: SavedEdits;
+  /** The base: the parts, and the site frames they are addressed in. */
+  sites?: SaveSite[];
+  structures?: SaveStructure[];
 }
 
 function open(): Promise<IDBDatabase> {

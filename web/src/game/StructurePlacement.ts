@@ -20,6 +20,7 @@ import { MAX_LEVEL, SITE_REACH_M, addrKey, addressAt, anchorOf, footprintOf,
   isDeck, localOf, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
 import type { Structures } from './Structures.js';
+import type { HudTarget } from '../ui/GameHud.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 /** Aim march: step and reach, metres. Longer than a machine's, because a base is
@@ -44,6 +45,23 @@ export interface StructureTarget {
    *  Positive buries a corner, negative leaves it hanging. */
   unevennessM: number;
   freePlaced: boolean;
+}
+
+/**
+ * What the crosshair SAYS while a structural part is in hand.
+ *
+ * The reason is on screen while the player is still aiming, not flashed after a
+ * refused press, because DW-24's whole argument is that being refused is how the
+ * levelling tool gets discovered. A message that only appears once you have
+ * already pressed the key teaches nothing.
+ */
+export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
+  if (t === null) return null;
+  return {
+    name: `${t.kind}${t.freePlaced ? '  (free)' : ''}  ${t.reason}`,
+    fraction: 0, empty: !t.ok, distanceM: 0,
+    action: 'G place    R turn    B snap',
+  };
 }
 
 /**

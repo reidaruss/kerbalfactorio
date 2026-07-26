@@ -21,7 +21,10 @@ import type { GameCore } from './GameCore.js';
 import type { Machines } from './Machines.js';
 import type { NodeField } from './NodeField.js';
 import type { OreField } from './OreField.js';
+import type { Structures } from './Structures.js';
+import type { StructureView } from './StructureView.js';
 import type { Gameplay } from './Gameplay.js';
+import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
@@ -35,6 +38,8 @@ export interface WorldPorts {
 
 export interface RestoreLedger {
   buildings: number;
+  /** Structural parts that came back. Their cost is NOT charged again. */
+  structures: number;
   machines: number;
   nodesDepleted: number;
   patchesDepleted: number;
@@ -49,7 +54,7 @@ export interface RestoreLedger {
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
                          seed: number, ports: WorldPorts,
-                         ore: OreField): SaveSlot {
+                         ore: OreField, structures: Structures): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -87,6 +92,8 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     voxels,
     depletion,
     patches,
+    sites: saveSites(structures),
+    structures: saveParts(structures),
     buildings: factory.placed.map((p) => ({
       kind: p.kind, cell: p.cell, patch: p.patch,
       pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
@@ -110,7 +117,8 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
 export function apply(M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
                       slot: SaveSlot, ports: WorldPorts,
-                      ore: OreField): RestoreLedger {
+                      ore: OreField, structures: Structures,
+                      structView: StructureView): RestoreLedger {
   // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
   //    surface the oracle reports, and a miner or a machine placed against the
   //    old, un-dug column would sit at the wrong height.
@@ -176,8 +184,18 @@ export function apply(M: OfCoreModule, game: GameCore,
     fuelTicksLost += s.fuelTicks;
   }
 
+  // 5. THE BASE. Last, because a part rests on the ground and the ground has to
+  //    have finished moving: a restored dig lowers the surface, and a foundation
+  //    placed against the un-dug column would read as floating.
+  //    The batch is emptied FIRST or every old instance keeps drawing where it
+  //    stood, which is the same bug FactoryView.release exists to prevent.
+  for (const p of structures.parts) structView.release(p.id);
+  const restoredParts = restoreStructures(structures, slot.sites ?? [],
+    slot.structures ?? []);
+
   return {
-    buildings, machines: restoredMachines, nodesDepleted: depleted,
+    buildings, structures: restoredParts,
+    machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, savedAt: slot.savedAt,
   };
 }
@@ -189,11 +207,12 @@ export function apply(M: OfCoreModule, game: GameCore,
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField);
+    g.seed, g.ports, g.oreField, g.structures);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
     bytes: slot.pack.length, buildings: slot.buildings.length,
+    structures: slot.structures?.length ?? 0, sites: slot.sites?.length ?? 0,
     machines: slot.machines.length, depletion: slot.depletion.length,
     patches: slot.patches.length,
     voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
@@ -206,7 +225,7 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
   g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports,
-    g.oreField);
+    g.oreField, g.structures, g.structView);
   g.panel.invalidate();
   const dug = g.restored.voxels.cells;
   g.hud.flash(`restored ${g.restored.buildings} buildings, `

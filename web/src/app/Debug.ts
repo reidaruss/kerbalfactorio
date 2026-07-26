@@ -24,6 +24,7 @@ export interface WorldState {
     toggles: number; armLengthM: number;
     /** W5. Underground state: on a voxel floor, and refused by rock this tick. */
     underRock: boolean; blockedByRock: boolean; voxelPushM: number;
+    onDeck: boolean; blockedByBuild: boolean; structureTests: number;
     aim: { origin: [number, number, number]; dir: [number, number, number] };
   } | null;
   bodyRadiusM: number;
@@ -264,6 +265,11 @@ export function installDebugApi(
           underRock: pl.body.underRock,
           blockedByRock: pl.body.blockedByRock,
           voxelPushM: pl.body.voxelPushM,
+          // The structural port: standing on what the player built, and being
+          // stopped by it. Both are how a walk through a doorway is asserted.
+          onDeck: pl.body.onDeck,
+          blockedByBuild: pl.body.blockedByBuild,
+          structureTests: pl.body.structureTests,
           aim: { origin: ray.origin, dir: ray.dir },
         },
         bodyRadiusM: s.body.radiusM,

@@ -126,6 +126,8 @@ export function boundOf(boxes: readonly LocalBox[]): number {
  */
 export class StructureBodies {
   readonly list: Solid[] = [];
+  /** So the walker can skip the whole port on a world with no base in it. */
+  get count(): number { return this.list.length; }
   /** Point tests made since the last reset, charged to the tick budget. */
   tests = 0;
   private readonly q = new THREE.Quaternion();

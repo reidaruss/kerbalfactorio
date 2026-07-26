@@ -31,6 +31,33 @@ export function gameplayApi(s: Services, loop: Loop) {
       return s.gameplay?.build.report() ?? null;
     },
 
+    /** The base: every part, every site, the module and the costs. */
+    structures: () => s.gameplay?.structures ?? null,
+
+    /**
+     * Open or shut a placed door by part id, through the SAME toggle the E key
+     * reaches. A probe that set `wantOpen` directly would be proving a path no
+     * player can take.
+     */
+    door(id: number, open?: boolean) {
+      const st = s.gameplay?.structures;
+      const p = st?.parts.find((q) => q.id === id);
+      if (st === undefined || p === undefined) return null;
+      if (open === undefined || open !== p.wantOpen) st.toggle(p);
+      return { id, kind: p.kind, wantOpen: p.wantOpen, swing: p.swing,
+        shut: p.solid.shut };
+    },
+
+    /**
+     * Is this body-frame point inside a structural collider? This is the exact
+     * predicate the walker uses, so a probe asserting that a doorway is open is
+     * asserting about the collision the player will actually meet, not about a
+     * parallel test written in the probe.
+     */
+    solidBuild(x: number, y: number, z: number) {
+      return s.gameplay?.structures.bodies.blocks(x, y, z) ?? false;
+    },
+
     collect(id: number) {
       const f = s.gameplay?.factory;
       const b = f?.placed.find((p) => p.id === id);

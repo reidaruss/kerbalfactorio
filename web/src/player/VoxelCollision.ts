@@ -37,6 +37,32 @@ export const CAPSULE_SAMPLES_M = [0.15, 0.9, 1.65];
 const STEP_UP_M = [0.55, 1.1];
 
 export interface StepResult { x: number; y: number; z: number; blocked: boolean }
+
+/**
+ * A set of PLACED SOLIDS the walker also has to respect: today the base
+ * building parts, implemented by `game/StructureBody.ts`.
+ *
+ * It is an interface here rather than an import because a structure is not
+ * terrain and must not become a second definition of it. Rock stays the
+ * oracle's answer and nothing on this port touches it (standing rule 1); these
+ * are boxes RESTING on the ground, which is exactly DW-24's model, and the
+ * walker composes the two answers instead of merging them.
+ */
+export interface SolidBodies {
+  readonly count: number;
+  tests: number;
+  resetTests(): void;
+  blocks(x: number, y: number, z: number): boolean;
+  deckUnder(dx: number, dy: number, dz: number, rFrom: number,
+            searchM: number): number | null;
+  resolveStep(p: Vec3d, qx: number, qy: number, qz: number,
+              ux: number, uy: number, uz: number,
+              samplesM: readonly number[],
+              stepUpM: readonly number[]): StepResult;
+}
+
+/** The ledge heights a blocked structural step retries at. A deck is 0.50 m. */
+export const STRUCTURE_STEP_UP_M: readonly number[] = STEP_UP_M;
 /** A minimum translation out of solid. `dist` is its length in metres. */
 export interface PushResult { x: number; y: number; z: number; dist: number }
 

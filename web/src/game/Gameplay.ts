@@ -30,6 +30,7 @@ import { BuildMode } from './BuildMode.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
 import { aimPrompt } from './FactoryReport.js';
+import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
 import { collectFrom, craft, loadFurnace, machineView, raze, recipes, slots,
   stepBuild, takeFurnace } from './GameplayActions.js';
@@ -163,6 +164,10 @@ export class Gameplay {
       g.structures.load(), g.icons.load()]);
     g.structView.build(g.structures);
     d.scene.add(g.structView.group);
+    // The walker learns about the base through a PORT and not an import: a
+    // structure rests on the terrain and must never become a second definition
+    // of it (DW-24, plus DW-26's lesson about what a fifth surface costs).
+    d.player.body.solids = g.structures.bodies;
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
@@ -182,10 +187,8 @@ export class Gameplay {
     return g;
   }
 
-  /** Write the autosave slot. Returns what was written, or null (DW-17). */
+  /** Write the autosave slot (DW-17), and restore it over a fresh clearing. */
   save(): Promise<unknown> { return saveSlot(this); }
-
-  /** Restore the autosave slot over a freshly generated clearing. */
   load(): Promise<RestoreLedger | null> { return loadSlot(this); }
 
   /**
@@ -214,10 +217,9 @@ export class Gameplay {
     this.nodesPlaced = this.field.placed.length;
   }
 
-  /** True while the pointer is locked to the canvas, for the report. */
+  /** True while the pointer is locked to the canvas. Also the key reader, so
+   *  the verbs in GameplayActions can ask about a key without a second path. */
   get pointerLocked(): boolean { return this.d.input.pointerLocked; }
-
-  /** The key reader, so the verbs in GameplayActions can ask about a key. */
   get input(): Input { return this.d.input; }
 
   /** True while any panel owns the pointer, so the dig action stands down. */
@@ -231,17 +233,15 @@ export class Gameplay {
     if (f.panel && !this.panelHeld) this.setPanel(!this.panel.isOpen);
     this.panelHeld = f.panel;
 
-    // Machines tick on the SIM clock, like everything else that is a rule: a
-    // furnace on a synthetic-clock probe smelts in exactly the tick count
-    // gameplay.h says it does, which is what makes the timing assertable.
+    // Machines and the automation network tick on the SIM clock, like
+    // everything else that is a rule: a furnace on a synthetic-clock probe
+    // smelts in exactly the tick count gameplay.h says it does, and "walk away
+    // and iron accumulates" waits on no frame, panel or player proximity.
     this.machines.tick(1);
-    // ONE tick of the automation network, on the same clock. This is the line
-    // that makes "walk away and iron accumulates" true: nothing here waits on a
-    // frame, a panel or the player being anywhere near the machines.
     this.factory.tick(1);
     this.fx.watchSmelters(this.factory, this.game);
-    // AUTOSAVE on the sim clock, like everything else that is a rule, so a
-    // driven run saves exactly as often as a played one does.
+    // AUTOSAVE on the sim clock too, so a driven run saves as often as a played
+    // one does.
     if (++this.sinceSaveTicks >= AUTOSAVE_TICKS) { this.sinceSaveTicks = 0; void this.save(); }
 
     // M mutes. Edge-detected here like every other open-ended key, so a driven
@@ -365,8 +365,9 @@ export class Gameplay {
     }));
     // ONE prompt decision, made in one place. It used to be four early returns
     // here, and every one of them had to remember the two panel conditions.
-    this.hud.render(dt, this.uiOpen ? null : aimPrompt(this.factory, this.game,
-      this.aimedBuild, this.aimedMachine, this.interact.target), carried);
+    this.hud.render(dt, this.uiOpen ? null : ghostPrompt(this.build.structTarget)
+      ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
+        this.interact.target), carried);
     stepGoals(this, dt);
     if (this.panel.isOpen) this.panel.render(slots(this), recipes(this));
   }
@@ -392,5 +393,6 @@ export class Gameplay {
   nodes(): unknown[] {
     return nodeDump(this.game, this.field.placed, this.d.player.aimRay().origin);
   }
+
   report(): unknown { return gameplayReport(this); }
 }

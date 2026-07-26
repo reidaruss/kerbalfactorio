@@ -9,7 +9,9 @@
 
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { Vec3d } from '../world/PlanetBody.js';
-import { VoxelCollider } from './VoxelCollision.js';
+import { CAPSULE_SAMPLES_M, STRUCTURE_STEP_UP_M, VoxelCollider,
+  type SolidBodies } from './VoxelCollision.js';
+import { climbGate, sampleSlopeCos } from './HeightfieldWalk.js';
 
 export interface MoveIntent {
   /** Desired tangent direction, body frame, unit or zero. */
@@ -62,7 +64,6 @@ export const CAPSULE = {
   groundDrag: 11.0,
 };
 
-const EPS_SLOPE_M = 1.5;
 /** How far below the feet a voxel floor is looked for before the player falls. */
 const VOXEL_FLOOR_SEARCH_M = 6;
 /**
@@ -78,6 +79,9 @@ const DEEP_UNDERGROUND_M = 1.5;
  * Just over a cell, so it follows a dug floor and still falls down a shaft.
  */
 const DEEP_SNAP_M = 1.1;
+/** How far below the feet a structural deck is looked for. A storey is 3 m and
+ *  a deck is 0.5 m, so two metres finds the one you are on and never a roof. */
+const STRUCTURE_FLOOR_SEARCH_M = 2.0;
 
 export class KinematicBody {
   /** Feet, on the surface. Body-frame f64 metres. */
@@ -92,6 +96,22 @@ export class KinematicBody {
   underRock = false;
   /** True on a tick where a step into solid rock was refused. */
   blockedByRock = false;
+  /** True while the feet rest on a placed STRUCTURE rather than on the ground. */
+  onDeck = false;
+  /** True on a tick where a step into a wall was refused. */
+  blockedByBuild = false;
+  /** Box tests the structural port made this tick, charged to the budget. */
+  structureTests = 0;
+  /**
+   * Placed structures, handed in by the gameplay layer (null with none).
+   *
+   * A base RESTS on the terrain and never edits it (DW-24), so the walker cannot
+   * learn about it from the oracle: it has to compose two answers, rock from
+   * `surface_field.h` and boxes from here. Keeping it a port rather than an
+   * import is what stops a foundation from becoming a sixth definition of the
+   * surface (DW-26 is that lesson, learned the expensive way).
+   */
+  solids: SolidBodies | null = null;
   speedMps = 0;
   oracleCalls = 0;
 
@@ -188,7 +208,8 @@ export class KinematicBody {
     const deep = this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
     if (!deep) {
       // The heightfield's own wall. See CAPSULE.stepUpM.
-      const gate = this.climbGate(p, qx, qy, qz, r, ux, uy, uz, surfaceR);
+      const gate = climbGate(this.oracle, p, qx, qy, qz, r, ux, uy, uz, surfaceR);
+      this.oracleCalls += gate.calls;
       if (gate.moved) {
         qx = gate.x; qy = gate.y; qz = gate.z;
         qr = Math.hypot(qx, qy, qz) || 1;
@@ -219,6 +240,29 @@ export class KinematicBody {
       groundR = floorR === null ? -Infinity : floorR;
       this.underRock = floorR !== null;
     }
+    // 1b. WHAT THE PLAYER BUILT. Resolved after the terrain and before the
+    //     ground snap, in that order, because a deck is a floor ABOVE the
+    //     ground: settling onto the terrain first and then discovering the
+    //     foundation would drop the player through their own base for a tick.
+    this.onDeck = false;
+    this.blockedByBuild = false;
+    this.structureTests = 0;
+    const solids = this.solids;
+    if (solids !== null && solids.count > 0) {
+      solids.resetTests();
+      const s = solids.resolveStep(p, qx, qy, qz, ux, uy, uz,
+        CAPSULE_SAMPLES_M, STRUCTURE_STEP_UP_M);
+      qx = s.x; qy = s.y; qz = s.z;
+      qr = Math.hypot(qx, qy, qz) || 1;
+      dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
+      if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByBuild = true; }
+      // A deck is only ever a metre or two under the feet: a bigger search would
+      // let a player standing beside a tower be grounded on its roof.
+      const deck = solids.deckUnder(dxn, dyn, dzn, qr, STRUCTURE_FLOOR_SEARCH_M);
+      if (deck !== null && deck > groundR) { groundR = deck; this.onDeck = true; }
+      this.structureTests = solids.tests;
+    }
+
     const gap = qr - groundR;
     const snapM = this.underRock ? DEEP_SNAP_M : CAPSULE.groundSnapM;
     const landing = gap <= 0 || (this.grounded && gap <= snapM && vUp <= 0);
@@ -269,8 +313,14 @@ export class KinematicBody {
     ux = qx / qr; uy = qy / qr; uz = qz / qr;
     // Underground the heightfield gradient describes the hillside overhead, not
     // the floor being stood on, so it must not gate walking inside a tunnel.
-    this.slopeCos = this.grounded && !this.underRock
-      ? this.sampleSlopeCos(ux, uy, uz, surfaceR, qr) : 1;
+    // A DECK IS FLAT by construction, so the heightfield gradient under it
+    // describes the hillside it stands on and must not gate walking on it.
+    this.slopeCos = 1;
+    if (this.grounded && !this.underRock && !this.onDeck) {
+      const sl = sampleSlopeCos(this.oracle, ux, uy, uz, surfaceR, qr);
+      this.slopeCos = sl.cos;
+      this.oracleCalls += sl.calls;
+    }
     if (this.grounded && this.slopeCos < CAPSULE.slopeLimitCos) {
       // Too steep to stand: keep the downhill component, drop the uphill one.
       const climb = tx * ux + ty * uy + tz * uz;
@@ -296,85 +346,5 @@ export class KinematicBody {
     const k = (r + CAPSULE.eyeHeightM) / r;
     out.x = p.x * k; out.y = p.y * k; out.z = p.z * k;
     return out;
-  }
-
-  /**
-   * Refuse a horizontal move onto ground more than `CAPSULE.stepUpM` above where
-   * the feet started this tick. `r` is that starting radius and `surfaceR` is
-   * the ground already sampled at the destination, so the common case (every
-   * ordinary walking tick) costs nothing but the comparison.
-   *
-   * Only the TANGENTIAL half of the move is judged. The radial half is a jump or
-   * a fall, and rising 0.6 m under your own power is exactly how you are meant
-   * to reach ground that is more than a step up.
-   */
-  private climbGate(
-    p: Vec3d, qx: number, qy: number, qz: number, r: number,
-    ux: number, uy: number, uz: number, surfaceR: number,
-  ): { x: number; y: number; z: number; surfaceR: number; moved: boolean;
-    tx: number; ty: number; tz: number } {
-    const keep = { x: qx, y: qy, z: qz, surfaceR, moved: false, tx: 0, ty: 0, tz: 0 };
-    if (surfaceR - r <= CAPSULE.stepUpM) return keep;
-    const mx = qx - p.x, my = qy - p.y, mz = qz - p.z;
-    const mr = mx * ux + my * uy + mz * uz;
-    const sx0 = p.x + ux * mr, sy0 = p.y + uy * mr, sz0 = p.z + uz * mr;
-    const dx = mx - ux * mr, dy = my - uy * mr, dz = mz - uz * mr;
-    // Tangent basis, built exactly as sampleSlopeCos builds it: ONE basis.
-    let ex = -uz, ey = 0, ez = ux;
-    const el = Math.hypot(ex, ey, ez);
-    if (el < 1e-9) { ex = 1; ey = 0; ez = 0; } else { ex /= el; ez /= el; }
-    const nx = uy * ez - uz * ey, ny = uz * ex - ux * ez, nz = ux * ey - uy * ex;
-    const a = dx * ex + dy * ey + dz * ez;
-    const b = dx * nx + dy * ny + dz * nz;
-    // Slide by keeping one tangent axis at a time, the larger first. A
-    // heightfield wall has no axis to drop the way a voxel face does, so this
-    // is an approximation, but it is the cheapest one that lets a player walk
-    // ALONG the foot of a cliff instead of being pinned to it, and it costs an
-    // oracle call only on a tick that actually hit a wall.
-    const tries: [number, number][] = Math.abs(a) >= Math.abs(b)
-      ? [[a, 0], [0, b]] : [[0, b], [a, 0]];
-    for (const [ca, cb] of tries) {
-      if (ca === 0 && cb === 0) continue;
-      const tX = ex * ca + nx * cb, tY = ey * ca + ny * cb, tZ = ez * ca + nz * cb;
-      const sx = sx0 + tX, sy = sy0 + tY, sz = sz0 + tZ;
-      const sr = Math.hypot(sx, sy, sz) || 1;
-      this.oracleCalls++;
-      const g = this.oracle.surfaceRadius(sx / sr, sy / sr, sz / sr);
-      if (g - r <= CAPSULE.stepUpM) {
-        return { x: sx, y: sy, z: sz, surfaceR: g, moved: true, tx: tX, ty: tY, tz: tZ };
-      }
-    }
-    // Nothing horizontal survives. Keep the radial half: a player pressed into
-    // a cliff still falls, still lands and can still jump onto it.
-    const sr = Math.hypot(sx0, sy0, sz0) || 1;
-    this.oracleCalls++;
-    return {
-      x: sx0, y: sy0, z: sz0,
-      surfaceR: this.oracle.surfaceRadius(sx0 / sr, sy0 / sr, sz0 / sr),
-      moved: true, tx: 0, ty: 0, tz: 0,
-    };
-  }
-
-  /**
-   * dot(surfaceNormal, up) from a two-tap forward difference of surfaceRadius in
-   * the local tangent frame. `r0` is the radius already sampled at (ux,uy,uz).
-   */
-  private sampleSlopeCos(ux: number, uy: number, uz: number, r0: number, rNow: number): number {
-    // Tangent basis: POLAR x up, then up x east.
-    let ex = -uz, ey = 0, ez = ux;
-    const el = Math.hypot(ex, ey, ez);
-    if (el < 1e-9) { ex = 1; ey = 0; ez = 0; } else { ex /= el; ez /= el; }
-    const nx = uy * ez - uz * ey, ny = uz * ex - ux * ez, nz = ux * ey - uy * ex;
-    const eps = EPS_SLOPE_M / Math.max(1, rNow);
-    const sample = (ax: number, ay: number, az: number): number => {
-      let sx = ux + ax * eps, sy = uy + ay * eps, sz = uz + az * eps;
-      const l = Math.hypot(sx, sy, sz);
-      sx /= l; sy /= l; sz /= l;
-      this.oracleCalls++;
-      return this.oracle.surfaceRadius(sx, sy, sz);
-    };
-    const ge = (sample(ex, ey, ez) - r0) / EPS_SLOPE_M;
-    const gn = (sample(nx, ny, nz) - r0) / EPS_SLOPE_M;
-    return 1 / Math.sqrt(1 + ge * ge + gn * gn);
   }
 }
