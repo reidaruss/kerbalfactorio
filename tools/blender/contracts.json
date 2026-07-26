@@ -1200,6 +1200,69 @@
         {"node": "LanderLanded_LOD1", "dims_xyz_m": [4.0402, 6.40, 4.0402], "max_tris": 500, "pivot": "ground"},
         {"node": "LanderLanded_LOD2", "dims_xyz_m": [4.0402, 6.40, 4.0402], "max_tris": 260, "pivot": "ground"}
       ]
+    },
+
+    "vfx_engine_plume": {
+      "glb": "assets/models/dist/rocket/vfx_engine_plume.glb",
+      "_comment": [
+        "TIER 2, GEOMETRY ONLY: the shader is the rendering domain's.",
+        "A UNIT plume, 1.00 m across the mouth and 1.00 m long, pointing down",
+        "three.js +Z, which is what a socket's facing is. So it attaches with",
+        "socket_muzzle.add(plume) at IDENTITY and is scaled",
+        "(exitDiameter, exitDiameter, plumeLength).",
+        "The origin is the MOUTH, not the centre and not the base, so throttle",
+        "is a scale on Z alone and the mouth stays welded to the bell:",
+        "pivot 'none'.",
+        "THE ONLY ASSET IN THE GAME WITH UVs. U wraps 0..1 with the seam on",
+        "+X; V is 0 at the mouth and 1 at the tip, linear in LENGTH. Authored",
+        "flipped, because the exporter writes 1 - v, so that the SHIPPED file",
+        "reads the way this comment says it does.",
+        "OF_EmissiveState is the palette role for genuine fire. Backface-",
+        "culled as authored: DOUBLE_SIDED is palette-wide, and adding",
+        "EmissiveState to it would double-side every machine's state chip."
+      ],
+      "lod0_node": "EnginePlume_LOD0",
+      "lod_nodes": ["EnginePlume_LOD0"],
+      "pivot_mode": "none",
+      "dims_xyz_m": [1.00, 1.00, 1.00],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 160,
+      "max_tris_total": 160,
+      "max_materials": 1,
+      "sockets": ["socket_muzzle"],
+      "clips": []
+    },
+
+    "body_sphere_lod": {
+      "glb": "assets/models/dist/world/body_sphere_lod.glb",
+      "_comment": [
+        "TIER 2, the scaled far-scene body. A UNIT icosphere at three",
+        "subdivision levels: 1280 / 320 / 80 triangles.",
+        "RADIUS COMES FROM BodyParams, never from the mesh. The renderer",
+        "scales by radiusM (Forge 600 km, Cinder 200 km, orbital.h), so one",
+        "mesh serves every body and dims are [2, 2, 2] by definition.",
+        "Icosphere, not UV sphere: a UV sphere pinches half its vertices into",
+        "the poles, which is exactly where a polar orbit flies over.",
+        "The mesh is INSCRIBED: every vertex is on radius 1.0, so every face",
+        "sags below it by 0.45% at LOD0, 1.78% at LOD1 and 6.58% at LOD2. A",
+        "renderer that needs the horizon exact scales by radiusM * (1 + sag).",
+        "pivot 'centre': a body is positioned by its centre, not stood on the",
+        "ground. One material; the renderer recolours base colour per body."
+      ],
+      "lod0_node": "BodySphere_LOD0",
+      "lod_nodes": ["BodySphere_LOD0", "BodySphere_LOD1", "BodySphere_LOD2"],
+      "pivot_mode": "centre",
+      "dims_xyz_m": [2.00, 2.00, 2.00],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 1280,
+      "max_tris_total": 1680,
+      "max_materials": 1,
+      "sockets": [],
+      "clips": [],
+      "parts": [
+        {"node": "BodySphere_LOD1", "dims_xyz_m": [2.00, 2.00, 2.00], "max_tris": 320, "pivot": "centre"},
+        {"node": "BodySphere_LOD2", "dims_xyz_m": [2.00, 2.00, 2.00], "max_tris": 80, "pivot": "centre"}
+      ]
     }
   }
 }
