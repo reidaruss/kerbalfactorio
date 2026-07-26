@@ -349,6 +349,16 @@ add_executable(procgen_bench
   tools/procgen_bench.cpp)
 target_link_libraries(procgen_bench PRIVATE of_core)
 
+# --- Tools: lod_probe — DW-19 measurement. Sweeps StreamConfig (splitRatio x
+#     maxDepth) for a player standing on a plain and on a mountain, and reports
+#     the LOD depth and vertex spacing UNDER THE FEET alongside the cost of it
+#     (resident chunk count, packed pool bytes, total mesh build time). The
+#     number DW-19 has to hit is 2 m or finer at the feet before W5 digging.
+#     A pure CONSUMER of of_core (no test framework, not registered with ctest). ---
+add_executable(lod_probe
+  tools/lod_probe.cpp)
+target_link_libraries(lod_probe PRIVATE of_core)
+
 # --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
 #     means a future loader/DLL failure fails FAST instead of stalling ~1000 s
 #     in Windows Error Reporting (the historical "hung overnight run" mode). ---
