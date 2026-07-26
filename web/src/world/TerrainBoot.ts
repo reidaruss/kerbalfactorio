@@ -7,6 +7,7 @@ import type { Events } from '../app/Events.js';
 import type { QualityKnobs } from '../render/Quality.js';
 import type { DepthPolicy } from '../render/DepthPolicy.js';
 import type { Scenes } from '../render/Scenes.js';
+import type { AtmosphereUniforms } from '../render/materials/Atmosphere.glsl.js';
 import { SharedIndex } from '../render/geometry/SharedIndex.js';
 import { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js';
 import { createTerrainMaterials } from '../render/materials/TerrainMaterial.js';
@@ -37,10 +38,20 @@ export interface TerrainBootResult {
   indexCount: number;
 }
 
-export async function bootTerrain(
-  cfg: Config, quality: QualityKnobs, depth: DepthPolicy, events: Events,
-  scenes: Scenes, origin: FloatingOrigin, body: PlanetBody,
-): Promise<TerrainBootResult> {
+export interface TerrainBootDeps {
+  cfg: Config;
+  quality: QualityKnobs;
+  depth: DepthPolicy;
+  events: Events;
+  scenes: Scenes;
+  origin: FloatingOrigin;
+  body: PlanetBody;
+  atmosphere: AtmosphereUniforms;
+  cascadeSplits: number[];
+}
+
+export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult> {
+  const { cfg, quality, depth, events, scenes, origin, body } = d;
   const worker = new Worker(new URL('../workers/terrain.worker.ts', import.meta.url), {
     type: 'module', name: 'of-terrain',
   });
@@ -71,10 +82,16 @@ export async function bootTerrain(
   const layout = chunkBlobLayout(inited.verts);
   const index = new SharedIndex(new Uint16Array(inited.index), inited.interiorIndexCount);
   const pool = new ChunkGeometryPool(cfg.chunkPoolSize, layout, index);
-  const materials = createTerrainMaterials(depth, body.maxReliefM);
-  const stream = new TerrainStream(
-    worker, pool, layout, materials, scenes, origin, events, cfg.skirts, cfg.stitch,
-  );
+  const materials = createTerrainMaterials({
+    depth,
+    maxReliefM: body.maxReliefM,
+    atmosphere: d.atmosphere,
+    cascadeSplits: d.cascadeSplits,
+    fadeSecs: cfg.fadeSecs,
+  });
+  const stream = new TerrainStream(worker, pool, layout, materials, scenes, origin, events, {
+    skirts: cfg.skirts, stitching: cfg.stitch, fadeSecs: cfg.fadeSecs, shell: cfg.shell,
+  });
   stream.setNearDepthCutoff(depth.nearDepthCutoff());
 
   return {

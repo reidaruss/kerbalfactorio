@@ -27,7 +27,7 @@ export interface WorldState {
   origin: { x: number; y: number; z: number; rebases: number };
   chunks: {
     resident: number; near: number; far: number; pending: number;
-    hidden: number; converged: boolean;
+    hidden: number; fading: number; converged: boolean;
   };
   depthMode: string;
   regime: string;
@@ -49,6 +49,7 @@ export interface OfDebugApi {
   stats(): FrameStats & {
     boot: BootMetrics; gpu: string; terrain: StreamMetricsReport;
     pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
+    shadow: unknown; sky: { sunT: number; daylight: number; elevationDot: number };
     caps: unknown;
   };
   world(): WorldState;
@@ -58,7 +59,7 @@ export interface OfDebugApi {
   /** Advance `seconds` of sim on a synthetic clock. See Loop.run. */
   run(seconds: number, renderHz?: number): Promise<void>;
   /** Render + hash the presented frame. See Loop.frameHash. */
-  framehash(): FrameHash;
+  framehash(tilesX?: number, tilesY?: number): FrameHash;
   screenshot(): Promise<Blob>;
   teleport(latDeg: number, lonDeg: number, altM: number): void;
   setTime(t: number): void;
@@ -92,12 +93,13 @@ export interface StitchReport {
 
 export interface StreamReport {
   resident: number; near: number; far: number; pending: number; converged: boolean;
-  poolInUse: number; poolFree: number; hidden: number; metrics: StreamMetricsReport;
-  stitch: StitchReport;
+  poolInUse: number; poolFree: number; hidden: number; fading: number;
+  metrics: StreamMetricsReport; stitch: StitchReport;
 }
 
 const EMPTY_STREAM: StreamReport = {
-  resident: 0, near: 0, far: 0, pending: 0, converged: true, poolInUse: 0, poolFree: 0, hidden: 0,
+  resident: 0, near: 0, far: 0, pending: 0, converged: true, poolInUse: 0, poolFree: 0,
+  hidden: 0, fading: 0,
   metrics: {
     updateMs: 0, packMs: 0, uploadMs: 0, bytesLastUpdate: 0,
     bytesTotal: 0, chunksBuilt: 0, poolExhausted: 0, roundTripMs: 0,
@@ -125,7 +127,7 @@ export function installDebugApi(
 
   const api: OfDebugApi = {
     ready,
-    version: 'W2',
+    version: 'W3',
     config: s.cfg,
     boot: s.boot,
 
@@ -139,6 +141,12 @@ export function installDebugApi(
         terrain: st.metrics,
         pool: { inUse: st.poolInUse, free: st.poolFree, exhausted: st.metrics.poolExhausted },
         stitch: st.stitch,
+        shadow: s.shadows.stats(),
+        sky: {
+          sunT: s.sky.sunT,
+          daylight: Math.round(s.sky.daylight * 1000) / 1000,
+          elevationDot: Math.round(s.sky.elevation(s.observer.up) * 1000) / 1000,
+        },
       };
     },
 
@@ -168,7 +176,8 @@ export function installDebugApi(
         origin: { x: s.origin.origin.x, y: s.origin.origin.y, z: s.origin.origin.z, rebases: s.origin.rebases },
         chunks: {
           resident: st.resident, near: st.near, far: st.far,
-          pending: st.pending, hidden: st.hidden, converged: st.converged,
+          pending: st.pending, hidden: st.hidden, fading: st.fading,
+          converged: st.converged,
         },
         depthMode: s.renderer.depth.mode,
         regime: s.regime.state.band,
@@ -194,7 +203,7 @@ export function installDebugApi(
 
     settle: (n = 8) => loop.settle(n),
     run: (seconds, renderHz) => loop.run(seconds, renderHz),
-    framehash: () => loop.frameHash(),
+    framehash: (tx, ty) => loop.frameHash(tx, ty),
     screenshot: () => loop.capture(),
 
     teleport(latDeg, lonDeg, altM) {

@@ -6,8 +6,17 @@ import * as THREE from 'three';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 
+/** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
+const NIGHT_DOT = -0.12;
+const DAY_DOT = 0.15;
+const NOON = new THREE.Color(0xfff2df);
+const HORIZON = new THREE.Color(0xff9b52);
+
 export function registerSystems(s: Services, loop: Loop): void {
   const bodyCenterEngine = new THREE.Vector3();
+  const eye = new THREE.Vector3();
+  const fwd = new THREE.Vector3();
+  const sunColor = new THREE.Color();
 
   loop.onFixedStep.push(() => {
     if (s.regime.update(s.observer.altM)) {
@@ -18,24 +27,49 @@ export function registerSystems(s: Services, loop: Loop): void {
   });
 
   loop.onDrain.push(() => {
+    // The cross-fade ramp is SIM time, not wall clock, so a driven run on the
+    // synthetic clock (Loop.run) dissolves at exactly the rate a real one does.
+    s.terrain.nowSecs = loop.simSecs;
     s.terrain.drain();
     const p = s.player;
     if (p !== null && s.avatar !== null) {
       s.avatar.place(s.origin, p.body.feet, p.view.up, p.view.aim);
       // The body is culled by CAMERA layer in FP, not by object visibility, so
-      // a future shadow caster still sees it.
+      // the shadow caster still sees it and the player still casts a shadow.
       s.rig.setOwnBodyVisible(p.view.mode === 'TP');
     }
     // The body centre in engine space is simply -origin; the far scene puts it
     // at the scaled origin, which TerrainMaterials.update handles itself.
     bodyCenterEngine.set(-s.origin.origin.x, -s.origin.origin.y, -s.origin.origin.z);
-    s.materials.update(s.sky.sunDirection, bodyCenterEngine);
+    s.materials.update(bodyCenterEngine, loop.simSecs);
+    s.sky.update(s.observer.position, s.observer.up, s.observer.altM);
+
+    // Stock materials (PlanetProxy, Avatar) are lit by these; TerrainMaterial is
+    // not. Driving them from the SAME sun elevation the sky uses is what stops
+    // the avatar staying noon-lit on the night side.
+    const elev = s.sky.elevation(s.observer.up);
+    const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
+    sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
     for (const light of s.sunLights) {
       light.position.copy(s.sky.sunDirection).multiplyScalar(light.userData.distance as number);
+      light.intensity = 3.0 * k;
+      light.color.copy(sunColor);
     }
   });
 
-  // A capture is only allowed once the streamer has converged and the inbox is
-  // empty, which is what makes screenshots reproducible instead of flaky.
+  // AFTER the camera is placed: the cascades are fitted to the near camera, so
+  // fitting them in onDrain would shadow last frame's pose.
+  loop.onPreRender.push(() => {
+    const cam = s.rig.nearCam;
+    eye.setFromMatrixPosition(cam.matrixWorld);
+    cam.getWorldDirection(fwd);
+    // Nothing on the ground casts onto anything at orbital range, and the
+    // cascades would otherwise be fitted around an eye 300 km up (section 3.5).
+    s.shadows.update(eye, fwd, s.sky.sunDirection, s.regime.state.band !== 'ORBIT');
+  });
+
+  // A capture is only allowed once the streamer has converged, the inbox is
+  // empty and nothing is still dissolving in, which is what makes screenshots
+  // reproducible instead of flaky.
   loop.settleGate = () => s.terrain.report().converged;
 }

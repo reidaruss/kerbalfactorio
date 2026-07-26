@@ -110,6 +110,11 @@ class WebGLSeam implements OFRenderer {
     this.r.outputColorSpace = THREE.SRGBColorSpace;
     this.r.toneMapping = THREE.ACESFilmicToneMapping;
     this.r.toneMappingExposure = 1.0;
+    // Shadow cascades (ShadowRig). Only the NEAR scene holds shadow-casting
+    // lights, so WebGLShadowMap returns early for the sky, far and view-model
+    // passes and the maps are rendered exactly once per frame, not four times.
+    this.r.shadowMap.enabled = cfg.shadows;
+    this.r.shadowMap.type = THREE.PCFShadowMap;
   }
 
   get domElement(): HTMLCanvasElement { return this.r.domElement; }

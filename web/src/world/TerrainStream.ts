@@ -15,7 +15,18 @@ import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import { ChunkView } from './ChunkView.js';
 import { anyStitch, neighbourStrides, stitchEdges, stridesEqual } from './EdgeStitch.js';
+import { dumpChunks, probeStakes } from './TerrainDebug.js';
+import { ChunkRetire } from './ChunkRetire.js';
 import type { FromTerrain, TerrainObserveMsg, TerrainUpdateMsg } from '../workers/TerrainProtocol.js';
+
+export interface TerrainStreamOptions {
+  readonly skirts: boolean;
+  readonly stitching: boolean;
+  /** Cross-fade duration in sim seconds. 0 reproduces the W2 hard pop. */
+  readonly fadeSecs: number;
+  /** Draw far-scene chunks at all. ?shell=0 isolates the PlanetProxy. */
+  readonly shell: boolean;
+}
 
 export interface StitchMetrics {
   /** Chunks whose seam mask changed on the last resident-set change. */
@@ -47,9 +58,15 @@ export class TerrainStream {
   nearCount = 0;
   farCount = 0;
   hiddenCount = 0;
+  /** Chunks still dithering in. settle() gates on this, so no capture is mid-fade. */
+  fadingCount = 0;
+  /** Sim seconds, pushed by Loop. The cross-fade ramp is derived from it. */
+  nowSecs = 0;
   private evictedSinceCover = false;
 
   private readonly views = new Map<string, ChunkView>();
+  /** The outgoing half of the cross-dissolve. See ChunkRetire. */
+  private readonly retiring: ChunkRetire;
   private readonly inbox: TerrainUpdateMsg[] = [];
   private seq = 0;
   private inFlight = false;
@@ -72,9 +89,9 @@ export class TerrainStream {
     private readonly scenes: Scenes,
     private readonly origin: FloatingOrigin,
     private readonly events: Events,
-    private readonly skirts: boolean,
-    private readonly stitching = true,
+    private readonly opts: TerrainStreamOptions,
   ) {
+    this.retiring = new ChunkRetire(pool, opts.fadeSecs);
     this.worker.addEventListener('message', (e) => this.onMessage(e as MessageEvent<FromTerrain>));
     // Exactly one subscriber to the one broadcast (ARCHITECTURE.md 3.6).
     this.events.on('OriginRebased', () => this.onOriginRebased());
@@ -142,6 +159,8 @@ export class TerrainStream {
       this.evictedSinceCover = false;
     }
     if (uploaded > 0) this.metrics.uploadMs = performance.now() - t0;
+    this.retiring.reap(this.nowSecs);
+    this.tickFade();
     this.recount();
   }
 
@@ -158,7 +177,7 @@ export class TerrainStream {
    * a stride go back DOWN as well as up.
    */
   private stitchAll(): void {
-    if (!this.stitching) return;
+    if (!this.opts.stitching) return;
     const t0 = performance.now();
     const visible = (key: string): boolean => this.views.get(key)?.mesh.visible === true;
     let restitched = 0;
@@ -197,22 +216,46 @@ export class TerrainStream {
    * is precisely when they cover its whole quad. This recurses for free, is
    * O(resident), and leaves no hole during streaming because a partially
    * subdivided parent stays visible.
+   *
+   * CROSS-FADE (section 4.5 mechanism 3): the parent is held one step longer,
+   * until all four children have FINISHED dithering in. Without that hold there
+   * is nothing behind the dither holes and the fade reads as a shimmer against
+   * the sky instead of as a dissolve between two LODs. This is the whole fix for
+   * the stream-in pop, and it is four extra characters of condition.
    */
   private updateCoverage(): void {
     let hidden = 0;
+    let fading = 0;
+    const now = this.nowSecs;
+    const dur = this.opts.fadeSecs;
+    const faded = (key: string): boolean => {
+      const c = this.views.get(key);
+      return c !== undefined && (dur <= 0 || now - c.fadeT0 >= dur);
+    };
     for (const v of this.views.values()) {
+      if (dur > 0 && now - v.fadeT0 < dur) fading++;
       const [face, depth, qx, qy] = v.key.split(':').map(Number);
       const cd = depth + 1;
       const cx = qx * 2;
       const cy = qy * 2;
-      const covered = this.views.has(`${face}:${cd}:${cx}:${cy}`)
-        && this.views.has(`${face}:${cd}:${cx + 1}:${cy}`)
-        && this.views.has(`${face}:${cd}:${cx}:${cy + 1}`)
-        && this.views.has(`${face}:${cd}:${cx + 1}:${cy + 1}`);
-      v.mesh.visible = !covered;
+      const covered = faded(`${face}:${cd}:${cx}:${cy}`)
+        && faded(`${face}:${cd}:${cx + 1}:${cy}`)
+        && faded(`${face}:${cd}:${cx}:${cy + 1}`)
+        && faded(`${face}:${cd}:${cx + 1}:${cy + 1}`);
+      v.mesh.visible = !covered && (v.isNear || this.opts.shell);
       if (covered) hidden++;
     }
     this.hiddenCount = hidden;
+    this.fadingCount = fading;
+  }
+
+  /**
+   * Coverage depends on elapsed time, not only on the resident set, so it has to
+   * be re-evaluated while anything is still fading even when nothing arrived.
+   * Called once per frame from drain().
+   */
+  private tickFade(): void {
+    if (this.fadingCount > 0) this.updateCoverage();
   }
 
   private apply(c: import('../workers/TerrainProtocol.js').TerrainChunkMsg): void {
@@ -224,13 +267,23 @@ export class TerrainStream {
       this.placeInScene(view);
       return;
     }
-    const pooled = this.pool.acquire();
+    let pooled = this.pool.acquire();
+    if (pooled === null) {
+      // Retiring chunks are the only slack the pool has; give them up before
+      // dropping a chunk that is actually needed.
+      this.retiring.reap(this.nowSecs, true);
+      pooled = this.pool.acquire();
+    }
     if (pooled === null) {
       this.metrics.poolExhausted = this.pool.exhausted;
       return;
     }
     const near = c.depth >= this.cutoff;
     view = new ChunkView(c, pooled, near ? this.materials.near : this.materials.far);
+    // A recycled slot still carries the previous tenant's fade stamp, so this is
+    // written for every NEW view and never for a refresh (same terrain, no fade).
+    view.fadeT0 = this.nowSecs;
+    this.pool.setFadeStart(pooled, view.fadeT0);
     this.pool.upload(pooled, c.blob, this.layout, c.maxOffsetM);
     this.views.set(c.key, view);
     this.placeInScene(view);
@@ -251,29 +304,35 @@ export class TerrainStream {
     // over the entire landscape (measured, and visible in the W1 diagnosis).
     // In the scaled scene the quadtree is a complete partition and any residual
     // T-junction crack is subpixel, so the skirt buys nothing there.
-    this.pool.setSkirtVisible(view.pooled, this.skirts && near);
+    this.pool.setSkirtVisible(view.pooled, this.opts.skirts && near);
     view.place(this.origin, near, material);
   }
 
   private evict(key: string): void {
     const view = this.views.get(key);
     if (view === undefined) return;
-    view.mesh.removeFromParent();
-    this.pool.release(view.pooled);
     this.views.delete(key);
     this.evictedSinceCover = true;
     this.events.emit('ChunkEvicted', { key });
+    if (this.opts.fadeSecs > 0 && view.mesh.visible) {
+      this.retiring.push(view, this.nowSecs);
+      return;
+    }
+    view.mesh.removeFromParent();
+    this.pool.release(view.pooled);
   }
 
   private resort(): void {
     for (const view of this.views.values()) this.placeInScene(view);
   }
 
-  /** The ONE rebase contract. Re-derive, never patch. */
+  /** The ONE rebase contract. Re-derive, never patch. Retiring chunks are still
+   *  on screen for a quarter of a second, so they re-derive too. */
   onOriginRebased(): void {
     for (const view of this.views.values()) {
       view.place(this.origin, view.isNear, view.mesh.material as THREE.Material);
     }
+    this.retiring.onOriginRebased(this.origin);
   }
 
   private recount(): void {
@@ -285,17 +344,21 @@ export class TerrainStream {
 
   report(): {
     resident: number; near: number; far: number; pending: number; converged: boolean;
-    poolInUse: number; poolFree: number; hidden: number; metrics: StreamMetrics;
-    stitch: StitchMetrics;
+    poolInUse: number; poolFree: number; hidden: number; fading: number;
+    metrics: StreamMetrics; stitch: StitchMetrics;
   } {
     return {
       hidden: this.hiddenCount,
+      fading: this.fadingCount + this.retiring.length,
       stitch: { ...this.stitchMetrics },
       resident: this.views.size,
       near: this.nearCount,
       far: this.farCount,
       pending: Math.max(0, this.residentTarget - this.views.size) + this.inbox.length,
-      converged: this.converged && this.inbox.length === 0 && !this.inFlight,
+      // A capture must not land mid-dissolve, so a still-fading chunk counts as
+      // "not settled" exactly the way a pending chunk does.
+      converged: this.converged && this.inbox.length === 0 && !this.inFlight
+        && this.fadingCount === 0 && this.retiring.length === 0,
       poolInUse: this.pool.inUse,
       poolFree: this.pool.freeCount,
       // A COPY: window.__of.stats() is used to diff two moments in time, and
@@ -305,76 +368,14 @@ export class TerrainStream {
     };
   }
 
-  /**
-   * Fill JitterProbe stake rows from the chunks nearest the engine origin:
-   * [anchor xyz (engine metres), local xyz (the f32 vertex offset)] per stake.
-   * Two stakes per chunk, the corner vertex and the centre vertex, because the
-   * quantization the GPU sees depends on BOTH the camera-to-anchor distance and
-   * the vertex's own offset from that anchor.
-   */
+  /** JitterProbe stake rows from the chunks nearest the camera. See TerrainDebug. */
   probeStakes(out: Float64Array, maxStakes: number, cam: THREE.Vector3): number {
-    const slots = this.nearest;
-    const d2s = this.nearestD2;
-    slots.fill(null);
-    d2s.fill(Infinity);
-    for (const v of this.views.values()) {
-      if (!v.isNear || !v.mesh.visible) continue;
-      // Distance from the CAMERA, not from the engine origin. The float32 error
-      // the GPU sees is a function of the camera-relative modelView magnitude
-      // (three composes modelViewMatrix in f64 and only downcasts on upload), so
-      // selecting by origin distance would silently measure a different thing at
-      // every rebase threshold.
-      const d2 = v.mesh.position.distanceToSquared(cam);
-      if (d2 >= d2s[slots.length - 1]) continue;
-      let i = slots.length - 1;
-      while (i > 0 && d2s[i - 1] > d2) { d2s[i] = d2s[i - 1]; slots[i] = slots[i - 1]; i--; }
-      d2s[i] = d2; slots[i] = v;
-    }
-    const centre = (33 * 16 + 16) * 3;
-    let s = 0;
-    for (let k = 0; k < slots.length && s + 1 < maxStakes; ++k) {
-      const v = slots[k];
-      if (v === null) break;
-      const arr = (v.mesh.geometry.getAttribute('position') as THREE.BufferAttribute)
-        .array as Float32Array;
-      for (const base of [0, centre]) {
-        const o = s * 6;
-        out[o] = v.mesh.position.x; out[o + 1] = v.mesh.position.y; out[o + 2] = v.mesh.position.z;
-        out[o + 3] = arr[base]; out[o + 4] = arr[base + 1]; out[o + 5] = arr[base + 2];
-        s++;
-      }
-    }
-    return s;
+    return probeStakes(this.views.values(), out, maxStakes, cam, this.nearest, this.nearestD2);
   }
 
   /** Agent-facing dump of live chunk state, surfaced as window.__of.chunks(). */
   dump(limit = 4, nearOnly = false): unknown[] {
-    const out: unknown[] = [];
-    for (const v of this.views.values()) {
-      if (out.length >= limit) break;
-      if (nearOnly && !v.isNear) continue;
-      const attr = v.mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const arr = attr.array as Float32Array;
-      let maxLocal = 0;
-      for (let i = 0; i < arr.length; i += 3) {
-        const r = arr[i] * arr[i] + arr[i + 1] * arr[i + 1] + arr[i + 2] * arr[i + 2];
-        if (r > maxLocal) maxLocal = r;
-      }
-      out.push({
-        key: v.key, depth: v.depth, near: v.isNear, biome: v.biome,
-        parent: v.mesh.parent?.name ?? null,
-        visible: v.mesh.visible,
-        material: (v.mesh.material as THREE.Material).name,
-        meshPos: v.mesh.position.toArray().map((n) => Math.round(n)),
-        scale: v.mesh.scale.x,
-        distFromCamOriginM: Math.round(v.mesh.position.length() / (v.isNear ? 1 : 1e-5)),
-        maxLocalM: Math.round(Math.sqrt(maxLocal)),
-        bsRadius: Math.round(v.mesh.geometry.boundingSphere?.radius ?? -1),
-        indexCount: v.mesh.geometry.getIndex()?.count ?? -1,
-        v0: [arr[0], arr[1], arr[2]].map((n) => Math.round(n)),
-      });
-    }
-    return out;
+    return dumpChunks(this.views.values(), limit, nearOnly, this.nowSecs);
   }
 
   dispose(): void {

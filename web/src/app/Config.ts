@@ -78,6 +78,18 @@ export interface Config {
   readonly view: 'FP' | 'TP';
   /** Snap LOD T-junction edges onto the coarser neighbour. ?stitch=0 disables. */
   readonly stitch: boolean;
+  /** Draw the far-scene PlanetProxy. ?proxy=0 isolates the terrain shell. */
+  readonly proxy: boolean;
+  /** Draw far-scene terrain chunks. ?shell=0 isolates the proxy. */
+  readonly shell: boolean;
+  /** Cross-fade duration for a chunk arriving or being replaced, seconds. */
+  readonly fadeSecs: number;
+  /** Cascaded shadows. ?shadows=0 disables the whole pass. */
+  readonly shadows: boolean;
+  /** Analytic atmospheric scattering. ?atmos=0 disables sky + aerial perspective. */
+  readonly atmosphere: boolean;
+  /** Star field. ?stars=0 disables it. */
+  readonly stars: boolean;
   /** of::FloatingOrigin rebase threshold in metres. ?rebase= for walk tests. */
   readonly rebaseM: number;
   /** Character ground speed in m/s; sprint is 2x. ?walkspeed= for walk tests. */
@@ -177,6 +189,14 @@ export function parseConfig(search: string): Config {
         : base.mode ?? 'fly',
     view: p.get('view') === 'tp' || p.get('view') === 'TP' ? 'TP' : 'FP',
     stitch: p.get('stitch') !== '0',
+    proxy: p.get('proxy') !== '0',
+    shell: p.get('shell') !== '0',
+    // 250 ms (ARCHITECTURE.md section 4.5 mechanism 3). ?fade=0 reproduces the
+    // W2 pop in the same build, so the fix has a measured BEFORE.
+    fadeSecs: Math.max(0, num(p, 'fade', 0.25)),
+    shadows: p.get('shadows') !== '0',
+    atmosphere: p.get('atmos') !== '0',
+    stars: p.get('stars') !== '0',
     // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run
     // can force many rebases inside a walk that fits in a smoke budget, which
     // makes the invisibility assertion STRICTER, not weaker.

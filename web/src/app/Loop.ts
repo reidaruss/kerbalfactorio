@@ -32,8 +32,18 @@ export class Loop {
   readonly onFixedStep: FixedStep[] = [];
   /** Systems that apply worker payloads, once per rendered frame. */
   readonly onDrain: Drain[] = [];
+  /** Systems that need the camera already placed (shadow cascade fitting). */
+  readonly onPreRender: Drain[] = [];
   /** Returns false while streaming or asset work is still pending. */
   settleGate: (() => boolean) | null = null;
+
+  /**
+   * Sim time in seconds: tickIndex / 60, NOT performance.now(). Everything with
+   * a visual ramp (the terrain cross-fade today, machine animation later) reads
+   * this, so a driven run on the synthetic clock advances it at the same rate a
+   * real one does and a headless capture is never caught mid-dissolve.
+   */
+  get simSecs(): number { return this.tickIndex * FIXED_DT; }
 
   private raf = 0;
   private lastMs = 0;
@@ -235,6 +245,7 @@ export class Loop {
     origin.toEngine(observer.position, this.eye);
     rig.setView(this.eye, observer.position, observer.orientation);
     jitter.sample(rig.nearCam, this.stakes, this.stakeCount(), this.lastH, origin.origin);
+    for (const fn of this.onPreRender) fn();
 
     const cpuMs = performance.now() - t0;
     frame.render();

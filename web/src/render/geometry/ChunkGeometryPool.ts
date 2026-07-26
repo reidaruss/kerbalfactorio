@@ -26,9 +26,11 @@ export class ChunkGeometryPool {
 
   private readonly indexCount: number;
   private readonly interiorIndexCount: number;
+  private readonly index: SharedIndex;
 
   constructor(capacity: number, layout: ChunkBlobLayout, index: SharedIndex) {
     this.capacity = capacity;
+    this.index = index;
     this.bytesPerChunk = layout.byteLength;
     this.indexCount = index.indexCount;
     this.interiorIndexCount = index.interiorIndexCount;
@@ -40,14 +42,26 @@ export class ChunkGeometryPool {
       const uv = new THREE.BufferAttribute(new Uint16Array(v * 2), 2, true);
       const aBiome = new THREE.BufferAttribute(new Uint8Array(v * 4), 4, false);
       const aHeight = new THREE.BufferAttribute(new Float32Array(v), 1);
+      // The sim time this chunk became visible, constant across the chunk.
+      //
+      // It is a per-VERTEX attribute rather than a uniform on purpose: one
+      // ShaderMaterial is shared by every chunk (section 4.4), so a per-chunk
+      // uniform would mean either a material clone per chunk or a forced
+      // uniform re-upload per draw. Storing the fade START (not the fade value)
+      // means it is written ONCE at stream-in and the ramp comes for free from
+      // the global uTime, so the steady state costs nothing at all.
+      const aFadeT0 = new THREE.BufferAttribute(new Float32Array(v), 1);
       // three docs: "after the initial use of a buffer, its usage cannot be
       // changed", so DynamicDrawUsage is set here, before any render.
-      for (const a of [position, normal, uv, aBiome, aHeight]) a.setUsage(THREE.DynamicDrawUsage);
+      for (const a of [position, normal, uv, aBiome, aHeight, aFadeT0]) {
+        a.setUsage(THREE.DynamicDrawUsage);
+      }
       g.setAttribute('position', position);
       g.setAttribute('normal', normal);
       g.setAttribute('uv', uv);
       g.setAttribute('aBiome', aBiome);
       g.setAttribute('aHeight', aHeight);
+      g.setAttribute('aFadeT0', aFadeT0);
       g.setIndex(index.attribute);
       g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
       this.slots.push({ slot: i, geometry: g });
@@ -84,6 +98,12 @@ export class ChunkGeometryPool {
   upload(p: PooledGeometry, blob: ArrayBuffer, layout: ChunkBlobLayout, boundingRadiusM: number): void {
     const src: ChunkBlobViews = chunkBlobViews(blob, layout);
     const g = p.geometry;
+    // Three of /core's six cube faces are parametrized left-handed, so they need
+    // the mirrored index buffer or FrontSide culls them away entirely. Measured
+    // per chunk from the vertex normal, so no face table can go stale.
+    const wanted = this.index.needsFlip(src.position, src.normal)
+      ? this.index.flipped : this.index.attribute;
+    if (g.getIndex() !== wanted) g.setIndex(wanted);
     ChunkGeometryPool.write(g, 'position', src.position);
     ChunkGeometryPool.write(g, 'normal', src.normal);
     ChunkGeometryPool.write(g, 'uv', src.uv);
@@ -91,6 +111,13 @@ export class ChunkGeometryPool {
     ChunkGeometryPool.write(g, 'aHeight', src.height);
     const bs = g.boundingSphere;
     if (bs !== null) { bs.center.set(0, 0, 0); bs.radius = boundingRadiusM * 1.1; }
+  }
+
+  /** Stamp the cross-fade start time (sim seconds) across the whole chunk. */
+  setFadeStart(p: PooledGeometry, tSecs: number): void {
+    const a = p.geometry.getAttribute('aFadeT0') as THREE.BufferAttribute;
+    (a.array as Float32Array).fill(tSecs);
+    a.needsUpdate = true;
   }
 
   private static write(g: THREE.BufferGeometry, name: string, src: ArrayLike<number>): void {

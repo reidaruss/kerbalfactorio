@@ -38,7 +38,11 @@ export class Avatar {
     this.group.add(this.body);
     this.group.add(this.head);
     this.group.name = 'playerBody';
-    this.group.traverse((o) => { o.layers.set(LAYER_PLAYER_BODY); });
+    this.group.traverse((o) => {
+      o.layers.set(LAYER_PLAYER_BODY);
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
     this.group.matrixAutoUpdate = false;
   }
 

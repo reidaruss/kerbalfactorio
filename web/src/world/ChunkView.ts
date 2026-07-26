@@ -38,6 +38,13 @@ export class ChunkView {
   blob: ArrayBuffer;
   /** Current edge stitch strides, in neighbourDepth order [-X, +X, -Y, +Y]. */
   strides: EdgeStrides = [...NO_STITCH] as EdgeStrides;
+  /**
+   * Sim time (seconds) this chunk started dithering in. The fragment shader
+   * derives the ramp from it and the global uTime, so the CPU writes it once.
+   * -Infinity means "already fully faded in", which is what an evicted-then-
+   * recycled slot must NOT inherit.
+   */
+  fadeT0 = 0;
 
   constructor(msg: TerrainChunkMsg, pooled: PooledGeometry, material: THREE.Material) {
     this.key = msg.key;
@@ -55,6 +62,10 @@ export class ChunkView {
     this.mesh = new THREE.Mesh(pooled.geometry, material);
     this.mesh.name = `chunk ${msg.key}`;
     this.mesh.matrixAutoUpdate = true;
+    // Terrain self-shadowing (a ridge onto the valley below it) is the visible
+    // half of the shadow milestone; the player casting onto it is the other.
+    this.mesh.castShadow = true;
+    this.mesh.receiveShadow = true;
   }
 
   /**

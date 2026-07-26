@@ -1,71 +1,60 @@
-// Pass 1 contents: the star field and the sun disc. Rotation-only camera, depth
-// test and write off, so this paints every pixel and everything after composites
-// over it by clear order. Analytic atmospheric scattering lands here at W3.
+// Pass 1 contents: the analytic atmosphere, the star field and the sun disc.
+// Rotation-only camera, depth test and write off, so this paints every pixel and
+// everything after composites over it by clear order (ARCHITECTURE.md 3.1).
+//
+// Draw order inside the pass is the whole regime story: atmosphere (-1), stars
+// (1, additive), sun (2, additive). A lit sky therefore washes the stars out and
+// a dark one lets them through, with no switch anywhere.
 
 import * as THREE from 'three';
+import type { AtmosphereParams, AtmosphereUniforms } from './materials/Atmosphere.glsl.js';
+import { createAtmosphereUniforms, daylightFactor } from './materials/Atmosphere.glsl.js';
+import { createSkyAtmosphere, type SkyAtmosphere } from './materials/SkyAtmosphere.js';
+import { createStarfield, type Starfield } from './materials/StarfieldMaterial.js';
+import type { QualityTier } from '../app/Config.js';
 
-/** xorshift32, so the star field is reproducible from ?seed= (section 11.3). */
-function rng(seed: number): () => number {
-  let s = (seed >>> 0) || 0x9e3779b9;
-  return () => {
-    s ^= s << 13; s >>>= 0;
-    s ^= s >>> 17;
-    s ^= s << 5; s >>>= 0;
-    return s / 4294967296;
-  };
+export interface SkyOptions {
+  readonly seedLo: number;
+  readonly sunT: number;
+  readonly tier: QualityTier;
+  readonly atmosphere: boolean;
+  readonly stars: boolean;
+  readonly pixelRatio: number;
 }
-
-const STAR_COUNT = 4000;
 
 export class SkyPass {
   readonly group = new THREE.Group();
   readonly sunDirection = new THREE.Vector3(1, 0.3, 0).normalize();
+  /** The one uniform record, shared BY REFERENCE with the terrain materials. */
+  readonly atmos: AtmosphereUniforms;
+  readonly params: AtmosphereParams;
   sunT = 0;
+  /** 0 in space or at night, 1 in lit air. Drives the star fade. */
+  daylight = 0;
+  private readonly sky: SkyAtmosphere | null;
+  private readonly stars: Starfield | null;
   private readonly sunSprite: THREE.Sprite;
 
-  constructor(seedLo: number, sunT: number) {
-    const rand = rng(seedLo ^ 0x5bd1e995);
-    const pos = new Float32Array(STAR_COUNT * 3);
-    const col = new Float32Array(STAR_COUNT * 3);
-    const c = new THREE.Color();
-    for (let i = 0; i < STAR_COUNT; ++i) {
-      // Uniform on the sphere, then pushed out to just inside skyCam.far.
-      const u = rand() * 2 - 1;
-      const th = rand() * Math.PI * 2;
-      const r = Math.sqrt(Math.max(0, 1 - u * u));
-      pos[i * 3] = r * Math.cos(th) * 8;
-      pos[i * 3 + 1] = u * 8;
-      pos[i * 3 + 2] = r * Math.sin(th) * 8;
-      // Crude blackbody ramp: most stars dim and white, a few blue or amber.
-      const mag = Math.pow(rand(), 2.2);
-      const temp = rand();
-      c.setRGB(0.65 + temp * 0.35, 0.72 + temp * 0.18, 0.85 + (1 - temp) * 0.15);
-      c.multiplyScalar(0.25 + mag * 0.95);
-      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const stars = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 1.6, sizeAttenuation: false, vertexColors: true,
-      depthTest: false, depthWrite: false, transparent: true,
-      blending: THREE.AdditiveBlending,
-    }));
-    stars.name = 'starfield';
-    stars.frustumCulled = false;
-    this.group.add(stars);
+  constructor(params: AtmosphereParams, o: SkyOptions) {
+    this.params = params;
+    this.atmos = createAtmosphereUniforms(params, o.atmosphere);
 
-    const sunTex = SkyPass.discTexture();
+    this.sky = o.atmosphere ? createSkyAtmosphere(this.atmos, o.tier) : null;
+    if (this.sky !== null) this.group.add(this.sky.mesh);
+
+    this.stars = o.stars ? createStarfield(o.seedLo, o.pixelRatio) : null;
+    if (this.stars !== null) this.group.add(this.stars.points);
+
     this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: sunTex, color: 0xfff3d6, depthTest: false, depthWrite: false,
+      map: SkyPass.discTexture(), color: 0xfff3d6, depthTest: false, depthWrite: false,
       blending: THREE.AdditiveBlending, sizeAttenuation: false,
     }));
-    this.sunSprite.scale.set(0.09, 0.09, 1);
-    this.sunSprite.renderOrder = 1;
+    this.sunSprite.scale.set(0.055, 0.055, 1);
+    this.sunSprite.renderOrder = 2;
     this.group.add(this.sunSprite);
 
     this.group.name = 'skyPass';
-    this.setSunT(sunT);
+    this.setSunT(o.sunT);
   }
 
   /** Sun angle in turns, [0,1). Deterministic: __of.setTime() drives this. */
@@ -73,7 +62,27 @@ export class SkyPass {
     this.sunT = ((t % 1) + 1) % 1;
     SkyPass.dirForT(this.sunT, this.sunDirection);
     this.sunSprite.position.copy(this.sunDirection).multiplyScalar(7);
+    this.atmos.uSunDir.value.copy(this.sunDirection);
   }
+
+  /**
+   * Per-frame update. `camBody` is the eye in PLANET-CENTRED metres and `up` is
+   * the local radial there; both come straight from the observer, so the sky,
+   * the aerial perspective and the star fade are all driven by one position.
+   */
+  update(camBody: { x: number; y: number; z: number }, up: THREE.Vector3, altM: number): void {
+    this.sky?.setCameraPos(camBody.x, camBody.y, camBody.z);
+    const elev = this.sunDirection.dot(up);
+    this.daylight = daylightFactor(this.params, altM, elev);
+    this.stars?.setDaylight(this.daylight);
+    // Below the horizon the disc must not hang in the sky: the terminator is the
+    // point of the milestone. Terrain occludes it from pass 3 on the ground, but
+    // from altitude there is no terrain in the way.
+    this.sunSprite.visible = elev > -0.02 || altM > 2.0e4;
+  }
+
+  /** Sun elevation as dot(sunDir, localUp). */
+  elevation(up: THREE.Vector3): number { return this.sunDirection.dot(up); }
 
   static dirForT(t: number, out: THREE.Vector3): THREE.Vector3 {
     const a = t * Math.PI * 2;
@@ -96,6 +105,12 @@ export class SkyPass {
       if (err < bestErr) { bestErr = err; bestT = t; }
     }
     return bestT;
+  }
+
+  dispose(): void {
+    this.sky?.dispose();
+    this.stars?.dispose();
+    (this.sunSprite.material as THREE.Material).dispose();
   }
 
   private static discTexture(): THREE.Texture {

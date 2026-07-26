@@ -11,6 +11,8 @@ import { Scenes } from '../render/Scenes.js';
 import { CameraRig } from '../render/CameraRig.js';
 import { Frame } from '../render/Frame.js';
 import { SkyPass } from '../render/SkyPass.js';
+import { ShadowRig } from '../render/ShadowRig.js';
+import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
@@ -30,6 +32,12 @@ import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { Hud } from '../ui/Hud.js';
 import { probeWorkerOracle } from './WorkerProbe.js';
 
+/**
+ * The stock-material lighting: PlanetProxy (Lambert) and the Avatar (Standard)
+ * are lit by this, TerrainMaterial is not (it lights itself from uSunDir so the
+ * sky and the ground cannot disagree). castShadow stays FALSE here: cascades are
+ * ShadowRig's job and a second casting light would render a second shadow map.
+ */
 function addLighting(scene: THREE.Scene, sunDir: THREE.Vector3, dist: number): THREE.DirectionalLight {
   const sun = new THREE.DirectionalLight(0xfff2df, 3.0);
   sun.position.copy(sunDir).multiplyScalar(dist);
@@ -76,17 +84,28 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const rig = new CameraRig(renderer.depth);
   const frame = new Frame(renderer, scenes, rig);
   const stats = new StatsProbe();
-  const sky = new SkyPass(cfg.seedLo, 0);
+  const atmosParams = forgeAtmosphere(body.radiusM);
+  const sky = new SkyPass(atmosParams, {
+    seedLo: cfg.seedLo, sunT: 0, tier: cfg.quality,
+    // ?clear= exists to count VOID pixels, and a painted sky makes every void
+    // pixel opaque, so the census would silently read zero. Disable the sky with
+    // the clear colour rather than making every crack probe remember --atmos=0.
+    atmosphere: cfg.atmosphere && cfg.clearColor === 0,
+    stars: cfg.stars,
+    pixelRatio: renderer.pixelRatio,
+  });
   scenes.sky.add(sky.group);
 
   const sunLights = [
     addLighting(scenes.far, sky.sunDirection, 1e4),
     addLighting(scenes.near, sky.sunDirection, 1e5),
   ];
+  const shadows = new ShadowRig(scenes.near, quality, cfg.shadows);
 
   hud.banner('sampling the surface oracle for the planet proxy ...');
   // detail 16 -> 20 * 17^2 = 5,780 triangles, one draw call for a whole planet.
   const proxy = new PlanetProxy(body, oracle, 16);
+  proxy.setVisible(cfg.proxy);
   scenes.far.add(proxy.mesh);
 
   scenes.viewModel.add(createViewModelPlaceholder());
@@ -128,11 +147,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const tTerrain = performance.now();
   const regime = new Regime(renderer.depth.nearDepthCutoff());
   regime.update(observer.altM);
-  const t = await bootTerrain(cfg, quality, renderer.depth, events, scenes, origin, body);
+  const t = await bootTerrain({
+    cfg, quality, depth: renderer.depth, events, scenes, origin, body,
+    atmosphere: sky.atmos, cascadeSplits: shadows.splits,
+  });
   const terrain = t.stream;
   terrain.setNearDepthCutoff(regime.state.nearDepthCutoff);
   const terrainBootMs = performance.now() - tTerrain;
-  stats.extraVramBytes = t.pooledBytes + t.indexBytes;
+  stats.extraVramBytes = t.pooledBytes + t.indexBytes + shadows.vramBytes();
 
   const boot: BootMetrics = {
     wasmLoadMs,
@@ -160,7 +182,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, boot,
+    hud, sunLights, shadows, boot,
   };
   return { services, canvas };
 }

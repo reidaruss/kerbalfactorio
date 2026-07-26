@@ -10,6 +10,7 @@ import type { Scenes } from '../render/Scenes.js';
 import type { CameraRig } from '../render/CameraRig.js';
 import type { Frame } from '../render/Frame.js';
 import type { SkyPass } from '../render/SkyPass.js';
+import type { ShadowRig } from '../render/ShadowRig.js';
 import type { StatsProbe } from '../render/debug/StatsProbe.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
@@ -74,11 +75,14 @@ export interface Services {
   readonly zfight: ZFightProbe | null;
   readonly hud: Hud;
   readonly sunLights: DirectionalLightLike[];
+  readonly shadows: ShadowRig;
   readonly boot: BootMetrics;
 }
 
 /** Just enough of THREE.DirectionalLight for Systems to aim it, no import. */
 export interface DirectionalLightLike {
   position: { copy(v: { x: number; y: number; z: number }): { multiplyScalar(s: number): unknown } };
+  color: { copy(c: unknown): unknown };
+  intensity: number;
   userData: Record<string, unknown>;
 }
