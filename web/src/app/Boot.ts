@@ -208,6 +208,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // handle is bound to the oracle in the VoxelWorld constructor, which is the
   // moment surfaceHeight starts subtracting derivedLoweringAt.
   const voxels = player === null ? null : new VoxelWorld(core, oracle);
+  if (voxels !== null) voxels.aimAgainstShell = cfg.aimShell;
   const voxelMesh = voxels === null ? null
     : new VoxelMesh(core, body.handle, voxels.handle, origin, {
       bodyRadiusM: body.radiusM,

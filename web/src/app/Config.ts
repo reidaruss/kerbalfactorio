@@ -108,6 +108,9 @@ export interface Config {
   /** `?voxelnear=0` keeps the near voxel mesh out of the scene entirely, so a
    *  capture can attribute geometry to it or to the terrain chunks. */
   readonly voxelNear: boolean;
+  /** `?aimshell=1` marches the aim ray against the raw 1 m solidity shell, as
+   *  W5 did, so a behaviour change can be attributed to that swap (rule 7). */
+  readonly aimShell: boolean;
   /** WG-22. Draw the levelling footprint decal. `?levelring=0` isolates it. */
   readonly levelRing: boolean;
   /**
@@ -243,6 +246,7 @@ export function parseConfig(search: string): Config {
     gameplay: p.get('gameplay') !== '0',
     voxelSkinEditsOnly: p.get('voxelskin') !== '0',
     voxelNear: p.get('voxelnear') !== '0',
+    aimShell: p.get('aimshell') === '1',
     levelRing: p.get('levelring') !== '0',
     nearCutoff: Math.max(0, num(p, 'cutoff', 0) | 0),
     // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run

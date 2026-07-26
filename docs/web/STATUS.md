@@ -412,6 +412,58 @@ mixer exists anywhere).
 Screenshots: `docs/screenshots/W8_base.png`, `W8_door.png`.
 Probes: `build.js`, `buildtol.js` (the measurement), `buildshot.js`.
 
+## Terraformed ground stopped looking, and behaving, like broken geometry (2026-07-26)
+
+**The field of black spikes was the near voxel mesh.** It was not fill geometry,
+not winding, not the headlamp and not the material, and it was not specific to
+terraforming at all: a dig produced it too, over a couple of metres instead of
+twenty-five. `exposedFaces` answers "every solid-to-air face in this box", so a
+6 m levelling op, whose dirty region is a 13 x 25 x 13 m cylinder, had the mesh
+draw /core's 1 m solidity shell over about 25 m of ordinary ground. That shell
+disagrees with the smooth `surfaceRadius` the terrain chunk draws by up to half
+a cell diagonal by construction (DW-26), and what pokes through the ground is
+the corner of a cube. At two metres from the eye a 1 m face fills a fifth of the
+screen.
+
+`world/VoxelSkin.ts` keeps a face only where the heightfield cannot express it:
+the solid cell stands above the derived surface, or the air cell sits clearly
+below it. **924 exposed, 904 dropped, 20 drawn.** Filtering to "faces of an
+EDIT" was tried first, removed 78% and left the pad looking identical, because
+`levelArea` flips only the cells on the wrong side of its target so its edits
+are a scatter of isolated cubes. ARCHITECTURE 15.2 items 108 to 110.
+
+**Cut rock takes the terrain's colour and keeps the headlamp's light.**
+Per-vertex albedo now comes from `BiomePalette.terrainAlbedo`, the terrain
+shader's own palette entry, slope-to-rock smoothstep, snow band and relief
+scaling. Using the terrain's actual `ShaderMaterial` was tried, matched
+perfectly in daylight, and silently disabled the headlamp, because that program
+computes its light from `uSunDir` and never reads three's light list.
+
+**The aim ray stopped short of the ground.** `VoxelWorld.raycast` marched
+`solidAt`: over 40 driven aims, **17 stopped early, worst 3.8 m**, on invisible
+rock up to 0.52 m above the surface. `SurfaceOracle.solidForAim` is `solidAt`
+with its one quantised term swapped for the smooth surface and both edit sets
+untouched. Worst driven strike error **0.20 m against a 0.25 m march step**.
+
+**Numbers.** Levelled pad against untouched terrain, same seed, same site,
+matched range (8.7 / 8.8 m) and matched local slope (0.573 / 0.428 m), 240 px
+samples: **96.5/96.6/85.8 vs 143.7/145.5/134.7, worst channel 33.6% off,
+becomes 132.7/135.8/124.9 vs the same ground, 7.6%**, tolerance 12%. Lamp lift
+3.46x -> 11.5x. Draw calls with a base and a levelled pad in frame **49 -> 45**
+of 150, p99 unchanged. `tunnelwalk` 8/8 grounded, 8/8 rock overhead, 8/8 column
+closed; `tunnellit`, `dig` and `level` all green.
+
+**Three isolation flags shipped** (standing rule 7): `?voxelskin=0` restores the
+W5 mesh exactly (whole shell, flat brown Lambert), `?voxelnear=0` removes it
+from the scene, `?aimshell=1` marches the raw shell. The first attributed the
+defect, the second proved which layer drew it, the third proved two unrelated
+red probes were not caused by this work.
+
+Screenshots: `docs/screenshots/RN_base_before.png` and `RN_base_after.png` (the
+same probe, seed, site and camera), `RN_pad_before.png`, `RN_pad_after.png`,
+`RN_pad_after_novoxel.png`, `RN_dig_voxel.png`, `RN_dig_novoxel.png`.
+Probes: `voxelskin.js`, `padshot.js`, `beltfloat.js`.
+
 ## Digging into an ore body pays (2026-07-26)
 
 A pickaxe swing at an outcrop granted ore and a dig strike into the identical

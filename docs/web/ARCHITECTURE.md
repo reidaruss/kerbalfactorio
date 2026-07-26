@@ -1931,6 +1931,61 @@ Added at W4 (2026-07-25):
     end of an existing run to extend it is the natural gesture and used to do
     nothing at all.
 
+108. **A MESH THAT SUPPLEMENTS ANOTHER SURFACE MUST BE FILTERED BY THAT
+    SURFACE, NOT BY ITS OWN INPUTS.** The field of black spikes over
+    terraformed ground was the near voxel mesh. `exposedFaces` answers "every
+    solid-to-air face in this box", which is right for a mesher that owns the
+    world and wrong for one that only fills in what the heightfield cannot say.
+    A 6 m levelling op has a 13 x 25 x 13 m dirty region, so it had the mesh
+    draw /core's 1 m solidity shell over about 25 m of ordinary ground, and that
+    shell disagrees with the smooth `surfaceRadius` the terrain chunk draws by
+    up to half a cell diagonal by construction (DW-26). What pokes through the
+    ground is the corner of a cube, and at two or three metres from the eye a
+    1 m face fills a fifth of the screen, so the artifact reads as a field of
+    big dark pyramids rather than as anything voxel-sized. **Nothing about it
+    was specific to fill**: a dig produced it too, over a couple of metres
+    instead of twenty-five, which is why nobody had reported it before
+    terraforming existed. Four plausible causes were briefed (winding, the
+    headlamp, the wrong material, degenerate triangles) and **all four were
+    wrong**; `?voxelnear=0` at a fixed site and camera settled it in one
+    capture. The first fix was wrong too, and instructively: filtering to
+    "faces of an EDIT" removed 78% of them and left the pad looking identical,
+    because `levelArea` flips only the cells on the wrong side of its target, so
+    its edits are a SCATTER and their faces are isolated cubes standing out of a
+    terrace the chunk had already drawn correctly. The rule that works asks the
+    SURFACE: keep a face only where the solid cell stands above the derived
+    surface or the air cell sits clearly below it. 924 exposed, 904 dropped,
+    20 drawn.
+
+109. **A SHARED MATERIAL CARRIES ITS LIGHTING MODEL WITH IT, AND THAT CAN BE
+    THE WRONG HALF TO SHARE.** Giving the near voxel mesh the terrain's own
+    `ShaderMaterial` made a levelled pad and the hillside beside it the same
+    program, palette, cascade and aerial perspective, which is exactly what was
+    asked for, and it silently disabled the headlamp: `TerrainMaterial`
+    computes its light from `uSunDir` and the atmosphere integral and never
+    touches three's light list, so a `SpotLight` has nothing to act on down
+    there. Driven, `tunnellit`'s lamp lift fell from 3.46x to 1.12x while every
+    other verdict in that probe stayed green. The mesh keeps a
+    `MeshLambertMaterial` and imports only the ALBEDO, via
+    `BiomePalette.terrainAlbedo`, which is four lines of `TerrainShader.ts`
+    living a second time in TypeScript because GLSL cannot call it. That
+    duplication is named in both files. Lift is now 11.5x, because rock at the
+    biome's own colour is darker unlit than the old mid-brown was.
+
+110. **AN AIM RAY MUST MARCH THE SURFACE THAT IS DRAWN.** `VoxelWorld.raycast`
+    marched `solidAt`, the 1 m lattice shell, so it stopped on invisible rock in
+    front of the ground the player was pointing at: measured over a grid of 40
+    driven aims, **17 stopped early, the worst by 3.8 m**, on a shell face up to
+    0.52 m above the surface under it. This is item 93's disagreement in the
+    other direction, and it is why "the triangles are annoying when you dig"
+    was a real complaint about aiming and not only about looks.
+    `SurfaceOracle.solidForAim` is `solidAt` with its one quantised term
+    replaced and both edit sets left exactly as they are,
+    `added || (r <= surfaceRadius && !removed)`, so a tunnel is still hollow and
+    a tunnel wall is still rock. Worst driven strike error 0.20 m against the
+    0.25 m march step. `?aimshell=1` restores the old march, and it is what
+    proved that two other red probes on the same branch were not caused by this.
+
 ### 15.3 The dev loop, concretely
 
 ```

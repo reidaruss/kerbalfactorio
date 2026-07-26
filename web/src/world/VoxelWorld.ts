@@ -75,6 +75,9 @@ export class VoxelWorld {
   private knownRemoved = 0;
   private knownAdded = 0;
 
+  /** `?aimshell=1`: march the raw shell, as W5 did. Isolation only (rule 7). */
+  aimAgainstShell = false;
+
   constructor(private readonly M: OfCoreModule, private readonly oracle: SurfaceOracle) {
     this.handle = M._of_edits_create();
     if (this.handle <= 0) throw new Error('of_edits_create failed');
@@ -207,7 +210,9 @@ export class VoxelWorld {
       const t = i * stepM;
       const x = origin.x + dir.x * t, y = origin.y + dir.y * t, z = origin.z + dir.z * t;
       this.lastRaySteps++;
-      if (this.oracle.solidForAim(x, y, z)) return { p: { x, y, z }, distM: t };
+      const hit = this.aimAgainstShell
+        ? this.oracle.solidAt(x, y, z) : this.oracle.solidForAim(x, y, z);
+      if (hit) return { p: { x, y, z }, distM: t };
     }
     return null;
   }
