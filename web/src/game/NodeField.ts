@@ -1,5 +1,5 @@
-// The harvestable world: where the nodes are, what they look like, and how they
-// visibly deplete.
+// The harvestable world: where the nodes are, what they look like, how they
+// visibly deplete, and what a landed swing does to them.
 //
 // The nodes THEMSELVES live in WASM (of_gp_node_*), because RemainingAmount is
 // sim state and the depletion diff is what persistence will save. This module
@@ -12,10 +12,14 @@
 // hanging in the air (ARCHITECTURE.md 3.6).
 //
 // The three depletion variants share a pivot by contract (ASSET-SPECS 2.7), so
-// swapping one for another is a visibility flip with no re-snap and no pop.
+// swapping one for another is a geometry-id write with no re-snap and no pop.
+//
+// THE ART IS BATCHED (DW-11): see NodeBatch. A node is a set of instance slots,
+// one per material it uses, not a cloned Group.
 
 import * as THREE from 'three';
-import { loadGlb, selectLod } from '../assets/Loaders.js';
+import { loadGlb } from '../assets/Loaders.js';
+import { NodeBatch, type NodePart } from './NodeBatch.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore, NodeState } from './GameCore.js';
 import { NODE_KIND } from './GameCore.js';
@@ -23,18 +27,24 @@ import { NODE_KIND } from './GameCore.js';
 const ROOT = 'assets/nodes/';
 
 /** One .glb per node kind, plus the root node name the meshes are prefixed with. */
-interface NodeArt { file: string; root: string; radiusM: number }
+interface NodeArt { file: string; root: string; radiusM: number; hitUpM: number; colour: number }
 
-/** Kind -> art. Trees alternate between two files so a stand is not a clone army. */
+/**
+ * Kind -> art. Trees alternate between two files so a stand is not a clone army.
+ * `colour` is what the debris burst is made of, taken from the role palette the
+ * asset itself is authored against (of_lib.py): wood is bark brown, iron is the
+ * pale metal, coal is near black. A player should be able to name the resource
+ * from the chips alone.
+ */
 const ART: Record<number, NodeArt[]> = {
   [NODE_KIND.Tree]: [
-    { file: 'tree_conifer.glb', root: 'TreeConifer', radiusM: 1.6 },
-    { file: 'tree_broadleaf.glb', root: 'TreeBroadleaf', radiusM: 2.2 },
+    { file: 'tree_conifer.glb', root: 'TreeConifer', radiusM: 1.6, hitUpM: 1.15, colour: 0x6d5238 },
+    { file: 'tree_broadleaf.glb', root: 'TreeBroadleaf', radiusM: 2.2, hitUpM: 1.25, colour: 0x6d5238 },
   ],
-  [NODE_KIND.Rock]: [{ file: 'boulder_stone.glb', root: 'BoulderStone', radiusM: 1.0 }],
-  [NODE_KIND.CoalSeam]: [{ file: 'boulder_coal.glb', root: 'BoulderCoal', radiusM: 1.1 }],
-  [NODE_KIND.IronOre]: [{ file: 'boulder_iron.glb', root: 'BoulderIron', radiusM: 1.1 }],
-  [NODE_KIND.CopperOre]: [{ file: 'boulder_copper.glb', root: 'BoulderCopper', radiusM: 1.0 }],
+  [NODE_KIND.Rock]: [{ file: 'boulder_stone.glb', root: 'BoulderStone', radiusM: 1.0, hitUpM: 0.6, colour: 0x8d887e }],
+  [NODE_KIND.CoalSeam]: [{ file: 'boulder_coal.glb', root: 'BoulderCoal', radiusM: 1.1, hitUpM: 0.6, colour: 0x35353c }],
+  [NODE_KIND.IronOre]: [{ file: 'boulder_iron.glb', root: 'BoulderIron', radiusM: 1.1, hitUpM: 0.6, colour: 0xb4bac0 }],
+  [NODE_KIND.CopperOre]: [{ file: 'boulder_copper.glb', root: 'BoulderCopper', radiusM: 1.0, hitUpM: 0.6, colour: 0xc06b3e }],
 };
 
 /**
@@ -43,22 +53,25 @@ const ART: Record<number, NodeArt[]> = {
  * and an emptied node keeps its `Low` silhouette rather than vanishing, which
  * is what tells a player "this one is done" instead of "this one moved".
  */
-const VARIANTS = ['Full', 'Half', 'Low'] as const;
-function variantFor(fraction: number): string {
-  if (fraction > 0.66) return 'Full';
-  if (fraction > 0.33) return 'Half';
-  return 'Low';
+function variantFor(fraction: number): number {
+  if (fraction > 0.66) return 0;
+  if (fraction > 0.33) return 1;
+  return 2;
 }
+
+/** Seconds the hit reaction lasts. Short: a swing lands, it does not bounce. */
+const PUNCH_SECS = 0.26;
 
 interface Placed {
   index: number;
-  group: THREE.Group;
-  root: string;
-  radiusM: number;
+  art: NodeArt;
+  parts: readonly NodePart[];
+  slots: number[];
   /** 64-bit body-frame position. THE anchor; engine space is derived from it. */
   pos: { x: number; y: number; z: number };
   up: THREE.Vector3;
-  variant: string;
+  yaw: number;
+  variant: number;
   /** Seconds left in the hit reaction. */
   punch: number;
   empty: boolean;
@@ -71,30 +84,42 @@ function hash32(a: number, b: number): number {
 }
 const frac = (h: number): number => (h >>> 8) / 16777216;
 
+export interface HitPoint {
+  pos: { x: number; y: number; z: number };
+  up: { x: number; y: number; z: number };
+  colour: number;
+}
+
 export class NodeField {
   readonly group = new THREE.Group();
   readonly placed: Placed[] = [];
-  private readonly templates = new Map<string, THREE.Object3D>();
+  readonly batch = new NodeBatch();
+  private readonly templates = new Map<string, { root: string; scene: THREE.Object3D }>();
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
+  private readonly qYaw = new THREE.Quaternion();
+  private readonly m = new THREE.Matrix4();
+  private readonly s = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
 
   constructor(private readonly core: GameCore, private readonly origin: FloatingOrigin) {
     this.group.name = 'harvestNodes';
+    this.group.add(this.batch.group);
   }
 
-  /** Preload every node .glb once. Six files, all untextured, about 90 kB. */
+  /** Preload every node .glb once, then collapse them into the batches. */
   async load(): Promise<void> {
-    const files = new Set<string>();
-    for (const list of Object.values(ART)) for (const a of list) files.add(a.file);
-    await Promise.all([...files].map(async (f) => {
-      const g = await loadGlb(ROOT + f);
-      this.templates.set(f, g.scene);
+    const want = new Map<string, string>();
+    for (const list of Object.values(ART)) for (const a of list) want.set(a.file, a.root);
+    await Promise.all([...want].map(async ([file, root]) => {
+      const g = await loadGlb(ROOT + file);
+      this.templates.set(file, { root, scene: g.scene });
     }));
+    this.batch.build(this.templates);
   }
 
   /**
-   * Scatter a clearing of nodes around `dir` and build their meshes.
+   * Scatter a clearing of nodes around `dir` and build their instances.
    *
    * Placement is ours, not `/core`'s, and that is a measured choice rather than
    * a shortcut: worldgen::survival::LayoutTestArea jitters every node by up to
@@ -105,7 +130,9 @@ export class NodeField {
    */
   populate(body: number, edits: number, dir: THREE.Vector3, seed: number): number {
     this.core.clearNodes();
-    for (const pl of this.placed) this.group.remove(pl.group);
+    for (const pl of this.placed)
+      for (let i = 0; i < pl.parts.length; ++i)
+        this.batch.set(pl.parts[i].material, pl.slots[i], -1, this.m);
     this.placed.length = 0;
 
     // A tangent basis at the spawn direction, so a metre offset is a metre.
@@ -152,58 +179,64 @@ export class NodeField {
     const list = ART[kind];
     if (list === undefined) return;
     const art = list[Math.floor(frac(hash32(h, 3)) * list.length) % list.length];
-    const tpl = this.templates.get(art.file);
-    if (tpl === undefined) return;
-    const g = new THREE.Group();
-    const clone = tpl.clone(true);
-    // ASSET-SPECS 2.5: a col_* proxy is a physics box in the same file, and
-    // adding one to the scene draws a grey cube through the middle of the asset.
-    selectLod(clone, '_LOD0');
-    clone.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.isMesh !== true) return;
-      m.castShadow = true;
-      m.receiveShadow = true;
-    });
-    g.add(clone);
-    g.rotateY(frac(hash32(h, 5)) * Math.PI * 2);
-    this.group.add(g);
-    const up = new THREE.Vector3(st.x, st.y, st.z).normalize();
+    const parts = this.batch.partsOf(art.file);
+    if (parts === null) return;
+    const slots = parts.map((p) => this.batch.acquire(p.material));
     const pl: Placed = {
-      index, group: g, root: art.root, radiusM: art.radiusM,
-      pos: { x: st.x, y: st.y, z: st.z }, up,
-      variant: '', punch: 0, empty: st.remaining <= 0,
+      index, art, parts, slots,
+      pos: { x: st.x, y: st.y, z: st.z },
+      up: new THREE.Vector3(st.x, st.y, st.z).normalize(),
+      yaw: frac(hash32(h, 5)) * Math.PI * 2,
+      variant: -1, punch: 0, empty: st.remaining <= 0,
     };
     this.placed.push(pl);
     this.setVariant(pl, variantFor(st.initial > 0 ? st.remaining / st.initial : 0));
   }
 
-  /**
-   * Flip which depletion variant is visible. `selectLod` already hid every
-   * `_LOD1`/`_LOD2` and every `col_*`, so this only has to agree about LOD0.
-   */
-  private setVariant(pl: Placed, variant: string): void {
+  /** Point every one of a node's slots at the geometry for `variant`. */
+  private setVariant(pl: Placed, variant: number): void {
     if (pl.variant === variant) return;
     pl.variant = variant;
-    const want = `${pl.root}_${variant}_LOD0`;
-    pl.group.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.isMesh !== true) return;
-      if (m.name.startsWith('col_')) { m.visible = false; return; }
-      // GLTFLoader splits a multi-material mesh into `<name>_0`, `<name>_1`, ...
-      const base = /_(\d+)$/.test(m.name) ? m.name.replace(/_(\d+)$/, '') : m.name;
-      for (const v of VARIANTS) {
-        if (base === `${pl.root}_${v}_LOD0`) { m.visible = base === want; return; }
-      }
-      // Anything that is not a variant LOD0 (a stump, a higher LOD) stays hidden.
-      if (/_LOD[12]$/.test(base) || /_Stump_/.test(base)) m.visible = false;
-    });
+    this.compose(pl, 0);
+    for (let i = 0; i < pl.parts.length; ++i)
+      this.batch.set(pl.parts[i].material, pl.slots[i], pl.parts[i].geom[variant], this.m);
+  }
+
+  /** Build `this.m` for a node: engine position, ground normal, yaw, hit reaction. */
+  private compose(pl: Placed, punch: number): void {
+    this.origin.toEngine(pl.pos, this.p);
+    this.q.setFromUnitVectors(this.up, pl.up);
+    // A decaying wobble about the ground normal reads as "that hit landed" from
+    // any angle, unlike a scale pulse, which is invisible head on. The yaw is
+    // composed here rather than baked at build time, so every node in a stand
+    // faces a different way.
+    this.qYaw.setFromAxisAngle(this.up, pl.yaw + Math.sin(punch * 46) * 0.13 * punch);
+    this.q.multiply(this.qYaw);
+    // Squash, not shrink: a struck tree compresses along its own trunk.
+    this.s.set(1 + 0.05 * punch, 1 - 0.11 * punch, 1 + 0.05 * punch);
+    this.m.compose(this.p, this.q, this.s);
   }
 
   /** Start the hit reaction on a node. Purely visual; the sim already moved. */
   punch(index: number): void {
     const pl = this.placed.find((n) => n.index === index);
-    if (pl !== undefined) pl.punch = 0.22;
+    if (pl !== undefined) pl.punch = PUNCH_SECS;
+  }
+
+  /**
+   * Where a swing on `index` lands, in the body frame, and what colour it is.
+   * The node's own art decides the height, so a chop lands on the trunk and a
+   * pick lands on the boulder rather than both landing at the pivot in the dirt.
+   */
+  hitPoint(index: number): HitPoint | null {
+    const pl = this.placed.find((n) => n.index === index);
+    if (pl === undefined) return null;
+    const u = pl.up, r = pl.art.hitUpM;
+    return {
+      pos: { x: pl.pos.x + u.x * r, y: pl.pos.y + u.y * r, z: pl.pos.z + u.z * r },
+      up: { x: u.x, y: u.y, z: u.z },
+      colour: pl.art.colour,
+    };
   }
 
   /** Re-read every node's depletion state and re-place it in engine space. */
@@ -215,21 +248,10 @@ export class NodeField {
         this.setVariant(pl, variantFor(f));
         pl.empty = st.remaining <= 0;
       }
-      this.origin.toEngine(pl.pos, this.p);
-      pl.group.position.copy(this.p);
-      this.q.setFromUnitVectors(this.up, pl.up);
-      pl.group.quaternion.copy(this.q);
-      if (pl.punch > 0) {
-        pl.punch = Math.max(0, pl.punch - dt);
-        // A decaying wobble about the ground normal reads as "that hit landed"
-        // from any angle, unlike a scale pulse, which is invisible head on.
-        const k = pl.punch / 0.22;
-        pl.group.rotateY(Math.sin(k * 34) * 0.10 * k);
-        pl.group.scale.setScalar(1 - 0.06 * k);
-      } else if (pl.group.scale.x !== 1) {
-        pl.group.scale.setScalar(1);
-      }
-      pl.group.updateMatrixWorld(true);
+      if (pl.punch > 0) pl.punch = Math.max(0, pl.punch - dt);
+      this.compose(pl, pl.punch / PUNCH_SECS);
+      for (let i = 0; i < pl.parts.length; ++i)
+        this.batch.move(pl.parts[i].material, pl.slots[i], this.m);
     }
   }
 
@@ -241,19 +263,24 @@ export class NodeField {
     for (const pl of this.placed) {
       const ox = pl.pos.x - eye.x, oy = pl.pos.y - eye.y, oz = pl.pos.z - eye.z;
       const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      if (t < -pl.radiusM || t > bestT) continue;
+      if (t < -pl.art.radiusM || t > bestT) continue;
       const cx = ox - dir.x * t, cy = oy - dir.y * t, cz = oz - dir.z * t;
       // A tree is tall and its origin is at the base, so the pick sphere is
       // raised and widened rather than centred on the pivot; aiming at a trunk
       // at chest height must hit, and it does not with a base-centred sphere.
       const perp = Math.hypot(cx, cy, cz);
-      if (perp > pl.radiusM * 1.35 + 0.6) continue;
+      if (perp > pl.art.radiusM * 1.35 + 0.6) continue;
       best = pl; bestT = Math.max(0, t);
     }
     return best;
   }
 
-  stats(): { nodes: number; empty: number } {
-    return { nodes: this.placed.length, empty: this.placed.filter((p) => p.empty).length };
+  stats(): { nodes: number; empty: number; batches: number; instances: number } {
+    const b = this.batch.stats();
+    return {
+      nodes: this.placed.length,
+      empty: this.placed.filter((p) => p.empty).length,
+      batches: b.batches, instances: b.instances,
+    };
   }
 }

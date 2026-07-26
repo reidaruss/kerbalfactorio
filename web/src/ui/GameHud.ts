@@ -27,16 +27,19 @@ export class GameHud {
   private readonly prompt: HTMLElement;
   private readonly carry: HTMLElement;
   private readonly toast: HTMLElement;
+  private readonly gainEl: HTMLElement;
   private lastPrompt = '';
   private lastCarry = '';
   private toastLeft = 0;
   private visible = true;
+  gains = 0;
 
   constructor(parent: HTMLElement) {
     this.cross = this.div(parent, 'of-cross', '');
     this.prompt = this.div(parent, 'of-prompt', 'of-ui');
     this.carry = this.div(parent, 'of-carry', 'of-ui');
     this.toast = this.div(parent, 'of-toast', 'of-ui');
+    this.gainEl = this.div(parent, 'of-gain', 'of-ui');
   }
 
   private div(parent: HTMLElement, id: string, cls: string): HTMLElement {
@@ -52,7 +55,32 @@ export class GameHud {
     const d = v ? '' : 'none';
     this.cross.style.display = d;
     this.carry.style.display = d;
+    this.gainEl.style.display = d;
     if (!v) this.prompt.style.display = 'none';
+  }
+
+  /**
+   * The item-gain readout: a big "+7 Wood" that pops beside the crosshair on the
+   * impact frame, plus a pulse on the crosshair itself.
+   *
+   * Separate from `flash` on purpose. The toast is a message channel ("cannot
+   * place there"); this is the CONFIRMATION that the swing landed and it has to
+   * arrive at the same instant as the debris, in the resource's own colour, and
+   * be gone before the next swing. A grant that shares a widget with an error
+   * message reads as an error message.
+   */
+  gain(text: string, colour: string): void {
+    this.gains++;
+    this.gainEl.textContent = text;
+    this.gainEl.style.color = colour;
+    // Removing the class, forcing layout, then re-adding is what restarts a CSS
+    // animation; without the reflow the browser coalesces both writes and a
+    // second swing inside the animation window shows nothing at all.
+    this.gainEl.classList.remove('pop');
+    this.cross.classList.remove('hit');
+    void this.gainEl.offsetWidth;
+    this.gainEl.classList.add('pop');
+    this.cross.classList.add('hit');
   }
 
   /** Show `text` for `secs`. The toast is the "something happened" channel. */

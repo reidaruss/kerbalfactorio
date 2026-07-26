@@ -112,6 +112,39 @@
 }
 #of-toast.show { opacity: 1; transition: none; }
 
+/* --- the item-gain readout ---------------------------------------------- */
+/* Sits just right of the crosshair and rises out of it, so the eye never has to
+   leave the thing being hit to read what was gained. Colour is set inline, from
+   the resource's own palette entry, so "+7" in bark brown and "+31" in metal
+   grey are distinguishable without reading the word. */
+#of-gain {
+  left: calc(50% + 26px);
+  top: calc(50% - 12px);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 4px #000, 0 2px 5px rgba(0, 0, 0, 0.85);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 21;
+}
+#of-gain.pop { animation: of-gain 0.95s cubic-bezier(0.16, 0.9, 0.3, 1) forwards; }
+@keyframes of-gain {
+  0%   { opacity: 0; transform: translate(-8px, 10px) scale(0.7); }
+  14%  { opacity: 1; transform: translate(0, 0) scale(1.16); }
+  30%  { opacity: 1; transform: translate(0, -4px) scale(1); }
+  70%  { opacity: 1; transform: translate(0, -18px) scale(1); }
+  100% { opacity: 0; transform: translate(0, -34px) scale(0.94); }
+}
+/* The crosshair takes the hit too: a quick bloom outward, then back. */
+#of-cross.hit { animation: of-hit 0.22s ease-out; }
+@keyframes of-hit {
+  0%   { transform: scale(1); opacity: 0.75; }
+  25%  { transform: scale(1.85); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.75; }
+}
+
 /* --- the Tab panel ------------------------------------------------------ */
 #of-panel {
   inset: 0;

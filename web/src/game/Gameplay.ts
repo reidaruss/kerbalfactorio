@@ -21,6 +21,7 @@ import { GameHud } from '../ui/GameHud.js';
 import { InventoryPanel, type RecipeRow, type SlotRow } from '../ui/InventoryPanel.js';
 import { FurnacePanel } from '../ui/FurnacePanel.js';
 import { Machines, type Machine } from './Machines.js';
+import { CameraKick, Debris } from './HarvestFx.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
@@ -47,6 +48,8 @@ export class Gameplay {
   readonly panel: InventoryPanel;
   readonly machines: Machines;
   readonly furnacePanel: FurnacePanel;
+  readonly debris = new Debris();
+  readonly kick = new CameraKick();
   nodesPlaced = 0;
   placements = 0;
   private panelHeld = false;
@@ -71,6 +74,7 @@ export class Gameplay {
     await Promise.all([g.field.load(), g.machines.load()]);
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
+    d.scene.add(g.debris.mesh);
     g.populate();
     return g;
   }
@@ -133,18 +137,50 @@ export class Gameplay {
     }
 
     const got = this.interact.step(f.mine, tick);
-    if (got && this.interact.last !== null) {
-      const l = this.interact.last;
-      this.hud.flash(`+${l.granted} ${l.name}${l.usedTool ? '  (tool)' : ''}`);
-      this.panel.invalidate();
-    }
+    if (got && this.interact.last !== null) this.impact(this.interact.last);
+    // The kick runs on the FIXED tick and is applied through the same additive
+    // Controller.look the mouse uses, so a driven tape kicks exactly as often as
+    // a human does and the offsets still sum to zero.
+    const [ky, kp] = this.kick.step(this.d.player.view.pitch);
+    if (kp !== 0 || ky !== 0) this.d.player.look(ky, kp);
     return got;
   }
 
-  /** Per frame: node transforms, depletion variants, HUD, panels. */
+  /**
+   * Everything a landed swing does that is not the grant itself: the node
+   * reacts, chips fly in the resource's own colour, the camera kicks, and the
+   * gain is read out beside the crosshair. All of it hangs off the authored
+   * impact frame (17 of 33) because that is when the tool visibly connects.
+   */
+  private impact(l: { granted: number; name: string; usedTool: boolean; index: number }): void {
+    const hit = this.field.hitPoint(l.index);
+    if (hit !== null) {
+      const e = this.d.player.aimRay().origin;
+      // Back towards the eye, flattened into the ground plane, so chips come at
+      // the player rather than through the node they were struck from.
+      const b = new THREE.Vector3(e.x - hit.pos.x, e.y - hit.pos.y, e.z - hit.pos.z);
+      const u = new THREE.Vector3(hit.up.x, hit.up.y, hit.up.z);
+      b.addScaledVector(u, -b.dot(u));
+      if (b.lengthSq() < 1e-9) b.set(u.y, -u.x, 0);
+      b.normalize();
+      // More chips on a bigger pull, so a tooled swing visibly hits harder.
+      const n = Math.min(22, 8 + Math.round(Math.min(30, l.granted) * 0.45));
+      this.debris.burst({ pos: hit.pos, up: hit.up, back: b, colour: hit.colour, count: n });
+      this.hud.gain(`+${l.granted} ${l.name}`, readable(hit.colour));
+    } else {
+      this.hud.gain(`+${l.granted} ${l.name}`, '#e8eef3');
+    }
+    this.kick.fire(this.interact.swings);
+    if (l.usedTool) this.hud.flash('tool', 0.7);
+    this.panel.invalidate();
+  }
+
+  /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
   frame(dt: number): void {
     this.field.update(dt);
     this.machines.update();
+    this.machines.updateFx(dt);
+    this.debris.update(dt, this.d.origin);
     if (this.openMachine !== null) this.furnacePanel.render(this.furnaceView(this.openMachine));
     if (this.aimedMachine !== null && !this.panel.isOpen && !this.furnacePanel.isOpen) {
       const st = this.game.furnaceState(this.aimedMachine.handle);
@@ -282,6 +318,7 @@ export class Gameplay {
     return out;
   }
 
+
   report(): unknown {
     return {
       nodes: this.field.stats(),
@@ -291,6 +328,11 @@ export class Gameplay {
       placements: this.placements,
       machines: this.machines.report(),
       pointerLocked: this.d.input.pointerLocked,
+      fx: {
+        debrisLive: this.debris.live, debrisSpawned: this.debris.spawned,
+        smokeLive: this.machines.smoke.live, smokePuffs: this.machines.smoke.emitted,
+        gains: this.hud.gains, kicking: this.kick.active, kickTicks: this.kick.applied,
+      },
       interact: this.interact.report(),
       carried: this.game.carried(),
       recipes: this.game.recipes().map((r) => ({
@@ -298,4 +340,21 @@ export class Gameplay {
       })),
     };
   }
+}
+
+/**
+ * The resource's own colour, lifted until it can be read as text over terrain.
+ * Coal is authored at #35353c, which is correct for a chip in the air and
+ * invisible as a caption, so the hue is kept and only the luminance is raised.
+ */
+function readable(hex: number): string {
+  let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  if (lum < 150) {
+    const k = 150 / Math.max(24, lum);
+    r = Math.min(255, Math.round(r * k + 40));
+    g = Math.min(255, Math.round(g * k + 40));
+    b = Math.min(255, Math.round(b * k + 40));
+  }
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
 }

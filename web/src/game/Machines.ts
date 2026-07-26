@@ -16,15 +16,30 @@
 // sink even on a slope. Standing rule 1, one more time.
 
 import * as THREE from 'three';
-import { loadGlb, selectLod } from '../assets/Loaders.js';
+import { findNode, loadGlb, selectLod } from '../assets/Loaders.js';
+import { MachineGlow, Smoke } from './MachineFx.js';
 import { scratchF64, scratchI32, type OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore } from './GameCore.js';
 
-const FILES: Record<number, { url: string; root: string }> = {
-  0: { url: 'assets/machines/primitive_furnace.glb', root: 'PrimitiveFurnace' },
-  1: { url: 'assets/machines/survival_smelter.glb', root: 'SurvivalSmelter' },
+/**
+ * `card` is the emissive fire object the .glb ships for exactly this purpose;
+ * the smoke position comes from the file's own `socket_smoke`, so the smelter's
+ * offset flue smokes from the flue and not from the middle of the machine.
+ */
+const FILES: Record<number, { url: string; root: string; card: string }> = {
+  0: {
+    url: 'assets/machines/primitive_furnace.glb', root: 'PrimitiveFurnace',
+    card: 'Furnace_FireCard',
+  },
+  1: {
+    url: 'assets/machines/survival_smelter.glb', root: 'SurvivalSmelter',
+    card: 'SurvivalSmelter_Glow',
+  },
 };
+
+/** Seconds between smoke puffs while a machine is actually burning. */
+const PUFF_SECS = 0.30;
 
 /** Metres ahead of the eye a placement lands, before the grid snap. */
 const PLACE_AHEAD_M = 2.2;
@@ -44,14 +59,21 @@ export interface Machine {
   pos: { x: number; y: number; z: number };
   up: THREE.Vector3;
   group: THREE.Group;
+  glow: MachineGlow;
+  /** Body-frame point the flue smokes from, derived from the file's socket. */
+  smokeAt: { x: number; y: number; z: number };
+  puffIn: number;
+  burning: boolean;
 }
 
 export class Machines {
   readonly group = new THREE.Group();
   readonly list: Machine[] = [];
+  readonly smoke = new Smoke();
   private readonly templates = new Map<string, THREE.Object3D>();
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
+  private readonly v = new THREE.Vector3();
   private readonly yAxis = new THREE.Vector3(0, 1, 0);
 
   constructor(
@@ -61,6 +83,7 @@ export class Machines {
     private readonly bodyHandle: number,
   ) {
     this.group.name = 'machines';
+    this.group.add(this.smoke.mesh);
   }
 
   async load(): Promise<void> {
@@ -123,9 +146,19 @@ export class Machines {
     });
     g.add(clone);
     this.group.add(g);
+    const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
+    // The socket is authored in the machine's own frame, and a placed machine is
+    // only rotated (local +Y onto the ground normal), so rotating the socket
+    // offset by that same quaternion is the whole transform. Falling back to the
+    // asset height keeps a machine smoking even if a file ever drops the socket.
+    this.q.setFromUnitVectors(this.yAxis, stand);
+    const socket = findNode(clone, 'socket_smoke');
+    this.v.copy(socket?.position ?? new THREE.Vector3(0, 1.4, 0)).applyQuaternion(this.q);
     const m: Machine = {
-      handle, tier, pos, group: g,
-      up: new THREE.Vector3(pos.x, pos.y, pos.z).normalize(),
+      handle, tier, pos, group: g, up: stand,
+      glow: new MachineGlow(clone, f.card),
+      smokeAt: { x: pos.x + this.v.x, y: pos.y + this.v.y, z: pos.z + this.v.z },
+      puffIn: 0, burning: false,
     };
     this.list.push(m);
     return m;
@@ -136,6 +169,30 @@ export class Machines {
     let done = 0;
     for (const m of this.list) done += this.core.furnaceRun(m.handle, ticks);
     return done;
+  }
+
+  /**
+   * Drive the fire card and the flue from /core's furnace state.
+   *
+   * `smelting` is only true on a tick that actually PROGRESSED, and the tick that
+   * completes a smelt clears it, so reading that flag alone makes the fire blink
+   * off for one frame every 180 ticks. The state that matters visually is "has
+   * ore and has fuel", which is precisely the condition gameplay.h's tick uses to
+   * decide whether to progress at all.
+   */
+  updateFx(dt: number): void {
+    for (const m of this.list) {
+      const st = this.core.furnaceState(m.handle);
+      const hasFuel = st !== null && st.fuelTicks > 0;
+      m.burning = st !== null && hasFuel && st.oreCount > 0;
+      m.glow.update(dt, { burning: m.burning, hasFuel });
+      m.puffIn -= dt;
+      if (m.burning && m.puffIn <= 0) {
+        m.puffIn = PUFF_SECS;
+        this.smoke.emit(m.smokeAt, m.up);
+      }
+    }
+    this.smoke.update(dt, this.origin);
   }
 
   /** World-anchored re-place, exactly like the nodes. */
@@ -171,6 +228,8 @@ export class Machines {
   report(): unknown {
     return this.list.map((m) => ({
       handle: m.handle, tier: m.tier, state: this.core.furnaceState(m.handle),
+      burning: m.burning, lit: Number(m.glow.lit.toFixed(3)),
+      smokePuffs: this.smoke.live,
     }));
   }
 }

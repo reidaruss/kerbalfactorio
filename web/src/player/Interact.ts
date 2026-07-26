@@ -51,6 +51,8 @@ export interface HarvestEvent {
   granted: number;
   usedTool: boolean;
   nodeEmpty: boolean;
+  /** Which node took the hit, so the impact feedback lands on the right one. */
+  index: number;
   /** Sim tick the grant landed on, so a probe can prove it advanced. */
   tick: number;
 }
@@ -113,7 +115,7 @@ export class Interact {
     this.granted += r.granted;
     this.last = {
       item: r.resource, name: this.core.itemName(r.resource), granted: r.granted,
-      usedTool: r.usedTool, nodeEmpty: r.nodeEmpty, tick,
+      usedTool: r.usedTool, nodeEmpty: r.nodeEmpty, index, tick,
     };
     return true;
   }
