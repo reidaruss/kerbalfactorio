@@ -11,6 +11,7 @@ import type { VoxelWorld, DigResult } from '../world/VoxelWorld.js';
 import type { VoxelMesh } from '../world/VoxelMesh.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import type { Vec3d } from '../world/PlanetBody.js';
+import type { DigFx } from '../render/DigFx.js';
 
 /**
  * Reach and brush, metres.
@@ -60,10 +61,17 @@ export class DigAction {
     private readonly voxels: VoxelWorld,
     private readonly mesh: VoxelMesh,
     private readonly terrain: TerrainStream,
+    private readonly fx: DigFx | null = null,
   ) {}
 
-  /** Fixed-tick step. `held` is the mine key; the cooldown makes it repeat. */
-  step(held: boolean, origin: Vec3d, dir: Vec3d): DigResult | null {
+  /**
+   * Fixed-tick step. `held` is the mine key; the cooldown makes it repeat.
+   * The debris integrates every tick whether or not a strike lands, which is
+   * why it lives here and not behind the `held` guard: chips already in the air
+   * have to keep falling after the player lets go of the key.
+   */
+  step(held: boolean, origin: Vec3d, dir: Vec3d, dt = 1 / 60): DigResult | null {
+    this.fx?.step(dt);
     if (this.cooldown > 0) this.cooldown--;
     if (!held || this.cooldown > 0) return null;
     this.cooldown = DIG.cooldownTicks;
@@ -87,6 +95,7 @@ export class DigAction {
     this.mesh.applyDirty(r.dirty);
     if (r.hit !== null) {
       this.terrain.digAt(r.hit.x, r.hit.y, r.hit.z, DIG.radiusM);
+      this.fx?.burst(r.hit, dir);
     }
     this.stats.digs++;
     this.stats.volumeM3 += r.cells;   // 1 m^3 per cell (of_voxel_size)

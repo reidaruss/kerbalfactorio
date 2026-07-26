@@ -103,14 +103,22 @@
   const outM = +metres.toFixed(2);
   for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyS']); sample(); }
   await settle(0.6);
-  // Frame the capture: third person, looking down the tunnel, so the shot shows
-  // the player inside the passage rather than a wall filling the lens.
-  if (OF_ARGS.shotView !== 'FP') of.setView('TP');
+  // Frame the capture: look level down the tunnel from inside it.
+  if (OF_ARGS.shotView === 'TP') of.setView('TP');
   of.look(yaw, 0);
   await settle(0.5);
+  // Read the voxel state BEFORE the capture strike. The mouth reconciliation is
+  // a worker round trip, so a strike fired 0.12 s before the report would leave
+  // sent one ahead of applied and fail a check that is about lost digs.
+  const v = of.voxels();
+  // One last strike purely so the capture catches debris in the air, and so the
+  // burst counter proves the FX fired rather than that burst() returned.
+  const fxBefore = v.fx;
+  of.dig();
+  await of.run(0.12, 60);
+  const fxAfter = of.voxels().fx;
 
   const w = of.world();
-  const v = of.voxels();
   const hits = shots.filter((s) => s !== null && s.cells > 0);
   const n = walk.length;
   const p = eye();
@@ -151,6 +159,10 @@
       max: Math.max(...remesh),
       mean: +(remesh.reduce((a, b) => a + b, 0) / remesh.length).toFixed(2),
     },
+    // Debris: chips in the air AFTER a strike that the counter says happened.
+    fx: { before: fxBefore, after: fxAfter,
+      fired: fxAfter !== null && fxAfter.bursts > fxBefore.bursts
+        && fxAfter.alive > 0 && fxAfter.visible },
     mesh: v.mesh,
     meshVisible: v.meshVisible,
     action: v.action,

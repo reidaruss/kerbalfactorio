@@ -25,6 +25,7 @@ import { Regime } from '../world/Regime.js';
 import { bootTerrain } from '../world/TerrainBoot.js';
 import { VoxelWorld } from '../world/VoxelWorld.js';
 import { VoxelMesh } from '../world/VoxelMesh.js';
+import { DigFx } from '../render/DigFx.js';
 import { DigAction } from '../player/DigAction.js';
 import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
@@ -200,8 +201,12 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const voxelMesh = voxels === null ? null
     : new VoxelMesh(core, body.handle, voxels.handle, origin);
   if (voxelMesh !== null) scenes.near.add(voxelMesh.mesh);
+  // Debris. Reads gravity from the body, never from a constant (DW-18), and
+  // costs one draw call that is skipped while nothing is in the air.
+  const digFx = voxels === null ? null : new DigFx(origin, (r) => body.gravityAccel(r));
+  if (digFx !== null) scenes.near.add(digFx.points);
   const dig = voxels === null || voxelMesh === null ? null
-    : new DigAction(voxels, voxelMesh, terrain);
+    : new DigAction(voxels, voxelMesh, terrain, digFx);
 
   // W5 gameplay. Also player-gated: the pack, the clearing and the swing all
   // hang off a character, and a free camera has no hands. It is built LAST
@@ -241,7 +246,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, ibl, props, scatter, voxels, voxelMesh, dig,
+    hud, sunLights, shadows, ibl, props, scatter, voxels, voxelMesh, dig, digFx,
     gameplay, boot,
   };
   return { services, canvas };

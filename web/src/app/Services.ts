@@ -15,6 +15,7 @@ import type { SkyIbl } from '../render/SkyIbl.js';
 import type { PropLibrary } from '../render/instancing/PropLibrary.js';
 import type { VoxelWorld } from '../world/VoxelWorld.js';
 import type { VoxelMesh } from '../world/VoxelMesh.js';
+import type { DigFx } from '../render/DigFx.js';
 import type { DigAction } from '../player/DigAction.js';
 import type { Scatter } from '../world/Scatter.js';
 import type { StatsProbe } from '../render/debug/StatsProbe.js';
@@ -90,6 +91,8 @@ export interface Services {
   readonly voxels: VoxelWorld | null;
   readonly voxelMesh: VoxelMesh | null;
   readonly dig: DigAction | null;
+  /** W5. Strike debris. Null wherever `dig` is null: no hands, no chips. */
+  readonly digFx: DigFx | null;
   /** W5. Null with no character, or with ?gameplay=0. */
   readonly gameplay: Gameplay | null;
   readonly boot: BootMetrics;

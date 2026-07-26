@@ -275,6 +275,9 @@ export function installDebugApi(
         action: s.dig.stats,
         mesh: s.voxelMesh.stats,
         meshVisible: s.voxelMesh.mesh.visible,
+        // Strike debris, so a probe can assert chips were actually thrown
+        // rather than that the call to throw them returned.
+        fx: s.digFx === null ? null : { ...s.digFx.stats, visible: s.digFx.points.visible },
         // sent != applied means a dig never reached the heightfield, so the
         // voxel layer and the surface would silently disagree.
         mouth: { sent: s.terrain.digsSent, applied: s.terrain.digsApplied },
