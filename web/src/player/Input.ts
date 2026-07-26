@@ -15,6 +15,8 @@ export interface InputFrame {
   mine: boolean;
   /** Tab. Held state; the UI edge-detects it into one open/close per press. */
   panel: boolean;
+  /** KeyG. Held state; the build system edge-detects it into one placement. */
+  place: boolean;
 }
 
 export interface TapeEntry {
@@ -52,7 +54,7 @@ export class Input {
 
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
-    jump: false, toggleView: false, mine: false, panel: false,
+    jump: false, toggleView: false, mine: false, panel: false, place: false,
   };
 
   attach(el: HTMLElement): void {
@@ -124,11 +126,18 @@ export class Input {
     else if (this.el !== null) void this.el.requestPointerLock?.();
   }
 
-  /** Zero everything the UI is swallowing, but keep `panel` so Tab can close. */
+  /**
+   * Zero everything the UI is swallowing. `panel` and `mine` survive on
+   * purpose: Tab has to be able to close the panel it opened, and a machine
+   * screen has to close with the same key that opened it. Consumers behind an
+   * open panel must therefore ignore `mine` themselves, which Gameplay does by
+   * returning before the interaction step.
+   */
   private mute(f: InputFrame): void {
     f.fwd = 0; f.right = 0; f.up = 0;
     f.dYaw = 0; f.dPitch = 0; f.zoom = 0;
-    f.boost = false; f.jump = false; f.toggleView = false; f.mine = false;
+    f.boost = false; f.jump = false; f.toggleView = false;
+    f.place = false;
   }
 
   private axis(neg: string[], pos: string[]): number {
@@ -155,6 +164,7 @@ export class Input {
       f.toggleView = keys.has('KeyV');
       f.mine = keys.has('KeyE');
       f.panel = keys.has('Tab');
+      f.place = keys.has('KeyG');
       if (this.uiHeld) this.mute(f);
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
@@ -170,6 +180,7 @@ export class Input {
     f.toggleView = this.down.has('KeyV');
     f.mine = this.down.has('KeyE');
     f.panel = this.down.has('Tab');
+    f.place = this.down.has('KeyG');
     if (this.uiHeld) this.mute(f);
     this.dYaw = 0;
     this.dPitch = 0;

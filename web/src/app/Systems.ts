@@ -32,11 +32,12 @@ export function registerSystems(s: Services, loop: Loop): void {
     // when a node is in reach, because a player looking at a tree who presses
     // the mine key means the tree, and digging a crater under it instead is the
     // sort of thing that makes a game feel like it is not listening.
-    const onNode = s.gameplay !== null && s.gameplay.fixedStep(loop.tickIndex - 1)
-      ? true : s.gameplay?.interact.hasTarget ?? false;
+    const busy = s.gameplay !== null && s.gameplay.fixedStep(loop.tickIndex - 1)
+      ? true
+      : (s.gameplay?.interact.hasTarget ?? false) || (s.gameplay?.uiOpen ?? false);
     if (s.dig !== null && s.player !== null) {
       const ray = s.player.aimRay();
-      s.dig.step(s.input.frame.mine && !onNode, ray.origin, ray.dir);
+      s.dig.step(s.input.frame.mine && !busy, ray.origin, ray.dir);
     }
   });
 

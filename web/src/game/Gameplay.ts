@@ -19,6 +19,8 @@ import { NodeField } from './NodeField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
 import { InventoryPanel, type RecipeRow, type SlotRow } from '../ui/InventoryPanel.js';
+import { FurnacePanel } from '../ui/FurnacePanel.js';
+import { Machines, type Machine } from './Machines.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
@@ -43,8 +45,15 @@ export class Gameplay {
   readonly interact: Interact;
   readonly hud: GameHud;
   readonly panel: InventoryPanel;
+  readonly machines: Machines;
+  readonly furnacePanel: FurnacePanel;
   nodesPlaced = 0;
+  placements = 0;
   private panelHeld = false;
+  private placeHeld = false;
+  private mineHeld = false;
+  private openMachine: Machine | null = null;
+  private aimedMachine: Machine | null = null;
 
   private constructor(private readonly d: GameplayDeps) {
     this.game = new GameCore(d.core);
@@ -52,11 +61,15 @@ export class Gameplay {
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     this.hud = new GameHud(d.host);
     this.panel = new InventoryPanel(d.host, (i) => this.craft(i));
+    this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle);
+    this.furnacePanel = new FurnacePanel(
+      d.host, (item) => this.loadFurnace(item), () => this.takeFurnace());
   }
 
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
-    await g.field.load();
+    await Promise.all([g.field.load(), g.machines.load()]);
+    d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
     g.populate();
     return g;
@@ -76,6 +89,9 @@ export class Gameplay {
     this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed);
   }
 
+  /** True while any panel owns the pointer, so the dig action stands down. */
+  get uiOpen(): boolean { return this.panel.isOpen || this.furnacePanel.isOpen; }
+
   /** Fixed tick. Returns true on the tick a harvest actually granted items. */
   fixedStep(tick: number): boolean {
     const f = this.d.input.frame;
@@ -84,7 +100,38 @@ export class Gameplay {
     if (f.panel && !this.panelHeld) this.setPanel(!this.panel.isOpen);
     this.panelHeld = f.panel;
 
-    if (this.panel.isOpen) { this.interact.target = null; return false; }
+    // Machines tick on the SIM clock, like everything else that is a rule: a
+    // furnace on a synthetic-clock probe smelts in exactly the tick count
+    // gameplay.h says it does, which is what makes the timing assertable.
+    this.machines.tick(1);
+
+    if (this.panel.isOpen) {
+      this.mineHeld = f.mine;
+      this.interact.target = null;
+      return false;
+    }
+
+    if (this.furnacePanel.isOpen) {
+      if (f.mine && !this.mineHeld) this.openFurnace(null);
+      this.mineHeld = f.mine;
+      this.interact.target = null;
+      return false;
+    }
+    this.mineHeld = f.mine;
+
+    // Placement, and the machine prompt, both want the aim ray.
+    const ray = this.d.player.aimRay();
+    this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
+    if (f.place && !this.placeHeld) this.placeMachine(ray);
+    this.placeHeld = f.place;
+
+    // A machine under the crosshair takes the key: you cannot harvest a furnace.
+    if (this.aimedMachine !== null) {
+      if (f.mine) this.openFurnace(this.aimedMachine);
+      this.interact.target = null;
+      return false;
+    }
+
     const got = this.interact.step(f.mine, tick);
     if (got && this.interact.last !== null) {
       const l = this.interact.last;
@@ -94,9 +141,20 @@ export class Gameplay {
     return got;
   }
 
-  /** Per frame: node transforms, depletion variants, HUD, panel. */
+  /** Per frame: node transforms, depletion variants, HUD, panels. */
   frame(dt: number): void {
     this.field.update(dt);
+    this.machines.update();
+    if (this.openMachine !== null) this.furnacePanel.render(this.furnaceView(this.openMachine));
+    if (this.aimedMachine !== null && !this.panel.isOpen && !this.furnacePanel.isOpen) {
+      const st = this.game.furnaceState(this.aimedMachine.handle);
+      this.hud.render(dt, {
+        name: st !== null && st.smelting ? 'furnace (smelting)' : 'furnace',
+        fraction: st === null ? 0 : st.progress / Math.max(1, st.ticksPerSmelt),
+        empty: false, distanceM: 0,
+      }, this.game.carried().map((c) => ({ name: c.name, count: c.count })));
+      return;
+    }
     const t = this.interact.target;
     this.hud.render(dt, t === null ? null : {
       name: t.name, fraction: t.fraction, empty: t.empty, distanceM: t.distanceM,
@@ -110,6 +168,64 @@ export class Gameplay {
     this.d.input.setUiCapture(open);
     this.hud.setVisible(!open);
     if (open) this.panel.invalidate();
+  }
+
+  /** Put a furnace or a smelter from the pack on the 1 m grid ahead of the eye. */
+  private placeMachine(ray: { origin: { x: number; y: number; z: number };
+                              dir: { x: number; y: number; z: number } }): void {
+    const tier = this.game.count(this.game.ids.furnace) > 0 ? 0
+      : this.game.count(this.game.ids.smelter) > 0 ? 1 : -1;
+    if (tier < 0) { this.hud.flash('nothing to place  (craft a furnace)'); return; }
+    const item = tier === 0 ? this.game.ids.furnace : this.game.ids.smelter;
+    const m = this.machines.place(item, tier, ray.origin, ray.dir);
+    if (m === null) { this.hud.flash('cannot place there'); return; }
+    this.placements++;
+    this.hud.flash(`placed ${this.game.itemName(item)}`);
+  }
+
+  /** Open the furnace UI on `m`, or close it with null. THE pointer transition. */
+  openFurnace(m: Machine | null): void {
+    this.openMachine = m;
+    this.furnacePanel.setOpen(m !== null);
+    this.d.input.setUiCapture(m !== null);
+    this.hud.setVisible(m === null);
+    if (m !== null) this.furnacePanel.render(this.furnaceView(m));
+  }
+
+  private loadFurnace(item: number): void {
+    if (this.openMachine === null) return;
+    const n = this.game.furnaceInsert(this.openMachine.handle, item, 5);
+    if (n > 0) this.hud.flash(`loaded ${n} ${this.game.itemName(item)}`);
+  }
+
+  private takeFurnace(): void {
+    if (this.openMachine === null) return;
+    const n = this.game.furnaceCollect(this.openMachine.handle, 99);
+    if (n > 0) this.hud.flash(`took ${n}`);
+  }
+
+  /** What the pack can feed this machine: the ores it smelts and the fuels. */
+  private furnaceView(m: Machine) {
+    const st = this.game.furnaceState(m.handle);
+    const I = this.game.ids;
+    const loadable = [];
+    for (const [item, fuel] of [[I.rawIron, false], [I.rawCopper, false],
+      [I.coal, true], [I.wood, true]] as [number, boolean][]) {
+      const c = this.game.count(item);
+      if (c > 0) loadable.push({ item, name: this.game.itemName(item), count: c, fuel });
+    }
+    return {
+      title: m.tier === 1 ? 'Smelter' : 'Primitive furnace',
+      oreName: st === null ? '' : this.game.itemName(st.oreItem),
+      oreCount: st?.oreCount ?? 0,
+      outName: st === null || st.outItem === 0 ? '' : this.game.itemName(st.outItem),
+      outCount: st?.outCount ?? 0,
+      fuelTicks: st?.fuelTicks ?? 0,
+      progress: st?.progress ?? 0,
+      ticksPerSmelt: st?.ticksPerSmelt ?? 180,
+      smelting: st?.smelting ?? false,
+      loadable,
+    };
   }
 
   private craft(index: number): void {
@@ -171,6 +287,9 @@ export class Gameplay {
       nodes: this.field.stats(),
       placed: this.nodesPlaced,
       panelOpen: this.panel.isOpen,
+      furnaceOpen: this.furnacePanel.isOpen,
+      placements: this.placements,
+      machines: this.machines.report(),
       pointerLocked: this.d.input.pointerLocked,
       interact: this.interact.report(),
       carried: this.game.carried(),

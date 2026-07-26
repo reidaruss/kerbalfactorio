@@ -211,3 +211,64 @@
   font-size: 11px;
   color: var(--of-dim);
 }
+
+/* --- the furnace panel -------------------------------------------------- */
+#of-furnace {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.45);
+  z-index: 29;
+}
+#of-furnace.open { display: flex; }
+#of-furnace .frame {
+  width: min(520px, 90vw);
+  padding: 16px 18px;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+#of-furnace h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+  padding-bottom: 7px;
+}
+#of-furnace h3 span { float: right; letter-spacing: 0; color: var(--of-accent); }
+#of-furnace .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#of-furnace .cell {
+  padding: 8px 10px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  text-align: center;
+}
+#of-furnace .cell.out { border-color: var(--of-accent); }
+#of-furnace .cell em {
+  display: block;
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+}
+#of-furnace .cell b { display: block; margin: 3px 0 1px; font-size: 14px; }
+#of-furnace .cell i { font-style: normal; font-size: 12px; color: var(--of-accent); }
+#of-fbar { height: 6px; margin: 12px 0 4px; background: #2b343b; }
+#of-fbar > i { display: block; height: 100%; background: var(--of-accent); }
+#of-furnace .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+#of-furnace button {
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #101418;
+  background: var(--of-accent);
+  border: 0;
+  cursor: pointer;
+}
+#of-furnace button:disabled { background: #2c353d; color: #667581; cursor: not-allowed; }
+#of-furnace .hint { margin-top: 8px; font-size: 11px; color: var(--of-dim); }

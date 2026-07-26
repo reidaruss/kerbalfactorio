@@ -20,6 +20,8 @@ export interface WorldState {
   player: {
     mode: string; grounded: boolean; speedMps: number; slopeCos: number;
     toggles: number; armLengthM: number;
+    /** W5. Underground state: on a voxel floor, and refused by rock this tick. */
+    underRock: boolean; blockedByRock: boolean; voxelPushM: number;
     aim: { origin: [number, number, number]; dir: [number, number, number] };
   } | null;
   bodyRadiusM: number;
@@ -202,6 +204,9 @@ export function installDebugApi(
           slopeCos: pl.body.slopeCos,
           toggles: pl.view.toggles,
           armLengthM: pl.view.armLength,
+          underRock: pl.body.underRock,
+          blockedByRock: pl.body.blockedByRock,
+          voxelPushM: pl.body.voxelPushM,
           aim: { origin: ray.origin, dir: ray.dir },
         },
         bodyRadiusM: s.body.radiusM,
