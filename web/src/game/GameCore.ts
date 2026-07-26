@@ -27,6 +27,15 @@ export interface NodeState {
 export interface HarvestResult {
   granted: number; usedTool: boolean; nodeEmpty: boolean; resource: number;
 }
+/** One structural part: its item id, its render TypeId and its build cost. */
+export interface StructureDef {
+  index: number;
+  item: number;
+  typeId: number;
+  /** `survival::StructureKind`, in enum order: foundation, floor, wall, door. */
+  kind: number;
+  cost: { item: number; count: number }[];
+}
 export interface FurnaceState {
   oreItem: number; oreCount: number; outItem: number; outCount: number;
   fuelTicks: number; progress: number; ticksPerSmelt: number; smelting: boolean;
@@ -149,6 +158,48 @@ export class GameCore {
   }
 
   craft(index: number): boolean { return this.M._of_gp_craft(index) === 1; }
+
+  // --- structural building set ---------------------------------------------
+  /**
+   * The four structural parts and what each one COSTS, straight out of /core.
+   *
+   * The costs are authored in `gameplay.h` §S.6 as `CraftRecipe`s, so balance
+   * moves in the header the headless suites test and never in a JS table. The
+   * guard is for one window only: a client running against a wasm older than
+   * ABI 5 has no structural surface, and losing the build menu is a better
+   * failure than a page that will not boot.
+   */
+  structures(): StructureDef[] {
+    const M = this.M as Partial<OfCoreModule>;
+    if (typeof M._of_gp_structure_count !== 'function') return [];
+    const n = this.M._of_gp_structure_count();
+    const out: StructureDef[] = [];
+    for (let i = 0; i < n; ++i) {
+      const len = this.M._of_gp_structure_info(i);
+      if (len < 4) continue;
+      const p = scratchI32(this.M, len).slice();
+      const cost: { item: number; count: number }[] = [];
+      for (let k = 0; k < p[3]; ++k) {
+        cost.push({ item: p[4 + k * 2], count: p[5 + k * 2] });
+      }
+      out.push({ index: i, item: p[0], typeId: p[1], kind: p[2], cost });
+    }
+    return out;
+  }
+
+  /** Can the pack pay for structure `index` right now? /core answers. */
+  structureAfford(index: number): boolean {
+    const M = this.M as Partial<OfCoreModule>;
+    if (typeof M._of_gp_structure_can_afford !== 'function') return false;
+    return this.M._of_gp_structure_can_afford(index) === 1;
+  }
+
+  /** Spend the cost, all or nothing. Returns false and spends nothing if short. */
+  structurePay(index: number): boolean {
+    const M = this.M as Partial<OfCoreModule>;
+    if (typeof M._of_gp_structure_pay !== 'function') return false;
+    return this.M._of_gp_structure_pay(index) === 1;
+  }
 
   // --- furnaces ------------------------------------------------------------
   furnaceCreate(tier: number): number { return this.M._of_gp_furnace_create(tier); }

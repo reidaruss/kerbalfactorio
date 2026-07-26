@@ -16,6 +16,8 @@ import type { Factory, Placed } from './Factory.js';
 import type { FactoryView } from './FactoryView.js';
 import type { GameCore } from './GameCore.js';
 import type { Machine, Machines } from './Machines.js';
+import type { StructurePart, Structures } from './Structures.js';
+import type { StructureView } from './StructureView.js';
 
 export interface DemolishResult {
   kind: string;
@@ -62,6 +64,23 @@ export function demolishBuild(factory: Factory, view: FactoryView, game: GameCor
   return { kind: b.kind, refunded, lost, message: describe(b.kind, refunded, lost) };
 }
 
+/**
+ * Pull up a foundation, floor, wall or door. The FULL cost comes back, unlike a
+ * machine, because a structure holds nothing and loses nothing: there is no
+ * pool, no belt and no in-flight item, so anything less than a full refund would
+ * be a tax on changing your mind about a wall.
+ */
+export function demolishStructure(structures: Structures, view: StructureView,
+                                  game: GameCore,
+                                  p: StructurePart): DemolishResult | null {
+  const id = p.id;
+  const r = structures.remove(p);
+  if (r === null) return null;
+  view.release(id);
+  const refunded = r.refunded.map((x) => ({ name: game.itemName(x.item), count: x.count }));
+  return { kind: p.kind, refunded, lost: [], message: describe(p.kind, refunded, []) };
+}
+
 function describe(kind: string, refunded: { name: string; count: number }[],
                   lost: { what: string; count: number }[]): string {
   const parts = [`removed ${kind}`];
@@ -80,10 +99,14 @@ function describe(kind: string, refunded: { name: string; count: number }[],
  * behind it must not steal the press.
  */
 export function demolishAimed(g: { machines: Machines; game: GameCore;
-                                   factory: Factory; factoryView: FactoryView },
+                                   factory: Factory; factoryView: FactoryView;
+                                   structures: Structures;
+                                   structView: StructureView },
                               machine: Machine | null,
-                              build: Placed | null): DemolishResult | null {
+                              build: Placed | null,
+                              part: StructurePart | null = null): DemolishResult | null {
   if (machine !== null) return demolishMachine(g.machines, g.game, machine);
   if (build !== null) return demolishBuild(g.factory, g.factoryView, g.game, build);
+  if (part !== null) return demolishStructure(g.structures, g.structView, g.game, part);
   return null;
 }

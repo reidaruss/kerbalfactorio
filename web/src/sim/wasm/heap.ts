@@ -174,6 +174,16 @@ export interface OfCoreModule {
   _of_gp_recipe_info(i: number): number;
   _of_gp_craft(i: number): number;
 
+  // --- ABI 5: the structural building set (gameplay.h §S.6). Structures are
+  //     NOT automation: they never tick, hold nothing and have no ports, so
+  //     they are their own kind and never enter the factory sim.
+  _of_gp_structure_count(): number;
+  /** i32 scratch [item, typeId, kind, inN, (item,count)*inN]. Returns the length. */
+  _of_gp_structure_info(i: number): number;
+  _of_gp_structure_can_afford(i: number): number;
+  /** Spend the cost, all or nothing. 1 on success, 0 if the pack is short. */
+  _of_gp_structure_pay(i: number): number;
+
   _of_gp_furnace_create(tier: number): number;
   _of_gp_furnace_destroy(f: number): void;
   _of_gp_furnace_insert(f: number, item: number, count: number): number;

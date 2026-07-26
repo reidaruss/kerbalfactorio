@@ -27,11 +27,12 @@ import { Sfx } from '../audio/Sfx.js';
 import { Factory, type Placed } from './Factory.js';
 import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
-import { demolishAimed } from './Demolition.js';
+import { Structures, type StructurePart } from './Structures.js';
+import { StructureView } from './StructureView.js';
 import { aimPrompt } from './FactoryReport.js';
 import { nodeDump } from './GameplayViews.js';
-import { collectFrom, craft, loadFurnace, machineView, placeMachine, recipes, slots,
-  takeFurnace } from './GameplayActions.js';
+import { collectFrom, craft, loadFurnace, machineView, raze, recipes, slots,
+  stepBuild, takeFurnace } from './GameplayActions.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
@@ -87,6 +88,9 @@ export class Gameplay {
   readonly factory: Factory;
   readonly factoryView: FactoryView;
   readonly build: BuildMode;
+  /** Base building: the parts, their bodies and the batch that draws them. */
+  readonly structures: Structures;
+  readonly structView: StructureView;
   nodesPlaced = 0;
   patchesPlaced = 0;
   placements = 0;
@@ -107,6 +111,7 @@ export class Gameplay {
   private openMachine: Machine | null = null;
   private aimedMachine: Machine | null = null;
   private aimedBuild: Placed | null = null;
+  private aimedPart: StructurePart | null = null;
 
   /** What a save needs: the module handle, the seed, and the voxel handles,
    * which live in Services and are null in a scenario with no character. */
@@ -137,7 +142,14 @@ export class Gameplay {
     this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60,
       this.oreField.patches);
     this.factoryView = new FactoryView(d.origin);
-    this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView);
+    // DW-24: the edits handle is read LIVE, so a pad flattened with Q reads as
+    // flat on the very next tick and the invalid ghost turns valid in the frame
+    // the player levels it.
+    this.structures = new Structures(d.core, this.game, d.bodyHandle,
+      () => d.ports?.voxels?.handle ?? 0);
+    this.structView = new StructureView(d.origin);
+    this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView,
+      this.structures, this.structView);
     // A hand furnace announces its own ingots, at the furnace that made them.
     this.machines.onSmelt = (m, n) => {
       this.fx.ingot(n, m.pos, m.up,
@@ -148,7 +160,9 @@ export class Gameplay {
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
-      g.icons.load()]);
+      g.structures.load(), g.icons.load()]);
+    g.structView.build(g.structures);
+    d.scene.add(g.structView.group);
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
@@ -202,6 +216,9 @@ export class Gameplay {
 
   /** True while the pointer is locked to the canvas, for the report. */
   get pointerLocked(): boolean { return this.d.input.pointerLocked; }
+
+  /** The key reader, so the verbs in GameplayActions can ask about a key. */
+  get input(): Input { return this.d.input; }
 
   /** True while any panel owns the pointer, so the dig action stands down. */
   get uiOpen(): boolean { return this.panel.isOpen || this.furnacePanel.isOpen; }
@@ -260,30 +277,17 @@ export class Gameplay {
     }
 
     const ray = this.d.player.aimRay();
-    // BUILD MODE FIRST, and it takes the place key while it is armed. A player
-    // holding a belt in hand who presses G means the belt, not the furnace, and
-    // guessing wrong is the sort of thing that makes a game feel unlistening.
-    const built = this.build.step((c) => this.d.input.held(c), f.place, ray);
-    if (built) {
-      // The rate is said out loud on placement, because richness varies across a
-      // deposit and a player who cannot see what a spot is worth cannot choose.
-      const r = this.build.lastRate;
-      this.hud.flash(r > 0 ? `placed ${this.build.label}  ${r.toFixed(1)} ore/s`
-        : `placed ${this.build.label}`);
-      this.sfx.confirm();
-    }
-    else if (this.build.selected === null) {
-      if (f.place && !this.placeHeld) placeMachine(this, ray);
-    } else if (f.place && !this.placeHeld && this.build.target?.ok === false) {
-      this.hud.flash(this.build.target.reason);
-    }
+    const built = stepBuild(this, ray, f.place, this.placeHeld);
     this.placeHeld = f.place;
+    if (built) return false;
 
     this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
     // Belts ARE included here, because a belt is demolishable even though it is
     // not interactive; `collectFrom` on one is a no-op with its own message.
     this.aimedBuild = this.aimedMachine !== null ? null
       : this.factory.pick(ray.origin, ray.dir, 3.5, true);
+    this.aimedPart = this.aimedMachine !== null || this.aimedBuild !== null ? null
+      : this.structures.pick(ray.origin, ray.dir, 3.5);
 
     // X pulls up whatever is under the crosshair, and it is read BEFORE the mine
     // key so that "remove" can never be mistaken for "open".
@@ -305,6 +309,15 @@ export class Gameplay {
       this.interact.target = null;
       return false;
     }
+    // A DOOR opens with the same key everything else is used with. Aiming at
+    // any other structural part takes the key too and does nothing, because a
+    // wall that could be mined would be a wall made of wood at the wrong moment.
+    if (this.aimedPart !== null) {
+      const open = minePressed ? this.structures.toggle(this.aimedPart) : null;
+      if (open !== null) { this.hud.flash(open ? 'opened' : 'closed'); this.sfx.confirm(); }
+      this.interact.target = null;
+      return false;
+    }
 
     const got = this.interact.step(f.mine, tick);
     if (got && this.interact.last !== null) {
@@ -319,21 +332,11 @@ export class Gameplay {
     return got;
   }
 
-  /**
-   * Remove whatever the crosshair is on. Returns true if something went.
-   * The machine is tried first for the same reason it takes the mine key: it is
-   * the nearer, larger object and a belt tile behind it must not steal the press.
-   */
+  /** Remove whatever the crosshair is on. Returns true if something went. */
   private demolish(): boolean {
-    const r = demolishAimed(this, this.aimedMachine, this.aimedBuild);
-    if (r === null) { this.hud.flash('nothing to remove'); return false; }
-    this.aimedMachine = null;
-    this.aimedBuild = null;
-    this.fx.forgetSmelters();
-    this.hud.flash(r.message, 2.2);
-    this.sfx.undo();
-    this.panel.invalidate();
-    return true;
+    const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart);
+    if (gone) { this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null; }
+    return gone;
   }
 
   /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
@@ -343,6 +346,8 @@ export class Gameplay {
     this.oreField.update(dt, this.d.ports?.voxels?.handle ?? 0);
     this.machines.update();
     this.machines.updateFx(dt);
+    this.structures.step(dt);
+    this.structView.sync(this.structures);
     this.fx.update(dt, this.d.origin);
     const eye = this.d.player.aimRay().origin;
     this.sfx.walk(dt, this.d.player.body.speedMps, this.d.player.body.grounded);

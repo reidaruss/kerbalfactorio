@@ -16,21 +16,44 @@
 import * as THREE from 'three';
 import { quarterTurn, snapToAxes } from './Grid.js';
 import { FOOTPRINT, type BuildKind, type Factory } from './Factory.js';
+import { commitTarget, resolveTarget, type StructureTarget }
+  from './StructurePlacement.js';
+import { STRUCTURE_KINDS, type StructureKind } from './StructureGrid.js';
+import type { Structures, StructurePart } from './Structures.js';
+import type { StructureView } from './StructureView.js';
 import type { FactoryView } from './FactoryView.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
+/** Anything the build key can put down. Machines TICK and structures do not,
+ *  which is exactly why they are two kinds that share only this menu. */
+export type PartKind = BuildKind | StructureKind;
+
 /** Number keys, in menu order. 0 (or Escape) leaves build mode. */
-const MENU: { key: string; kind: BuildKind; label: string }[] = [
+const MENU: { key: string; kind: PartKind; label: string }[] = [
   { key: 'Digit1', kind: 'miner', label: 'mining drill' },
   { key: 'Digit2', kind: 'belt', label: 'belt' },
   { key: 'Digit3', kind: 'smelter', label: 'smelter' },
+  { key: 'Digit4', kind: 'foundation', label: 'foundation' },
+  { key: 'Digit5', kind: 'floor', label: 'floor' },
+  { key: 'Digit6', kind: 'wall', label: 'wall' },
+  { key: 'Digit7', kind: 'door', label: 'door' },
 ];
+
+function isStructure(k: PartKind | null): k is StructureKind {
+  return k !== null && (STRUCTURE_KINDS as readonly string[]).includes(k);
+}
 
 /** Aim march: step and reach, in metres. */
 const STEP_M = 0.35;
 const REACH_M = 9.0;
 /** Where the ghost falls back to when the aim never meets the ground. */
 const FALLBACK_M = 2.6;
+
+/** An aim ray, as the player's own view produces it. */
+export interface BuildRay {
+  origin: { x: number; y: number; z: number };
+  dir: { x: number; y: number; z: number };
+}
 
 export interface BuildTarget {
   pos: { x: number; y: number; z: number };
@@ -48,24 +71,33 @@ export interface BuildTarget {
 }
 
 export class BuildMode {
-  selected: BuildKind | null = null;
+  selected: PartKind | null = null;
   rotation = 0;
   placements = 0;
   refusals = 0;
   target: BuildTarget | null = null;
+  /** The structural ghost, when a structural part is in hand. */
+  structTarget: StructureTarget | null = null;
+  /** B takes the snap off. Free placement is the same parts without rounding. */
+  freePlace = false;
+  /** The last structural part put down, for the confirmation message. */
+  lastPart: StructurePart | null = null;
   /** Rate of the LAST accepted placement, for the confirmation message. */
   lastRate = 0;
   private rotateHeld = false;
+  private freeHeld = false;
   private placeHeld = false;
   private readonly digitHeld = new Set<string>();
 
   constructor(private readonly M: OfCoreModule, private readonly body: number,
-              private readonly factory: Factory, private readonly view: FactoryView) {}
+              private readonly factory: Factory, private readonly view: FactoryView,
+              private readonly structures: Structures | null = null,
+              private readonly structView: StructureView | null = null) {}
 
   /** Select by menu index (1-based), or 0 to leave build mode. For probes. */
-  select(index: number): BuildKind | null {
+  select(index: number): PartKind | null {
     this.selected = index >= 1 && index <= MENU.length ? MENU[index - 1].kind : null;
-    if (this.selected === null) this.view.hideGhost();
+    if (this.selected === null) { this.view.hideGhost(); this.structView?.hideGhost(); }
     return this.selected;
   }
 
@@ -88,12 +120,28 @@ export class BuildMode {
     }
     if (held('Digit0') || held('Escape')) this.select(0);
 
-    if (this.selected === null) { this.target = null; this.view.hideGhost(); return false; }
+    if (this.selected === null) {
+      this.target = null; this.structTarget = null;
+      this.view.hideGhost(); this.structView?.hideGhost();
+      return false;
+    }
 
     const rot = held('KeyR');
     if (rot && !this.rotateHeld) this.rotation = (this.rotation + 1) % 4;
     this.rotateHeld = rot;
+    // B TAKES THE SNAP OFF. Free placement is the same parts with the rounding
+    // removed, which is why it is a modifier on this mode and not a second one.
+    const free = held('KeyB');
+    if (free && !this.freeHeld) this.freePlace = !this.freePlace;
+    this.freeHeld = free;
 
+    if (isStructure(this.selected)) {
+      const hit = place && !this.placeHeld;
+      this.placeHeld = place;
+      return this.stepStructure(this.selected, ray, hit);
+    }
+    this.structTarget = null;
+    this.structView?.hideGhost();
     this.target = this.resolve(ray);
     if (this.target !== null) {
       this.view.showGhost(this.selected, this.target.pos, this.target.up,
@@ -111,6 +159,29 @@ export class BuildMode {
     }, this.target.fwd);
     if (made === null) { this.refusals++; return false; }
     this.lastRate = this.target.ratePerSec;
+    this.placements++;
+    return true;
+  }
+
+  /**
+   * The structural half. A separate path rather than a branch inside `resolve`,
+   * because the two grids are genuinely different things: a machine snaps to
+   * /core's body-frame voxel lattice and a structure snaps to a site's metric
+   * tangent lattice, for the reason StructureGrid.ts opens with.
+   */
+  private stepStructure(kind: StructureKind, ray: BuildRay, pressed: boolean): boolean {
+    const s = this.structures;
+    const v = this.structView;
+    if (s === null || v === null) return false;
+    this.target = null;
+    this.view.hideGhost();
+    const t = resolveTarget(s, kind, ray, this.rotation, this.freePlace);
+    this.structTarget = t;
+    v.showGhost(t);
+    if (!pressed) return false;
+    const made = commitTarget(s, t);
+    if (made === null) { this.refusals++; return false; }
+    this.lastPart = made;
     this.placements++;
     return true;
   }
@@ -165,16 +236,30 @@ export class BuildMode {
   report(): unknown {
     return {
       selected: this.selected, label: this.label, rotation: this.rotation,
+      freePlace: this.freePlace,
       placements: this.placements, refusals: this.refusals,
+      structGhost: this.structTarget === null ? null : {
+        kind: this.structTarget.kind, ok: this.structTarget.ok,
+        reason: this.structTarget.reason, key: this.structTarget.key,
+        site: this.structTarget.site?.id ?? -1,
+        addr: this.structTarget.addr === null ? null
+          : [this.structTarget.addr.i, this.structTarget.addr.j,
+            this.structTarget.addr.level, this.structTarget.addr.axis],
+        pos: [this.structTarget.pos.x, this.structTarget.pos.y,
+          this.structTarget.pos.z],
+        unevennessM: +this.structTarget.unevennessM.toFixed(4),
+        free: this.structTarget.freePlaced,
+      },
       ghost: this.target === null ? null : {
         cell: this.target.cell, ok: this.target.ok, reason: this.target.reason,
-        footprint: this.selected === null ? 0 : FOOTPRINT[this.selected],
+        footprint: this.selected === null || isStructure(this.selected) ? 0
+          : FOOTPRINT[this.selected],
         pos: [this.target.pos.x, this.target.pos.y, this.target.pos.z],
         fwd: [this.target.fwd.x, this.target.fwd.y, this.target.fwd.z],
         patch: this.target.patch,
         ratePerSec: +this.target.ratePerSec.toFixed(3),
       },
-      visible: this.view.ghostVisible,
+      visible: this.view.ghostVisible || (this.structView?.ghostVisible ?? false),
     };
   }
 }

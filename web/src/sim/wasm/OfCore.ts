@@ -16,11 +16,18 @@ import type { OfCoreModule } from './heap.js';
 // set so fill is representable; of_edits_fill, of_level_area, of_derived_raising
 // and of_surface_offset are new, and of_edits_serialize writes a new
 // self-describing format that carries BOTH sets (old slots still load).
+// ABI 5 (2026-07-26): the STRUCTURAL BUILDING SET (gameplay.h section S.6).
+// of_gp_structure_count / _info / _can_afford / _pay expose the four base
+// building parts and their authored build costs. Additive: no existing
+// signature or struct layout changed, so every ABI 4 caller is unaffected.
 //
 // This constant is the only thing standing between a browser and a wasm that
 // answers a different question than the one the client is asking. It was left at
-// 2 while the shim already returned 3, which is the failure it exists to catch.
-export const OF_ABI_VERSION = 4;
+// 2 while the shim already returned 3, which is the failure it exists to catch,
+// and it happened again at 4 against a shim reporting 5. AN ABI BUMP IS ATOMIC
+// ACROSS THE BRIDGE: the shim's version, the rebuilt and SYNCED wasm, this
+// constant and its callers land in one commit, and that commit boots.
+export const OF_ABI_VERSION = 5;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

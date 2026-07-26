@@ -92,15 +92,19 @@ export class MachineBatch {
   readonly merged = new Map<string, THREE.BufferGeometry>();
   private mesh: THREE.BatchedMesh | null = null;
   private readonly geomId = new Map<string, number>();
-  private readonly fxData = new Float32Array(CAPACITY * 4);
+  private readonly fxData: Float32Array;
   private readonly fxTex: THREE.DataTexture;
   /** Slots released by demolition, reused before any new one is added. */
   private readonly free: number[] = [];
   private live = 0;
 
-  constructor() {
-    this.group.name = 'factoryMachines';
-    this.fxTex = new THREE.DataTexture(this.fxData, CAPACITY, 1,
+  /** `capacity` is a parameter because a BASE is many more instances than a
+   *  factory: 256 covers a six-building line and would cap a 10 x 10 platform
+   *  with its walls at about a third of it. */
+  constructor(private readonly capacity = CAPACITY, name = 'factoryMachines') {
+    this.group.name = name;
+    this.fxData = new Float32Array(capacity * 4);
+    this.fxTex = new THREE.DataTexture(this.fxData, capacity, 1,
       THREE.RGBAFormat, THREE.FloatType);
     this.fxTex.magFilter = THREE.NearestFilter;
     this.fxTex.minFilter = THREE.NearestFilter;
@@ -214,8 +218,8 @@ if ( vRole > 2.5 ) {
       idx += g.getIndex()?.count ?? 0;
     }
     if (per.size === 0) return;
-    const mesh = new THREE.BatchedMesh(CAPACITY, verts, idx, this.material);
-    mesh.name = 'factory:machines';
+    const mesh = new THREE.BatchedMesh(this.capacity, verts, idx, this.material);
+    mesh.name = this.group.name;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     // The factory is always within a few tens of metres of the player, so a
@@ -232,7 +236,7 @@ if ( vRole > 2.5 ) {
   /** A slot drawing `key`'s geometry, or -1 when the batch is full. */
   acquire(key: string): number {
     const g = this.geomId.get(key);
-    if (this.mesh === null || g === undefined || this.live >= CAPACITY) return -1;
+    if (this.mesh === null || g === undefined || this.live >= this.capacity) return -1;
     this.live++;
     // A FREED SLOT IS REUSED rather than a new one added. Demolition made this
     // load bearing: addInstance only ever grows, so a player who put down and
@@ -286,7 +290,7 @@ if ( vRole > 2.5 ) {
 
   /** ONE texel per instance. This is the whole of DW-8's per-instance channel. */
   setFx(slot: number, fx: Fx): void {
-    if (slot < 0 || slot >= CAPACITY) return;
+    if (slot < 0 || slot >= this.capacity) return;
     const i = slot * 4;
     this.fxData[i] = fx.flow;
     this.fxData[i + 1] = fx.density;
@@ -302,6 +306,6 @@ if ( vRole > 2.5 ) {
   }
 
   stats(): { batches: number; instances: number; capacity: number } {
-    return { batches: this.mesh === null ? 0 : 1, instances: this.live, capacity: CAPACITY };
+    return { batches: this.mesh === null ? 0 : 1, instances: this.live, capacity: this.capacity };
   }
 }

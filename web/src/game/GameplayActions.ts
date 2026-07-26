@@ -10,10 +10,13 @@
 // happened, and a player who takes six ingots out of a smelter must see six. The
 // rule is /core's; the sentence is this file's.
 
+import { demolishAimed } from './Demolition.js';
 import { furnaceView, recipeRows, slotRows } from './GameplayViews.js';
 import type { Gameplay } from './Gameplay.js';
+import type { BuildRay } from './BuildMode.js';
 import type { Placed } from './Factory.js';
 import type { Machine } from './Machines.js';
+import type { StructurePart } from './Structures.js';
 
 /** The two panel views, with the item pictures bound in one place. */
 export function slots(g: Gameplay) {
@@ -49,6 +52,64 @@ export function placeMachine(g: Gameplay,
   g.placements++;
   g.hud.flash(`placed ${g.game.itemName(item)}`);
   g.sfx.confirm();
+}
+
+/**
+ * The build key, whole. Build mode takes G while it is armed, whatever is in
+ * hand: a player holding a wall who presses G means the wall, not the furnace,
+ * and guessing wrong is the sort of thing that makes a game feel unlistening.
+ *
+ * Returns true if anything was put down, so the caller can skip the rest of the
+ * tick's interaction.
+ */
+export function stepBuild(g: Gameplay, ray: BuildRay, place: boolean,
+                          placeHeld: boolean): boolean {
+  const built = g.build.step((c) => g.input.held(c), place, ray);
+  if (built) {
+    const part = g.build.lastPart;
+    if (g.build.structTarget !== null && part !== null) {
+      // The COST is said out loud on placement, because a player who cannot see
+      // what a wall costs cannot plan a room.
+      g.hud.flash(`placed ${part.kind}  -${g.structures.costText(part.kind)}`);
+    } else {
+      // The RATE is said out loud, because richness varies across a deposit and
+      // a player who cannot see what a spot is worth cannot choose.
+      const r = g.build.lastRate;
+      g.hud.flash(r > 0 ? `placed ${g.build.label}  ${r.toFixed(1)} ore/s`
+        : `placed ${g.build.label}`);
+    }
+    g.sfx.confirm();
+    g.panel.invalidate();
+    return true;
+  }
+  if (g.build.selected === null) {
+    if (place && !placeHeld) placeMachine(g, ray);
+    return false;
+  }
+  const refused = g.build.structTarget !== null
+    ? (g.build.structTarget.ok ? null : g.build.structTarget.reason)
+    : (g.build.target?.ok === false ? g.build.target.reason : null);
+  if (place && !placeHeld && refused !== null) g.hud.flash(refused);
+  return false;
+}
+
+/**
+ * The X key, whole. Whatever is under the crosshair goes back through its own
+ * owner, and what could not survive the removal is named in the same toast.
+ *
+ * The machine is tried first for the same reason it takes the mine key: it is
+ * the nearer, larger object, and a belt tile or a wall behind it must not steal
+ * the press.
+ */
+export function raze(g: Gameplay, machine: Machine | null, build: Placed | null,
+                     part: StructurePart | null): boolean {
+  const r = demolishAimed(g, machine, build, part);
+  if (r === null) { g.hud.flash('nothing to remove'); return false; }
+  g.fx.forgetSmelters();
+  g.hud.flash(r.message, 2.2);
+  g.sfx.undo();
+  g.panel.invalidate();
+  return true;
 }
 
 /** Pack -> the open machine, as ore or as fuel. */
