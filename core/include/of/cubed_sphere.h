@@ -497,10 +497,11 @@ struct QuadMesh {
   int idx(int i, int j) const { return j * gridDim + i; }
 };
 
-// Optional per-vertex DEFORM lowering callback (terrain_deform.h binds this).
-// Given a vertex's unit dir, returns the metres of terrain REMOVED at that spot
-// (>= 0). The mesh lowers the RAW sampleHeightField by this amount so a dig hole
-// appears in the SAME surface the player walks on. Default = null => the loop
+// Optional per-vertex SURFACE-OFFSET callback (surface_field.h binds this).
+// Given a vertex's unit dir, returns the SIGNED metres the edited surface sits
+// BELOW the base: positive where the player dug an open column, negative where
+// they filled one (WG-22). The mesh subtracts it, so a dig hole and a levelled
+// pad both appear in the SAME surface the player walks on. Default = null => the loop
 // below is BIT-IDENTICAL to the original (no edit contributes exactly nothing),
 // so the undeformed mesh + all determinism proofs are unchanged. ADDITIVE: the
 // header stays leaf (no terrain_deform dependency); the caller supplies the fn.
@@ -561,9 +562,15 @@ inline QuadMesh generateQuadMesh(const BodyParams& body, const FQuadKey& key,
       const Vec3 dir = latticeDir(key.faceId, ix, iy, m.latticeLevel);
       double h = baseHeight ? baseHeight(dir)          // WG-21: designed base
                             : sampleHeightField(body, dir);  // null = RAW (bit-identical)
-      if (lowering) {                       // subtract voxel-derived dug depth
+      if (lowering) {                       // subtract the voxel-derived offset
         const double dug = lowering(dir);
-        if (dug > 0.0) h -= dug;            // lower the SAME surface the mesh draws
+        // SIGNED since WG-22: positive lowers (a dug column), negative raises (a
+        // filled one). The old guard was `dug > 0.0`, which silently discarded
+        // every fill and would have left terraformed ground rendering at the
+        // height it used to be while the walker stood on the new one — the
+        // five-surfaces failure with the sign flipped. `!= 0.0` keeps the undug
+        // path bit-identical (an exact 0 still contributes nothing).
+        if (dug != 0.0) h -= dug;           // move the SAME surface the mesh draws
       }
       const double radius = body.radiusM + h;
       const Vec3 pos = dir * radius;  // body-center-relative

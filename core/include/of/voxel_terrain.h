@@ -14,19 +14,32 @@
 //     grid is a plain Cartesian lattice in the body frame (NOT the angular cubed-
 //     sphere deform lattice) — that is what lets a cell be ANYWHERE in the solid
 //     volume, including horizontally adjacent below the surface (a tunnel).
-//   * SOLIDITY = PROCEDURAL-SOLID xor REMOVED (the seed+diff property): a cell is
-//     solid iff its centre is at/below the terrain surface (the DESIGNED surface,
-//     biome.h's sampleDesignedHeight at the cell-centre direction — WG-21: the
-//     single surface authority; RAW sampleHeightField is NOT the voxel surface)
-//     AND it is not in the removed set. Cells above the surface are AIR. We never store the (enormous)
-//     full volume — only the sparse REMOVED diff. The procedural-solid half is a
-//     PURE function of the height field, so the same (body, edits) -> the same
-//     solidity, bit-for-bit, on any machine.
+//   * SOLIDITY = ADDED or (PROCEDURAL-SOLID and not REMOVED) — the seed+diff
+//     property: a cell is procedurally solid iff its centre is at/below the
+//     terrain surface (the DESIGNED surface, biome.h's sampleDesignedHeight at the
+//     cell-centre direction — WG-21: the single surface authority; RAW
+//     sampleHeightField is NOT the voxel surface). Cells above the surface are AIR
+//     unless the player FILLED them. We never store the (enormous) full volume —
+//     only the two sparse diffs. The procedural-solid half is a PURE function of
+//     the height field, so the same (body, edits) -> the same solidity,
+//     bit-for-bit, on any machine.
+//   * WG-22 ADDED the second set. Until then the layer was SUBTRACTIVE BY
+//     CONSTRUCTION: a removed set can only take rock away, so there was no way to
+//     represent a cell of ground the player PUT THERE, and terraforming that
+//     levels a slope (cut the high side down, fill the low side up) was not
+//     expressible at all. `added_` is the smallest change that makes fill a first
+//     class citizen of the same seed+diff model: two disjoint sparse sets, both
+//     pure explicit ops, both persisted.
 //   * DIG BRUSH (the tunnel maker) — VoxelEdits::dig(body, centerWorldPos,
 //     radiusM): mark every currently-solid cell whose centre is within radiusM as
 //     removed; returns the count removed (drives harvest yield). Because it removes
 //     ARBITRARY cells (including ones horizontally below the surface), a sequence
 //     of digs carves a tunnel / overhang / cavern the heightfield can't express.
+//   * FILL BRUSH (the terraforming half, WG-22) — VoxelEdits::fill(body,
+//     centerWorldPos, radiusM): the exact mirror. Mark every currently-AIR cell
+//     whose centre is within radiusM as solid; returns the count added (drives the
+//     material cost). dig and fill are inverses cell for cell, so filling a dug
+//     cell simply drops it out of `removed_` and the diff SHRINKS.
 //   * MESH EXTRACTION (for the UE cube mesher) — exposedFaces(body, edits, region):
 //     emit a FaceQuad for each SOLID cell face whose 6-neighbour is AIR (the
 //     visible voxel surface) over a region AABB or centre+radius. The UE side
@@ -169,32 +182,64 @@ inline bool isProcSolid(const BodyParams& body, const VoxelCell& cell) {
 }
 
 // =============================================================================
-// §3 — VoxelEdits: the sparse REMOVED-cell set + the dig brush + queries.
+// §3 — VoxelEdits: the two sparse edit sets + the dig/fill brushes + queries.
 //
-// Holds the player's destruction diff: the set of cell ids carved to AIR. (An
-// `added` set is reserved for later placed-voxel support; digging only uses
-// `removed`.) Solidity = procedural-solid AND NOT removed.
+// Holds the player's terrain diff as TWO DISJOINT sets of cell ids:
+//   removed_ — procedurally-solid cells carved to AIR (digging).
+//   added_   — procedurally-AIR cells filled to SOLID (terraforming, WG-22).
+// Solidity = added OR (procedural-solid AND NOT removed).
+//
+// Disjointness is an INVARIANT, maintained by the two atomic ops rather than
+// checked: filling a removed cell erases it from `removed_` (it is procedurally
+// solid again, so nothing needs storing), and digging an added cell erases it
+// from `added_`. An op therefore never grows both sets, and undoing an edit
+// shrinks the save rather than growing it.
 // =============================================================================
 class VoxelEdits {
  public:
   VoxelEdits() = default;
 
-  // ---- raw removed-set access (the UE/gameplay layer binds to these) -------
+  // ---- raw set access (the UE/gameplay/browser layer binds to these) -------
   const std::unordered_set<uint64_t>& removedSet() const { return removed_; }
   size_t removedCount() const { return removed_.size(); }
-  bool empty() const { return removed_.empty(); }
+  const std::unordered_set<uint64_t>& addedSet() const { return added_; }
+  size_t addedCount() const { return added_.size(); }
+  /** No edits of EITHER kind: the pristine procedural world. */
+  bool empty() const { return removed_.empty() && added_.empty(); }
 
   bool isRemoved(uint64_t id) const { return removed_.count(id) != 0; }
   bool isRemoved(const VoxelCell& c) const { return isRemoved(voxelCellId(c)); }
+  bool isAdded(uint64_t id) const { return !added_.empty() && added_.count(id) != 0; }
+  bool isAdded(const VoxelCell& c) const { return isAdded(voxelCellId(c)); }
 
-  // Mark a single cell removed (the atomic carve op). Returns true if newly
-  // removed (was present in the set after the call & wasn't before).
-  bool digCell(const VoxelCell& c) { return removed_.insert(voxelCellId(c)).second; }
-  bool digCellId(uint64_t id) { return removed_.insert(id).second; }
+  // Mark a single cell removed (the atomic carve op). Returns true if the cell
+  // CHANGED from solid to air. Un-filling an added cell counts, and is how a
+  // pickaxe takes back ground the player placed.
+  bool digCell(const VoxelCell& c) { return digCellId(voxelCellId(c)); }
+  bool digCellId(uint64_t id) {
+    if (!added_.empty() && added_.erase(id) != 0) return true;  // placed -> gone
+    return removed_.insert(id).second;
+  }
 
-  // ---- SOLIDITY = procedural-solid AND NOT removed ------------------------
+  // Mark a single cell SOLID (the atomic fill op, WG-22). Returns true if the
+  // cell CHANGED from air to solid. Needs the body because a cell that is
+  // procedurally solid is filled simply by forgetting it was ever dug — which is
+  // what keeps the two sets disjoint and the diff minimal.
+  bool fillCell(const BodyParams& body, const VoxelCell& c) {
+    const uint64_t id = voxelCellId(c);
+    if (!removed_.empty() && removed_.erase(id) != 0) return true;  // dug -> back
+    if (procSolidMemo(body, c)) return false;   // already rock; nothing to store
+    return added_.insert(id).second;
+  }
+
+  // ---- SOLIDITY = added OR (procedural-solid AND NOT removed) -------------
+  //
+  // `added_` is tested FIRST and behind an empty() guard, so a world in which
+  // nobody has filled anything takes exactly the branch it took before WG-22.
   bool isSolid(const BodyParams& body, const VoxelCell& c) const {
-    if (isRemoved(c)) return false;          // carved to air
+    const uint64_t id = voxelCellId(c);
+    if (!added_.empty() && added_.count(id) != 0) return true;   // placed ground
+    if (removed_.count(id) != 0) return false;                   // carved to air
     return procSolidMemo(body, c);
   }
 
@@ -265,13 +310,48 @@ class VoxelEdits {
           const Vec3 ctr = cellCenter(c);
           const Vec3 d = ctr - centerWorldPos;
           if (d.lengthSq() > r2) continue;   // outside the sphere
-          if (!isProcSolid(body, c)) continue;   // already air (above surface)
+          if (!isSolid(body, c)) continue;       // already air
           if (!digCell(c)) continue;             // already removed
           ++count;
           accumulateDirty(c);
         }
     return count;
   }
+
+  // ---- FILL BRUSH (the terraforming half, WG-22) --------------------------
+  //
+  // The exact mirror of dig(): mark every currently-AIR cell whose CENTRE is
+  // within `radiusM` of `centerWorldPos` (body-frame) as solid. Returns the
+  // count of cells that changed from air to solid (drives the material cost).
+  // Cells already solid are skipped, so the count is the true placed volume in
+  // 1 m^3 units.
+  int fill(const BodyParams& body, const Vec3& centerWorldPos, double radiusM) {
+    if (radiusM <= 0.0) return 0;
+    dirtyValid_ = false;                     // recompute dirty AABB below
+    const double r2 = radiusM * radiusM;
+    const VoxelCell c0 = cellForPos(Vec3(centerWorldPos.x - radiusM,
+                                         centerWorldPos.y - radiusM,
+                                         centerWorldPos.z - radiusM));
+    const VoxelCell c1 = cellForPos(Vec3(centerWorldPos.x + radiusM,
+                                         centerWorldPos.y + radiusM,
+                                         centerWorldPos.z + radiusM));
+    int count = 0;
+    for (int32_t z = c0.cz; z <= c1.cz; ++z)
+      for (int32_t y = c0.cy; y <= c1.cy; ++y)
+        for (int32_t x = c0.cx; x <= c1.cx; ++x) {
+          const VoxelCell c{x, y, z};
+          const Vec3 d = cellCenter(c) - centerWorldPos;
+          if (d.lengthSq() > r2) continue;       // outside the sphere
+          if (isSolid(body, c)) continue;        // already rock
+          if (!fillCell(body, c)) continue;
+          ++count;
+          accumulateDirty(c);
+        }
+    return count;
+  }
+
+  /** Mark a cell dirty from outside (levelArea drives the brushes cell by cell). */
+  void touch(const VoxelCell& c) { accumulateDirty(c); }
 
   // ---- DIRTY REGION (the re-mesh hint) ------------------------------------
   //
@@ -285,29 +365,69 @@ class VoxelEdits {
   bool dirtyValid() const { return dirtyValid_; }
   void clearDirty() { dirtyValid_ = false; }
 
-  // ---- persistence (the destruction diff as a compact sparse set) ----------
+  // ---- persistence (the terrain diff as two compact sparse sets) -----------
   //
   // Templated over the SaveWriter / SaveReader cursors (persistence.h §1 style)
   // WITHOUT depending on persistence.h, so this layer stays leaf. Writer needs
-  // varint(uint64); reader the inverse. Format: [varint count][varint cellId]*.
-  // The set is written in SORTED id order so the byte stream is deterministic.
+  // varint(uint64); reader the inverse. Each set is written in SORTED id order so
+  // the byte stream is deterministic.
+  //
+  // FORMAT, and why it is self-describing (WG-22). The pre-WG-22 stream was
+  // [varint removedCount][varint cellId]*, with no room for a second set. Rather
+  // than break every slot already written, the new stream opens with a MAGIC
+  // varint that the old one cannot produce in practice:
+  //
+  //   [varint kEditsMagic][varint version=2]
+  //   [varint removedCount][varint id]* [varint addedCount][varint id]*
+  //
+  // A legacy stream's first varint is its removed-cell count. kEditsMagic is
+  // 0x4F46_4532 (about 1.3 billion), i.e. 1.3 billion removed cells in one save;
+  // at 1 m^3 a cell that is a cube of rock 1.1 km on a side, carved by hand.
+  // deserialize() reads the first varint and branches, so an old slot still
+  // loads and simply arrives with no added cells.
+  static constexpr uint64_t kEditsMagic   = 0x4F464532ull;  // 'OFE2'
+  static constexpr uint64_t kEditsVersion = 2;
+
   template <typename Writer>
   void serialize(Writer& w) const {
-    std::vector<uint64_t> ids(removed_.begin(), removed_.end());
+    w.varint(kEditsMagic);
+    w.varint(kEditsVersion);
+    writeSet(w, removed_);
+    writeSet(w, added_);
+  }
+  template <typename Reader>
+  void deserialize(Reader& r) {
+    removed_.clear();
+    added_.clear();
+    dirtyValid_ = false;
+    proc_.clear();
+    procValid_ = false;
+    const uint64_t first = r.varint();
+    if (first != kEditsMagic) {          // LEGACY: `first` was the removed count
+      removed_.reserve(first);
+      for (uint64_t i = 0; i < first; ++i) removed_.insert(r.varint());
+      return;
+    }
+    r.varint();                          // version; only 2 exists so far
+    readSet(r, removed_);
+    readSet(r, added_);
+  }
+
+ private:
+  template <typename Writer>
+  static void writeSet(Writer& w, const std::unordered_set<uint64_t>& s) {
+    std::vector<uint64_t> ids(s.begin(), s.end());
     std::sort(ids.begin(), ids.end());
     w.varint(ids.size());
     for (uint64_t id : ids) w.varint(id);
   }
   template <typename Reader>
-  void deserialize(Reader& r) {
-    removed_.clear();
-    dirtyValid_ = false;
+  static void readSet(Reader& r, std::unordered_set<uint64_t>& s) {
     const uint64_t n = r.varint();
-    removed_.reserve(n);
-    for (uint64_t i = 0; i < n; ++i) removed_.insert(r.varint());
+    s.reserve(n);
+    for (uint64_t i = 0; i < n; ++i) s.insert(r.varint());
   }
 
- private:
   void accumulateDirty(const VoxelCell& c) {
     if (!dirtyValid_) {
       dirtyMin_ = dirtyMax_ = c;
@@ -342,6 +462,7 @@ class VoxelEdits {
   static constexpr size_t kProcMemoMax = 4u << 20;
 
   std::unordered_set<uint64_t> removed_;   // carved-to-air cell ids (the diff)
+  std::unordered_set<uint64_t> added_;     // filled-to-solid cell ids (WG-22)
   VoxelCell dirtyMin_{}, dirtyMax_{};      // inclusive touched-cell AABB
   bool dirtyValid_ = false;
   // Pure-function memo (procSolidMemo). `mutable` because it is a cache: it can

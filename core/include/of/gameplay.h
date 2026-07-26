@@ -1066,6 +1066,44 @@ inline HarvestResult harvestNode(worldgen::FDepositNode& node,
 }
 
 // =============================================================================
+// §S.5 — Hand-mining an ORE PATCH through one of its outcrops (deposits.h §P).
+//
+// A patch is a piece of ground with ONE pool of ore in it. An outcrop is the
+// part of that body which breaks the surface: it is what the player aims at and
+// swings at, and it is NOT a second reservoir. So this function does not
+// re-implement a single rule — it hands the outcrop the patch's own pool as its
+// remaining amount, lets harvestNode do exactly what it does for any node (the
+// tool check, the grant, the clamp, the round-up of the last sub-unit), and then
+// takes out of the PATCH precisely what harvestNode removed from the view.
+//
+// The two yields are authored in deposits.h §P rather than derived from the
+// node's size, because a patch holds thousands of units and the §S.2a pacing
+// (six swings to clear) would hand over six hundred ore in one swing. Bare hands
+// still always work: that is the no-bootstrap-deadlock invariant, and it matters
+// more here than anywhere else, because a drill is the thing you cannot build
+// until you have mined by hand.
+// =============================================================================
+inline HarvestResult harvestPatch(worldgen::patches::OrePatch& patch,
+                                  worldgen::FDepositNode& outcrop,
+                                  worldgen::survival::NodeKind kind,
+                                  Inventory& inv) {
+  namespace wp = worldgen::patches;
+  outcrop.Resource = patch.Resource;
+  outcrop.InitialAmount = patch.InitialAmount;
+  outcrop.RemainingAmount = patch.RemainingAmount;
+  const double before = outcrop.RemainingAmount;
+  HarvestResult res = harvestNode(outcrop, kind, inv, wp::kHandYieldBare,
+                                  wp::kHandYieldTool);
+  const double took = before - outcrop.RemainingAmount;
+  if (took > 0.0) wp::extract(patch, took);
+  // The outcrop is a VIEW, re-derived after the fact. Leaving it holding its own
+  // number is how a second counter is born.
+  outcrop.RemainingAmount = patch.RemainingAmount;
+  res.nodeEmpty = (patch.RemainingAmount <= 0.0);
+  return res;
+}
+
+// =============================================================================
 // §S.3 — Hand-crafting (tools / furnace / smelter are made this way).
 //
 // A CraftRecipe is a small multi-input -> single-output bill of materials (the

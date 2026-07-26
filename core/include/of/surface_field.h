@@ -52,6 +52,7 @@
 // READ-ONLY. No UE, no rendering, no physics — the isolation harness the UE
 // surface layer binds to (R2 wires the UE side against the entry points below).
 // =============================================================================
+#include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <functional>
@@ -90,6 +91,16 @@ inline double baseSurfaceRadius(const BodyParams& body, const Vec3& dir) {
 // path. This is now the ONLY place the clamp is applied for the heightfield view.
 // =============================================================================
 static constexpr double kSurfaceMaxDigDepthM = 80.0;
+
+// The mirror limit for PLACED ground (WG-22). A filled column can raise the
+// heightfield view by at most this much above the designed base. It is far
+// smaller than the dig depth on purpose: digging follows real rock down to
+// bedrock, whereas fill is material the player carried, and a heightfield that
+// can be raised 80 m turns a build pad into a tower the LOD was never sized for.
+// The VOXEL layer is not limited by this — a filled cell above the cap is still
+// solid and still walkable, it simply stops moving the smooth far-field surface,
+// exactly as a sideways tunnel stops moving it downward.
+static constexpr double kSurfaceMaxFillM = 24.0;
 
 // =============================================================================
 // §3 — DERIVED LOWERING (the far-field heightfield view of voxel digs).
@@ -132,24 +143,88 @@ inline double derivedLoweringAt(const BodyParams& body, const Vec3& dir,
 }
 
 // =============================================================================
+// §3b — DERIVED RAISING (the far-field heightfield view of PLACED ground, WG-22).
+//
+// The exact mirror of derivedLoweringAt, and it has to exist for the same reason
+// that one does: the heightfield is what the streamed mesh, the LOD metric and
+// the far-field walker read, so ground the player PUT DOWN has to show up there
+// or the surface disagrees with the voxels — the five-surfaces failure, restaged
+// with the sign flipped.
+//
+// For a surface dir, walk UP from the designed surface one voxel step at a time
+// and count the CONTIGUOUS run of ADDED cells that starts AT the surface. Stop
+// at the first cell that is not filled:
+//   * A levelled pad on a hollow -> the cells above the base are filled -> the run
+//     is the pad's thickness -> the heightfield rises to meet it.
+//   * A filled cell floating above a gap (a bridge, a roof) -> the cell directly
+//     above the surface is NOT filled -> the run is 0 -> NO raising. The voxel
+//     layer alone carries it, exactly as it alone carries a tunnel.
+// Bounded by maxFillM. PURE function of (body, dir, added set).
+// =============================================================================
+inline double derivedRaisingAt(const BodyParams& body, const Vec3& dir,
+                               const VoxelEdits& edits,
+                               double maxFillM = kSurfaceMaxFillM) {
+  if (edits.addedCount() == 0) return 0.0;  // no fill -> bit-identical old path
+  const Vec3 u = unitOf(dir);
+  const double surfR = baseSurfaceRadius(body, u);
+  double placed = 0.0;
+  for (double d = 0.0; d < maxFillM; d += kVoxelSizeM) {
+    // surfR + d + 0.5 is the centre of the d-th metre cell ABOVE the base.
+    const Vec3 p = u * (surfR + d + 0.5 * kVoxelSizeM);
+    if (edits.isAdded(cellForPos(p))) placed = d + kVoxelSizeM;
+    else break;                            // first unfilled cell ends the run
+  }
+  if (placed > maxFillM) placed = maxFillM;
+  return placed;
+}
+
+// =============================================================================
 // §4 — surfaceHeight: the ONE surface the whole engine reads.
 //
-//   surfaceHeight = clamp(baseHeight − derivedLowering, baseHeight − maxDigDepth)
+//   surfaceHeight = clamp(baseHeight − derivedLowering + derivedRaising,
+//                         baseHeight − maxDigDepth, baseHeight + maxFill)
 //
-// The single bedrock clamp lives here. Where nothing is dug (edits empty, or the
-// column is unopened) this returns baseHeight BIT-IDENTICALLY — no regression to
-// the designed terrain. Overload without edits = the base (an undug body).
+// The single bedrock clamp lives here, and so does its WG-22 mirror. The two runs
+// read DIFFERENT cells (raising walks up from the base, lowering walks down), so
+// both can be non-zero at once: a player who digs a pit and then fills it above
+// the old ground line. Raising is resolved FIRST and wins, because the topmost
+// solid surface is the one you stand on and it is the placed pad, not the buried
+// pit under it.
+//
+// Where nothing is dug or filled (edits empty, or the column is untouched) this
+// returns baseHeight BIT-IDENTICALLY — no regression to the designed terrain.
+// Overload without edits = the base (an unedited body).
 // =============================================================================
 inline double surfaceHeight(const BodyParams& body, const Vec3& dir,
                             const VoxelEdits& edits,
-                            double maxDigDepthM = kSurfaceMaxDigDepthM) {
+                            double maxDigDepthM = kSurfaceMaxDigDepthM,
+                            double maxFillM = kSurfaceMaxFillM) {
   const double base = baseHeight(body, dir);
+  const double raising = derivedRaisingAt(body, dir, edits, maxFillM);
+  if (raising > 0.0) {
+    double h = base + raising;
+    const double ceilH = base + maxFillM;           // the fill cap
+    if (h > ceilH) h = ceilH;
+    return h;
+  }
   const double lowering = derivedLoweringAt(body, dir, edits, maxDigDepthM);
-  if (lowering <= 0.0) return base;                 // bit-identical undug path
+  if (lowering <= 0.0) return base;                 // bit-identical unedited path
   double h = base - lowering;
   const double floorH = base - maxDigDepthM;        // bedrock under this dir
   if (h < floorH) h = floorH;                       // the ONE clamp
   return h;
+}
+
+// The SIGNED offset of the edited surface from the designed base, in metres DOWN
+// (negative = the surface moved up). This is what the chunk mesher subtracts, so
+// one callback carries both halves of terraforming and generateQuadMesh needs no
+// second hook. Exactly `baseHeight − surfaceHeight` by construction.
+inline double surfaceOffsetAt(const BodyParams& body, const Vec3& dir,
+                              const VoxelEdits& edits,
+                              double maxDigDepthM = kSurfaceMaxDigDepthM,
+                              double maxFillM = kSurfaceMaxFillM) {
+  return baseHeight(body, dir)
+       - surfaceHeight(body, dir, edits, maxDigDepthM, maxFillM);
 }
 
 // Undug overload (no voxel edits): surfaceHeight ≡ baseHeight.
@@ -157,11 +232,12 @@ inline double surfaceHeight(const BodyParams& body, const Vec3& dir) {
   return baseHeight(body, dir);
 }
 
-// Absolute surface radius (metres from centre) including derived lowering.
+// Absolute surface radius (metres from centre) including lowering and raising.
 inline double surfaceRadius(const BodyParams& body, const Vec3& dir,
                             const VoxelEdits& edits,
-                            double maxDigDepthM = kSurfaceMaxDigDepthM) {
-  return body.radiusM + surfaceHeight(body, dir, edits, maxDigDepthM);
+                            double maxDigDepthM = kSurfaceMaxDigDepthM,
+                            double maxFillM = kSurfaceMaxFillM) {
+  return body.radiusM + surfaceHeight(body, dir, edits, maxDigDepthM, maxFillM);
 }
 
 // =============================================================================
@@ -205,9 +281,9 @@ class SurfaceField {
   // The designed base (no edits) under a dir.
   double baseHeightAt(const Vec3& dir) const { return baseHeight(body_, dir); }
 
-  // The ONE surface (base − derived voxel lowering, bedrock-clamped) under a dir.
+  // The ONE surface (base − lowering + raising, clamped both ways) under a dir.
   double heightAt(const Vec3& dir) const {
-    return edits_ ? surfaceHeight(body_, dir, *edits_, maxDigDepthM_)
+    return edits_ ? surfaceHeight(body_, dir, *edits_, maxDigDepthM_, maxFillM_)
                   : baseHeight(body_, dir);
   }
   double radiusAt(const Vec3& dir) const { return body_.radiusM + heightAt(dir); }
@@ -215,6 +291,10 @@ class SurfaceField {
   // The far-field lowering (0 if no top-anchored open column here).
   double loweringAt(const Vec3& dir) const {
     return edits_ ? derivedLoweringAt(body_, dir, *edits_, maxDigDepthM_) : 0.0;
+  }
+  // The far-field raising (0 if nothing is stacked on the base here). WG-22.
+  double raisingAt(const Vec3& dir) const {
+    return edits_ ? derivedRaisingAt(body_, dir, *edits_, maxFillM_) : 0.0;
   }
 
   // Voxel solidity (designed base XOR removed). No edits bound -> procedural solid.
@@ -226,15 +306,19 @@ class SurfaceField {
     return solid(cellForPos(bodyFramePos));
   }
 
-  // A HeightLoweringFn (cubed_sphere.h) bound to this field's derived lowering —
-  // pass to generateQuadMesh / buildChunk so the streamed mesh lowers exactly
-  // where the player has dug an open column (and nowhere a tunnel merely passes).
+  // A HeightLoweringFn (cubed_sphere.h) bound to this field's SIGNED surface
+  // offset — pass to generateQuadMesh / buildChunk so the streamed mesh drops
+  // exactly where the player dug an open column (and nowhere a tunnel merely
+  // passes) and RISES exactly where they filled one (WG-22). The callback returns
+  // metres DOWN, so a negative value raises; generateQuadMesh subtracts it either
+  // way and needs no second hook.
   HeightLoweringFn loweringFn() const {
     const BodyParams body = body_;         // capture by value (dir-pure)
     const VoxelEdits* edits = edits_;
     const double maxDig = maxDigDepthM_;
-    return [body, edits, maxDig](const Vec3& dir) -> double {
-      return edits ? derivedLoweringAt(body, dir, *edits, maxDig) : 0.0;
+    const double maxFill = maxFillM_;
+    return [body, edits, maxDig, maxFill](const Vec3& dir) -> double {
+      return edits ? surfaceOffsetAt(body, dir, *edits, maxDig, maxFill) : 0.0;
     };
   }
 
@@ -242,7 +326,104 @@ class SurfaceField {
   BodyParams body_;
   const VoxelEdits* edits_ = nullptr;
   double maxDigDepthM_ = kSurfaceMaxDigDepthM;
+  double maxFillM_ = kSurfaceMaxFillM;
 };
+
+// =============================================================================
+// §7 — levelArea: the TERRAFORMING op (WG-22). Flatten a disc toward one height.
+//
+// The rule a player asks for when they say "let me flatten a spot to build on"
+// is simple and it belongs HERE, in the surface authority, not in a client:
+//
+//   Inside a cylinder of radius `radiusM` about the aim point, aligned with the
+//   local up, every cell whose centre is ABOVE the target radius becomes AIR and
+//   every cell whose centre is BELOW it becomes SOLID.
+//
+// That is one predicate on |cellCentre| against ONE target radius, so the result
+// is a spherical cap at constant altitude — locally, over a few metres, a plane.
+// Cut and fill fall out of the same comparison rather than being two tools, which
+// is why a slope levels in one press instead of needing the player to guess which
+// half needs which.
+//
+// BOUNDS, and what happens at them. The cut reaches `maxCutM` above the target
+// and the fill `maxFillM` below it. Ground higher than the cut band is left
+// standing: it reads as a lip at the rim, not as a floating slab, because the
+// band is measured from the target and the rock above it is CONTIGUOUS with the
+// rock outside the disc. Deliberately bounded rather than unbounded: the scan is
+// a cell box, so an unbounded vertical reach on a cliff is an unbounded cost.
+//
+// TARGET HEIGHT is a relief height in the same units as baseHeight, so the caller
+// passes "the height I am standing at" and gets a floor at their own feet.
+//
+// Determinism: an explicit op over a pure predicate. Same (body, target, radius,
+// centre) applied to the same edit set gives the same two sets, bit for bit. It
+// is also IDEMPOTENT: applying it twice changes nothing the second time, which is
+// what lets the client repeat it on a held key without the pad creeping.
+// =============================================================================
+struct LevelResult {
+  int dug = 0;      // cells that changed solid -> air
+  int filled = 0;   // cells that changed air -> solid
+  int scanned = 0;  // cells inside the cylinder that were considered
+  int cells() const { return dug + filled; }
+};
+
+inline LevelResult levelArea(const BodyParams& body, VoxelEdits& edits,
+                             const Vec3& centerPos, double radiusM,
+                             double targetHeightM,
+                             double maxCutM = kSurfaceMaxFillM,
+                             double maxFillM = kSurfaceMaxFillM) {
+  LevelResult out;
+  const double centreR = centerPos.length();
+  if (radiusM <= 0.0 || centreR <= 0.0) return out;
+
+  const Vec3 up = centerPos * (1.0 / centreR);
+  const double targetR = body.radiusM + targetHeightM;
+  // Half a cell of slack on each side so the band is inclusive of the cells whose
+  // centres sit exactly on the boundary rather than dropping them to rounding.
+  const double rHigh = targetR + maxCutM + 0.5 * kVoxelSizeM;
+  const double rLow  = targetR - maxFillM - 0.5 * kVoxelSizeM;
+  if (rLow <= 0.0) return out;
+
+  // A tight AABB for { p : |p perp up| <= radius, rLow <= |p| <= rHigh }. The
+  // cylinder's axis passes through the body centre because `up` is the unit of
+  // `centerPos`, so the perpendicular offset of the axis is exactly zero and the
+  // axial coordinate runs from sqrt(rLow^2 − radius^2) to rHigh. Bounding it
+  // properly instead of taking centre +/- (radius + band) is worth roughly an
+  // order of magnitude in cells scanned at these sizes.
+  const double axLo = std::sqrt(std::max(0.0, rLow * rLow - radiusM * radiusM));
+  double lo[3], hi[3];
+  const double u[3] = {up.x, up.y, up.z};
+  for (int i = 0; i < 3; ++i) {
+    const double a = axLo * u[i], b = rHigh * u[i];
+    const double perp = radiusM * std::sqrt(std::max(0.0, 1.0 - u[i] * u[i]));
+    lo[i] = std::min(a, b) - perp;
+    hi[i] = std::max(a, b) + perp;
+  }
+  const VoxelCell c0 = cellForPos(Vec3(lo[0], lo[1], lo[2]));
+  const VoxelCell c1 = cellForPos(Vec3(hi[0], hi[1], hi[2]));
+
+  const double r2 = radiusM * radiusM;
+  edits.clearDirty();
+  for (int32_t z = c0.cz; z <= c1.cz; ++z)
+    for (int32_t y = c0.cy; y <= c1.cy; ++y)
+      for (int32_t x = c0.cx; x <= c1.cx; ++x) {
+        const VoxelCell c{x, y, z};
+        const Vec3 p = cellCenter(c);
+        const double r = p.length();
+        if (r > rHigh || r < rLow) continue;          // outside the band
+        // Perpendicular distance from the cylinder axis.
+        const double axial = p.x * up.x + p.y * up.y + p.z * up.z;
+        const double perp2 = p.lengthSq() - axial * axial;
+        if (perp2 > r2) continue;                     // outside the disc
+        ++out.scanned;
+        const bool wantSolid = (r <= targetR);
+        const bool isSolidNow = edits.isSolid(body, c);
+        if (wantSolid == isSolidNow) continue;        // already right: idempotent
+        if (wantSolid) { if (edits.fillCell(body, c)) { ++out.filled; edits.touch(c); } }
+        else           { if (edits.digCell(c))        { ++out.dug;    edits.touch(c); } }
+      }
+  return out;
+}
 
 }  // namespace worldgen
 }  // namespace of

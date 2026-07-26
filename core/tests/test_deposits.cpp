@@ -291,3 +291,171 @@ TEST(deposits_seed_plus_depletion_diff_reproduces_state) {
   }
   CHECK(identical);
 }
+
+// =============================================================================
+// §P — ORE PATCHES: a deposit is an area of ground, not a pebble.
+//
+// The properties a patch has to have before anything can be built on it:
+//   P1. DETERMINISM  — same seed regenerates the field bitwise; a different seed
+//                      gives a different field.
+//   P2. IT IS A PATCH — a measurable extent, an irregular (non-circular) outline,
+//                      and a richness that falls from the centre to the rim.
+//   P3. IN / OUT      — a point in the middle is inside, a point well outside is
+//                      NOT, and findPatch answers -1 there. This is the negative
+//                      control the drill's placement refusal is built on.
+//   P4. ONE POOL      — extraction depletes the patch, clamps at zero, and never
+//                      over-grants.
+//   P5. SEED + DIFF   — regenerating and re-applying the recorded depletion
+//                      reproduces the live state (DW-17 / WG-3).
+// =============================================================================
+static Vec3 unit(const Vec3& v) {
+  const double l = v.length();
+  return (l > 0.0) ? Vec3(v.x / l, v.y / l, v.z / l) : Vec3(0, 1, 0);
+}
+
+static std::vector<uint8_t> patchKinds() {
+  using NK = survival::NodeKind;
+  return {static_cast<uint8_t>(NK::IronOre), static_cast<uint8_t>(NK::CoalSeam),
+          static_cast<uint8_t>(NK::CopperOre), static_cast<uint8_t>(NK::Rock),
+          static_cast<uint8_t>(NK::IronOre)};
+}
+
+TEST(patches_same_seed_regenerates_bit_identical) {
+  const BodyParams forge = makeForge(777001ull);
+  const Vec3 c = unit(Vec3(0.31, 0.62, 0.72));
+  const auto a = patches::LayoutPatchField(forge, forge.bodySeed, frameOf(forge),
+                                           c, patchKinds());
+  const auto b = patches::LayoutPatchField(forge, forge.bodySeed, frameOf(forge),
+                                           c, patchKinds());
+  CHECK(a.size() == patchKinds().size());
+  CHECK(a.size() == b.size());
+  bool same = true;
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (a[i].Id != b[i].Id) same = false;
+    if (a[i].Resource != b[i].Resource) same = false;
+    if (a[i].Shape != b[i].Shape) same = false;
+    if (!bitEqual(a[i].Centre, b[i].Centre)) same = false;
+    if (!bitEqual(a[i].Dir, b[i].Dir)) same = false;
+    if (!bitEqual(a[i].RadiusM, b[i].RadiusM)) same = false;
+    if (!bitEqual(a[i].InitialAmount, b[i].InitialAmount)) same = false;
+  }
+  CHECK(same);
+
+  const BodyParams other = makeForge(777002ull);
+  const auto d = patches::LayoutPatchField(other, other.bodySeed, frameOf(other),
+                                           c, patchKinds());
+  bool differs = false;
+  for (size_t i = 0; i < a.size() && i < d.size(); ++i)
+    if (a[i].Id != d[i].Id || !bitEqual(a[i].RadiusM, d[i].RadiusM)) differs = true;
+  CHECK(differs);
+}
+
+TEST(patches_are_an_irregular_area_with_falling_richness) {
+  const BodyParams forge = makeForge(777003ull);
+  const auto field = patches::LayoutPatchField(
+      forge, forge.bodySeed, frameOf(forge), unit(Vec3(0, 1, 0)), patchKinds());
+  CHECK(!field.empty());
+
+  for (const patches::OrePatch& p : field) {
+    // A real extent, in metres, not a point.
+    CHECK(p.RadiusM >= patches::kMinRadiusM);
+    CHECK(p.RadiusM <= patches::kMaxRadiusM);
+    CHECK(p.InitialAmount > 500.0);
+    CHECK(p.Grade > 0.0f && p.Grade <= 1.0f);
+
+    // The outline is IRREGULAR: sweeping the azimuth must produce a spread of
+    // boundary radii. A circle would give min == max, and a circle reads as a
+    // decal rather than as an ore body.
+    double lo = 1e30, hi = -1e30;
+    for (int s = 0; s < 64; ++s) {
+      const double th = 6.283185307179586 * s / 64.0;
+      const double r = patches::lobeRadiusM(p, th);
+      if (r < lo) lo = r;
+      if (r > hi) hi = r;
+    }
+    CHECK(hi - lo > 0.5);           // measurably not a circle
+    CHECK(lo > 0.30 * p.RadiusM);   // and still star-shaped about the centre
+
+    // Richness falls from the centre outward, and the centre is the peak.
+    const double c0 = patches::coverageAt(p, p.Centre);
+    const double cMid = patches::coverageAt(
+        p, p.Centre + p.T1 * (0.5 * lo));
+    const double cRim = patches::coverageAt(p, p.Centre + p.T1 * (hi * 1.6));
+    CHECK_NEAR(c0, 1.0, 1e-9);
+    CHECK(cMid < c0 && cMid > 0.0);
+    CHECK_NEAR(cRim, 0.0, 1e-12);
+    CHECK_NEAR(patches::richnessAt(p, p.Centre),
+               static_cast<double>(p.Grade), 1e-9);
+  }
+}
+
+TEST(patches_contain_their_own_ground_and_refuse_everything_else) {
+  const BodyParams forge = makeForge(777004ull);
+  const auto field = patches::LayoutPatchField(
+      forge, forge.bodySeed, frameOf(forge), unit(Vec3(0.5, 0.5, 0.7)),
+      patchKinds());
+  CHECK(!field.empty());
+  const patches::OrePatch& p = field[0];
+
+  CHECK(patches::contains(p, p.Centre));
+  CHECK(patches::findPatch(field, p.Centre) == 0);
+
+  // THE NEGATIVE CONTROL. 400 m out along the patch's own tangent is ordinary
+  // ground: no patch contains it, and findPatch says so. This is exactly the
+  // question a drill placement asks before it refuses.
+  const Vec3 far = p.Centre + p.T1 * 400.0;
+  CHECK(!patches::contains(p, far));
+  CHECK(patches::findPatch(field, far) < 0);
+
+  // Every outcrop stands ON its own patch, sunk into the ground rather than on
+  // top of it, and the pieces are not all in one place.
+  const int n = patches::outcropCount(p);
+  CHECK(n >= 5);
+  double minCover = 1e30, spread = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const patches::Outcrop o = patches::outcropAt(p, i);
+    const Vec3 at = o.Dir * p.Centre.length();
+    CHECK(patches::coverageAt(p, at) > 0.0);
+    CHECK(o.SinkFrac > 0.2 && o.SinkFrac < 0.7);
+    CHECK(o.Scale > 0.4);
+    if (o.Coverage < minCover) minCover = o.Coverage;
+    const patches::Outcrop o0 = patches::outcropAt(p, 0);
+    const double d = (o.Dir - o0.Dir).length() * p.Centre.length();
+    if (d > spread) spread = d;
+  }
+  CHECK(spread > 1.0);   // they are scattered across the patch, not stacked
+
+  // The drawable skin covers the same ground the rule does: the rim samples land
+  // at coverage 0 and the centre at 1, so the tint and the drill rate agree.
+  const auto disc = patches::sampleDisc(p, 3, 24);
+  CHECK(disc.size() == 4u * 24u);
+  CHECK_NEAR(disc[0].Coverage, 1.0, 1e-12);
+  CHECK_NEAR(disc[disc.size() - 1].Coverage, 0.0, 1e-12);
+}
+
+TEST(patches_are_one_pool_that_depletes_and_clamps) {
+  const BodyParams forge = makeForge(777005ull);
+  auto field = patches::LayoutPatchField(
+      forge, forge.bodySeed, frameOf(forge), unit(Vec3(0, 0, 1)), patchKinds());
+  patches::OrePatch& p = field[0];
+  const double initial = p.InitialAmount;
+
+  CHECK_NEAR(patches::extract(p, 100.0), 100.0, 1e-9);
+  CHECK_NEAR(p.RemainingAmount, initial - 100.0, 1e-9);
+  CHECK_NEAR(patches::extract(p, -5.0), 0.0, 1e-12);        // never a source
+  CHECK_NEAR(p.RemainingAmount, initial - 100.0, 1e-9);
+
+  // Asking for more than is left grants exactly what is left and stops at zero.
+  const double left = p.RemainingAmount;
+  CHECK_NEAR(patches::extract(p, left * 10.0), left, 1e-9);
+  CHECK_NEAR(p.RemainingAmount, 0.0, 1e-12);
+  CHECK_NEAR(patches::extract(p, 50.0), 0.0, 1e-12);
+  CHECK(p.InitialAmount == initial);   // the seed baseline never moved
+
+  // P5, seed + diff: regenerate the field and re-apply the recorded depletion.
+  auto reloaded = patches::LayoutPatchField(
+      forge, forge.bodySeed, frameOf(forge), unit(Vec3(0, 0, 1)), patchKinds());
+  CHECK(reloaded[0].Id == p.Id);
+  patches::extract(reloaded[0], initial);
+  CHECK_NEAR(reloaded[0].RemainingAmount, p.RemainingAmount, 1e-9);
+}

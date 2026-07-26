@@ -436,5 +436,310 @@ inline std::vector<FDepositNode> LayoutTestArea(const BodyParams& body,
 
 }  // namespace survival
 
+// =============================================================================
+// §P — ORE PATCHES: a deposit is a piece of GROUND, not a pebble on it.
+//
+// The survival layer above scatters individual boulders you swing at until they
+// vanish. That reads as litter: a player cannot tell a resource from scenery,
+// and there is nothing for a mining drill to stand ON. Factorio's answer, and
+// Satisfactory's, is the same one: an ore body is an irregular AREA of ground
+// holding one resource, whose richness varies across it, and machines are
+// placed on top of it.
+//
+// THE MODEL, three numbers and a shape:
+//   * a CENTRE direction on the body, its own tangent basis, and a nominal
+//     radius in metres;
+//   * a LOBED boundary, r(theta) = RadiusM * lobeShape(Shape, theta), three
+//     hashed harmonics so the outline is irregular, closed, and smooth. A circle
+//     reads as a decal; a lobe reads as ore;
+//   * COVERAGE in (0,1] inside that outline, 1 at the centre falling to 0 at the
+//     edge, which is BOTH the drill's rate multiplier and the tint the ground
+//     is drawn with. One function, so what the player sees is what the machine
+//     gets.
+//
+// ONE POOL. RemainingAmount is the patch's, and it is the only mutable field.
+// Hand-mining an outcrop (gameplay.h §S.5) and a drill sitting on the patch draw
+// from THAT number and nothing else. Two counters for one ore body is the
+// five-surfaces failure wearing a different hat, and it shows up as a mountain
+// that stands full for ever while its ore rides away on a belt.
+//
+// DETERMINISM is the §4.5 rule unchanged: everything except RemainingAmount is
+// position-hashed from (bodySeed, dir), so the field is a pure function of the
+// seed and only the depletion is a diff (WG-6, DW-17).
+//
+// TERRAIN. A patch is defined in DIRECTION space and carries no height opinion
+// of its own beyond where its centre was snapped. Digging or levelling the
+// ground moves the surface, never the ore body: the same column still holds the
+// same patch. Callers re-snap what they draw through the surface oracle.
+// =============================================================================
+namespace patches {
+
+// ---- Authored balance (DATA, GP-12: tune without touching code paths) -------
+// Units of ore per square metre of patch, before the grade multiplier. A 9 m
+// patch at grade 0.8 is then ~3,600 units: about twenty minutes of one drill,
+// which is long enough to be a place you come back to.
+static constexpr double kUnitsPerSquareMetreM2 = 16.0;
+// Hand yields, passed to harvestNode so the tool rule is unchanged: the matching
+// tool triples the pull, and bare hands ALWAYS work (no bootstrap deadlock —
+// you cannot craft a drill before you have mined anything by hand).
+static constexpr uint16_t kHandYieldBare = 3;
+static constexpr uint16_t kHandYieldTool = 9;
+// A drill's extraction rate at full richness, in units per second.
+static constexpr double kDrillUnitsPerSec = 3.0;
+// Patch radius range, metres. Small enough to walk across, big enough to hold a
+// line of drills.
+static constexpr double kMinRadiusM = 6.0;
+static constexpr double kMaxRadiusM = 11.0;
+
+// A single ore body: an area of ground, its resource, and its pool.
+struct OrePatch {
+  DepositId Id = 0;
+  Vec3      Dir;                 // unit direction of the centre
+  Vec3      Centre;              // body-frame metres, on the snapped surface
+  Vec3      T1, T2;              // the patch's own tangent basis (azimuth 0 = T1)
+  double    RadiusM = 0.0;       // nominal radius; the lobe modulates it
+  ItemId    Resource = 0;        // OPAQUE gameplay item id (WG-11)
+  uint8_t   Kind = 0;            // survival::NodeKind, for art selection only
+  float     Grade = 0.0f;        // peak richness in (0,1]
+  double    InitialAmount = 0.0;    // regenerates from seed — NOT saved
+  double    RemainingAmount = 0.0;  // THE mutable depletion diff
+  uint64_t  Shape = 0;           // drives the lobed outline
+};
+
+// The outline multiplier at azimuth `theta`. Three hashed harmonics, amplitudes
+// 0.18 / 0.12 / 0.07, so the result lives in roughly [0.63, 1.37] and the
+// boundary never doubles back on itself. Pure function of (Shape, theta).
+inline double lobeShape(uint64_t shape, double theta) {
+  const double kTau = 6.28318530717958647692;
+  const double a2 = 0.18 * hashToSigned(hashCombine(shape, 2ull));
+  const double p2 = kTau * hashToUnit(hashCombine(shape, 3ull));
+  const double a3 = 0.12 * hashToSigned(hashCombine(shape, 5ull));
+  const double p3 = kTau * hashToUnit(hashCombine(shape, 7ull));
+  const double a5 = 0.07 * hashToSigned(hashCombine(shape, 11ull));
+  const double p5 = kTau * hashToUnit(hashCombine(shape, 13ull));
+  double f = 1.0 + a2 * std::cos(2.0 * theta + p2)
+                 + a3 * std::cos(3.0 * theta + p3)
+                 + a5 * std::cos(5.0 * theta + p5);
+  if (f < 0.45) f = 0.45;   // belt and braces: the outline stays star-shaped
+  return f;
+}
+
+// The boundary radius, in metres, at azimuth `theta`.
+inline double lobeRadiusM(const OrePatch& p, double theta) {
+  return p.RadiusM * lobeShape(p.Shape, theta);
+}
+
+// The patch-local tangent offset of a body-frame point: (along T1, along T2).
+inline void localOffset(const OrePatch& p, const Vec3& pos, double& x, double& y) {
+  const Vec3 v = pos - p.Centre;
+  const Vec3 t = v - p.Dir * v.dot(p.Dir);   // drop the radial part
+  x = t.dot(p.T1);
+  y = t.dot(p.T2);
+}
+
+// COVERAGE: 0 outside the lobe, 1 at the centre, falling to 0 at the boundary.
+// This one function is the drill's rate multiplier AND the ground tint, so what
+// the player reads off the terrain is exactly what the machine is standing in.
+inline double coverageAt(const OrePatch& p, const Vec3& pos) {
+  double x = 0.0, y = 0.0;
+  localOffset(p, pos, x, y);
+  const double d = std::sqrt(x * x + y * y);
+  if (d <= 0.0) return 1.0;
+  const double r = lobeRadiusM(p, std::atan2(y, x));
+  if (!(r > 0.0) || d >= r) return 0.0;
+  const double u = d / r;
+  return 1.0 - u * u;
+}
+
+// Richness = peak grade times coverage. Zero outside the patch.
+inline double richnessAt(const OrePatch& p, const Vec3& pos) {
+  return static_cast<double>(p.Grade) * coverageAt(p, pos);
+}
+
+inline bool contains(const OrePatch& p, const Vec3& pos) {
+  return coverageAt(p, pos) > 0.0;
+}
+
+// The unit direction of a patch-local tangent offset, so a caller can turn
+// (x, y) metres into something the surface oracle can be asked about.
+inline Vec3 dirAtLocal(const OrePatch& p, double x, double y) {
+  const double r0 = p.Centre.length();
+  const Vec3 v = p.Dir * (r0 > 0.0 ? r0 : 1.0) + p.T1 * x + p.T2 * y;
+  const double l = v.length();
+  return (l > 0.0) ? Vec3(v.x / l, v.y / l, v.z / l) : p.Dir;
+}
+
+// EXTRACTION — the ONLY mutator. Grants up to RemainingAmount and clamps at 0.
+// Sub-millimetre crumbs are snapped to empty for the same reason harvestNode
+// rounds its last pull up: a patch reading 3.6e-7 is not a patch you can finish.
+inline double extract(OrePatch& p, double requested) {
+  if (requested <= 0.0) return 0.0;
+  const double granted = std::min(requested, p.RemainingAmount);
+  double left = p.RemainingAmount - granted;
+  if (left < 1e-3) left = 0.0;
+  p.RemainingAmount = left;
+  return granted;
+}
+
+// ---- §P.2 — the disc sample: what a renderer draws the patch WITH ----------
+// One vertex of the ground skin: a unit direction and the coverage there. The
+// caller multiplies the direction by the surface oracle's radius, so the skin
+// hugs whatever the ground currently is (including a levelled or dug patch) and
+// this header keeps no height opinion.
+struct DiscVertex { Vec3 Dir; double Coverage; };
+
+// A (rings+1) x segs vertex grid over the patch: ring 0 is the centre point
+// repeated, ring `rings` is the boundary. Row-major, ring by ring.
+inline std::vector<DiscVertex> sampleDisc(const OrePatch& p, int rings, int segs) {
+  std::vector<DiscVertex> out;
+  if (rings < 1 || segs < 3) return out;
+  const double kTau = 6.28318530717958647692;
+  out.reserve(static_cast<size_t>(rings + 1) * static_cast<size_t>(segs));
+  for (int r = 0; r <= rings; ++r) {
+    const double f = static_cast<double>(r) / static_cast<double>(rings);
+    for (int s = 0; s < segs; ++s) {
+      const double th = kTau * static_cast<double>(s) / static_cast<double>(segs);
+      const double rad = lobeRadiusM(p, th) * f;
+      DiscVertex v;
+      v.Dir = dirAtLocal(p, rad * std::cos(th), rad * std::sin(th));
+      // The rim is pinned to exactly 0 so the skin fades out rather than
+      // ending on a visible step; inside, it is the same 1 - u^2 the drill
+      // rate reads.
+      v.Coverage = 1.0 - f * f;
+      out.push_back(v);
+    }
+  }
+  return out;
+}
+
+// ---- §P.3 — outcrops: the part of the ore body that breaks the surface -----
+// A patch is IN the ground, so something has to say it is there from a distance
+// and give a hand a place to swing. Outcrops are position-hashed inside the
+// lobe, denser and larger toward the rich centre, and sunk into the ground by a
+// fraction of their own size so they read as rock breaking through rather than
+// as boulders dropped on top.
+struct Outcrop {
+  Vec3   Dir;        // unit direction (snap it through the surface oracle)
+  double Scale;      // art scale multiplier
+  double SinkFrac;   // how much of the piece is buried, in (0,1)
+  double Coverage;   // the patch coverage where it stands
+};
+
+// How many outcrops a patch carries: proportional to its area, bounded.
+inline int outcropCount(const OrePatch& p) {
+  int n = static_cast<int>(p.RadiusM * 1.1);
+  if (n < 5) n = 5;
+  if (n > 14) n = 14;
+  return n;
+}
+
+inline Outcrop outcropAt(const OrePatch& p, int i) {
+  const double kTau = 6.28318530717958647692;
+  const uint64_t h = hashCombine(p.Id ^ 0x0C7C40Bull, static_cast<uint64_t>(i));
+  // Golden-angle azimuth so a handful of pieces still spread evenly, plus a
+  // hashed radial fraction biased inward (sqrt would spread them to the rim).
+  const double th = 2.39996322972865332 * static_cast<double>(i)
+                  + kTau * hashToUnit(hashCombine(h, 1ull));
+  const double f = 0.12 + 0.74 * hashToUnit(hashCombine(h, 2ull));
+  const double rad = lobeRadiusM(p, th) * f;
+  Outcrop o;
+  o.Dir = dirAtLocal(p, rad * std::cos(th), rad * std::sin(th));
+  o.Coverage = 1.0 - f * f;
+  o.Scale = 0.55 + 0.75 * o.Coverage + 0.25 * hashToUnit(hashCombine(h, 3ull));
+  o.SinkFrac = 0.32 + 0.26 * hashToUnit(hashCombine(h, 4ull));
+  return o;
+}
+
+// ---- §P.4 — the field: a deterministic patch layout around a centre --------
+// Placement is done in METRES and converted to an angle through the body radius,
+// unlike survival::LayoutTestArea whose angular jitter is 180 m at Forge scale
+// and therefore unusable for anything a player walks across.
+inline std::vector<OrePatch> LayoutPatchField(const BodyParams& body,
+                                              uint64_t bodySeed,
+                                              FrameId bodyFrame,
+                                              const Vec3& centreDir,
+                                              const std::vector<uint8_t>& kinds,
+                                              double spreadM = 90.0,
+                                              const SnapHeightFn& snapH = nullptr) {
+  std::vector<OrePatch> out;
+  const int n = static_cast<int>(kinds.size());
+  if (n <= 0) return out;
+  out.reserve(kinds.size());
+
+  const double clen = centreDir.length();
+  const Vec3 c = (clen > 0.0) ? Vec3(centreDir.x / clen, centreDir.y / clen,
+                                     centreDir.z / clen)
+                              : Vec3(0, 1, 0);
+  Vec3 up = (std::fabs(c.y) < 0.99) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+  Vec3 e1(up.y * c.z - up.z * c.y, up.z * c.x - up.x * c.z,
+          up.x * c.y - up.y * c.x);
+  const double e1l = e1.length();
+  e1 = (e1l > 0.0) ? Vec3(e1.x / e1l, e1.y / e1l, e1.z / e1l) : Vec3(1, 0, 0);
+  const Vec3 e2(c.y * e1.z - c.z * e1.y, c.z * e1.x - c.x * e1.z,
+                c.x * e1.y - c.y * e1.x);
+  const double r0 = body.radiusM;
+
+  for (int i = 0; i < n; ++i) {
+    // Golden-angle spiral in the tangent plane: even coverage, no lattice look.
+    const uint64_t hi = hashCombine(mix64(bodySeed ^ 0x0DEB05ull),
+                                    static_cast<uint64_t>(i));
+    const double ang = 2.39996322972865332 * static_cast<double>(i)
+                     + 0.7 * hashToUnit(hashCombine(hi, 1ull));
+    const double rad = 22.0 + spreadM
+        * std::sqrt((static_cast<double>(i) + 0.5) / static_cast<double>(n))
+        + 6.0 * hashToUnit(hashCombine(hi, 2ull));
+    const Vec3 v = c * r0 + e1 * (std::cos(ang) * rad) + e2 * (std::sin(ang) * rad);
+    const double vl = v.length();
+    const Vec3 dir(v.x / vl, v.y / vl, v.z / vl);
+
+    OrePatch p;
+    p.Dir = dir;
+    // The patch's OWN basis, derived from its own direction, so coverage is a
+    // pure function of the patch and not of whoever laid the field out.
+    Vec3 pu = (std::fabs(dir.y) < 0.99) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+    Vec3 t1(pu.y * dir.z - pu.z * dir.y, pu.z * dir.x - pu.x * dir.z,
+            pu.x * dir.y - pu.y * dir.x);
+    const double t1l = t1.length();
+    p.T1 = (t1l > 0.0) ? Vec3(t1.x / t1l, t1.y / t1l, t1.z / t1l) : Vec3(1, 0, 0);
+    p.T2 = Vec3(dir.y * p.T1.z - dir.z * p.T1.y, dir.z * p.T1.x - dir.x * p.T1.z,
+                dir.x * p.T1.y - dir.y * p.T1.x);
+
+    const double h = snapH ? snapH(dir) : sampleHeightField(body, dir);
+    p.Centre = dir * (body.radiusM + h);
+    p.Kind = kinds[static_cast<size_t>(i)];
+    p.Resource = survival::resourceOf(static_cast<survival::NodeKind>(p.Kind));
+    p.Grade = static_cast<float>(
+        0.45 + 0.55 * hashToUnit(hashPos(bodySeed, dir, 0x0A5E11u)));
+    p.RadiusM = kMinRadiusM + (kMaxRadiusM - kMinRadiusM)
+        * hashToUnit(hashPos(bodySeed, dir, 0x0BADA55u));
+    p.Shape = hashPos(bodySeed, dir, 0x510BEu);
+    const double kPi = 3.14159265358979323846;
+    p.InitialAmount = kUnitsPerSquareMetreM2 * kPi * p.RadiusM * p.RadiusM
+                    * static_cast<double>(p.Grade);
+    p.RemainingAmount = p.InitialAmount;
+    uint64_t id = mix64(bodySeed ^ 0x0A7C4Eull);
+    id = hashCombine(id, static_cast<uint64_t>(p.Kind));
+    id = hashCombine(id, static_cast<uint64_t>(i));
+    p.Id = id;
+    (void)bodyFrame;
+    out.push_back(p);
+  }
+  return out;
+}
+
+// The patch containing `pos`, or -1. Ties break on the richer one, because two
+// overlapping bodies should hand a drill the better ground.
+inline int findPatch(const std::vector<OrePatch>& field, const Vec3& pos) {
+  int best = -1;
+  double bestCover = 0.0;
+  for (size_t i = 0; i < field.size(); ++i) {
+    const double c = coverageAt(field[i], pos);
+    if (c > bestCover) { bestCover = c; best = static_cast<int>(i); }
+  }
+  return best;
+}
+
+}  // namespace patches
+
 }  // namespace worldgen
 }  // namespace of

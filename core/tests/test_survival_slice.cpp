@@ -612,3 +612,73 @@ TEST(end_to_end_survival_bootstrap_loop) {
   inv.add(sitems::Iron, 1);                     // ingot back into the pack
   CHECK(inv.has(sitems::Iron, 1));              // the survival payoff: smelted iron
 }
+
+// =============================================================================
+// 7. ORE PATCHES (deposits.h §P + gameplay.h §S.5) — a deposit is GROUND, and
+//    an outcrop is a window onto it rather than a second reservoir.
+//
+//    The three things that must hold before a drill can exist:
+//      a. BOOTSTRAP  — bare hands ALWAYS yield ore from a patch, so the player
+//                      can reach the iron a drill costs. The matching tool
+//                      raises the yield; it is never required.
+//      b. ONE POOL   — the units the player keeps come OUT of the patch, exactly,
+//                      and every outcrop of that patch reports the same number.
+//      c. FINISHABLE — the patch drains to zero and then grants nothing.
+// =============================================================================
+TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
+  using NK = worldgen::survival::NodeKind;
+  namespace wp = worldgen::patches;
+
+  const worldgen::BodyParams forge = worldgen::makeForge(6100ull);
+  const Vec3 c = worldgen::latLonToDir(0.2, 0.4);
+  std::vector<uint8_t> kinds{static_cast<uint8_t>(NK::IronOre)};
+  auto field = wp::LayoutPatchField(forge, forge.bodySeed, FrameId(1), c, kinds);
+  CHECK(field.size() == 1u);
+  wp::OrePatch& patch = field[0];
+  const double initial = patch.InitialAmount;
+  CHECK(initial > 500.0);
+  CHECK(patch.Resource == sitems::RawIron);
+
+  SliceRegistry reg;
+  CHECK(RegisterSurvivalContent(reg));
+  Inventory inv(reg);
+
+  // Two DIFFERENT outcrops of the same patch. Nothing in the pack: bare hands.
+  worldgen::FDepositNode a, b;
+  a.Resource = patch.Resource;
+  b.Resource = patch.Resource;
+
+  HarvestResult r1 = survival::harvestPatch(patch, a, NK::IronOre, inv);
+  CHECK(r1.granted == wp::kHandYieldBare);   // (a) bare hands always work
+  CHECK(!r1.usedTool);
+  CHECK_NEAR(patch.RemainingAmount, initial - wp::kHandYieldBare, 1e-9);
+  // (b) the OTHER outcrop draws from the SAME pool: it is handed the patch's
+  //     number on the way in, so it can neither refill it nor hold one of its
+  //     own. `a` is deliberately not re-read here — an outcrop is a view that is
+  //     re-derived when it is used, and asserting a stale copy would be
+  //     asserting the bug this design exists to prevent.
+  HarvestResult r2 = survival::harvestPatch(patch, b, NK::IronOre, inv);
+  CHECK(r2.granted == wp::kHandYieldBare);
+  CHECK_NEAR(b.RemainingAmount, patch.RemainingAmount, 1e-9);
+  CHECK_NEAR(b.InitialAmount, patch.InitialAmount, 1e-9);
+  CHECK(inv.count(sitems::RawIron) == 2 * wp::kHandYieldBare);
+  CHECK_NEAR(initial - patch.RemainingAmount,
+             static_cast<double>(inv.count(sitems::RawIron)), 1e-9);
+
+  // The tool raises the pull and is still not required.
+  inv.add(sitems::CrudePickaxe, 1);
+  const double beforeTool = patch.RemainingAmount;
+  HarvestResult r3 = survival::harvestPatch(patch, a, NK::IronOre, inv);
+  CHECK(r3.usedTool);
+  CHECK(r3.granted == wp::kHandYieldTool);
+  CHECK(wp::kHandYieldTool > wp::kHandYieldBare);
+  CHECK_NEAR(beforeTool - patch.RemainingAmount,
+             static_cast<double>(wp::kHandYieldTool), 1e-9);
+
+  // (c) drain it flat and confirm it stays empty.
+  wp::extract(patch, patch.RemainingAmount);
+  CHECK_NEAR(patch.RemainingAmount, 0.0, 1e-12);
+  HarvestResult r4 = survival::harvestPatch(patch, a, NK::IronOre, inv);
+  CHECK(r4.granted == 0);
+  CHECK(r4.nodeEmpty);
+}
