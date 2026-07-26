@@ -1,73 +1,113 @@
-// W6 balance probe: what a swing is actually worth, in the browser, per kind.
+// What a swing is actually worth, in the browser, per kind.
 //
-// The pacing lives in gameplay.h (S.2a) and the browser passes 0/0, so this is
-// the check that the authored numbers survive the bridge and land on the real
-// nodes the clearing generates. It reports the yield and the swings-to-clear
-// bare handed and with the matching tool, for every kind in the clearing.
+// TWO DIFFERENT CLAIMS, because there are now two different things to swing at
+// and one number cannot describe both.
 //
-// It does NOT drive the swing animation: probes/impact.js is what proves the
-// swing, the impact frame and the feedback. This one is about the numbers.
+//   A TREE is a thing you FELL. gameplay.h S.2a authors swings-to-clear (6 bare,
+//   3 with the axe) and derives the yield from the node's own size, so a tree is
+//   a handful of swings and then it is gone.
+//
+//   AN ORE PATCH is a PLACE. It holds thousands of units (deposits.h S.P), so
+//   the same pacing would hand over six hundred ore in one swing. The authored
+//   numbers there are the yields themselves: 3 bare, 9 with the pickaxe. A
+//   deposit is not something you clear by hand; it is somewhere you come back to
+//   with a drill, and the hand is the bootstrap rather than the method.
+//
+// THE BOOTSTRAP IS THE POINT OF BOTH. Each tool costs 1 raw iron + 1 wood, so
+// ONE bare swing at a tree and ONE at an outcrop buys the whole toolset. That is
+// tested here rather than asserted, because a drill is the thing you cannot
+// build until you have mined by hand.
+//
+// It does NOT drive the swing animation: probes/impact.js proves the swing, the
+// impact frame and the feedback. This one is about the numbers.
 (async () => {
   const of = window.__of;
   await of.run(0.5);
-  const KINDS = { tree: 0, rock: 1, coal: 2, iron: 3, copper: 4 };
+  const ORE = { rock: 1, coal: 2, iron: 3, copper: 4 };
+  const patchOf = (i) => of.game().ore.list.find((p) => p.index === i);
+  // Which patch an outcrop belongs to, by the pool it reports. An outcrop is a
+  // VIEW of its patch, so the two numbers are the same number.
+  const patchUnder = (n) => of.game().ore.list.find(
+    (p) => Math.abs(p.remaining - n.remaining) < 0.51 && p.kind === n.kind);
 
-  // Bare hands first, on a node that is still untouched.
-  const bare = {};
-  for (const [name, kind] of Object.entries(KINDS)) {
-    const n = of.nodes().find((x) => x.kind === kind && x.remaining === x.initial);
-    if (n === undefined) continue;
-    // __of.harvest returns {ok, node, carried}; the grant itself is on the
-    // interact record, which is the same object the HUD reads.
+  const swingAt = (n) => {
     of.harvest(n.index);
-    const r = of.game().interact.last;
+    return of.game().interact.last;
+  };
+
+  // --- the tree: a handful of swings, bare handed --------------------------
+  const t0 = of.nodes().find((x) => x.kind === 0 && x.remaining === x.initial);
+  if (t0 === undefined) return { fail: 'no untouched tree in the clearing' };
+  const treeBare = swingAt(t0);
+  const tree = {
+    bare: {
+      initial: +t0.initial.toFixed(2), perSwing: treeBare.granted,
+      usedTool: treeBare.usedTool,
+      swingsToClear: Math.ceil(t0.initial / Math.max(1, treeBare.granted)),
+    },
+  };
+
+  // --- the ore: a fixed pull out of a large pool ---------------------------
+  const bare = {};
+  for (const [name, kind] of Object.entries(ORE)) {
+    const n = of.nodes().find((x) => x.kind === kind && x.remaining > 50);
+    if (n === undefined) continue;
+    const p = patchUnder(n);
+    const before = p === undefined ? null : p.remaining;
+    const r = swingAt(n);
+    const after = p === undefined ? null : patchOf(p.index).remaining;
     bare[name] = {
-      initial: +n.initial.toFixed(2), perSwing: r.granted, usedTool: r.usedTool,
-      swingsToClear: r.granted > 0 ? Math.ceil(n.initial / r.granted) : null,
+      perSwing: r.granted, usedTool: r.usedTool,
+      patchInitial: p === undefined ? null : Math.round(p.initial),
+      // CONSERVATION, per kind: what the player kept came out of the patch.
+      patchFell: before === null ? null : +(before - after).toFixed(3),
     };
   }
 
-  // Both tools cost 1 raw iron + 1 wood, and the five bare swings above already
-  // paid for them twice over. That is the bootstrap claim, tested rather than
-  // asserted: ONE swing at a tree and ONE at an iron node buys the whole
-  // toolset, so a player is never more than two swings from an upgrade and
-  // there is no deadlock to fall into.
   const madePick = of.craft(0);
   const madeAxe = of.craft(1);
 
   const tooled = {};
-  for (const [name, kind] of Object.entries(KINDS)) {
-    const n = of.nodes().find((x) => x.kind === kind && x.remaining === x.initial);
+  for (const [name, kind] of Object.entries(ORE)) {
+    const n = of.nodes().find((x) => x.kind === kind && x.remaining > 50);
     if (n === undefined) continue;
-    // __of.harvest returns {ok, node, carried}; the grant itself is on the
-    // interact record, which is the same object the HUD reads.
-    of.harvest(n.index);
-    const r = of.game().interact.last;
-    tooled[name] = {
-      initial: +n.initial.toFixed(2), perSwing: r.granted, usedTool: r.usedTool,
-      swingsToClear: r.granted > 0 ? Math.ceil(n.initial / r.granted) : null,
+    const r = swingAt(n);
+    tooled[name] = { perSwing: r.granted, usedTool: r.usedTool };
+  }
+  const t1 = of.nodes().find((x) => x.kind === 0 && x.remaining === x.initial);
+  const treeTooled = t1 === undefined ? null : swingAt(t1);
+  if (t1 !== undefined && treeTooled !== null) {
+    tree.tooled = {
+      initial: +t1.initial.toFixed(2), perSwing: treeTooled.granted,
+      usedTool: treeTooled.usedTool,
+      swingsToClear: Math.ceil(t1.initial / Math.max(1, treeTooled.granted)),
     };
   }
 
   const kinds = Object.keys(tooled);
   return {
-    madePick, madeAxe, bare, tooled,
-    valid: madePick && madeAxe && kinds.length >= 4
-      // Bare hands always work, every node is a handful, and the tool is a real
-      // upgrade rather than a rounding error: it at least doubles the pull.
-      // The claim is about SWINGS, not about units, and it has to be: the two
-      // nodes compared have different grades, so their per-swing yields are not
-      // comparable in units at all. Comparing raw yields across nodes is the
-      // easiest way to write an assertion that means nothing.
-      && kinds.every((k) => bare[k] !== undefined && bare[k].perSwing > 0
-        && bare[k].swingsToClear >= 4 && bare[k].swingsToClear <= 6
-        && tooled[k].usedTool === true && tooled[k].perSwing > 0
-        && tooled[k].swingsToClear <= 3
-        && tooled[k].swingsToClear * 2 <= bare[k].swingsToClear + 1
-        // ... and about the yield, normalised by the node's own size: one
-        // tooled swing takes at least 1.8x the fraction a bare one does.
-        && (tooled[k].perSwing / tooled[k].initial)
-           >= 1.8 * (bare[k].perSwing / bare[k].initial)),
+    madePick, madeAxe, tree, bare, tooled,
+    // The bootstrap: the two bare swings above paid for both tools.
+    bootstrap: madePick && madeAxe,
+    // A tree is a handful of swings and the axe halves it.
+    treeIsAHandful: tree.bare.perSwing > 0
+      && tree.bare.swingsToClear >= 4 && tree.bare.swingsToClear <= 6
+      && tree.tooled !== undefined && tree.tooled.usedTool === true
+      && tree.tooled.swingsToClear <= 3,
+    // A deposit pays a fixed pull out of one pool, the pickaxe triples it, and
+    // the pool falls by exactly what was kept.
+    oreIsAPlaceNotAPebble: kinds.length >= 3
+      && kinds.every((k) => bare[k].perSwing > 0 && bare[k].usedTool === false
+        && bare[k].patchInitial > 500
+        && Math.abs(bare[k].patchFell - bare[k].perSwing) < 0.01
+        && tooled[k].usedTool === true
+        && tooled[k].perSwing >= 3 * bare[k].perSwing),
+    valid: madePick && madeAxe && kinds.length >= 3
+      && tree.bare.swingsToClear >= 4 && tree.bare.swingsToClear <= 6
+      && tree.tooled !== undefined && tree.tooled.swingsToClear <= 3
+      && kinds.every((k) => bare[k].perSwing > 0 && bare[k].usedTool === false
+        && Math.abs(bare[k].patchFell - bare[k].perSwing) < 0.01
+        && tooled[k].perSwing >= 3 * bare[k].perSwing),
     carried: of.game().carried,
   };
 })()
