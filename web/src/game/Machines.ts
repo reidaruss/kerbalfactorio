@@ -134,10 +134,37 @@ export class Machines {
       eye.y + flat.y * PLACE_AHEAD_M,
       eye.z + flat.z * PLACE_AHEAD_M,
     );
+    if (this.templates.get(FILES[tier].url) === undefined) return null;
+    if (this.core.remove(item, 1) !== 1) return null;
+    const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
+    // THE MOUTH FACES THE PLAYER WHO PUT IT THERE. Standing local +Y on the
+    // ground normal is only half a placement: the fire card is recessed in the
+    // mouth, so a machine dropped at an arbitrary yaw shows a player its blank
+    // back and the one signal that says "this thing is working" is invisible.
+    // The mouth is Blender -Y, which glTF's Z-up conversion makes local +Z.
+    this.q.setFromUnitVectors(this.yAxis, stand);
+    return this.spawn(tier, pos, stand, this.faceMouth(this.q, stand, eye, pos));
+  }
+
+  /**
+   * Put a machine back exactly where a save says it was. No item is spent and
+   * no yaw is derived: a restored furnace faces the way it faced, because the
+   * mouth's direction is player-authored state and not a function of where the
+   * player happens to stand at load time.
+   */
+  restore(tier: number, pos: { x: number; y: number; z: number },
+          quat: THREE.Quaternion): Machine | null {
+    if (FILES[tier] === undefined) return null;
+    const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
+    return this.spawn(tier, pos, stand, quat);
+  }
+
+  /** The half of a placement that is the same however it was asked for. */
+  private spawn(tier: number, pos: { x: number; y: number; z: number },
+                stand: THREE.Vector3, quat: THREE.Quaternion): Machine | null {
     const f = FILES[tier];
     const tpl = this.templates.get(f.url);
     if (tpl === undefined) return null;
-    if (this.core.remove(item, 1) !== 1) return null;
 
     const handle = this.core.furnaceCreate(tier);
     const g = new THREE.Group();
@@ -151,14 +178,6 @@ export class Machines {
     });
     g.add(clone);
     this.group.add(g);
-    const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
-    // THE MOUTH FACES THE PLAYER WHO PUT IT THERE. Standing local +Y on the
-    // ground normal is only half a placement: the fire card is recessed in the
-    // mouth, so a machine dropped at an arbitrary yaw shows a player its blank
-    // back and the one signal that says "this thing is working" is invisible.
-    // The mouth is Blender -Y, which glTF's Z-up conversion makes local +Z.
-    this.q.setFromUnitVectors(this.yAxis, stand);
-    const quat = this.faceMouth(this.q, stand, eye, pos);
     // The socket is authored in the machine's own frame, so rotating the socket
     // offset by that same quaternion is the whole transform. Falling back to the
     // asset height keeps a machine smoking even if a file ever drops the socket.

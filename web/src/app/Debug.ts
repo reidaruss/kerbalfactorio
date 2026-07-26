@@ -129,6 +129,14 @@ export interface OfDebugApi {
    * made; this proves a sound exists (DW-20).
    */
   audioRender(): Promise<unknown>;
+  /** DW-17. Write the autosave slot now. Returns what was written, or null. */
+  save(): Promise<unknown>;
+  /** DW-17. Apply the autosave slot over the live world. The reload path. */
+  load(): Promise<unknown>;
+  /** DW-17. Delete the slot, so the next boot is a fresh world. */
+  wipe(): Promise<void>;
+  /** DW-17. Regrow the clearing from the seed, exactly as boot does. */
+  repopulate(): unknown;
 }
 
 export interface AimRay {

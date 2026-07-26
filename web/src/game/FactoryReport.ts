@@ -79,3 +79,29 @@ function row(f: Factory, p: Placed): unknown {
     working: live ? f.line.working(p.build) : false,
   };
 }
+
+/**
+ * THE ONE PROMPT DECISION: an automated machine, a hand furnace, or a harvest
+ * node, in that order of priority. The order matters and is the same one the
+ * interaction step uses, so what the crosshair SAYS and what the key DOES can
+ * never disagree.
+ */
+export function aimPrompt(f: Factory, game: GameCore, build: Placed | null,
+                          machine: { handle: number } | null,
+                          node: { name: string; fraction: number; empty: boolean;
+                                  distanceM: number } | null): HudTarget | null {
+  if (build !== null) return buildPrompt(f, game, build);
+  if (machine !== null) {
+    const st = game.furnaceState(machine.handle);
+    return {
+      name: st !== null && st.smelting ? 'furnace (smelting)' : 'furnace',
+      fraction: st === null ? 0 : st.progress / Math.max(1, st.ticksPerSmelt),
+      empty: false, distanceM: 0, action: 'E open    X remove',
+    };
+  }
+  if (node === null) return null;
+  return {
+    name: node.name, fraction: node.fraction,
+    empty: node.empty, distanceM: node.distanceM,
+  };
+}

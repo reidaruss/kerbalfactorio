@@ -72,3 +72,18 @@ function describe(kind: string, refunded: { name: string; count: number }[],
   for (const l of lost) parts.push(`lost ${l.count} ${l.what}`);
   return parts.join('  ');
 }
+
+/**
+ * The X key's whole handler: whichever of the two targets is under the
+ * crosshair, removed through its own owner. The machine wins a tie for the same
+ * reason it takes the mine key: it is the nearer, larger object, and a belt tile
+ * behind it must not steal the press.
+ */
+export function demolishAimed(g: { machines: Machines; game: GameCore;
+                                   factory: Factory; factoryView: FactoryView },
+                              machine: Machine | null,
+                              build: Placed | null): DemolishResult | null {
+  if (machine !== null) return demolishMachine(g.machines, g.game, machine);
+  if (build !== null) return demolishBuild(g.factory, g.factoryView, g.game, build);
+  return null;
+}

@@ -147,6 +147,31 @@ export class Factory {
   }
 
   /**
+   * Rebuild the whole plan from saved records and commit ONCE.
+   *
+   * One commit, not one per building, because a commit throws the network away
+   * and rebuilds it: doing that per record would count N-1 spurious rebuilds
+   * and, worse, would wire partial plans on the way. Returns what was restored.
+   */
+  restore(rows: readonly { kind: BuildKind; pos: [number, number, number];
+                           cell: string; up: [number, number, number];
+                           fwd: [number, number, number]; node: number }[]): number {
+    this.placed.length = 0;
+    for (const r of rows) {
+      const up = new THREE.Vector3(r.up[0], r.up[1], r.up[2]);
+      const fwd = new THREE.Vector3(r.fwd[0], r.fwd[1], r.fwd[2]);
+      this.placed.push({
+        id: this.nextId++, kind: r.kind,
+        pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] },
+        cell: r.cell, up, fwd, quat: orient(up, fwd),
+        nodeIndex: r.node, lastRemaining: 0, build: -1, entity: -1, run: -1,
+      });
+    }
+    this.commit();
+    return this.placed.length;
+  }
+
+  /**
    * Take one building out of the PLAN and re-commit. Returns what came back.
    *
    * REMOVAL IS THE SAME PATH AS PLACEMENT, deliberately: the plan is edited and

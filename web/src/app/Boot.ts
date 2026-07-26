@@ -39,8 +39,8 @@ import { Input } from '../player/Input.js';
 import { JitterProbe } from '../render/debug/JitterProbe.js';
 import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { Hud } from '../ui/Hud.js';
+import type { Gameplay } from '../game/Gameplay.js';
 import { probeWorkerOracle } from './WorkerProbe.js';
-import { Gameplay } from '../game/Gameplay.js';
 
 /**
  * The stock-material lighting: PlanetProxy (Lambert) and the Avatar (Standard)
@@ -222,6 +222,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   let gameplay: Gameplay | null = null;
   if (player !== null && cfg.gameplay) {
     hud.banner('growing the harvest clearing ...');
+    // Imported dynamically so `?gameplay=0` isolates the slice for real
+    // (standing rule 7): with a static import the whole module graph is loaded,
+    // parsed and bundled whether or not a single node is placed, so a probe
+    // that means to measure the renderer alone cannot actually get there.
+    const { Gameplay } = await import('../game/Gameplay.js');
     gameplay = await Gameplay.create({
       core, origin, player, avatar, input, host, scene: scenes.near,
       bodyHandle: body.handle, seed: cfg.seedLo,

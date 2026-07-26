@@ -143,6 +143,15 @@ export interface OfCoreModule {
   _of_gp_node_drain(i: number, units: number): number;
   /** What `ore` smelts into (gameplay.h smeltOutputFor), or 0 if not an ore. */
   _of_gp_smelt_output_for(ore: number): number;
+  // --- DW-17 save slot. The BYTES are persistence.h's SaveWriter format; the
+  //     container is JS's, because persistence_file.h has no browser
+  //     filesystem. Encoding the pack in JS would give the format two authors.
+  /** Write the pack into the u8 scratch. Returns the byte count, or -1. */
+  _of_gp_inventory_serialize(): number;
+  /** Size the u8 scratch to `n` bytes so JS can copy a slot in. */
+  _of_gp_bytes_alloc(n: number): void;
+  /** Load the pack from the u8 scratch. Returns the units restored, or -1. */
+  _of_gp_inventory_deserialize(): number;
 
   // --- W6 automation (of_core_api.cpp section 7, over automation.h). One
   //     BuildableNetwork per handle; buildings are per-network build indices.

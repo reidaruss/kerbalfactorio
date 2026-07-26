@@ -1542,6 +1542,56 @@ OF_API int of_gp_clear(void) {
   return g_inv->slotCount();
 }
 
+// --- the pack, as persistence.h bytes (DW-17) --------------------------------
+// The CONTAINER is JS's, because persistence_file.h needs a filesystem the
+// browser does not have. The BYTES are persistence.h's, written with the same
+// SaveWriter the native suites read, so the save format keeps exactly one
+// author and a JS-side encoder can never drift from it.
+//
+// Slots are written in order INCLUDING the empty ones, because slot order is
+// player-visible state: a pack restored with everything shuffled to the front
+// is not the pack that was saved.
+OF_API int of_gp_inventory_serialize(void) {
+  g_u8.clear();
+  if (!gpReady()) return -1;
+  of::persist::SaveWriter w;
+  const int n = g_inv->slotCount();
+  w.varint(static_cast<uint64_t>(n));
+  for (int i = 0; i < n; ++i) {
+    const gp::ItemStack& s = g_inv->slot(i);
+    w.varint(static_cast<uint64_t>(s.item));
+    w.varint(static_cast<uint64_t>(s.count));
+  }
+  g_u8 = w.bytes();
+  return static_cast<int>(g_u8.size());
+}
+
+// Load a pack from `n` bytes previously written into the u8 scratch (JS: call
+// of_gp_bytes_alloc(n), copy into HEAPU8 at of_scratch_u8(), then call this).
+// Returns the total unit count restored, or -1.
+OF_API void of_gp_bytes_alloc(int n) { g_u8.assign(n > 0 ? n : 0, 0); }
+
+OF_API int of_gp_inventory_deserialize(void) {
+  if (!gpReady() || g_u8.empty()) return -1;
+  of::persist::SaveReader r(g_u8);
+  const uint64_t n = r.varint();
+  // A slot count larger than any pack that has ever existed means the bytes are
+  // not a pack. Refuse rather than walk off the end of the buffer.
+  if (n > 4096) return -1;
+  g_inv.reset(new gp::Inventory(*g_reg));
+  int restored = 0;
+  for (uint64_t i = 0; i < n; ++i) {
+    const auto item = static_cast<gp::ItemId>(r.varint());
+    const auto count = static_cast<uint16_t>(r.varint());
+    if (item == gp::kNoItem || count == 0) continue;
+    // add(), not a slot write: stack caps are the registry's rule and a
+    // restored pack must obey exactly the same one a crafted pack does.
+    const uint16_t over = g_inv->add(item, count);
+    restored += count - over;
+  }
+  return restored;
+}
+
 // --- Item metadata (names come from /core, so the UI cannot drift) ------------
 OF_API int of_gp_item_count(void) {
   return gpReady() ? static_cast<int>(g_reg->allItems().size()) : 0;

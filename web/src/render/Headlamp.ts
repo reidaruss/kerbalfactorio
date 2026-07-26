@@ -20,7 +20,7 @@
 // make the world uniformly darker.
 //
 // Cost: ONE SpotLight, no shadow map, no new custom shader (DW-10's cap of 5 is
-// untouched), and four `solidAt` calls per frame at roughly 2 us each.
+// untouched), and nine oracle calls per frame at roughly 2 us each.
 
 import * as THREE from 'three';
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
@@ -28,20 +28,42 @@ import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 /**
- * Radial heights above the EYE that are tested for rock, in metres. Four is
- * enough to separate the three states that matter and cheap enough to run every
- * frame: open sky (0 hits), a mouth or a shallow shelf (1 to 2), and properly
- * buried (4). The deepest sample is 9 m because a 1 m voxel roof with hillside
- * above it must read as buried, not as a shelf.
+ * Samples taken up the column between the eye and the sky. THIS IS A THICKNESS
+ * MEASUREMENT, not a ladder of fixed heights, and the first attempt got that
+ * wrong: fixed probes at 0.9 / 2.2 / 4.5 / 9.0 m reported 3 of 4 CLEAR while
+ * the player stood under a solid roof, because a walkable tunnel is only two or
+ * three metres under the hillside and everything above the hillside is sky by
+ * definition. Measured: skyVis bottomed out at 0.619 inside a tunnel the same
+ * probe was simultaneously asserting had rock overhead on 10 of 10 samples.
+ *
+ * The span is therefore adaptive: it runs from just above the head to just past
+ * the heightfield, so every sample is inside the only region that can contain
+ * rock and none of the budget is spent on open sky.
  */
-const SKY_PROBE_M = [0.9, 2.2, 4.5, 9.0];
+const SKY_SAMPLES = 8;
+/** Where the column starts, metres above the eye. Just clear of the head. */
+const SKY_SPAN_LO_M = 0.3;
+/** Span clamp. The lower bound keeps the measurement defined at the surface. */
+const SKY_SPAN_MIN_M = 1.5;
+const SKY_SPAN_MAX_M = 10;
 /**
- * Seconds for the driven value to reach a new measurement. This is eye
- * adaptation, and it is the reason stepping into a mouth reads as a transition
- * rather than as a light switch. It also swallows the one-frame flicker a
- * sample point crossing a cell boundary would otherwise produce.
+ * Metres of rock that cut the sky to 1/e. 1 m of roof leaves 43%, which is a
+ * shelf you can still read by; 2 m leaves 19% and 3.5 m leaves 5%, which is a
+ * tunnel. Tuned so a 3-cell bore under a hillside is properly dark and the lip
+ * of a mouth is not.
  */
-const ADAPT_SECS = 0.5;
+const ROCK_EFOLD_M = 1.2;
+/**
+ * Seconds for the driven value to reach a new measurement, ASYMMETRIC because
+ * the two directions are different physics. Rock arriving overhead blocks light
+ * at once, so going dark is nearly immediate; coming back out into daylight is
+ * eye adaptation, so it is slow, and that is what makes stepping out of a mouth
+ * read as relief rather than as a light switch. A single 0.5 s constant was
+ * measured lagging a 4.6 m/s walk by a full sample: the driven sun was still at
+ * 31% under 1.7 m of roof the occlusion had already reported.
+ */
+const ADAPT_DARK_SECS = 0.12;
+const ADAPT_LIGHT_SECS = 0.6;
 
 /** Daylight ambient: what W3/W4 shipped, and what full sky visibility restores. */
 const SKY_HEMI = { sky: 0x334466, ground: 0x101008, intensity: 0.35 };
@@ -151,12 +173,22 @@ export class Headlamp {
     const r = Math.hypot(eye.x, eye.y, eye.z);
     if (r < 1e-6) return this.rawVis;
     const ux = eye.x / r, uy = eye.y / r, uz = eye.z / r;
-    let blocked = 0;
-    for (const h of SKY_PROBE_M) {
+    // How much heightfield is above the eye. This is the EDITED surface, so a
+    // vertical shaft (whose column has been lowered to its floor) correctly
+    // reports open sky while a horizontal tunnel under intact ground does not:
+    // it is the same derivedLoweringAt the mouth reconciliation is built on.
+    this.oracleCalls++;
+    const gapM = oracle.surfaceRadius(ux, uy, uz) - r;
+    const top = Math.min(SKY_SPAN_MAX_M, Math.max(SKY_SPAN_MIN_M, gapM + 1.0));
+    const step = (top - SKY_SPAN_LO_M) / (SKY_SAMPLES - 1);
+    let solid = 0;
+    for (let i = 0; i < SKY_SAMPLES; ++i) {
+      const h = SKY_SPAN_LO_M + i * step;
       this.oracleCalls++;
-      if (oracle.solidAt(eye.x + ux * h, eye.y + uy * h, eye.z + uz * h)) blocked++;
+      if (oracle.solidAt(eye.x + ux * h, eye.y + uy * h, eye.z + uz * h)) solid++;
     }
-    this.rawVis = 1 - blocked / SKY_PROBE_M.length;
+    const rockM = (solid / SKY_SAMPLES) * (top - SKY_SPAN_LO_M);
+    this.rawVis = Math.exp(-rockM / ROCK_EFOLD_M);
     return this.rawVis;
   }
 
@@ -178,15 +210,15 @@ export class Headlamp {
     }
     // Exponential approach, frame-rate independent. dt is sim time, so a driven
     // run adapts at exactly the rate a real one does.
-    const a = ADAPT_SECS > 0 ? 1 - Math.exp(-dt / ADAPT_SECS) : 1;
-    this.skyVis += (this.rawVis - this.skyVis) * a;
+    const tau = this.rawVis < this.skyVis ? ADAPT_DARK_SECS : ADAPT_LIGHT_SECS;
+    this.skyVis += (this.rawVis - this.skyVis) * (1 - Math.exp(-dt / tau));
 
-    // The lamp comes on as the sky closes, not on a hard threshold: at 3/4 sky
-    // it is off, by 1/2 it is at full. Under open sky it contributes nothing, so
-    // leaving it enabled in daylight costs one light's worth of shader work and
-    // changes no pixel.
+    // The lamp comes on as the sky closes, not on a hard threshold: above 82%
+    // sky it is off, and it is at full by 45%, which is roughly a metre of rock
+    // overhead. Under open sky it contributes nothing, so leaving it enabled in
+    // daylight costs one light's worth of shader work and changes no pixel.
     const dark = 1 - this.skyVis;
-    const lampK = this.enabled ? THREE.MathUtils.smoothstep(dark, 0.25, 0.62) : 0;
+    const lampK = this.enabled ? THREE.MathUtils.smoothstep(dark, 0.18, 0.55) : 0;
     this.spot.intensity = LAMP_CD * lampK;
     this.spot.visible = lampK > 0.001;
 
@@ -209,8 +241,13 @@ export class Headlamp {
 
   /** Sky ambient fades out; a warm lamp fill fades in on the FP arms only. */
   private applyAmbient(vis: number, lampK: number): void {
+    // SQUARED. The sky ambient is what the lamp has to beat, and a linear fade
+    // leaves a quarter of full daylight on the walls at the point where the
+    // occlusion measurement already says "tunnel". The colour lerps stay linear
+    // so the tint still crosses over smoothly.
+    const k = vis * vis;
     const h = this.nearHemi;
-    h.intensity = THREE.MathUtils.lerp(CAVE_HEMI.intensity, SKY_HEMI.intensity, vis);
+    h.intensity = THREE.MathUtils.lerp(CAVE_HEMI.intensity, SKY_HEMI.intensity, k);
     h.color.set(CAVE_HEMI.sky).lerp(TMP_SKY.set(SKY_HEMI.sky), vis);
     h.groundColor.set(CAVE_HEMI.ground).lerp(TMP_GROUND.set(SKY_HEMI.ground), vis);
 
@@ -219,26 +256,27 @@ export class Headlamp {
     // second SpotLight in the view-model pass.
     const vm = this.vmHemi;
     const caveVm = CAVE_VM.intensity * lampK + 0.03;
-    vm.intensity = THREE.MathUtils.lerp(caveVm, VM_HEMI.intensity, vis);
+    vm.intensity = THREE.MathUtils.lerp(caveVm, VM_HEMI.intensity, k);
     vm.color.set(CAVE_VM.sky).lerp(TMP_SKY.set(VM_HEMI.sky), vis);
     vm.groundColor.set(CAVE_VM.ground).lerp(TMP_GROUND.set(VM_HEMI.ground), vis);
 
     // The sky IBL is the other half of the ambient: stock PBR materials read it
     // for their diffuse and specular, so leaving it at full would keep every
     // prop and the player himself lit by a sky he cannot see.
-    const env = THREE.MathUtils.lerp(CAVE_ENV, 1, vis);
+    const env = THREE.MathUtils.lerp(CAVE_ENV, 1, k);
     this.near.environmentIntensity = env;
     this.viewModel.environmentIntensity = env;
   }
 
   /**
-   * Multiplier Systems applies to every stock sun light. Sharper than the
-   * ambient curve: direct sun through a metre of rock is not a gradient, and
-   * leaving 10% of a 3.0 directional on underground is plainly visible on the
-   * voxel walls as a second, wrong light direction.
+   * Multiplier Systems applies to every stock sun light. It reaches zero WELL
+   * before the ambient does, at the point the occlusion first reads as a roof
+   * rather than as a shelf: direct sun through a metre of rock is not a
+   * gradient, and leaving even 10% of a 3.0 directional on underground is
+   * plainly visible on the voxel walls as a second, wrong light direction.
    */
   get sunScale(): number {
-    return THREE.MathUtils.smoothstep(this.skyVis, 0.05, 0.5);
+    return THREE.MathUtils.smoothstep(this.skyVis, 0.42, 0.85);
   }
 
   /** True while the cascade pass can be skipped entirely: 58 draw calls. */

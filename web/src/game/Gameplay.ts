@@ -26,14 +26,20 @@ import { Sfx } from '../audio/Sfx.js';
 import { Factory, type Placed } from './Factory.js';
 import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
-import { demolishBuild, demolishMachine } from './Demolition.js';
-import { buildPrompt } from './FactoryReport.js';
+import { demolishAimed } from './Demolition.js';
+import { aimPrompt } from './FactoryReport.js';
 import { furnaceView, nodeDump, recipeRows, slotRows } from './GameplayViews.js';
+import { gameplayReport } from './GameplayReport.js';
+import { loadSlot, saveSlot, type RestoreLedger } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
 import type { Avatar } from '../player/Avatar.js';
 import type { Input } from '../player/Input.js';
+
+/** Ticks between autosaves. 20 seconds: often enough to matter, rare enough
+ * that a slot write is invisible against a 16 ms frame. */
+const AUTOSAVE_TICKS = 20 * 60;
 
 export interface GameplayDeps {
   core: OfCoreModule;
@@ -70,11 +76,19 @@ export class Gameplay {
   private panelHeld = false;
   private placeHeld = false;
   private mineHeld = false;
+  /** DW-17 autosave: slots written, and what the last load brought back. */
+  saves = 0;
+  restored: RestoreLedger | null = null;
+  private sinceSaveTicks = 0;
   private razeHeld = false;
   private muteHeld = false;
   private openMachine: Machine | null = null;
   private aimedMachine: Machine | null = null;
   private aimedBuild: Placed | null = null;
+
+  /** What a save needs: the module handle and the seed the world grew from. */
+  get core(): OfCoreModule { return this.d.core; }
+  get seed(): number { return this.d.seed; }
 
   private constructor(private readonly d: GameplayDeps) {
     this.game = new GameCore(d.core);
@@ -108,8 +122,21 @@ export class Gameplay {
     // itself on the first pointer or key event and then removes itself.
     g.sfx.attach();
     g.populate();
+    // DW-17. The clearing is grown from the seed FIRST and then the diff is
+    // applied on top, because the layout is regenerated and only what the
+    // player changed is saved.
+    await g.load();
+    // pagehide, not beforeunload: a mobile browser may never fire beforeunload
+    // and the tab that gets frozen is exactly the one whose save matters.
+    window.addEventListener('pagehide', () => { void g.save(); });
     return g;
   }
+
+  /** Write the autosave slot. Returns what was written, or null (DW-17). */
+  save(): Promise<unknown> { return saveSlot(this); }
+
+  /** Restore the autosave slot over a freshly generated clearing. */
+  load(): Promise<RestoreLedger | null> { return loadSlot(this); }
 
   /**
    * Grow the clearing around wherever the player currently stands.
@@ -124,6 +151,9 @@ export class Gameplay {
     const dir = new THREE.Vector3(p.x, p.y, p.z).normalize();
     this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed);
   }
+
+  /** True while the pointer is locked to the canvas, for the report. */
+  get pointerLocked(): boolean { return this.d.input.pointerLocked; }
 
   /** True while any panel owns the pointer, so the dig action stands down. */
   get uiOpen(): boolean { return this.panel.isOpen || this.furnacePanel.isOpen; }
@@ -145,6 +175,9 @@ export class Gameplay {
     // frame, a panel or the player being anywhere near the machines.
     this.factory.tick(1);
     this.fx.watchSmelters(this.factory, this.game);
+    // AUTOSAVE on the sim clock, like everything else that is a rule, so a
+    // driven run saves exactly as often as a played one does.
+    if (++this.sinceSaveTicks >= AUTOSAVE_TICKS) { this.sinceSaveTicks = 0; void this.save(); }
 
     // M mutes. Edge-detected here like every other open-ended key, so a driven
     // tape that holds it for ten frames toggles once.
@@ -163,18 +196,14 @@ export class Gameplay {
     const minePressed = f.mine && !this.mineHeld;
     this.mineHeld = f.mine;
 
-    if (this.panel.isOpen) {
+    if (this.uiOpen) {
+      // A machine screen closes with the key that opened it; the Tab panel is
+      // handled above. Either way nothing in the world is aimed at.
+      if (minePressed && this.furnacePanel.isOpen) this.openFurnace(null);
       this.interact.target = null;
       return false;
     }
 
-    if (this.furnacePanel.isOpen) {
-      if (minePressed) this.openFurnace(null);
-      this.interact.target = null;
-      return false;
-    }
-
-    // Placement, and the machine prompt, both want the aim ray.
     const ray = this.d.player.aimRay();
     // BUILD MODE FIRST, and it takes the place key while it is armed. A player
     // holding a belt in hand who presses G means the belt, not the furnace, and
@@ -234,11 +263,7 @@ export class Gameplay {
    * the nearer, larger object and a belt tile behind it must not steal the press.
    */
   private demolish(): boolean {
-    const r = this.aimedMachine !== null
-      ? demolishMachine(this.machines, this.game, this.aimedMachine)
-      : this.aimedBuild !== null
-        ? demolishBuild(this.factory, this.factoryView, this.game, this.aimedBuild)
-        : null;
+    const r = demolishAimed(this, this.aimedMachine, this.aimedBuild);
     if (r === null) { this.hud.flash('nothing to remove'); return false; }
     this.aimedMachine = null;
     this.aimedBuild = null;
@@ -268,28 +293,11 @@ export class Gameplay {
         furnaceView(this.game, this.openMachine.handle, this.openMachine.tier));
     }
     const carried = this.game.carried().map((c) => ({ name: c.name, count: c.count }));
-    if (this.uiOpen) {
-      if (this.panel.isOpen) this.panel.render(slotRows(this.game), recipeRows(this.game));
-      this.hud.render(dt, null, carried);
-      return;
-    }
-    if (this.aimedBuild !== null) {
-      this.hud.render(dt, buildPrompt(this.factory, this.game, this.aimedBuild), carried);
-      return;
-    }
-    if (this.aimedMachine !== null) {
-      const st = this.game.furnaceState(this.aimedMachine.handle);
-      this.hud.render(dt, {
-        name: st !== null && st.smelting ? 'furnace (smelting)' : 'furnace',
-        fraction: st === null ? 0 : st.progress / Math.max(1, st.ticksPerSmelt),
-        empty: false, distanceM: 0, action: 'E open    X remove',
-      }, carried);
-      return;
-    }
-    const t = this.interact.target;
-    this.hud.render(dt, t === null ? null : {
-      name: t.name, fraction: t.fraction, empty: t.empty, distanceM: t.distanceM,
-    }, carried);
+    // ONE prompt decision, made in one place. It used to be four early returns
+    // here, and every one of them had to remember the two panel conditions.
+    this.hud.render(dt, this.uiOpen ? null : aimPrompt(this.factory, this.game,
+      this.aimedBuild, this.aimedMachine, this.interact.target), carried);
+    if (this.panel.isOpen) this.panel.render(slotRows(this.game), recipeRows(this.game));
   }
 
   /** Take an automated machine's finished stock into the pack. */
@@ -313,12 +321,15 @@ export class Gameplay {
   /** Put a furnace or a smelter from the pack on the 1 m grid ahead of the eye. */
   private placeMachine(ray: { origin: { x: number; y: number; z: number };
                               dir: { x: number; y: number; z: number } }): void {
-    const tier = this.game.count(this.game.ids.furnace) > 0 ? 0
-      : this.game.count(this.game.ids.smelter) > 0 ? 1 : -1;
+    const ids = this.game.ids;
+    const tier = this.game.count(ids.furnace) > 0 ? 0
+      : this.game.count(ids.smelter) > 0 ? 1 : -1;
     if (tier < 0) { this.hud.flash('nothing to place  (craft a furnace)'); return; }
-    const item = tier === 0 ? this.game.ids.furnace : this.game.ids.smelter;
-    const m = this.machines.place(item, tier, ray.origin, ray.dir);
-    if (m === null) { this.hud.flash('cannot place there'); return; }
+    const item = tier === 0 ? ids.furnace : ids.smelter;
+    if (this.machines.place(item, tier, ray.origin, ray.dir) === null) {
+      this.hud.flash('cannot place there');
+      return;
+    }
     this.placements++;
     this.hud.flash(`placed ${this.game.itemName(item)}`);
     this.sfx.confirm();
@@ -334,24 +345,26 @@ export class Gameplay {
   }
 
   private loadFurnace(item: number): void {
-    if (this.openMachine === null) return;
-    const n = this.game.furnaceInsert(this.openMachine.handle, item, 5);
-    if (n > 0) this.hud.flash(`loaded ${n} ${this.game.itemName(item)}`);
+    const h = this.openMachine?.handle;
+    if (h === undefined) return;
+    const n = this.game.furnaceInsert(h, item, 5);
+    if (n > 0) { this.hud.flash(`loaded ${n} ${this.game.itemName(item)}`); this.sfx.confirm(); }
   }
 
   private takeFurnace(): void {
-    if (this.openMachine === null) return;
-    const n = this.game.furnaceCollect(this.openMachine.handle, 99);
-    if (n > 0) this.hud.flash(`took ${n}`);
+    const h = this.openMachine?.handle;
+    if (h === undefined) return;
+    const n = this.game.furnaceCollect(h, 99);
+    if (n > 0) { this.hud.flash(`took ${n}`); this.sfx.confirm(); }
   }
 
   private craft(index: number): void {
     const ok = this.game.craft(index);
     this.panel.invalidate();
     this.panel.render(slotRows(this.game), recipeRows(this.game));
-    if (!ok) return;
-    const r = this.game.recipes()[index];
-    if (r !== undefined) this.hud.flash(`crafted ${this.game.itemName(r.output)}`);
+    const r = ok ? this.game.recipes()[index] : undefined;
+    if (r === undefined) return;
+    this.hud.flash(`crafted ${this.game.itemName(r.output)}`);
     this.sfx.confirm();
   }
 
@@ -359,39 +372,5 @@ export class Gameplay {
   nodes(): unknown[] {
     return nodeDump(this.game, this.field.placed, this.d.player.aimRay().origin);
   }
-
-  report(): unknown {
-    return {
-      nodes: this.field.stats(),
-      placed: this.nodesPlaced,
-      panelOpen: this.panel.isOpen,
-      furnaceOpen: this.furnacePanel.isOpen,
-      placements: this.placements,
-      machines: this.machines.report(),
-      pointerLocked: this.d.input.pointerLocked,
-      // W6 automation. `factory` is the plan and what /core says about it;
-      // `build` is the menu and the ghost; `view` is what is actually drawn.
-      factory: this.factory.report(),
-      build: this.build.report(),
-      view: this.factoryView.stats(),
-      autoCollected: this.autoCollected,
-      fx: {
-        ...(this.fx.report() as object),
-        smokeLive: this.machines.smoke.live, smokePuffs: this.machines.smoke.emitted,
-        gains: this.hud.gains, banners: this.hud.banners,
-      },
-      audio: this.sfx.stats(),
-      demolition: {
-        buildings: this.factory.removals, machines: this.machines.removals,
-        refunded: this.factory.refunded,
-        itemsLost: this.factory.demolishedInFlight,
-        oreLost: this.machines.oreLost,
-      },
-      interact: this.interact.report(),
-      carried: this.game.carried(),
-      recipes: this.game.recipes().map((r) => ({
-        name: this.game.itemName(r.output), craftable: r.craftable,
-      })),
-    };
-  }
+  report(): unknown { return gameplayReport(this); }
 }
