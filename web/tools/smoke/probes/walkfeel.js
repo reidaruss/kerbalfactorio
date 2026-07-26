@@ -63,7 +63,7 @@
    * Hold `keys` for `secs` and sample EVERY tick. of.run(1/60, 60) advances one
    * fixed tick, so this is a per-tick trace and not a per-frame one.
    */
-  const drive = async (label, secs, keys) => {
+  const drive = async (label, secs, keys, traceTicks = 0) => {
     const ticks = Math.ceil(secs * 60);
     of.input.tape([{ hold: ticks + 120, keys }]);
     const moving = keys.some((k) => k === 'KeyW' || k === 'KeyS'
@@ -77,7 +77,11 @@
       label, ticks: 0, travelledM: 0, commandedM: 0, stallTicks: 0,
       airborneTransitions: 0, largestStepM: 0, largestDropM: 0,
       pushTicks: 0, maxPushM: 0, blockedTicks: 0, phantomSolidTicks: 0,
-      airTicks: 0, minSlopeCos: 1, maxFloatM: 0, worstTick: null,
+      proudHalfMetreTicks: 0,
+      airTicks: 0, minSlopeCos: 1, maxFloatM: 0, worstTick: null, trace: [],
+      // Radial rise over the LAST quarter of the leg. A wall converges to zero
+      // here; a ladder does not, however slowly it climbs.
+      riseTailM: 0,
     };
     const bodyR = w.bodyRadiusM;
     for (let i = 0; i < ticks; ++i) {
@@ -120,6 +124,12 @@
       }
       if (g && dR > leg.largestStepM) leg.largestStepM = dR;
       if (g && -dR > leg.largestDropM) leg.largestDropM = -dR;
+      if (i >= ticks * 0.75) leg.riseTailM += dR;
+      if (leg.trace.length < traceTicks) {
+        leg.trace.push([+dT.toFixed(3), +dR.toFixed(3), g ? 1 : 0,
+          w.player.underRock ? 1 : 0, w.player.blockedByRock ? 1 : 0,
+          +w.player.voxelPushM.toFixed(3)]);
+      }
       // THE PHANTOM COLLIDER TEST. Ask the ONE oracle both of its questions
       // about the same point: the point 0.15 m of clear air above the WALKABLE
       // surface of the column the player is standing in, which is where the
@@ -140,6 +150,13 @@
       if (of.solidAt(c.u[0] * airR, c.u[1] * airR, c.u[2] * airR)) {
         leg.phantomSolidTicks += dTick;
       }
+      // How far the phantom rock stands PROUD of the ground, which is the size
+      // of the defect rather than its frequency. Half a metre is chest-high on
+      // the capsule's lowest sample and is not a rounding error.
+      const proudR = surfR + 0.5;
+      if (of.solidAt(c.u[0] * proudR, c.u[1] * proudR, c.u[2] * proudR)) {
+        leg.proudHalfMetreTicks += dTick;
+      }
     }
     leg.ticksAdvanced = of.world().tick - t0;
     leg.travelledM = +leg.travelledM.toFixed(2);
@@ -149,6 +166,7 @@
     leg.largestDropM = +leg.largestDropM.toFixed(3);
     leg.maxPushM = +leg.maxPushM.toFixed(3);
     leg.maxFloatM = +leg.maxFloatM.toFixed(3);
+    leg.riseTailM = +leg.riseTailM.toFixed(3);
     leg.minSlopeCos = +leg.minSlopeCos.toFixed(3);
     return leg;
   };
@@ -186,6 +204,8 @@
     phantomSolidTicks: sum((l) => l.phantomSolidTicks),
     phantomPct: walkTicks > 0
       ? +((100 * sum((l) => l.phantomSolidTicks)) / walkTicks).toFixed(1) : null,
+    proudHalfMetrePct: walkTicks > 0
+      ? +((100 * sum((l) => l.proudHalfMetreTicks)) / walkTicks).toFixed(1) : null,
     maxFloatAboveGroundM: +Math.max(...legs.map((l) => l.maxFloatM)).toFixed(3),
     minSlopeCos: +Math.min(...legs.map((l) => l.minSlopeCos)).toFixed(3),
   };
@@ -201,17 +221,31 @@
   // ---------------------------------------------------------------------------
   const nc = { ran: false };
   if (of.voxels() !== null) {
-    of.look(A.wallYaw ?? 45, -88);
-    const strikes = [];
-    for (let i = 0; i < (A.shaftStrikes ?? 8); ++i) {
-      strikes.push(of.dig());
-      await settle(0.3);
-    }
+    // Back to the spawn site first. The four walk legs are a loop, but tick
+    // jitter leaves the player a metre or two off each run, and whether a
+    // downward strike sinks the shaft depends on the ground it lands on: some
+    // sites reconcile and some do not. Digging from a fixed site is the
+    // difference between a control that grades itself every run and one that
+    // reports `meaningful: false` on a third of them.
+    of.teleport(start.observer.latDeg, start.observer.lonDeg, 0);
     await settle(0.8);
     const depthOf = () => {
       const c = column(posOf(of.world()));
       return (of.world().bodyRadiusM + c.s.baseM) - c.r;
     };
+    // Dig to a DEPTH, not for a fixed number of strikes. A strike that lands in
+    // rock already removed takes the shaft no deeper, and how many of those
+    // happen depends on exactly where the walk legs left the player, so a fixed
+    // count made the control silently shallow on some runs. `meaningful` still
+    // refuses to grade a shaft that never got deep enough.
+    of.look(A.wallYaw ?? 45, -88);
+    const strikes = [];
+    const wantDepth = A.shaftDepthM ?? 6;
+    for (let i = 0; i < (A.maxStrikes ?? 24) && depthOf() < wantDepth; ++i) {
+      strikes.push(of.dig());
+      await settle(0.3);
+    }
+    await settle(0.8);
     of.look(A.wallYaw ?? 45, 0);
     await settle(0.4);
     const startDepth = depthOf();
@@ -228,7 +262,7 @@
       if (of.solidAt(e[0] + aim.dir[0] * d, e[1] + aim.dir[1] * d,
         e[2] + aim.dir[2] * d)) { wallAtM = +d.toFixed(2); break; }
     }
-    const leg = await drive('wall', A.wallSecs ?? 2.5, ['KeyW']);
+    const leg = await drive('wall', A.wallSecs ?? 2.5, ['KeyW'], A.trace ?? 0);
     const endDepth = depthOf();
     nc.ran = true;
     nc.wallHeightM = +startDepth.toFixed(2);
@@ -239,9 +273,18 @@
     nc.leg = leg;
     // A shallower shaft than this cannot distinguish a wall from a legal step.
     nc.meaningful = startDepth >= 2.5 && wallAtM !== null && nc.strikesLanded > 0;
-    // The wall HOLDS if the player is still down the shaft. 0.7 m of allowance
-    // covers one legal step onto rubble at the shaft's own foot.
-    nc.wallHolds = nc.meaningful && nc.climbedM <= 0.7;
+    // The wall HOLDS on two counts, and the second is the one that matters.
+    //
+    // One legal step (CAPSULE.stepUpM, 1.1 m) plus one ground snap
+    // (CAPSULE.groundSnapM, 0.35 m) is allowed, because the shaft has rubble at
+    // its own foot and stepping onto it is not climbing out. But a threshold
+    // alone cannot tell a wall from a slow ladder:
+    // the baseline climbed 12 m at a dead-constant 0.097 m per tick, and half a
+    // second of that would have passed any threshold you care to name. So the
+    // real assertion is that the climb has CONVERGED: no radial rise at all over
+    // the last quarter of the leg, with the key still held.
+    nc.riseTailM = leg.riseTailM;
+    nc.wallHolds = nc.meaningful && nc.climbedM <= 1.5 && leg.riseTailM <= 0.05;
   }
 
   const w = of.world();
