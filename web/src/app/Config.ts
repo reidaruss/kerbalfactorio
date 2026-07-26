@@ -168,8 +168,12 @@ function num(p: URLSearchParams, key: string, fallback: number): number {
 export function parseConfig(search: string): Config {
   const p = new URLSearchParams(search);
   const seed = parseSeed(p.get('seed'));
-  const scenarioName = p.get('scenario') ?? 'space';
-  const base = SCENARIOS[scenarioName] ?? SCENARIOS.space;
+  // The bare URL opens the GAME, not a tech demo. 'space' was the default back
+  // when an orbital planet was the only thing that existed; now it drops a new
+  // player 1.6 Mm up with no character, no pack and no objectives, which reads
+  // as "nothing works". Every probe scenario is still one query param away.
+  const scenarioName = p.get('scenario') ?? 'walk';
+  const base = SCENARIOS[scenarioName] ?? SCENARIOS.walk;
   const tRaw = p.get('t');
   const scenario: Scenario = {
     lat: num(p, 'lat', base.lat),

@@ -4,14 +4,17 @@
 // fails the run, so a silent shader fallback is a hard failure, not a visual
 // one someone has to notice.
 //
-//   node tools/smoke/run.mjs --scenario=space --out=../docs/screenshots/W1.png
+//   node tools/smoke/run.mjs --scenario=space --out=docs/screenshots/W1.png
+//
+// --out is relative to the REPO ROOT, not to cwd. A leading '../' escapes the
+// project and is refused.
 //
 // Uses the locally installed Chrome via playwright-core (no browser download).
 // The dev server must already be listening; start it with `npm run dev`.
 
 import { chromium } from 'playwright-core';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve, isAbsolute } from 'node:path';
+import { dirname, resolve, isAbsolute, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -121,6 +124,18 @@ try {
 
   if (out) {
     const p = isAbsolute(out) ? out : resolve(repoRoot, out);
+    // --out is resolved against the REPO ROOT, so a leading '../' escapes the
+    // project and silently scatters screenshots into the parent directory. That
+    // is not hypothetical: it created a stray Nextcloud/docs folder that a later
+    // agent then tried to rm -rf. mkdirSync would happily create the escape
+    // path, so the guard has to come first. Refuse, and say what to pass.
+    const rel = relative(repoRoot, p);
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      throw new Error(
+        `--out must stay inside the repo. '${out}' resolves to ${p}, which is outside `
+        + `${repoRoot}. Paths are relative to the repo root, so pass `
+        + `docs/screenshots/NAME.png (no leading '../').`);
+    }
     mkdirSync(dirname(p), { recursive: true });
     await page.screenshot({ path: p });
     console.error(`smoke: wrote ${p}`);

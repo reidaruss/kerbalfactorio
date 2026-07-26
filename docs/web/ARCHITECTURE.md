@@ -1656,6 +1656,32 @@ Added at W4 (2026-07-25):
     re-shaping one is a contract change and belongs in a decision log, not in a
     convenience.**
 
+91. **The harness wrote outside the repo for weeks, and its own usage line was
+    the instruction to do it.** `run.mjs` resolves `--out` against the REPO
+    ROOT, but the example in its header said `--out=../docs/screenshots/W1.png`.
+    That `../` climbs out of the project, so every agent that followed the
+    documented usage scattered PNGs into `Nextcloud/docs`, a folder that exists
+    only because `mkdirSync(..., {recursive: true})` cheerfully created it. The
+    damage was not the stray files: an agent later found the mystery folder and
+    ran `rm -rf` on it, **a recursive delete outside the project**, which is a
+    far worse failure than the one it was cleaning up. Two lessons. A path that
+    a tool will `mkdir -p` needs a containment check BEFORE the mkdir, because
+    "the directory exists" is not evidence that it should. And a wrong usage
+    comment is not a documentation bug, it is a *defect with a blast radius*,
+    because agents follow the example rather than reading the resolution logic.
+    `--out` now refuses anything that resolves outside the repo root and names
+    the correct form in the error.
+
+92. **The bare URL opened a tech demo, not the game.** `scenario` defaulted to
+    `space`, correct in W1 when an orbital planet was all there was, and never
+    revisited. By W7 that meant a first-time player at `localhost:5173` got
+    dropped 1.6 Mm up with no character, no pack and no objectives. Everything
+    worked; nothing was visible. **A default chosen when the project was one
+    thing keeps being the default after the project becomes another, and no
+    test catches it because every probe passes `?scenario=` explicitly.** The
+    smoke runner only forwards params it is given, so a plain `run.mjs` with no
+    flags is now the regression test for the default path.
+
 ### 15.3 The dev loop, concretely
 
 ```
