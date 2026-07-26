@@ -442,7 +442,17 @@ Three mechanisms, layered:
    0** in the `W1_streaming.png` framing, 0.1 to 0.2 ms, only when the resident set changes.
    **It does NOT use `TerrainChunk.neighbourDepth[4]`,** because /core annotates that only on
    freshly-ready chunks and it goes stale the moment a neighbour merges. See section 15.2 item 16.
-3. **Cross-fade.** A per-chunk `aFade` value ramps 0 to 1 over 250 ms on stream-in, driving a dithered (Bayer 4×4) alpha-test in the fragment shader. Dithering rather than blending keeps it opaque, keeps Early-Z, and needs no sorting. This kills the pop that skirts cannot address.
+3. **Cross-fade. SHIPPED at W3, with one addition the design did not anticipate.**
+   A per-chunk fade START TIME rides in an `aFadeT0` attribute (written once at
+   stream-in, never per frame) and the ramp comes from one global `uTime`, driving a
+   dithered (Bayer 4×4) alpha test. **The addition: the OUTGOING chunk has to be held
+   for the length of the dissolve.** `/core` evicts a parent in the *same*
+   `StreamUpdate` its four children arrive, so fading only the incoming half leaves
+   the dither with nothing behind it and the "fade" reads as a hole punched in the
+   ground. `world/ChunkRetire.ts` keeps the evicted view and its pooled slot for
+   `fadeSecs` and stamps it with a **negative** `aFadeT0`, which the shader reads as
+   the complementary dither threshold, so exactly one of the pair covers each pixel
+   and they never z-fight. Measured in section 17.2. `?fade=0` reproduces the pop.
 
 ### 4.6 Re-mesh on dig
 
@@ -584,6 +594,19 @@ Design constraint: **cheap**. WebGL 2 forward rendering has no clustered lightin
 
 ### 7.2 Shadows
 
+> **W3 (2026-07-25): `CSM.js` is NOT used, and cannot be.** It patches materials
+> through `onBeforeCompile` at `#include <lights_fragment_begin>`, and
+> `TerrainMaterial` is a `ShaderMaterial` that lights itself from `uSunDir`, so
+> there is no such include to patch. `render/ShadowRig.ts` instead makes each
+> cascade a real `THREE.DirectionalLight` with `castShadow`, which leaves three
+> owning the depth material, the reversed-depth projection flip, the packing, the
+> PCF kernel and the per-cascade frustum culling. Cascades 1 and 2 carry
+> **intensity 0**: they exist only to produce a map, and the terrain shader picks
+> between them by view depth with constant sampler indices (GLSL ES 3.00 forbids
+> dynamic indexing of a sampler array). Only the near scene holds shadow-casting
+> lights, so `WebGLShadowMap` returns early for the sky, far and view-model passes
+> and the maps render **once** per frame, not four times.
+
 `three/addons/csm/CSM.js` (verified present in r185, WebGLRenderer only; `CSMShadowNode.js` is the WebGPU counterpart for the future swap).
 
 | Tier | Cascades | Map size | `maxFar` | Type |
@@ -601,10 +624,28 @@ Design constraint: **cheap**. WebGL 2 forward rendering has no clustered lightin
 
 Two phases:
 
-- **W3 (get something on screen):** `three/addons/objects/Sky.js` (Preetham, 9.94 kB, verified present). Good-looking, near-free, and it does **not** fade to black correctly from space, which is fine because W3 is a surface milestone.
-- **W3b onward (the actual sell):** one custom `SkyAtmosphere` full-screen shader in the **far** scene: analytic single-scattering, Rayleigh + Mie, parameterized by `FAtmosphereProfile` from world-gen (D-006: Forge scale height 5.6 km, Cinder airless). Two nested spheres (ground radius, atmosphere radius), 16 view-ray samples with 8 light-ray samples, evaluated per pixel at half resolution and upsampled. Roughly 0.6 ms at 1080p on the target GPU.
+- **W3 (SHIPPED, and `Sky.js` was skipped entirely).** The Preetham stand-in was not
+  built: it does not fade to black from space, and the analytic model turned out to
+  cost less than the measurement floor, so there was nothing to stage. `SkyAtmosphere`
+  is a **skybox BOX in the SKY pass**, not a full-screen quad in the far scene: the
+  sky camera never translates, so the fragment's object-space position IS the view
+  ray and no inverse-matrix uniform is needed at all.
+- Analytic single scattering, Rayleigh + Mie, ray-marched, **10 view x 3 light samples
+  on high** (6x2 low, 8x3 med) and **4 x 2 for aerial perspective**, where the segment
+  is short and nearly iso-altitude. Measured at 1600x900 on an RTX 4060 Ti: **below the
+  0.03 ms run-to-run variance**, so no half-resolution pass was needed. Scale that by
+  roughly 4x for the GTX 1660 target before assuming it is free there.
 
 **Aerial perspective is in `TerrainMaterial`, not post-processing** (§4.4): the same optical-depth function evaluated along the fragment's view ray. Mountains at 40 km go blue and the horizon matches the sky exactly, with no depth-buffer round trip and no post pass. This is the single cheapest big visual win available.
+
+**The near/far agreement is structural, and it is measured.** `materials/Atmosphere.glsl.ts`
+holds ONE model, exported as a GLSL string and as ONE uniform record **shared by
+reference** between the sky material and both terrain materials, so there is nothing to
+keep in sync. Every position handed to it is **planet-centred metres**; the near scene
+subtracts the body centre and the scaled scene multiplies by `uMetresPerUnit` = 1e5, and
+that is the only difference between them. Verified at W3 by moving 56 chunks from the far
+scaled scene into the near 1:1 scene (`?cutoff=6` against `?cutoff=3`) and diffing the
+frame: **zero of 14,400 tile means differ**.
 
 **The surface-to-space fade is free** from the same model: as the camera climbs, optical depth to the zenith falls, the sky darkens continuously, and stars (already rendered in pass 1, always present) emerge as the sky luminance drops below them. No transition code, no blend states, no regime special case. **Night side** is the same function with `dot(sunDir, up) < 0`.
 
@@ -883,7 +924,7 @@ Empty repo to "walk on the planet, dig, build, launch". Each milestone has an ex
 | **W0** | **Skeleton + WASM handshake** | Vite 8 + TS + three r185, canvas, the 4-pass compositor with a placeholder in each layer, `window.__of`, Playwright smoke + screenshot, `/core` WASM loaded in a worker | `sampleDesignedHeight` round-trips against a `/core` ctest vector bit-for-bit · **R1 microbenchmark: a packed chunk buffer crosses the boundary in ≤ 12 ms** · green screenshot in CI |
 | **W1** | **The planet renders** | terrain.worker + `TerrainStreamer`, `ChunkGeometryPool`, `SharedIndex`, `TerrainMaterial` (flat biome colours), near/far scene split, orbit camera, `?scenario=zfight` | 200 chunks resident · ≤ 220 draws · 60 fps · golden image · **zero z-flicker across 5 scales** |
 | **W2** | **Floating origin + walk** ✅ **shipped 2026-07-25, see §16** | `KinematicBody` vs the oracle, FP/TP with an aim-preserving toggle, the one `OriginRebased` broadcast, chunk re-anchor, input tapes, edge stitching, the depth probe | scripted 5 km walk ✅ · grounded every tick ✅ (100%) · frame p95 ≤ 18 ms ✅ (0.6 ms) · no jitter ✅ (64.76 mm → 0.0034 mm). **"≥ 3 rebases" was written against a threshold that does not produce three in 5 km:** `of::FloatingOrigin`'s 4,000 m default fires **once**. Read as "rebases fire during a sustained walk and are invisible", which is verified at 1 and at 20 rebases, as pixels (§16.1) |
-| **W3** | **Sky, sun, shadows, atmosphere** | star field, CSM, `SkyAtmosphere` analytic scattering, aerial perspective in `TerrainMaterial`, day/night, runtime IBL | 4 golden images (dawn / noon / dusk / night) · shadow VRAM ≤ 50 MB · GPU ≤ 10 ms |
+| **W3** | **Sky, sun, shadows, atmosphere** ✅ **shipped 2026-07-25, see §17** | star field, cascaded shadows (NOT `CSM.js`, see §7.2), `SkyAtmosphere` analytic scattering, aerial perspective in `TerrainMaterial`, day/night, stream-in cross-fade, the missing cube faces | 7 golden images ✅ · shadow VRAM ≤ 50 MB ✅ (48.0) · GPU ≤ 10 ms ✅ (0.99 ms whole frame). **The runtime IBL was NOT built:** `TerrainMaterial` reads the sky ambient from the same scattering integral per fragment, so a 64² cubemap plus `PMREMGenerator` would be a second, coarser answer to a question already answered. Revisit at W4 when stock PBR materials arrive and actually need an `environment` |
 | **W4** | **Look and feel** | glTF + KTX2 + meshopt pipeline live, first Blender assets, terrain array texture, `Scatter` lattice, foliage + resource-node `BatchedMesh`, TP camera + FP view model + aim-preserving toggle | ≤ 150 draws with foliage · 60k instances · **aim ray identical across an FP/TP toggle (asserted numerically)** · time-to-interactive ≤ 6 s |
 | **W5** | **Dig** | voxel.worker, greedy mesher, op log mirrored main and workers, dirty-region rebuild, capsule vs `solidCell`, mouth reconciliation, voxel AO, headlamp | dig down then tunnel sideways then walk in · **ceiling reads SOLID and interior reads AIR via `__of.world()` probes** (not by screenshot) · remesh ≤ 8 ms p95 · save/load restores the exact removed count |
 | **W6** | **Build** | grid snap + placement preview, machine `BatchedMesh` family, belts with real transforms, factory.worker running `FactorySim` at 60 UPS, `BeltView` LOD-0/1, HTML build bar | miner to belt to smelter to assembler runs · **≤ 6 factory draws at 20k entities** · LOD band crossing shows no pop (frame-diff assertion) · **WebGPU re-evaluation decision recorded** |
@@ -1031,6 +1072,65 @@ Added at W2 (2026-07-25):
     `PlanetProxy` sphere interleaving at grazing angles, both carrying relief at different
     resolutions. W3/W8 item.
 
+Added at W3 (2026-07-25):
+
+20. **The "limb fringe" of item 19 was a MISDIAGNOSIS, and the real defect was much
+    larger.** `/core` parametrizes three of its six cube faces **left-handed**, so one
+    shared index buffer makes those faces back-facing and `side: FrontSide` culled them
+    away entirely. From orbit with the `PlanetProxy` hidden: **150,265 void pixels**
+    before, **0** after. The proxy was filling the hole, which is why W1 and W2 only ever
+    saw the 279-pixel residue at the limb where the proxy's silhouette ends.
+    `SharedIndex` now carries a second, mirrored buffer and the pool picks per chunk by
+    **measuring** the first triangle's winding against the vertex normal `/core` already
+    stored, so a convention change cannot silently reintroduce it. `?side=double` was the
+    one-line test that found it.
+21. **`Loop.countHoles` has a floor, and `space` is at it.** The heuristic counts
+    clear-colour pixels with a run of opaque pixels above them in the same column, which
+    at the left and right flanks of a planet DISC counts genuine space. A perfect
+    analytic sphere in the `space` framing reports **3,088**; the terrain shell reports
+    **3,067**. Any future void census at that altitude has to compare against the sphere,
+    not against zero. `orbit`, `ascent` and `surface` all report 0 and are trustworthy.
+22. **The cross-fade needs the outgoing chunk, not just the incoming one.** See §4.5
+    mechanism 3. Fading only the arrival made the artefact **fifteen times worse** than
+    the pop it was meant to fix.
+23. **In GLSL, `-0.0 >= 0.0` is TRUE.** The cross-fade encoded the outgoing half as a
+    negated ramp, so at ramp 0 the outgoing chunk took the *incoming* branch for exactly
+    the first frame of every dissolve, both halves discarded everything, and the bright
+    far-scene terrain showed through the ground for one frame (191/255 tile impulse). The
+    outgoing ramp now lives in [-2,-1], where no value can be mistaken for the other
+    half. **Never use the sign of a computed float as a discriminator without an offset.**
+24. **A shadow camera tests layer 0 only.** `WebGLShadowMap` culls casters with
+    `object.layers.test(shadowCamera.layers)`, so the player body on `LAYER_PLAYER_BODY`
+    never entered the map and §3.4's "the player still casts a shadow" was quietly false
+    until `light.shadow.camera.layers.enable(LAYER_PLAYER_BODY)`. Anything W4 puts on a
+    non-default layer needs the same line.
+25. **Do NOT set `HAS_NORMAL` in a material's `defines`.** `WebGLProgram` already emits
+    it for any geometry with a normal attribute, and defining it twice is a hard compile
+    failure. `shadowmap_vertex` reads it to decide whether to apply the normal bias, so
+    it must come from three.
+26. **A `lights: true` `ShaderMaterial` must merge `UniformsLib.lights`.** three writes
+    `ambientLightColor`, `directionalLights`, `directionalShadowMap` and friends straight
+    into `material.uniforms` and throws if the slots are missing. Merge them, then
+    `Object.assign` your own uniforms AFTER, because `UniformsUtils.merge` deep-clones and
+    would break any uniform object you are deliberately sharing by reference.
+27. **`Loop.run(1/60)` never yields a macrotask, so a one-frame-at-a-time probe streams
+    nothing.** `run()` only awaits a `setTimeout` every 8 frames, and a worker
+    `postMessage` needs one. The first pop probe reported `chunksBuilt: 0` over a
+    kilometre of walking and was measuring a world that never streamed. Every
+    frame-stepping probe must `await new Promise(r => setTimeout(r, 0))` itself. This is
+    DW-20 in miniature and it is the third time this class of bug has appeared.
+28. **A tile-mean frame hash cannot see a chunk swap.** `frameHash` averages 8x8 pixel
+    blocks, which divides a few thousand changed pixels by 64. `render/debug/FrameDiff.ts`
+    keeps two frames of luminance and reports the per-PIXEL second difference; that is the
+    instrument that separated a 25-pixel walk artefact from a 166,446-pixel teleport one.
+29. **`run.mjs --out` cannot photograph a transition.** It fires after `settle()`, which by
+    design waits for the world to stop changing. `probes/popshot.js` grabs the canvas with
+    `toDataURL` inside the same task as the render, and `tools/smoke/writeshot.mjs` decodes
+    it. Any future before/after pair of a moving artefact needs that path.
+30. **The atmosphere breaks `?clear=`.** A painted sky makes every void pixel opaque, so a
+    hole census silently reads zero. `Boot` disables the sky whenever `clearColor` is set,
+    rather than requiring every crack probe to remember `--atmos=0`.
+
 ### 15.3 The dev loop, concretely
 
 ```
@@ -1163,3 +1263,106 @@ than an arbitrary threshold, and it currently returns `verdict: PASS` with 0% bl
   and step-up have to be finished.
 * **Aim rays, placement and harvest** (`player/Interaction.ts`) are not built. The aim ray exists and
   is asserted; nothing consumes it yet.
+
+*(The cross-fade and the "limb fringe" are both closed at W3. The limb fringe was a
+misdiagnosis: see §15.2 item 20.)*
+
+---
+
+## 17. W3 implementation record (2026-07-25)
+
+Sky, sun, cascaded shadows, analytic atmosphere, the stream-in cross-dissolve, and the
+half of the planet that was never being drawn. Same machine as §15 and §16: Chrome /
+ANGLE D3D11 / RTX 4060 Ti, 1600 x 900 unless stated.
+
+### 17.1 Measured numbers
+
+| Thing | Budget (§10, §7.2) | Measured |
+|---|---|---|
+| Whole frame, surface walk, 900 timed frames | p99 25 ms | **0.993 ms** (variance 0.003 across 3 runs) |
+| Cost of the shadow pass | inside GPU 10.0 ms | **0.123 ms** (0.993 with, 0.870 without) |
+| Cost of the atmosphere | ~0.6 ms projected (§7.3) | **below the 0.03 ms measurement floor** |
+| Cost of the star field | not budgeted | below the measurement floor |
+| Draw calls, surface, shadows on | <= 150 target | **141 to 157** (83 to 95 without shadows) |
+| Draw calls, surface, sun below the horizon | <= 150 | **106** (164 before the night cut-off) |
+| Draw calls, orbit | <= 150 | **32 to 46**, shadow rig inactive |
+| Triangles, surface | <= 2.7 M | **288k to 320k** |
+| Shadow VRAM | <= 50 MB (§7.2) | **48.0 MB** (3 x 2048^2 x 4 B) |
+| Total VRAM estimate | <= 260 MB | **60.1 MB** (12.1 pooled terrain + 48.0 shadows) |
+| Shadow contrast, A/B at 1000x560 | visible | **119 tiles of 22,400 darkened, peak 80/255, mean 62.6** |
+| Programs | alert 40 | **4 to 7** |
+| 5 km driven walk, W2 regression | grounded 100% | **100%**, 372 chunks built, 2 rebases, p99 0.7 ms, worst 1.9 ms |
+| Walk jitter, W2 regression | 0.0034 mm mean | **0.021 mm mean / 0.150 mm max** float32; eye jerk 0.00025 mm mean |
+| `?scenario=zfight`, W2 regression | PASS | **PASS**, 0% bleed at every scale |
+
+### 17.2 The three defects, closed by measurement
+
+**1. Half the planet was missing.** Not a limb fringe. Void census with `?clear=ff00ff`:
+
+| Framing | shell only (`?proxy=0`) | shell + proxy | proxy only (`?shell=0`) |
+|---|---|---|---|
+| orbit, before | **150,265** | 279 | 0 |
+| orbit, after | **0** | **0** | 0 |
+| ascent / surface, after | 0 | 0 | n/a |
+| space, after | 3,067 | 3,067 | 3,088 *(the metric's floor, §15.2 item 21)* |
+
+Three of `/core`'s six cube faces are parametrized left-handed. See §15.2 item 20.
+
+**2. Stream-in pop.** The dissolve is measured with `probes/pop.js`, which second-
+differences the frame because a moving camera changes every pixel every frame and only a
+discontinuity survives differentiation twice.
+
+| | walk, 1,375 m at 45 m/s, 279 chunks | teleport, 321 chunks onto a STATIONARY camera |
+|---|---|---|
+| worst frame, pixels jumping >= 16/255, `?fade=0` | 25 of 360,000 | **166,446** (46% of frame) |
+| worst frame, `?fade=0.25` | 29 of 360,000 | **42,295** (12%) |
+| worst tile step (100x56), `?fade=0` | 5.8 / 255 | **102.97** |
+| worst tile step, `?fade=0.25` | 6.6 / 255 | **15.28** |
+| frames carrying the change | n/a | 10 -> **33** |
+
+**The honest reading: the pop is real but small on a surface walk** (25 pixels of 360,000
+in the worst frame, with or without the fade), and the dissolve is what keeps a large
+resident-set change from being a cut. W8's descent is the case it was built for.
+`W3_pop_before.png` / `W3_pop_after.png` are the same moment of the same teleport.
+
+**3. Near/far horizon agreement.** Rendering the identical settled framing with
+`?cutoff=6` and `?cutoff=3` moves **56 chunks** from the far scaled scene into the near
+1:1 scene and changes **0 of 14,400 tile means**, maximum delta 0.00. Both scenes
+evaluate the same scattering integral in planet-centred metres; `uMetresPerUnit` is the
+only difference between the two programs.
+
+### 17.3 Verified at W3
+
+* Surface to space reads as one continuous fade: `W3_ascent_02km`, `W3_ascent_fade`
+  (12 km), `W3_ascent_60km`, `W3_ascent_200km`, `W3_orbit_limb`. The sky darkens, the
+  stars emerge, the limb lights up, and nothing switches: one uniform (air density times
+  sun elevation) drives the star fade and the rest is the same integral at a different
+  altitude.
+* Day and night: `W3_surface_day` shows the player's cast shadow on the ground,
+  `W3_surface_night` shows a dark surface, a full star field and a warm terminator glow
+  on the horizon in the sun's direction.
+* The shadow rig switches itself off in ORBIT and whenever the sun is below the horizon,
+  which is 58 draw calls in each case.
+* Every W3 capture goes through `probes/frame.js`, which converges on the SYNTHETIC clock
+  and reports ticks advanced, so DW-20 is satisfied per screenshot, not per milestone.
+
+### 17.4 Outstanding into W4
+
+* **Draw calls are the tight budget now, not frame time.** 141 to 157 on the surface with
+  shadows, against a 150 target, and W4 adds foliage. The terrain `BatchedMesh` upgrade
+  (§4.4) is the planned answer and it also collapses the 58 shadow draws.
+* **Shadow cascade blending is not implemented.** Cascade selection is a hard `if` on
+  view depth with only the LAST cascade faded out. A visible band at 22 m and 80 m is
+  possible on high-contrast ground; nothing showed at W3's contrast levels.
+* **The avatar receives no shadow from `TerrainMaterial`.** It is a `MeshStandardMaterial`
+  lit by the one stock sun light, which does not cast, so terrain never shadows the
+  player. It casts correctly. W4's rigged player is the moment to fix it.
+* **`uSunColor` is 15 and `sunIntensity` was tuned by rendering, not derived.** The first
+  pass at 1.5x Earth Rayleigh coefficients put a 25 km mesa at pure white. The knobs live
+  in `forgeAtmosphere()`; Cinder needs an airless profile (`uAtmosOn` 0) at W9.
+* **No runtime IBL.** See the W3 milestone row: the terrain already samples the sky
+  ambient from the same integral. Stock PBR materials at W4 will need
+  `nearScene.environment` and that is the moment to build the 64^2 cubemap.
+* **The atmosphere is free on an RTX 4060 Ti and that proves nothing about a GTX 1660.**
+  10 x 3 samples at full resolution is the shipping config; `Quality` already tiers it to
+  6 x 2 on low. Re-measure on the target class before assuming the headroom.
