@@ -172,7 +172,14 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       of_gp_node_add_outcrop. of_gp_node_state and of_gp_node_drain now
 //       report/mutate the PATCH for a node that is one of its outcrops, so a
 //       deposit has exactly one pool however many outcrops stand on it.
-OF_API int of_abi_version(void) { return 3; }
+//   4: TERRAFORMING (WG-22). VoxelEdits gained a second sparse set, so fill is
+//       representable at all: new of_edits_fill / of_edits_fill_cell /
+//       of_edits_added_count / of_edits_is_added_cell, the of_level_area op, and
+//       of_derived_raising / of_surface_offset / of_max_fill. The persistence
+//       bytes of_edits_serialize writes are a NEW self-describing format that
+//       carries both sets; of_edits_deserialize still reads the old one, so
+//       existing slots load. Additive: no existing signature changed.
+OF_API int of_abi_version(void) { return 4; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -266,9 +273,35 @@ OF_API int of_edits_dig_cell_at(int editsId, double x, double y, double z) {
   if (!e) return -1;
   return e->digCell(wg::cellForPos(vec(x, y, z))) ? 1 : 0;
 }
+// fill(): the mirror of dig(). Make every currently-AIR cell within radiusM
+// solid. Returns the count of cells placed (drives the material cost). WG-22.
+OF_API int of_edits_fill(int editsId, int bodyId, double x, double y, double z,
+                         double radiusM) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  return e->fill(*b, vec(x, y, z), radiusM);
+}
+// Place exactly one cell. 1 if the cell changed from air to solid.
+OF_API int of_edits_fill_cell(int editsId, int bodyId,
+                              int32_t cx, int32_t cy, int32_t cz) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  return e->fillCell(*b, wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+}
 OF_API int of_edits_removed_count(int editsId) {
   wg::VoxelEdits* e = g_edits.get(editsId);
   return e ? static_cast<int>(e->removedCount()) : -1;
+}
+OF_API int of_edits_added_count(int editsId) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  return e ? static_cast<int>(e->addedCount()) : -1;
+}
+OF_API int of_edits_is_added_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  if (!e) return -1;
+  return e->isAdded(wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
 }
 OF_API int of_edits_is_removed_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
   wg::VoxelEdits* e = g_edits.get(editsId);
@@ -387,6 +420,52 @@ OF_API double of_derived_lowering(int bodyId, int editsId,
   return e ? wg::derivedLoweringAt(*b, vec(dx, dy, dz), *e) : 0.0;
 }
 OF_API double of_max_dig_depth(void) { return wg::kSurfaceMaxDigDepthM; }
+
+// WG-22 the terraforming half of the oracle.
+OF_API double of_derived_raising(int bodyId, int editsId,
+                                 double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  return e ? wg::derivedRaisingAt(*b, vec(dx, dy, dz), *e) : 0.0;
+}
+// The SIGNED metres the edited surface sits BELOW the designed base (negative =
+// the ground came up). Exactly of_base_height - of_surface_height.
+OF_API double of_surface_offset(int bodyId, int editsId,
+                                double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  return e ? wg::surfaceOffsetAt(*b, vec(dx, dy, dz), *e) : 0.0;
+}
+OF_API double of_max_fill(void) { return wg::kSurfaceMaxFillM; }
+
+// THE LEVELLING OP (surface_field.h levelArea). Inside a cylinder of radiusM
+// about the aim point, aligned with the local up, every cell above
+// `targetHeightM` becomes air and every cell below it becomes solid.
+//
+// The rule lives in /core, not here and not in the browser: it is a statement
+// about what the surface IS, and standing rule 1 says there is one author of
+// those. This shim only unpacks the result.
+//
+// Returns the total cells changed (dug + filled), or -1 for a bad handle.
+// i32 scratch holds 3 ints: [dug, filled, scanned].
+OF_API int of_level_area(int editsId, int bodyId, double x, double y, double z,
+                         double radiusM, double targetHeightM,
+                         double maxCutM, double maxFillM) {
+  wg::VoxelEdits* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  resetI32(3);
+  if (!e || !b) return -1;
+  const wg::LevelResult r = wg::levelArea(
+      *b, *e, vec(x, y, z), radiusM, targetHeightM,
+      maxCutM > 0.0 ? maxCutM : wg::kSurfaceMaxFillM,
+      maxFillM > 0.0 ? maxFillM : wg::kSurfaceMaxFillM);
+  g_i32.push_back(r.dug);
+  g_i32.push_back(r.filled);
+  g_i32.push_back(r.scanned);
+  return r.cells();
+}
 
 // Voxel solidity through the oracle (designed base XOR removed).
 OF_API int of_solid_at(int bodyId, int editsId, double x, double y, double z) {
@@ -688,6 +767,28 @@ OF_API void of_streamer_set_edits(int sId, int editsId) {
 // of the oracle, not a second rule about when to open the ground.
 //
 // Returns the number of chunks re-meshed, or -1 for a bad handle.
+namespace {
+// Rebuild every resident chunk whose quad could contain a column the edit
+// touched, and publish them through `last.ready`. Distance is measured centre to
+// centre against the chunk's own radius, so a coarse far chunk that merely
+// happens to face the edit is not re-meshed. Shared by dig and level (WG-22).
+int rebuildQuadsNear(StreamerRec& r, const Vec3& p, double reachM) {
+  std::vector<wg::FQuadKey> hits;
+  for (const auto& kv : r.s->resident()) {
+    const wg::FQuadKey& k = kv.second.key;
+    const Vec3 c = kv.second.centerUniverse.pos;
+    const double reach = kv.second.chunkRadiusM + reachM + wg::kVoxelSizeM;
+    if ((c - p).lengthSq() <= reach * reach) hits.push_back(k);
+  }
+  r.last.ready.clear();
+  for (const wg::FQuadKey& k : hits) {
+    const wg::TerrainChunk* ch = r.s->rebuildChunk(k);
+    if (ch) r.last.ready.push_back(*ch);
+  }
+  return static_cast<int>(r.last.ready.size());
+}
+}  // namespace
+
 OF_API int of_streamer_dig(int sId, double x, double y, double z, double radiusM) {
   StreamerRec* r = g_streamers.get(sId);
   if (!r) return -1;
@@ -695,24 +796,34 @@ OF_API int of_streamer_dig(int sId, double x, double y, double z, double radiusM
   if (!e) return -1;
   const int removed = e->dig(r->body, vec(x, y, z), radiusM);
   if (removed <= 0) { r->last.ready.clear(); return 0; }
+  return rebuildQuadsNear(*r, vec(x, y, z), radiusM);
+}
 
-  // Rebuild every resident chunk whose quad could contain an opened column.
-  // Distance is measured centre to centre against the chunk's own radius, so a
-  // coarse far chunk that merely happens to face the dig is not re-meshed.
-  const Vec3 p = vec(x, y, z);
-  std::vector<wg::FQuadKey> hits;
-  for (const auto& kv : r->s->resident()) {
-    const wg::FQuadKey& k = kv.second.key;
-    const Vec3 c = kv.second.centerUniverse.pos;
-    const double reach = kv.second.chunkRadiusM + radiusM + wg::kVoxelSizeM;
-    if ((c - p).lengthSq() <= reach * reach) hits.push_back(k);
-  }
-  r->last.ready.clear();
-  for (const wg::FQuadKey& k : hits) {
-    const wg::TerrainChunk* ch = r->s->rebuildChunk(k);
-    if (ch) r->last.ready.push_back(*ch);
-  }
-  return static_cast<int>(r->last.ready.size());
+// WG-22 the same reconciliation for a LEVEL op. Apply levelArea to the
+// streamer's OWN edit set and re-mesh every resident chunk it can have touched.
+// It shares `rebuildQuadsNear` with the dig path deliberately: the chunks a
+// terrain edit invalidates are a function of WHERE it happened and how wide it
+// was, not of which verb did it, and a second copy of that rule is a second
+// authority waiting to disagree.
+//
+// Returns the number of chunks re-meshed, or -1 for a bad handle.
+OF_API int of_streamer_level(int sId, double x, double y, double z,
+                             double radiusM, double targetHeightM,
+                             double maxCutM, double maxFillM) {
+  StreamerRec* r = g_streamers.get(sId);
+  if (!r) return -1;
+  wg::VoxelEdits* e = g_edits.get(r->editsId);
+  if (!e) return -1;
+  const wg::LevelResult res = wg::levelArea(
+      r->body, *e, vec(x, y, z), radiusM, targetHeightM,
+      maxCutM > 0.0 ? maxCutM : wg::kSurfaceMaxFillM,
+      maxFillM > 0.0 ? maxFillM : wg::kSurfaceMaxFillM);
+  if (res.cells() <= 0) { r->last.ready.clear(); return 0; }
+  // The touched volume is the cylinder, so its bounding sphere is the reach.
+  const double band = (maxCutM > 0.0 ? maxCutM : wg::kSurfaceMaxFillM)
+                    + (maxFillM > 0.0 ? maxFillM : wg::kSurfaceMaxFillM);
+  return rebuildQuadsNear(*r, vec(x, y, z),
+                          std::sqrt(radiusM * radiusM + band * band));
 }
 
 // Drive LOD from the observer's body-frame authority position (metres).

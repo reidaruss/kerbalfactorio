@@ -474,6 +474,56 @@ int main(int argc, char** argv) {
   }
 
   // =========================================================================
+  // CASE 6b — TERRAFORMING (WG-22): the fill brush and the levelling op.
+  //
+  // TIER A material: cell ids, counts and save bytes are integer/exact, so a
+  // divergence here is a real bug and not the libm delta. The height spread is
+  // reported too, because "it levelled" is a claim about heights, and a count of
+  // cells changed would be satisfied by an op that moved the wrong ones.
+  // =========================================================================
+  {
+    // A site with REAL relief for THIS fixture's seed (0x0BF00D01): the steepest
+    // 8 m disc under 12 m of spread, 7.83 m across 16 m. A smooth spot cannot
+    // distinguish levelling from doing nothing.
+    of_latlon_to_dir(1.12, -1.50);
+    const double* dd = of_scratch_f64();
+    const double lx = dd[0], ly = dd[1], lz = dd[2];
+    const int edits = of_edits_create();
+    const double target = of_base_height(forge, lx, ly, lz);
+    const double baseR = of_body_radius(forge) + target;
+
+    const int changed = of_level_area(edits, forge, lx * baseR, ly * baseR,
+                                      lz * baseR, 8.0, target, 0.0, 0.0);
+    const int32_t* lr = of_scratch_i32();
+    const int dug = lr[0], filled = lr[1], scanned = lr[2];
+    const int removedN = of_edits_removed_count(edits);
+    const int addedN = of_edits_added_count(edits);
+    // The height under the centre after levelling, and the surface offset there.
+    const double h0 = of_surface_height(forge, edits, lx, ly, lz);
+    const int nb = of_edits_serialize(edits);
+    const uint8_t* sb = of_scratch_u8();
+    hInit(); hBytes(sb, static_cast<size_t>(nb));
+    const uint32_t saveHash = hEnd();
+
+    SELF(changed > 0, "levelArea changed nothing on a 26 degree slope");
+    SELF(filled > 0, "levelArea never filled: the op is still subtractive");
+    SELF(dug > 0, "levelArea never cut");
+    SELF(addedN == filled && removedN == dug,
+         "the two edit sets disagree with the op that made them");
+    // Idempotence: the same op again must move nothing.
+    const int again = of_level_area(edits, forge, lx * baseR, ly * baseR,
+                                    lz * baseR, 8.0, target, 0.0, 0.0);
+    SELF(again == 0, "levelArea is not idempotent: a held key would creep");
+
+    std::printf("  \"level\": {\"changed\": %d, \"dug\": %d, \"filled\": %d, "
+                "\"scanned\": %d, \"removed\": %d, \"added\": %d, "
+                "\"centreH\": %s, \"saveBytes\": %d, \"saveHash\": %u},\n",
+                changed, dug, filled, scanned, removedN, addedN,
+                bits(h0).c_str(), nb, saveHash);
+    of_edits_destroy(edits);
+  }
+
+  // =========================================================================
   // CASE 7 — terrain streaming: 3 budgeted updates around a fixed observer.
   // =========================================================================
   {

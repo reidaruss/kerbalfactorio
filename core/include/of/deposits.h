@@ -685,7 +685,7 @@ inline std::vector<OrePatch> LayoutPatchField(const BodyParams& body,
                                     static_cast<uint64_t>(i));
     const double ang = 2.39996322972865332 * static_cast<double>(i)
                      + 0.7 * hashToUnit(hashCombine(hi, 1ull));
-    const double rad = 22.0 + spreadM
+    const double rad = 14.0 + spreadM
         * std::sqrt((static_cast<double>(i) + 0.5) / static_cast<double>(n))
         + 6.0 * hashToUnit(hashCombine(hi, 2ull));
     const Vec3 v = c * r0 + e1 * (std::cos(ang) * rad) + e2 * (std::sin(ang) * rad);

@@ -440,6 +440,80 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   M._of_edits_destroy(edits);
 }
 
+// --- CASE 6b: TERRAFORMING (WG-22) fill + levelArea --------------------------
+//
+// The gate for the core change that made fill representable. Everything here is
+// integer or exact-bit, so a divergence is a real bug rather than the DW-14 libm
+// delta. The negative control is the assertion that the SPREAD collapsed: a
+// count of cells changed would be satisfied by an op that moved the wrong ones.
+{
+  const e = expected.level;
+  M._of_latlon_to_dir(1.12, -1.50);
+  const d = scratchF64(M, 3);
+  const [lx, ly, lz] = [d[0], d[1], d[2]];
+  const edits = M._of_edits_create();
+  const target = M._of_base_height(forge, lx, ly, lz);
+  const baseR = M._of_body_radius(forge) + target;
+
+  // Ring samples inside and outside the disc, measured BEFORE and AFTER.
+  const perp = Math.abs(lx) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const cx = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]];
+  let e1 = cx([lx, ly, lz], perp);
+  const n1 = Math.hypot(...e1); e1 = e1.map((v) => v / n1);
+  const e2 = cx([lx, ly, lz], e1);
+  const ring = (metres, n) => {
+    const o = [];
+    for (let i = 0; i < n; ++i) {
+      const a = (2 * Math.PI * i) / n;
+      const p = [0, 1, 2].map((k) => [lx, ly, lz][k] * M._of_body_radius(forge)
+        + (e1[k] * Math.cos(a) + e2[k] * Math.sin(a)) * metres);
+      const L = Math.hypot(...p);
+      o.push(p.map((v) => v / L));
+    }
+    return o;
+  };
+  const inside = [[lx, ly, lz], ...ring(3.2, 8), ...ring(6.4, 8)];
+  const outside = ring(24.0, 12);
+  const spread = (pts) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of pts) {
+      const h = M._of_surface_height(forge, edits, p[0], p[1], p[2]);
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+    return hi - lo;
+  };
+  const inBefore = spread(inside);
+  const outBefore = spread(outside);
+
+  const changed = M._of_level_area(edits, forge, lx * baseR, ly * baseR,
+    lz * baseR, 8.0, target, 0.0, 0.0);
+  const lr = scratchI32(M, 3);
+  eq('level.changed', changed, e.changed);
+  eq('level.dug', lr[0], e.dug);
+  eq('level.filled', lr[1], e.filled);
+  eq('level.scanned', lr[2], e.scanned);
+  eq('level.removedCount', M._of_edits_removed_count(edits), e.removed);
+  eq('level.addedCount', M._of_edits_added_count(edits), e.added);
+  eqBits('level.centreH', M._of_surface_height(forge, edits, lx, ly, lz), e.centreH);
+
+  // It actually flattened, and only inside the radius.
+  const inAfter = spread(inside);
+  eq('level.spreadCollapsed', inAfter * 3 < inBefore && inAfter <= 2.0, true);
+  eq('level.outsideUntouched', spread(outside) === outBefore, true);
+
+  // Both sets round-trip, and the bytes are the new self-describing format.
+  const nb = M._of_edits_serialize(edits);
+  eq('level.saveBytes', nb, e.saveBytes);
+  const sh = fnv(); sh.bytes(scratchU8(M, nb));
+  eq('level.saveHash', sh.end(), e.saveHash);
+
+  eq('level.idempotent', M._of_level_area(edits, forge, lx * baseR, ly * baseR,
+    lz * baseR, 8.0, target, 0.0, 0.0), 0);
+  M._of_edits_destroy(edits);
+}
+
 // --- CASE 7: terrain streaming ----------------------------------------------
 const streamChunkDiffs = [];
 {

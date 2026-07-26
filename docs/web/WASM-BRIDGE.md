@@ -167,8 +167,10 @@ had drifted off the authority. Fixed in ABI 2; the table is the contract.
 | `of_base_height` | **oracle** `baseHeight` | the designed base |
 | `of_surface_height` / `of_surface_radius` | **oracle** `surfaceHeight` | base minus lowering, one clamp |
 | `of_derived_lowering` | **oracle** | top-anchored open-column depth |
-| `of_solid_at` / `of_solid_cell` | **oracle** | designed shell XOR removed |
-| `of_edits_dig` / `of_exposed_faces` | **oracle** (via `VoxelEdits::isSolid`) | designed since WG-21 |
+| `of_derived_raising` / `of_surface_offset` | **oracle** | WG-22: the fill mirror, and the signed offset the mesher subtracts |
+| `of_solid_at` / `of_solid_cell` | **oracle** | designed shell, plus added, minus removed |
+| `of_edits_dig` / `of_edits_fill` / `of_exposed_faces` | **oracle** (via `VoxelEdits::isSolid`) | designed since WG-21 |
+| `of_level_area` / `of_streamer_level` | **oracle** `levelArea` | WG-22: the rule lives in `/core`, the shim only unpacks the result |
 | `of_sample_designed_height_latlon` | **oracle** base at a geo coord | same value as `of_base_height` |
 | `of_chunk_*` (streamed chunk data) | **oracle** (via `buildChunk`) | designed base + bound lowering |
 | `of_chunk_packed` | **oracle** | positions/heights from the chunk above |
@@ -207,7 +209,7 @@ Rules for any export added later:
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 2
+int      of_abi_version(void);                 // 4
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
@@ -221,6 +223,20 @@ build at the same ABI**, which is how the browser ran three-commit-old world
 generation for most of a session: `build.ps1` writes `web/wasm/dist`, the client
 serves `web/public/wasm`, and only `npm run sync-wasm` connects them. Treat
 `build.ps1 && sync-wasm` as one operation.
+
+**ABI 4, 2026-07-26 — TERRAFORMING (WG-22).** The voxel layer gained a second
+sparse set (`added`), so **fill is representable at all**; before this the model
+was subtractive by construction and levelling a slope could not be expressed.
+New: `of_edits_fill` / `of_edits_fill_cell` / `of_edits_added_count` /
+`of_edits_is_added_cell`, the `of_level_area` op, `of_streamer_level` (the mouth
+reconciliation for a level, sharing the dig path's re-mesh rule), and
+`of_derived_raising` / `of_surface_offset` / `of_max_fill`. **The bytes
+`of_edits_serialize` writes are a NEW self-describing format** carrying both
+sets; `of_edits_deserialize` still reads the old one, so slots written before
+today still load. No existing signature changed. ABI 3 (2026-07-26) was the
+`of_gp_patch_*` ore-body surface. **`OfCore.ts` sat at 2 while the shim already
+returned 3**, which is exactly the mismatch the constant exists to catch and is
+why it is worth checking both numbers when touching this file.
 
 **ABI 2 additions, 2026-07-26 (additive: no signature changed, so the version
 does not move).** `of_body_mu(body)` and `of_gravity_accel(body, rM)` publish
@@ -264,7 +280,10 @@ double of_base_height      (int body, double dx, double dy, double dz);
 double of_surface_height   (int body, int edits, double dx, double dy, double dz);
 double of_surface_radius   (int body, int edits, double dx, double dy, double dz);
 double of_derived_lowering (int body, int edits, double dx, double dy, double dz);
+double of_derived_raising  (int body, int edits, double dx, double dy, double dz);
+double of_surface_offset   (int body, int edits, double dx, double dy, double dz);
 double of_max_dig_depth(void);                 // 80.0 m bedrock clamp
+double of_max_fill(void);                      // 24.0 m fill cap (WG-22)
 
 int    of_solid_at  (int body, int edits, double x,  double y,  double z);   // 0/1
 int    of_solid_cell(int body, int edits, int32_t cx, int32_t cy, int32_t cz);
@@ -276,8 +295,16 @@ void   of_dir_to_latlon(double dx, double dy, double dz); // -> f64 scratch [lat
 ```
 
 `baseHeight ≡ sampleDesignedHeight` (WG-21: the single surface authority).
-`surfaceHeight = clamp(base − derivedLowering, base − 80 m)`. With no edits
-bound, `surfaceHeight` returns `baseHeight` **bit-identically**.
+`surfaceHeight = clamp(base − derivedLowering + derivedRaising, base − 80 m,
+base + 24 m)`. With no edits bound, `surfaceHeight` returns `baseHeight`
+**bit-identically**.
+
+`of_derived_raising` is the WG-22 mirror of `of_derived_lowering`: the run of
+PLACED cells anchored at the base surface. A filled cell floating above a gap
+raises nothing, exactly as a sideways tunnel lowers nothing.
+`of_surface_offset` is the signed `base − surface` the chunk mesher subtracts, so
+**one** callback carries both halves of terraforming and `generateQuadMesh` needs
+no second hook. It is negative where the ground came up.
 
 `of_sample_raw_height_latlon` is a **diagnostic, not a surface** ([§4.0](#40-surface-authority-which-export-reads-what)).
 It exists so a test can prove the raw/designed gap is still there and that
@@ -311,6 +338,20 @@ int  of_edits_is_removed_cell(int edits, int32_t cx, int32_t cy, int32_t cz);
 int  of_edits_dirty_region(int edits);   // 1=valid; i32 scratch [minXYZ, maxXYZ]
 void of_edits_clear_dirty(int edits);
 
+// --- WG-22 terraforming: the FILL half, the mirror of dig ---------------------
+int  of_edits_fill(int edits, int body, double x, double y, double z, double radiusM);
+int  of_edits_fill_cell(int edits, int body, int32_t cx, int32_t cy, int32_t cz);
+int  of_edits_added_count(int edits);
+int  of_edits_is_added_cell(int edits, int32_t cx, int32_t cy, int32_t cz);
+
+// THE LEVELLING OP. Inside a cylinder of radiusM about (x,y,z) aligned with the
+// local up, every cell above targetHeightM becomes air and every cell below it
+// becomes solid. Returns total cells changed; i32 scratch [dug, filled, scanned].
+// Pass 0 for either bound to take /core's default (24 m each way).
+int of_level_area(int edits, int body, double x, double y, double z,
+                  double radiusM, double targetHeightM,
+                  double maxCutM, double maxFillM);
+
 void   of_cell_for_pos(double x, double y, double z);   // -> i32 scratch [cx,cy,cz]
 void   of_cell_center(int32_t cx, int32_t cy, int32_t cz); // -> f64 scratch [x,y,z]
 double of_voxel_size(void);                             // 1.0 m
@@ -324,6 +365,13 @@ int  of_edits_serialize(int edits);      // -> byte count, bytes in u8 scratch
 void of_edits_alloc_bytes(int n);        // size the u8 scratch, then copy bytes in
 int  of_edits_deserialize(int edits);    // -> removed count
 ```
+
+**The serialized format changed in ABI 4 and it is self-describing.** The stream
+now opens with a magic varint (`0x4F464532`) and a version, then the removed set,
+then the added set. `of_edits_deserialize` branches on the first varint, so a
+slot written before terraforming existed still loads and simply arrives with no
+added cells. `VoxelSave.ts`'s "put the rock back" reset writes a single `0` byte,
+which is a legacy empty stream, and that still means "no edits at all".
 
 `dig()` returns the count of cells newly carved — the harvest yield. Because it
 removes arbitrary cells including horizontally below the surface, repeated digs
@@ -367,7 +415,14 @@ int  of_streamer_create(int body, double splitRatio, double mergeHysteresis,
                         int maxDepth, int minResidentDepth,
                         double skirtFraction, int genBudget);
 void of_streamer_destroy(int s);
-void of_streamer_set_edits(int s, int edits);   // bind voxel dig lowering (0 = none)
+void of_streamer_set_edits(int s, int edits);   // bind the voxel surface offset (0 = none)
+// The mouth reconciliation. Replay ONE edit into the streamer's own VoxelEdits
+// and re-mesh every resident chunk within reach, published through last.ready.
+// Both share one re-mesh rule: the chunks an edit invalidates are a function of
+// WHERE it happened and how wide it was, not of which verb did it.
+int  of_streamer_dig(int s, double x, double y, double z, double radiusM);
+int  of_streamer_level(int s, double x, double y, double z, double radiusM,
+                       double targetHeightM, double maxCutM, double maxFillM);
 
 void of_observer_latlon_alt(int body, int edits,
                             double lat, double lon, double altM);
