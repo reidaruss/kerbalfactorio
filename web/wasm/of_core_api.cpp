@@ -81,6 +81,7 @@
 #include "of/factory_sim.h"
 #include "of/automation.h"
 #include "of/persistence.h"   // byte serializer only — works fine in WASM
+#include "of/gameplay.h"      // survival slice: inventory, harvest, craft, furnace
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -95,6 +96,8 @@ using of::FrameId;
 namespace wg = of::worldgen;
 namespace au = of::automation;
 namespace fs = of::factory;
+namespace gp = of::gameplay;
+namespace sv = of::gameplay::survival;
 
 // =============================================================================
 // §0 — The scratch arena. One buffer per element type; every array-returning
@@ -1398,4 +1401,296 @@ OF_API int of_diag_scan_quad(int bodyId, int faceId, int depth,
     }
   }
   return n;
+}
+
+// =============================================================================
+// SECTION 9 - GAMEPLAY (the survival slice): inventory, hand harvest, hand
+// crafting, fuel-driven furnaces. A THIN shim over of/gameplay.h; no rule is
+// restated here. The two conventions from the file header hold unchanged:
+// stateful things are handles/indices, arrays land in the scratch arena, and JS
+// re-reads both the pointer and HEAPxx after every call.
+//
+// SINGLE-PLAYER SINGLETONS. There is exactly one SliceRegistry and one
+// Inventory per module instance, because Inventory holds a `const
+// SliceRegistry*` and the registry must outlive it. of_gp_init() builds both,
+// registers the survival content on top of the pinned slice table, and is
+// idempotent, so a reload or a second caller cannot double-register.
+//
+// SURFACE AUTHORITY. of_gp_nodes_layout snaps every node with a SnapHeightFn
+// that calls wg::surfaceHeight (the oracle, digs included), NOT the raw
+// heightfield that LayoutTestArea defaults to. A node placed on RAW would sit
+// kilometres off the ground the player stands on: the five-surfaces failure in
+// miniature, and exactly the bug that has now bitten this project three times.
+// =============================================================================
+namespace {
+std::unique_ptr<gp::SliceRegistry> g_reg;
+std::unique_ptr<gp::Inventory> g_inv;
+
+// The survival node patch. FDepositNode carries no NodeKind (world-gen derives
+// Resource from the kind and then keeps the kind out of the record), so the kind
+// rides alongside in a parallel vector. The shared index IS the node handle.
+std::vector<wg::FDepositNode> g_gpNodes;
+std::vector<uint8_t> g_gpKinds;
+std::vector<uint8_t> g_gpPending;   // kinds queued for the next layout call
+
+std::vector<sv::CraftRecipe> g_gpRecipes;
+
+Registry<sv::Furnace> g_furnaces;
+
+bool gpReady() { return g_reg && g_inv; }
+}  // namespace
+
+// Build the registry + inventory. Idempotent; returns 1 when ready, 0 on failure.
+OF_API int of_gp_init(void) {
+  if (gpReady()) return 1;
+  g_reg.reset(new gp::SliceRegistry());
+  if (!sv::RegisterSurvivalContent(*g_reg)) { g_reg.reset(); return 0; }
+  g_inv.reset(new gp::Inventory(*g_reg));
+  g_gpRecipes = sv::handRecipes();
+  return 1;
+}
+
+// --- Inventory ---------------------------------------------------------------
+OF_API int of_gp_slot_count(void) {
+  return gpReady() ? g_inv->slotCount() : 0;
+}
+
+// Every slot as [itemId, count] pairs in the i32 scratch. Returns the slot count.
+OF_API int of_gp_inventory(void) {
+  if (!gpReady()) { resetI32(0); return 0; }
+  const int n = g_inv->slotCount();
+  resetI32(static_cast<size_t>(n) * 2);
+  for (int i = 0; i < n; ++i) {
+    const gp::ItemStack& s = g_inv->slot(i);
+    g_i32.push_back(static_cast<int32_t>(s.item));
+    g_i32.push_back(static_cast<int32_t>(s.count));
+  }
+  return n;
+}
+
+OF_API int of_gp_count(int item) {
+  if (!gpReady()) return 0;
+  return static_cast<int>(g_inv->count(static_cast<gp::ItemId>(item)));
+}
+// Returns the overflow that did NOT fit (0 = all added), matching Inventory::add.
+OF_API int of_gp_add(int item, int count) {
+  if (!gpReady()) return count;
+  return g_inv->add(static_cast<gp::ItemId>(item), static_cast<uint16_t>(count));
+}
+OF_API int of_gp_remove(int item, int count) {
+  if (!gpReady()) return 0;
+  return g_inv->remove(static_cast<gp::ItemId>(item), static_cast<uint16_t>(count));
+}
+// Empty the pack (new game / test reset). Returns the slot count cleared.
+OF_API int of_gp_clear(void) {
+  if (!gpReady()) return 0;
+  g_inv.reset(new gp::Inventory(*g_reg));
+  return g_inv->slotCount();
+}
+
+// --- Item metadata (names come from /core, so the UI cannot drift) ------------
+OF_API int of_gp_item_count(void) {
+  return gpReady() ? static_cast<int>(g_reg->allItems().size()) : 0;
+}
+// i32 scratch [id, category, stackMax, flags, placesEntityTypeId]. Returns the id.
+OF_API int of_gp_item_at(int index) {
+  resetI32(5);
+  if (!gpReady() || index < 0 ||
+      static_cast<size_t>(index) >= g_reg->allItems().size()) return 0;
+  const gp::ItemDef& d = g_reg->allItems()[static_cast<size_t>(index)];
+  g_i32.push_back(static_cast<int32_t>(d.id));
+  g_i32.push_back(static_cast<int32_t>(d.category));
+  g_i32.push_back(static_cast<int32_t>(d.stackMax));
+  g_i32.push_back(static_cast<int32_t>(d.flags));
+  g_i32.push_back(static_cast<int32_t>(d.placesEntityTypeId));
+  return static_cast<int>(d.id);
+}
+// The display name as UTF-8 bytes in the u8 scratch (NOT null terminated).
+// Returns the byte length, or 0 for an unknown id.
+OF_API int of_gp_item_name(int item) {
+  g_u8.clear();
+  if (!gpReady()) return 0;
+  const gp::ItemDef* d = g_reg->item(static_cast<gp::ItemId>(item));
+  if (!d) return 0;
+  g_u8.assign(d->displayName.begin(), d->displayName.end());
+  return static_cast<int>(g_u8.size());
+}
+
+// --- The survival node patch -------------------------------------------------
+// Queue the kinds for the next layout, then lay them out as one geodesic ring
+// around `dir` (worldgen::survival::LayoutTestArea). Calling layout repeatedly
+// with different centres and radii builds a field; of_gp_nodes_clear resets it.
+OF_API void of_gp_kinds_reset(void) { g_gpPending.clear(); }
+OF_API void of_gp_kinds_push(int kind) {
+  if (kind < 0 || kind > 6) return;
+  g_gpPending.push_back(static_cast<uint8_t>(kind));
+}
+OF_API void of_gp_nodes_clear(void) { g_gpNodes.clear(); g_gpKinds.clear(); }
+OF_API int of_gp_nodes_count(void) { return static_cast<int>(g_gpNodes.size()); }
+
+// Append one ring. Returns the TOTAL node count, or -1 if the body is unknown.
+OF_API int of_gp_nodes_layout(int bodyId, int editsId, double dx, double dy,
+                              double dz, double ringRadiusRad) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return -1;
+  if (g_gpPending.empty()) return static_cast<int>(g_gpNodes.size());
+  std::vector<wg::survival::NodeKind> kinds;
+  kinds.reserve(g_gpPending.size());
+  for (uint8_t k : g_gpPending)
+    kinds.push_back(static_cast<wg::survival::NodeKind>(k));
+  // THE surface authority (standing rule 1). LayoutTestArea's default snap is
+  // the RAW heightfield, which is an internal ingredient and not a surface.
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::BodyParams& body = *b;
+  wg::SnapHeightFn snap = [&body, e](const Vec3& d) {
+    return e ? wg::surfaceHeight(body, d, *e) : wg::surfaceHeight(body, d);
+  };
+  const std::vector<wg::FDepositNode> made = wg::survival::LayoutTestArea(
+      body, body.bodySeed, FrameId(0), vec(dx, dy, dz), kinds, ringRadiusRad, snap);
+  for (size_t i = 0; i < made.size(); ++i) {
+    g_gpNodes.push_back(made[i]);
+    g_gpKinds.push_back(g_gpPending[i % g_gpPending.size()]);
+  }
+  return static_cast<int>(g_gpNodes.size());
+}
+
+// f64 scratch [x, y, z, remaining, initial, grade, kind, resource]. Returns 8,
+// or 0 for an out-of-range index. Position is body-frame metres.
+OF_API int of_gp_node_state(int i) {
+  resetF64(8);
+  if (i < 0 || static_cast<size_t>(i) >= g_gpNodes.size()) return 0;
+  const wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
+  const Vec3 p = n.Position.pos;
+  g_f64.push_back(p.x); g_f64.push_back(p.y); g_f64.push_back(p.z);
+  g_f64.push_back(n.RemainingAmount);
+  g_f64.push_back(n.InitialAmount);
+  g_f64.push_back(static_cast<double>(n.Grade));
+  g_f64.push_back(static_cast<double>(g_gpKinds[static_cast<size_t>(i)]));
+  g_f64.push_back(static_cast<double>(n.Resource));
+  return 8;
+}
+
+// One hand harvest. i32 scratch [granted, usedTool, nodeEmpty, resource].
+// Returns the granted count (0 when the node is empty or the pack is full).
+OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
+  resetI32(4);
+  if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpNodes.size()) return 0;
+  wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
+  const auto kind =
+      static_cast<wg::survival::NodeKind>(g_gpKinds[static_cast<size_t>(i)]);
+  const sv::HarvestResult r = sv::harvestNode(
+      n, kind, *g_inv, static_cast<uint16_t>(baseYield),
+      static_cast<uint16_t>(toolYield));
+  g_i32.push_back(static_cast<int32_t>(r.granted));
+  g_i32.push_back(r.usedTool ? 1 : 0);
+  g_i32.push_back(r.nodeEmpty ? 1 : 0);
+  g_i32.push_back(static_cast<int32_t>(n.Resource));
+  return static_cast<int>(r.granted);
+}
+
+// --- Hand crafting -----------------------------------------------------------
+OF_API int of_gp_recipe_count(void) { return static_cast<int>(g_gpRecipes.size()); }
+
+// i32 scratch [output, outputCount, canCraft, inputCount, (item, have, need)*N].
+// Returns the element count written, or 0 for an out-of-range index. `have` is
+// the pack total, so the UI can grey one input without a call per input.
+OF_API int of_gp_recipe_info(int i) {
+  resetI32(16);
+  if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpRecipes.size()) return 0;
+  const sv::CraftRecipe& r = g_gpRecipes[static_cast<size_t>(i)];
+  g_i32.push_back(static_cast<int32_t>(r.output));
+  g_i32.push_back(static_cast<int32_t>(r.outputCount));
+  g_i32.push_back(sv::HandCrafter::canCraft(r, *g_inv) ? 1 : 0);
+  g_i32.push_back(static_cast<int32_t>(r.inputs.size()));
+  for (const gp::ItemStack& in : r.inputs) {
+    g_i32.push_back(static_cast<int32_t>(in.item));
+    g_i32.push_back(static_cast<int32_t>(g_inv->count(in.item)));
+    g_i32.push_back(static_cast<int32_t>(in.count));
+  }
+  return static_cast<int>(g_i32.size());
+}
+
+// All-or-nothing craft. 1 on success, 0 if the inputs are not all present.
+OF_API int of_gp_craft(int i) {
+  if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpRecipes.size()) return 0;
+  return sv::HandCrafter::craft(g_gpRecipes[static_cast<size_t>(i)], *g_inv) ? 1 : 0;
+}
+
+// --- Furnaces ----------------------------------------------------------------
+// tier 0 = primitive furnace (180 ticks per smelt), 1 = smelter (60).
+OF_API int of_gp_furnace_create(int tier) {
+  return g_furnaces.add(new sv::Furnace(
+      tier == 1 ? sv::FurnaceTier::Smelter : sv::FurnaceTier::Furnace));
+}
+OF_API void of_gp_furnace_destroy(int f) { g_furnaces.remove(f); }
+
+// Move `count` of `item` from the PACK into the furnace, as ore or as fuel
+// depending on the item. Deducting the pack here rather than in JS is what makes
+// "load the furnace" atomic: there is no window in which the units exist twice.
+// Returns the number actually moved.
+OF_API int of_gp_furnace_insert(int f, int item, int count) {
+  sv::Furnace* fu = g_furnaces.get(f);
+  if (!gpReady() || !fu || count <= 0) return 0;
+  const auto id = static_cast<gp::ItemId>(item);
+  const bool isOre = sv::smeltOutputFor(id) != gp::kNoItem;
+  const bool isFuel = sv::fuelTicksPerUnit(id) > 0;
+  if (!isOre && !isFuel) return 0;
+  const uint16_t took = g_inv->remove(id, static_cast<uint16_t>(count));
+  if (took == 0) return 0;
+  // Ore first: no survival item is both, so the two branches cannot both claim
+  // the same id (coal and wood are fuel only, the raw ores are ore only).
+  const uint16_t moved = isOre ? fu->loadOre(id, took)
+                               : (fu->loadFuel(id, took) ? took : 0);
+  if (moved < took) g_inv->add(id, static_cast<uint16_t>(took - moved));
+  return static_cast<int>(moved);
+}
+
+// Pull finished ingots out of the furnace into the pack. Returns the count moved.
+OF_API int of_gp_furnace_collect(int f, int want) {
+  sv::Furnace* fu = g_furnaces.get(f);
+  if (!gpReady() || !fu || want <= 0) return 0;
+  const gp::ItemId out = fu->outputItem();
+  if (out == gp::kNoItem) return 0;
+  const uint16_t took = fu->takeOutput(static_cast<uint16_t>(want));
+  const uint16_t over = g_inv->add(out, took);
+  return static_cast<int>(took - over);
+}
+
+// Advance the furnace. Returns the number of smelts completed in the window.
+OF_API int of_gp_furnace_run(int f, int ticks) {
+  sv::Furnace* fu = g_furnaces.get(f);
+  if (!fu || ticks <= 0) return 0;
+  return static_cast<int>(fu->run(static_cast<uint32_t>(ticks)));
+}
+
+// i32 scratch [oreItem, oreCount, outItem, outCount, fuelTicks, progress,
+//              ticksPerSmelt, smelting]. Returns 8, or 0 for a dead handle.
+OF_API int of_gp_furnace_state(int f) {
+  resetI32(8);
+  const sv::Furnace* fu = g_furnaces.get(f);
+  if (!fu) return 0;
+  g_i32.push_back(static_cast<int32_t>(fu->oreItem()));
+  g_i32.push_back(static_cast<int32_t>(fu->oreCount()));
+  g_i32.push_back(static_cast<int32_t>(fu->outputItem()));
+  g_i32.push_back(static_cast<int32_t>(fu->outputCount()));
+  g_i32.push_back(static_cast<int32_t>(fu->fuelTicks()));
+  g_i32.push_back(static_cast<int32_t>(fu->progress()));
+  g_i32.push_back(static_cast<int32_t>(fu->ticksPerSmelt()));
+  g_i32.push_back(fu->smelting() ? 1 : 0);
+  return 8;
+}
+
+// The survival ItemId block, so JS never hard-codes an id it could get wrong.
+// i32 scratch, in this order: Wood, Stone, Coal, RawIron, RawCopper, Water, Oil,
+// Iron, Copper, CrudePickaxe, CrudeAxe, PrimitiveFurnace, SurvivalSmelter.
+OF_API int of_gp_item_ids(void) {
+  resetI32(13);
+  g_i32.push_back(sv::items::Wood);       g_i32.push_back(sv::items::Stone);
+  g_i32.push_back(sv::items::Coal);       g_i32.push_back(sv::items::RawIron);
+  g_i32.push_back(sv::items::RawCopper);  g_i32.push_back(sv::items::Water);
+  g_i32.push_back(sv::items::Oil);        g_i32.push_back(sv::items::Iron);
+  g_i32.push_back(sv::items::Copper);     g_i32.push_back(sv::items::CrudePickaxe);
+  g_i32.push_back(sv::items::CrudeAxe);   g_i32.push_back(sv::items::PrimitiveFurnace);
+  g_i32.push_back(sv::items::SurvivalSmelter);
+  return 13;
 }
