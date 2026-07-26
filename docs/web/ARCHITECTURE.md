@@ -1224,6 +1224,14 @@ Added at W4 (2026-07-25):
     designed. 1.4 ships because it is the highest value that still refines on a
     mountain; a future distance-to-nearest-point metric would remove the cliff and
     let the far field go coarser, at the cost of re-baselining the LOD pins.
+46. **A transcribed constant is a second authority wearing a copy's clothes.**
+    `KinematicBody.gravityAccel` reimplemented `/core`'s uniform-density gravity
+    in JS "EXACTLY, constants included", and was correct on the day it was
+    written. The moment DW-18 moved `/core` to `mu`, that comment was the only
+    thing holding the browser at 0.587 m/s^2 while the propagator ran at 9.81.
+    Standing rule 1 is not only about terrain height: anything the browser can
+    ask `/core` for, it must ask for. `of_body_mu` / `of_gravity_accel` are the
+    additive ABI-2 exports that closed it.
 
 ### 15.3 The dev loop, concretely
 
