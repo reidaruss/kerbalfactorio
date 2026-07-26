@@ -37,7 +37,11 @@ export const TYPE_ID: Record<BuildKind, number> = {
 export const FOOTPRINT: Record<BuildKind, number> = { miner: 2, belt: 1, smelter: 2 };
 
 /** Extraction rate, belt tier and craft time all come from one place. */
-const MINER_UNITS_PER_SEC = 1.5;
+// 3 ore a second against a smelter that eats 1: the belt fills, which is both
+// the honest Factorio lesson (one smelter is never enough) and the only way the
+// flow material has anything to show. A miner that exactly matched its smelter
+// would run a permanently empty belt.
+const MINER_UNITS_PER_SEC = 3.0;
 const BELT_SPEED_UNITS_PER_TICK = 8;      // tier 1: 1.875 m/s (ASSET-SPECS 4.12)
 const SMELT_TICKS = 60;                    // the survival smelter's own rate
 /** How far from a miner a harvest node may be and still be its deposit. */
@@ -346,6 +350,10 @@ export class Factory {
     let best: Placed | null = null;
     let bestT = reachM;
     for (const p of this.placed) {
+      // Belts are not interactive: there is nothing to take out of one, and a
+      // 1 m tile under the crosshair otherwise steals the prompt from the
+      // machine behind it every time the player looks down the line.
+      if (p.kind === 'belt') continue;
       const r = FOOTPRINT[p.kind] * 0.6 + 0.4;
       const ox = p.pos.x + p.up.x * 0.7 - eye.x;
       const oy = p.pos.y + p.up.y * 0.7 - eye.y;

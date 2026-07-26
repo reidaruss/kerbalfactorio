@@ -267,13 +267,15 @@ export class Gameplay {
       return {
         name: `miner  ${Math.round(left)} ${name} left`,
         fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
-        empty: left <= 0, distanceM: 0,
+        // `empty` is the HARVEST NODE's depleted caption; a machine has its own
+        // words for being empty and does not want "node depleted" under them.
+        empty: false, distanceM: 0,
       };
     }
     return {
-      name: out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  empty`,
+      name: out > 0 ? `${b.kind}  E to take ${out} ${name}` : `${b.kind}  working`,
       fraction: b.build < 0 ? 0 : this.factory.line.progress01(b.build),
-      empty: out <= 0, distanceM: 0,
+      empty: false, distanceM: 0,
     };
   }
 
