@@ -169,7 +169,7 @@
     }
   }
   const buildingsBeforeRefusal = of.game().factory.buildings;
-  of.input.tape([{ hold: 3, keys: ['KeyG'] }, { hold: 4, keys: [] }]);
+  of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
   await sleep(0.3);
   const refusal = {
     ghost: offGhost,
@@ -205,7 +205,7 @@
     const g = of.build().ghost;
     if (g === null || !g.ok) continue;
     const before = of.game().factory.buildings;
-    of.input.tape([{ hold: 3, keys: ['KeyG'] }, { hold: 4, keys: [] }]);
+    of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
     await sleep(0.16);
     if (of.game().factory.buildings > before) placed = { pitch: p, cell: g.cell };
   }

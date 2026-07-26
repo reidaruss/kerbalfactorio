@@ -41,7 +41,7 @@
         await sleep(0.05);
         const g = ghost();
         if (g === null || !g.ok || !want(g)) continue;
-        of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 6, keys: [] }]);
+        of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 6, keys: [] }]);
         await sleep(0.22);
         return g;
       }

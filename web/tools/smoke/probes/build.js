@@ -1,6 +1,11 @@
 // BASE BUILDING acceptance. Everything here is driven through the player's own
-// keys and the player's own aim; nothing reaches past the handlers a person can
-// reach.
+// controls and the player's own aim; nothing reaches past the handlers a person
+// can reach.
+//
+// THE CONTROLS ARE ASKED FOR BY ACTION and never by key (Bindings.ts): `use` is
+// the left mouse button and places whatever the hotbar holds, `interact` is E
+// and opens the furnace without ever harvesting. `of.build(n)` still means the
+// old build-menu index, because it is now a view onto hotbar slots 3 to 9.
 //
 // The seven claims, and why each is the one worth asserting:
 //   1. a foundation snaps, and two neighbours MEET. The gap is measured against
@@ -48,10 +53,13 @@
   if (!of.craft(2)) return fail('could not craft the furnace', { pack: named() });
   of.look(yaw, -18);
   await sleep(0.2);
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  // Slot 2 is the crafted hand furnace; the click places what the hand holds.
+  of.hotbar(2);
+  await sleep(0.15);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.4);
-  if (of.game().machines.length === 0) return fail('KeyG placed no furnace');
-  of.input.tape([{ hold: 4, keys: ['KeyE'] }, { hold: 10, keys: [] }]);
+  if (of.game().machines.length === 0) return fail('the click placed no furnace');
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 10, keys: [] }]);
   await sleep(0.4);
   const click = (m) => {
     const b = [...document.querySelectorAll('#of-furnace button[data-load]')]
@@ -66,7 +74,7 @@
   const take = document.querySelector('#of-furnace button[data-take]');
   if (take !== null) take.click();
   await sleep(0.1);
-  of.input.tape([{ hold: 4, keys: ['KeyE'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
   await sleep(0.3);
   of.demolish({ machine: 0 });
   await sleep(0.2);
@@ -106,10 +114,10 @@
   if (under === null) return fail('no valid cell underfoot', { ghost: ghost() });
   const cellA = under.g.addr;
   const spendBefore = named();
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
   if (of.game().structures.parts.length !== 1) {
-    return fail('KeyG placed no foundation', { ghost: ghost() });
+    return fail('the click placed no foundation', { ghost: ghost() });
   }
   const spendAfter = named();
   const stoneSpent = (spendBefore.Stone ?? 0) - (spendAfter.Stone ?? 0);
@@ -176,7 +184,7 @@
     && g.addr[2] === cellA[2], -85, -25);
   if (nb === null) return fail('no adjacent cell', { cellA, ghost: ghost() });
   const cellB = nb.g.addr;
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
   const two = of.game().structures.parts;
   if (two.length !== 2) return fail('the neighbour was refused', { cellB, two });
@@ -192,7 +200,7 @@
   await sleep(0.15);
   const wallAim = await sweep((g) => g.addr !== null && g.ok, -75, -30);
   if (wallAim === null) return fail('no valid wall edge', { ghost: ghost() });
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
   const parts = of.game().structures.parts;
   const wall = parts.find((p) => p.kind === 'wall');
@@ -224,7 +232,7 @@
     && g.key !== `w${wall.addr[3]}:${wall.addr[0]},${wall.addr[1]},${wall.addr[2]}`,
   -75, -25, AROUND);
   if (doorAim === null) return fail('no valid door edge', { ghost: ghost() });
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
   const door = of.game().structures.parts.find((p) => p.kind === 'door');
   if (door === undefined) return fail('the door was refused');
@@ -236,7 +244,7 @@
   const short = await sweep((g) => g.addr !== null
     && g.reason.startsWith('need '), -75, -25, AROUND);
   const n0 = of.game().structures.parts.length;
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 6, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 6, keys: [] }]);
   await sleep(0.25);
   const shortReason = short === null ? '' : short.g.reason;
   const placedWhileShort = of.game().structures.parts.length - n0;
@@ -319,7 +327,7 @@
   const freeAim = await sweep((g) => g.free === true && g.ok, -60, -20, AROUND);
   const freeGhost = freeAim === null ? ghost() : freeAim.g;
   const freeBefore = of.game().structures.parts.length;
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
   const freeParts = of.game().structures.parts;
   const freePart = freeParts[freeParts.length - 1];
