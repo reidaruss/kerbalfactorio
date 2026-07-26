@@ -2,8 +2,10 @@
 //
 // Place a miner on an ore deposit, run a belt from it to a smelter, THEN STOP
 // TOUCHING ANYTHING, and check that iron accumulated. Every placement goes
-// through the real build mode (number key, R, G) driven by an input tape, so
-// nothing here reaches a path a player cannot reach.
+// through the real build mode (number key, R, and a left click) driven by an
+// input tape, so nothing here reaches a path a player cannot reach. `use` is
+// asked for by ACTION and never by key: place moved off G onto the left mouse
+// button, and Bindings.ts is the one file that knows that.
 //
 // DW-20 IS THE WHOLE POINT of the `advanced` block. "of_net_step_n returned"
 // proves nothing. What is asserted is that /core's own tick counter moved by the
@@ -117,19 +119,21 @@
   //   degree is most of a metre and a coarse sweep steps clean over whole cells,
   //   which is what used to break this line into three.
   //
-  // NEIGHBOUR IS MEASURED, NOT COUNTED IN CELLS. The lattice is a 1 m grid in
-  // body-frame XYZ and the ground is a sphere cutting through it obliquely, so
-  // one unit step of the cell key is NOT one metre of ground: measured on this
-  // world it is 0.59 m along one body axis, 0.81 along another and 1.02 along
-  // the third, and a run walks a staircase of all three. Consecutive cell keys
-  // therefore prove nothing, and the probe compares ghost POSITIONS instead:
-  // anything past 1.25 m means a cell was skipped and the line has a hole in it.
+  // NEIGHBOUR IS STILL MEASURED, though it no longer has to be. A machine used
+  // to snap to /core's 1 m body-frame voxel lattice, which the ground sphere
+  // cuts obliquely, so one unit step of a cell key covered 0.59, 0.81 or 1.02 m
+  // of ground depending on the axis and consecutive cell keys proved nothing.
+  // Machines snap to the metric SITE grid now (MachinePlacement.ts) and a face
+  // neighbour is exactly 1.000 m. The measurement is kept because it is still
+  // the honest question: the band below now separates a face neighbour (1.000)
+  // from a boundary re-read (0) and from a DIAGONAL (1.414), which is a cell
+  // skipped sideways and is exactly the hole that shatters a run.
   //
   // So: sweep all four axes, keep the one that carries an unbroken line off the
   // richest ore, and lay the line down it.
   let yaw = of.world().observer.yawDeg;
   const placeHere = async () => {
-    of.input.tape([{ hold: 3, keys: ['KeyG'] }, { hold: 4, keys: [] }]);
+    of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
     await sleep(0.16);
   };
   const rotateTo = async (q) => {
@@ -145,7 +149,7 @@
   };
   const gdist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   const fromEye = (g) => { const e = eye(); return gdist(g.pos, [e.x, e.y, e.z]); };
-  // The band a genuine lattice neighbour lands in, in metres of ground. The
+  // The band a genuine grid neighbour lands in, in metres of ground. The
   // floor rejects a re-reading of the cell already dealt with; the ceiling
   // rejects a skipped cell, which is the failure that shatters a run.
   const NEAR = 0.5;
@@ -179,151 +183,139 @@
     yaw = bestYaw;
   }
 
-  // 2: walk each of the four axes with the DRILL ghost up, recording every
-  // distinct cell it lands on. The drill's ghost is the one that answers both
-  // questions at once: where the cells are, and what the ore under them is worth.
+  // 2: THE DRILL, and the heading it stands on.
+  //
+  // EVERY NUMBER IN THIS SWEEP IS A GROUND POSITION OR A RATE, and never a cell
+  // key. A machine cell is an address on a SITE, and no site has been adopted
+  // yet: until one has, every ghost founds a fresh PROSPECTIVE site on the
+  // lattice cell under its own aim point (MachinePlacement.siteAt), so every
+  // address it reports is 0,0 and two aims four metres apart cannot be told
+  // apart. Placing the drill adopts a site, and everything after it may use
+  // addresses. This probe read cell keys here and reported four cells for a
+  // whole sweep, which is how the trap was found.
   of.build(1);
-  const sweep = async (y) => {
-    const seen = [];
-    // The aim march quantizes the hit to 0.35 m (BuildMode.STEP_M), so on a cell
-    // boundary two neighbouring cells alternate as the pitch creeps past it. A
-    // cell is therefore recorded ONCE, the first time it is seen, or the line
-    // reads as walking backwards and the placements collide with themselves.
-    const known = new Set();
-    for (let p = -11; p >= -36; p -= 0.4) {
+  const drillSweep = async (y) => {
+    const out = [];
+    for (let p = -12; p >= -44; p -= 0.4) {
       const g = await ghostAt(y, p);
       if (g === null) continue;
-      const last = seen[seen.length - 1];
-      if (last !== undefined && last.cell === g.cell) { last.pitchTo = p; continue; }
-      if (known.has(g.cell)) continue;
-      known.add(g.cell);
-      seen.push({ cell: g.cell, pos: g.pos, pitchFrom: p, pitchTo: p, ok: g.ok,
-                  patch: g.patch, rate: g.ratePerSec, reachM: +fromEye(g).toFixed(2) });
+      out.push({ yaw: y, pitch: p, ok: g.ok, patch: g.patch, rate: g.ratePerSec,
+        pos: g.pos, reachM: +fromEye(g).toFixed(2) });
     }
-    // Aim at the MIDDLE of each cell's pitch band, not at the edge where it was
-    // first seen: a boundary sample lands on either side depending on the frame.
-    for (const s of seen) s.pitch = (s.pitchFrom + s.pitchTo) * 0.5;
-    return seen;
+    return out;
   };
-  // How far an unbroken line reaches inwards from cell `i`, and how many of its
-  // steps are a full metre of ground. A belt chains to the cell one metre along
-  // its own flow vector, so a metre-long step is the one /core can follow and
-  // the short ones are where a run splits. Both numbers are wanted: length
-  // first, because a rich drill feeding nothing produces no iron at all.
-  const reachFrom = (seen, i) => {
-    let n = 0;
-    let full = 0;
-    while (i + n + 1 < seen.length) {
-      const d = gdist(seen[i + n].pos, seen[i + n + 1].pos);
-      if (d < NEAR || d > FAR) break;
-      if (d > 0.9) full++;
-      n++;
-    }
-    return { cells: n, full };
-  };
-  const headings = [];
+  let drillPick = null;
   for (const turn of [0, 90, 180, 270]) {
     const y = yaw + turn;
-    const seen = await sweep(y);
-    let pick = null;
-    for (let i = 0; i < seen.length; ++i) {
-      if (!seen[i].ok || seen[i].patch < 0) continue;
-      // Five cells of line is a drill, four belts and a smelter; three is the
-      // least that leaves the two belts this probe insists on.
-      const r = reachFrom(seen, i);
-      const cells = Math.min(r.cells, 5);
-      if (cells < 3) continue;
-      const score = cells * 4 + Math.min(r.full, cells) + seen[i].rate;
-      if (pick === null || score > pick.score) {
-        pick = { yaw: y, turn, at: i, cells, score, seen, full: r.full,
-                 rate: seen[i].rate, reachM: seen[i].reachM };
-      }
+    const seen = await drillSweep(y);
+    // Far enough out that four belts and a smelter fit between it and the
+    // player's feet, and inside the 9 m build reach with a cell to spare.
+    const cand = seen.filter((s) => s.ok && s.patch >= 0
+      && s.reachM >= 5.6 && s.reachM <= 8.4);
+    const best = cand.reduce((a, b) => (a === null || b.rate > a.rate ? b : a), null);
+    log.push(`+${turn}: ${cand.length} drillable samples 5.6-8.4 m out, best `
+      + (best === null ? 'none' : `${best.rate.toFixed(2)} ore/s at ${best.reachM} m`));
+    if (best !== null && (drillPick === null || best.rate > drillPick.rate)) {
+      drillPick = { ...best, turn };
     }
-    log.push(`+${turn}: ` + seen.map((s, i) => `${s.reachM}${s.ok ? '*' : ''}`
-      + (i + 1 < seen.length ? `-${gdist(s.pos, seen[i + 1].pos).toFixed(2)}-` : ''))
-      .join(''));
-    if (pick !== null) headings.push(pick);
   }
-  headings.sort((a, b) => b.score - a.score);
-  log.push('axes: ' + (headings.length === 0 ? 'none' : headings.map((h) =>
-    `+${h.turn} ${h.cells} cells (${h.full} full) ${h.rate.toFixed(2)}/s at ${h.reachM}m`)
-    .join(', ')));
-  if (headings.length === 0) {
-    return { fail: 'no lattice axis carries a chainable line off the patch',
+  if (drillPick === null) {
+    return { fail: 'no heading offers a drillable cell with room for a line',
              build: of.build(), ore: of.game().ore, log };
   }
-  const chosen = headings[0];
-  yaw = chosen.yaw;
-  const line = chosen.seen.slice(chosen.at, chosen.at + chosen.cells + 1);
-  log.push('line: ' + line.map((s) => s.cell).join(' | '));
-
-  // 3: the drill, on the first cell of that line.
-  of.build(1);
-  let placedMiner = null;
-  for (const nudge of [0, -0.2, 0.2, -0.4]) {
-    const g = await ghostAt(yaw, line[0].pitch + nudge);
-    if (g === null || !g.ok || g.patch < 0 || g.cell !== line[0].cell) continue;
+  yaw = drillPick.yaw;
+  await ghostAt(yaw, drillPick.pitch);
+  {
     const before = of.game().factory.buildings;
     await placeHere();
-    if (of.game().factory.buildings > before) {
-      placedMiner = { pitch: line[0].pitch + nudge, cell: g.cell, pos: g.pos,
-                      rate: g.ratePerSec, reachM: +fromEye(g).toFixed(2) };
-      break;
+    if (of.game().factory.buildings <= before) {
+      return { fail: 'the drill would not go down on the cell the sweep chose',
+               build: of.build(), drillPick, log };
     }
   }
-  if (placedMiner === null) {
-    return { fail: 'the drill would not go down on the cell the sweep chose',
-             build: of.build(), line, headings: headings.length, log };
-  }
+  const miner0 = of.game().factory.list.find((b) => b.kind === 'miner');
+  const placedMiner = { pitch: drillPick.pitch, cell: miner0.cell, pos: miner0.pos,
+    rate: drillPick.rate, reachM: drillPick.reachM };
   log.push(`drill at pitch ${placedMiner.pitch.toFixed(1)} cell ${placedMiner.cell}, `
     + `${placedMiner.rate.toFixed(2)} ore/s, ${placedMiner.reachM} m out`);
 
-  // 4: belts, walking the pitch inwards from the drill. The dry sweep already
-  // proved this heading has an unbroken chain of cells; the placement sweep
-  // re-measures every one of them anyway, because the ghost is the authority on
-  // where a tile actually lands and the sweep is only a plan.
+  // 3: THE BELTS, laid as ONE HOLD-DRAG.
+  //
+  // Press the left button on the cell just inside the drill and sweep the
+  // crosshair back towards the feet WITHOUT LETTING GO. `BuildMode.dragRun`
+  // fills every cell between the head of the run and wherever the crosshair is
+  // and turns each tile to point at its successor as it goes, so the run is
+  // chained BY CONSTRUCTION rather than by the aim happening to stay on axis,
+  // and it flows towards the player, which is where the smelter goes.
+  //
+  // That replaces a pitch sweep that laid one tile at a time and had to dodge
+  // the old lattice's uneven steps to keep the tiles neighbours. It is both the
+  // gesture a player actually makes and far more reliable.
   of.build(2);
   await rotateTo(2);
-  const beltCells = [];
-  const steps = [];
-  const used = new Set([placedMiner.cell]);
-  let prev = placedMiner.pos;
-  let lastPitch = placedMiner.pitch;
-  for (let p = placedMiner.pitch - 0.2; p >= -46 && beltCells.length < 4; p -= 0.2) {
+  let fromPitch = null;
+  let toPitch = null;
+  for (let p = placedMiner.pitch - 0.2; p >= -50; p -= 0.3) {
     const g = await ghostAt(yaw, p);
-    if (g === null || used.has(g.cell)) continue;
-    const d = gdist(g.pos, prev);
-    if (d < NEAR) continue;                 // a boundary re-read, not a step
-    if (d > FAR) break;                     // a cell was skipped: do not lay a gap
-    if (!g.ok) { used.add(g.cell); continue; }
-    const before = of.game().factory.buildings;
-    await placeHere();
-    if (of.game().factory.buildings <= before) break;
-    used.add(g.cell);
-    beltCells.push(g.cell);
-    steps.push(+d.toFixed(2));
-    prev = g.pos;
-    lastPitch = p;
+    if (g === null || !g.ok) continue;
+    const d = gdist(g.pos, placedMiner.pos);
+    if (d < NEAR) continue;                 // still the drill's own cell
+    if (fromPitch === null) {
+      if (d > FAR) break;                   // the first cell inside the drill
+      fromPitch = p;                        // is not a neighbour: no line here
+    }
+    if (d > 4.6) break;                     // four belts is the length wanted
+    toPitch = p;
   }
-  log.push(`belts ${beltCells.length}, steps ${steps.join('/')} m: `
-    + beltCells.join(' | '));
+  if (fromPitch === null || toPitch === null) {
+    return { fail: 'no belt cell inside the drill', placedMiner, log };
+  }
+  const beltsBefore = of.game().factory.buildings;
+  of.look(yaw, fromPitch);
+  await sleep(0.25);
+  // ONE tape for the whole gesture. Two tapes would put a released frame
+  // between them, which is a second PRESS and not a hold, and the drag would
+  // restart from the new cell instead of running on.
+  of.input.tape([{ hold: 300, actions: ['use'] }]);
+  await sleep(0.3);
+  of.look(yaw, toPitch);
+  await sleep(0.6);
+  of.input.tape([{ hold: 6, keys: [] }]);
+  await sleep(0.4);
 
-  // 5: the smelter, on the cell in front of the run's HEAD. Reach for a belt and
+  const beltList = () => of.game().factory.list.filter((b) => b.kind === 'belt');
+  const beltCells = beltList().map((b) => b.cell);
+  // The tile-to-tile separations the drag actually produced, measured on the
+  // ground. On the metric site grid every one of them is the module.
+  const steps = [];
+  {
+    const bs = beltList();
+    for (let i = 1; i < bs.length; ++i) steps.push(+gdist(bs[i - 1].pos, bs[i].pos).toFixed(3));
+  }
+  log.push(`drag laid ${of.game().factory.buildings - beltsBefore} belts, `
+    + `steps ${steps.join('/')} m: ${beltCells.join(' | ')}`);
+
+  // 4: the smelter, on the cell in front of the run's HEAD. Reach for a belt and
   // a smelter is (1 + 2) / 2 + 0.75 m (FactoryWiring.touch), so it has to be the
-  // very next cell, not merely somewhere down the line.
+  // very next cell, not merely somewhere down the line. The head is the belt
+  // NEAREST THE EYE, because the drag came back towards the player: asking the
+  // plan which tile that is beats assuming the drag ended where it was aimed.
   of.build(3);
   let smelterCell = null;
-  for (let p = lastPitch - 0.2; p >= -52 && smelterCell === null; p -= 0.2) {
+  const bs = beltList();
+  if (bs.length === 0) return { fail: 'the drag laid no belts', log };
+  const e1 = eye();
+  const headBelt = bs.reduce((a, b) =>
+    gdist(b.pos, [e1.x, e1.y, e1.z]) < gdist(a.pos, [e1.x, e1.y, e1.z]) ? b : a);
+  for (let p = toPitch - 0.2; p >= -56 && smelterCell === null; p -= 0.25) {
     const g = await ghostAt(yaw, p);
-    if (g === null || used.has(g.cell)) continue;
-    const d = gdist(g.pos, prev);
+    if (g === null || !g.ok) continue;
+    const d = gdist(g.pos, headBelt.pos);
     if (d < NEAR) continue;
     if (d > 2.2) break;                     // beyond the belt head's reach
-    if (!g.ok) { used.add(g.cell); continue; }
     const before = of.game().factory.buildings;
     await placeHere();
     if (of.game().factory.buildings > before) smelterCell = g.cell;
-    used.add(g.cell);
   }
   of.build(0);
   log.push(`smelter cell ${smelterCell}`);
@@ -370,11 +362,21 @@
   const RUN_SECS = 26;
   let beltPeak = 0;
   let workingSeen = false;
-  for (let i = 0; i < 13; ++i) {
-    await sleep(RUN_SECS / 13);
+  let workingSamples = 0;
+  // POLLED IN SMALL STEPS, not slept through. A survival smelter is 60 ticks of
+  // work and it is only fed when a belt item arrives, so "working" is a state it
+  // is in for part of a second at a time; a two second sample can step clean
+  // over every one of them and report a line that visibly produced ingots as
+  // never having done any work. The same lesson as moments.js and the collapse.
+  const SAMPLES = 130;
+  for (let i = 0; i < SAMPLES; ++i) {
+    await sleep(RUN_SECS / SAMPLES);
     const g = of.game().factory;
     for (const r of g.runs) beltPeak = Math.max(beltPeak, r.items);
-    if (g.list.some((b) => b.kind === 'smelter' && b.working)) workingSeen = true;
+    if (g.list.some((b) => b.kind === 'smelter' && b.working)) {
+      workingSeen = true;
+      workingSamples++;
+    }
   }
   const after = of.game().factory;
   const minerA = after.list.find((b) => b.kind === 'miner');
@@ -441,6 +443,7 @@
       runs: after.runs,
       beltPeakItems: beltPeak,
       smelterWorkingSeen: workingSeen,
+      smelterWorkingSamples: `${workingSamples}/${SAMPLES}`,
       minerRemaining: minerA.remaining,
       minerExtracted: extracted,
       smelterInput: smelterA.input,
