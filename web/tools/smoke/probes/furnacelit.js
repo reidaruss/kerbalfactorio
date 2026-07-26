@@ -32,9 +32,18 @@
   }
   if (!of.craft(2)) return { fail: 'could not craft the furnace', carried: of.game().carried };
 
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  // Slot 2 is the crafted hand furnace, selected through the number key's own
+  // path, and the left button then places what the hand holds (Bindings.ts).
+  of.input.tape([{ hold: 4, actions: ['slot2'] }, { hold: 4, keys: [] }]);
+  await sleep(0.25);
+  if (of.hotbar().kind !== 'furnace') {
+    return { fail: 'slot 2 does not hold the furnace', hotbar: of.hotbar() };
+  }
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.4);
-  if (of.game().machines.length === 0) return { fail: 'KeyG placed nothing' };
+  if (of.game().machines.length === 0) {
+    return { fail: 'a click with the furnace in hand placed nothing' };
+  }
 
   // --- COLD: placed, nothing in it -----------------------------------------
   await sleep(0.4);
@@ -42,9 +51,9 @@
   log.push(`cold: lit=${cold.lit} burning=${cold.burning}`);
 
   // --- load it through the real DOM buttons --------------------------------
-  of.input.tape([{ hold: 4, keys: ['KeyE'] }, { hold: 10, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 10, keys: [] }]);
   await sleep(0.35);
-  if (!of.game().furnaceOpen) return { fail: 'KeyE did not open the furnace' };
+  if (!of.game().furnaceOpen) return { fail: 'interact did not open the furnace' };
   const click = (m) => {
     const b = [...document.querySelectorAll('#of-furnace button[data-load]')]
       .find((x) => x.textContent.includes(m));
@@ -65,7 +74,7 @@
     return { fail: 'the furnace did not take ore and fuel', s0 };
 
   // --- close the panel: the point is the MACHINE, not the menu --------------
-  of.input.tape([{ hold: 4, keys: ['KeyE'] }, { hold: 10, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 10, keys: [] }]);
   await sleep(0.35);
   const closed = !of.game().furnaceOpen;
 

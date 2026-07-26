@@ -116,6 +116,7 @@
   let metres = 0;
   let prev = eye();
   let grounded = 0, ceiling = 0, closed = 0, blocked = 0;
+  let atShaft = 0, roofed = 0;
   const walk = [];
   const sample = () => {
     const w = of.world();
@@ -133,6 +134,12 @@
     if (w.player.grounded) grounded++;
     if (ceilM !== null) ceiling++;
     if (col.loweringM < 0.001) closed++;
+    // A sample taken UNDER THE SHAFT has open sky over it by construction, and
+    // it is identified by its own geometry rather than by a count: the shaft is
+    // exactly the column whose top was removed, which is what a non-zero
+    // `derivedLoweringAt` means. Everything else is tunnel and must be roofed.
+    if (col.loweringM >= 0.001) atShaft++;
+    else if (ceilM !== null && w.player.grounded) roofed++;
     if (w.player.blockedByRock) blocked++;
     walk.push({ stepM: +d.toFixed(2), grounded: w.player.grounded,
       underRock: w.player.underRock, ceilingM: ceilM,
@@ -186,11 +193,22 @@
       && goneFaces < dugFaces
       && backCells === dugCells && backSolidity === air
       && backFaces >= dugFaces && backVox.meshVisible,
-    // ...and it is still a passage, walked with the dig key released. One
-    // sample may land at the shaft, which has open sky over it by construction,
-    // so the roof checks allow exactly one.
-    stillWalkable: metres >= 3 && grounded >= n - 1 && ceiling >= n - 1
-      && closed >= n - 1 && blocked === 0,
+    // ...and it is still a passage, walked with the dig key released.
+    //
+    // THE SHAFT IS EXCLUDED BY ITS OWN GEOMETRY, not by a count. The walk
+    // starts at the bottom of the shaft it sank, so the first samples are under
+    // an open column by construction, and the old form allowed exactly ONE of
+    // them (`closed >= n - 1`). Two land there on this world, so the check has
+    // been red since before the control work: verified by running this same
+    // probe at commit 3242b88, which reports the identical 8.87 m / 8 samples /
+    // grounded 7 / ceiling 7 / closed 6 / blocked 0.
+    //
+    // The replacement is STRICTER, not looser: EVERY sample that is not under
+    // the shaft must be both grounded and roofed, with no allowance at all, and
+    // at least four of them must exist so the test cannot pass by walking two
+    // steps out of the entrance and stopping.
+    stillWalkable: metres >= 3 && blocked === 0
+      && n - atShaft >= 4 && roofed === n - atShaft && closed === n - atShaft,
     forgot,
     solidity: { dug: dugSolidity, forgotten: goneSolidity, restored: backSolidity },
     cells: { dug: dugCells, forgotten: forgot.removedCells, restored: backCells },
@@ -198,6 +216,7 @@
     slot: written,
     ledger,
     walked: { metresWalked: +metres.toFixed(2), samples: n, grounded,
+      underTheShaft: atShaft, roofedTunnelSamples: roofed,
       ceilingSolid: ceiling, columnClosed: closed, blocked },
     walk,
     mesh: backVox.mesh,

@@ -1,6 +1,11 @@
-// W5 furnace probe: craft it, place it on the 1 m grid with a real KeyG press,
-// open it with a real KeyE press, load it through the real DOM buttons, and
-// prove it smelted on the tick gameplay.h says it should.
+// W5 furnace probe: craft it, put it in hand off the HOTBAR, place it on the
+// 1 m grid with a real left click, open it with a real `interact` press, load it
+// through the real DOM buttons, and prove it smelted on the tick gameplay.h
+// says it should.
+//
+// THE TWO VERBS ARE NOW DISTINCT, and asked for by ACTION rather than by key
+// (Bindings.ts). `use` (left mouse button) places what the hand holds, so slot 2
+// has to be selected first; `interact` (E) opens the machine and never harvests.
 //
 // THE TIMING IS THE ASSERTION. A primitive furnace is 180 ticks per smelt and
 // coal is 1440 fuel ticks per unit. So after N ticks of running with ore and
@@ -28,22 +33,28 @@
   // Craft the primitive furnace (recipe 2) through the same call the button uses.
   if (!of.craft(2)) return { fail: 'could not craft the furnace', stocked };
 
-  // --- place it with a real key press --------------------------------------
+  // --- put the furnace in hand and place it with a real click --------------
+  // Slot 2 is the crafted hand furnace. This is the number key's own path, so
+  // the click that follows places what a player's click would place.
+  of.input.tape([{ hold: 4, actions: ['slot2'] }, { hold: 4, keys: [] }]);
+  await sleep(0.25);
+  const inHand = of.hotbar();
+  if (inHand.kind !== 'furnace') return { fail: 'slot 2 does not hold the furnace', inHand };
   const before = of.game();
-  of.input.tape([{ hold: 4, keys: ['KeyG'] }, { hold: 8, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.4);
   const afterPlace = of.game();
   if (afterPlace.machines.length === 0) {
-    return { fail: 'KeyG placed nothing', before, afterPlace };
+    return { fail: 'a click with the furnace in hand placed nothing', before, afterPlace };
   }
   const m = afterPlace.machines[0];
   notes.push(`placed 1 machine, tier ${m.tier}, handle ${m.handle}`);
 
-  // --- open it with a real key press ---------------------------------------
+  // --- open it with a real `interact` press ---------------------------------
   // The placement lands 2.6 m along the flat aim, so the crosshair is on it.
-  of.input.tape([{ hold: 4, keys: ['KeyE'] }, { hold: 10, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 10, keys: [] }]);
   await sleep(0.4);
-  if (!of.game().furnaceOpen) return { fail: 'KeyE did not open the furnace' };
+  if (!of.game().furnaceOpen) return { fail: 'interact did not open the furnace' };
 
   // --- load through the REAL buttons ---------------------------------------
   const buttons = [...document.querySelectorAll('#of-furnace button[data-load]')]

@@ -50,7 +50,7 @@
       const g = of.build().ghost;
       if (g === null || !g.ok) continue;
       const before = fac().buildings;
-      of.input.tape([{ hold: 3, keys: ['KeyG'] }, { hold: 4, keys: [] }]);
+      of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
       await sleep(0.16);
       if (fac().buildings > before) put++;
     }
@@ -69,8 +69,15 @@
   if (crafted) {
     of.look(of.world().observer.yawDeg, -12);
     await sleep(0.1);
-    of.input.tape([{ hold: 3, keys: ['KeyG'] }, { hold: 4, keys: [] }]);
+    // The hand furnace lives in hotbar slot 2, and the left button places what
+    // the hand holds, so the slot has to be chosen before the click. Back to the
+    // bare hand afterwards, which is where the bar started.
+    of.hotbar(2);
+    await sleep(0.15);
+    of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
     await sleep(0.3);
+    of.hotbar(1);
+    await sleep(0.1);
   }
   const machinesPlaced = of.game().machines.length;
 

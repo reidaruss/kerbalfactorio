@@ -1,5 +1,9 @@
 // W6 impact probe. DRIVEN, and it refuses to trust a call that returned.
 //
+// THE SWING IS `use`, the left mouse button, asked for by ACTION rather than by
+// key (Bindings.ts). The hotbar starts on slot 1, the bare hand, and the bare
+// hand is what makes a click a swing instead of a placement.
+//
 // THE FAILURE THIS IS WRITTEN AGAINST. The first pass at a harvest probe swept
 // 60 yaw candidates, kept the best of them, and reported success on a dot of
 // 0.414 after walking 41 m in the wrong direction. A best-of-a-bad-set is not a
@@ -104,9 +108,9 @@
   const packOf = (g) => g.carried.reduce((a, c) => a + c.count, 0);
   const pack0 = packOf(of.game());
   of.input.tape([
-    { hold: 6, keys: ['KeyE'] }, { hold: 34, keys: [] },
-    { hold: 6, keys: ['KeyE'] }, { hold: 34, keys: [] },
-    { hold: 6, keys: ['KeyE'] }, { hold: 34, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 34, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 34, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 34, keys: [] },
   ]);
   await sleep(2.2);
   const pitchAfter = of.world().observer.pitchDeg;
@@ -117,7 +121,7 @@
   // The grant fires on frame 17 of the 33-frame clip, so running 22 ticks puts
   // the screenshot a few frames after the chips left the node and while the
   // readout is still on screen. This is what W6_harvest_impact.png shows.
-  of.input.tape([{ hold: 6, keys: ['KeyE'] }, { hold: 40, keys: [] }]);
+  of.input.tape([{ hold: 6, actions: ['use'] }, { hold: 40, keys: [] }]);
   await sleep(22 / 60);
   const g = of.game();
   const nodeAfter = nodeOf(target.index);

@@ -1,7 +1,13 @@
 // W5 harvest probe. DRIVEN, per standing rule 3 and DW-20: it turns with the
 // same look() a mouse drives, walks with a real KeyW tape and harvests with a
-// real KeyE tape, and it refuses to report success unless it can show the
+// real `use` tape, and it refuses to report success unless it can show the
 // simulation moved.
+//
+// `use` IS THE LEFT MOUSE BUTTON and it is asked for by ACTION, never by key
+// (Bindings.ts). Harvesting used to be E; E is now interact and swinging moved
+// onto the button, so a probe that still names a key would be testing whatever
+// that key happens to mean next. The hotbar starts on slot 1, the bare hand,
+// which is what makes the click a swing rather than a placement.
 //
 // PROOF OF ADVANCE, asserted rather than assumed:
 //   ticks      the fixed clock advanced (headless Chrome throttles rAF)
@@ -86,13 +92,13 @@
   await sleep(0.2);
   const acquired = of.game().interact.target;
 
-  // --- swing: hold the mine key long enough for several full clips ---------
+  // --- swing: hold the use button long enough for several full clips -------
   const nodeBefore = of.nodes().find((n) => n.index === target.index);
   of.input.tape([
-    { hold: 6, keys: ['KeyE'] }, { hold: 32, keys: [] },
-    { hold: 6, keys: ['KeyE'] }, { hold: 32, keys: [] },
-    { hold: 6, keys: ['KeyE'] }, { hold: 32, keys: [] },
-    { hold: 6, keys: ['KeyE'] }, { hold: 32, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 32, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 32, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 32, keys: [] },
+    { hold: 6, actions: ['use'] }, { hold: 32, keys: [] },
   ]);
   await sleep(3.2);
   const g = of.game();

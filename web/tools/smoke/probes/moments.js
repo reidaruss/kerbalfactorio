@@ -3,8 +3,10 @@
 // THE FELLED MOMENT has to be driven by real swings. `of.harvest(i)` reaches
 // gameplay.h directly and deliberately skips the swing, the impact frame and
 // therefore the whole reaction, so a probe that used it would prove the NUMBER
-// reached zero and nothing about the moment. Every swing below is the E key,
-// landing on the authored impact frame, exactly as a player's does.
+// reached zero and nothing about the moment. Every swing below is `use`, the
+// left mouse button, asked for by ACTION and not by key (Bindings.ts), landing
+// on the authored impact frame exactly as a player's does. The hotbar starts on
+// slot 1, the bare hand, which is what makes a click a swing.
 //
 // THE COLLAPSE IS SAMPLED WHILE IT IS HAPPENING. `felled` alone would only say
 // the event fired; `collapsing` counts nodes whose collapse is mid-flight, so
@@ -117,10 +119,10 @@
   let swings = 0;
   let emptyAt = -1;
   for (let i = 0; i < 12 && emptyAt < 0; ++i) {
-    // One press, then the cooldown. Holding E would swing continuously, but a
-    // discrete press per iteration is what makes "swings" a count and not a
-    // guess.
-    of.input.tape([{ hold: 4, keys: ['KeyE'] }, { hold: 40, keys: [] }]);
+    // One press, then the cooldown. Holding the button would swing
+    // continuously, but a discrete press per iteration is what makes "swings" a
+    // count and not a guess.
+    of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 40, keys: [] }]);
     swings++;
     // POLLED IN SMALL STEPS, not slept through. The collapse settles in 0.9 s of
     // effects time and the effects clock runs at the render rate, so a single
