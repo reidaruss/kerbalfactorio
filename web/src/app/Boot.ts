@@ -145,7 +145,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
 
   hud.banner('starting terrain.worker and preallocating the chunk pool ...');
   const tTerrain = performance.now();
-  const regime = new Regime(renderer.depth.nearDepthCutoff());
+  const regime = new Regime(cfg.nearCutoff > 0 ? cfg.nearCutoff : renderer.depth.nearDepthCutoff());
   regime.update(observer.altM);
   const t = await bootTerrain({
     cfg, quality, depth: renderer.depth, events, scenes, origin, body,

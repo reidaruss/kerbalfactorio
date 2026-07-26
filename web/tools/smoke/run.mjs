@@ -42,7 +42,7 @@ const params = new URLSearchParams();
 for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',
   't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
-  'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars']) {
+  'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import type { QualityKnobs } from './Quality.js';
+import { LAYER_PLAYER_BODY } from './Scenes.js';
 
 /** Cascade far planes in metres, for the 3-cascade tiers. */
 const SPLITS_3 = [22, 80, 300];
@@ -50,9 +51,15 @@ export class ShadowRig {
       light.castShadow = true;
       light.shadow.mapSize.set(this.mapSize, this.mapSize);
       light.shadow.bias = -0.0006;
-      light.shadow.normalBias = 0.6 + i * 1.8;
       light.shadow.camera.near = 1;
       light.shadow.camera.far = CASTER_BACKOFF_M * 2;
+      // WebGLShadowMap culls casters with `object.layers.test(shadowCamera.layers)`
+      // and a fresh camera tests layer 0 only, so the player body on
+      // LAYER_PLAYER_BODY would never enter the map. That is exactly the
+      // section 3.4 promise ("the shadow-casting light keeps it enabled, so the
+      // player still casts a shadow without rendering a slab in front of the
+      // camera"), and it is a one-line difference between kept and broken.
+      light.shadow.camera.layers.enable(LAYER_PLAYER_BODY);
       light.name = `shadowCascade${i}`;
       scene.add(light);
       scene.add(light.target);
@@ -86,6 +93,10 @@ export class ShadowRig {
       // Texel snapping. Without it the ortho box slides continuously with the
       // walk and every shadow edge crawls, which reads as worse than no shadows.
       const texel = (2 * r) / this.mapSize;
+      // Bias in WORLD units has to scale with the cascade, or cascade 0 at
+      // 11 mm per texel is offset by the same amount as cascade 2 at 200 mm and
+      // the contact shadow detaches from the caster.
+      light.shadow.normalBias = 3.0 * texel;
       this.centre.set(
         Math.round(this.centre.x / texel) * texel,
         Math.round(this.centre.y / texel) * texel,

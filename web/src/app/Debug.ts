@@ -62,6 +62,8 @@ export interface OfDebugApi {
   framehash(tilesX?: number, tilesY?: number): FrameHash;
   screenshot(): Promise<Blob>;
   teleport(latDeg: number, lonDeg: number, altM: number): void;
+  /** Absolute aim, in degrees. Framing a capture should not need an input tape. */
+  look(yawDeg: number, pitchDeg: number): void;
   setTime(t: number): void;
   input: { tape(t: TapeEntry[]): void; press(code: string, frames?: number): void };
   /** FP/TP control. setView returns the aim ray so a toggle can be asserted. */
@@ -208,6 +210,14 @@ export function installDebugApi(
 
     teleport(latDeg, lonDeg, altM) {
       s.observer.teleport(latDeg, lonDeg, altM);
+    },
+
+    look(yawDeg, pitchDeg) {
+      const st = s.observer.state();
+      s.observer.look(
+        ((yawDeg - st.yawDeg) * Math.PI) / 180,
+        ((pitchDeg - st.pitchDeg) * Math.PI) / 180,
+      );
     },
 
     setTime(t) { s.sky.setSunT(t); },

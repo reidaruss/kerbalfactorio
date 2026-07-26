@@ -63,9 +63,12 @@ export function registerSystems(s: Services, loop: Loop): void {
     const cam = s.rig.nearCam;
     eye.setFromMatrixPosition(cam.matrixWorld);
     cam.getWorldDirection(fwd);
-    // Nothing on the ground casts onto anything at orbital range, and the
-    // cascades would otherwise be fitted around an eye 300 km up (section 3.5).
-    s.shadows.update(eye, fwd, s.sky.sunDirection, s.regime.state.band !== 'ORBIT');
+    // Two reasons to skip the whole pass, both worth 58 draw calls:
+    // nothing on the ground casts onto anything at orbital range (section 3.5,
+    // cascades 0 in ORBIT), and below the horizon the sun casts nothing at all.
+    // Measured at night without this: 164 draws against a 150 target.
+    const lit = s.sky.elevation(s.observer.up) > -0.03;
+    s.shadows.update(eye, fwd, s.sky.sunDirection, lit && s.regime.state.band !== 'ORBIT');
   });
 
   // A capture is only allowed once the streamer has converged, the inbox is

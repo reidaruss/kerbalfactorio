@@ -90,6 +90,13 @@ export interface Config {
   readonly atmosphere: boolean;
   /** Star field. ?stars=0 disables it. */
   readonly stars: boolean;
+  /**
+   * Override the SURFACE-band nearDepthCutoff. 0 keeps DepthPolicy's answer.
+   * Lowering it pulls coarser chunks into the near 1:1 scene, which is how the
+   * near/far horizon agreement is measured: render the same view twice with
+   * different cutoffs and diff the pixels.
+   */
+  readonly nearCutoff: number;
   /** of::FloatingOrigin rebase threshold in metres. ?rebase= for walk tests. */
   readonly rebaseM: number;
   /** Character ground speed in m/s; sprint is 2x. ?walkspeed= for walk tests. */
@@ -197,6 +204,7 @@ export function parseConfig(search: string): Config {
     shadows: p.get('shadows') !== '0',
     atmosphere: p.get('atmos') !== '0',
     stars: p.get('stars') !== '0',
+    nearCutoff: Math.max(0, num(p, 'cutoff', 0) | 0),
     // 4,000 m is of::FloatingOrigin's default. The knob exists so a headless run
     // can force many rebases inside a walk that fits in a smoke budget, which
     // makes the invisibility assertion STRICTER, not weaker.
