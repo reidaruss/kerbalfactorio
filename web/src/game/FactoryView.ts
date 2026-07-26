@@ -28,9 +28,21 @@ const TEMPLATES: Record<string, MachineTemplate> = {
   // OF_Rubber is the deck, and the deck is what the flow band scrolls along.
   belt: { url: 'assets/machines/belt_segment.glb', root: 'BeltSegment',
           flowMaterial: 'Rubber' },
+  // W7. The curve tiles shipped at Tier 0 and nothing drew them, so a line that
+  // turned a corner was two straight tiles meeting at a right angle with a notch
+  // in the deck. They are DERIVED, never placed: the player lays belts and the
+  // view works out which tiles are corners, because a turn is a property of a
+  // run and not a thing to make somebody choose from a menu.
+  belt_l: { url: 'assets/machines/belt_curve_l.glb', root: 'BeltCurveL',
+            flowMaterial: 'Rubber', arc: 'l' },
+  belt_r: { url: 'assets/machines/belt_curve_r.glb', root: 'BeltCurveR',
+            flowMaterial: 'Rubber', arc: 'r' },
   smelter: { url: 'assets/machines/smelter.glb', root: 'Smelter' },
   inserter: { url: 'assets/machines/inserter.glb', root: 'Inserter' },
 };
+
+/** Cosine below which two flow directions count as the same heading. */
+const TURN_COS = 0.9;
 
 /** kUnitsPerTile from factory_sim.h, and the fixed tick rate. */
 const UNITS_PER_TILE = 256;
@@ -44,6 +56,10 @@ export class FactoryView {
   private ghost: THREE.Mesh | null = null;
   private readonly ghostMat: THREE.MeshBasicMaterial;
   private readonly slots = new Map<number, number>();
+  /** Which template each slot is currently drawing, so a corner can re-point. */
+  private readonly drawn = new Map<number, string>();
+  /** Belt tiles drawn as curves this frame, and which way each one turns. */
+  curves: { id: number; turn: string }[] = [];
   private readonly linkSlots: number[] = [];
   private readonly p = new THREE.Vector3();
   private readonly m = new THREE.Matrix4();
@@ -90,21 +106,33 @@ export class FactoryView {
     for (const r of f.line.entityStates()) rows.set(r.id, r);
     const flows = new Map<number, { speedQuant: number; density: number }>();
     for (const r of f.line.beltFlows()) flows.set(r.lineId, r);
+    const corners = cornersOf(f);
 
     for (const b of f.placed) {
+      const corner = corners.get(b.id);
+      const key = corner === undefined ? b.kind : `belt_${corner.turn}`;
       let slot = this.slots.get(b.id);
       if (slot === undefined) {
-        slot = this.batch.acquire(keyOf(b.kind));
+        slot = this.batch.acquire(key);
         if (slot < 0) continue;
         this.slots.set(b.id, slot);
+        this.drawn.set(b.id, key);
+      } else if (this.drawn.get(b.id) !== key) {
+        // A tile becomes a corner when the tile behind it is laid, which is a
+        // change of MESH with no change of instance.
+        if (this.batch.setGeometry(slot, key)) this.drawn.set(b.id, key);
       }
       this.origin.toEngine(b.pos, this.p);
-      this.m.compose(this.p, b.quat, this.one);
+      // A curve is oriented by the flow ENTERING it, because the mesh's own
+      // inlet is on its -Z face exactly where a straight tile's outlet is; the
+      // turn is baked into the geometry, not into the transform.
+      this.m.compose(this.p, corner === undefined ? b.quat : corner.quat, this.one);
       this.batch.place(slot, this.m);
       this.batch.setFx(slot, this.fxFor(b, f, rows, flows));
     }
     this.syncLinks(f);
     this.batch.flush();
+    this.curves = [...corners].map(([id, c]) => ({ id, turn: c.turn }));
   }
 
   private fxFor(b: Placed, f: Factory,
@@ -142,6 +170,7 @@ export class FactoryView {
     if (slot === undefined) return;
     this.batch.release(slot);
     this.slots.delete(id);
+    this.drawn.delete(id);
   }
 
   /** DW-9: one inserter wherever the plan recorded a connection. */
@@ -174,7 +203,10 @@ export class FactoryView {
   showGhost(kind: BuildKind, pos: { x: number; y: number; z: number },
             up: THREE.Vector3, fwd: THREE.Vector3, ok: boolean): void {
     if (this.ghost === null) return;
-    const g = this.batch.geometryFor(keyOf(kind));
+    // The GHOST is always the straight tile: the player places a belt and the
+    // corner is derived afterwards, so previewing a curve would be previewing a
+    // decision they are not making.
+    const g = this.batch.geometryFor(kind);
     if (g === null) { this.ghost.visible = false; return; }
     this.ghost.geometry = g;
     this.origin.toEngine(pos, this.p);
@@ -189,11 +221,38 @@ export class FactoryView {
   get ghostVisible(): boolean { return this.ghost?.visible ?? false; }
 
   stats(): unknown {
-    return { ...this.batch.stats(), ghost: this.ghostVisible, links: this.linkSlots.length };
+    return { ...this.batch.stats(), ghost: this.ghostVisible,
+      links: this.linkSlots.length,
+      curves: this.curves.length, curveTiles: this.curves };
   }
 }
 
-function keyOf(kind: BuildKind): string { return kind; }
+/**
+ * Which belt tiles are corners, which way they turn, and how to orient them.
+ *
+ * A run is already ORDERED (FactoryWiring.chainRuns walks each tile's flow
+ * direction), so a tile turns exactly when the heading it inherits from the tile
+ * behind it is not the heading it sends on. Handedness comes out of the tangent
+ * frame and nothing else: `orient` puts local +Y on `up` and local +Z on `fwd`,
+ * so local +X is `up x fwd`, and the mesh's outlet is on -X for a left turn and
+ * +X for a right one. Sign of (up x in) . out is therefore the whole test.
+ */
+function cornersOf(f: Factory): Map<number, { turn: 'l' | 'r'; quat: THREE.Quaternion }> {
+  const out = new Map<number, { turn: 'l' | 'r'; quat: THREE.Quaternion }>();
+  const side = new THREE.Vector3();
+  for (const run of f.runs) {
+    for (let i = 1; i < run.length; ++i) {
+      const prev = run[i - 1];
+      const tile = run[i];
+      if (prev.fwd.dot(tile.fwd) > TURN_COS) continue;      // straight on
+      side.crossVectors(tile.up, prev.fwd);
+      const s = side.dot(tile.fwd);
+      if (Math.abs(s) < 0.3) continue;   // a reversal, which no mesh describes
+      out.set(tile.id, { turn: s < 0 ? 'l' : 'r', quat: orient(tile.up, prev.fwd) });
+    }
+  }
+  return out;
+}
 
 /** The TypeIds this view knows how to draw, for a probe to assert against. */
 export const DRAWN_TYPE_IDS = TYPE_ID;

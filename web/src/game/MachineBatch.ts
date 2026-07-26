@@ -25,17 +25,33 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 /** Instances, and the width of the per-instance fx texture. */
 const CAPACITY = 256;
 
-/** aRole: what a vertex is, so one material can serve five authored roles. */
-const ROLE_BODY = 0, ROLE_STATUS = 1, ROLE_FLOW = 2;
+/**
+ * aRole: what a vertex is, so one material can serve the authored roles.
+ *
+ * The two ARC roles are the belt CURVES (W7). A curve's deck is a quarter
+ * annulus, so scrolling the band along local Z (which is what a straight tile
+ * does) would run the cargo diagonally across the corner. The role carries which
+ * corner it is, because that is the only thing the fragment shader needs in
+ * order to find the arc centre, and it costs no extra attribute.
+ */
+const ROLE_BODY = 0, ROLE_STATUS = 1, ROLE_FLOW = 2, ROLE_ARC_L = 3, ROLE_ARC_R = 4;
 
-export interface MachineTemplate { url: string; root: string; flowMaterial?: string }
+export interface MachineTemplate {
+  url: string;
+  root: string;
+  flowMaterial?: string;
+  /** Set on the curve tiles: which way the quarter turn goes. */
+  arc?: 'l' | 'r';
+}
 
 /** Per-instance fx channels, in the order the shader reads them. */
 export interface Fx { flow: number; density: number; state: number; level: number }
 
-function roleOf(matName: string, flowMaterial: string | undefined): number {
+function roleOf(matName: string, def: MachineTemplate): number {
   if (matName.endsWith('EmissiveState')) return ROLE_STATUS;
-  if (flowMaterial !== undefined && matName.endsWith(flowMaterial)) return ROLE_FLOW;
+  if (def.flowMaterial !== undefined && matName.endsWith(def.flowMaterial)) {
+    return def.arc === 'l' ? ROLE_ARC_L : def.arc === 'r' ? ROLE_ARC_R : ROLE_FLOW;
+  }
   return ROLE_BODY;
 }
 
@@ -133,7 +149,22 @@ varying vec4 vFx;
 varying vec3 vLocalPos;`)
         // AFTER the emissive map, which is where totalEmissiveRadiance is set.
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-if ( vRole > 1.5 ) {
+if ( vRole > 2.5 ) {
+  // A BELT CURVE (W7). Same flow row, same band, but the deck is a quarter
+  // annulus about a cell CORNER, so the phase is arc length and not local z.
+  // The corner is (-0.5,-0.5) for a left turn and (0.5,-0.5) for a right one,
+  // which is the only thing the role has to carry; the centre-line radius is
+  // 0.5 m, matching the straight tile's inlet and outlet exactly.
+  vec2 c = vec2( vRole > 3.5 ? 0.5 : -0.5, -0.5 );
+  vec2 d = vec2( vLocalPos.x, vLocalPos.z ) - c;
+  float ang = atan( d.y, d.x );
+  float s = 0.5 * ( vRole > 3.5 ? ( 3.14159265 - ang ) : ang );
+  float f = fract( s * 2.0 - uTime * vFx.x );
+  float blob = smoothstep( 0.38, 0.14, abs( f - 0.5 ) ) * step( 0.004, vFx.y );
+  float lit = 0.30 + 0.70 * vFx.y;
+  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.66, 0.47, 0.21 ), blob * 0.95 );
+  totalEmissiveRadiance += vec3( 0.44, 0.25, 0.06 ) * blob * lit;
+} else if ( vRole > 1.5 ) {
   // THE BELT, straight off FFactoryBeltFlowState. vFx.x is the quantized flow
   // speed turned into bands per second, vFx.y the line's fill fraction: an
   // empty line shows a bare deck and a saturated one is solid with cargo.
@@ -172,8 +203,7 @@ if ( vRole > 1.5 ) {
         if (!/_LOD0(?:_\d+)?$/.test(m.name)) return;
         const src = m.material as THREE.MeshStandardMaterial;
         list.push(normalize(m.geometry, m.matrixWorld,
-          src.color ?? new THREE.Color(1, 1, 1),
-          roleOf(src.name, t.def.flowMaterial)));
+          src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, t.def)));
       });
       if (list.length === 0) continue;
       const g = list.length === 1 ? list[0] : (mergeGeometries(list, false) ?? list[0]);
@@ -216,6 +246,21 @@ if ( vRole > 1.5 ) {
     const slot = this.mesh.addInstance(g);
     this.mesh.setGeometryIdAt(slot, g);
     return slot;
+  }
+
+  /**
+   * Re-point a live slot at a different template's geometry. Returns false when
+   * the key is unknown, so a caller can keep whatever was already drawn.
+   *
+   * A belt tile becomes a CURVE the moment a neighbour is laid beside it, which
+   * is a change of mesh with no change of instance, so re-acquiring the slot
+   * would churn the batch and lose the transform for a frame.
+   */
+  setGeometry(slot: number, key: string): boolean {
+    const g = this.geomId.get(key);
+    if (this.mesh === null || g === undefined || slot < 0) return false;
+    this.mesh.setGeometryIdAt(slot, g);
+    return true;
   }
 
   /** Hide a slot and give it back to the pool. Idempotent. */
