@@ -1262,6 +1262,64 @@ Added at W4 (2026-07-25):
     not a faster mesher; the greedy pass is already returning a 1.4x to 2.2x
     merge and is not where the time goes.
 
+51. **The harvest nodes were never in the world.** ASSET-SPECS records all nine
+    node `.glb` files as built and validated, and STATUS calls the art manifest
+    complete, so "the biome harvest nodes are already scattered" reads as true
+    from the docs. Nothing placed them: `Registry.ts` had no node entry,
+    `BIOME_PROPS` lists only Tier 1 decoration, and `Scatter.ts` scatters that
+    decoration alone. A validated asset that no system references is invisible
+    at every gate the project has, because `validate_glb.py` checks the file and
+    `check-limits` checks the source and neither asks whether anything reads it.
+
+52. **`worldgen::survival::LayoutTestArea` cannot place a walkable clearing.**
+    It jitters every node by up to 0.0003 rad, which is **180 m** at Forge's
+    600 km radius. That is proportionate to the 1.2 km test ring it was written
+    for and useless at any radius a player would walk: at a 20 m ring the jitter
+    is nine times the ring, and the "patch" is a 360 m smear. `of_gp_node_add`
+    therefore takes the position from the caller and leaves every RULE with
+    `/core` (resource, base amount, the position-hashed grade, and the oracle
+    surface it snaps to). The general shape: a `/core` helper written for a test
+    fixture is not automatically a gameplay placement primitive, and the tell is
+    a tolerance expressed in radians on a 600 km body.
+
+53. **`gameplay.h`'s `harvestNode` can never finish a node.** `InitialAmount` is
+    `baseAmountOf(kind) * Grade` with `Grade` in (0.5, 1.0], so every node's
+    amount is fractional. The pull is clamped with
+    `pull = (uint16_t)RemainingAmount`, which is **0** once under one unit
+    remains, and the function then grants 0 and decrements by 0. A node sticks
+    at, say, 0.72 for ever: it never reports `nodeEmpty`, its depletion mesh can
+    never reach its final state, and a "drain this node" loop does not terminate.
+    Caught by parity CASE 9's drain assertion, which is only there because it
+    checks a DELTA rather than a return value. `of_gp_node_harvest` collapses a
+    sub-unit remainder to zero as a bridge-level fix; the real one belongs in
+    `gameplay.h` and is logged for core-engine.
+
+54. **`__of.look()` did not move the aim ray, and the first harvest probe swept
+    60 yaw candidates, picked the worst one and walked 41 m the wrong way while
+    reporting no error.** `ViewMode` derives `aim` in `update()`, which runs on
+    the fixed tick, so `look()` immediately followed by `aim()` returned the
+    PREVIOUS orientation. This is DW-20 one level up: the defect was in the
+    verification API, and every driven probe that turns and then reads would
+    have measured the wrong thing. `look()` now rebuilds the tangent frame
+    before returning. The generalisation: an API whose write and read straddle
+    the tick boundary needs the read to be immediate, or callers silently get
+    last frame.
+
+55. **An interaction sphere on a ground pivot is missed by a level crosshair.**
+    Machines and harvest nodes pivot at the ground plane (ASSET-SPECS 2.7) while
+    the eye is 1.6 m up, so a ray cast level from the eye passes 1.6 m above a
+    1.1 m sphere centred on the origin and "press E on the furnace" does
+    nothing, silently and at every range. The pick sphere is raised 0.7 m and
+    widened. Worth stating because it will recur for every placeable: the pick
+    volume belongs to the SILHOUETTE, not to the transform.
+
+56. **E is one key with two verbs, and the arbitration is what the player
+    means.** Digging (W5 voxels) and harvesting both landed on the mine key. A
+    node under the crosshair takes the press, then a machine, then the dig.
+    Splitting them onto two keys was the obvious fix and the wrong one: a player
+    looking at a tree who presses mine means the tree, and cratering the ground
+    under it instead reads as the game not listening.
+
 ### 15.3 The dev loop, concretely
 
 ```

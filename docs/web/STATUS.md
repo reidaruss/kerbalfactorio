@@ -34,6 +34,7 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 | W3 sky, sun, cascaded shadows, analytic atmosphere, stream-in cross-fade, cube-face culling fix | done |
 | W4 look and feel: BatchedMesh terrain, rigged player, biome props | done |
 | **W5 voxel digging and tunnels** | **in flight: dig, mesh, collision and mouth all verified** |
+| **W5g gameplay slice: harvest, inventory, hand crafting, placeable furnace** | **done and driven-verified 2026-07-26** |
 | W6 building and automation in-world (also the WebGPU re-evaluation gate) | pending |
 | W7 progression: research wired to play, build costs, power | pending |
 | W8 **the seam**: boardable vessel, launch to orbit | pending, the signature milestone |
@@ -43,6 +44,28 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 2.43 MB total, zero textures. Tier 0 (player rig 44 bones/14 clips, FP arms, tools, 13 machines,
 9 harvest nodes, items atlas), Tier 1 (10 biome atlases, 41 props), Tier 2 (rocket parts on a
 1.25 m stack contract, launch pad, lander, far-scene sphere, plume).
+
+## The gameplay slice (W5g, 2026-07-26)
+
+**It is playable.** Spawn into a clearing of 24 harvest nodes, aim at one, press
+**E** to swing, and the yield goes into a 20-slot pack. **Tab** opens the
+inventory and hand-crafting panel; craft a pickaxe or an axe (which multiply the
+yield of the matching node kind) or a primitive furnace. Press **G** to place the
+furnace on the 1 m grid, **E** to open it, load ore and fuel from the pack, and
+take the iron out when it has smelted.
+
+Every rule is `/core`'s: `web/wasm/of_core_api.cpp` section 9 is a flat C shim
+over `gameplay.h` (`Inventory`, `harvestNode`, `HandCrafter`, `Furnace`) and the
+browser holds no opinion the headless suites do not. Parity CASE 9 covers it:
+self-determinism 29 -> 84 assertions.
+
+Screenshots: `docs/screenshots/W5_harvest.png`, `W5_inventory.png`,
+`W5_crafting.png`, `W5_furnace.png`. Probes:
+`web/tools/smoke/probes/{harvest,inventory,furnace}.js`.
+
+**Known:** draw calls 156 to 165 against the 150 budget with the clearing on
+screen, because each node is a cloned mesh rather than a `BatchedMesh` instance
+(DW-11 says it should be the latter). `?gameplay=0` isolates it.
 
 ## Commands
 
