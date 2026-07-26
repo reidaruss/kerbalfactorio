@@ -95,6 +95,50 @@ export interface OfCoreModule {
   _of_chunk_index_buffer(): number;
   _of_chunk_index_ptr(): number;
   _of_chunk_interior_index_count(): number;
+
+  // --- W5 gameplay slice (of_core_api.cpp section 9). One SliceRegistry and one
+  //     Inventory per module instance, so these are singletons on the MAIN
+  //     thread instance only; a worker's copy is a different pack.
+  _of_gp_init(): number;
+  _of_gp_slot_count(): number;
+  /** Fills i32 scratch with [item, count] per slot. Returns the slot count. */
+  _of_gp_inventory(): number;
+  _of_gp_count(item: number): number;
+  _of_gp_add(item: number, count: number): number;
+  _of_gp_remove(item: number, count: number): number;
+  _of_gp_clear(): number;
+  _of_gp_item_count(): number;
+  _of_gp_item_at(index: number): number;
+  /** Writes the display name into the u8 scratch. Returns the byte length. */
+  _of_gp_item_name(item: number): number;
+  /** Fills i32 scratch with the 13 survival ItemIds. Returns 13. */
+  _of_gp_item_ids(): number;
+
+  _of_gp_kinds_reset(): void;
+  _of_gp_kinds_push(kind: number): void;
+  _of_gp_nodes_clear(): void;
+  _of_gp_nodes_count(): number;
+  _of_gp_nodes_layout(body: number, edits: number, dx: number, dy: number,
+                      dz: number, ringRadiusRad: number): number;
+  _of_gp_node_add(body: number, edits: number, kind: number,
+                  dx: number, dy: number, dz: number): number;
+  /** f64 scratch [x,y,z,remaining,initial,grade,kind,resource]. Returns 8. */
+  _of_gp_node_state(i: number): number;
+  /** i32 scratch [granted,usedTool,nodeEmpty,resource]. Returns granted. */
+  _of_gp_node_harvest(i: number, baseYield: number, toolYield: number): number;
+
+  _of_gp_recipe_count(): number;
+  /** i32 scratch [out,outN,can,inN,(item,have,need)*inN]. Returns the length. */
+  _of_gp_recipe_info(i: number): number;
+  _of_gp_craft(i: number): number;
+
+  _of_gp_furnace_create(tier: number): number;
+  _of_gp_furnace_destroy(f: number): void;
+  _of_gp_furnace_insert(f: number, item: number, count: number): number;
+  _of_gp_furnace_collect(f: number, want: number): number;
+  _of_gp_furnace_run(f: number, ticks: number): number;
+  /** i32 scratch [oreItem,oreN,outItem,outN,fuel,progress,perSmelt,on]. 8. */
+  _of_gp_furnace_state(f: number): number;
 }
 
 /** Read the f64 scratch arena. Call AFTER the producing call, never before. */

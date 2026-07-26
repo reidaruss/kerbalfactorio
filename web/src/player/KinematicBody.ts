@@ -41,6 +41,14 @@ export const CAPSULE = {
 };
 
 const EPS_SLOPE_M = 1.5;
+/** How far below the feet a voxel floor is looked for before the player falls. */
+const VOXEL_FLOOR_SEARCH_M = 6;
+/**
+ * Below this much heightfield the voxels take over completely. More than one
+ * voxel (so a shallow dig still walks on the reconciled heightfield) and less
+ * than a capsule (so a tunnel floor is never mistaken for the surface).
+ */
+const DEEP_UNDERGROUND_M = 1.5;
 
 export class KinematicBody {
   /** Feet, on the surface. Body-frame f64 metres. */
@@ -51,6 +59,10 @@ export class KinematicBody {
   slopeCos = 1;
   /** Metres the feet were pushed out of solid voxels on the last step. */
   voxelPushM = 0;
+  /** True while the feet rest on a VOXEL floor below the heightfield surface. */
+  underRock = false;
+  /** True on a tick where a step into solid rock was refused. */
+  blockedByRock = false;
   speedMps = 0;
   oracleCalls = 0;
 
@@ -118,14 +130,45 @@ export class KinematicBody {
     let qy = p.y + (ty + uy * vUp) * dt;
     let qz = p.z + (tz + uz * vUp) * dt;
 
-    // 1. The oracle IS the ground.
+    // 1. The oracle IS the ground -- but WHICH ground. Above the heightfield it
+    //    is surfaceRadius. UNDER INTACT GROUND it cannot be: a sideways tunnel
+    //    leaves the top of its column solid, so derivedLoweringAt correctly
+    //    reports no lowering and surfaceRadius still names the hillside metres
+    //    overhead. Measured: two strikes into a tunnel wall and the next step
+    //    teleported the player out through their own ceiling, because
+    //    `gap <= 0` read "below the ground, therefore landing".
+    //
+    //    So once the feet are DEEP below the heightfield the voxel world is the
+    //    only authority: the floor is the first solid cell below (solidCell,
+    //    DW-12, the same predicate the mesher drew), and walking into rock is
+    //    REFUSED rather than resolved upward. Both branches read
+    //    surface_field.h; neither invents a height.
     let qr = Math.hypot(qx, qy, qz);
     let dxn = qx / qr, dyn = qy / qr, dzn = qz / qr;
-    const groundR = this.oracle.surfaceRadius(dxn, dyn, dzn);
+    const surfaceR = this.oracle.surfaceRadius(dxn, dyn, dzn);
     this.oracleCalls++;
+    let groundR = surfaceR;
+    this.underRock = false;
+    this.blockedByRock = false;
+    const deep = this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
+    if (deep) {
+      if (this.oracle.solidAt(qx, qy, qz)) {
+        // Into a wall. Undo the step and drop the tangential velocity; step 2
+        // still pushes out of anything the previous tick left us inside of.
+        qx = p.x; qy = p.y; qz = p.z;
+        qr = Math.hypot(qx, qy, qz) || 1;
+        dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
+        tx = 0; ty = 0; tz = 0;
+        this.blockedByRock = true;
+      }
+      const floorR = this.voxelFloor(qr, dxn, dyn, dzn);
+      // No floor within reach is an open shaft, so fall. Never snap to the roof.
+      groundR = floorR === null ? -Infinity : floorR;
+      this.underRock = floorR !== null;
+    }
     const gap = qr - groundR;
     const landing = gap <= 0 || (this.grounded && gap <= CAPSULE.groundSnapM && vUp <= 0);
-    if (landing) {
+    if (landing && Number.isFinite(groundR)) {
       qx = dxn * groundR; qy = dyn * groundR; qz = dzn * groundR;
       qr = groundR;
       vUp = 0;
@@ -134,12 +177,19 @@ export class KinematicBody {
       this.grounded = false;
     }
 
-    // 2. Near-field voxel walls. On a pristine world solidCell is simply "below
-    //    the heightfield", so step 1 has already resolved it and the sweep would
-    //    only fight itself at the boundary; it is armed the moment an edit set
-    //    exists, which is where tunnels and ceilings live (W5).
+    // 2. Near-field voxel walls, for the SHALLOW case only: a dig mouth whose
+    //    heightfield has reconciled but whose rim still has a solid cell in the
+    //    capsule. On a pristine world solidCell is simply "below the
+    //    heightfield", so step 1 has already resolved it.
+    //
+    //    It is skipped entirely when deep, and that is load-bearing. The push is
+    //    RADIAL and sized from the whole capsule, so inside a tunnel the head
+    //    sample sits under the ceiling, the push fires at 2.8 m, and the player
+    //    is levitated up through their own roof one tick at a time. Measured:
+    //    the drive phase ejected to open sky on the third strike, every time.
+    //    Under rock the floor and the walls are already resolved above.
     this.voxelPushM = 0;
-    if (this.oracle.editsHandle !== 0) {
+    if (this.oracle.editsHandle !== 0 && !deep) {
       const push = this.resolveVoxels(qx, qy, qz, dxn, dyn, dzn);
       if (push > 0) {
         this.voxelPushM = push;
@@ -153,7 +203,10 @@ export class KinematicBody {
     // 3. Slope. Sampling the gradient costs two oracle calls and is what stops
     //    the capsule walking up a cliff face like a ladder.
     ux = qx / qr; uy = qy / qr; uz = qz / qr;
-    this.slopeCos = this.grounded ? this.sampleSlopeCos(ux, uy, uz, groundR, qr) : 1;
+    // Underground the heightfield gradient describes the hillside overhead, not
+    // the floor being stood on, so it must not gate walking inside a tunnel.
+    this.slopeCos = this.grounded && !this.underRock
+      ? this.sampleSlopeCos(ux, uy, uz, surfaceR, qr) : 1;
     if (this.grounded && this.slopeCos < CAPSULE.slopeLimitCos) {
       // Too steep to stand: keep the downhill component, drop the uphill one.
       const climb = tx * ux + ty * uy + tz * uz;
@@ -183,6 +236,21 @@ export class KinematicBody {
    * radial axis is meaningless, so they are spread over the capsule's height).
    * Returns how far the capsule must move OUT along the radial to clear solid.
    */
+  /**
+   * The radius of the first SOLID cell below `r` along the radial, or null if
+   * there is none within the search depth (an open shaft, so the player falls).
+   * Marched at 0.1 m, an order finer than the 1 m cell, so the landing radius is
+   * accurate to a tenth of a voxel without a per-cell plane intersection.
+   */
+  private voxelFloor(r: number, ux: number, uy: number, uz: number): number | null {
+    for (let d = 0; d <= VOXEL_FLOOR_SEARCH_M; d += 0.1) {
+      const rr = r - d;
+      this.oracleCalls++;
+      if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return rr + 0.1;
+    }
+    return null;
+  }
+
   private resolveVoxels(x: number, y: number, z: number, ux: number, uy: number, uz: number): number {
     let push = 0;
     for (let i = 0; i < 6; ++i) {

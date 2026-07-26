@@ -65,6 +65,14 @@ export interface OfDebugApi {
   dig(): unknown;
   /** W5 voxel state: edits, near mesh, mouth reconciliation, harvest. */
   voxels(): unknown;
+  /** W5. Voxel solidity at a body-frame point, through the one oracle. */
+  solidAt(x: number, y: number, z: number): boolean;
+  /**
+   * W5. The pristine base and the edited surface under a body-frame direction.
+   * `lowering` is derivedLoweringAt: 0 means this column's top is still solid,
+   * which is exactly what a tunnel under intact ground must report.
+   */
+  surface(dx: number, dy: number, dz: number): { baseM: number; surfaceM: number; loweringM: number };
   settle(n?: number): Promise<void>;
   /** Advance `seconds` of sim on a synthetic clock. See Loop.run. */
   run(seconds: number, renderHz?: number): Promise<void>;
@@ -222,6 +230,16 @@ export function installDebugApi(
 
     chunks: (n = 4, nearOnly = false) => chunkDump(n, nearOnly),
     gravity: (rM: number) => s.body.gravityAccel(rM),
+
+    solidAt: (x: number, y: number, z: number) => s.oracle.solidAt(x, y, z),
+
+    surface(dx: number, dy: number, dz: number) {
+      const L = Math.hypot(dx, dy, dz) || 1;
+      const ux = dx / L, uy = dy / L, uz = dz / L;
+      const baseM = s.oracle.baseHeight(ux, uy, uz);
+      const surfaceM = s.oracle.surfaceHeight(ux, uy, uz);
+      return { baseM, surfaceM, loweringM: baseM - surfaceM };
+    },
 
     dig() {
       const p = s.player;
