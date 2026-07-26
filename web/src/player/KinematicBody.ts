@@ -46,7 +46,7 @@ export const CAPSULE = {
    * 1 m quantum the derived lowering moves in, so a hole you dig still needs a
    * jump or a ramp to get out of.
    */
-  stepUpM: 0.6,
+  stepUpM: 1.1,
   /** cos(50 deg): steeper than this is a slide, not a walk (section 8.1). */
   slopeLimitCos: 0.6428,
   /**

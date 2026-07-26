@@ -96,6 +96,8 @@ export class Gameplay {
   autoCollected = 0;
   private simSecs = 0;
   private sinceResnap = 0;
+  /** Where the clearing was grown. Fixed on the first populate (see below). */
+  private spawnDir: THREE.Vector3 | null = null;
   private panelHeld = false;
   private placeHeld = false;
   private mineHeld = false;
@@ -184,8 +186,16 @@ export class Gameplay {
    * placed after digging starts must pass the live handle.
    */
   populate(): void {
-    const p = this.d.player.body.feet;
-    const dir = new THREE.Vector3(p.x, p.y, p.z).normalize();
+    // THE CLEARING DOES NOT FOLLOW THE PLAYER. The direction is remembered from
+    // the first call, so regrowing from the seed reproduces the SAME world
+    // rather than a new one centred whereever the player happens to be standing.
+    // Without this a save's depletion diff comes back onto a differently shaped
+    // field, which is the quiet way a persistence test stops meaning anything.
+    if (this.spawnDir === null) {
+      const p = this.d.player.body.feet;
+      this.spawnDir = new THREE.Vector3(p.x, p.y, p.z).normalize();
+    }
+    const dir = this.spawnDir;
     // NodeField FIRST: it clears the whole node array, and the ore field's
     // outcrops are nodes in that same array.
     this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed);

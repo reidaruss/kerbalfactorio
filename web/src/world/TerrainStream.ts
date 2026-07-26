@@ -75,7 +75,7 @@ export class TerrainStream {
   private cutoff = 6;
   private cutoffDirty = false;
   private readonly lastObserved: Vec3d = { x: NaN, y: NaN, z: NaN };
-  /** W5 mouth reconciliation counters. sent != applied means a dig was lost. */
+  /** Mouth reconciliation counters. sent != applied means an edit was lost. */
   digsSent = 0;
   digsApplied = 0;
   /** Preallocated selection buffers for probeStakes (2.2 rule 6). */
@@ -130,13 +130,24 @@ export class TerrainStream {
   }
 
   /**
-   * W5. Ask the worker to replay a dig and re-mesh the chunks it opened. Sent
-   * unconditionally and out of band: unlike an observe it is not idempotent, so
-   * it can never be coalesced or dropped for "nothing moved".
-   */
+   * W5/WG-22. Ask the worker to replay a terrain edit and re-mesh the chunks it
+   * changed. Sent unconditionally and out of band: unlike an observe it is not
+   * idempotent, so it can never be coalesced or dropped for "nothing moved".
+   * Both verbs count on the same pair: an edit that never reached the worker
+   * leaves the heightfield believing in ground the voxel layer already moved,
+   * which is what `digsSent != digsApplied` exists to expose. */
   digAt(x: number, y: number, z: number, radiusM: number): void {
     this.digsSent++;
     this.worker.postMessage({ type: 'dig', seq: ++this.seq, x, y, z, radiusM });
+  }
+
+  levelAt(x: number, y: number, z: number, radiusM: number, targetHeightM: number,
+          maxCutM: number, maxFillM: number): void {
+    this.digsSent++;
+    this.worker.postMessage({
+      type: 'level', seq: ++this.seq, x, y, z, radiusM,
+      targetHeightM, maxCutM, maxFillM,
+    });
   }
 
   /** Post the observer. Skipped while a request is in flight or nothing moved. */

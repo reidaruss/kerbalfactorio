@@ -48,7 +48,8 @@ boot(cfg, host, hud).then(({ services }) => {
     `terrain.worker load ${services.boot.terrainWorkerLoadMs.toFixed(0)} ms`,
   );
   console.info(
-    `[of] W0 handshake  abi=2  wasm ${services.boot.wasmLoadMs.toFixed(0)} ms  ` +
+    `[of] W0 handshake  abi=${services.core._of_abi_version()}  ` +
+    `wasm ${services.boot.wasmLoadMs.toFixed(0)} ms  ` +
     `oracle base/surface/biome/solid = ` +
     Object.values(services.boot.oracleUs).map((v) => v.toFixed(2)).join(' / ') + ' us  ' +
     `worker instance agrees=${services.boot.workerAgrees} ` +

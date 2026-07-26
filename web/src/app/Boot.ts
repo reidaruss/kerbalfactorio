@@ -28,6 +28,8 @@ import { VoxelWorld } from '../world/VoxelWorld.js';
 import { VoxelMesh } from '../world/VoxelMesh.js';
 import { DigFx } from '../render/DigFx.js';
 import { DigAction } from '../player/DigAction.js';
+import { LevelAction } from '../player/LevelAction.js';
+import { LevelRing } from '../world/LevelRing.js';
 import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
 import { BIOME_ATLAS } from '../assets/Registry.js';
@@ -215,6 +217,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   if (digFx !== null) scenes.near.add(digFx.points);
   const dig = voxels === null || voxelMesh === null ? null
     : new DigAction(voxels, voxelMesh, terrain, digFx);
+  // WG-22 terraforming. The ring is a ground decal, so it goes in the NEAR
+  // scene beside the voxel mesh; `?levelring=0` isolates it (standing rule 7).
+  const levelRing = voxels === null || !cfg.levelRing ? null
+    : new LevelRing(oracle, origin);
+  if (levelRing !== null) scenes.near.add(levelRing.mesh);
+  const level = voxels === null || voxelMesh === null ? null
+    : new LevelAction(voxels, voxelMesh, terrain, oracle, levelRing);
 
   // W5 gameplay. Also player-gated: the pack, the clearing and the swing all
   // hang off a character, and a free camera has no hands. It is built LAST
@@ -263,6 +272,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
     hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
+    level, levelRing,
     gameplay, boot,
   };
   return { services, canvas };

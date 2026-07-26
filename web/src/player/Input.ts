@@ -19,6 +19,9 @@ export interface InputFrame {
   place: boolean;
   /** KeyL. Held state; Systems edge-detects it into one headlamp toggle (W5). */
   lamp: boolean;
+  /** KeyQ. Held state; LevelAction latches a floor on the press and repeats
+   *  on a cooldown, so a terraforming pass is one held key (WG-22). */
+  level: boolean;
 }
 
 export interface TapeEntry {
@@ -57,7 +60,7 @@ export class Input {
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
     jump: false, toggleView: false, mine: false, panel: false, place: false,
-    lamp: false,
+    lamp: false, level: false,
   };
 
   attach(el: HTMLElement): void {
@@ -146,7 +149,7 @@ export class Input {
     f.fwd = 0; f.right = 0; f.up = 0;
     f.dYaw = 0; f.dPitch = 0; f.zoom = 0;
     f.boost = false; f.jump = false; f.toggleView = false;
-    f.place = false; f.lamp = false;
+    f.place = false; f.lamp = false; f.level = false;
   }
 
   private axis(neg: string[], pos: string[]): number {
@@ -189,6 +192,7 @@ export class Input {
       f.panel = keys.has('Tab');
       f.place = keys.has('KeyG');
       f.lamp = keys.has('KeyL');
+      f.level = keys.has('KeyQ');
       if (this.uiHeld) this.mute(f);
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
@@ -207,6 +211,7 @@ export class Input {
     f.panel = this.down.has('Tab');
     f.place = this.down.has('KeyG');
     f.lamp = this.down.has('KeyL');
+    f.level = this.down.has('KeyQ');
     if (this.uiHeld) this.mute(f);
     this.dYaw = 0;
     this.dPitch = 0;

@@ -48,6 +48,23 @@ export interface TerrainDigMsg {
   radiusM: number;
 }
 
+/**
+ * WG-22 the same replay for a LEVEL op. Terraforming writes VOXELS only, exactly
+ * as digging does, and the heightfield follows because `buildChunk` reads
+ * `SurfaceField::loweringFn` — which since WG-22 is the SIGNED surface offset, so
+ * one callback carries both the pit and the pad.
+ */
+export interface TerrainLevelMsg {
+  type: 'level';
+  seq: number;
+  x: number; y: number; z: number;
+  radiusM: number;
+  /** Relief height above the datum the disc is flattened to. */
+  targetHeightM: number;
+  maxCutM: number;
+  maxFillM: number;
+}
+
 export interface TerrainChunkMsg {
   key: string;
   faceId: number;
@@ -79,5 +96,6 @@ export interface TerrainUpdateMsg {
 
 export interface TerrainErrorMsg { type: 'error'; message: string; }
 
-export type ToTerrain = TerrainInitMsg | TerrainObserveMsg | TerrainDigMsg;
+export type ToTerrain = TerrainInitMsg | TerrainObserveMsg | TerrainDigMsg
+  | TerrainLevelMsg;
 export type FromTerrain = TerrainInitedMsg | TerrainUpdateMsg | TerrainErrorMsg;

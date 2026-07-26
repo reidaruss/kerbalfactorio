@@ -18,6 +18,8 @@ import type { VoxelWorld } from '../world/VoxelWorld.js';
 import type { VoxelMesh } from '../world/VoxelMesh.js';
 import type { DigFx } from '../render/DigFx.js';
 import type { DigAction } from '../player/DigAction.js';
+import type { LevelAction } from '../player/LevelAction.js';
+import type { LevelRing } from '../world/LevelRing.js';
 import type { Scatter } from '../world/Scatter.js';
 import type { StatsProbe } from '../render/debug/StatsProbe.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -94,6 +96,10 @@ export interface Services {
   readonly voxels: VoxelWorld | null;
   readonly voxelMesh: VoxelMesh | null;
   readonly dig: DigAction | null;
+  /** WG-22 terraforming. Null wherever `dig` is: no hands, no shovel. */
+  readonly level: LevelAction | null;
+  /** WG-22. The ground footprint a level press will move. */
+  readonly levelRing: LevelRing | null;
   /** W5. Strike debris. Null wherever `dig` is null: no hands, no chips. */
   readonly digFx: DigFx | null;
   /** W5. Null with no character, or with ?gameplay=0. */

@@ -42,6 +42,15 @@ export function registerSystems(s: Services, loop: Loop): void {
       const ray = s.player.aimRay();
       s.dig.step(s.input.frame.mine && !busy, ray.origin, ray.dir);
     }
+    // WG-22 terraforming, on the same fixed tick and behind the same `busy`
+    // gate: a player rummaging in a furnace is not reshaping the hillside. The
+    // floor height comes from the player's own FEET, which is what makes the
+    // tool read as "stand where you want the floor" rather than as a slider.
+    if (s.level !== null && s.player !== null) {
+      const ray = s.player.aimRay();
+      s.level.step(s.input.frame.level && !busy, ray.origin, ray.dir,
+        s.player.body.feet);
+    }
     // L is edge-detected here rather than held: a lamp that only shines while
     // the key is down is a torch button, and the player needs both hands.
     if (s.input.frame.lamp && !lampHeld) s.headlamp.toggle();
@@ -51,7 +60,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   // The voxel mesh re-derives its engine transform from its 64-bit anchor, the
   // same contract every other subscriber honours (ARCHITECTURE.md 3.6): nobody
   // applies the delta by hand.
-  s.events.on('OriginRebased', () => { s.voxelMesh?.place(); });
+  s.events.on('OriginRebased', () => { s.voxelMesh?.place(); s.levelRing?.place(); });
 
   loop.onDrain.push(() => {
     // The cross-fade ramp is SIM time, not wall clock, so a driven run on the

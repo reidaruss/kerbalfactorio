@@ -38,7 +38,7 @@ const SEGS = 28;
 /** Metres the skin floats above the ground, so it never fights the terrain. */
 const LIFT_M = 0.09;
 /** How far apart the patches are laid out around the spawn point. */
-const SPREAD_M = 62;
+const SPREAD_M = 40;
 
 interface Skin {
   patch: PatchState;

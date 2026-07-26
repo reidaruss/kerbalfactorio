@@ -198,12 +198,24 @@ export class VoxelCollider {
    * there is none within `searchM` (an open shaft, so the player falls). Marched
    * at 0.1 m, an order finer than the 1 m cell, so the landing radius is
    * accurate to a tenth of a voxel without a per-cell plane intersection.
+   *
+   * NEVER above `r`. The capsule is `free` when three samples at 0.15, 0.9 and
+   * 1.65 m are clear, and none of them is at the feet, so a position with the
+   * feet a few centimetres inside rock passes. The march then found solid at
+   * d = 0 and returned `r + 0.1`, which is not a floor at all: it is one march
+   * step of pure lift, and the caller reads any ground above the feet as a
+   * landing. Held against a vertical rock face it ratchets, 0.1 m every tick,
+   * 6 m/s straight up. Driven: the walker climbed 12 m out of the 10.4 m shaft
+   * it had just dug, at a dead-constant 0.097 m per tick (0.1 less one tick of
+   * gravity), which is what a hard-coded step looks like in a trace and is why
+   * it read as a walkable ramp. An embedded capsule is `resolveEmbedded`'s job,
+   * and its minimum translation out of a wall is horizontal: back out, not up.
    */
   floorBelow(r: number, ux: number, uy: number, uz: number, searchM: number): number | null {
     for (let d = 0; d <= searchM; d += 0.1) {
       const rr = r - d;
       this.calls++;
-      if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return rr + 0.1;
+      if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return Math.min(r, rr + 0.1);
     }
     return null;
   }

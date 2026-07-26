@@ -13,9 +13,35 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { SurfaceOracle } from './SurfaceOracle.js';
 import type { Vec3d } from './PlanetBody.js';
 
-/** One dig, in body-frame metres. The op log a worker replays. */
+/**
+ * One terrain edit, in body-frame metres. The op log a worker replays.
+ *
+ * A LEVEL carries its target height and disc radius; a DIG carries its brush
+ * radius and leaves `targetHeightM` undefined. The two are one row type on
+ * purpose: `radiusM` is the touched extent either way, which is all the near
+ * mesher and the save's restore path ever ask of it, and splitting them would
+ * fork `VoxelSave`'s DigOpRow for no gain (that file is another agent's).
+ */
 export interface DigOp {
   x: number; y: number; z: number; radiusM: number;
+  /** Present only on a LEVEL op: the relief height the disc was flattened to. */
+  targetHeightM?: number;
+}
+
+/** What one levelling application moved. */
+export interface LevelResult {
+  /** Cells cut away (the high ground). */
+  dug: number;
+  /** Cells placed (the hollows). */
+  filled: number;
+  /** Cells inside the cylinder that were considered, for cost diagnosis. */
+  scanned: number;
+  dirty: CellBox | null;
+  /** The relief height the disc was levelled to, metres above the datum. */
+  targetHeightM: number;
+  /** Where the disc was centred, body-frame metres. */
+  centre: Vec3d;
+  radiusM: number;
 }
 
 /** Inclusive cell AABB, the re-mesh hint from VoxelEdits::dirtyRegion. */
@@ -75,6 +101,43 @@ export class VoxelWorld {
     this.totalCells += cells;
     this.ops.push({ x: hit.p.x, y: hit.p.y, z: hit.p.z, radiusM });
     return { cells, hit: hit.p, dirty: this.readDirty(), distM: hit.distM };
+  }
+
+  /**
+   * WG-22. Level a disc of ground toward `targetHeightM` (a relief height above
+   * the datum, the same units the oracle speaks).
+   *
+   * `centre` is the aim point on the ground; the cylinder is aligned with the
+   * local up through it, so the caller does not pass an orientation and cannot
+   * get one wrong. /core owns the rule (`levelArea`): every cell above the
+   * target becomes air and every cell below it becomes solid. Nothing here
+   * decides what the surface IS, which is standing rule 1 applied to an edit
+   * rather than to a query.
+   */
+  level(centre: Vec3d, radiusM: number, targetHeightM: number,
+        maxCutM = 0, maxFillM = 0): LevelResult {
+    const changed = this.M._of_level_area(this.handle, this.oracle.body.handle,
+      centre.x, centre.y, centre.z, radiusM, targetHeightM, maxCutM, maxFillM);
+    const out: LevelResult = {
+      dug: 0, filled: 0, scanned: 0, dirty: null,
+      targetHeightM, centre: { ...centre }, radiusM,
+    };
+    if (changed < 0) return out;
+    // Standing rule 5: the view is taken after the call that filled it, and read
+    // before anything else re-enters WASM.
+    const p = this.M._of_scratch_i32() >> 2;
+    const i32 = this.M.HEAP32;
+    out.dug = i32[p]; out.filled = i32[p + 1]; out.scanned = i32[p + 2];
+    if (changed === 0) return out;
+    this.totalCells += changed;
+    this.ops.push({ x: centre.x, y: centre.y, z: centre.z, radiusM, targetHeightM });
+    out.dirty = this.readDirty();
+    return out;
+  }
+
+  /** Cells placed so far. From /core, like removedCount, never a JS tally. */
+  addedCount(): number {
+    return this.M._of_edits_added_count(this.handle);
   }
 
   /** First solid point along a ray, or null. Public so aim UI can preview it. */

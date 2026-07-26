@@ -4,6 +4,7 @@
 
 import { assetStats } from '../assets/Loaders.js';
 import { gameplayApi } from './DebugGameplay.js';
+import { terraformApi } from './DebugTerraform.js';
 import type { Services } from './Services.js';
 import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
@@ -69,6 +70,15 @@ export interface OfDebugApi {
   dig(): unknown;
   /** W5 voxel state: edits, near mesh, mouth reconciliation, harvest. */
   voxels(): unknown;
+  /**
+   * WG-22. Level once along the current aim ray, ignoring the cooldown, exactly
+   * as the Q key does on the tick. `targetHeightM` defaults to the ground under
+   * the player's feet, which is the tool's own rule; passing one is how a probe
+   * levels to a height it chose. Null with no character or no ground in reach.
+   */
+  level(targetHeightM?: number): unknown;
+  /** WG-22 terraforming state: the tool's counters and the footprint decal. */
+  terraform(): unknown;
   /** W5. Voxel solidity at a body-frame point, through the one oracle. */
   solidAt(x: number, y: number, z: number): boolean;
   /**
@@ -293,44 +303,6 @@ export function installDebugApi(
     chunks: (n = 4, nearOnly = false) => chunkDump(n, nearOnly),
     gravity: (rM: number) => s.body.gravityAccel(rM),
 
-    solidAt: (x: number, y: number, z: number) => s.oracle.solidAt(x, y, z),
-
-    surface(dx: number, dy: number, dz: number) {
-      const L = Math.hypot(dx, dy, dz) || 1;
-      const ux = dx / L, uy = dy / L, uz = dz / L;
-      const baseM = s.oracle.baseHeight(ux, uy, uz);
-      const surfaceM = s.oracle.surfaceHeight(ux, uy, uz);
-      return { baseM, surfaceM, loweringM: baseM - surfaceM };
-    },
-
-    dig() {
-      const p = s.player;
-      if (p === null || s.dig === null) return null;
-      const ray = p.aimRay();
-      const r = s.dig.digOnce(ray.origin, ray.dir);
-      return { ...r, aim: { origin: ray.origin, dir: ray.dir } };
-    },
-
-    voxels() {
-      if (s.voxels === null || s.voxelMesh === null || s.dig === null) return null;
-      return {
-        // removedCount comes from /core, not from a JS tally: if the two ever
-        // disagree the browser has an edit set the simulation does not.
-        removedCells: s.voxels.removedCount(),
-        harvestedM3: s.dig.stats.volumeM3,
-        ops: s.voxels.ops.length,
-        action: s.dig.stats,
-        mesh: s.voxelMesh.stats,
-        meshVisible: s.voxelMesh.mesh.visible,
-        // Strike debris, so a probe can assert chips were actually thrown
-        // rather than that the call to throw them returned.
-        fx: s.digFx === null ? null : { ...s.digFx.stats, visible: s.digFx.points.visible },
-        // sent != applied means a dig never reached the heightfield, so the
-        // voxel layer and the surface would silently disagree.
-        mouth: { sent: s.terrain.digsSent, applied: s.terrain.digsApplied },
-      };
-    },
-
     settle: (n = 8) => loop.settle(n),
     run: (seconds, renderHz) => loop.run(seconds, renderHz),
     framehash: (tx, ty) => loop.frameHash(tx, ty),
@@ -376,6 +348,7 @@ export function installDebugApi(
 
     zprobe: () => s.zfight?.result(s.renderer.depth.mode) ?? null,
 
+    ...terraformApi(s),
     ...gameplayApi(s, loop),
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
