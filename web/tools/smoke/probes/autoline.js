@@ -223,6 +223,9 @@
                  rate: seen[i].rate, reachM: seen[i].reachM };
       }
     }
+    log.push(`+${turn}: ` + seen.map((s, i) => `${s.reachM}${s.ok ? '*' : ''}`
+      + (i + 1 < seen.length ? `-${gdist(s.pos, seen[i + 1].pos).toFixed(2)}-` : ''))
+      .join(''));
     if (pick !== null) headings.push(pick);
   }
   headings.sort((a, b) => b.score - a.score);

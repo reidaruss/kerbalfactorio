@@ -614,16 +614,16 @@ TEST(end_to_end_survival_bootstrap_loop) {
 }
 
 // =============================================================================
-// 7. ORE PATCHES (deposits.h §P + gameplay.h §S.5) — a deposit is GROUND, and
+// 7. ORE PATCHES (deposits.h §P + gameplay.h §S.5): a deposit is GROUND, and
 //    an outcrop is a window onto it rather than a second reservoir.
 //
 //    The three things that must hold before a drill can exist:
-//      a. BOOTSTRAP  — bare hands ALWAYS yield ore from a patch, so the player
+//      a. BOOTSTRAP : bare hands ALWAYS yield ore from a patch, so the player
 //                      can reach the iron a drill costs. The matching tool
 //                      raises the yield; it is never required.
-//      b. ONE POOL   — the units the player keeps come OUT of the patch, exactly,
+//      b. ONE POOL  : the units the player keeps come OUT of the patch, exactly,
 //                      and every outcrop of that patch reports the same number.
-//      c. FINISHABLE — the patch drains to zero and then grants nothing.
+//      c. FINISHABLE: the patch drains to zero and then grants nothing.
 // =============================================================================
 TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
   using NK = worldgen::survival::NodeKind;
@@ -654,7 +654,7 @@ TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
   CHECK_NEAR(patch.RemainingAmount, initial - wp::kHandYieldBare, 1e-9);
   // (b) the OTHER outcrop draws from the SAME pool: it is handed the patch's
   //     number on the way in, so it can neither refill it nor hold one of its
-  //     own. `a` is deliberately not re-read here — an outcrop is a view that is
+  //     own. `a` is deliberately not re-read here: an outcrop is a view that is
   //     re-derived when it is used, and asserting a stale copy would be
   //     asserting the bug this design exists to prevent.
   HarvestResult r2 = survival::harvestPatch(patch, b, NK::IronOre, inv);

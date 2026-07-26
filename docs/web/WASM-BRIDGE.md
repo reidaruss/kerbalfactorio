@@ -633,7 +633,7 @@ int of_net_get_line_items(int net, int beltBuild);
 `VisualState`: `0 idle, 1 working, 2 blocked, 3 no-power`.
 `Lod`: `0 near, 1 mid, 2 far, 3 on-rails`.
 
-### 4.9b Ore patches — what a deposit IS (ABI 3, `deposits.h` section P)
+### 4.9b Ore patches: what a deposit IS (ABI 3, `deposits.h` section P)
 
 A deposit is a piece of GROUND, not an object: an irregular lobed area, 6 to
 11 m across, holding ONE pool of one ore, with coverage falling from a rich

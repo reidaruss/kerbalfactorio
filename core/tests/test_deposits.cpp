@@ -293,19 +293,19 @@ TEST(deposits_seed_plus_depletion_diff_reproduces_state) {
 }
 
 // =============================================================================
-// §P — ORE PATCHES: a deposit is an area of ground, not a pebble.
+// §P: ORE PATCHES: a deposit is an area of ground, not a pebble.
 //
 // The properties a patch has to have before anything can be built on it:
-//   P1. DETERMINISM  — same seed regenerates the field bitwise; a different seed
+//   P1. DETERMINISM : same seed regenerates the field bitwise; a different seed
 //                      gives a different field.
-//   P2. IT IS A PATCH — a measurable extent, an irregular (non-circular) outline,
+//   P2. IT IS A PATCH: a measurable extent, an irregular (non-circular) outline,
 //                      and a richness that falls from the centre to the rim.
-//   P3. IN / OUT      — a point in the middle is inside, a point well outside is
+//   P3. IN / OUT     : a point in the middle is inside, a point well outside is
 //                      NOT, and findPatch answers -1 there. This is the negative
 //                      control the drill's placement refusal is built on.
-//   P4. ONE POOL      — extraction depletes the patch, clamps at zero, and never
+//   P4. ONE POOL     : extraction depletes the patch, clamps at zero, and never
 //                      over-grants.
-//   P5. SEED + DIFF   — regenerating and re-applying the recorded depletion
+//   P5. SEED + DIFF  : regenerating and re-applying the recorded depletion
 //                      reproduces the live state (DW-17 / WG-3).
 // =============================================================================
 static Vec3 unit(const Vec3& v) {

@@ -1066,12 +1066,12 @@ inline HarvestResult harvestNode(worldgen::FDepositNode& node,
 }
 
 // =============================================================================
-// §S.5 — Hand-mining an ORE PATCH through one of its outcrops (deposits.h §P).
+// §S.5: Hand-mining an ORE PATCH through one of its outcrops (deposits.h §P).
 //
 // A patch is a piece of ground with ONE pool of ore in it. An outcrop is the
 // part of that body which breaks the surface: it is what the player aims at and
 // swings at, and it is NOT a second reservoir. So this function does not
-// re-implement a single rule — it hands the outcrop the patch's own pool as its
+// re-implement a single rule: it hands the outcrop the patch's own pool as its
 // remaining amount, lets harvestNode do exactly what it does for any node (the
 // tool check, the grant, the clamp, the round-up of the last sub-unit), and then
 // takes out of the PATCH precisely what harvestNode removed from the view.

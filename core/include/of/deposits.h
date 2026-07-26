@@ -437,7 +437,7 @@ inline std::vector<FDepositNode> LayoutTestArea(const BodyParams& body,
 }  // namespace survival
 
 // =============================================================================
-// §P — ORE PATCHES: a deposit is a piece of GROUND, not a pebble on it.
+// §P: ORE PATCHES: a deposit is a piece of GROUND, not a pebble on it.
 //
 // The survival layer above scatters individual boulders you swing at until they
 // vanish. That reads as litter: a player cannot tell a resource from scenery,
@@ -480,7 +480,7 @@ namespace patches {
 // which is long enough to be a place you come back to.
 static constexpr double kUnitsPerSquareMetreM2 = 16.0;
 // Hand yields, passed to harvestNode so the tool rule is unchanged: the matching
-// tool triples the pull, and bare hands ALWAYS work (no bootstrap deadlock —
+// tool triples the pull, and bare hands ALWAYS work (no bootstrap deadlock -
 // you cannot craft a drill before you have mined anything by hand).
 static constexpr uint16_t kHandYieldBare = 3;
 static constexpr uint16_t kHandYieldTool = 9;
@@ -501,7 +501,7 @@ struct OrePatch {
   ItemId    Resource = 0;        // OPAQUE gameplay item id (WG-11)
   uint8_t   Kind = 0;            // survival::NodeKind, for art selection only
   float     Grade = 0.0f;        // peak richness in (0,1]
-  double    InitialAmount = 0.0;    // regenerates from seed — NOT saved
+  double    InitialAmount = 0.0;    // regenerates from seed: NOT saved
   double    RemainingAmount = 0.0;  // THE mutable depletion diff
   uint64_t  Shape = 0;           // drives the lobed outline
 };
@@ -569,7 +569,7 @@ inline Vec3 dirAtLocal(const OrePatch& p, double x, double y) {
   return (l > 0.0) ? Vec3(v.x / l, v.y / l, v.z / l) : p.Dir;
 }
 
-// EXTRACTION — the ONLY mutator. Grants up to RemainingAmount and clamps at 0.
+// EXTRACTION: the ONLY mutator. Grants up to RemainingAmount and clamps at 0.
 // Sub-millimetre crumbs are snapped to empty for the same reason harvestNode
 // rounds its last pull up: a patch reading 3.6e-7 is not a patch you can finish.
 inline double extract(OrePatch& p, double requested) {
@@ -581,7 +581,7 @@ inline double extract(OrePatch& p, double requested) {
   return granted;
 }
 
-// ---- §P.2 — the disc sample: what a renderer draws the patch WITH ----------
+// ---- §P.2: the disc sample: what a renderer draws the patch WITH ----------
 // One vertex of the ground skin: a unit direction and the coverage there. The
 // caller multiplies the direction by the surface oracle's radius, so the skin
 // hugs whatever the ground currently is (including a levelled or dug patch) and
@@ -612,7 +612,7 @@ inline std::vector<DiscVertex> sampleDisc(const OrePatch& p, int rings, int segs
   return out;
 }
 
-// ---- §P.3 — outcrops: the part of the ore body that breaks the surface -----
+// ---- §P.3: outcrops: the part of the ore body that breaks the surface -----
 // A patch is IN the ground, so something has to say it is there from a distance
 // and give a hand a place to swing. Outcrops are position-hashed inside the
 // lobe, denser and larger toward the rich centre, and sunk into the ground by a
@@ -650,7 +650,7 @@ inline Outcrop outcropAt(const OrePatch& p, int i) {
   return o;
 }
 
-// ---- §P.4 — the field: a deterministic patch layout around a centre --------
+// ---- §P.4: the field: a deterministic patch layout around a centre --------
 // Placement is done in METRES and converted to an angle through the body radius,
 // unlike survival::LayoutTestArea whose angular jitter is 180 m at Forge scale
 // and therefore unusable for anything a player walks across.
