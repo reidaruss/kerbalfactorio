@@ -33,7 +33,7 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 | W2 character controller, sustained-walk floating origin, LOD stitching, reversed-Z closed | done |
 | W3 sky, sun, cascaded shadows, analytic atmosphere, stream-in cross-fade, cube-face culling fix | done |
 | W4 look and feel: BatchedMesh terrain, rigged player, biome props | done |
-| **W5 voxel digging and tunnels** | **in flight: dig, mesh, collision and mouth all verified** |
+| **W5 voxel digging and tunnels** | **in flight: dig, mesh, collision, mouth and a WALKABLE tunnel all verified** |
 | **W5g gameplay slice: harvest, inventory, hand crafting, placeable furnace** | **done and driven-verified 2026-07-26** |
 | W6 building and automation in-world (also the WebGPU re-evaluation gate) | pending |
 | W7 progression: research wired to play, build costs, power | pending |
@@ -106,11 +106,21 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
   31 of 150. Crack-free holds (0 hole pixels stitched, 2 with `?stitch=0`). **`splitRatio` must
   stay below 2.0**: the metric measures the quad CENTRE, so 2.0 collapses a mountain to 108 chunks
   with no near terrain at all (ARCHITECTURE.md 15.2 item 45).
-- **W5 remaining:** the tunnel BORE is narrower than the capsule, so a tunnel extends ahead of a
-  player who cannot follow it (blocked is the safe failure). Needs wall sliding, or a wider brush.
-  The voxel re-mesh costs 27 to 69 ms and it is all surface-oracle noise evaluation inside
-  `exposedFaces`, not the greedy merge; it wants a per-column base-height cache over the dirty box
-  (15.2 item 50). Voxel edits are not yet persisted (DW-17) and not yet in the inventory UI.
+- **W5 tunnels are WALKABLE and the dig hitch is gone (2026-07-26).** Driven acceptance is
+  `tools/smoke/probes/tunnelwalk.js`, which digs a tunnel and then walks it with the dig key
+  released, so every metre it reports is pre-existing passage: **7.73 m walked, 10/10 samples
+  grounded, 10/10 on a voxel floor, 10/10 with rock overhead, 10/10 with `derivedLoweringAt` 0
+  (a trench would report metres), 0 blocked**, 899 ticks, 15 strikes landed, chunks converged.
+  Three causes, only one of which was the bore: a refused step was refusing the whole tick
+  (15.2 item 57), the capsule was one point at the feet, and a 1.2 m brush clears only two cells
+  off-lattice (item 58). Brush is now 1.5 m, the walker slides and steps up, and the capsule is
+  sampled at three heights. **Re-mesh 55.3 ms -> 5.0 ms max / 1.65 ms mean, worst frame 61.1 ->
+  3.8 ms** (item 59: memoized `isProcSolid`, a dense solidity slab in `exposedFaces`, and
+  `VoxelMesh` caching 8-cell bricks instead of re-meshing every box ever dug). Strike debris
+  (`render/DigFx.ts`) is one draw call and no new shader. Screenshot `W5_tunnel_walk.png`.
+- **W5 remaining:** voxel edits are not persisted (DW-17) and dug volume is not in the inventory
+  UI. Tunnel lighting is the near scene's ambient only, so a deep tunnel reads flat. The tunnel
+  mouth still relies on the shallow radial push, which is the one path 15.2 item 48 is about.
 - **A rebuild is not a deploy.** `web/wasm/build.ps1` writes `web/wasm/dist`; the client serves
   `web/public/wasm`, which is gitignored and only refreshed by `npm run sync-wasm`. A stale copy
   cost most of a session: the browser reproduced the exact DW-19 saturation signature that `/core`

@@ -1319,6 +1319,51 @@ Added at W4 (2026-07-25):
     Splitting them onto two keys was the obvious fix and the wrong one: a player
     looking at a tree who presses mine means the tree, and cratering the ground
     under it instead reads as the game not listening.
+57. **A refused STEP was refusing the whole TICK, and that is what made the
+    tunnel unusable.** The underground branch tested one point (the feet), and
+    on any contact it restored the previous position AND zeroed the tangential
+    velocity. Brushing a wall at a glancing angle therefore stopped the player
+    dead, so the excavation ran on ahead of someone who could not follow it and
+    the bore looked too narrow when the resolver was the actual fault.
+    `resolveDeepStep` now takes the move, climbs a ledge (0.55 / 1.1 m), or
+    slides by dropping the blocked body-frame axis. Dropping an axis is not an
+    approximation here: a voxel face is always perpendicular to a body-frame
+    axis, so the wall normal IS an axis and the drop is the exact projection
+    onto the wall plane. Measured: 0 blocked samples over a 7.73 m driven walk
+    that was previously 0 m.
+58. **A sphere brush of radius r does NOT clear 2r of bore.** `dig` removes
+    cells whose CENTRE is inside the sphere, so the bore depends on the phase of
+    the sphere against the 1 m lattice: radius 1.2 clears three cells only when
+    the centre lands near a cell centre and two otherwise, which is 2 m of
+    passage for a 1.8 m capsule. 1.5 is the smallest radius that guarantees a
+    3x3 cross-section in every phase, because a one-cell offset on two axes is
+    1.414 m (inside) and a two-cell offset is 2 m (outside). Brush radii are
+    lattice questions, not diameter questions.
+59. **Item 50 named the right cost and the wrong unit of work.** The oracle
+    inside `exposedFaces` was indeed the whole 27 to 69 ms, but a per-column
+    height cache was not available: the voxel lattice is body-frame Cartesian
+    while the surface is a function of DIRECTION, so an axis-aligned column
+    shares no exact sample. Three exact changes did it instead, and the third
+    matters most: memoize `isProcSolid` (a pure function, so the seed+diff
+    property is untouched); resolve solidity once per cell into a dense slab
+    rather than up to seven times; and stop re-meshing the UNION of every box
+    ever dug on every strike. That last one was O(tunnelLength^3) work per swing
+    for O(1) new geometry. `VoxelMesh` now caches 8-cell BRICKS on a fixed
+    disjoint lattice and re-meshes only the ones a strike touched, so the cost
+    of a swing no longer grows with the length of the tunnel at all.
+    **Measured on the same probe: 55.3 ms and a 61.1 ms worst frame, to 5.0 ms
+    max / 1.65 ms mean and a 3.8 ms worst frame.** The brick radius is
+    `(BRICK-1)/2`, not `BRICK/2`, because `exposedFaces` floors `centre +/-
+    radius`: half a brick spills one cell into the next one and every boundary
+    face is emitted, drawn, and z-fights with itself.
+60. **A probe that walks a tunnel must be stopped before it reaches daylight.**
+    The first tunnel-walk run reported `walkableTunnel false` with every sample
+    showing the eye 1.6 m ABOVE the surface: the new step-up let the player
+    climb straight back out of their own shaft, and the run ended measuring a
+    stroll across a field. The probe now walks IN first, OUT second, on a slice
+    budget short of the shaft, and asserts rock overhead plus
+    `derivedLoweringAt == 0` on every sample. This is DW-20's failure mode with
+    the numbers all present and plausible and the subject absent.
 
 ### 15.3 The dev loop, concretely
 
