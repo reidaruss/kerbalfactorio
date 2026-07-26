@@ -1364,6 +1364,64 @@ Added at W4 (2026-07-25):
     budget short of the shaft, and asserts rock overhead plus
     `derivedLoweringAt == 0` on every sample. This is DW-20's failure mode with
     the numbers all present and plausible and the subject absent.
+61. **Item 53 is CLOSED in `/core`, and the fix is "round the crumb up".** A
+    positive `RemainingAmount` below one unit now yields one unit and drains the
+    node, which is the rule `mineDeposit` already applied. The over-grant is
+    bounded by strictly less than one unit per node over its whole life, and in
+    exchange a node can be finished at all. The bridge shim that was absorbing
+    it is gone. Test: `hand_harvest_finishes_a_sub_unit_remainder`.
+62. **A flat per-swing yield cannot balance both a 30-unit tree and a 200-unit
+    coal seam.** At 2 and 5 a tree was about 15 bare swings and a seam was 40 to
+    100, which is not progression, it is a chore with a progress bar. The
+    authored constant is now SWINGS-TO-CLEAR (`gameplay.h` S.2a: 6 bare, 3 with
+    the matching tool) and the per-swing yield is DERIVED from the node's own
+    `InitialAmount`. Measured in the browser across all five kinds: bare 6
+    swings every time (tree 4/swing, rock 6, iron 29, coal 30, copper 33), tool
+    3 swings every time. The generalisation: when one number has to serve
+    content of wildly different sizes, author the PLAYER-FACING quantity and
+    derive the content-facing one, never the other way round.
+63. **One BatchedMesh per material is not automatically a win; the shadow
+    cascades multiply it.** Collapsing the 24 cloned node Groups into 8
+    per-material batches (the PropLibrary pattern, DW-11) measured **28 draw
+    calls**, no better than the clones, because every batch is redrawn in the
+    main pass and in each cascade. The six node files use eight roles but only
+    TWO shading families, and every role is an untextured flat colour, so the
+    colour is baked into a vertex attribute, the batch key is the family, and
+    everything one file draws in one family for one variant is merged into a
+    single geometry. **8 draws for the whole gameplay layer** (31 at
+    `?gameplay=0`, 39 with it), surface total 39 to 40 of 150. The rule: the
+    batch key is the SHADING FAMILY, and the material count only bounds it.
+64. **An all-hidden BatchedMesh still costs its draw call.** Both effect systems
+    are idle almost all of the time, so they set `visible` from their live count.
+65. **Reach measured to a pivot is not reach.** A tree's origin is on the ground
+    and the eye is 1.6 m above it, so a player at a natural chopping distance
+    was 4.13 m from the pivot against a 4.0 m reach: the trunk filled the screen
+    and the swing was refused, with nowhere closer to stand. Item 55 raised and
+    widened the pick SPHERE and did not touch the RANGE test, which is the same
+    bug one line further down. Reach now subtracts the node's own radius.
+66. **The .glb shipped the furnace's fire and smoke and nothing consumed them.**
+    `Furnace_FireCard` on its own `OF_EmissiveState` slot, `socket_smoke` on the
+    flue, and a 180-frame flicker clip whose length IS `ticksPerSmeltFor`. The
+    furnace was 180 ticks of a progress bar with a static machine underneath it.
+    Three traps on the way in, all worth stating: (a) `of_lib` names every
+    material `OF_<Role>`, so a match on the bare role name silently finds
+    nothing, and the role ships a WHITE emissive at full strength, so the
+    unclaimed card draws as a white rectangle that reads as a hole in the mesh;
+    (b) ACES at exposure 1 pushes an emissive much past 1 to white, so 2.6 was
+    still white and 1.15 is orange; (c) `Object3D.clone(true)` SHARES materials,
+    so without a per-machine clone the first furnace to light lights every
+    furnace ever placed, including the cold ones.
+67. **Standing a machine on the ground normal is only half a placement.** The
+    fire card is recessed in the mouth, so a machine dropped at an arbitrary yaw
+    shows the player its blank back and the one signal that says "this is
+    working" is invisible from where they are standing. The mouth now yaws
+    towards whoever placed it.
+68. **The same key read as an edge in one branch and as a level in another.**
+    E closed the furnace panel on the tick it was pressed and the still-held key
+    reopened it on the next, because the "panel is open" branch edge-detected
+    the mine key and the "aiming at a machine" branch did not. The panel could
+    not be closed by the key that opened it. One edge, computed once at the top
+    of the tick, used by every branch.
 
 ### 15.3 The dev loop, concretely
 

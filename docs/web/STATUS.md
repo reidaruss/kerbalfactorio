@@ -57,15 +57,55 @@ take the iron out when it has smelted.
 Every rule is `/core`'s: `web/wasm/of_core_api.cpp` section 9 is a flat C shim
 over `gameplay.h` (`Inventory`, `harvestNode`, `HandCrafter`, `Furnace`) and the
 browser holds no opinion the headless suites do not. Parity CASE 9 covers it:
-self-determinism 29 -> 84 assertions.
+self-determinism 29 -> 88 assertions.
 
 Screenshots: `docs/screenshots/W5_harvest.png`, `W5_inventory.png`,
 `W5_crafting.png`, `W5_furnace.png`. Probes:
 `web/tools/smoke/probes/{harvest,inventory,furnace}.js`.
 
-**Known:** draw calls 156 to 165 against the 150 budget with the clearing on
-screen, because each node is a cloned mesh rather than a `BatchedMesh` instance
-(DW-11 says it should be the latter). `?gameplay=0` isolates it.
+## W6 gameplay feel (2026-07-26)
+
+The slice worked and read as a spreadsheet with a tree in front of it. Four
+things changed, all driven-verified.
+
+**`/core` can finish a node.** `harvestNode` truncated the last sub-unit
+remainder to a `uint16` 0, so every node in the world parked just above empty
+for ever (ARCHITECTURE 15.2 item 61). A positive remainder now rounds up to one
+unit and drains the node. 22/22 ctest green.
+
+**Balance.** Swings-to-clear is the authored constant (`gameplay.h` S.2a: 6
+bare handed, 3 with the matching tool) and the per-swing yield is derived from
+the node's own size, because a flat yield cannot serve both a 30-unit tree and
+a 200-unit coal seam. Measured in the browser: bare 6 swings for every kind
+(tree 4/swing, rock 6, iron 29, coal 30, copper 33), tool 3 swings for every
+kind. One swing at a tree plus one at an iron node buys BOTH tools, so the
+no-deadlock property is now a tested claim, not an assertion.
+
+**Impact.** The grant already fired on the authored impact frame (17 of 33);
+the feedback now hangs off it. Chips in the resource's own palette colour, a
+squash-and-wobble on the node, a camera kick applied as the per-tick difference
+of an authored pitch curve (so the offsets sum to zero and the aim cannot
+drift), and a coloured `+N Item` popping out of a blooming crosshair.
+
+**The furnace does visible work.** The emissive fire card and `socket_smoke`
+the .glb has always shipped are wired to /core's furnace state in three states:
+burning, embers (fuel but nothing to smelt), cold. The mouth turns to face
+whoever placed the machine, because the fire is only visible from that side.
+
+**Draw calls: the clearing costs 8, not 25.** 31 at `?gameplay=0`, 39 with the
+whole gameplay layer on screen, against a 150 budget. Two `BatchedMesh`es for
+all 24 nodes (per-material was measured at 28 and gave the saving back to the
+shadow cascades: ARCHITECTURE 15.2 item 63).
+
+Screenshots: `docs/screenshots/W6_harvest_impact.png`, `W6_furnace_lit.png`.
+Probes: `web/tools/smoke/probes/{impact,furnacelit,balance}.js`, all
+`valid: true`.
+
+**Known, and not gameplay's to fix:** the walk stalls about 3.8 m short of a
+node and will not close further (`grounded true`, `blockedByRock false`, slope
+11 deg), which is why reach is now measured to the node rather than to its
+pivot. `probes/impact.js` logs the per-iteration distance for whoever owns the
+character controller.
 
 ## Commands
 
