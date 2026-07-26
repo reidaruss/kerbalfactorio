@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import type { DepthPolicy } from './DepthPolicy.js';
 import type { Vec3d } from '../world/PlanetBody.js';
-import { FAR_SCALE, LAYER_PLAYER_BODY } from './Scenes.js';
+import { FAR_SCALE, LAYER_PLAYER_BODY, LAYER_PROPS } from './Scenes.js';
 
 export class CameraRig {
   /** Pass 1. Rotation only: never translated, so the sky is at infinity. */
@@ -32,6 +32,7 @@ export class CameraRig {
     // (section 3.4), which is the M3.1b "FP black slab self-shadow" bug fixed by
     // construction instead of by a workaround.
     this.nearCam.layers.enable(LAYER_PLAYER_BODY);
+    this.nearCam.layers.enable(LAYER_PROPS);
   }
 
   /** FP disables the layer on the CAMERA, never on the object. */

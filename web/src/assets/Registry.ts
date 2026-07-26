@@ -56,8 +56,18 @@ export interface PropSpec {
   readonly jitter: number;
 }
 
+/**
+ * DENSITY_SCALE turns the per-prop figures below (which are written as "how
+ * common is this relative to its neighbours") into instances per square
+ * kilometre. It is 6 because 1x was measured and looked like scrub: three props
+ * per 784 m^2 cell, which is one every 16 m and reads as an empty field with
+ * litter on it. 6x is about one prop per 4 m^2 inside the scatter radius, which
+ * is what makes a biome read as a place rather than as a texture.
+ */
+const DENSITY_SCALE = 6;
+
 const P = (stem: string, collides: boolean, density: number, jitter = 0.25): PropSpec =>
-  ({ stem, collides, density, jitter });
+  ({ stem, collides, density: density * DENSITY_SCALE, jitter });
 
 export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [
   [P('Ocean_Kelp', false, 900), P('Ocean_SeabedRock', true, 400)],

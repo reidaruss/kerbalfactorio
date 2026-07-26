@@ -48,7 +48,8 @@ export class SkyIbl {
       const t0 = performance.now();
       const next = this.renderer.environmentFrom(skyScene);
       if (next !== null) {
-        this.texture?.dispose();
+        // NOT disposed here: the renderer seam owns the render target the
+        // texture belongs to, and disposing the texture alone leaks the target.
         this.texture = next;
         for (const t of this.targets) t.environment = next;
         this.builds++;
@@ -67,5 +68,5 @@ export class SkyIbl {
     };
   }
 
-  dispose(): void { this.texture?.dispose(); this.texture = null; }
+  dispose(): void { this.texture = null; }
 }

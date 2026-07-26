@@ -21,15 +21,23 @@ import { BIOME_PROPS, type PropSpec } from '../assets/Registry.js';
 /** 33x33 vertices, so 32 cells a side. /core fixes this (kGridDim). */
 const DIM = 33;
 const CELLS = DIM - 1;
-/** Vertex spacing above which a chunk is too coarse to scatter onto. */
-const MAX_CELL_M = 14;
+/**
+ * Vertex spacing above which a chunk is too coarse to scatter onto. MEASURED,
+ * not chosen: the streamer reaches depth 11 under a walking player at maxDepth
+ * 12, and a depth-11 chunk is about 900 m across, so its cell is about 28 m.
+ * A 14 m limit rejected every chunk in the world and the first run scattered
+ * exactly nothing while reporting success. DW-19's finer LOD is what shrinks
+ * this, and the prop's own placement error shrinks with it.
+ */
+const MAX_CELL_M = 40;
 /** Instances per chunk ceiling, and how far from the eye scatter reaches. */
-const MAX_PER_CHUNK = 260;
-const RADIUS_M = 190;
+const MAX_PER_CHUNK = 2600;
+const MAX_PER_CELL = 20;
+const RADIUS_M = 170;
 /** cos of the steepest ground a prop will stand on (about 40 degrees). */
 const MIN_SLOPE_COS = 0.76;
 /** Screen-space-free LOD: props past this distance draw their LOD2 geometry. */
-const LOD2_M = 55;
+const LOD2_M = 45;
 
 interface Placed {
   /** Flattened [material, slot] pairs; -1 slot means the batch was full. */
@@ -64,6 +72,7 @@ export class Scatter {
   private readonly n = new THREE.Vector3();
   private readonly p = new THREE.Vector3();
   private readonly s = new THREE.Vector3();
+  private readonly spin = new THREE.Quaternion();
   private readonly eye = new THREE.Vector3();
   chunksScattered = 0;
   lastBuildMs = 0;
@@ -125,15 +134,14 @@ export class Scatter {
     const weights = specs.map((s) => s.density);
     const total = weights.reduce((a, b) => a + b, 0);
     const want = Math.min(MAX_PER_CHUNK,
-      Math.round(total * areaKm2 * this.densityScale));
-    if (want <= 0) return;
-    const pl = this.sample(v, specs, weights, total, want, pos);
+      Math.max(1, Math.round(total * areaKm2 * this.densityScale)));
+    const pl = this.sample(v, specs, weights, total, want, pos, cell);
     if (pl !== null) { this.placed.set(v.key, pl); this.write(v, pl); }
   }
 
   private sample(
     v: ChunkView, specs: readonly PropSpec[], weights: number[], total: number,
-    want: number, pos: Float32Array,
+    want: number, pos: Float32Array, cell: number,
   ): Placed | null {
     const nrm = this.pool.batch(v.pooled).normals(v.pooled.slot);
     const base = keyHash(v.key);
@@ -147,43 +155,56 @@ export class Scatter {
     const ar = Math.hypot(a.x, a.y, a.z) || 1;
     const upx = a.x / ar, upy = a.y / ar, upz = a.z / ar;
     let n = 0;
-    for (let k = 0; k < want; ++k) {
-      const h0 = hash32(base, k * 4);
-      const cx = h0 % CELLS;
-      const cy = ((h0 / CELLS) | 0) % CELLS;
-      const u = frac(hash32(base, k * 4 + 1));
-      const w = frac(hash32(base, k * 4 + 2));
-      const i00 = (cy * DIM + cx) * 3;
-      const i10 = i00 + 3;
-      const i01 = i00 + DIM * 3;
-      const i11 = i01 + 3;
-      // Bilinear inside the cell: the prop sits ON the rendered triangle pair.
-      const bx = this.bilerp(pos, i00, i10, i01, i11, 0, u, w);
-      const by = this.bilerp(pos, i00, i10, i01, i11, 1, u, w);
-      const bz = this.bilerp(pos, i00, i10, i01, i11, 2, u, w);
-      // Slope from /core's own stored vertex normal, decoded from int8.
-      const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      if ((nx * upx + ny * upy + nz * upz) / nl < MIN_SLOPE_COS) continue;
-      const spec = this.pick(specs, weights, total, hash32(base, k * 4 + 3));
-      const list = this.lib.partsOf(spec.stem);
-      if (list === null) continue;
-      local[n * 3] = bx; local[n * 3 + 1] = by; local[n * 3 + 2] = bz;
-      // Stand it on the SURFACE normal, then spin it about that normal.
-      this.n.set(nx / nl, ny / nl, nz / nl);
-      this.q.setFromUnitVectors(this.up, this.n);
-      this.q.multiply(new THREE.Quaternion().setFromAxisAngle(
-        this.up, frac(hash32(base, k * 4 + 5)) * Math.PI * 2));
-      quat[n * 4] = this.q.x; quat[n * 4 + 1] = this.q.y;
-      quat[n * 4 + 2] = this.q.z; quat[n * 4 + 3] = this.q.w;
-      scale[n] = 1 + (frac(hash32(base, k * 4 + 6)) * 2 - 1) * spec.jitter;
-      for (const part of list) {
-        const slot = this.lib.acquire(part.material);
-        if (slot < 0) continue;
-        parts.push({ material: part.material, slot, lod0: part.lod0, lod2: part.lod2 });
-        owner.push(n);
+    // Walk CELLS, not the whole chunk. A depth-11 chunk is 900 m across and the
+    // scatter radius is 190 m, so a uniform draw over the chunk would put nine
+    // props in ten outside the radius and the ground under the player would
+    // read as empty. Per-cell placement also makes density mean what it says:
+    // instances per square kilometre of GROUND, independent of chunk depth.
+    const cellArea = cell * cell;
+    const perCell = Math.min(MAX_PER_CELL,
+      Math.max(0, Math.round(total * (cellArea / 1e6) * this.densityScale)));
+    const r2 = RADIUS_M * RADIUS_M;
+    for (let cy = 0; cy < CELLS && n < want; ++cy) {
+      for (let cx = 0; cx < CELLS && n < want; ++cx) {
+        const i00 = (cy * DIM + cx) * 3;
+        const dx = v.pos.x + pos[i00] - this.eye.x;
+        const dy = v.pos.y + pos[i00 + 1] - this.eye.y;
+        const dz = v.pos.z + pos[i00 + 2] - this.eye.z;
+        if (dx * dx + dy * dy + dz * dz > r2) continue;
+        // Slope from /core's own stored vertex normal, decoded from int8.
+        const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        if ((nx * upx + ny * upy + nz * upz) / nl < MIN_SLOPE_COS) continue;
+        const i10 = i00 + 3;
+        const i01 = i00 + DIM * 3;
+        const i11 = i01 + 3;
+        const seed = base ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
+        for (let k = 0; k < perCell && n < want; ++k) {
+          const u = frac(hash32(seed, k * 4));
+          const w = frac(hash32(seed, k * 4 + 1));
+          const spec = this.pick(specs, weights, total, hash32(seed, k * 4 + 2));
+          const list = this.lib.partsOf(spec.stem);
+          if (list === null) continue;
+          local[n * 3] = this.bilerp(pos, i00, i10, i01, i11, 0, u, w);
+          local[n * 3 + 1] = this.bilerp(pos, i00, i10, i01, i11, 1, u, w);
+          local[n * 3 + 2] = this.bilerp(pos, i00, i10, i01, i11, 2, u, w);
+          // Stand it on the SURFACE normal, then spin it about that normal.
+          this.n.set(nx / nl, ny / nl, nz / nl);
+          this.q.setFromUnitVectors(this.up, this.n);
+          this.spin.setFromAxisAngle(this.up, frac(hash32(seed, k * 4 + 3)) * Math.PI * 2);
+          this.q.multiply(this.spin);
+          quat[n * 4] = this.q.x; quat[n * 4 + 1] = this.q.y;
+          quat[n * 4 + 2] = this.q.z; quat[n * 4 + 3] = this.q.w;
+          scale[n] = 1 + (frac(hash32(seed, k * 4 + 5)) * 2 - 1) * spec.jitter;
+          for (const part of list) {
+            const slot = this.lib.acquire(part.material);
+            if (slot < 0) continue;
+            parts.push({ material: part.material, slot, lod0: part.lod0, lod2: part.lod2 });
+            owner.push(n);
+          }
+          n++;
+        }
       }
-      n++;
     }
     if (n === 0) { for (const p of parts) this.lib.release(p.material, p.slot); return null; }
     return {

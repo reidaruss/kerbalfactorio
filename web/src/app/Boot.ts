@@ -186,7 +186,6 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // Every atlas, not just the biome under the observer: a walk crosses biome
   // boundaries continuously and a mid-walk fetch would hitch. Ten files, 392 kB.
   const props = await PropLibrary.load(cfg.props ? BIOME_ATLAS : [], scenes.near);
-  props.arm();
   const scatter = new Scatter(props, t.pool, cfg.props, cfg.density);
 
   const boot: BootMetrics = {

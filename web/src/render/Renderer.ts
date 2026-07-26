@@ -73,6 +73,7 @@ class WebGLSeam implements OFRenderer {
   readonly caps: RendererCaps;
   readonly depth: DepthPolicy;
   private pmrem: THREE.PMREMGenerator | null = null;
+  private envTarget: THREE.WebGLRenderTarget | null = null;
 
   constructor(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs) {
     const dp = depthRendererParams(cfg, q.tier);
@@ -156,7 +157,17 @@ class WebGLSeam implements OFRenderer {
     // fromScene renders the scene into a small cube and pre-filters it. The sky
     // box is centred on the origin and the sky camera never translates, so the
     // default 0.1 to 100 range covers it exactly.
-    return this.pmrem.fromScene(scene, 0, 0.1, 100).texture;
+    //
+    // It ALLOCATES A NEW RENDER TARGET every call and offers no way to reuse
+    // one, so the previous target is disposed here rather than in SkyIbl:
+    // disposing only the .texture leaks the target, and the leak is not subtle.
+    // Measured before this line existed: renderer.info.memory.textures climbing
+    // past 50 and the near pass at 170 ms. 64 is section 7.1's size, and at
+    // 64^2 the whole rebuild is under the measurement floor.
+    const next = this.pmrem.fromScene(scene, 0, 0.1, 100, { size: 64 });
+    this.envTarget?.dispose();
+    this.envTarget = next;
+    return next.texture;
   }
 
   readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void {
@@ -166,7 +177,7 @@ class WebGLSeam implements OFRenderer {
     gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
   }
 
-  dispose(): void { this.pmrem?.dispose(); this.r.dispose(); }
+  dispose(): void { this.envTarget?.dispose(); this.pmrem?.dispose(); this.r.dispose(); }
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs): OFRenderer {

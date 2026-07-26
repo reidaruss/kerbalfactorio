@@ -9,6 +9,13 @@ export const FAR_SCALE = 1e-5;
 export const LAYER_DEFAULT = 0;
 export const LAYER_PLAYER_BODY = 1;
 export const LAYER_SHADOW_ONLY = 2;
+/**
+ * Biome props. They live on their own layer for ONE reason: a shadow camera
+ * tests layer 0 only unless told otherwise (section 15.2 item 24), so putting
+ * them here lets cascade 0 see them and cascades 1 and 2 not. A 0.4 m rock
+ * casting into a 300 m cascade is a texel.
+ */
+export const LAYER_PROPS = 3;
 
 export class Scenes {
   /** Pass 1: stars, sun disc, atmosphere quad. Rotation-only camera. */

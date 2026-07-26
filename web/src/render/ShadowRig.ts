@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import type { QualityKnobs } from './Quality.js';
-import { LAYER_PLAYER_BODY } from './Scenes.js';
+import { LAYER_PLAYER_BODY, LAYER_PROPS } from './Scenes.js';
 
 /** Cascade far planes in metres, for the 3-cascade tiers. */
 const SPLITS_3 = [22, 80, 300];
@@ -67,7 +67,10 @@ export class ShadowRig {
       // slots plus a three-material tool), so letting all three cascades see him
       // is 27 shadow draws for a 1.8 m object, and cascades 1 and 2 cover 80 m
       // and 300 m where he is a handful of texels. Measured: 45 draw calls to 27.
-      if (i === 0) light.shadow.camera.layers.enable(LAYER_PLAYER_BODY);
+      if (i === 0) {
+        light.shadow.camera.layers.enable(LAYER_PLAYER_BODY);
+        light.shadow.camera.layers.enable(LAYER_PROPS);
+      }
       light.name = `shadowCascade${i}`;
       scene.add(light);
       scene.add(light.target);

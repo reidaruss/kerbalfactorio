@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
+import { LAYER_PROPS } from '../Scenes.js';
 
 /** One primitive of one prop: which batch it lives in, and its two LOD ids. */
 export interface PropPart {
@@ -25,9 +26,11 @@ export interface PropPart {
 interface Batch {
   mesh: THREE.BatchedMesh;
   free: number[];
+  /** Slots ever handed out: the batch's high-water mark, not its live count. */
+  live: number;
 }
 
-const CAPACITY = 2600;
+const CAPACITY = 7000;
 /** Props are small; a 33^2 chunk's worth of geometry is a few thousand verts. */
 const MAX_VERTS = 60000;
 
@@ -109,25 +112,32 @@ export class PropLibrary {
     mesh.name = `props:${name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    // The batch spans the whole scatter radius, so an object-level test is
-    // meaningless; per-INSTANCE culling is the one that matters and is default.
     mesh.frustumCulled = false;
-    const batch: Batch = { mesh, free: [] };
+    mesh.layers.set(LAYER_PROPS);
+    // BOTH per-instance culling and sorting are OFF, and that is a MEASUREMENT
+    // against section 6.2, which says per-instance frustum culling "matters most
+    // here". For 150-triangle props it costs far more than it saves.
+    // BatchedMesh.onBeforeRender walks every live slot once per pass (main plus
+    // three shadow cascades) doing a getMatrixAt, a bounding-sphere copy, a
+    // transform and a frustum test: 9,340 props over four passes measured
+    // 8.2 ms of near-pass CPU with sorting and 11.1 ms without. With all three
+    // flags false the method EARLY-RETURNS unless visibility changed, so the
+    // steady-state cost is zero and the scatter ring redraws about twice the
+    // triangles it needs to. That trade is worth taking at this triangle count
+    // and stops being worth it for the factory's larger meshes at W6.
+    mesh.sortObjects = false;
+    mesh.perObjectFrustumCulled = false;
+    const batch: Batch = { mesh, free: [], live: 0 };
     this.batches.set(name, batch);
     return batch;
   }
 
-  /** Prime the instance slots. Called once, after every geometry is registered. */
-  arm(): void {
-    for (const b of this.batches.values()) {
-      for (let i = 0; i < CAPACITY; ++i) {
-        const id = b.mesh.addInstance(0);
-        b.mesh.setVisibleAt(id, false);
-        b.free.push(id);
-      }
-      b.free.reverse();
-    }
-  }
+  /**
+   * Slots are allocated LAZILY and never deleted, so a batch's instance array
+   * only ever reaches its own high-water mark. Priming all 7,000 up front cost
+   * 2.5 s at boot and, worse, made every frame walk 70,000 slots across ten
+   * batches when the scene held 9,000 props in five of them.
+   */
 
   partsOf(stem: string): readonly PropPart[] | null { return this.parts.get(stem) ?? null; }
   get propCount(): number { return this.parts.size; }
@@ -136,10 +146,13 @@ export class PropLibrary {
 
   acquire(material: string): number {
     const b = this.batches.get(material);
-    const i = b?.free.pop();
-    if (i === undefined) { this.exhausted++; return -1; }
+    if (b === undefined) return -1;
+    const reused = b.free.pop();
+    if (reused !== undefined) { this.instancesLive++; return reused; }
+    if (b.live >= CAPACITY) { this.exhausted++; return -1; }
+    b.live++;
     this.instancesLive++;
-    return i;
+    return b.mesh.addInstance(0);
   }
 
   release(material: string, slot: number): void {
