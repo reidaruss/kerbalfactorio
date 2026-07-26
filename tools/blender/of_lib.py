@@ -33,6 +33,7 @@ Naming inside a file:
 import json
 import math
 import os
+import struct
 import sys
 
 import bpy
@@ -304,6 +305,11 @@ class MeshBuilder:
         # changes.
         self.vert_bones = []
         self._bind = None
+        # Per-vertex UVs, None unless a caller supplies them. Only ONE asset
+        # has UVs at all (the Tier-2 engine plume, whose whole point is a
+        # length gradient a shader reads); a mesh with no UVs exports with no
+        # TEXCOORD_0 accessor, so the 37 untextured files are untouched.
+        self.uvs = []
 
     def bind(self, bones):
         """Set the bone whitelist applied to every vertex added AFTER this call.
@@ -325,18 +331,19 @@ class MeshBuilder:
             self.roles.append(role)
         return self.roles.index(role)
 
-    def _add(self, v, f, sm, role):
+    def _add(self, v, f, sm, role, uvs=None):
         base = len(self.verts)
         ri = self._role_index(role)
         self.verts.extend(v)
         self.vert_bones.extend([self._bind] * len(v))
+        self.uvs.extend(list(uvs) if uvs else [None] * len(v))
         for face, s in zip(f, sm):
             self.faces.append(tuple(i + base for i in face))
             self.smooth.append(s)
             self.face_role.append(ri)
         return self
 
-    def add_raw(self, verts, faces, smooth=None, role="Steel"):
+    def add_raw(self, verts, faces, smooth=None, role="Steel", uvs=None):
         """Append an arbitrary vertex/face list under one role.
 
         The escape hatch for shapes the named primitives cannot express: rock
@@ -344,10 +351,26 @@ class MeshBuilder:
         locally; the builder rebases them. Every vertex in `verts` must be
         referenced by some face, because mesh.validate() deletes loose
         vertices and that would silently desync the reported triangle count
-        from the exported one."""
+        from the exported one.
+
+        `uvs` is one (u, v) per vertex. Omit it and the mesh exports with no
+        TEXCOORD_0 at all, which is what every Tier-0 and Tier-1 asset does."""
         if smooth is None:
             smooth = [False] * len(faces)
-        return self._add(verts, faces, smooth, role)
+        return self._add(verts, faces, smooth, role, uvs)
+
+    def bounds(self):
+        """(lo, hi) of the accumulated vertices. The build scripts print this
+        so the number written into contracts.json is a MEASURED one, and a part
+        whose declared dimensions drifted is caught before the exporter runs
+        rather than by the validator afterwards."""
+        lo = [1e30] * 3
+        hi = [-1e30] * 3
+        for p in self.verts:
+            for k in range(3):
+                lo[k] = min(lo[k], p[k])
+                hi[k] = max(hi[k], p[k])
+        return lo, hi
 
     def box(self, size, loc=(0, 0, 0), role="Steel", rot_z=0.0):
         return self._add(*_box_data(size, loc, rot_z), role)
@@ -409,6 +432,11 @@ class MeshBuilder:
         for poly, ri, sm in zip(mesh.polygons, self.face_role, self.smooth):
             poly.material_index = ri
             poly.use_smooth = sm
+        if any(uv is not None for uv in self.uvs):
+            layer = mesh.uv_layers.new(name="UVMap")
+            for loop in mesh.loops:
+                uv = self.uvs[loop.vertex_index]
+                layer.data[loop.index].uv = uv if uv is not None else (0.0, 0.0)
         mesh.update()
         obj = bpy.data.objects.new(name, mesh)
         bpy.context.scene.collection.objects.link(obj)
@@ -894,7 +922,58 @@ def _supported(kwargs):
     return ok, dropped
 
 
-def export_glb(filepath, **overrides):
+def _dedupe_socket_names(filepath):
+    """Strip Blender's '.001' uniquifying suffix from exported SOCKET nodes.
+
+    WHY THIS HAS TO EXIST (Tier 2). Socket names are a runtime contract:
+    every rocket part exposes `socket_stack_top`, and the engine finds it with
+    part.getObjectByName('socket_stack_top') on the CLONED PART, not on the
+    file. But bpy.data.objects names are unique across the whole blend file,
+    so the second part to ask for that name gets `socket_stack_top.001` and
+    the thirteenth gets `.012`, and the contract quietly evaporates. glTF node
+    names are non-normative and duplicates are legal, so the fix belongs at
+    export time and nowhere else.
+
+    Deliberately narrow: only nodes whose stem starts with 'socket_' are
+    renamed, so a mesh or a proxy that ever picks up a suffix still shows it
+    (that would be a genuine bug, not a scoping artefact). Off by default, so
+    the 37 Tier-0 and Tier-1 files export byte-identically.
+    """
+    import re
+    with open(filepath, "rb") as fh:
+        data = fh.read()
+    _, _, total = struct.unpack_from("<4sII", data, 0)
+    off, chunks = 12, []
+    while off + 8 <= len(data):
+        clen, ctype = struct.unpack_from("<I4s", data, off)
+        off += 8
+        chunks.append((ctype, data[off:off + clen]))
+        off += clen + ((4 - clen % 4) % 4 if clen % 4 else 0)
+    pat = re.compile(r"^(socket_.*)\.\d{3}$")
+    out, n = [], 0
+    for ctype, payload in chunks:
+        if ctype != b"JSON":
+            out.append((ctype, payload))
+            continue
+        gltf = json.loads(payload.decode("utf-8"))
+        for node in gltf.get("nodes", []):
+            m = pat.match(node.get("name", ""))
+            if m:
+                node["name"] = m.group(1)
+                n += 1
+        out.append((ctype, json.dumps(gltf, separators=(",", ":"),
+                                      ensure_ascii=False).encode("utf-8")))
+    body = b""
+    for ctype, payload in out:
+        pad = (4 - len(payload) % 4) % 4
+        payload = payload + (b" " if ctype == b"JSON" else b"\x00") * pad
+        body += struct.pack("<I4s", len(payload), ctype) + payload
+    with open(filepath, "wb") as fh:
+        fh.write(struct.pack("<4sII", b"glTF", 2, 12 + len(body)) + body)
+    print("[of_lib] de-suffixed %d socket node name(s)" % n)
+
+
+def export_glb(filepath, dedupe_socket_names=False, **overrides):
     """Write the whole scene to a .glb under the pinned export contract."""
     filepath = os.path.abspath(filepath)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -904,6 +983,8 @@ def export_glb(filepath, **overrides):
     if dropped:
         print("[of_lib] note: this Blender ignores %s" % ", ".join(dropped))
     bpy.ops.export_scene.gltf(filepath=filepath, **settings)
+    if dedupe_socket_names:
+        _dedupe_socket_names(filepath)
     size = os.path.getsize(filepath)
     print("[of_lib] wrote %s (%d bytes)" % (filepath, size))
     return filepath

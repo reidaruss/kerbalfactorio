@@ -116,6 +116,45 @@ class Parts:
                      p[2] * s[2] + o[2]) for p in g[0]]
         return self
 
+    def translate(self, dx=0.0, dy=0.0, dz=0.0):
+        """Shift the pile. Tier 2 needs this because a rocket part is authored
+        ONCE in its own local frame and then placed several times: the landed
+        lander is four copies of the same landing leg at four azimuths, and a
+        part that could only be built at its final coordinates would have to be
+        a different function per placement."""
+        return self.apply(((1.0, 1.0, 1.0), (dx, dy, dz)))
+
+    def rotate(self, axis, deg, pivot=(0.0, 0.0, 0.0)):
+        """Rotate the pile about a world axis through `pivot`.
+
+        fit()/apply() carry scale and offset only, which was enough for Tier 0
+        and Tier 1 because nothing there was ever placed at an angle. A vessel
+        is: legs sit at four azimuths about the stack axis, and a landing foot
+        pad has to be authored pre-rotated so that it lands FLAT once the
+        deploy clip has swung the leg out."""
+        a = math.radians(deg)
+        c, s = math.cos(a), math.sin(a)
+        ax = axis.upper()
+        if ax == "Z":
+            def f(x, y, z):
+                return (x * c - y * s, x * s + y * c, z)
+        elif ax == "Y":
+            def f(x, y, z):
+                return (x * c + z * s, y, -x * s + z * c)
+        elif ax == "X":
+            def f(x, y, z):
+                return (x, y * c - z * s, y * s + z * c)
+        else:
+            raise ValueError("axis must be X, Y or Z (got %r)" % axis)
+        px, py, pz = pivot
+        for g in self.groups:
+            out = []
+            for p in g[0]:
+                q = f(p[0] - px, p[1] - py, p[2] - pz)
+                out.append((q[0] + px, q[1] + py, q[2] + pz))
+            g[0] = out
+        return self
+
     def fit(self, size, base_z=0.0):
         """Scale and shift so the AABB is exactly `size`, centred on X/Y with
         its base at `base_z`. That is the pivot rule from ASSET-SPECS 2.1, made

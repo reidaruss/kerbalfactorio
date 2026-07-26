@@ -362,6 +362,45 @@ def validate(asset, spec, verbose=False):
         r.check("parts", not bad, "%d checked%s"
                 % (len(parts), "" if not bad else "; " + "; ".join(bad)))
 
+    # --- per-part sockets: the Tier-2 stack contract, made checkable --------
+    # rocket_parts.glb holds thirteen parts and thirteen socket_stack_top
+    # nodes, so the flat `sockets` list below proves only that ONE of them
+    # exists. What the engine actually binds to is "this part's stack top is
+    # at this height on the stack axis", and that is what this checks: the
+    # socket must be a DESCENDANT of the named part group, and must land on
+    # the declared position in three.js axes. It is the check that would
+    # catch a part whose height and whose mating plane silently disagree.
+    part_sockets = spec.get("part_sockets", {})
+    if part_sockets:
+        nodes_j = gltf.get("nodes", [])
+        bad = []
+        for group, socks in sorted(part_sockets.items()):
+            if group not in by_name:
+                bad.append("%s missing" % group)
+                continue
+            found = {}
+
+            def collect(i):
+                nm, m, _ = walked[i]
+                found.setdefault(nm, m)
+                for c in nodes_j[i].get("children", []):
+                    collect(c)
+
+            collect(by_name[group])
+            for sname in sorted(socks):
+                want_p = socks[sname]
+                if sname not in found:
+                    bad.append("%s: %s is not under it" % (group, sname))
+                    continue
+                m = found[sname]
+                got = [m[12], m[13], m[14]]
+                if any(abs(got[k] - want_p[k]) > tol for k in range(3)):
+                    bad.append("%s/%s at %s want %s"
+                               % (group, sname, [round(v, 4) for v in got],
+                                  want_p))
+        r.check("part_sockets", not bad, "%d part(s)%s"
+                % (len(part_sockets), "" if not bad else "; " + "; ".join(bad)))
+
     # --- materials: budget + every name is a palette role ---
     mats = [m.get("name", "") for m in gltf.get("materials", [])]
     bad = [m for m in mats if not m.startswith("OF_")]
