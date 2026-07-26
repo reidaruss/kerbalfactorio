@@ -37,11 +37,16 @@
   const dLon = (((w.observer.lonDeg - t0.observer.lonDeg) * Math.PI) / 180)
     * Math.cos((t0.observer.latDeg * Math.PI) / 180);
 
-  // Every resident chunk, nearest-first. meshPos is camera-relative engine
-  // metres for near chunks, so |meshPos| IS the distance to the camera.
+  // Every resident chunk, nearest-first. meshPos is RENDER space, and so is
+  // eyeRel; ranking by |meshPos| alone measures distance from the floating
+  // ORIGIN, which had drifted 549 m from the camera here and returned a
+  // depth-12 chunk as "the feet" while depth-14 chunks were underfoot.
+  const eye = w.eyeRel;
+  const dist = (c) => Math.hypot(c.meshPos[0] - eye[0], c.meshPos[1] - eye[1],
+    c.meshPos[2] - eye[2]);
   const all = of.chunks(4096, false);
   const near = all.filter((c) => c.near && c.visible);
-  near.sort((a, b) => Math.hypot(...a.meshPos) - Math.hypot(...b.meshPos));
+  near.sort((a, b) => dist(a) - dist(b));
   const feet = near[0] ?? null;
 
   // Histogram of achieved cell size across the near band, so "2 m at the feet"
@@ -60,7 +65,12 @@
 
   return {
     // --- DW-20 validity gate: read this BEFORE any number below it.
-    valid: ticks > 0 && metres > 1 && built > 0 && feet !== null,
+    // chunksBuilt is reported but NOT required: at the coarse baseline a
+    // depth-11 quad is 463 m across, so a 500 m walk can legitimately stay
+    // inside one chunk and build nothing. `builtOrStationarySet` says which of
+    // the two happened, so a zero can never be mistaken for a stalled worker.
+    valid: ticks > 0 && metres > 1 && feet !== null && w.chunks.resident > 0,
+    builtOrStationarySet: built > 0 ? 'built' : 'set unchanged (no boundary crossed)',
     drove: {
       ticksAdvanced: ticks,
       metresWalked: +metres.toFixed(1),
@@ -73,7 +83,12 @@
     feet: feet && {
       key: feet.key, depth: feet.depth, biome: feet.biome,
       measuredCellM: feet.cellM,
-      camDistM: Math.round(Math.hypot(...feet.meshPos)),
+      camDistM: Math.round(dist(feet)),
+      // A chunk is `cellM * 32` across, so the leaf the player is standing IN
+      // must have its centre within half a diagonal. If this is false the
+      // "feet" chunk is a neighbour and the cell size below is not the one
+      // under the player.
+      containsFeet: dist(feet) <= feet.cellM * 32 * 0.7072,
     },
     finestNearCellM: near.length ? Math.min(...near.map((c) => c.cellM)) : null,
     coarsestNearCellM: near.length ? Math.max(...near.map((c) => c.cellM)) : null,

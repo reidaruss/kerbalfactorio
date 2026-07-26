@@ -26,6 +26,8 @@ export interface WorldState {
   surfaceHeightM: number;
   biome: number;
   origin: { x: number; y: number; z: number; rebases: number };
+  /** Eye position in RENDER space (body-frame eye minus floating origin). */
+  eyeRel: [number, number, number];
   chunks: {
     resident: number; near: number; far: number; pending: number;
     hidden: number; fading: number; converged: boolean;
@@ -182,6 +184,11 @@ export function installDebugApi(
         surfaceHeightM: s.oracle.surfaceHeight(p.x / r, p.y / r, p.z / r),
         biome: s.oracle.biomeAt(p.x / r, p.y / r, p.z / r),
         origin: { x: s.origin.origin.x, y: s.origin.origin.y, z: s.origin.origin.z, rebases: s.origin.rebases },
+        // The eye in RENDER space, i.e. the same frame chunks() reports meshPos
+        // in. Without it a probe that ranks chunks by |meshPos| is measuring
+        // distance from the floating ORIGIN, which drifts up to rebaseM from
+        // the camera and silently returns the wrong chunk as "under the feet".
+        eyeRel: [p.x - s.origin.origin.x, p.y - s.origin.origin.y, p.z - s.origin.origin.z],
         chunks: {
           resident: st.resident, near: st.near, far: st.far,
           pending: st.pending, hidden: st.hidden, fading: st.fading,
