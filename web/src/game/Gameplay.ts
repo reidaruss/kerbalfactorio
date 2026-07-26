@@ -139,6 +139,33 @@ export class Gameplay {
     }));
   }
 
+  /**
+   * Every node with its 64-bit body-frame position, sorted by distance from the
+   * eye. This is the probe's eyes: without world positions a driven run cannot
+   * tell "I aimed at nothing" from "the pick is broken", which is exactly the
+   * silent success DW-20 is about.
+   */
+  nodes(): unknown[] {
+    const e = this.d.player.aimRay().origin;
+    const out = [];
+    for (const pl of this.field.placed) {
+      const st = this.game.node(pl.index);
+      if (st === null) continue;
+      out.push({
+        index: pl.index,
+        x: st.x, y: st.y, z: st.z,
+        name: this.game.itemName(st.resource),
+        kind: st.kind,
+        remaining: st.remaining,
+        initial: st.initial,
+        fraction: st.initial > 0 ? st.remaining / st.initial : 0,
+        distanceM: Math.hypot(st.x - e.x, st.y - e.y, st.z - e.z),
+      });
+    }
+    out.sort((a, b) => a.distanceM - b.distanceM);
+    return out;
+  }
+
   report(): unknown {
     return {
       nodes: this.field.stats(),

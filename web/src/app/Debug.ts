@@ -93,6 +93,8 @@ export interface OfDebugApi {
   zprobe(): ZFightResult | null;
   /** W5 gameplay: pack, clearing, swing counters, pointer state. */
   game(): unknown;
+  /** Every harvest node with its world position, nearest first. */
+  nodes(): unknown[];
   /** Open or close the Tab panel from a probe, with the real transition. */
   panel(open: boolean): unknown;
   /** Craft by recipe index. Returns true only if /core actually crafted. */
@@ -289,6 +291,12 @@ export function installDebugApi(
         ((yawDeg - st.yawDeg) * Math.PI) / 180,
         ((pitchDeg - st.pitchDeg) * Math.PI) / 180,
       );
+      // Rebuild the tangent frame NOW, so aim() reflects the look that just
+      // happened. ViewMode derives the aim ray in update(), which runs on the
+      // fixed tick, so without this a probe that turns and immediately reads
+      // aim() gets the PREVIOUS orientation and silently measures nothing. That
+      // is precisely the DW-20 failure mode, in the verification API itself.
+      s.observer.interpolate(1);
     },
 
     setTime(t) { s.sky.setSunT(t); },
@@ -314,6 +322,7 @@ export function installDebugApi(
     zprobe: () => s.zfight?.result(s.renderer.depth.mode) ?? null,
 
     game: () => s.gameplay?.report() ?? null,
+    nodes: () => s.gameplay?.nodes() ?? [],
     panel(open) { s.gameplay?.setPanel(open); return s.gameplay?.report() ?? null; },
     craft: (index) => s.gameplay?.game.craft(index) ?? false,
     harvest(index) {
