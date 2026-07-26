@@ -16,8 +16,27 @@
 //
 // A variant that does not use a material (a Low tree has no leaves) sets that
 // instance invisible instead. Nothing is deleted, so no slot is ever recycled.
+//
+// TWO BATCHES, NOT EIGHT, and that is a MEASUREMENT. One batch per material is
+// what PropLibrary does and it left the clearing at 28 draws, no better than the
+// clones, because a shadow cascade redraws every batch: eight materials times
+// the main pass plus three cascades is the whole saving given back. The six node
+// files use eight roles but only TWO shading families (matte dielectric, and the
+// two metallic ores), and the roles are untextured flat colours, so the colour
+// is baked into a vertex attribute and the family is the batch. Eight batches
+// become two, and the shadow multiplier stops mattering.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/** Merge one family's primitives into a single geometry. One is already merged. */
+function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  if (list.length === 1) return list[0];
+  const g = mergeGeometries(list, false);
+  if (g === null) return list[0];
+  g.computeBoundingSphere();
+  return g;
+}
 
 /** The depletion variants, in the order their geometry ids are stored. */
 export const VARIANTS = ['Full', 'Half', 'Low'] as const;
@@ -36,8 +55,15 @@ interface Batch {
 /** Instances per material. 24 nodes today, and the ring is authored, not streamed. */
 const CAPACITY = 128;
 
-/** Strip to what every geometry in a batch must agree about (see PropLibrary). */
-function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4): THREE.BufferGeometry {
+/**
+ * Strip to what every geometry in a batch must agree about (see PropLibrary),
+ * and BAKE the source material's colour into a per-vertex attribute so several
+ * roles can share one material. `mat.color` is already in the renderer's linear
+ * working space (GLTFLoader converted it), which is the space three expects a
+ * vertex colour to be in, so the components copy across untouched.
+ */
+function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
+                   tint: THREE.Color): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const pos = src.getAttribute('position') as THREE.BufferAttribute;
   g.setAttribute('position', pos.clone());
@@ -45,6 +71,11 @@ function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4): THREE.Buffe
   g.setAttribute('normal', nrm !== undefined
     ? (nrm as THREE.BufferAttribute).clone()
     : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; ++i) {
+    col[i * 3] = tint.r; col[i * 3 + 1] = tint.g; col[i * 3 + 2] = tint.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const idx = src.getIndex();
   if (idx !== null) g.setIndex(idx.clone());
   else {
@@ -55,6 +86,12 @@ function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4): THREE.Buffe
   g.applyMatrix4(world);
   g.computeBoundingSphere();
   return g;
+}
+
+/** Which shading family a role belongs to. The role's own metalness decides. */
+function familyOf(m: THREE.Material): string {
+  const s = m as THREE.MeshStandardMaterial;
+  return (s.metalness ?? 0) > 0.5 ? 'metal' : 'matte';
 }
 
 /** A candidate primitive found in a template, before any batch exists. */
@@ -94,7 +131,7 @@ export class NodeBatch {
         if (v < 0) return;   // a Stump or anything else outside the three variants
         found.push({
           file, variant: v, geometry: m.geometry, world: m.matrixWorld,
-          material: (m.material as THREE.Material).name || 'OF_Default',
+          material: familyOf(m.material as THREE.Material),
           source: m.material as THREE.Material,
         });
       });
@@ -110,27 +147,46 @@ export class NodeBatch {
     }
     for (const [name, s] of size) this.batches.set(name, this.makeBatch(name, s));
 
+    // Everything a file draws in one family, for one variant, MERGES into one
+    // geometry. A tree's Full variant is bark plus two leaf roles: three
+    // primitives that are now one, so the node needs one instance rather than
+    // three and the shadow pass sees a third of the work.
+    const merged = new Map<string, THREE.BufferGeometry[]>();
     for (const f of found) {
-      const b = this.batches.get(f.material);
+      const key = `${f.file}|${f.variant}|${f.material}`;
+      const list = merged.get(key) ?? [];
+      list.push(normalize(f.geometry, f.world,
+        (f.source as THREE.MeshStandardMaterial).color ?? new THREE.Color(1, 1, 1)));
+      merged.set(key, list);
+    }
+    for (const [key, list] of merged) {
+      const [file, vs, family] = key.split('|');
+      const b = this.batches.get(family);
       if (b === undefined) continue;
-      const list = this.parts.get(f.file) ?? [];
-      let part = list.find((p) => p.material === f.material);
+      const parts = this.parts.get(file) ?? [];
+      let part = parts.find((p) => p.material === family);
       if (part === undefined) {
-        part = { material: f.material, geom: [-1, -1, -1] };
-        list.push(part);
-        this.parts.set(f.file, list);
+        part = { material: family, geom: [-1, -1, -1] };
+        parts.push(part);
+        this.parts.set(file, parts);
       }
-      // One primitive per (variant, material) is the authored shape; if a file
-      // ever splits one, the first wins and the rest would need their own part.
-      if (part.geom[f.variant] < 0)
-        part.geom[f.variant] = b.mesh.addGeometry(normalize(f.geometry, f.world));
+      part.geom[Number(vs)] = b.mesh.addGeometry(concat(list));
     }
   }
 
   private makeBatch(name: string,
                     s: { verts: number; idx: number; src: THREE.Material }): Batch {
-    const material = s.src.clone();
-    material.name = name;
+    const metal = name === 'metal';
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff, vertexColors: true,
+      metalness: metal ? 1.0 : 0.0,
+      roughness: metal ? 0.38 : 0.88,
+      // The leaf roles are authored double sided (of_lib DOUBLE_SIDED) and they
+      // share this batch with the trunk, so the whole matte family takes the
+      // leaves' side setting. Nothing here is thick enough to show the cost.
+      side: metal ? THREE.FrontSide : THREE.DoubleSide,
+    });
+    material.name = `nodes:${name}`;
     const mesh = new THREE.BatchedMesh(CAPACITY, s.verts, s.idx, material);
     mesh.name = `nodes:${name}`;
     mesh.castShadow = true;

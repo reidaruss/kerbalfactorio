@@ -143,6 +143,8 @@ export class Smoke {
   }
 
   update(dt: number, origin: FloatingOrigin): void {
+    // Idle costs nothing: an all-hidden BatchedMesh still issues its draw.
+    this.mesh.visible = this.live > 0;
     if (this.live === 0) return;
     let alive = 0;
     for (let i = 0; i < PUFFS; ++i) {

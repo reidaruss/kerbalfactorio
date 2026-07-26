@@ -127,6 +127,10 @@ export class Debris {
 
   /** Integrate in the body frame, then re-derive engine space. Every frame. */
   update(dt: number, origin: FloatingOrigin): void {
+    // A BatchedMesh with every instance hidden is still a draw call, and this
+    // one is idle almost all the time, so the whole object leaves the graph
+    // between bursts. One boolean is worth a draw against a 150 budget.
+    this.mesh.visible = this.live > 0;
     if (this.live === 0) return;
     let alive = 0;
     for (let i = 0; i < MAX; ++i) {

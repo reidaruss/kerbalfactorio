@@ -255,7 +255,16 @@ export class NodeField {
     }
   }
 
-  /** Nearest node whose sphere the aim ray enters, within `reachM`. */
+  /**
+   * Nearest node whose sphere the aim ray enters, within `reachM`.
+   *
+   * REACH IS MEASURED TO THE NODE, NOT TO ITS PIVOT. A tree's origin is on the
+   * ground and the eye is 1.6 m above it, so a player standing at a natural
+   * chopping distance from a trunk is 4.1 m from the PIVOT and the pick used to
+   * refuse: you could see the tree filling the screen and not be allowed to
+   * swing at it, with no way to get closer because the walk stops there too.
+   * Subtracting the node's own radius is the same rule every melee reach uses.
+   */
   pick(eye: { x: number; y: number; z: number },
        dir: { x: number; y: number; z: number }, reachM: number): Placed | null {
     let best: Placed | null = null;
@@ -263,14 +272,15 @@ export class NodeField {
     for (const pl of this.placed) {
       const ox = pl.pos.x - eye.x, oy = pl.pos.y - eye.y, oz = pl.pos.z - eye.z;
       const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      if (t < -pl.art.radiusM || t > bestT) continue;
+      const surfaceT = Math.max(0, t - pl.art.radiusM);
+      if (t < -pl.art.radiusM || surfaceT > bestT) continue;
       const cx = ox - dir.x * t, cy = oy - dir.y * t, cz = oz - dir.z * t;
       // A tree is tall and its origin is at the base, so the pick sphere is
       // raised and widened rather than centred on the pivot; aiming at a trunk
       // at chest height must hit, and it does not with a base-centred sphere.
       const perp = Math.hypot(cx, cy, cz);
       if (perp > pl.art.radiusM * 1.35 + 0.6) continue;
-      best = pl; bestT = Math.max(0, t);
+      best = pl; bestT = surfaceT;
     }
     return best;
   }
