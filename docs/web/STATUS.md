@@ -20,7 +20,7 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
    and DW-20 are the ones that have actually bitten people.**
 2. `docs/web/ARCHITECTURE.md` (engine and rendering design, milestones W0 to W9, and **§15.2,
    the growing list of things that did not survive contact with reality**).
-3. `docs/web/WASM-BRIDGE.md` (the `/core` C API, ABI 2, memory and ownership conventions).
+3. `docs/web/WASM-BRIDGE.md` (the `/core` C API, ABI 5, memory and ownership conventions).
 4. `docs/web/ASSET-SPECS.md` (the complete asset manifest and the Blender pipeline).
 5. `docs/review-2026-06-16/RETHINK.md` (why the project was restructured; still the strategic plan).
 
@@ -37,7 +37,7 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 | **W5g gameplay slice: harvest, inventory, hand crafting, placeable furnace** | **done and driven-verified 2026-07-26** |
 | **W6 building and automation in-world** (also the WebGPU re-evaluation gate) | **automation, demolition, audio and a save slot done and driven-verified 2026-07-26; power and build costs are W7** |
 | **W7 polish: tunnel persistence, item icons, belt curves, ambience, objectives** | **done and driven-verified 2026-07-26** |
-| W7b progression: research wired to play, build costs, power | pending |
+| W7b progression: research wired to play, build costs, power | **base building done and driven-verified 2026-07-26; research and power still pending** |
 | W8 **the seam**: boardable vessel, launch to orbit | pending, the signature milestone |
 | W9 Cinder | pending |
 
@@ -340,6 +340,94 @@ surface).
 
 Screenshots: `docs/screenshots/W7_ore_patch.png` (a drill standing on an iron
 patch), `W7_ore_patches_wide.png` (a copper patch reading orange at 26 m).
+
+## Base building: foundations, floors, walls and doors (2026-07-26)
+
+**Press 4, 5, 6 or 7 and put a base down.** A ghost snaps to a metric build
+grid, **R** flips a wall, **B** takes the snap off for free placement, **G**
+puts it down, **E** opens a door and **X** takes a part back with a full
+refund. The cost is spent out of the pack and it is /core's: `gameplay.h`
+section S.6 authors the four parts, their ItemIds (0x0040 to 0x0043), their
+TypeIds (0x40 to 0x43) and their `CraftRecipe` costs as data, and
+`HandCrafter::payInputs` spends them all or nothing. **Foundation 4 Stone, floor
+2 Wood + 2 Stone, wall 3 Wood, door 4 Wood + 1 Iron**, so the door is the one
+structural part that needs a working furnace.
+
+**A structure is NOT a `BuildKind`.** It never ticks, holds nothing, has no
+ports and draws no power, so it has no business in `automation.h`'s entity
+arrays; it is its own kind and the factory sim never sees it. Same argument as
+GP-19's survival furnace.
+
+**The grid is not the voxel lattice, and that is measured rather than assumed.**
+One unit step of a /core cell key covers 0.588 to 1.017 m of ground depending on
+the axis, because a 1 m body-frame cube grid is cut obliquely by the ground
+sphere. A 1.00 m foundation laid on cell centres would tear a platform open by
+0.41 m on one axis. So a structure belongs to a SITE: a local metric tangent
+frame anchored on ONE world lattice cell, inside which the spacing is exactly
+the module the assets ship. **Measured gap between adjacent foundations:
+1.176e-12 m.** Every module constant (1.00 m cell, 0.50 m deck, 2.50 m wall,
+3.00 m storey) is read off the shipped sockets at load, so a change in Blender
+propagates with no code edit.
+
+**DW-24, and the number it asked for turned out to be about the TOOL.** A
+structure rests on the terrain and never deforms it; ground too uneven under the
+footprint makes the ghost read INVALID and name the levelling key. Measuring the
+terrain gives a comfortable tolerance: the worst spread over a 1 m footprint is
+0.127 m across four sites. Measuring what Q can actually deliver does not: it
+edits whole 1 m voxel cells, so it has a dead band of half a cell in which it
+changes nothing, and one press left **0 of 12** refused cells buildable at a
+0.22 m tolerance (residual over a levelled disc p05 -0.536, p50 +0.027, p95
++0.588 m). The tolerance is therefore **asymmetric**: FLOAT 0.55 m, half a voxel
+plus a tenth, because a gap of daylight under a slab is the visible failure;
+BURY the deck thickness itself, because ground rising into a slab is invisible.
+A site's plane is founded on the LOWEST ground under its first cell, so a base
+leans towards the invisible failure. **This should come down the day the
+levelling tool can fill less than a whole cell.** ARCHITECTURE 15.2 item 104.
+
+**The walker learns about the base through a PORT.** `KinematicBody.solids` is
+an interface implemented in `game/StructureBody.ts` and resolved AFTER the
+terrain and BEFORE the ground snap, because a deck is a floor above the ground.
+Rock stays the oracle's answer and a foundation never becomes a sixth definition
+of the surface (DW-26). **The door's three collision boxes stay three**: hulling
+them would seal the doorway, so the acceptance walks through it.
+
+Driven acceptance (`probes/build.js`, `valid: true`, 1,459 ticks): two adjacent
+foundations meet with a gap of **1.176e-12 m**; a free-placed part lands
+**4.07e-9 m** from where it was aimed; a wall sits **0.000e+0 m** from the
+foundation's own published edge socket; a door **opens and the player walks
+through it** and is stopped by it when shut (doorway solid `[t,t,t]` shut,
+`[f,f,f]` open); the ghost refuses uneven ground by name and **8 of 13** aimed
+cells accept after one press of Q; a foundation spends exactly **4 Stone** and a
+second door is refused with **"need 4 Wood + 1 Iron"**; and **5 parts survive a
+save with the live world emptied to 0 in between, worst move 0.000e+0 m**. Slot
+version 4 carries the parts and their site frames.
+
+**Draw calls: the whole base costs 1.** 31 on the surface, 51 with a base and a
+levelled pad filling the frame, against 150. One `BatchedMesh` for every part
+(DW-11), 512 instances, and a door is two of them because the leaf is animated
+by writing its matrix rather than by an `AnimationMixer` (DW-8 still holds: no
+mixer exists anywhere).
+
+Screenshots: `docs/screenshots/W8_base.png`, `W8_door.png`.
+Probes: `build.js`, `buildtol.js` (the measurement), `buildshot.js`.
+
+## Digging into an ore body pays (2026-07-26)
+
+A pickaxe swing at an outcrop granted ore and a dig strike into the identical
+ground granted nothing. `game/DigOre.ts` is the line between them, handed to
+`DigAction` as a port so `src/player` still knows nothing about deposits:
+`of_gp_patch_find` on the strike centre, `of_gp_patch_drain` for the amount, and
+the grant is exactly the drain, so a deposit still has one number (DW-25).
+
+**The yield is deliberately poor.** From this world's own numbers: a bare-handed
+swing at an outcrop is 3 units, a strike into the middle of a patch is 2, a
+pickaxe swing is 9 and a drill is 3.0 a second unattended. It does not become a
+second, better mining tool; it stops the world lying to a player who has tried
+to dig ore out of a hillside they can see the ore in.
+
+Driven (`probes/digore.js`, `valid: true`): 10 strikes on a patch centre, 10
+paid, **pack +20 and patch -20 exactly**; 6 strikes **20.14 m clear** of every
+patch, pack +0 and patch -0.
 
 ## Commands
 

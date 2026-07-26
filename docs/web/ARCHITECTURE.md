@@ -1847,6 +1847,45 @@ Added at W4 (2026-07-25):
     face neighbour: 0.59 and 0.81 make a 1.00 m diagonal. Two probes had been
     quietly compensating for this by placing their tiles very close together.
 
+103. **A structural set cannot snap to the voxel lattice, and the number that
+    proves it is the same one item 102 turned up.** The build grid machines use
+    is /core's 1 m body-frame cell lattice, which is right for a machine: it is
+    one object, and a belt only ever has to find the cell ahead of it. It is
+    wrong for a set of parts that TILE. The lattice is a cube grid in the body
+    frame and the ground is a sphere cutting through it obliquely, so one unit
+    step of a cell key covers 0.588 to 1.017 m of ground depending on the axis
+    (measured at four sites: 0.590/1.017/0.811, 0.716/0.983/0.743,
+    0.916/0.857/0.654, 0.588/0.999/0.809). A foundation is a 1.00 m mesh, so laid
+    on cell centres a 20 x 20 m platform would tear open by 0.41 m on one axis
+    and overlap by 0.02 m on another. Structures therefore belong to a SITE: a
+    local metric tangent frame anchored on ONE world lattice cell, inside which
+    the spacing is exactly the module. Measured gap between two adjacent
+    foundations: **1.176e-12 m**. The curvature the tangent plane ignores is
+    r^2/2R, which is 0.85 mm at the 32 m site cap and 0.08 mm at 10 m.
+
+104. **The placement tolerance is set by the TOOL, not by the terrain, and that
+    inverted the whole answer.** DW-24 asks for a ground-unevenness tolerance
+    loose enough for ordinary ground and tight enough that nothing visibly
+    floats. Measuring the terrain gives a comfortable answer: the worst spread
+    across a deck's five footprint points over 400 sampled footprints is 0.0013
+    and 0.0069 m on two plains and 0.118 and 0.127 m on two slopes, so 0.2 m
+    would carry every ordinary foundation. Then measure what happens when the
+    player does what DW-24 tells them to do. The levelling tool edits whole 1 m
+    voxel cells, so it has a **dead band of half a cell in which it changes
+    nothing at all**: one press of Q left **0 of 12** refused cells buildable at
+    a 0.22 m tolerance, and the residual over a levelled disc is p05 **-0.536**,
+    p50 **+0.027**, p95 **+0.588** m (149 samples). A tolerance tighter than that
+    dead band makes DW-24's own loop unclosable by construction, however good the
+    terrain is. Shipped: **FLOAT 0.55 m** (half a voxel plus a tenth, a number
+    about the tool, which should come down the day the tool can fill less than a
+    cell) and **BURY = the deck thickness**, read off the asset, because ground
+    rising into a slab is invisible and a gap of daylight under one is not. A
+    site's plane is also founded on the LOWEST ground under its first cell rather
+    than the centre, so a base leans towards the invisible failure. The general
+    lesson: **a constraint is only as tight as the coarsest thing that can
+    satisfy it.** Measuring the subject and not the remedy gives a number that
+    looks defensible and cannot be met.
+
 ### 15.3 The dev loop, concretely
 
 ```
