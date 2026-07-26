@@ -35,7 +35,7 @@ deterministic, compiled to WASM and driven from JS. The Unreal layer is **frozen
 | W4 look and feel: BatchedMesh terrain, rigged player, biome props | done |
 | **W5 voxel digging and tunnels** | **in flight: dig, mesh, collision, mouth and a WALKABLE tunnel all verified** |
 | **W5g gameplay slice: harvest, inventory, hand crafting, placeable furnace** | **done and driven-verified 2026-07-26** |
-| **W6 building and automation in-world** (also the WebGPU re-evaluation gate) | **automation slice done and driven-verified 2026-07-26; power and build costs are W7** |
+| **W6 building and automation in-world** (also the WebGPU re-evaluation gate) | **automation, demolition, audio and a save slot done and driven-verified 2026-07-26; power and build costs are W7** |
 | W7 progression: research wired to play, build costs, power | pending |
 | W8 **the seam**: boardable vessel, launch to orbit | pending, the signature milestone |
 | W9 Cinder | pending |
@@ -146,9 +146,74 @@ Screenshots: `docs/screenshots/W6_autoline.png`, `W6_build_ghost.png`.
 
 **What is missing, plainly.** Placement is free (build costs are W7, with
 power); a belt that turns a corner still chains but the tiles are drawn as
-straight segments, so the curve assets are unused; there is no way to REMOVE a
-building; and belts hold at most one or two items at these rates, so the flow
-material is proving itself on a trickle rather than on a saturated line.
+straight segments, so the curve assets are unused; and belts hold at most one or
+two items at these rates, so the flow material is proving itself on a trickle
+rather than on a saturated line.
+
+## W6 polish: removal, sound, moments and a save slot (2026-07-26)
+
+Four gaps closed, all driven-verified. ARCHITECTURE 15.2 items 76 to 82.
+
+**You can take it back down.** Aim at any placed miner, belt, smelter or hand
+furnace and press **X**. The plan is edited and the network rebuilt from it, the
+SAME path a placement takes, because `FactorySim` is append-only by design and
+so a removal must not grow an entity-removal API (15.2 item 69). Finished stock
+and a smelter's un-smelted input come back to the pack; items riding a belt and
+ore already inside a furnace pool CANNOT, and both are said out loud in the
+removal's own toast and counted in `__of.game().demolition`.
+
+Driven acceptance (`probes/demolish.js`, `valid: true`) asserts the NEGATIVE,
+because a wrong rebuild would keep working: three windows of identical length,
+840 core ticks each, producing **6 ingots, then 0 with the middle tile of the
+longest run pulled out, then 6 again with it back**. Runs `[3,1] -> [1,1,1] ->
+[3,1]`, buildings 6 -> 5 -> 6, and the 2 items lost off the belt named in the
+toast. The X key is proved separately to reach the same handler.
+
+**It makes noise, and it ships no audio.** Everything is synthesised with
+WebAudio: seven one-shot voices (a thunk in wood, a sharper crack in stone, a
+footstep cadence driven by distance covered rather than a timer, a collapse, a
+chime, a confirmation, and its reverse for removal) plus TWO continuous beds for
+the whole world, a machine hum and a fire crackle, whose level comes from the
+distance to the nearest contributor. One bed each, not one per machine: the
+DW-8 argument applied to sound. Pitch is hashed per event, **M** mutes, the
+setting survives a reload, and the context is created lazily and resumed on the
+first real gesture. Measured: **31 plays for 2.9 ms** of total CPU.
+
+The acceptance is a RENDER, not a counter (`probes/moments.js`): the same synth
+functions are run through an `OfflineAudioContext`, which no autoplay policy
+blocks, and the waveform is measured. Peaks 0.022 to 0.410, **none silent**.
+
+**The two missing moments.** A node that empties now visibly collapses, a tree
+going over AWAY from whoever felled it and a boulder sinking into its own
+footprint, with a 44-chip burst against a normal swing's 8 to 22, a banner that
+names the thing (TREE FELLED, not "wood cleared") and a low crash. A finished
+smelt announces itself where the machine is, with a pop of pale chips, a chime
+and a banner, so a player who walked away learns their line produced something
+without opening anything. Driven: 6 swings, node to 0, felled fires once, and
+the collapse is caught MID-FLIGHT.
+
+**DW-17 is DONE, one slot.** `of_gp_inventory_serialize` writes the pack with
+`persistence.h`'s own `SaveWriter`, so the byte format keeps exactly one author;
+the container is IndexedDB because `persistence_file.h` needs a filesystem the
+browser does not have. The slot carries the pack, the harvest-node depletion
+diff, the whole factory plan and the hand-placed machines with their contents.
+Terrain, biomes and the clearing's LAYOUT regenerate from the seed and are not
+saved (PS-7): a four-building world was **41 bytes of pack** plus its plan.
+Autosave every 20 sim seconds and on `pagehide`; restored in `Gameplay.create`
+over a freshly populated clearing, in that order, because a miner is seeded from
+its node's remaining ore.
+
+`probes/persist.js` (`valid: true`): save, demolish everything, CHANGE the pack
+(not empty it, so a merge cannot pass), regrow the clearing from the seed, load.
+Pack, cells, buildings and all four node depletions come back exactly.
+
+**Not saved, and not hidden:** voxel edits (the `VoxelEdits` handle lives in
+Services, outside the gameplay module's ownership; `of_edits_serialize` already
+exists for whoever wires it) and a furnace's burning fuel, which is a tick
+countdown with no item to give back. Both are counted in the restore ledger.
+
+Screenshots: `docs/screenshots/W6_demolish.png`, `W6_felled.png`,
+`W6_persist.png`. Probes: `demolish.js`, `moments.js`, `persist.js`.
 
 ## Commands
 
@@ -216,8 +281,11 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
 - **DW-15 gate:** before any native peer (multiplayer server or native port) exists, vendor
   `tan`/`asin`/`atan2`/`cos` into `/core` and re-baseline. A 1 ULP libm difference grows a
   different planet from the same seed.
-- Persistence is still browser-side work: `persistence_file.h` is excluded from WASM, so the
-  unified save (inventory, buildings, research, voxel edits) moves to IndexedDB/OPFS (DW-17).
+- **DW-17 is DONE for the pack, the buildings and the node depletion** (IndexedDB, autosave every
+  20 s and on `pagehide`, `probes/persist.js` green). **Voxel edits are still not persisted:**
+  `of_edits_serialize` exists and works, but the `VoxelEdits` handle lives in `Services`, so
+  wiring it belongs to whoever owns the voxel layer. Research is not persisted either (it is not
+  wired to play yet: W7).
 
 ## Process rules that have earned their place
 

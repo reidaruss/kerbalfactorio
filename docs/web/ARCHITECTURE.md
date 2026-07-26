@@ -1476,6 +1476,77 @@ Added at W4 (2026-07-25):
     six-building line plus its inserters, which is one batch times the main pass
     plus three shadow cascades and nothing else.
 
+76. **`BatchedMesh.addInstance` only ever grows, so a system that can remove
+    needs a free list.** `MachineBatch.acquire` had no counterpart, which was
+    invisible while nothing could be demolished: a player laying and pulling up
+    belts would have walked the slot count to `CAPACITY` with nothing visible on
+    screen, and the next real building would have silently failed to draw.
+    `release()` hides the instance and returns the slot; `acquire()` reuses one
+    before adding. The same bug had a sibling in `FactoryView.syncLinks`, which
+    placed `links.length` inserters and never hid the surplus, so unwiring a
+    line left its inserters floating.
+
+77. **Removal is the SAME path as placement, and that is what makes it safe.**
+    `FactorySim` is append-only by design (item 69), so a demolition edits the
+    PLAN and rebuilds the network from it, exactly as a placement does. Nothing
+    patches a run, nothing unwires an inserter, and nothing has to remember what
+    the topology used to be: after the rebuild the network is exactly what the
+    plan says. Driven proof is the negative one, because a wrong rebuild would
+    keep working: producing 6 ingots, then **0** with the middle tile of the
+    longest run pulled out, then 6 again with it back, over three windows of
+    identical length. Runs `[3,1] -> [1,1,1] -> [3,1]`.
+
+78. **A loss that is not counted is a conservation claim that has already
+    rotted.** A demolition returns a machine's finished stock and a smelter's
+    un-smelted input to the pack, because those units exist; it cannot return
+    the items riding a belt, and it cannot return the ore already inside a
+    `gameplay.h` Furnace (which has `loadOre` and no `unloadOre`, and inventing
+    a JS-side eject would be a second authority over the pool). Both are
+    reported in the removal's own toast, in the ledger, and in `__of.game()`.
+    A miner refunds nothing and that is correct: its `remaining` is a claim on
+    the world node, which the ore never left.
+
+79. **Every sound is synthesised, and the acceptance is a RENDER, not a
+    counter.** WebAudio, no asset, no download: seven one-shot voices plus two
+    continuous beds for the whole world, whose level comes from the distance to
+    the nearest contributor (the DW-8 O(lines) argument, applied to sound: ten
+    smelters must sound like a factory, not like ten copies of one machine
+    phasing). Because the voices are free functions over `BaseAudioContext`, the
+    same code the game runs can be rendered into an `OfflineAudioContext`, which
+    no autoplay policy blocks, and MEASURED: peaks 0.022 to 0.410, none silent.
+    A play counter would have proved only that a function was called, which is
+    exactly the DW-20 failure mode. Measured cost: **31 plays for 2.9 ms** of
+    total graph-building CPU, and an idle world holds two nodes.
+
+80. **An effects clock that runs at the RENDER rate will step over a 0.9 s
+    animation in one sleep.** `Gameplay.frame` is handed `fixedDt` but is called
+    once per rendered frame, so at the probe's 144.3 Hz an effect ages 2.4x
+    faster than sim time. The felled collapse therefore settles in about 0.37 s
+    of wall time, and the first version of `probes/moments.js` slept 0.8 s after
+    each swing and reported a collapse peak of **zero**: the harness was wrong,
+    not the animation. Polling in 0.05 s steps catches it. Worth knowing before
+    the next timed effect is written.
+
+81. **A felled tree must fall AWAY from whoever felled it.** The first pass
+    leaned about a hashed tangent axis, and a tree that goes over onto the
+    player fills the entire screen with bark. `NodeField.fell` now takes the
+    direction: rotating `up` about `up x away` tips the trunk along `away`
+    exactly, because `(up x away) x up == away` for a tangent `away`. The
+    caption names the THING and not the item it dropped ("tree felled", not
+    "wood cleared"), because one of those is a moment and the other is a
+    sentence about an inventory row.
+
+82. **A save is a diff over a regenerated world, so a probe that restores onto a
+    MORE depleted world is measuring itself.** `of_gp_node_drain` only removes,
+    which is correct (it is the same call a miner uses, so a restored world is
+    depleted through the one path that can deplete it) but it means a load
+    cannot un-deplete. The first `probes/persist.js` harvested after saving and
+    then loaded, and the node stayed at the lower value: a state no boot can
+    reach. `__of.repopulate()` regrows the clearing from the seed first, which
+    is what a reload actually does, and all four depletions then come back
+    exactly. Restore ORDER matters for the same reason: nodes are drained before
+    miners are placed, or a miner is seeded from a full deposit.
+
 ### 15.3 The dev loop, concretely
 
 ```
