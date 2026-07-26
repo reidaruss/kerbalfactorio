@@ -4,17 +4,24 @@
 //        --evalfile=tools/smoke/probes/beltfloat.js \
 //        --out=docs/screenshots/RN_beltfloat.png
 //
-// This probe belongs to the report, not to a fix: the three call sites it
-// measures live in web/src/game, which is another agent's file set. It exists so
-// the claim handed over is a number.
+// WRITTEN BY THE RENDERING LANE AS A MEASUREMENT, kept by the gameplay lane as a
+// REGRESSION GUARD once the three call sites it names were fixed (GP-28). The
+// numbers it reported when it was written are in its `valid` now, inverted: what
+// it proved was broken it must now prove is not.
 //
 // `_of_surface_radius(body, edits, dir)` takes the voxel edit set as its SECOND
 // argument. `game/Grid.ts` snapToGround, `game/Machines.ts` and `game/BuildMode`
-// all pass 0 there, which means "the pristine procedural world", while
-// `game/OrePatches.ts` and `game/Structures.ts` pass the real handle. So on
-// ground the player has cut or filled, half the build system reads the surface
-// as it was before they touched it. The measurement is the gap in metres between
+// all passed 0 there, which means "the pristine procedural world", while
+// `game/OrePatches.ts` and `game/Structures.ts` passed the real handle. So on
+// ground the player had cut or filled, half the build system read the surface as
+// it was before they touched it. The measurement is the gap in metres between
 // where a ghost lands and where the ground now is.
+//
+// TWO NUMBERS, because there were two halves. The ghost's HEIGHT over the edited
+// surface was closed by the metric site grid, which routes its anchor through
+// the one call site that was always right. The shallow-aim TARGETING error was
+// not, and needed the march itself moved onto the live surface: it was 1.807 m
+// and is now bounded by the grid snap, which is half a 1 m cell diagonal.
 (async () => {
   const of = window.__of;
   const A = typeof OF_ARGS === 'undefined' ? {} : OF_ARGS;
@@ -118,8 +125,19 @@
       + `away and the ghost landed ${shallow.ghostFromAimPointM} m from it`);
   }
 
+  // Half the diagonal of a 1 m cell. A snapped ghost CANNOT be closer to an
+  // arbitrary aim point than this, so it is the floor the targeting error is
+  // measured against rather than zero.
+  const SNAP_BOUND_M = Math.SQRT2 * 0.5 + 1e-3;
   return {
-    valid: of.world().tick - tick0 > 300 && ghost !== null,
+    // The guard, and it asserts the LOWERING happened first: a probe that dug
+    // nothing would satisfy every line below it for the wrong reason.
+    valid: of.world().tick - tick0 > 300 && ghost !== null
+      && Math.abs(s.loweringM) > 1
+      && ghostAboveGroundM !== null && Math.abs(ghostAboveGroundM) <= 0.2
+      && ghostVsPristineM !== null && Math.abs(ghostVsPristineM) > 1
+      && shallow !== null && shallow.ghostFromAimPointM <= SNAP_BOUND_M,
+    snapBoundM: +SNAP_BOUND_M.toFixed(3),
     shallow,
     // True when the ghost tracks the ground the player actually made.
     ghostFollowsTheEditedSurface: ghostAboveGroundM !== null
