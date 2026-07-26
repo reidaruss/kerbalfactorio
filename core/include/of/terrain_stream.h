@@ -172,19 +172,36 @@ inline Vec3 observerBodyRelative(const UniverseCoord& observer) {
 
 // Build an observer UniverseCoord from lat/lon + altitude above the surface
 // (metres). Convenience for callers that think in geo coords (§3.1).
+// WG-22: "the surface" here is the DESIGNED surface, the one the walker stands
+// on, so an altM of 1.62 m really is eye height above the ground rather than
+// eye height above a heightfield nobody draws.
 inline UniverseCoord makeObserverLatLonAlt(const BodyParams& body, double lat,
                                            double lon, double altM) {
   const Vec3 dir = latLonToDir(lat, lon);
-  const double h = sampleHeightField(body, dir);
+  const double h = sampleDesignedHeight(body, dir);
   const double r = body.radiusM + h + altM;
   return UniverseCoord(dir * r, static_cast<FrameId>(body.bodyId + 1));
 }
 
 // Distance from the observer to a quad's centre on the surface (metres).
+//
+// WG-22 (one surface authority, applied to LOD): the quad centre is sampled on
+// the DESIGNED surface (biome.h sampleDesignedHeight) — the same surface
+// buildChunk meshes (WG-21), surface_walk.h stands on, and surface_field.h
+// serves. It used to sample the RAW sampleHeightField, and that one-line
+// disagreement was the whole of DW-19: designed relief diverges from raw by
+// ~590 m on a plain and ~3,100 m on a mountain, so a player standing on the
+// designed surface was always that far "above" every quad centre the metric
+// measured. That constant vertical term is an irreducible floor on `d`, so
+// s/d saturates and the quadtree stops subdividing regardless of maxDepth —
+// measured: maxDepth 12 and maxDepth 16 produced byte-identical resident sets
+// (252 chunks, depth 11, 14.38 m at the feet, and depth 9 / 52.8 m on a
+// mountain). Sampling the surface the player is actually on removes the floor,
+// and splitRatio governs the near field as §3.1 designed.
 inline double observerToQuadDist(const BodyParams& body, const Vec3& obsRel,
                                  const FQuadKey& k) {
   const Vec3 dir = quadCenterDir(k);
-  const double h = sampleHeightField(body, dir);
+  const double h = sampleDesignedHeight(body, dir);
   const Vec3 quadCenter = dir * (body.radiusM + h);
   return (obsRel - quadCenter).length();
 }
