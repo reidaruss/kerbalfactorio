@@ -1886,6 +1886,51 @@ Added at W4 (2026-07-25):
     satisfy it.** Measuring the subject and not the remedy gives a number that
     looks defensible and cannot be met.
 
+105. **The belt misalignment WAS item 102, and the fix was to stop having two
+    answers.** The player reported "belts don't smoothly line up with each
+    other". Measured with `__of.latticeCell` on the shipped world at the spawn,
+    one unit step of a /core cell key covers **0.5903, 0.8110 and 1.0167 m** of
+    ground on the three body axes. A belt tile is a 1.00 m mesh, so two tiles the
+    player put down side by side OVERLAP by up to **0.41 m**. Item 102 had
+    already found this and treated the SYMPTOM, by making `chainRuns` a distance
+    test instead of a cell-key test, which restored the wiring and left the
+    tiles visibly ragged. Item 103 had already found the same defect for a
+    tiling structural set and solved it properly, with a SITE: a local metric
+    tangent frame anchored on one world lattice cell. So machines now snap to
+    that same site grid (`game/MachinePlacement.ts`) rather than to a second
+    answer of their own, which is also what makes a base and a belt run agree
+    about where a metre starts. Measured after, over a 15-tile dragged run:
+    worst tangential deviation from the module **4.006e-6 m**, and the residual
+    is geometry rather than slop, because a radial projection scales tangential
+    spacing by the local ground radius and that run descends 0.19 m a tile.
+    `probes/controls.js` reports both numbers side by side. The general lesson
+    is the one item 103 already paid for and this one paid for again: **when the
+    same measurement condemns two systems, fix them with one mechanism.**
+
+106. **A key that must not be fought: Escape already exits pointer lock at the
+    browser level.** The obvious design for "Escape closes any menu" is to close
+    the menu and take the pointer lock back, and it does not work: Chrome
+    rejects a `requestPointerLock` made outside a user gesture, and the rejected
+    promise is an unhandled rejection, which is a console error, which fails
+    every driven probe in the suite. The handler therefore cooperates: with a
+    menu open the pointer is already released (opening one released it), so
+    Escape closes the menu and the browser has nothing to exit; with nothing
+    open it drops the part in hand; with nothing in hand it lets the browser's
+    own exit stand and says so (`lastEscape` reports "released the pointer") so
+    the key is never silently a no-op. The re-lock request that does still exist
+    catches its own rejection for the same reason.
+
+107. **Two tapes are not one hold.** A driven probe that laid a belt with
+    `tape([{use}])` and then `tape([{use, forward}])` placed exactly ONE tile:
+    the first tape runs out, the tape falls back to the live (empty) key set for
+    a frame, and the next tape is therefore a fresh PRESS rather than a
+    continuing hold. Drag-place edge-detects the press and ends the drag on the
+    release, so the gesture restarted onto a cell that was already taken. A
+    hold is ONE tape entry. It also produced the right feature fix: pressing on
+    a tile that is already there now starts a drag FROM it, because grabbing the
+    end of an existing run to extend it is the natural gesture and used to do
+    nothing at all.
+
 ### 15.3 The dev loop, concretely
 
 ```

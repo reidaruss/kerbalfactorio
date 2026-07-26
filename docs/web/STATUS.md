@@ -430,6 +430,70 @@ Driven (`probes/digore.js`, `valid: true`): 10 strikes on a patch centre, 10
 paid, **pack +20 and patch -20 exactly**; 6 strikes **20.14 m clear** of every
 patch, pack +0 and patch -0.
 
+## The controls now match the genre, and belts line up (2026-07-26)
+
+The playtest report was five sentences and every one of them named a convention
+this game was violating. All five are fixed, plus the belt misalignment reported
+alongside them, which turned out to be the same defect base building already
+solved.
+
+**The binding table, as a player reads it.**
+
+| | |
+|---|---|
+| **left click** | use what is in your hand: swing at a node, dig, or place a building. **Hold it to lay a run.** |
+| **E** | interact: open a furnace, take a machine's output, open a door. It is no longer harvest. |
+| **Escape** | close whatever menu is open. Nothing open, drop the part in hand. Nothing in hand, take the pointer back. |
+| **1 to 9** and the **mouse wheel** | choose a hotbar slot: hands, furnace, drill, belt, smelter, foundation, floor, wall, door |
+| Tab | pack and hand crafting |
+| Q level ground · X demolish · R turn the ghost · B free placement | |
+| WASD walk · Space jump · Shift sprint · V first/third person · L headlamp · M mute · H hide the checklist · ` debug HUD | |
+
+**Escape has ONE handler over a DERIVED list.** Every panel joins
+`ui/ModalStack.ts` in its own constructor by extending `Modal`, so a menu added
+later cannot silently escape the guarantee, and `probes/controls.js` walks the
+live list and FAILS on an entry it cannot open. It also deliberately does not
+fight the browser: Escape already exits pointer lock, so with nothing open the
+handler drops the part in hand and otherwise lets that exit stand (15.2 item 106).
+
+**The hotbar decides what the left button does**, which is the whole point.
+A part in hand places; the bare hand swings and digs and places NOTHING; an
+empty slot does nothing at all. That negative is the assertion that matters and
+it is the one the acceptance leans on.
+
+**Belts line up now, and the cause was measured.** The build grid was /core's
+1 m voxel lattice, and the ground sphere cuts through it obliquely: one unit
+step of a cell key covers **0.5903, 0.8110 or 1.0167 m** of ground depending on
+the body axis (`__of.latticeCell`, shipped world, at the spawn). A belt tile is
+a 1.00 m mesh, so two tiles laid side by side overlapped by up to **0.41 m**.
+That is exactly the defect base building hit and solved with a SITE, a local
+metric tangent frame anchored on one world lattice cell (15.2 item 103), so
+machines now snap to that same grid rather than to a second answer of their own.
+A base and a belt run finally agree about where a metre starts. **Measured over
+a 15-tile dragged run: worst tangential deviation from the module 4.006e-6 m**,
+and the residual is geometry rather than slop, because a radial projection
+scales tangential spacing by the local ground radius and that run descends
+0.19 m a tile.
+
+**Hold left click to lay a run.** Every tile is turned to point at its
+successor, cells the crosshair skipped are filled in so a fast sweep still gives
+a continuous line, a reversal ends the drag rather than turning the tail around,
+and the whole tick is ONE commit because a commit rebuilds the network and would
+otherwise eat the ore riding the belts. Pressing on a tile that is already there
+starts a drag FROM it, so the end of a run can be grabbed and extended.
+
+Driven acceptance `probes/controls.js`, `valid: true`, 616 ticks: the wheel
+moved the slot 4 -> 7 -> 4; a click with the bare hand dug 7 cells and placed
+nothing (15 -> 15 buildings); a drill off the ore was refused by name and built
+nothing; E opened the furnace and granted **nothing** (27 -> 27 harvest grants),
+asserted in a world where a left click demonstrably does grant; one press held
+while walking laid **15 belts that /core reports as ONE transport line**; and
+Escape closed 3 of 3 modals from the derived list.
+
+Every consumer now asks for an ACTION and never for a key
+(`player/Bindings.ts`), so the next remap costs one file rather than twenty
+probes. Save slot version 5.
+
 ## Commands
 
 ```
