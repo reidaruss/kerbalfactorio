@@ -888,6 +888,140 @@
         {"node": "Ocean_Kelp_LOD0", "dims_xyz_m": [0.98, 3.20, 0.88], "max_tris": 150, "pivot": "ground"},
         {"node": "Ocean_SeabedRock_LOD0", "dims_xyz_m": [1.85, 0.75, 1.55], "max_tris": 110, "pivot": "ground"}
       ]
+    },
+
+    "props_moon": {
+      "glb": "assets/models/dist/props/props_moon.glb",
+      "_comment": [
+        "TIER 1. ONE file covers Biome::Regolith, MoonHighland and",
+        "CraterFloor: biome.h classifies the moon by elevation band alone,",
+        "the bands abut with no transition, and the surface material is the",
+        "same dust everywhere. The scatter pass loads one file and picks a",
+        "per-biome subset:",
+        "  Regolith     RockSmall, RockLarge, RegolithRipple",
+        "  MoonHighland HighlandOutcrop, RockLarge, RockSmall",
+        "  CraterFloor  CraterRimRock, ImpactGlass, RockSmall",
+        "OF_Oil on Moon_ImpactGlass is a PBR role, not a substance: impact",
+        "melt glass is dark and glossy, and OF_Oil is the palette's only dark",
+        "low-roughness surface. OF_Glass would be alpha-blended, and",
+        "thousands of alpha-blended instances is a sorting problem bought for",
+        "nothing."
+      ],
+      "lod0_node": "Moon_RockLarge_LOD0",
+      "lod_nodes": [
+        "Moon_RockSmall_LOD0", "Moon_RockSmall_LOD2",
+        "Moon_RockLarge_LOD0", "Moon_RockLarge_LOD2",
+        "Moon_RegolithRipple_LOD0", "Moon_RegolithRipple_LOD2",
+        "Moon_HighlandOutcrop_LOD0", "Moon_HighlandOutcrop_LOD2",
+        "Moon_CraterRimRock_LOD0", "Moon_CraterRimRock_LOD2",
+        "Moon_ImpactGlass_LOD0", "Moon_ImpactGlass_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [1.65, 1.05, 1.42],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 160,
+      "max_tris_total": 700,
+      "max_tris_collision": 36,
+      "max_materials": 4,
+      "sockets": [],
+      "clips": [],
+      "collision": [
+        "col_Moon_RockLarge", "col_Moon_HighlandOutcrop",
+        "col_Moon_CraterRimRock"
+      ],
+      "parts": [
+        {"node": "Moon_RockSmall_LOD0", "dims_xyz_m": [0.48, 0.32, 0.42], "max_tris": 100, "pivot": "ground"},
+        {"node": "Moon_RockLarge_LOD0", "dims_xyz_m": [1.65, 1.05, 1.42], "max_tris": 160, "pivot": "ground"},
+        {"node": "Moon_RegolithRipple_LOD0", "dims_xyz_m": [3.00, 0.14, 1.40], "max_tris": 140, "pivot": "ground"},
+        {"node": "Moon_HighlandOutcrop_LOD0", "dims_xyz_m": [2.40, 1.50, 1.80], "max_tris": 160, "pivot": "ground"},
+        {"node": "Moon_CraterRimRock_LOD0", "dims_xyz_m": [1.20, 0.85, 1.05], "max_tris": 110, "pivot": "ground"},
+        {"node": "Moon_ImpactGlass_LOD0", "dims_xyz_m": [0.95, 0.20, 0.82], "max_tris": 120, "pivot": "ground"}
+      ]
+    },
+
+    "props_cave": {
+      "glb": "assets/models/dist/props/props_cave.glb",
+      "_comment": [
+        "TIER 1, and the one atlas not bound to a Biome value: it dresses the",
+        "1 m^3 voxel tunnels the player digs.",
+        "Cave_SupportFrame is 2.40 m against a 1.80 m player and that is its",
+        "job - it is the SCALE REFERENCE that turns a corridor of identical",
+        "cubes into a space with a readable height.",
+        "Cave_OreVeinPanel is a decal for a dug voxel FACE, so its pivot is",
+        "its volumetric centre, not the ground. It carries exactly two",
+        "material slots in pinned order, OF_RockDark host then OF_Iron vein,",
+        "and the renderer OVERRIDES SLOT 1 per ore type. One mesh, four ores.",
+        "Crystals are OF_Glass, never OF_EmissiveState: emissive is reserved",
+        "for machine state and genuine fire (ASSET-SPECS 1)."
+      ],
+      "lod0_node": "Cave_SupportFrame_LOD0",
+      "lod_nodes": [
+        "Cave_Stalagmite_LOD0", "Cave_Stalagmite_LOD2",
+        "Cave_CrystalCluster_LOD0", "Cave_CrystalCluster_LOD2",
+        "Cave_Rubble_LOD0", "Cave_Rubble_LOD2",
+        "Cave_SupportFrame_LOD0", "Cave_SupportFrame_LOD2",
+        "Cave_OreVeinPanel_LOD0", "Cave_OreVeinPanel_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [2.00, 2.40, 0.34],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 120,
+      "max_tris_total": 800,
+      "max_tris_collision": 36,
+      "max_materials": 5,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Glass"],
+      "collision": [
+        "col_Cave_Stalagmite", "col_Cave_CrystalCluster",
+        "col_Cave_SupportFrame"
+      ],
+      "parts": [
+        {"node": "Cave_Stalagmite_LOD0", "dims_xyz_m": [0.58, 1.85, 0.52], "max_tris": 160, "pivot": "ground"},
+        {"node": "Cave_CrystalCluster_LOD0", "dims_xyz_m": [0.72, 0.95, 0.62], "max_tris": 140, "pivot": "ground"},
+        {"node": "Cave_Rubble_LOD0", "dims_xyz_m": [1.25, 0.38, 1.05], "max_tris": 220, "pivot": "ground"},
+        {"node": "Cave_SupportFrame_LOD0", "dims_xyz_m": [2.00, 2.40, 0.34], "max_tris": 120, "pivot": "ground"},
+        {"node": "Cave_OreVeinPanel_LOD0", "dims_xyz_m": [1.00, 1.00, 0.14], "max_tris": 160, "pivot": "centre"}
+      ]
+    },
+
+    "detail_cards": {
+      "glb": "assets/models/dist/props/detail_cards.glb",
+      "_comment": [
+        "TIER 1, the layer UNDER the biome props: stamped by the square metre",
+        "where a biome prop is placed by the handful, so its instance count",
+        "is one to two orders of magnitude higher than anything else.",
+        "NO LOD CHAIN, deliberately: an 18-triangle card is already at the",
+        "floor and there is no distance at which a 0.5 m tuft is worth a",
+        "second mesh. The renderer culls the whole layer at its own detail",
+        "distance, which is one test rather than one LOD switch per instance.",
+        "Nothing collides.",
+        "18 to 42 tris each, NOT the 60 to 400 the biome props run at.",
+        "Built as tapered blade geometry, not alpha-tested crossed quads:",
+        "there is no texture pipeline and an untextured crossed quad renders",
+        "as a solid rectangle standing in the grass (spec correction, see",
+        "ASSET-SPECS 3.2)."
+      ],
+      "lod0_node": "Detail_GrassCardB_LOD0",
+      "lod_nodes": [
+        "Detail_GrassCardA_LOD0", "Detail_GrassCardB_LOD0",
+        "Detail_GrassCardC_LOD0", "Detail_PebbleScatter_LOD0"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [0.72, 0.58, 0.68],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 60,
+      "max_tris_total": 160,
+      "max_materials": 3,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDry"],
+      "parts": [
+        {"node": "Detail_GrassCardA_LOD0", "dims_xyz_m": [0.50, 0.36, 0.48], "max_tris": 30, "pivot": "ground"},
+        {"node": "Detail_GrassCardB_LOD0", "dims_xyz_m": [0.72, 0.58, 0.68], "max_tris": 60, "pivot": "ground"},
+        {"node": "Detail_GrassCardC_LOD0", "dims_xyz_m": [0.62, 0.42, 0.58], "max_tris": 30, "pivot": "ground"},
+        {"node": "Detail_PebbleScatter_LOD0", "dims_xyz_m": [0.92, 0.10, 0.80], "max_tris": 60, "pivot": "ground"}
+      ]
     }
   }
 }
