@@ -216,7 +216,22 @@ uint8_t* of_scratch_u8(void);
 ```
 
 `of_abi_version` is checked at load (`OfCore.ts`) and a mismatch throws, so a
-stale `.wasm` fails loudly instead of misbehaving. **ABI 2** (2026-07-25, the
+stale `.wasm` fails loudly instead of misbehaving. **It does NOT catch a stale
+build at the same ABI**, which is how the browser ran three-commit-old world
+generation for most of a session: `build.ps1` writes `web/wasm/dist`, the client
+serves `web/public/wasm`, and only `npm run sync-wasm` connects them. Treat
+`build.ps1 && sync-wasm` as one operation.
+
+**ABI 2 additions, 2026-07-26 (additive: no signature changed, so the version
+does not move).** `of_body_mu(body)` and `of_gravity_accel(body, rM)` publish
+`BodyParams::muM3S2`, THE gravity authority (DW-18); the browser must never
+re-derive g. `of_streamer_dig(s, x, y, z, radiusM)` replays one dig into the
+STREAMER's own `VoxelEdits` and re-meshes every resident chunk within reach,
+publishing them through the ordinary `last.ready` path, which is the W5 mouth
+reconciliation: the heightfield opens only because `buildChunk` runs through
+`SurfaceField::loweringFn`, so a sideways tunnel correctly opens nothing.
+
+**ABI 2** (2026-07-25, the
 surface-authority audit) changed three things: `of_observer_latlon_alt` gained an
 `edits` parameter and now reads the oracle; `of_quadmesh_generate`'s last
 parameter became `rawBase`, inverting its polarity so `0` is the safe value; and
