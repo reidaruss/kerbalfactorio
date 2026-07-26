@@ -240,7 +240,7 @@ export class Factory {
     for (const b of this.runBuilds) inFlight += this.line.beltItems(b);
     this.line.recreate(inFlight);
 
-    this.runs = chainRuns(this.M, this.placed);
+    this.runs = chainRuns(this.placed);
     this.runBuilds = this.runs.map((r) =>
       this.line.placeBelt(r.length, BELT_SPEED_UNITS_PER_TICK));
     this.runs.forEach((r, i) => r.forEach((t) => { t.run = i; }));

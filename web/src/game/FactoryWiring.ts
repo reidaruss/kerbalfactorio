@@ -13,24 +13,42 @@
 // and the tiles in between are a length, not entities to connect.
 
 import * as THREE from 'three';
-import { cellKeyOf } from './Grid.js';
 import { FOOTPRINT, type Factory, type Placed } from './Factory.js';
-import type { OfCoreModule } from '../sim/wasm/heap.js';
+
+/**
+ * How far apart two tiles of one run can be, and how well aligned with the flow.
+ *
+ * A LATTICE STEP IS NOT A METRE, and that is the whole reason this is a distance
+ * test and not a cell-key test. The grid is a 1 m body-frame cube lattice and the
+ * ground sphere cuts through it obliquely, so the ground distance between two
+ * cells whose keys differ by one is whatever the local geometry says: measured on
+ * Forge at the spawn, one body axis steps 0.59 m of ground, another 0.81 m and
+ * the third 1.02 m, and a straight run walks a staircase of all three. Asking for
+ * "the cell one metre along the flow" therefore overshoots its own neighbour on
+ * two axes out of three, the chain breaks, and /core correctly reports two or
+ * three transport lines where the player laid one. Nothing about that is visible:
+ * the tiles look like a straight line and the ore simply never arrives.
+ *
+ * The alignment gate is what keeps a DIAGONAL out. A diagonal neighbour can be
+ * closer than a face neighbour here (0.59 and 0.81 make a 1.00 m diagonal), so
+ * distance alone cannot separate them; 45 degrees off the flow scores 0.707,
+ * comfortably under the gate.
+ */
+const CHAIN_MAX_M = 1.35;
+const CHAIN_ALIGN = 0.85;
 
 /**
  * Group belts into contiguous runs by following each tile's flow direction.
  * A tile with no belt behind it starts a run; the walk stops on a cycle, which
  * a player CAN lay by putting four tiles in a square.
  */
-export function chainRuns(M: OfCoreModule, placed: readonly Placed[]): Placed[][] {
+export function chainRuns(placed: readonly Placed[]): Placed[][] {
   const belts = placed.filter((p) => p.kind === 'belt');
-  const byCell = new Map<string, Placed>();
-  for (const b of belts) byCell.set(b.cell, b);
   const next = new Map<number, Placed>();
   const hasPrev = new Set<number>();
   for (const b of belts) {
-    const ahead = byCell.get(cellAhead(M, b));
-    if (ahead === undefined || ahead === b) continue;
+    const ahead = aheadOf(b, belts);
+    if (ahead === undefined || ahead === b || hasPrev.has(ahead.id)) continue;
     next.set(b.id, ahead);
     hasPrev.add(ahead.id);
   }
@@ -50,9 +68,19 @@ export function chainRuns(M: OfCoreModule, placed: readonly Placed[]): Placed[][
   return out;
 }
 
-/** The lattice cell one metre along a tile's flow direction. */
-function cellAhead(M: OfCoreModule, b: Placed): string {
-  return cellKeyOf(M, b.pos.x + b.fwd.x, b.pos.y + b.fwd.y, b.pos.z + b.fwd.z);
+/** The nearest belt tile AHEAD of `b` along its own flow, or undefined. */
+function aheadOf(b: Placed, belts: readonly Placed[]): Placed | undefined {
+  let best: Placed | undefined;
+  let bestD = Infinity;
+  for (const o of belts) {
+    if (o === b) continue;
+    const dx = o.pos.x - b.pos.x, dy = o.pos.y - b.pos.y, dz = o.pos.z - b.pos.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d < 1e-6 || d > CHAIN_MAX_M || d >= bestD) continue;
+    if ((dx * b.fwd.x + dy * b.fwd.y + dz * b.fwd.z) / d < CHAIN_ALIGN) continue;
+    bestD = d; best = o;
+  }
+  return best;
 }
 
 /**
