@@ -100,7 +100,10 @@
       // the snap is to a lattice cell, and neighbouring cells are 1 m apart
       && cellA !== cellB && moved > 0.5 && moved < 3.01
       // and the ghost refuses for the reasons a placement would
-      && noOre.ghost.ok === false && noOre.ghost.reason === 'no ore deposit here'
+      // The refusal is the sentence that teaches the mechanic, so it is matched
+      // as text and not as a boolean.
+      && noOre.ghost.ok === false
+      && noOre.ghost.reason === 'you cannot place a drill here, there is no ore'
       && taken.ghost.ok === false && taken.ghost.reason === 'cell taken',
     build: of.build(),
     view: of.game().view,
