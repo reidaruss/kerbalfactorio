@@ -11,6 +11,8 @@ const NIGHT_DOT = -0.12;
 const DAY_DOT = 0.15;
 const NOON = new THREE.Color(0xfff2df);
 const HORIZON = new THREE.Color(0xff9b52);
+/** Stands in for the player's up when there is no player to have one. */
+const UP_FALLBACK = new THREE.Vector3(0, 1, 0);
 
 export function registerSystems(s: Services, loop: Loop): void {
   const bodyCenterEngine = new THREE.Vector3();
@@ -18,6 +20,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   const fwd = new THREE.Vector3();
   const sunColor = new THREE.Color();
   let lastAnimSecs = 0;
+  let lampHeld = false;
 
   loop.onFixedStep.push(() => {
     if (s.regime.update(s.observer.altM)) {
@@ -39,6 +42,10 @@ export function registerSystems(s: Services, loop: Loop): void {
       const ray = s.player.aimRay();
       s.dig.step(s.input.frame.mine && !busy, ray.origin, ray.dir);
     }
+    // L is edge-detected here rather than held: a lamp that only shines while
+    // the key is down is a torch button, and the player needs both hands.
+    if (s.input.frame.lamp && !lampHeld) s.headlamp.toggle();
+    lampHeld = s.input.frame.lamp;
   });
 
   // The voxel mesh re-derives its engine transform from its 64-bit anchor, the
@@ -87,12 +94,24 @@ export function registerSystems(s: Services, loop: Loop): void {
     s.ibl.update(s.scenes.sky, elev);
     const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
     sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
+    // W5. How much sky the EYE can see, measured before the lights are set so
+    // the same frame's lamp, ambient and sun all read one number. The lamp is
+    // driven from the player's OWN eye and aim, not from the camera, so in third
+    // person it stays on his head instead of 3.5 m behind it.
+    const pv = s.player?.view ?? null;
+    if (pv !== null) s.headlamp.measure(s.oracle, pv.eye);
+    s.headlamp.update(loop.fixedDt, s.origin, pv?.eye ?? null,
+      pv?.aim ?? fwd, pv?.up ?? UP_FALLBACK);
+    const sunK = s.headlamp.sunScale;
     for (const light of s.sunLights) {
       // ShadowRig owns cascade 0's POSITION (fitted to the eye and texel
       // snapped), so a zero distance means "colour and intensity only".
       const dist = light.userData.distance as number;
       if (dist > 0) light.position.copy(s.sky.sunDirection).multiplyScalar(dist);
-      light.intensity = 3.0 * k;
+      // sunK is 0 under rock. Without it the cascade sun keeps raking the voxel
+      // walls from a direction the player cannot see the source of, which is
+      // exactly what made a tunnel read as an outdoor grey box.
+      light.intensity = 3.0 * k * sunK;
       light.color.copy(sunColor);
     }
   });
@@ -111,7 +130,10 @@ export function registerSystems(s: Services, loop: Loop): void {
     // nothing on the ground casts onto anything at orbital range (section 3.5,
     // cascades 0 in ORBIT), and below the horizon the sun casts nothing at all.
     // Measured at night without this: 164 draws against a 150 target.
-    const lit = s.sky.elevation(s.observer.up) > -0.03;
+    // Three reasons now: nothing on the ground casts at orbital range, the sun
+    // below the horizon casts nothing, and under rock the sun has already been
+    // scaled to zero so its shadow map would be 58 draw calls of nothing.
+    const lit = s.sky.elevation(s.observer.up) > -0.03 && !s.headlamp.sunOccluded;
     s.shadows.update(eye, fwd, s.sky.sunDirection, lit && s.regime.state.band !== 'ORBIT');
   });
 

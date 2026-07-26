@@ -54,7 +54,8 @@ export interface OfDebugApi {
   stats(): FrameStats & {
     boot: BootMetrics; gpu: string; terrain: StreamMetricsReport;
     pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
-    shadow: unknown; ibl: unknown; props: unknown; avatar: unknown; assets: unknown;
+    shadow: unknown; ibl: unknown; lamp: unknown; props: unknown; avatar: unknown;
+    assets: unknown;
     sky: { sunT: number; daylight: number; elevationDot: number };
     caps: unknown;
   };
@@ -103,6 +104,8 @@ export interface OfDebugApi {
   craft(index: number): boolean;
   /** Harvest node `i` now, ignoring reach. Proves the grant path in isolation. */
   harvest(index: number): unknown;
+  /** W5. Headlamp on/off, or read it. Same toggle the L key drives. */
+  lamp(on?: boolean): unknown;
 }
 
 export interface AimRay {
@@ -175,6 +178,10 @@ export function installDebugApi(
         stitch: st.stitch,
         shadow: s.shadows.stats(),
         ibl: s.ibl.stats(),
+        // W5. Sky occlusion at the eye and what it did to the lights, so a
+        // probe can assert the tunnel actually went dark rather than that the
+        // lamp object exists.
+        lamp: s.headlamp.stats(),
         props: { ...s.props.stats(), ...s.scatter.stats() },
         avatar: s.avatar?.report() ?? null,
         assets: { ...assetStats, ms: Math.round(assetStats.ms) },
@@ -333,6 +340,11 @@ export function installDebugApi(
     nodes: () => s.gameplay?.nodes() ?? [],
     panel(open) { s.gameplay?.setPanel(open); return s.gameplay?.report() ?? null; },
     craft: (index) => s.gameplay?.game.craft(index) ?? false,
+    lamp(on) {
+      if (on !== undefined && on !== s.headlamp.enabled) s.headlamp.toggle();
+      return s.headlamp.stats();
+    },
+
     harvest(index) {
       if (s.gameplay === null) return null;
       const ok = s.gameplay.interact.harvestNow(index, loop.tickIndex);

@@ -13,6 +13,7 @@ import { Frame } from '../render/Frame.js';
 import { SkyPass } from '../render/SkyPass.js';
 import { ShadowRig } from '../render/ShadowRig.js';
 import { SkyIbl } from '../render/SkyIbl.js';
+import { Headlamp } from '../render/Headlamp.js';
 import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
@@ -47,13 +48,17 @@ import { Gameplay } from '../game/Gameplay.js';
  * sky and the ground cannot disagree). castShadow stays FALSE here: cascades are
  * ShadowRig's job and a second casting light would render a second shadow map.
  */
-function addLighting(scene: THREE.Scene, sunDir: THREE.Vector3, dist: number): THREE.DirectionalLight {
+function addLighting(scene: THREE.Scene, sunDir: THREE.Vector3, dist: number,
+  hemi = true): THREE.DirectionalLight {
   const sun = new THREE.DirectionalLight(0xfff2df, 3.0);
   sun.position.copy(sunDir).multiplyScalar(dist);
   sun.userData.distance = dist;
   scene.add(sun);
   scene.add(sun.target);
-  scene.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
+  // `hemi` is false wherever Headlamp owns the ambient: a constant hemisphere
+  // left behind would floor the darkness at 0.35 and the lamp would stop
+  // mattering the moment the player went underground.
+  if (hemi) scene.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
   return sun;
 }
 
@@ -111,18 +116,21 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // is exactly why the character was never shadowed by the ground (section 17.4).
   const sunLights = [
     addLighting(scenes.far, sky.sunDirection, 1e4),
-    addLighting(scenes.viewModel, sky.sunDirection, 3),
+    addLighting(scenes.viewModel, sky.sunDirection, 3, false),
   ];
-  scenes.near.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
+  // W5. THE underground lighting authority: it owns the near and view-model sky
+  // ambient AND the headlamp that replaces it, because how dark it is and what
+  // lights you are one question. Built here so the SpotLight is present in the
+  // first compiled program and turning it on mid-tunnel costs no recompile.
+  const headlamp = new Headlamp(scenes.near, scenes.viewModel);
   const shadows = new ShadowRig(scenes.near, quality, cfg.shadows);
   // Stock PBR materials (the player, the tools, the biome props) have no
   // scattering integral of their own, so they need an environment or they
   // render as black silhouettes on a lit hillside. Section 7.1, due at W4.
   const ibl = new SkyIbl(renderer, [scenes.near, scenes.viewModel]);
-  // The view-model pass has NO lights of its own. One hemisphere plus the sun
-  // direction is enough: the arms are 0.35 m from the eye, always front-lit, and
-  // a cascade fitted to a 22 m box would be wasted on them.
-  scenes.viewModel.add(new THREE.HemisphereLight(0x8fb0d8, 0x35301f, 1.1));
+  // The view-model pass has NO lights of its own beyond the sun and Headlamp's
+  // hemisphere: the arms are 0.35 m from the eye, always front-lit, and a
+  // cascade fitted to a 22 m box would be wasted on them.
   const nearSun = shadows.sunLight;
   // distance 0 means "colour and intensity only": ShadowRig owns its position.
   if (nearSun !== null) { nearSun.userData.distance = 0; sunLights.push(nearSun); }
@@ -246,7 +254,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
     core, body, oracle, origin, proxy, terrain, regime,
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, ibl, props, scatter, voxels, voxelMesh, dig, digFx,
+    hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
     gameplay, boot,
   };
   return { services, canvas };

@@ -17,6 +17,8 @@ export interface InputFrame {
   panel: boolean;
   /** KeyG. Held state; the build system edge-detects it into one placement. */
   place: boolean;
+  /** KeyL. Held state; Systems edge-detects it into one headlamp toggle (W5). */
+  lamp: boolean;
 }
 
 export interface TapeEntry {
@@ -55,6 +57,7 @@ export class Input {
   readonly frame: InputFrame = {
     fwd: 0, right: 0, up: 0, dYaw: 0, dPitch: 0, zoom: 0, boost: false,
     jump: false, toggleView: false, mine: false, panel: false, place: false,
+    lamp: false,
   };
 
   attach(el: HTMLElement): void {
@@ -137,7 +140,7 @@ export class Input {
     f.fwd = 0; f.right = 0; f.up = 0;
     f.dYaw = 0; f.dPitch = 0; f.zoom = 0;
     f.boost = false; f.jump = false; f.toggleView = false;
-    f.place = false;
+    f.place = false; f.lamp = false;
   }
 
   private axis(neg: string[], pos: string[]): number {
@@ -165,6 +168,7 @@ export class Input {
       f.mine = keys.has('KeyE');
       f.panel = keys.has('Tab');
       f.place = keys.has('KeyG');
+      f.lamp = keys.has('KeyL');
       if (this.uiHeld) this.mute(f);
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
@@ -181,6 +185,7 @@ export class Input {
     f.mine = this.down.has('KeyE');
     f.panel = this.down.has('Tab');
     f.place = this.down.has('KeyG');
+    f.lamp = this.down.has('KeyL');
     if (this.uiHeld) this.mute(f);
     this.dYaw = 0;
     this.dPitch = 0;

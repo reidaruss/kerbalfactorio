@@ -12,6 +12,7 @@ import type { Frame } from '../render/Frame.js';
 import type { SkyPass } from '../render/SkyPass.js';
 import type { ShadowRig } from '../render/ShadowRig.js';
 import type { SkyIbl } from '../render/SkyIbl.js';
+import type { Headlamp } from '../render/Headlamp.js';
 import type { PropLibrary } from '../render/instancing/PropLibrary.js';
 import type { VoxelWorld } from '../world/VoxelWorld.js';
 import type { VoxelMesh } from '../world/VoxelMesh.js';
@@ -85,6 +86,8 @@ export interface Services {
   readonly sunLights: DirectionalLightLike[];
   readonly shadows: ShadowRig;
   readonly ibl: SkyIbl;
+  /** W5. Sky occlusion at the eye, the headlamp, and the ambient it replaces. */
+  readonly headlamp: Headlamp;
   readonly props: PropLibrary;
   readonly scatter: Scatter;
   /** W5. Null in scenarios with no character (there is nobody to dig). */
