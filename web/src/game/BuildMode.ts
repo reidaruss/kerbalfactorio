@@ -178,6 +178,15 @@ export class BuildMode {
     if (t === null) return 0;
 
     if (pressed) {
+      // PRESSING ON A TILE THAT IS ALREADY THERE STARTS A DRAG FROM IT rather
+      // than doing nothing. Continuing an existing run by grabbing its end is
+      // the most natural way to extend one, and refusing the press outright
+      // left the player holding the button with nothing happening.
+      const standing = this.factory.at(t.cell);
+      if (standing !== null && standing.kind === kind) {
+        this.dragLast = { addr: t.addr, placed: standing, step: null };
+        return 0;
+      }
       if (!t.ok) { this.refusals++; return 0; }
       const made = this.factory.add(kind, t, t.fwd);
       if (made === null) { this.refusals++; return 0; }

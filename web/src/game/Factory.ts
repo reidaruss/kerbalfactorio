@@ -126,6 +126,11 @@ export class Factory {
     return this.placed.some((p) => p.cell === cell);
   }
 
+  /** Whatever stands in this cell, or null. */
+  at(cell: string): Placed | null {
+    return this.placed.find((p) => p.cell === cell) ?? null;
+  }
+
   /**
    * The ore patch UNDER `pos`, or -1. This is /core's own containment test
    * (of_gp_patch_find over the lobed outline), not a distance to something.

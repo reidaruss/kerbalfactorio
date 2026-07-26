@@ -312,6 +312,9 @@ export class Machines {
     return this.list.map((m, i) => ({
       id: i,
       handle: m.handle, tier: m.tier, state: this.core.furnaceState(m.handle),
+      // The POSITION is part of the report so a probe can AIM at a machine it
+      // placed rather than assume where the placement put it.
+      pos: [m.pos.x, m.pos.y, m.pos.z],
       burning: m.burning, lit: Number(m.glow.lit.toFixed(3)),
       smokePuffs: this.smoke.live,
     }));
