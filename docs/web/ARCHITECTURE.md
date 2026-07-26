@@ -1577,6 +1577,27 @@ Added at W4 (2026-07-25):
     mean, because a white text overlay puts a floor under "dark" that has
     nothing to do with the scene and would have hidden the whole effect.
 
+85. **Item 48 is CLOSED, and the fix was to stop sizing a push from the thing
+    being pushed.** The shallow rim resolver moved the capsule RADIALLY by
+    `heightM - h + 1.0`, up to 2.8 m, which is not a resolution at all: it is a
+    search that lifts the player until the deepest sample happens to clear, and
+    its magnitude is a property of the CAPSULE rather than of the geometry it is
+    stuck in. That is why it had to be switched off below 1.5 m to stop it
+    levitating people through their own ceiling, which left the mouth and the
+    tunnel as two different resolvers with a seam between them.
+    `VoxelCollision.resolveEmbedded` computes the exit distance to the FACE of
+    the cell each solid sample is in, over the six axis directions, and takes
+    the cheapest candidate that leaves the whole capsule free. A voxel's contact
+    normal is always a body-frame axis, so that IS the minimum translation
+    vector: exact, not approximate. It can never exceed one cell, so it needs no
+    depth special case and runs in both regimes, and a push with no upward
+    component no longer grounds a falling player. **Measured on the same driven
+    walk: max `voxelPushM` 2.8 m -> 0.003 m, with the ceiling property intact
+    (10/10 samples rock overhead, 10/10 `derivedLoweringAt` 0, 0 blocked, 8.38 m
+    walked).** The general shape, and it is the same one as item 58: when a
+    resolver's magnitude comes from the mover instead of from the obstacle, it
+    is a heuristic wearing a formula's clothes.
+
 ### 15.3 The dev loop, concretely
 
 ```

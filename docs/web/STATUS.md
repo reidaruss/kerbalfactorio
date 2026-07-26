@@ -289,9 +289,18 @@ Chunk build and pack 1.8 to 3.5 ms against a 12 ms gate.
   heightfield-only, which also has to stop the heightfield test from firing when the eye is
   already under rock. Reproduce with
   `--evalfile=tools/smoke/probes/tunnellit.js --evalargs='{"shotView":"TP"}'`.
-- **W5 remaining:** voxel edits are not persisted (DW-17) and dug volume is not in the inventory
-  UI. The tunnel mouth still relies on the shallow radial push, which is the one path 15.2
-  item 48 is about.
+- **The dig mouth is EXACT now, and 15.2 item 48 is closed (2026-07-26).** The shallow rim
+  resolver pushed the capsule RADIALLY by `heightM - h + 1.0`, up to 2.8 m, sized from the
+  player rather than from the rock, which is why it had to be switched off below 1.5 m to stop
+  it levitating people through their own ceiling. `player/VoxelCollision.ts` replaces it with
+  the minimum translation out of the offending cell FACE, over the six axis directions: a
+  voxel's contact normal is always a body-frame axis, so it is exact rather than approximate,
+  it can never exceed one cell, and the mouth and the tunnel are now ONE resolver with no
+  1.5 m seam. Measured on the driven `tunnelwalk.js`: **max `voxelPushM` 2.8 m -> 0.003 m**,
+  with the ceiling property intact (**10/10 rock overhead, 10/10 `derivedLoweringAt` 0, 0
+  blocked, 8.38 m walked, 899 ticks, 22 strikes, 186 cells**), so a horizontal tunnel under
+  solid ground still leaves the surface closed. See 15.2 item 85.
+- **W5 remaining:** dug volume is not in the inventory UI.
 - **A rebuild is not a deploy.** `web/wasm/build.ps1` writes `web/wasm/dist`; the client serves
   `web/public/wasm`, which is gitignored and only refreshed by `npm run sync-wasm`. A stale copy
   cost most of a session: the browser reproduced the exact DW-19 saturation signature that `/core`
