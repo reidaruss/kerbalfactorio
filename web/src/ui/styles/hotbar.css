@@ -9,7 +9,14 @@
   display: flex;
   gap: 4px;
   pointer-events: none;
+  z-index: 3;
 }
+
+/* Only with the pack open: during play the pointer is locked and there is no
+   cursor to click a slot with. */
+#of-hotbar.live { pointer-events: auto; }
+#of-hotbar.live .of-hslot { cursor: grab; }
+#of-hotbar.live .of-hslot:hover { border-color: var(--of-ink); }
 
 .of-hslot {
   position: relative;

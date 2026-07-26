@@ -22,6 +22,7 @@ import type { Machines } from './Machines.js';
 import type { NodeField } from './NodeField.js';
 import type { OreField } from './OreField.js';
 import type { Structures } from './Structures.js';
+import type { Hotbar } from './Hotbar.js';
 import type { StructureView } from './StructureView.js';
 import type { Gameplay } from './Gameplay.js';
 import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
@@ -48,13 +49,16 @@ export interface RestoreLedger {
   fuelTicksLost: number;
   /** The tunnels: cells /core has back, strikes replayed, and the re-mesh cost. */
   voxels: VoxelRestore;
+  /** Whether the saved hotbar loadout came back. */
+  hotbarRestored: boolean;
   savedAt: number;
 }
 
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
                          seed: number, ports: WorldPorts,
-                         ore: OreField, structures: Structures): SaveSlot {
+                         ore: OreField, structures: Structures,
+                         hotbar: Hotbar): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -94,6 +98,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     patches,
     sites: saveSites(structures),
     structures: saveParts(structures),
+    hotbar: hotbar.serialize(),
     buildings: factory.placed.map((p) => ({
       kind: p.kind, cell: p.cell, patch: p.patch,
       pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
@@ -118,7 +123,7 @@ export function apply(M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
                       slot: SaveSlot, ports: WorldPorts,
                       ore: OreField, structures: Structures,
-                      structView: StructureView): RestoreLedger {
+                      structView: StructureView, hotbar: Hotbar): RestoreLedger {
   // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
   //    surface the oracle reports, and a miner or a machine placed against the
   //    old, un-dug column would sit at the wrong height.
@@ -193,10 +198,16 @@ export function apply(M: OfCoreModule, game: GameCore,
   const restoredParts = restoreStructures(structures, slot.sites ?? [],
     slot.structures ?? []);
 
+  // 6. THE BAR. Last and independent of everything above: it is a setting, not
+  //    a piece of the world, and a malformed row falls back to empty rather
+  //    than throwing, because a save must never be able to brick a boot.
+  const hotbarRestored = hotbar.restore(slot.hotbar);
+
   return {
     buildings, structures: restoredParts,
     machines: restoredMachines, nodesDepleted: depleted,
-    patchesDepleted, packUnits, fuelTicksLost, voxels, savedAt: slot.savedAt,
+    patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
+    savedAt: slot.savedAt,
   };
 }
 
@@ -207,7 +218,7 @@ export function apply(M: OfCoreModule, game: GameCore,
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField, g.structures);
+    g.seed, g.ports, g.oreField, g.structures, g.hotbar);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
@@ -225,7 +236,8 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
   g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports,
-    g.oreField, g.structures, g.structView);
+    g.oreField, g.structures, g.structView, g.hotbar);
+  g.hotbarBar.invalidate();
   g.panel.invalidate();
   const dug = g.restored.voxels.cells;
   g.hud.flash(`restored ${g.restored.buildings} buildings, `

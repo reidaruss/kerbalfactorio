@@ -136,6 +136,11 @@ export class Gameplay {
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     this.hud = new GameHud(d.host);
     this.hotbarBar = new HotbarBar(d.host);
+    // Arranging the bar is a POINTER gesture, so it only works while the pack is
+    // open: during play the pointer is locked to the canvas and there is no
+    // cursor to click a slot with.
+    this.hotbarBar.onSelect = (i) => { this.hotbar.select(i); this.hotbarBar.invalidate(); };
+    this.hotbarBar.onSwap = (a, b) => { this.hotbar.swap(a, b); this.hotbarBar.invalidate(); };
     this.fx = new Feedback(this.hud, this.field, this.sfx);
     this.panel = new InventoryPanel(d.host, this.modals, (i) => craft(this, i));
     this.panel.closer = () => this.setPanel(false);
@@ -239,10 +244,17 @@ export class Gameplay {
   /** True while a panel owns the pointer, so the dig action stands down. */
   get uiOpen(): boolean { return this.panel.isOpen || this.furnacePanel.isOpen; }
 
-  /** True when the left button should reach the DIGGING tool: no panel up, and
-   *  the hand is empty of parts. A player carrying a wall is not digging. */
+  /**
+   * True when the left button should reach the DIGGING tool: no panel up, and
+   * the selected slot is the HAND.
+   *
+   * "no part in hand" is the wrong test and was a bug: a hand furnace is not a
+   * `PartKind`, so holding the button with the furnace slot selected placed the
+   * furnace on the press and then dug a crater under it for as long as the
+   * button was held. An empty slot must do nothing at all for the same reason.
+   */
   get digAllowed(): boolean {
-    return !this.uiOpen && this.hotbar.partInHand === null;
+    return !this.uiOpen && this.hotbar.handInHand;
   }
 
   /** Fixed tick. Returns true on the tick a harvest actually granted items. */
@@ -345,7 +357,9 @@ export class Gameplay {
     if (open) this.modals.touch(this.panel);
     this.d.input.setUiCapture(open);
     this.hud.setVisible(!open);
-    this.hotbarBar.setVisible(!open);
+    // The bar STAYS UP behind the pack, and takes the pointer: that is the one
+    // moment a player has a cursor to rearrange it with.
+    this.hotbarBar.setInteractive(open);
     if (open) this.panel.invalidate();
   }
 

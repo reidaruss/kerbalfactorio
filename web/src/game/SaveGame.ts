@@ -81,6 +81,14 @@ export interface SaveSlot {
   /** The base: the parts, and the site frames they are addressed in. */
   sites?: SaveSite[];
   structures?: SaveStructure[];
+  /** The hotbar: which slot is in hand and what is in each of them (GP-26). */
+  hotbar?: SaveHotbar;
+}
+
+/** The bar, as plain data. Optional so a slot written before it existed loads. */
+export interface SaveHotbar {
+  selected: number;
+  slots: { kind: string; part?: string }[];
 }
 
 function open(): Promise<IDBDatabase> {

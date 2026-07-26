@@ -132,9 +132,11 @@ export class GameplayInput {
     if (interactPressed && this.doInteract(g)) return false;
 
     // --- the bare hand swings -----------------------------------------------
-    // A part in hand does NOT swing: a player carrying a wall who clicks means
-    // the wall. The dig action is gated on the same question in Systems.
-    if (g.hotbar.partInHand !== null) { g.interact.target = null; return false; }
+    // ONLY the hand swings. A player carrying a wall who clicks means the wall,
+    // a player carrying a furnace means the furnace, and an empty slot means
+    // nothing at all. `Gameplay.digAllowed` asks the same question for the dig
+    // action, which Systems owns.
+    if (!g.hotbar.handInHand) { g.interact.target = null; return false; }
     return g.swing(f.use, tick, ray);
   }
 

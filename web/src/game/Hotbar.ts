@@ -123,6 +123,37 @@ export class Hotbar {
     return true;
   }
 
+  /** Swap two slots. The "put things in a hotbar" gesture, made by hand. */
+  swap(a: number, b: number): boolean {
+    if (a === b || a < 0 || b < 0 || a >= SLOT_COUNT || b >= SLOT_COUNT) return false;
+    const t = this.bar[a];
+    this.bar[a] = this.bar[b];
+    this.bar[b] = t;
+    return true;
+  }
+
+  /** The whole bar, for the save slot. Plain data, no class instances. */
+  serialize(): { selected: number; slots: SlotContent[] } {
+    return { selected: this.index, slots: this.bar.map((s) => ({ ...s })) };
+  }
+
+  /**
+   * Put a saved bar back. Takes `unknown` and VALIDATES, rather than trusting a
+   * typed shape: a malformed row falls back to empty and a malformed slot index
+   * to 0, because a save slot is data from disk and must never be able to brick
+   * a boot.
+   */
+  restore(v: unknown): boolean {
+    const o = v as { selected?: unknown; slots?: unknown } | null | undefined;
+    if (o === null || o === undefined || !Array.isArray(o.slots)) return false;
+    for (let i = 0; i < SLOT_COUNT; ++i) {
+      this.bar[i] = readSlot(o.slots[i]);
+    }
+    this.index = typeof o.selected === 'number' && o.selected >= 0
+      && o.selected < SLOT_COUNT ? Math.floor(o.selected) : 0;
+    return true;
+  }
+
   /** Empty the hand: Escape's last resort before it gives the pointer back. */
   clearHand(): boolean {
     if (this.held.kind !== 'part') return false;
@@ -158,6 +189,18 @@ export class Hotbar {
         part: s.kind === 'part' ? s.part : null, label: describe(s) })),
     };
   }
+}
+
+/** One saved slot, checked. Anything unrecognised becomes an empty slot. */
+function readSlot(v: unknown): SlotContent {
+  const o = v as { kind?: unknown; part?: unknown } | null | undefined;
+  if (o === null || o === undefined) return { kind: 'empty' };
+  if (o.kind === 'hand') return { kind: 'hand' };
+  if (o.kind === 'furnace') return { kind: 'furnace' };
+  if (o.kind === 'part' && typeof o.part === 'string' && isPart(o.part)) {
+    return { kind: 'part', part: o.part };
+  }
+  return { kind: 'empty' };
 }
 
 function describe(s: SlotContent): string {
