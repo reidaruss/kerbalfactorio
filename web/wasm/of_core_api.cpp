@@ -167,7 +167,12 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       parameter and now reads the oracle; of_quadmesh_generate's last
 //       parameter flipped to `rawBase` (0 = the oracle, the safe default);
 //       of_chunk_max_offset became a true Euclidean bound including skirts.
-OF_API int of_abi_version(void) { return 2; }
+//   3: ORE PATCHES (deposits.h §P). New of_gp_patch_* surface (layout, state,
+//       mesh, outcrops, cover, find, drill_rate, drain) plus
+//       of_gp_node_add_outcrop. of_gp_node_state and of_gp_node_drain now
+//       report/mutate the PATCH for a node that is one of its outcrops, so a
+//       deposit has exactly one pool however many outcrops stand on it.
+OF_API int of_abi_version(void) { return 3; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -1487,11 +1492,37 @@ std::vector<wg::FDepositNode> g_gpNodes;
 std::vector<uint8_t> g_gpKinds;
 std::vector<uint8_t> g_gpPending;   // kinds queued for the next layout call
 
+// The ORE PATCHES (deposits.h §P) and, for each node, which patch it is an
+// outcrop OF (-1 = a standalone node such as a tree). A linked node holds no ore
+// of its own: its state is re-derived from the patch on every read, which is the
+// whole reason the link is an index here and not a copied number.
+std::vector<wg::patches::OrePatch> g_gpPatches;
+std::vector<int32_t> g_gpNodePatch;
+
 std::vector<sv::CraftRecipe> g_gpRecipes;
 
 Registry<sv::Furnace> g_furnaces;
 
 bool gpReady() { return g_reg && g_inv; }
+
+// The patch a node is an outcrop of, or null.
+wg::patches::OrePatch* patchOfNode(int i) {
+  if (i < 0 || static_cast<size_t>(i) >= g_gpNodePatch.size()) return nullptr;
+  const int p = g_gpNodePatch[static_cast<size_t>(i)];
+  if (p < 0 || static_cast<size_t>(p) >= g_gpPatches.size()) return nullptr;
+  return &g_gpPatches[static_cast<size_t>(p)];
+}
+
+// Re-derive a linked node's pool from its patch. Called before every read and
+// before every harvest, so the node never carries a number of its own.
+void syncNodeToPatch(int i) {
+  wg::patches::OrePatch* p = patchOfNode(i);
+  if (!p) return;
+  wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
+  n.Resource = p->Resource;
+  n.InitialAmount = p->InitialAmount;
+  n.RemainingAmount = p->RemainingAmount;
+}
 }  // namespace
 
 // Build the registry + inventory. Idempotent; returns 1 when ready, 0 on failure.
@@ -1629,7 +1660,9 @@ OF_API void of_gp_kinds_push(int kind) {
   if (kind < 0 || kind > 6) return;
   g_gpPending.push_back(static_cast<uint8_t>(kind));
 }
-OF_API void of_gp_nodes_clear(void) { g_gpNodes.clear(); g_gpKinds.clear(); }
+OF_API void of_gp_nodes_clear(void) {
+  g_gpNodes.clear(); g_gpKinds.clear(); g_gpNodePatch.clear();
+}
 OF_API int of_gp_nodes_count(void) { return static_cast<int>(g_gpNodes.size()); }
 
 // Append one ring. Returns the TOTAL node count, or -1 if the body is unknown.
@@ -1654,6 +1687,7 @@ OF_API int of_gp_nodes_layout(int bodyId, int editsId, double dx, double dy,
   for (size_t i = 0; i < made.size(); ++i) {
     g_gpNodes.push_back(made[i]);
     g_gpKinds.push_back(g_gpPending[i % g_gpPending.size()]);
+    g_gpNodePatch.push_back(-1);
   }
   return static_cast<int>(g_gpNodes.size());
 }
@@ -1692,14 +1726,21 @@ OF_API int of_gp_node_add(int bodyId, int editsId, int kind,
                          static_cast<uint64_t>(g_gpNodes.size()));
   g_gpNodes.push_back(n);
   g_gpKinds.push_back(static_cast<uint8_t>(kind));
+  g_gpNodePatch.push_back(-1);
   return static_cast<int>(g_gpNodes.size()) - 1;
 }
 
 // f64 scratch [x, y, z, remaining, initial, grade, kind, resource]. Returns 8,
 // or 0 for an out-of-range index. Position is body-frame metres.
+//
+// A node linked to a PATCH reports the PATCH's pool, re-derived here on every
+// read. That is the whole point of the link: an outcrop is the part of an ore
+// body that breaks the surface, so "how much is left" has exactly one answer
+// however many outcrops the patch has.
 OF_API int of_gp_node_state(int i) {
   resetF64(8);
   if (i < 0 || static_cast<size_t>(i) >= g_gpNodes.size()) return 0;
+  syncNodeToPatch(i);
   const wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
   const Vec3 p = n.Position.pos;
   g_f64.push_back(p.x); g_f64.push_back(p.y); g_f64.push_back(p.z);
@@ -1729,6 +1770,18 @@ OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
   wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
   const auto kind =
       static_cast<wg::survival::NodeKind>(g_gpKinds[static_cast<size_t>(i)]);
+  // An OUTCROP goes through §S.5, which is harvestNode with the patch's pool
+  // handed in and the deduction taken back out of the patch. Same rule, one
+  // pool; the yields it uses are deposits.h §P's, not this file's.
+  wg::patches::OrePatch* patch = patchOfNode(i);
+  if (patch) {
+    sv::HarvestResult pr = sv::harvestPatch(*patch, n, kind, *g_inv);
+    g_i32.push_back(static_cast<int32_t>(pr.granted));
+    g_i32.push_back(pr.usedTool ? 1 : 0);
+    g_i32.push_back(pr.nodeEmpty ? 1 : 0);
+    g_i32.push_back(static_cast<int32_t>(n.Resource));
+    return static_cast<int>(pr.granted);
+  }
   sv::HarvestResult r = sv::harvestNode(
       n, kind, *g_inv, static_cast<uint16_t>(baseYield < 0 ? 0 : baseYield),
       static_cast<uint16_t>(toolYield < 0 ? 0 : toolYield));
@@ -1753,6 +1806,12 @@ OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
 // between two ledgers, not a source of items.
 OF_API int of_gp_node_drain(int i, double units) {
   if (i < 0 || static_cast<size_t>(i) >= g_gpNodes.size() || units <= 0.0) return 0;
+  // An outcrop has no ore of its own, so the transfer lands on its patch.
+  if (wg::patches::OrePatch* p = patchOfNode(i)) {
+    const double took = wg::patches::extract(*p, units);
+    syncNodeToPatch(i);
+    return static_cast<int>(took);
+  }
   wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
   // Subtract in DOUBLE and store once. `RemainingAmount` is a float, so
   // `remaining -= (float)remaining` at deposit scale leaves a 3.6e-7 crumb, and
@@ -1764,6 +1823,138 @@ OF_API int of_gp_node_drain(int i, double units) {
   const double left = rem - take;
   n.RemainingAmount = static_cast<float>(left < 1e-3 ? 0.0 : left);
   return static_cast<int>(take);
+}
+
+// --- ORE PATCHES (deposits.h §P) ---------------------------------------------
+// A deposit is a piece of GROUND: an irregular lobed area holding ONE pool of
+// ore, with coverage falling from a rich centre to a thin rim. Every shape,
+// richness and balance question below is answered by /core; this file only
+// copies numbers into the scratch arena.
+//
+// SURFACE AUTHORITY, again. The layout snaps each patch centre through
+// wg::surfaceHeight, and the mesh/outcrop calls hand back UNIT DIRECTIONS rather
+// than positions, so the caller re-asks the same oracle for the radius and a
+// levelled or dug patch still hugs the ground it is in.
+OF_API void of_gp_patches_clear(void) { g_gpPatches.clear(); }
+OF_API int of_gp_patches_count(void) { return static_cast<int>(g_gpPatches.size()); }
+
+// Lay out a field of patches around `dir`, one per kind queued with
+// of_gp_kinds_push. Returns the TOTAL patch count, or -1 if the body is unknown.
+OF_API int of_gp_patch_layout(int bodyId, int editsId, double dx, double dy,
+                              double dz, double spreadM) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return -1;
+  if (g_gpPending.empty()) return static_cast<int>(g_gpPatches.size());
+  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::BodyParams& body = *b;
+  wg::SnapHeightFn snap = [&body, e](const Vec3& d) {
+    return e ? wg::surfaceHeight(body, d, *e) : wg::surfaceHeight(body, d);
+  };
+  const std::vector<wg::patches::OrePatch> made = wg::patches::LayoutPatchField(
+      body, body.bodySeed, FrameId(0), vec(dx, dy, dz), g_gpPending, spreadM, snap);
+  for (const wg::patches::OrePatch& p : made) g_gpPatches.push_back(p);
+  return static_cast<int>(g_gpPatches.size());
+}
+
+// f64 scratch, 18 entries:
+//   [0..2]  centre, body-frame metres
+//   [3..5]  centre unit direction
+//   [6..8]  tangent basis T1
+//   [9..11] tangent basis T2
+//   [12]    nominal radius, metres      [13] NodeKind      [14] resource ItemId
+//   [15]    peak grade                  [16] initial       [17] remaining
+OF_API int of_gp_patch_state(int i) {
+  resetF64(18);
+  if (i < 0 || static_cast<size_t>(i) >= g_gpPatches.size()) return 0;
+  const wg::patches::OrePatch& p = g_gpPatches[static_cast<size_t>(i)];
+  const Vec3 v[4] = {p.Centre, p.Dir, p.T1, p.T2};
+  for (const Vec3& a : v) { g_f64.push_back(a.x); g_f64.push_back(a.y); g_f64.push_back(a.z); }
+  g_f64.push_back(p.RadiusM);
+  g_f64.push_back(static_cast<double>(p.Kind));
+  g_f64.push_back(static_cast<double>(p.Resource));
+  g_f64.push_back(static_cast<double>(p.Grade));
+  g_f64.push_back(p.InitialAmount);
+  g_f64.push_back(p.RemainingAmount);
+  return 18;
+}
+
+// The drawable skin: (rings+1) x segs vertices as [dirX, dirY, dirZ, coverage].
+// Returns the VERTEX count. The caller multiplies each direction by the surface
+// oracle's radius; the coverage is the same number the drill rate reads, which
+// is what makes the tint an honest picture of the ore rather than a decoration.
+OF_API int of_gp_patch_mesh(int i, int rings, int segs) {
+  resetF64(0);
+  if (i < 0 || static_cast<size_t>(i) >= g_gpPatches.size()) return 0;
+  const std::vector<wg::patches::DiscVertex> d =
+      wg::patches::sampleDisc(g_gpPatches[static_cast<size_t>(i)], rings, segs);
+  resetF64(d.size() * 4);
+  for (const wg::patches::DiscVertex& v : d) {
+    g_f64.push_back(v.Dir.x); g_f64.push_back(v.Dir.y); g_f64.push_back(v.Dir.z);
+    g_f64.push_back(v.Coverage);
+  }
+  return static_cast<int>(d.size());
+}
+
+// The outcrops: [dirX, dirY, dirZ, scale, sinkFrac, coverage] each. Returns the
+// count. These are the pieces of the ore body that break the surface, which is
+// what makes a patch visible from a distance and gives a hand something to swing
+// at (the bootstrap: you cannot build a drill before you have mined by hand).
+OF_API int of_gp_patch_outcrops(int i) {
+  resetF64(0);
+  if (i < 0 || static_cast<size_t>(i) >= g_gpPatches.size()) return 0;
+  const wg::patches::OrePatch& p = g_gpPatches[static_cast<size_t>(i)];
+  const int n = wg::patches::outcropCount(p);
+  resetF64(static_cast<size_t>(n) * 6);
+  for (int k = 0; k < n; ++k) {
+    const wg::patches::Outcrop o = wg::patches::outcropAt(p, k);
+    g_f64.push_back(o.Dir.x); g_f64.push_back(o.Dir.y); g_f64.push_back(o.Dir.z);
+    g_f64.push_back(o.Scale); g_f64.push_back(o.SinkFrac); g_f64.push_back(o.Coverage);
+  }
+  return n;
+}
+
+// Coverage in [0,1] at a body-frame point: 0 means "not on this patch".
+OF_API double of_gp_patch_cover(int i, double x, double y, double z) {
+  if (i < 0 || static_cast<size_t>(i) >= g_gpPatches.size()) return 0.0;
+  return wg::patches::coverageAt(g_gpPatches[static_cast<size_t>(i)], vec(x, y, z));
+}
+
+// THE PLACEMENT QUESTION, and the reason the refusal can be trusted: which patch
+// is under this point, or -1 for ordinary ground. A drill asks exactly this.
+OF_API int of_gp_patch_find(double x, double y, double z) {
+  return wg::patches::findPatch(g_gpPatches, vec(x, y, z));
+}
+
+// A drill's extraction rate at a point, units per second: the authored rate
+// times the richness where it stands. Zero off the patch, so a drill that was
+// somehow placed on nothing would mine nothing rather than mine for free.
+OF_API double of_gp_patch_drill_rate(int i, double x, double y, double z) {
+  if (i < 0 || static_cast<size_t>(i) >= g_gpPatches.size()) return 0.0;
+  return wg::patches::kDrillUnitsPerSec
+       * wg::patches::richnessAt(g_gpPatches[static_cast<size_t>(i)], vec(x, y, z));
+}
+
+// Take ore out of a patch WITHOUT granting it (the drill's ledger transfer, and
+// the depletion diff's way back in on load). Returns what was actually removed.
+OF_API double of_gp_patch_drain(int i, double units) {
+  if (i < 0 || static_cast<size_t>(i) >= g_gpPatches.size()) return 0.0;
+  return wg::patches::extract(g_gpPatches[static_cast<size_t>(i)], units);
+}
+
+// Add a harvest node that is an OUTCROP of patch `patchIndex`: same node array,
+// same index space, same harvest call, but it holds no ore of its own. Returns
+// the node index, or -1.
+OF_API int of_gp_node_add_outcrop(int bodyId, int editsId, int patchIndex,
+                                  double dx, double dy, double dz) {
+  if (patchIndex < 0 || static_cast<size_t>(patchIndex) >= g_gpPatches.size())
+    return -1;
+  const wg::patches::OrePatch& p = g_gpPatches[static_cast<size_t>(patchIndex)];
+  const int idx = of_gp_node_add(bodyId, editsId, static_cast<int>(p.Kind),
+                                 dx, dy, dz);
+  if (idx < 0) return -1;
+  g_gpNodePatch[static_cast<size_t>(idx)] = patchIndex;
+  syncNodeToPatch(idx);
+  return idx;
 }
 
 // What `ore` smelts into (gameplay.h smeltOutputFor), or 0 if it is not an ore.

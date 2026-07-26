@@ -145,8 +145,38 @@ export interface OfCoreModule {
   _of_gp_furnace_run(f: number, ticks: number): number;
   /** i32 scratch [oreItem,oreN,outItem,outN,fuel,progress,perSmelt,on]. 8. */
   _of_gp_furnace_state(f: number): number;
-  /** Remove ore from a node WITHOUT granting it. Returns the units removed. */
+  /** Remove ore from a node WITHOUT granting it. Returns the units removed.
+   * A node that is an OUTCROP of a patch drains its patch, because it holds no
+   * ore of its own. */
   _of_gp_node_drain(i: number, units: number): number;
+
+  // --- ABI 3: ORE PATCHES (deposits.h §P). A deposit is an irregular area of
+  //     ground holding ONE pool. Every shape and balance answer is /core's; the
+  //     directions that come back are UNIT vectors, so the caller re-asks the
+  //     surface oracle for the radius and a dug patch still hugs the ground.
+  _of_gp_patches_clear(): void;
+  _of_gp_patches_count(): number;
+  /** Lay out one patch per queued kind around `dir`. Returns the total. */
+  _of_gp_patch_layout(body: number, edits: number, dx: number, dy: number,
+                      dz: number, spreadM: number): number;
+  /** f64 scratch, 18: centre, dir, t1, t2, radiusM, kind, resource, grade,
+   * initial, remaining. Returns 18. */
+  _of_gp_patch_state(i: number): number;
+  /** f64 scratch [dirX,dirY,dirZ,coverage] per vertex. Returns the count. */
+  _of_gp_patch_mesh(i: number, rings: number, segs: number): number;
+  /** f64 scratch [dirX,dirY,dirZ,scale,sink,coverage]. Returns the count. */
+  _of_gp_patch_outcrops(i: number): number;
+  /** Coverage in [0,1] at a body-frame point. 0 means "not on this patch". */
+  _of_gp_patch_cover(i: number, x: number, y: number, z: number): number;
+  /** Which patch is under this point, or -1. THE drill placement question. */
+  _of_gp_patch_find(x: number, y: number, z: number): number;
+  /** A drill's units per second where it stands: rate times richness. */
+  _of_gp_patch_drill_rate(i: number, x: number, y: number, z: number): number;
+  /** Take ore out of a patch without granting it. Returns what was removed. */
+  _of_gp_patch_drain(i: number, units: number): number;
+  /** Add a harvest node that is an outcrop OF a patch. Returns its index. */
+  _of_gp_node_add_outcrop(body: number, edits: number, patch: number,
+                          dx: number, dy: number, dz: number): number;
   /** What `ore` smelts into (gameplay.h smeltOutputFor), or 0 if not an ore. */
   _of_gp_smelt_output_for(ore: number): number;
   // --- DW-17 save slot. The BYTES are persistence.h's SaveWriter format; the
