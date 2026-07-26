@@ -17,8 +17,8 @@ import {
   type ChunkBlobLayout,
 } from '../world/ChunkFormat.js';
 import type {
-  TerrainChunkMsg, TerrainInitMsg, TerrainInitedMsg, TerrainObserveMsg,
-  TerrainUpdateMsg, ToTerrain,
+  TerrainChunkMsg, TerrainDigMsg, TerrainInitMsg, TerrainInitedMsg,
+  TerrainObserveMsg, TerrainUpdateMsg, ToTerrain,
 } from './TerrainProtocol.js';
 
 const ctx = self as unknown as {
@@ -29,6 +29,8 @@ const ctx = self as unknown as {
 let M: OfCoreModule | null = null;
 let body = 0;
 let streamer = 0;
+/** THIS worker's own VoxelEdits (DW-16: heaps are never shared). Lazily made. */
+let workerEdits = 0;
 let layout: ChunkBlobLayout | null = null;
 let verts = 0;
 
@@ -63,6 +65,28 @@ async function init(msg: TerrainInitMsg): Promise<void> {
   ctx.postMessage(reply, [reply.index]);
 }
 
+/**
+ * W5. Replay one dig into THIS worker's own VoxelEdits and post back the chunks
+ * /core re-meshed. The lowering is bound once, at first dig, through
+ * of_streamer_set_edits, so every chunk built from here on reads
+ * derivedLoweringAt: the mouth opens where a column was emptied from the top,
+ * and a tunnel under intact ground correctly opens nothing.
+ */
+function dig(msg: TerrainDigMsg): void {
+  const mod = M;
+  if (mod === null) return;
+  if (workerEdits === 0) {
+    workerEdits = mod._of_edits_create();
+    mod._of_streamer_set_edits(streamer, workerEdits);
+  }
+  const t0 = performance.now();
+  const n = mod._of_streamer_dig(streamer, msg.x, msg.y, msg.z, msg.radiusM);
+  if (n < 0) return;
+  const t1 = performance.now();
+  drain(msg.seq, n, t0, t1, 'digged', [],
+    n, true, mod._of_streamer_resident_count(streamer));
+}
+
 function observe(msg: TerrainObserveMsg): void {
   const mod = M;
   const L = layout;
@@ -85,7 +109,23 @@ function observe(msg: TerrainObserveMsg): void {
     evicted.push(chunkKey(evictedKeys[i * 4], evictedKeys[i * 4 + 1],
       evictedKeys[i * 4 + 2], evictedKeys[i * 4 + 3]));
   }
+  drain(msg.seq, readyCount, t0, t1, 'update', evicted, generated, converged, resident);
+}
 
+/**
+ * Copy `readyCount` freshly built chunks out of the WASM arenas and post them.
+ * Shared by `observe` and `dig` so a re-meshed chunk travels the SAME path as a
+ * newly streamed one: same accessors, same de-interleave, same slot reuse.
+ * Standing rule 5 lives in this loop: every scratch view is re-read per call.
+ */
+function drain(
+  seq: number, readyCount: number, t0: number, t1: number,
+  type: 'update' | 'digged', evicted: string[], generated: number,
+  converged: boolean, resident: number,
+): void {
+  const mod = M;
+  const L = layout;
+  if (mod === null || L === null) return;
   const chunks: TerrainChunkMsg[] = [];
   const transfer: Transferable[] = [];
   let bytes = 0;
@@ -125,8 +165,8 @@ function observe(msg: TerrainObserveMsg): void {
   const t2 = performance.now();
 
   const out: TerrainUpdateMsg = {
-    type: 'update',
-    seq: msg.seq,
+    type,
+    seq,
     chunks, evicted, resident, generated, converged,
     updateMs: t1 - t0,
     packMs: t2 - t1,
@@ -140,6 +180,7 @@ ctx.onmessage = (e: MessageEvent<ToTerrain>) => {
   try {
     if (msg.type === 'init') { void init(msg).catch(fail); return; }
     if (msg.type === 'observe') observe(msg);
+    if (msg.type === 'dig') dig(msg);
   } catch (err) {
     fail(err);
   }

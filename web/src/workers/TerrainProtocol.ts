@@ -34,6 +34,20 @@ export interface TerrainObserveMsg {
   x: number; y: number; z: number;
 }
 
+/**
+ * W5 the mouth reconciliation. The main thread owns the authoritative
+ * VoxelEdits (DW-16); this replays ONE dig op into the worker's own instance
+ * and re-meshes the chunks it opened. Digging is the only thing that writes
+ * terrain height, and it does it through derivedLoweringAt (WG-21), so a
+ * sideways tunnel sends this message and correctly changes nothing.
+ */
+export interface TerrainDigMsg {
+  type: 'dig';
+  seq: number;
+  x: number; y: number; z: number;
+  radiusM: number;
+}
+
 export interface TerrainChunkMsg {
   key: string;
   faceId: number;
@@ -50,7 +64,7 @@ export interface TerrainChunkMsg {
 }
 
 export interface TerrainUpdateMsg {
-  type: 'update';
+  type: 'update' | 'digged';
   seq: number;
   chunks: TerrainChunkMsg[];
   evicted: string[];
@@ -65,5 +79,5 @@ export interface TerrainUpdateMsg {
 
 export interface TerrainErrorMsg { type: 'error'; message: string; }
 
-export type ToTerrain = TerrainInitMsg | TerrainObserveMsg;
+export type ToTerrain = TerrainInitMsg | TerrainObserveMsg | TerrainDigMsg;
 export type FromTerrain = TerrainInitedMsg | TerrainUpdateMsg | TerrainErrorMsg;

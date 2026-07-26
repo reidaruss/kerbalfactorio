@@ -666,6 +666,47 @@ OF_API void of_streamer_set_edits(int sId, int editsId) {
   else   r->s->setLoweringFn(nullptr);
 }
 
+// W5 THE MOUTH RECONCILIATION. Apply a dig to the streamer's OWN edit set and
+// re-mesh every resident chunk it can have opened, publishing them through
+// `last.ready` so JS consumes them on the unchanged chunk path (same meta /
+// anchor / packed accessors, same slot reuse, same stitching).
+//
+// This is the worker half of DW-16: the main thread owns the authoritative
+// VoxelEdits, the worker replays the op here into its own heap. It is also
+// WG-21 in practice: the dig writes VOXELS ONLY, and the heightfield opens
+// because buildChunk runs through SurfaceField::loweringFn(), i.e.
+// derivedLoweringAt. A sideways tunnel leaves the top of its column solid, so
+// the lowering is 0 and the ceiling stays: the reconciliation is a consequence
+// of the oracle, not a second rule about when to open the ground.
+//
+// Returns the number of chunks re-meshed, or -1 for a bad handle.
+OF_API int of_streamer_dig(int sId, double x, double y, double z, double radiusM) {
+  StreamerRec* r = g_streamers.get(sId);
+  if (!r) return -1;
+  wg::VoxelEdits* e = g_edits.get(r->editsId);
+  if (!e) return -1;
+  const int removed = e->dig(r->body, vec(x, y, z), radiusM);
+  if (removed <= 0) { r->last.ready.clear(); return 0; }
+
+  // Rebuild every resident chunk whose quad could contain an opened column.
+  // Distance is measured centre to centre against the chunk's own radius, so a
+  // coarse far chunk that merely happens to face the dig is not re-meshed.
+  const Vec3 p = vec(x, y, z);
+  std::vector<wg::FQuadKey> hits;
+  for (const auto& kv : r->s->resident()) {
+    const wg::FQuadKey& k = kv.second.key;
+    const Vec3 c = kv.second.centerUniverse.pos;
+    const double reach = kv.second.chunkRadiusM + radiusM + wg::kVoxelSizeM;
+    if ((c - p).lengthSq() <= reach * reach) hits.push_back(k);
+  }
+  r->last.ready.clear();
+  for (const wg::FQuadKey& k : hits) {
+    const wg::TerrainChunk* ch = r->s->rebuildChunk(k);
+    if (ch) r->last.ready.push_back(*ch);
+  }
+  return static_cast<int>(r->last.ready.size());
+}
+
 // Drive LOD from the observer's body-frame authority position (metres).
 // Returns the number of chunks READY this call.
 OF_API int of_streamer_update(int sId, double ox, double oy, double oz) {

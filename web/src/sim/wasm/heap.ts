@@ -60,6 +60,9 @@ export interface OfCoreModule {
   _of_cell_for_pos(x: number, y: number, z: number): void;
   _of_cell_center(cx: number, cy: number, cz: number): void;
   _of_streamer_set_edits(s: number, edits: number): void;
+  /** Replay one dig into the streamer's own edits and re-mesh the chunks it
+   *  opened, publishing them through the normal ready path. Returns the count. */
+  _of_streamer_dig(s: number, x: number, y: number, z: number, radiusM: number): number;
   _of_material_for_biome(biome: number): number;
   _of_latlon_to_dir(lat: number, lon: number): void;
   _of_dir_to_latlon(dx: number, dy: number, dz: number): void;
