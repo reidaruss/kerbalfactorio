@@ -119,17 +119,50 @@
     });
   };
 
-  // Retreat along the tunnel, then walk back in. Both directions matter: out is
-  // the direction nobody has ever driven, in is the one that was blocked. The
-  // slice budget is deliberately short of the shaft, because climbing back out
-  // into daylight would end the test with samples that are not in a tunnel at
-  // all and would say nothing about walking down one.
+  // ENTER THE TUNNEL FIRST, and this is the fix for a failure that looked like a
+  // terrain regression and was not (2026-07-26). The bore CLIMBS: at a -12 deg
+  // aim each strike leaves a floor the walker steps up onto, so measured over
+  // this drive the eye rises from 7.38 m below the base at the first forward
+  // strike to 0.62 m ABOVE it at the last. The far end of the passage is a
+  // second mouth in daylight, and the drive finishes standing in it. Walking
+  // KeyW from there, which is what this probe used to do, walks AWAY across open
+  // ground: 17.25 m covered, 10/10 grounded, 0 blocked, and 0/10 with rock
+  // overhead, because there was no rock to be under. The probe's own comment
+  // above already said "retreat along the tunnel, THEN walk back in"; the code
+  // pressed the two keys in the opposite order.
+  //
+  // So: retreat (KeyS) until the walker reports itself under rock, UNSAMPLED,
+  // because those metres are about getting into the passage and not about
+  // walking it. Then the sampled walk goes deeper and only part of the way back,
+  // the shape probes/tunnelpersist.js uses, so no sample lands at a mouth that
+  // has open sky over it by construction. Not one assertion below is relaxed.
+  //
+  // NOT A TERRAIN REGRESSION, and the evidence is in the parity fixture: the
+  // WG-22 terraforming change moved exactly two numbers in expected.json, the
+  // save byte count and its hash, from a 7-byte format header. voxel.removed,
+  // the dirty AABB, the exposed-face count and faceHash, digColumn, the tunnel
+  // ceiling case and every streamed chunk hash are bit-identical. A dig-only
+  // world is the same world it was.
   const slices = OF_ARGS.slices ?? 5;
   const sliceSecs = OF_ARGS.sliceSecs ?? 0.4;
+  //
+  // Two slices PAST the first one that reports under-rock, because the lighting
+  // half of this test measures how much sky the eye can still see and a roof
+  // gets thin near a mouth. Sampling from the first buried slice put one sample
+  // under a 1.26 m lid reading rawVis 0.461 against a 0.4 threshold the probe is
+  // right to hold: the fix is to stand in the tunnel rather than in its doorway.
+  let entrySlices = 0;
+  let buriedFor = 0;
+  for (let i = 0; i < (OF_ARGS.entryMax ?? 10); ++i) {
+    if (of.world().player.underRock) buriedFor++;
+    if (buriedFor > (OF_ARGS.entryExtra ?? 2)) break;
+    await hold(sliceSecs, ['KeyS']);
+    entrySlices++;
+  }
   prev = eye();
-  for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyW']); sample(); }
-  const outM = +metres.toFixed(2);
   for (let i = 0; i < slices; ++i) { await hold(sliceSecs, ['KeyS']); sample(); }
+  const outM = +metres.toFixed(2);
+  for (let i = 0; i < slices - 2; ++i) { await hold(sliceSecs, ['KeyW']); sample(); }
   await settle(0.6);
   // Frame the capture: look level down the tunnel from inside it.
   if (OF_ARGS.shotView === 'TP') of.setView('TP');
@@ -167,6 +200,7 @@
       converged: w.chunks.converged,
       strikesLanded: hits.length,
       removedCells: v.removedCells,
+      entrySlices,
     },
     // --- THE ACCEPTANCE TEST -------------------------------------------------
     // Walked several metres, on the ground, on a voxel floor, with rock

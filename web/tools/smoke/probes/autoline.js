@@ -10,7 +10,7 @@
 // number of ticks the unattended window was, and that ore physically left the
 // world node. Every number after that is a DELTA:
 //
-//   the node lost EXACTLY what the miner extracted   (one pool of ore)
+//   the PATCH lost EXACTLY what the drill extracted  (one pool of ore)
 //   ingots exist that nobody hand-fed                 (the line actually ran)
 //   no ingot appeared that no ore paid for            (nothing was invented)
 //   the pack grew by EXACTLY what collection removed  (nothing was duplicated)
@@ -204,11 +204,15 @@
   // by 2 units, which is how this comment came to exist.
   const now = of.game().factory;
   const nowMiner = now.list.find((b) => b.kind === 'miner');
-  const n0 = of.nodes().find((n) => n.index === minerB.node);
+  // The deposit is the PATCH the drill stands on, not a boulder: ONE pool, and
+  // the number the conservation check has to balance against.
+  const patchRemaining = (i) =>
+    (of.game().ore.list.find((q) => q.index === i) ?? { remaining: 0 }).remaining;
+  const patch0 = patchRemaining(minerB.patch);
   const before = {
     coreTicks: now.coreTicks,
     mined: now.minedFromNodes,
-    nodeRemaining: n0.remaining,
+    nodeRemaining: patch0,
     minerRemaining: nowMiner.remaining,
     iron: (of.game().carried.find((c) => c.name === 'Iron') ?? { count: 0 }).count,
   };
@@ -224,7 +228,7 @@
   const after = of.game().factory;
   const minerA = after.list.find((b) => b.kind === 'miner');
   const smelterA = after.list.find((b) => b.kind === 'smelter');
-  const n1 = of.nodes().find((n) => n.index === minerB.node);
+  const patch1 = patchRemaining(minerB.patch);
 
   // --- DOES THE IRON MATTER? -----------------------------------------------
   // The sharpest criticism of the survival slice was that nothing needed the
@@ -268,7 +272,7 @@
 
   const drained = after.minedFromNodes - before.mined;
   const extracted = before.minerRemaining - minerA.remaining;
-  const nodeLost = n0.remaining - n1.remaining;
+  const nodeLost = patch0 - patch1;
 
   return {
     advanced: {

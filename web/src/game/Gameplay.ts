@@ -47,8 +47,6 @@ import type { Input } from '../player/Input.js';
 /** Ticks between autosaves. 20 seconds: often enough to matter, rare enough
  * that a slot write is invisible against a 16 ms frame. */
 const AUTOSAVE_TICKS = 20 * 60;
-/** Seconds between re-snapping ONE ore patch's skin to the live ground. */
-const RESNAP_SECS = 0.75;
 
 export interface GameplayDeps {
   core: OfCoreModule;
@@ -95,7 +93,6 @@ export class Gameplay {
   /** Ingots taken out of automated machines by hand, for the HUD and probes. */
   autoCollected = 0;
   private simSecs = 0;
-  private sinceResnap = 0;
   /** Where the clearing was grown. Fixed on the first populate (see below). */
   private spawnDir: THREE.Vector3 | null = null;
   private panelHeld = false;
@@ -267,7 +264,14 @@ export class Gameplay {
     // holding a belt in hand who presses G means the belt, not the furnace, and
     // guessing wrong is the sort of thing that makes a game feel unlistening.
     const built = this.build.step((c) => this.d.input.held(c), f.place, ray);
-    if (built) { this.hud.flash(`placed ${this.build.label}`); this.sfx.confirm(); }
+    if (built) {
+      // The rate is said out loud on placement, because richness varies across a
+      // deposit and a player who cannot see what a spot is worth cannot choose.
+      const r = this.build.lastRate;
+      this.hud.flash(r > 0 ? `placed ${this.build.label}  ${r.toFixed(1)} ore/s`
+        : `placed ${this.build.label}`);
+      this.sfx.confirm();
+    }
     else if (this.build.selected === null) {
       if (f.place && !this.placeHeld) placeMachine(this, ray);
     } else if (f.place && !this.placeHeld && this.build.target?.ok === false) {
@@ -336,17 +340,7 @@ export class Gameplay {
   frame(dt: number): void {
     this.simSecs += dt;
     this.field.update(dt);
-    this.oreField.update();
-    // The ground under a patch can be dug into or levelled, so the skin is
-    // re-asked of the surface oracle: ONE patch per interval, round robin,
-    // because doing all of them every frame is thousands of synchronous oracle
-    // calls a second to answer a question that changes when somebody digs.
-    this.sinceResnap += dt;
-    if (this.sinceResnap >= RESNAP_SECS) {
-      this.sinceResnap = 0;
-      const v = this.d.ports?.voxels;
-      if (v !== null && v !== undefined) this.oreField.resnap(v.handle);
-    }
+    this.oreField.update(dt, this.d.ports?.voxels?.handle ?? 0);
     this.machines.update();
     this.machines.updateFx(dt);
     this.fx.update(dt, this.d.origin);

@@ -39,6 +39,12 @@ export interface BuildTarget {
   cell: string;
   ok: boolean;
   reason: string;
+  /** Drill only: the ore patch under the ghost, or -1. */
+  patch: number;
+  /** Drill only: what it would mine here, units per second. Richness varies
+   * across a deposit, so WHERE on the patch a drill goes is a real decision and
+   * the ghost has to answer it before the key is pressed. */
+  ratePerSec: number;
 }
 
 export class BuildMode {
@@ -47,6 +53,8 @@ export class BuildMode {
   placements = 0;
   refusals = 0;
   target: BuildTarget | null = null;
+  /** Rate of the LAST accepted placement, for the confirmation message. */
+  lastRate = 0;
   private rotateHeld = false;
   private placeHeld = false;
   private readonly digitHeld = new Set<string>();
@@ -102,6 +110,7 @@ export class BuildMode {
       pos: this.target.pos, up: this.target.up, cell: this.target.cell,
     }, this.target.fwd);
     if (made === null) { this.refusals++; return false; }
+    this.lastRate = this.target.ratePerSec;
     this.placements++;
     return true;
   }
@@ -133,6 +142,8 @@ export class BuildMode {
 
     let ok = true;
     let reason = '';
+    let patch = -1;
+    let ratePerSec = 0;
     if (this.factory.occupied(s.cell)) { ok = false; reason = 'cell taken'; }
     else if (this.selected === 'miner') {
       // THE SENTENCE THAT TEACHES THE MECHANIC. A drill eats the ground under
@@ -140,11 +151,15 @@ export class BuildMode {
       // the answer is on the ghost before the key is pressed rather than in an
       // error message after it. Several drills on one patch are fine: a deposit
       // is a piece of ground, not a socket.
-      if (this.factory.patchUnder(s.pos) < 0) {
+      patch = this.factory.patchUnder(s.pos);
+      if (patch < 0) {
         ok = false; reason = 'you cannot place a drill here, there is no ore';
+      } else {
+        ratePerSec = this.factory.ore.drillRate(patch, s.pos.x, s.pos.y, s.pos.z);
+        reason = `${ratePerSec.toFixed(1)} ore/s here`;
       }
     }
-    return { pos: s.pos, up: s.up, fwd, cell: s.cell, ok, reason };
+    return { pos: s.pos, up: s.up, fwd, cell: s.cell, ok, reason, patch, ratePerSec };
   }
 
   report(): unknown {
@@ -156,6 +171,8 @@ export class BuildMode {
         footprint: this.selected === null ? 0 : FOOTPRINT[this.selected],
         pos: [this.target.pos.x, this.target.pos.y, this.target.pos.z],
         fwd: [this.target.fwd.x, this.target.fwd.y, this.target.fwd.z],
+        patch: this.target.patch,
+        ratePerSec: +this.target.ratePerSec.toFixed(3),
       },
       visible: this.view.ghostVisible,
     };

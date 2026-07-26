@@ -39,6 +39,8 @@ const SEGS = 28;
 const LIFT_M = 0.25;
 /** How far apart the patches are laid out around the spawn point. */
 const SPREAD_M = 40;
+/** Seconds between re-snapping ONE patch's skin to the live ground. */
+const RESNAP_SECS = 0.75;
 
 interface Skin {
   patch: PatchState;
@@ -64,6 +66,7 @@ export class OreField {
   private dirs: Float64Array = new Float64Array(0);
   private covers: Float32Array = new Float32Array(0);
   private nextResnap = 0;
+  private sinceResnap = 0;
   resnaps = 0;
 
   constructor(M: OfCoreModule, body: number,
@@ -250,11 +253,23 @@ export class OreField {
     this.resnaps++;
   }
 
-  /** Per frame: put the field where the floating origin says it is, and restain. */
-  update(): void {
+  /**
+   * Per frame: put the field where the floating origin says it is, restain it,
+   * and re-snap ONE patch to the live ground on a slow rotation.
+   *
+   * One per interval, round robin, because the ground only changes when somebody
+   * digs, and doing all of them every frame is thousands of synchronous oracle
+   * calls a second to answer a question nobody asked.
+   */
+  update(dt: number, edits = 0): void {
     if (this.mesh === null) return;
     this.origin.toEngine(this.anchor, this.mesh.position);
     this.stain();
+    this.sinceResnap += dt;
+    if (this.sinceResnap >= RESNAP_SECS && edits > 0) {
+      this.sinceResnap = 0;
+      this.resnap(edits);
+    }
   }
 
   /** The patch under a body-frame point, or -1. THE drill placement question. */
