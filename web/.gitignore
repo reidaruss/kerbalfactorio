@@ -6,3 +6,7 @@ node_modules/
 # Synced from web/wasm/dist by scripts/sync-wasm.mjs (npm run sync-wasm).
 # The canonical copy is committed under web/wasm/dist; do not commit a second one.
 public/wasm/
+
+# Synced from assets/models/dist by scripts/sync-assets.mjs (npm run sync-assets).
+# The canonical copy is committed at the repo root; do not commit a second one.
+public/assets/

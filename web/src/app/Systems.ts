@@ -17,6 +17,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   const eye = new THREE.Vector3();
   const fwd = new THREE.Vector3();
   const sunColor = new THREE.Color();
+  let lastAnimSecs = 0;
 
   loop.onFixedStep.push(() => {
     if (s.regime.update(s.observer.altM)) {
@@ -34,9 +35,24 @@ export function registerSystems(s: Services, loop: Loop): void {
     const p = s.player;
     if (p !== null && s.avatar !== null) {
       s.avatar.place(s.origin, p.body.feet, p.view.up, p.view.aim);
+      s.avatar.placeViewModel(s.rig.vmCam.quaternion);
+      // ONE state drives both skeletons (AnimGraph). The clock is Loop.simSecs,
+      // not performance.now(), for the same reason the terrain cross-dissolve
+      // uses it: a driven headless run then animates at exactly the rate a real
+      // one does, so a captured pose is reproducible.
+      const up = p.view.up;
+      const v = p.body.vel;
+      s.avatar.animate(Math.max(0, loop.simSecs - lastAnimSecs), {
+        grounded: p.body.grounded,
+        speedMps: p.body.speedMps,
+        verticalMps: v.x * up.x + v.y * up.y + v.z * up.z,
+      });
+      lastAnimSecs = loop.simSecs;
       // The body is culled by CAMERA layer in FP, not by object visibility, so
       // the shadow caster still sees it and the player still casts a shadow.
       s.rig.setOwnBodyVisible(p.view.mode === 'TP');
+      // The arms ARE the first-person silhouette; in TP the pass draws nothing.
+      s.avatar.viewModel.visible = p.view.mode === 'FP';
     }
     // The body centre in engine space is simply -origin; the far scene puts it
     // at the scaled origin, which TerrainMaterials.update handles itself.
@@ -51,7 +67,10 @@ export function registerSystems(s: Services, loop: Loop): void {
     const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
     sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
     for (const light of s.sunLights) {
-      light.position.copy(s.sky.sunDirection).multiplyScalar(light.userData.distance as number);
+      // ShadowRig owns cascade 0's POSITION (fitted to the eye and texel
+      // snapped), so a zero distance means "colour and intensity only".
+      const dist = light.userData.distance as number;
+      if (dist > 0) light.position.copy(s.sky.sunDirection).multiplyScalar(dist);
       light.intensity = 3.0 * k;
       light.color.copy(sunColor);
     }

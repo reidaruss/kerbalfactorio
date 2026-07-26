@@ -96,11 +96,16 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   });
   scenes.sky.add(sky.group);
 
-  const sunLights = [
-    addLighting(scenes.far, sky.sunDirection, 1e4),
-    addLighting(scenes.near, sky.sunDirection, 1e5),
-  ];
+  // The FAR scene gets its own directional; nothing in it casts. The NEAR scene
+  // gets NO directional here: ShadowRig's cascade 0 is the near sun from W4, so
+  // the one light that lights the player is the one that shadows him. Two lights
+  // is exactly why the character was never shadowed by the ground (section 17.4).
+  const sunLights = [addLighting(scenes.far, sky.sunDirection, 1e4)];
+  scenes.near.add(new THREE.HemisphereLight(0x334466, 0x101008, 0.35));
   const shadows = new ShadowRig(scenes.near, quality, cfg.shadows);
+  const nearSun = shadows.sunLight;
+  // distance 0 means "colour and intensity only": ShadowRig owns its position.
+  if (nearSun !== null) { nearSun.userData.distance = 0; sunLights.push(nearSun); }
 
   hud.banner('sampling the surface oracle for the planet proxy ...');
   // detail 16 -> 20 * 17^2 = 5,780 triangles, one draw call for a whole planet.
@@ -108,7 +113,6 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   proxy.setVisible(cfg.proxy);
   scenes.far.add(proxy.mesh);
 
-  scenes.viewModel.add(createViewModelPlaceholder());
   if (new URLSearchParams(location.search).get('gnomon') === '1') {
     scenes.near.add(createGnomon());
   }
@@ -128,7 +132,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   sky.setSunT(cfg.sunTExplicit ?? SkyPass.solveSunT(observer.up, cfg.scenario.sunDot));
 
   const avatar = player === null ? null : new Avatar();
-  if (avatar !== null) scenes.near.add(avatar.group);
+  if (avatar !== null) {
+    hud.banner('loading the character rig and the first-person arms ...');
+    await avatar.load();
+    scenes.near.add(avatar.group);
+    scenes.viewModel.add(avatar.viewModel);
+  } else {
+    scenes.viewModel.add(createViewModelPlaceholder());
+  }
 
   const input = new Input();
   input.attach(canvas);

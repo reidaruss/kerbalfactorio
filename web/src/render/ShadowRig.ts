@@ -44,9 +44,12 @@ export class ShadowRig {
     this.splits = (n === 1 ? SPLITS_1 : SPLITS_3).slice(0, Math.max(0, n));
     this.mapSize = q.shadowMapSize;
     for (let i = 0; i < this.splits.length; ++i) {
-      // Intensity 0: TerrainMaterial lights itself from uSunDir, and the stock
-      // materials in the near scene are lit by the ONE sun light Boot adds. A
-      // second lit directional would double-count the sun.
+      // Cascade 0 IS the near scene's sun (W4). TerrainMaterial lights itself
+      // from uSunDir, but the rigged player is a stock MeshStandardMaterial, and
+      // a MeshStandardMaterial is only shadowed by a light that CASTS. W3's
+      // separate non-casting sun therefore left the character lit but never
+      // shadowed by the terrain it stood on. Merging the two costs nothing:
+      // cascades 1 and 2 stay at intensity 0 and exist only to produce a map.
       const light = new THREE.DirectionalLight(0xffffff, 0);
       light.castShadow = true;
       light.shadow.mapSize.set(this.mapSize, this.mapSize);
@@ -69,6 +72,9 @@ export class ShadowRig {
 
   get cascades(): number { return this.lights.length; }
 
+  /** The one cascade that also LIGHTS stock materials, or null. */
+  get sunLight(): THREE.DirectionalLight | null { return this.lights[0] ?? null; }
+
   /**
    * Fit every cascade around the eye, aligned to the sun. Called once per frame
    * AFTER the camera is placed, so it needs no rebase subscription: the eye is
@@ -78,7 +84,11 @@ export class ShadowRig {
     this.active = on && this.lights.length > 0;
     for (let i = 0; i < this.lights.length; ++i) {
       const light = this.lights[i];
-      light.visible = this.active;
+      // Cascade 0 stays in the scene when the rig is off, because it is also the
+      // sun: dropping it would turn the avatar black at night instead of dark,
+      // and black in a lit frame reads as a missing asset.
+      light.visible = this.active || i === 0;
+      light.castShadow = this.active;
       if (!this.active) continue;
       const far = this.splits[i];
       // Centre the cascade a little ahead of the eye: a walking player looks

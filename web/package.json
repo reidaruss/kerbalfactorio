@@ -9,15 +9,16 @@
   },
   "scripts": {
     "sync-wasm": "node scripts/sync-wasm.mjs",
-    "predev": "npm run sync-wasm",
+    "predev": "npm run sync-wasm && npm run sync-assets",
     "dev": "vite",
-    "prebuild": "npm run sync-wasm",
+    "prebuild": "npm run sync-wasm && npm run sync-assets",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "check:limits": "node scripts/check-limits.mjs",
     "smoke": "node tools/smoke/run.mjs",
-    "check": "npm run typecheck && npm run check:limits"
+    "check": "npm run typecheck && npm run check:limits",
+    "sync-assets": "node scripts/sync-assets.mjs"
   },
   "dependencies": {
     "three": "0.185.1"

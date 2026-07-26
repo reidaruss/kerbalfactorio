@@ -1,67 +1,127 @@
-// The player's own body, as a placeholder capsule until W4 brings the rigged
-// mesh. It exists at W2 for one structural reason: ARCHITECTURE.md section 3.4
-// says the character sits on LAYER_PLAYER_BODY and the FIRST-PERSON camera
-// disables that layer, so the M3.1b "FP black slab self-shadow" bug is fixed by
-// construction rather than by a workaround. Wiring that at W2 means the shadow
-// pass at W3 inherits it for free.
+// The player's own body in the near 1:1 scene, and the first-person arms in the
+// view-model pass. Both are real rigged assets from W4 onward; the W2 capsule
+// placeholder is gone.
 //
-// It is world-anchored, so it re-derives from the 64-bit feet position every
-// frame and needs no rebase subscription of its own.
+// It sits on LAYER_PLAYER_BODY and the FIRST-PERSON camera disables that layer
+// (ARCHITECTURE.md 3.4), so the M3.1b "FP black slab self-shadow" bug is fixed by
+// construction rather than by a workaround, and the shadow camera keeps the layer
+// ENABLED so the player still casts (section 15.2 item 24).
+//
+// It is world-anchored: it re-derives from the 64-bit feet position every frame
+// and needs no rebase subscription of its own.
 
 import * as THREE from 'three';
 import { LAYER_PLAYER_BODY } from '../render/Scenes.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Vec3d } from '../world/PlanetBody.js';
-import { CAPSULE } from './KinematicBody.js';
+import { ASSETS } from '../assets/Registry.js';
+import { PlayerRig } from './PlayerRig.js';
+import { BODY_CLIPS, FP_CLIPS, resolveAnim, SWING_DURATION_SECS, type AnimInput } from './AnimGraph.js';
+
+/**
+ * Assets are authored Blender -Y forward, which the exporter turns into three.js
+ * **+Z** forward (ASSET-SPECS 2.1). Matrix4.lookAt aims **-Z** at its target, so
+ * the target is the aim NEGATED. Getting this backwards is silent: the character
+ * walks correctly and moonwalks while doing it.
+ */
+const MODEL_FORWARD_IS_PLUS_Z = true;
 
 export class Avatar {
   readonly group = new THREE.Group();
-  private readonly body: THREE.Mesh;
-  private readonly head: THREE.Mesh;
+  readonly viewModel = new THREE.Group();
+  body: PlayerRig | null = null;
+  arms: PlayerRig | null = null;
   private readonly basis = new THREE.Matrix4();
   private readonly zero = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
+  private swingLeft = 0;
 
   constructor() {
-    const shaft = CAPSULE.heightM - 2 * CAPSULE.radiusM;
-    this.body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(CAPSULE.radiusM, shaft, 6, 12),
-      new THREE.MeshStandardMaterial({ color: 0xd8813a, roughness: 0.7, metalness: 0.05 }),
-    );
-    this.body.position.y = CAPSULE.heightM * 0.5;
-    this.head = new THREE.Mesh(
-      new THREE.BoxGeometry(0.34, 0.16, 0.26),
-      new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness: 0.4 }),
-    );
-    // A visor on the front, so a TP screenshot shows which way the body faces.
-    this.head.position.set(0, CAPSULE.eyeHeightM, -CAPSULE.radiusM * 0.75);
-    this.group.add(this.body);
-    this.group.add(this.head);
     this.group.name = 'playerBody';
-    this.group.traverse((o) => {
-      o.layers.set(LAYER_PLAYER_BODY);
-      o.castShadow = true;
-      o.receiveShadow = true;
-    });
     this.group.matrixAutoUpdate = false;
+    this.viewModel.name = 'playerViewModel';
   }
 
-  /** Stand the capsule on `feet`, facing `aim` projected into the tangent plane. */
+  /**
+   * Load both rigs. The tools go in at the same time because a character holding
+   * nothing is a different silhouette, and the FP arms with an empty fist read as
+   * a bug rather than as an unarmed state.
+   */
+  async load(): Promise<void> {
+    const [body, arms] = await Promise.all([
+      PlayerRig.create({
+        url: ASSETS.playerBody, clips: BODY_CLIPS, layer: LAYER_PLAYER_BODY,
+        castShadow: true, receiveShadow: true, lod: '_LOD0',
+      }),
+      PlayerRig.create({
+        url: ASSETS.playerFpArms, clips: FP_CLIPS, layer: null,
+        castShadow: false, receiveShadow: false, lod: '_LOD0',
+      }),
+    ]);
+    this.body = body;
+    this.arms = arms;
+    await Promise.all([
+      body.holdTool(ASSETS.crudePickaxe),
+      arms.holdTool(ASSETS.crudePickaxe),
+    ]);
+    this.group.add(body.group);
+    this.viewModel.add(arms.group);
+  }
+
+  /** Start a swing. Both rigs play their own clip; the impact frames match. */
+  swing(): void { this.swingLeft = SWING_DURATION_SECS; }
+
+  /** Drive both animation graphs from ONE state, computed from the capsule. */
+  animate(dt: number, input: Omit<AnimInput, 'swingLeft'>): void {
+    if (this.swingLeft > 0) this.swingLeft = Math.max(0, this.swingLeft - dt);
+    const state = resolveAnim({ ...input, swingLeft: this.swingLeft });
+    this.body?.setAnim(state, input.speedMps);
+    this.arms?.setAnim(state, input.speedMps);
+    this.body?.update(dt);
+    this.arms?.update(dt);
+  }
+
+  /**
+   * The view model is fixed in CAMERA space: same origin, same rotation, so its
+   * transform relative to the camera is constant. Its own origin is the camera
+   * point (ASSET-SPECS 4.2), which is why there is no offset here either.
+   */
+  placeViewModel(cameraQuat: THREE.Quaternion): void {
+    this.viewModel.quaternion.copy(cameraQuat);
+    if (MODEL_FORWARD_IS_PLUS_Z) this.viewModel.rotateY(Math.PI);
+    this.viewModel.updateMatrixWorld(true);
+  }
+
+  /** Stand the body on `feet`, facing `aim` projected into the tangent plane. */
   place(origin: FloatingOrigin, feet: Vec3d, up: THREE.Vector3, aim: THREE.Vector3): void {
     const g = this.group;
     origin.toEngine(feet, g.position);
-    // -Z is the model's forward, so look from the origin ALONG the flattened aim.
     const fx = aim.x - up.x * aim.dot(up);
     const fy = aim.y - up.y * aim.dot(up);
     const fz = aim.z - up.z * aim.dot(up);
     const l = Math.hypot(fx, fy, fz);
     if (l > 1e-6) {
-      // Matrix4.lookAt(eye, target, up) points -Z at the target, and -Z is the
-      // model's forward, so the target IS the flattened aim direction.
-      this.basis.lookAt(this.zero, this.fwd.set(fx / l, fy / l, fz / l), up);
+      const s = MODEL_FORWARD_IS_PLUS_Z ? -1 / l : 1 / l;
+      this.basis.lookAt(this.zero, this.fwd.set(fx * s, fy * s, fz * s), up);
       g.quaternion.setFromRotationMatrix(this.basis);
     }
     g.updateMatrix();
     g.updateMatrixWorld(true);
+  }
+
+  report(): unknown {
+    return {
+      bodyLoaded: this.body?.loaded ?? false,
+      armsLoaded: this.arms?.loaded ?? false,
+      bodyBones: this.body?.boneCount ?? 0,
+      armBones: this.arms?.boneCount ?? 0,
+      bodyClips: this.body?.clipCount ?? 0,
+      armClips: this.arms?.clipCount ?? 0,
+      sockets: this.body?.socketNames ?? [],
+      holding: this.body?.holding ?? '',
+      playing: this.body?.playing ?? '',
+      playingFp: this.arms?.playing ?? '',
+      swingLeft: Math.round(this.swingLeft * 1000) / 1000,
+    };
   }
 }
