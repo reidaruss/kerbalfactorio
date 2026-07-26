@@ -826,6 +826,30 @@ OF_API int of_streamer_level(int sId, double x, double y, double z,
                           std::sqrt(radiusM * radiusM + band * band));
 }
 
+// Load the streamer's OWN edit set from bytes previously written into the u8
+// scratch, then re-mesh every resident chunk within `radiusM` of (x,y,z).
+//
+// WHY THIS EXISTS. The worker learns about terrain edits by replaying an op log
+// (DW-16), which works while the main thread is the only thing that mutates the
+// edit set. A SAVE RESTORE is not that: it replaces the whole set from bytes, and
+// an op log replayed on top of it is at best redundant and at worst a different
+// edit (a levelling op replayed as a dig is a 13 m sphere carved out of a build
+// pad). Reconciling the worker against the AUTHORITY, rather than against a
+// history of how the authority got there, is the same argument standing rule 1
+// makes about surfaces, applied to the copy.
+//
+// Returns the number of chunks re-meshed, or -1 for a bad handle.
+OF_API int of_streamer_load_edits(int sId, double x, double y, double z,
+                                  double radiusM) {
+  StreamerRec* r = g_streamers.get(sId);
+  if (!r) return -1;
+  wg::VoxelEdits* e = g_edits.get(r->editsId);
+  if (!e) return -1;
+  of::persist::SaveReader rd(g_u8);
+  e->deserialize(rd);
+  return rebuildQuadsNear(*r, vec(x, y, z), radiusM);
+}
+
 // Drive LOD from the observer's body-frame authority position (metres).
 // Returns the number of chunks READY this call.
 OF_API int of_streamer_update(int sId, double ox, double oy, double oz) {

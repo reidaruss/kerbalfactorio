@@ -277,9 +277,30 @@
     + `${restoredMaxDeltaM.toFixed(6)} m`);
 
   const wEnd = of.world();
+
+  // --- 6. frame the capture -------------------------------------------------
+  // Standing ON the pad and looking down photographs the inside of its own cut
+  // walls: at 1.6 m of eye height a 6 m disc fills the frame with unlit
+  // polygons and says nothing. So back away across the slope, turn round, and
+  // look at the pad from outside it, in third person, where the flat step in
+  // the hillside and the player standing on it are both visible.
+  // Third person is NOT used for it, though it would show the player standing on
+  // the pad: `ViewMode.springArm` probes only `oracle.surfaceRadius`, so against
+  // a steep face every candidate is already below the heightfield and the arm
+  // collapses to 0.5 m, putting the camera inside the player's own head. That is
+  // a known open defect (STATUS.md) and not this pass's to fix, so the capture
+  // stays in first person: stand on the pad and look out across it, where the
+  // flat floor in the foreground meets the untouched slope beyond.
   await settle(0.4);
-  of.look(OF_ARGS.yawDeg ?? 0, OF_ARGS.shotPitchDeg ?? -22);
-  await settle(0.6);
+  await hold(OF_ARGS.reframeSecs ?? 0.35, ['KeyW']);
+  await settle(0.5);
+  // Put the sun near the zenith for the capture. The cut walls of a pad face
+  // sideways, so at the scenario's default low sun the whole foreground is in
+  // its own shadow and photographs as a black mass. This changes only the light,
+  // never the geometry, and every number above was taken before it.
+  of.setTime(OF_ARGS.shotSunT ?? 0.25);
+  of.look(OF_ARGS.shotYawDeg ?? (OF_ARGS.yawDeg ?? 0), OF_ARGS.shotPitchDeg ?? -25);
+  await settle(1.2);
 
   return {
     // DW-20 first: the sim actually advanced, and the tool actually ran.
