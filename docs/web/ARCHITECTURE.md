@@ -1198,6 +1198,32 @@ Added at W4 (2026-07-25):
 42. **A 40-degree slope limit empties the Mountains biome.** A mountain flank is
     steeper than that almost everywhere, so the one biome whose identity is loose
     rock had no loose rock on it. 57 degrees is the shipped value.
+43. **The browser was serving a WASM three commits stale, and it looked exactly
+    like the bug it was hiding.** `web/wasm/build.ps1` writes `web/wasm/dist`;
+    the client loads `web/public/wasm`, which is gitignored and only refreshed by
+    `npm run sync-wasm`. Nothing had run it since before the DW-19 fix, so the
+    browser kept producing byte-identical resident sets at `maxDepth` 12, 13, 14
+    and 15 — the precise signature of the saturating metric that had already been
+    fixed in `/core`. **A rebuild is not a deploy.** Any `/core` change must end
+    with `build.ps1` AND `sync-wasm`, and a bridge measurement that disagrees with
+    the native one should suspect the binary before the algorithm.
+44. **`chunks()` reports `meshPos` in RENDER space, so ranking by `|meshPos|`
+    measures distance from the floating ORIGIN, not from the camera.** The origin
+    had drifted 549 m over the probe's walk (rebases 0), so the "chunk under the
+    player's feet" came back as a depth-12 neighbour while depth-14 chunks were
+    genuinely underfoot: the LOD tuning read as two levels worse than it was.
+    `world().eyeRel` now publishes the eye in render space, and the probe asserts
+    `containsFeet` (centre within half a chunk diagonal) instead of trusting a
+    sort. This is item 21's floating-origin trap in a new costume.
+45. **The LOD split metric measures the observer to the quad CENTRE, so `s/d`
+    tops out near 2 and `splitRatio` has a CLIFF rather than a curve.** A quad the
+    observer stands inside reports up to a half-diagonal of distance, so at
+    `splitRatio` 2.0 a face root stops splitting and the entire quadtree collapses
+    to the `minResidentDepth` shell: measured on a mountain as 108 chunks, 0 near,
+    no terrain in the near scene at all. Below the cliff the ratio behaves as
+    designed. 1.4 ships because it is the highest value that still refines on a
+    mountain; a future distance-to-nearest-point metric would remove the cliff and
+    let the far field go coarser, at the cost of re-baselining the LOD pins.
 
 ### 15.3 The dev loop, concretely
 
