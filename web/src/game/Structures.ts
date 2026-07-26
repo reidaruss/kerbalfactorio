@@ -206,7 +206,7 @@ export class Structures {
 
   /** A site founded on the world lattice cell containing `p`, not yet adopted. */
   prospectiveSite(p: Vec3d): Site {
-    return makeSite(this.M, this.body, this.nextSite, p, this.module,
+    return makeSite(this.M, this.body, this.edits(), this.nextSite, p, this.module,
       (x, y, z) => this.groundRadius(x, y, z));
   }
 

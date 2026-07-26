@@ -10,6 +10,13 @@
 // even on a slope. Standing rule 1, one more time. Machines.ts has done exactly
 // this since the furnace shipped; this module is that logic lifted out so the
 // automation layer cannot grow a second, subtly different copy of it.
+//
+// AND THE EDIT SET IS A REQUIRED ARGUMENT, not a defaulted one. It used to be a
+// literal 0 here, in Machines and in the build ghost's aim march, while
+// OrePatches and Structures passed the live handle: half the build system read
+// the world as it was BEFORE the player dug it. Measured (`probes/beltfloat.js`)
+// the surface under the feet had moved 4.00 m after eight strikes. A default
+// would let the next caller make the same mistake silently, so there is none.
 
 import * as THREE from 'three';
 import { scratchF64, scratchI32, type OfCoreModule } from '../sim/wasm/heap.js';
@@ -29,8 +36,8 @@ export function cellKeyOf(M: OfCoreModule, x: number, y: number, z: number): str
   return `${c[0]},${c[1]},${c[2]}`;
 }
 
-/** Snap to the lattice, then put the result back on the oracle surface. */
-export function snapToGround(M: OfCoreModule, body: number,
+/** Snap to the lattice, then put the result back on the LIVE oracle surface. */
+export function snapToGround(M: OfCoreModule, body: number, edits: number,
                              x: number, y: number, z: number): Snapped {
   M._of_cell_for_pos(x, y, z);
   const c = scratchI32(M, 3);
@@ -40,7 +47,7 @@ export function snapToGround(M: OfCoreModule, body: number,
   const px = p[0], py = p[1], pz = p[2];
   const r = Math.hypot(px, py, pz) || 1;
   const dx = px / r, dy = py / r, dz = pz / r;
-  const ground = M._of_surface_radius(body, 0, dx, dy, dz);
+  const ground = M._of_surface_radius(body, edits, dx, dy, dz);
   return {
     pos: { x: dx * ground, y: dy * ground, z: dz * ground },
     up: new THREE.Vector3(dx, dy, dz),

@@ -31,7 +31,6 @@ import type { Structures, StructurePart } from './Structures.js';
 import type { StructureView } from './StructureView.js';
 import type { FactoryView } from './FactoryView.js';
 import type { Action } from '../player/Bindings.js';
-import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 export type { PartKind };
 
@@ -103,8 +102,7 @@ export class BuildMode {
                       step: { di: number; dj: number } | null } | null = null;
   private dragKey = '';
 
-  constructor(private readonly M: OfCoreModule, private readonly body: number,
-              private readonly factory: Factory, private readonly view: FactoryView,
+  constructor(private readonly factory: Factory, private readonly view: FactoryView,
               private readonly structures: Structures,
               private readonly structView: StructureView) {}
 
@@ -283,14 +281,21 @@ export class BuildMode {
   /**
    * March the aim ray until it is below the ground, then snap the hit to the
    * site grid and answer whether the placement would be accepted.
+   *
+   * THE GROUND HERE IS THE LIVE ONE, asked through `Structures.groundRadius`,
+   * which is the one call site in this directory that has always passed the
+   * edit set. It used to pass a literal 0, so over ground the player had dug or
+   * levelled the ray stopped at a surface that no longer existed: measured, a
+   * -25 degree aim across a cut put the ghost **1.807 m** from where the aim
+   * actually meets the ground, which is a cell and a half of targeting error and
+   * is most of what made laying a line into a cut feel unresponsive.
    */
   private resolve(ray: BuildRay, kind: BuildKind): BuildTarget | null {
     const o = ray.origin, d = ray.dir;
     let hitT = -1;
     for (let t = 0.6; t <= REACH_M; t += STEP_M) {
       const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
-      const r = Math.hypot(x, y, z) || 1;
-      if (r <= this.M._of_surface_radius(this.body, 0, x / r, y / r, z / r)) {
+      if (Math.hypot(x, y, z) <= this.structures.groundRadius(x, y, z)) {
         hitT = t; break;
       }
     }

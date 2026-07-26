@@ -86,6 +86,9 @@ export class Machines {
     private readonly core: GameCore,
     private readonly origin: FloatingOrigin,
     private readonly bodyHandle: number,
+    /** The LIVE voxel edit set. A furnace put down in a pit belongs in the
+     *  pit, and this used to be a literal 0 (probes/beltfloat.js). */
+    private readonly edits: () => number = () => 0,
   ) {
     this.group.name = 'machines';
     this.group.add(this.smoke.mesh);
@@ -110,7 +113,7 @@ export class Machines {
     const cx = p[0], cy = p[1], cz = p[2];
     const r = Math.hypot(cx, cy, cz) || 1;
     const dx = cx / r, dy = cy / r, dz = cz / r;
-    const ground = this.M._of_surface_radius(this.bodyHandle, 0, dx, dy, dz);
+    const ground = this.M._of_surface_radius(this.bodyHandle, this.edits(), dx, dy, dz);
     return { x: dx * ground, y: dy * ground, z: dz * ground };
   }
 

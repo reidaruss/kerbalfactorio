@@ -130,10 +130,10 @@ export function addrKey(a: Addr): string {
  * grid uses, so a site's east is the direction a belt at that spot would run.
  * One tangent convention for the whole game, not two.
  */
-export function makeSite(M: OfCoreModule, body: number, id: number, p: Vec3d,
-                         m: StructureModule,
+export function makeSite(M: OfCoreModule, body: number, edits: number, id: number,
+                         p: Vec3d, m: StructureModule,
                          ground: (x: number, y: number, z: number) => number): Site {
-  const s = snapToGround(M, body, p.x, p.y, p.z);
+  const s = snapToGround(M, body, edits, p.x, p.y, p.z);
   const up = s.up.clone();
   const basis = new THREE.Vector3(-up.y, up.x, 0);
   if (basis.lengthSq() < 1e-9) basis.set(1, 0, 0);

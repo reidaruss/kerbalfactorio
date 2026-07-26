@@ -109,7 +109,8 @@ export function gameplayApi(s: Services, loop: Loop) {
     latticeCell(x: number, y: number, z: number) {
       const f = s.gameplay?.factory;
       if (f === undefined) return null;
-      const p = snapToGround(s.core, f.bodyHandle, x, y, z);
+      const p = snapToGround(s.core, f.bodyHandle,
+        s.voxels?.handle ?? 0, x, y, z);
       return [p.pos.x, p.pos.y, p.pos.z];
     },
 

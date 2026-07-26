@@ -146,7 +146,8 @@ export class Gameplay {
     this.panel.closer = () => this.setPanel(false);
     this.goalPanel = new ObjectivePanel(d.host);
     showGoals(this, this.goals.wasVisible());
-    this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle);
+    this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle,
+      () => d.ports?.voxels?.handle ?? 0);
     this.furnacePanel = new FurnacePanel(
       d.host, this.modals, (item) => loadFurnace(this, this.openMachine, item),
       () => takeFurnace(this, this.openMachine));
@@ -171,7 +172,7 @@ export class Gameplay {
       this.oreField.patches, this.structures);
     this.factoryView = new FactoryView(d.origin);
     this.structView = new StructureView(d.origin);
-    this.build = new BuildMode(d.core, d.bodyHandle, this.factory, this.factoryView,
+    this.build = new BuildMode(this.factory, this.factoryView,
       this.structures, this.structView);
     // A hand furnace announces its own ingots, at the furnace that made them.
     this.machines.onSmelt = (m, n) => {
