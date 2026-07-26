@@ -209,7 +209,7 @@ Rules for any export added later:
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 4
+int      of_abi_version(void);                 // 5
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
@@ -223,6 +223,16 @@ build at the same ABI**, which is how the browser ran three-commit-old world
 generation for most of a session: `build.ps1` writes `web/wasm/dist`, the client
 serves `web/public/wasm`, and only `npm run sync-wasm` connects them. Treat
 `build.ps1 && sync-wasm` as one operation.
+
+**ABI 5, 2026-07-26 — STRUCTURAL BUILDING SET (`gameplay.h` section S.6).** The
+base-building parts (foundation, floor, wall, door) as data: items
+`0x0040..0x0043`, entity TypeIds `0x40..0x43`. New: `of_gp_structure_count` /
+`of_gp_structure_info` / `of_gp_structure_can_afford` / `of_gp_structure_pay`
+(section 4.9c). These are NOT factory-sim entities and there is no `of_fs_*`
+call for them: a foundation never ticks, has no ports, no power and no
+inventory, so the sim never sees it. Placement PAYS a build cost rather than
+crafting an item, so `of_gp_recipe_count` still returns 4 and no existing
+signature changed.
 
 **ABI 4, 2026-07-26 — TERRAFORMING (WG-22).** The voxel layer gained a second
 sparse set (`added`), so **fill is representable at all**; before this the model
@@ -677,6 +687,39 @@ its remaining and initial amounts from the patch on every read, and
 through `gameplay.h` section S.5, which is `harvestNode` with the patch's pool
 handed in and exactly what it removed taken back out of the patch, so the tool
 rule and the no-bootstrap-deadlock rule are the same ones a tree obeys.
+
+### 4.9c Structural building set (ABI 5, `gameplay.h` section S.6)
+
+Foundation, floor, wall and door: placeable structural parts, authored as data
+so balance iterates without a recompile. The shipped art is
+`assets/models/dist/structures/{foundation,floor,wall,door}.glb`.
+
+```c
+int of_gp_structure_count(void);          // 4; content, so valid before of_gp_init
+// i32 scratch [item, typeId, kind, inputCount, (itemId, count)*inputCount].
+// -> words written, or 0 for a bad index.
+int of_gp_structure_info(int i);
+int of_gp_structure_can_afford(int i);    // 1 = the pack holds the whole cost
+int of_gp_structure_pay(int i);           // 1 = paid (all-or-nothing, adds NO item)
+```
+
+| kind | item | TypeId | cost |
+|---|---|---|---|
+| 0 Foundation | `0x0040` | `0x40` | 4 Stone |
+| 1 Floor | `0x0041` | `0x41` | 2 Wood + 2 Stone |
+| 2 Wall | `0x0042` | `0x42` | 3 Wood |
+| 3 Door | `0x0043` | `0x43` | 4 Wood + 1 Iron |
+
+**These are not factory-sim entities.** A foundation never ticks, has no ports,
+no power and no inventory, so it never enters `FactorySim`'s entity arrays and
+there is no `of_fs_*` call here. Same call `gameplay.h` made for the survival
+furnace: a gameplay-layer type, not a machine.
+
+**Placement pays, it does not craft.** `of_gp_structure_pay` consumes the cost
+and adds nothing to the pack, because what it produces is a building in the
+world. Commit the placement only on `1`, so the units can never exist as both a
+wall and a stack. This is why the four never appear in `of_gp_recipe_*`, which
+still lists exactly the four hand recipes.
 
 ### 4.10 Determinism diagnostics
 

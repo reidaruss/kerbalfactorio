@@ -179,7 +179,14 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       bytes of_edits_serialize writes are a NEW self-describing format that
 //       carries both sets; of_edits_deserialize still reads the old one, so
 //       existing slots load. Additive: no existing signature changed.
-OF_API int of_abi_version(void) { return 4; }
+//   5: STRUCTURAL BUILDING SET (gameplay.h §S.6). The base-building parts
+//       (foundation, floor, wall, door) as data: items 0x0040..0x0043, entity
+//       TypeIds 0x40..0x43. New of_gp_structure_count / of_gp_structure_info /
+//       of_gp_structure_can_afford / of_gp_structure_pay. Placement PAYS a build
+//       cost rather than crafting an item, so of_gp_recipe_* is unchanged and
+//       still lists exactly the four hand recipes. Additive: no existing
+//       signature changed.
+OF_API int of_abi_version(void) { return 5; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -1636,6 +1643,20 @@ std::vector<int32_t> g_gpNodePatch;
 
 std::vector<sv::CraftRecipe> g_gpRecipes;
 
+// The base-building structural set (gameplay.h §S.6). Pure content with no
+// dependency on the registry or the inventory, so it is materialised once on
+// first use rather than in of_gp_init: the build menu can be populated before a
+// world exists, and there is still exactly one copy of the data.
+const std::vector<sv::StructureDef>& gpStructures() {
+  static const std::vector<sv::StructureDef> s = sv::structureDefs();
+  return s;
+}
+const sv::StructureDef* gpStructure(int i) {
+  const std::vector<sv::StructureDef>& s = gpStructures();
+  if (i < 0 || static_cast<size_t>(i) >= s.size()) return nullptr;
+  return &s[static_cast<size_t>(i)];
+}
+
 Registry<sv::Furnace> g_furnaces;
 
 bool gpReady() { return g_reg && g_inv; }
@@ -2127,6 +2148,56 @@ OF_API int of_gp_recipe_info(int i) {
 OF_API int of_gp_craft(int i) {
   if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpRecipes.size()) return 0;
   return sv::HandCrafter::craft(g_gpRecipes[static_cast<size_t>(i)], *g_inv) ? 1 : 0;
+}
+
+// --- Structural building set (gameplay.h §S.6) -------------------------------
+// Foundation / floor / wall / door. These are NOT factory-sim entities: they
+// never tick, have no ports, no power and no inventory, so the sim never sees
+// them and there is no of_fs_* call here. The client places a TypeId and pays a
+// build cost; that is the whole contract.
+//
+// PLACEMENT PAYS, IT DOES NOT CRAFT. of_gp_structure_pay consumes the cost and
+// adds NO item to the pack, because the thing produced is a building in the
+// world, not a stack. That is why these four never appear in of_gp_recipe_*.
+
+// How many structural parts exist. Content, so this is valid before of_gp_init.
+OF_API int of_gp_structure_count(void) {
+  return static_cast<int>(gpStructures().size());
+}
+
+// i32 scratch [item, typeId, kind, inputCount, (itemId, count)*inputCount].
+// Returns the element count written, or 0 for an out-of-range index. `count` is
+// the cost, not what the pack holds: use of_gp_count / of_gp_structure_can_afford
+// for affordability so the two never disagree.
+OF_API int of_gp_structure_info(int i) {
+  resetI32(12);
+  const sv::StructureDef* d = gpStructure(i);
+  if (!d) return 0;
+  g_i32.push_back(static_cast<int32_t>(d->item));
+  g_i32.push_back(static_cast<int32_t>(d->typeId));
+  g_i32.push_back(static_cast<int32_t>(d->kind));
+  g_i32.push_back(static_cast<int32_t>(d->cost.inputs.size()));
+  for (const gp::ItemStack& in : d->cost.inputs) {
+    g_i32.push_back(static_cast<int32_t>(in.item));
+    g_i32.push_back(static_cast<int32_t>(in.count));
+  }
+  return static_cast<int>(g_i32.size());
+}
+
+// 1 if the pack holds the whole build cost right now, else 0. Read-only.
+OF_API int of_gp_structure_can_afford(int i) {
+  const sv::StructureDef* d = gpStructure(i);
+  if (!gpReady() || !d) return 0;
+  return sv::HandCrafter::canCraft(d->cost, *g_inv) ? 1 : 0;
+}
+
+// Pay the build cost, ALL-OR-NOTHING. 1 on success (every input removed, nothing
+// added), 0 if any input is short (nothing removed). The caller commits the
+// placement only on 1, so the units cannot exist as both a wall and a stack.
+OF_API int of_gp_structure_pay(int i) {
+  const sv::StructureDef* d = gpStructure(i);
+  if (!gpReady() || !d) return 0;
+  return sv::HandCrafter::payInputs(d->cost, *g_inv) ? 1 : 0;
 }
 
 // --- Furnaces ----------------------------------------------------------------
