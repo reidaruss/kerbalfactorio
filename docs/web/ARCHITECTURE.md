@@ -1830,6 +1830,23 @@ Added at W4 (2026-07-25):
     keys in the opposite order. A probe's premise can rot while every one of its
     assertions stays correct, and the assertions are the part everybody reads.
 
+102. **A LATTICE STEP IS NOT A METRE, and a belt run was silently splitting on
+    it.** The build grid is /core's 1 m voxel lattice in body-frame XYZ and the
+    ground sphere cuts through it obliquely, so the ground distance between two
+    cells whose keys differ by one is whatever the local geometry says.
+    Measured on Forge at the spawn: 0.59 m along one body axis, 0.81 along
+    another, 1.02 along the third, and a straight run walks a staircase of all
+    three. `chainRuns` asked for "the belt in the cell one metre along this
+    tile's flow vector", which on two axes out of three overshoots that tile's
+    actual neighbour, so the chain broke and /core correctly reported two or
+    three transport lines where the player had laid one. Nothing about it is
+    visible: the tiles look like a straight line, the wiring looks healthy, and
+    the ore simply never arrives. It is a distance test now (nearest belt within
+    1.35 m whose offset is 0.85 aligned with the flow), and the alignment gate
+    is doing real work because a diagonal neighbour here can be SHORTER than a
+    face neighbour: 0.59 and 0.81 make a 1.00 m diagonal. Two probes had been
+    quietly compensating for this by placing their tiles very close together.
+
 ### 15.3 The dev loop, concretely
 
 ```
