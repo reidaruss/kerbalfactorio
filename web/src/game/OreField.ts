@@ -272,6 +272,20 @@ export class OreField {
     }
   }
 
+  /**
+   * Every node index that is an OUTCROP of some patch.
+   *
+   * The save needs this to be exact rather than inferred. Asking "is this node
+   * standing inside a patch?" gets a tree that happens to grow on an ore body
+   * wrong, and the consequence is silent: that tree's depletion is dropped from
+   * the slot and it comes back full after a reload.
+   */
+  outcropIndices(): Set<number> {
+    const out = new Set<number>();
+    for (const s of this.skins) for (const i of s.outcrops) out.add(i);
+    return out;
+  }
+
   /** The patch under a body-frame point, or -1. THE drill placement question. */
   patchUnder(x: number, y: number, z: number): number {
     return this.patches.find(x, y, z);

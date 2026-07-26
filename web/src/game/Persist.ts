@@ -20,7 +20,7 @@ import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
 import type { Machines } from './Machines.js';
 import type { NodeField } from './NodeField.js';
-import type { OrePatches } from './OrePatches.js';
+import type { OreField } from './OreField.js';
 import type { Gameplay } from './Gameplay.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
@@ -49,7 +49,7 @@ export interface RestoreLedger {
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
                          seed: number, ports: WorldPorts,
-                         ore: OrePatches): SaveSlot {
+                         ore: OreField): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -59,19 +59,23 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   // re-enters WASM and any growth detaches the view.
   const pack = n > 0 ? Array.from(scratchU8(M, n)) : [];
 
-  // Nodes first. An OUTCROP reports its patch's pool, so writing it here would
-  // record the same ore once per outcrop and drain it that many times on load:
-  // the diff is keyed by what OWNS the ore, and for ore that is the patch.
+  // Nodes first, and NOT the outcrops. An outcrop reports its patch's pool, so
+  // writing it here would record the same ore once per outcrop and drain it that
+  // many times on load: the diff is keyed by what OWNS the ore, and for ore that
+  // is the patch. The outcrops are named exactly, not inferred from where they
+  // stand, because a tree growing on an ore body would be misread and its own
+  // depletion silently dropped.
+  const outcrops = ore.outcropIndices();
   const depletion: [number, number][] = [];
   for (const pl of field.placed) {
+    if (outcrops.has(pl.index)) continue;
     const st = game.node(pl.index);
     if (st === null || st.remaining >= st.initial) continue;
-    if (ore.find(st.x, st.y, st.z) >= 0) continue;   // an outcrop: its patch owns it
     depletion.push([pl.index, st.remaining]);
   }
   const patches: [number, number][] = [];
-  for (let i = 0; i < ore.count; ++i) {
-    const p = ore.patch(i);
+  for (let i = 0; i < ore.patches.count; ++i) {
+    const p = ore.patches.patch(i);
     if (p !== null && p.remaining < p.initial) patches.push([i, p.remaining]);
   }
 
@@ -106,7 +110,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
 export function apply(M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
                       slot: SaveSlot, ports: WorldPorts,
-                      ore: OrePatches): RestoreLedger {
+                      ore: OreField): RestoreLedger {
   // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
   //    surface the oracle reports, and a miner or a machine placed against the
   //    old, un-dug column would sit at the wrong height.
@@ -120,10 +124,10 @@ export function apply(M: OfCoreModule, game: GameCore,
   //    reach. Patches first, because a drill placed in step 3 is seeded from one.
   let patchesDepleted = 0;
   for (const [index, remaining] of slot.patches ?? []) {
-    const p = ore.patch(index);
+    const p = ore.patches.patch(index);
     if (p === null) continue;
     const take = p.remaining - remaining;
-    if (take > 0) { ore.drain(index, take); patchesDepleted++; }
+    if (take > 0) { ore.patches.drain(index, take); patchesDepleted++; }
   }
   let depleted = 0;
   for (const [index, remaining] of slot.depletion) {
@@ -185,7 +189,7 @@ export function apply(M: OfCoreModule, game: GameCore,
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField.patches);
+    g.seed, g.ports, g.oreField);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
@@ -202,7 +206,7 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
   g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports,
-    g.oreField.patches);
+    g.oreField);
   g.panel.invalidate();
   const dug = g.restored.voxels.cells;
   g.hud.flash(`restored ${g.restored.buildings} buildings, `
