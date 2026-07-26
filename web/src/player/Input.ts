@@ -84,7 +84,13 @@ export class Input {
     el.addEventListener('pointermove', (e) => {
       if (!this.lookEnabled) return;
       if (!this.dragging && !this.locked) return;
-      this.dYaw -= e.movementX * MOUSE_SENS;
+      // Yaw is NOT the mirror of pitch, and assuming it was is how this shipped
+      // inverted. tangentFrame builds ENU with east x north = up, and ViewMode
+      // aims along east*sin(yaw) + north*cos(yaw), so RISING yaw swings from
+      // north toward east, which is a turn to the RIGHT. Mouse right therefore
+      // ADDS. Pitch keeps its minus: screen Y grows downward, so mouse down
+      // must lower the aim.
+      this.dYaw += e.movementX * MOUSE_SENS;
       this.dPitch -= e.movementY * MOUSE_SENS;
     });
     el.addEventListener('click', () => {
