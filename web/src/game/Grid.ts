@@ -76,6 +76,27 @@ export function snapToAxes(up: THREE.Vector3, ref: THREE.Vector3,
   return db >= 0 ? b : b.clone().negate();
 }
 
+/**
+ * A full orthonormal frame: local +Y on `up` and local +Z on `fwd`, PITCH
+ * included.
+ *
+ * `orient` below only yaws, which is right for a machine standing on the
+ * ground: it should be upright whatever the slope. It is wrong for a belt,
+ * because a run of upright 1 m tiles on a hillside is a STAIRCASE, stepping by
+ * the slope's rise every tile. A conveyor is inclined, so its tiles take the
+ * run's own direction and a normal perpendicular to it. `fwd` must already be
+ * perpendicular to `up`.
+ */
+export function frameOf(up: THREE.Vector3, fwd: THREE.Vector3): THREE.Quaternion {
+  const z = fwd.clone().normalize();
+  const y = up.clone().addScaledVector(z, -up.dot(z));
+  if (y.lengthSq() < 1e-9) return orient(up, fwd);
+  y.normalize();
+  const x = new THREE.Vector3().crossVectors(y, z).normalize();
+  return new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(x, y, z));
+}
+
 /** Stand local +Y on the ground normal, then yaw local +Z onto `fwd`. */
 export function orient(up: THREE.Vector3, fwd: THREE.Vector3): THREE.Quaternion {
   const stand = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);

@@ -12,6 +12,8 @@
 // (where items enter) and its LAST tile is its head (where they leave), matching
 // addInserter's direction.
 
+import * as THREE from 'three';
+import { frameOf } from './Grid.js';
 import { chainRuns, wire } from './FactoryWiring.js';
 import { FOOTPRINT, TYPE_ID, type Factory, type Placed } from './Factory.js';
 
@@ -68,7 +70,51 @@ export function commitPlan(f: Factory): void {
     });
 
     stampPlacements(f);
+    pitchRuns(f);
     wire(f);
+}
+
+/**
+ * A RUN IS A RAMP, NOT A STAIRCASE.
+ *
+ * A belt follows the ground, so consecutive tiles differ in height by the local
+ * slope: measured on the shipped world, 0.19 m per 1.00 m tile on an 11 degree
+ * hillside. Left upright, each tile is a horizontal plank at its own height and
+ * the run reads as a flight of steps, which is the second half of "belts don't
+ * smoothly line up with each other" and survives the grid fix entirely.
+ *
+ * So every tile takes the RUN's own 3D direction and a normal perpendicular to
+ * it. The residual is the kink between two rigid 1.00 m planks whose centres are
+ * 1.0176 m apart, which is 0.018 m at that slope against the 0.189 m step it
+ * replaces.
+ *
+ * It runs AFTER `chainRuns`, deliberately: chaining asks which tile is ahead
+ * along the flow, and answering that with a pitched vector on a slope would
+ * make the test depend on the terrain. The pitched heading is for DRAWING, and
+ * the next commit re-derives it from the positions either way.
+ */
+function pitchRuns(f: Factory): void {
+  const d = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  for (const run of f.runs) {
+    if (run.length < 2) continue;
+    for (let i = 0; i < run.length; ++i) {
+      const a = run[i];
+      // The last tile has no successor, so it borrows the heading INTO it.
+      const b = i + 1 < run.length ? run[i + 1] : run[i - 1];
+      const s = i + 1 < run.length ? 1 : -1;
+      d.set((b.pos.x - a.pos.x) * s, (b.pos.y - a.pos.y) * s,
+        (b.pos.z - a.pos.z) * s);
+      if (d.lengthSq() < 1e-9) continue;
+      d.normalize();
+      up.set(a.pos.x, a.pos.y, a.pos.z).normalize();
+      up.addScaledVector(d, -up.dot(d));
+      if (up.lengthSq() < 1e-9) continue;
+      a.up.copy(up.normalize());
+      a.fwd.copy(d);
+      a.quat = frameOf(a.up, a.fwd);
+    }
+  }
 }
 
 /** What ore reaches this smelter: the resource of the nearest drill's patch. */
