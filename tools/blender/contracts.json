@@ -1280,50 +1280,67 @@
     "launch_pad": {
       "glb": "assets/models/dist/rocket/launch_pad.glb",
       "_comment": [
-        "TIER 2. A placed structure, so section 2.2 applies exactly as it does",
-        "to a smelter: an 8 x 8 WHOLE-METRE footprint, pivot at the footprint",
-        "centre, base on y = 0, nothing overhanging the cell. 8 is even, so it",
-        "snaps to a cell corner.",
-        "The clamp is a SEPARATE ground-pivoted part on the file origin,",
-        "following the Tier-1 atlas convention: the renderer clones it and",
-        "places three around the circle socket_clamp marks.",
+        "TIER 2, and the HERO ASSET of the DW-35 material pass. Rebuilt at",
+        "24 x 24 m from the 8 x 8 m original on Reid's 'make it big and make",
+        "it look good', which he said twice. 24 is 6 structural cells of the",
+        "DW-32 4 m module and 9x the ground area of the original.",
+        "A placed structure, so section 2.2 applies exactly as to a smelter:",
+        "WHOLE-METRE footprint, pivot at the footprint centre, base on y = 0,",
+        "nothing overhanging the cell. 24 is even, so it snaps to a cell",
+        "corner.",
+        "THE DECK IS RAISED 2.00 m and that is the whole reason the thing",
+        "reads as launch infrastructure rather than as a big foundation: it",
+        "gives the FLAME TRENCH somewhere to go. A pad flush with the ground",
+        "has nowhere to send the exhaust and looks like a car park.",
+        "socket_vessel is on the DECK TOP, so it is [0, 2.00, 0]. This is the",
+        "rollout anchor that replaces the flight lane's admitted stand-in of",
+        "planting a rocket 26 m in front of the player. The value MOVED from",
+        "[0, 1.60, 0]; nothing consumed the old one yet.",
+        "FOUR clamps, not three, on a 1.90 m circle sized for the DW-29a",
+        "class L 2.50 m diameter. The clamp stays a SEPARATE ground-pivoted",
+        "part on the file origin, per the Tier-1 atlas convention: the",
+        "renderer clones it and places four around the circle socket_clamp",
+        "marks.",
         "Clamp_Release is authored HOLDING, because frame 1 is the exported",
         "static pose and a pad at rest is a pad holding a rocket.",
-        "Three proxies: the deck, the tower and the clamp. One convex box",
-        "cannot describe a slab with a 12 m mast on one corner."
+        "Four proxies. One convex box cannot describe a slab with a 28 m mast",
+        "on one edge, and the trench must NOT be filled in by the deck proxy",
+        "or the player walks on air over it."
       ],
       "lod0_node": "LaunchPad_LOD0",
       "lod_nodes": [
         "LaunchPad_LOD0", "LaunchPad_LOD1", "LaunchPad_LOD2",
         "LaunchClamp_LOD0", "LaunchClamp_LOD2", "LaunchClamp_Arm"
       ],
-      "footprint_cells": [8, 8],
+      "footprint_cells": [24, 24],
       "pivot_mode": "ground",
-      "dims_xyz_m": [8.00, 12.00, 8.00],
+      "dims_xyz_m": [24.00, 28.00, 24.00],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 900,
-      "max_tris_total": 1300,
-      "max_tris_collision": 36,
-      "max_materials": 6,
+      "max_tris_lod0": 2600,
+      "max_tris_total": 4200,
+      "max_tris_collision": 60,
+      "max_materials": 7,
       "sockets": [
         "socket_vessel",
         "socket_clamp",
+        "socket_umbilical",
         "socket_smoke",
         "socket_status"
       ],
       "clips": ["Clamp_Release"],
       "frame1_identity": true,
-      "collision": ["col_LaunchPad", "col_LaunchTower", "col_LaunchClamp"],
+      "collision": ["col_LaunchPad", "col_LaunchTower", "col_LaunchTrench",
+                    "col_LaunchClamp"],
       "parts": [
-        {"node": "LaunchPad_LOD0", "dims_xyz_m": [8.00, 12.00, 8.00], "max_tris": 900, "pivot": "ground"},
-        {"node": "LaunchPad_LOD1", "dims_xyz_m": [8.00, 12.00, 8.00], "max_tris": 400, "pivot": "ground"},
-        {"node": "LaunchPad_LOD2", "dims_xyz_m": [8.00, 12.00, 8.00], "max_tris": 100, "pivot": "ground"},
-        {"node": "LaunchClamp_LOD0", "dims_xyz_m": [1.24, 1.50, 0.50], "max_tris": 100, "pivot": "ground"},
-        {"node": "LaunchClamp_LOD2", "dims_xyz_m": [1.24, 1.50, 0.50], "max_tris": 60, "pivot": "ground"},
-        {"node": "LaunchClamp_Arm", "dims_xyz_m": [1.00, 0.44, 0.30], "max_tris": 60, "pivot": "none"}
+        {"node": "LaunchPad_LOD0", "dims_xyz_m": [24.00, 28.00, 24.00], "max_tris": 2600, "pivot": "ground"},
+        {"node": "LaunchPad_LOD1", "dims_xyz_m": [24.00, 28.00, 24.00], "max_tris": 900, "pivot": "ground"},
+        {"node": "LaunchPad_LOD2", "dims_xyz_m": [24.00, 28.00, 24.00], "max_tris": 260, "pivot": "ground"},
+        {"node": "LaunchClamp_LOD0", "dims_xyz_m": [1.60, 2.40, 0.70], "max_tris": 160, "pivot": "ground"},
+        {"node": "LaunchClamp_LOD2", "dims_xyz_m": [1.60, 2.40, 0.70], "max_tris": 80, "pivot": "ground"},
+        {"node": "LaunchClamp_Arm", "dims_xyz_m": [1.40, 0.60, 0.40], "max_tris": 80, "pivot": "none"}
       ],
       "part_sockets": {
-        "LaunchPad": {"socket_vessel": [0, 1.60, 0], "socket_clamp": [1.25, 0.40, 0]}
+        "LaunchPad": {"socket_vessel": [0, 2.00, 0], "socket_clamp": [1.90, 2.00, 0]}
       }
     },
 
@@ -1367,6 +1384,7 @@
 
     "vfx_engine_plume": {
       "glb": "assets/models/dist/rocket/vfx_engine_plume.glb",
+      "uv_mode": "authored",
       "_comment": [
         "TIER 2, GEOMETRY ONLY: the shader is the rendering domain's.",
         "A UNIT plume, 1.00 m across the mouth and 1.00 m long, pointing down",

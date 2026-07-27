@@ -19,6 +19,24 @@ build script ran.
 Cycles on the CPU, deliberately. EEVEE needs a GPU context that a headless
 Windows Blender does not reliably have, and a check that only runs on the
 author's machine is not a check.
+
+SURFACE MAPS (DW-35), opt in. A `--maps` or `--nomaps` token anywhere in the
+argument list runs `surface_preview.apply_all()` (or `apply_all(off=True)`)
+after the import and before the first render:
+
+    ... -- <glb> <prefix> --nomaps rest:0:surfmach     # the BEFORE
+    ... -- <glb> <prefix> --maps   rest:0:surfmach     # the AFTER
+
+With NEITHER token the behaviour is exactly what it was: no import of
+surface_preview, no material edits, flat palette constants as the .glb shipped
+them. That default matters, because every existing caller and every committed
+screenshot was produced by it.
+
+`--nomaps` is not the same as omitting the flag. It strips the maps and REWRITES
+the palette constants onto the BSDF, which makes the before half of a comparison
+a positive statement about what the material is rather than an assumption that
+nothing has touched it. Same scene, same camera, same lighting, same shipped
+file, one flag: that is the only thing that makes the two frames comparable.
 """
 
 import math
@@ -29,6 +47,10 @@ import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+if HERE not in sys.path:
+    # Blender puts the SCRIPT's directory on sys.path only for some invocation
+    # paths, so `import surface_preview` is made explicit rather than lucky.
+    sys.path.insert(0, HERE)
 
 VIEWS = {
     # name: (camera position, look-at target, focal length mm)
@@ -45,6 +67,35 @@ VIEWS = {
     # launch tower is off the top of every one of them.
     "vessel34": ((7.2, -8.6, 4.6), (0.0, 0.0, 3.0), 50.0),
     "site34": ((14.0, -16.0, 8.5), (0.0, 0.0, 4.2), 50.0),
+
+    # --- DW-35 surface comparison -------------------------------------------
+    # Two views per asset, and the pair is the argument: a surface pass is a
+    # claim about two different distances at once. The `surf*` views frame the
+    # WHOLE asset, which is where tiling repetition shows and where a texture
+    # that is too fine disappears; the `det*` views put roughly 0.5 to 0.8 m of
+    # surface across the frame, which is where the panel line either reads as a
+    # panel line or reads as dirt. Judging either one alone is how a texture
+    # ships that looks right in a hero shot and wrong in the game.
+    #
+    # Frame widths are computed, not eyeballed: at 420 x 540 Blender fits the
+    # 36 mm sensor to the LARGER dimension, so the horizontal half-angle is
+    # atan(14 / f) and one metre of surface at distance D is 420 / (0.509 * D)
+    # pixels at f = 55. The numbers in the comments below are that arithmetic.
+    "surfmach": ((4.22, -6.76, 4.57), (0.0, 0.0, 1.35), 55.0),   # 4.4 m wide
+    "surfwall": ((2.56, -7.87, 4.07), (0.0, 0.0, 1.70), 55.0),   # 4.4 m wide
+    "surfpad": ((4.52, -7.83, 7.84), (0.0, 0.0, 0.25), 55.0),    # 6.0 m wide
+    "surfnode": ((2.70, -3.85, 2.21), (0.0, 0.0, 0.50), 55.0),   # 2.5 m wide
+    # The player's full view is the existing `front`, deliberately: it is the
+    # frame every committed player screenshot already uses.
+    "detmach": ((0.75, -2.60, 1.95), (0.0, -1.20, 1.45), 55.0),  # 0.6-0.8 m
+    "detwall": ((0.55, -1.35, 1.85), (0.0, -0.12, 1.60), 55.0),  # 0.70 m
+    "detpad": ((0.60, -1.10, 1.55), (0.0, -0.35, 0.50), 55.0),   # 0.73 m
+    # Pulled back from a first attempt at 1.5 m, which put three facets of a
+    # 1.6 m boulder across the whole frame: at that distance the coarse tile is
+    # bigger than the frame, so the one thing the shot exists to answer - does
+    # this tile repeat - could not be answered by it.
+    "detnode": ((1.58, -1.77, 1.84), (0.05, -0.15, 0.65), 55.0),  # 0.94 m
+    "detbody": ((0.42, -1.05, 1.45), (0.0, -0.16, 1.25), 55.0),  # 0.51 m
 }
 
 
@@ -150,6 +201,15 @@ def play(arm, clip, frame):
 
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    # Pull the surface-map token out wherever it sits, so the positional
+    # arguments keep the meaning and the ORDER they have always had. `maps` is
+    # None when neither token is present, and None is the untouched default -
+    # distinct from False, which is an active "strip them".
+    maps = None
+    for tok, val in (("--maps", True), ("--nomaps", False)):
+        while tok in argv:
+            argv.remove(tok)
+            maps = val
     if len(argv) < 3:
         print(__doc__)
         return
@@ -159,6 +219,16 @@ def main():
     bpy.context.scene.render.fps = 60
     cam = setup_world()
     bpy.ops.import_scene.gltf(filepath=os.path.join(ROOT, glb))
+    if maps is not None:
+        # Imported at module scope this would make every existing caller depend
+        # on assets/textures/dist/ being present, and surface_preview raises if
+        # the manifest is missing. Imported here, only a caller that asked for
+        # maps can be told the maps are not built.
+        import surface_preview
+        rep = surface_preview.apply_all(off=not maps)
+        print("[render_check] surface maps %s: %d mapped, %d flat, %d skipped"
+              % ("ON" if maps else "OFF (stripped)", len(rep["mapped"]),
+                 len(rep["flat"]), len(rep["skipped"])))
     # Show what the RUNTIME shows: one LOD band, no collision proxy, and for a
     # harvest node only the _Full depletion variant. A .glb holds every band and
     # every variant as siblings, so rendering the file raw draws LOD0, LOD1 and

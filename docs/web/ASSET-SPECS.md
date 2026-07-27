@@ -73,9 +73,13 @@ at-a-glance clarity in 3D.
 
 Practical consequences, all load-bearing:
 
-- **No image textures in Tier 0.** Flat base colour plus metallic/roughness
-  constants. Files stay tiny, there is no UV work, no KTX2 step, and no texture
-  memory budget to police.
+- **Colour is carried by the palette; SURFACE is carried by two shared maps.**
+  Base colour, metallic and roughness are still flat per-role constants and the
+  palette is still the one place to retint the game. What changed on 2026-07-27
+  (DW-35) is that every role in the industrial and mineral families also wears a
+  shared tiling normal map and a shared occlusion/roughness/metalness pack, so
+  panel lines, rivets, wear and crevice shadow exist. **There is still no
+  per-asset texture and no albedo map at all** — see section 2.8.
 - **Palette roles, not per-asset colours.** An asset picks from `of_lib.PALETTE`.
   Retinting the whole game is one file.
 - **Silhouette over surface detail.** Poly budget goes into the outline, not into
@@ -334,30 +338,186 @@ depsgraph evaluate the object at the current frame and the exporter writes
 permanent lean into the asset. It surfaced as a 2.483 m wide conifer failing a
 2.400 m scale check, which is exactly the class of bug section 7.3 is about.
 
-### 2.8 Texture policy (Tier 1 onward)
+### 2.8 Texture policy — SHIPPED 2026-07-27 (DW-35)
 
-Tier 0 ships without UVs at all. **Tier 1 shipped the same way**: 41 scatter props,
-zero textures, 367 KB. The one place a texture looked mandatory was alpha-tested
-foliage cards, and that turned out to be cheaper as geometry (section 3.2). So the
-threshold below is still unmet and the KTX2 step is still deferred.
+The old text here said textures were deferred until the payload would cross 1 MB.
+That threshold was never the binding constraint; the binding constraint was that
+**37 of 48 shipped assets were flat colour on a PBR material with no maps**, which
+is a materials ceiling that no amount of extra geometry addresses. This section is
+what replaced it.
 
-**Tier 2 adds UVs to exactly one asset and still no textures.**
-`vfx_engine_plume.glb` carries a UV set because a plume with no length
-parameter cannot be shaded at all, not because it has an image: V is the
-shader's distance-down-the-plume input. `MeshBuilder` takes an optional
-per-vertex `uvs` list and writes a UV layer **only** when one is supplied, so
-the other 41 files still export with no `TEXCOORD_0` accessor. Total texture
-payload is still zero bytes.
+**Two shared tiling surfaces, no per-asset textures, and no albedo map.**
 
-When a texture is genuinely needed:
+| family | what it is | size | tile | texel density | roles |
+|---|---|---|---|---|---|
+| `panel` | plate seams, rivets, bolt heads, a weld bead, rubs, grime | 512 x 512 | 1.50 m | 341 px/m | Steel, SteelDark, SteelLight, Accent, Hazard, Plate, Suit, SuitDark, SuitAccent |
+| `coarse` | chipped facets and granular relief | 384 x 384 | 0.75 m | 512 px/m | Rock, RockDark, Regolith, Sand, Soil, Coal, Bark, BarkLight, Rubber, Iron, Copper |
 
-- **Texel density:** 512 px/m for hand-held and first-person assets, 256 px/m for
-  machines, 128 px/m for terrain props. Maximum 1024 x 1024 per asset.
-- **Channels:** albedo, and an ORM pack (occlusion / roughness / metallic) only if
-  the flat constant is not enough. Normal maps are a last resort at this poly count.
-- **Encoding:** KTX2 via `gltf-transform`, ETC1S for albedo and UASTC for ORM/normal,
-  loaded with three.js `KTX2Loader`. Do **not** add this step until the total
-  texture payload crosses 1 MB, because the transcoder itself costs more than that.
+Each family ships `of_<family>_n.png` (tangent-space normal, OpenGL +Y) and
+`of_<family>_orm.png` (R = occlusion, G = roughness, B = metalness), plus one
+`surfaces.json` manifest, under `assets/textures/dist/`. **Total payload 0.52 MB**,
+which is still under the 1 MB KTX2 threshold, so the KTX2 step below is still
+deferred and is now the honest next win.
+
+**There is no albedo map, deliberately, and there are three independent reasons.**
+It is the map DW-35 ranks last ("roughness variation matters more than albedo
+detail"). It is the only map that can silently move the palette, and the ask was a
+polish pass and not a restyle. And it would not survive the client anyway:
+`MachineBatch` sets `vertexColors: true` and its `onBeforeCompile` writes
+`diffuseColor.rgb` *after* `<map_fragment>`, so a base-colour map would be tinted
+by the baked vertex colour and then partly overwritten for four of the five roles.
+Normal, roughness, metalness and AO all land earlier in the shader and are safe.
+
+**ORM multiplies, it does not replace.** three.js computes
+`roughness * roughnessMap.g` and `metalness * metalnessMap.b`, so the palette's
+per-role constants survive and the map can only take a surface *down* from them.
+That direction is the physically correct one: wear polishes metal and grime buries
+it. A map authored as an absolute would flatten thirty roles onto one value.
+
+**UVs are in METRES and every render primitive has them.**
+
+- `of_lib.MeshBuilder.build()` box-projects each face along its dominant axis
+  automatically. No build script authors UVs; `col_*` proxies are skipped because
+  the client never renders them.
+- A UV of 2.5 means 2.5 metres, not 2.5 repeats. The consumer applies
+  `texture.repeat = 1 / tile_m` from the manifest. Tuning texel density is then a
+  JSON edit rather than a rebuild and rebaseline of 48 binaries.
+- **Coverage is uniform and that is a correctness requirement, not tidiness.** The
+  client merges an asset's primitives with `mergeGeometries(list, false)`, three
+  returns `null` on a mismatched attribute set, and both call sites swallow it with
+  `?? list[0]` — so an asset with mixed UV coverage draws its *first* primitive and
+  silently discards the rest. Untextured roles still carry UVs. A partial rollout is
+  far more dangerous than none.
+- Cost, measured: **+744 KB across 48 files, +22.9%**. That is the price of the
+  uniformity rule. Skipping `_LOD1`/`_LOD2` would recover most of it and is
+  explicitly NOT taken, because which LOD bands enter a `BatchedMesh` is client
+  knowledge that is currently changing (RN-7 A-3/A-4).
+- The one exception is `vfx_engine_plume.glb`, whose UVs are *authored* (V is a
+  distance-down-the-plume shader input, a parameter rather than a surface
+  measurement). It declares `uv_mode: "authored"` in `contracts.json`.
+
+**No tangent attribute is exported.** three.js derives a tangent frame from screen-
+space derivatives when `TANGENT` is absent, which is correct for flat-shaded
+geometry and saves 16 bytes per vertex on top of the 8 the UV already costs.
+
+**Determinism.** The maps are generated by `tools/blender/texgen.py`, which is
+stdlib-only, uses no RNG (a 32-bit integer hash), no transcendentals in the field
+synthesis (only `+ - * /` and `sqrt`, which is correctly rounded and therefore
+bit-portable; `sin`/`cos`/`tan` are not, and DW-14 is this project's scar from
+exactly that), and writes PNGs through its own encoder that emits IHDR + IDAT +
+IEND and nothing else — no `tIME`, no `tEXt`, no generator string. **Blender is not
+in the texture path at all**, so a Blender upgrade (BT-14) cannot rewrite a texture
+byte. zlib is pinned to explicit parameters and its version is recorded in the
+manifest.
+
+**Still deferred:** KTX2 via `gltf-transform`, UASTC for both maps, loaded with
+`KTX2Loader`. Trigger unchanged at 1 MB of texture payload; current payload
+0.52 MB. This is now the largest single VRAM win available: the maps are 4.27 MiB
+of VRAM and UASTC would take most of it.
+
+**Texel density targets, unchanged and now met:** 512 px/m for hand-held and
+first-person assets, 256 px/m for machines, 128 px/m for terrain props. `panel` ships at 341 px/m,
+above its 256 px/m machine target, and `coarse` at 512 px/m. Maximum 1024 x 1024 per image.
+
+### 2.9 What the CLIENT must do to consume the maps
+
+**Until this lands, the maps and the UVs are inert.** The `.glb` files are correct
+and complete, they carry the UVs, they validate, and nothing on screen changes.
+This is the whole hand-off; it is deliberately small and it is owned by the render
+and client lanes, not by the asset pipeline.
+
+**Serving is already done** (`web/scripts/sync-assets.mjs`, 2026-07-27): the maps
+are copied to `public/assets/textures/` and are fetched at
+`assets/textures/of_panel_n.png` and so on, with the same relative-path scheme
+every `.glb` already uses. `surfaces.json` sits beside them.
+
+Three code changes, in order of consequence.
+
+**(1) Carry `uv` through the three `normalize()` functions.** These are the same
+25-line function copy-pasted, and each builds a fresh `BufferGeometry` from an
+attribute allowlist that does not include `uv`:
+
+- `web/src/game/MachineBatch.ts:71-98` — machines, belts, structures, belt cargo
+- `web/src/game/NodeBatch.ts:96-120` — harvest nodes
+- `web/src/render/instancing/PropLibrary.ts:63-83` — biome props
+
+Copy `uv` alongside `position` and `normal`. **Copy it unconditionally.** Do NOT
+write `if (src.getAttribute('uv')) ...`: a conditional reintroduces exactly the
+mixed-attribute merge failure that uniform UV coverage exists to prevent, and it
+fails silently at `MachineBatch.ts:256` / `NodeBatch.ts:36`. If a geometry ever
+arrives without UVs, synthesise a zero-filled attribute rather than skipping.
+
+**(2) Attach the maps to the batch materials.** Load once, share everywhere; a
+per-file texture would multiply VRAM by the asset count.
+
+```
+const t = new THREE.TextureLoader();
+const tex = await t.loadAsync('assets/textures/of_panel_n.png');
+tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+tex.repeat.set(1 / tileM, 1 / tileM);      // tileM from surfaces.json
+tex.anisotropy = caps.anisotropy;          // Renderer.ts:97 already reports it
+// colorSpace: leave as the default NoColorSpace. BOTH maps are data.
+```
+
+Then, on each material:
+
+```
+mat.normalMap = normalTex;
+mat.roughnessMap = ormTex;
+mat.metalnessMap = ormTex;                 // one texture, three slots
+mat.aoMap = ormTex;
+mat.aoMap.channel = 0;                     // REQUIRED: aoMap defaults to uv1
+```
+
+Sites: `MachineBatch.ts:163-166` (`makeMaterial`, covers all three
+`MachineBatch` instances), `NodeBatch.ts:225-233` (`makeBatch`, two materials),
+`PropLibrary.ts:140` (right after `source.clone()`).
+
+The `aoMap.channel = 0` line is the one that will be forgotten. three samples
+`aoMap` from `uv1` unless told otherwise, and there is no `uv1`, so AO silently
+samples texel (0,0) everywhere — which looks like a slightly wrong constant tint
+rather than like a bug.
+
+**(3) Choose the family per material.** `surfaces.json` carries `roles` (role ->
+family) and `flat_roles` (role -> the reason it deliberately has no map). The role
+name is the material name minus the `OF_` prefix. `MachineBatch` has already
+reduced material names to an integer `aRole` by the time it builds its material, so
+for the batched paths the practical choice is to use `panel` for the machine and
+structure batches and `coarse` for the node batches, and to leave the per-role
+distinction to `PropLibrary`, which is the one path that keeps a material per name.
+A role absent from both tables is a bug in the asset pipeline, not in the client;
+report it rather than defaulting.
+
+**Do not** add a base-colour map. See section 2.8 for why it would not survive
+`MachineBatch`'s shader edit.
+
+**The one place this scheme visibly compromises, stated rather than discovered.**
+Two of the three batch paths collapse many roles onto one material, so they cannot
+express a per-role family:
+
+- `NodeBatch` buckets into exactly two materials by `metalness > 0.5`
+  (`NodeBatch.ts:123-126`). Bark and Rock both land in `nodes:matte` — and so do
+  **Leaf and Grass, which are in `flat_roles` and must not receive a map at all**. A
+  rock normal map on a foliage card is worse than no map. The fix is small: bucket
+  by *(family, metalness)* instead of by metalness alone, which turns 2 materials
+  into at most 4. Draw calls are 53 of a 150 budget, so this is free.
+- `MachineBatch` merges every machine, belt, structure and pillar into **one**
+  material. Its roles are mostly `panel`, but `Rubber` (belt decks) and `Rock` (the
+  primitive furnace) are `coarse`. Two options, and the choice is the render lane's:
+  (a) put `panel` on the whole batch and accept plate seams on the belt rubber and
+  the stone furnace, which is wrong but small at those surface areas; or (b) sample
+  both families and select with the **`aRole` per-vertex integer that already
+  exists** (`MachineBatch.ts:62-68`), inside the `onBeforeCompile` edit that is
+  already there. Option (b) costs one extra texture fetch and **no new custom
+  shader**, so it does not move against the DW-10 cap of five.
+
+I would take (a) first and measure whether anyone notices, because (b) is easy to
+add later and hard to justify before someone has looked at (a).
+
+**Acceptance that would prove it works**, in this project's own style: the same
+scene, same camera, same seed, captured with the maps attached and with them
+detached behind an isolation flag (`?maps=0`, standing rule 7), differenced. A
+"before" that is identical to the "after" means the UVs did not arrive.
 
 ---
 

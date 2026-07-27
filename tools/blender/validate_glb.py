@@ -26,6 +26,7 @@ What it proves, per asset:
 
 import argparse
 import json
+import math
 import os
 import struct
 import sys
@@ -583,6 +584,142 @@ def validate(asset, spec, verbose=False):
         r.check("frame1_identity", not bad,
                 "first key == node TRS"
                 if not bad else "; ".join(bad[:3]))
+
+    # --- UVs (DW-35) ---
+    #
+    # TWO separate properties, and they fail in completely different ways.
+    #
+    # (1) EVERY render primitive has TEXCOORD_0. This is not a texture concern,
+    #     it is a correctness one: the client merges an asset's primitives with
+    #     `mergeGeometries(list, false)`, three returns NULL when the attribute
+    #     sets differ, and both call sites swallow that with `?? list[0]`. An
+    #     asset with mixed UV coverage therefore draws its FIRST primitive and
+    #     silently discards the rest. Untextured roles still need the attribute.
+    #
+    # (2) THE UVs ARE IN METRES, and the test for that is an EQUALITY.
+    #
+    #     The first version of this check asserted a band on uv_area/world_area,
+    #     derived from the fact that projecting along a face's dominant axis is
+    #     an isometry scaled by cos(theta) with theta <= 54.7356 degrees. The
+    #     derivation is correct and the check was still wrong, in the direction
+    #     that matters: it failed 20 assets for two reasons that are both
+    #     legitimate authoring (a COLLAPSE decimator interpolates UVs, and a
+    #     non-planar quad triangulates into two faces neither of which shares
+    #     the parent's Newell normal). A band wide enough to admit those is a
+    #     band tuned until it passed, which is the thing this repo's standing
+    #     rule 11 keeps finding.
+    #
+    #     The exact property is available and needs no tolerance at all. A
+    #     box-projected UV is a COPY of two position components, so after the
+    #     exporter's Y-up conversion (bx, by, bz) -> (X, Y, Z) = (bx, bz, -by)
+    #     and its V flip (v -> 1 - v), every vertex UV must equal exactly one of
+    #
+    #         Blender axis Z ->  (u, v) = ( X, 1 + Z)
+    #         Blender axis X ->  (u, v) = (-Z, 1 - Y)
+    #         Blender axis Y ->  (u, v) = ( X, 1 - Y)
+    #
+    #     That catches everything the band caught and cannot be satisfied by
+    #     accident: UVs divided by a tile size, normalised to [0, 1], zeroed,
+    #     or copied from the wrong component all fail an equality.
+    #
+    #     WHAT IS NOT EXAMINED, and why it is a positive rule rather than an
+    #     inference: `add_lod_decimate` collapses edges and interpolates the UV
+    #     of the surviving vertex, so a decimated LOD CANNOT satisfy an equality
+    #     and no amount of care in the builder would change that. Those
+    #     primitives are named and counted, never folded into the pass, and they
+    #     still carry an assertion: a decimated UV must lie inside the UV
+    #     bounding box of the exactly projected geometry it came from, because
+    #     collapsing an edge blends the UVs of vertices that were already in
+    #     that box.
+    #
+    #     That is ALMOST derived and the gap is worth stating rather than
+    #     hiding. Blender's COLLAPSE decimator places the surviving vertex at
+    #     the quadric-optimal point, which is not required to lie ON the
+    #     collapsed edge, so the blend can overshoot the hull slightly. Measured
+    #     across all 48 assets the worst overshoot is 8.3e-5 UV metres, on
+    #     `Forest_FallenLog_LOD2`. The slack below is 1e-3, which is an order of
+    #     magnitude above the worst real overshoot and three orders below the
+    #     smallest defect this check exists to catch (a UV divided by a tile
+    #     size, normalised to [0, 1], or zeroed, all of which move a UV by of
+    #     order 1). The worst observed overshoot is PRINTED on every run, so the
+    #     day that number starts climbing toward the slack it is visible rather
+    #     than absorbed - which is the failure mode a bare threshold has.
+    #
+    #     A primitive on a `_LOD0` node has no such excuse and must be exact.
+    #
+    # Assets whose UVs are AUTHORED rather than projected declare
+    # `uv_mode: "authored"` in the contract and are exempt from (2) only. The
+    # engine plume is the one: its V is a distance-down-the-plume shader input,
+    # which is a parameter and not a surface measurement.
+    uv_mode = spec.get("uv_mode", "projected")
+    render_meshes = []
+    for idx, (nname, _, _) in walked.items():
+        mi = gltf["nodes"][idx].get("mesh")
+        if mi is not None and not nname.startswith("col_"):
+            render_meshes.append((nname, mi))
+    no_uv = sorted({n for n, mi in render_meshes
+                    for p in gltf["meshes"][mi]["primitives"]
+                    if "TEXCOORD_0" not in p["attributes"]})
+    r.check("uv_present", not no_uv,
+            "%d render mesh(es) carry TEXCOORD_0" % len(render_meshes)
+            if not no_uv else
+            "%d WITHOUT uv: %s" % (len(no_uv), ", ".join(no_uv[:4])))
+
+    if uv_mode == "authored":
+        r.check("uv_metres", True,
+                "SKIPPED: contract declares authored UVs, not projected")
+    elif not no_uv:
+        TOL = 1e-5
+        exact_prims, bad_lod0, interp = 0, [], []
+        exact_uv = []          # every UV that passed the equality, for the hull
+        interp_uv = []
+        for nname, mi in render_meshes:
+            for p in gltf["meshes"][mi]["primitives"]:
+                pos = read_accessor(gltf, binc, p["attributes"]["POSITION"])
+                uvs = read_accessor(gltf, binc, p["attributes"]["TEXCOORD_0"])
+                ok = len(pos) == len(uvs) and len(pos) > 0
+                for (X, Y, Z), (u, v) in zip(pos, uvs):
+                    if not ok:
+                        break
+                    if not (abs(u - X) < TOL and abs(v - (1.0 + Z)) < TOL) \
+                       and not (abs(u + Z) < TOL and abs(v - (1.0 - Y)) < TOL) \
+                       and not (abs(u - X) < TOL and abs(v - (1.0 - Y)) < TOL):
+                        ok = False
+                if ok:
+                    exact_prims += 1
+                    exact_uv.extend(uvs)
+                elif nname.endswith("_LOD0"):
+                    bad_lod0.append(nname)
+                else:
+                    interp.append(nname)
+                    interp_uv.extend(uvs)
+
+        detail = "%d prim(s) exactly box-projected in metres" % exact_prims
+        ok = not bad_lod0 and exact_prims > 0
+        if bad_lod0:
+            detail += "; LOD0 NOT PROJECTED: %s" % ", ".join(sorted(set(bad_lod0))[:4])
+        if not exact_prims:
+            detail = "NOT EXAMINED: no primitive was exactly projected"
+        if interp:
+            # Convex-combination bound on the decimated LODs. Reported by name
+            # and count, per standing rule 11: "0 conflicts" over geometry the
+            # method never looked at is the shape of a check that passes on
+            # nothing.
+            SLACK = 1e-3
+            lo_u = min(t[0] for t in exact_uv); hi_u = max(t[0] for t in exact_uv)
+            lo_v = min(t[1] for t in exact_uv); hi_v = max(t[1] for t in exact_uv)
+            worst_out = 0.0
+            for (u, v) in interp_uv:
+                worst_out = max(worst_out, lo_u - u, u - hi_u,
+                                lo_v - v, v - hi_v)
+            ok = ok and worst_out <= SLACK
+            names = sorted(set(interp))
+            detail += ("; %d decimated prim(s) NOT EXAMINED (%s%s), %d UVs "
+                       "within %.1e of the projected hull (slack %.0e)"
+                       % (len(interp), ", ".join(names[:3]),
+                          "" if len(names) <= 3 else ", +%d" % (len(names) - 3),
+                          len(interp_uv), max(worst_out, 0.0), SLACK))
+        r.check("uv_metres", ok, detail)
 
     # --- collision proxy ---
     # One name for a single-asset file; a LIST for a biome atlas, where only

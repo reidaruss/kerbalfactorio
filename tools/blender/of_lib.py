@@ -315,10 +315,10 @@ class MeshBuilder:
         # changes.
         self.vert_bones = []
         self._bind = None
-        # Per-vertex UVs, None unless a caller supplies them. Only ONE asset
-        # has UVs at all (the Tier-2 engine plume, whose whole point is a
-        # length gradient a shader reads); a mesh with no UVs exports with no
-        # TEXCOORD_0 accessor, so the 37 untextured files are untouched.
+        # Per-vertex UVs, None unless a caller supplies them. Exactly one asset
+        # supplies them (the Tier-2 engine plume, whose whole point is a length
+        # gradient a shader reads). EVERY OTHER MESH NOW GETS BOX-PROJECTED UVs
+        # AUTOMATICALLY in build(); see _project_uvs for the whole argument.
         self.uvs = []
 
     def bind(self, bones):
@@ -433,20 +433,107 @@ class MeshBuilder:
         """Triangles after export triangulation (quad -> 2, n-gon -> n-2)."""
         return sum(max(0, len(f) - 2) for f in self.faces)
 
-    def build(self, name, parent=None):
+    # -- UV projection ------------------------------------------------------
+    #
+    # WHY EVERY MESH GETS UVs AND NOT JUST THE TEXTURED ONES (DW-35). The
+    # client merges a multi-material asset's primitives with
+    # `mergeGeometries(list, false)`, and three's implementation returns NULL
+    # when the attribute sets differ. Both call sites swallow that null with
+    # `?? list[0]`, so an asset whose primitives disagree about having UVs
+    # draws its FIRST primitive and silently discards the rest, with one
+    # console line as the only evidence. A partial rollout is therefore far
+    # more dangerous than no rollout, and "textured assets only" is not a
+    # coherent option. Uniform UVs, selective MAPS: the role -> family table in
+    # texgen.py decides which surfaces actually wear something.
+    #
+    # WHY BOX PROJECTION. Everything in this game is a box, a cylinder or an
+    # arc band, authored from world-axis primitives. Projecting each face along
+    # its own dominant axis is exact for the flat case, which is most faces,
+    # and degrades gracefully on the round ones into the same slight azimuthal
+    # stretch a cylindrical unwrap would give. It needs no per-asset authoring,
+    # which is the only reason 48 assets could be done at once.
+    #
+    # WHY UVs ARE IN METRES. A UV of 2.5 means 2.5 metres, not 2.5 repeats. The
+    # consumer divides by the family's tile size (texture.repeat = 1 / tile_m,
+    # published in assets/textures/dist/surfaces.json). Retuning texel density
+    # is then a one-line change in a JSON file instead of a rebuild and
+    # rebaseline of all 48 binaries, and the shipped geometry carries a
+    # physical fact rather than a tuning constant.
+
+    _UV_AXES = {0: (1, 2), 1: (0, 2), 2: (0, 1)}
+
+    def _face_normal(self, face):
+        """Newell's method, computed here rather than read off Blender, so the
+        UVs depend on nothing but this file's arithmetic."""
+        nx = ny = nz = 0.0
+        n = len(face)
+        for i in range(n):
+            a = self.verts[face[i]]
+            b = self.verts[face[(i + 1) % n]]
+            nx += (a[1] - b[1]) * (a[2] + b[2])
+            ny += (a[2] - b[2]) * (a[0] + b[0])
+            nz += (a[0] - b[0]) * (a[1] + b[1])
+        return nx, ny, nz
+
+    def _project_uvs(self):
+        """[(u, v) per corner] for every face, in metres, box-projected."""
+        out = []
+        for face in self.faces:
+            nx, ny, nz = self._face_normal(face)
+            ax, ay, az = abs(nx), abs(ny), abs(nz)
+            # Ties break X, then Y, then Z. A tie is a 45 degree face, where
+            # either choice is equally good; what matters is that the SAME face
+            # always picks the SAME one, on every machine and every run.
+            axis = 0 if (ax >= ay and ax >= az) else (1 if ay >= az else 2)
+            i, j = self._UV_AXES[axis]
+            out.append(tuple((self.verts[k][i], self.verts[k][j])
+                             for k in face))
+        return out
+
+    def build(self, name, parent=None, project_uv=None):
+        """Realise the accumulated primitives as a Blender object.
+
+        project_uv  None  auto: box-project unless the caller supplied explicit
+                          per-vertex UVs, and never on a `col_` proxy
+                    True  force projection even over supplied UVs
+                    False no UV layer at all
+        """
         mesh = bpy.data.meshes.new(name)
         mesh.from_pydata(self.verts, [], self.faces)
         mesh.validate(verbose=False)
         for role in self.roles:
             mesh.materials.append(get_material(role))
+        # This zip has always assumed mesh.polygons is 1:1 and in order with
+        # self.faces. It is, but mesh.validate() is allowed to delete a
+        # degenerate face, and if it ever did, every material index and smooth
+        # flag past that point would shift by one and nothing would say so.
+        # Now it says so.
+        if len(mesh.polygons) != len(self.faces):
+            raise RuntimeError(
+                "%s: mesh.validate() changed the face count %d -> %d, so "
+                "per-face roles, smoothing and UVs no longer line up"
+                % (name, len(self.faces), len(mesh.polygons)))
         for poly, ri, sm in zip(mesh.polygons, self.face_role, self.smooth):
             poly.material_index = ri
             poly.use_smooth = sm
-        if any(uv is not None for uv in self.uvs):
+
+        explicit = any(uv is not None for uv in self.uvs)
+        if project_uv is None:
+            # A collision proxy is never rendered and never enters a batch
+            # (the client filters `col_*` in Loaders.renderMeshes), so UVs on
+            # one are bytes with no reader.
+            project_uv = not explicit and not name.startswith("col_")
+        if explicit and not project_uv:
             layer = mesh.uv_layers.new(name="UVMap")
             for loop in mesh.loops:
                 uv = self.uvs[loop.vertex_index]
                 layer.data[loop.index].uv = uv if uv is not None else (0.0, 0.0)
+        elif project_uv:
+            layer = mesh.uv_layers.new(name="UVMap")
+            face_uv = self._project_uvs()
+            for poly, fuv in zip(mesh.polygons, face_uv):
+                for k, li in enumerate(poly.loop_indices):
+                    layer.data[li].uv = fuv[k]
         mesh.update()
         obj = bpy.data.objects.new(name, mesh)
         bpy.context.scene.collection.objects.link(obj)
