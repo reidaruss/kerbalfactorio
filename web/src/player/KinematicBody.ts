@@ -9,7 +9,7 @@
 
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { Vec3d } from '../world/PlanetBody.js';
-import { CAPSULE_SAMPLES_M, STRUCTURE_STEP_UP_M, VoxelCollider,
+import { CAPSULE_SAMPLES_M, STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M, VoxelCollider,
   type SolidBodies } from './VoxelCollision.js';
 import { climbGate, sampleSlopeCos } from './HeightfieldWalk.js';
 import type { StandTrace } from './StandTrace.js';
@@ -255,7 +255,12 @@ export class KinematicBody {
       qr = Math.hypot(qx, qy, qz) || 1;
       dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
       if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByRock = true; }
-      const floorR = this.col.floorBelow(qr, dxn, dyn, dzn, VOXEL_FLOOR_SEARCH_M);
+      // The rise allowance is the walker's OWN first voxel rung, the reading
+      // GP-53 made the structural port take and for the same reason: a floor
+      // the feet have sunk into is still that floor, so seating on it corrects
+      // rather than lifts, and anything bigger is a climb `resolveStep` owns.
+      const floorR = this.col.floorBelow(qr, dxn, dyn, dzn, VOXEL_FLOOR_SEARCH_M,
+        VOXEL_STEP_UP_M[0]);
       // No floor within reach is an open shaft, so fall. Never snap to the roof.
       groundR = floorR === null ? -Infinity : floorR;
       this.underRock = floorR !== null;
@@ -294,6 +299,9 @@ export class KinematicBody {
       this.structureTests = solids.tests;
     }
 
+    // The radius the walker ARRIVED at: the only witness to a floor query that
+    // answers with the querier's own position (WG-31/GP-53). See StandTrace.ts.
+    const preSnapR = qr;
     const gap = qr - groundR;
     const snapM = this.underRock ? DEEP_SNAP_M : CAPSULE.groundSnapM;
     const landing = gap <= 0 || (this.grounded && gap <= snapM && vUp <= 0);
@@ -322,10 +330,12 @@ export class KinematicBody {
     //    always a body-frame axis. It can never exceed one cell, so it needs no
     //    depth special case and runs in both regimes.
     this.voxelPushM = 0;
+    let pushUpM = 0;
     if (this.oracle.editsHandle !== 0) {
       const push = this.col.resolveEmbedded(qx, qy, qz, dxn, dyn, dzn);
       if (push !== null) {
         this.voxelPushM = push.dist;
+        pushUpM = push.x * dxn + push.y * dyn + push.z * dzn;
         qx += push.x; qy += push.y; qz += push.z;
         qr = Math.hypot(qx, qy, qz) || 1;
         dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
@@ -373,6 +383,7 @@ export class KinematicBody {
         tick: this.trace.total, feetR: qr, terrainR, deckR: deckRaw, groundR,
         fallM: askedR - r, onDeck: this.onDeck, grounded: this.grounded,
         blockedByBuild: this.blockedByBuild,
+        underRock: this.underRock, preSnapR, pushM: this.voxelPushM, pushUpM,
       });
     }
   }
