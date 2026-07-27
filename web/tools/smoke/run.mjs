@@ -48,6 +48,7 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
   'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff', 'gameplay',
   'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density',
+  'vab', 'flight',
   // DW-31. Unlike every other entry here this is not an isolation switch: it
   // selects a game MODE, and the world it makes saves to its own slot.
   'sandbox']) {

@@ -124,6 +124,7 @@ export class Gameplay {
   aimedMachine: Machine | null = null;
   aimedBuild: Placed | null = null;
   aimedPart: StructurePart | null = null;
+  suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
 
   /** What a save needs: the module handle, the seed, and the voxel handles,
    * which live in Services and are null in a scenario with no character. */
@@ -283,7 +284,7 @@ export class Gameplay {
     // one does.
     if (++this.sinceSaveTicks >= AUTOSAVE_TICKS) { this.sinceSaveTicks = 0; void this.save(); }
 
-    if (this.uiOpen) {
+    if (this.uiOpen || this.suspended) {
       // A machine screen closes with the key that opened it; the pack is handled
       // by `chrome`. Either way nothing in the world is aimed at.
       this.keys.closeWithInteract(this);

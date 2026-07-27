@@ -7,6 +7,7 @@ import { Loop } from './app/Loop.js';
 import { registerSystems } from './app/Systems.js';
 import { installDebugApi } from './app/Debug.js';
 import { vabApi } from './app/DebugVab.js';
+import { flightApi } from './app/DebugFlight.js';
 import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
@@ -34,7 +35,7 @@ boot(cfg, host, hud).then(({ services }) => {
   // `__of.vab` is assigned onto the SAME object installDebugApi put on window,
   // rather than spread inside it: Debug.ts is at the 400-line cap and the bay's
   // whole driven surface is one method. See app/DebugVab.ts.
-  Object.assign(api, vabApi(services));
+  Object.assign(api, vabApi(services), flightApi(services));
 
   let hudFrame = 0;
   loop.onDrain.push(() => {

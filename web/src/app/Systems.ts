@@ -21,10 +21,37 @@ export function registerSystems(s: Services, loop: Loop): void {
   // through the DERIVED modal list rather than through a second handler (GP-25),
   // because its panel joins the stack in its own constructor.
   let assemblyHeld = false;
+  let boardHeld = false;
   loop.onFixedStep.push(() => {
     const on = s.input.act('assembly');
     if (on && !assemblyHeld) s.vab?.toggle();
     assemblyHeld = on;
+    // W9. Board / roll out / disembark, edge-detected here for the same reason
+    // the bay's key is: flight is not part of Gameplay, it owns its own eye.
+    const b = s.input.act('board');
+    if (b && !boardHeld && s.vab?.open !== true) s.flight?.board();
+    boardHeld = b;
+    // The ON-FOOT half of the gameplay tick is suspended while strapped in; the
+    // FACTORY half is not, and that distinction is the whole point. A flight
+    // that quietly froze the base would be two games again.
+    //
+    // The ghost has to be dropped as well as gated: `BuildMode` re-arms itself
+    // from the hotbar every tick, so a part left in hand would keep drawing a
+    // placement preview at a frozen walker's crosshair while the player is at
+    // 80 km. Done here rather than inside Gameplay because Systems already owns
+    // "what runs this tick" and Gameplay is at its line cap.
+    const g = s.gameplay;
+    if (g !== null) {
+      const strapped = s.flight?.aboard === true;
+      if (strapped !== g.suspended) {
+        g.suspended = strapped;
+        if (strapped) {
+          g.build.arm(null);
+          g.interact.target = null;
+          g.aimedMachine = null; g.aimedBuild = null; g.aimedPart = null;
+        }
+      }
+    }
   });
   loop.onDrain.push(() => { s.vab?.tick(performance.now()); });
 
@@ -52,7 +79,11 @@ export function registerSystems(s: Services, loop: Loop): void {
     const busy = s.gameplay !== null && s.gameplay.fixedStep(loop.tickIndex - 1)
       ? true
       : (s.gameplay?.interact.hasTarget ?? false) || (s.gameplay?.uiOpen ?? false);
-    const digArmed = s.gameplay?.digAllowed ?? true;
+    // W9. Strapped into a rocket you have no hands: the walker is frozen at the
+    // pad, so its aim ray is stale, and a click while in orbit would otherwise
+    // dig a crater under a parked avatar 80 km below.
+    const aboard = s.flight?.aboard === true;
+    const digArmed = (s.gameplay?.digAllowed ?? true) && !aboard;
     if (s.dig !== null && s.player !== null) {
       const ray = s.player.aimRay();
       s.dig.step(s.input.frame.use && !busy && digArmed, ray.origin, ray.dir);
@@ -63,7 +94,7 @@ export function registerSystems(s: Services, loop: Loop): void {
     // tool read as "stand where you want the floor" rather than as a slider.
     if (s.level !== null && s.player !== null) {
       const ray = s.player.aimRay();
-      s.level.step(s.input.frame.level && !busy, ray.origin, ray.dir,
+      s.level.step(s.input.frame.level && !busy && !aboard, ray.origin, ray.dir,
         s.player.body.feet);
     }
     // WG-22. Reconcile the worker against the AUTHORITY when the edit set moved
@@ -92,8 +123,23 @@ export function registerSystems(s: Services, loop: Loop): void {
     // synthetic clock (Loop.run) dissolves at exactly the rate a real one does.
     s.terrain.nowSecs = loop.simSecs;
     s.terrain.drain();
+    // `flying` silences the on-foot presentation; the SIM half of gameplay
+    // above is untouched. The vessel's own meshes are placed in onPreRender
+    // rather than here, because they have to use the same interpolated instant
+    // the camera does (VesselObserver.renderPos).
+    const flying = s.flight?.aboard === true;
     const p = s.player;
-    if (p !== null && s.avatar !== null) {
+    if (s.avatar !== null && flying) {
+      // A rocket is a third-person view of a vehicle, so BOTH the body and the
+      // first-person arms go: an arm floating at the eye 80 km up would be the
+      // most obvious defect in the whole milestone.
+      s.avatar.group.visible = false;
+      s.avatar.viewModel.visible = false;
+      s.rig.setOwnBodyVisible(false);
+    } else if (s.avatar !== null) {
+      s.avatar.group.visible = true;
+    }
+    if (p !== null && s.avatar !== null && !flying) {
       s.avatar.place(s.origin, p.body.feet, p.view.up, p.view.aim);
       s.avatar.placeViewModel(s.rig.vmCam.quaternion);
       // ONE state drives both skeletons (AnimGraph). The clock is Loop.simSecs,
@@ -132,7 +178,9 @@ export function registerSystems(s: Services, loop: Loop): void {
     // the same frame's lamp, ambient and sun all read one number. The lamp is
     // driven from the player's OWN eye and aim, not from the camera, so in third
     // person it stays on his head instead of 3.5 m behind it.
-    const pv = s.player?.view ?? null;
+    // Null while flying: the lamp is on the player's HEAD, and leaving it on a
+    // frozen walker's head would light the pad from orbit.
+    const pv = flying ? null : s.player?.view ?? null;
     if (pv !== null) s.headlamp.measure(s.oracle, pv.eye);
     s.headlamp.update(loop.fixedDt, s.origin, pv?.eye ?? null,
       pv?.aim ?? fwd, pv?.up ?? UP_FALLBACK);
@@ -153,6 +201,11 @@ export function registerSystems(s: Services, loop: Loop): void {
   // AFTER the camera is placed: the cascades are fitted to the near camera, so
   // fitting them in onDrain would shadow last frame's pose.
   loop.onPreRender.push(() => {
+    // AFTER observer.interpolate and rig.setView: the vessel is drawn at the
+    // interpolated instant the camera was placed for, so the model and the eye
+    // agree. Placing it in onDrain instead put it a whole tick of travel out,
+    // which is 38 m at orbital speed and reads as a rocket that has vanished.
+    s.flight?.frame(loop.simSecs);
     const cam = s.rig.nearCam;
     eye.setFromMatrixPosition(cam.matrixWorld);
     // Scatter follows the EYE, not the origin: the floating origin is only

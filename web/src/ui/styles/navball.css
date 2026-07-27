@@ -1,0 +1,223 @@
+/* The flight HUD: navball, flanking readouts, stage table. Palette and the
+   .of-ui base come from game.css, which every screen showing this also loads.
+
+   The root takes NO pointer events, ever. It sits over a locked-pointer flight
+   view and a panel that ate a click there would be indistinguishable from a
+   dropped input. It also sits at the BOTTOM of the screen so the world-space
+   crosshair at 50%/50% stays clear. */
+
+/* Full width, contents centred, rather than left:50% with a translate: an
+   absolutely positioned box anchored at the middle of the screen only gets the
+   RIGHT HALF as its available width, and everything past that silently
+   overflows instead of laying out. */
+#of-navball {
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  z-index: 18;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  font-size: 12px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* --- status chips -------------------------------------------------------- */
+#of-navball .of-nchips {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 70vw;
+}
+#of-navball .chip {
+  padding: 2px 9px;
+  background: rgba(16, 20, 24, 0.85);
+  border: 1px solid var(--of-edge);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#of-navball .chip.st { border-color: var(--of-accent); color: var(--of-accent); }
+#of-navball .chip.sas { color: #6fc9ff; border-color: #35566b; }
+#of-navball .chip.sas.off { color: var(--of-dim); border-color: var(--of-edge); }
+#of-navball .chip.msg {
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--of-ink);
+  border-left: 3px solid var(--of-accent);
+}
+
+/* --- the row: readouts, ball, readouts, stages --------------------------- */
+#of-navball .of-npanel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 98vw;
+}
+#of-navball .of-ncore {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+#of-navball .of-ncore > * { flex: 0 0 auto; }
+
+/* A counterweight for the stage table, so the BALL lands on the middle of the
+   screen and not the widget. It is the first thing to give way when the
+   viewport is narrow, which is the correct thing to lose. */
+#of-navball .of-ncore > .of-nspace { flex: 0 0 198px; }
+/* Below this the counterweight costs more than it buys, so it goes and the
+   whole block centres on itself instead. */
+@media (max-width: 1000px) {
+  #of-navball .of-ncore > .of-nspace { display: none; }
+}
+
+#of-navball .of-nread {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  width: 132px;
+  padding: 7px 9px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+}
+#of-navball .of-nread.left { border-right-width: 0; }
+#of-navball .of-nread.right { border-left-width: 0; }
+#of-navball .of-nread .c {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+#of-navball .of-nread em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--of-dim);
+}
+#of-navball .of-nread b {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--of-ink);
+  white-space: nowrap;
+}
+
+/* --- the ball ------------------------------------------------------------ */
+#of-navball .of-nball {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+#of-navball canvas {
+  display: block;
+  border-radius: 50%;
+  background: rgba(8, 11, 14, 0.9);
+  box-shadow: 0 0 0 1px #101418, 0 6px 22px rgba(0, 0, 0, 0.55);
+}
+#of-navball .of-natt {
+  margin-top: -1px;
+  padding: 2px 10px;
+  background: rgba(16, 20, 24, 0.9);
+  border: 1px solid var(--of-edge);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--of-ink);
+  white-space: nowrap;
+}
+
+/* --- the stage table (DW-30 item 4: never optional) ---------------------- */
+#of-navball .of-nstages {
+  width: 176px;
+  padding: 7px 9px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  border-left: 3px solid var(--of-accent);
+}
+#of-navball .of-nstages h4 {
+  margin: 0 0 5px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+  padding-bottom: 4px;
+}
+#of-navball .of-nstages h4 span {
+  float: right;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #55636e;
+}
+#of-navball .of-nstage-rows { max-height: 122px; overflow: hidden; }
+#of-navball .of-nstage-rows .r {
+  display: grid;
+  grid-template-columns: 18px 1fr 42px 40px;
+  gap: 4px;
+  padding: 1px 2px 1px 4px;
+  border-left: 2px solid transparent;
+  font-size: 11px;
+  color: var(--of-dim);
+}
+#of-navball .of-nstage-rows .r b {
+  font-weight: 600;
+  color: var(--of-ink);
+  text-align: right;
+}
+#of-navball .of-nstage-rows .r b.warn { color: var(--of-bad); }
+#of-navball .of-nstage-rows .r span:not(:first-child) { text-align: right; }
+#of-navball .of-nstage-rows .r.on {
+  border-left-color: var(--of-accent);
+  background: rgba(255, 154, 60, 0.1);
+  color: var(--of-ink);
+}
+#of-navball .of-nstage-rows .none { color: var(--of-dim); font-style: italic; }
+#of-navball .of-nstage-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--of-edge);
+}
+#of-navball .of-nstage-foot .f em {
+  display: block;
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--of-dim);
+}
+#of-navball .of-nstage-foot .f b { font-size: 14px; color: var(--of-accent); }
+#of-navball .of-nstage-foot .f:last-child b { color: var(--of-ink); }
+
+/* --- throttle ------------------------------------------------------------ */
+#of-navball .of-nthr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 10px;
+  background: rgba(16, 20, 24, 0.82);
+  border: 1px solid var(--of-edge);
+  box-sizing: border-box;
+}
+#of-navball .of-nthr em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--of-dim);
+}
+#of-navball .of-nthr .bar {
+  flex: 1 1 auto;
+  height: 6px;
+  background: #2b343b;
+  overflow: hidden;
+}
+#of-navball .of-nthr .bar > i { display: block; height: 100%; background: var(--of-accent); }
+#of-navball .of-nthr b { font-weight: 600; min-width: 38px; text-align: right; }
+#of-navball .of-nthr .maxq { font-size: 10px; color: var(--of-dim); white-space: nowrap; }

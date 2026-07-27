@@ -18,6 +18,11 @@ export type Action =
   | 'use' | 'interact' | 'cancel'
   | 'pack' | 'level' | 'demolish' | 'view' | 'lamp'
   | 'rotate' | 'freeSnap' | 'mute' | 'goals' | 'assembly'
+  // W9 FLIGHT. Board is the one context-sensitive verb (roll out / board /
+  // disembark); everything else means exactly one thing and only while flying.
+  | 'board' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
+  | 'throttleCut' | 'pitchUp' | 'pitchDown' | 'yawLeft' | 'yawRight'
+  | 'rollLeft' | 'rollRight' | 'sasToggle' | 'sasMode' | 'warpUp' | 'warpDown'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
   | 'slot6' | 'slot7' | 'slot8' | 'slot9';
@@ -63,6 +68,33 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // than a hotbar slot: a slot decides what the LEFT BUTTON does, and the bay is
   // not something the left button does.
   assembly: ['KeyC'],
+  // W9 FLIGHT. Two rules picked the codes below and neither is taste.
+  //
+  // (1) The keys that mean something on foot and NOTHING in a rocket are reused
+  // for the verb the genre already puts on them, so a KSP player has muscle
+  // memory here on the first flight: Space stages, Shift throttles up, X cuts
+  // the throttle, W/A/S/D and Q/E fly the attitude. A code may fire two actions
+  // (Bindings maps code -> action LIST), and only one of the two consumers is
+  // ever live, because you are either walking or strapped in.
+  //
+  // (2) Everything with no genre home takes a key from the free set, so nothing
+  // already documented moves.
+  board: ['KeyG'],
+  stage: ['Space', 'KeyN'],
+  throttleUp: ['ShiftLeft', 'ShiftRight', 'KeyI'],
+  throttleDown: ['KeyK'],
+  throttleFull: ['KeyZ'],
+  throttleCut: ['KeyX'],
+  pitchDown: ['KeyW'],
+  pitchUp: ['KeyS'],
+  yawLeft: ['KeyA'],
+  yawRight: ['KeyD'],
+  rollLeft: ['KeyQ'],
+  rollRight: ['KeyE'],
+  sasToggle: ['KeyT'],
+  sasMode: ['KeyY'],
+  warpUp: ['KeyP'],
+  warpDown: ['KeyO'],
   slotNext: [],
   slotPrev: [],
   slot1: ['Digit1'], slot2: ['Digit2'], slot3: ['Digit3'],

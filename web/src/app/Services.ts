@@ -39,6 +39,8 @@ import type { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import type { Hud } from '../ui/Hud.js';
 import type { Gameplay } from '../game/Gameplay.js';
 import type { Vab } from '../game/Vab.js';
+import type { FlightMode } from './FlightMode.js';
+import type { ViewRouter } from '../player/ViewRouter.js';
 
 /** One-off numbers measured at boot, surfaced through window.__of.stats(). */
 export interface BootMetrics {
@@ -107,6 +109,10 @@ export interface Services {
   readonly gameplay: Gameplay | null;
   /** W8. The assembly bay. Null without gameplay, or with ?vab=0. */
   readonly vab: Vab | null;
+  /** W9. Flight. Null without the bay to build a rocket in, or with ?flight=0. */
+  readonly flight: FlightMode | null;
+  /** W9. THE eye router: which ViewSource is the streaming observer right now. */
+  readonly router: ViewRouter;
   readonly boot: BootMetrics;
 }
 

@@ -34,7 +34,9 @@ import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
 import { BIOME_ATLAS } from '../assets/Registry.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
+import { ViewRouter } from '../player/ViewRouter.js';
 import { Controller } from '../player/Controller.js';
+import type { FlightMode } from './FlightMode.js';
 import { Avatar } from '../player/Avatar.js';
 import type { ViewSource } from '../player/ViewSource.js';
 import { Input } from '../player/Input.js';
@@ -154,7 +156,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // what is resident can never drift apart (the W1 rule, carried forward).
   const player = cfg.mode === 'walk'
     ? new Controller(oracle, cfg.view, cfg.walkSpeedMps, cfg.interpolate) : null;
-  const observer: ViewSource = player ?? new ObserverCamera(oracle);
+  // W9. The eye goes through a ROUTER so that boarding a rocket is a swap of the
+  // one object the loop already talks to, rather than a branch inside the loop.
+  // Everything downstream (the origin, the terrain request, the regime band, the
+  // sky, the shadow fit) then follows the vessel with no further wiring, which
+  // is what makes the surface-to-orbit handoff need no flight-specific code.
+  const router = new ViewRouter(player ?? new ObserverCamera(oracle));
+  const observer: ViewSource = router;
   observer.teleport(cfg.scenario.lat, cfg.scenario.lon, cfg.scenario.alt);
   if (cfg.scenario.pitchDeg !== undefined) {
     observer.look(0, THREE.MathUtils.degToRad(cfg.scenario.pitchDeg - observer.state().pitchDeg));
@@ -293,6 +301,28 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     });
   }
 
+  // W9 FLIGHT. Needs the bay (it flies the bay's design handle) and gameplay
+  // (it hides the on-foot HUD while strapped in), so it is built last. Dynamic
+  // import for standing rule 7: `?flight=0` has to isolate it for real.
+  let flight: FlightMode | null = null;
+  if (gameplay !== null && vab !== null && player !== null && cfg.flight) {
+    hud.banner('loading the rocket meshes for flight ...');
+    const { FlightMode: Mode } = await import('./FlightMode.js');
+    const g = gameplay;
+    const theVab = vab;
+    flight = new Mode({
+      M: core, bodyHandle: body.handle, bodyRadiusM: body.radiusM, oracle, origin,
+      router, input, player, scene: scenes.near, host,
+      designHandle: () => theVab.design.handle,
+      setWorldUi: (on) => {
+        g.hud.setVisible(on);
+        g.hotbarBar.setVisible(on);
+        g.goalPanel.setVisible(on && g.goals.visible);
+      },
+    });
+    await flight.load();
+  }
+
   const boot: BootMetrics = {
     wasmLoadMs,
     oracleUs: {
@@ -321,7 +351,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
     hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
     level, levelRing,
-    gameplay, vab, boot,
+    gameplay, vab, flight, router, boot,
   };
   return { services, canvas };
 }
