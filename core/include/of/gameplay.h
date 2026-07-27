@@ -876,6 +876,11 @@ static constexpr ItemId Foundation    = 0x0040;
 static constexpr ItemId Floor         = 0x0041;
 static constexpr ItemId Wall          = 0x0042;
 static constexpr ItemId Door          = 0x0043;
+// The launch pad (§S.6, GP-57). Still inside the 0x0040 structural block and
+// deliberately NOT at 0x0050, which GP-31 spent on the vessel part items
+// (`ItemId = 0x0050 + (PartId - 0x0100)`, allocated in of_vessel_api.inc and due
+// to be promoted here). 0x0045..0x004F stay free for the next structural part.
+static constexpr ItemId LaunchPad     = 0x0044;
 }  // namespace items
 
 // --- Survival entity TypeId block (0x30+, for the placeable structures). -------
@@ -898,6 +903,11 @@ static constexpr TypeId Foundation = 0x40;
 static constexpr TypeId Floor      = 0x41;
 static constexpr TypeId Wall       = 0x42;
 static constexpr TypeId Door       = 0x43;
+// The launch pad. Its art is assets/models/dist/rocket/launch_pad.glb, which
+// lives under rocket/ rather than structures/ because it is launch
+// infrastructure; the TypeId is still a structural one because what a TypeId
+// answers is "which mesh and which family", and the pad's family is this one.
+static constexpr TypeId LaunchPad  = 0x44;
 }  // namespace types
 
 // --- Survival smelting RecipeId block (0x0130+, append-only). ------------------
@@ -1108,6 +1118,14 @@ inline bool RegisterSurvivalContent(SliceRegistry& reg) {
                       kFlagBuildable, types::Wall));
   reg.registerItem(mk(Door, "Door", ItemCategory::Buildable, 50,
                       kFlagBuildable, types::Door));
+  // The launch pad (GP-57). One per stack, because a stack cap is a statement
+  // about how many you would ever carry and the answer for a 24 x 24 m pad is
+  // one; every other structural part stacks 50 because you carry a wall by the
+  // dozen. Nothing reads the cap today (a structure is paid for and placed, it
+  // never enters the pack, §S.6) and it is set honestly anyway, because the day
+  // something does read it a 50 here would be a silent lie.
+  reg.registerItem(mk(LaunchPad, "Launch pad", ItemCategory::Buildable, 1,
+                      kFlagBuildable, types::LaunchPad));
   // smelting recipes (fuel-driven; registered so the UE layer can list them)
   reg.registerRecipe(makeSmeltIronRecipe());
   reg.registerRecipe(makeSmeltCopperRecipe());
@@ -1553,8 +1571,9 @@ class Furnace {
 // =============================================================================
 // §S.6 — STRUCTURAL BUILDING SET (base building).
 //
-// Four placeable structural parts (foundation, floor, wall, door) authored as
-// DATA (GP-12), so balance iterates without a recompile of any system.
+// Five placeable structural parts (foundation, floor, wall, door and, since
+// GP-57, the launch pad) authored as DATA (GP-12), so balance iterates without a
+// recompile of any system.
 //
 // WHY THESE ARE NOT automation.h BuildKinds — the decision, already taken:
 //   a foundation never ticks, has no input or output ports, draws no power and
@@ -1575,7 +1594,33 @@ class Furnace {
 // Ids: items 0x0040..0x0043, entity TypeIds 0x40..0x43 (ASSET-SPECS §4 is the
 // TypeId authority; the shipped art is assets/models/dist/structures/*.glb).
 // =============================================================================
-enum class StructureKind : uint8_t { Foundation = 0, Floor = 1, Wall = 2, Door = 3 };
+// GP-57. THE LAUNCH PAD IS THE FIFTH MEMBER OF THIS ENUM, AND IT IS NOT THE
+// FIFTH MEMBER OF THE CLIENT'S ENUM OF THE SAME NAME. Worth stating here,
+// because the two look like one thing and are not.
+//
+// THIS enum is a COST-AND-IDENTITY TAG. `StructureDef` is {kind, item, typeId,
+// name, cost} and carries no geometry, no address, no footprint and no tiling
+// rule, so the only question membership asks is the one the section header
+// above already poses: does this thing tick, hold ports, draw power or carry an
+// inventory? A launch pad does none of those, exactly as a foundation does
+// none of them, so it belongs here by the section's own stated criterion. Its
+// reward for joining is the entire `of_gp_structure_*` bridge surface: count,
+// info, can_afford and pay are all indexed reads over `structureDefs()`, so a
+// fifth row reaches the browser with NO ABI CHANGE and with one cost authority
+// rather than two.
+//
+// THE CLIENT's `StructureKind` is a different thing wearing the same four
+// names: it is the 4 m TILING MODULE, and every function that switches on it
+// (`isDeck`, `addressAt`, `anchorOf`, `footprintOf`, `supported`, `addrKey`)
+// asks a question a 24 x 24 m monolith cannot answer. Adding a fifth member
+// there would grow six branches that all say "not this one", which is precisely
+// the argument this section already makes for keeping a foundation out of
+// `automation.h`'s `BuildKind`, one level down. So the pad has its own client
+// module and the two enums are joined by `StructureDef::kind` as a FIELD rather
+// than by array position.
+enum class StructureKind : uint8_t {
+  Foundation = 0, Floor = 1, Wall = 2, Door = 3, LaunchPad = 4,
+};
 
 struct StructureDef {
   StructureKind kind;
@@ -1585,8 +1630,9 @@ struct StructureDef {
   CraftRecipe cost;   // output = this structure's own item; inputs = BUILD COST
 };
 
-// The four structural parts. Tier-0 costs: cheap, legible, and payable from a
-// first-hour pack (stone from rocks, wood from trees, iron ingots for a door).
+// The structural parts. The first four are Tier-0 costs: cheap, legible, and
+// payable from a first-hour pack (stone from rocks, wood from trees, iron ingots
+// for a door). The fifth, the launch pad, is not Tier-0 at all and says why.
 //
 // RE-PRICED FOR THE 4 m MODULE ON 2026-07-27 (GP-40, following DW-32). The
 // prices were authored against a 1 m module and DW-32 made every part sixteen
@@ -1624,6 +1670,29 @@ inline std::vector<StructureDef> structureDefs() {
       StructureDef{StructureKind::Door, items::Door, types::Door, "Door",
                    CraftRecipe{items::Door, 1,
                                {ItemStack{items::Wood, 16}, ItemStack{items::Iron, 4}}}},
+      // GP-57 / GP-58. THE LAUNCH PAD, and its price is set by what it SITS ON
+      // rather than by its own area. It is founded on a 6 x 6 block of decks
+      // (GP-58: measured, a 24 m footprint on natural ground is accepted at
+      // 3.7% of sampled origins against 59.3% for a 4 m one, so a pad is laid
+      // on prepared ground and never on soil), which is 36 foundations at 40
+      // Stone = 1,440 Stone before this row is paid at all. So the pad's own
+      // bill is deliberately NOT another 1,440: it is the STEEL, because the
+      // platform is already the stone and charging for it twice would price the
+      // gate at the wrong thing.
+      //
+      // Iron is the binding ingredient on purpose. 60 ingots is 60 smelts, and
+      // a hand furnace runs one every 180 ticks, so a player who tries to reach
+      // orbit on a single furnace is looking at three hours of it. That is the
+      // pressure DW-29 asks for in one number: the two halves of the game are
+      // tied together by making the rocket programme need the factory. Copper
+      // is 20 rather than 60 because it is the floodlights, the umbilical and
+      // the wiring, and a second sixty-unit gate would be one gate too many.
+      StructureDef{StructureKind::LaunchPad, items::LaunchPad, types::LaunchPad,
+                   "Launch pad",
+                   CraftRecipe{items::LaunchPad, 1,
+                               {ItemStack{items::Iron, 60},
+                                ItemStack{items::Stone, 120},
+                                ItemStack{items::Copper, 20}}}},
   };
 }
 

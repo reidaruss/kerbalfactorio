@@ -342,14 +342,24 @@ TEST(survival_armour_is_gated_and_its_costs_are_not_transcribed) {
 // -----------------------------------------------------------------------------
 TEST(survival_tree_shape_and_id_space) {
   TechTree tree = survivalTechTree();
-  CHECK(tree.allTechs().size() == 6);
+  CHECK(tree.allTechs().size() == 7);
 
   CHECK(tree.depthOf(techs::Electrification) == 0);
   CHECK(tree.depthOf(techs::Metallurgy) == 0);
   CHECK(tree.depthOf(techs::ElectricSmelting) == 1);
   CHECK(tree.depthOf(techs::PlateArmour) == 1);
   CHECK(tree.depthOf(techs::FlightAutopilot) == 1);
+  CHECK(tree.depthOf(techs::LaunchFacilities) == 1);
   CHECK(tree.depthOf(techs::CinderRefining) == 2);
+
+  // GP-57 / DW-29. THE PAD AND THE AUTOPILOT ARE THE TWO ENDS OF ONE ARC, and
+  // the milestone belongs on the FAR end. Gating the pad on having reached
+  // orbit would be a cycle, because reaching orbit is what the pad is for, so
+  // this asserts the direction rather than the presence: exactly one of the two
+  // carries a milestone, and it is the autopilot.
+  CHECK(tree.tech(techs::LaunchFacilities)->requiresMilestone == kNoMilestone);
+  CHECK(tree.tech(techs::FlightAutopilot)->requiresMilestone
+        == milestones::ReachedOrbit);
   CHECK(tree.depthOf(kNoTech) == 0);           // an unknown id is a root, not a hang
 
   // The SLICE tree (§B.2) is untouched by all of this, and the two id blocks

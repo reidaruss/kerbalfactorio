@@ -90,9 +90,9 @@ TEST(survival_content_registers_additively) {
 
   CHECK(RegisterSurvivalContent(reg));
 
-  // 20 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
-  // + 4 structural) appended.
-  CHECK(reg.allItems().size() == 12 + 20);
+  // 21 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
+  // + 5 structural, the fifth being GP-57's launch pad) appended.
+  CHECK(reg.allItems().size() == 12 + 21);
   // 2 smelting recipes appended.
   CHECK(reg.allRecipes().size() == 5 + 2);
 
@@ -133,7 +133,7 @@ TEST(survival_content_registers_additively) {
 
   // Re-registering is idempotent (no duplicates added).
   RegisterSurvivalContent(reg);
-  CHECK(reg.allItems().size() == 12 + 20);
+  CHECK(reg.allItems().size() == 12 + 21);
   CHECK(reg.allRecipes().size() == 5 + 2);
 }
 
@@ -783,7 +783,7 @@ TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
 // =============================================================================
 TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
   const std::vector<StructureDef> defs = structureDefs();
-  CHECK(defs.size() == 4);
+  CHECK(defs.size() == 5);
 
   // Pinned ids: items 0x0040.. , entity TypeIds 0x40.. (ASSET-SPECS §4).
   CHECK(defs[0].kind == StructureKind::Foundation);
@@ -806,6 +806,21 @@ TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
   CHECK(defs[3].item == sitems::Door);
   CHECK(defs[3].item == 0x0043);
   CHECK(defs[3].typeId == 0x43);
+
+  // GP-57. The launch pad continues the SAME two blocks rather than opening a
+  // third, which is the whole claim behind putting it in this enum.
+  CHECK(defs[4].kind == StructureKind::LaunchPad);
+  CHECK(defs[4].item == sitems::LaunchPad);
+  CHECK(defs[4].item == 0x0044);
+  CHECK(defs[4].typeId == stypes::LaunchPad);
+  CHECK(defs[4].typeId == 0x44);
+  // AND IT DOES NOT COLLIDE WITH THE VESSEL PART ITEM BLOCK. GP-31 spent
+  // 0x0050..0x006A on the part items and GP-42 left the gap deliberately; a pad
+  // that had simply taken "the next id" after the armour block would have
+  // landed inside it. The bound is asserted rather than the digit alone,
+  // because the digit alone cannot say WHY it is that digit.
+  CHECK(defs[4].item < 0x0050);
+  CHECK(defs[4].item > sitems::Door);
 
   // Every def carries a name and a non-empty cost whose output is its own item
   // (one coherent id space: the cost is a CraftRecipe, not a second concept).
@@ -851,6 +866,33 @@ TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
   // design decision rather than a number.
   CHECK(defs[0].cost.inputs[0].count > defs[2].cost.inputs[0].count);
   CHECK(defs[3].cost.inputs[0].count > defs[2].cost.inputs[0].count);
+
+  // GP-57's pad price, and the PROPERTY it is set by rather than the digits.
+  // The pad is founded on 36 foundations (GP-58), so what makes its own bill
+  // right is that it is a STEEL bill: its binding ingredient is smelted, which
+  // no other structural part's is, and that is what ties the rocket programme
+  // to the factory. Asserted as "the pad needs more iron than every other
+  // structural part put together", which stays true through a rebalance and
+  // which a pad priced in stone alone could not satisfy by accident.
+  int ironElsewhere = 0;
+  for (size_t k = 0; k + 1 < defs.size(); ++k) {
+    for (const ItemStack& in : defs[k].cost.inputs) {
+      if (in.item == sitems::Iron) ironElsewhere += in.count;
+    }
+  }
+  int padIron = 0;
+  int padStone = 0;
+  for (const ItemStack& in : defs[4].cost.inputs) {
+    if (in.item == sitems::Iron) padIron = in.count;
+    if (in.item == sitems::Stone) padStone = in.count;
+  }
+  CHECK(padIron > ironElsewhere);
+  CHECK(padIron == 60);
+  // And its stone is LESS than the 36 foundations it stands on cost, because
+  // the platform is already the stone and charging for it twice would put the
+  // gate on the wrong ingredient. 36 * 40 = 1,440.
+  CHECK(padStone == 120);
+  CHECK(padStone < 36 * defs[0].cost.inputs[0].count);
 }
 
 // The four structural items land in the registry, buildable, and cross-linked to
@@ -871,6 +913,19 @@ TEST(structure_items_register_and_do_not_collide) {
   CHECK(flr->displayName == "Floor");
   CHECK(wal->displayName == "Wall");
   CHECK(dor->displayName == "Door");
+
+  // GP-57. The pad is a registered, buildable item with its own entity, so the
+  // browser's `of_gp_structure_info` row and the research tree's `unlockItems`
+  // are naming a thing the registry actually holds. It stacks ONE and every
+  // other structural part stacks 50, which is the one place the pad's size
+  // shows up in /core at all.
+  const ItemDef* pad = reg.item(sitems::LaunchPad);
+  CHECK(pad != nullptr);
+  CHECK(pad->displayName == "Launch pad");
+  CHECK(pad->isBuildable());
+  CHECK(pad->stackMax == 1);
+  CHECK(pad->stackMax < fnd->stackMax);
+  CHECK(reg.entityForItem(sitems::LaunchPad) == stypes::LaunchPad);
 
   // Placeables stack 50 and place their entity TypeId.
   CHECK(fnd->stackMax == 50);
@@ -958,6 +1013,9 @@ TEST(structures_do_not_leak_into_hand_recipes) {
     CHECK(r.output != sitems::Floor);
     CHECK(r.output != sitems::Wall);
     CHECK(r.output != sitems::Door);
+    // GP-57. The pad is placed against its bill, exactly like the other four,
+    // and is emphatically not a thing you craft into your pack and carry.
+    CHECK(r.output != sitems::LaunchPad);
   }
   CHECK(hand[0].output == sitems::CrudePickaxe);
   CHECK(hand[1].output == sitems::CrudeAxe);

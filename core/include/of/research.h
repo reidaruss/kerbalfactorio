@@ -160,6 +160,7 @@ static constexpr TechId Metallurgy = 0x0012;         // helm + boots
 static constexpr TechId PlateArmour = 0x0013;        // cuirass + greaves
 static constexpr TechId FlightAutopilot = 0x0014;    // DW-29: earned by flying, then researched
 static constexpr TechId CinderRefining = 0x0015;     // OFF-WORLD GATE over survival content
+static constexpr TechId LaunchFacilities = 0x0016;   // DW-29: the launch pad (GP-57)
 }  // namespace techs
 
 // =============================================================================
@@ -619,7 +620,7 @@ inline std::vector<ItemId> scienceItems() {
   return {items::AutomationScience, items::LogisticScience, items::CinderScience};
 }
 
-/** The survival tech tree as DATA (GP-12). Six techs, three tiers deep. */
+/** The survival tech tree as DATA (GP-12). Seven techs, three tiers deep. */
 inline std::vector<TechDef> survivalTechs() {
   namespace pi = progression::items;
   using survival::items::BurnerGenerator;
@@ -677,6 +678,31 @@ inline std::vector<TechDef> survivalTechs() {
   autopilot.cost = {ItemStack{items::AutomationScience, 25},
                     ItemStack{items::LogisticScience, 15}};
   t.push_back(autopilot);
+
+  // DW-29 / GP-57. THE LAUNCH PAD, gated behind ground progression.
+  //
+  // ITS PREREQ IS ELECTRIFICATION AND ITS COST IS SCIENCE, AND NEITHER IS
+  // DECORATION. DW-29's sequencing argument is that gating the pad behind
+  // ground progression is what ties the two halves of the game into one game
+  // instead of two modes, and a tech whose prereq is nothing would gate on
+  // patience rather than on progression. Electrification is the first rung that
+  // genuinely requires a working factory (poles and a generator), so requiring
+  // it is requiring a base.
+  //
+  // IT DELIBERATELY REQUIRES NO MILESTONE. `FlightAutopilot` above is the tech
+  // that is EARNED (`milestones::ReachedOrbit`), and it must stay the only one:
+  // gating the PAD on having reached orbit would be a cycle, because reaching
+  // orbit is what the pad is for. The two techs are the two ends of the same
+  // arc and the milestone belongs on the far one.
+  TechDef pad;
+  pad.id = techs::LaunchFacilities;
+  pad.name = "Launch Facilities";
+  pad.prereqs = {techs::Electrification};
+  pad.cost = {ItemStack{items::AutomationScience, 20},
+              ItemStack{items::LogisticScience, 12}};
+  pad.unlockItems = {survival::items::LaunchPad};
+  pad.unlockEntities = {survival::types::LaunchPad};
+  t.push_back(pad);
 
   // GP-2, visible. Costs an item that cannot be made on this planet.
   TechDef cinder;
