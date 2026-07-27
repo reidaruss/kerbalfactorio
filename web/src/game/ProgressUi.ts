@@ -7,21 +7,19 @@
 // POINTER, exactly as it always has, and hands this object the one callback
 // that owns the transition.
 //
-// THE KEYS ARE RAW CODES AND THAT IS A BOUNDED DEBT, named here rather than
-// hidden. `player/Bindings.ts` is the only place a key code is supposed to
-// appear and this lane does not own that file (the rendering lane is live in
-// `web/src/player/`). So the three codes below are declared ONCE, in one
-// constant, and read through `Input.held`, which is the public raw-code test.
-// The ask for Admin is three lines in `Bindings.ts`: `research: ['KeyJ']`,
-// `power: ['KeyU']`, `equipment: ['KeyK']`, plus all three in `UI_ALLOWED` so a
-// panel's own key can close it. The moment those exist this constant deletes
-// itself and every call below becomes `act('research')`.
+// THE KEYS ARE ACTIONS (H-5, closed). They shipped as three raw codes read
+// through `Input.held` because `player/Bindings.ts` belonged to another lane
+// that night, and three raw codes break the one property that made a whole
+// control remap cost a single file: every consumer in this client asks for an
+// ACTION and nothing else names a key. `BINDINGS` now carries `research`,
+// `power` and `equipment`, all three are in `UI_ALLOWED` so a panel's own key
+// closes it, and `PROGRESS_ACTIONS` below is a mapping from a screen to a verb
+// rather than to a keyboard.
 //
-// KeyK is deliberate rather than a leftover: it is `throttleDown`, which means
-// something in a rocket and nothing on foot, and `Bindings.ts` states that
-// precedent itself ("a code may fire two actions, and only one of the two
-// consumers is ever live, because you are either walking or strapped in").
-// These panels are gated on `suspended`, so they cannot fire while flying.
+// KeyK for `equipment` is deliberate rather than a leftover: it is also
+// `throttleDown`, which means something in a rocket and nothing on foot, which
+// is the precedent `Bindings.ts` states itself. These panels are gated on
+// `suspended`, so the two consumers are never live at once.
 
 import { EquipPanel, type EquipView } from '../ui/EquipPanel.js';
 import { PowerPanel, type PowerView } from '../ui/PowerPanel.js';
@@ -33,14 +31,17 @@ import { equipView, powerView, researchView } from './ProgressViews.js';
 import type { GameCore } from './GameCore.js';
 import type { ModeRules } from './GameMode.js';
 import type { ModalStack } from '../ui/ModalStack.js';
+import type { Action } from '../player/Bindings.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
-/** The one place a raw key code appears in this lane. See the header. */
-export const PROGRESS_KEYS = {
-  research: 'KeyJ',
-  power: 'KeyU',
-  equipment: 'KeyK',
-} as const;
+/** Screen -> the ACTION that toggles it. Identity today, and deliberately kept
+ *  as a table so a screen and its verb can be named differently tomorrow
+ *  without anything downstream learning a key code. */
+export const PROGRESS_ACTIONS = {
+  research: 'research',
+  power: 'power',
+  equipment: 'equipment',
+} as const satisfies Record<Which, Action>;
 
 export interface ProgressDeps {
   core: OfCoreModule;
@@ -59,6 +60,18 @@ export interface ProgressDeps {
   /** Say something to the player. */
   flash: (msg: string, secs?: number) => void;
   icon: (name: string) => string;
+  /**
+   * H-4: PUT THE ARMOUR ON THE BODY. A port, so this object learns nothing
+   * about the avatar, the rig, three.js or the asset registry, exactly as
+   * `setCapture` keeps the pointer transition out of here.
+   *
+   * Both strings come from /core (`progression.h` `slotName` and `armourNode`)
+   * and NEITHER is rebuilt in the client, because the four node names are the
+   * art lane's published contract and a second derivation of a name is how a
+   * lookup ends up binding 284 of 904 triangles while every slot reports
+   * something equipped.
+   */
+  armour: (slotName: string, node: string, on: boolean) => void;
 }
 
 type Which = 'research' | 'power' | 'equipment';
@@ -122,14 +135,15 @@ export class ProgressUi {
 
   toggle(which: Which): void { this.show(this.open === which ? null : which); }
 
-  /** Edge-detected key handling, so a held key acts once exactly as a human
+  /** Edge-detected ACTION handling, so a held key acts once exactly as a human
    *  press does. Runs whether or not a panel is open, because a panel's own key
-   *  has to survive to close it. */
-  step(held: (code: string) => boolean): void {
-    for (const [which, code] of Object.entries(PROGRESS_KEYS) as [Which, string][]) {
-      const now = held(code);
-      if (now && !this.down.has(code)) this.toggle(which);
-      if (now) this.down.add(code); else this.down.delete(code);
+   *  has to survive to close it (which is why all three are in `UI_ALLOWED`). */
+  step(act: (a: Action) => boolean): void {
+    for (const [which, action] of
+      Object.entries(PROGRESS_ACTIONS) as [Which, Action][]) {
+      const now = act(action);
+      if (now && !this.down.has(action)) this.toggle(which);
+      if (now) this.down.add(action); else this.down.delete(action);
     }
   }
 
@@ -177,6 +191,27 @@ export class ProgressUi {
     return -1;
   }
 
+  /**
+   * H-4. MAKE THE BODY MATCH /core, for EVERY slot, every time.
+   *
+   * Derived rather than incremental, which is GP-25's ModalStack argument and
+   * GP-44's gating argument in a third place: a pair of "add on equip, remove
+   * on unequip" calls is correct until the third path appears, and the third
+   * path already exists (a LOAD puts four pieces on a body nobody clicked).
+   * One idempotent sweep from /core's own `wornAll` cannot drift from it, and
+   * the rig's own equip/unequip are both no-ops when they already agree.
+   *
+   * Fire and forget: the rig's `equip` is async because it loads a GLB, and
+   * nothing here depends on the frame it lands on.
+   */
+  syncArmour(): void {
+    const worn = this.progression.wornAll();
+    for (let s = 0; s < worn.length; ++s) {
+      this.d.armour(this.progression.slotName(s),
+        this.progression.armourNode(s), (worn[s] ?? 0) !== 0);
+    }
+  }
+
   private doEquip(item: number): void {
     if (this.d.mode.researchGated && !this.research.itemAvailable(item)) {
       this.d.flash('that armour is not researched yet');
@@ -187,6 +222,7 @@ export class ProgressUi {
       return;
     }
     this.d.flash(`equipped ${this.d.game.itemName(item)}`);
+    this.syncArmour();
     this.invalidate();
   }
 
@@ -196,6 +232,7 @@ export class ProgressUi {
       return;
     }
     this.d.flash(`removed ${this.progression.slotName(slot)} armour`);
+    this.syncArmour();
     this.invalidate();
   }
 
@@ -229,7 +266,7 @@ export class ProgressUi {
   report(): unknown {
     return {
       open: this.open,
-      keys: PROGRESS_KEYS,
+      keys: PROGRESS_ACTIONS,
       research: this.research.report(),
       power: this.power.report(),
       progression: this.progression.report(),

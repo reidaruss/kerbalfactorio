@@ -23,6 +23,7 @@ import { TYPE_ID, type BuildKind, type Factory, type Placed } from './Factory.js
 import { orient } from './Grid.js';
 import { readMachineSockets, type SocketDef } from './FactorySnap.js';
 import { BeltCargo } from './BeltCargo.js';
+import { WireView } from '../render/WireView.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 
 const TEMPLATES: Record<string, MachineTemplate> = {
@@ -65,6 +66,8 @@ export class FactoryView {
   readonly batch = new MachineBatch();
   /** FS-28: discrete cargo riding the belts, at LOD 0 only. */
   readonly cargo = new BeltCargo();
+  /** H-6: the grid's own spanning tree, drawn between the poles' crossarms. */
+  readonly wires = new WireView();
   /**
    * FS-26: every socket the machine assets publish, read once at load. The
    * placement layer snaps to these; nothing recomputes a half-tile offset.
@@ -87,6 +90,7 @@ export class FactoryView {
     this.group.name = 'factory';
     this.group.add(this.batch.group);
     this.group.add(this.cargo.group);
+    this.group.add(this.wires.group);
     this.ghostMat = new THREE.MeshBasicMaterial({
       color: 0x63d0ff, transparent: true, opacity: 0.35, depthWrite: false,
       side: THREE.DoubleSide,
@@ -104,6 +108,11 @@ export class FactoryView {
     // the geometry drawn and the geometry snapped to cannot fall out of step.
     this.sockets = readMachineSockets(loaded);
     await this.cargo.load(loaded.get('belt')?.scene ?? null);
+    // H-6: the wire attachment comes off the SAME pole scene the batch drew, so
+    // the mast that is rendered and the crossarm the cable lands on cannot fall
+    // out of step. `socket_wire_a` / `socket_wire_b` are the asset's own
+    // contract for this and had never been read.
+    this.wires.load(loaded.get('pole')?.scene ?? null);
     // ONE ghost mesh, re-pointed at whichever machine is selected. A clone per
     // frame would allocate a mesh sixty times a second to draw a preview.
     this.ghost = new THREE.Mesh(new THREE.BufferGeometry(), this.ghostMat);
@@ -159,6 +168,10 @@ export class FactoryView {
     // cargo has to ride the deck that is actually drawn, and two answers to
     // "is this tile a curve" is how it ends up riding the one that is not.
     this.cargo.sync(f, f.core, this.origin, eye, corners);
+    // H-6. Handed the whole factory rather than an edge list, because the view
+    // decides WHEN to ask /core: the segments are pulled on a topology change
+    // and the transforms rewritten on a rebase, and a steady frame does neither.
+    this.wires.sync(f, this.origin);
     this.curves = [...corners].map(([id, c]) => ({ id, turn: c.turn }));
   }
 
@@ -250,7 +263,8 @@ export class FactoryView {
   stats(): unknown {
     return { ...this.batch.stats(), ghost: this.ghostVisible,
       links: this.linkSlots.length, cargo: this.cargo.stats(),
-      curves: this.curves.length, curveTiles: this.curves };
+      curves: this.curves.length, curveTiles: this.curves,
+      wires: this.wires.report() };
   }
 }
 

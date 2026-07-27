@@ -61,7 +61,7 @@ the failure this project has paid for six times. See lane B.
    section, work around it, or move to the next item in your own scope.
 2. Every claim carries a number. A probe must prove its own setup worked (DW-20).
 3. `git commit -- <paths>`, never a bare `git add -A` (standing rule 10).
-4. An ABI bump is atomic and its commit boots (standing rule 9). ABI is at 9.
+4. An ABI bump is atomic and its commit boots (standing rule 9). ABI is at 10.
 5. No em dashes. No destructive commands outside the project directory.
 6. No DW numbers; use your domain prefix and escalate anything Admin-level.
 
@@ -601,7 +601,7 @@ None of these stopped lane H, all three are real, and every one of them was
 invisible to the headless suites that cover the code they are in, because they
 are properties of the code MEETING something else.
 
-**H-1. `HandCrafter::craft` RETURNS TRUE WHILE SILENTLY DROPPING ITS OUTPUT when
+**H-1. CLOSED 2026-07-27 (GP-51), at ABI 10.** `HandCrafter::craft` RETURNS TRUE WHILE SILENTLY DROPPING ITS OUTPUT when
 the pack is full, and the thing it drops has already been paid for.** Measured:
 a pack at 20 of 20 slots (Wood 410, Stone 396, Coal 324, Raw iron 216, Raw
 copper 324 is exactly twenty slots at a stack of 100) crafted a primitive
@@ -615,7 +615,7 @@ downstream, and it cost this lane an hour. The fix is one line in /core
 (`craft` fails when the output would not fit) and it is somebody's deliberate
 balance decision, not a 4 a.m. edit at the end of an ABI bump.
 
-**H-2. A machine placed where a neighbour stands is put ONE METRE ABOVE IT
+**H-2. CLOSED 2026-07-27 (GP-49), AND THE DIAGNOSIS BELOW IS HALF WRONG: it was 1.0000 m SIDEWAYS with 8.3e-7 m of up, because at a 600 km radius the world y axis is very nearly TANGENTIAL there. The consequence is identical.** A machine placed where a neighbour stands is put ONE METRE ABOVE IT
 rather than refused (GP-49).** Measured: a generator at y 21103.98 and an
 electric smelter placed on a bearing 15 degrees away at y **21104.98**, the same
 tangent position exactly 1.00 m up. It floats, a downward aim ray passes
@@ -623,7 +623,7 @@ underneath it, and it can never be interacted with, demolished or fed again.
 `MachineAddr.u` carrying the aim's own height is correct and is GP-39; what is
 missing is that an occupied COLUMN should refuse rather than stack.
 
-**H-3. `progression.h` publishes a move-speed figure that is wrong.** GP-42 and
+**H-3. CLOSED 2026-07-27 (GP-52).** `progression.h` publishes a move-speed figure that is wrong. GP-42 and
 the header's own comment both say the tier-1 iron set is "0.892 move speed" and
 "12% of walking speed". The four shipped multipliers are 0.99, 0.95, 0.97 and
 0.98, whose product is **0.8940393**, so the set costs 10.6%. The table is right
@@ -635,8 +635,8 @@ passed, which is standing rule 11's exact failure.
 
 ### Lane H, 2026-07-27: what the three new systems still need from other lanes
 
-**H-4, rendering: ARMOUR IS EQUIPPED AND NOT DRAWN, and the two halves are both
-built.** `__of.armour(slot, on, url)` and `PlayerRig.equip` already exist in
+**H-4. CLOSED 2026-07-27. Armour is drawn: 904 triangles over 12 primitives across four slots, every piece bound to the body's OWN skeleton, and the trap was real (the chest is 4 primitives).** ARMOUR IS EQUIPPED AND NOT DRAWN, and the two halves are both
+built. `__of.armour(slot, on, url)` and `PlayerRig.equip` already exist in
 `web/src/app/DebugArmour.ts` and `web/src/player/`, which this lane may not
 touch; `Progression.armourNode(slot)` publishes the four `armour_set.glb` node
 names straight out of /core (`Armour_Head_LOD0` and the other three, asserted in
@@ -646,8 +646,8 @@ applies here**: `Armour_Chest_LOD0` is four primitives, so GLTFLoader splits it
 into `_0`.. `_3` and an exact-name lookup binds 284 of 904 triangles while every
 slot reports something equipped.
 
-**H-5, input: THREE PANEL KEYS ARE RAW CODES, and it is a bounded debt named in
-one constant.** `PROGRESS_KEYS` in `web/src/game/ProgressUi.ts` holds `KeyJ`
+**H-5. CLOSED 2026-07-27. `research`, `power` and `equipment` are rows in `BINDINGS` and all three are in `UI_ALLOWED`; `PROGRESS_KEYS` is gone and `ProgressUi.step` takes `Input.act`.** THREE PANEL KEYS ARE RAW CODES, and it is a bounded debt named in
+one constant. `PROGRESS_KEYS` in `web/src/game/ProgressUi.ts` holds `KeyJ`
 (research), `KeyU` (power) and `KeyK` (equipment), read through `Input.held`
 because `player/Bindings.ts` is another lane's file tonight. The ask is three
 rows in `BINDINGS` plus all three in `UI_ALLOWED` so a panel's own key can close
@@ -656,14 +656,14 @@ it; the constant then deletes itself and every call becomes `act('research')`.
 something in a rocket and nothing on foot, which is the precedent `Bindings.ts`
 states itself.
 
-**H-6, render: THE WIRES ARE EXPORTED AND NOTHING DRAWS THEM (lane D's D-3).**
+**H-6. CLOSED 2026-07-27. One instanced draw call, 51 to 52, drawn count equals /core's segment count at every step.** THE WIRES ARE EXPORTED AND NOTHING DRAWS THEM (lane D's D-3).
 `of_net_wires` fills the f32 scratch with 7 floats a segment
 (`ax ay az bx by bz network`) and `Power.wires()` returns them typed. Measured
 on a driven grid: 3 poles and **2 segments**, 5 poles and **4 segments**, which
 is the N-1 spanning tree lane D promised and never one per in-reach pair. A
 stretched instanced quad per segment is the whole job.
 
-**H-7, art: THREE ITEMS HAVE NO ICON.** The power pole, the burner generator and
+**H-7. CLOSED 2026-07-27, and it was NINE rows and not three: the four armour pieces and two science packs were in the same state. Hotbar 3 to 0, menu 9 to 2, unexplained 9 to 0.** THREE ITEMS HAVE NO ICON. The power pole, the burner generator and
 the electric smelter (0x003D to 0x003F) are now craftable and appear in the Tab
 menu and on the hotbar, and `ItemIcons` bakes from the item's display NAME, so
 they currently fall back to text. Lane D flagged this as an escalation before
@@ -672,6 +672,90 @@ they were reachable; they are reachable now.
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
+
+- **2026-07-27, gameplay lane: the finishing pass. THREE DEFECTS FIXED AND FOUR
+  SHIPPED-BUT-INVISIBLE THINGS DRAWN, at WASM ABI 9 to 10, atomic and booting.**
+
+  **GP-51, the craft that reported success it had not achieved.** `craft` spent
+  every input, called `inv.add`, discarded the overflow and returned true; the
+  only symptom is that nothing happens. It now refuses, and the reason crosses
+  as a CODE (`of_gp_craft_block`, GP-46's rule in a second place) because "go
+  and mine" and "go and drop something" are opposite actions a boolean cannot
+  tell apart. **The fit test runs on a COPY of the real pack through the real
+  operations**, never a model of the stacking rules: the inputs are removed
+  FIRST, which frees slots, so a pack whose last slot holds exactly the 5 Wood a
+  furnace costs HAS room for it, and a free-slot count taken before the spend
+  says it does not. That second direction has its own /core test. **Driven in
+  SURVIVAL, because sandbox GRANTS a craft and would never call the code being
+  fixed: nine pickaxes made, every one with a slot free; at 20 of 20 the tenth
+  refused with `PackFull` while `canCraft` still read TRUE (the discriminator)
+  and Wood 401 / Raw iron 531 were untouched; a forced click through the
+  disabled button paid nothing and flashed "pack is full"; three recipes read
+  `PackFull` and ten read `InputsShort` in the SAME frame.** Reverting the /core
+  fix fails exactly five checks by name, and the one that does NOT fail is
+  `count(PrimitiveFurnace) == 0`, because the old code really did drop it.
+
+  **GP-49, and the probe corrected the diagnosis as well as the code.** The
+  reported "one metre ABOVE it" was a world-frame y at a 600 km radius, where
+  the y axis is very nearly TANGENTIAL: decomposed into the site's own up and
+  tangent, the offset is **total 1.0000 m, tangent 1.0000 m, up 8.3e-7 m**, and
+  the world dy across the step was 0.025 m. It was never in the air, it was
+  INSIDE its neighbour: `FOOTPRINT` is 2 for a generator and a smelter while the
+  occupancy key is one 1 m cell. The consequence is identical and is why it
+  deserves a refusal rather than a tidy-up: `Factory.pick` resolves every
+  bearing to whichever is better centred, so one of the two can never again be
+  aimed at, opened, fed or demolished, and it was paid for. **The ghost now
+  reads `too close to #1 generator` before the button is pressed; the count does
+  not move; the refusal is counted; and the SAME smelter from the SAME hand goes
+  down 2.2361 m away.** The rule is deliberately only between things two cells
+  wide, because a belt must be able to run INTO a smelter (GP-50's own point).
+
+  **GP-52.** The header published 0.892 for a table that multiplies to
+  **0.8940393**, so the suit costs 10.6% and not 12%. Fixed in the header and in
+  GP-42, and the PROPERTY assertion is kept in both places: `progression_tests`
+  now pins the multiply AGAINST the add, because the additive answer is 0.89,
+  which is near enough to the wrong figure to look right in a menu.
+
+  **H-4, armour drawn.** `ProgressUi` gained an `armour` PORT and a `syncArmour`
+  that sweeps every slot from /core's `wornAll` rather than reacting to a click,
+  which is what makes the third path work: **a LOAD puts four pieces back with
+  nobody pressing anything**, and the probe asserts that too. **Measured: Head
+  3 primitives / 192 triangles, Chest 4 / 216, Legs 2 / 328, Feet 3 / 168, 904
+  in all; every piece `sameSkeleton`; the bound node is /core's own published
+  `armourNode(slot)` rather than a name the client spelled itself; and the frame
+  triangle count moved 871,624 to 875,240, a delta of 3,616 which is exactly 4
+  whole passes of the 904** (the body is drawn once plus three shadow cascades,
+  and asserting that the multiple is exact is what keeps it a property).
+  Negative control: taking it off returns the count to 871,624 EXACTLY.
+  **One process note that nearly produced a false conclusion, which is why it is
+  here: the first version of that block pressed V to go third person AFTER
+  opening the panel, `view` is not in `UI_ALLOWED`, the camera never moved, and
+  the triangle delta read exactly 0. That reads precisely like "the armour is
+  not drawn" and is in fact "the camera did not turn round."**
+
+  **H-5.** `research`, `power` and `equipment` are rows in `BINDINGS`, all three
+  in `UI_ALLOWED`, `PROGRESS_KEYS` deleted, and `ProgressUi.step` takes
+  `Input.act`. The probe presses the ACTION and asserts the three bindings exist.
+
+  Gates: **29/29 ctest**, self-determinism **126/126**, cross-toolchain exact
+  **108/108**, `npm --prefix web run check` green at **181 files** all at or
+  under 400 lines, `tools/smoke/reload.mjs` **PASS** against a freshly built
+  bundle served on its own port, and probes `gp49`, `craftfull`, `equip`,
+  `power`, `research`, `wires` and `icons` all `valid: true`. Screenshots
+  `docs/screenshots/W11_armour_worn.png`, `W11_wires.png`, `W11_icons.png`.
+
+  **STILL SHIPPED AND INVISIBLE, stated plainly.** First person still has no
+  armour (A-11: `armour_set.glb` carries the 44-bone third-person rig and the
+  view model is a different 27-bone rig, so an armoured player sees unarmoured
+  arms; it needs a second authored file or an explicit decision to accept it).
+  Automation and Logistic science still fall back to text, because no
+  science-pack mesh ships anywhere and drawing two different packs as the same
+  crate is worse than drawing their names. Power wires are straight rather than
+  catenary, and there is one cable per span rather than two on the insulator
+  caps. `NODE_KIND.WaterPool` and `OilSeep` still have no `ART` entry, so
+  `water_pool.glb`, `oil_seep.glb` and `bush_scrub.glb` remain unreachable, and
+  `NodeBatch` still matches `_LOD0` only. GP-50 is untouched, and the belt into
+  an electric smelter it asks for is the next thing worth doing.
 
 - **2026-07-27, lane H: three finished /core layers became reachable from the
   game, in ONE ABI bump (GP-44 to GP-50).** `research.h` had been green since

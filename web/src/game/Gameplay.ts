@@ -9,10 +9,10 @@
 //
 // THE POINTER TRANSITION is the part worth being careful about. Opening a panel
 // must release the lock, show the cursor and stop the camera dead in the same
-// frame; closing it must take the lock back without the mouse having "moved"
-// while the cursor was free. Input.setUiCapture does both halves, including
-// clearing the accumulated deltas, because a frame's worth of unlocked movement
-// applied on re-lock is a visible snap and reads as a bug.
+// frame; closing it must take the lock back without the mouse having "moved".
+// Input.setUiCapture does both halves, including clearing the accumulated
+// deltas, because a frame of unlocked movement applied on re-lock reads as a
+// bug.
 
 import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
@@ -110,10 +110,9 @@ export class Gameplay {
   /** Base building: the parts, their bodies and the batch that draws them. */
   readonly structures: Structures;
   readonly structView: StructureView;
-  /** W11: the three screens that show what the player has EARNED, and the
-   *  three /core layers behind them (research.h, power.h, progression.h).
-   *  Built in `create` because the grid panel needs the factory's own network,
-   *  and definitely assigned before any frame runs. */
+  /** W11: the three screens that show what the player has EARNED, over
+   *  research.h, power.h and progression.h. Built in `create` because the grid
+   *  panel needs the factory's own network. */
   progress!: ProgressUi;
   /** The DOM parent, so the progression panels share the pack's host. */
   readonly host: HTMLElement;
@@ -139,6 +138,8 @@ export class Gameplay {
    * which live in Services and are null in a scenario with no character. */
   get core(): OfCoreModule { return this.d.core; }
   get seed(): number { return this.d.seed; }
+  /** H-4: the body the armour goes on. Null with no character. */
+  get avatar(): Avatar | null { return this.d.avatar; }
   get ports(): WorldPorts {
     const p = this.d.ports;
     return { voxels: p?.voxels ?? null, voxelMesh: p?.voxelMesh ?? null,
@@ -288,10 +289,10 @@ export class Gameplay {
   /** Fixed tick. Returns true on the tick a harvest actually granted items. */
   fixedStep(tick: number): boolean {
     this.keys.chrome(this);
-    // The progression screens read RAW codes rather than actions, because
-    // `player/Bindings.ts` is another lane's file tonight. ProgressUi.ts names
-    // the debt and the three lines that delete it.
-    if (!this.suspended) this.progress.step((c) => this.d.input.held(c));
+    // H-5 closed: the three progression screens are ACTIONS, so a remap moves
+    // them. Gated on `suspended` because `equipment` shares KeyK with
+    // `throttleDown`, and you are either walking or strapped in.
+    if (!this.suspended) this.progress.step((a) => this.d.input.act(a));
 
     // Machines and the automation network tick on the SIM clock, like
     // everything else that is a rule: a furnace on a synthetic-clock probe

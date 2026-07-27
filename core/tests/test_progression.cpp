@@ -15,6 +15,7 @@
 //   5. Appearance survives a save written by a build with a longer palette.
 //   6. All of it is deterministic: the same sequence gives the same state.
 // =============================================================================
+#include <cmath>
 #include <cstdio>
 
 #include "test_framework.h"
@@ -206,6 +207,17 @@ TEST(a_full_suit_sums_reduction_multiplies_encumbrance_and_is_capped) {
   const prog::ArmourStats full = eq.total();
   CHECK_NEAR(full.damageReduction, wantSum, 1e-5f);
   CHECK_NEAR(full.moveSpeedMul, wantMul, 1e-5f);
+  // GP-52: THE TWO RULES ARE NOT THE SAME RULE, asserted rather than assumed.
+  // The header used to publish 0.892 for a table that multiplies to 0.8940393,
+  // and the additive answer (1 - sum of the encumbrances) is 0.89, which is
+  // near enough to the wrong published figure to look right in a menu. So the
+  // multiply is pinned AGAINST the add, which is the property the code claims.
+  float additive = 1.0f;
+  for (const prog::ArmourDef& d : prog::armourDefs())
+    additive -= (1.0f - d.stats.moveSpeedMul);
+  CHECK(std::fabs(full.moveSpeedMul - additive) > 1e-3f);
+  CHECK(full.moveSpeedMul > additive);   // compounding is gentler than adding
+  CHECK(wantSum != wantMul);
   CHECK(full.damageReduction <= prog::kMaxDamageReduction);
   // A full set is a real but not decisive cost in speed, and a real but not
   // decisive gain in survivability. Both pinned as BANDS, because the digits

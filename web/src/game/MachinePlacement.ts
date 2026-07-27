@@ -32,6 +32,7 @@
 import * as THREE from 'three';
 import { SITE_REACH_M, localOf, worldOf, type Site, type StructureModule }
   from './StructureGrid.js';
+import { FOOTPRINT, type BuildKind, type Placed } from './FactoryKinds.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 /**
@@ -108,6 +109,78 @@ export interface MachineAddr {
 export function machineCellKey(a: MachineAddr): string {
   return a.prospective ? `m~${a.site.cell}:${a.i},${a.j}`
     : `m${a.site.id}:${a.i},${a.j}`;
+}
+
+/**
+ * The inverse of `machineCellKey`, for a REAL (adopted) key. Null otherwise.
+ *
+ * Here rather than in `Factory` so the key's FORMAT lives in exactly one file,
+ * beside the function that writes it. A second place that knew how to spell
+ * `m1:2,-3` would be free to disagree with this one, and a saved placement is
+ * keyed in this form, so the disagreement would be permanent.
+ */
+export function parseMachineCellKey(cell: string):
+{ site: number; i: number; j: number } | null {
+  const m = /^m(\d+):(-?\d+),(-?\d+)$/.exec(cell);
+  return m === null ? null
+    : { site: Number(m[1]), i: Number(m[2]), j: Number(m[3]) };
+}
+
+/**
+ * GP-49: DO THESE TWO MACHINES OVERLAP?
+ *
+ * Both stand on the SAME site grid, axis-aligned, `f` cells across and CENTRED
+ * on their cell (`anchorIn` puts them at `(i + 0.5) * tile`). Two axis-aligned
+ * squares overlap when they overlap on BOTH axes, and a centre separation of
+ * `d` cells clears a pair of widths `fa` and `fb` when `2*d >= fa + fb`. So two
+ * 2 m machines need their centres two cells apart, and one cell apart is half
+ * of each one standing inside the other.
+ *
+ * MEASURED, and this is the whole defect. A burner generator went down at
+ * `m1:1,1` and an electric smelter aimed 15 degrees away landed at `m1:1,2`,
+ * ONE CELL over: offset 1.0000 m total, tangent 1.0000 m, up 8.3e-7 m. The
+ * roadmap recorded that as "one metre ABOVE it" from a world-frame y that moved
+ * by 1.00 m, but at a 600 km radius the y axis is very nearly TANGENTIAL there
+ * (the world dy over the step was in fact 0.025 m), so the machine was never in
+ * the air: it was inside its neighbour. The consequence the player sees is the
+ * same either way and is worse than a refusal, because `Factory.pick` resolves
+ * an aim to the best-centred building within 3.5 m, so one of the two can never
+ * again be aimed at, opened, fed or demolished. It was paid for and it is gone.
+ */
+export function footprintsOverlap(ai: number, aj: number, fa: number,
+                                  bi: number, bj: number, fb: number): boolean {
+  const reach = fa + fb;
+  return Math.abs(ai - bi) * 2 < reach && Math.abs(aj - bj) * 2 < reach;
+}
+
+/**
+ * The placed machine this placement would stand INSIDE, or null (GP-49).
+ *
+ * ONLY BETWEEN THINGS TWO CELLS WIDE, and that is deliberate rather than a
+ * simplification. Belts and poles are one cell, and a belt whose whole purpose
+ * is to run INTO a smelter must be able to sit against it; applying the rule to
+ * them would refuse the feed the power system exists to make possible (GP-50's
+ * conclusion, that a belt is the only way to address a dense base at all). So
+ * the rule is exactly the one the defect needs: two two-metre boxes may not
+ * occupy the same two metres.
+ *
+ * Reads each placed machine's address by PARSING its own key rather than
+ * re-snapping its position, because re-snapping is a WASM call per machine per
+ * ghost frame and the key is already the authority the save is written with.
+ */
+export function machineClash(placed: readonly Placed[], kind: BuildKind,
+                             addr: MachineAddr | undefined): Placed | null {
+  if (addr === undefined || addr.prospective) return null;
+  const fa = FOOTPRINT[kind];
+  if (fa < 2) return null;
+  for (const p of placed) {
+    const fb = FOOTPRINT[p.kind];
+    if (fb < 2) continue;
+    const b = parseMachineCellKey(p.cell);
+    if (b === null || b.site !== addr.site.id) continue;
+    if (footprintsOverlap(addr.i, addr.j, fa, b.i, b.j, fb)) return p;
+  }
+  return null;
 }
 
 /** The site whose grid reaches `p`, or a fresh one founded on the lattice cell

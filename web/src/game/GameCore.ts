@@ -12,11 +12,36 @@ import { scratchF64, scratchI32, scratchU8, type OfCoreModule } from '../sim/was
 
 export interface Slot { item: number; count: number }
 export interface RecipeInput { item: number; have: number; need: number }
+/**
+ * WHY A CRAFT IS REFUSED. `gameplay.h`'s `CraftBlock`, in enum order.
+ *
+ * GP-51. `craftable` below is the INPUT side only, which is what /core's
+ * `canCraft` answers and what `payInputs` needs; `block` is the whole answer.
+ * They are two questions and not one, in the same way GP-48 keeps `freeBuild`
+ * and `researchGated` apart: a full pack and an empty pack both make a craft
+ * impossible and they need OPPOSITE actions from the player.
+ */
+export const CRAFT_BLOCK = {
+  None: 0, NoRecipe: 1, InputsShort: 2, PackFull: 3,
+} as const;
+
+/** The refusal as a player reads it. One place, so the button's tooltip and the
+ *  HUD flash cannot say different things about the same code. */
+export function craftBlockText(block: number): string {
+  if (block === CRAFT_BLOCK.PackFull) return 'pack is full  (drop something first)';
+  if (block === CRAFT_BLOCK.InputsShort) return 'not enough materials';
+  if (block === CRAFT_BLOCK.NoRecipe) return 'no such recipe';
+  return '';
+}
+
 export interface RecipeView {
   index: number;
   output: number;
   outputCount: number;
+  /** INPUTS ONLY. See `CRAFT_BLOCK`: this is true on a full pack. */
   craftable: boolean;
+  /** The whole answer, as a `CRAFT_BLOCK` code. 0 means it will really craft. */
+  block: number;
   inputs: RecipeInput[];
 }
 export interface NodeState {
@@ -150,12 +175,19 @@ export class GameCore {
       for (let k = 0; k < p[3]; ++k) {
         inputs.push({ item: p[4 + k * 3], have: p[5 + k * 3], need: p[6 + k * 3] });
       }
+      // AFTER the copy above, because this is a second call into WASM and would
+      // detach the view (standing rule 5).
+      const block = this.M._of_gp_craft_block(i);
       out.push({
-        index: i, output: p[0], outputCount: p[1], craftable: p[2] !== 0, inputs,
+        index: i, output: p[0], outputCount: p[1], craftable: p[2] !== 0,
+        block, inputs,
       });
     }
     return out;
   }
+
+  /** GP-51. Ask BEFORE crafting, or ask again after a refusal to say why. */
+  craftBlock(index: number): number { return this.M._of_gp_craft_block(index); }
 
   craft(index: number): boolean { return this.M._of_gp_craft(index) === 1; }
 

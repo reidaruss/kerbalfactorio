@@ -125,9 +125,19 @@ struct ArmourDef {
  *
  *  The chest is worth the most and the head next, which is the ordering every
  *  player already expects; the encumbrance is spread so that a full set costs
- *  12% of walking speed, which is felt without being a punishment. Costs are in
- *  the same Iron and Wood the structural set spends, so armour competes with a
- *  base for the same ingots, which is the whole point of a cost. */
+ *  **10.6% of walking speed** (0.99 * 0.95 * 0.97 * 0.98 = 0.8940393), which is
+ *  felt without being a punishment. Costs are in the same Iron and Wood the
+ *  structural set spends, so armour competes with a base for the same ingots,
+ *  which is the whole point of a cost.
+ *
+ *  GP-52, and it is worth the line because of HOW it was caught. This comment
+ *  and GP-42 both said "0.892 / 12%", which is a TRANSCRIPTION of the table
+ *  below that drifted from it; the table was always right. `probes/equip.js`
+ *  found it by equipping one piece at a time, differencing, and asserting that
+ *  the suit's encumbrance is the PRODUCT of the pieces and its reduction the
+ *  SUM. Asserting the published constant instead would have meant tuning the
+ *  constant until it passed, which is standing rule 11's exact failure. The
+ *  property assertion stays; the published number is what moves. */
 inline std::vector<ArmourDef> armourDefs() {
   using survival::items::Iron;
   using survival::items::Wood;

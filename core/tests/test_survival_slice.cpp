@@ -42,6 +42,7 @@ namespace wsv = of::worldgen::survival;
 using surv::Furnace;
 using surv::FurnaceTier;
 using surv::HandCrafter;
+using surv::CraftBlock;
 using surv::CraftRecipe;
 using surv::HarvestResult;
 using surv::ToolKind;
@@ -387,6 +388,86 @@ TEST(hand_craft_succeeds_only_with_all_inputs) {
   // A second craft now fails (inputs spent) — all-or-nothing.
   CHECK(!HandCrafter::craft(pick, inv));
   CHECK(inv.count(sitems::CrudePickaxe) == 1);
+}
+
+// GP-51 — A CRAFT INTO A FULL PACK IS REFUSED, AND IT IS REFUSED BY THE OUTPUT
+// SIDE, WHICH IS THE WHOLE POINT.
+//
+// The shipped defect returned TRUE here: it spent 5 Wood and 2 Raw iron, called
+// inv.add(), threw the overflow away and reported success. The only symptom is
+// that nothing happens. `canCraft` is asserted TRUE in the same breath as the
+// refusal, because that is what makes the claim specific: this is not "the
+// inputs are missing" wearing a different hat.
+//
+// THE FULL PACK IS REACHED, NOT WRITTEN. Slot counts are derived from the
+// registry's own stackMax and fullness is proven by the only honest test there
+// is — one more of a new item does not fit — so a stacking-rule change cannot
+// leave this test asserting against a state the production path can no longer
+// produce. That is standing rule 11's fixture-versus-production-path lesson.
+TEST(a_craft_into_a_full_pack_is_refused_and_spends_nothing) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+  const CraftRecipe furnace = recipePrimitiveFurnace();  // 5 Wood + 2 Raw iron
+
+  const uint16_t cap = reg.stackMax(sitems::Wood);
+  CHECK(cap >= 4);
+  // Four slots per item x five items = every one of the twenty slots, and each
+  // item's LAST slot is a half stack, so spending a few units frees nothing.
+  const uint16_t perItem = static_cast<uint16_t>(cap * 3 + cap / 2);
+  const ItemId fill[5] = {sitems::Wood, sitems::Stone, sitems::Coal,
+                          sitems::RawIron, sitems::RawCopper};
+  for (const ItemId it : fill) CHECK(inv.add(it, perItem) == 0);
+  // Proven full by the production path: a new item has nowhere to go.
+  CHECK(inv.add(sitems::CrudePickaxe, 1) == 1);
+  CHECK(inv.count(sitems::CrudePickaxe) == 0);
+
+  // The inputs ARE there. This is the discriminator: a boolean "cannot craft"
+  // cannot tell this state from an empty pack, and the two need opposite fixes.
+  CHECK(HandCrafter::canCraft(furnace, inv));
+  CHECK(HandCrafter::craftBlock(furnace, inv) == CraftBlock::PackFull);
+
+  const uint32_t woodBefore = inv.count(sitems::Wood);
+  const uint32_t ironBefore = inv.count(sitems::RawIron);
+  CHECK(!HandCrafter::craft(furnace, inv));
+  CHECK(inv.count(sitems::PrimitiveFurnace) == 0);   // no output...
+  CHECK(inv.count(sitems::Wood) == woodBefore);      // ...and NOTHING was paid
+  CHECK(inv.count(sitems::RawIron) == ironBefore);
+
+  // NEGATIVE CONTROL, on the SAME pack with ONE slot different. Emptying ONE
+  // stack of Coal changes nothing about the inputs and everything about the
+  // room, and the identical craft now succeeds and charges exactly its bill.
+  CHECK(inv.remove(sitems::Coal, cap) == cap);
+  CHECK(HandCrafter::craftBlock(furnace, inv) == CraftBlock::None);
+  CHECK(HandCrafter::craft(furnace, inv));
+  CHECK(inv.count(sitems::PrimitiveFurnace) == 1);
+  CHECK(inv.count(sitems::Wood) == woodBefore - 5);
+  CHECK(inv.count(sitems::RawIron) == ironBefore - 2);
+}
+
+// GP-51's OTHER direction, and the one a lazy fix gets wrong: THE INPUTS FREE
+// THEIR OWN SLOTS, so a pack with no spare slot at all can still craft when the
+// spend empties one. A check that counted free slots BEFORE spending would
+// refuse this, which would be a second silent failure wearing the fix's badge.
+TEST(a_full_pack_still_crafts_when_the_spend_frees_the_slot) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+  const CraftRecipe pick = recipeCrudePickaxe();  // 1 RawIron + 1 Wood
+
+  const uint16_t cap = reg.stackMax(sitems::Stone);
+  for (int s = 0; s < 18; ++s) CHECK(inv.add(sitems::Stone, cap) == 0);
+  // The last two slots hold EXACTLY the bill, so spending them empties both.
+  CHECK(inv.add(sitems::Wood, 1) == 0);
+  CHECK(inv.add(sitems::RawIron, 1) == 0);
+  CHECK(inv.add(sitems::Coal, 1) == 1);  // full, by the production path
+
+  CHECK(HandCrafter::craftBlock(pick, inv) == CraftBlock::None);
+  CHECK(HandCrafter::craft(pick, inv));
+  CHECK(inv.count(sitems::CrudePickaxe) == 1);
+  CHECK(inv.count(sitems::Wood) == 0);
+  CHECK(inv.count(sitems::RawIron) == 0);
+
+  // And the block code names the OTHER refusal correctly on the same pack.
+  CHECK(HandCrafter::craftBlock(pick, inv) == CraftBlock::InputsShort);
 }
 
 // The full bootstrap chain hand-crafts: tools, then a furnace, then (after a

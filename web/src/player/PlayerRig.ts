@@ -41,6 +41,9 @@ export class PlayerRig {
    * nothing while reporting `meshes: 15`.
    */
   private readonly worn = new Map<string, THREE.SkinnedMesh[]>();
+  /** Slot -> the node name the CALLER asked for, published so a probe can
+   *  assert it is /core's `armourNode(slot)` and not a second derivation. */
+  private readonly requested = new Map<string, string>();
   /** The rig's own skeleton, which armour pieces are rebound onto. */
   private skeleton: THREE.Skeleton | null = null;
   loaded = false;
@@ -137,24 +140,33 @@ export class PlayerRig {
    * assuming it. Frustum culling is off for the same reason it is off on the
    * body: a `SkinnedMesh`'s bounds are the bind pose.
    */
-  async equip(slot: string, url: string): Promise<boolean> {
+  async equip(slot: string, url: string,
+              node: string = `Armour_${slot}_LOD0`): Promise<boolean> {
     const skel = this.skeleton;
     if (skel === null) return false;
-    const node = `Armour_${slot}`;
     if (this.worn.has(slot)) return true;
     const gltf = await loadGlb(url);
+    // THE NODE NAME IS THE CALLER'S, and /core is the caller that matters
+    // (H-4). `progression.h`'s `armourNode(EquipSlot)` publishes these four
+    // strings and `Progression.armourNode` hands them straight through, so the
+    // client does not hold a second derivation of a name the header owns. The
+    // default keeps the debug surface and its slot-name call working, and
+    // `armourDrift().requested` publishes which one was actually used so a
+    // probe can assert the two agree instead of assuming it.
+    //
     // `Armour_Head_LOD0`, optionally plus glTF's `_<n>` primitive suffix. An
     // anchored match rather than `startsWith`, which would also take a future
     // `Armour_HeadLamp`, and it is built with string concatenation because
     // inside a template literal `\d` is not an escape and silently becomes `d`,
     // giving a regex that matches nothing and an equip that returns false.
-    const re = new RegExp('^' + node + '_LOD0(_\\d+)?$');
+    const re = new RegExp('^' + node + '(_\\d+)?$');
     const src: THREE.SkinnedMesh[] = [];
     gltf.scene.traverse((o) => {
       const m = o as THREE.SkinnedMesh;
       if (m.isSkinnedMesh === true && re.test(m.name)) src.push(m);
     });
     if (src.length === 0) return false;
+    this.requested.set(slot, node);
     const pieces: THREE.SkinnedMesh[] = [];
     for (const one of src) {
       const piece = one.clone();
@@ -175,6 +187,7 @@ export class PlayerRig {
     if (had === undefined) return false;
     for (const piece of had) piece.removeFromParent();
     this.worn.delete(slot);
+    this.requested.delete(slot);
     return true;
   }
 
@@ -194,8 +207,8 @@ export class PlayerRig {
    * the only one of the three that is visible on screen.
    */
   armourDrift(): {
-    slot: string; nodes: string[]; primitives: number; sameSkeleton: boolean;
-    bones: number; bodyBones: number; triangles: number;
+    slot: string; requested: string; nodes: string[]; primitives: number;
+    sameSkeleton: boolean; bones: number; bodyBones: number; triangles: number;
   }[] {
     const out = [];
     for (const [slot, pieces] of this.worn) {
@@ -205,7 +218,8 @@ export class PlayerRig {
         tris += Math.floor((idx?.count ?? p.geometry.getAttribute('position').count) / 3);
       }
       out.push({
-        slot, nodes: pieces.map((p) => p.name), primitives: pieces.length,
+        slot, requested: this.requested.get(slot) ?? '',
+        nodes: pieces.map((p) => p.name), primitives: pieces.length,
         sameSkeleton: pieces.every((p) => p.skeleton === this.skeleton),
         bones: pieces[0]?.skeleton?.bones.length ?? 0,
         bodyBones: this.skeleton?.bones.length ?? 0,

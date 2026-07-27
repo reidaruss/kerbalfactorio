@@ -5,6 +5,7 @@
 // heading past the 400-line cap with row-shaping code that has no state and no
 // order dependency. Nothing below touches the pointer, the tick or the scene.
 
+import { CRAFT_BLOCK } from './GameCore.js';
 import type { GameCore } from './GameCore.js';
 import type { RecipeRow, SlotRow } from '../ui/InventoryPanel.js';
 
@@ -57,7 +58,12 @@ export function recipeRows(game: GameCore, icon: IconFor = NO_ICON,
       icon: icon(name),
       outputCount: r.outputCount,
       lockedBy: lock,
-      craftable: (all || r.craftable) && lock === '',
+      // GP-51: the BUTTON asks the whole question, not the input half. A row
+      // whose inputs are all present but whose output has nowhere to go is not
+      // craftable, and it says which of the two it is rather than greying out
+      // in silence, because the two need opposite actions from the player.
+      craftable: (all || r.block === CRAFT_BLOCK.None) && lock === '',
+      blockedBy: r.block === CRAFT_BLOCK.PackFull ? 'pack is full' : '',
       inputs: r.inputs.map((i) => {
         const n = game.itemName(i.item);
         return { name: n, have: i.have, need: i.need, icon: icon(n) };

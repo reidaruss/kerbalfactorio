@@ -165,8 +165,19 @@ BuildTarget | null {
   let patch = -1;
   let ratePerSec = 0;
   const chains = kind === 'belt' && chainsInto(f.placed, s.pos);
+  const inside = f.clash(kind, s.addr);
   if (f.occupied(s.cell)) { ok = false; reason = 'cell taken'; }
-  else if (kind === 'miner') {
+  else if (inside !== null) {
+    // GP-49, AND THE SENTENCE IS THE FIX. A 2 m machine one cell from another
+    // 2 m machine stands half inside it, and `Factory.pick` then resolves every
+    // bearing that reaches either to whichever is better centred, so one of the
+    // two can never be aimed at, opened, fed or demolished again. That is worse
+    // than a refusal: the player paid for it and it is gone with no way to get
+    // it back. Naming the neighbour is what makes the rule learnable rather
+    // than a mystery red ghost, exactly as DW-25's "there is no ore" does.
+    ok = false;
+    reason = `too close to #${inside.id} ${inside.kind}`;
+  } else if (kind === 'miner') {
     // THE SENTENCE THAT TEACHES THE MECHANIC. A drill eats the ground under
     // itself, so the only question is whether there is ore in that ground, and
     // the answer is on the ghost before the button is pressed rather than in an

@@ -7,10 +7,10 @@
 //
 // SAYING SO OUT LOUD IS THE POINT, and it is why they are not one-liners on
 // GameCore. A player who presses G with an empty pack must be told why nothing
-// happened, and a player who takes six ingots out of a smelter must see six. The
-// rule is /core's; the sentence is this file's.
+// happened. The rule is /core's; the sentence is this file's.
 
 import { demolishAimed } from './Demolition.js';
+import { CRAFT_BLOCK, craftBlockText } from './GameCore.js';
 import { GATED_BY_ITEM } from './Factory.js';
 import { furnaceView, recipeRows, slotRows } from './GameplayViews.js';
 import { urlForMode, type GameMode } from './GameMode.js';
@@ -54,12 +54,9 @@ const HOTBAR_ITEMS = new Set([0x003B, 0x003C, 0x003D, 0x003E, 0x003F]);
 
 /**
  * Take an automated machine's finished stock into the pack, or ONE ITEM OFF A
- * BELT (FS-28).
- *
- * A belt used to reach the first branch, ask a `BeltLine` entity for an output
- * buffer it does not have, and answer "nothing to take yet" for ever. It is the
- * same key and the same sentence in both cases because it is the same verb: take
- * what is in front of you.
+ * BELT (FS-28). A belt used to reach the first branch, ask a `BeltLine` for an
+ * output buffer it does not have, and answer "nothing to take yet" for ever.
+ * Same key, same sentence, because it is the same verb.
  */
 export function collectFrom(g: Gameplay, b: Placed): void {
   // A GENERATOR IS FED, NOT EMPTIED, and E is the key that means "deal with the
@@ -72,21 +69,18 @@ export function collectFrom(g: Gameplay, b: Placed): void {
     refuel(g, b);
     return;
   }
-  // AN ELECTRIC SMELTER IS FED BY HAND UNTIL A BELT REACHES IT, and it has to
-  // be, for a reason that is a property of /core rather than a convenience:
-  // `pumpPower` publishes what a machine WANTS THIS TICK, and a starved machine
-  // wants nothing. So an unfed electric smelter draws 0 W, the network reads
-  // 100% satisfied, and the supply-and-demand panel is a screen full of zeroes
-  // however many generators are standing on it. Ore in the hopper is what makes
-  // the whole feature visible.
+  // AN ELECTRIC SMELTER IS FED BY HAND UNTIL A BELT REACHES IT, for a reason
+  // that is a property of /core: `pumpPower` publishes what a machine WANTS
+  // THIS TICK, and a starved machine wants nothing. So an unfed electric
+  // smelter draws 0 W, the network reads 100% satisfied, and the panel is a
+  // screen of zeroes however many generators stand on it.
   //
-  // AN EMPTY HOPPER MEANS FEED, ANYTHING ELSE MEANS EMPTY, and the first
-  // version had it the other way round (output first, feed only when the tray
-  // was empty). That reads sensibly and is unusable: a running machine has
+  // AN EMPTY HOPPER MEANS FEED, ANYTHING ELSE MEANS EMPTY. The first version
+  // had it the other way round and it is unusable: a running machine has
   // finished stock within half a second, so E alternated between collecting one
-  // ingot and refusing to load, and a base could never be kept fed by hand at
-  // all. Keyed on the HOPPER, the key does the thing the machine is short of,
-  // which is the only rule that stays right while it is running.
+  // ingot and refusing to load. Keyed on the HOPPER, the key does the thing the
+  // machine is short of, which is the only rule that stays right while it
+  // runs.
   if (b.kind === 'esmelter' && g.factory.inputOf(b) <= 0) {
     feedMachine(g, b);
     return;
@@ -326,13 +320,29 @@ export function craft(g: Gameplay, index: number): void {
     return;
   }
   const want = g.game.recipes()[index];
+  // GP-51: THE REFUSAL IS ASKED FOR BEFORE THE ATTEMPT, so the player is told
+  // which of two opposite things to go and do. `of_gp_craft` used to return
+  // true on a full pack, spend the inputs and drop the output, and the only
+  // symptom was that nothing happened. The reason travels as a CODE (GP-46);
+  // the sentence is composed here, where the item names live.
+  const block = g.mode.freeBuild ? CRAFT_BLOCK.None : g.game.craftBlock(index);
+  if (block !== CRAFT_BLOCK.None) {
+    g.hud.flash(craftBlockText(block), 2.4);
+    g.sfx.undo();
+    return;
+  }
   const ok = g.mode.freeBuild
     ? want !== undefined && g.game.add(want.output, want.outputCount) === 0
     : g.game.craft(index);
   g.panel.invalidate();
   g.panel.render(slots(g), recipes(g));
   const r = ok ? g.game.recipes()[index] : undefined;
-  if (r === undefined) return;
+  if (r === undefined) {
+    // Sandbox GRANTS rather than crafts, so /core's block code never ran and a
+    // full pack lands here. Never silent, either way.
+    g.hud.flash(craftBlockText(CRAFT_BLOCK.PackFull), 2.4);
+    return;
+  }
   g.hud.flash(`crafted ${g.game.itemName(r.output)}`);
   g.sfx.confirm();
 }

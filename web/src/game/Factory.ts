@@ -1,14 +1,12 @@
 // THE PLAN, and the one job a placement layer has that /core cannot do for it:
 // deciding which buildings are next to which, and turning that into connect()
 // calls. Every rule downstream of that is automation.h's.
-//
 // WHY A REBUILD RATHER THAN AN EDIT. FactorySim is append-only by design: the
 // dense entity index IS the render key, so there is no removeEntity and there
-// should not be one. A belt run therefore cannot grow a tile in place. So the
-// PLAN lives here as plain records, and any topology change re-creates the
-// network from it. That is cheap (a handful of entities, only ever on a
-// placement) and it makes one property free: the network is always exactly what
-// the plan says, so a wiring bug cannot survive one rebuild and hide.
+// should not be one. So the PLAN lives here as plain records and any topology
+// change re-creates the network from it. That is cheap, and it makes one
+// property free: the network is always exactly what the plan says, so a wiring
+// bug cannot survive one rebuild and hide.
 //
 // State is carried across a rebuild, not reset: a miner is re-placed with the
 // ore it had LEFT, machine inputs are re-fed, and finished output goes to the
@@ -18,20 +16,17 @@
 // THE DEPOSIT IS ONE POOL. A drill is placed ON an ore patch (deposits.h S.P),
 // seeded from that patch's remaining amount, and every tick the patch is drained
 // by exactly what the drill extracted (of_gp_patch_drain). Two counters for the
-// same ore is the five-surfaces failure in miniature, and it would show as a
-// deposit standing full for ever while its ore rides away on a belt.
-//
-// AND THE RATE IS THE GROUND'S. A drill mines at /core's authored rate times the
-// RICHNESS where it stands, so putting it in the middle of a patch is worth more
-// than putting it on the rim. That is the same coverage number the ground is
-// tinted with, which is what makes the tint an instruction rather than a decal.
+// same ore is the five-surfaces failure in miniature. The RATE is the ground's
+// too: /core's authored rate times the RICHNESS where the drill stands, which is
+// the same coverage number the ground is tinted with, so the tint is an
+// instruction rather than a decal.
 
 import * as THREE from 'three';
 import { FOOTPRINT, type BuildKind, type Placed } from './FactoryKinds.js';
 import { AutoLine } from './AutoLine.js';
 import { Power } from './Power.js';
 import { orient, type Snapped } from './Grid.js';
-import { addressIn, anchorIn, machineCellKey, siteAt,
+import { addressIn, anchorIn, machineCellKey, machineClash, siteAt,
   type MachineAddr, type SiteHost } from './MachinePlacement.js';
 import { factoryReport } from './FactoryReport.js';
 import { commitPlan, oreFedTo } from './FactoryCommit.js';
@@ -112,10 +107,9 @@ export class Factory {
   /**
    * Turn a PROSPECTIVE address into a real one by founding its site.
    *
-   * Looking founds nothing (`siteAt`); PLACING founds. That is the whole rule,
-   * and putting it here rather than in the caller is what stops a placement
-   * being keyed `m~12,-4,7:0,0` and then persisted in a form nothing else
-   * speaks. Idempotent, because `adoptSite` is.
+   * Looking founds nothing (`siteAt`); PLACING founds. Putting it here rather
+   * than in the caller is what stops a placement being keyed `m~12,-4,7:0,0`
+   * and persisted in a form nothing else speaks. Idempotent, as `adoptSite` is.
    */
   private claim(a: MachineAddr): MachineAddr {
     if (!a.prospective) return a;
@@ -142,15 +136,21 @@ export class Factory {
     return this.placed.find((p) => p.cell === cell) ?? null;
   }
 
+  /** GP-49: what this placement would stand INSIDE, or null. Rule in
+   *  `MachinePlacement.machineClash`. */
+  clash(kind: BuildKind, addr?: MachineAddr): Placed | null {
+    return machineClash(this.placed, kind, addr);
+  }
+
   /**
    * The ore patch UNDER `pos`, or -1. This is /core's own containment test
    * (of_gp_patch_find over the lobed outline), not a distance to something.
    *
    * A drill without one is refused, and that refusal is where the mechanic
    * teaches itself: "you cannot place a drill here, there is no ore" is the one
-   * sentence that tells a player the ground is what matters. A drill standing on
-   * nothing would need a deposit invented for it right here, which is exactly
-   * how a second source of ore gets born.
+   * sentence that tells a player the ground is what matters. A drill on nothing
+   * would need a deposit invented for it here, which is how a second ore source
+   * gets born.
    */
   patchUnder(pos: { x: number; y: number; z: number }): number {
     const i = this.ore.find(pos.x, pos.y, pos.z);
@@ -171,9 +171,9 @@ export class Factory {
    *
    * Drag-placing a belt run lays up to a couple of dozen tiles in one tick, and
    * `commit()` throws the whole /core network away and rebuilds it from the
-   * plan. Doing that per tile would rebuild it twenty-four times for one drag,
-   * and every rebuild loses the items riding the belts, so the drag would
-   * silently eat ore as it was laid. Staging and committing once fixes both.
+   * plan. Per tile that is twenty-four rebuilds for one drag, and every rebuild
+   * loses the items riding the belts, so the drag would silently eat ore as it
+   * was laid.
    */
   stage(kind: BuildKind, s: Snapped & { addr?: MachineAddr },
         fwd: THREE.Vector3): Placed | null {
@@ -182,13 +182,15 @@ export class Factory {
     const addr = s.addr === undefined ? undefined : this.claim(s.addr);
     const cell = addr === undefined ? s.cell : machineCellKey(addr);
     if (this.occupied(cell)) return null;
+    // GP-49. The ghost refused this and said why; asserted again because a red
+    // ghost is a suggestion and a drag can reach `stage` without one.
+    if (this.clash(kind, addr) !== null) return null;
     let patch = -1;
     if (kind === 'miner') {
       patch = this.patchUnder(s.pos);
       if (patch < 0) return null;
-      // SEVERAL DRILLS ON ONE PATCH IS ALLOWED, and that is the point of a
-      // patch: it is a piece of ground, not a socket. They share the one pool,
-      // so covering a deposit in drills only makes it run out sooner.
+      // SEVERAL DRILLS ON ONE PATCH IS ALLOWED: a patch is a piece of ground,
+      // not a socket, and they share the one pool.
     }
     const p: Placed = {
       id: this.nextId++, kind, pos: s.pos, cell, up: s.up.clone(),
@@ -354,22 +356,20 @@ export class Factory {
   /**
    * The building the aim ray is most nearly CENTRED on, within `reachM`.
    *
-   * FS-28 CHANGED THE RANKING FROM NEAREST TO BEST-CENTRED, and it had to.
-   * The old rule kept whichever candidate the ray entered FIRST, which is fine
+   * FS-28 CHANGED THE RANKING FROM NEAREST TO BEST-CENTRED. The old rule kept
+   * whichever candidate the ray entered FIRST, which is fine
    * while everything is the same size and wrong the moment they are not: a
    * smelter's interaction sphere is 1.6 m against a belt tile's 1.0 m, so a belt
-   * standing just past a smelter is inside the smelter's sphere from almost
-   * every angle and could not be aimed at AT ALL. Measured with the take verb
-   * (`probes/autoline.js`): an aim **0.005 m** off a belt tile's centre resolved
-   * to the smelter on every one of seven presses, from four different standing
-   * positions, so "take what is on this belt" was unreachable for any belt near
-   * a machine. That is a feature that exists and cannot be used.
+   * just past a smelter is inside the smelter's sphere from almost every angle
+   * and could not be aimed at AT ALL. Measured (`probes/autoline.js`): an aim
+   * 0.005 m off a belt tile's centre resolved to the smelter on all seven
+   * presses from four standing positions, so "take what is on this belt" was
+   * unreachable for any belt near a machine.
    *
    * The score is the perpendicular miss as a FRACTION of the candidate's own
    * radius, so it asks "how centred is the crosshair on this thing" rather than
-   * "which thing is nearest", and distance only breaks ties. A player pointing
-   * at a smelter still gets the smelter, because a crosshair on a 2 m machine
-   * scores near zero against it and poorly against anything beside it.
+   * "which is nearest", and distance only breaks ties. A crosshair on a 2 m
+   * machine scores near zero against it and poorly against anything beside it.
    */
   pick(eye: { x: number; y: number; z: number },
        dir: { x: number; y: number; z: number }, reachM: number,

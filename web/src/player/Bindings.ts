@@ -18,6 +18,13 @@ export type Action =
   | 'use' | 'interact' | 'cancel'
   | 'pack' | 'level' | 'demolish' | 'view' | 'lamp'
   | 'rotate' | 'freeSnap' | 'mute' | 'goals' | 'assembly'
+  // W11 PROGRESSION SCREENS. Three panels, three verbs, no raw codes anywhere
+  // downstream (H-5). They landed as literal 'KeyJ'/'KeyU'/'KeyK' inside
+  // `game/ProgressUi.ts` only because this file was another lane's that night,
+  // and three raw codes break the one property that made a whole control remap
+  // cost a single file: everything asks for an ACTION and nothing else in the
+  // client names a key.
+  | 'research' | 'power' | 'equipment'
   // W9 FLIGHT. Board is the one context-sensitive verb (roll out / board /
   // disembark); everything else means exactly one thing and only while flying.
   | 'board' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
@@ -68,6 +75,14 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // than a hotbar slot: a slot decides what the LEFT BUTTON does, and the bay is
   // not something the left button does.
   assembly: ['KeyC'],
+  // W11. The three progression screens. `equipment` on KeyK is deliberate and
+  // not a leftover: KeyK is `throttleDown`, which means something in a rocket
+  // and nothing on foot, which is exactly the precedent stated below for the
+  // flight block. The panels are gated on the walking context, so the two
+  // consumers are never live at once.
+  research: ['KeyJ'],
+  power: ['KeyU'],
+  equipment: ['KeyK'],
   // W9 FLIGHT. Two rules picked the codes below and neither is taste.
   //
   // (1) The keys that mean something on foot and NOTHING in a rocket are reused
@@ -115,7 +130,13 @@ export const BINDINGS: Record<Action, readonly string[]> = {
  * while it is open, so the key that opened it has to survive to close it.
  */
 export const UI_ALLOWED: readonly Action[] =
-  ['pack', 'interact', 'cancel', 'assembly'];
+  ['pack', 'interact', 'cancel', 'assembly',
+    // Same rule as `pack`: each of the three progression screens takes the
+    // pointer while it is open, so the key that opened it has to survive to
+    // close it. All three, not one, because a guarantee that holds for two
+    // panels out of three is the shape of bug ModalStack's derived list exists
+    // to prevent (GP-25).
+    'research', 'power', 'equipment'];
 
 const CODE_TO_ACTIONS = new Map<string, Action[]>();
 for (const [a, codes] of Object.entries(BINDINGS) as [Action, string[]][]) {

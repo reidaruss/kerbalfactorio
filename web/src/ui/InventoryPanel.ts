@@ -39,6 +39,12 @@ export interface RecipeRow {
    *  see the far side of teaches nothing, and "needs Electrification" is the
    *  line that sends them to the research screen. */
   lockedBy?: string;
+  /** GP-51: why an UNLOCKED, affordable row still will not craft, or ''. Today
+   *  that is only "pack is full", and it is a separate field from `lockedBy`
+   *  because they are answered by different systems and fixed by opposite
+   *  actions: one sends the player to the research screen and the other to the
+   *  pack. A refusal with no sentence is the defect this closes. */
+  blockedBy?: string;
 }
 
 export class InventoryPanel extends Modal {
@@ -139,7 +145,7 @@ export class InventoryPanel extends Modal {
       if (h !== null) h.textContent = `${used} / ${slots.length}`;
     }
     const craftKey = recipes.map((r) => `${r.name}:${r.craftable ? 1 : 0}:`
-      + `${r.lockedBy ?? ''}:`
+      + `${r.lockedBy ?? ''}:${r.blockedBy ?? ''}:`
       + r.inputs.map((i) => `${i.have}/${i.need}`).join(',')).join('|');
     if (craftKey === this.lastCraft) return;
     this.lastCraft = craftKey;
@@ -149,13 +155,16 @@ export class InventoryPanel extends Modal {
         .join(' &nbsp;+&nbsp; ');
       const n = r.outputCount > 1 ? ` x${r.outputCount}` : '';
       const locked = r.lockedBy !== undefined && r.lockedBy !== '';
+      const blocked = r.blockedBy !== undefined && r.blockedBy !== '';
       return `<div class="of-recipe${r.craftable && !locked ? ' can' : ''}`
-        + `${locked ? ' locked' : ''}">`
+        + `${locked ? ' locked' : ''}${blocked ? ' blocked' : ''}"`
+        + `${blocked ? ` data-block="${esc(r.blockedBy ?? '')}"` : ''}>`
         + `<div class="top"><span class="nm">${iconTag(r.icon, 'ico-sm')}`
         + `${esc(r.name)}${n}</span>`
         + `<button data-i="${r.index}"${r.craftable && !locked ? '' : ' disabled'}>`
         + 'Craft</button></div>'
         + (locked ? `<div class="lock">needs ${esc(r.lockedBy ?? '')} (J)</div>` : '')
+        + (blocked ? `<div class="lock">${esc(r.blockedBy ?? '')}</div>` : '')
         + `<div class="ing">${ing}</div></div>`;
     }).join('');
   }

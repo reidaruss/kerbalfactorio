@@ -1257,7 +1257,8 @@ inline HarvestResult harvestPatch(worldgen::patches::OrePatch& patch,
 // A CraftRecipe is a small multi-input -> single-output bill of materials (the
 // factory-sim Recipe is single-input; tools/structures need 2 inputs). HandCrafter
 // crafts it against an Inventory: succeeds (consuming ALL inputs, adding the
-// output) ONLY if every input is present; otherwise consumes nothing.
+// output) ONLY if every input is present AND THE OUTPUT FITS; otherwise it
+// consumes nothing and `craftBlock` says which of the two refused it (GP-51).
 // =============================================================================
 struct CraftRecipe {
   ItemId output = kNoItem;
@@ -1310,9 +1311,25 @@ inline std::vector<CraftRecipe> handRecipes() {
           recipeElectricSmelter()};
 }
 
+// WHY A CRAFT IS REFUSED, as a CODE and never as a sentence (GP-46's rule, and
+// GP-51's defect). /core has no display names, so a sentence here would need a
+// second copy of the name table inside the shim; and a boolean cannot tell
+// "you are short of wood" from "your pack is full", which are opposite actions.
+enum class CraftBlock : uint8_t {
+  None = 0,        // craftable right now
+  NoRecipe = 1,    // the recipe has no output (an empty/unknown row)
+  InputsShort = 2, // some input stack is not in the pack
+  PackFull = 3,    // the inputs ARE there and the output would not fit
+};
+
 class HandCrafter {
  public:
   // Can this recipe be crafted from `inv` right now? (Every input present.)
+  //
+  // DELIBERATELY INPUTS ONLY, and it stays that way: `payInputs` produces no
+  // output at all, so a fit test here would refuse a foundation because the
+  // pack was full of stone it was about to spend. The OUTPUT side is
+  // `craftBlock`, which is the question `craft` asks.
   static bool canCraft(const CraftRecipe& r, const Inventory& inv) {
     if (r.output == kNoItem) return false;
     for (const ItemStack& in : r.inputs)
@@ -1320,16 +1337,47 @@ class HandCrafter {
     return true;
   }
 
-  // Craft it: ALL-OR-NOTHING. Consumes every input + adds the output iff canCraft;
-  // returns true on success (false consumes nothing). The output is added through
-  // the normal stack rules; any overflow that doesn't fit is dropped (tools and
-  // structures stack small, so this is effectively never hit in the slice).
+  /**
+   * Why this craft would be refused, or `None`.
+   *
+   * THE FIT TEST RUNS ON A COPY OF THE REAL PACK, THROUGH THE REAL OPERATIONS
+   * (GP-51). It is not a model of the stacking rules and must never become one:
+   * the inputs are removed FIRST, which frees slots, so "is there room" is only
+   * answerable after the spend. A pack of 20 full slots whose last slot holds
+   * exactly the 5 Wood a furnace costs HAS room for the furnace, and a
+   * free-slot count taken before the spend says it does not. An `Inventory` is
+   * 20 `ItemStack`s and a registry pointer, so the copy is a few dozen bytes and
+   * costs nothing at UI rates.
+   */
+  static CraftBlock craftBlock(const CraftRecipe& r, const Inventory& inv) {
+    if (r.output == kNoItem) return CraftBlock::NoRecipe;
+    if (!canCraft(r, inv)) return CraftBlock::InputsShort;
+    Inventory probe = inv;  // the production path, not a re-derivation of it
+    spend(r, probe);
+    return probe.add(r.output, r.outputCount) == 0 ? CraftBlock::None
+                                                   : CraftBlock::PackFull;
+  }
+
+  /**
+   * Craft it: ALL-OR-NOTHING, in BOTH directions.
+   *
+   * GP-51. This used to spend the inputs, call `inv.add`, DISCARD the overflow
+   * and return true, with a comment reasoning that tools and structures stack
+   * small so it was "effectively never hit in the slice". The slice then grew a
+   * science pack that a player crafts a dozen times with a pack full of ore, and
+   * the only symptom of the loss is that nothing happens: the materials are
+   * gone, the item never existed, and every instrument reads success. An
+   * operation that reports an outcome it did not achieve is the failure class
+   * standing rule 11 is about, so the craft now REFUSES and the caller has a
+   * code (`craftBlock`) to say why.
+   */
   static bool craft(const CraftRecipe& r, Inventory& inv) {
-    if (!canCraft(r, inv)) return false;
-    for (const ItemStack& in : r.inputs)
-      if (in.item != kNoItem) inv.remove(in.item, in.count);
-    inv.add(r.output, r.outputCount);
-    return true;
+    if (craftBlock(r, inv) != CraftBlock::None) return false;
+    spend(r, inv);
+    // Asserted by construction: craftBlock ran this exact sequence on a copy of
+    // this exact pack and saw zero overflow, so the output cannot be dropped.
+    const uint16_t dropped = inv.add(r.output, r.outputCount);
+    return dropped == 0;
   }
 
   // PAY the inputs of a recipe WITHOUT producing its output (§S.6). This is what
@@ -1339,9 +1387,17 @@ class HandCrafter {
   // canCraft() so the rule lives in exactly one place: false consumes nothing.
   static bool payInputs(const CraftRecipe& r, Inventory& inv) {
     if (!canCraft(r, inv)) return false;
+    spend(r, inv);
+    return true;
+  }
+
+ private:
+  // The consume half, in ONE place, so the fit probe and the real craft cannot
+  // spend different things. This is the "pin the fixture against the production
+  // path" rule from standing rule 11 applied at the point it matters.
+  static void spend(const CraftRecipe& r, Inventory& inv) {
     for (const ItemStack& in : r.inputs)
       if (in.item != kNoItem) inv.remove(in.item, in.count);
-    return true;
   }
 };
 

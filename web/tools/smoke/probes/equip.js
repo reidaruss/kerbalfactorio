@@ -14,9 +14,12 @@
 //      that only set a slot would leave the pack untouched and pass every
 //      assertion about the slot.
 //   2. THE SUIT ADDS UP TO /core's OWN NUMBER. The four shipped pieces total
-//      0.40 reduction at 0.892 move speed, and 0.892 is 0.99 x 0.95 x 0.97 x
-//      0.98 to three decimals: the encumbrances MULTIPLY and the reductions SUM,
-//      and a client that got either rule backwards lands somewhere else.
+//      0.40 reduction at 0.8940393 move speed, which is 0.99 x 0.95 x 0.97 x
+//      0.98 EXACTLY: the encumbrances MULTIPLY and the reductions SUM, and a
+//      client that got either rule backwards lands somewhere else. GP-52: the
+//      header published 0.892 for that product for a night, and this probe is
+//      what caught it, precisely because it asserts the arithmetic instead of
+//      the constant.
 //   3. THE SLOT IS ENFORCED. A restore that puts boots on a head is refused by
 //      /core's own deserialize, so the four slots after a reload are the four
 //      slots before it, piece for piece.
@@ -92,10 +95,40 @@
   // ======================================================================
   // 2. WEAR IT, through the panel, with real DOM clicks.
   // ======================================================================
-  await press('KeyK');
+  // H-5. THE PANEL KEY IS AN ACTION, not a raw code. It shipped as literal
+  // 'KeyK' inside ProgressUi because `player/Bindings.ts` was another lane's
+  // file that night, and three raw codes break the one property that made a
+  // whole control remap cost a single file. A probe that presses `equipment`
+  // survives the next remap; one that presses KeyK has to be found and edited.
+  // H-4. THIRD PERSON FIRST, and the order is not cosmetic: `view` is NOT in
+  // `UI_ALLOWED`, so a panel that is already open swallows it and the camera
+  // stays in first person, where the body is not drawn at all. The first run of
+  // this block pressed V after opening the panel and measured a triangle delta
+  // of exactly 0, which reads precisely like "the armour is not drawn" and was
+  // in fact "the camera never moved". Worth the paragraph, because the wrong
+  // conclusion was one line away and it is the conclusion this probe exists to
+  // reach.
+  //
+  // FIRST PERSON HAS NO ARMOUR AND THAT IS A-11, not a defect here:
+  // `armour_set.glb` carries the 44-bone third-person rig and the view model is
+  // a different 27-bone rig with a different bind pose, so an armoured player
+  // still sees unarmoured arms.
+  of.setView('TP');
+  await sleep(0.8);
+  const driftBare = of.armourDrift();
+  check('nothing is BOUND to the body before a click', driftBare.length === 0,
+    JSON.stringify(driftBare));
+  const trisBare = of.stats().draw.triangles;
+
+  const binds = of.input.bindings();
+  check('research, power and equipment are real bindings',
+    ['research', 'power', 'equipment'].every((a) => (binds[a] ?? []).length > 0),
+    JSON.stringify({ research: binds.research, power: binds.power,
+      equipment: binds.equipment }));
+  await press('equipment');
   await sleep(0.5);
   const panel = document.querySelector('#of-equip');
-  check('the equip panel opened on K',
+  check('the equip panel opened on the equipment ACTION',
     !!panel && panel.classList.contains('open'), panel?.className);
   // ONE PIECE AT A TIME, recording the suit after each, so the totals below can
   // be checked as a PROPERTY (reductions sum, encumbrances multiply) rather
@@ -133,8 +166,64 @@
     ['Iron helm', 'Iron cuirass', 'Iron greaves', 'Iron boots']
       .every((n) => (packAfter[n] ?? 0) === 0), JSON.stringify(packAfter));
 
-  // CONTROL 2: the suit is /core's own arithmetic. Reductions SUM to 0.40,
-  // encumbrances MULTIPLY to 0.892 (0.99 x 0.95 x 0.97 x 0.98).
+  // ======================================================================
+  // 2b. H-4: IT IS ACTUALLY ON THE BODY. Four clicks put four pieces into
+  //     /core's slots; this is the half that was missing, and its absence was
+  //     invisible because every progression assertion above still passed.
+  // ======================================================================
+  const drift = of.armourDrift();
+  check('four pieces are BOUND to the body', drift.length === 4,
+    JSON.stringify(drift.map((d) => d.slot)));
+  check('every piece is driven by the BODY skeleton, not its own copy',
+    drift.every((d) => d.sameSkeleton === true),
+    JSON.stringify(drift.map((d) => [d.slot, d.sameSkeleton])));
+  check('and by a skeleton with the same bones as the body',
+    drift.every((d) => d.bones === d.bodyBones && d.bones > 0),
+    JSON.stringify(drift.map((d) => [d.slot, d.bones, d.bodyBones])));
+  // THE NODE NAME CAME FROM /core AND WAS NOT REBUILT HERE. `armourNode(slot)`
+  // is progression.h's published contract; a client that spelled it itself
+  // would be a second authority over a name it does not own.
+  check('the bound node is /core\'s own published name',
+    drift.every((d) => p1.nodes.includes(d.requested)),
+    JSON.stringify(drift.map((d) => d.requested)));
+  // THE MULTI-PRIMITIVE TRAP, asserted rather than hoped for. GLTFLoader names
+  // a node's mesh after the node only when the node has ONE primitive;
+  // `Armour_Chest_LOD0` is several, so it arrives as `_0`, `_1`, ... An
+  // exact-name lookup binds ONE of them, draws a fraction of the mesh, and
+  // reports every slot equipped. That is the third file in two days to hit it.
+  const chest = drift.find((d) => d.slot === 'Chest') ?? null;
+  check('the chest is a MULTI-primitive node and all of it was bound',
+    chest !== null && chest.primitives > 1, JSON.stringify(chest));
+  const driftTris = drift.reduce((a, d) => a + d.triangles, 0);
+  const trisWorn = of.stats().draw.triangles;
+  check('every piece contributed triangles', drift.every((d) => d.triangles > 0),
+    JSON.stringify(drift.map((d) => [d.slot, d.primitives, d.triangles])));
+  // THE SCREEN AGREES WITH THE RIG. What the rig says it bound is what the
+  // renderer draws: a piece bound to a detached copy, or left invisible, moves
+  // one of these numbers and not the other.
+  //
+  // THE DELTA IS A WHOLE MULTIPLE of the bound count, not equal to it, and the
+  // multiple is the number of PASSES the body is drawn in. `renderer.info` is
+  // accumulated across the frame's passes, and armour casts shadows like the
+  // body does, so a set worn on a body lit by three cascades shows up four
+  // times. Asserting the multiple is exact rather than asserting a total is
+  // what keeps this a property: it fails if one primitive is missing, if a
+  // piece is invisible in the near pass, or if a piece is drawn in the shadow
+  // passes but not the one the player sees.
+  const delta = trisWorn - trisBare;
+  const passes = driftTris > 0 ? delta / driftTris : 0;
+  check('the frame drew the triangles the rig says it bound, in whole passes',
+    driftTris > 0 && delta > 0 && Number.isInteger(passes),
+    `${trisBare} -> ${trisWorn} (delta ${delta}) vs ${driftTris} bound`);
+  log.push(`H-4 drawn: ${JSON.stringify(drift.map((d) =>
+    `${d.slot} ${d.primitives}p ${d.triangles}t`))}, set ${driftTris} triangles, `
+    + `frame ${trisBare} -> ${trisWorn} (delta ${delta} = ${passes} passes)`);
+
+  // CONTROL 2: the suit is /core's own arithmetic. Reductions SUM to 0.40 and
+  // encumbrances MULTIPLY to 0.8940393 (0.99 x 0.95 x 0.97 x 0.98). GP-52: the
+  // header and GP-42 both published 0.892 for that product, which is a
+  // transcription that drifted from a table that was always right, and this
+  // probe is what caught it precisely BECAUSE it asserts the arithmetic.
   const sumOfPieces = steps.reduce((a, s2) => a + s2.dReduction, 0);
   const productOfPieces = steps.reduce((a, s2) => a * s2.rSpeed, 1);
   check('REDUCTIONS SUM: the suit is the sum of its four pieces',
@@ -177,6 +266,14 @@
       .every((n) => (pack()[n] ?? 0) === 1), JSON.stringify(pack()));
   check('a bare body is neutral again', p2.reduction === 0 && p2.moveSpeedMul === 1,
     `${p2.reduction}/${p2.moveSpeedMul}`);
+  // H-4's NEGATIVE CONTROL, and it is the one that makes the four assertions
+  // above mean something: a build that simply drew four armour pieces on every
+  // body it ever loaded passes all of them and fails both of these.
+  check('taking it off takes it OFF THE BODY too', of.armourDrift().length === 0,
+    JSON.stringify(of.armourDrift()));
+  check('and the frame gave the triangles back exactly',
+    of.stats().draw.triangles === trisBare,
+    `${of.stats().draw.triangles} vs ${trisBare}`);
 
   const ledger = await of.load();
   check('the slot loaded', ledger !== null, JSON.stringify(ledger));
@@ -189,6 +286,16 @@
     `${p3.reduction}/${p3.moveSpeedMul} vs ${p1.reduction}/${p1.moveSpeedMul}`);
   check('the restore ledger counts what it put back',
     (ledger?.progress?.armour ?? 0) === 4, JSON.stringify(ledger?.progress));
+  // H-4, THE PATH THAT PRESSES NO BUTTON. A load puts four pieces back into
+  // /core's slots with nobody clicking Equip, so a client that only reacted to
+  // a click would come back from a save with a bare body and a full stat
+  // block. This is why `syncArmour` sweeps every slot from `wornAll` instead.
+  const driftBack = of.armourDrift();
+  check('and the BODY came back wearing them, with no click at all',
+    driftBack.length === 4, JSON.stringify(driftBack.map((d) => d.slot)));
+  check('bound to the body skeleton after the load too',
+    driftBack.every((d) => d.sameSkeleton === true && d.triangles > 0),
+    JSON.stringify(driftBack.map((d) => [d.slot, d.sameSkeleton, d.triangles])));
   log.push(`reload: armour ${ledger?.progress?.armour}, techs `
     + `${ledger?.progress?.techs}, worn ${JSON.stringify(p3.worn)}`);
 
@@ -212,7 +319,7 @@
   log.push(`appearance: ${JSON.stringify(look)}, skills `
     + JSON.stringify(skills.map((s) => `${s.name} ${s.level}`)));
 
-  await press('KeyK');
+  await press('equipment');
   await sleep(0.3);
 
   return {

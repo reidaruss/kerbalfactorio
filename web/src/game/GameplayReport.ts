@@ -92,7 +92,11 @@ export function gameplayReport(g: Gameplay): unknown {
       interact: g.interact.report(),
       carried: g.game.carried(),
       recipes: g.game.recipes().map((r) => ({
-        name: g.game.itemName(r.output), craftable: r.craftable,
+        // GP-51: `craftable` is the INPUT side and `block` is the whole answer.
+        // Both are reported because the pair is the assertion: a row whose
+        // inputs are all present and which still will not craft is a full pack,
+        // and a boolean cannot say that.
+        name: g.game.itemName(r.output), craftable: r.craftable, block: r.block,
       })),
     };
 }

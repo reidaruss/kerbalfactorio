@@ -208,6 +208,11 @@ export interface OfCoreModule extends OfCoreProgressApi {
   /** i32 scratch [out,outN,can,inN,(item,have,need)*inN]. Returns the length. */
   _of_gp_recipe_info(i: number): number;
   _of_gp_craft(i: number): number;
+  /** ABI 10 / GP-51. Why a craft would be refused, as a `CraftBlock` code:
+   *  0 none, 1 no such recipe, 2 inputs short, 3 pack full. A sentence cannot
+   *  be built in the shim (/core holds no display names) and a boolean cannot
+   *  tell "go and mine" from "go and drop something". */
+  _of_gp_craft_block(i: number): number;
 
   // --- ABI 5: the structural building set (gameplay.h §S.6). Structures are
   //     NOT automation: they never tick, hold nothing and have no ports, so

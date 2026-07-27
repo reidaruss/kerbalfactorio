@@ -156,8 +156,9 @@ export class Avatar {
    * decision; until then the gap is stated here rather than hidden by silently
    * skipping the call.
    */
-  async equip(slot: EquipSlotName, url: string = ASSETS.armourSet): Promise<boolean> {
-    return (await this.body?.equip(slot, url)) ?? false;
+  async equip(slot: EquipSlotName, url: string = ASSETS.armourSet,
+              node?: string): Promise<boolean> {
+    return (await this.body?.equip(slot, url, node)) ?? false;
   }
 
   unequip(slot: EquipSlotName): boolean { return this.body?.unequip(slot) ?? false; }

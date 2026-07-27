@@ -224,7 +224,7 @@ rather than misread, and `of_edits_deserialize` returns -1 for it.
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 7
+int      of_abi_version(void);                 // 10
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
@@ -1336,3 +1336,33 @@ path restores the pack from its own bytes first, with the worn pieces correctly
 absent from it, so taking them out again would delete four items on every
 reload. Each id is validated against its own slot by `/core`'s own
 serialize/deserialize pair, so a hand-edited save cannot put boots on a head.
+
+
+## ABI 10 (2026-07-27): a craft that reports what it did
+
+**One new export and one behaviour change behind an unchanged signature.** The
+bump exists because the two must land together: a client showing "crafted a
+furnace" against a wasm that had just eaten the wood is the defect this fixes
+wearing a different hat.
+
+```c
+int of_gp_craft_block(int recipeIndex);   // gameplay.h CraftBlock
+// 0 none, 1 no such recipe, 2 inputs short, 3 pack full
+```
+
+**`of_gp_craft` now REFUSES a craft whose output would not fit**, where it used
+to spend every input, call `inv.add`, discard the overflow and return 1 (GP-51).
+A 0 consumes nothing, in both directions.
+
+**A refusal crosses as a CODE, never as a sentence**, which is GP-46's rule in a
+second place. `/core` holds no display names (they live in the `SliceRegistry`
+that `HandCrafter` deliberately does not carry), so a sentence here would need a
+second copy of the item name table inside the shim; and a boolean cannot tell
+"you are short of wood" from "your pack is full", which are opposite actions.
+The client composes the line in `GameCore.craftBlockText`.
+
+**`of_gp_recipe_info`'s `canCraft` field is UNCHANGED and is still the INPUT
+side only.** That is deliberate: `of_gp_structure_pay` produces no output at
+all, so a fit test folded into `canCraft` would refuse a foundation because the
+pack was full of the stone it was about to spend. The two questions stay two
+questions.

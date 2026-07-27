@@ -79,6 +79,12 @@ export function restoreProgress(g: Gameplay, saved: SaveProgress | undefined):
         build: a[4] }
     : null);
   const armour = p.progression.wornAll().filter((i) => i > 0).length;
+  // H-4: THE BODY IS PART OF WHAT A LOAD RESTORES. A save that brought four
+  // pieces back into /core's slots and left the avatar bare would be the same
+  // defect the equip button had, one path further along, and it is the reason
+  // `syncArmour` sweeps every slot from `wornAll` rather than reacting to a
+  // click: this call site never presses a button.
+  p.syncArmour();
   p.invalidate();
   return { techs, milestones, armour };
 }

@@ -13,7 +13,9 @@
 // visible snap and reads as a bug.
 
 import { ProgressUi } from './ProgressUi.js';
+import { ASSETS } from '../assets/Registry.js';
 import { machineView } from './GameplayActions.js';
+import type { EquipSlotName } from '../player/Avatar.js';
 import type { Gameplay } from './Gameplay.js';
 import type { Machine } from './Machines.js';
 
@@ -83,5 +85,17 @@ export function attachProgress(g: Gameplay): ProgressUi {
     },
     flash: (msg, secs) => g.hud.flash(msg, secs),
     icon: (name) => g.icons.for(name),
+    // H-4: the render half. Both halves have existed for a night and nothing
+    // joined them, so armour was equipped, costed, saved and invisible. The
+    // node name is /core's own (`progression.h armourNode`), handed through
+    // rather than rebuilt here, because `Armour_Chest_LOD0` is FOUR primitives
+    // and GLTFLoader splits it into `_0`.. `_3`: a name this file derived
+    // itself would bind whatever it happened to spell.
+    armour: (slotName, node, on) => {
+      const a = g.avatar;
+      if (a === null) return;
+      if (on) void a.equip(slotName as EquipSlotName, ASSETS.armourSet, node);
+      else a.unequip(slotName as EquipSlotName);
+    },
   });
 }

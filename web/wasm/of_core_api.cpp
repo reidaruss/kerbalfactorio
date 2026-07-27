@@ -228,7 +228,15 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       indices are UNCHANGED (the list is appended to, never reordered), so
 //       every existing caller and probe still names the same recipe.
 //       Additive: no existing signature changed.
-OF_API int of_abi_version(void) { return 9; }
+//   10: GP-51. ONE new export, of_gp_craft_block(i), and a BEHAVIOUR change
+//       behind an unchanged signature: of_gp_craft now REFUSES a craft whose
+//       output would not fit, where it used to spend the inputs, drop the
+//       output and return 1. The bump is what makes the client's refusal text
+//       and /core's refusal reason land together, because a client that showed
+//       "crafted a furnace" against a wasm that had just eaten the wood is the
+//       failure this fixes wearing a different hat.
+//       Additive: no existing signature changed.
+OF_API int of_abi_version(void) { return 10; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2348,10 +2356,26 @@ OF_API int of_gp_recipe_info(int i) {
   return static_cast<int>(g_i32.size());
 }
 
-// All-or-nothing craft. 1 on success, 0 if the inputs are not all present.
+// All-or-nothing craft, in BOTH directions since GP-51: 1 on success, 0 if the
+// inputs are not all present OR the output would not fit. A 0 consumes nothing.
 OF_API int of_gp_craft(int i) {
   if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpRecipes.size()) return 0;
   return sv::HandCrafter::craft(g_gpRecipes[static_cast<size_t>(i)], *g_inv) ? 1 : 0;
+}
+
+// WHY a craft would be refused, as gameplay.h's CraftBlock code (GP-51, and
+// GP-46's rule that a refusal crosses the bridge as a CODE plus its subject).
+// 0 none, 1 no such recipe, 2 inputs short, 3 pack full.
+//
+// A SENTENCE CANNOT BE BUILT HERE and that is deliberate: /core has no display
+// names, so composing one would need a second copy of the item name table
+// inside this shim. It is also the difference between two opposite actions, "go
+// and mine" against "go and drop something", which a boolean throws away.
+OF_API int of_gp_craft_block(int i) {
+  if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpRecipes.size())
+    return static_cast<int>(sv::CraftBlock::NoRecipe);
+  return static_cast<int>(
+      sv::HandCrafter::craftBlock(g_gpRecipes[static_cast<size_t>(i)], *g_inv));
 }
 
 // --- Structural building set (gameplay.h §S.6) -------------------------------
