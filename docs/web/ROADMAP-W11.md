@@ -69,6 +69,43 @@ the failure this project has paid for six times. See lane B.
 
 _Lanes append here. Include what you tried and what would unblock it._
 
+### Lane G, 2026-07-27: TWO COMMIT SUBJECTS ARE SWAPPED, and this is the record
+
+**No content is lost or wrong in either commit. Two subject lines point at each
+other's work and cannot be corrected, so they are corrected here instead.**
+
+- `fa7a5fd` is titled *"WG-28: the mesher was inside out"*. **It is lane G's
+  flight commit** (20 files: `FlightSession`, `FlightMode`, `VesselObserver`,
+  `VesselView`, `Navball`, `SaveInhibit`, `FlightWarp`, three probes,
+  `reload.mjs`, `physics.md`, four screenshots).
+- `f89ab0b` is titled *"W11 lane G: fly the demo adversarially..."*. **It is
+  world-gen's `rule 11` commit** (the inside-out mesher and the stale-copy
+  negative control).
+
+**How, because the mechanism is a trap anyone here can fall into.** `git commit
+-F <file>` with a path that does not exist does **not** fail. Git falls through
+to `.git/COMMIT_EDITMSG`, which is SHARED, and which at that moment held the
+message of whichever lane committed most recently. So the commit landed with
+another lane's subject line, silently. The obvious repair, `--amend`, then made
+it worse: between the commit and the amend a third lane had committed, so the
+amend rewrote **their** tip instead, swapping the second pair. Both attempts to
+unpick it (`update-ref` and a second `--amend`) were refused by the permission
+system, which was the right answer: rewriting shared history at 4 a.m. with five
+lanes committing into the same tree is how content actually gets lost, and
+nothing had been lost yet.
+
+**Two rules fall out of it, and they are cheaper than the incident.**
+1. **Pass the message with `-m`, never `-F`**, unless you have just checked the
+   file exists in the same command. A missing `-F` target is a silent fallback
+   to another lane's words.
+2. **`--amend` is unsafe in this repo, full stop.** The tip is not yours by the
+   time you type it. Re-read `git log -1` first if you must, and prefer a new
+   commit that says what went wrong, which is this section.
+
+This is the fourth instance tonight of the shared-git-state hazard already
+logged under standing rule 10, and the first where the casualty was the
+history's ability to explain itself rather than a file.
+
 ### Lane G, 2026-07-27: THE CLIENT DOES NOT BOOT ON THE CURRENT WORKING TREE
 
 **This is the one thing that stops there being a demo at all, and it is not
