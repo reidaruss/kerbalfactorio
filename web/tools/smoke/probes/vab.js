@@ -4,10 +4,17 @@
 // reload, restart it after any src edit):
 //
 //   npx vite --config vite.probe.config.ts
-//   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/?sandbox=1 --settle=6 \
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/ --sandbox=1 --settle=6 \
 //        --evalfile=tools/smoke/probes/vab.js
 //   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/ --settle=6 \
 //        --evalfile=tools/smoke/probes/vab.js
+//
+// NOTE THE FLAG POSITION. `--sandbox=1` is a RUNNER flag, not part of --url.
+// run.mjs builds the page URL from --url plus a fixed allow-list of its OWN
+// arguments, so a query string written into --url is DISCARDED without a word.
+// Putting it there costs a run and a confusing report. This probe checks its own
+// setup for exactly that reason (section 0 fails if the URL flag and the game
+// disagree), and that is what caught it.
 //
 // WHY IT IS SHAPED THIS WAY.
 //
