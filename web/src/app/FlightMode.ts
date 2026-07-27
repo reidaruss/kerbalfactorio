@@ -292,13 +292,22 @@ export class FlightMode {
   // --- per frame -------------------------------------------------------------
 
   frame(simSecs: number): void {
+    // THE CLOCK IS READ BEFORE THE EARLY RETURN, AND THAT IS A FIX RATHER THAN A
+    // TIDY-UP. `flash` expires a message at `lastSimSecs + 6`, and `lastSimSecs`
+    // was only written on a frame with a LIVE session, so it was still 0 at the
+    // moment of the very first roll-out: the expiry test on the next frame then
+    // compared a six second deadline against a sim clock that had been running
+    // all session, and cleared the message immediately. The victim was PH-36's
+    // own claim, that a stand-in which announces itself is a stand-in: the
+    // notice was discarded before a single frame drew it. Found by GP-57's probe
+    // asserting the PAD's notice and getting an empty string.
+    this.lastSimSecs = simSecs;
     if (!this.session.live) return;
     this.session.tick(simSecs);
     // The transient half of the message line. FlightMode's own `message` had no
     // expiry at all and the session's had one on the wrong clock: two opposite
     // bugs in one line of readout, which is why neither showed up.
     if (this.message !== '' && simSecs > this.msgUntilS) this.message = '';
-    this.lastSimSecs = simSecs;
     if (this.drawnRevision !== this.session.revision) this.rebuild();
     // Parked: nothing steps the observer, so keep the drawn instant equal to
     // the sim's (PH-31). Aboard, the interpolator owns it.
