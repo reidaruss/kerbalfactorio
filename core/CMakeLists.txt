@@ -304,6 +304,45 @@ target_link_libraries(flight_tests PRIVATE of_core)
 target_include_directories(flight_tests PRIVATE tests)
 add_test(NAME flight_tests COMMAND flight_tests)
 
+# --- ENEMIES: the pollution / evolution / nest-attack feedback loop (W11 lane
+#     E). enemies.h is the Factorio-inspired base-defense loop as a SIMULATION
+#     rather than a wave timer: machines emit pollution into a coarse sparse
+#     grid over the surface, the grid diffuses and decays, nests absorb what
+#     reaches them and grow an attack budget in proportion, absorbed pollution
+#     plus elapsed time plus nests destroyed raise a saturating evolution factor
+#     that gates the enemy roster, and waves are dispatched AT the emitter that
+#     actually fed the nest. Nests also expand toward the pollution, so cleared
+#     ground does not stay cleared.
+#
+#     What this suite proves, and why each one is here:
+#       * diffusion pinned to HAND-COMPUTED values at distance 0/1/2/diagonal,
+#         so the scheme is fixed to independently derived arithmetic rather than
+#         to a previous run of itself;
+#       * mass conservation to a closed form, including ACROSS a cube-face seam,
+#         which is where a naive neighbour table silently reflects;
+#       * evolution isolated input by input (hold two at zero, vary the third),
+#         monotone, bounded below 1, and decomposed BIT-EXACTLY into its three
+#         terms so a UI's breakdown is a decomposition and not an estimate;
+#       * THE NEGATIVE CONTROL: nests with no pollution dispatch nothing over
+#         thirty simulated minutes while evolution provably rises from its time
+#         term (DW-20), which is what separates this from a wave timer wearing a
+#         pollution costume; plus its complement, that switching the factory off
+#         stops the attacks;
+#       * targeting: the wave goes to the emitter that FED the nest, checked
+#         against a nearest-emitter heuristic that would answer differently;
+#       * determinism (standing rule 4) and a save/load that resumes bit-exactly;
+#       * cost measured at 1,200 machines (the DW-28 render limit), with the
+#         O(cells)-not-O(machines) claim tested by doubling the machine count.
+#     Header-only; consumes cubed_sphere.h read-only (+ persistence.h in the
+#     test only, for the byte cursor). Does NOT touch factory_sim.h, the voxel
+#     layer or the surface oracle.
+add_executable(enemies_tests
+  tests/test_main.cpp
+  tests/test_enemies.cpp)
+target_link_libraries(enemies_tests PRIVATE of_core)
+target_include_directories(enemies_tests PRIVATE tests)
+add_test(NAME enemies_tests COMMAND enemies_tests)
+
 # --- Gameplay logic: the player-facing rules over the closed sim substrate ---
 add_executable(gameplay_tests
   tests/test_main.cpp
