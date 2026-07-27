@@ -65,28 +65,16 @@ export interface DiscoveryStats {
   bodyRadiusM: number;
 }
 
-/** One cached window of discovered cells, ready for the map to project. */
-export interface DiscoveryWindow {
-  corners: Float64Array;
-  count: number;
-  truncated: boolean;
-  cellSizeM: number;
-}
-
 /** Seconds between observations. See the header: 1 Hz is sound while the
  *  observer cannot outrun one sweep, and `gapRatio` is the check on that. */
 const SAMPLE_S = 1.0;
-/** Rows one window may carry. A fully surveyed Forge is 98,304 cells, so this
- *  is not a limit that hides the world; it is a limit on how much crosses the
- *  bridge for ONE repaint, and `truncated` says when it bound. */
-const WINDOW_ROWS = 8192;
 
 export class Discovery {
   private ready = false;
   private sinceS = 0;
   /** Bumped whenever the field changes, so a cached window knows it is stale
    *  without comparing 8,192 rows. */
-  private generation = 0;
+  private generation_ = 0;
   private lastObsX = 0;
   private lastObsY = 0;
   private lastObsZ = 0;
@@ -96,10 +84,6 @@ export class Discovery {
   gapRatio = 0;
   observeMsTotal = 0;
   observePasses = 0;
-  windowMsTotal = 0;
-  windowCalls = 0;
-  private win: DiscoveryWindow | null = null;
-  private winKey = '';
 
   private readonly M: OfDiscoveryModule;
 
@@ -125,6 +109,12 @@ export class Discovery {
 
   get live(): boolean { return this.ready; }
 
+  /** The field's version. Moves whenever `/core` accepted a new cell, was
+   *  cleared, re-tuned or restored. Published so a CONSUMER that caches a
+   *  picture of the discovered world (MapTerrain) can be stale-proof for the
+   *  same reason `window()` is, rather than by re-asking every frame. */
+  get generation(): number { return this.generation_; }
+
   /**
    * FORGET EVERYTHING SEEN, keeping the body and the tuning.
    *
@@ -144,8 +134,7 @@ export class Discovery {
   forget(): void {
     if (!this.ready) return;
     this.M._of_disc_clear();
-    this.generation += 1;
-    this.win = null;
+    this.generation_ += 1;
     this.haveLast = false;
     this.gapRatio = 0;
     // The next observation lands on the NEXT step rather than up to a second
@@ -161,8 +150,7 @@ export class Discovery {
     if (!this.ready) return;
     this.M._of_disc_configure(surveyCellM, exploreCellM, horizonFraction,
                               exploreMaxRadiusM, maxCellsPerPass);
-    this.generation += 1;
-    this.win = null;
+    this.generation_ += 1;
   }
 
   /** Feed it. `pos` is body-frame metres (the eye or the feet, either is within
@@ -193,7 +181,7 @@ export class Discovery {
     }
     this.lastObsX = pos.x; this.lastObsY = pos.y; this.lastObsZ = pos.z;
     this.haveLast = true;
-    if (added > 0) { this.generation += 1; this.win = null; }
+    if (added > 0) this.generation_ += 1;
   }
 
   /** Has the SHAPE of the world at this direction been seen? */
@@ -238,49 +226,14 @@ export class Discovery {
     };
   }
 
-  /**
-   * The discovered cells around a direction, for the map to shade.
-   *
-   * CACHED on (direction, cosMin, generation). The map repaints every frame and
-   * a window is up to 8,192 rows of twelve doubles crossing the bridge; doing
-   * that at 60 Hz for a picture that only changes when the view or the field
-   * does would be a self-inflicted frame cost. The generation counter is what
-   * makes the cache honest: it moves whenever `/core` accepted a new cell, so a
-   * stale window is impossible rather than unlikely.
-   */
-  window(dx: number, dy: number, dz: number, cosMin: number,
-         layer = DISC_SURVEY): DiscoveryWindow | null {
-    if (!this.ready) return null;
-    const key = `${layer}|${this.generation}|${dx.toFixed(6)},${dy.toFixed(6)},`
-      + `${dz.toFixed(6)}|${cosMin.toFixed(9)}`;
-    if (key === this.winKey && this.win !== null) return this.win;
-    const t0 = performance.now();
-    const rows = this.M._of_disc_window(layer, dx, dy, dz, cosMin, WINDOW_ROWS);
-    this.windowMsTotal += performance.now() - t0;
-    this.windowCalls += 1;
-    if (rows <= 0) {
-      this.win = { corners: new Float64Array(0), count: 0, truncated: false,
-        cellSizeM: this.cellSizeM(layer) };
-      this.winKey = key;
-      return this.win;
-    }
-    const p = this.M._of_scratch_f64();
-    const n = rows * 12;
-    // COPIED out, not a subarray: the next call into WASM may grow the heap and
-    // detach this buffer, and the map holds it across frames.
-    const corners = new Float64Array(this.M.HEAPF64.subarray(p >>> 3,
-                                                             (p >>> 3) + n));
-    const st = this.stats();
-    this.win = { corners, count: rows, truncated: st.lastWindowTruncated,
-      cellSizeM: this.cellSizeM(layer) };
-    this.winKey = key;
-    return this.win;
-  }
-
-  private cellSizeM(layer: number): number {
-    const s = this.stats();
-    return layer === DISC_EXPLORE ? s.exploreCellSizeM : s.surveyCellSizeM;
-  }
+  // `window()` IS GONE, and with it the map's last call to `_of_disc_window`
+  // (DW-37). The map's shading source is now `of_map_sample`, whose per-sample
+  // survey bit is a finer and simpler mask than a 9,375 m quad, so this driver
+  // kept a cache, a row cap and two counters for a picture nothing painted any
+  // more. `_of_disc_window` itself stays in the ABI and is still the right call
+  // for a cell overlay (the pollution layer the enemies branch will want); it
+  // is simply no longer this file's job to drive it, and a published method
+  // with no caller is the exact shape this project has been bitten by before.
 
   /** The save's bytes. Delta-varint over a sorted key set in `/core`, so this is
    *  small; DW-17 puts it in the one atomic slot with everything else. */
@@ -305,8 +258,7 @@ export class Discovery {
     const p = this.M._of_scratch_u8();
     this.M.HEAPU8.set(bytes as number[], p);
     const cells = this.M._of_disc_deserialize();
-    this.generation += 1;
-    this.win = null;
+    this.generation_ += 1;
     return cells;
   }
 
@@ -315,12 +267,10 @@ export class Discovery {
     return {
       ...s,
       gapRatio: Number(this.gapRatio.toFixed(4)),
-      generation: this.generation,
+      generation: this.generation_,
       observeUsPerPass: this.observePasses === 0 ? 0
         : Math.round((this.observeMsTotal / this.observePasses) * 1000),
-      windowUsPerCall: this.windowCalls === 0 ? 0
-        : Math.round((this.windowMsTotal / this.windowCalls) * 1000),
-      passes: this.observePasses, windows: this.windowCalls,
+      passes: this.observePasses,
       saveBytes: this.ready ? Math.max(0, this.M._of_disc_serialize()) : 0,
     };
   }

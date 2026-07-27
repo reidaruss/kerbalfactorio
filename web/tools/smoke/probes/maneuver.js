@@ -163,30 +163,67 @@
   if (fails.length > 0) return { valid: false, why: 'setup', fails, rows };
 
   // ==========================================================================
-  // 1. THE MAP OFF THE VESSEL REFUSES OUT LOUD (section B).
+  // 1. THE MAP OFF THE VESSEL OPENS, CENTRED ON THE PLAYER (section B).
   //
-  // Done HERE, before anything is built, because "on foot with no vessel in
-  // the world at all" is the strongest form of the case: there is nothing the
-  // key could plausibly have opened. A silent no-op is the failure being
-  // hunted (GP-54: Reid pressed the launch key at a rocket and the game did
-  // nothing whatsoever), so the assertion is not only "it did not open" but
-  // "and the player was TOLD", read off the toast element itself.
+  // THIS SECTION USED TO ASSERT THE OPPOSITE and was right to, until DW-36.
+  // B1/B2 read "the map key OFF THE VESSEL does not open the map" and "it SAYS
+  // SO on the HUD", because the map shipped as the FLIGHT map. DW-36 reverses
+  // that deliberately - "M opens it centred on the player" is the first thing
+  // it asks for - so the old rows were testing a behaviour that was removed on
+  // purpose. They are replaced rather than deleted, and by a STRONGER claim:
+  // the same keystroke must now open the map AND the projection must prove it
+  // is centred on the player rather than on the body.
+  //
+  // B3 IS R17'S OWN NEGATIVE CONTROL and is the reason this belongs in the
+  // acceptance probe rather than only in probes/discovery.js. The centring bug
+  // R17 named is invisible in every count: a body-centred projection and a
+  // player-centred one draw the same conic, the same apsides and the same
+  // scale bar, and differ ONLY in the origin. |centreM| separates them with no
+  // ambiguity - it is ~0 for the body and one body radius for a player standing
+  // on the ground - so it is the one number that can fail if the centring is
+  // ever regressed back to the body.
+  //
+  // The refusal did NOT disappear, it MOVED, and B4 follows it: a node is a
+  // burn and there is nothing to burn on foot, so `place` is where the honest
+  // "board a vessel first" now lives. GP-54's lesson is unchanged - a control
+  // that declines silently teaches the player the feature does not exist - it
+  // simply applies to a different control now.
   // ==========================================================================
   const tB = toast();
   const beforeB = { open: MAP().open, opens: MAP().opens, toast: tB.text,
     aboard: F().aboard };
   of.input.act(['map'], 4);
   await sleep(0.25);
-  const tB2 = toast();
-  const afterB = { open: MAP().open, opens: MAP().opens, toast: tB2.text,
-    shown: tB2.shown };
-  rec('B1 the map key OFF THE VESSEL does not open the map',
-      beforeB, afterB, MAP().open === false && MAP().opens === beforeB.opens);
-  rec('B2 and it SAYS SO on the HUD rather than doing nothing silently',
-      { toast: tB.text, shown: tB.shown }, { toast: tB2.text, shown: tB2.shown },
-      tB2.shown === true && typeof tB2.text === 'string'
-      && /board a vessel|flight map/i.test(tB2.text),
-      'the refusal must name the reason, not just decline');
+  const afterB = { open: MAP().open, opens: MAP().opens,
+    focus: MAP().focus?.active, centreM: MAP().focus?.centreM };
+  rec('B1 the map key OFF THE VESSEL now OPENS the map (DW-36)',
+      beforeB, afterB,
+      MAP().open === true && MAP().opens === beforeB.opens + 1);
+  rec('B2 and it is centred on YOU, not on the body',
+      { focus: null }, { focus: MAP().focus?.active },
+      MAP().focus?.active === 'you',
+      'focus switching and re-centring are one mechanism (R17)');
+  const cM = MAP().focus?.centreM ?? [0, 0, 0];
+  const cLen = Math.hypot(cM[0], cM[1], cM[2]);
+  rec('B3 |centreM| is a BODY RADIUS, not zero: the projection origin moved',
+      { bodyRadiusM: 600000, wouldBeZeroIfBodyCentred: 0 },
+      { centreLenM: Math.round(cLen) },
+      cLen > 500000 && cLen < 700000,
+      'the one number that separates a player-centred projection from a '
+      + 'body-centred one; every other instrument reads the same either way');
+  // The refusal, at its new home.
+  const tP = toast();
+  of.map('place');
+  await sleep(0.2);
+  const tP2 = toast();
+  rec('B4 a NODE still refuses on foot, out loud: the refusal moved, not gone',
+      { toast: tP.text }, { toast: tP2.text, shown: tP2.shown },
+      tP2.shown === true && /board|vessel/i.test(tP2.text ?? ''),
+      'a node is a burn and there is nothing to burn on foot');
+  // Leave the map shut again so section 2 starts where it always did.
+  if (MAP().open === true) { of.input.act(['map'], 4); await sleep(0.2); }
+  rec('B5 and M closes it again, so the mode is a toggle either way',
+      { open: true }, { open: MAP().open }, MAP().open === false);
 
   // ==========================================================================
   // 2. BUILD "Ascender I" IN THE BAY, through the panel, one part at a time.

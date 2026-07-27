@@ -32,10 +32,16 @@
 // spent a year making true. There is therefore NO zoom threshold anywhere in
 // this family of files. A layer is not switched on at a span; a FEATURE becomes
 // legible as its own size in pixels grows, through the one ramp in MapPaint's
-// `sizeAlpha`. An ore patch is 9 m across and fades in when 9 m is a few pixels;
-// a survey cell is 9.4 km and fades in when 9.4 km is. Continuity is therefore a
-// property of the code rather than a claim about it, and `MapDrawReport.alphas`
-// publishes what was actually painted so a probe can sweep the zoom and check.
+// `sizeAlpha`. An ore patch is 9 m across and fades in when 9 m is a few pixels.
+// THE TERRAIN LAYER TAKES THAT RULE TO ITS LIMIT (DW-37): its feature is one
+// sample of ground, the grid is cut to the canvas, so a sample's ground size
+// scales with the span exactly as pixels-per-metre falls and its size in PIXELS
+// is the same at every zoom. Its alpha is therefore invariant rather than
+// ramping, which is a stronger form of "no threshold" than a ramp is - there is
+// nothing left to step - and the probe asserts exactly that over 220 notches.
+// Continuity is a property of the code rather than a claim about it, and
+// `MapDrawReport.alphas` publishes what was painted so a probe can sweep and
+// check.
 // =============================================================================
 
 export type V3 = readonly [number, number, number];
@@ -83,32 +89,47 @@ export interface MapOre {
 }
 
 /**
- * A buffer of SURFACE CELLS to paint, ready to project. `corners` is flat
- * [x,y,z]*4 per cell in body-frame UNIT directions; the painter scales by the
- * body radius. Four corners rather than a centre and a size because the
- * projection is orthographic and a cell near the limb foreshortens to a sliver,
- * so a stamped square would paint one cell's ground over its neighbour's.
+ * THE GROUND UNDER THE VIEW, sampled on a grid cut to the canvas (DW-37).
  *
- * NAMED FOR THE SHAPE, NOT FOR DISCOVERY, deliberately. `discovery.h`'s grid is
- * the same raw-gnomonic cube lattice as `enemies.h`'s `PollutionField` (that
- * agreement is asserted cell-for-cell in `discovery_tests`), so the pollution
- * overlay the enemies branch already publishes `pollution_cells` for is this
- * exact buffer with a different producer and a different fill: window the cells,
- * hand them over as corners, take an alpha from `sizeAlpha` on `cellSizeM`, and
- * `MapLayers.strokeDiscovered`'s projection, back-face cull and clip apply
- * unchanged. It is an added producer and a second fill style, not a new layer
- * type and not a rewrite. Left as a seam rather than built, because the enemies
- * branch is unmerged and a consumer for an unlanded export is speculation.
+ * WHY THIS REPLACED A BUFFER OF DISCOVERY QUADS. WG-29 shaded the map with
+ * `of_disc_window`'s discovered CELLS, 9,375 m each, painted as flat quads.
+ * Reid, seeing it: "cant see the terrain from the map, even in sandbox." The
+ * quads were the right answer to "what have you seen" and no answer at all to
+ * "what is there", and since discovery REVEALS terrain, a map with no terrain
+ * has nothing to reveal. `/core`'s `of_map_sample` answers both at once: the
+ * biome and the designed height say what is there, and a per-sample survey bit
+ * says whether you have seen it. That bit is a FINER and simpler mask than a
+ * discovery quad, which is why the quad layer is gone rather than layered under
+ * this one. `of_disc_window` remains in the ABI; it is simply no longer the
+ * map's shading source.
+ *
+ * Three parallel arrays, row-major, TOP ROW FIRST, `cols * rows` long. The
+ * painter needs no knowledge of the bridge's arena layout: `discabi.ts`'s
+ * `MapSample` is read once, in `world/MapTerrain.ts`, and nowhere else.
  */
-export interface MapDiscovered {
-  readonly corners: Float64Array;
-  readonly count: number;
-  /** The window hit its row cap and some discovered ground is NOT in this
-   *  buffer. Surfaced rather than swallowed (DW-28): a layer that silently drops
-   *  work when full cannot be found by looking at the thing it degrades. */
-  readonly truncated: boolean;
-  /** Metres across one cell, for the legibility ramp. */
-  readonly cellSizeM: number;
+export interface MapTerrainGrid {
+  /** /core's `Biome` enum per sample; **-1 means OFF THE LIMB** — the line of
+   *  sight misses the body and there is no ground under that sample at all. */
+  readonly biome: Int8Array;
+  /** `sampleDesignedHeight`, the surface oracle's designed base, in metres.
+   *  NOT a second terrain: it is the function the mesh, the collision and the
+   *  walker all read (standing rule 1). */
+  readonly heightM: Float64Array;
+  /** 1 when this sample's SURVEY cell has been observed. THE GATE. */
+  readonly seen: Uint8Array;
+  readonly cols: number;
+  readonly rows: number;
+  /** Ground metres across ONE sample: the terrain layer's FEATURE SIZE, and
+   *  what its alpha comes from, exactly as the old quad layer's came from a
+   *  cell edge. No layer is switched on at a span (DW-36). */
+  readonly sampleSizeM: number;
+  /** Samples with ground under them, and how many of those have been seen. */
+  readonly onBody: number;
+  readonly seenOnBody: number;
+  /** The height range over the on-body samples, for the relief ramp. A shading
+   *  statistic of THIS view, not a fact about the world. */
+  readonly minH: number;
+  readonly maxH: number;
 }
 
 /** Everything the canvas needs for one frame. */
@@ -145,8 +166,8 @@ export interface MapScene {
   readonly nodePos: V3 | null;
   /** Metres across the SHORT screen axis. The view owns this, not the sim. */
   readonly spanM: number;
-  /** The discovered world, or null when there is nothing to shade. */
-  readonly discovered: MapDiscovered | null;
+  /** The ground under this view, or null when there is none to draw. */
+  readonly discovered: MapTerrainGrid | null;
   /** Ore bodies to draw. ALREADY GATED by discovery upstream: an undiscovered
    *  patch is absent from this array rather than present-and-hidden, so there is
    *  no way for a drawing bug to leak one. */
@@ -251,8 +272,18 @@ export interface MapDrawReport {
    *  span and every one of them must move smoothly and monotonically. A `if
    *  (span > X) return` anywhere would show up here as a 1 -> 0 step. */
   alphas: { ore: number; discovered: number; body: number };
-  /** Cells and patches that reached the canvas, counted in the paint pass. */
+  /** TERRAIN SAMPLES and patches that reached the canvas, counted in the paint
+   *  pass. `discoveredQuads` keeps its name and its meaning — "how much ground
+   *  did this frame actually draw" — while what a unit of ground IS changed
+   *  from a 9,375 m discovery quad to one terrain sample (DW-37). */
   discoveredQuads: number;
+  /** Samples with ground under them, painted or not. The pair is the negative
+   *  control: in survival `discoveredQuads` is strictly less than this wherever
+   *  the view is wider than what has been seen, and in sandbox they are equal. */
+  terrainSamples: number;
+  /** Ground metres across one terrain sample, the feature size `alphas.
+   *  discovered` was taken from, so a probe can predict that alpha exactly. */
+  sampleSizeM: number;
   oreDrawn: number;
   /** The RAW numbers each drawn ore marker carried, in paint order, so a probe
    *  compares integers against /core's `OrePatch::RemainingAmount` field by

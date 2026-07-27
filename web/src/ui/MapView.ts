@@ -81,7 +81,8 @@ function noDraw(): MapDrawReport {
   return {
     currentPoints: 0, plannedPoints: 0, markers: [], pixelsPerMetre: 0,
     alphas: { ore: 0, discovered: 0, body: 0 },
-    discoveredQuads: 0, oreDrawn: 0, oreDrawnRows: [], bodyFilled: false,
+    discoveredQuads: 0, terrainSamples: 0, sampleSizeM: 0,
+    oreDrawn: 0, oreDrawnRows: [], bodyFilled: false,
   };
 }
 
@@ -171,6 +172,14 @@ export class MapView extends Modal {
     if (key === this.lastKey) return;
     this.lastKey = key;
     this.readout.innerHTML = this.body(r);
+  }
+
+  /** The canvas in CSS pixels, for the one caller that must know the SHAPE of
+   *  the picture before it is drawn: the terrain grid is cut to the canvas, so
+   *  the samples land on the pixels whatever the panel's aspect. It is the
+   *  layout's own answer, read from the element, never a constant. */
+  size(): { w: number; h: number } {
+    return { w: this.canvas.clientWidth, h: this.canvas.clientHeight };
   }
 
   private paint(r: MapReadout): void {

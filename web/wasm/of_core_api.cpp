@@ -278,7 +278,19 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       Additive: no existing signature changed and no existing value moved.
 //       of_disc_ensure is new; the discovery format changed, and it may, because
 //       12 is not landed and nothing has ever shipped a save written with it.
-OF_API int of_abi_version(void) { return 12; }
+//  13: THE MAP DRAWS THE WORLD (DW-37). One new export, §19's of_map_sample:
+//       the biome, the designed height and the SURVEY bit over a view region —
+//       a centre, two in-plane axes, a span, an aspect and a grid density — so
+//       the map can paint ground instead of an empty plane. Specified in
+//       view-region rather than pixel terms because DW-37 turns the map into a
+//       rotatable 3D camera next and a camera asks the same question. Every
+//       height is sampleDesignedHeight and every biome is biomeAt (standing
+//       rule 1): this adds a CONSUMER of the surface oracle, never a second
+//       definition of it. Additive: no existing signature changed and no
+//       existing value moved. of_disc_window is untouched and still exported;
+//       it is simply no longer the map's shading source, because a per-sample
+//       survey bit is a finer and simpler mask than a 9,375 m quad.
+OF_API int of_abi_version(void) { return 13; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2563,3 +2575,6 @@ OF_API int of_gp_item_ids(void) {
 #include "of_research_api.inc"  // §15/16 ABI 9: the tech tree, armour, skills
 #include "of_maneuver_api.inc"  // §17  ABI 11: maneuver node planning
 #include "of_discovery_api.inc" // §18  ABI 12: the discoverable map (DW-36)
+// AFTER §18, and it must be: of_map_sample reads that file's `g_disc` for the
+// survey bit it writes per sample.
+#include "of_map_api.inc"       // §19  ABI 13: the map samples the world (DW-37)

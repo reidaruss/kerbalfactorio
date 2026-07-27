@@ -33,6 +33,20 @@ export const DISC_EXPLORE = 1;
 export const DISC_REPORT_WORDS = 16;
 /** Four corner directions, x,y,z each, per window row. */
 export const DISC_WINDOW_ROW_WORDS = 12;
+/** `of_map_sample` writes three doubles per sample. Indexed by `MapSample`. */
+export const MAP_SAMPLE_WORDS = 3;
+
+/** Field offsets within one `of_map_sample` sample. A reader that indexed by a
+ *  bare number would be a second definition of the layout waiting to drift. */
+export const MapSample = {
+  /** /core's `Biome` enum, 0..9. **-1 means OFF THE LIMB**: the sample's line
+   *  of sight misses the body entirely, so there is no ground under it. */
+  biomeId: 0,
+  /** `sampleDesignedHeight` — the surface oracle's designed base, metres. */
+  heightM: 1,
+  /** `of_disc_has(SURVEY, dir)`, 1 or 0. The painter's whole gate. */
+  surveyed: 2,
+} as const;
 
 /** Field offsets into the f64 scratch `_of_disc_report` fills. */
 export const DiscReport = {
@@ -113,8 +127,15 @@ export interface DiscoveryAbi {
    */
   _of_disc_has(layer: number, dx: number, dy: number, dz: number): number;
   /**
-   * THE DRAW CALL. Discovered cells of `layer` whose CENTRE is within `cosMin`
-   * of the direction, i.e. dot(centre, dir) >= cosMin.
+   * Discovered cells of `layer` whose CENTRE is within `cosMin` of the
+   * direction, i.e. dot(centre, dir) >= cosMin.
+   *
+   * NO LONGER THE MAP'S DRAW CALL (DW-37, ABI 13) and currently uncalled by the
+   * client. `of_map_sample` shades the map now, because a per-sample survey bit
+   * is a finer and simpler mask than a 9,375 m quad AND it carries the terrain
+   * the quads never could. This stays declared and exported: it is still the
+   * right call for a CELL overlay (the pollution layer the enemies branch will
+   * want), and it is not wrong, it is just not the shading source.
    *
    * -> the ROW count; f64 scratch holds DISC_WINDOW_ROW_WORDS per row: the
    * cell's FOUR corner directions, x,y,z each. Unit directions, so multiply by
@@ -153,6 +174,38 @@ export interface DiscoveryAbi {
    * was stale.) If there was no field, a -1 leaves there still being none.
    */
   _of_disc_deserialize(): number;
+
+  // --- §19 the map samples the WORLD (ABI 13, DW-37) --------------------------
+  /**
+   * THE GROUND, over a view region, at the resolution the view needs.
+   *
+   * DW-37: "cant see the terrain from the map, even in sandbox." Discovery
+   * REVEALS terrain, so a map with no terrain has nothing to reveal. This is
+   * what the map paints instead of an empty plane.
+   *
+   * `body` is a §1 body HANDLE (the height and the biome belong to the body, so
+   * this is not the 0/1 bodyId the discovery calls take). `cx,cy,cz` is the view
+   * centre in body-frame metres; `ux..`/`vx..` are the two in-plane axes (right
+   * and up on screen, need not be unit); `spanM` is the metres the `n` axis
+   * covers; `aspect` is width/height; `n` is the sample rows.
+   *
+   * -> the SAMPLE COUNT written (n * round(n*aspect)), or 0 on refusal. The f64
+   * scratch then holds MAP_SAMPLE_WORDS per sample, indexed by `MapSample`,
+   * ROW-MAJOR AND TOP ROW FIRST, which is the order an ImageData wants.
+   *
+   * SPECIFIED IN VIEW-REGION TERMS RATHER THAN IN PIXELS, deliberately: DW-37
+   * turns the map into a rotatable 3D camera next, and a centre plus two axes
+   * plus a span plus a density is a question a camera asks too. The PAINTER on
+   * the other side of this call is the half expected to be replaced.
+   *
+   * The ray solve is EXACT and transcendental-free: the projection is
+   * orthographic, so the ground under a sample is a line meeting a sphere, which
+   * is dot products and one sqrt (CE-11 / DW-15).
+   */
+  _of_map_sample(body: number, cx: number, cy: number, cz: number,
+                 ux: number, uy: number, uz: number,
+                 vx: number, vy: number, vz: number,
+                 spanM: number, aspect: number, n: number): number;
 }
 
 export type OfDiscoveryModule = OfCoreModule & DiscoveryAbi;

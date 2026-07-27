@@ -15,6 +15,7 @@
 import { MapMode } from './MapMode.js';
 import { MapWorld } from './MapWorld.js';
 import { Discovery } from '../world/Discovery.js';
+import { MapTerrain } from '../world/MapTerrain.js';
 import type { OrePatchSource } from './MapWorld.js';
 import { MAP_ALLOWED } from '../player/Bindings.js';
 import { vesselAbi } from '../sim/wasm/vesselabi.js';
@@ -98,8 +99,15 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
   // one query the map repaints from. bodyId 0 is Forge, 1 is anything else,
   // which is the same convention §1 of the bridge already uses.
   const disc = new Discovery(a.core, a.body.kind === 'moon' ? 1 : 0);
+  // THE GROUND (DW-37). It takes the body HANDLE, not the 0/1 bodyId above:
+  // the biome and the designed height belong to this seed's body, while the
+  // discovery lattice only needs the body's radius. It is handed the discovery
+  // driver purely for its generation counter, so a new observation invalidates
+  // the cached picture rather than leaving a frame of the old survey mask.
+  const terrain = new MapTerrain({ core: a.core, body: a.body.handle, disc });
   const world = new MapWorld({
     disc,
+    terrain,
     ore: a.g.oreField.patches,
     bodyRadiusM: a.body.radiusM,
     revealAll: () => a.g.mode.fullMapRevealed,

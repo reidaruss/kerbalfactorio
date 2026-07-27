@@ -29,16 +29,20 @@ import {
   discCoversCanvas, km1, nm, pen, place, scaleBar, sizeAlpha, text, toPx, toPxV, xy,
 } from './MapPaint.js';
 import {
-  drawOre, nodeGlyph, playerGlyph, shipGlyph, strokeDiscovered,
+  drawOre, nodeGlyph, paintTerrain, playerGlyph, shipGlyph,
 } from './MapLayers.js';
 
 // An ore patch is a couple of metres across: it earns its pixels between 1.5 and
 // 6 of them, which is where a disc stops being one stippled dot and starts being
-// a thing with a count beside it. A survey cell is 9.4 km and is fully on by 3
-// px, because a whole-planet framing puts a cell at about 4 px and that is
-// exactly the view the discovery layer exists for. The body's ramp only ever
-// leaves 1 at interplanetary spans, and is here so that a distant world fades
-// rather than popping when there is more than one of them.
+// a thing with a count beside it. A TERRAIN SAMPLE keeps the ramp the discovery
+// quads had, taken from its own ground size; that size is view-relative by
+// construction (the grid is cut to the canvas), so a sample is the same number
+// of pixels at every zoom and this ramp sits pinned at its top. That is the
+// right answer and it is stated rather than special-cased: the terrain is the
+// thing the map is for, and DW-36 forbids switching a layer on at a span, not
+// leaving one always on. The body's ramp only ever leaves 1 at interplanetary
+// spans, and is here so that a distant world fades rather than popping when
+// there is more than one of them.
 const ORE_MIN_PX = 1.5, ORE_FULL_PX = 6;
 const DISC_MIN_PX = 0.75, DISC_FULL_PX = 3;
 const BODY_MIN_PX = 2, BODY_FULL_PX = 12;
@@ -73,8 +77,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, cssW: number,
   const bc = xy(), onBody = toPx(pr, 0, 0, 0, bc);
   if (!onBody) { bc.x = pr.cx; bc.y = pr.cy; }
   const filled = paintBody(ctx, pr, s, alphas.body, marks, taken, cssW, cssH, bc);
-  const quads = strokeDiscovered(ctx, pr, s, alphas.discovered, cssW, cssH,
-                                 marks, t);
+  const quads = paintTerrain(ctx, pr, s, alphas.discovered, cssW, cssH, marks);
   const cur = strokeConic(ctx, pr, s.current, cssW, cssH, TRACK, false, t);
   const plan = strokeConic(ctx, pr, s.planned, cssW, cssH, ACCENT, true, t);
   // Ship, player and node reserve footprints BEFORE labels lay out, though their
@@ -98,9 +101,12 @@ export function drawMap(ctx: CanvasRenderingContext2D, cssW: number,
   caption(ctx, s, cssW, cssH);
   // Not a marker, a receipt: a refused point leaves no trace on the canvas.
   if (t.skipped > 0) marks.push(`skipped:${t.skipped}`);
+  const g = s.discovered;
   return {
     currentPoints: cur, plannedPoints: plan, markers: marks, pixelsPerMetre: pr.m2p,
     alphas, discoveredQuads: quads, oreDrawn: ore, oreDrawnRows: rows,
+    terrainSamples: g === null || g === undefined ? 0 : g.onBody,
+    sampleSizeM: g === null || g === undefined ? 0 : nm(g.sampleSizeM),
     bodyFilled: filled,
   };
 }
@@ -115,7 +121,7 @@ function ramp(s: MapScene, m2p: number): { ore: number; discovered: number; body
   if (list !== null && list !== undefined) {
     for (const p of list) wide = Math.max(wide, 2 * Math.max(0, nm(p.radiusM)));
   }
-  const cell = s.discovered === null ? 0 : nm(s.discovered.cellSizeM);
+  const cell = s.discovered === null ? 0 : nm(s.discovered.sampleSizeM);
   return {
     ore: sizeAlpha(wide, m2p, ORE_MIN_PX, ORE_FULL_PX),
     discovered: sizeAlpha(cell, m2p, DISC_MIN_PX, DISC_FULL_PX),

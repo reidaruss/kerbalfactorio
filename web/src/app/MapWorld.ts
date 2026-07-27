@@ -20,7 +20,8 @@
 // remembering to add an or-clause, and this is that branch.
 // =============================================================================
 import type { Discovery } from '../world/Discovery.js';
-import type { MapDiscovered, MapDiscoveryReadout, MapOre, V3 }
+import type { MapTerrain } from '../world/MapTerrain.js';
+import type { MapTerrainGrid, MapDiscoveryReadout, MapOre, V3 }
   from '../ui/MapTypes.js';
 
 /** The slice of the ore field this needs, named structurally so the map depends
@@ -42,6 +43,8 @@ export interface OrePatchSource {
 
 export interface MapWorldDeps {
   disc: Discovery;
+  /** The ground itself (DW-37), or null when there is no body to sample. */
+  terrain: MapTerrain | null;
   ore: OrePatchSource | null;
   bodyRadiusM: number;
   /** `ModeRules`' answer, asked by name. */
@@ -50,10 +53,6 @@ export interface MapWorldDeps {
    *  never interprets the id (WG-11); the caller supplies the word. */
   itemName(id: number): string;
 }
-
-/** How many short-axis spans of ground the shading window reaches for. See the
- *  derivation in `shading`: half the diagonal of a 2.9:1 canvas is 1.53 spans. */
-const WINDOW_SPANS = 1.6;
 
 export class MapWorld {
   /** Patches skipped because the ground they sit on has never been explored.
@@ -100,59 +99,30 @@ export class MapWorld {
   }
 
   /**
-   * The discovered ground to shade, for a view of `spanM` metres centred on
-   * `centreM`.
+   * THE GROUND UNDER THE VIEW (DW-37), sampled through `/core`.
    *
-   * THE WINDOW IS A HEMISPHERE AT MOST. The projection is orthographic, so
-   * without that cap the far side of the body would project onto the same disc
-   * as the near side and paint discovered ground over undiscovered from twelve
-   * thousand kilometres away. `cosMin >= 0` is not a tuned limit, it is the
-   * horizon of the projection itself.
+   * This replaced a window of discovered CELLS painted as flat quads. The quads
+   * answered "what have you seen" and said nothing at all about "what is there",
+   * so the map was every instrument correct over an empty plane — and since
+   * discovery REVEALS terrain, a map with no terrain has nothing to reveal.
    *
-   * The angular radius comes from the span through the chord identity
-   * `dot >= 1 - (c/R)^2 / 2`, the same transcendental-free form `discovery.h`
-   * uses for its own cap, so the two agree by construction rather than by
-   * coincidence.
+   * NO MARGIN AND NO WINDOW RADIUS IS DERIVED HERE ANY MORE, and that whole
+   * class of bug goes with them. The old path selected discovery cells by their
+   * CENTRE, so it had to reason about how far a cell wider than the view could
+   * reach, and getting that wrong put a 0 -> 1 step in `alphas.discovered`
+   * inside one zoom notch. A sample has no extent, the grid is cut to the
+   * canvas, and every sample is inside the view by construction.
+   *
+   * IT IS NOT GATED HERE. The mask rides on each sample and the painter applies
+   * it against the mode, which is the finer place to ask: `MapWorld.ore()`
+   * remains the ONE gate for PATCHES, and the survey bit is the one gate for
+   * GROUND. Both come from the same field.
    */
-  shading(centreM: V3, spanM: number): MapDiscovered | null {
-    const r = Math.hypot(centreM[0], centreM[1], centreM[2]);
-    if (!(r > 0) || !Number.isFinite(spanM) || !(spanM > 0)) return null;
-    const R = this.d.bodyRadiusM;
-    if (!(R > 0)) return null;
-    // THE RADIUS IS DERIVED, and the first draft of it was WRONG, which is worth
-    // recording because it is standing rule 11's exact shape: 0.75 * spanM
-    // "looked like plenty" and would have left the CORNERS of a wide panel
-    // unshaded, reading as undiscovered ground the player had walked over.
-    //
-    // `spanM` is measured across the SHORT screen axis, so the farthest visible
-    // point is the corner, at spanM/2 * sqrt(1 + aspect^2). WINDOW_SPANS covers
-    // an aspect up to 2.9:1 with a cell of margin left over, which is wider than
-    // any panel the map is ever given; a canvas wider still would under-fetch
-    // rather than mis-draw, and `MapDiscovered.truncated` is the other end of
-    // the same honesty.
-    //
-    // AND THE MARGIN IS MEASURED IN CELLS AS WELL AS IN SPANS (WG-29 probe).
-    // `_of_disc_window` selects on the cell's CENTRE, so a margin proportional
-    // only to the view misses a cell WIDER than the view ENTIRELY: a survey cell
-    // is 9,375 m across and the map opens on foot at a 600 m span, so the cell
-    // under the player's own feet has its centre up to 6.6 km away and was
-    // dropped. Measured before this line existed: `alphas.discovered` stepped
-    // 0 -> 1 in ONE zoom notch somewhere between a 1,207 m and a 1,388 m span,
-    // and WHERE it stepped depended on where in the cell the player happened to
-    // be standing. A 1 -> 0 step in that number is the exact signature DW-36
-    // forbids and `MapTypes`' header promises a probe will catch, so the fix is
-    // the half-diagonal of the cell itself rather than a larger multiple of the
-    // span, which would have moved the step rather than removed it.
-    const half = this.d.disc.stats().surveyCellSizeM * Math.SQRT1_2;
-    const u = (spanM * WINDOW_SPANS + half) / R;
-    let cosMin = 1.0 - 0.5 * u * u;
-    if (cosMin < 0) cosMin = 0;
-    if (cosMin > 1) cosMin = 1;
-    const w = this.d.disc.window(centreM[0] / r, centreM[1] / r, centreM[2] / r,
-                                 cosMin);
-    if (w === null || w.count === 0) return null;
-    return { corners: w.corners, count: w.count, truncated: w.truncated,
-      cellSizeM: w.cellSizeM };
+  terrain(centreM: V3, u: V3, v: V3, spanM: number,
+          view: { w: number; h: number }): MapTerrainGrid | null {
+    const t = this.d.terrain;
+    if (t === null) return null;
+    return t.sample(centreM, u, v, spanM, view.w, view.h);
   }
 
   /** Throw away what has been seen. The discovery half of `of.repopulate()`,
@@ -160,7 +130,13 @@ export class MapWorld {
    *  this layer and not that one. DW-17's rule is that the destruction is the
    *  point: a save/load round trip over a field that was never destroyed reads
    *  a number that never left memory. */
-  forget(): void { this.d.disc.forget(); }
+  forget(): void {
+    this.d.disc.forget();
+    // The picture goes with the field it was cut from. Without this the cached
+    // grid would out-live its own survey mask for one repaint, which is exactly
+    // the stale-cache failure the generation counter exists to make impossible.
+    if (this.d.terrain !== null) this.d.terrain.forget();
+  }
 
   readout(): MapDiscoveryReadout {
     const s = this.d.disc.stats();
@@ -181,6 +157,7 @@ export class MapWorld {
       hiddenPatches: this.hidden,
       revealAll: this.d.revealAll(),
       discovery: this.d.disc.report(),
+      terrain: this.d.terrain === null ? null : this.d.terrain.report(),
     };
   }
 }

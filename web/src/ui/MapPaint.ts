@@ -32,10 +32,88 @@ export const SHADE = 'rgba(6, 9, 12, 0.78)', TRACK = '#b6dcf7';
 export const SURFACE = '#2c3740', RIM = '#5b6b77';
 export const AIR = 'rgba(84, 154, 214, 0.17)';
 export const AIR_EDGE = 'rgba(146, 200, 242, 0.62)';
-/** Ground that has been SEEN. Lighter than SURFACE, because the map paints
- *  KNOWLEDGE onto a dark world rather than painting a shroud over a lit one:
- *  there is then no shroud to get wrong and no hole for it to leak through. */
+/** Ground that has been SEEN but not sampled. Lighter than SURFACE, because the
+ *  map paints KNOWLEDGE onto a dark world rather than painting a shroud over a
+ *  lit one: there is then no shroud to get wrong and no hole for it to leak
+ *  through. */
 export const KNOWN = '#3e5164';
+/** SURFACE, as bytes. What lies UNDER the terrain image, so an unpainted sample
+ *  carries this colour at zero alpha and the scaled blit's interpolation fades
+ *  into exactly what is behind it rather than into a black fringe. */
+export const SURFACE_RGB: readonly [number, number, number] = [0x2c, 0x37, 0x40];
+
+/**
+ * BIOME COLOURS, indexed by /core's `Biome` enum, 0..9.
+ *
+ * A COPY BY VALUE of `render/materials/BiomePalette.ts`'s HEX table, and it is
+ * deliberately a copy rather than an import, for the reason every other colour
+ * in this file is copied out of the `--of-*` CSS variables: `src/ui` may not
+ * import three.js (check-limits enforces it mechanically) and the render
+ * palette's module builds `THREE.Color` objects at load. Copying keeps the
+ * painters PURE FUNCTIONS OF THEIR ARGUMENTS, so a probe drawing offscreen gets
+ * the panel's own pixels. The two tables describe the same ten biomes and
+ * should move together; the map is a schematic of the world, not a second
+ * render of it, so a drift here is a cosmetic difference and not a wrong answer.
+ */
+export const BIOME_RGB: readonly (readonly [number, number, number])[] = [
+  [0x14, 0x40, 0x6e], // Ocean
+  [0xc8, 0xb4, 0x8a], // Beach
+  [0x5f, 0x7d, 0x38], // Plains
+  [0x2f, 0x52, 0x30], // Forest
+  [0x6f, 0x73, 0x46], // Hills
+  [0x7c, 0x7a, 0x74], // Mountains
+  [0xe8, 0xee, 0xf2], // Polar
+  [0x8d, 0x85, 0x79], // Regolith
+  [0xa9, 0xa2, 0x94], // MoonHighland
+  [0x5c, 0x57, 0x4e], // CraterFloor
+];
+
+/**
+ * The lightness one terrain sample is painted at: an ELEVATION ramp plus a
+ * HILLSHADE, both normalised to the view's own relief.
+ *
+ * THE ELEVATION RAMP ALONE WAS NOT ENOUGH, and that was found by looking at the
+ * picture rather than at a number (DW-7). A first version returned only
+ * `0.72 + 0.56 * elevT`, which is what a smooth height field honestly looks
+ * like: at a 400 m span the whole view is ONE biome with 44 m of relief across
+ * it, so the map came out a single pale rectangle with a gradient too gentle to
+ * read as ground. Every count said terrain was being drawn and the picture
+ * still said nothing, which is the exact failure DW-37 was raised about.
+ *
+ * A hillshade fixes it because slope, not height, is what the eye reads as
+ * terrain: it is the standard relief map and it is computed from the SAME
+ * heights, so nothing new is claimed about the world. `gx`/`gy` are the height
+ * differences across one sample in SCREEN axes (x right, y down), ALREADY
+ * NORMALISED BY THE VIEW'S OWN TYPICAL SLOPE by the caller.
+ *
+ * THAT NORMALISATION IS THE WHOLE TRICK AND THE FIRST TRY GOT IT WRONG, which
+ * is worth recording because the wrong version looked principled. Dividing the
+ * per-sample rise by the view's total RELIEF is dimensionally fine and useless:
+ * a smooth 44 m of relief spread over 36 samples is 1.2 m a sample, so every
+ * gradient came out near 0.03, every lambert came out near the same number, and
+ * the picture was as blank as the ramp alone had been. Real terrain slopes are
+ * SMALL at map scales - that is why cartographic relief has always used a
+ * vertical exaggeration - so the scale has to come from the view's own typical
+ * slope, not from its height range. Then a 400 m view of a hillside and a
+ * whole-body view of a mountain range light with the same contrast, and neither
+ * has a threshold in it.
+ *
+ * The result is capped at 1.05 rather than allowed to run higher, because the
+ * map is a dark instrument with light text on it and a blown-out ground layer
+ * takes the readout's contrast with it.
+ */
+export function terrainShade(elevT: number, gx: number, gy: number): number {
+  const t = Number.isFinite(elevT) ? Math.max(0, Math.min(1, elevT)) : 0.5;
+  const nx = -(Number.isFinite(gx) ? gx : 0);
+  const ny = -(Number.isFinite(gy) ? gy : 0);
+  const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
+  // Lit from the upper LEFT of the screen, the cartographic convention: the eye
+  // reads the other direction as craters instead of hills.
+  const lam = (nx * -0.55 + ny * -0.55 + 0.63) * inv;
+  const s = Math.max(0, Math.min(1, lam * 1.35));
+  const f = 0.34 + 0.26 * t + 0.52 * s;
+  return f < 0.26 ? 0.26 : f > 1.05 ? 1.05 : f;
+}
 
 export interface XY { x: number; y: number }
 export interface Rect { x: number; y: number; w: number; h: number }

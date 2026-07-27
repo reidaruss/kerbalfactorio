@@ -342,7 +342,7 @@ export class MapMode {
 
     const scene = {
       ...draft, spanM,
-      discovered: w === null ? null : w.shading(foc.centreM, spanM),
+      discovered: w === null ? null : w.terrain(foc.centreM, b.u, b.v, spanM, this.view.size()),
     };
 
     return {
