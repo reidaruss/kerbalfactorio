@@ -50,7 +50,7 @@ the failure this project has paid for six times. See lane B.
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | **all five landed** (GP-36 to GP-40) |
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
 | E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`, then reviewed and hardened** (525 checks green, 1,200 machines cost 8.04 us/sim-tick, 10 defects found by an adversarial pass over an already-green suite); production hook + combat handoff published, see Blockers |
-| F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
+| F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | **all four landed** (FS-26 to FS-29) |
 | G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | **DONE. 9 defects found and fixed (PH-28 to PH-36), 10/10 cold ascents bit-identical, a reload mid-orbit no longer loses the world silently.** See the progress log and Blockers |
 | H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | queued, blocked on flight (owns `ui/`) |
 | I | Player skills, appearance, armour | slots for head/chest/legs/feet, customization | `core/gameplay.h`, `web/src/game/` | **headless layer landed** (GP-41 to GP-43, `core/include/of/progression.h`); client wiring handed to Admin |
@@ -131,6 +131,74 @@ tonight a lane has been stopped by another lane's half-saved file (lane B's
 that says "the app starts".** One driven boot with no probe attached would have
 caught all three in seconds. Lane G's `tools/smoke/reload.mjs` does exactly that
 as its first step and could be lifted into the standard check for nothing.
+
+### Lane F, 2026-07-27: belts
+
+- **Standing rule 10 took this lane's bridge export, and it is the fourth time
+  in two days.** `web/wasm/of_core_api.cpp` (the new `of_net_take_line_item`
+  entry point) and the rebuilt `web/wasm/dist/of-core.{mjs,wasm}` were swept into
+  the world-gen lane's commit `fa7a5fd` / `47210f7` ("WG-28: the mesher was
+  inside out"). Nothing is lost and nothing is broken: the content is correct and
+  on main, and the wasm on main is the one every lane needs, since it carries the
+  flight lane's ABI 8 additions and this lane's together. What is destroyed is
+  again the history's ability to explain itself. **The lane's own commit was
+  built through a temporary index** (`GIT_INDEX_FILE` + `commit-tree` +
+  compare-and-swap `update-ref`), which is why nothing of anyone else's went out
+  under an FS message; that technique is cheap and it is the only one that has
+  actually held all night. Worth promoting from "an option" to the default.
+- **I joined the flight lane's uncommitted ABI 8 rather than bumping to 9, and
+  that was a judgement call worth recording.** When this lane needed a new bridge
+  export, `of_abi_version` in the working tree already read 8 from the flight
+  lane's in-flight vessel/staging/atmosphere additions, while HEAD was at 7.
+  Bumping to 9 would have broken their in-flight client; adding to 8 means one
+  rebuild carries both, which is exactly what lane D advised ("whoever next bumps
+  the ABI should take this with them rather than bumping twice"). The wasm was
+  rebuilt with `-SkipNative` deliberately, so the committed parity fixture was
+  NOT regenerated against another lane's in-flight terrain headers.
+- **Three pre-existing defects in `TransportLine`'s gap accounting, found while
+  adding `takeAt`, NOT fixed, and escalated because fixing any of them changes
+  belt throughput everywhere.** All three were found by an independent
+  hand-derivation of the invariant the header states unconditionally at
+  `factory_sim.h:127`, and the new `takeAt` preserves that invariant exactly in
+  all four of its cases, which is what made them visible by contrast.
+  1. **`popHead` mints one item-spacing of tail room per pop.** It rolls the
+     freed span into `headGap` (correct: the new lead item must still travel it)
+     AND does `tailGap += kItemSpacing` (not correct: nothing at the tail moved).
+     The invariant sum reads `capacityUnits + 64` after one pop. The observable
+     is that a long-running line can accept more items than its own capacity,
+     which now has a visible symptom for the first time because FS-28 draws them.
+  2. **`advance()` spends `headGap` without crediting anything**, so the sum
+     DROPS by `speedUnitsPerTick` per flowing tick. This partly cancels (1),
+     which is presumably why neither has ever been noticed.
+  3. **`tryPushTail` zeroes `tailGap` on the FIRST item regardless of capacity**
+     (`headGap = C - S; tailGap = 0`), so a freshly placed line accepts exactly
+     ONE item until something is removed. This is very likely why the shipped
+     auto-line holds `beltPeakItems` at 1 no matter how fast the drill runs.
+  **(3) is the one to look at first**, because it is the difference between a
+  belt that looks like a belt and a belt that carries one lonely ore. It is not
+  a two-line fix: `tailGap` has to become a derived quantity, or `advance` has to
+  credit the tail, and either changes every throughput number in
+  `factory_sim_tests`, `factory_rails_tests` and the parity fixture. That is a
+  deliberate, measured change with its own gate run, not a 3am edit in a lane
+  about placement and rendering.
+- **`Factory.pick`'s ranking changed and other lanes should know.** It was
+  nearest-along-ray and is now smallest miss-over-radius, because a smelter's
+  1.6 m sphere made every belt beside it unaimable (an aim 0.005 m off a belt
+  centre resolved to the smelter on all seven presses from four standing
+  positions). `probes/demolish.js` and `probes/shortline.js` were re-run green
+  after the change, but anything that aims at a factory building by ray is now
+  ranked differently.
+- **Not a blocker, an ask for the art lane: the belt cargo convention shipped
+  before this lane needed it and every socket was exactly where ASSET-SPECS said
+  it was.** `socket_item_a` / `socket_item` / `socket_item_b` on the straight and
+  both curves, `socket_rest` on all fifteen `Item_*` nodes, and `Item_Crate` as
+  the fallback for anything the atlas does not carry. One runtime detail worth
+  writing into the spec: **GLTFLoader names a node's mesh after the node only
+  when that node has ONE primitive**; a two-material item becomes a Group whose
+  children are `Item_X_0` and `Item_X_1`. An exact-name match therefore loaded
+  fifteen meshes, registered ONE, and drew nothing while reporting `meshes: 15`.
+  The machine templates have always used a `_\d+` suffix tolerance for the same
+  reason and the cargo loader now does too.
 
 ### Lane C, 2026-07-27
 
@@ -555,6 +623,57 @@ _Lanes append a line per landed change: date, lane, what, and the number that pr
 - 2026-07-27 lane A: **armour, four slots**, 904 tris, skinned to the body's own 44-bone rig, rig drift 0.00e+00 at nine poses. Four defects found that were visible only in motion.
 - 2026-07-27 lane A: **`contact_sheet.py`**, stdlib-only PNG tiler with a selftest. It is what showed that the first-person model was one unbroken white shape, which no single render says.
 
+
+- **2026-07-27, lane F, `c2d8e69`: belts behave like Factorio's (FS-26 to FS-29).**
+  Reid's three belt items, and the first one overrules a call an earlier lane made.
+  **R AFTER PLACEMENT (FS-27), and what it cost to reconcile.** `FactoryCommit.pitchRuns`
+  re-derived every tile's heading from its run's geometry on every commit, so a turn
+  survived until the next commit and FS-18 responded by withdrawing the key rather than
+  the overwrite. The two halves were never the same quantity: the heading splits into the
+  tangent YAW (which of four site axes) and the PITCH out of that plane, the yaw is the
+  player's and is never written there, the pitch is the ground's and is all `pitchRuns`
+  writes. **For a dragged run the output is unchanged by construction**, because
+  `dragRun` already refaces each tile at its successor, and that is the property FS-18 was
+  protecting: **7 tiles, 1 run**, asserted before and after every turn. **R measures
+  `cosToOld` 0 exactly, read back after the commit that used to overwrite it**, and the
+  run answered by splitting 1 into 2, which is a corner appearing where the player put one.
+  R with an empty hand turns what is under the crosshair; with a part in hand it turns the
+  ghost.
+  **SNAPPING (FS-26).** New `FactorySnap.ts` reads `socket_belt_in/out` and
+  `socket_item_in/out` off the shipped `.glb` files once at load, exactly as `StructureSnap`
+  does for decks, and the ghost offers its ground hit to it BEFORE flooring into a cell.
+  **Belt to belt 9.245e-7 m** socket to mating socket, which are coincident by construction
+  and therefore only near zero if the client and the assets agree. **Belt to machine 2.000 m
+  centre to centre and WIRED head-to-smelter**, which is the acceptance that matters.
+  Residual named rather than hidden: a **0.500 m** edge gap, the honest cost of a 2 m
+  machine on the deliberately-1 m `MACHINE_TILE_M`.
+  **CARGO (FS-28).** `BeltCargo.ts` instances the art lane's item meshes along each near
+  line's published `socket_item_a`/`socket_item`/`socket_item_b` path, at LOD 0 only, from
+  the one O(items) call the section 6 contract has always described and **nobody had ever
+  called**. DW-8 is untouched: belt motion is still one shader-driven flow row per line and
+  there is no `AnimationMixer` anywhere. **The instance answer: the whole layer is ONE
+  BatchedMesh, so it costs a FIXED +4 draw calls (45 to 49) however many items are on
+  screen.** Measured 1 item over 3 tiles = 0.333 per tile, 0 skipped, 49 draws, 503,474
+  triangles; the 768-item frame budget is 192 saturated tiles and at 120 tris per item is
+  92,160 triangles, **3.4% of the 2.7 M alert**. **Taking one off conserves: 4 taken,
+  4 gained, 0 spilled**, with `beltTakeAttempts` at 22 proving the aim reached a belt at
+  all rather than a zero that could mean either thing.
+  **FIVE DEFECTS THE PROBES FOUND, four of them in this change**: the snap steered a DRAG
+  and laid a run's first tile behind its own start; a snapped press did not seed the drag's
+  reversal guard, so holding walked straight back; the STICKY rotate state was applied on
+  top of a snapped heading, silently reversing every snap after any R press; and a smelter
+  could catch a belt's INLET and land two cells upstream on the drill's cell. **The fifth
+  is the one worth reading (FS-29): `chainRuns` emitted ZERO runs for a pure cycle**, so
+  two belts facing each other existed, were drawn, were never placed in /core, and turned
+  48 mined ore into 0 iron over 1,200 ticks with `runs: []` the only clue. FS-27 made it
+  reachable rather than causing it. `Factory.pick` also changed from nearest-along-ray to
+  smallest miss-over-radius, because a smelter's 1.6 m sphere made every belt beside it
+  unaimable: an aim **0.005 m** off a belt's centre resolved to the smelter on all seven
+  presses from four standing positions.
+  Gates: **29/29 ctest** (594 checks in `factory_sim_tests`), self-determinism **119/119**,
+  cross-toolchain exact **108/108**, `npm run check` clean at **166 files**, and
+  `autoline`, `beltsnap`, `beltcurve`, `shortline` and `demolish` all green. Screenshots
+  `docs/screenshots/W11_belt_snap.png` and `W11_belt_cargo.png`.
 
 - **2026-07-27, lane D — the power model (FS-20 to FS-23).** New
   `core/include/of/power.h` (poles, wire reach, supply areas, union-find network
