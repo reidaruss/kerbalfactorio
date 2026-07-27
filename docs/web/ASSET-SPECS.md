@@ -1,23 +1,26 @@
 # Orbital Foundry: 3D Asset Specs and Blender Authoring Pipeline
 
 **Owner:** ART-PIPELINE agent. **Date:** 2026-07-26. **Status:** **THE ART
-MANIFEST IS COMPLETE**, plus the base-building set added 2026-07-26: 46 of 46
-files green under `validate_glb.py --all`, and a full rebuild of every
-`build_*.py` produces a **zero-byte diff**, so the pipeline is proven
-deterministic end to end.
+MANIFEST IS COMPLETE**, and on 2026-07-26 it absorbed two design decisions:
+DW-29's vessel catalogue (**BT-12**, two diameter classes, 24 parts) and DW-32's
+4 m structural module (**BT-11**, plus the support pillar). 47 of 47 files green
+under `validate_glb.py --all`, all joints exact under `check_mating.py`, and a
+full rebuild of every `build_*.py` produces a **zero-byte diff**, so the pipeline
+is proven deterministic end to end.
 
 | Tier | Files | Meshes | Payload |
 |---|---|---|---|
 | 0: the playable loop | 27 | 40 base (83 counting depletion variants) | 1.8 MB |
-| 0: base building (added 2026-07-26) | 4 | 4 parts, 13 render meshes | 59 KB |
+| 0: base building (4 m module, 2026-07-26) | 5 | 8 parts, 17 render meshes | 92 KB |
 | 1: biome scatter props | 10 | 41 props, 78 render meshes with LOD2 | 367 KB |
-| 2: space | 5 | 18 parts, 28 render meshes | 372 KB |
-| **Total `dist/`** | **46** | | **2.48 MB** |
+| 2: space and vessels | 5 | 28 parts, 38 render meshes | 529 KB |
+| **Total `dist/`** | **47** | **289 render mesh nodes** | **2.67 MB** |
 
 Tier 0 is 13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged
-player body, the first-person arms and the 4-part structural building set.
-Tier 1 is one scatter atlas per biome. Tier 2 is the 13 rocket parts, the launch
-pad, the landed lander, the far-scene body sphere and the engine plume shell.
+player body, the first-person arms and the 5-file structural building set.
+Tier 1 is one scatter atlas per biome. Tier 2 is the 24-part vessel catalogue,
+the launch pad, the landed lander, the far-scene body sphere and the engine
+plume shell.
 
 This is the buildable half of the art direction. It says exactly **what** models the
 game needs, **how big** each one is, and **how** an agent produces one so that it
@@ -205,10 +208,29 @@ propagates without a code change.
 
 | Socket | Meaning |
 |---|---|
-| `socket_top` | the plane the NEXT module's origin sits on. On a deck that is its walkable surface (`y = 0.50`); on a wall or door it is the head (`y = 2.50`), which is the base plane of the deck above |
+| `socket_top` | the plane the NEXT module's origin sits on. On a deck that is its walkable surface (`y = 0.50`); on a wall or door it is the head (`y = 3.50`), which is the base plane of the deck above. On a `PillarFoot` it is where the shaft base goes |
 | `socket_edge_n/e/s/w` | a deck's four edge midpoints, **on the deck top**. This is exactly where a wall's origin goes, so "put a wall on this foundation's north edge" is one `getObjectByName` and one assignment. Each faces outward |
 | `socket_end_l`, `socket_end_r` | a wall's two end faces, for collinear continuation: a wall run walks `socket_end_r` to the next wall's origin |
 | `socket_hinge` | the door's hinge axis, on the left jamb's inner face |
+| `socket_deck` | a `PillarHead`'s top: where the underside of the foundation it supports sits |
+
+**Added 2026-07-26 for the DW-29 vessel catalogue.** Three more, and they exist
+because two diameter classes and radially carried parts are both things the
+1.25 m single-class contract had no way to say.
+
+| Socket | Meaning |
+|---|---|
+| `socket_radial_out` | on a `RadialDecoupler` only: the far face of the standoff, where a radially carried part's own hull lands. Its X coordinate **is** the published hull-to-hull gap, so nothing re-derives it |
+| `socket_radial_attach` | on a part that is CARRIED radially rather than surface-mounted (the solid booster): a point on the part's OWN hull, facing inboard. It mates with `socket_radial_out` under the same anti-parallel rule a stack joint uses |
+| `socket_dock` | a docking port's capture plane. Co-located with that part's `socket_stack_top`, because a dock face genuinely is a mating plane, and named separately because docking is a different operation from assembly |
+
+**Stack sockets now carry their diameter class in `of_role`**: `stack_top_s`,
+`stack_bottom_s`, `stack_top_l`, `stack_bottom_l`. That is not decoration. With
+one class, "does this mate" was answered by the anti-parallel dot product alone;
+with two, a 2.50 m decoupler will happily land on a 1.25 m tank and the dot
+product will approve it. `StackAdapter` is the part that makes the distinction
+unavoidable, since it carries `stack_bottom_l` and `stack_top_s` on the same
+part, and it is exactly the case a per-part class lookup would get wrong.
 
 **Socket names are scoped to the PART, not to the file** (Tier 2 only, and only
 in `rocket_parts.glb`). Thirteen parts each carry a `socket_stack_top`, so the
@@ -398,24 +420,27 @@ Two build-UX meshes are **generated in code, not authored**: the 1 m^3 voxel dig
 marker (`BoxGeometry` + `EdgesGeometry`) and the placement ghost (the machine's own
 LOD0 with a ghost material). Do not model them.
 
-#### Base building structures (4 files). **Built 2026-07-26.**
+#### Base building structures (5 files). **Built 2026-07-26, rescaled to a 4 m module the same day (DW-32 / BT-11).**
 
 | # | Asset | File | Anchor | Module (m) | Tris | LODs | Anim |
 |---|---|---|---|---|---|---|---|
-| 27 | Foundation | `structures/foundation.glb` | cell centre | **1 x 1 x 0.50** | 84 | 3 | none |
-| 28 | Floor / ceiling | `structures/floor.glb` | cell centre | **1 x 1 x 0.50** | 84 | 3 | none |
-| 29 | Wall | `structures/wall.glb` | cell **edge** | **1 x 0.25 x 2.50** | 84 | 3 | none |
-| 30 | Door | `structures/door.glb` | cell **edge** | **1 x 0.25 x 2.50** | 96 | 3 + leaf | swing |
+| 27 | Foundation | `structures/foundation.glb` | cell centre | **4 x 4 x 0.50** | 108 | 3 | none |
+| 28 | Floor / ceiling | `structures/floor.glb` | cell centre | **4 x 4 x 0.50** | 132 | 3 | none |
+| 29 | Wall | `structures/wall.glb` | cell **edge** | **4 x 0.25 x 3.50** | 108 | 3 | none |
+| 30 | Door | `structures/door.glb` | cell **edge** | **4 x 0.25 x 3.50** | 216 | 3 + leaf | swing |
+| 31 | Support pillar | `structures/pillar.glb` | assembled | foot 1.20, shaft **1.00 scalable**, collar 0.70, head 1.00 | 100 / 28 / 56 / 52 | 1 | none |
 
-Full spec in section 4.23. These are the first Tier-0 assets with **no referent
-in the headless headers**: `automation.h`'s `BuildKind` has no structural kinds
-and `gameplay.h` has no structural items, so they were built on Reid's direct
-request and are logged as decision **BT-9**. They need `BuildKind` values, item
-ids and `TypeId`s before a player can select one, which is a gameplay and
-factory-sim decision rather than an art one.
+Full spec in sections 4.23 (the module) and 4.24 (the pillar). These are the
+first Tier-0 assets with **no referent in the headless headers**:
+`automation.h`'s `BuildKind` has no structural kinds and `gameplay.h` has no
+structural items, so they were built on Reid's direct request and are logged as
+decision **BT-9**. `survival::StructureKind` has since appeared on the `/core`
+side, but costs and recipes are still a gameplay call, and the rescale makes
+that call urgent: a 4 m foundation covers **sixteen times** the ground a 1 m one
+did, so leaving the price alone silently divides the cost of a base by 16.
 
 **There is no `ceiling.glb`, deliberately.** Storey N's ceiling is storey N+1's
-floor: the same part, the same origin, placed at `y = 3(N+1)`. Shipping a second
+floor: the same part, the same origin, placed at `y = 4(N+1)`. Shipping a second
 flipped file would double the payload to make the same picture.
 
 ### 3.2 Tier 1: richness (10 files, 41 props). **Built 2026-07-25.**
@@ -517,61 +542,147 @@ nothing.
 
 | File | Parts | Tris (render) | Mats | KB |
 |---|---|---|---|---|
-| `rocket/rocket_parts.glb` | 13 parts, 15 meshes | 3264 | 7 | 151 |
+| `rocket/rocket_parts.glb` | **24 parts, 26 meshes** | see 3.3 | 7 | see 3.3 |
 | `rocket/launch_pad.glb` | pad + clamp, 6 meshes | 1000 | 6 | 65 |
 | `rocket/lander_landed.glb` | 1 assembly, 3 meshes | 2580 | 7 | 119 |
 | `rocket/vfx_engine_plume.glb` | 1 mesh | 142 | 1 | 5 |
 | `world/body_sphere_lod.glb` | 1 sphere, 3 meshes | 1680 | 1 | 32 |
 
-#### The stack contract
+#### The stack contract, in TWO diameter classes (DW-29 / BT-12)
 
-This is what the engine binds to, and everything else in Tier 2 composes out of
-it. It lives in code in `tools/blender/rocket_common.py` and is checked per
-part by `contracts.json`'s `part_sockets` block.
+This is what the assembly UI binds to, and everything else in Tier 2 composes
+out of it. It lives in code in `tools/blender/rocket_common.py` and is checked
+per part by `contracts.json`'s `part_sockets` block, then measured on the
+shipped bytes by `tools/blender/check_mating.py`.
+
+| Class | Diameter | R | Segments | Barrel R |
+|---|---|---|---|---|
+| **S** | **1.25 m** | 0.625 | 16 | 0.600 |
+| **L** | **2.50 m** | 1.250 | 24 | 1.200 |
+
+**Two classes and no more, and L is exactly 2 S.** Two is the smallest number
+that lets a vessel have a first stage wider than its payload, which is the
+entire reason staging reads as staging rather than as a longer tube. A third
+class would double the catalogue to buy a size nobody has asked for. The exact
+factor of 2 is not cosmetic either: it keeps every radial attachment sum in
+whole millimetres and makes the adapter a single frustum rather than a fudge.
 
 | Rule | Value |
 |---|---|
-| Stack diameter | **1.25 m exactly** (R = 0.625), on every stack part |
 | Stack axis | Blender **+Z**, which is three.js **+Y**: a vessel assembles up the world up axis and needs no rotation to stand on a pad |
 | Stack part origin | its **bottom mating plane**, centred on the axis: `pivot_mode: "ground"`, the same rule a machine obeys |
 | `socket_stack_bottom` | always local `(0, 0, 0)`, facing three.js **-Y** (down, away from the part) |
 | `socket_stack_top` | local `(0, H, 0)` in three.js axes, facing **+Y** (up, away from the part) |
-| To stack B on A | `B.position = A.position + A.socket_stack_top.position`. No per-part offset table exists anywhere |
-| Mating test | two mated sockets are **anti-parallel**, so "do these faces mate" is a dot product rather than a naming convention |
-| Terminators | an **engine** has no `socket_stack_bottom` and a **nose cone** has no `socket_stack_top`: they end a stack |
+| To stack B **above** A | `B.position = A.position + A.socket_stack_top.position`. No per-part offset table exists anywhere |
+| To hang B **below** A | `B.position = A.position - B.socket_stack_top.position`. This is how an engine attaches, and it is the same socket |
+| Mating test | two mated sockets are **anti-parallel**, so "do these faces mate" is a dot product. With two classes that is **necessary but no longer sufficient**: the `of_role` class suffix must also agree, or a 2.50 m decoupler will happily land on a 1.25 m tank and every geometric test will approve it |
+| Terminators | an **engine** and a **solid booster** have no `socket_stack_bottom`, because nothing may ever be bolted under a bell; a **nose cone** has no `socket_stack_top`. They end a stack. A terminator may still be PLACED on a `socket_stack_top`, with its bell firing away from the joint, and that placement is exactly what an interstage is |
+| Class change | **only** `StackAdapter`, which carries `stack_bottom_l` and `stack_top_s`. It is what makes two classes one catalogue instead of two disjoint ones |
 | Radial parts | origin on the **mount plane**, body extending three.js **+X**. Attach with `position = (R cos a, y, R sin a)` and `rotateY(-a)`; `pivot_mode: "none"`, because neither `ground` nor `centre` describes a part whose origin is on its own side face |
+| Radially CARRIED parts | a solid booster is a stack part held off the hull by a `RadialDecoupler`. Its `socket_radial_attach` (on its own hull, facing inboard) meets the decoupler's `socket_radial_out`. Centre-to-centre distance is `R_host + 0.30 + R_part`, and the 0.30 is read off the socket, never typed |
 
-**Why 16 segments.** A polygon whose segment count is divisible by 4 puts
-vertices exactly on ±X and ±Y, so a 16-gon of radius 0.625 measures exactly
-1.25 x 1.25. A 14-gon of the same radius measures 1.250 x 1.244 and misses the
-dimension check by 6 mm. The cargo bay proved it on the first build: hinge rods
-at 0.585 with a 0.05 radius pushed the box to 1.27.
+**Why the segment count is always divisible by 4.** A polygon whose segment
+count is divisible by 4 puts vertices exactly on ±X and ±Y, so a 16-gon of
+radius 0.625 measures exactly 1.25 x 1.25 and a 24-gon of radius 1.250 measures
+exactly 2.50 x 2.50. A 14-gon of radius 0.625 measures 1.250 x 1.244 and misses
+the dimension check by 6 mm. The cargo bay proved it on the first build: hinge
+rods at 0.585 with a 0.05 radius pushed the box to 1.27.
 
-Barrels are built at **0.600** and the collars at **0.625**, so the mating
-diameter is carried by the rings and a stringer standing proud of the barrel
-can never touch the bounding box.
+Barrels are built one class step inside the collars (0.600 against 0.625, 1.200
+against 1.250), so the mating diameter is carried by the rings and a stringer
+standing proud of the barrel can never touch the bounding box.
 
-#### The 13 parts
+**A mating face is built with the segment count of the class it presents.**
+This is the second rule the two-class contract needed, and it cost three
+defects on the day the catalogue was built. A 16-gon and a 24-gon of the *same
+circumradius* do not have the same surface: their inradii are 0.6011 and
+0.6146, so between those radii each pokes through the other at alternating
+azimuths and the joint renders as a sawtooth ring. It passes every other check
+in this document, because the bounding box is set by the circumradius and the
+mating PLANE is still exact. `check_mating.py`'s coaxial pass now asserts it
+mechanically over every shipped file (section 7.4).
 
-Dimensions are three.js axes (X right, Y up, Z forward), metres.
+#### The 24 parts
 
-| Part | Dims | Tris | Pivot | Sockets |
+Dimensions are three.js axes (X right, Y up, Z forward), metres. `Cls` is the
+diameter class the part's mating faces present. **This table is the assembly
+UI's interface**: part name, class, envelope, and every socket with its exact
+local position.
+
+**Class S stack parts** (R 0.625, 16 segments). `socket_stack_bottom` is at
+`(0,0,0)` on all of them except the two terminators.
+
+| Part | DW-29 role | Dims | Tris | `socket_stack_top` | Other sockets |
+|---|---|---|---|---|---|
+| `CommandPod` | command pod | 1.25 x 2.50 x 1.25 | 392 | `(0, 2.50, 0)` | `socket_hatch (0.50, 1.15, 0)` |
+| `LiquidTankSmall` | liquid tank, small | 1.25 x 2.00 x 1.25 | 288 | `(0, 2.00, 0)` | |
+| `LiquidTankSmallLong` | liquid tank, small long | 1.25 x 4.00 x 1.25 | 348 | `(0, 4.00, 0)` | |
+| `LiquidEngineSmall` | liquid engine, small | 1.25 x 1.60 x 1.25 | 512 | `(0, 1.60, 0)` | `socket_muzzle (0,0,0)`; **no bottom** |
+| `EngineVacuumSmall` | vacuum engine (`vessel.h` 0x0104) | 1.25 x 1.00 x 1.25 | see below | `(0, 1.00, 0)` | `socket_muzzle (0,0,0)`; **no bottom** |
+| `StackDecouplerSmall` | stack decoupler | 1.25 x 0.25 x 1.25 | 312 | `(0, 0.25, 0)` | |
+| `NoseCone` | nose cone | 1.25 x 1.20 x 1.25 | 360 | **none** | |
+| `Parachute` | parachute | 1.25 x 0.75 x 1.25 | 288 | `(0, 0.75, 0)` | `socket_chute (0, 0.75, 0)` |
+| `CargoBay` | (extra) | 1.25 x 1.60 x 1.25 | 284 | `(0, 1.60, 0)` | |
+| `SolidBooster` | solid booster | 1.25 x 6.00 x 1.25 | 428 | `(0, 6.00, 0)` | `socket_muzzle (0,0,0)`, `socket_radial_attach (-0.625, 3.00, 0)`; **no bottom** |
+| `MonopropTank` | monopropellant tank | 1.25 x 1.00 x 1.25 | 280 | `(0, 1.00, 0)` | |
+| `ReactionWheel` | reaction wheel | 1.25 x 0.40 x 1.25 | 276 | `(0, 0.40, 0)` | |
+| `Battery` | battery | 1.25 x 0.60 x 1.25 | 336 | `(0, 0.60, 0)` | |
+| `DockingPort` | docking port | 1.25 x 0.30 x 1.25 | 304 | `(0, 0.30, 0)` | `socket_dock (0, 0.30, 0)` |
+
+**Class L stack parts** (R 1.250, 24 segments).
+
+| Part | DW-29 role | Dims | Tris | `socket_stack_top` | Other sockets |
+|---|---|---|---|---|---|
+| `LiquidTankLarge` | liquid tank, large | 2.50 x 4.00 x 2.50 | 556 | `(0, 4.00, 0)` | |
+| `LiquidEngineLarge` | liquid engine, large | 2.50 x 2.60 x 2.50 | 544 | `(0, 2.60, 0)` | `socket_muzzle (0,0,0)`; **no bottom** |
+| `StackDecouplerLarge` | stack decoupler | 2.50 x 0.35 x 2.50 | 488 | `(0, 0.35, 0)` | |
+| `StackAdapter` | (added, see below) | 2.50 x 1.00 x 2.50 | 432 | `(0, 1.00, 0)` **class S** | bottom is **class L** |
+
+**Radial parts** (`pivot: none`, origin on the mount plane, body extending +X).
+
+| Part | DW-29 role | Dims | Tris | Sockets |
 |---|---|---|---|---|
-| `CommandPod` | 1.25 x 2.50 x 1.25 | 392 | ground | stack top/bottom, `socket_hatch` |
-| `TankSmall` | 1.25 x 2.00 x 1.25 | 288 | ground | stack top/bottom |
-| `TankLarge` | 1.25 x 4.00 x 1.25 | 348 | ground | stack top/bottom |
-| `EngineMain` | 1.25 x 1.60 x 1.25 | 512 | ground | stack top, `socket_muzzle` |
-| `Decoupler` | 1.25 x 0.25 x 1.25 | 312 | ground | stack top/bottom |
-| `NoseCone` | 1.25 x 1.20 x 1.25 | 360 | ground | stack bottom |
-| `Parachute` | 1.25 x 0.75 x 1.25 | 288 | ground | stack top/bottom, `socket_chute` |
-| `CargoBay` | 1.25 x 1.60 x 1.25 | 284 | ground | stack top/bottom |
-| `EngineVernier` | 0.36 x 0.43 x 0.28 | 96 | none | radial mount, `socket_muzzle` |
-| `Fin` | 0.85 x 1.10 x 0.10 | 24 | none | radial mount |
-| `RcsBlock` | 0.245 x 0.50 x 0.50 | 136 | none | radial mount |
-| `LandingLeg` | 0.20 x 0.42 x 0.34 yoke + 0.43 x 2.56 x 0.48 strut | 24 + 92 | none | radial mount, `socket_leg_foot` |
-| `SolarPanel` | 0.18 x 0.30 x 0.44 mount + 0.065 x 1.26 x 0.56 array | 24 + 84 | none | radial mount |
+| `RadialDecoupler` | radial decoupler | 0.30 x 0.60 x 0.36 | 96 | `socket_radial_mount (0,0,0)`, `socket_radial_out (0.30, 0, 0)` |
+| `EngineVernier` | (extra) | 0.36 x 0.43 x 0.28 | 96 | radial mount, `socket_muzzle (0.22, -0.30, 0)` |
+| `Fin` | (extra, DW-30 aero) | 0.85 x 1.10 x 0.10 | 24 | radial mount |
+| `RcsBlock` | RCS thruster block | 0.245 x 0.50 x 0.50 | 136 | radial mount |
+| `LandingLeg` | landing legs | 0.20 x 0.42 x 0.34 yoke + 0.43 x 2.56 x 0.48 strut | 24 + 92 | radial mount, `socket_leg_foot (0.26, 2.42, 0)` |
+| `SolarPanel` | solar panel | 0.18 x 0.30 x 0.44 mount + 0.065 x 1.26 x 0.56 array | 24 + 84 | radial mount |
 
-They land at 24 to 512 triangles against the "300 to 1400 each" this section
+**`EngineVacuumSmall` exists to be told apart from `LiquidEngineSmall`, and
+that is its entire art brief.** A player choosing between a sea-level and a
+vacuum engine is the point of shipping both, and physics measured the choice at
+about 970 m/s of upper-stage delta-v, so the difference has to be legible in
+silhouette from across the assembly view rather than in a tooltip. The
+sea-level engine is a compact shrouded package with a 0.58 exit and a turbopump
+box; the vacuum engine is shorter (1.00 m against 1.60), wider at the mouth
+(0.615, as wide as class S allows) and has **no aerodynamic shrouding at all**,
+so its thrust structure is an exposed open frame. It never flies through
+atmosphere, so it has nothing to hide behind, and the real-world contrast is
+free silhouette information.
+
+**Part ids belong to `core/include/of/vessel.h`, not to this document.** The
+binding between the two is the ASSET NAME: `PartDef::asset` names the glb nodes
+in the tables above, and a ctest on the physics side asserts every stack part
+measures exactly 1.25 or 2.50 m across, because 1.24 would mate visually and
+leave a seam. **A silent dimension change here now breaks a test rather than
+only a render**, which is the right way round.
+
+**`StackAdapter` is an addition to the DW-29 list, and it is a consequence of
+the list rather than an extension of it.** DW-29 asks for tanks and engines "in
+two sizes"; the moment those two sizes are two DIAMETERS, a vessel with a wide
+first stage and a narrow payload has no legal joint anywhere in the catalogue,
+and the two classes are two separate games. One frustum fixes that, and it is
+the only part in the file whose two ends differ. Flagged to Admin for
+reconciliation with `core/include/of/vessel.h`.
+
+**Lengths did not double with the class.** `StackDecouplerLarge` is 0.35 m and
+not 0.50: a joint gets wider when the vessel does, it does not get taller. Only
+diameters carry the class factor; heights are chosen per part. This is the same
+rule the structural module follows in section 4.23, where the plan module
+scaled x4 and the deck thickness did not move at all.
+
+They land at 24 to 556 triangles against the "300 to 1400 each" this section
 used to ask for. The budget is a ceiling, not a quota, and a tank genuinely is
 a tube with three rings on it.
 
@@ -1411,30 +1522,48 @@ if the wall height and the deck thickness are typed separately into four files,
 the storey pitch is a number nobody owns and it drifts the first time somebody
 nudges a wall.
 
-#### The module
+#### The module. **Rescaled 1 m to 4 m on 2026-07-26 (DW-32 / BT-11).**
 
-| Constant | Value | Meaning |
-|---|---|---|
-| `CELL` | **1.00 m** | plan module, matching `kVoxelSizeM = 1.0` and the 1x1 machines |
-| `DECK_H` | **0.50 m** | foundation, floor and ceiling are ONE thickness |
-| `WALL_H` | **2.50 m** | wall height, deck top to next deck base; clear head height |
-| `WALL_T` | **0.25 m** | wall thickness, centred on the cell edge |
-| `STOREY` | **3.00 m** | `DECK_H + WALL_H`, asserted at import time |
+| Constant | Value | Was | Meaning |
+|---|---|---|---|
+| `CELL` | **4.00 m** | 1.00 | plan module. Four whole voxel cells (`kVoxelSizeM = 1.0`) and four 1x1 machines across |
+| `DECK_H` | **0.50 m** | 0.50 | foundation, floor and ceiling are ONE thickness |
+| `WALL_H` | **3.50 m** | 2.50 | wall height, deck top to next deck base; clear head height |
+| `WALL_T` | **0.25 m** | 0.25 | wall thickness, centred on the cell edge |
+| `STOREY` | **4.00 m** | 3.00 | `DECK_H + WALL_H`, asserted at import time |
 
-Level N's deck base is at `y = 3N` for every N, with no accumulated error and no
-per-level offset. That identity is why the deck is 0.50 and not 0.25: a thinner
-floor would put the storey pitch at two different values depending on which one
-you were standing on.
+**Only the PLAN module scaled, and that is the whole re-derivation.** `DECK_H`
+and `WALL_T` are person-and-structure-scale numbers, fixed by what a deck and a
+wall physically are rather than by how wide the bay is. Multiplying them by four
+would have given a 2 m thick slab and a 1 m thick partition, which is a bunker.
+A 4 x 4 x 0.50 deck is an 8:1 slab, which is what a real 4 m span looks like.
+`WALL_H` rose to 3.50 because a 4 m wide bay with a 2.5 m ceiling reads squat,
+and because it lands the new identity:
+
+> **`STOREY` now EQUALS `CELL` at 4.00 m.** The plan lattice and the vertical
+> lattice are one number, so a deck base sits on `y = 4N`, a wall run on
+> `x = 4k`, and both are whole multiples of the 1 m voxel grid. Level N's deck
+> base is at `y = 4N` for every N, with no accumulated error and no per-level
+> offset. `structure_common.py` asserts both `DECK_H + WALL_H == STOREY` and
+> `STOREY == CELL` at import; deleting either assert is a design decision, not
+> a fix.
+
+That identity is also why the deck is 0.50 and not 0.25: a thinner floor would
+put the storey pitch at two different values depending on which one you were
+standing on.
+
+Everything a base is built from now costs a sixteenth of the pieces it used to.
+A 20 x 20 m platform was 400 foundations; it is 25.
 
 #### The two anchors
 
 Structural parts do not all snap to the same thing, and pretending they do is
 where a build system goes wrong:
 
-| Family | Anchor | Snap rule (three.js axes) |
+| Family | Anchor | Snap rule (three.js axes, `C` = `CELL`) |
 |---|---|---|
-| deck (`foundation`, `floor`) | cell **centre** | `(floor(x) + 0.5, deckY, floor(z) + 0.5)` |
-| wall (`wall`, `door`) | cell **edge midpoint**, straddled | X-running: `(floor(x) + 0.5, deckY + 0.5, round(z))`, yaw 0. Z-running: `(round(x), deckY + 0.5, floor(z) + 0.5)`, yaw 90 degrees |
+| deck (`foundation`, `floor`) | cell **centre** | `((i + 0.5)C, deckY, (j + 0.5)C)` |
+| wall (`wall`, `door`) | cell **edge midpoint**, straddled | X-running: `((i + 0.5)C, deckY + DECK_H, jC)`, yaw 0. Z-running: `(iC, deckY + DECK_H, (j + 0.5)C)`, yaw 90 degrees |
 
 Both still obey section 2.1 exactly: pivot centred in X/Z, base on `y = 0`. A
 wall is centred on its own origin across its 0.25 m thickness, so putting that
@@ -1443,16 +1572,23 @@ and what makes four walls close exactly around one foundation.
 
 #### The tiling, measured
 
-Measured off the shipped `.glb` files by walking the node hierarchy, not
-asserted. All values are exact to the printed precision.
+Measured off the shipped `.glb` files by `tools/blender/check_mating.py`, which
+walks the node hierarchy and transforms accessor bounds into world space. Not
+asserted, and not read back from `structure_common.py`. All values are exact to
+the printed precision.
 
 | Claim | Evidence |
 |---|---|
-| decks tile in a row | cells 0..3 occupy `x` `[0,1] [1,2] [2,3] [3,4]`; gap between neighbours `+0.000000000 m` |
-| walls tile in a row | same, `[0,1] [1,2] [2,3] [3,4]`; gap `+0.000000000 m` |
-| four walls enclose one foundation | foundation `x[0,1] z[0,1]`; S wall `z[-0.125, +0.125]`, N wall `z[0.875, 1.125]`, W wall `x[-0.125, +0.125]`, E wall `x[0.875, 1.125]`. Clear interior **0.750 x 0.750 m** |
-| a wall reaches the deck it stands on | foundation top `y = 0.500`; wall base `y = 0.500`, wall top `y = 3.000` = next deck base. Storey pitch **3.000 m exact** |
-| a door drops into a wall cell | `wall` and `door` LOD0 AABBs are both `[1.0, 2.50, 0.25]`, identical to 1e-9 |
+| decks tile in a row | cells 0..3 occupy `x` `[0,4] [4,8] [8,12] [12,16]`; gap between neighbours `+0.000000000 m` |
+| walls tile in a row | same spans; gap `+0.000000000 m` |
+| four walls enclose one foundation | foundation `x[0,4] z[0,4]`; S wall `z[-0.125, +0.125]`, N wall `z[3.875, 4.125]`, W wall `x[-0.125, +0.125]`, E wall `x[3.875, 4.125]`. Clear interior **3.750 x 3.750 m** |
+| a wall reaches the deck it stands on | foundation top `y = 0.500`; wall base `y = 0.500`, wall top `y = 4.000` = next deck base. Storey pitch **4.000 m exact** |
+| the floor doubles as the ceiling | `floor` placed at `y = STOREY` meets the wall head at `+0.000000000 m` |
+| a door drops into a wall cell | `wall` and `door` LOD0 AABBs are both `[4.0, 3.50, 0.25]`, identical to 1e-9 |
+
+The corner overlap is **unchanged at 0.125 x 0.125 m**, precisely because
+`WALL_T` did not scale. A wall on a foundation edge still puts 0.125 m on the
+deck and 0.125 m overhanging.
 
 **Collinear parts touch, perpendicular parts interpenetrate.** Two walls in a
 row share the plane `x = k` exactly: zero gap, zero overlap, and no z-fighting,
@@ -1471,7 +1607,7 @@ a slab edge looks like.
 
 #### The parts
 
-**`structures/foundation.glb`** - 1 x 1 x 0.50 m, 84 / 24 / 12 tris.
+**`structures/foundation.glb`** - 4 x 4 x 0.50 m, 108 / 24 / 12 tris.
 A poured stone pad on a stepped footing, edged with a steel kerb. The kerb is
 not decoration: it is what makes the tile boundary legible, so a 20 x 20 m
 platform reads as a grid of placed modules rather than one grey sheet. Only the
@@ -1480,8 +1616,9 @@ so two neighbours meet on the kerb line and show a shallow reveal below it.
 Materials (3): `OF_Rock`, `OF_RockDark`, `OF_SteelDark`. Collision `col_Foundation`.
 Sockets `socket_top`, `socket_edge_n/e/s/w`. No clips.
 
-**`structures/floor.glb`** - 1 x 1 x 0.50 m, 84 / 36 / 12 tris. **Also the ceiling.**
-A steel deck plate on a perimeter beam frame with two cross ribs. The ribs are on
+**`structures/floor.glb`** - 4 x 4 x 0.50 m, 132 / 60 / 12 tris. **Also the ceiling.**
+A steel deck plate on a perimeter beam frame with a 3 x 3 waffle of ribs (two
+cross ribs at 1 m read as sparse across a 4 m span). The ribs are on
 the UNDERSIDE and the plate on top because the part is authored to be seen from
 both sides at once: plate from above, structure from below. Distinct from the
 foundation on purpose - stone-and-kerb means ground, steel-and-beam means
@@ -1489,24 +1626,45 @@ suspended, and a player should be able to tell from the material alone whether
 the thing under their feet is on soil or over a drop.
 Materials (2): `OF_Steel`, `OF_SteelDark`. Collision `col_Floor`. Same five sockets.
 
-**`structures/wall.glb`** - 1 x 0.25 x 2.50 m, 84 / 60 / 12 tris.
-A framed panel, not a slab: two full-depth corner posts, bottom and top rails, a
-centre stile and a mid rail, with the `OF_Steel` field recessed 45 mm behind the
-`OF_SteelDark` frame on both faces. All the cost is in that one depth step, and
-it is what makes a 2.5 m wall read as built rather than extruded from 1 m away,
-which is where the player is standing.
+**`structures/wall.glb`** - 4 x 0.25 x 3.50 m, 108 / 72 / 12 tris.
+A framed panel, not a slab: two full-depth corner posts, bottom and top rails,
+**three full-depth mullions on the 1 m voxel lines**, and a mid rail, with the
+`OF_Steel` field recessed 45 mm behind the `OF_SteelDark` frame on both faces.
+All the cost is in that one depth step, and it is what makes a 3.5 m wall read as
+built rather than extruded from 1 m away, which is where the player is standing.
+The mullions are the part that scaled: one 4 m bay with nothing in it is a
+billboard, and putting the divisions on whole metres keeps the panel legible
+against the voxel grid behind it.
 Materials (2): `OF_Steel`, `OF_SteelDark`. Collision `col_Wall`.
 Sockets `socket_top`, `socket_end_l`, `socket_end_r`. No clips.
 
-**`structures/door.glb`** - 1 x 0.25 x 2.50 m, 96 / 60 / 36 tris + a 72-tri leaf.
-The wall module with a **0.76 m wide by 2.10 m tall** clear opening, which passes
-the 0.60 m player body with 80 mm either side.
+**`structures/door.glb`** - 4 x 0.25 x 3.50 m, 216 / 60 / 36 tris + an 84-tri leaf.
+The wall module with a **1.20 m wide by 2.40 m tall** clear opening, which passes
+the 0.60 m player body with 300 mm either side.
 
-*Why one cell and not two.* Two cells would buy a 1.0 m opening and cost the
-property that makes the set usable: that every structural part is one module, so
-a wall run is a list of cells and any cell can become a door without re-planning
-the run. A 0.76 m opening is a real door (interior doors are 0.7 to 0.8 m); a
-build system where the door is the one part that does not fit the grid is not.
+*The door stays ONE FULL CELL, and the OPENING did not scale.* This was the one
+real decision in the rescale, and both halves of it matter.
+
+It stays a full cell because that is the property that makes the set usable:
+every structural part is one module, so a wall run is a list of cells and **any
+cell can become a door without re-planning the run**. The alternative, a
+sub-cell door placed somewhere within a wall panel, needs a second and finer
+lattice for wall furniture that nothing in the placement system has, plus a
+rule for what happens when a player puts two of them 0.3 m apart. That is a
+whole placement feature bought to solve a problem the second half already
+solves.
+
+The opening did not scale because **a 4 m opening is a garage, not a door**.
+The module is a plan dimension and the opening is a person dimension, exactly
+the same split that keeps `DECK_H` at 0.50 and `WALL_T` at 0.25. So the panel is
+4 m and the hole in it is 1.20 m: wide enough to walk equipment through, and
+unmistakably a door. A genuine 4 m vehicle opening is a good future part, and it
+is a DIFFERENT part (`WallGate`), not this one stretched.
+
+The consequence is 1.40 m of panel either side of the opening, which is a lot,
+so the door surround is widened to land ON the wall's mullion at `x = +/-1.00`
+rather than beside it. Otherwise it leaves a 0.20 m sliver of field between
+surround and mullion that reads as a mistake.
 
 *It has to read as a door from outside,* and at 30 m the opening itself is a dark
 smudge that reads exactly like a shadow. So the frame's outward face is built as a
@@ -1520,10 +1678,13 @@ finish the read. At LOD1 and LOD2 the accent takes the whole header, because at
 80 m the band IS the door.
 
 Materials (4): `OF_SteelDark`, `OF_Steel`, `OF_Accent`, `OF_Hazard`.
-Sockets `socket_top`, `socket_end_l`, `socket_end_r`, `socket_hinge` (-0.38, 0, 0).
+Sockets `socket_top`, `socket_end_l`, `socket_end_r`, `socket_hinge` (-0.60, 0, 0).
 Clip `Door_Swing` 1 to 25, one-shot, `door_hinge` rotates 0 to -95 degrees about
 up; play with negative `timeScale` to close. `frame1_identity` asserts the
-exported static pose is a CLOSED door, which is what a door at rest is.
+exported static pose is a CLOSED door, which is what a door at rest is. The
+accent band now sits directly on the header rather than at the top of the panel:
+at 3.5 m the panel top is a metre clear of a 2.4 m opening, and a band up there
+stops marking the door and starts being a stripe.
 
 *Collision is three boxes, not one.* One convex proxy per asset (section 2.5) is
 the rule for a solid machine; a convex hull of a doorway is a sealed wall.
@@ -1536,11 +1697,76 @@ says otherwise the doorway is open.
 #### Verification
 
 `tools/blender/render_structures.py` assembles the **shipped** GLBs into a 3 x 3
-cell room using nothing but the anchors above, and renders it to
+cell room (now 12 x 12 m) using nothing but the anchors above, and renders it to
 `docs/screenshots/structures_*.png`. It exists because every part here passes
 `validate_glb.py` in isolation and the interesting failure is *between* parts: a
 seam, an overlap, a wall that does not reach its deck. That only exists in an
-assembly, so the assembly is what gets rendered.
+assembly, so the assembly is what gets rendered. `tools/blender/check_mating.py`
+is the arithmetic half of the same idea.
+
+### 4.24 Support pillar, `structures/pillar.glb`. **Built 2026-07-26 (DW-32 / BT-11).**
+
+DW-32 lets a foundation attach to a neighbour's edge and hang over a drop, which
+is the answer to sloped ground instead of levelling it. Where the gap to the
+ground is large the overhang needs a visible pillar, and **that gap is a
+continuous number**: it is whatever the terrain happens to be under a deck the
+player chose to extend. No single mesh spans a continuous range, because scaling
+one stretches its foot and its bracket along with its shaft.
+
+**So a pillar is not a part, it is a RECIPE over four parts.** All four are
+ground-pivoted on the file origin, each with its own group node, and the
+renderer clones and places them (the Tier-1 atlas convention).
+
+| Group | Mesh | Dims (m) | Tris | Role |
+|---|---|---|---|---|
+| `PillarFoot` | `PillarFoot_LOD0` | 1.20 x 0.40 x 1.20 | 100 | splayed base plate on the ground. `socket_top` at `(0, 0.40, 0)` |
+| `PillarShaft` | `PillarShaft_LOD0` | 0.50 x **1.00** x 0.50 | 28 | the **only** part ever scaled, and only in Y |
+| `PillarCollar` | `PillarCollar_LOD0` | 0.70 x 0.24 x 0.70 | 56 | a band, repeated, **never** scaled |
+| `PillarHead` | `PillarHead_LOD0` | 1.00 x 0.30 x 1.00 | 52 | bracket under the deck. `socket_deck` at `(0, 0.30, 0)` |
+
+**The shaft is PRISMATIC, and that is the whole trick.** Its cross section is
+constant along the axis and it carries no vertical feature of any kind, so
+scaling it in Y is not an approximation, it is exact: nothing can distort
+because there is nothing along the axis to distort. It is authored at exactly
+1.00 m so `scale.y` **is** the length in metres. The rhythm that stops a long
+pillar reading as a stretched tube comes from the collars, which are placed at a
+fixed pitch and never scaled.
+
+The assembly, given a gap `H` from the ground to the deck underside. These are
+published as named constants in `structure_common.py` (`PILLAR_FOOT_H`,
+`PILLAR_SHAFT_LEN`, `PILLAR_COLLAR_H`, `PILLAR_HEAD_H`, `PILLAR_MIN_H`,
+`PILLAR_COLLAR_PITCH`, `PILLAR_COLLAR_CLEAR`) plus `pillar_parts(gap)`, so
+neither the renderer nor the client types a pillar number of its own:
+
+```
+H < 0.70        no pillar at all: the deck is close enough to the ground
+PillarFoot      y = 0,          0.40 tall
+PillarShaft     y = 0.40,       scale.y = H - 0.70
+PillarHead      y = H - 0.30,   0.30 tall
+PillarCollar    y = 0.40 + 2.00k for k = 1.., dropped within 0.35 m of either end
+```
+
+Measured on the shipped file at gaps of 0.70, 1.37, 4.00 and 9.42 m, the
+assembled height residual is `+0.000000000 m` in every case.
+
+**The limits, stated rather than discovered later.** The minimum useful pillar
+is 0.70 m, below which there is only a foot and a head and the recipe returns
+nothing. There is no geometric maximum, but the shaft does not taper and no
+diagonal bracing is authored, so past roughly 10 m a single pillar reads as a
+thin unbraced stick; a bounded unsupported run and a maximum pillar height are
+gameplay calls, and DW-32 already asks for the first. Collars are placed at a
+fixed 2 m pitch measured from the foot, so a pillar whose gap is not a multiple
+of 2 m has a longer bare stretch at the top than at the bottom. That is
+deliberate: it puts the irregularity where the head bracket is, rather than
+distributing it and making every pillar in a row differ from its neighbour.
+
+Materials (3): `OF_SteelDark`, `OF_Steel`, `OF_Hazard`. Collision
+`col_PillarShaft` and `col_PillarFoot`; the collar and head carry none, because
+they are inside the shaft's own column.
+
+**LOD0 only, and it is a floor rather than an omission.** A 28-triangle shaft
+and a 56-triangle collar are already below where a decimator saves anything.
+`detail_cards.glb` makes the same call for the same reason.
 
 ---
 
@@ -1559,18 +1785,27 @@ tools/blender/
   rig_common.py             the player skeleton, shared by body and first-person arms
   props_common.py           Tier 1: blade/tuft/rock/chips/prism primitives and the
                             per-biome atlas driver (Prop, build_atlas)
-  rocket_common.py          Tier 2: the 1.25 m stack contract, the 13 part
-                            builders, and the deploy constants the landed
-                            lander re-uses to bake the same pose statically
+  rocket_common.py          the TWO-CLASS stack contract (S 1.25 m, L 2.50 m),
+                            every vessel part builder, and the deploy constants
+                            the landed lander re-uses to bake the same pose
+                            statically
   structure_common.py       the base-building module (CELL, DECK_H, WALL_H,
-                            WALL_T, STOREY), the two placement anchors and the
-                            shared deck/wall socket sets
+                            WALL_T, STOREY), the two placement anchors, the
+                            shared deck/wall socket sets and the pillar recipe
   contracts.json            hand-authored per-asset acceptance contract
   validate_glb.py           stdlib-only automated checker
+  check_mating.py           stdlib-only ASSEMBLY checker: places shipped parts
+                            using only the sockets they publish and measures
+                            every joint. A seam and a clash exist between parts,
+                            never inside a file, so a per-file validator cannot
+                            see either one
   render_check.py           imports a shipped .glb and renders clip frames
   render_structures.py      assembles the shipped structural .glb files into a
                             room and renders it: the tiling check a per-file
                             validator structurally cannot do
+  render_vessel.py          the same idea for the vessel catalogue: a real
+                            two-stage rocket and a contact sheet, placed off
+                            socket_stack_top and socket_radial_out alone
 
 assets/models/
   src/                      .blend files ONLY where a script cannot express the shape
@@ -1803,7 +2038,87 @@ matrix is composed, and the eight corners of each POSITION accessor's `min`/`max
 transformed into world space. That is why the scale and pivot checks catch real bugs
 instead of just reading numbers back out of the file.
 
-### 7.3 It already earned its keep
+### 7.3 What a per-file validator cannot see: `check_mating.py`
+
+`python tools/blender/check_mating.py [vessel | structure | coaxial]`. Stdlib
+only, no Blender, no npm. It reads the **shipped** `.glb` files, places parts
+using **only the sockets those files publish**, and measures the result. Nothing
+is imported from `rocket_common.py` or `structure_common.py` and no dimension is
+retyped from this document, which is the point: a check driven from the source
+constants only ever proves the builder agrees with itself.
+
+| Pass | Proves |
+|---|---|
+| `vessel` | both class chains assemble with `+0.000000000 m` at every joint; exactly two distinct diameters exist; the decoupler mates on BOTH faces in both classes; `StackAdapter` presents class L below and class S above; the radial standoff resolves to the published 0.30 m hull to hull; mated sockets are anti-parallel by dot product |
+| `structure` | the module read back off the sockets; decks and walls tile with zero gap; four walls close on the right clear interior; the wall reaches its deck and its head is the next deck base; the floor doubles as the ceiling; door and wall envelopes identical to 1e-9; the pillar recipe closes exactly at four gap heights |
+| `coaxial` | see 7.4 |
+
+### 7.4 The scallop check, and why it exists
+
+**The bug class.** Two coaxial round surfaces built with different segment
+counts do not have the same surface even at the same radius. A 16-gon and a
+24-gon of circumradius 0.625 have inradii 0.6011 and 0.6146, so between those
+radii each one pokes through the other at alternating azimuths and the joint
+renders as a sawtooth ring.
+
+**It passes every other check in this document**, which is exactly why it needs
+its own. The bounding box is set by the circumradius, so `scale` is exact. The
+mating plane is unaffected, so `part_sockets` and every gap in 7.3 read
+`+0.000000000`. The defect is in the mating SURFACE, and until 2026-07-26 the
+only thing that could see it was a person looking at a render. It bit **three
+times in one file on the day the two-class catalogue was built** (the stack
+adapter's cone against its own class S collar, the monopropellant tank's 12-gon
+flanges against its 16-gon bowls, and a class L engine bell left on the module
+default 16), and a fourth time in an asset that had shipped a day earlier: the
+player body's 8-gon elbow band, whose inradius of 0.0628 let the 10-gon arm
+inside it poke through by 0.6 mm.
+
+**How it is detected**, on the shipped bytes and with no help from the builder.
+Positions are deduplicated (flat shading splits a vertex per face, so raw
+indices do not describe adjacency), triangles are unioned into connected
+components, and each component is tested for being a solid of revolution about
+one of the three principal axes: every cross section must be a ring of at least
+six vertices at one radius with uniform azimuth spacing. Two revolution
+components on the SAME axis with DIFFERENT segment counts must then nest, one
+entirely inside the other's inradius across their shared span. Radii are
+piecewise linear in the axial coordinate, so evaluating the two containment
+inequalities at every ring plane inside the overlap decides it exactly.
+
+**It has no false positives by construction.** A slab, a fin, a window frame and
+a stringer are not rings, so they are never compared, and a stringer standing
+proud of a barrel is intended detail rather than a defect.
+
+**A SKIP IS NOT A PASS, and the check says so out loud.** Some round surfaces
+cannot be tested by this method at all: an open shell puts two radii in one
+axial plane, and an arc sweep is not uniform over 2 pi, so neither meets the
+precondition. Printing only "0 conflicts" would read as full coverage and would
+not be, which is exactly the failure mode the pass exists to close. So every
+run prints the unexamined set, counted and named by reason, next to the
+conflict count. Each plane is classified by a POSITIVE test (is it a ring, an
+annulus, an arc?) rather than by inferring a reason from a failed one: the first
+version inferred "shell" from the single-ring test failing and labelled every
+box that happened to put six corners in one plane as an unexamined round
+surface, which reported 203 skips instead of the true 4 and made the coverage
+number worthless in the other direction.
+
+Current state: **47 assets, 255 render meshes, 0 conflicts, 4 round components
+not examined** (`rocket_parts/DockingPort_LOD0` and
+`rocket_parts/EngineVacuumSmall_LOD0` are shells, `player_body/Player_LOD0` and
+`vfx_engine_plume/EnginePlume_LOD0` change segment count along their own axis).
+Those four are made safe by construction instead: every round surface on them is
+built at its own class segment count, which costs a few triangles and removes
+the question.
+
+**The check has demonstrated it can fail**, which per DW-20 is the difference
+between a green result and a green light. Run against the pre-fix
+`player_body.glb` out of git it reports the 10-gon arm against the 8-gon elbow
+band over `x -0.475..-0.425`; run against the shipped one it reports nothing.
+Since every real defect it found is now fixed, nothing in `dist` can exercise it
+any more, so `check_mating.py` also carries a `selftest` that asserts the
+nesting arithmetic on the three real bad geometries from 2026-07-26 and on two
+legal ones that must not fire.
+
+### 7.5 It already earned its keep
 
 On the very first asset the checker failed the belt segment:
 
@@ -1847,6 +2162,14 @@ the case for automating the check.
    tiling set is only correct as a whole: `structure_common.py` first, then the
    two decks, then the wall, then the door on the wall's envelope.
    **46/46 green, and a full rebuild of all 46 produces a zero-byte diff.**
+9. **DW-29 vessel catalogue and DW-32 rescale** (2 files rewritten, 4 rescaled,
+   1 new). **Done 2026-07-26**, decisions BT-11 (the 4 m module and the pillar),
+   BT-12 (the two-class catalogue) and BT-13 (the scallop check). The contracts
+   in `contracts.json` were written FIRST, before any geometry, precisely
+   because section 7.1 says a checker derived from the builder only proves the
+   builder agrees with itself; the two build jobs were then run against a spec
+   they could not edit. **47/47 green, all joints exact under `check_mating.py`,
+   and a full rebuild of all 47 scripts produces a zero-byte diff.**
 
 Steps 2 to 4 are 23 files of pure primitive assembly with no rigging and no organic
 sculpting. They parallelise cleanly across agents: one script per asset, one contract
@@ -1890,4 +2213,25 @@ halves can be written independently and still meet.
    **physics/world-gen** needs to say whether a foundation deforms terrain or just
    sits on it. Art has published the geometry and the anchors and nothing about
    cost, health or terrain interaction. Section 4.23 is the contract those lanes
-   should code against.
+   should code against. **Terrain interaction was since answered by DW-24**: a
+   structure rests on terrain and never deforms it. Cost is still open, and the
+   4 m rescale makes it urgent: one foundation now covers sixteen times the
+   ground it did, so an unchanged price divides the cost of a base by 16.
+5. **The 4 m rescale needs a client pass, and one number in it is not cosmetic
+   (opened 2026-07-26, BT-11).** `StructureGrid.measureModule` reads the module
+   off the shipped sockets, so most of the client follows the rescale for free.
+   Four things do not: the pre-load module fallback in `Structures.ts`,
+   `FLOAT_TOLERANCE_M`, `SITE_REACH_M` and the placement `REACH_M`. The
+   tolerance is the one that matters. It was set at 0.55 m against a **1 m**
+   footprint whose worst measured corner spread on a slope was 0.127 m; the same
+   slope over a **4 m** footprint spreads roughly four times as far, which alone
+   consumes the whole allowance and would make ordinary sloped ground
+   unbuildable, closing off DW-24's own teaching loop. It has to be re-measured
+   with `probes/buildtol.js` at the new footprint rather than scaled on paper.
+   Full list in `docs/controllers/build-tooling.md`. Not an art call and not an
+   art file.
+6. **`StackAdapter` is not in the DW-29 part list (opened 2026-07-26, BT-12).**
+   It is the geometric consequence of DW-29's "two sizes" being two diameters:
+   without it a wide first stage and a narrow payload have no legal joint, and
+   the two classes are two disjoint catalogues. Needs reconciling with
+   `core/include/of/vessel.h`, which is being written against the same list.

@@ -112,7 +112,15 @@ def build_mesh(name, arm):
                             [0.078, 0.070, 0.062, 0.057, 0.050], seg=10),
                    role=SUIT)
         mb.bind([pre + "Arm", pre + "ForeArm"])
-        mb.add_raw(*of.cyl_data(0.068, 0.050, (s * 0.450, 0, 1.45), "X", 8),
+        # TEN segments, not eight, and it has to match the arm it covers.
+        # The arm is a 10-gon reaching circumradius 0.0634 across this band;
+        # an 8-gon of radius 0.068 has an INradius of 0.0628, so the arm's ten
+        # ridges poked 0.6 mm through the band at alternating azimuths. Two
+        # coaxial polygons only nest cleanly if one's circumradius clears the
+        # other's inradius, and the cheap way to guarantee that is to give
+        # them the same segment count. check_mating.py's coaxial pass asserts
+        # this now; it is the check that found it.
+        mb.add_raw(*of.cyl_data(0.068, 0.050, (s * 0.450, 0, 1.45), "X", 10),
                    role=DARK)
         # oversized glove, and a cuff that spans the wrist joint
         mb.bind([pre + "Hand"])
