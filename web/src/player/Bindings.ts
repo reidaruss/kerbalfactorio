@@ -41,7 +41,7 @@ export type Action =
   | 'sasNormal' | 'sasAntinormal' | 'sasRadialIn' | 'sasRadialOut' | 'sasNode'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
-  | 'slot6' | 'slot7' | 'slot8' | 'slot9';
+  | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10';
 
 /**
  * Action -> the codes that fire it. `Mouse0` is the left button.
@@ -146,6 +146,11 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   slot1: ['Digit1'], slot2: ['Digit2'], slot3: ['Digit3'],
   slot4: ['Digit4'], slot5: ['Digit5'], slot6: ['Digit6'],
   slot7: ['Digit7'], slot8: ['Digit8'], slot9: ['Digit9'],
+  // GP-57. The tenth slot, on the key that sits next to the ninth. The bar
+  // grew because the game grew: `Hotbar.SLOT_COUNT` was 9 with 9 defaults, so
+  // a tenth buildable had nowhere to be held, and a buildable nothing can hold
+  // is GP-56's failure class by construction.
+  slot10: ['Digit0'],
 };
 
 /**

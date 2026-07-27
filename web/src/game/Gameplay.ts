@@ -35,6 +35,9 @@ import { ModeRules, type GameMode } from './GameMode.js';
 import { GameplayInput } from './GameplayInput.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
+import { LaunchPads, type PadPart } from './LaunchPad.js';
+import { LaunchPadView } from './LaunchPadView.js';
+import { padPrompt } from './LaunchPadPlacement.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
@@ -110,6 +113,10 @@ export class Gameplay {
   /** Base building: the parts, their bodies and the batch that draws them. */
   readonly structures: Structures;
   readonly structView: StructureView;
+  /** GP-57 / DW-29: the launch pads, and the batch that draws them with their
+   *  clamps. The space half of the game's entrance into the ground half. */
+  readonly pads: LaunchPads;
+  readonly padView: LaunchPadView;
   /** W11: the three screens that show what the player has EARNED, over
    *  research.h, power.h and progression.h. Built in `create` because the grid
    *  panel needs the factory's own network. */
@@ -132,6 +139,8 @@ export class Gameplay {
   aimedMachine: Machine | null = null;
   aimedBuild: Placed | null = null;
   aimedPart: StructurePart | null = null;
+  /** GP-57: the launch pad under the crosshair, or null. Picked LAST. */
+  aimedPad: PadPart | null = null;
   suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
 
   /** What a save needs: the module handle, the seed, and the voxel handles,
@@ -197,8 +206,10 @@ export class Gameplay {
       this.oreField.patches, this.structures);
     this.factoryView = new FactoryView(d.origin);
     this.structView = new StructureView(d.origin);
+    this.pads = new LaunchPads(this.game, this.mode, this.structures.bodies);
+    this.padView = new LaunchPadView(d.origin);
     this.build = new BuildMode(this.factory, this.factoryView,
-      this.structures, this.structView);
+      this.structures, this.structView, this.pads, this.padView);
     // A hand furnace announces its own ingots, at the furnace that made them.
     this.machines.onSmelt = (m, n) => {
       this.fx.ingot(n, m.pos, m.up,
@@ -209,14 +220,20 @@ export class Gameplay {
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
-      g.structures.load(), g.icons.load()]);
+      g.structures.load(), g.pads.load(), g.icons.load()]);
     g.structView.build(g.structures);
+    g.padView.build(g.pads);
     g.progress = attachProgress(g);
     g.hotbarBar.invalidate();
     d.scene.add(g.structView.group);
+    d.scene.add(g.padView.group);
     // The walker learns about the base through a PORT and not an import: a
     // structure rests on the terrain and must never become a second definition
     // of it (DW-24, plus DW-26's lesson about what a fifth surface costs).
+    // A PAD JOINS THAT SAME SET rather than getting a walker port of its own,
+    // which is what makes its deck, its tower and its launch table walkable for
+    // free and, more to the point, means there is still exactly one answer to
+    // "what is holding the player up".
     d.player.body.solids = g.structures.bodies;
     d.scene.add(g.machines.group);
     d.scene.add(g.field.group);
@@ -315,6 +332,16 @@ export class Gameplay {
     return this.keys.world(this, this.d.player.aimRay(), tick);
   }
 
+  /** GP-59: what the PLAYER is doing, which is what tells a held click apart
+   *  from a drag. A foundation appearing under the feet moves the aim RAY and
+   *  leaves all three of these untouched. */
+  get lookAngles(): { yaw: number; pitch: number; moving: boolean } {
+    const v = this.d.player.view;
+    const f = this.d.input.frame;
+    return { yaw: v.yaw, pitch: v.pitch,
+      moving: f.fwd !== 0 || f.right !== 0 || f.up !== 0 };
+  }
+
   /** Re-pick what the crosshair is on. Machine, then building, then structure. */
   aim(ray: { origin: { x: number; y: number; z: number };
              dir: { x: number; y: number; z: number } }): void {
@@ -325,6 +352,12 @@ export class Gameplay {
       : this.factory.pick(ray.origin, ray.dir, 3.5, true);
     this.aimedPart = this.aimedMachine !== null || this.aimedBuild !== null ? null
       : this.structures.pick(ray.origin, ray.dir, 3.5);
+    // GP-57. LAST, and the order is the rule: a pad is 24 m across, so a deck
+    // or a machine standing on it is INSIDE its bound, and a pad that won the
+    // tie would swallow every press aimed at anything on the launch site.
+    this.aimedPad = this.aimedMachine !== null || this.aimedBuild !== null
+      || this.aimedPart !== null ? null
+      : this.pads.pick(ray.origin, ray.dir, 3.5);
   }
 
   /** The bare hand. Returns true on the tick a harvest granted items. */
@@ -345,7 +378,8 @@ export class Gameplay {
 
   /** Remove whatever the crosshair is on. Returns true if something went. */
   demolish(): boolean {
-    const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart);
+    const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart,
+      this.aimedPad);
     if (gone) { this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null; }
     return gone;
   }
@@ -359,6 +393,8 @@ export class Gameplay {
     this.machines.updateFx(dt);
     this.structures.step(dt);
     this.structView.sync(this.structures);
+    this.pads.step(dt);
+    this.padView.sync(this.pads);
     this.fx.update(dt, this.d.origin);
     const eye = this.d.player.aimRay().origin;
     this.sfx.walk(dt, this.d.player.body.speedMps, this.d.player.body.grounded);
@@ -376,7 +412,8 @@ export class Gameplay {
     }));
     // ONE prompt decision, made in one place. It used to be four early returns
     // here, and every one of them had to remember the two panel conditions.
-    this.hud.render(dt, this.uiOpen ? null : ghostPrompt(this.build.structTarget)
+    this.hud.render(dt, this.uiOpen ? null : padPrompt(this.build.padTarget)
+      ?? ghostPrompt(this.build.structTarget)
       ?? ghostMachinePrompt(this.build.label, this.build.target)
       ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
         this.interact.target), carried);

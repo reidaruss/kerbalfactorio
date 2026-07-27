@@ -10,6 +10,7 @@
 // happened. The rule is /core's; the sentence is this file's.
 
 import { demolishAimed } from './Demolition.js';
+import type { PadPart } from './LaunchPad.js';
 import { CRAFT_BLOCK, craftBlockText } from './GameCore.js';
 import { GATED_BY_ITEM } from './Factory.js';
 import { furnaceView, recipeRows, slotRows } from './GameplayViews.js';
@@ -168,8 +169,31 @@ export function stepBuild(g: Gameplay, ray: BuildRay, use: boolean,
     placeMachine(g, ray);
     return true;
   }
+  // GP-57 / DW-29. THE PAD'S GATE IS SET ON THE GHOST, NOT SPRUNG ON THE PRESS.
+  //
+  // The three power buildables above are refused at the moment of the click,
+  // which is right for them: they are one-metre machines and the ghost has no
+  // room to explain itself. A launch pad is 24 m, needs 36 foundations under it
+  // and costs 60 iron, so a player aiming one is making a decision several
+  // minutes long, and finding out only on the click that they cannot build it
+  // at all would waste every one of those minutes. So the sentence is handed to
+  // BuildMode, which paints it red under the crosshair through the same path as
+  // "11 of 36 cells have no foundation". It is composed here because this file
+  // holds the mode and the tech names; BuildMode holds the rule.
+  if (g.pads !== null) {
+    const padItem = g.pads.definition?.item ?? 0;
+    g.build.padLocked = padItem > 0 && g.mode.researchGated
+      && !g.progress.research.itemAvailable(padItem)
+      ? `needs ${g.progress.research.techForItem(padItem)?.name ?? 'a technology'}`
+        + '  (J to research)'
+      : '';
+  }
   const turns0 = g.build.turns;
-  const n = g.build.step((a) => g.input.act(a), use, ray);
+  // GP-59: the player's own look angles go in beside the ray. See BuildMode's
+  // `stepStructure`: they are what tells a held click apart from a drag, and
+  // they are read from the CONTROLLER rather than derived from the ray, because
+  // being lifted onto a foundation moves the ray and not these.
+  const n = g.build.step((a) => g.input.act(a), use, ray, g.lookAngles);
   // FS-27: R on a placed building. It is announced HERE rather than inside
   // BuildMode for the reason this whole file exists: BuildMode owns the rule and
   // this owns the sentence, and a turn that says nothing is indistinguishable
@@ -188,15 +212,25 @@ export function stepBuild(g: Gameplay, ray: BuildRay, use: boolean,
     return true;
   }
   if (g.build.selected === null) return false;
-  const refused = g.build.structTarget !== null
-    ? (g.build.structTarget.ok ? null : g.build.structTarget.reason)
-    : (g.build.target?.ok === false ? g.build.target.reason : null);
+  const refused = g.build.padTarget !== null
+    ? (g.build.padTarget.ok ? null : g.build.padTarget.reason)
+    : g.build.structTarget !== null
+      ? (g.build.structTarget.ok ? null : g.build.structTarget.reason)
+      : (g.build.target?.ok === false ? g.build.target.reason : null);
   if (pressed && refused !== null) g.hud.flash(refused);
   return false;
 }
 
 /** What a placement says out loud. A drag says the RUN, not each tile. */
 function announce(g: Gameplay, n: number, pressed: boolean): void {
+  // GP-57. A launch pad is the biggest single thing a player builds, and what
+  // they need to hear next is not "placed launch pad" but what it is FOR.
+  if (g.build.lastPad !== null && g.build.padTarget !== null) {
+    g.build.lastPad = null;
+    g.hud.flash('LAUNCH PAD BUILT: press C to build a rocket, then G rolls it '
+      + 'out onto the pad', 5);
+    return;
+  }
   if (!pressed || n > 1) {
     g.hud.flash(`${g.build.dragLength + n} ${g.build.label}`);
     return;
@@ -224,8 +258,9 @@ function announce(g: Gameplay, n: number, pressed: boolean): void {
  * the press.
  */
 export function raze(g: Gameplay, machine: Machine | null, build: Placed | null,
-                     part: StructurePart | null): boolean {
-  const r = demolishAimed(g, machine, build, part);
+                     part: StructurePart | null,
+                     pad: PadPart | null = null): boolean {
+  const r = demolishAimed(g, machine, build, part, pad);
   if (r === null) { g.hud.flash('nothing to remove'); return false; }
   g.fx.forgetSmelters();
   g.hud.flash(r.message, 2.2);

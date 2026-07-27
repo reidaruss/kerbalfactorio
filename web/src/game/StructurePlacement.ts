@@ -22,8 +22,8 @@ import { CANTILEVER_STOREYS, MAX_CANTILEVER_CELLS } from './StructureTolerance.j
 import { SNAP_FRACTION, addrFromSocket, nearestSocket } from './StructureSnap.js';
 import { orient } from './Grid.js';
 import { labelOf } from '../player/Bindings.js';
-import { MAX_LEVEL, addrKey, addressAt, anchorOf, footprintOf,
-  isDeck, type Addr, type Site, type StructureKind }
+import { MAX_LEVEL, addrKey, addressAt, anchorOf, deckKey, footprintOf,
+  isDeck, wallKey, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
 import { FREE_KEY, type StructurePart, type Structures } from './Structures.js';
 import type { HudTarget } from '../ui/GameHud.js';
@@ -94,7 +94,7 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * foundation would be told about the soil underneath it, and no upper storey
  * could ever be aimed at.
  */
-function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec3d {
+export function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec3d {
   const o = ray.origin, d = ray.dir;
   let tGround = -1;
   for (let t = 0.6; t <= REACH_M; t += STEP_M) {
@@ -129,14 +129,14 @@ export function resolveTarget(s: Structures, kind: StructureKind,
     // nothing to add: the grid's own answer already says "already built here",
     // and overruling it would move the refusal to a cell the player is not
     // looking at.
-    if (alt !== null && !s.has(addrKey(alt))) {
+    if (alt !== null && !s.has(addrKey(site.id, alt))) {
       addr = alt;
       snapped = `#${sock.part.id} ${sock.name}`;
     }
   }
   const a = anchorOf(site, s.module, addr);
   const t: StructureTarget = {
-    kind, site, addr, key: addrKey(addr), pos: a.pos, up: site.up.clone(),
+    kind, site, addr, key: addrKey(site.id, addr), pos: a.pos, up: site.up.clone(),
     fwd: a.fwd, quat: orient(site.up, a.fwd), ok: true, reason: '',
     unevennessM: 0, freePlaced: false, snapped, carryRun: 0,
   };
@@ -217,8 +217,8 @@ function carryRun(s: Structures, site: Site, a: Addr): number {
 /** The deck part at a cell of this site's level, or null. */
 function deckAt(s: Structures, site: Site, i: number, j: number,
                 level: number): StructurePart | null {
-  const p = s.partAt(`d:${i},${j},${level}`);
-  return p !== undefined && p.siteId === site.id && p.addr !== null ? p : null;
+  const p = s.partAt(deckKey(site.id, i, j, level));
+  return p !== undefined && p.addr !== null ? p : null;
 }
 
 /**
@@ -283,8 +283,10 @@ function supported(s: Structures, site: Site, a: Addr): boolean {
     if (a.level === 0) return true;
     const b = a.level - 1;
     return hasDeck(s, site, a.i, a.j, b)
-      || s.has(`w0:${a.i},${a.j},${b}`) || s.has(`w0:${a.i},${a.j + 1},${b}`)
-      || s.has(`w1:${a.i},${a.j},${b}`) || s.has(`w1:${a.i + 1},${a.j},${b}`);
+      || s.has(wallKey(site.id, 0, a.i, a.j, b))
+      || s.has(wallKey(site.id, 0, a.i, a.j + 1, b))
+      || s.has(wallKey(site.id, 1, a.i, a.j, b))
+      || s.has(wallKey(site.id, 1, a.i + 1, a.j, b));
   }
   return a.axis === 0
     ? hasDeck(s, site, a.i, a.j, a.level) || hasDeck(s, site, a.i, a.j - 1, a.level)
@@ -293,8 +295,7 @@ function supported(s: Structures, site: Site, a: Addr): boolean {
 
 function hasDeck(s: Structures, site: Site, i: number, j: number,
                  level: number): boolean {
-  const p = s.partAt(`d:${i},${j},${level}`);
-  return p !== undefined && p.siteId === site.id;
+  return s.partAt(deckKey(site.id, i, j, level)) !== undefined;
 }
 
 /**

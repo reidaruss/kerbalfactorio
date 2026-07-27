@@ -18,6 +18,8 @@ import type { GameCore } from './GameCore.js';
 import type { Machine, Machines } from './Machines.js';
 import type { StructurePart, Structures } from './Structures.js';
 import type { StructureView } from './StructureView.js';
+import type { LaunchPads, PadPart } from './LaunchPad.js';
+import type { LaunchPadView } from './LaunchPadView.js';
 
 export interface DemolishResult {
   kind: string;
@@ -101,12 +103,43 @@ function describe(kind: string, refunded: { name: string; count: number }[],
 export function demolishAimed(g: { machines: Machines; game: GameCore;
                                    factory: Factory; factoryView: FactoryView;
                                    structures: Structures;
-                                   structView: StructureView },
+                                   structView: StructureView;
+                                   pads?: LaunchPads; padView?: LaunchPadView },
                               machine: Machine | null,
                               build: Placed | null,
-                              part: StructurePart | null = null): DemolishResult | null {
+                              part: StructurePart | null = null,
+                              pad: PadPart | null = null): DemolishResult | null {
   if (machine !== null) return demolishMachine(g.machines, g.game, machine);
   if (build !== null) return demolishBuild(g.factory, g.factoryView, g.game, build);
   if (part !== null) return demolishStructure(g.structures, g.structView, g.game, part);
+  // GP-57. THE PAD IS LAST AND THAT IS THE ORDER, not an afterthought: a pad is
+  // 24 m across and a machine or a deck standing on it is inside its bound, so
+  // a pad that won the tie would eat every press aimed at anything on it. It is
+  // also the only one of the four that can never be aimed at by accident, since
+  // reaching it means aiming at the pad itself with nothing in the way.
+  if (pad !== null && g.pads !== undefined && g.padView !== undefined) {
+    return demolishPad(g.pads, g.padView, g.game, pad);
+  }
   return null;
+}
+
+/**
+ * Take a launch pad back up, with a full refund.
+ *
+ * 60 Iron is the most expensive single thing a player builds, and a misplaced
+ * one is a mistake somebody WILL make: the pad is centred on the cell under the
+ * crosshair, so it goes down one cell off more or less exactly as often as it
+ * goes down where it was meant to. Without this, that mistake costs an hour of
+ * smelting and the only recourse is to build a second platform beside the
+ * first. A thing that expensive with no undo is not a difficulty setting.
+ */
+export function demolishPad(pads: LaunchPads, view: LaunchPadView,
+                            game: GameCore, p: PadPart): DemolishResult | null {
+  const id = p.id;
+  const r = pads.remove(p);
+  if (r === null) return null;
+  view.release(id);
+  const refunded = r.refunded.map((x) => ({ name: game.itemName(x.item), count: x.count }));
+  return { kind: 'launch pad', refunded, lost: [],
+    message: describe('launch pad', refunded, []) };
 }

@@ -16,8 +16,20 @@
 import { STRUCTURE_KINDS, type StructureKind } from './StructureGrid.js';
 import type { BuildKind } from './Factory.js';
 
+/**
+ * GP-57. The launch pad, as a hand-held part.
+ *
+ * It is its own string rather than a fifth `StructureKind` because the client's
+ * `StructureKind` IS the 4 m tiling module and a 24 m monolith answers none of
+ * that enum's questions; see LaunchPad.ts for the whole argument and for why
+ * /core's enum of the same name did take it. Here it only has to be a third
+ * family the build key can dispatch on.
+ */
+export type FixtureKind = 'launchpad';
+export const FIXTURE_KINDS: readonly FixtureKind[] = ['launchpad'];
+
 /** Anything the build key can put down. Machines TICK and structures do not. */
-export type PartKind = BuildKind | StructureKind;
+export type PartKind = BuildKind | StructureKind | FixtureKind;
 
 /**
  * What a slot holds.
@@ -36,7 +48,18 @@ export type SlotContent =
   | { kind: 'furnace' }
   | { kind: 'empty' };
 
-export const SLOT_COUNT = 9;
+/**
+ * TEN, and it was nine until GP-57.
+ *
+ * The bar grew because the game grew: nine slots held nine defaults exactly, so
+ * a tenth buildable had nowhere to be held at all. A structural part never
+ * enters the pack (gameplay.h §S.6: it is paid for and placed, never crafted
+ * into a carried item), so `assignToBar`'s pack-click gesture cannot reach one
+ * and the default bar IS the only route to it. A launch pad with no slot would
+ * therefore have been a researched, priced, placeable thing no key could hold,
+ * which is GP-56's failure class by construction rather than by oversight.
+ */
+export const SLOT_COUNT = 10;
 
 /** Label and icon for every part, in one table so the HUD restates nothing. */
 export const PART_INFO: Record<PartKind, { label: string; iconName: string }> = {
@@ -53,6 +76,9 @@ export const PART_INFO: Record<PartKind, { label: string; iconName: string }> = 
   floor: { label: 'floor', iconName: '' },
   wall: { label: 'wall', iconName: '' },
   door: { label: 'door', iconName: '' },
+  // The icon name is the /core ITEM display name, which is what ItemIcons bakes
+  // its pictures under, so this row needs no second naming authority.
+  launchpad: { label: 'launch pad', iconName: 'Launch pad' },
 };
 
 /**
@@ -69,12 +95,14 @@ export const DEFAULT_BAR: readonly SlotContent[] = [
   { kind: 'part', part: 'floor' },
   { kind: 'part', part: 'wall' },
   { kind: 'part', part: 'door' },
+  { kind: 'part', part: 'launchpad' },
 ];
 
 function isPart(k: string): k is PartKind {
   return k === 'miner' || k === 'belt' || k === 'smelter'
     || k === 'pole' || k === 'generator' || k === 'esmelter'
-    || (STRUCTURE_KINDS as readonly string[]).includes(k);
+    || (STRUCTURE_KINDS as readonly string[]).includes(k)
+    || (FIXTURE_KINDS as readonly string[]).includes(k);
 }
 
 export class Hotbar {
@@ -146,8 +174,18 @@ export class Hotbar {
   restore(v: unknown): boolean {
     const o = v as { selected?: unknown; slots?: unknown } | null | undefined;
     if (o === null || o === undefined || !Array.isArray(o.slots)) return false;
+    const saved = o.slots.length;
     for (let i = 0; i < SLOT_COUNT; ++i) {
-      this.bar[i] = readSlot(o.slots[i]);
+      // A BAR SAVED BEFORE THIS ONE GREW KEEPS THE DEFAULT IN THE NEW SLOTS
+      // rather than emptying them, and that is a general rule and not a
+      // launch-pad special case. `readSlot(undefined)` is `empty`, so without
+      // this a player who researched the pad on an existing world would find
+      // slot 10 blank with no gesture anywhere that could fill it: the bar is
+      // the only route to a structural part, so an empty new slot is an
+      // unreachable feature. What the player CHOSE is still theirs; only slots
+      // they never had a chance to choose fall back.
+      this.bar[i] = i < saved ? readSlot(o.slots[i])
+        : { ...DEFAULT_BAR[i] };
     }
     this.index = typeof o.selected === 'number' && o.selected >= 0
       && o.selected < SLOT_COUNT ? Math.floor(o.selected) : 0;

@@ -28,7 +28,7 @@ import type { Gameplay } from './Gameplay.js';
 import { labelOf, type Action } from '../player/Bindings.js';
 
 const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5',
-  'slot6', 'slot7', 'slot8', 'slot9'];
+  'slot6', 'slot7', 'slot8', 'slot9', 'slot10'];
 
 export class GameplayInput {
   private pack = false;

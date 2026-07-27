@@ -27,6 +27,8 @@ import type { Hotbar } from './Hotbar.js';
 import type { StructureView } from './StructureView.js';
 import type { Gameplay } from './Gameplay.js';
 import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
+import { restorePads, savePads } from './LaunchPadSave.js';
+import type { LaunchPads } from './LaunchPad.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
@@ -94,6 +96,8 @@ export interface RestoreLedger {
   buildings: number;
   /** Structural parts that came back. Their cost is NOT charged again. */
   structures: number;
+  /** GP-57: launch pads brought back. */
+  pads: number;
   machines: number;
   nodesDepleted: number;
   patchesDepleted: number;
@@ -122,6 +126,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
                          seed: number, ports: WorldPorts,
                          ore: OreField, structures: Structures,
+                         pads: LaunchPads,
                          hotbar: Hotbar, mode: GameMode,
                          progress: SaveProgress | undefined): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
@@ -176,6 +181,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     patches,
     sites: saveSites(structures),
     structures: saveParts(structures),
+    pads: savePads(pads),
     hotbar: hotbar.serialize(),
     progress,
     buildings: factory.placed.map((p) => ({
@@ -298,6 +304,13 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   for (const p of structures.parts) structView.release(p.id);
   const restoredParts = restoreStructures(structures, slot.sites ?? [],
     slot.structures ?? []);
+  // 5b. THE LAUNCH PADS, after the decks and for the same reason the decks come
+  //     after the tunnels: a pad's base plane IS a deck's top face (GP-58), so
+  //     restoring one before its platform would anchor it against a site that
+  //     is not there yet. Its own batch is emptied first, exactly as the
+  //     structural one is, or a demolished pad keeps drawing where it stood.
+  for (const p of g.pads.list) g.padView.release(p.id);
+  const restoredPads = restorePads(g.pads, slot.pads);
 
   // 6. THE BAR. Last and independent of everything above: it is a setting, not
   //    a piece of the world, and a malformed row falls back to empty rather
@@ -315,7 +328,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   //    DW-29's autopilot to anybody who pressed F5.
 
   return {
-    buildings, structures: restoredParts,
+    buildings, structures: restoredParts, pads: restoredPads,
     machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
     progress, discovery,
@@ -340,7 +353,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   if (inhibit !== '') { noteSave(true); return { refused: inhibit }; }
   noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField, g.structures, g.hotbar, g.mode.mode,
+    g.seed, g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
     saveProgress(g));
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
@@ -348,6 +361,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
     mode: slot.mode,
     bytes: slot.pack.length, buildings: slot.buildings.length,
     structures: slot.structures?.length ?? 0, sites: slot.sites?.length ?? 0,
+    pads: slot.pads?.length ?? 0,
     machines: slot.machines.length, depletion: slot.depletion.length,
     patches: slot.patches.length,
     voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,

@@ -59,6 +59,12 @@ export function gameplayReport(g: Gameplay): unknown {
       // out of instances would show up.
       structures: structureReport(g.structures),
       baseView: g.structView.stats(),
+      // GP-57. The launch pads: what stands, what it cost, and the clamp state
+      // of each. `padView` is separate for the same reason `baseView` is: one
+      // is the world and one is the pool, and conflating them hides a pool that
+      // has quietly run out.
+      pads: g.pads.report(),
+      padView: g.padView.stats(),
       autoCollected: g.autoCollected,
       fx: {
         ...(g.fx.report() as object),

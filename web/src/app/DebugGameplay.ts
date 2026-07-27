@@ -90,6 +90,14 @@ export function gameplayApi(s: Services, loop: Loop) {
     structures: () => s.gameplay?.structures ?? null,
 
     /**
+     * GP-57. The launch pads, LIVE, so a probe can measure against the pad's
+     * own `socket_vessel` rather than against a number retyped in the probe.
+     * `vesselAnchor` is the same call the roll-out makes, which is the point:
+     * a probe that recomputed the anchor would be checking its own arithmetic.
+     */
+    pads: () => s.gameplay?.pads ?? null,
+
+    /**
      * DW-31. READ-ONLY on purpose: there is no `sandbox(true)`.
      *
      * A setter would be the single most useful thing here and the single most

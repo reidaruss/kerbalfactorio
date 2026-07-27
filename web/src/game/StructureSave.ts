@@ -12,7 +12,7 @@
 // only shows up when somebody tries to extend a room a week later.
 
 import * as THREE from 'three';
-import { STRUCTURE_KINDS, type Addr, type Site, type StructureKind }
+import { STRUCTURE_KINDS, addrKey, type Addr, type Site, type StructureKind }
   from './StructureGrid.js';
 import type { Structures } from './Structures.js';
 
@@ -100,7 +100,14 @@ export function restoreStructures(s: Structures, sites: readonly SaveSite[],
     // The quaternion is rebuilt from up and fwd inside `adopt`, through the SAME
     // `orient` the placement used, so a restored wall faces exactly where it
     // faced and no rounding creeps in through a saved quaternion.
-    const p = s.adopt(kind, def, r.site, addr, r.key,
+    // GP-60: THE KEY IS REBUILT FROM THE SITE AND THE ADDRESS, not read back
+    // out of the slot. A slot written before the site id joined the key carries
+    // the old colliding form, and restoring it verbatim would carry the bug
+    // forward for ever in exactly the worlds that already have two bases. A
+    // free part has no address and keeps its saved key, which is its own id and
+    // was never ambiguous.
+    const key = addr === null ? r.key : addrKey(r.site, addr);
+    const p = s.adopt(kind, def, r.site, addr, key,
       { x: r.pos[0], y: r.pos[1], z: r.pos[2] }, up, fwd);
     p.wantOpen = r.open;
     p.swing = r.open ? 1 : 0;

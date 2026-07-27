@@ -19,15 +19,19 @@
 // and it is a metric site grid rather than /core's voxel lattice: see that
 // file's header for the measurement that forced the change.
 
-import { addressIn, headingIn, stepToward, type MachineAddr }
-  from './MachinePlacement.js';
-import { resolveGhost, type BuildRay, type BuildTarget } from './FactoryGhost.js';
-import { axisStepOf, snapGapM, mateFor } from './FactorySnap.js';
-import { FOOTPRINT, type BuildKind, type Factory, type Placed } from './Factory.js';
+import { addressIn } from './MachinePlacement.js';
+import { MachineDrag } from './BuildDrag.js';
+import type { BuildRay, BuildTarget } from './FactoryGhost.js';
+import { FOOTPRINT, type BuildKind, type Factory } from './Factory.js';
 import { commitTarget, resolveTarget, type StructureTarget }
   from './StructurePlacement.js';
 import { STRUCTURE_KINDS, type StructureKind } from './StructureGrid.js';
-import { PART_INFO, type PartKind } from './Hotbar.js';
+import { commitPad, resolvePadTarget, type PadTarget }
+  from './LaunchPadPlacement.js';
+import { FIXTURE_KINDS, PART_INFO, type FixtureKind, type PartKind }
+  from './Hotbar.js';
+import type { LaunchPads, PadPart } from './LaunchPad.js';
+import type { LaunchPadView } from './LaunchPadView.js';
 import type { Structures, StructurePart } from './Structures.js';
 import type { StructureView } from './StructureView.js';
 import type { FactoryView } from './FactoryView.js';
@@ -40,23 +44,9 @@ function isStructure(k: PartKind | null): k is StructureKind {
   return k !== null && (STRUCTURE_KINDS as readonly string[]).includes(k);
 }
 
-/**
- * How far R reaches to turn a building that is already down (FS-27). The same
- * 3.5 m the interact and demolish keys use, so "what R will turn" and "what E
- * will open" can never be two different things under one crosshair.
- */
-const TURN_REACH_M = 3.5;
-/**
- * Cells a single drag tick may fill in.
- *
- * A drag is sampled once per fixed tick, and a player sweeping the crosshair
- * fast crosses several cells between samples. Filling the gap is what makes a
- * dragged run CONTINUOUS rather than a dotted line, which matters because a
- * dotted line of belts is exactly the "visually adjacent tiles that are not
- * chained" failure this work exists to remove. The cap stops a teleport, or a
- * frame that dropped a second, from carpeting the planet.
- */
-const DRAG_FILL_MAX = 24;
+function isFixture(k: PartKind | null): k is FixtureKind {
+  return k !== null && (FIXTURE_KINDS as readonly string[]).includes(k);
+}
 
 export class BuildMode {
   /** Mirrors the hotbar. Set by `arm` every tick, never guessed here. */
@@ -71,6 +61,17 @@ export class BuildMode {
   freePlace = false;
   /** The last structural part put down, for the confirmation message. */
   lastPart: StructurePart | null = null;
+  /** GP-57: the launch-pad ghost, when a pad is in hand, and the last pad laid. */
+  padTarget: PadTarget | null = null;
+  lastPad: PadPart | null = null;
+  /**
+   * WHY THE PAD'S RESEARCH REFUSAL ARRIVES AS A STRING RATHER THAN BEING ASKED
+   * FOR HERE. The gate belongs to `ModeRules.researchGated` and its sentence is
+   * composed from the tech's own name, both of which live in GameplayActions;
+   * this file would have to learn what a game mode and a tech tree are to ask
+   * the question, and it already knows enough. Empty means unlocked.
+   */
+  padLocked = '';
   /** Rate of the LAST accepted placement, for the confirmation message. */
   lastRate = 0;
   /** Tiles laid by the CURRENT drag, and the longest drag ever run. */
@@ -90,20 +91,46 @@ export class BuildMode {
   private rotateHeld = false;
   private freeHeld = false;
   private useHeld = false;
-  private dragLast: { addr: MachineAddr; placed: Placed;
-                      step: { di: number; dj: number } | null } | null = null;
   private dragKey = '';
+  /**
+   * GP-59: the cell the structural ghost named on the PREVIOUS tick.
+   *
+   * A held drag places in a cell only once the aim has named it on TWO
+   * CONSECUTIVE ticks. See `stepStructure` for the measurement that forced it.
+   */
+  private dragPrevKey = '';
+  /** GP-59: the LOOK ANGLES the last placement of ANY kind was made at. A held
+   *  button places again only once the player has turned away from them. */
+  private dragAim: { yaw: number; pitch: number } | null = null;
+  /** The machine/belt half, which owns its own drag state. See BuildDrag.ts. */
+  private readonly drag: MachineDrag;
+  /** Ticks a held button was refused because the crosshair had not moved since
+   *  the last placement. Published, because a rule that swallowed every drag
+   *  would otherwise look exactly like a rule that was working. */
+  dragSettles = 0;
 
   constructor(private readonly factory: Factory, private readonly view: FactoryView,
               private readonly structures: Structures,
-              private readonly structView: StructureView) {}
+              private readonly structView: StructureView,
+              /** GP-57. The pad's world and its batch. Ports rather than
+               *  imports so a `?vab=0`-style boot with no pad content still
+               *  builds everything else, and so this file keeps no opinion
+               *  about what a launch pad is. */
+              private readonly pads: LaunchPads | null = null,
+              private readonly padView: LaunchPadView | null = null) {
+    this.drag = new MachineDrag(this.factory, this.view, this.structures,
+      this.structView, this.padView, this);
+  }
 
   /** Put `kind` in hand, or nothing. The hotbar's one call into build mode. */
   arm(kind: PartKind | null): void {
     if (kind === this.selected) return;
     this.selected = kind;
     this.endDrag();
-    if (kind === null) { this.view.hideGhost(); this.structView.hideGhost(); }
+    if (kind === null) {
+      this.view.hideGhost(); this.structView.hideGhost();
+      this.padView?.hideGhost();
+    }
   }
 
   get label(): string {
@@ -111,7 +138,7 @@ export class BuildMode {
   }
 
   /** True while a hold-drag is laying a run. For the HUD and for the probe. */
-  get dragging(): boolean { return this.dragLast !== null || this.dragKey !== ''; }
+  get dragging(): boolean { return this.drag.active || this.dragKey !== ''; }
 
   /**
    * One fixed tick of build mode. `act` is Input.act, so a driven tape and a
@@ -120,13 +147,21 @@ export class BuildMode {
    *
    * Returns how many parts went down this tick.
    */
-  step(act: (a: Action) => boolean, use: boolean, ray: BuildRay): number {
+  step(act: (a: Action) => boolean, use: boolean, ray: BuildRay,
+       /** GP-59: what the PLAYER is doing, as opposed to what the world is
+        *  doing to them. `yaw`/`pitch` are the observer's own look angles and
+        *  `moving` is whether a movement key is down this tick. Not derived
+        *  from the aim ray, because the ray changes when the player is lifted
+        *  onto their own new foundation and none of these three do. Optional,
+        *  so a caller with no camera keeps the old behaviour exactly. */
+       aim: { yaw: number; pitch: number; moving: boolean } | null = null): number {
     const rot = act('rotate');
     const turned = rot && !this.rotateHeld;
     this.rotateHeld = rot;
     if (this.selected === null) {
-      this.target = null; this.structTarget = null;
+      this.target = null; this.structTarget = null; this.padTarget = null;
       this.view.hideGhost(); this.structView.hideGhost();
+      this.padView?.hideGhost();
       this.useHeld = use;
       this.endDrag();
       // FS-27: WITH NOTHING IN HAND, R TURNS WHAT IS UNDER THE CROSSHAIR. This
@@ -135,7 +170,7 @@ export class BuildMode {
       // empty hand means it is about the WORLD. It lives here rather than in
       // GameplayInput because BuildMode already owns every meaning the rotate
       // key has, and a second owner is how one of them goes stale.
-      if (turned) this.turnAimed(ray);
+      if (turned) this.drag.turnAimed(ray);
       return 0;
     }
     if (turned) this.rotation = (this.rotation + 1) % 4;
@@ -150,164 +185,47 @@ export class BuildMode {
     this.useHeld = use;
     if (released) this.endDrag();
 
-    const n = isStructure(this.selected)
-      ? this.stepStructure(this.selected, ray, pressed, use)
-      : this.stepMachine(this.selected, ray, pressed, use);
+    // GP-59. HAS THE PLAYER MOVED THE CROSSHAIR SINCE THE LAST PLACEMENT?
+    //
+    // ONE answer, for both families, because it is one rule and Reid met it in
+    // both: a foundation click placing several, and `probes/controls.js`
+    // catching "one press, one tile: 2 in the first three ticks" for a belt. A
+    // per-family fix would have been two rules to keep in step, and the second
+    // one would have gone stale.
+    //
+    // THE SIGNAL IS PLAYER INPUT, and it has two halves because a player drives
+    // a run two ways. TURNING changes the observer's own yaw and pitch, which
+    // mouse look writes and nothing else does. WALKING with the button down is
+    // the other way, and it is the one `probes/controls.js` uses to lay a
+    // fifteen-tile belt run, so it has to count: a rule that only watched the
+    // look angles killed that run dead and the probe said so within a minute.
+    //
+    // What neither half responds to is the WORLD moving under a player who is
+    // doing nothing: a part appearing under the crosshair, the walker stepping
+    // up onto it, and the aim ray's ORIGIN rising with it all leave the look
+    // angles alone and set no movement key. That is the whole distinction, and
+    // there is no threshold anywhere in it: the angles are compared against
+    // their values at the last placement, and a mouse that did not move leaves
+    // them identical.
+    const moved = aim === null || this.dragAim === null || aim.moving
+      || aim.yaw !== this.dragAim.yaw || aim.pitch !== this.dragAim.pitch;
+    const n = isFixture(this.selected) ? this.stepPad(ray, pressed)
+      : isStructure(this.selected)
+        ? this.stepStructure(this.selected, ray, pressed, use, moved)
+        : this.drag.stepMachine(this.selected, ray, this.rotation, pressed, use,
+          moved);
+    if (n > 0 && aim !== null) this.dragAim = { yaw: aim.yaw, pitch: aim.pitch };
     this.dragLength = use ? this.dragLength + n : 0;
     if (this.dragLength > this.longestDrag) this.longestDrag = this.dragLength;
     return n;
   }
 
   private endDrag(): void {
-    this.dragLast = null;
+    this.drag.end();
     this.dragKey = '';
+    this.dragPrevKey = '';
+    this.dragAim = null;
     this.dragLength = 0;
-  }
-
-  /**
-   * FS-27: turn whatever is under the crosshair one quarter turn, and re-commit.
-   *
-   * Belts are INCLUDED in the pick (`belts` true), which is the whole point: a
-   * belt is the thing a player most wants to turn and the only thing the pick
-   * normally hides, because a 1 m tile under the crosshair otherwise steals the
-   * interact prompt from the machine behind it. Turning is not interacting, so
-   * the exclusion does not apply here.
-   */
-  private turnAimed(ray: BuildRay): void {
-    const b = this.factory.pick(ray.origin, ray.dir, TURN_REACH_M, true);
-    if (b === null) return;
-    if (!this.factory.turn(b)) return;
-    this.turns++;
-    this.lastTurn = { id: b.id, kind: b.kind };
-  }
-
-  /** Machines and belts: the ghost, the press, and the hold that lays a run. */
-  private stepMachine(kind: BuildKind, ray: BuildRay, pressed: boolean,
-                      held: boolean): number {
-    this.structTarget = null;
-    this.structView.hideGhost();
-    // FS-26: a drag steers by the CROSSHAIR and never by a socket. See
-    // `resolveGhost`; letting the snap move the ghost mid-drag laid the first
-    // tile of a run in the cell behind the one it started from.
-    const t = resolveGhost(this.factory, kind, ray, this.rotation,
-      (x, y, z) => this.structures.groundRadius(x, y, z), this.view.sockets,
-      !(held && this.dragLast !== null));
-    this.target = t;
-    if (t !== null) this.view.showGhost(kind, t.pos, t.up, t.fwd, t.ok);
-    else this.view.hideGhost();
-    if (t === null) return 0;
-
-    if (pressed) {
-      // PRESSING ON A TILE THAT IS ALREADY THERE STARTS A DRAG FROM IT rather
-      // than doing nothing. Continuing an existing run by grabbing its end is
-      // the most natural way to extend one, and refusing the press outright
-      // left the player holding the button with nothing happening.
-      const standing = this.factory.at(t.cell);
-      if (standing !== null && standing.kind === kind) {
-        this.dragLast = { addr: t.addr, placed: standing, step: null };
-        return 0;
-      }
-      if (!t.ok) { this.refusals++; return 0; }
-      const made = this.factory.add(kind, t, t.fwd);
-      if (made === null) { this.refusals++; return 0; }
-      // The site is founded by `Factory.stage` (FS-19), so this is now only a
-      // belt and braces: `adoptSite` is idempotent by id.
-      this.factory.adoptSite(t.addr);
-      this.lastRate = t.ratePerSec;
-      // FS-26: MEASURE THE SNAP AT THE MOMENT IT HAPPENS, against the socket the
-      // ghost SAID it caught, not against the nearest one afterwards. Those are
-      // the same number only if the snap actually drove the placement, which is
-      // exactly the claim being made.
-      this.lastSnapped = t.snapped;
-      this.lastSnapGapM = t.hit === null ? -1
-        : snapGapM(t.hit, made, this.view.sockets, mateFor(kind, t.hit));
-      if (t.hit !== null) this.snaps++;
-      this.placements++;
-      // FS-26: A SNAPPED PLACEMENT SEEDS THE DRAG WITH THE DIRECTION IT WENT.
-      //
-      // The reversal guard in `dragRun` refuses a step that undoes the last one,
-      // and on the first step of a fresh drag there was no last one to compare
-      // against. That was harmless while a placement always landed under the
-      // crosshair, and it stopped being harmless the moment a snap could put the
-      // tile a cell or two BEYOND the crosshair: holding the button after a
-      // snapped press then walked the run straight back to the cell the player
-      // was pointing at. Measured (`probes/autoline.js`): a drill's belt line
-      // laid its second tile between the drill and its own first tile, and the
-      // run reversed into a two-tile stub. Seeding the step closes it, and the
-      // direction is the real one (owner to placed), not the tile's heading,
-      // because a tile snapped onto a run's TAIL faces forward while the run
-      // grows backward.
-      let step: { di: number; dj: number } | null = null;
-      if (t.hit !== null) {
-        const owner = this.factory.snap(t.hit.build.pos.x, t.hit.build.pos.y,
-          t.hit.build.pos.z).addr;
-        const [di, dj] = axisStepOf(t.addr.site, {
-          x: made.pos.x - t.hit.build.pos.x, y: made.pos.y - t.hit.build.pos.y,
-          z: made.pos.z - t.hit.build.pos.z });
-        if (owner.site.id === t.addr.site.id) step = { di, dj };
-      }
-      this.dragLast = { addr: { ...t.addr, prospective: false }, placed: made,
-        step };
-      return 1;
-    }
-    if (!held || this.dragLast === null || t.addr.site.id !== this.dragLast.addr.site.id) {
-      return 0;
-    }
-    return this.dragRun(kind, t);
-  }
-
-  /**
-   * The hold-drag itself, and the reason it is worth its own method.
-   *
-   * EVERY TILE IS TURNED TO POINT AT ITS SUCCESSOR. When a tile goes down there
-   * is no successor yet, so its heading is whatever the crosshair had; the next
-   * tile is what says which way the run actually goes, and `reface` turns the
-   * one behind it to match. Do that at every step and the run is chained BY
-   * CONSTRUCTION rather than by the aim happening to stay on axis, corners
-   * included: a heading that changes between two tiles is exactly what the belt
-   * curve renderer already reads.
-   *
-   * Then ONE commit for the whole tick, because a commit rebuilds the /core
-   * network and loses whatever is riding the belts.
-   */
-  private dragRun(kind: BuildKind, t: BuildTarget): number {
-    const start = this.dragLast;
-    if (start === null) return 0;
-    let from = start.addr;
-    let last: Placed = start.placed;
-    let step = start.step;
-    let n = 0;
-    for (let i = 0; i < DRAG_FILL_MAX; ++i) {
-      const next = stepToward(from, t.addr);
-      if (next === null) break;
-      const now = { di: next.i - from.i, dj: next.j - from.j };
-      // A REVERSAL ENDS THE DRAG. Sweeping the crosshair back over the run just
-      // laid would otherwise turn the tail around to face the way it came, and
-      // a tile pointing at its own predecessor is exactly the break that makes
-      // one visible line into two transport lines. A ninety-degree turn is
-      // fine and is what a corner is.
-      if (step !== null && now.di === -step.di && now.dj === -step.dj) break;
-      const anchor = this.factory.snapAddr(next);
-      const dir = { x: anchor.pos.x - last.pos.x, y: anchor.pos.y - last.pos.y,
-        z: anchor.pos.z - last.pos.z };
-      const fwd = headingIn(next.site, dir, 0);
-      const made = this.factory.stage(kind, anchor, fwd);
-      // A refused cell ENDS the drag rather than being stepped over: a run with
-      // a hole in it is not a run, and jumping the hole would leave two tiles
-      // 2 m apart claiming to be neighbours.
-      if (made === null) break;
-      this.factory.reface(last, fwd);
-      from = next;
-      step = now;
-      last = made;
-      this.placements++;
-      n++;
-    }
-    if (n > 0) {
-      this.factory.commit();
-      this.dragLast = { addr: from, placed: last, step };
-    }
-    return n;
   }
 
   /**
@@ -315,17 +233,92 @@ export class BuildMode {
    * because the two grids share a FRAME but not an address space: a deck takes
    * the cell it is inside and a wall takes the nearest cell edge.
    */
-  private stepStructure(kind: StructureKind, ray: BuildRay, pressed: boolean,
-                        held: boolean): number {
+  /**
+   * The launch pad. NO DRAG, deliberately: a drag lays a RUN, and a run of
+   * 24 m pads is not a thing anybody wants by accident. One press, one pad.
+   */
+  private stepPad(ray: BuildRay, pressed: boolean): number {
     this.target = null;
+    this.structTarget = null;
     this.view.hideGhost();
-    const t = resolveTarget(this.structures, kind, ray, this.rotation, this.freePlace);
+    this.structView.hideGhost();
+    if (this.pads === null || this.padView === null) return 0;
+    const t = resolvePadTarget(this.pads, this.structures, ray, this.padLocked);
+    this.padTarget = t;
+    this.padView.showGhost(t);
+    if (!pressed) return 0;
+    const made = commitPad(this.pads, t);
+    if (made === null) { this.refusals++; return 0; }
+    this.lastPad = made;
+    this.placements++;
+    return 1;
+  }
+
+  private stepStructure(kind: StructureKind, ray: BuildRay, pressed: boolean,
+                        held: boolean, moved: boolean): number {
+    this.target = null;
+    this.padTarget = null;
+    this.view.hideGhost();
+    this.padView?.hideGhost();
+    const t = resolveTarget(this.structures, kind, ray, this.rotation,
+      this.freePlace);
     this.structTarget = t;
     this.structView.showGhost(t);
+    const prev = this.dragPrevKey;
+    this.dragPrevKey = t.key;
     if (!pressed && !held) return 0;
     // Dragging a wall line is the same gesture as dragging a belt: place when
     // the crosshair reaches a cell that is not the one just built on.
     if (!pressed && t.key === this.dragKey) return 0;
+    // =====================================================================
+    // GP-59. A HELD DRAG PLACES IN A CELL ONLY ONCE THE AIM HAS NAMED IT ON
+    // TWO CONSECUTIVE TICKS. Reid: "when i click to place a foundation, it
+    // typically places multiple."
+    //
+    // MEASURED, sampling the ghost's own cell key every tick through a real
+    // pointerdown / pointerup pair on the canvas with the mouse held perfectly
+    // still: the press commits in cell (0,0), the very NEXT tick names (0,-1),
+    // and every tick after that names (0,0) again. One tick of excursion, one
+    // cell wide, and a button that is still down places a second foundation in
+    // it. A human click is 60 to 150 ms, which is 4 to 9 ticks at 60 Hz, so it
+    // covers that tick essentially always: this is not an edge case, it is what
+    // a click DOES.
+    //
+    // The excursion is caused by the placement itself. `aimPoint` marches
+    // against what is already BUILT as well as against the ground, and it has
+    // to (or no upper storey could ever be aimed at), so the new deck top face
+    // and the walker stepping UP onto that deck both move the aim in the one
+    // tick that follows the commit. The player never touched the mouse.
+    //
+    // TWO CONSECUTIVE TICKS rather than a minimum cursor travel, and that is
+    // the point. A travel threshold needs a number, and the number would have
+    // to exceed a transient whose size is deckH / tan(pitch) and is therefore
+    // UNBOUNDED as the player looks flatter, so anything that worked today
+    // would be a number tuned until the symptom stopped. A settle test has no
+    // number in it at all: it rejects any excursion shorter than the dwell, and
+    // a genuine sweep dwells in a 4 m cell for tens of ticks, so the cost to a
+    // real drag is one tick of latency nobody can see.
+    //
+    // A PRESS IS EXEMPT and must be: a click has to place on the tick it
+    // happens, or the game would feel like it was ignoring the button, which is
+    // the complaint this project has spent a week removing.
+    // =====================================================================
+    if (!pressed && t.key !== prev) { this.dragSettles++; return 0; }
+    // ...AND ONLY ONCE THE PLAYER HAS ACTUALLY TURNED. See `moved` in `step`.
+    //
+    // The settle test above rejects a ONE-tick excursion on its own, and the
+    // excursion is sometimes TWO ticks: measured, a 60 ms click still laid two
+    // foundations with the settle test alone, because the aim spent two
+    // consecutive ticks in the neighbouring cell before coming back.
+    // Lengthening the settle would be choosing a number to sit above however
+    // long the transient happens to be today, which is exactly the failure this
+    // comment exists to avoid. `moved` has no number in it.
+    //
+    // THE COST, stated rather than hidden: holding the button and WALKING
+    // forward without turning no longer extends a run. That is the same rule
+    // belts already follow (FS-26: a drag steers by the crosshair and by
+    // nothing else), and it is what a player means by "drag".
+    if (!pressed && !moved) { this.dragSettles++; return 0; }
     const made = commitTarget(this.structures, t);
     if (made === null) { if (pressed) this.refusals++; return 0; }
     this.dragKey = t.key;
@@ -342,8 +335,23 @@ export class BuildMode {
       placements: this.placements, refusals: this.refusals,
       // FS-27 / FS-26: the two numbers this pass is judged on.
       turns: this.turns, lastTurn: this.lastTurn,
+      // GP-59: ticks a held button spent on a cell the aim had not settled on.
+      // Published because a settle rule that swallowed EVERY drag would look
+      // identical to one that was working, and this is what tells them apart.
+      dragSettles: this.dragSettles,
       snaps: this.snaps, lastSnapped: this.lastSnapped,
       lastSnapGapM: this.lastSnapGapM,
+      // GP-57. Everything a probe needs to judge a pad placement WITHOUT
+      // reaching into the model: what it caught, why it was refused, and the
+      // count that makes the refusal an instruction.
+      padGhost: this.padTarget === null ? null : {
+        ok: this.padTarget.ok, reason: this.padTarget.reason,
+        key: this.padTarget.key, site: this.padTarget.site?.id ?? -1,
+        addr: [this.padTarget.i, this.padTarget.j, this.padTarget.level],
+        cells: this.padTarget.cells, missingCells: this.padTarget.missingCells,
+        pos: [this.padTarget.pos.x, this.padTarget.pos.y, this.padTarget.pos.z],
+        locked: this.padLocked,
+      },
       structGhost: this.structTarget === null ? null : {
         kind: this.structTarget.kind, ok: this.structTarget.ok,
         reason: this.structTarget.reason, key: this.structTarget.key,
@@ -368,8 +376,8 @@ export class BuildMode {
         // says a run would flow into this cell, which since FS-27 is a fact
         // about the RUN and no longer a claim that R is inert here.
         snapped: this.target.snapped, chains: this.target.chains,
-        footprint: this.selected === null || isStructure(this.selected) ? 0
-          : FOOTPRINT[this.selected],
+        footprint: this.selected === null || isStructure(this.selected)
+          || isFixture(this.selected) ? 0 : FOOTPRINT[this.selected],
         site: this.target.addr.site.id,
         ij: [this.target.addr.i, this.target.addr.j],
         pos: [this.target.pos.x, this.target.pos.y, this.target.pos.z],
@@ -377,7 +385,8 @@ export class BuildMode {
         patch: this.target.patch,
         ratePerSec: +this.target.ratePerSec.toFixed(3),
       },
-      visible: this.view.ghostVisible || this.structView.ghostVisible,
+      visible: this.view.ghostVisible || this.structView.ghostVisible
+        || (this.padView?.ghostVisible ?? false),
     };
   }
 }

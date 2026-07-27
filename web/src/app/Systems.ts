@@ -24,7 +24,26 @@ export function registerSystems(s: Services, loop: Loop): void {
   let boardHeld = false;
   let mapHeld = false;
   let holdHeld = false;
-  loop.onFixedStep.push(() => {
+  loop.onFixedStep.push((_dt, tick) => {
+    // GP-57. THE PAD'S CLAMPS, ON THE FIXED TICK AND NOT ON THE FRAME.
+    //
+    // The launch clamp releases inside `FlightSession.stepClamped`, which
+    // `Loop.fixedTick` reaches through `observer.step` immediately before this
+    // list runs, so `tick` here IS the tick the release happened on. A frame
+    // carries one to three fixed ticks, so putting this beside `flight.frame`
+    // in `onPreRender` would let the arms swing up to two ticks late with every
+    // instrument still reading "they both happened".
+    //
+    // `fixedTick` is handed to the session for the NEXT tick, because
+    // `observer.step` runs BEFORE this list: at tick T this sets T + 1, and the
+    // release that happens inside `observer.step` at T + 1 stamps itself T + 1.
+    // The two ticks are then written by two different systems reading two
+    // different variables, which is what makes comparing them a test rather
+    // than a restatement of one assignment.
+    s.flight?.stepPadClamps(tick);
+    if (s.flight !== undefined && s.flight !== null) {
+      s.flight.session.fixedTick = tick + 1;
+    }
     const on = s.input.act('assembly');
     if (on && !assemblyHeld) s.vab?.toggle();
     assemblyHeld = on;

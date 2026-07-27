@@ -25,8 +25,8 @@ import { BURY_TOLERANCE_FALLBACK_M, CANTILEVER_STOREYS, FLOAT_TOLERANCE_M }
   from './StructureTolerance.js';
 import { readSockets, type SocketDef } from './StructureSnap.js';
 import { orient } from './Grid.js';
-import { MAX_LEVEL, PILLAR_FALLBACK, SITE_REACH_M, STRUCTURE_KINDS, localOf,
-  makeSite, measureModule, measurePillar,
+import { MAX_LEVEL, PILLAR_FALLBACK, SITE_REACH_M, STRUCTURE_KINDS, deckKey,
+  localOf, makeSite, measureModule, measurePillar,
   type Addr, type PillarModule, type Site, type StructureKind,
   type StructureModule } from './StructureGrid.js';
 import { StructureBodies, boundOf, leafProxy, proxiesOf,
@@ -194,8 +194,7 @@ export class Structures {
     for (let level = MAX_LEVEL; level >= 0; --level) {
       const top = level * this.module.storey + this.module.deckH;
       if (top > want) continue;
-      const p = this.taken.get(`d:${i},${j},${level}`);
-      if (p !== undefined && p.siteId === site.id) return top;
+      if (this.taken.has(deckKey(site.id, i, j, level))) return top;
     }
     return null;
   }

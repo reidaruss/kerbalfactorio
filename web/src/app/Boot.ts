@@ -342,6 +342,10 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       M: core, bodyHandle: body.handle, bodyRadiusM: body.radiusM, oracle, origin,
       router, input, player, scene: scenes.near, host,
       designHandle: () => theVab.design.handle,
+      // GP-57. THE PAD, as a thunk. A value would have worked here, but the
+      // thunk keeps the pad's LIFETIME out of flight's hands, so a world
+      // reloaded from a save hands back the RESTORED pads and not a stale list.
+      pads: () => g.pads,
       setWorldUi: (on) => {
         g.hud.setVisible(on);
         g.hotbarBar.setVisible(on);

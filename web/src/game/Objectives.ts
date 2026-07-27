@@ -99,6 +99,24 @@ export const OBJECTIVES: Objective[] = [
   // it, which is DW-29's "ground progression first" stated where a player can
   // actually read it. Both rows are visible as upcoming from the first minute,
   // which is the part that answers "I cannot find it".
+  // GP-57. THE PAD, NAMED, and BEFORE the rocket rather than after it.
+  //
+  // The order is the teaching. A player who builds a rocket first and then
+  // discovers it needs a launch site has done the two halves in the order that
+  // makes the second one feel like a tax; doing the platform first makes the
+  // rocket the reward. It is also the honest order for the costs: 36
+  // foundations plus 60 Iron is a project, and finding that out AFTER assembling
+  // a vehicle is the sort of thing that makes a player put a game down.
+  //
+  // The row RETIRES on the pad existing rather than on the tech being bought,
+  // because what the player has to do is build the thing, and a checklist that
+  // ticks itself when you press a research button has taught you nothing about
+  // where the pad goes.
+  {
+    id: 'pad', text: 'Build a launch pad on a 6 x 6 foundation platform',
+    hint: 'research Launch Facilities (J), then slot 0 puts one in your hand',
+    done: (g) => g.pads.list.length >= 1,
+  },
   {
     id: 'rocket', text: 'Build a rocket in the assembly bay',
     hint: 'press C to go in, click parts onto the stack',
@@ -106,7 +124,7 @@ export const OBJECTIVES: Objective[] = [
   },
   {
     id: 'launch', text: 'Roll it out and climb aboard',
-    hint: 'G rolls it onto the ground, G again straps you in',
+    hint: 'G rolls it onto the pad, G again straps you in',
     done: (_g, r) => r === null || r.boardings() >= 1,
   },
 ];

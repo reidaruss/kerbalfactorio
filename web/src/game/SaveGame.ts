@@ -77,6 +77,7 @@ export const SAVE_VERSION = 5;
 import { asMode, type GameMode } from './GameMode.js';
 import type { SavedEdits } from './VoxelSave.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';
+import type { SavePad } from './LaunchPadSave.js';
 
 export interface SaveBuilding {
   kind: string;
@@ -131,6 +132,12 @@ export interface SaveSlot {
   /** The base: the parts, and the site frames they are addressed in. */
   sites?: SaveSite[];
   structures?: SaveStructure[];
+  /** GP-57 / DW-29: the launch pads. Additive and optional for the same reason
+   *  `discovery` and `progress` are, so SAVE_VERSION deliberately does NOT
+   *  move: an absent list is a world with no launch site, which is what every
+   *  world written before tonight actually was, so nothing MISREADS an old
+   *  slot and a bump would refuse every world anybody is playing. */
+  pads?: SavePad[];
   /** The hotbar: which slot is in hand and what is in each of them (GP-26). */
   hotbar?: SaveHotbar;
   /** The progression spine (ABI 9). Optional, and the version was deliberately
