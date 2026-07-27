@@ -69,6 +69,45 @@ the failure this project has paid for six times. See lane B.
 
 _Lanes append here. Include what you tried and what would unblock it._
 
+### Gameplay lane, 2026-07-27: HALF THIS LANE'S WORK IS UNCOMMITTED ON PURPOSE
+
+**The sinking fix (GP-53) is committed. The launch-entrance and part-removal
+fix (GP-54, GP-55) is NOT, and holding it is the right call rather than a
+failure.** Both are finished, green and in the working tree.
+
+The reason is standing rule 9, not standing rule 10. GP-54 touches
+`web/src/app/Boot.ts`, `Systems.ts`, `FlightMode.ts` and `player/Bindings.ts`,
+and **all four of those files currently also carry the W12 map/maneuver lane's
+in-flight work**: `Systems.ts` calls `s.map?.toggle()`, `Services.ts` declares
+`map`, and `web/src/app/MapMode.ts`, `MapBoot.ts` and `DebugMap.ts` are
+**untracked**. Committing my four files without theirs leaves HEAD referencing
+three modules that do not exist, which is precisely the unbootable-HEAD failure
+rule 9 exists to prevent and which cost two breaks on 2026-07-26 alone.
+Committing theirs as well would put another lane's mid-write on main under my
+message AND under a tree that does not typecheck (`src/player/FlightControls.ts`
+line 107 is `Property 'flash' is private`, theirs, live as I write).
+
+So: **whoever lands the map lane should land it, and this lane's second commit
+goes in immediately after, unchanged.** Nothing is at risk in the meantime,
+because the GP-53 commit was built through a **temporary index**
+(`GIT_INDEX_FILE` + `commit-tree` + a compare-and-swap `update-ref`), so the
+shared index was never touched and these files read as ordinary modifications
+rather than as staged deletions to anybody else.
+
+Two smaller things found on the way, neither this lane's:
+
+- **`probes/controls.js` still fails exactly one assertion, "one press, one
+  tile: 2 in the first three ticks", and it is the belt drag.** It was three
+  failures when I started; the other two were `research` and `power` having no
+  opener in that probe, which I added, because they joined the DERIVED modal
+  stack at H-5 and until now **nothing anywhere proved Escape shut either of
+  them.** That is GP-25's derivation catching a real gap rather than a stale
+  probe, and it is the reachability point in miniature.
+- **`src/sim/FlightSession.ts` (402) and `src/ui/MapDraw.ts` (446) are over the
+  400-line cap on the working tree**, both the map lane's. Every file this lane
+  owns is under, including `Vab.ts`, which needed `VabReport.ts` splitting out of
+  it to make room honestly rather than by deleting a comment.
+
 ### Lane G, 2026-07-27: TWO COMMIT SUBJECTS ARE SWAPPED, and this is the record
 
 **No content is lost or wrong in either commit. Two subject lines point at each
@@ -672,6 +711,86 @@ they were reachable; they are reachable now.
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
+
+- **2026-07-27, gameplay lane (playtest pass): THE SINKING WAS NOT THE HYPOTHESIS,
+  AND THE ROCKET HAD NO ENTRANCE. GP-53 to GP-56.**
+
+  **GP-53, and Admin's hypothesis is refuted by measurement rather than argued
+  with.** The brief said a partly buried deck loses `deck > groundR` to the
+  terrain. **The terrain won that comparison on 0 of 300 ticks.** The defect was
+  in the deck's OWN answer: `StructureBodies.deckUnder` marched down from the
+  feet and clamped to `Math.min(rFrom, r + 0.05)`, so with the feet inside the
+  slab it returned THE FEET. The ground snap then ratified the tick's own
+  gravity penetration instead of correcting it. **Measured before, player
+  stationary, grounded, 0.00 m/s, on a deck walked onto: standing spread
+  0.198989 m over 300 ticks, 4 snap-ups, mean period 74.3 ticks, biggest snap
+  0.197317 m, feet up to 0.149774 m below the deck's real top face, sinking
+  0.002683 m EVERY tick, which is exactly one tick of gravity at that radius.
+  After: 0.000000 m spread, 0 snap-ups, 0.000000 m sink.** The same clamp had a
+  second victim nobody reported: a foundation laid on the cell you are standing
+  in puts its 0.50 m slab entirely ABOVE your feet and a downward-only march
+  never sees it, so **the port answered nothing on 120 of 120 ticks and the
+  player stood 0.499993 m below their own first foundation, permanently**; now
+  120 of 120 at 0 m. It is now an exact slab intersection of the radial with
+  each box in its own frame (a rotation preserves length, so the line parameter
+  IS the radius and the slab exit IS the top face), with a rise allowance of the
+  walker's own first step rung so a floor you stand INSIDE seats you on top of
+  it and a 4.00 m wall never can. `probes/decksink.js`, 12 assertions, both
+  bounds derived (one tick of free fall; a micron) and neither tuned. **Reverting
+  ONLY the answer fails 8 by name and leaves both negative controls and the
+  save-restore check standing**, which is what says the controls measure
+  something else. Adjacent, all three cheap: `STRUCTURE_FLOOR_SEARCH_M`'s comment
+  said "a storey is 3 m" and it has been 4 m since DW-32, so the number stays and
+  its reasoning is restated (the real bound is `storey - deckH` = 3.50 m);
+  `STRUCTURE_STEP_UP_M` stops being an ALIAS of the voxel ladder, same values, and
+  the probe asserts its first rung (0.55) still clears the shipped `deckH` (0.50)
+  read off the .glb; and **restored structures were already in the collision set**
+  (a placement and a restore share `Structures.adopt`), now driven anyway.
+
+  **GP-54. THE LAUNCH KEY DID NOTHING AND THAT IS THE WORST ANSWER AVAILABLE.**
+  `board` is not on `UI_ALLOWED`, so a press inside the bay never arrived, and
+  `Systems.ts` discarded it a second time with an explicit `s.vab?.open !== true`.
+  **`board` was deliberately NOT added to `UI_ALLOWED`**: that list is GLOBAL and
+  would have given G to the inventory and the research tree, where it would plant
+  a rocket behind the player or strap them in from inside a menu.
+  `Input.setUiCapture(on, alsoAllow)` now takes a per-panel allowance and the bay
+  passes `['board']`. One method, `FlightMode.fromBay`, is shared by the key and
+  by a new visible **Roll out  G** button in the bay's own bar, and it refuses
+  OUT LOUD while aboard **without closing the bay** (that last clause came from
+  `probes/flightabuse.js` going red, which was right). **The negative control is
+  the assertion that matters: with the pack open the same key still does nothing,
+  0 rollouts, aboard false.** Reverting only the allowance fails 5 checks by name.
+
+  **GP-55. `Vab.removeAt` was finished, refunds and all, and had no caller but
+  the debug surface.** Right-click in the bay now removes the part under the
+  cursor with an empty hand and drops the part with a full one, which is GP-26's
+  "the hand decides" applied to the right button, and `demolish` is already
+  `Mouse2` on foot so the button means the same thing in both halves of the game.
+  **Measured: 3 parts to 0 on one click at the root with `removed` +3, which is
+  `_of_vs_remove`'s subtree contract; a right-click with a part IN HAND drops the
+  hand and removes nothing; a right-click on empty space removes nothing and SAYS
+  what the button is for.**
+
+  **GP-56, and this is the one worth arguing about. NOTHING IN THIS PROJECT ASKS
+  WHETHER A PLAYER CAN REACH A SHIPPED CAPABILITY.** Measured rather than
+  asserted, on 189 client files: **all 54 of 54 actions in `BINDINGS` have a
+  consumer, `board` included**, so the obvious static check catches none of this;
+  **43 of 283 `_of_*` bridge symbols are never named outside `src/sim/wasm`**; and
+  sweeping every public method in `src/game`, `src/ui` and `src/player`,
+  **`Vab.removeAt` shows up as reachable ONLY from `src/app/Debug*.ts`**. That
+  last one is the finding: **a reachability check that counts the debug surface as
+  a caller scores its own scaffolding.** Full recommended shape, in three parts
+  (a static gate that excludes `Debug*.ts`, a DRIVEN per-context silent-no-op
+  sweep which is the only one that would have caught the G bug, and a one-line
+  content predicate that every keyed mode be named in an objective hint), in
+  `docs/controllers/gameplay.md` section 6.
+
+  Gates: `probes/decksink.js`, `rollout.js`, `ascent.js` (orbit 92,589 x 79,693 m,
+  factory still producing, 496 mined at the end), `flightabuse.js`, `build.js`,
+  `basesnap.js`, `cantilever.js`, `objectives.js`, `vab.js`, `walk.js` all green;
+  `controls.js` down to its ONE pre-existing belt failure (see Blockers);
+  `tools/smoke/reload.mjs` **PASS** against a freshly built bundle on its own port
+  (4190, `--outDir dist-gp`). `check:limits` clean for every file this lane owns.
 
 - **2026-07-27, gameplay lane: the finishing pass. THREE DEFECTS FIXED AND FOUR
   SHIPPED-BUT-INVISIBLE THINGS DRAWN, at WASM ABI 9 to 10, atomic and booting.**

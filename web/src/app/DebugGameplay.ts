@@ -15,6 +15,8 @@ import { clearEdits } from '../game/VoxelSave.js';
 import { showGoals } from '../game/Objectives.js';
 import { isPart } from '../game/Hotbar.js';
 import { snapToGround } from '../game/Grid.js';
+import { STRUCTURE_STEP_UP_M } from '../player/VoxelCollision.js';
+import { StandTrace } from '../player/StandTrace.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 
@@ -166,6 +168,33 @@ export function gameplayApi(s: Services, loop: Loop) {
      */
     solidBuild(x: number, y: number, z: number) {
       return s.gameplay?.structures.bodies.blocks(x, y, z) ?? false;
+    },
+
+    /**
+     * The per-TICK standing trace (player/StandTrace.ts). `stand(true)` arms and
+     * clears it, `stand()` dumps it oldest-first, `stand(false)` disarms.
+     *
+     * It lives on the gameplay surface because the question it answers is a
+     * gameplay one: WHICH of the terrain and the base is holding the player up
+     * this tick. `world().player` reports the answer once per FRAME, and a frame
+     * carries one to three fixed ticks, so anything that alternates is aliased
+     * away before a probe can see it.
+     */
+    /** The structural step ladder, so a probe can assert the rung that gets a
+     *  player onto their own foundation still clears the shipped deck rather
+     *  than reciting 0.55 back at itself. */
+    stepUpM: STRUCTURE_STEP_UP_M,
+
+    stand(on?: boolean) {
+      const b = s.player?.body;
+      if (b === undefined || b === null) return null;
+      if (on === false) { b.trace = null; return { armed: false, samples: [] }; }
+      if (on === true) {
+        if (b.trace === null) b.trace = new StandTrace();
+        b.trace.reset();
+      }
+      const t = b.trace;
+      return { armed: t !== null, total: t?.total ?? 0, samples: t?.dump() ?? [] };
     },
 
     collect(id: number) {

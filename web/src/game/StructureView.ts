@@ -235,8 +235,11 @@ export class StructureView {
     const r = Math.hypot(part.pos.x, part.pos.y, part.pos.z) || 1;
     const gap = r - s.groundRadius(part.pos.x, part.pos.y, part.pos.z);
     if (gap < s.pillar.minH) return 0;
+    // No rise allowance at all here, unlike the walker's call: this asks what is
+    // UNDER a deck, and a lift of even a centimetre would let the part find its
+    // own top face and report itself as its own support.
     const under = s.bodies.deckUnder(part.pos.x / r, part.pos.y / r,
-      part.pos.z / r, r - 0.05, gap);
+      part.pos.z / r, r - 0.05, gap, 0);
     return under === null ? gap : 0;
   }
 

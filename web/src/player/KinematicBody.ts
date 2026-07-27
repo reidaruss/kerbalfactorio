@@ -12,6 +12,7 @@ import type { Vec3d } from '../world/PlanetBody.js';
 import { CAPSULE_SAMPLES_M, STRUCTURE_STEP_UP_M, VoxelCollider,
   type SolidBodies } from './VoxelCollision.js';
 import { climbGate, sampleSlopeCos } from './HeightfieldWalk.js';
+import type { StandTrace } from './StandTrace.js';
 
 export interface MoveIntent {
   /** Desired tangent direction, body frame, unit or zero. */
@@ -79,8 +80,20 @@ const DEEP_UNDERGROUND_M = 1.5;
  * Just over a cell, so it follows a dug floor and still falls down a shaft.
  */
 const DEEP_SNAP_M = 1.1;
-/** How far below the feet a structural deck is looked for. A storey is 3 m and
- *  a deck is 0.5 m, so two metres finds the one you are on and never a roof. */
+/**
+ * How far below the feet a structural deck is looked for.
+ *
+ * THE OLD COMMENT HERE READ "a storey is 3 m", AND IT HAS BEEN 4 m SINCE DW-32.
+ * The number survived the change; the reasoning behind it did not, so it is
+ * restated against the module the game actually ships. The bound that matters
+ * is that the search must never reach through the floor you are on to the one
+ * below: that clearance is `storey - deckH` = 4.00 - 0.50 = 3.50 m, and 2.0 m
+ * sits well inside it. The bound from the other side is that it must outreach
+ * the tallest step-up (1.1 m), or a player who has just climbed onto a deck
+ * would not find it underneath them. 2.0 m satisfies both with room, which is
+ * why the number is unchanged even though the sentence that justified it was
+ * wrong.
+ */
 const STRUCTURE_FLOOR_SEARCH_M = 2.0;
 
 export class KinematicBody {
@@ -114,6 +127,12 @@ export class KinematicBody {
   solids: SolidBodies | null = null;
   speedMps = 0;
   oracleCalls = 0;
+  /**
+   * Per-tick record of which authority held the feet up, off unless a probe
+   * turns it on. See StandTrace.ts: an oscillation between the terrain and a
+   * deck is invisible in any per-FRAME reading, so it needs its own channel.
+   */
+  trace: StandTrace | null = null;
 
   /** Everything that touches the voxel lattice. See VoxelCollision.ts. */
   private readonly col: VoxelCollider;
@@ -199,6 +218,7 @@ export class KinematicBody {
     //    REFUSED rather than resolved upward. Both branches read
     //    surface_field.h; neither invents a height.
     let qr = Math.hypot(qx, qy, qz);
+    const askedR = qr;
     let dxn = qx / qr, dyn = qy / qr, dzn = qz / qr;
     let surfaceR = this.oracle.surfaceRadius(dxn, dyn, dzn);
     this.oracleCalls++;
@@ -247,6 +267,8 @@ export class KinematicBody {
     this.onDeck = false;
     this.blockedByBuild = false;
     this.structureTests = 0;
+    const terrainR = groundR;
+    let deckRaw = Number.NaN;
     const solids = this.solids;
     if (solids !== null && solids.count > 0) {
       solids.resetTests();
@@ -258,7 +280,16 @@ export class KinematicBody {
       if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByBuild = true; }
       // A deck is only ever a metre or two under the feet: a bigger search would
       // let a player standing beside a tower be grounded on its roof.
-      const deck = solids.deckUnder(dxn, dyn, dzn, qr, STRUCTURE_FLOOR_SEARCH_M);
+      //
+      // The rise allowance is the walker's OWN first step rung, and it is what
+      // seats the feet on a floor they are standing inside rather than leaving
+      // them in it. Bounded by a step because a bigger lift is a climb and
+      // `resolveStep` above owns climbing; the shipped 0.50 m deck fits inside
+      // one 0.55 m rung and a 4.00 m wall does not, so being inside a wall can
+      // never put anybody on top of it.
+      const deck = solids.deckUnder(dxn, dyn, dzn, qr, STRUCTURE_FLOOR_SEARCH_M,
+        STRUCTURE_STEP_UP_M[0]);
+      if (deck !== null) deckRaw = deck;
       if (deck !== null && deck > groundR) { groundR = deck; this.onDeck = true; }
       this.structureTests = solids.tests;
     }
@@ -337,6 +368,13 @@ export class KinematicBody {
     // The collider does most of the oracle work now; fold it in or the tick
     // budget this reports is only the half of it that stayed here.
     this.oracleCalls += this.col.calls;
+    if (this.trace !== null) {
+      this.trace.push({
+        tick: this.trace.total, feetR: qr, terrainR, deckR: deckRaw, groundR,
+        fallM: askedR - r, onDeck: this.onDeck, grounded: this.grounded,
+        blockedByBuild: this.blockedByBuild,
+      });
+    }
   }
 
   /** Eye position for a given feet position. */

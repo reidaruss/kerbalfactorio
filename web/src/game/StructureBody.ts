@@ -109,6 +109,40 @@ export function leafProxy(root: THREE.Object3D): LocalBox | null {
   };
 }
 
+/**
+ * Where a line LEAVES an axis-aligned box, or null if it misses it.
+ *
+ * The line is `t -> O + L * t` in the box's own frame. The caller's line is the
+ * radial `t -> dir * t` rotated into that frame, and a rotation preserves
+ * length, so `|L|` is 1 and the returned `t` IS a radius in metres. Standard
+ * slab test; the only thing worth saying about it is that the EXIT is the
+ * answer, because along an outward radial the exit is the top face.
+ *
+ * The degenerate axis is a real case and not a guard against one: a deck's
+ * radial is very nearly perpendicular to its own two tangent axes, so `L` on
+ * those axes is around 1e-6 and dividing by it is exactly the wrong thing to
+ * do. A line parallel to a slab is either inside it for every `t` or outside
+ * it for every `t`, which is the branch below.
+ */
+function slabExit(ox: number, oy: number, oz: number,
+                  lx: number, ly: number, lz: number, b: LocalBox): number | null {
+  let t0 = -Infinity, t1 = Infinity;
+  for (let a = 0; a < 3; ++a) {
+    const o = a === 0 ? ox : a === 1 ? oy : oz;
+    const l = a === 0 ? lx : a === 1 ? ly : lz;
+    const lo = b.min[a], hi = b.max[a];
+    if (Math.abs(l) < 1e-9) {
+      if (o < lo || o > hi) return null;
+      continue;
+    }
+    const ta = (lo - o) / l, tb = (hi - o) / l;
+    if (ta < tb) { if (ta > t0) t0 = ta; if (tb < t1) t1 = tb; }
+    else { if (tb > t0) t0 = tb; if (ta < t1) t1 = ta; }
+    if (t1 < t0) return null;
+  }
+  return t1 === Infinity ? null : t1;
+}
+
 /** Bounding sphere of a proxy set once a part is placed. */
 export function boundOf(boxes: readonly LocalBox[]): number {
   let r = 0;
@@ -132,6 +166,7 @@ export class StructureBodies {
   tests = 0;
   private readonly q = new THREE.Quaternion();
   private readonly v = new THREE.Vector3();
+  private readonly v2 = new THREE.Vector3();
   private readonly near: Solid[] = [];
 
   resetTests(): void { this.tests = 0; }
@@ -181,27 +216,66 @@ export class StructureBodies {
   }
 
   /**
-   * The radius of the top of the highest structural surface under `rFrom` along
-   * a radial direction, or null when there is none within `searchM`.
+   * The radius of the highest structural TOP FACE along a radial: `searchM`
+   * below the feet, or up to `riseM` above them. Null when the radial misses
+   * every placed part, which is what makes "standing beside a deck" answer
+   * nothing without a single special case.
    *
-   * Marched at 0.05 m rather than solved, for the same reason
-   * `VoxelCollider.floorBelow` marches: a deck top is a plane in a rotated frame
-   * and an exact solve buys a centimetre of accuracy that nothing can see. The
-   * candidate set is gathered ONCE, so the march costs at most a handful of box
-   * tests per step and usually none at all.
+   * THIS USED TO MARCH DOWN FROM THE FEET AND CLAMP TO `min(rFrom, r + 0.05)`,
+   * AND THAT MADE IT A FUNCTION OF WHERE THE FEET WERE INSTEAD OF A PROPERTY OF
+   * THE STRUCTURE. Both halves of Reid's "you constantly sink into the
+   * foundation" came out of that one clamp, and both were measured before
+   * anything was changed (`probes/decksink.js`):
+   *
+   *   * Feet inside the slab: the first march sample is already solid, so the
+   *     answer WAS the feet. The ground snap then ratified the tick's own
+   *     gravity penetration instead of correcting it, so the player sank
+   *     0.002683 m EVERY tick, standing still, at 0.161 m/s, until the
+   *     capsule's lowest sample (0.15 m) finally entered the slab and
+   *     `resolveStep`'s 0.55 m step-up fired. Measured: a stationary, grounded,
+   *     0.00 m/s player oscillated over 0.198989 m with a mean period of 74.3
+   *     ticks, dropping to 0.149774 m below the deck's own top face. That is
+   *     exactly "snapping back up to the surface then sinking".
+   *   * Feet BELOW the slab: a downward-only march never sees it at all. A
+   *     foundation laid on the cell the player is standing in puts its base
+   *     plane on the ground, so its 0.50 m slab stands entirely above the feet:
+   *     measured 0.499993 m of deck above the feet with this port answering
+   *     NOTHING on 120 of 120 ticks. The player is shin-deep in their own first
+   *     foundation and nothing will ever lift them out.
+   *
+   * So it is now SOLVED rather than marched, and it answers with the box's own
+   * top face. The radial is the line `t -> dir * t` through the planet centre;
+   * a rotation preserves length, so in a part's own frame it is still a line
+   * whose parameter IS the radius, and the exit of the standard slab test is
+   * the top face exactly. No march step, no quantisation, and no dependence on
+   * where the feet happen to be.
+   *
+   * `riseM` is what lets the feet be seated on a floor they are standing INSIDE
+   * rather than left in it, and it is bounded rather than free because a rise
+   * larger than a step is a climb and climbing is `resolveStep`'s job. The
+   * caller passes its own first step rung (`STRUCTURE_STEP_UP_M[0]`, 0.55 m),
+   * which the shipped 0.50 m deck fits inside and a 4.00 m wall does not.
    */
   deckUnder(dx: number, dy: number, dz: number, rFrom: number,
-            searchM: number): number | null {
-    const near = this.gather(dx * rFrom, dy * rFrom, dz * rFrom, searchM + 1);
+            searchM: number, riseM: number): number | null {
+    const near = this.gather(dx * rFrom, dy * rFrom, dz * rFrom,
+      Math.max(searchM, riseM) + 1);
     if (near.length === 0) return null;
-    for (let d = 0; d <= searchM; d += 0.05) {
-      const r = rFrom - d;
-      const x = dx * r, y = dy * r, z = dz * r;
-      for (const s of near) {
-        if (this.inside(s, x, y, z)) return Math.min(rFrom, r + 0.05);
+    const loR = rFrom - searchM, hiR = rFrom + riseM;
+    let best: number | null = null;
+    for (const s of near) {
+      this.q.copy(s.quat).invert();
+      const L = this.v.set(dx, dy, dz).applyQuaternion(this.q);
+      const O = this.v2.set(-s.pos.x, -s.pos.y, -s.pos.z).applyQuaternion(this.q);
+      for (const b of s.boxes) {
+        if (b.leaf && !s.shut) continue;
+        this.tests++;
+        const exitR = slabExit(O.x, O.y, O.z, L.x, L.y, L.z, b);
+        if (exitR === null || exitR < loR || exitR > hiR) continue;
+        if (best === null || exitR > best) best = exitR;
       }
     }
-    return null;
+    return best;
   }
 
   /**

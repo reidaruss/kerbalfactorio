@@ -53,16 +53,34 @@ export interface SolidBodies {
   tests: number;
   resetTests(): void;
   blocks(x: number, y: number, z: number): boolean;
+  /** The highest structural TOP FACE along a radial: `searchM` below the feet,
+   *  or up to `riseM` above them. See `StructureBodies.deckUnder`. */
   deckUnder(dx: number, dy: number, dz: number, rFrom: number,
-            searchM: number): number | null;
+            searchM: number, riseM: number): number | null;
   resolveStep(p: Vec3d, qx: number, qy: number, qz: number,
               ux: number, uy: number, uz: number,
               samplesM: readonly number[],
               stepUpM: readonly number[]): StepResult;
 }
 
-/** The ledge heights a blocked structural step retries at. A deck is 0.50 m. */
-export const STRUCTURE_STEP_UP_M: readonly number[] = STEP_UP_M;
+/**
+ * The ledge heights a blocked STRUCTURAL step retries at.
+ *
+ * Its own array rather than an alias of `STEP_UP_M`, which it used to be, so
+ * that the two are not silently coupled: the voxel ladder is a statement about
+ * a 1 m lattice cell and this one is a statement about the shipped module, and
+ * DW-32's move from a 1 m module to a 4 m one is the third scale assumption in
+ * two days to have been found hiding inside a constant that predated it. The
+ * VALUES are deliberately unchanged.
+ *
+ * The first rung is what a player climbs to get onto their own foundation, so
+ * it must clear a deck: 0.55 m against the module's own `deckH` of 0.50 m.
+ * That relation is asserted rather than assumed, in `probes/decksink.js`, which
+ * reads `deckH` off the shipped asset and fails if it ever grows past the rung.
+ * The second rung is one storey of nothing in particular; a storey is 4.00 m,
+ * so no step ever puts a player on top of a wall.
+ */
+export const STRUCTURE_STEP_UP_M: readonly number[] = [0.55, 1.1];
 /** A minimum translation out of solid. `dist` is its length in metres. */
 export interface PushResult { x: number; y: number; z: number; dist: number }
 
