@@ -33,6 +33,7 @@ import { addressIn, anchorIn, machineCellKey, siteAt,
   type MachineAddr, type SiteHost } from './MachinePlacement.js';
 import { factoryReport } from './FactoryReport.js';
 import { commitPlan, oreFedTo } from './FactoryCommit.js';
+import { collectOutput, takeFromBelt, turnPlaced } from './FactoryHand.js';
 import type { GameCore } from './GameCore.js';
 import type { OrePatches } from './OrePatches.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -89,6 +90,14 @@ export class Factory {
   /** Ingots collected by hand into the pack, and what would not fit. */
   collected = 0;
   spilled = 0;
+  /** FS-28: items lifted off a belt by hand. Its own counter, because "took it
+   *  off a belt" and "emptied a machine" are different events and a probe that
+   *  cannot tell them apart cannot check either. */
+  takenFromBelts = 0;
+  /** DW-20: how many times the take verb REACHED a belt at all. Without it, a
+   *  zero take count cannot be told from never having aimed at one, and a probe
+   *  that cannot tell those apart is measuring nothing. */
+  beltTakeAttempts = 0;
   /** Demolition: buildings pulled up, items handed back, items lost on belts. */
   removals = 0;
   refunded = 0;
@@ -96,7 +105,7 @@ export class Factory {
 
   constructor(readonly M: OfCoreModule, readonly core: GameCore,
               readonly bodyHandle: number, fixedDt: number,
-              readonly ore: OrePatches, private readonly host: SiteHost) {
+              readonly ore: OrePatches, readonly host: SiteHost) {
     this.line = new AutoLine(M, fixedDt);
   }
 
@@ -220,6 +229,14 @@ export class Factory {
     p.quat = orient(p.up, p.fwd);
   }
 
+  /** FS-27: turn a placed building one quarter turn. `FactoryHand` owns it. */
+  turn(p: Placed): boolean { return turnPlaced(this, p); }
+
+  /** FS-28: take one item off the aimed belt tile. `FactoryHand` owns it. */
+  takeFromBelt(p: Placed): { item: number; count: number } | null {
+    return takeFromBelt(this, p);
+  }
+
   /**
    * Rebuild the whole plan from saved records and commit ONCE.
    *
@@ -319,23 +336,9 @@ export class Factory {
     }
   }
 
-  /**
-   * Empty a building's output buffer into the pack. Returns what moved.
-   * `refund` only chooses which ledger it lands in: taking stock by hand and
-   * getting stock back off a demolished machine are different events and a
-   * probe that cannot tell them apart cannot check either.
-   */
+  /** Empty a machine's output buffer into the pack. `FactoryHand` owns it. */
   collect(p: Placed, refund = false): number {
-    if (p.build < 0) return 0;
-    const have = this.line.outputBuffer(p.build);
-    if (have <= 0) return 0;
-    const took = this.line.takeOutput(p.build, have);
-    if (took <= 0) return 0;
-    const item = this.outputItemOf(p);
-    const over = item > 0 ? this.core.add(item, took) : took;
-    if (refund) this.refunded += took - over; else this.collected += took - over;
-    this.spilled += over;
-    return took - over;
+    return collectOutput(this, p, refund);
   }
 
   outputItemOf(p: Placed): number {
@@ -347,26 +350,46 @@ export class Factory {
     return n?.resource ?? 0;
   }
 
-  /** Nearest building the aim ray enters, within `reachM`. */
+  /**
+   * The building the aim ray is most nearly CENTRED on, within `reachM`.
+   *
+   * FS-28 CHANGED THE RANKING FROM NEAREST TO BEST-CENTRED, and it had to.
+   * The old rule kept whichever candidate the ray entered FIRST, which is fine
+   * while everything is the same size and wrong the moment they are not: a
+   * smelter's interaction sphere is 1.6 m against a belt tile's 1.0 m, so a belt
+   * standing just past a smelter is inside the smelter's sphere from almost
+   * every angle and could not be aimed at AT ALL. Measured with the take verb
+   * (`probes/autoline.js`): an aim **0.005 m** off a belt tile's centre resolved
+   * to the smelter on every one of seven presses, from four different standing
+   * positions, so "take what is on this belt" was unreachable for any belt near
+   * a machine. That is a feature that exists and cannot be used.
+   *
+   * The score is the perpendicular miss as a FRACTION of the candidate's own
+   * radius, so it asks "how centred is the crosshair on this thing" rather than
+   * "which thing is nearest", and distance only breaks ties. A player pointing
+   * at a smelter still gets the smelter, because a crosshair on a 2 m machine
+   * scores near zero against it and poorly against anything beside it.
+   */
   pick(eye: { x: number; y: number; z: number },
        dir: { x: number; y: number; z: number }, reachM: number,
        belts = false): Placed | null {
     let best: Placed | null = null;
-    let bestT = reachM;
+    let bestScore = Infinity;
+    let bestT = Infinity;
     for (const p of this.placed) {
-      // Belts are not interactive: there is nothing to take out of one, and a
-      // 1 m tile under the crosshair otherwise steals the prompt from the
-      // machine behind it every time the player looks down the line. They ARE
-      // demolishable, which is the one caller that passes `belts`.
       if (p.kind === 'belt' && !belts) continue;
       const r = FOOTPRINT[p.kind] * 0.6 + 0.4;
       const ox = p.pos.x + p.up.x * 0.7 - eye.x;
       const oy = p.pos.y + p.up.y * 0.7 - eye.y;
       const oz = p.pos.z + p.up.z * 0.7 - eye.z;
       const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      if (t < -r || t > bestT) continue;
-      if (Math.hypot(ox - dir.x * t, oy - dir.y * t, oz - dir.z * t) > r) continue;
-      best = p; bestT = Math.max(0, t);
+      if (t < -r || t > reachM) continue;
+      const miss = Math.hypot(ox - dir.x * t, oy - dir.y * t, oz - dir.z * t);
+      if (miss > r) continue;
+      const score = miss / r;
+      if (score > bestScore + 1e-6) continue;
+      if (score > bestScore - 1e-6 && t >= bestT) continue;
+      best = p; bestScore = score; bestT = Math.max(0, t);
     }
     return best;
   }

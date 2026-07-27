@@ -1,0 +1,186 @@
+// WHERE THE GHOST LANDS, and what it is allowed to say before the button goes
+// down. Split out of BuildMode when FS-26 socket snapping landed and the file
+// reached its 400-line cap, along a seam that was already there: BuildMode owns
+// the GESTURE (press, hold, drag, turn) and this owns the single question "given
+// this aim ray and this part, which cell, which way, and would it be accepted".
+//
+// THE AIM MARCH IS AGAINST THE LIVE GROUND, asked through `Structures.
+// groundRadius`. It used to pass a literal 0 for the edit set, so over ground the
+// player had dug or levelled the ray stopped at a surface that no longer existed:
+// measured, a -25 degree aim across a cut put the ghost 1.807 m from where the
+// aim actually meets the ground, a cell and a half of targeting error, and most
+// of what made laying a line into a cut feel unresponsive.
+//
+// FS-26: THE SOCKET OVERRULES THE GRID. Where the ray stops is a good guess and
+// nothing more, and it is a bad guess exactly where it matters most, at the end
+// of a run the player is obviously trying to extend. So before the hit point is
+// floored into a cell it is offered to `FactorySnap`, and a published socket
+// within 0.90 m takes the decision instead. What was caught is REPORTED, on the
+// ghost and in the probe report, because a snap the player cannot see is
+// indistinguishable from a coincidence.
+
+import { headingIn, type MachineAddr } from './MachinePlacement.js';
+import { chainsInto } from './FactoryWiring.js';
+import { mateFor, nearestSocket, proposeFromSocket, SNAP_M,
+  type SocketDef, type SocketHit } from './FactorySnap.js';
+import type { BuildKind, Factory } from './Factory.js';
+import type * as THREE from 'three';
+
+/** Aim march: step and reach, in metres. */
+const STEP_M = 0.35;
+const REACH_M = 9.0;
+/** Where the ghost falls back to when the aim never meets the ground. */
+const FALLBACK_M = 2.6;
+
+/** An aim ray, as the player's own view produces it. */
+export interface BuildRay {
+  origin: { x: number; y: number; z: number };
+  dir: { x: number; y: number; z: number };
+}
+
+export interface BuildTarget {
+  pos: { x: number; y: number; z: number };
+  up: THREE.Vector3;
+  fwd: THREE.Vector3;
+  cell: string;
+  addr: MachineAddr;
+  /**
+   * FS-19. The site under this ghost does not exist yet: it was founded on the
+   * lattice cell under the aim point purely so the ghost has a frame, and it
+   * becomes real only if something is placed. `cell` and the site id are
+   * PLACEHOLDERS while this is true, so a consumer comparing two ghosts must
+   * read it. Three probes learned that the hard way.
+   */
+  prospective: boolean;
+  /**
+   * FS-26. The socket this ghost caught, as `#12 socket_belt_out`, or ''. The
+   * ghost says it out loud for the reason GP-37 does: a player who cannot see
+   * WHICH thing was caught cannot tell a snap from a lucky grid cell.
+   */
+  snapped: string;
+  /** The caught socket itself, so a probe can measure the gap it produced. */
+  hit: SocketHit | null;
+  /**
+   * FS-27. A run already chains into this cell. It no longer means the heading
+   * is locked (that was FS-18, and Reid overruled it): `pitchRuns` now sets
+   * pitch only, so R survives a commit and this tile would simply become a
+   * corner. It is still worth saying, because "this continues the run" is the
+   * thing a player is trying to find out.
+   */
+  chains: boolean;
+  ok: boolean;
+  reason: string;
+  /** Drill only: the ore patch under the ghost, or -1. */
+  patch: number;
+  /** Drill only: what it would mine here, units per second. Richness varies
+   * across a deposit, so WHERE on the patch a drill goes is a real decision and
+   * the ghost has to answer it before the button is pressed. */
+  ratePerSec: number;
+}
+
+/** March the aim ray until it is below the LIVE ground. */
+function march(ground: (x: number, y: number, z: number) => number,
+               ray: BuildRay): { x: number; y: number; z: number } {
+  const o = ray.origin, d = ray.dir;
+  let hitT = -1;
+  for (let t = 0.6; t <= REACH_M; t += STEP_M) {
+    const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
+    if (Math.hypot(x, y, z) <= ground(x, y, z)) { hitT = t; break; }
+  }
+  const t = hitT < 0 ? FALLBACK_M : hitT;
+  return { x: o.x + d.x * t, y: o.y + d.y * t, z: o.z + d.z * t };
+}
+
+/**
+ * The whole ghost decision. Returns null only when there is nothing to show.
+ *
+ * The order matters and is stated once here: march, then SNAP, then floor into a
+ * cell, then judge. Snapping before flooring is the entire point, because
+ * flooring is the step that throws away the sub-cell information a socket needs.
+ * A snap whose proposed cell is already taken falls through to the grid rather
+ * than showing a red ghost, because "the cell after the one you meant" is a
+ * better guess than "no".
+ *
+ * `snapOn` IS FALSE FOR EVERY TICK OF A DRAG, and that is not a tuning knob, it
+ * is the fix for a defect this feature introduced and `probes/beltsnap.js`
+ * caught on its first run. A drag reads the ghost's ADDRESS as the cell to walk
+ * towards, so a ghost that had jumped to a socket's proposal was steering the
+ * drag rather than reporting the crosshair. Measured: laying a run of eight
+ * tiles put the FIRST one in the cell BEHIND the seed tile, pointing backwards,
+ * and `chainRuns` correctly reported two transport lines where the player had
+ * laid one, which is exactly the class of silent failure this whole file exists
+ * to prevent. Snapping is a targeting aid for ONE placement; during a drag the
+ * run itself is the guide and the crosshair is the only input.
+ */
+export function resolveGhost(f: Factory, kind: BuildKind, ray: BuildRay,
+                             rotation: number,
+                             ground: (x: number, y: number, z: number) => number,
+                             sockets: ReadonlyMap<string, SocketDef[]>,
+                             snapOn = true):
+BuildTarget | null {
+  const hp = march(ground, ray);
+  let snapped = '';
+  let hit: SocketHit | null = null;
+  let s = f.snap(hp.x, hp.y, hp.z);
+  let fwd = headingIn(s.addr.site, ray.dir, rotation);
+
+  // A DRILL NEVER SNAPS, AND THAT IS NOT AN OMISSION. Its position is decided
+  // by the GROUND: `patchUnder` refuses a cell with no ore, and "you cannot
+  // place a drill here, there is no ore" is the one sentence that teaches the
+  // whole mechanic. A socket that moves the ghost two cells to line it up with a
+  // belt can move it straight off the patch, and then the snap has replaced a
+  // rule the player can see with one they cannot. Measured: with this guard
+  // absent, `probes/shortline.js` and `probes/demolish.js` both failed at "the
+  // drill would not go down beyond the tail", because the belt's tail socket
+  // proposed a cell 2.000 m back that had no ore under it. Belts and smelters
+  // have no such constraint, so they snap freely.
+  const caught = snapOn && kind !== 'miner'
+    ? nearestSocket(f.placed, sockets, hp, SNAP_M, kind !== 'belt') : null;
+  if (caught !== null) {
+    const prop = proposeFromSocket(caught, kind, (p) => f.snap(p.x, p.y, p.z).addr);
+    if (prop !== null && !f.occupied(f.snapAddr(prop.addr).cell)) {
+      s = f.snapAddr(prop.addr);
+      // A SNAPPED HEADING IS THE SOCKET'S, AND THE ROTATE KEY DOES NOT TOUCH IT.
+      //
+      // The first draft added `rotation` on top, reasoning that a player who
+      // wanted to branch sideways off a run's end should still be able to. The
+      // cost of that is much larger than the benefit and it is measured:
+      // `BuildMode.rotation` is STICKY, so a player (or a probe) who pressed R
+      // twenty minutes ago to lay one run backwards has every subsequent snap
+      // silently reversed. `probes/demolish.js` pulls a tile out of the middle
+      // of a run and puts it back, with rotation sitting at 2 from laying the
+      // run; the replacement inherited the socket's heading REVERSED, so the
+      // run came back as 3 tiles plus 1 instead of re-merging into 4, and
+      // nothing said why. Continuity is the entire reason to snap. Branching is
+      // still available: aim past the socket's reach and the grid answers, where
+      // R does exactly what it always did.
+      fwd = prop.fwd;
+      hit = caught;
+      snapped = `#${caught.build.id} ${caught.name} -> ${mateFor(kind, caught)}`;
+    }
+  }
+
+  let ok = true;
+  let reason = snapped === '' ? '' : `snapped to ${snapped}`;
+  let patch = -1;
+  let ratePerSec = 0;
+  const chains = kind === 'belt' && chainsInto(f.placed, s.pos);
+  if (f.occupied(s.cell)) { ok = false; reason = 'cell taken'; }
+  else if (kind === 'miner') {
+    // THE SENTENCE THAT TEACHES THE MECHANIC. A drill eats the ground under
+    // itself, so the only question is whether there is ore in that ground, and
+    // the answer is on the ghost before the button is pressed rather than in an
+    // error message after it. Several drills on one patch are fine: a deposit is
+    // a piece of ground, not a socket.
+    patch = f.patchUnder(s.pos);
+    if (patch < 0) {
+      ok = false; reason = 'you cannot place a drill here, there is no ore';
+    } else {
+      ratePerSec = f.ore.drillRate(patch, s.pos.x, s.pos.y, s.pos.z);
+      reason = `${ratePerSec.toFixed(1)} ore/s here`;
+    }
+  }
+  return { pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr,
+    prospective: s.addr.prospective, snapped, hit, chains, ok, reason, patch,
+    ratePerSec };
+}

@@ -21,6 +21,8 @@ import { loadGlb } from '../assets/Loaders.js';
 import { MachineBatch, type MachineTemplate } from './MachineBatch.js';
 import { TYPE_ID, type BuildKind, type Factory, type Placed } from './Factory.js';
 import { orient } from './Grid.js';
+import { readMachineSockets, type SocketDef } from './FactorySnap.js';
+import { BeltCargo } from './BeltCargo.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 
 const TEMPLATES: Record<string, MachineTemplate> = {
@@ -53,6 +55,13 @@ const BANDS_PER_M = 2;
 export class FactoryView {
   readonly group = new THREE.Group();
   readonly batch = new MachineBatch();
+  /** FS-28: discrete cargo riding the belts, at LOD 0 only. */
+  readonly cargo = new BeltCargo();
+  /**
+   * FS-26: every socket the machine assets publish, read once at load. The
+   * placement layer snaps to these; nothing recomputes a half-tile offset.
+   */
+  sockets: ReadonlyMap<string, SocketDef[]> = new Map();
   private ghost: THREE.Mesh | null = null;
   private readonly ghostMat: THREE.MeshBasicMaterial;
   private readonly slots = new Map<number, number>();
@@ -69,6 +78,7 @@ export class FactoryView {
   constructor(private readonly origin: FloatingOrigin) {
     this.group.name = 'factory';
     this.group.add(this.batch.group);
+    this.group.add(this.cargo.group);
     this.ghostMat = new THREE.MeshBasicMaterial({
       color: 0x63d0ff, transparent: true, opacity: 0.35, depthWrite: false,
       side: THREE.DoubleSide,
@@ -82,6 +92,10 @@ export class FactoryView {
       loaded.set(key, { def, scene: g.scene });
     }));
     this.batch.build(loaded);
+    // FS-26: the sockets come off the SAME scenes the batch was built from, so
+    // the geometry drawn and the geometry snapped to cannot fall out of step.
+    this.sockets = readMachineSockets(loaded);
+    await this.cargo.load(loaded.get('belt')?.scene ?? null);
     // ONE ghost mesh, re-pointed at whichever machine is selected. A clone per
     // frame would allocate a mesh sixty times a second to draw a preview.
     this.ghost = new THREE.Mesh(new THREE.BufferGeometry(), this.ghostMat);
@@ -99,7 +113,8 @@ export class FactoryView {
    * O(entities) and EmitBeltFlowStates is O(lines), and asking per building
    * would quietly turn both into O(n^2) the moment a base got interesting.
    */
-  sync(f: Factory, simSecs: number): void {
+  sync(f: Factory, simSecs: number,
+       eye: { x: number; y: number; z: number }): void {
     this.t = simSecs;
     this.batch.setTime(simSecs);
     const rows = new Map<number, { visual: number; anim: number }>();
@@ -132,6 +147,10 @@ export class FactoryView {
     }
     this.syncLinks(f);
     this.batch.flush();
+    // FS-28. The corners map is handed straight over rather than recomputed:
+    // cargo has to ride the deck that is actually drawn, and two answers to
+    // "is this tile a curve" is how it ends up riding the one that is not.
+    this.cargo.sync(f, f.core, this.origin, eye, corners);
     this.curves = [...corners].map(([id, c]) => ({ id, turn: c.turn }));
   }
 
@@ -222,7 +241,7 @@ export class FactoryView {
 
   stats(): unknown {
     return { ...this.batch.stats(), ghost: this.ghostVisible,
-      links: this.linkSlots.length,
+      links: this.linkSlots.length, cargo: this.cargo.stats(),
       curves: this.curves.length, curveTiles: this.curves };
   }
 }

@@ -211,6 +211,82 @@ struct TransportLine {
     return taken;
   }
 
+  // --- Manual pick-off (§2.3, the PLAYER's verb): take ONE item at `slot`. ---
+  //
+  // popHead is the CONSUMER's verb: it only ever removes the item presented at
+  // the head, and it is allowed to assume headGap == 0 because nothing is
+  // presented until the lead item has travelled the whole line. A player aiming
+  // at a belt and pulling an item off it is a different verb: the item can sit
+  // anywhere in [head_, size), the line is normally mid-flow (headGap > 0), and
+  // the one property a player notices instantly at LOD-0 is that nothing ELSE
+  // on the belt may twitch. Items are stored as gaps, never as positions (§2),
+  // so the naive "erase the slot" drags every item behind the hole FORWARD by
+  // kItemSpacing plus the erased item's own extra gap: 64 units at the absolute
+  // minimum, a quarter of a tile, which GetLineItems reports and rendering
+  // draws as the whole tail of the belt teleporting on the frame of the pick.
+  //
+  // So each case donates the freed span (the item's kItemSpacing body plus its
+  // extra gap) to whichever neighbouring gap leaves every surviving offset
+  // byte-identical. That is the same bookkeeping that keeps the §2 invariant
+  //   headGap + Σ(itemGaps[k], k>head_) + itemCount*kItemSpacing + tailGap
+  //     == capacityUnits
+  // balanced after every take:
+  //   head slot : headGap += kItemSpacing + itemGaps[head_+1]; that gap zeroes
+  //               (the new lead item's gap IS headGap) and head_ advances.
+  //               tailGap is UNTOUCHED, because the head side already absorbed
+  //               the freed span. This is precisely where popHead's shortcut
+  //               would be wrong: it rebuilds headGap from 0, which on a
+  //               mid-flow line throws away the travel the lead item has
+  //               already done and snaps the whole line backwards.
+  //   last slot : tailGap += kItemSpacing + itemGaps[slot]. The tail is the one
+  //               end that legitimately gains room, because the hole really is
+  //               at the tail and a new item may now enter there.
+  //   interior  : itemGaps[slot+1] += kItemSpacing + itemGaps[slot]; the hole is
+  //               absorbed into the FOLLOWING item's lead gap, so both ends of
+  //               the line stay exactly where they were.
+  // Taking the SOLE item resets the line to the state addBeltLine leaves it in,
+  // so a drained line refills byte-identically to a freshly placed one.
+  //
+  // Cost: O(items) for the two erasing cases, against popHead's O(1). That is
+  // deliberate. A hand pick is a cold, human-rate action (one call per player
+  // input), never part of the tick that advances 40,000 lines inside 16.67 ms
+  // in the G1 benchmark, so clarity here is worth more than an in-place shuffle.
+  // Returns kNoItem (and changes nothing) if the line is empty or `slot` is not
+  // a live slot.
+  ItemId takeAt(size_t slot) {
+    if (empty()) return kNoItem;
+    if (slot < head_ || slot >= itemTypes.size()) return kNoItem;
+    const ItemId taken = itemTypes[slot];
+    const size_t last = itemTypes.size() - 1;
+    if (itemCount() == 1) {
+      // Sole item: reclaim storage and return to the fresh-line state exactly,
+      // so "drain a belt by hand then rebuild on it" cannot leave a phantom gap
+      // that would make the next tryPushTail behave differently from the first.
+      head_ = 0;
+      itemGaps.clear();
+      itemTypes.clear();
+      headGap = 0;
+      tailGap = capacityUnits;
+    } else if (slot == head_) {
+      headGap += kItemSpacing + itemGaps[head_ + 1];
+      itemGaps[head_ + 1] = 0;
+      ++head_;
+    } else if (slot == last) {
+      tailGap += kItemSpacing + itemGaps[slot];
+      itemGaps.pop_back();
+      itemTypes.pop_back();
+    } else {
+      itemGaps[slot + 1] += kItemSpacing + itemGaps[slot];
+      itemGaps.erase(itemGaps.begin() + static_cast<std::ptrdiff_t>(slot));
+      itemTypes.erase(itemTypes.begin() + static_cast<std::ptrdiff_t>(slot));
+    }
+    // Same reasoning as popHead: a line that just lost an item is no longer
+    // provably min-spaced, and the latched-compression fast path must not be
+    // trusted until advance() re-observes it.
+    fullyCompressed = false;
+    return taken;
+  }
+
   // --- Advance one tick (§2.2): the O(1) flowing case. -----------------------
   // If the lead item is not yet at the head, move the whole line forward by
   // speed (one subtraction). If it reaches the head, clamp at 0 (waiting for a
@@ -829,6 +905,50 @@ class FactorySim {
       out.push_back(FLineItem{l.itemTypes[k], offset});
     }
     return out;
+  }
+
+  // --- The player-facing inverse of GetLineItems: take the item NEAREST to a
+  // point on the line. Gameplay aims a reticle at a belt, converts the hit to a
+  // unit-offset along the baked pathUnitToWorld (the same axis GetLineItems
+  // reports), and asks for the item there. `toleranceUnits` is the aim window:
+  // a pick that lands more than that far from any item is a MISS, not a grab of
+  // whatever happened to be closest, so brushing the cursor past a belt cannot
+  // silently strip it. Returns the taken item, or kNoItem if the line id is not
+  // a belt, the line is empty, or nothing is inside the window (in which case
+  // the line is left byte-identical).
+  //
+  // Ties (two items exactly equidistant, which is common on a min-spaced belt
+  // where every gap is exactly kItemSpacing) resolve toward the HEAD, i.e. the
+  // lower UnitOffset: the walk is in increasing-offset order and the comparison
+  // is a STRICT <, so the first (head-most) candidate keeps the slot. That makes
+  // a hand pick deterministic and therefore replay-safe (NW-4), which a "last
+  // one wins" or an offset sort with an unstable tie order would not be.
+  //
+  // O(items) like GetLineItems, and cold for the same reason: one call per
+  // player input, never per tick.
+  ItemId TakeLineItemNear(FEntityId lineId, uint32_t unitOffset,
+                          uint32_t toleranceUnits) {
+    if (lineId >= kind_.size() || kind_[lineId] != EntityKind::BeltLine)
+      return kNoItem;
+    TransportLine& l = lines_[lineId];
+    if (l.empty()) return kNoItem;
+    const size_t kNoSlot = l.itemTypes.size();
+    size_t bestSlot = kNoSlot;
+    uint32_t bestDist = 0;
+    // Same offset walk as GetLineItems: lead item at headGap, each subsequent
+    // item kItemSpacing + its extra gap further from the head.
+    uint32_t offset = l.headGap;
+    for (size_t k = l.head_; k < l.itemTypes.size(); ++k) {
+      if (k > l.head_) offset += kItemSpacing + l.itemGaps[k];
+      const uint32_t d =
+          offset >= unitOffset ? offset - unitOffset : unitOffset - offset;
+      if (bestSlot == kNoSlot || d < bestDist) {
+        bestDist = d;
+        bestSlot = k;
+      }
+    }
+    if (bestSlot == kNoSlot || bestDist > toleranceUnits) return kNoItem;
+    return l.takeAt(bestSlot);
   }
 
   // Count of live items on a line — O(1) (the §2 head-cursor count). Lets the

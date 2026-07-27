@@ -44,13 +44,23 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
       empty: false, distanceM: 0, action: `${TAKE}    ${REMOVE}`,
     };
   }
+  if (b.kind === 'belt') {
+    // FS-28: a belt is now a thing you can take FROM, so it says how much is on
+    // the line and offers the turn key, which is the only place a player finds
+    // out that R works on a placed tile.
+    const on = b.run < 0 ? 0 : f.line.beltItems(f.runBuilds[b.run] ?? -1);
+    return {
+      name: on > 0 ? `belt  ${on} on the line` : 'belt  empty',
+      fraction: 0, empty: on === 0, distanceM: 0,
+      action: `${TAKE} one    ${labelOf('rotate')} turn    ${REMOVE}`,
+    };
+  }
   const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
   return {
-    name: b.kind === 'belt' ? 'belt'
-      : out > 0 ? `${b.kind}  ${labelOf('interact')} to take ${out} ${name}`
-        : `${b.kind}  working`,
+    name: out > 0 ? `${b.kind}  ${labelOf('interact')} to take ${out} ${name}`
+      : `${b.kind}  working`,
     fraction: b.build < 0 ? 0 : f.line.progress01(b.build),
-    empty: false, distanceM: 0, action: `${TAKE}    ${REMOVE}`,
+    empty: false, distanceM: 0, action: `${TAKE}    ${labelOf('rotate')} turn    ${REMOVE}`,
   };
 }
 
@@ -63,25 +73,24 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
  * pressed and was refused. Same argument as DW-24's: a message that arrives
  * after the key is pressed teaches nothing.
  *
- * And the turn key is described rather than merely offered. Corners in this game
- * are purely geometric: `FactoryCommit.pitchRuns` re-derives every tile's
- * heading from its run's own positions on every commit, so a belt laid against
- * an existing run takes the run's heading and R cannot change it. That is the
- * behaviour we want (it is what chains a dragged run by construction and what
- * the curve renderer reads), so the ghost says so instead of the HUD offering a
- * key that silently does nothing.
+ * FS-27 REPLACES WHAT THIS USED TO SAY ABOUT THE TURN KEY. It read "R turn: the
+ * run sets this heading", which was honest about FS-18's behaviour and is now
+ * false: `pitchRuns` writes pitch and never yaw, so a tile keeps whatever
+ * heading it was given and a run flows through the corner that makes. The prompt
+ * says what the key does instead, and the second clause is the discoverability
+ * half of the same feature, because a key that only works with an EMPTY hand is
+ * a key nobody finds by accident.
  */
 export function ghostMachinePrompt(
   label: string,
-  t: { reason: string; ok: boolean; headingLocked: boolean } | null,
+  t: { reason: string; ok: boolean; chains: boolean } | null,
 ): HudTarget | null {
   if (t === null || label === '') return null;
   return {
     name: `${label}${t.reason === '' ? '' : `  ${t.reason}`}`,
     fraction: 0, empty: !t.ok, distanceM: 0,
-    action: `${USE} place  (hold to drag)    `
-      + (t.headingLocked ? `${labelOf('rotate')} turn: the run sets this heading`
-        : `${labelOf('rotate')} turn`),
+    action: `${USE} place  (hold to drag)    ${labelOf('rotate')} turn`
+      + (t.chains ? '  (continues the run)' : ''),
   };
 }
 
@@ -105,6 +114,8 @@ export function factoryReport(f: Factory): unknown {
     minedFromNodes: f.minedFromNodes,
     collected: f.collected,
     spilled: f.spilled,
+    takenFromBelts: f.takenFromBelts,
+    beltTakeAttempts: f.beltTakeAttempts,
     removals: f.removals,
     refunded: f.refunded,
     demolishedInFlight: f.demolishedInFlight,

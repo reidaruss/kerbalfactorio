@@ -188,4 +188,23 @@ export class AutoLine {
     }
     return out;
   }
+
+  /** Sub-tile units per belt tile: 256, and asked rather than assumed. */
+  get unitsPerTile(): number { return this.M._of_net_units_per_tile() || 256; }
+
+  /**
+   * FS-28: take ONE item off a belt, nearest to `offsetTiles` from the line
+   * head. Returns the ItemId taken, or 0 when nothing was within `toleranceTiles`.
+   *
+   * The offsets are in TILES here and in sub-tile units across the bridge, the
+   * same conversion `lineItems` does in the other direction, so a caller that
+   * read an item's position out of `lineItems` can hand the same number straight
+   * back and get that item.
+   */
+  takeLineItem(build: number, offsetTiles: number, toleranceTiles: number): number {
+    const per = this.unitsPerTile;
+    return this.M._of_net_take_line_item(this.handle, build,
+      Math.max(0, Math.round(offsetTiles * per)),
+      Math.max(0, Math.round(toleranceTiles * per)));
+  }
 }

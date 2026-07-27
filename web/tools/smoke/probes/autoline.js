@@ -153,7 +153,17 @@
   // floor rejects a re-reading of the cell already dealt with; the ceiling
   // rejects a skipped cell, which is the failure that shatters a run.
   const NEAR = 0.5;
-  const FAR = 1.25;
+  // FS-26 MOVED THIS AND THE NEW VALUE IS THE FEATURE, not a slackening. A belt
+  // ghost within 0.90 m of a drill's published `socket_item_out` no longer takes
+  // the cell the aim ray happened to stop on: it takes the cell that socket
+  // proposes, which for a 2.0 m drill feeding a 1.0 m belt is TWO cells out
+  // (`FactorySnap.stepsFor`, the sum of the half-extents rounded up to whole
+  // cells, so the two do not clip). So the first belt cell of a line off a drill
+  // is 2.000 m from the drill's centre where it used to be 1.000 m, and 1.25
+  // rejected every candidate and reported "no belt cell inside the drill" on a
+  // line that places perfectly. Still well inside `FactoryWiring`'s 2.25 m
+  // miner-to-belt reach, which is what has to hold for the line to run.
+  const FAR = 2.4;
 
   // 1: which yaw is a tangent axis, measured off the ghost's own flow direction.
   of.build(2);
@@ -265,6 +275,16 @@
       fromPitch = p;                        // is not a neighbour: no line here
     }
     if (d > 4.6) break;                     // four belts is the length wanted
+    // THE END OF THE DRAG MUST BE A PITCH THAT MEANS ITS OWN CELL. FS-26 lets a
+    // ghost near a published socket report the cell that SOCKET proposes rather
+    // than the one under the aim, which is the whole feature and is exactly
+    // wrong for choosing where to sweep TO: a drag deliberately ignores the snap
+    // (`FactoryGhost.resolveGhost`, snapOn false while dragging) and walks to
+    // the cell the crosshair is really on. Measured, before this line existed:
+    // the scan read a snapped ghost two cells out from the drill, the drag then
+    // read the unsnapped cell ONE cell out, and the run was laid backwards into
+    // the gap between the drill and its own first belt.
+    if (g.snapped !== '') continue;
     toPitch = p;
   }
   if (fromPitch === null || toPitch === null) {
@@ -427,7 +447,198 @@
   const extracted = before.minerRemaining - minerA.remaining;
   const nodeLost = patch0 - patch1;
 
+  // --- FS-28: THE CARGO IS ON THE BELT, AND IT CAN BE TAKEN OFF -------------
+  //
+  // Two claims, measured separately because they fail separately.
+  //
+  // VISIBLE. `view.cargo` is what the LOD-0 layer actually placed this frame:
+  // instances drawn, lines pulled, and anything the per-frame budget refused.
+  // The refusal count is the DW-28 half: a cap that reports success is the most
+  // expensive failure this project has, so a frame that could not draw every
+  // item says so rather than looking merely sparse. Draw calls and triangles are
+  // read alongside, because "items on belts" is exactly the feature that could
+  // multiply instance count, and the answer has to be a number.
+  //
+  // TAKEABLE. The pack must gain exactly what the belt loses. The line is LIVE
+  // throughout (a drill is feeding the tail and an inserter is draining the
+  // head), so a raw before/after count of belt items cannot be a conservation
+  // proof: ore enters and leaves on its own between any two samples. What IS
+  // exact is the ledger identity, `takenFromBelts == packGained + spilled`,
+  // because `Factory.takeFromBelt` only increments its counter when /core
+  // actually returned an item, and /core's own suite pins that a successful
+  // `TakeLineItemNear` removes exactly one item and moves no other (594 checks
+  // in `factory_sim_tests`). The belt-side delta is reported next to the tick
+  // count anyway, unasserted, so a reader can see it.
+  const cargoView = of.game().view.cargo;
+  const beltItemsOf = () => of.game().factory.runs.reduce((a, r) => a + r.items, 0);
+  const countOf = (name) =>
+    (of.game().carried.find((c) => c.name === name) ?? { count: 0 }).count;
+  const oreName = of.game().factory.list.find((b) => b.kind === 'miner') === undefined
+    ? 'Raw iron'
+    : (of.game().carried, 'Raw iron');
+  const takeStart = {
+    taken: of.game().factory.takenFromBelts,
+    attempts: of.game().factory.beltTakeAttempts,
+    autoCollected: of.game().autoCollected,
+    spilled: of.game().factory.spilled,
+    ore: countOf(oreName),
+    beltItems: beltItemsOf(),
+    tick: of.world().tick,
+  };
+  // Aim at a belt tile and press the interact key, which is the SAME key and the
+  // same handler a player uses (`GameplayInput.doInteract` -> `collectFrom`).
+  // The pitch is swept because the belts run away from the eye and only some of
+  // them have an item on them at any instant.
+  // A LINE THIS SHORT CARRIES ONE ITEM AT A TIME, which is why this presses
+  // repeatedly at each pitch rather than once. Measured on this very line: a
+  // 2.39 ore/s drill against a 60-tick smelter leaves `beltPeakItems` at 1 over
+  // a 26 s window, so a single press per aim is a one-in-three shot at best and
+  // reported zero takes on a feature that works. Four presses per pitch over
+  // half a second lets the ore come to the crosshair.
+  // THE BELT IS AIMED AT, NOT SWEPT FOR, and the first draft of this block
+  // proved why. `Factory.pick` reaches 3.5 m and the capture framing above
+  // deliberately steps back twice, so a blind pitch sweep from the screenshot
+  // position pressed the key 152 times and `beltTakeAttempts` stayed at ZERO:
+  // not one press reached a belt, which reads exactly like a broken feature and
+  // is nothing of the kind. So walk back onto the line and then aim the same way
+  // `aimAt` aims at the ore node, by minimising the perpendicular miss of the
+  // ray against a KNOWN target position.
+  const missTo = (t) => {
+    const a = of.aim();
+    const v = { x: t[0] - a.origin[0], y: t[1] - a.origin[1], z: t[2] - a.origin[2] };
+    const u = v.x * a.dir[0] + v.y * a.dir[1] + v.z * a.dir[2];
+    if (u <= 0) return Infinity;
+    return Math.hypot(v.x - a.dir[0] * u, v.y - a.dir[1] * u, v.z - a.dir[2] * u);
+  };
+  const aimAtPoint = (t) => {
+    let y = of.world().observer.yawDeg;
+    let p = -20;
+    for (const step of [16, 4, 1, 0.3]) {
+      let bestM = Infinity, by = y, bp = p;
+      for (let a = -6; a <= 6; ++a) {
+        for (let b = -6; b <= 6; ++b) {
+          of.look(y + a * step, Math.max(-88, Math.min(0, p + b * step)));
+          const m = missTo(t);
+          if (m < bestM) { bestM = m; by = y + a * step; bp = p + b * step; }
+        }
+      }
+      y = by; p = Math.max(-88, Math.min(0, bp));
+    }
+    of.look(y, p);
+    return missTo(t);
+  };
+  const beltRow = () => {
+    const e = of.aim().origin;
+    const bs = of.game().factory.list.filter((b) => b.kind === 'belt');
+    return bs.length === 0 ? null
+      : bs.reduce((a, b) => (gdist(b.pos, e) < gdist(a.pos, e) ? b : a));
+  };
+  let target = beltRow();
+  // Walk until the nearest belt is comfortably inside the 3.5 m pick reach.
+  for (let i = 0; i < 5 && target !== null
+       && gdist(target.pos, of.aim().origin) > 2.6; ++i) {
+    aimAtPoint(target.pos);
+    of.input.tape([{ hold: 24, keys: ['KeyW'] }, { hold: 4, keys: [] }]);
+    await sleep(0.6);
+    target = beltRow();
+  }
+  // NOT EVERY BELT CAN BE AIMED AT, and that is a real property of `Factory.pick`
+  // rather than a probe defect. The pick keeps the building NEAREST ALONG THE
+  // RAY whose bounding sphere the ray enters, and a smelter's is 1.6 m against a
+  // belt tile's 1.0 m; a belt standing just past the smelter is inside that
+  // sphere from most angles. Measured: an aim 0.005 m off the nearest belt's
+  // centre reached the SMELTER on all seven presses. So the candidates are tried
+  // in order of clearance from the machines, and `beltTakeAttempts` is what says
+  // whether a candidate was reachable at all. That counter is the DW-20 half:
+  // it separates "aimed at a belt and it was empty" from "never aimed at a belt".
+  const machinesAt = of.game().factory.list.filter((b) => b.kind !== 'belt');
+  const clearance = (b) => machinesAt.reduce(
+    (m, k) => Math.min(m, gdist(b.pos, k.pos)), Infinity);
+  const takeTries = [];
+  let aimMiss = -1;
+  let reachedBelt = false;
+  let candidates = [];
+  // STAND SOMEWHERE THE SMELTER IS NOT IN THE WAY. Straight down the line every
+  // belt is behind the smelter's 1.6 m sphere, and both candidates within reach
+  // resolved to the smelter. Stepping off the axis is what a player does without
+  // thinking; here it is four tries of a short strafe, each re-picking the
+  // reachable belts from the new standpoint.
+  for (let side = 0; side < 4 && !reachedBelt; ++side) {
+    if (side > 0) {
+      of.input.tape([{ hold: 16, keys: [side % 2 === 1 ? 'KeyA' : 'KeyD'] },
+        { hold: 4, keys: [] }]);
+      await sleep(0.5);
+    }
+    candidates = of.game().factory.list
+      .filter((b) => b.kind === 'belt' && gdist(b.pos, of.aim().origin) < 3.4)
+      .sort((a, b) => clearance(b) - clearance(a));
+    for (const cand of candidates) {
+      aimMiss = aimAtPoint(cand.pos);
+      await sleep(0.1);
+      const a0 = of.game().factory.beltTakeAttempts;
+      of.input.tape([{ hold: 2, actions: ['interact'] }, { hold: 2, keys: [] }]);
+      await sleep(0.16);
+      if (of.game().factory.beltTakeAttempts === a0) continue;   // not this one
+      reachedBelt = true;
+      target = cand;
+      // A LINE THIS SHORT CARRIES ONE ITEM AT A TIME, so this presses repeatedly
+      // and lets the ore come to the crosshair rather than pressing once and
+      // concluding. Measured on this very line: a 2.39 ore/s drill against a
+      // 60-tick smelter holds `beltPeakItems` at 1 over a 26 s window.
+      for (let k = 0; k < 90 && takeTries.length < 3; ++k) {
+        const n0 = of.game().factory.takenFromBelts;
+        of.input.tape([{ hold: 2, actions: ['interact'] }, { hold: 2, keys: [] }]);
+        await sleep(0.14);
+        if (of.game().factory.takenFromBelts > n0) takeTries.push(k);
+      }
+      if (takeTries.length > 0) break;
+    }
+  }
+  const takeEnd = {
+    taken: of.game().factory.takenFromBelts,
+    attempts: of.game().factory.beltTakeAttempts,
+    autoCollected: of.game().autoCollected,
+    spilled: of.game().factory.spilled,
+    ore: countOf(oreName),
+    beltItems: beltItemsOf(),
+    tick: of.world().tick,
+  };
+  const beltTake = {
+    itemName: oreName,
+    takenFromBelts: takeEnd.taken - takeStart.taken,
+    // DW-20. Without this a zero above cannot be told from never having aimed
+    // at a belt, and the two want opposite fixes.
+    aimedAtABelt: takeEnd.attempts - takeStart.attempts,
+    machineTakesInstead: takeEnd.autoCollected - takeStart.autoCollected,
+    packGained: takeEnd.ore - takeStart.ore,
+    spilledDelta: takeEnd.spilled - takeStart.spilled,
+    beltItemsBefore: takeStart.beltItems,
+    beltItemsAfter: takeEnd.beltItems,
+    ticksElapsed: takeEnd.tick - takeStart.tick,
+    atPress: takeTries,
+    aimMissM: aimMiss < 0 ? -1 : +aimMiss.toFixed(3),
+    reachedBelt, candidates: candidates.length,
+    beltInReachM: target === null ? -1
+      : +gdist(target.pos, of.aim().origin).toFixed(3),
+  };
+  // THE CONSERVATION LINE. Every item that left a belt is in the pack or on the
+  // floor, and nothing else changed either counter in this window.
+  beltTake.conserves = beltTake.takenFromBelts > 0
+    && beltTake.packGained + beltTake.spilledDelta === beltTake.takenFromBelts;
+
   return {
+    beltCargo: {
+      ...cargoView,
+      // The density that produced the count above, so the number means
+      // something: items per belt TILE, against factory_sim's saturation of
+      // four (kItemSpacing 64 of kUnitsPerTile 256).
+      tiles: beltCells.length,
+      itemsPerTile: beltCells.length === 0 ? 0
+        : +(cargoView.items / beltCells.length).toFixed(3),
+      drawCalls: of.stats().draw.calls,
+      triangles: of.stats().draw.triangles,
+    },
+    beltTake,
     advanced: {
       ticks: of.world().tick - t0,
       // /core's OWN tick counter, not ours: if these disagree the whole run is
@@ -468,7 +679,9 @@
       // collection conserves: the pack gained exactly what the buffer lost
       && took > 0 && ironAfter - ironBefore === took && bufBefore - bufAfter === took
       // and the automated iron is the ONLY thing that unlocked a real recipe
-      && craftableBeforeIron === false && craftableAfterIron === true && crafted === true,
+      && craftableBeforeIron === false && craftableAfterIron === true && crafted === true
+      // FS-28: cargo was drawn, and taking one off a belt conserved.
+      && cargoView.items > 0 && cargoView.skipped === 0 && beltTake.conserves,
     cost: {
       drawCalls: of.stats().draw.calls,
       budget: of.stats().budget.drawCalls,

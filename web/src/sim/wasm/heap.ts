@@ -307,6 +307,9 @@ export interface OfCoreModule {
   /** Items; i32 [ItemType,UnitOffset] per item. LOD-0 only (the O(items) pull). */
   _of_net_get_line_items(n: number, build: number): number;
   _of_net_units_per_tile(): number;
+  /** FS-28: take ONE item off a belt near `unitOffset`. Returns the ItemId. */
+  _of_net_take_line_item(n: number, build: number, unitOffset: number,
+                         toleranceUnits: number): number;
 }
 
 /** Read the f64 scratch arena. Call AFTER the producing call, never before. */

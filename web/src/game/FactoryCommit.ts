@@ -75,43 +75,82 @@ export function commitPlan(f: Factory): void {
 }
 
 /**
- * A RUN IS A RAMP, NOT A STAIRCASE.
+ * A RUN IS A RAMP, NOT A STAIRCASE, and FS-27: IT MAY SET A TILE'S PITCH BUT
+ * NEVER ITS YAW.
  *
- * A belt follows the ground, so consecutive tiles differ in height by the local
- * slope: measured on the shipped world, 0.19 m per 1.00 m tile on an 11 degree
- * hillside. Left upright, each tile is a horizontal plank at its own height and
- * the run reads as a flight of steps, which is the second half of "belts don't
- * smoothly line up with each other" and survives the grid fix entirely.
+ * The ramp half is the original reason this exists. A belt follows the ground,
+ * so consecutive tiles differ in height by the local slope: measured on the
+ * shipped world, 0.19 m per 1.00 m tile on an 11 degree hillside. Left upright,
+ * each tile is a horizontal plank at its own height and the run reads as a
+ * flight of steps. So a tile takes the pitch of the segment it sits on and a
+ * normal perpendicular to that, and the residual is the kink between two rigid
+ * 1.00 m planks whose centres are 1.0176 m apart: 0.018 m at that slope against
+ * the 0.189 m step it replaces.
  *
- * So every tile takes the RUN's own 3D direction and a normal perpendicular to
- * it. The residual is the kink between two rigid 1.00 m planks whose centres are
- * 1.0176 m apart, which is 0.018 m at that slope against the 0.189 m step it
- * replaces.
+ * THE YAW HALF IS FS-27 AND IT REVERSES FS-18. This function used to write the
+ * whole heading, `a.fwd.copy(d)`, straight from the run's own geometry. That
+ * made a dragged run chained BY CONSTRUCTION, which was the property worth
+ * having, and it also made the R key a lie: a tile placed beside an existing run
+ * had its rotation overwritten on the very next commit, and FS-18 responded by
+ * withdrawing the advertisement rather than the overwrite. Reid overruled that
+ * ("make it like factorio where i can change the direction after i place it"),
+ * and he is right, because in Factorio a belt tile's DIRECTION is the datum and
+ * the run is derived from it, which is the only model in which a corner is
+ * something a player places rather than something a drag implies.
  *
- * It runs AFTER `chainRuns`, deliberately: chaining asks which tile is ahead
- * along the flow, and answering that with a pitched vector on a slope would
- * make the test depend on the terrain. The pitched heading is for DRAWING, and
- * the next commit re-derives it from the positions either way.
+ * The reconciliation is that the two halves were never the same quantity. Split
+ * the heading into the tangent YAW (which of the four site axes the tile faces)
+ * and the PITCH out of the tangent plane (how steeply the ground falls along
+ * it). The yaw is the player's, set by placement or by R, and is never written
+ * here. The pitch is the ground's, and is all this function writes.
+ *
+ * `t` below is the tile's own heading with the radial component removed, so it
+ * is the yaw and nothing else; `s` is the segment's slope, taken from the tile
+ * ahead when there is one and from the tile behind for the last tile of a run.
+ * Rebuilding `fwd = t*cos + r*sin` therefore reproduces the OLD result exactly
+ * whenever the tile's yaw already agrees with the run's geometry, which is every
+ * tile of every dragged run, since `BuildMode.dragRun` refaces each tile at its
+ * successor as it lays it. The only tile that moves is the one whose heading the
+ * player deliberately set to something the run did not imply, and that tile is
+ * now a corner instead of being silently straightened.
+ *
+ * It still runs AFTER `chainRuns`: chaining asks which tile is ahead along the
+ * flow, and answering that with a pitched vector on a slope would make the test
+ * depend on the terrain.
  */
 function pitchRuns(f: Factory): void {
   const d = new THREE.Vector3();
+  const r = new THREE.Vector3();
+  const t = new THREE.Vector3();
   const up = new THREE.Vector3();
   for (const run of f.runs) {
     if (run.length < 2) continue;
     for (let i = 0; i < run.length; ++i) {
       const a = run[i];
-      // The last tile has no successor, so it borrows the heading INTO it.
+      // The last tile has no successor, so it borrows the SLOPE of the segment
+      // into it. Only the slope: its own yaw is whatever the player set, which
+      // is exactly how the corner at the end of a run survives to be drawn.
       const b = i + 1 < run.length ? run[i + 1] : run[i - 1];
       const s = i + 1 < run.length ? 1 : -1;
       d.set((b.pos.x - a.pos.x) * s, (b.pos.y - a.pos.y) * s,
         (b.pos.z - a.pos.z) * s);
       if (d.lengthSq() < 1e-9) continue;
       d.normalize();
-      up.set(a.pos.x, a.pos.y, a.pos.z).normalize();
-      up.addScaledVector(d, -up.dot(d));
+      r.set(a.pos.x, a.pos.y, a.pos.z).normalize();
+      // The tile's OWN yaw, and the one line in this function that guarantees
+      // the player's rotation survives a commit.
+      t.copy(a.fwd).addScaledVector(r, -a.fwd.dot(r));
+      if (t.lengthSq() < 1e-9) continue;
+      t.normalize();
+      // Clamped because a near-vertical segment has no meaningful yaw to pitch,
+      // and 0.9 is a 64 degree slope: past that the terrain is a cliff and a
+      // belt on it is refused elsewhere long before this matters.
+      const sin = Math.max(-0.9, Math.min(0.9, d.dot(r)));
+      a.fwd.copy(t).multiplyScalar(Math.sqrt(1 - sin * sin)).addScaledVector(r, sin);
+      a.fwd.normalize();
+      up.copy(r).addScaledVector(a.fwd, -r.dot(a.fwd));
       if (up.lengthSq() < 1e-9) continue;
       a.up.copy(up.normalize());
-      a.fwd.copy(d);
       a.quat = frameOf(a.up, a.fwd);
     }
   }

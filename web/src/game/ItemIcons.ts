@@ -45,9 +45,16 @@ const SOURCES: { url: string; nodes: string[] }[] = [
   { url: 'assets/machines/smelter.glb', nodes: ['Smelter_LOD0'] },
 ];
 
-/** The /core item name each mesh stands for. Names, not ids: `ItemIds` does not
- * carry the buildables the build menu uses, and a name is what the panel has. */
-const BY_NAME: Record<string, string> = {
+/**
+ * The /core item name each mesh stands for. Names, not ids: `ItemIds` does not
+ * carry the buildables the build menu uses, and a name is what the panel has.
+ *
+ * EXPORTED since FS-28, because belt cargo needs exactly the same question
+ * answered ("which mesh is this item?") and a second table would be a second
+ * answer. The icon baker wants a picture and the belt wants a 3D instance; both
+ * are the same mesh, so both read this.
+ */
+export const ITEM_MESH_NODE: Record<string, string> = {
   Wood: 'Item_Log',
   Stone: 'Item_StoneChunk',
   Coal: 'Item_CoalLump',
@@ -78,7 +85,7 @@ export class ItemIcons {
 
   /** The data URL for a /core display name, or '' when there is no mesh. */
   for(name: string): string {
-    return this.urls.get(BY_NAME[name] ?? '') ?? '';
+    return this.urls.get(ITEM_MESH_NODE[name] ?? '') ?? '';
   }
 
   /**
@@ -91,7 +98,7 @@ export class ItemIcons {
    */
   sizes(): Record<string, number> {
     const out: Record<string, number> = {};
-    for (const [name, node] of Object.entries(BY_NAME)) {
+    for (const [name, node] of Object.entries(ITEM_MESH_NODE)) {
       const u = this.urls.get(node);
       if (u !== undefined) out[name] = u.length;
     }
@@ -101,7 +108,7 @@ export class ItemIcons {
   /** Every icon, keyed by /core display name. What the panel is handed. */
   table(): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const [name, node] of Object.entries(BY_NAME)) {
+    for (const [name, node] of Object.entries(ITEM_MESH_NODE)) {
       const u = this.urls.get(node);
       if (u !== undefined) out[name] = u;
     }

@@ -46,7 +46,15 @@ export interface MachineTemplate {
   flowMaterial?: string;
   /** Set on the curve tiles: which way the quarter turn goes. */
   arc?: 'l' | 'r';
+  /** Which meshes of the source scene belong to this template; defaults to the
+   *  `_LOD0` suffix every machine file uses. `items_atlas.glb` (FS-28) names its
+   *  meshes `Item_Log` with no LOD chain at all, so belt cargo passes a pattern
+   *  rather than the atlas being renamed to suit one caller. */
+  nodeMatch?: RegExp;
 }
+
+/** The default: a machine file's own drawing LOD. */
+const LOD0 = /_LOD0(?:_\d+)?$/;
 
 /** Per-instance fx channels, in the order the shader reads them. */
 export interface Fx { flow: number; density: number; state: number; level: number }
@@ -239,7 +247,7 @@ if ( vRole > 2.5 ) {
       t.scene.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh !== true || m.name.startsWith('col_')) return;
-        if (!/_LOD0(?:_\d+)?$/.test(m.name)) return;
+        if (!(t.def.nodeMatch ?? LOD0).test(m.name)) return;
         const src = m.material as THREE.MeshStandardMaterial;
         list.push(normalize(m.geometry, m.matrixWorld,
           src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, t.def)));

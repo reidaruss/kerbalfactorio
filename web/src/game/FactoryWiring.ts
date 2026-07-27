@@ -41,6 +41,26 @@ const CHAIN_ALIGN = 0.85;
  * Group belts into contiguous runs by following each tile's flow direction.
  * A tile with no belt behind it starts a run; the walk stops on a cycle, which
  * a player CAN lay by putting four tiles in a square.
+ *
+ * FS-27: AND A PURE CYCLE STILL PRODUCES A RUN, which it did not before, and the
+ * failure that fixed was silent in the worst way. The first pass only starts a
+ * run at a tile with NO predecessor, so a closed loop, in which every tile has
+ * one, emitted nothing at all: the tiles kept existing in the plan, kept being
+ * drawn, and were never placed in /core, so `Placed.build` stayed -1, nothing was
+ * wired to them, and a drill beside them mined into a buffer for ever. The whole
+ * report of it was `runs: []` next to four live belt tiles.
+ *
+ * It became reachable because FS-27 stopped `pitchRuns` rewriting headings from
+ * run geometry: two tiles facing each other used to be straightened out on the
+ * next commit and now they stay as the player left them. Measured
+ * (`probes/shortline.js`): two belts one cell apart with opposite headings, a
+ * drill feeding neither, 48 ore mined and 0 iron over 1,200 ticks, with `links`
+ * empty and no error anywhere.
+ *
+ * The second pass starts a run at the lowest-id tile not yet visited, which
+ * breaks the cycle at a defined point rather than an arbitrary one, so the
+ * grouping stays deterministic (standing rule 4). The walk's own `seen` guard
+ * already stops it going round twice.
  */
 export function chainRuns(placed: readonly Placed[]): Placed[][] {
   const belts = placed.filter((p) => p.kind === 'belt');
@@ -53,18 +73,19 @@ export function chainRuns(placed: readonly Placed[]): Placed[][] {
     hasPrev.add(ahead.id);
   }
   const out: Placed[][] = [];
-  for (const b of belts) {
-    if (hasPrev.has(b.id)) continue;
+  const used = new Set<number>();
+  const walk = (b: Placed): void => {
     const run: Placed[] = [];
-    const seen = new Set<number>();
     let cur: Placed | undefined = b;
-    while (cur !== undefined && !seen.has(cur.id)) {
-      seen.add(cur.id);
+    while (cur !== undefined && !used.has(cur.id)) {
+      used.add(cur.id);
       run.push(cur);
       cur = next.get(cur.id);
     }
-    out.push(run);
-  }
+    if (run.length > 0) out.push(run);
+  };
+  for (const b of belts) if (!hasPrev.has(b.id)) walk(b);
+  for (const b of belts) if (!used.has(b.id)) walk(b);
   return out;
 }
 

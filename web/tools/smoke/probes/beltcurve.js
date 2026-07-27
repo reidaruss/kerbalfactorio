@@ -102,15 +102,28 @@
       if (last !== undefined && last.cell === s.cell) continue;
       pit.push(s);
     }
-    const c0 = pit.find((s) => s.ok);
-    if (c0 === undefined) return { fail: 'no start cell on this heading' };
-    // The FARTHEST cell on the same row: the straight leg has to be long enough
-    // that the corner is unmistakably in the middle of a run and not at its end.
-    let c1 = null;
-    for (const s of pit) {
-      if (s.ok && s.site === c0.site && s.j === c0.j && Math.abs(s.i - c0.i) >= 3) c1 = s;
-    }
-    if (c1 === null) return { fail: 'no straight leg on this heading', c0 };
+    // THE LEG MUST NOT DRAG ACROSS THE SEED TILE, and picking the first `ok`
+    // cell in the sweep did exactly that. A refused cell ENDS a drag by design
+    // (`BuildMode.dragRun`: a run with a hole in it is not a run), so a leg that
+    // starts on the far side of the seed and sweeps past it lays ONE tile and
+    // stops. Measured after FS-26 landed: leg 0 ran m1:2,1 -> m1:-4,1 straight
+    // through the seed at m1:1,1, laid 1 tile, and the probe reported one curve
+    // where it had asked for two. So the far end is chosen first and the start
+    // is the cell one step from the SEED towards it.
+    const seed = addr(fac().list[0].cell);
+    const far = pit.filter((s) => s.ok && s.site === seed.site && s.j === seed.j
+      && Math.abs(s.i - seed.i) >= 4);
+    const c1 = far.length === 0 ? null : far[far.length - 1];
+    // The nearest free cell to the seed ON C1'S SIDE, not exactly one step from
+    // it: a snapped ghost near the seed can report either neighbour, so the cell
+    // at seed.i +/- 1 is not always in this sweep's own list.
+    const dir = c1 === null ? 0 : Math.sign(c1.i - seed.i);
+    const c0 = c1 === null ? undefined
+      : pit.filter((s) => s.ok && s.site === seed.site && s.j === seed.j
+        && Math.sign(s.i - seed.i) === dir && Math.abs(s.i - c1.i) >= 3)
+        .sort((a, b) => Math.abs(a.i - seed.i) - Math.abs(b.i - seed.i))[0];
+    if (c1 === null) return { fail: 'no straight leg on this heading', seed };
+    if (c0 === undefined) return { fail: 'no start cell beside the seed', seed, c1 };
     const si = Math.sign(c1.i - c0.i);
     const sj = si * wantCross;
 

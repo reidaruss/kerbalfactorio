@@ -349,7 +349,7 @@ export class Gameplay {
     // The belt scroll is driven by SIM seconds, not performance.now(), for the
     // same reason the terrain cross-dissolve is: a headless driven run then
     // scrolls at exactly the rate a real one does and a capture is reproducible.
-    this.factoryView.sync(this.factory, this.simSecs);
+    this.factoryView.sync(this.factory, this.simSecs, eye);  // eye: FS-28 LOD 0
     if (this.openMachine !== null) {
       this.furnacePanel.render(machineView(this, this.openMachine));
     }

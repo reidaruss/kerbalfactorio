@@ -19,10 +19,10 @@
 // and it is a metric site grid rather than /core's voxel lattice: see that
 // file's header for the measurement that forced the change.
 
-import * as THREE from 'three';
 import { addressIn, headingIn, stepToward, type MachineAddr }
   from './MachinePlacement.js';
-import { chainsInto } from './FactoryWiring.js';
+import { resolveGhost, type BuildRay, type BuildTarget } from './FactoryGhost.js';
+import { axisStepOf, snapGapM, mateFor } from './FactorySnap.js';
 import { FOOTPRINT, type BuildKind, type Factory, type Placed } from './Factory.js';
 import { commitTarget, resolveTarget, type StructureTarget }
   from './StructurePlacement.js';
@@ -34,16 +34,18 @@ import type { FactoryView } from './FactoryView.js';
 import type { Action } from '../player/Bindings.js';
 
 export type { PartKind };
+export type { BuildRay, BuildTarget };
 
 function isStructure(k: PartKind | null): k is StructureKind {
   return k !== null && (STRUCTURE_KINDS as readonly string[]).includes(k);
 }
 
-/** Aim march: step and reach, in metres. */
-const STEP_M = 0.35;
-const REACH_M = 9.0;
-/** Where the ghost falls back to when the aim never meets the ground. */
-const FALLBACK_M = 2.6;
+/**
+ * How far R reaches to turn a building that is already down (FS-27). The same
+ * 3.5 m the interact and demolish keys use, so "what R will turn" and "what E
+ * will open" can never be two different things under one crosshair.
+ */
+const TURN_REACH_M = 3.5;
 /**
  * Cells a single drag tick may fill in.
  *
@@ -55,43 +57,6 @@ const FALLBACK_M = 2.6;
  * frame that dropped a second, from carpeting the planet.
  */
 const DRAG_FILL_MAX = 24;
-
-/** An aim ray, as the player's own view produces it. */
-export interface BuildRay {
-  origin: { x: number; y: number; z: number };
-  dir: { x: number; y: number; z: number };
-}
-
-export interface BuildTarget {
-  pos: { x: number; y: number; z: number };
-  up: THREE.Vector3;
-  fwd: THREE.Vector3;
-  cell: string;
-  addr: MachineAddr;
-  /**
-   * FS-19. The site under this ghost does not exist yet: it was founded on the
-   * lattice cell under the aim point purely so the ghost has a frame, and it
-   * becomes real only if something is placed. `cell` and the site id are
-   * PLACEHOLDERS while this is true, so a consumer comparing two ghosts must
-   * read it. Three probes learned that the hard way.
-   */
-  prospective: boolean;
-  /**
-   * FS-18. A run already chains into this cell, so the tile's heading will be
-   * taken from the run's geometry on the next commit and the R key cannot change
-   * it. Reported, and said on the ghost, because the alternative is a key the
-   * HUD offers and the game ignores.
-   */
-  headingLocked: boolean;
-  ok: boolean;
-  reason: string;
-  /** Drill only: the ore patch under the ghost, or -1. */
-  patch: number;
-  /** Drill only: what it would mine here, units per second. Richness varies
-   * across a deposit, so WHERE on the patch a drill goes is a real decision and
-   * the ghost has to answer it before the button is pressed. */
-  ratePerSec: number;
-}
 
 export class BuildMode {
   /** Mirrors the hotbar. Set by `arm` every tick, never guessed here. */
@@ -111,6 +76,17 @@ export class BuildMode {
   /** Tiles laid by the CURRENT drag, and the longest drag ever run. */
   dragLength = 0;
   longestDrag = 0;
+  /** FS-27: buildings turned in place by R, and the last one, for the toast. */
+  turns = 0;
+  lastTurn: { id: number; kind: BuildKind } | null = null;
+  /**
+   * FS-26: the gap between the socket the last placement caught and the socket
+   * the placed part presented back to it, in metres. -1 when the last placement
+   * did not snap. THE number this feature is judged on.
+   */
+  lastSnapGapM = -1;
+  lastSnapped = '';
+  snaps = 0;
   private rotateHeld = false;
   private freeHeld = false;
   private useHeld = false;
@@ -145,16 +121,24 @@ export class BuildMode {
    * Returns how many parts went down this tick.
    */
   step(act: (a: Action) => boolean, use: boolean, ray: BuildRay): number {
+    const rot = act('rotate');
+    const turned = rot && !this.rotateHeld;
+    this.rotateHeld = rot;
     if (this.selected === null) {
       this.target = null; this.structTarget = null;
       this.view.hideGhost(); this.structView.hideGhost();
       this.useHeld = use;
       this.endDrag();
+      // FS-27: WITH NOTHING IN HAND, R TURNS WHAT IS UNDER THE CROSSHAIR. This
+      // is Factorio's own split and it is unambiguous in a way that "guess from
+      // context" is not: a part in hand means the key is about the GHOST, an
+      // empty hand means it is about the WORLD. It lives here rather than in
+      // GameplayInput because BuildMode already owns every meaning the rotate
+      // key has, and a second owner is how one of them goes stale.
+      if (turned) this.turnAimed(ray);
       return 0;
     }
-    const rot = act('rotate');
-    if (rot && !this.rotateHeld) this.rotation = (this.rotation + 1) % 4;
-    this.rotateHeld = rot;
+    if (turned) this.rotation = (this.rotation + 1) % 4;
     // B TAKES THE SNAP OFF. Free placement is the same parts with the rounding
     // removed, which is why it is a modifier on this mode and not a second one.
     const free = act('freeSnap');
@@ -180,12 +164,34 @@ export class BuildMode {
     this.dragLength = 0;
   }
 
+  /**
+   * FS-27: turn whatever is under the crosshair one quarter turn, and re-commit.
+   *
+   * Belts are INCLUDED in the pick (`belts` true), which is the whole point: a
+   * belt is the thing a player most wants to turn and the only thing the pick
+   * normally hides, because a 1 m tile under the crosshair otherwise steals the
+   * interact prompt from the machine behind it. Turning is not interacting, so
+   * the exclusion does not apply here.
+   */
+  private turnAimed(ray: BuildRay): void {
+    const b = this.factory.pick(ray.origin, ray.dir, TURN_REACH_M, true);
+    if (b === null) return;
+    if (!this.factory.turn(b)) return;
+    this.turns++;
+    this.lastTurn = { id: b.id, kind: b.kind };
+  }
+
   /** Machines and belts: the ghost, the press, and the hold that lays a run. */
   private stepMachine(kind: BuildKind, ray: BuildRay, pressed: boolean,
                       held: boolean): number {
     this.structTarget = null;
     this.structView.hideGhost();
-    const t = this.resolve(ray, kind);
+    // FS-26: a drag steers by the CROSSHAIR and never by a socket. See
+    // `resolveGhost`; letting the snap move the ghost mid-drag laid the first
+    // tile of a run in the cell behind the one it started from.
+    const t = resolveGhost(this.factory, kind, ray, this.rotation,
+      (x, y, z) => this.structures.groundRadius(x, y, z), this.view.sockets,
+      !(held && this.dragLast !== null));
     this.target = t;
     if (t !== null) this.view.showGhost(kind, t.pos, t.up, t.fwd, t.ok);
     else this.view.hideGhost();
@@ -208,9 +214,40 @@ export class BuildMode {
       // belt and braces: `adoptSite` is idempotent by id.
       this.factory.adoptSite(t.addr);
       this.lastRate = t.ratePerSec;
+      // FS-26: MEASURE THE SNAP AT THE MOMENT IT HAPPENS, against the socket the
+      // ghost SAID it caught, not against the nearest one afterwards. Those are
+      // the same number only if the snap actually drove the placement, which is
+      // exactly the claim being made.
+      this.lastSnapped = t.snapped;
+      this.lastSnapGapM = t.hit === null ? -1
+        : snapGapM(t.hit, made, this.view.sockets, mateFor(kind, t.hit));
+      if (t.hit !== null) this.snaps++;
       this.placements++;
+      // FS-26: A SNAPPED PLACEMENT SEEDS THE DRAG WITH THE DIRECTION IT WENT.
+      //
+      // The reversal guard in `dragRun` refuses a step that undoes the last one,
+      // and on the first step of a fresh drag there was no last one to compare
+      // against. That was harmless while a placement always landed under the
+      // crosshair, and it stopped being harmless the moment a snap could put the
+      // tile a cell or two BEYOND the crosshair: holding the button after a
+      // snapped press then walked the run straight back to the cell the player
+      // was pointing at. Measured (`probes/autoline.js`): a drill's belt line
+      // laid its second tile between the drill and its own first tile, and the
+      // run reversed into a two-tile stub. Seeding the step closes it, and the
+      // direction is the real one (owner to placed), not the tile's heading,
+      // because a tile snapped onto a run's TAIL faces forward while the run
+      // grows backward.
+      let step: { di: number; dj: number } | null = null;
+      if (t.hit !== null) {
+        const owner = this.factory.snap(t.hit.build.pos.x, t.hit.build.pos.y,
+          t.hit.build.pos.z).addr;
+        const [di, dj] = axisStepOf(t.addr.site, {
+          x: made.pos.x - t.hit.build.pos.x, y: made.pos.y - t.hit.build.pos.y,
+          z: made.pos.z - t.hit.build.pos.z });
+        if (owner.site.id === t.addr.site.id) step = { di, dj };
+      }
       this.dragLast = { addr: { ...t.addr, prospective: false }, placed: made,
-        step: null };
+        step };
       return 1;
     }
     if (!held || this.dragLast === null || t.addr.site.id !== this.dragLast.addr.site.id) {
@@ -297,69 +334,16 @@ export class BuildMode {
     return 1;
   }
 
-  /**
-   * March the aim ray until it is below the ground, then snap the hit to the
-   * site grid and answer whether the placement would be accepted.
-   *
-   * THE GROUND HERE IS THE LIVE ONE, asked through `Structures.groundRadius`,
-   * which is the one call site in this directory that has always passed the
-   * edit set. It used to pass a literal 0, so over ground the player had dug or
-   * levelled the ray stopped at a surface that no longer existed: measured, a
-   * -25 degree aim across a cut put the ghost **1.807 m** from where the aim
-   * actually meets the ground, which is a cell and a half of targeting error and
-   * is most of what made laying a line into a cut feel unresponsive.
-   */
-  private resolve(ray: BuildRay, kind: BuildKind): BuildTarget | null {
-    const o = ray.origin, d = ray.dir;
-    let hitT = -1;
-    for (let t = 0.6; t <= REACH_M; t += STEP_M) {
-      const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
-      if (Math.hypot(x, y, z) <= this.structures.groundRadius(x, y, z)) {
-        hitT = t; break;
-      }
-    }
-    const t = hitT < 0 ? FALLBACK_M : hitT;
-    const s = this.factory.snap(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t);
-    // The flow axis is one of the site's FOUR tangent axes, shared by every tile
-    // of the run: the grid is square, so a belt at 37 degrees has no cell ahead
-    // of it to chain to.
-    const fwd = headingIn(s.addr.site, d, this.rotation);
-
-    let ok = true;
-    let reason = '';
-    let patch = -1;
-    let ratePerSec = 0;
-    // FS-18. Asked of the wiring rule itself, so the ghost cannot promise a
-    // heading the next commit will overwrite.
-    const headingLocked = kind === 'belt'
-      && chainsInto(this.factory.placed, s.pos);
-    if (headingLocked) reason = 'heading set by the run';
-    if (this.factory.occupied(s.cell)) { ok = false; reason = 'cell taken'; }
-    else if (kind === 'miner') {
-      // THE SENTENCE THAT TEACHES THE MECHANIC. A drill eats the ground under
-      // itself, so the only question is whether there is ore in that ground, and
-      // the answer is on the ghost before the button is pressed rather than in
-      // an error message after it. Several drills on one patch are fine: a
-      // deposit is a piece of ground, not a socket.
-      patch = this.factory.patchUnder(s.pos);
-      if (patch < 0) {
-        ok = false; reason = 'you cannot place a drill here, there is no ore';
-      } else {
-        ratePerSec = this.factory.ore.drillRate(patch, s.pos.x, s.pos.y, s.pos.z);
-        reason = `${ratePerSec.toFixed(1)} ore/s here`;
-      }
-    }
-    return { pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr,
-      prospective: s.addr.prospective, headingLocked, ok, reason, patch,
-      ratePerSec };
-  }
-
   report(): unknown {
     return {
       selected: this.selected, label: this.label, rotation: this.rotation,
       freePlace: this.freePlace, dragging: this.dragging,
       dragLength: this.dragLength, longestDrag: this.longestDrag,
       placements: this.placements, refusals: this.refusals,
+      // FS-27 / FS-26: the two numbers this pass is judged on.
+      turns: this.turns, lastTurn: this.lastTurn,
+      snaps: this.snaps, lastSnapped: this.lastSnapped,
+      lastSnapGapM: this.lastSnapGapM,
       structGhost: this.structTarget === null ? null : {
         kind: this.structTarget.kind, ok: this.structTarget.ok,
         reason: this.structTarget.reason, key: this.structTarget.key,
@@ -380,7 +364,10 @@ export class BuildMode {
         // true: no site has been adopted, so the address was derived in a frame
         // centred on the aim point itself and two aims metres apart agree.
         prospective: this.target.prospective,
-        headingLocked: this.target.headingLocked,
+        // FS-26 / FS-27. `snapped` names the socket the ghost caught; `chains`
+        // says a run would flow into this cell, which since FS-27 is a fact
+        // about the RUN and no longer a claim that R is inert here.
+        snapped: this.target.snapped, chains: this.target.chains,
         footprint: this.selected === null || isStructure(this.selected) ? 0
           : FOOTPRINT[this.selected],
         site: this.target.addr.site.id,

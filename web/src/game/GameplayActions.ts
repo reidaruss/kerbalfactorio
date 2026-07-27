@@ -27,8 +27,26 @@ export function recipes(g: Gameplay) {
   return recipeRows(g.game, (n) => g.icons.for(n), g.mode.fullCatalogue);
 }
 
-/** Take an automated machine's finished stock into the pack. */
+/**
+ * Take an automated machine's finished stock into the pack, or ONE ITEM OFF A
+ * BELT (FS-28).
+ *
+ * A belt used to reach the first branch, ask a `BeltLine` entity for an output
+ * buffer it does not have, and answer "nothing to take yet" for ever. It is the
+ * same key and the same sentence in both cases because it is the same verb: take
+ * what is in front of you.
+ */
 export function collectFrom(g: Gameplay, b: Placed): void {
+  if (b.kind === 'belt') {
+    const got = g.factory.takeFromBelt(b);
+    if (got === null) { g.hud.flash('nothing on this belt'); return; }
+    g.autoCollected += got.count;
+    g.hud.flash(got.count > 0 ? `took 1 ${g.game.itemName(got.item)}`
+      : `pack full: ${g.game.itemName(got.item)} dropped`);
+    g.sfx.confirm();
+    g.panel.invalidate();
+    return;
+  }
   const n = g.factory.collect(b);
   if (n <= 0) { g.hud.flash('nothing to take yet'); return; }
   g.autoCollected += n;
@@ -84,7 +102,16 @@ export function stepBuild(g: Gameplay, ray: BuildRay, use: boolean,
     placeMachine(g, ray);
     return true;
   }
+  const turns0 = g.build.turns;
   const n = g.build.step((a) => g.input.act(a), use, ray);
+  // FS-27: R on a placed building. It is announced HERE rather than inside
+  // BuildMode for the reason this whole file exists: BuildMode owns the rule and
+  // this owns the sentence, and a turn that says nothing is indistinguishable
+  // from a key that does nothing, which is the exact complaint being fixed.
+  if (g.build.turns > turns0 && g.build.lastTurn !== null) {
+    g.hud.flash(`turned the ${g.build.lastTurn.kind}`);
+    g.sfx.confirm();
+  }
   if (n > 0) {
     announce(g, n, pressed);
     g.sfx.confirm();
