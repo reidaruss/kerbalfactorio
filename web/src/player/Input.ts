@@ -73,8 +73,6 @@ export class Input {
   /** False while the UI owns the pointer: no look, no movement, no use. */
   private lookEnabled = true;
   private uiHeld = false;
-  /** True for the press that is only buying the pointer lock back. */
-  private swallowClick = false;
   private el: HTMLElement | null = null;
   private tape: TapeEntry[] = [];
   private tapeIdx = 0;
@@ -103,19 +101,42 @@ export class Input {
     el.addEventListener('contextmenu', stop);
     el.addEventListener('pointerdown', (e) => {
       this.dragging = true;
-      el.setPointerCapture(e.pointerId);
+      // Pointer capture is a CONVENIENCE for drag-look, never a precondition
+      // for the click registering. It throws for a pointer id the browser does
+      // not consider active, and because it sat above the line that records the
+      // button, one throw skipped everything below it and the press vanished.
+      // `dragging` was set first, so look still worked and only the button was
+      // lost, which is exactly the shape of "I can turn but I cannot swing".
+      try { el.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
       // THE CLICK THAT BUYS THE LOCK IS NOT A SWING. Without this the press
       // that re-captures the pointer after Escape also places a building under
       // the crosshair, which reads as the game acting on a click the player
       // made at the menu.
-      this.swallowClick = this.lookEnabled && !this.locked;
-      if (!this.swallowClick) this.down.add(`Mouse${e.button}`);
+      //
+      // But ONLY the click that actually buys it. This used to swallow every
+      // click made while unlocked, which meant the left button was completely
+      // inert whenever the lock was not held, and drag-to-look is a supported
+      // mode that never holds it. Reported as "left click to harvest and place
+      // doesnt work", and invisible to the whole probe suite because probes
+      // drive the `use` ACTION and never generate a pointer event.
+      const code = `Mouse${e.button}`;
+      if (this.lookEnabled && !this.locked) {
+        this.requestLockThen((gotLock) => {
+          // No lock means the click bought nothing, so it was a real click.
+          // `dragging` guards a release that already happened: adding the code
+          // after pointerup would leave the button held forever.
+          if (!gotLock && this.dragging) this.down.add(code);
+        });
+      } else {
+        this.down.add(code);
+      }
     });
     el.addEventListener('pointerup', (e) => {
       this.dragging = false;
-      this.swallowClick = false;
+      // Release BEFORE nothing: the delete must happen even if release throws,
+      // or a failed capture leaves the button held for ever.
       this.down.delete(`Mouse${e.button}`);
-      el.releasePointerCapture(e.pointerId);
+      try { el.releasePointerCapture(e.pointerId); } catch { /* never captured */ }
     });
     el.addEventListener('pointermove', (e) => {
       if (!this.lookEnabled) return;
@@ -154,6 +175,21 @@ export class Input {
   private requestLock(): void {
     const p = this.el?.requestPointerLock?.() as unknown;
     if (p instanceof Promise) p.catch(() => undefined);
+  }
+
+  /**
+   * Ask for the lock and report whether it was granted, so a caller can tell a
+   * click that BOUGHT the lock from a click that merely happened while
+   * unlocked. Those are the same event and only the first should be eaten.
+   *
+   * The promise form is Chrome's; older engines return undefined, in which case
+   * the only honest answer comes from whether `pointerlockchange` has fired by
+   * the next turn of the loop.
+   */
+  private requestLockThen(done: (gotLock: boolean) => void): void {
+    const p = this.el?.requestPointerLock?.() as unknown;
+    if (p instanceof Promise) p.then(() => done(true), () => done(false));
+    else setTimeout(() => done(this.locked), 0);
   }
 
   /** Queue a scripted tape. Replaces anything still playing. */
