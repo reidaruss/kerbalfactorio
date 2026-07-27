@@ -3,6 +3,8 @@
 // value derives from Config.seed through /core's hash chain, so ?seed= alone
 // makes a run reproducible.
 
+import { parsePost, type PostSettings } from '../render/post/PostConfig.js';
+
 export type QualityTier = 'low' | 'med' | 'high';
 
 /** Named start states an agent or the smoke suite can jump straight to. */
@@ -166,6 +168,13 @@ export interface Config {
    * budgets were swept in the first place.
    */
   readonly zSepRatio: number;
+  /**
+   * The post-processing stack's flags and tunables (render/post/PostConfig.ts).
+   * `?post=0` restores the pre-stack path exactly: no render target, no
+   * composite, three's own ACES straight to the canvas. Every effect inside it
+   * switches off on its own, per standing rule 7.
+   */
+  readonly post: PostSettings;
 }
 
 const DEFAULT_SEED_LO = 0x0bf00d01;
@@ -215,6 +224,7 @@ export function parseConfig(search: string): Config {
   // as "nothing works". Every probe scenario is still one query param away.
   const scenarioName = p.get('scenario') ?? 'walk';
   const base = SCENARIOS[scenarioName] ?? SCENARIOS.walk;
+  const quality = parseQuality(p.get('quality'));
   const tRaw = p.get('t');
   const scenario: Scenario = {
     lat: num(p, 'lat', base.lat),
@@ -230,7 +240,8 @@ export function parseConfig(search: string): Config {
     scenarioName,
     scenario,
     sunTExplicit: tRaw === null || !Number.isFinite(Number(tRaw)) ? null : Number(tRaw),
-    quality: parseQuality(p.get('quality')),
+    quality,
+    post: parsePost(search, quality),
     debug: p.get('debug') !== '0',
     forceLogDepth: p.get('depth') === 'log',
     forcePlainDepth: p.get('depth') === 'plain',

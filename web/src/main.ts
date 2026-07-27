@@ -11,6 +11,7 @@ import { flightApi } from './app/DebugFlight.js';
 import { mapApi } from './app/DebugMap.js';
 import { scatterApi } from './app/DebugScatter.js';
 import { armourApi } from './app/DebugArmour.js';
+import { postApi } from './app/DebugPost.js';
 import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
@@ -39,7 +40,7 @@ boot(cfg, host, hud).then(({ services }) => {
   // rather than spread inside it: Debug.ts is at the 400-line cap and the bay's
   // whole driven surface is one method. See app/DebugVab.ts.
   Object.assign(api, vabApi(services), flightApi(services), mapApi(services),
-    scatterApi(services, loop), armourApi(services));
+    scatterApi(services, loop), armourApi(services), postApi(services, loop));
 
   let hudFrame = 0;
   loop.onDrain.push(() => {

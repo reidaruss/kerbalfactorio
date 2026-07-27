@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { Config } from '../app/Config.js';
 import type { QualityKnobs } from './Quality.js';
 import { DepthPolicy, depthRendererParams, resolveDepthMode } from './DepthPolicy.js';
+import { PostStack, type PostHost } from './post/PostStack.js';
 
 export interface RendererCaps {
   readonly reversedDepthAvailable: boolean;
@@ -39,6 +40,13 @@ export interface OFRenderer {
   readonly caps: RendererCaps;
   readonly depth: DepthPolicy;
   readonly pixelRatio: number;
+  /**
+   * The post-processing stack. It lives behind the seam because it owns render
+   * targets and issues draws, and both of those are renderer-specific; Frame.ts
+   * owns WHEN each half of it runs, because that is a question about the
+   * four-pass clear order and nothing else. Null only if construction failed.
+   */
+  readonly post: PostStack;
   render(scene: THREE.Scene, camera: THREE.Camera): void;
   clearAll(): void;
   clearDepth(): void;
@@ -67,13 +75,17 @@ function gpuName(gl: WebGL2RenderingContext): string {
   return gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string;
 }
 
-class WebGLSeam implements OFRenderer {
+class WebGLSeam implements OFRenderer, PostHost {
   private readonly r: THREE.WebGLRenderer;
   private readonly gl: WebGL2RenderingContext;
   readonly caps: RendererCaps;
   readonly depth: DepthPolicy;
+  readonly post: PostStack;
   private pmrem: THREE.PMREMGenerator | null = null;
   private envTarget: THREE.WebGLRenderTarget | null = null;
+  /** For the full-screen triangle. Never moves; the post VS ignores it anyway. */
+  private readonly quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private readonly sizeScratch = new THREE.Vector2();
 
   constructor(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs) {
     const dp = depthRendererParams(cfg, q.tier);
@@ -122,10 +134,28 @@ class WebGLSeam implements OFRenderer {
     // passes and the maps are rendered exactly once per frame, not four times.
     this.r.shadowMap.enabled = cfg.shadows;
     this.r.shadowMap.type = THREE.PCFShadowMap;
+    // Constructed LAST: PostStack asks the host for its buffer size, and the
+    // size is not final until setPixelRatio and the clear colour are set.
+    this.post = new PostStack(this, { ...cfg.post.flags }, { ...cfg.post.tune });
   }
 
   get domElement(): HTMLCanvasElement { return this.r.domElement; }
   get pixelRatio(): number { return this.r.getPixelRatio(); }
+  get depthMode(): 'reversed' | 'log' | 'plain' { return this.depth.mode; }
+
+  setTarget(rt: THREE.WebGLRenderTarget | null): void { this.r.setRenderTarget(rt); }
+
+  bufferSize(): { w: number; h: number } {
+    this.r.getDrawingBufferSize(this.sizeScratch);
+    return { w: this.sizeScratch.x, h: this.sizeScratch.y };
+  }
+
+  /**
+   * One post pass. `this.r.render` and not `renderBufferDirect` on purpose: the
+   * direct path skips the state resets around blending and depth that a post
+   * material relies on, and three's own post addons take exactly this route.
+   */
+  drawFullScreen(mesh: THREE.Mesh): void { this.r.render(mesh, this.quadCam); }
 
   render(scene: THREE.Scene, camera: THREE.Camera): void { this.r.render(scene, camera); }
   clearAll(): void { this.r.clear(true, true, true); }
@@ -177,7 +207,10 @@ class WebGLSeam implements OFRenderer {
     gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
   }
 
-  dispose(): void { this.envTarget?.dispose(); this.pmrem?.dispose(); this.r.dispose(); }
+  dispose(): void {
+    this.post.dispose();
+    this.envTarget?.dispose(); this.pmrem?.dispose(); this.r.dispose();
+  }
 }
 
 export function createRenderer(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs): OFRenderer {

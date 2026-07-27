@@ -61,6 +61,26 @@ export class DepthPolicy {
     this.fragmentBody = log ? LOG_FS_BODY : '';
   }
 
+  /**
+   * The value the depth attachment is CLEARED to. Reversed-Z clears to 0 (far)
+   * because it inverts the range; everything else clears to 1. The post stack
+   * needs this to tell "no geometry here" from "geometry at the far plane", and
+   * getting it backwards would make ambient occlusion skip the world and
+   * process the sky, which is a failure that still produces a plausible image.
+   */
+  clearValue(): number {
+    return this.mode === 'reversed' ? 0 : 1;
+  }
+
+  /**
+   * three's `logDepthBufFC`, the constant its logdepthbuf chunk uses to encode
+   * gl_FragDepth. The post stack inverts that encoding to recover w, so this
+   * must stay the same expression three uses (WebGLRenderer, uniform setup).
+   */
+  logFC(cameraFar: number): number {
+    return 2.0 / (Math.log(cameraFar + 1.0) / Math.LN2);
+  }
+
   /** Near-scene far plane. Plain depth cannot hold 100 km, so it gets 30 km. */
   nearFarPlaneM(): number {
     return this.mode === 'plain' ? 3.0e4 : 1.0e5;

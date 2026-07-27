@@ -65,6 +65,12 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density',
   'scatterfair', 'propgrow', 'detail',
   'vab', 'flight',
+  // The post-processing stack (render/post/PostConfig.ts). `post` is the master
+  // switch and restores the pre-stack path exactly; the other four isolate one
+  // effect each, per standing rule 7.
+  'post', 'ao', 'bloom', 'grade', 'aa',
+  'aoscale', 'aoslices', 'aosteps', 'aoradius', 'aostrength', 'aopower',
+  'bloomlevels', 'bloomstrength', 'bloomthresh', 'exposure', 'msaa', 'fxaalod',
   // DW-31. Unlike every other entry here this is not an isolation switch: it
   // selects a game MODE, and the world it makes saves to its own slot.
   'sandbox']) {
@@ -110,12 +116,25 @@ page.on('console', (m) => {
   const t = m.type();
   if (t === 'error') errors.push(`console.error: ${m.text()}`);
   else if (t === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())) {
-    // ANGLE's HLSL backend emits X4122 for three's own PMREM shader: a literal
-    // sum it cannot fold exactly in double precision. It is a compiler note on
-    // stock three.js source, not our shader and not a fallback, and it is the
-    // ONLY warning on this allowlist. Everything else still fails the run,
-    // which is the rule that caught the silent no-op terrain material at W1.
-    if (!/warning X4122/.test(m.text())) errors.push(`console.warn: ${m.text()}`);
+    // TWO warnings are allowlisted, both on stock three.js source, both
+    // compiler notes rather than fallbacks. Everything else still fails the
+    // run, which is the rule that caught the silent no-op terrain material at
+    // W1. Neither entry is a wildcard: they name one ANGLE diagnostic each.
+    //
+    // X4122: three's own PMREM shader, a literal sum ANGLE's HLSL backend
+    //   cannot fold exactly in double precision.
+    // X4000 in f_ApplyFXAA: three's `addons/shaders/FXAAShader.js`, reached
+    //   only when the post stack's AA pass is on (`?aa=0` removes it entirely,
+    //   which is how it was attributed). `ApplyFXAA` has exactly two return
+    //   statements and no fall-through path, so "potentially uninitialized" is
+    //   D3DCompiler failing to prove that the early return dominates its use
+    //   after flattening. Stock three warns here either way: with its own
+    //   implicit-LOD fetch it emits X3595 instead, which is why `?fxaalod=0`
+    //   exists and why probes/post.js checks the two produce the same pixels.
+    if (!/warning X4122/.test(m.text())
+      && !/warning X4000: use of potentially uninitialized variable \(f_ApplyFXAA\)/.test(m.text())) {
+      errors.push(`console.warn: ${m.text()}`);
+    }
   }
   else if (t === 'info' || t === 'log') console.error(`[page] ${m.text()}`);
 });

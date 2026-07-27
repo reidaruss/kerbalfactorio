@@ -85,7 +85,14 @@ export class StatsProbe {
     let cpu = 0;
     for (let i = 0; i < n; ++i) cpu += this.cpuRing[i];
     const draw = r.info();
-    const vram = this.extraVramBytes / (1024 * 1024);
+    // The post stack's targets are added HERE and not folded into
+    // `extraVramBytes` at boot, and the difference is not stylistic. Boot runs
+    // before the canvas has been laid out, so at that instant the render
+    // targets are sized for a 300x150 default and total 0.9 MB; the frame after
+    // the first resize they are 27.7 MB and `extraVramBytes` never hears about
+    // it. A boot-time snapshot of a quantity that follows the window is a
+    // number that is wrong by 30x and looks fine.
+    const vram = (this.extraVramBytes + r.post.vram) / (1024 * 1024);
     return {
       frames: this.frames,
       fps: p50 > 0 ? 1000 / p50 : 0,
