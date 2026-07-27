@@ -63,18 +63,85 @@ const LOD0_M = 32.0;
  */
 const MAX_ITEMS = 768;
 
+/**
+ * The circle through a tile's three published sockets, solved ONCE at load.
+ *
+ * `theta` is measured from `b` (the exit, t = 0) in the plane of the three
+ * points, and `sweep` is the signed total angle to `a` the short way THROUGH
+ * the midpoint. Interpolating theta linearly is arc-length parameterisation
+ * exactly, on a circle, with no integration and no lookup table: that is the
+ * whole reason the art lane published a midpoint rather than just two ends.
+ */
+interface Arc {
+  centre: THREE.Vector3; u: THREE.Vector3; w: THREE.Vector3;
+  radius: number; sweep: number;
+}
+
 /** Where a belt tile's item path enters, passes and leaves, in tile-local m. */
-interface Path { a: THREE.Vector3; mid: THREE.Vector3; b: THREE.Vector3 }
+interface Path {
+  a: THREE.Vector3; mid: THREE.Vector3; b: THREE.Vector3;
+  /** null when the three sockets are collinear, i.e. a straight tile. */
+  arc: Arc | null;
+}
 
 /** Which tile shape a run tile is drawing, matching FactoryView's templates. */
 export type Turn = 'l' | 'r';
+
+/**
+ * A circle through three points is a LINE when they are collinear, and floating
+ * point does not do "exactly collinear". So the degenerate branch is chosen on
+ * the solved RADIUS rather than on a cross-product epsilon: past this multiple
+ * of the tile's own chord the arc is straighter than the 1 mm the assets are
+ * authored to and the lerp is both correct and better conditioned. A straight
+ * tile's three sockets solve to a radius of order 1e8 m; the shipped curve
+ * solves to 0.5 m.
+ */
+const STRAIGHT_RADIUS_RATIO = 40;
+
+/** Solve the circumcircle of a, mid, b in 3D. null when they are collinear. */
+function arcThrough(a: THREE.Vector3, mid: THREE.Vector3,
+                    b: THREE.Vector3): Arc | null {
+  const v1 = new THREE.Vector3().subVectors(mid, b);
+  const v2 = new THREE.Vector3().subVectors(a, b);
+  const n = new THREE.Vector3().crossVectors(v1, v2);
+  const nn = n.lengthSq();
+  const chord = v2.length();
+  if (nn <= 0 || chord <= 0) return null;
+  // centre = b + ((|v1|^2 v2 - |v2|^2 v1) x n) / (2|n|^2)
+  const num = new THREE.Vector3()
+    .addScaledVector(v2, v1.lengthSq())
+    .addScaledVector(v1, -v2.lengthSq())
+    .cross(n)
+    .multiplyScalar(1 / (2 * nn));
+  const centre = new THREE.Vector3().addVectors(b, num);
+  const u = new THREE.Vector3().subVectors(b, centre);
+  const radius = u.length();
+  if (!Number.isFinite(radius) || radius <= 0) return null;
+  if (radius > chord * STRAIGHT_RADIUS_RATIO) return null;  // collinear enough
+  u.multiplyScalar(1 / radius);
+  const w = new THREE.Vector3().crossVectors(n.normalize(), u).normalize();
+  const ang = (p: THREE.Vector3): number => {
+    const d = new THREE.Vector3().subVectors(p, centre);
+    return Math.atan2(d.dot(w), d.dot(u));
+  };
+  const tm = ang(mid);
+  let ta = ang(a);
+  // Take the branch that keeps the midpoint BETWEEN the ends. Without this a
+  // 90-degree corner is as likely to be drawn as the 270-degree one, which puts
+  // every item on a lap of the tile it is standing on.
+  if (tm > 0 && ta < tm) ta += 2 * Math.PI;
+  if (tm < 0 && ta > tm) ta -= 2 * Math.PI;
+  if (!Number.isFinite(ta)) return null;
+  return { centre, u, w, radius, sweep: ta };
+}
 
 function pathOf(root: THREE.Object3D | null): Path | null {
   if (root === null) return null;
   const g = (n: string): THREE.Vector3 | null =>
     root.getObjectByName(n)?.position.clone() ?? null;
   const a = g('socket_item_a'), mid = g('socket_item'), b = g('socket_item_b');
-  return a === null || mid === null || b === null ? null : { a, mid, b };
+  if (a === null || mid === null || b === null) return null;
+  return { a, mid, b, arc: arcThrough(a, mid, b) };
 }
 
 export class BeltCargo {
@@ -257,11 +324,31 @@ function nearestTileM(run: readonly { pos: { x: number; y: number; z: number } }
  * items leave. So f = 0 is the exit socket and f = 1 is the entry socket, which
  * is the reverse of the direction it reads in, and getting it backwards puts
  * every item on a belt travelling the wrong way while every other number stays
- * correct. Two straight segments through the published midpoint rather than one
- * from a to b, because on a curve the midpoint is 0.146 m off the chord.
+ * correct.
+ *
+ * FS-31: ONE RULE FOR BOTH TILE SHAPES, which is the art lane's published
+ * convention (ASSET-SPECS 4.13.1) and is why there is no `if (curve)` here. An
+ * item follows the CIRCLE through the three sockets, parameterised by arc
+ * length; on a straight the three are collinear, the circle degenerates to a
+ * line, and the same call is a plain lerp. This replaced two straight chords
+ * b->mid->a, which cut the inside of every corner: on the shipped curve (r =
+ * 0.5 m through 90 degrees, midpoint at 45) a chord pair sags r(1 - cos 22.5)
+ * = 0.038 m inside the arc and is 0.7654 m long against the true 0.7854, so
+ * cargo rode 3.8 cm off the belt centre and changed pace twice per corner.
+ *
+ * Note what is NOT wrong and must not be "fixed": a curve tile's path is 21.5%
+ * shorter than a straight one (0.7854 m against 1.000) while costing the SAME
+ * one tile of sim capacity, so an item genuinely crosses a corner slower in
+ * metres per second. That is the tile-capacity model, it is what Factorio does,
+ * and multiplying `offsetTiles` by a constant metres-per-tile to "correct" it
+ * is the trap the art lane flagged as A-9: it would accelerate items 27%
+ * (1.000 / 0.785398) through every corner instead.
  */
 function pointOnPath(p: Path, f: number, out: THREE.Vector3): void {
   const t = Math.min(1, Math.max(0, f));
-  if (t < 0.5) out.copy(p.b).lerp(p.mid, t * 2);
-  else out.copy(p.mid).lerp(p.a, (t - 0.5) * 2);
+  if (p.arc === null) { out.copy(p.b).lerp(p.a, t); return; }
+  const th = p.arc.sweep * t;
+  out.copy(p.arc.u).multiplyScalar(Math.cos(th) * p.arc.radius)
+    .addScaledVector(p.arc.w, Math.sin(th) * p.arc.radius)
+    .add(p.arc.centre);
 }

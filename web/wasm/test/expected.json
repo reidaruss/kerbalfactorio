@@ -37,7 +37,7 @@
     {"ready": 16, "generated": 16, "converged": 0, "resident": 48, "evicted": 0, "keyHash": 2189225573, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [758840265,3765957811,2757951770,619424670,1791160848,2818422705,3726925359,722628703,1442192722,2371987529,2464088275,569659021,3710524839,329790173,603022037,457875773], "chunkBiomes": [0,4,0,2,0,2,4,5,0,2,2,3,4,3,4,3]}
   ]},
   "observer": {"latDeg": 48, "lonDeg": 18, "altM": 60, "raw": "40b127ed7c62ce69", "designed": "40b8e04b8df5ab4b", "surfaceR": "41228140971beb57", "obsX": "41178dfdd61cfa7a", "obsY": "411b81a032bde867", "obsZ": "40fe9d0d55afac74", "rawGapM": "409ee178464b7388", "lowering": "401893a19de92c00", "dugDropM": "401893a19dec0000"},
-  "factory": {"ore": 384, "ingot": 248, "part": 197, "minerRemaining": 99616, "belt1Items": 1, "smelterOut": 0, "asmIn": 50, "tick": 5000, "stateRows": 9, "stateHash": 2547301955, "flows": 2, "flowHash": 1450565499, "lineItems": 1, "itemHash": 1886708342, "asmProgress": "3fe3333333333333", "smelterWorking": 1},
+  "factory": {"ore": 665, "ingot": 248, "part": 197, "minerRemaining": 99335, "belt1Items": 1, "smelterOut": 0, "asmIn": 50, "tick": 5000, "stateRows": 9, "stateHash": 2719008851, "flows": 2, "flowHash": 1450565499, "lineItems": 1, "itemHash": 2350664982, "asmProgress": "3fe3333333333333", "smelterWorking": 1},
   "factoryDeplete": {"mined": 40, "remaining": 0, "depleted": 1, "exactRateMined": 600, "exactRateRemaining": 0},
   "selfCheck": 1
 }

@@ -328,3 +328,98 @@ TEST(working_and_progress01_are_deterministic) {
   CHECK(na.progress01(sa) == nb.progress01(sb));   // exact bit-for-bit (fixed-point)
   CHECK(na.progress01(sa) > 0.0);                  // non-trivial
 }
+
+// =============================================================================
+// FS-30 — THROUGHPUT ON A REAL DRILL -> BELT -> SMELTER LINE.
+//
+// The primitive-level proof lives in test_factory_sim.cpp. This is the same
+// change measured where a player meets it: the exact scene the client builds in
+// FactoryCommit.ts (belt speed 8 units/tick, smelter 60 ticks), driven for 60
+// seconds of sim time, with every number below hand-derived BEFORE it was read
+// off the code. Against the pre-FS-30 accounting this test fails on almost every
+// line, because the belt carried one ore however hard the drill ran.
+// =============================================================================
+TEST(auto_line_belt_carries_a_column_and_throughput_follows_the_drill) {
+  BuildableNetwork net;
+  // 4 ore/s drill, a 10-tile belt, a 60-tick smelter. 3,600 ticks = 60 s.
+  BuildId miner = net.placeMinerOnDeposit(/*deposit*/ 1000000, kOre,
+                                          /*ratePerSecond*/ 4.0, /*outCap*/ 50);
+  BuildId belt = net.placeBelt(/*tiles*/ 10, /*speed*/ 8);
+  BuildId smelter = net.placeSmelter(kOre, kIngot, /*craftTicks*/ 60);
+  net.connect(miner, belt);
+  net.connect(belt, smelter);
+
+  const of::factory::TransportLine& line = net.sim().line(belt.entity);
+  CHECK(line.capacityUnits == 2560);  // 10 tiles * 256
+  CHECK(line.maxItems() == 40);       // 2560 / 64
+
+  uint32_t peak = 0;
+  int invariantBreaks = 0;
+  for (int t = 0; t < 3600; ++t) {
+    net.step();
+    const uint32_t n = net.beltItemCount(belt);
+    if (n > peak) peak = n;
+    if (!line.invariantHolds()) ++invariantBreaks;
+  }
+
+  // The invariant holds on a driven line, tick by tick, not just in a unit test.
+  CHECK(invariantBreaks == 0);
+
+  // Ore: 4/s for 60 s. The +1 is the fixed-point extraction accumulator
+  // (milli-units/tick) freeing one extra whole unit inside the window.
+  CHECK(net.producedCountOf(kOre) == 241);  // OLD: 63, capped by a 50-unit buffer
+
+  // Ingots: the smelter runs one 60-tick craft per second and is the bottleneck,
+  // so the ceiling is 60. What it loses is startup latency: the FIRST ore has to
+  // walk the whole belt, (2560 - 64) / 8 = 312 ticks, before anything can smelt.
+  // (3600 - 312) / 60 = 54.8 -> 54 completed crafts.
+  CHECK(net.producedCountOf(kIngot) == 54);  // OLD: 11
+
+  // The belt carries a COLUMN. Ore boards every 15 ticks (4/s) and takes 312
+  // ticks to cross, so 312 / 15 = 20.8 -> 21 items are in flight at steady
+  // state. This single number is the whole change: it read 1 before.
+  CHECK(peak == 21);
+  CHECK(peak > 1);
+  CHECK(peak <= line.maxItems());
+
+  // Negative control (DW-20): the same drill and smelter with the belt NOT
+  // connected must make zero ingots, so the numbers above cannot be coming from
+  // some path other than the belt.
+  BuildableNetwork ctl;
+  BuildId cMiner = ctl.placeMinerOnDeposit(1000000, kOre, 4.0, 50);
+  BuildId cBelt = ctl.placeBelt(10, 8);
+  BuildId cSmelt = ctl.placeSmelter(kOre, kIngot, 60);
+  ctl.connect(cMiner, cBelt);  // ore reaches the belt, and stops there
+  for (int t = 0; t < 3600; ++t) ctl.step();
+  CHECK(ctl.producedCountOf(kIngot) == 0);
+  CHECK(ctl.outputBuffer(cSmelt) == 0);  // the smelter exists and never ran
+  CHECK(ctl.beltItemCount(cBelt) > 0);   // ... and the belt really was carrying
+}
+
+// --- A saturated belt, driven: the drill outruns what a belt can accept. -----
+// A belt accepts one item per kItemSpacing / speed = 64 / 8 = 8 ticks, i.e. 7.5
+// items/s. Feed it 8/s and the line fills to its own capacity and the drill's
+// output buffer backs up behind it, which is the Factorio-legible signal that
+// the belt is the constraint. Every one of these read 1 / 0 / never before.
+TEST(auto_line_belt_saturates_when_the_drill_outruns_it) {
+  BuildableNetwork net;
+  BuildId miner = net.placeMinerOnDeposit(1000000, kOre, /*8 ore/s*/ 8.0, 50);
+  BuildId belt = net.placeBelt(10, 8);
+  BuildId smelter = net.placeSmelter(kOre, kIngot, 60);
+  net.connect(miner, belt);
+  net.connect(belt, smelter);
+
+  const of::factory::TransportLine& line = net.sim().line(belt.entity);
+  uint32_t peak = 0;
+  for (int t = 0; t < 3600; ++t) {
+    net.step();
+    const uint32_t n = net.beltItemCount(belt);
+    if (n > peak) peak = n;
+    CHECK(n <= line.maxItems());  // a line may never exceed its own length
+  }
+  CHECK(net.producedCountOf(kOre) == 478);   // OLD: 63
+  CHECK(net.producedCountOf(kIngot) == 54);  // smelter-bound, same as at 4/s
+  CHECK(peak == 39);                         // OLD: 1
+  CHECK(net.outputBuffer(miner) > 0);        // the drill really did back up
+  CHECK(line.invariantHolds());
+}

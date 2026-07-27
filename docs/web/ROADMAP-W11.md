@@ -539,6 +539,145 @@ look instead of concluding "the enemies feel wrong" and rewriting the model.
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
 
+- **2026-07-27, lane F follow-on — the belt carries a column (FS-30 to FS-32).**
+  The three `TransportLine` gap-accounting defects lane F escalated and correctly
+  declined to fix at 3 a.m., taken together because they are one system.
+
+  **The invariant, which is a statement about geometry and not an accounting
+  convention.** `headGap + Σ(itemGaps[k > head_]) + itemCount*kItemSpacing +
+  tailGap == capacityUnits`. Give item k the offset `o(k) = o(k-1) +
+  kItemSpacing + itemGaps[k]` measured from the head, let every body occupy
+  `kItemSpacing`, and `tailGap` is by definition the room left behind the last
+  body. Substituting gives the sum exactly, so it says one thing: **the layout
+  fits on the belt.** Two rules follow and they decide every case. An operation
+  that MOVES items must move the free space the other way. An operation that
+  ADDS or REMOVES an item must charge `kItemSpacing` to the end where the change
+  happened, never to both. It is now stated unconditionally in `factory_sim.h`
+  (the old comment hedged with "invariant only modulo what enters and leaves at
+  the ends" two lines above stating it unconditionally), published as
+  `TransportLine::invariantHolds()` so no test file owns a second copy, and
+  asserted after every operation.
+
+  **Throughput, before and after, on the client's own scene** (belt speed 8
+  units/tick and a 60-tick smelter, the constants `FactoryCommit.ts` uses), 3,600
+  ticks = 60 s of sim:
+
+  | | before | after |
+  |---|---|---|
+  | saturated 10-tile belt | **1 item** | **40 items** (its own `maxItems()`) |
+  | 0.5 ore/s drill: ore / ingots | 28 / 10 | 28 / **26** |
+  | 2 ore/s drill: ore / ingots | 63 / 11 | **118** / **54** |
+  | 4 ore/s drill: ore / ingots / belt peak | 63 / 11 / 1 | **241** / **54** / **21** |
+  | 8 ore/s drill: ore / ingots / belt peak | 63 / 11 / 1 | **478** / **54** / **39** |
+  | pinned parity scene, 5,000 ticks: ore | 384 | **665** |
+
+  The old ceiling was **one item per full belt traversal**, which is why a 3-tile
+  belt used to out-produce a 10-tile one 39 ingots to 11. It is now 57 to 54: belt
+  length costs latency instead of throughput, which is the correct shape. The
+  bottleneck also moved to where a player can see it. Above 2 ore/s the smelter
+  binds at 54 of a theoretical 60 (the missing 6 are the 312 ticks the FIRST ore
+  spends walking the belt, `(2560 - 64) / 8`, hand-derived before it was read off
+  the code), and at 8 ore/s the belt binds and the drill's own buffer visibly
+  backs up behind it.
+
+  **The third defect was a misdiagnosis, and that is the finding worth carrying.**
+  `tryPushTail` setting `tailGap = 0` for the first item is geometrically CORRECT:
+  an item standing on the last 64 units of a belt has nothing behind it. The
+  reason no second item could ever follow it was `advance()`, which moved that item
+  off the tail and never gave the vacated room back. Fixing (3) as reported would
+  have let a second item enter the space the first was standing in, which is
+  precisely the "different wrong answer rather than a right one" the brief
+  predicted. `popHead` also stopped minting 64 units of belt per pop, so a
+  long-running line can no longer accept more items than its own length.
+
+  **Why 594 green checks missed a belt that carried one item, which is standing
+  rule 11 and is the reusable half of this.** Three mechanisms, all still present
+  in other suites. (1) **Every full-belt fixture in every suite is
+  `fillSaturated()`**, a setup shortcut that WRITES the end state; its own doc
+  comment claims it "models a belt that has been running and is full", which is
+  exactly the claim it stood in for and exactly the claim that was false. (2)
+  **Every `tryPushTail` test pushed exactly one item**, so the operation that fills
+  a belt and the state of a full belt were tested on opposite sides of a gap that
+  nothing crossed. (3) The invariant helper **existed**, in the test file, applied
+  to ONE of the five mutating operations; where it met `advance()` the assertion
+  read `gapInvariantSum(lp) + 40 == 1280` with the comment "advance() spends
+  headGap". **It measured the violation exactly and was written to absorb it.**
+  That is the same shape as the negative control policing a stale radius: a
+  threshold tuned until it passes rather than the property the code claims.
+
+  **What was closed so it cannot recur.** The invariant moved onto the struct.
+  `belt_gap_invariant_holds_after_every_operation` drives push, advance, pop and
+  all three erasing `takeAt` cases for 4,000 ticks and checks after every call,
+  with a DW-20 negative control asserting each branch fired and that the line
+  really saturated and really blocked. And the class-closing one:
+  **`belt_filled_by_pushing_matches_the_fillSaturated_fixture` pins the FIXTURE
+  against the PRODUCTION PATH** field by field, at four tile/speed combinations
+  including a speed that does not divide `kItemSpacing`, so a setup shortcut can
+  never again quietly disagree with the code it stands in for. `factory_sim_tests`
+  went 594 -> **33,141 checks**. The one existing check that failed was line 556,
+  the calibrated one.
+
+  **FS-31, the follow-on: belt cargo follows the arc.** `BeltCargo.pointOnPath`
+  walked two straight chords through the published midpoint; it now solves the
+  circumcircle of `socket_item_a` / `socket_item` / `socket_item_b` once at load
+  and interpolates the ANGLE, which on a circle is arc-length parameterisation
+  exactly. A straight tile's sockets are collinear, the circle degenerates and the
+  same call is a lerp, so there is no per-shape branch, which is the art lane's
+  published convention. **Measured on the shipped curve: the chord pair sagged
+  38.1 mm inside the arc and was 0.765417 m long against the true 0.785464 m.**
+  Lane A's A-9 `offsetTiles` trap was already avoided by lane F (`k = floor`,
+  `f = frac`, evaluate within tile k), and the inverse is now the tempting error:
+  a curve tile's path is 21.5% shorter than a straight one while costing the same
+  one tile of sim capacity, so an item genuinely crosses a corner slower in m/s.
+  That is the tile-capacity model and it is what Factorio does.
+
+  **FS-32, deferred with a number and a pinning test:** while `headGap == 0` the
+  whole line is frozen, so a hole left by a hand pick does not close up behind a
+  stalled belt. `belt_blocked_line_does_not_compress_interior_gaps` pins it, and
+  its sharpest assertion is that the belt refuses a new item at the tail while
+  carrying a whole item's worth of free space in its own middle. Not taken here
+  because it needs a compression cursor or a running gap sum to stay O(1) against
+  the G1 benchmark's 40,000 lines, i.e. a second state field with five maintenance
+  sites, and this change already moves every throughput number in the game.
+
+  **Driven in the browser, all five belt probes green against a production build
+  on `vite preview`** (`autoline`, `shortline`, `beltsnap`, `beltcurve`,
+  `demolish`; no console.error, no failed request, `abi=8`, worker agrees with 0
+  mismatches on every run). The numbers that moved, against lane F's own figures
+  from the same probes yesterday:
+  - `autoline` **`beltPeakItems` 1 -> 4** on its 3-tile belt, and that 4 is
+    derivable rather than lucky: the run is 88 ticks long at speed 8
+    (`(768 - 64) / 8`) and the 2.39 ore/s drill boards one item every 25 ticks,
+    so 88 / 25 = 3.5 items in flight at steady state.
+  - `autoline` cargo **0.333 -> 0.667 items per tile**, 4 instances, 0 skipped,
+    **50 draw calls** (lane F measured 49 with one item), 503,818 triangles,
+    p50 2.20 ms. The cargo layer is still ONE `BatchedMesh`, so the draw cost
+    did not scale with the item count.
+  - `autoline` iron out of the line **26 taken, 26 gained by the pack, 0
+    spilled**, with conservation still exact (`nodeLost 63 == drainedByMiner 63
+    == minerExtracted 63`).
+  - **`demolish` is the sharpest browser proof.** Its `stalled` window kills the
+    line's middle and lets the belts back up, and the two orphaned runs now read
+    **`items [8, 0]` on a 2-tile and a 1-tile run: 8 is exactly the 2-tile
+    line's `maxItems()`**. A belt backing up to its own capacity behind a
+    stoppage is the Factorio-legible signal that did not previously exist,
+    because the belt held one item whether it was stalled or not. Removing that
+    belt correspondingly reports **"lost 4 items on the belts"** rather than one.
+
+  Gates: **29/29 ctest**, self-determinism **119/119**, cross-toolchain exact
+  **108/108** (the parity fixture's `factory` section re-baselined, `factoryDeplete`
+  byte-identical), `npm run check` clean at **166 files**. The wasm was rebuilt and
+  synced; **the ABI is unchanged at 8**, so standing rule 9 does not bite.
+
+  **One gap left open on purpose, and it is the same shape as the defect.** None
+  of the five probes asserts against a pinned belt-item or ingot constant, which
+  is why all five stayed green while the belt's carrying capacity went up 40x.
+  `demolish`'s `items [8, 0]` and `autoline`'s `beltPeakItems` are exactly where a
+  fixture would have caught this from the client side and there is no fixture
+  there. Adding one is a probe change in files a live lane is driving tonight, so
+  it is recorded rather than made: **a probe that reports a number without
+  asserting anything about it is a log line, not a test.**
+
 - **2026-07-27, lane G — the flight demo, driven adversarially until it stopped
   breaking (PH-28 to PH-36).** Nine defects, and the thing worth carrying out of
   this lane is that **all nine READ HEALTHY ON EVERY INSTRUMENT**, which is the

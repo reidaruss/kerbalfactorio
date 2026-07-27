@@ -553,7 +553,17 @@ TEST(belt_take_at_leaves_the_line_flowing) {
   CHECK(p[0].UnitOffset == c[0].UnitOffset);
   CHECK(p[1].UnitOffset == c[2].UnitOffset);
   CHECK(p[2].UnitOffset == c[3].UnitOffset);
-  CHECK(gapInvariantSum(lp) + 40 == 1280);  // advance() spends headGap, §2.2
+  // FS-30. This line used to read `gapInvariantSum(lp) + 40 == 1280`, with the
+  // comment "advance() spends headGap, §2.2". It was the ONLY place in 594
+  // checks where the invariant was measured across advance(), it saw the
+  // violation exactly, and it was written to absorb it. Rule 11's sentence
+  // applies literally: assert the property the code claims, never a threshold
+  // tuned until it passes. The claim is that the column moving 40 units toward
+  // the head hands 40 units back to the tail, so the sum does not move at all.
+  CHECK(gapInvariantSum(lp) == 1280);
+  CHECK(lp.invariantHolds());
+  CHECK(lp.headGap == 60);    // 100 - 40, the lead item really did travel
+  CHECK(lp.tailGap == 908);   // 868 + 40, and the tail really did gain it
 }
 
 // --- TakeLineItemNear: the aim window, the guards, and the misses. -----------
@@ -671,4 +681,291 @@ TEST(belt_take_at_negative_control_setup_really_had_items) {
   CHECK(items.size() == 8);
   for (const FLineItem& it : items) CHECK(it.ItemType == 42);
   CHECK(gapInvariantSum(l) == 768);
+}
+
+// =============================================================================
+// FS-30 — THE GAP INVARIANT, ASSERTED DIRECTLY, ON EVERY OPERATION.
+//
+// Why these exist, which matters more than what they check. Three defects in
+// this struct's gap accounting survived 594 green checks for months, and the
+// belt they produced carried ONE item however hard it was fed. The suite missed
+// them by a mechanism worth naming, because it is reusable and it is still
+// sitting in other suites:
+//
+//   1. EVERY test of a FULL belt built its fullness with fillSaturated(), which
+//      writes the end state directly. Its own doc comment claims it "models a
+//      belt that has been running and is full" — which is exactly the claim it
+//      was standing in for, and exactly the claim that was false. A fixture that
+//      constructs the state the production path is supposed to REACH is a second
+//      implementation of that state, and only the fixture was ever run.
+//   2. EVERY test of tryPushTail pushed exactly ONE item. So the operation that
+//      fills a belt and the state of a filled belt were tested on opposite sides
+//      of a gap that no test ever crossed.
+//   3. The invariant helper existed, and was applied to ONE of the five mutating
+//      operations. Where it met advance() (belt_take_at_leaves_the_line_flowing)
+//      the assertion was written as `sum + 40 == 1280` with a comment naming the
+//      violation as intended behaviour.
+//
+// So the closure is not "add a check for a one-item belt". It is: state the
+// invariant ON THE STRUCT (TransportLine::invariantHolds), assert it after every
+// operation rather than after one, and PIN THE FIXTURE AGAINST THE PRODUCTION
+// PATH so a setup shortcut can never again quietly disagree with the code it
+// stands in for.
+// =============================================================================
+
+// --- Every mutating operation preserves the invariant, in one driven walk. ---
+// Push, advance, pop, and all three erasing takeAt cases, interleaved, on a line
+// that is alternately flowing, saturated and blocked. The invariant is checked
+// after EVERY call, and the counters at the bottom are the DW-20 negative
+// control: a build in which nothing ever happened would satisfy every invariant
+// check trivially, so the test also asserts that each operation really fired.
+TEST(belt_gap_invariant_holds_after_every_operation) {
+  FactorySim sim;
+  EntityHandle belt = sim.addBeltLine(/*tiles*/ 4, /*speed*/ 8);
+  TransportLine& l = sim.line(belt);
+  CHECK(l.capacityUnits == 1024);
+  CHECK(l.maxItems() == 16);  // 1024 / 64, hand-computed
+  CHECK(l.invariantHolds());
+
+  int pushed = 0, refusedPush = 0, advanced = 0, popped = 0, taken = 0;
+  int sawFull = 0, sawBlocked = 0;
+  for (int tick = 0; tick < 4000; ++tick) {
+    // A feeder that never gives up: it offers an item every single tick.
+    if (l.tryPushTail(static_cast<ItemId>(200 + (tick % 7)))) ++pushed;
+    else ++refusedPush;
+    CHECK(l.invariantHolds());
+
+    l.advance();
+    ++advanced;
+    CHECK(l.invariantHolds());
+
+    if (static_cast<uint32_t>(l.itemCount()) == l.maxItems()) ++sawFull;
+    if (l.headReady()) ++sawBlocked;
+
+    // Drain at the head every 40 ticks (a slow consumer), and pull one off by
+    // hand every 137 ticks (a player), so all the takeAt cases are exercised
+    // against a line that is genuinely mid-flow rather than hand-built.
+    if (tick % 40 == 39 && l.headReady()) {
+      CHECK(l.popHead() != kNoItem);
+      ++popped;
+      CHECK(l.invariantHolds());
+    }
+    if (tick % 137 == 136 && !l.empty()) {
+      const size_t n = l.itemCount();
+      size_t slot = l.head_;                                        // head case
+      if (n > 2 && (tick / 137) % 3 == 1) slot = l.head_ + n / 2;    // interior
+      if (n > 2 && (tick / 137) % 3 == 2) slot = l.itemTypes.size() - 1;  // last
+      if (l.takeAt(slot) != kNoItem) ++taken;
+      CHECK(l.invariantHolds());
+    }
+    // The ceiling is arithmetic, not a second constant: a line can never hold
+    // more items than its own length admits. This is the assertion that fails
+    // against popHead's old `tailGap += kItemSpacing`, which minted one item of
+    // belt per pop and let a long-running line grow past its own capacity.
+    CHECK(l.itemCount() <= l.maxItems());
+  }
+
+  // Negative control (DW-20): prove the walk above was not a long list of
+  // no-ops. Every branch must have fired, and the belt must genuinely have
+  // reached saturation and genuinely have blocked at the head.
+  CHECK(pushed > 100);       // items really boarded, repeatedly
+  CHECK(refusedPush > 100);  // and the belt really did fill up and refuse
+  CHECK(advanced == 4000);
+  CHECK(popped >= 50);       // the consumer really drained the head
+  CHECK(taken >= 20);        // the player really picked items off
+  CHECK(sawFull > 0);        // the line really reached maxItems()
+  CHECK(sawBlocked > 0);     // and really sat blocked at the head
+  CHECK(l.invariantHolds());
+}
+
+// --- THE CLASS-CLOSING TEST: the fixture must equal the production path. -----
+// fillSaturated() is a setup shortcut that WRITES the state of a full belt.
+// Feeding a belt through tryPushTail() + advance() is the code a real drill
+// runs. Those are two independent implementations of "a saturated line", and
+// for months only the shortcut was ever executed while every claim about full
+// belts was read off it. So: build one of each and compare them FIELD BY FIELD.
+//
+// The terminal state is not a coincidence of the belt speed, so it is proved at
+// two kinds of speed: one that divides kItemSpacing exactly (8, so one item
+// boards every 8 ticks) and one that does not (12, so a push happens whenever
+// tailGap crosses 64 and leaves a different remainder each time). Both must
+// converge on the same bytes, because the invariant forces them to: a min-spaced
+// line of n items has headGap + tailGap == capacityUnits - n*kItemSpacing, and a
+// line fed until it refuses and advanced until it blocks has headGap == 0 and
+// tailGap < kItemSpacing.
+static void pushFilledEqualsFillSaturated(uint32_t tiles, uint32_t speed) {
+  FactorySim sim;
+  EntityHandle fed = sim.addBeltLine(tiles, speed);
+  EntityHandle set = sim.addBeltLine(tiles, speed);
+  TransportLine& lf = sim.line(fed);
+  TransportLine& ls = sim.line(set);
+
+  const uint32_t written = ls.fillSaturated(/*item*/ 55);
+  int boarded = 0;
+  for (int tick = 0; tick < 5000; ++tick) {
+    if (lf.tryPushTail(/*item*/ 55)) ++boarded;
+    lf.advance();
+  }
+
+  // The headline: the two roads arrive at the same belt.
+  CHECK(static_cast<uint32_t>(boarded) == written);
+  CHECK(lf.itemCount() == ls.itemCount());
+  CHECK(static_cast<uint32_t>(lf.itemCount()) == lf.maxItems());
+  CHECK(lf.headGap == ls.headGap);
+  CHECK(lf.tailGap == ls.tailGap);
+  CHECK(lf.headGap == 0);          // the column reached the head
+  CHECK(lf.tailGap == 0);          // and the belt is packed to its own end
+  CHECK(lf.fullyCompressed == ls.fullyCompressed);
+  CHECK(lf.fullyCompressed);       // latched by advance(), not by the fixture
+  CHECK(lf.isMinSpaced() && ls.isMinSpaced());
+  CHECK(lf.invariantHolds() && ls.invariantHolds());
+  // ... and the items are at the same offsets, which is the only comparison a
+  // renderer or a hand-pick actually cares about.
+  const std::vector<FLineItem> af = sim.GetLineItems(fed.index);
+  const std::vector<FLineItem> as = sim.GetLineItems(set.index);
+  CHECK(af.size() == as.size());
+  for (size_t i = 0; i < af.size() && i < as.size(); ++i)
+    CHECK(af[i].UnitOffset == as[i].UnitOffset);
+  // Negative control: this comparison is only worth anything if the belt was
+  // not empty and the feeder was not a no-op.
+  CHECK(written > 0 && boarded > 0);
+}
+
+TEST(belt_filled_by_pushing_matches_the_fillSaturated_fixture) {
+  pushFilledEqualsFillSaturated(/*tiles*/ 3, /*speed*/ 8);    // 12 items
+  pushFilledEqualsFillSaturated(/*tiles*/ 10, /*speed*/ 8);   // 40 items
+  pushFilledEqualsFillSaturated(/*tiles*/ 10, /*speed*/ 12);  // speed not a divisor
+  pushFilledEqualsFillSaturated(/*tiles*/ 1, /*speed*/ 32);   // one tile, turbo
+}
+
+// --- What a saturated belt carries, stated as a number. ----------------------
+// The single sentence this whole change is about: a belt carries a COLUMN of
+// items. Every count below is capacity/spacing, computed by hand. Against the
+// pre-FS-30 code every one of these reads 1.
+TEST(belt_fed_continuously_carries_a_full_column) {
+  const uint32_t tiles[] = {1, 3, 5, 10, 20};
+  const uint32_t expect[] = {4, 12, 20, 40, 80};
+  for (int c = 0; c < 5; ++c) {
+    FactorySim sim;
+    EntityHandle belt = sim.addBeltLine(tiles[c], 8);
+    TransportLine& l = sim.line(belt);
+    uint32_t peak = 0;
+    for (int tick = 0; tick < 6000; ++tick) {
+      l.tryPushTail(/*item*/ 3);
+      l.advance();
+      if (l.itemCount() > peak) peak = static_cast<uint32_t>(l.itemCount());
+    }
+    CHECK(peak == expect[c]);
+    CHECK(peak == l.maxItems());
+    CHECK(l.invariantHolds());
+  }
+}
+
+// --- popHead may not mint belt, and advance() may not consume it. ------------
+// The two halves of the old accounting error, isolated from each other so
+// neither can hide behind the other's cancellation. Each block below fails
+// against the pre-FS-30 code, in a different direction.
+TEST(belt_pop_and_advance_each_conserve_the_line_length) {
+  // (a) popHead in isolation: ONE pop off a saturated line, nothing else. The
+  //     freed body is charged to the head side, so the tail may not gain a unit.
+  {
+    FactorySim sim;
+    EntityHandle belt = sim.addBeltLine(3, 8);
+    TransportLine& l = sim.line(belt);
+    CHECK(l.fillSaturated(/*item*/ 4) == 12);
+    CHECK(l.tailGap == 0);       // packed to its own end
+    CHECK(l.headReady());
+    CHECK(l.popHead() == 4);
+    CHECK(l.tailGap == 0);       // OLD: 64. Nothing at the tail moved.
+    CHECK(l.headGap == 64);      // the new lead has one body-length to travel
+    CHECK(l.invariantHolds());   // OLD: 832 after one pop, and growing
+    // Drain the rest, advancing the 64 units between each pop.
+    int pops = 1;
+    for (int guard = 0; guard < 100000 && !l.empty(); ++guard) {
+      if (l.headReady()) { CHECK(l.popHead() == 4); ++pops; }
+      else l.advance();
+      CHECK(l.invariantHolds());
+    }
+    CHECK(pops == 12);                    // conservation: 12 in, 12 out
+    CHECK(l.empty());
+    CHECK(l.tailGap == l.capacityUnits);  // 768 exactly, not 768 + 12*64
+    CHECK(l.headGap == 0);
+  }
+  // (b) advance() alone: one item walked the length of a 10-tile line.
+  {
+    FactorySim sim;
+    EntityHandle belt = sim.addBeltLine(10, 8);
+    TransportLine& l = sim.line(belt);
+    CHECK(l.tryPushTail(/*item*/ 6));
+    CHECK(l.headGap == 2496);  // 2560 - 64, hand-computed
+    CHECK(l.tailGap == 0);     // an item standing on the last 64 units
+    int ticks = 0;
+    while (!l.headReady() && ticks < 10000) { l.advance(); ++ticks; }
+    CHECK(ticks == 312);       // 2496 / 8, hand-computed
+    CHECK(l.headGap == 0);
+    CHECK(l.tailGap == 2496);  // OLD: 0 forever, which IS the one-item belt
+    CHECK(l.invariantHolds()); // OLD: 64, i.e. 2496 units of belt evaporated
+    // The consequence, in one line: a second item can now follow the first.
+    CHECK(l.tryPushTail(/*item*/ 6));
+    CHECK(l.itemCount() == 2);
+  }
+  // (c) a long-running line can never exceed its own length. This is the
+  //     observable the belt lane predicted from the arithmetic: pop-and-refill
+  //     for 20,000 ticks used to hand the tail 64 free units per pop.
+  {
+    FactorySim sim;
+    EntityHandle belt = sim.addBeltLine(2, 8);
+    TransportLine& l = sim.line(belt);
+    int pops = 0;
+    for (int tick = 0; tick < 20000; ++tick) {
+      l.tryPushTail(/*item*/ 9);
+      l.advance();
+      if (l.headReady()) { l.popHead(); ++pops; }
+      CHECK(l.itemCount() <= l.maxItems());
+    }
+    CHECK(pops > 1000);   // negative control: the line really was churning
+    CHECK(l.maxItems() == 8);
+    CHECK(l.invariantHolds());
+  }
+}
+
+// --- FS-32, pinned rather than fixed: a blocked line does not compress. ------
+// While headGap == 0 the whole line is frozen, so an interior gap left by a
+// hand pick does NOT close up behind a stalled belt the way Factorio's would.
+// That is invariant-preserving (the layout still fits) and it is a real
+// behavioural difference, so it is pinned here with its number rather than left
+// to be rediscovered. When FS-32 lands, this is the test that must change, and
+// it says so here so that changing it reads as intent rather than as breakage.
+TEST(belt_blocked_line_does_not_compress_interior_gaps) {
+  FactorySim sim;
+  EntityHandle belt = sim.addBeltLine(3, 8);
+  TransportLine& l = sim.line(belt);
+  CHECK(l.fillSaturated(/*item*/ 7) == 12);
+  CHECK(l.headReady());  // head blocked: no consumer
+
+  // Pull an interior item off. FS-29's rule donates the freed span (one body of
+  // kItemSpacing, plus the removed item's own extra gap, which is 0 on a
+  // min-spaced line) to the FOLLOWING item's lead gap, so no surviving offset
+  // moves. After the erase that gap sits at the same index the removed item had.
+  const size_t mid = l.head_ + 6;
+  CHECK(l.takeAt(mid) == 7);
+  CHECK(l.itemGaps[mid] == 64);  // 64 body + 0 extra, hand-computed
+  CHECK(l.invariantHolds());
+
+  const std::vector<FLineItem> before = sim.GetLineItems(belt.index);
+  for (int tick = 0; tick < 600; ++tick) l.advance();
+  const std::vector<FLineItem> after = sim.GetLineItems(belt.index);
+
+  // Nothing moved, because the head is blocked and nothing behind it slides.
+  CHECK(before.size() == 11 && after.size() == 11);
+  for (size_t i = 0; i < before.size() && i < after.size(); ++i)
+    CHECK(before[i].UnitOffset == after[i].UnitOffset);
+  CHECK(l.itemGaps[mid] == 64);  // the hole is still open: THIS is FS-32
+  CHECK(l.tailGap == 0);         // and the freed room is stranded in the middle
+  // The sharpest statement of the cost: the belt refuses a new item at the tail
+  // while carrying a whole item's worth of free space in its own middle. In
+  // Factorio the column behind the hole would slide forward and close it.
+  CHECK(!l.tryPushTail(/*item*/ 8));
+  CHECK(l.itemCount() == 11);
+  CHECK(l.invariantHolds());
 }

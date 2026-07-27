@@ -121,16 +121,54 @@ struct FLineItem {
 //                    i-1 and item i). itemGaps[0] is unused (item 0's lead gap
 //                    IS headGap). Items themselves store no position.
 //   tailGap          free units after the LAST item (where new items enter).
-//   capacityUnits    = tiles * 256; headGap + Σ(itemGaps) + tailGap is invariant
-//                    only modulo what enters/leaves at the ends.
+//   capacityUnits    = tiles * 256.
+//
+// -----------------------------------------------------------------------------
+// THE INVARIANT (FS-30). It holds after EVERY operation, with no exceptions and
+// no "modulo what enters and leaves at the ends" hedge:
+//
+//     headGap + Σ(itemGaps[k], k > head_) + itemCount()*kItemSpacing + tailGap
+//       ==  capacityUnits
+//
+// It is not an accounting convention, it is a statement about geometry, and that
+// is why every operation must preserve it. Give each item a position: measure
+// offsets from the HEAD of the line toward the tail, so
+//
+//     o(head_)  = headGap                            (the lead item)
+//     o(k)      = o(k-1) + kItemSpacing + itemGaps[k]  (k > head_)
+//
+// and let every item's body occupy kItemSpacing of flow-axis length starting at
+// its own offset. Then tailGap is defined as the room left over behind the last
+// body, tailGap = capacityUnits - o(last) - kItemSpacing, and substituting the
+// recurrence gives exactly the sum above. So the invariant says one thing only:
+// THE LAYOUT FITS ON THE BELT. Occupied length plus free length is the length.
+//
+// Two rules follow, and between them they decide every case in this struct:
+//   * An operation that MOVES items must move the free space the other way. The
+//     column sliding `d` units toward the head spends `d` of headGap and must
+//     credit `d` to tailGap, because the room the column vacated is behind it.
+//   * An operation that ADDS or REMOVES an item changes the occupied term by
+//     kItemSpacing and must charge that to the end where the change happened —
+//     the head side for a head removal, the tail side for a tail insert or
+//     removal, the following item's lead gap for an interior removal. Charging
+//     it to BOTH ends mints belt out of nothing.
+//
+// Three operations each broke a different one of those rules for months (see
+// invariantHolds() below and the FS-30 tests): popHead credited the tail for a
+// removal the head had already absorbed (+kItemSpacing per pop), advance() spent
+// headGap and credited nothing (-speedUnitsPerTick per flowing tick), and the
+// two partly cancelled, which is why neither showed up as a runaway number. The
+// observable was that a belt fed by a drill carried ONE item however fast the
+// drill ran, because the room a moving item vacates at the tail was never given
+// back and so no second item could ever enter.
+//
+// Note what is NOT part of the invariant, because it is a real behavioural limit
+// and naming it is cheaper than rediscovering it: while the head is BLOCKED
+// (headGap == 0) nothing on the line moves at all, so an interior gap left by a
+// hand pick (takeAt) does not close up behind a stalled belt the way Factorio's
+// would. That is invariant-preserving (the layout still fits) and it is deferred
+// as FS-32, pinned by belt_blocked_line_does_not_compress_interior_gaps.
 // =============================================================================
-// Invariant (units): headGap + Σ(itemGaps[i], i>=1) + itemCount*kItemSpacing
-//                     + tailGap  ==  capacityUnits.
-// Each item occupies kItemSpacing of "body" length (its minimum footprint);
-// the gaps track only the FREE space. headGap is the free units the lead item
-// must still travel to reach the head; tailGap is the free room at the tail
-// where new items enter. itemGaps[i] (i>=1) is the EXTRA free space between
-// item i-1 and item i beyond the minimum spacing (0 when compressed).
 struct TransportLine {
   uint32_t capacityUnits = 0;       // tiles * kUnitsPerTile
   uint32_t speedUnitsPerTick = 8;   // belt-tier speed (8 basic .. 32 turbo)
@@ -146,6 +184,27 @@ struct TransportLine {
   size_t itemCount() const { return itemTypes.size() - head_; }
   bool empty() const { return head_ >= itemTypes.size(); }
 
+  // --- The invariant, as code (FS-30). ---------------------------------------
+  // Published on the struct rather than re-derived in each test file, because a
+  // test-local copy of an invariant is a second definition of it: the previous
+  // one lived only in test_factory_sim.cpp, was applied to exactly ONE of the
+  // five mutating operations, and where it collided with advance() the test was
+  // written to absorb the discrepancy rather than to report it. O(items) and
+  // therefore a TEST/debug call, never a per-tick one — the hot path preserves
+  // the invariant by construction, which is the whole point of writing it down.
+  uint64_t invariantSum() const {
+    uint64_t sum = static_cast<uint64_t>(headGap) + tailGap;
+    for (size_t k = head_ + 1; k < itemGaps.size(); ++k) sum += itemGaps[k];
+    sum += static_cast<uint64_t>(itemCount()) * kItemSpacing;
+    return sum;
+  }
+  bool invariantHolds() const { return invariantSum() == capacityUnits; }
+
+  // How many items this line can physically hold, min-spaced: the number a
+  // saturated belt actually carries, and the ceiling tryPushTail enforces by
+  // arithmetic rather than by a second constant.
+  uint32_t maxItems() const { return capacityUnits / kItemSpacing; }
+
   // --- Tail input (§2.3): try to append an item at the line's tail. ----------
   // Succeeds (returns true) only if there is min-spacing room at the tail.
   // A new item enters at the far (tail) end and must travel the line's length to
@@ -155,11 +214,26 @@ struct TransportLine {
   bool tryPushTail(ItemId item) {
     if (tailGap < kItemSpacing) return false;
     if (empty()) {
-      // First item: lead gap = everything ahead of its tail-most footprint.
+      // First item: it enters AT THE TAIL, so it eats the tail room and must
+      // travel everything ahead of it to reach the head. DERIVED from the two
+      // gaps rather than written as `capacityUnits - kItemSpacing`, so it is
+      // the invariant that decides the value and not a second copy of it: on an
+      // empty line headGap + tailGap == capacityUnits by the invariant, and the
+      // new item converts kItemSpacing of that free span into occupied length.
+      //
+      // FS-30 note, because the belt lane's escalation named this line as the
+      // one-item bug and it is worth being exact about why it was not: leaving
+      // tailGap at 0 here is geometrically CORRECT — an item standing on the
+      // last 64 units of the belt has nothing behind it. The reason no second
+      // item could ever follow it was advance(), which moved the first item off
+      // the tail without ever giving the vacated room back. Had this line been
+      // "fixed" on its own (say to capacityUnits - kItemSpacing) the belt would
+      // have accepted a second item into the space the first one was standing
+      // in, which is the different wrong answer rather than the right one.
       head_ = 0;
       itemGaps.assign(1, 0);
       itemTypes.assign(1, item);
-      headGap = capacityUnits - kItemSpacing;
+      headGap = headGap + tailGap - kItemSpacing;
       tailGap = 0;
     } else {
       // A trailing item packs min-spaced behind the last (no extra gap).
@@ -189,24 +263,40 @@ struct TransportLine {
   bool headReady() const { return !empty() && headGap == 0; }
   ItemId headItem() const { return empty() ? kNoItem : itemTypes[head_]; }
 
-  // Pop the lead item (consumer took it). O(1): advance the head cursor. The new
-  // lead item's extra gap rolls into headGap; the popped footprint + the head
-  // gap open up, and capacity returns to the tail.
+  // Pop the lead item (consumer took it). O(1): advance the head cursor.
+  //
+  // The freed span (the popped item's kItemSpacing body plus the new lead
+  // item's extra gap) is charged to the HEAD side and to the head side ONLY,
+  // because that is where the hole is: nothing at the tail moved, so the tail
+  // gains nothing. This is the identical rule takeAt's head case follows, and
+  // the two are now the same three lines.
+  //
+  // FS-30: this used to ALSO do `tailGap += kItemSpacing`, minting one item of
+  // belt per pop. The invariant sum read capacityUnits + 64 after a single pop
+  // and grew without bound on a running line, so a long-lived belt could accept
+  // more items than its own length. It partly cancelled advance()'s equal and
+  // opposite error, which is how a line whose accounting was wrong in two
+  // directions at once still looked plausible for months.
   ItemId popHead() {
     if (empty()) return kNoItem;
     ItemId taken = itemTypes[head_];
     ++head_;
     if (!empty()) {
-      // new lead: its extra gap becomes part of the (now larger) headGap.
-      headGap = itemGaps[head_] + kItemSpacing;
+      // new lead: the freed body + its own extra gap become part of headGap.
+      // `+=` rather than `=`: identical when headGap == 0, which is popHead's
+      // documented precondition (headReady()), and correct rather than
+      // line-snapping if a future caller ever pops mid-flow.
+      headGap += itemGaps[head_] + kItemSpacing;
       itemGaps[head_] = 0;
     } else {
-      headGap = 0;
-      head_ = 0;          // line empty: reset cursor + reclaim storage.
+      // Line empty: reset to EXACTLY the state addBeltLine leaves behind, which
+      // is the one empty state the invariant admits (0 + 0 + 0 + capacity).
+      head_ = 0;
       itemGaps.clear();
       itemTypes.clear();
+      headGap = 0;
+      tailGap = capacityUnits;
     }
-    tailGap += kItemSpacing;
     fullyCompressed = false;  // removing from head decompresses
     return taken;
   }
@@ -288,19 +378,34 @@ struct TransportLine {
   }
 
   // --- Advance one tick (§2.2): the O(1) flowing case. -----------------------
-  // If the lead item is not yet at the head, move the whole line forward by
-  // speed (one subtraction). If it reaches the head, clamp at 0 (waiting for a
-  // consumer). Interior item gaps are NOT touched while flowing.
+  // If the lead item is not yet at the head, move the whole COLUMN forward by
+  // speed. If it reaches the head, clamp at 0 (waiting for a consumer).
+  // Interior item gaps are NOT touched while flowing: the column moves rigidly,
+  // so every gap between two items is preserved and only the two ENDS change.
+  //
+  // FS-30: the two ends is the point. This used to spend headGap and credit
+  // nothing, so the invariant sum fell by speedUnitsPerTick on every flowing
+  // tick — the line quietly forgot it was capacityUnits long. That is the
+  // one-item belt, and it is worth stating in physical terms because the arrow
+  // of the bug is not obvious from the arithmetic: the room a moving item
+  // VACATES is behind it, at the tail, and giving it back is what lets a second
+  // item follow the first. Without the credit a freshly placed belt sets
+  // tailGap to 0 when its first item boards and never raises it again, so
+  // tryPushTail refuses forever and the belt carries exactly one ore however
+  // hard it is fed. Two operations, one subtraction each, one line apart.
   void advance() {
     if (empty()) return;
-    if (headGap == 0) return;  // head blocked, waiting on consumer
-    if (headGap <= speedUnitsPerTick) {
-      headGap = 0;
+    if (headGap == 0) return;  // head blocked, waiting on consumer (see FS-32)
+    // The distance the column actually travels this tick: it cannot overrun the
+    // head, and whatever it travels is exactly what the tail gains.
+    const uint32_t moved =
+        headGap < speedUnitsPerTick ? headGap : speedUnitsPerTick;
+    headGap -= moved;
+    tailGap += moved;
+    if (headGap == 0) {
       // Latch compression once, at the transition — O(items) but amortized
       // O(1)/tick since it runs only on the first arrival, not every tick.
       if (!fullyCompressed && isMinSpaced()) fullyCompressed = true;
-    } else {
-      headGap -= speedUnitsPerTick;
     }
   }
 
