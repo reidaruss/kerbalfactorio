@@ -104,6 +104,10 @@ export function factoryReport(f: Factory): unknown {
     runs: f.runs.map((r, i) => ({
       tiles: r.length, items: f.line.beltItems(f.runBuilds[i] ?? -1),
       tail: r[0]?.id ?? -1, head: r[r.length - 1]?.id ?? -1,
+      // The FULL tile order, tail first, exactly as the cargo layer indexes it.
+      // A probe measuring items against belt geometry needs the run's own order,
+      // not a reconstruction from positions that could disagree with it.
+      tileIds: r.map((t) => t.id),
     })),
     /** Every inserter connect() created, and the two plan ids it sits between. */
     links: f.links.map((l) => ({ from: l.from, to: l.to })),
@@ -135,6 +139,9 @@ function row(f: Factory, p: Placed): unknown {
     // and not a screenshot: the acceptance measures tile to tile (GP-27).
     pos: [p.pos.x, p.pos.y, p.pos.z],
     fwd: [p.fwd.x, p.fwd.y, p.fwd.z],
+    // `up` completes the tile frame: a probe checking cargo against the belt's
+    // centre-line arc needs the deck plane, and pos+fwd alone cannot give it.
+    up: [p.up.x, p.up.y, p.up.z],
     remaining: p.kind === 'miner' && live ? f.line.minerRemaining(p.build) : null,
     input: live && f.inputItemOf(p) > 0 ? f.line.inputBuffer(p.build) : null,
     output: machine ? f.line.outputBuffer(p.build) : null,

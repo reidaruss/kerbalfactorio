@@ -162,6 +162,16 @@ export class BeltCargo {
   pulls = 0;
   lastKey = '';
   lastWant = '';
+  /**
+   * Where every item was DRAWN last frame: the deck point on the tile's path,
+   * in body-frame metres, before the item's own `socket_rest` drop. This is the
+   * probe surface for the corner-cargo assertion (`probes/beltcargo.js`): the
+   * defect class it exists to catch is "the sim is right, the path is right,
+   * and the RENDERED point is off the belt", which no sim-side count can see.
+   * Bounded by MAX_ITEMS and rebuilt per sync, exactly like the counters.
+   */
+  readonly trace: { tile: number; run: number; f: number; off: number;
+    item: number; turn: string; deck: [number, number, number] }[] = [];
   private ready = false;
 
   constructor() { this.group.name = 'beltCargo'; this.group.add(this.batch.group); }
@@ -222,9 +232,11 @@ export class BeltCargo {
        eye: { x: number; y: number; z: number },
        corners: ReadonlyMap<number, { turn: Turn; quat: THREE.Quaternion }>): void {
     this.drawn = 0; this.lines = 0; this.skipped = 0; this.pulls = 0;
+    this.trace.length = 0;
     if (!this.ready) return;
     const p = new THREE.Vector3();
     const local = new THREE.Vector3();
+    const deck = new THREE.Vector3();
     const m = new THREE.Matrix4();
     const one = new THREE.Vector3(1, 1, 1);
     let n = 0;
@@ -262,6 +274,12 @@ export class BeltCargo {
         if (slot < 0) { this.skipped++; continue; }
         const q = c === undefined ? tile.quat : c.quat;
         pointOnPath(path, it.offsetTiles - idx, local);
+        // The trace point is computed on its OWN vector so the instance math
+        // below stays byte-for-byte what it was: recording must not perturb.
+        deck.copy(local).applyQuaternion(q);
+        this.trace.push({ tile: tile.id, run: i, f: it.offsetTiles - idx,
+          off: it.offsetTiles, item: it.item, turn: c === undefined ? '' : c.turn,
+          deck: [tile.pos.x + deck.x, tile.pos.y + deck.y, tile.pos.z + deck.z] });
         local.sub(this.rest.get(key) ?? ZERO);
         local.applyQuaternion(q);
         origin.toEngine(tile.pos, p);
@@ -299,6 +317,8 @@ export class BeltCargo {
       // count alone cannot tell "the budget bound" from "that item has no mesh",
       // and those want completely different fixes.
       meshes: this.have.size, lastKey: this.lastKey, lastWant: this.lastWant,
+      // The full per-item trace rides along for probes; the HUD ignores it.
+      trace: this.trace,
       pool: this.batch.stats() };
   }
 }

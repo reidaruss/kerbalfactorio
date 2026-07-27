@@ -107,7 +107,17 @@ export class FactoryView {
     // FS-26: the sockets come off the SAME scenes the batch was built from, so
     // the geometry drawn and the geometry snapped to cannot fall out of step.
     this.sockets = readMachineSockets(loaded);
-    await this.cargo.load(loaded.get('belt')?.scene ?? null);
+    // ALL THREE TILE SHAPES, not just the straight. FS-31 solved the arc
+    // through the curve tiles' published sockets and shipped with only the
+    // first argument passed, so `BeltCargo.load`'s missing-file fallback
+    // (`pathOf(null) ?? this.straight`) quietly gave every corner tile the
+    // STRAIGHT path and cargo rode 0.618 m off the bend at the corner's exit,
+    // which is Reid's "the resource appears to fall off the end instead of
+    // turning". Measured by `probes/beltcargo.js`, the probe FS-31 deferred;
+    // the fallback itself is kept, because it is for a genuinely absent file.
+    await this.cargo.load(loaded.get('belt')?.scene ?? null,
+      loaded.get('belt_l')?.scene ?? null,
+      loaded.get('belt_r')?.scene ?? null);
     // H-6: the wire attachment comes off the SAME pole scene the batch drew, so
     // the mast that is rendered and the crossarm the cable lands on cannot fall
     // out of step. `socket_wire_a` / `socket_wire_b` are the asset's own
