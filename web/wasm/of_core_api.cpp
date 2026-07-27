@@ -200,7 +200,7 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       pass-through (of_fl_*) for the flight lane, landed here because an ABI
 //       bump is atomic and a second one would cost more than one file.
 //       Additive: no existing signature changed.
-OF_API int of_abi_version(void) { return 7; }
+OF_API int of_abi_version(void) { return 8; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -574,7 +574,7 @@ OF_API int of_level_area(int editsId, int bodyId, double x, double y, double z,
                          double maxCutM, double maxFillM) {
   wg::DensityField* e = g_edits.get(editsId);
   const wg::BodyParams* b = g_bodies.get(bodyId);
-  resetI32(3);
+  resetI32(4);
   if (!e || !b) return -1;
   const wg::LevelResult r = wg::levelArea(
       *b, *e, vec(x, y, z), radiusM, targetHeightM,
@@ -583,7 +583,14 @@ OF_API int of_level_area(int editsId, int bodyId, double x, double y, double z,
   g_i32.push_back(r.dug);
   g_i32.push_back(r.filled);
   g_i32.push_back(r.scanned);
-  return r.cells();
+  g_i32.push_back(r.corners);
+  // ABI 8 RETURNS CORNERS, not cells, and the distinction is the whole reason
+  // for the bump. On a signed field, shaving 40 cm off a slope moves the surface
+  // under the entire disc without carrying one cell CENTRE across the zero level,
+  // so `cells()` is legitimately 0 for an op that did real work. The client gates
+  // its re-mesh on this number; returning cells made a working tool draw nothing
+  // and read as a dead key, which is WG-23's complaint with a new cause.
+  return r.corners;
 }
 
 // Voxel solidity through the oracle (designed base XOR removed).

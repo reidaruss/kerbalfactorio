@@ -36,6 +36,8 @@ export interface LevelResult {
   filled: number;
   /** Cells inside the cylinder that were considered, for cost diagnosis. */
   scanned: number;
+  /** Corners whose stored distance moved: the honest size of the diff. */
+  corners: number;
   dirty: CellBox | null;
   /** The relief height the disc was levelled to, metres above the datum. */
   targetHeightM: number;
@@ -126,7 +128,7 @@ export class VoxelWorld {
     const changed = this.M._of_level_area(this.handle, this.oracle.body.handle,
       centre.x, centre.y, centre.z, radiusM, targetHeightM, maxCutM, maxFillM);
     const out: LevelResult = {
-      dug: 0, filled: 0, scanned: 0, dirty: null,
+      dug: 0, filled: 0, scanned: 0, corners: 0, dirty: null,
       targetHeightM, centre: { ...centre }, radiusM,
     };
     if (changed < 0) return out;
@@ -134,7 +136,13 @@ export class VoxelWorld {
     // before anything else re-enters WASM.
     const p = this.M._of_scratch_i32() >> 2;
     const i32 = this.M.HEAP32;
-    out.dug = i32[p]; out.filled = i32[p + 1]; out.scanned = i32[p + 2];
+    out.dug = i32[p]; out.filled = i32[p + 1];
+    out.scanned = i32[p + 2]; out.corners = i32[p + 3];
+    // `changed` is CORNERS written (ABI 8), and it has to be, because on a signed
+    // field an op that shaves 40 cm off a slope moves the surface under the whole
+    // disc without carrying one cell CENTRE across the zero level. Gating on
+    // cells meant a working tool returned no dirty box, the near mesh never
+    // rebuilt, and the key read as dead: WG-23's complaint with a new cause.
     if (changed === 0) return out;
     this.totalCells += changed;
     // Recorded with a radius that BOUNDS the touched cylinder, not the disc: the

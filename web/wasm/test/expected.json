@@ -1,5 +1,5 @@
 {
-  "abi": 7,
+  "abi": 8,
   "seedLo": 200281345, "seedHi": 0,
   "forgeRadius": "41224f8000000000",
   "cinderRadius": "41086a0000000000",
@@ -30,7 +30,7 @@
   "digColumn": {"cells": 6, "before": "c078990a2c6618ed", "after": "c078f29fc940f800", "lowering": "4016656736b7c4c0", "removed": 9},
   "tunnel": {"removed": 82, "columns": 10, "noLoweringColumns": 10, "ceilingSolid": 1, "worstResidual": "3f3ece313cf00000", "hash": 666757432},
   "voxel": {"removed": 227, "dirtyValid": 1, "dirty": [186004,342010,456015,186011,342017,456022], "verts": 362, "indices": 1980, "vertHash": 1720006828, "faceHash": 1256287883, "saveBytes": 12622, "saveHash": 2194795008},
-  "level": {"changed": 270, "dug": 131, "filled": 139, "scanned": 10431, "removed": 614, "added": 602, "centreH": "40b50cb8bc1f7400", "saveBytes": 17032, "saveHash": 271306967},
+  "level": {"changed": 1216, "dug": 131, "filled": 139, "scanned": 10431, "removed": 614, "added": 602, "centreH": "40b50cb8bc1f7400", "saveBytes": 17032, "saveHash": 271306967},
   "streaming": {"obsX": "411bb577f7595baf", "obsY": "410669d450f138a5", "obsZ": "411756bf0693e714", "updates": [
     {"ready": 16, "generated": 16, "converged": 0, "resident": 16, "evicted": 0, "keyHash": 2994706501, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [3594391697,1669954493,1909235049,2244000567,3339290182,3308888147,3077209095,1586980004,3306895972,140989727,1623843789,3589253858,1691574406,3324478723,3088231852,190773], "chunkBiomes": [3,5,0,0,0,0,0,0,2,2,5,0,0,3,4,2]},
     {"ready": 16, "generated": 16, "converged": 0, "resident": 32, "evicted": 0, "keyHash": 505937014, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [3584158118,2796685695,1896654653,2508780005,1479687001,693845284,1558310636,2919542667,3753806470,2273969069,2803814168,771537663,2418979671,97087053,2934569144,1412310431], "chunkBiomes": [0,0,2,0,5,6,0,2,0,0,4,0,0,0,0,4]},

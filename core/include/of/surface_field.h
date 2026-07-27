@@ -299,6 +299,15 @@ struct LevelResult {
   int dug = 0;      // cells that changed solid -> air
   int filled = 0;   // cells that changed air -> solid
   int scanned = 0;  // corners the op considered
+  // Corners whose STORED DISTANCE moved. This is the honest "did the op do
+  // anything", and on a signed field it is frequently non-zero while dug and
+  // filled are both zero: shaving 40 cm off a slope moves the surface everywhere
+  // under the disc without moving a single cell CENTRE across the zero level.
+  // The client used to gate its re-mesh on cells changing, so a real levelling
+  // op drew nothing and read to the player as a dead key. That is WG-23's
+  // complaint with a new cause, which is why the count the client watches has to
+  // be the one that measures the diff rather than the one that measures cells.
+  int corners = 0;
   int cells() const { return dug + filled; }
 };
 
@@ -313,6 +322,7 @@ inline LevelResult levelArea(const BodyParams& body, DensityField& edits,
   out.dug = r.dug;
   out.filled = r.filled;
   out.scanned = r.scanned;
+  out.corners = r.corners;
   return out;
 }
 

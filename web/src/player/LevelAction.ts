@@ -29,8 +29,20 @@ export const LEVEL = {
    *  nothing, silently, at every angle a player looks while walking. Ground was
    *  first found at -45 degrees, which is craning your neck at your own boots. */
   reachM: 9.0,
-  /** The disc the tool flattens. 3 m is a hut, 6 m is a workshop floor. */
-  radiusM: 6.0,
+  /**
+   * The disc the tool flattens. 3 m is a hut, 6 m is a workshop floor.
+   *
+   * WG-24 took it to 10 m, and the reason is about the INSTRUMENT rather than
+   * the tool. On the signed field the pad is flat to 0.0000 m through the oracle
+   * and to 0.000001 m on the extracted 1 m mesh, but the streamed terrain chunk
+   * samples that same field at the shipped 1.8 m LOD (DW-19), so a 6 m disc is
+   * only about seven chunk vertices across and the rim wall falls inside any 4 m
+   * span you measure. Measured on the drawn chunk: 1.623 m worst step over 4 m at
+   * radius 6. Widening does not make the field flatter, it makes the flat part
+   * big enough for the coarse mesh to show, and 10 m is also two and a half DW-32
+   * modules, so a foundation fits inside the pad rather than bridging its edge.
+   */
+  radiusM: 10.0,
   /** Ray march step, finer than the 1 m voxel so a thin lip cannot be missed. */
   stepM: 0.25,
   /**
