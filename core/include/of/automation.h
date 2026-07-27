@@ -43,6 +43,7 @@
 
 #include "of/factory_sim.h"
 #include "of/deposits.h"  // worldgen::survival::NodeKind -> ItemId (resourceOf)
+#include "of/power.h"     // the electrical grid: poles, generators, brownout
 
 namespace of {
 namespace automation {
@@ -52,6 +53,22 @@ using factory::Recipe;
 using factory::EntityHandle;
 using factory::ItemId;
 using factory::kNoItem;
+
+// Poles and generators are grid citizens, not factory entities, and they get
+// their own handle types rather than a BuildKind. This is the same call
+// gameplay.h §S.6 made for structural parts: a pole never ticks, has no input
+// or output ports, holds no inventory and runs no recipe, so putting it in the
+// hot SoA arrays would add a permanently inert row and make "does this entity
+// do anything" a runtime question instead of a type-level one.
+using power::PoleId;
+using power::PoleClass;
+using power::NetworkId;
+using power::NetworkStats;
+using power::NetworkSample;
+using power::WireSegment;
+using power::GeneratorSpec;
+using power::kNoNetwork;
+using GeneratorId = power::NodeId;
 
 // A stable handle to a placed building in the network (miner / belt / machine).
 // The UE layer holds these to query state + connect buildings. It wraps the
@@ -184,11 +201,128 @@ class BuildableNetwork {
     return e;
   }
 
+  // ==========================================================================
+  // ELECTRICITY (power.h). A network that never calls enableGrid() behaves
+  // EXACTLY as it always has: factory_sim's self-contained integer networks,
+  // every machine at powerW 0 unless the caller said otherwise. Turning the
+  // grid on hands the satisfaction decision to the PowerGrid, and from then on
+  // there is one authority for it.
+  //
+  // The three placeables are the Factorio triad: a POLE distributes, a
+  // GENERATOR produces, and any machine registered with connectToGrid consumes.
+  // ==========================================================================
+
+  power::PowerGrid& grid() { return grid_; }
+  const power::PowerGrid& grid() const { return grid_; }
+
+  // Hand power over to the grid. Idempotent.
+  void enableGrid(bool on = true) {
+    gridOn_ = on;
+    sim_.setExternalPowerAuthority(on);
+    if (on) {
+      // Sim network 1 is reserved for OFF-GRID: anything the grid says is
+      // covered by no pole is pinned to satisfaction 0, which is the honest
+      // answer and is visibly different from "on a network with no generator".
+      sim_.setNetworkSatisfactionQ16(kOffGridSimNet, 0);
+      gridEpoch_ = 0;  // force a re-map on the next step
+    }
+  }
+  bool gridEnabled() const { return gridOn_; }
+
+  // Place a POWER POLE. Poles form networks by connectivity: two poles within
+  // each other's wire reach are the same network, and everything inside a
+  // pole's supply radius is on that network.
+  PoleId placePole(float x, float y, float z,
+                   PoleClass cls = PoleClass::Small) {
+    return grid_.addPole(x, y, z, cls);
+  }
+  // Remove a pole. If it was the only link between two halves of a network, the
+  // network SPLITS and each half then follows its own generators.
+  bool removePole(PoleId p) { return grid_.removePole(p); }
+
+  // Place a BURNER GENERATOR: rated watts off a solid fuel, burning in
+  // proportion to what it actually produces (see power.h). Feed it with
+  // insertFuel().
+  GeneratorId placeBurnerGenerator(float x, float y, float z, ItemId fuelItem) {
+    return grid_.addGenerator(x, y, z, power::burnerGeneratorSpec(fuelItem));
+  }
+  GeneratorId placeGenerator(float x, float y, float z,
+                             const GeneratorSpec& spec) {
+    return grid_.addGenerator(x, y, z, spec);
+  }
+  uint16_t insertFuel(GeneratorId g, ItemId item, uint16_t count) {
+    return grid_.insertFuel(g, item, count);
+  }
+  uint16_t generatorFuel(GeneratorId g) const { return grid_.fuelUnits(g); }
+  int32_t generatorOutputW(GeneratorId g) const {
+    return grid_.generatorOutputW(g);
+  }
+
+  // Register a placed building as a grid CONSUMER at (x,y,z) drawing
+  // `ratedDrawW` while it works. For a miner this also gives it a real draw, so
+  // it stops being a free rider that suffers brownouts without causing them.
+  //
+  // A building that is never registered stays off-grid at full speed, which is
+  // exactly right for anything whose recipe draws 0 W (belts, the tier-0
+  // fuel-driven chain). A machine with a real draw MUST be registered, which is
+  // why placeElectricSmelter does it in the same call rather than trusting a
+  // caller to remember.
+  void connectToGrid(const BuildId& b, float x, float y, float z,
+                     int32_t ratedDrawW) {
+    if (!b.valid()) return;
+    const power::NodeId node = grid_.addConsumer(x, y, z, ratedDrawW);
+    consumers_.push_back(Consumer{b.entity, node});
+    if (b.kind == BuildKind::Miner) sim_.setMinerPower(b.entity, ratedDrawW);
+    gridEpoch_ = 0;  // topology changed: re-map on the next step
+  }
+
+  // Place an ELECTRIC SMELTER: the powered rung of the smelting ladder. Same
+  // ore -> ingot conversion as the fuel-driven tiers, faster, and it eats watts
+  // instead of coal. Registered on the grid in the same call.
+  BuildId placeElectricSmelter(ItemId ore, ItemId ingot, float x, float y,
+                               float z, uint32_t craftTicks = 30,
+                               int32_t powerW = 30000, uint16_t outCap = 0) {
+    BuildId b = placeSmelter(ore, ingot, craftTicks, powerW, outCap);
+    connectToGrid(b, x, y, z, powerW);
+    return b;
+  }
+
+  // ---- what a supply-and-demand panel reads --------------------------------
+  size_t networkCount() { return grid_.networkCount(); }
+  NetworkStats networkStats(NetworkId n) { return grid_.stats(n); }
+  std::vector<NetworkSample> networkHistory(NetworkId n) {
+    return grid_.history(n);
+  }
+  const std::vector<WireSegment>& wires() { return grid_.wireSegments(); }
+
+  // Which network is this building on? kNoNetwork means no pole covers it.
+  NetworkId networkOfBuild(const BuildId& b) {
+    const power::NodeId* n = consumerNodeOf(b);
+    return n ? grid_.networkOfNode(*n) : kNoNetwork;
+  }
+  // This building's own satisfaction, Q16.16. Off-grid but registered reads 0;
+  // never registered reads 1.0, because a 0 W machine is not short of anything.
+  uint32_t satisfactionQ16Of(const BuildId& b) {
+    const power::NodeId* n = consumerNodeOf(b);
+    return n ? grid_.satisfactionOfNode(*n) : power::kQ16One;
+  }
+  double satisfactionOf(const BuildId& b) {
+    return static_cast<double>(satisfactionQ16Of(b)) / 65536.0;
+  }
+
   // --------------------------------------------------------------------------
   // ADVANCE. Deterministic fixed-tick stepping.
+  //
+  // With the grid on, the order within one tick is: publish this tick's wanted
+  // draws, solve the grid on them, write the answer back, then run the sim.
+  // Solving on THIS tick's demand rather than last tick's is what keeps a
+  // machine that just became able to craft from getting a free full-power tick.
   // --------------------------------------------------------------------------
-  void step() { sim_.step(); }
-  void stepN(uint64_t n) { for (uint64_t i = 0; i < n; ++i) sim_.step(); }
+  void step() {
+    if (gridOn_) pumpPower();
+    sim_.step();
+  }
+  void stepN(uint64_t n) { for (uint64_t i = 0; i < n; ++i) step(); }
   uint64_t tickIndex() const { return sim_.tickIndex(); }
 
   // --------------------------------------------------------------------------
@@ -327,7 +461,69 @@ class BuildableNetwork {
     return kNoItem;
   }
 
+  // ---- grid plumbing --------------------------------------------------------
+  // Sim network 0 is OFF-GRID-BY-DEFAULT (satisfaction 1.0): a belt or a 0 W
+  // machine that was never registered. Sim network 1 is OFF-GRID-REGISTERED
+  // (pinned to 0): a machine that wants watts and no pole reaches it. Grid
+  // network n maps to sim network n + 2.
+  static constexpr uint16_t kOffGridSimNet = 1;
+  static constexpr uint16_t kSimNetBase = 2;
+
+  struct Consumer {
+    EntityHandle entity;
+    power::NodeId node = 0;
+  };
+
+  const power::NodeId* consumerNodeOf(const BuildId& b) const {
+    if (!b.valid()) return nullptr;
+    for (const Consumer& c : consumers_)
+      if (c.entity.index == b.entity.index) return &c.node;
+    return nullptr;
+  }
+
+  void pumpPower() {
+    // 1. Publish what every powered entity wants THIS tick. A starved or
+    //    output-blocked machine publishes 0 and does not brown out its
+    //    neighbours for work it was never going to do.
+    sim_.refreshPowerDemand();
+    for (const Consumer& c : consumers_)
+      grid_.setDemand(c.node, sim_.entityDemandW(c.entity));
+
+    // 2. One solve, one answer.
+    grid_.solve(sim_.tickIndex());
+
+    // 3. Mirror the partition into the sim's per-entity network id, but only
+    //    when the topology actually changed. A pole placed or removed is rare;
+    //    a tick is not.
+    const uint64_t epoch = grid_.rebuildCount();
+    if (epoch != gridEpoch_) {
+      gridEpoch_ = epoch;
+      for (const Consumer& c : consumers_) {
+        const NetworkId n = grid_.networkOfNode(c.node);
+        sim_.setMachineNetwork(c.entity,
+                               n == kNoNetwork
+                                   ? kOffGridSimNet
+                                   : static_cast<uint16_t>(n + kSimNetBase));
+      }
+      sim_.setNetworkSatisfactionQ16(kOffGridSimNet, 0);
+    }
+
+    // 4. Write the grid's satisfaction into the sim's per-network factor. This
+    //    is the ONLY place the sim's brownout factor is written while the grid
+    //    is on (factory_sim's own solve returns early under external authority).
+    const size_t nets = grid_.networkCount();
+    for (size_t n = 0; n < nets; ++n) {
+      sim_.setNetworkSatisfactionQ16(
+          static_cast<uint16_t>(n + kSimNetBase),
+          grid_.stats(static_cast<NetworkId>(n)).satisfactionQ16);
+    }
+  }
+
   FactorySim sim_;
+  power::PowerGrid grid_;
+  std::vector<Consumer> consumers_;
+  uint64_t gridEpoch_ = 0;
+  bool gridOn_ = false;
 };
 
 }  // namespace automation

@@ -87,6 +87,40 @@ target_link_libraries(automation_tests PRIVATE of_core)
 target_include_directories(automation_tests PRIVATE tests)
 add_test(NAME automation_tests COMMAND automation_tests)
 
+# --- ELECTRICITY (power.h + its automation.h binding): the grid. Generators
+#     produce, consumers demand, poles form networks by connectivity, and when
+#     demand exceeds supply EVERYTHING on that network slows by the same factor.
+#     Every expected value in the suite was hand-computed from the arithmetic
+#     before the implementation was run against it. Proves: the satisfaction
+#     division against nine hand pairs; network formation and the SPLIT when a
+#     bridging pole is removed; that wires are a spanning tree (N-1) and not one
+#     per in-reach pair (9 vs 4 in a dense line, 182 vs 29 at 30 poles); that
+#     proportional slowdown really is the same factor for every consumer, and
+#     where integer truncation makes it only approximately so; the four-smelters-
+#     on-one-generator scenario where the fourth smelter adds ZERO output; fuel
+#     burn proportional to actual output with energy conserved exactly; that a
+#     generator which also consumes cannot collapse its own network (the power
+#     analogue of the FS-17 belt deadlock); and determinism.
+add_executable(power_tests
+  tests/test_main.cpp
+  tests/test_power.cpp)
+target_link_libraries(power_tests PRIVATE of_core)
+target_include_directories(power_tests PRIVATE tests)
+add_test(NAME power_tests COMMAND power_tests)
+
+# --- SMELTING LADDER (gameplay.h §S.0): primitive furnace -> coal smelter ->
+#     electric smelter, one open table of tiers rather than three models of
+#     smelting. Proves the ladder is data, that the fuel rungs and the powered
+#     rung produce the SAME ingots at different rates (1800 / 600 / 300 ticks
+#     for ten), what each fuel rung costs in wood and coal, and that the new
+#     tier reuses the shipped TypeIds rather than minting duplicates.
+add_executable(smelting_tiers_tests
+  tests/test_main.cpp
+  tests/test_smelting_tiers.cpp)
+target_link_libraries(smelting_tiers_tests PRIVATE of_core)
+target_include_directories(smelting_tiers_tests PRIVATE tests)
+add_test(NAME smelting_tiers_tests COMMAND smelting_tiers_tests)
+
 add_executable(world_gen_tests
   tests/test_main.cpp
   tests/test_world_gen.cpp)

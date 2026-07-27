@@ -24,6 +24,11 @@
 #include <cstddef>
 
 #include "of/sim_clock.h"
+// power.h owns the ONE definition of the brownout arithmetic (SatisfactionQ16)
+// and, when a caller binds a PowerGrid, the network partition as well. This
+// header keeps its self-contained integer-network solve for every existing
+// caller; it just no longer spells the division out a second time.
+#include "of/power.h"
 
 namespace of {
 namespace factory {
@@ -367,6 +372,52 @@ class FactorySim {
     if (!m.valid()) return;
     networkId_[m.index] = network;
     ensureNetwork(network);
+  }
+
+  // ==========================================================================
+  // POWER BINDING (power.h). Two additive hooks, both default-off, so every
+  // existing caller keeps the self-contained integer-network behaviour.
+  // ==========================================================================
+
+  // Give a MINER a real power draw (watts while it is extracting). 0, the
+  // default, is the historical free-rider behaviour. A miner's extraction rate
+  // has always been scaled by its network's brownout; this makes it also
+  // CONTRIBUTE to the demand that causes one.
+  void setMinerPower(EntityHandle h, int32_t watts) {
+    if (h.valid()) minerPowerW_[h.index] = watts < 0 ? 0 : watts;
+  }
+  int32_t minerPower(EntityHandle h) const { return minerPowerW_[h.index]; }
+
+  // Hand the satisfaction decision to an external authority (an of::power::
+  // PowerGrid). While set, powerSolveSystem() still computes every entity's
+  // wanted draw — the grid reads exactly that — but stops writing the per-network
+  // factor, so there is only ever ONE answer to "how browned out is this
+  // network". The caller writes the grid's answer back with
+  // setNetworkSatisfactionQ16 before stepping.
+  void setExternalPowerAuthority(bool on) { externalPower_ = on ? 1 : 0; }
+  bool externalPowerAuthority() const { return externalPower_ != 0; }
+
+  // Write a network's satisfaction factor (Q16.16). Only meaningful alongside
+  // setExternalPowerAuthority(true); otherwise the next step() overwrites it.
+  void setNetworkSatisfactionQ16(uint16_t network, uint32_t q16) {
+    ensureNetwork(network);
+    netBrownoutQ16_[network] = q16;
+  }
+
+  // Recompute every active entity's wanted draw WITHOUT advancing anything else
+  // — the demand half of the tick, lifted out so an external grid can solve on
+  // this tick's demand rather than last tick's. Read demandW_ with entityDemandW.
+  void refreshPowerDemand() { powerSolveSystem(); }
+
+  // This entity's wanted draw in watts as of the last power solve. 0 for an
+  // entity that is idle, starved, output-blocked, or has no power model.
+  int32_t entityDemandW(EntityHandle h) const {
+    if (!h.valid() || static_cast<size_t>(h.index) >= demandW_.size()) return 0;
+    return demandW_[h.index];
+  }
+  uint16_t networkOf(EntityHandle h) const {
+    if (!h.valid() || static_cast<size_t>(h.index) >= networkId_.size()) return 0;
+    return networkId_[h.index];
   }
 
   // --------------------------------------------------------------------------
@@ -832,6 +883,7 @@ class FactorySim {
   std::vector<uint32_t> minerRateMilliPerTick_;  // extraction rate (milli-units/tick)
   std::vector<uint32_t> minerAccum_;         // sub-unit extraction accumulator (milli)
   std::vector<uint16_t> minerOutCap_;        // out-slot cap (0 = unbounded)
+  std::vector<int32_t>  minerPowerW_;        // draw while extracting (0 = unpowered)
 
   // §6 render-stream metadata (cold; touched only by stream emission, never by
   // the hot tick). Additive: defaulted so legacy scenes stream sanely. typeId_
@@ -881,6 +933,9 @@ class FactorySim {
   // the snapshotted machines and AdvanceOnRails/Promote drive them instead.
   FRailState rails_;
 
+  // 1 while an external of::power::PowerGrid owns the satisfaction decision.
+  uint8_t externalPower_ = 0;
+
   SimClock clock_;
 
   // ---- allocation -----------------------------------------------------------
@@ -929,6 +984,7 @@ class FactorySim {
     minerRateMilliPerTick_.resize(n, 0);
     minerAccum_.resize(n, 0);
     minerOutCap_.resize(n, 0);
+    minerPowerW_.resize(n, 0);
     typeId_.resize(n, 0);
     posX_.resize(n, 0.0f);
     posY_.resize(n, 0.0f);
@@ -999,16 +1055,28 @@ class FactorySim {
         bool wants = (inSlotCount_[i] >= r.inputCount) || progressTicks_[i] > 0;
         demandW_[i] = wants ? r.powerW : 0;
         demand[net] += demandW_[i];
+      } else if (k == EntityKind::Miner) {
+        // A powered miner must PAY for the brownout it is already subject to.
+        // minerSystem has always scaled extraction by the network factor, but
+        // the miner contributed nothing to demand, so it was a free rider that
+        // got slower when other machines browned out and never caused one
+        // itself. minerPowerW_ defaults to 0, so every existing scene keeps its
+        // exact behaviour and only a caller that asks for a powered miner pays.
+        if (minerPowerW_[i] == 0) { demandW_[i] = 0; continue; }
+        const bool outFull =
+            minerOutCap_[i] != 0 && outSlotCount_[i] >= minerOutCap_[i];
+        const bool wants = minerRemaining_[i] > 0 && !outFull;
+        demandW_[i] = wants ? minerPowerW_[i] : 0;
+        demand[net] += demandW_[i];
       }
     }
+    // When an external PowerGrid owns the partition (power.h), it also owns the
+    // satisfaction: we still publish every entity's wanted draw above, because
+    // that is what the grid reads, but we do not write a second answer.
+    if (externalPower_) return;
     for (size_t n = 0; n < nets; ++n) {
-      if (demand[n] <= supply[n] || demand[n] == 0) {
-        netBrownoutQ16_[n] = 65536;  // 1.0
-      } else {
-        // proportional brownout (FS-5): supply/demand as Q16.16.
-        netBrownoutQ16_[n] =
-            static_cast<uint32_t>((supply[n] << 16) / demand[n]);
-      }
+      // ONE definition of the brownout arithmetic, shared with power.h (FS-5).
+      netBrownoutQ16_[n] = of::power::SatisfactionQ16(supply[n], demand[n]);
     }
   }
 

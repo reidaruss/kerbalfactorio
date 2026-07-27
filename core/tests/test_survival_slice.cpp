@@ -89,9 +89,9 @@ TEST(survival_content_registers_additively) {
 
   CHECK(RegisterSurvivalContent(reg));
 
-  // 17 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 4 structural)
-  // appended.
-  CHECK(reg.allItems().size() == 12 + 17);
+  // 20 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
+  // + 4 structural) appended.
+  CHECK(reg.allItems().size() == 12 + 20);
   // 2 smelting recipes appended.
   CHECK(reg.allRecipes().size() == 5 + 2);
 
@@ -132,7 +132,7 @@ TEST(survival_content_registers_additively) {
 
   // Re-registering is idempotent (no duplicates added).
   RegisterSurvivalContent(reg);
-  CHECK(reg.allItems().size() == 12 + 17);
+  CHECK(reg.allItems().size() == 12 + 20);
   CHECK(reg.allRecipes().size() == 5 + 2);
 }
 
@@ -413,8 +413,13 @@ TEST(hand_craft_furnace_and_smelter_bill_of_materials) {
   CHECK(inv.count(sitems::Iron) == 0);
   CHECK(inv.count(sitems::Stone) == 0);
 
-  // handRecipes() exposes the full offered set for the UE craft menu.
-  CHECK(handRecipes().size() == 4);
+  // handRecipes() exposes the full offered set for the UE craft menu. Four
+  // tier-0 recipes plus the three electrification craftables (§S.5: pole,
+  // burner generator, electric smelter), APPENDED, so the original four keep
+  // their positions and anything that indexes the list is unmoved.
+  CHECK(handRecipes().size() == 7);
+  CHECK(handRecipes()[0].output == sitems::CrudePickaxe);
+  CHECK(handRecipes()[3].output == sitems::SurvivalSmelter);
 }
 
 // =============================================================================
@@ -735,26 +740,36 @@ TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
     }
   }
 
-  // The authored Tier-0 costs.
+  // The authored Tier-0 costs, RE-PRICED for the 4 m module (GP-40 / DW-32).
+  // A deck is an area and went up 16x in plan, so it is priced at 10x; a wall
+  // is a line and grew 5.6x in panel, so it is priced at 4x. Both are
+  // deliberately short of parity, because DW-32 existed to cut the grind.
   CHECK(defs[0].cost.inputs.size() == 1);
   CHECK(defs[0].cost.inputs[0].item == sitems::Stone);
-  CHECK(defs[0].cost.inputs[0].count == 4);
+  CHECK(defs[0].cost.inputs[0].count == 40);
 
   CHECK(defs[1].cost.inputs.size() == 2);
   CHECK(defs[1].cost.inputs[0].item == sitems::Wood);
-  CHECK(defs[1].cost.inputs[0].count == 2);
+  CHECK(defs[1].cost.inputs[0].count == 20);
   CHECK(defs[1].cost.inputs[1].item == sitems::Stone);
-  CHECK(defs[1].cost.inputs[1].count == 2);
+  CHECK(defs[1].cost.inputs[1].count == 20);
 
   CHECK(defs[2].cost.inputs.size() == 1);
   CHECK(defs[2].cost.inputs[0].item == sitems::Wood);
-  CHECK(defs[2].cost.inputs[0].count == 3);
+  CHECK(defs[2].cost.inputs[0].count == 12);
 
   CHECK(defs[3].cost.inputs.size() == 2);
   CHECK(defs[3].cost.inputs[0].item == sitems::Wood);
-  CHECK(defs[3].cost.inputs[0].count == 4);
+  CHECK(defs[3].cost.inputs[0].count == 16);
   CHECK(defs[3].cost.inputs[1].item == sitems::Iron);
-  CHECK(defs[3].cost.inputs[1].count == 1);
+  CHECK(defs[3].cost.inputs[1].count == 4);
+
+  // A DECK COSTS MORE THAN A WALL AND A DOOR COSTS MORE THAN A WALL, whatever
+  // the digits are. Pinned as a RELATION as well as as values, because the
+  // values will be rebalanced again and the ordering is the part that is a
+  // design decision rather than a number.
+  CHECK(defs[0].cost.inputs[0].count > defs[2].cost.inputs[0].count);
+  CHECK(defs[3].cost.inputs[0].count > defs[2].cost.inputs[0].count);
 }
 
 // The four structural items land in the registry, buildable, and cross-linked to
@@ -805,17 +820,21 @@ TEST(structure_pay_inputs_is_all_or_nothing_and_adds_nothing) {
   SliceRegistry reg = makeSurvivalRegistry();
   const CraftRecipe foundation = structureDefs()[0].cost;
 
-  // Three stone: one short. Nothing is consumed, nothing is produced.
+  // The cost is READ from the def rather than retyped, so a rebalance moves one
+  // table and this test keeps testing all-or-nothing instead of arithmetic.
+  const uint32_t stoneCost = foundation.inputs[0].count;
+
+  // One stone short. Nothing is consumed, nothing is produced.
   Inventory poor(reg);
-  poor.add(sitems::Stone, 3);
+  poor.add(sitems::Stone, stoneCost - 1);
   CHECK(!HandCrafter::canCraft(foundation, poor));
   CHECK(!HandCrafter::payInputs(foundation, poor));
-  CHECK(poor.count(sitems::Stone) == 3);
+  CHECK(poor.count(sitems::Stone) == stoneCost - 1);
   CHECK(poor.count(sitems::Foundation) == 0);
 
-  // Four stone: pays exactly, and the pack is left with NO foundation item.
+  // Exactly the cost: pays exactly, and the pack is left with NO foundation.
   Inventory rich(reg);
-  rich.add(sitems::Stone, 4);
+  rich.add(sitems::Stone, stoneCost);
   CHECK(HandCrafter::canCraft(foundation, rich));
   CHECK(HandCrafter::payInputs(foundation, rich));
   CHECK(rich.count(sitems::Stone) == 0);
@@ -827,28 +846,32 @@ TEST(structure_pay_inputs_is_all_or_nothing_and_adds_nothing) {
   // craft() on the same recipe DOES yield the item — payInputs is the same rule
   // minus the output, not a different rule.
   Inventory both(reg);
-  both.add(sitems::Stone, 4);
+  both.add(sitems::Stone, stoneCost);
   CHECK(HandCrafter::craft(foundation, both));
   CHECK(both.count(sitems::Foundation) == 1);
 
   // Multi-input all-or-nothing: a door needs wood AND iron.
   const CraftRecipe door = structureDefs()[3].cost;
+  const uint32_t doorWood = door.inputs[0].count;
+  const uint32_t doorIron = door.inputs[1].count;
   Inventory woodOnly(reg);
-  woodOnly.add(sitems::Wood, 10);
+  woodOnly.add(sitems::Wood, doorWood + 4);
   CHECK(!HandCrafter::payInputs(door, woodOnly));
-  CHECK(woodOnly.count(sitems::Wood) == 10);
-  woodOnly.add(sitems::Iron, 1);
+  CHECK(woodOnly.count(sitems::Wood) == doorWood + 4);
+  woodOnly.add(sitems::Iron, doorIron);
   CHECK(HandCrafter::payInputs(door, woodOnly));
-  CHECK(woodOnly.count(sitems::Wood) == 6);
+  CHECK(woodOnly.count(sitems::Wood) == 4);
   CHECK(woodOnly.count(sitems::Iron) == 0);
   CHECK(woodOnly.count(sitems::Door) == 0);
 }
 
-// The structural set did NOT leak into the hand-craft menu: still the four
-// original hand recipes (pickaxe, axe, furnace, smelter).
+// The structural set did NOT leak into the hand-craft menu: the four original
+// hand recipes (pickaxe, axe, furnace, smelter) plus the three electrification
+// craftables appended after them. Structures are still placed from the build
+// menu against their bill of materials, never crafted into a carried item.
 TEST(structures_do_not_leak_into_hand_recipes) {
   const std::vector<CraftRecipe> hand = handRecipes();
-  CHECK(hand.size() == 4);
+  CHECK(hand.size() == 7);
   for (const CraftRecipe& r : hand) {
     CHECK(r.output != sitems::Foundation);
     CHECK(r.output != sitems::Floor);
@@ -859,4 +882,7 @@ TEST(structures_do_not_leak_into_hand_recipes) {
   CHECK(hand[1].output == sitems::CrudeAxe);
   CHECK(hand[2].output == sitems::PrimitiveFurnace);
   CHECK(hand[3].output == sitems::SurvivalSmelter);
+  CHECK(hand[4].output == sitems::PowerPole);
+  CHECK(hand[5].output == sitems::BurnerGenerator);
+  CHECK(hand[6].output == sitems::ElectricSmelter);
 }

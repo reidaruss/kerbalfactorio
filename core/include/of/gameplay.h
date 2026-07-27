@@ -865,6 +865,11 @@ static constexpr ItemId CrudeAxe      = 0x003A;
 // structures (hand-crafted, then placeable).
 static constexpr ItemId PrimitiveFurnace = 0x003B;
 static constexpr ItemId SurvivalSmelter  = 0x003C;
+// electrification (§S.5). The third smelting rung plus the two things that make
+// it work: something that makes watts and something that carries them.
+static constexpr ItemId ElectricSmelter  = 0x003D;
+static constexpr ItemId BurnerGenerator  = 0x003E;
+static constexpr ItemId PowerPole        = 0x003F;
 // base-building structural set (§S.6). A separate 0x0040 block so the structural
 // parts read as their own family rather than as a tail of the machine items.
 static constexpr ItemId Foundation    = 0x0040;
@@ -877,6 +882,16 @@ static constexpr ItemId Door          = 0x0043;
 namespace types {
 static constexpr TypeId PrimitiveFurnace = 0x30;
 static constexpr TypeId SurvivalSmelter  = 0x31;
+// --- ALIASES, NOT NEW IDS. ----------------------------------------------------
+// The electric smelter, the generator and the power pole already exist in the
+// machine TypeId block with shipped art (ASSET-SPECS §4.15 / §4.18 / §4.19:
+// machines/smelter.glb 0x12, machines/generator.glb 0x15, machines/power_pole.glb
+// 0x16). Minting 0x32/0x33/0x34 for them would be a second id for one mesh and
+// one machine, which is the duplicate-authority mistake this project keeps
+// paying for. These names simply let survival-side code say what it means.
+static constexpr TypeId ElectricSmelter = of::gameplay::types::Smelter;    // 0x12
+static constexpr TypeId BurnerGenerator = of::gameplay::types::Generator;  // 0x15
+static constexpr TypeId PowerPole       = of::gameplay::types::PowerPole;  // 0x16
 // Base-building structural set (§S.6). ASSET-SPECS §4 is the TypeId authority:
 // machines own 0x10..0x16 and 0x30/0x31, structures own the 0x40 block.
 static constexpr TypeId Foundation = 0x40;
@@ -893,6 +908,84 @@ namespace recipes {
 static constexpr RecipeId SmeltIron   = 0x0130;  // raw_iron  -> iron
 static constexpr RecipeId SmeltCopper = 0x0131;  // raw_copper -> copper
 }  // namespace recipes
+
+// =============================================================================
+// §S.0 — THE SMELTING LADDER. One table, open at the bottom.
+//
+// Three rungs today, and the list is deliberately OPEN: a fourth tier is a row,
+// never a branch and never a new type.
+//
+//   primitive furnace   180 t/smelt   burns wood or coal
+//   smelter              60 t/smelt   burns coal (3x the furnace)
+//   electric smelter     30 t/smelt   draws 30 kW (2x the smelter, 6x the furnace)
+//
+// WHAT THE `authority` COLUMN IS FOR, and why this table is a DESCRIPTOR rather
+// than a third implementation of smelting:
+//
+//   the fuel rungs are run by the gameplay-layer Furnace (§S.4, a solid-fuel
+//   burn pool), and the electric rung is run by a factory_sim machine on an
+//   of::power grid (automation.h placeElectricSmelter). That split already
+//   existed and is the right one: a fuel pool has no representation in a power
+//   network and a power network has none of a fuel pool, and §S.4 argues it out
+//   at length. What did NOT exist was a single place saying which rungs there
+//   are, how fast each is, and who runs it. Without that, "add the electric
+//   tier" reads as an invitation to grow a THIRD smelting model, and this
+//   project has repeatedly paid for two authorities modelling one thing.
+//
+// So: this table owns the LADDER (what the rungs are, and what each costs in
+// ticks and in watts). The two existing engines own the RUNNING. Nothing in
+// this table simulates anything.
+//
+// The ticks are a 6:2:1 progression, so the ladder is legible as a ladder: ten
+// smelts take 30 s, then 10 s, then 5 s.
+// =============================================================================
+enum class SmeltAuthority : uint8_t {
+  FuelPool = 0,      // run by survival::Furnace (§S.4)
+  PowerNetwork = 1,  // run by a factory_sim machine on an of::power grid
+};
+
+enum class SmeltTierId : uint8_t {
+  PrimitiveFurnace = 0,
+  Smelter = 1,
+  ElectricSmelter = 2,
+  // append here; do not renumber.
+};
+
+struct SmeltTierDef {
+  SmeltTierId id = SmeltTierId::PrimitiveFurnace;
+  SmeltAuthority authority = SmeltAuthority::FuelPool;
+  const char* name = "";
+  uint32_t ticksPerSmelt = 180;
+  int32_t powerW = 0;       // 0 for the fuel rungs
+  ItemId item = kNoItem;    // the buildable item form
+  TypeId typeId = kNoType;  // the placed entity / mesh (ASSET-SPECS is authority)
+
+  bool isPowered() const { return authority == SmeltAuthority::PowerNetwork; }
+};
+
+// The ladder, in order. The 180 and the 60 live HERE and nowhere else.
+inline const std::vector<SmeltTierDef>& smeltTiers() {
+  static const std::vector<SmeltTierDef> kTiers = {
+      SmeltTierDef{SmeltTierId::PrimitiveFurnace, SmeltAuthority::FuelPool,
+                   "Primitive furnace", 180, 0, items::PrimitiveFurnace,
+                   types::PrimitiveFurnace},
+      SmeltTierDef{SmeltTierId::Smelter, SmeltAuthority::FuelPool, "Smelter", 60,
+                   0, items::SurvivalSmelter, types::SurvivalSmelter},
+      SmeltTierDef{SmeltTierId::ElectricSmelter, SmeltAuthority::PowerNetwork,
+                   "Electric smelter", 30, 30000, items::ElectricSmelter,
+                   types::ElectricSmelter},
+  };
+  return kTiers;
+}
+
+inline const SmeltTierDef& smeltTier(SmeltTierId id) {
+  const std::vector<SmeltTierDef>& t = smeltTiers();
+  const size_t i = static_cast<size_t>(id);
+  return t[i < t.size() ? i : 0];
+}
+inline uint32_t ticksPerSmeltFor(SmeltTierId t) {
+  return smeltTier(t).ticksPerSmelt;
+}
 
 // --- Tool kind (for the tool-assisted harvest rule). ---------------------------
 // Which hand-tool speeds up which node kind. None = bare hands (always allowed).
@@ -938,8 +1031,30 @@ inline RecipeDef makeSmeltIronRecipe() {
   r.inputCount = 1;
   r.outputItem = items::Iron;
   r.outputCount = 1;
-  r.timeTicks = 180;   // furnace tier (slow); smelter runs the same recipe faster
-  r.powerW = 0;        // survival smelting is FUEL-driven, not power-driven
+  // Nominal tier = the primitive furnace, read from the §S.0 ladder rather than
+  // spelled again here. The higher rungs run the SAME conversion faster: see
+  // smeltTiers() for the speeds and makeSmeltRecipeFor() for a per-tier def.
+  const SmeltTierDef& t0 = smeltTier(SmeltTierId::PrimitiveFurnace);
+  r.timeTicks = t0.ticksPerSmelt;
+  r.powerW = t0.powerW;  // 0: the fuel rungs are FUEL-driven, not power-driven
+  return r;
+}
+// The same ore -> ingot conversion authored against any rung of the ladder. One
+// conversion, three machines: the recipe id and the item pair never change, only
+// the machine type, the tick cost and the watts. A caller that wants "what does
+// an electric smelter do with raw iron" asks here instead of writing a second
+// recipe with a second id, which is how a duplicate authority starts.
+inline RecipeDef makeSmeltRecipeFor(SmeltTierId tier, ItemId ore) {
+  RecipeDef r = makeSmeltIronRecipe();
+  if (ore == items::RawCopper) {
+    r.recipeId = recipes::SmeltCopper;
+    r.inputItem = items::RawCopper;
+    r.outputItem = items::Copper;
+  }
+  const SmeltTierDef& t = smeltTier(tier);
+  r.machineTypeId = t.typeId;
+  r.timeTicks = t.ticksPerSmelt;
+  r.powerW = t.powerW;
   return r;
 }
 inline RecipeDef makeSmeltCopperRecipe() {
@@ -975,6 +1090,15 @@ inline bool RegisterSurvivalContent(SliceRegistry& reg) {
                       10, kFlagBuildable, types::PrimitiveFurnace));
   reg.registerItem(mk(SurvivalSmelter, "Smelter", ItemCategory::Buildable, 10,
                       kFlagBuildable, types::SurvivalSmelter));
+  // electrification (§S.5): the powered smelting rung and its supporting cast.
+  // These place the EXISTING machine-block TypeIds (0x12 / 0x15 / 0x16), whose
+  // art already ships — see the alias note in the types block above.
+  reg.registerItem(mk(ElectricSmelter, "Electric smelter", ItemCategory::Buildable,
+                      10, kFlagBuildable, types::ElectricSmelter));
+  reg.registerItem(mk(BurnerGenerator, "Burner generator", ItemCategory::Buildable,
+                      10, kFlagBuildable, types::BurnerGenerator));
+  reg.registerItem(mk(PowerPole, "Power pole", ItemCategory::Buildable, 50,
+                      kFlagBuildable, types::PowerPole));
   // base-building structural set (§S.6): placeable, never ticked, no ports.
   reg.registerItem(mk(Foundation, "Foundation", ItemCategory::Buildable, 50,
                       kFlagBuildable, types::Foundation));
@@ -1158,11 +1282,32 @@ inline CraftRecipe recipeSurvivalSmelter() {
   return CraftRecipe{items::SurvivalSmelter, 1,
                      {ItemStack{items::Iron, 5}, ItemStack{items::Stone, 5}}};
 }
+// --- Electrification (§S.5). Costs are stated in SMELTED metal, so the power
+// tier is gated behind having run the fuel tier first: you cannot build the
+// thing that replaces the furnace until the furnace has done some work. That
+// ordering is the whole progression, expressed as a bill of materials rather
+// than as a lock.
+inline CraftRecipe recipePowerPole() {
+  return CraftRecipe{items::PowerPole, 1,
+                     {ItemStack{items::Wood, 2}, ItemStack{items::Copper, 1}}};
+}
+inline CraftRecipe recipeBurnerGenerator() {
+  return CraftRecipe{items::BurnerGenerator, 1,
+                     {ItemStack{items::Iron, 8}, ItemStack{items::Copper, 4},
+                      ItemStack{items::Stone, 4}}};
+}
+inline CraftRecipe recipeElectricSmelter() {
+  return CraftRecipe{items::ElectricSmelter, 1,
+                     {ItemStack{items::Iron, 10}, ItemStack{items::Copper, 5},
+                      ItemStack{items::Stone, 5}}};
+}
 
 // All the hand recipes the survival slice offers (the UE craft menu binds to this).
 inline std::vector<CraftRecipe> handRecipes() {
-  return {recipeCrudePickaxe(), recipeCrudeAxe(), recipePrimitiveFurnace(),
-          recipeSurvivalSmelter()};
+  return {recipeCrudePickaxe(),   recipeCrudeAxe(),
+          recipePrimitiveFurnace(), recipeSurvivalSmelter(),
+          recipePowerPole(),      recipeBurnerGenerator(),
+          recipeElectricSmelter()};
 }
 
 class HandCrafter {
@@ -1233,10 +1378,19 @@ inline uint32_t fuelTicksPerUnit(ItemId item) {
   return 0;                               // not a fuel
 }
 
-// The furnace tier — only difference is ticks per smelt (smelter is faster).
+// The furnace tier — the two FUEL rungs, which are the ones survival::Furnace
+// can run. The electric rung is not a FurnaceTier because it is not a Furnace:
+// it has no fuel pool, and asking a Furnace to draw watts is exactly the second
+// authority the §S.0 ladder table exists to prevent.
 enum class FurnaceTier : uint8_t { Furnace = 0, Smelter = 1 };
+
+inline SmeltTierId smeltTierOf(FurnaceTier t) {
+  return t == FurnaceTier::Smelter ? SmeltTierId::Smelter
+                                   : SmeltTierId::PrimitiveFurnace;
+}
+// Reads the §S.0 ladder, so the tier speeds are stated once.
 inline uint32_t ticksPerSmeltFor(FurnaceTier t) {
-  return t == FurnaceTier::Smelter ? 60u : 180u;  // smelter 3x faster (brief: ~60 vs ~180)
+  return smeltTier(smeltTierOf(t)).ticksPerSmelt;
 }
 
 // What a furnace smelts: ore in -> ingot out (the two survival smelts).
@@ -1376,22 +1530,44 @@ struct StructureDef {
 };
 
 // The four structural parts. Tier-0 costs: cheap, legible, and payable from a
-// first-hour pack (stone from rocks, wood from trees, one iron ingot for a door).
+// first-hour pack (stone from rocks, wood from trees, iron ingots for a door).
+//
+// RE-PRICED FOR THE 4 m MODULE ON 2026-07-27 (GP-40, following DW-32). The
+// prices were authored against a 1 m module and DW-32 made every part sixteen
+// times the area, so a 20 x 20 m platform fell from 400 foundations at 1,600
+// Stone to 25 at 100 Stone: a 16x discount that nobody chose. The new prices are
+// 10x on the two decks and 4x on the two wall parts, DELIBERATELY short of full
+// area parity, because DW-32's stated purpose was to cut the grind rather than
+// to relabel it. Full parity would have restored 1,600 Stone for the same
+// platform and made the rescale purely cosmetic; 10x lands it at 1,000, which
+// is a real discount that still reads as a serious commitment of stone.
+//
+// The two families scale differently because they are different shapes. A deck
+// is an AREA and went up 16x in plan, so 10x is a visible discount on it. A wall
+// is a LINE: it went from 1 m to 4 m wide and from 2.50 m to 3.50 m tall, which
+// is 5.6x the panel, so 4x is the same kind of discount applied to the same kind
+// of growth. The door keeps the wall's wood ratio and its iron goes 1 -> 4,
+// because iron is the gate on a door and a gate that did not move would have
+// been a 16x discount on the only interesting ingredient in the set.
+//
+// A 20 x 20 m room with four walls a side and one door now costs 1,000 Stone,
+// 500 Wood + 500 Stone of decking if it is floored, and 16 wall panels at 12
+// Wood with one of them a door at 16 Wood + 4 Iron.
 inline std::vector<StructureDef> structureDefs() {
   return {
       StructureDef{StructureKind::Foundation, items::Foundation, types::Foundation,
                    "Foundation",
                    CraftRecipe{items::Foundation, 1,
-                               {ItemStack{items::Stone, 4}}}},
+                               {ItemStack{items::Stone, 40}}}},
       StructureDef{StructureKind::Floor, items::Floor, types::Floor, "Floor",
                    CraftRecipe{items::Floor, 1,
-                               {ItemStack{items::Wood, 2}, ItemStack{items::Stone, 2}}}},
+                               {ItemStack{items::Wood, 20}, ItemStack{items::Stone, 20}}}},
       StructureDef{StructureKind::Wall, items::Wall, types::Wall, "Wall",
                    CraftRecipe{items::Wall, 1,
-                               {ItemStack{items::Wood, 3}}}},
+                               {ItemStack{items::Wood, 12}}}},
       StructureDef{StructureKind::Door, items::Door, types::Door, "Door",
                    CraftRecipe{items::Door, 1,
-                               {ItemStack{items::Wood, 4}, ItemStack{items::Iron, 1}}}},
+                               {ItemStack{items::Wood, 16}, ItemStack{items::Iron, 4}}}},
   };
 }
 

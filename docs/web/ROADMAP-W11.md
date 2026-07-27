@@ -49,7 +49,7 @@ the failure this project has paid for six times. See lane B.
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | launched |
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
-| E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | launched |
+| E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`** (248 checks green, 1,200 machines cost 10.06 us/sim-tick); production hook + combat handoff published, see Blockers |
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
 | G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | queued, blocked on W8 flight |
 | H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | queued, blocked on flight (owns `ui/`) |
@@ -232,6 +232,49 @@ authored**. Either the art lane should be asked for three 64 px icons or the
 menu should fall back gracefully. Flagging it now so it is not a surprise
 discovered in a screenshot.
 
+### Lane E, 2026-07-27: three handoffs, none of which blocked lane E's own work
+
+The model is done and green in `/core`. Nothing emits pollution, nothing fights,
+and nothing places nests in a generated world, because all three of those live in
+other lanes' files. Each is published as an interface rather than waited on.
+Full detail in [docs/controllers/enemies.md](../controllers/enemies.md) §6 and §8.
+
+- **E-1, factory lane (the one that matters).** `factory_sim.h` is lane D's file
+  tonight so it was not touched. The production hook is three calls and one data
+  table, published in `enemies.h` §11: on build,
+  `addEmitter(dir, pollutionRateForMachine(typeId))`; on idle or removal,
+  `setEmitterActive(id, false)` or `removeEmitter(id)`; optionally
+  `setEmitterRate(id, rate * dutyCycle)` so a smelter that is not smelting does
+  not pollute. Neither header includes the other; the wiring belongs in whatever
+  composes them, exactly as `automation.h` composes `factory_sim.h` today.
+  **Rates are already authored as data** (Generator 6.0/s deliberately the
+  dominant polluter, Smelter 2.0/s, Assembler 1.5/s, Miner 1.0/s, Belt and Box
+  and Pole 0.0/s), so this is a wiring task and not a design one. **Until it
+  lands, the enemy loop is inert in game** even though it is fully exercised in
+  test, because a caller drives emitters directly there.
+- **E-2, a combat lane that does not exist yet.** `AttackWave` accumulates in
+  `pendingWaves()` with an origin, a target direction, the emitter it is coming
+  for, a roster, and totalled health / dps / slowest speed. Movement,
+  pathfinding, damage to structures, turrets and weapons are all deliberately out
+  of scope and were left undone rather than half-done. The return path exists and
+  is tested: `damageNest(id, dmg)` returns true on the killing blow and
+  `destroyNest(id)` feeds the evolution kill term, both idempotent against an
+  already-dead nest.
+- **E-3, world-gen: seeded nest placement.** Nests are placed by the caller, so
+  there is currently no deterministic scatter of nests over a generated planet.
+  Suggested shape, mirroring `GenerateDeposits`:
+  `GenerateNests(body, bodySeed, exclusionRadiusAroundSpawn)`. **The exclusion
+  radius is an Admin call, not a world-gen one**, because "how long is the
+  peaceful early game" is a pacing decision rather than a terrain one.
+
+**One thing worth escalating rather than filing.** Every balance number in this
+model is first-pass, derived from Factorio's pacing plus arithmetic, and none of
+it has been played. The tuning struct exists so that is a cheap fix. The number
+most likely to be wrong is `nestAbsorptionPerSecond`, because it sets both the
+attack cadence and how far the cloud spreads before something eats it, and those
+two want different values. Flagging it now so the first playtest knows where to
+look instead of concluding "the enemies feel wrong" and rewriting the model.
+
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
@@ -279,3 +322,73 @@ _Lanes append a line per landed change: date, lane, what, and the number that pr
   went from **0.8660 m (a whole cell face) to 0.087116 m**. Digging: the carved
   sphere is the surface to 0.0957 m and the crater carries **77 distinct normals
   where a cube mesher emits exactly 6**. New `voxel_field_tests`, 143 checks.
+
+- **2026-07-27, lane E — the enemies model, as a loop rather than a wave timer.**
+  New `core/include/of/enemies.h` + `core/tests/test_enemies.cpp` (**248 checks**),
+  ctest **28/28**. Design notes and every decision with its rationale are in
+  [docs/controllers/enemies.md](../controllers/enemies.md).
+  **Cost, the number the brief asked for: at 1,200 machines (the DW-28 render
+  limit) the whole system costs 10.06 us per sim tick, and doubling to 2,400
+  machines in the same footprint cost 1.28x, not 2x**, because pollution lives on
+  5,500 sparse 146 m cells rather than on machines. At 60 UPS that is 0.06% of
+  wall clock. A 30-machine starting base costs 3.81 us/tick over 2,173 cells.
+  **Diffusion is pinned to hand arithmetic, not to itself**: from a 1,000-unit
+  source at D = 0.02 and decay = 0.01 the values at distance 0/1/2/diagonal over
+  two ticks are 910.8, 19.8, 831.1248, 36.06768, 0.39204 and 0.78408, each
+  derived on paper (the last two are `D^2*A*(1-k)^2` and twice it, since a
+  diagonal has two paths), asserted to 1e-12; and distance 2 is asserted to be
+  **exactly zero** after one tick so an over-diffusing scheme fails. Mass is
+  conserved to the closed form `1000*0.99^30 = 739.700373388`, **including across
+  a cube-face seam** (777.821359399 spread over two faces), which is where a
+  naive neighbour table silently reflects.
+  **The negative control, which is the point of the whole exercise**: six nests,
+  thirty simulated minutes, no emitters, gives **0 waves and 0 pollution
+  absorbed while evolution provably rises to 0.3017 from its time term**, so the
+  run cannot be silently doing nothing (DW-20). Its complement also holds: a base
+  that was being attacked and then switches its emitters off gets **0 waves in a
+  clean 30-minute window**. And EN-4's zero: a 2,000/s base with no nest anywhere
+  leaves the evolution pollution term at **exactly 0.0**, because evolution is
+  driven by pollution ABSORBED, not produced, which is what makes distance and
+  nest-clearing real mitigations.
+  Evolution keeps all three Factorio inputs, each isolated in test (hold two at
+  zero, vary the third) and each accounted separately so `factor == fromTime +
+  fromPollution + fromKills` holds **bit-exactly** for a UI breakdown. Waves are
+  aimed at the emitter that fed the nest, tested against a nearest-emitter
+  heuristic that answers differently (5/s at 1.5 km loses to 220/s at 3.5 km, and
+  the mirror case resolves the other way). Nests expand toward the pollution: one
+  seeded 2,968 m out put its nearest child at 1,270 m within 20 minutes.
+  **The module is transcendental-free by construction** (only `+ - * / sqrt fabs
+  floor`), so unlike world-gen it should be bit-identical cross-toolchain; the
+  price is a measured 2.1209x cell-size variation between a cube-face centre and
+  a corner, against the 3/sqrt2 = 2.1213 analytic limit. No `web/**`,
+  `factory_sim.h`, `power.h`, voxel or surface file touched; ABI untouched.
+
+- **2026-07-27, lane D — the power model (FS-20 to FS-25).** New
+  `core/include/of/power.h` (pole classes, wire reach, supply areas, union-find
+  network formation, the supply/demand solve, fuel-bounded generators,
+  per-network stats and a history ring), bound into `automation.h` as the single
+  power authority and into `gameplay.h` as an open three-rung smelting ladder.
+  Two new suites, `power_tests` (1,188 checks) and `smelting_tiers_tests` (142
+  checks), both green; **24 of 24 buildable suites pass** (`surface_walk_tests`
+  and `surface_field_tests` do not currently COMPILE on lane B's in-flight
+  `surface_field.h` signature change, which is unreachable from any file lane D
+  touched). Numbers, all hand-computed by a subagent from an arithmetic spec
+  before the code was run against them: satisfaction 90 kW against 120 kW =
+  **49152** Q16 exactly; 30, 60 and 90-tick recipes all slow by **exactly 4/3**
+  there and **exactly 2** at 32768; **one 90 kW generator runs three 30 kW
+  electric smelters and the fourth adds ZERO output** (120 ingots in 1,200 ticks
+  either way, 160 once a second generator is placed); one coal unit is **2,667
+  powered ticks at 90 kW, 5,334 at 45 kW, 8,001 at 30 kW**, delivering **exactly
+  4,000,000,000 mJ in every case**, so energy is conserved rather than
+  approximated; removing one bridging pole from a five-pole line splits **one
+  network into two of two poles each**, which then read **49152 and 65536**;
+  wires are a spanning tree, **182 in-reach pairs against 29 segments** at 30
+  dense poles; a generator that also consumes 3x its own output sits at **21845
+  for 1,000 ticks** and never collapses (the power analogue of the FS-17 belt
+  deadlock); ten ore become ten iron in **1800 / 600 / 300 ticks** on the three
+  rungs. The parity fixture's `factory` and `factoryDeplete` sections are
+  **byte-identical** before and after, so this change is determinism-neutral.
+  Deferred with reasons: **no accumulators until solar exists, no boiler chain
+  until fluids exist** (FS-23). No `web/**` file touched, no wasm rebuild, ABI
+  untouched by lane D; the bridge exports, the panel and the wire rendering are
+  handed off in the lane D blockers above.
