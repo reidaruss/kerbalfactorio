@@ -508,12 +508,24 @@ int main(int argc, char** argv) {
     SELF(changed > 0, "levelArea changed nothing on a 26 degree slope");
     SELF(filled > 0, "levelArea never filled: the op is still subtractive");
     SELF(dug > 0, "levelArea never cut");
-    SELF(addedN == filled && removedN == dug,
-         "the two edit sets disagree with the op that made them");
-    // Idempotence: the same op again must move nothing.
+    // WG-23: the sets RECORD the op's decision over the band it is responsible
+    // for, which is a superset of the cells whose solidity changed. It used to
+    // be an equality, and that equality was the defect stated as an invariant:
+    // storing only the changes left the derived heightfield with broken column
+    // runs and full-depth holes in the pad. So the claim is containment plus a
+    // bound, and a set larger than the cylinder it scanned is still a bug.
+    SELF(addedN >= filled && removedN >= dug,
+         "the edit sets do not contain the cells the op changed");
+    SELF(addedN + removedN <= scanned,
+         "the op recorded more cells than it scanned");
+    // Idempotence: the same op again must move nothing AND record nothing new,
+    // or a held key would creep the pad or grow the save without bound.
     const int again = of_level_area(edits, forge, lx * baseR, ly * baseR,
                                     lz * baseR, 8.0, target, 0.0, 0.0);
     SELF(again == 0, "levelArea is not idempotent: a held key would creep");
+    SELF(of_edits_removed_count(edits) == removedN
+         && of_edits_added_count(edits) == addedN,
+         "a repeat levelArea grew the edit sets");
 
     std::printf("  \"level\": {\"changed\": %d, \"dug\": %d, \"filled\": %d, "
                 "\"scanned\": %d, \"removed\": %d, \"added\": %d, "

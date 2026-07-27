@@ -257,6 +257,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // ore pool lives in the gameplay layer, so this line is the seam between
     // them; without it a pickaxe swing at an outcrop grants ore and a dig strike
     // into the same ground grants nothing.
+    // WG-23. The levelling tool announces every press through the same HUD line
+    // every other action uses. A tool whose whole honest output is a number has
+    // to have somewhere to say it, and a press that says nothing on ground a
+    // 1 m lattice cannot flatten further is indistinguishable from a dead key.
+    if (level !== null) level.flash = (t, secs) => gameplay?.hud.flash(t, secs);
     if (dig !== null) {
       const g = gameplay;
       dig.ore = digOrePort(g.oreField.patches, g.game, (n, name, at) => {

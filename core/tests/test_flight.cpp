@@ -34,11 +34,11 @@ static Ascender makeAscender(bool withFins) {
   Vessel& v = a.v;
   a.pod = v.addRoot(parts::CommandPod);
   a.chute = v.attach(a.pod, parts::Parachute, Attach::StackBottom);
-  a.tankUp = v.attach(a.chute, parts::TankSmall, Attach::StackBottom);
-  a.engUp = v.attach(a.tankUp, parts::EngineSmall, Attach::StackBottom);
-  a.dec = v.attach(a.engUp, parts::DecouplerStack, Attach::StackBottom);
-  a.tankLo = v.attach(a.dec, parts::TankLarge, Attach::StackBottom);
-  a.engLo = v.attach(a.tankLo, parts::EngineMain, Attach::StackBottom);
+  a.tankUp = v.attach(a.chute, parts::TankLiquidSmall, Attach::StackBottom);
+  a.engUp = v.attach(a.tankUp, parts::EngineVacuumSmall, Attach::StackBottom);
+  a.dec = v.attach(a.engUp, parts::DecouplerStackSmall, Attach::StackBottom);
+  a.tankLo = v.attach(a.dec, parts::TankLiquidSmallLong, Attach::StackBottom);
+  a.engLo = v.attach(a.tankLo, parts::EngineLiquidSmall, Attach::StackBottom);
   if (withFins)
     for (int i = 0; i < 4; ++i)
       v.attach(a.tankLo, parts::Fin, Attach::Radial, i * 0.5 * orbital::kPi, 0.15);
@@ -143,7 +143,7 @@ TEST(the_atmosphere_fades_to_exactly_zero_at_its_ceiling) {
 // =============================================================================
 TEST(thrust_and_isp_rise_as_the_air_thins) {
   const atmo::AtmosphereProfile air = atmo::makeForgeAtmosphere();
-  const PartDef& e = *catalogue().get(parts::EngineMain);
+  const PartDef& e = *catalogue().get(parts::EngineLiquidSmall);
 
   // On the pad: exactly the authored sea-level figures.
   CHECK_NEAR(atmo::lapse(e.thrustSeaLevelN, e.thrustVacuumN,
@@ -415,8 +415,8 @@ TEST(stability_assist_is_limited_by_the_parts_actually_bolted_on) {
   // "stability assist is on by default" must not quietly mean "attitude is free".
   {
     Vessel v;
-    const PartHandle t = v.addRoot(parts::TankLarge);
-    const PartHandle e = v.attach(t, parts::EngineMain, Attach::StackBottom);
+    const PartHandle t = v.addRoot(parts::TankLiquidSmallLong);
+    const PartHandle e = v.attach(t, parts::EngineLiquidSmall, Attach::StackBottom);
     Stage s0; s0.activate.push_back(e);
     v.stages.push_back(s0);
     v.layout();

@@ -30,7 +30,7 @@
   "digColumn": {"cells": 6, "before": "c0925457652656f4", "after": "c0926c57652656f4", "lowering": "4018000000000000", "removed": 6},
   "tunnel": {"removed": 109, "columns": 10, "noLoweringColumns": 10, "ceilingSolid": 1, "hash": 748632641},
   "voxel": {"removed": 229, "dirtyValid": 1, "dirty": [185762,341565,455422,185769,341572,455429], "faces": 375, "faceHash": 3961851798, "saveBytes": 2070, "saveHash": 1090840707},
-  "level": {"changed": 405, "dug": 202, "filled": 203, "scanned": 9830, "removed": 202, "added": 203, "centreH": "40bd825686c88fac", "saveBytes": 3655, "saveHash": 3472506520},
+  "level": {"changed": 405, "dug": 202, "filled": 203, "scanned": 9830, "removed": 385, "added": 386, "centreH": "40bd825686c88fac", "saveBytes": 6949, "saveHash": 1347278636},
   "streaming": {"obsX": "411bc3dd3cbf6acf", "obsY": "410675794ab0213d", "obsZ": "411762df1632b21e", "updates": [
     {"ready": 16, "generated": 16, "converged": 0, "resident": 16, "evicted": 0, "keyHash": 2994706501, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2391916783,4277595019,3217462027,3888022511,990683114,3839370254,281487916,2073845955,1297374692,2010058720,152425187,1552791347,495652397,349826179,2637517559,2366263607], "chunkBiomes": [3,4,0,0,0,0,0,0,2,2,4,0,0,3,4,2]},
     {"ready": 16, "generated": 16, "converged": 0, "resident": 32, "evicted": 0, "keyHash": 505937014, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2558675447,279008052,2141234350,3972022229,2209371651,1326134406,140772313,4255292297,3188615790,480034642,2690146676,762059346,265712179,449693665,3035395095,708026266], "chunkBiomes": [0,0,2,0,5,6,0,2,0,0,4,0,0,0,0,4]},

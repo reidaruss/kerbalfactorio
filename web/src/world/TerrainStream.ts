@@ -15,7 +15,7 @@ import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import { ChunkView } from './ChunkView.js';
 import { anyStitch, neighbourStrides, stitchEdges, stridesEqual, NO_STITCH, type EdgeStrides } from './EdgeStitch.js';
-import { dumpChunks, probeStakes } from './TerrainDebug.js';
+import { probeStakes } from './TerrainDebug.js';
 import { ChunkRetire } from './ChunkRetire.js';
 import { TerrainEditChannel } from './TerrainEdits.js';
 import { updateCoverage as coverage } from './ChunkCoverage.js';
@@ -376,14 +376,16 @@ export class TerrainStream {
   /** The live resident set. Scatter reads it; nothing else may mutate it. */
   get residentViews(): Map<string, ChunkView> { return this.views; }
 
-  /** JitterProbe stake rows from the chunks nearest the camera. See TerrainDebug. */
+  /** The vertex buffers behind it. This class owns the resident set, TerrainDebug
+   *  owns every agent-facing READ of it, and these two handles are all those
+   *  reads need: publishing them once is the seam, a delegate per read is not,
+   *  which is what `dump` and `meshVertsNear` had become. */
+  get geometryPool(): ChunkGeometryPool { return this.pool; }
+
+  /** JitterProbe stake rows from the chunks nearest the camera. Here and not in
+   *  the debug layer because the scratch arrays it ranks into are this object's. */
   probeStakes(out: Float64Array, maxStakes: number, cam: THREE.Vector3): number {
     return probeStakes(this.views.values(), out, maxStakes, cam, this.nearest, this.nearestD2, this.pool);
-  }
-
-  /** Agent-facing dump of live chunk state, surfaced as window.__of.chunks(). */
-  dump(limit = 4, nearOnly = false): unknown[] {
-    return dumpChunks(this.views.values(), limit, nearOnly, this.nowSecs, this.pool);
   }
 
   dispose(): void {

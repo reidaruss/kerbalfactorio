@@ -40,11 +40,11 @@ static Ascender makeAscender(bool withFins = true) {
   Vessel& v = a.v;
   a.pod = v.addRoot(parts::CommandPod);
   a.chute = v.attach(a.pod, parts::Parachute, Attach::StackBottom);
-  a.tankUp = v.attach(a.chute, parts::TankSmall, Attach::StackBottom);
-  a.engUp = v.attach(a.tankUp, parts::EngineSmall, Attach::StackBottom);
-  a.dec = v.attach(a.engUp, parts::DecouplerStack, Attach::StackBottom);
-  a.tankLo = v.attach(a.dec, parts::TankLarge, Attach::StackBottom);
-  a.engLo = v.attach(a.tankLo, parts::EngineMain, Attach::StackBottom);
+  a.tankUp = v.attach(a.chute, parts::TankLiquidSmall, Attach::StackBottom);
+  a.engUp = v.attach(a.tankUp, parts::EngineVacuumSmall, Attach::StackBottom);
+  a.dec = v.attach(a.engUp, parts::DecouplerStackSmall, Attach::StackBottom);
+  a.tankLo = v.attach(a.dec, parts::TankLiquidSmallLong, Attach::StackBottom);
+  a.engLo = v.attach(a.tankLo, parts::EngineLiquidSmall, Attach::StackBottom);
   if (withFins) {
     for (int i = 0; i < 4; ++i)
       a.fins[i] = v.attach(a.tankLo, parts::Fin, Attach::Radial,
@@ -72,8 +72,8 @@ static Ascender makeAscender(bool withFins = true) {
 // =============================================================================
 TEST(catalogue_is_complete_and_self_consistent) {
   const PartCatalogue& c = catalogue();
-  // Tier 1 (13) + Tier 2 (7) = 20 authored parts.
-  CHECK(c.size() == 20);
+  // Class S Tier 1 (13) + Tier 2 (7) + class L (4) = 24 authored parts.
+  CHECK(c.size() == 24);
 
   // Every id resolves, and no id is duplicated.
   for (const PartDef& d : c.all()) {
@@ -92,17 +92,28 @@ TEST(catalogue_is_complete_and_self_consistent) {
     CHECK(d.nodeTop || d.nodeBottom || d.radialMount);
   }
 
-  // The stack contract: every part that publishes a stack node is 1.25 m across
-  // (ASSET-SPECS.md section 3.3). Radial-only parts are exempt.
-  for (const PartDef& d : c.all())
-    if (d.nodeTop || d.nodeBottom)
-      if (d.id != parts::SolidBooster)  // the booster is a 1.00 m strap-on
-        CHECK_NEAR(d.diameterM, 1.25, 1e-12);
+  // The stack contract: every part that publishes a stack node is EXACTLY one
+  // of the two authored diameters (ASSET-SPECS.md section 3.3 and
+  // tools/blender/rocket_common.py's CLASS table). A part that is 1.24 or 2.51
+  // would mate visually and leave a seam, so this is a hard equality.
+  int classS = 0, classL = 0;
+  for (const PartDef& d : c.all()) {
+    if (!(d.nodeTop || d.nodeBottom)) continue;
+    const bool isS = std::fabs(d.diameterM - kStackDiameterS) < 1e-12;
+    const bool isL = std::fabs(d.diameterM - kStackDiameterL) < 1e-12;
+    CHECK(isS || isL);
+    if (isS) ++classS; else ++classL;
+  }
+  CHECK(classS == 14);
+  CHECK(classL == 4);
+  // Class L is exactly twice class S across, which is what makes an adapter a
+  // single part rather than a family of them.
+  CHECK_NEAR(kStackDiameterL / kStackDiameterS, 2.0, 1e-15);
 
   // Terminators, per the art contract: an engine ends a stack downward and a
   // nose cone ends it upward.
-  CHECK(c.get(parts::EngineMain)->nodeTop && !c.get(parts::EngineMain)->nodeBottom);
-  CHECK(c.get(parts::EngineSmall)->nodeTop && !c.get(parts::EngineSmall)->nodeBottom);
+  CHECK(c.get(parts::EngineLiquidSmall)->nodeTop && !c.get(parts::EngineLiquidSmall)->nodeBottom);
+  CHECK(c.get(parts::EngineVacuumSmall)->nodeTop && !c.get(parts::EngineVacuumSmall)->nodeBottom);
   CHECK(!c.get(parts::NoseCone)->nodeTop && c.get(parts::NoseCone)->nodeBottom);
 
   // DW-29: the solid booster has no throttle and no restart.
@@ -138,11 +149,11 @@ TEST(engine_mass_flow_is_altitude_invariant) {
     // Vacuum Isp is never worse than sea-level Isp.
     CHECK(d.ispVacuumS >= d.ispSeaLevelS);
   }
-  CHECK(engines == 4);  // main, small, vernier, solid booster
+  CHECK(engines == 5);  // class-S main and vacuum, class-L main, vernier, solid
 
   // The two engines the reference vehicle flies, to 4 dp.
-  const PartDef* m = catalogue().get(parts::EngineMain);
-  const PartDef* s = catalogue().get(parts::EngineSmall);
+  const PartDef* m = catalogue().get(parts::EngineLiquidSmall);
+  const PartDef* s = catalogue().get(parts::EngineVacuumSmall);
   CHECK_NEAR(m->thrustVacuumN / (m->ispVacuumS * atmo::kG0), 61.8010, 1e-4);
   CHECK_NEAR(s->thrustVacuumN / (s->ispVacuumS * atmo::kG0), 16.9953, 1e-4);
 }
@@ -431,8 +442,8 @@ TEST(firing_a_stage_splits_the_tree_and_conserves_mass) {
 TEST(radial_decouplers_split_two_boosters_at_once) {
   Vessel v;
   const PartHandle pod = v.addRoot(parts::CommandPod);
-  const PartHandle tank = v.attach(pod, parts::TankLarge, Attach::StackBottom);
-  const PartHandle eng = v.attach(tank, parts::EngineMain, Attach::StackBottom);
+  const PartHandle tank = v.attach(pod, parts::TankLiquidSmallLong, Attach::StackBottom);
+  const PartHandle eng = v.attach(tank, parts::EngineLiquidSmall, Attach::StackBottom);
   PartHandle decR[2], srb[2];
   for (int i = 0; i < 2; ++i) {
     decR[i] = v.attach(tank, parts::DecouplerRadial, Attach::Radial,
@@ -454,9 +465,9 @@ TEST(radial_decouplers_split_two_boosters_at_once) {
 
   const double before = massProperties(v).totalKg;
   // pod 840 (800 + 40 mono) + tank 4730 + engine 1200
-  //   + 2 x (radial decoupler 25 + booster 500 + 3350 solid) = 14520.
-  CHECK_NEAR(before, 840.0 + 4730.0 + 1200.0 + 2.0 * (25.0 + 3850.0), 1e-9);
-  CHECK_NEAR(before, 14520.0, 1e-9);
+  //   + 2 x (radial decoupler 25 + booster 1300 + 9000 solid) = 27420.
+  CHECK_NEAR(before, 840.0 + 4730.0 + 1200.0 + 2.0 * (25.0 + 10300.0), 1e-9);
+  CHECK_NEAR(before, 27420.0, 1e-9);
 
   CHECK(fireStage(v).jettisoned.empty());   // press one: light both boosters
   const StageResult r = fireStage(v);      // press two: drop both, light the core
@@ -467,7 +478,7 @@ TEST(radial_decouplers_split_two_boosters_at_once) {
   for (const Vessel& j : r.jettisoned) gone += massProperties(j).totalKg;
   const double kept = massProperties(v).totalKg;
   CHECK_NEAR(kept + gone, before, 1e-9);
-  CHECK_NEAR(gone, 2.0 * (25.0 + 500.0 + 3350.0), 1e-9);
+  CHECK_NEAR(gone, 2.0 * (25.0 + 1300.0 + 9000.0), 1e-9);
   CHECK_NEAR(kept, 840.0 + 4730.0 + 1200.0, 1e-9);
   CHECK(v.parts.size() == 3);
   CHECK(r.jettisoned[0].parts.size() == 2);

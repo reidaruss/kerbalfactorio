@@ -35,7 +35,11 @@ export function terraformApi(s: Services) {
       const r = Math.hypot(feet.x, feet.y, feet.z) || 1;
       const under = s.oracle.surfaceHeight(feet.x / r, feet.y / r, feet.z / r);
       const ray = p.aimRay();
-      const res = s.level.levelOnce(ray.origin, ray.dir, targetHeightM ?? under);
+      // `feet` is passed for the same reason the tick path passes it: the disc
+      // falls back to the ground underfoot when the aim ray finds none, and a
+      // probe that skipped that argument would be driving a path the Q key
+      // cannot reach (WG-23).
+      const res = s.level.levelOnce(ray.origin, ray.dir, targetHeightM ?? under, feet);
       return res === null ? null : {
         ...res, feetHeightM: under, aim: { origin: ray.origin, dir: ray.dir },
       };

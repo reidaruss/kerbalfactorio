@@ -10,6 +10,7 @@ import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
 import type { BootMetrics } from './Services.js';
 import { BINDINGS } from '../player/Bindings.js';
+import { meshVertsNear } from '../world/TerrainDebug.js';
 import type { TapeEntry } from '../player/Input.js';
 import type { ObserverState } from '../player/ViewSource.js';
 import type { CameraMode } from '../player/ViewMode.js';
@@ -84,6 +85,12 @@ export interface OfDebugApi {
   terraform(): unknown;
   /** W5. Voxel solidity at a body-frame point, through the one oracle. */
   solidAt(x: number, y: number, z: number): boolean;
+  /**
+   * The DRAWN near-terrain vertices within `radiusM` of a body-frame centre, as
+   * `{dM, hM, depth}`. The oracle says what the ground IS; this says what the
+   * player is looking at, and a terraforming claim needs both.
+   */
+  meshVerts(x: number, y: number, z: number, radiusM: number): unknown[];
   /**
    * W5. The pristine base and the edited surface under a body-frame direction.
    * `lowering` is derivedLoweringAt: 0 means this column's top is still solid,
@@ -327,6 +334,9 @@ export function installDebugApi(
     },
 
     chunks: (n = 4, nearOnly = false) => chunkDump(n, nearOnly),
+    meshVerts: (x, y, z, radiusM) => meshVertsNear(
+      s.terrain.residentViews.values(), s.terrain.geometryPool,
+      x, y, z, radiusM, s.body.radiusM),
     gravity: (rM: number) => s.body.gravityAccel(rM),
 
     settle: (n = 8) => loop.settle(n),

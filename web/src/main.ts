@@ -6,6 +6,7 @@ import { boot } from './app/Boot.js';
 import { Loop } from './app/Loop.js';
 import { registerSystems } from './app/Systems.js';
 import { installDebugApi } from './app/Debug.js';
+import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
 import { instancePools } from './game/InstancePools.js';
@@ -25,7 +26,8 @@ boot(cfg, host, hud).then(({ services }) => {
   const api = installDebugApi(
     services, loop, ready,
     () => services.terrain.report(),
-    (n, nearOnly) => services.terrain.dump(n, nearOnly),
+    (n, nearOnly) => dumpChunks(services.terrain.residentViews.values(), n, nearOnly,
+      services.terrain.nowSecs, services.terrain.geometryPool),
   );
 
   let hudFrame = 0;

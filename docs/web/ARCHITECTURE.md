@@ -2150,6 +2150,123 @@ Added at W4 (2026-07-25):
     answer next to the overridden one; the delta is the only evidence that the
     feature is doing the work.**
 
+119. **A QUANTITY THAT IS PHYSICALLY A SUM OVER PARTS IS NOT ALWAYS AN
+    ARITHMETIC ONE, AND THE WRONG ONE CAN STILL PASS.** `massProperties` summed
+    each part's axial `Cd * A`, which is the obvious reading and is wrong,
+    because parts in a stack SHADE one another: air meets the nose and then
+    flows along the tube. The 12 m reference rocket came out at **3.274 m^2 of
+    Cd*A on a 1.227 m^2 frontal disc, an effective Cd of 2.67**, which is
+    roughly a parachute. At max-q that is **64 kN of drag against 180 kN of
+    thrust**: 36% of the engine spent on an arithmetic error. **The rocket still
+    reached orbit**, with a plausible-looking trajectory and a plausible-looking
+    propellant margin, which is the whole reason this needed a NUMBER rather
+    than a look, and it is the same failure family as the pool that reported
+    success (item 111). It is now nose pressure drag plus skin friction plus
+    unshaded radial parts: 0.887 m^2, effective Cd 0.72. Note the discipline the
+    fix needs: the BROADSIDE sum in the same function stays a sum and that is
+    not an inconsistency, because flying sideways every part genuinely is in the
+    flow. **Before summing a per-part quantity, ask whether the parts are in
+    series or in parallel with respect to the thing being summed.**
+
+120. **TWO QUESTIONS THAT SOUND LIKE ONE COEFFICIENT ARE OFTEN TWO.** The
+    centre of pressure was first weighted by broadside drag area, on the
+    reasoning that the centre of pressure is where the aerodynamic force acts.
+    But broadside area answers "how hard does the air push a vehicle that is
+    flying sideways" and the pitching moment needs "where does the pushing
+    START when the vehicle is barely off axis", and those are different
+    distributions: a constant-diameter body tube contributes almost nothing to
+    the second, which is Barrowman's 1967 result and why fins work at all. With
+    the wrong weighting, a 12 m tube of 16 m^2 of flank drowned out 3.7 m^2 of
+    fin, **four fins moved the centre of pressure 0.87 m, and the reference
+    rocket stayed statically unstable no matter how it was finned**. With the
+    right one the same fins move it **4.117 m** and the static margin flips from
+    +3.188 m to -0.884 m. The symptom was a feature that visibly did nothing;
+    the cause was one coefficient doing two jobs.
+
+121. **A LIMITER MEASURED AGAINST A STATE IT EXISTS TO CHANGE CAN LOCK THAT
+    STATE.** The ascent clamps angle of attack to five degrees off the airflow,
+    which is what a real ascent does. Applied from the pad it is a trap: off the
+    pad the velocity IS vertical, so a clamp measured against the velocity
+    forbids the pitch-over that would make the velocity stop being vertical, so
+    the velocity stays vertical and the clamp forbids it again. The vehicle flew
+    **straight up, reached 79.7 kPa of dynamic pressure at 22 km, and fell
+    back**, with every individual component behaving exactly as specified. The
+    fix is to gate the limiter on the thing that makes it necessary (dynamic
+    pressure) rather than on time or altitude, and to ramp it rather than switch
+    it, because a hard switch stepped the commanded attitude by 23 degrees the
+    instant it opened and the attitude controller then chased a discontinuity it
+    had not caused. **Any limiter of the form "stay close to X" needs asking:
+    what changes X, and have I just forbidden it?**
+
+122. **A TERMINATION TEST ON A LABELLED QUANTITY CANNOT FIRE IF THE LABELS
+    SWAP.** The circularisation burn was cut when the periapsis caught the
+    apoapsis, which is how a player describes it and is unimplementable as
+    written: the instant the orbit passes through circular, the burn point
+    becomes the periapsis and the far side becomes the new apoapsis, so the gap
+    starts growing again and the test can never be satisfied. The upper stage
+    burned to depletion and the vehicle left on a hyperbola at **e = 1.34** with
+    dry tanks. Cutting on the ECCENTRICITY turning round is the criterion that
+    works, because eccentricity is label-free. Two more of the same shape were
+    in the same 40 lines: **the burn also has to be LED by half its own
+    duration** (37 s here, so a burn started at apoapsis is falling for all of
+    it and raises the far side instead of the near one, best achievable being a
+    121 x 33 km orbit with the periapsis 27 km inside the atmosphere), and the
+    burn duration has to come from the **rocket equation** rather than from
+    `dv * m / T`, which is 15% long here because it ignores the mass the burn
+    throws away. **When a criterion is phrased in terms of named extrema, check
+    what happens at the moment the extrema exchange names.**
+
+123. **A TOOL CAN PASS EVERY TEST OF ITS EFFECT AND STILL BE UNREACHABLE, AND
+    THE MEASUREMENT THAT WOULD HAVE CAUGHT IT IS ABOUT THE INPUT, NOT THE
+    OUTPUT.** Levelling shipped with nine green assertions, a measured 2.3x
+    collapse in height spread, save/reload exact and 17/17 surface-vs-solid
+    agreement. Reid pressed Q and reported "it didnt really work at all". Three
+    separate causes, and only the third is the one everybody looks for.
+    **(a) THE TOOL COULD NOT BE REACHED.** The disc was centred on the first
+    ground the aim ray hit within 9 m of the eye. On the 29 degree slope the
+    tool exists for, looking downhill, the ground falls away faster than the ray
+    descends, so measured: at pitch 0, -10, -20 and -30 the ray found NOTHING,
+    the footprint ring hid itself, and the key did nothing at all. Ground was
+    first found at **-45 degrees**, which is craning your neck at your own boots.
+    The probe had aimed at -72 the whole time, and its own comment recorded that
+    a shallower aim "cost a run to learn" - the harness had met the bug, worked
+    around it, and written the workaround down as a lesson about framing.
+    **The number that would have caught it: the pitch at which the tool first
+    finds ground, swept, against the pitch a player looks from.** It is now
+    asserted at 0, -10, -20, -30, -45 and -72 in `probes/level.js`.
+    **(b) NOTHING TOLD THE PLAYER ANYTHING.** No sound, no debris, no message,
+    and the one indicator that existed hid itself under exactly the condition
+    that made the key inert. An edit smaller than a voxel that says nothing is
+    indistinguishable from a dead key.
+    **(c) THE HEIGHTFIELD ONLY RECORDED WHAT CHANGED, AND READ IT BACK AS A
+    RUN.** `levelArea` stored the cells whose solidity moved; `derivedRaisingAt`
+    and `derivedLoweringAt` reconstruct the surface by walking a CONTIGUOUS run
+    of explicitly edited cells along each column. The procedural surface is a
+    1 m staircase around the smooth designed height, so a column's probe
+    regularly lands in a cell that was already air on the cut side or already
+    rock on the fill side; nothing was stored there, the run ended at step one,
+    and that column kept its ORIGINAL height while its neighbours moved metres.
+    Measured on the 253 columns of one pad: **8.7% did not move at all, the
+    worst 2.5 m below target.** The pad was not rough, it had holes in it, and
+    at the terrain's 1.8 m vertex spacing each one draws as a wide gash.
+    **The number that would have caught it: the worst height difference between
+    two DRAWN vertices within one 4 m foundation module of each other.** Before
+    the fix, levelling moved it from 1.883 m of smooth hillside to **2.727 m**
+    of terrace: the tool made the thing a player reads as flatness WORSE while
+    the spread it was asserting on halved. It is now 0.973 m, under one voxel.
+    **The general rule, which is the reason this is here and not in a changelog:
+    spread, variance and percentiles are claims about the middle of a
+    distribution, and a surface is judged by its worst neighbouring pair.** Any
+    future flatness, smoothness or continuity claim states a LOCAL bound over a
+    named span, and states it against the geometry that is drawn rather than the
+    field it was derived from. `of.meshVerts(x, y, z, r)` exists for that: it
+    returns the vertices the GPU has this frame, and it is the first tool in
+    this project able to tell the oracle and the picture apart.
+    **What was NOT the cause, checked first because it was cheap:** Q is still
+    bound after the control overhaul and a real DOM `KeyboardEvent` drives the
+    tool (asserted, not assumed); the ring existed and was correct wherever it
+    drew; the tool needs no hold, one press is one application.
+
 ### 15.3 The dev loop, concretely
 
 ```

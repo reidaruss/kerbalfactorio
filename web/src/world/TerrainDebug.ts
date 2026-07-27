@@ -69,6 +69,71 @@ export function probeStakes(
   return s;
 }
 
+/** One DRAWN terrain vertex near a query centre. Heights are relief metres. */
+export interface MeshVertexSample {
+  /** Body-frame offset from the query centre, metres. The caller builds its own
+   *  tangent basis from it: two vertices the same distance OUT from a centre can
+   *  be a disc apart, so a radial distance alone cannot measure a step. */
+  dx: number; dy: number; dz: number;
+  /** Tangential metres from the query centre. */
+  dM: number;
+  /** |anchor + vertex| − bodyRadiusM: the height the player is looking at. */
+  hM: number;
+  depth: number;
+}
+
+/**
+ * The vertices of the DRAWN near terrain within `radiusM` of a body-frame
+ * centre, as (tangential distance, relief height) pairs.
+ *
+ * This exists because every levelling assertion this project has made reads the
+ * surface ORACLE, and a player does not stand on the oracle, they look at the
+ * mesh. The two agreeing is the whole of standing rule 1 and it was never once
+ * measured on the terraforming path. Heights come from the pooled vertex buffer
+ * that the GPU is drawing this frame, so nothing here can be right while the
+ * picture is wrong.
+ *
+ * Skirt vertices share a direction with their edge vertex and hang below it, so
+ * they appear in this list as a second, lower sample at nearly the same `dM`.
+ * Callers that want the top surface take the max height per bucket; callers
+ * measuring holes want them both, which is why they are not filtered here.
+ */
+export function meshVertsNear(
+  views: Iterable<ChunkView>, pool: ChunkGeometryPool,
+  cx: number, cy: number, cz: number, radiusM: number, bodyRadiusM: number,
+  limit = 6000,
+): MeshVertexSample[] {
+  const cr = Math.hypot(cx, cy, cz) || 1;
+  const ux = cx / cr, uy = cy / cr, uz = cz / cr;
+  const out: MeshVertexSample[] = [];
+  for (const v of views) {
+    if (!v.isNear || !v.visible) continue;
+    // Cheap reject: the chunk's own bounding sphere against the query disc,
+    // measured on the 64-bit anchor so a rebase cannot move it.
+    const ax = v.anchor.x - cx, ay = v.anchor.y - cy, az = v.anchor.z - cz;
+    const reach = v.chunkRadiusM + radiusM + 4;
+    if (ax * ax + ay * ay + az * az > reach * reach) continue;
+    const arr = pool.positions(v.pooled);
+    for (let i = 0; i < arr.length; i += 3) {
+      const px = v.anchor.x + arr[i];
+      const py = v.anchor.y + arr[i + 1];
+      const pz = v.anchor.z + arr[i + 2];
+      const r = Math.hypot(px, py, pz);
+      if (r === 0) continue;
+      // Tangential offset from the query axis: |p| sin(theta), which at these
+      // scales is the ground distance a player would pace out.
+      const along = px * ux + py * uy + pz * uz;
+      const t2 = r * r - along * along;
+      const d = t2 <= 0 ? 0 : Math.sqrt(t2);
+      if (d > radiusM) continue;
+      out.push({ dx: px - cx, dy: py - cy, dz: pz - cz,
+        dM: d, hM: r - bodyRadiusM, depth: v.depth });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 /** window.__of.chunks(): live chunk state, for diagnosing placement by hand. */
 export function dumpChunks(
   views: Iterable<ChunkView>, limit: number, nearOnly: boolean, nowSecs: number,

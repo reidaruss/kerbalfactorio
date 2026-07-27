@@ -67,29 +67,43 @@ using PartId = uint16_t;
 static constexpr PartId kNoPart = 0;
 
 namespace parts {
-// --- Tier 1 (DW-29): what a first rocket is made of. -------------------------
-static constexpr PartId CommandPod      = 0x0100;
-static constexpr PartId TankSmall       = 0x0101;
-static constexpr PartId TankLarge       = 0x0102;
-static constexpr PartId EngineMain      = 0x0103;  // 1.25 m axial, sea-level
-static constexpr PartId EngineSmall     = 0x0104;  // 1.25 m axial, vacuum
-static constexpr PartId SolidBooster    = 0x0105;  // no throttle, no restart
-static constexpr PartId DecouplerStack  = 0x0106;
-static constexpr PartId DecouplerRadial = 0x0107;
-static constexpr PartId NoseCone        = 0x0108;
-static constexpr PartId LandingLeg      = 0x0109;
-static constexpr PartId Parachute       = 0x010A;
-static constexpr PartId Fin             = 0x010B;
-static constexpr PartId CargoBay        = 0x010C;
+// --- Tier 1 (DW-29), class S: the 1.25 m stack a first rocket is built on. ---
+static constexpr PartId CommandPod          = 0x0100;
+static constexpr PartId TankLiquidSmall     = 0x0101;  // 1.25 x 2.00
+static constexpr PartId TankLiquidSmallLong = 0x0102;  // 1.25 x 4.00
+static constexpr PartId EngineLiquidSmall   = 0x0103;  // 1.25 m, sea-level bell
+static constexpr PartId EngineVacuumSmall   = 0x0104;  // 1.25 m, vacuum bell
+static constexpr PartId SolidBooster        = 0x0105;  // no throttle, no restart
+static constexpr PartId DecouplerStackSmall = 0x0106;
+static constexpr PartId DecouplerRadial     = 0x0107;
+static constexpr PartId NoseCone            = 0x0108;
+static constexpr PartId LandingLeg          = 0x0109;
+static constexpr PartId Parachute           = 0x010A;
+static constexpr PartId Fin                 = 0x010B;
+static constexpr PartId CargoBay            = 0x010C;
 // --- Tier 2 (DW-29): control, power, docking. --------------------------------
-static constexpr PartId RcsBlock        = 0x0110;
-static constexpr PartId TankMonoprop    = 0x0111;
-static constexpr PartId ReactionWheel   = 0x0112;
-static constexpr PartId Battery         = 0x0113;
-static constexpr PartId SolarPanel      = 0x0114;
-static constexpr PartId DockingPort     = 0x0115;
-static constexpr PartId EngineVernier   = 0x0116;  // radial, fine control
+static constexpr PartId RcsBlock            = 0x0110;
+static constexpr PartId TankMonoprop        = 0x0111;
+static constexpr PartId ReactionWheel       = 0x0112;
+static constexpr PartId Battery             = 0x0113;
+static constexpr PartId SolarPanel          = 0x0114;
+static constexpr PartId DockingPort         = 0x0115;
+static constexpr PartId EngineVernier       = 0x0116;  // radial, fine control
+// --- Class L: the 2.50 m stack, exactly twice class S across. ----------------
+// DW-29 asks for "liquid tanks and engines in two sizes" and this is what the
+// art lane built to answer it: two DIAMETER classes with an adapter between
+// them, rather than two performance tiers on one diameter. Their reading is the
+// better one and it is the one with meshes, so it is the one authored here.
+static constexpr PartId TankLiquidLarge     = 0x0117;  // 2.50 x 4.00
+static constexpr PartId EngineLiquidLarge   = 0x0118;  // 2.50 x 2.60
+static constexpr PartId DecouplerStackLarge = 0x0119;
+static constexpr PartId StackAdapter        = 0x011A;  // L below, S above
 }  // namespace parts
+
+// The two stack diameters. Every stack part is exactly one of these, and the
+// only part with a different class at each end is StackAdapter.
+static constexpr double kStackDiameterS = 1.25;
+static constexpr double kStackDiameterL = 2.50;
 
 enum class PartClass : uint8_t {
   Pod = 0, Tank, Engine, Decoupler, Aero, Structural,
@@ -281,7 +295,7 @@ class PartCatalogue {
     {  // Small liquid tank. 1.25 x 2.00 m = 2.454 m^3 -> 2150 kg at ~876 kg/m^3,
        // a realistic bulk propellant density, and a 10:1 wet/dry ratio.
       PartDef d;
-      d.id = parts::TankSmall; d.name = "Fuel Tank (small)"; d.asset = "TankSmall";
+      d.id = parts::TankLiquidSmall; d.name = "Fuel Tank (small)"; d.asset = "LiquidTankSmall";
       d.cls = PartClass::Tank;
       d.diameterM = 1.25; d.heightM = 2.00; d.nodeTop = true; d.nodeBottom = true;
       d.dryMassKg = 215.0;
@@ -293,7 +307,7 @@ class PartCatalogue {
     }
     {  // Large liquid tank: exactly twice the small one, same 1.25 m diameter.
       PartDef d;
-      d.id = parts::TankLarge; d.name = "Fuel Tank (large)"; d.asset = "TankLarge";
+      d.id = parts::TankLiquidSmallLong; d.name = "Fuel Tank (large)"; d.asset = "LiquidTankSmallLong";
       d.cls = PartClass::Tank;
       d.diameterM = 1.25; d.heightM = 4.00; d.nodeTop = true; d.nodeBottom = true;
       d.dryMassKg = 430.0;
@@ -306,7 +320,7 @@ class PartCatalogue {
     {  // Main engine: sea-level bell, the one that gets you off the pad.
        // 160/264 == 200/330 == 20/33 exactly -> mdot 61.8010 kg/s at any altitude.
       PartDef d;
-      d.id = parts::EngineMain; d.name = "Main Engine"; d.asset = "EngineMain";
+      d.id = parts::EngineLiquidSmall; d.name = "Main Engine"; d.asset = "LiquidEngineSmall";
       d.cls = PartClass::Engine;
       d.diameterM = 1.25; d.heightM = 1.60; d.nodeTop = true; d.nodeBottom = false;
       d.dryMassKg = 1200.0;
@@ -323,7 +337,7 @@ class PartCatalogue {
     {  // Small engine: vacuum bell, the one that circularises.
        // 30/180 == 60/360 == 0.166666...  -> mdot 16.9953 kg/s at any altitude.
       PartDef d;
-      d.id = parts::EngineSmall; d.name = "Vacuum Engine"; d.asset = "EngineSmall";
+      d.id = parts::EngineVacuumSmall; d.name = "Vacuum Engine"; d.asset = "LiquidEngineVacuumSmall";
       d.cls = PartClass::Engine;
       d.diameterM = 1.25; d.heightM = 1.00; d.nodeTop = true; d.nodeBottom = false;
       d.dryMassKg = 400.0;
@@ -344,23 +358,27 @@ class PartCatalogue {
       PartDef d;
       d.id = parts::SolidBooster; d.name = "Solid Booster"; d.asset = "SolidBooster";
       d.cls = PartClass::Engine;
-      d.diameterM = 1.00; d.heightM = 5.00;
-      d.nodeTop = true; d.nodeBottom = true; d.radialMount = true;
-      d.dryMassKg = 500.0;
-      d.propellant = Propellant::SolidFuel; d.propellantCapacityKg = 3350.0;
-      d.thrustSeaLevelN = 250000.0; d.thrustVacuumN = 280000.0;
+      d.diameterM = kStackDiameterS; d.heightM = 6.00;
+      d.nodeTop = true; d.nodeBottom = false;   // terminates a stack downward
+      d.radialMount = true;                     // and straps on the side
+      d.dryMassKg = 1300.0;
+      d.propellant = Propellant::SolidFuel; d.propellantCapacityKg = 9000.0;
+      // 600/190 == 672/212.8 == 60/19 exactly -> mdot 321.99 kg/s, 27.95 s of
+      // burn. Big thrust for a short time is what a solid is FOR.
+      d.thrustSeaLevelN = 600000.0; d.thrustVacuumN = 672000.0;
       d.ispSeaLevelS = 190.0; d.ispVacuumS = 212.8;
       d.consumes = Propellant::SolidFuel;
       d.throttleable = false; d.restartable = false; d.minThrottle = 1.0;
       d.gimbalRangeRad = 0.0;
-      d.dragCdAxial = 0.40; d.dragAreaAxialM2 = discArea(1.00);
-      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.00 * 5.00;
-      d.normalForceSlopeM2 = noseCn(1.00) + tubeCn(1.00, 5.00);
+      d.dragCdAxial = 0.40; d.dragAreaAxialM2 = discArea(kStackDiameterS);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = kStackDiameterS * 6.00;
+      d.normalForceSlopeM2 =
+          noseCn(kStackDiameterS) + tubeCn(kStackDiameterS, 6.00);
       defs_.push_back(d);
     }
     {  // Stack decoupler. Severs its link to its PARENT (§6).
       PartDef d;
-      d.id = parts::DecouplerStack; d.name = "Stack Decoupler"; d.asset = "Decoupler";
+      d.id = parts::DecouplerStackSmall; d.name = "Stack Decoupler"; d.asset = "StackDecouplerSmall";
       d.cls = PartClass::Decoupler;
       d.diameterM = 1.25; d.heightM = 0.25; d.nodeTop = true; d.nodeBottom = true;
       d.dryMassKg = 50.0;
@@ -458,38 +476,38 @@ class PartCatalogue {
     }
     {  // Monopropellant tank.
       PartDef d;
-      d.id = parts::TankMonoprop; d.name = "Monopropellant Tank"; d.asset = "TankMonoprop";
+      d.id = parts::TankMonoprop; d.name = "Monopropellant Tank"; d.asset = "MonopropTank";
       d.cls = PartClass::Tank;
-      d.diameterM = 1.25; d.heightM = 0.60; d.nodeTop = true; d.nodeBottom = true;
+      d.diameterM = 1.25; d.heightM = 1.00; d.nodeTop = true; d.nodeBottom = true;
       d.dryMassKg = 40.0;
       d.propellant = Propellant::Monopropellant; d.propellantCapacityKg = 200.0;
       d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(1.25);
-      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 0.60;
-      d.normalForceSlopeM2 = tubeCn(1.25, 0.60);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 1.00;
+      d.normalForceSlopeM2 = tubeCn(1.25, 1.00);
       defs_.push_back(d);
     }
     {  // Reaction wheel: torque with no propellant, paid for in electricity.
       PartDef d;
       d.id = parts::ReactionWheel; d.name = "Reaction Wheel"; d.asset = "ReactionWheel";
       d.cls = PartClass::Control;
-      d.diameterM = 1.25; d.heightM = 0.30; d.nodeTop = true; d.nodeBottom = true;
+      d.diameterM = 1.25; d.heightM = 0.40; d.nodeTop = true; d.nodeBottom = true;
       d.dryMassKg = 50.0;
       d.reactionTorqueNm = 15000.0;   // DW-30 item 3
       d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(1.25);
-      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 0.30;
-      d.normalForceSlopeM2 = tubeCn(1.25, 0.30);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 0.40;
+      d.normalForceSlopeM2 = tubeCn(1.25, 0.40);
       defs_.push_back(d);
     }
     {  // Battery.
       PartDef d;
       d.id = parts::Battery; d.name = "Battery"; d.asset = "Battery";
       d.cls = PartClass::Power;
-      d.diameterM = 1.25; d.heightM = 0.30; d.nodeTop = true; d.nodeBottom = true;
+      d.diameterM = 1.25; d.heightM = 0.60; d.nodeTop = true; d.nodeBottom = true;
       d.dryMassKg = 20.0;
       d.propellant = Propellant::ElectricCharge; d.electricCapacity = 1000.0;
       d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(1.25);
-      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 0.30;
-      d.normalForceSlopeM2 = tubeCn(1.25, 0.30);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 0.60;
+      d.normalForceSlopeM2 = tubeCn(1.25, 0.60);
       defs_.push_back(d);
     }
     {  // Solar panel. Deploys (Solar_Deploy clip already ships).
@@ -515,6 +533,65 @@ class PartCatalogue {
       d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(1.25);
       d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 0.30;
       d.normalForceSlopeM2 = tubeCn(1.25, 0.30);
+      defs_.push_back(d);
+    }
+    // ---- Class L: 2.50 m across, exactly twice class S. -------------------
+    {  // Large liquid tank: four times the cross-section, so four times the
+       // propellant of the 4 m class-S tank at the same length.
+      PartDef d;
+      d.id = parts::TankLiquidLarge; d.name = "Fuel Tank (large)"; d.asset = "LiquidTankLarge";
+      d.cls = PartClass::Tank;
+      d.diameterM = kStackDiameterL; d.heightM = 4.00;
+      d.nodeTop = true; d.nodeBottom = true;
+      d.dryMassKg = 1720.0;
+      d.propellant = Propellant::LiquidFuel; d.propellantCapacityKg = 17200.0;
+      d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(kStackDiameterL);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = kStackDiameterL * 4.00;
+      d.normalForceSlopeM2 = tubeCn(kStackDiameterL, 4.00);
+      defs_.push_back(d);
+    }
+    {  // Large main engine. 640/264 == 800/330 == 80/33 -> mdot 247.20 kg/s.
+      PartDef d;
+      d.id = parts::EngineLiquidLarge; d.name = "Main Engine (large)"; d.asset = "LiquidEngineLarge";
+      d.cls = PartClass::Engine;
+      d.diameterM = kStackDiameterL; d.heightM = 2.60;
+      d.nodeTop = true; d.nodeBottom = false;
+      d.dryMassKg = 4800.0;
+      d.thrustSeaLevelN = 640000.0; d.thrustVacuumN = 800000.0;
+      d.ispSeaLevelS = 264.0; d.ispVacuumS = 330.0;
+      d.consumes = Propellant::LiquidFuel;
+      d.throttleable = true; d.restartable = true; d.minThrottle = 0.0;
+      d.gimbalRangeRad = 5.0 * 3.14159265358979323846 / 180.0;
+      d.dragCdAxial = 0.45; d.dragAreaAxialM2 = discArea(kStackDiameterL);
+      d.dragCdNormal = 1.00; d.dragAreaNormalM2 = kStackDiameterL * 2.60;
+      d.normalForceSlopeM2 = tubeCn(kStackDiameterL, 2.60);
+      defs_.push_back(d);
+    }
+    {  // Large stack decoupler.
+      PartDef d;
+      d.id = parts::DecouplerStackLarge; d.name = "Stack Decoupler (large)";
+      d.asset = "StackDecouplerLarge";
+      d.cls = PartClass::Decoupler;
+      d.diameterM = kStackDiameterL; d.heightM = 0.35;
+      d.nodeTop = true; d.nodeBottom = true;
+      d.dryMassKg = 150.0;
+      d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(kStackDiameterL);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = kStackDiameterL * 0.35;
+      d.normalForceSlopeM2 = tubeCn(kStackDiameterL, 0.35);
+      defs_.push_back(d);
+    }
+    {  // The only part whose two ends are different classes: class L below,
+       // class S above. `diameterM` is its LARGE end; a builder that needs the
+       // small one reads kStackDiameterS.
+      PartDef d;
+      d.id = parts::StackAdapter; d.name = "Stack Adapter"; d.asset = "StackAdapter";
+      d.cls = PartClass::Structural;
+      d.diameterM = kStackDiameterL; d.heightM = 1.00;
+      d.nodeTop = true; d.nodeBottom = true;
+      d.dryMassKg = 300.0;
+      d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(kStackDiameterL);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = kStackDiameterL * 1.00 * 0.75;
+      d.normalForceSlopeM2 = tubeCn(kStackDiameterL, 1.00);
       defs_.push_back(d);
     }
     {  // Vernier: a small radial liquid engine for fine control.
