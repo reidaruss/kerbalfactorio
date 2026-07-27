@@ -229,6 +229,21 @@ target_link_libraries(physics_tests PRIVATE of_core)
 target_include_directories(physics_tests PRIVATE tests)
 add_test(NAME physics_tests COMMAND physics_tests)
 
+# --- VESSEL: the part and vessel data model (DW-29). A vessel is a TREE of
+#     parts with stack and radial attachment, grouped into ordered stages;
+#     firing a stage severs the tree and hands back the discarded subtree as a
+#     vessel in its own right. Covers the authored part catalogue, tree layout
+#     against the shipped 1.25 m art stack contract, mass properties, centre of
+#     mass and centre of pressure, Tsiolkovsky delta-v per stage pinned to an
+#     independently hand-computed number, thrust-to-weight read off
+#     BodyParams::muM3S2 (DW-18), and mass conservation across staging.
+add_executable(vessel_tests
+  tests/test_main.cpp
+  tests/test_vessel.cpp)
+target_link_libraries(vessel_tests PRIVATE of_core)
+target_include_directories(vessel_tests PRIVATE tests)
+add_test(NAME vessel_tests COMMAND vessel_tests)
+
 # --- Gameplay logic: the player-facing rules over the closed sim substrate ---
 add_executable(gameplay_tests
   tests/test_main.cpp
