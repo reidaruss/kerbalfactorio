@@ -1,0 +1,241 @@
+/* The electric network readout. Same world as game.css and vab.css: gunmetal
+   panels, one amber accent, hairline rules, monospace. The variables come from
+   game.css, which the HUD pulls in.
+
+   THE ONE RULE THIS FILE EXISTS TO HOLD: the sentence is the loudest thing on
+   the card. Demand, production and percentage are set at 17px against 11 to 12px
+   for everything else, because a player who reads only one line of this panel
+   has to read that one, and the four-row table underneath is the evidence, not
+   the headline. Shrink .say to match .rows and you have built a spreadsheet. */
+
+#of-power {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.55);
+  z-index: 30;
+}
+
+#of-power.open { display: flex; }
+
+#of-power .frame {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  padding: 14px 16px 12px;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+#of-power h3 {
+  margin: 0 0 10px;
+  padding-bottom: 7px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-power h3 .nets {
+  float: right;
+  letter-spacing: 0;
+  color: var(--of-accent);
+}
+
+#of-power .of-pbody {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+#of-power .none {
+  padding: 8px 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--of-dim);
+  font-style: italic;
+}
+
+/* --- one network --------------------------------------------------------- */
+#of-power .net {
+  margin-bottom: 10px;
+  padding: 9px 11px 10px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  border-left: 3px solid var(--of-accent);
+}
+
+#of-power .net > h4 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+}
+
+/* --- THE SENTENCE -------------------------------------------------------- */
+#of-power .say {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--of-dim);
+}
+
+#of-power .say b {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--of-ink);
+}
+
+/* --- the satisfaction bar ------------------------------------------------ */
+#of-power .bar {
+  height: 7px;
+  margin: 7px 0 8px;
+  background: #101418;
+  border: 1px solid #2c353d;
+  overflow: hidden;
+}
+
+#of-power .bar > i { display: block; height: 100%; }
+#of-power .bar.ok > i { background: var(--of-good); }
+#of-power .bar.warn > i { background: var(--of-accent); }
+#of-power .bar.bad > i { background: var(--of-bad); }
+
+/* --- the verdict, which is the whole point of publishing capacity -------- */
+#of-power .verdict {
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  border: 1px solid #2c353d;
+  color: var(--of-dim);
+}
+
+#of-power .verdict.short {
+  color: var(--of-bad);
+  border-color: var(--of-bad);
+  background: rgba(255, 107, 90, 0.10);
+  font-weight: 600;
+}
+
+#of-power .verdict.spare { color: var(--of-accent); border-color: #4a3a26; }
+#of-power .verdict.balanced { color: var(--of-good); border-color: #27392c; }
+
+/* --- the four-row table -------------------------------------------------- */
+#of-power .rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 14px;
+}
+
+#of-power .r {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+#of-power .r em { font-style: normal; color: var(--of-dim); }
+#of-power .r b { font-weight: 600; }
+
+/* --- the counts line ----------------------------------------------------- */
+#of-power .counts {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--of-dim);
+}
+
+#of-power .counts span { color: var(--of-ink); font-weight: 600; }
+
+/* A generator with no coal is the most likely reason a base slowed down. */
+#of-power .counts b.warn { font-weight: 700; color: var(--of-bad); }
+
+/* --- the exact integer, for comparing against /core --------------------- */
+#of-power .q16 {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #667581;
+}
+
+#of-power .q16 em {
+  font-style: normal;
+  letter-spacing: 0.16em;
+  margin-right: 5px;
+}
+
+#of-power .q16 code { font: inherit; color: var(--of-dim); }
+
+/* --- the sparkline ------------------------------------------------------- */
+#of-power .spark {
+  display: block;
+  width: 100%;
+  height: 34px;
+  margin-top: 7px;
+  background: #101418;
+  border: 1px solid #2c353d;
+}
+
+#of-power .spark polyline {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+#of-power .spark polyline.dm { stroke: var(--of-accent); }
+#of-power .spark polyline.pr { stroke: var(--of-good); }
+
+#of-power .legend {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--of-dim);
+}
+
+#of-power .legend i {
+  display: inline-block;
+  width: 9px;
+  height: 2px;
+  margin: 0 4px 0 10px;
+  vertical-align: middle;
+}
+
+#of-power .legend i:first-child { margin-left: 0; }
+#of-power .legend i.dm { background: var(--of-accent); }
+#of-power .legend i.pr { background: var(--of-good); }
+
+/* --- the off-grid footer ------------------------------------------------- */
+#of-power .offgrid {
+  margin-top: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--of-bad);
+  border: 1px solid var(--of-bad);
+  background: rgba(255, 107, 90, 0.10);
+}
+
+#of-power .offgrid b { font-weight: 700; }
+
+#of-power .hint {
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--of-dim);
+  border-top: 1px solid var(--of-edge);
+}
+
+/* --- scrollbar, so the body does not sprout a system-grey slab ---------- */
+#of-power .of-pbody::-webkit-scrollbar { width: 8px; }
+
+#of-power .of-pbody::-webkit-scrollbar-thumb {
+  background: #2c353d;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+#of-power .of-pbody::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,314 @@
+// THE RESEARCH ACCEPTANCE (W11 lane H). `research.h` has been green in /core
+// since June and had never once been called from the browser; a sandbox probe
+// reported `researchGatesInClient: 0` and said so plainly rather than faking a
+// pass, which is how we knew. This is that number's replacement.
+//
+//   npm --prefix web run build
+//   npx --prefix web vite preview --port 4180
+//   node web/tools/smoke/run.mjs --url=http://127.0.0.1:4180/ --scenario=walk \
+//     --evalfile=web/tools/smoke/probes/research.js
+//
+// THE CLAIM, and it is the one the brief asked for: a tech that is LOCKED
+// becomes affordable, unlocks, and the thing it gates ACTUALLY BECOMES
+// AVAILABLE, with the negative control that it was REFUSED BEFORE.
+//
+// THE SCIENCE IS EARNED, NOT GRANTED. There is no `of.give` on the debug
+// surface and this probe deliberately does not add one: it mines ore by hand,
+// smelts it in a furnace it crafted and placed, and hand-crafts the packs, so
+// what it proves is the whole chain rather than the last link of it. That also
+// means the run FAILS if any earlier part of the game is broken, which is the
+// right dependency for an acceptance to have.
+//
+// FOUR NEGATIVE CONTROLS, because "the thing became available after research"
+// is also true of a gate that always says yes:
+//
+//   1. THE SAME QUERY BEFORE, ON A PACK THAT CAN AFFORD IT. The power pole is
+//      refused while its materials are in hand, so the refusal can only be the
+//      tech tree; and the identical button takes the identical click after.
+//   2. AN UNGATED NEIGHBOUR. Other recipes are craftable in the SAME FRAME.
+//      Without this, a client where every row read locked would pass control 1.
+//   3. THE SIBLING BRANCH. Electrification opens the pole and the generator and
+//      leaves Metallurgy shut, so a tech that opened everything fails here
+//      while passing everything above.
+//   4. THE MILESTONE (DW-29). The autopilot is blocked with its prereq in and
+//      its cost affordable, and its refusal names the DEED rather than a price.
+//
+// AND EVERY ACTION THAT CAN BE IS A REAL DOM EVENT. `probes/realclick.js` is
+// the standing reminder that an abstraction hid a completely inert left mouse
+// button through twenty green probes, so the Research button is pressed with a
+// genuine `MouseEvent` on the element a player clicks, and the panel is opened
+// with a real key press through the input tape.
+(async () => {
+  const of = window.__of;
+  if (!of) return { valid: false, why: 'no __of' };
+  const sleep = (n) => of.run(n);
+  const fails = [];
+  const log = [];
+  const check = (name, ok, detail) => {
+    if (!ok) fails.push(detail === undefined ? name : `${name}: ${detail}`);
+    return ok;
+  };
+  const press = async (code, frames = 6) => {
+    of.input.act([code], frames);
+    await sleep(0.3);
+  };
+  const click = (el) => {
+    if (!el || el.disabled) return false;
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true,
+      view: window }));
+    return true;
+  };
+  const pack = () =>
+    Object.fromEntries(of.game().carried.map((c) => [c.name, c.count]));
+  const have = (n) => pack()[n] ?? 0;
+
+  // /core's own TechIds (research.h §D), named rather than derived so a
+  // renumbering in the header fails this probe instead of quietly testing some
+  // other tech.
+  const T = { Electrification: 0x0010, ElectricSmelting: 0x0011,
+    Metallurgy: 0x0012, PlateArmour: 0x0013, FlightAutopilot: 0x0014,
+    CinderRefining: 0x0015 };
+  const POLE_ITEM = 0x003F;
+
+  await sleep(1.0);
+
+  // ======================================================================
+  // 0. SETUP PROOF (DW-20): the layer is REACHABLE and it is GATING. A run
+  //    where none of this was wired would otherwise report a serene green from
+  //    a set of queries that all answered "yes".
+  // ======================================================================
+  const p0 = of.game()?.progress;
+  check('the progress surface exists', !!p0);
+  if (!p0) return { valid: false, fails, why: 'no progress in the report' };
+  check('this is survival, so the gate is live',
+    of.game().mode.researchGated === true, JSON.stringify(of.game().mode));
+  check('six techs in the tree', p0.research.techs === 6, p0.research.techs);
+  check('nothing unlocked at boot', p0.research.unlocked === 0,
+    p0.research.unlocked);
+  // THE NUMBER THAT WAS ZERO: every unlock every locked tech is still holding.
+  check('the tree is holding gates', p0.research.gatesHeld > 0,
+    p0.research.gatesHeld);
+  log.push(`boot: ${p0.research.techs} techs, ${p0.research.gatesHeld} gates held`);
+
+  // ======================================================================
+  // 1. EARN IT. Harvest, then smelt, then craft the science by hand.
+  // ======================================================================
+  const yaw = of.world().observer.yawDeg;
+  let harvests = 0;
+  // SIX SWINGS A NODE, NOT TWELVE, and the number is load-bearing rather than
+  // arbitrary. The pack is twenty slots and raw resources stack to a hundred;
+  // twelve swings a node fills all twenty, and then `HandCrafter::craft`
+  // RETURNS TRUE while silently dropping its output, because gameplay.h adds
+  // the result through the normal stack rules and discards the overflow. The
+  // furnace was crafted, paid for and gone, and the only symptom four
+  // assertions downstream was "the furnace went down: false". Escalated to the
+  // roadmap; six swings is the workaround.
+  for (const n of of.nodes()) {
+    if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
+    for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
+  }
+  check('the pack has room to craft into', of.game().carried.length < 20,
+    of.game().carried.length);
+  log.push(`stocked in ${harvests} swings: ${JSON.stringify(pack())}`);
+  check('the clearing had raw iron in it', have('Raw iron') > 0, JSON.stringify(pack()));
+  check('the clearing had raw copper in it', have('Raw copper') > 0);
+
+  // A furnace, crafted, placed, loaded and run. Recipe index 2 is the primitive
+  // furnace, and the first seven indices are UNCHANGED by ABI 9 (the list is
+  // appended to, never reordered), which is itself worth asserting.
+  check('the furnace recipe is still index 2', of.craft(2) === true);
+  of.look(yaw, -18);
+  await sleep(0.2);
+  of.hotbar(2);
+  await sleep(0.15);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+  await sleep(0.4);
+  check('the furnace went down', of.game().machines.length > 0);
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 10, keys: [] }]);
+  await sleep(0.4);
+  check('the furnace screen opened', of.game().furnaceOpen === true,
+    JSON.stringify(of.game().furnaceOpen));
+  const load = (m) => {
+    const b = [...document.querySelectorAll('#of-furnace button[data-load]')]
+      .find((x) => x.textContent.includes(m));
+    if (b === undefined) return false;
+    b.click();
+    return true;
+  };
+  const take = () => {
+    const b = document.querySelector('#of-furnace button[data-take]');
+    if (b !== null) b.click();
+  };
+  // ONE ore type at a time: /core's Furnace refuses a second while the first is
+  // still in the pool, so the batches are sequential rather than interleaved.
+  // Five units a click at 180 ticks a smelt, so each batch waits out 900 ticks.
+  const smelt = async (ore, batches) => {
+    for (let i = 0; i < batches; ++i) {
+      if (!load('Coal')) load('Wood');
+      await sleep(0.05);
+      if (!load(ore)) return false;
+      await sleep(1000 / 60);
+      take();
+      await sleep(0.2);
+    }
+    return true;
+  };
+  check('iron smelted', await smelt('Raw iron', 5), 'the load button vanished');
+  check('copper smelted', await smelt('Raw copper', 4), 'the load button vanished');
+  of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
+  await sleep(0.3);
+  log.push(`smelted: ${JSON.stringify(pack())}`);
+  check('iron came out of the furnace', have('Iron') >= 20, have('Iron'));
+  check('copper came out of the furnace', have('Copper') >= 10, have('Copper'));
+
+  // ======================================================================
+  // 2. THE REFUSAL, WITH THE MATERIALS IN HAND.
+  // ======================================================================
+  await press('Tab');
+  await sleep(0.4);
+  check('the pack opened', of.game().panelOpen === true);
+  const rows = () => [...document.querySelectorAll('#of-panel .of-recipe')];
+  const rowNamed = (t) => rows().find((e) =>
+    (e.querySelector('.nm')?.textContent ?? '').includes(t));
+  const lockedRows = () => rows().filter((e) => e.classList.contains('locked'));
+  const beforeLocked = lockedRows().length;
+  check('some recipes are LOCKED', beforeLocked > 0, beforeLocked);
+  const lockText = lockedRows().map((e) => e.querySelector('.lock')?.textContent ?? '');
+  check('a lock NAMES its tech', lockText.some((t) => /needs \S/.test(t)),
+    JSON.stringify(lockText.slice(0, 4)));
+  log.push(`locked rows: ${beforeLocked}, e.g. "${lockText[0]}"`);
+
+  // CONTROL 2: an UNGATED recipe is craftable in the SAME FRAME.
+  check('ungated recipes are craftable in the same frame',
+    rows().filter((e) => e.classList.contains('can')).length > 0);
+
+  const poleBefore = have('Power pole');
+  const refused = click(rowNamed('Power pole')?.querySelector('button'));
+  await sleep(0.3);
+  check('a locked Craft button REFUSES a real DOM click', refused === false);
+  check('and nothing was crafted', have('Power pole') === poleBefore,
+    `${poleBefore} -> ${have('Power pole')}`);
+
+  // The science itself is NOT gated, which is the bootstrap: research must be
+  // reachable from an empty tech tree or the whole tree is unreachable.
+  let made = 0;
+  for (let i = 0; i < 14; ++i) {
+    if (click(rowNamed('Automation science')?.querySelector('button'))) made++;
+    await sleep(0.1);
+  }
+  const sci = have('Automation science');
+  check('real DOM clicks made science', sci >= 10, `${made} clicks, ${sci} packs`);
+  log.push(`science: ${sci} packs from ${made} clicks, pack ${JSON.stringify(pack())}`);
+  await press('Tab');
+  await sleep(0.3);
+
+  // ======================================================================
+  // 3. THE RESEARCH SCREEN, opened with a real key, bought with a real click.
+  // ======================================================================
+  await press('KeyJ');
+  await sleep(0.4);
+  const panel = document.querySelector('#of-research');
+  check('the research panel opened on J',
+    !!panel && panel.classList.contains('open'), panel?.className);
+  const cardFor = (id) => document.querySelector(`#of-research [data-tech="${id}"]`);
+  const btnFor = (id) => document.querySelector(`#of-research button[data-tech="${id}"]`);
+  const stateOf = (id) => cardFor(id)?.getAttribute('data-state') ?? '';
+  const textOf = (id) => cardFor(id)?.textContent ?? '';
+  // THE REFUSAL, not the whole card. The panel renders a `needs <name>` CHIP
+  // for every prereq whatever the state, so matching the card text conflates
+  // "this tech depends on Electrification", which is permanent, with "you have
+  // not researched Electrification", which is the thing that changes. `.why` is
+  // the reason line and only the reason line.
+  const whyOf = (id) => cardFor(id)?.querySelector('.why')?.textContent ?? '';
+
+  check('Electrification reads available',
+    stateOf(T.Electrification) === 'available', stateOf(T.Electrification));
+  check('ElectricSmelting is blocked behind its prereq',
+    stateOf(T.ElectricSmelting) === 'blocked', stateOf(T.ElectricSmelting));
+  const rSmelt = whyOf(T.ElectricSmelting);
+  check('the ElectricSmelting refusal names its PREREQ',
+    /Electrification/.test(rSmelt), `"${rSmelt}"`);
+
+  // CONTROL 4: DW-29's milestone, before anything is bought.
+  const rAuto = whyOf(T.FlightAutopilot);
+  check('the autopilot is blocked', stateOf(T.FlightAutopilot) === 'blocked');
+  log.push(`autopilot refusal: "${rAuto.trim()}"`);
+
+  const before = of.game().progress.research;
+  const bought = click(btnFor(T.Electrification));
+  await sleep(0.5);
+  const after = of.game().progress.research;
+  check('the Research button took a real DOM click', bought === true);
+  check('Electrification is unlocked', after.unlocked === before.unlocked + 1,
+    `${before.unlocked} -> ${after.unlocked}`);
+  check('the science was SPENT, exactly ten', have('Automation science') === sci - 10,
+    `${sci} -> ${have('Automation science')}`);
+  check('gates held went DOWN', after.gatesHeld < before.gatesHeld,
+    `${before.gatesHeld} -> ${after.gatesHeld}`);
+  log.push(`Electrification bought: gates held ${before.gatesHeld} -> ${after.gatesHeld}`);
+
+  // The refusal one rung up MOVED from the prereq to the cost, which is the
+  // ResearchBlock code doing the job a boolean cannot.
+  // THE REFUSAL MOVED, which is the ResearchBlock code doing a job a boolean
+  // cannot: the same tech is still refused, and for a DIFFERENT reason.
+  const rSmelt2 = whyOf(T.ElectricSmelting);
+  check('the ElectricSmelting refusal moved off the prereq',
+    !/Electrification/.test(rSmelt2), `"${rSmelt2}"`);
+  check('and onto the science it is short of',
+    /more Automation science/.test(rSmelt2), `"${rSmelt2}"`);
+  log.push(`ElectricSmelting refusal: "${rSmelt}" -> "${rSmelt2}"`);
+  // CONTROL 3: the sibling branch did NOT open with it.
+  check('Metallurgy did not open with Electrification',
+    stateOf(T.Metallurgy) !== 'unlocked', stateOf(T.Metallurgy));
+  // CONTROL 4b: the milestone tech is STILL blocked with its prereq now in.
+  check('the autopilot is STILL blocked with its prereq in',
+    stateOf(T.FlightAutopilot) === 'blocked', stateOf(T.FlightAutopilot));
+  check('the autopilot refusal names the DEED, not a price',
+    /orbit/i.test(whyOf(T.FlightAutopilot)), `"${whyOf(T.FlightAutopilot)}"`);
+  // GP-2, visible: the off-world row cannot be bought on this planet.
+  check('Cinderite Refining is blocked', stateOf(T.CinderRefining) === 'blocked');
+
+  await press('KeyJ');
+  await sleep(0.3);
+
+  // ======================================================================
+  // 4. THE THING IT GATES ACTUALLY BECAME AVAILABLE. This is the acceptance.
+  // ======================================================================
+  await press('Tab');
+  await sleep(0.4);
+  const afterLocked = lockedRows().length;
+  check('fewer locked rows than before', afterLocked < beforeLocked,
+    `${beforeLocked} -> ${afterLocked}`);
+  const poleRow = rowNamed('Power pole');
+  check('the power pole is no longer locked',
+    !!poleRow && !poleRow.classList.contains('locked'), poleRow?.className);
+  const madePole = click(poleRow?.querySelector('button'));
+  await sleep(0.3);
+  check('the SAME button that refused a click now takes one', madePole === true);
+  check('a power pole is in the pack', have('Power pole') > poleBefore,
+    `${poleBefore} -> ${have('Power pole')}`);
+
+  // And onto the bar, through the pack tile a player clicks: nine slots and
+  // twelve placeable things means the loadout has to be changeable.
+  const tile = document.querySelector(`#of-panel .of-slot[data-item="${POLE_ITEM}"]`);
+  check('the pack tile offers the pole to the bar', !!tile);
+  click(tile);
+  await sleep(0.3);
+  const bar = of.game().hotbar;
+  check('the pole went on the selected hotbar slot',
+    bar.slots.some((s) => s.part === 'pole'),
+    JSON.stringify(bar.slots.map((s) => s.part)));
+  await press('Tab');
+  await sleep(0.4);
+
+  return {
+    valid: fails.length === 0,
+    fails,
+    log,
+    lockedBefore: beforeLocked,
+    lockedAfter: afterLocked,
+    research: of.game().progress.research,
+    pack: pack(),
+    ticks: of.world().tick,
+  };
+})()

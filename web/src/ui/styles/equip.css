@@ -1,0 +1,291 @@
+/* The equipment panel. Same world as game.css and the same chrome as the Tab
+   panel: gunmetal frame, hairline rules, small-caps headings, one amber accent.
+   The variables live on :root in game.css, which every screen that shows this
+   also loads (EquipPanel pulls it in through GameHud).
+
+   THE FRAME MUST NOT OUTGROW THE VIEWPORT. Three columns of armour, skills and
+   two palettes is more content than the pack ever holds, so the frame is capped
+   at 86vh and each COLUMN scrolls on its own: cap the frame without giving the
+   columns their own overflow and the bottom of the appearance picker becomes
+   unreachable on a laptop, which is exactly where it will be used. */
+
+#of-equip {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.55);
+  z-index: 30;
+}
+
+#of-equip.open { display: flex; }
+
+#of-equip .frame {
+  display: flex;
+  width: min(1040px, 94vw);
+  max-height: 86vh;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+#of-equip .col {
+  padding: 16px 18px;
+  overflow-y: auto;
+  max-height: 86vh;
+}
+
+#of-equip .col.gear { flex: 1 1 32%; border-right: 1px solid var(--of-edge); }
+#of-equip .col.pack { flex: 1 1 30%; border-right: 1px solid var(--of-edge); }
+#of-equip .col.me { flex: 1 1 38%; }
+
+#of-equip h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+  padding-bottom: 7px;
+}
+
+#of-equip h3.mid { margin-top: 18px; }
+
+#of-equip .none {
+  color: var(--of-dim);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* --- column 1: the four worn slots -------------------------------------- */
+/* The tile look is hotbar.css's, widened into a row: a dark cell, a hairline
+   border, and a lit border when it holds something. */
+
+.of-eslot {
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  border-radius: 3px;
+}
+
+.of-eslot.filled { border-color: #4a5862; background: #1c242b; }
+.of-eslot.bare { opacity: 0.72; }
+
+.of-eslot .hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+}
+
+.of-eslot .bd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+  min-height: 26px;
+}
+
+.of-eslot .bd .ico { width: 26px; height: 26px; }
+.of-eslot .nm { font-size: 12px; font-weight: 600; word-break: break-word; }
+.of-eslot .nm.none {
+  font-weight: 400;
+  font-style: italic;
+  color: #39434b;
+}
+
+.of-eslot .st { margin-top: 2px; font-size: 11px; color: var(--of-dim); }
+
+.of-eslot button {
+  padding: 2px 9px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--of-ink);
+  background: transparent;
+  border: 1px solid var(--of-edge);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.of-eslot button:hover { border-color: var(--of-bad); color: var(--of-bad); }
+
+/* --- the summed suit ----------------------------------------------------- */
+
+#of-equip .sum {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--of-edge);
+}
+
+#of-equip .sum h4 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+}
+
+#of-equip .sum .ln {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--of-dim);
+  padding: 1px 0;
+}
+
+#of-equip .sum .ln b { color: var(--of-accent); font-weight: 700; }
+
+/* --- column 2: armour in the pack ---------------------------------------- */
+
+.of-erow {
+  padding: 8px 10px;
+  margin-bottom: 7px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  border-left: 3px solid var(--of-good);
+}
+
+.of-erow .top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.of-erow .nm { font-weight: 600; word-break: break-word; }
+.of-erow .nm .ico-sm { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; }
+.of-erow .sub { margin-top: 4px; font-size: 11px; color: var(--of-dim); }
+
+.of-erow button {
+  flex: 0 0 auto;
+  padding: 4px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: #101418;
+  background: var(--of-accent);
+  border: 0;
+  cursor: pointer;
+}
+
+.of-erow button:hover { background: #ffb066; }
+
+/* --- column 3a: skills --------------------------------------------------- */
+
+.of-eskill { margin-bottom: 9px; }
+
+.of-eskill .top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.of-eskill .nm { flex: 0 0 68px; font-size: 12px; font-weight: 600; }
+.of-eskill .lv { flex: 0 0 auto; font-size: 11px; color: var(--of-dim); }
+
+.of-eskill .bar {
+  flex: 1 1 auto;
+  height: 7px;
+  background: #10161b;
+  border: 1px solid #2c353d;
+  overflow: hidden;
+}
+
+.of-eskill .bar > i {
+  display: block;
+  height: 100%;
+  background: var(--of-accent);
+}
+
+.of-eskill .mul {
+  flex: 0 0 46px;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--of-good);
+}
+
+.of-eskill .xp {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--of-dim);
+}
+
+/* --- column 3b: appearance ----------------------------------------------- */
+
+.of-eapp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.of-eapp .lb {
+  flex: 0 0 92px;
+  font-size: 11px;
+  color: var(--of-dim);
+  word-break: break-word;
+}
+
+.of-eapp .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* A swatch has no text, so the selected one has to be readable as a SHAPE: a
+   ring in the accent colour plus a lift, not a colour change (changing the fill
+   would be lying about which colour is selected). */
+.of-eapp .sw {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #2c353d;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.of-eapp .sw:hover { border-color: var(--of-ink); }
+
+.of-eapp .sw.sel {
+  outline: 2px solid var(--of-accent);
+  outline-offset: 1px;
+  border-color: var(--of-accent);
+}
+
+.of-eapp .opt {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--of-dim);
+  background: #151b21;
+  border: 1px solid #2c353d;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.of-eapp .opt:hover { color: var(--of-ink); border-color: var(--of-ink); }
+
+.of-eapp .opt.sel {
+  color: var(--of-accent);
+  outline: 2px solid var(--of-accent);
+  outline-offset: 1px;
+  border-color: var(--of-accent);
+}
+
+/* Narrow windows: stack the three columns and let the frame scroll as one. */
+@media (max-width: 760px) {
+  #of-equip .frame { flex-direction: column; }
+  #of-equip .col { max-height: none; }
+  #of-equip .col.gear, #of-equip .col.pack {
+    border-right: 0;
+    border-bottom: 1px solid var(--of-edge);
+  }
+}

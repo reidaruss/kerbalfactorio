@@ -28,6 +28,22 @@ export function gameplayReport(g: Gameplay): unknown {
       // Escape last did with them. Derived, so a new menu shows up here without
       // anybody adding a line.
       hotbar: g.hotbar.report(),
+      // W11. The three progression layers that were green in /core and
+      // unreachable from the game until ABI 9: the tech tree and what it still
+      // holds locked, the electrical grid with /core's own Q16 satisfaction
+      // integers carried through unrounded, and the player's own suit and
+      // practice. `gatesHeld` is the number a sandbox probe once reported as
+      // ZERO, which is how we knew none of this was wired.
+      progress: g.progress.report(),
+      // WHAT THE CROSSHAIR RESOLVED TO. DW-20: a probe that cannot tell "I
+      // aimed at nothing" from "the verb is broken" is measuring neither, and
+      // this lane lost an hour to exactly that on the hand-feed sweep.
+      aimed: {
+        machine: g.aimedMachine === null ? null : g.aimedMachine.tier,
+        build: g.aimedBuild === null ? null
+          : { id: g.aimedBuild.id, kind: g.aimedBuild.kind },
+        part: g.aimedPart === null ? null : g.aimedPart.kind,
+      },
       modals: g.modals.report(),
       controls: g.keys.report(),
       placements: g.placements,

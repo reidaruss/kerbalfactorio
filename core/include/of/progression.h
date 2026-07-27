@@ -151,6 +151,16 @@ inline std::vector<ArmourDef> armourDefs() {
   };
 }
 
+/** The four armour pieces as HAND RECIPES, so the craft menu offers them the
+ *  same way it offers a pickaxe and nothing transcribes a cost twice. The list
+ *  is derived from `armourDefs()` rather than authored beside it, which is the
+ *  whole reason `ArmourDef::cost` is a `CraftRecipe` and not a loose vector. */
+inline std::vector<CraftRecipe> armourRecipes() {
+  std::vector<CraftRecipe> out;
+  for (const ArmourDef& d : armourDefs()) out.push_back(d.cost);
+  return out;
+}
+
 inline const ArmourDef* armourFor(ItemId item) {
   static const std::vector<ArmourDef> defs = armourDefs();
   for (const ArmourDef& d : defs)

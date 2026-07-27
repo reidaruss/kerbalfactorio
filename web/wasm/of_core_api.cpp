@@ -84,6 +84,8 @@
 #include "of/automation.h"
 #include "of/persistence.h"   // byte serializer only — works fine in WASM
 #include "of/gameplay.h"      // survival slice: inventory, harvest, craft, furnace
+#include "of/progression.h"   // ABI 9: armour slots, skills, appearance
+#include "of/research.h"      // ABI 9: the tech tree (includes progression.h too)
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten/emscripten.h>
@@ -200,7 +202,39 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       pass-through (of_fl_*) for the flight lane, landed here because an ABI
 //       bump is atomic and a second one would cost more than one file.
 //       Additive: no existing signature changed.
-OF_API int of_abi_version(void) { return 8; }
+//   7-8: the flight lane's staging / atmosphere additions and lane F's
+//       of_net_take_line_item, landed together rather than as two bumps.
+//   9: PROGRESSION, POWER AND EQUIPMENT, all three in ONE bump because standing
+//       rule 9 makes a bump atomic and three of them cost three times as much
+//       and give three chances to break the client.
+//       (a) RESEARCH (research.h, green in /core since June and never once
+//           called from the browser): the SURVIVAL tech tree as data, the
+//           gates the craft menu and the build hotbar ask (of_rs_item_available
+//           / _entity_available / _recipe_available), the spend (of_rs_try),
+//           the refusal AS A CODE rather than a sentence (of_rs_tech_state),
+//           and DW-29's MILESTONE, a precondition that is a thing the player
+//           DID rather than a thing they bought.
+//       (b) POWER (power.h through automation.h, lane D's roadmap blocker D-1):
+//           poles, burner generators, the electric smelting rung, the
+//           per-network supply/demand statistics a panel draws, the history
+//           ring it graphs, and the spanning-tree wire list a renderer needs.
+//           WATTS ARE int32 AND ENERGY IS NOT: one coal unit is 4e9 mJ, so
+//           of_net_generator_energy_j returns joules as a double.
+//       (c) PLAYER PROGRESSION (progression.h): four equip slots, the armour
+//           table with its stats and its .glb node names, the summed suit,
+//           five skills and the five-byte palette-indexed appearance.
+//       of_gp_init now also registers the science items and the armour items,
+//       and of_gp_recipe_count therefore grows from 7 to 13. The first seven
+//       indices are UNCHANGED (the list is appended to, never reordered), so
+//       every existing caller and probe still names the same recipe.
+//       Additive: no existing signature changed.
+OF_API int of_abi_version(void) { return 9; }
+
+// Defined in of_research_api.inc at the foot of this file. Forward-declared so
+// of_gp_init can bring the research layer up in the same call that builds the
+// pack: a client that has an inventory but no tech tree is a client whose gates
+// all silently answer "yes", which is the exact failure this ABI closes.
+extern "C" int of_rs_init(void);
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -1839,8 +1873,25 @@ OF_API int of_gp_init(void) {
   if (gpReady()) return 1;
   g_reg.reset(new gp::SliceRegistry());
   if (!sv::RegisterSurvivalContent(*g_reg)) { g_reg.reset(); return 0; }
+  // ABI 9. The science packs and the four armour pieces join the SAME item
+  // registry through the same additive extension point the survival content
+  // uses, so they stack, serialise and draw exactly like a plank does. Both
+  // calls are idempotent.
+  gp::RegisterScienceItems(*g_reg);
+  gp::progression::RegisterArmour(*g_reg);
   g_inv.reset(new gp::Inventory(*g_reg));
+  // APPENDED, NEVER REORDERED. The four survival recipes and the three power
+  // buildables keep indices 0..6, so every existing caller and every probe that
+  // names a recipe by index still names the same one. Science first because it
+  // is ungated and armour second because it is not.
   g_gpRecipes = sv::handRecipes();
+  for (const sv::CraftRecipe& r : gp::scienceHandRecipes()) g_gpRecipes.push_back(r);
+  for (const sv::CraftRecipe& r : gp::progression::armourRecipes())
+    g_gpRecipes.push_back(r);
+  // The tech tree comes up WITH the pack, not after it. A client holding an
+  // inventory and no ResearchState is a client whose every gate silently
+  // answers "yes", which is indistinguishable from having no gates at all.
+  of_rs_init();
   return 1;
 }
 
@@ -2442,3 +2493,5 @@ OF_API int of_gp_item_ids(void) {
 #include "of_vessel_api.inc"    // §11  catalogue, part costs, the tree
 #include "of_staging_api.inc"   // §12  staging, autostage, reorder, delta-v
 #include "of_flight_api.inc"    // §13  atmosphere + FlightSim (for the next lane)
+#include "of_power_api.inc"     // §14  ABI 9: poles, generators, the grid panel
+#include "of_research_api.inc"  // §15/16 ABI 9: the tech tree, armour, skills

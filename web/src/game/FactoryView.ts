@@ -41,6 +41,14 @@ const TEMPLATES: Record<string, MachineTemplate> = {
             flowMaterial: 'Rubber', arc: 'r' },
   smelter: { url: 'assets/machines/smelter.glb', root: 'Smelter' },
   inserter: { url: 'assets/machines/inserter.glb', root: 'Inserter' },
+  // ABI 9. The pole and the generator shipped at Tier 0 (0x16 and 0x15) and
+  // nothing drew them, because until tonight nothing could place one. The
+  // ELECTRIC smelter deliberately reuses the smelter's own asset: it is the
+  // same machine with a different power source, and inventing a second mesh
+  // for it would be this lane authoring the art lane's content.
+  pole: { url: 'assets/machines/power_pole.glb', root: 'PowerPole' },
+  generator: { url: 'assets/machines/generator.glb', root: 'Generator' },
+  esmelter: { url: 'assets/machines/smelter.glb', root: 'Smelter' },
 };
 
 /** Cosine below which two flow directions count as the same heading. */

@@ -374,7 +374,12 @@ add_test(NAME survival_slice_tests COMMAND survival_slice_tests)
 #     KSP×Factorio crossover matter. Header-only; consumes gameplay.h verbatim.
 add_executable(research_tests
   tests/test_main.cpp
-  tests/test_research.cpp)
+  tests/test_research.cpp
+  # §D, the SURVIVAL tech tree: the one the playable web client gates on. Its
+  # own translation unit on the same target because several lanes edit these
+  # files in one night and a second simultaneous editor of one file is how
+  # commits start sweeping each other (the GP-41 argument, applied to a test).
+  tests/test_research_survival.cpp)
 target_link_libraries(research_tests PRIVATE of_core)
 target_include_directories(research_tests PRIVATE tests)
 add_test(NAME research_tests COMMAND research_tests)

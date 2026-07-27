@@ -63,6 +63,25 @@ export class ModeRules {
    */
   get fullCatalogue(): boolean { return this.sandbox; }
 
+  /**
+   * Does the TECH TREE gate what may be crafted and placed?
+   *
+   * THIS IS THE BRANCH `freeBuild`'s comment PREDICTED, written the day
+   * research landed rather than by somebody remembering to add `|| sandbox` to
+   * it. It is a third named question and not a reuse of `freeBuild` because the
+   * two are about different things and will diverge: `freeBuild` is about COST,
+   * this is about AVAILABILITY, and the first mode that wants "everything
+   * unlocked but still paid for" (a creative-but-honest mode, or a scenario
+   * that starts mid-tree) needs them apart. They happen to be complements
+   * today, and GP-29's whole argument is that questions with the same answer
+   * today are still different questions.
+   *
+   * THE GATES THAT ASK THIS, so a reader can find them: the craft panel
+   * (`GameplayViews.recipeRows` and `GameplayActions.craft`, for a locked
+   * recipe) and the build hotbar (`Hotbar.available`, for a locked machine).
+   */
+  get researchGated(): boolean { return !this.sandbox; }
+
   /** What the badge on screen says. Empty in survival: an always-on chip that
    *  says "SURVIVAL" is noise, and the failure being guarded against is a
    *  player who FORGOT they were in sandbox. */
@@ -74,7 +93,8 @@ export class ModeRules {
   report(): unknown {
     return {
       mode: this.mode, sandbox: this.sandbox, freeBuild: this.freeBuild,
-      fullCatalogue: this.fullCatalogue, badge: this.badge,
+      fullCatalogue: this.fullCatalogue, researchGated: this.researchGated,
+      badge: this.badge,
     };
   }
 }

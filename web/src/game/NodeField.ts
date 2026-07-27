@@ -363,7 +363,8 @@ export class NodeField {
 
   stats(): { nodes: number; empty: number; felled: number; collapsing: number;
              batches: number; instances: number; free: number;
-             capacity: number; slots: number } {
+             capacity: number; slots: number;
+             ceiling: number; grows: number; refused: number } {
     const b = this.batch.stats();
     let slots = 0;
     for (const p of this.placed) slots += p.slots.filter((s) => s >= 0).length;
@@ -375,7 +376,12 @@ export class NodeField {
       batches: b.batches, instances: b.instances,
       // `instances` is what the batch thinks is live and `slots` is what the
       // nodes actually hold. They must agree; a gap is a leak.
-      free: b.free, capacity: b.capacity, slots,
+      free: this.batch.detail().free, capacity: b.capacity, slots,
+      // DW-28. The pool now DOUBLES instead of returning -1 at a fixed 128, and
+      // `refused` is the number that must stay zero: it counts nodes that exist
+      // and can be mined and are not on screen. A silent exhaustion here is
+      // exactly the failure that hid 150-machine bases and 25% of the foliage.
+      ceiling: b.ceiling, grows: b.grows, refused: b.refused,
     };
   }
 }

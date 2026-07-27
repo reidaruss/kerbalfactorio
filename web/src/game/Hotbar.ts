@@ -43,6 +43,12 @@ export const PART_INFO: Record<PartKind, { label: string; iconName: string }> = 
   miner: { label: 'mining drill', iconName: 'Miner' },
   belt: { label: 'belt', iconName: 'Belt' },
   smelter: { label: 'smelter', iconName: 'Smelter' },
+  // ABI 9. The icon names are the /core ITEM display names, because that is
+  // what ItemIcons bakes its pictures under, and the three items exist in the
+  // registry exactly so these three rows do not need a fourth naming authority.
+  pole: { label: 'power pole', iconName: 'Power pole' },
+  generator: { label: 'burner generator', iconName: 'Burner generator' },
+  esmelter: { label: 'electric smelter', iconName: 'Electric smelter' },
   foundation: { label: 'foundation', iconName: '' },
   floor: { label: 'floor', iconName: '' },
   wall: { label: 'wall', iconName: '' },
@@ -67,6 +73,7 @@ export const DEFAULT_BAR: readonly SlotContent[] = [
 
 function isPart(k: string): k is PartKind {
   return k === 'miner' || k === 'belt' || k === 'smelter'
+    || k === 'pole' || k === 'generator' || k === 'esmelter'
     || (STRUCTURE_KINDS as readonly string[]).includes(k);
 }
 

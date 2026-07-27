@@ -14,8 +14,8 @@
 // rather than a mystery.
 
 import * as THREE from 'three';
-import { SAVE_VERSION, readSlot, writeSlot,
-  type SaveMachine, type SaveSlot, type SlotRefusal } from './SaveGame.js';
+import { SAVE_VERSION, readSlot, writeSlot, type SaveMachine, type SaveProgress,
+  type SaveSlot, type SlotRefusal } from './SaveGame.js';
 import type { GameMode } from './GameMode.js';
 import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
@@ -51,6 +51,38 @@ export interface WorldPorts {
   terrain: TerrainDigPort | null;
 }
 
+/** What a save writes about research and the player. Read here so the shape
+ *  and its one reader stay in one file. */
+export function saveProgress(g: Gameplay): SaveProgress {
+  const p = g.progress;
+  const worn = p.progression.wornAll();
+  return {
+    techs: p.research.unlocked(),
+    milestones: p.research.milestones(),
+    worn: [worn[0] ?? 0, worn[1] ?? 0, worn[2] ?? 0, worn[3] ?? 0],
+    skills: p.progression.skillXp(),
+    appearance: [...Object.values(p.progression.appearance())],
+  };
+}
+
+/** Put it back. Returns what actually took, so the ledger can say so. */
+export function restoreProgress(g: Gameplay, saved: SaveProgress | undefined):
+    { techs: number; milestones: number; armour: number } {
+  if (saved === undefined) return { techs: 0, milestones: 0, armour: 0 };
+  const p = g.progress;
+  const techs = p.research.restore(saved.techs);
+  let milestones = 0;
+  for (const m of saved.milestones) if (p.research.earn(m)) milestones++;
+  const a = saved.appearance;
+  p.progression.restore(saved.worn, saved.skills, a.length >= 5
+    ? { skin: a[0], suitPrimary: a[1], suitSecondary: a[2], visor: a[3],
+        build: a[4] }
+    : null);
+  const armour = p.progression.wornAll().filter((i) => i > 0).length;
+  p.invalidate();
+  return { techs, milestones, armour };
+}
+
 export interface RestoreLedger {
   buildings: number;
   /** Structural parts that came back. Their cost is NOT charged again. */
@@ -65,6 +97,9 @@ export interface RestoreLedger {
   voxels: VoxelRestore;
   /** Whether the saved hotbar loadout came back. */
   hotbarRestored: boolean;
+  /** The progression spine: techs re-unlocked, milestones re-earned, armour
+   *  pieces put back on. Zero on a slot written before ABI 9. */
+  progress: { techs: number; milestones: number; armour: number };
   /** DW-31: the mode the slot was written in. Always equal to the running mode,
    *  because a slot that disagreed was refused before it got here. */
   mode: GameMode;
@@ -75,7 +110,8 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
                          seed: number, ports: WorldPorts,
                          ore: OreField, structures: Structures,
-                         hotbar: Hotbar, mode: GameMode): SaveSlot {
+                         hotbar: Hotbar, mode: GameMode,
+                         progress: SaveProgress | undefined): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -120,8 +156,13 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     sites: saveSites(structures),
     structures: saveParts(structures),
     hotbar: hotbar.serialize(),
+    progress,
     buildings: factory.placed.map((p) => ({
       kind: p.kind, cell: p.cell, patch: p.patch,
+      // Read LIVE off the grid rather than off the record, so a generator that
+      // has been burning since the last commit saves what it actually holds.
+      fuel: p.kind === 'generator' && p.grid >= 0
+        ? factory.power.generatorFuel(p.grid) : p.fuel,
       pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
       up: [p.up.x, p.up.y, p.up.z] as [number, number, number],
       fwd: [p.fwd.x, p.fwd.y, p.fwd.z] as [number, number, number],
@@ -140,7 +181,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   };
 }
 
-export function apply(M: OfCoreModule, game: GameCore,
+export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
                       slot: SaveSlot, ports: WorldPorts,
                       ore: OreField, structures: Structures,
@@ -223,11 +264,22 @@ export function apply(M: OfCoreModule, game: GameCore,
   //    a piece of the world, and a malformed row falls back to empty rather
   //    than throwing, because a save must never be able to brick a boot.
   const hotbarRestored = hotbar.restore(slot.hotbar);
+  const progress = restoreProgress(g, slot.progress);
+
+  // 7. THE PROGRESSION SPINE, after the pack, and that ORDER MATTERS: armour
+  //    is restored WITHOUT touching the pack (the pack already came back from
+  //    its own bytes at step 2, with the worn pieces correctly absent from it),
+  //    so doing it the other way round would take four items out of an
+  //    inventory that never had them. Techs restore through the unlock-set path
+  //    rather than by replaying the purchases. MILESTONES RESTORE SEPARATELY
+  //    and deliberately: a load that silently granted one would hand out
+  //    DW-29's autopilot to anybody who pressed F5.
 
   return {
     buildings, structures: restoredParts,
     machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
+    progress,
     mode: slot.mode ?? 'survival',
     savedAt: slot.savedAt,
   };
@@ -249,7 +301,8 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   if (inhibit !== '') { noteSave(true); return { refused: inhibit }; }
   noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField, g.structures, g.hotbar, g.mode.mode);
+    g.seed, g.ports, g.oreField, g.structures, g.hotbar, g.mode.mode,
+    saveProgress(g));
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
@@ -278,7 +331,7 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // A slot from another seed is a different planet, and loading it would drop
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
-  g.restored = apply(g.core, g.game, g.factory, g.machines, slot, g.ports,
+  g.restored = apply(g, g.core, g.game, g.factory, g.machines, slot, g.ports,
     g.oreField, g.structures, g.structView, g.hotbar);
   g.hotbarBar.invalidate();
   g.panel.invalidate();

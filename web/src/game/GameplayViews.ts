@@ -13,10 +13,29 @@ export type IconFor = (name: string) => string;
 
 const NO_ICON: IconFor = () => '';
 
-export function slotRows(game: GameCore, icon: IconFor = NO_ICON): SlotRow[] {
+/**
+ * W11: what a recipe is gated BY, or '' when nothing gates it.
+ *
+ * A PORT rather than a `Research` import, so this file stays a pure mapping and
+ * so the sandbox answer ("nothing is gated") is expressed by passing a function
+ * that says so rather than by a branch in here.
+ */
+export type LockedBy = (recipeIndex: number) => string;
+const NO_LOCK: LockedBy = () => '';
+
+/** Which pack items can go on the hotbar: the machines and the parts. Asked of
+ *  /core through the item's own category rather than by an id list here. */
+export type Placeable = (item: number) => boolean;
+const NOT_PLACEABLE: Placeable = () => false;
+
+export function slotRows(game: GameCore, icon: IconFor = NO_ICON,
+                         placeable: Placeable = NOT_PLACEABLE): SlotRow[] {
   return game.inventory().map((s) => {
     const name = s.count > 0 ? game.itemName(s.item) : '';
-    return { name, count: s.count, icon: name === '' ? '' : icon(name) };
+    return {
+      name, count: s.count, icon: name === '' ? '' : icon(name),
+      item: s.item, placeable: s.count > 0 && placeable(s.item),
+    };
   });
 }
 
@@ -28,15 +47,17 @@ export function slotRows(game: GameCore, icon: IconFor = NO_ICON): SlotRow[] {
  * even while the button is live.
  */
 export function recipeRows(game: GameCore, icon: IconFor = NO_ICON,
-                           all = false): RecipeRow[] {
+                           all = false, lockedBy: LockedBy = NO_LOCK): RecipeRow[] {
   return game.recipes().map((r) => {
     const name = game.itemName(r.output);
+    const lock = lockedBy(r.index);
     return {
       index: r.index,
       name,
       icon: icon(name),
       outputCount: r.outputCount,
-      craftable: all || r.craftable,
+      lockedBy: lock,
+      craftable: (all || r.craftable) && lock === '',
       inputs: r.inputs.map((i) => {
         const n = game.itemName(i.item);
         return { name: n, have: i.have, need: i.need, icon: icon(n) };

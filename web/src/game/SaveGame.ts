@@ -61,7 +61,17 @@ function slotKey(mode: GameMode): string {
  *  5: MACHINES MOVED OFF THE VOXEL LATTICE onto the same metric site grid the
  *     base uses (GP-27). A v4 slot's building positions and cell keys are on
  *     the old lattice, so a belt run restored from one would be laid out to the
- *     old spacing and would never chain to anything placed after the load. */
+ *     old spacing and would never chain to anything placed after the load.
+ *
+ *  PROGRESSION (research, armour, skills, appearance) joined the slot at ABI 9
+ *  and DELIBERATELY DID NOT BUMP THIS, which is worth defending because the
+ *  reflex is to bump. `version` is refused on a MISMATCH, not on being older,
+ *  so every bump DESTROYS every existing world; it must therefore be spent only
+ *  when a reader would MISREAD an old slot. `progress` is optional and absent
+ *  from a v5 slot, an absent one restores an unresearched player with an empty
+ *  suit, and that is precisely the state a world saved before research existed
+ *  WAS. Nothing is misread, so nothing is thrown away. Same call, same
+ *  argument, as GP-29's additive `mode` field. */
 export const SAVE_VERSION = 5;
 
 import { asMode, type GameMode } from './GameMode.js';
@@ -76,6 +86,10 @@ export interface SaveBuilding {
   fwd: [number, number, number];
   /** Drill only: the ore patch it stands on. -1 for anything else. */
   patch: number;
+  /** Generator only: fuel units left in it. Absent on a pre-ABI-9 slot, which
+   *  restores an empty generator: the honest answer, and the same one a reload
+   *  has always given a furnace mid-burn. */
+  fuel?: number;
 }
 
 export interface SaveMachine {
@@ -113,6 +127,36 @@ export interface SaveSlot {
   structures?: SaveStructure[];
   /** The hotbar: which slot is in hand and what is in each of them (GP-26). */
   hotbar?: SaveHotbar;
+  /** The progression spine (ABI 9). Optional, and the version was deliberately
+   *  NOT bumped for it: see SAVE_VERSION above. An absent one restores an
+   *  unresearched player with an empty suit, which is a legal world. */
+  progress?: SaveProgress;
+}
+
+/**
+ * What research and the player themself amount to on disk.
+ *
+ * TECHS AND MILESTONES ARE SEPARATE LISTS, and that is the point rather than an
+ * accident of shape. A tech is something you BOUGHT and restoring it is safe; a
+ * milestone is something you DID, and a load path that quietly granted one
+ * would hand out DW-29's autopilot to anybody who reloaded. So they travel
+ * apart and restore through different calls.
+ *
+ * The science the player spent is NOT recorded, because the unlock SET is
+ * restored directly rather than by replaying the purchases, which would need
+ * the exact packs they held at the time.
+ */
+export interface SaveProgress {
+  /** Unlocked TechIds. Order is irrelevant: restore skips prereq checks. */
+  techs: number[];
+  /** Earned MilestoneIds (DW-29). */
+  milestones: number[];
+  /** The four worn ItemIds, head/chest/legs/feet, 0 for an empty slot. */
+  worn: [number, number, number, number];
+  /** Raw xp per skill, in SkillId order. */
+  skills: number[];
+  /** Five palette indices: skin, suitPrimary, suitSecondary, visor, build. */
+  appearance: number[];
 }
 
 /** The bar, as plain data. Optional so a slot written before it existed loads. */

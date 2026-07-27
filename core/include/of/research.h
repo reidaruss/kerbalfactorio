@@ -34,6 +34,12 @@
 #include <string>
 
 #include "of/gameplay.h"
+// The SURVIVAL tech tree (§D) gates armour, so it names armour ItemIds. The
+// dependency is one-way and states the layering honestly: a tech tree is
+// CONTENT that references content, and nothing in progression.h knows research
+// exists. progression.h consumes gameplay.h and nothing else, so there is no
+// cycle.
+#include "of/progression.h"
 
 namespace of {
 namespace gameplay {
@@ -146,20 +152,66 @@ namespace techs {
 static constexpr TechId BasicSmelting = 0x0001;     // unlocks smelter + assembler recipes
 static constexpr TechId Logistics = 0x0002;         // unlocks belts + box (needs BasicSmelting)
 static constexpr TechId CinderiteRefining = 0x0003; // OFF-WORLD GATE: needs Cinderite (GP-2)
+// --- The SURVIVAL tree (§D), the one the playable client gates on. Appended,
+// so the three slice ids above are never renumbered.
+static constexpr TechId Electrification = 0x0010;    // poles + burner generator
+static constexpr TechId ElectricSmelting = 0x0011;   // the 30 kW smelting rung
+static constexpr TechId Metallurgy = 0x0012;         // helm + boots
+static constexpr TechId PlateArmour = 0x0013;        // cuirass + greaves
+static constexpr TechId FlightAutopilot = 0x0014;    // DW-29: earned by flying, then researched
+static constexpr TechId CinderRefining = 0x0015;     // OFF-WORLD GATE over survival content
 }  // namespace techs
 
+// =============================================================================
+// A MILESTONE is a thing the player DID, not a thing they bought.
+//
+// DW-29 asks for a flight autopilot that is a research unlock EARNED BY HAVING
+// REACHED ORBIT MANUALLY. That is not a science cost and it is not a prereq
+// tech: it is a fact about the save. Modelling it as a third kind of
+// precondition is what stops it being faked as either. A tech with no
+// milestone (`kNoMilestone`, the default) behaves exactly as before, so every
+// existing tech and every existing test is untouched by this field.
+//
+// The set is deliberately tiny and append-only. A milestone that no tech reads
+// is a flag in a save file, and this project already has enough of those.
+// =============================================================================
+using MilestoneId = uint16_t;
+static constexpr MilestoneId kNoMilestone = 0;
+
+namespace milestones {
+static constexpr MilestoneId ReachedOrbit = 0x0001;    // DW-29's own condition
+static constexpr MilestoneId LandedOffWorld = 0x0002;  // the GP-2 crossover, later
+}  // namespace milestones
+
+inline const char* milestoneName(MilestoneId m) {
+  switch (m) {
+    case milestones::ReachedOrbit: return "reach orbit and come back";
+    case milestones::LandedOffWorld: return "land on another world";
+    default: return "";
+  }
+}
+
 // One node of the tech tree (GP-12: pure data, no code per tech).
-//   - prereqs : techs that must already be unlocked
-//   - cost    : the science (ItemStacks) consumed on research — affordability
-//               is checked against, and deducted from, a provided inventory pool
-//   - unlockRecipes / unlockEntities : the content this tech makes available
+//   - prereqs          : techs that must already be unlocked
+//   - requiresMilestone: something the player must have DONE (DW-29)
+//   - cost             : the science (ItemStacks) consumed on research —
+//                        affordability is checked against, and deducted from, a
+//                        provided inventory pool
+//   - unlockRecipes / unlockEntities / unlockItems : the content this tech
+//                        makes available
 struct TechDef {
   TechId id = kNoTech;
   std::string name;
   std::vector<TechId> prereqs;
+  MilestoneId requiresMilestone = kNoMilestone;
   std::vector<ItemStack> cost;            // science items + counts (GP-1)
   std::vector<RecipeId> unlockRecipes;    // recipes unlocked on research
   std::vector<TypeId> unlockEntities;     // entity classes unlocked on research
+  // The ITEMS this tech makes craftable and placeable. Items rather than
+  // RecipeIds because the survival hand recipes (`survival::CraftRecipe`) are
+  // keyed by their OUTPUT and carry no RecipeId at all, so the output item is
+  // the only handle both the craft menu and the build hotbar can hold.
+  std::vector<ItemId> unlockItems;
 };
 
 // =============================================================================
@@ -176,6 +228,11 @@ class TechTree {
  public:
   TechTree() { build(); }
 
+  /** Build a tree from an authored table (§D's survival tree uses this). The
+   *  default constructor is left alone so every existing caller and every
+   *  existing test gets the same slice tree it always did. */
+  explicit TechTree(std::vector<TechDef> defs) : techs_(std::move(defs)) {}
+
   const TechDef* tech(TechId id) const {
     for (const TechDef& t : techs_)
       if (t.id == id) return &t;
@@ -183,8 +240,51 @@ class TechTree {
   }
   const std::vector<TechDef>& allTechs() const { return techs_; }
 
+  /** Longest prereq chain behind this tech, so a UI can lay the graph out in
+   *  columns without re-deriving the topology. 0 for a root. A cycle would
+   *  recurse for ever, so the walk is bounded by the tree's own size, which is
+   *  also the only depth a legal tree can reach. */
+  uint32_t depthOf(TechId id) const { return depth(id, techs_.size() + 1); }
+
+  // --- WHAT IS GATED AT ALL ---------------------------------------------------
+  // THE RULE, and it is the whole design: an item or an entity is GATED if and
+  // only if some tech in this tree mentions it. Everything the tree never names
+  // is free for ever. That is why adding a tech is the ONLY edit needed to gate
+  // something, and why there is no second "locked by default" list anywhere to
+  // fall out of step with this one. Wood was never in a tech, so wood is free,
+  // and nobody had to write that down.
+  bool gatesItem(ItemId item) const {
+    for (const TechDef& t : techs_)
+      for (ItemId i : t.unlockItems)
+        if (i == item) return true;
+    return false;
+  }
+  bool gatesEntity(TypeId type) const {
+    for (const TechDef& t : techs_)
+      for (TypeId e : t.unlockEntities)
+        if (e == type) return true;
+    return false;
+  }
+  bool gatesRecipe(RecipeId r) const {
+    for (const TechDef& t : techs_)
+      for (RecipeId x : t.unlockRecipes)
+        if (x == r) return true;
+    return false;
+  }
+
  private:
   std::vector<TechDef> techs_;
+
+  uint32_t depth(TechId id, size_t budget) const {
+    const TechDef* d = tech(id);
+    if (d == nullptr || budget == 0) return 0;
+    uint32_t best = 0;
+    for (TechId p : d->prereqs) {
+      const uint32_t k = depth(p, budget - 1) + 1;
+      if (k > best) best = k;
+    }
+    return best;
+  }
 
   void build() {
     using namespace techs;
@@ -233,6 +333,30 @@ class TechTree {
 // Unlocking is monotonic (a tech, once unlocked, never re-locks) and
 // deterministic (no hidden state — same tree + same inputs → same result).
 // =============================================================================
+
+/** Why `tryResearch` would refuse. `None` means it would succeed. */
+enum class ResearchBlock : uint8_t {
+  None = 0,
+  UnknownTech = 1,
+  AlreadyUnlocked = 2,
+  PrereqMissing = 3,
+  MilestoneMissing = 4,
+  CostShort = 5,
+};
+
+/** The refusal, with the thing that caused it. Exactly one of `prereq`,
+ *  `milestone` and `item` is set, according to `block`. */
+struct ResearchStatus {
+  ResearchBlock block = ResearchBlock::None;
+  TechId prereq = kNoTech;
+  MilestoneId milestone = kNoMilestone;
+  ItemId item = kNoItem;
+  /** How many more of `item` are needed. 0 unless block == CostShort. */
+  uint16_t shortBy = 0;
+
+  bool ok() const { return block == ResearchBlock::None; }
+};
+
 class ResearchState {
  public:
   explicit ResearchState(const TechTree& tree) : tree_(&tree) {}
@@ -260,9 +384,56 @@ class ResearchState {
     return false;
   }
 
+  bool isItemUnlocked(ItemId id) const {
+    for (ItemId i : unlockedItems_)
+      if (i == id) return true;
+    return false;
+  }
+
+  // --- WHAT THE UX ACTUALLY ASKS ---------------------------------------------
+  // "Unlocked" and "available" are DIFFERENT QUESTIONS and conflating them is
+  // how a tech tree ends up locking wood. Unlocked means a tech granted it.
+  // AVAILABLE means the player may use it right now, which is true when the
+  // tree never gated it at all OR when a tech has granted it. Every gate in the
+  // client asks the second question; the first exists so a panel can say which
+  // tech did the granting.
+  bool isItemAvailable(ItemId id) const {
+    return !tree_->gatesItem(id) || isItemUnlocked(id);
+  }
+  bool isEntityAvailable(TypeId id) const {
+    return !tree_->gatesEntity(id) || isEntityUnlocked(id);
+  }
+  bool isRecipeAvailable(RecipeId id) const {
+    return !tree_->gatesRecipe(id) || isRecipeUnlocked(id);
+  }
+
+  // --- MILESTONES (DW-29) -----------------------------------------------------
+  /** Record that the player DID something. Monotonic and dedup-safe, like every
+   *  other unlock here: a milestone that could be un-earned would need a rule
+   *  for what happens to the tech it gated. */
+  bool setMilestone(MilestoneId m) {
+    if (m == kNoMilestone || hasMilestone(m)) return false;
+    milestones_.push_back(m);
+    return true;
+  }
+  bool hasMilestone(MilestoneId m) const {
+    if (m == kNoMilestone) return true;   // "no requirement" is always met
+    for (MilestoneId x : milestones_)
+      if (x == m) return true;
+    return false;
+  }
+  const std::vector<MilestoneId>& milestones() const { return milestones_; }
+
+  /** Has this tech's milestone (if any) been earned? */
+  bool milestoneMet(TechId id) const {
+    const TechDef* def = tree_->tech(id);
+    return def == nullptr ? false : hasMilestone(def->requiresMilestone);
+  }
+
   const std::vector<TechId>& unlockedTechs() const { return unlockedTechs_; }
   const std::vector<RecipeId>& unlockedRecipes() const { return unlockedRecipes_; }
   const std::vector<TypeId>& unlockedEntities() const { return unlockedEntities_; }
+  const std::vector<ItemId>& unlockedItems() const { return unlockedItems_; }
 
   // Are all of a tech's prereqs unlocked? (A precondition of researchability.)
   bool prereqsMet(TechId id) const {
@@ -291,7 +462,50 @@ class ResearchState {
     const TechDef* def = tree_->tech(id);
     if (!def) return false;
     if (isUnlocked(id)) return false;  // already done (idempotent)
-    return prereqsMet(id) && costAffordable(id, science);
+    return prereqsMet(id) && hasMilestone(def->requiresMilestone) &&
+           costAffordable(id, science);
+  }
+
+  /**
+   * WHY a tech cannot be researched, as data rather than as a sentence.
+   *
+   * The sentence needs item and tech NAMES, which live in the SliceRegistry,
+   * which this class deliberately does not hold. So the reason comes back as a
+   * code plus the offending id and whoever has the names composes the line.
+   * That also makes the reason TESTABLE: "refused because the prereq is
+   * missing" and "refused because the science is short" are different
+   * assertions, and a single boolean cannot tell them apart, which is exactly
+   * how a gate that refuses for the wrong reason passes its own test.
+   *
+   * The order is the order a player meets them: does it exist, is it already
+   * done, is the prereq in, was the deed done, is the science on the shelf.
+   */
+  ResearchStatus status(TechId id, const Inventory& science) const {
+    ResearchStatus s;
+    const TechDef* def = tree_->tech(id);
+    if (def == nullptr) { s.block = ResearchBlock::UnknownTech; return s; }
+    if (isUnlocked(id)) { s.block = ResearchBlock::AlreadyUnlocked; return s; }
+    for (TechId p : def->prereqs) {
+      if (!isUnlocked(p)) {
+        s.block = ResearchBlock::PrereqMissing;
+        s.prereq = p;
+        return s;
+      }
+    }
+    if (!hasMilestone(def->requiresMilestone)) {
+      s.block = ResearchBlock::MilestoneMissing;
+      s.milestone = def->requiresMilestone;
+      return s;
+    }
+    for (const ItemStack& c : def->cost) {
+      if (c.item != kNoItem && !science.has(c.item, c.count)) {
+        s.block = ResearchBlock::CostShort;
+        s.item = c.item;
+        s.shortBy = static_cast<uint16_t>(c.count - science.count(c.item));
+        return s;
+      }
+    }
+    return s;   // ResearchBlock::None: it can be researched right now.
   }
 
   // ---- The unlock operation (GP-1) -----------------------------------------
@@ -338,6 +552,8 @@ class ResearchState {
   std::vector<TechId> unlockedTechs_;
   std::vector<RecipeId> unlockedRecipes_;
   std::vector<TypeId> unlockedEntities_;
+  std::vector<ItemId> unlockedItems_;
+  std::vector<MilestoneId> milestones_;
 
   // Mark the tech unlocked and apply its unlocks (monotonic; dedup-safe).
   void apply(const TechDef& def) {
@@ -346,8 +562,136 @@ class ResearchState {
       if (!isRecipeUnlocked(r)) unlockedRecipes_.push_back(r);
     for (TypeId e : def.unlockEntities)
       if (!isEntityUnlocked(e)) unlockedEntities_.push_back(e);
+    for (ItemId i : def.unlockItems)
+      if (!isItemUnlocked(i)) unlockedItems_.push_back(i);
   }
 };
+
+// =============================================================================
+// §D — THE SURVIVAL TECH TREE: the one the playable client actually gates on.
+//
+// The §B.2 tree above is the Phase-1 SLICE tree. It gates `types::Smelter`,
+// `types::Belt` and the Ferrite recipes, none of which the web client uses, so
+// wiring it into the browser verbatim would have produced a tech tree that
+// unlocks nothing a player can see, which is a menu.
+//
+// This tree gates SURVIVAL content, and every row of it gates something the
+// player can hold or place. It is deliberately built out of things that DID NOT
+// EXIST BEFORE TONIGHT (the power pole, the burner generator, the electric
+// smelter, the four armour pieces) plus one flag another lane consumes, because
+// gating content that already ships would silently lock a dozen green probes
+// out of the machines they place. Adding an existing item to a tech's
+// `unlockItems` is a one-line change the day that is wanted, and TechTree's
+// "gated iff mentioned" rule means it is the ONLY line.
+//
+// SCIENCE IS HAND-CRAFTED HERE, AND THAT IS AN HONEST FIRST CUT RATHER THAN
+// THE END STATE. Factorio's model, which GP-1 adopts, is that the FACTORY
+// produces science; the recipes below are authored as ordinary `CraftRecipe`
+// data precisely so a lab or an assembler reads the same table on the day one
+// exists. What they buy today is that science costs Iron and Copper, which cost
+// a furnace and fuel and swings, so research is downstream of the production
+// chain from the very first pack rather than being a free button.
+// =============================================================================
+
+/** Automation and logistic science, crafted by hand from smelted metal.
+ *
+ *  Cinder science is deliberately ABSENT from this list. It is refined from
+ *  Cinderite (§A.2), Cinderite is Cinder-only (WG-4), and there is no Cinderite
+ *  on Forge, so `CinderRefining` below is a node the player can SEE and can
+ *  never research without leaving the planet. That visible, permanently
+ *  unaffordable row IS the GP-2 crossover gate, stated on screen instead of
+ *  only in a header. */
+inline std::vector<survival::CraftRecipe> scienceHandRecipes() {
+  using survival::items::Copper;
+  using survival::items::Iron;
+  using survival::items::Stone;
+  return {
+      survival::CraftRecipe{items::AutomationScience, 1,
+                            {ItemStack{Iron, 2}, ItemStack{Copper, 1}}},
+      survival::CraftRecipe{items::LogisticScience, 1,
+                            {ItemStack{Iron, 1}, ItemStack{Copper, 2},
+                             ItemStack{Stone, 2}}},
+  };
+}
+
+/** Every science ItemId, in tier order, so a UI lists them without a table. */
+inline std::vector<ItemId> scienceItems() {
+  return {items::AutomationScience, items::LogisticScience, items::CinderScience};
+}
+
+/** The survival tech tree as DATA (GP-12). Six techs, three tiers deep. */
+inline std::vector<TechDef> survivalTechs() {
+  namespace pi = progression::items;
+  using survival::items::BurnerGenerator;
+  using survival::items::ElectricSmelter;
+  using survival::items::PowerPole;
+
+  std::vector<TechDef> t;
+
+  TechDef elec;
+  elec.id = techs::Electrification;
+  elec.name = "Electrification";
+  elec.cost = {ItemStack{items::AutomationScience, 10}};
+  elec.unlockItems = {PowerPole, BurnerGenerator};
+  elec.unlockEntities = {survival::types::PowerPole, survival::types::BurnerGenerator};
+  t.push_back(elec);
+
+  // The third rung of the smelting ladder (FS-23). A hand furnace burns coal at
+  // 180 ticks and the hand smelter at 60; this one burns WATTS, so it is the
+  // first machine whose speed depends on something the player has to manage.
+  TechDef esmelt;
+  esmelt.id = techs::ElectricSmelting;
+  esmelt.name = "Electric Smelting";
+  esmelt.prereqs = {techs::Electrification};
+  esmelt.cost = {ItemStack{items::AutomationScience, 15},
+                 ItemStack{items::LogisticScience, 10}};
+  esmelt.unlockItems = {ElectricSmelter};
+  t.push_back(esmelt);
+
+  TechDef metal;
+  metal.id = techs::Metallurgy;
+  metal.name = "Metallurgy";
+  metal.cost = {ItemStack{items::AutomationScience, 8}};
+  metal.unlockItems = {pi::ArmourHead, pi::ArmourFeet};
+  t.push_back(metal);
+
+  TechDef plate;
+  plate.id = techs::PlateArmour;
+  plate.name = "Plate Armour";
+  plate.prereqs = {techs::Metallurgy};
+  plate.cost = {ItemStack{items::AutomationScience, 12},
+                ItemStack{items::LogisticScience, 6}};
+  plate.unlockItems = {pi::ArmourChest, pi::ArmourLegs};
+  t.push_back(plate);
+
+  // DW-29. The autopilot is not bought, it is EARNED and then bought: you fly
+  // the ascent by hand once, and only then may you spend the science that lets
+  // the machine do it. Its payload is the unlock flag itself, which the flight
+  // lane reads; it deliberately unlocks no item, because inventing a part for
+  // it here would be this lane authoring another lane's content.
+  TechDef autopilot;
+  autopilot.id = techs::FlightAutopilot;
+  autopilot.name = "Flight Autopilot";
+  autopilot.prereqs = {techs::Electrification};
+  autopilot.requiresMilestone = milestones::ReachedOrbit;
+  autopilot.cost = {ItemStack{items::AutomationScience, 25},
+                    ItemStack{items::LogisticScience, 15}};
+  t.push_back(autopilot);
+
+  // GP-2, visible. Costs an item that cannot be made on this planet.
+  TechDef cinder;
+  cinder.id = techs::CinderRefining;
+  cinder.name = "Cinderite Refining";
+  cinder.prereqs = {techs::ElectricSmelting};
+  cinder.cost = {ItemStack{items::AutomationScience, 20},
+                 ItemStack{items::CinderScience, 5}};
+  cinder.unlockRecipes = {recipes::RefineCinderScience};
+  t.push_back(cinder);
+
+  return t;
+}
+
+inline TechTree survivalTechTree() { return TechTree(survivalTechs()); }
 
 }  // namespace gameplay
 }  // namespace of

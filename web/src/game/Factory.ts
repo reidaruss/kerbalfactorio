@@ -27,7 +27,9 @@
 // tinted with, which is what makes the tint an instruction rather than a decal.
 
 import * as THREE from 'three';
+import { FOOTPRINT, type BuildKind, type Placed } from './FactoryKinds.js';
 import { AutoLine } from './AutoLine.js';
+import { Power } from './Power.js';
 import { orient, type Snapped } from './Grid.js';
 import { addressIn, anchorIn, machineCellKey, siteAt,
   type MachineAddr, type SiteHost } from './MachinePlacement.js';
@@ -38,34 +40,8 @@ import type { GameCore } from './GameCore.js';
 import type { OrePatches } from './OrePatches.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
-export type BuildKind = 'miner' | 'belt' | 'smelter';
-
-/** TypeIds are ASSET-SPECS section 4's, so the stream keys the right mesh. */
-export const TYPE_ID: Record<BuildKind, number> = {
-  miner: 0x10, belt: 0x11, smelter: 0x12,
-};
-/** Footprint in whole metres (ASSET-SPECS), and the interaction bound. */
-export const FOOTPRINT: Record<BuildKind, number> = { miner: 2, belt: 1, smelter: 2 };
-
-export interface Placed {
-  id: number;
-  kind: BuildKind;
-  /** Body-frame metres, snapped to the 1 m lattice and put on the ground. */
-  pos: { x: number; y: number; z: number };
-  cell: string;
-  up: THREE.Vector3;
-  /** Flow direction, in the tangent plane. Belts flow along it. */
-  fwd: THREE.Vector3;
-  quat: THREE.Quaternion;
-  /** Drill only: the ore PATCH it stands on, and what it had left last tick. */
-  patch: number;
-  lastRemaining: number;
-  /** Filled by commit(): the /core build index, and the stream entity id. */
-  build: number;
-  entity: number;
-  /** Belt only: which run it joined, so the flow row can find its tiles. */
-  run: number;
-}
+export { FOOTPRINT, GATED_BY_ITEM, TYPE_ID, type BuildKind,
+  type Placed } from './FactoryKinds.js';
 
 export class Factory {
   readonly line: AutoLine;
@@ -103,10 +79,18 @@ export class Factory {
   refunded = 0;
   demolishedInFlight = 0;
 
+  /** THE GRID, over the SAME network the machines are on. Handed the handle as
+   *  a port because `recreate()` replaces it on every commit (Power.ts has the
+   *  argument), and held here rather than on Gameplay so there is exactly one
+   *  Power object in the client and the panel cannot end up reading a second,
+   *  always-correct, always-empty grid. */
+  readonly power: Power;
+
   constructor(readonly M: OfCoreModule, readonly core: GameCore,
               readonly bodyHandle: number, fixedDt: number,
               readonly ore: OrePatches, readonly host: SiteHost) {
     this.line = new AutoLine(M, fixedDt);
+    this.power = new Power(M, () => this.line.net);
   }
 
   /**
@@ -209,7 +193,7 @@ export class Factory {
     const p: Placed = {
       id: this.nextId++, kind, pos: s.pos, cell, up: s.up.clone(),
       fwd: fwd.clone(), quat: orient(s.up, fwd), patch, lastRemaining: 0,
-      build: -1, entity: -1, run: -1,
+      build: -1, entity: -1, run: -1, grid: -1, fuel: 0,
     };
     this.placed.push(p);
     return p;
@@ -246,7 +230,12 @@ export class Factory {
    */
   restore(rows: readonly { kind: BuildKind; pos: [number, number, number];
                            cell: string; up: [number, number, number];
-                           fwd: [number, number, number]; patch: number }[]): number {
+                           fwd: [number, number, number]; patch: number;
+                           /** Generators only. Absent on a slot written before
+                            *  ABI 9, which restores an empty generator: the
+                            *  honest answer, and the same one a reload has
+                            *  always given a furnace mid-burn. */
+                           fuel?: number }[]): number {
     this.placed.length = 0;
     for (const r of rows) {
       const up = new THREE.Vector3(r.up[0], r.up[1], r.up[2]);
@@ -256,6 +245,7 @@ export class Factory {
         pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] },
         cell: r.cell, up, fwd, quat: orient(up, fwd),
         patch: r.patch, lastRemaining: 0, build: -1, entity: -1, run: -1,
+        grid: -1, fuel: r.fuel ?? 0,
       });
     }
     this.commit();
@@ -341,8 +331,20 @@ export class Factory {
     return collectOutput(this, p, refund);
   }
 
+  /** What a machine holds, what it EATS (/core's smelt table, never a JS list)
+   *  and putting some in. Anything with no buffer answers 0. */
+  outputOf(p: Placed): number {
+    return p.build < 0 || p.kind === 'belt' ? 0 : this.line.outputBuffer(p.build);
+  }
+  inputItemOf(p: Placed): number {
+    return p.kind !== 'smelter' && p.kind !== 'esmelter' ? 0
+      : oreFedTo(this, p) || this.core.ids.rawIron;
+  }
+  inputOf(p: Placed): number { return p.build < 0 ? 0 : this.line.inputBuffer(p.build); }
+  feed(p: Placed, n: number): void { if (p.build >= 0) this.line.feed(p.build, n); }
+
   outputItemOf(p: Placed): number {
-    if (p.kind === 'smelter') {
+    if (p.kind === 'smelter' || p.kind === 'esmelter') {
       return this.M._of_gp_smelt_output_for(oreFedTo(this, p) || this.core.ids.rawIron)
         || this.core.ids.iron;
     }

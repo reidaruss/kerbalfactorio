@@ -88,6 +88,14 @@ function eq(label, got, want, tier = TIER.A) {
   s.fail++; s.failures.push(`${label}: got ${got}  want ${want}`);
   return false;
 }
+/** A predicate rather than an equality, for the properties that are about a
+ *  SHAPE (an append-only table's length, say) instead of a value. */
+function ok(label, cond, detail, tier = TIER.A) {
+  const s = stats[tier];
+  if (cond) { s.pass++; return true; }
+  s.fail++; s.failures.push(`${label}: ${detail}`);
+  return false;
+}
 function eqBits(label, gotDouble, wantHex, tier = TIER.A) {
   return eq(label, bits(gotDouble), wantHex, tier);
 }
@@ -906,11 +914,29 @@ function buildChain(deposit) {
 
   // --- hand crafting: all-or-nothing, and it consumes ----------------------
   {
-    // Lane D's smelting ladder (2026-07-27) added three rungs to the open recipe
-    // table, so the pinned count moved 4 to 7. Not a determinism failure: it is a
-    // literal that a deliberate content change invalidated, and lane D should
-    // confirm 7 is the number it meant to ship.
-    eq('gp.recipeCount', M._of_gp_recipe_count(), 7, TIER.SELF);
+    // THE RECIPE TABLE IS OPEN AND THE PIN IS ON ITS SHAPE, NOT ITS LENGTH.
+    //
+    // It has moved twice in two days: lane D's smelting ladder took it 4 to 7,
+    // and ABI 9 took it 7 to 13 (two science recipes, then four armour pieces).
+    // Neither was a determinism failure, both were literals a deliberate
+    // content change invalidated, and re-pinning the length each time teaches
+    // nothing. What actually matters, and what every caller and every probe
+    // that names a recipe by INDEX depends on, is that the table is APPENDED
+    // TO and never reordered. So the count is asserted as a floor and the
+    // FIRST SEVEN OUTPUTS are pinned one by one: adding a recipe passes, and
+    // moving one fails by name.
+    const recipeCount = M._of_gp_recipe_count();
+    ok('gp.recipeCountGrowsOnly', recipeCount >= 7,
+       `${recipeCount} recipes, was 7`, TIER.SELF);
+    // gameplay.h's own block, in `handRecipes()` order: pickaxe, axe, primitive
+    // furnace, survival smelter, then lane D's three electrical rungs.
+    const pinnedOutputs = [0x0039, 0x003A, 0x003B, 0x003C,
+      0x003F, 0x003E, 0x003D];
+    for (let k = 0; k < pinnedOutputs.length; ++k) {
+      M._of_gp_recipe_info(k);
+      eq(`gp.recipeAt${k}`, scratchI32(M, 4).slice()[0], pinnedOutputs[k],
+         TIER.SELF);
+    }
     M._of_gp_recipe_info(0);
     let r = scratchI32(M, 13).slice();
     eq('gp.recipeOutput', r[0], I.pickaxe, TIER.SELF);

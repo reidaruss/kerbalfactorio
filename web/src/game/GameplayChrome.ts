@@ -1,0 +1,87 @@
+// THE POINTER TRANSITIONS, and the construction of the three progression
+// screens. Split out of Gameplay when research, power and equipment landed and
+// the composition hit its 400-line cap, along a seam that was already there:
+// Gameplay owns ORDER, and what these functions own is the one operation that
+// is neither order nor rule, which is handing the mouse over.
+//
+// THE TRANSITION IS THE PART WORTH BEING CAREFUL ABOUT and the reason these are
+// not two lines each. Opening a panel must release the lock, show the cursor
+// and stop the camera dead in the same frame; closing it must take the lock
+// back without the mouse having "moved" while the cursor was free.
+// `Input.setUiCapture` does both halves, including clearing the accumulated
+// deltas, because a frame's worth of unlocked movement applied on re-lock is a
+// visible snap and reads as a bug.
+
+import { ProgressUi } from './ProgressUi.js';
+import { machineView } from './GameplayActions.js';
+import type { Gameplay } from './Gameplay.js';
+import type { Machine } from './Machines.js';
+
+/**
+ * Powered machines that NO POLE REACHES, which run at zero.
+ *
+ * A different sentence from "you are short of power" and worth its own count:
+ * the fix for one is a generator and the fix for the other is a pole, and a
+ * panel that says the wrong one sends the player to build the wrong thing.
+ * -1 from `networkOf` is /core's own "not covered", not an error code.
+ */
+export function offGridCount(g: Gameplay): number {
+  if (!g.factory.power.enabled) return 0;
+  let n = 0;
+  for (const p of g.factory.placed) {
+    if (p.kind !== 'esmelter' || p.build < 0) continue;
+    if (g.factory.power.networkOf(p.build) < 0) n++;
+  }
+  return n;
+}
+
+/** THE pointer transition for the Tab pack. One place, both halves. */
+export function setPackPanel(g: Gameplay, open: boolean): void {
+  g.panel.setOpen(open);
+  if (open) g.modals.touch(g.panel);
+  g.input.setUiCapture(open);
+  g.hud.setVisible(!open);
+  // The bar STAYS UP behind the pack, and takes the pointer: that is the one
+  // moment a player has a cursor to rearrange it with.
+  g.hotbarBar.setInteractive(open);
+  if (open) g.panel.invalidate();
+}
+
+/** Open the furnace UI on `m`, or close it with null. THE pointer transition. */
+export function openMachinePanel(g: Gameplay, m: Machine | null): void {
+  g.openMachine = m;
+  g.furnacePanel.setOpen(m !== null);
+  if (m !== null) g.modals.touch(g.furnacePanel);
+  g.input.setUiCapture(m !== null);
+  g.hud.setVisible(m === null);
+  g.hotbarBar.setVisible(m === null);
+  if (m !== null) g.furnacePanel.render(machineView(g, m));
+}
+
+/**
+ * Build the three progression screens and hand them the transition.
+ *
+ * Called from `Gameplay.create` rather than the constructor because it needs
+ * the factory's own network handle: the grid panel MUST read the same network
+ * the machines are on. Reading a second one would give a panel that is always
+ * right about a grid nobody is standing in, which is the most expensive kind of
+ * wrong a readout can be.
+ */
+export function attachProgress(g: Gameplay): ProgressUi {
+  return new ProgressUi({
+    core: g.core,
+    host: g.host,
+    modals: g.modals,
+    game: g.game,
+    mode: g.mode,
+    power: g.factory.power,
+    offGrid: () => offGridCount(g),
+    setCapture: (open) => {
+      g.input.setUiCapture(open);
+      g.hud.setVisible(!open);
+      g.hotbarBar.setVisible(!open);
+    },
+    flash: (msg, secs) => g.hud.flash(msg, secs),
+    icon: (name) => g.icons.for(name),
+  });
+}

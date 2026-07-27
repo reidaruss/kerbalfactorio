@@ -136,9 +136,21 @@ function row(f: Factory, p: Placed): unknown {
     pos: [p.pos.x, p.pos.y, p.pos.z],
     fwd: [p.fwd.x, p.fwd.y, p.fwd.z],
     remaining: p.kind === 'miner' && live ? f.line.minerRemaining(p.build) : null,
-    input: p.kind === 'smelter' && live ? f.line.inputBuffer(p.build) : null,
+    input: live && f.inputItemOf(p) > 0 ? f.line.inputBuffer(p.build) : null,
     output: machine ? f.line.outputBuffer(p.build) : null,
     working: live ? f.line.working(p.build) : false,
+    // ABI 9. A pole and a generator are GRID citizens with their own id space,
+    // so `build` is -1 on both and `grid` is where they actually live. A
+    // consumer's own network and satisfaction are here rather than only in the
+    // panel because "this machine is slow" and "this machine is on no network
+    // at all" are different faults with different fixes, and a report that
+    // cannot tell them apart sends the player to build the wrong thing.
+    grid: p.grid,
+    fuel: p.kind === 'generator' && p.grid >= 0
+      ? f.power.generatorFuel(p.grid) : null,
+    network: live && p.kind === 'esmelter' ? f.power.networkOf(p.build) : null,
+    satisfactionQ16: live && p.kind === 'esmelter'
+      ? f.power.satisfactionQ16Of(p.build) : null,
   };
 }
 

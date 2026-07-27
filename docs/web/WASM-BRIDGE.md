@@ -1241,3 +1241,98 @@ control. Every authority-sensitive contract now needs an executable guard that
 fails the build, which is what CASE 7b/7c are. The pattern worth copying: assert
 the positive identity **and** the negative one, so the test cannot start passing
 because both sides quietly became the same wrong thing.
+
+## ABI 9 (2026-07-27): research, power and player progression
+
+Three finished `/core` layers that had no door into the browser, exported in one
+bump because standing rule 9 makes a bump atomic and three of them cost three
+times as much. Additive: no existing signature changed. The one behavioural
+change is that `of_gp_init` now also registers the science items and the four
+armour pieces, so **`of_gp_recipe_count` grows from 7 to 13**. The list is
+APPENDED to and never reordered, so every existing index still names the same
+recipe, and `parity.mjs` pins the first seven OUTPUTS one by one rather than the
+length, so adding a recipe passes and moving one fails by name.
+
+### Section 14, the electrical grid (`of_net_*`, power.h through automation.h)
+
+`of_net_enable_grid` / `_grid_enabled`, `_place_pole` / `_remove_pole` /
+`_pole_count`, `_place_burner_generator` / `_insert_fuel` / `_generator_fuel` /
+`_generator_output_w` / `_generator_available_w` / `_generator_energy_j`,
+`_connect_to_grid`, `_place_electric_smelter`, `_network_count` /
+`_network_stats` / `_network_history` / `_wires`, `_build_network` /
+`_build_satisfaction`.
+
+Three things a caller must know.
+
+**WATTS FIT AN int32 AND ENERGY DOES NOT.** One coal unit is 4,000,000,000
+millijoules, which overflows a signed 32-bit integer by a factor of two. Every
+watt figure goes through a CLAMPING conversion (a wrapped watt is a negative
+generator, a number a panel will happily draw and a player will never
+understand), and the one energy figure is `of_net_generator_energy_j`, which
+returns JOULES as a double.
+
+**A NETWORK ID IS NOT A HANDLE.** `power.h` re-derives the partition on every
+topology change, so network 0 after a pole is pulled is a different network from
+network 0 before it. `NetworkStats` comes back by value in `/core` and is copied
+into the scratch here; nothing on the JS side may cache one across a placement.
+
+**THE GRID IS OFF UNTIL A CALLER TURNS IT ON.** A network that never calls
+`of_net_enable_grid` behaves exactly as it always did, every machine at full
+speed whatever its `powerW` says. Turning it on hands the satisfaction decision
+to the `PowerGrid`, and from that moment anything no pole reaches is pinned to
+**zero**, which is the honest answer and is why this is an explicit call rather
+than something the first pole implies.
+
+`of_net_network_stats` fills the i32 scratch with ten fields in `NetworkStats`'
+own order: `id, capacityW, productionW, demandW, consumptionW, satisfactionQ16,
+poleCount, generatorCount, consumerCount, fuelledGeneratorCount`.
+`satisfactionQ16` is passed through UNROUNDED so a client can be checked against
+`/core`'s integer rather than against a percentage that has been through a float.
+`of_net_wires` returns the SEGMENT count and fills the f32 scratch with seven
+floats each; there are exactly (poles in network - 1) of them.
+
+### Section 15, research (`of_rs_*`, research.h)
+
+`of_rs_init`, `_tech_count` / `_tech_id` / `_tech_name` / `_tech_state` /
+`_tech_prereqs` / `_tech_cost` / `_tech_unlocks`, `_try`, `_item_available` /
+`_entity_available` / `_item_gated` / `_recipe_available`, `_set_milestone` /
+`_has_milestone` / `_milestone_name` / `_milestones`, `_unlocked` / `_restore`,
+`_science_items`.
+
+**The science pool IS the player's pack.** `tryResearch` takes any `Inventory&`,
+so it could have had a second one; giving it the pack makes a science pack an
+ordinary item that stacks, is saved by the existing byte serializer, can be
+dropped and is visible in the same grid as everything else. A separate pool
+would need its own UI, its own save field and its own transfer verb, all to
+model a shelf.
+
+**No reason STRING crosses this boundary.** `of_rs_tech_state` returns a
+`ResearchBlock` code plus the offending id (`prereq`, `milestone`, `costItem`,
+`shortBy`) and the client composes the sentence from names it already has. That
+keeps the item name table in one place AND makes the refusal testable:
+prereq-missing and cost-short are different assertions and a boolean cannot tell
+them apart.
+
+**`of_rs_init` is called by `of_gp_init`**, so a client that has an inventory
+always has a tech tree. A client holding one and not the other is a client whose
+every gate silently answers yes, which is indistinguishable from having no gates.
+
+### Section 16, player progression (`of_pg_*`, progression.h)
+
+`of_pg_slot_count` / `_slot_name` / `_armour_node`, `_worn` / `_equip` /
+`_unequip` / `_worn_all` / `_restore_worn`, `_armour_count` / `_armour_info` /
+`_total` / `_damage_after`, `_skill_count` / `_skill_name` / `_skill_state` /
+`_add_xp` / `_apply_yield` / `_skill_xp_all` / `_restore_skills`, `_appearance` /
+`_set_appearance` / `_palette`.
+
+`of_pg_armour_node(slot)` is a PURE FUNCTION OF THE SLOT and returns the four
+node names `assets/models/dist/player/armour_set.glb` ships, because the art
+lane's contract says those names are SLOT names and not SET names: a second
+armour set is a second file carrying the same four nodes and nothing in the
+client moves.
+
+`of_pg_restore_worn` does NOT touch the pack, and that is load bearing. The load
+path restores the pack from its own bytes first, with the worn pieces correctly
+absent from it, so taking them out again would delete four items on every
+reload. Each id is validated against its own slot by `/core`'s own
+serialize/deserialize pair, so a hand-edited save cannot put boots on a head.

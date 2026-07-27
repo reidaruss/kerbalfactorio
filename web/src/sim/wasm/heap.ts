@@ -9,8 +9,10 @@
 // Every scratch read in the codebase goes through these four helpers, so the rule
 // is not something a caller can forget.
 
+import type { OfCoreProgressApi } from './progressabi.js';
+
 /** The Emscripten module, narrowed to the exports we actually call. */
-export interface OfCoreModule {
+export interface OfCoreModule extends OfCoreProgressApi {
   HEAPU8: Uint8Array;
   HEAP8: Int8Array;
   HEAPU16: Uint16Array;
@@ -310,6 +312,7 @@ export interface OfCoreModule {
   /** FS-28: take ONE item off a belt near `unitOffset`. Returns the ItemId. */
   _of_net_take_line_item(n: number, build: number, unitOffset: number,
                          toleranceUnits: number): number;
+
 }
 
 /** Read the f64 scratch arena. Call AFTER the producing call, never before. */

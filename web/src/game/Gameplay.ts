@@ -38,13 +38,15 @@ import { StructureView } from './StructureView.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
-import { craft, loadFurnace, machineView, raze, recipes, slots, switchMode,
-  takeFurnace } from './GameplayActions.js';
+import { assignToBar, craft, loadFurnace, machineView, raze, recipes, slots,
+  switchMode, takeFurnace } from './GameplayActions.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
 import { ObjectivePanel } from '../ui/ObjectivePanel.js';
 import { gameplayReport } from './GameplayReport.js';
+import { attachProgress, openMachinePanel, setPackPanel } from './GameplayChrome.js';
+import type { ProgressUi } from './ProgressUi.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
@@ -108,6 +110,13 @@ export class Gameplay {
   /** Base building: the parts, their bodies and the batch that draws them. */
   readonly structures: Structures;
   readonly structView: StructureView;
+  /** W11: the three screens that show what the player has EARNED, and the
+   *  three /core layers behind them (research.h, power.h, progression.h).
+   *  Built in `create` because the grid panel needs the factory's own network,
+   *  and definitely assigned before any frame runs. */
+  progress!: ProgressUi;
+  /** The DOM parent, so the progression panels share the pack's host. */
+  readonly host: HTMLElement;
   nodesPlaced = 0;
   patchesPlaced = 0;
   placements = 0;
@@ -120,7 +129,7 @@ export class Gameplay {
   saves = 0;
   restored: RestoreLedger | null = null;
   private sinceSaveTicks = 0;
-  private openMachine: Machine | null = null;
+  openMachine: Machine | null = null;
   aimedMachine: Machine | null = null;
   aimedBuild: Placed | null = null;
   aimedPart: StructurePart | null = null;
@@ -138,6 +147,7 @@ export class Gameplay {
 
   private constructor(private readonly d: GameplayDeps) {
     this.mode = new ModeRules(d.mode);
+    this.host = d.host;
     this.game = new GameCore(d.core);
     this.field = new NodeField(this.game, d.origin);
     this.oreField = new OreField(d.core, d.bodyHandle, this.field, d.origin);
@@ -153,7 +163,7 @@ export class Gameplay {
     this.hotbarBar.onSwap = (a, b) => { this.hotbar.swap(a, b); this.hotbarBar.invalidate(); };
     this.fx = new Feedback(this.hud, this.field, this.sfx);
     this.panel = new InventoryPanel(d.host, this.modals, (i) => craft(this, i),
-      this.mode, (m) => switchMode(this, m));
+      this.mode, (m) => switchMode(this, m), (item) => assignToBar(this, item));
     this.panel.closer = () => this.setPanel(false);
     this.goalPanel = new ObjectivePanel(d.host);
     showGoals(this, this.goals.wasVisible());
@@ -200,6 +210,7 @@ export class Gameplay {
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
       g.structures.load(), g.icons.load()]);
     g.structView.build(g.structures);
+    g.progress = attachProgress(g);
     g.hotbarBar.invalidate();
     d.scene.add(g.structView.group);
     // The walker learns about the base through a PORT and not an import: a
@@ -257,7 +268,9 @@ export class Gameplay {
   get input(): Input { return this.d.input; }
 
   /** True while a panel owns the pointer, so the dig action stands down. */
-  get uiOpen(): boolean { return this.panel.isOpen || this.furnacePanel.isOpen; }
+  get uiOpen(): boolean {
+    return this.panel.isOpen || this.furnacePanel.isOpen || this.progress.isOpen;
+  }
 
   /**
    * True when the left button should reach the DIGGING tool: no panel up, and
@@ -275,6 +288,10 @@ export class Gameplay {
   /** Fixed tick. Returns true on the tick a harvest actually granted items. */
   fixedStep(tick: number): boolean {
     this.keys.chrome(this);
+    // The progression screens read RAW codes rather than actions, because
+    // `player/Bindings.ts` is another lane's file tonight. ProgressUi.ts names
+    // the debt and the three lines that delete it.
+    if (!this.suspended) this.progress.step((c) => this.d.input.held(c));
 
     // Machines and the automation network tick on the SIM clock, like
     // everything else that is a rule: a furnace on a synthetic-clock probe
@@ -363,32 +380,14 @@ export class Gameplay {
       ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
         this.interact.target), carried);
     this.hotbarBar.render(this.hotbar.rows((n) => this.icons.for(n)));
+    this.progress.frame();
     stepGoals(this, dt);
     if (this.panel.isOpen) this.panel.render(slots(this), recipes(this));
   }
 
-  /** THE pointer transition. One place, both halves. */
-  setPanel(open: boolean): void {
-    this.panel.setOpen(open);
-    if (open) this.modals.touch(this.panel);
-    this.d.input.setUiCapture(open);
-    this.hud.setVisible(!open);
-    // The bar STAYS UP behind the pack, and takes the pointer: that is the one
-    // moment a player has a cursor to rearrange it with.
-    this.hotbarBar.setInteractive(open);
-    if (open) this.panel.invalidate();
-  }
-
-  /** Open the furnace UI on `m`, or close it with null. THE pointer transition. */
-  openFurnace(m: Machine | null): void {
-    this.openMachine = m;
-    this.furnacePanel.setOpen(m !== null);
-    if (m !== null) this.modals.touch(this.furnacePanel);
-    this.d.input.setUiCapture(m !== null);
-    this.hud.setVisible(m === null);
-    this.hotbarBar.setVisible(m === null);
-    if (m !== null) this.furnacePanel.render(machineView(this, m));
-  }
+  /** THE two pointer transitions. `GameplayChrome` owns both halves of each. */
+  setPanel(open: boolean): void { setPackPanel(this, open); }
+  openFurnace(m: Machine | null): void { openMachinePanel(this, m); }
 
   /** Every node with its world position, nearest first. The probe's eyes. */
   nodes(): unknown[] {

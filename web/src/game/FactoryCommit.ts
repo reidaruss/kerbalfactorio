@@ -23,12 +23,26 @@ import { FOOTPRINT, TYPE_ID, type Factory, type Placed } from './Factory.js';
  * a patch outruns one on the rim. */
 const BELT_SPEED_UNITS_PER_TICK = 8;      // tier 1: 1.875 m/s (ASSET-SPECS 4.12)
 const SMELT_TICKS = 60;                    // the survival smelter's own rate
+/** The powered rung (FS-23). Twice the coal smelter's speed, at 30 kW, which
+ *  is /core's own `placeElectricSmelter` default and the number lane D's
+ *  headline case is derived from: one 90 kW generator runs exactly three of
+ *  these and the fourth adds precisely zero output. */
+const E_SMELT_TICKS = 30;
+const E_SMELT_W = 30000;
 
 export function commitPlan(f: Factory): void {
 
     const carry = f.placed.map((p) => ({
       remaining: p.build < 0 ? 0 : f.line.minerRemaining(p.build),
       input: p.build < 0 || p.kind === 'belt' ? 0 : f.line.inputBuffer(p.build),
+      // FUEL IS CARRIED THE SAME WAY A MINER'S ORE IS, and it has to be: the
+      // grid lives inside the BuildableNetwork, so `recreate()` below destroys
+      // every pole and every generator along with the belts. Without this,
+      // laying one belt tile anywhere in the base would empty every generator
+      // in it, and the symptom would be a base that mysteriously browns out
+      // whenever you build something.
+      fuel: p.kind === 'generator' && p.grid >= 0
+        ? f.power.generatorFuel(p.grid) : p.fuel,
     }));
     // Empty every output into the pack BEFORE the network goes away: those are
     // finished ingots, and a rebuild is not allowed to eat them.
@@ -43,7 +57,53 @@ export function commitPlan(f: Factory): void {
     f.runs.forEach((r, i) => r.forEach((t) => { t.run = i; }));
 
     const ids = f.core.ids;
+    // THE GRID GOES ON THE MOMENT THE FIRST POLE OR GENERATOR EXISTS, and not
+    // one placement before. Turning it on pins anything no pole reaches to
+    // ZERO, so a world that has never built anything electrical must never have
+    // it on: /core is explicit that a network which never calls enableGrid()
+    // behaves exactly as it always did, and that is the property protecting
+    // every already-placed machine and every existing probe.
+    const electrical = f.placed.some((p) => p.kind === 'pole'
+      || p.kind === 'generator' || p.kind === 'esmelter');
+    if (electrical) f.power.enable(true);
+    // Poles FIRST, before any consumer or generator, so the supply areas exist
+    // when the grid partitions them. Placing a generator into a world with no
+    // poles yet is legal and simply leaves it on no network, which is exactly
+    // what the panel then reports.
+    const a = f.anchor();
+    for (const p of f.placed) {
+      if (p.kind !== 'pole') continue;
+      p.grid = f.power.placePole(p.pos.x - a.x, p.pos.y - a.y, p.pos.z - a.z);
+      p.build = -1;
+      p.entity = -1;
+    }
     f.placed.forEach((p, i) => {
+      if (p.kind === 'pole') return;
+      if (p.kind === 'generator') {
+        p.grid = f.power.placeGenerator(p.pos.x - a.x, p.pos.y - a.y,
+          p.pos.z - a.z, ids.coal);
+        // The carried fuel goes straight back in. `insertFuel` returns what was
+        // ACCEPTED, so the stored figure is what the generator really holds and
+        // not what we hoped to give it.
+        p.fuel = p.grid < 0 || carry[i].fuel <= 0 ? 0
+          : f.power.insertFuel(p.grid, ids.coal, carry[i].fuel);
+        p.build = -1;
+        p.entity = -1;
+        return;
+      }
+      if (p.kind === 'esmelter') {
+        const ore = oreFedTo(f, p) || ids.rawIron;
+        const ingot = f.M._of_gp_smelt_output_for(ore) || ids.iron;
+        // Placed AND registered on the grid in ONE call, so a 30 kW machine
+        // cannot exist that quietly runs at full speed off a grid it never
+        // joined. 30 ticks against the coal smelter's 60: the ladder's top rung
+        // is twice as fast and costs watts instead of coal.
+        p.build = f.power.placeElectricSmelter(ore, ingot,
+          p.pos.x - a.x, p.pos.y - a.y, p.pos.z - a.z, E_SMELT_TICKS, E_SMELT_W);
+        if (carry[i].input > 0) f.line.feed(p.build, carry[i].input);
+        p.entity = p.build < 0 ? -1 : f.line.entityIndex(p.build);
+        return;
+      }
       if (p.kind === 'miner') {
         const patch = p.patch >= 0 ? f.ore.patch(p.patch) : null;
         // The deposit is the PATCH's remaining ore on the first build, and the

@@ -48,12 +48,12 @@ the failure this project has paid for six times. See lane B.
 | A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | **DONE. 48/48 validate, byte-identical rebuild, dist 2.69 -> 3.10 MB.** Client wiring **landed by the rendering lane (RN-7): A-1, A-2, A-6, A-8, A-10, A-12, A-13 closed; A-3 and A-4 blocked on `web/src/game` ownership; A-5 and A-11 need decisions** |
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | **all five landed** (GP-36 to GP-40) |
-| D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
+| D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; bridge, placement and panel DONE at ABI 9 by lane H.** D-1 and D-2 closed; D-3 (drawing the wires) still open, the segment list is now exported |
 | E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`, then reviewed and hardened** (525 checks green, 1,200 machines cost 8.04 us/sim-tick, 10 defects found by an adversarial pass over an already-green suite); production hook + combat handoff published, see Blockers |
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | **all four landed** (FS-26 to FS-29) |
 | G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | **DONE. 9 defects found and fixed (PH-28 to PH-36), 10/10 cold ascents bit-identical, a reload mid-orbit no longer loses the world silently.** See the progress log and Blockers |
-| H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | queued, blocked on flight (owns `ui/`) |
-| I | Player skills, appearance, armour | slots for head/chest/legs/feet, customization | `core/gameplay.h`, `web/src/game/` | **headless layer landed** (GP-41 to GP-43, `core/include/of/progression.h`); client wiring handed to Admin |
+| H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | **DONE at ABI 9.** Six-tech survival tree, 7 of 13 hand recipes and 3 buildables gated, DW-29's milestone hook, refusals as CODES. `probes/research.js` green with four negative controls |
+| I | Player skills, appearance, armour | slots for head/chest/legs/feet, customization | `core/gameplay.h`, `web/src/game/` | **DONE at ABI 9.** Bridge, `game/Progression.ts`, equip panel, four slots saved and restored, skills credited from play. `probes/equip.js` green. Armour is NOT drawn on the avatar yet, see the ask below |
 
 ## Standing rules for every lane tonight
 
@@ -61,7 +61,7 @@ the failure this project has paid for six times. See lane B.
    section, work around it, or move to the next item in your own scope.
 2. Every claim carries a number. A probe must prove its own setup worked (DW-20).
 3. `git commit -- <paths>`, never a bare `git add -A` (standing rule 10).
-4. An ABI bump is atomic and its commit boots (standing rule 9). ABI is at 6.
+4. An ABI bump is atomic and its commit boots (standing rule 9). ABI is at 9.
 5. No em dashes. No destructive commands outside the project directory.
 6. No DW numbers; use your domain prefix and escalate anything Admin-level.
 
@@ -595,9 +595,170 @@ attack cadence and how far the cloud spreads before something eats it, and those
 two want different values. Flagging it now so the first playtest knows where to
 look instead of concluding "the enemies feel wrong" and rewriting the model.
 
+### Lane H, 2026-07-27: three defects found by wiring three finished layers into the game
+
+None of these stopped lane H, all three are real, and every one of them was
+invisible to the headless suites that cover the code they are in, because they
+are properties of the code MEETING something else.
+
+**H-1. `HandCrafter::craft` RETURNS TRUE WHILE SILENTLY DROPPING ITS OUTPUT when
+the pack is full, and the thing it drops has already been paid for.** Measured:
+a pack at 20 of 20 slots (Wood 410, Stone 396, Coal 324, Raw iron 216, Raw
+copper 324 is exactly twenty slots at a stack of 100) crafted a primitive
+furnace, spent 5 Wood and 2 Raw iron, and the furnace was gone. `gameplay.h`
+does this on purpose (`inv.add(r.output, ...)` and "any overflow that doesn't
+fit is dropped", with the comment noting that tools and structures stack small
+so it is "effectively never hit in the slice"), and it is now hit, because the
+slice grew a science recipe that a player crafts a dozen times while their pack
+is full of ore. **The only symptom is that nothing happens**, four assertions
+downstream, and it cost this lane an hour. The fix is one line in /core
+(`craft` fails when the output would not fit) and it is somebody's deliberate
+balance decision, not a 4 a.m. edit at the end of an ABI bump.
+
+**H-2. A machine placed where a neighbour stands is put ONE METRE ABOVE IT
+rather than refused (GP-49).** Measured: a generator at y 21103.98 and an
+electric smelter placed on a bearing 15 degrees away at y **21104.98**, the same
+tangent position exactly 1.00 m up. It floats, a downward aim ray passes
+underneath it, and it can never be interacted with, demolished or fed again.
+`MachineAddr.u` carrying the aim's own height is correct and is GP-39; what is
+missing is that an occupied COLUMN should refuse rather than stack.
+
+**H-3. `progression.h` publishes a move-speed figure that is wrong.** GP-42 and
+the header's own comment both say the tier-1 iron set is "0.892 move speed" and
+"12% of walking speed". The four shipped multipliers are 0.99, 0.95, 0.97 and
+0.98, whose product is **0.8940393**, so the set costs 10.6%. The table is right
+and the two published numbers are transcriptions of it that drifted. Caught
+because `probes/equip.js` asserts the PROPERTY (reductions SUM, encumbrances
+MULTIPLY, each derived by equipping one piece at a time and differencing) rather
+than the constant; asserting the constant would have required tuning it until it
+passed, which is standing rule 11's exact failure.
+
+### Lane H, 2026-07-27: what the three new systems still need from other lanes
+
+**H-4, rendering: ARMOUR IS EQUIPPED AND NOT DRAWN, and the two halves are both
+built.** `__of.armour(slot, on, url)` and `PlayerRig.equip` already exist in
+`web/src/app/DebugArmour.ts` and `web/src/player/`, which this lane may not
+touch; `Progression.armourNode(slot)` publishes the four `armour_set.glb` node
+names straight out of /core (`Armour_Head_LOD0` and the other three, asserted in
+`probes/equip.js`). The hookup is one call in `ProgressUi.doEquip` and one in
+`doUnequip`, given a port. **The trap the rendering lane already paid for
+applies here**: `Armour_Chest_LOD0` is four primitives, so GLTFLoader splits it
+into `_0`.. `_3` and an exact-name lookup binds 284 of 904 triangles while every
+slot reports something equipped.
+
+**H-5, input: THREE PANEL KEYS ARE RAW CODES, and it is a bounded debt named in
+one constant.** `PROGRESS_KEYS` in `web/src/game/ProgressUi.ts` holds `KeyJ`
+(research), `KeyU` (power) and `KeyK` (equipment), read through `Input.held`
+because `player/Bindings.ts` is another lane's file tonight. The ask is three
+rows in `BINDINGS` plus all three in `UI_ALLOWED` so a panel's own key can close
+it; the constant then deletes itself and every call becomes `act('research')`.
+`KeyK` is deliberate rather than a leftover: it is `throttleDown`, which means
+something in a rocket and nothing on foot, which is the precedent `Bindings.ts`
+states itself.
+
+**H-6, render: THE WIRES ARE EXPORTED AND NOTHING DRAWS THEM (lane D's D-3).**
+`of_net_wires` fills the f32 scratch with 7 floats a segment
+(`ax ay az bx by bz network`) and `Power.wires()` returns them typed. Measured
+on a driven grid: 3 poles and **2 segments**, 5 poles and **4 segments**, which
+is the N-1 spanning tree lane D promised and never one per in-reach pair. A
+stretched instanced quad per segment is the whole job.
+
+**H-7, art: THREE ITEMS HAVE NO ICON.** The power pole, the burner generator and
+the electric smelter (0x003D to 0x003F) are now craftable and appear in the Tab
+menu and on the hotbar, and `ItemIcons` bakes from the item's display NAME, so
+they currently fall back to text. Lane D flagged this as an escalation before
+they were reachable; they are reachable now.
+
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
+
+- **2026-07-27, lane H: three finished /core layers became reachable from the
+  game, in ONE ABI bump (GP-44 to GP-50).** `research.h` had been green since
+  June and had **never once been called from the browser**; `power.h` and
+  `progression.h` landed complete the night before in the same condition. ABI 8
+  to **9**, atomic: shim, rebuilt and synced wasm, `OF_ABI_VERSION`, and the
+  parity fixture in one commit, and the commit boots (`tools/smoke/reload.mjs`
+  PASS).
+
+  **RESEARCH, with the negative control the brief asked for.** A new survival
+  tech tree (`research.h` section D, TechIds 0x0010+, six techs, three tiers
+  deep) gating things that did not exist before tonight. Driven in the browser
+  from a cold boot, mining and smelting its own science rather than being handed
+  any: **7 of 13 hand recipes read LOCKED on a pack holding 405 Wood, 198 Stone,
+  117 Coal, 81 Raw iron and 142 Raw copper**, which is the control that matters
+  because the refusal can then only be the tree; the Power pole's Craft button
+  **refused a real DOM click** and 12 more real clicks made 12 science packs;
+  buying Electrification through a real click on the Research button spent
+  **exactly 10** and took **gates held 10 to 6** and **locked rows 7 to 5**; and
+  **the same button that refused a click then took one**, putting a pole in the
+  pack. Three more controls: an ungated recipe is craftable in the SAME frame
+  (so a client where everything read locked would fail), Metallurgy did NOT open
+  with Electrification (so a tech that opened its whole branch would fail), and
+  **the ElectricSmelting refusal MOVED from "needs Electrification first" to "13
+  more Automation science"**, which is a claim a boolean cannot express and is
+  the whole reason `ResearchStatus` is a code rather than a sentence (GP-46).
+  DW-29's autopilot is blocked with its prereq in and its cost affordable, and
+  says so: *"you must reach orbit and come back before this can be researched"*.
+
+  **POWER: the panel's number IS /core's number, asserted field by field in the
+  same frame.** Driven grid of 3 poles, 1 burner generator and 3 electric
+  smelters, built through the craft menu, put on the hotbar through the pack
+  tile a player clicks, and placed with the left button. **q16 65536, demand
+  60000 W, capacity 90000 W, production 60000 W**, and the panel's `data-power`
+  attributes carry those four RAW integers, not the formatted text, so the
+  comparison is exact rather than a rounding. Demand is a whole number of 30 kW
+  smelters (2 of 3 running at the reading, asserted); satisfaction is asserted
+  equal to /core's own integer arithmetic `floor(cap * 65536 / demand)`;
+  capacity is **exactly 0** with an unfuelled generator and **exactly the rated
+  90000** once E puts coal in it, which is the control that stops "it works"
+  meaning "a generator exists"; and 3 poles give **2 wire segments** (N-1,
+  never one per in-reach pair). The deficit regime is also proven, from a
+  different run: **q16 0, demand 30000 W, capacity 0 W, verdict `short`**, panel
+  matching /core on every field.
+
+  **EQUIPMENT, persisted and reloaded.** Four slots, four real DOM clicks on
+  Equip, **the armour LEFT the pack** (so a piece is in exactly one place), the
+  four pieces each in their OWN slot, then save, four Removes, the armour comes
+  BACK to the pack and the body reads exactly neutral again, then load and
+  **all four come back piece for piece** with the ledger counting 4. The suit is
+  asserted as a PROPERTY and not a constant: equipping one piece at a time and
+  differencing gives per-piece `0.08/0.990, 0.16/0.950, 0.10/0.970, 0.06/0.980`,
+  and the totals are the SUM (0.4000000059604645) and the PRODUCT
+  (0.8940393328666687) of those, plus an assertion that the two rules are not
+  the same rule. That is what caught H-3.
+
+  **What is now reachable that was not:** a tech tree screen (J), a
+  supply-and-demand screen (U), an equip screen (K), power poles, burner
+  generators and electric smelters as placeable buildings drawing the Tier-0 art
+  that shipped for them and was never drawn, science as a craftable item, armour
+  as craftable and wearable items, E as refuel and E as load-ore, and a hotbar
+  you can rearrange from the pack (nine slots, twelve placeable things).
+
+  **DW-28 closed on the last pool that violated it**, routed in from the
+  rendering lane: `NodeBatch`'s `CAPACITY = 128` had no growth path and returned
+  -1 silently, which is the failure that hid a 150-machine wall and 25% of the
+  foliage. It now doubles to a 16,384 ceiling, counts refusals, shouts `POOL
+  FULL` once, and is on the shared `registerPool` HUD line with the machines,
+  the structures and the props. Its own header comment had PREDICTED the bug.
+
+  Gates: **29/29 ctest** (`research_tests` 69 to **262 checks**), self-determinism
+  **126/126**, cross-toolchain exact **108/108**, `npm --prefix web run check`
+  green at **180 files** all under 400 lines, and `tools/smoke/reload.mjs` PASS.
+  Probes `research.js`, `power.js` and `equip.js` all `valid: true`. Screenshots
+  `docs/screenshots/W11_research_tree.png`, `W11_power_panel.png`,
+  `W11_equip_panel.png`.
+
+  **One thing deferred with its reason, not its excuse.** The four-smelter
+  headline (120 kW against 90 kW reading **49152** exactly) is proven in /core by
+  lane D's 1,188 checks and is NOT reproduced in the browser, because a small
+  pole supplies 2.5 m and `Factory.pick` resolves an aim to the best-centred
+  building within 3.5 m, so in a cluster that tight every bearing that reaches a
+  smelter also reaches the generator beside it and the sweep meant to feed one
+  machine refuels the other on the way (GP-50). The client-side identity
+  `satisfaction == floor(cap * 65536 / demand)` is asserted in every regime the
+  run does reach, and the honest fix is a belt into an electric smelter rather
+  than a probe that hunts for the topology.
 
 - **2026-07-27, rendering lane (RN-7, RN-8) - the overnight art actually reaches
   the screen.** Six defects, and five of them reported success on every

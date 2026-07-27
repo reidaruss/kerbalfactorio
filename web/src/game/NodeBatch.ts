@@ -28,6 +28,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MAX_CAPACITY, registerPool, type PoolReport } from './InstancePools.js';
 
 /** Merge one family's primitives into a single geometry. One is already merged. */
 function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -61,10 +62,29 @@ interface Batch {
    * not drawn, silently and only sometimes.
    */
   free: number[];
+  /** THIS batch's current instance count. It doubles; see `grow`. */
+  cap: number;
 }
 
-/** Instances per material. 24 nodes today, and the ring is authored, not streamed. */
-const CAPACITY = 128;
+/**
+ * DW-28. Instances per material, as a STARTING size that doubles on demand up
+ * to a ceiling, never a fixed wall.
+ *
+ * This was a hard `128` with no growth path and a silent `-1` on exhaustion,
+ * which is the exact failure DW-28 exists to prevent and which this project has
+ * paid for twice: a fixed 256 in `MachineBatch` stopped the factory drawing at
+ * about 150 machines while every indicator read healthy, and the same shape in
+ * `PropLibrary` was measured this week to be costing 25% of the foliage. The
+ * comment on `free` two dozen lines above even PREDICTED it ("the third regrow
+ * would cross the capacity, `acquire` would start returning -1, and the world
+ * would come back with pieces of it simply not drawn, silently and only
+ * sometimes"), which makes it the most expensive kind of known bug.
+ *
+ * The start is deliberately still small, because the clearing genuinely holds a
+ * couple of dozen nodes: growth is for the case nobody predicted, and paying
+ * for 16,384 instances up front to guard against it is the opposite mistake.
+ */
+const START_CAPACITY = 128;
 
 /**
  * Strip to what every geometry in a batch must agree about (see PropLibrary),
@@ -120,7 +140,21 @@ export class NodeBatch {
   private readonly batches = new Map<string, Batch>();
   private readonly parts = new Map<string, NodePart[]>();
 
-  constructor() { this.group.name = 'harvestNodeBatches'; }
+  /** DW-28 bookkeeping: doublings taken, and instances REFUSED at the ceiling.
+   *  `refused` must stay 0 and is what the HUD line and a probe assert on. */
+  private grows = 0;
+  private refused = 0;
+  private warned = false;
+
+  constructor() {
+    this.group.name = 'harvestNodeBatches';
+    // On the SAME HUD line as the machines, the structures and the props, so
+    // one query covers every pool in the client and a new one cannot be added
+    // without appearing there. That derivation is the whole point of the
+    // registry: DW-28's failure was invisible precisely because nothing
+    // published it.
+    registerPool(this);
+  }
 
   /**
    * Register every template at once. Two passes on purpose: a BatchedMesh sizes
@@ -198,7 +232,7 @@ export class NodeBatch {
       side: metal ? THREE.FrontSide : THREE.DoubleSide,
     });
     material.name = `nodes:${name}`;
-    const mesh = new THREE.BatchedMesh(CAPACITY, s.verts, s.idx, material);
+    const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
     mesh.name = `nodes:${name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -209,20 +243,46 @@ export class NodeBatch {
     mesh.sortObjects = false;
     mesh.perObjectFrustumCulled = false;
     this.group.add(mesh);
-    return { mesh, live: 0, free: [] };
+    return { mesh, live: 0, free: [], cap: START_CAPACITY };
   }
 
   partsOf(file: string): readonly NodePart[] | null { return this.parts.get(file) ?? null; }
 
-  /** A slot in `material`'s batch, or -1 if the batch is full or unknown. */
+  /** A slot in `material`'s batch, or -1 only at the CEILING, and then loudly. */
   acquire(material: string): number {
     const b = this.batches.get(material);
     if (b === undefined) return -1;
     const reused = b.free.pop();
     if (reused !== undefined) { b.live++; return reused; }
-    if (b.live >= CAPACITY) return -1;
+    if (b.live >= b.cap && !this.grow(b)) return -1;
     b.live++;
     return b.mesh.addInstance(0);
+  }
+
+  /**
+   * Double one batch. False ONLY at the ceiling, and then it says so on the
+   * console once and counts every refusal after it.
+   *
+   * `setInstanceCount` keeps every live instance (it copies the indirect and
+   * matrix texture data across), so no slot is re-added and no transform is
+   * lost, which is the same mechanism `MachineBatch.grow` uses and the reason
+   * growth is safe mid-frame.
+   */
+  private grow(b: Batch): boolean {
+    const next = Math.min(MAX_CAPACITY, b.cap * 2);
+    if (next <= b.cap) {
+      this.refused++;
+      if (!this.warned) {
+        this.warned = true;
+        console.error(`[of] POOL FULL: node pool is at ${b.cap} instances;`
+          + ' harvest nodes past this exist and can be mined but are NOT DRAWN');
+      }
+      return false;
+    }
+    b.mesh.setInstanceCount(next);
+    b.cap = next;
+    this.grows++;
+    return true;
   }
 
   /** Hand a slot back: hidden now, reusable by the next acquire. */
@@ -251,12 +311,28 @@ export class NodeBatch {
     b.mesh.setMatrixAt(slot, m);
   }
 
-  stats(): { batches: number; materials: string[]; instances: number;
-             free: number; capacity: number } {
+  /** Exactly the shape `InstancePools.PoolReport` asks for, so `registerPool`
+   *  puts this batch on the same HUD line as the machines and the props and a
+   *  probe asserts `refused === 0` on all of them with one query. `capacity` is
+   *  the SMALLEST live batch's, because that is the one that will exhaust
+   *  first and a maximum would hide it. */
+  stats(): PoolReport {
     let n = 0;
+    let cap = 0;
+    for (const b of this.batches.values()) {
+      n += b.live;
+      cap = cap === 0 ? b.cap : Math.min(cap, b.cap);
+    }
+    return { name: 'nodes', batches: this.batches.size, instances: n,
+      capacity: cap, ceiling: MAX_CAPACITY, grows: this.grows,
+      refused: this.refused };
+  }
+
+  /** Free slots and which materials exist, for a probe that wants the detail
+   *  the shared PoolReport shape has no room for. */
+  detail(): { materials: string[]; free: number } {
     let free = 0;
-    for (const b of this.batches.values()) { n += b.live; free += b.free.length; }
-    return { batches: this.batches.size, materials: [...this.batches.keys()],
-      instances: n, free, capacity: CAPACITY };
+    for (const b of this.batches.values()) free += b.free.length;
+    return { materials: [...this.batches.keys()], free };
   }
 }

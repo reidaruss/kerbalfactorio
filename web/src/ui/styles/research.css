@@ -1,0 +1,243 @@
+/* The tech tree screen. Same world as game.css and vab.css: gunmetal panels,
+   one amber accent, hairline rules, monospace. The variables come from game.css,
+   which ResearchPanel pulls in through GameHud.
+
+   THE ONE RULE THIS FILE EXISTS TO HOLD: the tree scrolls SIDEWAYS inside its
+   own box (overflow-x on .tree), never the page. A tree ten tiers wide has to be
+   reachable without the document itself growing a horizontal scrollbar, because
+   the canvas underneath is sized to the viewport and a scrolled page slides the
+   3D view out from under the overlay. */
+
+#of-research {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.55);
+  z-index: 30;
+}
+
+#of-research.open { display: flex; }
+
+#of-research .frame {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 95vw);
+  max-height: 88vh;
+  padding: 14px 16px 12px;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* --- the header line ----------------------------------------------------- */
+#of-research h3 {
+  margin: 0 0 8px;
+  padding-bottom: 7px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-research h3 .prog {
+  float: right;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--of-accent);
+}
+
+#of-research .held {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+#of-research .sci {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  color: var(--of-dim);
+  background: #151b21;
+  border: 1px solid #2c353d;
+}
+
+#of-research .sci b { font-weight: 700; color: var(--of-accent); }
+
+#of-research .none {
+  color: var(--of-dim);
+  font-style: italic;
+}
+
+/* --- the tree: a row of columns, one per tier ---------------------------- */
+#of-research .tree {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+#of-research .col {
+  flex: 0 0 auto;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+#of-research .col > h4 {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 6px 4px 4px;
+  /* Opaque, not the frame's translucent panel: cards scroll UNDER this. */
+  background: #11161b;
+  border-bottom: 1px solid #2c353d;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--of-accent);
+}
+
+#of-research .col > h4 span {
+  float: right;
+  letter-spacing: 0;
+  color: var(--of-dim);
+}
+
+/* --- one tech card ------------------------------------------------------- */
+#of-research .tech {
+  padding: 8px 9px;
+  background: #151b21;
+  border: 1px solid #2c353d;
+  border-left: 3px solid #3a464f;
+}
+
+/* Already researched: green, and it stays legible rather than fading out, so
+   the player can still read what it gave them. */
+#of-research .tech.unlocked {
+  border-left-color: var(--of-good);
+  background: #141d17;
+}
+
+#of-research .tech.unlocked .nm { color: var(--of-good); }
+
+/* Researchable right now: gold, and a shade brighter than everything else on
+   the screen, because it is the only thing on it the player can act on. */
+#of-research .tech.can {
+  border-color: #46525c;
+  border-left-color: var(--of-accent);
+  background: #1d2129;
+  box-shadow: inset 0 0 0 1px rgba(255, 154, 60, 0.20);
+}
+
+#of-research .tech.can .nm { color: var(--of-accent); }
+
+#of-research .tech.blocked { opacity: 0.62; }
+
+#of-research .tech .top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#of-research .tech .nm { font-weight: 600; }
+
+#of-research .tech .tick {
+  flex: 0 0 auto;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--of-good);
+}
+
+#of-research .tech button {
+  flex: 0 0 auto;
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 12px;
+  color: #101418;
+  background: var(--of-accent);
+  border: 0;
+  cursor: pointer;
+}
+
+#of-research .tech button:disabled {
+  color: #667581;
+  background: #2c353d;
+  cursor: not-allowed;
+}
+
+/* --- the prereq chips (what an edge would have said) --------------------- */
+#of-research .needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 5px;
+  margin-top: 5px;
+}
+
+#of-research .needs .need {
+  font-style: normal;
+  font-size: 10px;
+  padding: 0 5px;
+  color: var(--of-dim);
+  border: 1px solid #2c353d;
+}
+
+#of-research .tech.unlocked .needs .need { border-color: #27392c; }
+
+/* --- the price, same markup and same colours as a hand recipe ----------- */
+#of-research .cost {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--of-dim);
+}
+
+#of-research .cost i { font-style: normal; }
+#of-research .cost i.ok { color: var(--of-good); }
+#of-research .cost i.no { color: var(--of-bad); }
+
+#of-research .gives {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--of-dim);
+}
+
+/* The refusal, in the player's words rather than an error code. */
+#of-research .why {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--of-bad);
+}
+
+#of-research .hint {
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--of-dim);
+  border-top: 1px solid var(--of-edge);
+}
+
+/* --- scrollbars, so the tree does not sprout a system-grey slab ---------- */
+#of-research .tree::-webkit-scrollbar { width: 8px; height: 8px; }
+
+#of-research .tree::-webkit-scrollbar-thumb {
+  background: #2c353d;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+#of-research .tree::-webkit-scrollbar-track { background: transparent; }

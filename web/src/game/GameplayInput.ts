@@ -137,7 +137,14 @@ export class GameplayInput {
     // nothing at all. `Gameplay.digAllowed` asks the same question for the dig
     // action, which Systems owns.
     if (!g.hotbar.handInHand) { g.interact.target = null; return false; }
-    return g.swing(f.use, tick, ray);
+    const got = g.swing(f.use, tick, ray);
+    // Practice is credited from the verb, HERE, because this file is where a
+    // press becomes a verb. `interact.last` is the node the swing actually
+    // landed on, so a swing that hit nothing credits nothing.
+    if (got && g.interact.last !== null) {
+      g.progress.creditHarvest(g.game.node(g.interact.last.index)?.kind ?? 1);
+    }
+    return got;
   }
 
   /** What E does, in the order a player expects: machine, then output, then door. */
