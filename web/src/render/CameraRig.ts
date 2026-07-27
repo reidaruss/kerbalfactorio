@@ -16,6 +16,13 @@ export class CameraRig {
   readonly nearCam: THREE.PerspectiveCamera;
   /** Pass 4. FP view model. */
   readonly vmCam: THREE.PerspectiveCamera;
+  /**
+   * The assembly bay. It is here rather than owned by the VAB because rule 2 of
+   * ARCHITECTURE 2.2 is that this class owns every camera in the application,
+   * and a second owner is how two views end up disagreeing about aspect ratio.
+   * It is NOT driven by setView: the VAB orbits it around a rocket instead.
+   */
+  readonly vabCam: THREE.PerspectiveCamera;
 
   private fovDeg = 60;
 
@@ -24,6 +31,8 @@ export class CameraRig {
     this.farCam = new THREE.PerspectiveCamera(this.fovDeg, 1, 0.01, 1e5);
     this.nearCam = new THREE.PerspectiveCamera(this.fovDeg, 1, 0.1, depth.nearFarPlaneM());
     this.vmCam = new THREE.PerspectiveCamera(this.fovDeg, 1, 0.01, 5);
+    this.vabCam = new THREE.PerspectiveCamera(45, 1, 0.05, 400);
+    this.vabCam.name = 'vabCam';
     this.skyCam.name = 'skyCam';
     this.farCam.name = 'farCam';
     this.nearCam.name = 'nearCam';
@@ -53,6 +62,10 @@ export class CameraRig {
   resize(width: number, height: number): void {
     const aspect = width / Math.max(1, height);
     for (const c of this.cameras()) { c.aspect = aspect; c.updateProjectionMatrix(); }
+    // vabCam is resized but is deliberately NOT in cameras(): it keeps its own
+    // 45 degree framing and is never touched by setFov or setView.
+    this.vabCam.aspect = aspect;
+    this.vabCam.updateProjectionMatrix();
   }
 
   /**

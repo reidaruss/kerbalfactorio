@@ -26,12 +26,20 @@ export class Scenes {
   readonly near = new THREE.Scene();
   /** Pass 4: FP arms and held tool. Its own depth range, so it cannot clip. */
   readonly viewModel = new THREE.Scene();
+  /**
+   * The assembly bay. NOT a fifth pass: it REPLACES all four when the player is
+   * in the VAB (Frame.vabActive), because a rocket on a stand shares nothing
+   * with a planet at 600 km and compositing the two would buy only a way for
+   * one to seam into the other. Off, it costs one unrendered THREE.Scene.
+   */
+  readonly vab = new THREE.Scene();
 
   constructor() {
     this.sky.name = 'skyScene';
     this.far.name = 'farScene';
     this.near.name = 'nearScene';
     this.viewModel.name = 'vmScene';
+    this.vab.name = 'vabScene';
     // Compositing is by clear order, never by depth merge, so no scene has a
     // background of its own: pass 1 paints every pixel.
     this.sky.background = null;

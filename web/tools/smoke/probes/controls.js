@@ -82,7 +82,11 @@
   // Consecutive tiles, in the order the drag laid them. Separation is split
   // into the TANGENT-PLANE component (which must be the module, exactly) and
   // the radial rise (which is the terrain and is allowed to be anything).
-  const module = of.game().structures.module.cellM;
+  // The MACHINE tile, not the structural cell. They share the site FRAME and
+  // not the cell SIZE: DW-32 took a foundation from 1 m to 4 m and a belt tile
+  // is still the 1.00 m the mesh ships, so reading `module.cellM` here would
+  // assert belts are laid on foundations. See MACHINE_TILE_M.
+  const module = 1.0;
   const seq = belts.slice(beltsBefore);
   const gaps = [];
   for (let i = 1; i < seq.length; ++i) {
@@ -272,6 +276,12 @@
       await act(['interact'], 6, 0.4);
     },
     hand: async () => { await act(['slot4'], 4, 0.25); },
+    // W8. The assembly bay is a MODE with a key of its own, not a slot, so it
+    // opens with `assembly` (C) rather than through the hotbar. It is in this
+    // table because the derivation above is the enforcement: a menu that joins
+    // the modal stack and cannot be opened here FAILS, which is exactly how
+    // this entry came to be written.
+    vab: async () => { await act(['assembly'], 4, 0.4); },
   };
   const escapeRows = [];
   for (const entry of of.modals().modals) {

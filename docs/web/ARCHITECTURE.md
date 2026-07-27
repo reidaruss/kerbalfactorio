@@ -2267,6 +2267,61 @@ Added at W4 (2026-07-25):
     tool (asserted, not assumed); the ring existed and was correct wherever it
     drew; the tool needs no hold, one press is one application.
 
+124. **A glTF LOADER RENAMES DUPLICATE NODES, AND EVERY SOCKET IN THIS PROJECT
+    IS A DUPLICATE NAME.** `rocket_parts.glb` has 24 parts and twenty of them
+    publish a node called `socket_stack_top`. three's `GLTFLoader.createUniqueName`
+    appends `_1`, `_2` ... to every repeat, so exactly ONE part in the file keeps
+    the authored name and nineteen get a numbered variant. A plain
+    `getObjectByName('socket_stack_top')` on a cloned part therefore returns
+    nothing for nineteen parts out of twenty. **Measured: the assembly view's
+    joint-gap check reported every one of its joints "unmeasurable" while the
+    rocket on screen was perfectly assembled**, which is the worst shape a
+    verification defect can take, because the harness was reporting a failure of
+    the thing it was pointed at rather than of itself. The fix is a regex,
+    `^socket_stack_top(_\d+)?$`, scoped to one cloned part so the match is
+    unambiguous. **The tell was already in the codebase**: `Loaders.selectLod`'s
+    regex carries a trailing `(_\d+)?` and its comment says the suffix is
+    load-bearing. One consumer had met this and written it down; the next one did
+    not read it. Any new code that looks a glTF node up by name goes through a
+    helper that tolerates the suffix.
+
+125. **A PART'S OWN PARENT LINK CONSUMES ONE OF ITS FACES, AND ASKING ONLY ABOUT
+    CHILDREN MISSES IT.** The assembly view offered an attachment node on any
+    stack face with no CHILD attached, which is half the question: a part hanging
+    BELOW its parent has already spent its own TOP face on that joint, and a part
+    sitting ON its parent has spent its BOTTOM. Measured on the reference
+    vehicle: the stack decoupler is 0.25 m tall, so its free-looking top node sat
+    0.25 m from its bottom one, the snap took whichever was nearer, and **the
+    entire lower stage attached UPWARD into the joint it was already hanging
+    from. Length read 7.85 m against 12.10, and the delta-v budget read 3065 m/s
+    against 4923.** Nothing looked wrong in a screenshot, because the parts still
+    met at a plane. The number that caught it was overall LENGTH against the
+    fixture, which is worth noting: mass and per-stage delta-v were still exactly
+    right for the tree that existed, so only a geometric total disagreed.
+
+126. **A SNAP MUST RANK BY DISTANCE TO THE AIM RAY, NOT TO WHERE THE RAY HIT.**
+    The first cut picked the attachment node nearest the point where the cursor
+    ray struck the hull. That makes the winner depend on which surface the ray
+    happened to hit first, so aiming exactly at a node can still select a
+    different one a few centimetres away on the far side of the skin, and a
+    driven probe that aims at a node's own pixel cannot rely on getting it.
+    Ranking by PERPENDICULAR distance to the ray means the node the player put
+    the cursor on wins, which is what "aim at it" means, with depth as the
+    tiebreak so a near node beats a far one behind it.
+
+127. **A SHARED MODULE CONSTANT IS A COUPLING, AND RESCALING ONE SYSTEM MOVED
+    ANOTHER.** DW-32 took the structural module from 1 m to 4 m. `MachinePlacement`
+    was reading `module.cellM` for its tile pitch, so belts silently went to 4 m
+    spacing, `FactoryWiring.chainRuns` correctly stopped seeing consecutive tiles
+    as neighbours, and **one dragged run of four tiles reported as FOUR transport
+    lines, `runs [1,1,1,1]`**. GP-27 asked machines and structures to share the
+    site FRAME, which is what fixed belt alignment; it never asked them to share
+    the cell SIZE, and they are different sizes of thing. Now `MACHINE_TILE_M`
+    is its own named 1.00 m constant, the frame is still shared, and the measured
+    tile-to-tile tangential error is back to **3.168e-06 m**. The general rule:
+    when two systems share a constant, name what each of them means by it, or a
+    rescale of one is a silent rescale of the other.
+
 ### 15.3 The dev loop, concretely
 
 ```

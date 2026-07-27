@@ -42,6 +42,7 @@ import { JitterProbe } from '../render/debug/JitterProbe.js';
 import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { Hud } from '../ui/Hud.js';
 import type { Gameplay } from '../game/Gameplay.js';
+import type { Vab } from '../game/Vab.js';
 import { probeWorkerOracle } from './WorkerProbe.js';
 
 /**
@@ -272,6 +273,26 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     }
   }
 
+  // W8 the assembly bay. Dynamically imported for the same reason gameplay is
+  // (standing rule 7): `?vab=0` must isolate it for real, not merely hide it.
+  // It is built after gameplay because it spends the same pack.
+  let vab: Vab | null = null;
+  if (gameplay !== null && cfg.vab) {
+    const { Vab: VabMode } = await import('../game/Vab.js');
+    const g = gameplay;
+    vab = await VabMode.create({
+      M: core, body: body.handle, host, canvas, scene: scenes.vab,
+      camera: rig.vabCam, modals: g.modals, mode: g.mode,
+      setUiCapture: (on) => { input.setUiCapture(on); },
+      setRenderMode: (on) => { frame.vabActive = on; },
+      setWorldUi: (on) => {
+        g.hud.setVisible(on);
+        g.hotbarBar.setVisible(on);
+        g.goalPanel.setVisible(on && g.goals.visible);
+      },
+    });
+  }
+
   const boot: BootMetrics = {
     wasmLoadMs,
     oracleUs: {
@@ -300,7 +321,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
     hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
     level, levelRing,
-    gameplay, boot,
+    gameplay, vab, boot,
   };
   return { services, canvas };
 }

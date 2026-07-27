@@ -209,7 +209,7 @@ Rules for any export added later:
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 5
+int      of_abi_version(void);                 // 6
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
@@ -223,6 +223,15 @@ build at the same ABI**, which is how the browser ran three-commit-old world
 generation for most of a session: `build.ps1` writes `web/wasm/dist`, the client
 serves `web/public/wasm`, and only `npm run sync-wasm` connects them. Treat
 `build.ps1 && sync-wasm` as one operation.
+
+**ABI 6, 2026-07-26 - THE VESSEL SURFACE** (`vessel.h`, `atmosphere.h`,
+`flight.h`). The part catalogue as data, the item form of a part and its build
+cost, the vessel TREE, staging (an autostage plus a reorder that renumbers the
+parts with the rows) and the derived delta-v, mass and TWR figures DW-30 item 4
+makes non-negotiable. Plus the atmosphere as pure functions and a `FlightSim`
+pass-through, landed in the SAME bump because standing rule 9 makes a bump atomic
+and a second one would cost more than one file. Full surface in section 4.9d.
+Additive: no existing signature changed.
 
 **ABI 5, 2026-07-26 — STRUCTURAL BUILDING SET (`gameplay.h` section S.6).** The
 base-building parts (foundation, floor, wall, door) as data: items
@@ -720,6 +729,134 @@ and adds nothing to the pack, because what it produces is a building in the
 world. Commit the placement only on `1`, so the units can never exist as both a
 wall and a stack. This is why the four never appear in `of_gp_recipe_*`, which
 still lists exactly the four hand recipes.
+
+### 4.9d The VESSEL surface (ABI 6, `vessel.h` / `atmosphere.h` / `flight.h`)
+
+A vessel is a TREE of parts grouped into ordered STAGES (DW-29, PH-17). The shim
+publishes the catalogue as data, the tree, the staging and the derived delta-v
+figures; it computes nothing. If a number here disagrees with
+`core/tests/test_vessel.cpp`, the shim is wrong.
+
+Split across `web/wasm/of_vessel_api.inc`, `of_staging_api.inc` and
+`of_flight_api.inc`, all three included into `of_core_api.cpp` so the scratch
+arena and the gameplay inventory stay one translation unit and `build.ps1` stays
+a one-file command.
+
+```c
+// --- the catalogue. CONTENT: valid before of_gp_init and before any body. ----
+int    of_vs_part_count(void);                 // 24
+int    of_vs_part_index_of(int partId);        // -1 if unknown
+int    of_vs_part_info(int i);                 // f64 scratch, EXACTLY 34
+int    of_vs_part_name(int i);                 // u8 scratch, UTF-8, byte count
+int    of_vs_part_asset(int i);                // u8 scratch: the glb NODE NAME
+int    of_vs_part_item(int i);                 // the ItemId of the item form
+int    of_vs_part_cost_info(int i);            // i32 [item, n, (id,count)*n]
+int    of_vs_part_can_afford(int i);
+int    of_vs_part_pay(int i);                  // all-or-nothing, adds NO item
+int    of_vs_part_refund(int i);               // -> input stacks fully returned
+
+// --- the tree ----------------------------------------------------------------
+int    of_vs_create(void);
+void   of_vs_destroy(int v);
+int    of_vs_clear(int v);
+int    of_vs_add_root(int v, int partId);      // -> handle, or -1
+int    of_vs_attach(int v, int parent, int partId, int how,
+                    double radialAngleRad, double radialOffsetM);
+int    of_vs_remove(int v, int handle);        // the subtree; -> parts removed
+int    of_vs_count(int v);
+int    of_vs_parts(int v);       // i32, 5/part [handle, partId, parent, attach, stage]
+int    of_vs_transforms(int v);  // f64, 8/part [oXYZ, cXYZ, radialAngle, propKg]
+double of_vs_length(int v);
+int    of_vs_set_part_stage(int v, int handle, int stage);   // -1 = payload
+int    of_vs_assign_stage(int v, int handle, int stage);     // the whole subtree
+
+// --- staging -----------------------------------------------------------------
+int    of_vs_stage_count(int v);
+int    of_vs_stage_info(int v, int k);  // i32 [nAct, nDec, activate.., decouple..]
+int    of_vs_stage_clear(int v);
+int    of_vs_stage_add(int v);
+int    of_vs_stage_push(int v, int k, int which, int handle);  // 0 act, 1 dec
+int    of_vs_autostage(int v);          // derive the table from the TREE
+int    of_vs_stage_move(int v, int from, int to);
+double of_vs_fire_stage(int v);         // -> jettisoned kg, or -1
+int    of_vs_next_stage_index(int v);
+
+// --- the derived figures (DW-30 item 4) --------------------------------------
+int    of_vs_stage_performance(int v);  // f64, 12/stage; returns the STAGE COUNT
+double of_vs_total_dv_vacuum(int v);
+double of_vs_remaining_dv_vacuum(int v);
+int    of_vs_mass_properties(int v);    // f64, EXACTLY 15
+double of_vs_static_margin(int v);      // NEGATIVE is stable
+double of_vs_twr(int v, int stageIndex, int body, double altitudeM);
+double of_vs_propellant_aboard(int v, int kind);
+int    of_vs_crew_capacity(int v);
+
+// --- atmosphere: pure functions of (bodyId, altitude) ------------------------
+double of_atmo_density(int bodyId, double altM);
+double of_atmo_density_raw(int bodyId, double altM);
+double of_atmo_pressure_ratio(int bodyId, double altM);
+double of_atmo_space_altitude(int bodyId);
+int    of_atmo_in_space(int bodyId, double altM);
+double of_atmo_dynamic_pressure(double rho, double airspeedMS);
+double of_atmo_lapse(double seaLevel, double vacuum, double pRatio);
+double of_atmo_g0(void);                // 9.80665, a UNIT CONVERSION (PH-18)
+
+// --- the flight sim, for the NEXT lane ---------------------------------------
+int    of_fl_create(int v, int body);   // COPIES the design out of v
+void   of_fl_destroy(int f);
+int    of_fl_set_pos_vel(int f, double px, double py, double pz,
+                         double vx, double vy, double vz);
+int    of_fl_set_attitude(int f, double fx, double fy, double fz,
+                          double rx, double ry, double rz);
+int    of_fl_set_ang_vel(int f, double x, double y, double z);
+int    of_fl_set_throttle(int f, double t);
+int    of_fl_set_sas(int f, int mode);  // 0 Off 1 Hold 2 Pro 3 Retro 4 Command
+int    of_fl_set_sas_command(int f, double x, double y, double z);
+int    of_fl_capture_hold(int f);
+int    of_fl_step(int f, double dt);
+int    of_fl_step_n(int f, double dt, int n);
+double of_fl_stage(int f);
+int    of_fl_next_stage_index(int f);
+int    of_fl_on_rails_eligible(int f);
+int    of_fl_state(int f);              // f64, EXACTLY 17
+int    of_fl_telemetry(int f);          // f64, EXACTLY 12
+int    of_fl_orbit(int f);              // f64, EXACTLY 6
+double of_fl_remaining_dv_vacuum(int f);
+int    of_fl_parts(int f);              // same layout as of_vs_parts
+int    of_fl_transforms(int f);         // same layout as of_vs_transforms
+int    of_fl_guidance_pitch(double altitudeM);  // f64 [pitchRad, pastVertical]
+```
+
+**The ItemId block for parts is `0x0050..0x006A`**, allocated in
+`of_vessel_api.inc` as the pure function `ItemId = 0x0050 + (PartId - 0x0100)`.
+It sits clear of every pinned block (slice `0x0001..0x0016`, science `0x0020+`,
+survival `0x0030..0x003C`, structures `0x0040..0x0043`). Physics R9 said somebody
+had to allocate it and `vessel.h` deliberately has no opinion about cost; this is
+that allocation, and it should be PROMOTED into `gameplay.h` the next time
+`/core` is opened. Until it is, a part item cannot be added to the pack
+(`Inventory::add` asks the registry for a stack size and refuses an unknown id),
+which costs nothing today: a part is PAID FOR and placed on a rocket, exactly the
+contract `of_gp_structure_pay` has.
+
+**`of_vs_autostage` derives the table from the tree**, applying PH-17 outward: a
+decoupler and everything below it burns together, deeper decouplers fire first,
+decouplers at the same DEPTH leave together (a pair of strap-ons, no special
+case), and stage k lights burn k while dropping the hardware of burn k-1. A
+vessel with no decouplers is ONE stage, which is the correct reading of a
+single-stage rocket rather than a degenerate case. On the reference vehicle it
+reproduces the hand-written table in `test_vessel.cpp` exactly.
+
+**`of_vs_stage_move` renumbers the PARTS with the rows.** Every per-stage figure
+is a filter over `PartInstance::stage` (`vessel.h` section 7), so permuting the
+rows alone would leave the readout describing a vessel that does not exist. The
+permutation is applied to both or to neither. Measured on the reference vehicle:
+swapping the two stages takes the budget from 4922.91 to 3445.45 m/s, and moving
+it back restores 4922.908064601136 BIT-IDENTICALLY.
+
+**Verified against /core's own fixture** through the browser
+(`web/tools/smoke/probes/vab.js`): per-stage 1857.7928 + 3065.1153 = 4922.9081
+m/s vacuum, launch mass 9845 kg, pad TWR 1.6566671, length 12.10 m, static
+margin -0.6007 m.
 
 ### 4.10 Determinism diagnostics
 

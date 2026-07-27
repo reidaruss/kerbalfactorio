@@ -15,6 +15,19 @@ const HORIZON = new THREE.Color(0xff9b52);
 const UP_FALLBACK = new THREE.Vector3(0, 1, 0);
 
 export function registerSystems(s: Services, loop: Loop): void {
+  // W8. The assembly bay is entered and left with ONE key, edge-detected here
+  // rather than inside Gameplay because the bay is not part of Gameplay: it owns
+  // its own pointer, its own scene and its own pass. Escape still closes it, and
+  // through the DERIVED modal list rather than through a second handler (GP-25),
+  // because its panel joins the stack in its own constructor.
+  let assemblyHeld = false;
+  loop.onFixedStep.push(() => {
+    const on = s.input.act('assembly');
+    if (on && !assemblyHeld) s.vab?.toggle();
+    assemblyHeld = on;
+  });
+  loop.onDrain.push(() => { s.vab?.tick(performance.now()); });
+
   const bodyCenterEngine = new THREE.Vector3();
   const eye = new THREE.Vector3();
   const fwd = new THREE.Vector3();

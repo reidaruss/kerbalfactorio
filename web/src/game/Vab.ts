@@ -1,0 +1,398 @@
+// The Vehicle Assembly Building: a MODE you enter and leave, not a dialog.
+//
+// While it is open it replaces the four render passes with its own scene
+// (Frame.vabActive) and takes the pointer, and it hands both back on exit. The
+// numbers are /core's and are recomputed on every structural change, because
+// DW-30 item 4 makes per-stage delta-v always visible and a readout you have to
+// ask for is a readout nobody reads.
+//
+// The pointer layer is VabInput, the panel is ui/VabPanel, the scene is VabView,
+// the model is VesselDesign, the rules are VesselNodes. This file is the MODE:
+// what is in hand, what a click means, and who pays.
+import * as THREE from 'three';
+import { VabPanel } from '../ui/VabPanel.js';
+import type { ModalStack } from '../ui/ModalStack.js';
+import type { OfCoreModule } from '../sim/wasm/heap.js';
+import { scratchU8 } from '../sim/wasm/heap.js';
+import { vesselAbi, ATTACH_RADIAL } from '../sim/wasm/vesselabi.js';
+import type { ModeRules } from './GameMode.js';
+import { offeredParts, readCatalogue } from './VesselCatalogue.js';
+import type { PartRow } from './VesselCatalogue.js';
+import { VesselDesign } from './VesselDesign.js';
+import { VabView } from './VabView.js';
+import { VabCamera } from './VabCamera.js';
+import { VabPointer } from './VabInput.js';
+import { partRows, stageRows, catalogueReport, jointGapReport } from './VabRows.js';
+import {
+  attachModeOf, attachNodes, fitAt, ghostOrigin, nearestNodeToRay, symmetryAngles,
+} from './VesselNodes.js';
+import type { AttachNode } from './VesselNodes.js';
+import * as store from './VabStore.js';
+
+export interface VabDeps {
+  M: OfCoreModule;
+  body: number;
+  host: HTMLElement;
+  canvas: HTMLCanvasElement;
+  scene: THREE.Scene;
+  camera: THREE.PerspectiveCamera;
+  modals: ModalStack;
+  mode: ModeRules;
+  setUiCapture(on: boolean): void;    // mute the world's input
+  setRenderMode(vab: boolean): void;  // flip to the bay's single pass
+  setWorldUi(visible: boolean): void; // the bay is a PLACE, not an overlay, so
+                                      // the surface HUD has no business in it
+}
+
+/** How far from a node the cursor may be and still snap, in metres. */
+const SNAP_M = 1.6;
+
+export class Vab {
+  readonly design: VesselDesign;
+  readonly view: VabView;
+  readonly cam: VabCamera;
+  readonly panel: VabPanel;
+  readonly pointer: VabPointer;
+  readonly catalogue: PartRow[];
+
+  open = false;
+  hand: PartRow | null = null;
+  selected = -1;
+  symmetry = 1;
+  message = '';
+  placed = 0; refused = 0; removed = 0; enters = 0;
+
+  private readonly byIdMap = new Map<number, PartRow>();
+  private readonly itemNames = new Map<number, string>();
+  nodes: AttachNode[] = [];   // public: a probe PROJECTS these to aim at a pixel
+  private active: AttachNode | null = null;
+  private msgUntil = 0;
+  // Once the player reorders a stage by hand the table is THEIRS: a later
+  // placement must not silently rewrite it.
+  private handStaged = false;
+
+  private constructor(private readonly d: VabDeps) {
+    this.catalogue = readCatalogue(d.M);
+    for (const p of this.catalogue) this.byIdMap.set(p.id, p);
+    this.design = new VesselDesign(d.M, d.body);
+    this.view = new VabView(d.scene);
+    this.cam = new VabCamera(d.camera);
+    this.pointer = new VabPointer({
+      canvas: d.canvas, camera: d.camera, cam: this.cam,
+      onAim: (x, y) => this.aim(x, y),
+      onClick: (x, y) => this.click(x, y),
+      onCancel: () => this.dropHand(),
+    });
+    this.panel = new VabPanel(d.host, d.modals, {
+      pick: (i) => this.takeInHand(i),
+      stageUp: (i) => this.moveStage(i, i - 1),
+      stageDown: (i) => this.moveStage(i, i + 1),
+      autostage: () => { this.design.autostage(); this.handStaged = false; this.after('re-staged'); },
+      clear: () => { this.design.clear(); this.handStaged = false; this.after('cleared'); },
+      save: (n) => this.saveAs(n),
+      load: (n) => this.loadNamed(n),
+      remove: (n) => { store.removeDesign(n); this.after(`deleted ${n}`); },
+      symmetry: (n) => { this.symmetry = n; this.render(); },
+      exit: () => this.leave(),
+    });
+    this.panel.closer = () => this.leave();
+  }
+
+  static async create(d: VabDeps): Promise<Vab> {
+    const v = new Vab(d);
+    await v.view.load(v.catalogue);
+    const saved = store.loadCurrent();
+    if (saved !== null) { v.design.fromJson(saved); v.handStaged = true; }
+    v.rebuild();
+    return v;
+  }
+
+  // --- the mode -------------------------------------------------------------
+  enter(): void {
+    if (this.open) return;
+    this.open = true;
+    this.enters += 1;
+    this.d.setRenderMode(true);
+    this.d.setUiCapture(true);
+    this.d.setWorldUi(false);
+    this.panel.setOpen(true);
+    this.d.modals.touch(this.panel);
+    this.pointer.bind();
+    this.frameCamera();
+    this.after('');
+  }
+
+  leave(): void {
+    if (!this.open) return;
+    this.open = false;
+    this.hand = null;
+    this.active = null;
+    this.view.clearGhost();
+    this.view.clearNodes();
+    this.panel.setOpen(false);
+    this.pointer.unbind();
+    this.d.setUiCapture(false);
+    this.d.setWorldUi(true);
+    this.d.setRenderMode(false);
+  }
+
+  toggle(): void { if (this.open) this.leave(); else this.enter(); }
+
+  /** Once per rendered frame while open. Only the message has a clock. */
+  tick(nowMs: number): void {
+    if (this.open && this.message !== '' && nowMs > this.msgUntil) {
+      this.message = '';
+      this.render();
+    }
+  }
+
+  get camera(): THREE.PerspectiveCamera { return this.d.camera; }
+
+  frameCamera(): void {
+    const b = this.view.bounds();
+    this.cam.frame(b.centre, b.size);
+  }
+
+  // --- what the pointer means -----------------------------------------------
+  private aim(ndcX: number, ndcY: number): void {
+    const hand = this.hand;
+    if (hand === null) { this.view.clearGhost(); return; }
+    if (this.design.empty) {
+      this.active = null;
+      this.view.showGhost(hand, [0, 0, 0], 0, false, true);
+      return;
+    }
+    const ray = this.view.aimRay(this.d.camera, ndcX, ndcY);
+    this.active = nearestNodeToRay(this.nodes, hand, ray.o[0], ray.o[1], ray.o[2],
+                                   ray.d[0], ray.d[1], ray.d[2], SNAP_M);
+    this.view.showNodes(this.nodes, this.active);
+    if (this.active === null) { this.view.clearGhost(); return; }
+    const o = ghostOrigin(this.active, hand);
+    this.view.showGhost(hand, o, this.active.angleRad,
+                        this.active.kind === 'radial', true);
+  }
+
+  private click(ndcX: number, ndcY: number): void {
+    if (this.hand !== null) { this.aim(ndcX, ndcY); this.commitHere(); return; }
+    const hit = this.view.pick(this.d.camera, ndcX, ndcY);
+    this.selected = hit === null ? -1 : hit.handle;
+    this.view.highlight(this.selected >= 0 ? [this.selected] : []);
+    this.render();
+  }
+
+  /** Drive the aim from a debug caller, through the path a real move takes. */
+  hoverNdc(ndcX: number, ndcY: number): void { this.pointer.aimAt(ndcX, ndcY); }
+  dropHand(): void {
+    this.hand = null;
+    this.active = null;
+    this.view.clearGhost();
+    this.view.clearNodes();
+    this.render();
+  }
+
+  // --- editing --------------------------------------------------------------
+  private takeInHand(index: number): void {
+    const p = this.catalogue[index];
+    if (p === undefined) return;
+    if (this.hand !== null && this.hand.index === index) { this.dropHand(); return; }
+    this.hand = p;
+    this.selected = -1;
+    this.view.highlight([]);
+    this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
+    this.view.showNodes(this.nodes, this.active);
+    this.render();
+  }
+
+  /** Commit the part in hand wherever it is currently snapped. */
+  commitHere(): boolean {
+    const hand = this.hand;
+    if (hand === null) return this.refuse('nothing in hand');
+
+    if (this.design.empty) {
+      if (!hand.nodeBottom && !hand.nodeTop) {
+        return this.refuse(`${hand.label} cannot start a stack`);
+      }
+      if (!this.canAfford(hand)) return this.refuse(this.costWhy(hand));
+      if (!this.pay(hand)) return this.refuse(this.costWhy(hand));
+      this.design.addRoot(hand.id);
+      this.placed += 1;
+      return this.afterPlace(hand);
+    }
+
+    const node = this.active;
+    if (node === null) return this.refuse('no attachment node there');
+    const fit = fitAt(node, hand);
+    if (!fit.ok) return this.refuse(fit.why);
+
+    const how = attachModeOf(node);
+    const angles = how === ATTACH_RADIAL
+      ? symmetryAngles(node, this.symmetry) : [node.angleRad];
+    // Symmetry is ALL-OR-NOTHING on cost. A player who can afford one fin of
+    // four and receives one fin has been charged for a mistake they cannot see,
+    // so the whole set is checked before the first unit is spent.
+    for (let i = 0; i < angles.length; ++i) {
+      if (!this.canAfford(hand)) {
+        return this.refuse(i === 0 ? this.costWhy(hand)
+                                   : `only ${i} of ${angles.length} affordable`);
+      }
+      if (!this.pay(hand)) return this.refuse(this.costWhy(hand));
+      this.design.attach(node.parent, hand.id, how, angles[i] ?? 0, node.offsetM);
+      this.placed += 1;
+    }
+    return this.afterPlace(hand);
+  }
+
+  private afterPlace(hand: PartRow): boolean {
+    if (!this.handStaged) this.design.autostage();
+    this.after(`placed ${hand.label}`);
+    this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
+    this.view.showNodes(this.nodes, this.active);
+    return true;
+  }
+
+  removeAt(handle: number): boolean {
+    if (this.design.find(handle) === null) return false;
+    const subtree = this.design.subtree(handle);
+    const n = this.design.remove(handle);
+    if (n <= 0) return false;
+    if (!this.d.mode.freeBuild) {
+      const V = vesselAbi(this.d.M);
+      for (const p of subtree) {
+        const def = this.byIdMap.get(p.partId);
+        if (def !== undefined) V._of_vs_part_refund(def.index);
+      }
+    }
+    this.removed += n;
+    this.selected = -1;
+    if (!this.handStaged) this.design.autostage();
+    this.after(`removed ${n} part${n === 1 ? '' : 's'}`);
+    this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
+    return true;
+  }
+
+  private moveStage(from: number, to: number): void {
+    if (!this.design.stageMove(from, to)) return;
+    this.handStaged = true;
+    this.after(`stage ${from} to ${to}`);
+  }
+
+  // --- cost, through GameMode and never through a boolean ------------------
+
+  private canAfford(p: PartRow): boolean {
+    return this.d.mode.freeBuild || this.affordInCore(p);
+  }
+
+  private pay(p: PartRow): boolean {
+    if (this.d.mode.freeBuild) return true;
+    return vesselAbi(this.d.M)._of_vs_part_pay(p.index) === 1;
+  }
+
+  /** /core's OWN verdict, not overridden by the mode. GP-29: a mode that lifts a
+   *  rule must publish what it overrides, or "12 placed" is indistinguishable
+   *  from a broken affordability check. */
+  affordInCore(p: PartRow): boolean {
+    return vesselAbi(this.d.M)._of_vs_part_can_afford(p.index) === 1;
+  }
+
+  private costWhy(p: PartRow): string { return `need ${this.costText(p)}`; }
+
+  private costText(p: PartRow): string {
+    if (this.d.mode.freeBuild) return 'free';
+    if (p.cost.length === 0) return 'no cost';
+    return p.cost.map((c) => `${c.count} ${this.itemName(c.item)}`).join(' + ');
+  }
+
+  private itemName(item: number): string {
+    const hit = this.itemNames.get(item);
+    if (hit !== undefined) return hit;
+    const n = this.d.M._of_gp_item_name(item);
+    const s = n > 0 ? new TextDecoder().decode(scratchU8(this.d.M, n).slice())
+                    : `item ${item}`;
+    this.itemNames.set(item, s);
+    return s;
+  }
+
+  private refuse(why: string): boolean {
+    this.refused += 1;
+    this.after(why);
+    return false;
+  }
+
+  // --- designs -------------------------------------------------------------
+
+  private saveAs(name: string): void {
+    const ok = store.saveDesign(name, this.design.toJson(name));
+    this.after(ok ? `saved ${name}` : 'name the design first');
+  }
+
+  private loadNamed(name: string): void {
+    const d = store.loadDesign(name);
+    if (d === null) { this.after(`no design ${name}`); return; }
+    // Loading neither charges nor refunds. A saved design is a DRAWING, and this
+    // is the one place the pack is deliberately untouched. Stated because it is
+    // a balance hole a later pass may want to close.
+    this.design.fromJson(d);
+    this.handStaged = true;
+    this.frameCamera();
+    this.after(`loaded ${name}`);
+  }
+
+  // --- rendering the state out ---------------------------------------------
+
+  private after(msg: string): void {
+    if (msg !== '') { this.message = msg; this.msgUntil = performance.now() + 3000; }
+    store.saveCurrent(this.design.toJson('current'));
+    this.rebuild();
+  }
+
+  private rebuild(): void {
+    this.view.rebuild(this.design.parts, (id) => this.byIdMap.get(id));
+    this.view.highlight(this.selected >= 0 ? [this.selected] : []);
+    this.render();
+  }
+
+  private render(): void {
+    if (!this.open) return;
+    const offered = offeredParts(this.catalogue, this.d.mode);
+    this.panel.render(
+      partRows(offered, this.hand === null ? -1 : this.hand.index,
+               (p) => this.costText(p), (p) => this.canAfford(p)),
+      stageRows(this.design.stages), this.design.stats,
+      store.listDesigns(), this.symmetry, this.message);
+  }
+
+  // --- what a probe reads ---------------------------------------------------
+
+  /** Joint gaps MEASURED on the drawn scene. See VabView.jointGaps. */
+  measureJointGaps(): unknown { return jointGapReport(this.view, this.design.parts); }
+
+  catalogueReport(): unknown {
+    return catalogueReport(this.catalogue, this.view, (p) => this.affordInCore(p));
+  }
+
+  report(): unknown {
+    return {
+      open: this.open, mode: this.d.mode.mode, freeBuild: this.d.mode.freeBuild,
+      catalogue: this.catalogue.length,
+      offered: offeredParts(this.catalogue, this.d.mode).length,
+      meshesMissing: [...this.view.missing],
+      assetsRenamed: [...this.view.renamed],
+      renameDebt: VabView.renameCount,
+      hand: this.hand === null ? null : this.hand.label,
+      handIndex: this.hand === null ? -1 : this.hand.index,
+      symmetry: this.symmetry, selected: this.selected, nodes: this.nodes.length,
+      snapped: this.active === null ? null
+        : { parent: this.active.parent, kind: this.active.kind, pos: this.active.posM },
+      placed: this.placed, refused: this.refused, removed: this.removed,
+      enters: this.enters, handStaged: this.handStaged,
+      parts: this.design.parts.map((p) => ({
+        handle: p.handle, partId: p.partId, parent: p.parent,
+        attach: p.attach, stage: p.stage, origin: p.originM,
+      })),
+      stages: this.design.stages, stats: this.design.stats,
+      designs: store.listDesigns(),
+      camera: this.cam.report(), pointer: this.pointer.report(),
+      message: this.message,
+    };
+  }
+}

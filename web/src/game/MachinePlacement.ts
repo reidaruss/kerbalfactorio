@@ -34,6 +34,22 @@ import { SITE_REACH_M, localOf, worldOf, type Site, type StructureModule }
   from './StructureGrid.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
+/**
+ * The tile pitch a MACHINE stands on, in metres. It is deliberately NOT
+ * `module.cellM`.
+ *
+ * A machine and a foundation share the site FRAME, which is what GP-27 asked
+ * for and what made belts line up; they do not share the CELL SIZE, because
+ * they are different sizes of thing. DW-32 took the structural module from 1 m
+ * to 4 m, and machines went with it because this file was reading `cellM`: belt
+ * tiles ended up 4 m apart, so `FactoryWiring.chainRuns` correctly stopped
+ * seeing them as neighbours and `probes/controls.js` measured one dragged run
+ * of four tiles reported as FOUR transport lines, `runs [1,1,1,1]`. The belt
+ * mesh is a 1.00 m tile and the miner, smelter and assembler are built to it,
+ * so 1.00 is what the assets ship and 1.00 is what this is.
+ */
+export const MACHINE_TILE_M = 1.0;
+
 /** What a placement needs of the site registry. A port, so Factory does not
  *  have to know the whole base-building module. */
 export interface SiteHost {
@@ -88,12 +104,12 @@ export function siteAt(host: SiteHost, p: Vec3d): { site: Site; prospective: boo
 }
 
 /** Which square of a site's grid a point falls in. */
-export function addressIn(site: Site, m: StructureModule, p: Vec3d,
+export function addressIn(site: Site, _m: StructureModule, p: Vec3d,
                           prospective = false): MachineAddr {
   const l = localOf(site, p, new THREE.Vector3());
   return {
     site, prospective,
-    i: Math.floor(l.x / m.cellM), j: Math.floor(l.y / m.cellM),
+    i: Math.floor(l.x / MACHINE_TILE_M), j: Math.floor(l.y / MACHINE_TILE_M),
   };
 }
 
@@ -106,7 +122,7 @@ export function addressIn(site: Site, m: StructureModule, p: Vec3d,
  */
 export function anchorIn(host: SiteHost, a: MachineAddr):
 { pos: Vec3d; up: THREE.Vector3 } {
-  const c = host.module.cellM;
+  const c = MACHINE_TILE_M;
   const p = worldOf(a.site, (a.i + 0.5) * c, (a.j + 0.5) * c, 0,
     { x: 0, y: 0, z: 0 });
   const r = Math.hypot(p.x, p.y, p.z) || 1;

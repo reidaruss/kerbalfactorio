@@ -186,7 +186,19 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       cost rather than crafting an item, so of_gp_recipe_* is unchanged and
 //       still lists exactly the four hand recipes. Additive: no existing
 //       signature changed.
-OF_API int of_abi_version(void) { return 5; }
+//   6: THE VESSEL SURFACE (vessel.h / atmosphere.h / flight.h). The part
+//       catalogue as data (of_vs_part_*), the item form of a part and its build
+//       cost (ItemId block 0x0050..0x006A, allocated in of_vessel_api.inc),
+//       building and editing a vessel TREE (of_vs_create / _add_root / _attach /
+//       _remove / _parts / _transforms), STAGING including an autostage and a
+//       reorder that renumbers the parts with the rows (of_vs_autostage /
+//       _stage_move), and the derived figures DW-30 item 4 makes non-negotiable
+//       (of_vs_stage_performance / _total_dv_vacuum / _mass_properties / _twr).
+//       Plus the atmosphere as pure functions (of_atmo_*) and a FlightSim
+//       pass-through (of_fl_*) for the flight lane, landed here because an ABI
+//       bump is atomic and a second one would cost more than one file.
+//       Additive: no existing signature changed.
+OF_API int of_abi_version(void) { return 6; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -2278,3 +2290,14 @@ OF_API int of_gp_item_ids(void) {
   g_i32.push_back(sv::items::SurvivalSmelter);
   return 13;
 }
+
+// =============================================================================
+// §11-§13 — the VESSEL surface (ABI 6). Split into three included files so that
+// none of them, and not this one either, grows past reading size. They are
+// #included rather than compiled separately because the scratch arena, the
+// Registry template and the gameplay inventory above all have internal linkage:
+// one translation unit is the contract, and build.ps1 stays a one-file command.
+// =============================================================================
+#include "of_vessel_api.inc"    // §11  catalogue, part costs, the tree
+#include "of_staging_api.inc"   // §12  staging, autostage, reorder, delta-v
+#include "of_flight_api.inc"    // §13  atmosphere + FlightSim (for the next lane)

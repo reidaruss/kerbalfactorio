@@ -12,6 +12,14 @@ export interface PassTimings {
 
 export class Frame {
   readonly timings: PassTimings = { sky: 0, far: 0, near: 0, viewModel: 0, total: 0 };
+  /**
+   * The assembly bay REPLACES the four passes rather than adding a fifth. A
+   * rocket on a stand and a planet at 600 km share no depth range, no lighting
+   * and no camera, so compositing them would buy nothing but a way for one to
+   * seam into the other. It also means `info().calls` in the VAB is the VAB's
+   * own draw-call count and not the planet's plus a bit.
+   */
+  vabActive = false;
 
   constructor(
     private readonly r: OFRenderer,
@@ -26,6 +34,14 @@ export class Frame {
 
     r.resetInfo();
     r.clearAll();
+
+    if (this.vabActive) {
+      r.render(this.scenes.vab, this.rig.vabCam);
+      const tv = performance.now();
+      t.sky = 0; t.far = 0; t.near = tv - t0; t.viewModel = 0;
+      t.total = tv - t0;
+      return;
+    }
 
     r.render(this.scenes.sky, this.rig.skyCam);
     const t1 = performance.now();

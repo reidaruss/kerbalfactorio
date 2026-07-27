@@ -20,6 +20,13 @@ import type { OfCoreModule } from './heap.js';
 // of_gp_structure_count / _info / _can_afford / _pay expose the four base
 // building parts and their authored build costs. Additive: no existing
 // signature or struct layout changed, so every ABI 4 caller is unaffected.
+// ABI 6 (2026-07-26): the VESSEL SURFACE (vessel.h / atmosphere.h / flight.h).
+// of_vs_* is the part catalogue as data, the item form of a part and its build
+// cost, the vessel TREE, staging (autostage plus a reorder that renumbers the
+// parts with the rows) and the derived delta-v / mass / TWR figures DW-30 item 4
+// makes non-negotiable. of_atmo_* and of_fl_* are the atmosphere and a FlightSim
+// pass-through, landed in the SAME bump because a second one costs more than one
+// file. Declared in sim/wasm/vesselabi.ts, not here: heap.ts is at the line cap.
 //
 // This constant is the only thing standing between a browser and a wasm that
 // answers a different question than the one the client is asking. It was left at
@@ -27,7 +34,7 @@ import type { OfCoreModule } from './heap.js';
 // and it happened again at 4 against a shim reporting 5. AN ABI BUMP IS ATOMIC
 // ACROSS THE BRIDGE: the shim's version, the rebuilt and SYNCED wasm, this
 // constant and its callers land in one commit, and that commit boots.
-export const OF_ABI_VERSION = 5;
+export const OF_ABI_VERSION = 6;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

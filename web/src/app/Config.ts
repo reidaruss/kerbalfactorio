@@ -98,6 +98,8 @@ export interface Config {
   readonly density: number;
   /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
   readonly gameplay: boolean;
+  /** W8 the assembly bay. ?vab=0 isolates it, standing rule 7 again. */
+  readonly vab: boolean;
   /**
    * DW-31. `?sandbox=1` creates a SANDBOX world: everything placeable at no
    * cost, no research gate, no pack requirement, the whole catalogue in hand.
@@ -254,6 +256,7 @@ export function parseConfig(search: string): Config {
     props: p.get('props') !== '0',
     density: Math.max(0, num(p, 'density', 1)),
     gameplay: p.get('gameplay') !== '0',
+    vab: p.get('vab') !== '0',
     // OFF unless asked for, and asked for POSITIVELY (`=1`), unlike the
     // isolation switches above which are all `!== '0'`. A mode that could be
     // entered by a typo in a query string is a mode that will silently label

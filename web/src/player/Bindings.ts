@@ -17,7 +17,7 @@ export type Action =
   | 'jump' | 'sprint'
   | 'use' | 'interact' | 'cancel'
   | 'pack' | 'level' | 'demolish' | 'view' | 'lamp'
-  | 'rotate' | 'freeSnap' | 'mute' | 'goals'
+  | 'rotate' | 'freeSnap' | 'mute' | 'goals' | 'assembly'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
   | 'slot6' | 'slot7' | 'slot8' | 'slot9';
@@ -59,6 +59,10 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   freeSnap: ['KeyB'],
   mute: ['KeyM'],
   goals: ['KeyH'],
+  // W8. The assembly bay is a PLACE you go, so it gets a key of its own rather
+  // than a hotbar slot: a slot decides what the LEFT BUTTON does, and the bay is
+  // not something the left button does.
+  assembly: ['KeyC'],
   slotNext: [],
   slotPrev: [],
   slot1: ['Digit1'], slot2: ['Digit2'], slot3: ['Digit3'],
@@ -74,8 +78,12 @@ export const BINDINGS: Record<Action, readonly string[]> = {
  * Escape closing any menu is the whole point of the change. Everything else,
  * `use` above all, is swallowed: a click on a Craft button must not also swing
  * a pickaxe at whatever the crosshair happened to be resting on.
+ *
+ * `assembly` is here for the same reason as `pack`: the bay takes the pointer
+ * while it is open, so the key that opened it has to survive to close it.
  */
-export const UI_ALLOWED: readonly Action[] = ['pack', 'interact', 'cancel'];
+export const UI_ALLOWED: readonly Action[] =
+  ['pack', 'interact', 'cancel', 'assembly'];
 
 const CODE_TO_ACTIONS = new Map<string, Action[]>();
 for (const [a, codes] of Object.entries(BINDINGS) as [Action, string[]][]) {

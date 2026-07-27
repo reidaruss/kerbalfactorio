@@ -6,6 +6,7 @@ import { boot } from './app/Boot.js';
 import { Loop } from './app/Loop.js';
 import { registerSystems } from './app/Systems.js';
 import { installDebugApi } from './app/Debug.js';
+import { vabApi } from './app/DebugVab.js';
 import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
@@ -29,6 +30,11 @@ boot(cfg, host, hud).then(({ services }) => {
     (n, nearOnly) => dumpChunks(services.terrain.residentViews.values(), n, nearOnly,
       services.terrain.nowSecs, services.terrain.geometryPool),
   );
+
+  // `__of.vab` is assigned onto the SAME object installDebugApi put on window,
+  // rather than spread inside it: Debug.ts is at the 400-line cap and the bay's
+  // whole driven surface is one method. See app/DebugVab.ts.
+  Object.assign(api, vabApi(services));
 
   let hudFrame = 0;
   loop.onDrain.push(() => {

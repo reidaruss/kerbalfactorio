@@ -38,6 +38,7 @@ import type { JitterProbe } from '../render/debug/JitterProbe.js';
 import type { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import type { Hud } from '../ui/Hud.js';
 import type { Gameplay } from '../game/Gameplay.js';
+import type { Vab } from '../game/Vab.js';
 
 /** One-off numbers measured at boot, surfaced through window.__of.stats(). */
 export interface BootMetrics {
@@ -104,6 +105,8 @@ export interface Services {
   readonly digFx: DigFx | null;
   /** W5. Null with no character, or with ?gameplay=0. */
   readonly gameplay: Gameplay | null;
+  /** W8. The assembly bay. Null without gameplay, or with ?vab=0. */
+  readonly vab: Vab | null;
   readonly boot: BootMetrics;
 }
 
