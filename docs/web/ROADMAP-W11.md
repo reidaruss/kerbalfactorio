@@ -53,7 +53,7 @@ the failure this project has paid for six times. See lane B.
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
 | G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | queued, blocked on W8 flight |
 | H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | queued, blocked on flight (owns `ui/`) |
-| I | Player skills, appearance, armour | slots for head/chest/legs/feet, customization | `core/gameplay.h`, `web/src/game/` | queued, blocked on C |
+| I | Player skills, appearance, armour | slots for head/chest/legs/feet, customization | `core/gameplay.h`, `web/src/game/` | **headless layer landed** (GP-41 to GP-43, `core/include/of/progression.h`); client wiring handed to Admin |
 
 ## Standing rules for every lane tonight
 
@@ -553,3 +553,42 @@ Gates: **23/24 ctest** (`surface_field_tests` is lane B's in-flight field),
   defects, three of which are the exact failure shape DECISIONS.md already names
   as this project's worst. Green does not mean audited. Budget a review pass on
   anything that will be depended on.
+
+### Lane C, 2026-07-27: item I, player progression (headless half)
+
+`core/include/of/progression.h`, additive over `gameplay.h` exactly as
+`research.h` is, plus `core/tests/test_progression.cpp`. **10 tests, 823 checks,
+29/29 ctest with it registered.**
+
+**Armour (GP-42).** Four slots; `armourNode(EquipSlot)` returns the same four
+strings `armour_set.glb` ships, because the art lane's contract says the node
+names are SLOT names and not SET names, so a second set is a second file and
+nothing in the client moves. Reduction SUMS, encumbrance MULTIPLIES, the cap is
+0.80 and nobody is immune; the tier-1 iron set is 0.40 reduction at 0.892 move
+speed for 35 Iron and 11 Wood. **The ItemId block is 0x0070+ and deliberately
+skips 0x0050..0x006A**, which GP-31's vessel part items already own in
+`of_vessel_api.inc` pending promotion into /core. `damageAfter(raw)` is
+published and NOT applied, because the damage model is the enemies lane's and is
+being built tonight.
+
+**Skills (GP-43).** Five, one per verb the game already has. Quadratic curve
+`100 * n^2`, cap 10, +5% per level, and `skillMultiplier(0) == 1.0f`
+bit-exactly, which is the property that makes the layer optional: `harvestNode`
+and `Furnace` can opt in through `Skills::applyYield` without one pinned test
+moving. Rounding is down and is one published call rather than four call sites.
+
+**Appearance (GP-43).** Five bytes of palette indices with `sanitise` idempotent,
+so a save written against a longer palette degrades to a legal player rather than
+to an index the renderer discovers at draw time.
+
+**What is NOT done, and it is the whole client half.** There is no bridge export,
+no `game/Progression.ts`, no equip panel and no armour drawn on the avatar. That
+needs an ABI bump (standing rule 9, atomic) plus `web/src/ui/` and
+`web/src/player/Avatar.ts`, none of which this lane owns. Handed to Admin with
+the exact surface named in the completion report.
+
+**One process note.** `progression_tests` is registered in `core/CMakeLists.txt`
+in the same commit as the header, and that commit also carries lane B's
+`terrain_probe` target and its source, because the two edits are in one file and
+committing mine alone would have left HEAD unable to configure. Attributed rather
+than silent; lane B loses nothing and should commit over it freely.

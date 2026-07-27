@@ -379,6 +379,20 @@ target_link_libraries(research_tests PRIVATE of_core)
 target_include_directories(research_tests PRIVATE tests)
 add_test(NAME research_tests COMMAND research_tests)
 
+# --- Player progression (W11 lane C / GP-41 to GP-43): the four armour slots
+#     the art lane shipped meshes for and the headless cores had no referent
+#     for, five practised skills whose level 0 is EXACTLY neutral so the layer
+#     is optional for every existing caller, and a five-byte palette-indexed
+#     appearance. Header-only; consumes gameplay.h verbatim, exactly as
+#     research.h does, and is a SEPARATE header because gameplay.h already has
+#     three lanes editing it.
+add_executable(progression_tests
+  tests/test_main.cpp
+  tests/test_progression.cpp)
+target_link_libraries(progression_tests PRIVATE of_core)
+target_include_directories(progression_tests PRIVATE tests)
+add_test(NAME progression_tests COMMAND progression_tests)
+
 # --- Headless integration: composes all four cores into the slice-loop logic ---
 add_executable(integration_tests
   tests/test_main.cpp
@@ -472,6 +486,18 @@ target_link_libraries(procgen_bench PRIVATE of_core)
 add_executable(lod_probe
   tools/lod_probe.cpp)
 target_link_libraries(lod_probe PRIVATE of_core)
+
+# --- Tools: terrain_probe — world-gen DIAGNOSTIC. Measures WHERE the height
+#     field has detail: patch min/max/mean at the start point and at the nearest
+#     mountain, the |dh| slope spectrum at 2 m / 10 m / 100 m / 1 km spacing, an
+#     RMS-vs-spacing sweep from 1 m to 10 km (a constant RMS/spacing ratio proves
+#     there is NO content below that scale), the planetary relief histogram by
+#     biome, measured valueNoise calls per sample + verts/sec, and the home
+#     flat-pad flatness / blend-slope / bit-identity radius. A pure CONSUMER of
+#     of_core (no test framework, not registered with ctest). ---
+add_executable(terrain_probe
+  tools/terrain_probe.cpp)
+target_link_libraries(terrain_probe PRIVATE of_core)
 
 # --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
 #     means a future loader/DLL failure fails FAST instead of stalling ~1000 s
