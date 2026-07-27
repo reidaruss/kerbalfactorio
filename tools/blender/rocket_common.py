@@ -1,4 +1,4 @@
-"""rocket_common.py - Tier 2 vessel geometry and the 1.25 m STACK CONTRACT.
+"""rocket_common.py - Tier 2 vessel geometry and the TWO-CLASS STACK CONTRACT.
 
     build_rocket_parts.py, build_lander_landed.py
 
@@ -6,13 +6,26 @@ THE STACK CONTRACT (ASSET-SPECS 3.3 / 4.23). Everything else in Tier 2
 composes out of this, so it is stated once, here, and the validator checks it
 per part through contracts.json's `part_sockets` block.
 
-  DIAMETER      Every stack part is exactly 1.25 m across (R = 0.625), so any
+  DIAMETER      TWO CLASSES AND NO MORE (DW-29). Class S is 1.25 m across
+                (R = 0.625) and class L is 2.50 m (R = 1.250), exactly 2x, so
+                the catalogue has one lift class and one heavy class rather
+                than a continuum nobody can remember. Inside a class every
                 tank, engine, decoupler and pod mate without a per-pair
-                adapter. SEG = 16 segments, and 16 matters: a polygon whose
-                segment count is divisible by 4 puts vertices exactly on +-X
-                and +-Y, so the exported bounding box is exactly 1.25 x 1.25.
-                A 14-gon of the same radius measures 1.250 x 1.244 and fails
-                the dimension check by 6 mm.
+                adapter; BETWEEN the classes there is exactly one part,
+                StackAdapter, whose two ends differ. Without it two classes
+                would be two disjoint catalogues.
+
+                Segment counts are 16 and 24, and divisible-by-4 is the whole
+                reason for both: a polygon whose segment count is divisible by
+                4 puts vertices exactly on +-X and +-Y, so the exported
+                bounding box is exactly the class diameter. A 14-gon of
+                radius 0.625 measures 1.250 x 1.244 and fails the dimension
+                check by 6 mm.
+
+                Class L's collars carry R = 1.250 exactly while its barrel is
+                1.200, which is class S's 0.625 / 0.600 language doubled: a
+                stringer standing proud of the barrel can then never touch the
+                bounding box.
 
   AXIS          The stack axis is Blender +Z, which is three.js +Y after
                 export_yup. A vessel is therefore assembled up the world up
@@ -66,9 +79,35 @@ import of_lib as of            # noqa: E402
 import harvest_common as hc    # noqa: E402
 
 
-R = 0.625                  # stack radius; the 1.25 m standard diameter
-SEG = 16                   # divisible by 4 -> the AABB is exactly 2R x 2R
-R_BODY = 0.600             # tank/bay barrel, so collars at R read proud
+# class -> (mating radius, segments, barrel radius). THE table: every stack
+# part derives its numbers from here rather than carrying literals, so "what
+# is class L" has exactly one answer and adding a third class would be a
+# one-line change rather than an archaeology exercise.
+CLASS = {
+    "S": (0.625, 16, 0.600),      # 1.25 m, the lift class
+    "L": (1.250, 24, 1.200),      # 2.50 m, the heavy class, exactly 2x
+}
+
+# Class-S aliases. Class S is the default everywhere, and these are what the
+# original thirteen parts and build_lander_landed.py already spell.
+R, SEG, R_BODY = CLASS["S"]
+
+# Trim counts that do NOT simply scale with the class. Four stringers read as
+# "ribbed" on a 1.25 m barrel; the same four spread around a 2.50 m barrel read
+# as bare, because the eye counts gaps, not ribs. Same argument for the
+# decoupler's separation bolts.
+STRINGERS = {"S": 4, "L": 8}
+DECOUPLER_BOLTS = {"S": 6, "L": 10}
+
+
+def class_scale(cls):
+    """How much bigger this class's TRIM is than class S's.
+
+    Trim depth (collar height, band width, stringer section) scales with the
+    class, but part HEIGHTS do not: a 2.50 m decoupler is 0.35 m tall, not
+    0.50, because its job is to be a joint and a joint does not get taller
+    just because it got wider."""
+    return CLASS[cls][0] / CLASS["S"][0]
 
 # Material slot order, pinned across all 13 parts. A renderer that wants "the
 # glass" or "the state-orange trim" of any part indexes the same slot on every
@@ -134,6 +173,69 @@ def disc(p, r, thickness, loc, role, seg=8, axis="Z"):
     return p.add(v, f, sm, role)
 
 
+def ring_band(p, r_in, r_out, z0, z1, role, seg=SEG):
+    """A true ANNULUS prism: a ring with a hole all the way through it.
+
+    Everything else in this file is a capped tube, and a capped tube inside a
+    capped tube is two discs nobody can see. The docking port needs an actual
+    hole, because "flat ring" is its entire silhouette and a disc with a
+    darker disc painted on it is a different part at 30 m.
+
+    Built as TWO HALF SWEEPS rather than one 0-to-360 sweep, because a full
+    sweep puts its start and end caps on the same plane, and mesh.validate()
+    deletes the degenerate result - which would make the reported triangle
+    count a lie (of_lib.arc_band_data says the same thing about r_in). The two
+    seam caps that remain are coincident, interior and backface-culled."""
+    loc = (0.0, 0.0, (z0 + z1) * 0.5)
+    for a0 in (0.0, 180.0):
+        v, f, sm = of.arc_band_data(r_in, r_out, z1 - z0, loc,
+                                    a0, a0 + 180.0, max(1, seg // 2))
+        p.add(v, f, sm, role)
+    return p
+
+
+def bell_shell(p, r_exit, r_throat, z0, z1, role, wall=0.025, seg=SEG):
+    """A THIN-WALLED conical nozzle: an outer surface, an inner surface, and a
+    rim annulus closing the wall thickness at each end.
+
+    Every other tube in this file is CAPPED, and a capped bell is a solid disc
+    across the nozzle mouth. On a sea-level engine that never shows: the mouth
+    is 1.16 m across at most and it points away from everything. On a VACUUM
+    engine the mouth is 1.23 m across and is the entire read of the part, so a
+    disc there is the difference between a nozzle and a bucket.
+
+    Wall thickness is 25 mm because it has to survive being seen: a real
+    regeneratively cooled wall is a few millimetres, which at this scale is one
+    pixel of rim and reads as an authoring mistake rather than as thin.
+
+    ON check_mating's COAXIAL PASS. A shell puts two different radii in the
+    same axial plane, so it fails that check's solid-of-revolution test and is
+    SKIPPED rather than compared. Nothing is being smuggled past the check:
+    the condition it exists to enforce is that coaxial round surfaces share a
+    segment count, and on this part every one of them does, by construction.
+    """
+    n = seg
+    v = []
+    for r, z in ((r_exit, z0), (r_exit - wall, z0),
+                 (r_throat, z1), (r_throat - wall, z1)):
+        for i in range(n):
+            a = 2.0 * math.pi * i / n
+            v.append((r * math.cos(a), r * math.sin(a), z))
+    ob, ib, ot, it = 0, n, 2 * n, 3 * n
+    f, sm = [], []
+    for i in range(n):
+        j = (i + 1) % n
+        f.append((ob + i, ob + j, ot + j, ot + i))     # outer wall
+        sm.append(True)
+        f.append((ib + j, ib + i, it + i, it + j))     # inner wall, reversed
+        sm.append(True)
+        f.append((ob + i, ob + j, ib + j, ib + i))     # exit rim, normal -Z
+        sm.append(False)
+        f.append((ot + j, ot + i, it + i, it + j))     # throat rim, normal +Z
+        sm.append(False)
+    return p.add(v, f, sm, role)
+
+
 # ---------------------------------------------------------------------------
 # Stack parts
 # ---------------------------------------------------------------------------
@@ -163,22 +265,30 @@ def command_pod():
     return p
 
 
-def fuel_tank(height, bands=1):
-    """1.25 x 1.25 x `height`. Barrel at R_BODY with collars at R, so the
-    1.25 m mating diameter is carried by the RINGS and the barrel reads
-    slightly waisted. That is also what keeps the bounding box exact when a
-    stringer stands proud of the barrel."""
+def fuel_tank(height, bands=1, cls="S"):
+    """<class diameter> square x `height`. Barrel at the class barrel radius
+    with collars at the class mating radius, so the mating diameter is carried
+    by the RINGS and the barrel reads slightly waisted. That is also what keeps
+    the bounding box exact when a stringer stands proud of the barrel.
+
+    Class L is this form RE-DERIVED, not a scaled copy: the trim depth doubles
+    with `class_scale`, but the stringer COUNT doubles independently (see
+    STRINGERS) and the height is whatever the part is, so a 2.50 x 4.00 tank
+    reads as a wide tank and not as a small tank filmed from closer up."""
+    r, seg, r_body = CLASS[cls]
+    k = class_scale(cls)
     p = hc.Parts()
-    tube(p, R_BODY, 0.00, height, "SteelLight")
-    tube(p, R, 0.00, 0.09, "SteelDark")
-    tube(p, R, height - 0.09, height, "SteelDark")
+    tube(p, r_body, 0.00, height, "SteelLight", seg=seg)
+    tube(p, r, 0.00, 0.09 * k, "SteelDark", seg=seg)
+    tube(p, r, height - 0.09 * k, height, "SteelDark", seg=seg)
     for i in range(bands):
         z = height * (i + 1) / (bands + 1)
-        tube(p, 0.615, z - 0.05, z + 0.05, "Accent")
-    # Four stringers at 45 degrees. At R_BODY they never reach +-X or +-Y, so
+        tube(p, r - 0.010 * k, z - 0.05 * k, z + 0.05 * k, "Accent", seg=seg)
+    # Stringers on the half-azimuth. At r_body they never reach +-X or +-Y, so
     # they cannot touch the AABB the collars define.
-    ring_slabs(p, (0.10, 0.10, height - 0.30), R_BODY, 4, height * 0.5,
-               "Steel", phase=math.pi * 0.25)
+    n = STRINGERS[cls]
+    ring_slabs(p, (0.10 * k, 0.10 * k, height - 0.30 * k), r_body, n,
+               height * 0.5, "Steel", phase=math.pi / n)
     return p
 
 
@@ -203,18 +313,78 @@ def engine_main():
     return p
 
 
-DECOUPLER_H = 0.25
+ENGINE_V_H = 1.00
 
 
-def decoupler():
-    """1.25 x 1.25 x 0.25. The one part whose job is to stop existing, so it
-    is the one part banded in hazard yellow."""
+def engine_vacuum():
+    """1.25 x 1.25 x 1.00. The class S vacuum engine, and the upper stage's.
+
+    IT EXISTS TO BE TOLD APART FROM engine_main, because choosing between them
+    is the decision the part list is for, and physics measured the difference
+    at about 970 m/s on the reference vessel's upper stage. So every line of it
+    is the sea-level engine's opposite, and the contrast is carried by
+    SILHOUETTE rather than by trim:
+
+      SHORT AND WIDE     1.00 m tall against 1.60, with the bell opening to
+                         R 0.615 against 0.58. That is as wide as class S
+                         allows, and it is also the real-world contrast: an
+                         expansion ratio you can only use where there is no
+                         atmosphere to push back.
+      THIN WALLED        a real shell rather than a capped tube (see
+                         bell_shell), so the mouth is a mouth.
+      NOTHING TO HIDE    the sea-level engine shrouds its thrust structure
+                         behind a mount plate and a turbopump box. This one
+                         never flies through air, so its neck, chamber and
+                         four struts are simply out in the open, and the gaps
+                         between them are as much of the read as the parts.
+
+    Only the top 80 mm is solid across the full 1.25 m, because that is the
+    mating face and a tank has to bolt to something."""
     p = hc.Parts()
-    tube(p, R_BODY, 0.00, DECOUPLER_H, "SteelDark")
-    tube(p, R, 0.00, 0.06, "Steel")
-    tube(p, R, DECOUPLER_H - 0.06, DECOUPLER_H, "Steel")
-    tube(p, 0.62, 0.09, 0.16, "Hazard")
-    ring_slabs(p, (0.08, 0.08, 0.09), 0.58, 6, 0.125, "SteelDark")
+    bell_shell(p, 0.615, 0.175, 0.00, 0.62, "SteelDark")
+    tube(p, 0.415, 0.29, 0.33, "Steel")                 # stiffener hoop
+    tube(p, 0.16, 0.62, 0.78, "SteelDark")              # throat
+    tube(p, 0.24, 0.78, 0.88, "Steel")                  # chamber / injector
+    tube(p, 0.255, 0.80, 0.84, "Accent")                # band
+    tube(p, R, 0.92, ENGINE_V_H, "SteelDark")           # mount ring
+    # Four open struts, chamber shoulder out to the mount ring underside. Built
+    # once along +Z and swung into place, the same trick the landing leg's foot
+    # pad uses, because a strut authored at its final angle is a strut that
+    # cannot be moved.
+    for az in (0.0, 90.0, 180.0, 270.0):
+        s = hc.Parts()
+        slab(s, (0.055, 0.055, 0.31), (0.0, 0.0, 0.135), "Steel")
+        s.rotate("Y", 67.8)
+        s.translate(0.25, 0.0, 0.83)
+        s.rotate("Z", az)
+        p.extend(s)
+    for sy in (-1.0, 1.0):                              # propellant feeds
+        tube(p, 0.035, 0.84, 0.95, "Steel", seg=8, loc=(0.0, sy * 0.30))
+    return p
+
+
+DECOUPLER_H = 0.25            # class S
+DECOUPLER_L_H = 0.35          # class L: wider, but a joint, so barely taller
+
+
+def decoupler(cls="S"):
+    """<class diameter> square x 0.25 (S) or 0.35 (L). The one part whose job
+    is to stop existing, so it is the one part banded in hazard yellow.
+
+    Every proportion is a FRACTION OF ITS OWN HEIGHT rather than a literal, so
+    the two classes are the same part at two sizes and not two drawings that
+    happen to look alike: collars are 0.24 h, the hazard band spans 0.36 h to
+    0.64 h, and the separation bolts are 0.36 h tall on the mid plane."""
+    r, seg, r_body = CLASS[cls]
+    k = class_scale(cls)
+    h = DECOUPLER_H if cls == "S" else DECOUPLER_L_H
+    p = hc.Parts()
+    tube(p, r_body, 0.00, h, "SteelDark", seg=seg)
+    tube(p, r, 0.00, h * 0.24, "Steel", seg=seg)
+    tube(p, r, h - h * 0.24, h, "Steel", seg=seg)
+    tube(p, r - 0.005 * k, h * 0.36, h * 0.64, "Hazard", seg=seg)
+    ring_slabs(p, (0.08 * k, 0.08 * k, h * 0.36), r - 0.045 * k,
+               DECOUPLER_BOLTS[cls], h * 0.5, "SteelDark")
     return p
 
 
@@ -273,9 +443,246 @@ def cargo_bay():
     return p
 
 
+BOOSTER_H = 6.00
+
+
+def solid_booster():
+    """1.25 x 1.25 x 6.00. A strap-on solid rocket booster.
+
+    THE SILHOUETTE IS THE SPEC: one long plain casing with a nose taper, and
+    NO PLUMBING. That is not laziness, it is what a solid is. It cannot be
+    throttled, shut down or restarted, so it has no turbopump, no feed lines
+    and no gimbal ring, and putting any of that on it would make it read as
+    just another liquid engine at the exact distance where the read matters.
+
+    The nozzle lives inside an aft boat-tail skirt so the bell exit sits ON
+    z = 0 rather than hanging below it: the part is carried radially, and a
+    bell poking out of the declared envelope is a bell that intersects
+    whatever the booster is strapped to. The skirt is a FRUSTUM rather than a
+    can so the nozzle inside it is visible through the mouth instead of being
+    44 triangles nobody will ever see.
+
+    It terminates a stack downward exactly as an engine does, so it carries no
+    socket_stack_bottom; what it carries instead is socket_radial_attach, on
+    its own hull, which is the part that makes it strap-on."""
+    p = hc.Parts()
+    tube(p, 0.520, 0.04, 0.55, "SteelDark", r_top=R)        # aft skirt
+    tube(p, 0.44, 0.00, 0.52, "SteelDark", r_top=0.16, seg=12)   # nozzle
+    tube(p, R_BODY, 0.55, 5.40, "SteelLight")               # casing
+    tube(p, R, 0.55, 0.64, "SteelDark")                     # aft collar
+    tube(p, R, 5.31, 5.40, "SteelDark")                     # forward collar
+    tube(p, R_BODY, 5.40, BOOSTER_H, "SteelLight", r_top=0.30)   # nose taper
+    tube(p, 0.615, 0.95, 1.13, "Hazard")                    # jettison band
+    # Attach saddles on -X, straddling socket_radial_attach at half height.
+    # 0.590 + 0.030 = 0.620 keeps them inside the collars' 0.625: a lug that
+    # touched the bounding box would widen the part past its class.
+    for z in (2.60, 3.40):
+        slab(p, (0.06, 0.26, 0.18), (-0.590, 0.0, z), "Steel")
+    return p
+
+
+MONO_H = 1.00
+
+
+def monoprop_tank():
+    """1.25 x 1.25 x 1.00. Monopropellant for the RCS blocks.
+
+    Deliberately NOT a short liquid tank. A liquid tank is a straight barrel
+    with a narrow accent band and four stringers; this is a squat pressure
+    sphere with narrow mating flanges and one WIDE accent belt at the equator,
+    so the two are different parts at a glance and not the same part at two
+    lengths. The belt is also what carries the 1.25 m mating diameter, exactly
+    as a tank's collars do, so the bowls can stay inside it.
+
+    The flanges are 16-gon like the bowls they meet, NOT the cheaper 12 a
+    0.36 m neck would otherwise deserve. Two tubes of the same radius and
+    different segment counts do not share a surface: a 12-gon and a 16-gon at
+    0.36 have inradii 0.3477 and 0.3531, so they interleave and the joint
+    renders as a 5 mm scallop. Same rule the stack adapter learned the hard
+    way, and the 32 triangles it costs are the price of a clean joint."""
+    p = hc.Parts()
+    tube(p, 0.36, 0.00, 0.08, "SteelDark")                  # bottom flange
+    tube(p, 0.36, 0.08, 0.44, "SteelLight", r_top=0.605)    # lower bowl
+    tube(p, R, 0.44, 0.56, "Accent")                        # equator belt
+    tube(p, 0.605, 0.56, 0.92, "SteelLight", r_top=0.36)    # upper bowl
+    tube(p, 0.36, 0.92, MONO_H, "SteelDark")                # top flange
+    slab(p, (0.10, 0.10, 0.06), (0.22, 0.0, 0.96), "Steel")  # fill port
+    return p
+
+
+WHEEL_H = 0.40
+
+
+def reaction_wheel():
+    """1.25 x 1.25 x 0.40. Torque with no propellant.
+
+    A thin ring: two mating collars at the full class radius with a deep waist
+    between them, which is a profile nothing else in the catalogue has. The
+    three gyro bosses sit IN that waist, standing proud of the 0.46 drum and
+    still 15 mm clear of the 0.625 bounding box, so the groove reads as a
+    groove from the side and the bosses say "this thing spins" from above."""
+    p = hc.Parts()
+    tube(p, R, 0.00, 0.06, "SteelDark")                     # bottom collar
+    tube(p, R, 0.34, WHEEL_H, "SteelDark")                  # top collar
+    tube(p, 0.46, 0.06, 0.34, "Steel")                      # rotor housing
+    tube(p, 0.50, 0.16, 0.24, "Accent")                     # band
+    ring_slabs(p, (0.18, 0.18, 0.26), 0.52, 3, 0.20, "SteelDark")
+    return p
+
+
+BATTERY_H = 0.60
+
+
+def battery():
+    """1.25 x 1.25 x 0.60. Stored charge for the night side.
+
+    A ribbed drum: eight cell blocks around a narrow core, which is the one
+    silhouette in the catalogue built out of repetition rather than out of
+    revolution. Banded in SuitAccent blue rather than Accent orange, because
+    the solar panel's cells are already SuitAccent and colour-blocking the
+    electrical parts together is free legibility. Orange stays what it is
+    everywhere else in the game: the trim colour, not a system."""
+    p = hc.Parts()
+    tube(p, R, 0.00, 0.07, "SteelDark")                     # bottom collar
+    tube(p, R, 0.53, BATTERY_H, "SteelDark")                # top collar
+    tube(p, 0.44, 0.07, 0.53, "Steel")                      # core
+    ring_slabs(p, (0.16, 0.16, 0.40), 0.52, 8, 0.30, "SteelDark",
+               phase=math.pi * 0.125)
+    tube(p, 0.50, 0.27, 0.33, "SuitAccent")                 # charge stripe
+    return p
+
+
+DOCK_H = 0.30
+
+
+def docking_port():
+    """1.25 x 1.25 x 0.30. The androgynous mating ring.
+
+    Its top face IS a mating plane, so socket_dock and socket_stack_top are
+    co-located: docking is stacking that happened in orbit, and the engine
+    should not need two rules for it.
+
+    The ring is a real ANNULUS (see ring_band) rather than a disc with a
+    darker disc painted on it. A docking port is 0.30 m tall against a 6 m
+    booster, so the hole is the only thing that identifies it at any distance
+    at all, and a painted hole is not a hole from 15 degrees off axis."""
+    p = hc.Parts()
+    tube(p, R, 0.00, 0.10, "SteelDark")                     # base collar
+    tube(p, 0.56, 0.10, 0.18, "Steel")                      # bulkhead
+    ring_band(p, 0.34, 0.52, 0.18, DOCK_H, "SteelLight")    # capture ring
+    ring_slabs(p, (0.12, 0.09, 0.07), 0.40, 3, 0.265, "Steel")   # latches
+    slab(p, (0.09, 0.05, 0.03), (0.56, 0.0, 0.085), "Accent")    # index mark
+    return p
+
+
+ENGINE_L_H = 2.60
+
+
+def engine_large():
+    """2.50 x 2.50 x 2.60. The class L main engine.
+
+    ONE BELL, not a cluster, and that is a socket decision before it is an art
+    decision: socket_muzzle is a single point and vfx_engine_plume.glb attaches
+    to it at identity, so a four-bell engine would need four muzzles and the
+    plume rule would stop being one rule. A 2.20 m exit diameter is also just
+    a bigger engine, which is what the class means.
+
+    Same language as engine_main at 1.25 m - mount plate, thrust structure,
+    throat collar, two-section bell, exit lip, one turbopump - re-proportioned
+    rather than scaled, because scaling engine_main by 2 would have put a
+    1.16 m turbopump on the side of it."""
+    r, seg, _ = CLASS["L"]
+    p = hc.Parts()
+    tube(p, r, 2.42, ENGINE_L_H, "SteelDark", seg=seg)      # mount plate
+    tube(p, 0.60, 1.90, 2.42, "Steel", seg=12)              # thrust structure
+    ring_slabs(p, (0.16, 0.16, 0.52), 0.90, 4, 2.16, "Steel",
+               phase=math.pi * 0.25)
+    tube(p, 0.46, 1.55, 1.90, "SteelDark", seg=12)          # throat collar
+    # The bell carries the class segment count. It is 2.28 m across, so the
+    # module default of 16 would have put a visibly coarser polygon on the
+    # biggest curved surface in the file than on the 2.50 m plate above it.
+    # The small internal cylinders stay at 12, exactly as engine_main's do:
+    # segment count follows DIAMETER, and a 0.46 m throat is not a class face.
+    tube(p, 0.72, 0.75, 1.55, "SteelDark", r_top=0.44, seg=seg)   # bell, upper
+    tube(p, 1.10, 0.00, 0.75, "SteelDark", r_top=0.72, seg=seg)   # bell, lower
+    tube(p, 1.14, 0.00, 0.10, "Steel", seg=seg)             # exit lip
+    slab(p, (0.50, 0.36, 0.50), (0.72, 0.0, 2.16), "Steel")  # turbopump
+    tube(p, 0.09, 1.66, 2.36, "SteelDark", seg=8, loc=(0.72, 0.26))
+    ring_slabs(p, (0.14, 0.14, 0.09), 1.06, 8, 2.465, "Hazard")
+    return p
+
+
+ADAPTER_H = 1.00
+
+
+def stack_adapter():
+    """2.50 x 2.50 x 1.00. THE PART THAT MAKES TWO CLASSES ONE CATALOGUE.
+
+    Bottom face class L, top face class S, and it is the only part in the file
+    whose two ends differ. Everything else about it is the tank language: a
+    barrel (here a cone from 1.200 down to 0.600) with a COLLAR at each end at
+    that end's mating radius, so each face's diameter is carried by its own
+    ring and the cone in between is free to be whatever reads best.
+
+    A MATING FACE IS BUILT WITH THE SEGMENT COUNT OF THE CLASS IT PRESENTS, so
+    the collars are 24-gon at the bottom and 16-gon at the top, so each face is
+    exactly its class diameter rather than approximately it.
+
+    THE COLLAR MUST ALSO STAND PROUD OF THE CONE, and that is the half of the
+    rule a validator cannot check. A 24-gon and a 16-gon of the same
+    CIRCUMRADIUS are not the same surface: their inradii at R 0.625 are 0.6199
+    and 0.6130. So a cone that was still 0.654 wide where the class S collar
+    starts poked out through it at alternating azimuths and rendered as a
+    ragged, scalloped ring right under the joint - while dims_xyz_m,
+    part_sockets and check_mating all passed, because the mating PLANES were
+    exact and it was the mating SURFACES that disagreed. Only the render showed
+    it (docs/screenshots/vessel_adapter_joint.png).
+
+    The cone therefore finishes its taper at the class S BARREL radius 0.600
+    where the collar begins, exactly as a tank's barrel does. The 24-to-16
+    mismatch then lands under a collar that overhangs it by 13 mm at the worst
+    azimuth, which is hidden by construction rather than by luck."""
+    rl, segl, rbl = CLASS["L"]
+    rs, segs, rbs = CLASS["S"]
+    z_s = ADAPTER_H - 0.09              # class S collar depth, as fuel_tank's
+    p = hc.Parts()
+    tube(p, rbl, 0.00, z_s, "SteelLight", r_top=rbs, seg=segl)   # cone
+    tube(p, rl, 0.00, 0.14, "SteelDark", seg=segl)          # class L collar
+    tube(p, rs, z_s, ADAPTER_H, "SteelDark", seg=segs)      # class S collar
+    tube(p, 0.945, 0.45, 0.55, "Accent", r_top=0.885, seg=segl)
+    ring_slabs(p, (0.14, 0.14, 0.10), 1.10, 8, 0.19, "SteelDark")
+    return p
+
+
 # ---------------------------------------------------------------------------
 # Radial parts. Origin on the mount plane, body extends +X.
 # ---------------------------------------------------------------------------
+
+# The published hull-to-hull gap a radial decoupler holds open.
+RADIAL_STANDOFF = 0.30
+
+
+def radial_decoupler():
+    """0.30 x 0.36 x 0.60 (Blender x/y/z). The strap-on separator.
+
+    Its X EXTENT IS THE CONTRACT. The part spans exactly RADIAL_STANDOFF from
+    its mount plane to its outboard face, so "how far from the hull does a
+    strapped-on booster sit" has one answer that is measurable off the shipped
+    mesh: socket_radial_mount at 0, socket_radial_out at 0.30, and nothing in
+    between sticking out past either. check_mating.py measures precisely that.
+
+    Hazard banded, because like the stack decoupler its job is to stop
+    existing, and the player should be able to see which parts do that."""
+    p = hc.Parts()
+    slab(p, (0.06, 0.36, 0.60), (0.03, 0.0, 0.0), "SteelDark")   # hull saddle
+    slab(p, (0.18, 0.26, 0.44), (0.15, 0.0, 0.0), "Steel")       # body
+    slab(p, (0.20, 0.28, 0.10), (0.15, 0.0, 0.0), "Hazard")      # band
+    slab(p, (0.06, 0.30, 0.50), (0.27, 0.0, 0.0), "SteelDark")   # outboard pad
+    for sy in (-1.0, 1.0):
+        for sz in (-1.0, 1.0):
+            slab(p, (0.05, 0.06, 0.06), (0.03, sy * 0.14, sz * 0.24), "Steel")
+    return p
+
 
 def engine_vernier():
     """A small gimballed thruster on a stub arm, bell facing down."""
