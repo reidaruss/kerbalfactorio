@@ -346,6 +346,11 @@ class DensityField {
   template <typename Reader>
   bool deserialize(Reader& r, uint64_t first = 0) {
     const uint64_t magic = first ? first : r.varint();
+    // A leading zero is the client's "put the rock back" reset: VoxelSave writes
+    // one zero byte to mean an empty diff, and it has meant that since before the
+    // format was self-describing. Reading it as a malformed stream would turn a
+    // reset into a refusal, so it stays legal and means exactly what it says.
+    if (magic == 0) { clear(); return true; }
     if (magic != kFieldMagic) return false;
     r.varint();                                   // version; only 3 so far
     clear();
@@ -479,10 +484,14 @@ class DensityField {
     dirtyMax_.cz = std::max(dirtyMax_.cz, c.cz);
   }
 
+  // Every BodyParams field world generation reads, including WG-26's flattened
+  // start pad, which moves the designed surface and therefore the field itself.
   static uint64_t fieldWorldSig(const BodyParams& body) {
     uint64_t h = body.bodySeed;
-    const double f[3] = {body.radiusM, body.maxReliefM, body.seaLevelM};
-    for (int i = 0; i < 3; ++i) {
+    const double f[7] = {body.radiusM, body.maxReliefM, body.seaLevelM,
+                         body.homeDir.x, body.homeDir.y, body.homeDir.z,
+                         body.homeFlatRadiusM};
+    for (int i = 0; i < 7; ++i) {
       uint64_t bits = 0;
       std::memcpy(&bits, &f[i], sizeof(bits));
       h ^= bits + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
@@ -645,6 +654,30 @@ inline LevelDiscResult levelDisc(const BodyParams& body, DensityField& field,
 // −density from an air sample cannot step past a surface. That turns a hundred
 // fixed 1 m probes into a handful.
 // =============================================================================
+/**
+ * Is the solid at radius `r` ATTACHED to the ground, or is it floating?
+ *
+ * Walk down from `r` while the field stays solid. Anchored means the run is
+ * still solid when it reaches the designed base, which is where the planet's own
+ * rock begins; a run that turns back to air above that is a slab with daylight
+ * under it. Bounded by `rBot` so a query cannot walk to the centre of the world.
+ */
+inline bool runIsAnchored(const BodyParams& body, const DensityField& field,
+                          const Vec3& u, double r, double rBase, double rBot) {
+  const double floorR = std::max(rBase, rBot);
+  // Within a cell of the base there is no room for a gap, so it is anchored by
+  // construction. This case is not a shortcut, it is the correctness: the
+  // designed surface sits AT rBase, so the field is zero there, and an earlier
+  // version that sampled the base itself read that zero as air and declared
+  // ordinary ground to be floating. The native fixture's self-check caught it as
+  // "tunnel produced surface lowering (ceiling lost)", which is the same thing
+  // seen from the other end.
+  if (r <= floorR + kVoxelSizeM) return true;
+  for (double s = r - kVoxelSizeM; s > floorR; s -= kVoxelSizeM)
+    if (field.densityAt(body, u * s) < 0.0) return false;   // daylight underneath
+  return true;
+}
+
 inline double columnSurfaceHeight(const BodyParams& body,
                                   const DensityField& field, const Vec3& dir,
                                   double maxDigM, double maxFillM) {
@@ -665,15 +698,38 @@ inline double columnSurfaceHeight(const BodyParams& body,
   const double rBot = body.radiusM + base - maxDigM;
   if (!field.columnTouched(u, rBot, rTop)) return base;
 
+  const double rBase = body.radiusM + base;
   double r = rTop;
   double dPrev = field.densityAt(body, u * r);
   if (dPrev >= 0.0) return base + maxFillM;        // filled to the cap
   double rPrev = r;
   for (int i = 0; i < 512 && r > rBot; ++i) {
-    const double step = std::min(4.0, std::max(0.25, -dPrev));
+    // ONE CELL, never more. This was a sphere trace stepping by the density it
+    // read, which is unsound on THIS field and was measured to be: an edit
+    // writes corner distances only about one cell beyond its own brush, so
+    // outside that skirt the value reverts to the procedural distance, which can
+    // be large where the true nearest surface is close. A 4 m step therefore
+    // jumped clean over a placed slab, and the same 0.87 m block read 6.6169 m
+    // from one height and 0.0002 m from another: position-dependent, so a coin
+    // flip rather than a property. A step of one cell cannot skip a sign change
+    // on a lattice whose corners are one cell apart, and the walk only runs at
+    // all for columns that contain an edit.
+    const double step = kVoxelSizeM;
     r -= step;
     if (r < rBot) r = rBot;
     const double d = field.densityAt(body, u * r);
+    if (d >= 0.0 && !runIsAnchored(body, field, u, r, rBase, rBot)) {
+      // Solid, but FLOATING: air again before the ground. A bridge, a roof or a
+      // placed slab over a gap. WG-22 established that such a thing must not move
+      // the smooth far-field surface, for the same reason a sideways tunnel must
+      // not: the heightfield is what the streamed chunk and the LOD metric read,
+      // and raising it under a floating slab would draw a ramp of solid ground up
+      // to something the player deliberately built in the air. The voxel layer
+      // alone carries it, exactly as it alone carries a tunnel. Keep marching.
+      dPrev = d;
+      rPrev = r;
+      continue;
+    }
     if (d >= 0.0) {
       // REFINE the bracket before interpolating. A single linear interpolation
       // is only exact when both samples carry the true distance to the surface,

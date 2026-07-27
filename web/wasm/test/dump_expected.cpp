@@ -124,15 +124,16 @@ static int runBench() {
   const double r = surfR - 2.0;
   auto t4 = std::chrono::high_resolution_clock::now();
   of_edits_dig(edits, forge, dx * r, dy * r, dz * r, 8.0);
-  const int faces = of_exposed_faces(forge, edits, dx * r, dy * r, dz * r, 10.0);
+  const int vnverts = of_surface_nets(forge, edits, dx * r, dy * r, dz * r, 10.0,
+                                      0, 0, 0, 0);
   auto t5 = std::chrono::high_resolution_clock::now();
   const double voxSec = std::chrono::duration<double>(t5 - t4).count();
 
   std::printf("{\"quads\": %d, \"verts\": %lld, \"meshSec\": %.6f, "
               "\"vertsPerSec\": %.0f, \"ticks\": %d, \"tickSec\": %.6f, "
-              "\"ticksPerSec\": %.0f, \"voxelFaces\": %d, \"voxelSec\": %.6f}\n",
+              "\"ticksPerSec\": %.0f, \"voxelVerts\": %d, \"voxelSec\": %.6f}\n",
               kQuads, verts, meshSec, verts / meshSec, kTicks, tickSec,
-              kTicks / tickSec, faces, voxSec);
+              kTicks / tickSec, vnverts, voxSec);
   return 0;
 }
 
@@ -372,7 +373,7 @@ int main(int argc, char** argv) {
     const int N = 6;   // carve 6 one-metre cells straight down from the surface
     for (int k = 0; k < N; ++k) {
       const double r = surfR - (static_cast<double>(k) + 0.5);
-      of_edits_dig_cell_at(edits, dx * r, dy * r, dz * r);
+      of_edits_dig_cell_at(edits, forge, dx * r, dy * r, dz * r);
     }
     const double lowering = of_derived_lowering(forge, edits, dx, dy, dz);
     const double after = of_surface_height(forge, edits, dx, dy, dz);
@@ -413,8 +414,22 @@ int main(int argc, char** argv) {
       const double pz = dz * baseR + tz * s;
       removed += of_edits_dig(edits, forge, px, py, pz, 1.4);
     }
-    // Every column over the tunnel must keep its ceiling: zero lowering.
+    // Every column over the tunnel must keep its ceiling.
+    //
+    // WG-24 RE-BASELINED THE TOLERANCE, and the reason is worth stating because
+    // it is the honest price of the new representation. This used to demand a
+    // BIT-IDENTICAL surface height above a tunnel, which the cell model could
+    // give: an untouched column had no top-anchored run of removed cells, so the
+    // lowering was exactly 0.0 and the surface was exactly the designed base. A
+    // signed field root-finds the TRILINEAR zero level for any column that
+    // passes within a cell of an override, and that lands a few tenths of a
+    // millimetre off the exact smooth height. The property under test is
+    // unchanged, "a sideways tunnel does not lower the ground"; what changed is
+    // that it is now a measured bound instead of a bit compare, so the residual
+    // is REPORTED here rather than assumed to be zero.
+    const double kTunnelResidualM = 0.10;   // 300x the measured worst
     int noLowering = 0;
+    double worstResidual = 0.0;
     hInit();
     for (int k = 0; k < steps; ++k) {
       const double s = static_cast<double>(k) * 2.0;
@@ -426,7 +441,9 @@ int main(int argc, char** argv) {
       const double sh = of_surface_height(forge, edits, cx, cy, cz);
       const double bh = of_base_height(forge, cx, cy, cz);
       hF64(low); hF64(sh);
-      if (low == 0.0 && std::memcmp(&sh, &bh, 8) == 0) ++noLowering;
+      const double res = std::fabs(sh - bh);
+      if (res > worstResidual) worstResidual = res;
+      if (low <= kTunnelResidualM && res <= kTunnelResidualM) ++noLowering;
     }
     const uint32_t tunnelHash = hEnd();
     SELF(removed > 0, "tunnel removed no cells");
@@ -435,9 +452,14 @@ int main(int argc, char** argv) {
     const double ceilR = surfR - depth + 3.0;
     const int ceilingSolid = of_solid_at(forge, edits, dx * ceilR, dy * ceilR, dz * ceilR);
     SELF(ceilingSolid == 1, "tunnel ceiling is not solid");
+    // worstResidual is PINNED, so the re-baselined tolerance above cannot quietly
+    // absorb a real regression: the bound says "small" and this line says how
+    // small it actually was, to the bit.
     std::printf("  \"tunnel\": {\"removed\": %d, \"columns\": %d, "
-                "\"noLoweringColumns\": %d, \"ceilingSolid\": %d, \"hash\": %u},\n",
-                removed, steps, noLowering, ceilingSolid, tunnelHash);
+                "\"noLoweringColumns\": %d, \"ceilingSolid\": %d, "
+                "\"worstResidual\": %s, \"hash\": %u},\n",
+                removed, steps, noLowering, ceilingSolid,
+                bits(worstResidual).c_str(), tunnelHash);
     of_edits_destroy(edits);
   }
 
@@ -453,9 +475,17 @@ int main(int argc, char** argv) {
     const int dirtyOk = of_edits_dirty_region(edits);
     const int32_t* dr = of_scratch_i32();
     int32_t d6[6] = {dr[0], dr[1], dr[2], dr[3], dr[4], dr[5]};
-    const int faces = of_exposed_faces(forge, edits, dx * r, dy * r, dz * r, 5.0);
+    // WG-24: the mesher answers in TRIANGLES on the field's zero level, not in
+    // cube faces, so what is pinned is the vertex buffer and the index list.
+    // Positions hash as raw float bits, which keeps this a bit-exactness pin.
+    const int mverts = of_surface_nets(forge, edits, dx * r, dy * r, dz * r,
+                                       5.0, 0, 0, 0, 0);
+    const int midx = of_surface_nets_index_count();
+    const float* mp = of_scratch_f32();
+    hInit(); for (int i = 0; i < mverts * 6; ++i) hF32(mp[i]);
+    const uint32_t vertHash = hEnd();
     const int32_t* fp = of_scratch_i32();
-    hInit(); for (int i = 0; i < faces * 5; ++i) hI32(fp[i]);
+    hInit(); for (int i = 0; i < midx; ++i) hI32(fp[i]);
     const uint32_t faceHash = hEnd();
     // Round-trip the removed set through persistence.h's byte cursors.
     const int nbytes = of_edits_serialize(edits);
@@ -463,13 +493,14 @@ int main(int argc, char** argv) {
     hInit(); hBytes(sb, static_cast<size_t>(nbytes));
     const uint32_t saveHash = hEnd();
     SELF(removed > 0, "dig brush removed nothing");
-    SELF(faces > 0, "no exposed faces after a dig");
+    SELF(mverts > 0, "no surface-nets vertices after a dig");
+    SELF(midx > 0, "no surface-nets triangles after a dig");
     SELF(nbytes > 0, "voxel edits serialized to 0 bytes");
     std::printf("  \"voxel\": {\"removed\": %d, \"dirtyValid\": %d, "
-                "\"dirty\": [%d,%d,%d,%d,%d,%d], \"faces\": %d, "
-                "\"faceHash\": %u, \"saveBytes\": %d, \"saveHash\": %u},\n",
+                "\"dirty\": [%d,%d,%d,%d,%d,%d], \"verts\": %d, "
+                "\"indices\": %d, \"vertHash\": %u, \"faceHash\": %u, \"saveBytes\": %d, \"saveHash\": %u},\n",
                 removed, dirtyOk, d6[0], d6[1], d6[2], d6[3], d6[4], d6[5],
-                faces, faceHash, nbytes, saveHash);
+                mverts, midx, vertHash, faceHash, nbytes, saveHash);
     of_edits_destroy(edits);
   }
 
@@ -633,7 +664,7 @@ int main(int argc, char** argv) {
     const int gedits = of_edits_create();
     for (int k = 0; k < 6; ++k) {
       const double r = surfR - 0.5 - static_cast<double>(k);
-      of_edits_dig_cell_at(gedits, dx * r, dy * r, dz * r);
+      of_edits_dig_cell_at(gedits, forge, dx * r, dy * r, dz * r);
     }
     const double low = of_derived_lowering(forge, gedits, dx, dy, dz);
     of_observer_latlon_alt(forge, gedits, lat, lon, alt);

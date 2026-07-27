@@ -1,10 +1,27 @@
-// The near-field voxel surface: one THREE.Mesh holding the greedy-meshed
-// exposed faces around the player, rebuilt from the DIRTY REGION only.
+// The near-field terrain surface: one THREE.Mesh holding the SURFACE NETS
+// extraction of /core's density field around the player, rebuilt from the DIRTY
+// REGION only.
 //
-// It draws only what the heightfield CANNOT express: the cavities a dig opened
-// and any ground placed above the surface. Everything else, including a
-// levelled pad, is the terrain chunk's and always was (VoxelSkin, and the field
-// of dark pyramids that motivated it).
+// WG-24 changed what this file draws. It used to ask `of_exposed_faces` for the
+// solid-to-air cube faces of a binary occupancy lattice and greedy-merge them
+// into axis-aligned rectangles. That is where "the way the ground breaks when
+// you dig is kinda fucky ... all these sharp edges" came from: the edges were
+// literal cube edges, and the shell they formed disagreed with the smooth
+// surface the chunk draws by up to half a cell diagonal (DW-26), which is what
+// poked through as dark pyramids and what the aim ray stopped short on.
+//
+// It now asks `of_surface_nets_brick` for TRIANGLES on the zero level of the
+// same signed field that collision reads, with normals from the field gradient.
+// A dig is a sphere and a levelled pad is a plane, both to sub-millimetre,
+// because the surface is an interpolated isosurface rather than a set of cell
+// faces. `VoxelGreedy` is gone with the cubes it merged.
+//
+// It still draws only what the heightfield CANNOT express: `editedOnly` in
+// /core keeps the cells near an actual edit and drops the rest, because the
+// terrain chunk already draws untouched ground, better and at its own LOD
+// (ARCHITECTURE 15.2 item 108). The filter moved into /core with the mesher,
+// where it can be expressed on the edit store directly instead of reconstructed
+// from surface heights in the client.
 //
 // Its COLOUR comes from the terrain's own biome palette and slope-to-rock rule
 // (VoxelSkin.faceColours), so a tunnel mouth and the hillside it is cut into
@@ -12,16 +29,15 @@
 // is still a Lambert and not the terrain's own program.
 //
 // One responsibility: geometry + placement. It does not dig (VoxelWorld), does
-// not decide the box, and does not collide (KinematicBody resolves against
-// solidCell directly, per DW-12 there is no physics engine to feed).
+// not decide the box, and does not collide (KinematicBody resolves against the
+// oracle directly, per DW-12 there is no physics engine to feed).
 
 import * as THREE from 'three';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import type { CellBox } from './VoxelWorld.js';
-import { greedyMesh, type GreedyMesh } from './VoxelGreedy.js';
-import { filterDrawnFaces, faceColours, FACE_STRIDE } from './VoxelSkin.js';
+import { faceColours } from './VoxelSkin.js';
 import type { SurfaceRadiusFn } from './VoxelSkin.js';
 
 /**
@@ -32,31 +48,42 @@ import type { SurfaceRadiusFn } from './VoxelSkin.js';
  * is where 27 to 69 ms came from. Bricks are a fixed, disjoint lattice, so a
  * strike re-meshes only the one or two bricks it touched and the rest are served
  * from cache: the cost of a swing stops growing with the length of the tunnel.
- * 8 keeps a brick's padded region at 10^3 cells, small enough that touching
- * eight of them at once is still cheaper than one 20 m cube was.
+ *
+ * The rule that keeps neighbouring bricks from seaming or doubling a triangle
+ * lives in /core's `surfaceNetsBrick`, not here, because it is exactly the kind
+ * of off-by-one that should be stated once and tested.
  */
 const BRICK = 8;
 
+/** Floats per vertex in the f32 scratch: position xyz then normal xyz. */
+const VERT_STRIDE = 6;
+
+/** One brick's extracted geometry, positions relative to the brick's own corner. */
+interface BrickMesh {
+  readonly cell: [number, number, number];
+  readonly verts: Float32Array;   // stride VERT_STRIDE
+  readonly idx: Uint32Array;
+}
+
 export interface VoxelMeshStats {
   rebuilds: number;
-  faces: number;
-  quads: number;
+  /** Vertices and triangles the extraction produced across every cached brick. */
+  vertices: number;
   triangles: number;
   lastMs: number;
-  /** faces / quads. 1 means the greedy pass merged nothing. */
-  mergeRatio: number;
   boxes: number;
   /** Bricks holding geometry, and how many the last strike had to re-mesh. */
   bricks: number;
   remeshed: number;
   /**
-   * Faces /core exposed in the re-meshed bricks, and how many of those the
-   * heightfield already draws and were therefore dropped. `dropped / exposed`
-   * is the size of the redundant skin this mesh used to paint over the terrain.
+   * Vertices /core emitted in the re-meshed bricks. `dropped` is retained at 0:
+   * the edit filter now runs inside /core, so the client never sees the faces it
+   * would have discarded. Kept as a field so the HUD and the probes that read it
+   * do not have to change shape.
    */
   exposed: number;
   dropped: number;
-  /** false with `?voxelskin=0`: the whole solid-to-air shell, as W5 drew it. */
+  /** false with `?voxelskin=0`: the whole isosurface, not only edited cells. */
   editFacesOnly: boolean;
   /** The /core biome the vertex colours were taken from. */
   biome: number;
@@ -67,13 +94,15 @@ export interface VoxelMeshOptions {
    *  needs to place a vertex in the snow band (BiomePalette.terrainAlbedo). */
   readonly bodyRadiusM: number;
   readonly maxReliefM: number;
-  /** The ONE surface, so this mesh can tell what the terrain chunk already
-   *  draws from what only it can (standing rule 1). */
+  /** The ONE surface. Retained on the options so `?voxelskin=0` and the probes
+   *  keep their shape; the filter itself now lives in /core (standing rule 1:
+   *  the edit store is what knows which cells are the player's). */
   readonly surfaceRadiusAt: SurfaceRadiusFn;
   /**
-   * `?voxelskin=0` restores the mesh exactly as W5 shipped it: the WHOLE
-   * solid-to-air shell of every re-meshed brick, in its own flat brown Lambert.
-   * That is the layer being accused, so it has to stay switchable (rule 7).
+   * `?voxelskin=0` meshes the WHOLE isosurface of every re-meshed brick rather
+   * than only the cells near an edit, in its own flat brown Lambert. That is the
+   * layer under accusation whenever the near field looks wrong, so it has to stay
+   * switchable (standing rule 7).
    */
   readonly editFacesOnly: boolean;
 }
@@ -84,12 +113,12 @@ export class VoxelMesh {
   private readonly geo = new THREE.BufferGeometry();
   /** Body-frame anchor the f32 vertices are relative to (standing rule 6). */
   private readonly anchor: Vec3d = { x: 0, y: 0, z: 0 };
-  /** Cached exposed faces per brick, keyed `bx,by,bz`. Empty bricks are dropped. */
-  private readonly bricks = new Map<string, Int32Array>();
+  /** Cached extraction per brick, keyed `bx,by,bz`. Empty bricks are dropped. */
+  private readonly bricks = new Map<string, BrickMesh>();
   /** Lowest brick corner seen, in cells. The f32 anchor (standing rule 6). */
   private anchorCell: [number, number, number] | null = null;
   readonly stats: VoxelMeshStats = {
-    rebuilds: 0, faces: 0, quads: 0, triangles: 0, lastMs: 0, mergeRatio: 0,
+    rebuilds: 0, vertices: 0, triangles: 0, lastMs: 0,
     boxes: 0, bricks: 0, remeshed: 0, exposed: 0, dropped: 0, editFacesOnly: true,
     biome: -1,
   };
@@ -104,12 +133,15 @@ export class VoxelMesh {
     // Lambert, because Headlamp is the lighting authority underground and the
     // terrain's own program ignores three's light list entirely: shading this
     // mesh with it made a tunnel stop responding to the lamp (lift 3.46x ->
-    // 1.12x, measured). Colour is imported instead of light. `?voxelskin=0`
-    // restores the flat brown W5 shipped, or the isolation would show only half
-    // of what changed.
+    // 1.12x, measured). Colour is imported instead of light.
+    //
+    // flatShading is GONE with the cubes. Surface nets supplies a real gradient
+    // normal per vertex, and flat shading would have thrown it away and drawn
+    // the smooth surface as facets, which is the artifact this whole change
+    // exists to remove.
     this.ownMaterial = new THREE.MeshLambertMaterial(opts.editFacesOnly
-      ? { vertexColors: true, flatShading: true }
-      : { color: 0x8a7a63, flatShading: true });
+      ? { vertexColors: true }
+      : { color: 0x8a7a63 });
     this.mesh = new THREE.Mesh(this.geo, this.ownMaterial);
     this.stats.editFacesOnly = opts.editFacesOnly;
     this.mesh.name = 'voxelNear';
@@ -122,8 +154,8 @@ export class VoxelMesh {
   /**
    * Re-mesh the bricks a dirty box touched, then rebuild the geometry from the
    * brick cache. The box is expanded by one cell first: a cell carved on a brick
-   * boundary exposes a face belonging to the NEIGHBOURING brick, and skipping
-   * that is a one-cell hole in the tunnel wall exactly where two bricks meet.
+   * boundary moves a corner belonging to the NEIGHBOURING brick, and skipping
+   * that is a one-cell notch in the wall exactly where two bricks meet.
    */
   applyDirty(dirty: CellBox): void {
     const t0 = performance.now();
@@ -143,43 +175,31 @@ export class VoxelMesh {
   }
 
   /**
-   * Ask /core for the exposed faces of ONE brick and cache them. The radius is
-   * (BRICK-1)/2, not BRICK/2, because exposedFaces builds its cell box from
-   * floor(centre +/- radius): half a brick would spill one cell into the next
-   * brick and every boundary face would be emitted twice, drawn twice, and
-   * z-fight with itself.
+   * Ask /core to extract ONE brick and cache it. Positions come back relative to
+   * the brick's own corner cell, which is a fixed 64-bit integer, so a cached
+   * brick survives an origin rebase and the anchor can move without re-meshing.
    */
   private meshBrick(bx: number, by: number, bz: number): void {
-    const cellM = this.M._of_voxel_size();
-    const half = (BRICK - 1) * 0.5 * cellM;
-    const count = this.M._of_exposed_faces(
-      this.bodyHandle, this.editsHandle,
-      (bx * BRICK + BRICK * 0.5) * cellM,
-      (by * BRICK + BRICK * 0.5) * cellM,
-      (bz * BRICK + BRICK * 0.5) * cellM,
-      half,
+    const count = this.M._of_surface_nets_brick(
+      this.bodyHandle, this.editsHandle, bx, by, bz, BRICK,
+      bx * BRICK, by * BRICK, bz * BRICK,
+      this.opts.editFacesOnly ? 1 : 0,
     );
     const key = `${bx},${by},${bz}`;
     if (count <= 0) { this.bricks.delete(key); return; }
+    const idxCount = this.M._of_surface_nets_index_count();
+    if (idxCount <= 0) { this.bricks.delete(key); return; }
     this.stats.exposed += count;
-    // Standing rule 5: the scratch pointer and HEAP32 are re-read here, after
-    // the call that may have grown the heap, and copied out before anything
-    // else can call into WASM.
-    const ptr = this.M._of_scratch_i32() >> 2;
-    const raw = new Int32Array(this.M.HEAP32.subarray(ptr, ptr + count * FACE_STRIDE));
-    // The filter is the fix for the pyramid field: everything /core exposes on
-    // the derived surface is already drawn, better and smoothly, by the chunk.
-    let kept: Int32Array = raw;
-    let keptCount = count;
-    if (this.opts.editFacesOnly) {
-      const f = filterDrawnFaces(this.M, this.editsHandle, this.opts.surfaceRadiusAt,
-        cellM, raw, count);
-      kept = f.i32; keptCount = f.count;
-      this.stats.dropped += f.dropped;
-    }
-    if (keptCount <= 0) { this.bricks.delete(key); return; }
-    this.bricks.set(key, new Int32Array(kept));
+    // Standing rule 5: both scratch pointers and both heap views are re-read
+    // here, after the call that may have grown the heap, and copied out before
+    // anything else can call into WASM.
+    const fp = this.M._of_scratch_f32() >> 2;
+    const verts = new Float32Array(
+      this.M.HEAPF32.subarray(fp, fp + count * VERT_STRIDE));
+    const ip = this.M._of_scratch_i32() >> 2;
+    const idx = new Uint32Array(this.M.HEAP32.subarray(ip, ip + idxCount));
     const cx = bx * BRICK, cy = by * BRICK, cz = bz * BRICK;
+    this.bricks.set(key, { cell: [cx, cy, cz], verts, idx });
     if (this.anchorCell === null) this.anchorCell = [cx, cy, cz];
     else {
       this.anchorCell[0] = Math.min(this.anchorCell[0], cx);
@@ -198,20 +218,40 @@ export class VoxelMesh {
     this.mesh.updateMatrixWorld(true);
   }
 
-  /** Greedy-mesh the concatenation of every cached brick. No WASM call here. */
+  /**
+   * Concatenate every cached brick into one geometry, rebasing each brick's
+   * positions from its own corner onto the shared anchor and offsetting its
+   * indices. No WASM call here, so a rebuild costs only the copy.
+   */
   private rebuild(): void {
     const aCell = this.anchorCell;
     if (aCell === null) return;
     const cellM = this.M._of_voxel_size();
 
-    let total = 0;
-    for (const f of this.bricks.values()) total += f.length;
-    const i32 = new Int32Array(total);
-    let at = 0;
-    for (const f of this.bricks.values()) { i32.set(f, at); at += f.length; }
-    const count = total / FACE_STRIDE;
-
-    const mesh: GreedyMesh = greedyMesh({ i32, count }, aCell, cellM);
+    let nv = 0, ni = 0;
+    for (const b of this.bricks.values()) { nv += b.verts.length / VERT_STRIDE; ni += b.idx.length; }
+    const positions = new Float32Array(nv * 3);
+    const normals = new Float32Array(nv * 3);
+    const indices = new Uint32Array(ni);
+    let v = 0, iAt = 0;
+    for (const b of this.bricks.values()) {
+      const dx = (b.cell[0] - aCell[0]) * cellM;
+      const dy = (b.cell[1] - aCell[1]) * cellM;
+      const dz = (b.cell[2] - aCell[2]) * cellM;
+      const n = b.verts.length / VERT_STRIDE;
+      for (let i = 0; i < n; ++i) {
+        const s = i * VERT_STRIDE, d = (v + i) * 3;
+        positions[d] = b.verts[s] + dx;
+        positions[d + 1] = b.verts[s + 1] + dy;
+        positions[d + 2] = b.verts[s + 2] + dz;
+        normals[d] = b.verts[s + 3];
+        normals[d + 1] = b.verts[s + 4];
+        normals[d + 2] = b.verts[s + 5];
+      }
+      for (let i = 0; i < b.idx.length; ++i) indices[iAt + i] = b.idx[i] + v;
+      v += n;
+      iAt += b.idx.length;
+    }
 
     this.anchor.x = aCell[0] * cellM;
     this.anchor.y = aCell[1] * cellM;
@@ -219,29 +259,27 @@ export class VoxelMesh {
 
     // One biome for the whole near mesh, from the SAME `of_biome_at` a chunk
     // vertex reads. The mesh spans tens of metres and a biome spans kilometres,
-    // so a per-face call would buy nothing but calls.
+    // so a per-vertex call would buy nothing but calls.
     const ar = Math.hypot(this.anchor.x, this.anchor.y, this.anchor.z) || 1;
     const biomeId = this.M._of_biome_at(
       this.bodyHandle, this.anchor.x / ar, this.anchor.y / ar, this.anchor.z / ar);
     this.stats.biome = biomeId;
 
-    this.geo.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
-    this.geo.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
+    this.geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    this.geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     if (this.opts.editFacesOnly) {
       this.geo.setAttribute('color', new THREE.BufferAttribute(faceColours(
-        mesh.positions, mesh.normals, [this.anchor.x, this.anchor.y, this.anchor.z],
+        positions, normals, [this.anchor.x, this.anchor.y, this.anchor.z],
         this.opts.bodyRadiusM, this.opts.maxReliefM, biomeId), 3));
     }
-    this.geo.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+    this.geo.setIndex(new THREE.BufferAttribute(indices, 1));
     this.geo.computeBoundingSphere();
-    this.mesh.visible = mesh.indices.length > 0;
+    this.mesh.visible = indices.length > 0;
     this.place();
 
     this.stats.rebuilds++;
-    this.stats.faces = mesh.faces;
-    this.stats.quads = mesh.quads;
-    this.stats.triangles = mesh.indices.length / 3;
-    this.stats.mergeRatio = mesh.quads > 0 ? +(mesh.faces / mesh.quads).toFixed(2) : 0;
+    this.stats.vertices = nv;
+    this.stats.triangles = ni / 3;
     this.stats.bricks = this.bricks.size;
   }
 

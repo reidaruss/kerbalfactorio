@@ -169,7 +169,7 @@ had drifted off the authority. Fixed in ABI 2; the table is the contract.
 | `of_derived_lowering` | **oracle** | top-anchored open-column depth |
 | `of_derived_raising` / `of_surface_offset` | **oracle** | WG-22: the fill mirror, and the signed offset the mesher subtracts |
 | `of_solid_at` / `of_solid_cell` | **oracle** | designed shell, plus added, minus removed |
-| `of_edits_dig` / `of_edits_fill` / `of_exposed_faces` | **oracle** (via `VoxelEdits::isSolid`) | designed since WG-21 |
+| `of_edits_dig` / `of_edits_fill` / `of_surface_nets` | **oracle** (via `DensityField`) | designed since WG-21; a SIGNED field since WG-24 |
 | `of_level_area` / `of_streamer_level` | **oracle** `levelArea` | WG-22: the rule lives in `/core`, the shim only unpacks the result |
 | `of_sample_designed_height_latlon` | **oracle** base at a geo coord | same value as `of_base_height` |
 | `of_chunk_*` (streamed chunk data) | **oracle** (via `buildChunk`) | designed base + bound lowering |
@@ -206,10 +206,25 @@ Rules for any export added later:
 4. Never mix bases. A lowering computed against the designed base must never be
    applied to a raw base; that is the original WG-21 bug rebuilt by hand.
 
+**ABI 7 (2026-07-27, WG-24): the voxel representation changed.** `VoxelEdits`,
+two sparse sets of CELL ids carrying one occupancy bit each, became
+`DensityField`, a sparse SIGNED DISTANCE per lattice CORNER, and the cube mesher
+became surface nets. `of_exposed_faces` is GONE, replaced by `of_surface_nets`
+and `of_surface_nets_brick`, because a cube face is exactly the artifact the
+change removes. Four signatures gained a `body`: `of_edits_dig_cell`,
+`of_edits_dig_cell_at`, `of_edits_is_removed_cell` and `of_edits_is_added_cell`,
+because "is this cell removed" used to be a set lookup and is now DERIVED against
+the procedural surface, which needs the body. `of_edits_removed_count` and
+`of_edits_added_count` survive but count OVERRIDES pushing toward air and toward
+rock, so they are not comparable to a pre-7 number; the client uses them only for
+drift detection, where any monotone pair serves. The save format is a new
+self-describing stream (magic `0x4F464633`, version 3); a pre-7 slot is REFUSED
+rather than misread, and `of_edits_deserialize` returns -1 for it.
+
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 6
+int      of_abi_version(void);                 // 7
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
@@ -350,10 +365,10 @@ double of_moisture_at   (int body, double dx, double dy, double dz);
 int  of_edits_create(void);
 void of_edits_destroy(int edits);
 int  of_edits_dig(int edits, int body, double x, double y, double z, double radiusM);
-int  of_edits_dig_cell   (int edits, int32_t cx, int32_t cy, int32_t cz);
-int  of_edits_dig_cell_at(int edits, double x, double y, double z);
+int  of_edits_dig_cell   (int edits, int body, int32_t cx, int32_t cy, int32_t cz);
+int  of_edits_dig_cell_at(int edits, int body, double x, double y, double z);
 int  of_edits_removed_count(int edits);
-int  of_edits_is_removed_cell(int edits, int32_t cx, int32_t cy, int32_t cz);
+int  of_edits_is_removed_cell(int edits, int body, int32_t cx, int32_t cy, int32_t cz);
 int  of_edits_dirty_region(int edits);   // 1=valid; i32 scratch [minXYZ, maxXYZ]
 void of_edits_clear_dirty(int edits);
 
@@ -361,7 +376,7 @@ void of_edits_clear_dirty(int edits);
 int  of_edits_fill(int edits, int body, double x, double y, double z, double radiusM);
 int  of_edits_fill_cell(int edits, int body, int32_t cx, int32_t cy, int32_t cz);
 int  of_edits_added_count(int edits);
-int  of_edits_is_added_cell(int edits, int32_t cx, int32_t cy, int32_t cz);
+int  of_edits_is_added_cell(int edits, int body, int32_t cx, int32_t cy, int32_t cz);
 
 // THE LEVELLING OP. Inside a cylinder of radiusM about (x,y,z) aligned with the
 // local up, every cell above targetHeightM becomes air and every cell below it
@@ -375,14 +390,28 @@ void   of_cell_for_pos(double x, double y, double z);   // -> i32 scratch [cx,cy
 void   of_cell_center(int32_t cx, int32_t cy, int32_t cz); // -> f64 scratch [x,y,z]
 double of_voxel_size(void);                             // 1.0 m
 
-// Exposed solid->air faces for the cube mesher. Returns the FACE COUNT;
-// i32 scratch holds 5 ints per face: [cx, cy, cz, axis(0=X,1=Y,2=Z), sign(-1|+1)].
-int of_exposed_faces(int body, int edits, double x, double y, double z, double radiusM);
+// WG-24. The TRIANGLES of the density field's zero level. Returns the VERTEX
+// COUNT and fills BOTH scratch buffers in one call:
+//   f32 scratch, stride 6: [px, py, pz, nx, ny, nz], position in metres RELATIVE
+//                          to the anchor cell corner (standing rule 6).
+//   i32 scratch:           triangle indices; length from the second call below.
+// editedOnly=1 emits only cells near a corner the player actually changed.
+int of_surface_nets(int body, int edits, double x, double y, double z,
+                    double radiusM, int32_t anchorCx, int32_t anchorCy,
+                    int32_t anchorCz, int editedOnly);
+int of_surface_nets_index_count(void);
+// The per-BRICK form the client meshes with, so it can cache a brick and rebuild
+// only what a dig touched. The tiling rule (grow the region one cell on the LOW
+// side, emit only the lattice edges this brick owns) lives in /core, so bricks
+// cannot seam or double a triangle by a client off-by-one.
+int of_surface_nets_brick(int body, int edits, int32_t bx, int32_t by, int32_t bz,
+                          int32_t brick, int32_t anchorCx, int32_t anchorCy,
+                          int32_t anchorCz, int editedOnly);
 
 // persistence.h byte cursors (no filesystem). Save to IndexedDB / OPFS.
 int  of_edits_serialize(int edits);      // -> byte count, bytes in u8 scratch
 void of_edits_alloc_bytes(int n);        // size the u8 scratch, then copy bytes in
-int  of_edits_deserialize(int edits);    // -> removed count
+int  of_edits_deserialize(int edits);    // -> override count, or -1 if not a field
 ```
 
 **The serialized format changed in ABI 4 and it is self-describing.** The stream

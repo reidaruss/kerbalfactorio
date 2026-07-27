@@ -95,9 +95,9 @@ class SurfaceObserver {
   // into the player's own digs: surfaceHeightM() reads the oracle's ONE surface
   // (designed base − voxel-derived lowering) instead of the bare designed base.
   // Null (the default) = the undug designed base, bit-identical to before. The
-  // pointer is borrowed (the UE layer owns the VoxelEdits); pass nullptr to unbind.
-  void setVoxelEdits(const VoxelEdits* edits) { voxels_ = edits; }
-  const VoxelEdits* voxelEdits() const { return voxels_; }
+  // pointer is borrowed (the client owns the DensityField); pass nullptr to unbind.
+  void setVoxelEdits(const DensityField* edits) { voxels_ = edits; }
+  const DensityField* voxelEdits() const { return voxels_; }
 
   // Body frame id for this walker's UniverseCoords (== bodyId+1).
   FrameId frame() const { return static_cast<FrameId>(body_.bodyId + 1); }
@@ -378,7 +378,7 @@ class SurfaceObserver {
   double eyeHeight_;  // metres above the designed surface
   FloatingOrigin origin_;
   int lastSeenRebase_ = 0;
-  const VoxelEdits* voxels_ = nullptr;  // borrowed player dig diff (WG-21); null = undug base
+  const DensityField* voxels_ = nullptr;  // borrowed player dig diff (WG-21); null = undug base
 };
 
 }  // namespace worldgen

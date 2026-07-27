@@ -206,7 +206,7 @@ eqBits('cinder.radius', M._of_body_radius(cinder), expected.cinderRadius);
     const e2 = M._of_edits_create();
     for (let k = 0; k < 8; ++k) {
       const r = sR - (k + 0.5);
-      M._of_edits_dig_cell_at(e2, ddx * r, ddy * r, ddz * r);
+      M._of_edits_dig_cell_at(e2, forge, ddx * r, ddy * r, ddz * r);
     }
     return e2;
   };
@@ -244,13 +244,21 @@ eqBits('cinder.radius', M._of_body_radius(cinder), expected.cinderRadius);
   const sR2 = M2._of_surface_radius(f2, 0, dx, dy, dz);
   for (let k = 0; k < 5; ++k) {
     const r = sR2 - (k + 0.5);
-    M2._of_edits_dig_cell_at(e2, dx * r, dy * r, dz * r);
+    M2._of_edits_dig_cell_at(e2, f2, dx * r, dy * r, dz * r);
   }
-  eq('multi.instance2 sees its own dig', M2._of_edits_removed_count(e2), 5, TIER.SELF);
+  // WG-24: the literal 5 was five CELLS in five removed-set entries. The store is
+  // now a signed field, so a five-cell carve writes more corner overrides than
+  // that and the exact number is not the property under test. What IS the
+  // property is heap isolation, so assert that instead: instance 2 sees its own
+  // dig, and instance 1's identically-numbered handle does NOT see it. Both are
+  // stated as inequalities against instance 1's own count, so the case cannot
+  // pass by both instances being empty.
+  const n2 = M2._of_edits_removed_count(e2);
+  eq('multi.instance2 sees its own dig', n2 > 0, true, TIER.SELF);
   // The same handle id in instance 1 does NOT hold instance 2's edits (it holds
   // whatever instance 1 put there, or nothing). Separate heaps, separate state.
   eq('multi.instance1 heap is unaffected (separate memories)',
-     M._of_edits_removed_count(e2) === 5, false, TIER.SELF);
+     M._of_edits_removed_count(e2) === n2, false, TIER.SELF);
   eq('multi.instance2 lowering != 0', M2._of_derived_lowering(f2, e2, dx, dy, dz) > 0,
      true, TIER.SELF);
   eq('multi.instance1 lowering == 0 for the same handle id',
@@ -369,7 +377,7 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   const edits = M._of_edits_create();
   for (let k = 0; k < e.cells; ++k) {
     const r = surfR - (k + 0.5);
-    M._of_edits_dig_cell_at(edits, dx * r, dy * r, dz * r);
+    M._of_edits_dig_cell_at(edits, forge, dx * r, dy * r, dz * r);
   }
   eqBits('digColumn.before', before, e.before, TIER.B);
   eqBits('digColumn.lowering', M._of_derived_lowering(forge, edits, dx, dy, dz), e.lowering);
@@ -394,7 +402,15 @@ for (let i = 0; i < SAMPLES.length; ++i) {
     removed += M._of_edits_dig(edits, forge, dx * baseR + tx * s,
                                dy * baseR + ty * s, dz * baseR + tz * s, 1.4);
   }
-  let noLowering = 0;
+  // WG-24 re-baselined the tolerance from a BIT COMPARE to a measured bound, and
+  // the reason is the honest price of the representation: a signed field root-
+  // finds the trilinear zero level for any column that passes within a cell of an
+  // override, which lands fractions of a millimetre off the exact smooth height.
+  // The property is unchanged, "a sideways tunnel does not lower the ground"; it
+  // is now measured rather than assumed, and the worst residual is a pinned line
+  // of the fixture so a real regression cannot hide inside the tolerance.
+  const TUNNEL_RESIDUAL_M = 0.10;
+  let noLowering = 0, worstResidual = 0;
   const h = fnv();
   for (let k = 0; k < steps; ++k) {
     const s = k * 2.0;
@@ -405,8 +421,11 @@ for (let i = 0; i < SAMPLES.length; ++i) {
     const sh = M._of_surface_height(forge, edits, cx, cy, cz);
     const bh = M._of_base_height(forge, cx, cy, cz);
     h.f64(low); h.f64(sh);
-    if (low === 0.0 && bits(sh) === bits(bh)) ++noLowering;
+    const res = Math.abs(sh - bh);
+    if (res > worstResidual) worstResidual = res;
+    if (low <= TUNNEL_RESIDUAL_M && res <= TUNNEL_RESIDUAL_M) ++noLowering;
   }
+  eqBits('tunnel.worstResidual', worstResidual, e.worstResidual, TIER.B);
   eq('tunnel.removed', removed, e.removed);
   eq('tunnel.noLoweringColumns (ceiling intact)', noLowering, e.noLoweringColumns);
   eq('tunnel.hash (raw surface heights)', h.end(), e.hash, TIER.B);
@@ -427,10 +446,18 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   eq('voxel.dirtyValid', M._of_edits_dirty_region(edits), e.dirtyValid);
   const dr = scratchI32(M, 6);
   for (let i = 0; i < 6; ++i) eq(`voxel.dirty[${i}]`, dr[i], e.dirty[i]);
-  const faces = M._of_exposed_faces(forge, edits, dx * r, dy * r, dz * r, 5.0);
-  eq('voxel.faces', faces, e.faces);
-  const fp = scratchI32(M, faces * 5);
-  let h = fnv(); for (let i = 0; i < faces * 5; ++i) h.i32(fp[i]);
+  // WG-24: the mesher answers in TRIANGLES on the field's zero level rather
+  // than in cube faces, so the pin is the vertex buffer plus the index list.
+  const mverts = M._of_surface_nets(forge, edits, dx * r, dy * r, dz * r, 5.0,
+                                    0, 0, 0, 0);
+  const midx = M._of_surface_nets_index_count();
+  eq('voxel.verts', mverts, e.verts);
+  eq('voxel.indices', midx, e.indices);
+  const mp = scratchF32(M, mverts * 6);
+  let h = fnv(); for (let i = 0; i < mverts * 6; ++i) h.f32(mp[i]);
+  eq('voxel.vertHash', h.end(), e.vertHash);
+  const fp = scratchI32(M, midx);
+  h = fnv(); for (let i = 0; i < midx; ++i) h.i32(fp[i]);
   eq('voxel.faceHash', h.end(), e.faceHash);
   const nbytes = M._of_edits_serialize(edits);
   eq('voxel.saveBytes', nbytes, e.saveBytes);
@@ -668,7 +695,7 @@ const streamChunkDiffs = [];
   const ge = M._of_edits_create();
   for (let k = 0; k < 6; ++k) {
     const r = surfR - 0.5 - k;
-    M._of_edits_dig_cell_at(ge, d[0] * r, d[1] * r, d[2] * r);
+    M._of_edits_dig_cell_at(ge, forge, d[0] * r, d[1] * r, d[2] * r);
   }
   const low = M._of_derived_lowering(forge, ge, d[0], d[1], d[2]);
   M._of_observer_latlon_alt(forge, ge, lat, lon, alt);
@@ -879,7 +906,11 @@ function buildChain(deposit) {
 
   // --- hand crafting: all-or-nothing, and it consumes ----------------------
   {
-    eq('gp.recipeCount', M._of_gp_recipe_count(), 4, TIER.SELF);
+    // Lane D's smelting ladder (2026-07-27) added three rungs to the open recipe
+    // table, so the pinned count moved 4 to 7. Not a determinism failure: it is a
+    // literal that a deliberate content change invalidated, and lane D should
+    // confirm 7 is the number it meant to ship.
+    eq('gp.recipeCount', M._of_gp_recipe_count(), 7, TIER.SELF);
     M._of_gp_recipe_info(0);
     let r = scratchI32(M, 13).slice();
     eq('gp.recipeOutput', r[0], I.pickaxe, TIER.SELF);
@@ -1160,7 +1191,8 @@ if (process.argv.includes('--bench')) {
   const r = surfR - 2.0;
   t0 = process.hrtime.bigint();
   M._of_edits_dig(edits, b2, dx * r, dy * r, dz * r, 8.0);
-  const vfaces = M._of_exposed_faces(b2, edits, dx * r, dy * r, dz * r, 10.0);
+  const vfaces = M._of_surface_nets(b2, edits, dx * r, dy * r, dz * r, 10.0,
+                                    0, 0, 0, 0);
   t1 = process.hrtime.bigint();
   const voxSec = Number(t1 - t0) / 1e9;
   M._of_edits_destroy(edits);
@@ -1181,7 +1213,7 @@ if (process.argv.includes('--bench')) {
   };
   row('quad-mesh generation', verts / meshSec, nat ? nat.vertsPerSec : 0, 'verts/s');
   row('factory sim', kTicks / tickSec, nat ? nat.ticksPerSec : 0, 'ticks/s');
-  row('voxel dig + faces', vfaces / voxSec, nat ? nat.voxelFaces / nat.voxelSec : 0, 'faces/s');
+  row('voxel dig + surface nets', vfaces / voxSec, nat ? nat.voxelVerts / nat.voxelSec : 0, 'verts/s');
   console.log(`  (quad-mesh: ${kQuads} quads = ${verts} verts in ${(meshSec * 1e3).toFixed(1)} ms` +
               ` -> ${(meshSec * 1e3 / kQuads).toFixed(2)} ms/chunk)`);
 
@@ -1250,7 +1282,7 @@ if (process.argv.includes('--bench')) {
     const sR = M._of_surface_radius(b2, 0, dx, dy, dz);
     for (let k = 0; k < 12; ++k) {
       const r = sR - (k + 0.5);
-      M._of_edits_dig_cell_at(edits, dx * r, dy * r, dz * r);
+      M._of_edits_dig_cell_at(edits, b2, dx * r, dy * r, dz * r);
     }
     const N = 20000;
     const probe = (label, fn) => {

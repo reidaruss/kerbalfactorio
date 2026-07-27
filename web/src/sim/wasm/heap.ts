@@ -55,9 +55,17 @@ export interface OfCoreModule {
   _of_edits_destroy(edits: number): void;
   _of_edits_dig(edits: number, body: number, x: number, y: number, z: number,
                 radiusM: number): number;
-  _of_edits_dig_cell(edits: number, cx: number, cy: number, cz: number): number;
+  // WG-24 (ABI 7): a signed-density field has no single-cell op, so a cell carve
+  // is a brush of half a cell diagonal and needs the body, as does asking whether
+  // a cell counts as removed, which is now DERIVED against the procedural surface
+  // rather than read out of a set.
+  _of_edits_dig_cell(edits: number, body: number, cx: number, cy: number,
+                     cz: number): number;
+  _of_edits_dig_cell_at(edits: number, body: number, x: number, y: number,
+                        z: number): number;
   _of_edits_removed_count(edits: number): number;
-  _of_edits_is_removed_cell(edits: number, cx: number, cy: number, cz: number): number;
+  _of_edits_is_removed_cell(edits: number, body: number, cx: number, cy: number,
+                            cz: number): number;
   // --- WG-22 terraforming: the FILL half. `added` is the second sparse set, so
   //     ground the player PUT DOWN is a first class citizen of the same diff.
   _of_edits_fill(edits: number, body: number, x: number, y: number, z: number,
@@ -65,7 +73,8 @@ export interface OfCoreModule {
   _of_edits_fill_cell(edits: number, body: number, cx: number, cy: number,
                       cz: number): number;
   _of_edits_added_count(edits: number): number;
-  _of_edits_is_added_cell(edits: number, cx: number, cy: number, cz: number): number;
+  _of_edits_is_added_cell(edits: number, body: number, cx: number, cy: number,
+                          cz: number): number;
   /**
    * THE LEVELLING OP. Inside a cylinder of `radiusM` about (x,y,z) aligned with
    * the local up, every cell above `targetHeightM` becomes air and every cell
@@ -84,9 +93,33 @@ export interface OfCoreModule {
   _of_edits_alloc_bytes(n: number): void;
   /** Load the diff from the u8 scratch. Returns the removed-cell count, or -1. */
   _of_edits_deserialize(edits: number): number;
-  /** Face count; i32 scratch holds 5 ints per face [cx,cy,cz,axis,sign]. */
-  _of_exposed_faces(body: number, edits: number, x: number, y: number, z: number,
-                    radiusM: number): number;
+  /**
+   * WG-24. The TRIANGLES of the density field's zero level, replacing
+   * `_of_exposed_faces`, which answered in cube faces and is gone at ABI 7.
+   *
+   * Returns the VERTEX count and fills BOTH scratch buffers in one call:
+   *   f32 scratch, stride 6: [px,py,pz,nx,ny,nz], position in metres RELATIVE to
+   *                          the anchor cell's corner (standing rule 6).
+   *   i32 scratch:           the triangle indices; length from
+   *                          `_of_surface_nets_index_count()`.
+   * Copy both out before the next call into WASM (standing rule 5).
+   * `editedOnly` 1 emits only cells near an actual edit, because this mesh
+   * supplements the streamed heightfield rather than replacing it.
+   */
+  _of_surface_nets(body: number, edits: number, x: number, y: number, z: number,
+                   radiusM: number, anchorCx: number, anchorCy: number,
+                   anchorCz: number, editedOnly: number): number;
+  _of_surface_nets_index_count(): number;
+  /**
+   * The per-BRICK form, which is what the client meshes with so it can cache a
+   * brick and rebuild only what a dig touched. Same two scratch buffers and the
+   * same anchor-relative positions; the tiling rule that keeps bricks from
+   * seaming or doubling lives in /core.
+   */
+  _of_surface_nets_brick(body: number, edits: number, bx: number, by: number,
+                         bz: number, brick: number, anchorCx: number,
+                         anchorCy: number, anchorCz: number,
+                         editedOnly: number): number;
   _of_voxel_size(): number;
   _of_cell_for_pos(x: number, y: number, z: number): void;
   _of_cell_center(cx: number, cy: number, cz: number): void;

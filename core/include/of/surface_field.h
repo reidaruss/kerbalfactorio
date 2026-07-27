@@ -61,6 +61,7 @@
 #include "of/cubed_sphere.h"
 #include "of/biome.h"
 #include "of/voxel_terrain.h"
+#include "of/voxel_field.h"
 
 namespace of {
 namespace worldgen {
@@ -103,218 +104,173 @@ static constexpr double kSurfaceMaxDigDepthM = 80.0;
 static constexpr double kSurfaceMaxFillM = 24.0;
 
 // =============================================================================
-// §3 — DERIVED LOWERING (the far-field heightfield view of voxel digs).
+// §3 — THE EDITED SURFACE, root-found on the density field (WG-24).
 //
-// This is the UE OpenColumn logic (OFPlanetTerrain.cpp) promoted into /core so it
-// is testable and single-sourced. For a surface dir, walk DOWN the column from the
-// (designed) surface one voxel step (kVoxelSizeM) at a time; count the CONTIGUOUS
-// run of REMOVED cells that starts AT the surface. Stop at the first solid cell:
-//   * A dig-down pit -> the top cells are removed -> the run == the pit depth ->
-//     the heightfield lowers to match the mouth.
-//   * A sideways tunnel below intact ground -> the top cell is still solid -> the
-//     run is 0 -> NO lowering (the ceiling/overhang is preserved). The voxel layer
-//     alone carries the tunnel; the smooth heightfield never sees it.
-// Bounded by maxDigDepth (bedrock). PURE function of (body, dir, removed set).
+// WG-21 read the far-field view of a dig as the depth of the TOP-ANCHORED
+// contiguous run of removed CELLS in a column, and WG-22 mirrored it for placed
+// ground. That rule existed because the store was a set of cells: there was
+// nothing continuous to ask. It also had to be propped up, because a run of
+// cells breaks the moment one cell in it is already in the state the op wanted,
+// which on a staircase surface happens constantly (WG-23 measured 8.7% of the
+// columns inside a levelled pad keeping their original height, worst 2.5 m out,
+// and had to make levelling RECORD its decision over a band to keep the run
+// unbroken).
 //
-// We test isRemoved (NOT isProcSolid) for the run so a tunnel whose mouth cells
-// were procedurally air (e.g. a pit dug into a slope) still reads correctly: the
-// "opening" is the run of explicitly-removed cells from the surface downward.
-// (Matches the UE OpenColumn, which counted Voxels.isRemoved(cellForPos(p)).)
-// =============================================================================
-inline double derivedLoweringAt(const BodyParams& body, const Vec3& dir,
-                                const VoxelEdits& edits,
-                                double maxDigDepthM = kSurfaceMaxDigDepthM) {
-  if (edits.empty()) return 0.0;  // no digs -> bit-identical undug path
-  const Vec3 u = unitOf(dir);
-  const double surfR = baseSurfaceRadius(body, u);
-  double open = 0.0;
-  // Step down in 1 m (kVoxelSizeM) increments; sample the cell centre at each
-  // depth (surfR - d - 0.5 puts the probe at the centre of the d-th metre cell).
-  for (double d = 0.0; d <= maxDigDepthM; d += kVoxelSizeM) {
-    const Vec3 p = u * (surfR - d - 0.5 * kVoxelSizeM);
-    if (edits.isRemoved(cellForPos(p))) {
-      open = d + kVoxelSizeM;   // this metre is open; the run extends this far
-    } else {
-      break;                    // hit solid -> ceiling; stop (don't open below it)
-    }
-  }
-  if (open > maxDigDepthM) open = maxDigDepthM;
-  return open;
-}
-
-// =============================================================================
-// §3b — DERIVED RAISING (the far-field heightfield view of PLACED ground, WG-22).
+// On a signed field none of that is needed. The surface under a direction is the
+// topmost radius at which the field turns solid, found by sphere-tracing down the
+// radial and refining the bracket (voxel_field.h §4). A sideways tunnel still
+// lowers nothing, for the same physical reason as before and now automatically:
+// the rock above it is solid, so the topmost crossing has not moved. The
+// band-recording prosthetic is deleted, and with it the class of bug it existed
+// to paper over.
 //
-// The exact mirror of derivedLoweringAt, and it has to exist for the same reason
-// that one does: the heightfield is what the streamed mesh, the LOD metric and
-// the far-field walker read, so ground the player PUT DOWN has to show up there
-// or the surface disagrees with the voxels — the five-surfaces failure, restaged
-// with the sign flipped.
-//
-// For a surface dir, walk UP from the designed surface one voxel step at a time
-// and count the CONTIGUOUS run of ADDED cells that starts AT the surface. Stop
-// at the first cell that is not filled:
-//   * A levelled pad on a hollow -> the cells above the base are filled -> the run
-//     is the pad's thickness -> the heightfield rises to meet it.
-//   * A filled cell floating above a gap (a bridge, a roof) -> the cell directly
-//     above the surface is NOT filled -> the run is 0 -> NO raising. The voxel
-//     layer alone carries it, exactly as it alone carries a tunnel.
-// Bounded by maxFillM. PURE function of (body, dir, added set).
-// =============================================================================
-inline double derivedRaisingAt(const BodyParams& body, const Vec3& dir,
-                               const VoxelEdits& edits,
-                               double maxFillM = kSurfaceMaxFillM) {
-  if (edits.addedCount() == 0) return 0.0;  // no fill -> bit-identical old path
-  const Vec3 u = unitOf(dir);
-  const double surfR = baseSurfaceRadius(body, u);
-  double placed = 0.0;
-  for (double d = 0.0; d < maxFillM; d += kVoxelSizeM) {
-    // surfR + d + 0.5 is the centre of the d-th metre cell ABOVE the base.
-    const Vec3 p = u * (surfR + d + 0.5 * kVoxelSizeM);
-    if (edits.isAdded(cellForPos(p))) placed = d + kVoxelSizeM;
-    else break;                            // first unfilled cell ends the run
-  }
-  if (placed > maxFillM) placed = maxFillM;
-  return placed;
-}
-
-// =============================================================================
-// §4 — surfaceHeight: the ONE surface the whole engine reads.
-//
-//   surfaceHeight = clamp(baseHeight − derivedLowering + derivedRaising,
-//                         baseHeight − maxDigDepth, baseHeight + maxFill)
-//
-// The single bedrock clamp lives here, and so does its WG-22 mirror. The two runs
-// read DIFFERENT cells (raising walks up from the base, lowering walks down), so
-// both can be non-zero at once: a player who digs a pit and then fills it above
-// the old ground line. Raising is resolved FIRST and wins, because the topmost
-// solid surface is the one you stand on and it is the placed pad, not the buried
-// pit under it.
-//
-// Where nothing is dug or filled (edits empty, or the column is untouched) this
-// returns baseHeight BIT-IDENTICALLY — no regression to the designed terrain.
-// Overload without edits = the base (an unedited body).
+// LOWERING and RAISING survive as NAMES, because callers and the bridge ask for
+// them, but they are now views of the one root find rather than two independent
+// walks that could disagree with each other.
 // =============================================================================
 inline double surfaceHeight(const BodyParams& body, const Vec3& dir,
-                            const VoxelEdits& edits,
+                            const DensityField& edits,
                             double maxDigDepthM = kSurfaceMaxDigDepthM,
                             double maxFillM = kSurfaceMaxFillM) {
   const double base = baseHeight(body, dir);
-  const double raising = derivedRaisingAt(body, dir, edits, maxFillM);
-  if (raising > 0.0) {
-    double h = base + raising;
-    const double ceilH = base + maxFillM;           // the fill cap
-    if (h > ceilH) h = ceilH;
-    return h;
-  }
-  const double lowering = derivedLoweringAt(body, dir, edits, maxDigDepthM);
-  if (lowering <= 0.0) return base;                 // bit-identical unedited path
-  double h = base - lowering;
-  const double floorH = base - maxDigDepthM;        // bedrock under this dir
-  if (h < floorH) h = floorH;                       // the ONE clamp
+  if (edits.empty()) return base;                     // bit-identical undug path
+  double h = columnSurfaceHeight(body, edits, dir, maxDigDepthM, maxFillM);
+  const double floorH = base - maxDigDepthM;          // the ONE bedrock clamp
+  const double ceilH = base + maxFillM;               // and its WG-22 mirror
+  if (h < floorH) h = floorH;
+  if (h > ceilH) h = ceilH;
   return h;
+}
+
+/** Metres the edited surface sits BELOW the designed base under this dir. */
+inline double derivedLoweringAt(const BodyParams& body, const Vec3& dir,
+                                const DensityField& edits,
+                                double maxDigDepthM = kSurfaceMaxDigDepthM) {
+  const double d = baseHeight(body, dir) -
+                   surfaceHeight(body, dir, edits, maxDigDepthM, kSurfaceMaxFillM);
+  return d > 0.0 ? d : 0.0;
+}
+
+/** Metres the edited surface sits ABOVE the designed base under this dir. */
+inline double derivedRaisingAt(const BodyParams& body, const Vec3& dir,
+                               const DensityField& edits,
+                               double maxFillM = kSurfaceMaxFillM) {
+  const double d = surfaceHeight(body, dir, edits, kSurfaceMaxDigDepthM, maxFillM) -
+                   baseHeight(body, dir);
+  return d > 0.0 ? d : 0.0;
 }
 
 // The SIGNED offset of the edited surface from the designed base, in metres DOWN
 // (negative = the surface moved up). This is what the chunk mesher subtracts, so
 // one callback carries both halves of terraforming and generateQuadMesh needs no
-// second hook. Exactly `baseHeight − surfaceHeight` by construction.
+// second hook. Exactly `baseHeight - surfaceHeight` by construction.
 inline double surfaceOffsetAt(const BodyParams& body, const Vec3& dir,
-                              const VoxelEdits& edits,
+                              const DensityField& edits,
                               double maxDigDepthM = kSurfaceMaxDigDepthM,
                               double maxFillM = kSurfaceMaxFillM) {
   return baseHeight(body, dir)
        - surfaceHeight(body, dir, edits, maxDigDepthM, maxFillM);
 }
 
-// Undug overload (no voxel edits): surfaceHeight ≡ baseHeight.
+// Undug overload (no voxel edits): surfaceHeight == baseHeight.
 inline double surfaceHeight(const BodyParams& body, const Vec3& dir) {
   return baseHeight(body, dir);
 }
 
 // Absolute surface radius (metres from centre) including lowering and raising.
 inline double surfaceRadius(const BodyParams& body, const Vec3& dir,
-                            const VoxelEdits& edits,
+                            const DensityField& edits,
                             double maxDigDepthM = kSurfaceMaxDigDepthM,
                             double maxFillM = kSurfaceMaxFillM) {
   return body.radiusM + surfaceHeight(body, dir, edits, maxDigDepthM, maxFillM);
 }
 
 // =============================================================================
-// §5 — VOXEL SOLIDITY derived from the SAME base (designed, not raw).
+// §5 — VOXEL SOLIDITY, the two named shapes of "solid" (DW-26).
 //
-// A cell is solid iff its centre is at/below the DESIGNED surface radius AND it is
-// not in the removed set. Identical shape to voxel_terrain.h's isSolid, but the
-// surface radius comes from baseHeight (designed) — so the voxel solid shell and
-// the rendered/collision mesh finally agree (the raw/designed gap is gone).
-// voxel_terrain.h's own isProcSolid/surfaceRadiusAt are switched to designed too
-// (they route through baseHeight), so isSolid(body, cell) and solidCell here are
-// the same predicate; this is the oracle-named entry point.
+// DW-26's rule survives the representation change and so does its bound. One
+// authority still has to answer this question in two shapes, so both are still
+// published by name and the ctest still asserts the size of their disagreement.
+// What changed is which of the two shapes the MESHER draws.
+//
+//   solidCell   — the CELL-quantised answer: the field sampled at the cell's own
+//                 centre. Region iteration, harvest counting and the dirty AABB
+//                 are all cell-shaped, so this shape is still needed. It is a
+//                 quantised VIEW of the field below it, never a second authority.
+//   solidAt     — the CONTINUOUS answer: the field at the point. A body occupies
+//                 this shape, and so does the aim ray.
+//
+// The two can disagree only where a point and its cell centre straddle the zero
+// level, so the bound is still half a cell diagonal, 0.866 m, and it is still
+// asserted (test_voxel_field.cpp measures 0.4012 m worst against it).
+//
+// THE BOUND THAT ACTUALLY HURT was never that one. It was the distance between
+// the surface DRAWN and the surface COLLIDED, which on the old model was the same
+// 0.866 m because the mesher drew whole cell faces: the walker collided with rock
+// above the ground it stood on, the aim ray stopped short on invisible rock, and
+// the near mesh drew black spikes over terraformed ground. Surface nets emits the
+// zero level of THIS field, so the drawn surface and solidAt are the same
+// surface, and the residual is the field's own interpolation error over one cell:
+// MEASURED 0.087116 m, asserted at a quarter of a cell.
 // =============================================================================
 inline bool solidCell(const BodyParams& body, const VoxelCell& cell,
-                      const VoxelEdits& edits) {
-  return edits.isSolid(body, cell);  // designed-based after the RAW->DESIGNED switch
+                      const DensityField& edits) {
+  return edits.solidCell(body, cell);
 }
 inline bool solidAt(const BodyParams& body, const Vec3& bodyFramePos,
-                    const VoxelEdits& edits) {
-  return edits.isSolidAt(body, bodyFramePos);
+                    const DensityField& edits) {
+  return edits.solidAt(body, bodyFramePos);
 }
 
 // =============================================================================
-// §6 — SurfaceField: a bound (body, voxelEdits) view — the object callers hold.
+// §6 — SurfaceField: a bound (body, edits) view — the object callers hold.
 //
-// The audit's proposed type: worldgen::SurfaceField { const BodyParams&; const
-// VoxelEdits*; }. A thin binder over the free functions above so a consumer that
-// already has "the body + the player's voxel diff" queries the ONE surface without
-// re-passing them. A null VoxelEdits* means the undug base everywhere (the
+// A thin binder over the free functions above so a consumer that already has
+// "the body plus the player's terrain diff" queries the ONE surface without
+// re-passing them. A null DensityField* means the undug base everywhere (the
 // far-from-player / freshly-generated case).
 // =============================================================================
 class SurfaceField {
  public:
-  SurfaceField(const BodyParams& body, const VoxelEdits* edits,
+  SurfaceField(const BodyParams& body, const DensityField* edits,
                double maxDigDepthM = kSurfaceMaxDigDepthM)
       : body_(body), edits_(edits), maxDigDepthM_(maxDigDepthM) {}
 
   const BodyParams& body() const { return body_; }
   double maxDigDepth() const { return maxDigDepthM_; }
 
-  // The designed base (no edits) under a dir.
   double baseHeightAt(const Vec3& dir) const { return baseHeight(body_, dir); }
 
-  // The ONE surface (base − lowering + raising, clamped both ways) under a dir.
   double heightAt(const Vec3& dir) const {
     return edits_ ? surfaceHeight(body_, dir, *edits_, maxDigDepthM_, maxFillM_)
                   : baseHeight(body_, dir);
   }
   double radiusAt(const Vec3& dir) const { return body_.radiusM + heightAt(dir); }
 
-  // The far-field lowering (0 if no top-anchored open column here).
   double loweringAt(const Vec3& dir) const {
     return edits_ ? derivedLoweringAt(body_, dir, *edits_, maxDigDepthM_) : 0.0;
   }
-  // The far-field raising (0 if nothing is stacked on the base here). WG-22.
   double raisingAt(const Vec3& dir) const {
     return edits_ ? derivedRaisingAt(body_, dir, *edits_, maxFillM_) : 0.0;
   }
 
-  // Voxel solidity (designed base XOR removed). No edits bound -> procedural solid.
   bool solid(const VoxelCell& cell) const {
-    if (edits_) return edits_->isSolid(body_, cell);
+    if (edits_) return edits_->solidCell(body_, cell);
     return isProcSolid(body_, cell);
   }
   bool solidAtPos(const Vec3& bodyFramePos) const {
-    return solid(cellForPos(bodyFramePos));
+    if (edits_) return edits_->solidAt(body_, bodyFramePos);
+    return procDensityAt(body_, bodyFramePos) >= 0.0;
   }
 
   // A HeightLoweringFn (cubed_sphere.h) bound to this field's SIGNED surface
-  // offset — pass to generateQuadMesh / buildChunk so the streamed mesh drops
-  // exactly where the player dug an open column (and nowhere a tunnel merely
-  // passes) and RISES exactly where they filled one (WG-22). The callback returns
-  // metres DOWN, so a negative value raises; generateQuadMesh subtracts it either
-  // way and needs no second hook.
+  // offset. Pass to generateQuadMesh / buildChunk so the streamed mesh drops
+  // exactly where the player dug an open column and RISES exactly where they
+  // filled one. The callback returns metres DOWN, so a negative value raises;
+  // generateQuadMesh subtracts it either way and needs no second hook.
   HeightLoweringFn loweringFn() const {
     const BodyParams body = body_;         // capture by value (dir-pure)
-    const VoxelEdits* edits = edits_;
+    const DensityField* edits = edits_;
     const double maxDig = maxDigDepthM_;
     const double maxFill = maxFillM_;
     return [body, edits, maxDig, maxFill](const Vec3& dir) -> double {
@@ -324,153 +280,39 @@ class SurfaceField {
 
  private:
   BodyParams body_;
-  const VoxelEdits* edits_ = nullptr;
+  const DensityField* edits_ = nullptr;
   double maxDigDepthM_ = kSurfaceMaxDigDepthM;
   double maxFillM_ = kSurfaceMaxFillM;
 };
 
 // =============================================================================
-// §7 — levelArea: the TERRAFORMING op (WG-22). Flatten a disc toward one height.
+// §7 — levelArea: the TERRAFORMING op, now one line over the field.
 //
-// The rule a player asks for when they say "let me flatten a spot to build on"
-// is simple and it belongs HERE, in the surface authority, not in a client:
-//
-//   Inside a cylinder of radius `radiusM` about the aim point, aligned with the
-//   local up, every cell whose centre is ABOVE the target radius becomes AIR and
-//   every cell whose centre is BELOW it becomes SOLID.
-//
-// That is one predicate on |cellCentre| against ONE target radius, so the result
-// is a spherical cap at constant altitude — locally, over a few metres, a plane.
-// Cut and fill fall out of the same comparison rather than being two tools, which
-// is why a slope levels in one press instead of needing the player to guess which
-// half needs which.
-//
-// BOUNDS, and what happens at them. The cut reaches `maxCutM` above the target
-// and the fill `maxFillM` below it. Ground higher than the cut band is left
-// standing: it reads as a lip at the rim, not as a floating slab, because the
-// band is measured from the target and the rock above it is CONTIGUOUS with the
-// rock outside the disc. Deliberately bounded rather than unbounded: the scan is
-// a cell box, so an unbounded vertical reach on a cliff is an unbounded cost.
-//
-// TARGET HEIGHT is a relief height in the same units as baseHeight, so the caller
-// passes "the height I am standing at" and gets a floor at their own feet.
-//
-// Determinism: an explicit op over a pure predicate. Same (body, target, radius,
-// centre) applied to the same edit set gives the same two sets, bit for bit. It
-// is also IDEMPOTENT: applying it twice changes nothing the second time, which is
-// what lets the client repeat it on a held key without the pad creeping.
-//
-// WHAT IS RECORDED, WHICH IS NOT THE SAME AS WHAT IS CHANGED (WG-23).
-//
-// The op records EVERY cell in the band between the procedural surface and the
-// target, whether or not its solidity moved, through `markRemoved`/`markAdded`.
-// Recording only the changes is what a minimal diff wants and it is not what the
-// derived heightfield can read: `derivedLoweringAt` and `derivedRaisingAt` follow
-// a contiguous run of explicitly edited cells along a radial, and the procedural
-// surface is a 1 m staircase around the smooth designed height, so a column's
-// probe regularly lands in a cell that is already air on the cut side or already
-// rock on the fill side. Nothing was stored there, the run stops at the first
-// step, and the column keeps its ORIGINAL height while its neighbours move.
-// Measured on a 29 degree slope: 8.7% of the columns inside a levelled disc did
-// not move at all, up to 2.5 m off target, which is a gash through a pad rather
-// than a rough floor, and it is why a tool whose spread collapsed 2.3x read to a
-// player as nothing happening.
-//
-// The band is `kLevelRecordBandM` around the procedural surface radius at each
-// cell's OWN direction, not a slab around the target: what has to be unbroken is
-// the run each column walks, which starts at that column's surface. One and a
-// half cells covers the two offsets that put a cell centre and the ray probing it
-// on opposite sides of the surface — half a cell diagonal (0.87 m) between a
-// point and its cell's centre, plus the change in the designed height across one
-// cell. Deep rock below the fill and open air above the cut are outside the band
-// and are not recorded, so the diff stays the size of the earth actually moved
-// plus a one-cell skin, and NOT the whole scanned cylinder.
-//
-// Recording cannot change `isSolid` (a marked-air cell that was air is still air,
-// a marked-solid cell that was rock is still rock), so the voxel shell, the near
-// mesher, collision and every voxel pin are untouched by this. Only the derived
-// heightfield moves, which is the surface that was wrong.
+// The rule is unchanged from WG-22 and the name is kept because the bridge and
+// the client ask for it. The IMPLEMENTATION is voxel_field.h's levelDisc, which
+// assigns the plane's own signed distance inside the disc, so the extracted
+// surface IS the plane rather than the lattice's best staircase approximation to
+// it. WG-23's kLevelRecordBandM prosthetic is gone: it existed to keep a run of
+// edited CELLS unbroken for a column walk that no longer happens.
 // =============================================================================
-/** Band around each cell's own procedural surface within which a levelling op
- *  records its decision. See the note above for why it is one and a half cells. */
-static constexpr double kLevelRecordBandM = 1.5 * kVoxelSizeM;
 struct LevelResult {
   int dug = 0;      // cells that changed solid -> air
   int filled = 0;   // cells that changed air -> solid
-  int scanned = 0;  // cells inside the cylinder that were considered
+  int scanned = 0;  // corners the op considered
   int cells() const { return dug + filled; }
 };
 
-inline LevelResult levelArea(const BodyParams& body, VoxelEdits& edits,
+inline LevelResult levelArea(const BodyParams& body, DensityField& edits,
                              const Vec3& centerPos, double radiusM,
                              double targetHeightM,
                              double maxCutM = kSurfaceMaxFillM,
                              double maxFillM = kSurfaceMaxFillM) {
+  const LevelDiscResult r =
+      levelDisc(body, edits, centerPos, radiusM, targetHeightM, maxCutM, maxFillM);
   LevelResult out;
-  const double centreR = centerPos.length();
-  if (radiusM <= 0.0 || centreR <= 0.0) return out;
-
-  const Vec3 up = centerPos * (1.0 / centreR);
-  const double targetR = body.radiusM + targetHeightM;
-  // Half a cell of slack on each side so the band is inclusive of the cells whose
-  // centres sit exactly on the boundary rather than dropping them to rounding.
-  const double rHigh = targetR + maxCutM + 0.5 * kVoxelSizeM;
-  const double rLow  = targetR - maxFillM - 0.5 * kVoxelSizeM;
-  if (rLow <= 0.0) return out;
-
-  // A tight AABB for { p : |p perp up| <= radius, rLow <= |p| <= rHigh }. The
-  // cylinder's axis passes through the body centre because `up` is the unit of
-  // `centerPos`, so the perpendicular offset of the axis is exactly zero and the
-  // axial coordinate runs from sqrt(rLow^2 − radius^2) to rHigh. Bounding it
-  // properly instead of taking centre +/- (radius + band) is worth roughly an
-  // order of magnitude in cells scanned at these sizes.
-  const double axLo = std::sqrt(std::max(0.0, rLow * rLow - radiusM * radiusM));
-  double lo[3], hi[3];
-  const double u[3] = {up.x, up.y, up.z};
-  for (int i = 0; i < 3; ++i) {
-    const double a = axLo * u[i], b = rHigh * u[i];
-    const double perp = radiusM * std::sqrt(std::max(0.0, 1.0 - u[i] * u[i]));
-    lo[i] = std::min(a, b) - perp;
-    hi[i] = std::max(a, b) + perp;
-  }
-  const VoxelCell c0 = cellForPos(Vec3(lo[0], lo[1], lo[2]));
-  const VoxelCell c1 = cellForPos(Vec3(hi[0], hi[1], hi[2]));
-
-  const double r2 = radiusM * radiusM;
-  edits.clearDirty();
-  for (int32_t z = c0.cz; z <= c1.cz; ++z)
-    for (int32_t y = c0.cy; y <= c1.cy; ++y)
-      for (int32_t x = c0.cx; x <= c1.cx; ++x) {
-        const VoxelCell c{x, y, z};
-        const Vec3 p = cellCenter(c);
-        const double r = p.length();
-        if (r > rHigh || r < rLow) continue;          // outside the band
-        // Perpendicular distance from the cylinder axis.
-        const double axial = p.x * up.x + p.y * up.y + p.z * up.z;
-        const double perp2 = p.lengthSq() - axial * axial;
-        if (perp2 > r2) continue;                     // outside the disc
-        ++out.scanned;
-        const bool wantSolid = (r <= targetR);
-        const bool isSolidNow = edits.isSolid(body, c);
-        // Is this cell in the band the op is RESPONSIBLE for, i.e. near the
-        // procedural surface it is reshaping? `localBase` is the designed
-        // surface radius under the cell's OWN direction, which is the same
-        // number isProcSolid compares against, so no second authority appears.
-        // Read through the memo `isSolid` just used, or the noise stack would be
-        // evaluated twice per cell (measured: 10.2 ms a press against 0.7).
-        const double localBase = edits.procSurfaceRadius(body, c);
-        const bool inBand = wantSolid ? (r >= localBase - kLevelRecordBandM)
-                                      : (r <= localBase + kLevelRecordBandM);
-        if (wantSolid != isSolidNow) {
-          if (wantSolid) ++out.filled; else ++out.dug;
-          edits.touch(c);
-        } else if (!inBand) {
-          continue;                                   // already right, and not
-        }                                             // ours to record
-        // Record the DECISION, not only the change, so the column walk that
-        // reads this back has an unbroken run to follow (see the note above).
-        if (wantSolid) edits.markAdded(c); else edits.markRemoved(c);
-      }
+  out.dug = r.dug;
+  out.filled = r.filled;
+  out.scanned = r.scanned;
   return out;
 }
 

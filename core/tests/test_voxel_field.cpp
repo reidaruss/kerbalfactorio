@@ -20,6 +20,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <array>
+#include <algorithm>
 #include <vector>
 
 #include "test_framework.h"
@@ -597,4 +599,142 @@ TEST(a_remesh_of_a_dig_region_is_affordable) {
   CHECK(m.cellsScanned > 1000);
   CHECK(m.positions.size() > 0);
   CHECK(m.indices.size() > 0);
+}
+
+// -----------------------------------------------------------------------------
+// 11. BRICK TILING. The client meshes one 8-cell brick at a time and caches the
+//     result, so the rule that decides which brick owns which quad is the
+//     difference between a seamless surface and either a visible crack or a
+//     doubled triangle. Neither shows up in a vertex count, so assert it: the
+//     union of the per-brick meshes must carry EXACTLY the same triangles, once
+//     each, as one whole-region mesh over the same cells.
+// -----------------------------------------------------------------------------
+TEST(bricks_tile_without_a_seam_or_a_doubled_triangle) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const Vec3 centre = u * (b.radiusM + sampleDesignedHeight(b, u));
+  DensityField f;
+  // A bore long enough to cross several brick boundaries in every axis.
+  Vec3 t1, t2;
+  tangents(u, t1, t2);
+  for (int i = 0; i < 20; ++i)
+    f.digSphere(b, centre + t1 * (i * 1.2) - u * 3.0, 2.0);
+
+  const int B = 8;
+  const VoxelCell c = cellForPos(centre);
+  const int32_t b0x = (c.cx - 24) / B, b1x = (c.cx + 24) / B;
+  const int32_t b0y = (c.cy - 24) / B, b1y = (c.cy + 24) / B;
+  const int32_t b0z = (c.cz - 24) / B, b1z = (c.cz + 24) / B;
+
+  SurfaceNetsOpts all;
+  all.editedOnly = false;
+
+  // A triangle is named by the three CELLS its vertices live in, sorted, so the
+  // same triangle found from two different region origins compares equal even
+  // though its vertex indices differ.
+  const auto triKeys = [&](const SurfaceNetsMesh& m) {
+    std::vector<std::array<uint64_t, 3>> out;
+    for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
+      std::array<uint64_t, 3> k{voxelCellId(cellForPos(m.positions[m.indices[i]])),
+                                voxelCellId(cellForPos(m.positions[m.indices[i + 1]])),
+                                voxelCellId(cellForPos(m.positions[m.indices[i + 2]]))};
+      std::sort(k.begin(), k.end());
+      out.push_back(k);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+  };
+
+  std::vector<std::array<uint64_t, 3>> fromBricks;
+  int brickVerts = 0;
+  for (int32_t bz = b0z; bz <= b1z; ++bz)
+    for (int32_t by = b0y; by <= b1y; ++by)
+      for (int32_t bx = b0x; bx <= b1x; ++bx) {
+        const SurfaceNetsMesh m = surfaceNetsBrick(b, f, bx, by, bz, B, all);
+        brickVerts += static_cast<int>(m.positions.size());
+        for (const auto& k : triKeys(m)) fromBricks.push_back(k);
+      }
+  std::sort(fromBricks.begin(), fromBricks.end());
+
+  // The whole-region reference, over exactly the cells the bricks covered.
+  const SurfaceNetsMesh whole = surfaceNets(
+      b, f, VoxelCell{b0x * B, b0y * B, b0z * B},
+      VoxelCell{b1x * B + B - 1, b1y * B + B - 1, b1z * B + B - 1}, all);
+  std::vector<std::array<uint64_t, 3>> ref = triKeys(whole);
+
+  // Duplicates: a doubled triangle is z-fighting, and it is silent.
+  size_t dupes = 0;
+  for (size_t i = 1; i < fromBricks.size(); ++i)
+    if (fromBricks[i] == fromBricks[i - 1]) ++dupes;
+
+  // Every triangle the whole-region mesh found must be present in the union.
+  // The reverse need not hold at the outermost brick ring, which reaches one
+  // cell further out than the reference region does.
+  size_t missing = 0;
+  for (const auto& k : ref)
+    if (!std::binary_search(fromBricks.begin(), fromBricks.end(), k)) ++missing;
+
+  std::printf("    bricks: %zu triangles from %d brick meshes (%d vertices) "
+              "against %zu in one whole-region mesh; %zu duplicated, %zu of the "
+              "reference missing\n",
+              fromBricks.size(),
+              (b1x - b0x + 1) * (b1y - b0y + 1) * (b1z - b0z + 1), brickVerts,
+              ref.size(), dupes, missing);
+  CHECK(ref.size() > 200);
+  CHECK(dupes == 0);
+  CHECK(missing == 0);
+}
+
+// -----------------------------------------------------------------------------
+// 12. A FLOATING SLAB DOES NOT MOVE THE SMOOTH SURFACE, and neither does the
+//     height it happens to sit at.
+//
+//     WG-22 established the property with a rule (a run of edited cells ANCHORED
+//     at the base) and the port of test_surface_field.cpp had to drop it, because
+//     the first version of the root find answered "the topmost crossing" and was
+//     ALSO stepping over thin structures: the same 0.87 m block measured 6.6169 m
+//     from one height and 0.0002 m from another, which is a coin flip rather than
+//     a behaviour. Both halves are fixed here, so both halves are asserted: the
+//     march steps one cell and can no longer skip a slab, and a solid run that
+//     turns back to air before the ground is not the surface.
+//
+//     Why it matters beyond tidiness: the heightfield is what the streamed chunk
+//     draws, so raising it under a bridge would build a ramp of ground up to
+//     something the player deliberately put in the air.
+// -----------------------------------------------------------------------------
+TEST(a_floating_slab_does_not_raise_the_heightfield_at_any_height) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const double baseH = sampleDesignedHeight(b, u);
+  const double surfR = b.radiusM + baseH;
+
+  int tested = 0, unmoved = 0;
+  double worst = 0.0, worstAt = 0.0;
+  // Sweep the height so the answer cannot depend on where the march's steps
+  // happen to land, which is exactly the failure this case exists to catch.
+  for (double up = 3.0; up <= 12.0; up += 0.35) {
+    DensityField f;
+    const int placed = f.fillSphere(b, u * (surfR + up), 1.2);
+    if (placed <= 0) continue;
+    ++tested;
+    const double h = columnSurfaceHeight(b, f, u, 80.0, 24.0);
+    const double e = std::fabs(h - baseH);
+    if (e > worst) { worst = e; worstAt = up; }
+    if (e < 0.10) ++unmoved;
+    // The slab is still SOLID, though: the voxel layer carries it, exactly as it
+    // alone carries a tunnel. If this fails the test is passing vacuously.
+    CHECK(f.solidAt(b, u * (surfR + up)));
+  }
+  std::printf("    floating slab: %d of %d heights leave the surface unmoved, "
+              "worst %.4f m at %.2f m up\n", unmoved, tested, worst, worstAt);
+  CHECK(tested >= 20);
+  CHECK(unmoved == tested);
+
+  // And the mirror: ground that IS attached raises the surface, or the rule
+  // above would be indistinguishable from ignoring fill altogether.
+  DensityField g;
+  for (int i = 0; i <= 6; ++i) g.fillSphere(b, u * (surfR + i * 0.8), 1.5);
+  const double raised = columnSurfaceHeight(b, g, u, 80.0, 24.0) - baseH;
+  std::printf("    attached fill: surface rose %.3f m\n", raised);
+  CHECK(raised > 3.0);
 }

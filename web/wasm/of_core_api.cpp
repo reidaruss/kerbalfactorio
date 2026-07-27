@@ -76,6 +76,8 @@
 #include "of/biome.h"
 #include "of/deposits.h"
 #include "of/voxel_terrain.h"
+#include "of/voxel_field.h"
+#include "of/surface_nets.h"
 #include "of/surface_field.h"
 #include "of/terrain_stream.h"
 #include "of/factory_sim.h"
@@ -198,7 +200,7 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       pass-through (of_fl_*) for the flight lane, landed here because an ABI
 //       bump is atomic and a second one would cost more than one file.
 //       Additive: no existing signature changed.
-OF_API int of_abi_version(void) { return 6; }
+OF_API int of_abi_version(void) { return 7; }
 
 // =============================================================================
 // §1 — Bodies (cubed_sphere.h BodyParams).
@@ -264,83 +266,114 @@ OF_API double of_gravity_accel(int body, double rM) {
 }
 
 // =============================================================================
-// §2 — Voxel edit sets (voxel_terrain.h VoxelEdits). The destruction diff.
+// §2 — The terrain edit field (voxel_field.h DensityField). WG-24.
+//
+// Was a pair of sparse CELL-id sets carrying one occupancy bit each. It is now a
+// sparse SIGNED DISTANCE per lattice corner, so a dig is a sphere and a levelled
+// pad is a plane rather than the lattice's best staircase approximation of one.
+// The handle type and every entry point's NAME survive; four signatures gained a
+// bodyId, because a question that used to be answerable from a cell id alone (is
+// this cell removed) is now DERIVED from the field against the procedural
+// surface, which needs the body. That is what the ABI 7 bump is.
+//
+// A brush of half a cell diagonal is the smallest one that takes all eight of a
+// cell's corners negative, so it is what a single-cell carve means on a field.
+namespace { constexpr double kCellBrushM = 0.95; }
 // =============================================================================
-namespace { Registry<wg::VoxelEdits> g_edits; }
+namespace { Registry<wg::DensityField> g_edits; }
 
-OF_API int of_edits_create(void) { return g_edits.add(new wg::VoxelEdits()); }
+OF_API int of_edits_create(void) { return g_edits.add(new wg::DensityField()); }
 OF_API void of_edits_destroy(int e) { g_edits.remove(e); }
 
 // dig(): remove every currently-solid cell within radiusM of a body-frame point.
 // Returns the count of cells newly carved (drives harvest yield).
 OF_API int of_edits_dig(int editsId, int bodyId, double x, double y, double z,
                         double radiusM) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!e || !b) return -1;
-  return e->dig(*b, vec(x, y, z), radiusM);
+  return e->digSphere(*b, vec(x, y, z), radiusM);
 }
-// Carve exactly one cell (used by tests / precise tools). 1 if newly removed.
-OF_API int of_edits_dig_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
-  if (!e) return -1;
-  return e->digCell(wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+// Carve exactly one cell (tests and precise tools). Returns the number of cells
+// whose solidity flipped, which at this brush radius is 1 when the cell was rock
+// and 0 when it was already air.
+OF_API int of_edits_dig_cell(int editsId, int bodyId,
+                             int32_t cx, int32_t cy, int32_t cz) {
+  wg::DensityField* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  return e->digSphere(*b, wg::cellCenter(wg::VoxelCell{cx, cy, cz}), kCellBrushM);
 }
 // Carve the cell containing a body-frame position.
-OF_API int of_edits_dig_cell_at(int editsId, double x, double y, double z) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
-  if (!e) return -1;
-  return e->digCell(wg::cellForPos(vec(x, y, z))) ? 1 : 0;
+OF_API int of_edits_dig_cell_at(int editsId, int bodyId,
+                                double x, double y, double z) {
+  wg::DensityField* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  return e->digSphere(*b, wg::cellCenter(wg::cellForPos(vec(x, y, z))), kCellBrushM);
 }
 // fill(): the mirror of dig(). Make every currently-AIR cell within radiusM
 // solid. Returns the count of cells placed (drives the material cost). WG-22.
 OF_API int of_edits_fill(int editsId, int bodyId, double x, double y, double z,
                          double radiusM) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!e || !b) return -1;
-  return e->fill(*b, vec(x, y, z), radiusM);
+  return e->fillSphere(*b, vec(x, y, z), radiusM);
 }
 // Place exactly one cell. 1 if the cell changed from air to solid.
 OF_API int of_edits_fill_cell(int editsId, int bodyId,
                               int32_t cx, int32_t cy, int32_t cz) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!e || !b) return -1;
-  return e->fillCell(*b, wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+  return e->fillSphere(*b, wg::cellCenter(wg::VoxelCell{cx, cy, cz}), kCellBrushM);
 }
+// The two counts are now overrides pushing toward AIR and toward ROCK. They are
+// no longer cell counts and are not comparable to a pre-ABI-7 number; the client
+// uses them only to notice that the edit set moved by a route that was not an op
+// (VoxelWorld.driftedFromCore), for which any monotone pair serves.
 OF_API int of_edits_removed_count(int editsId) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
-  return e ? static_cast<int>(e->removedCount()) : -1;
+  wg::DensityField* e = g_edits.get(editsId);
+  return e ? static_cast<int>(e->airCount()) : -1;
 }
 OF_API int of_edits_added_count(int editsId) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
-  return e ? static_cast<int>(e->addedCount()) : -1;
+  wg::DensityField* e = g_edits.get(editsId);
+  return e ? static_cast<int>(e->rockCount()) : -1;
 }
-OF_API int of_edits_is_added_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
-  if (!e) return -1;
-  return e->isAdded(wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+// Added and removed are DERIVED now: a cell is added when it is solid and
+// procedurally was not, removed when it is air and procedurally was rock. Both
+// therefore need the body, which is the other half of the ABI 7 signature change.
+OF_API int of_edits_is_added_cell(int editsId, int bodyId,
+                                  int32_t cx, int32_t cy, int32_t cz) {
+  wg::DensityField* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  const wg::VoxelCell c{cx, cy, cz};
+  return (!wg::isProcSolid(*b, c) && e->solidCell(*b, c)) ? 1 : 0;
 }
-OF_API int of_edits_is_removed_cell(int editsId, int32_t cx, int32_t cy, int32_t cz) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
-  if (!e) return -1;
-  return e->isRemoved(wg::VoxelCell{cx, cy, cz}) ? 1 : 0;
+OF_API int of_edits_is_removed_cell(int editsId, int bodyId,
+                                    int32_t cx, int32_t cy, int32_t cz) {
+  wg::DensityField* e = g_edits.get(editsId);
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!e || !b) return -1;
+  const wg::VoxelCell c{cx, cy, cz};
+  return (wg::isProcSolid(*b, c) && !e->solidCell(*b, c)) ? 1 : 0;
 }
 // Dirty AABB since the last clear. Fills i32 scratch with 6 ints
 // [minX,minY,minZ,maxX,maxY,maxZ]; returns 1 if valid, 0 if nothing touched.
 OF_API int of_edits_dirty_region(int editsId) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   resetI32(6);
   if (!e) return -1;
-  wg::VoxelEdits::CellAABB r = e->dirtyRegion();
+  wg::DensityField::CellAABB r = e->dirtyRegion();
   if (!r.valid) return 0;
   g_i32.push_back(r.min.cx); g_i32.push_back(r.min.cy); g_i32.push_back(r.min.cz);
   g_i32.push_back(r.max.cx); g_i32.push_back(r.max.cy); g_i32.push_back(r.max.cz);
   return 1;
 }
 OF_API void of_edits_clear_dirty(int editsId) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   if (e) e->clearDirty();
 }
 
@@ -358,31 +391,98 @@ OF_API void of_cell_center(int32_t cx, int32_t cy, int32_t cz) {
 }
 OF_API double of_voxel_size(void) { return wg::kVoxelSizeM; }
 
-// exposedFaces(): the solid->air boundary quads the cube mesher draws. Returns
-// the FACE COUNT; i32 scratch holds 5 ints per face: [cx, cy, cz, axis, sign].
-OF_API int of_exposed_faces(int bodyId, int editsId, double x, double y, double z,
-                            double radiusM) {
+// surfaceNets(): the TRIANGLES of the field's zero level. Replaces
+// of_exposed_faces, which answered in cube faces and is gone at ABI 7, a cube
+// face being exactly the thing the user called sharp edges that are not clean.
+//
+// Returns the VERTEX count and fills BOTH scratch buffers in one call:
+//   f32 scratch, stride 6: [px, py, pz, nx, ny, nz] per vertex, position in
+//                          metres RELATIVE to the anchor cell corner (standing
+//                          rule 6: never absolute planet-scale floats).
+//   i32 scratch:           the triangle index list; read its length from
+//                          of_surface_nets_index_count() after this call.
+// Copy both out before the next call into WASM (standing rule 5).
+//
+// editedOnly=1 emits only cells near a corner the player has actually changed,
+// because this mesh SUPPLEMENTS the streamed heightfield rather than replacing it
+// (ARCHITECTURE 15.2 item 108). 0 meshes the whole region, which is what a probe
+// or a test wants.
+namespace { int g_snIndexCount = 0; }
+
+OF_API int of_surface_nets(int bodyId, int editsId, double x, double y, double z,
+                           double radiusM, int32_t anchorCx, int32_t anchorCy,
+                           int32_t anchorCz, int editedOnly) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
+  resetF32(1024);
   resetI32(1024);
+  g_snIndexCount = 0;
   if (!b) return -1;
-  static const wg::VoxelEdits kEmpty;
-  const wg::VoxelEdits& ed = e ? *e : kEmpty;
-  const std::vector<wg::FaceQuad> faces =
-      wg::exposedFaces(*b, ed, vec(x, y, z), radiusM);
-  g_i32.reserve(faces.size() * 5);
-  for (const wg::FaceQuad& f : faces) {
-    g_i32.push_back(f.cell.cx); g_i32.push_back(f.cell.cy);
-    g_i32.push_back(f.cell.cz); g_i32.push_back(f.axis); g_i32.push_back(f.sign);
+  static const wg::DensityField kEmpty;
+  const wg::DensityField& ed = e ? *e : kEmpty;
+  wg::SurfaceNetsOpts o;
+  o.editedOnly = editedOnly != 0;
+  const wg::SurfaceNetsMesh m =
+      wg::surfaceNetsAround(*b, ed, vec(x, y, z), radiusM, o);
+  const Vec3 anchor = wg::cornerPos(wg::VoxelCell{anchorCx, anchorCy, anchorCz});
+  g_f32.reserve(m.positions.size() * 6);
+  for (size_t i = 0; i < m.positions.size(); ++i) {
+    g_f32.push_back(static_cast<float>(m.positions[i].x - anchor.x));
+    g_f32.push_back(static_cast<float>(m.positions[i].y - anchor.y));
+    g_f32.push_back(static_cast<float>(m.positions[i].z - anchor.z));
+    g_f32.push_back(static_cast<float>(m.normals[i].x));
+    g_f32.push_back(static_cast<float>(m.normals[i].y));
+    g_f32.push_back(static_cast<float>(m.normals[i].z));
   }
-  return static_cast<int>(faces.size());
+  g_i32.reserve(m.indices.size());
+  for (uint32_t idx : m.indices) g_i32.push_back(static_cast<int32_t>(idx));
+  g_snIndexCount = static_cast<int>(m.indices.size());
+  return static_cast<int>(m.positions.size());
+}
+OF_API int of_surface_nets_index_count(void) { return g_snIndexCount; }
+
+// The per-BRICK form the client actually meshes with, so it can cache a brick and
+// rebuild only what a dig touched. The tiling rule (grow the region one cell on
+// the low side, emit only the edges this brick owns) lives in surface_nets.h, not
+// here and not in the client, because it is the kind of off-by-one that draws a
+// seam or a doubled triangle and it should be stated once.
+OF_API int of_surface_nets_brick(int bodyId, int editsId, int32_t bx, int32_t by,
+                                 int32_t bz, int32_t brick, int32_t anchorCx,
+                                 int32_t anchorCy, int32_t anchorCz,
+                                 int editedOnly) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  wg::DensityField* e = g_edits.get(editsId);
+  resetF32(1024);
+  resetI32(1024);
+  g_snIndexCount = 0;
+  if (!b) return -1;
+  static const wg::DensityField kEmpty;
+  const wg::DensityField& ed = e ? *e : kEmpty;
+  wg::SurfaceNetsOpts o;
+  o.editedOnly = editedOnly != 0;
+  const wg::SurfaceNetsMesh m =
+      wg::surfaceNetsBrick(*b, ed, bx, by, bz, brick, o);
+  const Vec3 anchor = wg::cornerPos(wg::VoxelCell{anchorCx, anchorCy, anchorCz});
+  g_f32.reserve(m.positions.size() * 6);
+  for (size_t i = 0; i < m.positions.size(); ++i) {
+    g_f32.push_back(static_cast<float>(m.positions[i].x - anchor.x));
+    g_f32.push_back(static_cast<float>(m.positions[i].y - anchor.y));
+    g_f32.push_back(static_cast<float>(m.positions[i].z - anchor.z));
+    g_f32.push_back(static_cast<float>(m.normals[i].x));
+    g_f32.push_back(static_cast<float>(m.normals[i].y));
+    g_f32.push_back(static_cast<float>(m.normals[i].z));
+  }
+  g_i32.reserve(m.indices.size());
+  for (uint32_t idx : m.indices) g_i32.push_back(static_cast<int32_t>(idx));
+  g_snIndexCount = static_cast<int>(m.indices.size());
+  return static_cast<int>(m.positions.size());
 }
 
 // --- persistence (persistence.h byte cursors, no filesystem) ------------------
 // Serialize the removed-cell diff to bytes in the u8 scratch. Returns byte count.
 // JS persists these to IndexedDB / OPFS.
 OF_API int of_edits_serialize(int editsId) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   g_u8.clear();
   if (!e) return -1;
   of::persist::SaveWriter w;
@@ -395,11 +495,11 @@ OF_API int of_edits_serialize(int editsId) {
 // call this). Returns the removed-cell count on success, -1 on failure.
 OF_API void of_edits_alloc_bytes(int n) { g_u8.assign(n > 0 ? n : 0, 0); }
 OF_API int of_edits_deserialize(int editsId) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   if (!e) return -1;
   of::persist::SaveReader r(g_u8);
-  e->deserialize(r);
-  return static_cast<int>(e->removedCount());
+  if (!e->deserialize(r)) return -1;   // not a density-field stream
+  return static_cast<int>(e->overrideCount());
 }
 
 // =============================================================================
@@ -407,7 +507,7 @@ OF_API int of_edits_deserialize(int editsId) {
 // `editsId <= 0` means "no digs" (the pure designed base).
 // =============================================================================
 namespace {
-const wg::VoxelEdits* editsOrNull(int id) { return g_edits.get(id); }
+const wg::DensityField* editsOrNull(int id) { return g_edits.get(id); }
 }  // namespace
 
 OF_API double of_base_height(int bodyId, double dx, double dy, double dz) {
@@ -419,7 +519,7 @@ OF_API double of_surface_height(int bodyId, int editsId,
                                 double dx, double dy, double dz) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return NAN;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   return e ? wg::surfaceHeight(*b, vec(dx, dy, dz), *e)
            : wg::surfaceHeight(*b, vec(dx, dy, dz));
 }
@@ -427,7 +527,7 @@ OF_API double of_surface_radius(int bodyId, int editsId,
                                 double dx, double dy, double dz) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return NAN;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   return e ? wg::surfaceRadius(*b, vec(dx, dy, dz), *e)
            : b->radiusM + wg::baseHeight(*b, vec(dx, dy, dz));
 }
@@ -435,7 +535,7 @@ OF_API double of_derived_lowering(int bodyId, int editsId,
                                   double dx, double dy, double dz) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return NAN;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   return e ? wg::derivedLoweringAt(*b, vec(dx, dy, dz), *e) : 0.0;
 }
 OF_API double of_max_dig_depth(void) { return wg::kSurfaceMaxDigDepthM; }
@@ -445,7 +545,7 @@ OF_API double of_derived_raising(int bodyId, int editsId,
                                  double dx, double dy, double dz) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return NAN;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   return e ? wg::derivedRaisingAt(*b, vec(dx, dy, dz), *e) : 0.0;
 }
 // The SIGNED metres the edited surface sits BELOW the designed base (negative =
@@ -454,7 +554,7 @@ OF_API double of_surface_offset(int bodyId, int editsId,
                                 double dx, double dy, double dz) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return NAN;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   return e ? wg::surfaceOffsetAt(*b, vec(dx, dy, dz), *e) : 0.0;
 }
 OF_API double of_max_fill(void) { return wg::kSurfaceMaxFillM; }
@@ -472,7 +572,7 @@ OF_API double of_max_fill(void) { return wg::kSurfaceMaxFillM; }
 OF_API int of_level_area(int editsId, int bodyId, double x, double y, double z,
                          double radiusM, double targetHeightM,
                          double maxCutM, double maxFillM) {
-  wg::VoxelEdits* e = g_edits.get(editsId);
+  wg::DensityField* e = g_edits.get(editsId);
   const wg::BodyParams* b = g_bodies.get(bodyId);
   resetI32(3);
   if (!e || !b) return -1;
@@ -490,7 +590,7 @@ OF_API int of_level_area(int editsId, int bodyId, double x, double y, double z,
 OF_API int of_solid_at(int bodyId, int editsId, double x, double y, double z) {
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return -1;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   if (e) return wg::solidAt(*b, vec(x, y, z), *e) ? 1 : 0;
   return wg::isProcSolid(*b, wg::cellForPos(vec(x, y, z))) ? 1 : 0;
 }
@@ -499,7 +599,7 @@ OF_API int of_solid_cell(int bodyId, int editsId,
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return -1;
   const wg::VoxelCell c{cx, cy, cz};
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   if (e) return wg::solidCell(*b, c, *e) ? 1 : 0;
   return wg::isProcSolid(*b, c) ? 1 : 0;
 }
@@ -629,7 +729,7 @@ OF_API int of_quadmesh_generate(int bodyId, int faceId, int depth,
   wg::FQuadKey key{b->bodyId, faceId, depth, qx, qy};
 
   wg::HeightLoweringFn lowering = nullptr;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   if (e) {
     if (rawBase) return 0;                     // mixed authority: refuse
     lowering = wg::SurfaceField(*b, e).loweringFn();
@@ -767,7 +867,7 @@ OF_API void of_streamer_set_edits(int sId, int editsId) {
   StreamerRec* r = g_streamers.get(sId);
   if (!r) return;
   r->editsId = editsId;
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   if (e) r->s->setLoweringFn(wg::SurfaceField(r->body, e).loweringFn());
   else   r->s->setLoweringFn(nullptr);
 }
@@ -811,9 +911,9 @@ int rebuildQuadsNear(StreamerRec& r, const Vec3& p, double reachM) {
 OF_API int of_streamer_dig(int sId, double x, double y, double z, double radiusM) {
   StreamerRec* r = g_streamers.get(sId);
   if (!r) return -1;
-  wg::VoxelEdits* e = g_edits.get(r->editsId);
+  wg::DensityField* e = g_edits.get(r->editsId);
   if (!e) return -1;
-  const int removed = e->dig(r->body, vec(x, y, z), radiusM);
+  const int removed = e->digSphere(r->body, vec(x, y, z), radiusM);
   if (removed <= 0) { r->last.ready.clear(); return 0; }
   return rebuildQuadsNear(*r, vec(x, y, z), radiusM);
 }
@@ -831,7 +931,7 @@ OF_API int of_streamer_level(int sId, double x, double y, double z,
                              double maxCutM, double maxFillM) {
   StreamerRec* r = g_streamers.get(sId);
   if (!r) return -1;
-  wg::VoxelEdits* e = g_edits.get(r->editsId);
+  wg::DensityField* e = g_edits.get(r->editsId);
   if (!e) return -1;
   const wg::LevelResult res = wg::levelArea(
       r->body, *e, vec(x, y, z), radiusM, targetHeightM,
@@ -862,7 +962,7 @@ OF_API int of_streamer_load_edits(int sId, double x, double y, double z,
                                   double radiusM) {
   StreamerRec* r = g_streamers.get(sId);
   if (!r) return -1;
-  wg::VoxelEdits* e = g_edits.get(r->editsId);
+  wg::DensityField* e = g_edits.get(r->editsId);
   if (!e) return -1;
   of::persist::SaveReader rd(g_u8);
   e->deserialize(rd);
@@ -899,7 +999,7 @@ OF_API void of_observer_latlon_alt(int bodyId, int editsId,
   resetF64(3);
   if (!b) return;
   const Vec3 dir = wg::latLonToDir(lat, lon);        // already unit length
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   const double surfR = e ? wg::surfaceRadius(*b, dir, *e)
                          : b->radiusM + wg::baseHeight(*b, dir);
   const Vec3 p = dir * (surfR + altM);
@@ -1845,7 +1945,7 @@ OF_API int of_gp_nodes_layout(int bodyId, int editsId, double dx, double dy,
     kinds.push_back(static_cast<wg::survival::NodeKind>(k));
   // THE surface authority (standing rule 1). LayoutTestArea's default snap is
   // the RAW heightfield, which is an internal ingredient and not a surface.
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   const wg::BodyParams& body = *b;
   wg::SnapHeightFn snap = [&body, e](const Vec3& d) {
     return e ? wg::surfaceHeight(body, d, *e) : wg::surfaceHeight(body, d);
@@ -1878,7 +1978,7 @@ OF_API int of_gp_node_add(int bodyId, int editsId, int kind,
   if (!(len > 0.0)) return -1;
   const Vec3 dir(dx / len, dy / len, dz / len);
   const auto nk = static_cast<wg::survival::NodeKind>(kind);
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   const double h = e ? wg::surfaceHeight(*b, dir, *e) : wg::surfaceHeight(*b, dir);
   wg::FDepositNode n;
   n.Position = UniverseCoord(dir * (b->radiusM + h), FrameId(0));
@@ -2013,7 +2113,7 @@ OF_API int of_gp_patch_layout(int bodyId, int editsId, double dx, double dy,
   const wg::BodyParams* b = g_bodies.get(bodyId);
   if (!b) return -1;
   if (g_gpPending.empty()) return static_cast<int>(g_gpPatches.size());
-  const wg::VoxelEdits* e = editsOrNull(editsId);
+  const wg::DensityField* e = editsOrNull(editsId);
   const wg::BodyParams& body = *b;
   wg::SnapHeightFn snap = [&body, e](const Vec3& d) {
     return e ? wg::surfaceHeight(body, d, *e) : wg::surfaceHeight(body, d);

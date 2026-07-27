@@ -70,6 +70,13 @@ struct SurfaceNetsOpts {
   /** Refuse regions larger than this many cells, so a mistaken AABB allocates a
    *  bounded amount rather than gigabytes. */
   int64_t maxCells = 4ll << 20;
+  /** QUAD OWNERSHIP, inclusive corner range. A quad belongs to the lattice EDGE
+   *  it crosses, and an edge is named by its lower corner, so restricting which
+   *  corners may emit is what lets a caller mesh one brick at a time without
+   *  either a seam or a doubled triangle. Leave `quadsOwned` false to emit every
+   *  quad the region can form, which is what a whole-region call wants. */
+  bool quadsOwned = false;
+  VoxelCell quadMin{}, quadMax{};
 };
 
 // The twelve edges of a cell, as pairs of corner indices in the
@@ -242,6 +249,12 @@ inline SurfaceNetsMesh surfaceNets(const BodyParams& body,
   for (int64_t z = 1; z < nz; ++z)
     for (int64_t y = 1; y < ny; ++y)
       for (int64_t x = 1; x < nx; ++x) {
+        if (opts.quadsOwned) {
+          const int64_t gxw = cmin.cx + x, gyw = cmin.cy + y, gzw = cmin.cz + z;
+          if (gxw < opts.quadMin.cx || gxw > opts.quadMax.cx ||
+              gyw < opts.quadMin.cy || gyw > opts.quadMax.cy ||
+              gzw < opts.quadMin.cz || gzw > opts.quadMax.cz) continue;
+        }
         const double d0 = dAt(x, y, z);
         // Edge along +X from corner (x,y,z): shared by cells (x, y-1..y, z-1..z).
         if ((d0 >= 0.0) != (dAt(x + 1, y, z) >= 0.0))
@@ -256,6 +269,36 @@ inline SurfaceNetsMesh surfaceNets(const BodyParams& body,
       }
 
   return out;
+}
+
+/**
+ * Mesh ONE BRICK of the world, so the client can cache the result per brick and
+ * rebuild only what a dig touched. The tiling rule lives here rather than in the
+ * client because it is the kind of off-by-one that draws a seam or a doubled
+ * triangle, and it should be stated once:
+ *
+ *   the region is the brick's cells GROWN BY ONE ON THE LOW SIDE, because the
+ *   quad for an edge needs the four cells around it and the two on the low side
+ *   belong to the previous brick;
+ *   the quads emitted are those whose edge's lower corner lies in the brick's own
+ *   corner range, so every edge in the world is emitted by exactly one brick.
+ *
+ * Vertices in the grown row are produced twice, once here and once by the
+ * neighbour. That is a handful of duplicated positions and no duplicated
+ * geometry, which is the right side of that trade.
+ */
+inline SurfaceNetsMesh surfaceNetsBrick(const BodyParams& body,
+                                        const DensityField& field, int32_t bx,
+                                        int32_t by, int32_t bz, int32_t brick,
+                                        SurfaceNetsOpts opts = {}) {
+  if (brick <= 0) return SurfaceNetsMesh{};
+  const VoxelCell lo{bx * brick - 1, by * brick - 1, bz * brick - 1};
+  const VoxelCell hi{bx * brick + brick - 1, by * brick + brick - 1,
+                     bz * brick + brick - 1};
+  opts.quadsOwned = true;
+  opts.quadMin = VoxelCell{bx * brick, by * brick, bz * brick};
+  opts.quadMax = hi;
+  return surfaceNets(body, field, lo, hi, opts);
 }
 
 /** Convenience: the cell box covering a sphere, the shape the client asks for. */

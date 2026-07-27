@@ -48,44 +48,42 @@ export class SurfaceOracle {
   }
 
   /**
-   * IS THIS POINT INSIDE THE WORLD AS DRAWN? DW-26's second shape of solid,
-   * stated for anything that marches a ray at what the player can see.
+   * IS THIS POINT INSIDE THE WORLD AS DRAWN? Kept as a NAME, because the aim
+   * ray, the build ghost and the levelling disc all ask for it, and deliberately
+   * no longer a separate answer.
    *
-   * `solidAt` answers with the 1 m lattice shell, which is the right answer for
-   * the mesher and the wrong one for an aim: the shell disagrees with the
-   * smooth `surfaceRadius` by up to half a cell diagonal in BOTH directions, so
-   * a ray stops on invisible rock in front of the ground (measured: 17 of 40
-   * aims, up to 3.8 m short) or sails through visible ground into it.
+   * It used to be a reconciliation. `solidAt` answered with the 1 m occupancy
+   * shell while the terrain drew the smooth `surfaceRadius`, and the two
+   * disagreed by up to half a cell diagonal in BOTH directions, so an aim ray
+   * marching the shell stopped on invisible rock (measured: 17 of 40 aims, worst
+   * 3.8 m short, ARCHITECTURE 15.2 item 110). The fix then was to swap the one
+   * quantised term for the smooth surface here, in the client, which worked and
+   * was the SIXTH definition of the surface in all but name.
    *
-   * The predicate is `solidAt` with its ONE quantised term swapped for the
-   * smooth surface, and the two edit sets left exactly as they are:
-   *
-   *     inside = added(cell) || (r <= surfaceRadius(dir) && !removed(cell))
-   *
-   * so a tunnel is still hollow (its cells are removed), a tunnel WALL is still
-   * rock (below the surface, not removed), and a placed slab above the fill cap
-   * is still there. With no edits bound it collapses to `r <= surfaceRadius`,
-   * which is the surface every other consumer already reads (standing rule 1).
+   * WG-24 removed the disagreement instead of reconciling it. `solidAt` is now
+   * the sign of the signed density field, and the near mesh is the zero level of
+   * that same field, so the surface marched and the surface drawn are one
+   * surface. This is the whole point of the change, stated in one line of code.
    */
   solidForAim(x: number, y: number, z: number): boolean {
-    const r = Math.hypot(x, y, z);
-    if (r < 1e-6) return true;
-    if (r > this.surfaceRadius(x / r, y / r, z / r)) return this.addedAt(x, y, z);
-    return !this.removedAt(x, y, z);
+    return this.solidAt(x, y, z);
   }
 
-  /** Was the cell containing this point CARVED by the player? */
+  /** Was the cell containing this point CARVED by the player? Derived against
+   *  the procedural surface, so it needs the body (ABI 7). */
   removedAt(x: number, y: number, z: number): boolean {
     if (this.editsHandle === 0) return false;
     const c = this.cellOf(x, y, z);
-    return this.M._of_edits_is_removed_cell(this.editsHandle, c[0], c[1], c[2]) !== 0;
+    return this.M._of_edits_is_removed_cell(
+      this.editsHandle, this.body.handle, c[0], c[1], c[2]) !== 0;
   }
 
   /** Was the cell containing this point PLACED by the player? */
   addedAt(x: number, y: number, z: number): boolean {
     if (this.editsHandle === 0) return false;
     const c = this.cellOf(x, y, z);
-    return this.M._of_edits_is_added_cell(this.editsHandle, c[0], c[1], c[2]) !== 0;
+    return this.M._of_edits_is_added_cell(
+      this.editsHandle, this.body.handle, c[0], c[1], c[2]) !== 0;
   }
 
   private cellOf(x: number, y: number, z: number): Int32Array {
