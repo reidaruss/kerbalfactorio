@@ -74,8 +74,34 @@ export const BURY_TOLERANCE_FALLBACK_M = 0.50;
  */
 export function fitPlane(lo: number, hi: number, floatM: number,
                          buryM: number): number {
-  return Math.max(lo, Math.min(hi - buryM, lo + floatM));
+  const k = 1 - PLANE_MARGIN;
+  return Math.max(lo, Math.min(hi - buryM * k, lo + floatM * k));
 }
+
+/**
+ * How much of each bound the fit refuses to spend. THIS IS NOT A FUDGE, AND THE
+ * FIRST VERSION WITHOUT IT WAS BROKEN.
+ *
+ * Spending the bury budget "to the last millimetre" means the fitted plane puts
+ * the worst point at EXACTLY `buryM`, and `checkGround` then re-derives that
+ * same number from a different arithmetic path: both sides are `ground(x) -
+ * |x|`, a difference of two doubles of magnitude 600,000, so the cancellation
+ * carries about 1e-10 m of error. A slack ratio of 1 + 2e-10 is greater than 1,
+ * and the placement is refused. On the coarse height field this lane started
+ * against, spreads were usually inside the bury bound so the exact-fit branch
+ * was rarely taken and the defect hid; the moment the terrain lane gave the
+ * noise stack real detail (WG-25) it became the NORMAL case and every candidate
+ * site in an 88-site scan refused with "the ground stands 0.50 m into it"
+ * against a 0.50 m bound.
+ *
+ * 2% rather than an epsilon, because there are two problems here and only one
+ * of them is arithmetic. A plane that lands exactly on the bury bound also
+ * leaves the SECOND cell of the site no room at all: any neighbour whose ground
+ * is a millimetre higher than the founding cell's own high point is refused. The
+ * margin costs 10 mm of bury on a 0.50 m bound, which is invisible, and buys
+ * both the numerical headroom and a base that can grow.
+ */
+export const PLANE_MARGIN = 0.02;
 
 /**
  * DW-32's cantilever, in storeys of clear air under a carried deck.

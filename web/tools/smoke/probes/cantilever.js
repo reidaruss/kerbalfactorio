@@ -70,8 +70,15 @@
   const groundAt = (p) => st.groundRadius(p.x, p.y, p.z) - Math.hypot(p.x, p.y, p.z);
   const RUNGS = [];
   for (let k = -8; k <= 8; ++k) RUNGS.push(k * 800);
+  // A RANKED LIST, NOT ONE ANSWER. The scan founds a PROSPECTIVE site at the
+  // sample point, and after the teleport the real site is founded on the lattice
+  // cell under the player's feet, which is a metre or two away and therefore a
+  // different frame. That mismatch was survivable on a coarse height field and
+  // stopped being survivable the night the terrain lane gave the noise stack
+  // real detail: the best-scoring spot became one whose founding cell is
+  // refused. So the probe carries its next-best answers and tries them.
+  const cands = [];
   let bestAt = null;
-  let bestErr = Infinity;
   for (const a of RUNGS) {
     for (const b of RUNGS) {
       const s = st.prospectiveSite(pointAt(a, b));
@@ -101,22 +108,14 @@
         hi = Math.max(hi, v);
       }
       if (hi - lo > (FLOAT + st.buryToleranceM) * 0.6) continue;
-      const err = Math.abs(-drop - WANT);
-      if (err < bestErr) {
-        bestErr = err;
-        bestAt = { a, b, drop: -drop, foundingSpread: hi - lo };
-      }
+      cands.push({ a, b, drop: -drop, foundingSpread: hi - lo,
+        err: Math.abs(-drop - WANT) });
     }
   }
-  if (bestAt === null) return fail('the scan found nothing');
-  const [tlat, tlon] = latLonOf(bestAt.a, bestAt.b);
-  log.push(`want ${WANT.toFixed(2)} m per cell, found ${bestAt.drop.toFixed(2)} `
-    + `(founding spread ${bestAt.foundingSpread.toFixed(2)}) `
-    + `at ${bestAt.a},${bestAt.b} = ${tlat},${tlon}`);
-  of.teleport(tlat, tlon, 2);
-  await sleep(2.0);
-  await of.settle(6);
-  await sleep(1.0);
+  cands.sort((x, y) => x.err - y.err);
+  if (cands.length === 0) return fail('the scan found nothing');
+  log.push(`want ${WANT.toFixed(2)} m per cell, ${cands.length} candidates, `
+    + `best ${cands[0].drop.toFixed(2)} (spread ${cands[0].foundingSpread.toFixed(2)})`);
 
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   const ghost = () => of.build().structGhost;
@@ -157,13 +156,33 @@
     return best;
   };
 
-  // --- the founding deck ---------------------------------------------------
-  of.build(4);
-  await sleep(0.2);
-  const under = await sweep((g) => g.addr !== null && g.ok && g.carryRun === 0,
-    -88, -35);
+  // --- the founding deck, at the first candidate that will take one --------
+  let tlat = 0;
+  let tlon = 0;
+  let under = null;
+  for (const c of cands.slice(0, 6)) {
+    [tlat, tlon] = latLonOf(c.a, c.b);
+    of.teleport(tlat, tlon, 2);
+    await sleep(1.6);
+    await of.settle(6);
+    of.build(4);
+    await sleep(0.25);
+    const seen = new Map();
+    under = await sweep((g) => {
+      if (g.addr !== null) seen.set(g.key, `${g.reason} dev=${g.unevennessM}`);
+      return g.addr !== null && g.ok && g.carryRun === 0;
+    }, -88, -25);
+    const feet = of.world().player.feet;
+    log.push(`candidate ${c.a},${c.b} (drop ${c.drop.toFixed(2)}, spread `
+      + `${c.foundingSpread.toFixed(2)}) at r=`
+      + `${Math.hypot(feet[0], feet[1], feet[2]).toFixed(1)}: `
+      + `${under === null ? `refused: ${[...seen.values()].slice(0, 3).join(' | ')}`
+        : 'founding cell found'}`);
+    if (under !== null) { bestAt = c; break; }
+  }
   if (under === null) {
-    return fail('no valid founding cell after the teleport', { ghost: ghost() });
+    return fail('no candidate site would take a founding foundation',
+      { tried: Math.min(6, cands.length), ghost: ghost() });
   }
   await place();
   if (parts().length < 1) return fail('the founding click placed nothing');
@@ -365,7 +384,8 @@
     advanced: { ticks: of.world().tick - t0, parts: parts().length },
     site, latLon: [tlat, tlon],
     bounds: { floatM: FLOAT, buryM: st.buryToleranceM, cantileverM: HANG,
-      maxRunCells: MAXRUN, perCellDropM: +bestAt.drop.toFixed(3) },
+      maxRunCells: MAXRUN, perCellDropM: +bestAt.drop.toFixed(3),
+      candidates: cands.length },
     steps,
     carried: { placed: placedCarried, worstHangM: +worstCarriedHang.toFixed(3),
       runPlaced: placedRun },

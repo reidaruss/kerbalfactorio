@@ -137,7 +137,12 @@
   // own `fitPlane` would agree with it by construction and could not catch the
   // day somebody changes it, which is exactly what this file is for.
   const FLOAT = st.floatToleranceM;
-  const fit = (lo, hi) => Math.max(lo, Math.min(hi - DECK, lo + FLOAT));
+  // The margin is StructureTolerance.PLANE_MARGIN, restated rather than
+  // imported for the reason above: a probe that called the client's own fit
+  // would agree with it by construction.
+  const MARGIN = 0.98;
+  const fit = (lo, hi) => Math.max(lo, Math.min(hi - DECK * MARGIN,
+    lo + FLOAT * MARGIN));
 
   /** Judge a list of site-local footprint centres all four ways. */
   const measure = (s, centres) => {
