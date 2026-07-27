@@ -17,18 +17,21 @@
 // A variant that does not use a material (a Low tree has no leaves) sets that
 // instance invisible instead. Nothing is deleted, so no slot is ever recycled.
 //
-// TWO BATCHES, NOT EIGHT, and that is a MEASUREMENT. One batch per material is
+// A FEW BATCHES, NOT EIGHT, and that is a MEASUREMENT. One batch per material is
 // what PropLibrary does and it left the clearing at 28 draws, no better than the
 // clones, because a shadow cascade redraws every batch: eight materials times
 // the main pass plus three cascades is the whole saving given back. The six node
-// files use eight roles but only TWO shading families (matte dielectric, and the
-// two metallic ores), and the roles are untextured flat colours, so the colour
-// is baked into a vertex attribute and the family is the batch. Eight batches
-// become two, and the shadow multiplier stops mattering.
+// files use eight roles but few shading families, and colour is baked into a
+// vertex attribute, so the FAMILY is the batch and the shadow multiplier stops
+// mattering. The family is now (surface, metalness) rather than metalness alone
+// — see `familyOf`, where the reason is that Leaf and Grass must not inherit
+// Rock's normal map.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MAX_CAPACITY, registerPool, type PoolReport } from './InstancePools.js';
+import { attachSurface, copyUv, familyForMaterial, type Family }
+  from '../render/instancing/Surfaces.js';
 
 /** Merge one family's primitives into a single geometry. One is already merged. */
 function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -102,6 +105,7 @@ function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
   g.setAttribute('normal', nrm !== undefined
     ? (nrm as THREE.BufferAttribute).clone()
     : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
+  copyUv(src, g, pos.count, 'nodes');   // UNCONDITIONAL. See Surfaces.copyUv.
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; ++i) {
     col[i * 3] = tint.r; col[i * 3 + 1] = tint.g; col[i * 3 + 2] = tint.b;
@@ -119,10 +123,23 @@ function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
   return g;
 }
 
-/** Which shading family a role belongs to. The role's own metalness decides. */
+/**
+ * Which batch a role belongs to: `<surface>:<shading>`, and BOTH halves matter.
+ *
+ * Metalness alone put Leaf and Grass in the same bucket as Rock and Bark. That
+ * was free while nothing was textured and it stopped being free the moment the
+ * bucket got a map, because Leaf and Grass are `flat_roles`: the texture pass
+ * recorded a reason for each ("sub-pixel blades at any real viewing distance",
+ * "a double-sided card whose normal map fights the flat-shaded silhouette"), and
+ * a rock normal map on a foliage card is worse than no map at all. Splitting on
+ * the surface family is what preserves that decision through the batching.
+ *
+ * The cost is at most two extra batches, which at 53 draws of a 150 budget is
+ * the cheap side of the trade (ASSET-SPECS 2.9).
+ */
 function familyOf(m: THREE.Material): string {
   const s = m as THREE.MeshStandardMaterial;
-  return (s.metalness ?? 0) > 0.5 ? 'metal' : 'matte';
+  return `${familyForMaterial(m)}:${(s.metalness ?? 0) > 0.5 ? 'metal' : 'matte'}`;
 }
 
 /** A candidate primitive found in a template, before any batch exists. */
@@ -221,17 +238,18 @@ export class NodeBatch {
 
   private makeBatch(name: string,
                     s: { verts: number; idx: number; src: THREE.Material }): Batch {
-    const metal = name === 'metal';
+    const metal = name.endsWith(':metal');
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff, vertexColors: true,
       metalness: metal ? 1.0 : 0.0,
       roughness: metal ? 0.38 : 0.88,
-      // The leaf roles are authored double sided (of_lib DOUBLE_SIDED) and they
-      // share this batch with the trunk, so the whole matte family takes the
-      // leaves' side setting. Nothing here is thick enough to show the cost.
+      // The leaf roles are authored double sided (of_lib DOUBLE_SIDED). Side
+      // still keys on metalness ONLY, not on the new surface split, so the
+      // bucketing change cannot move a silhouette: this is a materials pass.
       side: metal ? THREE.FrontSide : THREE.DoubleSide,
     });
     material.name = `nodes:${name}`;
+    attachSurface(material, name.split(':')[0] as Family, `nodes:${name}`);
     const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
     mesh.name = `nodes:${name}`;
     mesh.castShadow = true;

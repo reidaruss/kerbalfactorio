@@ -15,6 +15,8 @@
 import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
 import { LAYER_PROPS } from '../Scenes.js';
+import { attachSurface, copyUv, familyForRole, roleOfMaterialName, surfacesReady }
+  from './Surfaces.js';
 
 /** One primitive of one prop: which batch it lives in, and its two LOD ids. */
 export interface PropPart {
@@ -68,6 +70,7 @@ function normalize(src: THREE.BufferGeometry, worldMatrix: THREE.Matrix4): THREE
   g.setAttribute('normal', nrm !== undefined
     ? (nrm as THREE.BufferAttribute).clone()
     : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
+  copyUv(src, g, pos.count, 'props');   // UNCONDITIONAL. See Surfaces.copyUv.
   const idx = src.getIndex();
   // Every geometry in a batch must agree about having an index (three throws
   // otherwise), and a prop authored as a triangle soup would break the batch.
@@ -97,7 +100,12 @@ export class PropLibrary {
     const lib = new PropLibrary();
     lib.growable = growable;
     // Deduped by Loaders, so props_moon.glb is fetched once for its three biomes.
-    const gltfs = await Promise.all([...new Set(urls)].map((u) => loadGlb(u)));
+    // The manifest is awaited alongside, not after: this is the ONE batch path
+    // that keeps a material per ROLE name, so it is the one that can express the
+    // per-role family choice, and it must know the table before it builds one.
+    const pending = Promise.all([...new Set(urls)].map((u) => loadGlb(u)));
+    await surfacesReady();
+    const gltfs = await pending;
     for (const g of gltfs) lib.register(g.scene);
     for (const b of lib.batches.values()) scene.add(b.mesh);
     return lib;
@@ -139,6 +147,12 @@ export class PropLibrary {
     if (hit !== undefined) return hit;
     const material = source.clone();
     material.name = name;
+    // The one path that keeps a material per role NAME, so it is the one that
+    // gets the per-role family. `flat_roles` (Leaf, Grass, Water, Ice, Glass,
+    // Skin, Oil, EmissiveState) register and take NOTHING, which is a recorded
+    // decision rather than an omission: see surfaces.json's reason per role.
+    attachSurface(material as THREE.MeshStandardMaterial,
+      familyForRole(roleOfMaterialName(name)), `props:${name}`);
     const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
     const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
     mesh.name = `props:${name}`;

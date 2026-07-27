@@ -1,12 +1,11 @@
 // Every placed machine, belt tile and inserter in ONE BatchedMesh (DW-11), and
 // ONE material, whose emissive is driven per instance from the section 6 stream.
 //
-// WHY ONE BATCH AND NOT ONE PER MATERIAL. NodeBatch already measured this for
-// the clearing: a shadow cascade redraws every batch, so eight materials times
-// the main pass plus three cascades gives the whole instancing saving back. The
-// machine files use five roles (steel, dark steel, accent, hazard, emissive) and
-// none of them is textured, so the colour bakes into a vertex attribute and the
-// whole factory is one draw plus its cascades.
+// WHY ONE BATCH AND NOT ONE PER MATERIAL. A shadow cascade redraws every batch,
+// so eight materials times the main pass plus three cascades gives the whole
+// instancing saving back (NodeBatch measured it on the clearing). The five roles
+// bake their COLOUR into a vertex attribute and now share ONE `panel` surface,
+// so the whole factory is still one draw plus its cascades.
 //
 // DW-8 IS THIS FILE'S REASON TO EXIST. There is no AnimationMixer anywhere: a
 // belt's motion is a per-INSTANCE flow value, uploaded as one texel, that
@@ -16,18 +15,20 @@
 // power is the emissive chip the asset already ships and not a second system.
 //
 // The per-instance channel is a DataTexture indexed by three's own batching id
-// (`getIndirectIndex(gl_DrawID)`), which is exactly the mechanism three uses for
+// (`getIndirectIndex(gl_DrawID)`), exactly the mechanism three uses for
 // per-instance colour, so it cannot fall out of step with the matrix texture.
 //
 // FS-16: THE POOL GROWS, AND WHEN IT CANNOT IT SAYS SO. This class shipped with
 // `CAPACITY = 256` and no growth path, and past it a machine existed in the
-// plan, existed in /core, ticked, produced and was never drawn. The measurement
-// and the argument for doubling are in `InstancePools.ts`; the fix is here.
+// plan, ticked, produced and was never drawn. The measurement and the argument
+// for doubling are in `InstancePools.ts`; the fix is here.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
   from './InstancePools.js';
+import { attachSurface, copyUv, noteShaderOrder }
+  from '../render/instancing/Surfaces.js';
 
 /**
  * aRole: what a vertex is, so one material can serve the authored roles.
@@ -35,8 +36,8 @@ import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
  * The two ARC roles are the belt CURVES (W7). A curve's deck is a quarter
  * annulus, so scrolling the band along local Z (which is what a straight tile
  * does) would run the cargo diagonally across the corner. The role carries which
- * corner it is, because that is the only thing the fragment shader needs in
- * order to find the arc centre, and it costs no extra attribute.
+ * corner it is, the only thing the shader needs to find the arc centre, and it
+ * costs no extra attribute.
  */
 const ROLE_BODY = 0, ROLE_STATUS = 1, ROLE_FLOW = 2, ROLE_ARC_L = 3, ROLE_ARC_R = 4;
 
@@ -48,8 +49,7 @@ export interface MachineTemplate {
   arc?: 'l' | 'r';
   /** Which meshes of the source scene belong to this template; defaults to the
    *  `_LOD0` suffix every machine file uses. `items_atlas.glb` (FS-28) names its
-   *  meshes `Item_Log` with no LOD chain at all, so belt cargo passes a pattern
-   *  rather than the atlas being renamed to suit one caller. */
+   *  meshes `Item_Log` with no LOD chain, so belt cargo passes a pattern. */
   nodeMatch?: RegExp;
 }
 
@@ -77,6 +77,7 @@ function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
   g.setAttribute('normal', nrm !== undefined
     ? (nrm as THREE.BufferAttribute).clone()
     : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
+  copyUv(src, g, pos.count, 'machines');   // UNCONDITIONAL. See Surfaces.copyUv.
   const col = new Float32Array(pos.count * 3);
   const rol = new Float32Array(pos.count);
   for (let i = 0; i < pos.count; ++i) {
@@ -120,8 +121,7 @@ export class MachineBatch {
   private warned = false;
 
   /** `capacity` is a parameter because a BASE reaches many more instances than
-   *  a factory does and there is no point paying for the first two doublings.
-   *  It is a STARTING size, not a limit: see the header. */
+   *  a factory does. It is a STARTING size, not a limit: see the header. */
   constructor(capacity = CAPACITY, private readonly name = 'factoryMachines',
               private readonly ceiling = MAX_CAPACITY) {
     this.group.name = name;
@@ -138,12 +138,10 @@ export class MachineBatch {
   setTime(t: number): void { this.uniforms.uTime.value = t; }
 
   /**
-   * (Re)allocate the per-instance fx texture for `cap` instances.
-   *
-   * Square, and the old contents are copied FLAT. That is exact, not lucky: the
-   * shader reads texel (id % w, id / w), whose flat offset is id * 4 whatever
-   * `w` is, so the array is indexed by instance id and a plain `set` preserves
-   * every live slot across a resize.
+   * (Re)allocate the per-instance fx texture for `cap` instances. Square, and
+   * the old contents are copied FLAT. That is exact, not lucky: the shader reads
+   * texel (id % w, id / w), whose flat offset is id * 4 whatever `w` is, so a
+   * plain `set` preserves every live slot across a resize.
    */
   private allocFx(cap: number): void {
     const w = Math.max(1, Math.ceil(Math.sqrt(cap)));
@@ -165,9 +163,14 @@ export class MachineBatch {
       color: 0xffffff, vertexColors: true, metalness: 0.45, roughness: 0.55,
     });
     m.name = 'factory:machines';
+    // ASSET-SPECS 2.9 option (a): `panel` on the whole batch. `Rubber` decks
+    // and the furnace's `Rock` are `coarse` and take plate seams they should
+    // not; option (b) selects per family off aRole for one extra fetch.
+    attachSurface(m, 'panel', `machines:${this.name}`);
     const uniforms = this.uniforms;
     m.userData.uniforms = uniforms;
     m.onBeforeCompile = (shader) => {
+      noteShaderOrder(this.name, shader.fragmentShader);
       shader.uniforms.uFx = uniforms.uFx;
       shader.uniforms.uFxW = uniforms.uFxW;
       shader.uniforms.uTime = uniforms.uTime;
@@ -266,8 +269,7 @@ if ( vRole > 2.5 ) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     // The factory is always within a few tens of metres of the player, so a
-    // whole-batch cull could only ever be a false negative (NodeBatch measured
-    // per-instance culling as a net cost at this object count).
+    // whole-batch cull is only ever a false negative (NodeBatch measured it).
     mesh.frustumCulled = false;
     mesh.sortObjects = false;
     mesh.perObjectFrustumCulled = false;
@@ -279,18 +281,16 @@ if ( vRole > 2.5 ) {
   /**
    * A slot drawing `key`'s geometry, or -1 when the CEILING has been reached.
    *
-   * -1 used to mean "the pool is 256 and you are the 257th", which is the
-   * silent wall the packaging spike measured. It now only ever means the
-   * template is unknown or the hard ceiling is exhausted, and the second of
-   * those is counted and shouted.
+   * -1 used to mean "the pool is 256 and you are the 257th", the silent wall
+   * the packaging spike measured. It now only ever means the template is
+   * unknown or the hard ceiling is exhausted, and the second is counted.
    */
   acquire(key: string): number {
     const g = this.geomId.get(key);
     if (this.mesh === null || g === undefined) return -1;
     // A FREED SLOT IS REUSED rather than a new one added. Demolition made this
     // load bearing: addInstance only ever grows, so a player who put down and
-    // pulled up belts for a while would exhaust the pool with invisible slots
-    // and the next real building would silently fail to draw.
+    // pulled up belts would exhaust the pool with invisible slots.
     const reuse = this.free.pop();
     if (reuse !== undefined) {
       this.live++;
