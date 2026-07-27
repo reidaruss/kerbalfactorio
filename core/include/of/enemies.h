@@ -807,7 +807,7 @@ class PollutionField {
 //
 // An emitter is a pollution source at a surface direction with a rate in
 // units/second. It is NOT a machine: the contract factory-sim implements is in
-// §11 (pollutionRateForMachine) plus these three calls. WIRED as of FS-33:
+// §11 (pollutionRateForMachine) plus these three calls. WIRED as of FS-35:
 // of::automation::BuildableNetwork composes this model exactly as §11
 // prescribes (an emitter per placed building, rate = base * witnessed duty
 // cycle per pollution window). Tests still drive emitters directly, which
@@ -1220,7 +1220,7 @@ class EnemySim {
  private:
   // emitters_ is sorted by id BY CONSTRUCTION: ids come off an increasing
   // counter, removeEmitter erases in place, and serialize/deserialize preserve
-  // vector order. Binary search here is an INTEGRATION SEAM (FS-33), not a
+  // vector order. Binary search here is an INTEGRATION SEAM (FS-35), not a
   // model change: the factory composition refreshes every machine's rate once
   // per pollution window (one setEmitterRate per machine), and a linear scan
   // would make that O(machines^2) per window at the 1,200-machine scale the
@@ -1922,7 +1922,7 @@ void EnemySim::deserialize(Reader& r) {
 }
 
 // =============================================================================
-// §11 — THE FACTORY-SIM HOOK. Published, and WIRED (FS-33, automation.h).
+// §11 — THE FACTORY-SIM HOOK. Published, and WIRED (FS-35, automation.h).
 //
 // This is the contract; of::automation::BuildableNetwork is the call — its
 // setPlacement/placeGenerator mint emitters, and once per pollution window it

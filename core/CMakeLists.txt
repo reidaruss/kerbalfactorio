@@ -87,7 +87,7 @@ target_link_libraries(automation_tests PRIVATE of_core)
 target_include_directories(automation_tests PRIVATE tests)
 add_test(NAME automation_tests COMMAND automation_tests)
 
-# --- POLLUTION INTEGRATION (FS-33): the enemies loop driven by a REAL factory
+# --- POLLUTION INTEGRATION (FS-35): the enemies loop driven by a REAL factory
 #     (stock-take F2 closure). Machines carry emitters at their own positions;
 #     once per pollution window each rate becomes base * duty, where duty is
 #     work ACTUALLY done read off the sim's fixed-point counters (machine
@@ -108,6 +108,24 @@ add_executable(factory_pollution_tests
 target_link_libraries(factory_pollution_tests PRIVATE of_core)
 target_include_directories(factory_pollution_tests PRIVATE tests)
 add_test(NAME factory_pollution_tests COMMAND factory_pollution_tests)
+
+# --- ITEM IDENTITY (FS-37): a machine accepts only items its current recipe
+#     consumes, enforced at the inserter's pickup (a refused item stays on its
+#     belt / in the source out-slot: visible back-pressure, never destruction)
+#     and again at the drop. Pins the player-reported "coal belt into a smelter
+#     produces iron" transmutation: counts conserved, identity not. Every
+#     scenario drives the REAL pipeline (worldgen node -> placeMinerForNode ->
+#     belt -> smelter, wired with the same item-less connect() calls the web
+#     wiring layer makes; standing rule 11, no fillSaturated-style fixtures).
+#     Includes the negative control (raw iron still smelts), a MIXED coal+iron
+#     line whose ledger balances exactly per item type, and a data-driven
+#     (machine, item) acceptance sweep over the recipe table.
+add_executable(item_identity_tests
+  tests/test_main.cpp
+  tests/test_item_identity.cpp)
+target_link_libraries(item_identity_tests PRIVATE of_core)
+target_include_directories(item_identity_tests PRIVATE tests)
+add_test(NAME item_identity_tests COMMAND item_identity_tests)
 
 # --- ELECTRICITY (power.h + its automation.h binding): the grid. Generators
 #     produce, consumers demand, poles form networks by connectivity, and when

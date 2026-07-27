@@ -1,5 +1,5 @@
 // =============================================================================
-// test_factory_pollution.cpp — the enemies loop driven by a REAL factory (FS-33).
+// test_factory_pollution.cpp — the enemies loop driven by a REAL factory (FS-35).
 //
 // The stock-take's F2 in one sentence: enemies.h shipped complete (525 checks)
 // and no machine emitted a gram of pollution, so the loop was inert in game

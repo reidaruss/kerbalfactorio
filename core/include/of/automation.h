@@ -45,7 +45,7 @@
 #include "of/factory_sim.h"
 #include "of/deposits.h"  // worldgen::survival::NodeKind -> ItemId (resourceOf)
 #include "of/power.h"     // the electrical grid: poles, generators, brownout
-#include "of/enemies.h"   // pollution / evolution / nests / waves (FS-33)
+#include "of/enemies.h"   // pollution / evolution / nests / waves (FS-35)
 
 namespace of {
 namespace automation {
@@ -251,7 +251,7 @@ class BuildableNetwork {
   GeneratorId placeGenerator(float x, float y, float z,
                              const GeneratorSpec& spec) {
     const GeneratorId g = grid_.addGenerator(x, y, z, spec);
-    // Pollution bookkeeping (FS-33): a generator is a grid citizen, not a
+    // Pollution bookkeeping (FS-35): a generator is a grid citizen, not a
     // factory entity, so its emission row is kept here rather than minted
     // through setPlacement. A generator that burns NOTHING (no fuel model:
     // future solar) emits nothing — combustion is what pollutes — so it never
@@ -403,7 +403,7 @@ class BuildableNetwork {
     sim_.setEntityTypeId(b.entity, typeId);
     sim_.setEntityPosition(b.entity, x, y, z);
     sim_.setEntityBoundRadiusCm(b.entity, boundCm);
-    // Pollution bookkeeping (FS-33): the placement is where a building gains a
+    // Pollution bookkeeping (FS-35): the placement is where a building gains a
     // POSITION, and an emitter is a rate at a position, so this is where the
     // binding happens — the bridge needs no extra call. Rows are kept even
     // while enemies are off so enableEnemies() can backfill.
@@ -487,7 +487,7 @@ class BuildableNetwork {
   }
 
   // ==========================================================================
-  // POLLUTION / ENEMIES (enemies.h, composed the way the power grid is: FS-33).
+  // POLLUTION / ENEMIES (enemies.h, composed the way the power grid is: FS-35).
   //
   // A network that never calls enableEnemies() behaves EXACTLY as before. With
   // it on, every placed building whose type has a nonzero row in enemies.h §11
@@ -614,7 +614,7 @@ class BuildableNetwork {
   // replay flow; nonzero means the caller rebuilt a DIFFERENT factory).
   uint32_t pollutionRebindMisses() const { return rebindMisses_; }
 
-  // ---- persistence (FS-33; enemies.h §10 cursor idiom) ---------------------
+  // ---- persistence (FS-35; enemies.h §10 cursor idiom) ---------------------
   // Serialises the WHOLE joined pollution state: the model (field, nests,
   // waves, evolution, emitters WITH their ids) plus the machine->emitter and
   // generator->emitter joins, keyed by replay-stable ids (dense entity index /
@@ -730,7 +730,7 @@ class BuildableNetwork {
     return kNoItem;
   }
 
-  // ---- pollution plumbing (FS-33) ------------------------------------------
+  // ---- pollution plumbing (FS-35) ------------------------------------------
   static constexpr uint64_t kPollutionMagic = 0x4F465031ull;  // 'OFP1'
   static constexpr uint64_t kPollutionVersion = 1;
 
@@ -926,7 +926,7 @@ class BuildableNetwork {
   uint64_t gridEpoch_ = 0;
   bool gridOn_ = false;
 
-  // ---- pollution state (FS-33) ---------------------------------------------
+  // ---- pollution state (FS-35) ---------------------------------------------
   std::unique_ptr<enemies::EnemySim> enemySim_;
   PollutionPolicy pollutionPolicy_;
   std::vector<MachineEmit> machineEmits_;
