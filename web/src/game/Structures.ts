@@ -22,9 +22,10 @@
 
 import * as THREE from 'three';
 import { orient } from './Grid.js';
-import { SITE_REACH_M, STRUCTURE_KINDS, localOf, makeSite, measureModule,
-  type Addr, type Site, type StructureKind, type StructureModule }
-  from './StructureGrid.js';
+import { PILLAR_FALLBACK, SITE_REACH_M, STRUCTURE_KINDS, localOf, makeSite,
+  measureModule, measurePillar,
+  type Addr, type PillarModule, type Site, type StructureKind,
+  type StructureModule } from './StructureGrid.js';
 import { StructureBodies, boundOf, leafProxy, proxiesOf,
   type LocalBox, type Solid } from './StructureBody.js';
 import { loadGlb } from '../assets/Loaders.js';
@@ -39,6 +40,9 @@ const FILES: Record<StructureKind, string> = {
   wall: 'assets/structures/wall.glb',
   door: 'assets/structures/door.glb',
 };
+/** NOT in FILES, because a pillar is not a `StructureKind`: nobody places one.
+ *  See `pillarPartsFor` in StructureGrid.ts for what it is instead. */
+const PILLAR_FILE = 'assets/structures/pillar.glb';
 
 /**
  * DW-24's numbers, and there are TWO of them because the two ways a part can sit
@@ -47,18 +51,36 @@ const FILES: Record<StructureKind, string> = {
  * FLOAT is ground BELOW the part's base plane: a visible gap of daylight under a
  * hovering slab, which is the thing DW-24 is protecting against.
  *
- * The terrain is NOT what sets it. `probes/buildtol.js` samples 400 one-metre
- * footprints at four sites on the shipped world and the worst spread across a
- * deck's five footprint points is 0.0013 and 0.0069 m on two plains and 0.118
- * and 0.127 m on two slopes, so 0.13 m would carry every ordinary foundation.
- * What sets it is the coarsest thing that can MOVE the terrain. The levelling
- * tool edits whole 1 m voxel cells, so it has a dead band of half a cell inside
- * which it changes nothing at all: measured, one press of Q left 0 of 12 refused
- * cells buildable at a 0.22 m tolerance, and the residual over a levelled disc
- * is p05 -0.536 m, p50 +0.027 m, p95 +0.588 m. A tolerance tighter than that
- * dead band makes DW-24's own loop unclosable by construction, however good the
- * terrain is. 0.55 m is half a voxel plus a tenth, and it is a number about the
- * TOOL. It should come down the day the tool can fill less than a whole cell.
+ * RE-MEASURED FOR THE 4 m MODULE (GP-30), never scaled. Multiplying 0.55 by four
+ * would have been a number about nothing: what sets this is the coarsest thing
+ * that can MOVE the terrain, and the levelling tool still edits whole 1 m voxel
+ * cells whatever size the foundation is. `probes/buildtol.js` re-run at the 4 m
+ * footprint, 812 footprints per site and 113 over a levelled pad:
+ *
+ *   levelling tool, worst DOWNWARD residual over a levelled pad  0.5138 m
+ *      (p95 0.2381; the half-cell dead band, unmoved by the module)
+ *   ordinary sloped ground, a freely placed deck                 0.5142 m p95
+ *      (p05 0.4979, so this is a cliff and not a tail)
+ *   a plain 0.3350 m p95; a 3.51-in-4 slope, refused on purpose, 1.80 m
+ *
+ * So the measured floor is 0.52 and the old 0.55 still clears it. It goes to
+ * 0.90 anyway, for three reasons that are all about the module having moved
+ * under it rather than about the measurement:
+ *
+ *   1. 0.55 stood 4x above the 1 m terrain term (0.127 m) and stands 7% above
+ *      the 4 m one. A bound whose margin collapsed from 4x to 1.07x is not the
+ *      same bound, however little the digits moved.
+ *   2. What makes a gap READ as wrong is its share of the span over it. 0.55 m
+ *      under a 1.00 m deck was 55% of the span; 0.90 m under a 4.00 m deck is
+ *      22%, so this is TIGHTER in the only terms a player can see.
+ *   3. DW-32 ships a pillar whose minimum height is 0.70 m, and it exists so a
+ *      clear deck reads as engineering instead of as this failure. Under 0.70 no
+ *      ground-level deck can hang far enough to get one and the asset is
+ *      unreachable; 0.90 opens a 0.70-to-0.90 band where a hang is both legal
+ *      and visibly carried. See `StructureView.solvePillars`.
+ *
+ * It is still a number about the TOOL, and it should still come down the day the
+ * tool can fill less than a whole cell.
  *
  * BURY is ground ABOVE the base plane. It disappears INSIDE the slab and reads
  * as a pad set into the soil, which is what a foundation on real ground looks
@@ -67,15 +89,18 @@ const FILES: Record<StructureKind, string> = {
  * `socket_top` rather than typed, and the constant here is only the fallback for
  * a module that failed to load.
  *
- * WHY ASYMMETRIC AND NOT ONE NUMBER. Measured (see the report): one press of Q
- * leaves the ground at the target plus or minus about half a metre, because the
- * terraforming tool moves whole 1 m voxel cells and cannot do better. A single
- * symmetric tolerance therefore has to be either tighter than the tool can hit,
- * which makes a levelled pad unbuildable, or looser than a slab is thick, which
- * makes a floating foundation legal. Splitting it takes the forgiving half of
- * the tool's residual for free and keeps the visible half tight.
+ * WHY ASYMMETRIC, and which side now binds. One press of Q leaves the ground at
+ * the target plus or minus about half a metre, so a single symmetric tolerance
+ * has to be either tighter than the tool can hit, which makes a levelled pad
+ * unbuildable, or looser than a slab is thick, which makes a floating foundation
+ * legal. DECK_H did NOT scale with DW-32, so BURY is now the binding side and
+ * FLOAT is not: a 4 m footprint spreads 1.01 m at the spawn where a 1 m one
+ * spread 0.127, and a FOUNDING foundation has no float side at all, because
+ * `makeSite` puts its plane on the lowest of its own five points. That is a real
+ * consequence of the rescale, it is not this constant's to fix, and it is raised
+ * as a cross-domain need rather than papered over here.
  */
-export const FLOAT_TOLERANCE_M = 0.55;
+export const FLOAT_TOLERANCE_M = 0.90;
 
 /** What a not-yet-placed free part is keyed by, until it has an id. */
 export const FREE_KEY = 'free:0';
@@ -104,7 +129,12 @@ export class Structures {
   readonly sites: Site[] = [];
   /** Loaded roots, kept so the view and the module measurement share one parse. */
   readonly scenes = new Map<StructureKind, THREE.Object3D>();
-  module: StructureModule = { cellM: 1, deckH: 0.5, wallH: 2.5, wallT: 0.25, storey: 3 };
+  /** The pillar file's root, kept for the same one-parse reason `scenes` is. */
+  pillarScene: THREE.Object3D | null = null;
+  /** The DW-32 module. This literal is the ONE place a stale one can survive
+   *  silently: everything else measures, this is what a failed load leaves. */
+  module: StructureModule = { cellM: 4, deckH: 0.5, wallH: 3.5, wallT: 0.25, storey: 4 };
+  pillar: PillarModule = PILLAR_FALLBACK;
   /** The authored swing, read off the shipped clip rather than retyped. */
   swingSecs = 0.4167;
   swingRad = -95 * Math.PI / 180;
@@ -133,6 +163,9 @@ export class Structures {
       if (k === 'door') this.readSwing(g.animations);
     }));
     this.module = measureModule(this.scenes);
+    const p = await loadGlb(PILLAR_FILE);
+    this.pillarScene = p.scene;
+    this.pillar = measurePillar(p.scene);
     for (const k of STRUCTURE_KINDS) {
       const root = this.scenes.get(k);
       if (root === undefined) continue;

@@ -5,10 +5,12 @@
 // is WRONG for a tiling structural set, and the reason is measured rather than
 // suspected. The lattice is a 1 m cube grid in the BODY frame, and the ground is
 // a sphere cutting through it obliquely, so one unit step of a cell key is 0.59,
-// 0.81 or 1.02 m of ground depending on which axis you step along. That already
-// split one belt run into three (ARCHITECTURE 15.2 item 102). A foundation is a
-// 1.00 m mesh: laid on cell centres it would leave a 0.41 m gap on one axis and
-// overlap by 0.02 m on another, and a 20 x 20 m platform would be visibly torn.
+// 0.81 or 1.02 m of ground depending on which axis you step along (re-measured
+// today by `probes/buildtol.js`: 0.590, 1.017, 0.811). That already split one
+// belt run into three (ARCHITECTURE 15.2 item 102). DW-32 makes the argument
+// STRONGER, not weaker: a foundation is now a 4.00 m mesh, so laying decks on
+// lattice cell centres would leave a 3.41 m gap on the worst axis instead of a
+// 0.41 m one, and a 20 x 20 m platform of 25 decks would be shredded.
 //
 // So a structure belongs to a SITE: a local metric frame, anchored to one world
 // lattice cell (which is what "snap to the world grid" means here) and carrying
@@ -16,13 +18,16 @@
 // so adjacent parts meet at 0.000 m by construction rather than by luck.
 //
 // The curvature this ignores is a measured quantity, not an assumption: a
-// tangent plane departs from a 600 km sphere by r^2/2R, which is 0.85 mm at 32 m
-// from the origin and 0.08 mm at 10 m. A site is capped at SITE_REACH_M so the
-// error can never leave that regime, and the probe reads it back.
+// tangent plane departs from a 600 km sphere by r^2/2R, which is 3.4 mm at 64 m
+// from the origin, 0.85 mm at 32 m and 0.08 mm at 10 m. A site is capped at
+// SITE_REACH_M so the error can never leave that regime, and the probe reads it
+// back. 3.4 mm is three orders below the 0.90 m the placement rule tolerates.
 //
 // EVERY MODULE CONSTANT IS MEASURED OFF THE SHIPPED .glb FILES, from the sockets
 // the art lane authored for exactly this purpose (ASSET-SPECS 4.23). Nothing
-// here retypes 0.50 or 2.50 or 3.00: change the Blender module and this follows.
+// here retypes 0.50 or 3.50 or 4.00: change the Blender module and this follows.
+// That is what made the DW-32 rescale a four-constant client change instead of a
+// re-derivation, and it is why the pillar recipe below is measured too.
 
 import * as THREE from 'three';
 import { boundsOf } from './StructureBody.js';
@@ -39,9 +44,25 @@ export function isDeck(k: StructureKind): boolean {
   return k === 'foundation' || k === 'floor';
 }
 
-/** How far from its origin a site may reach, metres. See the curvature note. */
-export const SITE_REACH_M = 32;
-/** Storeys a site may stack. Four is 12 m, which is a tower already. */
+/**
+ * How far from its origin a site may reach, metres. See the curvature note.
+ *
+ * 32 was 32 cells across a site's radius at the 1 m module and is 8 at the 4 m
+ * one, which is a single room, so DW-32 doubles it: 64 m is 16 cells, the same
+ * order of building the number was chosen to allow, and the tangent-plane error
+ * it admits is still 3.4 mm.
+ *
+ * SHARED WITH `MachinePlacement.withinSite`, deliberately, because a base and a
+ * factory sharing one frame is the whole point of GP-27. Raising it HELPS the
+ * factory rather than hurting it, so it is not split: BT-10 measured one adopted
+ * site bounding a layout at 323 machines with a 1 m cell and a 32 m reach, and
+ * the bound is `pi r^2 / cellM^2`, so 64 m restores about 804 cells per site
+ * against the 201 that a 32 m reach would leave at the 4 m module. The thing
+ * that actually moved the factory's bound is `module.cellM` itself, which is not
+ * this file's to fix and is reported rather than patched.
+ */
+export const SITE_REACH_M = 64;
+/** Storeys a site may stack. Four is 16 m at the DW-32 storey, a real tower. */
 export const MAX_LEVEL = 3;
 
 /** The tiling module, measured off the assets. */
@@ -85,6 +106,103 @@ export function measureModule(
     wallT: bb.max.z - bb.min.z,
     storey: deckH + wallH,
   };
+}
+
+/**
+ * THE PILLAR, AND WHY IT IS NOT A `StructureKind`.
+ *
+ * DW-32 asks for "visible pillars where the gap to the ground is large". That is
+ * a CONSEQUENCE of a placement, not a placement: the player put a deck out over
+ * a drop and the drop is what needs answering. So a pillar has no ItemId, no
+ * cost, no placement verb, no save row and no address; it is drawn under a deck
+ * whose gap exceeds the asset's own minimum and it disappears when the deck
+ * does. Three reasons, in the order they decided it:
+ *
+ *   1. Making it a kind would need a `/core` `StructureKind` entry plus an item
+ *      and a `CraftRecipe`, because `gameplay.h` is the single cost authority
+ *      (GP-21). This lane may not touch `/core` this pass, and a client-side
+ *      cost would be a SECOND cost authority, which is the exact failure this
+ *      project has already paid for more than once.
+ *   2. Handing a player a piece they must place UNDER something they have
+ *      already placed is worse than generating it. Satisfactory generates its
+ *      supports for this reason and nobody misses placing them.
+ *   3. It cannot be one mesh anyway (build_pillar.py): the gap is continuous, so
+ *      the part is a recipe over four ground-pivoted pieces of which only the
+ *      shaft is ever scaled, and a recipe is not a thing you put in a hotbar.
+ *
+ * THE NUMBERS ARE MEASURED, like every other module constant here. The foot and
+ * head heights come from `socket_top` and `socket_deck`, the shaft length and
+ * the collar height from their own bounds. Only the collar PITCH and the
+ * end-clearance are typed, because they are rhythm rather than geometry and the
+ * file publishes them nowhere; they are `structure_common.PILLAR_COLLAR_PITCH`
+ * and `PILLAR_COLLAR_CLEAR` and nothing else in this client may retype them.
+ */
+export const PILLAR_PARTS = ['PillarFoot', 'PillarShaft', 'PillarCollar',
+  'PillarHead'] as const;
+export type PillarPart = typeof PILLAR_PARTS[number];
+
+export interface PillarModule {
+  footH: number;
+  /** Authored shaft length. It is 1.00 m so that `scale.y` IS metres. */
+  shaftLen: number;
+  collarH: number;
+  headH: number;
+  /** Below this the deck is close enough to the ground and nothing is drawn. */
+  minH: number;
+}
+
+/** Collar rhythm. See the header: not derivable from the shipped geometry. */
+const COLLAR_PITCH_M = 2.00;
+const COLLAR_CLEAR_M = 0.35;
+
+/** What a failed pillar load leaves behind, from `structure_common.py`. */
+export const PILLAR_FALLBACK: PillarModule =
+  { footH: 0.40, shaftLen: 1.00, collarH: 0.24, headH: 0.30, minH: 0.70 };
+
+export function measurePillar(root: THREE.Object3D): PillarModule {
+  const top = root.getObjectByName('PillarFoot')?.getObjectByName('socket_top');
+  const deck = root.getObjectByName('PillarHead')?.getObjectByName('socket_deck');
+  const shaft = boundsOf(root, 'PillarShaft');
+  const collar = boundsOf(root, 'PillarCollar');
+  if (top === undefined || deck === undefined || shaft === null || collar === null) {
+    return PILLAR_FALLBACK;
+  }
+  const footH = top.position.y, headH = deck.position.y;
+  return { footH, headH, shaftLen: shaft.max.y - shaft.min.y,
+    collarH: collar.max.y - collar.min.y, minH: footH + headH };
+}
+
+/**
+ * The assembly for a gap of `gapM`, ground at z = 0. `structure_common
+ * .pillar_parts` in TypeScript, deliberately arithmetic-for-arithmetic.
+ *
+ * A collar is dropped when it would land within the clearance of either end of
+ * the shaft, because a band crowding the foot or the bracket reads as a mistake
+ * rather than as rhythm; the clearance is measured against the collar's own
+ * extent, which is why `collarH` appears in the upper bound.
+ */
+export function pillarPartsFor(gapM: number, p: PillarModule):
+{ part: PillarPart; z: number; scaleY: number }[] {
+  if (gapM < p.minH) return [];
+  const out: { part: PillarPart; z: number; scaleY: number }[] = [
+    { part: 'PillarFoot', z: 0, scaleY: 1 },
+  ];
+  // At exactly the minimum the foot meets the bracket and there is no shaft. A
+  // zero-scale instance is a singular matrix rather than an invisible one, so it
+  // is omitted instead of drawn flat.
+  const len = gapM - p.minH;
+  if (len > 1e-3) {
+    out.push({ part: 'PillarShaft', z: p.footH, scaleY: len / p.shaftLen });
+  }
+  const lo = p.footH + COLLAR_CLEAR_M;
+  const hi = gapM - p.headH - COLLAR_CLEAR_M - p.collarH;
+  for (let k = 1; ; ++k) {
+    const z = p.footH + COLLAR_PITCH_M * k;
+    if (z > hi) break;
+    if (z >= lo) out.push({ part: 'PillarCollar', z, scaleY: 1 });
+  }
+  out.push({ part: 'PillarHead', z: gapM - p.headH, scaleY: 1 });
+  return out;
 }
 
 /**

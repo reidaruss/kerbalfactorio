@@ -115,6 +115,10 @@ export function structureReport(s: Structures): unknown {
   return {
     ready: s.ready,
     module: s.module,
+    // DW-32's pillar recipe, measured off pillar.glb rather than typed. Here so
+    // a probe can assert the client and the Blender module agree on it, which is
+    // the same reason `module` is published: the two are one contract.
+    pillar: s.pillar,
     tolerance: { floatM: s.floatToleranceM, buryM: s.buryToleranceM },
     swing: { secs: s.swingSecs, rad: +s.swingRad.toFixed(5) },
     placements: s.placements,

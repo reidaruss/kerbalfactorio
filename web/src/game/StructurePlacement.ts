@@ -25,11 +25,19 @@ import type { HudTarget } from '../ui/GameHud.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 /** Aim march: step and reach, metres. Longer than a machine's, because a base is
- *  laid out by looking across it, not by standing on every cell of it. */
+ *  laid out by looking across it, not by standing on every cell of it.
+ *
+ *  DW-32 DOUBLED IT. 12 m was twelve cells at the 1 m module and is three at the
+ *  4 m one, which is not enough to reach the far edge of the cell you are aiming
+ *  at from inside a room you have already walled. 24 m is six cells: the whole
+ *  of a 20 x 20 m five-cell room from its own doorway, without walking. The
+ *  march still steps at 0.2 m, so this is 120 oracle samples rather than 60, and
+ *  it stops at the first hit either way. */
 const STEP_M = 0.2;
-const REACH_M = 12.0;
-/** Where the ghost falls back to when the aim meets neither ground nor build. */
-const FALLBACK_M = 3.0;
+const REACH_M = 24.0;
+/** Where the ghost falls back to when the aim meets neither ground nor build.
+ *  A cell and a half, keeping the quarter-of-reach ratio 3.0 had against 12. */
+const FALLBACK_M = 6.0;
 
 export interface StructureTarget {
   kind: StructureKind;

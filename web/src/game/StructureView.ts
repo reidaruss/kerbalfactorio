@@ -18,9 +18,18 @@
 // `Door_Swing` clip supplies the angle and the duration, and the motion is one
 // matrix per open door per frame.
 
+//
+// THE PILLAR IS DRAWN HERE AND PLACED NOWHERE. It is not a `StructureKind`, it
+// has no cost and no save row; it is what a deck standing clear of the ground
+// looks like. StructureGrid.ts holds the recipe and the argument. It shares this
+// batch rather than taking a pool of its own, so it inherits FS-16's growth and
+// the HUD's `POOL FULL: n NOT DRAWN` line for free (DW-28) instead of needing a
+// second copy of both.
+
 import * as THREE from 'three';
 import { MachineBatch } from './MachineBatch.js';
-import { STRUCTURE_KINDS, type StructureKind } from './StructureGrid.js';
+import { PILLAR_PARTS, STRUCTURE_KINDS, isDeck, pillarPartsFor,
+  type PillarPart, type StructureKind } from './StructureGrid.js';
 import type { Structures, StructurePart } from './Structures.js';
 import type { StructureTarget } from './StructurePlacement.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
@@ -38,6 +47,22 @@ import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 const CAPACITY = 512;
 /** The leaf's own batch key. It is not a placeable part, it is half of one. */
 const LEAF = 'door_leaf';
+/** A pillar piece's batch key. Namespaced, so it can never collide with a kind. */
+const pillarKey = (p: PillarPart): string => `pillar:${p}`;
+/** Past this a single pillar reads as a thin stick (build_pillar.py). It is a
+ *  READABILITY limit and not a legality one, so it is counted, not enforced. */
+const PILLAR_TALL_M = 10;
+/** Structures carry no simulation state, so every instance gets a flat texel. */
+const FLAT = { flow: 0, density: 0, state: 3, level: 0 };
+
+/** One deck's solved pillar: the recipe, the slots it holds, and the gap it
+ *  spans. Solved on demand and redrawn every frame, because a floating-origin
+ *  rebase moves every matrix in the batch. */
+interface PillarDraw {
+  gap: number;
+  items: { part: PillarPart; z: number; scaleY: number }[];
+  slots: number[];
+}
 
 export class StructureView {
   readonly group = new THREE.Group();
@@ -46,8 +71,17 @@ export class StructureView {
   private readonly ghostMat: THREE.MeshBasicMaterial;
   private readonly slots = new Map<number, number>();
   private readonly leafSlots = new Map<number, number>();
+  private readonly pillars = new Map<number, PillarDraw>();
+  /** Set whenever the part set or the ground under it may have moved. */
+  private pillarsDirty = true;
+  private lastParts = -1;
+  /** Pillars past the readability limit. Published rather than clamped. */
+  private tallPillars = 0;
   private hinge = new THREE.Vector3();
   private readonly p = new THREE.Vector3();
+  private readonly q = new THREE.Vector3();
+  private readonly axis = new THREE.Vector3();
+  private readonly scale = new THREE.Vector3();
   private readonly m = new THREE.Matrix4();
   private readonly swing = new THREE.Matrix4();
   private readonly one = new THREE.Vector3(1, 1, 1);
@@ -94,6 +128,16 @@ export class StructureView {
       holder.add(clone);
       templates.set(LEAF, { def: { url: LEAF, root: LEAF }, scene: holder });
     }
+    // The four pillar pieces, each its own template because each is placed and
+    // scaled independently. They come out of the file's own part groups, which
+    // all sit on the origin ground-pivoted, so the merged geometry needs no
+    // offset and `scale.y` on the shaft is its length in metres.
+    for (const name of PILLAR_PARTS) {
+      const node = s.pillarScene?.getObjectByName(name);
+      if (node === undefined || node === null) continue;
+      templates.set(pillarKey(name),
+        { def: { url: pillarKey(name), root: name }, scene: node });
+    }
     this.batch.build(templates);
     this.ghost = new THREE.Mesh(new THREE.BufferGeometry(), this.ghostMat);
     this.ghost.name = 'structureGhost';
@@ -117,10 +161,83 @@ export class StructureView {
       this.batch.place(slot, this.m);
       // Structures carry no simulation state, so the fx texel is a flat zero and
       // the batch draws them as plain lit geometry.
-      this.batch.setFx(slot, { flow: 0, density: 0, state: 3, level: 0 });
+      this.batch.setFx(slot, FLAT);
       if (part.kind === 'door') this.syncLeaf(part, s.swingRad);
     }
+    this.syncPillars(s);
     this.batch.flush();
+  }
+
+  /**
+   * Solve the pillars when the base changed, then redraw them every frame.
+   *
+   * Split that way because the two halves cost different things: solving one
+   * asks the surface oracle and marches the solid set, redrawing one is four
+   * matrix composes, and a floating-origin rebase invalidates the second
+   * without touching the first.
+   */
+  private syncPillars(s: Structures): void {
+    if (this.pillarsDirty || s.parts.length !== this.lastParts) {
+      this.solvePillars(s);
+      this.lastParts = s.parts.length;
+      this.pillarsDirty = false;
+    }
+    for (const part of s.parts) {
+      const d = this.pillars.get(part.id);
+      if (d === undefined) continue;
+      this.origin.toEngine(part.pos, this.p);
+      this.axis.set(0, 1, 0).applyQuaternion(part.quat);
+      for (let i = 0; i < d.items.length; ++i) {
+        const it = d.items[i];
+        // The pieces hang DOWN from the deck's own base plane along the deck's
+        // own up axis, so the bracket meets the underside EXACTLY and whatever
+        // is left between "radially down" and "along the site up" is spent at
+        // the foot, where a splayed base plate on soil hides it.
+        this.q.copy(this.p).addScaledVector(this.axis, it.z - d.gap);
+        this.m.compose(this.q, part.quat, this.scale.set(1, it.scaleY, 1));
+        this.batch.place(d.slots[i], this.m);
+        this.batch.setFx(d.slots[i], FLAT);
+      }
+    }
+  }
+
+  /** Which decks need a pillar, and how tall. See StructureGrid for the rule. */
+  private solvePillars(s: Structures): void {
+    for (const d of this.pillars.values()) for (const slot of d.slots) this.batch.release(slot);
+    this.pillars.clear();
+    this.tallPillars = 0;
+    for (const part of s.parts) {
+      if (!isDeck(part.kind)) continue;
+      const gap = this.gapUnder(s, part);
+      const items = pillarPartsFor(gap, s.pillar);
+      if (items.length === 0) continue;
+      const slots = items.map((it) => this.batch.acquire(pillarKey(it.part)));
+      // A refused slot is already counted and shouted by the pool itself, but a
+      // HALF-drawn pillar is worse than none, so the whole assembly is dropped.
+      if (slots.some((n) => n < 0)) {
+        for (const n of slots) if (n >= 0) this.batch.release(n);
+        continue;
+      }
+      if (gap > PILLAR_TALL_M) this.tallPillars++;
+      this.pillars.set(part.id, { gap, items, slots });
+    }
+  }
+
+  /**
+   * The clear height under a deck's centre, or 0 when it needs no pillar.
+   *
+   * Zero in two cases, and the second is the one that matters: the deck is
+   * close enough to the ground, OR something structural already carries it. A
+   * pillar driven down through the storey below is worse than no pillar, and an
+   * upper floor over a foundation is the normal case, not an edge one.
+   */
+  private gapUnder(s: Structures, part: StructurePart): number {
+    const r = Math.hypot(part.pos.x, part.pos.y, part.pos.z) || 1;
+    const gap = r - s.groundRadius(part.pos.x, part.pos.y, part.pos.z);
+    if (gap < s.pillar.minH) return 0;
+    const under = s.bodies.deckUnder(part.pos.x / r, part.pos.y / r,
+      part.pos.z / r, r - 0.05, gap);
+    return under === null ? gap : 0;
   }
 
   private syncLeaf(part: StructurePart, swingRad: number): void {
@@ -136,7 +253,7 @@ export class StructureView {
     this.swing.setPosition(this.hinge.x, this.hinge.y, this.hinge.z);
     this.m.multiply(this.swing);
     this.batch.place(slot, this.m);
-    this.batch.setFx(slot, { flow: 0, density: 0, state: 3, level: 0 });
+    this.batch.setFx(slot, FLAT);
   }
 
   /** Drop a demolished part's instances, or it keeps drawing where it stood. */
@@ -145,6 +262,9 @@ export class StructureView {
     if (slot !== undefined) { this.batch.release(slot); this.slots.delete(id); }
     const leaf = this.leafSlots.get(id);
     if (leaf !== undefined) { this.batch.release(leaf); this.leafSlots.delete(id); }
+    // Pulling ONE deck up can change what carries its neighbours, so the whole
+    // set is re-solved rather than this part's pillar simply dropped.
+    this.pillarsDirty = true;
   }
 
   /**
@@ -169,11 +289,25 @@ export class StructureView {
   get ghostVisible(): boolean { return this.ghost?.visible ?? false; }
 
   /** Geometry keys the batch knows, so a probe can assert the door split. */
-  get keys(): string[] { return [...STRUCTURE_KINDS, LEAF]; }
+  get keys(): string[] {
+    return [...STRUCTURE_KINDS, LEAF, ...PILLAR_PARTS.map(pillarKey)];
+  }
 
   stats(): unknown {
+    let pieces = 0;
+    let tallest = 0;
+    for (const d of this.pillars.values()) {
+      pieces += d.slots.length;
+      tallest = Math.max(tallest, d.gap);
+    }
     return { ...this.batch.stats(), ghost: this.ghostVisible,
       doors: this.leafSlots.size,
+      // DW-32. `tall` is the count past the art lane's 10 m readability limit:
+      // the pillar is still drawn, because a clamped one would float and a
+      // missing one would leave the deck hanging, and both are the failure the
+      // pillar exists to prevent. Counting it is how the limit stays honest.
+      pillars: { decks: this.pillars.size, pieces, tall: this.tallPillars,
+        tallestM: +tallest.toFixed(3), limitM: PILLAR_TALL_M },
       hinge: [this.hinge.x, this.hinge.y, this.hinge.z] };
   }
 }
