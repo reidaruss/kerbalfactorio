@@ -2,23 +2,21 @@
 // state a player's keys move. Nothing here integrates anything; `of_fl_step`
 // does all of it, and this file decides only WHEN and with what inputs.
 //
-// GROUND CONTACT, physics risk R5. `/core` has no contact at any layer: a vessel
-// flies and orbits, it cannot sit on anything. This file solves the PAD end with
-// a launch clamp (`stepClamped`) and does NOT pretend to solve the landing end.
-// `DOWN` is an ARREST: the state freezes at the surface, with no gear
-// compression, no friction, no tip-over and no impact tolerance. Landing legs
-// remain data. Real contact is a later milestone, and half-building it here
-// would produce a landing that looks right and is not.
+// GROUND CONTACT, physics risk R5. `/core` has no contact at any layer, so this
+// file solves the PAD end with a launch clamp (`stepClamped`) and does NOT
+// pretend to solve the landing end: `DOWN` is an ARREST, with no gear, friction,
+// tip-over or impact tolerance. Half-building it would look right and not be.
 import { vesselAbi } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import {
-  SAS_COMMAND, SAS_PROGRADE, SAS_RETROGRADE, SAS_NAMES, add,
+  SAS_COMMAND, SAS_PROGRADE, SAS_RETROGRADE, SAS_NAMES, add, dot,
   flightOrbit, flightParts, flightState, flightTelemetry, guidancePitch, len,
   norm, rotateAbout, scale,
 } from './FlightAbi.js';
 import { flightReport, readStagePerformance } from './FlightReport.js';
 import { holdRoll, horizonFrame, slewCommand } from './FlightAttitude.js';
+import { WARP_STEPS, warpSteps } from './FlightWarp.js';
 import type { FlightPartRow, FlightStateRow, FlightTelemetryRow, OrbitRow, Vec3 } from './FlightAbi.js';
 
 export type FlightStatus = 'CLAMPED' | 'ASCENT' | 'COAST' | 'ORBIT' | 'DOWN';
@@ -36,24 +34,14 @@ export interface FlightPorts {
   surfaceRadius(dx: number, dy: number, dz: number): number;
 }
 
-/** Degrees per second the command slews at full deflection. DW-30 item 3 asks
- *  for generous authority, but a rate the torque cannot keep up with is not
- *  generosity, it is a marker that lies about where the nose is going: 45 deg/s
- *  overshot the ribbon by 20 degrees a side, 20 tracks it. */
+/** Degrees per second the command slews at full deflection. DW-30 item 3 wants
+ *  generous authority, but a rate the torque cannot follow is a marker that
+ *  lies: 45 deg/s overshot the ribbon by 20 degrees a side, 20 tracks it. */
 const SLEW_DEG_S = 20;
 const ROLL_DEG_S = 60;
 /** How fast stability assist takes roll back out. Slower than the player's own
  *  roll rate, so a deliberate roll wins while the key is held. */
 const ROLL_HOLD_DEG_S = 20;
-/**
- * PHYSICS warp, and the distinction matters. `of_fl_step_n(f, dt, n)` takes n
- * steps of the SAME dt, so warping costs the integrator exactly nothing: the
- * trajectory is the one a real-time flight would fly. What it costs is CONTROL
- * LATENCY, the stick being sampled once per block, which is why the in-air cap
- * is the LOWER one, not KSP's on-rails warp that cannot be used under thrust.
- */
-const WARP_STEPS = [1, 2, 4, 10, 50, 200, 1000] as const;
-const WARP_IN_AIR_MAX = 10;
 
 export class FlightSession {
   handle = 0;
@@ -87,7 +75,7 @@ export class FlightSession {
   private st: FlightStateRow;
   private tm: FlightTelemetryRow;
   private orb: OrbitRow;
-  private msgUntilS = 0; private partsRevision = 0;
+  private msgUntilS = 0; private partsRevision = 0; private nowS = 0;
 
   constructor(private readonly p: FlightPorts) {
     this.V = vesselAbi(p.M);
@@ -110,12 +98,16 @@ export class FlightSession {
   get up(): Vec3 { return norm(this.st.pos); }
 
   /** Metres from the vessel's BASE to the ground under it: what "did it leave
-   *  the pad" is asked of, and NOT `telemetry.altitudeM` (from the datum). */
+   *  the pad" is asked of, and NOT `telemetry.altitudeM` (from the datum).
+   *  The offset SUBTRACTS (PH-28): `rollOut` puts the ORIGIN at
+   *  `surfaceRadius + baseOffsetM` since the origin is the stack's TOP, so the
+   *  base is that far below it. Adding it read ALT AGL 19.20 m on the pad,
+   *  twice the offset, and armed the arrest 19.2 m into the ground. */
   get altitudeAglM(): number {
     const r = len(this.st.pos);
     if (!(r > 0)) return 0;
     const u = norm(this.st.pos);
-    return r - this.p.surfaceRadius(u[0], u[1], u[2]) + this.baseOffsetM;
+    return r - this.p.surfaceRadius(u[0], u[1], u[2]) - this.baseOffsetM;
   }
 
   /** Roll a design out at a unit direction on the body. The vessel's origin is
@@ -219,6 +211,14 @@ export class FlightSession {
    */
   fireStage(): boolean {
     if (this.handle <= 0) return false;
+    // ONE PRESS ON THE PAD (PH-29). The first lights the engine; a second while
+    // the clamp still holds throws away the booster the vehicle needs, what is
+    // left cannot reach TWR 1, and the clamp then never releases. Measured: four
+    // presses took the reference vehicle from 11 parts to 4 and bolted it down.
+    if (this.status === 'CLAMPED' && this.stagings > 0) {
+      this.flash('clamp still holding: throttle up first, do not stage again');
+      return false;
+    }
     const jettisoned = this.V._of_fl_stage(this.handle);
     if (jettisoned < 0) { this.flash('no stage left'); return false; }
     this.stagings += 1;
@@ -263,8 +263,8 @@ export class FlightSession {
     if (this.status === 'CLAMPED') { this.stepClamped(dt); return; }
     if (this.status === 'DOWN') { this.sample(); return; }
 
-    let n = this.warpFactor;
-    if (!this.tm.inSpace && n > WARP_IN_AIR_MAX) n = WARP_IN_AIR_MAX;
+    const n = warpSteps(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
+                        -dot(this.st.vel, this.up), dt);
     this.V._of_fl_step_n(this.handle, dt, n);
     this.steps += n;
     this.metS += dt * n;
@@ -296,14 +296,11 @@ export class FlightSession {
       : 'ASCENT';
   }
 
-  /**
-   * THE CLAMP, and the reason it STEPS AND RESTORES rather than skipping the
-   * step: `FlightSim::telemetry` is written by `step` and nothing else, so a
-   * clamp that did not step reported zero thrust and zero mass, hence TWR zero,
-   * hence refused to release, forever, while every HUD number read healthy.
-   * It is also what a hold-down physically does, and with the throttle shut it
-   * is free, because a step with no thrust and no motion burns nothing.
-   */
+  /** THE CLAMP. It STEPS AND RESTORES rather than skipping the step because
+   *  `FlightSim::telemetry` is written by `step` and nothing else, so a clamp
+   *  that did not step read zero thrust, zero mass, TWR zero, and refused to
+   *  release forever while every HUD number looked healthy. With the throttle
+   *  shut the step is free: no thrust and no motion burns nothing. */
   private stepClamped(dt: number): void {
     this.clampTicks += 1;
     const p0 = this.st.pos, f0 = this.st.forward, r0 = this.st.right;
@@ -329,8 +326,15 @@ export class FlightSession {
     this.st.right = r;
   }
 
-  /** Per-frame message expiry only. Everything else moves on the fixed tick. */
+  /** Per-frame message expiry only. Everything else moves on the fixed tick.
+   *  `nowS` is captured here because it is the ONLY place the loop's clock
+   *  reaches this file, and `flash` was setting its deadline on the MISSION
+   *  clock instead (`metS`, -1 on the pad) against this one (seconds since
+   *  boot, in the hundreds by the time a rocket is built). Every message the
+   *  session raised was therefore cleared in the same frame it was raised, so
+   *  "clamp holding: TWR 0.00, throttle up" has never once been on screen. */
   tick(simSecs: number): void {
+    this.nowS = simSecs;
     if (this.message !== '' && simSecs > this.msgUntilS) this.message = '';
   }
 
@@ -349,10 +353,9 @@ export class FlightSession {
     this.sample();
   }
 
-
   private flash(msg: string): void {
     this.message = msg;
-    this.msgUntilS = (this.metS < 0 ? 0 : this.metS) + 4;
+    this.msgUntilS = this.nowS + 5;
   }
 
   // --- what the navball and the probe read -----------------------------------
@@ -393,6 +396,4 @@ export class FlightSession {
   report(): unknown { return flightReport(this); }
 }
 
-
-export { SLEW_DEG_S as FLIGHT_SLEW_DEG_S, ROLL_DEG_S as FLIGHT_ROLL_DEG_S,
-         WARP_STEPS as FLIGHT_WARP_STEPS };
+export { SLEW_DEG_S as FLIGHT_SLEW_DEG_S, ROLL_DEG_S as FLIGHT_ROLL_DEG_S };

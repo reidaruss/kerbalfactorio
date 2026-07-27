@@ -13,12 +13,11 @@
 //     VabPaint.findSocket, which also tolerates the `_7`-shaped suffix.
 //   * A missing mesh is DRAWN, not skipped. A part that silently vanishes is a
 //     part the player believes a staging event ate. It gets a wireframe proxy at
-//     its true envelope: honest about being a placeholder, still the right size.
+//     its true envelope: a placeholder that is honest and the right size.
 //
-// Floating origin (ARCHITECTURE.md section 3.6): this view holds NO 64-bit
-// anchor and never applies a rebase delta. `place()` takes a position the caller
-// already differenced in f64, which is what FloatingOrigin.toEngine produces, so
-// a rebase is an ordinary call with different numbers in it.
+// Floating origin (ARCHITECTURE.md 3.6): this view holds NO 64-bit anchor and
+// never applies a rebase delta. `place()` takes a position the caller already
+// differenced in f64, which is what FloatingOrigin.toEngine produces.
 
 import * as THREE from 'three';
 import { loadGlb, renderMeshes } from '../assets/Loaders.js';
@@ -261,6 +260,9 @@ export class VesselView {
       rebuilds: this.rebuilds,
       lowestLocalY: this.lowY,
       boundingRadius: this.radius,
+      // WHERE THE MESHES ACTUALLY ARE (PH-31), so "the rocket is not on the
+      // pad" is a number and not a screenshot somebody has to notice.
+      drawnEngineM: [this.root.position.x, this.root.position.y, this.root.position.z],
       plumeThrottle: this.plume.throttle,
       plumes: this.plume.count,
       templates: this.templates.size,
@@ -353,9 +355,7 @@ export class VesselView {
  * `socket_stack_bottom`, so the loader has renamed all but one of them and a
  * file-root lookup would answer with an arbitrary part's nozzle. `obj` must
  * still be DETACHED here, so the walk up from the socket stops at the part.
- * Falls back to the bottom centre of the part's own box, which is where a nozzle
- * is even when the art does not label one.
- */
+ * Falls back to the bottom centre of the part's box, where a nozzle is anyway. */
 function nozzleOf(obj: THREE.Object3D, box: THREE.Box3, def: PartRow): PlumeNozzle {
   const p = new THREE.Vector3();
   const sock = findSocket(obj, 'socket_stack_bottom');

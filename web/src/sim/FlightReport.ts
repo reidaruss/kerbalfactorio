@@ -4,7 +4,7 @@
 import { scratchF64 } from './wasm/heap.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import { STAGE_PERF_WORDS, vesselAbi } from './wasm/vesselabi.js';
-import { dot } from './FlightAbi.js';
+import { dot, len } from './FlightAbi.js';
 import type { FlightSession, FlightStageRow } from './FlightSession.js';
 
 export function round(v: number, d: number): number {
@@ -38,8 +38,15 @@ export function readStagePerformance(
   if (designHandle <= 0) return [];
   const n = vesselAbi(M)._of_vs_stage_performance(designHandle);
   if (n <= 0) return [];
-  const a = scratchF64(M, n * STAGE_PERF_WORDS);
+  // GRAVITY FIRST, THEN THE VIEW. `scratchF64` hands back a SUBARRAY of the
+  // heap, not a copy, and the rule (`FlightAbi.ts`) is that nothing may call
+  // into WASM between taking one and reading it: `ALLOW_MEMORY_GROWTH` detaches
+  // every outstanding view, and then all twelve `?? 0` fallbacks below fire at
+  // once and the whole per-stage delta-v table silently reads zero. It has been
+  // safe only because `_of_gravity_accel` happens not to allocate today, which
+  // is a property of a function this file does not own. Reordering is free.
   const g = M._of_gravity_accel(bodyHandle, bodyRadiusM);
+  const a = scratchF64(M, n * STAGE_PERF_WORDS);
   const out: FlightStageRow[] = [];
   for (let i = 0; i < n; ++i) {
     const q = i * STAGE_PERF_WORDS;
@@ -64,7 +71,12 @@ export function flightReport(s: FlightSession): unknown {
     altitudeAglM: round(s.altitudeAglM, 2),
     altitudeDatumM: round(tm.altitudeM, 2),
     peakAltM: round(s.peakAltM, 1),
-    speedMS: round(tm.speedMS, 2),
+    // THE STATE, NOT THE TELEMETRY. `FlightSession.step` says it out loud for
+    // the arrest: telemetry is written by `of_fl_step` and by nothing else, so
+    // after a landing it still holds the IMPACT speed forever. The navball
+    // reads the state and this read the telemetry, so the same quantity had two
+    // values that disagreed only in the one state nothing asserts on.
+    speedMS: round(len(s.state.vel), 2),
     verticalMS: round(dot(s.state.vel, s.up), 2),
     apoapsisM: round(o.apoapsisAltM, 1), periapsisM: round(o.periapsisAltM, 1),
     eccentricity: round(o.eccentricity, 5), periodS: round(o.periodS, 1),

@@ -7,6 +7,7 @@
 
 import { structureReport } from './StructureSave.js';
 import { lastSlotRefusal } from './Persist.js';
+import { saveInhibitReport } from '../sim/SaveInhibit.js';
 import type { Gameplay } from './Gameplay.js';
 
 export function gameplayReport(g: Gameplay): unknown {
@@ -60,8 +61,12 @@ export function gameplayReport(g: Gameplay): unknown {
       // `slotRefused` is DW-31's negative evidence: '' means nothing was turned
       // away, 'mode' means a slot EXISTS under this key that the running mode
       // will not read. An absence alone cannot tell those apart (DW-20).
+      // `saveInhibit` is the SAVE-side twin of `slotRefused`: a save that was
+      // never written because the world could not be described (PH-30, a
+      // vessel in flight) has to be tellable from a save that simply did not
+      // come round yet, which is why the allowed ones are counted too.
       persist: { saves: g.saves, restored: g.restored,
-        slotRefused: lastSlotRefusal() },
+        slotRefused: lastSlotRefusal(), saveInhibit: saveInhibitReport() },
       demolition: {
         buildings: g.factory.removals, machines: g.machines.removals,
         refunded: g.factory.refunded,

@@ -51,6 +51,17 @@
   color: var(--of-ink);
   border-left: 3px solid var(--of-accent);
 }
+/* A STANDING warning (PH-30), not a flash. Amber and outlined rather than red:
+   nothing is broken, something is not yet built, and a red chip on a working
+   ascent would teach the player to ignore the row. */
+#of-navball .chip.warn {
+  letter-spacing: 0;
+  text-transform: none;
+  color: #ffcf70;
+  background: rgba(58, 42, 10, 0.9);
+  border-color: #8a6a22;
+  border-left: 3px solid #ffcf70;
+}
 
 /* --- the row: readouts, ball, readouts, stages --------------------------- */
 #of-navball .of-npanel {

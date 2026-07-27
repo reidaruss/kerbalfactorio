@@ -30,6 +30,7 @@ import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
+import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 
 /** The three Services handles a whole-world save needs and gameplay does not own. */
 /**
@@ -238,6 +239,15 @@ export function apply(M: OfCoreModule, game: GameCore,
  * type import is erased, so the apparent cycle costs nothing at runtime.
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
+  // PH-30 / physics R11. A save that cannot describe the world is refused here
+  // rather than written and hoped over: the slot has no field for a vessel, so
+  // one written mid-flight is a VALID GROUND state that silently deletes the
+  // flight on the next load. Refusing leaves the last GROUND save on disk,
+  // which is where a reload should put somebody whose flight was not saved,
+  // and the navball says so while it is happening.
+  const inhibit = saveInhibit();
+  if (inhibit !== '') { noteSave(true); return { refused: inhibit }; }
+  noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
     g.seed, g.ports, g.oreField, g.structures, g.hotbar, g.mode.mode);
   const ok = await writeSlot(slot);

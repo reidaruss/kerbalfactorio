@@ -57,6 +57,10 @@ export interface NavballReadout {
   status: string;
   qPa: number; maxQPa: number; twr: number; massKg: number; gForce: number;
   metS: number;
+  /** A STANDING condition the player is owed, drawn until it goes away. Not the
+   *  same thing as `message`, which is a transient flash: a warning that scrolls
+   *  past in four seconds is a warning nobody read. '' when there is none. */
+  warning: string;
   message: string;
 }
 
@@ -154,12 +158,16 @@ export class Navball {
   }
 
   private chips(r: NavballReadout): void {
-    const key = `${r.status}|${r.sas}|${r.message}`;
+    const warn = r.warning ?? '';
+    const key = `${r.status}|${r.sas}|${r.message}|${warn}`;
     if (key === this.last[4]) return;
     this.last[4] = key;
     this.chipsEl.innerHTML = `<span class="chip st">${esc(r.status)}</span>`
       + `<span class="chip sas${r.sas === 'OFF' ? ' off' : ''}">SAS `
       + `${esc(r.sas)}</span>`
+      // The standing warning comes BEFORE the transient message, so a flash
+      // cannot push it off the end of the row on a narrow window.
+      + (warn === '' ? '' : `<span class="chip warn">${esc(warn)}</span>`)
       + (r.message === '' ? '' : `<span class="chip msg">${esc(r.message)}</span>`);
   }
 
@@ -237,6 +245,9 @@ export class Navball {
       remainingDvMS: r === null ? 0 : nm(r.remainingDvMS),
       status: r === null ? '' : r.status,
       sas: r === null ? '' : r.sas,
+      // Read off the DOM, not off the readout: a probe asking "is the player
+      // being told" must be answered by the pixels, not by the intention.
+      warning: this.chipsEl.querySelector('.chip.warn')?.textContent ?? '',
       markersDrawn: [...this.marks],
       renders: this.renders,
     };
@@ -282,10 +293,13 @@ function clamp01(v: number): number { return Math.max(0, Math.min(1, nm(v))); }
 
 function round(v: number): number { return Math.round(nm(v) * 4) / 4; }
 
-/** Metres up to 10 km, kilometres past it, megametres once in deep space. */
+/** Metres up to 10 km, kilometres past it, megametres once in deep space.
+ *  `+ 0` is not decoration: without it a rocket standing on the pad reads
+ *  "-0 m", because IEEE negative zero survives `toFixed`. */
 function alt(v: number): string {
-  const a = nm(v);
+  const a = nm(v) + 0;
   const m = Math.abs(a);
+  if (m < 5e-4) return '0 m';
   if (m >= 1e6) return `${(a / 1e6).toFixed(3)} Mm`;
   if (m >= 1e4) return `${(a / 1e3).toFixed(2)} km`;
   return `${a.toFixed(0)} m`;

@@ -216,27 +216,40 @@
   let smelterDown = false;
   if (drillPick !== null) {
     await ghostAt(drillPick.yaw, drillPick.pitch);
-    of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
+    of.input.tape([{ hold: 1, actions: ['use'] }, { hold: 5, keys: [] }]);
     await sleep(0.3);
     // The smelter goes DOWN-SLOPE of the drill by a couple of degrees of aim,
     // which lands it inside `wire`'s touch radius so /core creates the inserter.
     of.build(3);                                // hotbar slot 5: the smelter
+    // The placement is read back from the ABSOLUTE count after a longer settle,
+    // not from a per-iteration delta after 0.3 s. The base-building lane's
+    // commit path is not this lane's to reason about and it has moved twice
+    // tonight; a probe that decides "the smelter did not go down" from a
+    // three-tenths-of-a-second window is measuring the commit latency of
+    // somebody else's file rather than the thing it came here to assert.
+    const beforeSmelter = of.game().factory.buildings;
     for (let d = 1.6; d <= 6.4 && !smelterDown; d += 0.8) {
       const g = await ghostAt(drillPick.yaw, drillPick.pitch + d);
       if (g === null || !g.ok) continue;
-      const before = of.game().factory.buildings;
-      of.input.tape([{ hold: 3, actions: ['use'] }, { hold: 4, keys: [] }]);
-      await sleep(0.3);
-      smelterDown = of.game().factory.buildings > before;
+      of.input.tape([{ hold: 1, actions: ['use'] }, { hold: 5, keys: [] }]);
+      await sleep(0.6);
+      smelterDown = of.game().factory.buildings > beforeSmelter;
     }
     of.build(0);                                 // bare hand again
   }
   const built = of.game().factory;
   check('the drill went down on the ore', built.buildings >= 1,
         `${built.buildings} buildings`);
-  check('and a smelter is wired to it, so the drill never saturates',
-        smelterDown === true && built.links.length > 0,
-        `smelter ${smelterDown}, links ${built.links.length}`);
+  check('a second machine went down next to it', smelterDown === true,
+        `smelter ${smelterDown}, ${built.buildings} buildings`);
+  // The WIRE is reported separately from the PLACEMENT because they fail for
+  // different reasons and in different lanes. Without a link the drill fills its
+  // 50-unit output buffer in about 17 seconds and stops, so section 10's
+  // production claim becomes "it mined for the first 3% of the flight", which is
+  // true and is not the claim. Named rather than folded in, so a red line here
+  // points at `FactoryWiring` and not at the rocket.
+  check('and /core WIRED them, so the drill never saturates mid-flight',
+        built.links.length > 0, `links ${built.links.length}`);
   // PROVE IT RUNS before trusting it later. 6 seconds of sim on the ground.
   const cPre = CT();
   await sleep(6);
@@ -329,6 +342,13 @@
   //    LIFTOFF IS MEASURED, not inferred.
   // ==========================================================================
   const aglOnPad = FL().altitudeAglM;
+  const padAltDatumM = FL().altitudeDatumM;
+  // PH-28. A rocket standing on the pad is at ZERO altitude above the ground.
+  // It read 19.20 m for the whole of W9, exactly twice its own base offset,
+  // and nothing here caught it because every altitude assertion in this file
+  // is RELATIVE to `aglOnPad`. An absolute one costs a line.
+  check('the rocket on the pad is at zero AGL', Math.abs(aglOnPad) < 0.5,
+        `${aglOnPad} m`);
   const countersAtLaunch = CT();
   of.input.act(['stage'], 6);
   await sleep(0.6);
@@ -421,9 +441,21 @@
         `${r.flight.parts} parts left of 11`);
   check('the engine was cut at the target apoapsis', coasting === true
         && cutoffAt > 0, `cutoff ${cutoffAt} s`);
-  check('max q is in /core\'s range (27.3 kPa at 7.8 km)',
-        r.flight.maxQPa > 15000 && r.flight.maxQPa < 45000,
-        `${(r.flight.maxQPa / 1000).toFixed(1)} kPa`);
+  // MAX Q IS ASSERTED AGAINST THE AIR THIS PAD IS ACTUALLY IN, not against a
+  // fixed window. /core's fixture launches from the DATUM and peaks at 27.3
+  // kPa; the shipped spawn is on real terrain several km up, and q scales with
+  // the density the vehicle flies through, rho = rho0 * exp(-h/H) with
+  // H = 5600 m (PH-10, D-006). The window this line used to be was sized to one
+  // terrain build and the TERRAIN LANE then moved the ground under it: the pad
+  // rose about 1.2 km, max q fell from 17.8 to 14.4 kPa, and a perfectly
+  // healthy ascent went red. A ratio against the measured pad altitude still
+  // catches the thing the check is FOR (drag that is not being computed, or an
+  // atmosphere that is not being consulted) and does not care where the pad is.
+  const qExpect = CORE.maxQPa * Math.exp(-padAltDatumM / 5600);
+  check('max q is /core\'s 27.3 kPa lapsed for the pad altitude',
+        r.flight.maxQPa > qExpect * 0.55 && r.flight.maxQPa < qExpect * 1.9,
+        `${(r.flight.maxQPa / 1000).toFixed(1)} kPa against ${(qExpect / 1000).toFixed(1)} `
+        + `expected from a pad ${Math.round(padAltDatumM)} m up`);
   log.push(`ascent: staged ${stagedAt.toFixed(1)} s, cutoff ${cutoffAt.toFixed(1)} s ` +
            `at ${cutoffSpeed.toFixed(0)} m/s, max q ${(r.flight.maxQPa / 1000).toFixed(1)} kPa`);
 

@@ -98,6 +98,34 @@ export class VesselObserver implements ViewSource {
     this.interpolate(1);
   }
 
+  /**
+   * SEED THE INTERPOLATOR FROM THE SIM WITHOUT STEPPING IT (PH-31).
+   *
+   * `step` is only reached through `ViewRouter`, and the vessel is the router's
+   * source only while somebody is ABOARD. So between roll-out and boarding
+   * nothing wrote `renderPos`, it was still the {0,0,0} it was constructed
+   * with, and `FlightMode.frame` drew the whole rocket at the BODY CENTRE, 600
+   * km under the pad and outside the near camera's far plane. The vessel is
+   * planted at PAD_AHEAD_M = 26 m and boarding reaches to 18 m, so there is
+   * ALWAYS a walk during which the rocket the game just told you to walk to
+   * does not exist on screen, and it appears out of nowhere as you board.
+   *
+   * Invisible to every instrument because `distanceToVessel` reads
+   * `session.state.pos`, which was right the whole time: the walk, the range
+   * refusal and the boarding all measured correctly against a rocket that was
+   * not being drawn.
+   *
+   * Also the reset the roll-out needed anyway: without it a SECOND flight
+   * lerps its first tick from wherever the LAST one ended, sweeping the camera
+   * and the model across the intervening ground in one frame.
+   */
+  syncToVessel(): void {
+    const p = this.flight.state.pos;
+    this.curr.x = p[0]; this.curr.y = p[1]; this.curr.z = p[2];
+    this.prev.x = p[0]; this.prev.y = p[1]; this.prev.z = p[2];
+    this.interpolate(1);
+  }
+
   look(dYaw: number, dPitch: number): void {
     this.yaw += dYaw;
     this.pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, this.pitch + dPitch));
