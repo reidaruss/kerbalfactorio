@@ -672,6 +672,34 @@ class FactorySim {
     return crafting_[h.index] != 0;
   }
 
+  // Lifetime WORK this entity has actually performed, as a monotonic fixed-point
+  // counter (FS-33, the pollution integration's duty meter — also a utilization
+  // probe for a HUD). Units are the entity's own hot-loop fixed point, so a
+  // window's duty cycle is (delta / full-rate-delta) with no float in the sim:
+  //   * Machine: craft-progress MILLITICKS actually advanced. Full power and
+  //     continuously crafting is exactly 1000 per tick; a brownout at
+  //     satisfaction s advances (1000*s)>>16, so browned-out work reads
+  //     proportionally lower BY THE SAME ARITHMETIC that slowed the craft. A
+  //     starved or output-blocked machine advances nothing and reads 0.
+  //   * Miner: extraction MILLI-UNITS accrued. Full rate is exactly
+  //     minerRateMilliPerTick() per tick; a depleted or out-blocked miner
+  //     accrues nothing. (Whole units mined would jitter with the accumulator
+  //     phase; the accrual is the smooth, exact measure of work done.)
+  //   * Everything else: 0.
+  // Never reset, never decremented; on-rails advance does NOT accrue (a demoted
+  // chunk's pollution is part of the on-rails seam, deliberately out of scope).
+  uint64_t workMilli(EntityHandle h) const {
+    if (!h.valid() || static_cast<size_t>(h.index) >= workMilli_.size()) return 0;
+    return workMilli_[h.index];
+  }
+
+  // A miner's extraction rate in milli-units per tick — the workMilli() full-rate
+  // denominator, exposed so a facade never re-derives the rounding in addMiner.
+  uint32_t minerRateMilliPerTick(EntityHandle h) const {
+    if (!h.valid() || kind_[h.index] != EntityKind::Miner) return 0;
+    return minerRateMilliPerTick_[h.index];
+  }
+
   // Remove up to `want` units from a machine's / miner's output buffer, and
   // return how many were actually removed. This is the MANUAL-COLLECTION verb:
   // it is exactly what inserterSystem already does internally (§3 drains a
@@ -1110,6 +1138,11 @@ class FactorySim {
   std::vector<uint16_t> minerOutCap_;        // out-slot cap (0 = unbounded)
   std::vector<int32_t>  minerPowerW_;        // draw while extracting (0 = unpowered)
 
+  // Lifetime work counters (FS-33): machine milliticks advanced / miner
+  // milli-units accrued. One uint64 add on the hot path per entity that is
+  // actually WORKING this tick; idle entities never touch it.
+  std::vector<uint64_t> workMilli_;
+
   // §6 render-stream metadata (cold; touched only by stream emission, never by
   // the hot tick). Additive: defaulted so legacy scenes stream sanely. typeId_
   // buckets draw calls (rendering instances per TypeId); pos*_ is the authority
@@ -1210,6 +1243,7 @@ class FactorySim {
     minerAccum_.resize(n, 0);
     minerOutCap_.resize(n, 0);
     minerPowerW_.resize(n, 0);
+    workMilli_.resize(n, 0);
     typeId_.resize(n, 0);
     posX_.resize(n, 0.0f);
     posY_.resize(n, 0.0f);
@@ -1326,6 +1360,7 @@ class FactorySim {
       uint64_t add = (static_cast<uint64_t>(minerRateMilliPerTick_[i]) * brown)
                      >> 16;
       minerAccum_[i] += static_cast<uint32_t>(add);
+      workMilli_[i] += add;  // FS-33: extraction effort actually accrued
       // Free as many whole units as have accrued (bounded by deposit + out cap).
       while (minerAccum_[i] >= 1000) {
         if (minerRemaining_[i] == 0) break;             // deposit emptied mid-tick
@@ -1378,6 +1413,7 @@ class FactorySim {
       // craftTimeTicks * 1000 milliticks completes a craft.
       uint32_t advance = static_cast<uint32_t>((1000u * brown) >> 16);
       progressTicks_[i] += advance;
+      workMilli_[i] += advance;  // FS-33: craft effort actually applied
       uint32_t target = r.craftTimeTicks * 1000u;
       if (progressTicks_[i] >= target) {
         // complete: emit output, reset, allow immediate restart next tick.

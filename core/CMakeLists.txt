@@ -87,6 +87,28 @@ target_link_libraries(automation_tests PRIVATE of_core)
 target_include_directories(automation_tests PRIVATE tests)
 add_test(NAME automation_tests COMMAND automation_tests)
 
+# --- POLLUTION INTEGRATION (FS-33): the enemies loop driven by a REAL factory
+#     (stock-take F2 closure). Machines carry emitters at their own positions;
+#     once per pollution window each rate becomes base * duty, where duty is
+#     work ACTUALLY done read off the sim's fixed-point counters (machine
+#     milliticks, miner accrual, generator fuel energy burned). Proves: the
+#     hand-derived steady rates of a drill-belt-smelter-generator scene
+#     (6.5999320/s, including the 29999 W truncation chain); field mass against
+#     the closed form with decay off and between hand bounds with decay on;
+#     brownout scaling emission by the same Q16 factor that slowed the craft
+#     while the generator pays the balance; the NEGATIVE CONTROL (an idle
+#     factory emits nothing and no wave ever forms, for 15 simulated minutes);
+#     a wave dispatched THROUGH the real pipeline targeting the generator that
+#     fed the nest; the joined save round-trip (bit-identical hash, stable
+#     emitter joins, byte-identical re-serialize); and the joined per-tick cost
+#     at 1,200 machines against the enemies-suite baseline.
+add_executable(factory_pollution_tests
+  tests/test_main.cpp
+  tests/test_factory_pollution.cpp)
+target_link_libraries(factory_pollution_tests PRIVATE of_core)
+target_include_directories(factory_pollution_tests PRIVATE tests)
+add_test(NAME factory_pollution_tests COMMAND factory_pollution_tests)
+
 # --- ELECTRICITY (power.h + its automation.h binding): the grid. Generators
 #     produce, consumers demand, poles form networks by connectivity, and when
 #     demand exceeds supply EVERYTHING on that network slows by the same factor.
