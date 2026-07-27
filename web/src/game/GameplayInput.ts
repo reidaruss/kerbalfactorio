@@ -25,7 +25,7 @@
 import { collectFrom, stepBuild } from './GameplayActions.js';
 import { showGoals } from './Objectives.js';
 import type { Gameplay } from './Gameplay.js';
-import type { Action } from '../player/Bindings.js';
+import { labelOf, type Action } from '../player/Bindings.js';
 
 const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5',
   'slot6', 'slot7', 'slot8', 'slot9'];
@@ -60,7 +60,11 @@ export class GameplayInput {
 
     const mute = act('mute');
     if (mute && !this.mute) {
-      g.hud.flash(g.sfx.bus.toggleMute() ? 'sound off  (M)' : 'sound on  (M)');
+      // The key name is READ from the binding table, never spelled here. This
+      // line said "(M)" for an hour after mute moved to Backslash, because M
+      // was taken by the map, and a hint that names the wrong key is worse
+      // than no hint: it teaches the player a control that does nothing.
+      g.hud.flash(`${g.sfx.bus.toggleMute() ? 'sound off' : 'sound on'}  (${labelOf('mute')})`);
     }
     this.mute = mute;
 
