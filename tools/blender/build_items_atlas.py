@@ -1,10 +1,10 @@
-"""build_items_atlas.py - the fourteen dropped-item props, one file.
+"""build_items_atlas.py - the fifteen dropped-item props, one file.
 
     blender --background --python tools/blender/build_items_atlas.py
 
 Produces assets/models/dist/items/items_atlas.glb (ASSET-SPECS 3.1 / 4.11).
 
-THREE THINGS MAKE THIS FILE DIFFERENT FROM EVERY OTHER ASSET.
+FOUR THINGS MAKE THIS FILE DIFFERENT FROM EVERY OTHER ASSET.
 
 1. ORIGIN AT THE VOLUMETRIC CENTRE, not at the base. An item tumbles when it is
    dropped and rides centred on a belt, so its pivot is its middle. Parts.fit()
@@ -21,9 +21,39 @@ THREE THINGS MAKE THIS FILE DIFFERENT FROM EVERY OTHER ASSET.
    Lod::Near0 (factory_sim.h), so items simply vanish rather than degrade, and
    the ground drop uses a code-generated sphere.
 
-The real constraint is legibility at 64 px in an inventory icon: if the iron
-ingot and the copper ingot are not instantly distinguishable, the material
-contrast is wrong, not the mesh.
+4. EVERY ITEM CARRIES A CHILD socket_rest, at its own lowest point on its
+   vertical axis, i.e. local (0, -halfY, 0) in three.js axes. Rule 1 is what
+   makes this necessary: an item riding a belt RESTS on it, but its origin is
+   its middle, so without socket_rest every consumer would need a per-item half
+   height table. Placing an item on a belt is instead one subtraction:
+
+       item.position = beltPathPoint - clone.getObjectByName('socket_rest').position
+
+   Note CLONE. Blender object names are unique per FILE, so fifteen sockets
+   called socket_rest become socket_rest .. socket_rest.014 and the contract
+   evaporates; of_lib.export_glb(dedupe_socket_names=True) strips the suffix at
+   export time, exactly as rocket_parts.glb does for its thirteen
+   socket_stack_top nodes. Duplicate glTF node names are legal, so the lookup
+   MUST be scoped to the cloned item node and never done at the file root.
+
+TWO CONSTRAINTS SET THE SHAPES.
+
+The old one is legibility at 64 px in an inventory icon: if the iron ingot and
+the copper ingot are not instantly distinguishable, the material contrast is
+wrong, not the mesh.
+
+The new one is legibility at 3 to 5 m on a MOVING BELT, which is a different
+job, and it is why the four raw chunks were rebuilt. They were four copies of
+one faceted lobe separated by tint alone, and tint is the first thing you lose
+on a small object crossing a lit deck at 1.9 m/s. Note that proportion cannot
+carry the difference either: every item is fitted to an exact spec AABB, so a
+"flat" shard and a "tall" chunk end up the same box. Only STRUCTURE survives
+that fit, so each raw chunk now has one:
+
+    iron ore     a lobe with cubic crystals breaking out of it   SPIKY
+    copper ore   four yawed slabs, alternating rock and metal    LAYERED
+    coal         three separate small lumps, not one rock        CLUSTERED
+    stone        one truncated block with a knocked corner       BLOCKY
 """
 
 import math
@@ -98,22 +128,59 @@ def _chunk(seed, host, ore=None, ore_faces=(), seg=7, jit=0.20):
 # ---------------------------------------------------------------------------
 
 def item_ore_chunk_iron():
-    return _chunk(0x11, "Rock", "Iron", (0, 3, 7, 11)), ["Rock", "Iron"], \
-        (0.26, 0.22, 0.20)
+    """SPIKY. Host rock with three cubic crystals breaking out of the shoulder
+    and standing proud of the apex. The spikes are the read: they are the only
+    thing in the raw set that breaks the smooth top line of a lobe, and a
+    broken top line survives motion blur where a tint does not."""
+    p = _chunk(0x11, "Rock", "Iron", (0, 3, 7, 11), seg=7, jit=0.16)
+    nxt = hc.rng(0x51A1)
+    for k in range(3):
+        a = 2.0 * math.pi * k / 3.0 + 0.55
+        r = 0.13 + 0.10 * nxt()
+        s = 0.14 + 0.05 * nxt()
+        p.add(*of.box_data((s, s, 0.55 + 0.80 * nxt()),
+                           (r * math.cos(a), r * math.sin(a), 0.92),
+                           rot_z=17.0 + 23.0 * k), role="Iron")
+    return p, ["Rock", "Iron"], (0.26, 0.22, 0.20)
 
 
 def item_ore_chunk_copper():
-    return _chunk(0x12, "Rock", "Copper", (1, 5, 8, 12)), ["Rock", "Copper"], \
-        (0.26, 0.22, 0.20)
+    """LAYERED. Four slabs of falling size, each yawed a few degrees, host rock
+    and raw metal alternating, so the silhouette is a stepped ziggurat and the
+    colour break repeats up it instead of being one flat wash."""
+    p = hc.Parts()
+    for sx, sy, sz, cz, rz, role in ((0.92, 0.86, 0.26, 0.13, 0.0, "Rock"),
+                                     (0.74, 0.68, 0.22, 0.37, 13.0, "Copper"),
+                                     (0.56, 0.50, 0.20, 0.58, -21.0, "Rock"),
+                                     (0.30, 0.27, 0.18, 0.79, 8.0, "Copper")):
+        p.add(*of.box_data((sx, sy, sz), (0.0, 0.0, cz), rot_z=rz), role=role)
+    return p, ["Rock", "Copper"], (0.26, 0.22, 0.20)
 
 
 def item_coal_lump():
-    return _chunk(0x13, "Coal", seg=7, jit=0.26), ["Coal"], (0.24, 0.20, 0.18)
+    """CLUSTERED. Three small lumps rather than one rock: the only multi-body
+    silhouette in the whole atlas, which makes it the fastest to name at 5 m
+    and stops it reading as a black-tinted stone chunk."""
+    p = hc.Parts()
+    for seed, dx, dy, dz, s, seg in ((0x13, -0.26, -0.10, 0.00, 0.62, 6),
+                                     (0x23, 0.22, -0.16, 0.02, 0.54, 6),
+                                     (0x33, 0.02, 0.24, 0.05, 0.46, 5)):
+        p.add(*hc.lobe(0.50 * s, 0.46 * s, 1.0 * s, loc=(dx, dy, dz), seg=seg,
+                       seed=seed, jit=0.24, role="Coal"))
+    return p, ["Coal"], (0.24, 0.20, 0.18)
 
 
 def item_stone_chunk():
-    return _chunk(0x14, "Rock", "RockDark", (2, 6, 10)), ["Rock", "RockDark"], \
-        (0.24, 0.22, 0.18)
+    """BLOCKY. One truncated block with a second smaller block knocked askew on
+    top. Large flat facets, no spikes and no cluster, so it is the calm shape in
+    a set of busy ones - which is what "unremarkable grey rubble" should be."""
+    p = hc.Parts()
+    p.add(*_stack(((0.00, 0.46, 0.42),
+                   (0.62, 0.40, 0.36),
+                   (0.92, 0.22, 0.19)), "Rock"))
+    p.add(*of.box_data((0.42, 0.38, 0.34), (0.18, -0.15, 0.90), rot_z=24.0),
+          role="RockDark")
+    return p, ["Rock", "RockDark"], (0.24, 0.22, 0.18)
 
 
 def item_log():
@@ -145,26 +212,33 @@ def item_ferrite_ore():
 
 
 def item_ferrite_plate():
-    v, f, sm, roles = _stack(((-0.01, 0.120, 0.120),
-                              (0.01, 0.140, 0.140)), "Iron")
-    return hc.Parts().add(v, f, sm, roles), ["Iron"], (0.28, 0.28, 0.02)
+    """0.24 m deep, not 0.28. THE FLOW-AXIS BOUND (see check_belt_cargo.py):
+    factory_sim.h saturates a belt at kItemSpacing / kUnitsPerTile = 64/256 of
+    a 1 m tile, so four items per tile, 0.250 m apart. Anything deeper than
+    that along the flow axis interpenetrates its neighbour on a full belt. This
+    plate and the frame part were the only two items over the line, and nobody
+    had noticed because nothing had ever put an item on a belt."""
+    v, f, sm, roles = _stack(((-0.015, 0.120, 0.100),
+                              (0.015, 0.140, 0.118)), "Iron")
+    return hc.Parts().add(v, f, sm, roles), ["Iron"], (0.28, 0.24, 0.03)
 
 
 def item_frame_part():
-    """A square frame with a cross brace: four Iron bars, two Steel diagonals.
-    The hole in the middle is the icon read - it is the only item you can see
-    through."""
+    """A frame with a cross brace: four Iron bars, two Steel diagonals. The hole
+    in the middle is the read - it is the only item you can see through, at 64
+    px and on a belt alike. 0.24 m deep for the same flow-axis reason as the
+    ferrite plate."""
     p = hc.Parts()
     for sx in (-1, 1):
-        p.add(*of.box_data((0.04, 0.28, 0.10), (sx * 0.12, 0.0, 0.0)),
+        p.add(*of.box_data((0.04, 0.24, 0.10), (sx * 0.12, 0.0, 0.0)),
               role="Iron")
     for sy in (-1, 1):
-        p.add(*of.box_data((0.20, 0.04, 0.10), (0.0, sy * 0.12, 0.0)),
+        p.add(*of.box_data((0.20, 0.04, 0.10), (0.0, sy * 0.10, 0.0)),
               role="Iron")
-    for rz in (38.0, -38.0):
-        p.add(*of.box_data((0.30, 0.035, 0.05), (0.0, 0.0, 0.0), rot_z=rz),
+    for rz in (40.0, -40.0):
+        p.add(*of.box_data((0.26, 0.035, 0.05), (0.0, 0.0, 0.0), rot_z=rz),
               role="Steel")
-    return p, ["Iron", "Steel"], (0.28, 0.28, 0.10)
+    return p, ["Iron", "Steel"], (0.28, 0.24, 0.10)
 
 
 def item_cinderite():
@@ -200,6 +274,33 @@ def item_oil_flask():
     return p, ["Glass", "Oil"], (0.16, 0.16, 0.28)
 
 
+def item_crate():
+    """ONE generic packed crate, which carries any ItemCategory::Buildable on a
+    belt: Miner 0x10 through PowerPole 0x16, PrimitiveFurnace 0x3B, Survival
+    Smelter 0x3C, and Foundation 0x40 through Door 0x43. Twelve buildables, and
+    not one of them has a belt-sized mesh.
+
+    The alternative was scaling the machine's own mesh down to fit, and a 4 m
+    foundation at 0.24 m is a smudge; worse, twelve smudges would all be the
+    same grey smudge, so the player would learn nothing from looking. A crate
+    says "a thing packed for transport", which is the true statement, and the
+    HUD says which thing.
+
+    Timber body, four corner posts, two steel straps, and an Accent stencil on
+    the lid so the top face reads at a glance from a player's eye height."""
+    p = hc.Parts()
+    p.add(*of.box_data((0.196, 0.196, 0.176)), role="BarkLight")
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            p.add(*of.box_data((0.038, 0.038, 0.200),
+                               (sx * 0.094, sy * 0.094, 0.0)), role="Bark")
+    p.add(*of.box_data((0.212, 0.048, 0.186)), role="Steel")
+    p.add(*of.box_data((0.048, 0.212, 0.186)), role="Steel")
+    p.add(*of.box_data((0.204, 0.204, 0.020), (0.0, 0.0, 0.092)), role="Bark")
+    p.add(*of.box_data((0.086, 0.086, 0.008), (0.0, 0.0, 0.105)), role="Accent")
+    return p, ["BarkLight", "Bark", "Steel", "Accent"], (0.24, 0.24, 0.22)
+
+
 ITEMS = [
     ("Item_OreChunk_Iron", item_ore_chunk_iron),
     ("Item_OreChunk_Copper", item_ore_chunk_copper),
@@ -215,6 +316,7 @@ ITEMS = [
     ("Item_Combustite", item_combustite),
     ("Item_WaterCanister", item_water_canister),
     ("Item_OilFlask", item_oil_flask),
+    ("Item_Crate", item_crate),
 ]
 
 
@@ -230,11 +332,19 @@ def main():
         parts.fit(size, base_z=-size[2] * 0.5)
         mb = of.MeshBuilder()
         parts.into(mb, order)
-        mb.build(name, root)
+        obj = mb.build(name, root)
+        # socket_rest, a CHILD of the item. fit() has just made the AABB
+        # exactly `size` centred on the origin, so the item's lowest point is
+        # -size[2]/2 by construction rather than by measurement, and there is
+        # no half-height table for a consumer to keep in step with the meshes.
+        of.add_socket("socket_rest", (0.0, 0.0, -size[2] * 0.5), parent=obj,
+                      extras={"of_role": "item_rest"})
         built.append((name, mb))
 
     of.report(NAME, built)
-    of.export_glb(OUT, export_force_sampling=False)
+    # dedupe_socket_names: fifteen nodes want to be called socket_rest and
+    # Blender will only let one of them. See the module docstring, point 4.
+    of.export_glb(OUT, dedupe_socket_names=True, export_force_sampling=False)
 
 
 if __name__ == "__main__":

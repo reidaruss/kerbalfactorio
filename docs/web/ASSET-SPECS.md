@@ -10,11 +10,24 @@ is proven deterministic end to end.
 
 | Tier | Files | Meshes | Payload |
 |---|---|---|---|
-| 0: the playable loop | 27 | 40 base (83 counting depletion variants) | 1.8 MB |
+| 0: the playable loop | 27 | 40 base (83 counting depletion variants) | 2.05 MB |
 | 0: base building (4 m module, 2026-07-26) | 5 | 8 parts, 17 render meshes | 92 KB |
-| 1: biome scatter props | 10 | 41 props, 78 render meshes with LOD2 | 367 KB |
+| 0: armour, four slots (2026-07-27) | 1 | 4 skinned slot meshes | 89 KB |
+| 1: biome scatter props | 10 | 41 props, 78 render meshes with LOD2 | 383 KB |
 | 2: space and vessels | 5 | 28 parts, 38 render meshes | 529 KB |
-| **Total `dist/`** | **47** | **289 render mesh nodes** | **2.67 MB** |
+| **Total `dist/`** | **48** | **296 render mesh nodes** | **3.10 MB** (3,248,452 B) |
+
+**Updated 2026-07-27 (W11 lane A).** The player, belt cargo, world dressing and
+armour all landed the same night, across four parallel build agents working
+contract-first. Per-directory, measured: `items` 1 file 60,960 B, `machines` 13
+files 441,020 B, `nodes` 9 files 523,732 B, `player` 3 files 1,152,452 B,
+`props` 10 files 392,432 B, `rocket` 4 files 529,224 B, `structures` 5 files
+93,852 B, `tools` 2 files 22,236 B, `world` 1 file 32,544 B. **The `player`
+directory is now a third of the payload**, and it is animation rather than
+geometry: 14 clips x 44 bones x 3 paths is 1,848 channels whose accessor
+metadata dominates the file. Self-contained clips are deliberate (see 4.1) and
+the right lever is the bundle-time meshopt pass in section 6.3, not dropping
+channels.
 
 Tier 0 is 13 machines, 9 harvest nodes, the items atlas, 2 tools, the rigged
 player body, the first-person arms and the 5-file structural building set.
@@ -200,6 +213,33 @@ canonical in exactly the same sense as the ones above:
 | `socket_vessel` | the launch pad's vessel mating point: where a vessel's `socket_stack_bottom` goes |
 | `socket_clamp` | the launch pad's clamp mounting circle |
 | `socket_chute` | where a parachute canopy spawns |
+
+**Added 2026-07-27 for belt cargo (W11 lane A).** Four sockets, and between them
+they are the whole interface a belt-cargo renderer binds to.
+
+| Socket | Meaning |
+|---|---|
+| `socket_item_a` | where the item path ENTERS the tile, on the belt carrying surface |
+| `socket_item_b` | where it LEAVES. On a straight this is the opposite cell boundary; on a curve it is the side one |
+| `socket_item` | unchanged in position, promoted in meaning: it is the path MIDPOINT |
+| `socket_rest` | on an ITEM, a child of the item node, at the item's own lowest point on its vertical axis |
+
+**One rule covers both tile shapes: an item's position across a tile is the
+circular arc through `socket_item_a`, `socket_item`, `socket_item_b`,
+parameterised by ARC LENGTH.** On a straight tile the three are collinear and
+the arc degenerates to the chord, so a consumer has no per-shape branch. The
+midpoint is not decoration: from the two endpoints alone a quarter turn and a
+three-quarter turn are the same two points on the same circle, and only the
+middle point tells them apart.
+
+`socket_rest` exists so that "put this item on the belt" is
+`item.position = pathPoint - clone.getObjectByName('socket_rest').position`, one
+subtraction. Items are `pivot_mode: "centre"` because they tumble when dropped,
+so without it every consumer would need each item's half height, which is
+exactly the per-asset offset table this pipeline does not have anywhere else.
+All fifteen dedupe to the same name, so the runtime rule is the one
+`rocket_parts.glb` already publishes: **clone the PART node and query the
+clone**, never the file root.
 
 **Added 2026-07-26 for the base-building set.** These are the placement lane's
 whole interface to the structural parts: a build system that reads them never
@@ -912,8 +952,8 @@ a code-generated capsule (radius 0.35, height 1.80); the box is a broadphase fal
 | Clip | Frames | Loop | Notes |
 |---|---|---|---|
 | `Idle` | 1 to 121 | yes | 2 s breathing cycle |
-| `Walk` | 1 to 33 | yes | 1.4 m/s, stride 0.75 m |
-| `Run` | 1 to 25 | yes | 4.5 m/s, stride 1.35 m |
+| `Walk` | 1 to 33 | yes | 1.4 m/s, 0.747 m per cycle |
+| `Run` | 1 to 25 | yes | 4.5 m/s, **1.80 m per cycle** (was written as 1.35, wrong, see below) |
 | `Jump_Start` | 1 to 13 | no | crouch and launch |
 | `Jump_Loop` | 1 to 21 | yes | airborne |
 | `Jump_Land` | 1 to 17 | no | absorb |
@@ -928,6 +968,32 @@ a code-generated capsule (radius 0.35, height 1.80); the box is a broadphase fal
 
 Impact frames are contract: gameplay fires `harvestNode()` on those frames, so moving
 one desynchronises feel from logic.
+
+**Corrected 2026-07-27 (the run stride was wrong, and the convention was never
+stated).** A cycle keyed from frame 1 to frame `n` has frame `n` EQUAL to frame
+1, because `rig_common.keys` samples `fn(i/samples)` and every periodic term
+returns the same value at 0 and 1. So the period is `n - 1` intervals, not `n`,
+and that is also the duration three.js computes, since it comes from the track
+times. Therefore:
+
+| Clip | Frames | Period | Authored speed | Ground travel per CYCLE | per STEP |
+|---|---|---|---|---|---|
+| `Walk` | 1 to 33 | 32/60 = 0.5333 s | 1.4 m/s | 0.747 m | 0.373 m |
+| `Run` | 1 to 25 | 24/60 = 0.4000 s | 4.5 m/s | 1.800 m | 0.900 m |
+
+The "stride" column above used to read 0.75 and 1.35. The walk figure was right
+and was a per-cycle distance; the run figure was not, on either convention.
+1.35 is what an 18-frame period gives, so it looks like it was written before
+the clip settled at 25 frames and was never re-derived. **The numbers that
+matter are per STEP**, because that is what a foot plant has to travel, and they
+are 0.373 m and 0.900 m.
+
+**And the clip that matters is `Run`, not `Walk`.** `web/src/player/Controller.ts:33`
+is `walkMps = 4.6` and `web/src/player/AnimGraph.ts:44` is
+`RUN_THRESHOLD_MPS = 3.0`, so the player is above the run threshold at all times
+while moving and `Walk` is only reachable in the 0.15 to 3.0 m/s band that
+nothing but deceleration produces. `Run` plays at timeScale 4.6/4.5 = 1.02, i.e.
+essentially as authored. Sprint is `walkMps * 2 = 9.2` m/s, timeScale 2.04.
 
 **Corrected 2026-07-25 (dimensions).** The manifest row says 0.60 x 0.40 x 1.80.
 That is the standing **footprint**, and it is carried by `col_Player`
@@ -981,6 +1047,69 @@ Visual check (`tools/blender/render_check.py`, renders in
 `docs/screenshots/T0_player_*.png`): T-pose clean, walk contact and knee bend
 correct, no shearing at any joint, no detached geometry, hands read as gloves
 with a thumb and two finger blocks.
+
+**Rebuilt 2026-07-27 (W11 lane A). LOD0 1244 -> 2320 tris, 3688 render tris,
+694,816 bytes, 8 of 9 materials, envelope `[1.7981, 1.8000, 0.4577]` against
+`[1.80, 1.80, 0.46] +/-0.005`, weight sum 1.0000 to 1.0000 over 1298 vertices.**
+Bone-heat auto weights are still attempted first and still fail honestly,
+now at 360 of 1298 vertices unweighted. What changed and why:
+
+- **Hands**, the same fix as the view model (see 4.2) and it pays twice: an
+  elliptical palm, a proud `OF_Plate` knuckle plate, four separate finger tubes
+  plus a thumb, and a smaller wrist cuff. The old one was so fat it ate the palm.
+- **Boots split** into a heel block on `Foot` and a toe block on `ToeBase` with
+  overlapping soles, so the foot can actually roll.
+- **A real back pack**, which is what the Z envelope went 0.39 to 0.46 for:
+  `OF_Plate` body, `OF_SuitDark` lid, two proud tanks setting the rearmost point
+  at exactly y = +0.240, and shoulder straps.
+- **Colour separation that survives 20 m**: the chest pack went `OF_Suit` to
+  `OF_Plate`, because a white pack on a white torso is invisible; plus an
+  `OF_SuitDark` belt, flank panels and shins, and a `OF_Plate` knee band.
+- **Thicker upper arms**, 0.078 to 0.088 at the shoulder, with the shoulder pads
+  resized to sit on them and the elbow band raised 0.068 to 0.076 to keep its
+  inradius clear of the arm (section 7.4).
+
+**One failure worth recording, because it is DW-7 exactly.** The first pass hung
+flat `OF_Plate` boxes on the thigh and shin for contrast. They **sheared clean
+off the leg in `Walk` and `Run`**: a rigid box whitelisted across a joint gets a
+50/50 distance blend down its middle and is torn in half. It validated clean and
+only a render in motion showed it. Replaced with coaxial tube segments, which
+take the same weights the limb does.
+
+**The gait is now solved from an authored ankle path (`rig_common.leg_ik`), not
+sampled from sines**, because a pure sine has no foot plant. Three separate
+defects were found by MEASURING the shipped file rather than by looking at it,
+and all three had survived every previous render:
+
+1. **The lean was keyed on `Hips`, which `UpLeg` inherits.** An 11 degree run
+   lean therefore put the whole leg 11 degrees further back than the IK asked and
+   pitched the sole toe-down, **driving the toe 30 mm through the ground**. The
+   lean moved to the spine chain, above the legs.
+2. **`rig_common.keys` rounds the frame but not the sampled parameter.** At 16
+   samples over 25 frames the key for phase 0.0625 was written to frame 3, which
+   is phase 0.0833. Contact-phase foot velocity swung between 1.7 and 6.6 m/s
+   around a 4.5 target. Gait clips now key one sample per frame.
+3. **Pelvis yaw moves the hip socket.** The `UpLeg` head is 0.10 m off the
+   midline, so +/-5 degrees of yaw carries it +/-8.7 mm fore and aft: a **2.3%
+   skate that survived everything else because the foot path was right and the
+   HIP was moving.** Now compensated.
+
+Ankle height during contact is no longer authored, it is **solved** from the
+sole roll, so whatever the heel-strike to toe-off angle, the lowest sole point
+is exactly on z = 0. Measured on the shipped bytes: contact-phase net world slip
+**+0.0005 m** over 0.5250 m of root travel, implied ground speed **4.496 m/s
+against 4.50 authored**, worst single-frame slip 0.9 mm, **ground penetration
+0.0000 m** (was -0.0296 m). Both legs measure identically. `ToeBase` is keyed in
+every locomotion clip; it was keyed in **zero** of them before.
+
+**On the 0.900 m step, stated honestly.** 0.900 m is ROOT travel and it is
+exact. The foot only covers 0.576 m of it on the ground; the rest is the flight
+phase, and it cannot be otherwise. Hip to ankle is 0.820 m, and with the sole
+flat the reach is about 0.28 m forward at heel strike and 0.36 m back at
+toe-off, so **about 0.64 m is the geometric ceiling for one ground contact** and
+a 0.900 m step at this leg length REQUIRES a flight phase. The no-skate
+criterion is not "the foot travels a step", it is "contact-phase foot velocity
+equals ground speed", and that is met to 0.06 m/s.
 
 ### 4.2 First-person arms, `player/player_fp_arms.glb`
 
@@ -1036,6 +1165,63 @@ with a 24 mm lens (`render_check.py`'s `eye` view).
 220 KB. Measured bounds `[0.900, 0.550, 0.710]` in three.js axes against the
 "about 0.90 x 0.70 x 0.55" the section asks for. `pivot_mode: "none"`: the
 origin is the camera point and is deliberately outside the mesh.
+
+#### 4.2.1 Rebuilt 2026-07-27: the mitts, and the three causes behind them
+
+Reid, on the shipped build: the on-screen hands "read as large white mitts".
+This is the most visible asset in the game, on screen every frame, and it was
+the worst one. **1740 tris against a raised 2600 budget, 12 clips, 366,796
+bytes, envelope `[0.8552, 0.5762, 0.9268]` against `[0.86, 0.58, 0.92]
++/-0.02`, weight sum 1.0000 to 1.0000 over 924 vertices.**
+
+**The diagnosis came from tiling the eight before-renders into one sheet
+(section 7.7), and no single render says it: the model was ONE UNBROKEN WHITE
+SHAPE.** Every piece of colour separation the asset already had, the
+`OF_SteelDark` elbow band, the `OF_SuitAccent` deltoid, the `OF_Skin` wrist
+band, was UP THE SLEEVE and therefore out of frame. From the eye point the
+entire model was `OF_Suit` `D8D3C6`. Three independent causes, fixed in this
+order:
+
+1. **Colour has to be where the camera can see it**, not up the sleeve: an
+   `OF_SuitDark` glove, an `OF_SuitAccent` cuff ring at the wrist where the eye
+   lands, a wider bare `OF_Skin` band, an `OF_Plate` knuckle plate and forearm
+   brace.
+2. **The hand was a round tube with three round prongs on the end.** A circular
+   cross section cannot read as a palm from any angle; a real palm is roughly
+   2:1 in section. Now an **elliptical** palm (`rig_common.oval_tube`) widening
+   to a knuckle line then stepping down, with **five** finger tubes carried on
+   the three frozen bone chains (the `Middle` chain carries middle, ring and
+   little as three offset tubes, so this costs **zero extra bones**), fingers
+   that curl segment by segment, and a thumb springing from the side of the palm
+   well back of the knuckles on a genuinely different axis.
+3. **Framing.** The hand moved from `(+/-0.156, -0.220, +0.435)` to
+   `(+/-0.200, -0.302, +0.620)` and the elbow in from +/-0.388 to +/-0.367, with
+   a thinner forearm. Visible frame height at the hand went **0.61 m to 0.87 m**,
+   so the same glove is about 30% smaller on screen before any geometry change.
+
+**Four new clips**: `FP_Jump_Start` (13f), `FP_Jump_Loop` (21f), `FP_Jump_Land`
+(17f), `FP_Fall` (21f). All twelve clips now state a finger pose, so the
+client's 0.15 s crossfade cannot pop a finger.
+
+**The frame-1 rule got a measured form.** The first pass produced two EMPTY
+frames (`FP_Jump_Land` frame 5 and a near-empty `FP_Swing_Pickaxe` frame 8),
+which is the failure this section already had a scar from. The culprit was not
+the raise, it was **`twist`**: an 18 degree Z rotation at the shoulder swings the
+hand 0.20 m sideways and off the SIDE of a 60.5 degree horizontal frame. Twists
+were cut to 4, 7 and 2 degrees, raises and drives roughly halved, and the travel
+moved into `Root`. Then "no empty frame" stopped being a thing you notice and
+became a thing you measure: a scratch script rebuilds `render_check.py`'s `eye`
+camera and projects every vertex of every frame of every clip. **Worst case
+across all twelve clips is `FP_Swing_Axe` frame 8 at 72.5% of the visible
+geometry on screen**, against a rest baseline of about 86%.
+
+**`socket_hand_R` moved and the tool was checked, not assumed:**
+`(-0.1560, -0.2200, +0.4350)` to `(-0.2000, -0.3340, +0.6300)`, deliberately
+32 mm below the hand bone tail and 10 mm forward, INTO the fist, because at the
+tail the haft rides across the top of the knuckle plate. Verified by rendering
+the real `crude_pickaxe.glb` parented to the socket with the client's
+`FP_CARRY_TILT` applied. **The body's six sockets are bit-identical to the
+previous build**, including `socket_head_cam` at `(0, 1.650, 0.060)`.
 
 ### 4.3 Crude pickaxe, `tools/crude_pickaxe.glb`
 
@@ -1180,6 +1366,72 @@ Low wood yield: this is the bootstrap harvest before the player has an axe.
 
 **Built.** LOD0 128 tris, 440 render tris.
 
+#### 4.8.1 World dressing pass, 2026-07-27 (W11 lane A): trees, bush, grass
+
+Reid: "Grass, trees, ore deposits". Ore already reads well, so it was the BAR
+rather than the target and the boulders were left alone. This pass is the two
+trees, the bush, the plains and forest atlases.
+
+**What the client actually draws, which changed the whole shape of the job.**
+`web/src/game/NodeBatch.ts:139` matches `_LOD0` and nothing else, and line 42 is
+`VARIANTS = ['Full', 'Half', 'Low']`. So for a harvest node **only `_Full_LOD0`,
+`_Half_LOD0` and `_Low_LOD0` are ever drawn**, at every distance, and every
+`_LOD1`, `_LOD2` and `_Stump` node in the nine node files is dead weight that
+the contract still requires. Since `NodeField.ts:161` spawns **14 trees** and
+`NodeBatch.ts:67` caps the batch at 128 instances, a conifer at the full
+900-triangle budget costs 14 x 900 = 12,600 triangles in the entire scene. The
+trees were not triangle-constrained at all, and the effort went into `_LOD0`.
+
+| asset | LOD0 tris | total render tris | bytes |
+|---|---|---|---|
+| `tree_conifer` | 308 -> **584** | 1072 -> 1384 | 56,836 -> 84,280 |
+| `tree_broadleaf` | 280 -> **452** | 960 -> 1132 | 61,896 -> 79,348 |
+| `bush_scrub` | 128 -> 128 | 428 -> 428 | 36,548 -> 40,348 |
+| `props_plains` | 136 -> 136 | 483 -> 647 | 46,528 -> 58,424 |
+| `props_forest` | 124 -> 124 | 539 -> 594 | 54,040 -> 58,776 |
+| `detail_cards` | 40 -> 40 | 118 -> 118 | 10,772 (unchanged) |
+
+**Four new nature palette roles** carry most of the improvement at zero
+triangle cost: `LeafDeep` `2F4F26`, `LeafLight` `7FA84E`, `Grass` `6F8F42`,
+`BarkLight` `6B5238`, all added to `of_lib.DOUBLE_SIDED`. `NodeBatch` bakes
+material colour into a **vertex attribute** and batches only by shading family
+(metal or matte), so a canopy shaded deep at the base to light at the crown
+costs **no extra draw call**. Two new shared helpers in `tree_common.py`,
+`taper_bands()` and `canopy_mass()`, do the jittered banding.
+
+**The grass took two passes and the first one was wrong in an instructive way.**
+The complaint is that the ground reads as bare, and the obvious reading is
+"not enough grass". It is not. Working from `web/src/assets/Registry.ts:76-78`
+and `DENSITY_SCALE = 6` at line 67, the plains scatter places **0.096 grass
+tufts per m2, one every 10.4 m2**, so there were already hundreds of them across
+the visible field. They are invisible because **`Plains_GrassTuftA` was 0.44 m
+tall and the visible ground is 20 to 50 m away, where 0.44 m subtends 2 to 6
+pixels.**
+
+So the lever is coverage and mass per instance, not count. The first redesign
+built loose clumps of individually spaced blades 1 to 2 cm wide, which at
+distance is the same defect in a new shape: **a blade has to survive being one
+pixel wide before it can add anything.** The shipped version spawns each fan
+from a tight radius (0.11 to 0.13 m down to 0.025 to 0.035) with wide blades
+(0.04 to 0.05 m up to 0.115 to 0.125), so the bases overlap into a **solid green
+core** and only the tips splay, with pale seed heads breaking the top line.
+Verified by rendering the same clump at 8 m and 25 m, which is the test that
+matters and the one the first pass had not run. Declared sizes went
+`GrassTuftA` 0.44 -> **0.95 m** and `GrassTuftB` 0.66 -> **1.30 m**.
+
+**Grass moved onto its own `OF_Grass` role for a render reason as well as a
+colour one.** `web/src/render/instancing/PropLibrary.ts:33` allocates
+`CAPACITY = 7000` instances **per material batch**, fixed, with no growth path,
+and exhaustion is silent (`PropLibrary.ts:152` counts `exhausted++` and simply
+does not draw). Over the 170 m scatter radius the placement rate wants about
+8,700 grass instances, so sharing `OF_Leaf` with every other biome's foliage was
+already binding. Its own role is its own pool, for one extra draw call against a
+budget that sits at 45.
+
+`detail_cards.glb` was deliberately left minimal: it is **declared and dead** in
+the client (`Registry.ts:18` is the only occurrence of `detailCards` anywhere,
+and nothing passes it to `loadGlb`).
+
 ### 4.9 Water pool, `nodes/water_pool.glb`
 
 3.0 x 3.0 m, rim 0.25 m above the water. A shallow rock-rimmed basin: an 8-sided
@@ -1312,6 +1564,60 @@ language, quarter-turn deck with a wedge-shaped slat fan. Flow enters +Y and exi
 `belt_end_cap.glb`: a closed roller housing that terminates a line head or tail so a
 belt never ends in a visible hole. 120 tris, three materials (no chip), sockets
 `socket_belt_in` and `socket_item`. No clip.
+
+#### 4.13.1 Belt cargo: the published path, and the day 0.280 turned out not to be a surface
+
+**Built 2026-07-27 (W11 lane A).** Reid: "Belts should show the material being
+transported (like factorio or satisfactory), and i should be able to pick up
+that stuff off the belts." The placement code is the belt lane's; this is the
+geometry and the contract it codes against.
+
+Path sockets on all four tiles, three.js axes, local to the 1 m cell centre,
+all at **Y = 0.280**:
+
+| tile | `socket_item_a` | `socket_item` | `socket_item_b` | shape | arc length |
+|---|---|---|---|---|---|
+| `belt_segment` | (0, .28, -0.5) | (0, .28, 0) | (0, .28, +0.5) | line | **1.000000 m** |
+| `belt_curve_l` | (0, .28, -0.5) | (-.1464, .28, -.1464) | (-0.5, .28, 0) | arc r 0.5 about (-0.5, -0.5) | **0.785398 m** |
+| `belt_curve_r` | (0, .28, -0.5) | (+.1464, .28, -.1464) | (+0.5, .28, 0) | arc r 0.5 about (+0.5, -0.5) | **0.785398 m** |
+| `belt_end_cap` | (0, .28, -0.5) | (0, .28, -0.15) | (0, .28, +0.20) | line (stub) | **0.700000 m** |
+
+**Spacing is not an art choice.** `factory_sim.h` has `kUnitsPerTile = 256` and
+`kItemSpacing = 64`, so saturated items sit **0.250 m apart** on a 1 m tile,
+four per tile, the Factorio number. Therefore **an item rides with its own local
++Z along the flow tangent, and its local Z extent must be <= 0.250 m**, or
+saturated items interpenetrate. Twelve of the fourteen shipped items already
+satisfied it; `Item_FerritePlate` and `Item_FramePart` did not, at 0.28, and
+nobody had noticed because nothing had ever put an item on a belt. Both are now
+0.24. The deepest item is the new `Item_Crate` at 0.240, which is 96% of the
+pitch and 10 mm of air at saturation.
+
+**The interesting finding: `socket_item` at Y = 0.280 was not on any surface.**
+Measured off the shipped bytes the rubber deck top was 0.250 and the slat top
+0.272, so the published carrying point floated 8 mm above the belt. Rather than
+move a socket other code would come to depend on, the geometry was made true:
+slats went 22 mm to **30 mm** thick, so 0.250 + 0.030 = 0.280 **is** the
+carrying surface. A side effect fell out of it: the end rollers top out at 0.275
+and had been poking **3 mm above the old ride plane at every tile seam**, which
+would have shown as items ticking over a bump at each cell boundary. They now
+clear by 5 mm.
+
+**The shader and the art agree, and that was checked rather than assumed.**
+`web/src/game/MachineBatch.ts:191-205` draws the belt's motion as a fragment
+band on a radius-0.5 centre line about the tile corner, with a phase that IS arc
+length from the inlet. Fitting a circle to the three published sockets returns
+the same centre and r = 0.500000 to 2.9e-8 m. Two curves that look alike would
+have been a bug waiting for a playtest.
+
+**`Item_Crate` is new and it answers a gap nobody had hit yet.** Twelve items in
+`gameplay.h` are `ItemCategory::Buildable` (0x10 to 0x16, 0x3B, 0x3C, 0x40 to
+0x43) and none of them has a belt-sized mesh. Scaling a machine down was the
+alternative, and a 4 m foundation at 0.24 m is a smudge. One generic strapped
+crate carries all twelve; the HUD says which thing it is, the mesh says "packed
+for transport".
+
+The rule is asserted on the shipped bytes by `tools/blender/check_belt_cargo.py`
+(section 7.6).
 
 ### 4.14 Miner, `machines/miner.glb` (TypeId 0x10)
 
@@ -1768,6 +2074,113 @@ they are inside the shaft's own column.
 and a 56-triangle collar are already below where a decimator saves anything.
 `detail_cards.glb` makes the same call for the same reason.
 
+### 4.25 Armour, `player/armour_set.glb`. **Built 2026-07-27 (W11 lane A).**
+
+Four wearable slots: head, chest, legs, feet. 904 triangles, 90,840 bytes, five
+materials (`OF_Plate`, `OF_SteelDark`, `OF_SuitDark`, `OF_Hazard`,
+`OF_EmissiveState`). Reid asked for "armor and armor slots for head chest legs
+feet"; the slot logic and the stats are a gameplay lane's, this is the geometry
+and the attachment contract.
+
+| node | tris | measured dims (m, three.js) | bone whitelist |
+|---|---|---|---|
+| `Armour_Head_LOD0` | 192 | 0.294 x 0.360 x 0.327 | `Head`, `Neck`; the nape is `Head` alone |
+| `Armour_Chest_LOD0` | 216 | 0.605 x 0.540 x 0.435 | `Hips`, `Spine`..`Spine2`; pauldrons on `<side>Shoulder` + `<side>Arm` |
+| `Armour_Legs_LOD0` | 328 | 0.500 x 0.880 x 0.266 | `Hips` (+`Spine` belt), `Hips`+`UpLeg`, `UpLeg`+`Leg`, `Leg`+`Foot` |
+| `Armour_Feet_LOD0` | 168 | 0.400 x 0.252 x 0.338 | `<side>Foot`, `<side>ToeBase` |
+
+540 vertices, weight sum 1.0000 to 1.0000.
+
+**The node names are SLOT names, not SET names.** A second armour set is a
+second `.glb` carrying **the same four node names**, so slot lookup is
+set-independent, swapping a set is swapping a file, and nothing ever keys off a
+filename. That is why this file is `armour_set.glb` and not `armour_tier1.glb`.
+
+**Each slot is a SKINNED mesh sharing the body's own 44-bone rig**, built from
+`rig_common.BODY_BONES` so there is one declaration and the two rigs
+structurally cannot drift: same names, same order, same T-pose rest, and the
+exporter emits **one shared skin** so all four meshes reference the same joint
+array and the same inverse bind matrices. The alternative was rigid parts
+bone-parented one per bone, and it was rejected because a leg plate has to bend
+at the knee and a rigid part cannot.
+
+**The client's equip, precisely.** Do NOT `scene.add(armourScene)`, which would
+carry a second skeleton. Load the file, take each named `THREE.SkinnedMesh`,
+call `mesh.bind(bodyRig.skeleton, mesh.bindMatrix)` to rebind to the body's
+existing `THREE.Skeleton` (legal because the joint order and the inverse bind
+matrices are identical by construction, and `rest_pose` in the contract is the
+checked proof at 2.69e-07), parent it under the same node the body's
+`Player_LOD0` sits under, set `frustumCulled = false` because a skinned mesh's
+bounds are its bind pose, and copy `layers`, `castShadow` and `receiveShadow`
+from the body mesh. Unequip is `mesh.removeFromParent()` and nothing else. The
+armour has no sockets, no clips and no collision, and needs none: it is driven
+by the body's skeleton, and the player capsule is code-generated.
+
+**LOD0 only**, because `web/src/player/Avatar.ts:55-62` loads the body with
+`lod: '_LOD0'` and there is exactly one player. Revisit when multiplayer puts
+more than one character on screen.
+
+**The acceptance was rendering it ON the body, IN MOTION, and that is the whole
+point.** `tools/blender/render_armour.py` imports both shipped files, drives
+both armatures with the same clip at the same frame, and renders the dressed
+character; it measures **rig drift 0.00e+00** at all nine tested poses. Four
+defects were found and every one of them was invisible in a static fit:
+
+1. **The waist opened 57 mm in `Crouch_Idle`.** The cuirass rim was rigid to
+   `Spine` and the belt below it rigid to `Hips`, so a 26 degree hip rotation
+   swung them apart and bare torso showed through the seam. **The general rule:
+   two surfaces that must stay adjacent have to share the bones they straddle.**
+2. **The knee cop floated at `Run:19`.** The front of a bending knee is the
+   OUTSIDE of the bend, so that surface must get longer, and **no weighting can
+   invent material**. The fix is slack, not tuning: the cuisse now ends 50 mm
+   below the joint, the cop is 150 mm tall spanning 75 mm either side, and the
+   greave rim starts 10 mm below it, so the seams slide instead of opening.
+3. **Thin 58 mm plates read as floating rectangles**, showing daylight along
+   both long edges the moment a limb swung. Deepening them to 110 to 120 mm and
+   burying the back half costs nothing, because those faces are never seen.
+4. **The nape lifted off the helmet in `Swing_Pickaxe`**, because its centroid
+   gave it a 55/45 `Head`/`Neck` split. Bound to `Head` alone. Tightening a
+   whitelist is always available and always beats tuning a falloff.
+
+**A negative clearance minimum is NOT a defect here, and the rule that said it
+was is wrong for this asset.** Measured signed distance to the nearest body
+surface in the rest pose: chest min -0.0180 mean +0.0291, feet min -0.0030 mean
++0.0355, head min -0.0200 mean +0.0263, legs min -0.0239 mean +0.0216. Every
+negative vertex is the **inner** face of a strapped-on plate, deliberately
+buried in the limb it is strapped to, and a plate with zero penetration is a
+plate floating off the body. The numbers that matter are the mean standoff (22
+to 36 mm) and the identity of the deepest vertex, which in all four cases is an
+inner face. Nothing negative is an outward-facing surface.
+
+**Silhouette is the test, not colour.** `docs/screenshots/W11_armour_rest_f1_34.png`
+against `W11_armour_bare_rest_f1_34.png`: crest, pauldrons, thickened shins and
+32 mm longer sabatons. The outline changes, which is what has to be true at
+10 m, because colour alone is invisible at distance and is also the first thing
+a customization system will override.
+
+**NO REFERENT IN THE HEADLESS HEADERS.** `grep -riE 'armor|armour|equip'
+core/include` returns nothing, and `slot` in the client means an inventory slot,
+a hotbar slot or a batch instance index. This is the BT-9 situation again: the
+meshes ship and validate and nothing can wear one until gameplay adds an
+`EquipSlot` enum, an `ItemCategory::Armour`, four `ItemId`s and an equipped
+array, and persistence bumps the save schema by 16 bytes. Escalated to Admin.
+
+**Known residue**, stated rather than discovered later: a wedge of bare suit
+remains at the inner hip between the fauld's lower edge and the cuisse tops (a
+harness genuinely articulates there, and the shoulder gusset that tried to close
+the equivalent gap at the armpit protruded past the pauldron rim the moment the
+arm swung, so it was removed); the tassets read as small tabs head-on because
+the 0.50 m declared width leaves no room to widen them; the chest measures 0.435
+against a declared 0.42, inside the 0.02 tolerance but using three quarters of
+it, so it is the first number that goes out of contract if the chest pack ever
+moves forward; and **the arms are unarmoured by design**, since four slots do
+not include hands or arms.
+
+**First person has no armour at all.** `armour_set` carries the third-person
+44-bone rig; the view model is a different 27-bone rig with a different bind
+pose. An armoured player currently sees unarmoured arms. Either a second armour
+file authored against `FP_BONES`, or an explicit decision to accept it.
+
 ---
 
 ## 5. Repository layout
@@ -2131,6 +2544,58 @@ cell on each end, which would have z-fought the neighbouring belt tile on the gr
 roller is now positioned at `L/2 - ROLLER_R`, tangent to the cell edge by construction.
 That class of bug is invisible in a render and obvious in a factory, which is exactly
 the case for automating the check.
+
+### 7.6 `check_belt_cargo.py`, the third checker, and why it exists
+
+**Added 2026-07-27 (W11 lane A).** Stdlib-only, reads the shipped `.glb` bytes,
+no Blender. It asserts the section 4.13.1 contract:
+
+1. every `Item_*` node's local **Z extent is <= 0.250 m**, the saturated pitch;
+2. every `Item_*` node has exactly one `socket_rest` child and it sits at that
+   item's own measured minimum Y;
+3. each belt tile's three path sockets exist, share one Y, and are either
+   collinear or lie on a common circle, with the fitted radius and centre
+   reported and checked against 0.5 and the tile corner;
+4. the path stays inside the tile footprint and above the deck;
+5. item X extent against the measured deck width, so an item overhanging the
+   belt edge is a printed number rather than a surprise.
+
+**Per DW-20 it demonstrates it can fail.** `check_belt_cargo.py selftest` runs
+**19 cases, 11 that must fire and 8 that must not**, including an item 0.2501 m
+deep, a `socket_rest` left on the pivot, a path bowed 50 mm, an r = 0.31 arc, an
+r = 0.5 arc on the wrong centre, and a collinear path whose midpoint falls
+outside its own segment.
+
+This is the same principle as 7.4: **when a render catches something twice, the
+third time should be a check, and it belongs wherever the information actually
+lives**, which for a game that loads `.glb` files is the shipped bytes and not
+the builder.
+
+### 7.7 `contact_sheet.py`, because renders that are not looked at are not a check
+
+**Added 2026-07-27.** `render_check.py` writes one 420 x 540 PNG per shot and a
+character pass is thirty of them. Nobody opens thirty files, which quietly turns
+a visual review into an artefact. This tiles them into one labelled sheet, with
+each caption taken from the input FILENAME, because `render_check.py` already
+encodes clip and frame there.
+
+**Stdlib only, and that is the point.** Pillow is installed in neither the
+system python nor Blender's, and sections 7.1 to 7.6 already establish that a
+gate here runs as a plain `python3` step with no environment. So the PNG codec
+is written out: `zlib` does the hard part and the rest is the five scanline
+filters and a CRC. Scope is stated rather than discovered (8-bit
+non-interlaced grey, RGB and RGBA, which is everything Cycles emits) and
+anything else **raises rather than guessing**. `contact_sheet.py selftest`
+proves the round trip, proves all five scanline filters decode identically, and
+proves a 16-bit PNG and a non-PNG are both REFUSED rather than silently
+misread.
+
+It earned its keep the day it shipped: tiling the eight first-person "before"
+renders side by side is what showed that the on-screen hands were not merely too
+big but were **one unbroken white shape**, with every piece of colour separation
+the asset already had sitting up the sleeve and out of frame. No single render
+says that. It then caught two empty frames in the new first-person jump and
+swing clips, which is the failure section 4.2 already had a scar from.
 
 ---
 

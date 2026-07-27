@@ -14,6 +14,25 @@ sockets, a state-emissive slot, and one looping animation clip.
 Belt segment, TypeId 0x11 (of::gameplay::types::Belt).
 Footprint 1 x 1 m (one build-grid cell), 0.30 m tall.
 Flow runs along Blender -Y, which is three.js +Z.
+
+THE ITEM PATH (W11). Three sockets publish where cargo rides:
+
+    socket_item_a   where the path ENTERS the tile, on the inlet edge
+    socket_item     the path MIDPOINT
+    socket_item_b   where the path LEAVES the tile, on the outlet edge
+
+and the published rule is one rule for every belt tile shape: an item's
+position across a tile is the CIRCULAR ARC through those three points,
+parameterised by arc length. On a straight tile they are collinear, the arc
+degenerates to a line, and the client needs no per-shape special case.
+
+All three sit at RIDE_TOP, which is the top of the SLAT strip and not the top
+of the rubber deck. Those are two different surfaces 30 mm apart, and the one
+an item actually rests on is the slats. The slat was 22 mm thick and
+socket_item has always been at 0.28, so the socket floated 8 mm over the only
+surface in the file; the slat is now 30 mm thick, which makes 0.28 the real
+carrying surface rather than a number near one. Nothing moved: the geometry
+came up to meet the published socket.
 """
 
 import os
@@ -32,6 +51,8 @@ DECK_W = W - 2 * RAIL_W         # 0.80
 DECK_TOP = 0.25
 SLAT_PITCH = 0.125              # 8 slats per metre -> a whole-number loop
 SLAT_COUNT = 9                  # 8 on the tile + 1 entering from the inlet
+SLAT_T = 0.030                  # slat thickness: DECK_TOP + SLAT_T == RIDE_TOP
+RIDE_TOP = DECK_TOP + SLAT_T    # 0.28, the surface cargo rests on
 ROLLER_R = 0.055
 ROLLER_Y = L * 0.5 - ROLLER_R   # tangent to the cell edge, never outside it
 
@@ -81,8 +102,8 @@ def build_slats(root):
     box stays exactly 1 x 1 x 0.30 while the strip is free to overhang the
     front edge mid-loop (the overhang tucks under the next tile's roller)."""
     mb = of.MeshBuilder()
-    mb.repeat_box((DECK_W - 0.08, 0.05, 0.022),
-                  start=(0.0, -0.4375, DECK_TOP + 0.011),
+    mb.repeat_box((DECK_W - 0.08, 0.05, SLAT_T),
+                  start=(0.0, -0.4375, DECK_TOP + SLAT_T * 0.5),
                   step=(0.0, SLAT_PITCH, 0.0),
                   count=SLAT_COUNT, role="Rubber")
     return mb, mb.build("Belt_Slats", root)
@@ -104,8 +125,16 @@ def main():
                   extras={"of_role": "belt_in"})
     of.add_socket("socket_belt_out", (0.0, -L * 0.5, DECK_TOP), parent=root,
                   extras={"of_role": "belt_out"})
-    of.add_socket("socket_item", (0.0, 0.0, DECK_TOP + 0.03), parent=root,
+    # The item path: entry, midpoint, exit, all on the slat top. A and B sit
+    # ON the tile's own boundary planes (Blender y = +/-L/2), so the path of
+    # one tile starts exactly where its neighbour's ended and a line of belts
+    # carries cargo with no gap and no overlap at the seams.
+    of.add_socket("socket_item_a", (0.0, L * 0.5, RIDE_TOP), parent=root,
+                  extras={"of_role": "item_path_in"})
+    of.add_socket("socket_item", (0.0, 0.0, RIDE_TOP), parent=root,
                   extras={"of_role": "item_ride"})
+    of.add_socket("socket_item_b", (0.0, -L * 0.5, RIDE_TOP), parent=root,
+                  extras={"of_role": "item_path_out"})
     of.add_socket("socket_status", ((W - RAIL_W) * 0.5, 0.0, H), parent=root,
                   extras={"of_role": "state_light"})
 

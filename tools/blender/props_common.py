@@ -97,11 +97,18 @@ def blade(height, width, azim_deg, bend, segs=3, loc=(0.0, 0.0, 0.0),
 
 def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
          role="Leaf", alt_role=None, alt_every=0, loc=(0.0, 0.0, 0.0),
-         h_var=0.45, phase=0.0):
+         h_var=0.45, phase=0.0, heads=0, head_role=None, head_scale=1.45,
+         head_width=0.55):
     """A ring of blades: the grass tuft, the dune grass, the fern, the kelp.
 
     alt_role/alt_every recolour every Nth blade, which is how a tuft gets a
-    dry note without a second mesh and without leaving the palette."""
+    dry note without a second mesh and without leaving the palette.
+
+    `heads` adds that many blades TALLER than the rest (height * head_scale,
+    width * head_width), scattered at random angles instead of evenly spaced,
+    in `head_role` if given. A tuft with every blade the same height reads as
+    a trimmed hedge; a couple of seed heads breaking the top line is the
+    difference between "grass" and "green fuzz"."""
     nxt = hc.rng(seed)
     p = hc.Parts()
     for i in range(count):
@@ -115,6 +122,16 @@ def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
         rl = (alt_role if (alt_role and alt_every and i % alt_every == 0)
               else role)
         p.add(*blade(h, w, a, b, segs=segs, loc=base, droop=droop), role=rl)
+    for k in range(heads):
+        a = 360.0 * nxt() + phase
+        h = height * head_scale * (0.90 + 0.20 * nxt())
+        w = width * head_width
+        b = bend * (0.75 + 0.5 * nxt())
+        r = radius * math.sqrt(nxt()) * 0.65
+        aa = math.radians(a)
+        base = (loc[0] + r * math.cos(aa), loc[1] + r * math.sin(aa), loc[2])
+        p.add(*blade(h, w, a, b, segs=segs + 1, loc=base, droop=droop * 0.55),
+              role=head_role or role)
     return p
 
 

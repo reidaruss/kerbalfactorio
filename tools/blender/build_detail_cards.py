@@ -36,7 +36,17 @@ TWO SPEC CORRECTIONS, both flagged in ASSET-SPECS 3.2.
    because a single-sided leaf disappears from half the angles you look at it
    from. This file uses the same two roles and adds nothing new.
 
-Materials (3): OF_Leaf, OF_LeafDry, OF_Rock.
+Materials (3): OF_Grass, OF_LeafDry, OF_Rock.
+
+W11 note (2026-07-27): Registry.ts never passes detailCards to loadGlb, so
+nothing here is drawn today; the controller is reporting that hook-up
+separately. This file gets the minimum needed to stay valid and consistent
+with the grass elsewhere: cards A and B moved onto OF_Grass (was OF_Leaf), the
+same ground-grass role the plains and forest atlases now use, and their spawn
+radius/width moved to the same tight-base, wide-blade ratio the plains fans
+use (mass over blade count, see build_props_plains.py) since it costs nothing
+extra to keep them consistent. No other change, deliberately: the effort went
+to props_plains, props_forest and the two trees.
 """
 
 import math
@@ -53,17 +63,19 @@ OUT = of.dist_path("props", "detail_cards.glb")
 
 
 def grass_card_a():
-    """Six short blades, three triangles each. The default: this is the one
-    that covers a plains chunk end to end."""
-    return pc.tuft(6, 0.38, 0.055, 0.055, 1301, bend=0.14, segs=2, droop=0.32,
-                   role="Leaf", h_var=0.40)
+    """Six short blades, three triangles each, based tight and wide so the
+    card is a small mass rather than a spread of hairs. The default: this is
+    the one that covers a plains chunk end to end."""
+    return pc.tuft(6, 0.38, 0.090, 0.030, 1301, bend=0.14, segs=2, droop=0.32,
+                   role="Grass", h_var=0.35)
 
 
 def grass_card_b():
-    """Eight taller blades with a real arch. Scattered at maybe a fifth of A's
-    density to break the uniformity, which is the only job it has."""
-    return pc.tuft(8, 0.60, 0.052, 0.085, 1311, bend=0.28, segs=3, droop=0.40,
-                   role="Leaf", h_var=0.45, phase=23.0)
+    """Eight taller blades with a real arch, same tight-base logic as A.
+    Scattered at maybe a fifth of A's density to break the uniformity, which
+    is the only job it has."""
+    return pc.tuft(8, 0.60, 0.085, 0.040, 1311, bend=0.26, segs=3, droop=0.40,
+                   role="Grass", h_var=0.40, phase=23.0)
 
 
 def grass_card_c():
@@ -93,9 +105,9 @@ def pebble_scatter():
 
 PROPS = [
     pc.Prop("Detail_GrassCardA", (0.50, 0.48, 0.36), grass_card_a,
-            ["Leaf"], lod2=None),
+            ["Grass"], lod2=None),
     pc.Prop("Detail_GrassCardB", (0.72, 0.68, 0.58), grass_card_b,
-            ["Leaf"], lod2=None),
+            ["Grass"], lod2=None),
     pc.Prop("Detail_GrassCardC", (0.62, 0.58, 0.42), grass_card_c,
             ["LeafDry"], lod2=None),
     pc.Prop("Detail_PebbleScatter", (0.92, 0.80, 0.10), pebble_scatter,

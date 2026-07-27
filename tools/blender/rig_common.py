@@ -110,27 +110,81 @@ BODY_BONES = (_SPINE
 #
 # Its BIND POSE is the view-model rest - arms held forward into the lower third
 # of the view - not the T-pose. Three reasons, recorded in ASSET-SPECS 4.2:
-# the declared bounds (0.90 x 0.70 x 0.55) are the posed bounds and a T-posed
-# arm subset is 1.80 m wide; a view model is never retargeted from Mixamo, so
-# the T-pose buys nothing here; and weights authored in the pose the model will
-# actually be seen in are better weights. What the two assets share is the NAME
-# and hierarchy contract, which is what lets one animation layer drive both.
+# the declared bounds are the posed bounds and a T-posed arm subset is 1.80 m
+# wide; a view model is never retargeted from Mixamo, so the T-pose buys
+# nothing here; and weights authored in the pose the model will actually be
+# seen in are better weights. What the two assets share is the NAME and
+# hierarchy contract, which is what lets one animation layer drive both.
 #
 # The origin is the CAMERA POINT, so the model attaches to the camera with an
 # identity transform.
+#
+# 2026-07-27, THE FRAMING. Reid played the game and reported the on-screen
+# hands as "large white mitts". They were, and it was arithmetic rather than
+# taste: the hand sat 0.435 m from the camera, and at the client's roughly 70
+# degree vertical FOV the visible height at that distance is 0.61 m, so a
+# 0.10 m glove was a sixth of the screen. Two of them plus the forearms coming
+# at the lens is the mitt. The hands now sit at 0.62 m (visible height 0.87 m)
+# and 0.30 m below the eye, the elbows come in from 0.388 to 0.360 so the carry
+# is narrower, and the forearms are thinner.
 # ---------------------------------------------------------------------------
 
 _FP_SHOULDER = (0.105, 0.055, -0.150)
-_FP_ELBOW_IN = (0.245, 0.040, -0.195)      # deltoid, where the upper arm starts
-_FP_ELBOW = (0.388, -0.150, -0.320)
-_FP_WRIST = (0.190, -0.370, -0.238)
-_FP_HAND = (0.156, -0.435, -0.220)
+_FP_ELBOW_IN = (0.235, -0.030, -0.205)     # deltoid, where the upper arm starts
+_FP_ELBOW = (0.367, -0.165, -0.335)
+_FP_WRIST = (0.222, -0.500, -0.300)
+_FP_HAND = (0.200, -0.620, -0.302)
 
-# finger root offsets from the hand tip, and the direction they continue in
-_FP_FINGER_DIR = (-0.026, -0.058, 0.012)
-_FP_FINGER_OFF = {"Thumb": (0.014, -0.004, -0.030),
-                  "Index": (-0.010, 0.006, 0.006),
-                  "Middle": (0.024, 0.014, -0.004)}
+# One entry per finger CHAIN: (knuckle offset from _FP_HAND, three segment
+# vectors). The old rig gave every finger ONE straight direction repeated three
+# times, 0.165 m long, which is why the hands read as a cone with three prongs
+# stuck in the end. A finger is 0.075 m and it CURLS: each segment angles
+# further down than the last, so the hand has a knuckle line, a silhouette and
+# a readable grip at 0.62 m. Blender axes, unmirrored (the character's LEFT).
+_FP_FINGERS = (
+    # The thumb springs from the SIDE of the palm, well back of the knuckle
+    # line, and runs forward and inboard while the fingers run forward and
+    # down. Being on a genuinely different axis is what makes it read as a
+    # thumb; the old rig fanned all three chains the same way and the thumb
+    # simply merged into the mass at this camera angle.
+    ("Thumb", (-0.034, 0.032, -0.014),
+     ((-0.026, -0.019, 0.001), (-0.015, -0.021, -0.008),
+      (-0.006, -0.015, -0.012))),
+    ("Index", (-0.030, -0.020, 0.005),
+     ((-0.004, -0.031, -0.013), (-0.002, -0.016, -0.024),
+      (0.000, -0.007, -0.018))),
+    ("Middle", (0.012, -0.019, 0.003),
+     ((0.002, -0.032, -0.013), (0.001, -0.017, -0.026),
+      (0.000, -0.006, -0.020))),
+)
+
+# The Middle chain stands in for the middle, ring and little fingers, and it now
+# carries THREE tubes instead of one fat block: three fingers' worth of
+# silhouette for zero extra bones, because a tube offset from the chain it is
+# whitelisted to still curls with it. (offset from the chain, radius, length).
+_FP_MIDDLE_TUBES = (((-0.011, 0.000, 0.002), 0.0215, 1.00),
+                    ((0.012, 0.000, 0.000), 0.0200, 0.94),
+                    ((0.033, -0.005, -0.007), 0.0170, 0.82))
+
+_FP_FINGER_R = {"Thumb": 0.0245, "Index": 0.0215, "Middle": 0.0215}
+
+
+def fp_finger_points(fname, scale=1.0, offset=(0.0, 0.0, 0.0)):
+    """The four joint points of one FP finger, unmirrored.
+
+    [knuckle, joint1, joint2, tip]. `scale` shortens the whole chain (the
+    little finger) and `offset` slides it sideways across the knuckle line,
+    which is how one bone chain carries three finger tubes."""
+    for name, root, segs in _FP_FINGERS:
+        if name != fname:
+            continue
+        p = tuple(_FP_HAND[k] + root[k] + offset[k] for k in range(3))
+        out = [p]
+        for seg in segs:
+            p = tuple(p[k] + seg[k] * scale for k in range(3))
+            out.append(p)
+        return out
+    raise KeyError("no FP finger chain named %r" % fname)
 
 
 def _fp_arm(side, s):
@@ -145,16 +199,14 @@ def _fp_arm(side, s):
         (pre + "Hand", _mirror_pt(_FP_WRIST, s), _mirror_pt(_FP_HAND, s),
          pre + "ForeArm"),
     ]
-    for fname, off in _FP_FINGER_OFF.items():
-        head = tuple(_FP_HAND[k] + off[k] for k in range(3))
-        prev_name, prev_pt = pre + "Hand", head
+    for fname, _root, _segs in _FP_FINGERS:
+        pts = fp_finger_points(fname)
+        prev_name = pre + "Hand"
         for i in range(3):
-            tail = tuple(prev_pt[k] + _FP_FINGER_DIR[k] * (1.0 - 0.15 * i)
-                         for k in range(3))
             bname = "%sHand%s%d" % (pre, fname, i + 1)
-            out.append((bname, _mirror_pt(prev_pt, s), _mirror_pt(tail, s),
+            out.append((bname, _mirror_pt(pts[i], s), _mirror_pt(pts[i + 1], s),
                         prev_name))
-            prev_name, prev_pt = bname, tail
+            prev_name = bname
     return out
 
 
@@ -193,6 +245,70 @@ def keys(frames, samples, fn):
 
 def wave(t, amp, cycles=1.0, phase=0.0, offset=0.0):
     return offset + amp * math.sin(2.0 * math.pi * (cycles * t + phase))
+
+
+def ramp(x, knots):
+    """Piecewise-linear lookup. knots is [(t, value), ...] ascending in t.
+
+    A gait is a SHAPE, not a sine. The contact phase of a step is a straight
+    line - the planted foot moves backward relative to the hip at exactly the
+    ground speed - and the swing phase is not. `wave` cannot express a foot
+    plant at all, which is the whole reason the run used to skate."""
+    if x <= knots[0][0]:
+        return knots[0][1]
+    for i in range(1, len(knots)):
+        t0, v0 = knots[i - 1]
+        t1, v1 = knots[i]
+        if x <= t1:
+            f = 0.0 if t1 <= t0 else (x - t0) / (t1 - t0)
+            return v0 + (v1 - v0) * f
+    return knots[-1][1]
+
+
+# Thigh and shank lengths read straight off BODY_BONES: hip 0.920 -> knee 0.510
+# -> ankle 0.100. They are here so leg_ik and the skeleton cannot drift apart.
+THIGH_LEN = 0.410
+SHANK_LEN = 0.410
+
+
+def leg_ik(fwd, drop, thigh=THIGH_LEN, shank=SHANK_LEN):
+    """Planar two-link solve for one leg -> (hip_deg, knee_deg, shank_fwd_deg).
+
+    `fwd` is how far the ANKLE is in front of the hip and `drop` how far below
+    it, metres, in the sagittal plane. The three returned angles are degrees in
+    this rig's own sign convention:
+
+      hip_deg        the UpLeg X rotation. Negative swings the leg forward,
+                     because +X rotation carries a bone pointing down toward
+                     +Y, and +Y is backward.
+      knee_deg       the Leg X rotation, relative to the posed thigh. Positive
+                     is flexion, heel toward the seat.
+      shank_fwd_deg  the shank's forward lean from vertical. Not a channel: it
+                     is what the Foot rotation has to CANCEL to keep the sole
+                     flat on the ground, so a heel strike is `shank_fwd - 14`
+                     and a toe-off is `shank_fwd + 40` and both mean what they
+                     say regardless of what the rest of the leg is doing.
+
+    WHY IK RATHER THAN A SINE. A sine moves the thigh FASTEST at the passing
+    pose, which is precisely when the foot is planted and must be travelling
+    backward at a constant ground speed, and slowest at the extremes, where the
+    foot is in the air and should be whipping through. That is the skate, and no
+    amount of tuning the amplitude fixes it because the shape is wrong. Solving
+    the joints from an authored foot PATH inverts the problem: the path is the
+    thing that has to be right and the angles fall out of it."""
+    reach = (thigh + shank) * 0.997
+    r = math.sqrt(fwd * fwd + drop * drop)
+    if r < 1e-6:
+        return 0.0, 0.0, 0.0
+    if r > reach:
+        fwd, drop, r = fwd * reach / r, drop * reach / r, reach
+    c_knee = (thigh * thigh + shank * shank - r * r) / (2.0 * thigh * shank)
+    knee = math.pi - math.acos(max(-1.0, min(1.0, c_knee)))
+    c_beta = (r * r + thigh * thigh - shank * shank) / (2.0 * r * thigh)
+    beta = math.acos(max(-1.0, min(1.0, c_beta)))
+    hip_fwd = math.atan2(fwd, drop) + beta
+    return (-math.degrees(hip_fwd), math.degrees(knee),
+            math.degrees(hip_fwd - knee))
 
 
 _MIRROR_NAME = (("Left", "\x00"), ("Right", "Left"), ("\x00", "Right"))
@@ -266,14 +382,16 @@ def _basis(direction, ref):
     return d, u, v
 
 
-def tube(points, radii, seg=10, closed_caps=True):
-    """A closed tube through a polyline, one ring per point.
+def oval_tube(points, radii_u, radii_v, seg=10, closed_caps=True):
+    """A closed tube of ELLIPTICAL section through a polyline.
 
-    The rings are parallel-transported (each ring's frame is carried from the
-    previous one rather than rebuilt from a fixed up vector), so a bent tube -
-    the first-person forearm - does not twist between rings.
+    `radii_u` is the half-extent along the carried up reference (vertical for a
+    roughly horizontal sweep) and `radii_v` the half-extent across it. A circle
+    is the case radii_u == radii_v, which is what `tube` passes.
 
-    Returns (verts, faces, smooth) for MeshBuilder.add_raw."""
+    This exists for the first-person hand. A hand is not round: it is roughly
+    twice as wide as it is thick, and a round palm is exactly the shape that
+    reads as a mitt. It also builds the knuckle plate and the boot cuff."""
     n = len(points)
     ref = [0.0, 0.0, 1.0]
     verts, ring_start = [], []
@@ -287,10 +405,10 @@ def tube(points, radii, seg=10, closed_caps=True):
         d, u, v = _basis(d, ref)
         ref = u
         ring_start.append(len(verts))
-        r = radii[i]
+        ru, rv = radii_u[i], radii_v[i]
         for j in range(seg):
             a = 2.0 * math.pi * j / seg
-            ca, sa = math.cos(a) * r, math.sin(a) * r
+            ca, sa = math.cos(a) * ru, math.sin(a) * rv
             verts.append(tuple(points[i][k] + u[k] * ca + v[k] * sa
                                for k in range(3)))
     faces, smooth = [], []
@@ -307,6 +425,17 @@ def tube(points, radii, seg=10, closed_caps=True):
         faces.append(tuple(range(last, last + seg)))
         smooth.append(False)
     return verts, faces, smooth
+
+
+def tube(points, radii, seg=10, closed_caps=True):
+    """A closed tube through a polyline, one ring per point.
+
+    The rings are parallel-transported (each ring's frame is carried from the
+    previous one rather than rebuilt from a fixed up vector), so a bent tube -
+    the first-person forearm - does not twist between rings.
+
+    Returns (verts, faces, smooth) for MeshBuilder.add_raw."""
+    return oval_tube(points, radii, radii, seg, closed_caps)
 
 
 def stack(rings):

@@ -66,12 +66,18 @@ PALETTE = {
     "Water":        ("2F6E8C", 0.00, 0.10, 0.65, None),
     # --- nature ---
     "Bark":         ("4E3B2A", 0.00, 0.95, 1.0, None),
+    "BarkLight":    ("6B5238", 0.00, 0.92, 1.0, None),
     "Leaf":         ("4C7A38", 0.00, 0.80, 1.0, None),
+    "LeafDeep":     ("2F4F26", 0.00, 0.84, 1.0, None),
+    "LeafLight":    ("7FA84E", 0.00, 0.76, 1.0, None),
     "LeafDry":      ("8A7A3E", 0.00, 0.85, 1.0, None),
+    "Grass":        ("6F8F42", 0.00, 0.88, 1.0, None),
     "Ice":          ("CFE6F0", 0.00, 0.25, 1.0, None),
     # --- character ---
     "Suit":         ("D8D3C6", 0.00, 0.65, 1.0, None),
+    "SuitDark":     ("6E6A60", 0.00, 0.70, 1.0, None),
     "SuitAccent":   ("2E7DBE", 0.00, 0.55, 1.0, None),
+    "Plate":        ("7E8790", 0.70, 0.42, 1.0, None),
     "Skin":         ("C08A63", 0.00, 0.70, 1.0, None),
     # --- state light: ONE material per machine, driven at runtime ---
     # base is near-black so an unlit chip reads as "off"; emission is white and
@@ -81,7 +87,8 @@ PALETTE = {
 
 # Roles that must render double-sided. Everything else is backface-culled,
 # which is roughly half the fragment work on a scene made of boxes.
-DOUBLE_SIDED = {"Glass", "Leaf", "LeafDry", "Water"}
+DOUBLE_SIDED = {"Glass", "Leaf", "LeafDeep", "LeafLight", "LeafDry", "Grass",
+                "Water"}
 
 # FFactoryEntityState.VisualState -> emissive colour, straight off
 # FactorySim::entityVisualState() in core/include/of/factory_sim.h.

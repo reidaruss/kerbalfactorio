@@ -18,6 +18,15 @@ use - so a snapped branch reads as snapped from any distance.
 Collision: Forest_DeadTree (trunk box only, a player walks through where the
 branches were), Forest_FallenLog and Forest_Rock. The fern and the mushrooms
 are walk-through.
+
+W11 pass (2026-07-27, dims relaxed by the controller the same night to 1.6 x
+1.55 x 0.8 m, max 200 tris): the fern is now three crowns of arching fronds
+spread across that bigger footprint with bare forest floor between them,
+instead of one dense crown, the same "clump, not tuft" fix the plains grass
+got. It shades LeafDeep (the floor is dim under a canopy) with a few
+LeafLight fronds catching dapples of light through the trees, which needed
+two more roles: Bark, LeafDry, Rock, Leaf, LeafDeep, LeafLight is 6, exactly
+this atlas's budget.
 """
 
 import os
@@ -31,19 +40,37 @@ import harvest_common as hc    # noqa: E402
 NAME = "PropsForest"
 OUT = of.dist_path("props", "props_forest.glb")
 
+# (offset x, offset y, frond count, seed) per crown.
+FERN_CROWNS = (
+    (0.00, 0.00, 6, 4101),
+    (0.46, 0.30, 5, 4113),
+    (-0.42, 0.24, 5, 4127),
+)
+
 
 def fern():
-    """Nine fronds arching almost flat out of one crown. segs 4 and a bend
-    close to the frond length is what makes it arch rather than stand: a fern
-    is a horizontal shape, which is the opposite of every grass tuft in the
-    game and the reason it reads as forest floor."""
-    return pc.tuft(9, 0.62, 0.115, 0.05, 4101, bend=0.52, segs=4, droop=0.46,
-                   role="Leaf", h_var=0.34)
+    """Three crowns of fronds arching almost flat, spread across the
+    footprint with bare floor between them: a spreading fern colony rather
+    than one dense clump. segs 4 and a bend close to the frond length is what
+    makes a frond arch rather than stand: a fern is a horizontal shape, which
+    is the opposite of every grass tuft in the game and the reason it reads
+    as forest floor. Every third frond is LeafLight, a dapple of light
+    breaking through the canopy."""
+    p = hc.Parts()
+    for cx, cy, count, seed in FERN_CROWNS:
+        p.extend(pc.tuft(count, 0.58, 0.115, 0.07, seed, bend=0.52, segs=4,
+                         droop=0.46, role="LeafDeep", alt_role="LeafLight",
+                         alt_every=3, h_var=0.30, loc=(cx, cy, 0.0)))
+    return p
 
 
 def fern_lod2():
-    return pc.tuft(4, 0.62, 0.180, 0.04, 4101, bend=0.52, segs=2, droop=0.46,
-                   role="Leaf", h_var=0.20)
+    p = hc.Parts()
+    for cx, cy, seed in ((0.0, 0.0, 4101), (0.40, 0.24, 4139)):
+        p.extend(pc.tuft(3, 0.58, 0.170, 0.05, seed, bend=0.52, segs=2,
+                         droop=0.46, role="LeafDeep", alt_role="LeafLight",
+                         alt_every=3, h_var=0.18, loc=(cx, cy, 0.0)))
+    return p
 
 
 def _stub(r0, r1, z0, z1, loc, lean, seed, seg=5):
@@ -120,8 +147,8 @@ def forest_rock():
 
 
 PROPS = [
-    pc.Prop("Forest_Fern", (1.20, 1.14, 0.66), fern, ["Leaf"],
-            lod2=fern_lod2),
+    pc.Prop("Forest_Fern", (1.60, 1.55, 0.80), fern,
+            ["LeafDeep", "LeafLight"], lod2=fern_lod2),
     pc.Prop("Forest_DeadTree", (1.36, 1.22, 4.20), dead_tree,
             ["Bark", "LeafDry"], lod2=0.30, collide=True,
             col_size=(0.50, 0.50, 4.20), col_role="Bark"),

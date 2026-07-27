@@ -12,6 +12,12 @@ a bush clean, you do not chop it down.
 
 DEPLETION 5 lobes -> 3 lobes -> 2 dry lobes. Two LOD bands only, per the
 manifest: a 0.9 m prop is either near enough to matter or gone.
+
+W11 pass (2026-07-27): the Full lobes now shade Leaf (base/interior) into
+LeafLight (sunlit top) via tree_common.canopy_mass instead of one flat green,
+the same volume trick the two trees use, sized to the 4-material budget this
+asset has (Bark, Leaf, LeafLight, LeafDry). The stem is jittered instead of a
+perfect cylinder.
 """
 
 import os
@@ -25,7 +31,7 @@ import tree_common as tc       # noqa: E402
 NAME = "BushScrub"
 OUT = of.dist_path("nodes", "bush_scrub.glb")
 DIMS = (1.00, 1.00, 0.90)
-ORDER = ["Bark", "Leaf", "LeafDry"]
+ORDER = ["Bark", "Leaf", "LeafLight", "LeafDry"]
 SEED = 6113
 
 # (centre, radii, height, segments) for the five lobes, biggest first. None of
@@ -39,7 +45,9 @@ LOBES = (((-0.10, 0.06, 0.52), (0.34, 0.30), 0.46, 6),
 
 
 def _stem(p, seg=5):
-    p.add(*hc.taper(0.075, 0.045, 0.0, 0.26, seg=seg), role="Bark")
+    v, f, sm, roles = tc.taper_bands(((0.075, 0.0), (0.045, 0.26)), seg=seg,
+                                     seed=SEED + 501, jit=0.08, roles="Bark")
+    p.add(v, f, sm, roles)
     return p
 
 
@@ -48,10 +56,20 @@ def _bush(count, role_of, seg_bias=0, jit=0.20):
     _stem(p, seg=5 if seg_bias == 0 else 4)
     for k in range(count):
         loc, r, h, seg = LOBES[k]
-        p.add(*hc.blob(r[0], r[1], h, loc, seg=max(4, seg + seg_bias),
-                       seed=SEED + k * 29, jit=jit,
-                       rings=(0.30, 0.66), radii=(0.82, 0.80)),
-              role=role_of(k))
+        s = max(4, seg + seg_bias)
+        role = role_of(k)
+        if role == "Leaf":
+            # Two-tone: base/interior Leaf, sunlit top LeafLight. Real volume
+            # for the same triangle count a flat-coloured blob already cost.
+            v, f, sm, roles = tc.canopy_mass(
+                r[0], r[1], h, loc, seg=s, seed=SEED + k * 29, jit=jit,
+                rings=(0.30, 0.66), radii=(0.82, 0.80),
+                bands=("Leaf", "Leaf", "LeafLight"))
+            p.add(v, f, sm, roles)
+        else:
+            p.add(*hc.blob(r[0], r[1], h, loc, seg=s, seed=SEED + k * 29,
+                           jit=jit, rings=(0.30, 0.66), radii=(0.82, 0.80)),
+                  role=role)
     return p
 
 

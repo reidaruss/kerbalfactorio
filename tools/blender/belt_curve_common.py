@@ -19,6 +19,19 @@ Nothing crosses the 1 m cell: the outer rail's radius is exactly 1.00 m about
 the corner, which makes it tangent to the two far cell edges rather than past
 them - the same construction that fixed the straight tile's 10 mm roller
 overhang.
+
+THE ITEM PATH (W11). socket_item_a / socket_item / socket_item_b publish the
+entry, midpoint and exit of the cargo path, and the client rule is the same
+one the straight tile publishes: the circular arc through those three points.
+Here that arc is the exact quarter circle of radius 0.5 about the cell corner
+(cx, cy) - which is the SAME curve MachineBatch.ts's belt shader already walks
+for its flow band, so the geometry the fragment shader draws and the geometry
+the item rides are one curve rather than two that happen to look alike.
+
+The consequence a client must not miss: this arc is pi/4 = 0.7854 m long,
+21.5% SHORTER than the 1.000 m straight tile. An item advanced at a constant
+rate in tile fractions therefore speeds up through a corner. Parameterise by
+arc length, not by fraction of a tile.
 """
 
 import math
@@ -36,6 +49,9 @@ R_DECK_IN, R_DECK_OUT = 0.10, 0.90     # 0.80 m deck, centre line at r = 0.5
 R_RAIL_OUT = 1.00                      # tangent to the cell edge, never past
 SLAT_COUNT = 9                         # 8 on the tile + 1 entering the inlet
 SLAT_HALF_DEG = 4.5
+SLAT_T = 0.030                         # matches build_belt_segment exactly
+RIDE_TOP = DECK_TOP + SLAT_T           # 0.28, the surface cargo rests on
+R_PATH = 0.50                          # centre-line radius, == the shader's
 
 
 def _polar(cx, cy, r, deg):
@@ -90,7 +106,7 @@ def build(name, out, cx, a_entry, a_exit, exit_x):
     mbs = of.MeshBuilder()
     for k in range(SLAT_COUNT):
         a = a_entry + pitch * (k - 1)
-        mbs.arc_band(0.14, 0.86, 0.022, (0.0, 0.0, DECK_TOP + 0.011),
+        mbs.arc_band(0.14, 0.86, SLAT_T, (0.0, 0.0, DECK_TOP + SLAT_T * 0.5),
                      a - SLAT_HALF_DEG, a + SLAT_HALF_DEG, 1, "Rubber")
     slats = mbs.build(name + "_Slats", root)
     slats.location = (cx, cy, 0.0)      # rotate about the arc centre, not 0,0
@@ -101,9 +117,15 @@ def build(name, out, cx, a_entry, a_exit, exit_x):
                   extras={"of_role": "belt_in"})
     of.add_socket("socket_belt_out", (exit_x, 0.0, DECK_TOP), parent=root,
                   extras={"of_role": "belt_out"})
-    item = _polar(cx, cy, 0.5, a_mid)
-    of.add_socket("socket_item", (item[0], item[1], DECK_TOP + 0.03),
-                  parent=root, extras={"of_role": "item_ride"})
+    # The item path, sampled off the SAME arc the deck is swept along, so no
+    # number here is retyped from the socket_belt_* pair: entry, midpoint and
+    # exit are _polar() at the entry, mid and exit angles of that one sweep.
+    for sock, ang, role in (("socket_item_a", a_entry, "item_path_in"),
+                            ("socket_item", a_mid, "item_ride"),
+                            ("socket_item_b", a_exit, "item_path_out")):
+        p = _polar(cx, cy, R_PATH, ang)
+        of.add_socket(sock, (p[0], p[1], RIDE_TOP), parent=root,
+                      extras={"of_role": role})
     of.add_socket("socket_status", (chip[0], chip[1], H), parent=root,
                   extras={"of_role": "state_light"})
 
