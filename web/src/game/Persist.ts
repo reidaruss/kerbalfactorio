@@ -30,6 +30,7 @@ import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
+import { discAbi } from '../sim/wasm/discabi.js';
 import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 
 /** The three Services handles a whole-world save needs and gameplay does not own. */
@@ -109,6 +110,11 @@ export interface RestoreLedger {
   /** DW-31: the mode the slot was written in. Always equal to the running mode,
    *  because a slot that disagreed was refused before it got here. */
   mode: GameMode;
+  /** DW-36: discovery cells /core has back. 0 means the slot carried none,
+   *  which a pre-DW-36 save legitimately does; **-1 means /core REFUSED the
+   *  stream** and what the player explored is gone. Three states and not two,
+   *  because a silent zero would make a lost world look like a new one. */
+  discovery: number;
   savedAt: number;
 }
 
@@ -126,6 +132,14 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   // Copied out of the heap IMMEDIATELY (standing rule 5): every call below
   // re-enters WASM and any growth detaches the view.
   const pack = n > 0 ? Array.from(scratchU8(M, n)) : [];
+  // DW-36 / DW-17: WHAT THE PLAYER HAS SEEN goes in the same atomic slot as
+  // everything else. It is read straight off /core rather than through the map,
+  // because the discovery field is world state that lives in `discovery.h` and
+  // the map is only one of its readers - a save that had to wait for a panel to
+  // exist would be a save that is wrong whenever `?flight=0`. Same u8 scratch,
+  // so same rule: copy out before the next call.
+  const dn = discAbi(M)._of_disc_serialize();
+  const discovery = dn > 0 ? Array.from(scratchU8(M, dn)) : [];
 
   // Nodes first, and NOT the outcrops. An outcrop reports its patch's pool, so
   // writing it here would record the same ore once per outcrop and drain it that
@@ -157,6 +171,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     savedAt: Date.now(),
     pack,
     voxels,
+    discovery,
     depletion,
     patches,
     sites: saveSites(structures),
@@ -197,6 +212,24 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   //    old, un-dug column would sit at the wrong height.
   const voxels = restoreEdits(M, ports.voxels, ports.voxelMesh, ports.terrain,
     slot.voxels ?? NO_VOXELS);
+
+  // 0b. WHAT THE PLAYER HAD SEEN (DW-36). Before the ore, because an ore patch
+  //     the map may draw is gated on the fine discovery grid and a frame drawn
+  //     between the two would flash every patch on the planet. A slot written
+  //     before this field simply has none, which reads as an unexplored world
+  //     and is the honest answer for a save that never recorded one.
+  //     `restored` is -1 when /core REFUSED the stream (a different lattice, or
+  //     not ours). That is surfaced in the ledger rather than swallowed: a world
+  //     that quietly forgets where you have been is exactly what DW-17 exists
+  //     to prevent, and a zero would be indistinguishable from a new game.
+  let discovery = 0;
+  const dbytes = slot.discovery ?? [];
+  if (dbytes.length > 0) {
+    const D = discAbi(M);
+    D._of_disc_alloc_bytes(dbytes.length);
+    scratchU8(M, dbytes.length).set(dbytes);
+    discovery = D._of_disc_deserialize();
+  }
 
   // 1. THE ORE PATCHES, and then the standalone nodes. Both go back through the
   //    SAME extraction call the live world uses (of_gp_patch_drain /
@@ -285,7 +318,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     buildings, structures: restoredParts,
     machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
-    progress,
+    progress, discovery,
     mode: slot.mode ?? 'survival',
     savedAt: slot.savedAt,
   };

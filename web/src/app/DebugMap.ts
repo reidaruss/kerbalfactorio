@@ -49,6 +49,46 @@ export function mapApi(s: Services): MapDebugApi {
           m.view.hooks.zoom(typeof o?.mult === 'number' ? o.mult : 1.25);
           return m.report();
         }
+        // DW-36. Focus goes through the panel's own hook, the same one the
+        // buttons call, because switching focus IS re-centring and a probe that
+        // wrote `centreM` directly would be testing a path no player can take.
+        case 'focus': {
+          const o = a as { name?: string } | undefined;
+          if (typeof o?.name !== 'string') return { error: 'focus needs {name}' };
+          m.view.hooks.focus(o.name);
+          return m.report();
+        }
+        // The discovery field, straight off /core.
+        case 'disc': return m.world?.report() ?? { error: 'no world layer' };
+        // FORGET WHAT HAS BEEN SEEN. The one entry here that no key drives, and
+        // it is deliberate: it is the discovery twin of `of.forgetTunnels()`
+        // and `of.repopulate()`, which exist for the same reason and neither of
+        // which a player can press either. DW-17's rule is THE DESTRUCTION IS
+        // THE POINT: a save/load round trip over a field that was never thrown
+        // away is reading a number that never left memory, so without this the
+        // one field DW-36 added is the one field DW-17 cannot verify. It is
+        // also what lets a probe construct a PARTIALLY explored world, which
+        // the shipped one is not: `Gameplay.populate` pins the ore cluster to
+        // the spawn direction and the player starts standing on it, so every
+        // patch is explored one second after boot and `MapWorld.hidden` is
+        // otherwise permanently 0.
+        case 'forget': {
+          const w = m.world;
+          if (w === null) return { error: 'no world layer' };
+          w.forget();
+          return w.report();
+        }
+        // THE ORE ROWS THE PAINTER IS HANDED, as raw numbers. Not the panel's
+        // text and not a second query of the patch field: this is the same array
+        // the map draws from, already gated by discovery, so a probe comparing
+        // it against `of_gp_patch_state` is comparing the two ends of the one
+        // path rather than two independent reads that happen to agree.
+        case 'ore': {
+          const w = m.world;
+          if (w === null) return { error: 'no world layer' };
+          const rows = w.ore();
+          return { drawn: rows.length, hidden: w.hidden, rows };
+        }
         default: return { error: `unknown map op ${op}` };
       }
     },

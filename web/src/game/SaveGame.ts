@@ -122,6 +122,12 @@ export interface SaveSlot {
   machines: SaveMachine[];
   /** The dug tunnels: /core's removed-cell bytes plus the strike log. */
   voxels: SavedEdits;
+  /** DW-36: what the player has SEEN, as `discovery.h`'s delta-varint byte
+   *  stream. Absent on any slot written before it existed, which reads as an
+   *  unexplored world - the honest answer for a save that never recorded one.
+   *  Additive and optional, so SAVE_VERSION deliberately does NOT move: a bump
+   *  refuses every existing world, and nothing here would MISREAD an old slot. */
+  discovery?: number[];
   /** The base: the parts, and the site frames they are addressed in. */
   sites?: SaveSite[];
   structures?: SaveStructure[];

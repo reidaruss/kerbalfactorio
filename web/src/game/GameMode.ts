@@ -82,6 +82,28 @@ export class ModeRules {
    */
   get researchGated(): boolean { return !this.sandbox; }
 
+  /**
+   * Is the WHOLE MAP visible, or only what has actually been seen?
+   *
+   * DW-36: the map is discoverable in survival ("you cannot see what you have
+   * never been to") and complete in sandbox. This is the fourth named question
+   * and the third time `freeBuild`'s comment has been right about what would
+   * happen: a branch written months later asks by name and gets the right
+   * answer, instead of somebody remembering to add `|| sandbox` to it.
+   *
+   * It is NOT a reuse of `fullCatalogue` even though the two agree today, for
+   * the reason `researchGated` gives at length: questions with the same answer
+   * today are still different questions, and these two will diverge the moment
+   * anything wants a scenario that starts with a surveyed world but no free
+   * parts, or a hardcore mode with a fogged map and an open catalogue.
+   *
+   * THE ONE GATE THAT ASKS THIS, so a reader can find it: `MapWorld.ore()` in
+   * app/MapWorld.ts, which decides whether an ore patch on undiscovered ground
+   * reaches the painter at all. The map's shading needs no gate because it
+   * draws only what IS discovered; there is nothing to hide.
+   */
+  get fullMapRevealed(): boolean { return this.sandbox; }
+
   /** What the badge on screen says. Empty in survival: an always-on chip that
    *  says "SURVIVAL" is noise, and the failure being guarded against is a
    *  player who FORGOT they were in sandbox. */
@@ -94,7 +116,7 @@ export class ModeRules {
     return {
       mode: this.mode, sandbox: this.sandbox, freeBuild: this.freeBuild,
       fullCatalogue: this.fullCatalogue, researchGated: this.researchGated,
-      badge: this.badge,
+      fullMapRevealed: this.fullMapRevealed, badge: this.badge,
     };
   }
 }

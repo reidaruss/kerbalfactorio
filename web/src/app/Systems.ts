@@ -236,7 +236,10 @@ export function registerSystems(s: Services, loop: Loop): void {
     s.flight?.frame(loop.simSecs);
     // AFTER flight: the node is re-planned off the state flight has just
     // sampled, so the ball's node marker and the map draw the same instant.
-    s.map?.frame();
+    // SIM seconds, not real ones: the map feeds the discovery field from here
+    // (DW-36) and a warped orbit has to lay its ground track down at the rate
+    // the world moved, not the rate the screen refreshed.
+    s.map?.frame(loop.simSecs);
     const cam = s.rig.nearCam;
     eye.setFromMatrixPosition(cam.matrixWorld);
     // Scatter follows the EYE, not the origin: the floating origin is only

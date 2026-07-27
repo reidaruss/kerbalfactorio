@@ -250,7 +250,35 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //           inertial space, so Command(4) already holds it.
 //       Additive: no existing signature changed. The only behaviour change is
 //       that four integers of_fl_set_sas used to REFUSE are now accepted.
-OF_API int of_abi_version(void) { return 11; }
+//   12: THE DISCOVERABLE MAP (discovery.h, WG-29 / DW-36). §18, of_disc_*.
+//       What the player has SEEN of a body, as WORLD state rather than UI
+//       state: one rule (a cell is discovered when the observer has been
+//       somewhere it was above their horizon) read at TWO resolutions, a
+//       coarse SURVEY layer that orbit fills in and a fine EXPLORE layer capped
+//       at 10 km of ground chord so a lap does not hand you the ore.
+//       of_disc_reset / _ensure / _configure / _clear own the field,
+//       of_disc_observe feeds both layers from ONE call, of_disc_has is the
+//       gate a UI or an ore
+//       reveal asks, of_disc_window hands the map the discovered cells' CORNERS
+//       (not centres: the projection is orthographic and a limb cell is a
+//       sliver), of_disc_report publishes the counts taken inside those calls
+//       including the truncation flag of_disc_window sets, and
+//       of_disc_serialize / _alloc_bytes / _deserialize persist it through the
+//       same three-call sequence of_edits_* uses.
+//       TUNING IS DATA: of_disc_configure moves every number without touching
+//       a code path, and a non-positive field means "the default for that one".
+//       THE SAVE IS SELF-DESCRIBING, and that is an ordering fix rather than a
+//       format preference. discovery.h's stream carries the body radius, so
+//       of_disc_deserialize needs NO field to exist first and rebuilds the
+//       lattices from the bytes; and of_disc_ensure resets ONLY when there is no
+//       field or it is cut for another body, so a map built AFTER the save was
+//       applied cannot wipe what was just restored. Without both halves a page
+//       reload lost everything the player had explored and the next autosave
+//       made the loss permanent (measured: restored.discovery = -1).
+//       Additive: no existing signature changed and no existing value moved.
+//       of_disc_ensure is new; the discovery format changed, and it may, because
+//       12 is not landed and nothing has ever shipped a save written with it.
+OF_API int of_abi_version(void) { return 12; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2534,3 +2562,4 @@ OF_API int of_gp_item_ids(void) {
 #include "of_power_api.inc"     // §14  ABI 9: poles, generators, the grid panel
 #include "of_research_api.inc"  // §15/16 ABI 9: the tech tree, armour, skills
 #include "of_maneuver_api.inc"  // §17  ABI 11: maneuver node planning
+#include "of_discovery_api.inc" // §18  ABI 12: the discoverable map (DW-36)

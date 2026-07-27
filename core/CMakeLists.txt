@@ -269,6 +269,63 @@ target_link_libraries(surface_field_tests PRIVATE of_core)
 target_include_directories(surface_field_tests PRIVATE tests)
 add_test(NAME surface_field_tests COMMAND surface_field_tests)
 
+# --- World-gen DISCOVERABLE MAP (WG-29 / DW-36): discovery.h is the record of
+#     what the player has SEEN of a body, which is WORLD state rather than UI
+#     state, so it is deterministic and it persists. ONE rule -- a cell is
+#     discovered when it was above the observer's horizon -- read at TWO
+#     resolutions: a coarse SURVEY layer (9.4 km cells, horizon-limited, what the
+#     map shades) and a fine EXPLORE layer (293 m cells, additionally capped at a
+#     10 km ground chord, what gates an ore patch). Height therefore buys EXTENT
+#     and costs RESOLUTION, so an 80 km lap hands over 41% of Forge's shape and
+#     only a 1.2% thread of its detail. Transcendental-free throughout: the
+#     horizon is dot >= R/(R+h) and the cap is the chord form dot >= 1-(c/R)^2/2,
+#     because a 1 ULP difference would flip a boundary cell and desync a SAVED
+#     set (CE-11/DW-15).
+#
+#     What this suite proves, and why each one is here:
+#       * THE LATTICE CROSS-CHECK, and the reason the suite exists at all.
+#         SurfaceCellGrid is a SECOND COPY of the raw-gnomonic cube lattice
+#         inside enemies.h's PollutionField, which is the failure class this
+#         project has paid for five times, so the copy is not left as a claim:
+#         this file includes BOTH headers and asserts cellOf agrees EXACTLY and
+#         cellCentreDir BIT-IDENTICALLY over 560,000 directions spread across
+#         face interiors, every seam, every edge midpoint and all eight cube
+#         corners, at nine shared cell targets on two bodies, plus neighbours()
+#         cell-for-cell over every border ring at three subdivisions;
+#       * the flood proved SOUND and COMPLETE by BRUTE FORCE -- at a small bit
+#         count the whole body (1,105,920 cells over 72 cases) is enumerated and
+#         compared to the store both directions, because a region inside the cap
+#         but disconnected on the lattice is invisible to a breadth-first pass
+#         and leaves no counter, no warning and no symptom;
+#       * the horizon algebra against the GEOMETRY: the threshold bit-equal to
+#         R/(R+h), the tangent point re-derived independently as
+#         (obs - p).p == 0, chordFor pinned as the exact inverse, the cap's
+#         crossover altitude bracketed against the closed form h* = R u^2/(2-u^2)
+#         = 83.345 m, and altitude monotone as a SET INCLUSION;
+#       * determinism (standing rule 4) including the TRUNCATED pass, plus the
+#         order-independence that makes the set safe to save;
+#       * serialization: exact round trip, a byte stream that is a pure function
+#         of the SET, a foreign lattice REFUSED with the cursor left where the
+#         caller expects, and a corrupt stream that cannot leave an unsorted
+#         vector -- the check that found this header's one real defect;
+#       * cost asserted through the gnomonic area Jacobian rather than printed:
+#         accepted matches the exact continuum cap-cell count to within the
+#         disc's own perimeter, grows as r^2, and is 2.828x / 5.196x denser at a
+#         face-edge midpoint / cube corner, which pins the 2.12x linear
+#         non-uniformity this lattice pays for being transcendental-free and
+#         would fail loudly if anyone swapped in the equal-angle tan() warp.
+#     Header-only; consumes discovery.h (the subject), enemies.h READ-ONLY (the
+#     lattice it must agree with), cubed_sphere.h READ-ONLY (mix64/hashToUnit,
+#     for deterministic directions) and persistence.h in the test only, for the
+#     byte cursors discovery.h is templated over but deliberately does not
+#     include. Touches no terrain height, no biome, no voxel layer, no gameplay.
+add_executable(discovery_tests
+  tests/test_main.cpp
+  tests/test_discovery.cpp)
+target_link_libraries(discovery_tests PRIVATE of_core)
+target_include_directories(discovery_tests PRIVATE tests)
+add_test(NAME discovery_tests COMMAND discovery_tests)
+
 add_executable(physics_tests
   tests/test_main.cpp
   tests/test_physics.cpp)

@@ -361,8 +361,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       rollouts: () => theFlight.rollouts,
       boardings: () => theFlight.boardings,
     };
-    // W12 THE MAP, on M. Its ports live in MapBoot: Boot is shared and at cap.
-    map = await bootMap({ core, host, g, flight: theFlight, body, input });
+    // THE MAP, on M. Ports in MapBoot (Boot is at cap); DW-36 adds the walker.
+    map = await bootMap({ core, host, g, flight: theFlight, body, input, player });
   }
 
   const boot: BootMetrics = {

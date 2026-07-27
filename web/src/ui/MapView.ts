@@ -15,7 +15,7 @@ import './styles/map.css';
 import { Modal } from './ModalStack.js';
 import type { ModalStack } from './ModalStack.js';
 import { drawMap } from './MapDraw.js';
-import type { MapReadout } from './MapTypes.js';
+import type { MapDrawReport, MapReadout } from './MapTypes.js';
 
 /** What the panel's buttons ask the app to do. It does none of it itself. */
 export interface MapHooks {
@@ -26,6 +26,9 @@ export interface MapHooks {
   holdNode(): void;
   /** Multiply the view span. > 1 zooms out. */
   zoom(mult: number): void;
+  /** Look at something else. Focus switching and re-centring are ONE mechanism
+   *  (DW-36): this writes a different `centreM` and nothing else changes. */
+  focus(name: string): void;
 }
 
 const HANDLES: readonly (readonly ['prograde' | 'normal' | 'radial' | 'time',
@@ -57,6 +60,31 @@ function row(label: string, value: string, cls = ''): string {
   return `<div class="row ${cls}"><em>${label}</em><b>${value}</b></div>`;
 }
 
+/** A fraction of a whole world is a very small number early on, and "0.00%"
+ *  after a first survey pass reads as "the map is broken". */
+function pct(f: number): string {
+  if (!Number.isFinite(f)) return '---';
+  const v = f * 100;
+  return `${v > 0 && v < 0.01 ? '&lt;0.01' : v.toFixed(v < 10 ? 2 : 1)}%`;
+}
+
+/** Names come from the sim (a vessel's, a body's) and land in markup and in a
+ *  data attribute. getAttribute decodes, so the focus round trip is exact. */
+function esc(s: string): string {
+  return String(s).replace(/[&<>"']/g, (c) => (c === '&' ? '&amp;'
+    : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'));
+}
+
+/** A fresh one each time: a shared literal would hand every MapView the same
+ *  `markers` array, and a probe that read one would be reading all of them. */
+function noDraw(): MapDrawReport {
+  return {
+    currentPoints: 0, plannedPoints: 0, markers: [], pixelsPerMetre: 0,
+    alphas: { ore: 0, discovered: 0, body: 0 },
+    discoveredQuads: 0, oreDrawn: 0, oreDrawnRows: [], bodyFilled: false,
+  };
+}
+
 export class MapView extends Modal {
   private readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
@@ -66,8 +94,7 @@ export class MapView extends Modal {
   private lastKey = '';
   /** The report the LAST paint pass produced, for a probe. Not a second
    *  opinion: these are counts taken inside drawMap. */
-  drawn = { currentPoints: 0, plannedPoints: 0, markers: [] as string[],
-    pixelsPerMetre: 0 };
+  drawn: MapDrawReport = noDraw();
   frames = 0;
 
   constructor(parent: HTMLElement, stack: ModalStack,
@@ -116,6 +143,8 @@ export class MapView extends Modal {
     if (act === 'hold') { this.hooks.holdNode(); return; }
     if (act === 'zoomin') { this.hooks.zoom(0.8); return; }
     if (act === 'zoomout') { this.hooks.zoom(1.25); return; }
+    const f = b.getAttribute('data-focus');
+    if (f !== null) { this.hooks.focus(f); return; }
     const axis = b.getAttribute('data-axis');
     const d = Number(b.getAttribute('data-delta'));
     if (axis !== null && Number.isFinite(d)) {
@@ -159,14 +188,26 @@ export class MapView extends Modal {
     this.drawn = drawMap(ctx, w, h, dpr, r.scene);
   }
 
+  /** The DOM rebuilds only when this changes. It keys on the INTEGER counts and
+   *  the discrete strings, never on the derived fractions: the fractions are a
+   *  function of the cell counts, so keying on the counts is sufficient (the
+   *  panel cannot go stale) and stable (the last binary digit of a ratio cannot
+   *  make it thrash). Altitude and speed keep their existing 1 m / 1 m/s
+   *  granularity, which is the discipline this key already had. */
   private keyOf(r: MapReadout): string {
-    const n = r.node;
+    const n = r.node, c = r.scene.current, d = r.discovery;
     return [
       r.status, r.sas, r.onRails ? '1' : '0',
-      r.scene.current.apoapsisAltM.toFixed(0),
-      r.scene.current.periapsisAltM.toFixed(0),
-      r.scene.current.timeToApoapsisS.toFixed(0),
-      r.scene.current.timeToPeriapsisS.toFixed(0),
+      c === null ? 'foot' : [
+        c.apoapsisAltM.toFixed(0), c.periapsisAltM.toFixed(0),
+        c.timeToApoapsisS.toFixed(0), c.timeToPeriapsisS.toFixed(0),
+      ].join('|'),
+      r.focusName, r.focusOptions.join('~'),
+      d === null ? 'dark' : [
+        d.surveyCells, d.exploreCells, d.revealAll ? 'all' : 'own',
+        d.lastSurveyRadiusM.toFixed(0), d.lastExploreRadiusM.toFixed(0),
+        d.cellSizeM.toFixed(0),
+      ].join('|'),
       r.altitudeM.toFixed(0), r.speedMS.toFixed(0),
       r.deltaVRemainingMS.toFixed(0),
       n === null ? 'none' : [
@@ -182,25 +223,82 @@ export class MapView extends Modal {
   private body(r: MapReadout): string {
     const c = r.scene.current;
     const out: string[] = [];
-    out.push('<h4>Orbit</h4>');
-    out.push(row('AP', c.bound ? km(c.apoapsisAltM) : '---'));
-    out.push(row('to AP', c.timeToApoapsisS >= 0 ? clock(c.timeToApoapsisS) : '---'));
-    out.push(row('PE', km(c.periapsisAltM),
-      c.periapsisAltM < r.scene.atmosphereCeilingM ? 'warn' : ''));
-    out.push(row('to PE', c.timeToPeriapsisS >= 0 ? clock(c.timeToPeriapsisS) : '---'));
-    out.push(row('period', c.bound ? clock(c.periodS) : '---'));
-    out.push(row('ecc', c.eccentricity.toFixed(4)));
-    out.push(row('ALT', km(r.altitudeM)));
-    out.push(row('SPD', `${r.speedMS.toFixed(0)} m/s`));
-    out.push(row('dV left', `${r.deltaVRemainingMS.toFixed(0)} m/s`));
-    out.push(row('SAS', r.sas));
-    // The conic is exact only in vacuum with the engine shut. Saying so is not
-    // a nicety: in the air the drawn path is where the vessel would go if the
-    // air and the thrust stopped now, which is a different claim.
-    if (!r.onRails) {
-      out.push(row('trajectory', 'PREDICTED (air or thrust)', 'warn'));
+    // ON FOOT there is no vessel and so no trajectory. The panel says where you
+    // are standing rather than blanking: a column of '---' where the orbit used
+    // to be reads as a broken map, which is the one thing it must not do.
+    if (c === null) {
+      out.push('<h4>Position</h4>');
+      out.push(row('state', esc(r.status)));
+      out.push(row('ALT', km(r.altitudeM)));
+      out.push(row('SPD', `${r.speedMS.toFixed(0)} m/s`));
+      out.push('<div class="note">No vessel: the map is centred on you. '
+        + 'Keep zooming out and it becomes the orbital view.</div>');
+    } else {
+      out.push('<h4>Orbit</h4>');
+      out.push(row('AP', c.bound ? km(c.apoapsisAltM) : '---'));
+      out.push(row('to AP', c.timeToApoapsisS >= 0 ? clock(c.timeToApoapsisS) : '---'));
+      out.push(row('PE', km(c.periapsisAltM),
+        c.periapsisAltM < r.scene.atmosphereCeilingM ? 'warn' : ''));
+      out.push(row('to PE', c.timeToPeriapsisS >= 0 ? clock(c.timeToPeriapsisS) : '---'));
+      out.push(row('period', c.bound ? clock(c.periodS) : '---'));
+      out.push(row('ecc', c.eccentricity.toFixed(4)));
+      out.push(row('ALT', km(r.altitudeM)));
+      out.push(row('SPD', `${r.speedMS.toFixed(0)} m/s`));
+      out.push(row('dV left', `${r.deltaVRemainingMS.toFixed(0)} m/s`));
+      out.push(row('SAS', r.sas));
+      // The conic is exact only in vacuum with the engine shut. Saying so is not
+      // a nicety: in the air the drawn path is where the vessel would go if the
+      // air and the thrust stopped now, which is a different claim.
+      if (!r.onRails) {
+        out.push(row('trajectory', 'PREDICTED (air or thrust)', 'warn'));
+      }
     }
-    out.push(this.nodeBlock(r));
+    out.push(this.focusBlock(r));
+    out.push(this.discoveryBlock(r));
+    if (c !== null) out.push(this.nodeBlock(r));
+    return out.join('');
+  }
+
+  /** Focus switching IS re-centring: each button writes a different `centreM`
+   *  and nothing else about the map changes. */
+  private focusBlock(r: MapReadout): string {
+    const out: string[] = ['<h4>Focus</h4>'];
+    out.push(row('centred on', esc(r.focusName)));
+    out.push('<div class="nodectl">');
+    // The view controls live here rather than in the node block, because on
+    // foot there is no node block and the zoom is the one control the map
+    // always has. The wheel does the same thing, continuously.
+    out.push('<button class="wide" data-act="zoomout">zoom out</button>');
+    out.push('<button class="wide" data-act="zoomin">zoom in</button>');
+    for (const name of r.focusOptions) {
+      const on = name === r.focusName ? ' on' : '';
+      out.push(`<button class="wide${on}" data-focus="${esc(name)}">`
+        + `${esc(name)}</button>`);
+    }
+    out.push('</div>');
+    return out.join('');
+  }
+
+  /** What the map is allowed to show, and why. Two layers, because height buys
+   *  EXTENT and costs RESOLUTION: orbit fills in the shape of the world and
+   *  walking fills in its detail. */
+  private discoveryBlock(r: MapReadout): string {
+    const d = r.discovery;
+    const out: string[] = ['<h4>Discovery</h4>'];
+    if (d === null) {
+      out.push(row('seen', 'nothing yet'));
+      out.push('<div class="note">Nothing has been observed. Fly or walk and '
+        + 'the world fills in.</div>');
+      return out.join('');
+    }
+    // DW-31's stated failure mode is a player who forgot which mode they are
+    // in, so the badge is first and it is plain.
+    if (d.revealAll) out.push(row('mode', 'SANDBOX: everything visible', 'warn'));
+    out.push(row('survey', `${d.surveyCells} · ${pct(d.surveyFraction)}`));
+    out.push(row('last sweep', km(d.lastSurveyRadiusM)));
+    out.push(row('explore', `${d.exploreCells} · ${pct(d.exploreFraction)}`));
+    out.push(row('last sweep', km(d.lastExploreRadiusM)));
+    out.push(row('cell', km(d.cellSizeM)));
     return out.join('');
   }
 
@@ -209,9 +307,7 @@ export class MapView extends Modal {
     if (n === null) {
       return '<h4>Maneuver</h4>'
         + '<div class="nodectl">'
-        + '<button class="wide" data-act="place">place node</button>'
-        + '<button class="wide" data-act="zoomout">zoom out</button>'
-        + '<button class="wide" data-act="zoomin">zoom in</button></div>'
+        + '<button class="wide" data-act="place">place node</button></div>'
         + '<div class="note">A node tells you the burn. It does not fly it.</div>';
     }
     const out: string[] = ['<h4>Maneuver</h4>'];
@@ -247,8 +343,6 @@ export class MapView extends Modal {
     out.push(`<button class="wide${n.holding ? ' on' : ''}" data-act="hold">`
       + `${n.holding ? 'holding the node (8)' : 'hold node (8)'}</button>`);
     out.push('<button class="wide" data-act="clear">clear node</button>');
-    out.push('<button class="wide" data-act="zoomout">zoom out</button>');
-    out.push('<button class="wide" data-act="zoomin">zoom in</button>');
     out.push('</div>');
     out.push('<div class="note">Point at the node marker, then light the '
       + 'engine when "light it in" reaches zero. Half the burn goes before the '

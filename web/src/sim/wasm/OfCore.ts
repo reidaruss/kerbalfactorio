@@ -27,6 +27,26 @@ import type { OfCoreModule } from './heap.js';
 // makes non-negotiable. of_atmo_* and of_fl_* are the atmosphere and a FlightSim
 // pass-through, landed in the SAME bump because a second one costs more than one
 // file. Declared in sim/wasm/vesselabi.ts, not here: heap.ts is at the line cap.
+// ABI 12 (2026-07-27): THE DISCOVERABLE MAP (discovery.h, WG-29 / DW-36).
+// of_disc_* publishes what the player has SEEN of a body as WORLD state: one
+// rule (a cell is discovered when the observer has been somewhere it was above
+// their horizon) read at two resolutions, a coarse SURVEY layer that orbit
+// fills in and a fine EXPLORE layer capped at 10 km of ground chord. reset /
+// ensure / configure / clear own the field, observe feeds BOTH layers from one
+// call, has is the gate, window hands the map the discovered cells' CORNERS,
+// report publishes the counts taken inside those calls (including window
+// truncation), and serialize / alloc_bytes / deserialize persist it exactly as
+// of_edits_* does.
+// THE SAVE IS SELF-DESCRIBING, which is an ordering fix and not a format
+// preference: the stream carries the body radius, so deserialize needs no field
+// to exist first, and `ensure` resets only when there is no field or it is cut
+// for another body, so the map built AFTER the save was applied cannot wipe what
+// was just restored. Without both halves a reload lost everything the player had
+// explored and the next autosave made it permanent (restored.discovery = -1).
+// Additive: no existing signature or value moved; `ensure` is new and the
+// discovery byte format changed, which it may, because 12 is not landed and no
+// shipped build has ever written a save with it. Declared in
+// sim/wasm/discabi.ts, not here, for the same line-cap reason.
 //
 // This constant is the only thing standing between a browser and a wasm that
 // answers a different question than the one the client is asking. It was left at
@@ -34,7 +54,7 @@ import type { OfCoreModule } from './heap.js';
 // and it happened again at 4 against a shim reporting 5. AN ABI BUMP IS ATOMIC
 // ACROSS THE BRIDGE: the shim's version, the rebuilt and SYNCED wasm, this
 // constant and its callers land in one commit, and that commit boots.
-export const OF_ABI_VERSION = 11;
+export const OF_ABI_VERSION = 12;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 
