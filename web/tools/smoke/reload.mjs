@@ -57,8 +57,16 @@ const context = await browser.newContext({ viewport: { width: 1280, height: 720 
 const page = await context.newPage();
 page.on('console', (m) => {
   if (m.type() === 'error') note(`console.error: ${m.text()}`);
+  // The allowlist is run.mjs's, verbatim, and its reasoning lives there: two
+  // named ANGLE diagnostics on stock three.js source, neither a wildcard. It
+  // is duplicated rather than shared because these runners are deliberately
+  // standalone, so the rule is to keep them IN SYNC: X4000 was added to
+  // run.mjs by the post-stack lane and not here, and this runner then failed
+  // every build the moment FXAA shipped.
   else if (m.type() === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())
-           && !/warning X4122/.test(m.text())) note(`console.warn: ${m.text()}`);
+           && !/warning X4122/.test(m.text())
+           && !/warning X4000: use of potentially uninitialized variable \(f_ApplyFXAA\)/
+             .test(m.text())) note(`console.warn: ${m.text()}`);
 });
 page.on('pageerror', (e) => note(`pageerror: ${e.message}`));
 page.on('requestfailed', (r) => note(`requestfailed: ${r.url()}`));
@@ -124,6 +132,15 @@ try {
   check('the player is NOT left strapped into a vessel that does not exist',
         !(after.aboard === true && after.flightLive === false),
         `aboard ${after.aboard}, live ${after.flightLive}`);
+  // DW-36/DW-17: what the player EXPLORED has to come back, and the in-page
+  // round trip cannot see this. `of.save()`/`of.load()` inside one page passes
+  // even when the boot order loses the field, because by then the field exists.
+  // Only a real reload asks the question, so only this runner can assert it.
+  // -1 is /core REFUSING the stream and 0 is a slot that carried none; both are
+  // the defect, so the bar is a positive count.
+  check('the discovered world came back',
+        (after.persist?.restored?.discovery ?? -1) > 0,
+        `${after.persist?.restored?.discovery}`);
 
   console.log(JSON.stringify({ phase, before, after, fails }, null, 2));
 } catch (e) {
