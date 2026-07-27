@@ -15,7 +15,7 @@ import { clearEdits } from '../game/VoxelSave.js';
 import { showGoals } from '../game/Objectives.js';
 import { isPart } from '../game/Hotbar.js';
 import { snapToGround } from '../game/Grid.js';
-import { STRUCTURE_STEP_UP_M } from '../player/VoxelCollision.js';
+import { STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M } from '../player/VoxelCollision.js';
 import { StandTrace } from '../player/StandTrace.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
@@ -192,6 +192,12 @@ export function gameplayApi(s: Services, loop: Loop) {
      *  player onto their own foundation still clears the shipped deck rather
      *  than reciting 0.55 back at itself. */
     stepUpM: STRUCTURE_STEP_UP_M,
+
+    /** The VOXEL step ladder, deliberately a second name for a second ladder
+     *  (see VoxelCollision.ts). A probe bounding the lift a tunnel floor query
+     *  is allowed to apply reads its first rung from here rather than reciting
+     *  0.55, so retuning the walker retunes the assertion with it. */
+    voxelStepUpM: VOXEL_STEP_UP_M,
 
     stand(on?: boolean) {
       const b = s.player?.body;

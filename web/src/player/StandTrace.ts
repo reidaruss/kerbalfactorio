@@ -31,6 +31,36 @@ export interface StandSample {
   onDeck: boolean;
   grounded: boolean;
   blockedByBuild: boolean;
+
+  // --- THE SECOND OSCILLATION, IN A TUNNEL (WG-31) -------------------------
+  // GP-53 fixed the structural half of this and the same shape survived in the
+  // voxel half, where the columns above cannot see it: `terrainR` is one number
+  // whether it came from `surfaceRadius` or from `VoxelCollider.floorBelow`,
+  // and only the second one was clamped to the querier. So the three fields
+  // below say WHICH floor answered and WHAT corrected it afterwards.
+  //
+  // A floor query that ratifies is invisible in `groundR` alone, because a
+  // ratified answer and a correct answer are both "the ground the snap used".
+  // It becomes visible the moment `preSnapR` is beside it: a floor equal to the
+  // radius the walker arrived at IS the walker's own position handed back.
+
+  /** True while the feet rest on a VOXEL floor below the heightfield surface,
+   *  i.e. `terrainR` came from `floorBelow` and not from `surfaceRadius`. */
+  underRock: boolean;
+  /**
+   * The radius the walker ARRIVED at this tick, after gravity, the step
+   * resolution and the structural resolution, and before the ground snap.
+   *
+   * `terrainR - preSnapR` is the ratification test, and it needs no threshold:
+   * a floor that is a property of the world does not move when the querier
+   * does, so this difference is a constant only when the query is honest.
+   */
+  preSnapR: number;
+  /** Metres `resolveEmbedded` pushed the capsule out of solid rock, AFTER the
+   *  snap. This is the correcting authority, and the snap-up the player sees. */
+  pushM: number;
+  /** The RADIAL component of that push, signed. Positive is the lift. */
+  pushUpM: number;
 }
 
 /**

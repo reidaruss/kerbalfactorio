@@ -33,8 +33,35 @@ import type { Vec3d } from '../world/PlanetBody.js';
  * and a full swept capsule is not affordable in-frame (DW-12: no physics engine).
  */
 export const CAPSULE_SAMPLES_M = [0.15, 0.9, 1.65];
-/** Ledge heights a blocked step retries at, metres. A voxel is 1 m. */
-const STEP_UP_M = [0.55, 1.1];
+/**
+ * Ledge heights a blocked step retries at, metres. A voxel is 1 m.
+ *
+ * Exported since WG-31 because `floorBelow`'s rise allowance is read from the
+ * FIRST rung of this ladder, exactly as the structural port reads its own
+ * (GP-53), and because a probe asserting "no lift exceeds a step" has to be
+ * able to ask the walker what a step is rather than reciting 0.55 back at it.
+ */
+export const VOXEL_STEP_UP_M: readonly number[] = [0.55, 1.1];
+const STEP_UP_M = VOXEL_STEP_UP_M;
+/**
+ * The radial grid the floor march samples on, metres, and the number of
+ * bisection halvings that follow it.
+ *
+ * 0.25 m is a quarter of a cell, so no rock slab a dig can leave is stepped
+ * over, and it is a MARCH resolution rather than an ANSWER resolution: the
+ * bisection below turns whichever bracket it lands in into the crossing itself,
+ * so this number does not appear in the result.
+ *
+ * 30 halvings take a 0.25 m bracket to 2.3e-10 m, which is BELOW the f64
+ * spacing at Forge's 604 km standing radius (1.2e-10 m). That is deliberate and
+ * it is not precision for its own sake: it makes the answer independent of the
+ * bracket the march happened to land in, so a querier who has moved a
+ * millimetre gets the identical bits rather than an answer that follows them by
+ * 1e-7 m. The whole claim of this function is that the floor does not move when
+ * the player does, and "does not move" should mean it.
+ */
+const FLOOR_MARCH_M = 0.25;
+const FLOOR_BISECT_ITERS = 30;
 
 export interface StepResult { x: number; y: number; z: number; blocked: boolean }
 
@@ -238,29 +265,116 @@ export class VoxelCollider {
   }
 
   /**
-   * The radius of the first SOLID cell below `r` along the radial, or null if
-   * there is none within `searchM` (an open shaft, so the player falls). Marched
-   * at 0.1 m, an order finer than the 1 m cell, so the landing radius is
-   * accurate to a tenth of a voxel without a per-cell plane intersection.
+   * THE VOXEL FLOOR (WG-31). The radius of the highest air-to-rock crossing of
+   * the signed field along this radial within `[r - searchM, r + riseM]`, or
+   * null when the column has none.
    *
-   * NEVER above `r`. The capsule is `free` when three samples at 0.15, 0.9 and
-   * 1.65 m are clear, and none of them is at the feet, so a position with the
-   * feet a few centimetres inside rock passes. The march then found solid at
-   * d = 0 and returned `r + 0.1`, which is not a floor at all: it is one march
-   * step of pure lift, and the caller reads any ground above the feet as a
-   * landing. Held against a vertical rock face it ratchets, 0.1 m every tick,
-   * 6 m/s straight up. Driven: the walker climbed 12 m out of the 10.4 m shaft
-   * it had just dug, at a dead-constant 0.097 m per tick (0.1 less one tick of
-   * gravity), which is what a hard-coded step looks like in a trace and is why
-   * it read as a walkable ramp. An embedded capsule is `resolveEmbedded`'s job,
-   * and its minimum translation out of a wall is horizontal: back out, not up.
+   * IT IS A PROPERTY OF THE FIELD AND NOT OF `r`. That sentence is the fix.
+   * This function used to end `return Math.min(r, rr + 0.1)`, which is GP-53's
+   * defect in a second code path: with the first solid sample within one march
+   * step of the feet, or with the feet inside rock at all, the clamp handed back
+   * `r` itself. Measured, player stationary and grounded on a tunnel floor at
+   * 0.00 m/s: the query returned the querier's own pre-snap radius on 330 of 330
+   * ticks, so the ground snap ratified each tick of gravity instead of
+   * correcting it, the feet drifted 0.032557 m in five and a half seconds and
+   * sat 0.150167 to 0.182724 m BELOW the world's own floor with nothing ever
+   * putting them back. The only authority that ever did put them back was
+   * `resolveEmbedded`, which cannot fire until the sink has buried the capsule's
+   * lowest sample 0.15 m up, and that delay is the period of the sawtooth the
+   * player sees as snapping up every few seconds.
+   *
+   * The general form, from GP-53 and now twice: a floor query that clamps its
+   * answer to the querier's position ratifies the querier's error, and gravity
+   * supplies a fresh error every tick.
+   *
+   * THREE STEPS, NO CLAMP.
+   *  1. Find the highest AIR at or above the feet within `riseM`. A floor needs
+   *     air over it, so this is what stops a low ceiling being read as one, and
+   *     it is what makes the answer able to sit ABOVE the feet: a floor you have
+   *     sunk into is still the floor, and seating on it is a correction rather
+   *     than a lift. `riseM` is the caller's own first step rung, so a lift here
+   *     can never exceed a step the walker would have taken anyway.
+   *  2. March DOWN from that air on an absolute radial grid for the first rock.
+   *  3. Bisect that one bracket. `solidAt` is the sign of the trilinear density
+   *     (WG-24), so this converges on the same iso-surface surface nets meshed;
+   *     the old march assumed cell-quantised geometry and could only ever land
+   *     on a multiple of its own step.
+   *
+   * NULL WHEN THE FEET ARE BURIED past `riseM` with rock all the way up. That
+   * is not a floor question, it is an embedded capsule, and `resolveEmbedded`
+   * owns it: answering anything at all here is exactly what ratified the sink.
+   * Null is also the open shaft, where the caller falls, which is the property
+   * that keeps the correction honest in the other direction.
+   *
+   * The grid is ABSOLUTE (`floor(rr / FLOOR_MARCH_M)`) rather than an offset
+   * from the feet so that a stationary querier lands in the identical bracket
+   * every tick and the bisection returns bit-identical numbers. A grid relative
+   * to `r` would leave the floor following the feet by 1e-8 m instead of by
+   * 0.18 m, and "nothing" is the answer this is supposed to give.
    */
-  floorBelow(r: number, ux: number, uy: number, uz: number, searchM: number): number | null {
-    for (let d = 0; d <= searchM; d += 0.1) {
-      const rr = r - d;
-      this.calls++;
-      if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return Math.min(r, rr + 0.1);
+  floorBelow(r: number, ux: number, uy: number, uz: number,
+    searchM: number, riseM: number): number | null {
+    // THE OLD ANSWER, KEPT SO THE ASSERTION CAN BE SEEN TO FAIL. Standing rule
+    // 11: an assertion that has never failed is not yet an assertion, and the
+    // only way to demonstrate that `probes/tunnelsink.js` catches this class is
+    // to run the identical probe against the query that had it. Off unless a
+    // probe sets the global, tested once per TICK rather than per sample, and
+    // deliberately the whole old body rather than a tuning knob: a switch that
+    // selects between two behaviours is a second definition, and this one is
+    // allowed to exist only because it is the discarded one.
+    if ((globalThis as unknown as { __ofOldFloor?: boolean }).__ofOldFloor === true) {
+      for (let d = 0; d <= searchM; d += 0.1) {
+        const rr = r - d;
+        this.calls++;
+        if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return Math.min(r, rr + 0.1);
+      }
+      return null;
     }
-    return null;
+    const at = (rr: number): boolean => {
+      this.calls++;
+      return this.oracle.solidAt(ux * rr, uy * rr, uz * rr);
+    };
+    const h = FLOOR_MARCH_M;
+    // `lo` ends the search inside rock and `hi` in air, always in that order,
+    // and the bisection between them is the crossing.
+    let lo = Number.NaN, hi = Number.NaN;
+
+    if (at(r)) {
+      // THE FEET ARE INSIDE ROCK. Look UP for the top of the slab they are in,
+      // and only as far as one step. This is the ONLY case that may answer
+      // above the feet, and that restriction is the whole of it: a first draft
+      // looked up unconditionally, found rock ABOVE feet that were standing in
+      // air, and read a ceiling fragment as a floor. Driven, it walked the
+      // player 8 m up and out of their own bore over 14 strikes, which is the
+      // 0.1 m ratchet this function's history already contains, rebuilt.
+      lo = r;
+      for (let rr = Math.ceil(r / h) * h; rr <= r + riseM + 1e-12; rr += h) {
+        if (!at(rr)) { hi = rr; break; }
+        lo = rr;
+      }
+      // Buried deeper than a step with rock all the way up. Not a floor
+      // question: an embedded capsule, which `resolveEmbedded` owns. Answering
+      // ANYTHING here is what ratified the sink.
+      if (!Number.isFinite(hi)) return null;
+    } else {
+      // THE FEET ARE IN AIR. The floor is strictly below them, full stop.
+      hi = r;
+      for (let rr = Math.floor(r / h) * h; rr >= r - searchM; rr -= h) {
+        if (at(rr)) { lo = rr; break; }
+        hi = rr;
+      }
+      if (!Number.isFinite(lo)) return null;  // an open shaft, so fall
+    }
+
+    // The crossing itself. `hi` is returned because the feet stand on the air
+    // side of the boundary. Enough halvings to take a 0.25 m bracket below the
+    // f64 spacing at a 600 km radius (1.2e-10 m), so the answer is the same
+    // bits from any starting bracket that contains it: the floor a stationary
+    // player stands on is then not merely stable, it is one number.
+    for (let i = 0; i < FLOOR_BISECT_ITERS; ++i) {
+      const m = (lo + hi) * 0.5;
+      if (at(m)) lo = m; else hi = m;
+    }
+    return hi;
   }
 }
