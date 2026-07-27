@@ -122,14 +122,56 @@ inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
   return h;
 }
 
+// WG-25 re-baselined this reference COMPOSITION to the current noise stack. What
+// the benchmark proves is unchanged and is worth restating, because it is easy to
+// re-baseline the wrong half: `ref::valueNoise` above is still the ORIGINAL eight
+// independent hash chains, so the comparison still measures exactly the WG-16
+// shared-prefix hoist. Only the stack the hoist is exercised through moved.
+inline double smoothstep(double e0, double e1, double x) {
+  if (!(e1 > e0)) return x < e0 ? 0.0 : 1.0;
+  double t = (x - e0) / (e1 - e0);
+  if (t <= 0.0) return 0.0;
+  if (t >= 1.0) return 1.0;
+  return t * t * (3.0 - 2.0 * t);
+}
+
+inline double ridgedMF(uint64_t seed, const Vec3& dir, double freq, int octaves,
+                       uint64_t channel, double lacunarity, double gain,
+                       double weightGain) {
+  double sum = 0.0, norm = 0.0, amp = 1.0, f = freq, weight = 1.0;
+  for (int o = 0; o < octaves; ++o) {
+    double n =
+        valueNoise(seed, dir * f, channel + static_cast<uint64_t>(o) + 777u);
+    n = 1.0 - std::fabs(n);
+    n *= n;
+    n *= weight;
+    weight = n * weightGain;
+    if (weight > 1.0) weight = 1.0;
+    sum += amp * n;
+    norm += amp;
+    f *= lacunarity;
+    amp *= gain;
+  }
+  return (norm > 0.0) ? (sum / norm) : 0.0;
+}
+
+inline Vec3 domainWarp(uint64_t seed, const Vec3& dir, double freq, double amp,
+                       uint64_t channel) {
+  const Vec3 p = dir * freq;
+  return Vec3(dir.x + amp * valueNoise(seed, p, channel),
+              dir.y + amp * valueNoise(seed, p, channel + 1u),
+              dir.z + amp * valueNoise(seed, p, channel + 2u));
+}
+
+
 inline double sampleHeightFieldPlanetRef(const BodyParams& body, const Vec3& dir) {
   const double L0 = fbm(body.bodySeed, dir, 2.5, 4, 11);
-  const double mask = std::max(0.0, L0);
-  const double L1 = ridged(body.bodySeed, dir, 20.0, 4, 23);
-  const double L2 = fbm(body.bodySeed, dir, 80.0, 3, 37);
-  double h = L0 * 0.6 + mask * L1 * 0.9 + L2 * 0.04;
+  const double uplift = smoothstep(0.10, 0.62, L0);
+  const Vec3 wd = domainWarp(body.bodySeed, dir, 3.0, 0.018, 0x57A1u);
+  const double L1 = ridgedMF(body.bodySeed, wd, 24.0, 9, 23, 2.0, 0.50, 2.0);
+  const double L2 = fbm(body.bodySeed, dir, 2500.0, 3, 37);
+  double h = L0 * 0.58 + uplift * L1 * 0.52 + L2 * 0.0021;
   h *= body.maxReliefM;
-  if (h < body.seaLevelM) h = body.seaLevelM;
   return h;
 }
 inline double sampleHeightFieldMoonRef(const BodyParams& body, const Vec3& dir) {

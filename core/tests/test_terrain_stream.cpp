@@ -395,14 +395,35 @@ inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
   }
   return h;
 }
+// WG-25 re-baseline: the PLANET composition below tracks the current
+// sampleHeightFieldPlanet. What this oracle exists to prove is unchanged, 
+// orig::valueNoise above is still the NAIVE eight-independent-corner-chains
+// version, so the test still asserts that cubed_sphere.h's shared-prefix hoist
+// is bit-exact. Only the stack it is exercised through moved. `ridged` above is
+// retained (unused by the planet path now) as the oracle for of::ridged.
+inline double ridgedMF(uint64_t s, const Vec3& d, double fr, int oc, uint64_t ch,
+                       double lac, double gain, double wg) {
+  double sum=0, norm=0, amp=1.0, f=fr, weight=1.0;
+  for (int o=0;o<oc;++o){ double n=valueNoise(s, d*f, ch+(uint64_t)o+777u);
+    n=1.0-std::fabs(n); n*=n; n*=weight; weight=n*wg; if(weight>1.0) weight=1.0;
+    sum+=amp*n; norm+=amp; f*=lac; amp*=gain; }
+  return norm>0.0 ? sum/norm : 0.0;
+}
+inline Vec3 domainWarp(uint64_t s, const Vec3& d, double fr, double amp,
+                       uint64_t ch) {
+  const Vec3 p = d*fr;
+  return Vec3(d.x+amp*valueNoise(s,p,ch), d.y+amp*valueNoise(s,p,ch+1u),
+              d.z+amp*valueNoise(s,p,ch+2u));
+}
 inline double sampleHeightField(const BodyParams& b, const Vec3& dir) {
   if (b.kind==kPlanet) {
     const double L0=fbm(b.bodySeed,dir,2.5,4,11);
-    const double mask=std::max(0.0,L0);
-    const double L1=ridged(b.bodySeed,dir,20.0,4,23);
-    const double L2=fbm(b.bodySeed,dir,80.0,3,37);
-    double h=L0*0.6+mask*L1*0.9+L2*0.04; h*=b.maxReliefM;
-    if (h<b.seaLevelM) h=b.seaLevelM; return h;
+    const double uplift=of::worldgen::smoothstep(0.10,0.62,L0);
+    const Vec3 wd=domainWarp(b.bodySeed,dir,3.0,0.018,0x57A1u);
+    const double L1=ridgedMF(b.bodySeed,wd,24.0,9,23,2.0,0.50,2.0);
+    const double L2=fbm(b.bodySeed,dir,2500.0,3,37);
+    double h=L0*0.58+uplift*L1*0.52+L2*0.0021; h*=b.maxReliefM;
+    return h;
   } else {
     const double M0=fbm(b.bodySeed,dir,3.0,3,41);
     const double M1=craterField(b.bodySeed,dir,9.0);

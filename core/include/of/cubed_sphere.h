@@ -41,6 +41,21 @@
 namespace of {
 namespace worldgen {
 
+// -----------------------------------------------------------------------------
+// OPT-IN noise-call instrumentation (terrain_probe / procgen_bench only).
+// Compiled entirely OUT unless the TU defines OF_NOISE_COUNT=1 before including
+// this header, so the shipped hot path is byte-for-byte the code it always was.
+// -----------------------------------------------------------------------------
+#ifndef OF_NOISE_COUNT
+#define OF_NOISE_COUNT 0
+#endif
+#if OF_NOISE_COUNT
+inline uint64_t& noiseCalls() { static uint64_t n = 0; return n; }
+#define OF_COUNT_NOISE() (++::of::worldgen::noiseCalls())
+#else
+#define OF_COUNT_NOISE() ((void)0)
+#endif
+
 // =============================================================================
 // §0 — Deterministic position hash (the determinism substrate, WG-6).
 //
@@ -252,6 +267,27 @@ struct BodyParams {
   // read bodySeed / radiusM / maxReliefM / seaLevelM only, so this field cannot
   // move a vertex and no terrain baseline changes with it.
   double muM3S2 = 0.0;
+
+  // --- WG-26: the HOME FLAT PAD (the level starting area) --------------------
+  // A body may declare ONE flat landing/base pad, dead level inside
+  // homeFlatRadiusM and smoothly blended back to the natural surface by
+  // homeBlendRadiusM. It is applied inside biome.h's sampleDesignedHeight, the
+  // single surface authority (standing rule 1), so the mesh, collision, the
+  // walker, voxel solidity, deposit snapping and build placement ALL get it with
+  // no special case anywhere.
+  //
+  // homeFlatRadiusM <= 0 disables the pad, and outside homeBlendRadiusM the
+  // designed height is BIT-IDENTICAL to the un-padded field, so 99.999% of the
+  // planet is untouched by this feature (proved in test_biome.cpp).
+  //
+  // homeDir is a LITERAL unit vector, never computed with trig at runtime: DW-14
+  // says cos/sin can differ by 1 ULP between mingw libm and emscripten musl, and
+  // because height is position-hashed from raw bits a 1-ULP difference in the pad
+  // centre would hash to an unrelated height. test_biome.cpp pins the literal
+  // against latLonToDir to 1e-12.
+  Vec3 homeDir{0.0, 0.0, 0.0};
+  double homeFlatRadiusM = 0.0;   // dead flat within this arc distance (m)
+  double homeBlendRadiusM = 0.0;  // pad effect reaches exactly zero here (m)
 };
 
 // Spike §5.1 — planet "Forge".
@@ -267,6 +303,20 @@ inline BodyParams makeForge(uint64_t worldSeed) {
   // MUST equal of::orbital::kForgeMu; world_gen_tests pins the two together so
   // the walker and the propagator can never disagree about the same planet.
   b.muM3S2 = 9.81 * 6.0e5 * 6.0e5;
+  // WG-26: the home flat pad at lat 2 deg, lon 144 deg (the scenario spawn).
+  // LITERAL doubles, never latLonToDir at runtime: DW-14 says cos/sin can differ
+  // by 1 ULP between mingw libm and emscripten musl, and since height is
+  // position-hashed from raw bits, a 1-ULP difference in this vector would hash
+  // the pad to an entirely unrelated height on the other toolchain. These are
+  // the exact bits latLonToDir(2*pi/180, 144*pi/180) produces; test_biome.cpp
+  // pins them against it to 1e-12.
+  b.homeDir = Vec3(-0.80852416308088182, 0.034899496702500969,
+                   0.58742718939820271);
+  // 300 m of dead-level ground to start a base on, blended back to the natural
+  // surface by 600 m. Measured: the blend adds ~1 percentage point of grade over
+  // the natural slope of the same ground, so it does not read as a cut disc.
+  b.homeFlatRadiusM = 150.0;
+  b.homeBlendRadiusM = 600.0;
   return b;
 }
 
@@ -299,6 +349,17 @@ inline double fade(double t) {  // quintic smoothstep (C2)
 }
 inline double lerp(double a, double b, double t) { return a + (b - a) * t; }
 
+// C1 smoothstep, 0 at/below e0 and 1 at/above e1. Used everywhere a threshold
+// would otherwise put a STEP in the height field. Multiply/add only, no trig,
+// no pow: so it is bit-portable across mingw libm and emscripten musl (DW-14).
+inline double smoothstep(double e0, double e1, double x) {
+  if (!(e1 > e0)) return x < e0 ? 0.0 : 1.0;
+  double t = (x - e0) / (e1 - e0);
+  if (t <= 0.0) return 0.0;
+  if (t >= 1.0) return 1.0;
+  return t * t * (3.0 - 2.0 * t);
+}
+
 // 3D value noise on a lattice of the scaled direction. Position-hashed corners.
 //
 // HOT-PATH OPTIMIZATION (bit-identical): the original computed the full 4-step
@@ -312,6 +373,7 @@ inline double lerp(double a, double b, double t) { return a + (b - a) * t; }
 // => identical bits, but ~ half the mix64/hashCombine calls per valueNoise(). The
 // integer-cast operands are also hoisted (ix..iz+1 computed once each).
 inline double valueNoise(uint64_t seed, const Vec3& p, uint64_t channel) {
+  OF_COUNT_NOISE();
   const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
   const int ix = static_cast<int>(fx), iy = static_cast<int>(fy),
             iz = static_cast<int>(fz);
@@ -378,6 +440,57 @@ inline double ridged(uint64_t seed, const Vec3& dir, double freq, int octaves,
   return sum;
 }
 
+// -----------------------------------------------------------------------------
+// Ridged MULTIFRACTAL (Musgrave), normalized to ~[0,1]. WG-25.
+//
+// Why this and not `ridged()` above: `ridged` starts at amp 0.5 and halves, so
+// its FIRST octave carries half the total amplitude. At the frequency it was
+// called with (20 on a 600 km body) that first octave has a 30 km lattice cell,
+// which is why a "mountain" was a 30 km-wide dome and read as a rounded lump at
+// human scale. Here the caller picks lacunarity/gain explicitly and the octave
+// span is wide enough to carry ridges from tens of kilometres down to hundreds
+// of metres.
+//
+// The `weight` term is the cheap erosion analogue: an octave's detail is
+// multiplied by the PREVIOUS octave's value, so fine roughness accumulates on
+// the ridges and the valley floors stay smooth: the sediment-filled-valley,
+// rocky-crest look, with no derivative evaluation. `n *= n` keeps the crest a
+// sharp V (the 1-|n| tent's slope discontinuity survives the squaring) while
+// flattening the valley floor.
+//
+// Multiply/add/fabs only: no pow, no trig (DW-14).
+inline double ridgedMF(uint64_t seed, const Vec3& dir, double freq, int octaves,
+                       uint64_t channel, double lacunarity, double gain,
+                       double weightGain) {
+  double sum = 0.0, norm = 0.0, amp = 1.0, f = freq, weight = 1.0;
+  for (int o = 0; o < octaves; ++o) {
+    double n =
+        valueNoise(seed, dir * f, channel + static_cast<uint64_t>(o) + 777u);
+    n = 1.0 - std::fabs(n);
+    n *= n;
+    n *= weight;
+    weight = n * weightGain;
+    if (weight > 1.0) weight = 1.0;
+    sum += amp * n;
+    norm += amp;
+    f *= lacunarity;
+    amp *= gain;
+  }
+  return (norm > 0.0) ? (sum / norm) : 0.0;
+}
+
+// Domain warp: displace the sample position by a low-frequency noise VECTOR.
+// The standard cure for "every ridge looks like every other ridge", it bends
+// and braids the ranges instead of leaving them axis-aligned and self-similar.
+// Three noise calls at ONE low frequency, so it is cheap (WG-25).
+inline Vec3 domainWarp(uint64_t seed, const Vec3& dir, double freq, double amp,
+                       uint64_t channel) {
+  const Vec3 p = dir * freq;
+  return Vec3(dir.x + amp * valueNoise(seed, p, channel),
+              dir.y + amp * valueNoise(seed, p, channel + 1u),
+              dir.z + amp * valueNoise(seed, p, channel + 2u));
+}
+
 // Hashed-grid crater field (moon signature, spike §2.2). Hash cells on the
 // scaled direction; one candidate crater per cell; accumulate nearest profiles.
 // Position-hashed so craters are identical across runs / LOD.
@@ -426,15 +539,62 @@ inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
 // because the sampler operates directly on the dir vector (not on face/uv),
 // callers that already pass a canonical lattice dir get identical results.
 // =============================================================================
+// -----------------------------------------------------------------------------
+// WG-25: the planet noise stack.
+//
+// WAVELENGTHS. `dir` is a unit vector, so `dir * f` puts one noise lattice cell
+// every 1/f radians, i.e. every radiusM/f metres of ARC. On Forge (R = 600 km)
+// frequency f therefore has a feature size of 600000/f metres. That one line is
+// the whole diagnosis of the old stack: its highest frequency was 320 (fbm 80,
+// 3 octaves), a 1.9 km feature at roughly 30 m of amplitude. Below ~2 km the old
+// field had NO content whatsoever, so at the player's 1.8 m terrain LOD the
+// ground was an exact plane and a "mountain" was a 30 km dome, a 3% grade,
+// which is why they read as rounded lumps rather than mountains.
+//
+// The stack below spans 240 km down to 60 m:
+//   warp   f=3.0            200 km        domain warp vector  (3 calls)
+//   L0     f=2.5 .. 20      240..30 km    continents          (4 calls)
+//   L1     f=24 .. 6144      25 km..98 m  ridged massifs      (9 calls)
+//   L2     f=2500 .. 10000  240..60 m     ground detail       (3 calls)
+// 19 valueNoise calls against the old 11. That is under 2x on the RAW sampler,
+// and biome.h's sampleDesignedHeight, the surface everything actually consumes
+//: gets FASTER, because it used to evaluate this field three times per vertex.
+//
+// AMPLITUDE CALIBRATION. For an fBm-like stack with lacunarity 2 and gain 0.5,
+// every octave contributes the SAME local grade, so the RMS grade of a layer is
+// about sqrt(octaves) * A * f0 / radiusM, where A is the layer's total metre
+// amplitude and f0 its base frequency. That closed form is how the numbers below
+// were chosen rather than guessed: L1 lands near 40% grade in a full massif
+// (a real 22-degree mountainside) and L2 near 8% underfoot.
+//
+// The sea-level CLAMP is gone. It forced every ocean pixel to exactly the datum,
+// which meant biome.h had to invent a basin depth out of a separate fBm, which
+// in turn put a ~1.2 km VERTICAL WALL on every coastline. Letting the field go
+// negative on its own gives a continuous shore and costs nothing.
 inline double sampleHeightFieldPlanet(const BodyParams& body, const Vec3& dir) {
-  // L0 continents (low freq fBm), L1 ridged mountains (masked), L2 detail.
-  const double L0 = fbm(body.bodySeed, dir, 2.5, 4, 11);            // continents
-  const double mask = std::max(0.0, L0);                            // land mask
-  const double L1 = ridged(body.bodySeed, dir, 20.0, 4, 23);       // mountains
-  const double L2 = fbm(body.bodySeed, dir, 80.0, 3, 37);          // detail
-  double h = L0 * 0.6 + mask * L1 * 0.9 + L2 * 0.04;
+  // L0: continents. Unchanged frequency/octaves: the landmass layout is the one
+  // part of the old field that was doing its job.
+  const double L0 = fbm(body.bodySeed, dir, 2.5, 4, 11);
+  // OROGENY MASK: where mountains are allowed to grow. The old `max(0, L0)`
+  // put a slope KINK exactly on the shoreline; a smoothstep over a WIDE band of
+  // L0 does two jobs instead: it removes the kink, and it confines the massifs
+  // to high continental interiors so coasts get plains and the planet does not
+  // come out 100% mountain range.
+  const double uplift = smoothstep(0.10, 0.62, L0);
+  // L1: domain-warped ridged massifs. The warp amplitude (0.018 rad ~ 10.8 km)
+  // is deliberately just under one L1 lattice cell: enough to bend and braid the
+  // ranges, not so much that it dissolves them.
+  const Vec3 wd = domainWarp(body.bodySeed, dir, 3.0, 0.018, 0x57A1u);
+  const double L1 = ridgedMF(body.bodySeed, wd, 24.0, 9, 23,
+                             /*lacunarity*/ 2.0, /*gain*/ 0.50,
+                             /*weightGain*/ 2.0);
+  // L2: ground detail. THE layer the player sees underfoot; the old stack had
+  // nothing at all in this band. Small in absolute metres (about 12 m across the
+  // whole layer) but its top wavelength is 300 m, so it reads as an ~8% local
+  // grade: rough natural ground rather than a polished plane.
+  const double L2 = fbm(body.bodySeed, dir, 2500.0, 3, 37);
+  double h = L0 * 0.58 + uplift * L1 * 0.52 + L2 * 0.0021;
   h *= body.maxReliefM;
-  if (h < body.seaLevelM) h = body.seaLevelM;  // flat ocean placeholder
   return h;
 }
 

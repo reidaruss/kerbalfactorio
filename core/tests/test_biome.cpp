@@ -28,6 +28,35 @@ static uint64_t asBits(double d) {
   uint64_t u; std::memcpy(&u, &d, sizeof(u)); return u;
 }
 
+// --- local tangent-plane helpers (WG-26 / WG-25 tests) -----------------------
+// A unit dir offset by (dx, dy) metres along the surface. Gnomonic, so the arc
+// error is under 3 cm at 3 km on a 600 km body: far below anything asserted.
+struct TFrame { Vec3 c, east, north; };
+static TFrame tframe(const Vec3& c) {
+  Vec3 up(0, 1, 0);
+  if (std::fabs(c.y) > 0.99) up = Vec3(1, 0, 0);
+  Vec3 e(up.y * c.z - up.z * c.y, up.z * c.x - up.x * c.z,
+         up.x * c.y - up.y * c.x);
+  e = e * (1.0 / e.length());
+  Vec3 n(c.y * e.z - c.z * e.y, c.z * e.x - c.x * e.z, c.x * e.y - c.y * e.x);
+  return TFrame{c, e, n};
+}
+static Vec3 toff(const TFrame& f, double R, double dx, double dy) {
+  const double a = dx / R, b = dy / R;
+  Vec3 p(f.c.x + a * f.east.x + b * f.north.x,
+         f.c.y + a * f.east.y + b * f.north.y,
+         f.c.z + a * f.east.z + b * f.north.z);
+  return p * (1.0 / p.length());
+}
+// The SAME arc distance the pad itself measures: radiusM * chord.
+static double padDist(const BodyParams& b, const Vec3& d) {
+  const double dx = d.x - b.homeDir.x, dy = d.y - b.homeDir.y,
+               dz = d.z - b.homeDir.z;
+  return b.radiusM * std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+// The seed the terrain is tuned against (world-gen brief, 2026-07-25).
+static const uint64_t kTunedSeed = 0x0bf00d01ull;
+
 // =============================================================================
 // biomeAt is a PURE function of (body, dir): the same dir always classifies to
 // the same biome, regardless of call order. (WG-6 determinism discipline.)
@@ -154,6 +183,231 @@ TEST(designed_height_preserves_shared_edge_bit_identity) {
     ++compared;
   }
   CHECK(compared == ma.gridDim);
+}
+
+// =============================================================================
+// WG-26: THE HOME FLAT PAD.
+//
+// The pad lives inside sampleDesignedHeight, the single surface authority, so
+// the mesh, collision, the walker, voxel solidity, deposit snapping and build
+// placement all inherit it with no special case. These tests pin the four
+// properties that makes it safe to put there.
+// =============================================================================
+
+// The pad centre is a LITERAL Vec3, never latLonToDir at runtime (DW-14: cos/sin
+// can differ 1 ULP between mingw libm and emscripten musl, and height is
+// position-hashed from raw bits, so a 1-ULP difference would hash the pad to an
+// unrelated height). This pins the literal to the geodetic coordinate it claims.
+TEST(home_dir_literal_matches_lat2_lon144) {
+  const BodyParams forge = makeForge(kTunedSeed);
+  const double kPi = 3.14159265358979323846;
+  const Vec3 want = latLonToDir(2.0 * kPi / 180.0, 144.0 * kPi / 180.0);
+  CHECK(std::fabs(forge.homeDir.x - want.x) < 1e-12);
+  CHECK(std::fabs(forge.homeDir.y - want.y) < 1e-12);
+  CHECK(std::fabs(forge.homeDir.z - want.z) < 1e-12);
+  // And it is a unit vector, which the chord-distance maths assumes.
+  CHECK(std::fabs(forge.homeDir.length() - 1.0) < 1e-12);
+  // Cinder declares no pad, so its designed surface is untouched by WG-26.
+  const BodyParams cinder = makeCinder(kTunedSeed);
+  CHECK(cinder.homeFlatRadiusM == 0.0);
+}
+
+// Dead flat inside the flat radius: the worst height step over a 4 m span (the
+// DW-32 structural module, i.e. the span one foundation piece bridges) must be
+// under 0.05 m. It is in fact EXACTLY zero, smoothstep returns exactly 0.0
+// inside the flat radius and the blend is written pad-first, so every sample
+// returns the pad height's exact bits: so this asserts bit-equality, which is a
+// far stronger statement than the 0.05 m budget.
+TEST(home_pad_is_bit_exactly_flat_over_a_4m_span) {
+  const BodyParams forge = makeForge(kTunedSeed);
+  CHECK(forge.homeFlatRadiusM > 0.0);
+  const TFrame f = tframe(forge.homeDir);
+  const double padH = sampleDesignedHeight(forge, forge.homeDir);
+  const double lim = forge.homeFlatRadiusM * 0.97;  // margin for gnomonic error
+
+  double worst4 = 0.0;
+  int samples = 0;
+  for (double y = -lim; y <= lim; y += 2.0)
+    for (double x = -lim; x <= lim; x += 2.0) {
+      if (x * x + y * y > lim * lim) continue;
+      const Vec3 d = toff(f, forge.radiusM, x, y);
+      CHECK(padDist(forge, d) <= forge.homeFlatRadiusM);
+      const double h = sampleDesignedHeight(forge, d);
+      CHECK(asBits(h) == asBits(padH));            // bit-exactly level
+      ++samples;
+      // Every 4 m neighbour (axial and diagonal) inside the pad.
+      const double o[4][2] = {{4, 0}, {0, 4}, {2.8284271, 2.8284271},
+                              {2.8284271, -2.8284271}};
+      for (const auto& n : o) {
+        const double nx = x + n[0], ny = y + n[1];
+        if (nx * nx + ny * ny > lim * lim) continue;
+        const double hn =
+            sampleDesignedHeight(forge, toff(f, forge.radiusM, nx, ny));
+        const double step = std::fabs(hn - h);
+        if (step > worst4) worst4 = step;
+      }
+    }
+  CHECK(samples > 5000);      // the pad really was swept, not skipped
+  CHECK(worst4 < 0.05);       // the stated budget
+  CHECK(worst4 == 0.0);       // and it is actually exact
+}
+
+// The blend is EXACTLY the smoothstep it claims: monotone, 1 inside the flat
+// radius, and reaching zero influence at the blend radius. Recovering the weight
+// from the three surfaces (padded, natural, pad height) means this pins the
+// observable shape rather than re-stating the implementation.
+TEST(home_pad_blend_is_monotone_and_reaches_zero) {
+  const BodyParams forge = makeForge(kTunedSeed);
+  const TFrame f = tframe(forge.homeDir);
+  const double padH = designedHeightNoPad(forge, forge.homeDir);
+  int checked = 0;
+  for (int ray = 0; ray < 8; ++ray) {
+    const double th = ray * (3.14159265358979323846 / 4.0);
+    const double ca = std::cos(th), sa = std::sin(th);
+    double prevW = 2.0;
+    for (double r = 0.0; r <= forge.homeBlendRadiusM + 150.0; r += 5.0) {
+      const Vec3 d = toff(f, forge.radiusM, r * ca, r * sa);
+      const double nat = designedHeightNoPad(forge, d);
+      const double pad = sampleDesignedHeight(forge, d);
+      if (std::fabs(nat - padH) < 1.0) continue;   // weight not observable here
+      const double w = (pad - nat) / (padH - nat); // 1 = full pad, 0 = natural
+      const double dist = padDist(forge, d);
+      const double want =
+          1.0 - smoothstep(forge.homeFlatRadiusM, forge.homeBlendRadiusM, dist);
+      CHECK(std::fabs(w - want) < 1e-9);           // exactly the declared shape
+      CHECK(w <= prevW + 1e-9);                    // monotone non-increasing
+      if (dist <= forge.homeFlatRadiusM) CHECK(std::fabs(w - 1.0) < 1e-12);
+      if (dist >= forge.homeBlendRadiusM) CHECK(w == 0.0);
+      prevW = w;
+      ++checked;
+    }
+  }
+  CHECK(checked > 400);
+}
+
+// Outside the blend radius the pad contributes NOTHING, not "nothing to a
+// tolerance", the identical 64 bits. This is what keeps essentially the whole
+// planet unaffected by the feature, so adding a pad re-baselines nothing.
+TEST(outside_blend_radius_is_bit_identical_to_unpadded) {
+  const BodyParams forge = makeForge(kTunedSeed);
+  const TFrame f = tframe(forge.homeDir);
+  int compared = 0, inside = 0;
+
+  // A ring just outside the blend radius, where a sloppy implementation would
+  // leak a rounding residue.
+  for (int a = 0; a < 720; ++a) {
+    const double th = a * (3.14159265358979323846 / 360.0);
+    const double r = forge.homeBlendRadiusM + 1.0 + (a % 40);
+    const Vec3 d = toff(f, forge.radiusM, r * std::cos(th), r * std::sin(th));
+    CHECK(asBits(sampleDesignedHeight(forge, d)) ==
+          asBits(designedHeightNoPad(forge, d)));
+    ++compared;
+  }
+  // And the rest of the planet: every point outside the blend radius agrees
+  // bitwise, every point inside it is the only place the pad may differ.
+  for (int i = 0; i < 20000; ++i) {
+    const Vec3 d = fibonacciDir(i, 20000);
+    if (padDist(forge, d) < forge.homeBlendRadiusM) { ++inside; continue; }
+    CHECK(asBits(sampleDesignedHeight(forge, d)) ==
+          asBits(designedHeightNoPad(forge, d)));
+    ++compared;
+  }
+  CHECK(compared > 20000);
+  CHECK(inside == 0);   // a 600 m disc on a 600 km body: nothing else is touched
+}
+
+// =============================================================================
+// WG-25: the height field has REAL CONTENT at short wavelengths.
+//
+// The defect this pins against: the old stack's finest octave was frequency 320,
+// a 1.9 km lattice cell, so below ~2 km the field was an exact PLANE. It showed
+// up as a degenerate |dh| distribution: at 2 m spacing on a mountain the old
+// field gave p50 0.616 m, p90 0.624 m, max 0.630 m, a spread of 1.3%, which is
+// a plane with a constant tilt and nothing else. Real terrain has a wide spread.
+// =============================================================================
+TEST(mountain_terrain_has_short_wavelength_content) {
+  const BodyParams forge = makeForge(kTunedSeed);
+  // Highest-relief Mountains dir on a coarse global scan (deterministic).
+  Vec3 peak = forge.homeDir;
+  double best = -1e300;
+  for (int i = 0; i < 20000; ++i) {
+    const Vec3 d = fibonacciDir(i, 20000);
+    if (biomeAt(forge, d) != Biome::Mountains) continue;
+    const double h = designedHeightNoPad(forge, d);
+    if (h > best) { best = h; peak = d; }
+  }
+  CHECK(best > 0.0);
+
+  const TFrame f = tframe(peak);
+  auto spectrum = [&](double s, double& mean, double& p50, double& p90) {
+    std::vector<double> dh;
+    for (int j = 0; j < 100; ++j) {
+      double prev = designedHeightNoPad(forge, toff(f, forge.radiusM,
+                                                    -50.0 * s, (j - 50) * s));
+      for (int i = -49; i < 50; ++i) {
+        const double h = designedHeightNoPad(
+            forge, toff(f, forge.radiusM, i * s, (j - 50) * s));
+        dh.push_back(std::fabs(h - prev));
+        prev = h;
+      }
+    }
+    std::sort(dh.begin(), dh.end());
+    double sum = 0; for (double v : dh) sum += v;
+    mean = sum / dh.size();
+    p50 = dh[dh.size() / 2];
+    p90 = dh[(dh.size() * 9) / 10];
+  };
+
+  double mean100 = 0, p50_100 = 0, p90_100 = 0;
+  spectrum(100.0, mean100, p50_100, p90_100);
+  // Content at the 100 m wavelength. Measured 14.6 m mean at this seed's peak;
+  // the threshold is well below that but far above a plane's contribution.
+  CHECK(mean100 > 8.0);
+
+  double mean2 = 0, p50_2 = 0, p90_2 = 0;
+  spectrum(2.0, mean2, p50_2, p90_2);
+  // Content at the 2 m wavelength: the player's LOD. A PLANE gives p90/p50 == 1
+  // (the old field measured 1.013). Real content spreads the distribution;
+  // measured 1.99 here.
+  CHECK(p50_2 > 0.0);
+  CHECK(p90_2 / p50_2 > 1.5);
+}
+
+// =============================================================================
+// WG-25: the designed surface is CONTINUOUS: no biome-boundary cliffs.
+//
+// The old design layer switched its relief gain on the DISCRETE biome, which made
+// the shaped surface discontinuous at every biome edge. Measured on this seed,
+// two samples 100 m apart differed by 985 m vertically at the Hills/Mountains
+// threshold (2700 m of base relief read 3375 m as Hills, 4320 m as Mountains),
+// and every coastline carried a ~1.2 km wall. This pins the fix.
+// =============================================================================
+TEST(designed_surface_has_no_biome_boundary_cliffs) {
+  const BodyParams forge = makeForge(kTunedSeed);
+  double worst = 0.0;
+  int crossings = 0, samples = 0;
+  // Great-circle transects across the whole planet at 100 m sample spacing.
+  for (int t = 0; t < 24; ++t) {
+    const Vec3 c = fibonacciDir(t * 977, 24000);
+    const TFrame f = tframe(c);
+    double prev = designedHeightNoPad(forge, toff(f, forge.radiusM, -50000.0, 0));
+    Biome prevB = biomeAt(forge, toff(f, forge.radiusM, -50000.0, 0));
+    for (int i = -499; i <= 500; ++i) {
+      const Vec3 d = toff(f, forge.radiusM, i * 100.0, 0.0);
+      const double h = designedHeightNoPad(forge, d);
+      const Biome b = biomeAt(forge, d);
+      if (b != prevB) ++crossings;
+      const double step = std::fabs(h - prev);
+      if (step > worst) worst = step;
+      prev = h; prevB = b;
+      ++samples;
+    }
+  }
+  CHECK(samples > 20000);
+  CHECK(crossings > 50);   // the transects really do cross biome boundaries
+  // 300 m over 100 m of ground is a 71-degree slope: steep, but terrain. The old
+  // field produced 985 m here, which is a wall, not a slope.
+  CHECK(worst < 300.0);
 }
 
 // =============================================================================

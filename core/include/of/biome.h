@@ -74,26 +74,44 @@ enum class Biome : uint8_t {
 // position-hashed so they are deterministic and seam-consistent.
 // =============================================================================
 
+// Relief denominator, guarded. One place so every consumer agrees.
+inline double reliefDenom(const BodyParams& body) {
+  return (body.maxReliefM > 0.0) ? body.maxReliefM : 1.0;
+}
+
 // Normalised relief in [-1,1]-ish: relief / maxRelief (planet datum-relative).
 inline double normalizedRelief(const BodyParams& body, const Vec3& dir) {
-  const double h = sampleHeightField(body, dir);
-  const double denom = (body.maxReliefM > 0.0) ? body.maxReliefM : 1.0;
-  return h / denom;
+  return sampleHeightField(body, dir) / reliefDenom(body);
 }
 
 // Temperature in roughly [0,1]: 1 = hot (equator, low), 0 = cold (pole, high).
 // latitude gradient + altitude lapse + a position-hashed wobble.
-inline double temperatureAt(const BodyParams& body, const Vec3& dir) {
-  double lat, lon;
-  dirToLatLon(dir, lat, lon);
-  const double latFactor = std::cos(lat);            // 1 at equator, 0 at poles
-  const double alt = std::max(0.0, normalizedRelief(body, dir));  // altitude lapse
+//
+// The `H` form takes an ALREADY-SAMPLED raw height. Every caller on the designed
+// -height path has one in hand; the old signature re-entered the whole noise
+// stack to get it back, which is why sampleDesignedHeight was evaluating the
+// height field THREE times per vertex (WG-25).
+//
+// DW-14: cos(lat) is computed as sqrt(1 - dir.y^2), not cos(asin(dir.y)). dir.y
+// IS sin(lat) by construction, sqrt is correctly rounded on every IEEE-754
+// toolchain, and asin/cos are not, so this drops two libm calls from the hot
+// path AND removes a 1-ULP mingw-vs-musl divergence from the biome classifier.
+inline double temperatureAtH(const BodyParams& body, const Vec3& dir, double h) {
+  double y = dir.y;
+  if (y > 1.0) y = 1.0;
+  if (y < -1.0) y = -1.0;
+  const double latFactor = std::sqrt(1.0 - y * y);   // == cos(lat), exactly
+  const double alt = std::max(0.0, h / reliefDenom(body));  // altitude lapse
   // Position-hashed wobble (channel 0xC11A7E) so isotherms aren't perfect bands.
   const double wob = 0.12 * fbm(body.bodySeed, dir, 4.0, 3, 0xC11A7Eu);
   double t = 0.5 * latFactor + 0.5 * (1.0 - 0.6 * alt) + wob - 0.25;
   if (t < 0.0) t = 0.0;
   if (t > 1.0) t = 1.0;
   return t;
+}
+
+inline double temperatureAt(const BodyParams& body, const Vec3& dir) {
+  return temperatureAtH(body, dir, sampleHeightField(body, dir));
 }
 
 // Moisture in [0,1]: position-hashed fBm; biases Forest vs Plains.
@@ -109,43 +127,53 @@ inline double moistureAt(const BodyParams& body, const Vec3& dir) {
 // (from the canonical heightfield), and the position-hashed temperature/moisture
 // climate. Planet and moon use distinct rule sets (moon is airless).
 // =============================================================================
-inline Biome biomeAtPlanet(const BodyParams& body, const Vec3& dir) {
-  double lat, lon;
-  dirToLatLon(dir, lat, lon);
-  const double absLat = std::fabs(lat);
-  const double h = sampleHeightField(body, dir);
-  const double rel = h / (body.maxReliefM > 0.0 ? body.maxReliefM : 1.0);
-  const double temp = temperatureAt(body, dir);
-  const double moist = moistureAt(body, dir);
+// --- Classifier thresholds (normalised relief). Named so terrain tuning and the
+//     biome map can be reasoned about together. WG-25 retuned Mountains/Hills
+//     after the noise stack changed the relief distribution.
+static constexpr double kBeachBandRel = 0.010;   // above datum -> beach
+static constexpr double kHillsRel     = 0.150;   // above this -> Hills
+static constexpr double kMountainsRel = 0.330;   // above this -> Mountains
+// |sin(lat)| at lat = 1.30 rad (~74.5 deg), the polar-cap latitude. Held as
+// sin(lat) rather than lat so the test needs no asin on the hot path (DW-14).
+static constexpr double kPolarSinLat  = 0.9635581854171929;
 
-  // Sea level: below the datum is ocean. (sampleHeightFieldPlanet clamps at
-  // seaLevelM, so genuine ocean reads exactly at the datum — treat the low,
-  // flat near-datum band as ocean via a small relief threshold.)
-  const double seaRel = body.seaLevelM / (body.maxReliefM > 0.0 ? body.maxReliefM : 1.0);
-  const double beachBand = 0.01;  // ~1% of max relief above datum = beach
+inline Biome biomeAtPlanetH(const BodyParams& body, const Vec3& dir, double h) {
+  const double denom = reliefDenom(body);
+  const double rel = h / denom;
+  const double seaRel = body.seaLevelM / denom;
 
   // Polar caps: high latitude OR very cold high terrain -> snow/ice.
-  if (absLat > 1.30 /* ~74.5 deg */ || (temp < 0.18 && rel > seaRel)) {
+  // |dir.y| IS |sin(lat)|, so no asin is needed (DW-14).
+  if (std::fabs(dir.y) > kPolarSinLat ||
+      (rel > seaRel && temperatureAtH(body, dir, h) < 0.18)) {
     return Biome::Polar;
   }
-  // Ocean: at/below the relief datum (the flat clamp band).
+  // Ocean: at/below the relief datum. Since WG-25 the raw field is no longer
+  // clamped at the datum, so this is genuinely "below sea level", not "in the
+  // flat clamp band".
   if (rel <= seaRel) return Biome::Ocean;
-  // Beach: just above sea level.
-  if (rel <= seaRel + beachBand) return Biome::Beach;
-  // High relief -> mountains; moderate -> hills.
-  if (rel > 0.45) return Biome::Mountains;
-  if (rel > 0.18) return Biome::Hills;
-  // Low land: forest if moist, plains otherwise.
-  return (moist > 0.55) ? Biome::Forest : Biome::Plains;
+  if (rel <= seaRel + kBeachBandRel) return Biome::Beach;
+  if (rel > kMountainsRel) return Biome::Mountains;
+  if (rel > kHillsRel) return Biome::Hills;
+  // Low land: forest if moist, plains otherwise. Moisture is sampled ONLY here
+  // (4 valueNoise calls) instead of unconditionally, same value, fewer calls.
+  return (moistureAt(body, dir) > 0.55) ? Biome::Forest : Biome::Plains;
 }
 
-inline Biome biomeAtMoon(const BodyParams& body, const Vec3& dir) {
-  const double h = sampleHeightField(body, dir);
-  const double rel = h / (body.maxReliefM > 0.0 ? body.maxReliefM : 1.0);
+inline Biome biomeAtPlanet(const BodyParams& body, const Vec3& dir) {
+  return biomeAtPlanetH(body, dir, sampleHeightField(body, dir));
+}
+
+inline Biome biomeAtMoonH(const BodyParams& body, double h) {
+  const double rel = h / reliefDenom(body);
   // Airless: no oceans/forests. Elevation bands only.
   if (rel < -0.10) return Biome::CraterFloor;   // deep crater interiors
   if (rel > 0.20) return Biome::MoonHighland;   // raised highlands
   return Biome::Regolith;                        // default dusty plain
+}
+
+inline Biome biomeAtMoon(const BodyParams& body, const Vec3& dir) {
+  return biomeAtMoonH(body, sampleHeightField(body, dir));
 }
 
 inline Biome biomeAt(const BodyParams& body, const Vec3& dir) {
@@ -238,6 +266,10 @@ inline double hardnessForBiome(Biome b) {
 // =============================================================================
 inline double designedReliefFactor(Biome b) {
   // Multiplicative gain applied to the base relief above the datum.
+  // PLANET biomes no longer read this: see designedGainForRelief below. It
+  // remains the MOON's shaping table (the moon's bands are elevation-derived and
+  // its factors are close enough together not to step) and a description of the
+  // relief character each biome is meant to have.
   switch (b) {
     case Biome::Mountains:    return 1.60;
     case Biome::Hills:        return 1.25;
@@ -248,35 +280,97 @@ inline double designedReliefFactor(Biome b) {
     case Biome::MoonHighland: return 1.15;
     case Biome::CraterFloor:  return 1.10;
     case Biome::Regolith:     return 1.00;
-    case Biome::Ocean:        return 1.00;  // handled specially (basin) below
+    case Biome::Ocean:        return 1.00;
     default:                  return 1.00;
   }
 }
 
-inline double sampleDesignedHeight(const BodyParams& body, const Vec3& dir) {
-  const double base = sampleHeightField(body, dir);   // canonical, unchanged
-  const Biome b = biomeAt(body, dir);
+// -----------------------------------------------------------------------------
+// designedGainForRelief: the CONTINUOUS relief-shaping curve (WG-25).
+//
+// WHY THIS EXISTS. The old design layer switched the gain on the DISCRETE biome,
+// which made the shaped surface DISCONTINUOUS at every biome boundary. Measured
+// on Forge at world seed 0x0bf00d01, the two adjacent samples with the largest
+// step were 985 metres apart VERTICALLY at a horizontal spacing of 100 m: at the
+// Hills/Mountains threshold, 2700 m of base relief read 3375 m on the Hills side
+// (gain 1.25) and 4320 m on the Mountains side (gain 1.60). Every coastline had
+// a ~1.2 km wall for the same reason (Ocean jumped to a separately-generated
+// basin depth), and the Plains/Forest moisture threshold added an ~860 m one.
+//
+// Terrain made of flat plateaus separated by kilometre-tall vertical steps is
+// precisely the "mountains look like lumps" complaint: the plateaus read as
+// domes and the steps read as unclimbable walls. So the gain is now a smoothstep
+// blend over the SAME relief bands: monotone (d/drel of rel*gain > 0 everywhere)
+// and C1, so lowland still flattens and highland still steepens, with no step
+// anywhere on the planet.
+//
+// Multiply/add only: no trig, no pow (DW-14).
+inline double designedGainForRelief(double rel) {
+  double g = 1.15;                                        // sea floor: real basin
+  g = lerp(g, 0.30, smoothstep(-0.030, 0.008, rel));      // shore / beach: flat
+  g = lerp(g, 0.60, smoothstep(0.008, 0.070, rel));       // plains
+  g = lerp(g, 1.15, smoothstep(0.090, 0.260, rel));       // hills
+  g = lerp(g, 1.45, smoothstep(0.300, 0.520, rel));       // mountains
+  return g;
+}
+
+// -----------------------------------------------------------------------------
+// designedHeightNoPad: the designed surface BEFORE the home flat pad.
+//
+// Split out from sampleDesignedHeight so the pad can be a strict wrapper and so
+// tests can prove that outside the blend radius the two are BIT-IDENTICAL.
+inline double designedHeightNoPad(const BodyParams& body, const Vec3& dir) {
+  const double base = sampleHeightField(body, dir);
+  const double denom = reliefDenom(body);
 
   if (body.kind == kPlanet) {
-    if (b == Biome::Ocean) {
-      // Carve a real basin below the datum: depth from a low-freq fBm so the
-      // ocean floor varies (shelf -> deep). Position-hashed -> deterministic.
-      const double basin =
-          0.10 + 0.20 * (0.5 + 0.5 * fbm(body.bodySeed, dir, 2.0, 3, 0x0CEAu));
-      return body.seaLevelM - basin * body.maxReliefM;
-    }
-    const double datum = body.seaLevelM;
-    const double above = base - datum;                // relief above the datum
-    double shaped = datum + above * designedReliefFactor(b);
-    if (b == Biome::Polar) {
-      // Add a smooth ice-cap dome so the poles read raised + flat.
-      shaped += 0.04 * body.maxReliefM;
-    }
+    const double above = base - body.seaLevelM;
+    double shaped = body.seaLevelM + above * designedGainForRelief(above / denom);
+    // Smooth ice-cap dome. Driven by |sin(lat)| = |dir.y| so it needs no trig
+    // (DW-14) and, being a smoothstep, adds no step at the polar biome edge,
+    // the old version added a flat 0.04*maxRelief the instant |lat| crossed
+    // 1.30 rad, i.e. a 240 m wall ringing both poles.
+    shaped += 0.030 * body.maxReliefM *
+              smoothstep(0.945, 0.990, std::fabs(dir.y));
     return shaped;
   }
 
   // Moon: scale relief by the biome factor about zero (no datum clamp).
-  return base * designedReliefFactor(b);
+  return base * designedReliefFactor(biomeAtMoonH(body, base));
+}
+
+// -----------------------------------------------------------------------------
+// sampleDesignedHeight: THE surface authority (standing rule 1).
+//
+// = designedHeightNoPad, with the body's HOME FLAT PAD blended in. Because the
+// pad lives here, the mesh, collision, the walker, voxel solidity, deposit
+// snapping and build placement all see the level pad with NO special case
+// anywhere.
+//
+// Outside homeBlendRadiusM the function returns designedHeightNoPad's value
+// UNCHANGED: the same double, not a rounded copy, so the pad perturbs a 600 m
+// disc and leaves the other 99.9999% of the planet bit-identical.
+inline double sampleDesignedHeight(const BodyParams& body, const Vec3& dir) {
+  const double h = designedHeightNoPad(body, dir);
+  if (body.homeFlatRadiusM <= 0.0) return h;          // no pad on this body
+
+  // Arc distance from the pad centre. chord = 2*sin(theta/2) and theta is at
+  // most 8e-4 rad here, so arc = radiusM * chord to within 1e-10 m. sqrt only,
+  // no asin, no acos (DW-14).
+  const double dx = dir.x - body.homeDir.x;
+  const double dy = dir.y - body.homeDir.y;
+  const double dz = dir.z - body.homeDir.z;
+  const double distM =
+      body.radiusM * std::sqrt(dx * dx + dy * dy + dz * dz);
+  if (distM >= body.homeBlendRadiusM) return h;       // untouched, bit-identical
+
+  // t = 0 inside the flat radius, 1 at the blend radius.
+  const double t =
+      smoothstep(body.homeFlatRadiusM, body.homeBlendRadiusM, distM);
+  const double padH = designedHeightNoPad(body, body.homeDir);
+  // Written pad-first so t == 0 returns padH EXACTLY (dead flat, bit-exact)
+  // rather than padH plus a rounding residue.
+  return padH + (h - padH) * t;
 }
 
 // Designed height at a geo coord (mirrors SampleTerrainHeight but designed).

@@ -500,13 +500,20 @@ class VoxelEdits {
   }
 
   // The world-generation identity of a body: the ONLY fields solidity reads
-  // (see BodyParams — mu and bodyId take no part in world generation). Two
-  // bodies that agree on all four produce the same solid shell, so the memo is
-  // valid across them; anything else clears it.
+  // (see BodyParams; mu and bodyId take no part in world generation). Two bodies
+  // that agree on all of them produce the same solid shell, so the memo is valid
+  // across them; anything else clears it.
+  //
+  // WG-26 added the flattened start pad, which MOVES the designed surface, so it
+  // belongs in this signature. A field added to BodyParams that world generation
+  // reads and this hash does not is a memo that answers for the wrong planet, and
+  // it would do so silently.
   static uint64_t worldSig(const BodyParams& body) {
     uint64_t h = body.bodySeed;
-    const double f[3] = {body.radiusM, body.maxReliefM, body.seaLevelM};
-    for (int i = 0; i < 3; ++i) {
+    const double f[7] = {body.radiusM, body.maxReliefM, body.seaLevelM,
+                         body.homeDir.x, body.homeDir.y, body.homeDir.z,
+                         body.homeFlatRadiusM};
+    for (int i = 0; i < 7; ++i) {
       uint64_t bits = 0;
       static_assert(sizeof(bits) == sizeof(f[i]), "double is 64 bits");
       std::memcpy(&bits, &f[i], sizeof(bits));
