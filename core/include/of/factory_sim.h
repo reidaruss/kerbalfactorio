@@ -672,6 +672,34 @@ class FactorySim {
     return crafting_[h.index] != 0;
   }
 
+  // Lifetime WORK this entity has actually performed, as a monotonic fixed-point
+  // counter (FS-35, the pollution integration's duty meter — also a utilization
+  // probe for a HUD). Units are the entity's own hot-loop fixed point, so a
+  // window's duty cycle is (delta / full-rate-delta) with no float in the sim:
+  //   * Machine: craft-progress MILLITICKS actually advanced. Full power and
+  //     continuously crafting is exactly 1000 per tick; a brownout at
+  //     satisfaction s advances (1000*s)>>16, so browned-out work reads
+  //     proportionally lower BY THE SAME ARITHMETIC that slowed the craft. A
+  //     starved or output-blocked machine advances nothing and reads 0.
+  //   * Miner: extraction MILLI-UNITS accrued. Full rate is exactly
+  //     minerRateMilliPerTick() per tick; a depleted or out-blocked miner
+  //     accrues nothing. (Whole units mined would jitter with the accumulator
+  //     phase; the accrual is the smooth, exact measure of work done.)
+  //   * Everything else: 0.
+  // Never reset, never decremented; on-rails advance does NOT accrue (a demoted
+  // chunk's pollution is part of the on-rails seam, deliberately out of scope).
+  uint64_t workMilli(EntityHandle h) const {
+    if (!h.valid() || static_cast<size_t>(h.index) >= workMilli_.size()) return 0;
+    return workMilli_[h.index];
+  }
+
+  // A miner's extraction rate in milli-units per tick — the workMilli() full-rate
+  // denominator, exposed so a facade never re-derives the rounding in addMiner.
+  uint32_t minerRateMilliPerTick(EntityHandle h) const {
+    if (!h.valid() || kind_[h.index] != EntityKind::Miner) return 0;
+    return minerRateMilliPerTick_[h.index];
+  }
+
   // Remove up to `want` units from a machine's / miner's output buffer, and
   // return how many were actually removed. This is the MANUAL-COLLECTION verb:
   // it is exactly what inserterSystem already does internally (§3 drains a
@@ -704,6 +732,23 @@ class FactorySim {
   // The item currently at a belt line's head (kNoItem if empty) — lets the
   // wiring layer infer what a belt carries when connecting it to a sink.
   ItemId lineHeadItem(EntityHandle h) const { return lines_[h.index].headItem(); }
+
+  // FS-37: would this machine accept `item` from a transfer? True iff the
+  // machine's CURRENT recipe consumes it (slot-1 ingredient, or the optional
+  // slot-2 ingredient). Data-driven off the recipe tag fields addMachine wrote,
+  // never a per-item special case; when machines grow a fuel buffer, "is a
+  // valid fuel here" joins this predicate as its third clause. This is the ONE
+  // definition of item acceptance — inserterSystem enforces it at pickup and
+  // again at drop, so an item a recipe does not consume can never enter an
+  // input slot and be transmuted by the count-based craft loop.
+  bool machineAcceptsItem(EntityHandle m, ItemId item) const {
+    return m.valid() && kind_[m.index] == EntityKind::Machine &&
+           machineAcceptsAt(m.index, item);
+  }
+  // What an inserter currently holds (kNoItem if empty). An identity-conserving
+  // ledger (mined == in-flight + buffered + consumed, PER item type) has to be
+  // able to see the one unit that can legitimately sit in an inserter's hand.
+  ItemId inserterHeldItem(EntityHandle h) const { return insHeld_[h.index]; }
   uint64_t tickIndex() const { return clock_.tickIndex(); }
 
   // Cumulative count of items ever produced by any machine (monotonic; never
@@ -1110,6 +1155,11 @@ class FactorySim {
   std::vector<uint16_t> minerOutCap_;        // out-slot cap (0 = unbounded)
   std::vector<int32_t>  minerPowerW_;        // draw while extracting (0 = unpowered)
 
+  // Lifetime work counters (FS-35): machine milliticks advanced / miner
+  // milli-units accrued. One uint64 add on the hot path per entity that is
+  // actually WORKING this tick; idle entities never touch it.
+  std::vector<uint64_t> workMilli_;
+
   // §6 render-stream metadata (cold; touched only by stream emission, never by
   // the hot tick). Additive: defaulted so legacy scenes stream sanely. typeId_
   // buckets draw calls (rendering instances per TypeId); pos*_ is the authority
@@ -1210,6 +1260,7 @@ class FactorySim {
     minerAccum_.resize(n, 0);
     minerOutCap_.resize(n, 0);
     minerPowerW_.resize(n, 0);
+    workMilli_.resize(n, 0);
     typeId_.resize(n, 0);
     posX_.resize(n, 0.0f);
     posY_.resize(n, 0.0f);
@@ -1326,6 +1377,7 @@ class FactorySim {
       uint64_t add = (static_cast<uint64_t>(minerRateMilliPerTick_[i]) * brown)
                      >> 16;
       minerAccum_[i] += static_cast<uint32_t>(add);
+      workMilli_[i] += add;  // FS-35: extraction effort actually accrued
       // Free as many whole units as have accrued (bounded by deposit + out cap).
       while (minerAccum_[i] >= 1000) {
         if (minerRemaining_[i] == 0) break;             // deposit emptied mid-tick
@@ -1378,6 +1430,7 @@ class FactorySim {
       // craftTimeTicks * 1000 milliticks completes a craft.
       uint32_t advance = static_cast<uint32_t>((1000u * brown) >> 16);
       progressTicks_[i] += advance;
+      workMilli_[i] += advance;  // FS-35: craft effort actually applied
       uint32_t target = r.craftTimeTicks * 1000u;
       if (progressTicks_[i] >= target) {
         // complete: emit output, reset, allow immediate restart next tick.
@@ -1388,6 +1441,18 @@ class FactorySim {
         crafting_[i] = 0;
       }
     }
+  }
+
+  // FS-37: does the machine at dense index `i` accept `item`? True iff the
+  // machine's CURRENT recipe consumes it: the slot-1 ingredient, or the
+  // optional slot-2 ingredient (in2SlotItem_ is kNoItem when unused). This is
+  // a pure read of the recipe tag fields addMachine wrote — data-driven over
+  // the recipe table, no per-item case. A machine whose recipe has no input
+  // (inSlotItem_ == kNoItem) accepts nothing.
+  bool machineAcceptsAt(uint32_t i, ItemId item) const {
+    if (item == kNoItem) return false;
+    if (inSlotItem_[i] != kNoItem && item == inSlotItem_[i]) return true;
+    return in2SlotItem_[i] != kNoItem && item == in2SlotItem_[i];
   }
 
   // ==========================================================================
@@ -1405,7 +1470,18 @@ class FactorySim {
         // drop into dst machine input. Route by item type: a held item matching
         // the machine's 2nd ingredient goes to the 2nd input slot (assembler),
         // otherwise to the 1st. Single-input machines only ever take slot 1.
+        // FS-37: the drop is GATED by machineAcceptsAt — an item the recipe
+        // does not consume never enters an input slot, because the slots are
+        // COUNTS and a count cannot remember what it was: one wrong unit in
+        // inSlotCount_ is transmuted into the recipe's input the moment the
+        // craft loop consumes it. A refused item stays HELD (never destroyed)
+        // and the inserter stalls: the same back-pressure a full machine
+        // exerts. This branch is unreachable today (the pickup gate below
+        // refuses first, and no API rebinds a recipe under a held item) but it
+        // is the wall between a future ISetRecipeIntent (C-5) and a mis-typed
+        // input buffer.
         if (dst.valid() && kind_[dst.index] == EntityKind::Machine) {
+          if (!machineAcceptsAt(dst.index, insHeld_[i])) continue;
           if (in2SlotItem_[dst.index] != kNoItem &&
               insHeld_[i] == in2SlotItem_[dst.index]) {
             in2SlotCount_[dst.index] += 1;
@@ -1424,16 +1500,28 @@ class FactorySim {
       }
 
       // Idle: try to pick from src head.
+      // FS-37: an item the destination machine's recipe does not consume is
+      // REFUSED AT PICKUP, so it stays where it is — on its belt, or in the
+      // source's out-slot — and the line backs up behind it, visibly, exactly
+      // as it does behind a full machine. Refusing here rather than only at
+      // the drop is what keeps the item on the belt (a permanently-held item
+      // would be conserved but invisible). Belt destinations take anything: a
+      // belt is transport, not a consumer.
+      const bool dstIsMachine =
+          dst.valid() && kind_[dst.index] == EntityKind::Machine;
       if (src.valid() && kind_[src.index] == EntityKind::BeltLine) {
         TransportLine& sl = lines_[src.index];
-        if (sl.headReady() && sl.headItem() == insItem_[i]) {
+        if (sl.headReady() && sl.headItem() == insItem_[i] &&
+            (!dstIsMachine || machineAcceptsAt(dst.index, sl.headItem()))) {
           insHeld_[i] = sl.popHead();
           insPhase_[i] = InserterPhase::Holding;
         }
       } else if (src.valid() && (kind_[src.index] == EntityKind::Machine ||
                                  kind_[src.index] == EntityKind::Miner)) {
         // Drain a machine OR a miner out-slot (both live in outSlotCount_).
-        if (outSlotCount_[src.index] > 0) {
+        if (outSlotCount_[src.index] > 0 &&
+            (!dstIsMachine ||
+             machineAcceptsAt(dst.index, outSlotItem_[src.index]))) {
           outSlotCount_[src.index] -= 1;
           insHeld_[i] = outSlotItem_[src.index];
           insPhase_[i] = InserterPhase::Holding;
