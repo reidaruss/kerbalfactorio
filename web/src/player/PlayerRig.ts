@@ -29,6 +29,20 @@ export class PlayerRig {
   private sockets = new Map<string, THREE.Object3D>();
   private held: THREE.Object3D | null = null;
   private heldName = '';
+  /**
+   * Slot name -> the PRIMITIVES currently on the body. A-10 / GP-42.
+   *
+   * A LIST, not a mesh, and that is the whole trap: `Armour_Chest` is four
+   * primitives in four materials, so GLTFLoader gives a Group whose children are
+   * `Armour_Chest_0` to `_3`. Taking one match per slot bound 284 of the set's
+   * 904 triangles and looked entirely correct, because every slot still had
+   * SOMETHING on it. This is the same defect the belt-cargo loader hit when an
+   * exact-name match loaded fifteen item meshes, registered one, and drew
+   * nothing while reporting `meshes: 15`.
+   */
+  private readonly worn = new Map<string, THREE.SkinnedMesh[]>();
+  /** The rig's own skeleton, which armour pieces are rebound onto. */
+  private skeleton: THREE.Skeleton | null = null;
   loaded = false;
   boneCount = 0;
   clipCount = 0;
@@ -56,6 +70,9 @@ export class PlayerRig {
         // A SkinnedMesh's bounds are the BIND pose, and a clip moves vertices
         // outside them, so three would frustum-cull the character mid-stride.
         m.frustumCulled = false;
+      }
+      if ((m as THREE.SkinnedMesh).isSkinnedMesh === true && this.skeleton === null) {
+        this.skeleton = (m as THREE.SkinnedMesh).skeleton;
       }
       if (o.name.startsWith('socket_')) this.sockets.set(o.name, o);
       if ((o as THREE.Bone).isBone === true) this.boneCount++;
@@ -103,10 +120,111 @@ export class PlayerRig {
     return true;
   }
 
+  /**
+   * Put an armour piece on this rig, or take it off (A-10, GP-42).
+   *
+   * The four node names in `armour_set.glb` are SLOT names, not set names
+   * (`Armour_Head`, `Armour_Chest`, `Armour_Legs`, `Armour_Feet`), which is what
+   * makes a second set a second FILE and nothing here move. /core's
+   * `armourNode(EquipSlot)` returns the same four strings, so the lookup is an
+   * array index and never a string built at runtime.
+   *
+   * The mesh is skinned to the BODY's own 44-bone rig, so it must be rebound to
+   * THIS rig's skeleton: a `SkinnedMesh` cloned out of another glTF carries its
+   * own `Skeleton` and would animate on a T-posed copy standing at the origin.
+   * `bindMatrix` comes from the piece, not from the body, because the two files
+   * share a bind pose by construction and asserting that is cheaper than
+   * assuming it. Frustum culling is off for the same reason it is off on the
+   * body: a `SkinnedMesh`'s bounds are the bind pose.
+   */
+  async equip(slot: string, url: string): Promise<boolean> {
+    const skel = this.skeleton;
+    if (skel === null) return false;
+    const node = `Armour_${slot}`;
+    if (this.worn.has(slot)) return true;
+    const gltf = await loadGlb(url);
+    // `Armour_Head_LOD0`, optionally plus glTF's `_<n>` primitive suffix. An
+    // anchored match rather than `startsWith`, which would also take a future
+    // `Armour_HeadLamp`, and it is built with string concatenation because
+    // inside a template literal `\d` is not an escape and silently becomes `d`,
+    // giving a regex that matches nothing and an equip that returns false.
+    const re = new RegExp('^' + node + '_LOD0(_\\d+)?$');
+    const src: THREE.SkinnedMesh[] = [];
+    gltf.scene.traverse((o) => {
+      const m = o as THREE.SkinnedMesh;
+      if (m.isSkinnedMesh === true && re.test(m.name)) src.push(m);
+    });
+    if (src.length === 0) return false;
+    const pieces: THREE.SkinnedMesh[] = [];
+    for (const one of src) {
+      const piece = one.clone();
+      piece.bind(skel, one.bindMatrix);
+      piece.frustumCulled = false;
+      piece.castShadow = this.opts.castShadow;
+      piece.receiveShadow = this.opts.receiveShadow;
+      if (this.opts.layer !== null) piece.layers.set(this.opts.layer);
+      this.group.add(piece);
+      pieces.push(piece);
+    }
+    this.worn.set(slot, pieces);
+    return true;
+  }
+
+  unequip(slot: string): boolean {
+    const had = this.worn.get(slot);
+    if (had === undefined) return false;
+    for (const piece of had) piece.removeFromParent();
+    this.worn.delete(slot);
+    return true;
+  }
+
+  get wornSlots(): string[] { return [...this.worn.keys()]; }
+
+  /**
+   * What `equip` CLAIMS, in a form a test can fail (standing rule 11).
+   *
+   * The claim is not "the armour looks right", it is "the piece is driven by
+   * THIS rig's skeleton". `sameSkeleton` is an object identity, so it is exact
+   * and it is the thing that breaks: a `SkinnedMesh` cloned out of another glTF
+   * keeps its OWN skeleton, renders a T-posed shell that never moves, and looks
+   * plausible in any still frame where the character happens to be standing.
+   * `bones` against `bodyBones` catches the other failure, an armour file
+   * authored against a different rig, which binds without error and deforms to
+   * nothing. `triangles` is what the frame counter should go up by, which is
+   * the only one of the three that is visible on screen.
+   */
+  armourDrift(): {
+    slot: string; nodes: string[]; primitives: number; sameSkeleton: boolean;
+    bones: number; bodyBones: number; triangles: number;
+  }[] {
+    const out = [];
+    for (const [slot, pieces] of this.worn) {
+      let tris = 0;
+      for (const p of pieces) {
+        const idx = p.geometry.getIndex();
+        tris += Math.floor((idx?.count ?? p.geometry.getAttribute('position').count) / 3);
+      }
+      out.push({
+        slot, nodes: pieces.map((p) => p.name), primitives: pieces.length,
+        sameSkeleton: pieces.every((p) => p.skeleton === this.skeleton),
+        bones: pieces[0]?.skeleton?.bones.length ?? 0,
+        bodyBones: this.skeleton?.bones.length ?? 0,
+        triangles: tris,
+      });
+    }
+    return out;
+  }
+
   socket(name: string): THREE.Object3D | null { return this.sockets.get(name) ?? null; }
   get socketNames(): string[] { return [...this.sockets.keys()]; }
   get holding(): string { return this.heldName; }
   get playing(): string { return this.anim?.playing ?? ''; }
+
+  clipTimings(): { name: string; duration: number; firstKeyT: number; tracks: number }[] {
+    return this.anim?.timings() ?? [];
+  }
+
+  unmappedStates(): string[] { return this.anim?.unmapped() ?? []; }
 
   setAnim(state: PlayerAnim, speedMps: number): void { this.anim?.set(state, speedMps); }
   update(dt: number): void { this.anim?.update(dt); }

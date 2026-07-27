@@ -101,6 +101,7 @@ Practical consequences, all load-bearing:
 | Axis map | Blender `(x, y, z)` becomes glTF `(x, z, -y)` |
 | Pivot | footprint **centre** in X/Y, **base at Z = 0** |
 | Frame rate | **60 fps**, so one animation frame equals one `of::SimClock` tick |
+| Clip start | authored **frame 1** exports at **t = 0 s**, so an `n`-frame clip lasts `(n - 1)/60` s and runtime tick = authored frame - 1 (DW-34, `of_lib.clip_frame`) |
 
 The pivot rule is what makes placement code trivial: a machine's origin is the point
 that sits on the terrain, so there is never a per-asset height offset, and grid
@@ -958,9 +959,9 @@ a code-generated capsule (radius 0.35, height 1.80); the box is a broadphase fal
 | `Jump_Loop` | 1 to 21 | yes | airborne |
 | `Jump_Land` | 1 to 17 | no | absorb |
 | `Fall` | 1 to 21 | yes | long fall, arms out |
-| `Swing_Pickaxe` | 1 to 33 | no | impact on frame 17 |
-| `Swing_Axe` | 1 to 35 | no | impact on frame 18 |
-| `Dig` | 1 to 31 | no | voxel mining, impact on frame 16 |
+| `Swing_Pickaxe` | 1 to 33 | no | impact authored frame 17 = **runtime tick 16**, 0.2667 s |
+| `Swing_Axe` | 1 to 35 | no | impact authored frame 18 = **runtime tick 17**, 0.2833 s |
+| `Dig` | 1 to 31 | no | voxel mining, impact authored frame 16 = **runtime tick 15**, 0.2500 s |
 | `Place` | 1 to 25 | no | build placement |
 | `Craft` | 1 to 61 | yes | hand-craft loop |
 | `Crouch_Idle` | 1 to 91 | yes | |
@@ -969,12 +970,24 @@ a code-generated capsule (radius 0.35, height 1.80); the box is a broadphase fal
 Impact frames are contract: gameplay fires `harvestNode()` on those frames, so moving
 one desynchronises feel from logic.
 
+**Authored frame vs runtime tick (DW-34, 2026-07-27).** Clips are authored 1-based:
+frame 1 is the first frame, and the table above is written that way. Authored frame 1
+is exported at **t = 0 s** (`of_lib.clip_frame`), so the tick a client counts from the
+start of the clip is `authored - 1`, and an `n`-frame clip has a duration of
+`(n - 1)/60` s. Before DW-34 the first key was written at t = 1/60 and the tick index
+happened to equal the authored frame; the exported clips no longer do that, and
+`validate_glb.py` now asserts that the first animation sampler input of every clip in
+every file is exactly `0.0`.
+
 **Corrected 2026-07-27 (the run stride was wrong, and the convention was never
 stated).** A cycle keyed from frame 1 to frame `n` has frame `n` EQUAL to frame
 1, because `rig_common.keys` samples `fn(i/samples)` and every periodic term
 returns the same value at 0 and 1. So the period is `n - 1` intervals, not `n`,
-and that is also the duration three.js computes, since it comes from the track
-times. Therefore:
+and since DW-34 that is also the duration three.js computes, since it comes from
+the track times. (It was not, before DW-34: the first key sat at t = 1/60, so
+the duration read `n/60` and every cycle carried one dead frame. `Run` was
+0.4167 s of clip over 0.400 s of motion, a 7.5 cm snap per cycle at 4.5 m/s.)
+Therefore:
 
 | Clip | Frames | Period | Authored speed | Ground travel per CYCLE | per STEP |
 |---|---|---|---|---|---|
@@ -1126,9 +1139,9 @@ so body and first-person clips are authored against the same skeleton.
 Sockets: `socket_hand_R`, `socket_hand_L`.
 
 Clips (8): `FP_Idle` 1 to 121, `FP_Walk_Bob` 1 to 33, `FP_Run_Bob` 1 to 25,
-`FP_Swing_Pickaxe` 1 to 33 (impact 17), `FP_Swing_Axe` 1 to 35 (impact 18), `FP_Dig`
-1 to 31 (impact 16), `FP_Place` 1 to 25, `FP_Craft` 1 to 61. Impact frames match the
-third-person clips exactly.
+`FP_Swing_Pickaxe` 1 to 33 (impact authored 17, runtime tick 16), `FP_Swing_Axe` 1 to
+35 (authored 18, tick 17), `FP_Dig` 1 to 31 (authored 16, tick 15), `FP_Place` 1 to 25,
+`FP_Craft` 1 to 61. Impact frames match the third-person clips exactly.
 
 **Render note (rendering domain, recorded here because it constrains the model):** the
 arms draw on their own camera layer with a 0.01 m near plane, so they never clip world
@@ -2405,6 +2418,7 @@ happened:
 | `bone_sockets` | `{socket: bone}`; the socket's parent node is that BONE, not the armature. A socket parented to the armature validates, exports and does not ride the hand |
 | `rest_pose` | `world(joint) * inverseBindMatrix == identity` for every joint: the exported static pose IS the bind pose |
 | `frame1_identity` | the first sample of every non-joint animation channel equals the node's own TRS, which is section 2.7's rule made machine-checkable |
+| (implicit, when the file has animations) | `anim_t0`: the first sampler input of every clip is **exactly** `0.0` s. Exact, not a tolerance: the exporter writes `frame/fps` into a float32, so Blender frame 0 is 0.0 with no rounding, and a tolerance would only be somewhere for a one-frame offset to hide (DW-34) |
 
 One more was added on 2026-07-25 for Tier 2, and it is the gate on the stack
 contract:

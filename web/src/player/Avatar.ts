@@ -16,7 +16,9 @@ import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 import { ASSETS } from '../assets/Registry.js';
 import { PlayerRig } from './PlayerRig.js';
-import { BODY_CLIPS, FP_CLIPS, resolveAnim, SWING_DURATION_SECS, type AnimInput } from './AnimGraph.js';
+import {
+  BODY_CLIPS, FP_CLIPS, resolveAnim, swingSecs, type AnimInput, type SwingKind,
+} from './AnimGraph.js';
 
 /**
  * Assets are authored Blender -Y forward, which the exporter turns into three.js
@@ -29,6 +31,15 @@ const MODEL_FORWARD_IS_PLUS_Z = true;
 /** See PlayerRig.holdTool. Swings the haft down and out of the frame centre. */
 const FP_CARRY_TILT = new THREE.Euler(-1.15, 0.0, 0.35);
 
+/**
+ * The four armour slots, matching `of::progression::EquipSlot` value for value
+ * and `armour_set.glb`'s four node names character for character. /core's
+ * `armourNode(EquipSlot)` returns exactly these, so a slot index on either side
+ * of the bridge indexes this array and nothing concatenates a node name.
+ */
+export const EQUIP_SLOTS = ['Head', 'Chest', 'Legs', 'Feet'] as const;
+export type EquipSlotName = (typeof EQUIP_SLOTS)[number];
+
 export class Avatar {
   readonly group = new THREE.Group();
   readonly viewModel = new THREE.Group();
@@ -38,6 +49,8 @@ export class Avatar {
   private readonly zero = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
   private swingLeft = 0;
+  private swingKind: SwingKind = 'pickaxe';
+  private toolSwaps = 0;
 
   constructor() {
     this.group.name = 'playerBody';
@@ -71,13 +84,32 @@ export class Avatar {
     this.viewModel.add(arms.group);
   }
 
-  /** Start a swing. Both rigs play their own clip; the impact frames match. */
-  swing(): void { this.swingLeft = SWING_DURATION_SECS; }
+  /**
+   * Start a swing. Both rigs play their own clip; the impact frames match.
+   *
+   * `kind` also swaps the tool in the hand, which is what made `Swing_Axe`,
+   * `FP_Swing_Axe` and `crude_axe.glb` reachable at all: all three shipped and
+   * validated, and `holdTool` had only ever been called with the pickaxe, so a
+   * player chopping a tree swung a pickaxe at it (blocker A-6). The load is a
+   * no-op when the tool is already in hand, so this is safe to call per swing.
+   */
+  swing(kind: SwingKind = 'pickaxe'): void {
+    this.swingKind = kind;
+    this.swingLeft = swingSecs(kind);
+    const url = kind === 'axe' ? ASSETS.crudeAxe : ASSETS.crudePickaxe;
+    if (this.body?.holding !== url) {
+      this.toolSwaps++;
+      void this.body?.holdTool(url);
+      void this.arms?.holdTool(url, '_LOD0', FP_CARRY_TILT);
+    }
+  }
 
   /** Drive both animation graphs from ONE state, computed from the capsule. */
-  animate(dt: number, input: Omit<AnimInput, 'swingLeft'>): void {
+  animate(dt: number, input: Omit<AnimInput, 'swingLeft' | 'swingKind'>): void {
     if (this.swingLeft > 0) this.swingLeft = Math.max(0, this.swingLeft - dt);
-    const state = resolveAnim({ ...input, swingLeft: this.swingLeft });
+    const state = resolveAnim({
+      ...input, swingLeft: this.swingLeft, swingKind: this.swingKind,
+    });
     this.body?.setAnim(state, input.speedMps);
     this.arms?.setAnim(state, input.speedMps);
     this.body?.update(dt);
@@ -112,6 +144,26 @@ export class Avatar {
     g.updateMatrixWorld(true);
   }
 
+  /**
+   * A-10 / GP-42. Four slots, and the slot name IS the node name in
+   * `armour_set.glb`, so the lookup is never a string built at runtime.
+   *
+   * BODY ONLY, and that is A-11 rather than an oversight: `armour_set` carries
+   * the third-person 44-bone rig, while the view model is a different 27-bone
+   * rig with a different bind pose, so the same mesh cannot be bound to both.
+   * An armoured player currently sees unarmoured arms in first person. Fixing
+   * it needs a second armour file authored against `FP_BONES`, which is an art
+   * decision; until then the gap is stated here rather than hidden by silently
+   * skipping the call.
+   */
+  async equip(slot: EquipSlotName, url: string = ASSETS.armourSet): Promise<boolean> {
+    return (await this.body?.equip(slot, url)) ?? false;
+  }
+
+  unequip(slot: EquipSlotName): boolean { return this.body?.unequip(slot) ?? false; }
+
+  get wornSlots(): string[] { return this.body?.wornSlots ?? []; }
+
   report(): unknown {
     return {
       bodyLoaded: this.body?.loaded ?? false,
@@ -124,6 +176,10 @@ export class Avatar {
       holding: this.body?.holding ?? '',
       playing: this.body?.playing ?? '',
       playingFp: this.arms?.playing ?? '',
+      holdingFp: this.arms?.holding ?? '',
+      swingKind: this.swingKind,
+      worn: this.wornSlots,
+      toolSwaps: this.toolSwaps,
       swingLeft: Math.round(this.swingLeft * 1000) / 1000,
     };
   }

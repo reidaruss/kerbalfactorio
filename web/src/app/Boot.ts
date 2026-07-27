@@ -32,7 +32,8 @@ import { LevelAction } from '../player/LevelAction.js';
 import { LevelRing } from '../world/LevelRing.js';
 import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
-import { BIOME_ATLAS } from '../assets/Registry.js';
+import { BIOME_ATLAS, SHARED_ATLAS } from '../assets/Registry.js';
+import { registerPool } from '../game/InstancePools.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
 import { ViewRouter } from '../player/ViewRouter.js';
 import { Controller } from '../player/Controller.js';
@@ -209,8 +210,18 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   hud.banner('loading the biome prop atlases ...');
   // Every atlas, not just the biome under the observer: a walk crosses biome
   // boundaries continuously and a mid-walk fetch would hitch. Ten files, 392 kB.
-  const props = await PropLibrary.load(cfg.props ? BIOME_ATLAS : [], scenes.near);
-  const scatter = new Scatter(props, t.pool, cfg.props, cfg.density);
+  // `detail_cards.glb` is the ground-detail layer that sits UNDER the biome
+  // props. It shipped, validated, and was declared in Registry.ts and never
+  // passed to a loader, so it had never been drawn (blocker A-2).
+  const atlases = cfg.props
+    ? (cfg.detailCards ? [...BIOME_ATLAS, ...SHARED_ATLAS] : [...BIOME_ATLAS])
+    : [];
+  const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow);
+  // DW-28: the foliage pools report through the SAME registry the machine pools
+  // do, so a refusal reaches the HUD as `POOL FULL: n NOT DRAWN` rather than
+  // being counted into a field nothing prints.
+  registerPool(props);
+  const scatter = new Scatter(props, t.pool, cfg.props, cfg.density, cfg.scatterFair);
 
   // W5. Created only when there is a character: with no player nobody digs, and
   // an unbound edits handle would arm voxel collision for a flying camera. The

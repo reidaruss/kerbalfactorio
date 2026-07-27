@@ -5,16 +5,26 @@
 // owns no yields (gameplay.h decides those from what is in the pack), no node
 // state (WASM owns RemainingAmount) and no meshes (NodeField owns those).
 //
-// THE IMPACT FRAME IS A CONTRACT. ASSET-SPECS pins pickaxe impact at frame 17
-// and axe at 18 of a 33-frame swing, identical in the body rig and the FP arms,
-// so the grant fires when the tool visibly lands rather than when the key went
-// down. Granting on keydown is the single clearest tell that a game is a menu
-// with a camera attached.
+// THE IMPACT FRAME IS A CONTRACT, and DW-34 MOVED IT. ASSET-SPECS pins pickaxe
+// impact at authored frame 17 and axe at 18 of a 33-key swing, identical in the
+// body rig and the FP arms, so the grant fires when the tool visibly lands
+// rather than when the key went down. Granting on keydown is the single
+// clearest tell that a game is a menu with a camera attached.
+//
+// The exporter used to write the first key at Blender frame 1, so a clip opened
+// with a 16.7 ms dead hold and the RUNTIME tick of an authored frame was one
+// higher than its index. DW-34 shifted the first key to frame 0, which removes
+// the hold and makes sample index and tick index coincide. The published
+// indices therefore all move down by one: pickaxe 17 -> 16, axe 18 -> 17, dig
+// 16 -> 15, read back out of the exported sampler and not inferred. This
+// constant and the re-exported clips are one commit for that reason.
 
+import { NODE_KIND } from '../game/GameCore.js';
 import type { GameCore } from '../game/GameCore.js';
 import type { NodeField } from '../game/NodeField.js';
 import type { Avatar } from './Avatar.js';
 import type { Controller } from './Controller.js';
+import { SWING_CLIPS, type SwingKind } from './AnimGraph.js';
 
 export const HARVEST = {
   /** Metres. Slightly under the dig reach so the two never fight over one press. */
@@ -29,10 +39,17 @@ export const HARVEST = {
    */
   baseYield: 0,
   toolYield: 0,
-  /** Ticks from keydown to the grant. Frame 17 of 33 at 60 Hz. */
-  impactTicks: 17,
-  /** Ticks between swings while the key is held. The clip is 33 frames long. */
-  cooldownTicks: 34,
+};
+
+/**
+ * The impact tick and the cadence are PER CLIP, and they were one constant.
+ * Both come from `SWING_CLIPS` (AnimGraph) so exactly one file states them:
+ * pickaxe lands on tick 16 of 32, the axe on 17 of 34. The cooldown is the clip
+ * length plus one, which is the one-tick gap the single constant always had.
+ */
+const swingTiming = (kind: SwingKind): { impact: number; cooldown: number } => {
+  const c = SWING_CLIPS[kind];
+  return { impact: c.impactTicks, cooldown: c.ticks + 1 };
 };
 
 export interface AimTarget {
@@ -43,6 +60,8 @@ export interface AimTarget {
   remaining: number;
   distanceM: number;
   empty: boolean;
+  /** worldgen::survival::NodeKind. A tree is chopped, everything else is mined. */
+  kind: number;
 }
 
 export interface HarvestEvent {
@@ -62,6 +81,8 @@ export class Interact {
   /** The last grant, kept for the HUD toast and for __of.game(). */
   last: HarvestEvent | null = null;
   swings = 0;
+  /** Swings by tool, so a probe can prove the axe path was reached at all. */
+  readonly swingKinds: Record<SwingKind, number> = { pickaxe: 0, axe: 0, dig: 0 };
   grants = 0;
   granted = 0;
   misses = 0;
@@ -92,11 +113,14 @@ export class Interact {
     const pressed = held && !this.held;
     this.held = held;
     if (pressed && this.cooldown === 0 && this.target !== null && !this.target.empty) {
-      this.cooldown = HARVEST.cooldownTicks;
-      this.pending = HARVEST.impactTicks;
+      const kind: SwingKind = this.target.kind === NODE_KIND.Tree ? 'axe' : 'pickaxe';
+      const t = swingTiming(kind);
+      this.cooldown = t.cooldown;
+      this.pending = t.impact;
       this.pendingIndex = this.target.index;
       this.swings++;
-      this.avatar?.swing();
+      this.swingKinds[kind]++;
+      this.avatar?.swing(kind);
     }
 
     if (this.pending < 0) return false;
@@ -137,6 +161,7 @@ export class Interact {
       remaining: st.remaining,
       distanceM: Math.hypot(dx, dy, dz),
       empty: st.remaining <= 0,
+      kind: st.kind,
     };
   }
 
@@ -145,7 +170,8 @@ export class Interact {
 
   report(): unknown {
     return {
-      swings: this.swings, grants: this.grants, granted: this.granted,
+      swings: this.swings, swingKinds: this.swingKinds,
+      grants: this.grants, granted: this.granted,
       misses: this.misses, target: this.target, last: this.last,
     };
   }

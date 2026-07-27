@@ -20,6 +20,17 @@ export interface FrameStats {
   budget: { drawCalls: string; triangles: string; frameP99: string };
 }
 
+/**
+ * A-8. The draw-call TARGET, which existed only as the literal `150` inside a
+ * HUD template string, so nothing enforced it and nothing else could read it.
+ * It is not a ceiling: `ALERT` and `FAIL` below are the enforced numbers. It is
+ * the figure a change is judged against, and a change that moves it needs to
+ * say so. `web/src/ui/HudLines.ts:84` should import this instead of printing
+ * its own copy; that file belongs to another lane tonight, so the constant is
+ * published here and the swap is left as a one-line follow-up.
+ */
+export const DRAW_CALL_TARGET = 150;
+
 /** Ceilings from ARCHITECTURE.md section 10.3. */
 const ALERT = { calls: 300, triangles: 2.7e6, p99: 25 };
 const FAIL = { calls: 500, triangles: 4.0e6, p99: 40 };

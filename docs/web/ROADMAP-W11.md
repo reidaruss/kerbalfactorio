@@ -45,7 +45,7 @@ the failure this project has paid for six times. See lane B.
 
 | # | Lane | Scope | Owns | Status |
 |---|---|---|---|---|
-| A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | **DONE. 48/48 validate, byte-identical rebuild, dist 2.69 -> 3.10 MB. Client wiring needed, see blockers A-1 to A-13** |
+| A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | **DONE. 48/48 validate, byte-identical rebuild, dist 2.69 -> 3.10 MB.** Client wiring **landed by the rendering lane (RN-7): A-1, A-2, A-6, A-8, A-10, A-12, A-13 closed; A-3 and A-4 blocked on `web/src/game` ownership; A-5 and A-11 need decisions** |
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | **all five landed** (GP-36 to GP-40) |
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
@@ -261,6 +261,66 @@ as its first step and could be lifted into the standard check for nothing.
   the incident: **a shared CMakeLists and a shared header make one lane's
   half-finished edit another lane's broken build**, and it cost little tonight only
   because a header-only core compiles one translation unit at a time.
+
+### Rendering lane, 2026-07-27: what is still shipped-but-not-drawn after RN-7
+
+Lane A's A-1 to A-13 were the specification. **Closed: A-1, A-2, A-6, A-8, A-10,
+A-12 (DW-34), A-13.** Already closed by lane F before this lane started: A-7,
+A-9. **Not closed, and the reason is ownership rather than difficulty in two
+cases and a design decision in the other two.**
+
+- **A-3 and A-4 are in `web/src/game/NodeArt.ts` and `NodeBatch.ts`, which a
+  progression lane owns tonight, so this lane did not touch them.** They are
+  both still true as lane A wrote them, and A-4's second half is the one to take
+  first because it is a live DW-28 violation with a known blast radius:
+  `NodeBatch.ts:67` is `const CAPACITY = 128` with no growth path, `acquire()`
+  returns -1 when full and the node is silently not drawn. That is the same
+  shape as the 7,000-instance prop cap this lane just removed, and the prop one
+  turned out to be costing 25% of the foliage. Also unchanged: `NODE_KIND.WaterPool = 5`
+  and `OilSeep = 6` have no `ART` entry, so `nodes/water_pool.glb` and
+  `nodes/oil_seep.glb` (both with their own authored `Water_Ripple` /
+  `Oil_Bubble` clips) and `nodes/bush_scrub.glb` are shipped, validated and
+  unreachable; and `NodeBatch.ts:139` matches `_LOD0` only, so every `_LOD1`,
+  `_LOD2` and `_Stump` in the nine harvest-node files is dead weight in the
+  shipped bytes.
+
+- **A-5 is a decision for Reid and not for a lane, and the numbers are now
+  measured rather than inferred.** `Controller.ts:33 walkMps = 4.6` against
+  `AnimGraph.ts RUN_THRESHOLD_MPS = 3.0` means the player is in `Run` at all
+  times while moving, so the authored `Walk` clip is reachable only in the 0.15
+  to 3.0 band that nothing but deceleration produces. 4.6 m/s is 16.6 km/h,
+  which is a person running. The three ways out are all cheap and they are not
+  equivalent: lower `walkMps` to about 1.4 and make 4.6 the sprint (changes the
+  feel of every traversal), add a walk modifier key (adds a binding nobody asked
+  for), or accept that the character always runs and delete the `Walk` clip from
+  the state map (honest, and throws away authored work). **This lane deliberately
+  changed nothing**, because a movement speed is a game-feel decision and
+  silently halving it inside a rendering commit is exactly the kind of change
+  that gets discovered in a screenshot.
+
+- **A-11 needs an art decision.** `PlayerRig.equip` is shipped and armour is on
+  the third-person body, but it is BODY ONLY: `armour_set.glb` carries the
+  44-bone rig and the view model is a different 27-bone rig with a different
+  bind pose, so an armoured player still sees unarmoured arms in first person.
+  Either a second armour file authored against `FP_BONES`, or an explicit
+  decision to accept it. The client half is a one-line call either way; the code
+  states the gap in `Avatar.equip` rather than hiding it.
+
+**One thing found on the way that belongs to no lane on this list and that the
+next perf pass should take.** A full scatter build of one depth-14 chunk inside
+the detail ring is about 3,100 props and costs a **39.9 ms worst frame** against
+a 5.3 ms p50. Sampling is already amortised to one chunk per update and the
+pools are pre-sized so they do not double 22 times in a 55 m walk, which took it
+from 57.4 ms; getting the rest needs the per-chunk build itself split across
+frames, which is a bigger change than tonight had room for.
+
+**And one process note that cost this lane ten minutes and will cost the next
+one the same.** `npm run build` gates on `tsc --noEmit`, which fails whenever any
+of the four live lanes has a half-written file, so a probe cannot be built. The
+workaround is `npx vite build --outDir dist-rn` plus `npx vite preview --outDir
+dist-rn --port 4182`, which also gives this lane its OWN bundle so two lanes
+measuring at once cannot serve each other's dist. Recommended over sharing
+`web/dist`.
 
 ### Lane A, 2026-07-27: art that is shipped and validated but that the client never draws
 
@@ -538,6 +598,99 @@ look instead of concluding "the enemies feel wrong" and rewriting the model.
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
+
+- **2026-07-27, rendering lane (RN-7, RN-8) - the overnight art actually reaches
+  the screen.** Six defects, and five of them reported success on every
+  instrument. Full detail and every number in
+  [docs/controllers/rendering.md](../controllers/rendering.md) RN-7.
+
+  **The one worth reading: the scatter had been placing NOTHING near the player
+  since DW-19 landed, and no count-based check could have caught it.**
+  `Scatter.sample` quantised its per-CELL prop count with `Math.round(expected)`.
+  DW-19 took the near terrain cell from 7.2 m to 1.808 m on 2026-07-26, so
+  `expected` became `118920 * 1.808^2 / 1e6` = **0.389, and `Math.round(0.389)`
+  is 0**. Every chunk under the player scattered exactly nothing while the
+  per-chunk `want` for that same chunk read 399, the density constants were
+  right, the pool was not exhausted, the atlas was loaded and 159 props were
+  genuinely on screen on coarse chunks far away. **A terrain LOD improvement
+  silently deleted the ground cover, in a file it did not touch.** What was
+  false was the RATIO of delivered to requested, so that is what the probe
+  asserts now: `deliveredFraction` is placed over requested over the ground
+  actually drawn on, which is invariant to terrain, to density and to LOD depth.
+  It reads **0.0182 against the defect and 0.9971 against the fix**.
+
+  **Measured, same seed, same site, same pinned camera, one binary** (`?scatterfair=0`
+  reproduces the old rounding, standing rule 7): props placed **159 -> 8,697**,
+  and the number a player feels, **foliage screen coverage 0.56% -> 28.87%**.
+  Coverage is a frame difference with the layer toggled off INSIDE one settled
+  frame, so camera, sun, streamed set and terrain cannot differ between the two
+  captures. `docs/screenshots/RN_grass_before.png` against `RN_grass_after.png`.
+
+  Also closed: `PropLibrary`'s fixed `CAPACITY = 7000` per material batch with no
+  growth path (**a direct DW-28 violation, binding by about 25%**) now doubles to
+  a 16,384 ceiling and reports through the same `registerPool` the machines use,
+  so a refusal shouts `POOL FULL: n NOT DRAWN`; both silent scatter caps are
+  counted, and `chunksCapped` **found a 16% shortfall within one run of being
+  added**; and `props/detail_cards.glb`, declared in `Registry.ts` and never
+  passed to a loader, is drawn for the first time as a 55 m understorey ring.
+
+  **DW-34 landed atomically.** Re-exported clips and the moved impact indices in
+  one commit. Browser-measured off three's own `AnimationClip`: **clips opening
+  with a dead hold 26 of 26 -> 0 of 26, worst hold 16.6667 ms -> 0.0000 ms, `Run`
+  duration 0.416666657 -> 0.400000006 s, hitch at 4.5 m/s 7.50 cm -> 0.00 cm per
+  cycle.** Impact ticks pickaxe 17 -> **16**, axe 18 -> **17**, dig 16 -> **15**,
+  read out of the exported sampler and now stated in exactly one place. The root
+  cause was NOT the exporter's `export_anim_slide_to_zero` flag, which only
+  reaches the sampled path and would have fixed the two characters while silently
+  leaving every machine, tree and belt at 1/60. `validate_glb.py` gained
+  `anim_t0`, asserting the first sampler input is **exactly 0.0**, and it failed
+  exactly the 21 animated assets before the rebuild; four unanimated witnesses
+  rebuilt byte-identical, including `armour_set.glb` whose build script was
+  edited. 48/48 validate.
+
+  **A-6, four first-person clips and the entire axe.** `FP_CLIPS` mapped jump,
+  loop, land and fall to `null` with a comment claiming that was correct, so the
+  arms were dead still in the air; `swing` mapped unconditionally to
+  `Swing_Pickaxe` and `holdTool` had only ever been called with the pickaxe, so a
+  player chopping a tree swung a pickaxe at it. Driven proof rather than a
+  counter: chopping now reads `Swing_Axe` / `FP_Swing_Axe` with `crude_axe.glb`
+  in **both** hands sampled MID-swing, mining reads `Swing_Pickaxe` on the same
+  run, and unmapped states are 0 on both rigs with 26 of 26 clips reachable.
+
+  **A-10, armour on the avatar, and the probe caught lane F's A-9 trap on the
+  way.** The first `equip` took ONE match per slot and bound **284 of 904
+  triangles** while every slot still had something on it, because
+  `Armour_Chest_LOD0` is four primitives and GLTFLoader splits it into `_0` to
+  `_3`. Anchored `_LOD0(_\d+)?` match: **904 triangles drawn, 4 slots, 44 == 44
+  bones, same-skeleton true on all four, frame delta 3,616 = 904 x 4 passes and
+  exactly reversible.** That is the same defect shape lane F documented for the
+  item atlas, hit again in a different file within a day.
+
+  **Task 109, black cut banks, is fixed and the isolation is the interesting
+  part.** `skyAmb` in `TerrainShader.ts` was traced along local `up` for every
+  fragment, so it was a constant, and a near-vertical face with `ndl` clamped to
+  zero kept **2.5 / 3.5 / 5.9 per cent** of what flat ground gets. Isolated with
+  a **circular** 10 m pit, where depth, range, albedo rule, relief band and facet
+  steepness are equal at every bearing by construction, so the only free variable
+  is `dot(N, sunDir)`: **azimuthal luminance spread 155.3 counts**. The fix is 8
+  ALU ops, no new shader (DW-10's cap untouched) and no new uniform, and neither
+  new term is tuned: `skyView` is the share of the dome the face sees and the
+  bounce term's radiance is literally the flat-ground branch already computed at
+  that point. **Cut face over sunlit floor in the same frame 0.135 -> 0.313,
+  against a tolerance of 0.18 derived from clear-sky diffuse rather than picked.**
+  A flat fragment is algebraically unchanged (floor 154.8 -> 155.4) and the
+  headlamp does not move: `tunnellit` lamp lift **16.99 before and after** on one
+  identical tree.
+
+  **Cost, and it is a real trade rather than free:** draw calls **45 -> 53** of a
+  150 budget, triangles **493k -> 1.39 M** of a 2.7 M alert, frame p50 **1.5 ->
+  5.3 ms**, p99 **2.6 -> 15.6 ms**, worst **39.9 ms** (one chunk's scatter build,
+  down from 57.4 ms after amortising sampling and pre-sizing the pools).
+
+  Gates: **29/29 ctest**, `npm --prefix web run check` green at **180 files**,
+  `tools/smoke/reload.mjs` PASS, every probe `smoke: PASS` with no console error
+  and no failed request. New probes `tools/smoke/probes/{grass,avatar,cutbank}.js`;
+  new isolation flags `?scatterfair=0`, `?propgrow=0`, `?detail=0`.
 
 - **2026-07-27, lane F follow-on — the belt carries a column (FS-30 to FS-32).**
   The three `TransportLine` gap-accounting defects lane F escalated and correctly

@@ -2,7 +2,12 @@
 
     blender --background --python tools/blender/render_check.py -- \
         assets/models/dist/player/player_body.glb docs/screenshots/player \
-        rest:1:front Walk:9:side Swing_Pickaxe:17:threequarter
+        rest:0:front Walk:8:side Swing_Pickaxe:16:threequarter
+
+A shot is clip:frame:view, and the frame is a frame of the IMPORTED clip, which
+starts at 0 (DW-34, of_lib.clip_frame). It is therefore the authored frame in
+ASSET-SPECS minus one: the pickaxe impact is authored frame 17 and imported
+frame 16.
 
 WHY IT LOADS THE .glb AND NOT THE BUILD SCENE. validate_glb.py proves the file
 obeys its contract, and a rigged asset can pass every one of those checks and
@@ -125,7 +130,7 @@ def play(arm, clip, frame):
         arm.animation_data.action = None
         for pb in arm.pose.bones:
             pb.matrix_basis.identity()
-        bpy.context.scene.frame_set(1)
+        bpy.context.scene.frame_set(0)
         return
     act = bpy.data.actions.get(clip)
     if act is None:

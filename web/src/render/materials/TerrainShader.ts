@@ -208,7 +208,35 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
 
       vec3 skyTrans;
       vec3 skyAmb = ofAtmoScatter(pM, up, 1.0e9, 2, 2, skyTrans) * uSkyAmbient;
-      vec3 lit = albedo * (uAmbient + skyAmb + sunT * (1.45 * ndl * shadow));
+
+      // INDIRECT, and it is what a cut bank is lit BY. With only uAmbient and
+      // skyAmb, a face that turns away from the sun receives those two and
+      // nothing else, because this material lights itself from uSunDir and
+      // never reads three's light list. Measured on the wall of a 6 m levelled
+      // pit, sun 69 degrees up, cascades OFF so no shadow is in play: the wall
+      // received 0.0446 against the flat floor's 1.0446, and photographed at
+      // 20.9 against 154.8 in 8-bit luma IN THE SAME FRAME. Around that pit's
+      // rim, where depth, range, albedo, relief band and facet steepness are all
+      // equal by construction, luminance swung 155 counts on bearing alone. That
+      // swing is dot(N, sunDir) and nothing else, and at the far end of it the
+      // face reads as a hole in the world rather than as shaded ground.
+      //
+      // NEITHER TERM IS A TUNED CONSTANT.
+      //   skyView is the share of the sky dome a face with this normal sees:
+      //   1 lying flat, 1/2 stood on edge. A flat fragment therefore gets
+      //   EXACTLY what it got before this existed, so daylight terrain is
+      //   unchanged and only slopes move.
+      //   ground is the radiance of the FLAT ground at this same point.
+      //   vBiomeColor is precisely that ground's albedo here, and the bracket is
+      //   precisely the irradiance the flat case computes below. So a bank is
+      //   lit by the field it was cut out of, at no extra sampling, and every
+      //   part of it falls to zero together at night, under a shadow, and in
+      //   the terminator's transmittance.
+      float skyView = 0.5 + 0.5 * dot(n, up);
+      vec3 ground = vBiomeColor * (uAmbient + skyAmb
+        + sunT * (1.45 * max(dot(up, sd), 0.0) * shadow));
+      vec3 lit = albedo * (uAmbient + skyAmb * skyView + ground * (1.0 - skyView)
+        + sunT * (1.45 * ndl * shadow));
 
       // Aerial perspective. Same function, same parameters as the sky quad, so a
       // mountain at 40 km goes blue and MATCHES the horizon behind it exactly.

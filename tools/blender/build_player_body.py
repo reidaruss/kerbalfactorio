@@ -710,7 +710,11 @@ def clip_fall(n=21):
 def _swing(n, impact, high, low, lean_back, lean_fwd, bend_hi, bend_lo):
     """A two-handed overhead tool swing. `impact` is a CONTRACT frame: gameplay
     fires harvestNode() there, so the pose on that frame must be the moment the
-    head lands, not one frame either side of it."""
+    head lands, not one frame either side of it.
+
+    `impact` is an AUTHORED (1-based) frame and authored frame 1 exports at
+    t = 0, so the tick the client counts is `impact - 1` (of_lib.clip_frame,
+    DW-34): authored 17 is runtime tick 16 at 0.2667 s."""
     wind = max(2, impact - 10)
     settle = impact + max(4, (n - impact) // 3)
     t = both_arms({}, [
@@ -882,7 +886,7 @@ def main():
     # the joint nodes. export_rest_position_armature makes this belt and braces.
     if arm_obj.animation_data:
         arm_obj.animation_data.action = None
-    bpy.context.scene.frame_set(1)
+    bpy.context.scene.frame_set(int(of.clip_frame(1)))
 
     lo, hi = mb.bounds()
     print("[player] bounds blender x %.4f..%.4f  y %.4f..%.4f  z %.4f..%.4f"

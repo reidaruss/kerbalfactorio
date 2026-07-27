@@ -40,10 +40,12 @@ thing the player sees. So the skin band runs past the wrist into the palm, the
 glove starts 0.04 m behind the wrist, and every finger starts half a segment
 inside the hand.
 
-The impact frames of FP_Swing_Pickaxe (17), FP_Swing_Axe (18) and FP_Dig (16)
-match the third-person clips exactly. They are a gameplay contract, not an
-animation preference: harvestNode() fires on those frames whichever view the
-player is in.
+The impact frames of FP_Swing_Pickaxe (authored 17), FP_Swing_Axe (18) and
+FP_Dig (16) match the third-person clips exactly. They are a gameplay contract,
+not an animation preference: harvestNode() fires on those frames whichever view
+the player is in. Authored frames are 1-based and authored frame 1 exports at
+t = 0 (of_lib.clip_frame), so the RUNTIME tick is one lower than the number
+written here: 16, 17 and 15, at 0.2667, 0.2833 and 0.2500 s (DW-34).
 """
 
 import os
@@ -476,7 +478,7 @@ def main():
         of.pose_clip(arm_obj, name, fn())
     if arm_obj.animation_data:
         arm_obj.animation_data.action = None
-    bpy.context.scene.frame_set(1)
+    bpy.context.scene.frame_set(int(of.clip_frame(1)))
 
     lo, hi = mb.bounds()
     print("[fp_arms] bounds blender x %.4f..%.4f  y %.4f..%.4f  z %.4f..%.4f"

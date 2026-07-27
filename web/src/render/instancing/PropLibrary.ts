@@ -28,9 +28,34 @@ interface Batch {
   free: number[];
   /** Slots ever handed out: the batch's high-water mark, not its live count. */
   live: number;
+  /** Current reservation. Doubles on demand up to MAX_CAPACITY (DW-28). */
+  cap: number;
+  grows: number;
+  refused: number;
+  warned: boolean;
 }
 
-const CAPACITY = 7000;
+/**
+ * DW-28: instance pools GROW and exhaustion is LOUD. This batch used to be a
+ * fixed `CAPACITY = 7000` per material with no growth path, which is the exact
+ * shape the decision was written about: `acquire` returned -1, `exhausted++`
+ * counted it, and the props were simply not drawn while every other number on
+ * the HUD read healthy. It bound in practice: Plains asks for 0.1068 grass and
+ * flower instances per square metre in the OF_Grass role, and the 170 m scatter
+ * radius is 90,792 m2, so the demand is about 9,700 slots against 7,000.
+ *
+ * Start at a size the first ring will actually use and double from there,
+ * exactly as `MachineBatch.grow()` does, so capacity follows the PLAN rather
+ * than a second guessed constant. The start size is NOT a capacity decision, it
+ * is a churn one: `setInstanceCount` copies the indirect and matrix texture
+ * data on every doubling, and starting at 256 cost 22 reallocations during one
+ * 55 m walk. `?propgrow=0` pins the old fixed 7,000 with no growth so the
+ * before and after are measurable in one binary (standing rule 7).
+ */
+const START_CAPACITY = 2048;
+const LEGACY_CAPACITY = 7000;
+/** Memory guard, matching InstancePools.MAX_CAPACITY. Reaching it is counted. */
+const MAX_CAPACITY = 16384;
 /** Props are small; a 33^2 chunk's worth of geometry is a few thousand verts. */
 const MAX_VERTS = 60000;
 
@@ -63,8 +88,14 @@ export class PropLibrary {
   instancesLive = 0;
   exhausted = 0;
 
-  static async load(urls: readonly string[], scene: THREE.Scene): Promise<PropLibrary> {
+  /** False pins every batch at the old fixed 7,000 with no growth (?propgrow=0). */
+  private growable = true;
+
+  static async load(
+    urls: readonly string[], scene: THREE.Scene, growable = true,
+  ): Promise<PropLibrary> {
     const lib = new PropLibrary();
+    lib.growable = growable;
     // Deduped by Loaders, so props_moon.glb is fetched once for its three biomes.
     const gltfs = await Promise.all([...new Set(urls)].map((u) => loadGlb(u)));
     for (const g of gltfs) lib.register(g.scene);
@@ -108,7 +139,8 @@ export class PropLibrary {
     if (hit !== undefined) return hit;
     const material = source.clone();
     material.name = name;
-    const mesh = new THREE.BatchedMesh(CAPACITY, MAX_VERTS, MAX_VERTS * 3, material);
+    const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
+    const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
     mesh.name = `props:${name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -127,17 +159,31 @@ export class PropLibrary {
     // and stops being worth it for the factory's larger meshes at W6.
     mesh.sortObjects = false;
     mesh.perObjectFrustumCulled = false;
-    const batch: Batch = { mesh, free: [], live: 0 };
+    const batch: Batch = {
+      mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
+    };
     this.batches.set(name, batch);
     return batch;
   }
 
   /**
    * Slots are allocated LAZILY and never deleted, so a batch's instance array
-   * only ever reaches its own high-water mark. Priming all 7,000 up front cost
-   * 2.5 s at boot and, worse, made every frame walk 70,000 slots across ten
-   * batches when the scene held 9,000 props in five of them.
+   * only ever reaches its own high-water mark. Priming the whole reservation up
+   * front cost 2.5 s at boot and, worse, made every frame walk 70,000 slots
+   * across ten batches when the scene held 9,000 props in five of them. Growth
+   * therefore only moves the RESERVATION; `addInstance` still runs lazily.
    */
+
+  /**
+   * Hide or show the whole foliage layer. Standing rule 7's isolation, but done
+   * at RUNTIME rather than by a query flag on purpose: measuring how much of
+   * the ground the props cover means differencing two frames, and a page reload
+   * cannot guarantee the same camera, the same streamed set or the same sun.
+   * Toggling the batches inside one settled frame can.
+   */
+  setVisible(on: boolean): void {
+    for (const b of this.batches.values()) b.mesh.visible = on;
+  }
 
   partsOf(stem: string): readonly PropPart[] | null { return this.parts.get(stem) ?? null; }
   get propCount(): number { return this.parts.size; }
@@ -149,10 +195,32 @@ export class PropLibrary {
     if (b === undefined) return -1;
     const reused = b.free.pop();
     if (reused !== undefined) { this.instancesLive++; return reused; }
-    if (b.live >= CAPACITY) { this.exhausted++; return -1; }
+    if (b.live >= b.cap && !this.grow(b, material)) { this.exhausted++; return -1; }
     b.live++;
     this.instancesLive++;
     return b.mesh.addInstance(0);
+  }
+
+  /**
+   * Double one batch's reservation. False only at the ceiling, and then LOUDLY
+   * (DW-28). `setInstanceCount` copies the indirect and matrix texture data
+   * across, so every live slot keeps its transform and its geometry id.
+   */
+  private grow(b: Batch, name: string): boolean {
+    const next = this.growable ? Math.min(MAX_CAPACITY, b.cap * 2) : b.cap;
+    if (next <= b.cap) {
+      b.refused++;
+      if (!b.warned) {
+        b.warned = true;
+        console.error(`[of] prop pool '${name}' is FULL at ${b.cap} instances:`
+          + ' props past this are placed and are NOT DRAWN');
+      }
+      return false;
+    }
+    b.mesh.setInstanceCount(next);
+    b.cap = next;
+    b.grows++;
+    return true;
   }
 
   release(material: string, slot: number): void {
@@ -171,11 +239,33 @@ export class PropLibrary {
     b.mesh.setVisibleAt(slot, true);
   }
 
-  stats(): { batches: number; props: number; instances: number; exhausted: number; capacity: number } {
+  /**
+   * The shape `InstancePools.PoolReport` asks for, so `registerPool` puts the
+   * foliage layer on the same HUD line as the machines and `POOL FULL: n NOT
+   * DRAWN` covers it too. `perMaterial` is the number a probe needs: it is the
+   * per-role DEMAND, which is what a fixed cap used to hide.
+   */
+  stats(): {
+    name: string; batches: number; props: number; instances: number;
+    exhausted: number; capacity: number; ceiling: number; grows: number;
+    refused: number; growable: boolean;
+    perMaterial: { name: string; live: number; cap: number; refused: number }[];
+  } {
+    let capacity = 0; let grows = 0;
+    const perMaterial = [];
+    for (const [name, b] of this.batches) {
+      capacity += b.cap; grows += b.grows;
+      perMaterial.push({ name, live: b.live, cap: b.cap, refused: b.refused });
+    }
+    perMaterial.sort((a, b) => b.live - a.live);
+    // `refused` IS `exhausted`: every refused acquire is one instance that was
+    // placed and is not on screen. They are one number under two names because
+    // the HUD contract asks for `refused` and the older probes read `exhausted`.
     return {
-      batches: this.batches.size, props: this.parts.size,
+      name: 'props', batches: this.batches.size, props: this.parts.size,
       instances: this.instancesLive, exhausted: this.exhausted,
-      capacity: this.batches.size * CAPACITY,
+      capacity, ceiling: this.batches.size * MAX_CAPACITY, grows,
+      refused: this.exhausted, growable: this.growable, perMaterial,
     };
   }
 }

@@ -448,6 +448,30 @@ def validate(asset, spec, verbose=False):
                 "%d clip(s) move%s" % (len(gltf["animations"]),
                                        "" if not dead else "; DEAD: %s" % dead))
 
+    # --- every clip starts at t = 0, exactly ---
+    # three.js takes a clip's duration from its LAST track time, so a clip
+    # whose first key sits at 1/60 s is one frame longer than the motion
+    # authored into it and opens with a frame in which nothing moves. On Run
+    # that is 0.4167 s of loop against 0.400 s of motion: a 7.5 cm positional
+    # snap once per cycle at 4.5 m/s (DW-34; the cause and the fix are in
+    # of_lib.clip_frame). The assertion is exact equality with 0.0 and not a
+    # tolerance: the exporter writes frame/fps into a float32, so Blender
+    # frame 0 is 0.0 with no rounding at all, and any tolerance here is just
+    # somewhere for a one-frame offset to hide.
+    late = []
+    for anim in gltf.get("animations", []):
+        for si, samp in enumerate(anim.get("samplers", [])):
+            times = read_accessor(gltf, binc, samp["input"])
+            if not times:
+                continue
+            if times[0][0] != 0.0:
+                late.append("%s sampler %d first t=%.9g s"
+                            % (anim.get("name", "?"), si, times[0][0]))
+    if gltf.get("animations"):
+        r.check("anim_t0", not late,
+                "%d clip(s) start at t=0" % len(gltf["animations"])
+                if not late else "; ".join(late[:3]))
+
     # --- rig: bones, skin weights, bone-parented sockets, bind pose ---
     # A rigged asset can pass every check above and still be broken in ways
     # that are invisible in a static render: a limb with no weights follows

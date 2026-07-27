@@ -96,6 +96,18 @@ export interface Config {
   readonly props: boolean;
   /** Scatter density multiplier. ?density=2 doubles every biome's count. */
   readonly density: number;
+  /**
+   * Fair per-cell quantisation of the scatter count. `?scatterfair=0` restores
+   * the `Math.round(expected)` the layer shipped with, which returns ZERO props
+   * per cell at the DW-19 cell size. Standing rule 7: the isolation that proves
+   * the diagnosis stays in the build, and it makes the before and after
+   * measurable against ONE binary.
+   */
+  readonly scatterFair: boolean;
+  /** `?propgrow=0` pins the prop pools at the old fixed 7,000 with no growth. */
+  readonly propGrow: boolean;
+  /** `?detail=0` drops the ground-detail card layer that sits under the props. */
+  readonly detailCards: boolean;
   /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
   readonly gameplay: boolean;
   /** W8 the assembly bay. ?vab=0 isolates it, standing rule 7 again. */
@@ -257,6 +269,9 @@ export function parseConfig(search: string): Config {
     stars: p.get('stars') !== '0',
     props: p.get('props') !== '0',
     density: Math.max(0, num(p, 'density', 1)),
+    scatterFair: p.get('scatterfair') !== '0',
+    propGrow: p.get('propgrow') !== '0',
+    detailCards: p.get('detail') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',
     flight: p.get('flight') !== '0',

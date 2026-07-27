@@ -235,6 +235,9 @@ def finger_bones(pre, which=None):
 def keys(frames, samples, fn):
     """Sample a pose function into `samples`+1 keyframes over 1..frames.
 
+    Authored frames are 1-based; of_lib.clip_frame maps frame 1 to t = 0, so an
+    `frames`-frame clip exports as a span of (frames - 1)/60 s.
+
     fn(t) takes t in [0, 1] and returns whatever pose_clip accepts: an
     (rx, ry, rz) triple or an ordered [(axis, degrees), ...] list. Sampling
     rather than hand-listing keys is what keeps a 121-frame idle to two lines

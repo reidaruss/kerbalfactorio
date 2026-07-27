@@ -377,7 +377,7 @@ def main():
     # Nothing but the rest pose may be baked into the joint nodes.
     if arm_obj.animation_data:
         arm_obj.animation_data.action = None
-    bpy.context.scene.frame_set(1)
+    bpy.context.scene.frame_set(int(of.clip_frame(1)))
 
     of.report(NAME, built)
     print("[armour] bones: %d, clips: 0, sockets: 0, collision: none"

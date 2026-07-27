@@ -18,31 +18,11 @@ import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js'
 import type { PropLibrary } from '../render/instancing/PropLibrary.js';
 import { BIOME_PROPS, type PropSpec } from '../assets/Registry.js';
 
-/** 33x33 vertices, so 32 cells a side. /core fixes this (kGridDim). */
-const DIM = 33;
-const CELLS = DIM - 1;
-/**
- * Vertex spacing above which a chunk is too coarse to scatter onto. MEASURED,
- * not chosen: the streamer reaches depth 11 under a walking player at maxDepth
- * 12, and a depth-11 chunk is about 900 m across, so its cell is about 28 m.
- * A 14 m limit rejected every chunk in the world and the first run scattered
- * exactly nothing while reporting success. DW-19's finer LOD is what shrinks
- * this, and the prop's own placement error shrinks with it.
- */
-const MAX_CELL_M = 64;
-/** Instances per chunk ceiling, and how far from the eye scatter reaches. */
-const MAX_PER_CHUNK = 2600;
-const MAX_PER_CELL = 20;
-const RADIUS_M = 170;
-/**
- * cos of the steepest ground a prop will stand on, about 57 degrees. 40 degrees
- * was the first guess and it emptied the Mountains biome: a mountain FLANK is
- * steeper than that almost everywhere, so the one biome whose whole identity is
- * loose rock had no loose rock on it.
- */
-const MIN_SLOPE_COS = 0.55;
-/** Screen-space-free LOD: props past this distance draw their LOD2 geometry. */
-const LOD2_M = 45;
+import {
+  CELLS, DIM, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK, MAX_PER_CELL,
+  RADIUS_M, MIN_SLOPE_COS, LOD2_M, DETAIL_RADIUS_M,
+  tierOf, hash32, keyHash, frac, type Tier,
+} from './ScatterTuning.js';
 
 interface Placed {
   /** Flattened [material, slot] pairs; -1 slot means the batch was full. */
@@ -52,22 +32,14 @@ interface Placed {
   scale: Float32Array;
   /** parts index -> prop index, so one matrix serves a multi-material prop. */
   owner: Uint16Array;
+  /** Cells this chunk actually drew from, and one cell's ground area. */
+  cells: number;
+  cellArea: number;
+  /** What the registry ASKED for over those cells, before any quantisation. */
+  wanted: number;
+  /** Was this chunk inside the detail ring when it was built? */
+  detailBuilt: boolean;
 }
-
-function hash32(a: number, b: number): number {
-  let h = (a ^ Math.imul(b + 0x9e3779b9, 0x85ebca6b)) >>> 0;
-  h = Math.imul(h ^ (h >>> 15), 0x2545f491) >>> 0;
-  return (h ^ (h >>> 13)) >>> 0;
-}
-function keyHash(key: string): number {
-  let h = 0x811c9dc5 >>> 0;
-  for (let i = 0; i < key.length; ++i) {
-    h = Math.imul(h ^ key.charCodeAt(i), 0x01000193) >>> 0;
-  }
-  return h;
-}
-/** [0,1) from the n-th draw of a chunk's stream. */
-const frac = (h: number): number => (h >>> 8) / 16777216;
 
 export class Scatter {
   private readonly placed = new Map<string, Placed>();
@@ -81,12 +53,31 @@ export class Scatter {
   private readonly eye = new THREE.Vector3();
   chunksScattered = 0;
   lastBuildMs = 0;
+  /** Prop instances (not parts) currently placed, and the ground they sit on. */
+  propsPlaced = 0;
+  wantedProps = 0;
+  cellsScattered = 0;
+  groundM2 = 0;
+  /** Cells and chunks whose draw was TRUNCATED by a cap. Must stay 0 near. */
+  cellsCapped = 0;
+  chunksCapped = 0;
+  /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
+  backlog = 0;
 
   constructor(
     private readonly lib: PropLibrary,
     private readonly pool: ChunkGeometryPool,
     private readonly enabled: boolean,
     private readonly densityScale: number,
+    /**
+     * Fair (stochastic) per-cell quantisation. `?scatterfair=0` restores the
+     * `Math.round` this shipped with, which is the whole defect: the count is
+     * per CELL, DW-19 took the near cell from 7.2 m to 1.808 m, and
+     * `round(118920 * 1.808^2 / 1e6)` is `round(0.389)` = **0**. Every chunk
+     * under the player scattered NOTHING while `want` for the chunk read 399
+     * and every other number looked healthy.
+     */
+    private readonly fair = true,
   ) {}
 
   /**
@@ -99,17 +90,38 @@ export class Scatter {
     const t0 = performance.now();
     this.eye.copy(eye);
     const seen = new Set<string>();
+    let budget = BUILDS_PER_UPDATE;
+    let backlog = 0;
     for (const v of views) {
       if (!v.isNear || !v.visible) continue;
       if (v.pos.distanceTo(eye) > RADIUS_M + v.maxOffsetM) continue;
       seen.add(v.key);
-      if (!this.placed.has(v.key)) this.build(v);
+      const pl = this.placed.get(v.key);
+      if (pl === undefined) {
+        if (budget <= 0) { backlog++; continue; }
+        budget--;
+        this.build(v);
+        continue;
+      }
+      // A chunk built at 150 m carries no understorey, and walking onto it
+      // would put the player back on bare ground. Rebuild it the once, when it
+      // crosses the detail boundary, rather than paying for cards out to 170 m.
+      if (pl.detailBuilt === this.detailEligible(v)) continue;
+      if (budget <= 0) { backlog++; continue; }
+      budget--;
+      this.drop(v.key);
+      this.build(v);
     }
+    this.backlog = backlog;
     for (const key of [...this.placed.keys()]) {
       if (!seen.has(key)) this.drop(key);
     }
     this.chunksScattered = this.placed.size;
     this.lastBuildMs = performance.now() - t0;
+  }
+
+  private detailEligible(v: ChunkView): boolean {
+    return v.pos.distanceTo(this.eye) <= DETAIL_RADIUS_M + v.maxOffsetM;
   }
 
   /** Re-derive every instance matrix from its chunk's anchor. THE rebase path. */
@@ -125,6 +137,10 @@ export class Scatter {
     const pl = this.placed.get(key);
     if (pl === undefined) return;
     for (const part of pl.parts) this.lib.release(part.material, part.slot);
+    this.propsPlaced -= pl.scale.length;
+    this.wantedProps -= pl.wanted;
+    this.cellsScattered -= pl.cells;
+    this.groundM2 -= pl.cells * pl.cellArea;
     this.placed.delete(key);
   }
 
@@ -136,20 +152,44 @@ export class Scatter {
     const cell = Math.hypot(pos[3] - pos[0], pos[4] - pos[1], pos[5] - pos[2]);
     if (!(cell > 0) || cell > MAX_CELL_M) return;
     const areaKm2 = (cell * CELLS) ** 2 / 1e6;
-    const weights = specs.map((s) => s.density);
-    const total = weights.reduce((a, b) => a + b, 0);
+    // TWO tiers. The ground-detail cards are 0.36 to 0.58 m tall and stop being
+    // legible within a few tens of metres, so paying an instance for one at
+    // 150 m buys nothing and would push the shared OF_Grass batch past its
+    // ceiling. They are drawn only inside DETAIL_RADIUS_M; everything else is
+    // drawn over the whole RADIUS_M ring, exactly as before.
+    const full: Tier = tierOf(specs);
+    const base: Tier = tierOf(specs.filter((s) => !s.detail));
+    // HEADROOM, not a target. Fair quantisation means the realised count is a
+    // sum of Bernoulli draws about the expectation, so an allocation sized to
+    // the expectation exactly would truncate about half the chunks. 64 is four
+    // standard deviations at a full 1,024-cell chunk, and `chunksCapped` counts
+    // any truncation that happens anyway rather than swallowing it.
     const want = Math.min(MAX_PER_CHUNK,
-      Math.max(1, Math.round(total * areaKm2 * this.densityScale)));
-    const pl = this.sample(v, specs, weights, total, want, pos, cell);
-    if (pl !== null) { this.placed.set(v.key, pl); this.write(v, pl); }
+      Math.max(1, Math.ceil(full.total * areaKm2 * this.densityScale) + 64));
+    const detailBuilt = this.detailEligible(v);
+    const pl = this.sample(v, detailBuilt ? full : base, base, want, pos, cell,
+      detailBuilt);
+    // A chunk that legitimately places NOTHING is still recorded, and that is
+    // load-bearing twice over. It used to return early, so the chunk was retried
+    // every single frame forever, which with a per-update budget starves every
+    // chunk behind it: the shipped-behaviour A/B measured 22 chunks queued and
+    // ZERO props placed. And its cells belong in `wanted`, because a delivery
+    // ratio that only counts the chunks that delivered something is blind in
+    // exactly the case the ratio exists to catch.
+    this.placed.set(v.key, pl);
+    this.propsPlaced += pl.scale.length;
+    this.wantedProps += pl.wanted;
+    this.cellsScattered += pl.cells;
+    this.groundM2 += pl.cells * pl.cellArea;
+    this.write(v, pl);
   }
 
   private sample(
-    v: ChunkView, specs: readonly PropSpec[], weights: number[], total: number,
-    want: number, pos: Float32Array, cell: number,
-  ): Placed | null {
+    v: ChunkView, full: Tier, base: Tier, want: number,
+    pos: Float32Array, cell: number, detailBuilt: boolean,
+  ): Placed {
     const nrm = this.pool.batch(v.pooled).normals(v.pooled.slot);
-    const base = keyHash(v.key);
+    const keyBase = keyHash(v.key);
     const local = new Float32Array(want * 3);
     const quat = new Float32Array(want * 4);
     const scale = new Float32Array(want);
@@ -166,16 +206,25 @@ export class Scatter {
     // read as empty. Per-cell placement also makes density mean what it says:
     // instances per square kilometre of GROUND, independent of chunk depth.
     const cellArea = cell * cell;
-    const perCell = Math.min(MAX_PER_CELL,
-      Math.max(0, Math.round(total * (cellArea / 1e6) * this.densityScale)));
+    // The expected count for ONE cell, as a real number. Rounding it to an
+    // integer here is the defect: it is 0.389 at the shipped 1.808 m cell, and
+    // `Math.round` turns that into zero props per cell forever. A fair draw
+    // spends the fraction as a probability, keyed by the SAME per-cell hash
+    // everything else uses, so determinism is untouched and the realised
+    // density equals the requested density in expectation at any LOD depth.
+    const perKm2 = (cellArea / 1e6) * this.densityScale;
+    let cells = 0;
+    let wanted = 0;
     const r2 = RADIUS_M * RADIUS_M;
+    const detailR2 = DETAIL_RADIUS_M * DETAIL_RADIUS_M;
     for (let cy = 0; cy < CELLS && n < want; ++cy) {
       for (let cx = 0; cx < CELLS && n < want; ++cx) {
         const i00 = (cy * DIM + cx) * 3;
         const dx = v.pos.x + pos[i00] - this.eye.x;
         const dy = v.pos.y + pos[i00 + 1] - this.eye.y;
         const dz = v.pos.z + pos[i00 + 2] - this.eye.z;
-        if (dx * dx + dy * dy + dz * dz > r2) continue;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > r2) continue;
         // Slope from /core's own stored vertex normal, decoded from int8.
         const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
         const nl = Math.hypot(nx, ny, nz) || 1;
@@ -183,11 +232,21 @@ export class Scatter {
         const i10 = i00 + 3;
         const i01 = i00 + DIM * 3;
         const i11 = i01 + 3;
-        const seed = base ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
+        const seed = keyBase ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
+        cells++;
+        const tier = d2 <= detailR2 ? full : base;
+        const expect = tier.total * perKm2;
+        wanted += expect;
+        const whole = Math.floor(expect);
+        const drawn = this.fair
+          ? whole + (frac(hash32(seed, 0x9e3779b1)) < expect - whole ? 1 : 0)
+          : Math.round(expect);
+        if (drawn > MAX_PER_CELL) this.cellsCapped++;
+        const perCell = Math.min(MAX_PER_CELL, drawn);
         for (let k = 0; k < perCell && n < want; ++k) {
           const u = frac(hash32(seed, k * 4));
           const w = frac(hash32(seed, k * 4 + 1));
-          const spec = this.pick(specs, weights, total, hash32(seed, k * 4 + 2));
+          const spec = this.pick(tier, hash32(seed, k * 4 + 2));
           const list = this.lib.partsOf(spec.stem);
           if (list === null) continue;
           local[n * 3] = this.bilerp(pos, i00, i10, i01, i11, 0, u, w);
@@ -211,10 +270,11 @@ export class Scatter {
         }
       }
     }
-    if (n === 0) { for (const p of parts) this.lib.release(p.material, p.slot); return null; }
+    if (n >= want) this.chunksCapped++;
     return {
       parts, local: local.subarray(0, n * 3), quat: quat.subarray(0, n * 4),
       scale: scale.subarray(0, n), owner: Uint16Array.from(owner),
+      cells, cellArea, wanted, detailBuilt,
     };
   }
 
@@ -227,15 +287,13 @@ export class Scatter {
     return top + (bot - top) * w;
   }
 
-  private pick(
-    specs: readonly PropSpec[], weights: number[], total: number, h: number,
-  ): PropSpec {
-    let r = frac(h) * total;
-    for (let i = 0; i < specs.length; ++i) {
-      r -= weights[i];
-      if (r <= 0) return specs[i];
+  private pick(t: Tier, h: number): PropSpec {
+    let r = frac(h) * t.total;
+    for (let i = 0; i < t.specs.length; ++i) {
+      r -= t.weights[i];
+      if (r <= 0) return t.specs[i];
     }
-    return specs[specs.length - 1];
+    return t.specs[t.specs.length - 1];
   }
 
   /** Compose every instance matrix from the chunk's CURRENT engine position. */
@@ -254,7 +312,36 @@ export class Scatter {
     }
   }
 
-  stats(): { chunks: number; buildMs: number } {
-    return { chunks: this.chunksScattered, buildMs: Math.round(this.lastBuildMs * 100) / 100 };
+  /**
+   * `placedPerM2` against `wantedPerM2` is THE property this layer claims: the
+   * scatter delivers the density the registry asks for, over the ground it
+   * actually drew on, whatever LOD depth that ground came in at. It is a ratio
+   * rather than a count so it cannot be satisfied by a terrain change, and it
+   * is reported next to the two cap counters so a shortfall always has a named
+   * cause instead of being absorbed into a tolerance.
+   */
+  stats(): {
+    chunks: number; buildMs: number; propsPlaced: number; cellsScattered: number;
+    groundM2: number; placedPerM2: number; wantedPerM2: number;
+    deliveredFraction: number; cellsCapped: number; chunksCapped: number;
+    scatterBacklog: number; fairQuantise: boolean;
+  } {
+    return {
+      chunks: this.chunksScattered,
+      buildMs: Math.round(this.lastBuildMs * 100) / 100,
+      propsPlaced: this.propsPlaced,
+      cellsScattered: this.cellsScattered,
+      groundM2: Math.round(this.groundM2),
+      placedPerM2: this.groundM2 > 0
+        ? Math.round((this.propsPlaced / this.groundM2) * 1e5) / 1e5 : 0,
+      wantedPerM2: this.groundM2 > 0
+        ? Math.round((this.wantedProps / this.groundM2) * 1e5) / 1e5 : 0,
+      deliveredFraction: this.wantedProps > 0
+        ? Math.round((this.propsPlaced / this.wantedProps) * 1e4) / 1e4 : 0,
+      cellsCapped: this.cellsCapped,
+      chunksCapped: this.chunksCapped,
+      scatterBacklog: this.backlog,
+      fairQuantise: this.fair,
+    };
   }
 }

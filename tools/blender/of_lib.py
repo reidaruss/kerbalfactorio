@@ -128,8 +128,11 @@ def reset_scene():
     #     action.timeScale = referenceTicks / recipe.craftTimeTicks
     scn.render.fps = 60
     scn.render.fps_base = 1.0
-    scn.frame_start = 1
-    scn.frame_end = 1
+    # Frame 0, not 1. Authored frame 1 is the FIRST frame of every clip and has
+    # to leave here at t = 0 s, so it is keyed on Blender frame 0. See
+    # clip_frame() for the whole argument (DW-34).
+    scn.frame_start = int(clip_frame(1))
+    scn.frame_end = int(clip_frame(1))
     return scn
 
 
@@ -727,11 +730,57 @@ def _rot_matrix(rot):
     return m
 
 
+# ---------------------------------------------------------------------------
+# Clip frame numbering. The ONE place that decides where a clip starts.
+# ---------------------------------------------------------------------------
+
+# Clips are AUTHORED 1-based: a clip runs from frame 1 to frame n, n frames
+# long, and rig_common.keys() samples a pose function across exactly that
+# range. That is the convention every build script and every table in
+# ASSET-SPECS is written in, and it stays.
+#
+# What CANNOT stay is keying authored frame 1 on Blender frame 1. The glTF
+# exporter turns a Blender frame straight into a time:
+#
+#     seconds = frame / (fps * fps_base)        io_scene_gltf2 .../animation/
+#                                               keyframes.py:13
+#
+# so a first key on frame 1 exports at t = 1/60 s, three.js reads the clip's
+# duration off the last track time and gets n/60, and every clip opens with a
+# 16.7 ms hold in which nothing moves. On Run that is 0.4167 s of loop against
+# 0.400 s of authored motion: a 7.5 cm positional snap once per cycle at
+# 4.5 m/s, forever, in the clip a player watches more than any other (DW-34).
+#
+# The fix is here and not in a build script, and not in the exporter's
+# export_anim_slide_to_zero flag. That flag only reaches the SAMPLED animation
+# path; the fcurve path (every asset that exports with
+# export_force_sampling=False, which is 19 of the 21 animated assets) ignores
+# it, so it would have fixed the two rigged characters and silently left every
+# machine, tree and belt at 1/60. Measured, not assumed: two probe exports of
+# the same 3-key clip with the flag on came out 0.0 s and 0.0167 s.
+CLIP_FRAME_BASE = 1                       # the authored frame that is t = 0
+
+
+def clip_frame(f):
+    """Authored (1-based) clip frame -> the Blender frame it is keyed on.
+
+    Authored frame 1 lands on Blender frame 0 and therefore on t = 0 s, and an
+    n-frame clip spans Blender 0..n-1, so its exported duration is the
+    (n - 1)/60 s the motion was actually authored across.
+
+    Tick indices into an exported clip are therefore `authored - 1`: the
+    pickaxe impact authored on frame 17 is tick 16 at runtime.
+    """
+    return float(f) - CLIP_FRAME_BASE
+
+
 def pose_clip(arm, clip_name, tracks, interpolation="BEZIER"):
     """One Action on an armature: the rig's answer to add_clip_multi.
 
     tracks = {bone_name: {"rot": [(frame, rotation), ...],
                           "loc": [(frame, (x, y, z)), ...]}}
+
+    Frames are 1-based and authored frame 1 exports at t = 0 (see clip_frame).
 
     A rotation is either an (rx, ry, rz) triple of DEGREES applied in XYZ order,
     or an ordered list of (axis, degrees) pairs applied innermost first:
@@ -760,7 +809,7 @@ def pose_clip(arm, clip_name, tracks, interpolation="BEZIER"):
     act = bpy.data.actions.new(clip_name)
     act.use_fake_user = True                  # survives to ACTIONS export
     fcurves = _fcurves_for(act, arm)
-    last = 1
+    last = CLIP_FRAME_BASE
     for bone_name, chans in tracks.items():
         pb = arm.pose.bones[bone_name]
         pb.rotation_mode = "QUATERNION"
@@ -779,7 +828,7 @@ def pose_clip(arm, clip_name, tracks, interpolation="BEZIER"):
                     q.negate()
                 prev = q
                 for i in range(4):
-                    kp = fcs[i].keyframe_points.insert(float(frame), q[i])
+                    kp = fcs[i].keyframe_points.insert(clip_frame(frame), q[i])
                     kp.interpolation = interpolation
                 last = max(last, int(frame))
         if chans.get("loc"):
@@ -788,11 +837,12 @@ def pose_clip(arm, clip_name, tracks, interpolation="BEZIER"):
             for frame, vec in chans["loc"]:
                 local = inv @ Vector(vec)
                 for i in range(3):
-                    kp = fcs[i].keyframe_points.insert(float(frame), local[i])
+                    kp = fcs[i].keyframe_points.insert(clip_frame(frame),
+                                                       local[i])
                     kp.interpolation = interpolation
                 last = max(last, int(frame))
     scn = bpy.context.scene
-    scn.frame_end = max(scn.frame_end, last)
+    scn.frame_end = max(scn.frame_end, int(clip_frame(last)))
     return act
 
 
@@ -829,7 +879,7 @@ def add_clip(obj, clip_name, channel, keys, interpolation="LINEAR"):
     obj            the object to animate
     clip_name      the three.js AnimationClip name, e.g. 'Belt_Scroll'
     channel        'location' | 'rotation_euler' | 'scale'
-    keys           [(frame, (x, y, z)), ...]
+    keys           [(frame, (x, y, z)), ...], frames 1-based (see clip_frame)
 
     ROTATION WARNING: glTF stores rotation as a quaternion, so a two-key
     0 -> 360 degree euler curve exports as "no rotation at all" (both keys are
@@ -855,16 +905,17 @@ def add_clip_multi(obj, clip_name, channels, interpolation="LINEAR"):
     act = bpy.data.actions.new(clip_name)
     act.use_fake_user = True                      # survives to ACTIONS export
     fcurves = _fcurves_for(act, obj)
-    last = 1
+    last = CLIP_FRAME_BASE
     for channel, keys in channels.items():
         for axis in range(3):
             fc = fcurves.new(data_path=channel, index=axis)
             for frame, vec in keys:
-                kp = fc.keyframe_points.insert(float(frame), float(vec[axis]))
+                kp = fc.keyframe_points.insert(clip_frame(frame),
+                                               float(vec[axis]))
                 kp.interpolation = interpolation
         last = max(last, max(int(f) for f, _ in keys))
     scn = bpy.context.scene
-    scn.frame_end = max(scn.frame_end, last)
+    scn.frame_end = max(scn.frame_end, int(clip_frame(last)))
     return act
 
 

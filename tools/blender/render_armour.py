@@ -68,16 +68,20 @@ VIEWS = {
 
 # (clip, frame, views). The frames are the ones where the joints are most bent,
 # because a straight limb proves nothing about a joint.
+#
+# These are frames in the IMPORTED clip, which now starts at frame 0 (DW-34,
+# of_lib.clip_frame), so each one is the authored frame minus one. The
+# Swing_Pickaxe shot is the impact: authored 17, imported 16.
 SHOTS = [
-    ("rest", 1, ("34", "side")),
-    ("Idle", 60, ("34", "side")),
-    ("Run", 1, ("34", "side")),
-    ("Run", 7, ("34", "side", "knee", "torso")),
-    ("Run", 13, ("34", "side")),
-    ("Run", 19, ("34", "side", "knee", "torso")),
-    ("Jump_Loop", 11, ("34", "side", "knee")),
-    ("Swing_Pickaxe", 17, ("34", "side", "torso")),
-    ("Crouch_Idle", 1, ("34", "side", "knee", "torso")),
+    ("rest", 0, ("34", "side")),
+    ("Idle", 59, ("34", "side")),
+    ("Run", 0, ("34", "side")),
+    ("Run", 6, ("34", "side", "knee", "torso")),
+    ("Run", 12, ("34", "side")),
+    ("Run", 18, ("34", "side", "knee", "torso")),
+    ("Jump_Loop", 10, ("34", "side", "knee")),
+    ("Swing_Pickaxe", 16, ("34", "side", "torso")),
+    ("Crouch_Idle", 0, ("34", "side", "knee", "torso")),
 ]
 
 
@@ -178,7 +182,7 @@ def pose(arm, clip, frame):
         arm.animation_data.action = None
         for pb in arm.pose.bones:
             pb.matrix_basis.identity()
-        bpy.context.scene.frame_set(1)
+        bpy.context.scene.frame_set(0)
         return None
     act = bpy.data.actions.get(clip)
     if act is None:
