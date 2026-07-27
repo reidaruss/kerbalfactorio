@@ -25,6 +25,21 @@ for (const a of process.argv.slice(2)) {
   if (m) args.set(m[1], m[2] ?? '1');
 }
 const base = args.get('url') ?? 'http://127.0.0.1:5173/';
+// A query string inside --url used to be DISCARDED without a word: the runner
+// rebuilds the query from its own flags below, so '?sandbox=1' written into
+// --url silently ran the other mode, and two lanes have shipped wrong results
+// off exactly that. Refuse it loudly instead (BT-24).
+{
+  const q = base.indexOf('?');
+  if (q !== -1) {
+    console.error(
+      `smoke: --url must not carry a query string. '${base.slice(q)}' would be `
+      + `silently discarded, because the runner rebuilds the query from its own `
+      + `flags. Pass the flags instead: --url=${base.slice(0, q)} plus e.g. `
+      + `--sandbox=1 --scenario=walk --seed=... (any key in the params list).`);
+    process.exit(2);
+  }
+}
 const out = args.get('out');
 const width = Number(args.get('width') ?? 1600);
 const height = Number(args.get('height') ?? 900);
