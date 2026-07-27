@@ -247,38 +247,6 @@ export interface Addr {
 }
 
 /**
- * The occupancy key. A wall and a door share one, so an edge takes one part.
- *
- * GP-60. THE SITE ID IS PART OF THE KEY AND USED NOT TO BE, AND THAT WAS A BUG.
- * Every site numbers its own cells from (0,0), so a base founded 100 m away had
- * a cell (0,0) too, and the occupancy map is ONE map: `s.has(key)` therefore
- * answered "already built here" for a cell in a site nothing had ever been built
- * in. The support checks were already site-aware (`hasDeck` compares `siteId`),
- * so this was the one question in the set asked in the wrong space, which is why
- * it survived: every positive test builds one base.
- *
- * Found by `probes/clickonce.js` teleporting 60 m between measured clicks to get
- * fresh ground, and being told the fresh ground was already built on.
- */
-export function addrKey(siteId: number, a: Addr): string {
-  return isDeck(a.kind) ? deckKey(siteId, a.i, a.j, a.level)
-    : `w${a.axis}:${siteId}:${a.i},${a.j},${a.level}`;
-}
-
-/** The deck half of `addrKey`, for the several callers that ask about a cell
- *  they have coordinates for rather than an `Addr` they hold. */
-export function deckKey(siteId: number, i: number, j: number,
-                        level: number): string {
-  return `d:${siteId}:${i},${j},${level}`;
-}
-
-/** The wall half, likewise. */
-export function wallKey(siteId: number, axis: 0 | 1, i: number, j: number,
-                        level: number): string {
-  return `w${axis}:${siteId}:${i},${j},${level}`;
-}
-
-/**
  * Found a site on the world lattice cell containing a point.
  *
  * The tangent axes come from `snapToAxes` against the same basis the machine
@@ -410,3 +378,9 @@ export function footprintOf(m: StructureModule, kind: StructureKind):
   }
   return [[0, 0], [-h, 0], [h, 0]];
 }
+
+/** The occupancy keys live in StructureKeys.ts. Re-exported because four call
+ *  sites and two probes already name this module for them, and moving a
+ *  published name to make room in a file is a worse trade than one line of
+ *  forwarding. */
+export { addrKey, deckKey, wallKey } from './StructureKeys.js';

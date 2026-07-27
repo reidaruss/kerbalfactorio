@@ -18,8 +18,8 @@ import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import { FlightSession } from '../sim/FlightSession.js';
-import { dot, len, norm } from '../sim/FlightAbi.js';
-import { horizonAngles, horizonFrame, rollAngle } from '../sim/FlightAttitude.js';
+import { len, norm } from '../sim/FlightAbi.js';
+import { horizonFrame } from '../sim/FlightAttitude.js';
 import type { Vec3 } from '../sim/FlightAbi.js';
 import { VesselObserver } from '../player/VesselObserver.js';
 import type { ViewRouter } from '../player/ViewRouter.js';
@@ -27,9 +27,13 @@ import type { Input } from '../player/Input.js';
 import type { Controller } from '../player/Controller.js';
 import { VesselView } from '../render/VesselView.js';
 import { Navball } from '../ui/Navball.js';
-import type { NavballReadout, BallMarker } from '../ui/Navball.js';
-import { allowSave, inhibitSave, saveInhibit } from '../sim/SaveInhibit.js';
+import type { NavballReadout } from '../ui/Navball.js';
+import { allowSave, inhibitSave } from '../sim/SaveInhibit.js';
+import { readout as computeReadout } from './FlightReadout.js';
+import { choosePad, padReport, rollOutOnPad, stepPadClamps as stepPad }
+  from './FlightPad.js';
 import { readCatalogue } from '../game/VesselCatalogue.js';
+import type { LaunchPads, PadPart } from '../game/LaunchPad.js';
 import type { PartRow } from '../game/VesselCatalogue.js';
 
 /** How close the player must stand to a vessel to climb aboard, metres. */
@@ -68,6 +72,9 @@ export interface FlightDeps {
   host: HTMLElement;
   /** The live design handle from the assembly bay, or 0 when there is none. */
   designHandle(): number;
+  /** GP-57: the world's launch pads, or null in a boot with no gameplay. A
+   *  THUNK, so a world reloaded from a save hands back the RESTORED pads. */
+  pads?(): LaunchPads | null;
   /** Hide the on-foot HUD and the build ghost while strapped in. */
   setWorldUi(visible: boolean): void;
 }
@@ -83,6 +90,14 @@ export class FlightMode {
    *  ball's marker and the map's are ONE direction from one plan. */
   nodeDir: Vec3 | null = null;
   rollouts = 0;
+  /** GP-57. Roll-outs that landed on a real pad rather than on R12's stand-in
+   *  patch of ground, the pad the LIVE vessel stands on, and the measured gap
+   *  between the vessel's own base and that pad's published `socket_vessel`
+   *  (-1 when the last roll-out was not on a pad). Public because FlightPad.ts
+   *  writes them; see that file for what each one is measured against. */
+  padRollouts = 0;
+  padInUse: PadPart | null = null;
+  padSocketGapM = -1;
   boardings = 0;
   disembarks = 0;
   refusals = 0;
@@ -91,14 +106,17 @@ export class FlightMode {
   private catalogue: PartRow[] = [];
   private byId = new Map<number, PartRow>();
   private loaded = false;
-  private drawnRevision = -1;
+  /** Public: FlightPad.ts rebuilds the drawn stack on a pad roll-out. */
+  drawnRevision = -1;
   private msgUntilS = 0;
   private lastSimSecs = 0;
   private readonly pos = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
   private readonly rgt = new THREE.Vector3();
 
-  constructor(private readonly d: FlightDeps) {
+  /** `d` is public because the pad half of the roll-out lives in FlightPad.ts,
+   *  and handing over the bundle beats copying four ports onto the class. */
+  constructor(readonly d: FlightDeps) {
     this.session = new FlightSession({
       M: d.M, bodyHandle: d.bodyHandle, bodyRadiusM: d.bodyRadiusM,
       surfaceRadius: (x, y, z) => d.oracle.surfaceRadius(x, y, z),
@@ -152,6 +170,16 @@ export class FlightMode {
   rollOut(): void {
     const design = this.d.designHandle();
     if (design <= 0) { this.refuse('nothing built: press C and build a rocket'); return; }
+    // GP-57 / R12. THE PAD IS PREFERRED AND THE STAND-IN IS KEPT, which is a
+    // decision rather than a hedge. DW-29's own sequencing is that reaching
+    // orbit is a MANUAL skill first and the first flights are hand-flown, while
+    // the pad is gated behind Electrification plus 1,440 Stone of platform.
+    // Making flight impossible until all of that is paid would invert the arc
+    // it asks for: you would be automating to earn the right to learn to fly.
+    // The stand-in is the entry ramp; the pad is what you graduate to, and the
+    // two do not read alike (see PAD_NOTE against ROLLOUT_NOTE).
+    const pad = choosePad(this);
+    if (pad !== null && rollOutOnPad(this, design, pad)) return;
     const feet = this.d.player.body.feet;
     const r = Math.hypot(feet.x, feet.y, feet.z) || 1;
     const up: Vec3 = [feet.x / r, feet.y / r, feet.z / r];
@@ -168,6 +196,10 @@ export class FlightMode {
     const t = PAD_AHEAD_M / this.d.bodyRadiusM;
     const dir = norm([up[0] + ahead[0] * t, up[1] + ahead[1] * t, up[2] + ahead[2] * t]);
     if (!this.session.rollOut(design, dir)) { this.refusals += 1; return; }
+    // A stand-in roll-out CLEARS the pad state, or the report would still be
+    // describing the launch before this one.
+    this.padInUse = null;
+    this.padSocketGapM = -1;
     this.rollouts += 1;
     this.drawnRevision = -1;
     this.rebuild();
@@ -252,7 +284,7 @@ export class FlightMode {
   private refuse(why: string): void { this.refusals += 1; this.flash(why); }
   /** Six seconds on the LOOP's clock, the only clock `frame`'s expiry sees
    *  (PH-35: the session's used mission time against it). */
-  private flash(m: string): void {
+  flash(m: string): void {
     this.message = m;
     this.msgUntilS = this.lastSimSecs + 6;
   }
@@ -316,7 +348,7 @@ export class FlightMode {
     if (this.aboard) this.navball.render(this.readout());
   }
 
-  private rebuild(): void {
+  rebuild(): void {
     this.view.rebuild(this.session.partRows.map((q) => ({
       handle: q.handle, partId: q.partId, attach: q.attach,
       originM: q.originM, radialAngleRad: q.radialAngleRad,
@@ -328,56 +360,13 @@ export class FlightMode {
     this.drawnRevision = this.session.revision;
   }
 
-  // --- the readout -----------------------------------------------------------
+  /** The navball's whole readout, composed in FlightReadout.ts. Kept as a
+   *  method because probes and DebugFlight.ts call it. */
+  readout(): NavballReadout { return computeReadout(this); }
 
-  /** Heading and pitch of a unit direction in THE local horizon frame, which is
-   *  `FlightAttitude`'s, so the ball, the ribbon and the keys agree on east. */
-  private marker(dir: Vec3 | null): BallMarker | null {
-    return dir === null ? null : horizonAngles(dir, this.session.up);
-  }
-
-  readout(): NavballReadout {
-    const s = this.session;
-    const st = s.state;
-    const tm = s.telemetry;
-    const u = s.up;
-    const nose = this.marker(st.forward) ?? { headingDeg: 0, pitchDeg: 90 };
-    const v = st.vel;
-    const speed = len(v);
-    const pro = speed > 0.5 ? this.marker(v) : null;
-    const retro = pro === null ? null
-      : { headingDeg: (pro.headingDeg + 180) % 360, pitchDeg: -pro.pitchDeg };
-    const roll = rollAngle(st.forward, st.right, u);
-    const next = s.nextStageIndex();
-    return {
-      headingDeg: nose.headingDeg, pitchDeg: nose.pitchDeg,
-      rollDeg: (roll * 180) / Math.PI,
-      prograde: pro, retrograde: retro,
-      command: this.marker(s.sasName === 'CMD' ? s.commandDir : null),
-      guidance: this.marker(s.guidanceDir()),
-      node: this.marker(this.nodeDir),
-      altitudeM: s.altitudeAglM, altitudeDatumM: tm.altitudeM,
-      surfaceSpeedMS: speed, orbitalSpeedMS: speed, verticalSpeedMS: dot(v, u),
-      apoapsisM: s.orbit.apoapsisAltM, periapsisM: s.orbit.periapsisAltM,
-      // A vehicle on the ground has zero velocity, a perfectly well defined
-      // degenerate conic through the planet's centre, so the pad readout was
-      // PE -600.00 km: right, and it reads as a broken instrument.
-      bound: s.orbit.bound && s.status !== 'CLAMPED' && s.status !== 'DOWN',
-      throttle: s.throttleValue,
-      stages: s.stageRows.map((q) => ({
-        index: q.index, dvVacMS: q.dvVacMS, twr: q.twr, burnS: q.burnS,
-        active: q.index === Math.max(0, next - 1),
-      })),
-      totalDvMS: s.totalDvMS(), remainingDvMS: s.remainingDvMS(),
-      sas: s.sasName, status: s.status,
-      qPa: tm.qPa, maxQPa: s.maxQPa, twr: s.currentTwr(), massKg: tm.massKg,
-      gForce: tm.accelMS2 / 9.80665, metS: Math.max(0, s.metS),
-      // From the LATCH, never repeated from a constant here: a chip that says
-      // saving is off while it is on would be a second authority.
-      warning: saveInhibit(),
-      message: s.message !== '' ? s.message : this.message,
-    };
-  }
+  /** GP-57: the pad's clamps let go at the instant the launch clamp does. Once
+   *  per FIXED tick, from `Systems`, given that tick. See FlightPad.ts. */
+  stepPadClamps(tick: number): void { stepPad(this, tick); }
 
   vesselPosition(out: Vec3d): Vec3d { return this.observer.vesselPosition(out); }
 
@@ -385,6 +374,7 @@ export class FlightMode {
     return {
       aboard: this.aboard, rollouts: this.rollouts, boardings: this.boardings,
       disembarks: this.disembarks, refusals: this.refusals,
+      ...padReport(this),
       distanceToVesselM: this.session.live
         ? Math.round(this.distanceToVessel() * 100) / 100 : -1,
       boardRangeM: BOARD_RANGE_M,

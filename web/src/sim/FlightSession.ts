@@ -10,12 +10,13 @@ import { vesselAbi } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import {
-  SAS_COMMAND, SAS_OFF, SAS_PROGRADE, SAS_RETROGRADE, SAS_NAMES, add, dot,
-  flightOrbit, flightParts, flightState, flightTelemetry, guidancePitch, len,
-  norm, rotateAbout, scale,
+  SAS_COMMAND, SAS_OFF, SAS_NAMES, dot, flightOrbit, flightParts, flightState,
+  flightTelemetry, len, norm,
 } from './FlightAbi.js';
 import { flightReport, readStagePerformance } from './FlightReport.js';
-import { holdRoll, horizonFrame, slewCommand } from './FlightAttitude.js';
+import { commandDirection, cycleSas, guidanceDir, levelWings, setSas, slew }
+  from './FlightSas.js';
+import { horizonFrame } from './FlightAttitude.js';
 import { WARP_STEPS, warpSteps } from './FlightWarp.js';
 import type { FlightPartRow, FlightStateRow, FlightTelemetryRow, OrbitRow, Vec3 } from './FlightAbi.js';
 
@@ -39,10 +40,6 @@ export interface FlightPorts {
  *  LIES: 45 deg/s overshot the ribbon by 20 degrees a side; 20 tracks it. */
 const SLEW_DEG_S = 20;
 const ROLL_DEG_S = 60;
-/** How fast SAS takes roll back out. Slower than the player's own roll rate,
- *  so a deliberate roll wins while the key is held. */
-const ROLL_HOLD_DEG_S = 20;
-
 export class FlightSession {
   handle = 0;
   status: FlightStatus = 'CLAMPED';
@@ -60,18 +57,50 @@ export class FlightSession {
   /** Pad ground radius, and the vessel base offset below its own origin. */
   padRadiusM = 0; baseOffsetM = 0;
   padUp: Vec3 = [0, 1, 0];
+  /** GP-57: true when `rollOut` was given a stand radius, i.e. the vessel is on
+   *  a built launch pad rather than on the R12 stand-in patch of ground. */
+  onPad = false;
+  /**
+   * HOW MANY TIMES THE LAUNCH CLAMP HAS RELEASED, and the sim tick it last did.
+   *
+   * A COUNTER RATHER THAN A CALLBACK, and that is the whole point of it. The
+   * pad's own clamps have to swing back at this exact instant, and wiring them
+   * as a direct call from `tryRelease` would make "they fired together" true by
+   * construction and therefore unassertable: a probe checking it would be
+   * checking that one line calls another. A counter plus a tick lets the pad
+   * record its OWN release tick independently, so the acceptance compares two
+   * numbers that were written by two systems and can genuinely disagree.
+   *
+   * The tick is a FIXED tick and not a timestamp because release happens inside
+   * `stepClamped` on the fixed step, and a frame carries one to three of those:
+   * a per-frame clock cannot tell "the same instant" from "within 50 ms" and
+   * would turn the assertion into a coincidence detector.
+   */
+  releases = 0;
+  releasedAtTick = -1;
+  /** The fixed tick this session is being stepped on. Written by the caller each
+   *  tick, because a sim has no business knowing the loop's index and the loop
+   *  is the only thing that does. Named `fixedTick` rather than `tick` because
+   *  `tick(nowS)` is already this class's per-frame method. */
+  fixedTick = -1;
 
-  private readonly V: OfVesselModule;
+  /** PUBLIC because FlightSas.ts drives the attitude exports directly. It is
+   *  still nobody else's: the ABI face is `vesselabi.ts` and this is one
+   *  session's bound handle onto it. */
+  readonly V: OfVesselModule;
   /** The DESIGN the craft was copied from. Kept because the per-stage delta-v
    *  table is an `of_vs_*` read taking a VESSEL handle, and the two registries
    *  both number from 1 (PH-27). */
   private design = 0;
-  private sasMode = SAS_COMMAND;
-  private command: Vec3 = [0, 1, 0];
+  /** PUBLIC for FlightSas.ts, which owns every transition either one makes. */
+  sasMode = SAS_COMMAND;
+  command: Vec3 = [0, 1, 0];
   private throttle = 0;
   private parts: FlightPartRow[] = [];
   private stages: FlightStageRow[] = [];
-  private st: FlightStateRow;
+  /** PUBLIC for FlightSas.ts: a roll writes `right` back into the live row. The
+   *  `state` getter stays, because everything that only READS should use it. */
+  st: FlightStateRow;
   private tm: FlightTelemetryRow;
   private orb: OrbitRow;
   private msgUntilS = 0; private partsRevision = 0; private nowS = 0;
@@ -84,6 +113,8 @@ export class FlightSession {
   }
 
   get live(): boolean { return this.handle > 0; }
+  /** The wasm module, for FlightSas.ts. The ports stay private. */
+  get core(): OfCoreModule { return this.p.M; }
   get partRows(): readonly FlightPartRow[] { return this.parts; }
   get revision(): number { return this.partsRevision; }
   get state(): FlightStateRow { return this.st; }
@@ -109,9 +140,27 @@ export class FlightSession {
     return r - this.p.surfaceRadius(u[0], u[1], u[2]) - this.baseOffsetM;
   }
 
-  /** Roll a design out at a unit direction. The origin is the TOP of the stack,
-   *  so the BASE goes on the ground and the origin `-minY` above it. */
-  rollOut(designHandle: number, dir: Vec3): boolean {
+  /**
+   * Roll a design out at a unit direction. The origin is the TOP of the stack,
+   * so the BASE goes on the ground and the origin `-minY` above it.
+   *
+   * GP-57: `standRadiusM` OVERRIDES the ground for the base's radius, and it is
+   * how a rocket stands on a launch pad's `socket_vessel` (2.00 m above the
+   * pad's own base) instead of in the dirt. It is a RADIUS rather than a height
+   * offset on purpose: the caller has already measured the socket in the pad's
+   * own frame and turned it into a body-frame point, so handing over a length
+   * from the planet centre leaves nothing here to re-derive, and a pad on a
+   * hillside, on a second storey or on another body all arrive the same way.
+   *
+   * `padRadiusM` still records whatever the base was put on, so a probe reading
+   * it gets the pad deck's radius on a pad launch and the ground's on a
+   * stand-in launch, which is exactly the distinction worth being able to see.
+   * ALT AGL is deliberately NOT adjusted: it measures against the terrain, and a
+   * rocket standing on a 2 m deck genuinely IS 2 m above the ground. Making it
+   * read zero on a pad would be making an instrument lie to keep a number the
+   * same.
+   */
+  rollOut(designHandle: number, dir: Vec3, standRadiusM = 0): boolean {
     this.destroy();
     const h = this.V._of_fl_create(designHandle, this.p.bodyHandle);
     if (h <= 0) { this.flash('no vessel to launch'); return false; }
@@ -126,7 +175,9 @@ export class FlightSession {
 
     const u = norm(dir);
     this.padUp = u;
-    this.padRadiusM = this.p.surfaceRadius(u[0], u[1], u[2]);
+    this.padRadiusM = standRadiusM > 0 ? standRadiusM
+      : this.p.surfaceRadius(u[0], u[1], u[2]);
+    this.onPad = standRadiusM > 0;
     const r = this.padRadiusM + this.baseOffsetM;
     this.V._of_fl_set_pos_vel(h, u[0] * r, u[1] * r, u[2] * r, 0, 0, 0);
     // Nose straight up, +X east: the gravity turn is flown east (FlightAttitude).
@@ -138,6 +189,7 @@ export class FlightSession {
     this.throttle = 0;
     this.V._of_fl_set_throttle(h, 0);
     this.status = 'CLAMPED'; this.metS = -1;
+    this.releasedAtTick = -1;
     this.maxQPa = 0; this.stagings = 0; this.steps = 0;
     this.liftedOff = false; this.peakAltM = 0; this.warpIndex = 0;
     this.sample(); this.flash('on the pad, held by the clamp');
@@ -157,51 +209,11 @@ export class FlightSession {
   }
   nudgeThrottle(d: number): void { this.setThrottle(this.throttle + d); }
 
-  /** Slew in the LOCAL HORIZON FRAME. pitch > 0 lowers the nose, yaw > 0 turns
-   *  right, roll > 0 rolls right. */
-  slew(pitchRad: number, yawRad: number, rollRad: number): void {
-    if (this.handle <= 0) return;
-    // ROLL IS NOT A COMMAND (PH-44): through commandDirection it dropped a
-    // vessel out of PRO into CMD on any roll input, silently.
-    if (pitchRad !== 0 || yawRad !== 0) {
-      this.commandDirection(slewCommand(this.command, this.up, pitchRad, yawRad));
-    }
-    if (rollRad !== 0) {
-      const rr = rotateAbout(norm(this.st.right), norm(this.st.forward), rollRad);
-      this.V._of_fl_set_attitude(this.handle, this.st.forward[0], this.st.forward[1],
-                                 this.st.forward[2], rr[0], rr[1], rr[2]);
-    }
-  }
-
-  /** Every mode change goes through here, and every one SAYS SO. */
-  setSas(mode: number): void {
-    if (this.handle <= 0) return;
-    this.sasMode = mode;
-    this.V._of_fl_set_sas(this.handle, mode);
-    if (mode === SAS_COMMAND) this.commandDirection(norm(this.st.forward));
-    this.flash(`SAS ${this.sasName}`);
-  }
-
-  /** Point SAS at an inertial direction, switching to Command if needed. This
-   *  IS hold-node: a node's burn direction is fixed in inertial space, so
-   *  /core needs no Maneuver mode and the caller refreshes it as handles move. */
-  commandDirection(dir: Vec3): void {
-    if (this.handle <= 0) return;
-    this.command = norm(dir);
-    if (this.sasMode !== SAS_COMMAND) {
-      this.sasMode = SAS_COMMAND;
-      this.V._of_fl_set_sas(this.handle, SAS_COMMAND);
-    }
-    this.V._of_fl_set_sas_command(this.handle, this.command[0], this.command[1],
-                                  this.command[2]);
-  }
-
-  /** Command / Prograde / Retrograde, in that cycle. DW-30 item 2. The seven
-   *  mode KEYS are direct (Bindings' digit row); this is the one-key cycle. */
-  cycleSas(): void {
-    this.setSas(this.sasMode === SAS_COMMAND ? SAS_PROGRADE
-      : this.sasMode === SAS_PROGRADE ? SAS_RETROGRADE : SAS_COMMAND);
-  }
+  /** Slew, set a mode, aim the command, cycle. All in FlightSas.ts. */
+  slew(p: number, y: number, r: number): void { slew(this, p, y, r); }
+  setSas(mode: number): void { setSas(this, mode); }
+  commandDirection(dir: Vec3): void { commandDirection(this, dir); }
+  cycleSas(): void { cycleSas(this); }
 
   setWarp(i: number): void {
     this.warpIndex = Math.max(0, Math.min(WARP_STEPS.length - 1, i));
@@ -240,6 +252,8 @@ export class FlightSession {
     this.status = 'ASCENT';
     this.metS = 0;
     this.liftoffAltM = this.altitudeAglM;
+    this.releases += 1;
+    this.releasedAtTick = this.fixedTick;
     this.flash('clamp released');
     return true;
   }
@@ -316,16 +330,8 @@ export class FlightSession {
     if (this.throttle > 0) this.tryRelease();
   }
 
-  /** Stability assist's third axis (FlightAttitude.holdRoll). */
-  private levelWings(dt: number): void {
-    if (this.sasName === 'OFF' || this.handle <= 0) return;
-    const r = holdRoll(this.st.forward, this.st.right, this.up,
-                       ROLL_HOLD_DEG_S * (Math.PI / 180) * dt);
-    if (r === this.st.right) return;
-    const f = this.st.forward;
-    this.V._of_fl_set_attitude(this.handle, f[0], f[1], f[2], r[0], r[1], r[2]);
-    this.st.right = r;
-  }
+  /** Stability assist's third axis. See FlightSas.ts. */
+  private levelWings(dt: number): void { levelWings(this, dt); }
 
   /** Per-frame message expiry only; everything else moves on the fixed tick.
    *  `nowS` is captured here because it is the ONLY place the LOOP's clock
@@ -384,13 +390,7 @@ export class FlightSession {
   /** The ribbon (DW-30 item 6), fed the altitude ABOVE THE PAD. Its 500 m and
    *  45 km are numbers about a LAUNCH: the shipped spawn is on terrain 3 km up,
    *  so datum altitude had it commanding 18 degrees of pitch-over on the pad. */
-  guidanceDir(): Vec3 | null {
-    if (this.handle <= 0) return null;
-    const g = guidancePitch(this.p.M, Math.max(0, this.altitudeAglM));
-    const u = this.up;
-    const p = g.pitchFromVerticalRad;
-    return norm(add(scale(u, Math.cos(p)), horizonFrame(u).east, Math.sin(p)));
-  }
+  guidanceDir(): Vec3 | null { return guidanceDir(this); }
 
   report(): unknown { return flightReport(this); }
 }
