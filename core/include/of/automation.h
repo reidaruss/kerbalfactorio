@@ -39,11 +39,13 @@
 // via the BuildId handles it returns.
 // =============================================================================
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "of/factory_sim.h"
 #include "of/deposits.h"  // worldgen::survival::NodeKind -> ItemId (resourceOf)
 #include "of/power.h"     // the electrical grid: poles, generators, brownout
+#include "of/enemies.h"   // pollution / evolution / nests / waves (FS-33)
 
 namespace of {
 namespace automation {
@@ -244,14 +246,37 @@ class BuildableNetwork {
   // proportion to what it actually produces (see power.h). Feed it with
   // insertFuel().
   GeneratorId placeBurnerGenerator(float x, float y, float z, ItemId fuelItem) {
-    return grid_.addGenerator(x, y, z, power::burnerGeneratorSpec(fuelItem));
+    return placeGenerator(x, y, z, power::burnerGeneratorSpec(fuelItem));
   }
   GeneratorId placeGenerator(float x, float y, float z,
                              const GeneratorSpec& spec) {
-    return grid_.addGenerator(x, y, z, spec);
+    const GeneratorId g = grid_.addGenerator(x, y, z, spec);
+    // Pollution bookkeeping (FS-33): a generator is a grid citizen, not a
+    // factory entity, so its emission row is kept here rather than minted
+    // through setPlacement. A generator that burns NOTHING (no fuel model:
+    // future solar) emits nothing — combustion is what pollutes — so it never
+    // gets an emitter at all and solar lands clean automatically.
+    GenEmit ge;
+    ge.gen = g;
+    ge.spec = spec;
+    ge.x = x; ge.y = y; ge.z = z;
+    genEmits_.push_back(ge);
+    if (enemySim_) bindGenerator(genEmits_.back());
+    return g;
   }
   uint16_t insertFuel(GeneratorId g, ItemId item, uint16_t count) {
-    return grid_.insertFuel(g, item, count);
+    const uint16_t took = grid_.insertFuel(g, item, count);
+    // Lifetime fuel ENERGY inserted, tracked so burned = inserted - stored is
+    // an exact integer identity over power.h's published surfaces alone.
+    if (took > 0) {
+      for (GenEmit& ge : genEmits_) {
+        if (ge.gen != g) continue;
+        ge.insertedMilliJ +=
+            static_cast<uint64_t>(took) * ge.spec.energyPerFuelUnitMilliJ;
+        break;
+      }
+    }
+    return took;
   }
   uint16_t generatorFuel(GeneratorId g) const { return grid_.fuelUnits(g); }
   int32_t generatorOutputW(GeneratorId g) const {
@@ -274,6 +299,13 @@ class BuildableNetwork {
     consumers_.push_back(Consumer{b.entity, node});
     if (b.kind == BuildKind::Miner) sim_.setMinerPower(b.entity, ratedDrawW);
     gridEpoch_ = 0;  // topology changed: re-map on the next step
+    // A machine on the grid emits at the ELECTRIC factor (its combustion moved
+    // to the generator), so re-derive its base rate if it is already bound.
+    for (MachineEmit& m : machineEmits_) {
+      if (m.entity.index != b.entity.index) continue;
+      m.basePerSecond = baseRateFor(m.entity, m.typeId);
+      break;
+    }
   }
 
   // Place an ELECTRIC SMELTER: the powered rung of the smelting ladder. Same
@@ -321,6 +353,7 @@ class BuildableNetwork {
   void step() {
     if (gridOn_) pumpPower();
     sim_.step();
+    if (enemySim_) pumpPollution();
   }
   void stepN(uint64_t n) { for (uint64_t i = 0; i < n; ++i) step(); }
   uint64_t tickIndex() const { return sim_.tickIndex(); }
@@ -370,6 +403,23 @@ class BuildableNetwork {
     sim_.setEntityTypeId(b.entity, typeId);
     sim_.setEntityPosition(b.entity, x, y, z);
     sim_.setEntityBoundRadiusCm(b.entity, boundCm);
+    // Pollution bookkeeping (FS-33): the placement is where a building gains a
+    // POSITION, and an emitter is a rate at a position, so this is where the
+    // binding happens — the bridge needs no extra call. Rows are kept even
+    // while enemies are off so enableEnemies() can backfill.
+    MachineEmit* row = nullptr;
+    for (MachineEmit& m : machineEmits_) {
+      if (m.entity.index == b.entity.index) { row = &m; break; }
+    }
+    if (row == nullptr) {
+      machineEmits_.push_back(MachineEmit{});
+      row = &machineEmits_.back();
+    }
+    row->entity = b.entity;
+    row->kind = b.kind;
+    row->typeId = typeId;
+    row->x = x; row->y = y; row->z = z;
+    if (enemySim_) bindMachine(*row);
   }
 
   // The dense entity index behind a building: the key EmitEntityStates stamps
@@ -436,6 +486,225 @@ class BuildableNetwork {
     return 0.0;  // Miner / Belt: no craft cycle (see minerRemaining/beltItemCount).
   }
 
+  // ==========================================================================
+  // POLLUTION / ENEMIES (enemies.h, composed the way the power grid is: FS-33).
+  //
+  // A network that never calls enableEnemies() behaves EXACTLY as before. With
+  // it on, every placed building whose type has a nonzero row in enemies.h §11
+  // carries an emitter at ITS OWN surface direction, and once per pollution
+  // window (EnemyTuning::pollutionTickInterval sim ticks, default 60 = 1 Hz)
+  // each emitter's rate is set to
+  //
+  //     baseRate(type) * dutyCycle(window)
+  //
+  // where dutyCycle is WORK ACTUALLY DONE over full-rate work, measured from
+  // the sim's own fixed-point counters (FactorySim::workMilli for machines and
+  // miners; fuel energy actually burned for generators). That single rule is
+  // the whole design:
+  //   * an idle or starved machine did no work -> emits nothing;
+  //   * a browned-out machine emits less BY THE SAME Q16 factor that slowed it;
+  //   * a generator emits in proportion to the energy it actually delivered,
+  //     so moving a smelter to electricity MOVES its pollution to the power
+  //     plant rather than removing it (Factorio's cleverest balance idea);
+  //   * a machine registered on the grid emits electricEmissionFactor of its
+  //     base rate at the machine — the combustion happens elsewhere.
+  //
+  // The emission window and the field's deposit window are the SAME window, so
+  // emission is exactly work-proportional with no sampling alias: the rate
+  // refreshed at window w covers precisely the factory ticks window w deposits.
+  // ==========================================================================
+
+  // The one pollution-policy knob this layer adds on top of the enemies.h §11
+  // rate table. Data, not code, like everything else in the table.
+  struct PollutionPolicy {
+    // Fraction of the type's base rate a GRID-REGISTERED machine emits at the
+    // machine itself. 0.3 puts the tier-0 electric smelter at 0.6/s against
+    // the fuel smelter's 2.0/s, with its 30 kW share of a 90 kW generator
+    // adding ~2.0/s AT THE GENERATOR — slightly more in total, concentrated
+    // where the player can site it away from nests.
+    double electricEmissionFactor = 0.3;
+  };
+
+  // Turn the loop on. `anchorDir` is the surface direction (unit vector from
+  // the body centre) of the LOCAL FRAME ORIGIN that placement coordinates are
+  // expressed in; the local frame is read as x -> east, z -> north, y -> up
+  // (height is irrelevant to a surface field and is ignored). The tangent
+  // basis is derived exactly the way enemies.h derives expansion bearings, so
+  // the mapping is transcendental-free and toolchain-stable. Buildings placed
+  // BEFORE this call are backfilled; call it once at world creation.
+  // (Overloads rather than default arguments: an in-class default argument of
+  //  PollutionPolicy{} would need the NSDMI complete before the class ends.)
+  void enableEnemies(const worldgen::BodyParams& body, uint64_t worldSeed,
+                     const Vec3& anchorDir) {
+    enableEnemies(body, worldSeed, anchorDir, enemies::EnemyTuning());
+  }
+  void enableEnemies(const worldgen::BodyParams& body, uint64_t worldSeed,
+                     const Vec3& anchorDir,
+                     const enemies::EnemyTuning& tuning) {
+    enableEnemies(body, worldSeed, anchorDir, tuning, PollutionPolicy());
+  }
+  void enableEnemies(const worldgen::BodyParams& body, uint64_t worldSeed,
+                     const Vec3& anchorDir,
+                     const enemies::EnemyTuning& tuning,
+                     const PollutionPolicy& policy) {
+    enemySim_.reset(new enemies::EnemySim(body, worldSeed, tuning));
+    pollutionPolicy_ = policy;
+    radiusM_ = body.radiusM;
+    anchorDir_ = enemies::unitOf(anchorDir);
+    Vec3 axis(0, 1, 0);
+    if (anchorDir_.y > 0.999 || anchorDir_.y < -0.999) axis = Vec3(1, 0, 0);
+    east_ = enemies::unitOf(enemies::crossOf(axis, anchorDir_));
+    north_ = enemies::crossOf(anchorDir_, east_);
+    for (MachineEmit& m : machineEmits_) bindMachine(m);
+    for (GenEmit& g : genEmits_) bindGenerator(g);
+  }
+  bool enemiesEnabled() const { return enemySim_ != nullptr; }
+
+  // Full access to the model (nests, damage/destroy, reports, catalogue). The
+  // facade owns the EMISSION side; everything else is the model's own surface.
+  enemies::EnemySim& enemySim() { return *enemySim_; }
+  const enemies::EnemySim& enemySim() const { return *enemySim_; }
+
+  // Local placement coordinates -> the surface direction an emitter lives at.
+  // Chord step (normalise(anchor*R + east*x + north*z)): at base scale it is
+  // millimetres off a great-circle step and needs no transcendental.
+  Vec3 surfaceDirOfLocal(float x, float y, float z) const {
+    (void)y;  // height above the surface does not move a surface field cell
+    const double dx = static_cast<double>(x), dz = static_cast<double>(z);
+    return enemies::unitOf(
+        Vec3(anchorDir_.x * radiusM_ + east_.x * dx + north_.x * dz,
+             anchorDir_.y * radiusM_ + east_.y * dx + north_.y * dz,
+             anchorDir_.z * radiusM_ + east_.z * dx + north_.z * dz));
+  }
+
+  // ---- what a HUD line / map overlay reads ---------------------------------
+  // (Thin passthroughs, mirroring the §5.1 power-panel reads. Safe when off.)
+  enemies::PollutionReport pollutionReport() const {
+    return enemySim_ ? enemySim_->pollutionReport() : enemies::PollutionReport{};
+  }
+  std::vector<enemies::NestThreat> threatReport() const {
+    return enemySim_ ? enemySim_->threatReport()
+                     : std::vector<enemies::NestThreat>{};
+  }
+  const enemies::EvolutionState& evolutionState() const {
+    static const enemies::EvolutionState kOff{};
+    return enemySim_ ? enemySim_->evolution() : kOff;
+  }
+  std::vector<enemies::AttackWave> drainWaves() {
+    return enemySim_ ? enemySim_->drainWaves()
+                     : std::vector<enemies::AttackWave>{};
+  }
+
+  // The emitter bound to a building / generator (kNoEmitter if none: zero-rate
+  // type, no placement yet, or enemies off). A UI uses this to join a nest's
+  // `angriestAt` back to the machine the wave is coming for.
+  enemies::EmitterId pollutionEmitterOf(const BuildId& b) const {
+    if (!b.valid()) return enemies::kNoEmitter;
+    for (const MachineEmit& m : machineEmits_)
+      if (m.entity.index == b.entity.index) return m.emitter;
+    return enemies::kNoEmitter;
+  }
+  enemies::EmitterId generatorEmitterOf(GeneratorId g) const {
+    for (const GenEmit& ge : genEmits_)
+      if (ge.gen == g) return ge.emitter;
+    return enemies::kNoEmitter;
+  }
+
+  // Saved binding rows that found no live building at load (0 in the normal
+  // replay flow; nonzero means the caller rebuilt a DIFFERENT factory).
+  uint32_t pollutionRebindMisses() const { return rebindMisses_; }
+
+  // ---- persistence (FS-33; enemies.h §10 cursor idiom) ---------------------
+  // Serialises the WHOLE joined pollution state: the model (field, nests,
+  // waves, evolution, emitters WITH their ids) plus the machine->emitter and
+  // generator->emitter joins, keyed by replay-stable ids (dense entity index /
+  // grid NodeId). Load contract: rebuild the factory by replaying the same
+  // construction sequence, call enableEnemies with the same parameters, THEN
+  // deserializePollution — it discards the emitters the replay minted, adopts
+  // the saved ones, and re-joins them to the rebuilt buildings, so nest source
+  // credits keep pointing at the same machines. Duty baselines are SNAPPED to
+  // the rebuilt sim's counters at load (they meter counters that restart), so
+  // at most one pollution window of emission is lost across a save/load.
+  template <typename Writer>
+  void serializePollution(Writer& w) const {
+    w.varint(kPollutionMagic);
+    w.varint(kPollutionVersion);
+    w.u8(enemySim_ ? 1 : 0);
+    if (!enemySim_) return;
+    enemySim_->serialize(w);
+    uint64_t bound = 0;
+    for (const MachineEmit& m : machineEmits_)
+      if (m.emitter != enemies::kNoEmitter) ++bound;
+    w.varint(bound);
+    for (const MachineEmit& m : machineEmits_) {
+      if (m.emitter == enemies::kNoEmitter) continue;
+      w.varint(m.entity.index);
+      w.varint(m.emitter);
+    }
+    bound = 0;
+    for (const GenEmit& g : genEmits_)
+      if (g.emitter != enemies::kNoEmitter) ++bound;
+    w.varint(bound);
+    for (const GenEmit& g : genEmits_) {
+      if (g.emitter == enemies::kNoEmitter) continue;
+      w.varint(g.gen);
+      w.varint(g.emitter);
+    }
+  }
+  template <typename Reader>
+  bool deserializePollution(Reader& r) {
+    const uint64_t magic = r.varint();
+    const uint64_t version = r.varint();
+    if (magic != kPollutionMagic || version != kPollutionVersion) return false;
+    const bool wasEnabled = r.u8() != 0;
+    if (!wasEnabled) return true;       // saved with enemies off: nothing more
+    if (!enemySim_) return false;       // caller must enableEnemies first
+    enemySim_->deserialize(r);
+    // The replay-minted emitters were just discarded wholesale by the model's
+    // deserialize; drop every live join before adopting the saved ones.
+    for (MachineEmit& m : machineEmits_) m.emitter = enemies::kNoEmitter;
+    for (GenEmit& g : genEmits_) g.emitter = enemies::kNoEmitter;
+    rebindMisses_ = 0;
+    uint64_t n = r.varint();
+    for (uint64_t i = 0; i < n; ++i) {
+      const uint32_t idx = static_cast<uint32_t>(r.varint());
+      const enemies::EmitterId em = static_cast<enemies::EmitterId>(r.varint());
+      bool found = false;
+      for (MachineEmit& m : machineEmits_) {
+        if (m.entity.index != idx) continue;
+        m.emitter = em;
+        m.basePerSecond = baseRateFor(m.entity, m.typeId);
+        m.denomPerWindow = machineDenom(m);
+        m.workBaseline = sim_.workMilli(m.entity);  // snap: counters restarted
+        found = true;
+        break;
+      }
+      if (!found) ++rebindMisses_;
+    }
+    n = r.varint();
+    for (uint64_t i = 0; i < n; ++i) {
+      const GeneratorId gid = static_cast<GeneratorId>(r.varint());
+      const enemies::EmitterId em = static_cast<enemies::EmitterId>(r.varint());
+      bool found = false;
+      for (GenEmit& g : genEmits_) {
+        if (g.gen != gid) continue;
+        g.emitter = em;
+        g.denomPerWindow = generatorDenom(g);
+        g.burnedBaseline = burnedLifetimeMilliJ(g);  // snap, same reason
+        found = true;
+        break;
+      }
+      if (!found) ++rebindMisses_;
+    }
+    // A building placed after the save has a live row and no saved join: give
+    // it a fresh emitter (nextEmitterId_ was restored, so no id collision).
+    for (MachineEmit& m : machineEmits_)
+      if (m.emitter == enemies::kNoEmitter) bindMachine(m);
+    for (GenEmit& g : genEmits_)
+      if (g.emitter == enemies::kNoEmitter) bindGenerator(g);
+    return true;
+  }
+
  private:
   // Infer the carried item for an auto-created inserter:
   //   * a miner/machine SOURCE carries its output item;
@@ -459,6 +728,138 @@ class BuildableNetwork {
       return in1;  // empty belt: default to the slot-1 ingredient
     }
     return kNoItem;
+  }
+
+  // ---- pollution plumbing (FS-33) ------------------------------------------
+  static constexpr uint64_t kPollutionMagic = 0x4F465031ull;  // 'OFP1'
+  static constexpr uint64_t kPollutionVersion = 1;
+
+  // One row per PLACED building (recorded whether or not enemies are on, so
+  // enableEnemies can backfill). Cold data, touched once per pollution window.
+  struct MachineEmit {
+    EntityHandle entity;
+    BuildKind kind = BuildKind::None;
+    uint16_t typeId = 0;
+    float x = 0, y = 0, z = 0;
+    enemies::EmitterId emitter = enemies::kNoEmitter;
+    double basePerSecond = 0.0;   // full-duty rate (electric factor applied)
+    uint64_t workBaseline = 0;    // FactorySim::workMilli at the last refresh
+    uint64_t denomPerWindow = 0;  // full-duty work per pollution window
+  };
+  // One row per placed generator. Duty is metered on ENERGY ACTUALLY BURNED,
+  // through power.h's published surfaces only: burned = inserted - stored.
+  struct GenEmit {
+    GeneratorId gen = 0;
+    GeneratorSpec spec;
+    float x = 0, y = 0, z = 0;
+    uint64_t insertedMilliJ = 0;  // lifetime fuel energy accepted by insertFuel
+    enemies::EmitterId emitter = enemies::kNoEmitter;
+    uint64_t burnedBaseline = 0;  // lifetime burned at the last refresh
+    uint64_t denomPerWindow = 0;  // rated energy per pollution window (mJ)
+  };
+
+  bool isGridConsumer(EntityHandle e) const {
+    for (const Consumer& c : consumers_)
+      if (c.entity.index == e.index) return true;
+    return false;
+  }
+
+  // The §11 table row for this type, at the electric factor if the building
+  // draws its watts from the grid (its combustion happens at the generator).
+  double baseRateFor(EntityHandle e, uint16_t typeId) const {
+    double r = enemies::pollutionRateForMachine(typeId);
+    if (r > 0.0 && isGridConsumer(e)) r *= pollutionPolicy_.electricEmissionFactor;
+    return r;
+  }
+
+  // Full-duty work per pollution window, in the entity's own fixed point.
+  uint64_t machineDenom(const MachineEmit& m) const {
+    const uint32_t interval = enemySim_->tuning().pollutionTickInterval;
+    if (m.kind == BuildKind::Smelter || m.kind == BuildKind::Assembler)
+      return 1000ull * interval;  // machineSystem: 1000 milliticks/tick at full
+    if (m.kind == BuildKind::Miner)
+      return static_cast<uint64_t>(sim_.minerRateMilliPerTick(m.entity)) *
+             interval;
+    return 0;  // belts and everything else do no meterable work
+  }
+  uint64_t generatorDenom(const GenEmit& g) const {
+    const uint32_t interval = enemySim_->tuning().pollutionTickInterval;
+    if (g.spec.ratedW <= 0) return 0;
+    // burnFor charges (watts*1000)/60 mJ per tick; the denominator uses the
+    // SAME truncation so a flat-out generator reads duty exactly 1.
+    return (static_cast<uint64_t>(g.spec.ratedW) * 1000ull / 60ull) * interval;
+  }
+
+  // Lifetime energy burned, an exact monotone integer identity over published
+  // surfaces: everything ever inserted minus what is still stored.
+  uint64_t burnedLifetimeMilliJ(const GenEmit& g) const {
+    const uint64_t stored = grid_.storedEnergyMilliJ(g.gen);
+    return g.insertedMilliJ > stored ? g.insertedMilliJ - stored : 0;
+  }
+
+  // (Re)bind a building's emitter: mint one at the building's own surface
+  // direction, rate 0 until its first window of witnessed work. A zero-rate
+  // type gets NO emitter at all — a thousand belts must not lengthen the
+  // emitter scan. Re-placement (a moved building) re-mints at the new spot.
+  void bindMachine(MachineEmit& m) {
+    if (!enemySim_) return;
+    if (m.emitter != enemies::kNoEmitter) {
+      enemySim_->removeEmitter(m.emitter);
+      m.emitter = enemies::kNoEmitter;
+    }
+    m.basePerSecond = baseRateFor(m.entity, m.typeId);
+    m.denomPerWindow = machineDenom(m);
+    if (m.basePerSecond <= 0.0 || m.denomPerWindow == 0) return;
+    m.emitter = enemySim_->addEmitter(surfaceDirOfLocal(m.x, m.y, m.z), 0.0);
+    m.workBaseline = sim_.workMilli(m.entity);
+  }
+  void bindGenerator(GenEmit& g) {
+    if (!enemySim_) return;
+    if (g.emitter != enemies::kNoEmitter) {
+      enemySim_->removeEmitter(g.emitter);
+      g.emitter = enemies::kNoEmitter;
+    }
+    g.denomPerWindow = generatorDenom(g);
+    const double base = enemies::pollutionRateForMachine(g.spec.typeId);
+    if (base <= 0.0 || g.denomPerWindow == 0) return;
+    if (g.spec.energyPerFuelUnitMilliJ == 0) return;  // burns nothing: clean
+    g.emitter = enemySim_->addEmitter(surfaceDirOfLocal(g.x, g.y, g.z), 0.0);
+    g.burnedBaseline = burnedLifetimeMilliJ(g);
+  }
+
+  // Once per pollution window, right before the field's deposit for that same
+  // window: rate = base * (work actually done / full-rate work). The windows
+  // align EXACTLY (refresh fires on the tick whose enemy step runs the slow
+  // tick), so emission is work-proportional with no sampling alias.
+  void refreshEmitterRates() {
+    for (MachineEmit& m : machineEmits_) {
+      if (m.emitter == enemies::kNoEmitter || m.denomPerWindow == 0) continue;
+      const uint64_t now = sim_.workMilli(m.entity);
+      const uint64_t d = now - m.workBaseline;
+      m.workBaseline = now;
+      double duty = static_cast<double>(d) /
+                    static_cast<double>(m.denomPerWindow);
+      if (duty > 1.0) duty = 1.0;
+      enemySim_->setEmitterRate(m.emitter, m.basePerSecond * duty);
+    }
+    for (GenEmit& g : genEmits_) {
+      if (g.emitter == enemies::kNoEmitter || g.denomPerWindow == 0) continue;
+      const uint64_t burned = burnedLifetimeMilliJ(g);
+      const uint64_t d = burned - g.burnedBaseline;
+      g.burnedBaseline = burned;
+      double duty =
+          static_cast<double>(d) / static_cast<double>(g.denomPerWindow);
+      if (duty > 1.0) duty = 1.0;
+      enemySim_->setEmitterRate(
+          g.emitter,
+          enemies::pollutionRateForMachine(g.spec.typeId) * duty);
+    }
+  }
+
+  void pumpPollution() {
+    const uint32_t interval = enemySim_->tuning().pollutionTickInterval;
+    if ((enemySim_->tickIndex() + 1) % interval == 0) refreshEmitterRates();
+    enemySim_->step();
   }
 
   // ---- grid plumbing --------------------------------------------------------
@@ -524,6 +925,17 @@ class BuildableNetwork {
   std::vector<Consumer> consumers_;
   uint64_t gridEpoch_ = 0;
   bool gridOn_ = false;
+
+  // ---- pollution state (FS-33) ---------------------------------------------
+  std::unique_ptr<enemies::EnemySim> enemySim_;
+  PollutionPolicy pollutionPolicy_;
+  std::vector<MachineEmit> machineEmits_;
+  std::vector<GenEmit> genEmits_;
+  Vec3 anchorDir_ = Vec3(0, 0, 1);
+  Vec3 east_ = Vec3(1, 0, 0);
+  Vec3 north_ = Vec3(0, 1, 0);
+  double radiusM_ = 600000.0;
+  uint32_t rebindMisses_ = 0;
 };
 
 }  // namespace automation

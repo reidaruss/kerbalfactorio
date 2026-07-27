@@ -806,10 +806,12 @@ class PollutionField {
 // §5 — Emitters. The factory-sim hook, kept at arm's length ON PURPOSE.
 //
 // An emitter is a pollution source at a surface direction with a rate in
-// units/second. It is NOT a machine: factory_sim.h is owned by another lane
-// tonight and is not edited here. The contract factory-sim implements is in
-// §11 (pollutionRateForMachine) plus these three calls. Until that lands, a
-// caller drives emitters directly, which is exactly how the tests do it.
+// units/second. It is NOT a machine: the contract factory-sim implements is in
+// §11 (pollutionRateForMachine) plus these three calls. WIRED as of FS-33:
+// of::automation::BuildableNetwork composes this model exactly as §11
+// prescribes (an emitter per placed building, rate = base * witnessed duty
+// cycle per pollution window). Tests still drive emitters directly, which
+// remains supported — the model has no idea what is calling it.
 // =============================================================================
 struct Emitter {
   EmitterId id = kNoEmitter;
@@ -1031,12 +1033,10 @@ class EnemySim {
     return true;
   }
   bool removeEmitter(EmitterId id) {
-    for (size_t i = 0; i < emitters_.size(); ++i) {
-      if (emitters_[i].id != id) continue;
-      emitters_.erase(emitters_.begin() + static_cast<ptrdiff_t>(i));
-      return true;
-    }
-    return false;
+    Emitter* e = emitter(id);
+    if (e == nullptr) return false;
+    emitters_.erase(emitters_.begin() + (e - emitters_.data()));
+    return true;
   }
   const std::vector<Emitter>& emitters() const { return emitters_; }
   double pollutionPerSecond() const {
@@ -1218,15 +1218,26 @@ class EnemySim {
   void deserialize(Reader& r);
 
  private:
+  // emitters_ is sorted by id BY CONSTRUCTION: ids come off an increasing
+  // counter, removeEmitter erases in place, and serialize/deserialize preserve
+  // vector order. Binary search here is an INTEGRATION SEAM (FS-33), not a
+  // model change: the factory composition refreshes every machine's rate once
+  // per pollution window (one setEmitterRate per machine), and a linear scan
+  // would make that O(machines^2) per window at the 1,200-machine scale the
+  // cost test pins. The model's behaviour is identical.
   Emitter* emitter(EmitterId id) {
-    for (Emitter& e : emitters_)
-      if (e.id == id) return &e;
-    return nullptr;
+    auto it = std::lower_bound(
+        emitters_.begin(), emitters_.end(), id,
+        [](const Emitter& e, EmitterId k) { return e.id < k; });
+    if (it == emitters_.end() || it->id != id) return nullptr;
+    return &(*it);
   }
   const Emitter* emitter(EmitterId id) const {
-    for (const Emitter& e : emitters_)
-      if (e.id == id) return &e;
-    return nullptr;
+    auto it = std::lower_bound(
+        emitters_.begin(), emitters_.end(), id,
+        [](const Emitter& e, EmitterId k) { return e.id < k; });
+    if (it == emitters_.end() || it->id != id) return nullptr;
+    return &(*it);
   }
   Nest* mutableNest(NestId id) {
     for (Nest& n : nests_)
@@ -1911,10 +1922,12 @@ void EnemySim::deserialize(Reader& r) {
 }
 
 // =============================================================================
-// §11 — THE FACTORY-SIM HOOK. Published, not wired.
+// §11 — THE FACTORY-SIM HOOK. Published, and WIRED (FS-33, automation.h).
 //
-// factory_sim.h is owned by another lane tonight, so this is the contract
-// rather than the call. What factory-sim has to do is exactly three things:
+// This is the contract; of::automation::BuildableNetwork is the call — its
+// setPlacement/placeGenerator mint emitters, and once per pollution window it
+// sets each rate to base * dutyCycle from the sim's own work counters. What
+// factory-sim has to do is exactly three things:
 //
 //   1. On BUILD of a machine at surface direction `dir` with type id `t`:
 //          m.pollutionEmitter = enemies.addEmitter(dir, pollutionRateForMachine(t));
