@@ -72,29 +72,11 @@ export function recipeRows(game: GameCore, icon: IconFor = NO_ICON,
   });
 }
 
-/** What the pack can feed this machine: the ores it smelts and the fuels. */
-export function furnaceView(game: GameCore, handle: number, tier: number) {
-  const st = game.furnaceState(handle);
-  const I = game.ids;
-  const loadable = [];
-  for (const [item, fuel] of [[I.rawIron, false], [I.rawCopper, false],
-    [I.coal, true], [I.wood, true]] as [number, boolean][]) {
-    const c = game.count(item);
-    if (c > 0) loadable.push({ item, name: game.itemName(item), count: c, fuel });
-  }
-  return {
-    title: tier === 1 ? 'Smelter' : 'Primitive furnace',
-    oreName: st === null ? '' : game.itemName(st.oreItem),
-    oreCount: st?.oreCount ?? 0,
-    outName: st === null || st.outItem === 0 ? '' : game.itemName(st.outItem),
-    outCount: st?.outCount ?? 0,
-    fuelTicks: st?.fuelTicks ?? 0,
-    progress: st?.progress ?? 0,
-    ticksPerSmelt: st?.ticksPerSmelt ?? 180,
-    smelting: st?.smelting ?? false,
-    loadable,
-  };
-}
+// The machine screen's views moved to MachineScreen.ts (GP-57), and the
+// hand-rolled ore/fuel table that used to live here is gone with them: the ore
+// side now asks the sim's own exported smelt table and the fuel side is the
+// named seam GP-58 documents, so this file cannot grow a second acceptance
+// authority back by accident.
 
 /**
  * Every node with its 64-bit body-frame position, sorted by distance from the

@@ -14,10 +14,11 @@
 
 import { ProgressUi } from './ProgressUi.js';
 import { ASSETS } from '../assets/Registry.js';
-import { machineView } from './GameplayActions.js';
+import { screenView } from './MachineScreen.js';
 import type { EquipSlotName } from '../player/Avatar.js';
 import type { Gameplay } from './Gameplay.js';
 import type { Machine } from './Machines.js';
+import type { Placed } from './Factory.js';
 
 /**
  * Powered machines that NO POLE REACHES, which run at zero.
@@ -49,15 +50,22 @@ export function setPackPanel(g: Gameplay, open: boolean): void {
   if (open) g.panel.invalidate();
 }
 
-/** Open the furnace UI on `m`, or close it with null. THE pointer transition. */
-export function openMachinePanel(g: Gameplay, m: Machine | null): void {
+/**
+ * Open the machine screen on a hand furnace `m` OR a factory building `b`, or
+ * close it with both null. THE pointer transition, for both machine families
+ * (GP-57): one panel, one modal entry, one capture.
+ */
+export function openMachinePanel(g: Gameplay, m: Machine | null,
+                                 b: Placed | null = null): void {
   g.openMachine = m;
-  g.furnacePanel.setOpen(m !== null);
-  if (m !== null) g.modals.touch(g.furnacePanel);
-  g.input.setUiCapture(m !== null);
-  g.hud.setVisible(m === null);
-  g.hotbarBar.setVisible(m === null);
-  if (m !== null) g.furnacePanel.render(machineView(g, m));
+  g.openBuild = m !== null ? null : b;
+  const open = m !== null || g.openBuild !== null;
+  g.furnacePanel.setOpen(open);
+  if (open) g.modals.touch(g.furnacePanel);
+  g.input.setUiCapture(open);
+  g.hud.setVisible(!open);
+  g.hotbarBar.setVisible(!open);
+  if (open) g.furnacePanel.render(screenView(g));
 }
 
 /**

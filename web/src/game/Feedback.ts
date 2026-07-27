@@ -98,13 +98,22 @@ export class Feedback {
   }
 
   /**
-   * A SMELT FINISHED, announced where the machine is rather than in a menu.
-   * `n` ingots pop out of the machine as pale chips with a chime, so a player
-   * who walked away learns their line produced something without opening
-   * anything. Called once per completion, from whoever noticed the buffer grow.
+   * A SMELT FINISHED, marked AT THE MACHINE and nowhere else (GP-60). `n`
+   * ingots pop out as pale chips with a chime, so a player near their line
+   * learns it produced something without opening anything.
+   *
+   * THERE IS DELIBERATELY NO HUD BANNER HERE ANY MORE. The banner is a global
+   * flash that follows the player anywhere on the planet, and "+1 Iron ready"
+   * chasing someone kilometres from their base is Reid's complaint verbatim.
+   * Routine production speaks through the machine itself: these chips, the
+   * chime, and the panel's own slots and progress bar (GP-57). The banner path
+   * keeps its two legitimate, player-caused moments: `felled` below and the
+   * objectives' completion flash. `name` stays in the signature because the
+   * caller identifies the ingot for the report and for the day a world-space
+   * label wants it.
    */
   ingot(n: number, pos: { x: number; y: number; z: number },
-        up: { x: number; y: number; z: number }, name: string): void {
+        up: { x: number; y: number; z: number }, _name: string): void {
     if (n <= 0) return;
     this.ingots += n;
     const p = {
@@ -117,7 +126,6 @@ export class Feedback {
     this.debris.burst({
       pos: p, up, back: up, colour: INGOT_COLOUR, count: Math.min(18, 8 + n * 2),
     });
-    this.hud.banner(`+${n} ${name} ready`, '#cfe6ff');
     this.sfx.chime(n);
   }
 

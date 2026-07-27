@@ -207,11 +207,15 @@ export function showGoals(g: Gameplay, v: boolean): void {
 /**
  * Advance the checklist and draw it.
  *
- * A completion gets the SAME banner and chime a finished ingot gets, because it
- * is the same kind of event: the world telling the player that something
- * happened and that they caused it. It lives here rather than on Gameplay
- * because Gameplay is a composition at its line cap and this is not a
- * responsibility, it is one predicate and one render.
+ * A completion gets a banner and a chime, and after GP-60 it is one of only two
+ * things left that does. A checklist tick is a ONE-TIME event the player
+ * earned, which is exactly what a screen-wide flash is for; a finished ingot is
+ * routine production that repeats every three seconds for the rest of the game,
+ * which is why it lost its banner and now speaks at the machine instead. That
+ * distinction is the whole rule, and this call site is on the right side of it.
+ * It lives here rather than on Gameplay because Gameplay is a composition at
+ * its line cap and this is not a responsibility, it is one predicate and one
+ * render.
  */
 export function stepGoals(g: Gameplay, dt: number): void {
   const met = g.goals.step(dt, g);

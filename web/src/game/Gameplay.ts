@@ -38,8 +38,8 @@ import { StructureView } from './StructureView.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
-import { assignToBar, craft, loadFurnace, machineView, raze, recipes, slots,
-  switchMode, takeFurnace } from './GameplayActions.js';
+import { assignToBar, craft, raze, recipes, slots, switchMode } from './GameplayActions.js';
+import { loadInto, screenView, takeInput, takeOut } from './MachineScreen.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
@@ -129,6 +129,8 @@ export class Gameplay {
   restored: RestoreLedger | null = null;
   private sinceSaveTicks = 0;
   openMachine: Machine | null = null;
+  /** GP-57: the factory building the machine screen is showing, or null. */
+  openBuild: Placed | null = null;
   aimedMachine: Machine | null = null;
   aimedBuild: Placed | null = null;
   aimedPart: StructurePart | null = null;
@@ -173,9 +175,8 @@ export class Gameplay {
     // time. That is also what lets a hand furnace land on a foundation.
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle,
       () => d.ports?.voxels?.handle ?? 0, this.mode, () => this.structures);
-    this.furnacePanel = new FurnacePanel(
-      d.host, this.modals, (item) => loadFurnace(this, this.openMachine, item),
-      () => takeFurnace(this, this.openMachine));
+    this.furnacePanel = new FurnacePanel(d.host, this.modals,
+      (item) => loadInto(this, item), () => takeOut(this), () => takeInput(this));
     this.furnacePanel.closer = () => this.openFurnace(null);
     // THE HAND IS A MODAL TOO, and registering it here rather than special-casing
     // it in the Escape handler is what keeps the guarantee derived: the probe
@@ -199,11 +200,9 @@ export class Gameplay {
     this.structView = new StructureView(d.origin);
     this.build = new BuildMode(this.factory, this.factoryView,
       this.structures, this.structView);
-    // A hand furnace announces its own ingots, at the furnace that made them.
-    this.machines.onSmelt = (m, n) => {
-      this.fx.ingot(n, m.pos, m.up,
-        this.game.itemName(this.game.furnaceState(m.handle)?.outItem ?? 0));
-    };
+    // A hand furnace marks its ingots AT the furnace (GP-60: no roaming toast).
+    this.machines.onSmelt = (m, n) => this.fx.ingot(n, m.pos, m.up,
+      this.game.itemName(this.game.furnaceState(m.handle)?.outItem ?? 0));
   }
 
   static async create(d: GameplayDeps): Promise<Gameplay> {
@@ -368,8 +367,8 @@ export class Gameplay {
     // same reason the terrain cross-dissolve is: a headless driven run then
     // scrolls at exactly the rate a real one does and a capture is reproducible.
     this.factoryView.sync(this.factory, this.simSecs, eye);  // eye: FS-28 LOD 0
-    if (this.openMachine !== null) {
-      this.furnacePanel.render(machineView(this, this.openMachine));
+    if (this.openMachine !== null || this.openBuild !== null) {
+      this.furnacePanel.render(screenView(this));
     }
     const carried = this.game.carried().map((c) => ({
       name: c.name, count: c.count, icon: this.icons.for(c.name),
@@ -389,6 +388,7 @@ export class Gameplay {
   /** THE two pointer transitions. `GameplayChrome` owns both halves of each. */
   setPanel(open: boolean): void { setPackPanel(this, open); }
   openFurnace(m: Machine | null): void { openMachinePanel(this, m); }
+  openBuildPanel(b: Placed | null): void { openMachinePanel(this, null, b); }
 
   /** Every node with its world position, nearest first. The probe's eyes. */
   nodes(): unknown[] {
