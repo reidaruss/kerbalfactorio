@@ -16,12 +16,18 @@
 // must be identical, and the fields are published here so the diff is a
 // comparison rather than an argument.
 //
-// THE SHADING IS NOT MODE-DEPENDENT AND MUST NOT BE. `GameMode.fullMapRevealed`
-// has exactly one reader, `MapWorld.ore()`; `MapWorld.shading()` has no gate
-// because it paints only what IS discovered and there is nothing to hide. So
-// `view.drawn.discoveredQuads` is EQUAL between the two runs, not smaller in
-// survival, and asserting it smaller would have been inventing an assertion to
-// make a number match.
+// THE SHADING IS NOW MODE-DEPENDENT, AND THAT IS THE CHANGE (DW-37). WG-29's
+// map shaded with discovery QUADS, which are by definition only ever ground you
+// HAVE seen, so the drawn count was equal in both modes and this file said so.
+// Reid's answer to that map was "cant see the terrain from the map, even in
+// sandbox": the quads said what you had seen and nothing at all about what was
+// there. The map now samples the WORLD and masks it per sample with the survey
+// bit, so `view.drawn.discoveredQuads` is the SAMPLES PAINTED and
+// `terrainSamples` is the samples with ground under them at all.
+// `terrainSamples` is mode-blind and is still compared for EQUALITY across the
+// pair; `discoveredQuads` is the gate's own output and is asserted STRICTLY
+// SMALLER in survival wherever the view is wider than what has been seen
+// (section 1b).
 //
 // -----------------------------------------------------------------------------
 // WHY EVERY RUNG FORGETS FIRST. The shipped world cannot reach a partially
@@ -241,10 +247,17 @@
       // identical between the two runs; that is the "differs ONLY by the gate"
       // claim, stated as fields rather than as a sentence.
       spanM: r.spanM, focusActive: r.focus.active, focusCentreM: r.focus.centreM,
-      pixelsPerMetre: d.pixelsPerMetre, discoveredQuads: d.discoveredQuads,
+      pixelsPerMetre: d.pixelsPerMetre,
+      // THE WORLD, which is mode-blind: how much of this frame has ground under
+      // it, and how big one sample of that ground is. Both must be IDENTICAL
+      // across the pair - the same planet is there either way.
+      terrainSamples: d.terrainSamples, sampleSizeM: d.sampleSizeM,
       currentPoints: d.currentPoints, plannedPoints: d.plannedPoints,
       surveyCells: DISC().surveyCells, exploreCells: DISC().exploreCells,
       // The mode-DEPENDENT half, recorded but not required to match.
+      // `discoveredQuads` is in THIS half now (it was in the one above at
+      // WG-29) because it is the gate's output: the samples actually painted.
+      discoveredQuads: d.discoveredQuads,
       oreDrawn: d.oreDrawn, alphas: d.alphas, markers: d.markers.slice(),
     });
   }
@@ -284,14 +297,31 @@
       rungs.every((x, i) => i === 0 || x.hidden <= rungs[i - 1].hidden),
       JSON.stringify(rungs.map((x) => x.hidden)));
   }
-  // THE SHADING IS MODE-BLIND. `MapWorld.shading` has no gate at all, so this
-  // number is EQUAL between the two runs rather than smaller in survival. It is
-  // asserted here as "the shading was alive at every rung" and compared across
-  // the pair by the operator, exactly as sandbox.js pairs its two halves.
-  check('the discovered ground was SHADED at every rung, in either mode',
+  // THE GROUND IS THERE AT ALL. This is the assertion DW-37 exists for and the
+  // one WG-29 could not have made: the map is drawing WORLD, not an empty plane
+  // with instruments on it. Both halves are checked because they are different
+  // failures - a frame with no ground under it at all (the sampler refused, or
+  // the ray solve missed the body) reads nothing like a frame with ground that
+  // nothing painted (the mask stuck off).
+  check('every rung has GROUND under the view: the sampler found the body',
+    rungs.every((x) => x.terrainSamples > 0),
+    JSON.stringify(rungs.map((x) => [x.D, x.terrainSamples])));
+  check('and TERRAIN WAS PAINTED at every rung, in either mode',
     rungs.every((x) => x.discoveredQuads > 0),
     JSON.stringify(rungs.map((x) => [x.D, x.discoveredQuads])));
+  check('a painted sample is always a sample that had ground under it',
+    rungs.every((x) => x.discoveredQuads <= x.terrainSamples),
+    JSON.stringify(rungs.map((x) => [x.D, x.discoveredQuads, x.terrainSamples])));
+  // At the ON-FOOT span the whole view fits inside ONE 9,375 m survey cell, so
+  // standing anywhere makes the ground under your feet visible in either mode
+  // and this rung CANNOT separate them. Section 1b zooms out until it can, and
+  // says so here rather than leaving a reader to wonder why the ladder's terrain
+  // numbers agree between the two runs.
+  const fully = rungs.filter((x) => x.discoveredQuads === x.terrainSamples).length;
   log.push(`ladder: ${rungs.map((x) => `${x.D}:${x.drawn}/${x.hidden}`).join(' ')}`);
+  log.push(`terrain at the foot span: ${fully}/${rungs.length} rungs fully `
+    + `painted (${rungs[0].terrainSamples} on-body samples, `
+    + `${rungs[0].sampleSizeM} m of ground each)`);
 
   // ===========================================================================
   // 2. THE FIELD SURVIVES A SAVE AND A RELOAD (DW-17).
@@ -434,6 +464,63 @@
     + `${walked.gapRatio}, ${surveyed.surveyCells} survey cells`);
 
   // ===========================================================================
+  // 3b. THE TERRAIN NEGATIVE CONTROL, at a span WIDE ENOUGH TO BITE.
+  //
+  // Section 1's ladder cannot test the terrain mask, because at the 600 m foot
+  // span the whole view sits inside ONE 9,375 m survey cell: stand anywhere and
+  // the ground under you is visible in either mode. So it is done HERE, after
+  // the walked grid above has given the discovered set a real shape, by zooming
+  // out until the view is many cells across. The claim is then exact:
+  //
+  //     SANDBOX paints every sample that has ground under it.
+  //     SURVIVAL paints strictly fewer, because it has not been everywhere.
+  //
+  // Both halves are checked in EACH run, so neither run can pass by being the
+  // other one, and the painter's count is checked against /core's own count of
+  // what the mask allows - two independent reads of one answer, the way the ore
+  // rows are done.
+  // ===========================================================================
+  const zoomTo = async (wantM) => {
+    for (let i = 0; i < 400 && MAP().spanM > wantM * ZOOM; i++) {
+      of.map('zoom', { mult: 1 / ZOOM }); await sleep(0.03);
+    }
+    for (let i = 0; i < 400 && MAP().spanM < wantM / ZOOM; i++) {
+      of.map('zoom', { mult: ZOOM }); await sleep(0.03);
+    }
+    await sleep(0.25);
+    return MAP().spanM;
+  };
+  const wideSpanM = await zoomTo(1.5e5);
+  const wideD = DRAWN();
+  const wideT = of.map('disc').terrain;
+  const wide = { spanM: Math.round(wideSpanM), painted: wideD.discoveredQuads,
+    onBody: wideD.terrainSamples, sampleSizeM: wideD.sampleSizeM,
+    seenOnBody: wideT.seenOnBody, samples: wideT.samples,
+    grid: `${wideT.cols}x${wideT.rows}`, rebuildMs: wideT.rebuildMs,
+    cacheHitRate: wideT.cacheHitRate,
+    surveyCells: DISC().surveyCells };
+  check('at a wide span there is still real ground in the frame',
+    wide.onBody > 0, JSON.stringify(wide));
+  check('the painter drew exactly what the SURVEY MASK allows',
+    wide.painted === (sandbox ? wide.onBody : wide.seenOnBody),
+    JSON.stringify(wide));
+  if (sandbox) {
+    check('SANDBOX paints every sample that has ground under it',
+      wide.painted === wide.onBody, JSON.stringify(wide));
+  } else {
+    check('SURVIVAL paints STRICTLY FEWER samples than there is ground',
+      wide.painted > 0 && wide.painted < wide.onBody, JSON.stringify(wide));
+  }
+  log.push(`terrain wide: span ${wide.spanM} m, painted ${wide.painted} of `
+    + `${wide.onBody} on-body of ${wide.samples} (${wide.grid} grid, `
+    + `${wide.rebuildMs} ms/rebuild, hit rate ${wide.cacheHitRate})`);
+  // BACK TO THE FOOT SPAN before section 4 sweeps. The sweep runs 110 notches
+  // out from wherever it starts, and its "every alpha reaches 1" check needs
+  // the close end of the continuum, so leaving it parked 150 km out would have
+  // silently moved the whole sweep and failed a check about the ore.
+  await zoomTo(600);
+
+  // ===========================================================================
   // 4. THE ZOOM CONTINUUM, PROVEN AS A CONTINUUM.
   //
   // The claim is that there is no threshold anywhere: what is drawn is a
@@ -449,6 +536,10 @@
     return {
       spanM: r.spanM, ppm: d.pixelsPerMetre,
       a: { ...d.alphas }, q: d.discoveredQuads, o: d.oreDrawn,
+      // The terrain layer's own feature size, THIS frame. The alpha prediction
+      // in (d) is taken from this rather than from a survey cell edge: the
+      // feature the ramp measures is now a SAMPLE of ground (DW-37).
+      ss: d.sampleSizeM, tn: d.terrainSamples,
       f: d.bodyFilled, m: d.markers.slice(),
     };
   };
@@ -498,7 +589,16 @@
     LAYERS.every((k) => worst[k] <= BOUND[k] * (1 + 1e-9) + 1e-12),
     JSON.stringify({ worst, bound: BOUND, at: worstAt }));
 
-  // (c) THE RAMP IS NOT DEAD CODE: every layer reaches BOTH ends.
+  // (c) THE RAMP IS NOT DEAD CODE: the two layers with a fixed feature size
+  //     reach BOTH ends. THE TERRAIN LAYER CANNOT AND MUST NOT (DW-37), and
+  //     that is a property rather than an exemption. Its feature is a SAMPLE
+  //     of ground, and the grid is cut to the canvas, so a sample's ground size
+  //     scales with the span exactly as pixels-per-metre falls: its size in
+  //     PIXELS is min(cssW, cssH) / n at every zoom. So its alpha is invariant
+  //     under zoom, which is the strongest possible form of "no threshold" -
+  //     stronger than a ramp, because there is nothing left to step. It is
+  //     asserted as EXACTLY CONSTANT across all 220 notches, and (d) below
+  //     still predicts it bit for bit from its own feature size.
   const ends = {};
   for (const k of LAYERS) {
     ends[k] = {
@@ -506,8 +606,24 @@
       one: OUT.some((s) => s.a[k] === 1) || BACK.some((s) => s.a[k] === 1),
     };
   }
-  check('every alpha reaches exactly 0 and exactly 1 somewhere in the sweep',
-    LAYERS.every((k) => ends[k].zero && ends[k].one), JSON.stringify(ends));
+  check('the ore and body alphas reach exactly 0 and exactly 1 in the sweep',
+    ['ore', 'body'].every((k) => ends[k].zero && ends[k].one),
+    JSON.stringify(ends));
+  const aT = OUT[0].a.discovered;
+  const varies = [...OUT, ...BACK].filter((s) => s.a.discovered !== aT);
+  check('the TERRAIN alpha is invariant under zoom, exactly, at every notch',
+    varies.length === 0 && aT > 0,
+    `alpha ${aT}, ${varies.length} of ${OUT.length + BACK.length} differ`);
+  // And the reason it is invariant is checkable too: the sample's PIXEL size is
+  // what is constant, not its metres, which is the sentence above stated as an
+  // arithmetic identity over the whole sweep.
+  const pxOf = (x) => x.ss * x.ppm;
+  const px0 = pxOf(OUT[0]);
+  const pxBad = [...OUT, ...BACK].filter(
+    (x) => Math.abs(pxOf(x) - px0) > 1e-9 * px0);
+  check('because a terrain sample is the SAME NUMBER OF PIXELS at every zoom',
+    pxBad.length === 0 && px0 > 0,
+    `${px0.toFixed(6)} px, ${pxBad.length} samples differ`);
 
   // (d) THE ALPHAS ARE THE ONE RAMP AND NOTHING ELSE. The strongest form of
   //     "there is no second scale rule": the painted opacity is predicted here,
@@ -517,7 +633,6 @@
   const oreRows = ORE().rows;
   let wideM = 0;
   for (const p of oreRows) wideM = Math.max(wideM, 2 * p.radiusM);
-  const cellM = DISC().surveyCellSizeM;
   const bodyM = 2 * R;
   const predicted = [];
   for (const seq of [OUT, BACK]) {
@@ -528,8 +643,11 @@
       if (s.a.body !== sizeAlpha(bodyM, s.ppm, RAMP.body[0], RAMP.body[1])) {
         predicted.push(`body@${s.spanM.toExponential(3)}`);
       }
+      // FROM THE FRAME'S OWN SAMPLE SIZE. The feature changed (a survey cell
+      // edge became a sample of ground) and the ramp did not, which is the
+      // point: one function, taking whatever the layer's feature happens to be.
       if (s.a.discovered
-        !== sizeAlpha(cellM, s.ppm, RAMP.discovered[0], RAMP.discovered[1])) {
+        !== sizeAlpha(s.ss, s.ppm, RAMP.discovered[0], RAMP.discovered[1])) {
         predicted.push(`discovered@${s.spanM.toExponential(3)}`);
       }
     }
@@ -592,12 +710,31 @@
     const i = at[0];
     const d = delta(i, seq);
     flipInfo.push({ dir: name, spanM: seq[i].spanM, markerDelta: d,
-      q: [seq[i - 1].q, seq[i].q], o: [seq[i - 1].o, seq[i].o] });
+      q: [seq[i - 1].q, seq[i].q], o: [seq[i - 1].o, seq[i].o],
+      tn: [seq[i - 1].tn, seq[i].tn] });
     check(`the ${name} fill flip changes nothing but the air receipt`,
       d.every((x) => x === 'air'), JSON.stringify(d));
-    check(`the ${name} fill flip draws exactly the same content`,
-      seq[i].q === seq[i - 1].q && seq[i].o === seq[i - 1].o,
-      `quads ${seq[i - 1].q}->${seq[i].q}, ore ${seq[i - 1].o}->${seq[i].o}`);
+    check(`the ${name} fill flip draws exactly the same ORE`,
+      seq[i].o === seq[i - 1].o,
+      `ore ${seq[i - 1].o}->${seq[i].o}`);
+    // AND THE TERRAIN COUNT MUST MOVE HERE, which is the opposite of what this
+    // row used to assert and is a stronger check than the one it replaces.
+    //
+    // WG-29 asserted `discoveredQuads` UNCHANGED across the flip, because the
+    // discovery quads in view happened not to change over one notch. The
+    // terrain grid is different: `discCoversCanvas` is true exactly while the
+    // body covers every canvas CORNER, so the notch that flips it is by
+    // definition the notch at which the corners leave the body - and a sample
+    // off the limb has no ground under it and is not counted. The two are the
+    // same geometric fact computed in two entirely separate places: the flip
+    // from the projected radius in the painter, the count from /core's own
+    // ray-sphere solve per sample. If they disagreed, one of them would be
+    // wrong about where the limb is.
+    const shrank = name === 'out' ? seq[i].tn < seq[i - 1].tn
+      : seq[i].tn > seq[i - 1].tn;
+    check(`the ${name} fill flip is the LIMB entering the frame, in /core's `
+      + `count as well as in the painter's projection`,
+      shrank, `on-body ${seq[i - 1].tn} -> ${seq[i].tn}`);
   }
 
   // A REAL DOM WHEEL on the real canvas: MapView binds it to the same `zoom`
@@ -775,21 +912,37 @@
     msClosed: +msClosed.toFixed(4),
     surface: { spanM: Math.round(surfaceSpan), msOpen: +msSurfaceOpen.toFixed(4),
       mapMs: +(msSurfaceOpen - msClosed).toFixed(4),
-      quads: surfaceDrawn.discoveredQuads, ore: surfaceDrawn.oreDrawn },
+      painted: surfaceDrawn.discoveredQuads,
+      onBody: surfaceDrawn.terrainSamples, ore: surfaceDrawn.oreDrawn },
     orbital: { spanM: Math.round(orbitalSpan), msOpen: +msOrbitalOpen.toFixed(4),
       mapMs: +(msOrbitalOpen - msClosed).toFixed(4),
-      quads: orbitalDrawn.discoveredQuads, ore: orbitalDrawn.oreDrawn },
+      painted: orbitalDrawn.discoveredQuads,
+      onBody: orbitalDrawn.terrainSamples, ore: orbitalDrawn.oreDrawn },
+    terrain: of.map('disc').terrain,
     frameBudgetMs: 1000 / 60,
   };
   check('the map costs less than one 60 Hz frame at BOTH extremes of zoom',
     cost.surface.mapMs < cost.frameBudgetMs
     && cost.orbital.mapMs < cost.frameBudgetMs, JSON.stringify(cost));
-  check('and the zoomed-out frame really was the expensive one to draw',
-    cost.orbital.quads > cost.surface.quads,
-    `${cost.surface.quads} quads in, ${cost.orbital.quads} out`);
+  // THE OLD FORM OF THIS CHECK WAS `orbital.quads > surface.quads` AND IT WAS
+  // ABOUT THE QUAD LAYER: more discovery cells fall inside a wider view, so the
+  // zoomed-out frame drew more of them. The terrain grid is a FIXED number of
+  // samples cut to the canvas, so the relation inverts and the honest statement
+  // of the same fact is about the LIMB: zoomed to the surface every sample has
+  // ground under it, and zoomed to the whole body a real fraction of the frame
+  // is space. Restating it rather than deleting it, because the thing it was
+  // guarding - that the two framings are genuinely different pictures and not
+  // the same one measured twice - is still worth guarding.
+  check('the surface framing is ALL ground and the orbital one has a limb',
+    cost.surface.onBody === cost.surface.painted
+    && cost.orbital.onBody > 0
+    && cost.orbital.onBody < cost.surface.onBody,
+    `surface ${cost.surface.painted}/${cost.surface.onBody} on-body, `
+    + `orbital ${cost.orbital.painted}/${cost.orbital.onBody}`);
   log.push(`cost: closed ${cost.msClosed} ms/frame, surface +`
-    + `${cost.surface.mapMs}, orbital +${cost.orbital.mapMs} `
-    + `(${cost.orbital.quads} quads)`);
+    + `${cost.surface.mapMs} (${cost.surface.painted}/${cost.surface.onBody} `
+    + `samples), orbital +${cost.orbital.mapMs} `
+    + `(${cost.orbital.painted}/${cost.orbital.onBody})`);
 
   // ===========================================================================
   // 7. FRAME THE CAPTURE. Same world, same seed, three zooms, so the three
@@ -816,6 +969,8 @@
     advanced: { ticks: advanced, patches: total },
     negativeControl: { bearingDeg: BEARING, partialIndex: partialIdx,
       partial, rungs },
+    // The rung the terrain gate can actually be seen at (section 1b).
+    terrainWide: wide,
     persistence: { saved: savedState, wrecked: {
       surveyCells: wrecked.disc.surveyCells,
       exploreCells: wrecked.disc.exploreCells, drawn: wrecked.ore.drawn },
@@ -839,8 +994,11 @@
       ? 'sandbox half. The negative control is this same file run WITHOUT '
         + '--sandbox=1. Diff `negativeControl.rungs` rung for rung: `ids` must '
         + 'be a SUPERSET of survival\'s, and spanM / focusCentreM / '
-        + 'pixelsPerMetre / discoveredQuads / currentPoints / plannedPoints / '
-        + 'surveyCells / exploreCells must be IDENTICAL.'
+        + 'pixelsPerMetre / terrainSamples / sampleSizeM / currentPoints / '
+        + 'plannedPoints / surveyCells / exploreCells must be IDENTICAL. '
+        + '`discoveredQuads` is NO LONGER in the identical list (DW-37): it is '
+        + 'the samples the survey mask let through, so it is >= survival\'s at '
+        + 'every rung and STRICTLY GREATER at `terrainWide`.'
       : 'survival half (the negative control). Now run it with --sandbox=1.',
   };
 })()
