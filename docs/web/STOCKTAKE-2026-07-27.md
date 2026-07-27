@@ -37,6 +37,15 @@ worktrees by default; the convention stays only for quick single-file fixes in
 the main tree. A rule that has to be restated five times is not a rule, it is
 a missing mechanism.
 
+*Amendment, same evening: the mechanism has a footgun of its own.* A worktree's
+lifetime is its lane's lifetime, and a lane that stops while its BACKGROUND
+children are still working inside that worktree gets it cleaned out from under
+them (measured: the survival-probe lane's recon child lost its working
+directory mid-read; read-only, nothing lost). So: a worktree lane runs its
+subagents synchronously or does not stop until they land, and READ-ONLY work
+needs no worktree at all, since isolation exists to protect the shared index
+from writers.
+
 **F2. The delivery pipeline lags the build pipeline by about one system.**
 A recurring shape, now with a name: capability lands green in `/core` and sits
 invisible until someone trips over its absence. Research sat unwired since
