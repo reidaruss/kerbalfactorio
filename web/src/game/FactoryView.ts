@@ -21,6 +21,7 @@ import { loadGlb } from '../assets/Loaders.js';
 import { MachineBatch, type MachineTemplate } from './MachineBatch.js';
 import { TYPE_ID, type BuildKind, type Factory, type Placed } from './Factory.js';
 import { orient } from './Grid.js';
+import { cornersOf } from './BeltCorners.js';
 import { readMachineSockets, type SocketDef } from './FactorySnap.js';
 import { BeltCargo } from './BeltCargo.js';
 import { WireView } from '../render/WireView.js';
@@ -52,9 +53,6 @@ const TEMPLATES: Record<string, MachineTemplate> = {
   esmelter: { url: 'assets/machines/smelter.glb', root: 'Smelter' },
 };
 
-/** Cosine below which two flow directions count as the same heading. */
-const TURN_COS = 0.9;
-
 /** kUnitsPerTile from factory_sim.h, and the fixed tick rate. */
 const UNITS_PER_TILE = 256;
 const TICKS_PER_SEC = 60;
@@ -80,6 +78,20 @@ export class FactoryView {
   private readonly drawn = new Map<number, string>();
   /** Belt tiles drawn as curves this frame, and which way each one turns. */
   curves: { id: number; turn: string }[] = [];
+  /**
+   * FS-40: ASSET-SPECS 4.12's two BODY endpoints for each of the three tile
+   * shapes, read off the shipped `.glb` files at load and published raw.
+   *
+   * This is the socket convention a probe measures the SEAM with. All three
+   * files put `socket_belt_in` at local (0, 0.25, -0.5); the outlet is at +Z on
+   * the straight, -X on the left curve and +X on the right. Publishing the
+   * numbers rather than a conclusion is the point: the probe rebuilds where each
+   * tile's body ends from the asset and from the matrix three will draw, and
+   * never from this file's opinion about which tiles are corners.
+   */
+  beltSockets: Record<string, { in: number[]; out: number[] }> = {};
+  /** The last plan `sync` saw, so `stats()` can report per-tile draw state. */
+  private lastPlan: Factory | null = null;
   private readonly linkSlots: number[] = [];
   private readonly p = new THREE.Vector3();
   private readonly m = new THREE.Matrix4();
@@ -123,6 +135,13 @@ export class FactoryView {
     // out of step. `socket_wire_a` / `socket_wire_b` are the asset's own
     // contract for this and had never been read.
     this.wires.load(loaded.get('pole')?.scene ?? null);
+    for (const key of ['belt', 'belt_l', 'belt_r']) {
+      const s = loaded.get(key)?.scene;
+      const i = s?.getObjectByName('socket_belt_in');
+      const o = s?.getObjectByName('socket_belt_out');
+      if (i === undefined || o === undefined) continue;
+      this.beltSockets[key] = { in: i.position.toArray(), out: o.position.toArray() };
+    }
     // ONE ghost mesh, re-pointed at whichever machine is selected. A clone per
     // frame would allocate a mesh sixty times a second to draw a preview.
     this.ghost = new THREE.Mesh(new THREE.BufferGeometry(), this.ghostMat);
@@ -143,6 +162,7 @@ export class FactoryView {
   sync(f: Factory, simSecs: number,
        eye: { x: number; y: number; z: number }): void {
     this.t = simSecs;
+    this.lastPlan = f;
     this.batch.setTime(simSecs);
     const rows = new Map<number, { visual: number; anim: number }>();
     for (const r of f.line.entityStates()) rows.set(r.id, r);
@@ -274,35 +294,32 @@ export class FactoryView {
     return { ...this.batch.stats(), ghost: this.ghostVisible,
       links: this.linkSlots.length, cargo: this.cargo.stats(),
       curves: this.curves.length, curveTiles: this.curves,
+      beltSockets: this.beltSockets, tiles: this.tileDraw(),
       wires: this.wires.report() };
   }
-}
 
-/**
- * Which belt tiles are corners, which way they turn, and how to orient them.
- *
- * A run is already ORDERED (FactoryWiring.chainRuns walks each tile's flow
- * direction), so a tile turns exactly when the heading it inherits from the tile
- * behind it is not the heading it sends on. Handedness comes out of the tangent
- * frame and nothing else: `orient` puts local +Y on `up` and local +Z on `fwd`,
- * so local +X is `up x fwd`, and the mesh's outlet is on -X for a left turn and
- * +X for a right one. Sign of (up x in) . out is therefore the whole test.
- */
-function cornersOf(f: Factory): Map<number, { turn: 'l' | 'r'; quat: THREE.Quaternion }> {
-  const out = new Map<number, { turn: 'l' | 'r'; quat: THREE.Quaternion }>();
-  const side = new THREE.Vector3();
-  for (const run of f.runs) {
-    for (let i = 1; i < run.length; ++i) {
-      const prev = run[i - 1];
-      const tile = run[i];
-      if (prev.fwd.dot(tile.fwd) > TURN_COS) continue;      // straight on
-      side.crossVectors(tile.up, prev.fwd);
-      const s = side.dot(tile.fwd);
-      if (Math.abs(s) < 0.3) continue;   // a reversal, which no mesh describes
-      out.set(tile.id, { turn: s < 0 ? 'l' : 'r', quat: orient(tile.up, prev.fwd) });
+  /**
+   * FS-40: every belt tile's DRAWN state, and only its drawn state.
+   *
+   * `mesh` is read out of the BatchedMesh's own per-instance geometry index and
+   * `m` out of its matrix texture, so these are what the GPU is about to be
+   * handed and not what this file believes it asked for. Built on demand from
+   * `stats()` rather than per frame, because a base with a thousand tiles must
+   * not allocate a thousand rows sixty times a second to feed a debug panel.
+   */
+  private tileDraw(): unknown[] {
+    const f = this.lastPlan;
+    if (f === null) return [];
+    const out: unknown[] = [];
+    for (const b of f.placed) {
+      if (b.kind !== 'belt') continue;
+      const slot = this.slots.get(b.id);
+      out.push({ id: b.id, run: b.run, slot: slot ?? -1,
+        mesh: slot === undefined ? null : this.batch.drawnKeyAt(slot),
+        m: slot === undefined ? null : this.batch.matrixAt(slot) });
     }
+    return out;
   }
-  return out;
 }
 
 /** The TypeIds this view knows how to draw, for a probe to assert against. */

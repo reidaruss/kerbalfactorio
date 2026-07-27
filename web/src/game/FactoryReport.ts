@@ -134,6 +134,17 @@ function row(f: Factory, p: Placed): unknown {
   return {
     id: p.id, kind: p.kind, build: p.build, entity: p.entity, run: p.run,
     patch: p.patch, outputItem: f.outputItemOf(p),
+    // FS-41: WHAT THIS MACHINE WAS BUILT TO EAT, and what it has ever made.
+    //
+    // `outputItem` alone could not answer Reid's "feeding coal into a smelter
+    // produces iron?", because the answer was iron either way: the defect was
+    // that the machine's INPUT half was chosen separately from its output half
+    // and came out as coal. `producedOfOutput` is /core's own lifetime tally
+    // (`producedCountOf`), so a probe can ask whether the fiction was ever
+    // ACTED on rather than only whether it was declared.
+    inputItem: f.inputItemOf(p),
+    producedOfOutput: machine && f.outputItemOf(p) > 0
+      ? f.line.producedOf(f.outputItemOf(p)) : 0,
     cell: p.cell,
     // THE POSITION IS PART OF THE REPORT, because "belts line up" is a distance
     // and not a screenshot: the acceptance measures tile to tile (GP-27).

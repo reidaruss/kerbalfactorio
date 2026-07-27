@@ -27,76 +27,14 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
   from './InstancePools.js';
-import { attachSurface, copyUv, noteShaderOrder }
-  from '../render/instancing/Surfaces.js';
+import { attachSurface, noteShaderOrder } from '../render/instancing/Surfaces.js';
+import { LOD0, normalize, roleOf, type MachineTemplate }
+  from './MachineGeometry.js';
 
-/**
- * aRole: what a vertex is, so one material can serve the authored roles.
- *
- * The two ARC roles are the belt CURVES (W7). A curve's deck is a quarter
- * annulus, so scrolling the band along local Z (which is what a straight tile
- * does) would run the cargo diagonally across the corner. The role carries which
- * corner it is, the only thing the shader needs to find the arc centre, and it
- * costs no extra attribute.
- */
-const ROLE_BODY = 0, ROLE_STATUS = 1, ROLE_FLOW = 2, ROLE_ARC_L = 3, ROLE_ARC_R = 4;
-
-export interface MachineTemplate {
-  url: string;
-  root: string;
-  flowMaterial?: string;
-  /** Set on the curve tiles: which way the quarter turn goes. */
-  arc?: 'l' | 'r';
-  /** Which meshes of the source scene belong to this template; defaults to the
-   *  `_LOD0` suffix every machine file uses. `items_atlas.glb` (FS-28) names its
-   *  meshes `Item_Log` with no LOD chain, so belt cargo passes a pattern. */
-  nodeMatch?: RegExp;
-}
-
-/** The default: a machine file's own drawing LOD. */
-const LOD0 = /_LOD0(?:_\d+)?$/;
+export type { MachineTemplate };
 
 /** Per-instance fx channels, in the order the shader reads them. */
 export interface Fx { flow: number; density: number; state: number; level: number }
-
-function roleOf(matName: string, def: MachineTemplate): number {
-  if (matName.endsWith('EmissiveState')) return ROLE_STATUS;
-  if (def.flowMaterial !== undefined && matName.endsWith(def.flowMaterial)) {
-    return def.arc === 'l' ? ROLE_ARC_L : def.arc === 'r' ? ROLE_ARC_R : ROLE_FLOW;
-  }
-  return ROLE_BODY;
-}
-
-/** Bake colour and role per vertex so one material can draw every role. */
-function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
-                   tint: THREE.Color, role: number): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  const pos = src.getAttribute('position') as THREE.BufferAttribute;
-  g.setAttribute('position', pos.clone());
-  const nrm = src.getAttribute('normal');
-  g.setAttribute('normal', nrm !== undefined
-    ? (nrm as THREE.BufferAttribute).clone()
-    : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
-  copyUv(src, g, pos.count, 'machines');   // UNCONDITIONAL. See Surfaces.copyUv.
-  const col = new Float32Array(pos.count * 3);
-  const rol = new Float32Array(pos.count);
-  for (let i = 0; i < pos.count; ++i) {
-    col[i * 3] = tint.r; col[i * 3 + 1] = tint.g; col[i * 3 + 2] = tint.b;
-    rol[i] = role;
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  g.setAttribute('aRole', new THREE.BufferAttribute(rol, 1));
-  const idx = src.getIndex();
-  if (idx !== null) g.setIndex(idx.clone());
-  else {
-    const seq = new Uint32Array(pos.count);
-    for (let i = 0; i < pos.count; ++i) seq[i] = i;
-    g.setIndex(new THREE.BufferAttribute(seq, 1));
-  }
-  g.applyMatrix4(world);
-  g.computeBoundingSphere();
-  return g;
-}
 
 export class MachineBatch {
   readonly group = new THREE.Group();
@@ -105,6 +43,8 @@ export class MachineBatch {
   readonly merged = new Map<string, THREE.BufferGeometry>();
   private mesh: THREE.BatchedMesh | null = null;
   private readonly geomId = new Map<string, number>();
+  /** The same map reversed, for the read-back below and for nothing else. */
+  private readonly geomKey = new Map<number, string>();
   private fxData!: Float32Array;
   private fxTex!: THREE.DataTexture;
   private readonly uniforms = {
@@ -115,6 +55,8 @@ export class MachineBatch {
   /** Slots released by demolition, reused before any new one is added. */
   private readonly free: number[] = [];
   private live = 0;
+  /** Instances ever added, i.e. the id range three considers valid. */
+  private added = 0;
   private cap: number;
   private grows = 0;
   private refused = 0;
@@ -273,7 +215,11 @@ if ( vRole > 2.5 ) {
     mesh.frustumCulled = false;
     mesh.sortObjects = false;
     mesh.perObjectFrustumCulled = false;
-    for (const [key, list] of per) this.geomId.set(key, mesh.addGeometry(list[0]));
+    for (const [key, list] of per) {
+      const id = mesh.addGeometry(list[0]);
+      this.geomId.set(key, id);
+      this.geomKey.set(id, key);
+    }
     this.mesh = mesh;
     this.group.add(mesh);
   }
@@ -301,7 +247,32 @@ if ( vRole > 2.5 ) {
     this.live++;
     const slot = this.mesh.addInstance(g);
     this.mesh.setGeometryIdAt(slot, g);
+    this.added = Math.max(this.added, slot + 1);
     return slot;
+  }
+
+  /**
+   * FS-40 PROBE SURFACE: which template a slot is ACTUALLY going to be drawn
+   * with, read straight out of three's own per-instance geometry index, and the
+   * matrix it will actually be drawn with.
+   *
+   * Deliberately NOT a mirror of `FactoryView.drawn` or of anything else this
+   * client decided. The defect FS-40 exists for is "the view worked out the tile
+   * is a corner and the batch drew the straight mesh anyway", and a read-back
+   * that reports the decision instead of the state cannot see that class at all.
+   * These two are the last writable state before the GPU.
+   */
+  drawnKeyAt(slot: number): string | null {
+    if (this.mesh === null || slot < 0 || slot >= this.added) return null;
+    return this.geomKey.get(this.mesh.getGeometryIdAt(slot)) ?? null;
+  }
+
+  /** The 16 elements of the matrix `slot` will be drawn with, column-major. */
+  matrixAt(slot: number): number[] | null {
+    if (this.mesh === null || slot < 0 || slot >= this.added) return null;
+    const m = new THREE.Matrix4();
+    this.mesh.getMatrixAt(slot, m);
+    return [...m.elements];
   }
 
   /**

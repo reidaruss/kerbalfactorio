@@ -29,7 +29,7 @@ import { orient, type Snapped } from './Grid.js';
 import { addressIn, anchorIn, machineCellKey, machineClash, siteAt,
   type MachineAddr, type SiteHost } from './MachinePlacement.js';
 import { factoryReport } from './FactoryReport.js';
-import { commitPlan, oreFedTo } from './FactoryCommit.js';
+import { commitPlan, smeltPairFor } from './FactoryCommit.js';
 import { collectOutput, takeFromBelt, turnPlaced } from './FactoryHand.js';
 import type { GameCore } from './GameCore.js';
 import type { OrePatches } from './OrePatches.js';
@@ -282,7 +282,8 @@ export class Factory {
     if (out > 0) back.push({ item: this.outputItemOf(p), count: out });
     if (p.kind === 'smelter' && p.build >= 0) {
       const held = this.line.inputBuffer(p.build);
-      const ore = oreFedTo(this, p) || this.core.ids.rawIron;
+      // FS-41: the refund must not invent an item the smelter never held.
+      const ore = smeltPairFor(this, p).ore;
       if (held > 0) {
         const over = this.core.add(ore, held);
         this.spilled += over;
@@ -337,18 +338,17 @@ export class Factory {
   outputOf(p: Placed): number {
     return p.build < 0 || p.kind === 'belt' ? 0 : this.line.outputBuffer(p.build);
   }
+  /** FS-41: the SAME pair the machine was built with. Asking the two halves
+   *  separately is what let a coal-to-iron smelter exist. */
   inputItemOf(p: Placed): number {
     return p.kind !== 'smelter' && p.kind !== 'esmelter' ? 0
-      : oreFedTo(this, p) || this.core.ids.rawIron;
+      : smeltPairFor(this, p).ore;
   }
   inputOf(p: Placed): number { return p.build < 0 ? 0 : this.line.inputBuffer(p.build); }
   feed(p: Placed, n: number): void { if (p.build >= 0) this.line.feed(p.build, n); }
 
   outputItemOf(p: Placed): number {
-    if (p.kind === 'smelter' || p.kind === 'esmelter') {
-      return this.M._of_gp_smelt_output_for(oreFedTo(this, p) || this.core.ids.rawIron)
-        || this.core.ids.iron;
-    }
+    if (p.kind === 'smelter' || p.kind === 'esmelter') return smeltPairFor(this, p).ingot;
     const n = p.patch >= 0 ? this.ore.patch(p.patch) : null;
     return n?.resource ?? 0;
   }

@@ -92,8 +92,8 @@ export function commitPlan(f: Factory): void {
         return;
       }
       if (p.kind === 'esmelter') {
-        const ore = oreFedTo(f, p) || ids.rawIron;
-        const ingot = f.M._of_gp_smelt_output_for(ore) || ids.iron;
+        // FS-41: the recipe is chosen as a PAIR. See `smeltPairFor`.
+        const { ore, ingot } = smeltPairFor(f, p);
         // Placed AND registered on the grid in ONE call, so a 30 kW machine
         // cannot exist that quietly runs at full speed off a grid it never
         // joined. 30 ticks against the coal smelter's 60: the ladder's top rung
@@ -119,8 +119,8 @@ export function commitPlan(f: Factory): void {
       } else if (p.kind === 'smelter') {
         // The ORE the smelter takes is whatever a miner in this plan produces,
         // and what it becomes is gameplay.h's smeltOutputFor, never a JS table.
-        const ore = oreFedTo(f, p) || ids.rawIron;
-        const ingot = f.M._of_gp_smelt_output_for(ore) || ids.iron;
+        // FS-41: and the two are chosen TOGETHER. See `smeltPairFor`.
+        const { ore, ingot } = smeltPairFor(f, p);
         p.build = f.line.placeSmelter(ore, ingot, SMELT_TICKS);
         if (carry[i].input > 0) f.line.feed(p.build, carry[i].input);
       } else {
@@ -214,6 +214,47 @@ function pitchRuns(f: Factory): void {
       a.quat = frameOf(a.up, a.fwd);
     }
   }
+}
+
+/**
+ * FS-41: THE RECIPE A SMELTER IS BUILT WITH IS A PAIR, AND IT FALLS BACK AS A
+ * PAIR. This is the only place the two halves are ever chosen.
+ *
+ * Reid: "feeding coal via belt into a smelter produces iron? thats not right."
+ * It was not right, and the machine was not misbehaving: the recipe it was
+ * built with was a lie, authored at placement time by four copies of
+ *
+ *     const ore   = oreFedTo(f, p) || ids.rawIron;
+ *     const ingot = f.M._of_gp_smelt_output_for(ore) || ids.iron;
+ *
+ * `gameplay.h`'s `smeltOutputFor` answers `kNoItem` for anything that is not
+ * smeltable, `kNoItem` is 0, and JavaScript's `||` treats 0 as absent. So a
+ * drill on a COAL patch gave `ore = coal` and `ingot = 0 || iron`, and
+ * `placeSmelter(coal, iron)` built a machine that genuinely, in /core, claims
+ * to turn coal into iron. Measured headlessly by the typed-acceptance lane:
+ * 241 coal mined, 57 iron produced. The typed-acceptance gate landing in
+ * `factory_sim.h` cannot help, and should not: it refuses items a machine's
+ * recipe does not consume, and this machine's recipe consumed coal.
+ *
+ * The fix is that a fallback replaces BOTH halves or neither. An input with no
+ * smelt output does not get iron bolted onto it; it gets the whole raw-iron
+ * recipe, and the new gate then refuses the coal at the inserter and the line
+ * jams where the player can see it, which is the correct outcome.
+ *
+ * THE GENERAL SHAPE IS WORTH MORE THAN THE FIX. `||` as a default is unsafe
+ * wherever a valid identifier can be zero, and this codebase uses 0 as
+ * `kNoItem` throughout. `x || fallback` is only ever correct for a value whose
+ * zero is genuinely meaningless.
+ */
+export function smeltPairFor(f: Factory, s: Placed): { ore: number; ingot: number } {
+  const ids = f.core.ids;
+  const fed = oreFedTo(f, s);
+  const made = fed > 0 ? f.M._of_gp_smelt_output_for(fed) : 0;
+  if (fed > 0 && made > 0) return { ore: fed, ingot: made };
+  // The default rung, taken WHOLE. `smeltOutputFor(rawIron)` is the authority
+  // even here; `ids.iron` is only the guard for a /core that answered nothing.
+  return { ore: ids.rawIron,
+    ingot: f.M._of_gp_smelt_output_for(ids.rawIron) || ids.iron };
 }
 
 /** What ore reaches this smelter: the resource of the nearest drill's patch. */
