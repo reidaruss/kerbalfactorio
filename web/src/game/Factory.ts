@@ -331,8 +331,7 @@ export class Factory {
     return collectOutput(this, p, refund);
   }
 
-  /** What a machine holds, what it EATS (/core's smelt table, never a JS list)
-   *  and putting some in. Anything with no buffer answers 0. */
+  /** What a machine holds and EATS (/core's smelt table, never a JS list). */
   outputOf(p: Placed): number {
     return p.build < 0 || p.kind === 'belt' ? 0 : this.line.outputBuffer(p.build);
   }
