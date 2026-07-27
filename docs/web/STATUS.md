@@ -683,6 +683,89 @@ placement so nothing persists in that form.
 green (132 files), 19 probes re-run green plus the new `shortline.js`. No `/core`
 change, no wasm rebuild, ABI still 5.
 
+## Sandbox mode, and a save that cannot be confused with a survival one (DW-31, 2026-07-26)
+
+> "when I play through I want to be able to enter a sandbox mode where i dont
+> have to actually gather all of the materials manually, i can just pick
+> anything thats in the game and place it."
+
+Everything placeable at no cost, with no research gate and no pack requirement,
+reachable from the pack menu and from `?sandbox=1`. It is a mode and not a debug
+flag, and the load-bearing half of that distinction is the save.
+
+**One authority.** `game/GameMode.ts` holds the only `sandbox === true` test in
+the client and answers NAMED questions (`freeBuild`, `fullCatalogue`) rather than
+handing out a boolean. Three gates ask it: a structural part's `/core` cost
+(`Structures.canAfford` / `pay`), a hand furnace's pack requirement
+(`Machines.place`, both halves, so the check and the spend cannot drift apart),
+and hand crafting (`GameplayActions.craft` GRANTS the output instead of calling
+`of_gp_craft`, because a call whose false return is ignored would eat inputs it
+never announced). Machines and belts already cost nothing, so they needed no
+change at all. **Research does not exist in the web client yet** (`research.h`
+is green headless and has never been wired into the browser), so there is
+nothing there to bypass; when it lands it asks the same question, on the day it
+is written.
+
+**The save is keyed by mode and also records it,** and both mechanisms are
+needed because they fail differently. A survival boot reads and autosaves `auto`
+and a sandbox boot `auto-sandbox`, so neither run can read or, far more
+important, OVERWRITE the other. One shared key with a `mode` field would have
+been cheaper and wrong: the autosave fires every 20 s on the sim clock, so
+booting the wrong mode would correctly refuse to load the other world and then
+destroy it inside half a minute. The field catches a key that has itself gone
+wrong: a slot whose record disagrees with its key is REFUSED, the reason is on
+the HUD ("that save was made in sandbox mode, this world is survival") and in
+`game().persist.slotRefused`, and the live world is left exactly as it was.
+**A sandbox slot loaded without the flag, or a survival slot with it, is never
+read at all** (different keys), and nothing is written over either way.
+
+**It says so on screen.** A `SANDBOX` chip sits over the crosshair and is
+deliberately outside `GameHud.setVisible`, so it stays up behind the pack panel:
+that is the exact moment a player is staring at free recipes wondering why.
+
+**The menu reloads rather than toggling in place.** A mode is stamped on the
+slot, so a session that spent five minutes in each has no honest label to write.
+The switch saves the current world to its own slot first, so it costs nothing
+and coming back finds it as it was left.
+
+**Driven, both ways, `valid: true` in each.** `probes/sandbox.js` reads the URL,
+reads what the game thinks, and FAILS if they disagree, so a run where the flag
+never reached the app cannot quietly test survival twice and pass both times.
+
+| | survival (no flag) | sandbox (`?sandbox=1`) |
+|---|---|---|
+| pack at start | `[]` | `[]` |
+| foundation ghost | `need 4 Stone`, **0 placed** | `free  (sandbox)`, **1 placed** |
+| pack after | `[]` | `[]` |
+| `/core` affordability | **false** | **false** |
+| hand furnace (crafted-item gate) | 0 placed | 1 placed |
+| craft panel offers | **0 of 4** | **4 of 4** |
+| real DOM click on Craft | button disabled, pack 0 -> 0 | pack 0 -> 1 (Crude pickaxe) |
+| badge | absent | `SANDBOX`, up behind the panel too |
+| slot keys after saving | `[auto]` | `[auto, auto-sandbox]` |
+| decoy survival slot | (replaced by its own save) | **untouched, `savedAt` intact** |
+| ledger mode after reload | `survival` | `sandbox` |
+| mislabelled slot | refused, `slotRefused: mode`, world unchanged | same |
+
+Three negative controls, because "everything is free" is the easiest claim in
+this project to pass by accident. **(1) The other run**: the same file, the same
+empty pack, the same cell, refused by name. **(2) The same page**:
+`Structures.affordInCore` publishes `/core`'s verdict with the mode taken out,
+and it reads false in both modes while the sandbox placement succeeds, so the
+cost rule is provably alive. **(3) The slots**: a decoy survival record planted
+straight into IndexedDB comes back byte for byte after a whole sandbox session.
+The Craft button is clicked with a REAL DOM event rather than through
+`of.craft`, because `probes/realclick.js` is the standing reminder that an
+abstraction hid a completely inert left mouse button through twenty green
+probes. ARCHITECTURE 15.2 items 117 and 118.
+
+`build.js`, `controls.js`, `persist.js`, `inventory.js`, `realclick.js` and
+`objectives.js` re-run green. Save slot version unchanged at 5 (the `mode` field
+is additive and a slot without one reads as survival). No `/core` change, no
+wasm rebuild, ABI still 5. Screenshots `docs/screenshots/W9_sandbox_base.png`
+(12 structures standing, pack empty, badge up), `W9_sandbox_menu.png` (pack
+0/20, every recipe live, the mode row and its switch).
+
 ## Commands
 
 ```

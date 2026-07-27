@@ -2115,6 +2115,41 @@ Added at W4 (2026-07-25):
     ever persisted in the prospective form and saved cells keep the shape they
     always had.
 
+117. **A MODE MUST KEY ITS SAVE, NOT MERELY LABEL IT, BECAUSE THE AUTOSAVE IS
+    THE CONTAMINANT.** DW-31 asks that a sandbox world never be mistaken for a
+    survival one, and the obvious reading is a `mode` field on the slot plus a
+    refusal to load a mismatch. That is exactly half a fix, and the missing half
+    is the dangerous one: `Gameplay` autosaves every 20 seconds on the SIM
+    clock, so a survival boot over one shared key would correctly refuse to
+    *load* the sandbox world and then *destroy* it inside half a minute. Slots
+    are therefore keyed `auto` and `auto-sandbox` (`SaveGame.slotKey`) and the
+    field is kept as well, because the two mechanisms fail differently: the key
+    makes contamination structurally impossible, and the field is what catches a
+    key that has itself gone wrong (a hand-edited store, a future migration).
+    Measured rather than argued: `probes/sandbox.js` plants a decoy survival
+    record under `auto`, plays a whole sandbox session including an explicit
+    save, and asserts the decoy comes back with its `savedAt` unchanged. **The
+    generalisation: when a piece of state decides which data a process may READ,
+    check whether the same process also WRITES, and key the store by it if so. A
+    read guard alone protects the wrong direction.**
+
+118. **A MODE THAT LIFTS A RULE MUST PUBLISH THE ANSWER IT IS OVERRIDING, OR IT
+    IS INDISTINGUISHABLE FROM THE RULE BEING BROKEN.** A sandbox run in which
+    every placement succeeds looks, from outside, exactly like a build whose
+    affordability check has silently started returning true, and no amount of
+    "it placed 12 foundations" tells the two apart. `Structures.affordInCore`
+    therefore surfaces `/core`'s own verdict beside the game's in
+    `structureReport().costs`, and the acceptance asserts that with an empty
+    pack it reads **false in both modes** while the sandbox placement succeeds.
+    That is DW-26's rule about one authority answering in two named shapes,
+    applied to progression instead of to the surface. It is also what makes a
+    single page carry its own negative control, which matters because the
+    cross-run control (the same probe without `?sandbox=1`) needs a second
+    browser launch and can therefore be forgotten. **Any future mode, cheat,
+    difficulty setting or unlock override should publish the un-overridden
+    answer next to the overridden one; the delta is the only evidence that the
+    feature is doing the work.**
+
 ### 15.3 The dev loop, concretely
 
 ```
