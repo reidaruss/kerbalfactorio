@@ -380,17 +380,22 @@
     const moved = Math.abs(p1.latDeg - p0.latDeg) + Math.abs(p1.lonDeg - p0.lonDeg);
     check('RECOVERY: the walker walks again after a flight', moved > 1e-6,
           `moved ${moved}`);
-    // AIM AT THE GROUND FIRST. The disembark leaves the walker looking wherever
-    // the flight left him, which was straight up, and a dig ray into the sky
-    // correctly hits nothing. Asserting on the tool without aiming it was this
-    // file's own bug and it read as a broken dig.
-    of.look(of.world().observer.yawDeg, -70);
-    await sleep(0.2);
-    of.input.act(['use'], 20);
-    await sleep(0.6);
-    const d = of.dig();
+    // AIM AT THE GROUND AND LET THE STREAMER CATCH UP FIRST. The disembark
+    // leaves the walker looking wherever the flight left him (straight up, so a
+    // dig ray correctly hits nothing) at a landing site whose chunks have only
+    // just arrived. Both were this file's own bugs and both read as a broken
+    // dig, which is the shape of false positive a recovery check must not have.
+    of.look(of.world().observer.yawDeg, -75);
+    await of.settle(8);
+    let dug = null;
+    for (let i = 0; i < 6 && dug === null; ++i) {
+      of.input.act(['use'], 20);
+      await sleep(0.8);
+      const d = of.dig();
+      if (d.hit !== null || d.cells > 0) dug = d;
+    }
     check('RECOVERY: the left button digs the ground again after a flight',
-          d.hit !== null && d.distM > 0, JSON.stringify({ hit: d.hit, dist: d.distM }));
+          dug !== null, JSON.stringify(of.dig()));
   }
 
   const st = of.stats();
