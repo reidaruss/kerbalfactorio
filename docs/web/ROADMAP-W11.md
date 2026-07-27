@@ -49,7 +49,7 @@ the failure this project has paid for six times. See lane B.
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | **all five landed** (GP-36 to GP-40) |
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
-| E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`** (248 checks green, 1,200 machines cost 10.06 us/sim-tick); production hook + combat handoff published, see Blockers |
+| E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`, then reviewed and hardened** (525 checks green, 1,200 machines cost 8.04 us/sim-tick, 10 defects found by an adversarial pass over an already-green suite); production hook + combat handoff published, see Blockers |
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
 | G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | queued, blocked on W8 flight |
 | H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | queued, blocked on flight (owns `ui/`) |
@@ -505,3 +505,51 @@ the values.
 Gates: **23/24 ctest** (`surface_field_tests` is lane B's in-flight field),
 `npm --prefix web run check` green, 160 files all under 400 lines,
 `probes/build.js`, `basesnap.js` and `cantilever.js` all `valid: true`.
+
+- **2026-07-27, lane E, `6c1c85c` — ten defects an adversarial review found in a
+  suite that was already green.** The enemies core landed at 248 checks, all
+  passing. An independent review pass over the same header found **ten real
+  defects**, and that is the finding worth more than any of them individually:
+  every one was invisible to tests written by whoever wrote the code, because
+  those tests encode the same assumptions the code does. Suite now **525
+  checks**, ctest 28/28. Detail per defect in
+  [docs/controllers/enemies.md](../controllers/enemies.md) section 10.
+  **The one that mattered most would have silently undone the module's headline
+  property.** `diffuseAndDecay` sorted its scratch buffer with `std::sort` and
+  then summed each equal-key group IN ARRAY ORDER. Equal `(key, source)` groups
+  are the normal case: in a single-emitter cloud every cell gets one retained
+  entry plus one from each of four neighbours, so five doubles share a key and a
+  source. Floating-point addition is not associative and `std::sort` leaves ties
+  in an unspecified permutation, which is stable within one toolchain, **which is
+  exactly why the determinism test passed and could not possibly have caught
+  it**, and unstable between libstdc++ and libc++. EN-2 had paid a measured
+  2.12x cell-size non-uniformity to keep this module bit-portable; this threw it
+  away through a side door. `std::stable_sort` fixes it and is **20% faster** on
+  a nearly-sorted input, so the 1,200-machine cost fell from 10.06 to
+  **8.04 us/sim-tick**.
+  **Three of the ten were ceilings that report success**, the DW-28 class this
+  project has paid for before. `maxNests` counted the GRAVEYARD, so once 512
+  nests had ever existed the faction went permanently extinct while
+  `aliveNestCount()` kept reading healthy. `pollutionTickInterval = 0` froze the
+  entire loop while `tickIndex()` climbed and every accessor looked fine. And
+  `maxWaveSize` truncation was unreported with no cap on the carried budget, so
+  a heavy base would eventually get a constant wave size while the threat meter
+  climbed past 100% forever.
+  **Two would have disabled the game silently.** One content row with
+  `budgetCost = 0` made every nest refuse every wave forever, whose only symptom
+  is that nothing ever attacks: **indistinguishable from the negative control
+  passing**. And demolishing a base made the nest credit a dead emitter, giving
+  a wave `targetDir` of `(0,0,0)`: an attack aimed at the planet's core.
+  **Verified rather than asserted, because a guard that has never been seen to
+  fail is not a guard.** Reverting the six behavioural fixes in a scratch copy
+  of the header and rebuilding the CURRENT test file against it fails **exactly
+  six suites by name and 18 checks**. The other four moved a defect out of reach
+  rather than changing an observable. The `stable_sort` fix **cannot** have a
+  test on one toolchain by construction, so it is filed as a specific ask on
+  `parity.mjs` for whoever takes this module across the bridge.
+  **The generalisation, which is why this is in the log rather than in a bug
+  list:** the numbers in the original commit were all true, the suite was
+  genuinely green, the negative controls were real, and the code still had ten
+  defects, three of which are the exact failure shape DECISIONS.md already names
+  as this project's worst. Green does not mean audited. Budget a review pass on
+  anything that will be depended on.
