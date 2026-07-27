@@ -358,8 +358,8 @@ def main():
                 fill_pos=(2.6, 12.0, 1.55))
     build_pad()
     build_vessel()
-    build_human(2.6, 6.6, 0.30, 200.0)
-    shoot(cam, (-1.4, 8.2, 1.05), (0.4, 0.4, 0.90), 24.0, "trench")
+    build_human(2.6, 8.4, 0.30, 200.0)
+    shoot(cam, (-2.5, 12.4, 1.42), (0.2, 0.2, 0.80), 20.0, "trench")
 
     # 6. The mount and the four clamps holding a 2.50 m stack. This is the
     #    frame that either shows the grip pads touching the hull or does not.
