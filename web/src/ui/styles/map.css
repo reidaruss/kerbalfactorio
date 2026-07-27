@@ -1,0 +1,249 @@
+/* The orbital map screen. Same world as game.css and research.css: gunmetal
+   panels, one amber accent, hairline rules, monospace. The --of-* variables come
+   from game.css, which whatever mounts this pulls in through GameHud.
+
+   THE ONE RULE THIS FILE EXISTS TO HOLD: the canvas is sized by its BOX, never
+   by its own attributes. MapDraw is handed cssW/cssH/dpr and paints in CSS
+   pixels, so the element gets `position:absolute; inset:0` inside a relatively
+   positioned .view and the painter is told what that came out as. A canvas laid
+   out by width/height attributes disagrees with its backing store the moment
+   the window is resized, and the map goes soft and off-centre with no error. */
+
+#of-map {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.62);
+  z-index: 30;
+}
+
+#of-map.open { display: flex; }
+
+#of-map .frame {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 95vw);
+  height: min(820px, 90vh);
+  padding: 14px 16px 12px;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* --- the header line ----------------------------------------------------- */
+#of-map .frame h3 {
+  flex: 0 0 auto;
+  margin: 0 0 10px;
+  padding-bottom: 7px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-map .frame h3 span {
+  float: right;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--of-accent);
+}
+
+/* --- the split: canvas left, numbers right ------------------------------- */
+/* min-height/min-width 0 on both children: a flex item defaults to min-content,
+   and without these the canvas refuses to shrink and pushes the readout off. */
+#of-map .split {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+}
+
+#of-map .view {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: #070a0d;
+  border: 1px solid var(--of-edge);
+  overflow: hidden;
+}
+
+#of-map canvas.map-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- the readout column -------------------------------------------------- */
+#of-map .readout {
+  flex: 0 0 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  overflow-y: auto;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  border-left: 3px solid var(--of-accent);
+}
+
+#of-map .readout h4 {
+  margin: 9px 0 4px;
+  padding-bottom: 3px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-map .readout h4:first-child { margin-top: 0; }
+
+/* Label left, value right, and the value is tabular so a column of altitudes
+   lines up on the decimal point instead of wandering as the digits change. */
+#of-map .row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+#of-map .row em {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  white-space: nowrap;
+}
+
+#of-map .row b {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--of-ink);
+  white-space: nowrap;
+}
+
+#of-map .row.warn b { color: var(--of-bad); }
+#of-map .row.good b { color: var(--of-good); }
+#of-map .row .none { color: var(--of-dim); font-style: italic; }
+
+/* --- the node controls --------------------------------------------------- */
+/* A grid of small square buttons, one axis per row: prograde, normal, radial,
+   each with a minus and a plus, so the pair reads as one control. */
+#of-map .nodectl {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-top: 6px;
+}
+
+#of-map .nodectl button {
+  /* Height, not aspect-ratio. In a 250 px column a square cell is 55 px tall
+     and four rows of them turn the readout into a slab of orange that outshouts
+     the numbers they are steering. Measured in a driven screenshot, which is
+     the only way this kind of thing is ever noticed. */
+  height: 22px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: #101418;
+  background: var(--of-accent);
+  border: 0;
+  cursor: pointer;
+}
+
+#of-map .nodectl button:hover { background: #ffb266; }
+
+#of-map .nodectl button:disabled {
+  color: #667581;
+  background: #2c353d;
+  cursor: not-allowed;
+}
+
+/* The axis name in front of its pair, not a button. */
+#of-map .nodectl em {
+  display: flex;
+  align-items: center;
+  line-height: 1.15;
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+}
+
+#of-map .nodectl .wide { grid-column: span 4; height: 22px; }
+
+/* The live value between a minus and a plus. Bright and tabular, because it is
+   a NUMBER the player is steering and not a caption. */
+#of-map .nodectl em.val {
+  justify-content: center;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--of-ink);
+}
+
+#of-map .nodectl button.on { background: var(--of-good); }
+
+/* The message line, in the header's accent slot. */
+#of-map .frame h3 span.msg { float: right; color: var(--of-accent); }
+
+/* The two standing notes under the node block. */
+#of-map .note {
+  margin-top: 7px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--of-dim);
+}
+
+/* --- the hint line ------------------------------------------------------- */
+#of-map .hint {
+  flex: 0 0 auto;
+  margin-top: 10px;
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--of-dim);
+  border-top: 1px solid var(--of-edge);
+}
+
+#of-map .hint b {
+  font-weight: 600;
+  color: var(--of-ink);
+}
+
+/* --- scrollbars, so the readout never sprouts a system-grey slab --------- */
+#of-map .readout::-webkit-scrollbar { width: 8px; }
+
+#of-map .readout::-webkit-scrollbar-thumb {
+  background: #2c353d;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+#of-map .readout::-webkit-scrollbar-track { background: transparent; }
+
+/* --- narrow viewport ----------------------------------------------------- */
+/* Below this the readout costs the map more width than it is worth, so the two
+   stack and the numbers go under the picture rather than beside it. */
+@media (max-width: 780px) {
+  #of-map .split { flex-direction: column; }
+  #of-map .readout {
+    flex: 0 0 auto;
+    max-height: 34%;
+    border-left: 1px solid var(--of-edge);
+    border-top: 3px solid var(--of-accent);
+  }
+}

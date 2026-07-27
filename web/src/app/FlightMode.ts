@@ -79,6 +79,9 @@ export class FlightMode {
   readonly navball: Navball;
 
   aboard = false;
+  /** The node's burn direction, inertial, or null. Written by MapMode so the
+   *  ball's marker and the map's are ONE direction from one plan. */
+  nodeDir: Vec3 | null = null;
   rollouts = 0;
   boardings = 0;
   disembarks = 0;
@@ -133,6 +136,17 @@ export class FlightMode {
     // already have is, which is the only answer that is never surprising.
     if (d <= ABANDON_RANGE_M) { this.refuse(`vessel is ${d.toFixed(0)} m away`); return; }
     this.rollOut();
+  }
+
+  /** GP-54. The bay's launch control, shared by its button and by the launch
+   *  key pressed inside it so the two cannot drift apart. Here because the only
+   *  question it asks is `aboard`. The refusal does NOT close the bay: shutting
+   *  a screen to deliver a message puts the player somewhere they did not ask
+   *  to be, and the bay opens mid-flight (probes/flightabuse.js). */
+  fromBay(leaveBay: () => void): void {
+    if (this.aboard) { this.refuse('already flying: land and get out first'); return; }
+    leaveBay();
+    this.board();
   }
 
   rollOut(): void {
@@ -236,10 +250,8 @@ export class FlightMode {
   }
 
   private refuse(why: string): void { this.refusals += 1; this.flash(why); }
-  /** Six seconds on the LOOP's clock, which is the only clock the expiry in
-   *  `frame` sees. The session's own flash used mission-elapsed time against
-   *  that same loop clock, so every message it raised was cleared in the frame
-   *  it was raised in and no player ever saw one. */
+  /** Six seconds on the LOOP's clock, the only clock `frame`'s expiry sees
+   *  (PH-35: the session's used mission time against it). */
   private flash(m: string): void {
     this.message = m;
     this.msgUntilS = this.lastSimSecs + 6;
@@ -251,15 +263,13 @@ export class FlightMode {
     if (!this.session.live) return;
     this.session.tick(simSecs);
     // The transient half of the message line. FlightMode's own `message` had no
-    // expiry at all, so the last thing it ever said stayed on the navball for
-    // the rest of the session; the session's had one on the wrong clock. Two
-    // opposite bugs in one line of readout, which is why neither showed up.
+    // expiry at all and the session's had one on the wrong clock: two opposite
+    // bugs in one line of readout, which is why neither showed up.
     if (this.message !== '' && simSecs > this.msgUntilS) this.message = '';
     this.lastSimSecs = simSecs;
     if (this.drawnRevision !== this.session.revision) this.rebuild();
     // Parked: nothing steps the observer, so keep the drawn instant equal to
-    // the sim's (PH-31). While aboard the interpolator owns it and this would
-    // throw the lerp away.
+    // the sim's (PH-31). Aboard, the interpolator owns it.
     if (!this.aboard) this.observer.syncToVessel();
     // The INTERPOLATED position, the one the camera was placed for. See
     // VesselObserver.renderPos: the raw sim position is a whole tick ahead.
@@ -269,24 +279,28 @@ export class FlightMode {
     this.fwd.set(f[0], f[1], f[2]);
     this.rgt.set(r[0], r[1], r[2]);
     this.view.place(this.pos, this.fwd, this.rgt);
+    // IN THE COCKPIT YOU ARE INSIDE THE HULL, so the hull is not drawn. Found
+    // by screenshotting: looking down at the planet from an eye 1.2 m below the
+    // top of the stack put a black wedge of the vessel's own interior across
+    // two thirds of the frame. There is no IVA geometry (A-11), so an empty
+    // cockpit is honest and a hull seen from the inside out is not.
+    this.view.setVisible(!this.observer.firstPerson);
     // WHICH NOZZLES ARE LIT, and "is an engine" is not the same question
     // (PH-33). The filter used to be the catalogue's thrust figure alone, so
     // every engine on the stack drew a plume and the UPPER STAGE burned inside
-    // the interstage from the moment the clamp released. That reads healthy
-    // (the plume count matches the engine count) and becomes accidentally
-    // correct at separation when the spent parts leave the tree, so it is wrong
-    // only between liftoff and staging, which is the window every launch
-    // screenshot is taken in.
+    // the interstage from the moment the clamp released. It reads healthy (the
+    // plume count matches the engine count) and becomes accidentally correct at
+    // separation, so it is wrong only between liftoff and staging, which is the
+    // window every launch screenshot is taken in.
     //
     // The rule is the LOWEST stage group still bolted on, gated on /core saying
     // the vehicle is actually producing thrust. `nextStageIndex - 1` was tried
-    // first and is wrong for a measured reason: after a separation the remaining
-    // parts do not carry the stage number the flight's counter is on, so the
-    // upper stage flew the entire second half of the ascent at THR 100% with no
-    // flame at all (`view.plumes` 0 against `plumeThrottle` 1). Asking the
-    // TREE which engines are lowest needs no agreement about numbering, and
-    // gating on thrust makes the pad, a shut throttle and a dry tank all
-    // correct for free.
+    // first and is wrong for a measured reason: after a separation the parts do
+    // not carry the stage number the flight's counter is on, so the upper stage
+    // flew the whole second half of the ascent at THR 100% with no flame
+    // (`view.plumes` 0 against `plumeThrottle` 1). Asking the TREE which
+    // engines are lowest needs no agreement about numbering, and gating on
+    // thrust makes the pad, a shut throttle and a dry tank correct for free.
     const engines = this.session.partRows
       .filter((q) => (this.byId.get(q.partId)?.thrustVacuumN ?? 0) > 0);
     let lowest = Infinity;
@@ -316,9 +330,8 @@ export class FlightMode {
 
   // --- the readout -----------------------------------------------------------
 
-  /** Heading and pitch of a unit direction, in THE local horizon frame. There is
-   *  one of those and it is `FlightAttitude`'s, so the ball, the ribbon and the
-   *  keys cannot disagree about which way east is. */
+  /** Heading and pitch of a unit direction in THE local horizon frame, which is
+   *  `FlightAttitude`'s, so the ball, the ribbon and the keys agree on east. */
   private marker(dir: Vec3 | null): BallMarker | null {
     return dir === null ? null : horizonAngles(dir, this.session.up);
   }
@@ -340,16 +353,15 @@ export class FlightMode {
       headingDeg: nose.headingDeg, pitchDeg: nose.pitchDeg,
       rollDeg: (roll * 180) / Math.PI,
       prograde: pro, retrograde: retro,
-      command: this.marker(s.sasName === 'CMD' ? st.forward : null),
+      command: this.marker(s.sasName === 'CMD' ? s.commandDir : null),
       guidance: this.marker(s.guidanceDir()),
+      node: this.marker(this.nodeDir),
       altitudeM: s.altitudeAglM, altitudeDatumM: tm.altitudeM,
-      surfaceSpeedMS: speed, orbitalSpeedMS: speed,
-      verticalSpeedMS: dot(v, u),
+      surfaceSpeedMS: speed, orbitalSpeedMS: speed, verticalSpeedMS: dot(v, u),
       apoapsisM: s.orbit.apoapsisAltM, periapsisM: s.orbit.periapsisAltM,
-      // A vehicle sitting on the ground has zero velocity, which is a perfectly
-      // well defined degenerate conic through the planet's centre, so the pad
-      // readout was PE -600.00 km. Arithmetically right and it reads as a
-      // broken instrument. On the surface there is no orbit to report.
+      // A vehicle on the ground has zero velocity, a perfectly well defined
+      // degenerate conic through the planet's centre, so the pad readout was
+      // PE -600.00 km: right, and it reads as a broken instrument.
       bound: s.orbit.bound && s.status !== 'CLAMPED' && s.status !== 'DOWN',
       throttle: s.throttleValue,
       stages: s.stageRows.map((q) => ({
@@ -360,9 +372,8 @@ export class FlightMode {
       sas: s.sasName, status: s.status,
       qPa: tm.qPa, maxQPa: s.maxQPa, twr: s.currentTwr(), massKg: tm.massKg,
       gForce: tm.accelMS2 / 9.80665, metS: Math.max(0, s.metS),
-      // Read back from the LATCH rather than repeated from a constant here: a
-      // chip that says saving is off while saving is on would be a second
-      // authority, and this one is meant to be the player's evidence.
+      // From the LATCH, never repeated from a constant here: a chip that says
+      // saving is off while it is on would be a second authority.
       warning: saveInhibit(),
       message: s.message !== '' ? s.message : this.message,
     };

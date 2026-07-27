@@ -118,9 +118,15 @@ OF_API int of_fl_set_throttle(int f, double t) {
   return 1;
 }
 // 0 Off, 1 Hold, 2 Prograde, 3 Retrograde, 4 Command. DW-30 item 2 ships Hold.
+// ABI 11 appends 5 Normal, 6 Antinormal, 7 RadialIn, 8 RadialOut, which point
+// at orbital::basisAt's triad - the SAME triad a maneuver node's handles are
+// expressed in, because two derivations of "which way is normal" would show up
+// as a node marker that is not quite where the SAS holding it points.
+// There is no Node mode: a node's burn direction is fixed in inertial space,
+// so Command(4) plus of_fl_set_sas_command IS hold-node.
 OF_API int of_fl_set_sas(int f, int mode) {
   fl::FlightSim* s = g_flights.get(f);
-  if (!s || mode < 0 || mode > 4) return 0;
+  if (!s || mode < 0 || mode > 8) return 0;
   s->sas = static_cast<fl::SasMode>(mode);
   return 1;
 }

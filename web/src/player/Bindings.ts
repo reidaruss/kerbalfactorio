@@ -30,6 +30,15 @@ export type Action =
   | 'board' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
   | 'throttleCut' | 'pitchUp' | 'pitchDown' | 'yawLeft' | 'yawRight'
   | 'rollLeft' | 'rollRight' | 'sasToggle' | 'sasMode' | 'warpUp' | 'warpDown'
+  // W12 MAP AND NODES. `map` is M because M is the map in KSP and Reid asked
+  // for it by name. The eight SAS modes take the digit row, which is the
+  // hotbar on foot and dead in a rocket, exactly the precedent `throttleDown`
+  // set on KeyK. Node HANDLES are deliberately NOT keys: they are on-screen
+  // buttons, because eight more bindings to nudge four numbers is a worse
+  // trade than four pairs of buttons the player can see.
+  | 'map'
+  | 'sasStability' | 'sasPrograde' | 'sasRetrograde'
+  | 'sasNormal' | 'sasAntinormal' | 'sasRadialIn' | 'sasRadialOut' | 'sasNode'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
   | 'slot6' | 'slot7' | 'slot8' | 'slot9';
@@ -69,7 +78,17 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   lamp: ['KeyL'],
   rotate: ['KeyR'],
   freeSnap: ['KeyB'],
-  mute: ['KeyM'],
+  // MUTE MOVED OFF KeyM, and this is the one binding change that is not an
+  // addition. M is the map key in KSP and Reid asked for it by name, and the
+  // "a code may fire two actions" rule below has a precondition that mute
+  // BREAKS: only one of the two consumers may ever be live, and `mute` is read
+  // in `GameplayInput.chrome`, which runs above the `suspended` return and is
+  // therefore live in a rocket. Left as it was, one press of M would open the
+  // map AND silence the game, which is the silent-second-effect class this
+  // project keeps paying for. Backslash is a holding pen, not a design: see
+  // the physics lane's report for the one-word follow-up it needs (the HUD
+  // still flashes "sound off  (M)", in a file this lane may not touch).
+  mute: ['Backslash'],
   goals: ['KeyH'],
   // W8. The assembly bay is a PLACE you go, so it gets a key of its own rather
   // than a hotbar slot: a slot decides what the LEFT BUTTON does, and the bay is
@@ -110,6 +129,18 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   sasMode: ['KeyY'],
   warpUp: ['KeyP'],
   warpDown: ['KeyO'],
+  // W12. The map, and the SAS modes on the digit row. Every digit is a hotbar
+  // slot on foot and nothing at all in a rocket, so the pair is never live at
+  // once: the same argument `equipment` on KeyK already makes.
+  map: ['KeyM'],
+  sasStability: ['Digit1'],
+  sasPrograde: ['Digit2'],
+  sasRetrograde: ['Digit3'],
+  sasNormal: ['Digit4'],
+  sasAntinormal: ['Digit5'],
+  sasRadialIn: ['Digit6'],
+  sasRadialOut: ['Digit7'],
+  sasNode: ['Digit8'],
   slotNext: [],
   slotPrev: [],
   slot1: ['Digit1'], slot2: ['Digit2'], slot3: ['Digit3'],
@@ -118,7 +149,7 @@ export const BINDINGS: Record<Action, readonly string[]> = {
 };
 
 /**
- * What survives while a panel owns the pointer.
+ * What survives while ANY panel owns the pointer.
  *
  * `pack` because Tab has to close the panel it opened, `interact` because a
  * machine screen closes with the key that opened it, and `cancel` because
@@ -128,6 +159,15 @@ export const BINDINGS: Record<Action, readonly string[]> = {
  *
  * `assembly` is here for the same reason as `pack`: the bay takes the pointer
  * while it is open, so the key that opened it has to survive to close it.
+ *
+ * NOTHING WAS ADDED HERE FOR THE BAY'S LAUNCH KEY, AND THAT IS THE DECISION.
+ * Reid built a rocket, pressed G at it and the game did nothing, because
+ * `board` is not on this list. The obvious repair is to add it, and it is
+ * wrong: this list is GLOBAL, so `board` here would also fire from the
+ * inventory, the research tree and the power panel, where G means nothing a
+ * player intended and where it would either plant a rocket behind them or
+ * strap them into one from inside a menu. A panel's own actions belong to that
+ * panel, which is what `Input.setUiCapture`'s second argument is for.
  */
 export const UI_ALLOWED: readonly Action[] =
   ['pack', 'interact', 'cancel', 'assembly',
@@ -137,6 +177,37 @@ export const UI_ALLOWED: readonly Action[] =
     // panels out of three is the shape of bug ModalStack's derived list exists
     // to prevent (GP-25).
     'research', 'power', 'equipment'];
+
+/**
+ * THE MAP'S OWN ALLOW LIST, passed to `Input.setUiCapture`'s second argument.
+ *
+ * The decision here is deliberate and it is the opposite of a panel's. An
+ * inventory screen swallows the world because a click on a Craft button must
+ * not also swing a pickaxe. The map is not that: it is a VIEW of a flight that
+ * is still happening, at whatever warp it was already at, and in KSP every
+ * flight control stays live in map view. So EVERY flight action survives here,
+ * including `board` and `stage`, which are the two that could surprise you.
+ *
+ * They survive for the reason the `board` note above gives from the other
+ * side: `board` is not in the GLOBAL list because G from an inventory screen
+ * means nothing a player intended. G from the MAP, strapped into a rocket,
+ * means exactly what it means from the navball, and the map draws
+ * `FlightMode.message`, so a refusal is visible rather than silent. A key that
+ * does nothing at all teaches the player the feature does not exist.
+ *
+ * What is NOT here: the on-foot verbs (`use`, `demolish`, `level`, the hotbar
+ * slots, `view`, `lamp`). Every one of them is already dead while strapped in,
+ * because `Gameplay.fixedStep` returns early on `suspended`, so listing them
+ * would change nothing except to imply they might work.
+ */
+export const MAP_ALLOWED: readonly Action[] = [
+  'map', 'board', 'stage',
+  'throttleUp', 'throttleDown', 'throttleFull', 'throttleCut',
+  'pitchUp', 'pitchDown', 'yawLeft', 'yawRight', 'rollLeft', 'rollRight',
+  'sasToggle', 'sasMode', 'warpUp', 'warpDown',
+  'sasStability', 'sasPrograde', 'sasRetrograde', 'sasNormal',
+  'sasAntinormal', 'sasRadialIn', 'sasRadialOut', 'sasNode',
+];
 
 const CODE_TO_ACTIONS = new Map<string, Action[]>();
 for (const [a, codes] of Object.entries(BINDINGS) as [Action, string[]][]) {
@@ -173,5 +244,6 @@ export function labelOf(action: Action): string {
     .replace('Mouse0', 'left click')
     .replace('Mouse2', 'right click')
     .replace('ShiftLeft', 'Shift')
-    .replace('Backquote', '`');
+    .replace('Backquote', '`')
+    .replace('Backslash', '\\');
 }

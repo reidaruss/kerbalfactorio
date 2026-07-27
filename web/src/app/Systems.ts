@@ -22,15 +22,43 @@ export function registerSystems(s: Services, loop: Loop): void {
   // because its panel joins the stack in its own constructor.
   let assemblyHeld = false;
   let boardHeld = false;
+  let mapHeld = false;
+  let holdHeld = false;
   loop.onFixedStep.push(() => {
     const on = s.input.act('assembly');
     if (on && !assemblyHeld) s.vab?.toggle();
     assemblyHeld = on;
     // W9. Board / roll out / disembark, edge-detected here for the same reason
     // the bay's key is: flight is not part of Gameplay, it owns its own eye.
+    //
+    // GP-54. THIS USED TO REFUSE THE KEY WHILE THE BAY WAS OPEN, AND IT WAS THE
+    // WORST ANSWER AVAILABLE. Reid built a rocket, pressed the launch key at it
+    // and the game did nothing whatsoever: `board` is not on UI_ALLOWED so the
+    // press never arrived, and this line would have discarded it if it had. A
+    // silent no-op teaches the player the feature does not exist. It now means
+    // what they meant: leave the bay and roll the thing you just built out onto
+    // the ground. Leaving FIRST matters, because `rollOut` puts the pad in
+    // front of the player's own feet and yaw, and inside the bay both of those
+    // belong to a camera orbiting a stand.
     const b = s.input.act('board');
-    if (b && !boardHeld && s.vab?.open !== true) s.flight?.board();
+    if (b && !boardHeld) {
+      const vab = s.vab;
+      if (vab?.open === true) s.flight?.fromBay(() => vab.leave());
+      else s.flight?.board();
+    }
     boardHeld = b;
+    // W12. The MAP, on M. Same shape and same reason as the two above: it owns
+    // its own pointer, and it refuses OUT LOUD off the vessel rather than doing
+    // nothing, which is GP-54's lesson applied before it can bite again.
+    const mk = s.input.act('map');
+    if (mk && !mapHeld) s.map?.toggle();
+    mapHeld = mk;
+    // HOLD-NODE, the eighth SAS key. It lives here rather than in
+    // FlightControls because it is not a MODE: it is SAS Command aimed at a
+    // direction only the node knows, and FlightControls has no node.
+    const hk = s.input.act('sasNode');
+    if (hk && !holdHeld) s.map?.toggleHold();
+    holdHeld = hk;
     // The ON-FOOT half of the gameplay tick is suspended while strapped in; the
     // FACTORY half is not, and that distinction is the whole point. A flight
     // that quietly froze the base would be two games again.
@@ -206,6 +234,9 @@ export function registerSystems(s: Services, loop: Loop): void {
     // agree. Placing it in onDrain instead put it a whole tick of travel out,
     // which is 38 m at orbital speed and reads as a rocket that has vanished.
     s.flight?.frame(loop.simSecs);
+    // AFTER flight: the node is re-planned off the state flight has just
+    // sampled, so the ball's node marker and the map draw the same instant.
+    s.map?.frame();
     const cam = s.rig.nearCam;
     eye.setFromMatrixPosition(cam.matrixWorld);
     // Scatter follows the EYE, not the origin: the floating origin is only

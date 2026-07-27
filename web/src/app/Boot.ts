@@ -38,6 +38,7 @@ import { ObserverCamera } from '../player/ObserverCamera.js';
 import { ViewRouter } from '../player/ViewRouter.js';
 import { Controller } from '../player/Controller.js';
 import type { FlightMode } from './FlightMode.js';
+import { bootMap, type MapMode } from './MapBoot.js';
 import { Avatar } from '../player/Avatar.js';
 import type { ViewSource } from '../player/ViewSource.js';
 import { Input } from '../player/Input.js';
@@ -293,8 +294,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   }
 
   // W8 the assembly bay. Dynamically imported for the same reason gameplay is
-  // (standing rule 7): `?vab=0` must isolate it for real, not merely hide it.
-  // It is built after gameplay because it spends the same pack.
+  // (standing rule 7): `?vab=0` must isolate it for real. Built after gameplay
+  // because it spends the same pack.
+  // GP-54. The bay is built before flight (flight flies the bay's design), so
+  // its roll-out button cannot hold a reference to something that does not
+  // exist yet. Late-bound through one closure, and it REFUSES OUT LOUD under
+  // `?flight=0`: a dead button teaches the player the feature does not exist.
+  let doRollOut: (() => void) | null = null;
   let vab: Vab | null = null;
   if (gameplay !== null && cfg.vab) {
     const { Vab: VabMode } = await import('../game/Vab.js');
@@ -302,8 +308,18 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     vab = await VabMode.create({
       M: core, body: body.handle, host, canvas, scene: scenes.vab,
       camera: rig.vabCam, modals: g.modals, mode: g.mode,
-      setUiCapture: (on) => { input.setUiCapture(on); },
+      // GP-54: the bay's OWN launch key, live only while the bay holds the
+      // pointer. Not on UI_ALLOWED, which is global and would give G to the
+      // inventory screen too. Systems.ts turns the press into leave + roll out.
+      setUiCapture: (on) => { input.setUiCapture(on, ['board']); },
       setRenderMode: (on) => { frame.vabActive = on; },
+      rollOut: () => {
+        if (doRollOut === null) {
+          g.hud.banner('flight is not loaded (?flight=0)', '#ffb4a2');
+          return;
+        }
+        doRollOut();
+      },
       setWorldUi: (on) => {
         g.hud.setVisible(on);
         g.hotbarBar.setVisible(on);
@@ -316,6 +332,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // (it hides the on-foot HUD while strapped in), so it is built last. Dynamic
   // import for standing rule 7: `?flight=0` has to isolate it for real.
   let flight: FlightMode | null = null;
+  let map: MapMode | null = null;
   if (gameplay !== null && vab !== null && player !== null && cfg.flight) {
     hud.banner('loading the rocket meshes for flight ...');
     const { FlightMode: Mode } = await import('./FlightMode.js');
@@ -332,6 +349,20 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       },
     });
     await flight.load();
+    // Both entrances now run the SAME two calls in the same order, so the
+    // button and the key cannot drift into meaning different things.
+    const theFlight = flight;
+    doRollOut = () => theFlight.fromBay(() => theVab.leave());
+    // GP-53. The checklist learns about the rocket. It is a PORT rather than a
+    // field on Gameplay because Gameplay is at its line cap and because the
+    // checklist is the only thing that wants to know.
+    g.goals.rocket = {
+      parts: () => theVab.design.parts.length,
+      rollouts: () => theFlight.rollouts,
+      boardings: () => theFlight.boardings,
+    };
+    // W12 THE MAP, on M. Its ports live in MapBoot: Boot is shared and at cap.
+    map = await bootMap({ core, host, g, flight: theFlight, body, input });
   }
 
   const boot: BootMetrics = {
@@ -362,7 +393,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
     hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
     level, levelRing,
-    gameplay, vab, flight, router, boot,
+    gameplay, vab, flight, map, router, boot,
   };
   return { services, canvas };
 }

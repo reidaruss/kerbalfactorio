@@ -3,14 +3,14 @@
 // does all of it, and this file decides only WHEN and with what inputs.
 //
 // GROUND CONTACT, physics risk R5. `/core` has no contact at any layer, so this
-// file solves the PAD end with a launch clamp (`stepClamped`) and does NOT
-// pretend to solve the landing end: `DOWN` is an ARREST, with no gear, friction,
-// tip-over or impact tolerance. Half-building it would look right and not be.
+// solves the PAD end with a launch clamp and does NOT pretend to solve the
+// landing end: `DOWN` is an ARREST, no gear or friction or tip-over or impact
+// tolerance. Half-building it would look right and not be.
 import { vesselAbi } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import {
-  SAS_COMMAND, SAS_PROGRADE, SAS_RETROGRADE, SAS_NAMES, add, dot,
+  SAS_COMMAND, SAS_OFF, SAS_PROGRADE, SAS_RETROGRADE, SAS_NAMES, add, dot,
   flightOrbit, flightParts, flightState, flightTelemetry, guidancePitch, len,
   norm, rotateAbout, scale,
 } from './FlightAbi.js';
@@ -36,11 +36,11 @@ export interface FlightPorts {
 
 /** Degrees per second the command slews at full deflection. DW-30 item 3 wants
  *  generous authority, but a rate the torque cannot follow is a marker that
- *  lies: 45 deg/s overshot the ribbon by 20 degrees a side, 20 tracks it. */
+ *  LIES: 45 deg/s overshot the ribbon by 20 degrees a side; 20 tracks it. */
 const SLEW_DEG_S = 20;
 const ROLL_DEG_S = 60;
-/** How fast stability assist takes roll back out. Slower than the player's own
- *  roll rate, so a deliberate roll wins while the key is held. */
+/** How fast SAS takes roll back out. Slower than the player's own roll rate,
+ *  so a deliberate roll wins while the key is held. */
 const ROLL_HOLD_DEG_S = 20;
 
 export class FlightSession {
@@ -55,8 +55,7 @@ export class FlightSession {
   steps = 0;
   /** Set when the vessel first rises 1 m: the proof it left the ground. */
   liftedOff = false;
-  clampTicks = 0; clampStepOk = 0;   // "did the sim advance", from outside
-  liftoffAltM = 0; peakAltM = 0;
+  clampTicks = 0; clampStepOk = 0; liftoffAltM = 0; peakAltM = 0;
 
   /** Pad ground radius, and the vessel base offset below its own origin. */
   padRadiusM = 0; baseOffsetM = 0;
@@ -64,8 +63,8 @@ export class FlightSession {
 
   private readonly V: OfVesselModule;
   /** The DESIGN the craft was copied from. Kept because the per-stage delta-v
-   *  table is an `of_vs_*` read and those take a VESSEL handle, never a flight
-   *  one, and the two registries both number from 1. */
+   *  table is an `of_vs_*` read taking a VESSEL handle, and the two registries
+   *  both number from 1 (PH-27). */
   private design = 0;
   private sasMode = SAS_COMMAND;
   private command: Vec3 = [0, 1, 0];
@@ -96,13 +95,13 @@ export class FlightSession {
   get warpFactor(): number { return WARP_STEPS[this.warpIndex] ?? 1; }
   get clamped(): boolean { return this.status === 'CLAMPED'; }
   get up(): Vec3 { return norm(this.st.pos); }
+  /** Where SAS is AIMING, which is NOT where the nose is (PH-44). */
+  get commandDir(): Vec3 { return this.command; }
 
-  /** Metres from the vessel's BASE to the ground under it: what "did it leave
-   *  the pad" is asked of, and NOT `telemetry.altitudeM` (from the datum).
-   *  The offset SUBTRACTS (PH-28): `rollOut` puts the ORIGIN at
-   *  `surfaceRadius + baseOffsetM` since the origin is the stack's TOP, so the
-   *  base is that far below it. Adding it read ALT AGL 19.20 m on the pad,
-   *  twice the offset, and armed the arrest 19.2 m into the ground. */
+  /** Metres from the vessel's BASE to the ground, which is what "did it leave
+   *  the pad" asks, and NOT `telemetry.altitudeM` (from the datum). The offset
+   *  SUBTRACTS (PH-28): the origin is the stack's TOP, so the base is that far
+   *  below it. Adding it read ALT AGL 19.20 m standing still on the pad. */
   get altitudeAglM(): number {
     const r = len(this.st.pos);
     if (!(r > 0)) return 0;
@@ -110,9 +109,8 @@ export class FlightSession {
     return r - this.p.surfaceRadius(u[0], u[1], u[2]) - this.baseOffsetM;
   }
 
-  /** Roll a design out at a unit direction on the body. The vessel's origin is
-   *  at the TOP of the stack, so the BASE (most negative local Y) goes on the
-   *  ground and the origin `-minY` above it, or the vehicle would be buried. */
+  /** Roll a design out at a unit direction. The origin is the TOP of the stack,
+   *  so the BASE goes on the ground and the origin `-minY` above it. */
   rollOut(designHandle: number, dir: Vec3): boolean {
     this.destroy();
     const h = this.V._of_fl_create(designHandle, this.p.bodyHandle);
@@ -135,24 +133,20 @@ export class FlightSession {
     const east = horizonFrame(u).east;
     this.V._of_fl_set_attitude(h, u[0], u[1], u[2], east[0], east[1], east[2]);
     this.V._of_fl_set_ang_vel(h, 0, 0, 0);
-    this.command = u;
-    this.sasMode = SAS_COMMAND;
-    this.V._of_fl_set_sas(h, SAS_COMMAND);
-    this.V._of_fl_set_sas_command(h, u[0], u[1], u[2]);
+    this.sasMode = SAS_OFF;      // so commandDirection does the switch itself
+    this.commandDirection(u);
     this.throttle = 0;
     this.V._of_fl_set_throttle(h, 0);
     this.status = 'CLAMPED'; this.metS = -1;
     this.maxQPa = 0; this.stagings = 0; this.steps = 0;
     this.liftedOff = false; this.peakAltM = 0; this.warpIndex = 0;
-    this.sample();
-    this.flash('on the pad, held by the clamp');
+    this.sample(); this.flash('on the pad, held by the clamp');
     return true;
   }
 
   destroy(): void {
     if (this.handle > 0) this.V._of_fl_destroy(this.handle);
-    this.handle = 0; this.parts = []; this.stages = [];
-    this.status = 'CLAMPED';
+    this.handle = 0; this.parts = []; this.stages = []; this.status = 'CLAMPED';
   }
 
   // --- controls, all driven by ACTIONS and never by a key --------------------
@@ -163,16 +157,15 @@ export class FlightSession {
   }
   nudgeThrottle(d: number): void { this.setThrottle(this.throttle + d); }
 
-  /** Slew the command in the LOCAL HORIZON FRAME (FlightAttitude). Radians:
-   *  pitch > 0 lowers the nose, yaw > 0 turns right, roll > 0 rolls right. */
+  /** Slew in the LOCAL HORIZON FRAME. pitch > 0 lowers the nose, yaw > 0 turns
+   *  right, roll > 0 rolls right. */
   slew(pitchRad: number, yawRad: number, rollRad: number): void {
     if (this.handle <= 0) return;
-    if (pitchRad === 0 && yawRad === 0 && rollRad === 0) return;
-    const c = slewCommand(this.command, this.up, pitchRad, yawRad);
-    this.command = norm(c);
-    if (this.sasMode !== SAS_COMMAND) this.setSas(SAS_COMMAND);
-    this.V._of_fl_set_sas_command(this.handle, this.command[0], this.command[1],
-                                  this.command[2]);
+    // ROLL IS NOT A COMMAND (PH-44): through commandDirection it dropped a
+    // vessel out of PRO into CMD on any roll input, silently.
+    if (pitchRad !== 0 || yawRad !== 0) {
+      this.commandDirection(slewCommand(this.command, this.up, pitchRad, yawRad));
+    }
     if (rollRad !== 0) {
       const rr = rotateAbout(norm(this.st.right), norm(this.st.forward), rollRad);
       this.V._of_fl_set_attitude(this.handle, this.st.forward[0], this.st.forward[1],
@@ -180,23 +173,34 @@ export class FlightSession {
     }
   }
 
+  /** Every mode change goes through here, and every one SAYS SO. */
   setSas(mode: number): void {
     if (this.handle <= 0) return;
     this.sasMode = mode;
     this.V._of_fl_set_sas(this.handle, mode);
-    if (mode === SAS_COMMAND) {
-      this.command = norm(this.st.forward);
-      this.V._of_fl_set_sas_command(this.handle, this.command[0], this.command[1],
-                                    this.command[2]);
-    }
+    if (mode === SAS_COMMAND) this.commandDirection(norm(this.st.forward));
+    this.flash(`SAS ${this.sasName}`);
   }
 
-  /** Command / Prograde / Retrograde, in that cycle. DW-30 item 2. */
+  /** Point SAS at an inertial direction, switching to Command if needed. This
+   *  IS hold-node: a node's burn direction is fixed in inertial space, so
+   *  /core needs no Maneuver mode and the caller refreshes it as handles move. */
+  commandDirection(dir: Vec3): void {
+    if (this.handle <= 0) return;
+    this.command = norm(dir);
+    if (this.sasMode !== SAS_COMMAND) {
+      this.sasMode = SAS_COMMAND;
+      this.V._of_fl_set_sas(this.handle, SAS_COMMAND);
+    }
+    this.V._of_fl_set_sas_command(this.handle, this.command[0], this.command[1],
+                                  this.command[2]);
+  }
+
+  /** Command / Prograde / Retrograde, in that cycle. DW-30 item 2. The seven
+   *  mode KEYS are direct (Bindings' digit row); this is the one-key cycle. */
   cycleSas(): void {
-    const next = this.sasMode === SAS_COMMAND ? SAS_PROGRADE
-      : this.sasMode === SAS_PROGRADE ? SAS_RETROGRADE : SAS_COMMAND;
-    this.setSas(next);
-    this.flash(`SAS ${SAS_NAMES[next] ?? ''}`);
+    this.setSas(this.sasMode === SAS_COMMAND ? SAS_PROGRADE
+      : this.sasMode === SAS_PROGRADE ? SAS_RETROGRADE : SAS_COMMAND);
   }
 
   setWarp(i: number): void {
@@ -204,17 +208,14 @@ export class FlightSession {
     this.flash(`warp ${this.warpFactor}x`);
   }
 
-  /**
-   * Fire the next stage. On the pad this LIGHTS the first engine and releases
-   * the clamp, as in KSP and as `test_flight.cpp`'s flyToOrbit does it: set the
-   * throttle, then `sim.stage()`.
-   */
+  /** Fire the next stage. On the pad this LIGHTS the first engine and releases
+   *  the clamp, as in KSP: set the throttle, then `sim.stage()`. */
   fireStage(): boolean {
     if (this.handle <= 0) return false;
     // ONE PRESS ON THE PAD (PH-29). The first lights the engine; a second while
-    // the clamp still holds throws away the booster the vehicle needs, what is
-    // left cannot reach TWR 1, and the clamp then never releases. Measured: four
-    // presses took the reference vehicle from 11 parts to 4 and bolted it down.
+    // the clamp holds throws away the booster, what is left cannot reach TWR 1
+    // and the clamp never releases. Measured: four presses took the reference
+    // vehicle from 11 parts to 4 and bolted it to the ground.
     if (this.status === 'CLAMPED' && this.stagings > 0) {
       this.flash('clamp still holding: throttle up first, do not stage again');
       return false;
@@ -326,13 +327,10 @@ export class FlightSession {
     this.st.right = r;
   }
 
-  /** Per-frame message expiry only. Everything else moves on the fixed tick.
-   *  `nowS` is captured here because it is the ONLY place the loop's clock
-   *  reaches this file, and `flash` was setting its deadline on the MISSION
-   *  clock instead (`metS`, -1 on the pad) against this one (seconds since
-   *  boot, in the hundreds by the time a rocket is built). Every message the
-   *  session raised was therefore cleared in the same frame it was raised, so
-   *  "clamp holding: TWR 0.00, throttle up" has never once been on screen. */
+  /** Per-frame message expiry only; everything else moves on the fixed tick.
+   *  `nowS` is captured here because it is the ONLY place the LOOP's clock
+   *  reaches this file, and both message clocks must be that one (PH-35: they
+   *  were not, and no message this session raised was ever visible). */
   tick(simSecs: number): void {
     this.nowS = simSecs;
     if (this.message !== '' && simSecs > this.msgUntilS) this.message = '';
@@ -353,7 +351,8 @@ export class FlightSession {
     this.sample();
   }
 
-  private flash(msg: string): void {
+  /** Public: anything that answers a key answers on the line the sim uses. */
+  flash(msg: string): void {
     this.message = msg;
     this.msgUntilS = this.nowS + 5;
   }

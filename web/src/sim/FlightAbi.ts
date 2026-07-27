@@ -50,8 +50,17 @@ export const SAS_HOLD = 1;
 export const SAS_PROGRADE = 2;
 export const SAS_RETROGRADE = 3;
 export const SAS_COMMAND = 4;
+/** ABI 11. APPENDED, so 0..4 still mean what every shipped probe thinks. They
+ *  point at orbital::basisAt's triad, the SAME triad a maneuver node's handles
+ *  are expressed in. There is no Node mode: a node's direction is fixed in
+ *  inertial space, so SAS_COMMAND plus FlightSession.commandDirection IS it. */
+export const SAS_NORMAL = 5;
+export const SAS_ANTINORMAL = 6;
+export const SAS_RADIAL_IN = 7;
+export const SAS_RADIAL_OUT = 8;
 
-export const SAS_NAMES = ['OFF', 'HOLD', 'PRO', 'RET', 'CMD'] as const;
+export const SAS_NAMES =
+  ['OFF', 'HOLD', 'PRO', 'RET', 'CMD', 'NML', 'ANM', 'RIN', 'ROT'] as const;
 
 const ZERO: Vec3 = [0, 0, 0];
 

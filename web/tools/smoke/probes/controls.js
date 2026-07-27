@@ -282,6 +282,27 @@
     // the modal stack and cannot be opened here FAILS, which is exactly how
     // this entry came to be written.
     vab: async () => { await act(['assembly'], 4, 0.4); },
+    // W11 PROGRESSION SCREENS, and their absence from this table was the
+    // derivation catching a real gap rather than a probe being out of date:
+    // `research`, `power` and `equip` joined the modal stack when H-5 gave them
+    // ACTIONS, and until these three lines existed nothing anywhere proved
+    // Escape shut any of them. That is the whole argument for reading the list
+    // instead of writing it (GP-25), and it is the reachability point in
+    // miniature: a panel that exists is not a panel a player can get to.
+    research: async () => { await act(['research'], 4, 0.35); },
+    power: async () => { await act(['power'], 4, 0.35); },
+    equip: async () => { await act(['equipment'], 4, 0.35); },
+    // W12 THE MAP. It is a flight map and REFUSES to open on foot, which is a
+    // deliberate refusal and not a failure, so this opener has to get the
+    // player into a vessel first. `controls.js` runs on the ground with no
+    // rocket built, so it cannot: the entry exists to keep the derivation's
+    // guarantee honest, and it says out loud which condition it is standing
+    // in for rather than reporting a pass it did not earn.
+    map: async () => {
+      if (of.flight === undefined) return;
+      if (of.flight('report').aboard !== true) return;   // refused on foot
+      await act(['map'], 4, 0.4);
+    },
   };
   const escapeRows = [];
   for (const entry of of.modals().modals) {
@@ -293,6 +314,15 @@
       continue;
     }
     await open();
+    // A modal whose opener could not run in THIS probe's world is skipped
+    // rather than counted as opened. `probes/maneuver.js` is where the map's
+    // own Escape is proven, aboard a vessel in orbit, and it asserts it.
+    if (entry.name === 'map'
+        && of.modals().modals.find((m) => m.name === 'map').open !== true) {
+      escapeRows.push({ modal: 'map', opened: false, closedByEscape: null,
+        note: 'needs a vessel; proven in probes/maneuver.js' });
+      continue;
+    }
     const wasOpen = of.modals().modals.find((m) => m.name === entry.name).open;
     of.escape();
     await sleep(0.35);

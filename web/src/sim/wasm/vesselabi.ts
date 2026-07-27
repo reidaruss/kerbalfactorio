@@ -31,6 +31,8 @@ export const PART_ROW_WORDS = 5;
 export const FLIGHT_STATE_WORDS = 17;
 export const TELEMETRY_WORDS = 12;
 export const ORBIT_WORDS = 6;
+export const ORBIT_META_WORDS = 18;
+export const NODE_PLAN_WORDS = 26;
 
 export interface VesselAbi {
   // --- §11.1 the part catalogue (content: valid before any init) -------------
@@ -136,7 +138,10 @@ export interface VesselAbi {
                       rx: number, ry: number, rz: number): number;
   _of_fl_set_ang_vel(f: number, x: number, y: number, z: number): number;
   _of_fl_set_throttle(f: number, t: number): number;
-  /** 0 Off, 1 Hold, 2 Prograde, 3 Retrograde, 4 Command. DW-30 ships Hold. */
+  /** 0 Off, 1 Hold, 2 Prograde, 3 Retrograde, 4 Command. DW-30 ships Hold.
+   *  ABI 11 appends 5 Normal, 6 Antinormal, 7 RadialIn, 8 RadialOut. There is
+   *  no Node mode: a node's direction is fixed in inertial space, so Command
+   *  plus _of_fl_set_sas_command IS hold-node. */
   _of_fl_set_sas(f: number, mode: number): number;
   _of_fl_set_sas_command(f: number, x: number, y: number, z: number): number;
   _of_fl_capture_hold(f: number): number;
@@ -156,6 +161,21 @@ export interface VesselAbi {
   _of_fl_transforms(f: number): number;
   /** f64 scratch, 2: [pitchFromVerticalRad, pastTheVerticalHold]. */
   _of_fl_guidance_pitch(altitudeM: number): number;
+
+  // --- §17 MANEUVER NODES (ABI 11). Pure functions; nothing is stored. -------
+  /** The conic through (p, v) as a polyline. mu and the body radius come off
+   *  the FLIGHT HANDLE, never from JS: a JS-supplied mu would be a second
+   *  gravity authority, which is the bug DW-18 exists to have already fixed.
+   *  -> point count; f64 scratch holds count*3 doubles [x,y,z]. */
+  _of_mn_path(f: number, px: number, py: number, pz: number,
+              vx: number, vy: number, vz: number, samples: number): number;
+  /** f64 scratch, ORBIT_META_WORDS. Same conic, the scalars beside it. */
+  _of_mn_orbit_meta(f: number, px: number, py: number, pz: number,
+                    vx: number, vy: number, vz: number): number;
+  /** f64 scratch, NODE_PLAN_WORDS. What the burn costs, which way to point,
+   *  when to light it, how long for, and the orbit it produces. */
+  _of_mn_plan(f: number, tFromNowS: number, dvProgradeMS: number,
+              dvNormalMS: number, dvRadialMS: number): number;
 }
 
 export type OfVesselModule = OfCoreModule & VesselAbi;

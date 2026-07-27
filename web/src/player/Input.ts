@@ -10,6 +10,9 @@
 import { BINDINGS, UI_ALLOWED, codesFor, isAction, type Action }
   from './Bindings.js';
 
+/** Shared empty allowance, so releasing the pointer allocates nothing. */
+const EMPTY_ALLOW: readonly Action[] = [];
+
 export interface InputFrame {
   fwd: number; right: number; up: number;
   dYaw: number; dPitch: number;
@@ -73,6 +76,8 @@ export class Input {
   /** False while the UI owns the pointer: no look, no movement, no use. */
   private lookEnabled = true;
   private uiHeld = false;
+  /** The open panel's OWN actions. See `setUiCapture`. */
+  private uiAllow: readonly Action[] = EMPTY_ALLOW;
   private el: HTMLElement | null = null;
   private tape: TapeEntry[] = [];
   private tapeIdx = 0;
@@ -208,8 +213,16 @@ export class Input {
    * Hand the pointer to the UI, or take it back. Everything except the actions
    * on UI_ALLOWED is muted while the UI holds it, tape-driven runs included, so
    * a scripted probe sees exactly what a player sees.
+   *
+   * `alsoAllow` is the panel's OWN actions, live only while that panel holds
+   * the pointer. UI_ALLOWED is global and deliberately tiny; this is the seam
+   * for the case it cannot express, which the assembly bay's launch key is:
+   * `board` must work while the bay is open and must NOT work from the
+   * inventory screen. Cleared on release, so an allowance can never outlive the
+   * panel that asked for it.
    */
-  setUiCapture(on: boolean): void {
+  setUiCapture(on: boolean, alsoAllow: readonly Action[] = []): void {
+    this.uiAllow = on ? alsoAllow : EMPTY_ALLOW;
     this.uiHeld = on;
     this.lookEnabled = !on;
     this.down.clear();
@@ -240,7 +253,7 @@ export class Input {
    * capture so a consumer cannot act behind an open panel by accident.
    */
   act(a: Action): boolean {
-    if (this.uiHeld && !UI_ALLOWED.includes(a)) return false;
+    if (this.uiHeld && !UI_ALLOWED.includes(a) && !this.uiAllow.includes(a)) return false;
     for (const c of BINDINGS[a]) if (this.active.has(c)) return true;
     return false;
   }

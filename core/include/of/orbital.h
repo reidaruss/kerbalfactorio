@@ -341,6 +341,56 @@ inline double orbitalPeriod(double a, double mu) {
 }
 
 // =============================================================================
+// The prograde / normal / radial-out triad at a state.
+//
+// PH-39: there is ONE derivation of "which way is normal", and it lives here,
+// because two things now need it and they must not each own a copy. SAS points
+// at these directions (flight.h §5) and a maneuver node's handles are expressed
+// in them (maneuver.h §1); a second construction is exactly the two-authority
+// failure that has cost this project six multi-hour bugs, and it would show up
+// as a node whose burn marker on the navball is not quite the direction the
+// node was planned in - which nothing would catch, because both would look
+// plausible.
+//
+//   prograde  = v / |v|
+//   normal    = (r x v) / |r x v|            the orbit pole
+//   radialOut = prograde x normal            in-plane, away from the body
+//
+// radialOut really is outward: for r = (R,0,0), v = (0,V,0), r x v = +z and
+// prograde x normal = (0,1,0) x (0,0,1) = (1,0,0) = +r. On an eccentric orbit
+// it is the component of r perpendicular to v, which is the standard
+// definition and is NOT simply r-hat.
+// =============================================================================
+struct Basis {
+  Vec3 prograde{0, 1, 0};
+  Vec3 normal{0, 0, 1};
+  Vec3 radialOut{1, 0, 0};
+};
+
+inline Basis basisAt(const StateVector& s) {
+  Basis b;
+  const double vmag = s.v.length();
+  const Vec3 h = cross(s.r, s.v);
+  const double hmag = h.length();
+  // A degenerate state (at rest on the pad, or exactly radial) has no orbit
+  // plane. Build an arbitrary but orthonormal triad off the position instead,
+  // so callers get finite directions rather than NaN. A rocket standing still
+  // is the FIRST state this is asked about on every flight.
+  if (vmag < 1e-9 || hmag < 1e-9) {
+    const Vec3 up = normalized(s.r.lengthSq() > 0.0 ? s.r : Vec3{0, 1, 0});
+    const Vec3 seed = (std::fabs(up.y) < 0.9) ? Vec3{0, 1, 0} : Vec3{1, 0, 0};
+    b.radialOut = up;
+    b.normal = normalized(cross(up, seed));
+    b.prograde = normalized(cross(b.normal, up));
+    return b;
+  }
+  b.prograde = s.v * (1.0 / vmag);
+  b.normal = h * (1.0 / hmag);
+  b.radialOut = normalized(cross(b.prograde, b.normal));
+  return b;
+}
+
+// =============================================================================
 // Gravitational acceleration toward the central body: a = -μ r / |r|³.
 // (Optional constant thrust accel is added by the integrator caller.)
 // =============================================================================

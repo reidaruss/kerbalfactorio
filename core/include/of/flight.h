@@ -336,12 +336,26 @@ inline AeroForces aerodynamics(const vessel::Vessel& v,
 // mean "attitude is free".
 // =============================================================================
 
+// PH-39: the four orbital modes are APPENDED, so 0..4 keep the values the
+// bridge, FlightAbi.ts and every existing probe already speak. They point at
+// orbital::basisAt's triad and at nothing they derive themselves.
+//
+// There is deliberately no `Node` mode. A node's burn direction is FIXED in
+// inertial space once the node is placed (the impulse is planned at one point
+// on the conic), so holding it is exactly what `Command` already does, and
+// adding a fifth way to say "point there" would put a maneuver concept inside
+// the attitude controller. The caller sets Command and feeds it Plan::
+// burnDirection - which is also what makes hold-node cost nothing to build.
 enum class SasMode : uint8_t {
   Off = 0,
   Hold,        // hold the attitude captured when the mode was set
   Prograde,    // along the velocity vector
   Retrograde,
   Command,     // hold a caller-supplied direction (what a guidance ribbon does)
+  Normal,      // 5: along r x v, the orbit pole
+  Antinormal,  // 6
+  RadialIn,    // 7: toward the body, perpendicular to velocity
+  RadialOut,   // 8: away from it
 };
 
 struct ControlAuthority {
@@ -415,6 +429,14 @@ inline Vec3 sasTarget(SasMode mode, const FlightState& s, const Vec3& hold,
       return (sp > 1e-6) ? s.velMS * (-1.0 / sp) : normalized(s.forward);
     }
     case SasMode::Command: return normalized(command);
+    case SasMode::Normal:
+      return orbital::basisAt({s.posM, s.velMS}).normal;
+    case SasMode::Antinormal:
+      return orbital::basisAt({s.posM, s.velMS}).normal * -1.0;
+    case SasMode::RadialOut:
+      return orbital::basisAt({s.posM, s.velMS}).radialOut;
+    case SasMode::RadialIn:
+      return orbital::basisAt({s.posM, s.velMS}).radialOut * -1.0;
     case SasMode::Off:
     default: return normalized(s.forward);
   }

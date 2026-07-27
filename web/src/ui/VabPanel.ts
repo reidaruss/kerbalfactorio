@@ -64,6 +64,10 @@ export interface VabPanelHooks {
   load(name: string): void;
   remove(name: string): void;
   symmetry(n: number): void;
+  /** GP-54. Leave the bay and put the rocket on the ground in front of you.
+   *  The same thing the launch key does, because a key nobody can see is not a
+   *  way in: Reid built a rocket and had to ask how to fly it. */
+  rollOut(): void;
   exit(): void;
 }
 
@@ -132,6 +136,7 @@ export class VabPanel extends Modal {
       case 'save': this.hooks.save(this.input.value.trim()); break;
       case 'design': this.hooks.load(name); break;
       case 'design-del': this.hooks.remove(name); break;
+      case 'rollout': this.hooks.rollOut(); break;
       case 'exit': this.hooks.exit(); break;
       case 'sym': {
         const n = Number(t.getAttribute('data-n'));
@@ -257,7 +262,14 @@ const SKELETON =
   + '<span class="grp designs"></span>'
   + '<span class="grp acts"><button type="button" data-vab="autostage">'
   + 'Autostage</button><button type="button" data-vab="clear">Clear</button>'
-  + '<button type="button" class="go" data-vab="exit">Exit VAB</button></span>'
+  + '<button type="button" class="go" data-vab="exit">Exit VAB</button>'
+  // GP-54. The way OUT of the bay and into the sky, named on screen. The key
+  // works too and the label says which one, because a player who learns the key
+  // here never needs the button again, and a player who never finds the key has
+  // to ask, which is exactly what happened.
+  + '<button type="button" class="go launch" data-vab="rollout" '
+  + 'title="Leave the bay and set the rocket down in front of you">'
+  + 'Roll out &nbsp;<kbd>G</kbd></button></span>'
   + '</div></div>';
 
 /** Group the catalogue, in GROUPS order, each group under a sticky heading. */

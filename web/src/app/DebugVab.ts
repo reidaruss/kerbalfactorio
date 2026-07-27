@@ -62,6 +62,10 @@ export function vabApi(s: Services): VabDebugApi {
         }
         // Commit at whatever is currently snapped. Pays, or refuses and says so.
         case 'place': return { ok: v.commitHere(), report: v.report() };
+        // What the raycast under these NDC would hit. The SAME `view.pick` a
+        // click runs, so a probe can look before it clicks exactly as a player
+        // does, and then click for real. It removes nothing itself.
+        case 'pick': return v.view.pick(v.camera, Number(a), Number(b));
         case 'drop': v.dropHand(); return v.report();
         case 'remove': return { ok: v.removeAt(Number(a)), report: v.report() };
         case 'frame': v.frameCamera(); return v.report();

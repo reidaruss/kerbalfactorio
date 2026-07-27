@@ -17,7 +17,7 @@ export interface View { r: Vec3; u: Vec3; f: Vec3 }
 /** Unit-disc coordinates, y UP, plus depth. z > 0 is the near hemisphere. */
 export interface P2 { x: number; y: number; z: number }
 
-export type MarkKind = 'prograde' | 'retrograde' | 'command' | 'guidance';
+export type MarkKind = 'prograde' | 'retrograde' | 'command' | 'guidance' | 'node';
 export interface Mark { kind: MarkKind; dir: Vec3 }
 
 const D2R = Math.PI / 180;
@@ -36,6 +36,7 @@ const COLOUR: Record<MarkKind, string> = {
   retrograde: '#d9e34f',
   command: '#6fc9ff',
   guidance: '#ff9a3c',
+  node: '#3cd6b0',
 };
 
 function dot(a: Vec3, b: Vec3): number { return a.e * b.e + a.n * b.n + a.u * b.u; }
@@ -301,10 +302,11 @@ export function drawMarks(ctx: CanvasRenderingContext2D, size: number, w: View,
 }
 
 /**
- * The four marker glyphs, each readable in one glance and none of them a
+ * The five marker glyphs, each readable in one glance and none of them a
  * recolour of another: prograde is a wheel with three spokes, retrograde is the
- * same wheel crossed out, the SAS command is a winged diamond, and the guidance
- * ribbon is a corner-bracket target, because it is the one you fly TOWARDS.
+ * same wheel crossed out, the SAS command is a winged diamond, the maneuver
+ * node is KSP's own radiating trefoil, and the guidance ribbon is a
+ * corner-bracket target, because it is the one you fly TOWARDS.
  */
 function shape(ctx: CanvasRenderingContext2D, kind: MarkKind, x: number, y: number): void {
   ctx.beginPath();
@@ -329,6 +331,18 @@ function shape(ctx: CanvasRenderingContext2D, kind: MarkKind, x: number, y: numb
     ctx.lineTo(x, y + 6.5);
     ctx.lineTo(x - 6, y);
     ctx.closePath();
+    return;
+  }
+  if (kind === 'node') {
+    // KSP's trefoil: a ring with three arms at 12, 4 and 8 o'clock. Distinct
+    // in SHAPE from every other marker, not only in colour, because a player
+    // reads this one against the prograde wheel it usually sits beside.
+    ctx.arc(x, y, 5.5, 0, TAU);
+    for (let k = 0; k < 3; ++k) {
+      const a = -Math.PI / 2 + (k * TAU) / 3;
+      ctx.moveTo(x + Math.cos(a) * 5.5, y + Math.sin(a) * 5.5);
+      ctx.lineTo(x + Math.cos(a) * 13, y + Math.sin(a) * 13);
+    }
     return;
   }
   const s = 10;

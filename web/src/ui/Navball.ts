@@ -38,6 +38,12 @@ export interface NavballReadout {
   command: BallMarker | null;
   /** DW-30 item 6: the gravity-turn guidance ribbon. Shown, never flown. */
   guidance: BallMarker | null;
+  /** The maneuver node's burn direction. Reid asked for this by name ("then it
+   *  should show up on the ball"), and it is the SAME machinery the other four
+   *  markers use with a different direction: the node publishes an inertial
+   *  unit vector and `FlightMode.marker` turns it into horizon angles through
+   *  the one frame everything else uses. */
+  node: BallMarker | null;
   /** Metres above the terrain under the vessel. */
   altitudeM: number;
   /** Metres above the 600 km datum, which is what apoapsis and periapsis are
@@ -141,6 +147,7 @@ export class Navball {
     add(all, 'retrograde', r.retrograde);
     add(all, 'command', r.command);
     add(all, 'guidance', r.guidance);
+    add(all, 'node', r.node);
     const front = frontMarks(w, all);
     this.marks = front.map((m) => m.kind);
     const key = `${round(r.headingDeg)}/${round(r.pitchDeg)}/${round(r.rollDeg)}|`

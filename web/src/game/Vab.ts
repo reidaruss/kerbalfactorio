@@ -22,7 +22,8 @@ import { VesselDesign } from './VesselDesign.js';
 import { VabView } from './VabView.js';
 import { VabCamera } from './VabCamera.js';
 import { VabPointer } from './VabInput.js';
-import { partRows, stageRows, catalogueReport, jointGapReport } from './VabRows.js';
+import { partRows, stageRows } from './VabRows.js';
+import { vabReport, vabJointGaps, vabCatalogue } from './VabReport.js';
 import {
   attachModeOf, attachNodes, fitAt, ghostOrigin, nearestNodeToRay, symmetryAngles,
 } from './VesselNodes.js';
@@ -40,9 +41,9 @@ export interface VabDeps {
   mode: ModeRules;
   setUiCapture(on: boolean): void;    // mute the world's input
   setRenderMode(vab: boolean): void;  // flip to the bay's single pass
+  rollOut(): void;                    // GP-54: leave, and put it on the ground
   setWorldUi(visible: boolean): void; // the bay is a PLACE, not an overlay, so
-                                      // the surface HUD has no business in it
-}
+}                                     // the surface HUD has no business in it
 
 /** How far from a node the cursor may be and still snap, in metres. */
 const SNAP_M = 1.6;
@@ -65,11 +66,12 @@ export class Vab {
   private readonly byIdMap = new Map<number, PartRow>();
   private readonly itemNames = new Map<number, string>();
   nodes: AttachNode[] = [];   // public: a probe PROJECTS these to aim at a pixel
-  private active: AttachNode | null = null;
+  /** Public for VabReport, which is a VIEW of this object and never a copy. */
+  active: AttachNode | null = null;
   private msgUntil = 0;
   // Once the player reorders a stage by hand the table is THEIRS: a later
   // placement must not silently rewrite it.
-  private handStaged = false;
+  handStaged = false;
 
   private constructor(private readonly d: VabDeps) {
     this.catalogue = readCatalogue(d.M);
@@ -81,7 +83,7 @@ export class Vab {
       canvas: d.canvas, camera: d.camera, cam: this.cam,
       onAim: (x, y) => this.aim(x, y),
       onClick: (x, y) => this.click(x, y),
-      onCancel: () => this.dropHand(),
+      onCancel: () => this.rightClick(),
     });
     this.panel = new VabPanel(d.host, d.modals, {
       pick: (i) => this.takeInHand(i),
@@ -93,6 +95,7 @@ export class Vab {
       load: (n) => this.loadNamed(n),
       remove: (n) => { store.removeDesign(n); this.after(`deleted ${n}`); },
       symmetry: (n) => { this.symmetry = n; this.render(); },
+      rollOut: () => this.d.rollOut(),
       exit: () => this.leave(),
     });
     this.panel.closer = () => this.leave();
@@ -188,6 +191,29 @@ export class Vab {
     this.view.clearGhost();
     this.view.clearNodes();
     this.render();
+  }
+
+  /**
+   * GP-55. THE RIGHT BUTTON, and which of its two meanings you get is decided
+   * by WHAT IS IN YOUR HAND, exactly as GP-26 decided the left button on foot.
+   *
+   * Reid: "i should be able to remove components i have placed in the VAB. I
+   * shouldnt have to clear and start over." He was right, and the feature was
+   * finished at every layer: `_of_vs_remove` takes a part and its subtree,
+   * `removeAt` below refunds it when the mode charges, re-stages and reports.
+   * NOTHING CALLED IT. No key, no control, and the only delete in the panel is
+   * `design-del`, which throws away a saved DESIGN and is what a player hunting
+   * for this would find first. Right-click rather than Delete-on-a-selection
+   * because it needs no selection step, and because `demolish` is ALREADY
+   * `Mouse2` on foot (Bindings.ts): one button, one meaning, both halves.
+   */
+  private rightClick(): void {
+    if (this.hand !== null) { this.dropHand(); return; }
+    const hit = this.view.pick(this.d.camera, this.pointer.ndcX, this.pointer.ndcY);
+    // A miss SAYS SO. A right-click on empty space that quietly did nothing is
+    // how a feature stays undiscovered, which is the whole reason this exists.
+    if (hit === null) { this.after('right-click a part to remove it'); return; }
+    this.removeAt(hit.handle);
   }
 
   // --- editing --------------------------------------------------------------
@@ -361,38 +387,13 @@ export class Vab {
       store.listDesigns(), this.symmetry, this.message);
   }
 
-  // --- what a probe reads ---------------------------------------------------
+  // --- what a probe reads. The bodies live in VabReport.ts ------------------
 
-  /** Joint gaps MEASURED on the drawn scene. See VabView.jointGaps. */
-  measureJointGaps(): unknown { return jointGapReport(this.view, this.design.parts); }
+  measureJointGaps(): unknown { return vabJointGaps(this); }
+  catalogueReport(): unknown { return vabCatalogue(this); }
 
-  catalogueReport(): unknown {
-    return catalogueReport(this.catalogue, this.view, (p) => this.affordInCore(p));
-  }
+  /** The mode rules, so `VabReport` can read them without reaching into `d`. */
+  get modeRules(): ModeRules { return this.d.mode; }
 
-  report(): unknown {
-    return {
-      open: this.open, mode: this.d.mode.mode, freeBuild: this.d.mode.freeBuild,
-      catalogue: this.catalogue.length,
-      offered: offeredParts(this.catalogue, this.d.mode).length,
-      meshesMissing: [...this.view.missing],
-      assetsRenamed: [...this.view.renamed],
-      renameDebt: VabView.renameCount,
-      hand: this.hand === null ? null : this.hand.label,
-      handIndex: this.hand === null ? -1 : this.hand.index,
-      symmetry: this.symmetry, selected: this.selected, nodes: this.nodes.length,
-      snapped: this.active === null ? null
-        : { parent: this.active.parent, kind: this.active.kind, pos: this.active.posM },
-      placed: this.placed, refused: this.refused, removed: this.removed,
-      enters: this.enters, handStaged: this.handStaged,
-      parts: this.design.parts.map((p) => ({
-        handle: p.handle, partId: p.partId, parent: p.parent,
-        attach: p.attach, stage: p.stage, origin: p.originM,
-      })),
-      stages: this.design.stages, stats: this.design.stats,
-      designs: store.listDesigns(),
-      camera: this.cam.report(), pointer: this.pointer.report(),
-      message: this.message,
-    };
-  }
+  report(): unknown { return vabReport(this); }
 }

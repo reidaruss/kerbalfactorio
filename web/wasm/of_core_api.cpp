@@ -236,7 +236,21 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       "crafted a furnace" against a wasm that had just eaten the wood is the
 //       failure this fixes wearing a different hat.
 //       Additive: no existing signature changed.
-OF_API int of_abi_version(void) { return 10; }
+//   11: MANEUVER NODES (maneuver.h, PH-37 to PH-40) and four new SAS modes.
+//       (a) of_mn_plan / of_mn_path / of_mn_orbit_meta: what a burn costs,
+//           which way to point, when to light it, how long for, and the orbit
+//           it produces, plus the conic itself as a polyline the map draws.
+//           Pure functions of a flight handle; nothing is stored and nothing
+//           is commanded, because a node is a PLAN and autopilot is gated
+//           behind DW-29's research unlock.
+//       (b) of_fl_set_sas now accepts 0..8 rather than 0..4. SasMode gained
+//           Normal(5), Antinormal(6), RadialIn(7), RadialOut(8), APPENDED, so
+//           every existing value, probe and constant still means what it did.
+//           There is deliberately no Node mode: a node's direction is fixed in
+//           inertial space, so Command(4) already holds it.
+//       Additive: no existing signature changed. The only behaviour change is
+//       that four integers of_fl_set_sas used to REFUSE are now accepted.
+OF_API int of_abi_version(void) { return 11; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2519,3 +2533,4 @@ OF_API int of_gp_item_ids(void) {
 #include "of_flight_api.inc"    // §13  atmosphere + FlightSim (for the next lane)
 #include "of_power_api.inc"     // §14  ABI 9: poles, generators, the grid panel
 #include "of_research_api.inc"  // §15/16 ABI 9: the tech tree, armour, skills
+#include "of_maneuver_api.inc"  // §17  ABI 11: maneuver node planning

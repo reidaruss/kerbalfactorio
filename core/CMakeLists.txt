@@ -304,6 +304,22 @@ target_link_libraries(flight_tests PRIVATE of_core)
 target_include_directories(flight_tests PRIVATE tests)
 add_test(NAME flight_tests COMMAND flight_tests)
 
+# --- MANEUVER: maneuver node planning (maneuver.h, PH-37 to PH-40). A node
+#     answers four questions and commands nothing: how much delta-v, which way
+#     to point, when to start, how long for, plus the orbit that results. The
+#     numbers are pinned against a HAND computation done on paper first (the
+#     vis-viva speeds at 680 km and the transfer periapsis, and Tsiolkovsky
+#     inverted for the burn time), and the last test FLIES the burn the node
+#     describes through FlightSim and compares the orbit reached against the
+#     orbit predicted, because a node that predicts an orbit you cannot fly to
+#     is worse than no node.
+add_executable(maneuver_tests
+  tests/test_main.cpp
+  tests/test_maneuver.cpp)
+target_link_libraries(maneuver_tests PRIVATE of_core)
+target_include_directories(maneuver_tests PRIVATE tests)
+add_test(NAME maneuver_tests COMMAND maneuver_tests)
+
 # --- ENEMIES: the pollution / evolution / nest-attack feedback loop (W11 lane
 #     E). enemies.h is the Factorio-inspired base-defense loop as a SIMULATION
 #     rather than a wave timer: machines emit pollution into a coarse sparse

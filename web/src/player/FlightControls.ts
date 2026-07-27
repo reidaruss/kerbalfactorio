@@ -18,9 +18,31 @@ import type { Input } from './Input.js';
 import type { Action } from './Bindings.js';
 import { FLIGHT_ROLL_DEG_S, FLIGHT_SLEW_DEG_S } from '../sim/FlightSession.js';
 import type { FlightSession } from '../sim/FlightSession.js';
-import { SAS_COMMAND, SAS_OFF } from '../sim/FlightAbi.js';
+import {
+  SAS_ANTINORMAL, SAS_COMMAND, SAS_HOLD, SAS_NORMAL, SAS_OFF, SAS_PROGRADE,
+  SAS_RADIAL_IN, SAS_RADIAL_OUT, SAS_RETROGRADE,
+} from '../sim/FlightAbi.js';
 
 const DEG = Math.PI / 180;
+
+/**
+ * The SAS mode buttons, as keys. Reid asked for buttons; a pilot wants keys;
+ * both exist and they go through the same one call, `FlightSession.setSas`, so
+ * a button and a key cannot come to mean different things.
+ *
+ * `sasNode` is not in this table because it is not a MODE: hold-node is
+ * SAS_COMMAND pointed at the node's published burn direction, and only the map
+ * knows where that is. Its key is routed by MapMode.
+ */
+const SAS_KEYS: readonly (readonly [Action, number])[] = [
+  ['sasStability', SAS_HOLD],
+  ['sasPrograde', SAS_PROGRADE],
+  ['sasRetrograde', SAS_RETROGRADE],
+  ['sasNormal', SAS_NORMAL],
+  ['sasAntinormal', SAS_ANTINORMAL],
+  ['sasRadialIn', SAS_RADIAL_IN],
+  ['sasRadialOut', SAS_RADIAL_OUT],
+];
 /** Throttle travel per second while the key is held. Full swing in 2 seconds,
  *  which is fast enough to abort and slow enough to set 60% by ear. */
 const THROTTLE_RATE = 0.5;
@@ -28,6 +50,7 @@ const THROTTLE_RATE = 0.5;
 const EDGE: readonly Action[] = [
   'stage', 'sasToggle', 'sasMode', 'warpUp', 'warpDown',
   'throttleFull', 'throttleCut',
+  ...SAS_KEYS.map(([a]) => a),
 ];
 
 export class FlightControls {
@@ -76,6 +99,10 @@ export class FlightControls {
              yaw * FLIGHT_SLEW_DEG_S * DEG * dt,
              roll * FLIGHT_ROLL_DEG_S * DEG * dt);
     }
+
+    // The seven mode keys. `setSas` is the one call a button and a key both
+    // go through, and it flashes the name, so a mode change is never silent.
+    for (const [a, mode] of SAS_KEYS) if (pressed(a)) f.setSas(mode);
 
     if (pressed('stage')) f.fireStage();
     if (pressed('sasMode')) f.cycleSas();

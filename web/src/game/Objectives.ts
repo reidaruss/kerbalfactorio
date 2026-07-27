@@ -26,12 +26,30 @@ import type { Gameplay } from './Gameplay.js';
 /** Seconds between checks. Fast enough to feel immediate, slow enough to vanish. */
 const CHECK_SECS = 0.25;
 
+/**
+ * What the checklist is allowed to know about the assembly bay and flight.
+ *
+ * A PORT, set by the composition root once both exist, because both are
+ * dynamically imported and neither is built when this list is defined. Null
+ * with `?vab=0` or `?flight=0`, and the two objectives below retire themselves
+ * in that case rather than stalling a checklist for ever on a feature the run
+ * deliberately isolated.
+ */
+export interface RocketPort {
+  /** Parts on the assembly bay's stand right now. */
+  parts(): number;
+  /** Vessels set down on the ground this session. */
+  rollouts(): number;
+  /** Times the player has climbed into one. */
+  boardings(): number;
+}
+
 export interface Objective {
   id: string;
   /** The imperative, and the key that does it. */
   text: string;
   hint: string;
-  done: (g: Gameplay) => boolean;
+  done: (g: Gameplay, r: RocketPort | null) => boolean;
 }
 
 /** How many ingots off an automated line count as "it ran without you". */
@@ -67,6 +85,30 @@ export const OBJECTIVES: Objective[] = [
     id: 'auto', text: 'Walk away, then take what it made', hint: 'E on the smelter',
     done: (g) => g.autoCollected >= AUTO_TARGET,
   },
+  // GP-53. THE SPACE HALF OF THE GAME HAD NO ENTRANCE. The assembly bay and
+  // flight have been in the build since W8 and W9 and NOTHING on screen named
+  // either of them: not the HUD, not the pack, not the hotbar, not this list.
+  // Reid built a base and then had to ask "how do i build a launchpad and
+  // rocket, i cant find it in the menu", and he was right, it was not there.
+  //
+  // This list is the answer rather than a HUD line or a menu entry, for three
+  // reasons. It already teaches the opening step by step and RETIRES itself
+  // when done, so it costs nothing after the first hour where a permanent HUD
+  // line is clutter for ever. It is data, so the wording iterates without code.
+  // And it is ORDERED, so the rocket appears after the factory that pays for
+  // it, which is DW-29's "ground progression first" stated where a player can
+  // actually read it. Both rows are visible as upcoming from the first minute,
+  // which is the part that answers "I cannot find it".
+  {
+    id: 'rocket', text: 'Build a rocket in the assembly bay',
+    hint: 'press C to go in, click parts onto the stack',
+    done: (_g, r) => r === null || r.parts() >= 2,
+  },
+  {
+    id: 'launch', text: 'Roll it out and climb aboard',
+    hint: 'G rolls it onto the ground, G again straps you in',
+    done: (_g, r) => r === null || r.boardings() >= 1,
+  },
 ];
 
 export interface ObjectiveView {
@@ -80,6 +122,8 @@ export class Objectives {
   /** How many have been met, in order. The only state, and it is one integer. */
   index = 0;
   visible = true;
+  /** Set by the composition root once the bay and flight exist. See RocketPort. */
+  rocket: RocketPort | null = null;
   /** Objectives completed this session, for the report. */
   completions = 0;
   private since = 0;
@@ -101,7 +145,7 @@ export class Objectives {
     if (this.since < CHECK_SECS || this.complete) return null;
     this.since = 0;
     const o = OBJECTIVES[this.index];
-    if (!o.done(g)) return null;
+    if (!o.done(g, this.rocket)) return null;
     this.index++;
     this.completions++;
     return o;
