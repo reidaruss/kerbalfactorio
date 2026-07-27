@@ -359,7 +359,41 @@ class SurfaceField {
 // centre) applied to the same edit set gives the same two sets, bit for bit. It
 // is also IDEMPOTENT: applying it twice changes nothing the second time, which is
 // what lets the client repeat it on a held key without the pad creeping.
+//
+// WHAT IS RECORDED, WHICH IS NOT THE SAME AS WHAT IS CHANGED (WG-23).
+//
+// The op records EVERY cell in the band between the procedural surface and the
+// target, whether or not its solidity moved, through `markRemoved`/`markAdded`.
+// Recording only the changes is what a minimal diff wants and it is not what the
+// derived heightfield can read: `derivedLoweringAt` and `derivedRaisingAt` follow
+// a contiguous run of explicitly edited cells along a radial, and the procedural
+// surface is a 1 m staircase around the smooth designed height, so a column's
+// probe regularly lands in a cell that is already air on the cut side or already
+// rock on the fill side. Nothing was stored there, the run stops at the first
+// step, and the column keeps its ORIGINAL height while its neighbours move.
+// Measured on a 29 degree slope: 8.7% of the columns inside a levelled disc did
+// not move at all, up to 2.5 m off target, which is a gash through a pad rather
+// than a rough floor, and it is why a tool whose spread collapsed 2.3x read to a
+// player as nothing happening.
+//
+// The band is `kLevelRecordBandM` around the procedural surface radius at each
+// cell's OWN direction, not a slab around the target: what has to be unbroken is
+// the run each column walks, which starts at that column's surface. One and a
+// half cells covers the two offsets that put a cell centre and the ray probing it
+// on opposite sides of the surface — half a cell diagonal (0.87 m) between a
+// point and its cell's centre, plus the change in the designed height across one
+// cell. Deep rock below the fill and open air above the cut are outside the band
+// and are not recorded, so the diff stays the size of the earth actually moved
+// plus a one-cell skin, and NOT the whole scanned cylinder.
+//
+// Recording cannot change `isSolid` (a marked-air cell that was air is still air,
+// a marked-solid cell that was rock is still rock), so the voxel shell, the near
+// mesher, collision and every voxel pin are untouched by this. Only the derived
+// heightfield moves, which is the surface that was wrong.
 // =============================================================================
+/** Band around each cell's own procedural surface within which a levelling op
+ *  records its decision. See the note above for why it is one and a half cells. */
+static constexpr double kLevelRecordBandM = 1.5 * kVoxelSizeM;
 struct LevelResult {
   int dug = 0;      // cells that changed solid -> air
   int filled = 0;   // cells that changed air -> solid
@@ -418,9 +452,24 @@ inline LevelResult levelArea(const BodyParams& body, VoxelEdits& edits,
         ++out.scanned;
         const bool wantSolid = (r <= targetR);
         const bool isSolidNow = edits.isSolid(body, c);
-        if (wantSolid == isSolidNow) continue;        // already right: idempotent
-        if (wantSolid) { if (edits.fillCell(body, c)) { ++out.filled; edits.touch(c); } }
-        else           { if (edits.digCell(c))        { ++out.dug;    edits.touch(c); } }
+        // Is this cell in the band the op is RESPONSIBLE for, i.e. near the
+        // procedural surface it is reshaping? `localBase` is the designed
+        // surface radius under the cell's OWN direction, which is the same
+        // number isProcSolid compares against, so no second authority appears.
+        // Read through the memo `isSolid` just used, or the noise stack would be
+        // evaluated twice per cell (measured: 10.2 ms a press against 0.7).
+        const double localBase = edits.procSurfaceRadius(body, c);
+        const bool inBand = wantSolid ? (r >= localBase - kLevelRecordBandM)
+                                      : (r <= localBase + kLevelRecordBandM);
+        if (wantSolid != isSolidNow) {
+          if (wantSolid) ++out.filled; else ++out.dug;
+          edits.touch(c);
+        } else if (!inBand) {
+          continue;                                   // already right, and not
+        }                                             // ours to record
+        // Record the DECISION, not only the change, so the column walk that
+        // reads this back has an unbroken run to follow (see the note above).
+        if (wantSolid) edits.markAdded(c); else edits.markRemoved(c);
       }
   return out;
 }

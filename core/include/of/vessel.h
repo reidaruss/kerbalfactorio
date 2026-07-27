@@ -564,9 +564,17 @@ struct PartInstance {
   double propellantKg = 0.0;
   double electricCharge = 0.0;
 
-  // Which stage DECOUPLES this part. kNeverDecoupled means it is payload and
-  // rides to the end. This single integer is the whole staging model: a stage
-  // is "the set of parts with this number", and a delta-v sum is a filter.
+  // The STAGE GROUP this part belongs to: the index of the burn during which it
+  // is aboard and its tank, if it has one, is being drained. kNeverDecoupled
+  // means it is payload and rides to the end.
+  //
+  // This is deliberately NOT "the index of the stage that decouples me", which
+  // is off by one from it and was the first thing tried. Under the KSP sequence
+  // that this model follows, stage k LIGHTS burn k and DROPS the hardware of
+  // burn k-1, because a single press has to be able to jettison the spent stage
+  // and light the next engine together. So a stage's decouple list names the
+  // group that just finished, and this field names the group a part is in. One
+  // integer, one meaning, and a delta-v sum is then a filter over it.
   int stage = kNeverDecoupled;
 
   // Filled by Vessel::layout(): the part's own origin (its bottom mating
@@ -580,6 +588,13 @@ struct PartInstance {
 };
 
 // One stage: what it lights and what it throws away, in firing order.
+//
+// The KSP sequence, and the reason it is this way round: pressing stage k
+// simultaneously DROPS the spent hardware of burn k-1 and LIGHTS burn k. So the
+// first press of a two-stage rocket lights the lower engine and decouples
+// nothing (`decouple` empty), and the second press decouples the whole lower
+// stage and lights the upper engine. A stage that ignited and decoupled in the
+// same press could never be burned, which is what the other ordering does.
 struct Stage {
   std::vector<PartHandle> activate;   // engines ignited when this stage fires
   std::vector<PartHandle> decouple;   // decouplers fired (each severs a subtree)
@@ -641,9 +656,9 @@ class Vessel {
   }
   bool empty() const { return parts.empty(); }
 
-  // Assign every part in the subtree rooted at `h` (inclusive) to stage `s`.
-  // This is how an assembly UI says "this decoupler and everything it holds is
-  // stage 0" with one call.
+  // Assign every part in the subtree rooted at `h` (inclusive) to stage group
+  // `s`. This is how an assembly UI says "this decoupler and everything it
+  // holds burns during stage 0" with one call.
   void assignSubtreeToStage(PartHandle h, int s) {
     for (auto& p : parts)
       if (isInSubtree(p.handle, h)) p.stage = s;
@@ -789,10 +804,43 @@ inline double propellantAboardKg(const Vessel& v, Propellant kind) {
   return sum;
 }
 
+// Turbulent flat-plate skin-friction coefficient, applied to the stack's wetted
+// area. 0.004 is the textbook value at the Reynolds numbers a launch vehicle
+// sees, and it is what stops a long thin rocket from being as slippery as a
+// short one (see the axial-drag comment in massProperties).
+static constexpr double kSkinFrictionCd = 0.004;
+
 inline MassProperties massProperties(const Vessel& v) {
   MassProperties m;
   Vec3 momentum{0, 0, 0};
   Vec3 areaMoment{0, 0, 0};
+
+  // Axial drag is NOT a sum over parts, and this is the second place in this
+  // file where the obvious sum is wrong. Parts in a stack SHADE ONE ANOTHER:
+  // air meets the nose and then flows along the tube, so only the forward-most
+  // part presents pressure drag and the rest contribute skin friction.
+  //
+  // Summing Cd*A over the parts instead gave the 12 m reference rocket an
+  // axial Cd*A of 3.274 m^2 on a 1.227 m^2 frontal disc, an effective Cd of
+  // 2.67 for a rocket, which is roughly a parachute. It cost 64 kN of drag at
+  // max-q against 180 kN of thrust: 36% of the engine was being spent on an
+  // arithmetic error, and the ascent still reached orbit, which is exactly why
+  // it needed a number rather than a look.
+  //
+  // The model instead is the standard decomposition:
+  //     Cd*A = Cd(nose) * A_max  +  Cf * wetted area  +  radial parts, unshaded
+  // Radial parts are summed because they genuinely are not shaded: a fin or a
+  // strap-on booster sticks out into clean air.
+  //
+  // The BROADSIDE sum above is left as a sum, and that is not an inconsistency:
+  // flying sideways, the parts are side by side across the flow and every one
+  // of them is in it.
+  double maxFrontalM2 = 0.0;
+  double stackSideAreaM2 = 0.0;
+  double radialCdA = 0.0;
+  double forwardMostY = -1e300;
+  double noseCd = 0.0;
+
   for (const auto& p : v.parts) {
     const PartDef& d = v.def(p);
     const double mass = d.dryMassKg + p.propellantKg;
@@ -801,10 +849,25 @@ inline MassProperties massProperties(const Vessel& v) {
     momentum = momentum + p.centroidM * mass;
 
     m.normalCdA += d.dragCdNormal * d.dragAreaNormalM2;
-    m.axialCdA += d.dragCdAxial * d.dragAreaAxialM2;
     m.normalForceSlope += d.normalForceSlopeM2;
     areaMoment = areaMoment + p.centroidM * d.normalForceSlopeM2;
+
+    if (p.attach == Attach::Radial) {
+      radialCdA += d.dragCdAxial * d.dragAreaAxialM2;
+    } else {
+      if (d.dragAreaAxialM2 > maxFrontalM2) maxFrontalM2 = d.dragAreaAxialM2;
+      stackSideAreaM2 += d.dragAreaNormalM2;
+      const double leadingEdgeY = p.originM.y + d.heightM;
+      if (leadingEdgeY > forwardMostY) {
+        forwardMostY = leadingEdgeY;
+        noseCd = d.dragCdAxial;
+      }
+    }
   }
+  // Wetted area of a cylinder of side profile D*L is pi*D*L.
+  m.axialCdA = noseCd * maxFrontalM2 +
+               kSkinFrictionCd * 3.14159265358979323846 * stackSideAreaM2 +
+               radialCdA;
   m.totalKg = m.dryKg + m.propellantKg;
   if (m.totalKg > 0.0) m.comM = momentum * (1.0 / m.totalKg);
   if (m.normalForceSlope > 0.0) m.copM = areaMoment * (1.0 / m.normalForceSlope);
@@ -838,9 +901,9 @@ inline double staticMarginM(const MassProperties& m) {
 // =============================================================================
 // §6 - staging.
 //
-// fireStage() advances nextStageIndex, ignites that stage's engines (the caller
-// reads `activeEngines()`), and severs the tree at every decoupler the stage
-// lists. The rule, stated once so it cannot be re-invented per caller:
+// fireStage() advances nextStageIndex, which ignites that stage's engines (the
+// caller reads `activeEngines()`), and severs the tree at every decoupler the
+// stage lists. The rule, stated once so it cannot be re-invented per caller:
 //
 //   A DECOUPLER SEVERS THE LINK TO ITS OWN PARENT. The decoupler, and its
 //   entire subtree (everything further from the root than it), leaves. The

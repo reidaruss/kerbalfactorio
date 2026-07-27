@@ -244,6 +244,19 @@ target_link_libraries(vessel_tests PRIVATE of_core)
 target_include_directories(vessel_tests PRIVATE tests)
 add_test(NAME vessel_tests COMMAND vessel_tests)
 
+# --- FLIGHT: powered atmospheric and near-body flight (DW-29 / DW-30). The
+#     exponential atmosphere and its consequences (drag, thrust and Isp lapse,
+#     the space boundary), the DW-30 anti-flip model with its negative control,
+#     stability assist limited by the parts actually bolted on, a full ascent
+#     from the pad to a stable orbit, and the handoff to of::orbital, which is
+#     asserted BIT-EXACT rather than to a tolerance.
+add_executable(flight_tests
+  tests/test_main.cpp
+  tests/test_flight.cpp)
+target_link_libraries(flight_tests PRIVATE of_core)
+target_include_directories(flight_tests PRIVATE tests)
+add_test(NAME flight_tests COMMAND flight_tests)
+
 # --- Gameplay logic: the player-facing rules over the closed sim substrate ---
 add_executable(gameplay_tests
   tests/test_main.cpp

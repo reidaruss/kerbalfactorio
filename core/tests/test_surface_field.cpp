@@ -428,6 +428,99 @@ TEST(level_area_flattens_the_disc_and_only_the_disc) {
 // Levelling is deterministic, and it survives a save/load round trip with BOTH
 // sets intact â€” including a legacy stream that predates the added set.
 // =============================================================================
+// =============================================================================
+// WG-23 — NO COLUMN INSIDE THE DISC KEEPS ITS ORIGINAL HEIGHT.
+//
+// This is the assertion whose absence let a levelling tool ship, measure a 2.3x
+// collapse in height spread, and read to the player as nothing happening.
+//
+// Spread over a ring of samples is an AVERAGE claim, and the failure was in the
+// tail: `levelArea` stored only the cells whose solidity CHANGED, while the
+// heightfield reads the result back as a contiguous run of explicitly edited
+// cells along each column. The procedural surface is a 1 m staircase around the
+// smooth designed height, so a column's probe regularly lands in a cell that was
+// already air on the cut side or already rock on the fill side. Nothing was
+// stored there, the run ended at the first step, and that column kept its
+// ORIGINAL height while its neighbours moved by metres. Measured in the browser
+// on a 29 degree slope before the fix: 8.7% of 253 columns did not move at all,
+// the worst 2.5 m below target, which draws as a gash through the middle of a
+// pad rather than as a rough floor.
+//
+// So the property is stated per COLUMN and over a dense grid, not as a spread:
+// every column the disc covers moves to within one voxel of the target, and the
+// shell agrees with the surface at every one of them.
+// =============================================================================
+TEST(level_leaves_no_column_at_its_original_height) {
+  const BodyParams forge = makeForge(20260616ull);
+  const Vec3 u = unitOf(latLonToDir(1.00, -0.90));   // the 26 degree hillside
+  const double radiusM = 8.0;
+  const double target = baseHeight(forge, u);
+
+  // A dense grid over the disc, not a ring: the failure is a scatter of single
+  // columns, and a ring of 8 walks straight past it.
+  const Vec3 seed = (std::fabs(u.x) < 0.9) ? Vec3(1, 0, 0) : Vec3(0, 1, 0);
+  Vec3 e1 = crossOf(u, seed);
+  e1 = e1 * (1.0 / e1.length());
+  const Vec3 e2 = crossOf(u, e1);
+  std::vector<Vec3> grid;
+  for (double a = -radiusM * 0.75; a <= radiusM * 0.75; a += 0.5)
+    for (double b = -radiusM * 0.75; b <= radiusM * 0.75; b += 0.5)
+      if (a * a + b * b <= radiusM * radiusM * 0.5625)
+        grid.push_back(unitOf(u * forge.radiusM + e1 * a + e2 * b));
+  CHECK(grid.size() > 100);
+
+  std::vector<double> before;
+  VoxelEdits edits;
+  for (size_t i = 0; i < grid.size(); ++i)
+    before.push_back(surfaceHeight(forge, grid[i], edits));
+
+  const LevelResult r = levelArea(forge, edits, u * (forge.radiusM + target),
+                                  radiusM, target);
+  CHECK(r.cells() > 0);
+
+  // The BOUND, and it is the medium's and not the algorithm's. A column's
+  // surface is decided by the one cell the target plane passes through, the
+  // derivation reports whole metres, and a cell centre sits up to half a cell
+  // diagonal off the ray that probes it. So one probe step plus 0.87 m is the
+  // most a column can be out, and anything beyond that is a defect rather than
+  // a quantisation. Measured at this site: 3.45 m before, 1.08 m after.
+  const double bound = kVoxelSizeM + 0.9;
+  int stuck = 0;
+  int agree = 0;
+  double worst = 0.0;
+  for (size_t i = 0; i < grid.size(); ++i) {
+    const double h = surfaceHeight(forge, grid[i], edits);
+    // A column that needed to move further than the bound and did not move AT
+    // ALL is the defect: not a rough floor, a hole in one. Exactly zero.
+    if (std::fabs(before[i] - target) > bound
+        && std::fabs(h - before[i]) < 1e-9) ++stuck;
+    const double d = std::fabs(h - target);
+    if (d > worst) worst = d;
+    // The shell and the surface still agree at every sample: rock just below the
+    // reported ground, air well above it. Recording a decision must not have
+    // moved the voxels (DW-26's two shapes stay within their bound).
+    const double rr = forge.radiusM + h;
+    const bool below = edits.isSolid(forge, cellForPos(grid[i] * (rr - 0.5)));
+    const bool above = edits.isSolid(forge, cellForPos(grid[i] * (rr + 1.5)));
+    if (below && !above) ++agree;
+  }
+  CHECK(stuck == 0);
+  // Every column, not the median. This is the assertion that fails against the
+  // old code: it reached 3.45 m here, and a spread over a ring of 8 samples
+  // reported a healthy collapse the whole time.
+  CHECK(worst <= bound);
+  CHECK(agree == static_cast<int>(grid.size()));
+
+  // Still idempotent, and the second pass still moves nothing: recording a
+  // decision the op already recorded must not look like new work.
+  const LevelResult again = levelArea(forge, edits, u * (forge.radiusM + target),
+                                      radiusM, target);
+  CHECK(again.dug == 0 && again.filled == 0);
+  const size_t rc = edits.removedCount(), ac = edits.addedCount();
+  levelArea(forge, edits, u * (forge.radiusM + target), radiusM, target);
+  CHECK(edits.removedCount() == rc && edits.addedCount() == ac);
+}
+
 TEST(level_is_deterministic_and_round_trips) {
   const BodyParams forge = makeForge(20260616ull);
   const Vec3 u = unitOf(latLonToDir(1.00, -0.90));   // the sloped site again

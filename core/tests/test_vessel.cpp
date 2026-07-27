@@ -51,16 +51,18 @@ static Ascender makeAscender(bool withFins = true) {
                            i * 0.5 * orbital::kPi, 0.15);
   }
 
-  // Stage 0 discards the decoupler and everything below it.
+  // The decoupler and everything below it is stage group 0: it burns during
+  // stage 0 and leaves at the end of it. Everything above the decoupler keeps
+  // the kNeverDecoupled default, so it is the final stage.
   v.assignSubtreeToStage(a.dec, 0);
-  // Everything above the decoupler is never discarded (kNeverDecoupled is the
-  // default), so it belongs to the final stage.
 
+  // The KSP sequence: press once to light the lower engine (nothing is dropped
+  // yet), press again to drop the whole lower stage AND light the upper engine.
   Stage s0;
   s0.activate.push_back(a.engLo);
-  s0.decouple.push_back(a.dec);
   Stage s1;
   s1.activate.push_back(a.engUp);
+  s1.decouple.push_back(a.dec);
   v.stages.push_back(s0);
   v.stages.push_back(s1);
   v.layout();
@@ -364,9 +366,19 @@ TEST(firing_a_stage_splits_the_tree_and_conserves_mass) {
   const double afterBurn = massProperties(a.v).totalKg;
   CHECK_NEAR(afterBurn, 9845.0 - 4300.0, 1e-9);
 
+  // Press one: light the lower engine. Nothing is dropped, nothing changes mass.
+  const StageResult ignite = fireStage(a.v);
+  CHECK(ignite.fired);
+  CHECK(ignite.stageIndex == 0);
+  CHECK(ignite.jettisoned.empty());
+  CHECK_NEAR(massProperties(a.v).totalKg, afterBurn, 1e-12);
+  CHECK(activeEngines(a.v).size() == 1);
+  CHECK(activeEngines(a.v)[0] == a.engLo);
+
+  // Press two: drop the spent lower stage AND light the upper engine.
   const StageResult r = fireStage(a.v);
   CHECK(r.fired);
-  CHECK(r.stageIndex == 0);
+  CHECK(r.stageIndex == 1);
   CHECK(r.jettisoned.size() == 1);
 
   const double kept = massProperties(a.v).totalKg;
@@ -399,9 +411,15 @@ TEST(firing_a_stage_splits_the_tree_and_conserves_mass) {
     CHECK(a.v.find(a.fins[i]) == nullptr);
   }
 
-  // The remaining vessel is now on stage 1, and its remaining delta-v is the
+  // The spent engine left with the stage, and the upper engine is now the only
+  // one lit: activeEngines() filters parts that no longer exist, so no separate
+  // shutdown call exists or can be forgotten.
+  CHECK(activeEngines(a.v).size() == 1);
+  CHECK(activeEngines(a.v)[0] == a.engUp);
+
+  // The remaining vessel is burning stage 1, and its remaining delta-v is the
   // upper stage's alone.
-  CHECK(a.v.nextStageIndex == 1);
+  CHECK(a.v.nextStageIndex == 2);
   CHECK_NEAR(remainingDeltaVVacuumMS(a.v), 3065.12, 0.02);
 }
 
@@ -426,10 +444,10 @@ TEST(radial_decouplers_split_two_boosters_at_once) {
   Stage s0;
   s0.activate.push_back(srb[0]);
   s0.activate.push_back(srb[1]);
-  s0.decouple.push_back(decR[0]);
-  s0.decouple.push_back(decR[1]);
   Stage s1;
   s1.activate.push_back(eng);
+  s1.decouple.push_back(decR[0]);
+  s1.decouple.push_back(decR[1]);
   v.stages.push_back(s0);
   v.stages.push_back(s1);
   v.layout();
@@ -440,7 +458,8 @@ TEST(radial_decouplers_split_two_boosters_at_once) {
   CHECK_NEAR(before, 840.0 + 4730.0 + 1200.0 + 2.0 * (25.0 + 3850.0), 1e-9);
   CHECK_NEAR(before, 14520.0, 1e-9);
 
-  const StageResult r = fireStage(v);
+  CHECK(fireStage(v).jettisoned.empty());   // press one: light both boosters
+  const StageResult r = fireStage(v);      // press two: drop both, light the core
   CHECK(r.fired);
   CHECK(r.jettisoned.size() == 2);
 
@@ -463,8 +482,8 @@ TEST(radial_decouplers_split_two_boosters_at_once) {
 // -----------------------------------------------------------------------------
 TEST(staging_past_the_end_is_a_no_op) {
   Ascender a = makeAscender();
-  CHECK(fireStage(a.v).fired);
-  CHECK(fireStage(a.v).fired);       // stage 1 has no decouplers: still "fires"
+  CHECK(fireStage(a.v).fired);       // light the lower engine
+  CHECK(fireStage(a.v).fired);       // drop the lower stage, light the upper
   const double m = massProperties(a.v).totalKg;
   const size_t n = a.v.parts.size();
   for (int i = 0; i < 5; ++i) {
@@ -492,7 +511,9 @@ TEST(vessel_construction_is_bit_deterministic) {
   CHECK(ma.IyyKgM2 == mb.IyyKgM2);
   CHECK(totalDeltaVVacuumMS(a.v) == totalDeltaVVacuumMS(b.v));
 
-  // and after an identical staging event.
+  // and after an identical staging sequence.
+  fireStage(a.v);
+  fireStage(b.v);
   const StageResult ra = fireStage(a.v);
   const StageResult rb = fireStage(b.v);
   CHECK(ra.jettisonedMassKg == rb.jettisonedMassKg);

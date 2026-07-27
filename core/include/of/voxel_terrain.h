@@ -232,6 +232,48 @@ class VoxelEdits {
     return added_.insert(id).second;
   }
 
+  // ---- ASSERTED state: record what an op DECIDED, not only what it changed --
+  //
+  // WHY THESE EXIST, AND WHY THEY ARE NOT digCell/fillCell.
+  //
+  // `digCell` and `fillCell` store the MINIMUM diff: a cell that is already in
+  // the state you asked for is not recorded, because solidity would not change
+  // and the save would be larger for nothing. That is right for a brush, and it
+  // is wrong for an op whose result is read back through a COLUMN WALK.
+  // `derivedLoweringAt` and `derivedRaisingAt` follow a contiguous run of
+  // explicitly edited cells up or down a radial, and one unrecorded cell in that
+  // run ends it. A levelling disc hits unrecorded cells constantly, because the
+  // procedural surface is a staircase around the smooth designed height: the
+  // cell a column's probe lands in is regularly already air on the cut side, or
+  // already rock on the fill side, so nothing was stored, so the run breaks at
+  // the very first step and the whole column keeps its original height. Measured
+  // on a 29 degree slope: 8.7% of columns inside a levelled disc did not move at
+  // all, some of them 2.5 m off the target, which draws as a gash through the
+  // middle of a pad rather than as a rough floor.
+  //
+  // These two record membership REGARDLESS of whether solidity changes. They
+  // cannot change what `isSolid` answers — marking a procedurally-air cell
+  // removed leaves it air, marking a procedurally-solid cell added leaves it
+  // solid — so the voxel shell, the mesher, collision and every voxel pin are
+  // bit-identical. Only the derived heightfield sees the difference, which is
+  // exactly the surface that was lying.
+  //
+  // Disjointness is still an invariant: each erases from the opposite set.
+
+  /** Record this cell as AIR-by-decision. Solidity unchanged if it was air. */
+  void markRemoved(const VoxelCell& c) {
+    const uint64_t id = voxelCellId(c);
+    if (!added_.empty()) added_.erase(id);
+    removed_.insert(id);
+  }
+
+  /** Record this cell as SOLID-by-decision. Solidity unchanged if it was rock. */
+  void markAdded(const VoxelCell& c) {
+    const uint64_t id = voxelCellId(c);
+    if (!removed_.empty()) removed_.erase(id);
+    added_.insert(id);
+  }
+
   // ---- SOLIDITY = added OR (procedural-solid AND NOT removed) -------------
   //
   // `added_` is tested FIRST and behind an empty() guard, so a world in which
@@ -260,6 +302,21 @@ class VoxelEdits {
    * without limit.
    */
   bool procSolidMemo(const BodyParams& body, const VoxelCell& c) const {
+    const Vec3 p = cellCenter(c);
+    return p.length() <= procSurfaceRadius(body, c);
+  }
+
+  /**
+   * The DESIGNED surface radius under a cell's own centre, memoized.
+   *
+   * The cache stores the RADIUS and not the solid/air bit it used to, because a
+   * caller that needs to know how far a cell is from the surface would otherwise
+   * evaluate the same noise stack a second time. `levelArea` is that caller: it
+   * asks "is this cell solid" and "is this cell near the surface I am reshaping"
+   * about every cell it scans, and paying twice cost a measured 10.2 ms per
+   * press against 0.7 ms. Same value, same purity, one evaluation.
+   */
+  double procSurfaceRadius(const BodyParams& body, const VoxelCell& c) const {
     const uint64_t sig = worldSig(body);
     if (!procValid_ || sig != procSig_) {
       proc_.clear();
@@ -270,10 +327,10 @@ class VoxelEdits {
     }
     const uint64_t id = voxelCellId(c);
     const auto it = proc_.find(id);
-    if (it != proc_.end()) return it->second != 0;
-    const bool s = isProcSolid(body, c);
-    proc_.emplace(id, static_cast<uint8_t>(s ? 1 : 0));
-    return s;
+    if (it != proc_.end()) return it->second;
+    const double r = surfaceRadiusAt(body, cellCenter(c));
+    proc_.emplace(id, r);
+    return r;
   }
 
   /** Cells currently memoized. Diagnostic only; never a gameplay input. */
@@ -467,7 +524,7 @@ class VoxelEdits {
   bool dirtyValid_ = false;
   // Pure-function memo (procSolidMemo). `mutable` because it is a cache: it can
   // be filled through a const VoxelEdits without changing what that object means.
-  mutable std::unordered_map<uint64_t, uint8_t> proc_;
+  mutable std::unordered_map<uint64_t, double> proc_;
   mutable uint64_t procSig_ = 0;
   mutable bool procValid_ = false;
 };
