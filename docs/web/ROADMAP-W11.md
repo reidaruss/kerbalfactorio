@@ -45,10 +45,10 @@ the failure this project has paid for six times. See lane B.
 
 | # | Lane | Scope | Owns | Status |
 |---|---|---|---|---|
-| A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | launched |
+| A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | in flight: contracts written, 3 build lanes running, armour queued behind the character |
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | launched |
-| D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | launched |
+| D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
 | E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | launched |
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
 | G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | queued, blocked on W8 flight |
@@ -69,6 +69,213 @@ the failure this project has paid for six times. See lane B.
 
 _Lanes append here. Include what you tried and what would unblock it._
 
+### Lane B, 2026-07-27
+
+- **PRE-EXISTING and not mine: `web/wasm/test/expected.json` pins `"abi": 5` while
+  the shim returns 6.** The cross-toolchain gate therefore reads **105/106** on HEAD
+  as I found it, and `parity.mjs` counts that line as GATING. The vessel lane's ABI 6
+  bump rebuilt the wasm with `-SkipNative`, which does not regenerate the native
+  fixture. Self-determinism is a clean 119/119. Whoever runs `web\wasmuild.ps1`
+  WITHOUT `-SkipNative` clears it; lane B will, since it is bumping the ABI anyway.
+  Recorded so nobody diagnoses it as a fresh divergence.
+- **Lane D correctly attributes `terrain_stream_tests/procgen_optimized_is_bit_identical`
+  to lane B, and it is expected rather than a defect.** That test pins WG-16's
+  optimised `valueNoise` against a verbatim copy of the pre-optimisation chain, so
+  changing the noise stack invalidates the COPY, not the optimisation. Lane B
+  re-baselines the copy as part of the terrain-design change. Nothing else in the
+  determinism family is affected: the seam bit-identity proofs are base-agnostic,
+  because they assert that two quads sharing a vertex sample the same dir.
+- **Transient, twenty minutes, worked around rather than waited on:**
+  `core/CMakeLists.txt` would not configure (`No SOURCES given to target:
+  smelting_tiers_tests`) and `gameplay.h` did not compile, both lane D mid-edit.
+  Compiled the new suite directly with g++ instead. The pattern is worth more than
+  the incident: **a shared CMakeLists and a shared header make one lane's
+  half-finished edit another lane's broken build**, and it cost little tonight only
+  because a header-only core compiles one translation unit at a time.
+
+### Lane A, 2026-07-27: art that is shipped and validated but that the client never draws
+
+Not blockers for lane A's own work, which proceeds, but every one of these is a
+**client change without which better art changes nothing on screen.** All are
+measured, with file and line, from a read-only recon of `web/src`. Routing these
+is Admin's call; lane A does not touch `web/src`.
+
+**A-1. The ground reads as bare, and the dominant cause is the SIZE of a grass
+tuft, not the density. Lane A owns most of this fix.** Worked, because I first
+wrote a number here that was wrong by a factor of thirty and it is worth showing
+the arithmetic rather than the conclusion.
+
+Plains per-prop densities (`web/src/assets/Registry.ts:76-78`) sum to 19,820 per
+km2 before `DENSITY_SCALE = 6` (line 67), so 118,920 per km2, which is **0.119
+props per m2**. Grass tufts A and B are 16,000 of that 19,820, so **0.096 tufts
+per m2, one every 10.4 m2**. The chunk caps (`Scatter.ts` `MAX_PER_CHUNK = 2600`,
+`MAX_PER_CELL = 20`) do not bind at that rate on a near chunk. So the tufts ARE
+being placed, in the hundreds, across the field in `docs/screenshots/RN_base_after.png`.
+
+They are invisible because **`Plains_GrassTuftA` is 0.44 m tall and most of the
+visible ground is 20 to 50 m away, where 0.44 m subtends 2 to 6 pixels.** That is
+an art problem and lane A is fixing it tonight: the plains tufts are re-authored
+as spreading CLUMPS (`GrassTuftA` 0.44 to 0.95 m, `GrassTuftB` 0.66 to 1.30 m),
+so one instance reads as a patch of meadow instead of a shaving brush, and the
+pixel area per instance goes up about fivefold at no density cost.
+
+**The client half is real but secondary.** `PropLibrary.ts:33` is
+`const CAPACITY = 7000` instances **per material batch**, fixed, with no growth
+path. Over the scatter radius of 170 m (`Scatter.ts` `RADIUS_M = 170`, 90,792 m2)
+the placement rate above wants **8,707 grass instances against a 7,000 cap**, so
+the pool binds by roughly 25% today and will bind harder if density rises.
+Exhaustion is **silent in the way that matters**: `PropLibrary.ts:152` counts
+`exhausted++` and the instances are simply not drawn. Two cheap fixes, either
+works: give the pool a growth path the way `MachineBatch.grow()` already has one,
+or note that lane A is moving the grass blades onto the new `OF_Grass` palette
+role, which by itself gives grass its own 7,000-slot batch instead of sharing
+`OF_Leaf`'s with every other biome's foliage, for one extra draw call against a
+budget of 150 that currently sits at 45.
+
+Worth also noting: the comment at `Registry.ts:65-67` claims 6x gives "about one
+prop per 4 m2". The measured rate is one per 8.4 m2. The comment is out by 2x.
+
+**A-2. `props/detail_cards.glb` is declared and dead.** `web/src/assets/Registry.ts:18`
+is the only occurrence of `detailCards` in the whole client and nothing ever
+passes it to `loadGlb`. That file is the ground-detail layer that sits UNDER the
+biome props, and it has never been drawn.
+
+**A-3. Two harvest-node kinds exist in the sim and cannot be drawn.**
+`NODE_KIND.WaterPool = 5` and `OilSeep = 6` exist at `web/src/game/GameCore.ts:53`
+but have no entry in `ART` at `web/src/game/NodeArt.ts:28-37`, so
+`nodes/water_pool.glb` and `nodes/oil_seep.glb` are shipped, validated and
+unreachable. `nodes/bush_scrub.glb` is likewise never referenced.
+
+**A-4. Harvest nodes have no LOD ladder and no stump.**
+`web/src/game/NodeBatch.ts:139` matches `_LOD0` only, and line 42 is
+`VARIANTS = ['Full', 'Half', 'Low']`, so every `_LOD1`, `_LOD2` and `_Stump`
+node in the nine harvest-node files is dead weight in the shipped bytes. Also
+`NodeBatch.ts:67` is `const CAPACITY = 128` with **no growth path**: `acquire()`
+returns -1 when full and the node is silently not drawn. That is the same silent
+failure shape as the old 256-machine batch wall, which has since been fixed.
+
+**A-5. The walk cycle can essentially never play.** `web/src/player/Controller.ts:33`
+is `walkMps = 4.6`, and `web/src/player/AnimGraph.ts:44` is
+`RUN_THRESHOLD_MPS = 3.0`, so the player is in `Run` at all times while moving
+and `Walk` is only reachable in the 0.15 to 3.0 band that nothing but
+deceleration produces. Sprint is `walkMps * 2 = 9.2` (`Controller.ts:78`), which
+plays the run clip at timeScale 2.04. Lane A is tuning `Run` as the flagship
+clip against `RUN_CLIP_MPS = 4.5`, but somebody should decide whether 4.6 m/s
+(16.6 km/h, a near-sprint) is the intended default walking speed.
+
+**A-6. First person has no jump, and there is no axe swing.**
+`web/src/player/AnimGraph.ts:22-37` maps FP `jumpStart`, `jumpLoop`, `jumpLand`
+and `fall` to `null`, so the view model is dead still while airborne. Lane A is
+adding `FP_Jump_Start`, `FP_Jump_Loop`, `FP_Jump_Land` and `FP_Fall` tonight; the
+mapping is a client change. Separately `swing` maps unconditionally to
+`Swing_Pickaxe` even when chopping a tree, and `PlayerRig.holdTool` is only ever
+called with the pickaxe (`web/src/player/Avatar.ts:67,68`), so the shipped
+`Swing_Axe`, `FP_Swing_Axe` and `crude_axe.glb` are unreachable.
+
+**A-7. Nothing draws items on belts, and the hook is already there.**
+`AutoLine.lineItems(build)` (`web/src/game/AutoLine.ts:180-190`) wraps
+`_of_net_get_line_items`, already returns `{ item, offsetTiles }`, and has **zero
+callers**. `socket_item` does not appear anywhere in `web/src`. `items_atlas.glb`
+is used for exactly one thing: baking 64 px inventory icons at boot
+(`web/src/game/ItemIcons.ts`), after which the temporary WebGL context is
+destroyed. Lane A is publishing the belt cargo convention and the meshes tonight;
+the placement code is lane F's.
+
+**A-8. The draw-call budget of 150 is not a constant.** It exists only as a
+literal inside a HUD template string at `web/src/ui/HudLines.ts:84`. The real
+enforced numbers are `ALERT = { calls: 300, triangles: 2.7e6, p99: 25 }` and
+`FAIL = { calls: 500, ... }` at `web/src/render/debug/StatsProbe.ts:24-25`. Worth
+making 150 a named constant if it is meant to be the target.
+
+**Resolved, worth recording: BT-10's R5 is fixed.** The 150-machine render wall
+is gone. `web/src/game/InstancePools.ts:36,44` now carry `CAPACITY = 256` and
+`MAX_CAPACITY = 16384`, and `MachineBatch.grow()` doubles on demand
+(`web/src/game/MachineBatch.ts:307-324`), counting and logging a refusal at the
+ceiling instead of failing silently.
+
+### Lane D, 2026-07-27: the power model is built and has no way to reach the game
+
+Not blockers for lane D's own work, which is complete in `/core`. These are the
+three handoffs the model needs before a player can see any of it. Lane D did not
+touch `web/**` by instruction (four lanes live in the client) and did not rebuild
+the wasm (standing rule 9 makes an ABI bump atomic and it is not lane D's to
+bump tonight).
+
+**D-1. The grid has no bridge export, so nothing in the client can call it.**
+The C++ surface is finished and stable; the `of_net_*` shim in
+`web/wasm/of_core_api.cpp` needs about fourteen new entry points. The exact list
+is in `docs/controllers/factory-sim.md` §5 under "what a bridge lane needs".
+Nothing else in `/core` has to change for it. Whoever next bumps the ABI should
+take this with them rather than bumping twice.
+
+**D-2. The supply-and-demand panel is a client job and `web/src/ui` was owned by
+the flight lane tonight.** The model publishes everything the panel needs already
+(per-network production, capacity, demand, consumption, satisfaction, generator
+and consumer counts, plus a ring-buffer history for a graph). See the same §5
+section for the field list. The panel is the thing that turns "my base got
+slower" into "120 kW demanded, 90 kW produced, 75%", which is the entire point
+of the feature.
+
+**D-3. Wires are published but nothing draws them.** `PowerGrid::wireSegments()`
+returns a spanning-tree edge list with both endpoints resolved: exactly N-1
+segments per network, never one per pole pair in reach. This was designed against
+FS-16's measurement that auto-created inserters already dominate instance count
+at scale; a naive per-pair rule is O(N^2) in exactly the layouts players build
+(measured: 30 poles a metre apart is 182 in-reach pairs against 29 segments). A
+render lane can draw them as a stretched instanced quad per segment.
+
+**Escalation for Admin, not a blocker.** The three new buildables append to
+`survival::handRecipes()`, which the client reads dynamically through
+`_of_gp_recipe_count`. So on the next wasm rebuild the craft menu gains three
+entries (power pole, burner generator, electric smelter) **with no icons
+authored**. Either the art lane should be asked for three 64 px icons or the
+menu should fall back gracefully. Flagging it now so it is not a surprise
+discovered in a screenshot.
+
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
+
+- **2026-07-27, lane D — the power model (FS-20 to FS-23).** New
+  `core/include/of/power.h` (poles, wire reach, supply areas, union-find network
+  formation, the supply/demand solve, fuel-bounded generators, per-network stats
+  and a history ring), bound into `automation.h` as the single power authority
+  and into `gameplay.h` as an open three-rung smelting ladder. Two new suites,
+  `power_tests` (1,188 checks) and `smelting_tiers_tests` (142 checks), both
+  green; **26 of 27 ctest suites pass** (the one failure is
+  `terrain_stream_tests/procgen_optimized_is_bit_identical`, which is lane B's
+  live edits to `cubed_sphere.h` and `biome.h` and is not reachable from any
+  file lane D touched). Numbers that prove it, all hand-computed before the code
+  was run against them: satisfaction 90 kW against 120 kW = **49152** Q16
+  exactly; three machines of 30, 60 and 90 tick recipes all slow by **exactly
+  4/3** at that ratio and by **exactly 2** at 32768; **one 90 kW generator runs
+  three 30 kW electric smelters and the fourth adds ZERO output** (120 ingots in
+  1,200 ticks either way, and 160 once a second generator is placed); one coal
+  unit is **2,667 powered ticks at 90 kW, 5,334 at 45 kW and 8,001 at 30 kW**
+  with **4,000,000,000 mJ delivered in every case**, so energy is conserved
+  exactly rather than approximately; removing one bridging pole from a five-pole
+  line splits **one network into two of two poles each** and the halves then read
+  **49152 and 65536**; wires are a spanning tree, **182 in-reach pairs against 29
+  segments** at 30 dense poles; a generator that also consumes 3x its own output
+  sits at **21845 for 1,000 ticks** and never collapses; ten ore become ten iron
+  in **1800 / 600 / 300 ticks** on the three rungs. The parity fixture's
+  `factory` and `factoryDeplete` sections are **byte-identical** before and
+  after, so this change is determinism-neutral. No `web/**` file touched, no
+  wasm rebuild, ABI untouched by lane D.
+
+- **2026-07-27, lane B, `d1f474e` — the voxel representation changed.** Signed
+  density at lattice corners (`core/include/of/voxel_field.h`) replacing one
+  occupancy bit per cell, meshed by surface nets (`core/include/of/surface_nets.h`)
+  instead of cube faces. Additive commit: nothing existing is touched, so this one
+  cannot move any other lane's numbers.
+  **Q flattening, the headline: worst height step over a 4 m span, which is the
+  span a DW-32 foundation bridges, on a site with 7.03 m of spread across 12 m,
+  2.1408 m before and 0.0000 m after.** WG-23 defined the 0.25 m threshold, could
+  not meet it, and reached 0.973 m; 0 of 49 columns are now off target, and the
+  DRAWN pad read back from the extracted mesh has a radial spread of 0.000001 m
+  over 223 vertices. **DW-26 re-derived and still asserted**: the cell-versus-point
+  bound is unchanged in kind at 0.4012 m worst against 0.8660 m, and the bound that
+  actually hurt, the distance between the surface DRAWN and the surface COLLIDED,
+  went from **0.8660 m (a whole cell face) to 0.087116 m**. Digging: the carved
+  sphere is the surface to 0.0957 m and the crater carries **77 distinct normals
+  where a cube mesher emits exactly 6**. New `voxel_field_tests`, 143 checks.
