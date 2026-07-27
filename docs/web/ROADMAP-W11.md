@@ -45,7 +45,7 @@ the failure this project has paid for six times. See lane B.
 
 | # | Lane | Scope | Owns | Status |
 |---|---|---|---|---|
-| A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | in flight: contracts written, 3 build lanes running, armour queued behind the character |
+| A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | **DONE. 48/48 validate, byte-identical rebuild, dist 2.69 -> 3.10 MB. Client wiring needed, see blockers A-1 to A-13** |
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
 | C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | **all five landed** (GP-36 to GP-40) |
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
@@ -251,6 +251,67 @@ enforced numbers are `ALERT = { calls: 300, triangles: 2.7e6, p99: 25 }` and
 `FAIL = { calls: 500, ... }` at `web/src/render/debug/StatsProbe.ts:24-25`. Worth
 making 150 a named constant if it is meant to be the target.
 
+### Lane A, 2026-07-27, part 2: what the four landed assets now need from other lanes
+
+**A-9. Belt cargo is ready and `offsetTiles` is a trap.** The meshes, the path
+sockets and the checker all shipped (ASSET-SPECS 4.13.1 and 7.6).
+`AutoLine.lineItems()` (`web/src/game/AutoLine.ts:180-190`) still has zero
+callers. When it is wired: **`offsetTiles` is a sim CAPACITY coordinate, not
+metres of path.** Split it, `k = floor(offsetTiles)` picks the tile and
+`f = frac(offsetTiles)` is the fraction OF that tile, then evaluate that tile's
+arc at arc length `f x arcLength(k)`. Multiplying `offsetTiles` by a constant
+metres-per-tile makes items **accelerate 27% through every corner**
+(1.000 / 0.785398), because a curve is 21.5% shorter than a straight but still
+costs one full tile of sim capacity. Also: read the three path sockets per tile
+template and precompute the arc once at load, read `socket_rest` from the
+**cloned** item node and not from the atlas root, yaw each item so its local +Z
+follows the tangent, map the twelve `ItemCategory::Buildable` ids to
+`Item_Crate`, and put the items in a `BatchedMesh` with the machines. **Never a
+per-item or per-belt `AnimationMixer`** (DW-8); belt motion stays the shader band.
+
+**A-10. Armour needs a slot concept that does not exist anywhere yet.**
+`assets/models/dist/player/armour_set.glb` ships and validates, and nothing can
+wear one. `grep -riE 'armor|armour|equip' core/include` returns nothing.
+`/core` needs `enum class EquipSlot : uint8_t { Head, Chest, Legs, Feet, Count }`
+with the four values matching the four node names exactly (so the client's
+lookup is an array index, never a string built at runtime),
+`ItemCategory::Armour`, `ItemDef` gaining `EquipSlot slot` plus a stat block with
+`stackMax = 1`, four new `ItemId`s in the pinned append-only block, an
+equipped `std::array<ItemStack, EquipSlot::Count>` with `equip`/`unequip`
+returning the displaced stack, and a `setId` so the renderer knows which `.glb`
+to load. Persistence: 4 slots x 4 B = **16 B**, so the save schema needs a
+version bump. Client: a `Registry.ts` entry, and `PlayerRig.equip(slot, url)` /
+`unequip(slot)` doing `mesh.bind(this.skeleton, mesh.bindMatrix)`,
+`frustumCulled = false`, and copying the body mesh's layer and shadow flags.
+Full convention in ASSET-SPECS 4.25. **`web/scripts/sync-assets.mjs` needs no
+change**: it walks the tree and copies every `.glb`, so the new file syncs
+automatically.
+
+**A-11. First person has no armour**, because `armour_set` carries the
+third-person 44-bone rig and the view model is a different 27-bone rig with a
+different bind pose. An armoured player sees unarmoured arms. Either a second
+armour file authored against `FP_BONES`, or an explicit decision to accept it.
+Art call once gameplay decides whether arms are a slot.
+
+**A-12. Every animation clip in the game has a 16.7 ms dead hold at t = 0, and
+this one is MINE to fix but not tonight.** The exporter writes the first key at
+Blender frame 1, which is t = 1/60 s, so three.js computes
+`duration = n / 60` while the authored motion spans `(n - 1) / 60`. For `Run`
+that is 0.4167 s of loop against 0.400 s of motion: a **7.5 cm hitch once per
+cycle at 4.5 m/s**, on a gait that was just measured to 0.9 mm of slip. The fix
+is to shift keys to frame 0 in `of_lib`. **It is deliberately not being done at
+the end of an overnight run**, because it changes the exported bytes of every
+rigged asset (a full determinism rebaseline) and, more importantly, **it shifts
+every frame index by one, and the impact frames are a published gameplay
+contract**: `harvestNode()` fires on frame 17 of `Swing_Pickaxe`, 18 of
+`Swing_Axe` and 16 of `Dig`. That is a cross-lane change and it needs an Admin
+decision, not a 4am commit. Logged with the number so it is not rediscovered.
+
+**A-13. Sprint plays the run clip at timeScale 2.04.** `Controller.ts:78` is
+`walkMps * 2 = 9.2 m/s` against `RUN_CLIP_MPS = 4.5`. It will look frantic. The
+fix is a client one: cap the timeScale, or author a sprint clip, or lower the
+sprint multiplier. Related to A-5.
+
 **Resolved, worth recording: BT-10's R5 is fixed.** The 150-machine render wall
 is gone. `web/src/game/InstancePools.ts:36,44` now carry `CAPACITY = 256` and
 `MAX_CAPACITY = 16384`, and `MachineBatch.grow()` doubles on demand
@@ -372,6 +433,14 @@ look instead of concluding "the enemies feel wrong" and rewriting the model.
 ## Progress log
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
+
+- 2026-07-27 lane A: **world dressing.** Conifer 308 -> 584 LOD0 tris, broadleaf 280 -> 452, four new nature palette roles, grass re-authored as clumps (`GrassTuftA` 0.44 -> 0.95 m, `GrassTuftB` 0.66 -> 1.30 m) with 12 cm blades overlapping into a solid core. 6/6 validate, all six byte-identical on rebuild, verified by rendering the same clump at 8 m and 25 m.
+- 2026-07-27 lane A: **the player.** First-person hands rebuilt (elliptical palm, knuckle plate, five fingers on three bones, opposed thumb, colour moved to where the camera can see it, hands 0.435 -> 0.620 m out); body 1244 -> 2320 LOD0 tris with a real back pack, split boots and dark shins. Four new first-person jump and fall clips. Both byte-identical, and two witness assets neither lane owns rebuilt byte-identical to HEAD.
+- 2026-07-27 lane A: **the gait, measured not eyeballed.** Three defects found on the shipped bytes: the lean was keyed on `Hips` and drove the toe 30 mm through the ground; `rig_common.keys` rounded the frame but not the phase, swinging contact foot velocity 1.7 to 6.6 m/s around a 4.5 target; pelvis yaw moved the hip socket for a 2.3% skate. Result: net world slip **+0.0005 m** over 0.5250 m of root travel, implied ground speed **4.496 against 4.50 authored**, ground penetration **0.0000 m**.
+- 2026-07-27 lane A: **belt cargo.** One rule for both tile shapes (the circular arc through three published sockets, by arc length), `socket_rest` per item so no per-item height table exists, `Item_Crate` for all twelve buildables, and the 0.250 m flow-axis bound derived from `kItemSpacing / kUnitsPerTile`. Found that the published carrying height floated 8 mm above the belt and that the end rollers stood 3 mm proud at every tile seam. New `check_belt_cargo.py`, selftest 19 cases, 11 must fire and 8 must not.
+- 2026-07-27 lane A: **armour, four slots**, 904 tris, skinned to the body's own 44-bone rig, rig drift 0.00e+00 at nine poses. Four defects found that were visible only in motion.
+- 2026-07-27 lane A: **`contact_sheet.py`**, stdlib-only PNG tiler with a selftest. It is what showed that the first-person model was one unbroken white shape, which no single render says.
+
 
 - **2026-07-27, lane D — the power model (FS-20 to FS-23).** New
   `core/include/of/power.h` (poles, wire reach, supply areas, union-find network
