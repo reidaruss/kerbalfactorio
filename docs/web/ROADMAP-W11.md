@@ -267,6 +267,36 @@ Full detail in [docs/controllers/enemies.md](../controllers/enemies.md) §6 and 
   radius is an Admin call, not a world-gen one**, because "how long is the
   peaceful early game" is a pacing decision rather than a terrain one.
 
+**A process finding that cost nothing tonight but nearly cost four files, and is
+a sharper version of standing rule 10.** Rule 10 says commit with an explicit
+path list because whoever commits first sweeps up another lane's staged files.
+There is a second, worse edge on the same problem: **once your commit lands, the
+SHARED index is stale, and your brand-new files read as STAGED DELETIONS to
+every other lane.** After landing lane E, `git status` showed
+`D core/include/of/enemies.h` and `D core/tests/test_enemies.cpp` against an
+index that also held 30 staged files from the flight lane. A single bare
+`git commit` from that lane would have deleted all four of lane E's new files
+under a message about a navball, and every test would have gone with them.
+Two things to take from it. (1) The fix is one command,
+`git reset -q HEAD -- <your paths>`, immediately after committing; it rewrites
+only your index entries and leaves both the working tree and every other lane's
+staged set untouched (verified: the flight lane's 25 remaining staged files were
+unaffected). (2) **The exposure is proportional to how long another lane leaves
+work staged**, which is exactly rule 10's existing corollary, now with a
+concrete failure mode attached: a large staged set is not just a sweeping
+hazard, it is a loaded deletion. Lane E's own commit was built through a
+temporary index (`GIT_INDEX_FILE` + `commit-tree` + a compare-and-swap
+`update-ref`) precisely so it could not touch the shared one, which is worth
+knowing as an option when the index is busy.
+
+**Not lane E's, recorded so it is not misattributed.** On the working tree as of
+lane E's commit, `surface_field_tests` is red (6 checks across 3 tests, all in
+`solidCell` / `fillCell` / `derivedRaisingAt`) from lane B's in-flight 372-line
+rewrite of `surface_field.h`. Everything else including `enemies_tests` is
+green. `enemies.h` includes only `<algorithm> <cmath> <cstdint> <string>
+<vector>`, `of/cubed_sphere.h` and `of/vec3.h`, and deliberately depends on
+neither the surface oracle nor the voxel layer, so it cannot be involved.
+
 **One thing worth escalating rather than filing.** Every balance number in this
 model is first-pass, derived from Factorio's pacing plus arithmetic, and none of
 it has been played. The tuning struct exists so that is a cheap fix. The number
