@@ -69,6 +69,32 @@ the failure this project has paid for six times. See lane B.
 
 _Lanes append here. Include what you tried and what would unblock it._
 
+### Lane G, 2026-07-27: THE CLIENT DOES NOT BOOT ON THE CURRENT WORKING TREE
+
+**This is the one thing that stops there being a demo at all, and it is not
+lane G's.** As of 01:27, `web/src/game/FactoryView.ts:24` is
+`import { BeltCargo } from "./BeltCargo.js";` and **`web/src/game/BeltCargo.ts`
+does not exist**. Vite answers 500 on `FactoryView.ts`, which fails
+`Gameplay.ts`, which fails the whole boot: `[of] boot failed TypeError: Failed
+to fetch dynamically imported module`. Nothing renders, no probe can run, and
+`npm --prefix web run check` does not catch it because `tsc` and the 400-line
+check both pass on a file whose import target is missing at RUNTIME only when
+the module graph is walked.
+
+That is lane F mid-write and it will presumably resolve itself within the hour.
+Recorded because (a) it stopped lane G's measurement dead for the duration and
+everything below it is timestamped around the gap, and (b) **if it is still
+true when Reid sits down, the demo is a white screen.** Whoever lands lane F
+should boot the client once before walking away. `git stash` is not a fix here
+because five lanes share the tree.
+
+The general form is worth more than the incident and it is the third time
+tonight a lane has been stopped by another lane's half-saved file (lane B's
+`CMakeLists`, lane D's `gameplay.h`, now this): **the check suite has no gate
+that says "the app starts".** One driven boot with no probe attached would have
+caught all three in seconds. Lane G's `tools/smoke/reload.mjs` does exactly that
+as its first step and could be lifted into the standard check for nothing.
+
 ### Lane C, 2026-07-27
 
 - **Standing rule 10 was broken again, and this time it took MY work.** The
@@ -592,3 +618,104 @@ in the same commit as the header, and that commit also carries lane B's
 `terrain_probe` target and its source, because the two edits are in one file and
 committing mine alone would have left HEAD unable to configure. Attributed rather
 than silent; lane B loses nothing and should commit over it freely.
+
+### Lane C, 2026-07-27: the follow-up pass, and a bug my own first version had
+
+**GP-36 needed a `PLANE_MARGIN`, and finding out why is the most useful thing in
+this lane.** Spending the bury budget to the last millimetre puts the worst
+footprint point at exactly `buryM`; `checkGround` then re-derives that same
+number by a different arithmetic path, and both sides are `ground(x) - |x|`, a
+difference of two doubles of magnitude 600,000. The cancellation carries about
+1e-10 m, a slack ratio of 1 + 2e-10 is greater than 1, and the placement is
+refused. **On the coarse height field I started against this branch was rarely
+taken and the defect hid; within an hour of WG-25 landing it was the normal case
+and every one of 88 scanned candidate sites refused for standing 0.50 m into a
+0.50 m bound.** The fix is 2% of each bound left unspent, not an epsilon, because
+there are two problems and only one is arithmetic: a plane sitting exactly on the
+bury bound also leaves the second cell of the site no room at all. **The
+generalisable part: a rule that lands exactly on a limit is refused by that limit
+whenever the two sides are computed differently, and at planet scale "computed
+differently" is guaranteed.**
+
+**Final numbers, all re-measured on the post-WG-25 field:** 81 origins buildable
+14.8% pinned against **58.0%** fitted; the `mid` site 70.6% against **100.0%** of
+812 footprints; deck to deck **4.485e-13 m**; a wall **0.000e+0 m** from the deck
+socket the ghost named AND from the nearest one; a wall run **0.000e+0 m** end to
+end; a furnace **6.695e-12 m** above the deck's own `socket_top`; cantilever runs
+1, 2, 3 accepted hanging **1.077, 1.792, 2.480 m** with run 4 refused by the cap
+and the same-cell control refusing the identical **1.0773 m**; 40 Stone per
+foundation; save/reload 8 parts with **0.000e+0 m** worst move.
+`build.js`, `basesnap.js` and `cantilever.js` all `valid: true`.
+
+**Two things that cost time and are worth writing down.**
+
+1. **The shared dev server made driven probes unusable for about an hour.** Vite
+   HMR full-reloads the page whenever any lane saves a file, and a 60 to 90
+   second probe then dies with "Execution context was destroyed". `sandbox.js`,
+   which no lane touched tonight, failed identically, so this is not a lane's
+   regression. **The workaround is `npm run build` plus `npx vite preview --port
+   4180` and `--url=http://127.0.0.1:4180/`**: a static bundle does not reload,
+   and every probe went green first try against it. Recommended for any lane
+   running long driven probes while others are live.
+2. **`npm --prefix web run check` currently FAILS on
+   `src/sim/FlightSession.ts: 404 lines > 400`**, which is the flight lane's file
+   and not reachable from anything here. `tsc --noEmit` is clean; every file this
+   lane owns or created is inside the cap.
+
+- **2026-07-27, lane B, `ccb26f6` + `8667a16` — WG-25/WG-26, the terrain itself.**
+  Two defects, and only one was the one I sent the subagent to find. The expected
+  one: the noise stack had **no high-frequency content at all**, finest octave a
+  1.9 km lattice cell, so the wavelength sweep read 9.02% / 9.01% / 9.01% of
+  spacing at 1 m / 2 m / 5 m, which is a tilted plane and nothing else, and the
+  slope spectrum on a peak ran p50 0.616 to max 0.630. The unexpected one:
+  `designedReliefFactor` switched on the DISCRETE biome, so the classifier
+  boundary was a **985 m vertical wall** between two samples 100 m apart, with
+  more at every coastline, moisture threshold and ice cap. So "mountains look like
+  shit" was flat domes separated by sheer steps. **Worst grade over 100 m,
+  985.37% to 87.54%. Wavelength coverage 240 km to 1.9 km, now 240 km to 60 m.
+  Mountains biome 3.4% to 7.0%.** Cost went the RIGHT way: `sampleDesignedHeight`,
+  which every consumer reads, went **40 to 19 valueNoise calls and 2.00x FASTER**,
+  because it had been evaluating the height field three times per vertex; the
+  browser HUD shows the oracle at **2.23 to 0.97 us/call**. **Flat start area:
+  worst 4 m step inside the pad 0.000000 m exactly**, asserted as a bit compare,
+  bit-identical outside the blend, effect provably zero by 601 m.
+- **2026-07-27, lane B, `bd8c2e8` + `2efe44e` — ABI 7 then 8, the client reads the
+  signed surface.** Screenshots: `docs/screenshots/WG24_dig_before.png` against
+  `WG24_dig_after.png`, and `WG24_mountains_before.png` against
+  `WG24_mountains_after.png`, same seed, pinned cameras recorded in the probes.
+  **Levelling, driven through a real DOM key event, on the DRAWN chunk geometry,
+  worst step within one 4 m foundation module: 1.788 m to 0.000 m**, drawn spread
+  3.327 to 0.000 m, oracle spread 4.029 to 0.000 m. WG-23's numbers on that same
+  instrument were 1.883 to 0.973 m against a 0.25 m threshold it could not meet.
+  **DW-26's drawn-versus-collided bound 0.8660 m to 0.087116 m.** 29/29 ctest,
+  self-determinism 119/119, cross-toolchain exact **108/108** (it was 105/106 when
+  I started, and that pre-existing `abi` blocker is now cleared).
+
+### Lane B, open items, 2026-07-27
+
+- **The probe negative control `outsideUntouched` FAILS at the widened 10 m pad:
+  2.779 m of movement on a ring at 2.5x the pad radius, where it read 0.000000 m
+  at 6 m.** `/core` proves the same property BIT-IDENTICALLY over 12 points at
+  30 m, so the two instruments disagree and one is wrong. Leading hypothesis is
+  that the probe sizes its ring from the radius constant that just changed and is
+  no longer concentric with the pad the tool cut, but that is a hypothesis, not a
+  measurement, and it is the one thing tonight I would not demo without checking.
+- **The after-crater still contains a few isolated pale fragments.** The bowl and
+  its rim are smooth and the black shard field is gone, but small disconnected
+  pieces remain inside, most likely cells the `editedOnly` filter keeps whose
+  neighbours it drops. Cosmetic, visible on close inspection, unmeasured.
+- **A level press costs 32.7 ms cold and 4.5 ms held**, against WG-23's 0.9 ms.
+  The cost is the procedural field evaluated once per corner over the scan box and
+  it is memoized after; a dig strike is 0.37 ms plus 9.4 ms of re-mesh cold and
+  0.4 ms on the next strike. Acceptable, not free, and worth a pass.
+- **`npm --prefix web run check` is RED on HEAD, in lane C's files only**
+  (`src/game/Gameplay.ts`, `src/game/FactoryView.ts`). Lane B's own files
+  typecheck clean; I did not touch theirs.
+- **`web/tools/smoke/probes/digquality.js` reads `mesh.mergeRatio`, `.faces` and
+  `.quads`**, which no longer exist now that the greedy cube mesher is gone. They
+  read `undefined` rather than failing, which is the wrong way round.
+- **WG-26 judgement call for Reid:** at this seed the fixed spawn is no longer a
+  Hills valley floor at 2,963 m, it is Mountains at 4,668 m on a 42% mountainside,
+  so the flat area is a plateau perched on a mountain rather than a clearing. It
+  works and it may not be what "flat starting area for simplicity" pictured.
+  Moving the spawn means editing `Config.ts`, which lane B does not own.
