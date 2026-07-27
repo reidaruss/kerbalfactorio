@@ -47,7 +47,10 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
   'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff', 'gameplay',
-  'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density']) {
+  'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density',
+  // DW-31. Unlike every other entry here this is not an isolation switch: it
+  // selects a game MODE, and the world it makes saves to its own slot.
+  'sandbox']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');
