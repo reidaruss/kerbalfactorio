@@ -244,10 +244,17 @@
       `disabled ${buttonDisabled}, ${beforeClick} -> ${catalogue.packItemsAfterClick}`);
   }
 
-  // THE MENU ENTRY. Asserted, not clicked: the button NAVIGATES, which would
-  // destroy this execution context and every measurement in it. What is checked
-  // is that it exists, is enabled, names the other mode, and points at a URL
-  // that actually carries the flag.
+  // THE MENU ENTRY. Asserted here, not clicked: the button NAVIGATES, which
+  // would destroy this execution context and every measurement in it. What is
+  // checked is that it exists, is enabled, names the other mode, and points at a
+  // URL that actually carries the flag.
+  //
+  // The click itself WAS proven, out of band, with a real DOM event in a live
+  // browser on 2026-07-26, both directions: survival -> `?sandbox=1` with the
+  // badge appearing and `game().mode.mode === 'sandbox'` after the reload, then
+  // sandbox -> the flag gone, badge `display: none`, mode survival. Recorded
+  // here because a control this probe cannot press is a control somebody has to
+  // press, and an unrecorded manual check is one nobody repeats.
   const menuBtn = document.querySelector('#of-panel .mode button');
   const menu = {
     present: menuBtn !== null,
