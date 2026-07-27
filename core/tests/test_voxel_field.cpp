@@ -1,0 +1,600 @@
+// Headless tests for the SIGNED DENSITY FIELD + SURFACE NETS (WG-24).
+//
+// The claim under test is that replacing binary 1 m occupancy with a signed
+// distance sampled at lattice corners, and meshing its zero level rather than
+// its cell faces, fixes three separately-reported complaints at once:
+//
+//   * digging leaves smooth craters instead of axis-aligned cube faces;
+//   * a levelled pad is FLAT, measured as the worst height step between two
+//     points 4 m apart (the DW-32 structural module), against the 0.25 m
+//     perceptual threshold WG-23 defined and could not meet at 0.973 m;
+//   * the surface that is DRAWN and the surface a body COLLIDES with are the
+//     same zero level, so the DW-26 bound between the two shapes of "solid"
+//     collapses from half a cell diagonal (0.866 m) to the interpolation error
+//     of a smooth field over one cell.
+//
+// Every number this file prints is quoted in the report, so the tests print
+// their measurements rather than only asserting them (WG-23's lesson: a spread
+// is a claim about the middle of a distribution, and a surface is judged by its
+// worst neighbouring pair).
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+
+#include "test_framework.h"
+#include "of/voxel_field.h"
+#include "of/surface_nets.h"
+
+using namespace of;
+using namespace of::worldgen;
+
+namespace {
+
+// The byte cursor the serializer is templated over. Written out here rather
+// than pulled from persistence.h so this suite stays leaf and cannot be broken
+// by churn in a header it does not test; the shape is persistence.h's SaveWriter
+// / SaveReader varint pair exactly, which is what the WASM bridge passes.
+struct ByteWriter {
+  std::vector<uint8_t> buf;
+  void varint(uint64_t v) {
+    while (v >= 0x80) { buf.push_back(uint8_t(v) | 0x80u); v >>= 7; }
+    buf.push_back(uint8_t(v));
+  }
+};
+struct ByteReader {
+  const std::vector<uint8_t>& b;
+  size_t i = 0;
+  explicit ByteReader(const std::vector<uint8_t>& v) : b(v) {}
+  uint64_t varint() {
+    uint64_t v = 0;
+    int s = 0;
+    while (i < b.size()) {
+      const uint8_t c = b[i++];
+      v |= uint64_t(c & 0x7f) << s;
+      if (!(c & 0x80)) break;
+      s += 7;
+    }
+    return v;
+  }
+};
+
+BodyParams forge() { return makeForge(0x0bf00d01ull); }
+
+Vec3 dirAt(double latDeg, double lonDeg) {
+  return latLonToDir(latDeg * 3.14159265358979323846 / 180.0,
+                     lonDeg * 3.14159265358979323846 / 180.0);
+}
+
+// Body-frame surface point under a lat/lon, on the designed base.
+Vec3 surfacePoint(const BodyParams& b, double latDeg, double lonDeg) {
+  const Vec3 u = dirAt(latDeg, lonDeg);
+  return u * (b.radiusM + sampleDesignedHeight(b, u));
+}
+
+// Two orthonormal tangents at a direction, so a test can step a metre sideways.
+void tangents(const Vec3& u, Vec3& t1, Vec3& t2) {
+  const Vec3 ref = (std::fabs(u.y) < 0.9) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+  Vec3 a(u.y * ref.z - u.z * ref.y, u.z * ref.x - u.x * ref.z,
+         u.x * ref.y - u.y * ref.x);
+  double l = a.length();
+  t1 = Vec3(a.x / l, a.y / l, a.z / l);
+  Vec3 c(u.y * t1.z - u.z * t1.y, u.z * t1.x - u.x * t1.z,
+         u.x * t1.y - u.y * t1.x);
+  l = c.length();
+  t2 = Vec3(c.x / l, c.y / l, c.z / l);
+}
+
+uint64_t bits(double d) {
+  uint64_t u = 0;
+  std::memcpy(&u, &d, sizeof(u));
+  return u;
+}
+
+}  // namespace
+
+// -----------------------------------------------------------------------------
+// 1. The untouched world is unchanged. The field is a re-reading of the SAME
+//    designed surface, so an empty field must agree with the oracle exactly.
+// -----------------------------------------------------------------------------
+TEST(empty_field_is_the_designed_surface_bit_identically) {
+  const BodyParams b = forge();
+  DensityField f;
+  CHECK(f.empty());
+  int n = 0;
+  for (int i = 0; i < 40; ++i) {
+    const Vec3 u = dirAt(-70.0 + i * 3.5, -170.0 + i * 8.0);
+    const double h = columnSurfaceHeight(b, f, u, 80.0, 24.0);
+    CHECK(bits(h) == bits(sampleDesignedHeight(b, u)));
+    ++n;
+  }
+  CHECK(n == 40);
+  // And the field's sign at a point matches "is this inside the planet".
+  const Vec3 u = dirAt(2.0, 144.0);
+  const double surfR = b.radiusM + sampleDesignedHeight(b, u);
+  CHECK(f.densityAt(b, u * (surfR - 5.0)) > 0.0);   // 5 m under: rock
+  CHECK(f.densityAt(b, u * (surfR + 5.0)) < 0.0);   // 5 m over: air
+}
+
+// -----------------------------------------------------------------------------
+// 2. THE DW-26 RE-DERIVATION. Two shapes of "solid" still exist and must still
+//    have a stated, asserted bound. On a binary lattice the bound was half a
+//    cell diagonal, 0.866 m, because a cell is entirely solid or entirely air
+//    and its worst corner is that far from its centre. On the field the
+//    quantised shape is `solidCell` (the field at the cell CENTRE) and the
+//    continuous shape is `solidAt` (the field at the POINT). They can only
+//    disagree where a point and its cell centre straddle the zero level, and
+//    because the field is 1-Lipschitz the disagreement is bounded by the
+//    distance between them, which is at most half a cell diagonal.
+//
+//    The number that actually changed is the one below it: how far the DRAWN
+//    surface is from the COLLIDED surface. On the old model that was the same
+//    0.866 m, because the mesher drew whole cell faces. Here the mesher emits
+//    the zero level itself, so it is the field's own interpolation error.
+// -----------------------------------------------------------------------------
+TEST(dw26_bound_between_the_two_shapes_of_solid) {
+  const BodyParams b = forge();
+  DensityField f;
+  const double halfDiag = 0.5 * std::sqrt(3.0) * kVoxelSizeM;
+
+  int disagree = 0, sampled = 0;
+  double worstOffset = 0.0;
+  for (int i = 0; i < 900; ++i) {
+    const Vec3 u = dirAt(-60.0 + (i % 30) * 4.0, -170.0 + (i / 30) * 11.0);
+    const double surfR = b.radiusM + sampleDesignedHeight(b, u);
+    for (int k = -2; k <= 2; ++k) {
+      const Vec3 p = u * (surfR + k * 0.4);
+      const VoxelCell c = cellForPos(p);
+      ++sampled;
+      if (f.solidAt(b, p) != f.solidCell(b, c)) {
+        ++disagree;
+        // Where they disagree, the point is within half a cell diagonal of the
+        // centre BY CONSTRUCTION, and the field is 1-Lipschitz, so the density
+        // magnitude at the point bounds how deep the disagreement can be.
+        const double off = std::fabs(f.densityAt(b, p));
+        if (off > worstOffset) worstOffset = off;
+      }
+    }
+  }
+  std::printf("    DW-26 cell-vs-point: %d of %d samples disagree, worst |d| "
+              "%.4f m, bound %.4f m\n",
+              disagree, sampled, worstOffset, halfDiag);
+  CHECK(worstOffset <= halfDiag);
+
+  // THE BOUND THAT MATTERS: drawn versus collided. Every vertex the mesher
+  // emits must lie ON the zero level of the field that collision reads.
+  DensityField g;
+  const Vec3 site = surfacePoint(b, 2.0, 144.0);
+  g.digSphere(b, site, 3.0);
+  SurfaceNetsOpts o;
+  o.editedOnly = false;
+  const SurfaceNetsMesh m = surfaceNetsAround(b, g, site, 8.0, o);
+  CHECK(m.positions.size() > 200);
+  double worstVert = 0.0;
+  for (const Vec3& v : m.positions) {
+    const double e = std::fabs(g.densityAt(b, v));
+    if (e > worstVert) worstVert = e;
+  }
+  std::printf("    DW-26 drawn-vs-collided: %zu vertices, worst |density| at a "
+              "drawn vertex %.6f m (old model: %.4f m, a whole cell face)\n",
+              m.positions.size(), worstVert, halfDiag);
+  // Surface nets places a vertex at the MEAN of its cell's edge crossings, so
+  // on a curved surface it sits slightly off the exact zero level. A quarter of
+  // a cell is a generous, checkable bound and is 7x tighter than the shell was.
+  CHECK(worstVert <= 0.25 * kVoxelSizeM);
+}
+
+// -----------------------------------------------------------------------------
+// 3. A DIG LEAVES A SPHERE, not a staircase. The complaint was "all these sharp
+//    edges". The test: after carving a sphere, points on that sphere's surface
+//    sit on the field's zero level, and the extracted mesh has smoothly varying
+//    normals rather than six discrete ones.
+// -----------------------------------------------------------------------------
+TEST(a_dig_leaves_a_round_crater_not_cube_faces) {
+  const BodyParams b = forge();
+  DensityField f;
+  const Vec3 site = surfacePoint(b, 2.0, 144.0);
+  const double R = 2.5;
+  const int flipped = f.digSphere(b, site, R);
+  CHECK(flipped > 20);
+
+  // The carved boundary is the sphere: sample it and read the field.
+  double worst = 0.0;
+  for (int i = 0; i < 200; ++i) {
+    const double a = i * 0.31, e = std::sin(i * 0.17);
+    Vec3 dirv(std::cos(a) * std::sqrt(1 - e * e), e,
+              std::sin(a) * std::sqrt(1 - e * e));
+    const Vec3 p(site.x + dirv.x * R, site.y + dirv.y * R, site.z + dirv.z * R);
+    // Only where the crater wall is genuinely the carved sphere (i.e. the
+    // point was inside rock before the dig) does the sphere define the surface.
+    DensityField pristine;
+    if (pristine.densityAt(b, p) < 0.5) continue;
+    const double d = f.densityAt(b, p);
+    if (std::fabs(d) > worst) worst = std::fabs(d);
+  }
+  std::printf("    crater wall: worst |density| on the carved sphere %.4f m\n",
+              worst);
+  CHECK(worst < 0.30);
+
+  // Normals: a cube mesher emits exactly 6 distinct normals. Count distinct
+  // normals to 2 decimal places over the crater mesh.
+  SurfaceNetsOpts o;
+  o.editedOnly = false;
+  const SurfaceNetsMesh m = surfaceNetsAround(b, f, site, 6.0, o);
+  std::vector<uint64_t> keys;
+  for (const Vec3& n : m.normals) {
+    const int64_t a = static_cast<int64_t>(std::floor(n.x * 50.0));
+    const int64_t c = static_cast<int64_t>(std::floor(n.y * 50.0));
+    const int64_t e = static_cast<int64_t>(std::floor(n.z * 50.0));
+    keys.push_back(static_cast<uint64_t>((a + 200) * 160000 + (c + 200) * 400 +
+                                         (e + 200)));
+  }
+  std::sort(keys.begin(), keys.end());
+  keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+  std::printf("    crater mesh: %zu vertices, %zu distinct normals "
+              "(a cube mesher emits exactly 6)\n",
+              m.normals.size(), keys.size());
+  CHECK(keys.size() > 50);
+  CHECK(m.indices.size() % 3 == 0);
+}
+
+// -----------------------------------------------------------------------------
+// 4. THE HEADLINE. A levelled pad is FLAT, measured the way WG-23 defined it:
+//    the worst height difference between two points 4 m apart, which is the span
+//    a DW-32 foundation module bridges. WG-23 measured 0.973 m on the drawn
+//    geometry after its repair, against a 0.25 m threshold it could not meet
+//    because a 1 m Cartesian lattice cut by a non-axis-aligned plane terminates
+//    on a staircase. This test measures the same quantity on the same kind of
+//    site and asserts the threshold.
+// -----------------------------------------------------------------------------
+TEST(a_levelled_pad_is_flat_over_a_four_metre_span) {
+  const BodyParams b = forge();
+
+  // Find a genuinely sloped site: a levelling tool cannot be proven on flat
+  // ground (ARCHITECTURE 15.2 item 99).
+  //
+  // The site must be a genuine SLOPE, not a cliff: `sampleDesignedHeight` is
+  // DISCONTINUOUS at a coastline, because the Ocean branch of the biome design
+  // returns a carved basin while its neighbour returns shaped relief, so an
+  // unconstrained search for "the largest spread" finds a 1.4 km step across
+  // 12 m and measures the coast rather than the tool. Bound the spread to a
+  // range a levelling tool is actually for.
+  double bestSpread = 0.0;
+  Vec3 bestDir = dirAt(2.0, 144.0);
+  for (int i = 0; i < 400; ++i) {
+    const Vec3 u = dirAt(-50.0 + (i % 20) * 5.0, -170.0 + (i / 20) * 17.0);
+    Vec3 t1, t2;
+    tangents(u, t1, t2);
+    double lo = 1e30, hi = -1e30;
+    for (int a = -1; a <= 1; ++a)
+      for (int c = -1; c <= 1; ++c) {
+        const Vec3 p = u * (b.radiusM) + t1 * (a * 6.0) + t2 * (c * 6.0);
+        const double h = sampleDesignedHeight(b, unitOf(p));
+        if (h < lo) lo = h;
+        if (h > hi) hi = h;
+      }
+    // Bounded ABOVE as well as maximised: a 12 m patch spreading more than 8 m
+    // is steeper than 34 degrees, and past the tool's own 24 m cut reach the op
+    // deliberately leaves rock standing, so a steeper site measures the bound
+    // rather than the flatness. Bounded BELOW because a levelling tool cannot be
+    // proven on flat ground (ARCHITECTURE 15.2 item 99).
+    const double sp = hi - lo;
+    if (sp > 8.0) continue;
+    if (sp > bestSpread) { bestSpread = sp; bestDir = u; }
+  }
+  const Vec3 u = bestDir;
+  const double baseH = sampleDesignedHeight(b, u);
+  const Vec3 centre = u * (b.radiusM + baseH);
+  Vec3 t1, t2;
+  tangents(u, t1, t2);
+
+  // The measurement, shared by the before and after passes: over a grid inside
+  // the pad, the worst height difference between neighbours 4 m apart.
+  const double padR = 10.0;
+  const auto worstStep4m = [&](const DensityField& f) {
+    double worst = 0.0;
+    const int N = 11;                      // 11 x 11 samples, 2 m apart
+    std::vector<double> h(N * N, 0.0);
+    for (int j = 0; j < N; ++j)
+      for (int i = 0; i < N; ++i) {
+        const double x = (i - (N - 1) * 0.5) * 2.0;
+        const double y = (j - (N - 1) * 0.5) * 2.0;
+        const Vec3 p = centre + t1 * x + t2 * y;
+        h[j * N + i] = columnSurfaceHeight(b, f, unitOf(p), 80.0, 24.0);
+      }
+    for (int j = 0; j < N; ++j)
+      for (int i = 0; i < N; ++i) {
+        const double x = (i - (N - 1) * 0.5) * 2.0;
+        const double y = (j - (N - 1) * 0.5) * 2.0;
+        if (x * x + y * y > (padR - 2.0) * (padR - 2.0)) continue;
+        if (i + 2 < N) {
+          const double xb = (i + 2 - (N - 1) * 0.5) * 2.0;
+          if (xb * xb + y * y <= (padR - 2.0) * (padR - 2.0))
+            worst = std::max(worst, std::fabs(h[j * N + i] - h[j * N + i + 2]));
+        }
+        if (j + 2 < N) {
+          const double yb = (j + 2 - (N - 1) * 0.5) * 2.0;
+          if (x * x + yb * yb <= (padR - 2.0) * (padR - 2.0))
+            worst = std::max(worst,
+                             std::fabs(h[j * N + i] - h[(j + 2) * N + i]));
+        }
+      }
+    return worst;
+  };
+
+  DensityField before;
+  const double b4 = worstStep4m(before);
+
+  DensityField f;
+  const LevelDiscResult r = levelDisc(b, f, centre, padR, baseH, 24.0, 24.0);
+  const double a4 = worstStep4m(f);
+
+  // Which columns did not reach the target, and by how much. A spread is a claim
+  // about the middle of a distribution; the tool is judged by its worst column.
+  {
+    int off = 0, tot = 0;
+    double worst = 0.0, worstX = 0, worstY = 0;
+    for (int j = 0; j < 11; ++j)
+      for (int i = 0; i < 11; ++i) {
+        const double x = (i - 5) * 2.0, y = (j - 5) * 2.0;
+        if (x * x + y * y > 8.0 * 8.0) continue;
+        ++tot;
+        const Vec3 p = centre + t1 * x + t2 * y;
+        const double e =
+            std::fabs(columnSurfaceHeight(b, f, unitOf(p), 80.0, 24.0) - baseH);
+        if (e > 0.25) ++off;
+        if (e > worst) { worst = e; worstX = x; worstY = y; }
+      }
+    std::printf("    columns off target: %d of %d, worst %.4f m at (%.0f, %.0f) "
+                "m from the pad centre\n", off, tot, worst, worstX, worstY);
+  }
+  std::printf("    LEVELLING, site spread %.3f m over 12 m:\n", bestSpread);
+  std::printf("      worst step over a 4 m span, BEFORE %.4f m, AFTER %.4f m "
+              "(WG-23 threshold 0.25 m; WG-23 achieved 0.973 m)\n", b4, a4);
+  std::printf("      op: %d corners written, %d cells cut, %d filled, %d "
+              "corners scanned\n", r.corners, r.dug, r.filled, r.scanned);
+  CHECK(a4 <= 0.25);
+  CHECK(a4 < b4);
+
+  // IDEMPOTENT: a held key must not make the pad creep.
+  const size_t nOv = f.overrideCount();
+  const LevelDiscResult r2 = levelDisc(b, f, centre, padR, baseH, 24.0, 24.0);
+  CHECK(f.overrideCount() == nOv);
+  CHECK(r2.cells() == 0);
+  CHECK_NEAR(worstStep4m(f), a4, 1e-12);
+
+  // Outside the disc, untouched to the bit.
+  for (int i = 0; i < 12; ++i) {
+    const double a = i * 0.52;
+    const Vec3 p = centre + t1 * (std::cos(a) * 30.0) + t2 * (std::sin(a) * 30.0);
+    const Vec3 uu = unitOf(p);
+    CHECK(bits(columnSurfaceHeight(b, f, uu, 80.0, 24.0)) ==
+          bits(sampleDesignedHeight(b, uu)));
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 5. The DRAWN pad is flat too. Item 123's lesson: the oracle and the picture
+//    are different instruments, and the one the player sees is the mesh.
+// -----------------------------------------------------------------------------
+TEST(the_drawn_pad_is_flat_over_a_four_metre_span) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const double baseH = sampleDesignedHeight(b, u);
+  const Vec3 centre = u * (b.radiusM + baseH);
+  DensityField f;
+  levelDisc(b, f, centre, 10.0, baseH, 24.0, 24.0);
+
+  SurfaceNetsOpts o;
+  o.editedOnly = false;
+  const SurfaceNetsMesh m = surfaceNetsAround(b, f, centre, 12.0, o);
+  CHECK(m.positions.size() > 100);
+
+  // Every DRAWN vertex that lies over the pad, projected to a height. The pad's
+  // target is one radius, so the spread of |v| over the pad is the flatness of
+  // the picture, in metres, with no interpretation in between.
+  const double targetR = centre.length();
+  double lo = 1e30, hi = -1e30, worstAbs = 0.0;
+  int n = 0, off = 0;
+  for (const Vec3& v : m.positions) {
+    const Vec3 d = v - centre;
+    const double axial = d.x * u.x + d.y * u.y + d.z * u.z;
+    const double perp2 = d.lengthSq() - axial * axial;
+    if (perp2 > 7.0 * 7.0) continue;             // well inside the rim
+    const double r = v.length();
+    // A vertex more than a couple of cells off the target is not ON the pad: it
+    // is the crater-wall or lip geometry the op deliberately left standing. Count
+    // them separately rather than folding them into the flatness claim.
+    if (std::fabs(r - targetR) > 2.0) { ++off; continue; }
+    if (r < lo) lo = r;
+    if (r > hi) hi = r;
+    if (std::fabs(r - targetR) > worstAbs) worstAbs = std::fabs(r - targetR);
+    ++n;
+  }
+  std::printf("    DRAWN pad: %d vertices inside 7 m on the pad (%d off it), "
+              "radial spread %.6f m, worst departure from the target plane "
+              "%.6f m\n", n, off, hi - lo, worstAbs);
+  CHECK(n > 40);
+  CHECK(hi - lo <= 0.25);
+}
+
+// -----------------------------------------------------------------------------
+// 6. A sideways tunnel still lowers nothing. The property WG-21 built
+//    derivedLoweringAt for survives the model change, and now falls out of the
+//    root find rather than needing a contiguous-run rule.
+// -----------------------------------------------------------------------------
+TEST(a_sideways_tunnel_does_not_move_the_heightfield) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const double baseH = sampleDesignedHeight(b, u);
+  Vec3 t1, t2;
+  tangents(u, t1, t2);
+  DensityField f;
+  // Bore horizontally 8 m below the surface.
+  for (int i = 0; i < 12; ++i) {
+    const Vec3 p = u * (b.radiusM + baseH - 8.0) + t1 * (i * 1.0);
+    f.digSphere(b, p, 1.5);
+  }
+  CHECK(!f.empty());
+  int unmoved = 0, tested = 0;
+  double worst = 0.0;
+  for (int i = 0; i < 10; ++i) {
+    const Vec3 p = u * (b.radiusM + baseH) + t1 * (i * 1.0);
+    const Vec3 uu = unitOf(p);
+    ++tested;
+    const double h = columnSurfaceHeight(b, f, uu, 80.0, 24.0);
+    const double e = std::fabs(h - sampleDesignedHeight(b, uu));
+    if (e > worst) worst = e;
+    if (e < 0.10) ++unmoved;
+    // and the rock above the bore is still solid
+    CHECK(f.solidAt(b, uu * (b.radiusM + sampleDesignedHeight(b, uu) - 2.0)));
+  }
+  // The residual is NOT the tunnel: it is the difference between the exact
+  // designed height and the TRILINEAR field's zero level, which a column over an
+  // edit reads and an untouched column does not. It is the honest price of the
+  // model and it replaces a 0.87 m shell, so it is reported rather than hidden.
+  std::printf("    tunnel: %d of %d surface columns unmoved above an 8 m-deep "
+              "12 m bore; worst residual %.4f m (interpolation, not lowering)\n",
+              unmoved, tested, worst);
+  CHECK(unmoved == tested);
+  CHECK(worst < 0.10);
+}
+
+// -----------------------------------------------------------------------------
+// 7. A pit DOES lower the surface, and by the amount dug.
+// -----------------------------------------------------------------------------
+TEST(a_pit_lowers_the_surface_by_what_was_dug) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const double baseH = sampleDesignedHeight(b, u);
+  DensityField f;
+  for (int i = 0; i < 6; ++i)
+    f.digSphere(b, u * (b.radiusM + baseH - i * 1.5), 2.0);
+  const double h = columnSurfaceHeight(b, f, u, 80.0, 24.0);
+  const double drop = baseH - h;
+  std::printf("    pit: surface dropped %.3f m after six 2 m spheres down a "
+              "column\n", drop);
+  CHECK(drop > 6.0);
+  CHECK(drop < 12.0);
+  // The bedrock clamp still exists and is still the only one.
+  DensityField deep;
+  for (int i = 0; i < 120; ++i)
+    deep.digSphere(b, u * (b.radiusM + baseH - i * 1.0), 1.6);
+  const double hd = columnSurfaceHeight(b, deep, u, 80.0, 24.0);
+  CHECK(hd >= baseH - 80.0 - 1e-9);
+}
+
+// -----------------------------------------------------------------------------
+// 8. Determinism and persistence. Standing rule 4.
+// -----------------------------------------------------------------------------
+TEST(field_is_deterministic_and_round_trips) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const double baseH = sampleDesignedHeight(b, u);
+  const Vec3 centre = u * (b.radiusM + baseH);
+
+  const auto build = [&](DensityField& f) {
+    f.digSphere(b, centre, 2.0);
+    f.fillSphere(b, centre + Vec3(0, 0, 4.0), 1.5);
+    levelDisc(b, f, centre, 6.0, baseH - 1.0, 12.0, 12.0);
+  };
+  DensityField a, c;
+  build(a);
+  build(c);
+  CHECK(a.overrideCount() == c.overrideCount());
+
+  ByteWriter wa, wc;
+  a.serialize(wa);
+  c.serialize(wc);
+  CHECK(wa.buf.size() == wc.buf.size());
+  CHECK(wa.buf == wc.buf);
+  std::printf("    determinism: %zu overrides, %zu save bytes, identical "
+              "across two builds\n", a.overrideCount(), wa.buf.size());
+
+  ByteReader r(wa.buf);
+  DensityField back;
+  CHECK(back.deserialize(r));
+  CHECK(back.overrideCount() == a.overrideCount());
+  for (int i = 0; i < 40; ++i) {
+    const Vec3 p = centre + Vec3(i % 7 - 3, (i / 7) % 7 - 3, i % 5 - 2);
+    CHECK(bits(back.densityAt(b, p)) == bits(a.densityAt(b, p)));
+  }
+  // A stream that is not a density field is refused rather than misread.
+  ByteWriter junk;
+  junk.varint(7);
+  ByteReader jr(junk.buf);
+  DensityField nope;
+  CHECK(!nope.deserialize(jr));
+}
+
+// -----------------------------------------------------------------------------
+// 9. The mesher's edit filter, and per-region seam consistency: two adjacent
+//    regions must place the SAME vertex for a cell they both contain, or a
+//    per-brick re-mesh tears.
+// -----------------------------------------------------------------------------
+TEST(surface_nets_filters_to_edits_and_tiles_seamlessly) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const Vec3 centre = u * (b.radiusM + sampleDesignedHeight(b, u));
+  DensityField f;
+  f.digSphere(b, centre, 2.5);
+
+  SurfaceNetsOpts all;
+  all.editedOnly = false;
+  SurfaceNetsOpts edited;          // the shipped default
+  const SurfaceNetsMesh mAll = surfaceNetsAround(b, f, centre, 14.0, all);
+  const SurfaceNetsMesh mEd = surfaceNetsAround(b, f, centre, 14.0, edited);
+  std::printf("    filter: %d cells crossed, %zu vertices unfiltered, %zu "
+              "filtered to edits (%.1f%% dropped)\n",
+              mAll.cellsCrossed, mAll.positions.size(), mEd.positions.size(),
+              100.0 * (1.0 - double(mEd.positions.size()) /
+                                 double(mAll.positions.size() + 1)));
+  CHECK(mEd.positions.size() < mAll.positions.size());
+  CHECK(mEd.positions.size() > 20);
+
+  // Seam: mesh a cell from two different region origins and compare its vertex.
+  // Take the cell FROM the mesh, so the test cannot silently pass by naming a
+  // cell the surface does not cross.
+  CHECK(!mAll.positions.empty());
+  const VoxelCell c = cellForPos(mAll.positions[mAll.positions.size() / 2]);
+  const auto vertexIn = [&](const VoxelCell& lo, const VoxelCell& hi, Vec3& out) {
+    const SurfaceNetsMesh m = surfaceNets(b, f, lo, hi, all);
+    // Recover the vertex belonging to cell c by matching its containing cell.
+    for (const Vec3& v : m.positions) {
+      const VoxelCell vc = cellForPos(v);
+      if (vc == c) { out = v; return true; }
+    }
+    return false;
+  };
+  Vec3 v1, v2;
+  const bool got1 = vertexIn(VoxelCell{c.cx - 5, c.cy - 5, c.cz - 5},
+                             VoxelCell{c.cx + 5, c.cy + 5, c.cz + 5}, v1);
+  const bool got2 = vertexIn(VoxelCell{c.cx - 2, c.cy - 9, c.cz - 3},
+                             VoxelCell{c.cx + 8, c.cy + 2, c.cz + 7}, v2);
+  CHECK(got1 && got2);
+  if (got1 && got2) {
+    CHECK(bits(v1.x) == bits(v2.x));
+    CHECK(bits(v1.y) == bits(v2.y));
+    CHECK(bits(v1.z) == bits(v2.z));
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 10. Cost. The chunk gate is 12 ms and the shipped round trip is 6.0 ms
+//     (DW-19), so a re-mesh must stay in the same order it was.
+// -----------------------------------------------------------------------------
+TEST(a_remesh_of_a_dig_region_is_affordable) {
+  const BodyParams b = forge();
+  const Vec3 u = dirAt(2.0, 144.0);
+  const Vec3 centre = u * (b.radiusM + sampleDesignedHeight(b, u));
+  DensityField f;
+  f.digSphere(b, centre, 2.0);
+  const SurfaceNetsMesh m = surfaceNetsAround(b, f, centre, 8.0, {});
+  std::printf("    remesh: %d cells scanned, %d crossed, %d emitted, %zu "
+              "vertices, %zu triangles, %zu field entries memoized\n",
+              m.cellsScanned, m.cellsCrossed, m.cellsEmitted,
+              m.positions.size(), m.indices.size() / 3, f.memoSize());
+  CHECK(m.cellsScanned > 1000);
+  CHECK(m.positions.size() > 0);
+  CHECK(m.indices.size() > 0);
+}

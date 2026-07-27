@@ -204,6 +204,19 @@ target_link_libraries(voxel_terrain_tests PRIVATE of_core)
 target_include_directories(voxel_terrain_tests PRIVATE tests)
 add_test(NAME voxel_terrain_tests COMMAND voxel_terrain_tests)
 
+# --- World-gen SIGNED DENSITY FIELD + SURFACE NETS (WG-24): voxel_field.h stores
+#     a signed distance at lattice CORNERS instead of one occupancy bit per cell,
+#     and surface_nets.h extracts its zero level as triangles instead of drawing
+#     cell faces. This is the change that makes a dig round, a levelled pad flat
+#     to floating point rather than to a cell, and the drawn surface the same
+#     surface a body collides with (the DW-26 bound, re-derived).
+add_executable(voxel_field_tests
+  tests/test_main.cpp
+  tests/test_voxel_field.cpp)
+target_link_libraries(voxel_field_tests PRIVATE of_core)
+target_include_directories(voxel_field_tests PRIVATE tests)
+add_test(NAME voxel_field_tests COMMAND voxel_field_tests)
+
 # --- World-gen SINGLE SURFACE AUTHORITY ("surface oracle", WG-21): surface_field.h
 #     is the ONE sanctioned surface API — baseHeight ≡ sampleDesignedHeight (RAW is
 #     an internal ingredient only), voxel solidity derived from the SAME base, a
