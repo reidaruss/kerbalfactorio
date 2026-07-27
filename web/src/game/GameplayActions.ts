@@ -13,7 +13,7 @@ import { demolishAimed } from './Demolition.js';
 import type { PadPart } from './LaunchPad.js';
 import { CRAFT_BLOCK, craftBlockText } from './GameCore.js';
 import { GATED_BY_ITEM } from './Factory.js';
-import { furnaceView, recipeRows, slotRows } from './GameplayViews.js';
+import { recipeRows, slotRows } from './GameplayViews.js';
 import { urlForMode, type GameMode } from './GameMode.js';
 import { SKILL } from './Progression.js';
 import type { PartKind, SlotContent } from './Hotbar.js';
@@ -323,19 +323,8 @@ export function feedMachine(g: Gameplay, b: Placed, want = 20): void {
   g.panel.invalidate();
 }
 
-/** Pack -> the open machine, as ore or as fuel. */
-export function loadFurnace(g: Gameplay, m: Machine | null, item: number): void {
-  if (m === null) return;
-  const n = g.game.furnaceInsert(m.handle, item, 5);
-  if (n > 0) { g.hud.flash(`loaded ${n} ${g.game.itemName(item)}`); g.sfx.confirm(); }
-}
-
-/** The open machine's tray -> the pack. */
-export function takeFurnace(g: Gameplay, m: Machine | null): void {
-  if (m === null) return;
-  const n = g.game.furnaceCollect(m.handle, 99);
-  if (n > 0) { g.hud.flash(`took ${n}`); g.sfx.confirm(); }
-}
+// The machine screen's own verbs (load, take output, take input) live in
+// MachineScreen.ts with the views they serve (GP-57).
 
 /**
  * Hand-craft by recipe index, and redraw the panel that asked for it.
@@ -424,9 +413,4 @@ export function switchMode(g: Gameplay, to: GameMode): void {
   if (to === g.mode.mode) return;
   const href = urlForMode(window.location.href, to);
   void g.save().then(() => { window.location.assign(href); });
-}
-
-/** What the open machine's screen shows. One call, so Gameplay keeps no view. */
-export function machineView(g: Gameplay, m: Machine) {
-  return furnaceView(g.game, m.handle, m.tier);
 }

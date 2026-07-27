@@ -5,6 +5,7 @@
 // a claim that cannot be checked. Split out of Gameplay for the usual reason:
 // shaping rows is not a responsibility, and the composition was at the cap.
 
+import { screenReport } from './MachineScreen.js';
 import { structureReport } from './StructureSave.js';
 import { lastSlotRefusal } from './Persist.js';
 import { saveInhibitReport } from '../sim/SaveInhibit.js';
@@ -24,6 +25,11 @@ export function gameplayReport(g: Gameplay): unknown {
       ore: g.oreField.report(),
       panelOpen: g.panel.isOpen,
       furnaceOpen: g.furnacePanel.isOpen,
+      // GP-57 to GP-59: WHICH machine the one screen is showing, its slots, and
+      // the bar's DRAWN width beside the sim counter it claims to be. Kept
+      // beside `furnaceOpen` (which stays, and stays true for both machine
+      // families) so nothing already reading that boolean moves.
+      screen: screenReport(g),
       // GP-25 to GP-27: what is in hand, every menu that EXISTS, and what
       // Escape last did with them. Derived, so a new menu shows up here without
       // anybody adding a line.

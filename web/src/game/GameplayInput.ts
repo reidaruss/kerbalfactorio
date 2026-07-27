@@ -23,6 +23,7 @@
 // holds a key for ten frames acts once, exactly like a human press.
 
 import { collectFrom, stepBuild } from './GameplayActions.js';
+import { openAimedMachine } from './MachineScreen.js';
 import { showGoals } from './Objectives.js';
 import type { Gameplay } from './Gameplay.js';
 import { labelOf, type Action } from '../player/Bindings.js';
@@ -141,6 +142,17 @@ export class GameplayInput {
     // nothing at all. `Gameplay.digAllowed` asks the same question for the dig
     // action, which Systems owns.
     if (!g.hotbar.handInHand) { g.interact.target = null; return false; }
+    // GP-61: WITH THE BARE HAND, the left button on a machine OPENS it, the
+    // genre's own grammar. It sits INSIDE the hand branch, so a part in hand
+    // still places at a machine and a tool still swings at nodes; a machine is
+    // not harvestable, so nothing is taken from the swing by giving the press
+    // to the panel.
+    //
+    // IT ALSO STOPS A CLICK AT A MACHINE FROM CRATERING THE GROUND UNDER IT,
+    // which was not the point and is measured anyway: opening flips `uiOpen`
+    // before Systems reads `digAllowed`, and `probes/machinepanel.js` with only
+    // this line reverted digs 11 voxel cells on the identical press.
+    if (usePressed && openAimedMachine(g)) return false;
     const got = g.swing(f.use, tick, ray);
     // Practice is credited from the verb, HERE, because this file is where a
     // press becomes a verb. `interact.last` is the node the swing actually

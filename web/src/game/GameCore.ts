@@ -234,6 +234,32 @@ export class GameCore {
   }
 
   // --- furnaces ------------------------------------------------------------
+  /**
+   * What `ore` smelts into, or 0. THE SIM'S OWN TABLE (gameplay.h
+   * `smeltOutputFor`, the same export the auto-line reads): the panel's "what
+   * can this furnace take" question is answered here and never by a JS list,
+   * because a hand-rolled second acceptance table is one balance pass away from
+   * smelting coal into iron (GP-58).
+   */
+  smeltOutputFor(item: number): number {
+    return this.M._of_gp_smelt_output_for(item);
+  }
+
+  /**
+   * Furnace ore buffer -> pack. PUBLISHED AGAINST A SEAM (GP-58): /core's
+   * `Furnace` has `loadOre` and no `takeOre`, so the export
+   * `of_gp_furnace_take_ore(f, want)` does not exist yet. Null means "the seam
+   * is not filled"; the caller says so out loud rather than doing nothing. The
+   * day the bridge lane exports it (moves up to `want` ore furnace->pack,
+   * returns the count moved, pack overflow stays in the furnace), this client
+   * works unchanged.
+   */
+  furnaceTakeOre(f: number, want: number): number | null {
+    const M = this.M as { _of_gp_furnace_take_ore?: (f: number, w: number) => number };
+    if (typeof M._of_gp_furnace_take_ore !== 'function') return null;
+    return M._of_gp_furnace_take_ore(f, want);
+  }
+
   furnaceCreate(tier: number): number { return this.M._of_gp_furnace_create(tier); }
   furnaceDestroy(f: number): void { this.M._of_gp_furnace_destroy(f); }
   /** Pack -> furnace, as ore or fuel. Returns the count actually moved. */

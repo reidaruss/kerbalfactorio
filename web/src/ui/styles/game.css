@@ -309,6 +309,20 @@
   text-align: center;
 }
 #of-furnace .cell.out { border-color: var(--of-accent); }
+/* GP-57: an input/output SLOT is a button (click takes the stack), but it must
+   read as a cell and not as an accent-coloured action button. */
+#of-furnace button.cell {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+#of-furnace button.cell:not(:disabled):hover { border-color: var(--of-accent); }
+#of-furnace button.cell:disabled {
+  background: #151b21;
+  color: inherit;
+  cursor: default;
+}
 #of-furnace .cell em {
   display: block;
   font-style: normal;
