@@ -958,3 +958,404 @@ TEST(perf_cost_is_per_pollution_cell_not_per_machine) {
   // sanity, not a benchmark, and the printed number is the real deliverable.
   CHECK(big.usPerSimTick < 2000.0);
 }
+
+// =============================================================================
+// §9 — REGRESSION GUARDS from the 2026-07-27 adversarial review.
+//
+// Ten real defects came out of a review pass over a suite that was already 248
+// checks green, which is itself the finding worth keeping: every one of them
+// was invisible to tests written by whoever wrote the code.
+//
+// SIX of these are verified as real tests rather than assumed to be. Reverting
+// the six behavioural fixes in a scratch copy of the header and rebuilding THIS
+// file against it fails exactly six suites by name and 18 checks:
+// zero_cost_enemy_type, nests_can_still_be_seeded, new_dominant_polluter,
+// fully_drained_cell, nan_or_zero_direction, empty_base_report. A guard that
+// has never been seen to fail is not a guard.
+//
+// The remaining four fixes are guarded by construction rather than by a failing
+// run, and it is worth saying which and why. The stable_sort change CANNOT have
+// a test on one toolchain, because the bug it fixes is that two toolchains
+// disagree; it is guarded by parity.mjs when this module crosses to WASM. The
+// evolution-cap, tuning-clamp and packKey-mask fixes each moved a defect out of
+// reach rather than changing an observable, so their tests assert the invariant
+// now holds for inputs that previously broke it.
+// =============================================================================
+
+TEST(review_degenerate_tuning_is_clamped_and_the_clamp_is_reported) {
+  // An explicit diffusion scheme needs 4*D < 1. At D = 0.9 the retained
+  // fraction is -2.6, cells go negative, the pruner silently deletes them, and
+  // "conserves mass EXACTLY" becomes false with no error anywhere. Clamped now,
+  // and the clamp is REPORTED rather than swallowed.
+  {
+    EnemyTuning t = handTuning();
+    t.diffusionRate = 0.9;
+    PollutionField f(forge(), t);
+    CHECK(f.tuningWasClamped());
+    CHECK(f.effectiveTuning().diffusionRate <= PollutionField::kMaxStableDiffusion);
+    f.deposit(f.cellOf(baseDir()), 1000.0, 1);
+    for (int k = 0; k < 20; ++k) f.diffuseAndDecay();
+    CHECK_NEAR(f.totalMass(), 1000.0 * std::pow(0.99, 20.0), 1e-6);
+    int negative = 0;
+    for (const PollutionCellView& c : f.cells())
+      if (!(c.amount > 0.0)) ++negative;
+    CHECK(negative == 0);
+  }
+  // A survival factor outside [0,1] either destroys mass into the pruner or
+  // grows the field without bound, and the only symptom of the second is the
+  // perf test slowly getting slower.
+  {
+    EnemyTuning t = handTuning();
+    t.decayRate = 1.5;
+    PollutionField f(forge(), t);
+    CHECK(f.tuningWasClamped());
+    CHECK(f.effectiveTuning().decayRate <= 1.0);
+  }
+  {
+    EnemyTuning t = handTuning();
+    t.decayRate = -0.01;
+    PollutionField f(forge(), t);
+    CHECK(f.tuningWasClamped());
+    CHECK(f.effectiveTuning().decayRate >= 0.0);
+    f.deposit(f.cellOf(baseDir()), 1000.0, 1);
+    for (int k = 0; k < 40; ++k) f.diffuseAndDecay();
+    CHECK_NEAR(f.totalMass(), 1000.0, 1e-6);  // conserved, not exploding
+  }
+  // A sane tuning must NOT report a clamp, or the flag means nothing.
+  {
+    PollutionField f(forge(), EnemyTuning());
+    CHECK(!f.tuningWasClamped());
+  }
+}
+
+TEST(review_zero_tick_interval_does_not_freeze_the_world_silently) {
+  // pollutionTickInterval = 0 used to make step() return before slowTick() on
+  // every tick: the entire loop dead while tickIndex() climbed and every
+  // accessor reported a healthy world, plus a 0/0 NaN in the report. That is a
+  // ceiling reporting success (DW-28).
+  EnemyTuning t;
+  t.pollutionTickInterval = 0;
+  EnemySim sim(forge(), kSeed, t);
+  const double R = forge().radiusM;
+  for (int i = 0; i < 6; ++i)
+    sim.addEmitter(offsetM(baseDir(), i * 50.0, 0.0, R), 20.0);
+  sim.addNest(offsetM(baseDir(), 400.0, 0.0, R));
+  sim.step(60 * 120);
+  const PollutionReport p = sim.pollutionReport();
+  std::printf("    [review] interval 0 -> %u/tick, evo %.6f, absorbed %.3f/s\n",
+              sim.tuning().pollutionTickInterval, sim.evolution().factor,
+              p.absorbedPerSecond);
+  CHECK(sim.tuning().pollutionTickInterval >= 1u);
+  CHECK(sim.evolution().factor > 0.0);  // the loop actually ran
+  CHECK(sim.field().totalMass() > 0.0);
+  CHECK(p.absorbedPerSecond == p.absorbedPerSecond);  // not NaN
+}
+
+TEST(review_evolution_cannot_pass_one_or_run_backwards) {
+  // evoMaxStepFractionOfHeadroom above 1 let the factor step past 1.0; a
+  // negative value flipped all three terms and made evolution run BACKWARDS,
+  // which would have un-unlocked the roster and disabled attacks permanently.
+  const double fracs[4] = {2.0, -0.1, 1.0, 0.5};
+  for (int i = 0; i < 4; ++i) {
+    EnemyTuning t;
+    t.evoMaxStepFractionOfHeadroom = fracs[i];
+    t.evoTimeFactorPerSecond = 0.5;  // absurdly fast, to stress the cap
+    EnemySim sim(forge(), kSeed, t);
+    sim.addNest(offsetM(baseDir(), 3000.0, 0.0, forge().radiusM));
+    double last = -1.0;
+    int violations = 0;
+    for (int b = 0; b < 60; ++b) {
+      sim.step(120);
+      const double f = sim.evolution().factor;
+      if (f < last || f < 0.0 || f >= 1.0) ++violations;
+      last = f;
+    }
+    std::printf(
+        "    [review] headroom fraction %+.1f -> evolution %.9f, %d violations, "
+        "clamped %d\n",
+        fracs[i], last, violations, sim.tuningWasClamped() ? 1 : 0);
+    CHECK(violations == 0);
+    // A meaningless fraction must not silently FREEZE evolution either: a
+    // negative value falls back to the default rather than to zero, and the
+    // correction is reported. Only 0.5 and 1.0 are legal, so only those two
+    // must come back unclamped.
+    CHECK(sim.tuningWasClamped() == (fracs[i] < 0.0 || fracs[i] > 1.0));
+    CHECK(last > 0.0);
+  }
+}
+
+TEST(review_a_zero_cost_enemy_type_does_not_disable_every_attack) {
+  // minCostAt() lacked the budgetCost filter that composeWave's pool has, so a
+  // single registered row with budgetCost 0 made every nest in the world refuse
+  // every wave forever. The only symptom would have been that nothing ever
+  // attacks, which is indistinguishable from the negative control passing.
+  EnemyCatalogue cat;
+  EnemyTypeDef broken;
+  broken.id = 0x0B;
+  broken.name = "Malformed";
+  broken.budgetCost = 0.0;  // a content-authoring mistake
+  broken.spawnWeight = 10.0;
+  CHECK(cat.registerType(broken));
+  CHECK(cat.minCostAt(0.0) > 0.0);  // the free row must not become the minimum
+
+  EnemySim sim(forge(), kSeed, EnemyTuning(), cat);
+  const double R = forge().radiusM;
+  for (int i = 0; i < 12; ++i)
+    sim.addEmitter(offsetM(baseDir(), i * 45.0, 0.0, R), 12.0);
+  sim.addNest(offsetM(baseDir(), 500.0, 0.0, R));
+  sim.step(60 * 600);
+  std::printf(
+      "    [review] a catalogue with a zero-cost row still dispatched %zu waves\n",
+      sim.pendingWaves().size());
+  CHECK(sim.pendingWaves().size() >= 1);
+  // And the malformed type is never actually fielded.
+  for (const AttackWave& w : sim.pendingWaves())
+    for (const WaveMember& m : w.members) CHECK(m.typeId != 0x0B);
+}
+
+TEST(review_a_removed_emitter_never_aims_a_wave_at_the_planet_centre) {
+  // A nest crediting an emitter that no longer exists used to create a source
+  // entry with lastKnownDir (0,0,0), which went straight into
+  // AttackWave::targetDir: a wave aimed at the planet's core, reported by
+  // threatReport as a flat 600 km away, with nothing signalling it.
+  EnemySim sim(forge(), kSeed);
+  const double R = forge().radiusM;
+  std::vector<EmitterId> ids;
+  for (int i = 0; i < 8; ++i)
+    ids.push_back(sim.addEmitter(offsetM(baseDir(), i * 50.0, 0.0, R), 60.0));
+  sim.addNest(offsetM(baseDir(), 700.0, 0.0, R));
+  sim.step(60 * 120);
+  for (size_t i = 0; i < ids.size(); ++i)
+    CHECK(sim.removeEmitter(ids[i]));  // the whole base is demolished
+  sim.step(60 * 1500);  // the cloud outlives the base and the nest keeps eating
+
+  const std::vector<AttackWave>& waves = sim.pendingWaves();
+  int bad = 0;
+  double worstM = 0.0;
+  for (const AttackWave& w : waves) {
+    const double len = w.targetDir.length();
+    if (!(len > 0.99 && len < 1.01)) ++bad;
+    const double d = chordDistanceM(w.targetDir, baseDir(), R);
+    if (d > worstM) worstM = d;
+    if (d > 5000.0) ++bad;
+  }
+  std::printf(
+      "    [review] base demolished: %zu waves still dispatched, worst target "
+      "%.0f m from the old base, %d malformed\n",
+      waves.size(), worstM, bad);
+  CHECK(waves.size() >= 1);  // positive control: there WERE waves to check
+  CHECK(bad == 0);
+  const std::vector<NestThreat> threats = sim.threatReport();
+  for (size_t i = 0; i < threats.size(); ++i)
+    if (threats[i].angriestAt != kNoEmitter)
+      CHECK(threats[i].distanceToTargetM < 5000.0);
+}
+
+TEST(review_nests_can_still_be_seeded_after_a_cap_worth_have_died) {
+  // maxNests counted the GRAVEYARD, because nests_ was append-only. Once the
+  // cap had ever been reached the faction went permanently extinct: no
+  // expansion, no seeding, ever again, while aliveNestCount() kept reporting
+  // whatever was alive and the world looked fine.
+  EnemyTuning t;
+  t.maxNests = 3;
+  EnemySim sim(forge(), kSeed, t);
+  const double R = forge().radiusM;
+  std::vector<NestId> first;
+  for (int i = 0; i < 3; ++i)
+    first.push_back(sim.addNest(offsetM(baseDir(), 2000.0 + i * 900.0, 0.0, R)));
+  CHECK(sim.aliveNestCount() == 3u);
+  for (size_t i = 0; i < first.size(); ++i) CHECK(sim.destroyNest(first[i]));
+  sim.step(120);  // a slow tick reaps them
+  CHECK(sim.aliveNestCount() == 0u);
+  CHECK(sim.nests().empty());
+  CHECK(sim.evolution().nestsDestroyed == 3u);  // the kills still counted
+  int seeded = 0;
+  for (int i = 0; i < 3; ++i)
+    if (sim.addNest(offsetM(baseDir(), 5000.0 + i * 900.0, 0.0, R)) != kNoNest)
+      ++seeded;
+  std::printf(
+      "    [review] after 3 of 3 nests died, %d of 3 could be re-seeded\n",
+      seeded);
+  CHECK(seeded == 3);
+  CHECK(sim.aliveNestCount() == 3u);
+}
+
+TEST(review_a_new_dominant_polluter_displaces_a_full_source_table) {
+  // A nest tracks its top 8 contributors. The admission test compared ONE
+  // tick's increment against an accumulated EWMA whose steady state is about
+  // 1000x that, so the first eight emitters to touch a nest owned its targeting
+  // for the rest of the game and a new base ten times the size could never take
+  // over. That defeats "a wave targets what is polluting NOW".
+  EnemySim sim(forge(), kSeed);
+  const double R = forge().radiusM;
+  const Vec3 nestSpot = offsetM(baseDir(), 0.0, 1200.0, R);
+  std::vector<EmitterId> oldBase;
+  for (int i = 0; i < 8; ++i)
+    oldBase.push_back(sim.addEmitter(offsetM(baseDir(), i * 40.0, 0.0, R), 60.0));
+  const NestId n = sim.addNest(nestSpot);
+  // Fill the table for real. Attribution is a per-cell PLURALITY, so a cluster
+  // of emitters running together mostly credits whichever one dominates the
+  // nest's cell and the table would hold two or three entries, not eight. Run
+  // them one at a time so each in turn becomes the dominant source. (That the
+  // naive version does NOT fill the table is itself worth knowing: EN-6's
+  // estimate is coarser than "top 8 emitters" suggests.)
+  for (int phase = 0; phase < 8; ++phase) {
+    for (int i = 0; i < 8; ++i) sim.setEmitterActive(oldBase[i], i == phase);
+    sim.step(60 * 400);
+  }
+  for (int i = 0; i < 8; ++i) sim.setEmitterActive(oldBase[i], true);
+  sim.step(60 * 600);
+  CHECK(sim.nest(n)->sources.size() == kMaxNestSources);
+  const EmitterId before = sim.nest(n)->topSource()->source;
+  int fromOld = 0;
+  for (size_t i = 0; i < oldBase.size(); ++i)
+    if (oldBase[i] == before) ++fromOld;
+  CHECK(fromOld == 1);  // it is targeting the old base
+
+  // A new, much larger works goes up right next to the nest.
+  const EmitterId works = sim.addEmitter(offsetM(baseDir(), 0.0, 1000.0, R), 600.0);
+  sim.step(60 * 900);
+  const EmitterId after = sim.nest(n)->topSource()->source;
+  std::printf(
+      "    [review] nest was angriest at emitter %u; after a 600/s works went "
+      "up beside it, %u (the works is %u)\n",
+      before, after, works);
+  CHECK(after == works);
+  sim.drainWaves();
+  sim.step(60 * 600);
+  // Only the ORIGINAL nest is claimed here. By now it has spread, and a child
+  // sitting nearer the old base correctly targets what fed IT, which is the
+  // per-nest attribution working rather than a failure.
+  int fromN = 0;
+  for (const AttackWave& w : sim.pendingWaves()) {
+    if (w.sourceNest != n) continue;
+    ++fromN;
+    CHECK(w.targetEmitter == works);
+  }
+  std::printf("    [review] %d wave(s) from the original nest, all aimed at the works; %u nests now\n",
+              fromN, sim.aliveNestCount());
+  CHECK(fromN >= 1);
+}
+
+TEST(review_state_hash_covers_what_the_serializer_writes) {
+  // stateHash is the oracle the persistence round-trip test asserts on, so any
+  // field it omits could be dropped or mis-ordered by the serializer and the
+  // test would still be green. Check the previously-omitted fields explicitly.
+  EnemySim a(forge(), kSeed);
+  buildScriptedWorld(a);
+  a.step(60 * 400);
+  a.damageNest(2, 600.0);  // a kill, so pendingKills_ and the reaper are live
+  a.step(60 * 400);
+
+  of::persist::SaveWriter w;
+  a.serialize(w);
+  EnemySim b(forge(), kSeed);
+  of::persist::SaveReader r(w.bytes());
+  b.deserialize(r);
+
+  CHECK(b.stateHash() == a.stateHash());
+  CHECK(b.nestPlacementsRefused() == a.nestPlacementsRefused());
+  CHECK(b.wavesTruncated() == a.wavesTruncated());
+  CHECK(b.evolution().nestsDestroyed == a.evolution().nestsDestroyed);
+  CHECK(b.nests().size() == a.nests().size());
+  for (size_t i = 0; i < a.nests().size(); ++i) {
+    CHECK(b.nests()[i].maxHealth == a.nests()[i].maxHealth);
+    CHECK(b.nests()[i].children == a.nests()[i].children);
+  }
+  CHECK(b.pendingWaves().size() == a.pendingWaves().size());
+  for (size_t i = 0; i < a.pendingWaves().size(); ++i) {
+    const AttackWave& x = a.pendingWaves()[i];
+    const AttackWave& y = b.pendingWaves()[i];
+    CHECK(y.totalCount == x.totalCount);
+    CHECK(y.totalHealth == x.totalHealth);
+    CHECK(y.slowestSpeedMps == x.slowestSpeedMps);
+    CHECK(y.evolutionAtDispatch == x.evolutionAtDispatch);
+    CHECK(y.dispatchTick == x.dispatchTick);
+    CHECK(y.originDir.x == x.originDir.x);
+  }
+  // And the hash must be SENSITIVE, or the equality above is worth nothing.
+  EnemySim c(forge(), kSeed);
+  of::persist::SaveReader r2(w.bytes());
+  c.deserialize(r2);
+  CHECK(c.stateHash() == a.stateHash());
+  CHECK(!c.nests().empty());
+  c.damageNest(c.nests().front().id, 1.0);
+  CHECK(c.stateHash() != a.stateHash());
+}
+
+TEST(review_a_fully_drained_cell_is_not_immortal) {
+  // At the legal tuning pruneEpsilon = 0 the prune test was `amount >= eps`,
+  // so a cell a nest had drained to exactly zero survived every tick forever:
+  // it contributed nothing, received nothing, and could never be removed.
+  // activeCells() is the documented cost driver and the number the perf test
+  // gates on, so it would have grown monotonically for the life of a save with
+  // no symptom other than the sim slowly getting more expensive.
+  EnemyTuning t = handTuning();  // pruneEpsilon = 0
+  CHECK(t.pruneEpsilon == 0.0);
+  PollutionField f(forge(), t);
+  const CellKey s = f.cellOf(baseDir());
+  f.deposit(s, 100.0, 1);
+  CHECK(f.activeCells() == 1);
+  EmitterId src = kNoEmitter;
+  double attributed = 0.0;
+  CHECK_NEAR(f.take(s, 1000.0, src, attributed), 100.0, 1e-12);  // drained dry
+  CHECK(f.amountAt(s) == 0.0);
+  f.diffuseAndDecay();
+  std::printf("    [review] a cell drained to exactly 0 leaves %zu cells behind\n",
+              f.activeCells());
+  CHECK(f.activeCells() == 0);
+}
+
+TEST(review_a_nan_or_zero_direction_cannot_poison_the_state_hash) {
+  const double bad = std::nan("");
+  // NaN payload bits are not architecture-invariant, so a NaN surviving
+  // normalisation and reaching stateHash through bitsOf would make the hash
+  // itself non-portable, which is the one property this module exists to
+  // guarantee. `len <= 0.0` is false for NaN; `!(len > 0.0)` is not.
+  EnemySim a(forge(), kSeed);
+  a.addEmitter(Vec3(0, 0, 0), 10.0);
+  a.addEmitter(Vec3(bad, bad, bad), 10.0);
+  a.addNest(Vec3(bad, 0, 0));
+  EnemySim b(forge(), kSeed);
+  b.addEmitter(Vec3(0, 0, 0), 10.0);
+  b.addEmitter(Vec3(bad, bad, bad), 10.0);
+  b.addNest(Vec3(bad, 0, 0));
+  a.step(60 * 60);
+  b.step(60 * 60);
+  int nonFinite = 0;
+  for (size_t i = 0; i < a.emitters().size(); ++i) {
+    const Vec3& d = a.emitters()[i].dir;
+    if (!(d.x == d.x && d.y == d.y && d.z == d.z)) ++nonFinite;
+    CHECK_NEAR(d.length(), 1.0, 1e-12);
+  }
+  for (size_t i = 0; i < a.nests().size(); ++i) {
+    const Vec3& d = a.nests()[i].dir;
+    if (!(d.x == d.x && d.y == d.y && d.z == d.z)) ++nonFinite;
+  }
+  std::printf("    [review] %d non-finite directions survived, hash 0x%016llx\n",
+              nonFinite, static_cast<unsigned long long>(a.stateHash()));
+  CHECK(nonFinite == 0);
+  CHECK(a.stateHash() == b.stateHash());
+}
+
+TEST(review_the_empty_base_report) {
+  const double R = forge().radiusM;
+  const double bad = std::nan("");
+  (void)bad;
+  // Extent is measured FROM the base. With nothing producing there is no base,
+  // so reporting the distance to the +Z fallback would make the HUD jump to
+  // hundreds of kilometres the instant a player switches their factory off.
+  EnemySim c(forge(), kSeed);
+  const EmitterId e = c.addEmitter(offsetM(baseDir(), 0.0, 0.0, R), 400.0);
+  c.step(60 * 300);
+  const double liveExtent = c.pollutionReport().extentM;
+  CHECK(c.setEmitterActive(e, false));
+  const PollutionReport off = c.pollutionReport();
+  std::printf(
+      "    [review] extent %.0f m while producing, %.0f m with the base off "
+      "(%u cells still visible)\n",
+      liveExtent, off.extentM, off.visibleCells);
+  CHECK(liveExtent > 300.0);
+  CHECK(off.extentM == 0.0);
+  CHECK(off.visibleCells > 0);  // the cloud is still there; only the base is not
+}

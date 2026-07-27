@@ -104,7 +104,11 @@ struct DetRng {
 
 inline Vec3 unitOf(const Vec3& v) {
   const double len = v.length();
-  if (len <= 0.0) return Vec3(0, 0, 1);
+  // `!(len > 0.0)` rather than `len <= 0.0` so this rejects NaN as well as
+  // zero. A NaN direction would otherwise survive normalisation, fall through
+  // every comparison in faceOfDir to a fixed face, deposit real pollution into
+  // a fixed cell, and put non-portable NaN payload bits into stateHash.
+  if (!(len > 0.0)) return Vec3(0, 0, 1);
   const double inv = 1.0 / len;
   return Vec3(v.x * inv, v.y * inv, v.z * inv);
 }
@@ -208,6 +212,12 @@ class EnemyCatalogue {
     bool any = false;
     for (const EnemyTypeDef& d : defs_) {
       if (weightAtEvolution(d, evo) <= 0.0) continue;
+      // MUST match the pool filter in composeWave. Without it, one registered
+      // row with budgetCost <= 0 makes this return 0, composeWave then refuses
+      // every wave from every nest forever, and the only symptom is that
+      // nothing ever attacks: indistinguishable from the negative control
+      // passing. registerType() is public, so this is reachable from content.
+      if (!(d.budgetCost > 0.0)) continue;
       if (!any || d.budgetCost < best) {
         best = d.budgetCost;
         any = true;
@@ -323,9 +333,17 @@ class EnemyCatalogue {
 // §3 — EnemyTuning: EVERY balance number, in one struct.
 //
 // The brief's requirement was "tunable from data, the way gameplay.h authors
-// recipes, so balance is a table rather than a code change". This struct IS the
-// table. Nothing in this file reads a magic number that is not either here or
-// in an EnemyTypeDef row.
+// recipes, so balance is a table rather than a code change". This struct plus
+// the EnemyTypeDef rows are that table: every BALANCE number lives in one of
+// the two.
+//
+// Four constants are deliberately NOT here, because they are structural rather
+// than balance and moving them would let a designer break an invariant:
+// `kFadeFloor` (a type never fades to exactly zero, so a roster cannot empty
+// and strand a nest with an unspendable budget), `kMaxStableDiffusion` (the
+// explicit scheme's 4D < 1 condition), `kMaxExpansionCandidates` (the fixed
+// bearing table's length), and the sqrt(2) rounding bias in `resolveBits`.
+// They are named here so the claim above is exactly true rather than roughly.
 // =============================================================================
 struct EnemyTuning {
   // ---- pollution field (§4) ------------------------------------------------
@@ -391,7 +409,11 @@ struct EnemyTuning {
   uint64_t expansionCooldownTicks = 10800;  // 3 min at 60 UPS
   double expansionDistanceM = 900.0;
   double minNestSeparationM = 450.0;
-  uint32_t expansionCandidates = 8;  // bearings sampled; best-pollution wins
+  // Bearings sampled per expansion; the most polluted wins. The bearing table
+  // is a fixed 8 compass points (kMaxExpansionCandidates), so values above 8
+  // are clamped to 8 and 0 means 8. Lowering it below 8 is meaningful: it
+  // narrows the directions a nest will consider.
+  uint32_t expansionCandidates = 8;
   uint32_t maxNests = 512;           // hard ceiling; exhaustion is reported
 
   double fixedDt = 1.0 / 60.0;  // seconds per sim tick (matches of::SimClock)
@@ -448,7 +470,34 @@ class PollutionField {
       : body_(body), tuning_(tuning) {
     bits_ = resolveBits(body.radiusM, tuning.cellTargetM);
     side_ = uint32_t(1) << bits_;
+    // A tuning struct is data, and data arrives wrong. Two of these fields are
+    // not free parameters: an explicit diffusion scheme needs 4*D < 1 or the
+    // retained fraction goes NEGATIVE, and a survival factor outside [0,1]
+    // either destroys mass into the pruner or grows the field without bound.
+    // Either one would break the "conserves mass EXACTLY" claim with no error,
+    // no counter and no assert, which is the failure class DW-28 named. So
+    // clamp, and REPORT the clamp rather than swallowing it.
+    if (!(tuning_.diffusionRate >= 0.0)) tuning_.diffusionRate = 0.0;
+    if (tuning_.diffusionRate > kMaxStableDiffusion) {
+      tuning_.diffusionRate = kMaxStableDiffusion;
+      clamped_ = true;
+    }
+    if (!(tuning_.decayRate >= 0.0)) {
+      tuning_.decayRate = 0.0;
+      clamped_ = true;
+    }
+    if (tuning_.decayRate > 1.0) {
+      tuning_.decayRate = 1.0;
+      clamped_ = true;
+    }
+    if (!(tuning_.pruneEpsilon >= 0.0)) tuning_.pruneEpsilon = 0.0;
   }
+
+  // 4*D must stay under 1 for the explicit scheme; leave a little headroom.
+  static constexpr double kMaxStableDiffusion = 0.249;
+  // True if the constructor had to correct the tuning it was handed.
+  bool tuningWasClamped() const { return clamped_; }
+  const EnemyTuning& effectiveTuning() const { return tuning_; }
 
   // --- lattice geometry ----------------------------------------------------
   uint32_t cellsPerFaceSide() const { return side_; }
@@ -470,11 +519,23 @@ class PollutionField {
     return b;
   }
 
+  // Layout: face in bits 56..58, i in 28..55, j in 0..27. `resolveBits` caps at
+  // 24 so 28-bit index fields are never full. Every field is MASKED because
+  // packKey is public and an out-of-range i would otherwise spill into the face
+  // field, and `keyFace` feeds `faceBasis`'s std::array with no bounds check.
+  // `packKey(face, i - 1, j)` with unsigned i == 0 is a real caller idiom.
+  static constexpr uint64_t kIdxMask = 0x0FFFFFFFull;
   static CellKey packKey(int face, uint32_t i, uint32_t j) {
-    return (static_cast<uint64_t>(face) << 56) |
-           (static_cast<uint64_t>(i) << 28) | static_cast<uint64_t>(j);
+    return ((static_cast<uint64_t>(face) & 7ull) << 56) |
+           ((static_cast<uint64_t>(i) & kIdxMask) << 28) |
+           (static_cast<uint64_t>(j) & kIdxMask);
   }
-  static int keyFace(CellKey k) { return static_cast<int>(k >> 56); }
+  static int keyFace(CellKey k) {
+    // 6 and 7 are unreachable from packKey(faceOfDir(...)) but ARE reachable
+    // from a corrupt deserialize, and this value indexes a 6-element array.
+    const int f = static_cast<int>((k >> 56) & 7ull);
+    return f < 6 ? f : 0;
+  }
   static uint32_t keyI(CellKey k) {
     return static_cast<uint32_t>((k >> 28) & 0x0FFFFFFFull);
   }
@@ -588,7 +649,12 @@ class PollutionField {
     outAttributed = took * frac;
     it->amount -= took;
     it->sourceAmount -= outAttributed;
-    if (it->amount < tuning_.pruneEpsilon) cells_.erase(it);
+    if (it->sourceAmount < 0.0) it->sourceAmount = 0.0;  // rounding residue
+    // Deliberately does NOT prune here. Erasing a drained cell would destroy up
+    // to pruneEpsilon of mass that is reported neither in `took` nor in the
+    // nest's absorption, i.e. an unaccounted sink inside the one call the
+    // design calls "a genuine sink". The next diffuseAndDecay prunes it, which
+    // is at most one tick later and is already measured.
     return took;
   }
 
@@ -614,11 +680,25 @@ class PollutionField {
     }
     // Sort by (key, source) so the merge below is a single linear pass and the
     // plurality tie-break is "lowest emitter id wins", deterministically.
-    std::sort(scratch_.begin(), scratch_.end(),
-              [](const PollutionCellView& a, const PollutionCellView& b) {
-                if (a.key != b.key) return a.key < b.key;
-                return a.source < b.source;
-              });
+    //
+    // STABLE_sort, and this is load-bearing rather than cautious. Equal
+    // (key, source) groups are the NORMAL case, not an edge case: in a
+    // single-emitter cloud every cell receives one retained entry plus one from
+    // each of four neighbours, so five distinct doubles share a key and a
+    // source. The merge below then SUMS them in array order, and floating-point
+    // addition is not associative. std::sort leaves ties in an unspecified
+    // permutation, which is reproducible within one toolchain (so a
+    // same-binary determinism test cannot see it) but NOT across libstdc++ and
+    // libc++, whose introsort pivot strategies differ. That would have thrown
+    // away cross-toolchain bit-identity by a side door, after EN-2 paid a
+    // 2.12x cell-size non-uniformity to protect it through the front. Push
+    // order is fully determined (cells_ in key order; retained, then nb[0..3]),
+    // so preserving it is sufficient.
+    std::stable_sort(scratch_.begin(), scratch_.end(),
+                     [](const PollutionCellView& a, const PollutionCellView& b) {
+                       if (a.key != b.key) return a.key < b.key;
+                       return a.source < b.source;
+                     });
     cells_.clear();
     size_t p = 0;
     while (p < scratch_.size()) {
@@ -642,7 +722,11 @@ class PollutionField {
         }
       }
       const double amount = total * survive;
-      if (amount >= tuning_.pruneEpsilon) {
+      // `> eps`, not `>= eps`: at the legal tuning pruneEpsilon = 0 the latter
+      // keeps every exactly-zero cell forever, so a cell a nest has fully
+      // drained becomes immortal and activeCells() (the documented cost driver)
+      // grows monotonically and never shrinks.
+      if (amount > tuning_.pruneEpsilon) {
         PollutionCellView c;
         c.key = key;
         c.amount = amount;
@@ -713,6 +797,7 @@ class PollutionField {
   EnemyTuning tuning_;
   uint32_t bits_ = 14;
   uint32_t side_ = 1u << 14;
+  bool clamped_ = false;
   std::vector<PollutionCellView> cells_;
   std::vector<PollutionCellView> scratch_;
 };
@@ -743,6 +828,9 @@ struct SourceCredit {
 };
 
 static constexpr size_t kMaxNestSources = 8;
+// Length of the fixed compass-bearing table in chooseExpansionSite. Structural,
+// not balance: EnemyTuning::expansionCandidates is clamped to it.
+static constexpr uint32_t kMaxExpansionCandidates = 8;
 
 struct Nest {
   NestId id = kNoNest;
@@ -880,7 +968,38 @@ class EnemySim {
         seed_(worldgen::mix64(worldSeed ^ 0xE7E31E5Full)),  // "enemies" salt
         tuning_(tuning),
         catalogue_(catalogue),
-        field_(body, tuning) {}
+        field_(body, tuning) {
+    // pollutionTickInterval == 0 would make step() return before slowTick()
+    // every single tick: the whole loop freezes while tickIndex() climbs and
+    // every other accessor reports a healthy world. It would also make
+    // pollutionSecondsPerTick() zero and hand the UI a 0/0 NaN. That is a
+    // ceiling that reports success (DW-28), so treat it as 1 tick.
+    if (tuning_.pollutionTickInterval == 0) {
+      tuning_.pollutionTickInterval = 1;
+      simClamped_ = true;
+    }
+    if (!(tuning_.fixedDt > 0.0)) {
+      tuning_.fixedDt = 1.0 / 60.0;
+      simClamped_ = true;
+    }
+    // The diffusion/decay clamps live in PollutionField, which owns them; adopt
+    // its corrected copy so tuning() never disagrees with what is running.
+    tuning_.diffusionRate = field_.effectiveTuning().diffusionRate;
+    tuning_.decayRate = field_.effectiveTuning().decayRate;
+    tuning_.pruneEpsilon = field_.effectiveTuning().pruneEpsilon;
+    // A step fraction outside [0,1] is meaningless: above 1 lets the factor
+    // pass 1.0, below 0 makes evolution run backwards. Clamping to 0 would
+    // FREEZE evolution silently, so a negative value falls back to the default
+    // instead, and either correction is reported.
+    if (!(tuning_.evoMaxStepFractionOfHeadroom > 0.0)) {
+      tuning_.evoMaxStepFractionOfHeadroom = EnemyTuning().evoMaxStepFractionOfHeadroom;
+      simClamped_ = true;
+    }
+    if (tuning_.evoMaxStepFractionOfHeadroom > 1.0) {
+      tuning_.evoMaxStepFractionOfHeadroom = 1.0;
+      simClamped_ = true;
+    }
+  }
 
   const worldgen::BodyParams& body() const { return body_; }
   const EnemyTuning& tuning() const { return tuning_; }
@@ -929,7 +1048,10 @@ class EnemySim {
 
   // --- nests ---------------------------------------------------------------
   NestId addNest(const Vec3& dir, uint32_t generation = 0) {
-    if (nests_.size() >= tuning_.maxNests) {
+    // ALIVE count, not vector size. Dead nests are reaped each slow tick, but a
+    // caller can add between ticks, and counting corpses against the cap is how
+    // a faction goes permanently extinct while every indicator reads healthy.
+    if (aliveNestCount() >= tuning_.maxNests) {
       ++nestPlacementsRefused_;
       return kNoNest;
     }
@@ -959,6 +1081,13 @@ class EnemySim {
   // A pool that silently drops work is worse than one that fails (DW-28). If a
   // caller ever sees this above zero, maxNests is binding.
   uint64_t nestPlacementsRefused() const { return nestPlacementsRefused_; }
+  // Times a wave hit the maxWaveSize ceiling with budget still to spend. Above
+  // zero means wave size is being set by the ceiling rather than by pollution,
+  // so the design's headline proportionality is no longer what a player sees.
+  uint64_t wavesTruncated() const { return wavesTruncated_; }
+  // True if EnemyTuning had to be corrected at construction (an unstable
+  // diffusion rate, a decay outside [0,1], a zero tick interval).
+  bool tuningWasClamped() const { return simClamped_ || field_.tuningWasClamped(); }
 
   // The combat lane calls these. Returns true if the nest died on this call.
   bool damageNest(NestId id, double damage) {
@@ -1008,16 +1137,24 @@ class EnemySim {
     PollutionReport r;
     r.producedPerSecond = pollutionPerSecond();
     r.totalInField = field_.totalMass();
-    r.absorbedPerSecond = lastAbsorbed_ / tuning_.pollutionSecondsPerTick();
+    const double secs = tuning_.pollutionSecondsPerTick();
+    r.absorbedPerSecond = secs > 0.0 ? lastAbsorbed_ / secs : 0.0;
     r.absorbedLifetime = evo_.pollutionAbsorbed;
     r.activeCells = static_cast<uint32_t>(field_.activeCells());
     r.cellSizeM = field_.cellSizeAtFaceCentreM();
     r.absorbingNests = lastAbsorbingNests_;
     r.emitters = static_cast<uint32_t>(emitters_.size());
     r.centroidDir = productionCentroid();
+    // Extent is measured FROM the base, so with nothing producing there is no
+    // base to measure from and productionCentroid() falls back to +Z. Reporting
+    // the distance from a drifting cloud to the north pole would make the HUD's
+    // "pollution extent" jump to hundreds of kilometres the instant a player
+    // switches their factory off, which is the opposite of the truth.
+    const bool haveBase = r.producedPerSecond > 0.0;
     for (const PollutionCellView& c : field_.cells()) {
       if (c.amount < tuning_.minShownPerCell) continue;
       ++r.visibleCells;
+      if (!haveBase) continue;
       const double d =
           chordDistanceM(field_.cellCentreDir(c.key), r.centroidDir, body_.radiusM);
       if (d > r.extentM) r.extentM = d;
@@ -1098,7 +1235,25 @@ class EnemySim {
   }
 
   // ---- the loop, in order --------------------------------------------------
+  // Dead nests are COMPACTED OUT rather than accumulating. Without this,
+  // `nests_` is append-only and `maxNests` therefore counts the graveyard: once
+  // 512 nests have ever existed the faction goes permanently extinct, no
+  // expansion or seeding can ever succeed again, and `aliveNestCount()` keeps
+  // reporting whatever is currently alive so the world looks healthy. It also
+  // stops every slow tick, every stateHash and every save from carrying the
+  // full history of everything the player has ever killed.
+  void reapDeadNests() {
+    size_t w = 0;
+    for (size_t i = 0; i < nests_.size(); ++i) {
+      if (!nests_[i].alive) continue;
+      if (w != i) nests_[w] = nests_[i];
+      ++w;
+    }
+    if (w != nests_.size()) nests_.resize(w);
+  }
+
   void slowTick() {
+    reapDeadNests();
     const double dt = tuning_.pollutionSecondsPerTick();
     emitStep(dt);
     field_.diffuseAndDecay();
@@ -1143,32 +1298,50 @@ class EnemySim {
   }
 
   void creditSource(Nest& n, EmitterId src, double amount) {
-    Vec3 dir;
     const Emitter* e = emitter(src);
     for (SourceCredit& s : n.sources) {
       if (s.source != src) continue;
       s.absorbed += amount;
+      // An emitter removed while its pollution is still in the field keeps its
+      // LAST KNOWN direction rather than being zeroed. That is routine play: a
+      // machine is demolished and its cloud outlives it by minutes.
       if (e != nullptr) s.lastKnownDir = e->dir;
       return;
     }
-    if (e != nullptr) dir = e->dir;
+    // No entry yet, and the emitter no longer exists. Creating one would give
+    // it lastKnownDir == (0,0,0), which topSource() would happily return and
+    // composeWave would put straight into AttackWave::targetDir: a wave aimed
+    // at the PLANET CENTRE, reported by threatReport as a flat 600 km away,
+    // with nothing anywhere signalling it. Drop the credit instead; there is
+    // no longer a thing at the other end to attack.
+    if (e == nullptr) return;
     if (n.sources.size() < kMaxNestSources) {
       SourceCredit s;
       s.source = src;
       s.absorbed = amount;
-      s.lastKnownDir = dir;
+      s.lastKnownDir = e->dir;
       n.sources.push_back(s);
       return;
     }
-    // Replace the weakest entry if this one already beats it. Ties keep the
-    // incumbent, and the scan order is the vector order, which is deterministic.
+    // Replace the weakest entry. The comparison is made on the SAME SCALE at
+    // both ends, which the obvious version is not: `absorbed` is an EWMA
+    // decayed by sourceCreditDecayPerTick each slow tick, so its steady state
+    // is roughly amount/(1-decay), about 1000x one tick's increment at the
+    // shipped 0.999. Comparing a raw increment against that would mean the
+    // first eight emitters ever to touch a nest own its targeting for the rest
+    // of the game, and a new base ten times the size could never displace them
+    // -- exactly defeating "a wave targets what is polluting NOW". So project
+    // this sample to the steady state it implies before comparing, and seed the
+    // winner there. Ties keep the incumbent; the scan is vector order.
+    const double retain = 1.0 - tuning_.sourceCreditDecayPerTick;
+    const double projected = retain > 1e-9 ? amount / retain : amount;
     size_t weakest = 0;
     for (size_t i = 1; i < n.sources.size(); ++i)
       if (n.sources[i].absorbed < n.sources[weakest].absorbed) weakest = i;
-    if (amount <= n.sources[weakest].absorbed) return;
+    if (projected <= n.sources[weakest].absorbed) return;
     n.sources[weakest].source = src;
-    n.sources[weakest].absorbed = amount;
-    n.sources[weakest].lastKnownDir = dir;
+    n.sources[weakest].absorbed = projected;
+    n.sources[weakest].lastKnownDir = e->dir;
   }
 
   void evolveStep(double dt, double absorbed) {
@@ -1191,7 +1364,16 @@ class EnemySim {
     const double sum = dT + dP + dK;
     const double cap = head * tuning_.evoMaxStepFractionOfHeadroom;
     if (sum > cap && sum > 0.0) {
-      const double k = cap / sum;
+      // k is clamped into [0,1] rather than trusted. An unclamped k above 1
+      // would let the factor step past 1.0, and a NEGATIVE k (from a negative
+      // headroom fraction) would flip all three terms negative and make
+      // evolution run BACKWARDS, breaking the monotonicity the whole design
+      // rests on. The constructor already clamps the tuning field; this is the
+      // second lock, because the first one is a constructor a future refactor
+      // can route around.
+      double k = cap / sum;
+      if (!(k > 0.0)) k = 0.0;
+      if (k > 1.0) k = 1.0;
       dT *= k;
       dP *= k;
       dK *= k;
@@ -1215,6 +1397,16 @@ class EnemySim {
       if (w.totalCount == 0) continue;
       n.attackBudget -= w.pollutionSpent;
       if (n.attackBudget < 0.0) n.attackBudget = 0.0;
+      // Cap the CARRY-OVER budget. When maxWaveSize truncates a wave the
+      // unspent remainder stays here, and without a ceiling it grows without
+      // bound for the rest of the game: every wave is then exactly maxWaveSize,
+      // `fractionOfAttackThreshold` climbs past 1.0 forever while the actual
+      // attack is pinned, and the headline "attack size is proportional to what
+      // reached this nest" quietly becomes a constant. Keeping at most one
+      // extra threshold's worth means a nest that has been over-fed hits hard
+      // twice and then returns to being legible.
+      const double carryCap = tuning_.attackThresholdPollution;
+      if (n.attackBudget > carryCap) n.attackBudget = carryCap;
       n.lastAttackTick = tick_;
       ++n.wavesDispatched;
       waves_.push_back(w);
@@ -1280,6 +1472,10 @@ class EnemySim {
       }
       if (!found) tally.push_back({d->id, 1});
     }
+    // The head-count ceiling bound rather than the budget. Report it: a
+    // resource that silently drops work when full is worse than one that fails,
+    // because it cannot be found by measuring the thing it degrades (DW-28).
+    if (total >= tuning_.maxWaveSize && budget >= minCost) ++wavesTruncated_;
     if (total == 0) return w;
 
     std::sort(tally.begin(), tally.end(),
@@ -1289,14 +1485,20 @@ class EnemySim {
     w.members = tally;
     w.totalCount = total;
     w.pollutionSpent = n.attackBudget - budget;
+    bool haveSpeed = false;
     for (const WaveMember& m : w.members) {
       const EnemyTypeDef* d = catalogue_.type(m.typeId);
       if (d == nullptr) continue;
       const double c = static_cast<double>(m.count);
       w.totalHealth += d->health * c;
       w.totalDamagePerSecond += d->damagePerSecond * c;
-      if (w.slowestSpeedMps == 0.0 || d->speedMps < w.slowestSpeedMps)
+      // A `== 0.0` sentinel would be overwritten by the next member whenever a
+      // type has speedMps 0, so a wave containing something stationary would be
+      // reported to the combat lane as moving at some faster member's speed.
+      if (!haveSpeed || d->speedMps < w.slowestSpeedMps) {
         w.slowestSpeedMps = d->speedMps;
+        haveSpeed = true;
+      }
     }
     return w;
   }
@@ -1311,7 +1513,7 @@ class EnemySim {
       n.expansionBudget += idle;
       if (n.expansionBudget < tuning_.expansionCost) continue;
       if (tick_ - n.lastExpandTick < tuning_.expansionCooldownTicks) continue;
-      if (nests_.size() >= tuning_.maxNests) {
+      if (aliveNestCount() >= tuning_.maxNests) {
         ++nestPlacementsRefused_;
         continue;
       }
@@ -1332,11 +1534,12 @@ class EnemySim {
     static constexpr double kBearing[8][2] = {
         {1, 0},  {kR2, kR2},   {0, 1},  {-kR2, kR2},
         {-1, 0}, {-kR2, -kR2}, {0, -1}, {kR2, -kR2}};
-    const uint32_t count = tuning_.expansionCandidates == 0
-                               ? 8u
-                               : (tuning_.expansionCandidates > 8u
-                                      ? 8u
-                                      : tuning_.expansionCandidates);
+    const uint32_t count =
+        tuning_.expansionCandidates == 0
+            ? kMaxExpansionCandidates
+            : (tuning_.expansionCandidates > kMaxExpansionCandidates
+                   ? kMaxExpansionCandidates
+                   : tuning_.expansionCandidates);
     // Tangent basis. The polar axis is only a reference for "east"; at the pole
     // it degenerates, so fall back to a different axis there.
     Vec3 axis(0, 1, 0);
@@ -1411,6 +1614,8 @@ class EnemySim {
   uint64_t tick_ = 0;
   uint64_t pendingKills_ = 0;
   uint64_t nestPlacementsRefused_ = 0;
+  uint64_t wavesTruncated_ = 0;
+  bool simClamped_ = false;
   EmitterId nextEmitterId_ = 1;
   NestId nextNestId_ = 1;
   WaveId nextWaveId_ = 1;
@@ -1441,9 +1646,18 @@ inline uint64_t hashVec(uint64_t h, const Vec3& v) {
   return hashDouble(hashDouble(hashDouble(h, v.x), v.y), v.z);
 }
 
+// stateHash MUST cover everything serialize() writes, because the persistence
+// test uses it as the round-trip oracle: any field the hash omits could be
+// dropped or mis-ordered by the serializer and the test would still be green.
+// Both walk the same fields in the same order, deliberately.
 inline uint64_t EnemySim::stateHash() const {
   uint64_t h = worldgen::mix64(kEnemiesMagic ^ tick_);
   h = worldgen::hashCombine(h, seed_);
+  h = worldgen::hashCombine(h, pendingKills_);
+  h = worldgen::hashCombine(h, nestPlacementsRefused_);
+  h = worldgen::hashCombine(h, wavesTruncated_);
+  h = hashDouble(h, lastAbsorbed_);
+  h = worldgen::hashCombine(h, lastAbsorbingNests_);
   h = hashDouble(h, evo_.factor);
   h = hashDouble(h, evo_.fromTime);
   h = hashDouble(h, evo_.fromPollution);
@@ -1472,12 +1686,16 @@ inline uint64_t EnemySim::stateHash() const {
     h = worldgen::hashCombine(h, n.generation);
     h = worldgen::hashCombine(h, n.alive ? 1u : 0u);
     h = hashDouble(h, n.health);
+    h = hashDouble(h, n.maxHealth);
     h = hashDouble(h, n.absorbedLifetime);
     h = hashDouble(h, n.attackBudget);
     h = hashDouble(h, n.expansionBudget);
     h = worldgen::hashCombine(h, n.lastAttackTick);
     h = worldgen::hashCombine(h, n.lastExpandTick);
     h = worldgen::hashCombine(h, n.wavesDispatched);
+    // children feeds the fallback expansion-bearing RNG seed, so it affects
+    // future simulation and not only reporting.
+    h = worldgen::hashCombine(h, n.children);
     for (const SourceCredit& s : n.sources) {
       h = worldgen::hashCombine(h, s.source);
       h = hashDouble(h, s.absorbed);
@@ -1489,6 +1707,13 @@ inline uint64_t EnemySim::stateHash() const {
     h = worldgen::hashCombine(h, w.sourceNest);
     h = worldgen::hashCombine(h, w.targetEmitter);
     h = hashDouble(h, w.pollutionSpent);
+    h = hashDouble(h, w.evolutionAtDispatch);
+    h = worldgen::hashCombine(h, w.dispatchTick);
+    h = worldgen::hashCombine(h, w.totalCount);
+    h = hashDouble(h, w.totalHealth);
+    h = hashDouble(h, w.totalDamagePerSecond);
+    h = hashDouble(h, w.slowestSpeedMps);
+    h = hashVec(h, w.originDir);
     h = hashVec(h, w.targetDir);
     for (const WaveMember& m : w.members)
       h = worldgen::hashCombine(h, (static_cast<uint64_t>(m.typeId) << 32) | m.count);
@@ -1508,6 +1733,7 @@ void EnemySim::serialize(Writer& w) const {
   w.f64(lastAbsorbed_);
   w.varint(lastAbsorbingNests_);
   w.varint(nestPlacementsRefused_);
+  w.varint(wavesTruncated_);
 
   w.f64(evo_.factor);
   w.f64(evo_.fromTime);
@@ -1596,6 +1822,7 @@ void EnemySim::deserialize(Reader& r) {
   lastAbsorbed_ = r.f64();
   lastAbsorbingNests_ = static_cast<uint32_t>(r.varint());
   nestPlacementsRefused_ = r.varint();
+  wavesTruncated_ = r.varint();
 
   evo_.factor = r.f64();
   evo_.fromTime = r.f64();
