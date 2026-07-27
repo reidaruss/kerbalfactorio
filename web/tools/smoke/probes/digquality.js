@@ -26,8 +26,11 @@
 //      exposed solid-to-air faces the greedy mesher turns into quads. This is
 //      where "exactly 6 distinct normals" is checked, because a cube mesher's
 //      face normals are the six lattice axes and nothing else.
-//   5. The voxel skin mesh's own counters (faces / quads / triangles), which is
-//      the drawn triangle count of the thing being replaced.
+//   5. The near skin mesher's own counters (triangles / vertices / bricks), and
+//      an assertion that the crater HAS a skin. Originally faces / quads /
+//      mergeRatio, which is what the greedy cube mesher published; surface nets
+//      publishes none of those, so this block reported `undefined` from the day
+//      the change it measures landed until 2026-07-27.
 //   6. A PINNED camera, reported in full, so the after-shot is the same shot.
 //
 // THE GRID MATTERS. Near-terrain vertices here are 1.463 m apart, and a default
@@ -182,6 +185,15 @@
   const hits = strikes.filter((s) => s.cells > 0).length;
   log.push(`sculpted: ${strikes.length} strikes, ${hits} hit, `
     + `${v.removedCells} cells removed, ${v.harvestedM3} m3`);
+  // The near mesher's own output, read the moment the sculpt has reconciled and
+  // through `mustNum`, which throws on a field the client does not publish. See
+  // the `nearMesh` block in the report for what these used to be called and why
+  // that mattered.
+  const nearTris = mustNum(v.mesh, 'triangles', 'voxels().mesh');
+  const nearVerts = mustNum(v.mesh, 'vertices', 'voxels().mesh');
+  const nearBricks = mustNum(v.mesh, 'bricks', 'voxels().mesh');
+  log.push(`near skin: ${nearTris} triangles over ${nearVerts} vertices `
+    + `in ${nearBricks} bricks, visible ${v.meshVisible}`);
 
   // === 3. THE CRATER, through the one oracle ================================
   //
@@ -533,6 +545,24 @@
       && v.removedCells > 0
       && v.mouth.sent === v.mouth.applied
       && crater.verts >= 8,
+    // --- AND ONE ACTUAL VERDICT -------------------------------------------
+    //
+    // This probe was written as a before/after INSTRUMENT and it reports a great
+    // many numbers without asserting one of them, which by standing rule 11's
+    // own corollary makes it a log line rather than a test. The narrowest true
+    // thing it can assert is this: a crater this size has a near skin. /core's
+    // edit filter only emits geometry for bricks holding an edited cell, so a
+    // regression that dropped the crater's cut faces would leave a hole in the
+    // ground, and every roughness number here would carry on being computed off
+    // the terrain heightfield and look completely normal. `bricks` is asserted
+    // separately from `triangles` because the brick count IS the filter's output.
+    //
+    // Deliberately NOT asserted, because a threshold tuned until it passes is
+    // what this rule is against: the roughness figures themselves. They are a
+    // measurement to compare across a change, and the change they exist for
+    // (WG-24) has already happened.
+    craterHasANearSkin: nearTris > 0 && nearVerts > 0 && nearBricks > 0
+      && v.meshVisible === true,
     setup: {
       ticksAdvanced: wEnd.tick - t0.tick,
       framesRendered: wEnd.frames - t0.frames,
@@ -578,14 +608,23 @@
     drawnCrater: crater,
     drawnControlUndug: control,
 
-    // --- the cube mesher's own output -------------------------------------
-    cubeMesh: {
-      source: 'VoxelMesh.stats via __of.voxels().mesh: the greedy CUBE mesher',
-      faces: v.mesh.faces, quads: v.mesh.quads, triangles: v.mesh.triangles,
-      mergeRatio: v.mesh.mergeRatio, bricks: v.mesh.bricks,
-      exposed: v.mesh.exposed, dropped: v.mesh.dropped,
-      editFacesOnly: v.mesh.editFacesOnly, rebuilds: v.mesh.rebuilds,
-      lastRemeshMs: v.mesh.lastMs, visible: v.meshVisible,
+    // --- the near mesher's own output --------------------------------------
+    //
+    // WAS `cubeMesh`, and it read `faces`, `quads` and `mergeRatio`: the greedy
+    // cube mesher's counters, deleted by the very change this probe was written
+    // to measure. So from the moment surface nets landed, the block whose job is
+    // "the drawn triangle count of the thing being replaced" was reporting
+    // `undefined, undefined, undefined` in an AFTER run, next to a `source`
+    // string still claiming a mesher that no longer exists. Read through
+    // `mustNum` now, so the next rename is a failure and not a blank.
+    nearMesh: {
+      source: 'VoxelMeshStats via __of.voxels().mesh: the surface-nets near mesher',
+      triangles: nearTris, vertices: nearVerts, bricks: nearBricks,
+      exposed: mustNum(v.mesh, 'exposed', 'voxels().mesh'),
+      dropped: mustNum(v.mesh, 'dropped', 'voxels().mesh'),
+      rebuilds: mustNum(v.mesh, 'rebuilds', 'voxels().mesh'),
+      lastRemeshMs: mustNum(v.mesh, 'lastMs', 'voxels().mesh'),
+      editFacesOnly: v.mesh.editFacesOnly, visible: v.meshVisible,
     },
     cubeFaceCensus: census,
 

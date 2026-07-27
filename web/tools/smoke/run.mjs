@@ -49,12 +49,41 @@ const waitMs = Number(args.get('wait') ?? 0);
 // --evalargs is JSON, exposed to the probe as the global OF_ARGS.
 const evalFile = args.get('evalfile');
 const evalArgs = args.get('evalargs') ?? '{}';
+// THE PROBE PRELUDE. `mustNum(obj, 'triangles', where)` returns the field or
+// THROWS, naming the keys the object actually publishes. It exists because a
+// probe that reads a field the client stopped publishing gets `undefined`, and
+// `undefined === undefined` is true: the assertion built on it passes forever
+// while asserting nothing. That is not hypothetical. `probes/tunnelpersist.js`
+// compared `mesh.faces` across a save and a reload for weeks after the surface
+// nets change renamed it to `triangles`, so the one check that proves a dug
+// tunnel survives a reload was comparing undefined with undefined and going
+// green. Standing rule 11, in its cheapest possible form: make a dead read a
+// loud failure instead of a silent pass. A throw here rejects page.evaluate,
+// which the runner already reports as a FAILURE with a non-zero exit.
+//
+// It lives in the runner and not in the probes because run.mjs is the one place
+// every probe goes through (survival.mjs, lodsweep.mjs and writeshot.mjs all
+// shell out to it), and a guard that has to be pasted into ninety files is a
+// guard that will be in eighty-nine of them.
+//
+// Kept to ONE LINE on purpose so probe line numbers in a stack trace are
+// unchanged: the wrapper still occupies exactly the one line it did before.
+const PRELUDE = 'globalThis.mustNum=(o,k,w)=>{'
+  + 'if(o===null||o===undefined)throw new Error(`probe: cannot read ${w??"?"}.${k}, the object is ${o}`);'
+  + 'const v=o[k];'
+  + 'if(typeof v!=="number"||!Number.isFinite(v))throw new Error(`probe: ${w??"?"}.${k} is ${JSON.stringify(v)}, not a finite number. Published keys: ${Object.keys(o).join(", ")}`);'
+  + 'return v;};'
+  + 'globalThis.mustHave=(o,k,w)=>{'
+  + 'if(o===null||o===undefined)throw new Error(`probe: cannot read ${w??"?"}.${k}, the object is ${o}`);'
+  + 'if(!(k in o))throw new Error(`probe: ${w??"?"}.${k} does not exist. Published keys: ${Object.keys(o).join(", ")}`);'
+  + 'return o[k];};';
 // The parentheses around the file body are load-bearing: probes start with a
 // comment block, and `return` followed by a newline is `return;` under ASI, so
 // without them every probe silently resolves to undefined.
-const evalScript = evalFile
+const rawScript = evalFile
   ? `((OF_ARGS) => (\n${readFileSync(resolve(process.cwd(), evalFile), 'utf8')}\n))(${evalArgs})`
   : args.get('eval');
+const evalScript = rawScript ? `(()=>{${PRELUDE} return (${rawScript});})()` : rawScript;
 
 const params = new URLSearchParams();
 for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',

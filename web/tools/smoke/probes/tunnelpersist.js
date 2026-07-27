@@ -20,6 +20,14 @@
 //
 // AND THEN IT WALKS IT. The final phase never touches the dig key, so every
 // metre it covers is a metre of tunnel that came out of IndexedDB.
+//
+// TWO HALVES, AND ONE OF THEM WAS DEAD FOR WEEKS. The solidity half asks /core
+// what is rock; the geometry half asks the near mesher what it is drawing. The
+// geometry half read `voxels().mesh.faces`, a field WG-24 deleted when the
+// greedy cube mesher became surface nets, so all three of its readings were
+// `undefined` and every comparison between them was vacuous. It is now
+// `triangles`/`vertices`/`bricks` read through `mustNum`, which throws on a
+// field the client does not publish. See the note at the acceptance.
 (async () => {
   const of = window.__of;
   const ramp = OF_ARGS.rampStrikes ?? 6;
@@ -85,8 +93,36 @@
   // keeping it and comparing later compares a reading with itself: the first
   // version of this probe "proved" the face count was unchanged three times
   // over because all three readings were the same object.
+  //
+  // AND READ THROUGH `mustNum`, WHICH IS THE SECOND HALF OF THE SAME LESSON.
+  // Copying the value is not enough if the NAME is dead. This probe read
+  // `mesh.faces` from WG-24, when the greedy cube mesher became surface nets and
+  // `faces`/`quads`/`mergeRatio` stopped being published, until 2026-07-27. All
+  // three readings were `undefined`.
+  //
+  // BE PRECISE ABOUT WHICH WAY IT BROKE, because the two ways cost different
+  // things. `undefined < undefined` and `undefined >= undefined` are both FALSE,
+  // so the geometry terms did not turn into a silent pass: they nailed
+  // `tunnelSurvivesReload` to false and it could not go green however well the
+  // tunnel survived. Measured against the pre-fix file on this world: false, with
+  // a `meshFaces` block that JSON.stringify emitted as `{}` because it drops
+  // undefined values. That is a stuck verdict, and a stuck verdict is worth
+  // exactly as little as a vacuous one: it carries no information about the
+  // system either way, and it is WORSE to live with, because a check that is
+  // always red trains everyone to explain it away. This one was: the probe was
+  // already known red for `stillWalkable`, so a second red term next to it read
+  // as the same known problem, and the check that proves a dug tunnel survives a
+  // reload sat dead for weeks in plain sight. `mustNum` throws on a field the
+  // client does not publish and names the fields it does, so neither polarity is
+  // reachable any more.
+  //
+  // The published counter is TRIANGLES, not faces: surface nets emits a triangle
+  // soup with a real gradient normal per vertex, so there is no quad and nothing
+  // to merge (VoxelMeshStats in src/world/VoxelMesh.ts).
   const dugCells = dug.removedCells;
-  const dugFaces = dug.mesh.faces;
+  const dugTris = mustNum(dug.mesh, 'triangles', 'voxels().mesh');
+  const dugVerts = mustNum(dug.mesh, 'vertices', 'voxels().mesh');
+  const dugBricks = mustNum(dug.mesh, 'bricks', 'voxels().mesh');
   const dugSolidity = solidity(inside);
   log.push(`dug ${dug.removedCells} cells over ${landed} strikes, `
     + `${inside.length} interior samples read ${dugSolidity}`);
@@ -98,16 +134,21 @@
 
   // --- 3. PUT THE ROCK BACK -------------------------------------------------
   const forgot = of.forgetTunnels();
-  const goneFaces = of.voxels().mesh.faces;
+  const goneMesh = of.voxels().mesh;
+  const goneTris = mustNum(goneMesh, 'triangles', 'voxels().mesh');
+  const goneVerts = mustNum(goneMesh, 'vertices', 'voxels().mesh');
+  const goneBricks = mustNum(goneMesh, 'bricks', 'voxels().mesh');
   const goneSolidity = solidity(inside);
-  log.push(`forgot: ${forgot.removedCells} cells left, ${goneFaces} mesh faces, `
-    + `samples now ${goneSolidity}`);
+  log.push(`forgot: ${forgot.removedCells} cells left, ${goneTris} mesh triangles `
+    + `over ${goneBricks} bricks, samples now ${goneSolidity}`);
 
   // --- 4. load --------------------------------------------------------------
   const ledger = await of.load();
   const backVox = of.voxels();
   const backCells = backVox.removedCells;
-  const backFaces = backVox.mesh.faces;
+  const backTris = mustNum(backVox.mesh, 'triangles', 'voxels().mesh');
+  const backVerts = mustNum(backVox.mesh, 'vertices', 'voxels().mesh');
+  const backBricks = mustNum(backVox.mesh, 'bricks', 'voxels().mesh');
   const backSolidity = solidity(inside);
   log.push(`restored ${JSON.stringify(ledger?.voxels ?? null)}, samples ${backSolidity}`);
 
@@ -162,9 +203,14 @@
 
   return {
     // DW-20 first: the simulation actually ran, and it actually dug.
+    // `editFacesOnly` is part of DW-20 validity, not of the acceptance: under
+    // `?voxelskin=0` the near mesh draws the whole isosurface and never empties,
+    // so such a run cannot say anything about persistence and must declare
+    // itself invalid rather than report a red verdict.
     valid: landed > 0 && dug.removedCells > 0 && (w.tick - t0.tick) > 600
       && written.voxelBytes > 0 && written.voxelOps > 0
-      && dug.mouth.sent === dug.mouth.applied,
+      && dug.mouth.sent === dug.mouth.applied
+      && backVox.mesh.editFacesOnly === true,
     advanced: {
       ticks: w.tick - t0.tick, frames: w.frames - t0.frames,
       strikesLanded: landed, cellsDug: dug.removedCells,
@@ -174,25 +220,56 @@
     // back, and the same cell count both times. The middle line is the one that
     // makes the last one mean anything.
     //
-    // The near mesh is counted in FACES, not in "is it visible". Putting the
-    // rock back does not empty it: the bricks it re-meshes still straddle the
-    // natural surface, and a solid cell under open sky has an exposed face
-    // whether or not anybody ever dug. What has to go is the tunnel's own cut
-    // faces, and they have to come back.
+    // The near mesh is counted in TRIANGLES, not in "is it visible", and the
+    // three readings are three separate numbers rather than three views of one
+    // live object.
     //
-    // `>=` and not `===` on the way back, deliberately and with the reason
-    // stated. A live strike re-meshes /core's DIRTY REGION, which is the AABB of
-    // the cells actually removed; a restore has only the brush, whose box is a
-    // superset (it includes cells that were already air). So the restored mesh
-    // holds every face the live one did plus a few natural-surface faces from
-    // bricks the live pass never had to visit. Measured at 1016 -> 1043, and
-    // they are real rock faces in the right places, not tunnel that is not there.
+    // WHAT THE THREE NUMBERS MUST DO, and why each bound is what it is.
+    //
+    // `dugTris > 0`: the strike produced drawable geometry. Without this the
+    // whole comparison could be satisfied by 0 -> 0 -> 0, which is exactly the
+    // shape a probe reading a dead field was already in.
+    //
+    // `goneTris === 0 && goneBricks === 0`: EXACT, not an inequality, and this
+    // is stricter than the pre-WG-24 form (`goneFaces < dugFaces`, measured
+    // 1016 -> 745). The edit filter now runs inside /core, so with `editFacesOnly`
+    // a brick holding no edited cell returns nothing and is dropped from the
+    // cache entirely. Put the rock back and there is no near mesh at all. That
+    // makes the middle step a much harder thing to fake: a save that "worked"
+    // because the live world still held the answer now has to survive a mesh
+    // that is provably empty, not merely smaller.
+    //
+    // `backBricks === dugBricks` is EXACT and `backTris >= dugTris` is not, and
+    // the asymmetry is measured rather than assumed. Restoring 172 cells gives
+    // back the same 8 bricks holding geometry but 778 triangles over 544
+    // vertices against the live dig's 774 over 540. The four extra are real and
+    // they are the LIVE mesh being very slightly stale, not the restore
+    // inventing rock: a strike re-meshes /core's dirty region grown by one cell,
+    // while a surface-nets cell reads the density at corners it shares with the
+    // neighbouring brick, so a later strike near a brick boundary can leave the
+    // brick next door a few triangles behind. A restore re-meshes over the brush
+    // boxes, which are a superset, and picks those up. The drift is reported as
+    // `meshDrift` on every run so it stays a number somebody can watch rather
+    // than a tolerance that absorbs a real defect (standing rule 11).
+    //
+    // The teeth are `backTris > 0` (via `>= dugTris > 0`) together with the
+    // exact brick count and the exact cell count: a load that restored nothing
+    // reads 0, and a load that restored part of the tunnel loses bricks and
+    // cells. An inequality alone would not be enough, which is why it never
+    // stands alone here.
+    //
+    // `editFacesOnly` is asserted in `valid` above rather than here, because
+    // `?voxelskin=0` meshes the whole isosurface and `goneTris === 0` is then
+    // false for a legitimate reason. A run under that flag is not evidence about
+    // persistence and must invalidate itself rather than fail.
     tunnelSurvivesReload:
-      dugCells > 0 && dugSolidity === air
+      dugCells > 0 && dugTris > 0 && dugSolidity === air
       && forgot.removedCells === 0 && goneSolidity === rock
-      && goneFaces < dugFaces
+      && goneTris === 0 && goneVerts === 0 && goneBricks === 0
       && backCells === dugCells && backSolidity === air
-      && backFaces >= dugFaces && backVox.meshVisible,
+      && backBricks === dugBricks
+      && backTris >= dugTris && backVerts >= dugVerts
+      && backVox.meshVisible,
     // ...and it is still a passage, walked with the dig key released.
     //
     // THE SHAFT IS EXCLUDED BY ITS OWN GEOMETRY, not by a count. The walk
@@ -212,7 +289,13 @@
     forgot,
     solidity: { dug: dugSolidity, forgotten: goneSolidity, restored: backSolidity },
     cells: { dug: dugCells, forgotten: forgot.removedCells, restored: backCells },
-    meshFaces: { dug: dugFaces, forgotten: goneFaces, restored: backFaces },
+    meshTriangles: { dug: dugTris, forgotten: goneTris, restored: backTris },
+    meshVertices: { dug: dugVerts, forgotten: goneVerts, restored: backVerts },
+    meshBricks: { dug: dugBricks, forgotten: goneBricks, restored: backBricks },
+    // Restored minus live. Expected small and non-negative; see the note on
+    // tunnelSurvivesReload. Measured 4 triangles / 4 vertices of 774 / 540.
+    meshDrift: { triangles: backTris - dugTris, vertices: backVerts - dugVerts,
+      bricks: backBricks - dugBricks },
     slot: written,
     ledger,
     walked: { metresWalked: +metres.toFixed(2), samples: n, grounded,

@@ -13,9 +13,12 @@
 //
 // FOUR MEASUREMENTS.
 //
-//   1. HOW MUCH of what /core exposes is untouched ground. `exposed` is every
-//      solid-to-air face in the re-meshed bricks; `dropped` is the share of
-//      them that belong to no edit. A big ratio IS the defect, counted.
+//   1. THE SKIN THE PAD LEFT BEHIND: drawn triangles, vertices and bricks, and
+//      an assertion that there are any. Written when the filter still ran in the
+//      client, so it reported `exposed` against `dropped` and called the ratio
+//      the defect; RN-6 moved the filter into /core, so the discarded faces
+//      never cross the bridge and `dropped` is retained at 0. What is left to
+//      assert is that the pad HAS a skin, which nothing here ever checked.
 //   2. THE AIM RAY. Independently of anything this change does, march the
 //      player's own aim against BOTH of the oracle's answers and report where
 //      each stops. The gap is how far short of the visible ground a pickaxe
@@ -191,12 +194,37 @@
   await settle(0.5);
   const tf1 = of.terraform();
   const after = heights([uPad, ...ring(uPad, R * 0.5, 6, bodyR)]);
-  const mesh = of.voxels().mesh;
+  // COPIED HERE AND READ THROUGH `mustNum`, for two separate reasons that this
+  // probe was getting wrong at once.
+  //
+  // Copied, because `of.voxels().mesh` is the LIVE stats object: holding the
+  // reference and reporting it at the end of the run reports whatever the LAST
+  // re-mesh left behind, not what the pad cost, and the colour phase below moves
+  // the player and takes more captures before the report is built.
+  //
+  // Through `mustNum`, because the names this block used (`faces`, `quads`,
+  // `mergeRatio`) were deleted at WG-24 when the greedy cube mesher was replaced
+  // by surface nets. They had been printing `undefined` into the log line and
+  // into the `shell` report ever since. The published counters are `triangles`
+  // and `vertices` (VoxelMeshStats in src/world/VoxelMesh.ts); there is no quad
+  // and nothing to merge, because surface nets emits a triangle soup.
+  const live = of.voxels();
+  const pad = {
+    triangles: mustNum(live.mesh, 'triangles', 'voxels().mesh'),
+    vertices: mustNum(live.mesh, 'vertices', 'voxels().mesh'),
+    bricks: mustNum(live.mesh, 'bricks', 'voxels().mesh'),
+    exposed: mustNum(live.mesh, 'exposed', 'voxels().mesh'),
+    dropped: mustNum(live.mesh, 'dropped', 'voxels().mesh'),
+    remeshMs: mustNum(live.mesh, 'lastMs', 'voxels().mesh'),
+    editFacesOnly: live.mesh.editFacesOnly,
+    visible: live.meshVisible,
+  };
   log.push(`levelled: dug ${tf1.removedCells - tf0.removedCells}, `
     + `filled ${tf1.addedCells - tf0.addedCells}, `
     + `spread ${spreadOf(before).toFixed(3)} -> ${spreadOf(after).toFixed(3)} m`);
-  log.push(`near mesh: exposed ${mesh.exposed}, dropped ${mesh.dropped}, `
-    + `drawn faces ${mesh.faces}, quads ${mesh.quads}, ${mesh.lastMs} ms`);
+  log.push(`near skin after the pad: ${pad.triangles} triangles over `
+    + `${pad.vertices} vertices in ${pad.bricks} bricks, `
+    + `${pad.exposed} vertices exposed by the last box, ${pad.remeshMs} ms`);
 
   // === 3. COLOUR: the pad against the ground it replaced ====================
   //
@@ -336,18 +364,35 @@
   return {
     valid: w1.tick - tick0 > 300 && colour !== null,
     ticks: w1.tick - tick0,
-    // The two halves of the acceptance.
+    // The acceptance.
     padMatchesGround: colour !== null && colour.relWorstChannel <= tol,
-    skinIsEditsOnly: mesh.editFacesOnly,
+    skinIsEditsOnly: pad.editFacesOnly,
     aimReachesTheGround: strikeErrM !== null && strikeErrM <= (A.aimTolM ?? 0.3),
+    // NEW, and it is the verdict this probe was missing. Everything above judges
+    // how the near skin LOOKS: its colour against the ground it replaced, and
+    // whether the aim ray reaches it. Nothing asserted that it EXISTS. A regression
+    // in /core's edit filter that dropped every face of a levelled pad would leave
+    // colour and aim both green (there would be no skin pixels to disagree with the
+    // terrain, and the aim marches the smooth surface, not the skin) and would put a
+    // hole in the ground where the player just built. That is exactly the "ceiling
+    // that reports success" shape, and it went unasserted for the whole life of this
+    // probe because the two counters that could have caught it, `faces` and `quads`,
+    // stopped existing at WG-24 and were reporting `undefined` into the report.
+    //
+    // `bricks > 0` is not redundant with `triangles > 0`: /core drops a brick that
+    // holds no edited cell, so the brick count is the filter's own output and going
+    // to zero there is the specific regression.
+    padHasADrawnSkin: pad.triangles > 0 && pad.vertices > 0
+      && pad.bricks > 0 && pad.visible === true,
     colourTolerance: tol,
     colour,
-    shell: {
-      exposed: mesh.exposed, dropped: mesh.dropped,
-      droppedFraction: mesh.exposed > 0 ? +(mesh.dropped / mesh.exposed).toFixed(4) : 0,
-      faces: mesh.faces, quads: mesh.quads, triangles: mesh.triangles,
-      bricks: mesh.bricks, remeshMs: mesh.lastMs, editFacesOnly: mesh.editFacesOnly,
-    },
+    // Snapshotted right after the level op, not read live at the end of the run.
+    // `dropped` is retained at 0 by the client on purpose: the edit filter moved
+    // into /core at RN-6, so the faces it discards are never sent across the
+    // bridge and the client cannot count them. `exposed` is the vertex count
+    // /core emitted for the LAST dirty box only, so it is not comparable with
+    // `vertices`, which is the whole cached mesh.
+    shell: pad,
     aim: {
       samples: aimRows.length,
       shortM: { p50: pct(shorts, 0.5), p95: pct(shorts, 0.95), worst: worstShort },
