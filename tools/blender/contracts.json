@@ -1322,16 +1322,21 @@
         "a tiling part whose far LOD is a different size shows a seam opening",
         "up as the player walks away, and the single lod0_node check would",
         "never see it.",
-        "0.50 m is half the storey pitch identity DECK_H + WALL_H = 3.00 m",
-        "asserted in structure_common.py."
+        "RESCALED 2026-07-26 (DW-32, decision BT-11): CELL 1.00 -> 4.00 m.",
+        "DECK_H stays 0.50 because a deck thickness is set by what a deck IS,",
+        "not by the plan module: 4 x 4 x 0.50 is the same 8:1 slab a 1 m deck",
+        "was at 2:1, and scaling it would have given a 2 m plinth.",
+        "The storey pitch identity DECK_H + WALL_H = STOREY = 4.00 m is",
+        "asserted in structure_common.py, and STOREY now EQUALS CELL, so the",
+        "plan lattice and the vertical lattice are one 4 m number."
       ],
       "footprint_cells": [1, 1],
       "lod0_node": "Foundation_LOD0",
       "lod_nodes": ["Foundation_LOD0", "Foundation_LOD1", "Foundation_LOD2"],
-      "dims_xyz_m": [1.0, 0.50, 1.0],
+      "dims_xyz_m": [4.0, 0.50, 4.0],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 140,
-      "max_tris_total": 180,
+      "max_tris_lod0": 240,
+      "max_tris_total": 320,
       "max_materials": 4,
       "sockets": [
         "socket_top",
@@ -1343,28 +1348,28 @@
       "clips": [],
       "collision": "col_Foundation",
       "parts": [
-        {"node": "Foundation_LOD1", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 60, "pivot": "ground"},
-        {"node": "Foundation_LOD2", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 20, "pivot": "ground"}
+        {"node": "Foundation_LOD1", "dims_xyz_m": [4.0, 0.50, 4.0], "max_tris": 90, "pivot": "ground"},
+        {"node": "Foundation_LOD2", "dims_xyz_m": [4.0, 0.50, 4.0], "max_tris": 24, "pivot": "ground"}
       ]
     },
 
     "floor": {
       "glb": "assets/models/dist/structures/floor.glb",
       "_comment": [
-        "TIER 0 BASE BUILDING. The SAME 1 x 1 x 0.50 m envelope as the",
+        "TIER 0 BASE BUILDING. The SAME 4 x 4 x 0.50 m envelope as the",
         "foundation, deliberately: a deck of two thicknesses would give the",
         "storey pitch two values.",
         "THIS PART IS ALSO THE CEILING. There is no ceiling.glb; storey N's",
-        "ceiling is storey N+1's floor at z = 3(N+1), same part, same origin.",
+        "ceiling is storey N+1's floor at z = 4(N+1), same part, same origin.",
         "That is why the ribs are underneath and the plate on top."
       ],
       "footprint_cells": [1, 1],
       "lod0_node": "Floor_LOD0",
       "lod_nodes": ["Floor_LOD0", "Floor_LOD1", "Floor_LOD2"],
-      "dims_xyz_m": [1.0, 0.50, 1.0],
+      "dims_xyz_m": [4.0, 0.50, 4.0],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 140,
-      "max_tris_total": 200,
+      "max_tris_lod0": 240,
+      "max_tris_total": 340,
       "max_materials": 3,
       "sockets": [
         "socket_top",
@@ -1376,50 +1381,59 @@
       "clips": [],
       "collision": "col_Floor",
       "parts": [
-        {"node": "Floor_LOD1", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 60, "pivot": "ground"},
-        {"node": "Floor_LOD2", "dims_xyz_m": [1.0, 0.50, 1.0], "max_tris": 20, "pivot": "ground"}
+        {"node": "Floor_LOD1", "dims_xyz_m": [4.0, 0.50, 4.0], "max_tris": 90, "pivot": "ground"},
+        {"node": "Floor_LOD2", "dims_xyz_m": [4.0, 0.50, 4.0], "max_tris": 24, "pivot": "ground"}
       ]
     },
 
     "wall": {
       "glb": "assets/models/dist/structures/wall.glb",
       "_comment": [
-        "TIER 0 BASE BUILDING, the wall family. Module 1.00 wide x 0.25 thick",
-        "x 2.50 m tall.",
+        "TIER 0 BASE BUILDING, the wall family. Module 4.00 wide x 0.25 thick",
+        "x 3.50 m tall.",
         "ANCHOR: a CELL EDGE MIDPOINT, not a cell centre. The panel is centred",
         "on its own origin across the thickness (which is what the ground",
         "pivot check asserts), so putting that origin on the edge line makes",
         "one wall serve both cells it divides and makes four walls close",
         "exactly around one foundation.",
-        "dims [1.0, 2.50, 0.25]: the 2.50 landing on three.js Y is what proves",
+        "RESCALED 2026-07-26 (DW-32, BT-11). WALL_T stays 0.25 for the same",
+        "reason DECK_H stays 0.50: a wall is as thick as a wall is, and a 1 m",
+        "thick partition is a bunker. Only the PLAN module scaled.",
+        "dims [4.0, 3.50, 0.25]: the 3.50 landing on three.js Y is what proves",
         "export_yup fired, and it is the number that must equal STOREY - DECK_H."
       ],
       "footprint_cells": [1, 1],
       "lod0_node": "Wall_LOD0",
       "lod_nodes": ["Wall_LOD0", "Wall_LOD1", "Wall_LOD2"],
-      "dims_xyz_m": [1.0, 2.50, 0.25],
+      "dims_xyz_m": [4.0, 3.50, 0.25],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 140,
-      "max_tris_total": 220,
+      "max_tris_lod0": 240,
+      "max_tris_total": 340,
       "max_materials": 3,
       "sockets": ["socket_top", "socket_end_l", "socket_end_r"],
       "clips": [],
       "collision": "col_Wall",
       "parts": [
-        {"node": "Wall_LOD1", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 80, "pivot": "ground"},
-        {"node": "Wall_LOD2", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 20, "pivot": "ground"}
+        {"node": "Wall_LOD1", "dims_xyz_m": [4.0, 3.50, 0.25], "max_tris": 110, "pivot": "ground"},
+        {"node": "Wall_LOD2", "dims_xyz_m": [4.0, 3.50, 0.25], "max_tris": 24, "pivot": "ground"}
       ]
     },
 
     "door": {
       "glb": "assets/models/dist/structures/door.glb",
       "_comment": [
-        "TIER 0 BASE BUILDING. The wall module with a 0.76 x 2.10 m opening,",
+        "TIER 0 BASE BUILDING. The wall module with a 1.20 x 2.40 m opening,",
         "so it drops into any cell of any wall run with no special case.",
+        "THE DOOR IS STILL ONE FULL CELL, and at a 4 m cell that is the whole",
+        "decision (DW-32, BT-11). The MODULE scaled and the OPENING did not:",
+        "a 4 m opening is a garage, and a sub-cell door would need a second,",
+        "finer lattice for wall furniture that no part of the placement",
+        "system has. So the panel is 4 m and the hole in it is 1.20 m, which",
+        "is a double-leaf industrial doorway against a 0.60 m player.",
         "THREE collision proxies, not one: a convex hull of a doorway is a",
         "sealed wall. Two jambs and a header leave the opening walk-through.",
         "The 40 mm hazard threshold is a step-over and carries none.",
-        "Door_Leaf hangs off door_hinge at x = -0.38 (the left jamb's inner",
+        "Door_Leaf hangs off door_hinge at x = -0.60 (the left jamb's inner",
         "face) and is the only animated node. frame1_identity asserts the",
         "exported static pose is a CLOSED door.",
         "OF_Accent appears here and NOWHERE else in the structural set: the",
@@ -1428,10 +1442,10 @@
       "footprint_cells": [1, 1],
       "lod0_node": "Door_LOD0",
       "lod_nodes": ["Door_LOD0", "Door_LOD1", "Door_LOD2", "Door_Leaf"],
-      "dims_xyz_m": [1.0, 2.50, 0.25],
+      "dims_xyz_m": [4.0, 3.50, 0.25],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 150,
-      "max_tris_total": 340,
+      "max_tris_lod0": 300,
+      "max_tris_total": 620,
       "max_tris_collision": 40,
       "max_materials": 5,
       "sockets": [
@@ -1444,10 +1458,66 @@
       "frame1_identity": true,
       "collision": ["col_Door_JambL", "col_Door_JambR", "col_Door_Header"],
       "parts": [
-        {"node": "Door_LOD1", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 80, "pivot": "ground"},
-        {"node": "Door_LOD2", "dims_xyz_m": [1.0, 2.50, 0.25], "max_tris": 48, "pivot": "ground"},
-        {"node": "Door_Leaf", "dims_xyz_m": [0.75, 2.02, 0.125], "max_tris": 90, "pivot": "none"}
+        {"node": "Door_LOD1", "dims_xyz_m": [4.0, 3.50, 0.25], "max_tris": 140, "pivot": "ground"},
+        {"node": "Door_LOD2", "dims_xyz_m": [4.0, 3.50, 0.25], "max_tris": 60, "pivot": "ground"},
+        {"node": "Door_Leaf", "dims_xyz_m": [1.18, 2.36, 0.125], "max_tris": 90, "pivot": "none"}
       ]
+    },
+
+    "pillar": {
+      "glb": "assets/models/dist/structures/pillar.glb",
+      "_comment": [
+        "TIER 0 BASE BUILDING, DW-32's support pillar. Four ground-pivoted",
+        "parts on the file origin, one group node each, assembled by the",
+        "renderer: a pillar is not one asset, it is a RECIPE.",
+        "WHY NOT ONE STRETCHED MESH. A pillar spans whatever gap there is",
+        "between an overhanging foundation's underside and the ground, which",
+        "is a continuous number, and one mesh scaled to it stretches its foot",
+        "and its bracket along with its shaft.",
+        "THE SHAFT IS PRISMATIC, which is the whole trick: constant cross",
+        "section along Y, no vertical feature anywhere on it, so scaling it in",
+        "Y is not an approximation, it is exact. Nothing can distort because",
+        "there is nothing along the axis to distort. Authored at EXACTLY",
+        "1.00 m so scale.y IS the length in metres.",
+        "The rhythm comes from PillarCollar, repeated every 2.00 m and never",
+        "scaled, which is what stops a long pillar reading as a stretched",
+        "tube. Foot and head are fixed heights at the two ends.",
+        "ASSEMBLY, given gap H from ground to deck underside:",
+        "  H < 0.70          no pillar at all, the deck is close enough",
+        "  PillarFoot        y = 0,        0.40 tall",
+        "  PillarShaft       y = 0.40,     scale.y = H - 0.70",
+        "  PillarHead        y = H - 0.30, 0.30 tall",
+        "  PillarCollar      y = 0.40 + 2.00k, k = 1.., dropped if within",
+        "                    0.35 m of either end",
+        "LOD0 ONLY, and it is a floor rather than an omission: the shaft is",
+        "16 triangles and the collar 24, which is already below where a",
+        "decimator saves anything. Same call detail_cards.glb makes."
+      ],
+      "lod0_node": "PillarShaft_LOD0",
+      "lod_nodes": [
+        "PillarFoot_LOD0", "PillarShaft_LOD0",
+        "PillarCollar_LOD0", "PillarHead_LOD0"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [0.50, 1.00, 0.50],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 60,
+      "max_tris_total": 400,
+      "max_tris_collision": 40,
+      "max_materials": 3,
+      "sockets": ["socket_top", "socket_deck"],
+      "clips": [],
+      "collision": ["col_PillarShaft", "col_PillarFoot"],
+      "parts": [
+        {"node": "PillarFoot_LOD0", "dims_xyz_m": [1.20, 0.40, 1.20], "max_tris": 120, "pivot": "ground"},
+        {"node": "PillarShaft_LOD0", "dims_xyz_m": [0.50, 1.00, 0.50], "max_tris": 60, "pivot": "ground"},
+        {"node": "PillarCollar_LOD0", "dims_xyz_m": [0.70, 0.24, 0.70], "max_tris": 60, "pivot": "ground"},
+        {"node": "PillarHead_LOD0", "dims_xyz_m": [1.00, 0.30, 1.00], "max_tris": 120, "pivot": "ground"}
+      ],
+      "part_sockets": {
+        "PillarFoot": {"socket_top": [0, 0.40, 0]},
+        "PillarHead": {"socket_deck": [0, 0.30, 0]}
+      }
     }
   }
 }
