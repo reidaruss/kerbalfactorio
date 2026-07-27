@@ -122,7 +122,12 @@ export function structureReport(s: Structures): unknown {
     unevenRefusals: s.unevenRefusals,
     removals: s.removals,
     sites: s.sites.length,
+    // `afford` is what the GAME says and `affordInCore` is what /core says with
+    // the mode taken out. They differ only in sandbox, and that difference IS
+    // DW-31's negative control: a part goes down while /core still says the
+    // pack cannot pay for it.
     costs: STRUCTURE_KINDS.map((k) => ({ kind: k, cost: s.costText(k),
+      afford: s.canAfford(k), affordInCore: s.affordInCore(k),
       item: s.defFor(k)?.item ?? 0, typeId: s.defFor(k)?.typeId ?? 0 })),
     parts: s.parts.map((p) => ({
       id: p.id, kind: p.kind, site: p.siteId, key: p.key,

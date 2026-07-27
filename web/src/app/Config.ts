@@ -99,6 +99,16 @@ export interface Config {
   /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
   readonly gameplay: boolean;
   /**
+   * DW-31. `?sandbox=1` creates a SANDBOX world: everything placeable at no
+   * cost, no research gate, no pack requirement, the whole catalogue in hand.
+   *
+   * It is a mode and not a debug knob, so unlike every other flag in this record
+   * it is carried into the save slot and the slot is keyed by it: a sandbox
+   * world and a survival world are different saves and neither can overwrite or
+   * be mistaken for the other (game/GameMode.ts, game/SaveGame.ts).
+   */
+  readonly sandbox: boolean;
+  /**
    * Near voxel mesh: draw only the faces of an EDIT. `?voxelskin=0` restores
    * the whole solid-to-air shell W5 drew, which is the layer that put a field
    * of dark 1 m pyramids over untouched ground (standing rule 7: the isolation
@@ -244,6 +254,11 @@ export function parseConfig(search: string): Config {
     props: p.get('props') !== '0',
     density: Math.max(0, num(p, 'density', 1)),
     gameplay: p.get('gameplay') !== '0',
+    // OFF unless asked for, and asked for POSITIVELY (`=1`), unlike the
+    // isolation switches above which are all `!== '0'`. A mode that could be
+    // entered by a typo in a query string is a mode that will silently label
+    // somebody's survival save as sandbox.
+    sandbox: p.get('sandbox') === '1',
     voxelSkinEditsOnly: p.get('voxelskin') !== '0',
     voxelNear: p.get('voxelnear') !== '0',
     aimShell: p.get('aimshell') === '1',

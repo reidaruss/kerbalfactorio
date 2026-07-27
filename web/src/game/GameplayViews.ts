@@ -20,7 +20,15 @@ export function slotRows(game: GameCore, icon: IconFor = NO_ICON): SlotRow[] {
   });
 }
 
-export function recipeRows(game: GameCore, icon: IconFor = NO_ICON): RecipeRow[] {
+/**
+ * `all` is DW-31's full catalogue: in sandbox every recipe reads craftable
+ * whatever the pack holds, because the panel is the only list of items the game
+ * has and "pick anything thats in the game" has to reach it. The `have` counts
+ * are still the TRUE ones, so the row shows what a survival player would need
+ * even while the button is live.
+ */
+export function recipeRows(game: GameCore, icon: IconFor = NO_ICON,
+                           all = false): RecipeRow[] {
   return game.recipes().map((r) => {
     const name = game.itemName(r.output);
     return {
@@ -28,7 +36,7 @@ export function recipeRows(game: GameCore, icon: IconFor = NO_ICON): RecipeRow[]
       name,
       icon: icon(name),
       outputCount: r.outputCount,
-      craftable: r.craftable,
+      craftable: all || r.craftable,
       inputs: r.inputs.map((i) => {
         const n = game.itemName(i.item);
         return { name: n, have: i.have, need: i.need, icon: icon(n) };

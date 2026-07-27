@@ -10,6 +10,7 @@ import { demolishBuild, demolishMachine, demolishStructure } from '../game/Demol
 import { renderVoices } from '../audio/Sfx.js';
 import { renderBeds } from '../audio/Beds.js';
 import { clearSlot } from '../game/SaveGame.js';
+import { urlForMode } from '../game/GameMode.js';
 import { clearEdits } from '../game/VoxelSave.js';
 import { showGoals } from '../game/Objectives.js';
 import { isPart } from '../game/Hotbar.js';
@@ -85,6 +86,29 @@ export function gameplayApi(s: Services, loop: Loop) {
 
     /** The base: every part, every site, the module and the costs. */
     structures: () => s.gameplay?.structures ?? null,
+
+    /**
+     * DW-31. READ-ONLY on purpose: there is no `sandbox(true)`.
+     *
+     * A setter would be the single most useful thing here and the single most
+     * dangerous: a probe, or a curious player at a console, could flip a
+     * survival world halfway through and its autosave would then be written to
+     * the sandbox key with half a survival session in it. Switching goes
+     * through the reload the menu uses, so a mode is always decided at boot.
+     * `switchUrl` is what that button would navigate to, for a probe to assert.
+     */
+    sandbox() {
+      const g = s.gameplay;
+      if (g === null) return null;
+      const to = g.mode.sandbox ? 'survival' : 'sandbox';
+      return {
+        ...(g.mode.report() as object),
+        switchUrl: urlForMode(window.location.href, to),
+        // The button a PLAYER presses, so a probe can click it rather than
+        // calling a function only a probe can reach (standing rule 3).
+        menuButton: g.panel.modeSwitch?.textContent ?? null,
+      };
+    },
 
     /**
      * Snap a body-frame point exactly as a MACHINE placement does: the metric
@@ -192,7 +216,10 @@ export function gameplayApi(s: Services, loop: Loop) {
     // can save, mutate, load and compare in a single page.
     save: () => s.gameplay?.save() ?? Promise.resolve(null),
     load: () => s.gameplay?.load() ?? Promise.resolve(null),
-    wipe: () => clearSlot(),
+    // The RUNNING mode's slot only. Wiping both would let a probe destroy a
+    // world it is not testing, which is exactly the contamination DW-31 exists
+    // to prevent, from the other direction.
+    wipe: () => clearSlot(s.gameplay?.mode.mode ?? 'survival'),
     // Regrow the clearing from the seed, exactly as boot does. This is what
     // lets a probe model a RELOAD without one: a save is a diff over a freshly
     // generated world, so restoring onto a world that is already more depleted

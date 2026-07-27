@@ -34,6 +34,8 @@ export class GameHud {
   private readonly toast: HTMLElement;
   private readonly gainEl: HTMLElement;
   private readonly bannerEl: HTMLElement;
+  /** DW-31: the mode badge. Never hidden by `setVisible`; see the constructor. */
+  private readonly mode: HTMLElement;
   private lastPrompt = '';
   private lastCarry = '';
   private toastLeft = 0;
@@ -41,13 +43,26 @@ export class GameHud {
   gains = 0;
   banners = 0;
 
-  constructor(parent: HTMLElement) {
+  /**
+   * DW-31's visibility requirement, and it is the cheapest line in the feature.
+   *
+   * A player who forgets they are in sandbox and reports a balance bug costs
+   * everyone a debugging session, so the badge is ALWAYS ON in that mode: it is
+   * deliberately left out of `setVisible`, which hides the rest of the HUD
+   * behind a panel, because the one moment a mode label matters most is while
+   * somebody is staring at a craft list wondering why everything is free.
+   * Empty in survival, so the normal game gains no chrome at all.
+   */
+  constructor(parent: HTMLElement, badge = '') {
     this.cross = this.div(parent, 'of-cross', '');
     this.prompt = this.div(parent, 'of-prompt', 'of-ui');
     this.carry = this.div(parent, 'of-carry', 'of-ui');
     this.toast = this.div(parent, 'of-toast', 'of-ui');
     this.gainEl = this.div(parent, 'of-gain', 'of-ui');
     this.bannerEl = this.div(parent, 'of-banner', 'of-ui');
+    this.mode = this.div(parent, 'of-mode', 'of-ui');
+    this.mode.textContent = badge;
+    this.mode.style.display = badge === '' ? 'none' : 'block';
   }
 
   private div(parent: HTMLElement, id: string, cls: string): HTMLElement {

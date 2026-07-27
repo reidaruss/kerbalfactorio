@@ -12,6 +12,7 @@
 
 import { demolishAimed } from './Demolition.js';
 import { furnaceView, recipeRows, slotRows } from './GameplayViews.js';
+import { urlForMode, type GameMode } from './GameMode.js';
 import type { Gameplay } from './Gameplay.js';
 import type { BuildRay } from './BuildMode.js';
 import type { Placed } from './Factory.js';
@@ -23,7 +24,7 @@ export function slots(g: Gameplay) {
   return slotRows(g.game, (n) => g.icons.for(n));
 }
 export function recipes(g: Gameplay) {
-  return recipeRows(g.game, (n) => g.icons.for(n));
+  return recipeRows(g.game, (n) => g.icons.for(n), g.mode.fullCatalogue);
 }
 
 /** Take an automated machine's finished stock into the pack. */
@@ -36,13 +37,20 @@ export function collectFrom(g: Gameplay, b: Placed): void {
   g.panel.invalidate();
 }
 
-/** Put a furnace or a smelter from the pack on the 1 m grid ahead of the eye. */
+/**
+ * Put a furnace or a smelter from the pack on the 1 m grid ahead of the eye.
+ *
+ * DW-31: in sandbox the pack is not a gate, so an empty one still places the
+ * primitive furnace. The tier is still read from the pack FIRST, so a sandbox
+ * player who has actually got a smelter puts down the smelter.
+ */
 export function placeMachine(g: Gameplay,
                              ray: { origin: { x: number; y: number; z: number };
                                     dir: { x: number; y: number; z: number } }): void {
   const ids = g.game.ids;
-  const tier = g.game.count(ids.furnace) > 0 ? 0
+  const held = g.game.count(ids.furnace) > 0 ? 0
     : g.game.count(ids.smelter) > 0 ? 1 : -1;
+  const tier = held < 0 && g.mode.freeBuild ? 0 : held;
   if (tier < 0) { g.hud.flash('nothing to place  (craft a furnace)'); return; }
   const item = tier === 0 ? ids.furnace : ids.smelter;
   if (g.machines.place(item, tier, ray.origin, ray.dir) === null) {
@@ -144,15 +152,42 @@ export function takeFurnace(g: Gameplay, m: Machine | null): void {
   if (n > 0) { g.hud.flash(`took ${n}`); g.sfx.confirm(); }
 }
 
-/** Hand-craft by recipe index, and redraw the panel that asked for it. */
+/**
+ * Hand-craft by recipe index, and redraw the panel that asked for it.
+ *
+ * DW-31: in sandbox the output is GRANTED rather than crafted, because "i can
+ * just pick anything thats in the game" has to be true of items and not only of
+ * buildings, and the craft list is the only catalogue of items the game already
+ * has. `of_gp_craft` is not called at all, for the reason `Structures.pay`
+ * gives: a call whose false return is ignored would eat inputs it did not
+ * announce.
+ */
 export function craft(g: Gameplay, index: number): void {
-  const ok = g.game.craft(index);
+  const want = g.game.recipes()[index];
+  const ok = g.mode.freeBuild
+    ? want !== undefined && g.game.add(want.output, want.outputCount) === 0
+    : g.game.craft(index);
   g.panel.invalidate();
   g.panel.render(slots(g), recipes(g));
   const r = ok ? g.game.recipes()[index] : undefined;
   if (r === undefined) return;
   g.hud.flash(`crafted ${g.game.itemName(r.output)}`);
   g.sfx.confirm();
+}
+
+/**
+ * Leave for the other mode, from the menu.
+ *
+ * IT RELOADS, and that is the design and not a shortcut. A mode is stamped on
+ * the save slot and decides which slot the world even lives in, so a session
+ * that spent five minutes in each has no honest label to write. The current
+ * world is saved to its OWN slot first, so switching costs nothing and coming
+ * back finds it exactly as it was left.
+ */
+export function switchMode(g: Gameplay, to: GameMode): void {
+  if (to === g.mode.mode) return;
+  const href = urlForMode(window.location.href, to);
+  void g.save().then(() => { window.location.assign(href); });
 }
 
 /** What the open machine's screen shows. One call, so Gameplay keeps no view. */

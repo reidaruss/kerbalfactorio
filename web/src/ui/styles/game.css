@@ -410,3 +410,46 @@
   font-size: 11px;
   color: var(--of-dim);
 }
+
+/* --- the mode badge (DW-31) --------------------------------------------- */
+/* Top centre, always on in sandbox and absent in survival. It is NOT hidden
+   with the rest of the HUD when a panel opens: staring at a craft list where
+   everything is free is exactly the moment a player needs to be told why. */
+#of-mode {
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  background: rgba(16, 20, 24, 0.82);
+  border: 1px solid var(--of-accent);
+  color: var(--of-accent);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 40;
+}
+
+/* --- the mode row in the pack panel (DW-31) ------------------------------ */
+#of-panel .mode {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--of-edge);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--of-dim);
+}
+#of-panel .mode b { color: var(--of-accent); font-weight: 600; }
+#of-panel .mode button {
+  font: inherit;
+  padding: 4px 10px;
+  background: #2c353d;
+  color: var(--of-ink);
+  border: 1px solid var(--of-edge);
+  cursor: pointer;
+}
+#of-panel .mode button:hover { border-color: var(--of-accent); }

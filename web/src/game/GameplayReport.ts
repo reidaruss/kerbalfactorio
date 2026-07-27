@@ -6,10 +6,15 @@
 // shaping rows is not a responsibility, and the composition was at the cap.
 
 import { structureReport } from './StructureSave.js';
+import { lastSlotRefusal } from './Persist.js';
 import type { Gameplay } from './Gameplay.js';
 
 export function gameplayReport(g: Gameplay): unknown {
   return {
+      // DW-31, FIRST because it changes the meaning of every number below it.
+      // A balance measurement taken in sandbox is not a balance measurement,
+      // and a report that does not say which mode it came from cannot be read.
+      mode: g.mode.report(),
       nodes: g.field.stats(),
       placed: g.nodesPlaced,
       // THE DEPOSITS. A patch is the whole ore body, so `remaining` here is the
@@ -52,7 +57,11 @@ export function gameplayReport(g: Gameplay): unknown {
       // predicates are re-asked, so a report that says an objective is done is
       // the same evidence the panel drew.
       goals: g.goals.report(),
-      persist: { saves: g.saves, restored: g.restored },
+      // `slotRefused` is DW-31's negative evidence: '' means nothing was turned
+      // away, 'mode' means a slot EXISTS under this key that the running mode
+      // will not read. An absence alone cannot tell those apart (DW-20).
+      persist: { saves: g.saves, restored: g.restored,
+        slotRefused: lastSlotRefusal() },
       demolition: {
         buildings: g.factory.removals, machines: g.machines.removals,
         refunded: g.factory.refunded,

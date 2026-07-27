@@ -15,7 +15,8 @@
 
 import * as THREE from 'three';
 import { SAVE_VERSION, readSlot, writeSlot,
-  type SaveMachine, type SaveSlot } from './SaveGame.js';
+  type SaveMachine, type SaveSlot, type SlotRefusal } from './SaveGame.js';
+import type { GameMode } from './GameMode.js';
 import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
 import type { Machines } from './Machines.js';
@@ -31,6 +32,18 @@ import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 
 /** The three Services handles a whole-world save needs and gameplay does not own. */
+/**
+ * Why the last load refused a slot that EXISTS, for the report.
+ *
+ * Module state rather than a field on Gameplay because the refusal happens
+ * before anything is restored, so there is no ledger to hang it on, and DW-20
+ * says a harness must be able to prove its own setup: a probe asserting "the
+ * survival boot did not read the sandbox world" needs to see the refusal, not
+ * just an absence.
+ */
+let lastRefusal: SlotRefusal = '';
+export function lastSlotRefusal(): SlotRefusal { return lastRefusal; }
+
 export interface WorldPorts {
   voxels: VoxelPort | null;
   voxelMesh: VoxelMeshPort | null;
@@ -51,6 +64,9 @@ export interface RestoreLedger {
   voxels: VoxelRestore;
   /** Whether the saved hotbar loadout came back. */
   hotbarRestored: boolean;
+  /** DW-31: the mode the slot was written in. Always equal to the running mode,
+   *  because a slot that disagreed was refused before it got here. */
+  mode: GameMode;
   savedAt: number;
 }
 
@@ -58,7 +74,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
                          seed: number, ports: WorldPorts,
                          ore: OreField, structures: Structures,
-                         hotbar: Hotbar): SaveSlot {
+                         hotbar: Hotbar, mode: GameMode): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -91,6 +107,10 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   return {
     version: SAVE_VERSION,
     seed,
+    // DW-31. The mode is written into the slot as well as deciding its key, so
+    // a world can always answer what it is without anybody consulting where it
+    // was found. SaveGame.ts has the argument for keeping both.
+    mode,
     savedAt: Date.now(),
     pack,
     voxels,
@@ -207,6 +227,7 @@ export function apply(M: OfCoreModule, game: GameCore,
     buildings, structures: restoredParts,
     machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
+    mode: slot.mode ?? 'survival',
     savedAt: slot.savedAt,
   };
 }
@@ -218,10 +239,11 @@ export function apply(M: OfCoreModule, game: GameCore,
  */
 export async function saveSlot(g: Gameplay): Promise<unknown> {
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField, g.structures, g.hotbar);
+    g.seed, g.ports, g.oreField, g.structures, g.hotbar, g.mode.mode);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
+    mode: slot.mode,
     bytes: slot.pack.length, buildings: slot.buildings.length,
     structures: slot.structures?.length ?? 0, sites: slot.sites?.length ?? 0,
     machines: slot.machines.length, depletion: slot.depletion.length,
@@ -231,7 +253,18 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
 }
 
 export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
-  const slot = await readSlot();
+  const read = await readSlot(g.mode.mode);
+  const slot = read.slot;
+  // DW-31. A slot refused for its MODE is said out loud rather than dropped: a
+  // world that silently arrives empty is the single most alarming thing a save
+  // system can do, and "that save was made in sandbox mode" is the sentence that
+  // stops the player thinking their base is gone. Their base is not gone; it is
+  // under the other mode's key and nothing here will write over it.
+  lastRefusal = read.refusal;
+  if (read.refusal === 'mode' && read.foundMode !== null) {
+    g.hud.flash(`that save was made in ${read.foundMode} mode, `
+      + `this world is ${g.mode.mode}`, 3.2);
+  }
   // A slot from another seed is a different planet, and loading it would drop
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;

@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { findNode, loadGlb, selectLod } from '../assets/Loaders.js';
 import { MachineGlow, Smoke } from './MachineFx.js';
 import { scratchF64, scratchI32, type OfCoreModule } from '../sim/wasm/heap.js';
+import { SURVIVAL, type ModeRules } from './GameMode.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore } from './GameCore.js';
 
@@ -89,6 +90,9 @@ export class Machines {
     /** The LIVE voxel edit set. A furnace put down in a pit belongs in the
      *  pit, and this used to be a literal 0 (probes/beltfloat.js). */
     private readonly edits: () => number = () => 0,
+    /** DW-31. A hand furnace's gate is "is it in the pack", which is the
+     *  crafted-item gate; sandbox lifts it (game/GameMode.ts). */
+    private readonly mode: ModeRules = SURVIVAL,
   ) {
     this.group.name = 'machines';
     this.group.add(this.smoke.mesh);
@@ -121,10 +125,14 @@ export class Machines {
    * Place `item` from the pack in front of the eye. Returns the machine, or
    * null if the pack has none. The item is only consumed on success, so a
    * failed placement can never eat a furnace.
+   *
+   * DW-31: in sandbox the pack is not consulted and nothing is removed. The
+   * spend is `this.core.remove` further down and it is guarded by the same
+   * question, so the two halves cannot drift apart.
    */
   place(item: number, tier: number, eye: { x: number; y: number; z: number },
         aim: { x: number; y: number; z: number }): Machine | null {
-    if (this.core.count(item) < 1) return null;
+    if (!this.mode.freeBuild && this.core.count(item) < 1) return null;
     const up = new THREE.Vector3(eye.x, eye.y, eye.z).normalize();
     // Project the aim into the tangent plane: a machine goes on the ground in
     // front of you, not wherever the crosshair happens to be pointing at the sky.
@@ -138,7 +146,7 @@ export class Machines {
       eye.z + flat.z * PLACE_AHEAD_M,
     );
     if (this.templates.get(FILES[tier].url) === undefined) return null;
-    if (this.core.remove(item, 1) !== 1) return null;
+    if (!this.mode.freeBuild && this.core.remove(item, 1) !== 1) return null;
     const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
     // THE MOUTH FACES THE PLAYER WHO PUT IT THERE. Standing local +Y on the
     // ground normal is only half a placement: the fire card is recessed in the

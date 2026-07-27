@@ -31,13 +31,14 @@ import { Factory, type Placed } from './Factory.js';
 import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
 import { Hotbar } from './Hotbar.js';
+import { ModeRules, type GameMode } from './GameMode.js';
 import { GameplayInput } from './GameplayInput.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
-import { craft, loadFurnace, machineView, raze, recipes, slots,
+import { craft, loadFurnace, machineView, raze, recipes, slots, switchMode,
   takeFurnace } from './GameplayActions.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
@@ -65,11 +66,16 @@ export interface GameplayDeps {
   scene: THREE.Object3D;
   bodyHandle: number;
   seed: number;
+  /** DW-31: which mode created this world. Fixed for its whole lifetime. */
+  mode: GameMode;
   /** DW-17: the voxel, mesh and terrain handles a whole-world save needs. */
   ports?: Partial<WorldPorts>;
 }
 
 export class Gameplay {
+  /** DW-31: what a placement costs, what the catalogue offers, and what the
+   *  save slot is keyed by. ONE authority, in game/GameMode.ts. */
+  readonly mode: ModeRules;
   readonly game: GameCore;
   readonly field: NodeField;
   /** The ore in the ground: the patches, their skin and their outcrops. */
@@ -130,11 +136,14 @@ export class Gameplay {
   }
 
   private constructor(private readonly d: GameplayDeps) {
+    this.mode = new ModeRules(d.mode);
     this.game = new GameCore(d.core);
     this.field = new NodeField(this.game, d.origin);
     this.oreField = new OreField(d.core, d.bodyHandle, this.field, d.origin);
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
-    this.hud = new GameHud(d.host);
+    // The badge is handed in rather than read, so the one place that decides
+    // what a mode is called stays GameMode.ts.
+    this.hud = new GameHud(d.host, this.mode.badge);
     this.hotbarBar = new HotbarBar(d.host);
     // Arranging the bar is a POINTER gesture, so it only works while the pack is
     // open: during play the pointer is locked to the canvas and there is no
@@ -142,12 +151,13 @@ export class Gameplay {
     this.hotbarBar.onSelect = (i) => { this.hotbar.select(i); this.hotbarBar.invalidate(); };
     this.hotbarBar.onSwap = (a, b) => { this.hotbar.swap(a, b); this.hotbarBar.invalidate(); };
     this.fx = new Feedback(this.hud, this.field, this.sfx);
-    this.panel = new InventoryPanel(d.host, this.modals, (i) => craft(this, i));
+    this.panel = new InventoryPanel(d.host, this.modals, (i) => craft(this, i),
+      this.mode, (m) => switchMode(this, m));
     this.panel.closer = () => this.setPanel(false);
     this.goalPanel = new ObjectivePanel(d.host);
     showGoals(this, this.goals.wasVisible());
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle,
-      () => d.ports?.voxels?.handle ?? 0);
+      () => d.ports?.voxels?.handle ?? 0, this.mode);
     this.furnacePanel = new FurnacePanel(
       d.host, this.modals, (item) => loadFurnace(this, this.openMachine, item),
       () => takeFurnace(this, this.openMachine));
@@ -167,7 +177,7 @@ export class Gameplay {
     // flat on the very next tick and the invalid ghost turns valid in the frame
     // the player levels it.
     this.structures = new Structures(d.core, this.game, d.bodyHandle,
-      () => d.ports?.voxels?.handle ?? 0);
+      () => d.ports?.voxels?.handle ?? 0, this.mode);
     this.factory = new Factory(d.core, this.game, d.bodyHandle, 1 / 60,
       this.oreField.patches, this.structures);
     this.factoryView = new FactoryView(d.origin);

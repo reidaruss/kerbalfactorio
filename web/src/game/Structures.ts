@@ -28,6 +28,7 @@ import { SITE_REACH_M, STRUCTURE_KINDS, localOf, makeSite, measureModule,
 import { StructureBodies, boundOf, leafProxy, proxiesOf,
   type LocalBox, type Solid } from './StructureBody.js';
 import { loadGlb } from '../assets/Loaders.js';
+import { SURVIVAL, type ModeRules } from './GameMode.js';
 import type { GameCore, StructureDef } from './GameCore.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Vec3d } from '../world/PlanetBody.js';
@@ -120,7 +121,10 @@ export class Structures {
 
   constructor(private readonly M: OfCoreModule, private readonly core: GameCore,
               private readonly body: number,
-              private readonly edits: () => number) {}
+              private readonly edits: () => number,
+              /** DW-31. The ONE gate a structural part has is its cost, so this
+               *  is where sandbox lands for the whole base-building system. */
+              private readonly mode: ModeRules = SURVIVAL) {}
 
   async load(): Promise<void> {
     await Promise.all(STRUCTURE_KINDS.map(async (k) => {
@@ -173,14 +177,33 @@ export class Structures {
     return this.defs[STRUCTURE_KINDS.indexOf(kind)] ?? null;
   }
 
-  /** The cost as a sentence, so a refusal can say exactly what is missing. */
+  /** The cost as a sentence, so a refusal can say exactly what is missing.
+   *  In sandbox there is no cost, and the ghost says so rather than quoting a
+   *  price nothing will be charged: a HUD that lies is worse than a quiet one. */
   costText(kind: StructureKind): string {
     const d = this.defFor(kind);
     if (d === null) return '';
+    if (this.mode.freeBuild) return 'free  (sandbox)';
     return d.cost.map((c) => `${c.count} ${this.core.itemName(c.item)}`).join(' + ');
   }
 
   canAfford(kind: StructureKind): boolean {
+    const d = this.defFor(kind);
+    if (d === null) return false;
+    return this.mode.freeBuild || this.core.structureAfford(d.index);
+  }
+
+  /**
+   * /core's OWN affordability answer, with the mode taken back out of it.
+   *
+   * DW-31's IN-PAGE negative control, and the reason it is worth a method: in
+   * sandbox a foundation goes down while this still reads false, which proves
+   * the cost rule is alive and that the MODE is what lifted it. Without it, a
+   * sandbox run that placed everything would look identical to a build whose
+   * affordability check had simply broken. Published rather than reconciled per
+   * consumer, which is DW-26's rule about one authority answering in two shapes.
+   */
+  affordInCore(kind: StructureKind): boolean {
     const d = this.defFor(kind);
     return d !== null && this.core.structureAfford(d.index);
   }
@@ -262,10 +285,18 @@ export class Structures {
     return p;
   }
 
-  /** Spend a part's cost. All or nothing, and /core decides. */
+  /**
+   * Spend a part's cost. All or nothing, and /core decides.
+   *
+   * DW-31: in sandbox nothing is spent AND the /core call is not made, which is
+   * the difference between a mode and a cheat. Calling `structurePay` and
+   * ignoring a false return would let a part go down while the pack was
+   * silently emptied of whatever it did happen to hold.
+   */
   pay(kind: StructureKind): boolean {
     const d = this.defFor(kind);
-    return d !== null && this.core.structurePay(d.index);
+    if (d === null) return false;
+    return this.mode.freeBuild || this.core.structurePay(d.index);
   }
 
   /** Take a site as-is (a restore). A placement founds one through makeSite. */

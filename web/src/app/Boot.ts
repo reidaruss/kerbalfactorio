@@ -246,6 +246,9 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     gameplay = await Gameplay.create({
       core, origin, player, avatar, input, host, scene: scenes.near,
       bodyHandle: body.handle, seed: cfg.seedLo,
+      // DW-31. The mode is decided ONCE, here, and everything downstream asks
+      // the ModeRules object rather than re-reading the flag.
+      mode: cfg.sandbox ? 'sandbox' : 'survival',
       // DW-17: the voxel handles live here, so the save slot is handed them
       // rather than gameplay reaching for a global.
       ports: { voxels, voxelMesh, terrain },

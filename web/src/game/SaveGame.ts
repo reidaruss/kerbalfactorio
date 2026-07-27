@@ -24,7 +24,33 @@
 
 const DB = 'orbital-foundry';
 const STORE = 'saves';
-const SLOT = 'auto';
+
+/**
+ * DW-31: A SLOT IS KEYED BY THE MODE THAT CREATED IT, and it also RECORDS that
+ * mode inside itself. Two mechanisms, deliberately, because they fail
+ * differently.
+ *
+ * The KEY is what makes contamination structurally impossible: a survival boot
+ * reads and autosaves `auto` and a sandbox boot reads and autosaves
+ * `auto-sandbox`, so neither run can read the other's world and, far more
+ * important, neither can OVERWRITE it. One shared key with a mode field would
+ * have been cheaper and wrong: the autosave fires every 20 seconds, so booting
+ * the wrong mode would destroy the other world inside half a minute while
+ * correctly refusing to load it.
+ *
+ * The FIELD is the belt and braces. If a slot ever turns up under a key that
+ * disagrees with its own record (a hand-edited store, a future migration bug),
+ * the load is REFUSED and the refusal is reported rather than best-effort
+ * merged, which is the same rule the version check already states: a
+ * half-understood save is worse than a fresh world because the player cannot
+ * tell which half came back.
+ *
+ * A slot written before modes existed has no `mode` field and lives under
+ * `auto`; both readings make it survival, which is what it is.
+ */
+function slotKey(mode: GameMode): string {
+  return mode === 'sandbox' ? 'auto-sandbox' : 'auto';
+}
 /** 2: voxel edits joined the slot, so a v1 slot cannot describe the tunnels.
  *  3: a deposit is an ore PATCH rather than a boulder, so the depletion diff is
  *     keyed by patch and a building carries the patch it stands on. A v2 slot
@@ -38,6 +64,7 @@ const SLOT = 'auto';
  *     old spacing and would never chain to anything placed after the load. */
 export const SAVE_VERSION = 5;
 
+import { asMode, type GameMode } from './GameMode.js';
 import type { SavedEdits } from './VoxelSave.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';
 
@@ -66,6 +93,9 @@ export interface SaveSlot {
   version: number;
   seed: number;
   savedAt: number;
+  /** DW-31: the mode this world was CREATED in. Optional on the type because a
+   *  slot written before modes existed has no field; it reads as survival. */
+  mode?: GameMode;
   /** persistence.h bytes from of_gp_inventory_serialize. */
   pack: number[];
   /** Harvest-node depletion: [index, remaining] for every node below full.
@@ -118,32 +148,58 @@ async function tx<T>(mode: IDBTransactionMode,
   }
 }
 
-/** Write the slot. Resolves false rather than throwing: a save is not a rule. */
+/** Write the slot under its OWN mode's key. A save is not a rule, so a failure
+ *  resolves false rather than throwing. */
 export async function writeSlot(slot: SaveSlot): Promise<boolean> {
   try {
-    await tx('readwrite', (s) => s.put(slot, SLOT) as IDBRequest<IDBValidKey>);
+    const key = slotKey(asMode(slot.mode));
+    await tx('readwrite', (s) => s.put(slot, key) as IDBRequest<IDBValidKey>);
     return true;
   } catch {
     return false;
   }
 }
 
-/** Read the slot, or null if there is none, it is broken, or it is too old. */
-export async function readSlot(): Promise<SaveSlot | null> {
+/** Why a slot that EXISTS was not loaded. Empty means it was, or there was none. */
+export type SlotRefusal = '' | 'version' | 'mode';
+
+export interface SlotRead {
+  slot: SaveSlot | null;
+  refusal: SlotRefusal;
+  /** The mode the refused slot claims, so the message can name it. */
+  foundMode: GameMode | null;
+}
+
+/**
+ * Read `mode`'s slot. A version or mode mismatch is a MISS, not an error and
+ * not a best-effort load, and the REASON comes back so the player is told.
+ *
+ * Answering DW-31's question directly: loading a sandbox slot without the flag,
+ * or a survival slot with it, does not happen at all, because the two live under
+ * different keys. If one somehow turns up under the other's key it is refused
+ * here, the fresh world stands, and the slot is left exactly as it was until the
+ * running mode's own autosave writes to the running mode's own key.
+ */
+export async function readSlot(mode: GameMode): Promise<SlotRead> {
   try {
-    const v = await tx('readonly', (s) => s.get(SLOT) as IDBRequest<SaveSlot | undefined>);
-    if (v === undefined || v === null) return null;
-    // A version mismatch is a MISS, not an error and not a best-effort load: a
-    // half-understood save is worse than a fresh world, because the player
-    // cannot tell which half came back.
-    return v.version === SAVE_VERSION ? v : null;
+    const v = await tx('readonly',
+      (s) => s.get(slotKey(mode)) as IDBRequest<SaveSlot | undefined>);
+    if (v === undefined || v === null) return { slot: null, refusal: '', foundMode: null };
+    const found = asMode(v.mode);
+    if (v.version !== SAVE_VERSION) {
+      return { slot: null, refusal: 'version', foundMode: found };
+    }
+    if (found !== mode) return { slot: null, refusal: 'mode', foundMode: found };
+    return { slot: v, refusal: '', foundMode: found };
   } catch {
-    return null;
+    return { slot: null, refusal: '', foundMode: null };
   }
 }
 
-export async function clearSlot(): Promise<void> {
+/** Throw away ONE mode's slot. The other mode's world is not this call's to
+ *  destroy, which is the whole reason the keys are separate. */
+export async function clearSlot(mode: GameMode): Promise<void> {
   try {
-    await tx('readwrite', (s) => s.delete(SLOT) as IDBRequest<undefined>);
+    await tx('readwrite', (s) => s.delete(slotKey(mode)) as IDBRequest<undefined>);
   } catch { /* nothing to clear */ }
 }
