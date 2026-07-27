@@ -21,9 +21,12 @@
 // `automation.h`'s entity arrays. See gameplay.h §S.6 and GP-21.
 
 import * as THREE from 'three';
+import { BURY_TOLERANCE_FALLBACK_M, CANTILEVER_STOREYS, FLOAT_TOLERANCE_M }
+  from './StructureTolerance.js';
+import { readSockets, type SocketDef } from './StructureSnap.js';
 import { orient } from './Grid.js';
-import { PILLAR_FALLBACK, SITE_REACH_M, STRUCTURE_KINDS, localOf, makeSite,
-  measureModule, measurePillar,
+import { MAX_LEVEL, PILLAR_FALLBACK, SITE_REACH_M, STRUCTURE_KINDS, localOf,
+  makeSite, measureModule, measurePillar,
   type Addr, type PillarModule, type Site, type StructureKind,
   type StructureModule } from './StructureGrid.js';
 import { StructureBodies, boundOf, leafProxy, proxiesOf,
@@ -45,66 +48,17 @@ const FILES: Record<StructureKind, string> = {
 const PILLAR_FILE = 'assets/structures/pillar.glb';
 
 /**
- * DW-24's numbers, and there are TWO of them because the two ways a part can sit
- * wrong on the ground are not the same failure.
- *
- * FLOAT is ground BELOW the part's base plane: a visible gap of daylight under a
- * hovering slab, which is the thing DW-24 is protecting against.
- *
- * RE-MEASURED FOR THE 4 m MODULE (GP-30), never scaled. Multiplying 0.55 by four
- * would have been a number about nothing: what sets this is the coarsest thing
- * that can MOVE the terrain, and the levelling tool still edits whole 1 m voxel
- * cells whatever size the foundation is. `probes/buildtol.js` re-run at the 4 m
- * footprint, 812 footprints per site and 113 over a levelled pad:
- *
- *   levelling tool, worst DOWNWARD residual over a levelled pad  0.5138 m
- *      (p95 0.2381; the half-cell dead band, unmoved by the module)
- *   ordinary sloped ground, a freely placed deck                 0.5142 m p95
- *      (p05 0.4979, so this is a cliff and not a tail)
- *   a plain 0.3350 m p95; a 3.51-in-4 slope, refused on purpose, 1.80 m
- *
- * So the measured floor is 0.52 and the old 0.55 still clears it. It goes to
- * 0.90 anyway, for three reasons that are all about the module having moved
- * under it rather than about the measurement:
- *
- *   1. 0.55 stood 4x above the 1 m terrain term (0.127 m) and stands 7% above
- *      the 4 m one. A bound whose margin collapsed from 4x to 1.07x is not the
- *      same bound, however little the digits moved.
- *   2. What makes a gap READ as wrong is its share of the span over it. 0.55 m
- *      under a 1.00 m deck was 55% of the span; 0.90 m under a 4.00 m deck is
- *      22%, so this is TIGHTER in the only terms a player can see.
- *   3. DW-32 ships a pillar whose minimum height is 0.70 m, and it exists so a
- *      clear deck reads as engineering instead of as this failure. Under 0.70 no
- *      ground-level deck can hang far enough to get one and the asset is
- *      unreachable; 0.90 opens a 0.70-to-0.90 band where a hang is both legal
- *      and visibly carried. See `StructureView.solvePillars`.
- *
- * It is still a number about the TOOL, and it should still come down the day the
- * tool can fill less than a whole cell.
- *
- * BURY is ground ABOVE the base plane. It disappears INSIDE the slab and reads
- * as a pad set into the soil, which is what a foundation on real ground looks
- * like, so it costs nothing until the ground would break through the top face.
- * The bound is therefore the deck thickness itself, taken from the asset's own
- * `socket_top` rather than typed, and the constant here is only the fallback for
- * a module that failed to load.
- *
- * WHY ASYMMETRIC, and which side now binds. One press of Q leaves the ground at
- * the target plus or minus about half a metre, so a single symmetric tolerance
- * has to be either tighter than the tool can hit, which makes a levelled pad
- * unbuildable, or looser than a slab is thick, which makes a floating foundation
- * legal. DECK_H did NOT scale with DW-32, so BURY is now the binding side and
- * FLOAT is not: a 4 m footprint spreads 1.01 m at the spawn where a 1 m one
- * spread 0.127, and a FOUNDING foundation has no float side at all, because
- * `makeSite` puts its plane on the lowest of its own five points. That is a real
- * consequence of the rescale, it is not this constant's to fix, and it is raised
- * as a cross-domain need rather than papered over here.
+ * DW-24's two numbers, the plane fit that spends them (GP-36) and the cantilever
+ * that relaxes one of them (GP-38) all live in StructureTolerance.ts, with the
+ * measurements that set them. They are re-exported here because roughly a dozen
+ * call sites and two probes already import them from this module, and moving a
+ * published name to make room in a file is a worse trade than one line of
+ * forwarding.
  */
-export const FLOAT_TOLERANCE_M = 0.90;
+export { FLOAT_TOLERANCE_M, BURY_TOLERANCE_FALLBACK_M } from './StructureTolerance.js';
 
 /** What a not-yet-placed free part is keyed by, until it has an id. */
 export const FREE_KEY = 'free:0';
-export const BURY_TOLERANCE_FALLBACK_M = 0.50;
 
 export interface StructurePart {
   id: number;
@@ -129,6 +83,10 @@ export class Structures {
   readonly sites: Site[] = [];
   /** Loaded roots, kept so the view and the module measurement share one parse. */
   readonly scenes = new Map<StructureKind, THREE.Object3D>();
+  /** GP-37: the sockets the art lane publishes, read once off the .glb files.
+   *  Empty until `load` runs, which is what makes the snap fail SOFT into the
+   *  bare grid rather than throwing on a client whose assets did not arrive. */
+  readonly sockets = new Map<StructureKind, SocketDef[]>();
   /** The pillar file's root, kept for the same one-parse reason `scenes` is. */
   pillarScene: THREE.Object3D | null = null;
   /** The DW-32 module. This literal is the ONE place a stale one can survive
@@ -163,6 +121,7 @@ export class Structures {
       if (k === 'door') this.readSwing(g.animations);
     }));
     this.module = measureModule(this.scenes);
+    for (const [k, v] of readSockets(this.scenes)) this.sockets.set(k, v);
     const p = await loadGlb(PILLAR_FILE);
     this.pillarScene = p.scene;
     this.pillar = measurePillar(p.scene);
@@ -204,6 +163,41 @@ export class Structures {
   get floatToleranceM(): number { return FLOAT_TOLERANCE_M; }
   get buryToleranceM(): number {
     return this.module.deckH > 0 ? this.module.deckH : BURY_TOLERANCE_FALLBACK_M;
+  }
+
+  /** GP-38: how far a deck CARRIED by a neighbour may hang, in metres. Read off
+   *  the module's storey rather than typed, so it follows the Blender set. */
+  get cantileverFloatM(): number {
+    return this.module.storey * CANTILEVER_STOREYS;
+  }
+
+  /**
+   * GP-39: the top surface of a deck covering a site-local point, as metres of
+   * site-local UP, or null when there is nothing built there.
+   *
+   * THIS IS WHAT MAKES A SMELTER SIT ON A FOUNDATION. A machine's tile is 1 m
+   * and a structural cell is 4 m, and DW-32 made them deliberately different
+   * constants sharing one site frame, so the two lattices are not re-unified
+   * here: the machine's tangent coordinates are simply divided down into the
+   * structural cell that contains them. The answer is `socket_top`'s own
+   * height, which is `deckH` above the level's base plane.
+   *
+   * `nearU` is the aim's own height over the plane and picks the storey, so
+   * aiming at the ground floor of a two-storey base puts the furnace on the
+   * ground floor. Without it the highest deck wins, which is right for the one
+   * case that has no aim to consult: a restore.
+   */
+  deckTopAt(site: Site, e: number, n: number, nearU?: number): number | null {
+    const C = this.module.cellM;
+    const i = Math.floor(e / C), j = Math.floor(n / C);
+    const want = nearU === undefined ? Infinity : nearU + this.module.storey * 0.5;
+    for (let level = MAX_LEVEL; level >= 0; --level) {
+      const top = level * this.module.storey + this.module.deckH;
+      if (top > want) continue;
+      const p = this.taken.get(`d:${i},${j},${level}`);
+      if (p !== undefined && p.siteId === site.id) return top;
+    }
+    return null;
   }
 
   defFor(kind: StructureKind): StructureDef | null {
@@ -263,7 +257,8 @@ export class Structures {
   /** A site founded on the world lattice cell containing `p`, not yet adopted. */
   prospectiveSite(p: Vec3d): Site {
     return makeSite(this.M, this.body, this.edits(), this.nextSite, p, this.module,
-      (x, y, z) => this.groundRadius(x, y, z));
+      (x, y, z) => this.groundRadius(x, y, z),
+      { floatM: FLOAT_TOLERANCE_M, buryM: this.buryToleranceM });
   }
 
   /**

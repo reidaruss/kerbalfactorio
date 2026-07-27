@@ -8,15 +8,21 @@
 // therefore the 4 m measurement without one constant having been scaled on
 // paper, which was the whole instruction.
 //
-// THE SAME FOOTPRINT IS JUDGED AGAINST THREE DIFFERENT BASE PLANES, because the
-// placement rules use three and they do not agree:
-//   FOUNDING  a foundation that founds its own site. `makeSite` puts the plane
-//             on the LOWEST of the five footprint points, so this case has NO
-//             float side at all and is bounded entirely by the deck thickness.
+// THE SAME FOOTPRINT IS JUDGED AGAINST FOUR DIFFERENT BASE PLANES, because the
+// placement rules use them and they do not agree:
+//   FOUNDING  a foundation that founds its own site, under GP-36's shipped rule:
+//             `fitPlane` spends the bury budget first and spills the rest into
+//             float, so the spread is charged against FLOAT + BURY.
+//   PINNED    the SAME footprints under the rule GP-36 replaced, which put the
+//             plane on the lowest of the five points and therefore charged the
+//             whole spread against the deck thickness alone. Kept so the before
+//             and the after are one measurement rather than two runs a day
+//             apart, and so a regression to the old rule cannot pass quietly.
 //   FREE      a part dropped with no site, judged against the ground under its
 //             own centre. Both signs live, roughly half the spread each.
 //   PLANE     the second and later parts of a base, judged against a plane the
-//             first part fixed, out to the site's own reach.
+//             first part fixed, out to the site's own reach. This one reads the
+//             REAL site, so it already carries whatever `makeSite` does today.
 // Each is reported as FLOAT (ground below the base: the visible gap of daylight
 // `FLOAT_TOLERANCE_M` bounds) and BURY (ground above it, bounded by the deck
 // thickness, which DW-32 did NOT scale), never as one unsigned number, because
@@ -126,17 +132,27 @@
     };
   };
 
-  /** Judge a list of site-local footprint centres all three ways. */
+  // GP-36's shipped plane fit, restated here in the probe's own arithmetic
+  // rather than imported. That is deliberate: a probe that called the client's
+  // own `fitPlane` would agree with it by construction and could not catch the
+  // day somebody changes it, which is exactly what this file is for.
+  const FLOAT = st.floatToleranceM;
+  const fit = (lo, hi) => Math.max(lo, Math.min(hi - DECK, lo + FLOAT));
+
+  /** Judge a list of site-local footprint centres all four ways. */
   const measure = (s, centres) => {
-    const found = [], free = [], plane = [];
+    const found = [], pinned = [], free = [], plane = [];
     for (const [e, n] of centres) {
       const d = devsAt(s, e, n);
       const lo = Math.min(...d), hi = Math.max(...d);
-      found.push([0, hi - lo]);
+      const k = fit(lo, hi);
+      found.push([Math.min(0, lo - k), Math.max(0, hi - k)]);
+      pinned.push([0, hi - lo]);
       free.push([Math.min(0, lo - d[0]), Math.max(0, hi - d[0])]);
       plane.push([Math.min(0, lo), Math.max(0, hi)]);
     }
-    return { founding: judge(found), free: judge(free), plane: judge(plane) };
+    return { founding: judge(found), pinned: judge(pinned), free: judge(free),
+      plane: judge(plane) };
   };
 
   /** Every cell centre within `reach` of a site origin. */
@@ -243,9 +259,14 @@
       mid: { at: midAt.at, spread: midAt.spread, latLon: latLonOf(midAt.at) },
       slope: { at: slopeAt.at, spread: slopeAt.spread, latLon: latLonOf(slopeAt.at) },
       scanMedian: r4(pct(scan.map((s) => s.spread), 0.5)),
-      // How much of this planet a 4 m deck can rest on at all, which is the
-      // number the rescale actually moved.
+      // HOW MUCH OF THIS PLANET A 4 m DECK CAN FOUND ON, before and after
+      // GP-36, over the same 81 origins out to 6.4 km. `scanUnderBury` is the
+      // old rule: the whole spread charged against the deck thickness alone.
+      // `scanBuildable` is the shipped one: the spread spent across both sides,
+      // so the bound is FLOAT + BURY. One line apart in the report on purpose.
       scanUnderBury: +(scan.filter((s) => s.spread <= DECK).length
+        / scan.length).toFixed(3),
+      scanBuildable: +(scan.filter((s) => s.spread <= DECK + FLOAT).length
         / scan.length).toFixed(3),
     },
     plain: measure(plainAt.site, CELLS),

@@ -31,6 +31,7 @@
 
 import * as THREE from 'three';
 import { boundsOf } from './StructureBody.js';
+import { fitPlane } from './StructureTolerance.js';
 import { snapToAxes, snapToGround } from './Grid.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Vec3d } from '../world/PlanetBody.js';
@@ -260,7 +261,10 @@ export function addrKey(a: Addr): string {
  */
 export function makeSite(M: OfCoreModule, body: number, edits: number, id: number,
                          p: Vec3d, m: StructureModule,
-                         ground: (x: number, y: number, z: number) => number): Site {
+                         ground: (x: number, y: number, z: number) => number,
+                         /** GP-36. The two halves of the budget the plane is
+                          *  fitted inside. See StructureTolerance.fitPlane. */
+                         bounds: { floatM: number; buryM: number }): Site {
   const s = snapToGround(M, body, edits, p.x, p.y, p.z);
   const up = s.up.clone();
   const basis = new THREE.Vector3(-up.y, up.x, 0);
@@ -268,22 +272,25 @@ export function makeSite(M: OfCoreModule, body: number, edits: number, id: numbe
   const east = snapToAxes(up, basis, basis);
   const north = new THREE.Vector3().crossVectors(up, east).normalize();
   const half = m.cellM * 0.5;
-  // THE PLANE SITS AT THE LOWEST GROUND UNDER THE FOUNDING CELL, not at its
-  // centre. Both choices are defensible on flat ground and they part company on
-  // a slope, where the centre would leave one corner hanging in the air and the
-  // minimum leaves one corner buried instead. Buried is invisible (it is inside
-  // 0.50 m of slab) and hanging is a gap of daylight, so the base of a whole
-  // base is founded on its own worst case rather than on its average.
+  // GP-36 (DW-33). THE PLANE IS CHOSEN TO FIT THE FOUNDING CELL'S FOOTPRINT, not
+  // pinned to its low point. Pinning put the whole spread on the bury side, and
+  // at the 4 m module the spread at the default spawn is 1.012 m against a
+  // 0.50 m bound, so every cell was refused. `fitPlane` spends the bury budget
+  // first and spills the rest into float; the arithmetic and the argument for
+  // that direction live in StructureTolerance.ts and not here.
   const centreR = Math.hypot(s.pos.x, s.pos.y, s.pos.z) || 1;
-  let drop = 0;
+  let lo = Infinity;
+  let hi = -Infinity;
   for (const [de, dn] of [[0, 0], [-half, -half], [half, -half], [-half, half],
     [half, half]]) {
     const x = s.pos.x + east.x * de + north.x * dn;
     const y = s.pos.y + east.y * de + north.y * dn;
     const z = s.pos.z + east.z * de + north.z * dn;
-    drop = Math.min(drop, ground(x, y, z) - Math.hypot(x, y, z));
+    const dev = ground(x, y, z) - Math.hypot(x, y, z);
+    lo = Math.min(lo, dev);
+    hi = Math.max(hi, dev);
   }
-  const baseR = centreR + drop;
+  const baseR = centreR + fitPlane(lo, hi, bounds.floatM, bounds.buryM);
   const k = baseR / centreR;
   return {
     id, up, east, north, baseR, cell: s.cell,

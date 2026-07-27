@@ -371,6 +371,8 @@ export class BuildMode {
           this.structTarget.pos.z],
         unevennessM: +this.structTarget.unevennessM.toFixed(4),
         free: this.structTarget.freePlaced,
+        // GP-37 / GP-38: WHAT it caught, and how far out over nothing it is.
+        snapped: this.structTarget.snapped, carryRun: this.structTarget.carryRun,
       },
       ghost: this.target === null ? null : {
         cell: this.target.cell, ok: this.target.ok, reason: this.target.reason,

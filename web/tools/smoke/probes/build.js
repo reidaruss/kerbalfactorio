@@ -89,9 +89,15 @@
     b.click();
     return true;
   };
+  // FIVE ingots, not one. GP-40 re-priced a door from 1 Iron to 4, so a probe
+  // that smelts one ingot now measures a refusal instead of a door. The panel
+  // loads five at a time and the furnace takes 180 ticks each, so this waits
+  // out the whole batch rather than one smelt, and the FIFTH ingot is what
+  // makes the short-pack refusal below deterministic: the door spends four and
+  // exactly one is left, which is short by three however the harvest went.
   click('Raw iron'); await sleep(0.05);
   if (!click('Coal')) click('Wood');
-  await sleep(200 / 60);
+  await sleep(1000 / 60);
   const take = document.querySelector('#of-furnace button[data-take]');
   if (take !== null) take.click();
   await sleep(0.1);
@@ -100,7 +106,7 @@
   of.demolish({ machine: 0 });
   await sleep(0.2);
   const stocked = named();
-  if ((stocked.Iron ?? 0) < 1) return fail('no iron ingot for a door', { stocked });
+  if ((stocked.Iron ?? 0) < 4) return fail('not enough iron for a door', { stocked });
   log.push(`smelted, pack now ${JSON.stringify(stocked)}`);
 
   // --- aim helpers -----------------------------------------------------------
@@ -180,16 +186,23 @@
   const under = await sweep((g) => g.addr !== null && g.ok, -88, -55);
   if (under === null) return fail('no valid cell underfoot', { ghost: ghost() });
   const cellA = under.g.addr;
+  const keyA = under.g.key;
   const spendBefore = named();
   of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
-  if (of.game().structures.parts.length !== 1) {
+  // A HELD `use` DRAG-PLACES (GP-26), so one press can lay more than one cell
+  // and the cost has to be divided by what actually went down. Asserting a
+  // whole-press total against a per-part price is how a re-price turns a green
+  // suite red for a reason that has nothing to do with the re-price.
+  const laid = of.game().structures.parts.length;
+  if (laid < 1) {
     return fail('the click placed no foundation', { ghost: ghost() });
   }
   const spendAfter = named();
   siteId = of.game().structures.parts[0].site;
-  const stoneSpent = (spendBefore.Stone ?? 0) - (spendAfter.Stone ?? 0);
-  log.push(`foundation at ${cellA}, Stone ${spendBefore.Stone} -> ${spendAfter.Stone}`);
+  const stoneSpent = ((spendBefore.Stone ?? 0) - (spendAfter.Stone ?? 0)) / laid;
+  log.push(`${laid} foundation(s) at ${cellA}, Stone ${spendBefore.Stone} -> `
+    + `${spendAfter.Stone}, ${stoneSpent} each`);
 
   // --- 5. DW-24 end to end: refused, levelled with Q, accepted --------------
   // A cell out on the SAME site, where the terrain has left the site plane. The
@@ -252,11 +265,16 @@
     && g.addr[2] === cellA[2], -85, -8, AROUND);
   if (nb === null) return fail('no adjacent cell', { cellA, ghost: ghost() });
   const cellB = nb.g.addr;
+  const keyB = nb.g.key;
   of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
   await sleep(0.35);
-  const two = of.game().structures.parts;
-  if (two.length !== 2) return fail('the neighbour was refused', { cellB, two });
-  const centres = dist(two[0].pos, two[1].pos);
+  const all = of.game().structures.parts;
+  const pA = all.find((p) => p.key === keyA);
+  const pB = all.find((p) => p.key === keyB);
+  if (pA === undefined || pB === undefined) {
+    return fail('the neighbour was refused', { keyA, keyB, n: all.length });
+  }
+  const centres = dist(pA.pos, pB.pos);
   // A gap is the centre distance minus one module. Zero means the two 1.00 m
   // decks touch exactly: no seam and no overlap.
   const gapM = centres - M.cellM;
@@ -473,11 +491,19 @@
   // --- 7. save, force the live world back, reload ---------------------------
   const before = of.game().structures.parts;
   const saved = await of.save();
+  // THE AUTOSAVE IS THE HAZARD, and it has to be measured rather than hoped
+  // about. `Gameplay` autosaves every 20 s of SIM time, and this probe advances
+  // a great deal of it; one firing between the demolition and the reload would
+  // overwrite the slot with the empty world and the round trip would then be
+  // asserting that nothing comes back from a save of nothing. The counter is
+  // read on both sides of the window so the report can say which happened.
+  const savesA = of.game().persist.saves;
   for (const p of [...before]) of.demolish({ part: p.id });
-  await sleep(0.3);
   const emptied = of.game().structures.parts.length;
+  const savesB = of.game().persist.saves;
   const restored = await of.load();
   await sleep(0.4);
+  log.push(`autosaves across the reload window: ${savesA} -> ${savesB}`);
   const after = of.game().structures.parts;
   let worstMoveM = 0;
   for (const p of before) {
@@ -499,15 +525,28 @@
   // what this capture is of; the whole-base centroid is pulled off by whatever
   // free-placed part happened to land furthest away.
   const focus = shot.find((q) => q.key === (upFloor?.key ?? '')) ?? shot[0];
-  const mid = [0, 1, 2].map((k) => focus.pos[k]);
-  await faceAt(mid, -1);
-  of.input.tape([{ hold: 110, keys: ['KeyW'] }, { hold: 10, keys: [] }]);
-  await sleep(2.4);
-  const shotYaw = await faceAt(mid);
-  of.look(shotYaw, -7);
-  await sleep(0.8);
+  // GUARDED. A capture is the last thing this probe does and it must never be
+  // the thing that throws away the measurements: an empty base here means the
+  // restore above failed, which is a RESULT and belongs in the report, not a
+  // TypeError that discards eight other assertions on its way out.
+  if (focus !== undefined) {
+    const mid = [0, 1, 2].map((k) => focus.pos[k]);
+    await faceAt(mid, -1);
+    of.input.tape([{ hold: 110, keys: ['KeyW'] }, { hold: 10, keys: [] }]);
+    await sleep(2.4);
+    const shotYaw = await faceAt(mid);
+    of.look(shotYaw, -7);
+    await sleep(0.8);
+  }
 
   const g = of.game();
+  // THE PRICE COMES FROM /core, not from this file. GP-40 moved every structural
+  // cost and a probe that had 4 typed into it would have gone red for the wrong
+  // reason; what is worth asserting is that the pack was charged EXACTLY what
+  // the ghost quoted, whatever the table says today.
+  const foundationStone = Number(
+    (g.structures.costs.find((c) => c.kind === 'foundation')?.cost ?? '')
+      .match(/(\d+) Stone/)?.[1] ?? 0);
   return {
     advanced: { ticks: of.world().tick - t0, harvests },
     module: M,
@@ -541,9 +580,9 @@
       shutBlocks, openBlocks, passedOpen, blockedByShut,
       swingSecs: g.structures.swing.secs, swingRad: g.structures.swing.rad,
     },
-    cost: { stoneSpentPerFoundation: stoneSpent, shortReason, placedWhileShort,
-      costs: g.structures.costs },
-    persist: { saved, autosaves: g.persist.saves,
+    cost: { stoneSpentPerFoundation: stoneSpent, foundationStone,
+      shortReason, placedWhileShort, costs: g.structures.costs },
+    persist: { saved, autosaves: g.persist.saves, autosavedInWindow: savesB - savesA,
       before: before.length, emptied, after: after.length,
       worstMoveM: +worstMoveM.toExponential(3), restored: restored?.structures ?? 0 },
     pillar: {
@@ -575,7 +614,8 @@
       && (unlevelled === null || (unlevelled.ok === false
         && unlevelled.reason.includes('level it with Q')))
       // 6. the cost is spent, and a short pack is refused by name
-      && stoneSpent === 4 && shortReason.startsWith('need ') && placedWhileShort === 0
+      && stoneSpent === foundationStone && foundationStone > 0
+      && shortReason.startsWith('need ') && placedWhileShort === 0
       // 7. and it all comes back from bytes, over a world that was emptied first
       && before.length >= 4 && emptied === 0 && after.length === before.length
       && worstMoveM < 1e-9

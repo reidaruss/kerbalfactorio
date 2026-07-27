@@ -47,7 +47,7 @@ the failure this project has paid for six times. See lane B.
 |---|---|---|---|---|
 | A | Art: characters and world dressing | player model, player animation, grass, trees, ore deposit meshes, belt cargo meshes, armour slots as art | `tools/blender/`, `assets/` | in flight: contracts written, 3 build lanes running, armour queued behind the character |
 | B | Terrain and digging | smooth voxel field, dig quality, Q flattening, flat-ish spawn, mountain shape, generation quality for the default seed | `core/` worldgen + voxels, `web/src/world/` | launched |
-| C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | launched |
+| C | Base building and placement | DW-33 founding plane, cantilever from a neighbour, foundation and wall snapping, machines sitting on decks, re-price at 4 m | `web/src/game/Structure*.ts`, `MachinePlacement.ts` | **all five landed** (GP-36 to GP-40) |
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
 | E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`** (248 checks green, 1,200 machines cost 10.06 us/sim-tick); production hook + combat handoff published, see Blockers |
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
@@ -68,6 +68,44 @@ the failure this project has paid for six times. See lane B.
 ## Blockers
 
 _Lanes append here. Include what you tried and what would unblock it._
+
+### Lane C, 2026-07-27
+
+- **Standing rule 10 was broken again, and this time it took MY work.** The
+  `gameplay.h` re-price (GP-40) and its `test_survival_slice.cpp` pins were swept
+  into lane D's commit `eceadf6` ("FS-20 to FS-25: electricity"). Nothing is lost
+  and nothing is broken: the content is correct and on main. What is destroyed is
+  the history's ability to explain itself, which is the third time in two days.
+  The rule is being followed by the lanes that read it and broken by the shared
+  index, so it may be worth a stronger mechanism than a convention: the cost of
+  `git commit -- <paths>` is one clause, and the cost of forgetting it is a commit
+  message that describes someone else's work.
+- **`surface_field_tests` is red on HEAD and is lane B's in-flight field change,
+  not mine.** ctest read 24/24 when I started, 20/24 mid-run while lane B and lane
+  D were both mid-edit, and 23/24 once lane D's commit landed. All three of the
+  structural suites I own (`structure_defs_*`, `structure_items_*`,
+  `structure_pay_inputs_*`) are green throughout.
+- **The ABI moved under me mid-run.** I rebuilt the wasm at ABI 6 and synced it,
+  lane D then landed ABI 7 in shim and client, and every probe died with "wasm
+  reports 6, client expects 7" until I rebuilt. That is standing rule 9 working
+  exactly as designed and it cost ten minutes; recorded only because the failure
+  mode reads like a bridge bug and is not one.
+- **`probes/controls.js` fails one assertion, "one press, one tile: 2 in the first
+  three ticks", and it is NOT reachable from anything I changed.** With no
+  structures in the world `Structures.deckTopAt` returns null on the first map
+  lookup and `MachinePlacement.anchorIn` runs the byte-identical ground path it
+  always did, and `controls.js` places no structures. The belt drag is lane F's,
+  which is queued behind this lane; flagged so it is not diagnosed twice.
+- **Every tolerance in this lane wants re-measuring, and this is not a complaint.**
+  The terrain moved twice while I worked. When I started, the spawn refused every
+  cell (bury 1.0123 m p50) and 19.8% of 81 origins were buildable; two lane-B
+  landings later the spawn is exactly flat (spread 0.0000) and the planet-wide
+  figure reads 14.8% under the old rule. The GP-36 comparison is therefore
+  reported as pinned-vs-fit measured in ONE probe run over ONE terrain (14.8% ->
+  58.0%), never as a before-and-after across the two. **`FLOAT_TOLERANCE_M` = 0.90
+  is still a number about the LEVELLING TOOL's half-cell dead band, and if the
+  smooth field lets Q fill less than a whole cell it should come down.** Re-run
+  `probes/buildtol.js` once the field settles.
 
 ### Lane B, 2026-07-27
 
@@ -422,3 +460,48 @@ _Lanes append a line per landed change: date, lane, what, and the number that pr
   until fluids exist** (FS-23). No `web/**` file touched, no wasm rebuild, ABI
   untouched by lane D; the bridge exports, the panel and the wire rendering are
   handed off in the lane D blockers above.
+
+### Lane C, 2026-07-27: base building, all five items
+
+**GP-36, the founding plane is chosen to fit (DW-33).** `fitPlane(lo, hi, floatM,
+buryM) = clamp(hi - buryM, lo, lo + floatM)` in the new `StructureTolerance.ts`,
+applied by `makeSite`. Fills the bury budget first and spills the remainder into
+float, because a float past its bound can be carried by a neighbour and a bury
+past its bound cannot. **14.8% of 81 origins buildable under the pinned rule, 58.0%
+under the fit, measured in ONE probe run over ONE terrain; the `mid` site went
+70.6% to 100.0% of 812 footprints.** `probes/buildtol.js` now scores both rules
+side by side so the comparison survives the terrain moving.
+
+**GP-37, snapping.** `StructureSnap.ts` reads `socket_edge_n/e/s/w` and
+`socket_end_l/r` off the shipped `.glb` files once at load; the nearest within
+3.00 m overrules the grid whenever the cell it offers is free, and the ghost says
+`[snapped to #12 socket_edge_e]`. Directions come from the socket's local
+POSITION rotated by the part's quaternion, never from its name. **Deck to deck
+1.392e-12 m; a wall 0.000e+0 m from the socket the ghost said it caught AND
+0.000e+0 m from the nearest one; two panels of a run 0.000e+0 m end to end; one
+placement driven through a real `PointerEvent`** (`probes/basesnap.js`).
+
+**GP-38, the cantilever.** One storey (4.00 m, off `module.storey`) of hang when
+an orthogonally adjacent deck carries it, capped at 3 cells from the nearest
+grounded deck, bury untouched. **Runs 1, 1, 2, 3 accepted hanging 0.50, 2.00,
+3.35, 3.91 m; the fourth refused "nothing under this and no solid ground within
+3 cells"; pillars 3 decks / 9 pieces / 3.152 m tallest. Negative control on the
+SAME cell: pull its three carriers and the identical 2.0014 m hang is refused**
+(`probes/cantilever.js`, screenshot `docs/screenshots/W11_cantilever.png`).
+
+**GP-39, machines on decks.** `anchorIn` takes the deck's own `socket_top` height
+when a deck covers the cell; the hand furnace also leaves `of_cell_for_pos`, which
+it was the last thing in the build system still using. **`onDeck` true, 6.695e-12 m
+above the deck's own socket.** The 4 m structural cell and the 1 m `MACHINE_TILE_M`
+stay deliberately separate.
+
+**GP-40, re-priced at 4 m.** Foundation 40 Stone, floor 20 Wood + 20 Stone, wall
+12 Wood, door 16 Wood + 4 Iron: 10x on decks, 4x on wall parts, short of the 16x
+area parity on purpose. **40 Stone charged per foundation, read from /core's own
+quoted price rather than a literal, and a short pack refused "need 16 Wood + 4
+Iron"** (`probes/build.js`). The `/core` test now pins the ORDERING as well as
+the values.
+
+Gates: **23/24 ctest** (`surface_field_tests` is lane B's in-flight field),
+`npm --prefix web run check` green, 160 files all under 400 lines,
+`probes/build.js`, `basesnap.js` and `cantilever.js` all `valid: true`.

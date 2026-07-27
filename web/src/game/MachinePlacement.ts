@@ -58,6 +58,9 @@ export interface SiteHost {
   prospectiveSite(p: Vec3d): Site;
   adoptSite(s: Site): void;
   groundRadius(x: number, y: number, z: number): number;
+  /** GP-39: the top of a deck covering this site-local point, in metres of
+   *  site-local up, or null for bare ground. See `Structures.deckTopAt`. */
+  deckTopAt(site: Site, e: number, n: number, nearU?: number): number | null;
 }
 
 /**
@@ -74,6 +77,18 @@ export interface MachineAddr {
   i: number;
   j: number;
   prospective: boolean;
+  /**
+   * GP-39: the aim's own height over the site plane, metres, when there was an
+   * aim to read it from.
+   *
+   * It is the only thing that can tell a furnace aimed at the ground floor of a
+   * two-storey base from one aimed at the balcony, because a machine cell is a
+   * SQUARE and a base is a stack of them. Optional because half the addresses in
+   * this system are synthesised (a drag fill, a re-key after a site is adopted)
+   * and have no aim behind them; those fall back to the highest deck, which is
+   * the right answer for the single-storey base that is every base today.
+   */
+  u?: number;
 }
 
 /**
@@ -108,7 +123,7 @@ export function addressIn(site: Site, _m: StructureModule, p: Vec3d,
                           prospective = false): MachineAddr {
   const l = localOf(site, p, new THREE.Vector3());
   return {
-    site, prospective,
+    site, prospective, u: l.z,
     i: Math.floor(l.x / MACHINE_TILE_M), j: Math.floor(l.y / MACHINE_TILE_M),
   };
 }
@@ -116,21 +131,40 @@ export function addressIn(site: Site, _m: StructureModule, p: Vec3d,
 /**
  * Where a machine at this address stands, and which way is up there.
  *
- * The two tangent coordinates are the site's, EXACT to the module; the radius is
- * the oracle's. That split is the whole fix: spacing comes from a metric frame
- * that cannot drift, height comes from the one surface authority.
+ * The two tangent coordinates are the site's, EXACT to the module; the height is
+ * the ORACLE's on bare ground and the DECK's over a base. That split is the
+ * whole fix: spacing comes from a metric frame that cannot drift, height comes
+ * from the one authority that owns the surface the machine is actually on.
+ *
+ * GP-39, and the complaint it answers is "items like smelters dont sit ontop of
+ * the foundation". They did not, because every machine took its radius from
+ * `of_surface_radius` and a foundation deliberately does not write to the voxel
+ * layer (DW-24), so a smelter placed on a 0.50 m deck sank half a metre into it
+ * and stood on the soil underneath. The deck top is asked for by ADDRESS rather
+ * than by raycast so the answer is exact: it is the level's base plane plus the
+ * asset's own `socket_top` height, in the frame both parts already share.
+ *
+ * On a deck the normal is the SITE's up rather than the local radial. Over a
+ * 64 m site those differ by 1e-4 rad, which is invisible, but the deck is a
+ * plane and a machine standing on a plane should be flush with it rather than
+ * with the sphere the plane is tangent to.
  */
 export function anchorIn(host: SiteHost, a: MachineAddr):
-{ pos: Vec3d; up: THREE.Vector3 } {
+{ pos: Vec3d; up: THREE.Vector3; onDeck: boolean } {
   const c = MACHINE_TILE_M;
-  const p = worldOf(a.site, (a.i + 0.5) * c, (a.j + 0.5) * c, 0,
-    { x: 0, y: 0, z: 0 });
+  const e = (a.i + 0.5) * c, n = (a.j + 0.5) * c;
+  const deck = host.deckTopAt(a.site, e, n, a.u);
+  if (deck !== null) {
+    return { pos: worldOf(a.site, e, n, deck, { x: 0, y: 0, z: 0 }),
+      up: a.site.up.clone(), onDeck: true };
+  }
+  const p = worldOf(a.site, e, n, 0, { x: 0, y: 0, z: 0 });
   const r = Math.hypot(p.x, p.y, p.z) || 1;
   const up = new THREE.Vector3(p.x / r, p.y / r, p.z / r);
   const ground = host.groundRadius(p.x, p.y, p.z);
   return {
     pos: { x: up.x * ground, y: up.y * ground, z: up.z * ground },
-    up,
+    up, onDeck: false,
   };
 }
 
@@ -164,10 +198,10 @@ export function stepToward(a: MachineAddr, to: MachineAddr): MachineAddr | null 
   // L of straight runs rather than as a staircase of corners.
   if (Math.abs(di) >= Math.abs(dj)) {
     return { site: a.site, i: a.i + Math.sign(di), j: a.j,
-      prospective: a.prospective };
+      prospective: a.prospective, u: a.u };
   }
   return { site: a.site, i: a.i, j: a.j + Math.sign(dj),
-    prospective: a.prospective };
+    prospective: a.prospective, u: a.u };
 }
 
 /** Is this point still inside a site's reach? Past it, a new site is founded. */

@@ -5,22 +5,28 @@
 // which mesh it is, and the one thing a placement system must never get wrong:
 // the grid it snaps to and the ground it sits on.
 //
-// THE GRID IS /core's. `of_cell_for_pos` and `of_cell_center` are the same 1 m
-// voxel lattice the digging layer uses, so a furnace and a tunnel agree about
-// where a metre starts. Snapping to a grid invented in JS would put the two
-// half a cell apart everywhere, which is the class of bug that only shows up
-// once belts have to line up with something.
+// THE GRID IS THE SITE'S, and it stopped being /core's voxel lattice on the day
+// this file was the last thing in the build system still using it (GP-39).
+// GP-27 moved drills, belts and factory smelters onto the metric site frame
+// because a unit step of `of_cell_for_pos` covers 0.59 to 1.02 m of ground
+// depending on the axis; the HAND furnace and smelter were left behind, so a
+// furnace and the belt running into it disagreed about where a metre starts.
+// `MachinePlacement` is now the single answer for both.
 //
-// THE GROUND IS THE ORACLE's. The cell centre fixes the two tangent axes; the
-// RADIUS is then taken from of_surface_radius, so a machine cannot hover or
-// sink even on a slope. Standing rule 1, one more time.
+// THE HEIGHT IS THE ORACLE's ON SOIL AND THE DECK'S ON A BASE. "Items like
+// smelters dont sit ontop of the foundation" was exactly true and it was this
+// line of code: a foundation deliberately writes nothing to the voxel layer
+// (DW-24), so a machine that takes its radius from `of_surface_radius` stands on
+// the ground UNDER a deck rather than on the deck. `anchorIn` asks the base
+// whether the cell is decked and takes `socket_top`'s own height when it is.
 
 import * as THREE from 'three';
+import { addressIn, anchorIn, siteAt, type SiteHost } from './MachinePlacement.js';
 import { findNode, loadGlb, selectLod } from '../assets/Loaders.js';
 import { MachineGlow, Smoke } from './MachineFx.js';
-import { scratchF64, scratchI32, type OfCoreModule } from '../sim/wasm/heap.js';
 import { SURVIVAL, type ModeRules } from './GameMode.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
+import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { GameCore } from './GameCore.js';
 
 /**
@@ -58,6 +64,10 @@ export interface Machine {
   handle: number;
   tier: number;
   pos: { x: number; y: number; z: number };
+  /** GP-39. Published because "it sits on the foundation" is a claim, and a
+   *  claim needs a number: `probes/deckmount.js` reads it back against the
+   *  deck's own `socket_top`. False for a machine standing on soil. */
+  onDeck: boolean;
   up: THREE.Vector3;
   /** Ground normal AND the yaw that turns the mouth towards whoever placed it. */
   quat: THREE.Quaternion;
@@ -93,6 +103,11 @@ export class Machines {
     /** DW-31. A hand furnace's gate is "is it in the pack", which is the
      *  crafted-item gate; sandbox lifts it (game/GameMode.ts). */
     private readonly mode: ModeRules = SURVIVAL,
+    /** GP-39. The site registry, LAZILY, because the base-building layer is
+     *  built after this one and a machine only asks at placement time. Null
+     *  leaves the old lattice snap in place, which is what a headless unit
+     *  test of this class gets. */
+    private readonly host: () => SiteHost | null = () => null,
   ) {
     this.group.name = 'machines';
     this.group.add(this.smoke.mesh);
@@ -106,19 +121,29 @@ export class Machines {
   }
 
   /**
-   * Snap a body-frame point to the 1 m cell lattice, then put it back on the
-   * ground. Returns the snapped position.
+   * Snap a body-frame point to the metric site grid, then onto whatever surface
+   * that cell actually has: the deck top if one is built there, the live oracle
+   * surface if not.
+   *
+   * The fallback when no site registry is wired is the LIVE oracle at the point
+   * itself, deliberately without the old lattice quantisation. A grid nothing
+   * else in the build system uses any more is worse than no grid at all: it puts
+   * a furnace up to 0.51 m from where the crosshair said it would go, and the
+   * only consumer that could have wanted it is a headless test with no base.
    */
-  snap(x: number, y: number, z: number): { x: number; y: number; z: number } {
-    this.M._of_cell_for_pos(x, y, z);
-    const c = scratchI32(this.M, 3);
-    this.M._of_cell_center(c[0], c[1], c[2]);
-    const p = scratchF64(this.M, 3);
-    const cx = p[0], cy = p[1], cz = p[2];
-    const r = Math.hypot(cx, cy, cz) || 1;
-    const dx = cx / r, dy = cy / r, dz = cz / r;
-    const ground = this.M._of_surface_radius(this.bodyHandle, this.edits(), dx, dy, dz);
-    return { x: dx * ground, y: dy * ground, z: dz * ground };
+  snap(x: number, y: number, z: number):
+  { x: number; y: number; z: number; onDeck: boolean } {
+    const host = this.host();
+    if (host !== null) {
+      const p = { x, y, z };
+      const s = siteAt(host, p);
+      const a = anchorIn(host, addressIn(s.site, host.module, p, s.prospective));
+      return { ...a.pos, onDeck: a.onDeck };
+    }
+    const r = Math.hypot(x, y, z) || 1;
+    const dx = x / r, dy = y / r, dz = z / r;
+    const g = this.M._of_surface_radius(this.bodyHandle, this.edits(), dx, dy, dz);
+    return { x: dx * g, y: dy * g, z: dz * g, onDeck: false };
   }
 
   /**
@@ -154,7 +179,8 @@ export class Machines {
     // back and the one signal that says "this thing is working" is invisible.
     // The mouth is Blender -Y, which glTF's Z-up conversion makes local +Z.
     this.q.setFromUnitVectors(this.yAxis, stand);
-    return this.spawn(tier, pos, stand, this.faceMouth(this.q, stand, eye, pos));
+    return this.spawn(tier, pos, stand, this.faceMouth(this.q, stand, eye, pos),
+      pos.onDeck);
   }
 
   /**
@@ -167,12 +193,17 @@ export class Machines {
           quat: THREE.Quaternion): Machine | null {
     if (FILES[tier] === undefined) return null;
     const stand = new THREE.Vector3(pos.x, pos.y, pos.z).normalize();
-    return this.spawn(tier, pos, stand, quat);
+    // The saved POSITION is authoritative and is never re-snapped; only the
+    // `onDeck` flag is re-asked, because it is a fact about the world around
+    // the machine rather than about the machine, and a deck demolished while
+    // the page was shut would otherwise be remembered for ever.
+    return this.spawn(tier, pos, stand, quat, this.snap(pos.x, pos.y, pos.z).onDeck);
   }
 
   /** The half of a placement that is the same however it was asked for. */
   private spawn(tier: number, pos: { x: number; y: number; z: number },
-                stand: THREE.Vector3, quat: THREE.Quaternion): Machine | null {
+                stand: THREE.Vector3, quat: THREE.Quaternion,
+                onDeck: boolean): Machine | null {
     const f = FILES[tier];
     const tpl = this.templates.get(f.url);
     if (tpl === undefined) return null;
@@ -195,7 +226,7 @@ export class Machines {
     const socket = findNode(clone, 'socket_smoke');
     this.v.copy(socket?.position ?? new THREE.Vector3(0, 1.4, 0)).applyQuaternion(quat);
     const m: Machine = {
-      handle, tier, pos, group: g, up: stand, quat,
+      handle, tier, pos, onDeck, group: g, up: stand, quat,
       glow: new MachineGlow(clone, f.card),
       smokeAt: { x: pos.x + this.v.x, y: pos.y + this.v.y, z: pos.z + this.v.z },
       puffIn: 0, burning: false,
@@ -326,6 +357,7 @@ export class Machines {
       // The POSITION is part of the report so a probe can AIM at a machine it
       // placed rather than assume where the placement put it.
       pos: [m.pos.x, m.pos.y, m.pos.z],
+      onDeck: m.onDeck,
       burning: m.burning, lit: Number(m.glow.lit.toFixed(3)),
       smokePuffs: this.smoke.live,
     }));

@@ -157,8 +157,11 @@ export class Gameplay {
     this.panel.closer = () => this.setPanel(false);
     this.goalPanel = new ObjectivePanel(d.host);
     showGoals(this, this.goals.wasVisible());
+    // GP-39: the site registry is handed over LAZILY, because `structures` is
+    // built further down this constructor and a machine only asks at placement
+    // time. That is also what lets a hand furnace land on a foundation.
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle,
-      () => d.ports?.voxels?.handle ?? 0, this.mode);
+      () => d.ports?.voxels?.handle ?? 0, this.mode, () => this.structures);
     this.furnacePanel = new FurnacePanel(
       d.host, this.modals, (item) => loadFurnace(this, this.openMachine, item),
       () => takeFurnace(this, this.openMachine));
