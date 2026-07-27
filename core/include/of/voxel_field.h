@@ -198,6 +198,18 @@ class DensityField {
     const auto it = ov_.find(id);
     if (it != ov_.end()) {
       if (it->second == fv) return false;
+      // WG-28: the counter has to follow an OVERWRITE, not only an insert. It
+      // did not, so `airCount_` only ever climbed and the air/rock split drifted
+      // the moment a second op touched a corner the first one had already
+      // written, which is the normal case for dig-then-fill and for a held key.
+      // Measured: dig 2.5 m then fill 3.2 m at one site gave 444 overrides
+      // reported as 257 air / 187 rock against a true 212 / 232, wrong by 45 in
+      // each direction. The client uses these two numbers for DRIFT DETECTION
+      // between its own edit set and the worker's, so a counter that lies is a
+      // detector that cries wolf and then gets ignored.
+      if ((fv < 0.0f) != (it->second < 0.0f)) {
+        if (fv < 0.0f) ++airCount_; else --airCount_;
+      }
       it->second = fv;
       return true;
     }
@@ -484,20 +496,40 @@ class DensityField {
     dirtyMax_.cz = std::max(dirtyMax_.cz, c.cz);
   }
 
+ public:
   // Every BodyParams field world generation reads, including WG-26's flattened
   // start pad, which moves the designed surface and therefore the field itself.
+  //
+  // PUBLIC so it can be tested directly. It was private and had no test at all,
+  // which is how it came to be missing two of the fields it is responsible for:
+  // the only way to observe a memo key is to compare two of them.
+  //
+  // WG-28 added the two that were missing, and they were the two that hurt most.
+  // `kind` dispatches the ENTIRE height stack (cubed_sphere.h `sampleHeightField`
+  // and biome.h's designed shaping both branch planet against moon), and
+  // `homeBlendRadiusM` sets the width of the start pad's blend annulus. Neither
+  // was hashed, so one DensityField warmed on one body answered for another
+  // without ever clearing. Measured, same field object, two bodies:
+  // differing only in `homeBlendRadiusM` (600 m against 300 m) the memo returned
+  // -0.051259 where the truth was 28.664621, an error of 28.7 m inside the
+  // annulus; differing only in `kind`, it returned the planet's 894.4915 m for
+  // the moon's 3672.8600 m, out by 2,778 m. The bridge makes this reachable
+  // rather than theoretical: `of_body_create` takes `kind` from the caller and
+  // `of_edits_create` returns a field bound to no body, so every call takes an
+  // arbitrary (bodyId, editsId) pair and nothing enforces one field per body.
   static uint64_t fieldWorldSig(const BodyParams& body) {
-    uint64_t h = body.bodySeed;
-    const double f[7] = {body.radiusM, body.maxReliefM, body.seaLevelM,
+    uint64_t h = body.bodySeed ^ (static_cast<uint64_t>(body.kind) * 0x9e3779b1ull);
+    const double f[8] = {body.radiusM, body.maxReliefM, body.seaLevelM,
                          body.homeDir.x, body.homeDir.y, body.homeDir.z,
-                         body.homeFlatRadiusM};
-    for (int i = 0; i < 7; ++i) {
+                         body.homeFlatRadiusM, body.homeBlendRadiusM};
+    for (int i = 0; i < 8; ++i) {
       uint64_t bits = 0;
       std::memcpy(&bits, &f[i], sizeof(bits));
       h ^= bits + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
     }
     return h;
   }
+ private:
   static constexpr size_t kMemoMax = 4u << 20;
 
   std::unordered_map<uint64_t, float> ov_;      // corner id -> density override
@@ -584,15 +616,50 @@ inline LevelDiscResult levelDisc(const BodyParams& body, DensityField& field,
   const VoxelCell cellMin{c0.cx, c0.cy, c0.cz};
   const VoxelCell cellMax{c1.cx - 1, c1.cy - 1, c1.cz - 1};
 
-  // Cell solidity before, so the [dug, filled] the client already reads stays
-  // in the same unit it has always been in.
-  std::vector<uint8_t> before;
-  {
-    for (int32_t z = cellMin.cz; z <= cellMax.cz; ++z)
-      for (int32_t y = cellMin.cy; y <= cellMax.cy; ++y)
-        for (int32_t x = cellMin.cx; x <= cellMax.cx; ++x)
-          before.push_back(field.solidCell(body, VoxelCell{x, y, z}) ? 1u : 0u);
-  }
+  // WG-28 — THE COST, and why the cell passes are no longer over the whole box.
+  //
+  // `dug` and `filled` are cell counts, so the op has to know each cell's
+  // solidity before and after. The first version asked that of EVERY cell in the
+  // padded box, twice: on a 10 m disc with a 12 m reach that is 24 x 24 x 28 =
+  // about 16,100 cells, so about 32,300 `solidCell` calls, each of which reads
+  // eight corners. It cost 32.7 ms on the first press and 4.5 ms on a held one,
+  // which is two dropped frames and then a stutter a player can feel.
+  //
+  // Almost all of it was work that could not change the answer. `solidCell` is
+  // the field at the cell's own centre, which is the trilinear blend of exactly
+  // that cell's eight corners, so A CELL NONE OF WHOSE CORNERS THE OP WRITES
+  // CANNOT CHANGE SOLIDITY. The written corners form a shell a few cells thick
+  // over the disc, about 1,900 of them, and the cells touching them number
+  // around 2,200: seven per cent of the box.
+  //
+  // So the cell passes are restricted to that candidate set, which is marked
+  // while the corner pass is already visiting each corner and costs one byte
+  // per cell of the box. The output is unchanged BY CONSTRUCTION rather than by
+  // measurement, and the measurement agrees: identical dug / filled / scanned /
+  // corners and an identical `expected.json`.
+  //
+  // Every write is DEFERRED to its own pass so the "before" solidity is still
+  // read against a field no corner of this op has touched. Corners are
+  // independent of one another, so deferring cannot change what any of them
+  // decides; interleaving reads and writes only made the ordering matter more
+  // than it needed to.
+  const long long nx = static_cast<long long>(cellMax.cx) - cellMin.cx + 1;
+  const long long ny = static_cast<long long>(cellMax.cy) - cellMin.cy + 1;
+  const long long nz = static_cast<long long>(cellMax.cz) - cellMin.cz + 1;
+  if (nx <= 0 || ny <= 0 || nz <= 0) return out;
+  // 0 = cannot change, 1 = candidate that was AIR, 2 = candidate that was ROCK.
+  std::vector<uint8_t> cellState(static_cast<size_t>(nx * ny * nz), 0u);
+  const auto slot = [&](int32_t x, int32_t y, int32_t z) -> long long {
+    if (x < cellMin.cx || x > cellMax.cx) return -1;
+    if (y < cellMin.cy || y > cellMax.cy) return -1;
+    if (z < cellMin.cz || z > cellMax.cz) return -1;
+    return ((static_cast<long long>(z) - cellMin.cz) * ny
+            + (static_cast<long long>(y) - cellMin.cy)) * nx
+           + (static_cast<long long>(x) - cellMin.cx);
+  };
+
+  struct PendingCorner { VoxelCell c; double d; };
+  std::vector<PendingCorner> pending;
 
   const double r2 = radiusM * radiusM;
   for (int32_t z = c0.cz; z <= c1.cz; ++z)
@@ -619,17 +686,37 @@ inline LevelDiscResult levelDisc(const BodyParams& body, DensityField& field,
         const double cur = field.cornerDensity(body, c);
         const bool signMoves = (cur >= 0.0) != (plane >= 0.0);
         if (!signMoves && std::fabs(plane) > kLevelExactBandM) continue;
-        if (field.setCorner(body, c, plane)) ++out.corners;
+        pending.push_back(PendingCorner{c, plane});
+        // The eight cells this corner belongs to: those whose min-corner is one
+        // step back or level with it on each axis.
+        for (int k = 0; k < 8; ++k) {
+          const long long s = slot(x - (k & 1), y - ((k >> 1) & 1),
+                                   z - ((k >> 2) & 1));
+          if (s >= 0) cellState[static_cast<size_t>(s)] = 1u;
+        }
       }
 
-  size_t i = 0;
+  // Solidity BEFORE, over the candidates only, and still before any write.
+  for (int32_t z = cellMin.cz; z <= cellMax.cz; ++z)
+    for (int32_t y = cellMin.cy; y <= cellMax.cy; ++y)
+      for (int32_t x = cellMin.cx; x <= cellMax.cx; ++x) {
+        const size_t s = static_cast<size_t>(slot(x, y, z));
+        if (cellState[s] == 0u) continue;
+        cellState[s] = field.solidCell(body, VoxelCell{x, y, z}) ? 2u : 1u;
+      }
+
+  for (const PendingCorner& w : pending)
+    if (field.setCorner(body, w.c, w.d)) ++out.corners;
+
   field.clearDirty();
   for (int32_t z = cellMin.cz; z <= cellMax.cz; ++z)
     for (int32_t y = cellMin.cy; y <= cellMax.cy; ++y)
-      for (int32_t x = cellMin.cx; x <= cellMax.cx; ++x, ++i) {
+      for (int32_t x = cellMin.cx; x <= cellMax.cx; ++x) {
+        const uint8_t st = cellState[static_cast<size_t>(slot(x, y, z))];
+        if (st == 0u) continue;
         const VoxelCell c{x, y, z};
         const bool now = field.solidCell(body, c);
-        if ((before[i] != 0) == now) continue;
+        if ((st == 2u) == now) continue;
         field.touchCell(c);
         if (now) ++out.filled; else ++out.dug;
       }

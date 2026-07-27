@@ -11,6 +11,7 @@
 // exact disagreement the whole surface-authority discipline exists to prevent.
 
 import type { Services } from './Services.js';
+import { LEVEL } from '../player/LevelAction.js';
 
 export function terraformApi(s: Services) {
   return {
@@ -54,6 +55,17 @@ export function terraformApi(s: Services) {
         ops: s.voxels.ops.length,
         action: s.level.stats,
         ring: s.levelRing?.stats ?? null,
+        // The tool's own geometry, so a probe stops keeping a COPY of it. A
+        // negative control sized from a remembered radius silently stops being
+        // a control the moment the tool is retuned, which is exactly what
+        // WG-27's widening did to probes/level.js. The furthest a press can
+        // reach from the player is reachM + radiusM, and a control ring has to
+        // be outside that or it is measuring its own subject.
+        limits: {
+          reachM: LEVEL.reachM, radiusM: LEVEL.radiusM,
+          maxCutM: LEVEL.maxCutM, maxFillM: LEVEL.maxFillM,
+          maxReachFromPlayerM: LEVEL.reachM + LEVEL.radiusM,
+        },
         // sent != applied means an edit never reached the heightfield, so the
         // voxel layer and the surface would silently disagree.
         mouth: { sent: s.terrain.digsSent, applied: s.terrain.digsApplied },

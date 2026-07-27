@@ -226,23 +226,49 @@ inline SurfaceNetsMesh surfaceNets(const BodyParams& body,
 
   // Quads. A lattice edge that changes sign is pierced by the surface, and the
   // four cells sharing that edge each hold a vertex, so joining them in order
-  // gives a quad. Winding follows the sign so the front face is the rock side.
+  // gives a quad. Winding follows the sign so the front face is the AIR side:
+  // the face a player can see, which is the one a back-face-culling renderer
+  // must keep.
+  //
+  // WG-28 — THE WINDING WAS INVERTED, UNIFORMLY, AND EVERY TEST PASSED.
+  // Measured on the shipped code: 258 of 258 triangles on a dug crater and 259
+  // of 260 on a placed mound had a geometric normal (B-A)x(C-A) pointing INTO
+  // the rock, disagreeing with the per-vertex gradient normal this same function
+  // writes three lines above, on 100% of triangles. Verified two independent
+  // ways rather than one, because a cross-product convention is exactly the kind
+  // of thing to get backwards twice: stepping 0.35 m along the geometric normal
+  // from each centroid landed in ROCK for every triangle, and the dot against
+  // `out.normals` was negative for every triangle.
+  //
+  // The client draws this mesh with a `MeshLambertMaterial` and no `side`
+  // override, so three.js back-face-culls it. An inverted mesh therefore does
+  // not vanish, which would have been obvious: it draws the FAR side of the
+  // surface through the near side, which is what the disconnected pale
+  // fragments inside a carved crater were.
+  //
+  // Why the suite could not see it. The only assertion anywhere that reads
+  // `indices` past a count is the brick-tiling test, and it SORTS each index
+  // triple before comparing, which erases winding by construction; the parity
+  // fixture pins the index count. So a mesher can have every triangle backwards
+  // and still be green on triangle count, watertightness, vertex positions,
+  // normals and determinism. `mesh_triangles_face_out_of_the_rock` in
+  // test_voxel_field.cpp now asserts the thing the picture depends on.
   const auto quad = [&](int32_t a, int32_t b, int32_t c2, int32_t d2, bool flip) {
     if (a < 0 || b < 0 || c2 < 0 || d2 < 0) return;
     if (flip) {
       out.indices.push_back(static_cast<uint32_t>(a));
-      out.indices.push_back(static_cast<uint32_t>(c2));
       out.indices.push_back(static_cast<uint32_t>(b));
-      out.indices.push_back(static_cast<uint32_t>(a));
-      out.indices.push_back(static_cast<uint32_t>(d2));
       out.indices.push_back(static_cast<uint32_t>(c2));
+      out.indices.push_back(static_cast<uint32_t>(a));
+      out.indices.push_back(static_cast<uint32_t>(c2));
+      out.indices.push_back(static_cast<uint32_t>(d2));
     } else {
       out.indices.push_back(static_cast<uint32_t>(a));
+      out.indices.push_back(static_cast<uint32_t>(c2));
       out.indices.push_back(static_cast<uint32_t>(b));
-      out.indices.push_back(static_cast<uint32_t>(c2));
       out.indices.push_back(static_cast<uint32_t>(a));
-      out.indices.push_back(static_cast<uint32_t>(c2));
       out.indices.push_back(static_cast<uint32_t>(d2));
+      out.indices.push_back(static_cast<uint32_t>(c2));
     }
   };
 

@@ -241,6 +241,119 @@ TEST(a_dig_leaves_a_round_crater_not_cube_faces) {
 }
 
 // -----------------------------------------------------------------------------
+// 3b. THE WINDING. WG-28, and it is here because of what the suite around it
+// could not see.
+//
+// Every triangle the mesher emitted was wound INSIDE OUT. Not some of them, not
+// on one shape: 258 of 258 on a dug crater and 259 of 260 on a placed mound.
+// The client draws this mesh through a `MeshLambertMaterial` with no `side`
+// override, so three.js back-face-culls it, and an inverted mesh does not
+// disappear (which anyone would have noticed) but draws the FAR side of the
+// surface through the near side. That is what the disconnected pale fragments
+// inside a carved crater were.
+//
+// It survived 143 green checks because winding is invisible to every question
+// the suite asked. Triangle counts, watertightness, vertex positions, the
+// gradient normals, the crater's roundness, determinism and the brick tiling
+// are all winding-blind, and the tiling test SORTS each index triple before
+// comparing, which erases the ordering deliberately. This is standing rule 11's
+// exact shape: a check that passes because it never examined the thing it
+// claims to cover.
+//
+// So the property is asserted TWO independent ways, because a cross-product
+// convention is precisely the kind of thing to get backwards twice and agree
+// with yourself:
+//
+//   A. AGAINST THE FIELD. Step off each triangle's centroid along its geometric
+//      normal (B-A)x(C-A). Outward means AIR ahead and ROCK behind, asked of
+//      `solidAt`, which is the same authority the collider uses. This test knows
+//      nothing about `out.normals`.
+//   B. AGAINST THE MESHER'S OWN NORMALS. Dot the geometric normal against the
+//      per-vertex gradient normal the same call wrote. These must agree, and if
+//      they ever disagree the mesh is lit as one surface and drawn as its
+//      opposite.
+//
+// Test A is the load-bearing one: B alone would pass if both were flipped.
+// -----------------------------------------------------------------------------
+TEST(mesh_triangles_face_out_of_the_rock) {
+  const BodyParams b = forge();
+  const Vec3 site = surfacePoint(b, 2.0, 144.0);
+  const double up[3] = {site.x, site.y, site.z};
+  const double ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+
+  struct Shape { const char* name; int kind; };
+  const Shape shapes[3] = {{"dug crater", 0}, {"placed mound", 1},
+                           {"levelled pad", 2}};
+  long long totalOut = 0, totalIn = 0, totalAgree = 0, totalDisagree = 0;
+  for (const Shape& s : shapes) {
+    DensityField f;
+    double regionR = 6.0;
+    if (s.kind == 0) {
+      f.digSphere(b, site, 2.5);
+    } else if (s.kind == 1) {
+      f.fillSphere(b, Vec3(site.x + up[0] / ul * 1.5, site.y + up[1] / ul * 1.5,
+                           site.z + up[2] / ul * 1.5), 2.0);
+    } else {
+      // Level to 1.5 m BELOW the ground so the pad is a real cut with walls,
+      // not a plane that happens to coincide with the surface it replaced.
+      const Vec3 u(up[0] / ul, up[1] / ul, up[2] / ul);
+      levelDisc(b, f, site, 6.0, sampleDesignedHeight(b, u) - 1.5, 12.0, 12.0);
+      regionR = 9.0;
+    }
+    SurfaceNetsOpts o;
+    o.editedOnly = false;
+    const SurfaceNetsMesh m = surfaceNetsAround(b, f, site, regionR, o);
+    CHECK(m.indices.size() >= 3);
+
+    // The step has to clear the field's own interpolation error over one cell,
+    // measured at 0.087 m, and stay well inside one cell so a neighbouring
+    // feature cannot answer instead. A third of a cell does both.
+    const double step = 0.35;
+    long long outward = 0, inward = 0, flat = 0, agree = 0, disagree = 0;
+    for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
+      const Vec3& A = m.positions[m.indices[i]];
+      const Vec3& B = m.positions[m.indices[i + 1]];
+      const Vec3& C = m.positions[m.indices[i + 2]];
+      const double e1[3] = {B.x - A.x, B.y - A.y, B.z - A.z};
+      const double e2[3] = {C.x - A.x, C.y - A.y, C.z - A.z};
+      double g[3] = {e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2],
+                     e1[0] * e2[1] - e1[1] * e2[0]};
+      const double gl = std::sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
+      if (gl <= 1e-15) { ++flat; continue; }   // a degenerate sliver: no opinion
+      g[0] /= gl; g[1] /= gl; g[2] /= gl;
+      const Vec3 cen((A.x + B.x + C.x) / 3.0, (A.y + B.y + C.y) / 3.0,
+                     (A.z + B.z + C.z) / 3.0);
+      const bool ahead = f.solidAt(b, Vec3(cen.x + g[0] * step, cen.y + g[1] * step,
+                                           cen.z + g[2] * step));
+      const bool behind = f.solidAt(b, Vec3(cen.x - g[0] * step, cen.y - g[1] * step,
+                                            cen.z - g[2] * step));
+      if (!ahead && behind) ++outward;
+      else if (ahead && !behind) ++inward;
+      else ++flat;                              // a thin wall: both sides air
+      const Vec3& vn = m.normals[m.indices[i]];
+      if (g[0] * vn.x + g[1] * vn.y + g[2] * vn.z >= 0.0) ++agree; else ++disagree;
+    }
+    const long long decided = outward + inward;
+    std::printf("    %-13s %5zu triangles: %lld face OUT of the rock, %lld face IN, "
+                "%lld undecided; %lld agree with the vertex normal, %lld disagree\n",
+                s.name, m.indices.size() / 3, outward, inward, flat, agree, disagree);
+    // A. NOT ONE triangle may face into the rock. This is the assertion that
+    // fails on the pre-WG-28 mesher, on every shape, on every triangle.
+    CHECK(inward == 0);
+    CHECK(decided > 20);                       // the shape was actually meshed
+    // B. and the lighting must agree with the geometry.
+    CHECK(disagree == 0);
+    totalOut += outward; totalIn += inward;
+    totalAgree += agree; totalDisagree += disagree;
+  }
+  std::printf("    winding, all shapes: %lld out, %lld in; %lld agree, %lld disagree\n",
+              totalOut, totalIn, totalAgree, totalDisagree);
+  CHECK(totalIn == 0);
+  CHECK(totalDisagree == 0);
+  CHECK(totalOut > 100);
+}
+
+// -----------------------------------------------------------------------------
 // 4. THE HEADLINE. A levelled pad is FLAT, measured the way WG-23 defined it:
 //    the worst height difference between two points 4 m apart, which is the span
 //    a DW-32 foundation module bridges. WG-23 measured 0.973 m on the drawn
@@ -418,6 +531,90 @@ TEST(the_drawn_pad_is_flat_over_a_four_metre_span) {
               "%.6f m\n", n, off, hi - lo, worstAbs);
   CHECK(n > 40);
   CHECK(hi - lo <= 0.25);
+}
+
+// -----------------------------------------------------------------------------
+// 5b. WG-28. The two bookkeeping defects an adversarial review found in this
+//     header, both of the shape standing rule 11 names: a number that reports
+//     success on something it never examined.
+//
+//     (a) THE MEMO KEY. `fieldWorldSig` decides when the procedural memo is
+//         stale. It listed seven BodyParams fields and world generation reads
+//         nine: `kind` dispatches the entire height stack and `homeBlendRadiusM`
+//         sets the start pad's blend width. One field warmed on one body then
+//         answered for another, silently, and the comment above the hash already
+//         said in words that this must never happen.
+//
+//     (b) THE AIR/ROCK SPLIT. `setCorner` incremented `airCount_` on insert and
+//         left it alone on overwrite, so the split drifted as soon as a second
+//         op touched a corner the first had written. The client compares these
+//         two numbers against the worker's to detect that the two copies of the
+//         edit set have diverged, so a counter that lies disarms a detector.
+//
+//     The round-trip test that should have caught (b) applies exactly ONE op,
+//     which is the only case where the bug is invisible. This one applies two.
+// -----------------------------------------------------------------------------
+TEST(the_memo_key_and_the_air_rock_split_cannot_lie) {
+  // (a) two bodies that differ in ONE field each must not share a memo.
+  const BodyParams base = forge();
+  {
+    BodyParams other = base;
+    other.homeBlendRadiusM = base.homeBlendRadiusM * 0.5;
+    CHECK(DensityField::fieldWorldSig(base) != DensityField::fieldWorldSig(other));
+
+    BodyParams moon = base;
+    moon.kind = (base.kind == kPlanet) ? kMoon : kPlanet;
+    CHECK(DensityField::fieldWorldSig(base) != DensityField::fieldWorldSig(moon));
+
+    // And the memo must actually FOLLOW it: warm on one body, ask the other,
+    // and get that other body's own answer rather than the cached one.
+    DensityField f;
+    const Vec3 u = dirAt(2.0, 144.0);
+    // A direction inside the blend annulus, where the two bodies disagree.
+    Vec3 t1, t2;
+    tangents(u, t1, t2);
+    const double armM = 0.5 * (base.homeFlatRadiusM + base.homeBlendRadiusM);
+    const Vec3 q = unitOf(u * base.radiusM + t1 * armM);
+    const VoxelCell c = cornerForPos(q * (base.radiusM
+                                          + sampleDesignedHeight(base, q)));
+    const double warm = f.cornerDensity(base, c);
+    const double crossed = f.cornerDensity(other, c);
+    DensityField clean;
+    const double truth = clean.cornerDensity(other, c);
+    std::printf("    memo key: warmed on the shipped body %.6f m, then asked a "
+                "body with half the blend radius %.6f m against its own truth "
+                "%.6f m (error %.6f m)\n",
+                warm, crossed, truth, std::fabs(crossed - truth));
+    CHECK_NEAR(crossed, truth, 1e-9);
+  }
+
+  // (b) the air/rock split survives a SECOND op over the same corners.
+  //
+  // The truth comes from a round trip, because `deserialize` recomputes the
+  // split from the signs it actually reads rather than carrying the live
+  // counter across. Two ops rather than one is the whole point: the shipped
+  // round-trip assertion in test_surface_field.cpp does exactly this comparison
+  // and passes, because its fixture applies a single op and a single op is the
+  // one case where an insert-only counter is right.
+  {
+    DensityField f;
+    const Vec3 site = surfacePoint(base, 2.0, 144.0);
+    f.digSphere(base, site, 2.5);
+    f.fillSphere(base, site, 3.2);              // overwrites many of the same corners
+    ByteWriter w;
+    f.serialize(w);
+    ByteReader rd(w.buf);
+    DensityField back;
+    CHECK(back.deserialize(rd));
+    std::printf("    air/rock after dig-then-fill: live %zu air / %zu rock, "
+                "recomputed %zu / %zu over %zu overrides\n",
+                f.airCount(), f.rockCount(), back.airCount(), back.rockCount(),
+                f.overrideCount());
+    CHECK(f.overrideCount() > 100);             // the ops really did overlap
+    CHECK(back.overrideCount() == f.overrideCount());
+    CHECK(f.airCount() == back.airCount());
+    CHECK(f.rockCount() == back.rockCount());
+  }
 }
 
 // -----------------------------------------------------------------------------

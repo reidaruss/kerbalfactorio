@@ -944,7 +944,16 @@ OF_API int of_streamer_level(int sId, double x, double y, double z,
       r->body, *e, vec(x, y, z), radiusM, targetHeightM,
       maxCutM > 0.0 ? maxCutM : wg::kSurfaceMaxFillM,
       maxFillM > 0.0 ? maxFillM : wg::kSurfaceMaxFillM);
-  if (res.cells() <= 0) { r->last.ready.clear(); return 0; }
+  // CORNERS, not cells, for exactly the reason `of_level_area` returns corners
+  // (ABI 8). WG-27 fixed the main-thread path and left this one, so half the
+  // engine still believed a level op that moved no cell CENTRE had done nothing:
+  // the near voxel mesh rebuilt from the client's dirty box while the STREAMED
+  // chunk under the same pad kept the hill. That is the drawn-versus-collided
+  // disagreement DW-26 exists to bound, arriving through the back door of an
+  // early-out. It is not an edge case: shaving 40 cm off a slope moves the
+  // surface under the whole disc without carrying one cell centre across zero,
+  // and a held key does exactly that on every application after the first.
+  if (res.corners <= 0) { r->last.ready.clear(); return 0; }
   // The touched volume is the cylinder, so its bounding sphere is the reach.
   const double band = (maxCutM > 0.0 ? maxCutM : wg::kSurfaceMaxFillM)
                     + (maxFillM > 0.0 ? maxFillM : wg::kSurfaceMaxFillM);
@@ -1661,6 +1670,31 @@ OF_API int of_net_get_line_items(int nId, int build) {
   return static_cast<int>(items.size());
 }
 OF_API int of_net_units_per_tile(void) { return static_cast<int>(fs::kUnitsPerTile); }
+
+// FS-28. Take ONE discrete item off a belt by hand, nearest to `unitOffset`
+// (units from the line head, the same coordinate `of_net_get_line_items`
+// reports) and within `toleranceUnits`. Returns the ItemId taken, or 0 for
+// kNoItem when nothing was in range.
+//
+// It is the belt half of `of_net_take_output`'s argument, and it exists for the
+// same reason: nothing else drains a belt whose head feeds nowhere, so without a
+// collection verb the ore rides to the end and stops where no player can reach
+// it. Reid asked for it in one clause, "i should be able to pick up that stuff
+// off the belts", which is exactly what makes visible cargo a mechanic rather
+// than a decal.
+//
+// The NEAREST-item rule rather than pop-the-head is what makes it a world verb:
+// the player aims at a tile and takes what is on THAT tile, so which item they
+// get is a consequence of where they were looking. /core resolves ties toward
+// the head so two clients pointing at the same midpoint agree.
+OF_API int of_net_take_line_item(int nId, int build, int unitOffset,
+                                 int toleranceUnits) {
+  NetRec* r = g_nets.get(nId); if (!r || unitOffset < 0) return 0;
+  au::BuildId* b = r->build(build); if (!b || !b->valid()) return 0;
+  return static_cast<int>(r->net->sim().TakeLineItemNear(
+      b->entity.index, static_cast<uint32_t>(unitOffset),
+      static_cast<uint32_t>(toleranceUnits < 0 ? 0 : toleranceUnits)));
+}
 
 // =============================================================================
 // §8 — DETERMINISM DIAGNOSTICS.

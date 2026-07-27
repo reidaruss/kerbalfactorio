@@ -51,7 +51,7 @@ the failure this project has paid for six times. See lane B.
 | D | Electricity and smelting tiers | generation, poles and distribution, a supply/demand panel, furnace to coal smelter to electric smelter | `core/include/of/power.h` (new), `factory_sim.h` | **model DONE in `/core`; panel + bridge handed off** |
 | E | Enemies | pollution spread, evolution, nest spreading, attack waves, base defense | `core/include/of/enemies.h` (new) | **model DONE in `/core`, then reviewed and hardened** (525 checks green, 1,200 machines cost 8.04 us/sim-tick, 10 defects found by an adversarial pass over an already-green suite); production hook + combat handoff published, see Blockers |
 | F | Belts | direction change after placement, belt-to-belt and belt-to-machine snapping, cargo visible on belts, taking items off a belt | `web/src/game/Factory*.ts`, `MachineBatch.ts` | queued, blocked on C |
-| G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | queued, blocked on W8 flight |
+| G | Flight end-to-end validation | drive the whole demo repeatedly and adversarially until it is smooth | new probes | **DONE. 9 defects found and fixed (PH-28 to PH-36), 10/10 cold ascents bit-identical, a reload mid-orbit no longer loses the world silently.** See the progress log and Blockers |
 | H | Research and tech tree | wire `research.h` into play, a tech tree UI, gate machines and recipes | `core/research.h`, `web/src/ui/` | queued, blocked on flight (owns `ui/`) |
 | I | Player skills, appearance, armour | slots for head/chest/legs/feet, customization | `core/gameplay.h`, `web/src/game/` | **headless layer landed** (GP-41 to GP-43, `core/include/of/progression.h`); client wiring handed to Admin |
 
@@ -434,6 +434,83 @@ look instead of concluding "the enemies feel wrong" and rewriting the model.
 
 _Lanes append a line per landed change: date, lane, what, and the number that proves it._
 
+- **2026-07-27, lane G — the flight demo, driven adversarially until it stopped
+  breaking (PH-28 to PH-36).** Nine defects, and the thing worth carrying out of
+  this lane is that **all nine READ HEALTHY ON EVERY INSTRUMENT**, which is the
+  same signature the flight lane's own four had. A green probe on one scripted
+  path proved almost nothing about any of them.
+
+  **The spread, which is the headline and is not the best run:** the full
+  pad-to-orbit-to-deorbit-to-ground ascent flown **ten times from a cold
+  browser, and every run bit-identical** — 92.6 x 79.7 km, e 0.0094, staged
+  69.7 s, cutoff 112.3 s at 1712 m/s, max q 14.4 kPa, 1588.5 m/s left, mined
+  35 -> 367, ingots 12 -> 132, 36 draw calls, p50 1.7 ms. Flakiness was the
+  demo risk and there is none.
+
+  **What was actually wrong, in the order a player would meet it.** (1) The
+  rolled-out rocket **was not being drawn at all** until you boarded it: the
+  chase observer is only stepped while somebody is aboard, so the render
+  position sat at its constructed zero and the meshes were at the BODY CENTRE,
+  600 km down. The vessel is planted at 26 m and boarding reaches 18 m, so there
+  is always a walk to an empty pad, and the rocket appears out of nowhere as you
+  get in. Nothing caught it because `distanceToVessel` reads the SIM, which was
+  right the whole time. (2) **Pressing the stage key twice on the pad dismantled
+  the vehicle and bolted it down forever**: the second press jettisons the
+  booster, the remainder cannot make TWR 1, the clamp therefore never releases,
+  and the only escape is to climb out and walk 200 m. Measured: four presses
+  took 11 parts to 4. Space is also the jump key, so this is the most likely
+  wrong thing in the first thirty seconds. (3) **ALT AGL read 19.20 m with the
+  rocket standing still on the ground** — exactly twice its own base offset, a
+  single wrong sign feeding the navball, the guidance ribbon, the regime band
+  AND the touchdown trigger, so every instrument agreed and the arrest only
+  armed once the hull was buried by the same 19.2 m. Every altitude assertion in
+  the acceptance probe was RELATIVE; none had ever asked whether a rocket on the
+  ground is at zero. (4) **The upper stage burned inside the interstage** from
+  liftoff, because the plume filter asked "is this an engine" and not "is this
+  engine lit". (5) **No message the flight sim ever raised had been on screen**:
+  its flash deadline was on the mission clock and the expiry compared it against
+  the loop clock, so every one was cleared in the frame it was set, while
+  `FlightMode`'s own message had no expiry at all and stuck forever. Two
+  opposite bugs in one readout line, which is why the pair looked like it
+  worked. (6) **Any rocket taller than 18 m could never be boarded**, because
+  the range was measured to the vessel ORIGIN, which is the top of the stack.
+  (7) Warp's in-air cap was gated on the PREVIOUS tick's `inSpace`, so a descent
+  crossed the atmosphere ceiling in one 1000x block: 16.7 s and about 33 km of
+  re-entry taken blind. Now bounded by the height remaining, and verified by
+  riding a whole re-entry at 1000x without touching a key: **48 samples observed
+  below 60 km, 9 above 1 kPa, a real 139.3 kPa peak, deepest AGL 0.0 m.** (8) A
+  WASM heap view held across a call into WASM in the per-stage delta-v read.
+  (9) `__of.flight('report').speedMS` read the impact speed forever after a
+  landing while the navball beside it read zero.
+
+  **R11, the reload, is half closed and honestly so.** A vessel still cannot be
+  serialised, because `of_fl_*` has **no propellant setter** and restoring by
+  replaying stage calls would hand back full tanks, i.e. free delta-v on every
+  reload. That needs an ABI bump and 3 a.m. with five lanes live is not when to
+  take one. So the save is now REFUSED while the player is aboard, counted, and
+  said on the navball in words. Measured by a new second runner
+  (`tools/smoke/reload.mjs`, which reloads the BROWSER in the same context so
+  IndexedDB survives as it does for a person pressing F5): from a 92.6 x 79.5 km
+  orbit, **8 saves refused against 1 allowed**, and the reload returns 2
+  buildings, 1 link, the hotbar and no phantom vessel.
+
+  **Two escalations that are not physics'.** `Regime.ORBIT_START` is 100 km so
+  an 80 km orbit is still labelled ASCENT, which is why the client is still
+  fitting shadow cascades from orbit (`Systems.ts:230` keys off the band);
+  recommended 62 km, and `Regime.ts` is world-gen's file. And **the player's own
+  POSITION is not in the save at all** — a reload returns you to the spawn
+  whatever you were doing, flight or no flight (measured: went in at lon 107.8,
+  came back at lon 144.0). That one is bigger than the rocket.
+
+  Also fixed, and both were the PROBES rather than the game: the acceptance
+  probe's max-q assertion was a fixed 15 to 45 kPa window sized to one terrain
+  build, and lane B moved the ground under it (the pad rose about 1.2 km, max q
+  fell to 14.4 kPa, a healthy ascent went red) — it is now /core's 27.3 kPa
+  lapsed for the MEASURED pad altitude, which still catches drag that is not
+  being computed and does not care where the pad is; and the probes' one-button
+  placement tape held `use` for three ticks, which the belt lane's new
+  drag-to-place turns into a DRAG that lays two drills.
+
 - 2026-07-27 lane A: **world dressing.** Conifer 308 -> 584 LOD0 tris, broadleaf 280 -> 452, four new nature palette roles, grass re-authored as clumps (`GrassTuftA` 0.44 -> 0.95 m, `GrassTuftB` 0.66 -> 1.30 m) with 12 cm blades overlapping into a solid core. 6/6 validate, all six byte-identical on rebuild, verified by rendering the same clump at 8 m and 25 m.
 - 2026-07-27 lane A: **the player.** First-person hands rebuilt (elliptical palm, knuckle plate, five fingers on three bones, opposed thumb, colour moved to where the camera can see it, hands 0.435 -> 0.620 m out); body 1244 -> 2320 LOD0 tris with a real back pack, split boots and dark shins. Four new first-person jump and fall clips. Both byte-identical, and two witness assets neither lane owns rebuilt byte-identical to HEAD.
 - 2026-07-27 lane A: **the gait, measured not eyeballed.** Three defects found on the shipped bytes: the lean was keyed on `Hips` and drove the toe 30 mm through the ground; `rig_common.keys` rounded the frame but not the phase, swinging contact foot velocity 1.7 to 6.6 m/s around a 4.5 target; pelvis yaw moved the hip socket for a 2.3% skate. Result: net world slip **+0.0005 m** over 0.5250 m of root travel, implied ground speed **4.496 against 4.50 authored**, ground penetration **0.0000 m**.
@@ -760,7 +837,147 @@ foundation; save/reload 8 parts with **0.000e+0 m** worst move.
   self-determinism 119/119, cross-toolchain exact **108/108** (it was 105/106 when
   I started, and that pre-existing `abi` blocker is now cleared).
 
-### Lane B, open items, 2026-07-27
+### Lane B follow-ups, 2026-07-27 (WG-28): all five worked, and the review found more
+
+Every item in "Lane B, open items" below is answered here. Detail and rationale
+in [world-gen.md](../controllers/world-gen.md) WG-28.
+
+**1. WHICH INSTRUMENT WAS WRONG: THE PROBE. The level op's blast radius is
+correct.** `probes/level.js` sized its "outside the radius nothing moved" ring at
+2.5x **its own local copy of the pad radius, `R = 6.0`**, giving 15 m. WG-27
+widened the tool to 10 m, and the disc is centred on the AIM POINT up to
+`reachM` = 9 m downhill of the player, so the pad reached **16.279 m from the
+feet** and the control ring sat **1.17 m inside the pad it was policing**.
+Measured against the discs the tool itself reported: the two ring points that
+moved were **8.844 m and 9.968 m from the disc axis, and the next point out at
+10.386 m moved 0.000000 m**, against a radius of 10.000. The boundary is sharp
+and exactly where `levelDisc` says it is. Fixed at the root rather than by
+moving a threshold: the tool publishes `lastCentreM` / `lastRadiusM` /
+`maxRimFromFeetM` and a `limits` record, and the probe derives its ring from
+`reachM + radiusM` and **asserts it cleared every disc that was cut**
+(`controlRingClearsThePad`: ring 20.000 m, rim 16.279 m, clearance 3.721 m).
+`outsideUntouched` reads **0 of 12 points, 0.000000 m**. All 13 assertions green.
+**Worth taking out of this lane: a control whose geometry is a constant copied
+from the thing it watches stops being a control the moment that thing is
+retuned, and it fails in the direction that looks like a real defect.**
+
+**2. `npm --prefix web run check` IS GREEN**, 166 files all inside 400 lines and
+`tsc --noEmit` clean. The two lanes it was red in have both landed their fixes
+since: `src/sim/FlightSession.ts` is back inside the cap and the `BuildTarget`
+seam in `Gameplay.ts` resolves. Nothing was touched in either lane's files.
+
+**3. THE LEVEL PRESS, 4.6x cheaper cold and 12.8x warm, with a byte-identical
+parity fixture.** `levelDisc` asked EVERY cell in the padded box for its
+solidity, twice, to produce the `dug` / `filled` counts: about **32,000
+`solidCell` calls where the op writes about 2,000 corners**. A cell reads exactly
+its own eight corners, so a cell none of whose corners the op writes cannot
+change solidity; the cell passes now run over that candidate set only.
+**Native A/B, same binary, same sites: cold 42.7 to 9.3 ms, warm 12.9 to 1.0 ms,
+and `web/wasm/test/expected.json` regenerates byte-identical**, which is the
+proof the output did not move. In the browser, with the press broken into its
+parts for the first time: **39.7 ms cold (op 15.2, near-mesh rebuild 25.6, quote
+1.2) and 7.0 ms held (op 2.4, rebuild 2.8)**. The cold press is now dominated by
+the NEAR MESH REBUILD, not by the terraforming, which is where the next pass
+should go. A process note: the first browser A/B of this change read flat, and
+the reason was that the two runs were not provably different binaries. Every
+before/after here now carries a value that differs between the builds
+(`editCounts.removed`) so a swap that did not take cannot read as a null result.
+
+**4. THE CRATER FRAGMENTS WERE THE MESHER, and this is the biggest find of the
+night.** **Every triangle surface nets emitted was wound inside out** (258 of 258
+on a crater, 259 of 260 on a mound), confirmed two independent ways before
+anything was changed: stepping along each triangle's geometric normal landed in
+ROCK, and that normal disagreed with the mesher's own per-vertex gradient normal
+on 100% of triangles. The client draws the near voxel mesh with no `side`
+override, so three.js back-face-culls it, and an inverted CLOSED surface does not
+vanish, it draws its **far side through its near side**. See
+`docs/screenshots/WG28_crater_before.png` against `WG28_crater_after.png`: a
+black void full of pale shards, against a lit readable bowl. It survived 143
+green checks because the only test that reads `indices` past a count **sorts each
+index triple**, which erases winding by construction. New
+`mesh_triangles_face_out_of_the_rock`, verified by reverting the fix in a scratch
+copy, where it fails **9 checks in exactly one test and nothing else in the suite
+notices**. **Two honest caveats.** The tile-mean fragment metric in
+`probes/craterfrag.js` does NOT separate the two builds (darkest tile 27.0 before
+against 32.6 after) and the threshold was deliberately not tuned to sit between
+them; the gate for this defect is the /core test, and a per-pixel dark-run count
+is the follow-up. And the first version of that metric, counting bright outliers,
+ranked the BROKEN frame better (4 against 9), because a black void has nothing to
+be an outlier against. Only looking at the two captures explained it.
+
+**5. A SPAWN SITE, with numbers: lat -0.39200 / lon +111.04783.** Found by
+sweeping `designedHeightNoPad` and `biomeAt` through the oracle the way `HOME`
+originally was, with a new read-only `core/tools/spawn_probe.cpp`.
+**2084.2 m, Hills, slope 0.38% at 4 m and 0.38% at 20 m, worst 4 m step 0.031 m**
+(a DW-32 module sits flat). It is a real valley floor rather than a tabletop:
+**160.7 m below the mean of its 6 km box with 94.2% of that box above it, and
+28.2 m below the 1 km mean with 98.5% above it**, the strongest floor reading
+found anywhere. There is terrain to look at: **a 4116.7 m peak 7.6 km away, 2032 m
+above the site, with Mountains biome from 2 km out**, and 1073.7 m of relief in
+the 6 km box. Lowest ground within 6 km is only 23 m below it, so it is not a
+lake bed. Pad simulated in place: **worst 4 m step inside the flat radius
+0.000000 m, and the blend annulus adds 3.66 percentage points of grade over the
+natural slope**. 346 km from the current spawn and nearly on the equator like it.
+**The move needs BOTH halves and they are in different lanes' files.**
+`web/src/app/Config.ts:32` `HOME` is one; the load-bearing half is the `homeDir`
+literal in `forgeBody()` at `core/include/of/cubed_sphere.h:313`, pinned by
+`test_biome.cpp` against `latLonToDir` to 1e-12. Landing only one would put the
+flat pad somewhere the player does not spawn, so **neither was landed**. The
+literal to go with the recommendation:
+`b.homeDir = Vec3(-0.35913876352721213, -0.006841637292799462, 0.93325909614174074);`
+Runner-up if pad invisibility outranks valley depth: **lat +25.59450 / lon
++124.18913**, 2005.7 m Hills, worst 4 m step 0.017 m, peak +2364 m at 7.1 km, and
+the pad adds only 1.05 percentage points
+(`Vec3(-0.50678686052793986, 0.43199917710346952, 0.74601862508797978)`).
+**Two corrections to the record.** The current spawn's slope is **21 to 26%, not
+42%** on this instrument (worst 10 m grade inside the pad disc 32.37%); it is
+still 4667.8 m of Mountains sitting **130.7 m ABOVE** its 6 km mean with only
+37.8% of the box above it, so "a plateau perched on a mountainside" is exactly
+right. And the comment in `cubed_sphere.h` claiming the blend "adds about one
+percentage point of grade, so it does not read as a cut disc" is **stale by 18x
+since WG-25: it now adds 18.00 points there.**
+
+**FOUND BY THE ADVERSARIAL PASS AND NOT FIXED**, each with the number that
+demonstrates it, so the next lane does not have to rediscover them:
+
+- **`columnSurfaceHeight`'s first sample skips the floating-slab check**
+  (`voxel_field.h`, the `dPrev >= 0.0` early return). Every other solid sample
+  goes through `runIsAnchored`. A slab filled **21 to 27 m up with nothing under
+  it pins the heightfield to the +24 m fill cap**, and the returned value is
+  bit-identical to a legitimate "filled to the cap", so no caller can tell them
+  apart. The existing sweep tests 3 to 12 m, and the cap is 24, so the sweep
+  provably never reaches the band where the unguarded path lives.
+- **`runIsAnchored`'s floor is the DESIGNED base**, so nothing below the base can
+  ever read as floating and everything inside a pit is declared anchored. A slab
+  placed 8 m down a 16 m shaft, with open air 3 m beneath it, **refills the pit by
+  10.9245 m** of streamed heightfield. Bites any player who bridges their own
+  cavern. Both floating-slab tests only ever place blocks ABOVE the base.
+- **`columnTouched` is documented as EXACT and is not.** It samples one cell per
+  metre along the radial, so it misses **19.29% of the corners `densityAt` can
+  actually read** (953 of 4,940 over 60 directions). The damage today is
+  sub-millimetre (worst 0.000503 m with real dig brushes), but the stated
+  invariant is false and nothing enforces that it stays small.
+- **`levelDisc`'s real footprint is 1.48 m wider than the radius it is given**,
+  because the trilinear stencil reaches one cell past the corner test: outermost
+  changed radius 9.48 m for an 8 m pad, worst change outside the nominal radius
+  0.2367 m. Both suites' negative controls sample at 3x the radius, so
+  "outside the disc nothing moved, bitwise" is true and vacuous. Worth pinning
+  and worth stating in the header so the preview ring can show the real
+  footprint. (The client-side control now clears it: 20 m ring against a
+  16.279 + 1.48 m reach.)
+- **`surfaceNets` refuses a too-large region by returning an EMPTY mesh**, which
+  is byte-identical to "there is no surface here". `surfaceNetsAround` with
+  `radiusM >= 81` silently draws nothing. Same for `surfaceNetsBrick` with
+  `brick <= 0`. This is the DW-28 ceiling-that-reports-success shape and wants a
+  status field.
+- **The `procCorner` memo tops out around 201 MB per field and then clears
+  WHOLE**, so the next query re-evaluates the noise stack for every corner. An
+  LRU or a halving would avoid the cliff.
+- **`probes/digquality.js` still reads `mesh.mergeRatio`, `.faces` and `.quads`**,
+  which the greedy cube mesher took with it. They read `undefined` rather than
+  failing, which is the wrong way round. Not fixed tonight.
+
+### Lane B, open items, 2026-07-27 (ALL ANSWERED ABOVE, kept for the record)
 
 - **The probe negative control `outsideUntouched` FAILS at the widened 10 m pad:
   2.779 m of movement on a ring at 2.5x the pad radius, where it read 0.000000 m

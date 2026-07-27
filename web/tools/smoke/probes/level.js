@@ -31,6 +31,19 @@
 //      shin, so the tool quotes the flatness it achieved on every press. The
 //      number it says and the number the ground is have to be the same, and
 //      that is assertable.
+//   9. (WG-28) THE NEGATIVE CONTROL KNOWS ITS OWN SUBJECT. Item 3 above was
+//      wrong for a night: it sized its "outside the radius" ring at 2.5x THIS
+//      FILE'S copy of the pad radius, 6 m, so 15 m. WG-27 widened the tool to
+//      10 m and, because the disc is centred on the AIM POINT up to 9 m
+//      downhill rather than on the player, the pad reached 19 m and the control
+//      ring was policing ground 1.2 m inside it. It then reported 2.779 m of
+//      movement, which reads exactly like a regression in the level op's blast
+//      radius and is not one. MEASURED: the two ring points that moved were
+//      8.844 m and 9.968 m from the disc the tool reported, and the next point
+//      out at 10.386 m moved 0.000000 m against a radius of 10.000 m. The ring
+//      is now derived from `terraform().limits`, and the probe ASSERTS that its
+//      ring cleared every disc the tool says it cut, so the control can no
+//      longer quietly become a measurement of the pad.
 //
 // DW-20: input drains on the 60 Hz tick, not the render frame, so every wait
 // here is real time through of.run and every claim is checked against a tick
@@ -161,7 +174,16 @@
   const inner = ring(u, R * 0.25, 8, bodyR);
   const mid = ring(u, R * 0.45, 8, bodyR);
   const inside = [u, ...inner, ...mid];
-  const outside = ring(u, R * 2.5, 12, bodyR);
+  // THE CONTROL RING, sized from THE TOOL rather than from R. `R` is this
+  // probe's own idea of a pad and is used above only to pick a slope and to
+  // sample well inside whatever the tool cuts; it is NOT the tool's radius and
+  // must never again be used as though it were. A press puts its disc up to
+  // `reachM` downhill of the player and cuts `radiusM` around that, so
+  // `maxReachFromPlayerM` is the furthest ground a press can touch, and the
+  // control sits a metre beyond it.
+  const limits = of.terraform().limits;
+  const OUTSIDE_R = limits.maxReachFromPlayerM + (OF_ARGS.controlMarginM ?? 1.0);
+  const outside = ring(u, OUTSIDE_R, 12, bodyR);
 
   // --- 3. THE DRAWN SURFACE. The worst height difference between two vertices
   // the GPU is drawing that are within one DW-32 foundation module of each
@@ -369,7 +391,17 @@
     // fails both halves.
     drawnPadIsFlatterThanTheHill: drawnAfter.worstStepM < drawnBefore.worstStepM,
     drawnStepWithinOneVoxel: drawnAfter.worstStepM <= 1.0,
-    // And only inside the radius.
+    // And only inside the radius. THE CONTROL PROVES ITS OWN SETUP FIRST
+    // (DW-20): `outsideUntouched` is worth nothing unless the ring was outside
+    // every disc the tool cut, and over a held key that is several discs at
+    // several centres. `maxRimFromFeetM` is the tool's own record of the
+    // furthest its rim ever reached, so this compares the control against the
+    // subject instead of against a constant. The ring is centred on the eye and
+    // the rim is measured from the feet, which share an up direction to within
+    // the capsule's own lean, so the comparison is exact enough for a metre of
+    // margin and is deliberately not tighter.
+    controlRingClearsThePad: OUTSIDE_R > tf.action.maxRimFromFeetM
+      && tf.action.maxRimFromFeetM > 0,
     outsideUntouched: outMoved === 0,
     surfaceAgreesWithSolid: agree === inside.length,
     padIsWalkable: metres >= 1.5 && grounded >= n - 2 && blocked === 0
@@ -397,7 +429,11 @@
       collapse: +(spreadBefore / Math.max(spreadAfter, 1e-6)).toFixed(2) },
     drawn: { before: drawnBefore, after: drawnAfter, spanM: SPAN },
     outside: { points: outside.length, moved: outMoved,
-      maxDeltaM: +outMaxDeltaM.toFixed(6) },
+      maxDeltaM: +outMaxDeltaM.toFixed(6),
+      ringRadiusM: +OUTSIDE_R.toFixed(3),
+      toolReachM: limits.reachM, toolRadiusM: limits.radiusM,
+      padRimReachedM: +tf.action.maxRimFromFeetM.toFixed(3),
+      clearanceM: +(OUTSIDE_R - tf.action.maxRimFromFeetM).toFixed(3) },
     cells: { dug: tf.action.cellsDug, filled: tf.action.cellsFilled,
       removedSet: tf.removedCells, addedSet: tf.addedCells,
       scannedLast: tf.action.lastScanned },

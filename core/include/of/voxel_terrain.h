@@ -508,12 +508,21 @@ class VoxelEdits {
   // belongs in this signature. A field added to BodyParams that world generation
   // reads and this hash does not is a memo that answers for the wrong planet, and
   // it would do so silently.
+  //
+  // WG-28: that comment was true and the list under it was wrong, which is worth
+  // more than either fact alone. `kind` (which dispatches the whole height stack,
+  // planet against moon) and `homeBlendRadiusM` were both read by world
+  // generation and both absent here. Measured on the sibling copy of this hash
+  // in voxel_field.h: 2,778 m of error across `kind`, 28.7 m across the blend
+  // radius. Kept in step with `DensityField::fieldWorldSig`, which is the live
+  // one; this header is demoted (WG-24) but still compiles and still has a suite,
+  // and a demoted copy of a hash is exactly where a fix gets forgotten.
   static uint64_t worldSig(const BodyParams& body) {
-    uint64_t h = body.bodySeed;
-    const double f[7] = {body.radiusM, body.maxReliefM, body.seaLevelM,
+    uint64_t h = body.bodySeed ^ (static_cast<uint64_t>(body.kind) * 0x9e3779b1ull);
+    const double f[8] = {body.radiusM, body.maxReliefM, body.seaLevelM,
                          body.homeDir.x, body.homeDir.y, body.homeDir.z,
-                         body.homeFlatRadiusM};
-    for (int i = 0; i < 7; ++i) {
+                         body.homeFlatRadiusM, body.homeBlendRadiusM};
+    for (int i = 0; i < 8; ++i) {
       uint64_t bits = 0;
       static_assert(sizeof(bits) == sizeof(f[i]), "double is 64 bits");
       std::memcpy(&bits, &f[i], sizeof(bits));

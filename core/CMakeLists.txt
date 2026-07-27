@@ -499,6 +499,19 @@ add_executable(terrain_probe
   tools/terrain_probe.cpp)
 target_link_libraries(terrain_probe PRIVATE of_core)
 
+# --- Tools: spawn_probe: world-gen DIAGNOSTIC. Searches the WHOLE planet for
+#     the best player spawn site and reports it with numbers: local slope from
+#     rings at 4 m and 20 m, the worst height step between samples 4 m apart (the
+#     DW-32 module), min/max/mean relief in a 6 km box with the site's height
+#     against that mean (a valley FLOOR sits below it, a plateau does not), and
+#     the highest ground plus nearest Mountains sample within 8 km. Coarse global
+#     sweep -> regional refine -> fine flat-spot search. Samples
+#     designedHeightNoPad so the existing home pad cannot contaminate a result.
+#     A pure CONSUMER of of_core (no test framework, not registered with ctest). ---
+add_executable(spawn_probe
+  tools/spawn_probe.cpp)
+target_link_libraries(spawn_probe PRIVATE of_core)
+
 # --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
 #     means a future loader/DLL failure fails FAST instead of stalling ~1000 s
 #     in Windows Error Reporting (the historical "hung overnight run" mode). ---

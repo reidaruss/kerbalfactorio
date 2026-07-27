@@ -80,6 +80,22 @@ export interface LevelStats {
   lastFilled: number;
   lastScanned: number;
   lastMs: number;
+  /**
+   * WHERE THE PRESS ACTUALLY SPENT ITS TIME. One total is not a diagnosis, and
+   * this one was actively misleading: the press was assumed to cost what
+   * `levelArea` costs, and `levelArea` measured natively is under a millisecond
+   * warm. The press is four things and only one of them is the terraforming.
+   *
+   *   aim     the ray march that finds the disc centre
+   *   op      the call into /core: levelArea itself
+   *   remesh  rebuilding the NEAR voxel mesh over the dirty box, which is the
+   *           whole level cylinder rather than a dig's small sphere
+   *   quote   the 17 oracle samples behind the "flat to X m" the tool says
+   */
+  lastAimMs: number;
+  lastOpMs: number;
+  lastRemeshMs: number;
+  lastQuoteMs: number;
   /** The latched floor height, metres of relief. NaN while the key is up. */
   targetHeightM: number;
   /** Where the target came from, so a probe can tell latched from re-read. */
@@ -94,14 +110,44 @@ export interface LevelStats {
   underfoot: number;
   /** The last message shown, so the honesty itself is assertable. */
   lastMessage: string;
+  /**
+   * WHERE THE LAST APPLICATION PUT ITS DISC, body-frame metres, and how wide.
+   *
+   * Published because a NEGATIVE CONTROL HAS TO KNOW ITS OWN SUBJECT. WG-27
+   * widened `radiusM` from 6 to 10 and `probes/level.js` kept sizing its
+   * "outside the radius nothing moved" ring from its own local copy of the old
+   * 6, at 2.5x = 15 m. The disc is centred on the AIM POINT, up to `reachM`
+   * = 9 m downhill of the player, so a 10 m pad reaches 19 m and the control
+   * ring was sitting 1.2 m INSIDE the pad it was policing. It then correctly
+   * reported 2.779 m of movement and was read as a regression in the level op.
+   * Measured after: the two ring points that moved were 8.844 m and 9.968 m
+   * from this centre, and the next one out at 10.386 m moved 0.000 m.
+   *
+   * The general form is worth more than the incident: a control whose geometry
+   * is a CONSTANT COPIED FROM THE THING IT WATCHES stops being a control the
+   * moment that thing is retuned, and it fails in the direction that looks like
+   * a real defect. So the tool states where it acted, and the control derives
+   * its ring from that rather than from a number it happens to remember.
+   */
+  lastCentreM: readonly [number, number, number] | null;
+  lastRadiusM: number;
+  /**
+   * The furthest any application has put its disc RIM from the player's own
+   * feet, tangentially: the worst-case outer edge of everything this tool has
+   * touched. A control ring outside this number is provably outside the pad,
+   * and unlike `lastCentreM` it survives a held key that cut several discs.
+   */
+  maxRimFromFeetM: number;
 }
 
 export class LevelAction {
   readonly stats: LevelStats = {
     levels: 0, misses: 0, noops: 0, cellsDug: 0, cellsFilled: 0,
     lastDug: 0, lastFilled: 0, lastScanned: 0, lastMs: 0,
+    lastAimMs: 0, lastOpMs: 0, lastRemeshMs: 0, lastQuoteMs: 0,
     targetHeightM: NaN, latched: false,
     lastFlatnessM: NaN, underfoot: 0, lastMessage: '',
+    lastCentreM: null, lastRadiusM: LEVEL.radiusM, maxRimFromFeetM: 0,
   };
   /**
    * Where a press is announced. Set by the composition root once the game HUD
@@ -170,9 +216,15 @@ export class LevelAction {
     const t0 = performance.now();
     const hit = this.discCentre(origin, dir, feet);
     if (hit === null) { this.stats.misses++; this.say('nothing to level here'); return null; }
+    const tAim = performance.now();
     const target = targetHeightM ?? this.heightUnder(hit);
     const r = this.voxels.level(hit, LEVEL.radiusM, target,
       LEVEL.maxCutM, LEVEL.maxFillM);
+    const tOp = performance.now();
+    this.noteDisc(hit, feet);
+    this.stats.lastAimMs = +(tAim - t0).toFixed(3);
+    this.stats.lastOpMs = +(tOp - tAim).toFixed(3);
+    this.stats.lastRemeshMs = 0;
 
     this.stats.lastDug = r.dug;
     this.stats.lastFilled = r.filled;
@@ -184,9 +236,12 @@ export class LevelAction {
       // which is how the tool says "this is as flat as a 1 m lattice gets"
       // without a lecture and without lying.
       this.stats.noops++;
+      const tq = performance.now();
       const flat = this.flatnessOver(hit);
+      this.stats.lastQuoteMs = +(performance.now() - tq).toFixed(3);
       this.stats.lastFlatnessM = +flat.toFixed(2);
       this.say(`already level here  flat to ${flat.toFixed(1)} m`);
+      this.stats.lastMs = +(performance.now() - t0).toFixed(3);
       return r;
     }
 
@@ -194,7 +249,9 @@ export class LevelAction {
     // BEFORE the frame that shows the pad, and the worker hears about it in the
     // same tick, or the player walks on a heightfield that still believes in the
     // hill while the voxel layer has already flattened it.
+    const tm = performance.now();
     this.mesh.applyDirty(r.dirty);
+    this.stats.lastRemeshMs = +(performance.now() - tm).toFixed(3);
     this.terrain.levelAt(hit.x, hit.y, hit.z, LEVEL.radiusM, target,
       LEVEL.maxCutM, LEVEL.maxFillM);
     this.stats.levels++;
@@ -205,7 +262,9 @@ export class LevelAction {
     // quotes the flatness it actually achieved rather than the flatness it was
     // asked for, so a 1 m lattice on a steep slope says so in metres instead of
     // leaving the player to conclude the key is broken.
+    const tq = performance.now();
     const flat = this.flatnessOver(hit);
+    this.stats.lastQuoteMs = +(performance.now() - tq).toFixed(3);
     this.stats.lastFlatnessM = +flat.toFixed(2);
     this.say(`levelled ${(LEVEL.radiusM * 2).toFixed(0)} m pad  `
       + `flat to ${flat.toFixed(1)} m`);
@@ -263,6 +322,27 @@ export class LevelAction {
       }
     }
     return hi - lo;
+  }
+
+  /**
+   * Record the disc just cut, and how far its rim reached from the player.
+   *
+   * The offset is TANGENTIAL, measured the same way `levelDisc` measures it: the
+   * perpendicular distance from the cylinder's own axis, which is the line from
+   * the planet centre through the disc centre. Using a straight-line distance
+   * instead would mix in the metres the aim point sits BELOW the feet on a
+   * slope, and the op does not reach sideways by those.
+   */
+  private noteDisc(centre: Vec3d, feet?: Vec3d): void {
+    this.stats.lastCentreM = [centre.x, centre.y, centre.z];
+    this.stats.lastRadiusM = LEVEL.radiusM;
+    if (feet === undefined) return;
+    const fr = Math.hypot(feet.x, feet.y, feet.z) || 1;
+    const ax = (centre.x * feet.x + centre.y * feet.y + centre.z * feet.z) / fr;
+    const off = Math.sqrt(Math.max(0,
+      centre.x * centre.x + centre.y * centre.y + centre.z * centre.z - ax * ax));
+    const rim = off + LEVEL.radiusM;
+    if (rim > this.stats.maxRimFromFeetM) this.stats.maxRimFromFeetM = rim;
   }
 
   private say(text: string): void {
