@@ -54,7 +54,15 @@ import type { OfCoreModule } from './heap.js';
 // and it happened again at 4 against a shim reporting 5. AN ABI BUMP IS ATOMIC
 // ACROSS THE BRIDGE: the shim's version, the rebuilt and SYNCED wasm, this
 // constant and its callers land in one commit, and that commit boots.
-export const OF_ABI_VERSION = 14;
+// ABI 15 (2026-07-27): THE ENEMY LOOP (enemies.h, GP-85). §20 of the shim adds
+// the of_en_* surface: emitters in, the pollution field spreads and decays,
+// nests absorb and attribute, evolution rises from three separately accounted
+// inputs, and AttackWaves come out with an origin, a target and a roster.
+// PURELY ADDITIVE, so every ABI 14 caller is unaffected and the bump exists only
+// so this handshake can say the surface is there. Declared in
+// sim/wasm/enemyabi.ts, not here, for the same line-cap reason vesselabi.ts and
+// discabi.ts are.
+export const OF_ABI_VERSION = 15;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

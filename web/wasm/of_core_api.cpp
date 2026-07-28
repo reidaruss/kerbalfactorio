@@ -301,7 +301,20 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       map however the painter shaded them, and the close-in map's whole job is
 //       to show you your own work. With `edits <= 0` the value is bit-identical
 //       to ABI 13's, by surface_field.h's own undug overload.
-OF_API int of_abi_version(void) { return 14; }
+//  15: THE ENEMY LOOP CROSSES THE BRIDGE (enemies.h, GP-85). §20 adds the
+//       of_en_* surface: emitters in, the pollution field spreads and decays,
+//       nests absorb and attribute, evolution rises from three separately
+//       accounted inputs, and AttackWaves come out with an origin, a target and
+//       a roster. PURELY ADDITIVE: not one existing export changed name,
+//       signature or scratch layout, so every ABI 14 caller is unaffected and
+//       the bump exists only so the handshake can say the new surface is there.
+//       The line of the seam is enemies.h's own: it does not own pathfinding,
+//       movement, combat resolution or anything rendered, so the client spawns,
+//       paths, draws and kills the individual creatures and reports kills back
+//       through of_en_damage_nest. The catalogue's health/damagePerSecond/
+//       speedMps/reachM cross through of_en_type so the CLIENT never authors an
+//       enemy's numbers.
+OF_API int of_abi_version(void) { return 15; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2589,3 +2602,4 @@ OF_API int of_gp_item_ids(void) {
 // AFTER §18, and it must be: of_map_sample reads that file's `g_disc` for the
 // survey bit it writes per sample.
 #include "of_map_api.inc"       // §19  ABI 14: the map samples the world (DW-37)
+#include "of_enemies_api.inc" // §20  ABI 15: the pollution/evolution/nest loop

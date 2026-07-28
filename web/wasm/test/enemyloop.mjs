@@ -1,0 +1,201 @@
+// enemyloop.mjs: THE CAUSAL CHAIN, ACROSS THE BRIDGE (ABI 15, GP-85).
+//
+//   node web/wasm/test/enemyloop.mjs
+//
+// `parity.mjs` proves the wasm reproduces itself and matches the native build.
+// It cannot prove that §20's exports actually carry enemies.h's loop, because
+// every one of them was added after the fixtures it compares. This does that,
+// and it is deliberately a NODE test with no browser in it: the question is
+// whether the bridge is faithful, and a headless client answers it without a
+// GPU, a canvas or a settle time.
+//
+// THE NEGATIVE CONTROL IS THE MOST LOAD-BEARING ASSERTION HERE, and it is
+// enemies.h's own: "a nest that absorbed nothing dispatches nothing, forever".
+// A wave timer would satisfy the word "enemies" and pass every positive test in
+// this file. Only a nest that is left alone in an unpolluted hemisphere and
+// still never attacks proves the attacks are CAUSED.
+//
+// Exit 1 on any failed assertion, the rule every runner here uses.
+import { pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const glue = resolve(here, '..', 'dist', 'of-core.mjs');
+const m = await import(pathToFileURL(glue).href);
+const M = await m.default();
+
+const fails = [];
+const check = (name, ok, detail) => {
+  if (!ok) fails.push(detail === undefined ? name : `${name}: ${detail}`);
+  return ok;
+};
+const f64 = (n) => new Float64Array(M.HEAPF64.buffer, M._of_scratch_f64(), n);
+const log = (s) => console.log('  ' + s);
+
+check('the wasm reports ABI 15', M._of_abi_version() === 15, `${M._of_abi_version()}`);
+check('the enemy surface is exported', typeof M._of_en_init === 'function');
+
+const body = M._of_body_create_forge(200281345, 0);
+const R = 600000;
+// An emitter at +Z and a nest 900 m away, both on the same cube face. 900 m is
+// inside the cloud's e-folding radius (enemies.h computes 1,135 m on Forge), so
+// this is a base a nest can smell rather than a contrived adjacency.
+const EMIT = [0, 0, 1];
+const off = 900 / R;
+const NEST = [off, 0, Math.sqrt(1 - off * off)];
+
+// ---------------------------------------------------------------------------
+// 1. POSITIVE. A factory feeds a nest, the nest attacks the factory.
+// ---------------------------------------------------------------------------
+check('the loop comes up', M._of_en_init(body, 12345, 0) === 1);
+const emitter = M._of_en_add_emitter(EMIT[0], EMIT[1], EMIT[2], 40.0);
+const nest = M._of_en_add_nest(NEST[0], NEST[1], NEST[2], 0);
+check('an emitter was minted', emitter > 0, `${emitter}`);
+check('a nest was minted', nest > 0, `${nest}`);
+
+let waves = 0;
+let wave = null;
+let members = [];
+for (let s = 0; s < 400 && waves === 0; ++s) {
+  M._of_en_step(60);
+  const n = M._of_en_drain_waves();
+  if (n === 0) continue;
+  waves = n;
+  M._of_en_wave(0);
+  wave = Array.from(f64(12));
+  members = [];
+  for (let k = 0; k < wave[3]; ++k) { M._of_en_wave_member(0, k); members.push(Array.from(f64(2))); }
+}
+// DW-20: the harness proves it advanced before its measurements are trusted.
+const tick = M._of_en_step(0);
+check('the sim really advanced', tick > 0, `${tick}`);
+check('a fed nest ATTACKS', waves > 0, `${waves} waves in 400 pollution ticks`);
+if (wave !== null) {
+  check('the wave came from the nest that ate the pollution', wave[1] === nest,
+        `sourceNest ${wave[1]} against nest ${nest}`);
+  // THE WHOLE DESIGN IN ONE ASSERTION: a wave is aimed at the emitter that fed
+  // it, not at a random point, not at the player. Attacks are caused.
+  check('and it is aimed at the EMITTER THAT FED IT', wave[2] === emitter,
+        `targetEmitter ${wave[2]} against emitter ${emitter}`);
+  const d = Math.hypot(wave[8] - EMIT[0], wave[9] - EMIT[1], wave[10] - EMIT[2]) * R;
+  check("and its target direction IS the emitter's", d < 1e-6, `${d} m off`);
+  check('the roster is not empty', wave[4] > 0, `${wave[4]}`);
+  check('and the members sum to the total count',
+        members.reduce((a, b) => a + b[1], 0) === wave[4],
+        `${JSON.stringify(members)} against ${wave[4]}`);
+  log(`wave ${wave[0]} from nest ${wave[1]} at emitter ${wave[2]}: `
+    + `${wave[4]} of ${members.map((x) => `type ${x[0]} x${x[1]}`).join(', ')}`);
+}
+
+M._of_en_pollution();
+const poll = Array.from(f64(12));
+check('the cloud has mass', poll[1] > 0, `${poll[1]}`);
+check('and nests are eating it', poll[3] > 0, `absorbedLifetime ${poll[3]}`);
+check('the reported production is the emitter rate', poll[0] === 40, `${poll[0]}`);
+log(`pollution: produced ${poll[0]}/s, ${poll[1].toFixed(1)} in field over `
+  + `${poll[4]} cells of ${poll[6].toFixed(3)} m, absorbed ${poll[3].toFixed(1)} lifetime`);
+
+M._of_en_evolution();
+const evo = Array.from(f64(7));
+check('evolution rose', evo[0] > 0, `${evo[0]}`);
+// enemies.h re-sums rather than accumulating so this identity holds BIT-exactly,
+// which is what makes a UI breakdown a decomposition rather than an estimate.
+check('and its three terms sum BIT-EXACTLY to the factor',
+      evo[1] + evo[2] + evo[3] === evo[0],
+      `${evo[1]} + ${evo[2]} + ${evo[3]} !== ${evo[0]}`);
+check('and pollution is one of the terms that moved it', evo[2] > 0, `${evo[2]}`);
+log(`evolution ${evo[0].toFixed(8)} = time ${evo[1].toFixed(8)} + pollution `
+  + `${evo[2].toFixed(8)} + kills ${evo[3].toFixed(8)}`);
+
+// The catalogue, which is where the client gets every number it will ever draw
+// or apply. A TypeScript copy of these five rows would be a second balance
+// authority a designer editing enemies.h could not reach.
+const types = M._of_en_type_count();
+check('the catalogue crossed', types === 5, `${types}`);
+M._of_en_type(0);
+const t0 = Array.from(f64(11));
+check('and the Skitterer carries its combat numbers',
+      t0[0] === 1 && t0[1] === 15 && t0[2] === 7 && t0[3] === 6 && t0[4] === 1.5,
+      JSON.stringify(t0.slice(0, 5)));
+log(`Skitterer: ${t0[1]} hp, ${t0[2]} dps, ${t0[3]} m/s, ${t0[4]} m reach`);
+
+// ---------------------------------------------------------------------------
+// 2. THE NEGATIVE CONTROL. A nest nobody polluted never attacks.
+// ---------------------------------------------------------------------------
+M._of_en_init(body, 12345, 0);
+const lonely = M._of_en_add_nest(0, 1, 0, 0);
+let lonelyWaves = 0;
+for (let s = 0; s < 400; ++s) { M._of_en_step(60); lonelyWaves += M._of_en_drain_waves(); }
+M._of_en_evolution();
+const evo2 = Array.from(f64(7));
+check('A NEST THAT ABSORBED NOTHING DISPATCHES NOTHING', lonelyWaves === 0,
+      `${lonelyWaves} waves from nest ${lonely} with no emitter in the world`);
+check('and nothing was absorbed for it to have spent', evo2[5] === 0, `${evo2[5]}`);
+// Time alone still evolves, which is Factorio's model and is not a contradiction:
+// the roster gets nastier, but nothing is dispatched because nothing was fed.
+check('while TIME alone still moves evolution', evo2[1] > 0, `${evo2[1]}`);
+log(`lonely nest: ${lonelyWaves} waves, 0 absorbed, evolution ${evo2[0].toFixed(6)} `
+  + `from time alone`);
+
+// ---------------------------------------------------------------------------
+// 3. PERSISTENCE. A world that forgets its evolution factor is broken (DW-17).
+// ---------------------------------------------------------------------------
+M._of_en_init(body, 12345, 0);
+M._of_en_add_emitter(EMIT[0], EMIT[1], EMIT[2], 40.0);
+M._of_en_add_nest(NEST[0], NEST[1], NEST[2], 0);
+M._of_en_step(60 * 500);
+M._of_en_evolution();
+const before = Array.from(f64(7));
+const hashBeforeLo = M._of_en_state_hash_lo() >>> 0;
+const hashBeforeHi = M._of_last_hi() >>> 0;
+const n = M._of_en_serialize();
+check('the stream has bytes', n > 0, `${n}`);
+const bytes = Uint8Array.from(new Uint8Array(M.HEAPU8.buffer, M._of_scratch_u8(), n));
+
+// Rebuilt from the SAME world seed, which is the real case: the seed is world
+// state that the world already carries, so the enemy stream deliberately does
+// not repeat it. Restoring into a sim built from a DIFFERENT seed reproduces
+// every serialised field and still differs in `stateHash`, because the hash
+// covers the construction seed and the stream does not. That is correct and is
+// written down here so the next person to see it does not go looking for a
+// serialiser bug.
+M._of_en_init(body, 12345, 0);
+M._of_en_alloc_bytes(bytes.length);
+new Uint8Array(M.HEAPU8.buffer, M._of_scratch_u8(), bytes.length).set(bytes);
+const restored = M._of_en_deserialize();
+M._of_en_evolution();
+const after = Array.from(f64(7));
+check('the nests came back', restored > 0, `${restored}`);
+check('the evolution factor survived EXACTLY', before[0] === after[0],
+      `${before[0]} -> ${after[0]}`);
+check('and so did all three of its terms',
+      before[1] === after[1] && before[2] === after[2] && before[3] === after[3]);
+check('and the whole sim is BIT-IDENTICAL by its own hash',
+      (M._of_en_state_hash_lo() >>> 0) === hashBeforeLo
+      && (M._of_last_hi() >>> 0) === hashBeforeHi);
+log(`persistence: ${n} bytes, ${restored} nests, factor ${after[0].toFixed(8)}, hash equal`);
+
+// An EMPTY arena must be REFUSED rather than read: the reader throws past the
+// end and this module is built with exceptions off, so a zero-byte stream would
+// take the whole instance down instead of returning.
+M._of_en_alloc_bytes(0);
+check('an empty stream is refused, not read', M._of_en_deserialize() === -1);
+
+// ---------------------------------------------------------------------------
+// 4. DW-28. The counters that stop a ceiling reporting success.
+// ---------------------------------------------------------------------------
+check('the shipped tuning needed no clamping', M._of_en_tuning_clamped() === 0);
+check('no nest placement was refused by the cap', M._of_en_nests_refused() === 0,
+      `${M._of_en_nests_refused()}`);
+check('no wave was truncated by the head-count ceiling',
+      M._of_en_waves_truncated() === 0, `${M._of_en_waves_truncated()}`);
+check('no pollution cell was clipped out of the overlay',
+      M._of_en_cells_clipped() === 0, `${M._of_en_cells_clipped()}`);
+
+if (fails.length) {
+  console.error(`enemyloop: ${fails.length} ASSERTION FAILURES`);
+  for (const f of fails) console.error('  ' + f);
+  process.exit(1);
+}
+console.error('enemyloop: PASS');
