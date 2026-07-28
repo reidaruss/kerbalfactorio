@@ -54,6 +54,13 @@ static double padDist(const BodyParams& b, const Vec3& d) {
                dz = d.z - b.homeDir.z;
   return b.radiusM * std::sqrt(dx * dx + dy * dy + dz * dz);
 }
+// The SAME arc distance the pond basin measures (WG-36), in the same metric, so
+// "inside the basin" means here exactly what it means in pondBasinDropM.
+static double pondDist(const BodyParams& b, const Vec3& d) {
+  const double dx = d.x - b.pondDir.x, dy = d.y - b.pondDir.y,
+               dz = d.z - b.pondDir.z;
+  return b.radiusM * std::sqrt(dx * dx + dy * dy + dz * dz);
+}
 // The seed the terrain is tuned against (world-gen brief, 2026-07-25).
 static const uint64_t kTunedSeed = 0x0bf00d01ull;
 
@@ -218,36 +225,75 @@ TEST(home_dir_literal_matches_lat2_lon144) {
 // inside the flat radius and the blend is written pad-first, so every sample
 // returns the pad height's exact bits: so this asserts bit-equality, which is a
 // far stronger statement than the 0.05 m budget.
+//
+// WG-36 RE-BASELINE, AND WHY THE OLD ASSERTION WAS WRONG RATHER THAN UNLUCKY.
+// The home pond's basin is cut into the pad: its centre is 55 m from homeDir and
+// its rim 22 m from that, so a 44 m disc of the 300 m dead-flat disc now has real
+// terrain relief in it, on purpose. A pond the ground does not go down into is a
+// decal (WG-36), so "the whole pad is bit-flat" is a claim this build must NOT
+// make. What survives, and is what the pad was ever for, is that the pad is flat
+// everywhere the basin is not.
+//
+// So this test now asserts the STRONGER, exact statement in place of the old
+// blanket one: the set of directions where the padded ground differs from the pad
+// height is EXACTLY the set inside pondRadiusM, the difference there is EXACTLY
+// pondBasinDropM, and it is strictly downward. That fails if the basin moves, if
+// it leaks outside its radius, or if someone flattens it away, none of which the
+// old assertion could tell apart from each other.
 TEST(home_pad_is_bit_exactly_flat_over_a_4m_span) {
   const BodyParams forge = makeForge(kTunedSeed);
   CHECK(forge.homeFlatRadiusM > 0.0);
   const TFrame f = tframe(forge.homeDir);
+  // homeDir is 55 m from the pond centre and the basin is 22 m across, so the pad
+  // height itself is OUTSIDE the basin and is unmoved by WG-36. Pinned here, so
+  // that the two names below being interchangeable is a checked fact.
+  CHECK(pondDist(forge, forge.homeDir) > forge.pondRadiusM);
   const double padH = sampleDesignedHeight(forge, forge.homeDir);
+  CHECK(asBits(padH) == asBits(designedHeightNoPond(forge, forge.homeDir)));
   const double lim = forge.homeFlatRadiusM * 0.97;  // margin for gnomonic error
 
+  auto inBasin = [&](const Vec3& d) {
+    return pondDist(forge, d) < forge.pondRadiusM;
+  };
+
   double worst4 = 0.0;
-  int samples = 0;
+  int samples = 0, basinSamples = 0;
   for (double y = -lim; y <= lim; y += 2.0)
     for (double x = -lim; x <= lim; x += 2.0) {
       if (x * x + y * y > lim * lim) continue;
       const Vec3 d = toff(f, forge.radiusM, x, y);
       CHECK(padDist(forge, d) <= forge.homeFlatRadiusM);
       const double h = sampleDesignedHeight(forge, d);
-      CHECK(asBits(h) == asBits(padH));            // bit-exactly level
       ++samples;
-      // Every 4 m neighbour (axial and diagonal) inside the pad.
+      if (inBasin(d)) {
+        // Inside the basin the ground is SUPPOSED to have moved, and by exactly
+        // the amount the basin claims, measured off the same flat pad.
+        ++basinSamples;
+        CHECK(h < padH);                                        // really down
+        CHECK(std::fabs((padH - h) - pondBasinDropM(forge, d)) < 1e-12);
+        CHECK(asBits(designedHeightNoPond(forge, d)) == asBits(padH));
+        continue;
+      }
+      CHECK(asBits(h) == asBits(padH));            // bit-exactly level
+      // Every 4 m neighbour (axial and diagonal) inside the pad and outside the
+      // basin. A step that straddles the rim is a step across real terrain, not
+      // across the pad, so it is not this test's subject.
       const double o[4][2] = {{4, 0}, {0, 4}, {2.8284271, 2.8284271},
                               {2.8284271, -2.8284271}};
       for (const auto& n : o) {
         const double nx = x + n[0], ny = y + n[1];
         if (nx * nx + ny * ny > lim * lim) continue;
-        const double hn =
-            sampleDesignedHeight(forge, toff(f, forge.radiusM, nx, ny));
+        const Vec3 dn = toff(f, forge.radiusM, nx, ny);
+        if (inBasin(dn)) continue;
+        const double hn = sampleDesignedHeight(forge, dn);
         const double step = std::fabs(hn - h);
         if (step > worst4) worst4 = step;
       }
     }
   CHECK(samples > 5000);      // the pad really was swept, not skipped
+  // ...and the basin really is inside the swept pad, so the skip above is a
+  // carve-out for something that exists rather than a silent exemption.
+  CHECK(basinSamples > 200);
   CHECK(worst4 < 0.05);       // the stated budget
   CHECK(worst4 == 0.0);       // and it is actually exact
 }
@@ -256,6 +302,17 @@ TEST(home_pad_is_bit_exactly_flat_over_a_4m_span) {
 // radius, and reaching zero influence at the blend radius. Recovering the weight
 // from the three surfaces (padded, natural, pad height) means this pins the
 // observable shape rather than re-stating the implementation.
+//
+// WG-36: the PADDED surface here is designedHeightNoPond, not
+// sampleDesignedHeight. Those were the same function until the pond arrived, and
+// the rename is the whole point of designedHeightNoPond existing: the pad blend
+// is a property of the pad, and the basin is a second, independent term
+// subtracted afterwards. Reading the ponded height here would recover a weight
+// contaminated by up to 4 m of basin on the rays that cross it (the pond centre
+// is 55 m out, so three of these eight rays do), i.e. it would report the pad
+// blend as broken because a different feature was working. The basin's own shape
+// is asserted in home_pad_is_bit_exactly_flat_over_a_4m_span and, in full, in
+// test_water_field.cpp.
 TEST(home_pad_blend_is_monotone_and_reaches_zero) {
   const BodyParams forge = makeForge(kTunedSeed);
   const TFrame f = tframe(forge.homeDir);
@@ -268,7 +325,7 @@ TEST(home_pad_blend_is_monotone_and_reaches_zero) {
     for (double r = 0.0; r <= forge.homeBlendRadiusM + 150.0; r += 5.0) {
       const Vec3 d = toff(f, forge.radiusM, r * ca, r * sa);
       const double nat = designedHeightNoPad(forge, d);
-      const double pad = sampleDesignedHeight(forge, d);
+      const double pad = designedHeightNoPond(forge, d);
       if (std::fabs(nat - padH) < 1.0) continue;   // weight not observable here
       const double w = (pad - nat) / (padH - nat); // 1 = full pad, 0 = natural
       const double dist = padDist(forge, d);
@@ -292,6 +349,15 @@ TEST(outside_blend_radius_is_bit_identical_to_unpadded) {
   const BodyParams forge = makeForge(kTunedSeed);
   const TFrame f = tframe(forge.homeDir);
   int compared = 0, inside = 0;
+
+  // WG-36 PREMISE, made explicit rather than assumed. This test reads the FULL
+  // sampleDesignedHeight, which is now pad minus basin, so it is only a statement
+  // about the PAD while the basin lives wholly inside the blend radius. It does
+  // (55 m + 22 m against 600 m). If a body ever puts a pond outside its pad, this
+  // check goes red first and says so, instead of the comparisons below failing
+  // under a name that would then be a lie.
+  CHECK(pondDist(forge, forge.homeDir) + forge.pondRadiusM <
+        forge.homeBlendRadiusM);
 
   // A ring just outside the blend radius, where a sloppy implementation would
   // leak a rounding residue.

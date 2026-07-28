@@ -108,3 +108,37 @@ export function sampleSlopeCos(oracle: SurfaceOracle, ux: number, uy: number,
   const gn = (sample(nx, ny, nz) - r0) / EPS_SLOPE_M;
   return { cos: 1 / Math.sqrt(1 + ge * ge + gn * gn), calls };
 }
+
+/**
+ * MEASURE THE SLOPE UNDER THE FEET AND APPLY THE STAND-OR-SLIDE RULE (WG-41).
+ *
+ * Moved here from KinematicBody.step, which had the sampling delegated and the
+ * decision inline, so this file owned half a rule. It owns both halves now.
+ * Behaviour is unchanged and the tangent is edited in place through `t`.
+ *
+ * The three exemptions are load-bearing and each has a reason:
+ *   * not airborne  - a slope you are not standing on cannot refuse you.
+ *   * not underRock - underground the heightfield gradient describes the
+ *     HILLSIDE OVERHEAD, not the tunnel floor being stood on.
+ *   * not onDeck    - a deck is flat by construction, so the gradient under it
+ *     describes the ground it stands on and must not gate walking on it.
+ * Water is deliberately NOT an exemption: a swimmer is not grounded, so this
+ * never runs on one, and a wader IS standing on the bed and should be refused
+ * by a bank too steep to climb exactly as they would be on dry land.
+ *
+ * `cut` is the UPHILL component of the tangent the caller must remove, already
+ * 0 when the slope is walkable. Returned as a scalar rather than applied to a
+ * vector argument so this stays allocation free on the tick path.
+ */
+export function slopeGate(oracle: SurfaceOracle, tx: number, ty: number, tz: number,
+                          ux: number, uy: number, uz: number,
+                          surfaceR: number, qr: number, limitCos: number,
+                          grounded: boolean, underRock: boolean, onDeck: boolean):
+{ cos: number; calls: number; cut: number } {
+  if (!grounded || underRock || onDeck) return { cos: 1, calls: 0, cut: 0 };
+  const sl = sampleSlopeCos(oracle, ux, uy, uz, surfaceR, qr);
+  // Too steep to stand: keep the downhill component, drop the uphill one.
+  const climb = tx * ux + ty * uy + tz * uz;
+  const cut = (sl.cos < limitCos && climb > 0) ? climb : 0;
+  return { cos: sl.cos, calls: sl.calls, cut };
+}

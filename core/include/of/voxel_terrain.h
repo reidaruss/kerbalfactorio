@@ -519,10 +519,15 @@ class VoxelEdits {
   // and a demoted copy of a hash is exactly where a fix gets forgotten.
   static uint64_t worldSig(const BodyParams& body) {
     uint64_t h = body.bodySeed ^ (static_cast<uint64_t>(body.kind) * 0x9e3779b1ull);
-    const double f[8] = {body.radiusM, body.maxReliefM, body.seaLevelM,
-                         body.homeDir.x, body.homeDir.y, body.homeDir.z,
-                         body.homeFlatRadiusM, body.homeBlendRadiusM};
-    for (int i = 0; i < 8; ++i) {
+    // WG-36 appended the four pond fields for exactly the reason the eight
+    // above were added: the basin moves the designed height, so a memo warmed
+    // on a body with no pond answers wrong inside a body that has one.
+    const double f[13] = {body.radiusM, body.maxReliefM, body.seaLevelM,
+                          body.homeDir.x, body.homeDir.y, body.homeDir.z,
+                          body.homeFlatRadiusM, body.homeBlendRadiusM,
+                          body.pondDir.x, body.pondDir.y, body.pondDir.z,
+                          body.pondRadiusM, body.pondDepthM};
+    for (int i = 0; i < 13; ++i) {
       uint64_t bits = 0;
       static_assert(sizeof(bits) == sizeof(f[i]), "double is 64 bits");
       std::memcpy(&bits, &f[i], sizeof(bits));

@@ -6,12 +6,25 @@
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import { scratchF64, scratchI32 } from '../sim/wasm/heap.js';
 import type { PlanetBody, Vec3d } from './PlanetBody.js';
+import { WaterOracle } from './WaterOracle.js';
 
 export class SurfaceOracle {
   /** Voxel edit set handle; 0 means "the pristine procedural world". */
   editsHandle = 0;
 
-  constructor(private readonly M: OfCoreModule, readonly body: PlanetBody) {}
+  /**
+   * THE WATER, as a SEPARATE object with no method in common with this one
+   * (WG-39). It is constructed here only because this is where the module
+   * handle and the body already are, and holding a reference to it grants this
+   * class nothing: there is still no way to get a water height out of a
+   * SurfaceOracle call, and no way to get a ground height out of a WaterOracle
+   * call. That property, and not the ownership graph, is what DW-26 is about.
+   */
+  readonly water: WaterOracle;
+
+  constructor(private readonly M: OfCoreModule, readonly body: PlanetBody) {
+    this.water = new WaterOracle(M, body);
+  }
 
   /** The designed surface relief in metres. baseHeight === sampleDesignedHeight (WG-21). */
   baseHeight(dx: number, dy: number, dz: number): number {

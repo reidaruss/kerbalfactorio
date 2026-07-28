@@ -309,6 +309,44 @@ target_link_libraries(surface_field_tests PRIVATE of_core)
 target_include_directories(surface_field_tests PRIVATE tests)
 add_test(NAME surface_field_tests COMMAND surface_field_tests)
 
+# --- World-gen WATER LEVEL AUTHORITY (WG-36 / WG-37): water_field.h publishes
+#     the pond's water level as ITS OWN NAMED QUANTITY with ITS OWN BOUND, in its
+#     own file, under names that cannot be mistaken for the ground. Adding water
+#     adds a THIRD answer to "where is the surface here", and the project already
+#     pays for that ambiguity twice (DW-26: the sinking deck and the sinking
+#     tunnel), so the level is published the way surfaceHeight and solidCell are:
+#     bounded against its neighbours by a ctest rather than by a comment.
+#
+#     Two halves, and each one is a defect class rather than a feature list:
+#       * THE BASIN IS REAL TERRAIN. biome.h's pondBasinDropM cuts a 22 m bowl
+#         4 m into the designed height, so there is a floor to stand on and a
+#         slope to wade down. Asserted: the full depth at the centre; BIT-
+#         IDENTICAL designed height at and beyond the rim (the drop term returns
+#         a hard 0.0, so the other 99.9999% of the planet re-baselines nothing);
+#         monotone inward on 8 bearings; and the steepest grade bounded on BOTH
+#         SIDES, 0.30 for walkability and 0.25 so that flattening the bowl into a
+#         decal fails loudly instead of quietly.
+#       * THE LEVEL IS ITS OWN QUANTITY. Asserted: the DW-26 two-sided bound,
+#         sampleDesignedHeight <= levelM <= designedHeightNoPond over 4,000
+#         directions; exactly one freeboard at the rim; kNoWater for every dry
+#         column including the beach INSIDE the basin; the shoreline SOLVED from
+#         the basin profile rather than stored, checked against the profile it
+#         claims to solve; depth strictly increasing shore to centre; and
+#         submersionM unreachably negative off the pond, so `> 0` is a complete
+#         test for "in water" with no companion check.
+#     Plus the negative control the file is built around: the surface oracle at
+#     the pond centre returns the BASIN FLOOR and not the water level, to 1e-9
+#     and with 3 m of daylight, so a height function that ever starts answering
+#     with the water level goes red by name. Both defects were injected and the
+#     failures recorded (WG-37). Consumes water_field.h + biome.h + surface_field.h
+#     read-only.
+add_executable(water_field_tests
+  tests/test_main.cpp
+  tests/test_water_field.cpp)
+target_link_libraries(water_field_tests PRIVATE of_core)
+target_include_directories(water_field_tests PRIVATE tests)
+add_test(NAME water_field_tests COMMAND water_field_tests)
+
 # --- World-gen DISCOVERABLE MAP (WG-29 / DW-36): discovery.h is the record of
 #     what the player has SEEN of a body, which is WORLD state rather than UI
 #     state, so it is deterministic and it persists. ONE rule -- a cell is

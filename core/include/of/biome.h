@@ -340,7 +340,7 @@ inline double designedHeightNoPad(const BodyParams& body, const Vec3& dir) {
 }
 
 // -----------------------------------------------------------------------------
-// sampleDesignedHeight: THE surface authority (standing rule 1).
+// designedHeightNoPond: the designed surface WITH the pad and WITHOUT the pond.
 //
 // = designedHeightNoPad, with the body's HOME FLAT PAD blended in. Because the
 // pad lives here, the mesh, collision, the walker, voxel solidity, deposit
@@ -350,7 +350,14 @@ inline double designedHeightNoPad(const BodyParams& body, const Vec3& dir) {
 // Outside homeBlendRadiusM the function returns designedHeightNoPad's value
 // UNCHANGED: the same double, not a rounded copy, so the pad perturbs a 600 m
 // disc and leaves the other 99.9999% of the planet bit-identical.
-inline double sampleDesignedHeight(const BodyParams& body, const Vec3& dir) {
+//
+// WG-36 renamed this out of sampleDesignedHeight and left the body untouched.
+// It is public rather than a detail because it is the ONE thing that can answer
+// "how high would the ground here be if there were no pond", which is what the
+// pond's water level is measured down from. Deriving the water level from
+// sampleDesignedHeight instead would be circular: the basin is subtracted from
+// exactly the height the water is supposed to be referenced to.
+inline double designedHeightNoPond(const BodyParams& body, const Vec3& dir) {
   const double h = designedHeightNoPad(body, dir);
   if (body.homeFlatRadiusM <= 0.0) return h;          // no pad on this body
 
@@ -371,6 +378,50 @@ inline double sampleDesignedHeight(const BodyParams& body, const Vec3& dir) {
   // Written pad-first so t == 0 returns padH EXACTLY (dead flat, bit-exact)
   // rather than padH plus a rounding residue.
   return padH + (h - padH) * t;
+}
+
+// -----------------------------------------------------------------------------
+// pondBasinDropM (WG-36): metres of GROUND removed by the home pond's basin.
+//
+// A pond you can only see is a decal. This is the thing that makes it a place:
+// the ground actually goes DOWN, so there is a floor to stand on, a slope to
+// wade down, and a volume for water to be in.
+//
+// Profile: drop(t) = depth * (1 - smoothstep(0,1,t)), t = dist/pondRadiusM.
+// smoothstep is C1 with zero derivative at BOTH ends, which buys two things
+// that matter more than they look:
+//   * at t = 1 the basin meets the surrounding ground TANGENTIALLY, so the rim
+//     is not a cliff and no LOD level ever has to resolve a step there;
+//   * at t = 0 the floor is locally flat, so the deepest part is a bed rather
+//     than a point, which is what makes it read as a pond and not a funnel.
+// The steepest grade is at t = 0.5 and is 1.5 * depth / radius, which for the
+// shipped 4 m / 22 m is 0.273 (15.3 deg) - inside CAPSULE.slopeLimitCos, so
+// the whole basin is walkable and the player wades rather than slides.
+//
+// Returns EXACTLY 0.0 at and beyond pondRadiusM, so subtracting it leaves the
+// rest of the planet's designed height bit-identical.
+//
+// Multiply/add and one sqrt only: no trig, no pow (DW-14).
+inline double pondBasinDropM(const BodyParams& body, const Vec3& dir) {
+  if (body.pondRadiusM <= 0.0) return 0.0;            // no pond on this body
+  const double dx = dir.x - body.pondDir.x;
+  const double dy = dir.y - body.pondDir.y;
+  const double dz = dir.z - body.pondDir.z;
+  const double distM =
+      body.radiusM * std::sqrt(dx * dx + dy * dy + dz * dz);
+  if (distM >= body.pondRadiusM) return 0.0;          // untouched, bit-identical
+  const double t = distM / body.pondRadiusM;
+  return body.pondDepthM * (1.0 - smoothstep(0.0, 1.0, t));
+}
+
+// -----------------------------------------------------------------------------
+// sampleDesignedHeight: THE surface authority (standing rule 1).
+//
+// The pad, then the basin. Both are terrain. NEITHER is the water level: this
+// function answers "where is the GROUND" and nothing else, everywhere on the
+// body, including under the pond. See water_field.h for the other question.
+inline double sampleDesignedHeight(const BodyParams& body, const Vec3& dir) {
+  return designedHeightNoPond(body, dir) - pondBasinDropM(body, dir);
 }
 
 // Designed height at a geo coord (mirrors SampleTerrainHeight but designed).

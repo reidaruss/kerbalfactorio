@@ -11,9 +11,17 @@ import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 import { CAPSULE_SAMPLES_M, VOXEL_STEP_UP_M, VoxelCollider } from './VoxelCollision.js';
 import { STRUCTURE_STEP_UP_M, type SolidBodies } from './StructurePort.js';
-import { climbGate, sampleSlopeCos } from './HeightfieldWalk.js';
+import { CAPSULE } from './Capsule.js';
+// Re-exported so the split is invisible to the six modules that read it.
+export { CAPSULE } from './Capsule.js';
+import { climbGate, slopeGate } from './HeightfieldWalk.js';
 import { escapeRock } from './RockEscape.js';
 import type { StandTrace } from './StandTrace.js';
+import type { WaterOracle } from '../world/WaterOracle.js';
+import {
+  dragTangentFactor, dragUpFactor, moveAccel, moveSpeed, newSwimState,
+  radialAccel, readWater, SWIM, type SwimState,
+} from './Swim.js';
 
 export interface MoveIntent {
   /** Desired tangent direction, body frame, unit or zero. */
@@ -23,48 +31,6 @@ export interface MoveIntent {
   jump: boolean;
 }
 
-/** Human-scale capsule. Heights are metres from the feet. */
-export const CAPSULE = {
-  radiusM: 0.4,
-  heightM: 1.8,
-  eyeHeightM: 1.62,
-  /** Below this gap the feet re-attach to the ground instead of free-falling. */
-  groundSnapM: 0.35,
-  /**
-   * THE STEP UP, and therefore THE WALL. The tallest the ground may be above
-   * where the feet started a tick and still be walked onto. A lip under this is
-   * a step; anything over it is a cliff and the horizontal move into it is
-   * refused (`climbGate`).
-   *
-   * Before this existed the heightfield had no walls at all: `gap <= 0` read
-   * "below the ground, therefore landing", so ONE tick's 7.7 cm of travel into
-   * the foot of a cliff snapped the capsule to the top of it. Measured: the
-   * walker climbed 12 m straight up out of a 10.4 m shaft it had just dug,
-   * with rock 1.75 m ahead at eye height (walkfeel.js negative control). The
-   * slope limit below did not catch it and cannot: it is sampled AFTER the
-   * snap, so it reads the flat ground at the top of the cliff.
-   *
-   * 0.6 m is knee height on a 1.8 m capsule. It is over an order of magnitude
-   * more than the 3.4 cm of real relief a walk across this terrain presents in
-   * one tick, so it never fires on ordinary ground, and it is well under the
-   * 1 m quantum the derived lowering moves in, so a hole you dig still needs a
-   * jump or a ramp to get out of.
-   */
-  stepUpM: 1.1,
-  /** cos(50 deg): steeper than this is a slide, not a walk (section 8.1). */
-  slopeLimitCos: 0.6428,
-  /**
-   * Sized for FEEL, now that DW-18 has given Forge 9.81 m/s^2. 4.0 m/s gives a
-   * 0.82 m apex and 0.82 s of airtime: a jump that clears a knee-high ledge and
-   * lands, instead of the 4.8 second float the 0.587 m/s^2 density model
-   * produced. Apex = v^2/2g, airtime = 2v/g; both are read back by the jump
-   * probe rather than asserted here.
-   */
-  jumpSpeedMps: 4.0,
-  groundAccel: 34.0,
-  airAccel: 6.0,
-  groundDrag: 11.0,
-};
 
 /** How far below the feet a voxel floor is looked for before the player falls.
  *  Exported because `RockEscape` re-asks the SAME question about the position a
@@ -133,6 +99,15 @@ export class KinematicBody {
    * surface (DW-26 is that lesson, learned the expensive way).
    */
   solids: SolidBodies | null = null;
+  /**
+   * The water, if this body has any (WG-40). A SEPARATE oracle from the surface
+   * one on purpose: see WaterOracle.ts. Null leaves every path below bit-for-bit
+   * what it was, because `readWater` zeroes the state and every water term is
+   * multiplied by a frac of 0.
+   */
+  water: WaterOracle | null = null;
+  /** How wet the capsule is this tick, and the only place that is decided. */
+  readonly swim: SwimState = newSwimState();
   speedMps = 0;
   oracleCalls = 0;
   /**
@@ -186,9 +161,15 @@ export class KinematicBody {
     let vUp = v.x * ux + v.y * uy + v.z * uz;
     let tx = v.x - ux * vUp, ty = v.y - uy * vUp, tz = v.z - uz * vUp;
 
+    // How wet the capsule is. ONE query, at the feet, and every water term below
+    // is a function of the one `frac` it produces (WG-40).
+    const wet = readWater(this.swim, this.water, p, CAPSULE.heightM,
+      CAPSULE.eyeHeightM, dt);
+
     // Steer the tangential velocity toward the intent, then apply drag.
-    const accel = this.grounded ? CAPSULE.groundAccel : CAPSULE.airAccel;
-    const gx = intent.wx * intent.speed, gy = intent.wy * intent.speed, gz = intent.wz * intent.speed;
+    const accel = moveAccel(wet, this.grounded, CAPSULE.groundAccel, CAPSULE.airAccel);
+    const wantSpeed = moveSpeed(wet, intent.speed);
+    const gx = intent.wx * wantSpeed, gy = intent.wy * wantSpeed, gz = intent.wz * wantSpeed;
     let dx = gx - tx, dy = gy - ty, dz = gz - tz;
     const dLen = Math.hypot(dx, dy, dz);
     const dMax = accel * dt;
@@ -199,8 +180,19 @@ export class KinematicBody {
       tx *= k; ty *= k; tz *= k;
     }
 
-    vUp -= this.gravityAccel(r) * dt;
-    if (intent.jump && this.grounded && this.slopeCos >= CAPSULE.slopeLimitCos) {
+    // Weight, less buoyancy. Out of water `frac` is 0 and this is exactly the
+    // gravity term it replaced. In water it changes sign at the float line, so
+    // a swimmer rises to it and a wader is still held down by it, with no state
+    // switch anywhere: the equilibrium is a fixed point, not a branch (Swim.ts).
+    vUp += radialAccel(wet, this.gravityAccel(r)) * dt;
+    if (wet.inWater) {
+      // Held jump is SWIM UP, because what it is really for is climbing out at
+      // the bank, which is a sustained push rather than a jump.
+      if (intent.jump) vUp += SWIM.riseAccel * dt;
+      vUp *= dragUpFactor(wet, dt);
+      const k = dragTangentFactor(wet, dt);
+      tx *= k; ty *= k; tz *= k;
+    } else if (intent.jump && this.grounded && this.slopeCos >= CAPSULE.slopeLimitCos) {
       vUp = CAPSULE.jumpSpeedMps;
       this.grounded = false;
     }
@@ -320,7 +312,13 @@ export class KinematicBody {
     if (landing && Number.isFinite(groundR)) {
       qx = dxn * groundR; qy = dyn * groundR; qz = dzn * groundR;
       qr = groundR;
-      vUp = 0;
+      // A FLOOR KILLS DOWNWARD MOTION, NOT UPWARD. Out of water the two are the
+      // same statement because nothing but a jump makes vUp positive here, and
+      // a jump has already cleared `grounded`. In water they differ and the
+      // difference matters: standing on the bed under the float line, buoyancy
+      // is lifting, and zeroing that every tick would pin a swimmer to the
+      // bottom of the pond while the acceleration said otherwise.
+      vUp = vUp > 0 && wet.floating ? vUp : 0;
       this.grounded = true;
     } else {
       this.grounded = false;
@@ -348,24 +346,13 @@ export class KinematicBody {
       if (e.refused) { tx = 0; ty = 0; tz = 0; vUp = 0; this.blockedByRock = true; }
     }
 
-    // 3. Slope. Sampling the gradient costs two oracle calls and is what stops
-    //    the capsule walking up a cliff face like a ladder.
+    // 3. Slope: stand or slide. Both halves live in HeightfieldWalk.ts (WG-41).
     ux = qx / qr; uy = qy / qr; uz = qz / qr;
-    // Underground the heightfield gradient describes the hillside overhead, not
-    // the floor being stood on, so it must not gate walking inside a tunnel.
-    // A DECK IS FLAT by construction, so the heightfield gradient under it
-    // describes the hillside it stands on and must not gate walking on it.
-    this.slopeCos = 1;
-    if (this.grounded && !this.underRock && !this.onDeck) {
-      const sl = sampleSlopeCos(this.oracle, ux, uy, uz, surfaceR, qr);
-      this.slopeCos = sl.cos;
-      this.oracleCalls += sl.calls;
-    }
-    if (this.grounded && this.slopeCos < CAPSULE.slopeLimitCos) {
-      // Too steep to stand: keep the downhill component, drop the uphill one.
-      const climb = tx * ux + ty * uy + tz * uz;
-      if (climb > 0) { tx -= ux * climb; ty -= uy * climb; tz -= uz * climb; }
-    }
+    const sl = slopeGate(this.oracle, tx, ty, tz, ux, uy, uz, surfaceR, qr,
+      CAPSULE.slopeLimitCos, this.grounded, this.underRock, this.onDeck);
+    this.slopeCos = sl.cos;
+    this.oracleCalls += sl.calls;
+    if (sl.cut > 0) { tx -= ux * sl.cut; ty -= uy * sl.cut; tz -= uz * sl.cut; }
 
     p.x = qx; p.y = qy; p.z = qz;
     // Re-project the tangential velocity onto the NEW tangent plane, or walking

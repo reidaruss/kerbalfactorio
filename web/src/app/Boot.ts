@@ -203,6 +203,9 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const t = await bootTerrain({
     cfg, quality, depth: renderer.depth, events, scenes, origin, body,
     atmosphere: sky.atmos, cascadeSplits: shadows.splits,
+    // WG-42: the pond's surface is built and anchored inside bootTerrain, so
+    // this is the only line the water costs the boot site.
+    oracle,
   });
   const terrain = t.stream;
   terrain.setNearDepthCutoff(regime.state.nearDepthCutoff);
@@ -223,7 +226,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // do, so a refusal reaches the HUD as `POOL FULL: n NOT DRAWN` rather than
   // being counted into a field nothing prints.
   registerPool(props);
-  const scatter = new Scatter(props, t.pool, cfg.props, cfg.density, cfg.scatterFair);
+  const scatter = new Scatter(props, t.pool, cfg.props, cfg.density,
+    cfg.scatterFair, cfg.grassShort);
 
   // W5. Created only when there is a character: with no player nobody digs, and
   // an unbound edits handle would arm voxel collision for a flying camera. The

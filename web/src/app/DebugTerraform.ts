@@ -105,5 +105,50 @@ export function terraformApi(s: Services) {
       const surfaceM = s.oracle.surfaceHeight(ux, uy, uz);
       return { baseM, surfaceM, loweringM: baseM - surfaceM };
     },
+
+    /**
+     * THE WATER, asked for BY NAME (WG-39). Deliberately a separate call from
+     * `surface` above and deliberately returning no ground height, so a probe
+     * cannot read one while believing it asked for the other. `levelM` is the
+     * sentinel `noValue` for a dry column, which is why it is reported
+     * alongside `dry` rather than as a magic number the probe has to know.
+     */
+    water(dx: number, dy: number, dz: number) {
+      const L = Math.hypot(dx, dy, dz) || 1;
+      const ux = dx / L, uy = dy / L, uz = dz / L;
+      const w = s.oracle.water;
+      const levelM = w.levelAt(ux, uy, uz);
+      return {
+        hasWater: w.hasWater,
+        dry: levelM === w.noValue,
+        levelM,
+        depthM: w.depthAt(ux, uy, uz, s.oracle.editsHandle),
+        disc: w.disc,
+      };
+    },
+
+    /** Geodetic lat/lon in DEGREES for a body-frame direction. The inverse of
+     *  teleport's arguments, so a probe can aim at a place it computed. */
+    latlon(dx: number, dy: number, dz: number) {
+      const L = Math.hypot(dx, dy, dz) || 1;
+      const g = s.oracle.latLonFromDir(dx / L, dy / L, dz / L);
+      return { latDeg: (g.lat * 180) / Math.PI, lonDeg: (g.lon * 180) / Math.PI };
+    },
+
+    /** How far a body-frame POINT is under the water surface. The one question. */
+    submersion(x: number, y: number, z: number) {
+      return s.oracle.water.submersionM(x, y, z);
+    },
+
+    /**
+     * THE WALKER'S OWN WATER STATE (WG-40), the thing the capsule actually
+     * acted on this tick rather than a value re-derived for the report. It
+     * lives here and not in `world()` because Debug.ts is at its 400-line cap
+     * and because this is where the rest of the water crosses.
+     */
+    swim() {
+      const p = s.player;
+      return p === null ? null : { ...p.body.swim, grounded: p.body.grounded };
+    },
   };
 }

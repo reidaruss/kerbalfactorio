@@ -35,6 +35,10 @@ export class Controller implements ViewSource {
     private readonly interpolation = true,
   ) {
     this.body = new KinematicBody(oracle);
+    // The capsule gets the water from the oracle's own sibling (WG-40), so the
+    // swim state needs no new wiring at the boot site and cannot be forgotten
+    // on one code path and present on another.
+    this.body.water = oracle.water;
     this.view = new ViewMode(oracle);
     this.view.mode = startMode;
   }

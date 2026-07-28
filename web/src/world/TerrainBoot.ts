@@ -16,6 +16,8 @@ import { chunkBlobLayout } from './ChunkFormat.js';
 import { TerrainStream } from './TerrainStream.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { PlanetBody } from './PlanetBody.js';
+import type { SurfaceOracle } from './SurfaceOracle.js';
+import { WaterSurface } from './WaterSurface.js';
 import type { FromTerrain, TerrainInitMsg, TerrainInitedMsg } from '../workers/TerrainProtocol.js';
 
 /** minResidentDepth 2 keeps 6 * 4^2 = 96 coarse shells resident for the WHOLE
@@ -41,6 +43,8 @@ export interface TerrainBootResult {
   workerLoadMs: number;
   verts: number;
   indexCount: number;
+  /** The pond's surface. `mesh` is null on a body with no water. */
+  water: WaterSurface;
 }
 
 export interface TerrainBootDeps {
@@ -53,6 +57,8 @@ export interface TerrainBootDeps {
   body: PlanetBody;
   atmosphere: AtmosphereUniforms;
   cascadeSplits: number[];
+  /** The surface oracle, whose `water` sibling this boot reads (WG-42). */
+  oracle: SurfaceOracle;
 }
 
 export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult> {
@@ -101,9 +107,21 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
   });
   stream.setNearDepthCutoff(depth.nearDepthCutoff());
 
+  // THE POND'S SURFACE (WG-42). Built here, and not at the boot site, because
+  // it is world data with the terrain's own anchoring problem: it lives at a
+  // fixed body-frame place on a 600 km sphere and has to be re-derived from its
+  // f64 anchor on every rebase, which is the one thing this module already
+  // arranges for everything else it makes.
+  const water = new WaterSurface(origin, d.oracle, d.oracle.water);
+  if (water.mesh !== null) {
+    scenes.near.add(water.mesh);
+    events.on('OriginRebased', () => water.reanchor());
+  }
+
   return {
     stream,
     pool,
+    water,
     materials,
     pooledBytes: pool.bytes,
     indexBytes: index.bytes,

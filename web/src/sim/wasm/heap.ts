@@ -51,6 +51,23 @@ export interface OfCoreModule extends OfCoreProgressApi {
   _of_solid_cell(body: number, edits: number, cx: number, cy: number, cz: number): number;
   _of_biome_at(body: number, dx: number, dy: number, dz: number): number;
 
+  // --- ABI 16 / WG-36: THE WATER LEVEL. A separate authority from every
+  //     surface call above it (DW-26). Nothing here answers "where is the
+  //     ground" and nothing above answers "where is the water".
+  /** The exact sentinel a dry column returns. Never transcribe it. */
+  _of_water_no_value(): number;
+  /** The body's ONE water level, metres above the datum, or the sentinel. */
+  _of_water_level(body: number): number;
+  /** The water surface under a direction, or the sentinel for a dry column. */
+  _of_water_level_at(body: number, dx: number, dy: number, dz: number): number;
+  /** Metres of water over the EDITED ground under a direction; 0 if dry. */
+  _of_water_depth_at(body: number, edits: number, dx: number, dy: number,
+                     dz: number): number;
+  /** Metres a body-frame POINT is below the water surface; negative above. */
+  _of_water_submersion(body: number, x: number, y: number, z: number): number;
+  /** f64 scratch, 7: [dirx,diry,dirz, shorelineM, basinRadiusM, levelM, maxDepthM]. */
+  _of_water_disc(body: number): number;
+
   // --- W5 voxel edits. The main thread owns the ONE handle (DW-16); workers
   //     replay the op log into their own instance, they never share this one.
   _of_edits_create(): number;

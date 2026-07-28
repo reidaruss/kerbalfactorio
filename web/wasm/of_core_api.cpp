@@ -79,6 +79,7 @@
 #include "of/voxel_field.h"
 #include "of/surface_nets.h"
 #include "of/surface_field.h"
+#include "of/water_field.h"   // ABI 16: the water level, published separately
 #include "of/terrain_stream.h"
 #include "of/factory_sim.h"
 #include "of/automation.h"
@@ -314,7 +315,20 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       through of_en_damage_nest. The catalogue's health/damagePerSecond/
 //       speedMps/reachM cross through of_en_type so the CLIENT never authors an
 //       enemy's numbers.
-OF_API int of_abi_version(void) { return 15; }
+//  16: THE WATER LEVEL CROSSES THE BRIDGE (water_field.h, WG-36). §3b adds the
+//       of_water_* surface. PURELY ADDITIVE: not one existing export changed
+//       name, signature or scratch layout.
+//       The bump is nonetheless load-bearing rather than cosmetic, because the
+//       BASIN that the water stands in is a change to sampleDesignedHeight, and
+//       sampleDesignedHeight is what of_base_height / of_surface_height /
+//       of_surface_radius / of_solid_at and every streamed chunk return. A
+//       client running the old wasm against the new terrain would mesh a pond
+//       nothing collided with; the handshake refusing to start is the point.
+//       Note what is NOT here: there is no "of_surface_water" and no flag on
+//       any existing surface call. Water is asked for by name or not at all
+//       (DW-26), so no caller can receive a water height while believing it
+//       asked for the ground.
+OF_API int of_abi_version(void) { return 16; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -659,6 +673,85 @@ OF_API double of_derived_lowering(int bodyId, int editsId,
   return e ? wg::derivedLoweringAt(*b, vec(dx, dy, dz), *e) : 0.0;
 }
 OF_API double of_max_dig_depth(void) { return wg::kSurfaceMaxDigDepthM; }
+
+// =============================================================================
+// §3b: THE WATER LEVEL (water_field.h, ABI 16). A SEPARATE surface, on purpose.
+//
+// Everything above this comment answers "where is the ground". Everything below
+// it answers "where is the water". They are different questions with different
+// answers and they are never mixed: no export in §3 gained a water flag, and no
+// export here returns a ground height. That separation is DW-26 applied to the
+// third surface, and it is the whole reason this is its own section rather than
+// four more functions in the one above.
+//
+// `of_water_no_value()` hands JS the EXACT sentinel bits rather than making the
+// client transcribe -1e30. A transcribed constant that drifts by one digit is a
+// comparison that silently always takes one branch.
+// =============================================================================
+OF_API double of_water_no_value(void) { return wg::water::kNoWater; }
+
+/** The body's ONE water level, metres above the datum, or kNoWater. */
+OF_API double of_water_level(int bodyId) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::water::levelM(*b);
+}
+
+/** The water surface height under a direction, or kNoWater for a dry column. */
+OF_API double of_water_level_at(int bodyId, double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::water::levelAt(*b, vec(dx, dy, dz));
+}
+
+/** Metres of water standing over the EDITED ground under a direction; 0 if dry. */
+OF_API double of_water_depth_at(int bodyId, int editsId,
+                                double dx, double dy, double dz) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  const wg::DensityField* e = editsOrNull(editsId);
+  return e ? wg::water::depthAt(*b, vec(dx, dy, dz), *e)
+           : wg::water::depthAt(*b, vec(dx, dy, dz));
+}
+
+/**
+ * How far a body-frame POINT sits below the water surface, metres. Negative
+ * above it, a large negative where there is no water. This is the character
+ * controller's one question and it takes no ground argument at all.
+ */
+OF_API double of_water_submersion(int bodyId, double x, double y, double z) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  if (!b) return NAN;
+  return wg::water::submersionM(*b, vec(x, y, z));
+}
+
+/**
+ * The pond's geometry, for whoever has to draw its surface. f64 scratch, 7:
+ *   [0..2] pondDir (unit, body frame)
+ *   [3]    shorelineM   - radius where the water meets the ground
+ *   [4]    basinRadiusM - radius where the BASIN meets the surrounding ground
+ *   [5]    levelM       - the water surface height above the datum
+ *   [6]    maxDepthM    - deepest water, at the centre
+ * Returns the element count, or 0 if this body has no pond.
+ *
+ * Both radii cross, and the caller is expected to care about the difference:
+ * between them is dry beach INSIDE the bowl. A surface drawn out to
+ * basinRadiusM would be a disc of water climbing the bank, which is precisely
+ * the "sitting on the surface" read this whole change exists to remove.
+ */
+OF_API int of_water_disc(int bodyId) {
+  const wg::BodyParams* b = g_bodies.get(bodyId);
+  resetF64(7);
+  if (!b || !wg::water::hasPond(*b)) return 0;
+  g_f64.push_back(b->pondDir.x);
+  g_f64.push_back(b->pondDir.y);
+  g_f64.push_back(b->pondDir.z);
+  g_f64.push_back(wg::water::shorelineM(*b));
+  g_f64.push_back(b->pondRadiusM);
+  g_f64.push_back(wg::water::levelM(*b));
+  g_f64.push_back(wg::water::maxDepthM(*b));
+  return 7;
+}
 
 // WG-22 the terraforming half of the oracle.
 OF_API double of_derived_raising(int bodyId, int editsId,

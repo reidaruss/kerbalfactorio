@@ -224,7 +224,7 @@ rather than misread, and `of_edits_deserialize` returns -1 for it.
 ### 4.1 Module
 
 ```c
-int      of_abi_version(void);                 // 10
+int      of_abi_version(void);                 // 16
 uint32_t of_last_hi(void);                     // high word of the last uint64 return
 float*   of_scratch_f32(void);
 double*  of_scratch_f64(void);
@@ -1366,3 +1366,69 @@ side only.** That is deliberate: `of_gp_structure_pay` produces no output at
 all, so a fit test folded into `canCraft` would refuse a foundation because the
 pack was full of the stone it was about to spend. The two questions stay two
 questions.
+
+
+## ABI 11 to 15: NOT DOCUMENTED HERE YET
+
+Stated rather than left as a silent gap, because a reader who finds ABI 10 at
+the end of this file will otherwise conclude the bridge is at 10. It is at 16.
+The five intervening bumps landed with their surfaces described in the owning
+controller files instead of here: **ABI 14** is the map lane (WG-33/WG-34,
+`of_map_api.inc`, see `docs/controllers/world-gen.md`) and **ABI 15** is the
+enemy loop (GP-85, `of_enemies_api.inc` section 20, see
+`docs/controllers/gameplay.md`). Writing those sections up is owed work, not a
+decision that they do not belong here.
+
+
+## ABI 16 (2026-07-27, WG-36 / WG-38): the water level
+
+**The first bump on this bridge that is NOT purely additive in effect.** The
+export list is additive, and no existing signature, scratch layout or return
+changed. But WG-36 also cut a pond BASIN into `sampleDesignedHeight`, which is
+what every existing surface call and every streamed chunk already returns, so an
+old wasm under a new client would draw a pond that nothing collided with.
+Refusing to boot on the mismatch is the correct outcome and is the reason the
+bump is not cosmetic. That distinction is worth keeping in mind when judging a
+future "purely additive, no bump needed" claim: the test is whether ANY answer
+changed, not whether any signature did.
+
+Section 3b of the shim. Note what these are NOT: none of them is a ground
+height, and nothing in section 3 gained a water flag. `water_field.h` argues the
+separation at length and it is DW-26 applied to a third surface.
+
+```c
+double of_water_no_value(void);                 // the exact kNoWater sentinel bits
+double of_water_level(int bodyId);              // the body's ONE level, m above datum
+double of_water_level_at(int bodyId, double dx, double dy, double dz);
+double of_water_depth_at(int bodyId, int editsId, double dx, double dy, double dz);
+double of_water_submersion(int bodyId, double x, double y, double z);
+int    of_water_disc(int bodyId);               // f64 scratch, 7 elements
+```
+
+**`of_water_no_value` exists so the client never transcribes `-1e30`.** A
+transcribed sentinel that drifts by one digit is a comparison that silently
+always takes the same branch, which is the quiet-wrong-answer class this project
+keeps paying for. Ask the wasm for the bits.
+
+**`of_water_submersion` takes a POINT and no ground argument**, and
+`of_water_level_at` takes a DIRECTION. They are kept apart deliberately:
+"does this column hold water" and "is this point under water" have different
+answers for a player standing on a rock in the middle of a pond.
+
+**`of_water_depth_at` reads the EDITED surface**, so digging the bed deeper
+makes the water deeper. That is what will make a future pump or dredge act on
+the world rather than on a decoration.
+
+**Forge's pond, measured:** centre 55.000 m from the home pad, basin radius
+22.0 m, depth 4.0 m, freeboard 0.60 m, so the water level is 4667.188838 m,
+the derived shoreline is 16.623148 m and the deepest water is 3.400 m.
+
+**Containment is the property that kept the parity fixture still.**
+`pondBasinDropM` returns bitwise `0.0` at and beyond `pondRadiusM`, so every
+direction outside 22 m is untouched to the bit. Marched out along a tangent at
+0.1 m steps, the last nonzero drop is at 21.9 m and the first bitwise zero is at
+22.0 m, with zero leaks beyond the radius. The eight `expected.json` sample
+directions are 370 km to 1141 km from the pond, so **the fixture is a negative
+control for the pond, not a confirmation of it**: the only line that moved in
+`expected.json` at this bump was `"abi": 15` to `"abi": 16`. If a terrain value
+in that fixture ever moves on a pond change, the containment has leaked.

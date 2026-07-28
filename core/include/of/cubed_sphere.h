@@ -288,6 +288,33 @@ struct BodyParams {
   Vec3 homeDir{0.0, 0.0, 0.0};
   double homeFlatRadiusM = 0.0;   // dead flat within this arc distance (m)
   double homeBlendRadiusM = 0.0;  // pad effect reaches exactly zero here (m)
+
+  // --- WG-36: the HOME POND, a real BASIN cut into the designed surface ------
+  // A body may declare ONE pond: a smooth bowl whose floor is pondDepthM below
+  // the surrounding ground at its centre and which reaches that ground exactly
+  // at pondRadiusM. Like the pad it is applied inside biome.h's
+  // sampleDesignedHeight, so the mesh, collision, the walker, voxel solidity,
+  // deposit snapping and build placement ALL see the basin with no special case.
+  //
+  // THE BASIN IS TERRAIN. THE WATER LEVEL IS NOT.
+  // These four fields describe the shape of the GROUND only. Where the water
+  // surface sits is a separate published quantity that lives in water_field.h
+  // and is never obtained by asking any height function for "the surface"
+  // (DW-26: an unnamed second shape of an answer becomes a sixth definition of
+  // the surface; a named one is an interface). pondFreeboardM below is an input
+  // to that quantity, parked here only because BodyParams is where a body's
+  // constants live; nothing in this header or in biome.h ever reads it.
+  //
+  // pondRadiusM <= 0 disables the pond, and outside pondRadiusM the designed
+  // height is BIT-IDENTICAL to the un-ponded field (the basin term returns
+  // exactly 0.0 and `x - 0.0 == x`), so the feature perturbs a disc a few tens
+  // of metres across and leaves the rest of the planet alone.
+  //
+  // pondDir is a LITERAL unit vector for the same DW-14 reason homeDir is.
+  Vec3 pondDir{0.0, 0.0, 0.0};
+  double pondRadiusM = 0.0;     // basin meets the surrounding ground here (m)
+  double pondDepthM = 0.0;      // ground drop at the basin centre (m)
+  double pondFreeboardM = 0.0;  // water surface sits this far BELOW rim ground
 };
 
 // Spike §5.1 — planet "Forge".
@@ -317,6 +344,28 @@ inline BodyParams makeForge(uint64_t worldSeed) {
   // the natural slope of the same ground, so it does not read as a cut disc.
   b.homeFlatRadiusM = 150.0;
   b.homeBlendRadiusM = 600.0;
+  // WG-36: the home pond, 55.000000 m from the pad centre and therefore wholly
+  // inside the 150 m dead-flat disc, so the ground the basin is cut into is the
+  // pad's own bit-exact constant and the shoreline is a circle rather than a
+  // contour of the noise. Literal doubles for the DW-14 reason above; these are
+  // the exact bits of homeDir rotated 55 m along a heading 30 deg east of north,
+  // and test_water_field.cpp pins both the unit length and the 55 m separation.
+  b.pondDir = Vec3(-0.80849497812912174, 0.034978833858176704,
+                   0.58746263840512714);
+  // 22 m basin, 4 m deep at the middle, water standing 0.60 m below the rim.
+  // Solving t*t*(3 - 2t) = 1 - 0.60/4.00 = 0.85 gives t = 0.755598, so the
+  // waterline is at 16.623148 m: a 33.2 m pond inside a 44 m bowl, leaving a
+  // 5.4 m ring of dry beach to walk down. 3.40 m of water at the centre, which
+  // is 1.89 capsule heights, so swimming is the only way across rather than a
+  // deep wade. All four numbers are DERIVED in water_field.h and MEASURED in
+  // test_water_field.cpp, which prints them rather than pinning this comment.
+  // (This comment first shipped saying 16.11 m and "a 32 m pond", from an
+  // arithmetic slip in the same solve. The test caught it, which is the point
+  // of asking a suite to print a derived quantity instead of asserting the
+  // number a comment claims.)
+  b.pondRadiusM = 22.0;
+  b.pondDepthM = 4.0;
+  b.pondFreeboardM = 0.60;
   return b;
 }
 

@@ -588,6 +588,54 @@ TEST(the_memo_key_and_the_air_rock_split_cannot_lie) {
     CHECK_NEAR(crossed, truth, 1e-9);
   }
 
+  // (a2) WG-36 appended the pond to the key, for exactly the reason `kind` and
+  // `homeBlendRadiusM` were appended above: the basin moves the designed height
+  // inside a 22 m disc, so a field warmed on a body with one pond answering for
+  // a body with a different one (or none) is out by up to the full depth.
+  //
+  // pondFreeboardM is the one pond field deliberately NOT in the key, and that
+  // is asserted here rather than left to be inferred, because "the field the
+  // author forgot" and "the field the author excluded on purpose" look identical
+  // in a hash. No ground authority reads pondFreeboardM (it is an input to the
+  // WATER level, water_field.h), so hashing it would throw away a valid memo on
+  // a change that provably cannot move a single corner.
+  {
+    BodyParams noPond = base;
+    noPond.pondRadiusM = 0.0;
+    CHECK(DensityField::fieldWorldSig(base) != DensityField::fieldWorldSig(noPond));
+
+    BodyParams deeper = base;
+    deeper.pondDepthM = base.pondDepthM * 2.0;
+    CHECK(DensityField::fieldWorldSig(base) != DensityField::fieldWorldSig(deeper));
+
+    BodyParams moved = base;
+    moved.pondDir = base.homeDir;      // a real unit dir, 55 m away
+    CHECK(DensityField::fieldWorldSig(base) != DensityField::fieldWorldSig(moved));
+
+    BodyParams freeboard = base;
+    freeboard.pondFreeboardM = base.pondFreeboardM * 2.0;
+    CHECK(DensityField::fieldWorldSig(base) == DensityField::fieldWorldSig(freeboard));
+
+    // And the memo FOLLOWS at the deepest point of the basin, which is where the
+    // two bodies disagree by the whole depth.
+    DensityField f;
+    const Vec3 u = base.pondDir;
+    const VoxelCell c =
+        cornerForPos(u * (base.radiusM + sampleDesignedHeight(base, u)));
+    const double warm = f.cornerDensity(base, c);
+    const double crossed = f.cornerDensity(noPond, c);
+    DensityField clean;
+    const double truth = clean.cornerDensity(noPond, c);
+    std::printf("    memo key (pond): warmed at the basin floor %.6f m, then "
+                "asked the same body with no pond %.6f m against its own truth "
+                "%.6f m (error %.6f m)\n",
+                warm, crossed, truth, std::fabs(crossed - truth));
+    CHECK_NEAR(crossed, truth, 1e-9);
+    // The basin really is worth several metres of field here, so the check above
+    // is discriminating rather than comparing two copies of the same number.
+    CHECK(crossed - warm > 2.5);
+  }
+
   // (b) the air/rock split survives a SECOND op over the same corners.
   //
   // The truth comes from a round trip, because `deserialize` recomputes the

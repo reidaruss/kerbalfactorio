@@ -62,7 +62,13 @@ import type { OfCoreModule } from './heap.js';
 // so this handshake can say the surface is there. Declared in
 // sim/wasm/enemyabi.ts, not here, for the same line-cap reason vesselabi.ts and
 // discabi.ts are.
-export const OF_ABI_VERSION = 15;
+// ABI 16 (2026-07-27): THE WATER LEVEL (water_field.h, WG-36). §3b of the shim
+// adds the of_water_* surface. The export list is purely additive, but the bump
+// is NOT cosmetic: the pond's BASIN is a change to sampleDesignedHeight, which
+// is what every existing surface call and every streamed chunk returns, so an
+// old wasm under this client would draw a pond nothing collided with. Refusing
+// to boot is the correct outcome and the whole reason the handshake exists.
+export const OF_ABI_VERSION = 16;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 
