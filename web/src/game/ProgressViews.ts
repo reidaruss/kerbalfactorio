@@ -95,7 +95,8 @@ export function researchView(rs: Research, game: GameCore,
  * against the headless number rather than against a percentage that has been
  * through a float and a `toFixed`. 90 kW against 120 kW is 49152 exactly.
  */
-export function powerView(power: Power, offGrid = 0): PowerView {
+export function powerView(power: Power, offGrid = 0,
+                          offGridGenerators = 0): PowerView {
   const networks: NetworkRow[] = power.networks().map((n) => ({
     id: n.id,
     capacityW: n.capacityW,
@@ -114,7 +115,7 @@ export function powerView(power: Power, offGrid = 0): PowerView {
       satisfaction: s.satisfactionQ16 / Q16_ONE,
     })),
   }));
-  return { enabled: power.enabled, networks, offGrid };
+  return { enabled: power.enabled, networks, offGrid, offGridGenerators };
 }
 
 export function equipView(pg: Progression, game: GameCore,

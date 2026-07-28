@@ -164,33 +164,18 @@ const PORT_NAMES: Partial<Record<BuildKind, { name: string; dir: PortDir }[]>> =
 
 // THE STORAGE CHEST IS NOT IN THAT TABLE YET, AND THE REASON IS NOT THE PORTS.
 //
-// `assets/models/dist/machines/box.glb` has shipped for months with exactly the
-// pair this model wants, `socket_item_in` at [0, 0.60, -0.5] and
-// `socket_item_out` at [0, 0.60, +0.5], declared in `contracts.json` and now
-// checked both ways by check-proxies. Adding a `chest` row above would give it
-// working ports, a working ghost, a working refusal and a working panel in about
-// twenty lines, and every one of those would be honest.
-//
-// What is missing is the STORAGE. `factory_sim.h` has no container entity: an
-// `EntityKind` either crafts (a machine, with an input slot, an output slot and
-// a recipe), extracts (a miner, bound to a deposit) or carries (a transport
-// line). The tempting shortcut is to place a chest as a machine whose recipe
-// turns item X into item X in one tick, which really would behave as a buffer,
-// and it is refused here for a reason that would have been invisible until it
-// mattered: `producedCountOf` is a per-item LIFETIME PRODUCTION tally (FS-13),
-// the factory report publishes it as `producedOfOutput`, and FS-41's probes read
-// it to ask whether a machine ever ACTED on the recipe it claims. A box that
-// passes 500 iron through would report having MANUFACTURED 500 iron, and the one
-// ledger this project has for "what did the factory make" would start counting
-// storage as production. That is a second authority for a number that already
-// has one, which is the failure this codebase has paid for five times.
-//
-// So the chest needs a real `Container` in `factory_sim.h` with its own slots,
-// its own acceptance rule joined to FS-37's `machineAcceptsItem`, an
-// `automation.h` placement call, a bridge export and therefore an ABI bump,
-// and a persistence round trip. That is a /core task with a determinism gate,
-// not a twenty-line addition to this file, and it is written up in
-// docs/controllers/factory-sim.md rather than half-started here.
+// `box.glb` has shipped for months carrying exactly the pair this model wants,
+// `socket_item_in` at [0, 0.60, -0.5] and `socket_item_out` at [0, 0.60, +0.5],
+// declared in `contracts.json` and now checked both ways by check-proxies. A
+// `chest` row here would give it working ports in a few lines and every one of
+// them would be honest. What is missing is the STORAGE: `factory_sim.h` has no
+// container entity, so a chest would have to be a machine whose recipe turns
+// item X into X in one tick, and `producedCountOf` is a LIFETIME PRODUCTION
+// tally (FS-13) that the report publishes and FS-41's probes read, so a box
+// passing 500 iron through would report having MANUFACTURED 500 iron. Storage
+// would start counting as production, in the one ledger that answers "what did
+// the factory make". Full argument and the shape of the real fix: FS-49 in
+// docs/controllers/factory-sim.md.
 
 /**
  * Which face of the housing a socket sits on, from its position alone.
@@ -263,16 +248,36 @@ export function portsFromSockets(
  * that reports success (DW-28).
  */
 let table: ReadonlyMap<BuildKind, PortDef[]> = new Map();
-let loaded = false;
+let missing: string[] = [...Object.keys(PORT_NAMES)];
 
 /** Called by `FactoryView.load` with the sockets it read off the shipped files. */
 export function publishPorts(sockets: ReadonlyMap<string, SocketDef[]>): void {
   table = portsFromSockets(sockets);
-  loaded = table.size > 0;
+  missing = Object.keys(PORT_NAMES).filter((k) => !table.has(k as BuildKind));
 }
 
 export function machinePorts(): ReadonlyMap<BuildKind, PortDef[]> { return table; }
-export function portsLoaded(): boolean { return loaded; }
+
+/**
+ * EVERY kind this file asks for resolved, not merely SOME of them.
+ *
+ * The first draft wrote `loaded = table.size > 0`, which is the exact defect the
+ * paragraph above cites DW-28 about, three lines below writing it down. An
+ * asset set in which the belt resolved and the smelter did not would have
+ * reported LOADED, wired belt to belt happily, and silently refused every
+ * machine in the game, and the report would have said the port table was fine.
+ *
+ * The rule is now that `PORT_NAMES` is a CLAIM: a kind listed there is a kind
+ * this client says has item ports, so a kind listed there that produced none is
+ * a broken asset and not a configuration. `missing` names them, so the failure
+ * says which, rather than leaving somebody to diff two lists by eye. A kind with
+ * genuinely no item IO (a pole, a generator) is absent from `PORT_NAMES`
+ * entirely and never reaches this.
+ */
+export function portsLoaded(): boolean { return missing.length === 0; }
+
+/** Which kinds `PORT_NAMES` claims have ports and the assets did not deliver. */
+export function portsMissing(): readonly string[] { return missing; }
 
 /** Every port of one placed building, in the world. */
 export function portsOf(b: PortHost,

@@ -109,8 +109,15 @@ function buildPanelView(g: Gameplay, b: Placed): MachineView {
   const coal = g.game.count(g.game.ids.coal);
   return {
     title: PART_INFO[b.kind].label,
-    status: b.kind === 'generator' ? (b.grid >= 0 && f.power.generatorFuel(b.grid) > 0
-      ? 'BURNING' : 'NO FUEL')
+    // FS-52: NO NETWORK COMES BEFORE NO FUEL, and the order is the point. A
+    // generator that has coal and is on no network reads BURNING under the old
+    // test, which is the most misleading thing this panel could say: it is the
+    // one state where everything looks right and no watt reaches anything. The
+    // three states are now separable at a glance, and they have three different
+    // fixes (put a pole beside it, feed it, nothing).
+    status: b.kind === 'generator'
+      ? (b.grid >= 0 && f.power.generatorOffGrid(b.grid) ? 'NO NETWORK'
+        : b.grid >= 0 && f.power.generatorFuel(b.grid) > 0 ? 'BURNING' : 'NO FUEL')
       : working ? (b.kind === 'miner' ? 'MINING' : 'SMELTING') : 'IDLE',
     input: crafts ? { name: g.game.itemName(inItem),
       count: live ? f.line.inputBuffer(b.build) : 0,

@@ -150,8 +150,20 @@ export class FurnacePanel extends Modal {
     // it answers "and is anything plugged into it". A tooltip alone would not
     // do: the player is looking at this panel BECAUSE the line has stopped, and
     // a reason you have to hover to find is a reason nobody reads.
-    const tag = s.port === undefined ? '' : ` <u>${esc(s.port)}</u>`;
-    const via = s.via === undefined ? '' : `<s>${esc(s.via)}</s>`;
+    //
+    // TWO CLASSED SPANS, AND THE FIRST DRAFT USED `<u>` AND `<s>` INSTEAD.
+    // `<s>` is the strike-through element: "fed by #3 belt" would have rendered
+    // with a line through it, which reads as CANCELLED, the precise opposite of
+    // what it says. It was caught by reading the stylesheet rather than by
+    // looking at the panel, and the general form is worth the sentence: reaching
+    // for a bare HTML tag because its LETTER suits the field is how semantics
+    // nobody intended get rendered. New markup gets its own class and its own
+    // rule in game.css, where the disconnected state is also coloured.
+    const tag = s.port === undefined ? ''
+      : ` <span class="port">${esc(s.port)}</span>`;
+    const off = s.via === 'not connected' ? ' off' : '';
+    const via = s.via === undefined ? ''
+      : `<span class="via${off}">${esc(s.via)}</span>`;
     return `<button class="cell${out}" ${attr}="1"${enabled ? '' : ' disabled'}`
       + ` title="${esc(hint)}"><em>${label}${tag}</em>`
       + `<b>${s.count > 0 ? esc(s.name) : '.'}</b><i>${s.count}</i>${via}</button>`;

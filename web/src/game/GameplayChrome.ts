@@ -38,6 +38,39 @@ export function offGridCount(g: Gameplay): number {
   return n;
 }
 
+/**
+ * FS-53: AND THE SAME COUNT FOR GENERATORS, WHICH THIS PANEL COULD NOT SEE.
+ *
+ * Reid, live playtest: "i placed a few power poles and they connect to each
+ * other but not to the generator." The panel above this one exists precisely to
+ * answer that, and it could not, because `offGridCount` asks only about
+ * `esmelter`: a generator was never a candidate for being reported off grid, so
+ * the one readout that would have told him his generator had joined nothing was
+ * structurally incapable of saying it. The empty-state text even ends with
+ * "place a generator inside its supply area", which is the right instruction
+ * from a panel that then never checks whether you did.
+ *
+ * IT IS A SEPARATE COUNT AND A SEPARATE SENTENCE, for the reason `offGridCount`
+ * already gives about its own: the two faults have different fixes. A CONSUMER
+ * off grid is running at zero and needs a pole near it; a GENERATOR off grid is
+ * burning fuel that reaches nobody, and every machine on the real network is
+ * short by exactly its output. Merging them into one number would produce "3
+ * machines are not reached by any pole" for a base whose actual problem is that
+ * its only power plant is talking to itself.
+ *
+ * The predicate is `Power.generatorOffGrid`, which argues why it is an inference
+ * from /core's own solve rather than a supply radius copied into the client.
+ */
+export function offGridGenerators(g: Gameplay): number {
+  if (!g.factory.power.enabled) return 0;
+  let n = 0;
+  for (const p of g.factory.placed) {
+    if (p.kind !== 'generator' || p.grid < 0) continue;
+    if (g.factory.power.generatorOffGrid(p.grid)) n++;
+  }
+  return n;
+}
+
 /** THE pointer transition for the Tab pack. One place, both halves. */
 export function setPackPanel(g: Gameplay, open: boolean): void {
   g.panel.setOpen(open);
@@ -86,6 +119,7 @@ export function attachProgress(g: Gameplay): ProgressUi {
     mode: g.mode,
     power: g.factory.power,
     offGrid: () => offGridCount(g),
+    offGridGenerators: () => offGridGenerators(g),
     setCapture: (open) => {
       g.input.setUiCapture(open);
       g.hud.setVisible(!open);

@@ -12,6 +12,7 @@
 // pack had no room for.
 
 import { labelOf } from '../player/Bindings.js';
+import { portsMissing } from './FactoryPorts.js';
 import type { Factory, Placed } from './Factory.js';
 import type { GameCore } from './GameCore.js';
 import type { HudTarget } from '../ui/GameHud.js';
@@ -68,12 +69,46 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
         : `${r.fix}    ${labelOf('rotate')} turn    ${REMOVE}`,
     };
   }
+  // FS-52: A GENERATOR ON NO NETWORK SAYS SO WHERE THE PLAYER IS LOOKING.
+  //
+  // Reid: "i placed a few power poles and they connect to each other but not to
+  // the generator." The wires between the poles are drawn, so the grid LOOKS
+  // built; the one thing that was invisible is that the generator joined none of
+  // it. This is the same sentence-and-fix shape FS-45 gives a refused belt, for
+  // the same reason: a connection rule the player cannot see, failing silently.
+  // The predicate is /core's (`Power.generatorOffGrid` argues how), never a
+  // distance recomputed here against a copy of the supply radius.
+  if (b.kind === 'generator') {
+    const off = b.grid >= 0 && f.power.generatorOffGrid(b.grid);
+    const fuel = b.grid < 0 ? 0 : f.power.generatorFuel(b.grid);
+    return {
+      name: off ? 'generator  ON NO NETWORK: no power pole reaches it'
+        : fuel > 0 ? `generator  burning, ${fuel} coal left` : 'generator  no fuel',
+      fraction: 0, empty: off || fuel === 0, distanceM: 0,
+      action: off
+        ? `put a power pole beside it    ${OPEN}    ${REMOVE}`
+        : `${OPEN}    ${REMOVE}`,
+    };
+  }
   const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
+  // FS-45: AND A MACHINE SOMETHING IS POINTED AT SAYS SO FROM THE MACHINE'S END.
+  //
+  // The refusal is recorded against the BELT (its head is the end that ran into
+  // the housing), so aiming at the belt already names it. But a player whose line
+  // has stopped walks up to the SMELTER, because that is the thing visibly not
+  // working, and telling them nothing there sends them looking down the belt for
+  // a fault that is on the machine they are standing in front of. Same sentence,
+  // same fix, from whichever end they approach.
+  const at = f.refusals.find((k) => k.to === b.id);
   return {
-    name: out > 0 ? `${b.kind}  ${labelOf('interact')} to take ${out} ${name}`
-      : `${b.kind}  working`,
+    name: at !== undefined ? `${b.kind}  NOT FED: ${at.reason}`
+      : out > 0 ? `${b.kind}  ${labelOf('interact')} to take ${out} ${name}`
+        : `${b.kind}  working`,
     fraction: b.build < 0 ? 0 : f.line.progress01(b.build),
-    empty: false, distanceM: 0, action: `${TAKE}    ${labelOf('rotate')} turn    ${REMOVE}`,
+    empty: false,
+    action: at !== undefined ? `${at.fix}    ${labelOf('rotate')} turn    ${REMOVE}`
+      : `${TAKE}    ${labelOf('rotate')} turn    ${REMOVE}`,
+    distanceM: 0,
   };
 }
 
@@ -144,10 +179,13 @@ export function factoryReport(f: Factory): unknown {
       gapM: l.gapM, riseM: l.riseM, facing: l.facing })),
     /** FS-45: every belt end that ran into a housing, with the reason. */
     refusals: f.refusals,
-    /** The port table was published before this plan was wired. See
-     *  FactoryWiring: an empty table connects nothing, and a subsystem that
-     *  silently does nothing is the ceiling that reports success. */
+    /** The port table was published before this plan was wired, and it means
+     *  EVERY kind that claims ports delivered them, not merely some. See
+     *  FactoryPorts.portsLoaded: a half-loaded table connects belts to belts
+     *  and silently refuses every machine, which is the ceiling that reports
+     *  success. `portsMissing` names any kind that came up empty. */
     portsLoaded: f.portsLoaded,
+    portsMissing: portsMissing(),
     /** FS-46: what the last restore did to a pre-port save. */
     migration: f.migration,
     ticks: f.line.ticks,

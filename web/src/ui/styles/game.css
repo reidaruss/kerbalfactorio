@@ -333,6 +333,34 @@
 }
 #of-furnace .cell b { display: block; margin: 3px 0 1px; font-size: 14px; }
 #of-furnace .cell i { font-style: normal; font-size: 12px; color: var(--of-accent); }
+/* FS-48: the PORT a stack arrives on, and what is on the other end of it.
+   The port sits on the label line and inherits its uppercase tracking, so it
+   reads as part of the label rather than as a second heading; `text-transform`
+   is reset because a socket name is an identifier the player will also see in
+   the ghost's own sentence, and SOCKET_ITEM_IN and socket_item_in must not look
+   like two different things.
+
+   `.via.off` is the disconnected state and takes `--of-bad`, not the panel's
+   accent, which is orange and is already carrying the port name two lines
+   above it. It is also deliberately NOT #ff5a44, the exact hex
+   `FactoryView.showGhost` paints a refused build ghost, and that was the first
+   choice: "the same fault should look the same in the world and in the panel"
+   is a good argument right up to the point where it puts a raw hex into a
+   stylesheet that already has a variable for bad. Two authorities for one
+   colour inside one file is worse than two shades of red across two media. */
+#of-furnace .cell em .port {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--of-accent);
+  opacity: 0.75;
+}
+#of-furnace .cell .via {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--of-dim);
+}
+#of-furnace .cell .via.off { color: var(--of-bad); }
 #of-fbar { height: 6px; margin: 12px 0 4px; background: #2b343b; }
 #of-fbar > i { display: block; height: 100%; background: var(--of-accent); }
 #of-furnace .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

@@ -55,6 +55,9 @@ export interface ProgressDeps {
   /** Machines on the grid that no pole reaches. They run at zero, which is a
    *  different sentence from "you are short of power". */
   offGrid: () => number;
+  /** FS-53: generators that joined no network. Its own port for its own
+   *  sentence; see GameplayChrome.offGridGenerators. */
+  offGridGenerators: () => number;
   /** THE pointer transition, both halves, owned by Gameplay. */
   setCapture: (open: boolean) => void;
   /** Say something to the player. */
@@ -158,7 +161,9 @@ export class ProgressUi {
   researchViewNow(): ResearchView {
     return researchView(this.research, this.d.game, this.d.icon);
   }
-  powerViewNow(): PowerView { return powerView(this.power, this.d.offGrid()); }
+  powerViewNow(): PowerView {
+    return powerView(this.power, this.d.offGrid(), this.d.offGridGenerators());
+  }
   equipViewNow(): EquipView {
     return equipView(this.progression, this.d.game, this.d.icon);
   }

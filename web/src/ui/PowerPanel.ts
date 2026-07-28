@@ -54,6 +54,9 @@ export interface PowerView {
   /** Machines that no pole reaches. They run at zero, which is the honest
    *  answer. */
   offGrid: number;
+  /** FS-53: generators that joined no network. Burning fuel that reaches
+   *  nobody is a different fault from a machine running at zero. */
+  offGridGenerators: number;
 }
 
 export class PowerPanel extends Modal {
@@ -107,7 +110,7 @@ export class PowerPanel extends Modal {
 
 /** Everything that can change what is on screen, in one string. */
 function keyOf(view: PowerView): string {
-  return `${view.enabled ? 1 : 0}|${view.offGrid}|`
+  return `${view.enabled ? 1 : 0}|${view.offGrid}|${view.offGridGenerators}|`
     + view.networks.map((n) => `${n.id}:${n.capacityW}:${n.productionW}:`
       + `${n.demandW}:${n.consumptionW}:${n.satisfaction}:${n.satisfactionQ16}:`
       + `${n.poles}:${n.generators}:${n.fuelledGenerators}:${n.consumers}:`
@@ -126,7 +129,7 @@ function bodyHtml(view: PowerView): string {
   const nets = view.networks.length === 0
     ? '<div class="none">A grid exists but no pole has been placed.</div>'
     : view.networks.map(network).join('');
-  return nets + offGridLine(view.offGrid);
+  return nets + offGridLine(view.offGrid, view.offGridGenerators);
 }
 
 function network(n: NetworkRow): string {
@@ -208,11 +211,29 @@ function counts(n: NetworkRow): string {
     + '</div>';
 }
 
-function offGridLine(off: number): string {
+/**
+ * FS-53: TWO SENTENCES, BECAUSE THEY ARE TWO FAULTS WITH TWO FIXES.
+ *
+ * A CONSUMER off grid is running at zero and wants a pole near it. A GENERATOR
+ * off grid is burning fuel that reaches nobody, and every machine on the real
+ * network is short by exactly the watts this one is making for itself. Reid hit
+ * the second and this panel could only ever have printed the first, because
+ * `offGridCount` never looked at a generator. The generator line comes FIRST
+ * when both are present: an unreachable power plant explains the starving
+ * machines, and printing the symptom above the cause reads as two problems.
+ */
+function offGridLine(off: number, gens: number): string {
+  const g = int(gens);
   const k = int(off);
-  if (k <= 0) return '';
-  return `<div class="offgrid warn"><b data-power="offgrid">${k}</b> machines `
-    + 'are not reached by any pole and are running at zero</div>';
+  const genLine = g <= 0 ? ''
+    : `<div class="offgrid warn"><b data-power="offgridgen">${g}</b> `
+      + `generator${g === 1 ? ' is' : 's are'} not reached by any pole, so `
+      + `${g === 1 ? 'its' : 'their'} power goes nowhere. Put a power pole `
+      + 'beside it, inside its supply area.</div>';
+  const useLine = k <= 0 ? ''
+    : `<div class="offgrid warn"><b data-power="offgrid">${k}</b> machines `
+      + 'are not reached by any pole and are running at zero</div>';
+  return genLine + useLine;
 }
 
 /**

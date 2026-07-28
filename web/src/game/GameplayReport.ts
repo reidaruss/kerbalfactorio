@@ -6,6 +6,7 @@
 // shaping rows is not a responsibility, and the composition was at the cap.
 
 import { screenReport } from './MachineScreen.js';
+import { offGridGenerators } from './GameplayChrome.js';
 import { structureReport } from './StructureSave.js';
 import { lastSlotRefusal } from './Persist.js';
 import { censusOf } from './HealthCensus.js';
@@ -59,6 +60,13 @@ export function gameplayReport(g: Gameplay): unknown {
       // W6 automation. `factory` is the plan and what /core says about it;
       // `build` is the menu and the ghost; `view` is what is actually drawn.
       factory: g.factory.report(),
+      // FS-53. The off-grid GENERATOR count existed only as a rendered pixel:
+      // `offGridGenerators` fed the power panel and nothing else, so no headless
+      // caller could ask "how many generators are stranded" and `probes/genpole.js`
+      // had to read it back out of the DOM. Reading the DOM is the stronger test
+      // and stays; but a number a probe can only reach through a panel is a
+      // number that vanishes the day the panel is restyled.
+      offGridGenerators: offGridGenerators(g),
       build: g.build.report(),
       view: g.factoryView.stats(),
       // BASE BUILDING. `structures` is what stands and what it cost; `baseView`

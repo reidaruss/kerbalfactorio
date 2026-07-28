@@ -127,6 +127,48 @@ export class Power {
     return this.M._of_net_generator_energy_j(this.net, genId);
   }
 
+  /**
+   * FS-51: IS THIS GENERATOR ON NO NETWORK AT ALL?
+   *
+   * Reid, live playtest: "i placed a few power poles and they connect to each
+   * other but not to the generator." Nothing was broken. `power.h` gives a small
+   * pole a WIRE REACH of 7.5 m and a SUPPLY RADIUS of 2.5 m, and the two are
+   * different rules for different things: poles find each other at 7.5 m, and a
+   * generator or a consumer joins the nearest pole whose SUPPLY RADIUS covers
+   * it, centre to centre. That header says as much in as many words ("a 2.5 m
+   * supply radius covers the machine a pole is standing next to and its
+   * immediate neighbours"), so a generator more than two cells from every pole
+   * is on no network by design. What was broken is that NOTHING SAID SO. Poles
+   * visibly wired themselves together, the generator sat there burning nothing,
+   * and the game's only account of it was a number the player had to go and
+   * find.
+   *
+   * WHY THIS IS AN INFERENCE AND NOT A DIRECT READ, stated plainly because an
+   * inference is a liability. `power.h` has `networkOfNode(NodeId)`, which is
+   * exactly the right answer, and the bridge does not export it: the one export
+   * that answers this question, `of_net_build_network`, takes a BUILD index, and
+   * a generator is a grid citizen with `build` -1. So this reads a fact that
+   * follows from /core's own solve rather than from a constant copied out of it:
+   * `availableW` is assigned ONLY inside the loop that skips `kNoNetwork`
+   * (power.h line 397 guards line 400) and the field defaults to 0, so a
+   * generator that HAS FUEL and still offers zero watts was skipped, and being
+   * skipped means it is on no network. The fuel clause is what separates this
+   * from an empty generator, which also offers zero and is a different fault
+   * with a different fix.
+   *
+   * It is deliberately NOT "is there a pole within 2.5 m", which would have been
+   * three lines and would have put a second copy of the supply radius in the
+   * client. `poleClassDef` is a balance table lane D owns and expects to tune;
+   * a mirrored 2.5 here would go stale silently and would be believed, which is
+   * the five-surfaces failure with watts instead of ground. The durable fix is
+   * to export `networkOfNode` at the next ABI bump, and this comment is the
+   * reason that is worth doing.
+   */
+  generatorOffGrid(genId: number): boolean {
+    if (genId < 0) return false;
+    return this.generatorFuel(genId) > 0 && this.generatorAvailableW(genId) <= 0;
+  }
+
   // --- consumers ------------------------------------------------------------
   connect(build: number, x: number, y: number, z: number, ratedDrawW: number): void {
     this.M._of_net_connect_to_grid(this.net, build, x, y, z, ratedDrawW);
@@ -224,6 +266,15 @@ export class Power {
       capacityW: nets.map((n) => n.capacityW),
       consumersOnNet: nets[0]?.consumers ?? 0,
       fuelledGenerators: nets.map((n) => n.fuelledGenerators),
+      // FS-51: HOW MANY GENERATORS ACTUALLY JOINED A NETWORK, against how many
+      // were placed. /core's own per-network count, summed, so the shortfall is
+      // its arithmetic and not ours. This one line is the whole of Reid's
+      // "they connect to each other but not to the generator" made visible: it
+      // reads 0 of 1 while `poles` reads 3 and `wires` reads 2, which is the
+      // exact shape of the fault. Placing the generator and never noticing it
+      // joined nothing was possible for as long as nothing published this.
+      generatorsAttached: nets.reduce((n, r) => n + r.generators, 0),
+      consumersAttached: nets.reduce((n, r) => n + r.consumers, 0),
     };
   }
 }

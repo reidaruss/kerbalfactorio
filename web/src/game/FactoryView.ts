@@ -12,9 +12,10 @@
 // so "is it working" is the simulation's answer, rendered, and not a second
 // opinion computed here.
 //
-// DW-9: inserters are sim-internal. connect() creates them, the player never
-// places one, and one is drawn wherever the plan recorded a connection, which
-// is what makes a wired line legible.
+// DW-9: inserters are sim-internal. connect() creates them and the player never
+// places one. FS-47 stopped DRAWING them: under the port model a belt visibly
+// ends at the machine's hopper, so the connection is legible without an arm
+// reaching over a gap that no longer exists. See `syncLinks`.
 
 import * as THREE from 'three';
 import { loadGlb } from '../assets/Loaders.js';
@@ -59,17 +60,19 @@ const TEMPLATES: Record<string, MachineTemplate> = {
  * ports existed. It is not a preference and there is no way to reach it from
  * the game; it exists so the saving can be MEASURED rather than asserted.
  *
- * Standing rule 7, verbatim: a measurement that has not isolated its subject is
- * an opinion. The claim being made is that the auto-created inserter population
- * was the dominant triangle cost at scale, and the only honest way to check it
- * is to run the SAME scene with the arms on and with them off and subtract, in
- * the same way `?proxy=0`, `?shell=0`, `?atmos=0` and `?stitch=0` exist so that
- * any single layer can be taken away. Reading it here rather than through
- * `Config` keeps the flag beside the thing it isolates and out of a shared
- * parser this lane does not own; `Boot.ts` reads `?gnomon` the same way.
+ * Standing rule 7: a measurement that has not isolated its subject is an
+ * opinion, so the same scene runs both ways and the numbers are subtracted,
+ * exactly as `?proxy=0`, `?shell=0`, `?atmos=0` and `?stitch=0` exist to take
+ * one layer away. It is read here rather than through `Config` to keep the flag
+ * beside the thing it isolates; `Boot.ts` reads `?gnomon` the same way. Read
+ * ONCE at module load, because a flag that can change mid-run turns a
+ * before-and-after into two halves of one ambiguous number.
  *
- * Read ONCE at module load, not per frame: a flag that can change mid-run turns
- * a before-and-after measurement into two halves of one ambiguous number.
+ * WHAT IT IS NOT. It draws an arm per row of `f.links`, which under FS-44 is a
+ * mated-PORT graph, while the old proximity model minted one per ADJACENCY and
+ * was denser. So it prices arms on the connection graph the game has NOW, which
+ * is the right thing to price for the decision that was taken and the wrong
+ * thing to quote as "what the old model cost".
  */
 const LEGACY_INSERTERS = typeof location !== 'undefined'
   && new URLSearchParams(location.search).get('inserters') === '1';
@@ -114,9 +117,8 @@ export class FactoryView {
   /** The last plan `sync` saw, so `stats()` can report per-tile draw state. */
   private lastPlan: Factory | null = null;
   private readonly linkSlots: number[] = [];
-  /** FS-47: how many inserter instances were actually DRAWN this frame, against
-   *  how many slots exist. A probe measuring the triangle saving needs the drawn
-   *  count, and a hidden slot still owns an instance. */
+  /** FS-47: inserter instances actually DRAWN this frame. Not the slot count:
+   *  a hidden slot still owns an instance, and the probe needs the drawn one. */
   private drawnInserters = 0;
   private readonly p = new THREE.Vector3();
   private readonly m = new THREE.Matrix4();
@@ -285,20 +287,31 @@ export class FactoryView {
    * inserter as well would draw a robot arm reaching across a gap that no longer
    * exists, which is worse than redundant, it is a lie about the mechanism.
    *
-   * IT IS ALSO THE DOMINANT TRIANGLE COST AT SCALE, which is why this is a
-   * measurement and not only a taste call. `connect()` mints one inserter per
-   * adjacency, so the population grows with CONNECTIONS rather than with
-   * buildings, and FS-16's sweep put the triangle budget as the next real
-   * ceiling at about 1,180 machines. Every inserter not drawn is budget back.
-   * The number is in `probes/machineports.js`.
+   * AND THE PERFORMANCE ARGUMENT FOR IT IS FALSE, WHICH IS WORTH MORE THAN THE
+   * SAVING. This paragraph used to read "IT IS ALSO THE DOMINANT TRIANGLE COST
+   * AT SCALE", asserted, with no number behind it. `probes/portcost.js` was
+   * written to measure that and measured the opposite: **976 triangles per arm,
+   * exactly, and ZERO draw calls, because the arms ride this same BatchedMesh.**
+   * At the measured link density that is 21.5% of the factory's own triangles
+   * and 2.85% of the frame, against an average building's 901 triangles, so an
+   * arm costs about one extra building per connection and not many. The ratios
+   * are scale invariant, so extrapolating to FS-16's ~1,180 machine ceiling does
+   * not rescue the claim, and even at one link per building the arms would be
+   * 52%, which is half and not dominant. The full table, both runs, and the
+   * demolished-scene baseline that isolates the factory from the terrain are in
+   * that probe's header.
+   *
+   * So the saving is real and exactly linear in connections, and it is NOT the
+   * reason. The reason is the paragraph above: the arm is a lie about the
+   * mechanism. Recorded because the false version was about to become a fact
+   * somebody planned against, and an honest negative is worth more than a
+   * flattering number.
    *
    * The sim-side inserter is untouched: /core still creates one per `connect()`
    * and it still moves the items. This is a rendering decision about a machine
-   * the player was never able to place, hold, or aim at.
-   *
-   * The slots are still acquired and HIDDEN rather than released, and the reason
-   * has not changed: the count oscillates as a line is edited and re-acquiring
-   * per edit would churn the batch.
+   * the player was never able to place, hold or aim at. Slots are still acquired
+   * and HIDDEN rather than released, for the unchanged reason: the count
+   * oscillates as a line is edited and re-acquiring per edit would churn.
    */
   private syncLinks(f: Factory): void {
     // Every link is a port link now, so this hides the lot. It is written as a
