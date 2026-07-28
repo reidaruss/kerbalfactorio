@@ -30,7 +30,7 @@
 // walker did, which is standing rule 11's whole complaint (decksink.js has the
 // same paragraph about `module.deckH`).
 //
-// ============================ TWO SITES (R8) =============================
+// =========================== THREE SITES (R8) ============================
 //
 // EVERY GEOMETRIC PROBE IN THIS REPO ONLY EVER RAN ON THE FLAT SPAWN CLEARING,
 // AND THAT IS A CLASS OF BLIND SPOT, NOT AN ACCIDENT OF THIS FILE. The belt
@@ -46,19 +46,47 @@
 // dug through a MOUNTAIN, where it is satisfied by twenty metres. Those are not
 // the same test of the same code even though they run the same lines.
 //
-// So the scene now runs TWICE: once at the spawn and once on a mountainside
-// found by sweeping `of.surface` for the steepest ground within reach, and the
-// overhead rock depth is REPORTED at both. The site check is an assertion in
-// its own right: if the mountain site does not actually put more rock over the
-// player's head than the spawn shaft does, the second run is a duplicate of the
-// first and proves nothing, and this probe says so instead of going green
-// twice for the price of once.
+// The second cut added a mountainside found by sweeping `of.surface` for the
+// steepest ground within reach. It raised the overhead from 7.2 m to 14.7 m and
+// then stopped there, and the reason it stopped is worth writing down because it
+// is NOT the reason it looks like: the sweep only spanned 0.30 degrees, about
+// +/- 3 km, so it was called narrow. Measured, widening it to +/- 5 degrees
+// (550 km) buys almost nothing, because this terrain is fractal and the steepest
+// 40 m slope inside 3 km is about as steep as the steepest inside 550 km
+// (29.7 m of rise against 37.4 m). Two of the three surveyed coordinates in
+// world-gen.md section 6.1 are worse than the spawn, at 0.66 m and 0.74 m of
+// rise over 40 m: they are named Hills and they are hills.
+//
+// WHAT ACTUALLY PUTS ROCK OVER YOUR HEAD IS BORE LENGTH, not sweep radius. A
+// level bore into a hillside is under exactly as much rock as the hill has
+// climbed over the distance bored, so the site score here is the rise sustained
+// over the WHOLE bore (its minimum at four points along the path, so a slope
+// that flattens out loses to one that keeps climbing) and the bore is then
+// driven until the overhead PEAKS and starts to fall, which is the walker
+// arriving under the ridge line. Measured: 65 strikes, 102 m in, 33.1 m of rock.
+//
+// So the scene runs THREE times, and the site checks are assertions in their own
+// right: each site must put strictly more rock over the player's head than the
+// last, or the extra run is a duplicate that proves nothing and this probe says
+// so instead of going green three times for the price of one.
 //
 //   node tools/smoke/run.mjs --scenario=walk \
 //        --evalfile=tools/smoke/probes/tunnelsink.js
 //   node tools/smoke/run.mjs --scenario=walk \
 //        --evalfile=tools/smoke/probes/tunnelsink.js \
 //        --evalargs='{"oldFloor":true}'      # the negative control, must FAIL
+//
+// THE STRESS ARGUMENTS are the axes the fixed scene holds still, and they exist
+// because "it does not reproduce" is only worth anything once the thing that
+// did not reproduce was driven hard. Each one applies to every site:
+//
+//   {"stillSecs":120}       stand still for two minutes instead of twenty
+//   {"preWalkLaps":6}       walk the bore end to end six times, then stand
+//   {"reloadFirst":true}    save, put the rock back, load, then stand
+//   {"standOverheadM":2.0}  retreat until the roof is 2 m up and stand THERE,
+//                           which is the DEEP/shallow gate at 1.5 m rather than
+//                           the deep interior, and is the only place in a tunnel
+//                           where the walker changes which authority holds it up
 (async () => {
   const of = window.__of;
   const A = OF_ARGS ?? {};
@@ -160,6 +188,75 @@
     return best;
   };
 
+  const dirOf = (latDeg, lonDeg) => {
+    const la = (latDeg * Math.PI) / 180, lo = (lonDeg * Math.PI) / 180;
+    return [Math.cos(la) * Math.cos(lo), Math.sin(la), Math.cos(la) * Math.sin(lo)];
+  };
+
+  /**
+   * THE DEEP SITE: a hillside whose climb is SUSTAINED over a long bore.
+   *
+   * `findMountain` scores the rise at ONE distance, which finds the steepest
+   * ground and not the deepest. A 43 degree face that levels off after 20 m
+   * beats a 30 degree face that keeps climbing for 100 m on that score and
+   * loses badly on the only quantity that matters here, so this scores the
+   * MINIMUM rise at four points along the bore path: a site that flattens out
+   * is scored by the flat part.
+   *
+   * The sweep is wide (+/- 5 degrees, about 550 km) and then refined around its
+   * best three, because a 0.25 degree coarse step is 2.7 km and steps clean over
+   * every ridge in between. Both stages are cheap: 1681 coarse points and three
+   * 31x31 refinements measured 500 ms total, against 20 s of standing still.
+   */
+  const findDeepSite = (reachM) => {
+    const u0 = unit(feet());
+    const lat0 = Math.asin(u0[1]) * DEG;
+    const lon0 = Math.atan2(u0[2], u0[0]) * DEG;
+    const score = (latDeg, lonDeg, bearings) => {
+      const u = dirOf(latDeg, lonDeg);
+      const h0 = hAt(u);
+      if (h0 < 0) return null;                       // sea, nothing to bore into
+      const north = unit(add([0, 1, 0], u, -dot([0, 1, 0], u)));
+      const east = cross(north, u);
+      let best = null;
+      for (let i = 0; i < bearings; ++i) {
+        const th = (2 * Math.PI * i) / bearings;
+        const w = add(add([0, 0, 0], north, Math.cos(th)), east, Math.sin(th));
+        let rise = Infinity;
+        for (const d of [reachM * 0.25, reachM * 0.5, reachM * 0.75, reachM]) {
+          const ang = d / bodyR;
+          const q = unit(add(add([0, 0, 0], u, Math.cos(ang)), w, Math.sin(ang)));
+          const h = hAt(q) - h0;
+          if (h < rise) rise = h;
+        }
+        if (best === null || rise > best.riseM) best = { riseM: rise };
+      }
+      return { lat: latDeg, lon: lonDeg, riseM: best.riseM };
+    };
+    const coarse = [];
+    const span = A.deepSpanDeg ?? 5, step = A.deepStepDeg ?? 0.25;
+    for (let a = -span; a <= span + 1e-9; a += step) {
+      for (let b = -span; b <= span + 1e-9; b += step) {
+        const s = score(lat0 + a, lon0 + b, 8);
+        if (s !== null) coarse.push(s);
+      }
+    }
+    if (coarse.length === 0) return null;
+    coarse.sort((x, y) => y.riseM - x.riseM);
+    const fine = [];
+    for (const c of coarse.slice(0, 3)) {
+      for (let a = -0.30; a <= 0.30 + 1e-9; a += 0.02) {
+        for (let b = -0.30; b <= 0.30 + 1e-9; b += 0.02) {
+          const s = score(c.lat + a, c.lon + b, 16);
+          if (s !== null) fine.push(s);
+        }
+      }
+    }
+    fine.sort((x, y) => y.riseM - x.riseM);
+    return { ...fine[0], sweptPoints: coarse.length + fine.length,
+      coarseBestM: r3(coarse[0].riseM) };
+  };
+
   /** Which yaw points INTO the hill, read off the engine's own aim ray. */
   const faceUphill = async (intoM) => {
     let best = null;
@@ -224,6 +321,117 @@
       return { site: siteName, valid: false,
         fail: 'never got under rock; nothing here measures floorBelow',
         player: w0, feet: feet(), drive };
+    }
+
+    // --- THE STRESS AXES. Off by default; see the header. -------------------
+    // Every one of these is a thing the fixed scene holds still, and holding a
+    // thing still is a claim about it. They run BEFORE the trace so that what is
+    // measured is a player standing on a floor that has been through them, not
+    // the transient of the thing itself.
+    const stress = { preWalkLaps: 0, reloaded: null, retreatedTo: null };
+    if (A.preWalkLaps) {
+      // Walk the bore end to end. The floor a dug tunnel has is a staircase of
+      // whole cells and traversing it is what re-seats the walker on each of
+      // them, so a defect that needs a particular cell to be the one you stop on
+      // is reachable this way and is not reachable by standing where the drive
+      // happened to stop.
+      for (let lap = 0; lap < A.preWalkLaps; ++lap) {
+        for (const act of ['KeyS', 'KeyW']) {
+          for (let i = 0; i < 10; ++i) { await hold(0.35, [act]); await of.run(0.1, 60); }
+        }
+        stress.preWalkLaps++;
+      }
+      await settle(2.0);
+    }
+    if (A.reloadFirst) {
+      // The tunnel through a save. `tunnelpersist.js` proves the ROCK survives;
+      // this asks the different question of whether the FLOOR the walker gets
+      // afterwards is the same floor, with the player standing on it throughout.
+      //
+      // THERE IS NO `forgetTunnels` HERE AND THAT IS THE WHOLE POINT. The first
+      // cut of this hook did save -> forget -> load, copying `tunnelpersist.js`,
+      // and it measured something else entirely: forgetting the tunnel puts the
+      // rock back AROUND A PLAYER WHO IS STANDING IN IT, the walker correctly
+      // reads that as buried, and PH-60 rule 2 ejects them up the radial to the
+      // hillside. Measured at all three sites, `underRockAfter` false and the
+      // roof 0 m. That is the eject working, not a reload, and a hook that
+      // ejects the player before the measurement is measuring the eject.
+      // `tunnelpersist.js` gets away with the forget because it asserts about
+      // ROCK and never about the player, and its own header says a page that
+      // reloaded is never in the intermediate state for a frame.
+      const written = await of.save();
+      const ledger = await of.load();
+      await settle(3.0);
+      stress.reloaded = { voxelBytes: written?.voxelBytes ?? null,
+        restored: ledger?.voxels ?? null,
+        underRockAfter: of.world().player.underRock,
+        overheadAfterM: r3(overheadNow()) };
+      log.push(`${siteName} RELOAD: saved ${stress.reloaded.voxelBytes} B, restored `
+        + `${JSON.stringify(stress.reloaded.restored)}, roof now `
+        + `${stress.reloaded.overheadAfterM} m and underRock `
+        + `${stress.reloaded.underRockAfter}`);
+    }
+    if (A.standOverheadM !== undefined) {
+      // BACK OFF TO A CHOSEN ROOF DEPTH. `KinematicBody.step` changes which
+      // authority holds the player up at `DEEP_UNDERGROUND_M` (1.5 m of
+      // heightfield overhead): above it the floor is `surfaceRadius`, below it
+      // the floor is the voxel field, and a tunnel is the only place a player
+      // can stand near that line for any length of time. Standing 30 m under a
+      // ridge never runs the shallow branch at all.
+      // WALKING BACKWARDS TO A ROOF DEPTH DOES NOT WORK, and the first cut of
+      // this hook is kept in the comment because the number that exposed it is
+      // the useful part. It held KeyS in 0.30 s steps and recorded the closest
+      // it ever came to the asked-for depth. Measured, that closest approach was
+      // EXACTLY the asked-for depth at the two shallow sites (2.000000 against a
+      // 2 m target, 1.700000 against a 1.7 m target), which is the signature of
+      // going from the full roof to zero in ONE step: their bores are about 12 m
+      // long, so a single 1.4 m stride leaves by the mouth. At the deep site the
+      // same 40 steps moved the roof by 0.4 m in total. So the hook landed at
+      // either 0 m or 28.6 m and never once at the gate it exists to sit on.
+      //
+      // The bore is therefore stopped AT the depth instead, by `deepDig` below,
+      // which is deterministic and needs no walking. This retreat now only
+      // trims, in short steps, and it REPORTS the closest approach so a run that
+      // failed to land says so instead of quietly measuring somewhere else.
+      let bestGap = Math.abs(overheadNow() - A.standOverheadM);
+      const track = [r3(overheadNow())];
+      for (let i = 0; i < 60; ++i) {
+        if (overheadNow() <= A.standOverheadM) break;
+        await hold(0.10, ['KeyS']);
+        await of.run(0.05, 60);
+        const over = overheadNow();
+        track.push(r3(over));
+        const gap = Math.abs(over - A.standOverheadM);
+        if (gap < bestGap) bestGap = gap;
+      }
+      await settle(2.0);
+      stress.retreatedTo = { overheadM: r3(overheadNow()),
+        underRock: of.world().player.underRock, closestApproachM: r6(bestGap),
+        // A landing is only a landing if it got near what was asked for.
+        landed: bestGap <= 0.75, track: track.slice(0, 40) };
+      log.push(`${siteName} RETREAT: asked for a ${A.standOverheadM} m roof, `
+        + `stood under ${stress.retreatedTo.overheadM} m (closest approach `
+        + `${r3(bestGap)} m, landed ${stress.retreatedTo.landed}), underRock `
+        + `${stress.retreatedTo.underRock}`);
+    }
+
+    // THE STRESS HAS TO LEAVE THE PLAYER SOMEWHERE THE MEASUREMENT MEANS
+    // SOMETHING, and saying so is a separate check from doing it. Without this
+    // the shallow sites report their failures against the FLOOR assertions:
+    // measured, six laps of walking leave the spawn bore (16 strikes, about 12 m)
+    // out of the far end, and the still phase then runs on open hillside and
+    // fails `the terrain floor query answers the WORLD floor` with `[null]`,
+    // because there were no under-rock ticks to take a floor error over. That
+    // reads as a defect in the query and is nothing of the kind. Same shape as
+    // the `never got under rock` guard above and for the same reason.
+    // The bound is OPEN SKY rather than `underRock`, because `standOverheadM`
+    // aims at the shallow branch on purpose and a player under a thin roof is a
+    // legitimate thing to measure. A player under NO roof is not.
+    if (!of.world().player.underRock && overheadNow() < 0.25) {
+      return { site: siteName, valid: false,
+        fail: 'the stress moved the player out from under rock; nothing here '
+          + 'measures floorBelow',
+        stress, player: of.world().player, overheadM: r3(overheadNow()), drive };
     }
 
     // --- P1/P2: STAND ABSOLUTELY STILL AND WATCH, PER TICK ------------------
@@ -378,7 +586,7 @@
       p[2] / rNow * (rNow + 400)];
     const noFloor = floorAlong(highUp);
 
-    return { site: siteName, valid: true, still, stepUp, drive,
+    return { site: siteName, valid: true, still, stepUp, drive, stress,
       reachedUnderRockBy: reached, noFloor,
       driveNetRiseM: drive.length < 2 ? null
         : r6(drive[drive.length - 1].feetR - drive[0].feetR),
@@ -453,11 +661,60 @@
     return drive;
   };
 
+  // ---- SITE 3: the DEEPEST bore this world affords. Same level bore as site 2,
+  //      but at a site chosen for a climb that is SUSTAINED, and driven until the
+  //      rock overhead stops growing rather than for a fixed number of strikes.
+  const deepDig = async () => {
+    const reachM = A.reachM ?? 90;
+    const site = findDeepSite(reachM);
+    if (site === null) throw new Error('no land in the deep sweep');
+    of.teleport(site.lat, site.lon, 0);
+    await settle(3.0);
+    const face = await faceUphill(reachM);
+    if (face === null) throw new Error('no aim ray at the deep site');
+    log.push(`deep site ${site.lat.toFixed(4)},${site.lon.toFixed(4)} yaw ${face.yaw}: `
+      + `swept ${site.sweptPoints} points, sustained rise ${r3(site.riseM)} m over `
+      + `${reachM} m (best coarse ${site.coarseBestM} m); the ground ${reachM} m `
+      + `ahead is ${r3(face.riseM)} m higher`);
+    const drive = [];
+    // STOP AT THE PEAK, and the peak is measured rather than counted to. A fixed
+    // strike count either stops short of the ridge or bores out the far side of
+    // it: driven 120 strikes on this world the overhead climbs to 33.1 m at 102 m
+    // in and is back to zero by 180 m, so the deepest point of a bore is a thing
+    // the drive has to WATCH FOR. `peakDropM` is how far past the crest it is
+    // allowed to go before it accepts that the crest is behind it.
+    const maxStrikes = A.deepStrikes ?? 140;
+    const peakDropM = A.peakDropM ?? 2.5;
+    let peak = 0;
+    for (let i = 0; i < maxStrikes; ++i) {
+      of.look(face.yaw, A.deepPitchDeg ?? 0);
+      const d = of.dig();
+      await of.run(0.15, 60);
+      await hold(A.stepSecs ?? 0.30, ['KeyW']);
+      const p = of.world().player;
+      const over = overheadNow();
+      if (over > peak) peak = over;
+      drive.push({ phase: 'bore', i, cells: d?.cells ?? d?.removed ?? null,
+        underRock: p.underRock, grounded: p.grounded,
+        feetR: r6(Math.hypot(...p.feet)), overheadM: r3(over) });
+      // STOPPING AT A CHOSEN ROOF DEPTH, which is how `standOverheadM` actually
+      // reaches the DEEP/shallow gate. Boring in stops on the way UP the curve,
+      // so the walker ends under intact rock at the asked-for depth with no
+      // walking backwards involved and no dependence on how long the bore is.
+      if (A.standOverheadM !== undefined && over >= A.standOverheadM) break;
+      if (peak > 5 && over < peak - peakDropM) break;   // the crest is behind us
+    }
+    log.push(`deep bore: ${drive.length} strikes, overhead peaked at ${r3(peak)} m, `
+      + `stopped at ${r3(overheadNow())} m`);
+    return drive;
+  };
+
   const sites = [];
   sites.push(await scene('spawn', spawnDig));
   sites.push(await scene('mountain', mountainDig));
+  sites.push(await scene('deep', deepDig));
 
-  const spawn = sites[0], mtn = sites[1];
+  const spawn = sites[0], mtn = sites[1], deep = sites[2];
   const perSite = [];
   for (const site of sites) {
     if (!site.valid) { perSite.push([`${site.site}: the scene did not set up`, false, site.fail]); continue; }
@@ -493,21 +750,44 @@
   // came out of the hillside -- and the probe would report two greens for one
   // measurement. The bound is the SPAWN's own overhead, not a number typed
   // here, so it stays true if the spawn clearing is ever re-terraformed.
+  //
+  // The same argument applies a second time to the DEEP site: a longer bore that
+  // did not end up under more rock is a longer bore and nothing else.
+  //
+  // NEITHER BOUND HOLDS WHEN THE SCENE IS DELIBERATELY STOOD SOMEWHERE SHALLOW.
+  // `standOverheadM` retreats to a chosen roof depth on purpose, so all three
+  // sites then report that depth and comparing them is comparing the argument
+  // with itself. Skipped rather than relaxed: a check that is true because it was
+  // weakened is worth less than one that says it did not apply.
   const spawnOver = spawn.valid ? spawn.still.overheadRockM : null;
   const mtnOver = mtn.valid ? mtn.still.overheadRockM : null;
-  perSite.push(
-    ['R8: the second site really is under a MOUNTAIN, not a second flat clearing',
-      mtnOver !== null && spawnOver !== null && mtnOver >= spawnOver + 5,
-      `mountain ${mtnOver} m of rock overhead vs spawn ${spawnOver} m`],
-  );
+  const deepOver = deep.valid ? deep.still.overheadRockM : null;
+  if (A.standOverheadM === undefined) {
+    perSite.push(
+      ['R8: the second site really is under a MOUNTAIN, not a second flat clearing',
+        mtnOver !== null && spawnOver !== null && mtnOver >= spawnOver + 5,
+        `mountain ${mtnOver} m of rock overhead vs spawn ${spawnOver} m`],
+      ['R8: and the third site really is DEEPER than the mountainside, not merely longer',
+        deepOver !== null && mtnOver !== null && deepOver >= mtnOver + 5,
+        `deep ${deepOver} m of rock overhead vs mountain ${mtnOver} m`],
+    );
+  }
 
   const failed = perSite.filter((c) => !c[1]).map((c) => `${c[0]}  [${c[2]}]`);
   return {
     valid: failed.length === 0,
     oldFloor: A.oldFloor === true,
+    // Echoed so a run's numbers carry the axes they were driven on. A report that
+    // says "does not reproduce" is worth what the reader can tell about how hard
+    // it was pushed, and that has to travel with the numbers.
+    drivenWith: {
+      stillSecs: A.stillSecs ?? 20, preWalkLaps: A.preWalkLaps ?? 0,
+      reloadFirst: A.reloadFirst === true,
+      standOverheadM: A.standOverheadM ?? null,
+    },
     failed,
     checked: perSite.length,
-    overheadRockM: { spawn: spawnOver, mountain: mtnOver },
+    overheadRockM: { spawn: spawnOver, mountain: mtnOver, deep: deepOver },
     sites,
     log,
   };
