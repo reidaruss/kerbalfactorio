@@ -35,12 +35,13 @@
 //
 // THE READ IS `of.flight('tanks')` AND NOT `of.flight('report').propellantKg`,
 // and that distinction is the whole reason the previous pass measured nothing.
-// `FlightSession.propellantKg()` sums the CACHED `partRows`, which `refreshParts`
-// only rewrites on a roll-out and on a staging, so the reported total DOES NOT
-// MOVE while an engine burns. `FlightCheats.ts` documents this beside
-// `livePropellantKg`; a probe that watches the reported number during a burn is
-// watching a constant. Both numbers are traced below so the disagreement is
-// visible rather than assumed.
+// `FlightSession.propellantKg()` USED TO sum the CACHED `partRows`, which
+// `refreshParts` only rewrites on a roll-out and on a staging, so the reported
+// total did not move while an engine burned and a probe watching it was watching
+// a constant. R44 made that method a live re-read (`probes/stagedv.js` is the
+// acceptance), so the two agree again; this file keeps reading `tanks` because
+// it needs the PER-TANK rows and not a total. Both numbers are still traced
+// below, so a future divergence is visible rather than assumed.
 //
 // A FOURTH CASE, D, WAS ADDED BY WHAT THE FIRST RUN OF C FOUND. The bay
 // REFUSES to put a liquid tank on a radial node: vessel.h sets `radialMount =
@@ -577,11 +578,12 @@
       tag, metS: +s.metS.toFixed(2), thrustN: Math.round(s.thrustN),
       massKg: +s.massKg.toFixed(1),
       lfKg: +q.sum.toFixed(1),
-      // The two totals side by side. `cached` is what
-      // `flight('report').propellantKg` sums and is expected to sit frozen at
-      // its roll-out value for the whole burn; `live` is the re-read. They are
-      // printed together so the disagreement is a measurement rather than a
-      // claim made in a comment.
+      // The two totals side by side. `cached` is the session's cached
+      // `partRows` sum, which sits frozen at its roll-out value for the whole
+      // burn because those rows are what the CRAFT IS DRAWN FROM; `live` is the
+      // re-read, and since R44 it is also what `flight('report').propellantKg`
+      // reports. They are printed together so the difference between the drawn
+      // craft and the burning one is a measurement, not a claim in a comment.
       cachedKg: +q.cachedTotalKg.toFixed(1),
       liveKg: +q.liveTotalKg.toFixed(1),
       reportedKg: s.propellantKg,

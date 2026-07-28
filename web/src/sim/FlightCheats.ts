@@ -16,27 +16,25 @@
 // else. It is reachable only from the pause menu's TESTING section and from
 // `__of.cheat`, and in survival using either marks the save (GP-102).
 
-import { SAS_OFF, cross, flightParts, len, norm } from './FlightAbi.js';
+import { SAS_OFF, cross, len, norm } from './FlightAbi.js';
 import { horizonFrame } from './FlightAttitude.js';
 import type { FlightSession } from './FlightSession.js';
 
 /**
  * HOW MUCH PROPELLANT IS ABOARD RIGHT NOW, re-read from /core.
  *
- * `FlightSession.propellantKg()` sums the cached `partRows`, and those are only
- * refreshed by `refreshParts`, which runs on a roll-out and on a staging and at
- * no other time. So the session's own number is the amount the craft held when
- * it was last staged and does NOT move while an engine burns. That is correct
- * for what it is used for elsewhere (a stage table is about the design), and it
- * is completely wrong as a trigger for a top-up: the first version of the cheat
- * read it, saw a number that never fell, and refilled exactly once. The probe
- * caught it as a burn that spent 2190 kg and reported 2190 kg afterwards.
+ * IT IS NOW A ONE-LINE ALIAS, and the history is worth keeping. This function
+ * existed because `FlightSession.propellantKg()` summed the cached `partRows`,
+ * which `refreshParts` rewrites only on a roll-out and on a staging, so the
+ * session's own number was the amount the craft held when it was last staged and
+ * did NOT move while an engine burned. The first version of the refill cheat
+ * read it, saw a number that never fell, and refilled exactly once: a burn that
+ * spent 2190 kg reported 2190 kg afterwards. R44 fixed the session's own method
+ * to re-read, so the two are the same number again and this name is kept only
+ * because two callers say what they mean by it.
  */
 export function livePropellantKg(s: FlightSession): number {
-  if (s.handle <= 0) return 0;
-  let kg = 0;
-  for (const p of flightParts(s.core, s.handle)) kg += p.propellantKg;
-  return kg;
+  return s.propellantKg();
 }
 
 /**

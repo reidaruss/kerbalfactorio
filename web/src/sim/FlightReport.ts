@@ -4,13 +4,40 @@
 import { scratchF64 } from './wasm/heap.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import { STAGE_PERF_WORDS, vesselAbi } from './wasm/vesselabi.js';
-import { dot, len } from './FlightAbi.js';
+import { dot, flightParts, len } from './FlightAbi.js';
 import type { FlightSession, FlightStageRow } from './FlightSession.js';
 
 export function round(v: number, d: number): number {
   if (!Number.isFinite(v)) return v;
   const m = 10 ** d;
   return Math.round(v * m) / m;
+}
+
+/**
+ * HOW MUCH PROPELLANT IS ABOARD RIGHT NOW, re-read from /core (R44).
+ *
+ * IT IS A RE-READ AND NOT A CACHE, and that is the whole point of the function.
+ * `FlightSession.propellantKg` used to sum the session's cached `partRows`, and
+ * those are rewritten only by `refreshParts`, which runs on a roll-out and on a
+ * staging and at no other time. So the reported total was the amount aboard at
+ * the last STAGING and did not move while an engine burned. `probes/stagedv.js`
+ * measured it: 6490 kg reported for a whole ascent while the live per-tank read
+ * went 6194.4 -> 3413.3 kg. `probes/radialdrain.js` lost an entire pass to it,
+ * reading a flat trace off a burn that was draining correctly.
+ *
+ * IT IS DELIBERATELY NOT `refreshParts`. That call also bumps the session's
+ * `partsRevision`, which is what `FlightMode` diffs to decide whether to REBUILD
+ * every drawn mesh on the craft (`FlightMode.ts`, `drawnRevision`), so putting
+ * it on a per-frame path would rebuild the vehicle's geometry every frame to
+ * refresh a number. This is a pure read: one `_of_fl_parts` and one
+ * `_of_fl_transforms`, MEASURED at 0.008 ms on the 11-part reference vehicle
+ * against a 0.0095 ms `refreshParts` and a p50 frame of 3.2 ms.
+ */
+export function propellantAboardKg(M: OfCoreModule, handle: number): number {
+  if (handle <= 0) return 0;
+  let kg = 0;
+  for (const q of flightParts(M, handle)) kg += q.propellantKg;
+  return kg;
 }
 
 /**
@@ -26,6 +53,18 @@ export function round(v: number, d: number): number {
  * the vehicle AS BUILT and is what the assembly view shows; what the flown craft
  * has left is `of_fl_remaining_dv_vacuum`, which is a different question and a
  * different call.
+ *
+ * R44b, OPEN, AND IT LIVES HERE. The navball puts this table on screen for the
+ * whole flight (`ui/Navball.ts` `table()`, via `app/FlightReadout.ts`), so a
+ * player burning stage 0 watches its delta-v sit at the roll-out value and never
+ * fall. That is NOT a stale cache, and no refresh cadence can fix it: the design
+ * is a blueprint the rocket was COPIED out of, so this table is a constant for
+ * the whole flight. `probes/stagedv.js` measures it the deciding way, by staging
+ * for real (the one moment mid-flight that `refreshParts` runs) and finding the
+ * jettisoned stage 0 still reporting all 1857.79 m/s with its engine and its
+ * tank physically off the vehicle. The fix needs a NEW EXPORT and therefore an
+ * ABI number: `vessel::stagePerformance` takes a `Vessel&`, `FlightSim::craft`
+ * is the drained one, and no `of_fl_*` export reaches it.
  *
  * The stage TWR uses sea-level thrust against the stage's own start mass and
  * `of_gravity_accel` at the datum, which is the number a player judges a pad

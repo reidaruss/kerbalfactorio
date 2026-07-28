@@ -14,7 +14,8 @@ import {
   flightTelemetry, len, norm,
 } from './FlightAbi.js';
 import { clampHoldReason, mayStageWhileClamped, STAGE_REFUSAL } from './FlightClamp.js';
-import { flightReport, readStagePerformance } from './FlightReport.js';
+import { flightReport, propellantAboardKg, readStagePerformance }
+  from './FlightReport.js';
 import { commandDirection, cycleSas, guidanceDir, levelWings, setSas, slew }
   from './FlightSas.js';
 import { horizonFrame } from './FlightAttitude.js';
@@ -380,13 +381,11 @@ export class FlightSession {
   nextStageIndex(): number {
     return this.handle > 0 ? this.V._of_fl_next_stage_index(this.handle) : -1;
   }
-  /** Off the LIVE craft's parts, not `of_vs_propellant_aboard`: the two handle
-   *  registries both number from 1 (FlightReport.readStagePerformance). */
-  propellantKg(): number {
-    let s = 0;
-    for (const q of this.parts) s += q.propellantKg;
-    return s;
-  }
+  /** RE-READ from /core, NOT summed off the cached `parts` (R44): those move
+   *  only on a staging, so this used to report the amount aboard at the last
+   *  one and sat still through a whole burn. The measurement, and why this is
+   *  not `refreshParts`, are on `FlightReport.propellantAboardKg`. */
+  propellantKg(): number { return propellantAboardKg(this.p.M, this.handle); }
 
   /** The ribbon (DW-30 item 6), fed the altitude ABOVE THE PAD. Its 500 m and
    *  45 km are numbers about a LAUNCH: the shipped spawn is on terrain 3 km up,

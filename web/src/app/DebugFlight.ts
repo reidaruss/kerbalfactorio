@@ -96,14 +96,14 @@ export function flightApi(s: Services): FlightDebugApi {
         // PH-84. PER-TANK PROPELLANT, RE-READ FROM /core ON EVERY CALL.
         //
         // ADDITIVE, and it exists because there was no way to ask "which tank
-        // is draining". `report().propellantKg` sums `FlightSession.partRows`,
-        // and those rows are only refreshed by `refreshParts`, which runs on a
-        // roll-out and on a staging and at NO OTHER TIME (FlightCheats.ts says
-        // so beside `livePropellantKg`, which exists for exactly this reason).
-        // So the reported total DOES NOT MOVE while an engine burns, and a
-        // probe that watches it during a burn measures a constant and concludes
-        // the tanks are not draining. That is not hypothetical: it is the null
-        // result this op was added to replace.
+        // is draining". `report().propellantKg` used to sum
+        // `FlightSession.partRows`, and those rows are refreshed only by
+        // `refreshParts`, which runs on a roll-out and on a staging and at NO
+        // OTHER TIME, so the reported total did not move while an engine burned
+        // and a probe watching it measured a constant. R44 made that method a
+        // live re-read, so the totals now agree; `cachedTotalKg` is still
+        // published below because the CACHED rows are still what `FlightMode`
+        // draws the craft from, and a probe must be able to see the two apart.
         //
         // It is a READ of `of_fl_parts` / `of_fl_transforms` and writes
         // nothing, so no second authority is created (DW-26).
