@@ -14,7 +14,7 @@ import { STRUCTURE_STEP_UP_M, type SolidBodies } from './StructurePort.js';
 import { CAPSULE } from './Capsule.js';
 // Re-exported so the split is invisible to the six modules that read it.
 export { CAPSULE } from './Capsule.js';
-import { climbGate, slopeGate } from './HeightfieldWalk.js';
+import { climbGate, deepGate, DEEP_SNAP_M, dugSnapM, slopeGate } from './HeightfieldWalk.js';
 import { escapeRock } from './RockEscape.js';
 import type { StandTrace } from './StandTrace.js';
 import type { WaterOracle } from '../world/WaterOracle.js';
@@ -36,19 +36,6 @@ export interface MoveIntent {
  *  Exported because `RockEscape` re-asks the SAME question about the position a
  *  refused tick falls back to, and two search depths would be two answers. */
 export const VOXEL_FLOOR_SEARCH_M = 6;
-/**
- * Below this much heightfield the voxels take over completely. More than one
- * voxel (so a shallow dig still walks on the reconciled heightfield) and less
- * than a capsule (so a tunnel floor is never mistaken for the surface).
- */
-const DEEP_UNDERGROUND_M = 1.5;
-/**
- * Step-DOWN snap while standing on a voxel floor. A dug tunnel floor is a
- * staircase of whole cells, so the walking snap (0.35 m) leaves the player
- * ballistic for a tick at every step down and the walk reads as a stutter.
- * Just over a cell, so it follows a dug floor and still falls down a shaft.
- */
-const DEEP_SNAP_M = 1.1;
 /**
  * How far below the feet a structural deck is looked for.
  *
@@ -76,6 +63,9 @@ export class KinematicBody {
   voxelPushM = 0;
   /** True while the feet rest on a VOXEL floor below the heightfield surface. */
   underRock = false;
+  /** Which side of the deep/shallow gate the LAST tick came down on, which is
+   *  half of the gate's own answer this tick. See `deepGate`. */
+  private wasDeep = false;
   /** True on a tick the voxel floor query answered `buried`: the feet are in
    *  rock, which is the one state that must never be read as a fall (PH-60). */
   buried = false;
@@ -133,6 +123,9 @@ export class KinematicBody {
     this.vel.x = 0; this.vel.y = 0; this.vel.z = 0;
     this.grounded = true;
     this.speedMps = 0;
+    // A spawn or a teleport is a new place, and the gate's memory of the old
+    // one would decide the first tick there.
+    this.wasDeep = false;
   }
 
   /**
@@ -226,7 +219,10 @@ export class KinematicBody {
     this.underRock = false;
     this.blockedByRock = false;
     this.buried = false;
-    const deep =this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
+    // WITH HYSTERESIS: the quantity is read at the STEP TARGET and the tick ends
+    // somewhere else, so entering and leaving are different questions (deepGate).
+    const deep = this.oracle.editsHandle !== 0 && deepGate(surfaceR - qr, this.wasDeep);
+    this.wasDeep = deep;
     if (!deep) {
       // The heightfield's own wall. See CAPSULE.stepUpM.
       const gate = climbGate(this.oracle, p, qx, qy, qz, r, ux, uy, uz, surfaceR);
@@ -307,7 +303,14 @@ export class KinematicBody {
     // answers with the querier's own position (WG-31/GP-53). See StandTrace.ts.
     const preSnapR = qr;
     const gap = qr - groundR;
-    const snapM = this.underRock ? DEEP_SNAP_M : CAPSULE.groundSnapM;
+    let snapM = this.underRock ? DEEP_SNAP_M : CAPSULE.groundSnapM;
+    // A DUG STEP DOWN IS A DUG STEP DOWN, ROOF OR NO ROOF (R36). See `dugSnapM`.
+    if (!this.underRock && !this.onDeck && this.oracle.editsHandle !== 0
+      && this.grounded && vUp <= 0 && gap > snapM) {
+      const d = dugSnapM(this.oracle, gap, dxn, dyn, dzn);
+      this.oracleCalls += d.calls;
+      snapM = d.snapM;
+    }
     const landing = gap <= 0 || (this.grounded && gap <= snapM && vUp <= 0);
     if (landing && Number.isFinite(groundR)) {
       qx = dxn * groundR; qy = dyn * groundR; qz = dzn * groundR;

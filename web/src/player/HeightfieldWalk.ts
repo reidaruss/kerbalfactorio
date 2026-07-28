@@ -16,6 +16,46 @@ import type { Vec3d } from '../world/PlanetBody.js';
 /** Metres of tangent offset the slope gradient is sampled over. */
 const EPS_SLOPE_M = 1.5;
 
+/**
+ * Below this much heightfield the voxels take over completely. More than one
+ * voxel (so a shallow dig still walks on the reconciled heightfield) and less
+ * than a capsule (so a tunnel floor is never mistaken for the surface).
+ */
+export const DEEP_UNDERGROUND_M = 1.5;
+/**
+ * AND THIS MUCH TO COME BACK OUT AGAIN (R36). One threshold made the deep gate
+ * chatter, and the reason is that the quantity it reads is evaluated at the STEP
+ * TARGET while the tick ends somewhere else: at a bore mouth on a 45 degree face
+ * the reconciled surface differs by metres between one column and the next, so
+ * the walker straddling that boundary asked about a roofed column and finished
+ * the tick under open sky. Measured over one 152 tick crossing: eight regime
+ * changes, and on four of them the depth at the position the tick actually ended
+ * at was 0.002 to 0.017 m, that is the walker standing on the open surface while
+ * the voxel branch held it up.
+ *
+ * So leaving is a different question from entering, and the two numbers say so.
+ * 0.25 m is not a tuning knob: it is the depth below which `deepgate.js` refuses
+ * to call a column roofed at all, because on open ground the reconciled surface
+ * and the field's own crossing differ by a few centimetres either way (measured
+ * there: 32 columns between 0.050 and 0.056 m, every one under open sky). A
+ * walker shallower than that is on the surface by the same measurement that
+ * governs the probe, whatever the step target said.
+ *
+ * The band is deliberately NOT wide. Hysteresis cannot fix a discontinuity, and
+ * this one is 8 m tall: the gate quantity jumps by that much between adjacent
+ * taps at both bores. What the band removes is only the noise flip, where the
+ * two ends of one tick disagree about which side of the line the walker is on.
+ */
+const DEEP_EXIT_M = 0.25;
+
+/**
+ * WHICH COLLISION REGIME THIS TICK IS IN, given how deep the feet are below the
+ * reconciled heightfield and which regime the LAST tick was in.
+ */
+export function deepGate(depthM: number, wasDeep: boolean): boolean {
+  return depthM > (wasDeep ? DEEP_EXIT_M : DEEP_UNDERGROUND_M);
+}
+
 export interface ClimbResult {
   x: number; y: number; z: number; surfaceR: number; moved: boolean;
   tx: number; ty: number; tz: number;
@@ -81,6 +121,56 @@ export function climbGate(oracle: SurfaceOracle, p: Vec3d,
     surfaceR: oracle.surfaceRadius(sx0 / sr, sy0 / sr, sz0 / sr),
     moved: true, tx: 0, ty: 0, tz: 0, calls,
   };
+}
+
+/**
+ * Step-DOWN snap while standing on a DUG floor. A dug floor is a staircase of
+ * whole cells, so the walking snap (0.35 m) leaves the player ballistic for a
+ * tick at every step down one and the walk reads as a stutter. Just over a
+ * cell, so it follows a dug floor and still falls down a shaft.
+ */
+export const DEEP_SNAP_M = 1.1;
+
+/**
+ * HOW FAR DOWN THE FEET MAY REACH FOR THE GROUND when the walking snap has
+ * already failed. Two heights about one direction decide it: `baseHeight` is
+ * the designed relief and `surfaceHeight` is the relief after the voxel
+ * lowering, so a positive difference IS a dig and nothing else can produce one.
+ * Standing rule 1 holds: both numbers come from `surface_field.h` and nothing
+ * here invents a height.
+ *
+ * WHY THE WALKER WANTS IT (R36). `DEEP_SNAP_M` was gated on `underRock`, that
+ * is on there being a ROOF, and the staircase it is sized for has nothing to do
+ * with roofs: an open pit is cut by the same brush out of the same lattice.
+ *
+ * Measured on the 45 degree hill bore (deepgate.js at site `hill`): the
+ * reconciled surface drops 0.727 m in ONE tick at the rim of the entry shaft.
+ * The walking snap does not reach that, so the walker goes ballistic, and then
+ * it STAYS ballistic, because `landing` needs `grounded` before it may use any
+ * snap at all. One 0.727 m lip cost 31 airborne ticks and a 1.374 m fall, and
+ * every part of that fall after the lip was a ramp descending 0.066 m per tick,
+ * comfortably inside the walking snap the walker could no longer use.
+ *
+ * Pristine ground is bit-for-bit unchanged, because the lowering is exactly 0
+ * there and the caller does not even ask: it asks only on a tick that has
+ * already failed the walking snap, which is a ledge tick and not a walking one.
+ *
+ * OLD NOTE, KEPT BECAUSE IT WAS THE FIRST ANSWER AND IT WAS WRONG: the raw
+ * voxel floor is NOT usable here. At the same rim it sits 0.244 m under the
+ * feet, inside the walking snap, and it is 0.483 m ABOVE the reconciled surface
+ * (measured), i.e. it is WG-31's phantom rock. Landing on it would stand the
+ * player half a metre above the mesh they can see, which is the disagreement
+ * D-011 exists to prevent. Widening the snap moves the walker onto the surface
+ * that is actually drawn; consulting the lattice would not have.
+ */
+export function dugSnapM(oracle: SurfaceOracle, gapM: number,
+                         dx: number, dy: number, dz: number):
+{ snapM: number; calls: number } {
+  // Past the wide snap it is a fall whatever cut it, and asking would be a
+  // question with only one answer.
+  if (gapM > DEEP_SNAP_M) return { snapM: CAPSULE.groundSnapM, calls: 0 };
+  const lowered = oracle.baseHeight(dx, dy, dz) - oracle.surfaceHeight(dx, dy, dz);
+  return { snapM: lowered > 0 ? DEEP_SNAP_M : CAPSULE.groundSnapM, calls: 2 };
 }
 
 /**

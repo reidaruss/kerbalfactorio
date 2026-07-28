@@ -57,29 +57,37 @@
 //    0.039115 m coming in, grounded, with no push and no eject. That is
 //    ordinary walking, against a 1.1 m bound taken from the walker's own ladder.
 //
-// 3. IT CHATTERS AT A STEEP MOUTH, AND THAT IS THE ONE DEFECT HERE. On the 45
-//    degree face the two authorities disagree about where the floor is by more
-//    than `CAPSULE.groundSnapM`, and `deep` is evaluated at the STEP TARGET, so
-//    sub-centimetre horizontal jitter flips it. Measured: 8 flips in 152 ticks
-//    on one crossing, 19 of those ticks airborne, and the feet moving 0.002686 m
-//    on the ballistic ones, which is exactly one tick of free fall. On the
-//    shallow ticks the heightfield is further under the feet than the 0.35 m
-//    walking snap reaches, so nothing holds the player up; on the deep ticks
-//    `floorBelow` catches them again. The spawn bore does not do this: 1 flip
-//    each way and 0 airborne ticks out of 464.
+// 3. IT DROPPED THE WALKER AT A STEEP MOUTH, AND THAT WAS THE ONE DEFECT HERE.
+//    NOT chatter, which is what R36 was first written up as: the regime changes
+//    hands exactly twice per crossing at both sites, and the gate quantity moves
+//    by 8 to 9 m between adjacent taps, so no hysteresis band could have been
+//    the fix. What actually happened on the 45 degree face is that the walker
+//    fell into the mouth of its own bore. The reconciled surface drops 0.727 m
+//    in ONE tick at the rim of the entry shaft; the 0.35 m walking snap does not
+//    reach that, so the walker goes ballistic, and `landing` needs `grounded`
+//    before it may use any snap at all, so it then STAYS ballistic all the way
+//    down a ramp that descends only 0.066 m per tick. One lip cost 31 airborne
+//    ticks of 128 and a 1.374 m fall, and the deep/shallow handover happened to
+//    land inside it. Measured at dc88c66 either side of one change: 31 -> 0.
+//
+//    THE FIX WAS NOT ON THE GATE. `DEEP_SNAP_M` (1.1 m) exists because a dug
+//    floor is a staircase of whole cells, and it was gated on `underRock`, i.e.
+//    on there being a ROOF. An open pit is cut by the same brush out of the same
+//    lattice, so the wide snap now follows the DIG instead: see
+//    `HeightfieldWalk.dugSnapM`. The spawn bore does not do this and never did:
+//    1 flip each way and 0 airborne ticks out of 464.
 //
 //   node tools/smoke/run.mjs --scenario=walk \
-//        --evalfile=tools/smoke/probes/deepgate.js
+//        --evalfile=tools/smoke/probes/deepgate.js          # the spawn bore
 //   node tools/smoke/run.mjs --scenario=walk \
 //        --evalfile=tools/smoke/probes/deepgate.js \
-//        --evalargs='{"sites":["hill"]}'      # the steep face, which is the one
-//                                            # that fails
+//        --evalargs='{"sites":["hill"]}'      # the steep face on its own
 //
 // `sites` selects from `spawn` and `hill`. Two sites and not one because a
 // spectrum with a hole in it measured at a single bore is a fact about that
 // bore; the hole has to survive a different pitch, a different mouth and a
 // different hillside before it is a fact about the game. It did, and the second
-// site is also the only one that fails.
+// site is also the only one that ever failed.
 //
 // WHAT WAS TRIED AND DID NOT WORK, because the next reader will think of them:
 //
@@ -832,23 +840,46 @@
   };
 
   const digs = { spawn: spawnDig, hill: hillDig };
-  // DEFAULT IS `spawn` ALONE, AND `hill` IS AN OPT-IN THAT CURRENTLY FAILS.
+  // DEFAULT IS `spawn` ALONE, AND `hill` IS STILL AN OPT-IN. IT IS GREEN ON ITS
+  // OWN NOW; THE TWO-SITE ORDER IS NOT, AND THAT DIFFERENCE IS ITSELF A FINDING.
   //
-  // `hill` reproduces a real defect (PH-80 / R36): on a 45 degree face the gate
-  // CHATTERS, 8 flips in 152 ticks with the walker airborne on 19 of them and
-  // two flip ticks showing exactly one tick of free fall. It is bit-for-bit
-  // reproducible and it is worth keeping runnable:
+  //   --evalargs='{"sites":["hill"]}'          green since R36
+  //   --evalargs='{"sites":["spawn","hill"]}'  still red, at a DIFFERENT mouth
   //
-  //   --evalargs='{"sites":["hill"]}'      reproduces it
-  //   --evalargs='{"sites":["spawn","hill"]}'   runs both
+  // THE TWO ORDERS DO NOT MEASURE THE SAME HILLSIDE. `hillDig` sweeps for its
+  // site around wherever the feet happen to be when it starts, so run alone it
+  // picks 2.2000,144.3000 (44.81 deg) and run after the spawn scene it picks
+  // 2.3821,143.7000 (45.36 deg), because the spawn scene leaves the player 36 m
+  // of bore away from where it began. Two run orders, two hillsides, and the
+  // brief that sent an agent at this quoted one set of numbers with the other
+  // one's command. A site that depends on what ran before it is not yet a
+  // measurement, and fixing that is world-gen's call rather than this probe's,
+  // because whichever anchor is chosen decides which mouth the game is judged on.
   //
-  // It is NOT in the default set because a probe that is permanently red in a
-  // shared harness teaches everyone to ignore red, which costs more than the
-  // one defect it names. The defect is recorded in physics.md R36 with these
-  // numbers and this command, so nothing is hidden by the default being green.
-  // The alternative considered and rejected was asserting the CURRENT chatter
-  // as a characterisation check: that pins a bug as the spec, and this lane
-  // refused to do that in PH-74 for the same reason.
+  // WHAT R36 FIXED, at 2.2000,144.3000. The walker fell into the mouth of its
+  // own bore: the reconciled surface drops 0.727 m in ONE tick at the rim of the
+  // entry shaft, the 0.35 m walking snap could not reach that, and `landing`
+  // needs `grounded` before it may use any snap at all, so one lip cost 31
+  // airborne ticks of 128 and a 1.374 m fall, with the deep/shallow handover
+  // landing in the middle of it. The wide step-down snap now follows the DIG
+  // rather than the roof (`HeightfieldWalk.dugSnapM`), and the gate has a
+  // hysteresis band (`deepGate`). Measured either side of those two changes at
+  // dc88c66: the inward crossing goes from 31 ungrounded ticks to 0, the regime
+  // flips stay at 2, and the spawn bore's handover moves by 8 and 9 micrometres.
+  //
+  // WHAT IS STILL RED, at 2.3821,143.7000, and it is NOT the gate. The same two
+  // changes take that mouth from 19 + 35 ungrounded ticks to 8 + 0, and the
+  // flips stay at 8 + 2 against a bound of 6. The residual is `resolveEmbedded`:
+  // measured on one tick there it pushed the capsule 0.795 m with a 0.470 m
+  // RADIALLY DOWNWARD component, out of the rim wall and into the column next
+  // door whose reconciled surface is 1.64 m lower, which is past any snap the
+  // walker has. The walker then walks back in and is pushed out again, and that
+  // in-and-out is what the flip counter is counting. It belongs to
+  // `VoxelCollision.resolveEmbedded` and the mouth geometry, not to this gate.
+  //
+  // The alternative considered and rejected, twice, is asserting the current
+  // behaviour as a characterisation check: that pins a bug as the spec, and
+  // PH-74 refused it for the same reason.
   const wanted = A.sites ?? ['spawn'];
   const sites = [];
   for (const name of wanted) {
