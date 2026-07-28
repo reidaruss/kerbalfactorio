@@ -54,6 +54,11 @@ export class VabView {
   private pad!: THREE.Mesh;
   private grid!: THREE.GridHelper;
   private ready = false;
+  /** GP-141. The three things the floor has to stay out of the way of: the
+   *  committed assembly, the node markers, and the ghost. See `applyFloor`. */
+  private assemblyBaseY = 0;
+  private markerBaseY: number | null = null;
+  private ghostBaseY: number | null = null;
 
   constructor(private readonly scene: THREE.Scene) {
     this.assembly.name = 'vabAssembly';
@@ -112,7 +117,7 @@ export class VabView {
 
     this.grid = new THREE.GridHelper(60, 60, 0x4a5560, 0x2a3038);
     s.add(this.grid);
-    this.setFloor(0);
+    this.applyFloor();
 
     // A backdrop rather than a clear colour, so the silhouette of a tall rocket
     // reads against something and a screenshot is not a black rectangle.
@@ -146,14 +151,42 @@ export class VabView {
       const def = byId(p.partId);
       if (def !== undefined) base = Math.min(base, p.originM[1]);
     }
-    this.setFloor(base);
+    this.assemblyBaseY = base;
+    this.applyFloor();
   }
 
-  /** Put the floor under the lowest point of the assembly. */
-  private setFloor(baseY: number): void {
-    this.pad.position.y = baseY - 0.175;
-    this.grid.position.y = baseY - 0.35;
+  /**
+   * GP-141. THE FLOOR STAYS OUT OF THE WAY OF WHAT IS BEING PREVIEWED, not just
+   * of what is already built.
+   *
+   * The pad is an opaque 4.2 m disc whose top face sat EXACTLY on the lowest
+   * committed part, and a downward attachment is by definition below that. So
+   * the preview of every downward attachment was drawn entirely underneath it
+   * and reached the screen as **zero pixels**, measured, on two stacks and two
+   * node heights, against 625 for the same part going on top and 1259 for the
+   * same part going on the side. The snap search answered `bottom` the whole
+   * time. A player pointing at the base of their rocket saw nothing happen and
+   * concluded, correctly from the evidence, that you can only build upward.
+   *
+   * `showNodes` already carries the argument in its own comment ("an invisible
+   * snap is indistinguishable from a broken one"); this is that rule applied to
+   * the thing standing in front of it. The floor now sits under the LOWEST of
+   * the assembly, the drawn node markers and the ghost, so it opens downward
+   * exactly as far as the preview needs and closes again when the hand empties.
+   */
+  private applyFloor(): void {
+    let y = this.assemblyBaseY;
+    if (this.markerBaseY !== null) y = Math.min(y, this.markerBaseY);
+    if (this.ghostBaseY !== null) y = Math.min(y, this.ghostBaseY);
+    this.pad.position.y = y - 0.175;
+    this.grid.position.y = y - 0.35;
   }
+
+  /** Where the floor is, so a probe asserts against the scene and not a copy of
+   *  this arithmetic. */
+  get floorTopY(): number { return this.pad.position.y + 0.175; }
+  /** The base of the ghost currently previewed, or null if there is none. */
+  get ghostBase(): number | null { return this.ghostBaseY; }
 
   /**
    * A clone of the shipped node, or a labelled wireframe if there is none.
@@ -202,17 +235,33 @@ export class VabView {
     // recoloured, because it is not a part yet.
     paint(o, ok ? 0x66ff99 : 0xff5555, 0.6);
     this.ghost.add(o);
+    // A part's local origin is its own base (`instance` puts the placeholder
+    // cylinder at `heightM * 0.5`), so the ghost's lowest point is its origin.
+    // Taken from the definition rather than from a Box3, which would also
+    // measure the `col_*` proxies this method has just hidden.
+    this.ghostBaseY = origin[1];
+    this.applyFloor();
   }
 
   clearGhost(): void {
     for (const o of [...this.ghost.children]) this.ghost.remove(o);
+    this.ghostBaseY = null;
+    this.applyFloor();
   }
 
   /** The attachment points the part in hand could take. Drawn because an
    *  invisible snap is indistinguishable from a broken one. */
   showNodes(nodes: readonly AttachNode[], active: AttachNode | null): void {
     for (const o of [...this.markers.children]) this.markers.remove(o);
-    if (nodes.length === 0) return;
+    if (nodes.length === 0) { this.markerBaseY = null; this.applyFloor(); return; }
+    // GP-141, the half of it that happens BEFORE the player hovers anything. A
+    // stack node sits on the axis of the face it belongs to, so the lowest one
+    // is buried between the pad below it and the part's own hull above it, and
+    // the marker that says "you may attach here" is the one marker a player
+    // building downward never sees. MARKER_R * 1.8 is the hot scale below.
+    let lowest = Infinity;
+    for (const n of nodes) lowest = Math.min(lowest, n.posM[1]);
+    this.markerBaseY = lowest - 0.22;
     const geo = new THREE.SphereGeometry(0.09, 8, 6);
     const dim = new THREE.MeshBasicMaterial({ color: 0x55ddff, transparent: true, opacity: 0.5 });
     const hot = new THREE.MeshBasicMaterial({ color: 0xffee66 });
@@ -225,10 +274,13 @@ export class VabView {
       if (isHot) m.scale.setScalar(1.8);
       this.markers.add(m);
     }
+    this.applyFloor();
   }
 
   clearNodes(): void {
     for (const o of [...this.markers.children]) this.markers.remove(o);
+    this.markerBaseY = null;
+    this.applyFloor();
   }
 
   /**

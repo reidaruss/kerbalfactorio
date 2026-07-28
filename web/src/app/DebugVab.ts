@@ -84,6 +84,12 @@ export function vabApi(s: Services): VabDebugApi {
         // the distance between them in world space.
         case 'gaps': return v.measureJointGaps();
         case 'catalogue': return v.catalogueReport();
+        // GP-141. Where the bay floor is, read off the pad the renderer was
+        // handed. The floor is the thing that was standing in front of every
+        // downward preview, so an assertion about it has to come from the
+        // scene rather than from a second copy of `applyFloor`'s arithmetic.
+        case 'floor': return { topY: v.view.floorTopY,
+                               ghostBaseY: v.view.ghostBase };
         // Every attachment node with the PIXEL it is drawn at, so a probe can
         // put the cursor where a player would look instead of teleporting the
         // snap. The hit test and the snap search still run for real.
