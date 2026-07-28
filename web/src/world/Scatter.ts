@@ -66,7 +66,7 @@ export class Scatter {
   groundM2 = 0;
   /** Chunks whose draw was TRUNCATED by MAX_PER_CHUNK. Must stay 0 near. */
   chunksCapped = 0;
-  /** Cells refused for standing water since boot (DW-28). See WET_REJECT_M. */
+  /** Cells refused for water since boot (DW-28). See WET_REJECT_M. */
   wetCells = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
   backlog = 0;
@@ -79,28 +79,20 @@ export class Scatter {
     /**
      * Fair (stochastic) per-cell quantisation. `?scatterfair=0` restores the
      * `Math.round` this shipped with, which is the whole defect: the count is
-     * per CELL, DW-19 took the near cell from 7.2 m to 1.808 m, and
-     * `round(118920 * 1.808^2 / 1e6)` is `round(0.389)` = **0**. Every chunk
-     * under the player scattered NOTHING while `want` for the chunk read 399
-     * and every other number looked healthy.
+     * per CELL, DW-19 took the near cell to 1.808 m, and `round(0.389)` is
+     * **0**, so every chunk under the player scattered NOTHING while `want`
+     * read 399 and every other number looked healthy.
      */
     private readonly fair = true,
-    /**
-     * `?grassshort=0` restores the RN-15 understorey height band and the
-     * height-compounding distance upscale. See `ScatterLook.DETAIL_H_LO`.
-     */
+    /** `?grassshort=0` restores the RN-15 band. See ScatterLook.DETAIL_H_LO. */
     grassShort = true,
     /**
-     * The water authority, or null on a dry body. A WaterOracle rather than a
-     * height, because it is the ONE place "is there water here" is answered and
-     * a second copy of that rule here is the DW-26 failure exactly.
+     * The water authority, or null on a dry body. A WaterOracle and not a
+     * height: it is the ONE place "is there water here" is answered, and a
+     * second copy of that rule here is the DW-26 failure exactly.
      */
     private readonly water: WaterOracle | null = null,
-    /**
-     * The live edits handle, read at BUILD time. `depthAt` reads the EDITED
-     * ground, so digging a bed deeper deepens the water and a rebuilt chunk
-     * has to see it. Boot creates the edits after this, hence a thunk.
-     */
+    /** Live edits handle, read at BUILD time so a dug bed deepens the water. */
     private readonly editsHandle: () => number = () => 0,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);
@@ -243,10 +235,8 @@ export class Scatter {
     // existed.
     let wetR = this.water !== null && this.water.hasWater
       ? this.water.levelRadius() : 0;
-    // THE BASIN GATE. One dot product per chunk, and it is what makes the
-    // per-cell query affordable; the level-radius test alone is not (see
-    // WET_REJECT_M). Fails SAFE: a future non-disc water model leaves `disc`
-    // null, the gate is skipped, and every cell is queried again.
+    // THE BASIN GATE: one dot per chunk, and what makes the per-cell query
+    // affordable. Fails SAFE (see WET_REJECT_M).
     const disc = this.water?.disc ?? null;
     if (wetR > 0 && disc !== null) {
       const an = v.anchor;
@@ -303,15 +293,13 @@ export class Scatter {
         const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
         const nl = Math.hypot(nx, ny, nz) || 1;
         if ((nx * upx + ny * upy + nz * upz) / nl < MIN_SLOPE_COS) continue;
-        // WATER (RN-46, fixed and first proved at RN-48). Last of the three
-        // cell tests because it is the only one that can reach WASM.
-        // See WET_REJECT_M for the basin gate and the three defects here.
+        // WATER (RN-46, proved at RN-48). Last because it alone reaches
+        // WASM, and the two above have thrown most cells away already.
         if (wetR > 0) {
           const wx = a.x + pos[i00];
           const wy = a.y + pos[i00 + 1];
           const wz = a.z + pos[i00 + 2];
-          // NORMALIZED: `depthAt` takes a DIRECTION, not a point. RN-46 handed
-          // it an absolute 6e5 m position. The length is free, the guard needs it.
+          // NORMALIZED: depthAt takes a DIRECTION, not a point (RN-46 bug).
           const wl = Math.hypot(wx, wy, wz);
           if (wl < wetR
             && this.water!.depthAt(wx / wl, wy / wl, wz / wl, edits) > WET_REJECT_M) {
@@ -323,8 +311,7 @@ export class Scatter {
         const i01 = i00 + DIM * 3;
         const i11 = i01 + 3;
         b.seed = keyBase ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
-        // The PATCH this cell belongs to, so a stand of one species spans
-        // many cells rather than each cell drawing independently.
+        // The PATCH this cell belongs to, so a stand spans many cells.
         b.cluster = keyBase ^ Math.imul(
           (cy >> CLUSTER_SHIFT) * CELLS + (cx >> CLUSTER_SHIFT), 0x9e3779b1);
         b.i00 = i00; b.i10 = i10; b.i01 = i01; b.i11 = i11;

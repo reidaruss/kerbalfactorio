@@ -41,6 +41,7 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     varying float vRelief;
     varying float vFade;
     varying float vViewZ;
+    varying vec2 vChunkUv;
 
     void main() {
       #include <batching_vertex>
@@ -61,6 +62,13 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       vec4 worldPosition = ofModel * vec4(position, 1.0);
       vWorld = worldPosition.xyz;
       vRelief = aHeight;
+      // The chunk-LOCAL surface coordinate, normalized over the quad, uploaded
+      // as uint16 by /core since W2 and read by this shader ZERO times until
+      // RN-50 (WG-56 found it). It is the well-conditioned coordinate pM is
+      // not: one uint16 step is 0.883 mm on a depth-14 chunk, which is a
+      // quarter of a ground pixel at 2 m, against pM's quantum of nearly nine
+      // pixels there. No new attribute, no upload, no CPU work.
+      vChunkUv = uv;
       // The SIGN of aFadeT0 selects the half of the dissolve: positive is the
       // incoming chunk fading in, negative is the outgoing one fading out. One
       // attribute, written once, carries both.
@@ -160,6 +168,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     varying float vRelief;
     varying float vFade;
     varying float vViewZ;
+    varying vec2 vChunkUv;
     ${BAYER}
     ${CASCADE}
 
@@ -215,14 +224,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // 500 m to 2.5 km. A 2.35 m bed subtends about 3 px at 1 km on this
         // viewport and field of view, which is where a band starts to alias.
         strataW = uArtAmp.z * (1.0 - smoothstep(500.0, 2500.0, dist));
-        if (macroW > 0.0 || bumpW > 0.0) hArt = ofArtMacro(pM);
-        if (bumpW > 0.0) {
-          // The bump gets ONE extra octave the colour does not. 4.2 m is the
-          // float32 precision floor on pM at this planet radius (0.0625 m ULP,
-          // i.e. 1.5% of the wavelength); finer would stair-step rather than
-          // ripple. Sub-metre relief needs a per-chunk phase from world-gen.
-          hArt += (ofArtVnoise(pM * (1.0 / OF_ART_FINE_M) + 7.3) - 0.5) * 0.9;
-        }
+        if (macroW > 0.0) hArt = ofArtMacro(pM);
       #endif
 
       // Steep ground shows rock rather than the biome's surface cover. This is
@@ -270,8 +272,46 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // and not pM: a derivative of a float32 at 6e5 metres is four bits of
       // signal, and the two frames differ by a translation whose derivative is
       // the identity, so engine space is both cleaner and equivalent.
+      //
+      // THE BUMP'S HEIGHT FIELD IS KEYED ON THE CHUNK UV, NOT ON pM (RN-50).
+      // RN-45 measured that a screen-derivative bump keyed on planet-centred
+      // metres cannot work here: the float32 quantum is 3 to 15 times the
+      // pixel footprint under the player, so dFdx is exactly zero across runs
+      // of pixels and steps at the quantisation boundaries, which are surfaces
+      // of constant range and therefore draw arcs centred on the eye. World-gen
+      // reproduced that headlessly at 32.49% of quads with a dead derivative.
+      // The chunk UV has no such quantum because it is LOCAL, so the derivative
+      // is clean by construction rather than by tuning.
+      //
+      // THE HONEST COST, and it is why this is not the general fix: the UV
+      // normalises over the QUAD, so the detail's world size doubles at every
+      // LOD step. That is tolerable for THIS term only because the term is only
+      // well conditioned within about 20 to 45 m of the eye, and inside that
+      // band the streamer is at max depth, so the step falls outside the band.
+      // Any future field that needs a derivative at range still wants world-gen's
+      // per-chunk phase; this does not replace it.
+      // EVERY OCTAVE FEEDING THE DERIVATIVE IS ON THE UV. NOT ONE IS ON pM, and
+      // that is the whole correctness argument rather than a detail.
+      //
+      // The obvious version of this change keeps the macro field in the bump's
+      // height and merely adds a UV octave to it. World-gen measured that exact
+      // shape headlessly and it is a TRAP: a finest-octave-only fix scores
+      // 0.00% dead quads, identical to a correct one, because the live octave
+      // keeps the sum off zero everywhere, and it is still visibly wrong with
+      // the arcs and the lattice intact and its field 1,224x further from the
+      // truth. A quantised octave anywhere in the sum poisons the derivative of
+      // the whole sum. So hArt feeds the COLOUR and never the bump.
       #ifndef OF_SCALED
-        n = ofArtBump(n, vWorld, hArt, bumpW * 0.55, OF_ART_FINE_M);
+        if (bumpW > 0.0) {
+          // Two octaves, both local. 14.0 and 5.3 rather than powers of two: a
+          // lattice that lined up with the 32-cell quad grid would put every
+          // noise cell boundary on a vertex and draw the grid. At a depth-14
+          // chunk of 57.856 m these are 4.1 m and 10.9 m, which is the scale
+          // RN-45 wanted and could not reach from planet-centred metres.
+          float hB = (ofArtVnoise(vec3(vChunkUv * 14.0, 0.5)) - 0.5) * 0.9
+                   + (ofArtVnoise(vec3(vChunkUv * 5.3, 7.1)) - 0.5) * 0.5;
+          n = ofArtBump(n, vWorld, hB, bumpW * 1.6, OF_ART_FINE_M);
+        }
       #endif
 
       vec3 sd = normalize(uSunDir);

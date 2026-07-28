@@ -49,8 +49,15 @@ const AP_LIGHT_STEPS = 2;
  * amplitude; strata 1.0 is full bedding. Each is a multiplier ON those, so 0
  * is off and 1 is as designed.
  *
- * THE DETAIL BUMP DEFAULTS TO ZERO, AND THAT IS A MEASURED NEGATIVE RESULT
- * RATHER THAN AN UNFINISHED TERM. It is left in the build, reachable with
+ * THE DETAIL BUMP IS BACK ON AT RN-50, on a different coordinate. Everything
+ * below is the RN-45 measurement that took it OUT, kept because it is the
+ * reason the term is keyed on the chunk UV rather than on planet-centred
+ * metres, and because it generalises to any future screen-derivative effect on
+ * a 600 km body. The artefact and the arithmetic are unchanged; what changed is
+ * that the height field no longer reads a coordinate carrying a planet-scale
+ * quantum. See TerrainShader's note at the ofArtBump call.
+ *
+ * WHAT RN-45 MEASURED AND WHY THE TERM WAS DISABLED: It is left in the build, reachable with
  * `?bumpamp=1`, because the measurement is the deliverable and the next person
  * to reach for a screen-derivative effect on this planet needs to be able to
  * reproduce it in one flag.
@@ -89,7 +96,7 @@ const AP_LIGHT_STEPS = 2;
  * VALUE, where 0.0625 m against an 11.9 m finest octave is 0.5% of a
  * wavelength, and only the DERIVATIVE is destroyed by the quantisation.
  */
-const ART_DEFAULT = { macro: 1.0, bump: 0.0, strata: 1.0 };
+const ART_DEFAULT = { macro: 1.0, bump: 1.0, strata: 1.0 };
 
 function artAmpFromQuery(): THREE.Vector3 {
   const p = new URLSearchParams(self.location.search);
