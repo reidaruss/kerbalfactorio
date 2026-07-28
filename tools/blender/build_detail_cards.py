@@ -177,19 +177,82 @@ def sedge_rosette():
 
 
 def pebble_scatter():
-    """Seven grit-sized stones, six triangles each: a single-ring lobe is a
-    faceted cone, which is exactly what a chip of gravel is. This is what
-    stops bare soil and worn paths from reading as flat colour."""
+    """One broad chip and three shards, 42 triangles, all of them LOW.
+
+    THE OLD VERSION WAS SEVEN FOUR-SIDED PYRAMIDS AND LOOKED LIKE IT. Seven
+    single-ring lobes at seg = 4 is, literally, a base quad plus an apex fan:
+    a square-footprint cone. Worse, fit() pins the pile's height to the card's
+    authored 0.10 m whatever the author wrote, so those seven stones measured
+    9 to 19 cm across against 6 to 10 cm tall, a width-to-height ratio of 1.5
+    to 2.0. That is the profile of a pyramid and not of a stone, and a render
+    of sixteen instances on sand is a field of tiny grey pyramids with no
+    other reading available.
+
+    The near pebble is seen from 5 m with the eye 1.7 m up, which is 19
+    degrees above the ground and nowhere near the grazing angle the LOD2
+    below is designed for. Vertical extent buys nothing at that angle and is
+    exactly what made the pyramid; what reads is the OUTLINE, the TOP, and
+    where the stone meets the soil. So three levers, each pulled for one of
+    those:
+
+      * OUTLINE. seg 6 on the large chip and 5 on the largest shard, never 4,
+        so the plan silhouette is not a square; jit 0.48 against the old 0.30
+        so the ground contact line is ragged rather than a regular polygon.
+      * TOP. The chip gets a SECOND ring at 0.72 of its height carrying 0.74
+        of its radius. lobe() always finishes with an apex fan, so the only
+        way to not have a point is to hand that fan a large ring to start
+        from and little height to cross: the crown is 23% of the stone and
+        sits on a plateau three quarters of its width, which reads as a
+        broken flat top. That second ring is 16 of the 42 triangles and it is
+        the single change that stops the prop reading as a pyramid.
+      * BURIAL. It cannot be done by sinking the stones. Parts.fit() rescales
+        the pile so its AABB base lands exactly on z = 0, so a negative loc
+        z is undone on the deepest stone and lifts every other stone off the
+        ground instead. The burial read therefore comes from the profile: the
+        widest ring is at z = 0 on every stone, so the stone is broadest
+        exactly where the soil meets it and tapers upward from there. Fitted,
+        the chip measures 0.51 x 0.31 x 0.10 m and the three shards 0.21 to
+        0.11 m across by 0.043 to 0.029 m tall: a width-to-height ratio of
+        3.6 to 5.1 where the old cones ran 1.5 to 2.0.
+
+    Four stones and not seven, because 42 triangles is a HARD ceiling and not
+    the 60 in the contract: the file's max_tris_total is 245 and the build
+    already spends all 245, so a triangle added here is a triangle that has
+    to come off another card. Four stones at 22 + 8 + 6 + 6 buys the two-ring
+    chip and a real size hierarchy (a half-metre slab, a 21 cm shard, two
+    crumbs) out of the same budget seven identical cones were spending.
+
+    The three shards stay single-ring, and they are not pyramids either,
+    because `lean` scaled to the stone's own radius throws the apex well off
+    centre: one steep face, one long shallow ramp, which is what a broken
+    chip of rock looks like. Everything varies off the same seeded stream the
+    old version used, so the build stays byte-reproducible.
+    """
     p = hc.Parts()
     nxt = hc.rng(1331)
-    for i in range(7):
-        a = 2.0 * math.pi * i / 7 + (nxt() - 0.5) * 1.2
-        rr = 0.42 * (0.25 + nxt())
-        s = 0.55 + 0.65 * nxt()
-        p.add(*hc.lobe(0.075 * s, 0.065 * s, 0.048 * s,
+    # seg, ring profile, distance from card centre, xy radius, height, lean
+    plan = ((6, ((0.0, 1.00), (0.72, 0.74)), 0.22, 0.215, 0.052, 0.60),
+            (5, ((0.0, 1.00),),              0.60, 0.110, 0.026, 0.90),
+            (4, ((0.0, 1.00),),              0.66, 0.088, 0.019, 0.90),
+            (4, ((0.0, 1.00),),              0.52, 0.070, 0.015, 0.90))
+    for i, (seg, rings, rr0, rad, hgt, ln) in enumerate(plan):
+        a = 2.0 * math.pi * i / len(plan) + (nxt() - 0.5) * 1.5
+        rr = rr0 * (0.86 + 0.28 * nxt())
+        s = 0.88 + 0.24 * nxt()
+        rx = rad * s
+        ry = rad * s * (0.80 + 0.30 * nxt())
+        # A random SIGN on a guaranteed magnitude, not a random offset: an
+        # offset drawn uniformly about zero averages to zero, which is how the
+        # first cut of this ended up with four stones that all stood straight
+        # up. Every stone now leans by at least 0.45 of its allowance.
+        sx = 1.0 if nxt() < 0.5 else -1.0
+        sy = 1.0 if nxt() < 0.5 else -1.0
+        lean = (sx * ln * rx * (0.45 + 0.55 * nxt()),
+                sy * ln * ry * (0.45 + 0.55 * nxt()))
+        p.add(*hc.lobe(rx, ry, hgt * s,
                        loc=(rr * math.cos(a), rr * math.sin(a), 0.0),
-                       seg=4, seed=1341 + i * 13, jit=0.30,
-                       rings=((0.0, 1.00),), role="Rock"))
+                       seg=seg, seed=1341 + i * 13, jit=0.48, lean=lean,
+                       rings=rings, role="Rock"))
     return p
 
 
