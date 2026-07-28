@@ -55,7 +55,9 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-87 to GP-99 | combat remainder, enemies in the world | held |
 | RN-1 to RN-14 | rendering, historic | landed |
 | RN-15 to RN-29 | ground vegetation, contact blending, aerial perspective | allocated |
-| RN-30 to RN-44 | rendering, next block | free |
+| RN-30 to RN-44 | rendering: shadow contact, grass height, aerial perspective take two | allocated |
+| PH-47 | tunnel sinking, structural lead, not reproduced | landed |
+| PH-60 to PH-74 | physics: R18 fall through rock, R18b stuck in a wall | allocated |
 | BT-27 | the build stamp | landed |
 
 FS-34 is deliberately unused: the pollution lane renumbered its own FS-33/FS-34
