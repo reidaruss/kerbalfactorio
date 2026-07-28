@@ -129,3 +129,50 @@
 .of-pgrp .row .pair { display: flex; gap: 6px; }
 #of-pause button.go { color: var(--of-bad); border-color: var(--of-bad); }
 #of-pause button.go:hover { background: rgba(120, 30, 22, 0.6); }
+
+/* --- GP-131: the controls screen ---------------------------------------- */
+.of-pgrp .row.stub.live { opacity: 1; }
+.of-pgrp .row.stub.live .nm { color: var(--of-ink); }
+
+.of-pgrp.ctl h4 { display: flex; align-items: center; justify-content: space-between; }
+.of-pgrp.ctl .row.note { border-left-color: var(--of-accent); }
+
+.ctlg { margin: 0 0 9px; }
+
+.ctlg h5 {
+  margin: 0 0 3px;
+  padding-bottom: 3px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+.ctlr {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.ctlr:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
+.ctlr .nm { flex: 1 1 auto; color: var(--of-ink); }
+.ctlr .keys { flex: 0 0 auto; }
+.ctlr .share { flex: 0 0 auto; font-size: 10px; color: var(--of-dim); }
+
+.ctlr kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+  color: var(--of-accent);
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}

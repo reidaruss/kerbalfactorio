@@ -167,9 +167,19 @@
       && new Set(menuSrcs).size === menuSrcs.length,
   };
 
+  // GP-130. `slots.length === 9` USED TO BE HERE AND HAD QUIETLY STOPPED
+  // MEANING ANYTHING. The bar grew to ten at GP-57 and to eleven at GP-86, so
+  // this equality has been false ever since, `setupRan` has been false with it,
+  // and `valid` has therefore been false on every run of this probe since the
+  // gun shipped, for a reason that had nothing to do with icons. It is exactly
+  // the class of defect the runner's own `mustNum` prelude exists for: an
+  // assertion that fails for a reason nobody reads is worth no more than one
+  // that passes for a reason nobody reads. It is now DERIVED from the bar the
+  // client publishes, so it follows the next slot the game grows.
+  const barSlots = of.hotbar().slots.length;
   const setupRan = swings > 0 && (of.world().tick - t0.tick) > 60
     && crafted.length >= 3 && rep.panelOpen === true && menu.length >= 13
-    && slots.length === 9 && icons.px === 64;
+    && slots.length === barSlots && barSlots >= 9 && icons.px === 64;
 
   return {
     // --- THE ACCEPTANCE -----------------------------------------------------
@@ -180,6 +190,7 @@
       && menuUnexplained.length === 0
       && Object.values(negatives).every(Boolean),
     setupRan,
+    barSlots,
     perId,
     regressed,
     negatives,

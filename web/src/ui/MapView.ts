@@ -15,6 +15,7 @@ import './styles/map.css';
 import { Modal } from './ModalStack.js';
 import type { ModalStack } from './ModalStack.js';
 import { drawMap } from './MapDraw.js';
+import { labelOf } from '../player/Bindings.js';
 import type { MapDrawReport, MapReadout } from './MapTypes.js';
 import { ZERO_CONTRAST } from './MapContrast.js';
 
@@ -118,7 +119,14 @@ export class MapView extends Modal {
       + '<div class="view"><canvas class="map-canvas"></canvas></div>'
       + '<div class="readout"></div>'
       + '</div>'
-      + '<div class="hint"><b>M</b> or <b>Escape</b> returns to the ball. '
+      + // GP-131. THE KEYS ARE READ FROM THE BINDING TABLE, never spelled here.
+      // This line said a literal M for months and was the same defect the mute
+      // hint had for an hour (GameplayInput.chrome): a hint that names the wrong
+      // key is worse than no hint, because it teaches the player a control that
+      // does nothing. Nothing was wrong with it TODAY; it was one remap away
+      // from being wrong, which is exactly when to fix it.
+      `<div class="hint"><b>${labelOf('map')}</b> or <b>${labelOf('cancel')}</b> `
+      + 'returns to the ball. '
       + 'Flight controls stay live: throttle, stage, attitude, warp and every '
       + 'SAS mode work from here, exactly as they do from the navball.</div>'
       + '</div>';
