@@ -143,6 +143,58 @@ rather than interrogating the checkout around it.
 Delete the scratch directory when done. A 24 MB build left behind is nothing;
 thirteen of them plus their Chrome profiles is not.
 
+### `abi=N` IN THE BOOT LOG IS A CONSISTENCY CHECK, NOT A FRESHNESS CHECK
+
+**A freeze of `b30d161` reported `abi=19` with smoke PASS and zero console
+errors, on a tree whose source says 20. Both halves were true and neither was a
+bug.** Resolved 2026-07-28 (PH-82).
+
+The client throws unless the wasm agrees with it:
+
+```
+// OfCore.ts
+const abi = M._of_abi_version();
+if (abi !== OF_ABI_VERSION) throw new Error(...)
+```
+
+So `abi=19` printing successfully proves the bundle ALSO expected 19. **A stale
+build is internally consistent**: old JS expects 19, old wasm returns 19, the
+check passes, the page boots, smoke is green. The handshake line can only ever
+catch a MISMATCHED build, and a mismatched build does not boot at all, so in
+practice the line can never fail. **It says client and wasm agree with each
+other. It says nothing about whether either is HEAD.**
+
+Verified rather than argued: HEAD's committed binary was loaded in node and asked
+directly, `_of_abi_version()` returns **20**; a correct `git archive HEAD web`
+freeze bundles `client expects 20`, serves the 411607-byte wasm and reports
+**`abi=20`** with smoke PASS. So the build that printed 19 was not built from
+HEAD.
+
+**`OF_BUILD_STAMP` has the same shape and is worth naming beside it.**
+`vite.config.ts:20` takes the stamp from the environment and only falls back to
+`git rev-parse` (then to `'nogit'` inside an archive, which has no `.git`). A
+freeze therefore states the sha the operator TOLD it to state. Stamp a stale
+directory `b30d161` and it will say `b30d161` in good faith. **The stamp restates
+the intent; it does not measure the content.**
+
+Two things that look like verification and are not, both reporting exactly what a
+correctly-labelled stale build would report.
+
+**THE CHECK THAT ACTUALLY MEASURES IT** compares the served artifact against
+HEAD, which the build cannot self-report:
+
+```bash
+# 1. the served wasm IS HEAD's
+git show HEAD:web/wasm/dist/of-core.wasm | cmp - <servedroot>/wasm/of-core.wasm   && echo "wasm matches HEAD"
+# 2. the bundle's expectation IS HEAD's constant
+grep -oh "client expects [0-9]*" <servedroot>/assets/*.js | sort -u
+git show HEAD:web/src/sim/wasm/OfCore.ts | grep "OF_ABI_VERSION = "
+```
+
+Both are cheap and neither can be satisfied by a build that merely agrees with
+itself. Run them on every handover build; `abi=N` is worth printing but is not
+evidence of freshness.
+
 ### `npx vite build` SKIPS sync-wasm, so a frozen build can carry a stale wasm
 
 `npm run build` runs `prebuild` (`sync-wasm` then `sync-assets`). **`npx vite
