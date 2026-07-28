@@ -298,3 +298,46 @@ This is the same family as the wasm trap and the stale `web/dist` bundle: **the
 served artefact and the committed source are separate things, and only one of
 them is what the stamp names.** A build stamp proves which source was archived.
 It proves nothing about the models, the wasm, or anything else generated.
+
+### `--strictPort` fails the NEW server, so a reused port measures the OLD build
+
+`--strictPort` is the right flag, but understand what it does on a port you
+already used: **the new preview refuses to start, the old server keeps serving,
+and anything you point at that port measures the previous build.** No error
+reaches you if you background the server and only check the URL afterwards,
+because the URL answers 200 the whole time.
+
+This cost Admin a false alarm on 2026-07-28: a freeze of HEAD appeared to report
+`abi=19` against a source that says 20, which looked like a stale-build defect
+serious enough to raise with a lane. **The build was correct. The measurement
+was pointed at a server from six freezes earlier**, and seven stale preview
+servers were found still listening.
+
+Before serving on a port, kill whatever holds it and confirm it is gone, or use
+a port no run has used. After serving, confirm the server you just started is
+the one answering, not merely that something answers.
+
+This is the same family as everything else in this file: **the instrument was
+aimed at the wrong thing, and the wrong thing answered plausibly.**
+
+### What actually proves a frozen build is HEAD
+
+The boot line `abi=N` proves the client and the wasm **agree with each other**.
+A stale build is internally consistent, so it prints a number and boots and goes
+green. It cannot prove freshness, and a genuinely mismatched build does not boot
+at all, so in practice that line can never fail.
+
+`OF_BUILD_STAMP` has the same shape: `vite.config.ts` states the sha the
+operator passed it, in good faith, whatever directory it is stamping.
+
+Compare the served artifact against HEAD instead, which is the one thing a build
+cannot self-report:
+
+```
+git show HEAD:web/wasm/dist/of-core.wasm | cmp - <servedroot>/wasm/of-core.wasm
+grep -oh "client expects [0-9]*" <servedroot>/assets/*.js | sort -u
+git show HEAD:web/src/sim/wasm/OfCore.ts | grep "OF_ABI_VERSION = "
+```
+
+Keep printing `abi=N`. It is worth having during development, where a broken
+pairing is possible. Just never read it as freshness on a handover build.
