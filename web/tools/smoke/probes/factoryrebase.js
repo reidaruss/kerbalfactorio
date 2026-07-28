@@ -31,26 +31,33 @@
 // where it now is, so it reads non-zero for EXACTLY ONE REASON and its magnitude
 // names the delta. See `FactoryStale.ts`.
 //
-// THE BOUND IS NOT A HARD ZERO HERE, AND THE REASON IS THE FINDING. The scatter
-// probe asserts an exact 0 because both of its readings are f64. This one cannot,
-// and it is worth being precise about why rather than quietly widening a
-// threshold, which is the thing standing rule 11 warns about by name.
+// THE BOUND IS A HARD ZERO, AND GETTING THERE TOOK BEING WRONG FIRST.
 //
-// `MachineBatch.matrixAt` reads the matrix back out of the `BatchedMesh`, and a
-// BatchedMesh stores instance matrices as FLOAT32 because they are on their way
-// to the GPU. So the comparison is an f64 composition against a float32
-// round-trip of itself, and the residual is quantisation, not staleness.
-// Measured at a 200 m rebase threshold: worst 1.2465e-5 m, which is about half a
-// float32 ULP at 200 m (200 * 2^-23 = 2.4e-5). It is a floor, not a drift.
+// `MachineBatch.matrixAt` reads back out of a `BatchedMesh`, which stores
+// instance matrices as FLOAT32 because they are on their way to the GPU, while
+// `toEngine` composes in f64. FS-89's first draft asserted an exact 0 against
+// that and failed at 1.2465e-5 m, which is about half a float32 ULP at the 200 m
+// rebase threshold. The response was to DERIVE a floor from four ULP of the
+// engine magnitude rather than widen a threshold until it passed, which is the
+// thing standing rule 11 warns about by name.
 //
-// So the bound is DERIVED from that floor rather than picked: four ULP of the
-// engine-space magnitude, which is the rebase threshold, because no instance can
-// be further from the origin than that. What makes the assertion worth anything
-// is the separation, and it is not close: a DETACHED instance is stale by the
-// full rebase delta, so at a 200 m threshold the defect reads 200 m against a
-// bound of 9.5e-5 m, a factor of about two million. `staleFraction` is reported
-// beside the metres for exactly this reason, because it is scale free: rounding
-// is order 1e-7 of the delta and a detachment is 1.0 of it.
+// FS-91 REPLACED THE FLOOR WITH THE BETTER FIX, from the physics lane, which hit
+// the identical thing on a launch pad (1e-6 m at 137 m, 4e-6 at 244 m, 6e-6 at
+// 367 m, all exactly 2^-23 times the distance, correctly refused as a slow leak).
+// `FactoryStale` now rounds the EXPECTATION through `Math.fround`, the same
+// single-precision step the stored matrix already went through, so the two agree
+// bit for bit and there is nothing left to tolerate.
+//
+// WHY THAT IS WORTH MORE THAN A CORRECT TOLERANCE. The ULP floor grew with the
+// rebase threshold: 9.5e-5 m at 200 m, but 1.9e-3 m at the shipped 4 km. It was
+// never wrong, and it was a number that had to be recomputed and re-argued every
+// time the threshold moved, which is how a bound eventually gets loosened by
+// somebody who does not know why it is that size. A hard zero cannot rot.
+//
+// `staleFraction` is still reported beside the metres, because it is scale free
+// and it is what makes the separation legible: a DETACHED instance is stale by
+// the whole rebase delta, so it reads 1.0, and the negative control measured
+// 2.00 after two rebases because the deltas accumulate.
 //
 // `rebasesObserved` IS A VALIDITY TERM, NOT A REPORTED CURIOSITY. A walk that
 // never crossed the threshold has tested nothing, and a probe that returns green
@@ -151,23 +158,22 @@
   await sleep(0.4);
   log.push(`laid ${laid} belt tiles`);
 
-  // FOUR FLOAT32 ULP AT THE LARGEST ENGINE MAGNITUDE ANY INSTANCE CAN HAVE, which
-  // is the rebase threshold itself. Derived, not picked: see the header. Falls
-  // back to the shipped 4 km default when the runner did not say, which makes the
-  // bound LOOSER and is therefore the safe direction for a fallback.
+  // FS-91: THE BOUND IS ZERO. `FactoryStale` rounds the expectation through the
+  // same single-precision step the drawn matrix went through, so an in-step
+  // building is bit-identical and there is no band to tune. `engineMaxM` is kept
+  // only to report `staleFraction`, which is what makes the separation legible.
   const engineMaxM = threshold === null ? 4000 : threshold;
-  const roundingM = engineMaxM * Math.pow(2, -23) * 4;
-  log.push(`float32 readback floor: bound ${roundingM.toExponential(3)} m `
-    + `at an engine magnitude of ${engineMaxM} m`);
+  const roundingM = 0;
+  log.push(`bound is a hard 0 m (Math.fround, FS-91); `
+    + `engine magnitude for the fraction is ${engineMaxM} m`);
   const st0 = view().staleMaxM;
   const drawn0 = view().drawnParts;
   // BEFORE THE WALK, so a base that was already stale cannot be reported as a
   // walk that broke it. The scatter probe makes the same check for the same
   // reason: a control that cannot tell "already wrong" from "made wrong" is not
   // measuring the thing in its name.
-  check('notStaleBeforeTheWalk', st0 < roundingM,
-    `staleMaxM ${st0.toExponential(4)} m over ${drawn0} drawn, `
-    + `bound ${roundingM.toExponential(3)} m`);
+  check('notStaleBeforeTheWalk', st0 === roundingM,
+    `staleMaxM ${st0} m over ${drawn0} drawn, bound ${roundingM} m exactly`);
   check('somethingIsDrawn', drawn0 >= 2, `drawnParts ${drawn0}`);
 
   // --- WALK. Never teleport. -------------------------------------------------
@@ -217,13 +223,13 @@
   // is the assertion that separates "the base flew four kilometres away" from
   // "float32 rounded in the seventh decimal", and the two are seven orders of
   // magnitude apart.
-  check('nothingWentStaleDuringTheWalk', worstStale < roundingM,
+  check('nothingWentStaleDuringTheWalk', worstStale === roundingM,
     `worst staleMaxM ${worstStale.toExponential(4)} m`
     + (worstAt === null ? '' : ` at slice ${worstAt}`)
-    + `, bound ${roundingM.toExponential(3)} m, which is `
+    + `, bound ${roundingM} m exactly, which is `
     + `${(worstStale / engineMaxM).toExponential(2)} of one rebase delta `
     + `against 1.0 for a detachment`);
-  check('nothingIsStaleNow', after.staleMaxM < roundingM,
+  check('nothingIsStaleNow', after.staleMaxM === roundingM,
     `staleMaxM ${after.staleMaxM.toExponential(4)} m over ${after.drawnParts} drawn`);
   check('thePlanDidNotMove', worstMoved === 0,
     `worst body-frame displacement ${worstMoved} m`);
@@ -234,7 +240,7 @@
     fails, rebaseThresholdM: threshold, rebasesObserved,
     drawnParts: after.drawnParts, staleMaxM: after.staleMaxM,
     worstStaleM: worstStale, staleSlices, worstBodyFrameMoveM: worstMoved,
-    roundingBoundM: roundingM,
+    boundM: roundingM,
     staleFraction: worstStale / engineMaxM,
     slices, log,
   };

@@ -63,7 +63,28 @@ export function stalenessOf(f: Factory | null,
     if (m === null) continue;
     out.drawn++;
     origin.toEngine(p.pos, scratch);
-    const d = Math.hypot(m[12] - scratch.x, m[13] - scratch.y, m[14] - scratch.z);
+    // FS-91: ROUND THE EXPECTATION THE WAY THE GPU ROUNDED THE REALITY.
+    //
+    // `matrixAt` reads back out of a `BatchedMesh`, which stores instance
+    // matrices as FLOAT32 because they are on their way to the GPU, and
+    // `toEngine` composes in f64. Differencing the two directly measures the
+    // narrowing as well as the staleness, and FS-89 accommodated that with a
+    // bound derived from four float32 ULP at the engine magnitude.
+    //
+    // THE ACCOMMODATION WAS PRINCIPLED AND THIS IS BETTER, and it came from the
+    // physics lane hitting the identical thing on a launch pad: 1e-6 m at 137 m,
+    // 4e-6 at 244 m and 6e-6 at 367 m, which is 2^-23 times the distance and is
+    // therefore not a leak. `Math.fround` narrows the expectation through the
+    // same single-precision step the stored matrix already went through, so the
+    // two agree BIT FOR BIT and the correct answer is a hard 0 again.
+    //
+    // A HARD ZERO THAT STAYS HARD AT ANY DISTANCE IS WORTH MORE THAN A DERIVED
+    // TOLERANCE, and the reason is not tidiness. The ULP floor grew with the
+    // rebase threshold, so at the shipped 4 km it was 1.9e-3 m: still seven
+    // orders below a detachment, and still a number that has to be recomputed
+    // and re-argued every time the threshold moves. This one never moves.
+    const d = Math.hypot(m[12] - Math.fround(scratch.x),
+      m[13] - Math.fround(scratch.y), m[14] - Math.fround(scratch.z));
     if (d > 0) out.stale++;
     if (d > out.maxM) { out.maxM = d; out.worst = p.id; }
   }
