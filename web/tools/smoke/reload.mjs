@@ -213,13 +213,18 @@ try {
           `${after.persist?.restored?.discovery}`);
   }
 
-  // GP-66. THE PAD HALF, and it is deliberately the SAME set of assertions for
-  // both of padclear's modes. The recover run and the leave-it-there control
-  // differ by one key press and are then held to one bar, which is what lets the
-  // control say something: if an UNcleared pad also comes back with nothing
-  // standing on it, then "clearing must not resurrect the vessel" is satisfied
-  // because a vessel is never in the slot to resurrect (PH-30), and that is a
-  // fact about the save format rather than about the recover verb.
+  // GP-66, amended by PH-74 on 2026-07-28. THE PAD HALF. Everything down to the
+  // clamp is still the SAME set of assertions for both of padclear's modes: the
+  // pad came back, the ledger counted it, it came back where it was, and its
+  // rollout counter survived. Those are facts about the save format and both
+  // modes owe them.
+  //
+  // What is no longer shared is what is STANDING on the pad. This block used to
+  // hold both modes to "nothing came back", and the control said something
+  // precisely because an uncleared pad also came back empty (PH-30: a vessel was
+  // never in the slot to resurrect). Vessels now persist, so the two modes have
+  // genuinely different correct answers and holding them to one bar would assert
+  // a bug. They diverge below, and the recover side is unchanged.
   if (setup === PADCLEAR) {
     const p0 = before.pads ?? null;
     const p1 = (after.padList ?? [])[0] ?? null;
@@ -238,14 +243,51 @@ try {
     check("the pad's rollouts counter survived the reload",
           p1 !== null && p1.rollouts === (p0?.rollouts ?? -1),
           `${p0?.rollouts} before, ${p1?.rollouts} after`);
-    check('NO vessel is standing on the reloaded pad',
-          after.flightLive === false && after.aboard === false,
-          `live ${after.flightLive}, aboard ${after.aboard}`);
-    check('and the reloaded flight session carries ZERO parts',
-          after.flightParts === 0, `${after.flightParts}`);
-    check('the reloaded pad is HOLDING, never mid-swing',
-          p1 !== null && p1.clampT === 0 && p1.holding === true
-          && p1.releasing === false, JSON.stringify(p1));
+    // PH-74, and the comment above this block is now HALF true. The rows below
+    // used to be shared by both modes on the reasoning that a vessel is never in
+    // the save slot to resurrect (PH-30). That stopped being a fact about the
+    // save format on 2026-07-28: a vessel left on a pad now SURVIVES a reload by
+    // design, so "nothing came back" is the pass condition for `recover` and the
+    // FAILURE condition for `leave`.
+    //
+    // Split by mode rather than deleted, because the recover run still needs
+    // them exactly as written: they are the only thing standing between us and a
+    // pad that resurrects a recovered rocket, which is the regression PH-30 and
+    // GP-66 exist to catch. Deleting them to make `leave` green would have
+    // thrown away the control that gives the whole runner its meaning.
+    const recovered = before.mode === 'recover';
+    if (recovered) {
+      check('NO vessel is standing on the reloaded pad',
+            after.flightLive === false && after.aboard === false,
+            `live ${after.flightLive}, aboard ${after.aboard}`);
+      check('and the reloaded flight session carries ZERO parts',
+            after.flightParts === 0, `${after.flightParts}`);
+      check('the reloaded pad is HOLDING, never mid-swing',
+            p1 !== null && p1.clampT === 0 && p1.holding === true
+            && p1.releasing === false, JSON.stringify(p1));
+    } else {
+      // The mirror image, and it is asserted against the BEFORE measurement
+      // rather than against a constant, so it states "what was standing there
+      // came back" without this runner having to know how many parts a rocket
+      // has. A restore that dropped the vessel leaves this at 0.
+      check('the vessel left on the pad CAME BACK with all its parts',
+            after.flightParts === before.flightParts && before.flightParts > 0,
+            `${before.flightParts} before, ${after.flightParts} after`);
+      // Restoring a vessel must never also seat the player in it. This is the
+      // one that would hand Reid a rocket he did not climb into.
+      check('and it came back with NOBODY aboard',
+            after.aboard === false, `${after.aboard}`);
+      // Deliberately NOT asserted here: `flightLive`, and `holding` on the pad.
+      // Neither has been measured across a `leave` reload, and asserting an
+      // unmeasured expectation in either direction is how a control ends up
+      // encoding a bug as the spec. See the physics.md PH-74 note.
+    }
+    // Mode-independent either way: a reloaded pad is never caught mid-swing,
+    // whatever is or is not standing on it. A clamp restored half-open would be
+    // a real defect in both modes.
+    check('the reloaded pad is never mid-swing',
+          p1 !== null && p1.clampT === 0 && p1.releasing === false,
+          JSON.stringify(p1));
   }
 
   // GP-65. THE HEALTH HALF. Health is per-entity state no other field in the

@@ -5,13 +5,28 @@
 // depend on re-deriving a site frame, and the address rides along so a reloaded
 // base still refuses a second pad on the same platform.
 //
-// THE CLAMP STATE IS DELIBERATELY NOT SAVED. A pad is restored HOLDING, always,
-// and the reason is that the flight the clamps were released for is itself not
-// in the save (PH-30: the world save cannot describe a player who is strapped
-// in, so it is refused while aboard). A pad reloaded mid-swing would therefore
-// be holding a rocket that does not exist, with its arms open, which is a
-// picture of a state the game cannot be in. Restoring shut is the only answer
-// consistent with what the rest of the slot is allowed to contain.
+// THE CLAMP STATE IS DELIBERATELY NOT SAVED. A pad is restored HOLDING, always.
+//
+// The ORIGINAL reason for this is no longer true and is recorded here because it
+// is the kind of stale justification that gets a correct behaviour deleted by
+// someone who notices the premise has rotted. It used to read: the flight the
+// clamps were released for is itself not in the save, because PH-30 refused a
+// save while the player was strapped in, so a pad reloaded mid-swing would be
+// holding a rocket that does not exist. Both halves of that have since changed.
+// Vessels persist (2026-07-28), and the save is no longer refused while aboard.
+//
+// The behaviour survives the loss of its original reason, on a narrower one: a
+// half-open clamp is a state no restore can land in COHERENTLY. Restore shut and
+// the two possible worlds are both consistent, because a rocket that is still
+// clamped is held and a rocket that has left is held by nothing. Restore
+// mid-swing and the pad is animating a release for a vessel whose own restored
+// state says nothing about how far through that release it was, since clampT
+// lives on the pad and not on the vessel. Shut is the only value that cannot
+// contradict the vessel row next to it.
+//
+// If the clamp state is ever genuinely needed across a reload, the fix is to
+// save it ON THE VESSEL alongside its mode, not on the pad, so the two cannot
+// disagree. Do not simply start persisting `clampT` here.
 //
 // `SAVE_VERSION` deliberately does NOT move for this. The field is optional and
 // its absence is a legal world with no pad in it, so nothing MISREADS an old
