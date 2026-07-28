@@ -45,6 +45,7 @@ import { socketReachM } from './FactoryKinds.js';
 import type { MachineAddr } from './MachinePlacement.js';
 import type { Site } from './StructureGrid.js';
 import type { Vec3d } from '../world/PlanetBody.js';
+import { socketNamesFor } from './FactoryTemplates.js';
 
 /** One authored socket, in its building's own local frame. */
 export interface SocketDef { name: string; local: THREE.Vector3 }
@@ -68,51 +69,26 @@ export interface SnapProposal {
 }
 
 /**
- * Which sockets each kind publishes that MEAN something to a placement.
+ * FS-85: THE `WANT` TABLE IS GONE, and what replaced it is one lookup.
  *
+ * It used to be a hand-maintained `Record<string, string[]>` here, a second one
+ * naming the same sockets with directions in `FactoryPorts`, and a third naming
+ * the files in `FactoryTemplates`. The three encoded an implication (a port must
+ * be read, and to be read its file must be opened) as three lists somebody had
+ * to keep in step, and on 2026-07-28 they went out of step and unwired the whole
+ * factory in the shipped build. `FactoryTemplates` carries the full account and
+ * the argument for why the row is now impossible to omit rather than merely
+ * detectable.
+ *
+ * What this file still owns is the JUDGEMENT the old table's comment carried,
+ * and it is worth restating because it is easy to lose in a refactor:
  * `socket_status`, `socket_power_in`, `socket_smoke` and `socket_drill_tip` are
- * deliberately absent: they are render anchors, and offering to snap a belt to a
- * smelter's chimney is how a snap system stops being trusted.
+ * deliberately never asked for, because they are render anchors, and offering to
+ * snap a belt onto a smelter's chimney is how a snap system stops being trusted.
+ * That judgement now lives beside the port declarations themselves, which is the
+ * better home for it: the reason a socket is excluded is the same reason it is
+ * not a port.
  */
-const WANT: Record<string, string[]> = {
-  belt: ['socket_belt_in', 'socket_belt_out'],
-  miner: ['socket_item_out'],
-  smelter: ['socket_item_in', 'socket_item_out'],
-  // FS-43: THE ELECTRIC SMELTER WAS MISSING FROM THIS TABLE, and until ports
-  // became the connection rule the omission cost nothing visible: an esmelter
-  // simply never caught a snap, which reads as a stiff crosshair rather than as
-  // a defect. It is a separate `BuildKind` drawing the smelter's own asset
-  // (FactoryKinds says why), so it publishes the same two item ports and has to
-  // be asked for them under its own key, because `readMachineSockets` is keyed
-  // by the TEMPLATE key and not by the file.
-  esmelter: ['socket_item_in', 'socket_item_out'],
-  // FS-56. THE ASSEMBLER IS THE FIRST BUILDING WITH TWO INLETS, and it names
-  // them `_a` and `_b` rather than publishing `socket_item_in` twice, because a
-  // glTF scene is looked up by name and a duplicate name is a node you cannot
-  // address. Nothing downstream cares which suffix is which: `faceOf` derives
-  // the housing face from the socket's own position, so an author who moves
-  // input B from the right face to the left one needs no code change here or in
-  // `FactoryPorts`. The two are on DIFFERENT faces on purpose, which is what
-  // lets two belts arrive at one machine without crossing.
-  assembler: ['socket_item_in_a', 'socket_item_in_b', 'socket_item_out'],
-  // FS-81: THE CHEST'S ROW WAS MISSING HERE TOO, and this is the half that
-  // actually did the damage. `FactoryTemplates` decides which FILE is opened and
-  // this decides which SOCKETS are taken out of it, so a kind absent from either
-  // one publishes no ports; a kind that `FactoryPorts.PORT_NAMES` claims has
-  // ports and that publishes none makes `portsLoaded()` false; and
-  // `FactoryWiring.wire` returns early on exactly that. FS-70 shipped `chest` in
-  // PORT_NAMES and in neither table, and from that commit until now NOTHING in
-  // the factory was wired, in any world, in the shipped build.
-  //
-  // THREE TABLES KEYED THE SAME WAY AND EDITED SEPARATELY IS THE DEFECT, and the
-  // row below only closes today's instance of it. `PORT_NAMES` is a claim, this
-  // is a request, and `TEMPLATES` is a file: the claim can outrun the other two
-  // silently because nothing checks the three against each other at build time.
-  // It is the shape INSTRUMENTS.md names, an assumption held in copies that do
-  // not know about each other, and it is carried up as named debt rather than
-  // fixed under a rescale.
-  chest: ['socket_item_in', 'socket_item_out'],
-};
 
 /** The sockets items LEAVE by. Everything else is an inlet. */
 const OUTWARD = new Set(['socket_belt_out', 'socket_item_out']);
@@ -135,7 +111,7 @@ export function readMachineSockets(
 ): Map<string, SocketDef[]> {
   const out = new Map<string, SocketDef[]>();
   for (const [key, entry] of scenes) {
-    const want = WANT[key];
+    const want = socketNamesFor(key);
     if (want === undefined) continue;
     const list: SocketDef[] = [];
     for (const name of want) {
