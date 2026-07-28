@@ -148,6 +148,37 @@ produced twelve items, reading 98 after the fix). A report that says null where
 it means "I do not compute this for your kind" cannot be told from one that
 means "empty", and that ambiguity is invisible until a new kind arrives.
 
+## A tool that reports nothing may not be running (FS-70)
+
+**A syntax error anywhere silently disables semantic type checking everywhere.**
+TypeScript reports syntactic diagnostics for the file that failed to parse and
+then declines to run semantic checks on the WHOLE program. `npx tsc --noEmit`
+therefore prints a handful of errors that all name one file, and zero type
+errors for every other file in the repository, which is indistinguishable at a
+glance from a clean run with unrelated noise at the top.
+
+This was found with four parse errors in one lane's shader file standing between
+another lane's change and any type checking at all. Stubbing that one file in a
+scratch copy and re-running found two REAL errors the suppressed run had hidden:
+a `Record<K, V>` table that a new union member had made incomplete, and three
+invented method names on a class that has none of them. Both would have reached
+a browser.
+
+**So a clean tsc reading is only meaningful if the SYNTAX error count is also
+zero.** "No semantic errors" and "no semantic errors were looked for" print
+almost identically, and the second is the more likely reading whenever any file
+in the tree is mid-edit. The check is cheap: if the output names only one file,
+and the codes are TS1xxx rather than TS2xxx, nothing else was examined.
+
+The general rule this belongs to is the one the rest of this file keeps arriving
+at from different directions. **A green result from an instrument that was never
+running is the most expensive kind of green**, because it costs nothing to
+obtain, survives review, and is indistinguishable from the real thing until
+something ships. The other instances here are a control that depends on
+something that moved, an assertion that has never been seen to fail, a scene
+that cannot exhibit the defect, and a probe pointed at the wrong axis. This one
+is the tool declining to start.
+
 ## Cross-references
 
 Standing rules 4, 7, 10, 11 and DW-7, DW-20 in
