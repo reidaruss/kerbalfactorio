@@ -123,7 +123,15 @@ export class Cheats {
         return this.say(id, false, 'refused: Start Fresh must be confirmed first');
       }
       void this.startFresh();
-      return this.say(id, true, 'wiping the world');
+      // GP-155. `pending` MARKS THIS AS THE ACKNOWLEDGEMENT AND NOT THE ANSWER.
+      // Two receipts carry this id: this one, synchronously, saying the wipe has
+      // STARTED, and `startFresh`'s own, after two IndexedDB round trips, saying
+      // whether the slot is really gone. They were told apart only by whether
+      // `detail` happened to be present, so a reader arriving between them got
+      // the acknowledgement and read `detail.slotRemains` off `undefined`. A
+      // report that says nothing where it means "not yet" cannot be told from
+      // one that means "no", on the one verb in the game that destroys a save.
+      return this.say(id, true, 'wiping the world', { pending: true });
     }
     if (id === 'fuel') return this.toggleFuel();
     if (id === 'orbit') return this.toOrbit();

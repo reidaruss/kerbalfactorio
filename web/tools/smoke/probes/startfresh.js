@@ -31,15 +31,37 @@
     return ok;
   };
   const opts = { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 };
+  /**
+   * GP-155. RE-QUERIED AFTER THE AWAIT, AND IT REPORTS WHETHER ANYTHING
+   * HAPPENED, because the old helper did neither and that cost a session.
+   *
+   * It captured the button, awaited 0.11, then clicked the node it was still
+   * holding. `PauseMenu.render` replaces `body.innerHTML` wholesale on any view
+   * change, so that node can be DETACHED by the time the click lands, and a
+   * click on a detached node never reaches the delegated listener on `.body`.
+   * The helper then returned `true` anyway, because all it ever checked was
+   * that the element existed BEFORE it started.
+   *
+   * Measured: `press('startfresh')` reported success and `Cheats.log` contained
+   * no `startfresh` receipt at all, so the next line read `armed: false` and
+   * blamed the arming. This is GP-152's defect one layer out: the same rebuild,
+   * eating a probe's press instead of a player's focus.
+   *
+   * Returning "a receipt appeared" rather than "an element existed" is the fix
+   * that matters. A press helper that cannot fail is not a press.
+   */
   const press = async (id) => {
-    const el = document.querySelector(`#of-pause button[data-cheat="${id}"]`);
-    if (el === null) return false;
-    el.dispatchEvent(new PointerEvent('pointerdown', opts));
+    const at = () => document.querySelector(`#of-pause button[data-cheat="${id}"]`);
+    if (at() === null) return false;
+    const before = of.cheat().log.length;
+    at().dispatchEvent(new PointerEvent('pointerdown', opts));
     await sleep(0.11);
+    const el = at();
+    if (el === null) return false;
     el.dispatchEvent(new PointerEvent('pointerup', opts));
     el.click();
     await sleep(0.3);
-    return true;
+    return of.cheat().log.length > before;
   };
 
   await sleep(0.6);
@@ -129,10 +151,27 @@
   // can never report what it did, which is how this line came to exist.
   of.cheat('norestart');
   check('pressing the confirm works', await press('startfresh:confirm'));
-  await sleep(0.6);
-  const receipt = of.cheat().log.filter((r) => r.id === 'startfresh:confirm').pop();
+  // GP-155. WAIT FOR THE ANSWER, DO NOT SLEEP A GUESS AT IT. This was
+  // `await sleep(0.6)` and a `.pop()`, which is a race against a store: the
+  // terminal receipt lands about 190 ms after the press on a quiet machine and
+  // later on a busy one, so the probe popped the ACKNOWLEDGEMENT and threw a
+  // TypeError reading `detail.slotRemains` off it.
+  let receipt = null;
+  for (let i = 0; i < 60 && receipt === null; ++i) {
+    await sleep(0.25);
+    receipt = of.cheat().log.filter((r) => r.id === 'startfresh:confirm'
+      && r.detail !== undefined && r.detail.pending !== true).pop() ?? null;
+  }
+  check('the wipe reported back at all, rather than only acknowledging',
+    receipt !== null,
+    JSON.stringify(of.cheat().log.filter((r) => r.id === 'startfresh:confirm')));
+  if (receipt === null) return { valid: false, fails, log, why: 'no terminal receipt' };
   check('the wipe reports itself done', receipt.done === true,
     JSON.stringify(receipt));
+  const ack = of.cheat().log.filter((r) => r.id === 'startfresh:confirm'
+    && r.detail !== undefined && r.detail.pending === true).pop() ?? null;
+  check('and the acknowledgement is marked as one, not left looking like the answer',
+    ack !== null && ack.detail.pending === true, JSON.stringify(ack));
   // VERIFIED FROM THE STORE, not from the delete's return value: `clearSlot`
   // swallows its own errors by design (a save is not a rule), so a delete that
   // silently did nothing would otherwise report success.
