@@ -62,6 +62,12 @@ export function catalogueReport(catalogue: readonly PartRow[], view: MeshFacts,
                                 affordInCore: (p: PartRow) => boolean): unknown {
   return catalogue.map((p) => ({
     index: p.index, id: p.id, name: p.label, asset: p.asset,
+    // GP-150. The two dimensions, because a probe that wants to know whether a
+    // part INTERSECTS the hull it is mounted on has to know how wide it is, and
+    // the alternative is a hard-coded 1.25 in a probe, which is exactly the
+    // copied constant INSTRUMENTS.md's asset entry is about.
+    diameterM: p.diameterM, heightM: p.heightM,
+    radialMount: p.radialMount, nodeTop: p.nodeTop, nodeBottom: p.nodeBottom,
     hasMesh: !view.missing.has(p.asset),
     renamed: view.renamed.has(p.asset),
     itemId: p.itemId, tier1: p.tier1,
