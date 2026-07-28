@@ -203,6 +203,40 @@ export class FlightMode {
     this.flash(ROLLOUT_NOTE);
   }
 
+  /**
+   * PH-76. TAKE CONTROL OF THE PROMOTED VESSEL FROM ANY DISTANCE.
+   *
+   * `board()` gates on `distanceToVessel() <= BOARD_RANGE_M` and that gate is
+   * CORRECT and stays: walking up to a rocket standing on the ground is a thing
+   * you do with your legs, and a key that seats you into a vehicle two hundred
+   * metres away would be a key that lies about where your body is. Nothing here
+   * loosens it.
+   *
+   * It is also the reason a vessel in orbit could never be re-entered. The one
+   * you left is 100 to 700 km up, so the range test can only ever refuse, and
+   * past ABANDON_RANGE_M the same key quietly ROLLS OUT A SECOND ROCKET on top
+   * of the first. That is not a handoff, it is a duplicate.
+   *
+   * So the remote path is a SEPARATE VERB rather than a widened gate. It is not
+   * reachable from the board key at all: it is reached from `resumeControl`,
+   * which has already established that the record exists and has already been
+   * promoted into a live session. Everything else it does is `climbIn` verbatim,
+   * because "the player is flying this vessel" must mean exactly one thing
+   * whichever door it was entered by.
+   *
+   * The BODY IS NOT MOVED, which is the same decision `releaseControl` makes in
+   * the other direction (FlightVessels.ts): the walker stayed where it parked
+   * (PH-68) and the camera simply goes to the rocket.
+   */
+  takeControlRemote(): boolean {
+    if (this.aboard) return true;
+    // A seat in a vessel that does not exist is the exact state `reload.mjs`
+    // carries a standing assertion against. Refusing is the only safe answer.
+    if (!this.session.live) { this.refuse('no vessel to take control of'); return false; }
+    this.climbIn();
+    return true;
+  }
+
   private climbIn(): void {
     this.aboard = true;
     this.boardings += 1;

@@ -11,8 +11,8 @@
 // asks a harness to prove it advanced the sim, and for this milestone that means
 // proving the OTHER sim advanced too, which is a different number from any of
 // the ones flight itself produces.
-import { currentVesselTick, demoteVessel, promoteVessel, syncPromoted,
-         vesselEngineReport } from './FlightVessels.js';
+import { currentVesselTick, demoteVessel, leaveVessel, promoteVessel,
+         resumeControl, syncPromoted, vesselEngineReport } from './FlightVessels.js';
 import { mayLeave, resumeReport, whyNotLeave } from './ResumeBoot.js';
 import { playerAnchorReport } from './PlayerAnchor.js';
 import { vesselSaveReport } from '../game/VesselSave.js';
@@ -37,6 +37,14 @@ function vesselReport(tick: number): Record<string, unknown> {
       clockS: registry.clockAt(r, tick), status: r.status,
       onPad: r.onPad, promoted: r.id === registry.promotedId,
       mayLeave: mayLeave(r), whyNot: whyNotLeave(r),
+      // PH-76. THE POSE, published because the handoff is the first thing that
+      // can get it wrong in a way nothing else notices. Fuel and orbit are
+      // already asserted across a reload; which way the nose points was not, and
+      // a vessel resumed pointing the wrong way flies a different mission while
+      // every other number reads healthy. It is a READ of the record, so no
+      // second authority is created (DW-26).
+      pose: { fwd: r.pose.fwd, right: r.pose.right, angVel: r.pose.angVel,
+              throttle: r.pose.throttle, sasMode: r.pose.sasMode },
       conic: r.where.kind === 'conic'
         ? { a: r.where.el.a, e: r.where.el.e, epoch: r.where.el.epoch } : null,
     })),
@@ -106,6 +114,28 @@ export function flightApi(s: Services): FlightDebugApi {
         case 'promote': {
           const id = typeof a === 'number' ? a : Number(a ?? 0);
           const ok = promoteVessel(f, id, currentVesselTick());
+          return { ok, id, vessels: vesselReport(currentVesselTick()),
+                   report: f.report() };
+        }
+        // PH-76. THE CONTROL HANDOFF, both directions, through the same two
+        // functions any UI will call. They are ops on `flight` rather than a new
+        // top-level entry because that is what `demote` and `promote` already
+        // are, and the handoff is the guarded verb on top of those two, not a
+        // second surface.
+        //
+        // BOTH RETURN `ok`, and for `leave` that boolean is the REFUSAL: a
+        // frozen vessel is turned away by `mayLeave`, nothing changes, and the
+        // reason lands in `report.message`. A refusal that is invisible from
+        // outside is a guard no probe can prove ever fired, which is the same
+        // argument `recover` makes four cases above.
+        case 'leave': {
+          const ok = leaveVessel(f, currentVesselTick());
+          return { ok, vessels: vesselReport(currentVesselTick()),
+                   report: f.report() };
+        }
+        case 'resume': {
+          const id = typeof a === 'number' ? a : Number(a ?? 0);
+          const ok = resumeControl(f, id, currentVesselTick());
           return { ok, id, vessels: vesselReport(currentVesselTick()),
                    report: f.report() };
         }
