@@ -179,6 +179,16 @@ export class Avatar {
       playingFp: this.arms?.playing ?? '',
       holdingFp: this.arms?.holding ?? '',
       swingKind: this.swingKind,
+      // PH-77. WHERE THE BODY IS ACTUALLY DRAWN, in engine metres, read off the
+      // group's own transform rather than recomputed. `place` writes it through
+      // `origin.toEngine` from the f64 feet every frame, so differencing it
+      // against that same f64 read is a HARD ZERO or a real defect; there is no
+      // tolerance to tune. It is here because a body left behind by a
+      // floating-origin rebase is not a wrong-looking body, it is an absent one,
+      // and "the avatar vanished" is equally consistent with the FP culling
+      // layer, a failed skin load and a shadow-only draw.
+      drawnEngineM: [this.group.position.x, this.group.position.y,
+                     this.group.position.z],
       worn: this.wornSlots,
       toolSwaps: this.toolSwaps,
       swingLeft: Math.round(this.swingLeft * 1000) / 1000,

@@ -50,6 +50,9 @@ export class LaunchPadView {
   private ghost: THREE.Mesh | null = null;
   private readonly ghostMat: THREE.MeshBasicMaterial;
   private readonly slots = new Map<number, PadSlots>();
+  /** The pad set the last `sync` drew, kept so `stats()` can ask whether the
+   *  drawn matrices still agree with it. Not used to draw anything. */
+  private synced: LaunchPads | null = null;
   private readonly p = new THREE.Vector3();
   private readonly pad = new THREE.Matrix4();
   private readonly local = new THREE.Matrix4();
@@ -113,6 +116,7 @@ export class LaunchPadView {
 
   /** One pass: place every pad and swing every clamp. */
   sync(pads: LaunchPads): void {
+    this.synced = pads;
     for (const part of pads.list) {
       let s = this.slots.get(part.id);
       if (s === undefined) {
@@ -197,7 +201,65 @@ export class LaunchPadView {
 
   stats(): unknown {
     return { ...this.batch.stats(), ghost: this.ghostVisible,
-      pads: this.slots.size, keys: [BODY, COLUMN, ARM] };
+      pads: this.slots.size, keys: [BODY, COLUMN, ARM], ...this.staleness() };
+  }
+
+  /**
+   * PH-77. IS THE PAD DRAWN WHERE IT ACTUALLY IS, in metres.
+   *
+   * The world-gen lane proved that a cached engine-space transform is left
+   * behind by the whole floating-origin rebase delta, measured at 4,000.089191 m
+   * across every scattered chunk, and nothing audited the rest of the consumers.
+   * A 24 m launch pad four kilometres away is not a wrong-looking pad, it is an
+   * ABSENT one, and "the pad vanished" is equally consistent with a pool
+   * refusal, a demolition and a culling bug. A distance between where the pad is
+   * drawn and where it now is reads non-zero for exactly one reason, and its
+   * magnitude names the delta.
+   *
+   * THE CORRECT VALUE IS A HARD ZERO AND NOT A TOLERANCE, because `sync` wrote
+   * the drawn matrix through `origin.toEngine` from this same body-frame `pos`
+   * and this re-derives it the same way. There is no band to tune and therefore
+   * nothing to quietly tune it to.
+   *
+   * THE COMPARISON IS MADE IN FLOAT32, THROUGH `Math.fround`, AND THAT IS WHAT
+   * KEEPS THE ZERO HARD. A `BatchedMesh` keeps its per-instance matrices in a
+   * float32 DataTexture, so `matrixAt` hands back the f64 value `sync` composed
+   * ROUNDED to single precision, and differencing it against the f64 original
+   * measures the storage rather than the placement. Measured, before this line
+   * existed: 0 with the pad at the origin, 1e-6 m at 137 m out, 4e-6 at 244 m
+   * and 6e-6 at 367 m, which is 2^-23 times the distance and is float32's
+   * relative epsilon exactly, not a rebase. Rounding the expectation the same
+   * way the GPU rounded the reality compares like with like and gives the exact
+   * zero back. The alternative was a tolerance, and a tolerance that has to
+   * cover 6e-6 today covers whatever it is asked to cover tomorrow.
+   *
+   * IT READS THE MATRIX THE `BatchedMesh` WILL REALLY DRAW WITH, through
+   * `MachineBatch.matrixAt`, and never a mirror of `sync`'s own decision: a
+   * check recomputed out of the same assumptions as the thing it checks agrees
+   * with it by construction and can never fail. `drawnPads` is published beside
+   * it because a zero measured over zero pads is the cheapest green there is.
+   *
+   * Costs nothing per frame, because nothing calls it per frame: it is a report
+   * surface, and reading a report advances no frames. That matters, because any
+   * frame a probe runs lets the next `sync` heal the very state being measured.
+   */
+  private staleness(): { staleMaxM: number; stalePads: number; drawnPads: number } {
+    const out = { staleMaxM: 0, stalePads: 0, drawnPads: 0 };
+    if (this.synced === null) return out;
+    for (const part of this.synced.list) {
+      const s = this.slots.get(part.id);
+      if (s === undefined || s.body < 0) continue;
+      const m = this.batch.matrixAt(s.body);
+      if (m === null) continue;
+      out.drawnPads++;
+      this.origin.toEngine(part.pos, this.p);
+      const f = Math.fround;
+      const d = Math.hypot(m[12] - f(this.p.x), m[13] - f(this.p.y),
+                           m[14] - f(this.p.z));
+      if (d > 0) out.stalePads++;
+      if (d > out.staleMaxM) out.staleMaxM = d;
+    }
+    return out;
   }
 }
 
