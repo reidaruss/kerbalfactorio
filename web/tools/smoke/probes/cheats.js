@@ -39,6 +39,7 @@
   const combat = location.search.includes('combat=1');
   let controls = {};
   let video = {};
+  let audio = {};
   const opts = { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 };
   /**
    * Press the REAL button for a control, held 110 ms, RE-QUERIED between the
@@ -127,11 +128,12 @@
   // come back here and say so.
   const stubButtons = [...document.querySelectorAll('#of-pause .row.stub button')]
     .map((b) => b.getAttribute('data-cheat'));
-  check('exactly two sections are built: Controls and Video',
-    stubButtons.length === 2 && stubButtons.includes('page:controls')
-    && stubButtons.includes('page:video'), stubButtons.join(','));
-  check('the other three are reserved and carry no control at all',
-    stubs.length - stubButtons.length === 3, `${stubs.length} stubs`);
+  check('exactly three sections are built: Controls, Video and Audio',
+    stubButtons.length === 3 && stubButtons.includes('page:controls')
+    && stubButtons.includes('page:video') && stubButtons.includes('page:audio'),
+    stubButtons.join(','));
+  check('the other two are reserved and carry no control at all',
+    stubs.length - stubButtons.length === 2, `${stubs.length} stubs`);
   const shown = of.pause().view;
   check('the menu NAMES the save slot this world lives in',
     (document.querySelector('#of-pause [data-slot]') ?? {}).textContent
@@ -144,8 +146,8 @@
   check('the Controls section now carries an Open button',
     ctlStub !== null && ctlStub.querySelector('button') !== null,
     ctlStub === null ? 'no row' : ctlStub.className);
-  check('and the three unbuilt sections still do NOT',
-    document.querySelectorAll('#of-pause .row.stub button').length === 2,
+  check('and the two unbuilt sections still do NOT',
+    document.querySelectorAll('#of-pause .row.stub button').length === 3,
     `${document.querySelectorAll('#of-pause .row.stub button').length} buttons`);
   check('opening it works', await press('page:controls'));
   const ctl = of.pause().view.controls;
@@ -226,6 +228,81 @@
     document.querySelectorAll('#of-pause .ctlr[data-flag] button').length === 0
     && /[Rr]ead only/.test(document.querySelector('#of-pause .row.note').textContent),
     document.querySelector('#of-pause .row.note').textContent.slice(0, 60));
+
+  // ======================================================================
+  // B4. GP-134: OPTIONS / AUDIO, the first options page that WRITES
+  // ======================================================================
+  check('going back from video', await press('page:'));
+  check('opening audio works', await press('page:audio'));
+  const A = () => of.pause().view.audio;
+  const a0 = A();
+  audio = { supported: a0.supported, state: a0.state, unlocked: a0.unlocked,
+    silentBecause: a0.silentBecause, muteKey: a0.muteKey, v0: a0.volume,
+    buses: a0.buses.map((b) => b.name) };
+  check('the page names the mute key from the BINDING TABLE, not a literal',
+    a0.muteKey === of.pause().view.controls.flatMap((g) => g.rows)
+      .find((r) => r.action === 'mute').keys[0],
+    `${a0.muteKey}`);
+  // THE DIAGNOSIS IS THE REASON THE PAGE EXISTS. A driven browser never makes a
+  // trusted gesture, so the context is NOT unlocked and the page must say so in
+  // words rather than showing a silent game with no explanation. That is the
+  // assertion: `silentBecause` is non-empty exactly when nothing can be heard.
+  const audible = a0.supported && a0.unlocked && !a0.muted && a0.volume > 0;
+  check('silentBecause is non-empty exactly when nothing can be heard',
+    (a0.silentBecause === '') === audible,
+    `audible=${audible} because="${a0.silentBecause}"`);
+  if (!a0.unlocked) {
+    check('and it offers the button that fixes the commonest cause',
+      document.querySelector('#of-pause button[data-cheat="audio:unlock"]') !== null,
+      'no unlock button');
+  }
+
+  // THE SLIDER REALLY MOVES THE GAIN, and it is driven as a real `input` event
+  // on the real range control, which is what a player's drag produces.
+  const slider = document.querySelector('#of-pause input[data-audio="volume"]');
+  check('the volume slider is on screen', slider !== null);
+  if (slider !== null) {
+    slider.value = '35';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(0.35);
+    const a1 = A();
+    audio.v35 = a1.volume;
+    audio.busVolume = of.audio().volume;
+    check('dragging it moves the MASTER GAIN, not just the label',
+      Math.abs(a1.volume - 0.35) < 1e-6 && Math.abs(of.audio().volume - 0.35) < 1e-6,
+      `view ${a1.volume}, bus ${of.audio().volume}`);
+    // AND IT PERSISTS. `AudioBus` writes `of.audio` to localStorage on every
+    // set, which is what makes "a player who muted did not mean until the next
+    // refresh" true; the probe reads the store rather than trusting the setter.
+    audio.stored = localStorage.getItem('of.audio');
+    check('and the setting was written to the store, so a reload keeps it',
+      JSON.parse(audio.stored ?? '{}').v === 0.35, `${audio.stored}`);
+    slider.value = '70';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(0.3);
+  }
+
+  // MUTE, through the real button, and it must agree with the key.
+  const wasMuted = A().muted;
+  check('pressing Mute works', await press('audio:mute'));
+  const a2 = A();
+  audio.mutedAfter = a2.muted;
+  check('the mute button really toggles the bus',
+    a2.muted === !wasMuted && of.audio().muted === a2.muted,
+    `${wasMuted} -> ${a2.muted}, bus ${of.audio().muted}`);
+  check('and a muted game SAYS that is why it is silent',
+    !a2.muted || a2.silentBecause.toLowerCase().includes('muted'),
+    a2.silentBecause);
+  check('pressing it again puts it back', await press('audio:mute'));
+  check('and the bus is back where it started', of.audio().muted === wasMuted,
+    `${of.audio().muted}`);
+  // THE RESERVED HALF, said out loud rather than implied by four dead sliders.
+  check('the four buses are listed and none of them claims a separate level',
+    a0.buses.length === 4 && a0.buses.every((b) => b.separate === false),
+    JSON.stringify(a0.buses.map((b) => [b.name, b.separate])));
+  check('and no bus row carries a control',
+    document.querySelectorAll('#of-pause .ctlr[data-bus] input, '
+      + '#of-pause .ctlr[data-bus] button').length === 0);
 
   check('going Back returns to the root page', await press('page:'));
   check('and the root page is showing again',
@@ -534,6 +611,7 @@
     shell: { stubs, slotKey: shown.slotKey, mode: shown.mode },
     controls,
     video,
+    audio,
     startFresh: { armedSentence: sentence, beforeArm: before, afterArm: armed,
       afterCancel: cancelled, unarmedRefusal: refusal },
     enemies: enemyState,

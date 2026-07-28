@@ -176,3 +176,43 @@
   border-bottom-width: 2px;
   border-radius: 3px;
 }
+
+/* --- GP-134: the audio screen -------------------------------------------- */
+.of-pgrp .row.note.ok { border-left-color: var(--of-good); }
+.of-pgrp .row.note.ok .nm { color: var(--of-good); }
+.of-pgrp .row.note.warn { border-left-color: var(--of-bad); }
+.of-pgrp .row.note.warn .nm { color: var(--of-bad); }
+.of-pgrp .row.note .nm { flex: 0 0 auto; }
+
+.ctlr.vol { gap: 12px; }
+
+.ctlr input[type="range"] {
+  flex: 1 1 auto;
+  max-width: 320px;
+  height: 4px;
+  margin: 0;
+  appearance: none;
+  background: var(--of-edge);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.ctlr input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--of-accent);
+  border: 1px solid var(--of-panel-2);
+  cursor: grab;
+}
+
+.ctlr input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--of-accent);
+  border: 1px solid var(--of-panel-2);
+}
+
+.of-pgrp.aud .ctlr .share { flex: 1 1 auto; text-align: right; }

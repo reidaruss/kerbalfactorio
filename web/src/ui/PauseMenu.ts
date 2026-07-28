@@ -23,6 +23,7 @@ import { esc } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
 import type { ControlGroup } from '../player/BindingText.js';
 import type { VideoRow } from '../app/VideoSettings.js';
+import type { AudioView } from '../app/AudioSettings.js';
 
 /** One testing control, as data. The panel has no opinion about any of them. */
 export interface CheatRow {
@@ -52,6 +53,8 @@ export interface PauseView {
   /** GP-132. The video knobs this session is actually running at. Read only:
    *  see app/VideoSettings.ts for why the wiring is a separate, cross-lane job. */
   video: VideoRow[];
+  /** GP-134. The audio page, and the only options page that WRITES. */
+  audio: AudioView;
   mode: string;
   /** The IndexedDB key this world lives under. Named on screen because the one
    *  destructive control in here destroys exactly it. */
@@ -82,9 +85,11 @@ const STUBS: readonly { name: string; waiting: string; page: string }[] = [
   { name: 'Options / Video', page: 'video',
     waiting: 'what this session is running at, read live from the parsed '
       + 'config. Changing them from here is not built yet.' },
-  { name: 'Options / Audio', page: '',
-    waiting: 'not yet: master volume and mute exist and are on the backslash '
-      + 'key; they get sliders here, plus per-bus levels.' },
+  // GP-134. The only options page that WRITES, because `AudioBus` already has
+  // live persisted setters and nothing else is editing web/src/audio/ this
+  // round. It also diagnoses a silent game, which nothing anywhere could do.
+  { name: 'Options / Audio', page: 'audio',
+    waiting: 'master volume, mute, and why the game might be silent.' },
   { name: 'Multiplayer', page: '',
     waiting: 'not yet: host, join and the server list. The sim is already '
       + 'deterministic and command-driven, which is the hard half.' },
@@ -113,6 +118,14 @@ export class PauseMenu extends Modal {
     // ONE delegated listener, never one per button: the rows are rebuilt
     // whenever anything in the view moves and per-row listeners leak with them.
     // The probe presses the same real <button> a player presses.
+    // THE SLIDER NEEDS ITS OWN LISTENER, because `input` does not bubble as a
+    // click and a range control that only reported on mouse-up would feel dead
+    // while dragging. Same delegation, second event, one extra line.
+    this.body.addEventListener('input', (e) => {
+      const el = e.target as HTMLInputElement | null;
+      if (el === null || el.getAttribute('data-audio') !== 'volume') return;
+      this.onPress(`audio:vol:${el.value}`);
+    });
     this.body.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement | null)?.closest('button');
       if (b === null || b === undefined || b.disabled) return;
@@ -134,15 +147,18 @@ export class PauseMenu extends Modal {
   /** Rebuild, diffed on one key so an open menu nothing has moved is free. */
   render(view: PauseView): void {
     if (!this.open) return;
+    const a = view.audio;
     const key = `${view.page}|${view.mode}|${view.slotKey}|${view.assisted}|`
-      + `${view.confirm}|`
+      + `${view.confirm}|${a.volume}|${a.muted ? 1 : 0}|${a.state}|`
+      + `${a.silentBecause}|`
       + view.cheats.map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;
     this.last = key;
     this.body.innerHTML = view.page === 'controls' ? controls(view.controls)
       : view.page === 'video' ? video(view.video)
-        : header(view) + stubs() + testing(view);
+        : view.page === 'audio' ? audio(view.audio)
+          : header(view) + stubs() + testing(view);
   }
 
   invalidate(): void { this.last = ''; }
@@ -275,4 +291,58 @@ function video(rows: VideoRow[]): string {
         + `${r.applyBy === 'reload' ? ' (needs a reload)' : ''}</span>`
         + '</div>').join('') + '</div>').join('')
     + '</div>';
+}
+
+/**
+ * GP-134. THE AUDIO SCREEN, and the only options page with working controls.
+ *
+ * THE DIAGNOSIS IS FIRST, above the controls, because it is the reason to open
+ * this page at all: `AudioBus`'s own header says every browser blocks audio
+ * until a gesture and that "the game would be mute for exactly the players who
+ * never noticed why". `silentBecause` names ONE reason out of the four that can
+ * gate sound, in the order they actually gate, and the page offers the button
+ * that fixes the commonest of them. When there is nothing wrong it says so
+ * rather than showing an empty box, because a blank diagnostic and a broken one
+ * look identical.
+ *
+ * The counters are shown next to it deliberately: "412 sounds asked for, none
+ * of them audible" is a completely different fault from "nothing has tried to
+ * make a sound", and one number tells them apart.
+ */
+function audio(a: AudioView): string {
+  const pct = Math.round(a.volume * 100);
+  const diag = a.silentBecause === ''
+    ? '<div class="row note ok"><span class="nm">Sound is on</span>'
+      + `<span class="why">volume ${pct}%, context ${esc(a.state)}</span></div>`
+    : '<div class="row note warn"><span class="nm">You will hear nothing</span>'
+      + `<span class="why">${esc(a.silentBecause)}</span>`
+      + (a.unlocked || !a.supported ? ''
+        : '<button type="button" data-cheat="audio:unlock">Start audio</button>')
+      + '</div>';
+  return '<div class="of-pgrp ctl aud"><h4>Audio'
+    + '<button type="button" class="back" data-cheat="page:">Back</button></h4>'
+    + diag
+    + '<div class="ctlg"><h5>Master</h5>'
+    + '<div class="ctlr vol"><span class="nm">Volume</span>'
+    + `<input type="range" min="0" max="100" step="1" value="${pct}" `
+    + 'data-audio="volume" aria-label="master volume">'
+    + `<span class="keys"><kbd data-vol="${pct}">${pct}%</kbd></span></div>`
+    + `<div class="ctlr"><span class="nm">Mute</span>`
+    + `<span class="keys"><kbd>${esc(a.muteKey)}</kbd></span>`
+    + `<button type="button" data-cheat="audio:mute">`
+    + `${a.muted ? 'Unmute' : 'Mute'}</button></div>`
+    + '</div>'
+    + '<div class="ctlg"><h5>What has played</h5>'
+    + `<div class="ctlr"><span class="nm">One-shots since boot</span>`
+    + `<span class="keys"><kbd>${a.plays}</kbd></span></div>`
+    + `<div class="ctlr"><span class="nm">Running loops</span>`
+    + `<span class="keys"><kbd>${a.loops}</kbd></span></div>`
+    + `<div class="ctlr"><span class="nm">Time spent building voices</span>`
+    + `<span class="keys"><kbd>${a.cpuMs} ms</kbd></span></div>`
+    + '</div>'
+    + '<div class="ctlg"><h5>Buses</h5>'
+    + a.buses.map((b) => `<div class="ctlr" data-bus="${esc(b.name)}">`
+      + `<span class="nm">${esc(b.name)}</span>`
+      + `<span class="share">${esc(b.note)}</span></div>`).join('')
+    + '</div></div>';
 }

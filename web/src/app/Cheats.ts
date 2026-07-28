@@ -26,8 +26,8 @@
 import { clearSlot, readSlot } from '../game/SaveGame.js';
 import { assistedReport, clearAssisted, isAssisted, noteCheat } from '../game/Assisted.js';
 import { livePropellantKg, refillTanks, warpToOrbit } from '../sim/FlightCheats.js';
-import { controlGroups } from '../player/BindingText.js';
-import { videoRows } from './VideoSettings.js';
+import { optionPages, pressOption } from './OptionsPages.js';
+import { AudioBus } from '../audio/AudioBus.js';
 import type { CheatRow, PauseView } from '../ui/PauseMenu.js';
 import type { Gameplay } from '../game/Gameplay.js';
 import type { FlightMode } from './FlightMode.js';
@@ -53,8 +53,8 @@ export interface CheatDeps {
   gameplay: () => Gameplay | null;
   flight: () => FlightMode | null;
   body: PlanetBody;
-  /** GP-132: the PARSED config, read only. The video screen shows what the
-   *  renderer was handed, not what the defaults happen to be. */
+  /** GP-132: the PARSED config, read only, so the video screen shows what the
+   *  renderer was handed rather than the defaults. */
   cfg: Config;
   /**
    * How a wiped world comes back. A PORT rather than a bare `location.reload()`
@@ -76,8 +76,7 @@ export class Cheats {
   /** GP-103: Start Fresh is ARMED by one press and FIRED by a second one, and
    *  this is the only state that connects them. */
   private armed = false;
-  /** GP-131. Which page of the menu is showing. '' is the root. */
-  private page = '';
+  private page = '';   // GP-131. '' is the root page.
   /** Probe-only: see the `norestart` branch in `press`. */
   private restartOff = false;
   infiniteFuel = false;
@@ -99,13 +98,15 @@ export class Cheats {
    * separate verbs, because they belong to the row that raised them.
    */
   press(id: string): CheatReceipt {
-    // GP-131. NAVIGATION, not a cheat, and it goes through the same door for
-    // the reason the door exists: one place a button press is handled means one
-    // place a button press can be wrong about what it did.
+    // GP-131. NAVIGATION, not a cheat, routed here for the same reason.
     if (id.startsWith('page:')) {
       this.page = id.slice(5);
       return this.say(id, true, this.page === '' ? 'back' : `showing ${this.page}`);
     }
+    // GP-134. The options pages' own verbs. NOT cheats, and routed here anyway,
+    // because one place a press is handled is one place it can be wrong.
+    const opt = pressOption(this.d.gameplay()?.sfx.bus ?? null, id);
+    if (opt !== '') return this.say(id, true, opt);
     if (id === 'startfresh') return this.arm();
     if (id === 'startfresh:cancel') { this.armed = false; return this.say(id, true, 'cancelled'); }
     if (id === 'startfresh:confirm') {
@@ -346,11 +347,10 @@ export class Cheats {
     ];
     return {
       page: this.page,
-      // DERIVED ON EVERY VIEW and never stored, so neither screen can go stale
-      // against a rebind or a flag. The panel diffs its own key, so this only
-      // reaches the DOM when something actually moved.
-      controls: controlGroups(),
-      video: videoRows(this.d.cfg),
+      // DERIVED ON EVERY VIEW and never stored, so no screen can go stale
+      // against a rebind, a flag or a volume. See app/OptionsPages.ts.
+      ...optionPages(this.d.cfg, this.d.gameplay()?.sfx.bus ?? null,
+        () => new AudioBus()),
       mode: g?.mode.label ?? 'Survival',
       slotKey: this.slotKey(),
       assisted: isAssisted()
