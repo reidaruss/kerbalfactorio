@@ -32,10 +32,24 @@
   const A = (typeof OF_ARGS === 'object' && OF_ARGS !== null) ? OF_ARGS : {};
   const TX = 80, TY = 45;
   const sweep = A.sweep ?? [0.16, 0.22, 0.30, 0.40, 0.50];
+  // PITCH -30 AND NOT -10, AND THIS IS THE WHOLE OF RN-64's INSTRUMENT FIX.
+  // At -10 the horizon sits inside the frame, so most of what props never touch
+  // is SKY, and the "ground" control band was measuring the sky. A sky tile
+  // reads about 101 counts at dawn and 130 at noon, which is a surface that
+  // barely responds to the sun; the same camera pitched to -30 reads 35 and 95
+  // for real ground. That single substitution is where RN-60's headline "the
+  // prop band swings 71.4 counts where the ground swings 22.4, a 3.2x
+  // disagreement" came from, and re-measured below the horizon the same
+  // quantity is 0.10 of normalised response, not 0.44.
+  //
+  // Terrain does not brighten threefold because the camera tilted twenty
+  // degrees, which is what said the band was not terrain. The guard below makes
+  // it impossible to reintroduce silently.
+  const DEFAULT_PITCH = -30;
 
   of.teleport(A.lat ?? 12, A.lon ?? 150, 2);
   await of.settle(30);
-  of.look(A.yaw ?? 300, A.pitch ?? -10);
+  of.look(A.yaw ?? 300, A.pitch ?? DEFAULT_PITCH);
   of.setTime(0.30);
   await of.settle(30);
 
@@ -54,9 +68,33 @@
   // number below is measuring that side effect instead of the sun.
   const restored = of.framehash(TX, TY);
 
+  // THE FIRST-PERSON ARMS ARE NOT GROUND, AND THEY WERE THE CONTROL BAND.
+  //
+  // "A tile props never touch is ground" was the assumption, and the arms
+  // falsify it: they are drawn in the view-model pass, which has its own sun,
+  // its own hemisphere at 1.1 with warm colours, and no scattering integral at
+  // all, so they barely respond to the sun's elevation. At RN-60's pitch of -10
+  // they fill the bottom of the frame and dominated the band: the "ground"
+  // there reads 101 counts at dawn and 130 at noon, a surface that hardly moves,
+  // while real ground at the same site reads 35 and 95. THAT is where "the prop
+  // band swings 71.4 counts where the ground swings 22.4, a 3.2x disagreement"
+  // came from. Re-measured against real ground the same quantity is 0.10 of
+  // normalised response, and the conclusion drawn from the 3.2x does not hold.
+  //
+  // They are excluded BY THEIR OWN SIGNATURE rather than by a screen rectangle,
+  // for the same reason the prop band is: a rectangle is a constant that goes
+  // stale when the frame changes. The arms are the only thing in this scene
+  // that moves while the camera, the sun and the world are all pinned, so two
+  // captures one settled frame apart differ exactly where they are.
+  const t0 = of.framehash(TX, TY);
+  await of.settle(1);
+  const t1 = of.framehash(TX, TY);
+
   const propMask = [];
   const groundMask = [];
+  const armTiles = [];
   for (let i = 0; i < withProps.tiles.length; ++i) {
+    if (Math.abs(t1.tiles[i] - t0.tiles[i]) > 0.02) { armTiles.push(i); continue; }
     const d = Math.abs(withProps.tiles[i] - noProps.tiles[i]);
     // A tile is PROP only if props dominate it, and GROUND only if props are
     // bit-exactly absent. Everything in between is a mixed tile and is thrown
@@ -65,6 +103,20 @@
     if (d > 12) propMask.push(i);
     else if (d === 0) groundMask.push(i);
   }
+
+  // Published for orientation only. It is NOT an assertion, and the first
+  // version of it was: "the control band sits higher in the frame than the
+  // props" looks like sky contamination and is in fact what happens whenever
+  // the camera looks DOWN, because distant ground is at the top and the near
+  // understorey is at the bottom. A rule whose answer cannot express the
+  // failure is INSTRUMENTS.md's set-versus-order entry with a different subject.
+  const rowOf = (i) => Math.floor(i / TX);
+  const meanRow = (idx) => {
+    if (idx.length === 0) return 0;
+    let s = 0;
+    for (const i of idx) s += rowOf(i);
+    return s / idx.length;
+  };
 
   const meanOver = (tiles, idx) => {
     if (idx.length === 0) return 0;
@@ -115,7 +167,30 @@
   const propRange = +(pMax - pMin).toFixed(3);
   const groundRange = +(gMax - gMin).toFixed(3);
 
+  const propRow = +meanRow(propMask).toFixed(2);
+  const groundRow = +meanRow(groundMask).toFixed(2);
+
   const fails = [];
+  // THE CONTROL BAND MUST BE LIT BY THE SUN THIS PROBE IS SWEEPING, and that is
+  // a property of the band rather than a threshold on the answer. A sweep that
+  // takes the sun to 2.5 degrees of elevation removes essentially all of the
+  // direct term, so any surface actually lit by it loses most of its light. A
+  // band that keeps four fifths of its brightness at dawn is not that surface.
+  //
+  // This is the assertion RN-60 needed and did not have. At its pitch of -10 the
+  // ground band reads 110.7 at dawn against 137.7 at its brightest, a normalised
+  // minimum of 0.80, and it fails here by name; at -30 the same site reads 27.2
+  // against 110.4, i.e. 0.25, and passes. Terrain does not brighten fourfold
+  // because the camera tilted twenty degrees, and that is what says the -10 band
+  // was sky and first-person arms rather than ground. Everything RN-60 concluded
+  // from "the ground swings 22.4 counts" rests on the band it was taken over.
+  const groundNormMin = Math.min(...curve.map((c) => c.groundNorm));
+  if (groundNormMin > 0.60) {
+    fails.push(`the ground control band keeps ${groundNormMin} of its peak at the `
+      + `dimmest sun in the sweep: it is not a surface this sun lights, so every `
+      + `normalised comparison here is against the wrong control. Pitch the `
+      + `camera down until the horizon and the first-person arms leave the frame.`);
+  }
   if (restored.hash !== withProps.hash) {
     fails.push('propsVisible(false) then (true) did not restore the frame: the '
       + 'toggle has a side effect and every reading here is measuring it');
@@ -138,8 +213,14 @@
   return {
     valid: fails.length === 0,
     fails,
-    site: { lat: A.lat ?? 12, lon: A.lon ?? 150, yaw: A.yaw ?? 300, pitch: A.pitch ?? -10 },
+    site: {
+      lat: A.lat ?? 12, lon: A.lon ?? 150,
+      yaw: A.yaw ?? 300, pitch: A.pitch ?? DEFAULT_PITCH,
+    },
     tiles: { total: withProps.tiles.length, prop: propMask.length, ground: groundMask.length },
+    // Published rather than only asserted, so a reader can see how far the two
+    // bands are from each other without re-running the probe.
+    bands: { propRow, groundRow, rows: TY, animated: armTiles.length },
     toggleRestoresFrame: restored.hash === withProps.hash,
     curve,
     // The headline pair. `worstGap` is the largest disagreement between the two

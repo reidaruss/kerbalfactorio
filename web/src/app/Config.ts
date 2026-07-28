@@ -138,6 +138,22 @@ export interface Config {
    */
   readonly scatterWet: boolean;
   /**
+   * `?iblground=0` removes the GROUND half of the environment map (RN-64), so
+   * every stock material goes back to a lower hemisphere containing the sky
+   * model marched through the planet. It is a build-time switch rather than a
+   * runtime one on purpose: the shell exists or it does not, and a runtime
+   * toggle would leave a stale cube behind until the next rebuild trigger,
+   * which would make a matched pair measure the wrong frame.
+   */
+  readonly iblGround: boolean;
+  /**
+   * `?iblgroundamp=` multiplies RN-64's ground radiance. The shipped value is 1
+   * and it is NOT a look knob: it exists so that "this term measures near zero"
+   * can be told apart from "this term does not reach its consumer", which are
+   * the same reading and have opposite fixes.
+   */
+  readonly iblGroundAmp: number;
+  /**
    * How far canopy trees reach, in metres. `?canopy=0` REMOVES THE FOREST and
    * is the one-binary control for the whole of WG-59 to WG-63: the scatter
    * takes the identical branch it took before the tier existed, so a before and
@@ -145,8 +161,8 @@ export interface Config {
    * with two streamed chunk sets and two shadow states.
    *
    * It is a distance rather than a boolean so the same control also sweeps the
-   * cost: the triangles a forest adds go as the SQUARE of this, and 520 and 620
-   * measured in one binary is what set the shipping value.
+   * cost: the triangles a forest adds go as the SQUARE of this, and 260 / 520 /
+   * 900 measured in one binary is what set the shipping value.
    */
   readonly canopyRadiusM: number;
   /**
@@ -335,6 +351,12 @@ export function parseConfig(search: string): Config {
     fadeSecs: Math.max(0, num(p, 'fade', 0.25)),
     shadows: p.get('shadows') !== '0',
     atmosphere: p.get('atmos') !== '0',
+    // RN-64. `?iblground=0` builds no ground shell, so the environment's lower
+    // hemisphere goes back to the sky model marched through the planet, which
+    // is what every prop, tree, pebble and machine was lit from below by until
+    // this pass. Standing rule 7: one flag per term, and this one is the term.
+    iblGround: p.get('iblground') !== '0',
+    iblGroundAmp: Math.max(0, num(p, 'iblgroundamp', 1)),
     stars: p.get('stars') !== '0',
     props: p.get('props') !== '0',
     density: Math.max(0, num(p, 'density', 1)),

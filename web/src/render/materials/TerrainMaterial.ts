@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import type { DepthPolicy } from '../DepthPolicy.js';
 import type { AtmosphereUniforms } from './Atmosphere.glsl.js';
 import { biomeColorArray } from './BiomePalette.js';
+import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { FAR_SCALE } from '../Scenes.js';
 
@@ -198,12 +199,15 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uBodyCenter: { value: new THREE.Vector3(0, 0, 0) },
       uMaxRelief: { value: o.maxReliefM },
       uBiomeColor: { value: palette },
-      uAmbient: { value: new THREE.Color(0.030, 0.034, 0.045) },
+      // THE SHARED OBJECTS, not copies of the numbers. SkyAtmosphere's ground
+      // shell holds these same two so the environment's lower hemisphere is
+      // computed from the terrain's own ambient model (RN-64, TerrainAmbient.ts).
+      uAmbient: { value: TERRAIN_AMBIENT },
       uTime: { value: 0 },
       uFadeDur: { value: o.fadeSecs },
       uMetresPerUnit: { value: scaled ? 1 / FAR_SCALE : 1 },
       uCascadeFar: { value: splits },
-      uSkyAmbient: { value: 0.32 },
+      uSkyAmbient: { value: TERRAIN_SKY_AMBIENT },
       uArtAmp: { value: artAmp },
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },

@@ -230,7 +230,14 @@ export function registerSystems(s: Services, loop: Loop): void {
     // not. Driving them from the SAME sun elevation the sky uses is what stops
     // the avatar staying noon-lit on the night side.
     const elev = s.sky.elevation(s.observer.up);
-    s.ibl.update(s.scenes.sky, elev);
+    // RN-64. The observer's up IS the direction from the planet centre, so this
+    // is the /core classifier answering "what ground am I standing on" at the
+    // one place that already holds both the oracle and the eye. SkyIbl turns it
+    // into an albedo through the same palette TerrainMaterial uploads, and only
+    // when it is actually rebuilding, so this is one WASM call per frame and no
+    // colour work at all in between.
+    const up = s.observer.up;
+    s.ibl.update(s.scenes.sky, elev, s.oracle.biomeAt(up.x, up.y, up.z));
     const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
     sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
     // W5. How much sky the EYE can see, measured before the lights are set so

@@ -18,6 +18,15 @@ import type { DepthPolicy } from '../DepthPolicy.js';
 import { BIOME_COUNT } from './BiomePalette.js';
 import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_ART_PARS } from './TerrainArt.glsl.js';
+import { TERRAIN_SUN_IRRADIANCE } from './TerrainAmbient.js';
+
+/**
+ * The direct-sun irradiance literal, INLINED into the GLSL rather than passed as
+ * a uniform. It emits the same characters it always did, so the compiled program
+ * is unchanged; what it buys is that SkyAtmosphere's ground shell reads the same
+ * exported constant instead of a transcribed 1.45. See TerrainAmbient.ts.
+ */
+const SUN_IRR = TERRAIN_SUN_IRRADIANCE.toFixed(2);
 
 export function terrainVertexShader(depth: DepthPolicy): string {
   return /* glsl */`
@@ -371,9 +380,9 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       //   the terminator's transmittance.
       float skyView = 0.5 + 0.5 * dot(n, up);
       vec3 ground = vBiomeColor * (uAmbient + skyAmb
-        + sunT * (1.45 * max(dot(up, sd), 0.0) * shadow));
+        + sunT * (${SUN_IRR} * max(dot(up, sd), 0.0) * shadow));
       vec3 lit = albedo * (uAmbient + skyAmb * skyView + ground * (1.0 - skyView)
-        + sunT * (1.45 * ndl * shadow));
+        + sunT * (${SUN_IRR} * ndl * shadow));
 
       // Aerial perspective. Same function, same parameters as the sky quad, so a
       // mountain at 40 km goes blue and MATCHES the horizon behind it exactly.

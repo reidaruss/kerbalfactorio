@@ -20,6 +20,10 @@ export interface SkyOptions {
   readonly atmosphere: boolean;
   readonly stars: boolean;
   readonly pixelRatio: number;
+  /** `?iblground=0` builds no ground shell at all, which is RN-64's control. */
+  readonly iblGround: boolean;
+  /** `?iblgroundamp=` scales the ground radiance. 1 ships; see setGroundGain. */
+  readonly iblGroundAmp: number;
 }
 
 export class SkyPass {
@@ -32,6 +36,8 @@ export class SkyPass {
   /** 0 in space or at night, 1 in lit air. Drives the star fade. */
   daylight = 0;
   private readonly sky: SkyAtmosphere | null;
+  /** RN-64. False under `?iblground=0` or `?atmos=0`. */
+  private readonly iblGroundOn: boolean;
   private readonly stars: Starfield | null;
   private readonly sunSprite: THREE.Sprite;
 
@@ -59,6 +65,21 @@ export class SkyPass {
 
     this.sky = o.atmosphere ? createSkyAtmosphere(this.atmos, o.tier) : null;
     if (this.sky !== null) this.group.add(this.sky.mesh);
+
+    // THE GROUND HALF OF THE ENVIRONMENT (RN-64) IS THE SKY BOX ITSELF, in a
+    // mode raised for the duration of one capture.
+    //
+    // THE FIRST DESIGN WAS A SECOND MESH INTERPOSED INTO THE SKY SCENE, and it
+    // was abandoned on a measurement rather than on taste: with the shell
+    // rendering correctly in the presented frame (it paints the lower
+    // hemisphere, the horizon lands where it should, the discard is right), a
+    // FORTY-fold change in its radiance moved the prop band by 0.05 of a count,
+    // i.e. by nothing. A changed input that does not change the output is a
+    // wiring diagnosis, never a small effect. The one mesh that is certainly in
+    // the capture is the one the capture has always worked from, so the ground
+    // half goes there and the graph question disappears.
+    this.iblGroundOn = o.atmosphere && o.iblGround && this.sky !== null;
+    this.sky?.setGroundGain(o.iblGroundAmp);
 
     this.stars = o.stars ? createStarfield(o.seedLo, o.pixelRatio) : null;
     if (this.stars !== null) this.group.add(this.stars.points);
@@ -101,6 +122,22 @@ export class SkyPass {
 
   /** Sun elevation as dot(sunDir, localUp). */
   elevation(up: THREE.Vector3): number { return this.sunDirection.dot(up); }
+
+  /** RN-64. Whether a ground half exists to be raised at all. */
+  get hasIblGround(): boolean { return this.iblGroundOn; }
+
+  /** RN-64. The biome albedo the ground half of the environment is built from. */
+  setGroundAlbedo(c: THREE.Color): void { this.sky?.setGroundAlbedo(c); }
+
+  /**
+   * RN-64. Raise the ground half. SkyIbl calls this with true, captures, and
+   * calls it with false, all inside one synchronous call, so no presented frame
+   * can see it raised. `?iblground=0` makes it a no-op rather than a branch at
+   * the call site, on the `setAerial` precedent: off is the identity.
+   */
+  setGroundMode(on: boolean): void {
+    if (this.iblGroundOn) this.sky?.setGroundMode(on);
+  }
 
   static dirForT(t: number, out: THREE.Vector3): THREE.Vector3 {
     const a = t * Math.PI * 2;

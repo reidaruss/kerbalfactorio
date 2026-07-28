@@ -110,6 +110,10 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'water', 'waterripple', 'waterglint', 'waterrefract', 'waterfoam',
   'rippleamp', 'glintamp', 'refractamp', 'foamamp',
   'wetsand', 'wetsandamp',
+  // RN-64. `iblground=0` removes the ground half of the environment map, which
+  // is the whole of that fix in one flag: with it off every stock material is
+  // lit from below by the sky model marched through the planet, i.e. by nothing.
+  'iblground', 'iblgroundamp',
   'vab', 'flight',
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one

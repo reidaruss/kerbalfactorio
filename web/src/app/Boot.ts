@@ -116,6 +116,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     atmosphere: cfg.atmosphere && cfg.clearColor === 0,
     stars: cfg.stars,
     pixelRatio: renderer.pixelRatio,
+    iblGround: cfg.iblGround,
+    iblGroundAmp: cfg.iblGroundAmp,
   });
   scenes.sky.add(sky.group);
 
@@ -136,7 +138,9 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // Stock PBR materials (the player, the tools, the biome props) have no
   // scattering integral of their own, so they need an environment or they
   // render as black silhouettes on a lit hillside. Section 7.1, due at W4.
-  const ibl = new SkyIbl(renderer, [scenes.near, scenes.viewModel]);
+  // RN-64: and the GROUND half, which is what stops them crushing to black at
+  // dawn while the terrain they stand on stays lit.
+  const ibl = new SkyIbl(renderer, [scenes.near, scenes.viewModel], sky);
   // The view-model pass has NO lights of its own beyond the sun and Headlamp's
   // hemisphere: the arms are 0.35 m from the eye, always front-lit, and a
   // cascade fitted to a 22 m box would be wasted on them.
