@@ -51,6 +51,29 @@ if (BIOME_ATLAS.length !== BIOME_NAMES.length) {
 export const SHARED_ATLAS: readonly string[] = [ASSETS.detailCards];
 
 /**
+ * The canopy trees, loaded for every biome like the understorey and for the
+ * same reason: which biome a tree stands in is a DENSITY question answered by
+ * `BIOME_PROPS` below, not a question about which file it lives in. Three
+ * biomes carry trees at three different densities and a fourth is deliberately
+ * bare, and one atlas serving all of them is what makes the Forest/Plains edge
+ * a gradient instead of a seam.
+ *
+ * SEPARATE FROM `SHARED_ATLAS`, which is not a style choice. `PropLibrary.load`
+ * reads `SHARED_ATLAS` to decide which atlases get the `:detail` batch suffix,
+ * and that suffix sets `castShadow = false`. A 12 m tree that casts no shadow
+ * is worse than no tree: the whole reason a forest reads as mass is that the
+ * ground under it is dark.
+ *
+ * ZERO NEW DRAW CALLS, and this is why the atlas is worth having at all. A
+ * `PropLibrary` batch is keyed by MATERIAL NAME alone, and the three trees use
+ * only `OF_Bark`, `OF_LeafDeep`, `OF_Leaf` and `OF_LeafLight`, all four of
+ * which `props_forest.glb` already contributes. The trees land in batches that
+ * exist. A single new role name would have cost one draw in the near pass and
+ * one in each of the three shadow cascades.
+ */
+export const CANOPY_ATLAS: readonly string[] = [`${ROOT}props/props_canopy.glb`];
+
+/**
  * The props each biome scatters, as node stems, with the atlas subset the moon
  * biomes take. `collides` is the ASSET-SPECS section 3.2 table: eighteen props
  * carry a `col_<Prop>` box and the other twenty-three are walk-through, and the
@@ -69,6 +92,38 @@ export interface PropSpec {
    * that distance costs an instance and carries no pixels.
    */
   readonly detail?: boolean;
+  /**
+   * A CANOPY tree. Drawn out to `ScatterTuning.CANOPY_RADIUS_M` rather than the
+   * 170 m biome ring, switched to its far geometry at `CANOPY_LOD2_M` rather
+   * than at 45 m, and multiplied by the stand field and the treeline. Mutually
+   * exclusive with `detail`, and the three tiers are selected by these two flags
+   * alone so a spec cannot land in two pools.
+   */
+  readonly canopy?: boolean;
+  /**
+   * Per-instance HEIGHT band, as a fraction of the authored height, overriding
+   * the shared foliage band for this spec only. Absent means the shared band,
+   * bit-for-bit as before.
+   *
+   * WHY IT EXISTS AND WHY IT IS HERE. `ScatterLook`'s foliage band is 0.55 to
+   * 1.30 and it is correct for what it was written for: a meadow IS a height
+   * distribution, and a grass card at 0.55 is still grass. A canopy tree at
+   * 0.55 of 12 m is 6.6 m, which is the harvest conifer's height, and the whole
+   * design decision this pass rests on is that a scenery tree cannot be
+   * mistaken for a harvest node from its silhouette. A band that can produce
+   * that collision would falsify the rule on roughly a fifth of the trees in
+   * the world.
+   *
+   * TERRITORY, stated rather than assumed: the shared bands are rendering's
+   * (`ScatterLook.ts`), and this field does not touch them. It is an OPT-IN
+   * override, so every prop that existed before this line reads exactly the
+   * number it read before. It sits in the registry beside the density it
+   * qualifies because both are answers to "what does a canopy tree do", but it
+   * is a look number in a placement file and it should move with `ScatterLook`
+   * when that file moves.
+   */
+  readonly heightLo?: number;
+  readonly heightHi?: number;
 }
 
 /**
@@ -94,6 +149,27 @@ const P = (stem: string, collides: boolean, density: number, jitter = 0.25): Pro
 /** A ground-detail card. Same units, but only drawn inside the detail ring. */
 const D = (stem: string, density: number, jitter = 0.3): PropSpec =>
   ({ stem, collides: false, density: density * DENSITY_SCALE, jitter, detail: true });
+
+/**
+ * A canopy tree. Same units again, so a tree's density is directly comparable
+ * to the fern's underneath it and the two can be read side by side.
+ *
+ * `collides: true` buys the contact skirt and nothing else: `collides` is
+ * consumed in exactly one place in the client (`ScatterEmit`'s skirt test) and
+ * no prop in this game has ever stopped a player. A 12 m trunk meeting bare
+ * ground is the pasted-on read `ScatterLook.CONTACT_CARDS` exists to remove, so
+ * the trees take a skirt where a skirt is visible; `Scatter` withholds it
+ * beyond the understorey ring, where five cards at the foot of a tree 300 m
+ * away would be five instances nobody can see.
+ *
+ * The jitter is narrow (0.14, against 0.25 for a boulder) and the height band
+ * is narrower still, for the reason `heightLo` gives: variety here comes from
+ * having three species of three different heights, not from stretching one.
+ */
+const C = (stem: string, density: number): PropSpec => ({
+  stem, collides: true, density: density * DENSITY_SCALE, jitter: 0.14,
+  canopy: true, heightLo: 0.84, heightHi: 1.20,
+});
 
 /**
  * The understorey, shared by every vegetated biome. Densities are much higher
@@ -153,6 +229,73 @@ const DRY_DETAIL: readonly PropSpec[] = [
   D('Detail_SedgeRosette', 18000),
 ];
 
+/**
+ * THE CANOPY, per biome, and the four numbers that decide what this planet's
+ * forests look like from a distance.
+ *
+ * FOREST is the closed forest: 640 before the scale, 3,840 trees per square
+ * kilometre after it, which is a mean spacing of about 16 m before the stand
+ * field concentrates it. Inside a stand the realised spacing is nearer 12 m and
+ * in a clearing it is 50 m, which is the range a real forest actually spans.
+ *
+ * HILLS gets a third of that and PLAINS a ninth, and those two numbers are
+ * doing more work than their size suggests. The biome classifier hands out
+ * Forest or Plains on ONE moisture threshold (`biome.h:159`), so the two abut
+ * along a line with nothing in between. Giving Plains real, sparse trees and
+ * Hills real, thin ones turns that line into a hundred metres of thinning
+ * woodland, and it means a player crossing a biome boundary sees a landscape
+ * change rather than a switch. The stand field does the rest: at the Plains
+ * density the stands read as isolated copses in open grass, which is exactly
+ * what a low-density stand field produces and is why this needed no extra rule.
+ *
+ * MOUNTAINS DOES CARRY A DENSITY, and the first version of this table did not,
+ * which was a mistake in two separate ways.
+ *
+ * It was wrong as ARCHITECTURE, because "Mountains has no trees" was then
+ * stated twice: once as an absent row here and once as the treeline in
+ * `ScatterTuning`. Two rules with the same content is the DW-26 failure in
+ * miniature, and the two would drift the first time either moved.
+ *
+ * It was wrong as an INSTRUMENT, and that half was measured. With no Mountains
+ * row the canopy branch never executed anywhere above the treeline, so the term
+ * that deletes trees with altitude had no site in the world at which it could
+ * be observed doing so, and `canopyBareCells` read 0 at all seven survey sites
+ * while the treeline was in fact working. Giving Mountains a real, small
+ * density makes bareness a CONSEQUENCE of the altitude term rather than a
+ * second statement of it, and it puts the refusal counter somewhere it can
+ * fire. The mountain flanks are also the only steep ground in the survey, which
+ * is where the 44 degree slope gate becomes observable for the same reason (R8:
+ * a probe that only ever runs on flat ground cannot see a slope rule).
+ *
+ * What it looks like: nothing, nearly everywhere, because the Mountains biome
+ * begins around 2,280 m and the treeline ends at 1,850 m. Where a mountain foot
+ * dips below that, it is a few wind-bent stragglers, which is what the bottom
+ * of a real mountain looks like and is currently a hard edge.
+ *
+ * BEACH, POLAR, OCEAN and the three moon biomes get nothing. Beach is the pale
+ * dry sand Reid picked out of the WG-53 survey and a treeline behind it would
+ * be a different picture; the rest have no soil to argue about.
+ */
+const CANOPY_FOREST: readonly PropSpec[] = [
+  C('Canopy_Pine', 300), C('Canopy_Fir', 90), C('Canopy_Broadleaf', 250),
+];
+/** Thinner and more coniferous with height, which is what a hillside does. */
+const CANOPY_HILLS: readonly PropSpec[] = [
+  C('Canopy_Pine', 110), C('Canopy_Fir', 40), C('Canopy_Broadleaf', 50),
+];
+/** Copses in open grass. Broadleaf-dominant: an oak in a field, not a pine. */
+const CANOPY_PLAINS: readonly PropSpec[] = [
+  C('Canopy_Pine', 18), C('Canopy_Fir', 5), C('Canopy_Broadleaf', 47),
+];
+/**
+ * Mountain foot only, and conifer only: no broadleaf survives up here, and the
+ * treeline deletes almost all of this. It exists so the deletion is something
+ * the code DOES rather than something the table omits. See the note above.
+ */
+const CANOPY_MOUNTAIN: readonly PropSpec[] = [
+  C('Canopy_Pine', 55), C('Canopy_Fir', 25),
+];
+
 export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [
   [P('Ocean_Kelp', false, 900), P('Ocean_SeabedRock', true, 400)],
   [P('Beach_Rock', true, 500), P('Beach_Driftwood', true, 260),
@@ -161,14 +304,14 @@ export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [
   [P('Plains_GrassTuftA', false, 9000), P('Plains_GrassTuftB', false, 7000),
     P('Plains_FlowerCluster', false, 1800), P('Plains_PebbleA', false, 900),
     P('Plains_PebbleB', true, 420), P('Plains_Shrub', false, 700),
-    ...GROUND_DETAIL],
+    ...GROUND_DETAIL, ...CANOPY_PLAINS],
   [P('Forest_Fern', false, 4200), P('Forest_DeadTree', true, 420),
     P('Forest_FallenLog', true, 260), P('Forest_MushroomCluster', false, 1500),
-    P('Forest_Rock', true, 520), ...GROUND_DETAIL],
+    P('Forest_Rock', true, 520), ...GROUND_DETAIL, ...CANOPY_FOREST],
   [P('Hills_LargeBoulder', true, 380), P('Hills_ScreePatch', false, 1600),
-    P('Hills_Shrub', false, 2200), ...GROUND_DETAIL],
+    P('Hills_Shrub', false, 2200), ...GROUND_DETAIL, ...CANOPY_HILLS],
   [P('Mtn_RockSpire', true, 320), P('Mtn_TalusChunk', true, 1500),
-    P('Mtn_SnowPatch', false, 900), ...DRY_DETAIL],
+    P('Mtn_SnowPatch', false, 900), ...DRY_DETAIL, ...CANOPY_MOUNTAIN],
   [P('Polar_IceShard', true, 700), P('Polar_SnowDrift', false, 1100),
     P('Polar_IceBoulder', true, 380)],
   [P('Moon_RockSmall', false, 1800), P('Moon_RockLarge', true, 420),

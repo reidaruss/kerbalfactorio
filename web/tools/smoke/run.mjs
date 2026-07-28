@@ -129,7 +129,13 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // GP-79 / GP-82. Also not an isolation switch: it turns DANGER back on inside
   // sandbox, which DW-31 leaves off by default so a designer testing a rocket is
   // not fighting while they do it. Ignored in survival, which is always hostile.
-  'combat']) {
+  'combat',
+  // WG-59, standing rule 7. `canopy=0` removes the forest and `canopyshade=0`
+  // stops it thinning the understorey underneath it, so the trees and the
+  // ground cover they shade are two costs that can be read apart in ONE
+  // binary. A distance rather than a flag, so the same control sweeps the
+  // cost, which goes as its square.
+  'canopy', 'canopyshade']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

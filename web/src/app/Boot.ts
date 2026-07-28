@@ -33,7 +33,7 @@ import { LevelAction } from '../player/LevelAction.js';
 import { LevelRing } from '../world/LevelRing.js';
 import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
-import { BIOME_ATLAS, SHARED_ATLAS } from '../assets/Registry.js';
+import { BIOME_ATLAS, SHARED_ATLAS, CANOPY_ATLAS } from '../assets/Registry.js';
 import { registerPool } from '../game/InstancePools.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
 import { ViewRouter } from '../player/ViewRouter.js';
@@ -219,8 +219,15 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // `detail_cards.glb` is the ground-detail layer that sits UNDER the biome
   // props. It shipped, validated, and was declared in Registry.ts and never
   // passed to a loader, so it had never been drawn (blocker A-2).
+  // The canopy atlas rides with the biome atlases and NOT with SHARED_ATLAS,
+  // because `PropLibrary.load` reads SHARED_ATLAS to decide which batches get
+  // the `:detail` suffix and that suffix sets `castShadow = false`. See
+  // `Registry.CANOPY_ATLAS`. It is dropped entirely at `?canopy=0`, so the
+  // control does not merely place no trees, it does not load them either.
+  const canopy = cfg.canopyRadiusM > 0 ? [...CANOPY_ATLAS] : [];
   const atlases = cfg.props
-    ? (cfg.detailCards ? [...BIOME_ATLAS, ...SHARED_ATLAS] : [...BIOME_ATLAS])
+    ? (cfg.detailCards ? [...BIOME_ATLAS, ...canopy, ...SHARED_ATLAS]
+      : [...BIOME_ATLAS, ...canopy])
     : [];
   const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow,
     cfg.propCull, cfg.propLod2);
@@ -236,9 +243,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // it inverted, which handed the oracle over only in the one configuration
   // that then refuses to use it, so the feature never ran in ANY build while
   // every reading looked healthy. See WET_REJECT_M.
+  // WG-59: the body radius is the datum the TREELINE is measured from, and it
+  // is READ from the body rather than written down here, on the DW-18 rule that
+  // cost a walker a wrong gravity constant. `canopyRadiusM` 0 is the control.
   const scatter = new Scatter(props, t.pool, cfg.props, cfg.density,
     cfg.scatterFair, cfg.grassShort,
-    cfg.scatterWet ? null : oracle.water, () => voxels?.handle ?? 0);
+    cfg.scatterWet ? null : oracle.water, () => voxels?.handle ?? 0,
+    body.radiusM, cfg.canopyRadiusM, cfg.canopyShade);
 
   // W5. Created only when there is a character: with no player nobody digs, and
   // an unbound edits handle would arm voxel collision for a flying camera. The

@@ -4,6 +4,7 @@
 // makes a run reproducible.
 
 import { parsePost, type PostSettings } from '../render/post/PostConfig.js';
+import { CANOPY_RADIUS_M } from '../world/ScatterTuning.js';
 
 export type QualityTier = 'low' | 'med' | 'high';
 
@@ -136,6 +137,25 @@ export interface Config {
    * rule 7: the measurement that proves the diagnosis stays in the build).
    */
   readonly scatterWet: boolean;
+  /**
+   * How far canopy trees reach, in metres. `?canopy=0` REMOVES THE FOREST and
+   * is the one-binary control for the whole of WG-59 to WG-63: the scatter
+   * takes the identical branch it took before the tier existed, so a before and
+   * an after picture differ in one query parameter rather than in two builds
+   * with two streamed chunk sets and two shadow states.
+   *
+   * It is a distance rather than a boolean so the same control also sweeps the
+   * cost: the triangles a forest adds go as the SQUARE of this, and 520 and 620
+   * measured in one binary is what set the shipping value.
+   */
+  readonly canopyRadiusM: number;
+  /**
+   * `?canopyshade=0` keeps the understorey at full density under a closed
+   * canopy. The trees and the ground cover they shade are two separate terms
+   * with two separate costs, and a single number that mixed them could be used
+   * to make either one look free.
+   */
+  readonly canopyShade: boolean;
   /**
    * `?proplod2=0` makes the UNDERSTOREY draw its LOD0 geometry at all ranges,
    * which is the state the four ground-detail cards were in until RN-45
@@ -324,6 +344,12 @@ export function parseConfig(search: string): Config {
     propCull: p.get('propcull') !== '0',
     grassShort: p.get('grassshort') !== '0',
     scatterWet: p.get('scatterwet') === '1',
+    // Clamped at 1,600 m rather than left open: past that the cell the far
+    // chunks offer is coarser than `MAX_CELL_M` and the ring silently stops
+    // growing, which would read as "the cost levelled off" rather than as
+    // "the sampler refused the chunk".
+    canopyRadiusM: Math.min(1600, Math.max(0, num(p, 'canopy', CANOPY_RADIUS_M))),
+    canopyShade: p.get('canopyshade') !== '0',
     propLod2: p.get('proplod2') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',

@@ -11,7 +11,9 @@
 import * as THREE from 'three';
 import type { PropLibrary, PropPart } from '../render/instancing/PropLibrary.js';
 import type { PropSpec } from '../assets/Registry.js';
-import { MAX_PER_CELL, hash32, frac, type Tier } from './ScatterTuning.js';
+import {
+  MAX_PER_CELL, LOD2_M, CANOPY_LOD2_M, hash32, frac, type Tier,
+} from './ScatterTuning.js';
 import {
   CLUSTER_BIAS, CONTACT_CARDS, CONTACT_SPREAD, lookOf, scaleFor, tintFor,
   tintScratch,
@@ -29,7 +31,9 @@ export interface Build {
   local: Float32Array;
   quat: Float32Array;
   scale: Float32Array;
-  parts: { material: string; slot: number; lod0: number; lod2: number }[];
+  parts: {
+    material: string; slot: number; lod0: number; lod2: number; lod2M: number;
+  }[];
   owner: number[];
   n: number;
   want: number;
@@ -153,6 +157,15 @@ export class PropEmitter {
     const look = this.lookFor(spec.stem, list);
     const short = this.short && spec.detail === true;
     scaleFor(spec.jitter, b.seed, k, look === 'foliage', short, this.s);
+    // OPT-IN height band, for the canopy and for nothing else today. `scaleFor`
+    // returns height as `width * band`, so re-deriving it here has to keep that
+    // product: a tree that jittered wide and tall independently would lean into
+    // a stretched silhouette, which is the one property the harvest-versus-
+    // scenery rule cannot afford to blur. See `PropSpec.heightLo`.
+    if (spec.heightLo !== undefined && spec.heightHi !== undefined) {
+      const t = frac(hash32(b.seed, k * 8 + 11));
+      this.s.y = this.s.x * (spec.heightLo + t * (spec.heightHi - spec.heightLo));
+    }
     // `grow` IS HORIZONTAL ONLY for the understorey, and that is the durable
     // half of the height fix (ScatterLook.DETAIL_H_LO). `DETAIL_FAR_GROW` exists
     // to buy back screen COVERAGE at the outer edge of the ring, and coverage is
@@ -165,6 +178,10 @@ export class PropEmitter {
     b.scale[n * 3 + 1] = this.s.y * gy;
     b.scale[n * 3 + 2] = this.s.z * grow;
     tintFor(look, b.seed, k, tintScratch);
+    // The LOD distance is a property of the PROP, decided once here and carried
+    // on every part, because `Scatter.write` sees only parts and a lookup back
+    // to the spec on every rebase of every instance is the wrong shape.
+    const lod2M = spec.canopy === true ? CANOPY_LOD2_M : LOD2_M;
     for (const part of list) {
       const slot = this.lib.acquire(part.material);
       if (slot < 0) continue;
@@ -172,7 +189,9 @@ export class PropEmitter {
       // PropLibrary.tint: colour is a property of the placement, and `write`
       // runs for every part on every floating-origin rebase.
       this.lib.tint(part.material, slot, tintScratch);
-      b.parts.push({ material: part.material, slot, lod0: part.lod0, lod2: part.lod2 });
+      b.parts.push({
+        material: part.material, slot, lod0: part.lod0, lod2: part.lod2, lod2M,
+      });
       b.owner.push(n);
     }
     b.n = n + 1;

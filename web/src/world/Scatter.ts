@@ -21,15 +21,22 @@ import { BIOME_PROPS } from '../assets/Registry.js';
 import type { WaterOracle } from './WaterOracle.js';
 import {
   CELLS, DIM, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
-  RADIUS_M, MIN_SLOPE_COS, LOD2_M, DETAIL_RADIUS_M, DETAIL_FULL_M,
+  RADIUS_M, MIN_SLOPE_COS, DETAIL_RADIUS_M, DETAIL_FULL_M,
   DETAIL_FAR_GROW, WET_REJECT_M, detailWeight, tierOf, keyHash, type Tier,
+  CANOPY_MIN_SLOPE_COS, CANOPY_SHADE, CANOPY_FULL_M, canopyWeight,
+  canopyDistanceWeight, standAt,
 } from './ScatterTuning.js';
 import { CLUSTER_SHIFT, CONTACT_CARDS } from './ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
 
 interface Placed {
-  /** Flattened [material, slot] pairs; -1 slot means the batch was full. */
-  parts: { material: string; slot: number; lod0: number; lod2: number }[];
+  /**
+   * Flattened [material, slot] pairs; -1 slot means the batch was full.
+   * `lod2M` is the distance at which THIS part switches to its far geometry,
+   * carried per part rather than read from one constant because a 12 m tree and
+   * a 0.4 m grass card do not stop being legible at the same range.
+   */
+  parts: { material: string; slot: number; lod0: number; lod2: number; lod2M: number }[];
   local: Float32Array;
   quat: Float32Array;
   /** Three components per prop now: width, HEIGHT, width. See ScatterLook. */
@@ -41,8 +48,12 @@ interface Placed {
   cellArea: number;
   /** What the registry ASKED for over those cells, before any quantisation. */
   wanted: number;
-  /** Understorey band this chunk was built in. 0 none, 1 thinned, 2 full. */
+  /** Rebuild band this chunk was built in. See `detailBandOf`. */
   detailBand: number;
+  /** The canopy's own accounting, over the canopy's own ground. */
+  canopyCells: number;
+  canopyProps: number;
+  canopyWanted: number;
 }
 
 /** A biome with no understorey draws from this rather than from a null check. */
@@ -70,6 +81,45 @@ export class Scatter {
   wetCells = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
   backlog = 0;
+  /** Canopy trees placed, the ground they were drawn over, and the ask. */
+  canopyProps = 0;
+  canopyCells = 0;
+  canopyWanted = 0;
+  canopyM2 = 0;
+  /**
+   * Cells the canopy was OFFERED, and the two ways it refused them.
+   *
+   * `canopyOfferedCells` is the denominator and it is not decoration. The first
+   * measurement of this pass had both refusal counters reading exactly 0 at all
+   * seven survey sites, and a bare 0 cannot be told apart from a term that
+   * never ran: the treeline was in fact running and correct, and its refusing
+   * case was simply unreachable, because the only biome that sat above the fade
+   * had no canopy specs and therefore never entered this branch at all. With a
+   * denominator, 0 of 46,000 and 0 of 0 are different rows.
+   *
+   * `canopySlopeCells` is the 44 degree gate; `canopyBareCells` is at or above
+   * the treeline. Both must be non-zero SOMEWHERE in the world, and the site
+   * where each becomes non-zero is named in the report, because a filter is
+   * proved by the case it CATCHES and never by the case it ignores.
+   */
+  canopyOfferedCells = 0;
+  canopySlopeCells = 0;
+  canopyBareCells = 0;
+  /**
+   * Cells refused by `MIN_SLOPE_COS`, the 57 degree gate that has been in force
+   * for every prop since RN-7 and has never been counted.
+   *
+   * It is here because the canopy's own 44 degree gate refused 0 of 241,053
+   * cells across all seven survey sites, and before calling a gate inert it is
+   * worth knowing whether the LOOSER gate above it fires either. The comment on
+   * `MIN_SLOPE_COS` says 40 degrees "emptied the Mountains biome" because a
+   * mountain flank is steeper than that almost everywhere, and that claim
+   * predates WG-25's noise rework, which took the designed layer from 985 m
+   * vertical walls to a worst grade of 87.54% over 100 m. If this counter is
+   * also 0 then the world is gentler at cell scale than either constant
+   * assumes, and both comments describe a planet that no longer exists.
+   */
+  slopeRejectCells = 0;
 
   constructor(
     private readonly lib: PropLibrary,
@@ -94,8 +144,29 @@ export class Scatter {
     private readonly water: WaterOracle | null = null,
     /** Live edits handle, read at BUILD time so a dug bed deepens the water. */
     private readonly editsHandle: () => number = () => 0,
+    /**
+     * Body radius in metres, the datum the TREELINE is measured from. Read from
+     * `PlanetBody` and never transcribed: a treeline that disagreed with the
+     * body about where zero is would be wrong by kilometres and would look
+     * exactly like a tuning problem.
+     */
+    private readonly bodyRadiusM = 0,
+    /**
+     * How far canopy trees reach, in metres. ZERO SWITCHES THE WHOLE TIER OFF
+     * and is the negative control (`?canopy=0`): with it the sampler takes the
+     * identical branch it took before this tier existed, so the before picture
+     * and the after picture are one binary apart (standing rule 7).
+     */
+    private readonly canopyRadiusM = 0,
+    /** `?canopyshade=0` keeps the understorey at full density under trees. */
+    private readonly canopyShade = true,
   ) {
     this.em = new PropEmitter(lib, fair, grassShort);
+  }
+
+  /** The furthest any tier reaches. Residency and rebuild bands ride on it. */
+  private get reachM(): number {
+    return this.canopyRadiusM > RADIUS_M ? this.canopyRadiusM : RADIUS_M;
   }
 
   /**
@@ -112,7 +183,7 @@ export class Scatter {
     let backlog = 0;
     for (const v of views) {
       if (!v.isNear || !v.visible) continue;
-      if (v.pos.distanceTo(eye) > RADIUS_M + v.maxOffsetM) continue;
+      if (v.pos.distanceTo(eye) > this.reachM + v.maxOffsetM) continue;
       seen.add(v.key);
       const pl = this.placed.get(v.key);
       if (pl === undefined) {
@@ -146,11 +217,38 @@ export class Scatter {
     this.lastBuildMs = performance.now() - t0;
   }
 
+  /**
+   * Which rebuild band a chunk is in. A chunk is re-sampled when it crosses a
+   * boundary, and the bands are the distances at which something about the
+   * build would come out different.
+   *
+   * The canopy did NOT add a band, and that is why `CANOPY_LOD2_M` is set to
+   * `DETAIL_RADIUS_M` exactly. `write` decides LOD0 against LOD2 once, at build
+   * time, so a tree's LOD only actually changes when its chunk is rebuilt.
+   * A switch distance that is not a band boundary is therefore quantised to one
+   * regardless, and choosing a distinct value would have bought a fourth
+   * rebuild of every chunk on the way in for a switch that still happens at a
+   * band. Aligning them makes the quantisation exact instead of approximate.
+   *
+   * The consequence to know: a tree's LOD is correct to within one band and
+   * never staler than that, and a chunk built at 300 m carries far geometry
+   * until it crosses 78 m, which is where the far geometry stops being right.
+   */
   private detailBandOf(v: ChunkView): number {
     const d = v.pos.distanceTo(this.eye) - v.maxOffsetM;
-    if (d <= DETAIL_FULL_M) return 2;
-    return d <= DETAIL_RADIUS_M ? 1 : 0;
+    if (d <= DETAIL_FULL_M) return 3;
+    if (d <= DETAIL_RADIUS_M) return 2;
+    // The canopy's OWN density boundary, and it earns a band for exactly the
+    // reason the understorey's second band exists: the outer canopy is thinned
+    // by `canopyDistanceWeight`, and without a rebuild here a chunk first
+    // sampled at 500 m would keep its thinned density all the way in, so the
+    // ground ahead of a walking player would be permanently sparser than the
+    // ground behind. One extra rebuild per chunk, on a per-update budget of
+    // one, reported by `scatterBacklog`.
+    return d <= CANOPY_FULL_M ? 1 : 0;
   }
+  /** Bands 2 and 3 carry the understorey; 3 carries it at full density. */
+  private static detailOn(band: number): boolean { return band >= 2; }
 
   /** Re-derive every instance matrix from its chunk's anchor. THE rebase path. */
   replace(views: Map<string, ChunkView>): void {
@@ -165,10 +263,14 @@ export class Scatter {
     const pl = this.placed.get(key);
     if (pl === undefined) return;
     for (const part of pl.parts) this.lib.release(part.material, part.slot);
-    this.propsPlaced -= pl.scale.length / 3;
+    this.propsPlaced -= pl.scale.length / 3 - pl.canopyProps;
     this.wantedProps -= pl.wanted;
     this.cellsScattered -= pl.cells;
     this.groundM2 -= pl.cells * pl.cellArea;
+    this.canopyProps -= pl.canopyProps;
+    this.canopyCells -= pl.canopyCells;
+    this.canopyWanted -= pl.canopyWanted;
+    this.canopyM2 -= pl.canopyCells * pl.cellArea;
     this.placed.delete(key);
   }
 
@@ -190,8 +292,12 @@ export class Scatter {
     // graded by distance; and `card` is the understorey again, used on its own
     // as the pool the contact skirt draws from.
     const full: Tier = tierOf(specs);
-    const base: Tier = tierOf(specs.filter((s) => !s.detail));
+    const base: Tier = tierOf(specs.filter((s) => !s.detail && !s.canopy));
     const card: Tier = tierOf(specs.filter((s) => s.detail === true));
+    // The canopy is empty on seven of the ten biomes and empty everywhere when
+    // `?canopy=0`, and an empty tier costs one `total > 0` test per cell.
+    const canopy: Tier = this.canopyRadiusM > 0
+      ? tierOf(specs.filter((s) => s.canopy === true)) : EMPTY_TIER;
     const band = this.detailBandOf(v);
     // The skirt draws from the understorey WHATEVER band the chunk is in: a
     // rock at 90 m still has a silhouette meeting the ground, and five cards
@@ -206,8 +312,8 @@ export class Scatter {
     const want = Math.min(MAX_PER_CHUNK,
       Math.max(1, Math.ceil(full.total * areaKm2 * this.densityScale) + 64
         + Math.ceil(base.total * areaKm2 * this.densityScale) * CONTACT_CARDS));
-    const pl = this.sample(v, base, band > 0 ? card : EMPTY_TIER, want, pos,
-      cell, band);
+    const pl = this.sample(v, base, Scatter.detailOn(band) ? card : EMPTY_TIER,
+      canopy, want, pos, cell, band);
     // A chunk that legitimately places NOTHING is still recorded, and that is
     // load-bearing twice over. It used to return early, so the chunk was retried
     // every single frame forever, which with a per-update budget starves every
@@ -216,15 +322,31 @@ export class Scatter {
     // ratio that only counts the chunks that delivered something is blind in
     // exactly the case the ratio exists to catch.
     this.placed.set(v.key, pl);
-    this.propsPlaced += pl.scale.length / 3;
+    // GROUND COVER ONLY. The canopy is subtracted here and accounted for on its
+    // own three counters, because `deliveredFraction` is `propsPlaced` over
+    // `wantedProps` and mixing a tier into ONE side of a ratio is exactly the
+    // defect that made it read 1.5146 at RN-15. Measured before the fix: 1.0637
+    // at the Forest site, which would have failed `probes/grass.js` outright,
+    // and which is the flattering direction (a layer that produces instances it
+    // never requested cannot be trusted to report a genuine shortfall).
+    //
+    // Two ratios rather than one, and both are then meaningful over their own
+    // ground: the understorey's ring is 78 m and the canopy's is 520 m, so a
+    // single per-m2 figure over a single denominator could not be right for
+    // either of them.
+    this.propsPlaced += pl.scale.length / 3 - pl.canopyProps;
     this.wantedProps += pl.wanted;
     this.cellsScattered += pl.cells;
     this.groundM2 += pl.cells * pl.cellArea;
+    this.canopyProps += pl.canopyProps;
+    this.canopyCells += pl.canopyCells;
+    this.canopyWanted += pl.canopyWanted;
+    this.canopyM2 += pl.canopyCells * pl.cellArea;
     this.write(v, pl);
   }
 
   private sample(
-    v: ChunkView, base: Tier, card: Tier, want: number,
+    v: ChunkView, base: Tier, card: Tier, canopy: Tier, want: number,
     pos: Float32Array, cell: number, band: number,
   ): Placed {
     const nrm = this.pool.batch(v.pooled).normals(v.pooled.slot);
@@ -272,7 +394,21 @@ export class Scatter {
     const perKm2 = (cellArea / 1e6) * this.densityScale;
     let cells = 0;
     let wanted = 0;
+    let canopyCells = 0;
+    // BOTH SIDES OF THE CANOPY RATIO INCLUDE THE CONTACT SKIRT, deliberately.
+    // `drawTier` counts a skirt card as asked-for (it has to, or the ratio
+    // reads 1.5, which RN-15's `deliveredFraction` bug already cost a pass), so
+    // the placed side has to count it too. These are therefore "instances the
+    // canopy draw produced" and not "trees", and inside the understorey ring
+    // the two differ by five cards a tree.
+    let canopyWanted = 0;
+    let canopyProps = 0;
     const r2 = RADIUS_M * RADIUS_M;
+    // The OUTER gate. Equal to `r2` whenever the canopy is off or does not
+    // reach further, which is what makes `?canopy=0` take the identical path
+    // through this loop that existed before the tier did.
+    const treeR = canopy.total > 0 ? this.canopyRadiusM : 0;
+    const maxR2 = treeR > RADIUS_M ? treeR * treeR : r2;
     // One reusable emit context. Rebuilt per chunk rather than per cell: a
     // chunk is up to fourteen thousand props and allocating a record per prop
     // is the difference between a scatter build that amortises and one that
@@ -288,11 +424,16 @@ export class Scatter {
         const dy = v.pos.y + pos[i00 + 1] - this.eye.y;
         const dz = v.pos.z + pos[i00 + 2] - this.eye.z;
         const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 > r2) continue;
+        if (d2 > maxR2) continue;
+        const near = d2 <= r2;
         // Slope from /core's own stored vertex normal, decoded from int8.
         const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
         const nl = Math.hypot(nx, ny, nz) || 1;
-        if ((nx * upx + ny * upy + nz * upz) / nl < MIN_SLOPE_COS) continue;
+        const slopeCos = (nx * upx + ny * upy + nz * upz) / nl;
+        // The canopy gate is STRICTER than the ground-cover gate, so a cell
+        // that fails the ground gate has already failed the canopy one and
+        // there is nothing left to do with it at any distance.
+        if (slopeCos < MIN_SLOPE_COS) { this.slopeRejectCells++; continue; }
         // WATER (RN-46, proved at RN-48). Last because it alone reaches
         // WASM, and the two above have thrown most cells away already.
         if (wetR > 0) {
@@ -316,6 +457,56 @@ export class Scatter {
           (cy >> CLUSTER_SHIFT) * CELLS + (cx >> CLUSTER_SHIFT), 0x9e3779b1);
         b.i00 = i00; b.i10 = i10; b.i01 = i01; b.i11 = i11;
         b.nx = nx / nl; b.ny = ny / nl; b.nz = nz / nl;
+
+        // --- THE CANOPY. Sampled first, because it is the only tier that can
+        // be non-zero out here and because the understorey below reads its
+        // stand weight to decide how much shade it is standing in.
+        //
+        // `treeW` is a pure function of the cell's world position: the stand
+        // field, the treeline, and nothing about the camera. That is what makes
+        // a forest an attribute of the planet rather than of the observer, and
+        // it is why a chunk that streams out and back in, or that arrives at a
+        // different LOD depth, grows the same trees in the same places.
+        let treeW = 0;
+        // What the UNDERSTOREY is shaded by. The planet's own canopy weight and
+        // NOT the view-dependent one: the two are equal inside 78 m today,
+        // because that is where the understorey lives and the distance fade
+        // starts at 300 m, and keeping one variable would have been correct and
+        // silently coupled to that coincidence. Two names cost nothing and stop
+        // a later change to either radius from moving the other term.
+        let shadeW = 0;
+        if (canopy.total > 0) {
+          this.canopyOfferedCells++;
+          if (slopeCos < CANOPY_MIN_SLOPE_COS) {
+            this.canopySlopeCells++;
+          } else {
+            const wx = a.x + pos[i00], wy = a.y + pos[i00 + 1], wz = a.z + pos[i00 + 2];
+            const altM = Math.hypot(wx, wy, wz) - this.bodyRadiusM;
+            const stand = standAt(wx, wy, wz);
+            // TWO independent weights, multiplied and NOT merged. `canopyWeight`
+            // is a property of the PLANET (stands, treeline) and is the same for
+            // this cell whoever is looking at it; the distance term is a
+            // property of the VIEW and exists only to hide the ring's edge.
+            // Keeping them apart is what lets the first be a determinism claim
+            // and the second an art-direction one.
+            shadeW = canopyWeight(altM, stand);
+            treeW = shadeW * canopyDistanceWeight(Math.sqrt(d2));
+            if (treeW <= 0) this.canopyBareCells++;
+            else {
+              canopyCells++;
+              const n0 = b.n;
+              // The skirt is withheld past the understorey ring: five contact
+              // cards at the foot of a tree 300 m away are five instances that
+              // carry no pixels, and the cards are not drawn out there anyway.
+              canopyWanted += this.em.drawTier(b, canopy,
+                canopy.total * perKm2 * treeW, 8192, 1,
+                d2 <= DETAIL_RADIUS_M * DETAIL_RADIUS_M);
+              canopyProps += b.n - n0;
+            }
+          }
+        }
+        // Everything below is ground cover and stops at the biome ring.
+        if (!near) continue;
         cells++;
 
         // --- the biome props, over the whole ring at a flat density.
@@ -328,10 +519,17 @@ export class Scatter {
         if (card.total > 0) {
           const wt = detailWeight(Math.sqrt(d2));
           if (wt > 0) {
+            // SHADE. A closed canopy takes ground cover away, which is the same
+            // fact `build_props_forest.py` is built on: the Forest atlas is a
+            // floor of ferns and litter precisely because a forest floor is
+            // dim. It also happens to pay for a good part of the trees, so the
+            // two are reported as separate numbers and `?canopyshade=0` turns
+            // this term off without touching the trees.
+            const shade = this.canopyShade ? 1 - CANOPY_SHADE * shadeW : 1;
             // Bigger the further out, which buys coverage back per instance.
             // See DETAIL_FAR_GROW.
             const grow = 1 + DETAIL_FAR_GROW * (1 - wt);
-            wanted += this.em.drawTier(b, card, card.total * perKm2 * wt,
+            wanted += this.em.drawTier(b, card, card.total * perKm2 * wt * shade,
               4096, grow, false);
           }
         }
@@ -343,6 +541,7 @@ export class Scatter {
       parts, local: local.subarray(0, n * 3), quat: quat.subarray(0, n * 4),
       scale: scale.subarray(0, n * 3), owner: Uint16Array.from(owner),
       cells, cellArea, wanted, detailBand: band,
+      canopyCells, canopyProps, canopyWanted,
     };
   }
 
@@ -357,7 +556,7 @@ export class Scatter {
       this.s.set(pl.scale[o * 3], pl.scale[o * 3 + 1], pl.scale[o * 3 + 2]);
       this.m4.compose(this.p, this.q, this.s);
       const part = pl.parts[i];
-      const far = this.p.distanceTo(this.eye) > LOD2_M;
+      const far = this.p.distanceTo(this.eye) > part.lod2M;
       this.lib.place(part.material, part.slot, far ? part.lod2 : part.lod0, this.m4);
     }
   }
@@ -375,6 +574,10 @@ export class Scatter {
     groundM2: number; placedPerM2: number; wantedPerM2: number;
     deliveredFraction: number; cellsCapped: number; chunksCapped: number;
     scatterBacklog: number; fairQuantise: boolean; wetCells: number;
+    canopyRadiusM: number; canopyShade: boolean; canopyProps: number;
+    canopyCells: number; canopyM2: number; canopyPerM2: number;
+    canopyDelivered: number; canopyOfferedCells: number;
+    canopySlopeCells: number; canopyBareCells: number; slopeRejectCells: number;
   } {
     return {
       chunks: this.chunksScattered,
@@ -393,6 +596,26 @@ export class Scatter {
       scatterBacklog: this.backlog,
       fairQuantise: this.fair,
       wetCells: this.wetCells,
+      // Standing rule 7: the isolation flags travel with the numbers, so a row
+      // can never be attributed to the wrong run. `canopyRadiusM: 0` IS the
+      // control and says so on the row.
+      canopyRadiusM: this.canopyRadiusM,
+      canopyShade: this.canopyShade,
+      canopyProps: this.canopyProps,
+      canopyCells: this.canopyCells,
+      canopyM2: Math.round(this.canopyM2),
+      canopyPerM2: this.canopyM2 > 0
+        ? Math.round((this.canopyProps / this.canopyM2) * 1e5) / 1e5 : 0,
+      canopyDelivered: this.canopyWanted > 0
+        ? Math.round((this.canopyProps / this.canopyWanted) * 1e4) / 1e4 : 0,
+      // The two refusal counters AND their denominator. Both must be non-zero
+      // SOMEWHERE or the term that owns them is not running (DW-28, and the
+      // `wetCells: 0` lesson: a zero at a site that cannot exhibit the case is
+      // not evidence of anything).
+      canopyOfferedCells: this.canopyOfferedCells,
+      canopySlopeCells: this.canopySlopeCells,
+      canopyBareCells: this.canopyBareCells,
+      slopeRejectCells: this.slopeRejectCells,
     };
   }
 }

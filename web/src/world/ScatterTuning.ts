@@ -156,6 +156,257 @@ export function detailWeight(d: number): number {
  */
 export const DETAIL_FAR_GROW = 0.32;
 
+// ===========================================================================
+// THE CANOPY TIER (WG-59 to WG-63). A forest at world scale.
+//
+// Everything above this line is ground cover: the tallest thing it can place
+// is a 1.6 m fern, and it all stops at 170 m. That is why there was no forest.
+// The only living trees in the world were the 14 harvest nodes on a spiral out
+// to 56 m, and the Forest atlas deliberately contained no live tree at all
+// (`build_props_forest.py:9-12`), so past about 57 m of spawn there was nothing
+// to accumulate into a horizon mass, at any distance, in any biome.
+//
+// The canopy is a FOURTH tier rather than more entries in the biome list,
+// because a tree differs from a fern in every number that matters here: it is
+// worth drawing ten times further out, it wants a much cheaper far geometry, it
+// grows in stands hundreds of metres across rather than in 14 m patches, and it
+// STOPS at an altitude. None of those are expressible as a density.
+// ===========================================================================
+
+/**
+ * How far trees reach, and the number this whole pass is judged on.
+ *
+ * WHAT SET IT, and what it does NOT buy. Cost grows as the square of this, and
+ * a tree is drawn in the near pass plus every shadow cascade. The measured
+ * ladder is in world-gen.md section 6.2; 520 m is the widest ring whose added
+ * triangles stay inside the frame budget once the understorey it shades is
+ * subtracted. It is enough to put a treeline on the near ridges and to fill the
+ * middle distance, which is what was missing.
+ *
+ * It is NOT enough to reach the true horizon on a body with kilometres of
+ * visible ground, and no arithmetic makes it so: at 2 km the same density is
+ * fifteen times the instances. A horizon treeline needs a far-field impostor
+ * layer, and this client has none (there is no billboard, impostor or card
+ * mechanism anywhere in `web/src/render`). That is a rendering-lane ask and it
+ * is recorded as one rather than half-built here.
+ */
+export const CANOPY_RADIUS_M = 620;
+/**
+ * Inside this the canopy is at full density; from here to `CANOPY_RADIUS_M` it
+ * thins linearly to `CANOPY_EDGE_W`.
+ *
+ * THE FIRST VERSION HAD NO FADE AND THE EDGE WAS THE FIRST THING IN THE FRAME.
+ * `docs/screenshots/WG59_walk_c520_noedge.png` shows it: the forest stops dead
+ * in a straight line across the middle distance with open ground beyond, which
+ * is precisely the defect `DETAIL_FULL_M` was written to fix one tier down, and
+ * its comment says the durable half out loud: "a ring that ends is a ring you
+ * can see the edge of, whatever radius you put it at, so the fix is not a
+ * bigger number, it is a gradient."
+ *
+ * No number saw this. Every counter was healthy and the delivery ratio was
+ * 1.0021. It took looking at the picture (DW-7).
+ *
+ * The fade is 320 m long, which is more than half the ring, and it has to be:
+ * the understorey fades cards against ground of the same colour, while this
+ * fades a 12 m silhouette against sky. A short fade would read as a hedge.
+ * 0.16 rather than 0 for the same reason `DETAIL_EDGE_W` is 0.18: a linear fall
+ * to exactly zero puts the last tree AT the boundary and re-creates a fainter
+ * copy of the line.
+ *
+ * The fade also PAYS FOR the radius going 520 to 620 m: two thirds of the ring
+ * is now thinned, which returns more triangles than the extra 100 m spends.
+ */
+export const CANOPY_FULL_M = 300;
+export const CANOPY_EDGE_W = 0.16;
+/**
+ * Where a canopy tree drops to its far geometry. Nearly twice `LOD2_M`, because
+ * a 12 m tree at 60 m is most of the frame's vertical while a 0.4 m card is
+ * four pixels; sharing one distance would either pop the trees or pay LOD0 for
+ * every blade of grass.
+ *
+ * WHY IT IS 78 AND NOT THE 105 THIS SHIPPED WITH FOR ONE MEASUREMENT. A prop
+ * batch has `frustumCulled` and `perObjectFrustumCulled` both FALSE and casts
+ * into three shadow cascades, so **every tree is drawn four times** and its
+ * triangles are counted four times. Measured at the Forest site at 105 m: the
+ * canopy cost 186,109 triangles for 1,657 trees, which is 112 per tree against
+ * an LOD2 of 26 to 30, and the 69 trees inside the LOD0 radius were 85,600 of
+ * it on their own. The near tree is four times its own cost, so the LOD0 radius
+ * is the single most expensive number in this file.
+ *
+ * It is set EQUAL to `DETAIL_RADIUS_M` rather than merely near it. `write`
+ * picks LOD once, at build time, so a switch distance that is not a chunk
+ * rebuild boundary is quantised to the nearest one anyway; putting it exactly
+ * on the understorey boundary means the chunk that changes the tree's geometry
+ * is a chunk that was already going to be rebuilt, and the fourth rebuild band
+ * a distinct value would need does not have to exist.
+ *
+ * WHAT WOULD LET IT GO BACK OUT: a third LOD tier. The trees are authored with
+ * 296 to 310 triangles at LOD0 and 22 to 30 at LOD2, and the gap between them
+ * is where a 90-triangle mid tier belongs. `PropPart` carries exactly two
+ * geometry ids and that is rendering's file, so it is an ask and not a change.
+ */
+export const CANOPY_LOD2_M = DETAIL_RADIUS_M;
+/**
+ * THE TREELINE, in metres of designed altitude. Full canopy at or below
+ * `TREELINE_FULL_M`, nothing at or above `TREELINE_BARE_M`.
+ *
+ * These are altitudes and not biome ids on purpose. The biome classifier's
+ * Forest band ends at normalised relief 0.150 and Mountains begins at 0.330,
+ * and if trees simply stopped at a biome edge the treeline would be a hard line
+ * at a classifier threshold, which is the one thing a real treeline never is.
+ *
+ * WHERE THE NUMBERS CAME FROM, and they were WRONG on the first attempt in a
+ * way worth keeping. 1,400 and 2,300 were derived from the section 6.1 survey's
+ * altitude-to-relief mapping so that the fade spanned the whole Hills band and
+ * ended at the Mountains boundary. Measured, that put the ENTIRE fade above
+ * every site in the survey that has trees: the Hills candidates at 1,897 m and
+ * 2,077 m still scored 13% density instead of bare, and `canopyBareCells` read
+ * exactly 0 at all seven sites. The counter is what caught it. The term was
+ * running and was reachable only in Mountains, which had no canopy specs at all
+ * and therefore never evaluated it, so the ONE place the treeline was supposed
+ * to bite was the one place the code never looked. That is INSTRUMENTS.md's
+ * "a term measured only where it cannot work reports its own absence", and it
+ * had been invisible if the counter had not been there to read 0.
+ *
+ * 950 and 1,850 put the fade INSIDE the Hills band, where Hills actually is:
+ * the RN-15 camera at 861 m is closed woodland, `hills2` at 1,897 m sits on the
+ * treeline itself, and `hills` at 2,077 m is above it with stragglers. Note
+ * that the altitude and the biome boundary do NOT track each other, because the
+ * classifier runs on RAW relief and this runs on DESIGNED height: the survey has
+ * Hills at 861 m and at 2,077 m, a range of 1.2 km. That divergence is why an
+ * altitude is the right handle and a biome id is not.
+ *
+ * `TREELINE_WANDER_M` is why it is not a contour line. The threshold is
+ * displaced by the same world-space field the stands come from, so the treeline
+ * fingers up gullies and retreats off exposed shoulders. Without it the eye
+ * finds the altitude immediately and the hillside reads as a topographic map.
+ */
+export const TREELINE_FULL_M = 950;
+export const TREELINE_BARE_M = 1850;
+export const TREELINE_WANDER_M = 240;
+/**
+ * Steepest ground a canopy tree stands on, about 44 degrees, tighter than the
+ * 57 degrees everything else gets. A boulder on a 55 degree flank is a boulder
+ * that fell there; a 16 m tree on one is a tree growing out of a cliff. Bare
+ * crags inside a forest are also most of what makes a forested slope legible.
+ */
+export const CANOPY_MIN_SLOPE_COS = 0.72;
+/**
+ * STAND SIZE. Two octaves of world-space value noise, in metres.
+ *
+ * A forest is not a density, it is stands and clearings, and this is the whole
+ * difference between trees-on-the-ground and a forest. `ScatterLook`'s existing
+ * `CLUSTER_SHIFT` patch lattice cannot do this job and its own comment says
+ * why: it is CHUNK-LOCAL, so its patch size is whatever the LOD depth makes it
+ * (14 m at the feet, 460 m at the far edge of this ring) and its pattern
+ * restarts at every chunk boundary. At 170 m that restart is another patch
+ * edge and nobody notices. At 520 m the chunk boundaries ARE the feature size,
+ * so it would tile visibly.
+ *
+ * So the stand field is sampled in BODY-FRAME METRES and is a pure function of
+ * position, exactly like every other thing world-gen publishes (WG-6). It is
+ * therefore also LOD-independent: the same ground gives the same stand whatever
+ * depth of chunk it arrives on, which a chunk-local lattice cannot promise.
+ *
+ * SMOOTH noise rather than a tile hash, and that choice is load-bearing for
+ * more than looks. A cell's world position is reconstructed as a float64 anchor
+ * plus a float32 chunk-local offset, so the SAME ground sampled off two
+ * different LOD depths differs in the last bits. Through a smooth field that is
+ * a difference of order 1e-9 in the weight; through a hashed tile boundary it
+ * would be a coin flip, and stands would visibly reshuffle every time a chunk
+ * changed depth. This is the same class of problem as WG-51's shader phase, and
+ * the cheap answer here is to make the function continuous.
+ */
+export const STAND_M = 165;
+export const STAND_DETAIL_M = 52;
+/** Stand-field values below LO are clearing, above HI are closed canopy. */
+export const STAND_LO = 0.36;
+export const STAND_HI = 0.63;
+/**
+ * Canopy weight in a clearing. Not zero: a clearing with EXACTLY no trees in it
+ * is a hole with a rim, and the rim reads as a wall. A tenth of the density
+ * leaves a few standing trees in the open ground, which is what a real clearing
+ * looks like and is also where the player will want to build.
+ */
+export const CANOPY_FLOOR_W = 0.10;
+/**
+ * How much of the understorey a closed canopy takes away, at full stand weight.
+ *
+ * This is not a saving dressed up as art direction; it is the reason the Forest
+ * atlas is a floor of ferns, litter and dead wood in the first place, and its
+ * own docstring says so. Ground cover under a closed canopy is sparse because
+ * the light is. The saving is real and it is measured separately from the tree
+ * cost (`?canopyshade=0`) so neither number can be used to flatter the other.
+ */
+export const CANOPY_SHADE = 0.45;
+
+/**
+ * Canopy weight from a cell's distance to the eye, the outer-edge gradient.
+ * A pure function of distance so it reads next to `detailWeight`, which is the
+ * same shape one tier down and for the same reason.
+ */
+export function canopyDistanceWeight(d: number): number {
+  if (d <= CANOPY_FULL_M) return 1;
+  if (d >= CANOPY_RADIUS_M) return 0;
+  const t = (d - CANOPY_FULL_M) / (CANOPY_RADIUS_M - CANOPY_FULL_M);
+  return 1 + (CANOPY_EDGE_W - 1) * t;
+}
+
+/** Smootherstep, Perlin's second-derivative-continuous ramp. */
+const sstep = (t: number): number =>
+  t <= 0 ? 0 : t >= 1 ? 1 : t * t * t * (t * (t * 6 - 15) + 10);
+/** Ramp from a to b, clamped. */
+const ramp = (x: number, a: number, b: number): number => sstep((x - a) / (b - a));
+
+/** Integer lattice hash for the stand field. Three axes, one round. */
+function ihash3(x: number, y: number, z: number): number {
+  let h = (Math.imul(x | 0, 0x27d4eb2f) ^ Math.imul(y | 0, 0x9e3779b1)
+    ^ Math.imul(z | 0, 0x85ebca6b)) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 0x2545f491) >>> 0;
+  return (h ^ (h >>> 13)) >>> 0;
+}
+
+/** One octave of trilinear value noise over body-frame metres, in [0,1]. */
+function octave(x: number, y: number, z: number, scale: number): number {
+  const fx = x / scale, fy = y / scale, fz = z / scale;
+  const ix = Math.floor(fx), iy = Math.floor(fy), iz = Math.floor(fz);
+  const tx = sstep(fx - ix), ty = sstep(fy - iy), tz = sstep(fz - iz);
+  const c = (dx: number, dy: number, dz: number): number =>
+    ihash3(ix + dx, iy + dy, iz + dz) / 4294967296;
+  const x00 = c(0, 0, 0) + (c(1, 0, 0) - c(0, 0, 0)) * tx;
+  const x10 = c(0, 1, 0) + (c(1, 1, 0) - c(0, 1, 0)) * tx;
+  const x01 = c(0, 0, 1) + (c(1, 0, 1) - c(0, 0, 1)) * tx;
+  const x11 = c(0, 1, 1) + (c(1, 1, 1) - c(0, 1, 1)) * tx;
+  const y0 = x00 + (x10 - x00) * ty;
+  const y1 = x01 + (x11 - x01) * ty;
+  return y0 + (y1 - y0) * tz;
+}
+
+/**
+ * The stand field at a body-frame point, in [0,1]. Two octaves: the first is
+ * the stand, the second breaks its edge so a clearing has a ragged margin
+ * rather than a drawn one.
+ */
+export function standAt(x: number, y: number, z: number): number {
+  return octave(x, y, z, STAND_M) * 0.72 + octave(x, y, z, STAND_DETAIL_M) * 0.28;
+}
+
+/**
+ * Canopy density weight for one cell: stands times treeline, in [0,1].
+ *
+ * `stand` is passed in rather than re-sampled because the caller needs it for
+ * the understorey shading as well, and sampling one field twice per cell to
+ * keep two call sites tidy is how a hot loop doubles.
+ */
+export function canopyWeight(altM: number, stand: number): number {
+  const wander = (stand * 2 - 1) * TREELINE_WANDER_M;
+  const above = ramp(altM, TREELINE_FULL_M + wander, TREELINE_BARE_M + wander);
+  if (above >= 1) return 0;
+  const dense = CANOPY_FLOOR_W
+    + (1 - CANOPY_FLOOR_W) * ramp(stand, STAND_LO, STAND_HI);
+  return dense * (1 - above);
+}
+
 /** One weighted draw pool: the specs eligible at a cell, and their total. */
 export interface Tier {
   specs: readonly PropSpec[];

@@ -1162,6 +1162,64 @@
       ]
     },
 
+    "props_canopy": {
+      "glb": "assets/models/dist/props/props_canopy.glb",
+      "_comment": [
+        "TIER 1, the MATURE canopy trees, as scenery. props_forest.glb",
+        "deliberately contains no live tree because both live trees in the",
+        "forest are harvest nodes; this atlas is the way a forest gets a",
+        "canopy without a scatter prop reading as a node the player cannot",
+        "chop. The rule the game states in words is enforced here as",
+        "geometry: harvest trees are small and branched to the ground",
+        "(TreeConifer 2.40 x 2.40 x 6.50, TreeBroadleaf 4.00 x 4.00 x 5.00);",
+        "canopy trees are twice the height or more with a BARE TRUNK for the",
+        "lower half. No foliage of any role sits below 0.55 of height on the",
+        "pine, 0.62 on the fir, or 0.45 (the fork) on the broadleaf, so the",
+        "distinction survives at 200 m on the silhouette alone.",
+        "Canopy_Fir is the EMERGENT: at 16.5 m it is 2.5x the conifer harvest",
+        "node and it is the shape that breaks the canopy line.",
+        "FOUR MATERIALS, pinned Bark / LeafDeep / Leaf / LeafLight on every",
+        "prop and not one more. All four are already live batch keys in the",
+        "client, so this atlas costs ZERO additional draw calls; a fifth role",
+        "would cost one draw in the near pass plus one per shadow cascade.",
+        "LOD2 is hand authored as a CONE, never a decimate and never the",
+        "crossed-quad impostor the harvest trees carry: there is no texture",
+        "pipeline, so an untextured crossed quad renders as a solid",
+        "rectangle, and LOD2 is the tree from 150 m to 500 m where nearly",
+        "every instance actually is. Each LOD2 is fitted to its LOD0 box, so",
+        "both are listed as parts and both are dimension-checked.",
+        "NO COLLISION by design. `collides` is consumed by exactly one caller",
+        "(the contact-skirt code in web/src/world/ScatterEmit.ts:115), so a",
+        "collider per canopy tree would be a lie. max_tris_collision keeps",
+        "the same shape as every other atlas."
+      ],
+      "lod0_node": "Canopy_Broadleaf_LOD0",
+      "lod_nodes": [
+        "Canopy_Pine_LOD0", "Canopy_Pine_LOD2",
+        "Canopy_Fir_LOD0", "Canopy_Fir_LOD2",
+        "Canopy_Broadleaf_LOD0", "Canopy_Broadleaf_LOD2"
+      ],
+      "pivot_mode": "ground",
+      "dims_xyz_m": [9.00, 10.50, 9.00],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 310,
+      "max_tris_total": 932,
+      "max_tris_collision": 12,
+      "max_materials": 4,
+      "sockets": [],
+      "clips": [],
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight"],
+      "collision": [],
+      "parts": [
+        {"node": "Canopy_Pine_LOD0", "dims_xyz_m": [3.10, 12.00, 3.10], "max_tris": 296, "pivot": "ground"},
+        {"node": "Canopy_Pine_LOD2", "dims_xyz_m": [3.10, 12.00, 3.10], "max_tris": 26, "pivot": "ground"},
+        {"node": "Canopy_Fir_LOD0", "dims_xyz_m": [2.60, 16.50, 2.60], "max_tris": 248, "pivot": "ground"},
+        {"node": "Canopy_Fir_LOD2", "dims_xyz_m": [2.60, 16.50, 2.60], "max_tris": 22, "pivot": "ground"},
+        {"node": "Canopy_Broadleaf_LOD0", "dims_xyz_m": [9.00, 10.50, 9.00], "max_tris": 310, "pivot": "ground"},
+        {"node": "Canopy_Broadleaf_LOD2", "dims_xyz_m": [9.00, 10.50, 9.00], "max_tris": 30, "pivot": "ground"}
+      ]
+    },
+
     "detail_cards": {
       "glb": "assets/models/dist/props/detail_cards.glb",
       "_comment": [
