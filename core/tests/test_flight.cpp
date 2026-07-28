@@ -635,17 +635,48 @@ TEST(thrust_cut_above_the_atmosphere_follows_the_conic_orbital_predicts) {
   const double posErrM = (sim.state.posM - predicted.r).length();
   const double velErrMS = (sim.state.velMS - predicted.v).length();
 
-  // Measured after one complete 2042.6 s revolution at a 20 ms step. The residual
-  // is the integrator's own truncation error, not a disagreement about physics:
-  // that is what the bit-exact test above established.
-  CHECK(posErrM < 5.0);
-  CHECK(velErrMS < 0.01);
+  // Measured after one complete 2042.6 s revolution at a 20 ms step (102132
+  // steps). The residual is the integrator's own truncation error, not a
+  // disagreement about physics: that is what the bit-exact test above
+  // established.
+  //
+  // The bounds below are the MEASURED residue times kResidueMargin, not round
+  // numbers. They were round numbers until 2026-07-28 (PH-73), and 5.0 m against
+  // a 0.0057 m residue is a control that cannot fail: the integrator could have
+  // degraded by two orders of magnitude and this test would still have passed.
+  //
+  // Why 2x is the right margin, rather than a number picked for looking safe.
+  // The residue is DETERMINISTIC: repeated runs agree on every printed digit, so
+  // the margin does not have to cover run-to-run noise, only the same source
+  // built by a different compiler. That variation is bounded by instruction
+  // selection and libm differences, about 1 ulp (2.2e-16 relative) per operation
+  // over 102132 steps, so below ~2.3e-11 relative even if it accumulated
+  // linearly. The smallest regression this test exists to catch is a change in
+  // the integrator's order or step size, and the leading term goes as dt^2, so
+  // the cheapest real regression (a doubled step) moves the residue by 4x. The
+  // usable window is therefore [1 + 2.3e-11, 4). 2x sits at the log-scale middle
+  // of that window: ~1e10 times any portability wobble, and half the smallest
+  // regression worth catching.
+  //
+  // If a compiler change ever trips these, the fix is to re-measure and restate
+  // the residue, NOT to widen the margin back into decoration.
+  constexpr double kResidueMargin = 2.0;
+  constexpr double kPosResidueM   = 0.00570342259015;   // measured 2026-07-28
+  constexpr double kVelResidueMS  = 1.75437028384e-05;  // measured 2026-07-28
+  CHECK(posErrM < kPosResidueM * kResidueMargin);
+  CHECK(velErrMS < kVelResidueMS * kResidueMargin);
 
   // The orbit itself is unchanged after a full revolution: no secular drift.
+  // Same treatment, and these three were the worst of the set: 5.0 m against an
+  // 8e-09 m apoapsis deviation is a bound 6e8 times its own residue, and the
+  // eccentricity bound was 1e8 times its. All three now assert the measurement.
+  constexpr double kApoResidueM  = 8.03265720606e-09;   // measured 2026-07-28
+  constexpr double kPeriResidueM = 1.09313987195e-07;   // measured 2026-07-28
+  constexpr double kEccResidue   = 7.02847016676e-14;   // measured 2026-07-28
   const OrbitSummary after = summarize(sim.orbitalState(), env.muM3S2, env.bodyRadiusM);
-  CHECK_NEAR(after.apoapsisAltM, 120000.0, 5.0);
-  CHECK_NEAR(after.periapsisAltM, 120000.0, 5.0);
-  CHECK(after.eccentricity < 1e-5);
+  CHECK_NEAR(after.apoapsisAltM, 120000.0, kApoResidueM * kResidueMargin);
+  CHECK_NEAR(after.periapsisAltM, 120000.0, kPeriResidueM * kResidueMargin);
+  CHECK(after.eccentricity < kEccResidue * kResidueMargin);
 
   // Park and resume at the same instant is the identity, which is the on-rails
   // no-drift guarantee of::orbital already proves and this re-checks through

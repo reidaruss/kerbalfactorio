@@ -1,5 +1,33 @@
 #pragma once
 // =============================================================================
+// SUPERSEDED FOR VESSEL ACTIVE/ON-RAILS. READ THIS BEFORE BUILDING ON THIS FILE.
+//
+// The vessel rails API below (VesselMode, parkToRails, promoteToActive, and the
+// on-rails branch of step()) is NOT the live implementation and has never been
+// reachable from the game. The shipping one is the browser client's:
+//
+//     web/src/sim/VesselRegistry.ts   (registry, modes, tick accounting)
+//     web/src/app/FlightVessels.ts    (park / resume / promote against the wasm)
+//     of_fl_park / of_fl_resume / of_fl_promote  (ABI 18, web/wasm/)
+//
+// Ruled by Admin on 2026-07-28 (physics.md PH-72): the wired implementation
+// wins. If you are adding vessel rails behaviour, change the client one. Do not
+// extend, wire up, or copy the API in this header. A third implementation is the
+// failure this project has already paid for repeatedly.
+//
+// This header is KEPT, not deleted, because its two green suites
+// (core/tests/test_integration.cpp, core/tests/test_slice_e2e.cpp) and
+// core/tools/journey_dump.cpp cover things the client does not: the SOI
+// crossing, the star -> Forge -> Cinder frame graph, the floating origin, and a
+// factory ticking under flight on one clock. That coverage is worth keeping. Its
+// vessel-rails API is incidental scaffolding for those tests, NOT a public seam.
+//
+// Corroboration worth one line: this file's on-rails branch (hold the elements
+// fixed, advance only the time asked for) was written in Wave 1 and the client
+// arrived at the identical rule independently in PH-65. Two independent
+// derivations agreeing is a reason to trust the RULE. It is not a reason to keep
+// two copies of the code.
+// =============================================================================
 // sim_world.h — Headless Phase-1 integration substrate (M2.1–M2.4 logic).
 //
 // This is the *glue* core: it COMPOSES the four green Wave-0 cores into a single
@@ -47,6 +75,8 @@
 namespace of {
 
 // --- Vessel flight mode (the MASTER_PLAN §3 lever) ---------------------------
+// SUPERSEDED (PH-72): test scaffolding, not the live vessel mode. The shipping
+// one is VesselMode in web/src/sim/VesselRegistry.ts. Do not build on this.
 enum class VesselMode : uint8_t {
   Active = 0,   // full per-step symplectic integration (near a player)
   OnRails = 1,  // analytic Kepler propagation (far / coasting)
@@ -151,6 +181,17 @@ class SimWorld {
   }
 
   // ---- Active / on-rails handoff (MASTER_PLAN §3) --------------------------
+  //
+  // SUPERSEDED (PH-72). Everything in this section is test scaffolding for the
+  // suites named at the top of this file. It is NOT the game's active/on-rails
+  // seam and nothing outside core/tests and core/tools calls it. The live seam
+  // is promoteVessel / parkVessel in web/src/app/FlightVessels.ts, published in
+  // web/src/app/ResumeBoot.ts §5. Change that one, not this one.
+  //
+  // The one-vessel assumption here is why: this class holds a SINGLE state_ and
+  // a SINGLE elements_, so it cannot represent the thing the game needs (many
+  // vessels, at most one of them active). That is not a bug in this file, it is
+  // the boundary of what it was built to prove.
 
   // Demote ACTIVE → ON-RAILS: park the live (r, v) into Kepler elements at the
   // current SimTime (lossless conic fit, the orbital core's park()).
@@ -195,6 +236,10 @@ class SimWorld {
       state_ = integ.s;
     } else {
       // On-rails: evaluate the parked conic at the *next* tick's SimTime.
+      // SUPERSEDED (PH-72): the live on-rails advance is advanceRails() in
+      // web/src/app/FlightVessels.ts. This branch and that one independently
+      // reached the same rule (elements held fixed, only the time moves), which
+      // is why the rule is trusted; it is not a reason to keep both.
       const double nextTime = clock_.simTime() + dt;
       state_ = orbital::resume(elements_, nextTime);
     }
