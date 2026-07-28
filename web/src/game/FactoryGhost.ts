@@ -23,6 +23,10 @@ import { headingIn, type MachineAddr } from './MachinePlacement.js';
 import { chainsInto } from './FactoryWiring.js';
 import { mateFor, nearestSocket, proposeFromSocket, SNAP_M,
   type SocketDef, type SocketHit } from './FactorySnap.js';
+import { linksBetween, machinePorts, portsOf, PORT_MATE_M,
+  type PortHost } from './FactoryPorts.js';
+import { aimedAt, refusalFor } from './FactoryRefusal.js';
+import { orient } from './Grid.js';
 import type { BuildKind, Factory } from './Factory.js';
 import type * as THREE from 'three';
 
@@ -76,6 +80,23 @@ export interface BuildTarget {
    * across a deposit, so WHERE on the patch a drill goes is a real decision and
    * the ghost has to answer it before the button is pressed. */
   ratePerSec: number;
+  /**
+   * FS-45: WOULD THIS CONNECT, AND IF NOT WHY NOT, BEFORE THE BUTTON GOES DOWN.
+   *
+   * The empty string means "this placement makes no connection either way",
+   * which is the normal case in the middle of a run and deliberately says
+   * nothing. Anything else is either a mate, named by both sockets, or a refusal
+   * carrying its own fix.
+   *
+   * THIS IS THE HALF THAT MAKES THE REFUSAL RECOVERABLE. A port model refuses
+   * far more often than proximity wiring did, and a refusal a player only
+   * discovers by watching a smelter not work is a worse deadlock than the one
+   * FS-17 removed. So the answer arrives at the same moment as the decision,
+   * and it is computed by `FactoryPorts` against a PROVISIONAL host built from
+   * the ghost's own pose, so the sentence on screen and the wiring that follows
+   * cannot be two different calculations.
+   */
+  ports: string;
 }
 
 /** March the aim ray until it is below the LIVE ground. */
@@ -193,5 +214,60 @@ BuildTarget | null {
   }
   return { pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr,
     prospective: s.addr.prospective, snapped, hit, chains, ok, reason, patch,
-    ratePerSec };
+    ratePerSec, ports: ok ? portPreview(f, kind, s.pos, s.up, fwd) : '' };
+}
+
+/**
+ * What the part in hand would connect to, asked of the port model itself.
+ *
+ * A PROVISIONAL HOST, not a second geometry calculation. `PortHost` exists so
+ * this can be built out of the ghost's own pose and handed to exactly the
+ * functions `FactoryWiring` calls; the alternative, re-deriving where a port
+ * would land, is how a ghost ends up promising a connection the commit declines.
+ * Id -1 marks it as not-yet-real, which nothing here reads and everything that
+ * prints it does.
+ *
+ * BOTH DIRECTIONS ARE ASKED, because a belt at the head of a line wants to know
+ * whether it will feed the smelter in front of it and a smelter placed at that
+ * head wants to know whether the belt behind it will feed IT. They are the same
+ * question about the same pair of sockets, so the outlet is tried first and the
+ * inlet second, and the first hit wins.
+ *
+ * IT RUNS EVERY FRAME THE GHOST IS UP, which is why the coarse reject is here
+ * and not saved for later. No socket of any machine asset sits further than
+ * 1.6 m from its own origin, so two centres further apart than twice that plus
+ * the mate bound cannot own a link whatever their yaw. Without it this is
+ * O(buildings) quaternion applies per frame against a base that is meant to
+ * reach four figures, for an answer that is always about the two or three
+ * things under the crosshair.
+ */
+const PREVIEW_NEAR_M = 1.6 * 2 + PORT_MATE_M;
+
+function portPreview(f: Factory, kind: BuildKind,
+                     pos: { x: number; y: number; z: number },
+                     up: THREE.Vector3, fwd: THREE.Vector3): string {
+  const ports = machinePorts();
+  if (!ports.has(kind)) return '';
+  const host: PortHost = { id: -1, kind, pos, up, quat: orient(up, fwd) };
+  const near = f.placed.filter((p) => Math.hypot(p.pos.x - pos.x, p.pos.y - pos.y,
+    p.pos.z - pos.z) <= PREVIEW_NEAR_M);
+  for (const other of near) {
+    for (const l of linksBetween(host, other, ports)) {
+      return `${l.from.name} -> #${other.id} ${other.kind} ${l.to.name} `
+        + `(${l.fit.gapM.toFixed(2)} m)`;
+    }
+    for (const l of linksBetween(other, host, ports)) {
+      return `#${other.id} ${other.kind} ${l.from.name} -> ${l.to.name} `
+        + `(${l.fit.gapM.toFixed(2)} m)`;
+    }
+  }
+  // Nothing mates. Say WHY only when the player is plainly aiming at something,
+  // which is `aimedAt`'s whole job: a belt in the middle of open ground is not
+  // failing to connect, and a ghost that says so every frame is noise.
+  const out = portsOf(host, ports).find((p) => p.dir === 'out');
+  if (out === undefined) return '';
+  const aim = aimedAt(out, near, ports);
+  if (aim === null) return '';
+  const r = refusalFor(out, aim, up);
+  return r === null ? '' : `WILL NOT CONNECT: ${r.reason}. ${r.fix}`;
 }

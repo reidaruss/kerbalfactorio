@@ -23,6 +23,7 @@ import { TYPE_ID, type BuildKind, type Factory, type Placed } from './Factory.js
 import { orient } from './Grid.js';
 import { cornersOf } from './BeltCorners.js';
 import { readMachineSockets, type SocketDef } from './FactorySnap.js';
+import { publishPorts } from './FactoryPorts.js';
 import { BeltCargo } from './BeltCargo.js';
 import { WireView } from '../render/WireView.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
@@ -52,6 +53,26 @@ const TEMPLATES: Record<string, MachineTemplate> = {
   generator: { url: 'assets/machines/generator.glb', root: 'Generator' },
   esmelter: { url: 'assets/machines/smelter.glb', root: 'Smelter' },
 };
+
+/**
+ * FS-47: `?inserters=1` DRAWS THE ARM ON EVERY LINK AGAIN, as it did before
+ * ports existed. It is not a preference and there is no way to reach it from
+ * the game; it exists so the saving can be MEASURED rather than asserted.
+ *
+ * Standing rule 7, verbatim: a measurement that has not isolated its subject is
+ * an opinion. The claim being made is that the auto-created inserter population
+ * was the dominant triangle cost at scale, and the only honest way to check it
+ * is to run the SAME scene with the arms on and with them off and subtract, in
+ * the same way `?proxy=0`, `?shell=0`, `?atmos=0` and `?stitch=0` exist so that
+ * any single layer can be taken away. Reading it here rather than through
+ * `Config` keeps the flag beside the thing it isolates and out of a shared
+ * parser this lane does not own; `Boot.ts` reads `?gnomon` the same way.
+ *
+ * Read ONCE at module load, not per frame: a flag that can change mid-run turns
+ * a before-and-after measurement into two halves of one ambiguous number.
+ */
+const LEGACY_INSERTERS = typeof location !== 'undefined'
+  && new URLSearchParams(location.search).get('inserters') === '1';
 
 /** kUnitsPerTile from factory_sim.h, and the fixed tick rate. */
 const UNITS_PER_TILE = 256;
@@ -93,6 +114,10 @@ export class FactoryView {
   /** The last plan `sync` saw, so `stats()` can report per-tile draw state. */
   private lastPlan: Factory | null = null;
   private readonly linkSlots: number[] = [];
+  /** FS-47: how many inserter instances were actually DRAWN this frame, against
+   *  how many slots exist. A probe measuring the triangle saving needs the drawn
+   *  count, and a hidden slot still owns an instance. */
+  private drawnInserters = 0;
   private readonly p = new THREE.Vector3();
   private readonly m = new THREE.Matrix4();
   private readonly one = new THREE.Vector3(1, 1, 1);
@@ -119,6 +144,11 @@ export class FactoryView {
     // FS-26: the sockets come off the SAME scenes the batch was built from, so
     // the geometry drawn and the geometry snapped to cannot fall out of step.
     this.sockets = readMachineSockets(loaded);
+    // FS-43: and the SAME sockets become the IO ports the wiring connects
+    // through, published from here because this is the one function in the
+    // client that opens the shipped `.glb` files. FactoryPorts' header argues
+    // why it is published rather than threaded.
+    publishPorts(this.sockets);
     // ALL THREE TILE SHAPES, not just the straight. FS-31 solved the arc
     // through the curve tiles' published sockets and shipped with only the
     // first argument passed, so `BeltCargo.load`'s missing-file fallback
@@ -243,26 +273,55 @@ export class FactoryView {
     this.drawn.delete(id);
   }
 
-  /** DW-9: one inserter wherever the plan recorded a connection. */
+  /**
+   * FS-47: NO INSERTER IS DRAWN ON A PORT CONNECTION, and DW-9 is the reason
+   * rather than the obstacle.
+   *
+   * DW-9's argument was that inserters are sim-internal, the player never places
+   * one, and drawing the mesh wherever a connection exists is what makes a
+   * connection LEGIBLE. That argument was correct and it has been satisfied by
+   * something better: under FS-44 the belt physically ends at the machine's
+   * hopper, so the connection is legible because you can see it. Keeping the
+   * inserter as well would draw a robot arm reaching across a gap that no longer
+   * exists, which is worse than redundant, it is a lie about the mechanism.
+   *
+   * IT IS ALSO THE DOMINANT TRIANGLE COST AT SCALE, which is why this is a
+   * measurement and not only a taste call. `connect()` mints one inserter per
+   * adjacency, so the population grows with CONNECTIONS rather than with
+   * buildings, and FS-16's sweep put the triangle budget as the next real
+   * ceiling at about 1,180 machines. Every inserter not drawn is budget back.
+   * The number is in `probes/machineports.js`.
+   *
+   * The sim-side inserter is untouched: /core still creates one per `connect()`
+   * and it still moves the items. This is a rendering decision about a machine
+   * the player was never able to place, hold, or aim at.
+   *
+   * The slots are still acquired and HIDDEN rather than released, and the reason
+   * has not changed: the count oscillates as a line is edited and re-acquiring
+   * per edit would churn the batch.
+   */
   private syncLinks(f: Factory): void {
-    for (let i = 0; i < f.links.length; ++i) {
-      if (this.linkSlots.length <= i) {
+    // Every link is a port link now, so this hides the lot. It is written as a
+    // filter rather than as `hide everything` on purpose: a future connection
+    // that is genuinely a reaching arm (a long inserter, a robot port) would
+    // arrive as a link with no `fromPort`, and would draw without this function
+    // being rediscovered.
+    let n = 0;
+    for (const l of f.links) {
+      if (l.fromPort !== '' && !LEGACY_INSERTERS) continue;
+      if (this.linkSlots.length <= n) {
         const s = this.batch.acquire('inserter');
         if (s < 0) break;
         this.linkSlots.push(s);
       }
-      const l = f.links[i];
       this.origin.toEngine(l.pos, this.p);
       this.m.compose(this.p, orient(l.up, l.fwd), this.one);
-      this.batch.place(this.linkSlots[i], this.m);
-      this.batch.setFx(this.linkSlots[i], { flow: 0, density: 0, state: 1, level: 0.5 });
+      this.batch.place(this.linkSlots[n], this.m);
+      this.batch.setFx(this.linkSlots[n], { flow: 0, density: 0, state: 1, level: 0.5 });
+      n++;
     }
-    // A removal UNWIRES connections, so the surplus inserters have to go. They
-    // are kept (hidden) rather than released because the count oscillates as a
-    // line is edited and re-acquiring per edit would churn the batch.
-    for (let i = f.links.length; i < this.linkSlots.length; ++i) {
-      this.batch.hide(this.linkSlots[i]);
-    }
+    this.drawnInserters = n;
+    for (let i = n; i < this.linkSlots.length; ++i) this.batch.hide(this.linkSlots[i]);
   }
 
   /**
@@ -292,7 +351,8 @@ export class FactoryView {
 
   stats(): unknown {
     return { ...this.batch.stats(), ghost: this.ghostVisible,
-      links: this.linkSlots.length, cargo: this.cargo.stats(),
+      links: this.linkSlots.length, inserters: this.drawnInserters,
+      cargo: this.cargo.stats(),
       curves: this.curves.length, curveTiles: this.curves,
       beltSockets: this.beltSockets, tiles: this.tileDraw(),
       wires: this.wires.report() };

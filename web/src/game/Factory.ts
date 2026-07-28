@@ -31,6 +31,10 @@ import { addressIn, anchorIn, machineCellKey, machineClash, siteAt,
 import { factoryReport } from './FactoryReport.js';
 import { commitPlan, smeltPairFor } from './FactoryCommit.js';
 import { collectOutput, takeFromBelt, turnPlaced } from './FactoryHand.js';
+import { NO_MIGRATION, type PortMigration } from './FactoryMigrate.js';
+import { restorePlan, type SavedBuilding } from './FactoryRestore.js';
+import type { WiredLink } from './FactoryPorts.js';
+import type { PortRefusal } from './FactoryRefusal.js';
 import type { GameCore } from './GameCore.js';
 import type { OrePatches } from './OrePatches.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
@@ -45,16 +49,17 @@ export class Factory {
   runs: Placed[][] = [];
   /** Per-run /core build index, parallel to `runs`. */
   runBuilds: number[] = [];
-  /**
-   * Where connect() actually wired something, so an inserter can be drawn there
-   * (DW-9: the player never places one, but a connection has to be legible).
-   */
-  links: { pos: { x: number; y: number; z: number };
-           up: THREE.Vector3; fwd: THREE.Vector3;
-           /** The two plan ids the inserter sits between. REPORTED, because
-            *  "which building feeds which" is the one thing a wiring defect
-            *  gets wrong and the only thing a screenshot cannot show. */
-           from: number; to: number }[] = [];
+  /** FS-44: every connection, as a PAIR OF PORTS. `FactoryWiring` builds these
+   *  and argues what changed; `WiredLink` is the row. */
+  links: WiredLink[] = [];
+  /** FS-45: every belt end that ran into a housing instead of a port, with the
+   *  reason and the fix. Empty is a base whose lines all land. */
+  refusals: PortRefusal[] = [];
+  /** Was the port table published before this commit wired anything? Reported
+   *  rather than assumed: an empty table connects nothing (FactoryWiring). */
+  portsLoaded = false;
+  /** FS-46: how the last restore fared against the port model. */
+  migration: Readonly<PortMigration> = NO_MIGRATION;
   private nextId = 1;
   /** Ore drained out of world nodes by miners. The conservation counter. */
   minedFromNodes = 0;
@@ -159,6 +164,15 @@ export class Factory {
     return p !== null && p.remaining > 0 ? i : -1;
   }
 
+  /** Push a fully formed record onto the plan and mint its id. The ONE place an
+   *  id is issued, so a restored building and a placed one cannot collide.
+   *  `FactoryRestore` is the only caller; `stage` builds its own record. */
+  push(p: Omit<Placed, 'id'>): Placed {
+    const row = { id: this.nextId++, ...p } as Placed;
+    this.placed.push(row);
+    return row;
+  }
+
   /** Add one building to the PLAN and re-commit. Returns it, or null. */
   add(kind: BuildKind, s: Snapped, fwd: THREE.Vector3): Placed | null {
     const p = this.stage(kind, s, fwd);
@@ -223,36 +237,9 @@ export class Factory {
     return takeFromBelt(this, p);
   }
 
-  /**
-   * Rebuild the whole plan from saved records and commit ONCE.
-   *
-   * One commit, not one per building, because a commit throws the network away
-   * and rebuilds it: doing that per record would count N-1 spurious rebuilds
-   * and, worse, would wire partial plans on the way. Returns what was restored.
-   */
-  restore(rows: readonly { kind: BuildKind; pos: [number, number, number];
-                           cell: string; up: [number, number, number];
-                           fwd: [number, number, number]; patch: number;
-                           /** Generators only. Absent on a slot written before
-                            *  ABI 9, which restores an empty generator: the
-                            *  honest answer, and the same one a reload has
-                            *  always given a furnace mid-burn. */
-                           fuel?: number }[]): number {
-    this.placed.length = 0;
-    for (const r of rows) {
-      const up = new THREE.Vector3(r.up[0], r.up[1], r.up[2]);
-      const fwd = new THREE.Vector3(r.fwd[0], r.fwd[1], r.fwd[2]);
-      this.placed.push({
-        id: this.nextId++, kind: r.kind,
-        pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] },
-        cell: r.cell, up, fwd, quat: orient(up, fwd),
-        patch: r.patch, lastRemaining: 0, build: -1, entity: -1, run: -1,
-        grid: -1, fuel: r.fuel ?? 0,
-      });
-    }
-    this.commit();
-    return this.placed.length;
-  }
+  /** Rebuild the plan from saved records and commit. `FactoryRestore` owns it,
+   *  because a save is a seam and not a lifecycle. Returns what was restored. */
+  restore(rows: readonly SavedBuilding[]): number { return restorePlan(this, rows); }
 
   /**
    * Take one building out of the PLAN and re-commit. Returns what came back.

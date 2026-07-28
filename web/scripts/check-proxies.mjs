@@ -19,6 +19,17 @@
 // generated from the builder would only ever prove the builder agrees with
 // itself (validate_glb.py's own argument, and it is the right one).
 //
+// THE SOCKETS GET THE SAME TREATMENT, AND FOR A SHARPER REASON. A collision
+// proxy that goes missing costs you a wall you can walk through. A socket that
+// goes missing costs you a machine port: `socket_item_in` and `socket_item_out`
+// are about to be read at load as the real geometry of where a belt hands an
+// item to a smelter and where the smelter hands it back, so a contract that
+// declares a socket the file does not ship yields an undefined transform at the
+// exact place two machines are supposed to meet, and a socket shipped but not
+// declared is a port nobody wired up sitting on the asset looking functional.
+// Both directions are asked here for the same reason both are asked of `col_*`:
+// the surplus is the early symptom, and the absence is the outage.
+//
 // THE THIRD RULE IS A TRAP THIS FILE EXISTS TO STOP BEING SPRUNG. three.js
 // names the split primitives of a multi-material mesh `Name_0`, `Name_1`, ...
 // and the client's proxy readers (`StructureBody.proxiesOf`,
@@ -53,6 +64,7 @@ const assets = contracts.assets ?? {};
 const problems = [];
 let checked = 0;
 let proxies = 0;
+let sockets = 0;
 
 for (const [name, spec] of Object.entries(assets)) {
   if (spec === null || typeof spec !== 'object' || spec.glb === undefined) continue;
@@ -64,9 +76,8 @@ for (const [name, spec] of Object.entries(assets)) {
   }
   checked++;
   const gltf = glbJson(path);
-  const shipped = (gltf.nodes ?? [])
-    .map((n) => n.name ?? '')
-    .filter((n) => n.startsWith('col_'));
+  const nodeNames = (gltf.nodes ?? []).map((n) => n.name ?? '');
+  const shipped = nodeNames.filter((n) => n.startsWith('col_'));
   proxies += shipped.length;
 
   // A contract may declare one name or a list; a biome atlas declares the props
@@ -94,6 +105,50 @@ for (const [name, spec] of Object.entries(assets)) {
         + `sibling but the first is silently dropped on load.`);
     }
   }
+
+  // THE SOCKET HALF. Same question, same two directions, different cost of
+  // getting it wrong: these are the attachment points the machine IO code reads
+  // at load to place ports, so a name that drifts here does not crash, it just
+  // quietly puts a belt's hand-off somewhere the smelter is not.
+  const rawSockets = spec.sockets ?? [];
+  const declaredSockets = typeof rawSockets === 'string' ? [rawSockets] : rawSockets;
+  const shippedSockets = nodeNames.filter((n) => n.startsWith('socket_'));
+  sockets += shippedSockets.length;
+
+  for (const want of declaredSockets) {
+    if (!shippedSockets.includes(want)) {
+      problems.push(`${name} (${spec.glb}): contract declares socket ${want}, `
+        + `the file does not ship it. Anything that resolves that port gets no `
+        + `transform. Shipped: ${shippedSockets.join(', ') || '(none)'}`);
+    }
+  }
+  // The shipped side is de-duplicated by NAME before it is reported, which the
+  // `col_` side above does not need to do. An atlas GLB holds many sub-objects
+  // in one file (`rocket_parts` ships fourteen `socket_stack_bottom`, one per
+  // part; `items_atlas` ships one `socket_rest` per item), so a single
+  // undeclared socket name would otherwise print fifteen identical lines and
+  // bury whatever came after it. The contract names a socket ONCE per asset, so
+  // one line per distinct name is the right granularity; the count is carried
+  // along so a name that repeats unexpectedly is still visible.
+  const seen = new Map();
+  for (const got of shippedSockets) seen.set(got, (seen.get(got) ?? 0) + 1);
+  for (const [got, count] of seen) {
+    if (!declaredSockets.includes(got)) {
+      const times = count > 1 ? ` (${count} nodes)` : '';
+      problems.push(`${name} (${spec.glb}): ships socket ${got}${times}, which `
+        + `the contract does not declare. Add it to "sockets", or delete the `
+        + `node. An undeclared port is one nothing is obliged to keep working.`);
+    }
+  }
+
+  // NO _<digits> CHECK ON SOCKETS, AND THAT IS DELIBERATE RATHER THAN AN
+  // OVERSIGHT. The trap above is a property of three.js splitting a MESH with
+  // several materials into `Name_0`, `Name_1`, ... A socket is an empty node: no
+  // mesh, no material, nothing to split, so the loader never generates those
+  // suffixes for it and the client's readers never collapse them. A socket
+  // legitimately named `socket_item_in_1` is therefore safe, and rejecting it
+  // here would ban a naming scheme that costs nothing. Revisit only if a socket
+  // ever stops being an empty node.
 }
 
 if (problems.length > 0) {
@@ -102,4 +157,4 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(`check-proxies OK (${checked} assets, ${proxies} col_* proxies, `
-  + `declared set matches shipped set both ways)`);
+  + `${sockets} socket_* sockets, declared sets match shipped sets both ways)`);

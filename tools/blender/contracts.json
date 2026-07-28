@@ -732,7 +732,16 @@
       "max_tris_lod0": 120,
       "max_tris_total": 1500,
       "max_materials": 14,
-      "sockets": [],
+      "_sockets_comment": [
+        "FS-50, 2026-07-27. This read [] and the file has always shipped 15",
+        "socket_rest nodes, one per item mesh, carrying the small negative Y",
+        "offset that rests that item on the ground. check-proxies grew a",
+        "socket half the night the machine IO ports became real geometry, and",
+        "this was the ONE disagreement it found across 48 assets and 184",
+        "sockets. The nodes are the feature and the contract was the thing",
+        "that was wrong, so the contract is what changed."
+      ],
+      "sockets": ["socket_rest"],
       "clips": [],
       "double_sided_ok": ["OF_Glass", "OF_LeafDry"],
       "parts": [

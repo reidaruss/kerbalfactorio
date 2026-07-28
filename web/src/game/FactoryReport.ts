@@ -49,10 +49,23 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
     // the line and offers the turn key, which is the only place a player finds
     // out that R works on a placed tile.
     const on = b.run < 0 ? 0 : f.line.beltItems(f.runBuilds[b.run] ?? -1);
+    // FS-45: AND IF THIS TILE IS WHERE A LINE STOPPED, IT SAYS WHY, HERE.
+    //
+    // The ghost's verdict (FactoryGhost.portPreview) covers the moment BEFORE
+    // the press. This covers every moment after it, which is the one that
+    // matters for a save that was migrated, for a line the player built and
+    // walked away from, and for a machine somebody else turned. Without it a
+    // refusal is a thing you could only have learned at placement time, and a
+    // player who missed it has no way back to the sentence.
+    const r = f.refusals.find((k) => k.from === b.id);
     return {
-      name: on > 0 ? `belt  ${on} on the line` : 'belt  empty',
-      fraction: 0, empty: on === 0, distanceM: 0,
-      action: `${TAKE} one    ${labelOf('rotate')} turn    ${REMOVE}`,
+      name: r === undefined
+        ? (on > 0 ? `belt  ${on} on the line` : 'belt  empty')
+        : `belt  NOT CONNECTED: ${r.reason}`,
+      fraction: 0, empty: on === 0 && r === undefined, distanceM: 0,
+      action: r === undefined
+        ? `${TAKE} one    ${labelOf('rotate')} turn    ${REMOVE}`
+        : `${r.fix}    ${labelOf('rotate')} turn    ${REMOVE}`,
     };
   }
   const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
@@ -83,14 +96,21 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
  */
 export function ghostMachinePrompt(
   label: string,
-  t: { reason: string; ok: boolean; chains: boolean } | null,
+  t: { reason: string; ok: boolean; chains: boolean; ports?: string } | null,
 ): HudTarget | null {
   if (t === null || label === '') return null;
+  // FS-45: THE PORT VERDICT GOES ON THE PROMPT, and it goes on the ACTION line
+  // rather than the name line, because it is the longest thing the ghost ever
+  // says and the name line is where the drill's ore rate and the clash refusal
+  // already live. Empty when the placement connects to nothing, which is the
+  // normal case and must stay silent: a ghost that shouts every frame is a ghost
+  // nobody reads, which is how the refusal channel dies.
+  const port = t.ports === undefined || t.ports === '' ? '' : `\n${t.ports}`;
   return {
     name: `${label}${t.reason === '' ? '' : `  ${t.reason}`}`,
     fraction: 0, empty: !t.ok, distanceM: 0,
     action: `${USE} place  (hold to drag)    ${labelOf('rotate')} turn`
-      + (t.chains ? '  (continues the run)' : ''),
+      + (t.chains ? '  (continues the run)' : '') + port,
   };
 }
 
@@ -109,8 +129,27 @@ export function factoryReport(f: Factory): unknown {
       // not a reconstruction from positions that could disagree with it.
       tileIds: r.map((t) => t.id),
     })),
-    /** Every inserter connect() created, and the two plan ids it sits between. */
-    links: f.links.map((l) => ({ from: l.from, to: l.to })),
+    /**
+     * FS-44: every connection, AS A PAIR OF PORTS.
+     *
+     * `from`/`to` are the plan ids and are unchanged, so every probe that ever
+     * asserted "the head feeds the smelter" still reads. What is new is which
+     * SOCKET each end used and the three measurements that decided it, because
+     * under a port model "these two are connected" and "these two are near each
+     * other" are different claims and a report that cannot separate them cannot
+     * check the change that separated them.
+     */
+    links: f.links.map((l) => ({ from: l.from, to: l.to,
+      fromPort: l.fromPort, toPort: l.toPort,
+      gapM: l.gapM, riseM: l.riseM, facing: l.facing })),
+    /** FS-45: every belt end that ran into a housing, with the reason. */
+    refusals: f.refusals,
+    /** The port table was published before this plan was wired. See
+     *  FactoryWiring: an empty table connects nothing, and a subsystem that
+     *  silently does nothing is the ceiling that reports success. */
+    portsLoaded: f.portsLoaded,
+    /** FS-46: what the last restore did to a pre-port save. */
+    migration: f.migration,
     ticks: f.line.ticks,
     coreTicks: f.line.coreTicks,
     rebuilds: f.line.rebuilds,

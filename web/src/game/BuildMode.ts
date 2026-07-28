@@ -376,6 +376,11 @@ export class BuildMode {
         // says a run would flow into this cell, which since FS-27 is a fact
         // about the RUN and no longer a claim that R is inert here.
         snapped: this.target.snapped, chains: this.target.chains,
+        // FS-45. WOULD THIS CONNECT, and if not why not, before the button goes
+        // down. Published here because the probe that judges the port model has
+        // to read the same sentence the player does; a probe that recomputed the
+        // verdict would be checking its own arithmetic.
+        ports: this.target.ports,
         footprint: this.selected === null || isStructure(this.selected)
           || isFixture(this.selected) ? 0 : FOOTPRINT[this.selected],
         site: this.target.addr.site.id,

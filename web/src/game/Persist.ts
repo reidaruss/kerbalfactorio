@@ -180,6 +180,12 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
       pos: [p.pos.x, p.pos.y, p.pos.z] as [number, number, number],
       up: [p.up.x, p.up.y, p.up.z] as [number, number, number],
       fwd: [p.fwd.x, p.fwd.y, p.fwd.z] as [number, number, number],
+      // FS-46. A slot written from here has been through the port model, so it
+      // must never be migrated again: a second rotation pass over a base the
+      // player has since re-aimed by hand would turn machines they turned on
+      // purpose. Absent on every slot written before FS-44, and that absence is
+      // the migration's only hinge.
+      ports: true,
     })),
     machines: machines.list.map((m): SaveMachine => {
       const st = game.furnaceState(m.handle);

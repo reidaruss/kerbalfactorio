@@ -77,6 +77,14 @@ const WANT: Record<string, string[]> = {
   belt: ['socket_belt_in', 'socket_belt_out'],
   miner: ['socket_item_out'],
   smelter: ['socket_item_in', 'socket_item_out'],
+  // FS-43: THE ELECTRIC SMELTER WAS MISSING FROM THIS TABLE, and until ports
+  // became the connection rule the omission cost nothing visible: an esmelter
+  // simply never caught a snap, which reads as a stiff crosshair rather than as
+  // a defect. It is a separate `BuildKind` drawing the smelter's own asset
+  // (FactoryKinds says why), so it publishes the same two item ports and has to
+  // be asked for them under its own key, because `readMachineSockets` is keyed
+  // by the TEMPLATE key and not by the file.
+  esmelter: ['socket_item_in', 'socket_item_out'],
 };
 
 /** The sockets items LEAVE by. Everything else is an inlet. */
@@ -112,8 +120,16 @@ export function readMachineSockets(
   return out;
 }
 
-/** Where one socket of one placed building actually is, in body-frame metres. */
-export function socketWorld(b: Placed, s: SocketDef): Vec3d {
+/**
+ * Where one socket of one placed building actually is, in body-frame metres.
+ *
+ * FS-43 widened the parameter from `Placed` to the two fields it actually
+ * touches, so a build GHOST can be asked where its ports WOULD be without
+ * inventing a fake plan record. `Placed` satisfies it structurally, so no
+ * caller moved.
+ */
+export function socketWorld(b: { pos: Vec3d; quat: THREE.Quaternion },
+                            s: SocketDef): Vec3d {
   const v = s.local.clone().applyQuaternion(b.quat);
   return { x: b.pos.x + v.x, y: b.pos.y + v.y, z: b.pos.z + v.z };
 }

@@ -92,6 +92,14 @@ export interface SaveBuilding {
    *  restores an empty generator: the honest answer, and the same one a reload
    *  has always given a furnace mid-burn. */
   fuel?: number;
+  /** FS-46: written by the PORT model (FS-44). Absent on every slot written
+   *  before it, and that absence is what triggers the one-time migration in
+   *  `FactoryMigrate`. Additive and optional under exactly the rule `discovery`,
+   *  `pads`, `health`, `vitals` and `progress` were added by, so SAVE_VERSION
+   *  deliberately does NOT move: a bump is refused on MISMATCH and would
+   *  therefore destroy every world anybody is playing, and an absent flag is not
+   *  MISREAD, it is read as what it is. */
+  ports?: boolean;
 }
 
 export interface SaveMachine {

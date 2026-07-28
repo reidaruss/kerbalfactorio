@@ -16,6 +16,7 @@
 // the machine it claims to describe and then lies exactly when it matters.
 
 import { feedMachine, refuel } from './GameplayActions.js';
+import { machinePorts } from './FactoryPorts.js';
 import { PART_INFO } from './Hotbar.js';
 import type { MachineView } from '../ui/FurnacePanel.js';
 import type { Gameplay } from './Gameplay.js';
@@ -112,13 +113,15 @@ function buildPanelView(g: Gameplay, b: Placed): MachineView {
       ? 'BURNING' : 'NO FUEL')
       : working ? (b.kind === 'miner' ? 'MINING' : 'SMELTING') : 'IDLE',
     input: crafts ? { name: g.game.itemName(inItem),
-      count: live ? f.line.inputBuffer(b.build) : 0 } : null,
+      count: live ? f.line.inputBuffer(b.build) : 0,
+      ...portInfo(g, b, 'in') } : null,
     fuel: b.kind === 'generator'
       ? { main: `${b.grid >= 0 ? f.power.generatorFuel(b.grid) : 0} units`,
         sub: 'coal' } : null,
     output: b.kind === 'generator' ? null
       : { name: outItem > 0 ? g.game.itemName(outItem) : '',
-        count: live ? f.line.outputBuffer(b.build) : 0 },
+        count: live ? f.line.outputBuffer(b.build) : 0,
+        ...portInfo(g, b, 'out') },
     // /core's own per-unit work counter, normalised on the far side (GP-63).
     progress01: crafts && live ? f.line.progress01(b.build) : null,
     progressText: crafts && live
@@ -133,6 +136,38 @@ function buildPanelView(g: Gameplay, b: Placed): MachineView {
         ? [{ item: inItem, name: g.game.itemName(inItem), count: packIn, fuel: false }]
         : [],
   };
+}
+
+/**
+ * FS-48: WHICH PORT A STACK ARRIVES ON, AND WHAT IS ON THE OTHER END OF IT.
+ *
+ * The panel and the world have to agree about the same machine, and until FS-44
+ * they could not: a connection was a distance between two centres, so there was
+ * no port to name and "fed by the drill over there" was as specific as the truth
+ * got. Now a hand-off happens through a socket the player can walk round and
+ * look at, and `f.links` records both socket names, so this reads the SAME rows
+ * the wiring wrote rather than re-deriving the geometry. Re-deriving it is how
+ * the panel ends up confidently disagreeing with the belt.
+ *
+ * A DISCONNECTED PORT SAYS SO, and that is the half that earns this. A player
+ * opens this panel because a machine has stopped, and "in: socket_item_in, not
+ * connected" is the answer, printed where they are already looking, in the
+ * moment they are already asking.
+ */
+function portInfo(g: Gameplay, b: Placed, dir: 'in' | 'out'):
+{ port?: string; via?: string } {
+  const defs = machinePorts().get(b.kind) ?? [];
+  const def = defs.find((d) => d.dir === dir);
+  if (def === undefined) return {};
+  const f = g.factory;
+  const l = dir === 'in'
+    ? f.links.find((k) => k.to === b.id && k.toPort === def.name)
+    : f.links.find((k) => k.from === b.id && k.fromPort === def.name);
+  if (l === undefined) return { port: def.name, via: 'not connected' };
+  const other = f.placed.find((p) => p.id === (dir === 'in' ? l.from : l.to));
+  const label = other === undefined ? '?' : `#${other.id} ${other.kind}`;
+  return { port: def.name,
+    via: dir === 'in' ? `fed by ${label}` : `feeding ${label}` };
 }
 
 /**

@@ -17,7 +17,27 @@
 import { esc } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
 
-export interface MachineSlot { name: string; count: number }
+/**
+ * FS-48: A SLOT NAMES THE PORT ITS STACK ARRIVES ON, so the panel and the world
+ * agree about the same machine.
+ *
+ * The panel used to say "Input: 12 Raw Iron" and stop, which was the whole truth
+ * while a connection was a proximity adjacency: there was nothing else to name,
+ * because the ore came from "something nearby". Under FS-44 a stack arrives
+ * through a specific socket on a specific face of the housing, and a player
+ * debugging a stalled line needs the panel to agree with what they can walk
+ * round and look at. `port` is the socket's own name, verbatim from the shipped
+ * asset, and `via` is what is on the other end of it or why nothing is.
+ *
+ * Both are optional: the hand furnace has no ports and passes neither, and its
+ * cells render exactly as they did.
+ */
+export interface MachineSlot {
+  name: string;
+  count: number;
+  port?: string;
+  via?: string;
+}
 
 export interface MachineView {
   title: string;
@@ -125,14 +145,25 @@ export class FurnacePanel extends Modal {
     if (s === null) {
       return `<div class="cell${out}"><em>${label}</em><b>-</b><i></i></div>`;
     }
+    // FS-48. The PORT goes on the label line and the connection goes under the
+    // count, because the label answers "which hole is this" and the line under
+    // it answers "and is anything plugged into it". A tooltip alone would not
+    // do: the player is looking at this panel BECAUSE the line has stopped, and
+    // a reason you have to hover to find is a reason nobody reads.
+    const tag = s.port === undefined ? '' : ` <u>${esc(s.port)}</u>`;
+    const via = s.via === undefined ? '' : `<s>${esc(s.via)}</s>`;
     return `<button class="cell${out}" ${attr}="1"${enabled ? '' : ' disabled'}`
-      + ` title="${esc(hint)}"><em>${label}</em>`
-      + `<b>${s.count > 0 ? esc(s.name) : '.'}</b><i>${s.count}</i></button>`;
+      + ` title="${esc(hint)}"><em>${label}${tag}</em>`
+      + `<b>${s.count > 0 ? esc(s.name) : '.'}</b><i>${s.count}</i>${via}</button>`;
   }
 }
 
 function cellKey(s: MachineSlot | null): string {
-  return s === null ? '-' : `${s.name}${s.count}`;
+  // FS-48: the port and the connection are PART of the key. `render` returns
+  // early on an unchanged key, so a field left out here is a field that updates
+  // on screen only when something else happens to change, which is the shape of
+  // "the panel said it was connected for another ten seconds".
+  return s === null ? '-' : `${s.name}${s.count}|${s.port ?? ''}|${s.via ?? ''}`;
 }
 
 function pct(v: MachineView): number {
