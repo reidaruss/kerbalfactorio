@@ -123,3 +123,22 @@ One wrinkle the private-index technique does not remove: after landing a commit
 that way, the SHARED index still holds pre-commit entries for your paths and
 will read as staged modifications or deletions. Follow with
 `git reset -q HEAD -- <your paths>` (scoped to your paths, never `.`).
+
+### Freezing a build: archive `web`, never the whole tree
+
+`git archive HEAD | tar -x` extracts **`ue/` as well**, which is 6.8 GB of dead
+Unreal assets superseded by the Three.js pivot. Two lanes doing that at once
+filled a 931 GB disk to zero on 2026-07-28 and briefly stopped every lane.
+
+Always scope it:
+
+```
+git archive HEAD web | tar -x --strip-components=1 -C <dir>
+```
+
+Then `cp -r web/public <dir>/public` (generated, not tracked) and build with
+`OF_BUILD_STAMP=<sha>` so the frozen bundle states the commit it came from
+rather than interrogating the checkout around it.
+
+Delete the scratch directory when done. A 24 MB build left behind is nothing;
+thirteen of them plus their Chrome profiles is not.
