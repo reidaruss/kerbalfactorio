@@ -254,6 +254,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     cfg.scatterFair, cfg.grassShort,
     cfg.scatterWet ? null : oracle.water, () => voxels?.handle ?? 0,
     body.radiusM, cfg.canopyRadiusM, cfg.canopyShade);
+  // WG-64: THE REBASE PATH, which had no caller. `Scatter.replace` documents
+  // itself as "THE rebase path" and nothing ever called it, so every prop was
+  // left behind by the whole rebase delta each time the origin moved. Measured
+  // on a driven 4 km sprint before this line existed: 4,000.089191 m of
+  // displacement across 43 of 43 scattered chunks. It hangs off the streamer's
+  // own hook rather than off a second `OriginRebased` subscription so it cannot
+  // run before the views it reads have been re-placed.
+  t.stream.afterRebase = () => scatter.replace(t.stream.residentViews);
 
   // W5. Created only when there is a character: with no player nobody digs, and
   // an unbound edits handle would arm voxel collision for a flying camera. The

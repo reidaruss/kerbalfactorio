@@ -333,11 +333,32 @@ export class TerrainStream {
     for (const view of this.views.values()) this.placeInScene(view);
   }
 
+  /**
+   * Anything that has cached a chunk's ENGINE position and must re-derive it
+   * after this class has re-derived its own. Set by `Boot`; `Scatter.replace` is
+   * the only subscriber today.
+   *
+   * A HOOK AND NOT A SECOND `events.on('OriginRebased')` SUBSCRIPTION, and the
+   * difference is the whole point (WG-64). A subscriber that re-composes
+   * matrices from `ChunkView.pos` is only correct if it runs AFTER the loop
+   * below, and `Events` delivers to a `Set` in insertion order, so the
+   * correctness of the fix would rest on which of two files happened to be
+   * constructed first. That is a dependency nobody would think to preserve
+   * across a refactor, and the defect this repairs was itself an ordering-free
+   * omission that survived for months. Calling it here makes "after the views
+   * are re-placed" a property of the code rather than of a construction order.
+   */
+  afterRebase: (() => void) | null = null;
+
   /** The ONE rebase contract. Re-derive, never patch. Retiring chunks are still
    *  on screen for a quarter of a second, so they re-derive too. */
   onOriginRebased(): void {
     for (const view of this.views.values()) view.place(this.origin, this.pool);
     this.retiring.onOriginRebased(this.origin);
+    // Everything downstream that composed a transform from `view.pos`. Measured
+    // consequence of it being absent: a driven 4 km sprint displaced every prop
+    // in 43 of 43 scattered chunks by 4,000.089191 m, which is the rebase delta.
+    if (this.afterRebase !== null) this.afterRebase();
   }
 
   private recount(): void {

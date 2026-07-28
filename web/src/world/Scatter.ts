@@ -50,6 +50,13 @@ interface Placed {
   wanted: number;
   /** Rebuild band this chunk was built in. See `detailBandOf`. */
   detailBand: number;
+  /**
+   * The chunk's ENGINE position at the moment its instance matrices were last
+   * written. Every matrix in the batch is `builtPos + local`, so this is the
+   * other half of the staleness subtraction and it is the only new state the
+   * measurement needs.
+   */
+  builtPos: THREE.Vector3;
   /** The canopy's own accounting, over the canopy's own ground. */
   canopyCells: number;
   canopyProps: number;
@@ -58,6 +65,16 @@ interface Placed {
 
 /** A biome with no understorey draws from this rather than from a null check. */
 const EMPTY_TIER: Tier = { specs: [], weights: [], total: 0 };
+
+/**
+ * Below this a chunk counts as NOT stale (WG-64). One millimetre, which is not
+ * a tolerance on the answer: a re-placed chunk is exact, because `write` and
+ * `ChunkView.place` both go through the same f64 `toEngine` subtraction, so the
+ * correct reading is a hard 0.000000. The epsilon exists only so the counter
+ * cannot be tripped by a float32 round trip through an instance matrix, and the
+ * failure it is looking for is measured in kilometres.
+ */
+const STALE_EPS_M = 1e-3;
 
 export class Scatter {
   private readonly placed = new Map<string, Placed>();
@@ -120,6 +137,24 @@ export class Scatter {
    * assumes, and both comments describe a planet that no longer exists.
    */
   slopeRejectCells = 0;
+  /**
+   * The worst DISPLACEMENT, in metres, between where a chunk's props were drawn
+   * and where that chunk now is, and how many chunks carry any.
+   *
+   * A number rather than a picture on purpose. The suspected defect (this class
+   * is not told about a floating-origin rebase) puts props kilometres from the
+   * ground they were placed on, which at 4 km is not a wrong-looking forest but
+   * an ABSENT one, and "the props vanished" is consistent with half a dozen
+   * causes. This is the subtraction the defect IS, so it can only read non-zero
+   * for one reason, and the size of the reading names the rebase delta.
+   *
+   * Must be 0.0 at all times. It is not a tolerance and it has no threshold: a
+   * chunk that has been re-placed is re-placed exactly, in the same f64
+   * subtraction `toEngine` does, so the correct value is a hard zero and
+   * anything else is the bug.
+   */
+  staleMaxM = 0;
+  staleChunks = 0;
 
   constructor(
     private readonly lib: PropLibrary,
@@ -181,6 +216,19 @@ export class Scatter {
     const seen = new Set<string>();
     let budget = BUILDS_PER_UPDATE;
     let backlog = 0;
+    // STALENESS, measured rather than inferred (WG-64). Every instance matrix
+    // this class writes is composed as `v.pos + local`, and `v.pos` is engine
+    // space, which the floating origin re-derives on every rebase. So the exact
+    // error in a placed prop's position is the distance the chunk's OWN engine
+    // position has moved since the matrices were last written, and that is a
+    // number this class already holds both halves of.
+    //
+    // It is here rather than in a probe because a probe would have to read the
+    // matrices back out of a `BatchedMesh` and compare them against a surface it
+    // would have to re-derive, which is three chances to measure the wrong
+    // thing. This is the same subtraction the bug is.
+    let stale = 0;
+    let staleChunks = 0;
     for (const v of views) {
       if (!v.isNear || !v.visible) continue;
       if (v.pos.distanceTo(eye) > this.reachM + v.maxOffsetM) continue;
@@ -203,12 +251,16 @@ export class Scatter {
       // forever once inside, so walking forwards would leave the ground ahead
       // permanently sparser than the ground behind. One extra rebuild per
       // chunk buys the near band its real density.
+      const d = v.pos.distanceTo(pl.builtPos);
+      if (d > STALE_EPS_M) { staleChunks++; if (d > stale) stale = d; }
       if (pl.detailBand === this.detailBandOf(v)) continue;
       if (budget <= 0) { backlog++; continue; }
       budget--;
       this.drop(v.key);
       this.build(v);
     }
+    this.staleMaxM = stale;
+    this.staleChunks = staleChunks;
     this.backlog = backlog;
     for (const key of [...this.placed.keys()]) {
       if (!seen.has(key)) this.drop(key);
@@ -542,11 +594,16 @@ export class Scatter {
       scale: scale.subarray(0, n * 3), owner: Uint16Array.from(owner),
       cells, cellArea, wanted, detailBand: band,
       canopyCells, canopyProps, canopyWanted,
+      builtPos: v.pos.clone(),
     };
   }
 
   /** Compose every instance matrix from the chunk's CURRENT engine position. */
   private write(v: ChunkView, pl: Placed): void {
+    // `write` IS the re-placement, so this is where staleness is cleared. It is
+    // set here and not in `build` so that `replace` clears it too, which makes
+    // the counter a test of the rebase path rather than of the build path.
+    pl.builtPos.copy(v.pos);
     for (let i = 0; i < pl.parts.length; ++i) {
       const o = pl.owner[i];
       this.p.set(
@@ -578,6 +635,7 @@ export class Scatter {
     canopyCells: number; canopyM2: number; canopyPerM2: number;
     canopyDelivered: number; canopyOfferedCells: number;
     canopySlopeCells: number; canopyBareCells: number; slopeRejectCells: number;
+    staleMaxM: number; staleChunks: number;
   } {
     return {
       chunks: this.chunksScattered,
@@ -616,6 +674,9 @@ export class Scatter {
       canopySlopeCells: this.canopySlopeCells,
       canopyBareCells: this.canopyBareCells,
       slopeRejectCells: this.slopeRejectCells,
+      // WG-64. Must be 0.000000. See `staleMaxM`.
+      staleMaxM: Math.round(this.staleMaxM * 1e6) / 1e6,
+      staleChunks: this.staleChunks,
     };
   }
 }
