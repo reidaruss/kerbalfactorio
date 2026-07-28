@@ -21,8 +21,6 @@
 import './styles/pause.css';
 import { esc } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
-import type { ControlGroup } from '../player/BindingText.js';
-import type { VideoRow } from '../app/VideoSettings.js';
 
 /** One testing control, as data. The panel has no opinion about any of them. */
 export interface CheatRow {
@@ -42,16 +40,6 @@ export interface CheatRow {
 }
 
 export interface PauseView {
-  /** GP-131. Which page is showing: '' is the root, 'controls' is the binding
-   *  table. A PAGE and not a second modal, deliberately: Escape must keep
-   *  meaning one thing, and a nested modal would make the first press close a
-   *  sub-screen while the player expects it to close the menu. Back is a button;
-   *  Escape always shuts the whole thing. */
-  page: string;
-  controls: ControlGroup[];
-  /** GP-132. The video knobs this session is actually running at. Read only:
-   *  see app/VideoSettings.ts for why the wiring is a separate, cross-lane job. */
-  video: VideoRow[];
   mode: string;
   /** The IndexedDB key this world lives under. Named on screen because the one
    *  destructive control in here destroys exactly it. */
@@ -65,27 +53,22 @@ export interface PauseView {
 
 /** Everything the shell reserves and does not build. Data, so adding the fifth
  *  section later is a row here rather than a layout. */
-const STUBS: readonly { name: string; waiting: string; page: string }[] = [
-  { name: 'Save Game', page: '',
+const STUBS: readonly { name: string; waiting: string }[] = [
+  { name: 'Save Game',
     waiting: 'not yet: the world autosaves every 20 seconds to the slot named '
-      + 'above. Named slots, manual saves and a load list come with the save '
+      + 'below. Named slots, manual saves and a load list come with the save '
       + 'system.' },
-  // GP-131. THE FIRST STUB TO BECOME REAL, and it stays in this list rather
-  // than being promoted out of it, because the shape the shell reserved is the
-  // shape it turned out to want: a named section with a page behind it.
-  { name: 'Options / Controls', page: 'controls',
-    waiting: 'every control the game listens to, read live from the one binding '
-      + 'table. Rebinding is not built yet.' },
-  // GP-132. READ ONLY. Every knob already exists as a URL flag and is read once
-  // at boot by files another lane owns; showing what this session is running at
-  // is worth having on its own and needs no renderer contact whatsoever.
-  { name: 'Options / Video', page: 'video',
-    waiting: 'what this session is running at, read live from the parsed '
-      + 'config. Changing them from here is not built yet.' },
-  { name: 'Options / Audio', page: '',
+  { name: 'Options / Controls',
+    waiting: 'not yet: this will show the binding table the game already has '
+      + '(player/Bindings.ts), and let you rebind it. It will NOT be a second '
+      + 'list of keys, because a second list is a list that goes wrong.' },
+  { name: 'Options / Video',
+    waiting: 'not yet: resolution, the post stack (AO, bloom, grade, AA) and '
+      + 'the terrain quality dial, all of which are URL flags today.' },
+  { name: 'Options / Audio',
     waiting: 'not yet: master volume and mute exist and are on the backslash '
       + 'key; they get sliders here, plus per-bus levels.' },
-  { name: 'Multiplayer', page: '',
+  { name: 'Multiplayer',
     waiting: 'not yet: host, join and the server list. The sim is already '
       + 'deterministic and command-driven, which is the hard half.' },
 ];
@@ -134,15 +117,12 @@ export class PauseMenu extends Modal {
   /** Rebuild, diffed on one key so an open menu nothing has moved is free. */
   render(view: PauseView): void {
     if (!this.open) return;
-    const key = `${view.page}|${view.mode}|${view.slotKey}|${view.assisted}|`
-      + `${view.confirm}|`
+    const key = `${view.mode}|${view.slotKey}|${view.assisted}|${view.confirm}|`
       + view.cheats.map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;
     this.last = key;
-    this.body.innerHTML = view.page === 'controls' ? controls(view.controls)
-      : view.page === 'video' ? video(view.video)
-        : header(view) + stubs() + testing(view);
+    this.body.innerHTML = header(view) + stubs() + testing(view);
   }
 
   invalidate(): void { this.last = ''; }
@@ -170,42 +150,10 @@ function header(v: PauseView): string {
 }
 
 function stubs(): string {
-  return '<div class="of-pgrp stubs"><h4>Options</h4>'
-    + STUBS.map((s) => `<div class="row stub${s.page === '' ? '' : ' live'}" `
-      + `data-stub="${esc(s.name)}">`
+  return '<div class="of-pgrp stubs"><h4>Not built yet</h4>'
+    + STUBS.map((s) => `<div class="row stub" data-stub="${esc(s.name)}">`
       + `<span class="nm">${esc(s.name)}</span>`
-      + `<span class="why">${esc(s.waiting)}</span>`
-      + (s.page === '' ? ''
-        : `<button type="button" data-cheat="page:${esc(s.page)}">Open</button>`)
-      + '</div>').join('')
-    + '</div>';
-}
-
-/**
- * GP-131. THE CONTROLS SCREEN: every action the game listens to, with the key
- * it is actually on.
- *
- * Nothing here is written down. The rows are DERIVED from `BINDINGS` by
- * `controlGroups()` on every render, so this screen cannot state a key the game
- * does not listen to, which is the whole reason it was worth building before
- * rebinding. A shared code is called out rather than drawn twice and hoped over.
- */
-function controls(groups: ControlGroup[]): string {
-  const n = groups.reduce((a, g) => a + g.rows.length, 0);
-  return '<div class="of-pgrp ctl"><h4>Controls'
-    + `<button type="button" class="back" data-cheat="page:">Back</button></h4>`
-    + `<div class="row note"><span class="why">All ${n} controls, read from the `
-    + 'one binding table the game itself asks. Rebinding is not built yet; when '
-    + 'it is, it will edit this table and nothing else.</span></div>'
-    + groups.map((g) => `<div class="ctlg" data-group="${esc(g.name)}">`
-      + `<h5>${esc(g.name)}</h5>`
-      + g.rows.map((r) => `<div class="ctlr" data-action="${esc(r.action)}">`
-        + `<span class="nm">${esc(r.label)}</span>`
-        + `<span class="keys">${r.keys.map((k) =>
-          `<kbd>${esc(k)}</kbd>`).join(' ')}</span>`
-        + (r.sharedWith.length === 0 ? ''
-          : `<span class="share">also ${esc(r.sharedWith.join(', '))}</span>`)
-        + '</div>').join('') + '</div>').join('')
+      + `<span class="why">${esc(s.waiting)}</span></div>`).join('')
     + '</div>';
 }
 
@@ -243,36 +191,4 @@ function armed(c: CheatRow, sentence: string): string {
     + 'Yes, destroy it</button>'
     + `<button type="button" data-cheat="${esc(c.id)}:cancel">Cancel</button>`
     + '</span></div>';
-}
-
-/**
- * GP-132. THE VIDEO SCREEN: what this session is actually running at.
- *
- * Every value is read off the parsed `Config` the renderer was handed at boot,
- * not off a default table, because the number worth comparing across two
- * machines is the number each of them RAN. `applyBy` is shown per row rather
- * than as a blanket footnote: three of these are baked into an allocation or a
- * shader path at boot, and a screen that offered a live slider for a
- * preallocated chunk pool would be lying about what it could do.
- */
-function video(rows: VideoRow[]): string {
-  const groups: string[] = [];
-  for (const r of rows) if (!groups.includes(r.group)) groups.push(r.group);
-  return '<div class="of-pgrp ctl"><h4>Video'
-    + '<button type="button" class="back" data-cheat="page:">Back</button></h4>'
-    + `<div class="row note"><span class="why">Read only for now. Every one of `
-    + 'these is a URL flag the game already accepts, so you can benchmark by '
-    + 'adding it to the address bar today; a control here needs the renderer to '
-    + 'either take the value live or reload, which is a cross-lane call.'
-    + '</span></div>'
-    + groups.map((gname) => `<div class="ctlg" data-group="${esc(gname)}">`
-      + `<h5>${esc(gname)}</h5>`
-      + rows.filter((r) => r.group === gname).map((r) =>
-        `<div class="ctlr" data-flag="${esc(r.flag)}" data-apply="${r.applyBy}">`
-        + `<span class="nm">${esc(r.label)}</span>`
-        + `<span class="keys"><kbd>${esc(r.value)}</kbd></span>`
-        + `<span class="share">?${esc(r.flag)}= ${esc(r.options)}`
-        + `${r.applyBy === 'reload' ? ' (needs a reload)' : ''}</span>`
-        + '</div>').join('') + '</div>').join('')
-    + '</div>';
 }

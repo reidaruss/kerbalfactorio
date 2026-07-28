@@ -37,8 +37,6 @@
     return ok;
   };
   const combat = location.search.includes('combat=1');
-  let controls = {};
-  let video = {};
   const opts = { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 };
   /**
    * Press the REAL button for a control, held 110 ms, RE-QUERIED between the
@@ -120,117 +118,12 @@
     stubs.length === 5, `${stubs.length}: ${stubs.map((s) => s.name).join(', ')}`);
   check('and every stub says what it is waiting for rather than just "not yet"',
     stubs.every((s) => s.why.length > 40), JSON.stringify(stubs.map((s) => s.why.length)));
-  // GP-131 CHANGED THIS ASSERTION AND THE CHANGE IS THE POINT: it used to read
-  // "no stub is a pressable button", which was right when all five were
-  // reserved and would have gone on passing forever by simply never building
-  // one. It now names the number that is BUILT, so filling the next stub has to
-  // come back here and say so.
-  const stubButtons = [...document.querySelectorAll('#of-pause .row.stub button')]
-    .map((b) => b.getAttribute('data-cheat'));
-  check('exactly two sections are built: Controls and Video',
-    stubButtons.length === 2 && stubButtons.includes('page:controls')
-    && stubButtons.includes('page:video'), stubButtons.join(','));
-  check('the other three are reserved and carry no control at all',
-    stubs.length - stubButtons.length === 3, `${stubs.length} stubs`);
+  check('no stub is a pressable button',
+    document.querySelectorAll('#of-pause .row.stub button').length === 0);
   const shown = of.pause().view;
   check('the menu NAMES the save slot this world lives in',
     (document.querySelector('#of-pause [data-slot]') ?? {}).textContent
       === shown.slotKey, shown.slotKey);
-
-  // ======================================================================
-  // B2. GP-131: OPTIONS / CONTROLS, the first stub to become real
-  // ======================================================================
-  const ctlStub = document.querySelector('#of-pause .row.stub[data-stub="Options / Controls"]');
-  check('the Controls section now carries an Open button',
-    ctlStub !== null && ctlStub.querySelector('button') !== null,
-    ctlStub === null ? 'no row' : ctlStub.className);
-  check('and the three unbuilt sections still do NOT',
-    document.querySelectorAll('#of-pause .row.stub button').length === 2,
-    `${document.querySelectorAll('#of-pause .row.stub button').length} buttons`);
-  check('opening it works', await press('page:controls'));
-  const ctl = of.pause().view.controls;
-  const flat = ctl.flatMap((gp) => gp.rows);
-  const drawn = [...document.querySelectorAll('#of-pause .ctlr')];
-  controls = {
-    groups: ctl.map((gp) => `${gp.name}:${gp.rows.length}`),
-    total: flat.length, drawn: drawn.length,
-    keyed: Object.fromEntries(flat.map((r) => [r.action, r.keys.join('+')])),
-    shared: flat.filter((r) => r.sharedWith.length > 0)
-      .map((r) => `${r.action}=${r.keys.join('+')}~${r.sharedWith.join('/')}`),
-  };
-  check('the page is showing', of.pause().view.page === 'controls',
-    of.pause().view.page);
-  // EVERY action in the game is on the screen. `ACTION_TEXT` is a
-  // `Record<Action, ...>` so it is exhaustive by TYPE, and `controlGroups`
-  // filters by group name, so the one way a control could go missing is a group
-  // name that matches nothing. That is what this counts.
-  check('every derived row is DRAWN, so no group was dropped on the floor',
-    drawn.length === flat.length && flat.length > 55,
-    `${flat.length} derived, ${drawn.length} drawn`);
-  check('and every row carries at least one key', flat.every((r) => r.keys.length > 0),
-    flat.filter((r) => r.keys.length === 0).map((r) => r.action).join(','));
-  check('all six groups are present', ctl.length === 6,
-    ctl.map((gp) => gp.name).join(', '));
-  // THE REBIND THAT JUST HAPPENED. GP-113 moved B to the build menu and free
-  // placement to N; a screen that still said B for free placement would be the
-  // exact defect this screen exists to make impossible.
-  const keyOf = (a) => (flat.find((r) => r.action === a) ?? { keys: [] }).keys.join('+');
-  check('the screen shows the LIVE binding for B, not the old one',
-    keyOf('build') === 'B' && keyOf('freeSnap') === 'N',
-    `build=${keyOf('build')} freeSnap=${keyOf('freeSnap')}`);
-  check('and it reports the codes a player actually recognises',
-    keyOf('use') === 'Left click' && keyOf('demolish') === 'X+Right click',
-    `use=${keyOf('use')} demolish=${keyOf('demolish')}`);
-  // SHARED CODES ARE SHOWN rather than drawn twice and hoped over. Space is
-  // `jump` and `stage`, which `Bindings.ts` permits only because one consumer
-  // is ever live; a screen that hid that would hide the precondition.
-  check('a code shared by two actions is CALLED OUT',
-    controls.shared.some((x) => x.startsWith('jump=')),
-    controls.shared.join(' | '));
-  // AND THE MAP HINT AGREES WITH IT. Both now read `labelOf`, which is the
-  // whole point: the map panel hardcoded a literal M for months and was one
-  // remap from telling the player a key that does nothing.
-  const mapHint = document.querySelector('#of-map .hint');
-  controls.mapHint = mapHint === null ? null : mapHint.textContent.slice(0, 40);
-  check('the MAP HINT names the same key the controls screen does',
-    mapHint === null || mapHint.textContent.includes(keyOf('map')),
-    `${controls.mapHint} vs map=${keyOf('map')}`);
-  // ======================================================================
-  // B3. GP-132: OPTIONS / VIDEO, published READ ONLY
-  // ======================================================================
-  check('going back from controls', await press('page:'));
-  check('opening video works', await press('page:video'));
-  const vid = of.pause().view.video;
-  const vrows = [...document.querySelectorAll('#of-pause .ctlr[data-flag]')];
-  video = { rows: vid.length, drawn: vrows.length,
-    values: Object.fromEntries(vid.map((r) => [r.flag, r.value])),
-    reloadOnly: vid.filter((r) => r.applyBy === 'reload').map((r) => r.flag) };
-  check('the video page lists every knob and draws every one',
-    vid.length > 10 && vrows.length === vid.length,
-    `${vid.length} rows, ${vrows.length} drawn`);
-  // IT REPORTS WHAT THIS SESSION IS RUNNING, not a default table. The runner
-  // boots with `?quality=` unset and `?post=` unset, so those read their
-  // defaults; the assertion that matters is that a flag PASSED ON THE URL comes
-  // back changed, which is what makes this a benchmark readout rather than a
-  // list of constants. `debug=1` is always on for a driven run, so `shadows`
-  // is left alone and `pool` is the one the runner does not touch either.
-  check('every value is a real string and not blank',
-    vid.every((r) => r.value !== ''), JSON.stringify(video.values));
-  // THE HONESTY ROW. Three knobs are boot-only by construction and the screen
-  // says so per row, because a slider offered for a preallocated pool would be
-  // a control that cannot work.
-  check('the boot-only knobs are marked as needing a reload',
-    video.reloadOnly.includes('pool') && video.reloadOnly.includes('maxdepth')
-    && video.reloadOnly.includes('quality'), video.reloadOnly.join(','));
-  check('and the screen SAYS it is read only rather than offering dead controls',
-    document.querySelectorAll('#of-pause .ctlr[data-flag] button').length === 0
-    && /[Rr]ead only/.test(document.querySelector('#of-pause .row.note').textContent),
-    document.querySelector('#of-pause .row.note').textContent.slice(0, 60));
-
-  check('going Back returns to the root page', await press('page:'));
-  check('and the root page is showing again',
-    of.pause().view.page === '' && document.querySelectorAll('#of-pause .ctlr').length === 0,
-    of.pause().view.page);
 
   // ======================================================================
   // C. START FRESH: the confirm cannot be skipped (GP-103)
@@ -532,8 +425,6 @@
       withPartInHand: afterDrop,
     },
     shell: { stubs, slotKey: shown.slotKey, mode: shown.mode },
-    controls,
-    video,
     startFresh: { armedSentence: sentence, beforeArm: before, afterArm: armed,
       afterCancel: cancelled, unarmedRefusal: refusal },
     enemies: enemyState,

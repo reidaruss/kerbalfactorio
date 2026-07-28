@@ -57,12 +57,12 @@ is that the numbers are handed out by one writer before the work starts.
 | RN-1 to RN-14 | rendering, historic | landed |
 | RN-15 to RN-29 | ground vegetation, contact blending, aerial perspective | allocated |
 | FS-56 to FS-75 | assemblers, storage container, machine scale | allocated |
-| PH-64 to PH-84 | vessel persistence and on-rails propagation | allocated |
+| PH-64 to PH-84 | vessel persistence and on-rails propagation | PH-64 to PH-70 USED (the registry as the one answer to "where is this vessel", the three record modes, ABI 18, the saved form, the player's body parks coherently, the handoff seam, the verified design snapshot); PH-71 onward free |
 | RN-45 to RN-69 | graphics pass three: rocks, LOD2 cards, terrain material | allocated |
 | GP-100 to GP-114 | Escape menu, cheats, hotbar editing, BUILD MENU on B | allocated |
 | RN-30 to RN-44 | rendering: shadow contact, grass height, aerial perspective take two | allocated |
 | PH-47 | tunnel sinking, structural lead, not reproduced | landed |
-| PH-60 to PH-74 | physics: R18 fall through rock, R18b stuck in a wall | allocated |
+| PH-60 to PH-74 | physics: R18 fall through rock, R18b stuck in a wall | landed at PH-60 to PH-63. **THE TAIL OF THIS ROW OVERLAPS `PH-64 to PH-84` ABOVE AND IS SURRENDERED**: the later allocation is the live one, PH-64 to PH-70 are the vessel lane's, and nothing from the R18 lane may take a number above PH-63. Recorded rather than silently renumbered, because two lanes reading the same row differently is how a number gets used twice |
 | BT-27 | the build stamp | landed |
 
 FS-34 is deliberately unused: the pollution lane renumbered its own FS-33/FS-34
@@ -73,6 +73,27 @@ to FS-35/FS-36 when corner cargo reached main first.
 Standing rule 10 (path-limited commits) is the other half of this. Two lanes in
 one checkout collide on files as well as on numbers, and a broad `git add` has
 already swept one lane's work into another lane's commit.
+
+## FIRST: `git commit -- <paths>` DISCARDS YOUR INDEX
+
+Read this before the technique below, because it is the trap the technique
+exists to escape, and standing rule 10 as originally written walked straight
+into it.
+
+**`git commit -- <paths>` does not commit what you staged.** It ignores the
+index and commits the CURRENT WORKING TREE contents of those paths. So a lane
+that hunk-stages carefully, verifies with `git diff --cached --numstat`, and
+then commits "path-limited" has its hunk selection **silently thrown away** and
+ships whole files including other lanes' in-flight edits.
+
+That is the mechanism behind all three incidents this session where one lane's
+work landed inside another lane's commit. It was never carelessness. Three
+lanes followed the rule as written and the rule was wrong.
+
+- `git add <paths>` then a bare `git commit` (no pathspec) is safe: it commits
+  the index.
+- `git commit -- <paths>` is NOT safe and must not be used when any file you
+  touch also carries someone else's uncommitted work.
 
 ## Committing from a shared checkout without disturbing other lanes
 
@@ -97,3 +118,8 @@ them to commit themselves.
 
 This is the difference between "I tried not to touch their work" and "I could
 not have touched their work". Prefer the second.
+
+One wrinkle the private-index technique does not remove: after landing a commit
+that way, the SHARED index still holds pre-commit entries for your paths and
+will read as staged modifications or deletions. Follow with
+`git reset -q HEAD -- <your paths>` (scoped to your paths, never `.`).

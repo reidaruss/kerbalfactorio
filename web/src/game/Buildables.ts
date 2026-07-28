@@ -110,12 +110,7 @@ function isBuildable(id: string): id is PartKind {
 function structureRow(g: Gameplay, kind: StructureKind, inHand: boolean): BuildRow {
   const d = g.structures.defFor(kind);
   return {
-    // GP-130: BY ITEM ID and not by display name. `PART_INFO[kind].iconName` is
-    // '' for all four, because a structural part never enters the pack and so
-    // nothing had ever needed a picture of one; the id is on the `StructureDef`
-    // /core already hands over, and it is the identity that lasts.
-    id: kind, label: PART_INFO[kind].label,
-    icon: g.icons.forId(d?.item ?? 0), group: 'Structures',
+    id: kind, label: PART_INFO[kind].label, icon: '', group: 'Structures',
     cost: g.structures.costText(kind),
     needs: (d?.cost ?? []).map((c) => ingredient(g, c.item, c.count)),
     affordable: g.structures.canAfford(kind),
@@ -128,7 +123,7 @@ function padRow(g: Gameplay, inHand: boolean): BuildRow {
   const item = d?.item ?? 0;
   return {
     id: 'launchpad', label: PART_INFO.launchpad.label,
-    icon: g.icons.forId(item), group: 'Launch',
+    icon: g.icons.for(PART_INFO.launchpad.iconName), group: 'Launch',
     cost: g.pads.costText(),
     needs: (d?.cost ?? []).map((c) => ingredient(g, c.item, c.count)),
     affordable: g.pads.canAfford(),

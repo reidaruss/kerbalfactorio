@@ -26,13 +26,10 @@
 import { clearSlot, readSlot } from '../game/SaveGame.js';
 import { assistedReport, clearAssisted, isAssisted, noteCheat } from '../game/Assisted.js';
 import { livePropellantKg, refillTanks, warpToOrbit } from '../sim/FlightCheats.js';
-import { controlGroups } from '../player/BindingText.js';
-import { videoRows } from './VideoSettings.js';
 import type { CheatRow, PauseView } from '../ui/PauseMenu.js';
 import type { Gameplay } from '../game/Gameplay.js';
 import type { FlightMode } from './FlightMode.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
-import type { Config } from './Config.js';
 
 /**
  * 100 km. The atmosphere's ceiling is 60 km (`atmosphere.h`: density is exactly
@@ -53,9 +50,6 @@ export interface CheatDeps {
   gameplay: () => Gameplay | null;
   flight: () => FlightMode | null;
   body: PlanetBody;
-  /** GP-132: the PARSED config, read only. The video screen shows what the
-   *  renderer was handed, not what the defaults happen to be. */
-  cfg: Config;
   /**
    * How a wiped world comes back. A PORT rather than a bare `location.reload()`
    * so the destruction is observable before the page goes: a probe drives the
@@ -76,8 +70,6 @@ export class Cheats {
   /** GP-103: Start Fresh is ARMED by one press and FIRED by a second one, and
    *  this is the only state that connects them. */
   private armed = false;
-  /** GP-131. Which page of the menu is showing. '' is the root. */
-  private page = '';
   /** Probe-only: see the `norestart` branch in `press`. */
   private restartOff = false;
   infiniteFuel = false;
@@ -99,13 +91,6 @@ export class Cheats {
    * separate verbs, because they belong to the row that raised them.
    */
   press(id: string): CheatReceipt {
-    // GP-131. NAVIGATION, not a cheat, and it goes through the same door for
-    // the reason the door exists: one place a button press is handled means one
-    // place a button press can be wrong about what it did.
-    if (id.startsWith('page:')) {
-      this.page = id.slice(5);
-      return this.say(id, true, this.page === '' ? 'back' : `showing ${this.page}`);
-    }
     if (id === 'startfresh') return this.arm();
     if (id === 'startfresh:cancel') { this.armed = false; return this.say(id, true, 'cancelled'); }
     if (id === 'startfresh:confirm') {
@@ -133,13 +118,16 @@ export class Cheats {
     // out of module state that was never cleared. `forgetTunnels` and
     // `repopulate` exist in DebugGameplay for exactly this reason.
     if (id === 'forgetassist') { clearAssisted(); return this.say(id, true, 'assisted record forgotten in memory'); }
-    // The second and last non-cheat, and it suppresses the RESTART ONLY. A
-    // reload tears down the very context a driven probe reports from, so phase
-    // 1 of `probes/startfresh.js` could not both fire the real button and come
-    // back to say what happened. The wipe still runs, still goes through the
-    // same `startFresh` and still verifies itself against the store;
-    // `reload.mjs` performs the identical reload from the outside. What the
-    // probe skips is the `location.reload()` call and nothing else.
+    // The second and last non-cheat, and it suppresses the RESTART ONLY.
+    //
+    // Start Fresh destroys the slot and then reloads the page, and a reload
+    // tears down the very context a driven probe is reporting from, so phase 1
+    // of `probes/startfresh.js` cannot both fire the real button and come back
+    // to say what happened. This turns the navigation off and nothing else: the
+    // wipe still runs, still goes through the same `startFresh`, still verifies
+    // itself against the store, and `reload.mjs` then performs the identical
+    // reload from the outside. What the probe skips is the `location.reload()`
+    // call, not one line of the thing being tested.
     if (id === 'norestart') { this.restartOff = true; return this.say(id, true, 'restart suppressed (probe)'); }
     return this.say(id, false, `no such control: ${id}`);
   }
@@ -345,12 +333,6 @@ export class Cheats {
         note: 'every creature and every nest, through the same damage a shot does' },
     ];
     return {
-      page: this.page,
-      // DERIVED ON EVERY VIEW and never stored, so neither screen can go stale
-      // against a rebind or a flag. The panel diffs its own key, so this only
-      // reaches the DOM when something actually moved.
-      controls: controlGroups(),
-      video: videoRows(this.d.cfg),
       mode: g?.mode.label ?? 'Survival',
       slotKey: this.slotKey(),
       assisted: isAssisted()
@@ -362,8 +344,7 @@ export class Cheats {
 
   report(): unknown {
     return {
-      armed: this.armed, page: this.page,
-      infiniteFuel: this.infiniteFuel,
+      armed: this.armed, infiniteFuel: this.infiniteFuel,
       restartSuppressed: this.restartOff,
       fullKg: +this.fullKg.toFixed(1), slotKey: this.slotKey(),
       // LIVE, re-read from /core every time this is asked, so a probe reading

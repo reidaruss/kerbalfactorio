@@ -29,12 +29,7 @@
 
 import * as THREE from 'three';
 import { loadGlb, renderMeshes } from '../assets/Loaders.js';
-import { ICON_TABLE, type IconSpec } from './IconTable.js';
-
-// Re-exported so nothing downstream had to move: BeltCargo and the probes
-// import these from here, and the split is invisible to every one of them.
-export { ICON_TABLE, ITEM_MESH_NODE } from './IconTable.js';
-export type { IconSpec } from './IconTable.js';
+import { ASSETS } from '../assets/Registry.js';
 
 /** Icon edge in pixels. 64 is two DOM slots' worth on a HiDPI screen. */
 const PX = 64;
@@ -48,6 +43,98 @@ const PX = 64;
  */
 const MIN_PIXELS = 32;
 
+const ATLAS = 'assets/items/items_atlas.glb';
+const MACH = 'assets/machines/';
+
+/** One row of the icon table. `nodes` empty means deliberately no picture. */
+export interface IconSpec {
+  /** The /core ItemId (gameplay.h `items::`), so probes assert by id. */
+  readonly id: number;
+  /** The /core display name. What the panel and the hotbar look an icon up by. */
+  readonly name: string;
+  readonly url: string;
+  /** Every node the picture is made of, drawn together in their authored pose. */
+  readonly nodes: readonly string[];
+  /** Why this row has no picture. Only meaningful when `nodes` is empty. */
+  readonly why: string;
+}
+
+const R = (id: number, name: string, url: string, ...nodes: string[]): IconSpec =>
+  ({ id, name, url, nodes, why: '' });
+
+/** A row that has NO mesh anywhere in the shipped set, and says so. */
+const TEXT = (id: number, name: string, why: string): IconSpec =>
+  ({ id, name, url: '', nodes: [], why });
+
+/**
+ * Every item that can reach a slot, its /core id, and the mesh its picture is
+ * made of. The atlas covers the resources; tools and buildables borrow the LOD0
+ * of the object they place, which is the honest picture of them and costs no new
+ * art.
+ *
+ * THE GENERATOR TAKES TWO NODES. `Generator_Flywheel` is a sibling of
+ * `Generator_LOD0` rather than a child, because it is animated (ASSET-SPECS
+ * 4.18, `Gen_Flywheel`), and the flywheel is the machine's entire read: an icon
+ * of the LOD0 alone is a boiler on a skid with the one distinctive part missing.
+ * A still picture wants the parts that move, so the row names both.
+ */
+export const ICON_TABLE: readonly IconSpec[] = [
+  R(0x0030, 'Wood', ATLAS, 'Item_Log'),
+  R(0x0031, 'Stone', ATLAS, 'Item_StoneChunk'),
+  R(0x0032, 'Coal', ATLAS, 'Item_CoalLump'),
+  R(0x0033, 'Raw iron', ATLAS, 'Item_OreChunk_Iron'),
+  R(0x0034, 'Raw copper', ATLAS, 'Item_OreChunk_Copper'),
+  R(0x0037, 'Iron', ATLAS, 'Item_IngotIron'),
+  R(0x0038, 'Copper', ATLAS, 'Item_IngotCopper'),
+  R(0x0035, 'Water', ATLAS, 'Item_WaterCanister'),
+  R(0x0036, 'Oil', ATLAS, 'Item_OilFlask'),
+  R(0x0001, 'Ferrite ore', ATLAS, 'Item_FerriteOre'),
+  R(0x0002, 'Ferrite plate', ATLAS, 'Item_FerritePlate'),
+  R(0x0003, 'Frame part', ATLAS, 'Item_FramePart'),
+  R(0x0004, 'Cinderite', ATLAS, 'Item_Cinderite'),
+  R(0x0005, 'Combustite', ATLAS, 'Item_Combustite'),
+  R(0x0039, 'Crude pickaxe', ASSETS.crudePickaxe, 'CrudePickaxe_LOD0'),
+  R(0x003a, 'Crude axe', ASSETS.crudeAxe, 'CrudeAxe_LOD0'),
+  R(0x003b, 'Primitive furnace', `${MACH}primitive_furnace.glb`, 'PrimitiveFurnace_LOD0'),
+  R(0x003c, 'Smelter', `${MACH}survival_smelter.glb`, 'SurvivalSmelter_LOD0'),
+  R(0x0010, 'Miner', `${MACH}miner.glb`, 'Miner_LOD0'),
+  R(0x0011, 'Belt', `${MACH}belt_segment.glb`, 'BeltSegment_LOD0'),
+  // H-7. Craftable since ABI 9 and pictureless until now. All three place the
+  // EXISTING machine TypeIds (0x12 / 0x15 / 0x16), so the art already ships and
+  // this is three table rows rather than three assets.
+  R(0x003d, 'Electric smelter', `${MACH}smelter.glb`, 'Smelter_LOD0'),
+  R(0x003e, 'Burner generator', `${MACH}generator.glb`,
+    'Generator_LOD0', 'Generator_Flywheel'),
+  R(0x003f, 'Power pole', `${MACH}power_pole.glb`, 'PowerPole_LOD0'),
+  // The four armour pieces reached the same craft menu in the same ABI bump and
+  // had the same problem. `armour_set.glb` ships them SKINNED, which is why they
+  // are baked from the bind pose (see `bake`) rather than posed.
+  R(0x0070, 'Iron helm', ASSETS.armourSet, 'Armour_Head_LOD0'),
+  R(0x0071, 'Iron cuirass', ASSETS.armourSet, 'Armour_Chest_LOD0'),
+  R(0x0072, 'Iron greaves', ASSETS.armourSet, 'Armour_Legs_LOD0'),
+  R(0x0073, 'Iron boots', ASSETS.armourSet, 'Armour_Feet_LOD0'),
+  // DELIBERATE TEXT, not an oversight. Nothing in the shipped GLB set is a
+  // science pack: `items_atlas.glb` carries fourteen item meshes and a generic
+  // crate, and drawing two different packs as the same crate is worse than
+  // drawing their names. These rows exist so the report can say WHICH it is.
+  TEXT(0x0020, 'Automation science', 'no science-pack mesh ships in any GLB'),
+  TEXT(0x0021, 'Logistic science', 'no science-pack mesh ships in any GLB'),
+  TEXT(0x0022, 'Cinder science', 'no science-pack mesh ships in any GLB'),
+];
+
+/**
+ * The /core item name each mesh stands for, derived from the table above.
+ *
+ * EXPORTED since FS-28, because belt cargo needs exactly the same question
+ * answered ("which mesh is this item?") and a second table would be a second
+ * answer. The icon baker wants a picture and the belt wants a 3D instance; both
+ * are the same mesh, so both read this. Belt cargo only instances what its own
+ * atlas holds and falls back to `Item_Crate` for everything else, so a machine
+ * node appearing here never puts a 4 m power pole on a 1 m tile.
+ */
+export const ITEM_MESH_NODE: Record<string, string> = Object.fromEntries(
+  ICON_TABLE.filter((r) => r.nodes.length > 0).map((r) => [r.name, r.nodes[0]]),
+);
 
 /** What one row produced. Every field is something a probe can fail on. */
 export interface IconDetail {

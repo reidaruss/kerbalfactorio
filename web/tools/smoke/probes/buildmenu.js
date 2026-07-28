@@ -36,7 +36,6 @@
     return ok;
   };
   const B = () => of.buildMenu();
-  let iconRows = [];
   const rowOf = (id) => B().rows.find((r) => r.id === id);
   const sandbox = of.sandbox().sandbox;
   const opts = { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 };
@@ -95,38 +94,6 @@
   check('the structures are grouped together',
     rowOf('foundation').group === 'Structures' && rowOf('wall').group === 'Structures',
     `${rowOf('foundation').group}`);
-
-  // GP-130. EVERY BUILDABLE HAS A PICTURE, which is the whole point of a menu
-  // you are meant to read at a glance. It is asserted from the BAKER's own
-  // ledger and not from "the row has a non-empty string": a canvas that
-  // rendered nothing still hands back a valid PNG data URL, so `icon !== ''`
-  // is true of a set of blank squares. `stats.detail` carries the pixel count
-  // that tells those apart, and `broken` is the baker naming its own failures.
-  const icons = of.game().icons;
-  const byId = (id) => (icons.detail ?? []).find((d) => d.id === id) ?? null;
-  const BUILDINGS = ['0x0040', '0x0041', '0x0042', '0x0043', '0x0044'];
-  const baked = BUILDINGS.map((id) => byId(id));
-  iconRows = baked.map((d, i) => ({ id: BUILDINGS[i], name: d?.name ?? null,
-    tris: d?.tris ?? -1, pixels: d?.pixels ?? -1, bytes: d?.bytes ?? -1,
-    fallback: d?.fallback ?? 'no row at all' }));
-  check('the four structures and the pad are all IN the icon table',
-    baked.every((d) => d !== null), JSON.stringify(iconRows));
-  check('and every one of them BAKED REAL GEOMETRY, not a blank square',
-    baked.every((d) => d !== null && d.tris > 0 && d.pixels >= 32 && d.fallback === ''),
-    JSON.stringify(iconRows));
-  check('the baker reports nothing broken at all',
-    (icons.broken ?? []).length === 0, (icons.broken ?? []).join(','));
-  // AND THE MENU IS ACTUALLY DRAWING THEM. The tile carries an <img> when it
-  // has a picture and a text span when it does not, so this is the assertion
-  // about the pixels a player sees rather than about the table behind them.
-  // DERIVED FROM THE LIVE ROWS, not from a list typed here: a buildable added
-  // next month is a tile with no picture and this has to catch it rather than
-  // quietly not mention it, which is the same enforcement `TYPE_ID` gives the
-  // catalogue and `ModalStack` gives Escape.
-  const wordy = rows.map((r) => r.id).filter((id) =>
-    document.querySelector(`#of-build .of-btile[data-build="${id}"] .art img`) === null);
-  check('EVERY tile draws an image rather than its own name',
-    wordy.length === 0, `still text: ${wordy.join(', ')}`);
 
   // THE PRICES ARE /core's OWN, not a copy. gameplay.h S.6 prices a foundation
   // at 40 Stone and a launch pad at 60 Iron + 120 Stone + 20 Copper, and this
@@ -324,7 +291,6 @@
     counts: { rows: rows.length, lit: lit.length, grey: grey.length,
       locked: locked.length },
     prices,
-    iconRows,
     lit, grey, locked,
     hold: { slotsBefore, slotsAfter, selBefore },
     onDemand,
