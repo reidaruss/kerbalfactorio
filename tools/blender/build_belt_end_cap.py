@@ -54,6 +54,37 @@ NOSE_Y = -0.20                         # where the deck stops and the nose
                                        # begins: also socket_item_b
 DECK_LEN = L * 0.5 - NOSE_Y            # 0.70, the stub path length
 
+# FS-88, and all four numbers below exist for one reason: NOTHING IN THE NOSE
+# MAY SHARE A PLANE WITH ANYTHING ELSE IN THE NOSE. Measured on the shipped
+# bytes this asset had 57 same-facing coplanar pairs, every one of them two
+# parts that had been given the same width or the same face by copying a
+# number rather than deriving one:
+#
+#   28  the roller was exactly DECK_W long, so its end caps were on the rubber
+#       deck's own side planes at +/-0.40.
+#   10  the nose housing's front face and the end plate's front face were both
+#       on the cell edge at y = -0.50.
+#    7  the housing was DECK_W wide, so its sides were on the under-frame's.
+#    6  the end plate was wider than the deck, so its underside overlapped the
+#       rails' undersides on z = 0.
+#    6  the housing top and the rails' top were both at 0.30 before the housing
+#       was shortened; it is 0.28 and sunk, so that is already gone.
+#
+# The rule that comes out of it, and it is the same rule as the smelter's
+# notched plinth read from the other end: when two parts must both reach a HARD
+# plane (the cell edge, the ground), only one of them may have a FACE there.
+ROLLER_L = DECK_W + 0.06               # 0.86: caps buried in the rails
+PLATE_T = 0.06                         # the end plate, the one part on y=-0.50
+PLATE_W = DECK_W                       # 0.80: exactly the deck, so its sides
+                                       # are on the under-frame's own planes
+                                       # (same material, therefore invisible)
+                                       # and its underside only TOUCHES the
+                                       # rails' rather than overlapping them.
+NOSE_W = DECK_W + 0.04                 # 0.84: buried in the rails, and not on
+                                       # the roller's plane at 0.43 either
+NOSE_LEN = NOSE_Y + L * 0.5 - PLATE_T  # 0.24: it stops BEHIND the end plate
+NOSE_CY = (NOSE_Y - L * 0.5 + PLATE_T) * 0.5
+
 
 def build_lod0(root):
     mb = of.MeshBuilder()
@@ -63,12 +94,13 @@ def build_lod0(root):
     # deck runs from the inlet to the nose, then the housing closes it off
     mb.box((DECK_W, DECK_LEN, 0.06),
            (0.0, (L * 0.5 + NOSE_Y) * 0.5, DECK_TOP - 0.03), "Rubber")
-    mb.cylinder(ROLLER_R, DECK_W, (0.0, ROLLER_Y, DECK_TOP - 0.03), axis="X",
+    mb.cylinder(ROLLER_R, ROLLER_L, (0.0, ROLLER_Y, DECK_TOP - 0.03), axis="X",
                 segments=12, role="Steel")
-    # closed nose housing over the terminating roller
-    mb.box((DECK_W, NOSE_Y + L * 0.5, 0.28),
-           (0.0, (NOSE_Y - L * 0.5) * 0.5, 0.15), "Steel")
-    mb.box((W - 0.14, 0.06, H), (0.0, -L * 0.5 + 0.03, H * 0.5), "SteelDark")
+    # closed nose housing over the terminating roller, then the end plate that
+    # closes it. The plate is the ONLY part with a face on the cell edge.
+    mb.box((NOSE_W, NOSE_LEN, 0.28), (0.0, NOSE_CY, 0.15), "Steel")
+    mb.box((PLATE_W, PLATE_T, H), (0.0, -L * 0.5 + PLATE_T * 0.5, H * 0.5),
+           "SteelDark")
     return mb, mb.build(NAME + "_LOD0", root)
 
 
@@ -78,8 +110,7 @@ def build_lod1(root):
         mb.box((RAIL_W, L, H), (sx * (W - RAIL_W) * 0.5, 0.0, H * 0.5), "Steel")
     mb.box((DECK_W, DECK_LEN, 0.06),
            (0.0, (L * 0.5 + NOSE_Y) * 0.5, DECK_TOP - 0.03), "Rubber")
-    mb.box((DECK_W, NOSE_Y + L * 0.5, 0.28),
-           (0.0, (NOSE_Y - L * 0.5) * 0.5, 0.15), "Steel")
+    mb.box((NOSE_W, NOSE_LEN, 0.28), (0.0, NOSE_CY, 0.15), "Steel")
     return mb, mb.build(NAME + "_LOD1", root)
 
 

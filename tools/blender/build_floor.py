@@ -45,8 +45,27 @@ W = D = sc.CELL
 H = sc.DECK_H
 
 BEAM_W = 0.14
-BEAM_H = 0.40                    # z 0.00 .. 0.40, so the base is on z = 0
-PLATE_Z0 = 0.38                  # plate z 0.38 .. 0.50, overlapping the beams
+PLATE_Z0 = 0.38                  # plate z 0.38 .. 0.50
+BEAM_H = PLATE_Z0                # z 0.00 .. 0.38, so the base is on z = 0 and
+# THE BEAM STOPS EXACTLY WHERE THE PLATE STARTS, WHICH IS FS-88 AND IS THE
+# WHOLE DEFECT. The beam used to be 0.40 deep and the plate started at 0.38, so
+# the two overlapped through a 20 mm band. That is harmless in the middle of
+# the tile, where one is buried inside the other, and it is not harmless at the
+# EDGE: the beams' outer faces are on +/-2.0 because the beams are what two
+# neighbouring decks butt against, and the plate is full 4 x 4 because it is the
+# walking surface and a plate that stopped short would leave a 0.14 m trench
+# along every seam. So through those 20 mm, steel and dark steel had two
+# outward-facing faces on the same four planes, and check_coplanar.py measured
+# 36 pairs per LOD, 72 in the file, on the most-seen face in the structure kit.
+#
+# Neither part could move sideways, so the OVERLAP had to go. It was buying
+# nothing: this is one solid assembly, not a bolted joint, and 20 mm of
+# interpenetration does not make it stiffer. Now the beam's top face and the
+# plate's underside are a back-to-back contact, which no depth test arbitrates.
+#
+# The beam is consequently 4.00 / 0.38 = 10.5:1 on span rather than 10:1. The
+# docstring's claim is "what a real deck beam is", and 10.5:1 is equally that;
+# the ratio was never the constraint, DECK_H was.
 RIB_W = 0.10
 RIB_H = 0.28                     # z 0.12 .. 0.40, tucked up inside the frame
 RIB_SPAN = W - 2.0 * BEAM_W      # 3.72, beam inner face to beam inner face

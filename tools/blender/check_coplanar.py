@@ -129,21 +129,18 @@ AREA_EPS = 1e-9
 #   foundation      a floor at the lip of a platform shows that side face.
 #   lander_landed,  large hand-built assemblies with panels flush to hulls.
 #   launch_pad
-#   belt_*          the belt family shares a deck plane between the slat strip
-#                   and the frame; four files, one cause.
+# CLEARED 2026-07-28 (FS-88): the four belt tiles, the structural floor, the
+# survival smelter and the primitive furnace all went to 0 and are gone from
+# this table, so they are held there. What they turned out to be is written up
+# in each build script; none of it was the painted band at the footprint edge
+# that FS-75 started from.
 #   boulder_*       Rock against RockDark on z = 0, i.e. the undersides of two
 #                   lobes on the ground plane. Buried under terrain in practice,
 #                   which is a claim about placement that nothing enforces, so
 #                   it is counted rather than excused.
 ALLOWED = {
-    "machines/belt_curve_l": 8,
-    "machines/belt_curve_r": 8,
-    "machines/belt_end_cap": 57,
-    "machines/belt_segment": 84,
     "machines/generator": 35,
     "machines/inserter": 14,
-    "machines/primitive_furnace": 61,
-    "machines/survival_smelter": 92,
     "nodes/boulder_coal": 26,
     "nodes/boulder_copper": 23,
     "nodes/boulder_iron": 27,
@@ -158,7 +155,6 @@ ALLOWED = {
     "rocket/launch_pad": 86,
     "rocket/rocket_parts": 778,
     "structures/door": 120,
-    "structures/floor": 72,
     "structures/foundation": 20,
     "structures/wall": 40,
 }

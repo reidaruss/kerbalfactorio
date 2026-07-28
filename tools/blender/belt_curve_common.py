@@ -52,6 +52,30 @@ SLAT_HALF_DEG = 4.5
 SLAT_T = 0.030                         # matches build_belt_segment exactly
 RIDE_TOP = DECK_TOP + SLAT_T           # 0.28, the surface cargo rests on
 R_PATH = 0.50                          # centre-line radius, == the shader's
+R_UNDER_IN = 0.14                      # under-frame inner radius
+
+# FS-88. The corner bracket used to be 0.10 square, and the arc centre is its
+# OUTER corner, so its far corner sat at 0.10 * sqrt(2) = 0.1414 from that
+# centre: 1.4 mm outside the under-frame's own inner radius. Two parts on the
+# ground plane, different materials, overlapping by a 1.4 mm crescent, and the
+# depth test had to arbitrate it. The bracket is now sized so its diagonal
+# fits INSIDE R_UNDER_IN with real margin (0.09 * sqrt(2) = 0.127), which is a
+# derivation rather than a nudge: any POST_W under R_UNDER_IN / sqrt(2) works,
+# and 0.09 is the roundest one.
+POST_W = 0.09
+
+# The state chip stops being an inlay flush with the outer rail's top face and
+# becomes a LAMP UNDER THE RAIL'S LIP, exactly as on build_belt_segment.py and
+# for the same reason: an inlay whose top face is on H is on the plane the
+# rail's top face is on, both pointing up, and a flush inlay in a solid cannot
+# be built without cutting the solid open. Cutting a 6-segment arc_band into
+# three costs about 100 triangles and the curve tiles have 28 of headroom, so
+# the notch that fixed the smelter's plinth is not affordable here. R_CHIP puts
+# the lamp astride the outer rail's inner radius (0.90) so half of it overhangs
+# the deck and is seen from beside the belt, which is where a belt is looked at
+# from.
+R_CHIP = 0.88
+CHIP_Z = H - 0.0135                    # top at 0.293, under the 0.30 rail top
 
 
 def _polar(cx, cy, r, deg):
@@ -68,8 +92,15 @@ def build(name, out, cx, a_entry, a_exit, exit_x):
     pitch = (a_exit - a_entry) / 8.0          # one slat, signed: +/- 11.25 deg
     a_mid = a_entry + (a_exit - a_entry) * 0.5
     sgn = 1.0 if cx > 0 else -1.0
-    post = (cx - sgn * 0.05, cy - 0.05)       # inner corner bracket
+    # The bracket's OUTER corner is the cell corner and the arc centre both, so
+    # it is placed half its own width in from there on each axis.
+    post = (cx - sgn * POST_W * 0.5, cy - POST_W * 0.5)
+    # socket_status stays on the rail top at r = 0.95 where it has always been:
+    # it is where a light MOUNTS, and moving a published socket to follow a
+    # piece of geometry is a bigger change than this fix is allowed to be. The
+    # lamp itself sits below and inboard of it.
     chip = _polar(cx, cy, 0.95, a_mid)
+    lamp = _polar(cx, cy, R_CHIP, a_mid)
 
     of.reset_scene()
     root = of.add_root(name)
@@ -78,22 +109,22 @@ def build(name, out, cx, a_entry, a_exit, exit_x):
     mb0 = of.MeshBuilder()
     mb0.arc_band(0.90, R_RAIL_OUT, H, (cx, cy, H * 0.5), a_entry, a_exit, 6,
                  "Steel")
-    mb0.box((0.10, 0.10, H), (post[0], post[1], H * 0.5), "Steel")
-    mb0.arc_band(0.14, 0.86, 0.12, (cx, cy, 0.06), a_entry, a_exit, 5,
+    mb0.box((POST_W, POST_W, H), (post[0], post[1], H * 0.5), "Steel")
+    mb0.arc_band(R_UNDER_IN, 0.86, 0.12, (cx, cy, 0.06), a_entry, a_exit, 5,
                  "SteelDark")
     mb0.arc_band(R_DECK_IN, R_DECK_OUT, 0.06, (cx, cy, DECK_TOP - 0.03),
                  a_entry, a_exit, 6, "Rubber")
-    mb0.box((0.06, 0.06, 0.01), (chip[0], chip[1], H - 0.005), "EmissiveState")
+    mb0.box((0.08, 0.08, 0.011), (lamp[0], lamp[1], CHIP_Z), "EmissiveState")
     mb0.build(name + "_LOD0", root)
 
     # --- LOD1: the turn still has to read, the under-frame does not ---
     mb1 = of.MeshBuilder()
     mb1.arc_band(0.90, R_RAIL_OUT, H, (cx, cy, H * 0.5), a_entry, a_exit, 3,
                  "Steel")
-    mb1.box((0.10, 0.10, H), (post[0], post[1], H * 0.5), "Steel")
+    mb1.box((POST_W, POST_W, H), (post[0], post[1], H * 0.5), "Steel")
     mb1.arc_band(R_DECK_IN, R_DECK_OUT, 0.06, (cx, cy, DECK_TOP - 0.03),
                  a_entry, a_exit, 3, "Rubber")
-    mb1.box((0.06, 0.06, 0.01), (chip[0], chip[1], H - 0.005), "EmissiveState")
+    mb1.box((0.08, 0.08, 0.011), (lamp[0], lamp[1], CHIP_Z), "EmissiveState")
     mb1.build(name + "_LOD1", root)
 
     # --- LOD2 ---

@@ -35,6 +35,7 @@ carrying surface rather than a number near one. Nothing moved: the geometry
 came up to meet the published socket.
 """
 
+import math
 import os
 import sys
 
@@ -56,6 +57,39 @@ RIDE_TOP = DECK_TOP + SLAT_T    # 0.28, the surface cargo rests on
 ROLLER_R = 0.055
 ROLLER_Y = L * 0.5 - ROLLER_R   # tangent to the cell edge, never outside it
 
+# FS-88. The roller used to be exactly DECK_W long, so its two end caps landed
+# on exactly the planes the rubber deck's own side faces are on (x = +/-0.40),
+# both pointing outward, and the depth test had to pick one per pixel. That
+# single number was 56 of this asset's 84 same-facing coplanar pairs.
+#
+# It is 0.06 longer now, so the caps sit at +/-0.43, BURIED INSIDE the rails
+# rather than flush with the deck. That is also what a roller is: a shaft that
+# runs into a bearing in the frame, not a cylinder that stops at the belt's
+# edge. Still short of the cell edge at 0.50, which is the hard one.
+ROLLER_L = DECK_W + 0.06        # 0.86
+# The LOD1 stand-in for the roller is a BOX, and a box the diameter of the
+# cylinder lands its outer face on y = +/-0.50, which is the tile boundary the
+# LOD0 cylinder only ever touched along a tangent line. Use the 12-gon's
+# FLAT-TO-FLAT width instead of its diameter: that is the widest the polygonal
+# roller actually is across a face, so the box is the honest stand-in and it
+# clears the boundary plane by 1.8 mm without a fudge factor.
+ROLLER_FLAT = ROLLER_R * 2.0 * math.cos(math.pi / 12.0)     # 0.1063
+
+# The state chip. It used to be a 0.01 m inlay whose top face was at H, i.e. on
+# exactly the plane the rail's own top face is on, both pointing up: the
+# machine-state readout, the one part of a belt a player actually looks at, was
+# the geometry least able to guarantee it would be drawn. A flush inlay in a
+# solid box cannot be built without cutting the box open, and cutting the outer
+# rail of the CURVE tiles open costs more triangles than those tiles have.
+#
+# So the chip stops being an inlay and becomes a LAMP UNDER THE RAIL'S LIP: it
+# sits 7 mm below the rail top and overhangs the rail's inner face by 20 mm, so
+# the visible part hangs over the deck. It shares no plane with anything, and it
+# is arguably easier to see, because a belt is looked at from beside and along
+# rather than from directly overhead.
+CHIP_X = (W - RAIL_W) * 0.5 - 0.03      # 0.42, straddling the rail inner face
+CHIP_Z = H - 0.0125                     # top at 0.293, under the 0.30 rail top
+
 
 def build_lod0(root):
     mb = of.MeshBuilder()
@@ -69,11 +103,10 @@ def build_lod0(root):
     # end rollers, axis across the flow. Tangent to the cell edge, NOT past it:
     # a machine that overhangs its footprint z-fights its neighbour on the grid.
     for sy in (-1, 1):
-        mb.cylinder(ROLLER_R, DECK_W, (0.0, sy * ROLLER_Y, DECK_TOP - 0.03),
+        mb.cylinder(ROLLER_R, ROLLER_L, (0.0, sy * ROLLER_Y, DECK_TOP - 0.03),
                     axis="X", segments=12, role="Steel")
-    # state chip, flush in the +X rail top. THE machine-state readout.
-    mb.box((0.05, 0.12, 0.01), ((W - RAIL_W) * 0.5, 0.0, H - 0.005),
-           "EmissiveState")
+    # state chip: a lamp under the +X rail's lip. THE machine-state readout.
+    mb.box((0.08, 0.12, 0.011), (CHIP_X, 0.0, CHIP_Z), "EmissiveState")
     return mb, mb.build(NAME + "_LOD0", root)
 
 
@@ -86,7 +119,7 @@ def build_lod1(root):
     mb.box((DECK_W, L * 0.9, 0.12), (0.0, 0.0, 0.06), "SteelDark")
     mb.box((DECK_W, L, 0.06), (0.0, 0.0, DECK_TOP - 0.03), "Rubber")
     for sy in (-1, 1):
-        mb.box((DECK_W, ROLLER_R * 2, ROLLER_R * 2),
+        mb.box((ROLLER_L, ROLLER_FLAT, ROLLER_FLAT),
                (0.0, sy * ROLLER_Y, DECK_TOP - 0.03), "Steel")
     return mb, mb.build(NAME + "_LOD1", root)
 
