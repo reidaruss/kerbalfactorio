@@ -98,19 +98,32 @@ const D = (stem: string, density: number, jitter = 0.3): PropSpec =>
 /**
  * The understorey, shared by every vegetated biome. Densities are much higher
  * than a biome prop's because these are the layer that makes ground read as
- * ground rather than as a texture, and they are affordable precisely because
- * they are confined to the 55 m ring: 0.906 instances per m2 over 9,503 m2 is
- * about 8,600 instances, against the 90,792 m2 the biome props have to cover.
- * Each card is a single primitive in a single material, so it costs one pool
- * slot and 18 to 40 triangles, and the whole layer adds no draw call at all.
+ * ground rather than as a texture, and the numbers below are 3.6x what they
+ * were, which is the single biggest change in the world-art pass.
+ *
+ * WHAT PAID FOR IT, because a 3.6x density that is not paid for is a frame
+ * budget violation and DW-5 is not relaxed. Measured at a fixed Hills camera,
+ * one binary, `?detail=0` as the control: the OLD understorey was 9,738
+ * instances and cost **1,003,112 triangles and 12.3 ms of an 18.0 ms p50**,
+ * which is about 103 triangles for a card whose LOD0 is 18 to 42, because every
+ * card was drawn FOUR times, once in the near pass and once in each of three
+ * shadow cascades. `PropLibrary.DETAIL_SUFFIX` takes the understorey out of the
+ * shadow pass entirely, so a card now costs its own triangle count ONCE. That
+ * is a 4x saving spent on a 3.6x density, and it is why this is roughly budget
+ * neutral rather than roughly four times the cost.
+ *
+ * These are FULL-density figures and they apply inside `DETAIL_FULL_M` (30 m).
+ * Beyond that `detailWeight` grades them down to 0.18 at 78 m, which is about
+ * what the whole ring used to carry, so the old look is now the outer band of
+ * the new one and there is no longer a visible line where the cover stops.
  */
 const GROUND_DETAIL: readonly PropSpec[] = [
-  D('Detail_GrassCardA', 70000), D('Detail_GrassCardB', 45000),
-  D('Detail_GrassCardC', 28000), D('Detail_PebbleScatter', 8000),
+  D('Detail_GrassCardA', 250000), D('Detail_GrassCardB', 160000),
+  D('Detail_GrassCardC', 100000), D('Detail_PebbleScatter', 28000),
 ];
 /** Dry and rocky biomes take the litter and the pebbles, not the grass. */
 const DRY_DETAIL: readonly PropSpec[] = [
-  D('Detail_GrassCardC', 12000), D('Detail_PebbleScatter', 20000),
+  D('Detail_GrassCardC', 44000), D('Detail_PebbleScatter', 72000),
 ];
 
 export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [

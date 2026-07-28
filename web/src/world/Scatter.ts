@@ -16,19 +16,22 @@ import * as THREE from 'three';
 import type { ChunkView } from './ChunkView.js';
 import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js';
 import type { PropLibrary } from '../render/instancing/PropLibrary.js';
-import { BIOME_PROPS, type PropSpec } from '../assets/Registry.js';
+import { BIOME_PROPS } from '../assets/Registry.js';
 
 import {
-  CELLS, DIM, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK, MAX_PER_CELL,
-  RADIUS_M, MIN_SLOPE_COS, LOD2_M, DETAIL_RADIUS_M,
-  tierOf, hash32, keyHash, frac, type Tier,
+  CELLS, DIM, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
+  RADIUS_M, MIN_SLOPE_COS, LOD2_M, DETAIL_RADIUS_M, DETAIL_FULL_M,
+  DETAIL_FAR_GROW, detailWeight, tierOf, keyHash, type Tier,
 } from './ScatterTuning.js';
+import { CONTACT_CARDS } from './ScatterLook.js';
+import { PropEmitter, type Build } from './ScatterEmit.js';
 
 interface Placed {
   /** Flattened [material, slot] pairs; -1 slot means the batch was full. */
   parts: { material: string; slot: number; lod0: number; lod2: number }[];
   local: Float32Array;
   quat: Float32Array;
+  /** Three components per prop now: width, HEIGHT, width. See ScatterLook. */
   scale: Float32Array;
   /** parts index -> prop index, so one matrix serves a multi-material prop. */
   owner: Uint16Array;
@@ -37,20 +40,22 @@ interface Placed {
   cellArea: number;
   /** What the registry ASKED for over those cells, before any quantisation. */
   wanted: number;
-  /** Was this chunk inside the detail ring when it was built? */
-  detailBuilt: boolean;
+  /** Understorey band this chunk was built in. 0 none, 1 thinned, 2 full. */
+  detailBand: number;
 }
+
+/** A biome with no understorey draws from this rather than from a null check. */
+const EMPTY_TIER: Tier = { specs: [], weights: [], total: 0 };
 
 export class Scatter {
   private readonly placed = new Map<string, Placed>();
   private readonly m4 = new THREE.Matrix4();
   private readonly q = new THREE.Quaternion();
-  private readonly up = new THREE.Vector3(0, 1, 0);
-  private readonly n = new THREE.Vector3();
   private readonly p = new THREE.Vector3();
   private readonly s = new THREE.Vector3();
-  private readonly spin = new THREE.Quaternion();
   private readonly eye = new THREE.Vector3();
+  /** Places ONE prop. See ScatterEmit for why the two are separate objects. */
+  private readonly em: PropEmitter;
   chunksScattered = 0;
   lastBuildMs = 0;
   /** Prop instances (not parts) currently placed, and the ground they sit on. */
@@ -58,8 +63,7 @@ export class Scatter {
   wantedProps = 0;
   cellsScattered = 0;
   groundM2 = 0;
-  /** Cells and chunks whose draw was TRUNCATED by a cap. Must stay 0 near. */
-  cellsCapped = 0;
+  /** Chunks whose draw was TRUNCATED by MAX_PER_CHUNK. Must stay 0 near. */
   chunksCapped = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
   backlog = 0;
@@ -78,7 +82,9 @@ export class Scatter {
      * and every other number looked healthy.
      */
     private readonly fair = true,
-  ) {}
+  ) {
+    this.em = new PropEmitter(lib, fair);
+  }
 
   /**
    * Add scatter for chunks that entered the radius, drop it for chunks that
@@ -104,9 +110,17 @@ export class Scatter {
         continue;
       }
       // A chunk built at 150 m carries no understorey, and walking onto it
-      // would put the player back on bare ground. Rebuild it the once, when it
-      // crosses the detail boundary, rather than paying for cards out to 170 m.
-      if (pl.detailBuilt === this.detailEligible(v)) continue;
+      // would put the player back on bare ground. Rebuild it when it crosses a
+      // BAND boundary rather than paying for cards out to 170 m.
+      //
+      // Two bands rather than the one boolean this shipped with, because the
+      // understorey is now graded by distance instead of switched on and off:
+      // a chunk sampled at 70 m carries the thin outer density for every cell
+      // in it, and with a single boolean it would keep that thin density
+      // forever once inside, so walking forwards would leave the ground ahead
+      // permanently sparser than the ground behind. One extra rebuild per
+      // chunk buys the near band its real density.
+      if (pl.detailBand === this.detailBandOf(v)) continue;
       if (budget <= 0) { backlog++; continue; }
       budget--;
       this.drop(v.key);
@@ -120,8 +134,10 @@ export class Scatter {
     this.lastBuildMs = performance.now() - t0;
   }
 
-  private detailEligible(v: ChunkView): boolean {
-    return v.pos.distanceTo(this.eye) <= DETAIL_RADIUS_M + v.maxOffsetM;
+  private detailBandOf(v: ChunkView): number {
+    const d = v.pos.distanceTo(this.eye) - v.maxOffsetM;
+    if (d <= DETAIL_FULL_M) return 2;
+    return d <= DETAIL_RADIUS_M ? 1 : 0;
   }
 
   /** Re-derive every instance matrix from its chunk's anchor. THE rebase path. */
@@ -137,7 +153,7 @@ export class Scatter {
     const pl = this.placed.get(key);
     if (pl === undefined) return;
     for (const part of pl.parts) this.lib.release(part.material, part.slot);
-    this.propsPlaced -= pl.scale.length;
+    this.propsPlaced -= pl.scale.length / 3;
     this.wantedProps -= pl.wanted;
     this.cellsScattered -= pl.cells;
     this.groundM2 -= pl.cells * pl.cellArea;
@@ -157,18 +173,29 @@ export class Scatter {
     // 150 m buys nothing and would push the shared OF_Grass batch past its
     // ceiling. They are drawn only inside DETAIL_RADIUS_M; everything else is
     // drawn over the whole RADIUS_M ring, exactly as before.
+    // THREE tiers now, not two. `base` is the biome props, which cover the
+    // whole 170 m ring at a flat density; `detail` is the understorey, which is
+    // graded by distance; and `card` is the understorey again, used on its own
+    // as the pool the contact skirt draws from.
     const full: Tier = tierOf(specs);
     const base: Tier = tierOf(specs.filter((s) => !s.detail));
+    const card: Tier = tierOf(specs.filter((s) => s.detail === true));
+    const band = this.detailBandOf(v);
+    // The skirt draws from the understorey WHATEVER band the chunk is in: a
+    // rock at 90 m still has a silhouette meeting the ground, and five cards
+    // at its foot cost less than one more metre of ring.
+    this.em.skirt = card.total > 0 ? card : null;
     // HEADROOM, not a target. Fair quantisation means the realised count is a
     // sum of Bernoulli draws about the expectation, so an allocation sized to
-    // the expectation exactly would truncate about half the chunks. 64 is four
-    // standard deviations at a full 1,024-cell chunk, and `chunksCapped` counts
-    // any truncation that happens anyway rather than swallowing it.
+    // the expectation exactly would truncate about half the chunks. The 64 is
+    // four standard deviations at a full 1,024-cell chunk; the contact term is
+    // the skirt, which the tier densities know nothing about. `chunksCapped`
+    // counts any truncation that happens anyway rather than swallowing it.
     const want = Math.min(MAX_PER_CHUNK,
-      Math.max(1, Math.ceil(full.total * areaKm2 * this.densityScale) + 64));
-    const detailBuilt = this.detailEligible(v);
-    const pl = this.sample(v, detailBuilt ? full : base, base, want, pos, cell,
-      detailBuilt);
+      Math.max(1, Math.ceil(full.total * areaKm2 * this.densityScale) + 64
+        + Math.ceil(base.total * areaKm2 * this.densityScale) * CONTACT_CARDS));
+    const pl = this.sample(v, base, band > 0 ? card : EMPTY_TIER, want, pos,
+      cell, band);
     // A chunk that legitimately places NOTHING is still recorded, and that is
     // load-bearing twice over. It used to return early, so the chunk was retried
     // every single frame forever, which with a per-update budget starves every
@@ -177,7 +204,7 @@ export class Scatter {
     // ratio that only counts the chunks that delivered something is blind in
     // exactly the case the ratio exists to catch.
     this.placed.set(v.key, pl);
-    this.propsPlaced += pl.scale.length;
+    this.propsPlaced += pl.scale.length / 3;
     this.wantedProps += pl.wanted;
     this.cellsScattered += pl.cells;
     this.groundM2 += pl.cells * pl.cellArea;
@@ -185,21 +212,20 @@ export class Scatter {
   }
 
   private sample(
-    v: ChunkView, full: Tier, base: Tier, want: number,
-    pos: Float32Array, cell: number, detailBuilt: boolean,
+    v: ChunkView, base: Tier, card: Tier, want: number,
+    pos: Float32Array, cell: number, band: number,
   ): Placed {
     const nrm = this.pool.batch(v.pooled).normals(v.pooled.slot);
     const keyBase = keyHash(v.key);
     const local = new Float32Array(want * 3);
     const quat = new Float32Array(want * 4);
-    const scale = new Float32Array(want);
+    const scale = new Float32Array(want * 3);
     const parts: Placed['parts'] = [];
     const owner: number[] = [];
     // The chunk's own outward direction: the anchor IS a point on the sphere.
     const a = v.anchor;
     const ar = Math.hypot(a.x, a.y, a.z) || 1;
     const upx = a.x / ar, upy = a.y / ar, upz = a.z / ar;
-    let n = 0;
     // Walk CELLS, not the whole chunk. A depth-11 chunk is 900 m across and the
     // scatter radius is 190 m, so a uniform draw over the chunk would put nine
     // props in ten outside the radius and the ground under the player would
@@ -216,9 +242,16 @@ export class Scatter {
     let cells = 0;
     let wanted = 0;
     const r2 = RADIUS_M * RADIUS_M;
-    const detailR2 = DETAIL_RADIUS_M * DETAIL_RADIUS_M;
-    for (let cy = 0; cy < CELLS && n < want; ++cy) {
-      for (let cx = 0; cx < CELLS && n < want; ++cx) {
+    // One reusable emit context. Rebuilt per chunk rather than per cell: a
+    // chunk is up to fourteen thousand props and allocating a record per prop
+    // is the difference between a scatter build that amortises and one that
+    // makes the collector the worst frame in the run.
+    const b: Build = {
+      pos, local, quat, scale, parts, owner, n: 0, want,
+      nx: 0, ny: 0, nz: 0, i00: 0, i10: 0, i01: 0, i11: 0, seed: 0,
+    };
+    for (let cy = 0; cy < CELLS && b.n < want; ++cy) {
+      for (let cx = 0; cx < CELLS && b.n < want; ++cx) {
         const i00 = (cy * DIM + cx) * 3;
         const dx = v.pos.x + pos[i00] - this.eye.x;
         const dy = v.pos.y + pos[i00 + 1] - this.eye.y;
@@ -232,68 +265,37 @@ export class Scatter {
         const i10 = i00 + 3;
         const i01 = i00 + DIM * 3;
         const i11 = i01 + 3;
-        const seed = keyBase ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
+        b.seed = keyBase ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
+        b.i00 = i00; b.i10 = i10; b.i01 = i01; b.i11 = i11;
+        b.nx = nx / nl; b.ny = ny / nl; b.nz = nz / nl;
         cells++;
-        const tier = d2 <= detailR2 ? full : base;
-        const expect = tier.total * perKm2;
-        wanted += expect;
-        const whole = Math.floor(expect);
-        const drawn = this.fair
-          ? whole + (frac(hash32(seed, 0x9e3779b1)) < expect - whole ? 1 : 0)
-          : Math.round(expect);
-        if (drawn > MAX_PER_CELL) this.cellsCapped++;
-        const perCell = Math.min(MAX_PER_CELL, drawn);
-        for (let k = 0; k < perCell && n < want; ++k) {
-          const u = frac(hash32(seed, k * 4));
-          const w = frac(hash32(seed, k * 4 + 1));
-          const spec = this.pick(tier, hash32(seed, k * 4 + 2));
-          const list = this.lib.partsOf(spec.stem);
-          if (list === null) continue;
-          local[n * 3] = this.bilerp(pos, i00, i10, i01, i11, 0, u, w);
-          local[n * 3 + 1] = this.bilerp(pos, i00, i10, i01, i11, 1, u, w);
-          local[n * 3 + 2] = this.bilerp(pos, i00, i10, i01, i11, 2, u, w);
-          // Stand it on the SURFACE normal, then spin it about that normal.
-          this.n.set(nx / nl, ny / nl, nz / nl);
-          this.q.setFromUnitVectors(this.up, this.n);
-          this.spin.setFromAxisAngle(this.up, frac(hash32(seed, k * 4 + 3)) * Math.PI * 2);
-          this.q.multiply(this.spin);
-          quat[n * 4] = this.q.x; quat[n * 4 + 1] = this.q.y;
-          quat[n * 4 + 2] = this.q.z; quat[n * 4 + 3] = this.q.w;
-          scale[n] = 1 + (frac(hash32(seed, k * 4 + 5)) * 2 - 1) * spec.jitter;
-          for (const part of list) {
-            const slot = this.lib.acquire(part.material);
-            if (slot < 0) continue;
-            parts.push({ material: part.material, slot, lod0: part.lod0, lod2: part.lod2 });
-            owner.push(n);
+
+        // --- the biome props, over the whole ring at a flat density.
+        wanted += this.em.drawTier(b, base, base.total * perKm2, 0, 1, true);
+
+        // --- the understorey, GRADED by this cell's own distance to the eye.
+        // The weight is applied to the DENSITY and not to a visibility flag,
+        // so the thinning is a real change in how many cards exist rather than
+        // a fade that still pays for every instance.
+        if (card.total > 0) {
+          const wt = detailWeight(Math.sqrt(d2));
+          if (wt > 0) {
+            // Bigger the further out, which buys coverage back per instance.
+            // See DETAIL_FAR_GROW.
+            const grow = 1 + DETAIL_FAR_GROW * (1 - wt);
+            wanted += this.em.drawTier(b, card, card.total * perKm2 * wt,
+              4096, grow, false);
           }
-          n++;
         }
       }
     }
-    if (n >= want) this.chunksCapped++;
+    if (b.n >= want) this.chunksCapped++;
+    const n = b.n;
     return {
       parts, local: local.subarray(0, n * 3), quat: quat.subarray(0, n * 4),
-      scale: scale.subarray(0, n), owner: Uint16Array.from(owner),
-      cells, cellArea, wanted, detailBuilt,
+      scale: scale.subarray(0, n * 3), owner: Uint16Array.from(owner),
+      cells, cellArea, wanted, detailBand: band,
     };
-  }
-
-  private bilerp(
-    a: Float32Array, i00: number, i10: number, i01: number, i11: number,
-    c: number, u: number, w: number,
-  ): number {
-    const top = a[i00 + c] + (a[i10 + c] - a[i00 + c]) * u;
-    const bot = a[i01 + c] + (a[i11 + c] - a[i01 + c]) * u;
-    return top + (bot - top) * w;
-  }
-
-  private pick(t: Tier, h: number): PropSpec {
-    let r = frac(h) * t.total;
-    for (let i = 0; i < t.specs.length; ++i) {
-      r -= t.weights[i];
-      if (r <= 0) return t.specs[i];
-    }
-    return t.specs[t.specs.length - 1];
   }
 
   /** Compose every instance matrix from the chunk's CURRENT engine position. */
@@ -304,7 +306,7 @@ export class Scatter {
         v.pos.x + pl.local[o * 3], v.pos.y + pl.local[o * 3 + 1], v.pos.z + pl.local[o * 3 + 2],
       );
       this.q.set(pl.quat[o * 4], pl.quat[o * 4 + 1], pl.quat[o * 4 + 2], pl.quat[o * 4 + 3]);
-      this.s.setScalar(pl.scale[o]);
+      this.s.set(pl.scale[o * 3], pl.scale[o * 3 + 1], pl.scale[o * 3 + 2]);
       this.m4.compose(this.p, this.q, this.s);
       const part = pl.parts[i];
       const far = this.p.distanceTo(this.eye) > LOD2_M;
@@ -338,7 +340,7 @@ export class Scatter {
         ? Math.round((this.wantedProps / this.groundM2) * 1e5) / 1e5 : 0,
       deliveredFraction: this.wantedProps > 0
         ? Math.round((this.propsPlaced / this.wantedProps) * 1e4) / 1e4 : 0,
-      cellsCapped: this.cellsCapped,
+      cellsCapped: this.em.cellsCapped,
       chunksCapped: this.chunksCapped,
       scatterBacklog: this.backlog,
       fairQuantise: this.fair,

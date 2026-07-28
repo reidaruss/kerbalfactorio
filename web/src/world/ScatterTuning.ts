@@ -41,8 +41,8 @@ export const BUILDS_PER_UPDATE = 1;
  * and the old MAX_PER_CHUNK of 2,600 truncated it, which would have been an
  * invisible 16% shortfall on exactly the chunk the player is standing on.
  */
-export const MAX_PER_CHUNK = 4600;
-export const MAX_PER_CELL = 64;
+export const MAX_PER_CHUNK = 14000;
+export const MAX_PER_CELL = 160;
 export const RADIUS_M = 170;
 /**
  * cos of the steepest ground a prop will stand on, about 57 degrees. 40 degrees
@@ -62,7 +62,49 @@ export const LOD2_M = 45;
  * pitch is dominated by ground BEYOND the ring, and a 0.58 m card still carries
  * several pixels at 55 m.
  */
-export const DETAIL_RADIUS_M = 55;
+export const DETAIL_RADIUS_M = 78;
+/**
+ * Inside this radius the understorey is drawn at FULL density; between here and
+ * `DETAIL_RADIUS_M` it thins linearly to `DETAIL_EDGE_W`.
+ *
+ * The falloff exists because the hard edge was VISIBLE and is the second thing
+ * the eye finds in a wide shot after the bare ground itself: at a fixed Hills
+ * camera the understorey stopped dead in a line across the hillside, with dense
+ * cover on one side of it and untouched olive terrain on the other. A ring that
+ * ends is a ring you can see the edge of, whatever radius you put it at, so the
+ * fix is not a bigger number, it is a gradient.
+ *
+ * The edge weight is 0.18 rather than 0 for the same reason: a linear fall to
+ * exactly zero puts the last card AT the boundary and re-creates a fainter
+ * version of the same line. 0.18 of full density at 78 m is roughly the density
+ * the whole ring used to have, so the old look is now the outermost band of the
+ * new one.
+ */
+export const DETAIL_FULL_M = 30;
+export const DETAIL_EDGE_W = 0.18;
+/**
+ * Understorey weight for one cell, from its distance to the eye. A pure
+ * function of distance so it can be read next to the density it multiplies.
+ */
+export function detailWeight(d: number): number {
+  if (d <= DETAIL_FULL_M) return 1;
+  if (d >= DETAIL_RADIUS_M) return 0;
+  const t = (d - DETAIL_FULL_M) / (DETAIL_RADIUS_M - DETAIL_FULL_M);
+  return 1 + (DETAIL_EDGE_W - 1) * t;
+}
+/**
+ * How much a card GROWS with distance, at the outer edge of the ring.
+ *
+ * Coverage is what the eye reads, not instance count (Registry's DENSITY_SCALE
+ * note makes the same point), and coverage is density times footprint. The
+ * falloff above spends instances where they are cheap to see and saves them
+ * where they are not, and this buys some of that coverage back for free: a card
+ * at 70 m is a few pixels tall, so making it 45% larger costs nothing in
+ * silhouette honesty and holds the ground looking covered rather than moth
+ * eaten out at the edge. It is applied to the DETAIL tier only; a boulder that
+ * grew with range would be obvious.
+ */
+export const DETAIL_FAR_GROW = 0.32;
 
 /** One weighted draw pool: the specs eligible at a cell, and their total. */
 export interface Tier {

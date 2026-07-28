@@ -110,6 +110,14 @@ export interface Config {
   readonly propGrow: boolean;
   /** `?detail=0` drops the ground-detail card layer that sits under the props. */
   readonly detailCards: boolean;
+  /**
+   * `?propcull=0` turns per-instance frustum culling OFF on the understorey
+   * batches, which is what the whole prop layer shipped with. It exists because
+   * the trade behind that choice was measured at 9,340 props and the
+   * understorey now runs at tens of thousands, in a RING around the player, so
+   * most of it is behind the camera on any given frame.
+   */
+  readonly propCull: boolean;
   /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
   readonly gameplay: boolean;
   /** W8 the assembly bay. ?vab=0 isolates it, standing rule 7 again. */
@@ -283,6 +291,7 @@ export function parseConfig(search: string): Config {
     scatterFair: p.get('scatterfair') !== '0',
     propGrow: p.get('propgrow') !== '0',
     detailCards: p.get('detail') !== '0',
+    propCull: p.get('propcull') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',
     flight: p.get('flight') !== '0',

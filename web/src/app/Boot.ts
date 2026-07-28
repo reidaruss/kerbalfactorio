@@ -217,7 +217,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const atlases = cfg.props
     ? (cfg.detailCards ? [...BIOME_ATLAS, ...SHARED_ATLAS] : [...BIOME_ATLAS])
     : [];
-  const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow);
+  const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow, cfg.propCull);
   // DW-28: the foliage pools report through the SAME registry the machine pools
   // do, so a refusal reaches the HUD as `POOL FULL: n NOT DRAWN` rather than
   // being counted into a field nothing prints.

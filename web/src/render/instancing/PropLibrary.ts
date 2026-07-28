@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
+import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
 import { attachSurface, copyUv, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
@@ -24,6 +25,33 @@ export interface PropPart {
   readonly lod0: number;
   readonly lod2: number;
 }
+
+/**
+ * Batch-key suffix for the ground-detail understorey, and THE reason this class
+ * knows the understorey exists at all.
+ *
+ * MEASURED, at a fixed Hills camera, one binary, `?detail=0` as the control:
+ * the understorey is 9,738 instances and it costs **1,003,112 of the frame's
+ * 1,804,969 triangles and 12.3 ms of its 18.0 ms p50**. That is about 103
+ * triangles for a card whose LOD0 is 18 to 42, because every card is drawn FOUR
+ * times: the near pass plus three shadow cascades. Turning the whole shadow
+ * layer off (`?shadows=0`) takes 1,203,460 triangles and 14.5 ms with it, which
+ * is 67% of the triangles and 81% of the frame for shadows the player mostly
+ * cannot see.
+ *
+ * A 0.36 m card's own cast shadow is a few pixels under a tuft that is already
+ * casting one, so the understorey does not need to be in the shadow pass at
+ * all. But `castShadow` is a property of the MESH, and the cards share their
+ * materials with the biome tufts (`Detail_GrassCardA/B` and `Plains_GrassTuftA/B`
+ * are all `OF_Grass`), so there is no way to spend it per prop without giving
+ * the understorey its own batches. Hence the suffix.
+ *
+ * Two things fall out of it for free and both are wanted. The understorey gets
+ * its OWN pool ceiling rather than sharing `OF_Grass` with the tufts, which is
+ * the ceiling that was full at 16,384; and `stats().perMaterial` reports the two
+ * layers separately, so a shortfall in one can no longer hide inside the other.
+ */
+const DETAIL_SUFFIX = ':detail';
 
 interface Batch {
   mesh: THREE.BatchedMesh;
@@ -39,25 +67,35 @@ interface Batch {
 
 /**
  * DW-28: instance pools GROW and exhaustion is LOUD. This batch used to be a
- * fixed `CAPACITY = 7000` per material with no growth path, which is the exact
- * shape the decision was written about: `acquire` returned -1, `exhausted++`
- * counted it, and the props were simply not drawn while every other number on
- * the HUD read healthy. It bound in practice: Plains asks for 0.1068 grass and
- * flower instances per square metre in the OF_Grass role, and the 170 m scatter
- * radius is 90,792 m2, so the demand is about 9,700 slots against 7,000.
+ * fixed `CAPACITY = 7000` with no growth path, the exact shape the decision was
+ * written about: `acquire` returned -1, `exhausted++` counted it, and the props
+ * were simply not drawn while every other number on the HUD read healthy.
  *
- * Start at a size the first ring will actually use and double from there,
- * exactly as `MachineBatch.grow()` does, so capacity follows the PLAN rather
- * than a second guessed constant. The start size is NOT a capacity decision, it
- * is a churn one: `setInstanceCount` copies the indirect and matrix texture
- * data on every doubling, and starting at 256 cost 22 reallocations during one
- * 55 m walk. `?propgrow=0` pins the old fixed 7,000 with no growth so the
- * before and after are measurable in one binary (standing rule 7).
+ * Start at a size the first ring will actually use and double from there, so
+ * capacity follows the PLAN rather than a second guessed constant. The start
+ * size is NOT a capacity decision, it is a churn one: `setInstanceCount` copies
+ * the indirect and matrix texture data on every doubling, and starting at 256
+ * cost 22 reallocations during one 55 m walk. `?propgrow=0` pins the old fixed
+ * 7,000 with no growth so before and after are one binary (standing rule 7).
  */
 const START_CAPACITY = 2048;
 const LEGACY_CAPACITY = 7000;
-/** Memory guard, matching InstancePools.MAX_CAPACITY. Reaching it is counted. */
-const MAX_CAPACITY = 16384;
+/**
+ * Memory guard, and it is ONLY a memory guard (DW-28). Raised from 16,384,
+ * which the `OF_Grass` batch reached and sat on: a Plains site read `live`
+ * 16,384 with `refused` climbing, which is the decision working exactly as
+ * designed and also a ceiling that a denser understorey has to pass through.
+ *
+ * The number is a memory budget, so here is the memory. `BatchedMesh` keeps one
+ * RGBA32F matrix texel row per instance (16 floats, 64 B), a colour texel
+ * (16 B once `setColorAt` is used), plus an indirect entry and a bounding
+ * sphere, so a slot is about 100 B of CPU-side typed array and 80 B of texture.
+ * 65,536 slots is therefore about 5.2 MB of texture per batch that actually
+ * REACHES it, and a batch only reserves what it has grown into: `grow()` still
+ * doubles from 2,048, so a batch that never fills never pays. Reported as
+ * `vramEstimateMB` before and after.
+ */
+const MAX_CAPACITY = 65536;
 /** Props are small; a 33^2 chunk's worth of geometry is a few thousand verts. */
 const MAX_VERTS = 60000;
 
@@ -71,6 +109,22 @@ function normalize(src: THREE.BufferGeometry, worldMatrix: THREE.Matrix4): THREE
     ? (nrm as THREE.BufferAttribute).clone()
     : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
   copyUv(src, g, pos.count, 'props');   // UNCONDITIONAL. See Surfaces.copyUv.
+  // A WHITE vertex-colour attribute on EVERY prop geometry, unconditionally,
+  // and it is not decoration: it is what makes `BatchedMesh.setColorAt` reach
+  // the pixel. Checked in three's own source rather than assumed, because the
+  // obvious reading is wrong. `USE_BATCHING_COLOR` declares `vColor` and writes
+  // `vColor *= getBatchingColor(...)` in `color_vertex.glsl.js:24`, but
+  // `color_fragment.glsl.js` multiplies `diffuseColor` by it only
+  // `#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )`. So per-instance
+  // colour on a BatchedMesh is silently DISCARDED unless the material also sets
+  // `vertexColors`, and setting `vertexColors` without a `color` attribute
+  // binds the default (0,0,0,1) and renders every prop BLACK. Both halves are
+  // required and neither fails loudly on its own.
+  //
+  // Uint8 normalised: 3 B a vertex against 12 B for float32, and the values are
+  // a constant 255 anyway. 60,000 verts a batch is 180 kB.
+  g.setAttribute('color',
+    new THREE.BufferAttribute(new Uint8Array(pos.count * 3).fill(255), 3, true));
   const idx = src.getIndex();
   // Every geometry in a batch must agree about having an index (three throws
   // otherwise), and a prop authored as a triangle soup would break the batch.
@@ -93,25 +147,39 @@ export class PropLibrary {
 
   /** False pins every batch at the old fixed 7,000 with no growth (?propgrow=0). */
   private growable = true;
+  /** Per-instance frustum culling on the understorey batches (?propcull=0). */
+  private cullDetail = true;
 
   static async load(
     urls: readonly string[], scene: THREE.Scene, growable = true,
+    cullDetail = true,
   ): Promise<PropLibrary> {
     const lib = new PropLibrary();
     lib.growable = growable;
+    lib.cullDetail = cullDetail;
     // Deduped by Loaders, so props_moon.glb is fetched once for its three biomes.
     // The manifest is awaited alongside, not after: this is the ONE batch path
     // that keeps a material per ROLE name, so it is the one that can express the
     // per-role family choice, and it must know the table before it builds one.
-    const pending = Promise.all([...new Set(urls)].map((u) => loadGlb(u)));
+    const unique = [...new Set(urls)];
+    const pending = Promise.all(unique.map((u) => loadGlb(u)));
     await surfacesReady();
     const gltfs = await pending;
-    for (const g of gltfs) lib.register(g.scene);
+    // Which atlas a geometry came from decides which batch it lands in, and the
+    // answer is read from `SHARED_ATLAS` rather than passed in by the caller.
+    // Boot.ts already composes the url list from exactly that constant, so
+    // asking the registry here keeps the understorey's identity in ONE place
+    // and costs the caller nothing. `?detail=0` simply omits the url, so the
+    // detail batches are never created and the suffix never appears.
+    const detail = new Set<string>(SHARED_ATLAS);
+    for (let i = 0; i < gltfs.length; ++i) {
+      lib.register(gltfs[i].scene, detail.has(unique[i]) ? DETAIL_SUFFIX : '');
+    }
     for (const b of lib.batches.values()) scene.add(b.mesh);
     return lib;
   }
 
-  private register(root: THREE.Object3D): void {
+  private register(root: THREE.Object3D, suffix: string): void {
     root.updateWorldMatrix(true, true);
     const byStem = new Map<string, Map<string, { lod0: THREE.Mesh | null; lod2: THREE.Mesh | null }>>();
     root.traverse((o) => {
@@ -132,31 +200,45 @@ export class PropLibrary {
       for (const [mat, pair] of perMat) {
         const near = pair.lod0 ?? pair.lod2;
         if (near === null) continue;
-        const batch = this.batchFor(mat, near.material as THREE.Material);
+        const key = mat + suffix;
+        const batch = this.batchFor(key, mat, near.material as THREE.Material,
+          suffix === '', suffix !== '' && this.cullDetail);
         const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld));
         const far = pair.lod2 ?? near;
         const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld));
-        list.push({ material: mat, lod0, lod2 });
+        list.push({ material: key, lod0, lod2 });
       }
       if (list.length > 0 && !this.parts.has(stem)) this.parts.set(stem, list);
     }
   }
 
-  private batchFor(name: string, source: THREE.Material): Batch {
-    const hit = this.batches.get(name);
+  private batchFor(
+    key: string, role: string, source: THREE.Material, casts: boolean,
+    cull: boolean,
+  ): Batch {
+    const hit = this.batches.get(key);
     if (hit !== undefined) return hit;
     const material = source.clone();
-    material.name = name;
+    // The MATERIAL keeps the clean role name and the BATCH carries the suffix.
+    // `Surfaces.roleOfMaterialName` parses `OF_<Role>` and reports anything it
+    // cannot place as an unknown role, which is a console.error and therefore a
+    // failed smoke run, so `OF_Grass:detail` must never reach it.
+    material.name = role;
+    // Per-instance colour, and the half of the pair that lives on the material.
+    // See `normalize`: without this the white attribute is dead weight, and
+    // without the attribute this renders every prop black.
+    (material as THREE.MeshStandardMaterial).vertexColors = true;
     // The one path that keeps a material per role NAME, so it is the one that
     // gets the per-role family. `flat_roles` (Leaf, Grass, Water, Ice, Glass,
     // Skin, Oil, EmissiveState) register and take NOTHING, which is a recorded
     // decision rather than an omission: see surfaces.json's reason per role.
     attachSurface(material as THREE.MeshStandardMaterial,
-      familyForRole(roleOfMaterialName(name)), `props:${name}`);
+      familyForRole(roleOfMaterialName(role)), `props:${key}`);
     const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
     const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
-    mesh.name = `props:${name}`;
-    mesh.castShadow = true;
+    mesh.name = `props:${key}`;
+    // The whole point of the split. See DETAIL_SUFFIX for the measurement.
+    mesh.castShadow = casts;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     mesh.layers.set(LAYER_PROPS);
@@ -172,11 +254,18 @@ export class PropLibrary {
     // triangles it needs to. That trade is worth taking at this triangle count
     // and stops being worth it for the factory's larger meshes at W6.
     mesh.sortObjects = false;
-    mesh.perObjectFrustumCulled = false;
+    // ...AND THE MEASUREMENT THAT SET IT WENT STALE WHEN THE COUNT CHANGED,
+    // which is the interesting half. That trade was struck at 9,340 props. The
+    // understorey now runs at about 33,000 in one batch, and it is a RING
+    // centred on the player, so roughly three quarters of it is behind the
+    // camera and every one of those instances is still a `multiDrawElements`
+    // range the driver walks. Culling is therefore measured again per batch
+    // rather than inherited, and `?propcull=` is the isolation.
+    mesh.perObjectFrustumCulled = cull;
     const batch: Batch = {
       mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
     };
-    this.batches.set(name, batch);
+    this.batches.set(key, batch);
     return batch;
   }
 
@@ -254,6 +343,22 @@ export class PropLibrary {
   }
 
   /**
+   * Multiply one instance's albedo. Set ONCE, where the slot is acquired, and
+   * deliberately NOT in `place`: `place` is the rebase path and runs for every
+   * live part every time the floating origin moves, while a prop's colour is a
+   * property of its placement and never changes after it. Writing it there
+   * would be a per-frame upload of a texture that has not changed.
+   *
+   * A reused slot is always retinted because the sampler that acquires it also
+   * tints it, so a freed slot cannot inherit its predecessor's colour.
+   */
+  tint(material: string, slot: number, c: THREE.Color): void {
+    const b = this.batches.get(material);
+    if (b === undefined || slot < 0) return;
+    b.mesh.setColorAt(slot, c);
+  }
+
+  /**
    * The shape `InstancePools.PoolReport` asks for, so `registerPool` puts the
    * foliage layer on the same HUD line as the machines and `POOL FULL: n NOT
    * DRAWN` covers it too. `perMaterial` is the number a probe needs: it is the
@@ -263,13 +368,21 @@ export class PropLibrary {
     name: string; batches: number; props: number; instances: number;
     exhausted: number; capacity: number; ceiling: number; grows: number;
     refused: number; growable: boolean;
-    perMaterial: { name: string; live: number; cap: number; refused: number }[];
+    perMaterial: {
+      name: string; live: number; cap: number; refused: number; casts: boolean;
+    }[];
   } {
     let capacity = 0; let grows = 0;
     const perMaterial = [];
     for (const [name, b] of this.batches) {
       capacity += b.cap; grows += b.grows;
-      perMaterial.push({ name, live: b.live, cap: b.cap, refused: b.refused });
+      // `casts` is published because it is now the difference between two
+      // batches of the same material, and a triangle count that does not say
+      // which batches were in the shadow pass cannot be read.
+      perMaterial.push({
+        name, live: b.live, cap: b.cap, refused: b.refused,
+        casts: b.mesh.castShadow,
+      });
     }
     perMaterial.sort((a, b) => b.live - a.live);
     // `refused` IS `exhausted`: every refused acquire is one instance that was
