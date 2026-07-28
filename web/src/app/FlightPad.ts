@@ -17,6 +17,7 @@
 // A few of FlightMode's members are public purely so this file can drive them
 // (`d`, `flash`, `rebuild`, `drawnRevision`); each is commented as such there.
 
+import { watchVessels } from './FlightVessels.js';
 import type { Vec3 } from '../sim/FlightAbi.js';
 import type { PadPart } from '../game/LaunchPad.js';
 import type { FlightMode } from './FlightMode.js';
@@ -136,6 +137,12 @@ export function rollOutOnPad(m: FlightMode, design: number, pad: PadPart): boole
  * clock fine enough to state the claim.
  */
 export function stepPadClamps(m: FlightMode, tick: number): void {
+  // PH-64. The vessel registry rides this call, which is the ONE flight call the
+  // loop already makes whether or not anybody is aboard (`Systems.ts`), and is
+  // therefore the only per-tick seam the flight lane owns outright. It is one
+  // integer compare on the common path. Placed ABOVE the early returns below,
+  // because a roll-out with no pad is still a vessel that must be registered.
+  watchVessels(m, tick);
   const pads = m.d.pads?.() ?? null;
   const pad = m.padInUse;
   if (pads === null || pad === null) return;

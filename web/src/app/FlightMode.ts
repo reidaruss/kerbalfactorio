@@ -28,7 +28,7 @@ import type { Controller } from '../player/Controller.js';
 import { VesselView } from '../render/VesselView.js';
 import { Navball } from '../ui/Navball.js';
 import type { NavballReadout } from '../ui/Navball.js';
-import { allowSave, inhibitSave } from '../sim/SaveInhibit.js';
+import { allowSave } from '../sim/SaveInhibit.js';
 import { readout as computeReadout } from './FlightReadout.js';
 import { choosePad, padReport, rollOutOnPad, stepPadClamps as stepPad }
   from './FlightPad.js';
@@ -53,8 +53,6 @@ const PAD_AHEAD_M = 26;
  */
 const ROLLOUT_NOTE =
   'ROLL-OUT (stand-in for DW-29\'s launch pad): rocket 26 m ahead, walk to it and press G';
-const NOT_SAVED_NOTE =
-  'flight is not saved: reloading returns you to the last ground save';
 
 export interface FlightDeps {
   M: OfCoreModule;
@@ -216,10 +214,12 @@ export class FlightMode {
     this.d.router.setSource(this.observer);
     this.navball.setVisible(true);
     this.d.setWorldUi(false);
-    // PH-30. From here the world save cannot describe where the player is, so
-    // it is refused rather than written as a ground state that quietly deletes
-    // the flight. The chip below says so for as long as it is true.
-    inhibitSave(NOT_SAVED_NOTE);
+    // PH-30's save refusal is RETIRED here (PH-67). It existed because the slot
+    // had no field for a vessel, so a save written in orbit was a valid GROUND
+    // state that silently deleted the flight. The slot has that field now and
+    // `saveVessels` syncs the live sim into it before every write, so the honest
+    // move is to let the save happen. `FlightReadout` says what a reload still
+    // does NOT restore, which is the player being strapped in.
     this.flash('aboard: Space stages, Shift throttles up, WASD flies, '
       + `${labelOf('recover')} clears the pad`);
   }

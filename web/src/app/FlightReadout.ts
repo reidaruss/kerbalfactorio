@@ -67,9 +67,18 @@ export function readout(m: FlightMode): NavballReadout {
     sas: s.sasName, status: s.status,
     qPa: tm.qPa, maxQPa: s.maxQPa, twr: s.currentTwr(), massKg: tm.massKg,
     gForce: tm.accelMS2 / 9.80665, metS: Math.max(0, s.metS),
-    // From the LATCH, never repeated from a constant here: a chip that says
-    // saving is off while it is on would be a second authority.
-    warning: saveInhibit(),
+    // From the LATCH first, never repeated from a constant here: a chip that
+    // says saving is off while it is on would be a second authority.
+    //
+    // PH-67. The flight IS saved now, so the old standing chip is gone and the
+    // chip that replaces it says the one thing a reload still does NOT restore:
+    // you come back on foot, at your body, with the rocket where you left it.
+    // It is deliberately not silence. A player who reloads mid-orbit and finds
+    // themselves standing at the pad has to have been told, or the feature reads
+    // as the bug it used to be.
+    warning: saveInhibit() !== '' ? saveInhibit()
+      : (m.aboard ? 'reloading returns you to your body on the ground; '
+                  + 'the vessel keeps its orbit' : ''),
     message: s.message !== '' ? s.message : m.message,
   };
 }

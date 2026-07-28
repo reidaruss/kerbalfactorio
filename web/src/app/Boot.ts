@@ -17,6 +17,7 @@ import { Headlamp } from '../render/Headlamp.js';
 import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
+import { resumeWorld } from './ResumeBoot.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
 import { PlanetBody } from '../world/PlanetBody.js';
 import { SurfaceOracle } from '../world/SurfaceOracle.js';
@@ -364,6 +365,10 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // THE MAP, on M. Ports in MapBoot (Boot is at cap); DW-36 adds the walker.
     map = await bootMap({ core, host, g, flight: theFlight, body, input, player, oracle });
   }
+  // PH-64 to PH-69. THE WORLD COMES BACK AS IT WAS LEFT (ResumeBoot argues the
+  // order). After the flight block, so a vessel has somewhere to be promoted
+  // into; outside it, because the body anchor is owed to `?flight=0` too.
+  resumeWorld({ flight, vab, router, origin });
 
   const boot: BootMetrics = {
     wasmLoadMs,

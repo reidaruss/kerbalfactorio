@@ -183,16 +183,36 @@
   check('and the refusal is ON SCREEN, not just in a counter',
         /clamp/i.test(of.flight('readout').message),
         JSON.stringify(of.flight('readout').message));
-  // PH-30 / R11. Aboard means the world save cannot describe the player, so it
-  // is refused, counted, and said on the navball. 25 sim seconds is longer than
-  // the 20 second autosave cadence, so at least one refusal is not a race.
+  // PH-67, and these two rows are INVERTED from what they said this morning.
+  //
+  // They used to assert PH-30's honest fallback: aboard meant the world save
+  // could not describe the player, so it was REFUSED and counted and the navball
+  // carried a standing "flight is not saved" chip. The slot has a vessel field
+  // now, and `saveVessels` syncs the live sim into it before every write, so the
+  // refusal is retired and the save must go through. Left as assertions rather
+  // than deleted, and flipped rather than loosened: "the autosave happens while
+  // strapped in AND the vessel is in what it wrote" is a strictly stronger claim
+  // than "the autosave is refused", and it fails against the old build.
+  //
+  // 25 sim seconds is longer than the 20 second autosave cadence, so the write
+  // is a cadence and not a race.
   await sleep(25);
   const pst = of.game().persist;
-  check('THE AUTOSAVE IS REFUSED WHILE STRAPPED IN, and counted',
-        pst.saveInhibit !== undefined && pst.saveInhibit.refused > 0,
+  check('THE AUTOSAVE HAPPENS WHILE STRAPPED IN, and nothing is refused',
+        pst.saveInhibit !== undefined && pst.saveInhibit.refused === 0
+        && pst.saveInhibit.allowed > 0,
         JSON.stringify(pst.saveInhibit));
-  check('and the navball SAYS SO, read back off the DOM',
-        /not saved/i.test(of.flight('navball').warning ?? ''),
+  const vsl = of.flight('vessels');
+  check('and the vessel it wrote is a REAL record, with a design and its fuel',
+        vsl.records === 1 && vsl.writes > 0 && vsl.refusedSnapshots === 0
+        && (vsl.list[0] ?? {}).parts > 0,
+        JSON.stringify({ records: vsl.records, writes: vsl.writes,
+                         refused: vsl.refusedSnapshots, first: vsl.list[0] }));
+  // The chip is not silent, it says the one thing a reload still does NOT put
+  // back. A player who reloads mid-flight and finds themselves on the ground has
+  // to have been told, or the feature reads as the bug it used to be.
+  check('and the navball says what a reload does NOT restore',
+        /returns you to your body/i.test(of.flight('navball').warning ?? ''),
         JSON.stringify(of.flight('navball').warning));
 
   // 2b. Throttle up. With the engine already lit by 2a's first press this is

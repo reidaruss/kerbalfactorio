@@ -16,7 +16,7 @@
 // presses reproduces exactly the hardware k presses produced, and a setter would
 // have let a save claim a stage index the tree does not agree with.
 import { flightParts } from '../sim/FlightAbi.js';
-import { fitConic, poseFrom, registry, stateOf, v3 } from '../sim/VesselRegistry.js';
+import { RAILS_DT, fitConic, poseFrom, registry, stateOf, v3 } from '../sim/VesselRegistry.js';
 import type { VesselRecord, VesselWhere } from '../sim/VesselRegistry.js';
 import { VesselDesign } from '../game/VesselDesign.js';
 import type { DesignJson } from '../game/VesselDesign.js';
@@ -109,6 +109,15 @@ export function watchVessels(m: FlightMode, tick: number): void {
     disposeDesign(registry.promotedId);
     registry.remove(registry.promotedId);
   }
+  // PH-71, and this half is NOT about restoring: a rocket that has just been
+  // ROLLED OUT and never boarded reads `massKg 0` on main today, because nothing
+  // steps it until the player climbs in. Measured on a freshly rolled-out
+  // reference vehicle: `live true, status CLAMPED, mass 0`, for the whole walk
+  // over to it. It has never blocked the clamp, because boarding steps the
+  // vessel long before anyone throttles up, so it has been invisible; but it is
+  // the same instrument reading zero about a real 9845 kg rocket, and the fix
+  // for the restored case is the fix for this one.
+  primeParkedTelemetry(m.session, m.session.throttleValue);
   const design = snapshotDesign(m);
   if (design === null) return;
   const id = registry.allocateId();
@@ -325,15 +334,6 @@ export function promoteVessel(m: FlightMode, id: number, tick: number): boolean 
     if (q !== undefined) V._of_fl_set_propellant(h, q, kg);
   }
 
-  // A ZERO-LENGTH STEP, and it is not a hack: `FlightSim::telemetry` is written
-  // by `step` and by nothing else, so a freshly created sim publishes altitude
-  // 0 and mass 0 for a rocket at 700 km until something advances it. That is
-  // PH-20's launch-clamp bug wearing a different hat, where a TWR of zero read
-  // healthy on every instrument and the clamp refused to release for ever. dt 0
-  // moves nothing (velocity-Verlet with dt 0 is the identity, and there is no
-  // division by dt anywhere in flight.h) and costs one evaluation, which is the
-  // cheapest way to make a restored vessel describe itself honestly.
-  V._of_fl_step(h, 0);
   s.setThrottle(p.throttle);
   s.sasMode = p.sasMode;
   s.command = [p.command[0], p.command[1], p.command[2]];
@@ -344,6 +344,7 @@ export function promoteVessel(m: FlightMode, id: number, tick: number): boolean 
   s.padUp = [rec.padUp[0], rec.padUp[1], rec.padUp[2]];
   s.refreshParts();
   s.baseOffsetM = baseOffsetOf(m);
+  primeParkedTelemetry(s, p.throttle);
 
   designs.set(id, d);
   registry.promotedId = id;
@@ -354,6 +355,51 @@ export function promoteVessel(m: FlightMode, id: number, tick: number): boolean 
   m.rebuild();
   m.observer.syncToVessel();
   return true;
+}
+
+/**
+ * PH-71. GIVE A RESTORED PARKED VESSEL REAL TELEMETRY, BECAUSE OTHERWISE IT IS
+ * PH-20's LAUNCH-CLAMP BUG BACK, WITH A NEW CAUSE AND THE SAME SYMPTOM.
+ *
+ * `FlightSim::telemetry` is written by `step` and by nothing else, and a
+ * promoted vessel with nobody aboard is NEVER STEPPED: `FlightSession.step` is
+ * reached only through `VesselObserver.step`, which `ViewRouter` drives only
+ * while the player is strapped in. So a rocket restored onto its pad publishes
+ * `massKg` 0, therefore `currentTwr()` 0, therefore a clamp that can never
+ * release, and every number on the HUD reads healthy. That is exactly the wall
+ * Reid spent a day behind before GP-73 to GP-76, and handing it back with a
+ * different cause would be worse than never having restored the vessel.
+ *
+ * The obvious repair was a zero-length step and it does not work: `of_fl_step`
+ * guards `!(dt > 0.0)` and returns 0, so the call is silently a no-op. That
+ * guard is correct and is not worth an ABI bump to relax.
+ *
+ * What DOES work is the clamp's own mechanism, which was built for this exact
+ * problem: `stepClamped` takes a real step, then writes the pad pose back and
+ * zeroes the velocity. With the throttle shut it is free, because a step with no
+ * thrust and no motion burns no propellant. It is applied to PARKED vessels only
+ * (CLAMPED and DOWN), and only because they are genuinely stationary, so zeroing
+ * the velocity is a no-op rather than a lie. A vessel promoted in flight is NOT
+ * primed: zeroing 2.3 km/s to make an instrument read would be destroying the
+ * orbit to fix the gauge, and it needs no priming anyway, because promoting one
+ * is something a player does in order to fly it and the first tick aboard steps
+ * it for real.
+ *
+ * Once, at promote, and NOT every tick. An unattended parked vessel has nothing
+ * to advance, so stepping it repeatedly would be simulating a thing that cannot
+ * change and would run `clampTicks` up for ticks nobody was there for.
+ */
+function primeParkedTelemetry(s: FlightMode['session'], throttle: number): void {
+  if (s.status !== 'CLAMPED' && s.status !== 'DOWN') return;
+  const was = s.status;
+  // DOWN borrows the clamped path deliberately: `step` on a DOWN vessel only
+  // re-samples and would leave the telemetry at zero, and an arrested vessel is
+  // as stationary as a clamped one, so the restore is equally honest there.
+  s.status = 'CLAMPED';
+  s.setThrottle(0);
+  s.step(RAILS_DT);
+  s.setThrottle(throttle);
+  s.status = was;
 }
 
 /**
