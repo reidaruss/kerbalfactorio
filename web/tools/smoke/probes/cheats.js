@@ -128,12 +128,17 @@
   // come back here and say so.
   const stubButtons = [...document.querySelectorAll('#of-pause .row.stub button')]
     .map((b) => b.getAttribute('data-cheat'));
-  check('exactly three sections are built: Controls, Video and Audio',
-    stubButtons.length === 3 && stubButtons.includes('page:controls')
-    && stubButtons.includes('page:video') && stubButtons.includes('page:audio'),
-    stubButtons.join(','));
-  check('the other two are reserved and carry no control at all',
-    stubs.length - stubButtons.length === 2, `${stubs.length} stubs`);
+  // GP-137 MOVED THIS NUMBER AGAIN, AND THAT IS THE POINT OF WRITING IT AS A
+  // NUMBER. It read "no stub is a pressable button" when all five were
+  // reserved, then three, and now four. Each time, filling a stub has to come
+  // back here and say so, which is what stops the assertion quietly meaning
+  // nothing. Multiplayer is the one left.
+  check('exactly four sections are built, and Multiplayer is the one left',
+    stubButtons.length === 4 && stubButtons.includes('page:controls')
+    && stubButtons.includes('page:video') && stubButtons.includes('page:audio')
+    && stubButtons.includes('page:save'), stubButtons.join(','));
+  check('the last one is reserved and carries no control at all',
+    stubs.length - stubButtons.length === 1, `${stubs.length} stubs`);
   const shown = of.pause().view;
   check('the menu NAMES the save slot this world lives in',
     (document.querySelector('#of-pause [data-slot]') ?? {}).textContent
@@ -146,8 +151,8 @@
   check('the Controls section now carries an Open button',
     ctlStub !== null && ctlStub.querySelector('button') !== null,
     ctlStub === null ? 'no row' : ctlStub.className);
-  check('and the two unbuilt sections still do NOT',
-    document.querySelectorAll('#of-pause .row.stub button').length === 3,
+  check('and the one unbuilt section still does NOT',
+    document.querySelectorAll('#of-pause .row.stub button').length === 4,
     `${document.querySelectorAll('#of-pause .row.stub button').length} buttons`);
   check('opening it works', await press('page:controls'));
   const ctl = of.pause().view.controls;

@@ -21,11 +21,15 @@ import type { Config } from './Config.js';
 import type { AudioView } from './AudioSettings.js';
 import type { ControlGroup } from '../player/BindingText.js';
 import type { VideoRow } from './VideoSettings.js';
+import type { SaveListView, SaveSlots } from '../game/SaveSlots.js';
+import type { Gameplay } from '../game/Gameplay.js';
+import type { GameMode } from '../game/GameMode.js';
 
 export interface OptionPages {
   controls: ControlGroup[];
   video: VideoRow[];
   audio: AudioView;
+  saves: SaveListView;
 }
 
 /**
@@ -40,17 +44,39 @@ export interface OptionPages {
 let silent: AudioBus | null = null;
 
 export function optionPages(cfg: Config, bus: AudioBus | null,
-                            fallback: () => AudioBus): OptionPages {
+                            fallback: () => AudioBus, slots: SaveSlots,
+                            mode: GameMode, page: string): OptionPages {
   if (bus === null && silent === null) silent = fallback();
   return {
     controls: controlGroups(),
     video: videoRows(cfg),
     audio: audioView(bus ?? (silent as AudioBus)),
+    saves: slots.view(mode, page === 'save'),
   };
 }
 
-/** The audio page's own verbs. '' for an id these pages do not own. */
-export function pressOption(bus: AudioBus | null, id: string): string {
-  if (bus === null || !id.startsWith('audio:')) return '';
-  return pressAudio(bus, id);
+/**
+ * The pages' own verbs. '' for an id these pages do not own.
+ *
+ * The SAVE verbs are fired and not awaited, which is the shape IndexedDB forces
+ * and is honest about it: each one sets `busy` on the way in and a `note` on the
+ * way out, and the list is rebuilt from the STORE afterwards rather than patched
+ * in memory, so what the player sees is what is actually there. `save:new` reads
+ * the name the panel is holding, because the panel owns its own input and this
+ * owns the rule about what a name may be.
+ */
+export function pressOption(bus: AudioBus | null, slots: SaveSlots,
+                            g: Gameplay | null, id: string): string {
+  if (id.startsWith('audio:')) return bus === null ? '' : pressAudio(bus, id);
+  if (!id.startsWith('save:') || g === null) return '';
+  if (id === 'save:delcancel') { slots.cancelDelete(); return 'cancelled'; }
+  if (id.startsWith('save:arm:')) {
+    const n = id.slice(9);
+    slots.armDelete(n);
+    return `delete "${n}"?`;
+  }
+  if (id.startsWith('save:del:')) { void slots.remove(g, id.slice(9)); return 'deleting'; }
+  if (id.startsWith('save:load:')) { void slots.load(g, id.slice(10)); return 'loading'; }
+  if (id.startsWith('save:new:')) { void slots.save(g, id.slice(9)); return 'saving'; }
+  return '';
 }

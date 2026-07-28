@@ -62,6 +62,13 @@ const DAMAGESAVE = 'probes/damagesave.js';
 // what must NOT hold. They are inverted for it rather than skipped, because a
 // wipe that left the factory standing is the failure this proof exists to catch.
 const FRESH = 'probes/startfresh.js';
+// GP-137. The setup that proves a NAMED save, and it is run twice: once
+// pressing Load and once deliberately not. Both build a world, save it under a
+// name and then wreck it, so the autosave and the named slot diverge; the
+// assertions below expect the SAVED world back when Load was pressed and the
+// WRECKED one when it was not. Without the second run, "the world came back" is
+// satisfied by a load that did nothing at all.
+const SAVED = 'probes/savenamed.js';
 // FS-70. The setup that asks the question about the one buildable whose whole
 // value is the state it holds. Its extra assertions are below, gated on this
 // name exactly as PADCLEAR's are, because a world with no chest in it has
@@ -144,7 +151,7 @@ try {
   await page.evaluate(() => window.__of.ready);
   await page.evaluate(() => window.__of.run(2));
 
-  after = await page.evaluate(() => {
+  after = await page.evaluate(async () => {
     const of = window.__of;
     const w = of.world();
     const g = of.game();
@@ -186,6 +193,13 @@ try {
       // `persist` carries saves, the restore ledger and any refusal, which is
       // how "nothing came back" is told apart from "nothing was written".
       persist: g.persist ?? null,
+      // GP-137: the named-slot list AFTER the reload, read from the store the
+      // reloaded page opened, so a slot that vanished with the session shows up
+      // as missing rather than as remembered.
+      // AWAITED, and it re-reads the store: the in-memory list is only built
+      // when the save page is opened, which is right for a menu and useless to
+      // a phase-2 read that never opens one (GP-137).
+      slots: typeof of.saves === 'function' ? await of.saves('refresh') : null,
       health: g.health ?? null,
     };
   });
@@ -205,6 +219,25 @@ try {
     check('START FRESH: the fresh world is a real, playable one and not a husk',
           after.tick > 0 && Number.isFinite(after.lat) && Number.isFinite(after.lon),
           JSON.stringify([after.tick, after.lat, after.lon]));
+  } else if (setup === SAVED) {
+    if (before.wantLoad) {
+      check('LOAD: the SAVED world came back, not the wrecked one',
+            after.buildings === before.builtBuildings,
+            `saved ${before.builtBuildings}, wrecked to ${before.wreckedTo}, `
+            + `came back ${after.buildings}`);
+      check('LOAD: and the named slot is still there to load again',
+            (after.slots?.rows ?? []).some((r) => r.name === before.savedName),
+            JSON.stringify((after.slots?.rows ?? []).map((r) => r.name)));
+    } else {
+      // THE CONTROL. Same world, same save, same wreck, one button not pressed.
+      check('NO LOAD: the WRECKED world came back, which is what makes the '
+            + 'other run mean something',
+            after.buildings === before.wreckedTo,
+            `wrecked to ${before.wreckedTo}, came back ${after.buildings}`);
+      check('NO LOAD: and the named save is still on the shelf, unused',
+            (after.slots?.rows ?? []).some((r) => r.name === before.savedName),
+            JSON.stringify((after.slots?.rows ?? []).map((r) => r.name)));
+    }
   } else {
     check('the world restored the factory the player built',
           after.buildings >= before.buildings,
@@ -222,7 +255,7 @@ try {
   // Only a real reload asks the question, so only this runner can assert it.
   // -1 is /core REFUSING the stream and 0 is a slot that carried none; both are
   // the defect, so the bar is a positive count.
-  if (setup !== FRESH) {
+  if (setup !== FRESH && setup !== SAVED) {
     check('the discovered world came back',
           (after.persist?.restored?.discovery ?? -1) > 0,
           `${after.persist?.restored?.discovery}`);

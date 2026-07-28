@@ -33,6 +33,7 @@ import type { Gameplay } from '../game/Gameplay.js';
 import type { FlightMode } from './FlightMode.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
 import type { Config } from './Config.js';
+import type { SaveSlots } from '../game/SaveSlots.js';
 
 /**
  * 100 km. The atmosphere's ceiling is 60 km (`atmosphere.h`: density is exactly
@@ -53,15 +54,19 @@ export interface CheatDeps {
   gameplay: () => Gameplay | null;
   flight: () => FlightMode | null;
   body: PlanetBody;
-  /** GP-132: the PARSED config, read only, so the video screen shows what the
-   *  renderer was handed rather than the defaults. */
+  /** GP-132: the PARSED config, read only. The video screen shows what the
+   *  renderer was handed, not the defaults. */
   cfg: Config;
+  slots: SaveSlots;   // GP-137: named slots, load list, delete.
   /**
    * How a wiped world comes back. A PORT rather than a bare `location.reload()`
    * so the destruction is observable before the page goes: a probe drives the
    * real button, reads the receipt, and the runner reloads on its own terms.
    */
   restart: () => void;
+  /** Probe-only: stop the port navigating, so a driven run can read the
+   *  receipt. See the `norestart` branch in `press`. */
+  suppressRestart: () => void;
 }
 
 export interface CheatReceipt {
@@ -73,12 +78,9 @@ export interface CheatReceipt {
 }
 
 export class Cheats {
-  /** GP-103: Start Fresh is ARMED by one press and FIRED by a second one, and
-   *  this is the only state that connects them. */
+  /** GP-103: Start Fresh is ARMED by one press and FIRED by a second. */
   private armed = false;
   private page = '';   // GP-131. '' is the root page.
-  /** Probe-only: see the `norestart` branch in `press`. */
-  private restartOff = false;
   infiniteFuel = false;
   /** What the tanks held the last time they were filled, so the top-up has a
    *  target that survives a staging (a jettisoned tank lowers it, correctly). */
@@ -92,10 +94,10 @@ export class Cheats {
   get lastMessage(): string { return this.log[this.log.length - 1]?.message ?? ''; }
 
   /**
-   * THE ONE ENTRY POINT the menu and `__of.cheat` both go through, so there is
-   * exactly one place a cheat can be recorded and exactly one place it can be
-   * refused. The `:confirm` / `:cancel` suffixes are part of the id rather than
-   * separate verbs, because they belong to the row that raised them.
+   * THE ONE ENTRY POINT the menu and `__of.cheat` both go through: one place a
+   * press can be recorded, one place it can be refused. The `:confirm` and
+   * `:cancel` suffixes are part of the id because they belong to the row that
+   * raised them.
    */
   press(id: string): CheatReceipt {
     // GP-131. NAVIGATION, not a cheat, routed here for the same reason.
@@ -105,18 +107,17 @@ export class Cheats {
     }
     // GP-134. The options pages' own verbs. NOT cheats, and routed here anyway,
     // because one place a press is handled is one place it can be wrong.
-    const opt = pressOption(this.d.gameplay()?.sfx.bus ?? null, id);
+    const opt = pressOption(this.d.gameplay()?.sfx.bus ?? null, this.d.slots,
+      this.d.gameplay(), id);
     if (opt !== '') return this.say(id, true, opt);
     if (id === 'startfresh') return this.arm();
     if (id === 'startfresh:cancel') { this.armed = false; return this.say(id, true, 'cancelled'); }
     if (id === 'startfresh:confirm') {
-      // THE REFUSAL IS DECIDED HERE, SYNCHRONOUSLY, and this is a correction
-      // rather than a flourish: the first version fired the async wipe and
-      // immediately returned a cheerful "wiping the world", so an UNARMED call
-      // got a receipt saying `done: true` while the wipe it named was refusing
-      // itself out of sight. `probes/cheats.js` caught it on its first run. A
-      // receipt that reports the opposite of what happened is worse than no
-      // receipt, and on this particular verb it is the difference between a
+      // THE REFUSAL IS DECIDED HERE, SYNCHRONOUSLY. The first version fired the
+      // async wipe and returned a cheerful "wiping the world", so an UNARMED
+      // call got `done: true` while the wipe refused itself out of sight;
+      // `probes/cheats.js` caught it on its first run. On this verb, a receipt
+      // that reports the opposite of what happened is the difference between a
       // guard and the appearance of one.
       if (!this.armed) {
         return this.say(id, false, 'refused: Start Fresh must be confirmed first');
@@ -141,7 +142,10 @@ export class Cheats {
     // same `startFresh` and still verifies itself against the store;
     // `reload.mjs` performs the identical reload from the outside. What the
     // probe skips is the `location.reload()` call and nothing else.
-    if (id === 'norestart') { this.restartOff = true; return this.say(id, true, 'restart suppressed (probe)'); }
+    // GP-137: it suppresses THE PORT, not a copy of the answer. Start Fresh and
+    // Load both restart, and a flag only Start Fresh consulted let a driven Load
+    // navigate out from under the probe reporting on it.
+    if (id === 'norestart') { this.d.suppressRestart(); return this.say(id, true, 'restart suppressed'); }
     return this.say(id, false, `no such control: ${id}`);
   }
 
@@ -155,9 +159,7 @@ export class Cheats {
   /**
    * GP-103. The sentence the confirm shows. It NAMES THE SLOT KEY, because the
    * client keeps two worlds under two keys (DW-31) and "start fresh" is
-   * ambiguous the moment there is more than one. It is also the only place in
-   * the UI that says which key the running world lives in, which is worth having
-   * on its own.
+   * ambiguous the moment there is more than one.
    */
   confirmSentence(): string {
     const g = this.d.gameplay();
@@ -211,7 +213,7 @@ export class Cheats {
       gone ? `destroyed save slot "${key}", restarting`
         : `slot "${key}" is STILL THERE after the wipe`,
       { slotKey: key, mode, slotRemains: !gone });
-    if (gone && !this.restartOff) this.d.restart();
+    if (gone) this.d.restart();
     return r;
   }
 
@@ -350,7 +352,7 @@ export class Cheats {
       // DERIVED ON EVERY VIEW and never stored, so no screen can go stale
       // against a rebind, a flag or a volume. See app/OptionsPages.ts.
       ...optionPages(this.d.cfg, this.d.gameplay()?.sfx.bus ?? null,
-        () => new AudioBus()),
+        () => new AudioBus(), this.d.slots, g?.mode.mode ?? 'survival', this.page),
       mode: g?.mode.label ?? 'Survival',
       slotKey: this.slotKey(),
       assisted: isAssisted()
@@ -364,7 +366,6 @@ export class Cheats {
     return {
       armed: this.armed, page: this.page,
       infiniteFuel: this.infiniteFuel,
-      restartSuppressed: this.restartOff,
       fullKg: +this.fullKg.toFixed(1), slotKey: this.slotKey(),
       // LIVE, re-read from /core every time this is asked, so a probe reading
       // it is reading the tanks rather than the session's stage-table copy.

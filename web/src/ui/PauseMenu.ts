@@ -24,6 +24,8 @@ import { Modal, type ModalStack } from './ModalStack.js';
 import type { ControlGroup } from '../player/BindingText.js';
 import type { VideoRow } from '../app/VideoSettings.js';
 import type { AudioView } from '../app/AudioSettings.js';
+import type { SaveListView } from '../game/SaveSlots.js';
+import { audio, controls, saves, video } from './OptionPagesHtml.js';
 
 /** One testing control, as data. The panel has no opinion about any of them. */
 export interface CheatRow {
@@ -55,6 +57,8 @@ export interface PauseView {
   video: VideoRow[];
   /** GP-134. The audio page, and the only options page that WRITES. */
   audio: AudioView;
+  /** GP-137. This mode's saves, the name being typed, and the armed delete. */
+  saves: SaveListView;
   mode: string;
   /** The IndexedDB key this world lives under. Named on screen because the one
    *  destructive control in here destroys exactly it. */
@@ -69,10 +73,11 @@ export interface PauseView {
 /** Everything the shell reserves and does not build. Data, so adding the fifth
  *  section later is a row here rather than a layout. */
 const STUBS: readonly { name: string; waiting: string; page: string }[] = [
-  { name: 'Save Game', page: '',
-    waiting: 'not yet: the world autosaves every 20 seconds to the slot named '
-      + 'above. Named slots, manual saves and a load list come with the save '
-      + 'system.' },
+  // GP-137. The last stub to become real. Named slots, manual save, a load list
+  // and delete, keyed by mode AND name so a sandbox world cannot be loaded into
+  // a survival session.
+  { name: 'Save Game', page: 'save',
+    waiting: 'named saves for this mode, and the autosave. Loading restarts.' },
   // GP-131. THE FIRST STUB TO BECOME REAL, and it stays in this list rather
   // than being promoted out of it, because the shape the shell reserved is the
   // shape it turned out to want: a named section with a page behind it.
@@ -123,14 +128,30 @@ export class PauseMenu extends Modal {
     // while dragging. Same delegation, second event, one extra line.
     this.body.addEventListener('input', (e) => {
       const el = e.target as HTMLInputElement | null;
-      if (el === null || el.getAttribute('data-audio') !== 'volume') return;
-      this.onPress(`audio:vol:${el.value}`);
+      if (el === null) return;
+      // ONLY THE SLIDER. The save-name box is deliberately NOT reported as it
+      // is typed: `onPress` invalidates the panel, and rebuilding the page on
+      // every keystroke erased the box the player was typing in. A text input
+      // holds its own value and hands it over on the press (GP-137).
+      if (el.getAttribute('data-audio') === 'volume') {
+        this.onPress(`audio:vol:${el.value}`);
+      }
     });
     this.body.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement | null)?.closest('button');
       if (b === null || b === undefined || b.disabled) return;
       const id = b.getAttribute('data-cheat');
-      if (id !== null && id !== '') this.onPress(id);
+      if (id === null || id === '') return;
+      // GP-137. `save:new` carries the typed name with it, because the panel
+      // owns its own input and `OptionsPages` owns the rule about names; the id
+      // is the seam between them and nothing has to reach across it.
+      if (id === 'save:new') {
+        const box = this.root.querySelector<HTMLInputElement>('input[data-save="name"]');
+        this.onPress(`save:new:${box?.value ?? ''}`);
+        if (box !== null) box.value = '';
+        return;
+      }
+      this.onPress(id);
     });
   }
 
@@ -148,9 +169,16 @@ export class PauseMenu extends Modal {
   render(view: PauseView): void {
     if (!this.open) return;
     const a = view.audio;
+    const sv = view.saves;
+    // GP-137: THE SAVE LIST IS IN THE KEY, and its absence was a real defect
+    // rather than an omission: the page would have drawn once and then never
+    // again, so a save would land in the store and never appear on the screen
+    // that exists to show it. `note` and `busy` are in it too, because a
+    // refusal that does not redraw is a button that did nothing.
     const key = `${view.page}|${view.mode}|${view.slotKey}|${view.assisted}|`
       + `${view.confirm}|${a.volume}|${a.muted ? 1 : 0}|${a.state}|`
-      + `${a.silentBecause}|`
+      + `${a.silentBecause}|${sv.busy}|${sv.note}|${sv.confirmDelete}|`
+      + sv.rows.map((r) => `${r.name}:${r.savedAt}`).join(',') + '|'
       + view.cheats.map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;
@@ -158,7 +186,8 @@ export class PauseMenu extends Modal {
     this.body.innerHTML = view.page === 'controls' ? controls(view.controls)
       : view.page === 'video' ? video(view.video)
         : view.page === 'audio' ? audio(view.audio)
-          : header(view) + stubs() + testing(view);
+          : view.page === 'save' ? saves(view.saves)
+            : header(view) + stubs() + testing(view);
   }
 
   invalidate(): void { this.last = ''; }
@@ -197,33 +226,6 @@ function stubs(): string {
     + '</div>';
 }
 
-/**
- * GP-131. THE CONTROLS SCREEN: every action the game listens to, with the key
- * it is actually on.
- *
- * Nothing here is written down. The rows are DERIVED from `BINDINGS` by
- * `controlGroups()` on every render, so this screen cannot state a key the game
- * does not listen to, which is the whole reason it was worth building before
- * rebinding. A shared code is called out rather than drawn twice and hoped over.
- */
-function controls(groups: ControlGroup[]): string {
-  const n = groups.reduce((a, g) => a + g.rows.length, 0);
-  return '<div class="of-pgrp ctl"><h4>Controls'
-    + `<button type="button" class="back" data-cheat="page:">Back</button></h4>`
-    + `<div class="row note"><span class="why">All ${n} controls, read from the `
-    + 'one binding table the game itself asks. Rebinding is not built yet; when '
-    + 'it is, it will edit this table and nothing else.</span></div>'
-    + groups.map((g) => `<div class="ctlg" data-group="${esc(g.name)}">`
-      + `<h5>${esc(g.name)}</h5>`
-      + g.rows.map((r) => `<div class="ctlr" data-action="${esc(r.action)}">`
-        + `<span class="nm">${esc(r.label)}</span>`
-        + `<span class="keys">${r.keys.map((k) =>
-          `<kbd>${esc(k)}</kbd>`).join(' ')}</span>`
-        + (r.sharedWith.length === 0 ? ''
-          : `<span class="share">also ${esc(r.sharedWith.join(', '))}</span>`)
-        + '</div>').join('') + '</div>').join('')
-    + '</div>';
-}
 
 /**
  * The testing block. The destructive row is rendered in one of two states and
@@ -261,88 +263,4 @@ function armed(c: CheatRow, sentence: string): string {
     + '</span></div>';
 }
 
-/**
- * GP-132. THE VIDEO SCREEN: what this session is actually running at.
- *
- * Every value is read off the parsed `Config` the renderer was handed at boot,
- * not off a default table, because the number worth comparing across two
- * machines is the number each of them RAN. `applyBy` is shown per row rather
- * than as a blanket footnote: three of these are baked into an allocation or a
- * shader path at boot, and a screen that offered a live slider for a
- * preallocated chunk pool would be lying about what it could do.
- */
-function video(rows: VideoRow[]): string {
-  const groups: string[] = [];
-  for (const r of rows) if (!groups.includes(r.group)) groups.push(r.group);
-  return '<div class="of-pgrp ctl"><h4>Video'
-    + '<button type="button" class="back" data-cheat="page:">Back</button></h4>'
-    + `<div class="row note"><span class="why">Read only for now. Every one of `
-    + 'these is a URL flag the game already accepts, so you can benchmark by '
-    + 'adding it to the address bar today; a control here needs the renderer to '
-    + 'either take the value live or reload, which is a cross-lane call.'
-    + '</span></div>'
-    + groups.map((gname) => `<div class="ctlg" data-group="${esc(gname)}">`
-      + `<h5>${esc(gname)}</h5>`
-      + rows.filter((r) => r.group === gname).map((r) =>
-        `<div class="ctlr" data-flag="${esc(r.flag)}" data-apply="${r.applyBy}">`
-        + `<span class="nm">${esc(r.label)}</span>`
-        + `<span class="keys"><kbd>${esc(r.value)}</kbd></span>`
-        + `<span class="share">?${esc(r.flag)}= ${esc(r.options)}`
-        + `${r.applyBy === 'reload' ? ' (needs a reload)' : ''}</span>`
-        + '</div>').join('') + '</div>').join('')
-    + '</div>';
-}
 
-/**
- * GP-134. THE AUDIO SCREEN, and the only options page with working controls.
- *
- * THE DIAGNOSIS IS FIRST, above the controls, because it is the reason to open
- * this page at all: `AudioBus`'s own header says every browser blocks audio
- * until a gesture and that "the game would be mute for exactly the players who
- * never noticed why". `silentBecause` names ONE reason out of the four that can
- * gate sound, in the order they actually gate, and the page offers the button
- * that fixes the commonest of them. When there is nothing wrong it says so
- * rather than showing an empty box, because a blank diagnostic and a broken one
- * look identical.
- *
- * The counters are shown next to it deliberately: "412 sounds asked for, none
- * of them audible" is a completely different fault from "nothing has tried to
- * make a sound", and one number tells them apart.
- */
-function audio(a: AudioView): string {
-  const pct = Math.round(a.volume * 100);
-  const diag = a.silentBecause === ''
-    ? '<div class="row note ok"><span class="nm">Sound is on</span>'
-      + `<span class="why">volume ${pct}%, context ${esc(a.state)}</span></div>`
-    : '<div class="row note warn"><span class="nm">You will hear nothing</span>'
-      + `<span class="why">${esc(a.silentBecause)}</span>`
-      + (a.unlocked || !a.supported ? ''
-        : '<button type="button" data-cheat="audio:unlock">Start audio</button>')
-      + '</div>';
-  return '<div class="of-pgrp ctl aud"><h4>Audio'
-    + '<button type="button" class="back" data-cheat="page:">Back</button></h4>'
-    + diag
-    + '<div class="ctlg"><h5>Master</h5>'
-    + '<div class="ctlr vol"><span class="nm">Volume</span>'
-    + `<input type="range" min="0" max="100" step="1" value="${pct}" `
-    + 'data-audio="volume" aria-label="master volume">'
-    + `<span class="keys"><kbd data-vol="${pct}">${pct}%</kbd></span></div>`
-    + `<div class="ctlr"><span class="nm">Mute</span>`
-    + `<span class="keys"><kbd>${esc(a.muteKey)}</kbd></span>`
-    + `<button type="button" data-cheat="audio:mute">`
-    + `${a.muted ? 'Unmute' : 'Mute'}</button></div>`
-    + '</div>'
-    + '<div class="ctlg"><h5>What has played</h5>'
-    + `<div class="ctlr"><span class="nm">One-shots since boot</span>`
-    + `<span class="keys"><kbd>${a.plays}</kbd></span></div>`
-    + `<div class="ctlr"><span class="nm">Running loops</span>`
-    + `<span class="keys"><kbd>${a.loops}</kbd></span></div>`
-    + `<div class="ctlr"><span class="nm">Time spent building voices</span>`
-    + `<span class="keys"><kbd>${a.cpuMs} ms</kbd></span></div>`
-    + '</div>'
-    + '<div class="ctlg"><h5>Buses</h5>'
-    + a.buses.map((b) => `<div class="ctlr" data-bus="${esc(b.name)}">`
-      + `<span class="nm">${esc(b.name)}</span>`
-      + `<span class="share">${esc(b.note)}</span></div>`).join('')
-    + '</div></div>';
-}

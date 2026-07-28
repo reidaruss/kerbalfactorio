@@ -216,3 +216,34 @@
 }
 
 .of-pgrp.aud .ctlr .share { flex: 1 1 auto; text-align: right; }
+
+/* --- GP-137: the save screen --------------------------------------------- */
+.of-pgrp.sav .ctlr.sv { padding: 4px 6px; }
+.of-pgrp.sav .ctlr.sv .nm { flex: 0 0 190px; }
+.of-pgrp.sav .ctlr.sv .share { flex: 1 1 auto; text-align: left; }
+.of-pgrp.sav .ctlr .pair { display: flex; gap: 5px; flex: 0 0 auto; }
+.of-pgrp.sav .ctlr[data-auto="1"] { border-left: 2px solid var(--of-accent); }
+
+.of-pgrp.sav .asst {
+  margin-left: 7px;
+  padding: 0 4px;
+  font-style: normal;
+  font-size: 9px;
+  color: var(--of-bad);
+  border: 1px solid var(--of-bad);
+}
+
+.of-pgrp.sav input[type="text"] {
+  flex: 1 1 auto;
+  max-width: 260px;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--of-ink);
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  border-radius: 3px;
+}
+
+.of-pgrp.sav input[type="text"]:focus { outline: none; border-color: var(--of-accent); }
+.of-pgrp .share.bad { color: var(--of-bad); }

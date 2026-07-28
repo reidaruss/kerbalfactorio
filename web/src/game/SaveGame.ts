@@ -48,7 +48,9 @@ const STORE = 'saves';
  * A slot written before modes existed has no `mode` field and lives under
  * `auto`; both readings make it survival, which is what it is.
  */
-function slotKey(mode: GameMode): string {
+/** GP-136: EXPORTED so `SaveKeys.ts` can copy a named slot into the autosave
+ *  key. Loading is a copy plus a reload, never an in-place apply. */
+export function slotKey(mode: GameMode): string {
   return mode === 'sandbox' ? 'auto-sandbox' : 'auto';
 }
 /** 2: voxel edits joined the slot, so a v1 slot cannot describe the tunnels.
@@ -281,7 +283,9 @@ function open(): Promise<IDBDatabase> {
   });
 }
 
-async function tx<T>(mode: IDBTransactionMode,
+/** GP-136: EXPORTED for the named-slot layer, which needs the same store and
+ *  must not open a second connection to it. */
+export async function tx<T>(mode: IDBTransactionMode,
                      run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await open();
   try {
@@ -308,7 +312,7 @@ export async function writeSlot(slot: SaveSlot): Promise<boolean> {
     // exists; a field filled in by `Persist.snapshot` would be a field the
     // second snapshot path forgets. Same argument as `HealthCensus`: derive at
     // the one place, never register at the many.
-    slot.assisted = assistedFor(mode);
+    stampAssisted(slot);
     // PH-67, on GP-102's precedent and for its stated reason. `saveVessels`
     // SYNCS the promoted vessel out of its live `/core` FlightSim before it
     // serialises, as its first statement, so no write path can save a vessel in
@@ -321,6 +325,20 @@ export async function writeSlot(slot: SaveSlot): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * GP-136: THE ONE PLACE THE ASSISTED MARK IS PUT ON A SLOT.
+ *
+ * `writeSlot` calls it and so does the named-slot layer, because a named save
+ * of an assisted world is still assisted and a second place that derived the
+ * field would be a second authority on it. Exported rather than inlined for
+ * exactly that reason: GP-102's argument was that the mark is stamped at the
+ * choke point so no snapshot path can forget it, and there are two writers now.
+ */
+export function stampAssisted(slot: SaveSlot): SaveSlot {
+  slot.assisted = assistedFor(asMode(slot.mode));
+  return slot;
 }
 
 /** Why a slot that EXISTS was not loaded. Empty means it was, or there was none. */

@@ -19,6 +19,7 @@
 // the lock back without the mouse having "moved" while the cursor was free.
 
 import { Cheats } from './Cheats.js';
+import { SaveSlots } from '../game/SaveSlots.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
 import { BuildMenu } from '../ui/BuildMenu.js';
 import { buildRows, contentFor } from '../game/Buildables.js';
@@ -30,17 +31,29 @@ export function installPauseMenu(s: Services, loop: Loop) {
   const g = s.gameplay;
   if (g === null) return {};
 
+  // GP-137. ONE restart port, shared by Start Fresh and by Load, because they
+  // are the same operation seen from two places: put a world under the autosave
+  // key (or remove it) and boot into it. Two ports would be two answers to how
+  // long a banner stays on screen.
+  // A BEAT BEFORE THE PAGE GOES. The receipt has to be readable, and the line
+  // saying which slot was destroyed or loaded has to be on screen for at least
+  // one frame, or a player who pressed the wrong button never learns what it
+  // did. It is also what lets a driven probe press the real confirm, read the
+  // real outcome and return before the context is torn down.
+  let restartOff = false;
+  const restart = (): void => {
+    if (restartOff) return;
+    window.setTimeout(() => { window.location.reload(); }, 400);
+  };
+  const slots = new SaveSlots(restart);
   const cheats = new Cheats({
+    slots,
     gameplay: () => s.gameplay,
     flight: () => s.flight,
     body: s.body,
     cfg: s.cfg,
-    // A BEAT BEFORE THE PAGE GOES. The receipt has to be readable, and the
-    // banner saying which slot was destroyed has to be on screen for at least
-    // one frame, or a player who pressed the wrong button never learns what it
-    // did. It is also what lets a driven probe press the real confirm, read the
-    // real outcome and return before the context is torn down.
-    restart: () => { window.setTimeout(() => { window.location.reload(); }, 400); },
+    restart,
+    suppressRestart: () => { restartOff = true; },
   });
 
   const menu = new PauseMenu(g.host, g.modals, (id) => {
@@ -194,6 +207,28 @@ export function installPauseMenu(s: Services, loop: Loop) {
         armed: cheats.isArmed,
         view: cheats.view(),
       };
+    },
+
+    /**
+     * GP-137. The named-slot layer, READ ONLY.
+     *
+     * Every verb here is reached by pressing the real button in the real panel,
+     * exactly as `probes/savenamed.js` does; this exists so a probe can read
+     * what actually happened (`loads`, `saved`, `deleted`, `refusals`) rather
+     * than infer it from the world, which is the difference between proving a
+     * load ran and proving something changed.
+     */
+    saves(op?: string) {
+      // `refresh` RE-READS THE STORE and resolves with the report. The list is
+      // otherwise rebuilt only when the save page is opened (GP-137), which is
+      // right for a menu and wrong for a probe that never opens one: phase 2 of
+      // the reload proof has to ask the STORE what survived, not the cache a
+      // fresh page has never filled.
+      if (op === 'refresh') {
+        const m = s.gameplay?.mode.mode ?? 'survival';
+        return slots.refresh(m).then(() => slots.report());
+      }
+      return slots.report();
     },
 
     /**
