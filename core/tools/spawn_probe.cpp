@@ -101,6 +101,60 @@ Vec3 offsetDir(const Frame& f, double R, double dx, double dy) {
   return p * (1.0 / p.length());
 }
 
+// =============================================================================
+// WG-57: THE POND MOVES WITH THE PAD, OR IT IS ORPHANED.
+//
+// `pondDir` is `homeDir` rotated 55 m along a heading 30 deg east of north, and
+// cubed_sphere.h stores it as a LITERAL for the DW-14 reason `homeDir` is one.
+// So moving `homeDir` without recomputing this leaves the basin at the OLD
+// spawn, in whatever biome happens to sit 55 m from a site nobody chose, with
+// its water level still referenced to a pad that is no longer there. Before this
+// existed the probe never mentioned the pond at all and `printHomeDirLiteral`
+// emitted `homeDir` alone, so acting on its output as printed did exactly that.
+//
+// THE CONSTRUCTION IS A TRUE GREAT-CIRCLE ROTATION AND NOT `offsetDir`'s
+// tangent-offset-then-normalise, and that is not a detail. Measured against the
+// shipped literal: tangent-offset lands 154 nm away with the separation at
+// 54.999999827 m, while the great circle reproduces the shipped `pondDir`
+// BIT-FOR-BIT on all three components at 54.999999981 m. Both pass the
+// `|sep - 55| < 1e-6` that test_water_field.cpp pins, so a tolerance check would
+// have accepted the wrong one; bit-identity is what identifies the construction.
+// =============================================================================
+constexpr double kPondSepM = 55.0;
+constexpr double kPondHeadingDeg = 30.0;   // east of north
+
+Vec3 pondDirFor(const Vec3& homeDir, double R) {
+  const Frame f = frameAt(homeDir);
+  const double th = kPondSepM / R;
+  const double se = std::sin(kPondHeadingDeg * kDeg);
+  const double cn = std::cos(kPondHeadingDeg * kDeg);
+  const Vec3 t(f.east.x * se + f.north.x * cn, f.east.y * se + f.north.y * cn,
+               f.east.z * se + f.north.z * cn);
+  const double ct = std::cos(th), st = std::sin(th);
+  return Vec3(homeDir.x * ct + t.x * st, homeDir.y * ct + t.y * st,
+              homeDir.z * ct + t.z * st);
+}
+
+// Reconstructing the SHIPPED pondDir from the SHIPPED homeDir must return the
+// shipped bits. If it ever does not, the construction above has drifted from the
+// one that generated the literal, and every pondDir this tool prints would
+// silently move the pond. Loud rather than tolerated: this is the only thing
+// standing between "the spawn moved" and "the pond is somewhere else now".
+bool pondDirSelfCheck(const BodyParams& body) {
+  const Vec3 got = pondDirFor(body.homeDir, body.radiusM);
+  const bool exact = got.x == body.pondDir.x && got.y == body.pondDir.y &&
+                     got.z == body.pondDir.z;
+  const double dx = got.x - body.pondDir.x, dy = got.y - body.pondDir.y,
+               dz = got.z - body.pondDir.z;
+  std::printf("pondDir self-check: reconstruct from homeDir -> %s"
+              " (delta %.3g m, |v| - 1 = %.3g)\n",
+              exact ? "BIT-IDENTICAL to the shipped literal"
+                    : "*** MISMATCH, DO NOT USE THE PRINTED LITERAL ***",
+              body.radiusM * std::sqrt(dx * dx + dy * dy + dz * dz),
+              got.length() - 1.0);
+  return exact;
+}
+
 // Longitude wrapped into [-180, 180). Applied BEFORE latLonToDir so the printed
 // lat/lon and the dir (and therefore the homeDir literal) always agree: cos of
 // -180.085 deg and cos of +179.915 deg are the same angle but not the same bits.
@@ -484,25 +538,49 @@ void printRow(const Site& s, const char* tag) {
 // the pad), and the worst radial grade in the blend annulus ALONGSIDE the
 // natural grade over the same ground. The difference between those two is what
 // the eye reads as an artificial cut.
+// WG-57: this function used to move `homeDir` and leave `pondDir` and
+// `pondRadiusM` alone, then measure with `sampleDesignedHeight`, which since
+// WG-36 subtracts the pond basin. So at any candidate near the shipped pond it
+// charged the basin to the terrain: its "worst 4 m step inside the flat radius
+// 1.078601 m" at the current spawn was ENTIRELY the pond, since inside the flat
+// radius the un-ponded height is a bit-exact constant and the basin is the only
+// varying term. The analytic 4 m span across the basin's steepest point is
+// 1.080 m. Candidate rows read 0.000000 m only because the pond was thousands of
+// km away from them, which is why it looked like a property of the sites.
+//
+// Both numbers are now measured and BOTH are printed, rather than picking one.
+// DW-26's rule: when one authority must answer a question in two shapes, publish
+// both shapes. `padOnly` is the pad's own flatness, which is the question this
+// function exists to ask and is meaningless with a 4 m bowl cut into it.
+// `withPond` is the ground as it would actually ship. The difference is the
+// pond, and seeing it as a difference is what stops it being read as terrain.
 void probePadHere(const BodyParams& body, const Site& s) {
   BodyParams b = body;
   b.homeDir = s.dir;                      // move the pad to this candidate
+  b.pondDir = pondDirFor(s.dir, b.radiusM);   // and the pond moves WITH it
   const Frame f = frameAt(s.dir);
   const double R = b.radiusM;
-  const double h0 = sampleDesignedHeight(b, s.dir);
 
-  double worst4 = 0.0;
+  BodyParams noPond = b;
+  noPond.pondRadiusM = 0.0;               // isolate the pad from its own basin
+  const double h0 = sampleDesignedHeight(noPond, s.dir);
+
+  double worst4 = 0.0, worst4Pond = 0.0;
   const double lim = b.homeFlatRadiusM;
   const double off[4][2] = {{4, 0}, {0, 4}, {2.828, 2.828}, {2.828, -2.828}};
   for (double y = -lim; y <= lim; y += 2.0)
     for (double x = -lim; x <= lim; x += 2.0) {
       if (x * x + y * y > lim * lim) continue;
-      const double hh = sampleDesignedHeight(b, offsetDir(f, R, x, y));
+      const double hh = sampleDesignedHeight(noPond, offsetDir(f, R, x, y));
+      const double hp = sampleDesignedHeight(b, offsetDir(f, R, x, y));
       for (auto& o : off) {
         const double nx = x + o[0], ny = y + o[1];
         if (nx * nx + ny * ny > lim * lim) continue;
-        worst4 = std::max(worst4, std::fabs(
-            sampleDesignedHeight(b, offsetDir(f, R, nx, ny)) - hh));
+        const Vec3 d = offsetDir(f, R, nx, ny);
+        worst4 = std::max(worst4,
+                          std::fabs(sampleDesignedHeight(noPond, d) - hh));
+        worst4Pond = std::max(worst4Pond,
+                              std::fabs(sampleDesignedHeight(b, d) - hp));
       }
     }
 
@@ -520,21 +598,40 @@ void probePadHere(const BodyParams& body, const Site& s) {
       if (g > maxGrade) { maxGrade = g; atR = r; natThere = nat; }
     }
   std::printf("  IF THE PAD MOVES HERE: pad height %.2f m; worst 4 m step "
-              "inside the flat radius %.6f m\n"
+              "inside the flat radius %.6f m (pad alone)\n"
+              "                         %.6f m with the pond cut in, so the "
+              "basin accounts for %.6f m of it\n"
               "                         worst blend-annulus grade %.2f%% at "
               "r = %.0f m; natural grade there %.2f%% (worst natural %.2f%%)\n"
               "                         => the pad adds %.2f percentage points "
               "of grade over the natural ground\n",
-              h0, worst4, maxGrade * 100.0, atR, natThere * 100.0,
-              maxNat * 100.0, (maxGrade - natThere) * 100.0);
+              h0, worst4, worst4Pond, worst4Pond - worst4, maxGrade * 100.0,
+              atR, natThere * 100.0, maxNat * 100.0,
+              (maxGrade - natThere) * 100.0);
 }
 
-void printHomeDirLiteral(double latDeg, double lonDeg) {
+// WG-57: this emitted `homeDir` ALONE, so pasting its output moved the pad and
+// left the pond behind at the old spawn. Both literals are emitted together now,
+// because they are one edit: `pondDir` is defined relative to `homeDir` and a
+// half-applied move is worse than no move, since the world still builds and the
+// pond is simply somewhere else. The separation is printed so the paste can be
+// checked against the `|sep - 55| < 1e-6` that test_water_field.cpp pins.
+void printHomeDirLiteral(double latDeg, double lonDeg, double R) {
   const Vec3 d = latLonToDir(latDeg * kDeg, lonDeg * kDeg);
-  std::printf("  b.homeDir = Vec3(%.17g, %.17g,\n"
+  const Vec3 p = pondDirFor(d, R);
+  const double dx = p.x - d.x, dy = p.y - d.y, dz = p.z - d.z;
+  const double sep = R * std::sqrt(dx * dx + dy * dy + dz * dz);
+  std::printf("  // BOTH literals move together or the pond is orphaned.\n"
+              "  b.homeDir = Vec3(%.17g, %.17g,\n"
               "                   %.17g);\n"
-              "  // |dir| - 1 = %.3g\n",
-              d.x, d.y, d.z, d.length() - 1.0);
+              "  // |dir| - 1 = %.3g\n"
+              "  b.pondDir = Vec3(%.17g, %.17g,\n"
+              "                   %.17g);\n"
+              "  // |dir| - 1 = %.3g ; separation %.9f m (test pins < 1e-6 "
+              "from 55) %s\n",
+              d.x, d.y, d.z, d.length() - 1.0, p.x, p.y, p.z,
+              p.length() - 1.0, sep,
+              std::fabs(sep - 55.0) < 1e-6 ? "OK" : "*** OUT OF TOLERANCE ***");
 }
 
 }  // namespace
@@ -567,6 +664,11 @@ int main(int argc, char** argv) {
   const double R = forge.radiusM;
   gFlatR = (forge.homeFlatRadiusM > 0) ? forge.homeFlatRadiusM : 150.0;
   gBlendR = (forge.homeBlendRadiusM > 0) ? forge.homeBlendRadiusM : 600.0;
+
+  // WG-57: prove the pond construction still matches the shipped literal before
+  // any number below is trusted, because every pondDir this tool prints depends
+  // on it and a wrong one moves the pond silently.
+  const bool pondOk = pondDirSelfCheck(forge);
 
   std::printf("=== spawn_probe: Forge, R = %.0f km ===\n"
               "worldSeed 0x%llx  (client default is 0x%llx: %s)\n"
@@ -814,16 +916,16 @@ int main(int argc, char** argv) {
     std::printf("\n=== cubed_sphere.h homeDir literal for the RECOMMENDATION "
                 "===\n// lat %.4f deg, lon %.4f deg\n",
                 finalists[0].latDeg, finalists[0].lonDeg);
-    printHomeDirLiteral(finalists[0].latDeg, finalists[0].lonDeg);
+    printHomeDirLiteral(finalists[0].latDeg, finalists[0].lonDeg, forge.radiusM);
   }
   if (finalists.size() > 1) {
     std::printf("\n=== homeDir literal for the RUNNER-UP ===\n"
                 "// lat %.4f deg, lon %.4f deg\n",
                 finalists[1].latDeg, finalists[1].lonDeg);
-    printHomeDirLiteral(finalists[1].latDeg, finalists[1].lonDeg);
+    printHomeDirLiteral(finalists[1].latDeg, finalists[1].lonDeg, forge.radiusM);
   }
   std::printf("\n=== homeDir literal for the CURRENT spawn (must reproduce the "
               "shipped literal) ===\n");
-  printHomeDirLiteral(kHomeLatDeg, kHomeLonDeg);
-  return 0;
+  printHomeDirLiteral(kHomeLatDeg, kHomeLonDeg, forge.radiusM);
+  return pondOk ? 0 : 2;
 }
