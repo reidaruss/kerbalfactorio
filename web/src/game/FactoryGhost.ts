@@ -20,6 +20,7 @@
 // indistinguishable from a coincidence.
 
 import { headingIn, type MachineAddr } from './MachinePlacement.js';
+import { socketReachM } from './FactoryKinds.js';
 import { chainsInto } from './FactoryWiring.js';
 import { mateFor, nearestSocket, proposeFromSocket, SNAP_M,
   type SocketDef, type SocketHit } from './FactorySnap.js';
@@ -269,7 +270,15 @@ BuildTarget | null {
  * reach four figures, for an answer that is always about the two or three
  * things under the crosshair.
  */
-const PREVIEW_NEAR_M = 1.6 * 2 + PORT_MATE_M;
+// FS-59, FOURTH COPY. `1.6 * 2 + PORT_MATE_M` again, and here it decided what
+// the GHOST tells you it will connect to before the button goes down. With an
+// 8 m assembler in hand it filtered out every building the machine could
+// actually mate, so the ghost said nothing at all and the player learned what
+// their placement would do only after making it. Derived per pair now, through
+// the one definition in FactoryKinds.
+function previewNearM(a: BuildKind, b: BuildKind): number {
+  return socketReachM(a) + socketReachM(b) + PORT_MATE_M;
+}
 
 function portPreview(f: Factory, kind: BuildKind,
                      pos: { x: number; y: number; z: number },
@@ -278,7 +287,7 @@ function portPreview(f: Factory, kind: BuildKind,
   if (!ports.has(kind)) return '';
   const host: PortHost = { id: -1, kind, pos, up, quat: orient(up, fwd) };
   const near = f.placed.filter((p) => Math.hypot(p.pos.x - pos.x, p.pos.y - pos.y,
-    p.pos.z - pos.z) <= PREVIEW_NEAR_M);
+    p.pos.z - pos.z) <= previewNearM(kind, p.kind));
   for (const other of near) {
     for (const l of linksBetween(host, other, ports)) {
       return `${l.from.name} -> #${other.id} ${other.kind} ${l.to.name} `

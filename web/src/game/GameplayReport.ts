@@ -141,6 +141,17 @@ export function gameplayReport(g: Gameplay): unknown {
         // inputs are all present and which still will not craft is a full pack,
         // and a boolean cannot say that.
         name: g.game.itemName(r.output), craftable: r.craftable, block: r.block,
+        // FS-56: the OUTPUT ITEM and the BILL, which this row could not answer
+        // and now has to. `probes/assembler.js` asserts that the assembler's
+        // recipe menu is /core's own `handRecipes()` and not a second table the
+        // client grew, and that assertion is only worth anything if the probe's
+        // reading is INDEPENDENT of the code under test. Reading the bill out of
+        // the machine panel instead would be the client agreeing with itself,
+        // which is the shape of a check that cannot fail. Same precedent and
+        // same argument as FS-33, where the probe surface grew three published
+        // rows so the claim could be measured rather than asserted.
+        output: r.output,
+        inputs: r.inputs.map((i) => [i.item, i.need]),
       })),
     };
 }

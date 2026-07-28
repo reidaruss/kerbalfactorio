@@ -22,7 +22,7 @@
 // instruction rather than a decal.
 
 import * as THREE from 'three';
-import { FOOTPRINT, type BuildKind, type Placed } from './FactoryKinds.js';
+import { type BuildKind, type Placed } from './FactoryKinds.js';
 import { AutoLine } from './AutoLine.js';
 import { Power } from './Power.js';
 import { orient, type Snapped } from './Grid.js';
@@ -30,7 +30,8 @@ import { addressIn, anchorIn, machineCellKey, machineClash, siteAt,
   type MachineAddr, type SiteHost } from './MachinePlacement.js';
 import { factoryReport } from './FactoryReport.js';
 import { commitPlan, smeltPairFor } from './FactoryCommit.js';
-import { collectOutput, takeFromBelt, turnPlaced } from './FactoryHand.js';
+import { collectOutput, pickAimed, takeFromBelt,
+  turnPlaced } from './FactoryHand.js';
 import { NO_MIGRATION, type PortMigration } from './FactoryMigrate.js';
 import { menuOf, recipeOfPlaced, setPlacedRecipe, NO_RECIPE,
   type AssemblerRecipe, type RecipeMenu } from './FactoryRecipes.js';
@@ -331,7 +332,21 @@ export class Factory {
   }
   /** FS-41: the SAME pair the machine was built with. Asking the two halves
    *  separately is what let a coal-to-iron smelter exist. */
+  /**
+   * FS-64: AND AN ASSEMBLER'S FIRST INGREDIENT IS AN INPUT ITEM TOO.
+   *
+   * This returned 0 for every kind but the two smelters, which was complete
+   * until a machine existed whose input is a recipe field rather than a smelt
+   * pair. The cost was not a wrong number, it was a MISSING one:
+   * `FactoryReport.row` publishes `input` only when `inputItemOf(p) > 0`, so an
+   * assembler's slot-1 count read `null` however full it was, and
+   * `probes/assembler.js` measured a peak of 0 in slot 1 on a machine that had
+   * just manufactured twelve buildables out of it. A report that says null for a
+   * hopper the sim is visibly draining is worse than one that says nothing,
+   * because a probe cannot tell it from an empty machine.
+   */
   inputItemOf(p: Placed): number {
+    if (p.kind === 'assembler') return this.recipeOf(p)?.a.item ?? 0;
     return p.kind !== 'smelter' && p.kind !== 'esmelter' ? 0
       : smeltPairFor(this, p).ore;
   }
@@ -353,46 +368,13 @@ export class Factory {
   recipeOf(p: Placed): AssemblerRecipe | null { return recipeOfPlaced(this, p); }
   setRecipe(p: Placed, out: number): boolean { return setPlacedRecipe(this, p, out); }
 
-  /**
-   * The building the aim ray is most nearly CENTRED on, within `reachM`.
-   *
-   * FS-28 CHANGED THE RANKING FROM NEAREST TO BEST-CENTRED. The old rule kept
-   * whichever candidate the ray entered FIRST, which is fine
-   * while everything is the same size and wrong the moment they are not: a
-   * smelter's interaction sphere is 1.6 m against a belt tile's 1.0 m, so a belt
-   * just past a smelter is inside the smelter's sphere from almost every angle
-   * and could not be aimed at AT ALL. Measured (`probes/autoline.js`): an aim
-   * 0.005 m off a belt tile's centre resolved to the smelter on all seven
-   * presses from four standing positions, so "take what is on this belt" was
-   * unreachable for any belt near a machine.
-   *
-   * The score is the perpendicular miss as a FRACTION of the candidate's own
-   * radius, so it asks "how centred is the crosshair on this thing" rather than
-   * "which is nearest", and distance only breaks ties. A crosshair on a 2 m
-   * machine scores near zero against it and poorly against anything beside it.
-   */
+  /** The building the aim ray is most nearly CENTRED on, within `reachM`.
+   *  `FactoryHand` owns the rule and argues it, because "what the crosshair
+   *  resolved to" is a question about the hand and not about the plan. */
   pick(eye: { x: number; y: number; z: number },
        dir: { x: number; y: number; z: number }, reachM: number,
        belts = false): Placed | null {
-    let best: Placed | null = null;
-    let bestScore = Infinity;
-    let bestT = Infinity;
-    for (const p of this.placed) {
-      if (p.kind === 'belt' && !belts) continue;
-      const r = FOOTPRINT[p.kind] * 0.6 + 0.4;
-      const ox = p.pos.x + p.up.x * 0.7 - eye.x;
-      const oy = p.pos.y + p.up.y * 0.7 - eye.y;
-      const oz = p.pos.z + p.up.z * 0.7 - eye.z;
-      const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      if (t < -r || t > reachM) continue;
-      const miss = Math.hypot(ox - dir.x * t, oy - dir.y * t, oz - dir.z * t);
-      if (miss > r) continue;
-      const score = miss / r;
-      if (score > bestScore + 1e-6) continue;
-      if (score > bestScore - 1e-6 && t >= bestT) continue;
-      best = p; bestScore = score; bestT = Math.max(0, t);
-    }
-    return best;
+    return pickAimed(this, eye, dir, reachM, belts);
   }
 
   report(): unknown { return factoryReport(this); }

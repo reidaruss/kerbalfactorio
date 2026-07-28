@@ -208,7 +208,16 @@ export function portInfo(g: Gameplay, b: Placed, dir: 'in' | 'out', name?: strin
  */
 export function screenReport(g: Gameplay): unknown {
   if (g.openMachine === null && g.openBuild === null) {
-    return { open: false, of: null, barPct: g.furnacePanel.barPct };
+    // FS-56. THE CLOSED SHAPE CARRIES THE SAME KEYS AS THE OPEN ONE, valued
+    // null. A probe that reads `screen.status` on a panel that failed to open
+    // gets `undefined`, which reads in a report as "the field does not exist"
+    // and sends somebody hunting for a missing feature; `null` says "the panel
+    // is shut", which is the truth and is a different investigation. This cost
+    // a run on `probes/assembler.js`.
+    return { open: false, of: null, barPct: g.furnacePanel.barPct,
+      title: null, status: null, input: null, input2: null, fuel: null,
+      output: null, progress01: null, progressText: null, canTakeInput: false,
+      loadable: [], recipe: 0, recipes: null, refused: [] };
   }
   const v = screenView(g);
   return {

@@ -17,6 +17,7 @@
 
 import { headingIn, siteAt } from './MachinePlacement.js';
 import { orient } from './Grid.js';
+import { FOOTPRINT } from './FactoryKinds.js';
 import type { Factory, Placed } from './Factory.js';
 
 /**
@@ -110,4 +111,64 @@ export function turnPlaced(f: Factory, p: Placed): boolean {
   p.quat = orient(p.up, p.fwd);
   f.commit();
   return true;
+}
+
+/**
+ * The building the aim ray is most nearly CENTRED on, within `reachM`.
+ *
+ * FS-28 CHANGED THE RANKING FROM NEAREST TO BEST-CENTRED. The old rule kept
+ * whichever candidate the ray entered FIRST, which is fine
+ * while everything is the same size and wrong the moment they are not: a
+ * smelter's interaction sphere is 1.6 m against a belt tile's 1.0 m, so a belt
+ * just past a smelter is inside the smelter's sphere from almost every angle
+ * and could not be aimed at AT ALL. Measured (`probes/autoline.js`): an aim
+ * 0.005 m off a belt tile's centre resolved to the smelter on all seven
+ * presses from four standing positions, so "take what is on this belt" was
+ * unreachable for any belt near a machine.
+ *
+ * The score is the perpendicular miss as a FRACTION of the candidate's own
+ * radius, so it asks "how centred is the crosshair on this thing" rather than
+ * "which is nearest", and distance only breaks ties. A crosshair on a 2 m
+ * machine scores near zero against it and poorly against anything beside it.
+ */
+export function pickAimed(f: Factory,
+                          eye: { x: number; y: number; z: number },
+                          dir: { x: number; y: number; z: number },
+                          reachM: number, belts = false): Placed | null {
+  let best: Placed | null = null;
+  let bestScore = Infinity;
+  let bestT = Infinity;
+  for (const p of f.placed) {
+    if (p.kind === 'belt' && !belts) continue;
+    const r = FOOTPRINT[p.kind] * 0.6 + 0.4;
+    const ox = p.pos.x + p.up.x * 0.7 - eye.x;
+    const oy = p.pos.y + p.up.y * 0.7 - eye.y;
+    const oz = p.pos.z + p.up.z * 0.7 - eye.z;
+    const t = ox * dir.x + oy * dir.y + oz * dir.z;
+    // FS-63: REACH IS TO THE HOUSING, NOT THE CENTROID, and it is FS-59's
+    // constant a third time. `t` is the distance to the CENTRE and
+    // `PICK_REACH_M` is 3.5 m, written when every machine was 2 m across and so
+    // meaning 2.5 m from the face. An 8 m assembler's centre is 4.000 m from its
+    // own face, so this test rejected it FROM EVERYWHERE: the machine was drawn,
+    // was connected, and could not be aimed at, opened, fed or demolished from
+    // any position in the world, with every other indicator reading healthy
+    // (DW-28). Caught by `probes/assembler.js` and by nothing static, because
+    // every table, port and link was correct.
+    //
+    // ONLY THE EXCESS OVER 2 m IS ADDED, so every machine that exists today
+    // (belt 1 m, drill / smelter / esmelter / generator 2 m) clamps to zero and
+    // behaves exactly as it shipped, and the assembler gets the same 2.5 m from
+    // its face a smelter has always had. Making the rule "reach to the surface"
+    // outright is tidier and silently loosens every existing machine by 1.0 m,
+    // which changes what `autoline`, `shortline` and `demolish` measure.
+    const bulge = Math.max(0, FOOTPRINT[p.kind] - 2) * 0.5;
+    if (t < -r || t > reachM + bulge) continue;
+    const miss = Math.hypot(ox - dir.x * t, oy - dir.y * t, oz - dir.z * t);
+    if (miss > r) continue;
+    const score = miss / r;
+    if (score > bestScore + 1e-6) continue;
+    if (score > bestScore - 1e-6 && t >= bestT) continue;
+    best = p; bestScore = score; bestT = Math.max(0, t);
+  }
+  return best;
 }
