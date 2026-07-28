@@ -46,7 +46,8 @@ is that the numbers are handed out by one writer before the work starts.
 | WG-29 to WG-30 | the map draws the world | landed |
 | WG-31 to WG-32 | tunnel floor, tunnel mouth | landed |
 | WG-33 to WG-34 | close-in map contrast, ABI 14 | landed |
-| WG-35 to WG-49 | water: basin, pond, swimming | allocated, not started |
+| WG-35 to WG-44 | water: the pond basin, the water level authority, ABI 16, swimming | landed (WG-35 blob diagnosis, WG-36 basin + water_field.h, WG-37 water_field_tests, WG-38 ABI 16, WG-39 WaterOracle, WG-40 Swim.ts, WG-41 Capsule/slopeGate split, WG-42 WaterSurface, WG-43 pondwade probe, WG-44 pondshot probe) |
+| WG-45 to WG-49 | water remainder: the pump and pipes are NOT in this block, they need an Admin decision first | held |
 | PH-45 to PH-46 | tunnel sinking does not reproduce under a mountain | landed |
 | PH-47 to PH-59 | tunnel sinking, structural lead | allocated |
 | FS-33, FS-35 to FS-42 | corner cargo, pollution, typed items, belt corners | landed |
@@ -55,6 +56,10 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-87 to GP-99 | combat remainder, enemies in the world | held |
 | RN-1 to RN-14 | rendering, historic | landed |
 | RN-15 to RN-29 | ground vegetation, contact blending, aerial perspective | allocated |
+| FS-56 to FS-75 | assemblers, storage container, machine scale | allocated |
+| PH-64 to PH-84 | vessel persistence and on-rails propagation | allocated |
+| RN-45 to RN-69 | graphics pass three: rocks, LOD2 cards, terrain material | allocated |
+| GP-100 to GP-114 | Escape menu, cheats, hotbar editing, BUILD MENU on B | allocated |
 | RN-30 to RN-44 | rendering: shadow contact, grass height, aerial perspective take two | allocated |
 | PH-47 | tunnel sinking, structural lead, not reproduced | landed |
 | PH-60 to PH-74 | physics: R18 fall through rock, R18b stuck in a wall | allocated |
