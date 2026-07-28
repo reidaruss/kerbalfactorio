@@ -68,7 +68,22 @@ import type { OfCoreModule } from './heap.js';
 // is what every existing surface call and every streamed chunk returns, so an
 // old wasm under this client would draw a pond nothing collided with. Refusing
 // to boot is the correct outcome and the whole reason the handshake exists.
-export const OF_ABI_VERSION = 16;
+// ABI 17 (2026-07-27): THE SECOND INGREDIENT CAN BE HAND-FED (FS-56). One new
+// export, of_net_feed_machine2, onto factory_sim.h's `feedMachine2`, which has
+// existed since the multi-input Recipe landed and had no way across. Purely
+// additive, and NOT a convenience: `commitPlan` rebuilds the whole network on
+// every placement and carries each machine's input buffer across by reading it
+// and feeding it back, so with only slot 1 reachable every belt tile laid
+// anywhere in a base silently deleted whatever every assembler was holding in
+// slot 2. The bump exists to close a loss that had no message.
+// ABI 18 (2026-07-27): A VESSEL CAN BE PUT BACK, AND A VESSEL CAN BE LEFT
+// (PH-64 to PH-67). Three exports, all additive: `of_fl_set_propellant`, the one
+// write the fuel surface never had, without which a restored vessel comes back
+// with FULL TANKS and free delta-v (R11 refused to ship exactly that); and
+// `of_orb_park` / `of_orb_resume`, which are `orbital::park`/`resume` reaching
+// the browser, so an unattended vessel can be advanced ANALYTICALLY instead of
+// by keeping alive the object that leaving it was meant to retire.
+export const OF_ABI_VERSION = 18;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

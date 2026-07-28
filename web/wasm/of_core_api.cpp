@@ -328,7 +328,49 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       any existing surface call. Water is asked for by name or not at all
 //       (DW-26), so no caller can receive a water height while believing it
 //       asked for the ground.
-OF_API int of_abi_version(void) { return 16; }
+//  17: THE SECOND INGREDIENT CAN BE HAND-FED (FS-56). §7 adds exactly ONE
+//       export, of_net_feed_machine2, mirroring of_net_feed_machine onto
+//       factory_sim.h's `feedMachine2`, which has existed since the multi-input
+//       Recipe landed in Phase 1 and had no way across the bridge. PURELY
+//       ADDITIVE: not one existing export changed name, signature or scratch
+//       layout.
+//       IT IS NOT A CONVENIENCE, IT CLOSES AN ITEM-CONSERVATION HOLE, and that
+//       is why a bump was spent on a single line. The client rebuilds the whole
+//       /core network from the plan on every placement (Factory.ts argues why),
+//       carrying each machine's input buffer across by reading it, destroying
+//       the network and feeding it back. With only slot 1 reachable, every belt
+//       tile laid anywhere in a base would silently delete whatever every
+//       assembler in it was holding in slot 2, and the symptom would be an
+//       assembler that reads starved of one ingredient for no reason a player
+//       could connect to what they just did. That is the shape of defect this
+//       project has paid for repeatedly: a loss with no message, visible only as
+//       a machine that mysteriously will not run.
+//       Note what is still NOT here, and it is named rather than left to be
+//       discovered: there is no of_net_take_input for EITHER slot, so the
+//       machine panel's input cells stay disabled and say so (GP-62's rule).
+//  18: A VESSEL CAN BE PUT BACK, AND A VESSEL CAN BE LEFT (PH-64 to PH-67).
+//       §13 gains THREE exports and §13.3 is new. PURELY ADDITIVE: not one
+//       existing export changed name, signature or scratch layout.
+//         of_fl_set_propellant  - the one write the fuel surface never had.
+//         of_orb_park           - state vector -> conic elements.
+//         of_orb_resume         - conic elements + a time -> state vector.
+//       WHY A BUMP WAS SPENT ON THREE LINES: without the first, a vessel cannot
+//       be restored from a save with the fuel it actually had. R11 measured the
+//       consequence and refused to ship it: rebuilding the craft and replaying
+//       its stagings gets the right HARDWARE and FULL TANKS, which is free
+//       delta-v on every reload, and it is the class of wrongness this project
+//       keeps paying for because every instrument afterwards reads healthy.
+//       Without the other two, an unattended vessel can only be advanced by
+//       INTEGRATING it, i.e. by keeping alive the exact object that leaving it
+//       was supposed to retire. of::orbital has owned the analytic answer since
+//       PH-6 and had no way across the bridge; `orbital::park`/`resume` are
+//       twelve lines of header that no browser could reach.
+//       Note what is NOT here: no of_fl_park and no of_fl_resume. A flight
+//       handle that could park itself would be a second answer to "is this
+//       vessel on rails" living inside the object whose retirement is the
+//       question (DW-26). The predicate stays of_fl_on_rails_eligible, and the
+//       conic pair is pure and handle-free like of_mn_*.
+OF_API int of_abi_version(void) { return 18; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -1718,6 +1760,18 @@ OF_API int of_net_feed_machine(int nId, int build, int count) {
   au::BuildId* b = r->build(build);
   if (!b || !b->valid()) return -1;
   r->net->sim().feedMachine(b->entity, static_cast<uint16_t>(count));
+  return 1;
+}
+// FS-56 / ABI 17. Hand-feed a MULTI-INPUT machine's slot-2 input (assembler).
+// The twin of the call above, and the reason it exists is stated at the ABI
+// history entry: without it a network rebuild cannot carry slot 2 across and
+// silently eats it.
+OF_API int of_net_feed_machine2(int nId, int build, int count) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  au::BuildId* b = r->build(build);
+  if (!b || !b->valid()) return -1;
+  r->net->sim().feedMachine2(b->entity, static_cast<uint16_t>(count));
   return 1;
 }
 

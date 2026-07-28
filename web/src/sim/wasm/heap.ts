@@ -315,10 +315,16 @@ export interface OfCoreModule extends OfCoreProgressApi {
   _of_net_miner_depleted(n: number, build: number): number;
   _of_net_output_buffer(n: number, build: number): number;
   _of_net_input_buffer(n: number, build: number): number;
+  /** The SECOND ingredient slot of a multi-input machine (assembler). Live in
+   *  the shim and in the shipped wasm since ABI 16; declared here at FS-56 when
+   *  it finally got a caller. */
+  _of_net_input2_buffer(n: number, build: number): number;
   _of_net_belt_item_count(n: number, build: number): number;
   _of_net_working(n: number, build: number): number;
   _of_net_progress01(n: number, build: number): number;
   _of_net_feed_machine(n: number, build: number, count: number): number;
+  /** ABI 17 / FS-56: the SECOND ingredient slot of a multi-input machine. */
+  _of_net_feed_machine2(n: number, build: number, count: number): number;
   _of_net_take_output(n: number, build: number, want: number): number;
   _of_net_set_placement(n: number, build: number, typeId: number,
                         x: number, y: number, z: number, boundCm: number): void;
