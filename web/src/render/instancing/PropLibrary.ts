@@ -16,7 +16,9 @@ import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
 import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
-import { attachSurface, copyUv, familyForRole, roleOfMaterialName, surfacesReady }
+import { isFoliageMaterial } from '../../world/ScatterLook.js';
+import { normalize, setBaseShade } from './PropGeometry.js';
+import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
 
 /** One primitive of one prop: which batch it lives in, and its two LOD ids. */
@@ -63,6 +65,11 @@ interface Batch {
   grows: number;
   refused: number;
   warned: boolean;
+  /** At least one geometry in this batch carries the base-contact gradient. */
+  shaded: boolean;
+  /** The baked colour bytes, saved lazily the first time `setBaseShade(false)`
+   *  is called so the toggle can put them back. Zero cost until then. */
+  savedColour: Uint8Array | null;
 }
 
 /**
@@ -98,46 +105,6 @@ const LEGACY_CAPACITY = 7000;
 const MAX_CAPACITY = 65536;
 /** Props are small; a 33^2 chunk's worth of geometry is a few thousand verts. */
 const MAX_VERTS = 60000;
-
-/** Strip everything a BatchedMesh cannot bind consistently across geometries. */
-function normalize(src: THREE.BufferGeometry, worldMatrix: THREE.Matrix4): THREE.BufferGeometry {
-  const g = new THREE.BufferGeometry();
-  const pos = src.getAttribute('position') as THREE.BufferAttribute;
-  g.setAttribute('position', pos.clone());
-  const nrm = src.getAttribute('normal');
-  g.setAttribute('normal', nrm !== undefined
-    ? (nrm as THREE.BufferAttribute).clone()
-    : new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
-  copyUv(src, g, pos.count, 'props');   // UNCONDITIONAL. See Surfaces.copyUv.
-  // A WHITE vertex-colour attribute on EVERY prop geometry, unconditionally,
-  // and it is not decoration: it is what makes `BatchedMesh.setColorAt` reach
-  // the pixel. Checked in three's own source rather than assumed, because the
-  // obvious reading is wrong. `USE_BATCHING_COLOR` declares `vColor` and writes
-  // `vColor *= getBatchingColor(...)` in `color_vertex.glsl.js:24`, but
-  // `color_fragment.glsl.js` multiplies `diffuseColor` by it only
-  // `#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )`. So per-instance
-  // colour on a BatchedMesh is silently DISCARDED unless the material also sets
-  // `vertexColors`, and setting `vertexColors` without a `color` attribute
-  // binds the default (0,0,0,1) and renders every prop BLACK. Both halves are
-  // required and neither fails loudly on its own.
-  //
-  // Uint8 normalised: 3 B a vertex against 12 B for float32, and the values are
-  // a constant 255 anyway. 60,000 verts a batch is 180 kB.
-  g.setAttribute('color',
-    new THREE.BufferAttribute(new Uint8Array(pos.count * 3).fill(255), 3, true));
-  const idx = src.getIndex();
-  // Every geometry in a batch must agree about having an index (three throws
-  // otherwise), and a prop authored as a triangle soup would break the batch.
-  if (idx !== null) g.setIndex(idx.clone());
-  else {
-    const seq = new Uint32Array(pos.count);
-    for (let i = 0; i < pos.count; ++i) seq[i] = i;
-    g.setIndex(new THREE.BufferAttribute(seq, 1));
-  }
-  g.applyMatrix4(worldMatrix);
-  g.computeBoundingSphere();
-  return g;
-}
 
 export class PropLibrary {
   private readonly batches = new Map<string, Batch>();
@@ -176,6 +143,14 @@ export class PropLibrary {
       lib.register(gltfs[i].scene, detail.has(unique[i]) ? DETAIL_SUFFIX : '');
     }
     for (const b of lib.batches.values()) scene.add(b.mesh);
+    // The probe surface, on the `Surfaces.ts` precedent and for its reason:
+    // this is a measurement hook, not gameplay, so it is not routed through
+    // `window.__of`. It is also the only route this lane has to a one-binary
+    // control, since every constructor argument here comes from `Boot.ts`.
+    (window as unknown as { __ofProps: unknown }).__ofProps = {
+      setBaseShade: (on: boolean): number => lib.setBaseShade(on),
+      stats: (): unknown => lib.stats(),
+    };
     return lib;
   }
 
@@ -203,9 +178,15 @@ export class PropLibrary {
         const key = mat + suffix;
         const batch = this.batchFor(key, mat, near.material as THREE.Material,
           suffix === '', suffix !== '' && this.cullDetail);
-        const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld));
+        // The base gradient goes on PLANTS, and the predicate is imported from
+        // `ScatterLook` rather than rewritten here. Two copies of "which
+        // materials are plants" drift, and the drift would show up as one leaf
+        // role quietly failing to darken at its base.
+        const shade = isFoliageMaterial(mat);
+        batch.shaded = batch.shaded || shade;
+        const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, shade));
         const far = pair.lod2 ?? near;
-        const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld));
+        const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld, shade));
         list.push({ material: key, lod0, lod2 });
       }
       if (list.length > 0 && !this.parts.has(stem)) this.parts.set(stem, list);
@@ -264,6 +245,7 @@ export class PropLibrary {
     mesh.perObjectFrustumCulled = cull;
     const batch: Batch = {
       mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
+      shaded: false, savedColour: null,
     };
     this.batches.set(key, batch);
     return batch;
@@ -286,6 +268,11 @@ export class PropLibrary {
    */
   setVisible(on: boolean): void {
     for (const b of this.batches.values()) b.mesh.visible = on;
+  }
+
+  /** See `PropGeometry.setBaseShade`. Returns how many batches were touched. */
+  setBaseShade(on: boolean): number {
+    return setBaseShade(this.batches.values(), on);
   }
 
   partsOf(stem: string): readonly PropPart[] | null { return this.parts.get(stem) ?? null; }
@@ -367,21 +354,23 @@ export class PropLibrary {
   stats(): {
     name: string; batches: number; props: number; instances: number;
     exhausted: number; capacity: number; ceiling: number; grows: number;
-    refused: number; growable: boolean;
+    refused: number; growable: boolean; baseShaded: number;
     perMaterial: {
       name: string; live: number; cap: number; refused: number; casts: boolean;
+      shaded: boolean;
     }[];
   } {
-    let capacity = 0; let grows = 0;
+    let capacity = 0; let grows = 0; let baseShaded = 0;
     const perMaterial = [];
     for (const [name, b] of this.batches) {
       capacity += b.cap; grows += b.grows;
+      if (b.shaded) baseShaded++;
       // `casts` is published because it is now the difference between two
       // batches of the same material, and a triangle count that does not say
       // which batches were in the shadow pass cannot be read.
       perMaterial.push({
         name, live: b.live, cap: b.cap, refused: b.refused,
-        casts: b.mesh.castShadow,
+        casts: b.mesh.castShadow, shaded: b.shaded,
       });
     }
     perMaterial.sort((a, b) => b.live - a.live);
@@ -392,7 +381,7 @@ export class PropLibrary {
       name: 'props', batches: this.batches.size, props: this.parts.size,
       instances: this.instancesLive, exhausted: this.exhausted,
       capacity, ceiling: this.batches.size * MAX_CAPACITY, grows,
-      refused: this.exhausted, growable: this.growable, perMaterial,
+      refused: this.exhausted, growable: this.growable, baseShaded, perMaterial,
     };
   }
 }

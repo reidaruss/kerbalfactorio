@@ -55,6 +55,12 @@ export class PropEmitter {
     private readonly lib: PropLibrary,
     /** See Scatter's `fair`: `?scatterfair=0` restores the RN-7 defect. */
     private readonly fair: boolean,
+    /**
+     * False restores the RN-15 understorey height band and the height-compounding
+     * distance upscale. Defaulted rather than wired to a query flag: see
+     * `ScatterLook.TALL_H_LO` for why, and for what it would take.
+     */
+    private readonly short = true,
   ) {}
 
   /**
@@ -142,9 +148,18 @@ export class PropEmitter {
     b.quat[n * 4] = this.q.x; b.quat[n * 4 + 1] = this.q.y;
     b.quat[n * 4 + 2] = this.q.z; b.quat[n * 4 + 3] = this.q.w;
     const look = this.lookFor(spec.stem, list);
-    scaleFor(spec.jitter, b.seed, k, look === 'foliage', this.s);
+    const short = this.short && spec.detail === true;
+    scaleFor(spec.jitter, b.seed, k, look === 'foliage', short, this.s);
+    // `grow` IS HORIZONTAL ONLY for the understorey, and that is the durable
+    // half of the height fix (ScatterLook.DETAIL_H_LO). `DETAIL_FAR_GROW` exists
+    // to buy back screen COVERAGE at the outer edge of the ring, and coverage is
+    // footprint; letting it multiply height as well is what turned a 0.60 m card
+    // into a 1.34 m one. Spending it on width alone buys the same coverage and
+    // cannot compound with the height jitter, so neither number has to be
+    // re-derived when the other moves.
+    const gy = short ? 1 : grow;
     b.scale[n * 3] = this.s.x * grow;
-    b.scale[n * 3 + 1] = this.s.y * grow;
+    b.scale[n * 3 + 1] = this.s.y * gy;
     b.scale[n * 3 + 2] = this.s.z * grow;
     tintFor(look, b.seed, k, tintScratch);
     for (const part of list) {

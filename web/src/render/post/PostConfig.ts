@@ -33,6 +33,8 @@ export interface PostFlags {
   /** Master switch. Off restores the pre-lane path: straight to the canvas. */
   post: boolean;
   ao: boolean;
+  /** Screen-space contact shadows. See ContactGlsl for why it is not a cascade. */
+  contact: boolean;
   bloom: boolean;
   grade: boolean;
   aa: boolean;
@@ -52,6 +54,16 @@ export interface PostTuning {
   aoStrength: number;
   aoPower: number;
   aoDepthSigma: number;
+  /** March length in metres. The whole reason the term is a CONTACT shadow. */
+  csLengthM: number;
+  csSteps: number;
+  /** Assumed occluder thickness in metres: the upper bound on an accepted hit. */
+  csThickM: number;
+  /** Depth bias in metres, against a lit surface shadowing itself. */
+  csBiasM: number;
+  csStrength: number;
+  /** Hard cap on the march in UV, so a close-up surface cannot walk the frame. */
+  csMaxScreen: number;
   bloomLevels: number;
   bloomThreshold: number;
   bloomKnee: number;
@@ -111,6 +123,26 @@ export const POST_DEFAULTS: PostTuning = {
   aoPower: 1.35,
   // Depth weight, per metre. 8 keeps the blur inside a 12 cm depth band.
   aoDepthSigma: 8,
+  // 0.45 m, which is a little over the density-weighted mean understorey height
+  // of 0.281 m and well under cascade 0's 15.5 mm-per-texel resolution limit for
+  // a blade. The term is bounded BY DISTANCE, which is what stops it ever
+  // disagreeing with the cascaded maps: it physically cannot see a hill.
+  csLengthM: 0.45,
+  // 8 taps. The march is full resolution, so this is 8 depth reads per lit
+  // pixel; 12 was measured and bought a difference smaller than the run-to-run
+  // spread, which is reported rather than spent.
+  csSteps: 8,
+  // An occluder deeper than this is not between the surface and the sun, it is a
+  // separate object further away that happens to line up. Without the upper
+  // bound a hillside shadows the ground in front of it through open air.
+  csThickM: 0.55,
+  csBiasM: 0.012,
+  // Deliberately below 1.0. Like `aoStrength`, this multiplies TOTAL radiance
+  // including sky ambient, because the terrain program computes its own light
+  // from uSunDir and there is no direct-only channel to reach into. Holding some
+  // back is the honest correction for occluding light that was never occludable.
+  csStrength: 0.72,
+  csMaxScreen: 0.05,
   bloomLevels: 5,
   // 0.75 and 0.14, and BOTH were retuned after measurement rather than chosen.
   // At the first values (threshold 1.0, strength 0.05) bloom was wired, correct
@@ -172,6 +204,8 @@ function n(p: URLSearchParams, key: string, fallback: number): number {
  *
  *   ?post=0    no render target, no composite. three's own ACES on the canvas.
  *   ?ao=0      no AO buffers written and no multiply into the scene colour.
+ *   ?contact=0 no contact-shadow march and no multiply. Plus ?cslength=
+ *              ?cssteps= ?csthick= ?csstrength= to sweep it.
  *   ?bloom=0   no pyramid at all, and the composite's bloom term is zero.
  *   ?grade=0   the colour grade becomes an identity mix. LOOK changes, not cost.
  *   ?aa=0      the composite writes straight to the canvas, no FXAA pass.
@@ -207,6 +241,7 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
     flags: {
       post: on,
       ao: p.get('ao') !== '0',
+      contact: p.get('contact') !== '0',
       bloom: p.get('bloom') !== '0',
       grade: p.get('grade') !== '0',
       aa: p.get('aa') !== '0',
@@ -218,6 +253,10 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
       aoRadiusM: Math.max(0.02, n(p, 'aoradius', POST_DEFAULTS.aoRadiusM)),
       aoStrength: Math.min(1, Math.max(0, n(p, 'aostrength', POST_DEFAULTS.aoStrength))),
       aoPower: Math.max(0.1, n(p, 'aopower', POST_DEFAULTS.aoPower)),
+      csLengthM: Math.max(0.01, n(p, 'cslength', POST_DEFAULTS.csLengthM)),
+      csSteps: Math.min(24, Math.max(2, n(p, 'cssteps', POST_DEFAULTS.csSteps) | 0)),
+      csThickM: Math.max(0.01, n(p, 'csthick', POST_DEFAULTS.csThickM)),
+      csStrength: Math.min(1, Math.max(0, n(p, 'csstrength', POST_DEFAULTS.csStrength))),
       bloomLevels: Math.min(7, Math.max(1, n(p, 'bloomlevels', POST_DEFAULTS.bloomLevels) | 0)),
       bloomStrength: Math.max(0, n(p, 'bloomstrength', POST_DEFAULTS.bloomStrength)),
       bloomThreshold: Math.max(0, n(p, 'bloomthresh', POST_DEFAULTS.bloomThreshold)),

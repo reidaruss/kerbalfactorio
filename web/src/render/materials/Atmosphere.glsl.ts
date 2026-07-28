@@ -29,6 +29,27 @@ export interface AtmosphereParams {
   mieG: number;
   /** Radiance scale for the sun disc. */
   sunIntensity: number;
+  /**
+   * BOUNDARY-LAYER AEROSOL, the term that produces aerial perspective at
+   * PLAYABLE range: (extinction per metre at the datum, scale height in metres,
+   * isotropic multiple-scattering fraction of the phase).
+   *
+   * It exists because Rayleigh is CORRECT and therefore useless here. Molecular
+   * scattering moves a ridge by about one part in a hundred over the 200 m to
+   * 3 km a player actually looks across, and the measurement said so: near band
+   * against far band in one capture reads saturation -0.186, i.e. the DISTANT
+   * ground is MORE saturated than the ground at the player's feet, which is
+   * backwards. Real outdoor haze at that range is aerosol, it lives in the first
+   * kilometre or so of the column, and nothing in a Rayleigh plus Mie sky model
+   * represents it.
+   */
+  aerosolSigma: number;
+  aerosolScaleM: number;
+  aerosolMs: number;
+  /** Haze radiance multiplier on uSunColor. Grey ON PURPOSE: see the note. */
+  aerosolTint: THREE.Vector3;
+  /** Aerosol phase anisotropy. */
+  aerosolG: number;
 }
 
 /**
@@ -48,6 +69,51 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
     betaM: 3.5e-6,
     mieG: 0.76,
     sunIntensity: 15.0,
+    // 4.5e-4 per metre with a 400 m scale height ABOVE THE LOCAL GROUND (see
+    // `ofAtmoAerial`, which is where that reference is set, and why).
+    //
+    // The pair is chosen against two constraints that pull opposite ways, and
+    // the tension between them is the whole of the tuning. sigma sets how fast
+    // ground recedes: 4.5e-4 is a Koschmieder visual range of 8.7 km, which
+    // gives 0.22 of optical depth at 500 m, 0.90 at 2 km and 2.25 at 5 km, i.e.
+    // a ladder the eye can actually read at the range a player looks across. The
+    // SCALE HEIGHT does not affect that at all for a horizontal ground-level
+    // ray, and it is entirely about what the planet looks like FROM ORBIT: the
+    // vertical column through the whole layer is exactly sigma x H, so 400 m
+    // costs the scaled planet 0.18 of optical depth (16% haze) while 1,200 m
+    // would cost it 0.54 and turn Forge into a grey ball. Measured both ways
+    // rather than reasoned about, because the same term draws both frames.
+    //
+    // FIRST ATTEMPT'S NUMBERS, kept because the correction is the interesting
+    // part: 3.0e-4 with a 1,200 m scale height measured off the DATUM. At the
+    // Hills test site, whose ground stands at 860 m, that leaves exp(-860/1200)
+    // = 0.49 of the layer at the player's own feet and moved 0.3% of the mid
+    // band's pixels. Referencing the local ground instead is worth about 2x, and
+    // it is worth it everywhere rather than only here.
+    aerosolSigma: 4.5e-4,
+    aerosolScaleM: 400,
+    // 0.55 isotropic against a mild g = 0.35, and the two were set together to
+    // compress the phase function's dynamic range rather than to be right.
+    // Aerosol at this density is optically thick enough that real haze is
+    // largely MULTIPLY scattered, so a floor is physical; but the reason for
+    // THIS floor is that a single-scatter g = 0.55 lobe spans 45:1 between the
+    // solar and anti-solar directions, which puts the haze well above the ground
+    // it replaces on one side of the frame and well below it on the other, so
+    // turning around would make the distance alternately glow and darken. At
+    // g = 0.35 with a 0.55 floor the span is 2.8:1 and the haze is brighter than
+    // the ground it veils in every direction, which is what "haze" means.
+    aerosolMs: 0.55,
+    aerosolG: 0.35,
+    // GREY, and this is the whole finding of the first attempt. A blue-biased
+    // coefficient (the physically tempting choice, and what Rayleigh does) does
+    // not haze, it DARKENS: it extinguishes red hard and refills with saturated
+    // blue, so the far band's mean red fell 70.2 to 57.0 while its saturation
+    // moved by 0.004. Haze is a WHITE veil. The 0.34 in blue against 0.30 in red
+    // is the only bias left, and it is small enough to read as air rather than
+    // as a filter. The absolute level is set so the haze sits a little ABOVE the
+    // radiance of the ground it veils in the anti-solar direction, because haze
+    // that is darker than what it covers is not haze, it is a shadow.
+    aerosolTint: new THREE.Vector3(0.38, 0.39, 0.43),
   };
 }
 
@@ -61,6 +127,11 @@ export interface AtmosphereUniforms {
   uScaleH: { value: THREE.Vector2 };
   uMieG: { value: number };
   uAtmosOn: { value: number };
+  /** (sigma per metre, scale height m, isotropic MS fraction). x = 0 disables. */
+  uAerosol: { value: THREE.Vector3 };
+  /** Haze radiance multiplier on uSunColor. */
+  uAeroTint: { value: THREE.Vector3 };
+  uAeroG: { value: number };
 }
 
 /**
@@ -80,6 +151,11 @@ export function createAtmosphereUniforms(p: AtmosphereParams, on: boolean): Atmo
     uScaleH: { value: new THREE.Vector2(p.rayleighScaleM, p.mieScaleM) },
     uMieG: { value: p.mieG },
     uAtmosOn: { value: on ? 1 : 0 },
+    uAerosol: {
+      value: new THREE.Vector3(p.aerosolSigma, p.aerosolScaleM, p.aerosolMs),
+    },
+    uAeroTint: { value: p.aerosolTint.clone() },
+    uAeroG: { value: p.aerosolG },
   };
 }
 
@@ -93,6 +169,9 @@ export const ATMOSPHERE_PARS = /* glsl */`
   uniform vec2  uScaleH;
   uniform float uMieG;
   uniform float uAtmosOn;
+  uniform vec3  uAerosol;
+  uniform vec3  uAeroTint;
+  uniform float uAeroG;
 
   // Entry and exit parameters of a ray against a sphere centred on the origin.
   // A miss returns (1, -1), so every caller's "y > x" test rejects it.
@@ -171,6 +250,83 @@ export const ATMOSPHERE_PARS = /* glsl */`
     }
     trans = exp(-(uBetaR * odView.x + uBetaM * 1.1 * odView.y));
     return (sumR * uBetaR * phR + sumM * uBetaM * phM) * uSunColor;
+  }
+
+  /**
+   * BOUNDARY-LAYER AEROSOL HAZE OVER A PATH THAT TERMINATES ON GEOMETRY.
+   *
+   * THIS IS THE SECOND ATTEMPT AND THE ONLY THING THAT CHANGED IS THE
+   * CONFINEMENT. The first one added the aerosol INSIDE ofAtmoScatter and relied
+   * on a 400 m scale height to keep it off the sky. That is confinement by
+   * HEIGHT and it does not work, because a near-horizon sky ray lies inside the
+   * layer for tens of kilometres: the ground hazed correctly (far-band red 70.2
+   * to 60.9, blue over red 0.393 to 0.460) and the term then failed its own
+   * control, moving sky saturation 0.494 to 0.410 and sky red 81.9 to 97.0. It
+   * was reverted whole, and the sky control is what made that call possible.
+   *
+   * The confinement here is by PATH, and the seam it needs already existed:
+   * every escaping ray in this codebase passes tMax = 1.0e9 and every
+   * terminating ray passes a real metre distance. So the rule is that this is a
+   * SEPARATE ENTRY POINT, called only from the one call site that has a finite
+   * distance to geometry (TerrainShader's aerial perspective). The sky quad, and
+   * the terrain's own upward sky-ambient ray, cannot reach it at all. "The sky
+   * did not move" stops being a tuning result and becomes a property of the call
+   * graph. Note that a #define keyed on "is this the terrain material" would
+   * have got it WRONG, because the sky-ambient ray IS a terrain fragment issuing
+   * an escaping ray; the distinction that matters is the ray, not the material.
+   *
+   * THE OPTICAL DEPTH IS ANALYTIC, NOT MARCHED, and that is what makes it safe
+   * from orbit. For a height profile that is linear along the segment,
+   * INTEGRAL exp(-h/H) ds = L * H / (h1 - h0) * (exp(-h0/H) - exp(-h1/H)), which
+   * self-limits correctly: a viewer 100 km up looking down collects about H
+   * worth of dense air no matter how long the ray is, while a viewer standing on
+   * the ground looking horizontally collects the whole length of it. A midpoint
+   * or Simpson rule would weight its samples by the FULL path length and would
+   * produce an enormous optical depth for a scaled planet seen from space, which
+   * is a failure this closed form structurally cannot have.
+   */
+  vec3 ofAtmoAerial(vec3 col, vec3 ro, vec3 rd, float distM, vec3 sunT) {
+    if (uAtmosOn < 0.5 || uAerosol.x <= 0.0) return col;
+    float H = uAerosol.y;
+    float a0 = max(length(ro) - uPlanetR, 0.0);
+    float a1 = max(length(ro + rd * distM) - uPlanetR, 0.0);
+    // THE LAYER SITS ON THE TERRAIN, NOT ON THE DATUM, and heights are measured
+    // from the LOWER end of the ray. This is what a boundary layer physically is
+    // (it is why mountains stand above the haze and valleys fill with it) and it
+    // is also what makes one pair of constants work at every elevation: measured
+    // from the datum, the same term is 2x weaker on an 860 m hillside than at
+    // sea level and vanishes on a mountain, so it would have to be retuned per
+    // site, which is another way of saying it would be wrong everywhere but one.
+    //
+    // Continuous by construction: the two branches meet where a1 = a0, and there
+    // both give the same reference, so a fragment crossing the camera's own
+    // altitude does not step.
+    float base = min(a0, a1);
+    float h0 = a0 - base;
+    float h1 = a1 - base;
+    float dh = h1 - h0;
+    float e0 = exp(-h0 / H);
+    // The limit of the closed form as dh goes to zero, taken explicitly rather
+    // than divided into: a horizontal ray is the single most common case here,
+    // and it is exactly the one that makes the denominator vanish.
+    float colDepth = abs(dh) < 1.0
+      ? distM * e0
+      : distM * H / dh * (e0 - exp(-h1 / H));
+    float od = uAerosol.x * max(colDepth, 0.0);
+    float tr = exp(-od);
+
+    float mu = dot(rd, uSunDir);
+    float gg = uAeroG * uAeroG;
+    float den = max(1.0 + gg - 2.0 * uAeroG * mu, 1e-4);
+    float hg = 0.0795775 * (1.0 - gg) / (den * sqrt(den));
+    float ph = mix(hg, 0.0795775, uAerosol.z);
+    // sunT is the transmittance along the SUN ray at the shaded fragment, handed
+    // in by the caller rather than recomputed. It costs nothing, it is the right
+    // order of magnitude for the whole path at these ranges, and it means the
+    // haze reddens through the terminator and goes out at night with the sun
+    // instead of hanging in the frame as a grey sheet after sunset.
+    vec3 haze = uSunColor * uAeroTint * ph * sunT;
+    return col * tr + haze * (1.0 - tr);
   }
 `;
 

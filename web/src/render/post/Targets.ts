@@ -111,6 +111,14 @@ export class PostTargets {
    * silhouette and a legal draw; see AoGlsl's "WHY FOUR PASSES".
    */
   aoFull!: THREE.WebGLRenderTarget;
+  /**
+   * Screen-space contact shadows, full resolution R8. Full rather than half
+   * because the whole claim of the term is that it resolves a 3-triangle blade
+   * against the soil it stands in, and a half-resolution buffer cannot: the
+   * feature it is looking for is one to three pixels wide. It is one byte per
+   * pixel, so the resolution is 0.9 MB at 1280x720 and not a budget question.
+   */
+  contact!: THREE.WebGLRenderTarget;
   ldr!: THREE.WebGLRenderTarget;
   /** Bloom mip chain, index 0 = half resolution. */
   bloom: THREE.WebGLRenderTarget[] = [];
@@ -135,6 +143,7 @@ export class PostTargets {
     this.ao = aoTarget(aw, ah);
     this.aoBlur = aoTarget(aw, ah);
     this.aoFull = aoTarget(W, H);
+    this.contact = aoTarget(W, H);
     this.ldr = ldrTarget(W, H);
     this.bloom = [];
     let bw = W;
@@ -155,6 +164,7 @@ export class PostTargets {
         * (msaa > 1 ? 1 : 0)
       + aw * ah * 2                    // ao + aoBlur, R8
       + W * H * 1                      // aoFull, R8
+      + W * H * 1                      // contact, R8
       + W * H * 4                      // ldr
       + this.bloom.reduce((n, t) => n + t.width * t.height * 8, 0);
   }
@@ -172,6 +182,7 @@ export class PostTargets {
     this.ao.dispose();
     this.aoBlur.dispose();
     this.aoFull.dispose();
+    this.contact.dispose();
     this.ldr.dispose();
     for (const b of this.bloom) b.dispose();
     this.bloom = [];

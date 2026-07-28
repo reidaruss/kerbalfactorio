@@ -97,9 +97,10 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one
   // effect each, per standing rule 7.
-  'post', 'ao', 'bloom', 'grade', 'aa',
+  'post', 'ao', 'bloom', 'grade', 'aa', 'contact',
   'aoscale', 'aoslices', 'aosteps', 'aoradius', 'aostrength', 'aopower',
   'bloomlevels', 'bloomstrength', 'bloomthresh', 'exposure', 'msaa', 'fxaalod',
+  'cslength', 'cssteps', 'csthick', 'csstrength',
   // DW-31. Unlike every other entry here this is not an isolation switch: it
   // selects a game MODE, and the world it makes saves to its own slot.
   'sandbox',

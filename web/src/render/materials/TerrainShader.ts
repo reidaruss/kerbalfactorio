@@ -244,6 +244,15 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       vec3 apIn = ofAtmoScatter(camM, rd, dist, OF_AP_VIEW, OF_AP_LIGHT, apTrans);
       lit = lit * apTrans + apIn;
 
+      // BOUNDARY-LAYER AEROSOL, and this is the ONLY call site of it in the
+      // project. It is what gives the ground aerial perspective over the 200 m
+      // to 3 km a player looks across, where Rayleigh moves a ridge by about 1%.
+      // Reaching it requires a finite distance to geometry, and that IS the
+      // confinement: the sky quad and the skyAmb ray twenty lines above both
+      // pass 1.0e9 into a different function, so neither can pick this up. See
+      // Atmosphere.glsl's note for the sky control that the first attempt failed.
+      lit = ofAtmoAerial(lit, camM, rd, dist, sunT);
+
       gl_FragColor = vec4(lit, 1.0);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>

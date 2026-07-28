@@ -23,10 +23,25 @@ import { hash32, frac } from './ScatterTuning.js';
  */
 export type Look = 'foliage' | 'mineral';
 
+/**
+ * Is this material role a PLANT? The one authority for that question.
+ *
+ * It was one predicate inside `lookOf` and is now exported, because
+ * `PropLibrary` asks the same question at load time when it decides which
+ * geometries get the baked base-contact gradient (RN-30). Two copies of "which
+ * materials are plants" is precisely the drift `lookOf`'s own comment warns
+ * about, and a second list would be invisible until a new leaf role failed to
+ * darken at its base for no reason anybody could see.
+ *
+ * Note it matches on the material role and therefore covers `OF_Grass:detail`
+ * and every `OF_Leaf*` variant without enumerating them.
+ */
+export function isFoliageMaterial(name: string): boolean {
+  return name.startsWith('OF_Grass') || name.startsWith('OF_Leaf');
+}
+
 export function lookOf(materials: readonly string[]): Look {
-  for (const m of materials) {
-    if (m.startsWith('OF_Grass') || m.startsWith('OF_Leaf')) return 'foliage';
-  }
+  for (const m of materials) if (isFoliageMaterial(m)) return 'foliage';
   return 'mineral';
 }
 
@@ -87,6 +102,52 @@ export function tintFor(look: Look, seed: number, k: number, out: THREE.Color): 
 export const tintScratch = scratch;
 
 /**
+ * Understorey height band, and the number Reid's reference is about.
+ *
+ * RN-15 shipped the understorey on the SAME height band as the biome tufts
+ * (0.55 to 1.30 of the authored blade height) and the result reads as a crop
+ * field rather than as a meadow: at `Detail_GrassCardB`'s authored 0.60 m, the
+ * worst instance reached 0.60 x (1.3 width jitter x 1.30 height jitter x 1.32
+ * distance upscale) = **1.34 m**, which is chest height on a 1.8 m character,
+ * and a field of 1.3 m blades has no middle distance in it at all. The
+ * Satisfactory reference is ground cover you LOOK ACROSS.
+ *
+ * Two changes, and the second one is the structural half. The band itself drops
+ * to 0.40 to 0.82, which takes the density-weighted mean understorey height
+ * from 0.427 m to 0.281 m. And `DETAIL_FAR_GROW` is demoted to a HORIZONTAL
+ * upscale in `ScatterEmit`, so the distance term can no longer compound into
+ * height at all: the tallest card in the world goes 1.34 m to **0.64 m**. That
+ * second half is the one worth remembering, because RN-15 already retuned the
+ * height jitter once for exactly this reason (1.48 down to 1.30) and the
+ * compounding survived the retune. Capping a product by shrinking one of its
+ * factors is a fix that has to be repeated every time either factor moves;
+ * taking height out of the product is a fix that holds.
+ *
+ * Coverage is what the eye reads rather than height (Registry's DENSITY_SCALE
+ * note), so the width band is widened to compensate: a shorter, splayed card
+ * covers more GROUND per instance while blocking less middle distance, which is
+ * the trade the reference makes.
+ */
+export const DETAIL_H_LO = 0.40;
+export const DETAIL_H_HI = 0.82;
+export const DETAIL_W_GAIN = 1.18;
+/**
+ * The RN-15 band, still used by every foliage prop that is NOT understorey, and
+ * restored for the understorey too by `PropEmitter`'s `short = false`.
+ *
+ * That switch is deliberately NOT reachable from a query flag, and the reason is
+ * ownership rather than design: every argument the scatter is constructed with
+ * is passed by `Boot.ts`, which another lane owns this round, so the honest
+ * isolation for the height change is a BINARY PAIR (`docs/screenshots/
+ * RN30_world_{before,after}.png`) rather than standing rule 7's one-binary
+ * control. The one-line `?grassshort=` wiring is named in the RN-30 report as a
+ * coordination item; the constructor parameter is here so that wiring is one
+ * line when Boot is free.
+ */
+export const TALL_H_LO = 0.55;
+export const TALL_H_HI = 1.30;
+
+/**
  * Non-uniform scale for one instance: width and height drawn SEPARATELY.
  *
  * The scatter shipped with one uniform scalar, so every card was a scaled copy
@@ -99,19 +160,17 @@ export const tintScratch = scratch;
  * WIDTH spread, so a spec that asked to be uniform still is in plan view.
  */
 export function scaleFor(
-  jitter: number, seed: number, k: number, tall: boolean, out: THREE.Vector3,
+  jitter: number, seed: number, k: number, tall: boolean, short: boolean,
+  out: THREE.Vector3,
 ): THREE.Vector3 {
   const w = 1 + (frac(hash32(seed, k * 8 + 10)) * 2 - 1) * jitter;
-  // 0.55 to 1.30, and the TOP of that range is the number that was retuned.
-  // It started at 1.48 and it COMPOUNDS with the distance upscale, so a card
-  // authored at 0.58 m could reach 1.48 x 1.45 = 2.1x, i.e. 1.2 m, which put
-  // the understorey at the same height as the biome tufts it is supposed to sit
-  // under and made a meadow read as a cornfield. The two multipliers were fine
-  // apart and wrong together, which is the sort of thing only a picture shows.
+  const lo = short ? DETAIL_H_LO : TALL_H_LO;
+  const hi = short ? DETAIL_H_HI : TALL_H_HI;
   const h = tall
-    ? w * (0.55 + frac(hash32(seed, k * 8 + 11)) * 0.75)
+    ? w * (lo + frac(hash32(seed, k * 8 + 11)) * (hi - lo))
     : w;
-  return out.set(w, h, w);
+  const g = short ? DETAIL_W_GAIN : 1;
+  return out.set(w * g, h, w * g);
 }
 
 /**

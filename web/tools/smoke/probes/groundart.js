@@ -121,6 +121,14 @@
   // `far` is the strip just below the horizon.
   const nearBand = band(OF_ARGS.nearBand0 ?? 0.80, OF_ARGS.nearBand1 ?? 0.97);
   const farBand = band(OF_ARGS.farBand0 ?? 0.42, OF_ARGS.farBand1 ?? 0.52);
+  // THE HORIZON BAND, ADDED AT RN-30, and it exists because `farBand` above is
+  // NOT far. At the pinned Hills camera the horizon sits at about 0.28 of frame
+  // height, so 0.42 to 0.52 is ground 30 to 80 m away: near enough that no
+  // atmosphere on any planet would change it, and a term measured against it
+  // reads as doing nothing when it is in fact doing the right thing at the
+  // range it is for. `farBand` is KEPT UNCHANGED so the RN-15 numbers stay
+  // comparable, rather than moved so the new answer looks better.
+  const horizonBand = band(OF_ARGS.horizonBand0 ?? 0.29, OF_ARGS.horizonBand1 ?? 0.38);
   // THE CONTROL. Aerial perspective is a claim about GROUND at range, and the
   // boundary-layer term that produces it is kept off the sky by its scale
   // height alone rather than by a second set of numbers, so "the sky did not
@@ -143,7 +151,7 @@
 
   return {
     valid: w.tick > w0.tick && p.chunks > 0 && cover.samplePx > 0
-      && nearBand.px > 1000 && farBand.px > 1000,
+      && nearBand.px > 1000 && farBand.px > 1000 && horizonBand.px > 1000,
     camera: {
       lat, lon, yawDeg: yaw, pitchDeg: pitch, sunT,
       biome: w.biome, converged: w.chunks.converged, convergeSpins: spin,
@@ -153,12 +161,18 @@
     screenCoverage: cover,
     // --- 2. aerial perspective, near band against far band, ONE frame.
     aerial: {
-      near: nearBand, far: farBand,
+      near: nearBand, far: farBand, horizon: horizonBand,
       // The two properties aerial perspective claims. Published as deltas so
       // the sign is the answer and the magnitude is the strength.
       sky: skyBand,
       saturationDrop: +(nearBand.saturation - farBand.saturation).toFixed(4),
       blueShift: +(farBand.blueOverRed - nearBand.blueOverRed).toFixed(4),
+      // The same two claims against ground that is actually distant. This is the
+      // pair to read; the two above are kept for continuity with RN-15.
+      horizonSaturationDrop:
+        +(nearBand.saturation - horizonBand.saturation).toFixed(4),
+      horizonBlueShift:
+        +(horizonBand.blueOverRed - nearBand.blueOverRed).toFixed(4),
     },
     // --- 3. cost, against the budget it is spent from.
     cost: {

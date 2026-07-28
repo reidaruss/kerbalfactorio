@@ -10,6 +10,7 @@
 // occlusion computed from any other instant would be occlusion of the wrong
 // world - the view model's arms against a buffer their occluders are not in.
 
+import * as THREE from 'three';
 import type { OFRenderer } from './Renderer.js';
 import type { Scenes } from './Scenes.js';
 import type { CameraRig } from './CameraRig.js';
@@ -40,12 +41,46 @@ export class Frame {
    * own draw-call count and not the planet's plus a bit.
    */
   vabActive = false;
+  /**
+   * The sun, resolved ONCE out of the near scene by the name `ShadowRig` gives
+   * cascade 0, and handed to the post stack so the contact-shadow march knows
+   * which way to walk.
+   *
+   * A name lookup rather than a constructor argument, and that is a constraint
+   * rather than a preference: every wire into this class comes from `Boot.ts`,
+   * which another lane owns this round. It is honest as well as expedient,
+   * because cascade 0 IS the near scene's sun (ShadowRig's own comment: the two
+   * were merged so that a stock `MeshStandardMaterial` is shadowed by the light
+   * that lights it), so there is no second authority to disagree with.
+   *
+   * When the rig was built disabled there is no light at all and the vector
+   * stays zero, which the post stack reads as "no sun" and skips on. That means
+   * `?shadows=0` also removes contact shadows. That is correct rather than
+   * incidental: it is a shadow.
+   */
+  private sun: THREE.DirectionalLight | null = null;
+  private sunSearched = false;
 
   constructor(
     private readonly r: OFRenderer,
     private readonly scenes: Scenes,
     private readonly rig: CameraRig,
   ) {}
+
+  /** Write the world-space sun direction into the post stack, or leave it zero. */
+  private publishSun(): void {
+    if (!this.sunSearched) {
+      this.sunSearched = true;
+      this.sun = (this.scenes.near.getObjectByName('shadowCascade0')
+        ?? null) as THREE.DirectionalLight | null;
+    }
+    const s = this.sun;
+    if (s === null) { this.r.post.sunWorld.set(0, 0, 0); return; }
+    // ShadowRig places the light at `centre + sunDir * CASTER_BACKOFF_M` and
+    // aims its target at `centre`, so the direction TOWARD the sun is exactly
+    // the difference. Derived rather than stored, so it cannot go stale.
+    this.r.post.sunWorld.copy(s.position).sub(s.target.position).normalize();
+  }
 
   render(): void {
     const r = this.r;
@@ -59,6 +94,7 @@ export class Frame {
     post.beginFrame();
     r.clearAll();
     const clear = r.depth.clearValue();
+    this.publishSun();
 
     if (this.vabActive) {
       r.render(this.scenes.vab, this.rig.vabCam);

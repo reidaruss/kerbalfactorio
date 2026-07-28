@@ -38,6 +38,24 @@ export class SkyPass {
   constructor(params: AtmosphereParams, o: SkyOptions) {
     this.params = params;
     this.atmos = createAtmosphereUniforms(params, o.atmosphere);
+    // The aerial-perspective control, and it is a RUNTIME toggle for the same
+    // reason `PropLibrary.setVisible` is: the claim being measured is a matched
+    // pair, and a page reload cannot guarantee the same camera, the same
+    // streamed chunk set or the same sun. Setting sigma to zero makes
+    // `ofAtmoAerial` return its input unchanged, so "off" is the identity and
+    // not a second code path. Registered here because this class owns the one
+    // shared uniform record (DW-22) and is therefore the only place that can
+    // reach every consumer of it at once.
+    (window as unknown as { __ofAtmos: unknown }).__ofAtmos = {
+      setAerial: (on: boolean): number => {
+        this.atmos.uAerosol.value.x = on ? params.aerosolSigma : 0;
+        return this.atmos.uAerosol.value.x;
+      },
+      aerosol: (): number[] => [
+        this.atmos.uAerosol.value.x, this.atmos.uAerosol.value.y,
+        this.atmos.uAerosol.value.z,
+      ],
+    };
 
     this.sky = o.atmosphere ? createSkyAtmosphere(this.atmos, o.tier) : null;
     if (this.sky !== null) this.group.add(this.sky.mesh);
