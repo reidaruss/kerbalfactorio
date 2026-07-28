@@ -118,7 +118,39 @@
   const driftBare = of.armourDrift();
   check('nothing is BOUND to the body before a click', driftBare.length === 0,
     JSON.stringify(driftBare));
-  const trisBare = of.stats().draw.triangles;
+  /**
+   * GP-157. THE TRIANGLE COUNT IS SAMPLED WITH THE GROUND SCATTER TURNED OFF,
+   * because the scatter moves under the measurement and this probe was reading
+   * its drift as a defect in the armour rig.
+   *
+   * `of.stats().draw.triangles` is a WHOLE-FRAME accumulator, so it counts
+   * everything the renderer drew, and RN-45's ground detail cards stream in and
+   * out as the player stands there. Measured: the probe's bare-to-worn window
+   * gained 18 triangles that were nothing to do with armour, which turned an
+   * exact "delta is a whole multiple of the bound count" into 4.0199, and left
+   * an 18-triangle residue after the set came off again.
+   *
+   * DISCRIMINATED, not guessed. The same 18 appears with FOUR passes
+   * (delta 3634 against 904 bound) and with ONE (`?shadows=0`: delta 922
+   * against the same 904), so it is not per-pass and therefore not the body.
+   * And it vanishes entirely under `?props=0` AND under `?detail=0`, both of
+   * which make this probe pass unchanged. That is the ground detail cards and
+   * nothing else.
+   *
+   * So this is standing rule 7 rather than a tolerance: isolate the subject and
+   * keep the assertion EXACT. A threshold wide enough to absorb 18 triangles
+   * would also absorb a missing primitive, which is precisely what the check
+   * exists to catch.
+   */
+  const trisQuiet = async () => {
+    of.propsVisible(false);
+    await sleep(0.5);
+    const t = of.stats().draw.triangles;
+    of.propsVisible(true);
+    await sleep(0.3);
+    return t;
+  };
+  const trisBare = await trisQuiet();
 
   const binds = of.input.bindings();
   check('research, power and equipment are real bindings',
@@ -195,7 +227,7 @@
   check('the chest is a MULTI-primitive node and all of it was bound',
     chest !== null && chest.primitives > 1, JSON.stringify(chest));
   const driftTris = drift.reduce((a, d) => a + d.triangles, 0);
-  const trisWorn = of.stats().draw.triangles;
+  const trisWorn = await trisQuiet();
   check('every piece contributed triangles', drift.every((d) => d.triangles > 0),
     JSON.stringify(drift.map((d) => [d.slot, d.primitives, d.triangles])));
   // THE SCREEN AGREES WITH THE RIG. What the rig says it bound is what the
@@ -271,9 +303,9 @@
   // body it ever loaded passes all of them and fails both of these.
   check('taking it off takes it OFF THE BODY too', of.armourDrift().length === 0,
     JSON.stringify(of.armourDrift()));
+  const trisAfter = await trisQuiet();
   check('and the frame gave the triangles back exactly',
-    of.stats().draw.triangles === trisBare,
-    `${of.stats().draw.triangles} vs ${trisBare}`);
+    trisAfter === trisBare, `${trisAfter} vs ${trisBare}`);
 
   const ledger = await of.load();
   check('the slot loaded', ledger !== null, JSON.stringify(ledger));
