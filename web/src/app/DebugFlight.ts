@@ -13,6 +13,7 @@
 // the ones flight itself produces.
 import { currentVesselTick, demoteVessel, leaveVessel, promoteVessel,
          resumeControl, syncPromoted, vesselEngineReport } from './FlightVessels.js';
+import { flightParts } from '../sim/FlightAbi.js';
 import { mayLeave, resumeReport, whyNotLeave } from './ResumeBoot.js';
 import { playerAnchorReport } from './PlayerAnchor.js';
 import { vesselSaveReport } from '../game/VesselSave.js';
@@ -92,6 +93,38 @@ export function flightApi(s: Services): FlightDebugApi {
         // a refusal is invisible from outside unless the call returns.
         case 'recover': return { ok: f.recover(), report: f.report() };
         case 'counters': return counters(s);
+        // PH-84. PER-TANK PROPELLANT, RE-READ FROM /core ON EVERY CALL.
+        //
+        // ADDITIVE, and it exists because there was no way to ask "which tank
+        // is draining". `report().propellantKg` sums `FlightSession.partRows`,
+        // and those rows are only refreshed by `refreshParts`, which runs on a
+        // roll-out and on a staging and at NO OTHER TIME (FlightCheats.ts says
+        // so beside `livePropellantKg`, which exists for exactly this reason).
+        // So the reported total DOES NOT MOVE while an engine burns, and a
+        // probe that watches it during a burn measures a constant and concludes
+        // the tanks are not draining. That is not hypothetical: it is the null
+        // result this op was added to replace.
+        //
+        // It is a READ of `of_fl_parts` / `of_fl_transforms` and writes
+        // nothing, so no second authority is created (DW-26).
+        case 'tanks': {
+          const ses = f.session;
+          if (!ses.live) return { live: false, handle: 0, parts: [] };
+          const rows = flightParts(ses.core, ses.handle);
+          return {
+            live: true, handle: ses.handle, stagings: ses.stagings,
+            // The session's own CACHED sum, published beside the live one so a
+            // probe can see the two disagree rather than trust either blindly.
+            cachedTotalKg: ses.partRows.reduce((a, p) => a + p.propellantKg, 0),
+            liveTotalKg: rows.reduce((a, p) => a + p.propellantKg, 0),
+            parts: rows.map((p) => ({
+              handle: p.handle, partId: p.partId, parent: p.parent,
+              attach: p.attach, stage: p.stage,
+              propellantKg: p.propellantKg,
+              radialOffsetM: p.radialOffsetM, originM: p.originM,
+            })),
+          };
+        }
         // PH-64 to PH-69. THE REGISTRY, and it is deliberately the whole of it:
         // "where is this vessel" has ONE answer and a probe must be able to read
         // that answer rather than infer it from a live session that may not
