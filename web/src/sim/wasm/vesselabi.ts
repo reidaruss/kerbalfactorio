@@ -33,6 +33,8 @@ export const TELEMETRY_WORDS = 12;
 export const ORBIT_WORDS = 6;
 export const ORBIT_META_WORDS = 18;
 export const NODE_PLAN_WORDS = 26;
+/** ABI 18: [a, e, i, lan, argp, nu, m0, epoch, mu]. */
+export const ORBIT_ELEMENT_WORDS = 9;
 
 export interface VesselAbi {
   // --- §11.1 the part catalogue (content: valid before any init) -------------
@@ -159,8 +161,25 @@ export interface VesselAbi {
   _of_fl_remaining_dv_vacuum(f: number): number;
   _of_fl_parts(f: number): number;
   _of_fl_transforms(f: number): number;
+  /** ABI 18 / PH-66. Set ONE part's propellant, CLAMPED to its own capacity.
+   *  Exists for one caller: putting a half-empty tank back after a reload. The
+   *  clamp is the safety property, because a save file is untrusted input. */
+  _of_fl_set_propellant(f: number, partHandle: number, kg: number): number;
   /** f64 scratch, 2: [pitchFromVerticalRad, pastTheVerticalHold]. */
   _of_fl_guidance_pitch(altitudeM: number): number;
+
+  // --- §13.3 ON RAILS (ABI 18). Pure, handle-free; nothing is stored. --------
+  /** Fit a conic to a state vector. f64 scratch, ORBIT_ELEMENT_WORDS:
+   *  [a, e, i, lan, argp, nu, m0, epoch, mu]. */
+  _of_orb_park(px: number, py: number, pz: number,
+               vx: number, vy: number, vz: number,
+               mu: number, simTimeS: number): number;
+  /** Evaluate that conic at `simTimeS`. f64 scratch, 6: [rX,Y,Z, vX,Y,Z].
+   *  A function of the ELEMENTS and the TIME ASKED FOR and of nothing else, so
+   *  one jump of an hour and 216,000 jumps of a tick are bit-identical. */
+  _of_orb_resume(a: number, e: number, i: number, lan: number, argp: number,
+                 nu: number, m0: number, epoch: number, mu: number,
+                 simTimeS: number): number;
 
   // --- §17 MANEUVER NODES (ABI 11). Pure functions; nothing is stored. -------
   /** The conic through (p, v) as a polyline. mu and the body radius come off

@@ -17,7 +17,9 @@
 // Numbers use the real Forge/Cinder μ values (D-006) so the orbits are physical.
 // =============================================================================
 #include "test_framework.h"
+#include "of/flight.h"
 #include "of/orbital.h"
+#include "of/vessel.h"
 
 using namespace of;
 using namespace of::orbital;
@@ -324,4 +326,261 @@ TEST(integrator_coast_matches_kepler_thrust_raises_orbit) {
   burn.stepN(dt, 1000);
   const double Eafter = specificEnergy(burn.s, kForgeMu);
   CHECK(Eafter > Ebefore);  // energy added by thrust
+}
+
+// =============================================================================
+// ON RAILS, for a VESSEL (G6 / PH-16, through of::flight rather than through a
+// bare state vector).
+//
+// The tests above prove park/resume is the identity on (r, v). What a client
+// actually demotes is a VESSEL: a craft with stages, propellant and an
+// attitude, living in a FlightSim. This test asserts the four things the
+// on-rails contract owes that client, on the reference vehicle in an 80 km
+// circular Forge orbit with the throttle shut:
+//
+//   1. PATH INDEPENDENCE, exactly. Where the vessel is at a given SimTime is a
+//      function of the elements and that SimTime and of nothing else, so
+//      asking ONCE for t0 + 60 s and asking 3000 times in 20 ms increments must
+//      give BIT-IDENTICAL answers.
+//   2. RE-FITTING IS A DIFFERENT COMPUTATION, and is the negative control that
+//      makes point 1 mean something. Re-parking at every step is not
+//      bit-identical, so fitting the conic once and then leaving it alone is a
+//      load-bearing decision rather than a stylistic one.
+//   3. DEMOTE/PROMOTE ROUND TRIP against the integrator: the conic and the
+//      actively stepped vehicle agree over 60 s and over a full revolution.
+//   4. THE CRAFT IS UNTOUCHED. resume writes posM, velMS and timeS and nothing
+//      else, so the stage index and the propellant aboard survive a restore.
+//      The client's save/load path depends on exactly that.
+// =============================================================================
+
+// The reference vehicle, built the way test_flight.cpp's `makeAscender(true)`
+// builds it: 9845 kg on the pad, 4922.91 m/s of vacuum delta-v. Copied rather
+// than shared because the two suites are separate translation units and neither
+// owns a fixture header; if the construction below ever stops matching
+// test_flight.cpp, the two suites are measuring two different rockets.
+struct RailsAscender {
+  vessel::Vessel v;
+  vessel::PartHandle pod, chute, tankUp, engUp, dec, tankLo, engLo;
+};
+
+static RailsAscender makeRailsAscender() {
+  RailsAscender a;
+  vessel::Vessel& v = a.v;
+  a.pod = v.addRoot(vessel::parts::CommandPod);
+  a.chute = v.attach(a.pod, vessel::parts::Parachute, vessel::Attach::StackBottom);
+  a.tankUp = v.attach(a.chute, vessel::parts::TankLiquidSmall,
+                      vessel::Attach::StackBottom);
+  a.engUp = v.attach(a.tankUp, vessel::parts::EngineVacuumSmall,
+                     vessel::Attach::StackBottom);
+  a.dec = v.attach(a.engUp, vessel::parts::DecouplerStackSmall,
+                   vessel::Attach::StackBottom);
+  a.tankLo = v.attach(a.dec, vessel::parts::TankLiquidSmallLong,
+                      vessel::Attach::StackBottom);
+  a.engLo = v.attach(a.tankLo, vessel::parts::EngineLiquidSmall,
+                     vessel::Attach::StackBottom);
+  for (int i = 0; i < 4; ++i)
+    v.attach(a.tankLo, vessel::parts::Fin, vessel::Attach::Radial,
+             i * 0.5 * kPi, 0.15);
+  v.assignSubtreeToStage(a.dec, 0);
+  vessel::Stage s0; s0.activate.push_back(a.engLo);
+  vessel::Stage s1; s1.activate.push_back(a.engUp); s1.decouple.push_back(a.dec);
+  v.stages.push_back(s0);
+  v.stages.push_back(s1);
+  v.layout();
+  return a;
+}
+
+// A FlightSim carrying that vehicle on the 80 km circular orbit, first stage
+// LIT and the throttle shut. Lit deliberately: "on rails" must mean "nothing is
+// acting", not "no engine has ever been staged", and a vessel that has already
+// staged is the one a player actually parks. The stage index is 1 here, which
+// is what makes assertion 4 below a real check rather than 0 == 0.
+static flight::FlightSim makeRailsSim(const flight::FlightEnvironment& env,
+                                      double rM, double vCircMS, double t0S) {
+  flight::FlightSim sim;
+  sim.craft = makeRailsAscender().v;
+  sim.env = env;
+  sim.state.posM = Vec3{rM, 0, 0};
+  sim.state.velMS = Vec3{0, vCircMS, 0};
+  sim.state.forward = Vec3{0, 1, 0};   // nose prograde
+  sim.state.right = Vec3{1, 0, 0};
+  sim.state.throttle = 0.0;
+  sim.state.timeS = t0S;
+  // Attitude is not what this test is about, and SAS Off is what guarantees it:
+  // no torque is demanded, so no monopropellant can be spent, so the propellant
+  // assertion at the end can only be moved by the park/resume path itself.
+  sim.sas = flight::SasMode::Off;
+  sim.stage();
+  return sim;
+}
+
+TEST(vessel_on_rails_determinism) {
+  flight::FlightEnvironment env;
+  env.muM3S2 = kForgeMu;              // DW-18: the ONE gravity authority
+  env.bodyRadiusM = kForgeRadiusM;
+  env.air = atmo::makeForgeAtmosphere();
+
+  const double r = kForgeRadiusM + 80000.0;        // 680 km radius
+  const double vCirc = std::sqrt(kForgeMu / r);    // 2278.93 m/s
+  const double t0 = 137.0;                         // a nonzero epoch, so the
+                                                   // element epoch is exercised
+  const double dt = 0.02;                          // the sim tick
+  const int M = 3000;                              // 60 s of it
+
+  flight::FlightSim sim = makeRailsSim(env, r, vCirc, t0);
+
+  // The premise: 80 km is above the 60 km atmosphere ceiling and the throttle
+  // is shut, so nothing of::flight models is acting and the trajectory IS a
+  // conic. Everything below is meaningless if this is false.
+  CHECK(sim.onRailsEligible());
+  CHECK_NEAR(vCirc, 2278.93, 0.01);
+
+  const Elements el = park(sim.orbitalState(), env.muM3S2, sim.state.timeS);
+  CHECK_NEAR(el.a, r, 1.0);
+  CHECK(el.e < 1e-9);          // genuinely circular
+  CHECK(el.epoch == t0);       // parked at the instant it was asked for
+
+  // ---- 1. PATH INDEPENDENCE, exactly ------------------------------------
+  // Exact `==` and not a tolerance, because these are not two approximations of
+  // the same answer: the elements never move, only the time asked for does, so
+  // both calls run the SAME arithmetic on the SAME inputs. `t0 + M * dt` and
+  // the loop's last `t0 + k * dt` are the same expression on the same doubles.
+  // A tolerance here would let a hidden mutable in resume() through, which is
+  // the one failure this property exists to make impossible.
+  const StateVector jump = resume(el, t0 + M * dt);
+
+  StateVector walked = resume(el, t0);
+  for (int k = 1; k <= M; ++k) walked = resume(el, t0 + k * dt);
+
+  CHECK(walked.r.x == jump.r.x);
+  CHECK(walked.r.y == jump.r.y);
+  CHECK(walked.r.z == jump.r.z);
+  CHECK(walked.v.x == jump.v.x);
+  CHECK(walked.v.y == jump.v.y);
+  CHECK(walked.v.z == jump.v.z);
+  // and it really did move: 60 s of a 1875 s orbit is about 137 km of arc.
+  CHECK(dist(jump.r, sim.state.posM) > 100.0e3);
+
+  // ---- 2. RE-FITTING IS NOT THE SAME THING (the negative control) --------
+  // Same 3000 samples, but the conic is re-fitted from the propagated state at
+  // every one of them. state -> elements -> state is the identity in exact
+  // arithmetic and is NOT the identity in doubles (it goes through acos, atan2
+  // and Kepler's equation each way), so 3000 of them accumulate. Asserting only
+  // that the answer DIFFERS is the honest bar: the size of the difference is a
+  // property of the rounding, not of the design, but the fact that there is one
+  // is what makes "fit once, then leave it alone" a decision worth keeping.
+  // Measured 8.98e-10 m and 1.53e-11 m/s apart after 3000 re-fits, i.e. tiny but
+  // real. It is NOT asserted as a magnitude, because a magnitude here would be
+  // an assertion about the compiler's rounding rather than about the design.
+  StateVector reFit = resume(el, t0);
+  Elements rolling = el;
+  for (int k = 1; k <= M; ++k) {
+    const double t = t0 + k * dt;
+    reFit = resume(rolling, t);
+    rolling = park(reFit, env.muM3S2, t);
+  }
+  const double reFitPosErrM = dist(reFit.r, jump.r);
+  const double reFitVelErrMS = (reFit.v - jump.v).length();
+  const bool reFitIsBitIdentical =
+      reFit.r.x == jump.r.x && reFit.r.y == jump.r.y && reFit.r.z == jump.r.z &&
+      reFit.v.x == jump.v.x && reFit.v.y == jump.v.y && reFit.v.z == jump.v.z;
+  CHECK(!reFitIsBitIdentical);
+
+  // ---- 3. DEMOTE / PROMOTE ROUND TRIP against the integrator -------------
+  // A second vessel in the identical initial state, advanced ACTIVELY at 20 ms
+  // through of::flight (which above the atmosphere with the engine shut is
+  // bit-for-bit of::orbital::Integrator), against the conic evaluated at the
+  // same instant. Any disagreement is the integrator's own truncation error.
+  flight::FlightSim active = makeRailsSim(env, r, vCirc, t0);
+  for (int k = 0; k < M; ++k) active.step(dt);
+
+  // The active clock accumulates dt 3000 times while the conic is asked for
+  // t0 + 3000*dt in one multiply; the two differ by well under a nanosecond, so
+  // compare at the sim's OWN clock (which is what a real restore does) and pin
+  // that they are the same instant.
+  CHECK_NEAR(active.state.timeS, t0 + M * dt, 1e-9);
+  const StateVector railed60 = resume(el, active.state.timeS);
+  const double pos60M = (active.state.posM - railed60.r).length();
+  const double vel60MS = (active.state.velMS - railed60.v).length();
+  // Measured 1.014e-4 m and 1.827e-7 m/s over the 60 s. One metre and one
+  // centimetre per second are four orders of magnitude above that, deliberately:
+  // this pair is the "did the seam move at all" bar, and the tight one is the
+  // full-revolution pair below.
+  CHECK(pos60M < 1.0);
+  CHECK(vel60MS < 0.01);
+
+  // The same thing over a FULL REVOLUTION, which is where truncation error has
+  // had time to show. 1874.81 s at 20 ms is 93740 steps.
+  const double period = orbitalPeriod(el.a, env.muM3S2);
+  CHECK_NEAR(period, 1874.81, 0.01);
+  const int revSteps = static_cast<int>(period / dt);
+  flight::FlightSim rev = makeRailsSim(env, r, vCirc, t0);
+  for (int k = 0; k < revSteps; ++k) rev.step(dt);
+  const StateVector railedRev = resume(el, rev.state.timeS);
+  const double posRevM = (rev.state.posM - railedRev.r).length();
+  const double velRevMS = (rev.state.velMS - railedRev.v).length();
+  // Bounds are the MEASURED residue plus generous headroom, stated as such:
+  // measured 6.395e-3 m and 2.143e-5 m/s over one 1874.81 s revolution at a
+  // 20 ms step. 0.05 m and 2e-4 m/s leave roughly eight times that, which is
+  // room for a compiler's floating-point rounding and none at all for a change
+  // in the physics.
+  //
+  // That residue is the whole of velocity-Verlet's truncation error and nothing
+  // else, and it is the size theory says: the scheme's frequency error is
+  // (omega*dt)^2/24, here 1.9e-10, so one revolution of phase slip is 1.2e-9 rad
+  // and 680 km of radius turns that into about a millimetre. If this figure ever
+  // comes back in metres, something has started acting on a vessel that is
+  // supposed to be coasting.
+  CHECK(posRevM < 0.05);
+  CHECK(velRevMS < 2.0e-4);
+  // and the orbit itself has not drifted: a full revolution later the vessel is
+  // back where it started, which is the no-drift claim in its plainest form.
+  // 50 m rather than a millimetre because 93740 whole ticks is 1874.800 s
+  // against a 1874.811 s period, so the run stops 0.010958 s short of the top
+  // and the vessel is still 24.97 m of arc away from it. That gap is the integer
+  // step count, not the physics; the physics is the 6.4 mm above.
+  CHECK(dist(rev.state.posM, Vec3{r, 0, 0}) < 50.0);
+
+  // ---- 4. THE PROPELLANT AND THE STAGE INDEX DO NOT MOVE ON RAILS --------
+  // resume() writes posM, velMS and timeS. Nothing else in the craft is its
+  // business, and the client's restore path is built on that: a vessel that
+  // came off rails with a different stage index or a different fuel load would
+  // be a vessel the save file no longer describes.
+  const int stageBefore = sim.craft.nextStageIndex;
+  const double lfBefore =
+      vessel::propellantAboardKg(sim.craft, vessel::Propellant::LiquidFuel);
+  const double monoBefore =
+      vessel::propellantAboardKg(sim.craft, vessel::Propellant::Monopropellant);
+  CHECK(stageBefore == 1);          // the lower stage has been fired
+  CHECK_NEAR(lfBefore, 6450.0, 1e-9);   // 2150 + 4300 kg, both tanks full
+  CHECK_NEAR(monoBefore, 40.0, 1e-9);   // the pod's own tank
+
+  sim.resume(el, t0 + M * dt);
+  CHECK(sim.craft.nextStageIndex == stageBefore);
+  CHECK(vessel::propellantAboardKg(sim.craft, vessel::Propellant::LiquidFuel) ==
+        lfBefore);
+  CHECK(vessel::propellantAboardKg(sim.craft,
+                                   vessel::Propellant::Monopropellant) ==
+        monoBefore);
+  // and the restore did land where the conic said it would, so the round trip
+  // was a real one and not a no-op.
+  CHECK(sim.state.posM.x == jump.r.x);
+  CHECK(sim.state.posM.y == jump.r.y);
+  CHECK(sim.state.posM.z == jump.r.z);
+  CHECK(sim.state.timeS == t0 + M * dt);
+
+  std::printf(
+      "    [vessel on rails] 80 km circular Forge, reference vehicle, 20 ms tick\n"
+      "      1. one jump vs 3000 samples : BIT-IDENTICAL on all six components\n"
+      "      2. re-fitting every step    : pos %.6g m, vel %.6g m/s away from the\n"
+      "                                    single jump (%s)\n"
+      "      3. active vs rails,   60 s  : pos %.6g m, vel %.6g m/s\n"
+      "         active vs rails, 1 rev   : pos %.6g m, vel %.6g m/s over %.1f s"
+      " (%d steps)\n"
+      "      4. stage index %d and %.1f kg of propellant unchanged by resume\n",
+      reFitPosErrM, reFitVelErrMS,
+      reFitIsBitIdentical ? "BIT-IDENTICAL, which the test does not expect"
+                          : "not bit-identical, as expected",
+      pos60M, vel60MS, posRevM, velRevMS, period, revSteps,
+      sim.craft.nextStageIndex, lfBefore);
 }

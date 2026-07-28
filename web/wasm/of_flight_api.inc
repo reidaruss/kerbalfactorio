@@ -267,6 +267,91 @@ OF_API int of_fl_transforms(int f) {
   return static_cast<int>(s->craft.parts.size());
 }
 
+// PH-66. SET ONE PART'S PROPELLANT, in kg, CLAMPED to that part's own capacity.
+//
+// The one write the fuel surface has ever been missing, and it exists for
+// exactly one caller: putting a half-empty tank back after a reload. Everything
+// else about propellant here is a read, and burning is the only other way it
+// moves. `FlightCheats.refillTanks` says out loud what its absence cost -- it
+// rebuilds the whole craft from its design and replays every staging to refill,
+// because there was no other route -- and PH-30 / R11 named it as the single
+// reason a flight could not be saved: restoring by replaying `stage` gets the
+// right hardware and FULL TANKS, i.e. free delta-v on every reload.
+//
+// The clamp is the property that makes this safe to expose. A save file is
+// untrusted input, and a setter that accepted any number would let a hand-edited
+// slot put 10^9 kg in a 2150 kg tank, which is not a cheat but a mass property
+// the integrator would then fly. Clamping to `propellantCapacityKg` means the
+// worst a corrupt slot can do is a full tank, which the game can already produce
+// by pressing one key in the bay. Negative clamps to zero for the same reason.
+// -> 1 on success, 0 for a bad flight handle or a bad part handle.
+OF_API int of_fl_set_propellant(int f, int partHandle, double kg) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  vs::PartInstance* q = s->craft.find(static_cast<vs::PartHandle>(partHandle));
+  if (!q) return 0;
+  const double cap = s->craft.def(*q).propellantCapacityKg;
+  q->propellantKg = kg < 0.0 ? 0.0 : (kg > cap ? cap : kg);
+  return 1;
+}
+
+// =============================================================================
+// §13.3: ON RAILS. `orbital::park` and `orbital::resume` reach the browser.
+//
+// PH-64/PH-65. These are the two calls that let a vessel keep existing while
+// nothing is simulating it. They are deliberately PURE and take NO handle, the
+// same shape `of_mn_*` takes and for the same reason: a vessel on rails is not a
+// FlightSim, it is nine numbers, and requiring a live flight handle to advance
+// one would mean keeping alive exactly the object being retired.
+//
+// `FlightSim::park`/`resume` in flight.h are the member forms and are NOT
+// exported, on purpose. A flight handle that could park itself would be a
+// second answer to "is this vessel on rails", held inside the object whose
+// retirement is the question. The predicate stays `of_fl_on_rails_eligible`.
+//
+// The epoch is a bare double in whatever clock the caller keeps, because
+// `orbital::Elements` carries it and `elementsToState` only ever uses the
+// DIFFERENCE `t - epoch`. Nothing here has an opinion about where zero is.
+// =============================================================================
+
+// Fit a conic to a state vector. f64 scratch, EXACTLY 9:
+//   [a, e, i, lan, argp, nu, m0, epoch, mu]
+// Note `i` is measured against +Z and this world's pole is +Y (PH-40): these are
+// storage, not a readout, and the round trip through of_orb_resume is exact.
+OF_API int of_orb_park(double px, double py, double pz,
+                       double vx, double vy, double vz,
+                       double mu, double simTimeS) {
+  resetF64(9);
+  const of::orbital::StateVector sv{vec(px, py, pz), vec(vx, vy, vz)};
+  const of::orbital::Elements el = of::orbital::park(sv, mu, simTimeS);
+  const double a[9] = {el.a, el.e, el.i, el.lan, el.argp,
+                       el.nu, el.m0, el.epoch, el.mu};
+  for (double x : a) g_f64.push_back(x);
+  return 9;
+}
+
+// Evaluate that conic at `simTimeS`. f64 scratch, EXACTLY 6: [rX,Y,Z, vX,Y,Z].
+//
+// THIS IS THE WHOLE OF ON-RAILS PROPAGATION and it costs one Kepler solve. It is
+// a function of the ELEMENTS and the TIME ASKED FOR, never of how many times it
+// has been called, so advancing 3600 s in one call and in 216,000 calls of one
+// tick produce bit-identical answers. That property is the reason a rails record
+// must never re-fit its elements from a propagated state: re-fitting would make
+// the answer depend on the call pattern, which is exactly the drift the analytic
+// path exists to avoid (PH-3, PH-6).
+OF_API int of_orb_resume(double a, double e, double i, double lan, double argp,
+                         double nu, double m0, double epoch, double mu,
+                         double simTimeS) {
+  resetF64(6);
+  of::orbital::Elements el;
+  el.a = a; el.e = e; el.i = i; el.lan = lan; el.argp = argp;
+  el.nu = nu; el.m0 = m0; el.epoch = epoch; el.mu = mu;
+  const of::orbital::StateVector sv = of::orbital::resume(el, simTimeS);
+  g_f64.push_back(sv.r.x); g_f64.push_back(sv.r.y); g_f64.push_back(sv.r.z);
+  g_f64.push_back(sv.v.x); g_f64.push_back(sv.v.y); g_f64.push_back(sv.v.z);
+  return 6;
+}
+
 // The gravity-turn guidance ribbon (DW-30 item 6): the pitch, in radians from
 // vertical, a good ascent holds at this altitude. It does NOT fly anything.
 // f64 scratch, EXACTLY 2: [pitchFromVerticalRad, headingIsPrograde].
