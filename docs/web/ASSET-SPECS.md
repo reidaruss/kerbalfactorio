@@ -79,7 +79,7 @@ Practical consequences, all load-bearing:
   (DW-35) is that every role in the industrial and mineral families also wears a
   shared tiling normal map and a shared occlusion/roughness/metalness pack, so
   panel lines, rivets, wear and crevice shadow exist. **There is still no
-  per-asset texture and no albedo map at all** — see section 2.8.
+  per-asset texture and no albedo map at all**, see section 2.8.
 - **Palette roles, not per-asset colours.** An asset picks from `of_lib.PALETTE`.
   Retinting the whole game is one file.
 - **Silhouette over surface detail.** Poly budget goes into the outline, not into
@@ -338,7 +338,7 @@ depsgraph evaluate the object at the current frame and the exporter writes
 permanent lean into the asset. It surfaced as a 2.483 m wide conifer failing a
 2.400 m scale check, which is exactly the class of bug section 7.3 is about.
 
-### 2.8 Texture policy — SHIPPED 2026-07-27 (DW-35)
+### 2.8 Texture policy, SHIPPED 2026-07-27 (DW-35)
 
 The old text here said textures were deferred until the payload would cross 1 MB.
 That threshold was never the binding constraint; the binding constraint was that
@@ -385,7 +385,7 @@ it. A map authored as an absolute would flatten thirty roles onto one value.
 - **Coverage is uniform and that is a correctness requirement, not tidiness.** The
   client merges an asset's primitives with `mergeGeometries(list, false)`, three
   returns `null` on a mismatched attribute set, and both call sites swallow it with
-  `?? list[0]` — so an asset with mixed UV coverage draws its *first* primitive and
+  `?? list[0]`, so an asset with mixed UV coverage draws its *first* primitive and
   silently discards the rest. Untextured roles still carry UVs. A partial rollout is
   far more dangerous than none.
 - Cost, measured: **+744 KB across 48 files, +22.9%**. That is the price of the
@@ -405,7 +405,7 @@ stdlib-only, uses no RNG (a 32-bit integer hash), no transcendentals in the fiel
 synthesis (only `+ - * /` and `sqrt`, which is correctly rounded and therefore
 bit-portable; `sin`/`cos`/`tan` are not, and DW-14 is this project's scar from
 exactly that), and writes PNGs through its own encoder that emits IHDR + IDAT +
-IEND and nothing else — no `tIME`, no `tEXt`, no generator string. **Blender is not
+IEND and nothing else, no `tIME`, no `tEXt`, no generator string. **Blender is not
 in the texture path at all**, so a Blender upgrade (BT-14) cannot rewrite a texture
 byte. zlib is pinned to explicit parameters and its version is recorded in the
 manifest.
@@ -437,9 +437,9 @@ Three code changes, in order of consequence.
 25-line function copy-pasted, and each builds a fresh `BufferGeometry` from an
 attribute allowlist that does not include `uv`:
 
-- `web/src/game/MachineBatch.ts:71-98` — machines, belts, structures, belt cargo
-- `web/src/game/NodeBatch.ts:96-120` — harvest nodes
-- `web/src/render/instancing/PropLibrary.ts:63-83` — biome props
+- `web/src/game/MachineBatch.ts:71-98`, machines, belts, structures, belt cargo
+- `web/src/game/NodeBatch.ts:96-120`, harvest nodes
+- `web/src/render/instancing/PropLibrary.ts:63-83`, biome props
 
 Copy `uv` alongside `position` and `normal`. **Copy it unconditionally.** Do NOT
 write `if (src.getAttribute('uv')) ...`: a conditional reintroduces exactly the
@@ -475,7 +475,7 @@ Sites: `MachineBatch.ts:163-166` (`makeMaterial`, covers all three
 
 The `aoMap.channel = 0` line is the one that will be forgotten. three samples
 `aoMap` from `uv1` unless told otherwise, and there is no `uv1`, so AO silently
-samples texel (0,0) everywhere — which looks like a slightly wrong constant tint
+samples texel (0,0) everywhere, which looks like a slightly wrong constant tint
 rather than like a bug.
 
 **(3) Choose the family per material.** `surfaces.json` carries `roles` (role ->
@@ -496,7 +496,7 @@ Two of the three batch paths collapse many roles onto one material, so they cann
 express a per-role family:
 
 - `NodeBatch` buckets into exactly two materials by `metalness > 0.5`
-  (`NodeBatch.ts:123-126`). Bark and Rock both land in `nodes:matte` — and so do
+  (`NodeBatch.ts:123-126`). Bark and Rock both land in `nodes:matte`, and so do
   **Leaf and Grass, which are in `flat_roles` and must not receive a map at all**. A
   rock normal map on a foliage card is worse than no map. The fix is small: bucket
   by *(family, metalness)* instead of by metalness alone, which turns 2 materials
@@ -2401,7 +2401,7 @@ tools/blender/
                             LOD helpers, clip authoring, pinned glTF export settings
   build_<asset>.py          one script per asset; build_belt_segment.py is the template
   harvest_common.py         organic geometry: seeded jitter, Parts.fit, lobe/blob/taper
-  boulder_common.py         the four ore boulders: one form, four dressings
+  boulder_common.py         the four ore boulders: four forms, one break language
   tree_common.py            shared tree parts
   tool_common.py            the two hand tools
   rig_common.py             the player skeleton, shared by body and first-person arms
