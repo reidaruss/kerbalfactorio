@@ -4,14 +4,14 @@
 
 Produces assets/models/dist/props/detail_cards.glb (ASSET-SPECS 3.2).
 
-These four are NOT biome props. They are the layer under the biome props: the
+These seven are NOT biome props. They are the layer under the biome props: the
 thing the renderer stamps by the square metre across every vegetated chunk,
 where a biome prop is placed by the handful. Their instance count is one to
 two orders of magnitude above anything else in the batch, so every rule here
 is about cost:
 
   * 18 to 42 triangles each, not the 60 to 400 the biome props run at.
-  * Three materials for the whole file, so the entire detail layer is three
+  * Four materials for the whole file, so the entire detail layer is four
     draws per chunk no matter how many blades are in it.
   * A REBUILT LOD2, not a decimate. See the RN-45 note below: the claim that
     there is no distance at which a 0.5 m tuft is worth a second mesh was
@@ -36,7 +36,39 @@ TWO SPEC CORRECTIONS, both flagged in ASSET-SPECS 3.2.
    because a single-sided leaf disappears from half the angles you look at it
    from. This file uses the same two roles and adds nothing new.
 
-Materials (3): OF_Grass, OF_LeafDry, OF_Rock.
+Materials (4): OF_Grass, OF_LeafDry, OF_Rock, OF_Leaf.
+
+RN-48 note (2026-07-28): THREE UNDERSTOREY SPECIES ADDED, because the ground
+was one card shape jittered and nothing else. The first four props are all
+upright blade tufts, so a chunk of ground was a field of vertical strokes at
+one length; the reason Satisfactory's ground reads as a place is that several
+distinct plant SILHOUETTES are mixed, not that any one of them is detailed.
+The three added here are chosen to be different from the four and from each
+other in silhouette before they are different in anything else:
+
+  * Detail_BroadleafForb   few wide leaves splaying low from a centre. This
+                           is the shape that breaks a field of blades.
+  * Detail_FlowerSprig     a small tuft with three straw heads standing above
+                           it on thin stems: a vertical accent with a colour
+                           break at the top, where every other card is one
+                           tone from base to tip.
+  * Detail_SedgeRosette    many narrow straps radiating almost flat, wider
+                           than it is tall, so it FILLS the gaps between the
+                           taller cards instead of competing with them.
+
+THE MATERIAL SPEND, which is the real budget (props_common rule 2): three
+roles became FOUR, and the one role bought is OF_Leaf on the forb. Every
+other new prop reuses what the file already pays for. The argument for
+spending it there and nowhere else is about distance: the forb's whole job is
+to not read as grass, and by 45 m (where 48.7% of live instances sit, see the
+RN-45 note below) the shape difference between a low splay and an upright
+tuft is a couple of pixels while a tone difference survives. OF_Leaf is also
+the tone the trees and the plains shrub already use, so broad foliage agrees
+with itself from the canopy down to the ankle. The sprig's heads take
+OF_LeafDry, which is already in the file for card C: straw against green is a
+LARGER colour break than any second green would have been, and it costs
+nothing. The rosette is OF_Grass and carries its difference entirely in shape,
+which is what the budget rule asks for wherever it is possible.
 
 W11 note (2026-07-27): Registry.ts never passes detailCards to loadGlb, so
 nothing here is drawn today; the controller is reporting that hook-up
@@ -84,6 +116,64 @@ def grass_card_c():
     nothing else."""
     return pc.tuft(6, 0.44, 0.058, 0.065, 1321, bend=0.18, segs=2, droop=0.30,
                    role="LeafDry", h_var=0.40, phase=41.0)
+
+
+def broadleaf_forb():
+    """Six wide leaves splaying low from one centre: 30 triangles.
+
+    The same blade() the grass uses, driven the other way round. A blade is
+    thin, upright and barely bent; this is width 0.24 against height 0.30 (a
+    leaf as wide as it is long, where card A runs 0.09 against 0.38), a bend
+    larger than the height so the leaf travels further OUT than UP, and a
+    droop of 0.62 so the tip comes back down toward the ground. The result is
+    a rosette of flat-ish paddles, which is the one silhouette in this file
+    that has no vertical stroke in it anywhere."""
+    return pc.tuft(6, 0.30, 0.24, 0.045, 1351, bend=0.36, segs=3, droop=0.62,
+                   role="Leaf", h_var=0.26, phase=11.0)
+
+
+def flower_sprig():
+    """A five-blade tuft with three straw heads above it: 30 triangles, 15 in
+    the tuft and 15 in the heads.
+
+    tuft()'s own heads support does all of it: heads run height * head_scale
+    with width * head_width, at random azimuths rather than on the even ring,
+    which is what makes them read as three stems that happened rather than as
+    a candelabra. head_scale 1.9 is deliberately larger than the 1.45 default
+    because the whole point of this prop is the part standing ABOVE the
+    foliage line; a head that only just clears the tuft is a head nobody sees.
+    OF_LeafDry on the heads, OF_Grass under them.
+
+    head_width IS 0.95 AND WAS 0.42, CHANGED BY LOOKING AT IT. At 0.42 the
+    head was 3 cm of straw at its base after fit(), the render showed three
+    hairlines, and a hairline is the sub-pixel failure build_props_plains
+    already documented and already fixed once: an accent nobody can see is an
+    accent that was not worth a triangle, never mind a colour break. At 0.95
+    the head is as substantial as a grass blade, which is what makes the straw
+    actually reach the eye."""
+    return pc.tuft(5, 0.26, 0.085, 0.030, 1361, bend=0.16, segs=2, droop=0.30,
+                   role="Grass", h_var=0.30, phase=7.0,
+                   heads=3, head_role="LeafDry", head_scale=1.90,
+                   head_width=0.95)
+
+
+def sedge_rosette():
+    """Twelve narrow straps radiating almost flat: 36 triangles.
+
+    The gap filler. Bend 0.40 against height 0.20 sends each strap twice as
+    far out as up, and droop 0.80 brings the tip back down to a fifth of the
+    peak height, so the strap is an arc lying over the ground rather than a
+    blade standing in it. Twelve of them, narrow, is the deliberate opposite
+    of the forb's six wide ones: the two share a low profile and share nothing
+    else, so they do not collapse into the same prop at 15 m.
+
+    "Narrow" is RELATIVE and the first cut got it wrong. Width 0.052 measured
+    2.7 cm across after fit(), a third of card A's blade, and rendered as a
+    star of hairlines. 0.105 puts a strap at about 5 cm, still half a forb
+    leaf and clearly a different plant, and it is the width that makes this
+    prop a patch of covered ground rather than a spider."""
+    return pc.tuft(12, 0.20, 0.105, 0.028, 1371, bend=0.40, segs=2, droop=0.80,
+                   role="Grass", h_var=0.34, phase=29.0)
 
 
 def pebble_scatter():
@@ -151,6 +241,54 @@ def grass_card_c_lod2():
                    role="LeafDry", h_var=0.18, phase=41.0)
 
 
+def broadleaf_forb_lod2():
+    """Four leaves at one triangle each, 1.9x the width of LOD0's six.
+    4 triangles against 30.
+
+    A leaf is the one card shape where the LOD2 rule costs nothing to obey:
+    the LOD0 leaf is already a wide paddle, so dropping it to a single wide
+    triangle loses the arc and keeps the paddle, which is the whole read."""
+    return pc.tuft(4, 0.30, 0.455, 0.020, 1351, bend=0.36, segs=1, droop=0.30,
+                   role="Leaf", h_var=0.14, phase=11.0)
+
+
+def flower_sprig_lod2():
+    """Three wide grass triangles with two wide straw ones standing over
+    them: 5 triangles against 30.
+
+    Built as TWO tufts rather than one tuft with heads, because tuft() gives a
+    head segs + 1 levels and the cheapest blade this file allows is segs = 1;
+    a head would therefore cost 3 triangles where the LOD2 budget for the
+    whole prop is 4 to 8. Two tufts at segs = 1, the second taller and
+    narrower, is the same shape for 5. The heads keep their own role, since a
+    far sprig that has lost its straw accent is just a shorter grass card and
+    there was no reason to draw it."""
+    p = pc.tuft(3, 0.26, 0.205, 0.018, 1361, bend=0.16, segs=1, droop=0.16,
+                role="Grass", h_var=0.14, phase=7.0)
+    p.extend(pc.tuft(2, 0.49, 0.150, 0.012, 1367, bend=0.20, segs=1,
+                     droop=0.10, role="LeafDry", h_var=0.12, phase=53.0))
+    return p
+
+
+def sedge_rosette_lod2():
+    """Four straps at one triangle each, 3.7x the width of LOD0's twelve.
+    4 triangles against 36.
+
+    The widest ratio in the file, and it has to be: a rosette is nothing but
+    covered ground, so of the two things a LOD2 can keep here, area and
+    silhouette, only area exists.
+
+    DROOP IS 0.40 AND NOT LOD0'S 0.80, for the reason the pebble LOD2 below
+    spells out. LOD0's straps lie almost flat, which is the whole read of the
+    prop up close; at 45 m with the eye 1.8 m up the ground is about 2 degrees
+    off edge-on, a horizontal facet presents a few per cent of its area, and a
+    faithfully flat LOD2 would fade out at exactly the range it exists to
+    serve. Lifting the tips to 0.6 of the peak keeps the footprint fit()
+    already guarantees and turns the covered area back toward the camera."""
+    return pc.tuft(4, 0.20, 0.390, 0.016, 1371, bend=0.40, segs=1, droop=0.40,
+                   role="Grass", h_var=0.16, phase=29.0)
+
+
 def pebble_scatter_lod2():
     """One four-sided lobe filling the card's own footprint: 6 triangles
     against 42.
@@ -175,6 +313,12 @@ PROPS = [
             ["LeafDry"], lod2=grass_card_c_lod2),
     pc.Prop("Detail_PebbleScatter", (0.92, 0.80, 0.10), pebble_scatter,
             ["Rock"], lod2=pebble_scatter_lod2),
+    pc.Prop("Detail_BroadleafForb", (0.60, 0.56, 0.26), broadleaf_forb,
+            ["Leaf"], lod2=broadleaf_forb_lod2),
+    pc.Prop("Detail_FlowerSprig", (0.46, 0.42, 0.58), flower_sprig,
+            ["Grass", "LeafDry"], lod2=flower_sprig_lod2),
+    pc.Prop("Detail_SedgeRosette", (0.66, 0.62, 0.16), sedge_rosette,
+            ["Grass"], lod2=sedge_rosette_lod2),
 ]
 
 

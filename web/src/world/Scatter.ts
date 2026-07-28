@@ -24,7 +24,7 @@ import {
   RADIUS_M, MIN_SLOPE_COS, LOD2_M, DETAIL_RADIUS_M, DETAIL_FULL_M,
   DETAIL_FAR_GROW, WET_REJECT_M, detailWeight, tierOf, keyHash, type Tier,
 } from './ScatterTuning.js';
-import { CONTACT_CARDS } from './ScatterLook.js';
+import { CLUSTER_SHIFT, CONTACT_CARDS } from './ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
 
 interface Placed {
@@ -66,11 +66,7 @@ export class Scatter {
   groundM2 = 0;
   /** Chunks whose draw was TRUNCATED by MAX_PER_CHUNK. Must stay 0 near. */
   chunksCapped = 0;
-  /**
-   * Cells refused for standing water since boot. REPORTED rather than silent
-   * (DW-28): a filter nobody can see is indistinguishable from one that removes
-   * everything. Exactly 0 on a dry planet, nonzero near the pond.
-   */
+  /** Cells refused for standing water since boot (DW-28). See WET_REJECT_M. */
   wetCells = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
   backlog = 0;
@@ -96,16 +92,14 @@ export class Scatter {
     grassShort = true,
     /**
      * The water authority, or null on a dry body. A WaterOracle rather than a
-     * height number on purpose: it is the ONE place "is there water here" is
-     * answered, and a second copy of that rule in the scatter is the
-     * multiple-surface-authority failure DW-26 exists to prevent.
+     * height, because it is the ONE place "is there water here" is answered and
+     * a second copy of that rule here is the DW-26 failure exactly.
      */
     private readonly water: WaterOracle | null = null,
     /**
-     * The live voxel-edits handle, read at BUILD time rather than captured.
-     * `depthAt` reads the EDITED ground, so digging a bed deeper genuinely
-     * deepens the water and a rebuilt chunk has to see that. Boot creates the
-     * edits after the scatter, so this is a thunk.
+     * The live edits handle, read at BUILD time. `depthAt` reads the EDITED
+     * ground, so digging a bed deeper deepens the water and a rebuilt chunk
+     * has to see it. Boot creates the edits after this, hence a thunk.
      */
     private readonly editsHandle: () => number = () => 0,
   ) {
@@ -243,12 +237,26 @@ export class Scatter {
   ): Placed {
     const nrm = this.pool.batch(v.pooled).normals(v.pooled.slot);
     const keyBase = keyHash(v.key);
-    // Hoisted: one read of the body's single water level per chunk, not per
-    // cell. Zero (or less) means "this body is dry", which switches the whole
-    // test off with one comparison and leaves a dry planet bit-for-bit as it
-    // was before this existed.
-    const wetR = this.water !== null && this.water.hasWater
+    // Hoisted: one read of the body's water level per chunk, not per cell. Zero
+    // means "this body is dry", which switches the whole test off with one
+    // comparison and leaves a dry planet bit-for-bit as it was before this
+    // existed.
+    let wetR = this.water !== null && this.water.hasWater
       ? this.water.levelRadius() : 0;
+    // THE BASIN GATE. One dot product per chunk, and it is what makes the
+    // per-cell query affordable; the level-radius test alone is not (see
+    // WET_REJECT_M). Fails SAFE: a future non-disc water model leaves `disc`
+    // null, the gate is skipped, and every cell is queried again.
+    const disc = this.water?.disc ?? null;
+    if (wetR > 0 && disc !== null) {
+      const an = v.anchor;
+      const ar = Math.hypot(an.x, an.y, an.z) || 1;
+      const dot = (an.x * disc.dirX + an.y * disc.dirY + an.z * disc.dirZ) / ar;
+      const arcM = Math.acos(Math.max(-1, Math.min(1, dot))) * ar;
+      // Half the chunk's diagonal, because the anchor is its corner.
+      const reach = disc.basinRadiusM + cell * CELLS * 1.5;
+      if (arcM > reach) wetR = 0;
+    }
     const edits = wetR > 0 ? this.editsHandle() : 0;
     const local = new Float32Array(want * 3);
     const quat = new Float32Array(want * 4);
@@ -281,7 +289,7 @@ export class Scatter {
     // makes the collector the worst frame in the run.
     const b: Build = {
       pos, local, quat, scale, parts, owner, n: 0, want,
-      nx: 0, ny: 0, nz: 0, i00: 0, i10: 0, i01: 0, i11: 0, seed: 0,
+      nx: 0, ny: 0, nz: 0, cluster: 0, i00: 0, i10: 0, i01: 0, i11: 0, seed: 0,
     };
     for (let cy = 0; cy < CELLS && b.n < want; ++cy) {
       for (let cx = 0; cx < CELLS && b.n < want; ++cx) {
@@ -295,17 +303,18 @@ export class Scatter {
         const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
         const nl = Math.hypot(nx, ny, nz) || 1;
         if ((nx * upx + ny * upy + nz * upz) / nl < MIN_SLOPE_COS) continue;
-        // WATER (RN-46), last of the three cell tests because it is the only
-        // one that can call into WASM. The RADIUS test is what makes it
-        // affordable: a body has ONE water level, so a cell standing above it
-        // cannot be wet whatever the disc layout is, and only cells that fail
-        // that arithmetic pay for `depthAt`. See `WET_REJECT_M`.
+        // WATER (RN-46, fixed and first proved at RN-48). Last of the three
+        // cell tests because it is the only one that can reach WASM.
+        // See WET_REJECT_M for the basin gate and the three defects here.
         if (wetR > 0) {
           const wx = a.x + pos[i00];
           const wy = a.y + pos[i00 + 1];
           const wz = a.z + pos[i00 + 2];
-          if (Math.hypot(wx, wy, wz) < wetR
-            && this.water!.depthAt(wx, wy, wz, edits) > WET_REJECT_M) {
+          // NORMALIZED: `depthAt` takes a DIRECTION, not a point. RN-46 handed
+          // it an absolute 6e5 m position. The length is free, the guard needs it.
+          const wl = Math.hypot(wx, wy, wz);
+          if (wl < wetR
+            && this.water!.depthAt(wx / wl, wy / wl, wz / wl, edits) > WET_REJECT_M) {
             this.wetCells++;
             continue;
           }
@@ -314,6 +323,10 @@ export class Scatter {
         const i01 = i00 + DIM * 3;
         const i11 = i01 + 3;
         b.seed = keyBase ^ Math.imul(cy * CELLS + cx, 0x27d4eb2f);
+        // The PATCH this cell belongs to, so a stand of one species spans
+        // many cells rather than each cell drawing independently.
+        b.cluster = keyBase ^ Math.imul(
+          (cy >> CLUSTER_SHIFT) * CELLS + (cx >> CLUSTER_SHIFT), 0x9e3779b1);
         b.i00 = i00; b.i10 = i10; b.i01 = i01; b.i11 = i11;
         b.nx = nx / nl; b.ny = ny / nl; b.nz = nz / nl;
         cells++;

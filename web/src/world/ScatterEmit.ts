@@ -13,7 +13,8 @@ import type { PropLibrary, PropPart } from '../render/instancing/PropLibrary.js'
 import type { PropSpec } from '../assets/Registry.js';
 import { MAX_PER_CELL, hash32, frac, type Tier } from './ScatterTuning.js';
 import {
-  CONTACT_CARDS, CONTACT_SPREAD, lookOf, scaleFor, tintFor, tintScratch,
+  CLUSTER_BIAS, CONTACT_CARDS, CONTACT_SPREAD, lookOf, scaleFor, tintFor,
+  tintScratch,
   type Look,
 } from './ScatterLook.js';
 
@@ -34,6 +35,8 @@ export interface Build {
   want: number;
   /** The current cell: its unit normal, its four corner indices, its hash. */
   nx: number; ny: number; nz: number;
+  /** Per-PATCH hash for species clustering. See ScatterLook.CLUSTER_SHIFT. */
+  cluster: number;
   i00: number; i10: number; i01: number; i11: number;
   seed: number;
 }
@@ -101,7 +104,7 @@ export class PropEmitter {
     let asked = expect;
     for (let j = 0; j < perCell && b.n < b.want; ++j) {
       const k = salt + j;
-      const spec = this.pick(tier, hash32(b.seed, k * 8 + 2));
+      const spec = this.pickClustered(tier, hash32(b.seed, k * 8 + 2), b.cluster);
       const placed = this.emit(b, spec, k, frac(hash32(b.seed, k * 8)),
         frac(hash32(b.seed, k * 8 + 1)), grow);
       // CONTACT BLENDING. A prop that collides has a silhouette that meets the
@@ -205,6 +208,21 @@ export class PropEmitter {
       if (r <= 0) return t.specs[i];
     }
     return t.specs[t.specs.length - 1];
+  }
+
+  /**
+   * The same weighted draw, but biased toward the patch's dominant species.
+   * See ScatterLook.CLUSTER_BIAS for why a uniform mix is the thing to avoid.
+   *
+   * The dominant is drawn from the SAME table with the PATCH's hash, so it
+   * costs no second table and a rare species dominates rarely. Determinism is
+   * untouched: both draws are pure functions of hashes this code already had.
+   */
+  private pickClustered(t: Tier, h: number, cluster: number): PropSpec {
+    if (frac(hash32(cluster, 0x5bd1e995)) < CLUSTER_BIAS) {
+      return this.pick(t, hash32(cluster, 0x7feb352d));
+    }
+    return this.pick(t, h);
   }
 
 }

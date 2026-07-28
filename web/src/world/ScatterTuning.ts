@@ -78,6 +78,32 @@ export const LOD2_M = 45;
  */
 export const WET_REJECT_M = 0.02;
 /**
+ * WHY THE PER-CELL WATER QUERY IS GATED ON THE BASIN AND NOT ON THE LEVEL.
+ *
+ * RN-46's first guard was "is this cell below the water's level radius", on the
+ * unexamined assumption that a water level sits near the datum. It does not.
+ * The shipped pond is at the Mountains spawn, so its level is 4,667 m and its
+ * level radius is 604,667 m, while the Hills test site stands at 600,861 m.
+ * Every cell over most of the planet passed that guard and paid a WASM call to
+ * be told its column was dry. Measured at the two test sites: the pond's basin
+ * is 22 m across and the Hills site is 121,813 m from it.
+ *
+ * The basin is the honest bound and it comes from the oracle's OWN published
+ * disc rather than from a rule restated in the scatter. `Scatter.sample` keeps
+ * the level-radius test as the second, per-cell half; the basin gate is what
+ * removes the other 99.99% of the planet before either runs.
+ *
+ * THREE DEFECTS IN ONE FEATURE, all found by ONE probe (`probes/pondscatter.js`)
+ * and none by the counter RN-46 shipped. The counter read 0 at two DRY sites
+ * and that was reported as evidence. It is not: zero at a dry site is equally
+ * consistent with the filter working and with the filter not existing. The
+ * three were (a) the flag handed the oracle over only when the rejection was
+ * meant to be OFF, so it never ran in any build, (b) `depthAt` takes a
+ * normalized DIRECTION and was being handed an absolute 6e5 m position, and
+ * (c) this gate. The general rule: a filter is proved by the case it is
+ * supposed to CATCH, never by the case it is supposed to ignore.
+ */
+/**
  * How far the ground-detail card layer reaches. Confining it is what keeps the
  * shared OF_Grass batch inside its ceiling while the ground the player is
  * actually standing on gets a real understorey: at 55 m the ring is 9,503 m2

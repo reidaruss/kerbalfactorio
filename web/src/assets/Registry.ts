@@ -116,14 +116,41 @@ const D = (stem: string, density: number, jitter = 0.3): PropSpec =>
  * Beyond that `detailWeight` grades them down to 0.18 at 78 m, which is about
  * what the whole ring used to carry, so the old look is now the outer band of
  * the new one and there is no longer a visible line where the cover stops.
+ *
+ * SEVEN SPECIES, NOT FOUR, AND THE TOTAL IS UNCHANGED (RN-49). The three new
+ * ones are paid for out of the existing four rather than added on top: 538,000
+ * before and 538,000 after, to the unit. That is deliberate and it is the only
+ * honest way to add species while DW-5 is not relaxed, because density is what
+ * the triangle budget is spent on and "more variety" must not become "more
+ * cost" by default. What changes is WHICH plant stands in a given spot, not how
+ * many plants there are.
+ *
+ * The mix is also CLUSTERED rather than uniform (ScatterLook.CLUSTER_BIAS).
+ * Adding species to an unclustered scatter makes the ground MORE uniform, not
+ * less: four species salt-and-peppered and seven species salt-and-peppered both
+ * average out to one flat texture at any distance, and the second is merely a
+ * more expensive way to get there. Species without clustering would have been a
+ * cost with no picture.
  */
 const GROUND_DETAIL: readonly PropSpec[] = [
-  D('Detail_GrassCardA', 250000), D('Detail_GrassCardB', 160000),
-  D('Detail_GrassCardC', 100000), D('Detail_PebbleScatter', 28000),
+  D('Detail_GrassCardA', 180000), D('Detail_GrassCardB', 105000),
+  D('Detail_GrassCardC', 70000), D('Detail_PebbleScatter', 24000),
+  // The broadleaf forb is the biggest single share of the new budget because it
+  // is the shape that most differs from a blade: a field of vertical strokes is
+  // what the old four could only ever produce.
+  D('Detail_BroadleafForb', 75000), D('Detail_SedgeRosette', 60000),
+  // Sparse on purpose. Flowers read as an event, and a flower you see every
+  // metre is a texture. Clustering then concentrates these few into occasional
+  // stands rather than spreading them evenly, which is the whole point.
+  D('Detail_FlowerSprig', 24000),
 ];
 /** Dry and rocky biomes take the litter and the pebbles, not the grass. */
 const DRY_DETAIL: readonly PropSpec[] = [
-  D('Detail_GrassCardC', 44000), D('Detail_PebbleScatter', 72000),
+  D('Detail_GrassCardC', 34000), D('Detail_PebbleScatter', 64000),
+  // The rosette is the one new species that belongs on dry ground: it hugs the
+  // surface, which is what a plant does where water is scarce. 116,000 before
+  // and after, so this biome is budget neutral too.
+  D('Detail_SedgeRosette', 18000),
 ];
 
 export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [

@@ -221,13 +221,23 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const atlases = cfg.props
     ? (cfg.detailCards ? [...BIOME_ATLAS, ...SHARED_ATLAS] : [...BIOME_ATLAS])
     : [];
-  const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow, cfg.propCull);
+  const props = await PropLibrary.load(atlases, scenes.near, cfg.propGrow,
+    cfg.propCull, cfg.propLod2);
   // DW-28: the foliage pools report through the SAME registry the machine pools
   // do, so a refusal reaches the HUD as `POOL FULL: n NOT DRAWN` rather than
   // being counted into a field nothing prints.
   registerPool(props);
+  // RN-46: the scatter consults the water authority so nothing grows on the
+  // pond bed. The edits handle is a thunk because `voxels` is created below.
+  //
+  // MIND THE SENSE. `?scatterwet=1` means wet scattering is ALLOWED, i.e. the
+  // rejection is OFF, so the oracle goes in when the flag is FALSE. RN-46 had
+  // it inverted, which handed the oracle over only in the one configuration
+  // that then refuses to use it, so the feature never ran in ANY build while
+  // every reading looked healthy. See WET_REJECT_M.
   const scatter = new Scatter(props, t.pool, cfg.props, cfg.density,
-    cfg.scatterFair, cfg.grassShort);
+    cfg.scatterFair, cfg.grassShort,
+    cfg.scatterWet ? null : oracle.water, () => voxels?.handle ?? 0);
 
   // W5. Created only when there is a character: with no player nobody digs, and
   // an unbound edits handle would arm voxel collision for a flying camera. The

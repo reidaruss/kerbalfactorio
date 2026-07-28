@@ -194,6 +194,44 @@ export function scaleFor(
  * set as "this has a silhouette that meets the ground", so the skirt follows
  * the asset table rather than a second list that could drift from it.
  */
+/**
+ * SPECIES CLUSTERING (RN-49), the fraction of understorey instances in a patch
+ * that are forced to the patch's DOMINANT species.
+ *
+ * Plants do not salt-and-pepper. They grow in stands, because a plant seeds
+ * where its parent stood and because soil, drainage and shade vary over metres
+ * rather than over centimetres. The reference reads as a place largely for this
+ * reason: it has patches of one thing next to patches of another, and our
+ * understorey had every species drawn independently per instance, which
+ * produces a perfectly uniform mix at every scale. Adding species without
+ * clustering would have made that worse, not better, because more species mixed
+ * uniformly is more uniform, not less.
+ *
+ * The dominant is itself drawn from the SAME weighted table, so a common
+ * species dominates many patches and a rare one dominates few. That is what
+ * keeps the flowering sprig an occasional stand rather than one patch in seven.
+ *
+ * 0.55 rather than 1.0 deliberately: a patch that is 100% one species reads as
+ * a planted crop, which is the exact failure RN-30 spent a pass removing from
+ * the grass height. Just over half is enough for the eye to read a stand while
+ * every patch keeps a minority of everything else.
+ */
+export const CLUSTER_BIAS = 0.55;
+/**
+ * Patch size, in CELLS, as a power-of-two shift. 3 is an 8x8 cell patch, which
+ * at DW-19's shipped 1.808 m near cell is about 14 m across: roughly the scale
+ * the eye reads as "a stand of something" at walking distance, and comfortably
+ * inside the 30 m full-density band so a patch is never split by the density
+ * falloff.
+ *
+ * KNOWN AND ACCEPTED: the patch lattice is CHUNK-LOCAL, so it restarts at every
+ * chunk boundary. That is not a seam, because the pattern is random per patch
+ * and a restart is simply another patch edge. It is recorded because the honest
+ * fix (a patch key derived from planet-centred position) needs the same
+ * high-precision phase the terrain detail bump needs and is blocked on the same
+ * world-gen chunk-format work.
+ */
+export const CLUSTER_SHIFT = 3;
 export const CONTACT_CARDS = 5;
 /** Fraction of a cell the skirt is spread over, in the cell's own uv. */
 export const CONTACT_SPREAD = 0.30;
