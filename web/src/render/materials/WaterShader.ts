@@ -296,7 +296,15 @@ export function waterFragmentShader(depth: DepthPolicy): string {
       float swell = depthM - wv.x * uWaterShore.y * amp;
       float band = 1.0 - smoothstep(0.0, max(uWaterShore.x, 0.01), swell);
       float breakup = ofWaterNoise(vPlane * uWaterShore.z + vec2(uTime * 0.06, uTime * -0.04));
-      float foam = uWaterAmp.w * band * band * smoothstep(0.28, 0.78, breakup);
+      // BREAKUP IS NOT DECORATION HERE, IT IS MOST OF THE TERM. The band is a
+      // band of DEPTH, and a depth band on a gentle beach is very wide in
+      // metres: at the 6 degree slope this pond has, the shipped 0.10 m reaches
+      // 0.95 m up the shore, and the 0.34 m first tried reached 3.2 m and read
+      // as a solid white ring that hid the beach at any grazing angle. So the
+      // noise gate is deliberately high: only the top slice of it foams, which
+      // is what makes a broken line of surf instead of a painted rim.
+      float foam = uWaterAmp.w * band * band
+        * smoothstep(0.52, 0.88, breakup) * 0.85;
       vec3 foamLit = vec3(0.90, 0.94, 0.96)
         * (uAmbient + uSkyAmbient * 0.5 + sunT * (1.1 * shadow));
 

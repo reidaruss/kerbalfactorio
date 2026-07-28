@@ -50,8 +50,17 @@ const TUNE_DEFAULT = new THREE.Vector4(0.035, 0.55, 60.0, 0.55);
 /** x alphaShore, y alphaDeep, z alphaFullM, w shoreSoftM (refraction path). */
 const ALPHA_DEFAULT = new THREE.Vector4(
   WATER_ALPHA_SHORE, WATER_ALPHA_DEEP, WATER_ALPHA_FULL_M, 0.16);
-/** x foam depth m, y foam wave gain, z foam noise scale, w refraction full depth m. */
-const SHORE_DEFAULT = new THREE.Vector4(0.34, 1.9, 2.6, 1.4);
+/**
+ * x foam depth m, y foam wave gain, z foam noise scale, w refraction full depth m.
+ *
+ * THE FOAM DEPTH IS 0.10 AND NOT 0.34, AND IT WAS MEASURED RATHER THAN CHOSEN.
+ * It bounds a band of DEPTH, and depth converts to distance up the shore through
+ * the beach slope: at this pond's 6 degrees, 0.34 m reaches 3.2 m inland and
+ * covers most of the lower frame from any standing position, which photographed
+ * as a solid white wash over the sand. `?waterfoam=0` is what attributed it,
+ * which is the whole reason standing rule 7 asks for one flag per term.
+ */
+const SHORE_DEFAULT = new THREE.Vector4(0.10, 1.2, 2.6, 1.4);
 
 export interface WaterMaterialOptions {
   readonly depth: DepthPolicy;

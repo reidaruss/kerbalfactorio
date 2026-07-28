@@ -220,6 +220,16 @@ export class WaterSurface {
     };
     this.builtMaxDepthM = maxDepth;
     this.vertexCount = vCount;
+    // The grab is NOT counted by `vramEstimateMB`, which is built from the post
+    // targets and the chunk pool, so it is published here or the cost claim
+    // would be an assertion rather than a measurement. It reads 0 until the
+    // pond is first drawn, which is the claim that matters: a body with no
+    // water, a camera looking away, `?post=0` and `?msaa=` all pay nothing.
+    const w = self as unknown as Record<string, Record<string, unknown>>;
+    if (w.__ofWater !== undefined) {
+      w.__ofWater.grabBytes = (): number => this.grabBytes;
+      w.__ofWater.grabs = (): number => this.grabs;
+    }
     this.reanchor();
   }
 

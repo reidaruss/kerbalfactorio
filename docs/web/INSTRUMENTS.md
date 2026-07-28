@@ -66,6 +66,52 @@ The negative control IS the deliverable. `run.mjs` now throws on a read of a
 field the client does not publish, which converts the whole silent class into a
 loud one.
 
+## A syntax error anywhere silently disables type checking everywhere
+
+`tsc` reports **syntax** errors and **semantic** errors in separate phases, and
+when any file in the program fails to parse it **suppresses semantic diagnostics
+for the whole program**. So a tree with one unparseable file reports a handful of
+`TS1005`s and **zero** type errors, and every lane reading that output as "four
+errors, none of them mine, otherwise clean" is not being type checked at all.
+
+Found 2026-07-28: an uncommitted shader file had four backticks inside a GLSL
+template literal, which terminated the literal early. `npx tsc --noEmit` reported
+those four and nothing else, repo-wide. Another lane stubbed the file out in a
+scratch copy and immediately turned up two real type errors that had been hidden.
+
+The trap is that the output looks *specific*. Four errors in one file reads as a
+narrow, someone-else's problem, not as a global outage of the tool.
+
+**Practice:** treat a non-empty `tsc` run as **no information about any other
+file**. Fix the parse error first, then re-run before drawing any conclusion. And
+when a clean run is load-bearing, prove the checker is alive with a **negative
+control**: inject a deliberate type error, watch it fail **by name**, remove it,
+watch the silence return. That is standing rule 11 applied to the toolchain
+rather than to a probe, and it costs about ninety seconds.
+
+The general form, which is worth more than the instance: **a checker that can
+degrade to a weaker mode without announcing it will eventually be read as though
+it were still in the strong mode.** The same shape appears in `check-limits`
+(passes vacuously on a file it cannot read), in a probe reading a deleted field,
+and in `[].every(...)`.
+
+## A set has no order, so a set comparison cannot check an ordering
+
+The same lane wrote a static check that pulled every `uniform <type> <name>` out
+of a generated fragment shader, pulled every `u`-prefixed identifier the body
+used, and reported which were used but never declared. It printed `(none)`. The
+shader then failed to compile with eight errors, all of them
+`'uCascadeFar' : undeclared identifier`, because a helper had been concatenated
+**above** the uniform block and GLSL requires declaration before use.
+
+The check was not wrong about its own question. It was asked a question whose
+answer could not express the failure. Membership was fine; position was the bug.
+
+**Practice:** when a check reduces a program to a set, a count or a total, write
+down which properties that reduction **destroys**, and do not claim those. For
+generated GLSL specifically: **nothing but a compiler checks a compiler.** The
+driver found this in one run and named the line.
+
 ## The environment is part of the measurement
 
 - A **stale dev server on a forgotten port** produced a convincing ABI-mismatch
@@ -81,6 +127,48 @@ loud one.
   unresolved.
 - **`--strictPort` is mandatory.** Without it vite silently picks another port
   and you measure somebody else's server.
+- **Vite's watcher will reload the page out from under a running probe.** Editing
+  a probe file and immediately running it produced `Execution context was
+  destroyed, most likely because of a navigation` plus `net::ERR_ABORTED` on the
+  document, three runs in a row, and the failure names neither the edit nor the
+  watcher. Leave a few seconds between writing a file and driving the browser.
+- **The sun the post stack publishes FREEZES below the horizon.**
+  `ShadowRig.update` does `if (!this.active) continue` before it moves the light,
+  and `Frame.publishSun` derives `__ofPost.state().sun` from that light's
+  position minus its target. So once the rig goes inactive the vector stops
+  changing. A probe read the identical elevation `0.5486` for two different times
+  of day, which is the tell. Harmless where the post stack uses it, because the
+  contact-shadow march is gated on the same rig; **not** harmless in an
+  instrument. `of.stats().sky.elevationDot` is computed from the sky's own sun
+  and does not freeze.
+
+## A term measured only where it cannot work reports its own absence
+
+R8 says a geometric probe runs on a slope as well as on the flat. The same rule
+has a lighting form, and the water lane hit it twice in one pass on one term.
+
+The sun glint was measured at four fixed bearings and read peak tile deltas of
+0.10, 0.13, 0.91 and 1.13 counts, i.e. nothing anywhere, and **two of the four
+"failed"**. Neither reading was evidence. Three of those cameras had the sun
+behind them, where a correct specular highlight is **supposed** to be invisible,
+so the probe was asserting that a term must appear where physics forbids it,
+which is RN-46's `wetCells: 0` error with the sign flipped. Aiming the station at
+the sun's own azimuth, read from the scene rather than assumed, moved the same
+term to a peak of 55.
+
+The second half is subtler and is about the **grid**, not the camera. Even
+correctly aimed, the glint read ~0 on a 64 x 36 tile mean, because each tile is
+20 x 20 px and a sparkle path a few pixels wide averages away inside it. At
+160 x 90 the same effect reads a peak of 72. **The tile size is part of the
+instrument**, and a sparse high-frequency term measured on a coarse grid is
+indistinguishable from a dead one.
+
+**Practice:** state the condition under which a claim is made and pin it (this
+probe pins the sun 4 degrees up, and records that at 49 degrees the same term
+reads 1.67 counts, so nobody later "fixes" a number that is geometry). Prefer a
+**two-sided** claim to a threshold: this one asserts the glint is present with
+the sun up and **bit-exactly absent** with it below the horizon, which no
+tuned-until-it-passes threshold can imitate.
 
 ## The scene is part of the measurement (R8)
 
