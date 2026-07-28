@@ -76,6 +76,52 @@
 //        --evalfile=tools/smoke/probes/tunnelsink.js \
 //        --evalargs='{"oldFloor":true}'      # the negative control, must FAIL
 //
+// ============ A FOURTH SITE: WHAT THE PLAYER BUILT IN THE BORE ============
+//
+// The three sites above drive the walker's TERRAIN authority and nothing else.
+// Every run of them has `structures.count == 0`, so the whole structural block
+// of `KinematicBody.step` (`solids.resolveStep` then `solids.deckUnder`, lines
+// 281 to 304) never executes, and that block is the other half of what holds a
+// player up. basesink.js drives it with a base on open ground and with a tunnel
+// dug BESIDE the base; the one arrangement neither probe reaches is a base
+// INSIDE the bore, under intact rock, which is where both authorities are live
+// on the same tick and where Reid actually builds.
+//
+// It also matters that the two halves refuse differently. `escapeRock` is armed
+// with `this.buried && !this.grounded`, so a structural floor found in the same
+// tick DISARMS PH-60's eject on purpose: a deck built inside a hillside is a
+// legal floor and the rescue must not undo the tick of a player standing on
+// one. That is the correct rule and it is also the only way a buried player can
+// legally stop being ejected, so it is worth a scene of its own.
+//
+// The site needs SANDBOX, for decksink.js's and basesink.js's reason (DW-31):
+// this is about geometry, and forty stone per foundation would make it a
+// harvesting probe. Without `--sandbox=1` it is NOT MEASURED and says so rather
+// than reporting a green it did not earn:
+//
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/tunnelsink.js \
+//        --evalargs='{"sites":["built"]}'
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/tunnelsink.js \
+//        --evalargs='{"sites":["built"],"builtDig":"deep"}'   # refuses, by name
+//
+// `sites` selects which of `spawn`, `mountain`, `deep`, `built` run, because
+// four bores at four sites is four minutes and iterating on one of them should
+// not pay for the other three. `builtDig` picks which bore the fourth site
+// builds in.
+//
+// WHAT IT FOUND, so a reader does not have to run it to know: the walker does
+// NOT sink. Four scenes, 600 ticks each, at both bores, under 14.5 to 18.1 m of
+// rock at the spawn and 37.6 to 38.6 m at the deep site, with four foundations,
+// a wall and a machine in the world, spread 0.000000 m and 600 of 600 ticks
+// grounded in every one of them. What it found INSTEAD is that the scene it was
+// written to measure is not reachable at all: a structural part pressed while
+// standing in a bore lands OVERHEAD, at the heightfield surface, never in the
+// bore, so the walker's structural port answers nothing for a player in a
+// tunnel however much they build from inside it (`structureTests` 0 on every
+// one of 2400 ticks). See the CHARACTERISATION checks at the end of the scene.
+//
 // THE STRESS ARGUMENTS are the axes the fixed scene holds still, and they exist
 // because "it does not reproduce" is only worth anything once the thing that
 // did not reproduce was driven hard. Each one applies to every site:
@@ -709,12 +755,681 @@
     return drive;
   };
 
-  const sites = [];
-  sites.push(await scene('spawn', spawnDig));
-  sites.push(await scene('mountain', mountainDig));
-  sites.push(await scene('deep', deepDig));
+  // ---- SITE 4: A BORE WITH A BASE PRESSED INTO IT -------------------------
+  //
+  // Everything below drives the STRUCTURAL port, which the three sites above
+  // never touch, and it is deliberately a separate scene rather than a stress
+  // flag: the thing being varied is not how the player stands, it is what is
+  // under them, and that changes which of the walker's two floor authorities
+  // answers at all.
+  //
+  // IT RUNS ON THE SPAWN BORE BY DEFAULT AND THAT IS A MEASURED CHOICE, not a
+  // convenience. `builtDig:"deep"` is the same scene under a mountain and it
+  // sets up only sometimes: with a 60-strike bore, all 30 presses over 6 cells
+  // were refused with `ground too uneven here, the ground stands 1.95 m into
+  // it, level it with Q`, rising to 5.55 m further in, and cutting a 249-cell
+  // room around the player first moved that number by 0.01 m. With a 68-strike
+  // bore and a 260-cell room the same presses were ACCEPTED, at an unevenness
+  // of 0.49 m against a 0.50 m bury tolerance, which is a coin landing on its
+  // edge and not a difference in kind.
+  //
+  // BOTH OUTCOMES HAVE THE SAME CAUSE and it is what the CHARACTERISATION
+  // checks at the bottom of this scene state: the placement grid is addressed
+  // off `Structures.groundRadius`, which is the HEIGHTFIELD, and a bore does
+  // not touch the heightfield. So the refusal is the mountainside's own slope
+  // across a 4.00 m cell, the room barely moves it, and when a press IS
+  // accepted the part appears at the surface far overhead rather than in the
+  // bore. The spawn clearing is flat, so there the presses are accepted every
+  // time, and where they are accepted TO is the thing worth measuring.
+  const builtScene = async () => {
+    const sb = of.sandbox();
+    if (sb === null || sb.sandbox !== true) {
+      return { site: 'built', valid: false, skipped: true, checks: [],
+        fail: 'not measured: needs --sandbox=1, because a foundation costs '
+          + 'stone and this is a geometry probe (DW-31)' };
+    }
+    if (typeof of.solidBuild !== 'function') {
+      return { site: 'built', valid: false, checks: [],
+        fail: 'no __of.solidBuild: rebuild' };
+    }
+    // WHICH BORE THE BASE GOES IN. See the paragraph above the scene.
+    const digs = { spawn: spawnDig, mountain: mountainDig, deep: deepDig };
+    const digName = A.builtDig ?? 'spawn';
+    const drive = await (digs[digName] ?? deepDig)();
+    await settle(2.5);
 
-  const spawn = sites[0], mtn = sites[1], deep = sites[2];
+    // The same search the other three sites use, and for the same reason: the
+    // drive's end state depends on the walker and the walker is under test.
+    let reached = of.world().player.underRock ? 'drive' : null;
+    for (const act of ['KeyS', 'KeyW']) {
+      if (reached !== null) break;
+      for (let i = 0; i < 14 && reached === null; ++i) {
+        await hold(0.35, [act]);
+        await of.run(0.15, 60);
+        if (of.world().player.underRock) reached = act;
+      }
+      if (reached !== null) {
+        for (let i = 0; i < 2; ++i) { await hold(0.35, [act]); await of.run(0.15, 60); }
+      }
+    }
+    await settle(2.0);
+    if (!of.world().player.underRock) {
+      return { site: 'built', valid: false, checks: [], drive,
+        fail: 'never got under rock; nothing here measures the pair of floors' };
+    }
+
+    const P = () => of.world().player;
+    const parts = () => of.game().structures.parts;
+    const bodyCount = () => of.structures()?.bodies?.count ?? -1;
+    const ghost = () => of.build().structGhost;
+    const M = of.game().structures.module;
+    const boreYaw = of.world().observer.yawDeg;
+
+    // WHICH HOTBAR SLOT IS WHICH PART, ASKED RATHER THAN RECITED. basesink.js's
+    // argument: five lanes are live in the gameplay files this week and a
+    // recited index is a number that can silently become the wrong item and
+    // place nothing while the probe reports a clean zero.
+    const slotOf = async (kind) => {
+      for (let i = 1; i <= 8; ++i) {
+        of.build(i);
+        await of.run(0.08, 60);
+        of.look(boreYaw, -70);
+        await of.run(0.08, 60);
+        const g = ghost();
+        if (g !== null && g.kind === kind) return i;
+      }
+      return null;
+    };
+    const foundationSlot = await slotOf('foundation');
+    const wallSlot = await slotOf('wall');
+    of.build(0);
+    if (foundationSlot === null) {
+      return { site: 'built', valid: false, checks: [], drive,
+        fail: 'no hotbar slot produces a foundation ghost' };
+    }
+
+    /**
+     * THE STRUCTURAL SOLID COLUMN over the feet, as bands in metres relative to
+     * them, read off `of.solidBuild` which IS `StructureBodies.blocks`, the
+     * predicate the walker collides against. decksink.js's `profile`, and its
+     * reason: a column recomputed from `module.deckH` would agree with itself
+     * whatever the walker did.
+     *
+     * The sweep is the probe's OWN, not the walker's capsule sample list, which
+     * is not published. That is the honest way round: a band that overlaps the
+     * capsule is a fact about the geometry, and whether the walker samples that
+     * exact height is the walker's business.
+     */
+    const buildBands = (p, loM = -1.5, hiM = 2.5, stepM = 0.05) => {
+      const r = Math.hypot(p[0], p[1], p[2]);
+      const u = [p[0] / r, p[1] / r, p[2] / r];
+      const bands = [];
+      let start = null;
+      for (let d = loM; d <= hiM + 1e-9; d += stepM) {
+        const hit = of.solidBuild(u[0] * (r + d), u[1] * (r + d), u[2] * (r + d));
+        if (hit && start === null) start = d;
+        if (!hit && start !== null) { bands.push([r6(start), r6(d - stepM)]); start = null; }
+      }
+      if (start !== null) bands.push([r6(start), r6(hiM)]);
+      return bands;
+    };
+
+    /**
+     * WHERE THE PART ACTUALLY WENT, over the whole column a bore can be under.
+     * A press being ACCEPTED says nothing about where the part landed, and the
+     * narrow window above is deliberately the capsule's own reach, so it
+     * answers `[]` both for "nothing was built" and for "it was built forty
+     * metres over your head". Those are different findings.
+     */
+    // The range is 60 m because the deep bore ends under 38 m of rock and a
+    // sweep that stops at 40 clips the answer: the first cut ran to 40 and
+    // reported a part at exactly 40.0 m, which is a sweep bound reported as a
+    // measurement.
+    const columnBands = (p) => buildBands(p, -3, 60, 0.1);
+
+    /** The highest structural TOP FACE along the feet's radial, or null. */
+    const topAlong = (p, windowM = 3.0) => {
+      const r = Math.hypot(p[0], p[1], p[2]);
+      const u = [p[0] / r, p[1] / r, p[2] / r];
+      const at = (rr) => of.solidBuild(u[0] * rr, u[1] * rr, u[2] * rr);
+      let hit = null;
+      for (let d = -windowM; d <= windowM + 1e-9; d += 0.02) if (at(r + d)) hit = r + d;
+      if (hit === null) return null;
+      let a = hit, b = hit + 0.02;
+      for (let i = 0; i < 48; ++i) { const m = (a + b) / 2; if (at(m)) a = m; else b = m; }
+      return a;
+    };
+
+    const gTick = of.gravity(Math.hypot(...feet())) / 3600;
+
+    /** Stand absolutely still and read the per-tick trace. basesink.js's rig. */
+    const watch = async (name, secs) => {
+      await settle(1.5);
+      of.stand(true);
+      await settle(secs);
+      const d = of.stand();
+      of.stand(false);
+      const s = d.samples.filter((x) => Number.isFinite(x.feetR));
+      if (s.length < 250) {
+        return { name, valid: false, fail: 'trace too short', kept: s.length };
+      }
+      const p = P();
+      const rs = s.map((x) => x.feetR);
+      const ups = [];
+      for (let i = 1; i < s.length; ++i) {
+        const dd = s[i].feetR - s[i - 1].feetR;
+        if (dd > gTick) ups.push({ t: s[i].tick, dM: dd, push: s[i].pushM });
+      }
+      const per = [];
+      for (let i = 1; i < ups.length; ++i) per.push(ups[i].t - ups[i - 1].t);
+      const answered = s.filter((x) => Number.isFinite(x.deckR));
+      const top = topAlong(p.feet);
+      const feetR = Math.hypot(...p.feet);
+      return {
+        name, valid: true, ticks: s.length,
+        overheadRockM: r3(overheadNow()),
+        feetR: r6(feetR),
+        // Positive means the feet are BELOW the top face they are standing on.
+        belowBuildTopM: top === null ? null : r6(top - feetR),
+        buildBandsRelFeetM: buildBands(p.feet),
+        spreadM: r6(Math.max(...rs) - Math.min(...rs)),
+        oneTickOfGravityM: r6(gTick),
+        snapUps: ups.length,
+        biggestUpM: ups.length === 0 ? null : r6(Math.max(...ups.map((x) => x.dM))),
+        meanPeriodTicks: per.length === 0 ? null
+          : r6(per.reduce((a, b) => a + b, 0) / per.length),
+        // WHICH AUTHORITY IS LIVE, counted rather than assumed. A run where the
+        // structural port answered nothing is a run of the first three sites
+        // with extra steps, and this is what says so.
+        onDeckTicks: s.filter((x) => x.onDeck).length,
+        deckAnsweredTicks: answered.length,
+        underRockTicks: s.filter((x) => x.underRock).length,
+        buriedTicks: s.filter((x) => x.buried).length,
+        groundedTicks: s.filter((x) => x.grounded).length,
+        blockedByBuildTicks: s.filter((x) => x.blockedByBuild).length,
+        structureTests: p.structureTests,
+        // BOTH ratification tests side by side: GP-53 was the deck half and
+        // WG-31 the terrain half, and only both columns can name which one is
+        // answering with the querier's own position this time.
+        deckRatifyTicks: answered.filter((x) => Math.abs(x.deckR - x.preSnapR) < 1e-9).length,
+        terrainRatifyTicks: s.filter((x) => x.underRock
+          && Math.abs(x.terrainR - x.preSnapR) < 1e-9).length,
+        pushTicks: s.filter((x) => x.pushM > 0).length,
+        pushLiftTicks: s.filter((x) => x.pushUpM > 1e-9).length,
+        // PH-60's eject, which a structural floor found on the same tick is
+        // supposed to DISARM. Counted, because "the rescue stopped firing" and
+        // "the rescue is fighting the deck every tick" look identical in the
+        // spread alone.
+        ejectTicks: s.filter((x) => x.ejectM > 1e-9).length,
+        maxEjectM: r6(Math.max(...s.map((x) => x.ejectM))),
+        head: s.slice(0, 8).map((x) => ({ t: x.tick, feet: r6(x.feetR),
+          terrain: r6(x.terrainR), deck: Number.isFinite(x.deckR) ? r6(x.deckR) : null,
+          ground: r6(x.groundR), preSnap: r6(x.preSnapR), onDeck: x.onDeck,
+          underRock: x.underRock, grounded: x.grounded, push: r6(x.pushM),
+          eject: r6(x.ejectM) })),
+      };
+    };
+
+    // --- PHASE 1: LAY A FLOOR ALONG THE BORE --------------------------------
+    // IN A TUNNEL THE CROSSHAIR CAN ONLY EVER ADDRESS THE CELL YOU ARE IN, and
+    // that is a measured property of `StructurePlacement.aimPoint`, not an
+    // assumption: its ground march accepts the first sample whose radius is at
+    // or under `groundRadius`, and under a mountain EVERY point around the eye
+    // is under the surface radius, so the march stops at its first step of
+    // 0.6 m whatever the pitch or yaw. Recon measured 1 of 56 aim directions
+    // accepted and the other 55 answering `already built here`. So the run of
+    // floor is laid by WALKING, one cell at a time, and the step between
+    // placements is driven until the ghost's own key changes rather than for a
+    // guessed number of seconds.
+    /**
+     * HOLLOW OUT A ROOM AT THE CELL THE PLAYER IS STANDING IN.
+     *
+     * A BORE IS TOO NARROW TO BUILD IN AND THAT IS MEASURED, NOT ASSUMED. The
+     * first cut of this phase tried to lay the floor straight into the bore and
+     * was refused on all 30 aims with `ground too uneven here, the ground stands
+     * 1.95 m into it, level it with Q`, rising to 5.55 m further in. The module
+     * cell is 4.00 m, so a foundation's corners sit about 2 m out from the
+     * player, and a bore driven by walking is barely wider than the walker: the
+     * corners are in the tunnel WALL, buried by 2 to 5.5 m against a bury
+     * tolerance of 0.50 m. Nothing about that is a floor-query defect and it is
+     * not the placement rule misfiring either. It is the reason Reid's tunnels
+     * have rooms cut into them, so the probe cuts one too.
+     *
+     * The pitch stops at +20 degrees: the ceiling is what the rock overhead IS,
+     * and a scene that dug its own roof off would be measuring a hillside.
+     */
+    const chamber = async () => {
+      let cells = 0;
+      for (const dy of [0, 45, 90, 135, 180, 225, 270, 315]) {
+        for (const pitch of [-45, -20, 0, 20]) {
+          of.look((boreYaw + dy + 720) % 360, pitch);
+          await of.run(0.05, 60);
+          const d = of.dig();
+          cells += d?.cells ?? 0;
+        }
+      }
+      await settle(0.8);
+      return cells;
+    };
+
+    const laid = [];
+    // EVERY REFUSAL, WITH THE SENTENCE THE PLAYER WOULD HAVE SEEN. A phase that
+    // cannot build has to say why in the report: "0 presses landed" is a number
+    // that could mean the aim, the cost, the ground rule or a renamed hotbar
+    // slot, and those are four different findings.
+    const attempts = [];
+    of.build(foundationSlot);
+    await settle(0.3);
+    const want = A.borePartsN ?? 8;
+    for (let n = 0; n < want; ++n) {
+      // STAND STILL FIRST, AND THIS IS NOT TIDINESS. `hold(secs, keys)` lays a
+      // tape LONGER than the seconds it then runs (`60 * secs + 30` frames), so
+      // the walk carries on into whatever the probe does next. The first cut of
+      // this phase swept the ghost straight after a step and every reading in it
+      // was taken from a moving player: `overheadM` changed between two pitches
+      // of the same sweep, which is impossible for a stationary capsule, and the
+      // `onDeck` recorded after each press was read three metres past the slab
+      // that had just been laid. `settle` lays an EMPTY tape, which is what
+      // actually stops the walk.
+      await settle(0.4);
+      const cut = await chamber();
+      for (const pitch of [-88, -70, -50, -30, -10]) {
+        of.look(boreYaw, pitch);
+        await of.run(0.06, 60);
+        const g = ghost();
+        attempts.push({ n, pitch, chamberCells: cut, ok: g?.ok ?? null,
+          reason: g?.reason ?? 'no ghost',
+          unevennessM: g?.unevennessM ?? null, carryRun: g?.carryRun ?? null,
+          overheadM: r3(overheadNow()), underRock: P().underRock });
+        if (g === null || !g.ok) continue;
+        const before = parts().length;
+        of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+        await of.run(0.35, 60);
+        if (parts().length > before) {
+          await settle(0.5);
+          // THE BANDS ARE THE PROOF THAT THE SLAB IS WHERE THE PLAYER IS. A
+          // press that is accepted says nothing about where the part landed:
+          // the grid's level-0 plane comes from `groundRadius`, which is the
+          // heightfield, so a deck accepted while standing under a mountain
+          // could perfectly well appear at the mountain TOP. A solid band
+          // straddling the feet is the only thing that says otherwise.
+          laid.push({ n, addr: g.addr, key: g.key, overheadM: r3(overheadNow()),
+            onDeck: P().onDeck, underRock: P().underRock,
+            bandsRelFeetM: buildBands(feet()),
+            columnBandsRelFeetM: columnBands(feet()) });
+          break;
+        }
+      }
+      // Walk back down the bore toward the mouth until the addressed cell
+      // changes. KeyS and not KeyW: the drive stops with the face of the bore
+      // ahead, so forward is solid rock and the run of floor has to be laid
+      // BEHIND the deepest point. The deepest slab is therefore the first one,
+      // which is where phase 2 goes back to stand.
+      const k0 = ghost()?.key ?? null;
+      of.look(boreYaw, -70);
+      for (let j = 0; j < 10; ++j) {
+        await hold(0.25, ['KeyS']);
+        await settle(0.15);
+        if ((ghost()?.key ?? null) !== k0) break;
+      }
+    }
+    of.build(0);
+    await settle(1.0);
+    const built = parts().length;
+    log.push(`built site: laid ${built} structural parts along the bore `
+      + `(${laid.length} presses landed), module cell ${M.cellM} m, deck `
+      + `${M.deckH} m; solid set now ${bodyCount()}`);
+    if (built < 2) {
+      const why = {};
+      for (const t of attempts) why[t.reason] = (why[t.reason] ?? 0) + 1;
+      log.push(`built site: the floor would NOT go down, refusals `
+        + `${JSON.stringify(why)}`);
+      return { site: 'built', valid: false, checks: [], drive, laid, built,
+        refusals: why, attempts: attempts.slice(0, 24),
+        buryToleranceM: r6(of.structures()?.buryToleranceM ?? NaN),
+        floatToleranceM: r6(of.structures()?.floatToleranceM ?? NaN),
+        fail: 'the floor would not go down in the bore' };
+    }
+
+    // --- PHASE 2: GO TO THE DEEPEST POINT OF THE BORE AND STAND -------------
+    //
+    // WHICH KEY GOES DEEPER IS MEASURED, NOT ASSUMED, and the first cut of this
+    // walk is why. It held KeyW on the argument that the bore was driven
+    // forward, and it walked the player straight out of the mouth: scene A ran
+    // on open hillside under 0 m of rock with 0 under-rock ticks in 600. The
+    // spawn bore DESCENDS and the search that first found rock had already
+    // walked backwards along it, so which key faces into the hill depends on
+    // where that search stopped. One step and one reading settle it.
+    of.look(boreYaw, -10);
+    const o0 = overheadNow();
+    await hold(0.3, ['KeyS']);
+    await settle(0.2);
+    const deeper = overheadNow() >= o0 ? 'KeyS' : 'KeyW';
+    const backOut = deeper === 'KeyS' ? 'KeyW' : 'KeyS';
+    let bestOver = overheadNow();
+    for (let i = 0; i < 24; ++i) {
+      await hold(0.3, [deeper]);
+      await settle(0.2);
+      const o = overheadNow();
+      if (P().blockedByRock === true) break;            // the face of the bore
+      if (o < bestOver - 0.5) {                         // over the crest, back up
+        await hold(0.3, [backOut]);
+        await settle(0.2);
+        break;
+      }
+      if (o > bestOver) bestOver = o;
+      if (!P().underRock && o < 0.25) break;            // out of the bore
+    }
+    await settle(1.0);
+    const standBands = columnBands(feet());
+    // The lowest structural band that starts ABOVE a step: if the deck is up
+    // there rather than under the feet, this is how far up.
+    const above = standBands.filter((b) => b[0] > 0.55);
+    const deckAboveFeetM = above.length === 0 ? null : above[0][0];
+    const onDeck = P().onDeck === true;
+    log.push(`built site: standing under ${r3(overheadNow())} m of rock, onDeck `
+      + `${onDeck}, structural bands over the feet ${JSON.stringify(standBands)}`
+      + (deckAboveFeetM === null ? ', nothing structural in the column at all'
+        : `, the nearest built thing is ${deckAboveFeetM} m OVERHEAD`));
+    const scenes = [];
+    scenes.push(await watch('A: at the deep end with what was pressed in the bore',
+      A.builtStandSecs ?? 15));
+
+    // --- PHASE 3: WALK THE BORE WITH THE FLOOR IN IT, THEN STAND ------------
+    // The floor a dug tunnel has is a staircase of whole cells and a laid floor
+    // is a second staircase over it, so traversing both is what re-seats the
+    // walker on each of them. A defect that needs a particular cell to be the
+    // one you stop on is reachable this way and is not reachable by standing
+    // where the last press left you.
+    for (let lap = 0; lap < (A.builtLaps ?? 3); ++lap) {
+      for (const act of ['KeyS', 'KeyW']) {
+        for (let i = 0; i < 8; ++i) { await hold(0.3, [act]); await of.run(0.1, 60); }
+      }
+    }
+    await settle(2.0);
+    scenes.push(await watch('B: after walking the bore end to end',
+      A.builtStandSecs ?? 15));
+
+    // --- PHASE 4: A WALL PUT INTO THE SPACE THE CAPSULE OCCUPIES ------------
+    // The placement path consults the capsule on NONE of its refusal grounds,
+    // so a player can legally seal a wall through themselves. That is the state
+    // this phase reaches on purpose, and the band list says whether it got
+    // there rather than the phase claiming it did.
+    const walls = [];
+    if (wallSlot !== null) {
+      of.build(wallSlot);
+      await settle(0.3);
+      for (const dy of [0, 90, 180, 270]) {
+        for (const pitch of [-40, -20, 0, 20]) {
+          of.look((boreYaw + dy + 720) % 360, pitch);
+          await of.run(0.06, 60);
+          const g = ghost();
+          if (g === null || !g.ok) continue;
+          const before = parts().length;
+          of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+          await of.run(0.35, 60);
+          if (parts().length > before) walls.push({ dy, pitch, key: g.key });
+        }
+      }
+      of.build(0);
+    }
+    await settle(1.0);
+    const wallBands = buildBands(feet());
+    // A band that straddles 0 is geometry standing where the feet are.
+    const throughCapsule = wallBands.filter((b) => b[0] <= 0.9 && b[1] >= 0.9).length;
+    log.push(`built site: ${walls.length} wall press(es) landed, solid set `
+      + `${bodyCount()}, structural bands over the feet ${JSON.stringify(wallBands)}`);
+    scenes.push(await watch('C: with structures placed into the capsule own space',
+      A.builtStandSecs ?? 15));
+
+    // --- PHASE 5: A MACHINE, WHICH IS A DIFFERENT REGISTRY ------------------
+    // Worth one press and one number rather than a scene, because `Machines`
+    // never calls `Structures.adopt` and so never reaches `bodies`: a smelter
+    // is not a collider the walker can stand on or be stopped by at all. The
+    // press is here so that claim is measured on this build instead of read off
+    // the imports.
+    const machineBefore = bodyCount();
+    let machinesPlaced = 0;
+    for (let i = 1; i <= 8 && machinesPlaced === 0; ++i) {
+      of.build(i);
+      await of.run(0.08, 60);
+      for (const pitch of [-70, -50, -30]) {
+        of.look(boreYaw, pitch);
+        await of.run(0.06, 60);
+        const b = of.build();
+        if (b?.structGhost !== null && b?.structGhost !== undefined) break;
+        if (b?.ghost === null || b?.ghost === undefined || !b.ghost.ok) continue;
+        // `mustNum` rather than `?.buildings ?? -1`: a report key that has been
+        // renamed reads `undefined` on both sides and `undefined > undefined`
+        // is false forever, which is a press count that can only go down.
+        const n0 = mustNum(of.game().factory, 'buildings', 'factory');
+        of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+        await of.run(0.35, 60);
+        if (mustNum(of.game().factory, 'buildings', 'factory') > n0) {
+          machinesPlaced++;
+          break;
+        }
+      }
+    }
+    of.build(0);
+    await settle(1.0);
+    const machineAfter = bodyCount();
+    log.push(`built site: ${machinesPlaced} machine(s) placed in the bore, the `
+      + `walker's solid set went ${machineBefore} -> ${machineAfter}`);
+
+    // --- PHASE 6: SAVE, RELOAD, STAND ---------------------------------------
+    // The rock, the base and the player all through one round trip. No
+    // `forgetTunnels` here, for the reason the `reloadFirst` stress records: it
+    // puts the rock back around a player standing in it and PH-60 correctly
+    // ejects them, which measures the eject and not the reload.
+    // The count is taken HERE and not reused from phase 1: the wall and the
+    // machine went in after it, and comparing a reload against a stale total is
+    // an assertion that fails for the one reason it is not about.
+    const partsBeforeSave = parts().length;
+    const written = await of.save();
+    const ledger = await of.load();
+    await settle(3.5);
+    const afterLoad = {
+      voxelBytes: written?.voxelBytes ?? null,
+      restoredVoxels: ledger?.voxels ?? null,
+      partsBeforeSave,
+      parts: parts().length,
+      solidSet: bodyCount(),
+      underRock: P().underRock,
+      onDeck: P().onDeck,
+      overheadM: r3(overheadNow()),
+    };
+    log.push(`built site RELOAD: ${afterLoad.parts} parts and a solid set of `
+      + `${afterLoad.solidSet} came back, roof ${afterLoad.overheadM} m, `
+      + `underRock ${afterLoad.underRock}, onDeck ${afterLoad.onDeck}`);
+    scenes.push(await watch('D: after a save and a reload', A.builtStandSecs ?? 15));
+
+    // --- PHASE 7: THE TRADE THE REFUSAL IS ACTUALLY OFFERING ----------------
+    // `ground too uneven here, ... level it with Q` is the sentence a player
+    // gets when they try to build in a bore, so this phase takes the advice and
+    // reports what it costs. `level` cuts the HEIGHTFIELD column, which is the
+    // only thing `groundRadius` reads, so it is the only way to bring the
+    // buildable plane down to a player standing under rock, and every metre it
+    // brings the plane down is a metre of roof gone. The two numbers are
+    // recorded side by side per press so the exchange rate is measured rather
+    // than argued.
+    //
+    // LAST, and after every stand, because it destroys the bore it measures.
+    const levelTrade = [];
+    // Two steps onto a cell nothing has been built on, or every ghost below
+    // answers `already built here` and the trade is measured against a refusal
+    // that has nothing to do with the ground.
+    for (let i = 0; i < 2; ++i) { await hold(0.3, [deeper]); await settle(0.2); }
+    of.build(foundationSlot);
+    await settle(0.4);
+    for (let i = 0; i < (A.levelPresses ?? 6); ++i) {
+      of.look(boreYaw, -70);
+      await of.run(0.08, 60);
+      const g = ghost();
+      levelTrade.push({ press: i, overheadM: r3(overheadNow()),
+        unevennessM: g?.unevennessM ?? null, ok: g?.ok ?? null,
+        reason: g?.reason ?? 'no ghost', underRock: P().underRock });
+      if (g !== null && g.ok) break;
+      of.look(boreYaw, -85);
+      await of.run(0.08, 60);
+      // THE TARGET IS PASSED AND NOT LEFT TO DEFAULT. `of.level()` with no
+      // argument levels to `surfaceHeight` under the feet, and under a mountain
+      // that IS the mountain top, so the press asks for the height the column
+      // already has and changes nothing: measured, six presses at the deep site
+      // left the roof at 40.782 m to six decimal places. The tool's own rule is
+      // "stand where you want the floor", and the feet's height is what that
+      // sentence means.
+      of.level(Math.hypot(...feet()) - bodyR);
+      await settle(0.8);
+    }
+    of.build(0);
+    await settle(0.5);
+    log.push(`built site LEVEL TRADE: ${JSON.stringify(levelTrade)}`);
+
+    // --- WHAT THE FOUR SCENES ARE JUDGED ON ---------------------------------
+    const checks = [];
+    const add = (name, cond, detail) => checks.push([name, cond, detail]);
+    for (const sc of scenes) {
+      if (!sc.valid) { add(`built ${sc.name}: the scene did not set up`, false, sc.fail); continue; }
+      add(`built ${sc.name}: a stationary player stands at a CONSTANT radius`,
+        sc.spreadM <= 1e-6, sc.spreadM);
+      add(`built ${sc.name}: no snap-ups at all with the player standing still`,
+        sc.snapUps === 0, `${sc.snapUps} (period ${sc.meanPeriodTicks})`);
+      add(`built ${sc.name}: the DECK query never answers the querier own radius`,
+        sc.deckRatifyTicks === 0, `${sc.deckRatifyTicks}/${sc.deckAnsweredTicks}`);
+      add(`built ${sc.name}: nor does the TERRAIN query`,
+        sc.terrainRatifyTicks === 0, `${sc.terrainRatifyTicks}/${sc.underRockTicks}`);
+      add(`built ${sc.name}: resolveEmbedded never has to lift a stationary player`,
+        sc.pushLiftTicks === 0, `${sc.pushLiftTicks} lifting pushes`);
+      add(`built ${sc.name}: and PH-60 never has to eject one`,
+        sc.ejectTicks === 0, `${sc.ejectTicks} ejects, worst ${sc.maxEjectM} m`);
+    }
+    const a = scenes[0];
+    // THE CONTROLS THAT MAKE THE SITE MEAN ANYTHING. PH-45's runs were clean
+    // because `solids.count` was zero and the structural block never ran at
+    // all; these say the block ran and the player was under rock while it did.
+    add('built NEGATIVE CONTROL: the walker really had a structural set to consult',
+      built >= 2 && bodyCount() >= built,
+      `${built} parts, solid set ${bodyCount()}`);
+    add('built NEGATIVE CONTROL: and really was under rock the whole time',
+      a.valid === true && a.underRockTicks === a.ticks && a.overheadRockM >= 5,
+      a.valid ? `${a.underRockTicks}/${a.ticks} under ${a.overheadRockM} m of rock` : 'n/a');
+    add('built: a machine in the bore adds NOTHING to the walker solid set',
+      machinesPlaced > 0 && machineAfter === machineBefore,
+      `${machinesPlaced} placed, ${machineBefore} -> ${machineAfter}`);
+    add('built: the base and the bore both survive a save and a reload',
+      afterLoad.parts === partsBeforeSave && afterLoad.solidSet === partsBeforeSave
+        && afterLoad.underRock === true,
+      `${afterLoad.parts}/${partsBeforeSave} parts, solid set `
+      + `${afterLoad.solidSet}, underRock ${afterLoad.underRock}`);
+
+    // ===================================================================
+    // THE CHARACTERISATION, AND IT IS THE FINDING THIS SITE ACTUALLY MADE.
+    //
+    // A structural part pressed while standing in a bore IS ACCEPTED and does
+    // NOT land in the bore. `StructurePlacement` addresses the grid off
+    // `Structures.groundRadius`, which is `_of_surface_radius` over the
+    // HEIGHTFIELD, and a dug bore leaves the heightfield alone: the column over
+    // a tunnel whose roof is intact reads exactly as much rock as it did before
+    // the first strike. So the level-0 plane of the site a player founds while
+    // standing under a mountain is the MOUNTAINSIDE, and the foundation appears
+    // up there. Measured: three presses accepted at the spawn bore, and a
+    // solid-column sweep along the feet's own radial found the nearest built
+    // thing 9 to 13 m OVERHEAD with nothing at all inside the capsule's reach.
+    // At the deep site the same presses are refused outright, `ground too uneven
+    // here, the ground stands 1.95 m into it` rising to 5.55 m further in,
+    // which is the mountainside's own slope across a 4.00 m cell and not
+    // anything about the tunnel.
+    //
+    // Two consequences, and the second is why this is stated as an assertion:
+    //
+    //   * The walker's structural port CANNOT be brought under a player
+    //     standing in a tunnel by any amount of digging, so "structures in the
+    //     tunnel" cannot be a source of the sinking. That closes the last
+    //     uncovered path in the hunt rather than leaving it open.
+    //   * The day the placement rule learns about bores, this check FAILS, and
+    //     it is meant to: that is the day scenes A to D above stop measuring a
+    //     port that answers nothing and start measuring one that holds the
+    //     player up, and somebody has to be told to come back and tighten them.
+    // ===================================================================
+    //
+    // MEASURED AT THE CELLS THE PRESSES HAPPENED ON, not where the player ended
+    // up: the walk in phase 2 goes past them to the deepest point of the bore,
+    // and a column sweep taken there finds nothing simply because there is
+    // nothing built in THAT column. Each `laid` entry carries its own sweep.
+    const landed = laid.map((L) => {
+      const up = (L.columnBandsRelFeetM ?? []).filter((b) => b[0] > 0.55);
+      const partAtM = up.length === 0 ? null : up[0][0];
+      return { n: L.n, overheadM: L.overheadM, partAtM,
+        // How close to the ROOF it landed. Reported and not asserted: a 4.00 m
+        // deck is addressed at a cell whose centre is metres from the player,
+        // and on a 42 degree face the heightfield over THAT column is metres
+        // from the heightfield over this one. The number is tight where the
+        // ground is flat (measured 0.04 m at the spawn bore over four presses)
+        // and is a slope measurement anywhere else.
+        roofMissM: partAtM === null ? null : r6(partAtM - L.overheadM),
+        inCapsule: (L.bandsRelFeetM ?? []).length > 0 };
+    });
+    const seen = landed.filter((x) => x.partAtM !== null);
+    add('built CHARACTERISATION: a part pressed in a bore lands OVERHEAD, and '
+      + 'never inside the capsule that pressed it',
+      landed.length >= 2 && landed.every((x) => !x.inCapsule)
+        && seen.length >= 1 && seen.every((x) => x.partAtM > 0.55),
+      JSON.stringify(landed));
+    add('built CHARACTERISATION: so the structural port answers NOTHING for a '
+      + 'player in a bore, however much is built from inside it',
+      a.valid === true && a.onDeckTicks === 0 && a.deckAnsweredTicks === 0
+        && a.structureTests === 0 && onDeck === false,
+      a.valid ? `${a.onDeckTicks} onDeck, ${a.deckAnsweredTicks} deck answers, `
+        + `${a.structureTests} point tests` : 'n/a');
+    // THE LEVEL TRADE IS REPORTED AND NOT ASSERTED, deliberately.
+    //
+    // It measures the LEVELLING TOOL, and this probe's subject is the walker.
+    // Both halves of what it found are somebody else's to judge: at the spawn
+    // bore one press took the whole 14.175 m roof off in a single go, and at
+    // the deep site six presses left the roof at 40.782 m to six decimal places
+    // whether the target height was defaulted or passed explicitly, which is
+    // `LevelAction` under a mountain and is world-gen's line, not this lane's.
+    // Gating a sink probe on either would make it red for a reason that has
+    // nothing to do with sinking.
+    log.push(`built site LEVEL TRADE (reported, not asserted): roof `
+      + `${levelTrade[0]?.overheadM} m -> `
+      + `${levelTrade[levelTrade.length - 1]?.overheadM} m over `
+      + `${levelTrade.length} press(es), ghost says "${levelTrade[0]?.reason}"`);
+
+    for (const sc of scenes) {
+      if (!sc.valid) { log.push(`built ${sc.name}: NOT MEASURED (${sc.fail})`); continue; }
+      log.push(`built ${sc.name}: spread ${sc.spreadM} m over ${sc.ticks} ticks under `
+        + `${sc.overheadRockM} m of rock, ${sc.snapUps} snap-ups, onDeck `
+        + `${sc.onDeckTicks}, deck answered ${sc.deckAnsweredTicks}, underRock `
+        + `${sc.underRockTicks}, buried ${sc.buriedTicks}, deck ratified `
+        + `${sc.deckRatifyTicks}, terrain ratified ${sc.terrainRatifyTicks}, `
+        + `pushes ${sc.pushTicks}, ejects ${sc.ejectTicks}, feet `
+        + `${sc.belowBuildTopM} m below the build top`);
+    }
+
+    return {
+      site: 'built', valid: checks.every((c) => c[1]), checks, digName,
+      partsBuilt: built, laid, attempts: attempts.slice(0, 24), walls: walls.length,
+      standBandsRelFeetM: standBands, deckAboveFeetM, onDeckAtStand: onDeck,
+      landed, levelTrade,
+      wallsThroughCapsule: throughCapsule, wallBandsRelFeetM: wallBands,
+      foundationSlot, wallSlot, machinesPlaced,
+      solidSet: { beforeMachine: machineBefore, afterMachine: machineAfter },
+      afterLoad, reachedUnderRockBy: reached, scenes, drive,
+    };
+  };
+
+  const wanted = A.sites ?? ['spawn', 'mountain', 'deep', 'built'];
+  const sites = [];
+  if (wanted.includes('spawn')) sites.push(await scene('spawn', spawnDig));
+  if (wanted.includes('mountain')) sites.push(await scene('mountain', mountainDig));
+  if (wanted.includes('deep')) sites.push(await scene('deep', deepDig));
+  const builtSite = wanted.includes('built') ? await builtScene() : null;
+  if (builtSite !== null && builtSite.skipped === true) log.push(`built site: ${builtSite.fail}`);
+
+  const at = (n) => sites.find((x) => x.site === n) ?? null;
+  const spawn = at('spawn'), mtn = at('mountain'), deep = at('deep');
   const perSite = [];
   for (const site of sites) {
     if (!site.valid) { perSite.push([`${site.site}: the scene did not set up`, false, site.fail]); continue; }
@@ -759,10 +1474,14 @@
   // sites then report that depth and comparing them is comparing the argument
   // with itself. Skipped rather than relaxed: a check that is true because it was
   // weakened is worth less than one that says it did not apply.
-  const spawnOver = spawn.valid ? spawn.still.overheadRockM : null;
-  const mtnOver = mtn.valid ? mtn.still.overheadRockM : null;
-  const deepOver = deep.valid ? deep.still.overheadRockM : null;
-  if (A.standOverheadM === undefined) {
+  //
+  // AND A THIRD TIME, the same argument does NOT hold across a selected run:
+  // `sites` exists so one bore can be iterated on, and comparing a site with a
+  // site that did not run is comparing it with nothing.
+  const spawnOver = spawn !== null && spawn.valid ? spawn.still.overheadRockM : null;
+  const mtnOver = mtn !== null && mtn.valid ? mtn.still.overheadRockM : null;
+  const deepOver = deep !== null && deep.valid ? deep.still.overheadRockM : null;
+  if (A.standOverheadM === undefined && spawn !== null && mtn !== null && deep !== null) {
     perSite.push(
       ['R8: the second site really is under a MOUNTAIN, not a second flat clearing',
         mtnOver !== null && spawnOver !== null && mtnOver >= spawnOver + 5,
@@ -771,6 +1490,17 @@
         deepOver !== null && mtnOver !== null && deepOver >= mtnOver + 5,
         `deep ${deepOver} m of rock overhead vs mountain ${mtnOver} m`],
     );
+  }
+
+  // The fourth site's own checks, folded in. A SKIPPED site contributes none:
+  // it did not run, so it has nothing to say, and a green stamped on a scene
+  // that never happened is worth less than a report that says it did not.
+  if (builtSite !== null && builtSite.skipped !== true) {
+    if (Array.isArray(builtSite.checks) && builtSite.checks.length > 0) {
+      perSite.push(...builtSite.checks);
+    } else {
+      perSite.push(['built: the scene did not set up', false, builtSite.fail]);
+    }
   }
 
   const failed = perSite.filter((c) => !c[1]).map((c) => `${c[0]}  [${c[2]}]`);
@@ -784,11 +1514,16 @@
       stillSecs: A.stillSecs ?? 20, preWalkLaps: A.preWalkLaps ?? 0,
       reloadFirst: A.reloadFirst === true,
       standOverheadM: A.standOverheadM ?? null,
+      sites: wanted,
+      builtStandSecs: A.builtStandSecs ?? 15, borePartsN: A.borePartsN ?? 8,
+      builtLaps: A.builtLaps ?? 3,
     },
     failed,
     checked: perSite.length,
-    overheadRockM: { spawn: spawnOver, mountain: mtnOver, deep: deepOver },
+    overheadRockM: { spawn: spawnOver, mountain: mtnOver, deep: deepOver,
+      built: builtSite?.scenes?.[0]?.overheadRockM ?? null },
     sites,
+    builtSite,
     log,
   };
 })()
