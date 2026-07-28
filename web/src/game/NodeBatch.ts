@@ -24,7 +24,7 @@
 // files use eight roles but few shading families, and colour is baked into a
 // vertex attribute, so the FAMILY is the batch and the shadow multiplier stops
 // mattering. The family is now (surface, metalness) rather than metalness alone
-// — see `familyOf`, where the reason is that Leaf and Grass must not inherit
+// - see `familyOf`, where the reason is that Leaf and Grass must not inherit
 // Rock's normal map.
 
 import * as THREE from 'three';

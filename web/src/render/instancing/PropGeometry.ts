@@ -85,6 +85,42 @@ const BASE_SHADE = 0.42;
 const BASE_FRAC = 0.38;
 
 /**
+ * Which base-contact profile a geometry gets. RN-62 extended this from a
+ * boolean, because the gradient was foliage-only and the reason was never that
+ * rocks do not need it.
+ *
+ * A BOULDER OCCLUDES THE SKY AT ITS OWN BASE EXACTLY AS A PLANT DOES, and
+ * `ScatterLook` already names the symptom: "our boulders meet the terrain along
+ * a hard silhouette with bare ground on both sides of it, which is exactly the
+ * pasted-on read". The 5-card contact skirt mitigates that in vegetated biomes
+ * ONLY, so Polar, Ocean, Moon and Mountains, which carry no understorey tier,
+ * get nothing at all today. This reaches all of them for the same zero cost.
+ *
+ * THE ATTRIBUTE WAS ALREADY THERE AND ALREADY UPLOADED. `normalize` has always
+ * written a constant-255 colour on every prop geometry, because `setColorAt` on
+ * a BatchedMesh is silently discarded without it. So the mineral gradient costs
+ * no draw call, no triangle, no shader, no uniform and not one extra byte. That
+ * is now the third time this lane has found a live attribute nothing was
+ * reading (RN-50's per-quad UV, RN-61's node instance colour, this).
+ */
+export type BaseBake = 'foliage' | 'mineral';
+
+/**
+ * SHALLOWER AND WEAKER THAN THE PLANT PROFILE, and not as a matter of taste.
+ *
+ * A grass tuft is a translucent thicket: light is occluded by its own
+ * neighbours for a long way up, which is why 0.42 over the bottom 38% is right
+ * for a card. A boulder is one opaque convex mass, so the only genuinely
+ * occluded region is the narrow wedge where it meets the ground, and a band
+ * that deep would read as a rock dipped in paint rather than as contact.
+ *
+ * The fraction is of the GEOMETRY's own height, so one pair of constants is
+ * right for a 0.10 m pebble card and a 3.4 m spire at once.
+ */
+const MINERAL_SHADE = 0.64;
+const MINERAL_FRAC = 0.20;
+
+/**
  * Fill one geometry's vertex-colour attribute: a white constant, or the
  * base-contact gradient above.
  *
@@ -109,36 +145,35 @@ const BASE_FRAC = 0.38;
  * Uint8 normalised: 3 B a vertex against 12 B for float32. 60,000 verts a batch
  * is 180 kB either way, so the gradient is free in memory as well as in time.
  */
-export function bakeColour(g: THREE.BufferGeometry, shade: boolean): void {
+export function bakeColour(g: THREE.BufferGeometry, bake: BaseBake): void {
   const pos = g.getAttribute('position') as THREE.BufferAttribute;
   const n = pos.count;
   const col = new Uint8Array(n * 3);
-  if (!shade) col.fill(255);
-  else {
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (let i = 0; i < n; ++i) {
-      const y = pos.getY(i);
-      if (y < lo) lo = y;
-      if (y > hi) hi = y;
-    }
-    // Guard the degenerate case rather than dividing by it: a flat card lying in
-    // the ground plane has zero height, and 0/0 would write NaN into every
-    // vertex and render the whole batch black.
-    const span = Math.max(1e-4, (hi - lo) * BASE_FRAC);
-    for (let i = 0; i < n; ++i) {
-      const t = Math.min(1, Math.max(0, (pos.getY(i) - lo) / span));
-      const s = BASE_SHADE + (1 - BASE_SHADE) * (t * t * (3 - 2 * t));
-      const b = Math.round(s * 255);
-      col[i * 3] = b; col[i * 3 + 1] = b; col[i * 3 + 2] = b;
-    }
+  const shade = bake === 'mineral' ? MINERAL_SHADE : BASE_SHADE;
+  const frac = bake === 'mineral' ? MINERAL_FRAC : BASE_FRAC;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < n; ++i) {
+    const y = pos.getY(i);
+    if (y < lo) lo = y;
+    if (y > hi) hi = y;
+  }
+  // Guard the degenerate case rather than dividing by it: a flat card lying in
+  // the ground plane has zero height, and 0/0 would write NaN into every
+  // vertex and render the whole batch black.
+  const span = Math.max(1e-4, (hi - lo) * frac);
+  for (let i = 0; i < n; ++i) {
+    const t = Math.min(1, Math.max(0, (pos.getY(i) - lo) / span));
+    const s = shade + (1 - shade) * (t * t * (3 - 2 * t));
+    const b = Math.round(s * 255);
+    col[i * 3] = b; col[i * 3 + 1] = b; col[i * 3 + 2] = b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
 }
 
 /** Strip everything a BatchedMesh cannot bind consistently across geometries. */
 export function normalize(
-  src: THREE.BufferGeometry, worldMatrix: THREE.Matrix4, shade: boolean,
+  src: THREE.BufferGeometry, worldMatrix: THREE.Matrix4, bake: BaseBake,
 ): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const pos = src.getAttribute('position') as THREE.BufferAttribute;
@@ -164,7 +199,7 @@ export function normalize(
   // happened to need a transform. Silent, and only visible as one shrub in ten
   // being shaded sideways.
   g.applyMatrix4(worldMatrix);
-  bakeColour(g, shade);
+  bakeColour(g, bake);
   g.computeBoundingSphere();
   return g;
 }

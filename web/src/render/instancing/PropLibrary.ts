@@ -17,7 +17,7 @@ import { loadGlb } from '../../assets/Loaders.js';
 import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
 import { isFoliageMaterial } from '../../world/ScatterLook.js';
-import { normalize, setBaseShade } from './PropGeometry.js';
+import { normalize, setBaseShade, type BaseBake } from './PropGeometry.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
 
@@ -185,9 +185,15 @@ export class PropLibrary {
         // `ScatterLook` rather than rewritten here. Two copies of "which
         // materials are plants" drift, and the drift would show up as one leaf
         // role quietly failing to darken at its base.
-        const shade = isFoliageMaterial(mat);
-        batch.shaded = batch.shaded || shade;
-        const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, shade));
+        // RN-62: EVERY prop takes a base-contact gradient now, and the only
+        // question is which profile. It used to be plants or nothing, which
+        // left a boulder meeting the terrain along a hard silhouette with bare
+        // ground either side, i.e. the pasted-on read `ScatterLook` names. The
+        // predicate is still imported rather than rewritten, because two copies
+        // of "which materials are plants" drift.
+        const bake: BaseBake = isFoliageMaterial(mat) ? 'foliage' : 'mineral';
+        batch.shaded = true;
+        const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, bake));
         // `?proplod2=0` registers LOD0 in the far slot too: the state the
         // understorey shipped in before RN-45 authored the detail cards' LOD2.
         // Standing rule 7, and it matters more than usual because the saving is
@@ -198,7 +204,7 @@ export class PropLibrary {
         // pass's to claim. Scoped it reads 1,087,719 against 972,049.
         const far = (this.lod2Enabled || suffix === '')
           ? (pair.lod2 ?? near) : near;
-        const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld, shade));
+        const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld, bake));
         list.push({ material: key, lod0, lod2 });
       }
       if (list.length > 0 && !this.parts.has(stem)) this.parts.set(stem, list);
