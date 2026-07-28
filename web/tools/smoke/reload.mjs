@@ -62,6 +62,11 @@ const DAMAGESAVE = 'probes/damagesave.js';
 // what must NOT hold. They are inverted for it rather than skipped, because a
 // wipe that left the factory standing is the failure this proof exists to catch.
 const FRESH = 'probes/startfresh.js';
+// FS-70. The setup that asks the question about the one buildable whose whole
+// value is the state it holds. Its extra assertions are below, gated on this
+// name exactly as PADCLEAR's are, because a world with no chest in it has
+// nothing to say about chests.
+const CHESTSAVE = 'probes/chestsave.js';
 const setup = args.get('setup') ?? FLYTO;
 // The default keeps `--phase` meaning exactly what it meant: the phase IS the
 // flyto probe's argument, so an untouched command line produces an untouched
@@ -154,6 +159,16 @@ try {
       lat: w.observer.latDeg, lon: w.observer.lonDeg,
       buildings: g.factory ? g.factory.buildings : -1,
       links: g.factory && g.factory.links ? g.factory.links.length : -1,
+      // FS-70: every chest in the RESTORED plan, with what the restored /core
+      // container says is in it. `row.store` reads `containerItem` and
+      // `containerCount` off the live entity when there is one, so this is the
+      // rebuilt world's own answer and not the save file read back.
+      chests: g.factory && g.factory.list
+        ? g.factory.list.filter((b) => b.kind === 'chest')
+          .map((b) => ({ id: b.id, cell: b.cell, build: b.build,
+            item: Array.isArray(b.store) ? b.store[0] : -1,
+            count: Array.isArray(b.store) ? b.store[1] : -1 }))
+        : [],
       flightLive: f ? f.flight.live : null,
       aboard: f ? f.aboard : null,
       flightStatus: f ? f.flight.status : null,
@@ -262,9 +277,6 @@ try {
             `live ${after.flightLive}, aboard ${after.aboard}`);
       check('and the reloaded flight session carries ZERO parts',
             after.flightParts === 0, `${after.flightParts}`);
-      check('the reloaded pad is HOLDING, never mid-swing',
-            p1 !== null && p1.clampT === 0 && p1.holding === true
-            && p1.releasing === false, JSON.stringify(p1));
     } else {
       // The mirror image, and it is asserted against the BEFORE measurement
       // rather than against a constant, so it states "what was standing there
@@ -277,17 +289,69 @@ try {
       // one that would hand Reid a rocket he did not climb into.
       check('and it came back with NOBODY aboard',
             after.aboard === false, `${after.aboard}`);
-      // Deliberately NOT asserted here: `flightLive`, and `holding` on the pad.
-      // Neither has been measured across a `leave` reload, and asserting an
-      // unmeasured expectation in either direction is how a control ends up
-      // encoding a bug as the spec. See the physics.md PH-74 note.
+      // MEASURED 2026-07-28 against HEAD and then asserted (PH-75, R28 closed).
+      // These two were left out of the first version of this split because they
+      // had never been driven across a `leave` reload, and PH-73's lesson is
+      // that an assertion written from an assumption tests the assumption.
+      // Driven, the session comes back LIVE and holding the restored vessel.
+      check('and the reloaded flight session is LIVE, holding it',
+            after.flightLive === true, `${after.flightLive}`);
     }
-    // Mode-independent either way: a reloaded pad is never caught mid-swing,
-    // whatever is or is not standing on it. A clamp restored half-open would be
-    // a real defect in both modes.
-    check('the reloaded pad is never mid-swing',
-          p1 !== null && p1.clampT === 0 && p1.releasing === false,
-          JSON.stringify(p1));
+    // Mode-independent, and MEASURED to be so rather than assumed: a reloaded
+    // pad is HOLDING and never caught mid-swing, whatever is or is not standing
+    // on it. `holding` was in the recover-only set when this block was first
+    // split, on the guess that a pad with a vessel back on it might report
+    // differently. It does not: both modes come back `holding true, clampT 0,
+    // releasing false`, so the row belongs to both and is stronger here than it
+    // was as two copies. A clamp restored half-open is a real defect either way.
+    check('the reloaded pad is HOLDING, never mid-swing',
+          p1 !== null && p1.clampT === 0 && p1.holding === true
+          && p1.releasing === false, JSON.stringify(p1));
+  }
+
+  // FS-70. THE CHEST HALF, and it is the whole reason chestsave.js exists.
+  //
+  // A chest is the first buildable whose value IS its contents, so a reload that
+  // brings the box back empty has destroyed inventory the player deliberately
+  // put away. The contents cross `commitPlan`'s carry, `Persist`'s `store` row
+  // and `FactoryRestore`'s `r.store?.[0] ?? 0` on the way here, and only a real
+  // reload crosses all three in boot order: an in-page `of.save()`/`of.load()`
+  // passes even when the restore reads nothing, because the container already
+  // exists and the commit that follows carries it.
+  //
+  // BOTH NUMBERS, and the ITEM is not the lesser half. A container claims its
+  // type from whatever arrives first and releases it when emptied (FS-66), so a
+  // chest that came back holding the right COUNT of the wrong item is a chest
+  // whose stored goods have been silently swapped, and a count-only assertion
+  // would be green for it.
+  if (setup === CHESTSAVE) {
+    const c0 = before.chest ?? null;
+    const c1 = (after.chests ?? [])[0] ?? null;
+    check('the chest came back at all', after.chests.length === 1,
+          `${after.chests.length} chests in the restored plan`);
+    check('and it came back as a real /core container',
+          c1 !== null && c1.build >= 0, JSON.stringify(c1));
+    check('THE CHEST CAME BACK HOLDING WHAT WAS PUT IN IT',
+          c1 !== null && c0 !== null
+          && c1.item === c0.item && c1.count === c0.count,
+          `left ${c0?.count} of item ${c0?.item}, `
+          + `came back ${c1?.count} of item ${c1?.item}`);
+    // Asserted separately as well as jointly, so a red run says WHICH half went:
+    // a lost count and a lost type are two different defects with two different
+    // fixes, and the joint row above cannot tell them apart.
+    check("the chest's COUNT survived the reload",
+          c1 !== null && c0 !== null && c1.count === c0.count,
+          `${c0?.count} before, ${c1?.count} after`);
+    check("the chest's ITEM TYPE survived the reload",
+          c1 !== null && c0 !== null && c1.item === c0.item,
+          `${c0?.item} before, ${c1?.item} after`);
+    // The control on the pair: a restore that put everything back at zero would
+    // satisfy "before equals after" if the probe had also measured zero. It did
+    // not, and chestsave.js asserts that for itself, but the runner is where a
+    // reader looks and it must not depend on the setup's own honesty.
+    check('and the numbers being compared are not two zeroes agreeing',
+          (c0?.count ?? 0) > 0 && (c0?.item ?? 0) > 0,
+          JSON.stringify(c0));
   }
 
   // GP-65. THE HEALTH HALF. Health is per-entity state no other field in the
