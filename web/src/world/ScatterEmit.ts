@@ -18,7 +18,7 @@ import {
   CLUSTER_BIAS, CONTACT_CARDS, CONTACT_SPREAD, lookOf, scaleFor, tintFor,
   tintScratch,
   type Look,
-} from './ScatterLook.js';
+} from '../render/ScatterLook.js';
 
 /**
  * One chunk's build in progress. A record rather than eleven parameters, and

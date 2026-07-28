@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { loadGlb } from '../../assets/Loaders.js';
 import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
-import { isFoliageMaterial } from '../../world/ScatterLook.js';
+import { isFoliageMaterial } from '../ScatterLook.js';
 import { normalize, setBaseShade, type BaseBake } from './PropGeometry.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';

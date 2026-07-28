@@ -10,9 +10,22 @@
 // Every number below comes from the same per-cell hash stream the placement
 // uses, so determinism is untouched: the same seed grows the same forest with
 // the same colours, and a chunk that streams out and back in is identical.
+//
+// RN-71: THIS FILE LIVES UNDER render/ AND NOT UNDER world/, AND THAT IS THE
+// SPLIT ABOVE MADE STRUCTURAL. It sat in `web/src/world/` from the day it was
+// split out, for no better reason than that `Scatter.ts` was already there, and
+// it was the one rendering-owned file in a world-gen directory for four passes
+// while both domains edited around it. Ownership that is stated in a decision
+// log and contradicted by the tree is ownership that gets forgotten.
+//
+// It still imports `hash32`/`frac` from `world/ScatterTuning`, and that
+// direction is correct: the hash stream is placement's, and a look must be able
+// to read the same stream a placement used or the two would disagree about
+// which cell they are describing. What must NOT appear here is a second copy of
+// that stream. World-gen owns where things go; this file owns how they look.
 
 import * as THREE from 'three';
-import { hash32, frac } from './ScatterTuning.js';
+import { hash32, frac } from '../world/ScatterTuning.js';
 
 /**
  * A prop's look family, decided ONCE per stem from the materials its parts

@@ -26,7 +26,7 @@ import {
   CANOPY_MIN_SLOPE_COS, CANOPY_SHADE, CANOPY_FULL_M, canopyWeight,
   canopyDistanceWeight, standAt,
 } from './ScatterTuning.js';
-import { CLUSTER_SHIFT, CONTACT_CARDS } from './ScatterLook.js';
+import { CLUSTER_SHIFT, CONTACT_CARDS } from '../render/ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
 
 interface Placed {
