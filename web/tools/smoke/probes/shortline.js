@@ -111,6 +111,24 @@
     return of.build().ghost;
   };
   const fromEye = (g) => { const e = eye(); return gdist(g.pos, [e.x, e.y, e.z]); };
+  // FS-83: THE SEARCH WINDOWS AND THE REACHES ARE DERIVED FROM THE SHIPPED
+  // DIMENSION TABLE, NOT TYPED IN. Every distance in this probe was sized when
+  // the smelter and the drill were 2 m, so FS-73's rescale to 4 m falsified all
+  // of them at once and this probe simply stopped being able to place a smelter
+  // ("the smelter would not go down at the head"). That is INSTRUMENTS.md's own
+  // lesson pointed at the instrument: a probe that carries its own copy of a
+  // constant is a control that rots the moment the thing it watches moves.
+  //
+  // `factory.footprint` is the client's OWN table, published by FS-73 for exactly
+  // this, so these windows follow the assets wherever they go next. The band is
+  // the required cell count plus and minus about half a cell, which covers the
+  // 1.002 m site grid and a few centimetres of slope pitch without ever reaching
+  // the neighbouring cell.
+  const FPT = of.game().factory.footprint;
+  const cellsFor = (a, b) => Math.max(1, Math.ceil((FPT[a] + FPT[b]) * 0.5));
+  const matesNear = (a, b) => cellsFor(a, b) - 0.6;
+  const matesFar = (a, b) => cellsFor(a, b) + 0.45;
+
 
   of.build(2);
   await rotateTo(2);
@@ -143,8 +161,24 @@
     beltSweep.push({ pitch: p, ok: g.ok, pos: g.pos, prospective: g.prospective,
       reachM: +fromEye(g).toFixed(2) });
   }
-  const tailAim = beltSweep.filter((s) => s.ok && s.reachM <= 7.7)
-    .reduce((a, b) => (a === null || b.reachM > a.reachM ? b : a), null);
+  // FS-83. THE TAIL IS PLACED SO THE DRILL LANDS ON THE ORE, and that is now a
+  // derived target rather than "as far out as the reach allows".
+  //
+  // The old rule took the furthest legal belt cell inside 7.7 m and put the drill
+  // ONE cell beyond it, which worked only because one cell was what a 2 m drill
+  // needed. A 4 m drill mates three cells out, so the same tail put the drill
+  // three metres past the deposit and this probe reported "the drill would not go
+  // down beyond the tail" for a world in which nothing whatever was wrong. That
+  // is the probe's own copy of a constant rotting, INSTRUMENTS.md's dominant
+  // failure aimed at the instrument.
+  //
+  // So the tail is aimed at the standoff the DRILL needs minus the mating
+  // distance the table requires, and the sweep picks the cell nearest that. The
+  // floor keeps it out of the dead zone right under the crosshair.
+  const wantTailM = Math.max(2.2, standoff - cellsFor('miner', 'belt'));
+  const tailAim = beltSweep.filter((s) => s.ok)
+    .reduce((a, b) => (a === null
+      || Math.abs(b.reachM - wantTailM) < Math.abs(a.reachM - wantTailM) ? b : a), null);
   if (tailAim === null) return { fail: 'no belt cell inside the reach band', log };
 
   // TWO PRESSES, NOT A HOLD-DRAG, and that is a deliberate difference from
@@ -178,7 +212,7 @@
     const g = await ghostAt(yaw, p);
     if (g === null || !g.ok || g.prospective === true) continue;
     const d = gdist(g.pos, tail0.pos);
-    if (d > 1.45) break;                       // past the neighbouring cell
+    if (d > matesFar('belt', 'belt')) break;   // past the neighbouring cell
     if (d > 0.6) headAim = { pitch: p, pos: g.pos, cell: g.cell };
   }
   if (headAim === null) {
@@ -214,7 +248,7 @@
     if (g === null || !g.ok) continue;
     const d = gdist(g.pos, headBelt.pos);
     if (d < 0.5) continue;
-    if (d > 2.2) break;                          // beyond the belt head's reach
+    if (d > matesFar('belt', 'smelter')) break;  // beyond the belt head's reach
     const before = fac().buildings;
     await placeHere();
     if (fac().buildings > before) smelterAt = { cell: g.cell, pitch: p, pos: g.pos };
@@ -228,7 +262,8 @@
     const g = await ghostAt(yaw, p);
     if (g === null || !g.ok || g.patch < 0) continue;
     const d = gdist(g.pos, tailBelt.pos);
-    if (d < 0.5 || d > 1.25) continue;           // it has to TOUCH the tail
+    if (d < matesNear('miner', 'belt')
+      || d > matesFar('miner', 'belt')) continue;  // it has to reach the tail
     const before = fac().buildings;
     await placeHere();
     if (fac().buildings > before) {
@@ -258,8 +293,8 @@
     drillToSmelter: +drillToSmelter.toFixed(3),
     // The two reaches out of FactoryWiring.touch, restated so the numbers above
     // can be read against something.
-    beltToSmelterReachM: 2.25,
-    drillToSmelterReachM: 2.75,
+    beltToSmelterMateM: +(cellsFor('belt', 'smelter')).toFixed(3),
+    drillToSmelterMateM: +(cellsFor('miner', 'smelter')).toFixed(3),
     links: f0.links,
     // THE DEFECT, STATED EXACTLY: an inserter from the smelter to the tail of a
     // run whose head feeds that same smelter.
@@ -278,8 +313,12 @@
     oneRun: f0.runs.length === 1 && f0.runs[0].tiles === 2,
     drillFeedsTail: shape.linksDrillToTail === 1,
     headFeedsSmelter: shape.linksFromHead === 1,
-    shortCircuitGeometry: tailToSmelter <= 2.25,
-    beltsAreLoadBearing: drillToSmelter > 2.75,
+    // The tail is close enough that the OLD proximity rule really would have
+    // looped it, and the drill is far enough that the belts are load bearing.
+    // Both are now expressed against the mating distance the table requires,
+    // so a future rescale moves them with it instead of past them.
+    shortCircuitGeometry: tailToSmelter <= matesFar('belt', 'smelter') + 1.0,
+    beltsAreLoadBearing: drillToSmelter > matesFar('miner', 'smelter'),
   };
   const setupOk = Object.values(setup).every(Boolean);
   log.push('setup: ' + JSON.stringify(setup));

@@ -149,6 +149,24 @@
   };
   const gdist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   const fromEye = (g) => { const e = eye(); return gdist(g.pos, [e.x, e.y, e.z]); };
+  // FS-83: THE SEARCH WINDOWS AND THE REACHES ARE DERIVED FROM THE SHIPPED
+  // DIMENSION TABLE, NOT TYPED IN. Every distance in this probe was sized when
+  // the smelter and the drill were 2 m, so FS-73's rescale to 4 m falsified all
+  // of them at once and this probe simply stopped being able to place a smelter
+  // ("the smelter would not go down at the head"). That is INSTRUMENTS.md's own
+  // lesson pointed at the instrument: a probe that carries its own copy of a
+  // constant is a control that rots the moment the thing it watches moves.
+  //
+  // `factory.footprint` is the client's OWN table, published by FS-73 for exactly
+  // this, so these windows follow the assets wherever they go next. The band is
+  // the required cell count plus and minus about half a cell, which covers the
+  // 1.002 m site grid and a few centimetres of slope pitch without ever reaching
+  // the neighbouring cell.
+  const FPT = of.game().factory.footprint;
+  const cellsFor = (a, b) => Math.max(1, Math.ceil((FPT[a] + FPT[b]) * 0.5));
+  const matesNear = (a, b) => cellsFor(a, b) - 0.6;
+  const matesFar = (a, b) => cellsFor(a, b) + 0.45;
+
   // The band a genuine grid neighbour lands in, in metres of ground. The
   // floor rejects a re-reading of the cell already dealt with; the ceiling
   // rejects a skipped cell, which is the failure that shatters a run.
@@ -163,7 +181,14 @@
   // rejected every candidate and reported "no belt cell inside the drill" on a
   // line that places perfectly. Still well inside `FactoryWiring`'s 2.25 m
   // miner-to-belt reach, which is what has to hold for the line to run.
-  const FAR = 2.4;
+  //
+  // FS-83 MAKES IT DERIVED FOR THE SAME REASON FS-26 MOVED IT. A 4 m drill mates
+  // a 1 m belt THREE cells out, not two, so 2.4 rejected every candidate and this
+  // probe reported "no belt cell inside the drill" against a drill that was
+  // perfectly placed, which is the identical symptom the comment above describes
+  // from the last time this number was wrong. Twice is a pattern, so the number
+  // now comes from the client's own published table.
+  const FAR = matesFar('miner', 'belt');
 
   // 1: which yaw is a tangent axis, measured off the ghost's own flow direction.
   of.build(2);
@@ -274,7 +299,7 @@
       if (d > FAR) break;                   // the first cell inside the drill
       fromPitch = p;                        // is not a neighbour: no line here
     }
-    if (d > 4.6) break;                     // four belts is the length wanted
+    if (d > FAR + 3.2) break;               // four belts is the length wanted
     // THE END OF THE DRAG MUST BE A PITCH THAT MEANS ITS OWN CELL. FS-26 lets a
     // ghost near a published socket report the cell that SOCKET proposes rather
     // than the one under the aim, which is the whole feature and is exactly
@@ -332,7 +357,7 @@
     if (g === null || !g.ok) continue;
     const d = gdist(g.pos, headBelt.pos);
     if (d < NEAR) continue;
-    if (d > 2.2) break;                     // beyond the belt head's reach
+    if (d > matesFar('belt', 'smelter')) break;  // beyond the belt head's reach
     const before = of.game().factory.buildings;
     await placeHere();
     if (of.game().factory.buildings > before) smelterCell = g.cell;

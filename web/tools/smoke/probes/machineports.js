@@ -168,6 +168,24 @@
     return of.build().ghost;
   };
   const fromEye = (g) => { const e = eye(); return gdist(g.pos, [e.x, e.y, e.z]); };
+  // FS-83: THE SEARCH WINDOWS AND THE REACHES ARE DERIVED FROM THE SHIPPED
+  // DIMENSION TABLE, NOT TYPED IN. Every distance in this probe was sized when
+  // the smelter and the drill were 2 m, so FS-73's rescale to 4 m falsified all
+  // of them at once and this probe simply stopped being able to place a smelter
+  // ("the smelter would not go down at the head"). That is INSTRUMENTS.md's own
+  // lesson pointed at the instrument: a probe that carries its own copy of a
+  // constant is a control that rots the moment the thing it watches moves.
+  //
+  // `factory.footprint` is the client's OWN table, published by FS-73 for exactly
+  // this, so these windows follow the assets wherever they go next. The band is
+  // the required cell count plus and minus about half a cell, which covers the
+  // 1.002 m site grid and a few centimetres of slope pitch without ever reaching
+  // the neighbouring cell.
+  const FPT = of.game().factory.footprint;
+  const cellsFor = (a, b) => Math.max(1, Math.ceil((FPT[a] + FPT[b]) * 0.5));
+  const matesNear = (a, b) => cellsFor(a, b) - 0.6;
+  const matesFar = (a, b) => cellsFor(a, b) + 0.45;
+
 
   of.build(2);
   await rotateTo(2);
@@ -197,7 +215,14 @@
     beltSweep.push({ pitch: p, ok: g.ok, pos: g.pos, prospective: g.prospective,
       reachM: +fromEye(g).toFixed(2) });
   }
-  const tailAim = beltSweep.filter((s) => s.ok && s.reachM <= 7.7)
+  // FS-83. THE TAIL COMES IN BY THE EXTRA CELLS THE DRILL NOW NEEDS BEHIND IT.
+  // The drill used to mate the tail one cell out and now needs `cellsFor` cells,
+  // so laying the tail at the same 7.7 m put the drill past the build reach and
+  // this probe reported "the drill would not go down beyond the tail" for a
+  // world in which nothing was wrong. The band moves with the table rather than
+  // being re-picked, so the drill still lands on the same ground it always did.
+  const tailBandM = 7.7 - (cellsFor('miner', 'belt') - 1);
+  const tailAim = beltSweep.filter((s) => s.ok && s.reachM <= tailBandM)
     .reduce((a, b) => (a === null || b.reachM > a.reachM ? b : a), null);
   if (tailAim === null) return { fail: 'no belt cell inside the reach band', log };
   of.look(yaw, tailAim.pitch);
@@ -213,7 +238,7 @@
     const g = await ghostAt(yaw, p);
     if (g === null || !g.ok || g.prospective === true) continue;
     const d = gdist(g.pos, tail0.pos);
-    if (d > 1.45) break;
+    if (d > matesFar('belt', 'belt')) break;
     if (d > 0.6) headAim = { pitch: p, pos: g.pos };
   }
   if (headAim === null) return { fail: 'no cell adjacent to the tail on this heading', log };
@@ -246,7 +271,7 @@
     if (g === null || !g.ok) continue;
     const d = gdist(g.pos, headBelt.pos);
     if (d < 0.5) continue;
-    if (d > 2.6) break;
+    if (d > matesFar('belt', 'smelter')) break;
     const before = fac().buildings;
     ghostSaidBefore = g.ports ?? '';
     await placeHere();
@@ -262,7 +287,7 @@
     const g = await ghostAt(yaw, p);
     if (g === null || !g.ok || g.patch < 0) continue;
     const d = gdist(g.pos, tailBelt.pos);
-    if (d < 0.5 || d > 2.6) continue;
+    if (d < matesNear('belt', 'smelter') || d > matesFar('belt', 'smelter')) continue;
     const before = fac().buildings;
     await placeHere();
     if (fac().buildings > before) drill = { pos: g.pos, rate: g.ratePerSec };
@@ -679,7 +704,8 @@
       oneRun: f0.runs.length === 1 && f0.runs[0].tiles === 2,
       drillFeedsTail: f0.links.some((l) => l.from === drillRow.id && tails.has(l.to)),
       // The geometry FS-17 deadlocked on really did form.
-      shortCircuitGeometry: gdist(laid[0].pos, smelterAt.pos) <= 2.25,
+      shortCircuitGeometry: gdist(laid[0].pos, smelterAt.pos)
+        <= matesFar('belt', 'smelter') + 1.0,
     },
     shape, turned, ghostSaidBefore,
     phases: { A: phaseA, B: phaseB, C: phaseC, D: phaseD },
