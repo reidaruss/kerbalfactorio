@@ -30,10 +30,12 @@ import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
 import { restorePads, savePads } from './LaunchPadSave.js';
 import type { LaunchPads } from './LaunchPad.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
-  type VoxelPort, type TerrainDigPort, type VoxelRestore } from './VoxelSave.js';
+  type VoxelPort, type TerrainDigPort } from './VoxelSave.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
 import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
+import type { HealthBook } from './Health.js';
+import { rebuildHealth } from './HealthCensus.js';
 
 /** The three Services handles a whole-world save needs and gameplay does not own. */
 /**
@@ -92,35 +94,12 @@ export function restoreProgress(g: Gameplay, saved: SaveProgress | undefined):
   return { techs, milestones, armour };
 }
 
-export interface RestoreLedger {
-  buildings: number;
-  /** Structural parts that came back. Their cost is NOT charged again. */
-  structures: number;
-  /** GP-57: launch pads brought back. */
-  pads: number;
-  machines: number;
-  nodesDepleted: number;
-  patchesDepleted: number;
-  packUnits: number;
-  /** Fuel a furnace was burning. There is no item to give back for a tick. */
-  fuelTicksLost: number;
-  /** The tunnels: cells /core has back, strikes replayed, and the re-mesh cost. */
-  voxels: VoxelRestore;
-  /** Whether the saved hotbar loadout came back. */
-  hotbarRestored: boolean;
-  /** The progression spine: techs re-unlocked, milestones re-earned, armour
-   *  pieces put back on. Zero on a slot written before ABI 9. */
-  progress: { techs: number; milestones: number; armour: number };
-  /** DW-31: the mode the slot was written in. Always equal to the running mode,
-   *  because a slot that disagreed was refused before it got here. */
-  mode: GameMode;
-  /** DW-36: discovery cells /core has back. 0 means the slot carried none,
-   *  which a pre-DW-36 save legitimately does; **-1 means /core REFUSED the
-   *  stream** and what the player explored is gone. Three states and not two,
-   *  because a silent zero would make a lost world look like a new one. */
-  discovery: number;
-  savedAt: number;
-}
+// The receipt a load hands back. It lives in its own file (this one is at its
+// line cap) and is re-exported here, because every caller in the client asks
+// `Persist` for it and moving a published name to make room is a worse trade
+// than one line of forwarding, which is the same call `Structures.ts` made.
+import type { RestoreLedger } from './PersistLedger.js';
+export type { RestoreLedger } from './PersistLedger.js';
 
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
@@ -128,7 +107,8 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          ore: OreField, structures: Structures,
                          pads: LaunchPads,
                          hotbar: Hotbar, mode: GameMode,
-                         progress: SaveProgress | undefined): SaveSlot {
+                         progress: SaveProgress | undefined,
+                         health: HealthBook): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -184,6 +164,9 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     pads: savePads(pads),
     hotbar: hotbar.serialize(),
     progress,
+    // GP-65. The WOUNDS, and only the wounds: the book is the one authority on
+    // the number, so nothing here re-derives it.
+    health: health.serialize(),
     buildings: factory.placed.map((p) => ({
       kind: p.kind, cell: p.cell, patch: p.patch,
       // Read LIVE off the grid rather than off the record, so a generator that
@@ -312,6 +295,13 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   for (const p of g.pads.list) g.padView.release(p.id);
   const restoredPads = restorePads(g.pads, slot.pads);
 
+  // 5c. WHAT IS BROKEN (GP-65). LAST of the world steps, because every
+  //     population has to be standing before the book can be told what is wrong
+  //     with it: a wound applied earlier would land on a key nothing answers to
+  //     and be counted as an orphan. The three-step order lives in `HealthCensus`
+  //     with its reasoning, as one call, so a caller cannot get it wrong.
+  const health = rebuildHealth(g.health, g, slot.health);
+
   // 6. THE BAR. Last and independent of everything above: it is a setting, not
   //    a piece of the world, and a malformed row falls back to empty rather
   //    than throwing, because a save must never be able to brick a boot.
@@ -331,7 +321,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     buildings, structures: restoredParts, pads: restoredPads,
     machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
-    progress, discovery,
+    progress, discovery, health,
     mode: slot.mode ?? 'survival',
     savedAt: slot.savedAt,
   };
@@ -354,7 +344,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
     g.seed, g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
-    saveProgress(g));
+    saveProgress(g), g.health);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
@@ -363,7 +353,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
     structures: slot.structures?.length ?? 0, sites: slot.sites?.length ?? 0,
     pads: slot.pads?.length ?? 0,
     machines: slot.machines.length, depletion: slot.depletion.length,
-    patches: slot.patches.length,
+    patches: slot.patches.length, health: slot.health?.length ?? 0,
     voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
   } : null;
 }

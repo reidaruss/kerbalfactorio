@@ -235,6 +235,28 @@ export function gameplayApi(s: Services, loop: Loop) {
         : demolishBuild(g.factory, g.factoryView, g.game, b);
     },
 
+    /**
+     * GP-65. Deal damage to a placed thing, by its health key.
+     *
+     * THIS IS THE SAME CALL A WEAPON MAKES and deliberately not a shortcut past
+     * one: `HealthBook.damage` is the only door into the number, so a probe
+     * driving this is driving the combat path with the trigger left off. That
+     * matters because health lands BEFORE any damage source exists, and without
+     * an entry here the persistence claim could not be tested at all until a gun
+     * shipped, which is exactly the order this work set out not to use.
+     *
+     * Returns null for an unknown key rather than a cheerful zero, because a
+     * probe that silently damaged nothing and then asserted the damage survived
+     * a reload would pass on two absences agreeing with each other.
+     */
+    damage(sel: { key: string; amount: number }) {
+      const g = s.gameplay;
+      if (g === null || typeof sel?.key !== 'string') return null;
+      if (!g.health.has(sel.key)) return null;
+      const r = g.health.damage(sel.key, sel.amount);
+      return { key: sel.key, ...r };
+    },
+
     audio(op?: string | number) {
       const sfx = s.gameplay?.sfx;
       if (sfx === undefined) return null;

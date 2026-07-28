@@ -48,6 +48,8 @@ import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
 import { ObjectivePanel } from '../ui/ObjectivePanel.js';
 import { gameplayReport } from './GameplayReport.js';
+import { HealthBook } from './Health.js';
+import { reconcile } from './HealthCensus.js';
 import { attachProgress, openMachinePanel, setPackPanel } from './GameplayChrome.js';
 import type { ProgressUi } from './ProgressUi.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
@@ -117,6 +119,9 @@ export class Gameplay {
    *  clamps. The space half of the game's entrance into the ground half. */
   readonly pads: LaunchPads;
   readonly padView: LaunchPadView;
+  /** GP-65: what every placed thing can take. `Gameplay` itself is the
+   *  `HealthPopulations` argument, because the four lists are already fields. */
+  readonly health = new HealthBook();
   /** W11: the three screens that show what the player has EARNED, over
    *  research.h, power.h and progression.h. Built in `create` because the grid
    *  panel needs the factory's own network. */
@@ -319,6 +324,10 @@ export class Gameplay {
     // and iron accumulates" waits on no frame, panel or player proximity.
     this.machines.tick(1);
     this.factory.tick(1);
+    // GP-65. After the ticks (a commit replaces the whole plan) and every tick
+    // rather than on an event, because an event is a thing a future call site
+    // can forget to raise. Registering never heals: HealthCensus says why.
+    reconcile(this.health, this);
     this.fx.watchSmelters(this.factory, this.game);
     // AUTOSAVE on the sim clock too, so a driven run saves as often as a played
     // one does.

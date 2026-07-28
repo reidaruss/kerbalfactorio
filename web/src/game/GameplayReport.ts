@@ -8,6 +8,7 @@
 import { screenReport } from './MachineScreen.js';
 import { structureReport } from './StructureSave.js';
 import { lastSlotRefusal } from './Persist.js';
+import { censusOf } from './HealthCensus.js';
 import { saveInhibitReport } from '../sim/SaveInhibit.js';
 import type { Gameplay } from './Gameplay.js';
 
@@ -71,6 +72,13 @@ export function gameplayReport(g: Gameplay): unknown {
       // has quietly run out.
       pads: g.pads.report(),
       padView: g.padView.stats(),
+      // GP-65. WHAT EVERY PLACED THING CAN TAKE, and what is currently wrong
+      // with it. `audit.missing` is the number that matters most and it is the
+      // reason this is a report rather than a private map: a live buildable with
+      // no health row would be immortal, and immortal is indistinguishable from
+      // healthy unless somebody publishes the difference (DW-28). A probe holds
+      // both `missing` and `stale` at zero.
+      health: g.health.report(censusOf(g)),
       autoCollected: g.autoCollected,
       fx: {
         ...(g.fx.report() as object),

@@ -140,6 +140,17 @@ export interface SaveSlot {
   pads?: SavePad[];
   /** The hotbar: which slot is in hand and what is in each of them (GP-26). */
   hotbar?: SaveHotbar;
+  /** GP-65: what is BROKEN, as `[healthKey, hp]` for every placed thing below
+   *  full health, and nothing at all for the ones that are fine. An undamaged
+   *  world writes an empty list, so this costs a base nobody has attacked
+   *  exactly two bytes, and anything in it is by construction a building that
+   *  has taken damage. The CEILING is not written: it is catalogue data, and
+   *  re-reading it from the table is what lets a rebalance reach worlds that
+   *  already exist. Additive and optional under the same rule `discovery`,
+   *  `pads` and `progress` were added by, so SAVE_VERSION deliberately does NOT
+   *  move: an absent list is an undamaged world, which is what every world
+   *  written before tonight actually was. */
+  health?: [string, number][];
   /** The progression spine (ABI 9). Optional, and the version was deliberately
    *  NOT bumped for it: see SAVE_VERSION above. An absent one restores an
    *  unresearched player with an empty suit, which is a legal world. */

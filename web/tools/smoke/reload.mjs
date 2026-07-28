@@ -13,6 +13,21 @@
 // comparable. Exit 1 on any console error, page error or failed assertion,
 // same rule run.mjs uses.
 //
+// --setup NAMES THE PHASE-1 SCRIPT, and defaults to the flyto probe this runner
+// shipped with, so every invocation written before it is byte-identical. It
+// exists because "what does the player get when they come back" is not a
+// question only about flight: GP-66's cleared launch pad is the same question
+// asked of a pad, and the alternative was a second copy of this runner.
+//
+//   node tools/smoke/reload.mjs --url=http://127.0.0.1:5433/ \
+//     --setup=probes/padclear.js --setupargs='{"mode":"recover"}'
+//   node tools/smoke/reload.mjs --url=http://127.0.0.1:5401/ \
+//     --setup=probes/damagesave.js
+//
+// The setup's own argument goes through --setupargs as JSON, through the same
+// `wrap` the phase already used. Assertions that only make sense for one setup
+// are gated on the setup's name; the ones that are true of any reload are not.
+//
 // WHAT IT IS FOR. The 20 second autosave keeps writing while a vessel is in
 // flight, and the world save has no field for a vessel. So a reload in orbit
 // silently returns the player to the ground with the rocket simply gone. This
@@ -33,6 +48,14 @@ for (const a of process.argv.slice(2)) {
 const base = args.get('url') ?? 'http://127.0.0.1:5211/';
 const phase = args.get('phase') ?? 'orbit';
 const url = `${base}?sandbox=1&debug=1`;
+const FLYTO = 'probes/flyto.js';
+const PADCLEAR = 'probes/padclear.js';
+const DAMAGESAVE = 'probes/damagesave.js';
+const setup = args.get('setup') ?? FLYTO;
+// The default keeps `--phase` meaning exactly what it meant: the phase IS the
+// flyto probe's argument, so an untouched command line produces an untouched
+// phase-1 call.
+const setupArgs = args.get('setupargs') ?? JSON.stringify({ phase });
 
 const CHROME = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -87,12 +110,16 @@ try {
   await page.evaluate(() => window.__of.ready);
 
   // PHASE 1: fly to the requested cut, then report the world as it stands.
-  before = await page.evaluate(wrap('probes/flyto.js', JSON.stringify({ phase })));
+  before = await page.evaluate(wrap(setup, setupArgs));
   if (before === null || before.valid !== true) {
     throw new Error(`phase 1 setup failed: ${JSON.stringify(before)}`);
   }
-  check('phase 1 reached its cut', before.reached === phase,
-        `wanted ${phase}, got ${before.reached}`);
+  // `reached` is flyto's own word for "the cut I was asked for". A setup that
+  // does not fly has no cut, so this is asked of the probe that publishes it.
+  if (setup === FLYTO) {
+    check('phase 1 reached its cut', before.reached === phase,
+          `wanted ${phase}, got ${before.reached}`);
+  }
   check('phase 1 wrote at least one autosave', before.saves > 0, `${before.saves}`);
 
   // THE RELOAD. Same context, so IndexedDB is the same store a player has.
@@ -106,6 +133,10 @@ try {
     const w = of.world();
     const g = of.game();
     const f = typeof of.flight === 'function' ? of.flight('report') : null;
+    // GP-66: the pads as the RESTORED objects report themselves, re-measured
+    // rather than counted. `of.pads()` is a thunk onto the live world, so after
+    // a reload it is the world the save rebuilt and not a stale handle.
+    const pads = typeof of.pads === 'function' ? of.pads() : null;
     return {
       tick: w.tick, regime: w.regime, altM: w.altM,
       observerMode: w.observer.mode,
@@ -115,9 +146,21 @@ try {
       flightLive: f ? f.flight.live : null,
       aboard: f ? f.aboard : null,
       flightStatus: f ? f.flight.status : null,
+      flightParts: f ? f.flight.parts : null,
+      rollouts: f ? f.rollouts : null,
+      padRollouts: f ? f.padRollouts : null,
+      recoveries: f ? f.recoveries : null,
+      padCount: pads ? pads.list.length : -1,
+      padList: pads ? pads.list.map((p) => ({
+        id: p.id, site: p.siteId, cell: [p.i, p.j, p.level],
+        pos: [p.pos.x, p.pos.y, p.pos.z],
+        clampT: p.clampT, releasing: p.releasing, holding: p.solid.shut,
+        rollouts: p.rollouts,
+      })) : [],
       // `persist` carries saves, the restore ledger and any refusal, which is
       // how "nothing came back" is told apart from "nothing was written".
       persist: g.persist ?? null,
+      health: g.health ?? null,
     };
   });
 
@@ -142,7 +185,87 @@ try {
         (after.persist?.restored?.discovery ?? -1) > 0,
         `${after.persist?.restored?.discovery}`);
 
-  console.log(JSON.stringify({ phase, before, after, fails }, null, 2));
+  // GP-66. THE PAD HALF, and it is deliberately the SAME set of assertions for
+  // both of padclear's modes. The recover run and the leave-it-there control
+  // differ by one key press and are then held to one bar, which is what lets the
+  // control say something: if an UNcleared pad also comes back with nothing
+  // standing on it, then "clearing must not resurrect the vessel" is satisfied
+  // because a vessel is never in the slot to resurrect (PH-30), and that is a
+  // fact about the save format rather than about the recover verb.
+  if (setup === PADCLEAR) {
+    const p0 = before.pads ?? null;
+    const p1 = (after.padList ?? [])[0] ?? null;
+    check('the pad came back', after.padCount === (p0?.count ?? -1),
+          `${p0?.count} before, ${after.padCount} after`);
+    check('and the restore ledger counted it',
+          (after.persist?.restored?.pads ?? -1) === (p0?.count ?? -1),
+          `${after.persist?.restored?.pads}`);
+    const moved = p0 === null || p1 === null ? Infinity
+      : Math.hypot(p1.pos[0] - p0.pos[0], p1.pos[1] - p0.pos[1],
+                   p1.pos[2] - p0.pos[2]);
+    // RE-MEASURED, not merely counted: a pad that came back at the planet's
+    // centre is still one pad. Same 1e-6 m bar probes/pad.js holds the in-page
+    // round trip to.
+    check('and it came back WHERE IT WAS', moved < 1e-6, `${moved} m`);
+    check("the pad's rollouts counter survived the reload",
+          p1 !== null && p1.rollouts === (p0?.rollouts ?? -1),
+          `${p0?.rollouts} before, ${p1?.rollouts} after`);
+    check('NO vessel is standing on the reloaded pad',
+          after.flightLive === false && after.aboard === false,
+          `live ${after.flightLive}, aboard ${after.aboard}`);
+    check('and the reloaded flight session carries ZERO parts',
+          after.flightParts === 0, `${after.flightParts}`);
+    check('the reloaded pad is HOLDING, never mid-swing',
+          p1 !== null && p1.clampT === 0 && p1.holding === true
+          && p1.releasing === false, JSON.stringify(p1));
+  }
+
+  // GP-65. THE HEALTH HALF. Health is per-entity state no other field in the
+  // slot carries, and the in-page round trip cannot ask this question: `of.save`
+  // then `of.load` inside one page passes even when the boot order loses the
+  // field, because by then every population is already standing and the book was
+  // never emptied. Only a real reload rebuilds the world from the slot in boot
+  // order, so only this runner can prove a damaged building is still damaged.
+  if (setup === DAMAGESAVE) {
+    const wounds = before.damaged ?? [];
+    const sample = after.health?.sample ?? [];
+    const found = new Map(sample.map((r) => [r.key, r.hp]));
+    check('every placed thing still has a health row after the reload',
+          after.health?.audit?.missing === 0 && after.health?.audit?.stale === 0,
+          JSON.stringify(after.health?.audit));
+    // The bar is the EXACT hp, not "less than full". A restore that clamped
+    // everything to one point below its ceiling would pass a "still damaged"
+    // check and be completely wrong about the number.
+    for (const w of wounds) {
+      check(`${w.key} came back at the health it was left at`,
+            found.get(w.key) === w.hp,
+            `left ${w.hp}/${w.maxHp}, came back ${found.get(w.key) ?? 'ABSENT'}`);
+    }
+    // THE COUNT, as well as the rows, and it catches the two failures the rows
+    // cannot. A restore that brought EVERYTHING back at full health leaves this
+    // at 0, and one that brought everything back damaged leaves it at `tracked`;
+    // both would satisfy a per-row check that only looked at the keys it knew.
+    check('exactly the things that were damaged came back damaged',
+          after.health?.wounded === before.wounded,
+          `${before.wounded} wounded before, ${after.health?.wounded} after, `
+          + `of ${after.health?.tracked} tracked`);
+    check('the restore ledger counted the wounds it applied',
+          (after.persist?.restored?.health?.applied ?? -1) === wounds.length,
+          `${after.persist?.restored?.health?.applied} of ${wounds.length}`);
+    // AN ORPHAN IS THE FAILURE THIS EXISTS TO CATCH: a saved wound whose
+    // building the restore could not find means the key scheme has stopped
+    // being stable, and the building would come back at FULL HEALTH with every
+    // other assertion above it still green.
+    check('and no wound was orphaned by a key that stopped matching',
+          (after.persist?.restored?.health?.orphans ?? -1) === 0,
+          `${after.persist?.restored?.health?.orphans}`);
+    check('no buildable fell back to the placeholder health ceiling',
+          (after.health?.unknownKinds ?? -1) === 0,
+          `${after.health?.unknownKinds}`);
+  }
+
+  console.log(JSON.stringify({ setup, setupArgs, phase, before, after, fails },
+                             null, 2));
 } catch (e) {
   note(`runner: ${e?.message ?? e}`);
   exitCode = 1;
@@ -160,5 +283,8 @@ if (errors.size) {
   for (const [m, n] of errors) console.error(`  ${m}${n > 1 ? `   (x${n})` : ''}`);
   exitCode = 1;
 }
-if (exitCode === 0) console.error(`reload: PASS (phase ${phase})`);
+if (exitCode === 0) {
+  console.error(setup === FLYTO ? `reload: PASS (phase ${phase})`
+    : `reload: PASS (setup ${setup} ${setupArgs})`);
+}
 process.exit(exitCode);
