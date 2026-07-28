@@ -20,7 +20,10 @@
 
 import { Cheats } from './Cheats.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
+import { BuildMenu } from '../ui/BuildMenu.js';
+import { buildRows, contentFor } from '../game/Buildables.js';
 import type { Services } from './Services.js';
+import { labelOf } from '../player/Bindings.js';
 import type { Loop } from './Loop.js';
 
 export function installPauseMenu(s: Services, loop: Loop) {
@@ -92,7 +95,73 @@ export function installPauseMenu(s: Services, loop: Loop) {
       : `restored the default loadout  (${n} slots changed)`, 2.4);
   };
 
+  // =========================================================================
+  // GP-111. THE BUILD MENU, on B.
+  // =========================================================================
+  const build = new BuildMenu(g.host, g.modals, (id) => {
+    // CLICK AND YOU ARE HOLDING IT, and the menu SHUTS, because that is what
+    // Reid described: "you just click on whichever one you're trying to build.
+    // You're now holding it like you would build it, so you can see the preview
+    // of where you're gonna build it." A menu left open over the preview would
+    // be showing you a ghost you cannot see.
+    const c = contentFor(id);
+    if (c === null) return;
+    g.hotbar.hold(c);
+    g.build.arm(g.hotbar.partInHand);
+    setBuild(false);
+    g.hud.flash(`holding ${g.hotbar.label}  (${labelOf('cancel')} to put it down)`, 3);
+  });
+
+  /** THE pointer transition, the same shape as the pack's and the menu's. */
+  const setBuild = (open: boolean): void => {
+    buildMenuOpen = open;
+    build.setOpen(open);
+    if (open) { g.modals.touch(build); build.invalidate(); }
+    s.input.setUiCapture(open);
+    g.hud.setVisible(!open);
+    g.hotbarBar.setVisible(!open);
+  };
+  let buildMenuOpen = false;
+  build.closer = () => { setBuild(false); };
+
+  // B, edge-detected here for the same reason `assembly` and `map` are edge
+  // detected in Systems: this is a MODE-ish panel that owns the pointer, and
+  // `Gameplay` is at its line cap and could not hold it anyway.
+  let buildHeld = false;
+  loop.onFixedStep.push(() => {
+    const k = s.input.act('build');
+    if (k && !buildHeld) setBuild(!buildMenuOpen);
+    buildHeld = k;
+  });
+  loop.onDrain.push(() => {
+    if (!build.isOpen) return;
+    build.render({ rows: buildRows(g), holding: g.hotbar.label,
+      free: g.mode.freeBuild });
+  });
+
   return {
+    /**
+     * The build menu (GP-111). With no argument it only reports.
+     *
+     * `rows` is the SAME derivation the panel draws, so a probe asserting that a
+     * launch pad is greyed is asserting about the tile the player sees rather
+     * than about a second computation of the same thing.
+     */
+    buildMenu(open?: boolean) {
+      if (open !== undefined) setBuild(open);
+      const rows = buildRows(g);
+      return {
+        open: build.isOpen,
+        holding: g.hotbar.label,
+        fromMenu: g.hotbar.holdingFromMenu,
+        armed: g.build.selected,
+        rows: rows.map((r) => ({ id: r.id, cost: r.cost, group: r.group,
+          affordable: r.affordable, lockedBy: r.lockedBy, inHand: r.inHand,
+          tile: build.tileFor(r.id) !== null,
+          drawn: build.tileFor(r.id)?.className ?? '' })),
+      };
+    },
+
     /**
      * The menu, through the SAME transition Escape reaches. With no argument it
      * only reports, so a probe can look without changing anything.

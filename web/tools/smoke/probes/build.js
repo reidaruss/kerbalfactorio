@@ -416,7 +416,13 @@
   // --- 2. free placement lands where it was aimed ---------------------------
   of.build(6);
   await sleep(0.1);
-  of.input.tape([{ hold: 4, keys: ['KeyB'] }, { hold: 6, keys: [] }]);
+  // GP-113. THE ACTION AND NOT THE CODE. This pressed the literal `KeyB` for
+  // months, so when B moved to the build menu it would have silently stopped
+  // toggling free placement and the measurement below would have quietly become
+  // a second measurement of snapped placement. That is exactly the failure the
+  // binding table exists to prevent (GP-26), and this file was the one caller
+  // still going round it.
+  of.input.tape([{ hold: 4, actions: ['freeSnap'] }, { hold: 6, keys: [] }]);
   await sleep(0.25);
   const freeAim = await sweep((g) => g.free === true && g.ok, -60, -10, AROUND);
   const freeGhost = freeAim === null ? ghost() : freeAim.g;
@@ -431,7 +437,7 @@
     + `"${freeGhost?.reason}" landed `
     + `${freeErrM === null ? 'nowhere' : freeErrM.toExponential(3)} m from the aim`);
   // Back to snapping, so the world the save captures is the grid-built one.
-  of.input.tape([{ hold: 4, keys: ['KeyB'] }, { hold: 6, keys: [] }]);
+  of.input.tape([{ hold: 4, actions: ['freeSnap'] }, { hold: 6, keys: [] }]);
   await sleep(0.25);
 
   // --- 8. DW-32: a cantilevered floor, and the pillar under it --------------

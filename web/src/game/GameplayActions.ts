@@ -15,6 +15,7 @@ import { CRAFT_BLOCK, craftBlockText } from './GameCore.js';
 import { GATED_BY_ITEM } from './Factory.js';
 import { recipeRows, slotRows } from './GameplayViews.js';
 import { urlForMode, type GameMode } from './GameMode.js';
+import { craftOnDemand, shortOfText, tierToPlace } from './Buildables.js';
 import { SKILL } from './Progression.js';
 import type { PartKind, SlotContent } from './Hotbar.js';
 import type { Gameplay } from './Gameplay.js';
@@ -105,20 +106,19 @@ export function collectFrom(g: Gameplay, b: Placed): void {
 }
 
 /**
- * Put a furnace or a smelter from the pack on the 1 m grid ahead of the eye.
+ * Put a hand furnace or a hand smelter on the 1 m grid ahead of the eye.
  *
- * DW-31: in sandbox the pack is not a gate, so an empty one still places the
- * primitive furnace. The tier is still read from the pack FIRST, so a sandbox
- * player who has actually got a smelter puts down the smelter.
- */
+ * GP-114. RAW MATERIALS ARE ENOUGH NOW: with none in the pack `craftOnDemand`
+ * makes one at /core's own price and `Machines.place` consumes it as it always
+ * has, so there is one charge on one path and the bar's `furnace` slot and the
+ * build menu pay the same. The rule, the ORDER and DW-31 are in Buildables.ts. */
 export function placeMachine(g: Gameplay,
                              ray: { origin: { x: number; y: number; z: number };
                                     dir: { x: number; y: number; z: number } }): void {
   const ids = g.game.ids;
-  const held = g.game.count(ids.furnace) > 0 ? 0
-    : g.game.count(ids.smelter) > 0 ? 1 : -1;
-  const tier = held < 0 && g.mode.freeBuild ? 0 : held;
-  if (tier < 0) { g.hud.flash('nothing to place  (craft a furnace)'); return; }
+  const h = g.hotbar.held;
+  const tier = tierToPlace(g, h.kind === 'furnace' ? h.tier ?? -1 : -1);
+  if (tier < 0 || !craftOnDemand(g, tier)) { g.hud.flash(shortOfText(g, tier)); return; }
   const item = tier === 0 ? ids.furnace : ids.smelter;
   if (g.machines.place(item, tier, ray.origin, ray.dir) === null) {
     g.hud.flash('cannot place there');

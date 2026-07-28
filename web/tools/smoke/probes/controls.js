@@ -310,6 +310,11 @@
     // any other row in this table gets: a fallback that opened the menu without
     // registering it as a modal would open it here and never close it.
     pause: async () => { await act(['cancel'], 4, 0.35); },
+    // GP-111. THE BUILD MENU, on B. Its absence from this table when it landed
+    // was the derivation catching a real gap within the hour, exactly as the
+    // three progression screens' absence did: a menu that joins the stack and
+    // cannot be opened here FAILS, so nothing can quietly escape the guarantee.
+    build: async () => { await act(['build'], 4, 0.4); },
   };
   const escapeRows = [];
   for (const entry of of.modals().modals) {

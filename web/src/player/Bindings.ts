@@ -17,7 +17,7 @@ export type Action =
   | 'jump' | 'sprint'
   | 'use' | 'interact' | 'cancel'
   | 'pack' | 'level' | 'demolish' | 'view' | 'lamp'
-  | 'rotate' | 'freeSnap' | 'mute' | 'goals' | 'assembly'
+  | 'rotate' | 'freeSnap' | 'mute' | 'goals' | 'assembly' | 'build'
   // W11 PROGRESSION SCREENS. Three panels, three verbs, no raw codes anywhere
   // downstream (H-5). They landed as literal 'KeyJ'/'KeyU'/'KeyK' inside
   // `game/ProgressUi.ts` only because this file was another lane's that night,
@@ -79,7 +79,21 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   view: ['KeyV'],
   lamp: ['KeyL'],
   rotate: ['KeyR'],
-  freeSnap: ['KeyB'],
+  // GP-113. B MOVED OFF FREE PLACEMENT AND ONTO THE BUILD MENU, because Reid
+  // asked for that key by name: "let's make b, the letter b, a build menu".
+  //
+  // Free placement went to N, and the collision that looks like is not one. N is
+  // `stage`'s SECOND code (Space is the primary), and `stage` is a flight verb:
+  // `Gameplay.fixedStep` returns before `keys.world` while `suspended`, so the
+  // build ghost cannot exist in a rocket, and on foot `stage` reaches nothing.
+  // The rule this file already states covers it exactly: a code may fire two
+  // actions provided only one of the two consumers is ever live, and you are
+  // either walking or strapped in.
+  freeSnap: ['KeyN'],
+  // GP-111. THE BUILD MENU. It joins the modal stack, so it needs the same
+  // survivorship `pack` and `assembly` have: the key that opened it has to keep
+  // working while it owns the pointer, or the only way out would be Escape.
+  build: ['KeyB'],
   // MUTE MOVED OFF KeyM, and this is the one binding change that is not an
   // addition. M is the map key in KSP and Reid asked for it by name, and the
   // "a code may fire two actions" rule below has a precondition that mute
@@ -190,7 +204,7 @@ export const BINDINGS: Record<Action, readonly string[]> = {
  * panel, which is what `Input.setUiCapture`'s second argument is for.
  */
 export const UI_ALLOWED: readonly Action[] =
-  ['pack', 'interact', 'cancel', 'assembly',
+  ['pack', 'interact', 'cancel', 'assembly', 'build',
     // Same rule as `pack`: each of the three progression screens takes the
     // pointer while it is open, so the key that opened it has to survive to
     // close it. All three, not one, because a guarantee that holds for two

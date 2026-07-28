@@ -1,0 +1,107 @@
+/* The build menu (GP-111). Same world as game.css and research.css: gunmetal
+   panels, one amber accent, hairline rules, monospace.
+
+   THE ONE RULE THIS FILE HOLDS: the tiles wrap and the body scrolls INSIDE its
+   own frame, never the page. The canvas underneath is sized to the viewport, so
+   a scrolled document slides the 3D view out from under the overlay. */
+
+#of-build {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.5);
+  z-index: 30;
+}
+
+#of-build.open { display: flex; }
+
+#of-build .frame {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 94vw);
+  max-height: 86vh;
+  padding: 14px 16px 12px;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+#of-build h3 {
+  margin: 0 0 8px;
+  padding-bottom: 7px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-build h3 .foot {
+  float: right;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--of-accent);
+}
+
+#of-build .body { overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+
+#of-build .hint {
+  margin-top: 9px;
+  padding-top: 7px;
+  font-size: 11px;
+  color: var(--of-dim);
+  border-top: 1px solid var(--of-edge);
+}
+
+#of-build .grp { margin-bottom: 10px; }
+
+#of-build .grp h4 {
+  margin: 0 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--of-accent);
+}
+
+#of-build .tiles { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.of-btile {
+  width: 150px;
+  padding: 7px 8px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  border-left: 2px solid var(--of-edge);
+  cursor: pointer;
+}
+
+/* AFFORDABLE IS LIT, UNAFFORDABLE IS GREYED, LOCKED IS BOTH AND UNCLICKABLE.
+   Reid asked for the first two by name; the third follows the tech tree's own
+   rule that a node you cannot reach is still worth seeing. */
+.of-btile.can { border-left-color: var(--of-good); }
+.of-btile.short { opacity: 0.5; border-left-color: var(--of-edge); }
+.of-btile.locked { opacity: 0.4; cursor: default; }
+.of-btile.held { border-color: var(--of-accent); background: var(--of-panel-2); }
+.of-btile.held::after { content: " in hand"; color: var(--of-accent); font-size: 10px; }
+
+.of-btile:hover:not(.locked) { border-color: var(--of-accent); }
+
+.of-btile .art {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 3px;
+}
+.of-btile .art > .ico { width: 32px; height: 32px; }
+.of-btile .art > .tx { font-size: 11px; color: var(--of-dim); }
+
+.of-btile .nm { color: var(--of-ink); font-size: 12px; }
+.of-btile .cost { font-size: 10px; color: var(--of-accent); }
+.of-btile .lock { font-size: 10px; color: var(--of-dim); }
+.of-btile .ing { font-size: 10px; }
+.of-btile .ing i { font-style: normal; margin-right: 5px; }
+.of-btile .ing i.ok { color: var(--of-good); }
+.of-btile .ing i.no { color: var(--of-bad); }

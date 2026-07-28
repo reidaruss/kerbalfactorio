@@ -44,8 +44,14 @@ export type SlotContent =
   | { kind: 'part'; part: PartKind }
   /** A hand furnace or smelter out of the pack. It is not a `PartKind`: it is
    *  placed by `Machines`, not by the factory plan, for the same reason GP-19
-   *  kept the survival furnace out of the factory sim. */
-  | { kind: 'furnace' }
+   *  kept the survival furnace out of the factory sim.
+   *
+   *  GP-111: `tier` is which of the two the BUILD MENU asked for, and it is
+   *  optional because a `furnace` slot in the BAR carries none: the bar's own
+   *  slot has always meant "whatever hand machine is to hand", which is what
+   *  `tierToPlace(g, -1)` still answers. A saved slot never carries it either
+   *  (`readSlot` drops it), so the bar keeps meaning exactly what it did. */
+  | { kind: 'furnace'; tier?: number }
   /** GP-86: the gun. Its own kind rather than a `PartKind`, because it places
    *  nothing and ticks nothing: what it changes is what the LEFT BUTTON DOES,
    *  which is exactly the question this enum exists to answer (GP-26). */
@@ -121,9 +127,38 @@ export class Hotbar {
   /** Selections made, so a probe can prove the wheel actually moved it. */
   changes = 0;
 
+  /**
+   * GP-112. WHAT THE BUILD MENU PUT IN YOUR HAND, or null.
+   *
+   * It is an OVERRIDE over the selected slot rather than a write INTO one, and
+   * that is the decision. Reid still uses the bar and the other half of tonight
+   * is about editing it, so a menu pick that silently overwrote slot 4 would
+   * destroy a loadout to place one wall. It is also not a tenth kind of thing
+   * that decides the verb: it goes through `held`, so `partInHand`,
+   * `handInHand`, `gunInHand`, `label`, `digAllowed` and the per-tick
+   * `build.arm` all follow it with no second authority anywhere (GP-26's rule,
+   * which is that the HAND decides and there is one hand).
+   *
+   * It is transient by construction: choosing any slot clears it, and so does
+   * Escape, which is exactly the "to get out of that, you press escape" Reid
+   * asked for. It is never serialized, because `serialize` reads `bar`.
+   */
+  private override: SlotContent | null = null;
+
   get selectedIndex(): number { return this.index; }
   get slots(): readonly SlotContent[] { return this.bar; }
-  get held(): SlotContent { return this.bar[this.index]; }
+  get held(): SlotContent { return this.override ?? this.bar[this.index]; }
+  /** True while a build-menu pick is in hand rather than a bar slot. */
+  get holdingFromMenu(): boolean { return this.override !== null; }
+
+  /** Put something in hand from outside the bar. Returns false for a no-op. */
+  hold(c: SlotContent | null): boolean {
+    const was = this.override;
+    this.override = c === null || c.kind === 'empty' ? null : c;
+    if (was === this.override) return false;
+    this.changes++;
+    return true;
+  }
 
   /** The part in hand, or null when the hand is bare or the slot is empty. */
   get partInHand(): PartKind | null {
@@ -149,7 +184,12 @@ export class Hotbar {
   /** Select by 0-based index. Out of range is ignored, not wrapped: a number
    *  key that does not exist should do nothing, not jump to slot 1. */
   select(i: number): boolean {
-    if (i < 0 || i >= SLOT_COUNT || i === this.index) return false;
+    // GP-112. CHOOSING A SLOT DROPS A BUILD-MENU PICK, always, and before the
+    // range test: pressing 4 while holding a menu-picked wall must give you
+    // slot 4, and a pick that survived it would leave the bar lit on one thing
+    // and the ghost drawing another.
+    const dropped = this.hold(null);
+    if (i < 0 || i >= SLOT_COUNT || i === this.index) return dropped;
     this.index = i;
     this.changes++;
     return true;
@@ -251,6 +291,12 @@ export class Hotbar {
 
   /** Empty the hand: Escape's last resort before it gives the pointer back. */
   clearHand(): boolean {
+    // GP-112. A MENU PICK IS EMPTIED FIRST AND ON ITS OWN, because it is not a
+    // slot: `select` cannot undo it, and without this branch Escape would jump
+    // to the hand slot while the override kept the wall in the player's hand.
+    // It also returns true, which is what makes the `hand` modal entry in
+    // Gameplay close a menu pick exactly as it closes a slotted part.
+    if (this.override !== null) { this.hold(null); return true; }
     if (this.held.kind !== 'part') return false;
     return this.select(this.bar.findIndex((s) => s.kind === 'hand'));
   }
@@ -276,6 +322,7 @@ export class Hotbar {
   report(): unknown {
     return {
       selected: this.index + 1,
+      fromMenu: this.override !== null,
       label: this.label,
       kind: this.held.kind,
       part: this.partInHand,
