@@ -17,7 +17,7 @@
 
 import { headingIn, siteAt } from './MachinePlacement.js';
 import { orient } from './Grid.js';
-import { FOOTPRINT } from './FactoryKinds.js';
+import { FOOTPRINT, reachToCentreM } from './FactoryKinds.js';
 import type { Factory, Placed } from './Factory.js';
 
 /**
@@ -145,24 +145,21 @@ export function pickAimed(f: Factory,
     const oy = p.pos.y + p.up.y * 0.7 - eye.y;
     const oz = p.pos.z + p.up.z * 0.7 - eye.z;
     const t = ox * dir.x + oy * dir.y + oz * dir.z;
-    // FS-63: REACH IS TO THE HOUSING, NOT THE CENTROID, and it is FS-59's
-    // constant a third time. `t` is the distance to the CENTRE and
-    // `PICK_REACH_M` is 3.5 m, written when every machine was 2 m across and so
-    // meaning 2.5 m from the face. An 8 m assembler's centre is 4.000 m from its
-    // own face, so this test rejected it FROM EVERYWHERE: the machine was drawn,
-    // was connected, and could not be aimed at, opened, fed or demolished from
-    // any position in the world, with every other indicator reading healthy
-    // (DW-28). Caught by `probes/assembler.js` and by nothing static, because
-    // every table, port and link was correct.
+    // FS-63: REACH IS TO THE HOUSING, NOT THE CENTROID. `t` is the distance to
+    // the CENTRE and `PICK_REACH_M` is 3.5 m, written when every machine was 2 m
+    // across. An 8 m assembler's centre is 4.000 m from its own face, so this
+    // test rejected it FROM EVERYWHERE: the machine was drawn, was connected, and
+    // could not be aimed at, opened, fed or demolished from any position in the
+    // world, with every other indicator reading healthy (DW-28). Caught by
+    // `probes/assembler.js` and by nothing static, because every table, port and
+    // link was correct.
     //
-    // ONLY THE EXCESS OVER 2 m IS ADDED, so every machine that exists today
-    // (belt 1 m, drill / smelter / esmelter / generator 2 m) clamps to zero and
-    // behaves exactly as it shipped, and the assembler gets the same 2.5 m from
-    // its face a smelter has always had. Making the rule "reach to the surface"
-    // outright is tidier and silently loosens every existing machine by 1.0 m,
-    // which changes what `autoline`, `shortline` and `demolish` measure.
-    const bulge = Math.max(0, FOOTPRINT[p.kind] - 2) * 0.5;
-    if (t < -r || t > reachM + bulge) continue;
+    // FS-74 REPLACED FS-63's `Math.max(0, FOOTPRINT - 2) * 0.5` BECAUSE THE `2`
+    // WAS THE OLD BASELINE AND THE OLD BASELINE JUST MOVED. See
+    // `FactoryKinds.reachToCentreM` for the derivation and for what it changes:
+    // the belt and the pole are bit-identical, everything larger reaches 0.5 m
+    // further to its centre than FS-63 allowed.
+    if (t < -r || t > reachToCentreM(p.kind, reachM)) continue;
     const miss = Math.hypot(ox - dir.x * t, oy - dir.y * t, oz - dir.z * t);
     if (miss > r) continue;
     const score = miss / r;

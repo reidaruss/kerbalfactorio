@@ -13,6 +13,7 @@
 
 import { labelOf } from '../player/Bindings.js';
 import { portsMissing } from './FactoryPorts.js';
+import { FOOTPRINT } from './FactoryKinds.js';
 import type { Factory, Placed } from './Factory.js';
 import type { GameCore } from './GameCore.js';
 import type { HudTarget } from '../ui/GameHud.js';
@@ -176,7 +177,14 @@ export function factoryReport(f: Factory): unknown {
      */
     links: f.links.map((l) => ({ from: l.from, to: l.to,
       fromPort: l.fromPort, toPort: l.toPort,
-      gapM: l.gapM, riseM: l.riseM, facing: l.facing })),
+      gapM: l.gapM, riseM: l.riseM, facing: l.facing,
+      /** FS-76: the SIGNED separation along the outlet's own face. `gapM` is a
+       *  magnitude and reads 0.50 both for a belt half a metre short of a hopper
+       *  and for a belt half a metre INSIDE the housing, which is exactly the
+       *  arrangement a machine rescale creates on a world saved at the old size.
+       *  A probe that asserts on `gapM` alone cannot see it; one that asserts on
+       *  this can. */
+      alongM: l.alongM })),
     /** FS-45: every belt end that ran into a housing, with the reason. */
     refusals: f.refusals,
     /** The port table was published before this plan was wired, and it means
@@ -188,6 +196,17 @@ export function factoryReport(f: Factory): unknown {
     portsMissing: portsMissing(),
     /** FS-46: what the last restore did to a pre-port save. */
     migration: f.migration,
+    /** FS-78: what the last restore did to a save built when the machines were
+     *  smaller. `tooCloseAfter` is the verdict and it must be 0; `moved > 0` with
+     *  a nonzero `tooCloseAfter` is a PARTIAL re-spacing, which is a different
+     *  failure from a re-spacing that never ran (`moved === 0`), and the two are
+     *  deliberately distinguishable from these fields alone. */
+    rescale: f.rescale,
+    /** FS-73: the dimension table the whole geometry is derived from, published
+     *  so a probe asserts against the SHIPPED sizes rather than against its own
+     *  copy of them. A control whose constant is a copy of the thing it watches
+     *  is standing rule 11's own example of how a control rots. */
+    footprint: FOOTPRINT,
     ticks: f.line.ticks,
     coreTicks: f.line.coreTicks,
     rebuilds: f.line.rebuilds,

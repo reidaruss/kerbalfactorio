@@ -121,6 +121,11 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // DW-31. Unlike every other entry here this is not an isolation switch: it
   // selects a game MODE, and the world it makes saves to its own slot.
   'sandbox',
+  // FS-78, standing rule 7. `rescale=0` loads a world built when the machines
+  // were smaller WITHOUT re-spacing it, so the defect the migration exists to
+  // remove can be measured rather than asserted. `probes/rescale.js` is its
+  // negative control and prints the same fields with and without it.
+  'rescale',
   // GP-79 / GP-82. Also not an isolation switch: it turns DANGER back on inside
   // sandbox, which DW-31 leaves off by default so a designer testing a rocket is
   // not fighting while they do it. Ignored in survival, which is always hostile.

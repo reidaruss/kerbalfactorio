@@ -49,44 +49,112 @@ export const TYPE_ID: Record<BuildKind, number> = {
 /**
  * Footprint in whole metres (ASSET-SPECS), and the interaction bound.
  *
- * FS-57: THE ASSEMBLER IS 8 m, WHICH IS TWO STRUCTURAL MODULES ACROSS, AND
- * EVERY OTHER MACHINE IN THIS TABLE IS NOW INCONSISTENT WITH IT.
+ * FS-73: THE MACHINE SET IS NOW ONE SCALE, AND THE SCALE IS THE STRUCTURAL
+ * MODULE. The smelter, the electric smelter and the drill go 2 m to 4 m; the
+ * assembler stays at 8 m and the chest at 4 m; the belt tile and the power pole
+ * stay at 1 m. Every machine in the set is now a whole number of 4 m structural
+ * modules (DW-32) and the two things that are not machines are a quarter of one.
  *
- * Reid, on Satisfactory: "they're pretty big and they have slots for the inputs
- * and slots for the outputs that fit the belts and the belts snap to." The
- * measured reference is a Satisfactory foundation at 8 m, a Constructor at
- * 8 x 10 m and an Assembler at roughly 2 x 2 of those tiles. Our structural
- * module is 4 m (DW-32), so metre for metre this 8 m assembler is Satisfactory's
- * CONSTRUCTOR, and its Assembler would be about 16 m. It is not a Constructor
- * that is wanted, so the honest statement of what shipped is: the assembler is
- * now four times the smelter in each axis and still half the size its reference
- * is, and the smelter (2 m), the drill (2 m) and the belt tile (1 m) did NOT
- * move in this pass. A machine set at two different scales is visible from the
- * first screenshot, which is the right way for this to be carried: rescaling the
- * shipped machines re-baselines `beltsnap`, `machineports`, `shortline`,
- * `autoline` and `coalsmelt` together and is its own pass.
+ * FS-57 said this plainly and deferred it: "the smelter (2 m), the drill (2 m)
+ * and the belt tile (1 m) did NOT move in this pass. A machine set at two
+ * different scales is visible from the first screenshot." This is that pass.
  *
- * WHY EIGHT AND NOT ANY OTHER NUMBER, and this half is not taste. Machines snap
- * on a 1 m site grid, and `FactorySnap.stepsFor` steps a new part
- * `ceil((fpA + fpB) / 2)` cells away. An EVEN footprint leaves exactly the same
+ * WHY THE BELT AND THE POLE DO NOT MOVE, and it is a measured proportion rather
+ * than a saving. Reid's reference is Satisfactory, where a Mk1 conveyor is about
+ * 2 m wide against an 8 m foundation, which is one QUARTER of a module. Our
+ * module is 4 m (DW-32), so a quarter of it is 1 m, which is exactly what the
+ * belt already is. The belt never looked wrong against the reference, it looked
+ * wrong against a 2 m smelter, and moving the smelter is what fixes it. The
+ * belt's tile length is also the sim's unit of transport-line capacity, so
+ * doubling it would silently halve item density per metre in `factory_sim.h`
+ * (FS-30's invariant is stated in capacity UNITS, which know nothing about
+ * metres), and that is a throughput change nobody asked for wearing the clothes
+ * of an art change. A pole is a pole for the same reason a belt is a belt.
+ *
+ * WHY THE GENERATOR DOES NOT MOVE, DEFERRED WITH ITS REASON. `power.h` attaches
+ * a generator to a network only inside a pole's 2.5 m SUPPLY RADIUS (FS-51),
+ * which is a /core constant in another domain's header, measured against a 2 m
+ * generator standing 3.61 m from a pole and reading `attached 0 of 1`. Taking
+ * the generator to 4 m moves the housing face 1 m closer to every pole and
+ * therefore changes which generators are on the grid in every existing world,
+ * which is a power-model change and not an art change. It needs the power lane's
+ * number, not this lane's guess. The generator is consequently the one machine
+ * still at 2 m and that is said here rather than discovered later.
+ *
+ * WHY EVEN, AND WHY THIS IS THE ONLY SHAPE THE TABLE MAY TAKE. Machines snap on
+ * a 1 m site grid and `FactorySnap.stepsFor` steps a new part
+ * `ceil((fpA + fpB) / 2)` cells away. An EVEN footprint leaves exactly the
  * half-cell residual FS-26 named and `PORT_MATE_M` (0.65 m) was derived against:
- * belt to assembler is `ceil(9/2)` = 5 cells = 5.010 m on the shipped world,
- * less the belt's 0.500 m outlet offset and the assembler's 4.000 m inlet
- * offset, which is 0.510 m, against the smelter's 0.500 m. An ODD footprint
- * would land the pair on the other side of the rounding and change the bound
- * for every machine. So the assembler may grow to any even module count without
- * touching the port model, and 16 m is a one-constant change here plus the same
- * constant in `build_assembler.py`, once the rest of the set moves with it.
+ * belt to smelter is now `ceil(5/2)` = 3 cells, less the belt's 0.500 m outlet
+ * offset and the smelter's 2.000 m inlet offset. An ODD footprint would land the
+ * pair on the other side of the rounding and change the bound for every machine.
+ *
+ * AND CHANGING A NUMBER IN THIS TABLE CHANGES WORLDS THAT ALREADY EXIST. A
+ * `SaveBuilding` records `pos` and carries NO footprint, so a placement saved at
+ * the old size keeps its absolute position and is re-drawn at the new one. See
+ * `FactoryRescale.ts`: that is not a cosmetic drift, it is a belt standing half
+ * inside a housing while every indicator reads healthy, and it is why this table
+ * may not be edited without the migration beside it.
  */
 export const FOOTPRINT: Record<BuildKind, number> = {
-  miner: 2, belt: 1, smelter: 2, generator: 2, pole: 1, esmelter: 2,
+  // FS-73 took `smelter.glb` and `miner.glb` from 2.00 m to 4.00 m. These must
+  // equal the assets' own `footprint_cells` in `tools/blender/contracts.json` or
+  // `socketReachM` under-reaches its own sockets and `stepsFor` mates the part at
+  // the wrong distance, both silently.
+  miner: 4, belt: 1, smelter: 4, generator: 2, pole: 1, esmelter: 4,
   assembler: 8,
-  // FS-68 took `box.glb` from 1.00 m to 4.00 m, so this is 4 and NOT 1. It must
-  // equal the asset's `footprint_cells` or `socketReachM` under-reaches its own
-  // sockets and `stepsFor` mates it at the wrong distance, both silently. Even,
+  // FS-68 took `box.glb` from 1.00 m to 4.00 m, so this is 4 and NOT 1. Even,
   // for the reason the assembler's 8 is even.
   chest: 4,
 };
+
+/**
+ * The smallest footprint in the table, in metres. DERIVED, and it is the datum
+ * that four separate bounds used to spell as a literal.
+ *
+ * INSTRUMENTS.md, "a constant is a hidden assumption": a bound written against
+ * today's set gets COPIED rather than derived, and the copies do not know about
+ * each other. Three of the four copies this pass had to repair spelled the OLD
+ * BASELINE, the 2 m machine, as the number `2`. The right datum was never 2, it
+ * was "the smallest thing that stands on this grid", and that is a question the
+ * table can answer for itself and will keep answering when the table changes
+ * again.
+ */
+export function minFootprintM(): number {
+  return Math.min(...Object.values(FOOTPRINT));
+}
+
+/**
+ * FS-74: HOW FAR A BUILDING'S CENTRE MAY BE FROM THE EYE AND STILL BE AIMED AT,
+ * given a reach authored against the SMALLEST part on the grid.
+ *
+ * `PICK_REACH_M` (3.5 m, `GameplayAim.ts`) is a reach to a CENTRE. For a 1 m
+ * belt tile that is 3.0 m past its face, which is what it has always meant and
+ * what it still means here. For anything larger the centre is further inside the
+ * housing, so the extra half-extent is added back: the player is reaching for a
+ * SURFACE and the surface is where `FOOTPRINT` says it is.
+ *
+ * THE PREVIOUS SPELLING WAS `Math.max(0, FOOTPRINT - 2) * 0.5` AND THE `2` WAS
+ * THE OLD BASELINE (FS-63). It was written to keep every machine of the day
+ * behaving exactly as it shipped, and the clamp did that only because every
+ * machine of the day was 2 m. Rescaling the smelter and the drill fires it
+ * automatically and there is nothing left for it to protect, so the excess is now
+ * measured against `minFootprintM()` and there is no literal in it at all.
+ *
+ * WHAT MOVES, stated because a bound that changes silently is the defect this
+ * whole file is about. The belt and the pole are BIT-IDENTICAL: they are the
+ * minimum, so the excess is zero, which is exactly the property FS-63's clamp
+ * existed to protect. Everything larger gains 0.5 m of reach to its centre
+ * relative to FS-63's rule, so a machine is reachable from 3.0 m past its face
+ * rather than 2.5 m. That is a LOOSENING, deliberately: FS-63's defect was an
+ * 8 m machine that could not be aimed at from anywhere in the world, and every
+ * failure in this family has been a reach that was too short. It is measured in
+ * `probes/autoline.js`, `probes/shortline.js` and `probes/rescale.js` rather
+ * than asserted here.
+ */
+export function reachToCentreM(kind: BuildKind, reachM: number): number {
+  return reachM + (FOOTPRINT[kind] - minFootprintM()) * 0.5;
+}
 
 /**
  * FS-59: HOW FAR ONE OF THIS KIND'S SOCKETS CAN POSSIBLY BE FROM ITS OWN

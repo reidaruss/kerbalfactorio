@@ -32,7 +32,7 @@
 import * as THREE from 'three';
 import { SITE_REACH_M, localOf, worldOf, type Site, type StructureModule }
   from './StructureGrid.js';
-import { FOOTPRINT, type BuildKind, type Placed } from './FactoryKinds.js';
+import { FOOTPRINT, minFootprintM, type BuildKind, type Placed } from './FactoryKinds.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 /**
@@ -211,19 +211,32 @@ export function machineClash(placed: readonly Placed[], kind: BuildKind,
  *   belt 1 to belt     1: cell 0 refused (already `occupied`), cell 1 allowed
  *   smelter 2 to smelter 2: cell 1 refused, cell 2 allowed (GP-49, unchanged)
  *
- * THE GATE IS DELIBERATELY NARROW rather than "always apply", and that is a
- * blast-radius decision and not a geometric one. Always applying is the more
- * honest rule and it also refuses a belt running PAST a 2 m machine at one cell
- * of lateral offset, which is genuinely a clipping overlap and is genuinely
- * allowed today, on every drag path in every existing scene. Tightening that is
- * a change to what `beltsnap`, `shortline`, `autoline` and `demolish` measure
- * and belongs in the pass that rescales the machine set, not in this one. So the
- * rule applies when a housing is big enough to stand inside (3 m or more) or
- * when both parts are machines (GP-49's original case), and every existing
- * placement in the game is bit for bit unaffected.
+ * FS-77 TOOK THE DEFERRAL FS-65 LEFT HERE, BECAUSE THIS IS THE PASS IT NAMED.
+ * FS-65's gate read `Math.max(fa, fb) >= 3 || (fa >= 2 && fb >= 2)`, and its own
+ * comment said why it was narrow: always applying "also refuses a belt running
+ * PAST a 2 m machine at one cell of lateral offset, which is genuinely a
+ * clipping overlap and is genuinely allowed today ... Tightening that is a change
+ * to what `beltsnap`, `shortline`, `autoline` and `demolish` measure and belongs
+ * in the pass that rescales the machine set, not in this one."
+ *
+ * Two things make it right to take now. The rescale fires the `>= 3` branch by
+ * itself, because the smelter and the drill are 4 m, so belt-against-machine is
+ * already tightened whatever this line says; leaving the gate would mean the
+ * generator alone kept an exemption nothing else has. And `3` was the LAST
+ * spelling of the old baseline in this file, one more copy of the constant
+ * INSTRUMENTS.md is about.
+ *
+ * The replacement carries no size at all. The exemption exists so two parts of
+ * the SMALLEST kind may sit against each other, and for those the rule is a
+ * no-op anyway: `footprintsOverlap` at 1 and 1 refuses only the shared cell,
+ * which `Factory.occupied` already refuses. So the gate is now "unless both
+ * parts are the minimum", which is provably behaviour-identical for belt against
+ * belt at every future size of the table, and is documentation rather than
+ * arithmetic.
  */
 function clashApplies(fa: number, fb: number): boolean {
-  return Math.max(fa, fb) >= 3 || (fa >= 2 && fb >= 2);
+  const m = minFootprintM();
+  return fa > m || fb > m;
 }
 
 /** The site whose grid reaches `p`, or a fresh one founded on the lattice cell

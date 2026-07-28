@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { orient } from './Grid.js';
 import { migrateToPorts, NO_MIGRATION } from './FactoryMigrate.js';
+import { needsRescale, NO_RESCALE, rescalePlan } from './FactoryRescale.js';
 import { NO_RECIPE } from './FactoryRecipes.js';
 import type { BuildKind, Factory } from './Factory.js';
 
@@ -55,7 +56,8 @@ export interface SavedBuilding {
  * rebuilds it: doing that per record would count N-1 spurious rebuilds and,
  * worse, would wire partial plans on the way. Returns what was restored.
  */
-export function restorePlan(f: Factory, rows: readonly SavedBuilding[]): number {
+export function restorePlan(f: Factory, rows: readonly SavedBuilding[],
+                            rescue = ''): number {
   f.placed.length = 0;
   // CLEARED FIRST, so a load that does NOT migrate cannot report the previous
   // load's repair. `probes/portmigrate.js` caught it on its first green run: its
@@ -63,6 +65,7 @@ export function restorePlan(f: Factory, rows: readonly SavedBuilding[]): number 
   // `migration.ran: true` off the load before it. A report field that outlives
   // the thing it describes will be quoted one day and will be a lie.
   f.migration = NO_MIGRATION;
+  f.rescale = NO_RESCALE;
   for (const r of rows) {
     const up = new THREE.Vector3(r.up[0], r.up[1], r.up[2]);
     const fwd = new THREE.Vector3(r.fwd[0], r.fwd[1], r.fwd[2]);
@@ -85,6 +88,27 @@ export function restorePlan(f: Factory, rows: readonly SavedBuilding[]): number 
   if (rows.some((r) => r.ports !== true)) {
     f.migration = migrateToPorts(f);
     if (f.migration.turned > 0) f.commit();
+  }
+  // FS-78. THE MACHINE RESCALE, and it runs AFTER the port repair for the same
+  // reason that one runs after the commit: turning a machine changes which pairs
+  // are connected, and re-spacing a plan whose yaws are still wrong would spend
+  // cells separating pairs the port repair was about to make irrelevant.
+  //
+  // THE ORDER OF THE TWO GUARDS IS THE CONTRACT. `rescue` is the key the caller
+  // wrote a copy of this world under before anything touched it, and an empty
+  // string means there is no copy, so the rescale does not run at all. A
+  // migration that MOVES buildings without a copy behind it is the one thing
+  // that is not allowed to happen quietly, so the refusal is loud: it is a real
+  // record with `ran: false` and a sentence, not a silent skip that reads
+  // identically to a world that needed nothing.
+  if (needsRescale(rows)) {
+    f.rescale = rescue === '' ? {
+      ...NO_RESCALE, tooCloseBefore: -1,
+      notes: ['this world was built when the machines were smaller and needs '
+        + 're-spacing, and no rescue copy of it could be written, so nothing was '
+        + 'moved. Belts may stand inside housings until it can be.'],
+    } : rescalePlan(f, rescue);
+    if (f.rescale.moved > 0) f.commit();
   }
   return f.placed.length;
 }

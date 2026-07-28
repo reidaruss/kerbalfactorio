@@ -36,6 +36,7 @@ import { NO_MIGRATION, type PortMigration } from './FactoryMigrate.js';
 import { menuOf, recipeOfPlaced, setPlacedRecipe, NO_RECIPE,
   type AssemblerRecipe, type RecipeMenu } from './FactoryRecipes.js';
 import { restorePlan, type SavedBuilding } from './FactoryRestore.js';
+import { NO_RESCALE, type Rescale } from './FactoryRescale.js';
 import type { WiredLink } from './FactoryPorts.js';
 import type { PortRefusal } from './FactoryRefusal.js';
 import type { GameCore } from './GameCore.js';
@@ -63,6 +64,9 @@ export class Factory {
   portsLoaded = false;
   /** FS-46: how the last restore fared against the port model. */
   migration: Readonly<PortMigration> = NO_MIGRATION;
+  /** FS-78: what the one-time machine rescale did to this world, or `NO_RESCALE`
+   *  for a world that did not need it. Cleared by every restore. */
+  rescale: Readonly<Rescale> = NO_RESCALE;
   private nextId = 1;
   /** Ore drained out of world nodes by miners. The conservation counter. */
   minedFromNodes = 0;
@@ -247,7 +251,12 @@ export class Factory {
 
   /** Rebuild the plan from saved records and commit. `FactoryRestore` owns it,
    *  because a save is a seam and not a lifecycle. Returns what was restored. */
-  restore(rows: readonly SavedBuilding[]): number { return restorePlan(this, rows); }
+  /** FS-78: `rescue` is the key a copy of this world was written under before
+   *  the load began, and an empty string means there is no copy, which forbids
+   *  the machine rescale. See `FactoryRestore.restorePlan`. */
+  restore(rows: readonly SavedBuilding[], rescue = ''): number {
+    return restorePlan(this, rows, rescue);
+  }
 
   /**
    * Take one building out of the PLAN and re-commit. Returns what came back.

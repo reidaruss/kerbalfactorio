@@ -44,4 +44,33 @@ export const TEMPLATES: Record<string, MachineTemplate> = {
   // FS-56/57. `assembler.glb` shipped at Tier 0 against the pinned TypeId 0x13
   // and nothing ever drew it, because no `BuildKind` could place one.
   assembler: { url: 'assets/machines/assembler.glb', root: 'Assembler' },
+  /**
+   * FS-81: THE CHEST'S ROW WAS MISSING, AND IT UNWIRED THE ENTIRE FACTORY.
+   *
+   * FS-70 added `chest` to `BuildKind`, to `FOOTPRINT`, to the hotbar, to the
+   * panel, to the save format and to `FactoryPorts.PORT_NAMES`, and did not add
+   * it here. This table is the ONLY thing `FactoryView.load` reads, and
+   * `FactorySnap.readMachineSockets` is keyed by these same keys, so `box.glb`
+   * was never opened and the chest delivered no sockets.
+   *
+   * AND THAT DID NOT BREAK THE CHEST, IT BROKE EVERYTHING ELSE. `PORT_NAMES` is
+   * a CLAIM (see `portsLoaded`): a kind listed there that produces no ports is a
+   * broken asset, so `portsMissing` read `['chest']`, `portsLoaded()` read false,
+   * and `FactoryWiring.wire` returns early on exactly that condition. Every belt,
+   * every smelter, every drill and every assembler in every world stopped being
+   * wired, in the shipped build, from the moment the chest landed. `probes/
+   * rescale.js` walked into it on its first green migration: the geometry was
+   * measured correct to the millimetre and the link list was empty.
+   *
+   * THE GUARD IS NOT THE BUG AND MUST NOT BE LOOSENED. Refusing to wire on a
+   * half-loaded table is DW-28 working exactly as written, and `portsMissing`
+   * named the culprit the whole time. What was missing was anything that LOOKED:
+   * FS-70's own reload proof measured a chest's CONTENTS through the panel, which
+   * is a path that needs no port at all, so a probe suite of ninety files went
+   * green over a factory that could not connect two parts together. That is
+   * standing rule 11 verbatim, and the closing fix is structural rather than a
+   * row: `probes/rescale.js` now asserts `portsLoaded` and prints `portsMissing`,
+   * so a kind added to `PORT_NAMES` without a row here fails by name.
+   */
+  chest: { url: 'assets/machines/box.glb', root: 'Box' },
 };

@@ -232,7 +232,7 @@ export function wire(f: Factory): void {
       up: a.up.clone(), fwd: fwd.normalize(), from: a.id, to: b.id,
       fromPort: l.from.name, toPort: l.to.name,
       gapM: +l.fit.gapM.toFixed(4), riseM: +l.fit.riseM.toFixed(4),
-      facing: +l.fit.facing.toFixed(4),
+      facing: +l.fit.facing.toFixed(4), alongM: +l.fit.alongM.toFixed(4),
     });
   };
 

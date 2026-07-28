@@ -95,6 +95,23 @@ const WANT: Record<string, string[]> = {
   // `FactoryPorts`. The two are on DIFFERENT faces on purpose, which is what
   // lets two belts arrive at one machine without crossing.
   assembler: ['socket_item_in_a', 'socket_item_in_b', 'socket_item_out'],
+  // FS-81: THE CHEST'S ROW WAS MISSING HERE TOO, and this is the half that
+  // actually did the damage. `FactoryTemplates` decides which FILE is opened and
+  // this decides which SOCKETS are taken out of it, so a kind absent from either
+  // one publishes no ports; a kind that `FactoryPorts.PORT_NAMES` claims has
+  // ports and that publishes none makes `portsLoaded()` false; and
+  // `FactoryWiring.wire` returns early on exactly that. FS-70 shipped `chest` in
+  // PORT_NAMES and in neither table, and from that commit until now NOTHING in
+  // the factory was wired, in any world, in the shipped build.
+  //
+  // THREE TABLES KEYED THE SAME WAY AND EDITED SEPARATELY IS THE DEFECT, and the
+  // row below only closes today's instance of it. `PORT_NAMES` is a claim, this
+  // is a request, and `TEMPLATES` is a file: the claim can outrun the other two
+  // silently because nothing checks the three against each other at build time.
+  // It is the shape INSTRUMENTS.md names, an assumption held in copies that do
+  // not know about each other, and it is carried up as named debt rather than
+  // fixed under a rescale.
+  chest: ['socket_item_in', 'socket_item_out'],
 };
 
 /** The sockets items LEAVE by. Everything else is an inlet. */
@@ -206,7 +223,14 @@ export function nearestSocket(placed: readonly Placed[],
  * into four). Closing it needs a half-cell rule for even-footprint machines,
  * which is a placement decision and not a snapping one.
  */
-function stepsFor(from: BuildKind, to: BuildKind): number {
+/** FS-78 EXPORTED THIS. It was private while the only question it answered was
+ *  "where does the ghost go", and it is now also the answer to "how far apart
+ *  must these two stand at all", because the mating distance IS the minimum
+ *  clash-free distance at every size. `FactoryRescale` asks it the second
+ *  question, and asking the same function is the whole point: a migration that
+ *  re-derived the required spacing would be free to disagree with the placement
+ *  that produced it. */
+export function stepsFor(from: BuildKind, to: BuildKind): number {
   return Math.max(1, Math.ceil((FOOTPRINT[from] + FOOTPRINT[to]) * 0.5));
 }
 

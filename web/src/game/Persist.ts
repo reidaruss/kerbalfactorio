@@ -14,7 +14,8 @@
 // rather than a mystery.
 
 import * as THREE from 'three';
-import { SAVE_VERSION, chestStore, readSlot, writeSlot, type SaveMachine,
+import { rescueBefore } from './FactoryRescue.js';
+import { SAVE_VERSION, chestStore, readSlot, slotKey, writeSlot, type SaveMachine,
   type SaveProgress, type SaveSlot, type SlotRefusal } from './SaveGame.js';
 import type { GameMode } from './GameMode.js';
 import type { BuildKind, Factory } from './Factory.js';
@@ -57,43 +58,11 @@ export interface WorldPorts {
   terrain: TerrainDigPort | null;
 }
 
-/** What a save writes about research and the player. Read here so the shape
- *  and its one reader stay in one file. */
-export function saveProgress(g: Gameplay): SaveProgress {
-  const p = g.progress;
-  const worn = p.progression.wornAll();
-  return {
-    techs: p.research.unlocked(),
-    milestones: p.research.milestones(),
-    worn: [worn[0] ?? 0, worn[1] ?? 0, worn[2] ?? 0, worn[3] ?? 0],
-    skills: p.progression.skillXp(),
-    appearance: [...Object.values(p.progression.appearance())],
-  };
-}
-
-/** Put it back. Returns what actually took, so the ledger can say so. */
-export function restoreProgress(g: Gameplay, saved: SaveProgress | undefined):
-    { techs: number; milestones: number; armour: number } {
-  if (saved === undefined) return { techs: 0, milestones: 0, armour: 0 };
-  const p = g.progress;
-  const techs = p.research.restore(saved.techs);
-  let milestones = 0;
-  for (const m of saved.milestones) if (p.research.earn(m)) milestones++;
-  const a = saved.appearance;
-  p.progression.restore(saved.worn, saved.skills, a.length >= 5
-    ? { skin: a[0], suitPrimary: a[1], suitSecondary: a[2], visor: a[3],
-        build: a[4] }
-    : null);
-  const armour = p.progression.wornAll().filter((i) => i > 0).length;
-  // H-4: THE BODY IS PART OF WHAT A LOAD RESTORES. A save that brought four
-  // pieces back into /core's slots and left the avatar bare would be the same
-  // defect the equip button had, one path further along, and it is the reason
-  // `syncArmour` sweeps every slot from `wornAll` rather than reacting to a
-  // click: this call site never presses a button.
-  p.syncArmour();
-  p.invalidate();
-  return { techs, milestones, armour };
-}
+// FS-82. The research and player half moved to `PersistProgress.ts` when the
+// rescue copy pushed this file past its cap; re-exported because every caller in
+// the client asks `Persist` for it, which is the same call `PersistLedger` made.
+import { restoreProgress, saveProgress } from './PersistProgress.js';
+export { restoreProgress, saveProgress } from './PersistProgress.js';
 
 // The receipt a load hands back. It lives in its own file (this one is at its
 // line cap) and is re-exported here, because every caller in the client asks
@@ -206,7 +175,8 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
                       factory: Factory, machines: Machines,
                       slot: SaveSlot, ports: WorldPorts,
                       ore: OreField, structures: Structures,
-                      structView: StructureView, hotbar: Hotbar): RestoreLedger {
+                      structView: StructureView, hotbar: Hotbar,
+                      rescue = ''): RestoreLedger {
   // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
   //    surface the oracle reports, and a miner or a machine placed against the
   //    old, un-dug column would sit at the wrong height.
@@ -264,7 +234,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   // 3. The plan, in one commit.
   const buildings = factory.restore(slot.buildings.map((b) => ({
     ...b, kind: b.kind as BuildKind,
-  })));
+  })), rescue);
 
   // 4. The hand-placed machines, then their contents.
   let restoredMachines = 0;
@@ -387,8 +357,13 @@ export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
   // A slot from another seed is a different planet, and loading it would drop
   // buildings onto terrain that is not there.
   if (slot === null || slot.seed !== g.seed) return null;
+  // FS-79. THE RESCUE COPY, TAKEN BEFORE `apply` TOUCHES ANYTHING, and returning
+  // '' both when none was needed and when one could not be written. Passing it in
+  // is what makes it a PRECONDITION: `restorePlan` will not re-space a plan
+  // without the key of a copy that already exists.
+  const rescue = await rescueBefore(slotKey(g.mode.mode), slot);
   g.restored = apply(g, g.core, g.game, g.factory, g.machines, slot, g.ports,
-    g.oreField, g.structures, g.structView, g.hotbar);
+    g.oreField, g.structures, g.structView, g.hotbar, rescue);
   g.hotbarBar.invalidate();
   g.panel.invalidate();
   const dug = g.restored.voxels.cells;

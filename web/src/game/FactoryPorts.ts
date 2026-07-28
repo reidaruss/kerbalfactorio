@@ -128,6 +128,35 @@ export interface PortWorld {
 export const PORT_MATE_M = 0.65;
 
 /**
+ * FS-76: HOW FAR BEHIND AN OUTLET'S OWN FACE THE INLET IT FEEDS MAY SIT.
+ *
+ * `PORT_MATE_M` bounds a magnitude and therefore accepts a port that has passed
+ * THROUGH the face it was supposed to meet. This bounds the sign, and it is a
+ * separate number because the two populations it separates are not symmetric.
+ *
+ * DERIVED, AND DELIBERATELY NOT ZERO, because standing rule 8 forbids
+ * discriminating on the sign of a computed float. Two belt tiles mate socket to
+ * socket at 9.245e-7 m (FS-26), so their `alongM` is zero to within float noise
+ * and a `> 0` test would put half of every straight run on the wrong branch,
+ * intermittently, which is exactly the -0.0 defect rule 8 was written for. The
+ * two populations have to be pushed into DISJOINT ranges instead:
+ *
+ *   legitimate   belt to belt about 0.000, belt to machine about +0.506, less a
+ *                few centimetres of slope wobble where two parts pitch by
+ *                different amounts. Worst case a small negative, order -0.05.
+ *   illegitimate one whole grid cell too close, which is the coarsest error the
+ *                lattice can produce and the one a rescale creates: the mating
+ *                gap less one cell, about -0.496.
+ *
+ * Half of `PORT_MATE_M` sits between them at -0.325, about 6x clear of the worst
+ * legitimate reading and about 1.5x clear of the best illegitimate one, and it is
+ * expressed as a fraction of the mating envelope rather than picked so that
+ * widening that envelope widens this with it. `probes/rescale.js` measures both
+ * populations rather than trusting this paragraph.
+ */
+export const PORT_BEHIND_M = PORT_MATE_M * 0.5;
+
+/**
  * How nearly two mating ports must face each other, as a dot product.
  *
  * -0.85 is about 31 degrees. Two parts on flat ground that face each other score
@@ -307,6 +336,28 @@ export function portOf(b: PortHost, name: string,
 export interface PortFit {
   /** Distance between the two port points, projected into the tangent plane. */
   gapM: number;
+  /**
+   * FS-76: THE SAME SEPARATION, SIGNED, ALONG THE OFFERING PORT'S OWN FACE.
+   *
+   * `gapM` is a `Math.hypot`, which is a MAGNITUDE, and a magnitude cannot tell
+   * "the inlet is 0.50 m ahead of my outlet" from "the inlet is 0.50 m BEHIND
+   * my outlet, i.e. my belt's last half metre is inside that housing". Those two
+   * arrangements are a working line and a belt buried in a machine, and until
+   * this field existed they produced the identical number and the identical
+   * green indicator everywhere: the ghost, the crosshair, the report and every
+   * probe.
+   *
+   * That is not hypothetical and it is the reason this pass exists. A
+   * `SaveBuilding` records `pos` and carries no footprint, so taking the smelter
+   * from 2 m to 4 m moves its inlet 1.0 m outward while every saved belt stays
+   * put. On a world saved at the old size the inlet lands 0.5 m PAST the belt's
+   * end, `gapM` reads 0.500 exactly as it always did, `mated` stays true, and the
+   * base is connected and geometrically wrong at the same time. INSTRUMENTS.md
+   * calls that a control that cannot report the defect it exists to catch.
+   *
+   * Positive is ahead of the face, which is the only arrangement that is real.
+   */
+  alongM: number;
   /** How far apart they are along `up`. Measured and reported, never gated: a
    *  hopper mouth is deliberately higher than a belt deck. */
   riseM: number;
@@ -338,10 +389,11 @@ export function fitOf(from: PortWorld, to: PortWorld,
   const rise = dx * up.x + dy * up.y + dz * up.z;
   const gap = Math.hypot(dx - up.x * rise, dy - up.y * rise, dz - up.z * rise);
   const facing = from.face.dot(to.face);
+  const along = dx * from.face.x + dy * from.face.y + dz * from.face.z;
   return {
-    gapM: gap, riseM: rise, facing,
+    gapM: gap, alongM: along, riseM: rise, facing,
     mated: from.dir === 'out' && to.dir === 'in'
-      && gap <= PORT_MATE_M && facing <= PORT_FACE_DOT,
+      && gap <= PORT_MATE_M && along > -PORT_BEHIND_M && facing <= PORT_FACE_DOT,
   };
 }
 
@@ -373,6 +425,11 @@ export interface WiredLink {
   gapM: number;
   riseM: number;
   facing: number;
+  /** FS-76: the SIGNED separation along the outlet's own face. Published on the
+   *  link and not only on the fit, because the report is where a probe reads it
+   *  and a magnitude beside a sign is the difference between "this line works"
+   *  and "this belt is buried in that housing". See `PortFit.alongM`. */
+  alongM: number;
 }
 
 /** A connection the geometry actually makes: an outlet meeting an inlet. */
