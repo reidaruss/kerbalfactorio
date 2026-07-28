@@ -49,27 +49,27 @@ ORDER = ["Bark", "LeafDeep", "Leaf", "LeafLight", "LeafDry"]
 FORK_Z = 2.00
 SEED = 5107
 
-# The crown, as (centre, outer radii, core radii, core seg, blade count, seed).
-# Two layers per cluster and they do different jobs:
+# The crown, as (centre, radii, card count, seed). One entry per clump.
 #
-#   CORE   a small tc.canopy_mass, roughly half the outer radius. Closed, so
-#          it is opaque, and that is the point: it is the dark heart of the
-#          clump, the thing that stops the crown looking like a cloud of loose
-#          leaves. It is well INSIDE the silhouette and never draws it.
-#   SPRAY  `count` individual leaf blades radiating from the core out to the
-#          outer radii, in random directions biased upward. These draw the
-#          whole outline, and the gaps between them are sky.
+# THERE IS NO LONGER A SOLID MASS ANYWHERE IN THIS TREE. Up to W11 the crown
+# was four closed tc.canopy_mass spheroids, and a measurement of the rendered
+# silhouette put the sky visible THROUGH the canopy at 0.27 percent of its own
+# area: it was a solid, full stop, which is the whole reason it read as a blob
+# on a stick. Shrinking those masses and fringing them with cards was tried
+# and only reached 0.67 percent, because a closed spheroid of ANY size is
+# still opaque and it sits exactly where you would want to see through. They
+# are gone. A clump is now nothing but a loose cloud of leaf cards spread
+# through its own volume, and the gaps between them are the canopy's sky.
 #
-# Outer radii are oblate (z about 0.7 of the horizontal) per ASSET-SPECS 4.7.
+# Radii are oblate (z about 0.75 of the horizontal) per ASSET-SPECS 4.7.
 CLUSTERS = (
-    ((-0.78, 0.30, 3.95), (1.46, 1.34, 1.22), (0.76, 0.70, 0.66), 9, 60, 1),
-    ((0.72, -0.38, 3.70), (1.34, 1.46, 1.14), (0.70, 0.76, 0.62), 9, 56, 2),
-    ((0.14, 0.78, 3.30), (1.04, 0.98, 0.92), (0.54, 0.51, 0.50), 8, 46, 3),
-    # A fourth cluster with NO core, hung low and to the back: it is pure
-    # spray, so it thins the crown out towards its edge instead of adding
-    # another closed lump. Three clean lumps read as balloons on a stick,
-    # which is exactly what this pass exists to stop.
-    ((-0.30, -0.62, 3.50), (0.96, 1.00, 0.74), None, 0, 38, 4),
+    ((-0.92, 0.30, 3.98), (1.42, 1.30, 1.34), 72, 1),
+    ((0.86, -0.38, 3.72), (1.30, 1.42, 1.26), 68, 2),
+    ((0.14, 0.82, 3.48), (1.02, 0.96, 0.92), 52, 3),
+    # A fourth clump hung low and to the back, smaller and thinner than the
+    # other three: it stops the crown resolving into a countable number of
+    # equal lumps, which is what "three balloons tied to a stick" looks like.
+    ((-0.30, -0.66, 3.62), (0.94, 0.98, 0.76), 42, 4),
 )
 
 
@@ -87,96 +87,110 @@ def _trunk(p):
     return p
 
 
-def _spray(p, centre, radii, count, seed, wf=0.32, wob=0.045):
-    """`count` individual leaf blades radiating out of one cluster centre.
+def _spray(p, centre, radii, count, seed, dry=False):
+    """`count` leaf CARDS scattered over one cluster's shell. Four verts and
+    two triangles each, which is the cheapest patch of foliage there is.
 
-    Five verts and three tris each, the broadleaf's answer to the conifer's
-    _frond: a narrow quad leaves the core, widens and kinks down at the mid
-    ring, and closes to a drooping tip. The difference is that these point in
-    ANY direction rather than radially in the XY plane, because a broadleaf
-    crown is a ball of foliage and a conifer crown is a stack of skirts.
+    Why cards and not the conifer's radial blades. A blade pointing straight
+    out from the crown centre is seen EDGE ON from roughly half the directions
+    you can look at the tree from, so a crown built of them alternates between
+    solid and a scatter of slivers as the camera moves, and at rest it reads
+    as a wreath of spikes rather than foliage. That was the second attempt at
+    this and it was worse than the blob it replaced. A card lies TANGENT to
+    the crown surface instead: it faces the viewer wherever it is on the
+    shell, so it always presents area, and the gaps between neighbouring cards
+    are what the sky comes through.
 
-    Direction is a random azimuth plus an elevation biased upward (the sine of
-    the elevation is drawn from -0.55 to 1.00, so roughly two thirds of the
-    blades sit on the sunlit upper surface and the rest hang under). The
-    direction vector is then scaled COMPONENTWISE by the cluster's radii, so
-    the spray inherits the oblate crown shape for free.
+    Each card sits at a random point on the cluster's ellipsoid, sized from
+    the local shell scale, and its four corners are independently pushed in or
+    out radially by up to 15 percent. That does three jobs at once: the card
+    is non-planar, so Blender's triangulation puts a crease across it and the
+    two halves catch light differently; the cards no longer lie on a common
+    smooth surface, so there are no concentric arcs; and the outline of the
+    crown becomes the ragged union of corner positions rather than an
+    ellipse.
 
-    Why blades at all: four closed tc.canopy_mass spheroids can be jittered,
-    overlapped and shaded as much as you like and they are still four solids
-    of revolution with no holes. No sky ever came through the old crown from
-    any angle, which is most of why it read as a blob on a stick. Every gap
-    between two blades here is open sky. Flat geometry is safe because all
-    four OF_Leaf* roles are in of_lib's DOUBLE_SIDED set and in this asset's
-    double_sided_ok contract list.
+    Flat geometry is safe because all four OF_Leaf* roles are in of_lib's
+    DOUBLE_SIDED set and in this asset's double_sided_ok contract list.
     """
     nxt = hc.rng(seed)
     cx, cy, cz = centre
     rx, ry, rz = radii
+    rm = (rx + ry + rz) / 3.0
     for _ in range(count):
         th = 2.0 * math.pi * nxt()
-        ez = -0.60 + 1.50 * nxt()
+        # Elevation biased upward: the sine is drawn from -0.62 to 0.94, so
+        # roughly two thirds of the cards clothe the sunlit upper surface and
+        # the rest hang under the crown in its own shadow.
+        ez = -0.62 + 1.56 * nxt()
         s = math.sqrt(max(0.0, 1.0 - ez * ez))
         vx, vy, vz = rx * s * math.cos(th), ry * s * math.sin(th), rz * ez
-        # The blade starts on a SHELL, roughly at the core's surface, not at
-        # the cluster centre. Blades that all converge on one point read as a
-        # palm frond crown, which is what the first attempt at this looked
-        # like: each blade covers only the outer 40 percent of the radius, and
-        # it takes a lot of them to clothe the shell.
-        fin = 0.50 + 0.14 * nxt()
-        fout = 0.92 + 0.16 * nxt()
-        bx, by, bz = cx + vx * fin, cy + vy * fin, cz + vz * fin
-        tx, ty, tz = cx + vx * fout, cy + vy * fout, cz + vz * fout
-        dx, dy, dz = tx - bx, ty - by, tz - bz
-        ln = max(1e-4, math.sqrt(dx * dx + dy * dy + dz * dz))
-        ux, uy = -dy, dx
+        vn = max(1e-4, math.sqrt(vx * vx + vy * vy + vz * vz))
+        nx, ny, nz = vx / vn, vy / vn, vz / vn
+
+        # In-plane axes: u horizontal, w up the slope of the shell.
+        ux, uy = -ny, nx
         un = math.hypot(ux, uy)
         if un < 1e-6:
             ux, uy, un = 1.0, 0.0, 1.0
         ux, uy = ux / un, uy / un
-        # Droop is scaled OUT of the blades that point upward. A flat droop
-        # applied to every blade bends the top of the crown back down onto
-        # itself and the whole thing collapses into a disc, which is what the
-        # first version of this looked like; a horizontal blade should hang,
-        # a blade reaching for the sky should not.
-        droop = ln * (0.20 + 0.22 * nxt()) * (1.0 - 0.85 * max(0.0, ez))
-        w0, w1 = ln * 0.07, ln * wf
-        mx, my = bx + dx * 0.55, by + dy * 0.55
-        mz = bz + dz * 0.55 - droop * 0.32
+        wx, wy, wz_ = -nz * uy, nz * ux, nx * uy - ny * ux
 
-        def wz():
-            return (nxt() - 0.5) * 2.0 * wob * ln
+        # Cards sit at any DEPTH from 0.42 to 1.02 of the radius, not on one
+        # shell. A single shell of cards is a hollow ball: dense enough to
+        # cover and it is opaque again, sparse enough to see through and the
+        # crown reads as an empty wreath. Scattered through the volume, the
+        # canopy has interior leaves to look at AND the holes in the near and
+        # far layers only occasionally line up, which is what real foliage
+        # does.
+        fs = 0.42 + 0.60 * nxt()
+        # Card SIZE is the sky dial and it was set by measurement, not taste.
+        # Total card area over the crown's projected area is the coverage
+        # factor, and visible sky falls off as exp(-coverage): the W11 crown
+        # ran at coverage 10 and showed 0.27 percent sky. Many small cards at
+        # coverage near 2 hold the same apparent mass and let roughly an
+        # eighth of the canopy through, which is the difference between
+        # foliage and a solid.
+        a = rm * (0.085 + 0.075 * nxt())
+        # One card in five is half again as big. A crown of identically-sized
+        # cards is a texture; a few broad ones among many small ones is what
+        # makes it read as clumps of leaves on branches.
+        if nxt() < 0.20:
+            a *= 1.55
+        b = a * (0.62 + 0.40 * nxt())
+        px, py, pz = cx + vx * fs, cy + vy * fs, cz + vz * fs
 
-        # Underside blades are in the crown's own shadow, top blades catch the
-        # sky: assigning that per blade rather than per horizontal band is what
-        # gives the crown volume without a single extra triangle.
-        if ez < -0.08:
-            rr = ("LeafDeep", "LeafDeep")
-        elif ez < 0.45:
-            rr = ("LeafDeep", "Leaf")
+        verts = []
+        for su, sw in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            # Corner offsets are scaled IN PLANE as well as pushed radially,
+            # so a card is an irregular quadrilateral rather than a rectangle.
+            # A shell of identical rectangles reads as tiling, which is the
+            # same failure as a circular arc, one dimension down.
+            su *= 0.58 + 0.84 * nxt()
+            sw *= 0.58 + 0.84 * nxt()
+            k = (nxt() - 0.5) * 0.30 * rm
+            verts.append((px + ux * a * su + wx * b * sw + nx * k,
+                          py + uy * a * su + wy * b * sw + ny * k,
+                          pz + wz_ * b * sw + nz * k))
+
+        # Underside cards are in the crown's own shadow, top cards catch the
+        # sky. Assigning that per card rather than per horizontal band is what
+        # gives the crown volume without a single extra triangle, and the
+        # one-in-five darkening stops the two zones banding into stripes.
+        if dry:
+            role = "LeafDry"
+        elif ez < -0.10:
+            role = "LeafDeep"
+        elif ez < 0.42:
+            role = "Leaf" if nxt() > 0.45 else "LeafDeep"
         else:
-            rr = ("Leaf", "LeafLight")
-        if nxt() < 0.22:
-            rr = (rr[0], rr[0])
-
-        verts = [(bx - ux * w0, by - uy * w0, bz + wz()),
-                 (bx + ux * w0, by + uy * w0, bz + wz()),
-                 (mx - ux * w1, my - uy * w1, mz + wz()),
-                 (mx + ux * w1, my + uy * w1, mz + wz()),
-                 (tx, ty, tz - droop)]
-        p.add(verts, [(0, 2, 3, 1), (2, 4, 3)], [False, False], list(rr))
+            role = "LeafLight" if nxt() > 0.38 else "Leaf"
+        p.add(verts, [(0, 1, 2, 3)], [False], role)
     return p
 
 
 def _crown(p, clusters):
-    for centre, radii, core, seg, count, seed in clusters:
-        if core is not None:
-            v, f, sm, roles = tc.canopy_mass(core[0], core[1], core[2], centre,
-                                             seg=seg, seed=SEED + seed,
-                                             jit=0.17,
-                                             bands=("LeafDeep", "LeafDeep",
-                                                    "Leaf", "LeafLight"))
-            p.add(v, f, sm, roles)
+    for centre, radii, count, seed in clusters:
         _spray(p, centre, radii, count, SEED + 700 + seed * 37)
     return p
 
@@ -237,14 +251,12 @@ def half_lod0():
                                      seed=SEED + 22, jit=0.08,
                                      lean=(0.28, -0.15), roles="Bark")
     p.add(v, f, sm, roles)
-    v, f, sm, roles = tc.canopy_mass(1.05, 0.98, 1.20, (-0.66, 0.26, 3.75),
-                                     seg=8, seed=SEED + 11, jit=0.14,
-                                     bands=("LeafDeep", "LeafDeep", "Leaf",
-                                            "LeafLight"))
-    p.add(v, f, sm, roles)
-    v, f, sm = hc.blob(0.62, 0.58, 0.74, (0.34, -0.22, 3.05), seg=7,
-                       seed=SEED + 12, jit=0.20)
-    p.add(v, f, sm, role="LeafDry")
+    # Cards here too. The client draws Full_LOD0 and Half_LOD0 at the same
+    # distance and swaps between them as the node depletes, so a Half still
+    # built out of a closed tc.canopy_mass would pop from "leaves" back to
+    # "solid" the moment the axe took it past the threshold.
+    _spray(p, (-0.66, 0.26, 3.75), (1.06, 1.00, 1.14), 58, SEED + 811)
+    _spray(p, (0.34, -0.22, 3.05), (0.64, 0.60, 0.72), 24, SEED + 823, dry=True)
     return p
 
 
