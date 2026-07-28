@@ -155,9 +155,37 @@ BuildTarget | null {
   // drill would not go down beyond the tail", because the belt's tail socket
   // proposed a cell 2.000 m back that had no ore under it. Belts and smelters
   // have no such constraint, so they snap freely.
-  const caught = snapOn && kind !== 'miner'
+  const caught = snapOn
     ? nearestSocket(f.placed, sockets, hp, SNAP_M, kind !== 'belt') : null;
-  if (caught !== null) {
+  // FS-58, CLOSING FS-55: A DRILL TAKES THE HEADING AND NEVER THE CELL.
+  //
+  // The paragraph above is still true and is why this is a separate branch
+  // rather than a relaxed condition. Snapping carries TWO things, a position and
+  // a heading, and only the position is dangerous to a drill: a cell proposed by
+  // a belt's tail socket can sit off the patch, and then a rule the player can
+  // see has been replaced by one they cannot. The HEADING carries no such risk,
+  // because a drill's yaw constrains nothing except which way its own
+  // `socket_item_out` points, which is exactly the thing that was wrong.
+  //
+  // Before this, a drill placed on ore faced wherever the crosshair happened to
+  // point, its outlet faced nothing, and the player pressed R until it did. That
+  // is discoverable, and it is also the first thing the port model made harder,
+  // which is why FS-55 named it rather than leaving it to be found.
+  //
+  // THE STICKY-ROTATION TRAP IS AVOIDED THE SAME WAY THE BRANCH BELOW AVOIDS IT:
+  // `rotation` is NOT added on top. `BuildMode.rotation` persists across
+  // placements, so a player who pressed R twenty minutes ago would otherwise have
+  // every drill they ever snap silently reversed, which is the measured defect
+  // that made `probes/demolish.js` fail at FS-26.
+  if (kind === 'miner' && caught !== null) {
+    const prop = proposeFromSocket(caught, kind, (p) => f.snap(p.x, p.y, p.z).addr);
+    // `s` is deliberately left alone. Only the yaw moves.
+    if (prop !== null) {
+      fwd = prop.fwd;
+      hit = caught;
+      snapped = `#${caught.build.id} ${caught.name} -> heading only`;
+    }
+  } else if (caught !== null) {
     const prop = proposeFromSocket(caught, kind, (p) => f.snap(p.x, p.y, p.z).addr);
     if (prop !== null && !f.occupied(f.snapAddr(prop.addr).cell)) {
       s = f.snapAddr(prop.addr);

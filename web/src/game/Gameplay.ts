@@ -42,7 +42,8 @@ import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
 import { assignToBar, craft, raze, recipes, slots, switchMode } from './GameplayActions.js';
-import { loadInto, screenView, takeInput, takeOut } from './MachineScreen.js';
+import { loadInto, screenView, setRecipe, takeInput,
+  takeOut } from './MachineScreen.js';
 import { ItemIcons } from './ItemIcons.js';
 import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
@@ -209,7 +210,8 @@ export class Gameplay {
     this.machines = new Machines(d.core, this.game, d.origin, d.bodyHandle,
       () => d.ports?.voxels?.handle ?? 0, this.mode, () => this.structures);
     this.furnacePanel = new FurnacePanel(d.host, this.modals,
-      (item) => loadInto(this, item), () => takeOut(this), () => takeInput(this));
+      (item) => loadInto(this, item), () => takeOut(this), () => takeInput(this),
+      (output) => setRecipe(this, output));   // FS-56's fourth verb.
     this.furnacePanel.closer = () => this.openFurnace(null);
     // THE HAND IS A MODAL TOO, and registering it here rather than special-casing
     // it in the Escape handler is what keeps the guarantee derived: the probe

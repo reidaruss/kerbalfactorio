@@ -186,6 +186,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
       // purpose. Absent on every slot written before FS-44, and that absence is
       // the migration's only hinge.
       ports: true,
+      recipe: p.recipe,   // FS-56; SaveGame.SaveBuilding says why it is an ItemId.
     })),
     machines: machines.list.map((m): SaveMachine => {
       const st = game.furnaceState(m.handle);

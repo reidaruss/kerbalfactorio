@@ -398,6 +398,7 @@ export function assignToBar(g: Gameplay, item: number): void {
  *  which is exactly the `furnace` slot kind. */
 const PART_FOR_ITEM: Record<number, PartKind> = {
   0x003D: 'esmelter', 0x003E: 'generator', 0x003F: 'pole',
+  0x0013: 'assembler',   // FS-56. `items::Assembler`, a live registered id.
 };
 
 /**

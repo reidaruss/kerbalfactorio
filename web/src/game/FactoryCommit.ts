@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { frameOf } from './Grid.js';
 import { chainRuns, wire } from './FactoryWiring.js';
+import { recipeByOutput, type RecipeMenu } from './FactoryRecipes.js';
 import { FOOTPRINT, TYPE_ID, type Factory, type Placed } from './Factory.js';
 
 /** Belt tier and craft time. The DRILL's rate is not here: it comes out of
@@ -35,6 +36,13 @@ export function commitPlan(f: Factory): void {
     const carry = f.placed.map((p) => ({
       remaining: p.build < 0 ? 0 : f.line.minerRemaining(p.build),
       input: p.build < 0 || p.kind === 'belt' ? 0 : f.line.inputBuffer(p.build),
+      // FS-56 / ABI 17. The SECOND ingredient, carried by the same rule and for
+      // the same reason the fuel below is. Without it, laying one belt tile
+      // anywhere in the base empties every assembler's B hopper, and a machine
+      // that reads starved of exactly one ingredient after an unrelated
+      // placement is a defect nobody would trace back to its cause.
+      input2: p.build < 0 || p.kind !== 'assembler' ? 0
+        : f.line.input2Buffer(p.build),
       // FUEL IS CARRIED THE SAME WAY A MINER'S ORE IS, and it has to be: the
       // grid lives inside the BuildableNetwork, so `recreate()` below destroys
       // every pole and every generator along with the belts. Without this,
@@ -71,6 +79,12 @@ export function commitPlan(f: Factory): void {
     // poles yet is legal and simply leaves it on no network, which is exactly
     // what the panel then reports.
     const a = f.anchor();
+    // FS-56: the recipe menu is a dozen bridge round trips, so it is read ONCE
+    // per commit and lazily, rather than once per assembler in the loop below.
+    // Lazily because a base with no assembler in it must not pay for it at all,
+    // and every existing probe's commit is exactly that base.
+    let cachedMenu: RecipeMenu | null = null;
+    const menu = (): RecipeMenu => (cachedMenu ??= f.recipeMenu());
     for (const p of f.placed) {
       if (p.kind !== 'pole') continue;
       p.grid = f.power.placePole(p.pos.x - a.x, p.pos.y - a.y, p.pos.z - a.z);
@@ -101,6 +115,34 @@ export function commitPlan(f: Factory): void {
         p.build = f.power.placeElectricSmelter(ore, ingot,
           p.pos.x - a.x, p.pos.y - a.y, p.pos.z - a.z, E_SMELT_TICKS, E_SMELT_W);
         if (carry[i].input > 0) f.line.feed(p.build, carry[i].input);
+        p.entity = p.build < 0 ? -1 : f.line.entityIndex(p.build);
+        return;
+      }
+      if (p.kind === 'assembler') {
+        // FS-56. THE ONE PLACE A SELECTED RECIPE BECOMES A MACHINE.
+        //
+        // An assembler with no recipe is placed AS NOTHING, deliberately: no
+        // /core entity at all, `build` stays -1, and every read of it reports
+        // the empty answer. The alternative is to place it with a null recipe so
+        // it exists in the sim and does nothing, and that is worse for a reason
+        // this codebase has paid for: an entity that ticks, occupies a dense
+        // index, appears in the entity stream and produces zero is
+        // indistinguishable from a machine that is merely starved, and the panel
+        // would have to say IDLE for a machine that has no idea what it is
+        // supposed to be doing. NO RECIPE is a different state with a different
+        // fix, so it gets a different representation.
+        //
+        // It is still DRAWN, because it is still a building the player put
+        // there: `stampPlacements` skips a `build < 0` row, which is why the
+        // assembler's mesh comes from the PLAN through `FactoryView` and not
+        // from the entity stream. A machine you cannot see is a machine you
+        // cannot open to give a recipe to.
+        const r = recipeByOutput(menu(), p.recipe);
+        if (r === null) { p.build = -1; p.entity = -1; return; }
+        p.build = f.line.placeAssembler(r.a.item, r.a.count, r.b.item, r.b.count,
+          r.output, r.outputCount, r.ticks);
+        if (carry[i].input > 0) f.line.feed(p.build, carry[i].input);
+        if (carry[i].input2 > 0) f.line.feed2(p.build, carry[i].input2);
         p.entity = p.build < 0 ? -1 : f.line.entityIndex(p.build);
         return;
       }

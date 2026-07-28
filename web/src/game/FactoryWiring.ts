@@ -24,6 +24,7 @@
 
 import * as THREE from 'three';
 import { type Factory, type Placed } from './Factory.js';
+import { socketReachM } from './FactoryKinds.js';
 import { linksBetween, machinePorts, portOf, portsLoaded, PORT_MATE_M,
   type PortLink, type PortWorld } from './FactoryPorts.js';
 import { aimedAt, refusalFor } from './FactoryRefusal.js';
@@ -285,18 +286,30 @@ export function wire(f: Factory): void {
   // THE COARSE REJECT IS NOT PREMATURE. This pair loop is O(parts squared) and
   // it runs on every COMMIT, which is every placement, every removal and every
   // tile of a drag; FS-16's sweep put the next real ceiling at about 1,180
-  // machines, and 1,180 squared is 1.4 M pairs each doing four port
-  // resolutions with a quaternion apply. `NEAR_M` is the widest a mate can
-  // possibly be: no socket of any machine asset sits further than 1.6 m from
-  // its own origin (FactorySnap's coarse reject measured the same set), so two
-  // centres further apart than twice that plus the mate bound cannot own a
-  // link, whatever their yaw.
-  const NEAR_M = 1.6 * 2 + PORT_MATE_M;
-  for (const s of parts) {
-    for (const k of parts) {
+  // machines, and 1,180 squared is 1.4 M pairs each doing four port resolutions
+  // with a quaternion apply. The reject keeps that honest.
+  //
+  // FS-59: IT USED TO READ `1.6 * 2 + PORT_MATE_M`, with a comment asserting
+  // that no socket of any machine asset sits further than 1.6 m from its own
+  // origin. FS-57's 8 m assembler puts its inlets 4.000 m out and makes that
+  // false, so a drill shoved against an assembler (centres 5.0 m apart, which
+  // is exactly what the snap proposes) would have been rejected here BEFORE any
+  // port was resolved, and the two would simply never have linked with nothing
+  // anywhere saying why. It is now derived per kind through the one definition
+  // in `FactoryKinds.socketReachM`, and PER PART rather than as a single
+  // constant, because a pair's widest possible mate depends on both of them.
+  // Two 2 m machines go from 3.85 m to 4.29 m, so nothing that linked before
+  // stops linking.
+  //
+  // Precomputed once outside the loop: it is a table lookup and a multiply, and
+  // doing it 1.4 M times inside an O(n squared) loop to save an array is the
+  // wrong trade in the one place this file cares about cost.
+  const reach = parts.map((p) => socketReachM(p.kind));
+  for (const [si, s] of parts.entries()) {
+    for (const [ki, k] of parts.entries()) {
       if (s === k) continue;
-      if (Math.hypot(s.pos.x - k.pos.x, s.pos.y - k.pos.y,
-        s.pos.z - k.pos.z) > NEAR_M) continue;
+      if (Math.hypot(s.pos.x - k.pos.x, s.pos.y - k.pos.y, s.pos.z - k.pos.z)
+        > reach[si] + reach[ki] + PORT_MATE_M) continue;
       for (const l of linksBetween(s, k, ports)) {
         link(s, k, l, f.line.connect(s.build, k.build));
       }

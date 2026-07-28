@@ -32,6 +32,8 @@ import { factoryReport } from './FactoryReport.js';
 import { commitPlan, smeltPairFor } from './FactoryCommit.js';
 import { collectOutput, takeFromBelt, turnPlaced } from './FactoryHand.js';
 import { NO_MIGRATION, type PortMigration } from './FactoryMigrate.js';
+import { menuOf, recipeOfPlaced, setPlacedRecipe, NO_RECIPE,
+  type AssemblerRecipe, type RecipeMenu } from './FactoryRecipes.js';
 import { restorePlan, type SavedBuilding } from './FactoryRestore.js';
 import type { WiredLink } from './FactoryPorts.js';
 import type { PortRefusal } from './FactoryRefusal.js';
@@ -210,6 +212,8 @@ export class Factory {
       id: this.nextId++, kind, pos: s.pos, cell, up: s.up.clone(),
       fwd: fwd.clone(), quat: orient(s.up, fwd), patch, lastRemaining: 0,
       build: -1, entity: -1, run: -1, grid: -1, fuel: 0,
+      // FS-56. A fresh assembler is set to NOTHING: see NO_RECIPE.
+      recipe: NO_RECIPE,
     };
     this.placed.push(p);
     return p;
@@ -336,9 +340,18 @@ export class Factory {
 
   outputItemOf(p: Placed): number {
     if (p.kind === 'smelter' || p.kind === 'esmelter') return smeltPairFor(this, p).ingot;
+    // FS-56. An assembler's output is its RECIPE's: a choice the plan carries,
+    // not a function of what feeds it.
+    if (p.kind === 'assembler') return this.recipeOf(p)?.output ?? 0;
     const n = p.patch >= 0 ? this.ore.patch(p.patch) : null;
     return n?.resource ?? 0;
   }
+
+  // FS-56: assembler recipes. `FactoryRecipes` owns all three, for the reason
+  // `FactoryHand` owns `turn`: this class is the PLAN and its lifecycle.
+  recipeMenu(): RecipeMenu { return menuOf(this); }
+  recipeOf(p: Placed): AssemblerRecipe | null { return recipeOfPlaced(this, p); }
+  setRecipe(p: Placed, out: number): boolean { return setPlacedRecipe(this, p, out); }
 
   /**
    * The building the aim ray is most nearly CENTRED on, within `reachM`.

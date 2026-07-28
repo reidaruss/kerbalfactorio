@@ -77,6 +77,24 @@ export class AutoLine {
   placeSmelter(ore: number, ingot: number, craftTicks: number, outCap = 0): number {
     return this.M._of_net_place_smelter(this.handle, ore, ingot, craftTicks, 0, outCap);
   }
+  /**
+   * FS-56: a MULTI-INPUT machine, which is the shape the assembler needs and the
+   * one thing `placeSmelter` cannot express.
+   *
+   * `automation.h`'s `placeAssembler` has shipped since Phase 1 and this is its
+   * first caller in the browser. A single-ingredient recipe is `inB = 0,
+   * countB = 0`, which /core documents as legal and reads as a satisfied second
+   * slot, so no caller needs a branch. `powerW` is 0 for the same reason the
+   * coal smelter's is: the assembler is a fuel-free tier-1 machine until the
+   * ladder in `gameplay.h` section S.0 grows a powered rung for it, and passing a
+   * draw here would make it brown out on a grid it was never registered with.
+   */
+  placeAssembler(inA: number, countA: number, inB: number, countB: number,
+                 out: number, outCount: number, craftTicks: number,
+                 outCap = 0): number {
+    return this.M._of_net_place_assembler(this.handle, inA, countA, inB, countB,
+      out, outCount, craftTicks, 0, outCap);
+  }
   /** Wire two buildings. `item` 0 lets /core infer it. True on success. */
   connect(from: number, to: number): boolean {
     return this.M._of_net_connect(this.handle, from, to, 0) === 1;
@@ -95,6 +113,10 @@ export class AutoLine {
   }
   feed(build: number, count: number): void {
     this.M._of_net_feed_machine(this.handle, build, count);
+  }
+  /** ABI 17 / FS-56: the SECOND ingredient slot. Its twin above feeds slot 1. */
+  feed2(build: number, count: number): void {
+    this.M._of_net_feed_machine2(this.handle, build, count);
   }
 
   // --- advance -------------------------------------------------------------
@@ -118,6 +140,12 @@ export class AutoLine {
   }
   inputBuffer(build: number): number {
     return this.M._of_net_input_buffer(this.handle, build);
+  }
+  /** FS-56: the SECOND ingredient's slot. `of_net_input2_buffer` has been in the
+   *  shim and in the shipped wasm since ABI 16 with no caller, so reading it
+   *  needs no bump: it is a TS declaration catching up with a live export. */
+  input2Buffer(build: number): number {
+    return this.M._of_net_input2_buffer(this.handle, build);
   }
   beltItems(build: number): number {
     return this.M._of_net_belt_item_count(this.handle, build);

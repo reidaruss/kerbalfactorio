@@ -41,6 +41,7 @@
 
 import * as THREE from 'three';
 import { FOOTPRINT, type BuildKind, type Placed } from './Factory.js';
+import { socketReachM } from './FactoryKinds.js';
 import type { MachineAddr } from './MachinePlacement.js';
 import type { Site } from './StructureGrid.js';
 import type { Vec3d } from '../world/PlanetBody.js';
@@ -85,6 +86,15 @@ const WANT: Record<string, string[]> = {
   // be asked for them under its own key, because `readMachineSockets` is keyed
   // by the TEMPLATE key and not by the file.
   esmelter: ['socket_item_in', 'socket_item_out'],
+  // FS-56. THE ASSEMBLER IS THE FIRST BUILDING WITH TWO INLETS, and it names
+  // them `_a` and `_b` rather than publishing `socket_item_in` twice, because a
+  // glTF scene is looked up by name and a duplicate name is a node you cannot
+  // address. Nothing downstream cares which suffix is which: `faceOf` derives
+  // the housing face from the socket's own position, so an author who moves
+  // input B from the right face to the left one needs no code change here or in
+  // `FactoryPorts`. The two are on DIFFERENT faces on purpose, which is what
+  // lets two belts arrive at one machine without crossing.
+  assembler: ['socket_item_in_a', 'socket_item_in_b', 'socket_item_out'],
 };
 
 /** The sockets items LEAVE by. Everything else is an inlet. */
@@ -154,10 +164,16 @@ export function nearestSocket(placed: readonly Placed[],
   let best: SocketHit | null = null;
   let bestD = maxD;
   for (const b of placed) {
-    // Coarse reject first: every socket of these assets is inside 1.6 m of the
-    // building's own origin, so anything further than that cannot own the answer.
+    // Coarse reject first. This USED to read `bestD + 1.6`, on the stated
+    // grounds that "every socket of these assets is inside 1.6 m of the
+    // building's own origin". That was true of a 2 m smelter and a 3 m
+    // assembler, and FS-57's 8 m assembler makes it false: its inlets sit
+    // 4.000 m out, so a hard 1.6 would have rejected the very building the
+    // player was aiming at, silently, as a crosshair that would not catch.
+    // Derived now, through FS-59's ONE definition, which `FactoryWiring`'s pair
+    // loop had a second hand-written copy of.
     const dx = b.pos.x - p.x, dy = b.pos.y - p.y, dz = b.pos.z - p.z;
-    if (Math.hypot(dx, dy, dz) > bestD + 1.6) continue;
+    if (Math.hypot(dx, dy, dz) > bestD + socketReachM(b.kind)) continue;
     for (const s of sockets.get(b.kind) ?? []) {
       if (outwardOnly && !OUTWARD.has(s.name)) continue;
       const w = socketWorld(b, s);

@@ -17,6 +17,7 @@
 
 import { feedMachine, refuel } from './GameplayActions.js';
 import { machinePorts } from './FactoryPorts.js';
+import { assemblerPanelView, feedAssembler } from './MachineAssembler.js';
 import { PART_INFO } from './Hotbar.js';
 import type { MachineView } from '../ui/FurnacePanel.js';
 import type { Gameplay } from './Gameplay.js';
@@ -29,7 +30,12 @@ import type { BuildKind, Placed } from './Factory.js';
  * nothing at all, so neither is here, and the bare hand keeps digging past
  * them exactly as it did.
  */
-const OPENABLE = new Set<BuildKind>(['miner', 'smelter', 'esmelter', 'generator']);
+const OPENABLE = new Set<BuildKind>(['miner', 'smelter', 'esmelter', 'generator',
+  // FS-56. The assembler is the FIRST machine you must open, rather than one you
+  // may: an unset one makes nothing at all until somebody chooses a recipe, so
+  // if it were not on this list the machine would be unusable and there would be
+  // no way in the game to find out why.
+  'assembler']);
 
 /**
  * GP-61: what a bare-handed left click on the crosshair's machine does.
@@ -45,10 +51,13 @@ export function openAimedMachine(g: Gameplay): boolean {
 /** Whichever machine the screen is showing, as one view. */
 export function screenView(g: Gameplay): MachineView {
   if (g.openMachine !== null) return furnacePanelView(g, g.openMachine);
-  if (g.openBuild !== null) return buildPanelView(g, g.openBuild);
-  return { title: '', status: '', input: null, fuel: null, output: null,
-    progress01: null, progressText: '', canTakeInput: false, takeInputHint: '',
-    loadable: [] };
+  if (g.openBuild !== null) {
+    return g.openBuild.kind === 'assembler'
+      ? assemblerPanelView(g, g.openBuild) : buildPanelView(g, g.openBuild);
+  }
+  return { title: '', status: '', input: null, input2: null, fuel: null,
+    output: null, progress01: null, progressText: '', canTakeInput: false,
+    takeInputHint: '', loadable: [], recipes: null, refused: [] };
 }
 
 /** GP-62: why the input cell refuses today, said where the player can read it. */
@@ -73,6 +82,9 @@ function furnacePanelView(g: Gameplay, m: Machine): MachineView {
     canTakeInput: g.game.furnaceTakeOre(m.handle, 0) !== null,
     takeInputHint: TAKE_ORE_HINT,
     loadable: furnaceLoadable(g),
+    // A hand furnace's recipe is the ORE you put in it, so there is nothing to
+    // choose. Null and not [], which the panel's own comment distinguishes.
+    input2: null, recipes: null, refused: [],
   };
 }
 
@@ -142,8 +154,10 @@ function buildPanelView(g: Gameplay, b: Placed): MachineView {
       : crafts && packIn > 0
         ? [{ item: inItem, name: g.game.itemName(inItem), count: packIn, fuel: false }]
         : [],
+    input2: null, recipes: null, refused: [],
   };
 }
+
 
 /**
  * FS-48: WHICH PORT A STACK ARRIVES ON, AND WHAT IS ON THE OTHER END OF IT.
@@ -161,10 +175,20 @@ function buildPanelView(g: Gameplay, b: Placed): MachineView {
  * connected" is the answer, printed where they are already looking, in the
  * moment they are already asking.
  */
-function portInfo(g: Gameplay, b: Placed, dir: 'in' | 'out'):
+/**
+ * FS-56 widened this with an optional socket NAME, and the reason is the whole
+ * point of the assembler: `defs.find((d) => d.dir === dir)` returns the FIRST
+ * port of that direction, which was unambiguous while every machine had at most
+ * one inlet, and silently returns input A for both cells the moment one has two.
+ * The panel would then have said "socket_item_in_a" beside the stone stack and
+ * been confidently wrong about the very thing FS-48 added it to be right about.
+ * Callers with one port pass nothing and behave exactly as before.
+ */
+export function portInfo(g: Gameplay, b: Placed, dir: 'in' | 'out', name?: string):
 { port?: string; via?: string } {
   const defs = machinePorts().get(b.kind) ?? [];
-  const def = defs.find((d) => d.dir === dir);
+  const def = name === undefined ? defs.find((d) => d.dir === dir)
+    : defs.find((d) => d.name === name);
   if (def === undefined) return {};
   const f = g.factory;
   const l = dir === 'in'
@@ -191,11 +215,19 @@ export function screenReport(g: Gameplay): unknown {
     open: true,
     of: g.openMachine !== null ? `furnace${g.openMachine.tier}` : g.openBuild?.kind,
     title: v.title, status: v.status,
-    input: v.input, fuel: v.fuel, output: v.output,
+    input: v.input, input2: v.input2, fuel: v.fuel, output: v.output,
     progress01: v.progress01, progressText: v.progressText,
     canTakeInput: v.canTakeInput,
     barPct: g.furnacePanel.barPct,
     loadable: v.loadable.map((l) => `${l.name}:${l.count}${l.fuel ? ' (fuel)' : ''}`),
+    // FS-56. The recipe the machine is SET to is published beside the menu, and
+    // separately from it, so a probe can assert that a click changed the plan
+    // rather than only that a button rendered with a highlight.
+    recipe: g.openBuild?.recipe ?? 0,
+    recipes: v.recipes === null ? null
+      : v.recipes.map((r) => `${r.output}:${r.label}=${r.cost}`
+        + `${r.selected ? ' [set]' : ''}${r.affordable ? '' : ' [short]'}`),
+    refused: v.refused.map((r) => `${r.label}: ${r.why}`),
   };
 }
 
@@ -216,8 +248,25 @@ export function loadInto(g: Gameplay, item: number): void {
   }
   const b = g.openBuild;
   if (b === null) return;
-  if (b.kind === 'generator') refuel(g, b);
-  else feedMachine(g, b);
+  if (b.kind === 'generator') { refuel(g, b); return; }
+  if (b.kind === 'assembler') { feedAssembler(g, b, item); return; }
+  feedMachine(g, b);
+}
+
+/** FS-56's fourth verb, re-exported so `Gameplay` keeps ONE import for the
+ *  panel's callbacks and never learns that the assembler has its own file. */
+export { setRecipe } from './MachineAssembler.js';
+
+/** The input cell was clicked: the ore back, THROUGH THE SEAM (GP-62). */
+export function takeInput(g: Gameplay): void {
+  const m = g.openMachine;
+  if (m === null) return;
+  const item = g.game.furnaceState(m.handle)?.oreItem ?? 0;
+  const n = g.game.furnaceTakeOre(m.handle, 999);
+  if (n === null) { g.hud.flash(TAKE_ORE_HINT); return; }
+  if (n > 0) { g.hud.flash(`took ${n} ${g.game.itemName(item)} back`); g.sfx.confirm(); }
+  else g.hud.flash('nothing loaded');
+  g.panel.invalidate();
 }
 
 /** The output cell was clicked: the whole stack, identity and count. */
@@ -238,17 +287,5 @@ export function takeOut(g: Gameplay): void {
   g.autoCollected += n;
   g.hud.flash(`took ${n} ${g.game.itemName(g.factory.outputItemOf(b))}`);
   g.sfx.confirm();
-  g.panel.invalidate();
-}
-
-/** The input cell was clicked: the ore back, THROUGH THE SEAM (GP-62). */
-export function takeInput(g: Gameplay): void {
-  const m = g.openMachine;
-  if (m === null) return;
-  const item = g.game.furnaceState(m.handle)?.oreItem ?? 0;
-  const n = g.game.furnaceTakeOre(m.handle, 999);
-  if (n === null) { g.hud.flash(TAKE_ORE_HINT); return; }
-  if (n > 0) { g.hud.flash(`took ${n} ${g.game.itemName(item)} back`); g.sfx.confirm(); }
-  else g.hud.flash('nothing loaded');
   g.panel.invalidate();
 }

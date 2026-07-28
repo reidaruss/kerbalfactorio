@@ -86,6 +86,12 @@ export const PART_INFO: Record<PartKind, { label: string; iconName: string }> = 
   pole: { label: 'power pole', iconName: 'Power pole' },
   generator: { label: 'burner generator', iconName: 'Burner generator' },
   esmelter: { label: 'electric smelter', iconName: 'Electric smelter' },
+  // FS-56. `PART_INFO` is a `Record<PartKind, ...>` and `PartKind` derives from
+  // `BuildKind`, so a new machine kind makes this table incomplete and the build
+  // stops. That is the table doing its job: a buildable with no label is a
+  // buildable the HUD cannot name. The icon is the /core ITEM display name for
+  // `items::Assembler` (0x0013), exactly as the three rows above take theirs.
+  assembler: { label: 'assembler', iconName: 'Assembler' },
   foundation: { label: 'foundation', iconName: '' },
   floor: { label: 'floor', iconName: '' },
   wall: { label: 'wall', iconName: '' },
@@ -116,6 +122,7 @@ export const DEFAULT_BAR: readonly SlotContent[] = [
 function isPart(k: string): k is PartKind {
   return k === 'miner' || k === 'belt' || k === 'smelter'
     || k === 'pole' || k === 'generator' || k === 'esmelter'
+    || k === 'assembler'   // FS-56
     || (STRUCTURE_KINDS as readonly string[]).includes(k)
     || (FIXTURE_KINDS as readonly string[]).includes(k);
 }

@@ -160,6 +160,12 @@ const PORT_NAMES: Partial<Record<BuildKind, { name: string; dir: PortDir }[]>> =
             { name: 'socket_item_out', dir: 'out' }],
   esmelter: [{ name: 'socket_item_in', dir: 'in' },
              { name: 'socket_item_out', dir: 'out' }],
+  // FS-56: TWO INLETS, ON TWO FACES, AND `_a` DOES NOT MEAN "FIRST INGREDIENT":
+  // `connect` routes an arriving item to slot 1 or 2 BY ITEM TYPE against the
+  // machine's own recipe, so either belt may carry either ingredient.
+  assembler: [{ name: 'socket_item_in_a', dir: 'in' },
+              { name: 'socket_item_in_b', dir: 'in' },
+              { name: 'socket_item_out', dir: 'out' }],
 };
 
 // THE STORAGE CHEST IS NOT IN THAT TABLE YET, AND THE REASON IS NOT THE PORTS.

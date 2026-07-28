@@ -80,6 +80,8 @@ import type { SavedEdits } from './VoxelSave.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';
 import type { SavePad } from './LaunchPadSave.js';
 import type { PlayerHealthSave } from './PlayerHealth.js';
+import { savePlayerAnchor, saveVessels, stashVessels } from './VesselSave.js';
+import type { SavePlayerAnchor, SaveVessel } from './VesselSave.js';
 
 export interface SaveBuilding {
   kind: string;
@@ -101,6 +103,15 @@ export interface SaveBuilding {
    *  therefore destroy every world anybody is playing, and an absent flag is not
    *  MISREAD, it is read as what it is. */
   ports?: boolean;
+  /** FS-56, assembler only: the OUTPUT ITEM of the recipe the player selected,
+   *  0 for none and for every other kind. The output item and not an index into
+   *  /core's recipe list, because `handRecipes()` is append-only and its ordinals
+   *  move when a row is inserted, while an ItemId is pinned and never reused.
+   *  Additive and optional under exactly the rule `fuel` and `ports` were added
+   *  by, so SAVE_VERSION deliberately does NOT move: an absent field is not
+   *  misread, it is read as an unset machine, which is a state the panel already
+   *  has a sentence for. */
+  recipe?: number;
 }
 
 export interface SaveMachine {
@@ -169,6 +180,23 @@ export interface SaveSlot {
    *  NOT bumped for it: see SAVE_VERSION above. An absent one restores an
    *  unresearched player with an empty suit, which is a legal world. */
   progress?: SaveProgress;
+  /** PH-67: THE VESSELS. A rolled-out rocket, one in ascent and one in orbit are
+   *  three different states of the same record and all three live here. Before
+   *  this field a vessel was not in the slot AT ALL (R12), so rolling out and
+   *  closing the tab lost the rocket in silence. Additive and optional under
+   *  exactly the rule `discovery`, `pads`, `health`, `vitals`, `progress` and
+   *  `assisted` were added by, so SAVE_VERSION deliberately does NOT move: an
+   *  absent list is a world with no vessels, which is what every world written
+   *  before tonight was, and a bump is refused on MISMATCH and would destroy
+   *  every one of them. */
+  vessels?: SaveVessel[];
+  /** PH-68 / R13: WHERE THE PLAYER'S BODY WAS. `SaveSlot` had no player key at
+   *  all, so a reload teleported you to the scenario spawn whatever you were
+   *  doing. With a vessel now persisting, that is no longer an annoyance but an
+   *  incoherence: a rocket in orbit above a body that has been moved half a
+   *  planet. Same additive-and-optional rule; absent restores the scenario
+   *  spawn, which is the old behaviour exactly. */
+  player?: SavePlayerAnchor;
   /** GP-102: which CHEATS this world has had used on it, in first-use order.
    *  Survival only; a sandbox slot never carries one, because `mode: sandbox`
    *  already says the stronger thing. Additive and optional under exactly the
@@ -251,6 +279,13 @@ export async function writeSlot(slot: SaveSlot): Promise<boolean> {
     // second snapshot path forgets. Same argument as `HealthCensus`: derive at
     // the one place, never register at the many.
     slot.assisted = assistedFor(mode);
+    // PH-67, on GP-102's precedent and for its stated reason. `saveVessels`
+    // SYNCS the promoted vessel out of its live `/core` FlightSim before it
+    // serialises, as its first statement, so no write path can save a vessel in
+    // a place it is not (DW-26). Stamping here rather than in `Persist.snapshot`
+    // is what makes that true of `pagehide` and of the debug save as well.
+    slot.vessels = saveVessels();
+    slot.player = savePlayerAnchor();
     await tx('readwrite', (s) => s.put(slot, key) as IDBRequest<IDBValidKey>);
     return true;
   } catch {
@@ -291,6 +326,11 @@ export async function readSlot(mode: GameMode): Promise<SlotRead> {
     // GP-102, and only on a slot that was ACCEPTED: a refused slot is not this
     // world, so its mark is not this world's either.
     restoreAssisted(v.assisted);
+    // PH-67, same gate and same argument: the vessels and the body of a REFUSED
+    // slot are not this world's either. They are stashed rather than applied,
+    // because the flight lane does not exist yet at this point in the boot and
+    // the save layer must not reach into it (`ResumeBoot.ts` takes them).
+    stashVessels(v.vessels, v.player);
     return { slot: v, refusal: '', foundMode: found };
   } catch {
     return { slot: null, refusal: '', foundMode: null };

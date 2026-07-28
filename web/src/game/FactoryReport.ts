@@ -233,6 +233,21 @@ function row(f: Factory, p: Placed): unknown {
     remaining: p.kind === 'miner' && live ? f.line.minerRemaining(p.build) : null,
     input: live && f.inputItemOf(p) > 0 ? f.line.inputBuffer(p.build) : null,
     output: machine ? f.line.outputBuffer(p.build) : null,
+    // FS-56. An assembler needs three more rows and every one of them exists
+    // because a two-ingredient machine has a failure mode a one-ingredient
+    // machine cannot have: it can be correctly configured, correctly connected,
+    // and stalled because ONE of its two hoppers is empty. `input` alone reads
+    // as a healthy machine in exactly that case, so `input2` is what lets a
+    // probe assert that BOTH belts arrived. `recipe` is what the plan says the
+    // machine was set to and `recipeInputs` is what /core was actually asked to
+    // build, so the two can be compared instead of assumed equal: a panel and an
+    // entity disagreeing about a recipe is FS-41's defect one layer up, and it
+    // would be invisible in any report that published only one of them.
+    input2: live && p.kind === 'assembler' ? f.line.input2Buffer(p.build) : null,
+    recipe: p.recipe,
+    recipeInputs: p.kind !== 'assembler' ? null
+      : (() => { const r = f.recipeOf(p); return r === null ? null
+        : [r.a.item, r.a.count, r.b.item, r.b.count, r.output, r.ticks]; })(),
     working: live ? f.line.working(p.build) : false,
     // ABI 9. A pole and a generator are GRID citizens with their own id space,
     // so `build` is -1 on both and `grid` is where they actually live. A

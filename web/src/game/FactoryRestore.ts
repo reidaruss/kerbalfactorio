@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { orient } from './Grid.js';
 import { migrateToPorts, NO_MIGRATION } from './FactoryMigrate.js';
+import { NO_RECIPE } from './FactoryRecipes.js';
 import type { BuildKind, Factory } from './Factory.js';
 
 /** One building as a save slot holds it. `SaveGame.SaveBuilding` is the same
@@ -32,6 +33,17 @@ export interface SavedBuilding {
    *  and that absence is the migration's only hinge. Additive and optional on
    *  purpose; SaveGame.ts argues why the version must not move for it. */
   ports?: boolean;
+  /**
+   * FS-56, assemblers only: the OUTPUT ITEM of the selected recipe.
+   *
+   * Optional and additive for exactly the reason `fuel` and `ports` are, and the
+   * same hinge argument applies: absent on every slot written before assemblers
+   * existed, and absent means `NO_RECIPE`, which restores a placed but unset
+   * machine. That is the honest answer for a save that never recorded one, and
+   * it is a state the panel already has a sentence for. `SAVE_VERSION` does not
+   * move: no existing field changed meaning.
+   */
+  recipe?: number;
 }
 
 /**
@@ -56,7 +68,7 @@ export function restorePlan(f: Factory, rows: readonly SavedBuilding[]): number 
       kind: r.kind, pos: { x: r.pos[0], y: r.pos[1], z: r.pos[2] },
       cell: r.cell, up, fwd, quat: orient(up, fwd),
       patch: r.patch, lastRemaining: 0, build: -1, entity: -1, run: -1,
-      grid: -1, fuel: r.fuel ?? 0,
+      grid: -1, fuel: r.fuel ?? 0, recipe: r.recipe ?? NO_RECIPE,
     });
   }
   f.commit();

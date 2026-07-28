@@ -18,20 +18,89 @@ import type { Quaternion, Vector3 } from 'three';
 // asked for one. A separate kind means nothing existing moves and the upgrade
 // is something the player researches and then places, which is also what
 // Factorio does with the electric furnace.
+// FS-56 adds the ASSEMBLER, and it is the first machine whose RECIPE IS NOT A
+// PROPERTY OF ITS KIND. A smelter's recipe is chosen for it at commit time from
+// the ore reaching it (`smeltPairFor`); an assembler's is chosen by the PLAYER
+// from a menu and carried on the plan record. That is the whole difference
+// between the two machines and it is why `Placed` grows a field rather than the
+// kind table growing a column: two assemblers of the same kind, side by side,
+// make different things.
 export type BuildKind = 'miner' | 'belt' | 'smelter' | 'pole' | 'generator'
-  | 'esmelter';
+  | 'esmelter' | 'assembler';
 
 /** TypeIds are ASSET-SPECS section 4's, so the stream keys the right mesh.
  *  The electric smelter reuses the smelter's art (0x12) on purpose: it is the
- *  same machine with a different power source, and ASSET-SPECS says so. */
+ *  same machine with a different power source, and ASSET-SPECS says so.
+ *  The assembler is 0x13, pinned in `gameplay.h` section A's TypeId block since
+ *  before the web client existed, with `machines/assembler.glb` shipped against
+ *  it: nothing is minted here. */
 export const TYPE_ID: Record<BuildKind, number> = {
   miner: 0x10, belt: 0x11, smelter: 0x12,
-  generator: 0x15, pole: 0x16, esmelter: 0x12,
+  generator: 0x15, pole: 0x16, esmelter: 0x12, assembler: 0x13,
 };
-/** Footprint in whole metres (ASSET-SPECS), and the interaction bound. */
+/**
+ * Footprint in whole metres (ASSET-SPECS), and the interaction bound.
+ *
+ * FS-57: THE ASSEMBLER IS 8 m, WHICH IS TWO STRUCTURAL MODULES ACROSS, AND
+ * EVERY OTHER MACHINE IN THIS TABLE IS NOW INCONSISTENT WITH IT.
+ *
+ * Reid, on Satisfactory: "they're pretty big and they have slots for the inputs
+ * and slots for the outputs that fit the belts and the belts snap to." The
+ * measured reference is a Satisfactory foundation at 8 m, a Constructor at
+ * 8 x 10 m and an Assembler at roughly 2 x 2 of those tiles. Our structural
+ * module is 4 m (DW-32), so metre for metre this 8 m assembler is Satisfactory's
+ * CONSTRUCTOR, and its Assembler would be about 16 m. It is not a Constructor
+ * that is wanted, so the honest statement of what shipped is: the assembler is
+ * now four times the smelter in each axis and still half the size its reference
+ * is, and the smelter (2 m), the drill (2 m) and the belt tile (1 m) did NOT
+ * move in this pass. A machine set at two different scales is visible from the
+ * first screenshot, which is the right way for this to be carried: rescaling the
+ * shipped machines re-baselines `beltsnap`, `machineports`, `shortline`,
+ * `autoline` and `coalsmelt` together and is its own pass.
+ *
+ * WHY EIGHT AND NOT ANY OTHER NUMBER, and this half is not taste. Machines snap
+ * on a 1 m site grid, and `FactorySnap.stepsFor` steps a new part
+ * `ceil((fpA + fpB) / 2)` cells away. An EVEN footprint leaves exactly the same
+ * half-cell residual FS-26 named and `PORT_MATE_M` (0.65 m) was derived against:
+ * belt to assembler is `ceil(9/2)` = 5 cells = 5.010 m on the shipped world,
+ * less the belt's 0.500 m outlet offset and the assembler's 4.000 m inlet
+ * offset, which is 0.510 m, against the smelter's 0.500 m. An ODD footprint
+ * would land the pair on the other side of the rounding and change the bound
+ * for every machine. So the assembler may grow to any even module count without
+ * touching the port model, and 16 m is a one-constant change here plus the same
+ * constant in `build_assembler.py`, once the rest of the set moves with it.
+ */
 export const FOOTPRINT: Record<BuildKind, number> = {
   miner: 2, belt: 1, smelter: 2, generator: 2, pole: 1, esmelter: 2,
+  assembler: 8,
 };
+
+/**
+ * FS-59: HOW FAR ONE OF THIS KIND'S SOCKETS CAN POSSIBLY BE FROM ITS OWN
+ * ORIGIN, in metres, and it is DERIVED. This is the ONE definition of it.
+ *
+ * Two separate coarse rejects had the constant `1.6` written into them by hand,
+ * each with the same comment claiming that no socket of any machine asset sits
+ * further than 1.6 m from its own origin: `FactorySnap.nearestSocket`, which
+ * decides whether the crosshair CATCHES a building, and `FactoryWiring`'s
+ * machine-to-machine pair loop, which decides whether two machines can possibly
+ * link. That claim was true of a 2 m smelter and a 3 m assembler, and FS-57's
+ * 8 m assembler makes it false by two and a half times: its inlets sit 4.000 m
+ * out. Both rejects would then have fired on the very geometry the player was
+ * looking at, SILENTLY, one reading as a stiff crosshair and the other as a
+ * drill shoved against an assembler that simply refuses to feed it.
+ *
+ * DW-33's rule, which this is the third instance of: a constant that encodes a
+ * size is a scale assumption in disguise, and it becomes a bug the moment the
+ * scale changes. So it is a function of `FOOTPRINT` and there is one of it. A
+ * socket cannot be further from its origin than the half-diagonal of the
+ * housing, which is `footprint * sqrt(2) / 2` = 0.707; the 0.4 on top covers a
+ * hopper mouth authored slightly proud of the face, and is the only judgement
+ * in the line.
+ */
+export function socketReachM(kind: BuildKind): number {
+  return FOOTPRINT[kind] * 0.71 + 0.4;
+}
 
 /** The three the tech tree gates, and the item whose availability gates each.
  *  Read through `Research.itemAvailable`, so the answer is /core's. */
@@ -66,4 +135,15 @@ export interface Placed {
   fuel: number;
   /** Belt only: which run it joined, so the flow row can find its tiles. */
   run: number;
+  /**
+   * FS-56, ASSEMBLERS ONLY: the OUTPUT ITEM of the recipe the player selected,
+   * or `NO_RECIPE` (0) for a machine nobody has set yet. The output item and not
+   * an index into /core's recipe list: `FactoryRecipes.AssemblerRecipe.output`
+   * has the argument. A PLAN field rather than something re-derived at commit
+   * time, because it is the only thing about a machine that the player and
+   * nothing else decides: a smelter's recipe is inferred from the ore reaching
+   * it and is a function of the world, and a choice a rebuild re-derives is a
+   * choice the player did not really make.
+   */
+  recipe: number;
 }
