@@ -97,6 +97,57 @@ two defects outright:
 least twice, once flat and once on measured slope, and reports which is which.
 A pond's shoreline is a circle, so it gets four bearings, not one.
 
+## The asset is part of the measurement, and a constant is a hidden assumption
+
+The factory lane shipped one 8 m machine into a set where every previous machine
+was 1 m or 2 m, and it falsified **four separate constants at once**, in four
+files, each written independently and three of them asserting the assumption in
+prose beside the code:
+
+- `FactorySnap.nearestSocket`: does the crosshair CATCH this building
+  (`bestD + 1.6`, commented "every socket of these assets is inside 1.6 m of the
+  building's own origin").
+- `FactoryWiring`'s machine-to-machine pair loop: can two machines LINK at all
+  (`1.6 * 2 + PORT_MATE_M`, same comment).
+- `FactoryGhost.PREVIEW_NEAR_M`: what the ghost SAYS it will connect to, before
+  the button goes down (same expression again).
+- `Factory.pick`: can you INTERACT with it (`PICK_REACH_M` 3.5 m measured to the
+  centroid, which means "2.5 m from the face" only while a machine is 2 m).
+
+The last one is the instructive one. An 8 m machine's centre is 4.000 m from its
+own face, so the reach test rejected it **from every standing position that
+exists in the world**. The machine was placed, drawn, connected, wired and
+ticking, and could not be opened, fed, collected from or demolished. Every
+table, every port, every link and every published report field was correct.
+**No static check could have seen it and no existing probe would have, because
+every existing probe builds its scene out of 1 m and 2 m parts.** A driven run
+found it on its second attempt; reading found only one of the four.
+
+This is DW-28's class (a ceiling that reports success) reached by a new route,
+and DW-33's lesson (`DECK_H` = 0.50 encoding "the error all lands on one side")
+stated more generally:
+
+**When an assumption is true of every asset, it gets COPIED rather than derived,
+and the copies do not know about each other. Adding the first asset that breaks
+it does not produce one failure, it produces one failure per copy, and they
+surface in unrelated subsystems as unrelated symptoms.**
+
+**Practice, two halves.** When you add an asset that is the first of its size,
+class or shape, treat it as an instrument test of every constant that has ever
+been sized against the old set, and grep for the literal. And when you write a
+bound that depends on an asset's dimensions, derive it from the dimension table
+rather than from today's largest value, even where the constant is obviously
+correct today, because "obviously correct today" is exactly the comment all four
+of these carried.
+
+Corollary for probes: the two failures here pointed in **opposite** directions.
+The reach constant made a working machine unreachable, and a separate missing
+case in `inputItemOf` made a working machine look starved, reporting `null` for
+a hopper the sim was visibly draining (a peak of 0 in a slot that had just
+produced twelve items, reading 98 after the fix). A report that says null where
+it means "I do not compute this for your kind" cannot be told from one that
+means "empty", and that ambiguity is invisible until a new kind arrives.
+
 ## Cross-references
 
 Standing rules 4, 7, 10, 11 and DW-7, DW-20 in

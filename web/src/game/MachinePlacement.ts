@@ -172,15 +172,58 @@ export function machineClash(placed: readonly Placed[], kind: BuildKind,
                              addr: MachineAddr | undefined): Placed | null {
   if (addr === undefined || addr.prospective) return null;
   const fa = FOOTPRINT[kind];
-  if (fa < 2) return null;
   for (const p of placed) {
     const fb = FOOTPRINT[p.kind];
-    if (fb < 2) continue;
+    if (!clashApplies(fa, fb)) continue;
     const b = parseMachineCellKey(p.cell);
     if (b === null || b.site !== addr.site.id) continue;
     if (footprintsOverlap(addr.i, addr.j, fa, b.i, b.j, fb)) return p;
   }
   return null;
+}
+
+/**
+ * FS-65: WHEN THE OVERLAP RULE APPLIES, and the fifth copy of one stale scale
+ * assumption (see INSTRUMENTS.md, "the asset is part of the measurement").
+ *
+ * This used to be `fa < 2 return null` and `fb < 2 continue`: a one-cell part
+ * was exempt from the overlap test ENTIRELY, in both directions. GP-50's reason
+ * was sound and still is, a belt whose whole purpose is to run INTO a smelter
+ * must be able to sit against it, and it is worth noting the exemption was never
+ * actually NEEDED for that: `footprintsOverlap` at belt 1 and smelter 2 gives
+ * `reach` 3, so the mating cell two out clears it (4 < 3 is false) and only the
+ * cell one out, where the belt really does stand half inside the housing, is
+ * refused. The blunt exemption was doing no work that the geometry was not
+ * already doing.
+ *
+ * IT BECAME A DEFECT AT 8 m. An assembler occupies ONE cell key, which is all
+ * `Factory.occupied` guards, and nine cells of ground. With belts exempt,
+ * `probes/assembler.js` drove four belt tiles INSIDE the housing and drew them
+ * there, and the run walked straight past `socket_item_in_b` without ever
+ * stopping at the cell that mates it, which is why the second inlet had never
+ * been fed. Applying the rule fixes both at once, and it does so without a new
+ * constant: the last cell the test allows IS the mating cell, at every size.
+ * Verified against the shipped table before the change was made:
+ *
+ *   belt 1 to assembler 8: cells 3 and 4 refused, 5 and 6 allowed, stepsFor 5
+ *   belt 1 to smelter  2: cell 1 refused, cell 2 allowed, stepsFor 2
+ *   belt 1 to miner    2: cell 1 refused, cell 2 allowed, stepsFor 2
+ *   belt 1 to belt     1: cell 0 refused (already `occupied`), cell 1 allowed
+ *   smelter 2 to smelter 2: cell 1 refused, cell 2 allowed (GP-49, unchanged)
+ *
+ * THE GATE IS DELIBERATELY NARROW rather than "always apply", and that is a
+ * blast-radius decision and not a geometric one. Always applying is the more
+ * honest rule and it also refuses a belt running PAST a 2 m machine at one cell
+ * of lateral offset, which is genuinely a clipping overlap and is genuinely
+ * allowed today, on every drag path in every existing scene. Tightening that is
+ * a change to what `beltsnap`, `shortline`, `autoline` and `demolish` measure
+ * and belongs in the pass that rescales the machine set, not in this one. So the
+ * rule applies when a housing is big enough to stand inside (3 m or more) or
+ * when both parts are machines (GP-49's original case), and every existing
+ * placement in the game is bit for bit unaffected.
+ */
+function clashApplies(fa: number, fb: number): boolean {
+  return Math.max(fa, fb) >= 3 || (fa >= 2 && fb >= 2);
 }
 
 /** The site whose grid reaches `p`, or a fresh one founded on the lattice cell
