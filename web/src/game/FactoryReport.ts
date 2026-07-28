@@ -248,6 +248,19 @@ function row(f: Factory, p: Placed): unknown {
     recipeInputs: p.kind !== 'assembler' ? null
       : (() => { const r = f.recipeOf(p); return r === null ? null
         : [r.a.item, r.a.count, r.b.item, r.b.count, r.output, r.ticks]; })(),
+    // FS-70, CHESTS ONLY: WHAT IS IN IT, as `[ItemId, count]`.
+    //
+    // Read LIVE off the container when there is one and off the plan when there
+    // is not, which is exactly the pair of sources `Persist` and `commitPlan`
+    // read, so the report cannot disagree with what a save would write. It is
+    // here because without it a chest's contents were the one piece of placed
+    // state no reader outside the open panel could see: `probes/chestsave.js`
+    // has to re-measure a RESTORED chest after a browser reload, and a panel it
+    // would first have to walk up to and open is a second thing that can fail
+    // in the middle of the measurement.
+    store: p.kind !== 'chest' ? null
+      : live ? [f.line.containerItem(p.build), f.line.containerCount(p.build)]
+        : [p.storeItem, p.storeCount],
     working: live ? f.line.working(p.build) : false,
     // ABI 9. A pole and a generator are GRID citizens with their own id space,
     // so `build` is -1 on both and `grid` is where they actually live. A

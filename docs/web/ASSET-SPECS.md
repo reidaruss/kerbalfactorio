@@ -605,8 +605,8 @@ Footprints are whole metres, as required by section 2.2.
 | 17 | Belt curve right | `machines/belt_curve_r.glb` | 0x11 | **1 x 1** | 0.30 | 200 | scroll |
 | 18 | Belt end cap | `machines/belt_end_cap.glb` | 0x11 | **1 x 1** | 0.30 | 120 | none |
 | 19 | Smelter | `machines/smelter.glb` | 0x12 | **2 x 2** | 2.6 | 700 | glow |
-| 20 | Assembler | `machines/assembler.glb` | 0x13 | **3 x 3** | 2.8 | 1100 | arm cycle |
-| 21 | Box | `machines/box.glb` | 0x14 | **1 x 1** | 1.0 | 300 | lid |
+| 20 | Assembler | `machines/assembler.glb` | 0x13 | **8 x 8** | 4.0 | 1100 | arm cycle |
+| 21 | Box | `machines/box.glb` | 0x14 | **4 x 4** | 3.0 | 700 | lid |
 | 22 | Generator | `machines/generator.glb` | 0x15 | **3 x 2** | 2.6 | 900 | flywheel |
 | 23 | Power pole | `machines/power_pole.glb` | 0x16 | **1 x 1** | 4.0 | 350 | none |
 | 24 | Inserter | `machines/inserter.glb` | sim-internal | **1 x 1** | 0.9 | 400 | swing |
@@ -1896,15 +1896,28 @@ One full pick-place-return sweep: reach to input A on frames 1 to 25, to the pla
 
 ### 4.17 Box, `machines/box.glb` (TypeId 0x14)
 
-Footprint **1 x 1 m**, height 1.0 m. A ribbed steel crate with a hinged lid, corner
-posts, and a narrow fill-level bar on the front face.
+Footprint **4 x 4 m**, height 3.0 m, RESIZED AT FS-68 from the 1 x 1 m crate this
+section described for months. It was the smallest thing in a machine set whose
+largest member is an 8 m assembler, and it became a real placeable at FS-70, so it
+took the same treatment: one structural module (DW-32), an EVEN whole-metre
+footprint, and item ports at the height every machine here presents them at. Even
+is not cosmetic: `FactorySnap.stepsFor` steps `ceil((fpA + fpB) / 2)` cells, so an
+odd footprint lands on the other side of the rounding and moves `PORT_MATE_M` for
+every machine.
 
-300 / 140 / 40 tris. Materials (4): `OF_Steel`, `OF_SteelDark`, `OF_Accent`,
-`OF_EmissiveState` (the fill bar; it uses the standard four state colours, and its
-*length* is driven from the buffer level).
-Sockets: `socket_item_in` (0, +0.5, 0.6), `socket_item_out` (0, -0.5, 0.6),
-`socket_status` (0, -0.5, 0.8).
-Collision: `col_Box`, box 1.0 x 1.0 x 1.0.
+A ribbed steel plinth with a hazard skirt, corner posts, a stepped collar, a rimmed
+roof pan with a recessed hatch, an inspection window, and a recessed intake mouth
+and output chute so both ports read as physical slots a belt runs into.
+
+516 LOD0 tris against a 700 cap, 744 render total against 1100. Materials (6):
+`OF_Steel`, `OF_SteelDark`, `OF_Accent`, `OF_Hazard`, `OF_Glass` (the window,
+which needs `"double_sided_ok": ["OF_Glass"]` or the culling check goes red) and
+`OF_EmissiveState`.
+Sockets, READ BACK OUT OF THE SHIPPED GLB rather than transcribed: `socket_item_in`
+(0, 0.90, -2.00), `socket_item_out` (0, 0.45, +2.00), which are the SMELTER's own
+port heights, so a belt deck at 0.25 m reaches them identically to every other
+machine.
+Collision: `col_Box`, box 4.0 x 4.0 x 3.0, 12 tris against a 64 cap.
 Clip: `Box_Lid` 1 to 15, one-shot, lid rotates 0 to 72 degrees about its +X hinge;
 played in reverse to close.
 

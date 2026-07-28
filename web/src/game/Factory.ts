@@ -215,6 +215,9 @@ export class Factory {
       build: -1, entity: -1, run: -1, grid: -1, fuel: 0,
       // FS-56. A fresh assembler is set to NOTHING: see NO_RECIPE.
       recipe: NO_RECIPE,
+      // FS-70. A fresh chest is empty and UNTYPED: item 0 means the first thing
+      // an inserter brings decides what it holds.
+      storeItem: 0, storeCount: 0,
     };
     this.placed.push(p);
     return p;

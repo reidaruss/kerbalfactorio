@@ -79,6 +79,11 @@ export const ICON_TABLE: readonly IconSpec[] = [
   // `iconName: 'Assembler'`, so the row was expected and simply absent; the
   // asset, the node and the /core display name all shipped with the machine.
   R(0x0013, 'Assembler', `${MACH}assembler.glb`, 'Assembler_LOD0'),
+  // FS-68's storage box, found the same way the assembler was: the build
+  // menu's icon assertion is DERIVED from the live row list, so a buildable
+  // that ships without a picture fails it by name rather than going
+  // unmentioned. That is the second time in one night it has earned that.
+  R(0x0014, 'Box', `${MACH}box.glb`, 'Box_LOD0'),
   // H-7. Craftable since ABI 9 and pictureless until now. All three place the
   // EXISTING machine TypeIds (0x12 / 0x15 / 0x16), so the art already ships and
   // this is three table rows rather than three assets.

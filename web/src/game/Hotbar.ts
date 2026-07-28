@@ -92,6 +92,14 @@ export const PART_INFO: Record<PartKind, { label: string; iconName: string }> = 
   // buildable the HUD cannot name. The icon is the /core ITEM display name for
   // `items::Assembler` (0x0013), exactly as the three rows above take theirs.
   assembler: { label: 'assembler', iconName: 'Assembler' },
+  // FS-70, and this row exists because the table above did exactly what its
+  // comment promised: adding `chest` to `BuildKind` broke this file until it was
+  // named. The icon is /core's own display name for `items::Box` (0x0014), the
+  // same authority the rows above take theirs from. LABELLED "chest" AND NOT
+  // "box": the item is a Box in /core's registry and renaming it there would
+  // move an id-pinned display name for cosmetics, but what the player builds and
+  // opens is a storage chest, which is the word every game in this genre uses.
+  chest: { label: 'chest', iconName: 'Box' },
   foundation: { label: 'foundation', iconName: '' },
   floor: { label: 'floor', iconName: '' },
   wall: { label: 'wall', iconName: '' },

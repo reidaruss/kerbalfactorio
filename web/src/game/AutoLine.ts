@@ -95,6 +95,37 @@ export class AutoLine {
     return this.M._of_net_place_assembler(this.handle, inA, countA, inB, countB,
       out, outCount, craftTicks, 0, outCap);
   }
+  /**
+   * FS-66 / ABI 19: a STORAGE CONTAINER. `item` 0 leaves the type unclaimed, so
+   * the first thing an inserter brings decides it; passing an item pins it up
+   * front, which is both a filtered chest and how a committed chest comes back
+   * holding what it held.
+   *
+   * No x/y/z, exactly like `placeAssembler` above: a container's position is
+   * stamped by `setPlacement` with every other building's.
+   */
+  placeContainer(item: number, capacity: number): number {
+    return this.M._of_net_place_container(this.handle, capacity, item);
+  }
+  containerItem(build: number): number {
+    return this.M._of_net_container_item(this.handle, build);
+  }
+  containerCount(build: number): number {
+    return this.M._of_net_container_count(this.handle, build);
+  }
+  containerCapacity(build: number): number {
+    return this.M._of_net_container_capacity(this.handle, build);
+  }
+  /** Returns how many were ACTUALLY taken, which is 0 on an empty or
+   *  wrong-typed chest and may be less than `want`. */
+  containerTake(build: number, want: number): number {
+    return this.M._of_net_container_take(this.handle, build, want);
+  }
+  /** Returns how many were ACCEPTED: 0 if the chest holds a different type or
+   *  is full, which is the back pressure and not an error. */
+  containerInsert(build: number, item: number, count: number): number {
+    return this.M._of_net_container_insert(this.handle, build, item, count);
+  }
   /** Wire two buildings. `item` 0 lets /core infer it. True on success. */
   connect(from: number, to: number): boolean {
     return this.M._of_net_connect(this.handle, from, to, 0) === 1;

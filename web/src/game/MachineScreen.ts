@@ -18,6 +18,7 @@
 import { feedMachine, refuel } from './GameplayActions.js';
 import { machinePorts } from './FactoryPorts.js';
 import { assemblerPanelView, feedAssembler } from './MachineAssembler.js';
+import { chestPanelView, loadChest, takeFromChest } from './MachineChest.js';
 import { PART_INFO } from './Hotbar.js';
 import type { MachineView } from '../ui/FurnacePanel.js';
 import type { Gameplay } from './Gameplay.js';
@@ -35,7 +36,11 @@ const OPENABLE = new Set<BuildKind>(['miner', 'smelter', 'esmelter', 'generator'
   // may: an unset one makes nothing at all until somebody chooses a recipe, so
   // if it were not on this list the machine would be unusable and there would be
   // no way in the game to find out why.
-  'assembler']);
+  'assembler',
+  // FS-70. A chest MUST be openable or it is a box you can never look inside:
+  // it has no recipe to set and no fuel to add, so the panel is the only way to
+  // put something in by hand or get it back out.
+  'chest']);
 
 /**
  * GP-61: what a bare-handed left click on the crosshair's machine does.
@@ -52,8 +57,9 @@ export function openAimedMachine(g: Gameplay): boolean {
 export function screenView(g: Gameplay): MachineView {
   if (g.openMachine !== null) return furnacePanelView(g, g.openMachine);
   if (g.openBuild !== null) {
-    return g.openBuild.kind === 'assembler'
-      ? assemblerPanelView(g, g.openBuild) : buildPanelView(g, g.openBuild);
+    if (g.openBuild.kind === 'assembler') return assemblerPanelView(g, g.openBuild);
+    if (g.openBuild.kind === 'chest') return chestPanelView(g, g.openBuild);
+    return buildPanelView(g, g.openBuild);
   }
   return { title: '', status: '', input: null, input2: null, fuel: null,
     output: null, progress01: null, progressText: '', canTakeInput: false,
@@ -259,6 +265,7 @@ export function loadInto(g: Gameplay, item: number): void {
   if (b === null) return;
   if (b.kind === 'generator') { refuel(g, b); return; }
   if (b.kind === 'assembler') { feedAssembler(g, b, item); return; }
+  if (b.kind === 'chest') { loadChest(g, b, item); return; }
   feedMachine(g, b);
 }
 
@@ -291,6 +298,10 @@ export function takeOut(g: Gameplay): void {
   }
   const b = g.openBuild;
   if (b === null) return;
+  // FS-70. A chest is not collected through `factory.collect`: that reads the
+  // machine OUT-SLOT, and a container's pool is not an out-slot even though it
+  // lives in the same arrays.
+  if (b.kind === 'chest' && takeFromChest(g, b)) return;
   const n = g.factory.collect(b);
   if (n <= 0) { g.hud.flash('nothing to take yet'); return; }
   g.autoCollected += n;

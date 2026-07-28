@@ -31,6 +31,12 @@ const SMELT_TICKS = 60;                    // the survival smelter's own rate
 const E_SMELT_TICKS = 30;
 const E_SMELT_W = 30000;
 
+/** FS-70: how much one chest holds. Factorio's wooden chest is 16 stacks and its
+ *  iron chest 32; this is one number in the middle of that, authored once here
+ *  rather than passed in, because a chest whose capacity varied by placement
+ *  would need the capacity on the plan and in the save too. */
+const CHEST_CAP = 300;
+
 export function commitPlan(f: Factory): void {
 
     const carry = f.placed.map((p) => ({
@@ -51,6 +57,16 @@ export function commitPlan(f: Factory): void {
       // whenever you build something.
       fuel: p.kind === 'generator' && p.grid >= 0
         ? f.power.generatorFuel(p.grid) : p.fuel,
+      // FS-70. A CHEST'S CONTENTS, read LIVE off the container when there is one
+      // and off the plan when there is not, which is the same shape as `fuel`
+      // above and is required for the same reason: `recreate()` on the next line
+      // destroys every container in the base. The ITEM travels with the count
+      // because a container claims its type from whatever arrives first, so
+      // restoring 40 nameless units would let the next inserter re-claim it.
+      store: p.kind !== 'chest' ? { item: 0, count: 0 }
+        : p.build < 0 ? { item: p.storeItem, count: p.storeCount }
+        : { item: f.line.containerItem(p.build),
+            count: f.line.containerCount(p.build) },
     }));
     // Empty every output into the pack BEFORE the network goes away: those are
     // finished ingots, and a rebuild is not allowed to eat them.
@@ -143,6 +159,24 @@ export function commitPlan(f: Factory): void {
           r.output, r.outputCount, r.ticks);
         if (carry[i].input > 0) f.line.feed(p.build, carry[i].input);
         if (carry[i].input2 > 0) f.line.feed2(p.build, carry[i].input2);
+        p.entity = p.build < 0 ? -1 : f.line.entityIndex(p.build);
+        return;
+      }
+      if (p.kind === 'chest') {
+        // FS-70. Placed with its type ALREADY SET when it had one, rather than
+        // placed empty and refilled: `placeContainer` takes the item, so a
+        // restored chest holding 40 iron is a chest committed to iron, exactly
+        // as it was before the rebuild. Filling an untyped container instead
+        // would work, but it would mean a chest's type is re-derived on every
+        // commit, and a chest the player deliberately emptied would be free to
+        // claim a different type from the first inserter to reach it.
+        const s = carry[i].store;
+        p.build = f.line.placeContainer(s.item, CHEST_CAP);
+        if (p.build >= 0 && s.count > 0) {
+          f.line.containerInsert(p.build, s.item, s.count);
+        }
+        p.storeItem = s.item;
+        p.storeCount = s.count;
         p.entity = p.build < 0 ? -1 : f.line.entityIndex(p.build);
         return;
       }

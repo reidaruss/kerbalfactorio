@@ -14,8 +14,8 @@
 // rather than a mystery.
 
 import * as THREE from 'three';
-import { SAVE_VERSION, readSlot, writeSlot, type SaveMachine, type SaveProgress,
-  type SaveSlot, type SlotRefusal } from './SaveGame.js';
+import { SAVE_VERSION, chestStore, readSlot, writeSlot, type SaveMachine,
+  type SaveProgress, type SaveSlot, type SlotRefusal } from './SaveGame.js';
 import type { GameMode } from './GameMode.js';
 import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
@@ -186,7 +186,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
       // purpose. Absent on every slot written before FS-44, and that absence is
       // the migration's only hinge.
       ports: true,
-      recipe: p.recipe,   // FS-56; SaveGame.SaveBuilding says why it is an ItemId.
+      recipe: p.recipe, store: chestStore(factory.line, p),  // FS-56 / FS-70.
     })),
     machines: machines.list.map((m): SaveMachine => {
       const st = game.furnaceState(m.handle);

@@ -166,22 +166,21 @@ const PORT_NAMES: Partial<Record<BuildKind, { name: string; dir: PortDir }[]>> =
   assembler: [{ name: 'socket_item_in_a', dir: 'in' },
               { name: 'socket_item_in_b', dir: 'in' },
               { name: 'socket_item_out', dir: 'out' }],
+  // FS-70. The same pair the smelter has, at the same two heights, because
+  // FS-68 moved the box's sockets onto the smelter's. A chest's in and out are
+  // the SAME pool, so unlike every machine above these two ports do not bracket
+  // a transformation; they are the two ends of one box.
+  chest: [{ name: 'socket_item_in', dir: 'in' },
+          { name: 'socket_item_out', dir: 'out' }],
 };
 
-// THE STORAGE CHEST IS NOT IN THIS TABLE YET, AND THE REASON IS NO LONGER THE
-// STORAGE: it is now only the client half. FS-49 deferred it because a chest would have had to be a machine whose recipe
-// turns item X into X in one tick, and `producedCountOf` is a LIFETIME
-// PRODUCTION tally (FS-13), so a box passing 500 iron along would have reported
-// MANUFACTURING it. FS-66 built the real thing: `EntityKind::Container` holds
-// ONE item type up to a capacity, refuses a second with visible back pressure,
-// releases its type when emptied, and has NO recipe at all, so nothing can
-// record production against it BY CONSTRUCTION. ABI 19 carries the six
-// `of_net_container_*` exports; `container_tests` drives it.
-// WHAT IS LEFT is a `chest` BuildKind, a row here, a panel view and persistence.
-// The asset MOVED with FS-57's treatment, 1.00 m to 4.00 m, and the header table
-// above is updated: its ports sit at the SMELTER's own heights now. `FOOTPRINT`
-// must be 4 to match `footprint_cells` or `socketReachM` and `stepsFor` are both
-// wrong for it.
+// FS-70 PUT THE CHEST IN THAT TABLE, and what it took was NOT ports: `box.glb`
+// has carried this exact pair for months. FS-49 deferred it because a chest
+// would have had to be a machine whose recipe turns item X into X in one tick,
+// and `producedCountOf` is a LIFETIME PRODUCTION tally (FS-13), so a box passing
+// iron along would have reported MANUFACTURING it. FS-66 built the real storage
+// instead: `EntityKind::Container` has NO recipe at all, so nothing can record
+// production against it BY CONSTRUCTION rather than by anyone remembering.
 
 /**
  * Which face of the housing a socket sits on, from its position alone.

@@ -29,6 +29,8 @@ export interface SavedBuilding {
    *  empty generator: the honest answer, and the same one a reload has always
    *  given a furnace mid-burn. */
   fuel?: number;
+  /** FS-70, chest only: `[ItemId, count]`. See SaveGame.SaveBuilding. */
+  store?: [number, number];
   /** FS-46: placed under the PORT model? Absent on every slot written before it,
    *  and that absence is the migration's only hinge. Additive and optional on
    *  purpose; SaveGame.ts argues why the version must not move for it. */
@@ -69,6 +71,10 @@ export function restorePlan(f: Factory, rows: readonly SavedBuilding[]): number 
       cell: r.cell, up, fwd, quat: orient(up, fwd),
       patch: r.patch, lastRemaining: 0, build: -1, entity: -1, run: -1,
       grid: -1, fuel: r.fuel ?? 0, recipe: r.recipe ?? NO_RECIPE,
+      // FS-70. An absent `store` is an EMPTY chest, which is the only honest
+      // reading for a world saved before chests existed. `commit()` below is
+      // what puts these back into a real container.
+      storeItem: r.store?.[0] ?? 0, storeCount: r.store?.[1] ?? 0,
     });
   }
   f.commit();

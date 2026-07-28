@@ -25,8 +25,15 @@ import type { Quaternion, Vector3 } from 'three';
 // between the two machines and it is why `Placed` grows a field rather than the
 // kind table growing a column: two assemblers of the same kind, side by side,
 // make different things.
+// FS-70 adds the CHEST, and it is the first buildable that is neither a factory
+// entity that ticks nor a grid citizen. It holds ONE item type and does nothing
+// else: no recipe, no progress, no power, no system of its own, because the
+// inserters at both ends do all the work and a container never ticks. FS-66 gave
+// /core `EntityKind::Container` for exactly this, so the storage is real rather
+// than a machine whose recipe turns item X into X and reports having
+// MANUFACTURED everything that passed through it.
 export type BuildKind = 'miner' | 'belt' | 'smelter' | 'pole' | 'generator'
-  | 'esmelter' | 'assembler';
+  | 'esmelter' | 'assembler' | 'chest';
 
 /** TypeIds are ASSET-SPECS section 4's, so the stream keys the right mesh.
  *  The electric smelter reuses the smelter's art (0x12) on purpose: it is the
@@ -37,6 +44,7 @@ export type BuildKind = 'miner' | 'belt' | 'smelter' | 'pole' | 'generator'
 export const TYPE_ID: Record<BuildKind, number> = {
   miner: 0x10, belt: 0x11, smelter: 0x12,
   generator: 0x15, pole: 0x16, esmelter: 0x12, assembler: 0x13,
+  chest: 0x14,
 };
 /**
  * Footprint in whole metres (ASSET-SPECS), and the interaction bound.
@@ -73,6 +81,11 @@ export const TYPE_ID: Record<BuildKind, number> = {
 export const FOOTPRINT: Record<BuildKind, number> = {
   miner: 2, belt: 1, smelter: 2, generator: 2, pole: 1, esmelter: 2,
   assembler: 8,
+  // FS-68 took `box.glb` from 1.00 m to 4.00 m, so this is 4 and NOT 1. It must
+  // equal the asset's `footprint_cells` or `socketReachM` under-reaches its own
+  // sockets and `stepsFor` mates it at the wrong distance, both silently. Even,
+  // for the reason the assembler's 8 is even.
+  chest: 4,
 };
 
 /**
@@ -146,4 +159,22 @@ export interface Placed {
    * choice the player did not really make.
    */
   recipe: number;
+  /**
+   * FS-70, CHESTS ONLY: what is in it, as an ItemId and a count. `storeItem` is
+   * 0 for an empty chest and for every other kind.
+   *
+   * CARRIED ON THE PLAN FOR THE REASON `fuel` IS, and it is not optional. The
+   * container lives inside the BuildableNetwork, so `recreate()` destroys it,
+   * and a commit runs on EVERY placement anywhere in the base. Without this,
+   * laying one belt tile would empty every chest in the world. That is worse
+   * than the generator case it copies, because a player puts things in a chest
+   * on purpose: emptying it is destroying inventory they chose to store.
+   *
+   * The ITEM is carried and not just the count, because a container's type is
+   * claimed by whatever arrives first and released when it empties, so a rebuild
+   * that restored 40 units without restoring WHICH 40 would re-claim the type
+   * from the next inserter to reach it.
+   */
+  storeItem: number;
+  storeCount: number;
 }

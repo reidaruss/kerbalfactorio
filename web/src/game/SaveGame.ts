@@ -112,6 +112,36 @@ export interface SaveBuilding {
    *  misread, it is read as an unset machine, which is a state the panel already
    *  has a sentence for. */
   recipe?: number;
+  /** FS-70, chest only: WHAT IS IN IT, as `[ItemId, count]`. Absent on every
+   *  slot written before FS-70 and on every other kind, and an absent field
+   *  reads as an empty chest, which is the only honest answer for a world saved
+   *  before chests existed.
+   *
+   *  BOTH NUMBERS OR NEITHER. A count without its item cannot be restored: a
+   *  container claims its type from whatever arrives first, so a chest brought
+   *  back holding 40 untyped units would let the next inserter decide what they
+   *  were. Additive and optional under exactly the rule `fuel`, `ports` and
+   *  `recipe` were added by, so SAVE_VERSION deliberately does NOT move. */
+  store?: [number, number];
+}
+
+/**
+ * FS-70: what a chest slot's `store` should say, LIVE.
+ *
+ * It lives here rather than at the one call site in `Persist` because that file
+ * has been at its 400-line cap since PersistLedger was moved out of it, and
+ * because the rule this encodes is the FIELD's rule: read the container when one
+ * exists and the plan when it does not, exactly as `commitPlan` does, so a
+ * committed chest and an uncommitted one never disagree about what is in them.
+ * The typed parameters keep `SaveGame` from importing `Factory`.
+ */
+export function chestStore(
+    line: { containerItem(b: number): number; containerCount(b: number): number },
+    p: { kind: string; build: number; storeItem: number; storeCount: number },
+): [number, number] | undefined {
+  if (p.kind !== 'chest') return undefined;
+  return p.build >= 0 ? [line.containerItem(p.build), line.containerCount(p.build)]
+    : [p.storeItem, p.storeCount];
 }
 
 export interface SaveMachine {
