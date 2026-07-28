@@ -51,7 +51,12 @@ is that the numbers are handed out by one writer before the work starts.
 | PH-47 to PH-59 | tunnel sinking, structural lead | allocated |
 | FS-33, FS-35 to FS-42 | corner cargo, pollution, typed items, belt corners | landed |
 | FS-43 to FS-57 | Satisfactory-style machine ports | allocated, not started |
-| RN-* | rendering: ask Admin, block not yet carved | |
+| GP-85, GP-86 | combat: enemy loop at ABI 15, the gun | landed |
+| GP-87 to GP-99 | combat remainder, enemies in the world | held |
+| RN-1 to RN-14 | rendering, historic | landed |
+| RN-15 to RN-29 | ground vegetation, contact blending, aerial perspective | allocated |
+| RN-30 to RN-44 | rendering, next block | free |
+| BT-27 | the build stamp | landed |
 
 FS-34 is deliberately unused: the pollution lane renumbered its own FS-33/FS-34
 to FS-35/FS-36 when corner cargo reached main first.
