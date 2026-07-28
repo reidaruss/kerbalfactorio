@@ -171,3 +171,28 @@ mid-run, which corrupts a measurement in a way that looks like a code defect.
 - Delete it when the pass ends. Not "eventually".
 - **Never delete a directory you did not create.** If the disk is tight, say so
   and let Admin arbitrate.
+
+### `update-ref` must be compare-and-swap, and staging must be path-explicit
+
+Four times this session a lane's commit has carried a file belonging to another
+lane. Twice the content happened to be correct, once it cost a commit outright.
+Two independent causes, and the protocol needs both halves:
+
+**1. Stage by explicit path, never by directory or `-A`.** A directory add
+sweeps whatever another lane left modified in that directory.
+
+**2. Use the three-argument `update-ref` so a concurrent commit fails loudly:**
+
+```
+git update-ref HEAD <new-sha> <expected-old-sha>
+```
+
+where `<expected-old-sha>` is the HEAD you passed to `commit-tree -p`. The
+two-argument form **silently orphans any commit another lane landed** between
+your `read-tree` and your `update-ref`, because your new commit's parent is the
+HEAD you read, not the HEAD that exists. The three-argument form refuses and
+you re-read and retry, which is the correct behaviour under concurrency.
+
+Related: a private-index commit chain can fail mid-way and leave HEAD untouched
+(seen once with exit 66 under disk pressure). **`git log` is the check, not the
+exit code of the chain.**
