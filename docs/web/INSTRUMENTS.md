@@ -310,3 +310,49 @@ measure with.** Rendering may legitimately stop maintaining something the moment
 it stops drawing it, and a value that is correct wherever it is *used* can still
 be frozen everywhere it is *read*. Before measuring with a published field, ask
 what stops updating it, and prove it moves across the case you are testing.
+
+## The screenshot is not automatically the instrument (RN-61, RN-62, RN-63)
+
+Every other entry in this file is a failure. This one is the habit that keeps
+paying, recorded so it is copied rather than rediscovered.
+
+RN-61 gave fourteen harvest trees a per-instance tint and size. The before and
+after frames looked **identical** to the eye, and the honest report from looking
+at them would have been "no visible change". The frame was mostly desert with
+three trees in it, so the change occupied about 2% of the pixels: not a small
+effect, a small *share of the frame*. Diffed numerically instead, HUD and hotbar
+excluded, it was **13,514 of 544,000 pixels moving by more than 6 counts with a
+maximum channel delta of 180**, concentrated exactly where the trees were.
+
+**A frame in which the change occupies a few per cent of the pixels cannot be
+judged by looking at it**, and a matched pair of screenshots is evidence only
+once you know what fraction of the frame the effect is allowed to touch. This is
+the same shape as the tile-size entry above: there, the instrument's resolution
+decided whether a term was visible at all; here, the frame's *composition*
+decides whether the eye can see a change that is definitely present.
+
+### Assert the property, not the magnitude
+
+The stronger half. When the diff is the instrument, assert what the feature **is**
+rather than how big it came out:
+
+- RN-62's base-contact bake: **26,361 of 26,844 changed pixels got darker, 483
+  lighter.** A darkening gradient that stopped darkening things would be broken
+  by definition, so the direction is the assertion.
+- RN-63's mineral height scale: **12,715 darker against 13,764 lighter**, a
+  deliberately even split. A silhouette change moves pixels both ways; had it
+  come out 98% darker, it would have meant the scale change was accidentally
+  shading something instead of reshaping it.
+
+A magnitude assertion rots the moment somebody tunes a constant, and it invites a
+tolerance wide enough to pass on nothing. A property assertion survives tuning
+and still fails when the feature genuinely breaks. **Prefer the invariant that
+falls out of what the change means over the number it happened to produce.**
+
+### Name the failure mode before measuring, then look for it
+
+RN-62's comment predicted that too deep a mineral band would read as "a rock
+dipped in paint" and chose 0.64 over the bottom 20% against foliage's 0.42 over
+38% for that reason. The frame was then checked for that specific artefact rather
+than for general goodness. A named prediction is falsifiable; a justification
+written after the screenshot is not, and reads the same in the diff.

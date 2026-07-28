@@ -148,6 +148,32 @@ export const TALL_H_LO = 0.55;
 export const TALL_H_HI = 1.30;
 
 /**
+ * The height band a MINERAL instance is scaled into, independently of its width.
+ *
+ * RN-63. Mineral props used to collapse to a uniform scale, so every rock in the
+ * world was the same shape at a different size, and the survey found why that
+ * reads so strongly: there is exactly ONE mesh per rock stem, and the eye is
+ * looking at a few hundred copies of the same 102 triangles rotated about Y at
+ * 2,000 to 10,000 instances per km2. Rotation does not change a silhouette
+ * viewed from a level camera; a height ratio does.
+ *
+ * NARROWER THAN THE PLANT BAND (0.55 to 1.30) BECAUSE ROCK RESISTS IT. A tuft
+ * stretched to 1.3 still reads as a tuft, since a plant's proportions are
+ * genuinely variable. A boulder is a piece of a larger mass and its proportions
+ * carry information about what it broke off: past about 1.25 an upright lobe
+ * stops reading as stone and starts reading as a stretched copy of the rock next
+ * to it, which is a worse artefact than the sameness it was meant to fix.
+ *
+ * Y IS THE PROP'S OWN UP because the instance is already yawed about the surface
+ * normal, so this squashes and stands a rock along its own axis rather than
+ * shearing it against the ground. Non-uniform instance scale is already proven
+ * on this path: the foliage branch above has used it since the understorey
+ * shipped, so the normals are known to survive it.
+ */
+export const MINERAL_H_LO = 0.74;
+export const MINERAL_H_HI = 1.24;
+
+/**
  * Non-uniform scale for one instance: width and height drawn SEPARATELY.
  *
  * The scatter shipped with one uniform scalar, so every card was a scaled copy
@@ -168,7 +194,8 @@ export function scaleFor(
   const hi = short ? DETAIL_H_HI : TALL_H_HI;
   const h = tall
     ? w * (lo + frac(hash32(seed, k * 8 + 11)) * (hi - lo))
-    : w;
+    : w * (MINERAL_H_LO + frac(hash32(seed, k * 8 + 11))
+        * (MINERAL_H_HI - MINERAL_H_LO));
   const g = short ? DETAIL_W_GAIN : 1;
   return out.set(w * g, h, w * g);
 }
