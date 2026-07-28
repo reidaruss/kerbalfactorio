@@ -148,6 +148,24 @@ produced twelve items, reading 98 after the fix). A report that says null where
 it means "I do not compute this for your kind" cannot be told from one that
 means "empty", and that ambiguity is invisible until a new kind arrives.
 
+## A negative control is not finished when it goes red (FS-71)
+
+**It is finished when the revert is verified byte-identical.** A negative control
+deliberately breaks working code, so between applying it and reverting it the
+tree contains a real defect that nothing distinguishes from an accidental one.
+
+This was not hypothetical: the machine was restarted mid-pass while a restore
+path was deliberately zeroed, and the working tree was left holding a chest that
+forgets its contents, with no process alive that remembered why it was there. The
+next reader, including the same agent later, has no way to tell a control from a
+bug by looking at it.
+
+So the control has three steps and not two, and the third is the one that gets
+skipped: apply, observe red **with the numbers printed**, revert and diff against
+`HEAD`. `git status --porcelain <file>` printing nothing is the proof. On
+returning to any interrupted pass, diff before running anything, because a
+suspicious result may be measuring a break you left yourself.
+
 ## A tool that reports nothing may not be running (FS-70)
 
 **A syntax error anywhere silently disables semantic type checking everywhere.**
