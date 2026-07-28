@@ -109,7 +109,16 @@ const BAYER = /* glsl */`
   }
 `;
 
-const CASCADE = /* glsl */`
+/**
+ * The cascade lookup, EXPORTED at RN-52 so the water surface shades itself from
+ * the same three cascades the ground under it does. A second copy of this
+ * selection would be a second authority on which cascade a range belongs to,
+ * and the visible failure would be a pond whose glint stays lit inside a shadow
+ * the shoreline is already in. It reads `uCascadeFar` and three's own shadow
+ * uniforms, so any material using it needs `lights: true` and the shadowmap
+ * chunks, exactly as this one does.
+ */
+export const CASCADE_GLSL = /* glsl */`
   float ofCascadeShadow(float vz) {
     #if defined(USE_SHADOWMAP) && !defined(OF_SCALED) && OF_CASCADES > 0
       float s = 1.0;
@@ -155,6 +164,10 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     ${ATMOSPHERE_PARS}
     ${TERRAIN_ART_PARS}
     uniform vec3 uArtAmp;      // x macro colour, y detail bump, z rock strata
+    // RN-57. x water level (metres above datum), y shoreline radius m, z the
+    // height in metres over which the wet band dries out, w amplitude.
+    uniform vec4 uWetBand;
+    uniform vec3 uWetDir;      // unit direction of the pond centre, body frame
     uniform vec3 uBodyCenter;
     uniform float uMaxRelief;
     uniform vec3 uAmbient;
@@ -170,7 +183,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     varying float vViewZ;
     varying vec2 vChunkUv;
     ${BAYER}
-    ${CASCADE}
+    ${CASCADE_GLSL}
 
     void main() {
       ${depth.fragmentBody}
@@ -266,6 +279,14 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       float snow = smoothstep(0.86, 1.14, band) * smoothstep(0.45, 0.85, flat_) * 0.9;
       albedo = mix(albedo, vec3(0.88, 0.92, 0.98), snow);
       albedo *= 0.82 + 0.26 * smoothstep(0.0, 0.7, band);
+
+      // WET GROUND (RN-57), after snow and the relief ramp because it is a film
+      // ON the finished ground rather than another kind of ground. Compiled out
+      // of the scaled scene, where the whole 22 m pond is under one pixel; that
+      // is RN-45's confinement by the call graph, and it is free.
+      #ifndef OF_SCALED
+        albedo = ofArtWet(albedo, pM, vRelief, uWetDir, uWetBand);
+      #endif
 
       // The bump perturbs the LIGHTING normal only, and it does so after every
       // decision that depends on the true slope has already been taken. vWorld

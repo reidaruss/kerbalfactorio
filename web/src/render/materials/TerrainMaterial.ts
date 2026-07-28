@@ -113,9 +113,44 @@ function artAmpFromQuery(): THREE.Vector3 {
   );
 }
 
+/**
+ * WHAT THE GROUND NEEDS TO KNOW ABOUT WATER, and it is deliberately the least
+ * that will do (RN-57): a direction, two radii and a height. It is NOT a
+ * WaterOracle and it is NOT `depthAt`. The ground does not ask where the water
+ * is per fragment, because that would be a second consumer of the water
+ * authority inside a shader, which is the DW-26 trap by another route. It is
+ * handed the pond's published disc once at boot, and it darkens a band.
+ */
+export interface TerrainWaterBand {
+  /** Unit direction of the pond centre, body frame. */
+  readonly dirX: number; readonly dirY: number; readonly dirZ: number;
+  /** The water surface, METRES ABOVE THE DATUM, i.e. the same frame as aHeight. */
+  readonly levelM: number;
+  readonly shorelineM: number;
+}
+
+/**
+ * The height in metres over which ground above the waterline dries out. 0.55 m
+ * is capillary rise plus the ripple's own reach, and it is generous rather than
+ * physical: the shipped terrain LOD is 1.8 m under the player, so a band much
+ * tighter than half a metre would be thinner than the triangles carrying it and
+ * would read as a jagged outline of the mesh rather than as a wet margin.
+ */
+const WET_HEIGHT_M = 0.55;
+
+function wetBandFromQuery(w: TerrainWaterBand | null): THREE.Vector4 {
+  if (w === null) return new THREE.Vector4(0, 1, WET_HEIGHT_M, 0);
+  const p = new URLSearchParams(self.location.search);
+  const raw = Number(p.get('wetsandamp'));
+  const amp = p.get('wetsand') === '0' ? 0 : (Number.isFinite(raw) ? raw : 1);
+  return new THREE.Vector4(w.levelM, w.shorelineM, WET_HEIGHT_M, amp);
+}
+
 export interface TerrainMaterialOptions {
   readonly depth: DepthPolicy;
   readonly maxReliefM: number;
+  /** The pond, or null on a dry body. See TerrainWaterBand. */
+  readonly water: TerrainWaterBand | null;
   readonly atmosphere: AtmosphereUniforms;
   /** Cascade far planes in metres; the length is the cascade count. */
   readonly cascadeSplits: number[];
@@ -137,6 +172,13 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // near material and not the far one would be a second authority on how the
   // ground looks, which is the exact bug class this file already guards.
   const artAmp = artAmpFromQuery();
+  // The wet band, likewise ONE object shared by both materials by reference so
+  // a runtime tweak cannot reach one and not the other. The amplitude is zero on
+  // a dry body, which is what makes `ofArtWet` return on its first line and cost
+  // the fragment a compare rather than two lengths.
+  const wetBand = wetBandFromQuery(o.water);
+  const wetDir = new THREE.Vector3(
+    o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
   const cascades = o.cascadeSplits.length;
   const splits = new THREE.Vector3(
     o.cascadeSplits[0] ?? 1, o.cascadeSplits[1] ?? 1, o.cascadeSplits[2] ?? 1,
@@ -163,6 +205,8 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uCascadeFar: { value: splits },
       uSkyAmbient: { value: 0.32 },
       uArtAmp: { value: artAmp },
+      uWetBand: { value: wetBand },
+      uWetDir: { value: wetDir },
     });
     const m = new THREE.ShaderMaterial({
       uniforms,
@@ -199,6 +243,11 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
     reset(): void {
       artAmp.set(ART_DEFAULT.macro, ART_DEFAULT.bump, ART_DEFAULT.strata);
     },
+    // RN-57. Same handle rather than a second one, because the wet band is a
+    // terrain art term and a probe toggling it wants the SAME settled-frame
+    // instrument RN-45 built for the other three.
+    setWet(amp: number): number { wetBand.w = amp; return amp; },
+    getWet(): [number, number, number, number] { return wetBand.toArray(); },
   };
   return {
     near,

@@ -103,6 +103,13 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',
+  // RN-51 to RN-58, the water look. `water=0` removes the surface entirely so a
+  // frame with no pond in it is reachable; the four term flags isolate one of
+  // ripples, glint, refraction and foam each, and `wetsand` is the terrain-side
+  // half of the shoreline. The four `*amp` flags sweep rather than switch.
+  'water', 'waterripple', 'waterglint', 'waterrefract', 'waterfoam',
+  'rippleamp', 'glintamp', 'refractamp', 'foamamp',
+  'wetsand', 'wetsandamp',
   'vab', 'flight',
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one

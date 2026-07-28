@@ -17,7 +17,9 @@ import { TerrainStream } from './TerrainStream.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { PlanetBody } from './PlanetBody.js';
 import type { SurfaceOracle } from './SurfaceOracle.js';
-import { WaterSurface } from './WaterSurface.js';
+// RN-51: water's LOOK is the rendering lane's, so the surface moved to
+// `render/`. World-gen keeps the level and the basin (WaterOracle, water_field).
+import { WaterSurface } from '../render/WaterSurface.js';
 import type { FromTerrain, TerrainInitMsg, TerrainInitedMsg } from '../workers/TerrainProtocol.js';
 
 /** minResidentDepth 2 keeps 6 * 4^2 = 96 coarse shells resident for the WHOLE
@@ -95,6 +97,12 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
   const materials = createTerrainMaterials({
     depth,
     maxReliefM: body.maxReliefM,
+    // RN-57: the ground darkens at the waterline, because in this engine the
+    // BEACH IS TERRAIN. The disc is world-gen's published answer and it is read
+    // ONCE here, not per fragment: the ground is told where the pond is, it
+    // never asks. WaterDisc is structurally a TerrainWaterBand, so no shape is
+    // transcribed and a field that moves is a compile error rather than a look.
+    water: d.oracle.water.disc,
     atmosphere: d.atmosphere,
     cascadeSplits: d.cascadeSplits,
     fadeSecs: cfg.fadeSecs,
@@ -112,7 +120,20 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
   // fixed body-frame place on a 600 km sphere and has to be re-derived from its
   // f64 anchor on every rebase, which is the one thing this module already
   // arranges for everything else it makes.
-  const water = new WaterSurface(origin, d.oracle, d.oracle.water);
+  //
+  // RN-53 gives it a look, and everything the look needs is handed over by
+  // REFERENCE from what this function already built: the near terrain material
+  // (for the planet centre, the sim clock, the cascade splits and the ambient),
+  // the shared atmosphere record, and the depth policy. Nothing new is pushed
+  // per frame anywhere. `refractAllowed` is a capability, not a preference: see
+  // WaterSurfaceOptions for the two hard conditions behind it.
+  const water = new WaterSurface(origin, d.oracle, d.oracle.water, {
+    depth,
+    terrain: materials.near,
+    atmosphere: d.atmosphere,
+    cascades: d.cascadeSplits.length,
+    refractAllowed: cfg.post.flags.post && cfg.post.tune.samples === 0,
+  });
   if (water.mesh !== null) {
     scenes.near.add(water.mesh);
     events.on('OriginRebased', () => water.reanchor());
