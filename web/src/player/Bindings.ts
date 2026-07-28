@@ -268,16 +268,41 @@ export function actionsFor(code: string): readonly Action[] {
   return CODE_TO_ACTIONS.get(code) ?? [];
 }
 
+/**
+ * GP-140. ONE CODE, ONE SPELLING, everywhere in the client.
+ *
+ * There were two of these. `labelOf` turned `ShiftLeft` into "Shift" for the
+ * one-key hints, and `BindingText.prettyCode` turned it into "Left Shift" for
+ * the controls screen, so the launch guide said "Hold Shift to throttle up"
+ * while the screen that lists every control said "Left Shift". Nobody had
+ * noticed, because the two are never on screen together;
+ * `probes/launchguide.js` found it by asserting the guide against the binding
+ * table rather than against a literal, which is exactly why that assertion is
+ * written that way.
+ *
+ * It is the defect class this file already carries three scars from (the mute
+ * hint, the map hint, H-5's raw key codes) one level further in: not a second
+ * copy of WHICH key, but a second copy of how to SAY it. The precise spelling
+ * wins, because a controls screen listing both shift keys has to tell them
+ * apart and a hint that reads "Left Shift" loses nothing. The mouse buttons
+ * are capitalised for the same reason: they are KEY NAMES, they are drawn in
+ * <kbd> chips, and they start sentences ("Left click swings").
+ */
+export function prettyCode(code: string): string {
+  return code
+    .replace(/^Key/, '')
+    .replace(/^Digit/, '')
+    .replace('Mouse0', 'Left click')
+    .replace('Mouse2', 'Right click')
+    .replace('ShiftLeft', 'Left Shift')
+    .replace('ShiftRight', 'Right Shift')
+    .replace('Backquote', '`')
+    .replace('Backslash', '\\');
+}
+
 /** How a binding reads on screen. `Mouse0` is not a key name a player knows. */
 export function labelOf(action: Action): string {
   const codes = BINDINGS[action];
   if (codes.length === 0) return action === 'slotNext' ? 'wheel down' : 'wheel up';
-  return codes[0]
-    .replace(/^Key/, '')
-    .replace(/^Digit/, '')
-    .replace('Mouse0', 'left click')
-    .replace('Mouse2', 'right click')
-    .replace('ShiftLeft', 'Shift')
-    .replace('Backquote', '`')
-    .replace('Backslash', '\\');
+  return prettyCode(codes[0]);
 }

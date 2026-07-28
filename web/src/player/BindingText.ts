@@ -25,7 +25,7 @@
 // persistence and reset-to-default before it is worth having. The shape is
 // reserved by `ControlRow.rebindable`, which is what a later pass turns on.
 
-import { BINDINGS, actionsFor, labelOf, type Action } from './Bindings.js';
+import { BINDINGS, actionsFor, labelOf, prettyCode, type Action } from './Bindings.js';
 
 /** Where a control belongs on screen, in the order the groups are shown. */
 export const CONTROL_GROUPS: readonly string[] = [
@@ -167,19 +167,3 @@ export function controlGroups(): ControlGroup[] {
   })).filter((g) => g.rows.length > 0);
 }
 
-/**
- * One code, as a player reads it. The same substitutions `labelOf` makes, in
- * one place, because `Mouse0` is not a key name anybody knows and `KeyW` is not
- * how a keyboard is labelled.
- */
-function prettyCode(code: string): string {
-  return code
-    .replace(/^Key/, '')
-    .replace(/^Digit/, '')
-    .replace('Mouse0', 'Left click')
-    .replace('Mouse2', 'Right click')
-    .replace('ShiftLeft', 'Left Shift')
-    .replace('ShiftRight', 'Right Shift')
-    .replace('Backquote', '`')
-    .replace('Backslash', '\\');
-}

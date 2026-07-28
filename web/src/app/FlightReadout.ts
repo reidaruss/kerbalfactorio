@@ -22,6 +22,7 @@ import { dot, len } from '../sim/FlightAbi.js';
 import type { Vec3 } from '../sim/FlightAbi.js';
 import { horizonAngles, rollAngle } from '../sim/FlightAttitude.js';
 import { saveInhibit } from '../sim/SaveInhibit.js';
+import { launchStep } from '../sim/LaunchSteps.js';
 import type { NavballReadout, BallMarker } from '../ui/Navball.js';
 import type { FlightMode } from './FlightMode.js';
 
@@ -79,6 +80,11 @@ export function readout(m: FlightMode): NavballReadout {
     warning: saveInhibit() !== '' ? saveInhibit()
       : (m.aboard ? 'reloading returns you to your body on the ground; '
                   + 'the vessel keeps its orbit' : ''),
+    // GP-139. Derived every frame from the session, never cached and never
+    // reacted to: the sentence it replaces was only produced when a press was
+    // refused, so the players who needed it were exactly the ones who never
+    // triggered it.
+    nextStep: launchStep(s),
     message: s.message !== '' ? s.message : m.message,
   };
 }

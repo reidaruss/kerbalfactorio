@@ -185,6 +185,10 @@
   check('the screen shows the LIVE binding for B, not the old one',
     keyOf('build') === 'B' && keyOf('freeSnap') === 'N',
     `build=${keyOf('build')} freeSnap=${keyOf('freeSnap')}`);
+  // GP-140: ONE prettifier now serves this screen and every hint, so these are
+  // asserted against the spelling  produces and there is no second one
+  // to disagree with. The launch guide's probe asserts the same function from
+  // the other side.
   check('and it reports the codes a player actually recognises',
     keyOf('use') === 'Left click' && keyOf('demolish') === 'X+Right click',
     `use=${keyOf('use')} demolish=${keyOf('demolish')}`);

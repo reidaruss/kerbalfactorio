@@ -232,3 +232,14 @@
 #of-navball .of-nthr .bar > i { display: block; height: 100%; background: var(--of-accent); }
 #of-navball .of-nthr b { font-weight: 600; min-width: 38px; text-align: right; }
 #of-navball .of-nthr .maxq { font-size: 10px; color: var(--of-dim); white-space: nowrap; }
+
+/* GP-139. The next-step instruction. Amber like the status chip because it is
+   about the same thing (what state the vehicle is in), but filled rather than
+   outlined, because it is the one chip on the row the player is meant to act
+   on and it has to win the glance. */
+#of-navball .chip.step {
+  color: #14181c;
+  background: var(--of-accent);
+  border-color: var(--of-accent);
+  font-weight: 600;
+}

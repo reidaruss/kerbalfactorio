@@ -67,6 +67,13 @@ export interface NavballReadout {
    *  same thing as `message`, which is a transient flash: a warning that scrolls
    *  past in four seconds is a warning nobody read. '' when there is none. */
   warning: string;
+  /** GP-139: WHAT TO DO NEXT, standing, derived from state every frame. A third
+   *  kind of thing and not a synonym for either of the other two: `warning` says
+   *  something is wrong, `message` is a transient flash, and this says which key
+   *  to press. All three can be true at once and each is drawn in its own chip,
+   *  because a player who is told the vessel cannot be saved still needs to know
+   *  how to light the engine. '' when nothing is owed. */
+  nextStep: string;
   message: string;
 }
 
@@ -166,12 +173,19 @@ export class Navball {
 
   private chips(r: NavballReadout): void {
     const warn = r.warning ?? '';
-    const key = `${r.status}|${r.sas}|${r.message}|${warn}`;
+    const step = r.nextStep ?? '';
+    const key = `${r.status}|${r.sas}|${r.message}|${warn}|${step}`;
     if (key === this.last[4]) return;
     this.last[4] = key;
     this.chipsEl.innerHTML = `<span class="chip st">${esc(r.status)}</span>`
       + `<span class="chip sas${r.sas === 'OFF' ? ' off' : ''}">SAS `
       + `${esc(r.sas)}</span>`
+      // GP-139. THE INSTRUCTION COMES FIRST of the three, ahead of the standing
+      // warning and the transient flash, because it is the only one of them the
+      // player can act on and a narrow window truncates from the right. Reid sat
+      // looking at `CLAMPED` with nothing to do; whatever else is on this row,
+      // the thing to press has to survive.
+      + (step === '' ? '' : `<span class="chip step">${esc(step)}</span>`)
       // The standing warning comes BEFORE the transient message, so a flash
       // cannot push it off the end of the row on a narrow window.
       + (warn === '' ? '' : `<span class="chip warn">${esc(warn)}</span>`)
@@ -251,6 +265,10 @@ export class Navball {
       totalDvMS: r === null ? 0 : nm(r.totalDvMS),
       remainingDvMS: r === null ? 0 : nm(r.remainingDvMS),
       status: r === null ? '' : r.status,
+      // GP-139: read off the ELEMENT, not off the readout, so the assertion is
+      // the painted chip against the derivation rather than the derivation
+      // against itself.
+      step: this.chipsEl.querySelector('.chip.step')?.textContent ?? '',
       sas: r === null ? '' : r.sas,
       // Read off the DOM, not off the readout: a probe asking "is the player
       // being told" must be answered by the pixels, not by the intention.

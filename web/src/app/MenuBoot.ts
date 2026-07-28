@@ -20,6 +20,7 @@
 
 import { Cheats } from './Cheats.js';
 import { SaveSlots } from '../game/SaveSlots.js';
+import { stepNames } from '../sim/LaunchSteps.js';
 import { PauseMenu } from '../ui/PauseMenu.js';
 import { BuildMenu } from '../ui/BuildMenu.js';
 import { buildRows, contentFor } from '../game/Buildables.js';
@@ -218,6 +219,18 @@ export function installPauseMenu(s: Services, loop: Loop) {
      * than infer it from the world, which is the difference between proving a
      * load ran and proving something changed.
      */
+    /**
+     * GP-139. WHICH CONTROL the launch guide is currently naming, or ''.
+     *
+     * It lives on this surface and not on `__of.flight` because `DebugFlight.ts`
+     * belongs to another lane tonight, and because the assertion it exists for
+     * is about a UI instruction rather than about flight: the guide must never
+     * name a control already at its stop, and matching that on the PROSE would
+     * be matching on wording that is meant to be improved. An action name is a
+     * fact; the sentence is a draft.
+     */
+    steps: () => (s.flight === null ? '' : stepNames(s.flight.session)),
+
     saves(op?: string) {
       // `refresh` RE-READS THE STORE and resolves with the report. The list is
       // otherwise rebuilt only when the save page is opened (GP-137), which is
