@@ -56,17 +56,33 @@ export class ShadowRig {
       light.shadow.bias = -0.0006;
       light.shadow.camera.near = 1;
       light.shadow.camera.far = CASTER_BACKOFF_M * 2;
-      // WebGLShadowMap culls casters with `object.layers.test(shadowCamera.layers)`
-      // and a fresh camera tests layer 0 only, so the player body on
-      // LAYER_PLAYER_BODY would never enter the map. That is exactly the
-      // section 3.4 promise ("the shadow-casting light keeps it enabled, so the
-      // player still casts a shadow without rendering a slab in front of the
-      // camera"), and it is a one-line difference between kept and broken.
+      // THIS BLOCK IS A NO-OP AND IS KEPT ONLY SO THAT THE NEXT READER DOES NOT
+      // REDISCOVER IT THE HARD WAY (corrected RN-45, 2026-07-27).
       //
-      // Cascade 0 ONLY, from W4. The rigged player is 9 meshes (six material
-      // slots plus a three-material tool), so letting all three cascades see him
-      // is 27 shadow draws for a 1.8 m object, and cascades 1 and 2 cover 80 m
-      // and 300 m where he is a handful of texels. Measured: 45 draw calls to 27.
+      // It used to claim that `WebGLShadowMap` culls casters against the
+      // SHADOW camera's layers, and that enabling these two on cascade 0 alone
+      // is what confines the player and the props to the nearest cascade. Both
+      // halves are false, and it was checked in three's source rather than
+      // reasoned about. `WebGLShadowMap.renderObject` (r185, line 511) filters
+      // with `object.layers.test( camera.layers )` where `camera` is the VIEW
+      // camera handed to `shadowMap.render( shadowsArray, scene, camera )`, NOT
+      // the per-light shadow camera. `light.shadow.camera.layers` is therefore
+      // never consulted anywhere in the shadow pass, and layers cannot select a
+      // cascade. `Object3D.onBeforeShadow` does fire per object per light, but
+      // at lines 535 and 549, i.e. AFTER the `castShadow` test, so it cannot
+      // veto a draw either. The only per-cascade signal three supports is
+      // `_frustum.intersectsObject`.
+      //
+      // What actually puts the player and the props in the shadow map is
+      // `CameraRig` enabling those layers on the NEAR camera. The 45-to-27
+      // draw-call measurement recorded here was real and had another cause.
+      // "Understorey in cascade 0 only" would need a fork of three's shadow
+      // map, so the understorey was taken out of the shadow pass entirely
+      // instead (RN-15, its own `:detail` batches with `castShadow` false).
+      //
+      // Removing these two lines changes nothing. They are left in place
+      // because a future three release could start honouring the shadow
+      // camera's layers, at which point this is the behaviour we would want.
       if (i === 0) {
         light.shadow.camera.layers.enable(LAYER_PLAYER_BODY);
         light.shadow.camera.layers.enable(LAYER_PROPS);

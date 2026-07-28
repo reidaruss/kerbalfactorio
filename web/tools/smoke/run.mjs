@@ -93,6 +93,16 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff', 'gameplay',
   'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density',
   'scatterfair', 'propgrow', 'detail', 'propcull',
+  // RN-45 / RN-46. The ground-detail LOD2, the understorey height band, the
+  // pond-bed rejection, and the terrain surface art with its three terms and
+  // their amplitudes. Standing rule 7: every one of these restores the
+  // behaviour immediately before the change that introduced it.
+  'proplod2', 'grassshort', 'scatterwet',
+  'terrainart', 'macrovar', 'terrainbump', 'strata',
+  'macroamp', 'bumpamp', 'strataamp',
+  // RN-47, the underwater view. `underwater=0` removes the pass; the other
+  // four tune extinction, tint, scatter and the path clamp.
+  'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',
   'vab', 'flight',
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one

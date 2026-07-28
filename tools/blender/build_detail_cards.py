@@ -13,11 +13,11 @@ is about cost:
   * 18 to 42 triangles each, not the 60 to 400 the biome props run at.
   * Three materials for the whole file, so the entire detail layer is three
     draws per chunk no matter how many blades are in it.
-  * No LOD chain at all. A grass card is already at the floor - decimating
-    18 triangles saves nothing and there is no distance at which a 0.5 m tuft
-    is worth a second mesh. The renderer culls the whole layer at its own
-    detail distance instead, which is one distance test rather than one LOD
-    switch per instance.
+  * A REBUILT LOD2, not a decimate. See the RN-45 note below: the claim that
+    there is no distance at which a 0.5 m tuft is worth a second mesh was
+    measured and is false, because the understorey is scattered by the square
+    metre out to 78 m and 48.7% of its instances sit beyond the renderer's
+    LOD2 switch at 45 m.
   * Nothing collides. Obviously.
 
 TWO SPEC CORRECTIONS, both flagged in ASSET-SPECS 3.2.
@@ -103,15 +103,78 @@ def pebble_scatter():
     return p
 
 
+# ---------------------------------------------------------------------------
+# LOD2 (RN-45, 2026-07-27). Rebuilt, never decimated.
+#
+# The file header used to assert that a grass card is already at the triangle
+# floor and that no distance justifies a second mesh. That was measured and it
+# is false, for a reason that is about the SCATTER rather than about the card:
+# the biome props are placed by the handful and the understorey is stamped by
+# the square metre out to DETAIL_RADIUS_M = 78 m. Integrating the renderer's
+# own density falloff over that ring puts 48.7% of live understorey instances
+# beyond LOD2_M = 45 m, where a 0.28 m card is under 3 px tall. Those instances
+# were drawing 18 to 42 triangles apiece for a shape nothing can resolve.
+#
+# A COLLAPSE DECIMATE CANNOT BE USED HERE and that is why these are callables.
+# props_common's own header says it: a collapse decimator eats a grass blade
+# whole and leaves a shard, because a blade is a 3-triangle strip with no
+# interior edges to collapse into. Rebuilding the tuft with fewer, wider blades
+# is the only operation that trades triangles for the thing that actually
+# matters at this range, which is COVERED AREA and not silhouette.
+#
+# So the LOD2 rule for a card is: blades at segs = 1, i.e. one triangle each
+# (a base pair plus a tip, with no intermediate ring), fewer of them, and
+# WIDER to hold the coverage the dropped blades were providing. fit() rescales
+# every LOD into the prop's authored box, so the height and footprint are
+# identical to LOD0 by construction and the switch cannot pop in silhouette.
+# ---------------------------------------------------------------------------
+
+def grass_card_a_lod2():
+    """Four single-triangle blades, 2.7x the base width of LOD0's six.
+    4 triangles against 18."""
+    return pc.tuft(4, 0.38, 0.245, 0.018, 1301, bend=0.14, segs=1, droop=0.16,
+                   role="Grass", h_var=0.16)
+
+
+def grass_card_b_lod2():
+    """Card B is the tall note and is scattered at about a fifth of A's
+    density, so it keeps the same 4-triangle budget rather than a larger one.
+    4 triangles against 40, the biggest single saving in the file."""
+    return pc.tuft(4, 0.60, 0.235, 0.024, 1311, bend=0.26, segs=1, droop=0.20,
+                   role="Grass", h_var=0.18, phase=23.0)
+
+
+def grass_card_c_lod2():
+    """The dry note, on LeafDry so the far ground keeps its parched fraction.
+    4 triangles against 18."""
+    return pc.tuft(4, 0.44, 0.190, 0.030, 1321, bend=0.18, segs=1, droop=0.15,
+                   role="LeafDry", h_var=0.18, phase=41.0)
+
+
+def pebble_scatter_lod2():
+    """One four-sided lobe filling the card's own footprint: 6 triangles
+    against 42.
+
+    Deliberately NOT flat triangles lying on the ground, which would be 3
+    triangles and would be wrong. At 45 m with the eye 1.8 m up, the ground is
+    seen about 2 degrees off edge-on, so a horizontal facet presents ~3.5% of
+    its area and a scatter built from them would simply vanish at exactly the
+    range this LOD exists to serve. A low mound presents its sides instead."""
+    p = hc.Parts()
+    p.add(*hc.lobe(0.46, 0.40, 0.10, seg=4, seed=1331, jit=0.22,
+                   rings=((0.0, 1.00),), role="Rock"))
+    return p
+
+
 PROPS = [
     pc.Prop("Detail_GrassCardA", (0.50, 0.48, 0.36), grass_card_a,
-            ["Grass"], lod2=None),
+            ["Grass"], lod2=grass_card_a_lod2),
     pc.Prop("Detail_GrassCardB", (0.72, 0.68, 0.58), grass_card_b,
-            ["Grass"], lod2=None),
+            ["Grass"], lod2=grass_card_b_lod2),
     pc.Prop("Detail_GrassCardC", (0.62, 0.58, 0.42), grass_card_c,
-            ["LeafDry"], lod2=None),
+            ["LeafDry"], lod2=grass_card_c_lod2),
     pc.Prop("Detail_PebbleScatter", (0.92, 0.80, 0.10), pebble_scatter,
-            ["Rock"], lod2=None),
+            ["Rock"], lod2=pebble_scatter_lod2),
 ]
 
 

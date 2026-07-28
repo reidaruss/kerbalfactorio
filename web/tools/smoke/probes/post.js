@@ -20,12 +20,23 @@
 //      (where the machines stand) must darken far more than the EDGES of that
 //      SAME row. Same row is the control: identical range, identical sun
 //      elevation, identical lighting gradient. The only difference is whether
-//      there is a machine there.
-//   3. EMPTY-SCENE NULL. In ORBIT every chunk is in the far scaled scene and
-//      the near 1:1 scene is empty, so the near pass's depth buffer holds
-//      nothing. AO must therefore change NOTHING. This is the assertion that
-//      actually tests the four-pass reasoning: read the wrong depth attachment,
-//      or get the reversed-Z clear value backwards, and the planet darkens.
+//      there is a machine there, and since RN-15 that last clause is only true
+//      with the understorey hidden, so the measurement is taken in that
+//      configuration. The profile section below carries the whole account of
+//      why, because it is this probe's own repair.
+//   3. GEOMETRY-TRACKING, asserted as a PAIR that points in opposite
+//      directions. Open ground with nothing standing on it must be essentially
+//      untouched, and the SAME column with the foliage restored must darken.
+//      A global multiply fails the first, an AO pass that does nothing fails
+//      the second, and no single behaviour satisfies both without following the
+//      geometry, so hiding a layer cannot buy a pass.
+//
+//      NOT ASSERTED HERE, and it is the one this file used to claim it made:
+//      the ORBIT null, where every chunk is in the far scaled scene and the
+//      near 1:1 depth buffer holds nothing, so AO must change NOTHING. That is
+//      the assertion that tests the four-pass reasoning (read the wrong depth
+//      attachment, or get the reversed-Z clear value backwards, and the planet
+//      darkens). No probe in this tree asserts it; it wants its own pass.
 //
 // Plus the two-occlusion-source check the material lane asked for, plus the
 // isolated cost of each effect, plus the draw-call split.
@@ -229,28 +240,114 @@
     `dot ${r4(best.dot)} at yaw ${best.yaw} pitch ${best.pitch}`);
 
   // -------------------------------------------------------------- the profile
+  // TWO PROFILES, AND THE SECOND ONE IS THIS PROBE'S OWN REPAIR.
+  //
+  // WHAT WAS WRONG. Nothing here was inverted and no predicate ran backwards.
+  // The CONTROL stopped being a control, and the thresholds went on quoting a
+  // world that no longer exists. Properties 1 and 2 were calibrated at RN-10
+  // against a bare hillside: peak band centre 0.3528 against 0.0267 in the SAME
+  // ROW of open ground, ratio 13.2, which is exactly where the 2.5 and the 5%
+  // below come from. RN-15 then planted an understorey on that hillside at 0.55
+  // of screen coverage and RN-30 bought 3.7x more of it. A grass card is an
+  // occluder, a 0.9 m AO radius resolves it, and so the EDGE columns stopped
+  // being open ground and started carrying a large and entirely correct
+  // occlusion signal of their own. The denominator of the attribution ratio
+  // became a second copy of the numerator's physics; the ratio collapsed towards
+  // 1 (measured 1.5975, then 1.7359 after a pass that improved it), and three
+  // checks reported failure against a renderer that was right.
+  //
+  // THE REPAIR IS NOT A SMALLER THRESHOLD. It is to restore the condition the
+  // thresholds were derived under, inside one settled frame, with the camera,
+  // the sun, the streamed set and the machines held identical by construction:
+  // hide the foliage layer, which is the same runtime isolation `DebugScatter`
+  // and `Surfaces` already use for the same reason, and take the attribution
+  // measurement where "the only free variable is whether a machine is standing
+  // there" is TRUE rather than hoped for. The shipped frame is still profiled,
+  // still asserted on the properties it can carry, and still reported in full.
   const prof = await of.postProfile('ao', 30);
-  const peak = prof.rows.reduce((a, r, i) => (r.centre > prof.rows[a].centre ? i : a), 0);
-  const peakRow = prof.rows[peak];
-  const ratio = peakRow.edges > 1e-4 ? peakRow.centre / peakRow.edges : Infinity;
-  const bandsOver5 = prof.rows.filter((r) => r.centre > 0.05).length;
+  of.propsVisible(false);
+  await of.settle(8);
+  const bare = await of.postProfile('ao', 30);
+  of.propsVisible(true);
+  await of.settle(8);
 
-  // 1. LOCALISED.
+  // A MEASUREMENT OVER NOTHING MUST NOT READ AS A PASS, and every bound below
+  // is an upper bound on a darkening, so a black or empty capture satisfies all
+  // of them at once: `1 - with/without` is 0 on every pixel that never cleared
+  // the lit floor. `LIT` is 12 of 255 in DebugPost and this is a daylit hillside
+  // under a lit sky at sunT 0.30, where essentially the whole frame clears it,
+  // so half the frame is a floor only a failed or unlit capture can miss.
+  check('both profiles came off real lit frames, not empty or black captures',
+    prof.samplePx > 0 && bare.samplePx > 0
+    && prof.litFraction > 0.5 && bare.litFraction > 0.5,
+    `lit fraction ${prof.litFraction} shipped and ${bare.litFraction} with the `
+    + `foliage hidden, over ${prof.samplePx} and ${bare.samplePx} px`);
+
+  // The last three bands are the first-person view model and the hotbar. The
+  // arms sway between the two captures of an A/B, so those bands measure the
+  // sway rather than the effect and can read NEGATIVE darkening; this file
+  // already says so where it reports `viewModelBands`. A peak taken over bands
+  // the same file calls invalid is not a peak of the effect, so the search and
+  // the band count both stop before them.
+  const lastValid = Math.max(1, bare.rows.length - 3);
+  const peak = bare.rows.slice(0, lastValid)
+    .reduce((a, r, i, all) => (r.centre > all[a].centre ? i : a), 0);
+  const peakRow = bare.rows[peak];
+  const shippedPeak = prof.rows[peak];
+  // A ratio needs a floor on its DENOMINATOR for the same reason `darkening`
+  // needs one, and the old form had the failure backwards: `edges > 1e-4 ?
+  // centre / edges : Infinity` hands an AO pass that darkened NOTHING an
+  // infinite ratio and PASSES the attribution check on a dead effect. 1e-4 is
+  // not a tuned number, it is `DebugPost`'s own `r4` rounding quantum, so it is
+  // the smallest value a row mean can express at all. The numerator's magnitude
+  // is required separately below so a null cannot ride through a small one.
+  const edgeFloor = 1e-4;
+  const ratio = peakRow.centre / Math.max(peakRow.edges, edgeFloor);
+  const shippedRatio = shippedPeak.centre / Math.max(shippedPeak.edges, edgeFloor);
+  // The level this probe already calls "this band moved", used in both
+  // directions below so the pair cannot be satisfied by one behaviour.
+  const TOUCHED = 0.05;
+  const bandsTouched = bare.rows.slice(0, lastValid).filter((r) => r.centre > TOUCHED).length;
+
+  // 1. LOCALISED, on the SHIPPED frame, because "is the picture as a whole a
+  // wash" is a question about the picture that ships.
   check('AO is localised: the median pixel barely moves', prof.medianDark < 0.03,
     `median darkening ${prof.medianDark}, threshold 0.03`);
   check('AO is real: the 99th percentile moves a lot', prof.p99Dark > 0.10,
     `p99 darkening ${prof.p99Dark}, threshold 0.10`);
   check('AO is not a global multiply: most row bands are untouched',
-    bandsOver5 <= prof.bands / 2,
-    `${bandsOver5} of ${prof.bands} centre bands over 5%`);
+    bandsTouched <= lastValid / 2,
+    `${bandsTouched} of ${lastValid} scene centre bands over ${TOUCHED} with the `
+    + `foliage hidden (the shipped frame reads ${prof.rows.slice(0, lastValid)
+      .filter((r) => r.centre > TOUCHED).length}, and an understorey over half `
+    + 'the screen is why that number is reported and not asserted)');
 
-  // 2. ATTRIBUTABLE. Same row, so range and lighting are held equal.
+  // 2. ATTRIBUTABLE. Same row, so range and lighting are held equal; no
+  // understorey, so proximity to a machine is the only thing left.
   check('AO darkens the machine column far more than the SAME ROW of open ground',
-    ratio > 2.5,
-    `peak band y ${peakRow.y0}-${peakRow.y1}: centre ${peakRow.centre} vs edges `
-    + `${peakRow.edges}, ratio ${r4(ratio)}, threshold 2.5`);
-  check('open ground in the peak row is essentially unchanged', peakRow.edges < 0.05,
-    `edges ${peakRow.edges}, threshold 0.05`);
+    ratio > 2.5 && peakRow.centre > TOUCHED,
+    `peak band y ${peakRow.y0}-${peakRow.y1} with the foliage hidden: centre `
+    + `${peakRow.centre} vs edges ${peakRow.edges}, ratio ${r4(ratio)}, threshold `
+    + `2.5 (RN-10 measured 13.2 here) and the centre must itself clear ${TOUCHED}, `
+    + `so a pass that darkened nothing cannot ride a zero denominator. The shipped `
+    + `frame reads centre ${shippedPeak.centre} vs edges ${shippedPeak.edges}, `
+    + `ratio ${r4(shippedRatio)}, in the same band.`);
+
+  // 3. GEOMETRY-TRACKING, the pair. First direction: with nothing standing on
+  // it, open ground is essentially untouched.
+  check('open ground carrying no occluders is essentially unchanged',
+    peakRow.edges < TOUCHED,
+    `edges ${peakRow.edges} with the foliage hidden, threshold ${TOUCHED} `
+    + '(RN-10 measured 0.0267 on this view when the hillside was bare)');
+  // Second direction, and it is what stops "hide the foliage" from being a way
+  // to launder a broken pass. Grass cards ARE occluders, so the same column has
+  // to darken once they are back, and by more than the level this file calls
+  // untouched. An AO pass that does nothing fails this; a global multiply fails
+  // the one above; the two share the constant and disagree about the direction.
+  check('the understorey is itself occluded: the same column darkens once it is back',
+    shippedPeak.edges > TOUCHED,
+    `shipped edges ${shippedPeak.edges} against ${peakRow.edges} bare, band `
+    + `y ${peakRow.y0}-${peakRow.y1}, threshold ${TOUCHED}`);
 
   // THE MATERIAL LANE'S QUESTION, and the first version of this check was the
   // wrong instrument for it.
@@ -335,7 +432,14 @@
     fails,
     scene,
     ao: {
+      // `peakBand` and the ratio come from the CONTROL configuration (foliage
+      // hidden), because that is the only one in which centre-minus-edges is
+      // attributable to the machines. The shipped frame's own reading of the
+      // same band sits beside it so the two are never confused for each other.
       peakBand: peakRow, peakIndex: peak, centreOverEdges: r4(ratio),
+      shippedPeakBand: shippedPeak, shippedCentreOverEdges: r4(shippedRatio),
+      bareProfile: bare.rows, bandsTouched, validBands: lastValid,
+      bareLitFraction: bare.litFraction, bareP99Dark: bare.p99Dark,
       medianDark: prof.medianDark, p99Dark: prof.p99Dark, maxDark: prof.maxDark,
       changedFraction: prof.changedFraction, litFraction: prof.litFraction,
       faceBand,

@@ -54,6 +54,30 @@ export const MIN_SLOPE_COS = 0.55;
 /** Screen-space-free LOD: props past this distance draw their LOD2 geometry. */
 export const LOD2_M = 45;
 /**
+ * Standing water over a cell above which nothing is scattered on it (RN-46).
+ *
+ * WG-35 to WG-42 cut a real pond into `sampleDesignedHeight`, so the pond bed is
+ * ORDINARY GROUND as far as this code is concerned: it has a legal slope, it has
+ * a biome, and it therefore grew grass cards, pebbles and snow patches four
+ * metres under water, plus a rim of cards standing in the shallows at the
+ * waterline. Nothing in the scatter was wrong; the scatter simply had no notion
+ * that water existed.
+ *
+ * 0.02 m rather than 0 because the test has to survive the shoreline. Right at
+ * the waterline the depth passes through zero continuously, and an exact `> 0`
+ * would make the accept/reject decision turn on the last bit of a float. Two
+ * centimetres is below anything that could ever be visible on a 0.4 m card and
+ * comfortably above the noise in the ground sample.
+ *
+ * The test is PER CELL, so the shoreline is resolved at the terrain's own cell
+ * size, which DW-19 puts at 1.808 m under a walking player. A cell straddling
+ * the waterline is accepted or rejected whole. That is the right granularity
+ * here: it is finer than the 5.4 m of dry beach the water shell already leaves
+ * inside the basin rim, so the scatter boundary lands under the shell rather
+ * than outside it.
+ */
+export const WET_REJECT_M = 0.02;
+/**
  * How far the ground-detail card layer reaches. Confining it is what keeps the
  * shared OF_Grass batch inside its ceiling while the ground the player is
  * actually standing on gets a real understorey: at 55 m the ring is 9,503 m2

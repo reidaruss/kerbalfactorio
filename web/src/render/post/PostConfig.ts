@@ -35,6 +35,12 @@ export interface PostFlags {
   ao: boolean;
   /** Screen-space contact shadows. See ContactGlsl for why it is not a cascade. */
   contact: boolean;
+  /**
+   * The underwater view. Off removes the two blends ENTIRELY, which restores the
+   * pre-lane image exactly; and the pass is skipped anyway whenever the eye is
+   * dry, so on a dry planet this flag is already a no-op. See UnderwaterPass.
+   */
+  underwater: boolean;
   bloom: boolean;
   grade: boolean;
   aa: boolean;
@@ -64,6 +70,25 @@ export interface PostTuning {
   csStrength: number;
   /** Hard cap on the march in UV, so a close-up surface cannot walk the frame. */
   csMaxScreen: number;
+  /** Underwater extinction per METRE, per channel. Red hardest. See below. */
+  uwSigma: [number, number, number];
+  /** Scalar multiplier on uwSigma: "how murky is this water". */
+  uwExtinction: number;
+  /** Equilibrium radiance of the water, i.e. what a long path becomes. */
+  uwTint: [number, number, number];
+  /** Scalar multiplier on uwTint: "how bright is the murk". */
+  uwTintScale: number;
+  /**
+   * In-scatter build-up rate as a fraction of the extinction. 1.0 is the
+   * radiative-transfer equilibrium form, `col * tr + tint * (1 - tr)`, which is
+   * exactly what `ofAtmoAerial` ends on and is the default for that reason. The
+   * knob exists so the two coefficients can be pulled apart and MEASURED rather
+   * than collapsed by assertion; below 1 the tint fills in more slowly than the
+   * scene fades and the far water reads darker.
+   */
+  uwScatterFrac: number;
+  /** Hard cap on the underwater path in metres, so a sky pixel is a number. */
+  uwMaxPathM: number;
   bloomLevels: number;
   bloomThreshold: number;
   bloomKnee: number;
@@ -143,6 +168,40 @@ export const POST_DEFAULTS: PostTuning = {
   // back is the honest correction for occluding light that was never occludable.
   csStrength: 0.72,
   csMaxScreen: 0.05,
+  // WHERE THESE COME FROM. The shape is the Smith and Baker (1981) absorption
+  // spectrum of pure water, which is the standard tabulation and is brutally
+  // asymmetric: about 0.24 /m at 600 nm (red), 0.055 /m at 550 nm (green) and
+  // 0.011 /m at 450 nm (blue). Red is absorbed roughly 22x harder than blue, and
+  // that ratio, not the absolute level, is what makes water look like water.
+  //
+  // What is shipped is that spectrum with a small, roughly grey scattering and
+  // dissolved-organics term added for a SMALL FRESHWATER POND, which is turbid
+  // in a way clear ocean water is not: 0.35 / 0.06 / 0.045 per metre. The blue
+  // channel moves the most in relative terms (0.011 to 0.045) because particulate
+  // scattering is the term that dominates there and a pond has plenty of it.
+  // Sanity check at the pond's own scale: the basin is about 4 m deep, so a ray
+  // across it collects exp(-0.35 * 4) = 0.25 of its red, exp(-0.06 * 4) = 0.79
+  // of its green and exp(-0.045 * 4) = 0.84 of its blue. That is a visible
+  // colour cast at pond depth rather than a wash, which is the intent.
+  uwSigma: [0.35, 0.06, 0.045],
+  uwExtinction: 1.0,
+  // The equilibrium radiance: what a pixel at infinite depth becomes. Blue-green
+  // and DARK, at roughly a fifth of lit-ground radiance, because it is sunlight
+  // that has already been scattered sideways through several metres of the same
+  // water the coefficients above describe. A bright tint here is the failure this
+  // whole term exists to avoid: it lifts the frame instead of drowning it, which
+  // is the same "global lift rather than a halo" mistake DW-35 warns about for
+  // bloom and PostConfig's own bloom note measured.
+  uwTint: [0.045, 0.135, 0.155],
+  uwTintScale: 1.0,
+  uwScatterFrac: 1.0,
+  // 60 m. The pond is 22 m across and about 4 m deep, so nothing that is
+  // genuinely under water is further away than about 25 m; past that the ray has
+  // left through the surface or is looking at a background pixel, and both cases
+  // want to saturate. At 60 m even blue keeps only exp(-0.045 * 60) = 0.067, so
+  // the cap is well past the point where it can be seen, and it is here to keep
+  // exp() away from an argument of 4.5e7 rather than to shape anything.
+  uwMaxPathM: 60,
   bloomLevels: 5,
   // 0.75 and 0.14, and BOTH were retuned after measurement rather than chosen.
   // At the first values (threshold 1.0, strength 0.05) bloom was wired, correct
@@ -206,6 +265,11 @@ function n(p: URLSearchParams, key: string, fallback: number): number {
  *   ?ao=0      no AO buffers written and no multiply into the scene colour.
  *   ?contact=0 no contact-shadow march and no multiply. Plus ?cslength=
  *              ?cssteps= ?csthick= ?csstrength= to sweep it.
+ *   ?underwater=0 no absorption blend and no in-scatter blend, so the image is
+ *              the pre-lane one exactly. Plus ?uwext= (extinction scale),
+ *              ?uwtint= (tint scale), ?uwscatter= and ?uwpath= to sweep it.
+ *              Note the pass is skipped whenever the eye is dry regardless, so
+ *              on a dry planet this flag can move nothing.
  *   ?bloom=0   no pyramid at all, and the composite's bloom term is zero.
  *   ?grade=0   the colour grade becomes an identity mix. LOOK changes, not cost.
  *   ?aa=0      the composite writes straight to the canvas, no FXAA pass.
@@ -242,6 +306,7 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
       post: on,
       ao: p.get('ao') !== '0',
       contact: p.get('contact') !== '0',
+      underwater: p.get('underwater') !== '0',
       bloom: p.get('bloom') !== '0',
       grade: p.get('grade') !== '0',
       aa: p.get('aa') !== '0',
@@ -257,6 +322,10 @@ export function parsePost(search: string, quality: 'low' | 'med' | 'high'): Post
       csSteps: Math.min(24, Math.max(2, n(p, 'cssteps', POST_DEFAULTS.csSteps) | 0)),
       csThickM: Math.max(0.01, n(p, 'csthick', POST_DEFAULTS.csThickM)),
       csStrength: Math.min(1, Math.max(0, n(p, 'csstrength', POST_DEFAULTS.csStrength))),
+      uwExtinction: Math.max(0, n(p, 'uwext', POST_DEFAULTS.uwExtinction)),
+      uwTintScale: Math.max(0, n(p, 'uwtint', POST_DEFAULTS.uwTintScale)),
+      uwScatterFrac: Math.max(0, n(p, 'uwscatter', POST_DEFAULTS.uwScatterFrac)),
+      uwMaxPathM: Math.max(1, n(p, 'uwpath', POST_DEFAULTS.uwMaxPathM)),
       bloomLevels: Math.min(7, Math.max(1, n(p, 'bloomlevels', POST_DEFAULTS.bloomLevels) | 0)),
       bloomStrength: Math.max(0, n(p, 'bloomstrength', POST_DEFAULTS.bloomStrength)),
       bloomThreshold: Math.max(0, n(p, 'bloomthresh', POST_DEFAULTS.bloomThreshold)),

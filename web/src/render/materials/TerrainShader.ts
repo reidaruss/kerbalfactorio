@@ -17,6 +17,7 @@
 import type { DepthPolicy } from '../DepthPolicy.js';
 import { BIOME_COUNT } from './BiomePalette.js';
 import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
+import { TERRAIN_ART_PARS } from './TerrainArt.glsl.js';
 
 export function terrainVertexShader(depth: DepthPolicy): string {
   return /* glsl */`
@@ -144,6 +145,8 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // failure ("function already has a body"). Only the BODY chunks belong here.
     #include <shadowmap_pars_fragment>
     ${ATMOSPHERE_PARS}
+    ${TERRAIN_ART_PARS}
+    uniform vec3 uArtAmp;      // x macro colour, y detail bump, z rock strata
     uniform vec3 uBodyCenter;
     uniform float uMaxRelief;
     uniform vec3 uAmbient;
@@ -172,14 +175,87 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         else if (vFade < b) discard;
       }
 
+      // Everything below is in PLANET-CENTRED METRES, which is the one frame the
+      // shared atmosphere model speaks. uMetresPerUnit is 1 in the near scene
+      // and 1e5 in the scaled far scene, and that is the ONLY difference.
+      //
+      // Hoisted above the albedo block at RN-45: the surface-art field is keyed
+      // on pM because pM is the only position here that survives a floating
+      // origin rebase, so the albedo now needs it. See TerrainArt.glsl.
+      vec3 pM = (vWorld - uBodyCenter) * uMetresPerUnit;
+      vec3 camM = (cameraPosition - uBodyCenter) * uMetresPerUnit;
+      vec3 toCam = pM - camM;
+      float dist = max(length(toCam), 1.0);
+      vec3 rd = toCam / dist;
+
       vec3 n = normalize(vNormalW);
       vec3 up = normalize(vWorld - uBodyCenter);
+      // The GEOMETRIC normal, deliberately. flat_ selects rock against surface
+      // cover and gates the snow band, and both are questions about the actual
+      // slope of the ground. Feeding them the bumped normal below would let a
+      // 4 m ripple decide whether a hillside is rock, which is a feedback loop
+      // and reads as noise in the biome blend rather than as relief.
       float flat_ = clamp(dot(n, up), 0.0, 1.0);
+
+      // SURFACE ART (RN-45). Compiled out of the scaled far scene entirely, and
+      // faded to nothing well inside the near scene's own reach; both reasons
+      // are in TerrainArt.glsl's header and they are not the same reason.
+      float macroW = 0.0, bumpW = 0.0, strataW = 0.0;
+      float hArt = 0.0;
+      #ifndef OF_SCALED
+        // 600 m to 4 km: complete by 4 km against a ~15 km handover to the far
+        // scene, so the same ridge cannot be modulated on one side of the
+        // handover and flat on the other.
+        macroW = uArtAmp.x * (1.0 - smoothstep(600.0, 4000.0, dist));
+        // NO DISTANCE FADE ON THE BUMP. It is faded on the PIXEL FOOTPRINT
+        // inside ofArtBump instead, because range is not what aliases a bump
+        // and a distance fade let a field of moire arcs through at five metres.
+        // See TerrainArt.glsl's note on that function.
+        bumpW = uArtAmp.y;
+        // 500 m to 2.5 km. A 2.35 m bed subtends about 3 px at 1 km on this
+        // viewport and field of view, which is where a band starts to alias.
+        strataW = uArtAmp.z * (1.0 - smoothstep(500.0, 2500.0, dist));
+        if (macroW > 0.0 || bumpW > 0.0) hArt = ofArtMacro(pM);
+        if (bumpW > 0.0) {
+          // The bump gets ONE extra octave the colour does not. 4.2 m is the
+          // float32 precision floor on pM at this planet radius (0.0625 m ULP,
+          // i.e. 1.5% of the wavelength); finer would stair-step rather than
+          // ripple. Sub-metre relief needs a per-chunk phase from world-gen.
+          hArt += (ofArtVnoise(pM * (1.0 / OF_ART_FINE_M) + 7.3) - 0.5) * 0.9;
+        }
+      #endif
 
       // Steep ground shows rock rather than the biome's surface cover. This is
       // the cheap stand-in for the triplanar slope blend arriving at W4.
-      vec3 rock = vec3(0.30, 0.28, 0.26);
+      //
+      // The rock term was a flat vec3 and it is what every cliff, ravine
+      // wall and crater rim on the planet is drawn with, so it is where the
+      // bedding goes. vRelief is metres above the datum, which is exactly the
+      // altitude a bed is a function of.
+      vec3 rock = ofArtStrata(vec3(0.30, 0.28, 0.26), vRelief, pM, strataW);
       vec3 albedo = mix(rock, vBiomeColor, smoothstep(0.55, 0.88, flat_));
+
+      // MACRO VARIATION. Two effects off one field, because they answer two
+      // different halves of "flat colour": the tint moves the ground between a
+      // lush and a dry reading, which is what varies between hillsides, and the
+      // value moves it light to dark, which is what varies within one. Applied
+      // AFTER the rock blend so a cliff face is varied too, and BEFORE snow so
+      // a snowfield stays clean.
+      // THE TWO TINTS ARE RECIPROCAL ABOUT 1.0 PER CHANNEL, and that is a
+      // correction rather than a preference. The first pair shipped as
+      // (0.86, 1.00, 0.90) and (1.12, 1.03, 0.84), whose per-channel MEAN is
+      // (0.99, 1.015, 0.87). A mean blue of 0.87 is a 13% net blue reduction
+      // applied to the whole planet, i.e. a colour grade wearing a variation
+      // layer's clothes, and the probe caught it as a 5.03% drop in the mid
+      // band's LEVEL while its spread rose. A variation term must move the
+      // spread and leave the level alone; these two now average (1.00, 1.01,
+      // 1.00) and it reads as -1.1%, which is the macro field's own asymmetry.
+      if (macroW > 0.0) {
+        vec3 tint = mix(vec3(0.90, 1.00, 1.10), vec3(1.10, 1.02, 0.90),
+                        hArt * 0.5 + 0.5);
+        albedo *= mix(vec3(1.0), tint, macroW);
+        albedo *= 1.0 + macroW * 0.40 * hArt;
+      }
 
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
       // above it (6,520 m measured), so the snowline is expressed past 1.0
@@ -189,14 +265,14 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       albedo = mix(albedo, vec3(0.88, 0.92, 0.98), snow);
       albedo *= 0.82 + 0.26 * smoothstep(0.0, 0.7, band);
 
-      // Everything below is in PLANET-CENTRED METRES, which is the one frame the
-      // shared atmosphere model speaks. uMetresPerUnit is 1 in the near scene
-      // and 1e5 in the scaled far scene, and that is the ONLY difference.
-      vec3 pM = (vWorld - uBodyCenter) * uMetresPerUnit;
-      vec3 camM = (cameraPosition - uBodyCenter) * uMetresPerUnit;
-      vec3 toCam = pM - camM;
-      float dist = max(length(toCam), 1.0);
-      vec3 rd = toCam / dist;
+      // The bump perturbs the LIGHTING normal only, and it does so after every
+      // decision that depends on the true slope has already been taken. vWorld
+      // and not pM: a derivative of a float32 at 6e5 metres is four bits of
+      // signal, and the two frames differ by a translation whose derivative is
+      // the identity, so engine space is both cleaner and equivalent.
+      #ifndef OF_SCALED
+        n = ofArtBump(n, vWorld, hArt, bumpW * 0.55, OF_ART_FINE_M);
+      #endif
 
       vec3 sd = normalize(uSunDir);
       float ndl = max(dot(n, sd), 0.0);

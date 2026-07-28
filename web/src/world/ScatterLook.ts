@@ -135,14 +135,14 @@ export const DETAIL_W_GAIN = 1.18;
  * The RN-15 band, still used by every foliage prop that is NOT understorey, and
  * restored for the understorey too by `PropEmitter`'s `short = false`.
  *
- * That switch is deliberately NOT reachable from a query flag, and the reason is
- * ownership rather than design: every argument the scatter is constructed with
- * is passed by `Boot.ts`, which another lane owns this round, so the honest
- * isolation for the height change is a BINARY PAIR (`docs/screenshots/
- * RN30_world_{before,after}.png`) rather than standing rule 7's one-binary
- * control. The one-line `?grassshort=` wiring is named in the RN-30 report as a
- * coordination item; the constructor parameter is here so that wiring is one
- * line when Boot is free.
+ * WIRED AS `?grassshort=0` at RN-45, which closes the RN-30 coordination item.
+ * It was defaulted for one round for an ownership reason rather than a design
+ * one: every argument the scatter is constructed with is passed by `Boot.ts`
+ * and another lane owned Boot that round, so the honest isolation for the
+ * height change was a BINARY PAIR (`docs/screenshots/RN30_world_{before,after}
+ * .png`). Boot came free and it cost the one line it was predicted to cost, so
+ * the last unisolated claim in the ground-art programme is now a one-binary
+ * control like everything else (standing rule 7).
  */
 export const TALL_H_LO = 0.55;
 export const TALL_H_HI = 1.30;

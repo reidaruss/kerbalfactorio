@@ -32,6 +32,80 @@ const TERRAIN_SIDE = ((): THREE.Side => {
 const AP_VIEW_STEPS = 4;
 const AP_LIGHT_STEPS = 2;
 
+/**
+ * SURFACE ART amplitudes (RN-45): macro colour variation, detail bump, rock
+ * strata. See TerrainArt.glsl.ts for what each one is and why.
+ *
+ * Isolation is BOTH a query flag and a runtime handle, deliberately, because
+ * the two answer different questions and RN-30 showed the second is the
+ * stronger instrument. `?terrainart=0` and the three per-term flags give
+ * standing rule 7's one-binary control over a whole session. `__ofTerrainArt`
+ * lets a probe toggle a term between two SETTLED FRAMES, which holds the
+ * camera, the sun, the streamed chunk set and the scatter equal by
+ * construction rather than by care, and that is what makes a before/after
+ * attributable to the term instead of to the run.
+ *
+ * Defaults are not tuned to taste. Macro 1.0 is the field's authored
+ * amplitude; strata 1.0 is full bedding. Each is a multiplier ON those, so 0
+ * is off and 1 is as designed.
+ *
+ * THE DETAIL BUMP DEFAULTS TO ZERO, AND THAT IS A MEASURED NEGATIVE RESULT
+ * RATHER THAN AN UNFINISHED TERM. It is left in the build, reachable with
+ * `?bumpamp=1`, because the measurement is the deliverable and the next person
+ * to reach for a screen-derivative effect on this planet needs to be able to
+ * reproduce it in one flag.
+ *
+ * WHAT HAPPENS: a field of concentric moire arcs across the ground within
+ * about fifteen metres of the eye (`docs/screenshots/RN45_iso_bump.png`). No
+ * number in the probe saw it. It moved 35% of the near band with a healthy
+ * peak, which is exactly what a working bump would do.
+ *
+ * WHY, and it is arithmetic rather than tuning. A screen-derivative bump needs
+ * the height field's ARGUMENT to change between adjacent pixels. The argument
+ * is planet-centred metres, which is float32 and about 6e5 at Forge's surface,
+ * so one ULP is 2^(19-23) = 0.0625 m. The ground under the player is seen at a
+ * shallow depression angle, and at the pinned camera one pixel covers 4.3 mm of
+ * ground at 2 m and 21.5 mm at 5 m. The quantum is 3 to 15 times the pixel
+ * footprint, so whole runs of adjacent pixels sample the SAME quantised
+ * position, `dFdx` of the field is exactly zero across them, and it steps at
+ * the quantisation boundaries. Those boundaries are surfaces of constant range
+ * from the eye, which is why the artefact is a set of arcs centred on the
+ * player rather than noise.
+ *
+ * WHY IT IS NOT FIXABLE BY FADING: the term only becomes well conditioned once
+ * the footprint clears the quantum, which is about 20 m (footprint 5 ULP), and
+ * it starts aliasing its own 4.2 m octave once the footprint passes a third of
+ * that wavelength, which is about 45 m. A twenty-five metre annulus is a band
+ * of ground, not a surface treatment, and a bump that exists only in a ring
+ * around the player is worse than no bump.
+ *
+ * WHAT WOULD FIX IT, stated so it is a dependency and not a shrug: the height
+ * field needs a high-precision position, which means a per-chunk phase reduced
+ * modulo the octave period on the CPU in float64 (where it is exact) and
+ * carried alongside the integer cell index, so the shader adds a small local
+ * offset to a small local coordinate and never forms a 6e5 intermediate. That
+ * is a terrain-chunk format change and therefore world-gen's, not this lane's.
+ * Note the macro colour term is UNAFFECTED and ships on: it reads the field's
+ * VALUE, where 0.0625 m against an 11.9 m finest octave is 0.5% of a
+ * wavelength, and only the DERIVATIVE is destroyed by the quantisation.
+ */
+const ART_DEFAULT = { macro: 1.0, bump: 0.0, strata: 1.0 };
+
+function artAmpFromQuery(): THREE.Vector3 {
+  const p = new URLSearchParams(self.location.search);
+  const num = (k: string, d: number): number => {
+    const v = p.get(k);
+    const f = v === null ? NaN : Number(v);
+    return Number.isFinite(f) ? f : d;
+  };
+  const all = p.get('terrainart') === '0' ? 0 : 1;
+  return new THREE.Vector3(
+    all * (p.get('macrovar') === '0' ? 0 : num('macroamp', ART_DEFAULT.macro)),
+    all * (p.get('terrainbump') === '0' ? 0 : num('bumpamp', ART_DEFAULT.bump)),
+    all * (p.get('strata') === '0' ? 0 : num('strataamp', ART_DEFAULT.strata)),
+  );
+}
+
 export interface TerrainMaterialOptions {
   readonly depth: DepthPolicy;
   readonly maxReliefM: number;
@@ -51,6 +125,11 @@ export interface TerrainMaterials {
 
 export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMaterials {
   const palette = biomeColorArray();
+  // ONE Vector3 shared by both materials by reference, on the atmosphere's own
+  // precedent (see the merge note below): a runtime toggle that reached the
+  // near material and not the far one would be a second authority on how the
+  // ground looks, which is the exact bug class this file already guards.
+  const artAmp = artAmpFromQuery();
   const cascades = o.cascadeSplits.length;
   const splits = new THREE.Vector3(
     o.cascadeSplits[0] ?? 1, o.cascadeSplits[1] ?? 1, o.cascadeSplits[2] ?? 1,
@@ -76,6 +155,7 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uMetresPerUnit: { value: scaled ? 1 / FAR_SCALE : 1 },
       uCascadeFar: { value: splits },
       uSkyAmbient: { value: 0.32 },
+      uArtAmp: { value: artAmp },
     });
     const m = new THREE.ShaderMaterial({
       uniforms,
@@ -100,6 +180,19 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
 
   const near = make(false);
   const far = make(true);
+  // The runtime handle, on the `window.__ofSurfaces` / `window.__ofAtmos`
+  // precedent. It writes the SHARED vector, so there is no path by which the
+  // two materials can disagree, and it needs no uniform push because three
+  // uploads a ShaderMaterial's uniforms every frame.
+  (self as unknown as Record<string, unknown>).__ofTerrainArt = {
+    set(macro: number, bump: number, strata: number): void {
+      artAmp.set(macro, bump, strata);
+    },
+    get(): [number, number, number] { return [artAmp.x, artAmp.y, artAmp.z]; },
+    reset(): void {
+      artAmp.set(ART_DEFAULT.macro, ART_DEFAULT.bump, ART_DEFAULT.strata);
+    },
+  };
   return {
     near,
     far,

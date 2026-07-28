@@ -57,8 +57,8 @@ export class PropEmitter {
     private readonly fair: boolean,
     /**
      * False restores the RN-15 understorey height band and the height-compounding
-     * distance upscale. Defaulted rather than wired to a query flag: see
-     * `ScatterLook.TALL_H_LO` for why, and for what it would take.
+     * distance upscale. Reached from `?grassshort=0` since RN-45; the note at
+     * `ScatterLook.TALL_H_LO` explains why it was defaulted for one round.
      */
     private readonly short = true,
   ) {}

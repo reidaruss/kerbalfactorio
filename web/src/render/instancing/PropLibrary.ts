@@ -116,14 +116,17 @@ export class PropLibrary {
   private growable = true;
   /** Per-instance frustum culling on the understorey batches (?propcull=0). */
   private cullDetail = true;
+  /** False registers LOD0 as the far geometry too (?proplod2=0). */
+  private lod2Enabled = true;
 
   static async load(
     urls: readonly string[], scene: THREE.Scene, growable = true,
-    cullDetail = true,
+    cullDetail = true, lod2Enabled = true,
   ): Promise<PropLibrary> {
     const lib = new PropLibrary();
     lib.growable = growable;
     lib.cullDetail = cullDetail;
+    lib.lod2Enabled = lod2Enabled;
     // Deduped by Loaders, so props_moon.glb is fetched once for its three biomes.
     // The manifest is awaited alongside, not after: this is the ONE batch path
     // that keeps a material per ROLE name, so it is the one that can express the
@@ -185,7 +188,16 @@ export class PropLibrary {
         const shade = isFoliageMaterial(mat);
         batch.shaded = batch.shaded || shade;
         const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, shade));
-        const far = pair.lod2 ?? near;
+        // `?proplod2=0` registers LOD0 in the far slot too: the state the
+        // understorey shipped in before RN-45 authored the detail cards' LOD2.
+        // Standing rule 7, and it matters more than usual because the saving is
+        // an ASSET change, so the only other before/after would be a pair of
+        // BUILDS, which cannot hold the streamed chunk set equal. SCOPED to the
+        // understorey: over every batch it read 2,303,735 against 972,049, but
+        // most of that is the BIOME props' LOD2, shipping since W4 and not this
+        // pass's to claim. Scoped it reads 1,087,719 against 972,049.
+        const far = (this.lod2Enabled || suffix === '')
+          ? (pair.lod2 ?? near) : near;
         const lod2 = batch.mesh.addGeometry(normalize(far.geometry, far.matrixWorld, shade));
         list.push({ material: key, lod0, lod2 });
       }

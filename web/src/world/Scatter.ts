@@ -18,10 +18,11 @@ import type { ChunkGeometryPool } from '../render/geometry/ChunkGeometryPool.js'
 import type { PropLibrary } from '../render/instancing/PropLibrary.js';
 import { BIOME_PROPS } from '../assets/Registry.js';
 
+import type { WaterOracle } from './WaterOracle.js';
 import {
   CELLS, DIM, MAX_CELL_M, BUILDS_PER_UPDATE, MAX_PER_CHUNK,
   RADIUS_M, MIN_SLOPE_COS, LOD2_M, DETAIL_RADIUS_M, DETAIL_FULL_M,
-  DETAIL_FAR_GROW, detailWeight, tierOf, keyHash, type Tier,
+  DETAIL_FAR_GROW, WET_REJECT_M, detailWeight, tierOf, keyHash, type Tier,
 } from './ScatterTuning.js';
 import { CONTACT_CARDS } from './ScatterLook.js';
 import { PropEmitter, type Build } from './ScatterEmit.js';
@@ -65,6 +66,12 @@ export class Scatter {
   groundM2 = 0;
   /** Chunks whose draw was TRUNCATED by MAX_PER_CHUNK. Must stay 0 near. */
   chunksCapped = 0;
+  /**
+   * Cells refused for standing water since boot. REPORTED rather than silent
+   * (DW-28): a filter nobody can see is indistinguishable from one that removes
+   * everything. Exactly 0 on a dry planet, nonzero near the pond.
+   */
+  wetCells = 0;
   /** Chunks waiting on the per-update sampling budget. Should settle to 0. */
   backlog = 0;
 
@@ -82,8 +89,27 @@ export class Scatter {
      * and every other number looked healthy.
      */
     private readonly fair = true,
+    /**
+     * `?grassshort=0` restores the RN-15 understorey height band and the
+     * height-compounding distance upscale. See `ScatterLook.DETAIL_H_LO`.
+     */
+    grassShort = true,
+    /**
+     * The water authority, or null on a dry body. A WaterOracle rather than a
+     * height number on purpose: it is the ONE place "is there water here" is
+     * answered, and a second copy of that rule in the scatter is the
+     * multiple-surface-authority failure DW-26 exists to prevent.
+     */
+    private readonly water: WaterOracle | null = null,
+    /**
+     * The live voxel-edits handle, read at BUILD time rather than captured.
+     * `depthAt` reads the EDITED ground, so digging a bed deeper genuinely
+     * deepens the water and a rebuilt chunk has to see that. Boot creates the
+     * edits after the scatter, so this is a thunk.
+     */
+    private readonly editsHandle: () => number = () => 0,
   ) {
-    this.em = new PropEmitter(lib, fair);
+    this.em = new PropEmitter(lib, fair, grassShort);
   }
 
   /**
@@ -217,6 +243,13 @@ export class Scatter {
   ): Placed {
     const nrm = this.pool.batch(v.pooled).normals(v.pooled.slot);
     const keyBase = keyHash(v.key);
+    // Hoisted: one read of the body's single water level per chunk, not per
+    // cell. Zero (or less) means "this body is dry", which switches the whole
+    // test off with one comparison and leaves a dry planet bit-for-bit as it
+    // was before this existed.
+    const wetR = this.water !== null && this.water.hasWater
+      ? this.water.levelRadius() : 0;
+    const edits = wetR > 0 ? this.editsHandle() : 0;
     const local = new Float32Array(want * 3);
     const quat = new Float32Array(want * 4);
     const scale = new Float32Array(want * 3);
@@ -262,6 +295,21 @@ export class Scatter {
         const nx = nrm[i00] / 127, ny = nrm[i00 + 1] / 127, nz = nrm[i00 + 2] / 127;
         const nl = Math.hypot(nx, ny, nz) || 1;
         if ((nx * upx + ny * upy + nz * upz) / nl < MIN_SLOPE_COS) continue;
+        // WATER (RN-46), last of the three cell tests because it is the only
+        // one that can call into WASM. The RADIUS test is what makes it
+        // affordable: a body has ONE water level, so a cell standing above it
+        // cannot be wet whatever the disc layout is, and only cells that fail
+        // that arithmetic pay for `depthAt`. See `WET_REJECT_M`.
+        if (wetR > 0) {
+          const wx = a.x + pos[i00];
+          const wy = a.y + pos[i00 + 1];
+          const wz = a.z + pos[i00 + 2];
+          if (Math.hypot(wx, wy, wz) < wetR
+            && this.water!.depthAt(wx, wy, wz, edits) > WET_REJECT_M) {
+            this.wetCells++;
+            continue;
+          }
+        }
         const i10 = i00 + 3;
         const i01 = i00 + DIM * 3;
         const i11 = i01 + 3;
@@ -326,7 +374,7 @@ export class Scatter {
     chunks: number; buildMs: number; propsPlaced: number; cellsScattered: number;
     groundM2: number; placedPerM2: number; wantedPerM2: number;
     deliveredFraction: number; cellsCapped: number; chunksCapped: number;
-    scatterBacklog: number; fairQuantise: boolean;
+    scatterBacklog: number; fairQuantise: boolean; wetCells: number;
   } {
     return {
       chunks: this.chunksScattered,
@@ -344,6 +392,7 @@ export class Scatter {
       chunksCapped: this.chunksCapped,
       scatterBacklog: this.backlog,
       fairQuantise: this.fair,
+      wetCells: this.wetCells,
     };
   }
 }

@@ -118,6 +118,36 @@ export interface Config {
    * most of it is behind the camera on any given frame.
    */
   readonly propCull: boolean;
+  /**
+   * `?grassshort=0` restores the RN-15 understorey height band (0.55 to 1.30 of
+   * the authored blade height) AND the height-compounding distance upscale, so
+   * the whole "the understorey reads as a crop field" change can be isolated in
+   * ONE binary rather than as a build pair.
+   *
+   * RN-30 shipped this change with a binary pair because every argument the
+   * scatter is constructed with is passed by `Boot.ts` and another lane owned
+   * Boot that round. It is one line here and one in Boot, and it turns the only
+   * remaining unisolated claim in the ground-art programme into a runtime one.
+   */
+  readonly grassShort: boolean;
+  /**
+   * `?scatterwet=1` restores scattering ON the pond bed, which is what the
+   * layer shipped with until RN-46 and is the isolation for that fix (standing
+   * rule 7: the measurement that proves the diagnosis stays in the build).
+   */
+  readonly scatterWet: boolean;
+  /**
+   * `?proplod2=0` makes the UNDERSTOREY draw its LOD0 geometry at all ranges,
+   * which is the state the four ground-detail cards were in until RN-45
+   * authored their LOD2. It is the one-binary control for that asset change,
+   * and it is needed precisely because an asset change otherwise forces a
+   * build pair, which cannot hold the streamed chunk set equal.
+   *
+   * Scoped to the understorey rather than to every batch: the biome props have
+   * had LOD2 since W4, and a control that also removes theirs measures 2.30 M
+   * triangles against 972 k when the honest figure is 1.09 M against 972 k.
+   */
+  readonly propLod2: boolean;
   /** W5 gameplay layer. ?gameplay=0 isolates the terrain (standing rule 7). */
   readonly gameplay: boolean;
   /** W8 the assembly bay. ?vab=0 isolates it, standing rule 7 again. */
@@ -292,6 +322,9 @@ export function parseConfig(search: string): Config {
     propGrow: p.get('propgrow') !== '0',
     detailCards: p.get('detail') !== '0',
     propCull: p.get('propcull') !== '0',
+    grassShort: p.get('grassshort') !== '0',
+    scatterWet: p.get('scatterwet') === '1',
+    propLod2: p.get('proplod2') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',
     flight: p.get('flight') !== '0',

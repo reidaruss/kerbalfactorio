@@ -35,6 +35,7 @@ import { Blit, postMaterial } from './Quad.js';
 import { depthDefines } from './DepthGlsl.js';
 import { AO_APPLY_FS, AO_BLUR_FS, AO_FS, AO_UPSAMPLE_FS } from './AoGlsl.js';
 import { ContactPass } from './ContactPass.js';
+import { UnderwaterPass } from './UnderwaterPass.js';
 import { BLOOM_DOWN_FS, BLOOM_UP_FS } from './BloomGlsl.js';
 import { COMPOSITE_FS } from './CompositeGlsl.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
@@ -49,12 +50,12 @@ export interface PostHost {
 }
 
 export interface PostTimings {
-  ao: number; contact: number; bloom: number; composite: number; aa: number;
-  total: number;
+  ao: number; contact: number; underwater: number; bloom: number;
+  composite: number; aa: number; total: number;
 }
 
 const ZERO: PostTimings = {
-  ao: 0, contact: 0, bloom: 0, composite: 0, aa: 0, total: 0,
+  ao: 0, contact: 0, underwater: 0, bloom: 0, composite: 0, aa: 0, total: 0,
 };
 
 export class PostStack {
@@ -67,6 +68,7 @@ export class PostStack {
   private readonly aoUpsample: Blit;
   private readonly aoApply: Blit;
   readonly contactPass: ContactPass;
+  readonly underwaterPass: UnderwaterPass;
   private readonly bloomDown: Blit;
   private readonly bloomDownFirst: Blit;
   private readonly bloomUp: Blit;
@@ -114,6 +116,7 @@ export class PostStack {
     }, { multiply: true }));
 
     this.contactPass = new ContactPass(tune, dd);
+    this.underwaterPass = new UnderwaterPass(flags, tune, dd);
 
     const downUniforms = (): Record<string, THREE.IUniform> => ({
       tSrc: { value: null }, uTexel: { value: new THREE.Vector2() },
@@ -139,8 +142,11 @@ export class PostStack {
     (window as unknown as { __ofPost: unknown }).__ofPost = {
       setContact: (on: boolean): boolean => { this.flags.contact = on; return on; },
       setAo: (on: boolean): boolean => { this.flags.ao = on; return on; },
+      setUnderwater: (on: boolean): boolean => { this.flags.underwater = on; return on; },
       state: (): unknown => ({
         ...this.flags, contactRan: this.contactPass.ran,
+        underwaterRan: this.underwaterPass.ran,
+        headUnderM: this.underwaterPass.headUnderM,
         sun: this.contactPass.sunWorld.toArray(),
         csLengthM: this.tune.csLengthM, csSteps: this.tune.csSteps,
         csStrength: this.tune.csStrength,
@@ -195,7 +201,8 @@ export class PostStack {
     return this.tune.fxaaImplicitLod;
   }
 
-  get vram(): number { return this.targets.bytes; }
+  /** Includes the underwater pass's own buffer, which is zero until it runs. */
+  get vram(): number { return this.targets.bytes + this.underwaterPass.bytes; }
   get sizes(): { w: number; h: number; aoW: number; aoH: number } { return this.targets.sizes; }
 
   /**
@@ -209,6 +216,7 @@ export class PostStack {
     Object.assign(this.timings, ZERO);
     this.aoRan = false;
     this.contactPass.ran = false;
+    this.underwaterPass.ran = false;
     if (!this.flags.post) { this.host.setTarget(null); return false; }
     const s = this.host.bufferSize();
     this.targets.resize(s.w, s.h);
@@ -219,7 +227,7 @@ export class PostStack {
   /** Called after the NEAR pass and before its clearDepth(). */
   afterNear(camera: THREE.PerspectiveCamera, depthClear: number, logFC: number): void {
     if (!this.flags.post) return;
-    if (!this.flags.ao && !this.flags.contact) return;
+    if (!this.flags.ao && !this.flags.contact && !this.flags.underwater) return;
     const t = this.targets;
     const depth = t.scene.depthTexture;
     const projInv = this.projInv.copy(camera.projectionMatrix).invert();
@@ -229,6 +237,14 @@ export class PostStack {
       this.calls += this.contactPass.run(
         this.host, t, camera, depth, projInv, depthClear, logFC);
       this.timings.contact = performance.now() - t0;
+    }
+    // LAST of the three, so occlusion is computed on DRY radiance and then
+    // attenuated rather than the other way round, which is the physical order.
+    if (this.flags.underwater) {
+      const t0 = performance.now();
+      this.calls += this.underwaterPass.run(
+        this.host, t, camera, depth, projInv, depthClear, logFC);
+      this.timings.underwater = performance.now() - t0;
     }
   }
 
@@ -355,17 +371,20 @@ export class PostStack {
       this.timings.aa = performance.now() - ta;
     }
     this.timings.total = this.timings.ao + this.timings.contact
-      + this.timings.bloom + this.timings.composite + this.timings.aa;
+      + this.timings.underwater + this.timings.bloom + this.timings.composite
+      + this.timings.aa;
   }
 
   get aoApplied(): boolean { return this.aoRan; }
   get contactApplied(): boolean { return this.contactPass.ran; }
+  get underwaterApplied(): boolean { return this.underwaterPass.ran; }
   /** Direction TOWARD the sun, world space. Written by `Frame` every frame. */
   get sunWorld(): THREE.Vector3 { return this.contactPass.sunWorld; }
 
   dispose(): void {
     this.targets.dispose();
     this.contactPass.dispose();
+    this.underwaterPass.dispose();
     for (const b of [this.ao, this.aoBlur, this.aoUpsample, this.aoApply,
       this.bloomDown,
       this.bloomDownFirst, this.bloomUp, this.composite, this.aa]) b.dispose();
