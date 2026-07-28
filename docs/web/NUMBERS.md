@@ -196,3 +196,27 @@ you re-read and retry, which is the correct behaviour under concurrency.
 Related: a private-index commit chain can fail mid-way and leave HEAD untouched
 (seen once with exit 66 under disk pressure). **`git log` is the check, not the
 exit code of the chain.**
+
+### A probe file has no registry, so creating one can silently destroy another
+
+`web/tools/smoke/probes/*.js` are loose files with no index. **Writing a probe
+onto a name that already exists is indistinguishable from creating a new one**,
+and the Write tool will not warn you. It happened on 2026-07-28: a lane's new
+screenshot probe landed on GP-61's `machineshot.js` and destroyed it. It was
+caught only because the lane ran
+
+```
+git diff-index --cached --name-status HEAD
+```
+
+and saw `M` where it expected `A`.
+
+**Before writing a new probe, check the name is free.** After staging, check the
+status letter is `A` for every file you believe you created. An `M` on a path
+you have never edited means you have just overwritten someone's work, and the
+content will commit cleanly and look correct.
+
+This is the same family as the four commit sweeps: **the tooling cannot tell
+"new" from "replacing something I never read".** Explicit-path staging and
+compare-and-swap `update-ref` close the commit half; this check closes the
+authoring half.
