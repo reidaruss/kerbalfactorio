@@ -9,9 +9,10 @@
 
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { Vec3d } from '../world/PlanetBody.js';
-import { CAPSULE_SAMPLES_M, STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M, VoxelCollider,
-  type SolidBodies } from './VoxelCollision.js';
+import { CAPSULE_SAMPLES_M, VOXEL_STEP_UP_M, VoxelCollider } from './VoxelCollision.js';
+import { STRUCTURE_STEP_UP_M, type SolidBodies } from './StructurePort.js';
 import { climbGate, sampleSlopeCos } from './HeightfieldWalk.js';
+import { escapeRock } from './RockEscape.js';
 import type { StandTrace } from './StandTrace.js';
 
 export interface MoveIntent {
@@ -65,8 +66,10 @@ export const CAPSULE = {
   groundDrag: 11.0,
 };
 
-/** How far below the feet a voxel floor is looked for before the player falls. */
-const VOXEL_FLOOR_SEARCH_M = 6;
+/** How far below the feet a voxel floor is looked for before the player falls.
+ *  Exported because `RockEscape` re-asks the SAME question about the position a
+ *  refused tick falls back to, and two search depths would be two answers. */
+export const VOXEL_FLOOR_SEARCH_M = 6;
 /**
  * Below this much heightfield the voxels take over completely. More than one
  * voxel (so a shallow dig still walks on the reconciled heightfield) and less
@@ -107,6 +110,11 @@ export class KinematicBody {
   voxelPushM = 0;
   /** True while the feet rest on a VOXEL floor below the heightfield surface. */
   underRock = false;
+  /** True on a tick the voxel floor query answered `buried`: the feet are in
+   *  rock, which is the one state that must never be read as a fall (PH-60). */
+  buried = false;
+  /** Metres the last-resort radial eject lifted the capsule out of rock. */
+  ejectM = 0;
   /** True on a tick where a step into solid rock was refused. */
   blockedByRock = false;
   /** True while the feet rest on a placed STRUCTURE rather than on the ground. */
@@ -225,7 +233,8 @@ export class KinematicBody {
     let groundR = surfaceR;
     this.underRock = false;
     this.blockedByRock = false;
-    const deep = this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
+    this.buried = false;
+    const deep =this.oracle.editsHandle !== 0 && qr < surfaceR - DEEP_UNDERGROUND_M;
     if (!deep) {
       // The heightfield's own wall. See CAPSULE.stepUpM.
       const gate = climbGate(this.oracle, p, qx, qy, qz, r, ux, uy, uz, surfaceR);
@@ -259,11 +268,14 @@ export class KinematicBody {
       // GP-53 made the structural port take and for the same reason: a floor
       // the feet have sunk into is still that floor, so seating on it corrects
       // rather than lifts, and anything bigger is a climb `resolveStep` owns.
-      const floorR = this.col.floorBelow(qr, dxn, dyn, dzn, VOXEL_FLOOR_SEARCH_M,
+      const floor = this.col.floorBelow(qr, dxn, dyn, dzn, VOXEL_FLOOR_SEARCH_M,
         VOXEL_STEP_UP_M[0]);
-      // No floor within reach is an open shaft, so fall. Never snap to the roof.
-      groundR = floorR === null ? -Infinity : floorR;
-      this.underRock = floorR !== null;
+      // An open SHAFT is a fall. BEING IN ROCK IS NOT, and reading the two off
+      // one null is what put the walker 29 km under the world (PH-60). Never
+      // snap to the roof either way.
+      groundR = floor.kind === 'floor' ? floor.r : -Infinity;
+      this.underRock = floor.kind === 'floor';
+      this.buried = floor.kind === 'buried';
     }
     // 1b. WHAT THE PLAYER BUILT. Resolved after the terrain and before the
     //     ground snap, in that order, because a deck is a floor ABOVE the
@@ -314,39 +326,26 @@ export class KinematicBody {
       this.grounded = false;
     }
 
-    // 2. THE MOUTH (15.2 item 48, now closed). A dig that breaks the surface
-    //    leaves a rim: the heightfield has reconciled down to the shaft floor
-    //    while cells beside it are still solid, so the capsule can end a tick
-    //    standing inside the wall of the opening.
-    //
-    //    This USED to be a radial push sized from the whole capsule, which
-    //    resolved nothing geometrically: it lifted the player until the deepest
-    //    sample happened to clear, up to 2.8 m, straight up. It had to be
-    //    skipped underground to stop it levitating people through their own
-    //    ceiling, so the mouth and the tunnel were two different resolvers with
-    //    a 1.5 m seam between them. It is now the exact minimum translation out
-    //    of the offending cell FACE (VoxelCollision.resolveEmbedded), which is
-    //    correct rather than approximate because a voxel's contact normal is
-    //    always a body-frame axis. It can never exceed one cell, so it needs no
-    //    depth special case and runs in both regimes.
+    // 2. INSIDE ROCK. Two cases with one owner (RockEscape.ts): the dig-mouth
+    //    rim, which is the minimum translation out of a cell face (15.2 item
+    //    48), and the capsule buried outright, which owned nothing (PH-60).
     this.voxelPushM = 0;
+    this.ejectM = 0;
     let pushUpM = 0;
     if (this.oracle.editsHandle !== 0) {
-      const push = this.col.resolveEmbedded(qx, qy, qz, dxn, dyn, dzn);
-      if (push !== null) {
-        this.voxelPushM = push.dist;
-        pushUpM = push.x * dxn + push.y * dyn + push.z * dzn;
-        qx += push.x; qy += push.y; qz += push.z;
-        qr = Math.hypot(qx, qy, qz) || 1;
-        dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
-        // Only a push with an UPWARD component is a landing. A sideways nudge
-        // out of a rim wall must not ground a falling player, or stepping off
-        // the lip of a shaft would catch them on the way down.
-        if (push.x * dxn + push.y * dyn + push.z * dzn > 0.05 * push.dist) {
-          if (vUp < 0) vUp = 0;
-          this.grounded = true;
-        }
-      }
+      // `buried AND nothing is holding me up`. A deck built inside a hillside
+      // is a legal floor, so the rescue must not undo the tick of a player
+      // standing on one. `grounded` is this tick's own snap answer.
+      const e = escapeRock(this.col, this.oracle, p, r, qx, qy, qz,
+        dxn, dyn, dzn, this.buried && !this.grounded);
+      qx = e.x; qy = e.y; qz = e.z;
+      qr = Math.hypot(qx, qy, qz) || 1;
+      dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
+      this.voxelPushM = e.pushM; pushUpM = e.pushUpM; this.ejectM = e.ejectM;
+      if (e.grounded) { if (vUp < 0) vUp = 0; this.grounded = true; }
+      // A refused tick must lose the velocity that was driving into the rock,
+      // or the refusal fires again every tick and the walker grinds.
+      if (e.refused) { tx = 0; ty = 0; tz = 0; vUp = 0; this.blockedByRock = true; }
     }
 
     // 3. Slope. Sampling the gradient costs two oracle calls and is what stops
@@ -384,6 +383,7 @@ export class KinematicBody {
         fallM: askedR - r, onDeck: this.onDeck, grounded: this.grounded,
         blockedByBuild: this.blockedByBuild,
         underRock: this.underRock, preSnapR, pushM: this.voxelPushM, pushUpM,
+        buried: this.buried, ejectM: this.ejectM,
       });
     }
   }

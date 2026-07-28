@@ -6,7 +6,7 @@
 // an authority: /core's `levelArea` decides what the surface becomes, VoxelWorld
 // owns the edits, TerrainStream owns the heightfield reconciliation, VoxelMesh
 // owns the near geometry. This class only makes sure all three hear about the
-// same edit, in the same order — the same contract DigAction keeps, for the same
+// same edit, in the same order, the same contract DigAction keeps, for the same
 // reason (DW-16 names the failure it prevents).
 
 import type { VoxelWorld, LevelResult } from '../world/VoxelWorld.js';

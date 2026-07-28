@@ -17,6 +17,18 @@
 // deeper than one cell in every direction has no free position to be pushed
 // to, so `resolveEmbedded` declines, and then NOTHING owns the player.
 //
+// CLOSED BY PH-60/PH-61, and both halves were MEASURED at the entry tick before
+// anything was changed: all three capsule samples solid, all six one-cell exits
+// under a metre and not one of them freeing the capsule, the nearest free
+// position 3.5 m away, and 437 ticks later nothing free within 40 m in any
+// direction. So the bound did not want widening; the case wanted an owner.
+// `floorBelow` now says WHICH null it means and the walker refuses a tick that
+// would end buried, `RockEscape.ts` ejects a capsule that is buried already.
+// This probe is now green and reports the two new columns (`buriedTicks`,
+// `ejectTicks`) so a future regression is a number and not a silence. The
+// depth-swept version of the same defect, reachable on flat ground with the
+// levelling key and no seed at all, is `probes/burylevel.js`.
+//
 // This probe runs the same seeded drive with the trace armed CONTINUOUSLY,
 // including while walking, and reports the twenty ticks either side of the last
 // tick the player was grounded. That is the entry, which is the part a fix
@@ -139,6 +151,16 @@
   // `resolveEmbedded`) and `resolveEmbedded` ALSO answers null, because a
   // capsule inside bedrock has no free position within one cell on any axis.
   // Neither of them is wrong on its own terms. Together they own nothing.
+  // PH-60's two columns, and the assertion that does not care whether the floor
+  // was ever lost. `buried` is the voxel floor query saying the feet are inside
+  // rock, which used to be indistinguishable from an open shaft; a buried tick
+  // with no grounded tick within a second after it is a walker nothing owns.
+  const buriedTicks = s.filter((x) => x.buried === true).length;
+  const ejectTicks = s.filter((x) => (x.ejectM ?? 0) > 0).length;
+  const ejectMaxM = Math.max(0, ...s.map((x) => x.ejectM ?? 0));
+  const buriedUnrescued = s.filter((x, i) => x.buried === true
+    && !s.slice(i + 1, i + 61).some((y) => y.grounded)).length;
+
   const afterLoss = lastGrounded < 0 ? null : {
     ticks: s.length - lastGrounded - 1,
     underRockTicks: s.slice(lastGrounded + 1).filter((x) => x.underRock).length,
@@ -158,9 +180,9 @@
   // `valid` is THE RUN WAS SET UP; `pass` is THE ASSERTIONS HELD. They are two
   // booleans on purpose, and it is `tunnelmouth.js`'s split for `tunnelmouth`'s
   // reason: a probe whose assertions are false under a true top-level boolean
-  // is precisely how `tunnelwalk.js` stayed quietly red for days. THIS PROBE IS
-  // EXPECTED TO REPORT pass:false ON CURRENT MAIN. It ships with the diagnosis
-  // so that whoever closes the gap has a failing assertion to close it against.
+  // is precisely how `tunnelwalk.js` stayed quietly red for days. It shipped
+  // reporting pass:false with three named failures, on purpose, so that whoever
+  // closed the gap had something to close it against. It is now green.
   const checks = [
     ['a walker that loses its floor is caught by SOME authority within a second',
       !lostFloor || (afterLoss !== null && afterLoss.groundedTicks > 0),
@@ -171,6 +193,8 @@
     ['the player never ends the run below the surface by more than the bore is deep',
       Math.abs(bodyR + sf.surfaceM - feetR) < 200,
       r3(bodyR + sf.surfaceM - feetR)],
+    ['every tick that reports the feet inside rock is back on footing within a second',
+      buriedUnrescued === 0, `${buriedUnrescued} of ${buriedTicks} buried ticks`],
   ];
   const failed = checks.filter((c) => !c[1]).map((c) => `${c[0]}  [${c[2]}]`);
 
@@ -186,6 +210,7 @@
     finalDepthBelowSurfaceM: r3(bodyR + sf.surfaceM - feetR),
     finalUnderRock: p.underRock,
     finalGrounded: p.grounded,
+    buriedTicks, ejectTicks, ejectMaxM: r3(ejectMaxM), buriedUnrescued,
     // Once the floor is gone, is there ANY authority left?
     afterLoss,
     around: lastGrounded < 0 ? null

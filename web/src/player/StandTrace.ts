@@ -61,6 +61,21 @@ export interface StandSample {
   pushM: number;
   /** The RADIAL component of that push, signed. Positive is the lift. */
   pushUpM: number;
+
+  // --- THE STATE THAT OWNED NOTHING (R18/PH-60) ----------------------------
+  // `groundR` of -Infinity used to mean two unrelated things: an open shaft
+  // under the feet, and the feet being INSIDE ROCK. The first is a fall and the
+  // second must never be one. These two columns are what tell them apart in a
+  // trace, which no reading of `groundR` alone ever could.
+
+  /** The voxel floor query answered `buried`: the feet are in rock past a step
+   *  rung with rock all the way up. `groundR` is -Infinity on such a tick and
+   *  so it is on a shaft tick, which is exactly why this column exists. */
+  buried: boolean;
+  /** Metres the last-resort radial eject lifted the capsule out of rock. 0 on
+   *  every tick of ordinary play; a non-zero value is a rescue, and one that
+   *  repeats is an oscillation somebody has to explain. */
+  ejectM: number;
 }
 
 /**

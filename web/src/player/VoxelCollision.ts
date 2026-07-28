@@ -66,48 +66,33 @@ const FLOOR_BISECT_ITERS = 30;
 export interface StepResult { x: number; y: number; z: number; blocked: boolean }
 
 /**
- * A set of PLACED SOLIDS the walker also has to respect: today the base
- * building parts, implemented by `game/StructureBody.ts`.
+ * WHY THERE IS NO FLOOR, WHICH IS TWO DIFFERENT WORLDS (PH-60).
  *
- * It is an interface here rather than an import because a structure is not
- * terrain and must not become a second definition of it. Rock stays the
- * oracle's answer and nothing on this port touches it (standing rule 1); these
- * are boxes RESTING on the ground, which is exactly DW-24's model, and the
- * walker composes the two answers instead of merging them.
+ * This used to answer `number | null` and the caller read every null as
+ * "nothing under me, fall". One of the two nulls means that. The other means
+ * the feet are INSIDE ROCK, where falling is the one thing that must not
+ * happen. Measured on seed 991733: the floor went at tick 1352 and the next
+ * 4624 ticks had 0 grounded ticks and 0 pushes, ending 29,208 m down at
+ * 12.83 m per tick with `of.solidAt` true the whole way. DW-26's rule applied
+ * to an ANSWER rather than to a predicate: one authority saying two things says
+ * which, and a caller that wants to collapse them writes the collapse down.
  */
-export interface SolidBodies {
-  readonly count: number;
-  tests: number;
-  resetTests(): void;
-  blocks(x: number, y: number, z: number): boolean;
-  /** The highest structural TOP FACE along a radial: `searchM` below the feet,
-   *  or up to `riseM` above them. See `StructureBodies.deckUnder`. */
-  deckUnder(dx: number, dy: number, dz: number, rFrom: number,
-            searchM: number, riseM: number): number | null;
-  resolveStep(p: Vec3d, qx: number, qy: number, qz: number,
-              ux: number, uy: number, uz: number,
-              samplesM: readonly number[],
-              stepUpM: readonly number[]): StepResult;
-}
+export type FloorAnswer =
+  /** The radius of the floor. */
+  | { kind: 'floor'; r: number }
+  /** Feet in AIR, no rock within `searchM` below: fall. */
+  | { kind: 'shaft' }
+  /** Feet IN ROCK past `riseM` with rock all the way up: never fall. */
+  | { kind: 'buried' };
+const SHAFT: FloorAnswer = { kind: 'shaft' };
+const BURIED: FloorAnswer = { kind: 'buried' };
 
-/**
- * The ledge heights a blocked STRUCTURAL step retries at.
- *
- * Its own array rather than an alias of `STEP_UP_M`, which it used to be, so
- * that the two are not silently coupled: the voxel ladder is a statement about
- * a 1 m lattice cell and this one is a statement about the shipped module, and
- * DW-32's move from a 1 m module to a 4 m one is the third scale assumption in
- * two days to have been found hiding inside a constant that predated it. The
- * VALUES are deliberately unchanged.
- *
- * The first rung is what a player climbs to get onto their own foundation, so
- * it must clear a deck: 0.55 m against the module's own `deckH` of 0.50 m.
- * That relation is asserted rather than assumed, in `probes/decksink.js`, which
- * reads `deckH` off the shipped asset and fails if it ever grows past the rung.
- * The second rung is one storey of nothing in particular; a storey is 4.00 m,
- * so no step ever puts a player on top of a wall.
- */
-export const STRUCTURE_STEP_UP_M: readonly number[] = [0.55, 1.1];
+// The STRUCTURAL step ladder moved to StructurePort.ts with the rest of the
+// structural port. Re-exported, not redefined: it is the same binding, and one
+// live consumer (`app/DebugGameplay.ts`) is in a file another lane has open
+// this week, so the import there is deliberately left alone.
+export { STRUCTURE_STEP_UP_M } from './StructurePort.js';
+
 /** A minimum translation out of solid. `dist` is its length in metres. */
 export interface PushResult { x: number; y: number; z: number; dist: number }
 
@@ -159,7 +144,7 @@ export class VoxelCollider {
    * UNDUG column whose surface is metres higher, so a capsule embedded in it is
    * still solidly inside rock and still gets pushed out.
    */
-  private solidForWalker(px: number, py: number, pz: number): boolean {
+  solidForWalker(px: number, py: number, pz: number): boolean {
     this.calls++;
     if (!this.oracle.solidAt(px, py, pz)) return false;
     const r = Math.hypot(px, py, pz);
@@ -227,8 +212,12 @@ export class VoxelCollider {
    * cheapest accepted candidate wins. Because a voxel's contact normal is always
    * an axis, that IS the minimum translation vector; nothing is approximated and
    * nothing is sized from the capsule, so no push can exceed one cell per
-   * sample. Returns null when the capsule is already clear, which is the case on
-   * every tick that is not standing in a dig rim.
+   * sample.
+   *
+   * NULL IS TWO ANSWERS HERE TOO: the capsule is already clear (every tick that
+   * is not standing in a dig rim), or it is buried and no one-cell push frees
+   * it. `RockEscape.escapeRock` is the caller that tells them apart, and it
+   * does so from `floorBelow`'s answer rather than by asking a second time.
    */
   resolveEmbedded(x: number, y: number, z: number,
     ux: number, uy: number, uz: number): PushResult | null {
@@ -300,11 +289,9 @@ export class VoxelCollider {
    *     the old march assumed cell-quantised geometry and could only ever land
    *     on a multiple of its own step.
    *
-   * NULL WHEN THE FEET ARE BURIED past `riseM` with rock all the way up. That
-   * is not a floor question, it is an embedded capsule, and `resolveEmbedded`
-   * owns it: answering anything at all here is exactly what ratified the sink.
-   * Null is also the open shaft, where the caller falls, which is the property
-   * that keeps the correction honest in the other direction.
+   * `buried` WHEN THE FEET ARE BURIED past `riseM` with rock all the way up.
+   * Answering a RADIUS there is what ratified the sink; answering the SHAFT's
+   * null is what dropped the player through 29 km of rock. See `FloorAnswer`.
    *
    * The grid is ABSOLUTE (`floor(rr / FLOOR_MARCH_M)`) rather than an offset
    * from the feet so that a stationary querier lands in the identical bracket
@@ -313,7 +300,7 @@ export class VoxelCollider {
    * 0.18 m, and "nothing" is the answer this is supposed to give.
    */
   floorBelow(r: number, ux: number, uy: number, uz: number,
-    searchM: number, riseM: number): number | null {
+    searchM: number, riseM: number): FloorAnswer {
     // THE OLD ANSWER, KEPT SO THE ASSERTION CAN BE SEEN TO FAIL. Standing rule
     // 11: an assertion that has never failed is not yet an assertion, and the
     // only way to demonstrate that `probes/tunnelsink.js` catches this class is
@@ -326,9 +313,13 @@ export class VoxelCollider {
       for (let d = 0; d <= searchM; d += 0.1) {
         const rr = r - d;
         this.calls++;
-        if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) return Math.min(r, rr + 0.1);
+        if (this.oracle.solidAt(ux * rr, uy * rr, uz * rr)) {
+          return { kind: 'floor', r: Math.min(r, rr + 0.1) };
+        }
       }
-      return null;
+      // The old query had ONE null and the old caller fell on it. `shaft` is
+      // what reproduces that, so the negative control stays faithful.
+      return SHAFT;
     }
     const at = (rr: number): boolean => {
       this.calls++;
@@ -352,10 +343,9 @@ export class VoxelCollider {
         if (!at(rr)) { hi = rr; break; }
         lo = rr;
       }
-      // Buried deeper than a step with rock all the way up. Not a floor
-      // question: an embedded capsule, which `resolveEmbedded` owns. Answering
-      // ANYTHING here is what ratified the sink.
-      if (!Number.isFinite(hi)) return null;
+      // Buried deeper than a step with rock all the way up: an embedded
+      // capsule, not a floor question, and NOT a shaft (PH-60).
+      if (!Number.isFinite(hi)) return BURIED;
     } else {
       // THE FEET ARE IN AIR. The floor is strictly below them, full stop.
       hi = r;
@@ -363,7 +353,7 @@ export class VoxelCollider {
         if (at(rr)) { lo = rr; break; }
         hi = rr;
       }
-      if (!Number.isFinite(lo)) return null;  // an open shaft, so fall
+      if (!Number.isFinite(lo)) return SHAFT;  // an open shaft, so fall
     }
 
     // The crossing itself. `hi` is returned because the feet stand on the air
@@ -375,6 +365,6 @@ export class VoxelCollider {
       const m = (lo + hi) * 0.5;
       if (at(m)) lo = m; else hi = m;
     }
-    return hi;
+    return { kind: 'floor', r: hi };
   }
 }
