@@ -77,6 +77,11 @@ export function hudLines(
     ? 'drag=look  WASD=move  R/F=alt  wheel=zoom  shift=fast  `=hud'
     : 'drag=look  WASD=walk  space=jump  shift=sprint  V=FP/TP  `=hud';
   return [
+    // BT-27. FIRST LINE, above the seed, because it is the line that tells you
+    // whether anything else on this screen is worth reading. `+dirty` means the
+    // bundle matches no commit at all, which is the state a shared checkout is
+    // in whenever a lane has uncommitted work.
+    { label: 'build', value: `${__OF_BUILD__}`, warn: __OF_BUILD__.endsWith('+dirty') },
     { label: 'seed', value: `${w.seed}  scenario=${w.scenario}` },
     { label: 'fps', value: `${s.fps.toFixed(0)}  p50 ${s.frameMs.p50.toFixed(1)} ms  p99 ${s.frameMs.p99.toFixed(1)} ms`, warn: s.budget.frameP99 !== 'ok' },
     { label: 'passes ms', value: `sky ${s.passMs.sky.toFixed(2)} far ${s.passMs.far.toFixed(2)} near ${s.passMs.near.toFixed(2)} vm ${s.passMs.viewModel.toFixed(2)}` },
