@@ -179,6 +179,56 @@ art defect independent of where the spawn goes, and moving the spawn out of
 Mountains hides it rather than fixes it. Flagged for the art and rendering lanes;
 not mine to change.
 
+#### A selection criterion nobody knew about: this planet has no seasons and a fixed sun declination
+
+Forge's sun direction is `normalize(cos 2*pi*t, 0.42, sin 2*pi*t)`
+(`SkyPass.ts:105`). The `y` component is **constant at +0.387 for all time**, so
+the sun has a permanently high northern declination and the planet has no axial
+tilt and no seasons. **A far-southern spawn therefore cannot ever get a high
+sun.** Measured at each candidate's own local noon:
+
+| site | lat | best sun elevation, ever |
+|---|---|---|
+| hills2 | +22.29 | 89.5 deg |
+| current | +2.00 | 69.2 deg |
+| plains | -7.97 | 59.3 deg |
+| forest | -19.85 | 47.4 deg |
+| hills | -31.17 | 36.1 deg |
+| beach | -35.60 | 31.6 deg |
+| **beach2** | **-57.94** | **9.3 deg** |
+
+**This is a real choice and not a rendering artefact.** If Reid picks `beach2` the
+spawn is in low golden evening light permanently, at every hour of every day,
+because that is the highest the sun ever gets there. Its frame reads warmer and
+moodier than `beach` for exactly that reason. Some people will want that. It
+should be a decision rather than a surprise, and it is the sort of thing that
+would otherwise be discovered a week after the spawn moved.
+
+`beach` at 31.6 deg is the better sand option on this criterion as well as on
+the flatness numbers, which is convenient rather than a coincidence: the probe's
+own latitude band stops at 60 degrees.
+
+**Two instrument notes from the same pass**, both worth keeping:
+
+1. **The first batch of shots came back at night, and the cause was a real
+   misuse rather than a wrong flag.** `__of.setTime(t)` sets one sun vector in
+   the BODY frame, so a fixed `t` is a fixed direction in space and therefore a
+   *different local time at every longitude*: `t = 0.32` is mid-morning at lon
+   144 and the middle of the night at lon -86. There is no `?time=` or `?sun=`
+   flag; `setTime` was already the right handle, used wrongly. The probe now
+   sweeps `t` and takes each site's own local noon, and solves the camera yaw so
+   the sun is over the same shoulder in every frame. Comparable frames of
+   different longitudes need per-site solar time, not a shared constant.
+2. **`snowBatchesDrawn` is unreliable and should not be quoted.** It reads
+   `OF_Ice:744` at every site including both beaches, which contradicts the
+   pixels and the biome rule. Every run boots at the Mountains spawn before
+   teleporting, so it is almost certainly a batch allocated at boot and never
+   released rather than live geometry at the destination. **A counter that
+   reports geometry which is not on screen is the DW-28 class**: it would happily
+   confirm snow at a site that cannot place a single flake. The biome index and
+   the pixels are the evidence; that counter is not.
+
+
 #### The candidates
 
 Every site below is under the prop snow line. `rawRel` is the number `biomeAt`
@@ -194,7 +244,7 @@ longitude and altitude can be read back off each frame.
 | Hills | 22.28600 | 108.84406 | 1897.2 | 0.275 | 0.049 m | 2.44% | 9.91% | 249 m | `_hills2` | quieter, no other biome within 4 km |
 | Plains | -7.96750 | 116.53189 | 331.8 | 0.092 | n/a | 0.31% | 4.54% | 26 m | `_plains` | a real basin floor, 97.8% of the 1 km disc above it. **Two cautions, both visible on the frame:** 26 m of relief in 6 km is the empty green plane the probe's own header warns about, and it is the most expensive frame of the set at 2,660k triangles and 73,670 props against the Beach site's 839k and 15,135. |
 | Beach | -35.60280 | 53.30131 | 12.2 | 0.007 | 0.010 m | 0.33% | 2.32% | 25 m | `_beach` | **THE DESERT OPTION, and the one to show Reid first.** Flattest ground on the planet, dry scrub instead of grass, and the cheapest frame of the set. |
-| Beach | -57.93800 | -85.62600 | 8.3 | 0.004 | 0.007 m | 0.37% | 2.21% | 15 m | `_beach2` | as above, flatter still |
+| Beach | -57.93800 | -85.62600 | 8.3 | 0.004 | 0.007 m | 0.37% | 2.21% | 15 m | `_beach2` | flatter still, but **the sun never rises above 9.3 degrees here, ever** (see above), so this spawn is in permanent low golden light. Its frame also shows a translucent sheet in the foreground that reads as shallow water at 8.3 m of elevation, which is worth checking before choosing it. |
 | Forest | -19.85000 | -72.78530 | 27.3 | 0.015 | 0.020 m | 0.63% | 3.13% | n/a | `_forest` | for completeness |
 
 **Do not ship the probe's own rank 1** (lat 25.05, lon -27.17). At `rawRel`
