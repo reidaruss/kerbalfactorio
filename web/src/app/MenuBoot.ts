@@ -26,6 +26,7 @@ import { BuildMenu } from '../ui/BuildMenu.js';
 import { buildRows, contentFor } from '../game/Buildables.js';
 import type { Services } from './Services.js';
 import { labelOf } from '../player/Bindings.js';
+import { CONTROL_GROUPS } from '../player/BindingText.js';
 import type { Loop } from './Loop.js';
 
 export function installPauseMenu(s: Services, loop: Loop) {
@@ -206,6 +207,34 @@ export function installPauseMenu(s: Services, loop: Loop) {
         confirmButton: menu.buttonFor('startfresh:confirm') !== null,
         cancelButton: menu.buttonFor('startfresh:cancel') !== null,
         armed: cheats.isArmed,
+        // GP-154. The groups the TABLE declares, so a probe can assert that
+        // every one of them reaches the screen without carrying its own copy of
+        // how many there are. `cheats.js` held the literal 6 and failed the
+        // moment a seventh was added, which is the check being right about the
+        // wrong thing: the screen had grown, correctly.
+        groupsDeclared: [...CONTROL_GROUPS],
+        // GP-152 to GP-154. Keyboard navigation, read off the LIVE DOM rather
+        // than off a field the menu keeps: the defect this answers is that a
+        // rebuild destroyed the focused element while every field still said
+        // the right thing, so a report built from fields would have been green
+        // throughout. `focused` is null when nothing in the menu holds it,
+        // which is what "focus went nowhere" looks like.
+        keyboard: (() => {
+          const el = document.activeElement;
+          const body = document.querySelector('#of-pause .body');
+          const rows = body === null ? []
+            : [...body.querySelectorAll('button:not([disabled]), input:not([disabled])')];
+          const inMenu = body !== null && el !== null && body.contains(el);
+          return {
+            rows: rows.length,
+            focused: inMenu ? (el.getAttribute('data-cheat')
+              ?? el.getAttribute('data-save') ?? '?') : null,
+            focusedIndex: inMenu ? rows.indexOf(el) : -1,
+            activeTag: el === null ? 'null' : el.tagName,
+            ids: rows.map((r) => r.getAttribute('data-cheat')
+              ?? r.getAttribute('data-save') ?? '?'),
+          };
+        })(),
         view: cheats.view(),
       };
     },

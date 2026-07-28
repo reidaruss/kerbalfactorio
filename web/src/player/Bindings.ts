@@ -43,7 +43,14 @@ export type Action =
   | 'sasNormal' | 'sasAntinormal' | 'sasRadialIn' | 'sasRadialOut' | 'sasNode'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
-  | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10' | 'slot11';
+  | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10' | 'slot11'
+  // GP-154. MOVING AROUND A MENU WITHOUT A MOUSE. They live here rather than as
+  // raw `ArrowUp` inside `ui/PauseMenu.ts` for the reason at the top of this
+  // file: this is the only place a key code appears, and a screen that lists
+  // "every control the game listens to" (GP-131) becomes a liar the moment the
+  // game listens to a code this table has never heard of. Nothing in gameplay
+  // pulls them, so adding them costs the player nothing outside a menu.
+  | 'menuUp' | 'menuDown' | 'menuSelect';
 
 /**
  * Action -> the codes that fire it. `Mouse0` is the left button.
@@ -180,6 +187,13 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // shooter has taught, so the muscle memory is already there. The wheel still
   // reaches it because the wheel wraps, so the bar has no unreachable slot.
   slot11: ['KeyF'],
+  // GP-154. The arrows and Enter, which are what a player already tries. They
+  // are NOT in `UI_ALLOWED`: that list is what survives `Input`'s capture for
+  // the GAME to consume, and these are consumed by the menu's own listener
+  // instead, so putting them there would offer them to the world as well.
+  menuUp: ['ArrowUp'],
+  menuDown: ['ArrowDown'],
+  menuSelect: ['Enter', 'NumpadEnter'],
 };
 
 /**

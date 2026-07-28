@@ -247,3 +247,27 @@
 
 .of-pgrp.sav input[type="text"]:focus { outline: none; border-color: var(--of-accent); }
 .of-pgrp .share.bad { color: var(--of-bad); }
+
+/* GP-153. THE KEYBOARD SELECTION, and it is `:focus` rather than
+   `:focus-visible` on purpose. `:focus-visible` is a browser HEURISTIC about
+   whether the user "meant" keyboard, and it does not reliably match when focus
+   is moved by script, which is exactly how this menu moves it: on open, after
+   every rebuild, and on every arrow press. A ring that appears only when the
+   heuristic agrees is a ring that is missing precisely when the player is
+   navigating without a mouse.
+
+   Drawn in the panel's own accent rather than left to the user agent. The UA
+   default IS visible here, measured and photographed, so this is not a repair;
+   it is that the selected row in a menu being navigated by keyboard should read
+   as a selection rather than as a browser artefact, and should not change
+   appearance between Chromium versions. */
+#of-pause .body button:focus {
+  outline: 2px solid var(--of-accent);
+  outline-offset: 2px;
+  border-color: var(--of-accent);
+}
+#of-pause .body input:focus { outline: 2px solid var(--of-accent); outline-offset: 1px; }
+/* `--of-panel-2`, not `--of-panel-1`, which does not exist: an undefined custom
+   property makes the whole declaration invalid and the row would simply never
+   highlight, silently, which no type checker looks at. */
+#of-pause .body .row:focus-within { background: var(--of-panel-2); }

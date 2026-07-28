@@ -156,6 +156,8 @@
     `${document.querySelectorAll('#of-pause .row.stub button').length} buttons`);
   check('opening it works', await press('page:controls'));
   const ctl = of.pause().view.controls;
+  // GP-154. The declared group list, off the live table ().
+  const groupsDeclared = mustHave(of.pause(), 'groupsDeclared', 'pause()');
   const flat = ctl.flatMap((gp) => gp.rows);
   const drawn = [...document.querySelectorAll('#of-pause .ctlr')];
   controls = {
@@ -176,8 +178,18 @@
     `${flat.length} derived, ${drawn.length} drawn`);
   check('and every row carries at least one key', flat.every((r) => r.keys.length > 0),
     flat.filter((r) => r.keys.length === 0).map((r) => r.action).join(','));
-  check('all six groups are present', ctl.length === 6,
-    ctl.map((gp) => gp.name).join(', '));
+  // GP-154 CHANGED THIS FROM A LITERAL 6, and the literal is why: adding the
+  // `Menus` group to `CONTROL_GROUPS` made this row fail, correctly, because
+  // the screen HAD grown. The right assertion was never a count, it was that
+  // every group the table declares reaches the screen and none is dropped on
+  // the way. A number would have to be edited by hand on every future group,
+  // which is the same "assert against the live table, never a literal" rule
+  // that has caught three defects in this file's neighbourhood already.
+  check('every declared control group reaches the screen',
+    ctl.length === groupsDeclared.length
+    && groupsDeclared.every((g) => ctl.some((c) => c.name === g)),
+    `declared [${groupsDeclared.join(', ')}] drawn [`
+    + `${ctl.map((gp) => gp.name).join(', ')}]`);
   // THE REBIND THAT JUST HAPPENED. GP-113 moved B to the build menu and free
   // placement to N; a screen that still said B for free placement would be the
   // exact defect this screen exists to make impossible.

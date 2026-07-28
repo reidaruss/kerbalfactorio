@@ -25,6 +25,7 @@ import type { ControlGroup } from '../player/BindingText.js';
 import type { VideoRow } from '../app/VideoSettings.js';
 import type { AudioView } from '../app/AudioSettings.js';
 import type { SaveListView } from '../game/SaveSlots.js';
+import { codesFor } from '../player/Bindings.js';
 import { audio, controls, saves, video } from './OptionPagesHtml.js';
 
 /** One testing control, as data. The panel has no opinion about any of them. */
@@ -100,11 +101,40 @@ const STUBS: readonly { name: string; waiting: string; page: string }[] = [
       + 'deterministic and command-driven, which is the hard half.' },
 ];
 
+/** GP-152 to GP-154. Everything focusable a player can reach in here. */
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled])';
+
 export class PauseMenu extends Modal {
   private readonly root: HTMLElement;
   private readonly body: HTMLElement;
   private open = false;
   private last = '';
+  /**
+   * GP-152. THE DEFECT THIS FIELD EXISTS FOR, because it is not obvious from
+   * the code that anything is wrong.
+   *
+   * `render` replaces `body.innerHTML` wholesale, which DESTROYS the element
+   * that has keyboard focus, and the browser then puts focus on `document.body`
+   * with nothing on screen to say it moved. Driven and discriminated: focus
+   * held by a button SURVIVES ten ticks with no key pressed and survives the
+   * keydown synchronously, and is on `BODY` two ticks later with
+   * `document.contains(button) === false`. So it is not the key blurring it and
+   * not a focus that never took: it is this rebuild.
+   *
+   * That made keyboard navigation impossible before it was designed. Tab to a
+   * row, press anything at all, and the row you were on no longer exists.
+   *
+   * The id is the row's `data-cheat`, which is stable across a rebuild in a way
+   * a node reference and an index both are not: the list can gain or lose rows
+   * (a blocked cheat, an armed confirm) and the row a player was on keeps its
+   * identity through that.
+   */
+  private focusId = '';
+  /** Set when the menu opens or changes page, so focus lands somewhere. */
+  private needsFocus = false;
+  /** The page the last render drew, so a page CHANGE is distinguishable from a
+   *  rebuild of the same page. They want opposite focus behaviour. */
+  private lastPage = '';
 
   constructor(parent: HTMLElement, stack: ModalStack,
               private readonly onPress: (id: string) => void) {
@@ -153,6 +183,11 @@ export class PauseMenu extends Modal {
       }
       this.onPress(id);
     });
+    // GP-154. On `window`, in the capture phase, because the game's own input
+    // layer also listens on window and a menu key must not reach it. The
+    // listener is never removed: this panel is a singleton for the session and
+    // it gates itself on `this.open`.
+    window.addEventListener('keydown', (e) => this.onKey(e), true);
   }
 
   get isOpen(): boolean { return this.open; }
@@ -161,6 +196,86 @@ export class PauseMenu extends Modal {
     if (this.open === v) return;
     this.open = v;
     this.root.classList.toggle('open', v);
+    // GP-153. Opening ARMS the focus rather than taking it here: there is
+    // nothing to focus yet, because the rows are built by the `render` that
+    // follows. Closing clears it, or the next open would try to restore a row
+    // from the page before last.
+    this.needsFocus = v;
+    if (!v) this.focusId = '';
+  }
+
+  // --- GP-152 to GP-154, keyboard --------------------------------------------
+
+  /** The rows a player can land on, in the order they are drawn. */
+  private rows(): HTMLElement[] {
+    return [...this.body.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  }
+
+  /** Remember what has focus, so `render` can put it back after the rebuild. */
+  private rememberFocus(): void {
+    const el = document.activeElement;
+    if (el === null || !this.body.contains(el)) return;
+    this.focusId = el.getAttribute('data-cheat')
+      ?? el.getAttribute('data-save') ?? '';
+  }
+
+  /**
+   * Put focus back where it was, or somewhere sensible if that row is gone.
+   *
+   * Falling back to the FIRST row rather than to nothing is the whole point:
+   * "the row you were on has gone" and "the keyboard does nothing" look
+   * identical to a player, and one of them is recoverable without a mouse.
+   */
+  private restoreFocus(): void {
+    const rows = this.rows();
+    if (rows.length === 0) { this.needsFocus = false; return; }
+    const want = this.focusId === '' ? null
+      : rows.find((e) => e.getAttribute('data-cheat') === this.focusId
+                      || e.getAttribute('data-save') === this.focusId) ?? null;
+    if (want !== null) { want.focus(); return; }
+    // Nothing to restore. Only TAKE focus when the menu has just opened or
+    // changed page: stealing it on every incidental rebuild would fight a
+    // player who is typing in the save-name box.
+    if (!this.needsFocus) return;
+    this.needsFocus = false;
+    rows[0]?.focus();
+    this.rememberFocus();
+  }
+
+  /**
+   * GP-154. One window listener, and it only acts while the menu is open.
+   *
+   * The codes come from `BINDINGS` through `codesFor`, never as literals, so
+   * this cannot disagree with the controls screen that claims to list every
+   * control the game listens to. That is not hypothetical tidiness: two key
+   * prettifiers disagreed for weeks (GP-140) purely because they were never on
+   * screen together.
+   */
+  private onKey(e: KeyboardEvent): void {
+    if (!this.open) return;
+    const rows = this.rows();
+    if (rows.length === 0) return;
+    const here = rows.indexOf(document.activeElement as HTMLElement);
+    const step = (d: number): void => {
+      e.preventDefault();
+      // WRAPS. A list you can walk off the end of is a list that needs a mouse
+      // to get back to the top of.
+      const next = here < 0 ? (d > 0 ? 0 : rows.length - 1)
+        : (here + d + rows.length) % rows.length;
+      rows[next]?.focus();
+      this.rememberFocus();
+    };
+    if (codesFor('menuDown').includes(e.code)) { step(1); return; }
+    if (codesFor('menuUp').includes(e.code)) { step(-1); return; }
+    if (codesFor('menuSelect').includes(e.code)) {
+      const el = rows[here < 0 ? 0 : here];
+      if (el === undefined) return;
+      // preventDefault BEFORE the click, or a real keyboard fires the browser's
+      // own activation as well and the row is pressed twice. A synthetic event
+      // never would, so this is the half a probe cannot see.
+      e.preventDefault();
+      el.click();
+    }
   }
 
   toggle(): boolean { this.setOpen(!this.open); return this.open; }
@@ -182,12 +297,20 @@ export class PauseMenu extends Modal {
       + view.cheats.map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;
+    // GP-152. The page identity is part of the focus decision, not just of the
+    // diff: a page CHANGE must land focus on the new page's first row, and a
+    // rebuild of the same page must put it back where it was.
+    const pageMoved = this.lastPage !== view.page;
+    this.lastPage = view.page;
+    if (pageMoved) { this.needsFocus = true; this.focusId = ''; }
+    else this.rememberFocus();
     this.last = key;
     this.body.innerHTML = view.page === 'controls' ? controls(view.controls)
       : view.page === 'video' ? video(view.video)
         : view.page === 'audio' ? audio(view.audio)
           : view.page === 'save' ? saves(view.saves)
             : header(view) + stubs() + testing(view);
+    this.restoreFocus();
   }
 
   invalidate(): void { this.last = ''; }

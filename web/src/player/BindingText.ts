@@ -30,6 +30,11 @@ import { BINDINGS, actionsFor, labelOf, prettyCode, type Action } from './Bindin
 /** Where a control belongs on screen, in the order the groups are shown. */
 export const CONTROL_GROUPS: readonly string[] = [
   'Moving', 'Hands and building', 'Hotbar', 'Screens', 'Flying', 'Autopilot',
+  // GP-154. Last, because it is the group a player needs least often and the
+  // one they are most likely to already know. It exists at all because the
+  // menu now listens to these codes, and this screen claims to list every
+  // control the game listens to.
+  'Menus',
 ];
 
 interface Desc { group: string; label: string }
@@ -109,6 +114,10 @@ export const ACTION_TEXT: Record<Action, Desc> = {
   sasRadialIn: { group: 'Autopilot', label: 'Hold radial in' },
   sasRadialOut: { group: 'Autopilot', label: 'Hold radial out' },
   sasNode: { group: 'Autopilot', label: 'Hold the maneuver node' },
+
+  menuUp: { group: 'Menus', label: 'Move up the menu' },
+  menuDown: { group: 'Menus', label: 'Move down the menu' },
+  menuSelect: { group: 'Menus', label: 'Press the highlighted row' },
 };
 
 /** One line of the controls screen. Plain data: src/ui knows nothing else. */
