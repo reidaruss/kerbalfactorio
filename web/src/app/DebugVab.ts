@@ -90,6 +90,10 @@ export function vabApi(s: Services): VabDebugApi {
         // scene rather than from a second copy of `applyFloor`'s arithmetic.
         case 'floor': return { topY: v.view.floorTopY,
                                ghostBaseY: v.view.ghostBase };
+        // GP-143. The bay's one line, READ BACK OFF THE ELEMENT, so an
+        // assertion is against the screen and not against a second copy of the
+        // sentence the client composed (the GP-64 rule, as `verdictBand` does).
+        case 'line': return { text: v.panel.messageText };
         // Every attachment node with the PIXEL it is drawn at, so a probe can
         // put the cursor where a player would look instead of teleporting the
         // snap. The hit test and the snap search still run for real.

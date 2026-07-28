@@ -10,13 +10,78 @@ import type { Vab } from './Vab.js';
 /** How far from a node the cursor may be and still snap, in metres. */
 export const SNAP_M = 1.6;
 
+/**
+ * GP-143. WHAT THE BAY IS ABOUT TO DO, said BEFORE the button goes down.
+ *
+ * Measured on the shipped build: with a part in hand, the bay's one line read
+ * "placed Fuel Tank (large) [S]" through every state a player passes on the way
+ * to their next click, including the cursor on empty space and the cursor on a
+ * face that would take the part. It never once described the present.
+ *
+ * GP-115 composed excellent refusals and they were reachable only by clicking
+ * and failing, which is the shape the launch pad had at GP-139: four good
+ * explanatory sentences that fired only when a keypress was refused, so the help
+ * was reachable exactly by players who already knew what to press. `snap.why` is
+ * computed HERE, on the hover, and was being carried to the click and thrown
+ * away if the player did not make one.
+ *
+ * The face is NAMED, and that is the half that answers "you can only build
+ * bottom-up": pointing at the base of a rocket now says the part goes under the
+ * part it would go under, which is a sentence that could not have been produced
+ * by a bay in which downward building did not exist.
+ *
+ * `Vab.takeInHand` re-runs the aim through the pointer's LAST position for the
+ * same reason. `vabAim` does not run until the pointer moves, so a part picked
+ * off the rail would otherwise sit in hand under a line about the last thing
+ * that was placed, which is the state this whole entry exists to end.
+ *
+ * THE AIM WINS OVER THE EVENT, and the event CLEARS it rather than covering it
+ * (`VabPanel.render`). Both halves were forced by measurement rather than
+ * chosen. With the event winning for its three seconds, which is the obvious
+ * precedence because it is the newer fact, the aim line was invisible in every
+ * state a player reaches inside three seconds of a click, which is all of them:
+ * the probe read the same seven identical sentences it read before this entry
+ * existed, and the entry would have shipped doing nothing. And the event has to
+ * CLEAR the aim, not merely outrank it, because the aim described a hover over
+ * the model as it was BEFORE the event, so the face it names may no longer be
+ * there. Clearing on a non-empty message only means the message's own clock
+ * expiring leaves the aim standing instead of blanking a line being read.
+ */
+function faceWord(kind: string): string {
+  if (kind === 'top') return 'on top of';
+  if (kind === 'bottom') return 'under';
+  if (kind === 'interstage') return 'in the interstage under';
+  return 'on the side of';
+}
+
+function aimLine(v: Vab): string {
+  const hand = v.hand;
+  if (hand === null) return '';
+  if (v.design.empty) {
+    return !hand.nodeBottom && !hand.nodeTop
+      ? `${hand.label} cannot start a stack: begin with a pod, a tank or an engine`
+      : `click to set down ${hand.label} as the first part`;
+  }
+  const node = v.active;
+  if (node !== null) {
+    const parent = v.design.parts.find((p) => p.handle === node.parent);
+    const owner = parent === undefined ? 'the stack'
+      : (v.catalogue.find((c) => c.id === parent.partId)?.label ?? 'the stack');
+    return `${hand.label} ${faceWord(node.kind)} ${owner}`;
+  }
+  const b = v.blocked;
+  if (b !== null) return b.why === '' ? 'that will not fit there' : b.why;
+  return `point at an attachment point to place ${hand.label}`;
+}
+
 export function vabAim(v: Vab, ndcX: number, ndcY: number): void {
   const hand = v.hand;
-  if (hand === null) { v.view.clearGhost(); return; }
+  if (hand === null) { v.view.clearGhost(); v.panel.setAim(''); return; }
   if (v.design.empty) {
     v.active = null;
     v.blocked = null;
     v.view.showGhost(hand, [0, 0, 0], 0, false, true);
+    v.panel.setAim(aimLine(v));
     return;
   }
   const ray = v.view.aimRay(v.camera, ndcX, ndcY);
@@ -30,6 +95,7 @@ export function vabAim(v: Vab, ndcX: number, ndcY: number): void {
   // gone. A ghost that simply vanishes is indistinguishable from a snap search
   // that is broken, and that ambiguity is what cost Reid a build session.
   const shown = v.active ?? v.blocked?.node ?? null;
+  v.panel.setAim(aimLine(v));
   if (shown === null) { v.view.clearGhost(); return; }
   const o = ghostOrigin(shown, hand);
   v.view.showGhost(hand, o, shown.angleRad, isSideNode(shown),
@@ -56,6 +122,7 @@ export function vabDropHand(v: Vab): void {
   v.blocked = null;
   v.view.clearGhost();
   v.view.clearNodes();
+  v.panel.setAim('');
   v.repaint();
 }
 

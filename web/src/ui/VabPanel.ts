@@ -80,6 +80,17 @@ export class VabPanel extends Modal {
   private parts: readonly VabPartRow[] = [];
   /** [catalogue, readouts + stages, bottom bar, message]. */
   private last = ['', '', '', ''];
+  /**
+   * GP-143. THE TWO SENTENCES THAT SHARE ONE LINE. `msg` is an EVENT ("placed
+   * Main Engine"), written by `Vab.after` and cleared by its own three second
+   * clock; `aim` is a STATE, what the bay would do if the button went down now,
+   * rewritten on every pointer move and never on a clock. One element, because
+   * a second line is a second place a player has to learn to look. The reason
+   * the AIM wins, and the reason an event CLEARS it rather than covering it,
+   * are both in `VabAim.ts` beside the sentence itself.
+   */
+  private msg = '';
+  private aim = '';
 
   constructor(parent: HTMLElement, stack: ModalStack,
               private readonly hooks: VabPanelHooks) {
@@ -239,8 +250,12 @@ export class VabPanel extends Modal {
         .join(',')
       + `|${verdict.ok ? 'ok' : 'bad'}|${verdict.summary}`;
     const kBar = `${symmetry}|${designs.join(',')}`;
+    // GP-143: the early-out compares the EVENT against `this.msg`, not against
+    // `last[3]`. `last[3]` is now the line as drawn, which may be the aim state
+    // rather than the event, so comparing an event to it would let a genuine
+    // message change fall through the guard and never be painted.
     if (kParts === this.last[0] && kRead === this.last[1]
-      && kBar === this.last[2] && message === this.last[3]) return;
+      && kBar === this.last[2] && message === this.msg) return;
     if (kParts !== this.last[0]) this.paintCatalogue();
     if (kRead !== this.last[1]) {
       this.last[1] = kRead;
@@ -258,13 +273,42 @@ export class VabPanel extends Modal {
         ? '<span class="none">none yet</span>'
         : designs.map(chip).join(''));
     }
-    if (message !== this.last[3]) {
-      this.last[3] = message;
-      // textContent, not innerHTML: the message is somebody else's string and
-      // it is the one field on this screen that carries arbitrary text.
-      this.msgEl.textContent = message;
-      this.msgEl.classList.toggle('on', message !== '');
-    }
+    this.msg = message;
+    // An EVENT invalidates the aim, because the aim described a hover over the
+    // model as it was BEFORE the event: the face it named may not exist any
+    // more. The next pointer move recomputes it. Only a non-empty message
+    // clears it, so the message's own three second clock expiring leaves the
+    // aim standing rather than blanking a line the player is reading.
+    if (message !== '') this.aim = '';
+    this.paintLine();
+  }
+
+  /**
+   * GP-143. Set on every pointer move from `VabAim`. It repaints immediately
+   * rather than waiting for a `render()`, because a hover changes no model and
+   * must not trigger one: a render re-derives the catalogue rows, the stage
+   * table and the verdict, and `Vab.after` additionally autosaves the design.
+   */
+  setAim(text: string): void {
+    if (text === this.aim) return;
+    this.aim = text;
+    this.paintLine();
+  }
+
+  /** The line as DRAWN, so a probe asserts against the screen (GP-64). */
+  get messageText(): string { return this.msgEl.textContent ?? ''; }
+
+  private paintLine(): void {
+    // The AIM wins while it exists. It is the only one of the two that
+    // describes the present, and the event that could have hidden it has
+    // already cleared it above, so this is not a race between them.
+    const line = this.aim !== '' ? this.aim : this.msg;
+    if (line === this.last[3]) return;
+    this.last[3] = line;
+    // textContent, not innerHTML: the line is somebody else's string and it is
+    // the one field on this screen that carries arbitrary text.
+    this.msgEl.textContent = line;
+    this.msgEl.classList.toggle('on', line !== '');
   }
 
   /**

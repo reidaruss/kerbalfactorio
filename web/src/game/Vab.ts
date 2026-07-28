@@ -205,6 +205,7 @@ export class Vab {
     this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
     this.view.showNodes(this.nodes, this.active);
     this.render();
+    this.hoverNdc(this.pointer.ndcX, this.pointer.ndcY);   // GP-143, see VabAim
   }
 
   /** Commit the part in hand wherever it is currently snapped. */
