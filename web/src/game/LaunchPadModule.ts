@@ -27,7 +27,7 @@ export const PAD_KIND = 4;
  *
  * `standM` is `socket_vessel`'s own height and is THE number the roll-out uses.
  * The socket's quaternion is byte-identical to `LiquidTankSmall/socket_stack_top`
- * in `rocket_parts.glb` — same translation, same rotation, same f32 bits — which
+ * in `rocket_parts.glb`: same translation, same rotation, same f32 bits, which
  * is the proof that a rocket meeting this pad is meeting the same contract it
  * meets when a tank is stacked on a tank, rather than a bespoke launch rule.
  */
@@ -156,13 +156,30 @@ export function measurePad(root: THREE.Object3D,
  * stands and where a player walks up to it. It is fanned out by `clampProxies`
  * instead. Everything else is used verbatim.
  *
- * ALL FIVE OF THE OTHERS ARE TAKEN, and that is worth saying because
- * `contracts.json` lists only four collision nodes and the one it omits is
- * `col_LaunchMount` — the launch table spanning the flame trench. A client that
- * built its proxies from the contract list rather than from the file would drop
- * the table and let a player fall down the trench. Reading the file is what
- * makes that impossible here; the contract is flagged upward rather than worked
- * around.
+ * ALL TWELVE OF THE OTHERS ARE TAKEN, whatever they are called and however
+ * many there are, and that is the whole reason this reads the FILE. Two
+ * separate omissions have already been survived by exactly that: `contracts.json`
+ * listed four collision nodes for years while the file shipped five, the one it
+ * omitted being `col_LaunchMount`, the launch table spanning the flame trench. A
+ * client that built its proxies from the contract list would have dropped the
+ * table and let a player fall down the trench.
+ *
+ * THE SECOND OMISSION WAS NOT SURVIVED, and it is why the count above is now
+ * twelve. Reading the file is only a defence when the file HAS the thing: the
+ * eight stair treads in the north-east notch were drawn and never proxied at
+ * all, so the one route onto the deck on foot was 2.72 m of air ending in the
+ * 2.00 m south face of `col_LaunchTrench` (measured, `probes/padstair.js`:
+ * 0.000 m gained walking it, then wedged). They now ship as
+ * `col_LaunchStep1` to `col_LaunchStep8` and arrive here with no code change,
+ * which is this function working as intended. What was missing was a CHECK that
+ * the declared set and the shipped set agree, in both directions:
+ * `web/scripts/check-proxies.mjs`, wired into `npm run check`.
+ *
+ * NOTE THE `_\d+$` STRIP BELOW BEFORE NAMING A NEW PROXY. It exists so three's
+ * split primitives of a multi-material mesh collapse back to one box, and it
+ * means a set of proxies named `col_Step_1`, `col_Step_2` ... would be read as
+ * ONE box. That is why the treads are `col_LaunchStep1` and not
+ * `col_LaunchStep_1`, and check-proxies.mjs refuses the other spelling.
  */
 export function padProxies(root: THREE.Object3D): LocalBox[] {
   const out: LocalBox[] = [];

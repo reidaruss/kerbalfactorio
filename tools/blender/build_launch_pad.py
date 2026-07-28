@@ -41,7 +41,7 @@ number of clamps.
       clamp_pivot               Clamp_Release drives this
         LaunchClamp_Arm
       col_LaunchPad / col_LaunchTrench / col_LaunchMount / col_LaunchTower
-        / col_LaunchClamp
+        / col_LaunchClamp / col_LaunchStep1 .. col_LaunchStep8
       socket_vessel / socket_clamp / socket_umbilical / socket_smoke
         / socket_status
 
@@ -53,7 +53,32 @@ walk on air over a 1.70 m drop. So the deck is proxied as its two BANKS -
 second named for the trench because the trench is the only reason there are
 two - plus `col_LaunchMount` for the launch table, which is the one surface
 that legitimately spans the trench, and spans only 6.8 m of its 24 m length.
-Five boxes, 60 triangles, exactly the contract's collision budget.
+
+AND THE STAIRS ARE PROXIED TREAD BY TREAD (GP-76), the 2026-07-27 playtest fix
+and the reason the collision budget moved. Reid: "the stairs on the launch pad
+dont work". The eight steps in the north-east notch were drawn and never
+proxied, so the ONE route up that a player on foot can take had nothing under
+it at all: measured by `probes/padstair.js` before the fix, a driven walk
+from the ground gained 0.000 m over the pad's base plane and wedged against the
+2.00 m south face of `col_LaunchTrench` at the top of the run. The two banks
+deliberately stop short of the notch (`STAIR_S`), so there was no proxy within
+2.72 m of run to stand on.
+
+They are eight boxes and not one ramp because the client's proxies are
+AXIS-ALIGNED boxes in the part's own frame (`web/src/game/StructureBody.ts`):
+an inclined plane is not expressible, so a staircase has to be a staircase. And
+they are eight and not four because they are generated from the SAME
+`stair_treads()` the drawn geometry is generated from, so the surface you stand
+on is the surface you can see, to the millimetre. Coarsening to four 0.50 m
+boxes would have halved the triangles and put the player's feet a quarter of a
+metre above every other visible tread, which is the same walking-on-air the
+trench paragraph above exists to prevent.
+
+Thirteen boxes, 156 triangles. `max_tris_collision` in contracts.json moved
+from 60 to 160 to pay for it; nothing here reaches a pixel (of_lib hides every
+col_* and `assets/Loaders.ts` hides them again on load), so the cost is file
+size plus eight more AABB tests per capsule sample while the player is standing
+on this one 24 m part.
 
 THE CLAMP FACES THE STACK ALONG ITS OWN -Y. of_lib's convention is that an
 asset's forward is Blender -Y, so socket_clamp carries the rotation that maps
@@ -452,14 +477,26 @@ def guard_rails(mb):
     return mb
 
 
+def stair_treads():
+    """The eight treads, as (size, loc) pairs in the pad's own frame.
+
+    ONE generator, read by both the drawn geometry in `stair()` and the
+    `col_LaunchStep*` proxies in `main()`. That is the whole point of it being a
+    function: the stairs shipped drawn-but-not-proxied for as long as the two
+    were written out separately, and the cheapest guarantee that a re-author
+    moves the collision with the mesh is that there is only one loop."""
+    for i in range(STEPS):
+        top = RISER * (i + 1)
+        y = STAIR_N - TREAD * (i + 0.5)
+        yield (STAIR_W, TREAD, top), (STAIR_X, y, top * 0.5)
+
+
 def stair(mb, detail=True):
     """Eight steps from the ground to the deck in the north-east notch. The
     only route up that a player on foot can take, and the second scale cue
     after the rails: a 0.25 m riser is a riser at any distance."""
-    for i in range(STEPS):
-        top = RISER * (i + 1)
-        y = STAIR_N - TREAD * (i + 0.5)
-        mb.box((STAIR_W, TREAD, top), (STAIR_X, y, top * 0.5), "RockDark")
+    for size, loc in stair_treads():
+        mb.box(size, loc, "RockDark")
     if not detail:
         return mb
     run = STEPS * TREAD
@@ -649,7 +686,7 @@ def main():
     arm_pivot = of.add_pivot("clamp_pivot", (0.0, HINGE_Y, HINGE_Z), root)
     mba, _ = build_clamp_arm(arm_pivot)
 
-    # FIVE proxies, sixty triangles, exactly the contract's budget. The two
+    # THIRTEEN proxies: five for the structure and one per stair tread. The two
     # deck banks are separate boxes BECAUSE the trench is between them; a
     # single slab there would be a player walking on air over a 1.70 m drop.
     of.add_collision_box("col_LaunchPad", (HALF - TR_HW, W, DECK_Z),
@@ -669,6 +706,20 @@ def main():
                          role="Steel")
     of.add_collision_box("col_LaunchClamp", (CLAMP_X, CLAMP_Y, CLAMP_H),
                          (0.0, 0.0, CLAMP_H * 0.5), root, role="SteelDark")
+
+    # THE STAIRS, one proxy per drawn tread, from the generator the drawn
+    # geometry uses. See the module docstring for why this is eight boxes.
+    #
+    # THE NAMES MUST NOT END IN UNDERSCORE-DIGIT. `padProxies` and `proxiesOf`
+    # in the client collapse `col_Foo_1`, `col_Foo_2` ... onto one proxy named
+    # `col_Foo`, because that is how three.js names the split primitives of a
+    # multi-material mesh and a collision box must stay ONE box. So these are
+    # `col_LaunchStep1` and not `col_LaunchStep_1`: seven of the eight treads
+    # would silently vanish on load under the other spelling, which is a
+    # quieter version of exactly the bug being fixed here.
+    for i, (size, loc) in enumerate(stair_treads()):
+        of.add_collision_box("col_LaunchStep%d" % (i + 1), size, loc, root,
+                             role="Rock")
 
     of.add_socket("socket_vessel", (0.0, 0.0, DECK_Z), UP, root,
                   {"of_role": "vessel_mate"})

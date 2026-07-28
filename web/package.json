@@ -16,9 +16,10 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "check:limits": "node scripts/check-limits.mjs",
+    "check:proxies": "node scripts/check-proxies.mjs",
     "check:boot": "node tools/smoke/boot.mjs",
     "smoke": "node tools/smoke/run.mjs",
-    "check": "npm run typecheck && npm run check:limits && npm run check:boot",
+    "check": "npm run check:proxies && npm run typecheck && npm run check:limits && npm run check:boot",
     "sync-assets": "node scripts/sync-assets.mjs"
   },
   "dependencies": {

@@ -105,7 +105,10 @@ export class Vab {
     const v = new Vab(d);
     await v.view.load(v.catalogue);
     const saved = store.loadCurrent();
-    if (saved !== null) { v.design.fromJson(saved); v.handStaged = true; }
+    // GP-75. THE LATCH TRAVELS WITH THE TABLE (`DesignJson.hs`), instead of
+    // being set true on every boot with a work in progress, which was a second
+    // and permanent rule GP-33 never asked for.
+    if (saved !== null) { v.design.fromJson(saved); v.handStaged = saved.hs === true; }
     v.rebuild();
     return v;
   }
@@ -196,16 +199,13 @@ export class Vab {
   /**
    * GP-55. THE RIGHT BUTTON, and which of its two meanings you get is decided
    * by WHAT IS IN YOUR HAND, exactly as GP-26 decided the left button on foot.
-   *
    * Reid: "i should be able to remove components i have placed in the VAB. I
-   * shouldnt have to clear and start over." He was right, and the feature was
-   * finished at every layer: `_of_vs_remove` takes a part and its subtree,
-   * `removeAt` below refunds it when the mode charges, re-stages and reports.
-   * NOTHING CALLED IT. No key, no control, and the only delete in the panel is
+   * shouldnt have to clear and start over." The feature was finished at every
+   * layer (`_of_vs_remove`, and `removeAt` below refunds and re-stages) and
+   * NOTHING CALLED IT: no key, no control, and the only delete in the panel is
    * `design-del`, which throws away a saved DESIGN and is what a player hunting
    * for this would find first. Right-click rather than Delete-on-a-selection
-   * because it needs no selection step, and because `demolish` is ALREADY
-   * `Mouse2` on foot (Bindings.ts): one button, one meaning, both halves.
+   * because `demolish` is ALREADY `Mouse2` on foot (Bindings.ts).
    */
   private rightClick(): void {
     if (this.hand !== null) { this.dropHand(); return; }
@@ -347,18 +347,18 @@ export class Vab {
   // --- designs -------------------------------------------------------------
 
   private saveAs(name: string): void {
-    const ok = store.saveDesign(name, this.design.toJson(name));
+    const ok = store.saveDesign(name, this.design.toJson(name, this.handStaged));
     this.after(ok ? `saved ${name}` : 'name the design first');
   }
 
   private loadNamed(name: string): void {
     const d = store.loadDesign(name);
     if (d === null) { this.after(`no design ${name}`); return; }
-    // Loading neither charges nor refunds. A saved design is a DRAWING, and this
-    // is the one place the pack is deliberately untouched. Stated because it is
-    // a balance hole a later pass may want to close.
+    // GP-34: loading neither charges nor refunds, a stated balance hole.
     this.design.fromJson(d);
-    this.handStaged = true;
+    // GP-75: the design's OWN latch, so a blueprint whose author never touched
+    // the arrows keeps re-deriving and a hand-ordered one keeps its order.
+    this.handStaged = d.hs === true;
     this.frameCamera();
     this.after(`loaded ${name}`);
   }
@@ -367,7 +367,7 @@ export class Vab {
 
   private after(msg: string): void {
     if (msg !== '') { this.message = msg; this.msgUntil = performance.now() + 3000; }
-    store.saveCurrent(this.design.toJson('current'));
+    store.saveCurrent(this.design.toJson('current', this.handStaged));
     this.rebuild();
   }
 

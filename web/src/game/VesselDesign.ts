@@ -43,6 +43,14 @@ export interface DesignJson {
   name: string;
   parts: { p: number; parent: number; a: number; ang: number; off: number; st: number }[];
   stages: { act: number[]; dec: number[] }[];
+  /**
+   * GP-75. WHETHER THE STAGE TABLE BELOW IS THE PLAYER'S OR THE DERIVATION'S,
+   * which is `Vab.handStaged` and is state that has to travel WITH the table it
+   * protects. Optional so an older slot is legal; absent reads as false, which
+   * restores GP-33's stated rule (the latch is set when a stage arrow is
+   * pressed) rather than the boot-time latch it had drifted into.
+   */
+  hs?: boolean;
 }
 
 const NEVER = 0x7fffffff;
@@ -201,7 +209,7 @@ export class VesselDesign {
 
   // --- serialisation --------------------------------------------------------
 
-  toJson(name: string): DesignJson {
+  toJson(name: string, handStaged = false): DesignJson {
     const idx = new Map<number, number>();
     this.parts.forEach((p, i) => idx.set(p.handle, i));
     const stages: { act: number[]; dec: number[] }[] = [];
@@ -222,6 +230,7 @@ export class VesselDesign {
         a: p.attach, ang: p.radialAngleRad, off: 0, st: p.stage,
       })),
       stages,
+      hs: handStaged,
     };
   }
 

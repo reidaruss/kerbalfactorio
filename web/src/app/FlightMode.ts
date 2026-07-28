@@ -32,6 +32,8 @@ import { allowSave, inhibitSave } from '../sim/SaveInhibit.js';
 import { readout as computeReadout } from './FlightReadout.js';
 import { choosePad, padReport, rollOutOnPad, stepPadClamps as stepPad }
   from './FlightPad.js';
+import { recoverVessel } from './FlightRecover.js';
+import { labelOf } from '../player/Bindings.js';
 import { readCatalogue } from '../game/VesselCatalogue.js';
 import type { LaunchPads, PadPart } from '../game/LaunchPad.js';
 import type { PartRow } from '../game/VesselCatalogue.js';
@@ -45,14 +47,9 @@ const ABANDON_RANGE_M = 200;
 const PAD_AHEAD_M = 26;
 /**
  * THE TWO THINGS THE PLAYER IS OWED, said in words rather than left to be
- * discovered (physics R11 and R12).
- *
- * A stand-in that ANNOUNCES itself is a stand-in; a stand-in that does not is a
- * broken feature, and the difference is entirely in whether it is named. So the
- * roll-out says it is standing in for DW-29's launch pad, and the navball
- * carries a standing chip for as long as the player is strapped in saying the
- * flight is not in the save. Both are cheap; the alternative to the second one
- * is a player who reloads at 80 km and finds their rocket was never there.
+ * discovered (physics R11 and R12): a stand-in that ANNOUNCES itself is a
+ * stand-in, and a flight that is not in the save says so for as long as it is
+ * true. `FlightPad.PAD_NOTE` makes the same argument from the pad's side.
  */
 const ROLLOUT_NOTE =
   'ROLL-OUT (stand-in for DW-29\'s launch pad): rocket 26 m ahead, walk to it and press G';
@@ -100,6 +97,8 @@ export class FlightMode {
   padSocketGapM = -1;
   boardings = 0;
   disembarks = 0;
+  /** GP-74. Vessels taken back out of the world. FlightRecover.ts writes it. */
+  recoveries = 0;
   refusals = 0;
   message = '';
 
@@ -120,6 +119,7 @@ export class FlightMode {
     this.session = new FlightSession({
       M: d.M, bodyHandle: d.bodyHandle, bodyRadiusM: d.bodyRadiusM,
       surfaceRadius: (x, y, z) => d.oracle.surfaceRadius(x, y, z),
+      recoverKeyLabel: labelOf('recover'),
     });
     this.observer = new VesselObserver(this.session, d.oracle, d.input);
     this.view = new VesselView(d.scene);
@@ -171,13 +171,8 @@ export class FlightMode {
     const design = this.d.designHandle();
     if (design <= 0) { this.refuse('nothing built: press C and build a rocket'); return; }
     // GP-57 / R12. THE PAD IS PREFERRED AND THE STAND-IN IS KEPT, which is a
-    // decision rather than a hedge. DW-29's own sequencing is that reaching
-    // orbit is a MANUAL skill first and the first flights are hand-flown, while
-    // the pad is gated behind Electrification plus 1,440 Stone of platform.
-    // Making flight impossible until all of that is paid would invert the arc
-    // it asks for: you would be automating to earn the right to learn to fly.
-    // The stand-in is the entry ramp; the pad is what you graduate to, and the
-    // two do not read alike (see PAD_NOTE against ROLLOUT_NOTE).
+    // decision rather than a hedge. The argument is in `FlightPad.ts` beside
+    // `choosePad`, which is the code it is about.
     const pad = choosePad(this);
     if (pad !== null && rollOutOnPad(this, design, pad)) return;
     const feet = this.d.player.body.feet;
@@ -225,7 +220,8 @@ export class FlightMode {
     // it is refused rather than written as a ground state that quietly deletes
     // the flight. The chip below says so for as long as it is true.
     inhibitSave(NOT_SAVED_NOTE);
-    this.flash('aboard: Space stages, Shift throttles up, WASD flies');
+    this.flash('aboard: Space stages, Shift throttles up, WASD flies, '
+      + `${labelOf('recover')} clears the pad`);
   }
 
   /** The reverse MUST work or a player who lands is stuck. It is refused only
@@ -281,7 +277,11 @@ export class FlightMode {
                       feet.z - (p[2] - (p[2] / r) * b));
   }
 
-  private refuse(why: string): void { this.refusals += 1; this.flash(why); }
+  /** GP-74. Clear the pad / revert / recover: one op, in FlightRecover.ts. */
+  recover(): boolean { return recoverVessel(this); }
+
+  /** Public for FlightRecover.ts, which refuses in this mode's own voice. */
+  refuse(why: string): void { this.refusals += 1; this.flash(why); }
   /** Six seconds on the LOOP's clock, the only clock `frame`'s expiry sees
    *  (PH-35: the session's used mission time against it). */
   flash(m: string): void {
@@ -373,8 +373,8 @@ export class FlightMode {
    *  method because probes and DebugFlight.ts call it. */
   readout(): NavballReadout { return computeReadout(this); }
 
-  /** GP-57: the pad's clamps let go at the instant the launch clamp does. Once
-   *  per FIXED tick, from `Systems`, given that tick. See FlightPad.ts. */
+  /** GP-57: once per FIXED tick, from `Systems`. Why, and what the tick is
+   *  compared against, is in FlightPad.ts. */
   stepPadClamps(tick: number): void { stepPad(this, tick); }
 
   vesselPosition(out: Vec3d): Vec3d { return this.observer.vesselPosition(out); }
@@ -382,7 +382,8 @@ export class FlightMode {
   report(): unknown {
     return {
       aboard: this.aboard, rollouts: this.rollouts, boardings: this.boardings,
-      disembarks: this.disembarks, refusals: this.refusals,
+      disembarks: this.disembarks, recoveries: this.recoveries,
+      refusals: this.refusals,
       ...padReport(this),
       distanceToVesselM: this.session.live
         ? Math.round(this.distanceToVessel() * 100) / 100 : -1,

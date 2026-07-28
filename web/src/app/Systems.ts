@@ -22,6 +22,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   // because its panel joins the stack in its own constructor.
   let assemblyHeld = false;
   let boardHeld = false;
+  let recoverHeld = false;
   let mapHeld = false;
   let holdHeld = false;
   loop.onFixedStep.push((_dt, tick) => {
@@ -66,6 +67,17 @@ export function registerSystems(s: Services, loop: Loop): void {
       else s.flight?.board();
     }
     boardHeld = b;
+    // GP-74. THE WAY OUT, edge-detected here beside the key that made the
+    // vessel, because it is the same kind of key: flight owns its own eye and
+    // neither of these is part of Gameplay's on-foot tick. It is deliberately
+    // NOT gated on being aboard or on standing near the pad. A range test is
+    // what turned this from a missing feature into a dead end the first time:
+    // the only escape from a rocket that could not lift was to walk 200 m and
+    // overwrite it with `board`, and a recovery you have to walk away from to
+    // use is a recovery for the case that is not the emergency.
+    const rk = s.input.act('recover');
+    if (rk && !recoverHeld) s.flight?.recover();
+    recoverHeld = rk;
     // W12. The MAP, on M. Same shape and same reason as the two above: it owns
     // its own pointer, and it refuses OUT LOUD off the vessel rather than doing
     // nothing, which is GP-54's lesson applied before it can bite again.

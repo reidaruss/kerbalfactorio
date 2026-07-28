@@ -53,6 +53,10 @@ export function flightApi(s: Services): FlightDebugApi {
         case 'board': f.board(); return f.report();
         case 'rollout': f.rollOut(); return f.report();
         case 'disembark': f.disembark(); return f.report();
+        // GP-74. The same method the `recover` key calls. It is here as well as
+        // on a key because a probe must be able to assert the REFUSALS too, and
+        // a refusal is invisible from outside unless the call returns.
+        case 'recover': return { ok: f.recover(), report: f.report() };
         case 'counters': return counters(s);
         // The navball's OWN account of what it drew. A navball that is present
         // but never fed has to be distinguishable from one that is live, so this

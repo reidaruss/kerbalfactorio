@@ -955,9 +955,32 @@ reaches exactly to 0.63 m from the axis, touching a 1.25 m hull.
 `Clamp_Release` (frames 1 to 25) swings the arm 70 degrees up and back and is
 **authored holding**, because a pad at rest is a pad holding a rocket.
 
-Three proxies, not one: `col_LaunchPad` (the deck), `col_LaunchTower` and
-`col_LaunchClamp`. A single convex box cannot describe a slab with a 12 m mast
-on one corner.
+**Thirteen proxies, not one.** Five are the structure: `col_LaunchPad` and
+`col_LaunchTrench` are the two deck BANKS either side of the flame trench,
+`col_LaunchMount` is the launch table that legitimately spans it,
+`col_LaunchTower` is the mast and `col_LaunchClamp` is the clamp template the
+client fans out. A single convex box cannot describe a slab with a hole down
+the middle and a 28 m mast on one side, and a box spanning the trench would be
+a player walking on air over a 1.70 m drop.
+
+The other eight are `col_LaunchStep1` to `col_LaunchStep8`, **one per stair
+tread**, and they are the 2026-07-27 fix for Reid's "the stairs on the launch
+pad dont work". The notch in the north-east corner was drawn and never proxied,
+so the only route onto the deck on foot had nothing under it: a driven walk
+(`probes/padstair.js`) gained **0.000 m** and wedged against the 2.00 m south
+face of `col_LaunchTrench`. It now gains **2.000 m** onto the deck in 1.2 s.
+A tread proxy is a box and not a ramp because the client's structural proxies
+are axis-aligned boxes in the part's own frame (`game/StructureBody.ts`), and
+there are eight rather than four because they are generated from the same
+`stair_treads()` the drawn geometry is, so the surface you stand on is the
+surface you can see. 156 collision triangles, budget 160; none reach a pixel.
+
+The declared set in `contracts.json` and the set a `.glb` actually ships are
+now checked against each other **in both directions** by
+`web/scripts/check-proxies.mjs` (`npm run check:proxies`, and part of
+`npm run check`). `validate_glb.py` only ever reported names that were declared
+and absent, which is why `col_LaunchMount` shipped undeclared for as long as it
+did and why nothing at all noticed the stairs.
 
 #### `rocket/lander_landed.glb`
 

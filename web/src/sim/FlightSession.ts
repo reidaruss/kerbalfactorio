@@ -13,6 +13,7 @@ import {
   SAS_COMMAND, SAS_OFF, SAS_NAMES, dot, flightOrbit, flightParts, flightState,
   flightTelemetry, len, norm,
 } from './FlightAbi.js';
+import { clampHoldReason, mayStageWhileClamped, STAGE_REFUSAL } from './FlightClamp.js';
 import { flightReport, readStagePerformance } from './FlightReport.js';
 import { commandDirection, cycleSas, guidanceDir, levelWings, setSas, slew }
   from './FlightSas.js';
@@ -33,6 +34,9 @@ export interface FlightPorts {
   bodyRadiusM: number;
   /** Ground radius under a unit direction, metres from the body centre. */
   surfaceRadius(dx: number, dy: number, dz: number): number;
+  /** How the `recover` key READS on screen, from Bindings.ts. A label and never
+   *  a code: the sim names no key of its own (GP-74). */
+  recoverKeyLabel?: string;
 }
 
 /** Degrees per second the command slews at full deflection. DW-30 item 3 wants
@@ -61,20 +65,12 @@ export class FlightSession {
    *  a built launch pad rather than on the R12 stand-in patch of ground. */
   onPad = false;
   /**
-   * HOW MANY TIMES THE LAUNCH CLAMP HAS RELEASED, and the sim tick it last did.
-   *
-   * A COUNTER RATHER THAN A CALLBACK, and that is the whole point of it. The
-   * pad's own clamps have to swing back at this exact instant, and wiring them
-   * as a direct call from `tryRelease` would make "they fired together" true by
-   * construction and therefore unassertable: a probe checking it would be
-   * checking that one line calls another. A counter plus a tick lets the pad
-   * record its OWN release tick independently, so the acceptance compares two
-   * numbers that were written by two systems and can genuinely disagree.
-   *
-   * The tick is a FIXED tick and not a timestamp because release happens inside
-   * `stepClamped` on the fixed step, and a frame carries one to three of those:
-   * a per-frame clock cannot tell "the same instant" from "within 50 ms" and
-   * would turn the assertion into a coincidence detector.
+   * HOW MANY TIMES THE LAUNCH CLAMP HAS RELEASED, and the FIXED tick it last
+   * did. A counter rather than a callback, so the pad can record its own
+   * release tick from its own caller and the acceptance compares two numbers
+   * written by two systems instead of checking that one line calls another.
+   * The full argument, including why it is a fixed tick and not a timestamp,
+   * is in `app/FlightPad.ts` beside the code that reads it (GP-57).
    */
   releases = 0;
   releasedAtTick = -1;
@@ -224,12 +220,13 @@ export class FlightSession {
    *  the clamp, as in KSP: set the throttle, then `sim.stage()`. */
   fireStage(): boolean {
     if (this.handle <= 0) return false;
-    // ONE PRESS ON THE PAD (PH-29). The first lights the engine; a second while
-    // the clamp holds throws away the booster, what is left cannot reach TWR 1
-    // and the clamp never releases. Measured: four presses took the reference
-    // vehicle from 11 parts to 4 and bolted it to the ground.
-    if (this.status === 'CLAMPED' && this.stagings > 0) {
-      this.flash('clamp still holding: throttle up first, do not stage again');
+    // ONE PRESS ON THE PAD, AND THE RULE IS "IS THERE ANYTHING TO LOSE?"
+    // PH-29 asked `stagings > 0`, which assumed the first stage always holds
+    // the engine; GP-73 refutes that with a measurement. The predicate, the two
+    // opposed cases it has to satisfy at once and the numbers are in
+    // FlightClamp.ts, where they can be read next to each other.
+    if (this.status === 'CLAMPED' && !mayStageWhileClamped(this)) {
+      this.flash(STAGE_REFUSAL);
       return false;
     }
     const jettisoned = this.V._of_fl_stage(this.handle);
@@ -246,7 +243,7 @@ export class FlightSession {
     if (this.handle <= 0 || this.status !== 'CLAMPED') return false;
     const twr = this.currentTwr();
     if (!(twr >= 1.0)) {
-      this.flash(`clamp holding: TWR ${twr.toFixed(2)}, throttle up`);
+      this.flash(clampHoldReason(this, twr, this.p.recoverKeyLabel ?? 'recover'));
       return false;
     }
     this.status = 'ASCENT';

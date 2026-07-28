@@ -27,7 +27,9 @@ export type Action =
   | 'research' | 'power' | 'equipment'
   // W9 FLIGHT. Board is the one context-sensitive verb (roll out / board /
   // disembark); everything else means exactly one thing and only while flying.
-  | 'board' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
+  // GP-74. `recover` is the way OUT: it takes the vessel off the world and
+  // gives the pad back, from on foot or from the cockpit.
+  | 'board' | 'recover' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
   | 'throttleCut' | 'pitchUp' | 'pitchDown' | 'yawLeft' | 'yawRight'
   | 'rollLeft' | 'rollRight' | 'sasToggle' | 'sasMode' | 'warpUp' | 'warpDown'
   // W12 MAP AND NODES. `map` is M because M is the map in KSP and Reid asked
@@ -114,6 +116,14 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // (2) Everything with no genre home takes a key from the free set, so nothing
   // already documented moves.
   board: ['KeyG'],
+  // GP-74. `Delete`, and it had to be a non-letter: every one of the 26 letter
+  // keys is already bound in this table, on foot or in a rocket or both, so
+  // there was no free letter left to take. Delete is also the right word for
+  // it. NOT `Backspace` as a second code, though a laptop without a Delete key
+  // is a real case: the bay carries a text input for design names and
+  // Backspace inside it means something else, and a key with two meanings one
+  // of which eats your typing is worse than a key some keyboards make awkward.
+  recover: ['Delete'],
   stage: ['Space', 'KeyN'],
   throttleUp: ['ShiftLeft', 'ShiftRight', 'KeyI'],
   throttleDown: ['KeyK'],
@@ -206,7 +216,7 @@ export const UI_ALLOWED: readonly Action[] =
  * would change nothing except to imply they might work.
  */
 export const MAP_ALLOWED: readonly Action[] = [
-  'map', 'board', 'stage',
+  'map', 'board', 'recover', 'stage',
   'throttleUp', 'throttleDown', 'throttleFull', 'throttleCut',
   'pitchUp', 'pitchDown', 'yawLeft', 'yawRight', 'rollLeft', 'rollRight',
   'sasToggle', 'sasMode', 'warpUp', 'warpDown',
