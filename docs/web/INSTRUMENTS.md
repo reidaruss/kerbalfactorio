@@ -290,3 +290,23 @@ is the tool declining to start.
 Standing rules 4, 7, 10, 11 and DW-7, DW-20 in
 [DECISIONS.md](DECISIONS.md). The commit-isolation technique that makes rule 10
 enforceable is in [NUMBERS.md](NUMBERS.md).
+
+## The published value froze, and only the instrument noticed
+
+`__ofPost.state().sun` **stops updating once the sun is below the horizon.**
+`ShadowRig.update` does `if (!this.active) continue` before moving the light,
+and `Frame.publishSun` derives from that light, so the published elevation holds
+its last daylight value forever. A probe read an identical `0.5486` for two
+genuinely different times of day.
+
+This is harmless where the post stack consumes it, because the contact march is
+gated on the same rig that stopped. **It is not harmless in an instrument**, and
+it is invisible precisely when you are testing the night case.
+
+Use `of.stats().sky.elevationDot`, which does not freeze.
+
+The general rule: **a value published for rendering is not automatically fit to
+measure with.** Rendering may legitimately stop maintaining something the moment
+it stops drawing it, and a value that is correct wherever it is *used* can still
+be frozen everywhere it is *read*. Before measuring with a published field, ask
+what stops updating it, and prove it moves across the case you are testing.
