@@ -43,7 +43,7 @@ export type Action =
   | 'sasNormal' | 'sasAntinormal' | 'sasRadialIn' | 'sasRadialOut' | 'sasNode'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
-  | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10';
+  | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10' | 'slot11';
 
 /**
  * Action -> the codes that fire it. `Mouse0` is the left button.
@@ -161,6 +161,11 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // a tenth buildable had nowhere to be held, and a buildable nothing can hold
   // is GP-56's failure class by construction.
   slot10: ['Digit0'],
+  // GP-86. The eleventh slot is the GUN, and it deliberately has no digit: the
+  // digit row is full at ten and a weapon on `F` is the convention every
+  // shooter has taught, so the muscle memory is already there. The wheel still
+  // reaches it because the wheel wraps, so the bar has no unreachable slot.
+  slot11: ['KeyF'],
 };
 
 /**

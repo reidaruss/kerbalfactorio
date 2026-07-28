@@ -25,11 +25,12 @@
 import { collectFrom, stepBuild } from './GameplayActions.js';
 import { openAimedMachine } from './MachineScreen.js';
 import { showGoals } from './Objectives.js';
+import { pullTrigger } from './Gunnery.js';
 import type { Gameplay } from './Gameplay.js';
 import { labelOf, type Action } from '../player/Bindings.js';
 
 const SLOT_ACTIONS: Action[] = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5',
-  'slot6', 'slot7', 'slot8', 'slot9', 'slot10'];
+  'slot6', 'slot7', 'slot8', 'slot9', 'slot10', 'slot11'];
 
 export class GameplayInput {
   private pack = false;
@@ -135,6 +136,16 @@ export class GameplayInput {
     const interactPressed = f.interact && !this.interact;
     this.interact = f.interact;
     if (interactPressed && this.doInteract(g)) return false;
+
+    // --- GP-86: THE GUN, and it is HELD rather than clicked ------------------
+    // Read before the bare-hand branch because a gun is not a hand: it neither
+    // swings nor opens a machine, and falling through to the swing is exactly
+    // how GP-61 found a bare-hand click cratering eleven voxel cells under the
+    // machine somebody was trying to use. `f.use` and not `usePressed`, because
+    // 400 rpm is automatic fire and the cadence is the weapon's own cooldown,
+    // which is the ONE authority on rate: a per-press gate here would be a
+    // second one and they would disagree the first time either was tuned.
+    if (g.hotbar.gunInHand) { g.interact.target = null; pullTrigger(g, f.use, ray); return false; }
 
     // --- the bare hand swings -----------------------------------------------
     // ONLY the hand swings. A player carrying a wall who clicks means the wall,

@@ -82,6 +82,12 @@ export function gameplayReport(g: Gameplay): unknown {
       // GP-79. The PLAYER's health, separate from the buildings' book because
       // they are different subjects: one is the base and one is you.
       vitals: g.vitals.report(),
+      // GP-86. THE GUN, with the four tells a shot has to produce counted
+      // SEPARATELY: a weapon that fires correctly and shows nothing is the
+      // failure the whole effects layer exists to prevent, and one combined
+      // counter cannot tell it from a weapon that did not fire.
+      gun: g.gun.report(),
+      shootables: g.shootables.length,
       autoCollected: g.autoCollected,
       fx: {
         ...(g.fx.report() as object),

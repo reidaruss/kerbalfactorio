@@ -46,6 +46,10 @@ export type SlotContent =
    *  placed by `Machines`, not by the factory plan, for the same reason GP-19
    *  kept the survival furnace out of the factory sim. */
   | { kind: 'furnace' }
+  /** GP-86: the gun. Its own kind rather than a `PartKind`, because it places
+   *  nothing and ticks nothing: what it changes is what the LEFT BUTTON DOES,
+   *  which is exactly the question this enum exists to answer (GP-26). */
+  | { kind: 'gun' }
   | { kind: 'empty' };
 
 /**
@@ -59,7 +63,11 @@ export type SlotContent =
  * therefore have been a researched, priced, placeable thing no key could hold,
  * which is GP-56's failure class by construction rather than by oversight.
  */
-export const SLOT_COUNT = 10;
+// GP-86 makes it ELEVEN, and the argument is GP-57's verbatim: the bar grows
+// because the game grows. A gun has no other home. It is not a `PartKind` so
+// `assignToBar`'s pack-click cannot reach it and the default bar is the only
+// route, which is precisely the case that made the tenth slot necessary.
+export const SLOT_COUNT = 11;
 
 /** Label and icon for every part, in one table so the HUD restates nothing. */
 export const PART_INFO: Record<PartKind, { label: string; iconName: string }> = {
@@ -96,6 +104,7 @@ export const DEFAULT_BAR: readonly SlotContent[] = [
   { kind: 'part', part: 'wall' },
   { kind: 'part', part: 'door' },
   { kind: 'part', part: 'launchpad' },
+  { kind: 'gun' },
 ];
 
 function isPart(k: string): k is PartKind {
@@ -124,6 +133,16 @@ export class Hotbar {
 
   /** True when the left button should swing a tool rather than place. */
   get handInHand(): boolean { return this.held.kind === 'hand'; }
+
+  /** GP-86. True when the left button should FIRE. Asked by name rather than
+   *  compared against a string at the call site, for the reason every other
+   *  getter here exists: a second `=== 'gun'` somewhere else is a second
+   *  authority on what is in the player's hands. */
+  get gunInHand(): boolean { return this.held.kind === 'gun'; }
+
+  /** The 0-based index of the gun slot, or -1. Derived rather than stored, so
+   *  the weapon key still finds it after the bar has been rearranged. */
+  get gunSlot(): number { return this.bar.findIndex((s) => s.kind === 'gun'); }
 
   get label(): string { return describe(this.held); }
 
@@ -244,6 +263,7 @@ function readSlot(v: unknown): SlotContent {
 function describe(s: SlotContent): string {
   if (s.kind === 'hand') return 'hands';
   if (s.kind === 'furnace') return 'furnace';
+  if (s.kind === 'gun') return 'sidearm';
   if (s.kind === 'empty') return '';
   return PART_INFO[s.part].label;
 }

@@ -51,6 +51,8 @@ import { gameplayReport } from './GameplayReport.js';
 import { HealthBook } from './Health.js';
 import { reconcile } from './HealthCensus.js';
 import { PlayerVitals } from './PlayerVitals.js';
+import { Gunnery } from './Gunnery.js';
+import type { Hittable } from './Weapon.js';
 import type { HurtSource } from './PlayerHealth.js';
 import { attachProgress, openMachinePanel, setPackPanel } from './GameplayChrome.js';
 import type { ProgressUi } from './ProgressUi.js';
@@ -128,6 +130,12 @@ export class Gameplay {
   readonly health = new HealthBook();
   readonly vitals = new PlayerVitals(() => this.mode.hostile);
   readonly hurtSources: HurtSource[] = [];
+  /** GP-86: the gun. Its rule, its pictures and its sound, composed in
+   *  Gunnery.ts so this file grows by lines rather than by responsibilities.
+   *  `shootables` is the target list, rebuilt by whoever owns the population
+   *  and passed per shot so it cannot go stale (see Weapon.fire). */
+  readonly gun = new Gunnery();
+  readonly shootables: Hittable[] = [];
   /** W11: the three screens that show what the player has EARNED, over
    *  research.h, power.h and progression.h. Built in `create` because the grid
    *  panel needs the factory's own network. */
@@ -253,6 +261,7 @@ export class Gameplay {
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
+    d.scene.add(g.gun.fx.group);
     d.scene.add(g.factoryView.group);
     // Browsers refuse audio until the player has interacted; the listener arms
     // itself on the first pointer or key event and then removes itself.
@@ -335,6 +344,7 @@ export class Gameplay {
     // tick rather than on an event, because an event is a thing a future call
     // site can forget to raise. HealthCensus.ts says why registering never heals.
     reconcile(this.health, this);
+    this.gun.step(1 / 60);
     this.vitals.step(1 / 60, this.hurtSources,
       { player: this.d.player, hud: this.hud });
     this.fx.watchSmelters(this.factory, this.game);
@@ -383,6 +393,16 @@ export class Gameplay {
       : this.pads.pick(ray.origin, ray.dir, 3.5);
   }
 
+  /** GP-86. What a round arriving DOES, as a named seam rather than an
+   *  absence: the enemy lane fills `shootables` and assigns this, and nothing
+   *  in the weapon path has to learn what an enemy is. Firing itself lives in
+   *  Gunnery.ts (`pullTrigger`), because this file is 95 lines over its cap. */
+  onShotHit: (ref: unknown, damage: number) => void = () => {};
+  /** The walker, for the two things outside this file that need its aim: the
+   *  trigger (Gunnery.pullTrigger) and nothing else yet. A getter rather than
+   *  making `d` public, so the surface stays one name wide. */
+  get walker(): Controller { return this.d.player; }
+
   /** The bare hand. Returns true on the tick a harvest granted items. */
   swing(use: boolean, tick: number,
         ray: { origin: { x: number; y: number; z: number } }): boolean {
@@ -419,6 +439,7 @@ export class Gameplay {
     this.pads.step(dt);
     this.padView.sync(this.pads);
     this.fx.update(dt, this.d.origin);
+    this.gun.fx.update(dt, this.d.origin);
     const eye = this.d.player.aimRay().origin;
     this.sfx.walk(dt, this.d.player.body.speedMps, this.d.player.body.grounded);
     this.fx.beds(this.factory, this.machines, eye, (base) =>

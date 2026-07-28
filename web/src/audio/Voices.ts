@@ -168,6 +168,62 @@ export const undo: Voice = (ctx, out, t, seq) => {
 };
 
 /** Every one-shot by name, so a probe can render the whole set generically. */
+/**
+ * THE SHOT (GP-86). A gun that silently decrements a number feels broken even
+ * when it is correct, and this is the cheapest half of not feeling broken.
+ *
+ * Three layers, because one is what a toy sounds like: a hard broadband CRACK
+ * that is almost all transient (this is the part the ear reads as "loud"), a
+ * short pitched THUMP that gives it a body and a calibre, and a filtered TAIL
+ * that decays over a quarter of a second and reads as the room answering. The
+ * tail is the layer people cannot name and always miss when it is gone.
+ *
+ * Detuned per shot from the sequence hash like every other voice here, so a
+ * held trigger is twenty slightly different reports rather than one sample
+ * retriggered, which is the clearest tell that a sound is canned.
+ */
+export const shot: Voice = (ctx, out, t, seq) => {
+  const dur = 0.26;
+  // 1. the crack: bandpassed noise with a 1 ms attack.
+  const cg = env(ctx, t, 0.34, 0.055, 0.001);
+  noise(ctx, t, 0.055)
+    .connect(band(ctx, 'bandpass', 2400 + jit(seq, 71) * 1600, 0.9))
+    .connect(cg).connect(out);
+  // 2. the body: a fast downward sweep, which is what gives a report a calibre.
+  const hz = 165 * (0.88 + jit(seq, 73) * 0.28);
+  const bg = env(ctx, t, 0.26, 0.13, 0.002);
+  const o = tone(ctx, 'square', hz, t, 0.13);
+  o.frequency.exponentialRampToValueAtTime(hz * 0.35, t + 0.13);
+  o.connect(bg).connect(out);
+  // 3. the tail: the layer nobody can name and everybody misses.
+  const tg = env(ctx, t + 0.02, 0.085, dur, 0.02);
+  noise(ctx, t + 0.02, dur)
+    .connect(band(ctx, 'lowpass', 780 + jit(seq, 79) * 340, 0.7))
+    .connect(tg).connect(out);
+  return dur;
+};
+
+/**
+ * A round ARRIVING, which is a different event from a round leaving and has to
+ * sound like one or the player cannot tell a hit from a miss with their ears.
+ *
+ * Deliberately short, dry and higher than `thunk`: a hit is information, not
+ * drama, and at a swarm's rate of fire anything with a tail turns into mud.
+ */
+export const impact: Voice = (ctx, out, t, seq) => {
+  const dur = 0.085;
+  const g = env(ctx, t, 0.20, dur, 0.001);
+  noise(ctx, t, dur)
+    .connect(band(ctx, 'bandpass', 3100 + jit(seq, 83) * 900, 2.2))
+    .connect(g).connect(out);
+  const hz = 420 * (0.9 + jit(seq, 89) * 0.3);
+  const tg = env(ctx, t, 0.10, 0.06, 0.001);
+  const o = tone(ctx, 'triangle', hz, t, 0.06);
+  o.frequency.exponentialRampToValueAtTime(hz * 0.5, t + 0.06);
+  o.connect(tg).connect(out);
+  return dur;
+};
+
 export const VOICES: Record<string, Voice> = {
-  thunk, crack, step, collapse, chime, confirm, undo,
+  thunk, crack, step, collapse, chime, confirm, undo, shot, impact,
 };
