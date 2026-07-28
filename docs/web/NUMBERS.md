@@ -142,3 +142,32 @@ rather than interrogating the checkout around it.
 
 Delete the scratch directory when done. A 24 MB build left behind is nothing;
 thirteen of them plus their Chrome profiles is not.
+
+### `npx vite build` SKIPS sync-wasm, so a frozen build can carry a stale wasm
+
+`npm run build` runs `prebuild` (`sync-wasm` then `sync-assets`). **`npx vite
+build` does not.** So a scratch build made the fast way keeps whatever
+`web/public/wasm` happened to hold.
+
+It bit a lane on 2026-07-28: another lane bumped the client to ABI 19 mid
+session, the lane's builds kept a wasm at 18, **a binary silently failed to
+boot, a `--out` screenshot never wrote, and it compared two images that were the
+same file**. Identical output from a changed input is the tell, and it paid off
+three times that night.
+
+This applies to Admin's frozen handover builds too. After archiving, copy the
+ARCHIVED `web/wasm/dist` into the build's `public/wasm` rather than copying the
+live checkout's `public/`, or run `sync-wasm` inside the scratch tree. Then
+confirm the handshake ABI in the boot log matches the source's
+`OF_ABI_VERSION`.
+
+### Scratch build directories: one per lane, named, and yours alone
+
+The disk reached **7.2 MB free of 931 GB** on 2026-07-28 from `dist-*`
+directories accumulating across every lane, and one lane deleted another lane's
+mid-run, which corrupts a measurement in a way that looks like a code defect.
+
+- One scratch directory per lane, named for the lane (`dist-<lane>`).
+- Delete it when the pass ends. Not "eventually".
+- **Never delete a directory you did not create.** If the disk is tight, say so
+  and let Admin arbitrate.
