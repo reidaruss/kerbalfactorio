@@ -26,7 +26,10 @@ export const PROP_MONO = 3;
 export const PART_INFO_WORDS = 34;
 export const STAGE_PERF_WORDS = 12;
 export const MASS_PROPS_WORDS = 15;
-export const TRANSFORM_WORDS = 8;
+/** ABI 20: nine, not eight. The ninth is `radialOffsetM` (0 for a part that is
+ *  not radially attached), appended so every existing index is unmoved. Shared
+ *  by `_of_vs_transforms` and `_of_fl_transforms`, which write the same row. */
+export const TRANSFORM_WORDS = 9;
 export const PART_ROW_WORDS = 5;
 export const FLIGHT_STATE_WORDS = 17;
 export const TELEMETRY_WORDS = 12;
@@ -75,7 +78,8 @@ export interface VesselAbi {
    *  [handle, partId, parentHandle (-1 = root), attach, stage]. */
   _of_vs_parts(v: number): number;
   /** f64 scratch, TRANSFORM_WORDS per part, SAME row order as _of_vs_parts:
-   *  [oX,oY,oZ, cX,cY,cZ, radialAngleRad, propellantKg]. */
+   *  [oX,oY,oZ, cX,cY,cZ, radialAngleRad, propellantKg, radialOffsetM].
+   *  ABI 20 appended word 8; it is 0 unless attach === ATTACH_RADIAL. */
   _of_vs_transforms(v: number): number;
   _of_vs_length(v: number): number;
   /** ONE part. stage < 0 means kNeverDecoupled (payload). What a restore uses. */

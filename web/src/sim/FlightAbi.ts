@@ -42,6 +42,8 @@ export interface OrbitRow {
 export interface FlightPartRow {
   handle: number; partId: number; parent: number; attach: number; stage: number;
   originM: Vec3; radialAngleRad: number; propellantKg: number;
+  /** ABI 20, word 8. 0 unless `attach` is ATTACH_RADIAL. */
+  radialOffsetM: number;
 }
 
 /** SasMode, flight.h §5. DW-30 item 2 ships Hold and the prograde holds. */
@@ -135,6 +137,7 @@ export function flightParts(M: OfCoreModule, f: number): FlightPartRow[] {
       attach: rows[r + 3] ?? 0, stage: rows[r + 4] ?? 0,
       originM: [t[q] ?? 0, t[q + 1] ?? 0, t[q + 2] ?? 0],
       radialAngleRad: t[q + 6] ?? 0, propellantKg: t[q + 7] ?? 0,
+      radialOffsetM: t[q + 8] ?? 0,
     });
   }
   return out;

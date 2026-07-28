@@ -130,6 +130,40 @@ enum class Attach : uint8_t {
   Radial,        // this part clings to the parent's side
 };
 
+// WHAT A RADIAL PART'S ORIGIN MEANS. PH-81.
+//
+// Two conventions are in the shipped art and both are correct for the part that
+// uses them, so this is DECLARED per part rather than inferred:
+//
+//   MountPlane  the origin is the part's INBOARD mount face and the body
+//               extends outward from it. ASSET-SPECS §3.3 publishes
+//               `socket_radial_mount` at local (0,0,0) for exactly these.
+//               A fin, a solar panel, an RCS block, a landing leg, a vernier
+//               and the radial decoupler are all authored this way.
+//
+//   Axis        the origin is the part's OWN AXIS, because the same mesh must
+//               also serve stack mounting, where the origin is the bottom
+//               mating plane ON the axis. ASSET-SPECS §3.3 publishes
+//               `socket_radial_attach` at (-R, h/2, 0) for these: a point on
+//               the part's own hull, facing inboard. The Solid Booster is the
+//               shipped example and the reason this enum exists.
+//
+// DO NOT DERIVE THIS FROM THE MESH, THE PART CLASS, OR WHETHER THE PART ALSO
+// STACKS. The Solid Booster is a stack part, an engine, and a radial part all
+// at once; every derivation anybody tried got one of the six radial parts
+// wrong. It is a declaration because a declaration is a question the compiler
+// can force somebody to answer (see PartDef's constructor), and a derivation
+// rots the first time an asset breaks the pattern.
+//
+// The defect this closes, measured: a Solid Booster strapped to a 1.25 m core
+// had its axis at r = 0.775 m with its own radius 0.625 m, so its inboard face
+// sat 0.15 m INSIDE a 0.625 m hull. 0.475 m of interpenetrating cylinders,
+// visible in the assembly bay (docs/screenshots/GP150_radial_sink.png).
+enum class RadialOrigin : uint8_t {
+  MountPlane = 0,
+  Axis,
+};
+
 using PartHandle = uint32_t;
 static constexpr PartHandle kNoHandle = 0xFFFFFFFFu;
 
@@ -145,6 +179,21 @@ static constexpr int kNeverDecoupled = 0x7FFFFFFF;
 // reference area genuinely cannot express a rocket, and that is not a detail).
 // =============================================================================
 struct PartDef {
+  // THE ONE REQUIRED FIELD, and it is required by being the only constructor
+  // parameter. There is no default constructor and `radialOrigin` has no
+  // in-class initialiser, so `PartDef d;` DOES NOT COMPILE and every authored
+  // row in §3 has to state which convention its mesh uses. That is the point:
+  // a defaulted field would have let the Solid Booster keep the wrong answer
+  // silently, which is exactly what happened for the whole life of §3 so far.
+  explicit PartDef(RadialOrigin ro) : radialOrigin(ro) {}
+  PartDef() = delete;
+
+  /** Does this part's origin mean its inboard mount plane, or its own axis?
+   *  Read ONLY when the part is attached with Attach::Radial; a part that
+   *  never straps on still has to declare it, because the day it grows a
+   *  radial mount is the day nobody remembers to come back here. */
+  RadialOrigin radialOrigin;
+
   PartId id = kNoPart;
   const char* name = "";        // display name
   const char* asset = "";       // the glb node name, EXACTLY (ASSET-SPECS §3.3)
@@ -278,7 +327,7 @@ class PartCatalogue {
     // ---- Tier 1 -----------------------------------------------------------
     {  // Command pod. Crew 1, carries the vessel's baseline reaction torque and
        // 40 kg of monopropellant, which is INERT to a liquid-engine delta-v sum.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::CommandPod; d.name = "Command Pod Mk1"; d.asset = "CommandPod";
       d.cls = PartClass::Pod;
       d.diameterM = 1.25; d.heightM = 2.50; d.nodeTop = true; d.nodeBottom = true;
@@ -294,7 +343,7 @@ class PartCatalogue {
     }
     {  // Small liquid tank. 1.25 x 2.00 m = 2.454 m^3 -> 2150 kg at ~876 kg/m^3,
        // a realistic bulk propellant density, and a 10:1 wet/dry ratio.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::TankLiquidSmall; d.name = "Fuel Tank (small)"; d.asset = "LiquidTankSmall";
       d.cls = PartClass::Tank;
       d.diameterM = 1.25; d.heightM = 2.00; d.nodeTop = true; d.nodeBottom = true;
@@ -306,7 +355,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Large liquid tank: exactly twice the small one, same 1.25 m diameter.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::TankLiquidSmallLong; d.name = "Fuel Tank (large)"; d.asset = "LiquidTankSmallLong";
       d.cls = PartClass::Tank;
       d.diameterM = 1.25; d.heightM = 4.00; d.nodeTop = true; d.nodeBottom = true;
@@ -319,7 +368,7 @@ class PartCatalogue {
     }
     {  // Main engine: sea-level bell, the one that gets you off the pad.
        // 160/264 == 200/330 == 20/33 exactly -> mdot 61.8010 kg/s at any altitude.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::EngineLiquidSmall; d.name = "Main Engine"; d.asset = "LiquidEngineSmall";
       d.cls = PartClass::Engine;
       d.diameterM = 1.25; d.heightM = 1.60; d.nodeTop = true; d.nodeBottom = false;
@@ -336,7 +385,7 @@ class PartCatalogue {
     }
     {  // Small engine: vacuum bell, the one that circularises.
        // 30/180 == 60/360 == 0.166666...  -> mdot 16.9953 kg/s at any altitude.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::EngineVacuumSmall; d.name = "Vacuum Engine"; d.asset = "LiquidEngineVacuumSmall";
       d.cls = PartClass::Engine;
       d.diameterM = 1.25; d.heightM = 1.00; d.nodeTop = true; d.nodeBottom = false;
@@ -355,7 +404,7 @@ class PartCatalogue {
        // its own tank, and its SolidFuel can never be transferred out, which is
        // what makes "light it and live with it" a real decision.
        // 250/190 == 280/212.8 -> mdot 134.1 kg/s.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::SolidBooster; d.name = "Solid Booster"; d.asset = "SolidBooster";
       d.cls = PartClass::Engine;
       d.diameterM = kStackDiameterS; d.heightM = 6.00;
@@ -377,7 +426,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Stack decoupler. Severs its link to its PARENT (§6).
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::DecouplerStackSmall; d.name = "Stack Decoupler"; d.asset = "StackDecouplerSmall";
       d.cls = PartClass::Decoupler;
       d.diameterM = 1.25; d.heightM = 0.25; d.nodeTop = true; d.nodeBottom = true;
@@ -388,7 +437,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Radial decoupler: what a strap-on booster hangs from.
-      PartDef d;
+      PartDef d(RadialOrigin::MountPlane);
       d.id = parts::DecouplerRadial; d.name = "Radial Decoupler"; d.asset = "DecouplerRadial";
       d.cls = PartClass::Decoupler;
       d.diameterM = 0.30; d.heightM = 0.40; d.radialMount = true;
@@ -402,7 +451,7 @@ class PartCatalogue {
        // axial Cd. It also sits at the very front, so it drags the centre of
        // pressure forward: nose cones make a rocket prettier and less stable,
        // which is exactly the trade a player should be able to feel.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::NoseCone; d.name = "Nose Cone"; d.asset = "NoseCone";
       d.cls = PartClass::Aero;
       d.diameterM = 1.25; d.heightM = 1.20; d.nodeTop = false; d.nodeBottom = true;
@@ -414,7 +463,7 @@ class PartCatalogue {
     }
     {  // Landing leg. 2.13 m of drop is the art lane's measured reach, sized so
        // the feet touch before a 1.60 m engine bell does (ASSET-SPECS §3.3).
-      PartDef d;
+      PartDef d(RadialOrigin::MountPlane);
       d.id = parts::LandingLeg; d.name = "Landing Leg"; d.asset = "LandingLeg";
       d.cls = PartClass::Utility;
       d.diameterM = 0.48; d.heightM = 0.42; d.radialMount = true;
@@ -425,7 +474,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Parachute.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::Parachute; d.name = "Parachute"; d.asset = "Parachute";
       d.cls = PartClass::Utility;
       d.diameterM = 1.25; d.heightM = 0.75; d.nodeTop = true; d.nodeBottom = true;
@@ -437,7 +486,7 @@ class PartCatalogue {
     }
     {  // Fin. Almost no axial area, a lot of normal area, and it goes at the
        // BOTTOM: that combination is the whole of static stability.
-      PartDef d;
+      PartDef d(RadialOrigin::MountPlane);
       d.id = parts::Fin; d.name = "Aero Fin"; d.asset = "Fin";
       d.cls = PartClass::Aero;
       d.diameterM = 0.10; d.heightM = 1.10; d.radialMount = true;
@@ -448,7 +497,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Cargo bay.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::CargoBay; d.name = "Cargo Bay"; d.asset = "CargoBay";
       d.cls = PartClass::Structural;
       d.diameterM = 1.25; d.heightM = 1.60; d.nodeTop = true; d.nodeBottom = true;
@@ -462,7 +511,7 @@ class PartCatalogue {
     // ---- Tier 2 -----------------------------------------------------------
     {  // RCS block: four nozzles, monopropellant, the vacuum authority that
        // makes stability assist cost something (DW-30 item 2).
-      PartDef d;
+      PartDef d(RadialOrigin::MountPlane);
       d.id = parts::RcsBlock; d.name = "RCS Block"; d.asset = "RcsBlock";
       d.cls = PartClass::Control;
       d.diameterM = 0.50; d.heightM = 0.50; d.radialMount = true;
@@ -475,7 +524,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Monopropellant tank.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::TankMonoprop; d.name = "Monopropellant Tank"; d.asset = "MonopropTank";
       d.cls = PartClass::Tank;
       d.diameterM = 1.25; d.heightM = 1.00; d.nodeTop = true; d.nodeBottom = true;
@@ -487,7 +536,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Reaction wheel: torque with no propellant, paid for in electricity.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::ReactionWheel; d.name = "Reaction Wheel"; d.asset = "ReactionWheel";
       d.cls = PartClass::Control;
       d.diameterM = 1.25; d.heightM = 0.40; d.nodeTop = true; d.nodeBottom = true;
@@ -499,7 +548,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Battery.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::Battery; d.name = "Battery"; d.asset = "Battery";
       d.cls = PartClass::Power;
       d.diameterM = 1.25; d.heightM = 0.60; d.nodeTop = true; d.nodeBottom = true;
@@ -511,7 +560,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Solar panel. Deploys (Solar_Deploy clip already ships).
-      PartDef d;
+      PartDef d(RadialOrigin::MountPlane);
       d.id = parts::SolarPanel; d.name = "Solar Panel"; d.asset = "SolarPanel";
       d.cls = PartClass::Power;
       d.diameterM = 0.44; d.heightM = 0.30; d.radialMount = true;
@@ -523,7 +572,7 @@ class PartCatalogue {
     }
     {  // Docking port. DW-30 item 5: the capture cone is WIDE on purpose. The
        // numbers are carried as data here; the docking LOGIC is not built.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::DockingPort; d.name = "Docking Port"; d.asset = "DockingPort";
       d.cls = PartClass::Docking;
       d.diameterM = 1.25; d.heightM = 0.30; d.nodeTop = true; d.nodeBottom = true;
@@ -538,7 +587,7 @@ class PartCatalogue {
     // ---- Class L: 2.50 m across, exactly twice class S. -------------------
     {  // Large liquid tank: four times the cross-section, so four times the
        // propellant of the 4 m class-S tank at the same length.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::TankLiquidLarge; d.name = "Fuel Tank (large)"; d.asset = "LiquidTankLarge";
       d.cls = PartClass::Tank;
       d.diameterM = kStackDiameterL; d.heightM = 4.00;
@@ -551,7 +600,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Large main engine. 640/264 == 800/330 == 80/33 -> mdot 247.20 kg/s.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::EngineLiquidLarge; d.name = "Main Engine (large)"; d.asset = "LiquidEngineLarge";
       d.cls = PartClass::Engine;
       d.diameterM = kStackDiameterL; d.heightM = 2.60;
@@ -568,7 +617,7 @@ class PartCatalogue {
       defs_.push_back(d);
     }
     {  // Large stack decoupler.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::DecouplerStackLarge; d.name = "Stack Decoupler (large)";
       d.asset = "StackDecouplerLarge";
       d.cls = PartClass::Decoupler;
@@ -583,7 +632,7 @@ class PartCatalogue {
     {  // The only part whose two ends are different classes: class L below,
        // class S above. `diameterM` is its LARGE end; a builder that needs the
        // small one reads kStackDiameterS.
-      PartDef d;
+      PartDef d(RadialOrigin::Axis);
       d.id = parts::StackAdapter; d.name = "Stack Adapter"; d.asset = "StackAdapter";
       d.cls = PartClass::Structural;
       d.diameterM = kStackDiameterL; d.heightM = 1.00;
@@ -596,7 +645,7 @@ class PartCatalogue {
     }
     {  // Vernier: a small radial liquid engine for fine control.
        // 16/250 == 20/312.5 -> mdot 6.5262 kg/s.
-      PartDef d;
+      PartDef d(RadialOrigin::MountPlane);
       d.id = parts::EngineVernier; d.name = "Vernier Engine"; d.asset = "EngineVernier";
       d.cls = PartClass::Engine;
       d.diameterM = 0.28; d.heightM = 0.43; d.radialMount = true;
@@ -724,7 +773,10 @@ class Vessel {
   }
   const PartDef& def(const PartInstance& p) const {
     const PartDef* d = catalogue().get(p.def);
-    static const PartDef kEmpty;
+    // The unresolvable-part fallback. MountPlane is the conservative answer:
+    // it is what every radial part did before PH-81, so a part id that does not
+    // resolve cannot make the layout move.
+    static const PartDef kEmpty(RadialOrigin::MountPlane);
     return d ? *d : kEmpty;
   }
   PartHandle root() const {
@@ -826,7 +878,23 @@ class Vessel {
         // stack part's origin is its own bottom plane, so drop by its height.
         return Vec3{parent.originM.x, parent.originM.y - cd.heightM, parent.originM.z};
       case Attach::Radial: {
-        const double R = pd.diameterM * 0.5;
+        // PH-81. HOW FAR OUT THE CHILD'S ORIGIN GOES DEPENDS ON WHAT THE
+        // CHILD'S ORIGIN MEANS, and that is declared, not inferred (see
+        // RadialOrigin in §1).
+        //
+        //   MountPlane  the origin IS the inboard face, so it belongs exactly
+        //               on the parent's hull. Unchanged, bit for bit: this is
+        //               what a fin, a solar panel, an RCS block, a landing leg,
+        //               a vernier and a radial decoupler have always done and
+        //               none of them was broken.
+        //
+        //   Axis        the origin is the child's own centreline, so putting it
+        //               on the parent's hull buries half the child INSIDE the
+        //               parent. Pushed out by the child's own radius as well,
+        //               which puts the two hulls exactly in contact.
+        const double R = (cd.radialOrigin == RadialOrigin::Axis)
+                             ? pd.diameterM * 0.5 + cd.diameterM * 0.5
+                             : pd.diameterM * 0.5;
         return Vec3{parent.originM.x + R * std::cos(child.radialAngleRad),
                     parent.originM.y + child.radialOffsetM,
                     parent.originM.z + R * std::sin(child.radialAngleRad)};
@@ -840,11 +908,22 @@ class Vessel {
   Vec3 centroidOf(const PartInstance& p, const Vec3& origin) const {
     const PartDef& d = def(p);
     if (p.attach == Attach::Radial) {
-      // Origin is on the mount plane; the body extends outward and spans its
-      // own height about that plane. Treat the centroid as half a height up and
-      // half a "diameter" outboard along the radial direction.
+      // PH-81. THIS BRANCHES TOO, and getting it wrong moves the centre of mass
+      // and every mass property downstream of it.
+      //
+      //   MountPlane  origin is on the inboard face and the body extends
+      //               outward, so the centroid is offset outboard. Unchanged.
+      //   Axis        origin is ALREADY the centreline, so the centroid is ON
+      //               it. Offsetting it outward would double-count the same
+      //               radius `originFrom` has just added and hang the mass half
+      //               a diameter off the part.
+      //
+      // Both cases span the part's own height about its origin the same way,
+      // because a radially carried stack part's origin is still its bottom
+      // mating plane in Y.
       const double c = std::cos(p.radialAngleRad), s = std::sin(p.radialAngleRad);
-      const double out = d.diameterM * 0.5;
+      const double out =
+          (d.radialOrigin == RadialOrigin::Axis) ? 0.0 : d.diameterM * 0.5;
       return Vec3{origin.x + out * c, origin.y + d.heightM * 0.5, origin.z + out * s};
     }
     return Vec3{origin.x, origin.y + d.heightM * 0.5, origin.z};

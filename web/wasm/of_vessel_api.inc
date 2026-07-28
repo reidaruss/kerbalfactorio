@@ -341,15 +341,26 @@ OF_API int of_vs_parts(int v) {
   return static_cast<int>(p->parts.size());
 }
 
-// f64 scratch, 8 per part, SAME ROW ORDER as of_vs_parts:
+// f64 scratch, 9 per part, SAME ROW ORDER as of_vs_parts:
 //   [originX, originY, originZ, centroidX, centroidY, centroidZ,
-//    radialAngleRad, propellantKg]
+//    radialAngleRad, propellantKg, radialOffsetM]
 // origin is the part's own bottom mating plane (stack) or mount plane (radial)
 // in the vessel body frame, +Y toward the nose: exactly the frame the glb is
 // authored in, so a renderer needs no convention translation.
+//
+// ABI 20: `radialOffsetM` IS THE NINTH WORD, appended rather than inserted so
+// every existing index is unmoved. Radial placement is TWO numbers, the angle
+// around the parent and the height up it, and this row published one of them.
+// `VesselDesign.toJson` therefore re-derived the height by subtracting the two
+// origins, which is exact (nothing else touches that axis) but leaves the row
+// one field short of describing a part: a reader with the row alone could not
+// say where a radial part was mounted without also holding its parent's row.
+// PH-81 also makes the outward distance depend on the CHILD's declared
+// convention, so the subtraction trick is no longer the only thing a caller
+// might want and the input belongs in the output.
 OF_API int of_vs_transforms(int v) {
   vs::Vessel* p = g_vessels.get(v);
-  resetF64(p ? p->parts.size() * 8 : 0);
+  resetF64(p ? p->parts.size() * 9 : 0);
   if (!p) return 0;
   p->layout();
   for (const auto& q : p->parts) {
@@ -358,6 +369,9 @@ OF_API int of_vs_transforms(int v) {
     g_f64.push_back(q.centroidM.y); g_f64.push_back(q.centroidM.z);
     g_f64.push_back(q.radialAngleRad);
     g_f64.push_back(q.propellantKg);
+    // Zero for anything not radially attached, matching the field's own
+    // "ignored unless attach == Attach::Radial" contract in vessel.h §4.
+    g_f64.push_back(q.attach == vs::Attach::Radial ? q.radialOffsetM : 0.0);
   }
   return static_cast<int>(p->parts.size());
 }

@@ -252,9 +252,13 @@ OF_API int of_fl_parts(int f) {
   return static_cast<int>(s->craft.parts.size());
 }
 
+// ABI 20: NINE words per part, not eight, and the ninth is `radialOffsetM`.
+// This row and `of_vs_transforms`'s are ONE format sharing ONE client constant
+// (vesselabi.ts TRANSFORM_WORDS), so widening one and not the other would not
+// be a smaller change, it would be a misaligned read in the flight lane.
 OF_API int of_fl_transforms(int f) {
   fl::FlightSim* s = g_flights.get(f);
-  resetF64(s ? s->craft.parts.size() * 8 : 0);
+  resetF64(s ? s->craft.parts.size() * 9 : 0);
   if (!s) return 0;
   s->craft.layout();
   for (const auto& q : s->craft.parts) {
@@ -263,6 +267,7 @@ OF_API int of_fl_transforms(int f) {
     g_f64.push_back(q.centroidM.y); g_f64.push_back(q.centroidM.z);
     g_f64.push_back(q.radialAngleRad);
     g_f64.push_back(q.propellantKg);
+    g_f64.push_back(q.attach == vs::Attach::Radial ? q.radialOffsetM : 0.0);
   }
   return static_cast<int>(s->craft.parts.size());
 }

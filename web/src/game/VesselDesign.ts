@@ -23,6 +23,12 @@ export interface DesignPart {
   centroidM: [number, number, number];
   radialAngleRad: number;
   propellantKg: number;
+  /** ABI 20: the height up the parent at which a radial mount sits, straight
+   *  from /core rather than re-derived. 0 unless `attach` is ATTACH_RADIAL.
+   *  ADDITIVE: `toJson` still re-derives its `off` from the two origins (see
+   *  the GP-142 note there), because that derivation is exact and is what the
+   *  reroot path is currently tested against. */
+  radialOffsetM: number;
 }
 
 export interface StageRow {
@@ -193,6 +199,7 @@ export class VesselDesign {
         originM: [tr[o] ?? 0, tr[o + 1] ?? 0, tr[o + 2] ?? 0],
         centroidM: [tr[o + 3] ?? 0, tr[o + 4] ?? 0, tr[o + 5] ?? 0],
         radialAngleRad: tr[o + 6] ?? 0, propellantKg: tr[o + 7] ?? 0,
+        radialOffsetM: tr[o + 8] ?? 0,
       });
     }
     this.parts = parts;

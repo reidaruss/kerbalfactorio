@@ -394,7 +394,27 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       and no code path from a container to `recordProduced`. Driven proof in
 //       container_tests: a drill fills a chest with 221 units through a belt and
 //       `producedCountOf(ore)` equals the 241 MINED, not 241 plus 221.
-OF_API int of_abi_version(void) { return 19; }
+//  20: A RADIAL PART'S ORIGIN IS A DECLARED PROPERTY, NOT AN ASSUMPTION
+//       (PH-81, vessel.h §1 RadialOrigin). TWO items, one bump.
+//       (a) `PartDef` gained a REQUIRED `radialOrigin`, and required means it is
+//       the only constructor parameter and the struct has no default
+//       constructor, so every authored row had to answer. MountPlane means the
+//       origin is the part's inboard mount face and the body extends outward
+//       (fin, solar panel, RCS block, landing leg, vernier, radial decoupler);
+//       Axis means the origin is the part's own centreline, because the same
+//       mesh must also serve stack mounting (the Solid Booster, and every part
+//       that only stacks). `originFrom` and `centroidOf` branch on it.
+//       WHY IT COULD NOT BE DERIVED: the Solid Booster is a stack part, an
+//       engine, and a radial part at once, so no rule about kind or mesh
+//       separates it from the fin. Measured defect it closes: a booster strapped
+//       to a 1.25 m core sat with its axis at r = 0.775 m carrying its own
+//       0.625 m radius, i.e. 0.475 m of hull inside the core's hull.
+//       (b) `of_vs_transforms` and `of_fl_transforms` are NINE doubles per part,
+//       not eight. The ninth is `radialOffsetM`, appended so no existing index
+//       moves. Radial placement is two numbers and the row published one; the
+//       client re-derived the other by subtracting two origins, which was exact
+//       and left the row unable to describe a part on its own.
+OF_API int of_abi_version(void) { return 20; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the

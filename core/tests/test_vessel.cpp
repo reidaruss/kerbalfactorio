@@ -199,6 +199,134 @@ TEST(tree_layout_follows_the_art_stack_contract) {
 }
 
 // =============================================================================
+// PH-81. A RADIAL PART'S ORIGIN MEANS WHAT ITS PartDef SAYS IT MEANS.
+//
+// The two conventions, side by side on the SAME host, so the difference is the
+// declaration and nothing else. The mount-plane numbers here are the ones that
+// were already true before PH-81 and they are asserted to 1e-12, because the
+// fin and the solar panel were never what was broken and a fix that moved them
+// would be a second defect wearing the first one's clothes.
+// =============================================================================
+TEST(radial_origin_is_declared_not_assumed) {
+  const PartCatalogue& c = catalogue();
+
+  // The declaration itself, read off the catalogue. These six are the parts
+  // ASSET-SPECS §3.3 authors with `socket_radial_mount` at local (0,0,0).
+  const PartId mountPlane[] = {parts::Fin, parts::SolarPanel, parts::RcsBlock,
+                               parts::LandingLeg, parts::EngineVernier,
+                               parts::DecouplerRadial};
+  for (PartId id : mountPlane)
+    CHECK(c.get(id)->radialOrigin == RadialOrigin::MountPlane);
+  // The Solid Booster is the one shipped part that straps on AND stacks, so its
+  // mesh is authored around its own axis: ASSET-SPECS §3.3 gives it
+  // `socket_radial_attach (-0.625, 3.00, 0)`, a point on its OWN hull.
+  CHECK(c.get(parts::SolidBooster)->radialOrigin == RadialOrigin::Axis);
+  // Nothing is left unanswered: the field has no default, so this is really an
+  // assertion that the enum only has two values and both are used on purpose.
+  int axis = 0, plane = 0;
+  for (const PartDef& d : c.all()) {
+    if (d.radialOrigin == RadialOrigin::Axis) ++axis; else ++plane;
+  }
+  CHECK(axis == 18);
+  CHECK(plane == 6);
+
+  // --- the geometry, on one 1.25 m host ------------------------------------
+  Vessel v;
+  const PartHandle tank = v.addRoot(parts::TankLiquidSmallLong);   // R = 0.625
+  const PartHandle fin = v.attach(tank, parts::Fin, Attach::Radial, 0.0, 0.15);
+  const PartHandle srb =
+      v.attach(tank, parts::SolidBooster, Attach::Radial, 0.0, 0.0);
+  v.layout();
+
+  const double hostR = c.get(parts::TankLiquidSmallLong)->diameterM * 0.5;
+  CHECK_NEAR(hostR, 0.625, 1e-12);
+
+  // MOUNT PLANE: the origin lands EXACTLY on the host hull. Bit-identical to
+  // the pre-PH-81 behaviour, which is the whole point of the branch.
+  CHECK_NEAR(v.find(fin)->originM.x, 0.625, 1e-12);
+  CHECK_NEAR(v.find(fin)->originM.z, 0.0, 1e-12);
+  CHECK_NEAR(v.find(fin)->originM.y, 0.15, 1e-12);
+  // and its centroid is still offset OUTBOARD by half its own "diameter".
+  CHECK_NEAR(v.find(fin)->centroidM.x,
+             0.625 + c.get(parts::Fin)->diameterM * 0.5, 1e-12);
+
+  // AXIS: the origin IS the booster's centreline, so it is pushed out by its
+  // own radius as well and the two hulls touch instead of intersecting.
+  const double srbR = c.get(parts::SolidBooster)->diameterM * 0.5;
+  CHECK_NEAR(srbR, 0.625, 1e-12);
+  const PartInstance* b = v.find(srb);
+  const double axisR = std::sqrt(b->originM.x * b->originM.x +
+                                 b->originM.z * b->originM.z);
+  CHECK_NEAR(axisR, hostR + srbR, 1e-12);
+  CHECK_NEAR(axisR, 1.25, 1e-12);
+  // THE ASSERTION THE DEFECT FAILS. Gap between the two hulls, along the
+  // outward normal: exactly zero for a flush strap-on, and NEVER negative.
+  // Before PH-81 `originFrom` used only the host radius, so this read
+  // 0.625 - 0.625 - 0.625 = -0.625 m of interpenetration on a direct strap
+  // and -0.475 m through the 0.30 m radial decoupler.
+  const double gap = axisR - hostR - srbR;
+  CHECK(gap >= 0.0);
+  CHECK_NEAR(gap, 0.0, 1e-12);
+  // Its centroid is ON the axis, not offset outboard again. Getting this wrong
+  // would put the booster's mass half a diameter beyond its own hull.
+  CHECK_NEAR(b->centroidM.x, b->originM.x, 1e-12);
+  CHECK_NEAR(b->centroidM.z, b->originM.z, 1e-12);
+  CHECK_NEAR(b->centroidM.y,
+             b->originM.y + c.get(parts::SolidBooster)->heightM * 0.5, 1e-12);
+}
+
+// =============================================================================
+// The same rule through a PYLON, which is how a booster is actually strapped
+// on, and the case the assembly bay draws.
+// =============================================================================
+TEST(a_strap_on_booster_never_intersects_its_host) {
+  const PartCatalogue& c = catalogue();
+  Vessel v;
+  const PartHandle tank = v.addRoot(parts::TankLiquidSmallLong);
+  const PartHandle pylon =
+      v.attach(tank, parts::DecouplerRadial, Attach::Radial, 0.0, 2.0);
+  const PartHandle srb =
+      v.attach(pylon, parts::SolidBooster, Attach::Radial, 0.0, 0.0);
+  v.layout();
+
+  const double hostR = c.get(parts::TankLiquidSmallLong)->diameterM * 0.5;
+  const double srbR = c.get(parts::SolidBooster)->diameterM * 0.5;
+  const PartInstance* p = v.find(pylon);
+  const PartInstance* b = v.find(srb);
+
+  // The pylon is MountPlane, so its origin is on the host hull. Unchanged.
+  CHECK_NEAR(p->originM.x, hostR, 1e-12);
+  CHECK_NEAR(p->originM.y, 2.0, 1e-12);
+
+  // The booster is Axis, so it clears the pylon's own origin by its own radius.
+  const double axisR = std::sqrt(b->originM.x * b->originM.x +
+                                 b->originM.z * b->originM.z);
+  const double pylonHalf = c.get(parts::DecouplerRadial)->diameterM * 0.5;
+  CHECK_NEAR(axisR, hostR + pylonHalf + srbR, 1e-12);
+  CHECK_NEAR(axisR, 1.40, 1e-12);
+  // NO INTERPENETRATION, which is the claim. It read -0.475 m before PH-81.
+  CHECK(axisR - hostR - srbR >= 0.0);
+  CHECK_NEAR(axisR - hostR - srbR, 0.15, 1e-12);
+  // The booster rides at the pylon's height, not the host's base.
+  CHECK_NEAR(b->originM.y, 2.0, 1e-12);
+
+  // Two symmetric boosters still put no lateral offset into the centre of mass.
+  //
+  // NOTE, because it is a trap and the shipped bay already avoids it: a radial
+  // child carries its OWN angle about the VESSEL axis, not one inherited from
+  // its pylon (`originFrom` reads `child.radialAngleRad`). So the booster on
+  // the pi-side pylon must itself be authored at pi, which is exactly what
+  // `VesselNodes`'s pylon node publishes.
+  const PartHandle pylon2 =
+      v.attach(tank, parts::DecouplerRadial, Attach::Radial, orbital::kPi, 2.0);
+  v.attach(pylon2, parts::SolidBooster, Attach::Radial, orbital::kPi, 0.0);
+  v.layout();
+  const MassProperties mp = massProperties(v);
+  CHECK_NEAR(mp.comM.x, 0.0, 1e-9);
+  CHECK_NEAR(mp.comM.z, 0.0, 1e-9);
+}
+
+// =============================================================================
 TEST(mass_properties_match_the_authored_parts) {
   Ascender a = makeAscender();
   const MassProperties mp = massProperties(a.v);

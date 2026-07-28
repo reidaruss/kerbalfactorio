@@ -92,7 +92,16 @@ import type { OfCoreModule } from './heap.js';
 // as a pass-through machine because `producedCountOf` is a lifetime production
 // tally, so a box passing 500 iron along would have reported manufacturing 500
 // iron. Here that is impossible by construction rather than by rule.
-export const OF_ABI_VERSION = 19;
+// ABI 20 (2026-07-28): A RADIAL PART'S ORIGIN IS A DECLARED PROPERTY (PH-81).
+// `PartDef` gained a REQUIRED `radialOrigin`: MountPlane (the origin is the
+// inboard mount face, body outward: fin, solar panel, RCS, leg, vernier, radial
+// decoupler) or Axis (the origin is the part's own centreline, because the same
+// mesh also serves stack mounting: the Solid Booster). `vessel.h::originFrom`
+// and `centroidOf` branch on the declaration instead of assuming mount-plane
+// semantics, which is what buried half a strap-on booster inside a 1.25 m core.
+// Same bump: `of_vs_transforms` / `of_fl_transforms` are NINE doubles per part,
+// the ninth being `radialOffsetM`, appended so no existing index moves.
+export const OF_ABI_VERSION = 20;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

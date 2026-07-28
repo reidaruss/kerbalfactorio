@@ -50,6 +50,10 @@ export function vabReport(v: Vab): unknown {
     parts: v.design.parts.map((p) => ({
       handle: p.handle, partId: p.partId, parent: p.parent,
       attach: p.attach, stage: p.stage, origin: p.originM,
+      // ABI 20 (PH-81). ADDITIVE. The height up the parent at which a radial
+      // mount sits, published by `of_vs_transforms` rather than re-derived from
+      // two origins, so a probe can read a radial placement off one row.
+      radialOffsetM: p.radialOffsetM,
     })),
     stages: v.design.stages, stats: v.design.stats,
     designs: store.listDesigns(),
