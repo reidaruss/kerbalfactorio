@@ -75,6 +75,7 @@ function slotKey(mode: GameMode): string {
 export const SAVE_VERSION = 5;
 
 import { asMode, type GameMode } from './GameMode.js';
+import { assistedFor, restoreAssisted, type AssistedRecord } from './Assisted.js';
 import type { SavedEdits } from './VoxelSave.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';
 import type { SavePad } from './LaunchPadSave.js';
@@ -168,6 +169,14 @@ export interface SaveSlot {
    *  NOT bumped for it: see SAVE_VERSION above. An absent one restores an
    *  unresearched player with an empty suit, which is a legal world. */
   progress?: SaveProgress;
+  /** GP-102: which CHEATS this world has had used on it, in first-use order.
+   *  Survival only; a sandbox slot never carries one, because `mode: sandbox`
+   *  already says the stronger thing. Additive and optional under exactly the
+   *  rule `discovery`, `pads`, `health`, `vitals` and `progress` were added by,
+   *  so SAVE_VERSION deliberately does NOT move: an absent record is a world
+   *  nobody cheated in, which is what every world written before tonight is,
+   *  and a bump is refused on MISMATCH and would destroy every one of them. */
+  assisted?: AssistedRecord;
 }
 
 /**
@@ -233,7 +242,15 @@ async function tx<T>(mode: IDBTransactionMode,
  *  resolves false rather than throwing. */
 export async function writeSlot(slot: SaveSlot): Promise<boolean> {
   try {
-    const key = slotKey(asMode(slot.mode));
+    const mode = asMode(slot.mode);
+    const key = slotKey(mode);
+    // GP-102. THE ASSISTED MARK IS STAMPED AT THE CHOKE POINT, not by whoever
+    // built the slot. Every write in the client comes through this one function,
+    // so a snapshot path written next month carries the flag without knowing it
+    // exists; a field filled in by `Persist.snapshot` would be a field the
+    // second snapshot path forgets. Same argument as `HealthCensus`: derive at
+    // the one place, never register at the many.
+    slot.assisted = assistedFor(mode);
     await tx('readwrite', (s) => s.put(slot, key) as IDBRequest<IDBValidKey>);
     return true;
   } catch {
@@ -271,6 +288,9 @@ export async function readSlot(mode: GameMode): Promise<SlotRead> {
       return { slot: null, refusal: 'version', foundMode: found };
     }
     if (found !== mode) return { slot: null, refusal: 'mode', foundMode: found };
+    // GP-102, and only on a slot that was ACCEPTED: a refused slot is not this
+    // world, so its mark is not this world's either.
+    restoreAssisted(v.assisted);
     return { slot: v, refusal: '', foundMode: found };
   } catch {
     return { slot: null, refusal: '', foundMode: null };

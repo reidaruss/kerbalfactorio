@@ -12,6 +12,7 @@ import { mapApi } from './app/DebugMap.js';
 import { scatterApi } from './app/DebugScatter.js';
 import { armourApi } from './app/DebugArmour.js';
 import { postApi } from './app/DebugPost.js';
+import { installPauseMenu } from './app/MenuBoot.js';
 import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
 import { hudLines } from './ui/HudLines.js';
@@ -39,8 +40,12 @@ boot(cfg, host, hud).then(({ services }) => {
   // `__of.vab` is assigned onto the SAME object installDebugApi put on window,
   // rather than spread inside it: Debug.ts is at the 400-line cap and the bay's
   // whole driven surface is one method. See app/DebugVab.ts.
+  // GP-100. The game menu is CONSTRUCTED here rather than in Gameplay, because
+  // its testing controls reach the flight session and Gameplay cannot see one
+  // (Systems.ts: flight owns its own eye). See app/MenuBoot.ts.
   Object.assign(api, vabApi(services), flightApi(services), mapApi(services),
-    scatterApi(services, loop), armourApi(services), postApi(services, loop));
+    scatterApi(services, loop), armourApi(services), postApi(services, loop),
+    installPauseMenu(services, loop));
 
   let hudFrame = 0;
   loop.onDrain.push(() => {

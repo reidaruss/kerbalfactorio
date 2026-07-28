@@ -56,6 +56,12 @@ const url = `${base}?sandbox=1&debug=1${combat}`;
 const FLYTO = 'probes/flyto.js';
 const PADCLEAR = 'probes/padclear.js';
 const DAMAGESAVE = 'probes/damagesave.js';
+// GP-103. The setup that asks this runner's question BACKWARDS: it destroys the
+// slot on purpose, so the two assertions below that are otherwise true of every
+// reload ("the factory came back", "the discovered world came back") are exactly
+// what must NOT hold. They are inverted for it rather than skipped, because a
+// wipe that left the factory standing is the failure this proof exists to catch.
+const FRESH = 'probes/startfresh.js';
 const setup = args.get('setup') ?? FLYTO;
 // The default keeps `--phase` meaning exactly what it meant: the phase IS the
 // flyto probe's argument, so an untouched command line produces an untouched
@@ -171,9 +177,24 @@ try {
 
   // THE ASSERTIONS THAT ARE TRUE WHATEVER THE SAVE FORMAT DOES.
   check('the client came back up and is ticking', after.tick > 0, `${after.tick}`);
-  check('the world restored the factory the player built',
-        after.buildings >= before.buildings,
-        `${before.buildings} buildings before, ${after.buildings} after`);
+  if (setup === FRESH) {
+    // GP-103. THE WHOLE POINT, and it is the one question a single page cannot
+    // ask: a slot is only applied at BOOT, so a live session whose slot has been
+    // deleted is indistinguishable from one whose slot has not until it reloads.
+    check('START FRESH: the factory the player built is GONE',
+          after.buildings === 0,
+          `${before.builtBuildings} buildings before the wipe, ${after.buildings} after`);
+    check('START FRESH: and nothing was restored from a slot, because there is none',
+          (after.persist?.restored ?? null) === null,
+          JSON.stringify(after.persist?.restored ?? null));
+    check('START FRESH: the fresh world is a real, playable one and not a husk',
+          after.tick > 0 && Number.isFinite(after.lat) && Number.isFinite(after.lon),
+          JSON.stringify([after.tick, after.lat, after.lon]));
+  } else {
+    check('the world restored the factory the player built',
+          after.buildings >= before.buildings,
+          `${before.buildings} buildings before, ${after.buildings} after`);
+  }
   check('the player is somewhere real (not NaN)',
         Number.isFinite(after.lat) && Number.isFinite(after.lon),
         JSON.stringify([after.lat, after.lon]));
@@ -186,9 +207,11 @@ try {
   // Only a real reload asks the question, so only this runner can assert it.
   // -1 is /core REFUSING the stream and 0 is a slot that carried none; both are
   // the defect, so the bar is a positive count.
-  check('the discovered world came back',
-        (after.persist?.restored?.discovery ?? -1) > 0,
-        `${after.persist?.restored?.discovery}`);
+  if (setup !== FRESH) {
+    check('the discovered world came back',
+          (after.persist?.restored?.discovery ?? -1) > 0,
+          `${after.persist?.restored?.discovery}`);
+  }
 
   // GP-66. THE PAD HALF, and it is deliberately the SAME set of assertions for
   // both of padclear's modes. The recover run and the leave-it-there control

@@ -1,0 +1,131 @@
+/* The game menu (GP-100). Same world as game.css, research.css and vab.css:
+   gunmetal panels, one amber accent, hairline rules, monospace. The variables
+   come from game.css, which every screen that shows this also loads.
+
+   THE ONE RULE THIS FILE HOLDS: the menu scrolls INSIDE its own frame, never the
+   page. The canvas underneath is sized to the viewport, so a scrolled document
+   slides the 3D view out from under the overlay. Same rule research.css states
+   for its sideways tree. */
+
+#of-pause {
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 10, 0.62);
+  z-index: 32;   /* above the panels, below nothing: this is the top menu */
+}
+
+#of-pause.open { display: flex; }
+
+#of-pause .frame {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 94vw);
+  max-height: 88vh;
+  padding: 14px 16px 12px;
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+}
+
+#of-pause h3 {
+  margin: 0 0 8px;
+  padding-bottom: 7px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--of-dim);
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-pause h3 .esc {
+  float: right;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--of-accent);
+}
+
+#of-pause .body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+#of-pause .hint {
+  margin-top: 9px;
+  padding-top: 7px;
+  font-size: 11px;
+  color: var(--of-dim);
+  border-top: 1px solid var(--of-edge);
+}
+
+/* --- one group ----------------------------------------------------------- */
+.of-pgrp { margin-bottom: 12px; }
+
+.of-pgrp h4 {
+  margin: 0 0 5px;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--of-accent);
+}
+
+.of-pgrp .row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--of-edge);
+  border-left: 2px solid var(--of-edge);
+  background: var(--of-panel);
+  margin-bottom: 3px;
+}
+
+.of-pgrp .row .nm { flex: 0 0 190px; color: var(--of-ink); }
+.of-pgrp .row .why { flex: 1 1 auto; font-size: 11px; color: var(--of-dim); }
+.of-pgrp .row .val { flex: 1 1 auto; color: var(--of-accent); }
+
+.of-pgrp .row.assist .val { color: var(--of-bad); }
+
+/* A stub reads as reserved, not as broken: dimmed, no control at all. */
+.of-pgrp .row.stub { opacity: 0.62; }
+.of-pgrp .row.stub .nm { color: var(--of-dim); }
+
+/* --- the testing controls ------------------------------------------------ */
+.of-pgrp .row.cheat { border-left-color: var(--of-accent); }
+.of-pgrp .row.cheat.blocked { opacity: 0.55; border-left-color: var(--of-edge); }
+.of-pgrp .row.cheat.danger { border-left-color: var(--of-bad); }
+
+.of-pgrp .row .state {
+  margin-left: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+  border: 1px solid var(--of-edge);
+}
+.of-pgrp .row .state.on { color: var(--of-good); border-color: var(--of-good); }
+.of-pgrp .row .state.off { color: var(--of-dim); }
+
+#of-pause button {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--of-ink);
+  background: var(--of-panel-2);
+  border: 1px solid var(--of-edge);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+#of-pause button:hover:not(:disabled) { border-color: var(--of-accent); }
+#of-pause button:disabled { color: var(--of-dim); cursor: default; opacity: 0.6; }
+
+/* The armed confirm. It is the only red thing on the screen, deliberately. */
+.of-pgrp .row.armed { background: rgba(60, 16, 12, 0.55); }
+.of-pgrp .row .why.warn { color: var(--of-bad); }
+.of-pgrp .row .pair { display: flex; gap: 6px; }
+#of-pause button.go { color: var(--of-bad); border-color: var(--of-bad); }
+#of-pause button.go:hover { background: rgba(120, 30, 22, 0.6); }

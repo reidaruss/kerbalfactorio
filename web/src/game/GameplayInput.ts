@@ -90,10 +90,21 @@ export class GameplayInput {
     // player holding a wall they no longer want has nowhere else to put it.
     if (g.hotbar.clearHand()) { this.lastEscape = 'cleared the hand'; }
     else {
-      // And with nothing to close and nothing in hand, Escape means what the
-      // browser has already made it mean: give the pointer back. Fighting that
-      // by re-locking would produce a key that visibly does nothing.
-      this.lastEscape = 'released the pointer';
+      // GP-100. AND WITH NOTHING TO CLOSE AND NOTHING IN HAND, IT OPENS THE GAME
+      // MENU, which is Reid's ask stated exactly: "a menu i can open when i hit
+      // escape, if im not already in another menu". The "if" is not a condition
+      // written here; it is the two branches above, which is the point of
+      // routing through the derived stack rather than asking a panel whether it
+      // happens to be up.
+      //
+      // The hook can be unclaimed (a headless scenario with no menus), and then
+      // the OLD answer stands unchanged: Escape means what the browser has
+      // already made it mean, which is give the pointer back. Fighting that by
+      // re-locking would produce a key that visibly does nothing, and Chrome
+      // rejects a `requestPointerLock` outside a user gesture with a console
+      // error that fails every driven probe in the suite.
+      const opened = g.modals.whenNothingOpen?.() ?? '';
+      this.lastEscape = opened !== '' ? opened : 'released the pointer';
     }
     g.modals.lastFallback = this.lastEscape;
   }

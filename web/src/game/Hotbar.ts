@@ -170,6 +170,44 @@ export class Hotbar {
     return true;
   }
 
+  /**
+   * GP-108. EMPTY A SLOT. Reid's ask, verbatim: "i want to be able to remove
+   * things from my hotbar while in my inventory menu".
+   *
+   * It is deliberately allowed to empty EVERY slot, including the hand and the
+   * gun. A remove that silently refused on some slots would be a control that
+   * works four times out of eleven, which is worse than one that does not exist.
+   * What makes that safe is `reset`, below, and not a guard here.
+   */
+  clear(i: number): boolean {
+    if (i < 0 || i >= SLOT_COUNT || this.bar[i].kind === 'empty') return false;
+    this.bar[i] = { kind: 'empty' };
+    return true;
+  }
+
+  /**
+   * GP-108. THE WAY BACK, and it ships in the same breath as `clear` because
+   * without it `clear` is a trap.
+   *
+   * `assignToBar`'s pack gesture reaches exactly three of the twelve placeable
+   * things: the two hand furnaces and the three ABI 9 machines are pack items,
+   * and a structural part NEVER is (gameplay.h S.6: it is paid for and placed,
+   * never crafted into a carried item), nor is the gun. So a player who cleared
+   * the foundation slot would have removed their only route to a foundation for
+   * the life of the world, which is exactly the unreachable-feature failure
+   * `restore`'s own comment is about, arrived at from the opposite direction.
+   */
+  reset(): number {
+    let changed = 0;
+    for (let i = 0; i < SLOT_COUNT; ++i) {
+      if (this.bar[i].kind !== DEFAULT_BAR[i].kind
+        || (this.bar[i] as { part?: string }).part
+          !== (DEFAULT_BAR[i] as { part?: string }).part) changed++;
+      this.bar[i] = { ...DEFAULT_BAR[i] };
+    }
+    return changed;
+  }
+
   /** Swap two slots. The "put things in a hotbar" gesture, made by hand. */
   swap(a: number, b: number): boolean {
     if (a === b || a < 0 || b < 0 || a >= SLOT_COUNT || b >= SLOT_COUNT) return false;
@@ -254,6 +292,20 @@ function readSlot(v: unknown): SlotContent {
   if (o === null || o === undefined) return { kind: 'empty' };
   if (o.kind === 'hand') return { kind: 'hand' };
   if (o.kind === 'furnace') return { kind: 'furnace' };
+  // GP-109. THE GUN, AND ITS ABSENCE HERE WAS DELETING IT FROM EVERY SAVE.
+  //
+  // `serialize` writes `{kind:'gun'}` for slot 11 and this function had no case
+  // for it, so the fall-through at the bottom turned it into an empty slot. The
+  // symptom is precisely what Reid reported today, that he "does not see a
+  // gun": the bar is right for one boot, the autosave fires 20 seconds in, and
+  // from the next reload onwards slot 11 is blank with no gesture in the game
+  // that could refill it, because a gun is not a `PartKind` and `assignToBar`'s
+  // pack-click cannot reach one. The eleven-slot migration in `restore` could
+  // not save it either: `saved` is 11, so the new-slot fallback never fires.
+  // This is the same failure class GP-57's comment named and the same one it
+  // guarded against, one line further down, in the function nobody re-read when
+  // the eleventh slot was added.
+  if (o.kind === 'gun') return { kind: 'gun' };
   if (o.kind === 'part' && typeof o.part === 'string' && isPart(o.part)) {
     return { kind: 'part', part: o.part };
   }

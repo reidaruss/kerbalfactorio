@@ -28,6 +28,7 @@ import { EnemyLoop, SYNC_TICKS, type EmitterRow, type Vec3, type WaveRow }
 import { EnemyTypes } from './EnemyTypes.js';
 import { EnemySwarm, type Creature, type SwarmContext } from './EnemySwarm.js';
 import { EnemyView, NEST_KEY } from './EnemyView.js';
+import { killAll, setPeaceful } from './EnemyCheats.js';
 import { emittersOf, targetsOf, type TargetPopulations, type TargetRow }
   from './EnemyTargets.js';
 import type { Hittable } from './Weapon.js';
@@ -66,6 +67,21 @@ export class Enemies {
   readonly shootables: Hittable[] = [];
   /** True once `init` has run and the mode allows danger. */
   enabled = false;
+  /**
+   * GP-106. PEACEFUL MODE, at RUNTIME, and a flag of its OWN rather than a
+   * mutation of anything that already exists. The verbs are in EnemyCheats.ts.
+   *
+   * Not `ModeRules.hostile`: that is derived from an immutable mode and an
+   * immutable boot flag, and `GameMode.ts` argues at length that neither may
+   * move mid-session. That argument is still right and this does not contradict
+   * it, because this does not claim the world is SAFE. It claims a cheat has
+   * switched the CAUSE off, which in survival is recorded on the save (GP-102).
+   *
+   * Not `enabled` either. That means "the loop came up", and reusing it would
+   * make `report().enabled` disagree with `report().hostile`, which
+   * `probes/enemies.js` asserts are equal. Two facts, two fields (GP-29).
+   */
+  peaceful = false;
   /** The sentence a disabled subsystem publishes. See GP-93. */
   disabledWhy = 'not initialised';
   nestsKilled = 0;
@@ -135,11 +151,26 @@ export class Enemies {
     }
     this.sinceDerive--;
     const ctx = this.context(host);
-    for (const w of this.loop.step()) this.take(w, ctx);
+    // GP-106. PEACEFUL STOPS THE CAUSE AND NOT THE CONSEQUENCES. /core's clock
+    // stops advancing and no wave is drained, so nothing new is ever dispatched;
+    // everything below still runs, and that is the whole design rather than an
+    // oversight. `EnemySwarm.step` is the only thing that CLEARS `hurtSources`
+    // (it empties the list at its own top), and `Gameplay.fixedStep` spends that
+    // list against the player unconditionally, so an early return here would
+    // freeze the array populated and go on biting the player for ever in the
+    // mode whose entire purpose is that nothing bites them. It is also what
+    // reaps the creatures `setPeaceful` just killed and what lets `frame`
+    // release their instanced slots, instead of parking corpses mid-stride.
+    if (!this.peaceful) for (const w of this.loop.step()) this.take(w, ctx);
     this.swarm.step(dt, ctx);
     this.publishShootables(ctx);
     this.watchPool(host);
   }
+
+  /** GP-106 / GP-107. The two cheat verbs, in EnemyCheats.ts so this file stays
+   *  under its cap; the reasoning for both is over there beside them. */
+  setPeaceful(on: boolean): number { return setPeaceful(this, on); }
+  killAll(): { creatures: number; nests: number } { return killAll(this); }
 
   /**
    * Advance the CAUSE by `ticks` in one call, and spawn whatever it dispatched.
@@ -314,6 +345,9 @@ export class Enemies {
       enabled: this.enabled,
       why: this.disabledWhy,
       hostile: this.mode.hostile,
+      // GP-106. Beside `hostile` and never instead of it: one is what the world
+      // IS and the other is what a cheat has done to it this session.
+      peaceful: this.peaceful,
       nests: this.loop.nests.length,
       nestsSeeded: this.loop.nestsSeeded,
       nestsKilled: this.nestsKilled,

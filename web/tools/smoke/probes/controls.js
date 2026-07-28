@@ -303,6 +303,13 @@
       if (of.flight('report').aboard !== true) return;   // refused on foot
       await act(['map'], 4, 0.4);
     },
+    // GP-100. THE GAME MENU, and it is the one entry here that opens with the
+    // SAME key that closes it, because with nothing else open Escape IS its
+    // opener (ModalStack.whenNothingOpen). So the loop below opens it with
+    // `cancel` and then closes it with `cancel`, which is a stricter test than
+    // any other row in this table gets: a fallback that opened the menu without
+    // registering it as a modal would open it here and never close it.
+    pause: async () => { await act(['cancel'], 4, 0.35); },
   };
   const escapeRows = [];
   for (const entry of of.modals().modals) {
@@ -339,6 +346,21 @@
   await sleep(0.3);
   const idleEscape = of.game().controls.lastEscape;
   check('Escape with nothing open is not a no-op', idleEscape !== '', idleEscape);
+  // GP-100 CHANGED WHAT THAT SENSIBLE THING IS, and the comment above is kept
+  // because it is still the answer in a client with no pause menu: the fallback
+  // is a hook on the stack and an unclaimed one leaves the old behaviour
+  // untouched. Where the menu exists, it opens, which is asserted here rather
+  // than left to `idleEscape !== ''` -- a fallback that had quietly stopped
+  // doing anything would still write a sentence.
+  const idleOpened = typeof of.pause === 'function' ? of.pause().open : null;
+  check('and where the game menu exists, that is what it opens',
+    idleOpened === null || idleOpened === true,
+    `${idleEscape} -> pause open ${idleOpened}`);
+  // Shut it again, or every section below this one runs behind a modal that
+  // owns the pointer and swallows the world verbs.
+  if (idleOpened === true) { of.escape(); await sleep(0.3); }
+  check('and it shuts again on the next press',
+    typeof of.pause !== 'function' || of.pause().open === false);
 
   // ======================================================================
   // G. ONLY THE HAND SWINGS AND DIGS

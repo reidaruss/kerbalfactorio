@@ -86,8 +86,8 @@ export class FlightSession {
   readonly V: OfVesselModule;
   /** The DESIGN the craft was copied from. Kept because the per-stage delta-v
    *  table is an `of_vs_*` read taking a VESSEL handle, and the two registries
-   *  both number from 1 (PH-27). */
-  private design = 0;
+   *  both number from 1 (PH-27). PUBLIC for FlightCheats.ts (GP-104). */
+  design = 0;
   /** PUBLIC for FlightSas.ts, which owns every transition either one makes. */
   sasMode = SAS_COMMAND;
   command: Vec3 = [0, 1, 0];
@@ -339,14 +339,18 @@ export class FlightSession {
     if (this.message !== '' && simSecs > this.msgUntilS) this.message = '';
   }
 
-  private sample(): void {
+  /** PUBLIC for FlightCheats.ts: a cheat that writes wasm state and left these
+   *  rows stale would leave every instrument describing a vessel that is not
+   *  there any more (GP-105). */
+  sample(): void {
     const M = this.p.M;
     this.st = flightState(M, this.handle);
     this.tm = flightTelemetry(M, this.handle);
     this.orb = flightOrbit(M, this.handle);
   }
 
-  private refreshParts(): void {
+  /** PUBLIC for FlightCheats.ts: the revision bump redraws the craft (GP-104). */
+  refreshParts(): void {
     this.parts = flightParts(this.p.M, this.handle);
     this.partsRevision += 1;
     this.stages = readStagePerformance(this.p.M, this.design, this.p.bodyHandle,

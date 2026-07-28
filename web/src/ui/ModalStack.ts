@@ -55,6 +55,24 @@ export class ModalStack {
   /** What Escape did with nothing open, so the fallback is observable. */
   lastFallback = '';
 
+  /**
+   * GP-100. WHAT ESCAPE DOES WITH NOTHING OPEN AND NOTHING IN HAND.
+   *
+   * It returns a sentence for `lastFallback`, or '' to mean "I did nothing, use
+   * the default". Null while nobody has claimed it, which is what a headless
+   * scenario with no menus is, and the reason the default survives untouched:
+   * GP-25's promise was that the key is never silently a no-op, and a client
+   * booted with no pause menu must still keep it.
+   *
+   * IT IS A HOOK ON THE STACK RATHER THAN A BRANCH IN THE HANDLER because the
+   * pause menu spans gameplay AND flight AND the loop, so it is constructed at
+   * the composition root and `GameplayInput` cannot see it. Routing through the
+   * stack keeps the guarantee in ONE place: the same object that owns "Escape
+   * closes the top menu" now owns "and with none open, it opens this one", and
+   * they cannot disagree about which menus exist.
+   */
+  whenNothingOpen: (() => string) | null = null;
+
   register(m: ModalLike): void {
     if (!this.items.includes(m)) this.items.push(m);
   }

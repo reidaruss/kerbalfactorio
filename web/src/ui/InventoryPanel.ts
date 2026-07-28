@@ -79,7 +79,14 @@ export class InventoryPanel extends Modal {
     this.root.innerHTML =
       '<div class="frame">'
       + '<div class="col pack"><h3>Pack<span></span></h3><div class="of-slots"></div>'
-      + '<div class="hint">Tab or Escape closes. Left click swings at whatever you are aiming at.</div>'
+      // GP-108. THE BAR IS EDITABLE AND THE HINT SAYS SO HERE, because this is
+      // the panel Reid asked for it from and because the gesture is only alive
+      // while this panel is open: during play the pointer is locked to the
+      // canvas and there is no cursor to click a slot with.
+      + '<div class="hint">Tab or Escape closes. Left click swings at whatever '
+      + 'you are aiming at.<br>The bar below is live while this is open: click a '
+      + 'slot to select, drag to swap, <b>&times;</b> or right click to remove, '
+      + 'and a placeable item here goes on the selected slot.</div>'
       + modeRow(this.mode) + '</div>'
       + '<div class="col craft"><h3>Hand crafting<span></span></h3><div class="list"></div>'
       + '<div class="hint">Tools are not required to harvest: they multiply the '

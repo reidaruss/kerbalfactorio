@@ -62,3 +62,44 @@
 .of-hslot.on > .tx { color: var(--of-ink); }
 
 .of-hslot > .ico { width: 38px; height: 38px; }
+
+/* --- GP-108: editing the bar, and only with the pack open ---------------- */
+/* Both controls are always in the DOM and hidden here rather than rendered
+   conditionally, because the render key is the labels and the selection: a
+   conditional badge would not appear until the next time a slot changed. */
+.of-hx, .of-hreset { display: none; }
+
+#of-hotbar.live .of-hx {
+  display: block;
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  line-height: 13px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--of-dim);
+  background: rgba(8, 11, 14, 0.85);
+  border-left: 1px solid var(--of-edge);
+  border-bottom: 1px solid var(--of-edge);
+  cursor: pointer;
+}
+
+#of-hotbar.live .of-hx:hover { color: var(--of-bad); background: var(--of-panel-2); }
+
+#of-hotbar.live .of-hreset {
+  display: block;
+  align-self: center;
+  margin-left: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--of-dim);
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+#of-hotbar.live .of-hreset:hover { color: var(--of-ink); border-color: var(--of-accent); }
