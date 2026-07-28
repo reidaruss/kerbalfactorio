@@ -354,3 +354,30 @@ git show HEAD:web/src/sim/wasm/OfCore.ts | grep "OF_ABI_VERSION = "
 
 Keep printing `abi=N`. It is worth having during development, where a broken
 pairing is possible. Just never read it as freshness on a handover build.
+
+### The shared index accumulates STALE blobs, and a bare commit ships them
+
+Private-index commits leave the shared index untouched, so entries staged hours
+earlier survive there indefinitely. They are not merely redundant: measured on
+2026-07-28, three probe paths held blobs that differed from **both** HEAD and the
+working tree.
+
+```
+cheats.js:      staged 0570417f   head c1b8f588   worktree c1b8f588
+launchguide.js: staged 027f9179   head 519d47f5   worktree 519d47f5
+savenamed.js:   staged cc795cf2   head 0c9d5089   worktree 0c9d5089
+```
+
+A bare `git commit` in that state would have **reverted three probe fixes**,
+including the vacuous-antecedent repair, under whatever message the committing
+lane happened to write. The same hazard appears as staged deletions: a lane
+found two screenshots marked `D ` while present on disk and in HEAD.
+
+**Check `git diff --cached --name-status` before and after every pass.** It
+should be empty. If it is not, `git reset -q HEAD -- <paths>` clears it without
+touching the working tree.
+
+This is the fourth member of the sweep family. The others move a file into the
+wrong commit; this one moves a file **backwards in time** while every surface a
+lane normally checks (`git status`, the working tree, `cat-file -e HEAD:`) looks
+correct, because the stale content is only in the index.
