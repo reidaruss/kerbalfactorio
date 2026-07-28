@@ -334,6 +334,106 @@ R8 says a geometric probe runs on a slope as well as on the flat: the flat
 ground was the identity, and it hid a 10.1 degree belt misalignment as exactly
 zero across 39 driven keypresses.
 
+## An implication passes when its antecedent is false, and `||` in a check is the signature (GP-156)
+
+**This one is greppable, so audit before you reflect.** The other entries here
+ask you to think about your instrument. This one you can find mechanically, in
+your own probes, tonight.
+
+`probes/launchguide.js` contained
+
+```js
+check('in ORBIT it says so and points at the map',
+      s4.status !== 'ORBIT' || s4.names === 'map', ...)
+```
+
+which is an implication, and **an implication with a false antecedent is
+vacuously true**. The line before it pressed Teleport To Orbit. If that press
+had done nothing, the status would not have been `ORBIT`, the antecedent would
+have been false, and the probe would have gone green having tested nothing about
+the thing it exists to test. It is `[].every(...)` wearing different clothes,
+which is already in this file as the most expensive class of green.
+
+**The signature to search for: `||` or `!==` inside a `check(...)` condition.**
+Every one of them is a claim of the form "if A then B", and every one needs A
+asserted somewhere in its own right, or the check has a hole the size of A.
+
+The fix is one line: assert the antecedent separately.
+
+```js
+check('the teleport actually put the craft in orbit', s4.status === 'ORBIT', ...);
+```
+
+The control is what makes it worth having, and it is worth running rather than
+describing. With the orbit press suppressed, the new check fails by name
+(`status ASCENT`) and **the original implication does not appear in the failure
+list at all**. Red and green side by side on one run.
+
+Note what the fix did NOT change: the press really does land, and that green
+was real. **A true result and a supported one are different things**, and this
+file exists because only the second kind survives someone changing the code.
+
+Found by auditing every probe that presses a pause-menu button, after a press
+helper was caught reporting success on a click that never landed (GP-155). Of
+seven probes that touch the menu, exactly one had the defect being hunted, and
+this was in a different one, by a different mechanism. **The audit was worth its
+cost for the thing it was not looking for**, which is the usual way.
+
+## A computed style is what CSS asked for, not what the user agent drew (GP-151)
+
+The pairing matters more than the instance, so here is the instance first.
+
+Predicted, before measuring, that the pause menu's keyboard focus ring would be
+invisible. `getComputedStyle(el).outlineColor` agreed: `rgb(16, 16, 16)` on a
+panel of `rgba(26, 32, 38, 0.94)`, near-black on near-black, unreadable. **A
+screenshot refuted both the prediction and the number.** Chrome's
+`outline-style: auto` ignores `outline-color` entirely and draws its own
+high-contrast ring, which is perfectly legible.
+
+**And this points the OPPOSITE way to the rest of this file.** The standing
+lesson here is that the eye is unreliable and the number is truth: concentric
+arcs no metric saw, a grey wash that looked plausible and was not. Here the
+number was wrong and the picture was right.
+
+So the rule is neither "trust numbers" nor "trust pictures". It is that
+**a computed style is a statement of what CSS asked for, not of what the user
+agent drew**, and the two diverge precisely where the UA reserves a behaviour to
+itself: `outline: auto`, `appearance: auto`, default form-control rendering,
+`font: caption`. This is the same shape as "a value published for rendering is
+not automatically fit to measure with", one layer further out: there the value
+was correct where it was USED and frozen where it was READ; here the value is
+correct as an INPUT and silently not an output.
+
+**Practice:** for anything the user agent may draw its own way, the instrument
+is a picture or a hit test, not the cascade. And when a number and a picture
+disagree, the question is not which to believe but which one is downstream of
+the thing you are actually claiming.
+
+## The discriminating run is cheap and the certainty is not (GP-155)
+
+Chasing a probe failure, I was certain that an edit made LATER in a file could
+not break a check made EARLIER in it. That is true in general. It was wrong
+here, and being certain of it cost more than testing it would have.
+
+The test was four runs: my source and HEAD's source, crossed with my probe and
+HEAD's probe. It took minutes and it immediately contradicted the certainty,
+which is the only reason the hunt turned toward the real cause. **Reading the
+receipt log at the moment of failure**, rather than continuing to reason about
+what could and could not have caused it, is what actually named it: the log
+contained no receipt for the press at all, so the press had reported success and
+nothing had happened.
+
+The general form, and it is about time rather than about instruments:
+**when a measurement contradicts something you are sure of, the cheapest next
+move is almost always another measurement, not another argument.** Certainty is
+the most expensive thing to carry into a hunt, because it decides which
+experiments you do not bother running.
+
+Corollary, learned on the same verb: **while the cause is unknown, revert to
+byte-identical rather than leaving a half-understood change in place**, and
+re-apply only once it can be explained. That matters most on the paths that
+destroy something. This was the save wipe.
+
 ## Cross-references
 
 Standing rules 4, 7, 10, 11 and DW-7, DW-20 in
