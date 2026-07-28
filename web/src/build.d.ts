@@ -15,3 +15,8 @@ declare const __OF_BUILD__: string;
 declare module 'node:child_process' {
   export function execSync(command: string, options: { encoding: 'utf8' }): string;
 }
+
+// Config-time only, for the OF_BUILD_STAMP override. Narrowed to `env` on
+// purpose: widening this to the real Node `process` would make `process.exit`
+// and friends typecheck inside `src/`, where they would fail at runtime.
+declare const process: { env: Record<string, string | undefined> };
