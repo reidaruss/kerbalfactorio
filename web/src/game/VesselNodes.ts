@@ -149,6 +149,47 @@ export function attachNodes(parts: readonly DesignPart[],
   return out;
 }
 
+/**
+ * GP-145. THE DIRECTION REFUSAL NAMES THE DIRECTION THAT WORKS.
+ *
+ * This sentence was `${hand.label} has no ${face} node`, which names an internal
+ * field and no remedy, and it is the sentence a player hits at the exact moment
+ * the bay stops them building the way they chose. GP-115 already made the
+ * argument for the class refusal: the refusal that enforces a rule is the one
+ * place the player can be told what the rule is for.
+ *
+ * It matters more than it looks, because MEASUREMENT SAYS THE DIRECTION
+ * CONSTRAINT IS REAL AND IT RUNS THE OPPOSITE WAY TO REID'S COMPLAINT. Driven:
+ * the standard two-stage rocket (pod, tank, vacuum engine, decoupler, tank,
+ * engine, which is /core's own reference vehicle shape) builds top-down in all
+ * six parts, and building the SAME rocket bottom-up dies at part four of six on
+ * this exact sentence, because the interstage joint is one-directional: a
+ * decoupler hangs UNDER a bell, and an engine can never be put ON TOP of the
+ * decoupler because a bell is not a mating face. So a multi-stage rocket can
+ * only be assembled downward, and the downward preview was the invisible one
+ * (GP-141). He tried the only way that works, saw nothing, and concluded the
+ * opposite. Two defects pointing at each other.
+ *
+ * The sentence is derived from the part's own sockets rather than from a list
+ * of part kinds, so a part added later gets the right advice without anybody
+ * remembering to extend a table.
+ */
+function directionWhy(node: AttachNode, hand: PartRow): string {
+  // Going ON a top face needs the part's own BOTTOM socket; hanging UNDER a
+  // bottom face needs its TOP socket. Whichever it lacks, the other one is the
+  // direction to tell it about.
+  const needsBottom = node.kind === 'top';
+  if (needsBottom && hand.nodeTop) {
+    return `${hand.label} mates by its top only, because its bottom is its `
+      + `working end: hang it UNDER the part that goes above it`;
+  }
+  if (!needsBottom && hand.nodeBottom) {
+    return `${hand.label} mates by its bottom only, so it caps a stack: `
+      + `put it ON TOP of the part that goes below it`;
+  }
+  return `${hand.label} does not stack at either end: strap it to a hull instead`;
+}
+
 /** Does the part in hand fit this node, and if not, why not (for the ghost)? */
 export function fitAt(node: AttachNode, hand: PartRow): { ok: boolean; why: string } {
   if (node.kind === 'pylon') {
@@ -170,10 +211,7 @@ export function fitAt(node: AttachNode, hand: PartRow): { ok: boolean; why: stri
   }
   // Going ON a parent's TOP face, the incoming part presents its own BOTTOM.
   const mine = node.kind === 'top' ? classAtBottom(hand) : classAtTop(hand);
-  if (mine <= 0) {
-    const face = node.kind === 'top' ? 'bottom' : 'top';
-    return { ok: false, why: `${hand.label} has no ${face} node` };
-  }
+  if (mine <= 0) return { ok: false, why: directionWhy(node, hand) };
   if (Math.abs(mine - node.cls) > 1e-9) {
     // GP-115. THE SENTENCE NAMES THE REMEDY. DW-29a's whole argument for the
     // adapter existing is that two diameter classes without one are two disjoint
