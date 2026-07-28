@@ -208,6 +208,13 @@ export function commitPlan(f: Factory): void {
     stampPlacements(f);
     pitchRuns(f);
     wire(f);
+    // R33: AND THE COLLIDERS, LAST, because `pitchRuns` above is what finally
+    // decides a tile's `quat` and a collider built before it would be turned the
+    // wrong way. Reconciled against the plan rather than hooked onto each
+    // mutation, for the reason this whole function exists: place, drag, turn,
+    // demolish, restore and the FS-78 rescale ALL end here, so none of them has
+    // to remember. FS-81 is what a per-mutation hook costs.
+    f.solids.sync(f.placed, f.host.bodies);
 }
 
 /**

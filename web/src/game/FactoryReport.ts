@@ -194,6 +194,12 @@ export function factoryReport(f: Factory): unknown {
      *  success. `portsMissing` names any kind that came up empty. */
     portsLoaded: f.portsLoaded,
     portsMissing: portsMissing(),
+    /** R33: the colliders, so "the player walks through machines" is a number.
+     *  `blocking` is how many buildings in the plan DECLARE `solid: 'blocks'`
+     *  and `solids` is how many are actually in the walker's set, so `pending`
+     *  separates "this asset ships no col_ proxy" from "the adoption never ran".
+     *  A bare `solids` count could not: 0 and 0 look identical. */
+    solids: f.solids.report(f.placed),
     /** FS-46: what the last restore did to a pre-port save. */
     migration: f.migration,
     /** FS-78: what the last restore did to a save built when the machines were

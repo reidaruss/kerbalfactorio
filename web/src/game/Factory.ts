@@ -37,6 +37,7 @@ import { menuOf, recipeOfPlaced, setPlacedRecipe, NO_RECIPE,
   type AssemblerRecipe, type RecipeMenu } from './FactoryRecipes.js';
 import { restorePlan, type SavedBuilding } from './FactoryRestore.js';
 import { NO_RESCALE, type Rescale } from './FactoryRescale.js';
+import { FactorySolids } from './FactorySolids.js';
 import type { WiredLink } from './FactoryPorts.js';
 import type { PortRefusal } from './FactoryRefusal.js';
 import type { GameCore } from './GameCore.js';
@@ -92,6 +93,11 @@ export class Factory {
    *  Power object in the client and the panel cannot end up reading a second,
    *  always-correct, always-empty grid. */
   readonly power: Power;
+
+  /** R33: what the player cannot walk through. It ADDS to the walker's existing
+   *  solid set (reached through `host.bodies`) and owns no set of its own, for
+   *  DW-26's reason. `commit()` reconciles it; see FactorySolids.ts. */
+  readonly solids = new FactorySolids();
 
   constructor(readonly M: OfCoreModule, readonly core: GameCore,
               readonly bodyHandle: number, fixedDt: number,

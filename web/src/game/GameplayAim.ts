@@ -27,18 +27,43 @@ export interface AimRayLike {
   dir: { x: number; y: number; z: number };
 }
 
-/** Reach, in metres, of everything the crosshair can resolve. One number, so a
- *  machine and the pad it stands on can never be picked at different ranges. */
-export const PICK_REACH_M = 3.5;
+/**
+ * Reach of everything the crosshair can resolve, in metres PAST THE SURFACE of
+ * whatever is being reached for. One number, so a machine and the pad it stands
+ * on can never be picked at different ranges.
+ *
+ * FS-93 RENAMED IT FROM `PICK_REACH_M` TO STATE ITS FRAME, and the finding is
+ * sharper than the number: one constant was handed to four pickers and MEANT TWO
+ * DIFFERENT THINGS, with nothing saying so.
+ *
+ *   `structures.pick` and `pads.pick` go through `StructureBody.rayPick`, which
+ *   marches the ray and returns the first point INSIDE the solid. For those two
+ *   3.5 m has always been a reach to the SURFACE and has always been correct.
+ *
+ *   `machines.pick` and `factory.pick` measure `t` to a CENTRE. For those two
+ *   the same 3.5 m silently meant "3.5 m minus half a housing", which is the
+ *   FS-63 defect class: an 8 m assembler's centre is 4.000 m inside its own face,
+ *   so it could not be aimed at from any position that exists in the world while
+ *   every table, port, link and report field read healthy.
+ *
+ * So the frame is now in the NAME, the two ray-marching callers are unchanged
+ * bit for bit, and the two centre-based callers add the candidate's own
+ * half-extent on the way in (`FactoryKinds.reachToCentreM` for a `BuildKind`,
+ * `FactorySolids.tangentHalfExtentM` off the collision proxy for a hand
+ * machine). A name that states its frame is what stops the third centre-based
+ * picker being written against the wrong one.
+ */
+export const PICK_REACH_PAST_SURFACE_M = 3.5;
 
 export function pickAim(g: Gameplay, ray: AimRayLike): void {
   const o = ray.origin;
   const d = ray.dir;
-  g.aimedMachine = g.machines.pick(o, d, PICK_REACH_M);
+  const reach = PICK_REACH_PAST_SURFACE_M;
+  g.aimedMachine = g.machines.pick(o, d, reach);
   g.aimedBuild = g.aimedMachine !== null ? null
-    : g.factory.pick(o, d, PICK_REACH_M, true);
+    : g.factory.pick(o, d, reach, true);
   g.aimedPart = g.aimedMachine !== null || g.aimedBuild !== null ? null
-    : g.structures.pick(o, d, PICK_REACH_M);
+    : g.structures.pick(o, d, reach);
   g.aimedPad = g.aimedMachine !== null || g.aimedBuild !== null
-    || g.aimedPart !== null ? null : g.pads.pick(o, d, PICK_REACH_M);
+    || g.aimedPart !== null ? null : g.pads.pick(o, d, reach);
 }

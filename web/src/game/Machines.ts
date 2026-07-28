@@ -25,6 +25,9 @@ import { addressIn, anchorIn, siteAt, type SiteHost } from './MachinePlacement.j
 import { findNode, loadGlb, selectLod } from '../assets/Loaders.js';
 import { MachineGlow, Smoke } from './MachineFx.js';
 import { SURVIVAL, type ModeRules } from './GameMode.js';
+import { handSolid, learnProxies, tangentHalfExtentM } from './FactorySolids.js';
+import type { Solidity } from './FactoryTemplates.js';
+import type { Solid } from './StructureBody.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { GameCore } from './GameCore.js';
@@ -34,14 +37,25 @@ import type { GameCore } from './GameCore.js';
  * the smoke position comes from the file's own `socket_smoke`, so the smelter's
  * offset flue smokes from the flue and not from the middle of the machine.
  */
-const FILES: Record<number, { url: string; root: string; card: string }> = {
+/**
+ * `solid` is REQUIRED for the reason `FactoryTemplates.ASSETS.solid` is: R33
+ * found the player walking through every machine in the game, and an answer that
+ * has to be written down cannot be forgotten. What this table CANNOT give, and
+ * the ASSETS one can, is exhaustiveness: `tier` is a /core ladder index rather
+ * than a union, so `Record<number, ...>` will not fail to compile on a tier with
+ * no row. The compiler here asks the question of every row that exists; only the
+ * factory's table asks it of every kind that exists. Said plainly rather than
+ * claimed.
+ */
+const FILES: Record<number, { url: string; root: string; card: string;
+                              solid: Solidity }> = {
   0: {
     url: 'assets/machines/primitive_furnace.glb', root: 'PrimitiveFurnace',
-    card: 'Furnace_FireCard',
+    card: 'Furnace_FireCard', solid: 'blocks',
   },
   1: {
     url: 'assets/machines/survival_smelter.glb', root: 'SurvivalSmelter',
-    card: 'SurvivalSmelter_Glow',
+    card: 'SurvivalSmelter_Glow', solid: 'blocks',
   },
 };
 
@@ -77,6 +91,10 @@ export interface Machine {
   smokeAt: { x: number; y: number; z: number };
   puffIn: number;
   burning: boolean;
+  /** R33: this machine in the walker's own solid set, or null when the asset is
+   *  declared passable or ships no `col_*` proxy. Held so `remove` can take the
+   *  exact object back out by identity rather than by a shared id. */
+  solid: Solid | null;
 }
 
 export class Machines {
@@ -117,6 +135,8 @@ export class Machines {
     await Promise.all(Object.values(FILES).map(async (f) => {
       const g = await loadGlb(f.url);
       this.templates.set(f.url, g.scene);
+      // The collision proxy comes off the SAME parse the mesh does (R33).
+      learnProxies(f.url, g.scene);
     }));
   }
 
@@ -230,7 +250,12 @@ export class Machines {
       glow: new MachineGlow(clone, f.card),
       smokeAt: { x: pos.x + this.v.x, y: pos.y + this.v.y, z: pos.z + this.v.z },
       puffIn: 0, burning: false,
+      solid: handSolid(f.url, f.solid, pos, quat),
     };
+    // R33: into the walker's EXISTING set, never a second one (DW-26). A
+    // placement and a restore both land here, so a loaded furnace and a built one
+    // are solid by the same line of code.
+    if (m.solid !== null) this.host()?.bodies?.add(m.solid);
     this.list.push(m);
     return m;
   }
@@ -255,6 +280,9 @@ export class Machines {
     // clone(true) SHARES geometry and material with the template, so nothing
     // here may be disposed: doing so would blank every furnace placed after it.
     this.group.remove(m.group);
+    // By IDENTITY, not by id: a factory solid carries id 0 deliberately and
+    // several may share it. FactorySolids.ts has the id-space argument.
+    if (m.solid !== null) this.host()?.bodies?.remove((q) => q === m.solid);
     this.list.splice(at, 1);
     const item = m.tier === 1 ? this.core.ids.smelter : this.core.ids.furnace;
     const over = this.core.add(item, 1);
@@ -335,14 +363,20 @@ export class Machines {
   pick(eye: { x: number; y: number; z: number },
        dir: { x: number; y: number; z: number }, reachM: number): Machine | null {
     let best: Machine | null = null;
-    let bestT = reachM;
+    let bestT = Infinity;
     for (const m of this.list) {
       const u = MACHINE_CENTRE_UP_M;
       const ox = m.pos.x + m.up.x * u - eye.x;
       const oy = m.pos.y + m.up.y * u - eye.y;
       const oz = m.pos.z + m.up.z * u - eye.z;
       const t = ox * dir.x + oy * dir.y + oz * dir.z;
-      if (t < -MACHINE_RADIUS_M || t > bestT) continue;
+      // FS-93: `reachM` is PICK_REACH_PAST_SURFACE_M, a reach past the HOUSING,
+      // and `t` is the distance to a CENTRE, so the half-extent comes back on.
+      // It is the asset's own collision proxy rather than a table, because a
+      // hand machine has no FOOTPRINT row and inventing one would be a second
+      // copy of a dimension the .glb already publishes.
+      const reach = reachM + tangentHalfExtentM(FILES[m.tier].url);
+      if (t < -MACHINE_RADIUS_M || t > reach || t >= bestT) continue;
       const cx = ox - dir.x * t, cy = oy - dir.y * t, cz = oz - dir.z * t;
       if (Math.hypot(cx, cy, cz) > MACHINE_RADIUS_M + 0.5) continue;
       best = m; bestT = Math.max(0, t);

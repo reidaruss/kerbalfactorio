@@ -33,6 +33,7 @@ import * as THREE from 'three';
 import { SITE_REACH_M, localOf, worldOf, type Site, type StructureModule }
   from './StructureGrid.js';
 import { FOOTPRINT, minFootprintM, type BuildKind, type Placed } from './FactoryKinds.js';
+import type { StructureBodies } from './StructureBody.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 /**
@@ -55,6 +56,24 @@ export const MACHINE_TILE_M = 1.0;
  *  have to know the whole base-building module. */
 export interface SiteHost {
   readonly module: StructureModule;
+  /**
+   * R33: THE WALKER'S ONE SOLID SET, reached through the registry the factory
+   * already holds rather than through a new argument.
+   *
+   * `Structures` owns it, `LaunchPads` is handed the same object, and
+   * `Gameplay.create` gives it to the walker. A machine has to join THAT set, so
+   * the factory needs a route to it; this interface is already the route by
+   * which a base and a factory agree about where a metre starts, and agreeing
+   * about what is solid is the same claim. Adding it here rather than plumbing a
+   * fourth constructor argument through `Gameplay` keeps the integration file
+   * untouched and keeps the number of things that know about the solid set at
+   * one.
+   *
+   * Nullable for the headless case: a unit test of `Machines` with no base has
+   * no walker either, and a null here means "no collision", not "a second,
+   * always-empty set".
+   */
+  readonly bodies: StructureBodies | null;
   nearestSite(p: Vec3d): Site | null;
   prospectiveSite(p: Vec3d): Site;
   adoptSite(s: Site): void;

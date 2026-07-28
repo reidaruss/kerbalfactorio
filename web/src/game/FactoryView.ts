@@ -26,6 +26,7 @@ import { cornersOf } from './BeltCorners.js';
 import { stalenessOf } from './FactoryStale.js';
 import { readMachineSockets, type SocketDef } from './FactorySnap.js';
 import { publishPorts } from './FactoryPorts.js';
+import { learnProxies } from './FactorySolids.js';
 import { BeltCargo } from './BeltCargo.js';
 import { WireView } from '../render/WireView.js';
 import { TEMPLATES } from './FactoryTemplates.js';
@@ -127,6 +128,13 @@ export class FactoryView {
     // client that opens the shipped `.glb` files. FactoryPorts' header argues
     // why it is published rather than threaded.
     publishPorts(this.sockets);
+    // R33: AND THE SAME SCENES CARRY THE COLLISION PROXIES. A machine's `col_*`
+    // box is read here for the same reason its sockets and its ports are: this
+    // is the one function in the client that opens the shipped machine `.glb`
+    // files, so the geometry DRAWN, the geometry SNAPPED to and the geometry
+    // WALKED INTO all come off one parse and cannot fall out of step.
+    // `FactorySolids` owns what happens to them; nothing here decides.
+    for (const [key, v] of loaded) learnProxies(key, v.scene);
     // ALL THREE TILE SHAPES, not just the straight. FS-31 solved the arc
     // through the curve tiles' published sockets and shipped with only the
     // first argument passed, so `BeltCargo.load`'s missing-file fallback

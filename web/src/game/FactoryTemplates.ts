@@ -93,7 +93,51 @@ export interface PortSpec { readonly name: string; readonly dir: PortDir }
  */
 export const NO_ITEM_PORTS: readonly PortSpec[] = Object.freeze([]);
 
+/**
+ * WHETHER THE PLAYER CAN WALK THROUGH IT. Declared per asset, never derived.
+ *
+ * R33: nothing in the factory was ever solid, so a smelter, a drill, an
+ * assembler and a chest were scenery you walked through. Admin has ruled that
+ * machines are solid. What was open was the belt, and the answer is that a belt
+ * and a power pole are NOT: a 1 m tile the player cannot step over makes a dense
+ * base miserable to move around in, and both Factorio and Satisfactory let you
+ * walk over a conveyor.
+ *
+ * THE REASON THIS IS A FIELD AND NOT A FOOTPRINT THRESHOLD is the whole point of
+ * the entry, and it overrules the obvious implementation. Belt and pole are 1 m
+ * and everything else is 4 m or 8 m TODAY, so `FOOTPRINT[kind] > 1` would give
+ * the right answer for every asset in the game and would be wrong the first time
+ * somebody ships a 2 m machine or a 1 m walkable platform, silently, with no
+ * compiler and no probe able to see it. That is precisely the failure
+ * INSTRUMENTS.md catalogues under "a constant is a hidden assumption", and it
+ * has already cost this project four constants in one pass (`FactoryHand`'s
+ * `- 2`, `REFUSAL_NOTICE_M` counting a housing twice, `PORT_MATE_M` and
+ * `PICK_REACH_M`). A derivation can rot; a declaration cannot be forgotten,
+ * because `ASSETS` is exhaustive over `AssetKey` and this property is REQUIRED,
+ * so a new `BuildKind` fails to compile until somebody answers the question.
+ *
+ * It is a two-member union rather than a boolean so the answer reads as a claim
+ * at the call site (`solid: 'passable'`) instead of as an unlabelled `false`,
+ * and so a third answer can be added later without every row changing shape.
+ */
+export type Solidity =
+  /** The walker collides with this asset's `col_*` proxies. */
+  | 'blocks'
+  /** The walker passes through. Small enough to be underfoot, or not a thing
+   *  the player ever meets: a corner tile, a pole, a drawn inserter arm. */
+  | 'passable';
+
 export interface MachineAsset extends MachineTemplate {
+  /**
+   * Solidity, REQUIRED, so it cannot be forgotten. See `Solidity` for why this
+   * is declared rather than derived from `FOOTPRINT`.
+   *
+   * `FactorySolids` turns a `'blocks'` row into a `Solid` out of the asset's own
+   * `col_*` proxies and adds it to the ONE set the walker reads. It never
+   * invents a box: an asset that declares `'blocks'` and ships no proxy is
+   * counted as `pending` in the report rather than given a guessed hull.
+   */
+  readonly solid: Solidity;
   /**
    * The sockets that MEAN something, and nothing else.
    *
@@ -115,11 +159,17 @@ export interface MachineAsset extends MachineTemplate {
  * and "does this smelter feed this belt" are the same question asked twice.
  */
 export const ASSETS: Record<AssetKey, MachineAsset> = {
-  miner: { url: 'assets/machines/miner.glb', root: 'Miner',
+  miner: { url: 'assets/machines/miner.glb', root: 'Miner', solid: 'blocks',
            ports: [{ name: 'socket_item_out', dir: 'out' }] },
   // OF_Rubber is the deck, and the deck is what the flow band scrolls along.
+  // PASSABLE, and it is the one row in this table that was argued rather than
+  // assumed. A belt is 1.00 m and a base is mostly belt, so a solid one would
+  // turn every line into a fence and every junction into a maze. Factorio and
+  // Satisfactory both let the player walk over a conveyor for exactly this
+  // reason. Note what this is NOT: it is not "small things are passable", it is
+  // "this thing is passable", which is why it survives the next asset.
   belt: { url: 'assets/machines/belt_segment.glb', root: 'BeltSegment',
-          flowMaterial: 'Rubber',
+          flowMaterial: 'Rubber', solid: 'passable',
           ports: [{ name: 'socket_belt_in', dir: 'in' },
                   { name: 'socket_belt_out', dir: 'out' }] },
   // W7. The curve tiles shipped at Tier 0 and nothing drew them, so a line that
@@ -127,24 +177,34 @@ export const ASSETS: Record<AssetKey, MachineAsset> = {
   // in the deck. They are DERIVED, never placed, and a run's ENDS are always on
   // straight tiles, so a corner has nothing to present.
   belt_l: { url: 'assets/machines/belt_curve_l.glb', root: 'BeltCurveL',
-            flowMaterial: 'Rubber', arc: 'l', ports: NO_ITEM_PORTS },
+            flowMaterial: 'Rubber', arc: 'l', solid: 'passable',
+            ports: NO_ITEM_PORTS },
   belt_r: { url: 'assets/machines/belt_curve_r.glb', root: 'BeltCurveR',
-            flowMaterial: 'Rubber', arc: 'r', ports: NO_ITEM_PORTS },
+            flowMaterial: 'Rubber', arc: 'r', solid: 'passable',
+            ports: NO_ITEM_PORTS },
   smelter: { url: 'assets/machines/smelter.glb', root: 'Smelter',
+             solid: 'blocks',
              ports: [{ name: 'socket_item_in', dir: 'in' },
                      { name: 'socket_item_out', dir: 'out' }] },
   // DW-9 draws this on a connection rather than letting anybody place one, so it
   // has no ports of its own: it IS a port pair, rendered.
+  // Drawn on a link and only under `?inserters=1` (FS-47), so it is never a
+  // thing standing in the world for the player to meet. Solid here would put an
+  // invisible arm across the gap between a belt head and a hopper.
   inserter: { url: 'assets/machines/inserter.glb', root: 'Inserter',
-              ports: NO_ITEM_PORTS },
+              solid: 'passable', ports: NO_ITEM_PORTS },
   // ABI 9. Grid citizens: they never tick, hold nothing and have no item IO at
   // all, which is why this is `NO_ITEM_PORTS` and not an oversight. A player who
   // belts ore into the side of a generator gets a sentence saying so
   // (`FactoryRefusal`), and that sentence is reachable BECAUSE the row is here.
+  // A pole is PASSABLE for the belt's reason and one of its own: it is a 1 m
+  // mast the player threads a base with, and poles are placed in lines, so solid
+  // poles would wall off the corridors between machines that the poles exist to
+  // power. A generator is a housing and blocks.
   pole: { url: 'assets/machines/power_pole.glb', root: 'PowerPole',
-          ports: NO_ITEM_PORTS },
+          solid: 'passable', ports: NO_ITEM_PORTS },
   generator: { url: 'assets/machines/generator.glb', root: 'Generator',
-               ports: NO_ITEM_PORTS },
+               solid: 'blocks', ports: NO_ITEM_PORTS },
   // FS-43: THE ELECTRIC SMELTER USED TO BE MISSING FROM THE SOCKET HALF, and
   // until ports became the connection rule the omission cost nothing visible: an
   // esmelter simply never caught a snap, which reads as a stiff crosshair rather
@@ -154,6 +214,7 @@ export const ASSETS: Record<AssetKey, MachineAsset> = {
   // is keyed by kind and not by file. That duplication is the price of two kinds
   // sharing one mesh, and it is now one row rather than three.
   esmelter: { url: 'assets/machines/smelter.glb', root: 'Smelter',
+              solid: 'blocks',
               ports: [{ name: 'socket_item_in', dir: 'in' },
                       { name: 'socket_item_out', dir: 'out' }] },
   // FS-56/57. `assembler.glb` shipped at Tier 0 against the pinned TypeId 0x13
@@ -169,6 +230,7 @@ export const ASSETS: Record<AssetKey, MachineAsset> = {
   // position, so an author moving input B from the right face to the left needs
   // no code change anywhere.
   assembler: { url: 'assets/machines/assembler.glb', root: 'Assembler',
+               solid: 'blocks',
                ports: [{ name: 'socket_item_in_a', dir: 'in' },
                        { name: 'socket_item_in_b', dir: 'in' },
                        { name: 'socket_item_out', dir: 'out' }] },
@@ -176,7 +238,7 @@ export const ASSETS: Record<AssetKey, MachineAsset> = {
   // own two heights. A chest's in and out are the SAME pool, so unlike every
   // machine above these two do not bracket a transformation; they are the two
   // ends of one box. This is the row whose absence unwired the game.
-  chest: { url: 'assets/machines/box.glb', root: 'Box',
+  chest: { url: 'assets/machines/box.glb', root: 'Box', solid: 'blocks',
            ports: [{ name: 'socket_item_in', dir: 'in' },
                    { name: 'socket_item_out', dir: 'out' }] },
 };

@@ -125,35 +125,39 @@ export function minFootprintM(): number {
 }
 
 /**
- * FS-74: HOW FAR A BUILDING'S CENTRE MAY BE FROM THE EYE AND STILL BE AIMED AT,
- * given a reach authored against the SMALLEST part on the grid.
+ * FS-93: HOW FAR A BUILDING'S CENTRE MAY BE FROM THE EYE AND STILL BE AIMED AT,
+ * given a reach specified PAST THE SURFACE.
  *
- * `PICK_REACH_M` (3.5 m, `GameplayAim.ts`) is a reach to a CENTRE. For a 1 m
- * belt tile that is 3.0 m past its face, which is what it has always meant and
- * what it still means here. For anything larger the centre is further inside the
- * housing, so the extra half-extent is added back: the player is reaching for a
- * SURFACE and the surface is where `FOOTPRINT` says it is.
+ * `PICK_REACH_PAST_SURFACE_M` (3.5 m, `GameplayAim.ts`) now states its own
+ * frame, and this function is the whole of the conversion into the frame a
+ * centre-based picker works in: `t` runs to a CENTRE, the surface is half a
+ * footprint nearer, so the half-extent comes back on. One line, one meaning.
  *
- * THE PREVIOUS SPELLING WAS `Math.max(0, FOOTPRINT - 2) * 0.5` AND THE `2` WAS
- * THE OLD BASELINE (FS-63). It was written to keep every machine of the day
- * behaving exactly as it shipped, and the clamp did that only because every
- * machine of the day was 2 m. Rescaling the smelter and the drill fires it
- * automatically and there is nothing left for it to protect, so the excess is now
- * measured against `minFootprintM()` and there is no literal in it at all.
+ * THE HISTORY IS THE REASON THE NAME HAD TO CHANGE, and it is three spellings
+ * deep. FS-63 wrote `Math.max(0, FOOTPRINT - 2) * 0.5`, whose `2` was the old
+ * 2 m baseline; FS-74 replaced it with the excess over `minFootprintM()` when
+ * that baseline moved. Both were reaches to a centre wearing a constant that
+ * only made sense against the asset set of the day, which is this project's
+ * most-repeated defect. The datum was never "the smallest part on the grid", it
+ * was "the player is reaching for a SURFACE", and that needs no datum at all.
  *
- * WHAT MOVES, stated because a bound that changes silently is the defect this
- * whole file is about. The belt and the pole are BIT-IDENTICAL: they are the
- * minimum, so the excess is zero, which is exactly the property FS-63's clamp
- * existed to protect. Everything larger gains 0.5 m of reach to its centre
- * relative to FS-63's rule, so a machine is reachable from 3.0 m past its face
- * rather than 2.5 m. That is a LOOSENING, deliberately: FS-63's defect was an
- * 8 m machine that could not be aimed at from anywhere in the world, and every
- * failure in this family has been a reach that was too short. It is measured in
- * `probes/autoline.js`, `probes/shortline.js` and `probes/rescale.js` rather
- * than asserted here.
+ * WHAT MOVES, stated because a bound that changes silently is what this file is
+ * about. Every kind gains exactly `minFootprintM() * 0.5` = 0.50 m of reach to
+ * its centre against FS-74, INCLUDING the belt and the pole, which FS-74 held
+ * bit-identical and this deliberately does not. That is the point: under the old
+ * rule the minimum-size part was the one kind whose reach was measured to its
+ * centre rather than to its face, silently, because the excess was zero. A belt
+ * tile is now reachable from 3.5 m past its face like everything else, a 4 m
+ * smelter from 5.5 m to its centre and the 8 m assembler from 7.5 m. It is a
+ * LOOSENING in every case and that is the safe direction: every failure in this
+ * family (FS-63, FS-74, R33's handoff) has been a reach that was too short, and
+ * `pickAimed` ranks by how CENTRED the crosshair is rather than by distance, so
+ * a further candidate does not steal a press from a nearer one it is not
+ * pointing at. Measured in `probes/autoline.js`, `probes/shortline.js` and
+ * `probes/rescale.js` rather than asserted here.
  */
 export function reachToCentreM(kind: BuildKind, reachM: number): number {
-  return reachM + (FOOTPRINT[kind] - minFootprintM()) * 0.5;
+  return reachM + FOOTPRINT[kind] * 0.5;
 }
 
 /**
