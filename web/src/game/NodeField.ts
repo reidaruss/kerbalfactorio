@@ -25,6 +25,52 @@ import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore, NodeState } from './GameCore.js';
 import { NODE_KIND } from './GameCore.js';
 
+/**
+ * The warm, sun-bleached end of the tree spread. MUCH weaker than the
+ * understorey's DRY (1.22, 1.06, 0.62), and not because trees are less varied.
+ *
+ * A grass tint colours one 6-triangle card among thousands, so a strong drift
+ * reads as one blade catching the light. A node tint colours a 6.5 m tree that
+ * the player is standing next to, and the SAME multiplier applied to an object
+ * that size stops reading as light and starts reading as a different species.
+ * The understorey's own comment makes this argument for flowers; at tree scale
+ * it binds harder, so the drift is capped lower and there is no flower branch.
+ */
+const TREE_DRY = new THREE.Vector3(1.14, 1.05, 0.76);
+
+/**
+ * The colour multiplier for ONE placed node.
+ *
+ * Value jitter is what breaks up a stand at a glance; the hue drift is what
+ * stops it reading as one paint colour on a second look. `ScatterLook.tintFor`
+ * argues both at length for the understorey and this is deliberately the same
+ * shape, but it is NOT a call into that function: the flower branch would put a
+ * 1.70/1.50/0.38 yellow on a whole conifer, and the value range there (0.80 to
+ * 1.18) is wide enough that two neighbouring trees would differ by more than a
+ * third in brightness, which at tree size reads as a lighting bug rather than
+ * as variation.
+ *
+ * Ore boulders take VALUE ONLY, for the reason ScatterLook already gives: a
+ * rock whose hue wandered reads as a different rock rather than as the same
+ * rock in different light, and the point of the mineral family is that it is
+ * one substance. It matters more here than for scatter, because a node's colour
+ * is how the player identifies what they are about to mine.
+ */
+function nodeTint(isTree: boolean, h: number, out: THREE.Color): THREE.Color {
+  const v = 0.88 + frac(hash32(h, 17)) * 0.24;
+  if (!isTree) return out.setRGB(v, v, v);
+  const d = frac(hash32(h, 19));
+  // Squared, so most trees sit near their own species colour and only a few
+  // drift far. Linear would spread the stand evenly across the range and read
+  // as two species mixed, which is the failure the understorey names.
+  const t = d * d * 0.55;
+  return out.setRGB(
+    v * (1 + (TREE_DRY.x - 1) * t),
+    v * (1 + (TREE_DRY.y - 1) * t),
+    v * (1 + (TREE_DRY.z - 1) * t),
+  );
+}
+
 const ROOT = 'assets/nodes/';
 
 /** Seconds the hit reaction lasts. Short: a swing lands, it does not bounce. */
@@ -78,6 +124,7 @@ export class NodeField {
   private readonly qFell = new THREE.Quaternion();
   private readonly m = new THREE.Matrix4();
   private readonly s = new THREE.Vector3();
+  private readonly tintC = new THREE.Color();
   private readonly engineUp = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
   /** Nodes that have visibly collapsed, for the HUD counters and the probe. */
@@ -185,6 +232,19 @@ export class NodeField {
     const parts = this.batch.partsOf(art.file);
     if (parts === null) return;
     const slots = parts.map((p) => this.batch.acquire(p.material));
+    const isTree = kind === NODE_KIND.Tree;
+    // PER-INSTANCE SIZE, TREES ONLY. Outcrop scale is derived from the richness
+    // of the deposit under it and means something, so it is left exactly alone;
+    // trees were the ones pinned at a literal 1.0. The range is deliberately
+    // narrow, and the reason is a real inconsistency rather than taste: the
+    // harvest reach is `art.radiusM` and the hit point is `art.hitUpM`, neither
+    // of which scales with this, so a big tree and a small tree are chopped from
+    // the same distance. At +/-14% that is under the aim tolerance; at +/-40% it
+    // would be a gameplay bug wearing an art change's clothes.
+    const size = isTree ? 0.86 + frac(hash32(h, 13)) * 0.28 : 1;
+    nodeTint(isTree, h, this.tintC);
+    for (let i = 0; i < parts.length; ++i)
+      this.batch.tint(parts[i].material, slots[i], this.tintC);
     const up = new THREE.Vector3(st.x, st.y, st.z).normalize();
     // A fixed tangent axis per node: the direction a felled tree goes over.
     const lean = new THREE.Vector3(-up.y, up.x, 0);
@@ -196,7 +256,7 @@ export class NodeField {
       up,
       yaw: frac(hash32(h, 5)) * Math.PI * 2,
       variant: -1, punch: 0, fell: 0, lean, empty: st.remaining <= 0,
-      scale, sinkM,
+      scale: scale * size, sinkM,
     };
     this.placed.push(pl);
     this.setVariant(pl, variantFor(st.initial > 0 ? st.remaining / st.initial : 0));

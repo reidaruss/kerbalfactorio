@@ -322,6 +322,29 @@ export class NodeBatch {
     b.mesh.setVisibleAt(slot, true);
   }
 
+  /**
+   * Per-instance colour multiplier. Build-time only: nothing calls this per
+   * frame, so the 16 B/instance `setColorAt` adds to the batch is paid once.
+   *
+   * WHY THIS DID NOT EXIST. Every scatter prop has had a per-instance tint since
+   * the understorey landed (`ScatterLook.tintFor`), but nodes never got one, so
+   * the fourteen trees in the spawn clearing were the same two meshes at the
+   * same size in the same colour, differing only in yaw. That is the first thing
+   * the player sees and it read as a clone army. The batch could always do this
+   * (`BatchedMesh` carries the attribute); nothing was writing it.
+   *
+   * A NODE IS TINTED ONCE AND EVERY PART TAKES THE SAME COLOUR. Trunk and canopy
+   * are separate material batches, so tinting them independently would drift a
+   * tree's bark away from its own leaves and read as a broken asset rather than
+   * as variety. `NodeField` therefore draws one colour per PLACEMENT and applies
+   * it across that placement's slots.
+   */
+  tint(material: string, slot: number, c: THREE.Color): void {
+    const b = this.batches.get(material);
+    if (b === undefined || slot < 0) return;
+    b.mesh.setColorAt(slot, c);
+  }
+
   /** Move a slot without touching which geometry it draws. The per-frame path. */
   move(material: string, slot: number, m: THREE.Matrix4): void {
     const b = this.batches.get(material);
