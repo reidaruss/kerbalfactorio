@@ -16,6 +16,7 @@ import { MapMode } from './MapMode.js';
 import { MapWorld } from './MapWorld.js';
 import { Discovery } from '../world/Discovery.js';
 import { MapTerrain } from '../world/MapTerrain.js';
+import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { OrePatchSource } from './MapWorld.js';
 import { MAP_ALLOWED } from '../player/Bindings.js';
 import { vesselAbi } from '../sim/wasm/vesselabi.js';
@@ -86,6 +87,13 @@ export interface MapBootArgs {
   g: MapGameplayPorts;
   flight: FlightMode;
   body: PlanetBody;
+  /** THE SURFACE AUTHORITY, for its `editsHandle` (WG-33). The map samples the
+   *  ground the player is standing on, edits included, or it cannot show them a
+   *  hole they dug. Handed the oracle rather than the raw handle because the
+   *  handle is bound LATER (VoxelWorld's constructor), so a copy taken here
+   *  would be a permanent 0 and the map would silently keep drawing the
+   *  untouched world. Read every sample, never cached. */
+  oracle: SurfaceOracle;
   input: Input;
   /** The walker. DW-36's "centered around the player" begins here, and their
    *  altitude is what the discovery horizon is computed from. */
@@ -103,8 +111,11 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
   // the biome and the designed height belong to this seed's body, while the
   // discovery lattice only needs the body's radius. It is handed the discovery
   // driver purely for its generation counter, so a new observation invalidates
-  // the cached picture rather than leaving a frame of the old survey mask.
-  const terrain = new MapTerrain({ core: a.core, body: a.body.handle, disc });
+  // the cached picture rather than leaving a frame of the old survey mask, and
+  // the surface oracle for its EDIT HANDLE, so the ground it samples is the
+  // ground the player has been working on (WG-33).
+  const terrain = new MapTerrain({ core: a.core, body: a.body.handle, disc,
+    oracle: a.oracle });
   const world = new MapWorld({
     disc,
     terrain,

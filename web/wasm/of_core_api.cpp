@@ -290,7 +290,18 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       existing value moved. of_disc_window is untouched and still exported;
 //       it is simply no longer the map's shading source, because a per-sample
 //       survey bit is a finer and simpler mask than a 9,375 m quad.
-OF_API int of_abi_version(void) { return 13; }
+//  14: THE MAP SAMPLES THE EDITED SURFACE, NOT THE DESIGNED BASE (WG-33).
+//       §19's of_map_sample gains an `edits` parameter in second position and
+//       reads surface_field.h's `surfaceHeight` rather than biome.h's
+//       `sampleDesignedHeight`. BREAKING on that ONE signature, which is a day
+//       old and has exactly one caller (web/src/world/MapTerrain.ts). Every
+//       other export is untouched. It is a real defect and not a refinement:
+//       the designed base is by definition the world BEFORE the player touched
+//       it, so a dug hole, a levelled pad and a tunnel mouth could not reach the
+//       map however the painter shaded them, and the close-in map's whole job is
+//       to show you your own work. With `edits <= 0` the value is bit-identical
+//       to ABI 13's, by surface_field.h's own undug overload.
+OF_API int of_abi_version(void) { return 14; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2577,4 +2588,4 @@ OF_API int of_gp_item_ids(void) {
 #include "of_discovery_api.inc" // §18  ABI 12: the discoverable map (DW-36)
 // AFTER §18, and it must be: of_map_sample reads that file's `g_disc` for the
 // survey bit it writes per sample.
-#include "of_map_api.inc"       // §19  ABI 13: the map samples the world (DW-37)
+#include "of_map_api.inc"       // §19  ABI 14: the map samples the world (DW-37)

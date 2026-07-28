@@ -16,6 +16,7 @@ import { Modal } from './ModalStack.js';
 import type { ModalStack } from './ModalStack.js';
 import { drawMap } from './MapDraw.js';
 import type { MapDrawReport, MapReadout } from './MapTypes.js';
+import { ZERO_CONTRAST } from './MapContrast.js';
 
 /** What the panel's buttons ask the app to do. It does none of it itself. */
 export interface MapHooks {
@@ -83,6 +84,7 @@ function noDraw(): MapDrawReport {
     alphas: { ore: 0, discovered: 0, body: 0 },
     discoveredQuads: 0, terrainSamples: 0, sampleSizeM: 0,
     oreDrawn: 0, oreDrawnRows: [], bodyFilled: false,
+    contrast: ZERO_CONTRAST,
   };
 }
 

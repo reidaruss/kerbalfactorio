@@ -111,9 +111,11 @@ export interface MapTerrainGrid {
   /** /core's `Biome` enum per sample; **-1 means OFF THE LIMB** — the line of
    *  sight misses the body and there is no ground under that sample at all. */
   readonly biome: Int8Array;
-  /** `sampleDesignedHeight`, the surface oracle's designed base, in metres.
-   *  NOT a second terrain: it is the function the mesh, the collision and the
-   *  walker all read (standing rule 1). */
+  /** `surfaceHeight`, the surface oracle ITSELF, in metres: the designed base
+   *  with the player's voxel edits applied. NOT a second terrain, it is the
+   *  function the mesh, the collision and the walker all read (standing rule
+   *  1). It was the designed BASE for one day, which is the world before the
+   *  player touched it, so nothing they built could reach the map (WG-33). */
   readonly heightM: Float64Array;
   /** 1 when this sample's SURVEY cell has been observed. THE GATE. */
   readonly seen: Uint8Array;
@@ -130,6 +132,9 @@ export interface MapTerrainGrid {
    *  statistic of THIS view, not a fact about the world. */
   readonly minH: number;
   readonly maxH: number;
+  /** Mean |height difference| between horizontally adjacent on-body samples:
+   *  the world content at THIS view's resolution (WG-33). */
+  readonly stepM: number;
 }
 
 /** Everything the canvas needs for one frame. */
@@ -294,4 +299,47 @@ export interface MapDrawReport {
    *  filled rather than stroked as an arc. Not a mode: the two paths produce the
    *  same pixels by construction, and `MapPaint.bodyCovers` is the proof. */
   bodyFilled: boolean;
+  /** HOW MUCH THE GROUND LAYER ACTUALLY SAYS (WG-33). See TerrainContrast. */
+  contrast: TerrainContrast;
+}
+
+/**
+ * The ground layer's own contrast, measured over the bytes the painter wrote.
+ *
+ * WHY IT EXISTS. DW-37 shipped a map whose every structural count was green
+ * (`discoveredQuads === terrainSamples`, 2,784 of 2,784) over a picture that
+ * carried no information at all: at a 454 m span the surface map was a
+ * featureless pale wash. `painted == onBody` was true, green and worthless, and
+ * nothing in the report could tell the difference between that and a legible
+ * relief map. This is the number that can, and it is deliberately taken from the
+ * FINAL RGB bytes rather than from the heights, because a shading bug, a palette
+ * bug and a flat world all produce the same blank picture and the player cannot
+ * tell them apart either.
+ *
+ * Luminance is Rec. 709 over the 0..255 bytes the sample was written at, before
+ * the layer's own alpha and before anything is composited over it: this measures
+ * what the ground layer OFFERS, so a legible layer hidden by an alpha of 0 is a
+ * different (and separately visible) defect from a layer with nothing to say.
+ */
+export interface TerrainContrast {
+  /** Samples this was measured over, i.e. MapDrawReport.discoveredQuads. */
+  painted: number;
+  /** Standard deviation of luminance, 0..255. THE headline number. */
+  lumaSd: number;
+  /** The 5th and 95th percentile of luminance, and the gap between them: a
+   *  robust spread that a handful of outlier pixels cannot manufacture. */
+  lumaP5: number;
+  lumaP95: number;
+  lumaSpread: number;
+  /** The mean absolute luminance difference between ADJACENT painted samples:
+   *  LOCAL contrast, which is what the eye reads as terrain. It is the number
+   *  that failed the blank frame when the global ones could not, and that is a
+   *  measurement and not a preference: the featureless surface frame scored
+   *  lumaSd 22.96 against the legible regional frame's 21.87, while lumaStep
+   *  read 1.94 against 12.85. */
+  lumaStep: number;
+  /** Distinct 8-wide luminance buckets (32 across the byte range) holding at
+   *  least 1% of the painted samples each. A count of the tones the picture
+   *  really uses, immune to a single stray pixel widening the range. */
+  buckets: number;
 }

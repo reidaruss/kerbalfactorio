@@ -152,6 +152,11 @@ export class MapWorld {
     };
   }
 
+  /** THE GRID THE PAINTER WAS HANDED, for `__of.map('grid')` (WG-33). */
+  terrainGrid(): MapTerrainGrid | null {
+    return this.d.terrain === null ? null : this.d.terrain.lastGrid();
+  }
+
   report(): unknown {
     return {
       hiddenPatches: this.hidden,

@@ -7,10 +7,15 @@
 // reveal, so the feature could not be evaluated at all.
 //
 // IT DECIDES NOTHING ABOUT THE WORLD. The biome is `biomeAt`, the height is
-// `sampleDesignedHeight` (the surface oracle's designed base) and the survey bit
-// is `of_disc_has` — all three read inside ONE `/core` call, which is standing
-// rule 1: this is a CONSUMER of the surface authority, never a second copy of
-// it. This file's only opinions are WHEN to resample and WHAT TO KEEP.
+// `surfaceHeight` (the surface oracle ITSELF, the player's own digs included)
+// and the survey bit is `of_disc_has`, all three read inside ONE `/core` call,
+// which is standing rule 1: this is a CONSUMER of the surface authority, never a
+// second copy of it. This file's only opinions are WHEN to resample and WHAT TO
+// KEEP.
+//
+// THE HEIGHT WAS THE DESIGNED BASE FOR ONE DAY (WG-33, ABI 14), which is the
+// world BEFORE the player touched it, so a dug hole and a levelled pad could not
+// appear on the map at all however it was shaded.
 //
 // Its shape mirrors `Discovery.ts` deliberately, because that shape is proven:
 //   - the producing export is called FIRST, then the scratch pointer and
@@ -32,6 +37,7 @@ import { MAP_SAMPLE_WORDS, MapSample, discAbi } from '../sim/wasm/discabi.js';
 import type { OfDiscoveryModule } from '../sim/wasm/discabi.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Discovery } from './Discovery.js';
+import type { SurfaceOracle } from './SurfaceOracle.js';
 
 export { MapSample, MAP_SAMPLE_WORDS };
 
@@ -46,7 +52,8 @@ export { MapSample, MAP_SAMPLE_WORDS };
 export interface TerrainGrid {
   /** /core's `Biome` enum per sample; **-1 means OFF THE LIMB**. */
   readonly biome: Int8Array;
-  /** The surface oracle's designed base height, metres. */
+  /** `surfaceHeight`: the oracle's base with the player's voxel edits applied
+   *  and WG-21's bedrock clamp included. Metres. */
   readonly heightM: Float64Array;
   /** 1 when this sample's SURVEY cell has been observed. THE GATE. */
   readonly seen: Uint8Array;
@@ -68,6 +75,13 @@ export interface TerrainGrid {
    *  (kilometres) without a threshold anywhere. */
   readonly minH: number;
   readonly maxH: number;
+  /** Mean |height difference| between horizontally adjacent on-body samples,
+   *  metres. THE WORLD'S CONTENT AT THIS VIEW'S OWN RESOLUTION, and the number
+   *  that says whether a close-in map CAN read: `maxH - minH` is what the frame
+   *  spans, this is what one step of it says. A frame whose relief is large and
+   *  whose step is a rounding error is one smooth hillside, which is what the
+   *  454 m surface view of Forge turned out to be (WG-33). */
+  readonly stepM: number;
 }
 
 /**
@@ -115,6 +129,12 @@ export interface TerrainDeps {
   /** Only for its generation counter: a new observation changes the survey
    *  mask, and a cache that did not notice would keep painting the old one. */
   disc: Discovery | null;
+  /** THE SURFACE AUTHORITY (WG-33), read for two things and nothing else: the
+   *  live `editsHandle` passed straight into `/core`, and the edit COUNTS that
+   *  go in the cache key. Held as the object rather than the handle because the
+   *  handle is bound after boot; a copy taken in the constructor would be a
+   *  permanent 0 and the map would keep drawing the untouched world forever. */
+  oracle: SurfaceOracle;
 }
 
 /** To the nearest `q`. A non-finite or non-positive step is the identity, so a
@@ -168,6 +188,15 @@ export class MapTerrain {
     const aspect = cssW / cssH;
     const spanM = shortSpanM * cssH / short;
     const gen = this.d.disc === null ? 0 : this.d.disc.generation;
+    // THE EDIT GENERATION. A dig or a fill changes the ground under the view,
+    // and a cache that did not notice would keep painting the world as it was
+    // before the player touched it - which is precisely the defect ABI 14 was
+    // opened to fix, re-introduced one layer up. The two sparse-set sizes are
+    // /core's own counters, read through the oracle's handle; they are not a
+    // hash of the field, so a pair of edits that cancelled EXACTLY (dig a cell,
+    // refill the same cell) would be missed. That is acceptable and it is
+    // stated rather than hidden: the picture would then be right anyway,
+    // because a world restored to what it was draws what it drew.
     const sampleSizeM = shortSpanM / TERRAIN_N;
     // THE REQUEST IS SNAPPED TO A FRACTION OF A SAMPLE, and the reason is a
     // measurement rather than a preference. Keyed on the raw centre, a player
@@ -189,24 +218,33 @@ export class MapTerrain {
     // The axis rides on the focus and drifts by nanoradians as the player
     // settles; 1e-9 is 0.6 mm on Forge's own radius.
     const uu = unitq(u), vv = unitq(v);
-    const k = `${gen}|${rows}|${aspect.toFixed(6)}|${spanM}|${c.join(',')}|`
-      + `${uu.join(',')}|${vv.join(',')}`;
+    const ed = this.d.oracle.editsHandle;
+    const k = `${gen}|${this.editGen(ed)}|${rows}|${aspect.toFixed(6)}|${spanM}`
+      + `|${c.join(',')}|${uu.join(',')}|${vv.join(',')}`;
     if (k === this.key) { this.hits += 1; return this.grid; }
     this.key = k;
-    this.grid = this.build(c, uu, vv, spanM, aspect, rows, sampleSizeM);
+    this.grid = this.build(ed, c, uu, vv, spanM, aspect, rows, sampleSizeM);
     return this.grid;
+  }
+
+  /** `removed,added` off /core's own sparse-set sizes, or '0,0' with no field
+   *  bound. Two calls of a few nanoseconds each, once per `sample()`. */
+  private editGen(edits: number): string {
+    if (edits <= 0) return '0,0';
+    return `${this.M._of_edits_removed_count(edits)},`
+      + `${this.M._of_edits_added_count(edits)}`;
   }
 
   /** ONE call into `/core`, then the copy out. Nothing here interprets a
    *  height or a biome; it counts what came back so the painter and a probe
    *  read the same numbers. */
-  private build(c: readonly [number, number, number],
+  private build(edits: number, c: readonly [number, number, number],
                 u: readonly [number, number, number],
                 v: readonly [number, number, number],
                 spanM: number, aspect: number, rows: number,
                 sampleSizeM: number): TerrainGrid | null {
     const t0 = performance.now();
-    const n = this.M._of_map_sample(this.d.body, c[0], c[1], c[2],
+    const n = this.M._of_map_sample(this.d.body, edits, c[0], c[1], c[2],
                                     u[0], u[1], u[2], v[0], v[1], v[2],
                                     spanM, aspect, rows);
     this.rebuildMsTotal += performance.now() - t0;
@@ -242,13 +280,26 @@ export class MapTerrain {
     }
     if (onBody === 0) { minH = 0; maxH = 0; }
     const cols = Math.max(1, Math.round(n / rows));
+    let stepSum = 0, pairs = 0;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x + 1 < cols; x++) {
+        const i = y * cols + x;
+        if (biome[i] < 0 || biome[i + 1] < 0) continue;
+        stepSum += Math.abs(heightM[i] - heightM[i + 1]); pairs++;
+      }
+    }
     return { biome, heightM, seen, cols, rows, sampleSizeM, onBody,
-      seenOnBody, minH, maxH };
+      seenOnBody, minH, maxH, stepM: pairs === 0 ? 0 : stepSum / pairs };
   }
 
   /** Drop what is held. Used when the discovered world is thrown away, so the
    *  picture cannot outlive the field it was cut from. */
   forget(): void { this.grid = null; this.key = ''; }
+
+  /** THE GRID THE PAINTER WAS HANDED, for a probe. Not a second query and not a
+   *  re-sample: the identical object, so a probe comparing two of these across
+   *  a dig is comparing what the map drew, not what it could have drawn. */
+  lastGrid(): TerrainGrid | null { return this.grid; }
 
   report(): unknown {
     const g = this.grid;
@@ -261,6 +312,7 @@ export class MapTerrain {
       seenOnBody: g === null ? 0 : g.seenOnBody,
       sampleSizeM: g === null ? 0 : +g.sampleSizeM.toFixed(3),
       reliefM: g === null ? 0 : +(g.maxH - g.minH).toFixed(2),
+      stepM: g === null ? 0 : +g.stepM.toFixed(4),
       rebuilds: this.rebuilds,
       rebuildMs: this.rebuilds === 0 ? 0
         : +(this.rebuildMsTotal / this.rebuilds).toFixed(3),

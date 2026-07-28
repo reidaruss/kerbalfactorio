@@ -175,7 +175,7 @@ export interface DiscoveryAbi {
    */
   _of_disc_deserialize(): number;
 
-  // --- §19 the map samples the WORLD (ABI 13, DW-37) --------------------------
+  // --- §19 the map samples the WORLD (ABI 14, DW-37 + WG-33) ------------------
   /**
    * THE GROUND, over a view region, at the resolution the view needs.
    *
@@ -184,10 +184,17 @@ export interface DiscoveryAbi {
    * what the map paints instead of an empty plane.
    *
    * `body` is a §1 body HANDLE (the height and the biome belong to the body, so
-   * this is not the 0/1 bodyId the discovery calls take). `cx,cy,cz` is the view
-   * centre in body-frame metres; `ux..`/`vx..` are the two in-plane axes (right
-   * and up on screen, need not be unit); `spanM` is the metres the `n` axis
-   * covers; `aspect` is width/height; `n` is the sample rows.
+   * this is not the 0/1 bodyId the discovery calls take). `edits` is a §2
+   * DensityField handle, or 0 for the pristine procedural world. `cx,cy,cz` is
+   * the view centre in body-frame metres; `ux..`/`vx..` are the two in-plane
+   * axes (right and up on screen, need not be unit); `spanM` is the metres the
+   * `n` axis covers; `aspect` is width/height; `n` is the sample rows.
+   *
+   * THE HEIGHT IS `surfaceHeight`, THE ORACLE ITSELF (ABI 14, WG-33). It was
+   * `sampleDesignedHeight` for one day, which is the world BEFORE the player
+   * touched it: a dug hole, a levelled pad and a tunnel mouth could not reach
+   * the map at all, however the painter shaded them. Passing `edits = 0` gives
+   * bit-identically what ABI 13 returned.
    *
    * -> the SAMPLE COUNT written (n * round(n*aspect)), or 0 on refusal. The f64
    * scratch then holds MAP_SAMPLE_WORDS per sample, indexed by `MapSample`,
@@ -202,7 +209,7 @@ export interface DiscoveryAbi {
    * orthographic, so the ground under a sample is a line meeting a sphere, which
    * is dot products and one sqrt (CE-11 / DW-15).
    */
-  _of_map_sample(body: number, cx: number, cy: number, cz: number,
+  _of_map_sample(body: number, edits: number, cx: number, cy: number, cz: number,
                  ux: number, uy: number, uz: number,
                  vx: number, vy: number, vz: number,
                  spanM: number, aspect: number, n: number): number;

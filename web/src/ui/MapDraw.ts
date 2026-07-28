@@ -29,7 +29,7 @@ import {
   discCoversCanvas, km1, nm, pen, place, scaleBar, sizeAlpha, text, toPx, toPxV, xy,
 } from './MapPaint.js';
 import {
-  drawOre, nodeGlyph, paintTerrain, playerGlyph, shipGlyph,
+  drawOre, nodeGlyph, paintTerrain, playerGlyph, shipGlyph, terrainContrast,
 } from './MapLayers.js';
 
 // An ore patch is a couple of metres across: it earns its pixels between 1.5 and
@@ -108,6 +108,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, cssW: number,
     terrainSamples: g === null || g === undefined ? 0 : g.onBody,
     sampleSizeM: g === null || g === undefined ? 0 : nm(g.sampleSizeM),
     bodyFilled: filled,
+    contrast: terrainContrast(),
   };
 }
 

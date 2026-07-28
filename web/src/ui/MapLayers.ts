@@ -22,7 +22,9 @@
 // from ITS OWN feature size, and paints at it (DW-36).
 // =============================================================================
 
-import type { MapScene } from './MapTypes.js';
+import type { MapScene, TerrainContrast } from './MapTypes.js';
+import { ZERO_CONTRAST, forgetLuma, measure } from './MapContrast.js';
+import { relief } from './MapRelief.js';
 import type { Proj, Rect, XY } from './MapPaint.js';
 import {
   ACCENT, BIOME_RGB, INK, SHADE, SURFACE_RGB, TAU, compact,
@@ -61,6 +63,12 @@ let IMG_SRC: object | null = null;
 let IMG_REVEAL = false;
 let IMG_DRAWN = 0;
 
+let IMG_CONTRAST: TerrainContrast = ZERO_CONTRAST;
+
+/** The ground layer's contrast receipt for the last frame drawn (WG-33). See
+ *  MapContrast.ts for why a count of painted samples was not enough. */
+export function terrainContrast(): TerrainContrast { return IMG_CONTRAST; }
+
 /**
  * THE GROUND (DW-37). One `ImageData` at the grid's own resolution, blitted
  * scaled to the view with smoothing on: ONE composite rather than thousands of
@@ -87,9 +95,16 @@ export function paintTerrain(ctx: CanvasRenderingContext2D, pr: Proj,
                              s: MapScene, alpha: number, w: number,
                              h: number, marks: string[]): number {
   const g = s.discovered;
-  if (g === null || g === undefined || !(alpha > 0)) return 0;
+  // A frame that draws no ground reports NO contrast, never the last frame's:
+  // a stale receipt over a blank layer is the exact shape of lie this instrument
+  // was added to catch.
+  if (g === null || g === undefined || !(alpha > 0)) {
+    IMG_CONTRAST = ZERO_CONTRAST; forgetLuma(); return 0;
+  }
   const cols = g.cols | 0, rows = g.rows | 0;
-  if (cols <= 0 || rows <= 0 || g.biome.length < cols * rows) return 0;
+  if (cols <= 0 || rows <= 0 || g.biome.length < cols * rows) {
+    IMG_CONTRAST = ZERO_CONTRAST; forgetLuma(); return 0;
+  }
   const reveal = s.revealAll === true;
   if (IMG_SRC === g && IMG_REVEAL === reveal && IMG !== null) {
     blit(ctx, pr, s, alpha, w, h);          // already stamped: just composite it
@@ -98,29 +113,15 @@ export function paintTerrain(ctx: CanvasRenderingContext2D, pr: Proj,
     return IMG_DRAWN;
   }
   const im = image(cols, rows);
-  if (im === null) return 0;
+  if (im === null) { IMG_CONTRAST = ZERO_CONTRAST; forgetLuma(); return 0; }
   const px = im.data;
-  // The view's own relief, for the elevation ramp.
-  const span = g.maxH - g.minH > 1e-6 ? g.maxH - g.minH : 1;
-  const H = g.heightM, at = (x: number, y: number) =>
-    H[Math.max(0, Math.min(rows - 1, y)) * cols + Math.max(0, Math.min(cols - 1, x))];
-  const gx = (x: number, y: number) => at(x + 1, y) - at(x - 1, y);
-  const gy = (x: number, y: number) => at(x, y + 1) - at(x, y - 1);
-  // AND THE VIEW'S OWN TYPICAL SLOPE, for the hillshade. One extra pass over a
-  // grid of a couple of thousand samples, and it is what makes the shading
-  // scale-free: see `terrainShade`, where the first attempt normalised by the
-  // relief instead and produced a blank picture at every zoom.
-  let sum = 0, n = 0;
-  for (let i = 0; i < cols * rows; i++) {
-    if (g.biome[i] < 0) continue;
-    const x = i % cols, y = (i / cols) | 0;
-    sum += Math.hypot(gx(x, y), gy(x, y)); n++;
-  }
-  const mean = n > 0 ? sum / n : 0;
-  // A typical slope lights at 0.8, which is the contrast a shaded relief map
-  // reads best at. A perfectly flat view scales by 0 and shades uniformly,
-  // which is what a flat view should look like.
-  const gk = mean > 1e-9 ? 0.8 / mean : 0;
+  // THE TONE AND THE TWO RELIEF BANDS (WG-33). `litFull` is the field's own
+  // hillshade, which draws a mountain range; `litDetail` is the same lambert on
+  // the field with its local trend removed, which draws a levelled pad, a dug
+  // trench and the microrelief of a desert. Over 454 m of Forge the ground is
+  // one hillside (45.4 m of relief, 0.333 m between neighbours) and the full
+  // band alone is a flat wash by definition. See MapRelief.
+  const rel = relief(g.heightM, g.biome, cols, rows, g.minH, g.maxH);
   let drawn = 0;
   for (let i = 0; i < cols * rows; i++) {
     const b = g.biome[i], k = i * 4;
@@ -131,17 +132,14 @@ export function paintTerrain(ctx: CanvasRenderingContext2D, pr: Proj,
       continue;
     }
     const c = BIOME_RGB[b < BIOME_RGB.length ? b : 0];
-    const x = i % cols, y = (i / cols) | 0;
-    // Clamped at the edges rather than wrapped: the neighbour of an edge sample
-    // is itself, so the border shades flat instead of reading the far side of
-    // the image, which would draw a cliff along every edge of the panel.
-    const f = terrainShade((H[i] - g.minH) / span, gx(x, y) * gk, gy(x, y) * gk);
+    const f = terrainShade(rel.t[i], rel.litFull[i], rel.litDetail[i]);
     px[k] = clamp255(c[0] * f); px[k + 1] = clamp255(c[1] * f);
     px[k + 2] = clamp255(c[2] * f); px[k + 3] = 255;
     drawn++;
   }
   stamp(im);
   IMG_SRC = g; IMG_REVEAL = reveal; IMG_DRAWN = drawn;
+  IMG_CONTRAST = measure(px, cols, rows);
   blit(ctx, pr, s, alpha, w, h);
   if (drawn > 0) marks.push('terrain');
   // Receipts, not decoration (DW-28). "How much of this view is world at all"

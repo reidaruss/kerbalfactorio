@@ -1,6 +1,6 @@
 // =============================================================================
-// of_map_api.inc — §19, THE MAP SAMPLES THE WORLD (biome.h + discovery.h).
-// ABI 13.
+// of_map_api.inc: §19, THE MAP SAMPLES THE WORLD (surface_field.h + biome.h
+// + discovery.h). ABI 14.
 //
 // #included into of_core_api.cpp AFTER of_discovery_api.inc, because it reads
 // that file's `g_disc` for the survey layer. One translation unit is the
@@ -13,12 +13,23 @@
 // set of cells the player has seen.
 //
 // WHAT IT IS NOT: a second terrain. Standing rule 1 — every height here is
-// `sampleDesignedHeight`, the surface oracle's designed base, the same function
-// the mesh, the collision, the walker and the deposit snap all read. Every biome
-// is `biomeAt`. Nothing is re-derived, approximated or cached against a second
-// definition; if this file disagreed with the ground the player walks on, that
-// disagreement would be the sixth surface definition this project has spent a
-// year deleting.
+// `surfaceHeight`, the surface oracle itself, the same function the mesh, the
+// collision and the walker all read. Every biome is `biomeAt`. Nothing is
+// re-derived, approximated or cached against a second definition; if this file
+// disagreed with the ground the player walks on, that disagreement would be the
+// sixth surface definition this project has spent a year deleting.
+//
+// IT WAS THE DESIGNED BASE AND THAT WAS A DEFECT (WG-33, ABI 14). ABI 13 read
+// `sampleDesignedHeight`, which is the base BEFORE the player's own voxel edits.
+// The consequence is not cosmetic and it is not subtle: a dug hole, a levelled
+// pad and a tunnel mouth could not appear on the map AT ALL, by construction,
+// however the painter shaded them. A close-in map whose whole job is to show you
+// your own work was reading the one field guaranteed not to contain any of it.
+// The oracle already publishes the right answer (`surfaceHeight(body, dir,
+// edits)`, WG-21's clamp included) and §3 already exports it per-direction; this
+// export simply stopped taking the shortcut. With `edits <= 0` the two are
+// EXACTLY equal by surface_field.h's own undug overload, so a world with no
+// digs in it is bit-identical to ABI 13's output.
 //
 // IT IS SPECIFIED IN VIEW-REGION TERMS, NOT IN PIXELS, and deliberately. DW-37
 // also says the map will become a rotatable 3D camera, and when it does the
@@ -58,6 +69,9 @@ Vec3 mapUnit(const Vec3& v) {
 //
 //   body                a §1 body handle (the height and the biome are the
 //                       body's, so this is not a bodyId 0/1 constant)
+//   edits               a §2 DensityField handle, or <= 0 for the pristine
+//                       procedural world. THE PLAYER'S OWN TERRAIN, without
+//                       which the map cannot show a hole they dug (WG-33)
 //   cx,cy,cz            the view CENTRE, body-frame metres (MapScene.centreM)
 //   ux,uy,uz            planeU — right on screen; need not be unit
 //   vx,vy,vz            planeV — up on screen; need not be unit
@@ -91,13 +105,17 @@ Vec3 mapUnit(const Vec3& v) {
 // the painter draws a sample only when this is 1, unless the MODE reveals all.
 // With no discovery field at all every sample reads 0, which is the honest
 // answer ("nothing has been seen") and not a refusal dressed as one.
-OF_API int of_map_sample(int body, double cx, double cy, double cz,
+OF_API int of_map_sample(int body, int edits, double cx, double cy, double cz,
                          double ux, double uy, double uz,
                          double vx, double vy, double vz,
                          double spanM, double aspect, int n) {
   resetF64(0);
   const wg::BodyParams* b = g_bodies.get(body);
   if (!b) return 0;
+  // Borrowed once, exactly as the survey grid below is: the oracle's own undug
+  // overload is taken when there is no field, so "no edits" is a call into the
+  // same authority and not a branch that skips it.
+  const wg::DensityField* ed = g_edits.get(edits);
   if (!(spanM > 0.0) || !(aspect > 0.0) || n <= 0) return 0;
   const Vec3 u = mapUnit(vec(ux, uy, uz));
   const Vec3 v = mapUnit(vec(vx, vy, vz));
@@ -150,7 +168,8 @@ OF_API int of_map_sample(int body, double cx, double cy, double cz,
         continue;
       }
       g_f64.push_back(static_cast<double>(wg::biomeAt(*b, dir)));
-      g_f64.push_back(wg::sampleDesignedHeight(*b, dir));
+      g_f64.push_back(ed ? wg::surfaceHeight(*b, dir, *ed)
+                         : wg::surfaceHeight(*b, dir));
       g_f64.push_back(survey && survey->hasDir(dir) ? 1.0 : 0.0);
     }
   }

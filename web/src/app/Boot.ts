@@ -366,7 +366,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       boardings: () => theFlight.boardings,
     };
     // THE MAP, on M. Ports in MapBoot (Boot is at cap); DW-36 adds the walker.
-    map = await bootMap({ core, host, g, flight: theFlight, body, input, player });
+    map = await bootMap({ core, host, g, flight: theFlight, body, input, player, oracle });
   }
 
   const boot: BootMetrics = {

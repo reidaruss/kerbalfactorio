@@ -69,50 +69,61 @@ export const BIOME_RGB: readonly (readonly [number, number, number])[] = [
 ];
 
 /**
- * The lightness one terrain sample is painted at: an ELEVATION ramp plus a
- * HILLSHADE, both normalised to the view's own relief.
- *
- * THE ELEVATION RAMP ALONE WAS NOT ENOUGH, and that was found by looking at the
- * picture rather than at a number (DW-7). A first version returned only
- * `0.72 + 0.56 * elevT`, which is what a smooth height field honestly looks
- * like: at a 400 m span the whole view is ONE biome with 44 m of relief across
- * it, so the map came out a single pale rectangle with a gradient too gentle to
- * read as ground. Every count said terrain was being drawn and the picture
- * still said nothing, which is the exact failure DW-37 was raised about.
- *
- * A hillshade fixes it because slope, not height, is what the eye reads as
- * terrain: it is the standard relief map and it is computed from the SAME
- * heights, so nothing new is claimed about the world. `gx`/`gy` are the height
- * differences across one sample in SCREEN axes (x right, y down), ALREADY
- * NORMALISED BY THE VIEW'S OWN TYPICAL SLOPE by the caller.
- *
- * THAT NORMALISATION IS THE WHOLE TRICK AND THE FIRST TRY GOT IT WRONG, which
- * is worth recording because the wrong version looked principled. Dividing the
- * per-sample rise by the view's total RELIEF is dimensionally fine and useless:
- * a smooth 44 m of relief spread over 36 samples is 1.2 m a sample, so every
- * gradient came out near 0.03, every lambert came out near the same number, and
- * the picture was as blank as the ramp alone had been. Real terrain slopes are
- * SMALL at map scales - that is why cartographic relief has always used a
- * vertical exaggeration - so the scale has to come from the view's own typical
- * slope, not from its height range. Then a 400 m view of a hillside and a
- * whole-body view of a mountain range light with the same contrast, and neither
- * has a threshold in it.
- *
- * The result is capped at 1.05 rather than allowed to run higher, because the
- * map is a dark instrument with light text on it and a blown-out ground layer
- * takes the readout's contrast with it.
+ * THE LAMBERT of one relief band: how lit a surface of screen-slope (gx, gy) is,
+ * 0 to 1. `gx`/`gy` are height differences across one sample in SCREEN axes
+ * (x right, y down), ALREADY NORMALISED BY THAT BAND'S OWN TYPICAL SLOPE by the
+ * caller (MapRelief). That normalisation is the whole trick and a first attempt
+ * got it wrong in a way worth recording, because the wrong version looked
+ * principled: dividing the per-sample rise by the view's total RELIEF is
+ * dimensionally fine and useless, since a smooth 44 m of relief spread over 36
+ * samples is 1.2 m a sample, so every gradient came out near 0.03 and every
+ * lambert near the same number. Real terrain slopes are SMALL at map scales,
+ * which is why cartographic relief has always used a vertical exaggeration.
  */
-export function terrainShade(elevT: number, gx: number, gy: number): number {
-  const t = Number.isFinite(elevT) ? Math.max(0, Math.min(1, elevT)) : 0.5;
+export function lambert(gx: number, gy: number): number {
   const nx = -(Number.isFinite(gx) ? gx : 0);
   const ny = -(Number.isFinite(gy) ? gy : 0);
   const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
   // Lit from the upper LEFT of the screen, the cartographic convention: the eye
   // reads the other direction as craters instead of hills.
   const lam = (nx * -0.55 + ny * -0.55 + 0.63) * inv;
-  const s = Math.max(0, Math.min(1, lam * 1.35));
-  const f = 0.34 + 0.26 * t + 0.52 * s;
-  return f < 0.26 ? 0.26 : f > 1.05 ? 1.05 : f;
+  const s = lam * 1.35;
+  return s < 0 ? 0 : s > 1 ? 1 : s;
+}
+
+/**
+ * The lightness one terrain sample is painted at: an elevation ramp plus TWO
+ * bands of hillshade, the whole field's and the fine detail's.
+ *
+ * THE ELEVATION RAMP ALONE WAS NOT ENOUGH, and that was found by looking at the
+ * picture rather than at a number (DW-7). A first version returned only
+ * `0.72 + 0.56 * elevT`, which is what a smooth height field honestly looks
+ * like: at a 400 m span the whole view is ONE biome, so the map came out a
+ * single pale rectangle. A hillshade fixes that because slope, not height, is
+ * what the eye reads as terrain.
+ *
+ * AND ONE BAND OF HILLSHADE WAS NOT ENOUGH EITHER, which is WG-33 and was found
+ * the same way: by looking, then by measuring. A hillshade of a SMOOTH field is
+ * a smooth wash however well its magnitude is normalised, because every sample
+ * then has nearly the same slope DIRECTION as its neighbour and lights nearly
+ * the same. Over 454 m of Forge the ground is one hillside (measured: 45.4 m of
+ * relief, 0.33 m between adjacent samples), so the whole picture was one soft
+ * gradient. `litDetail` is the same lambert run on the field with its local
+ * trend removed, which is where a levelled pad and a dug trench live, and which
+ * on rugged ground is a small addition to what was already there. Multi-scale
+ * relief shading, which is what a modern printed relief map does.
+ *
+ * Capped at 1.05 rather than allowed to run higher, because the map is a dark
+ * instrument with light text on it and a blown-out ground layer takes the
+ * readout's contrast with it.
+ */
+export function terrainShade(elevT: number, litFull: number,
+                             litDetail: number): number {
+  const t = Number.isFinite(elevT) ? Math.max(0, Math.min(1, elevT)) : 0.5;
+  const a = Number.isFinite(litFull) ? litFull : 0.5;
+  const b = Number.isFinite(litDetail) ? litDetail : 0.5;
+  const f = 0.30 + 0.24 * t + 0.26 * a + 0.34 * b;
+  return f < 0.22 ? 0.22 : f > 1.05 ? 1.05 : f;
 }
 
 export interface XY { x: number; y: number }

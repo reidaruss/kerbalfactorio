@@ -13,6 +13,7 @@
 // hypothetical here: this whole lane exists partly because a published,
 // working, clamped `VesselObserver.look()` had no caller for a milestone.
 import type { Services } from './Services.js';
+import { lastLuma } from '../ui/MapContrast.js';
 
 export interface MapDebugApi {
   map(op?: string, a?: unknown): unknown;
@@ -60,6 +61,28 @@ export function mapApi(s: Services): MapDebugApi {
         }
         // The discovery field, straight off /core.
         case 'disc': return m.world?.report() ?? { error: 'no world layer' };
+        // THE GROUND THE PAINTER WAS HANDED, sample for sample (WG-33). The
+        // identical grid object, copied out as plain arrays, so a probe that
+        // digs a hole and asks twice is comparing what the map DREW across the
+        // dig rather than two fresh samples that would agree by construction.
+        case 'grid': {
+          const g = m.world?.terrainGrid() ?? null;
+          if (g === null) return { error: 'no terrain grid' };
+          // AND THE TONE THE PAINTER GAVE EACH ONE (WG-34), aligned sample for
+          // sample with the arrays beside it, because "is my pad visible" is a
+          // question about a handful of samples and every number in `contrast`
+          // is a statistic over all 2,784 of them. Copied out here rather than
+          // in the painter: this hook is the only caller.
+          const L = lastLuma();
+          const ok = L.n === g.cols * g.rows;
+          return {
+            cols: g.cols, rows: g.rows, sampleSizeM: g.sampleSizeM,
+            onBody: g.onBody, minH: g.minH, maxH: g.maxH, stepM: g.stepM,
+            heightM: Array.from(g.heightM), biome: Array.from(g.biome),
+            luma: ok ? Array.from(L.luma.subarray(0, L.n)) : null,
+            lumaMask: ok ? Array.from(L.mask.subarray(0, L.n)) : null,
+          };
+        }
         // FORGET WHAT HAS BEEN SEEN. The one entry here that no key drives, and
         // it is deliberate: it is the discovery twin of `of.forgetTunnels()`
         // and `of.repopulate()`, which exist for the same reason and neither of

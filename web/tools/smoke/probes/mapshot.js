@@ -59,7 +59,19 @@
       await sleep(1.1);
     }
   }
-  of.teleport(lat0, lon0, 2);
+  // WHERE THE SHOT IS TAKEN FROM, and it is not a detail (WG-34). The anchor
+  // above is the ore cluster beside the spawn, which sits inside Forge's start
+  // pad: `BodyParams.homeFlatRadiusM` is 150 m of DEAD-LEVEL ground blended
+  // back to natural by 600 m, so a 454 m surface shot framed there is mostly an
+  // artificial apron. Measured on the middle row of that frame, 34 of 58
+  // samples sit at one height to within 0.1 m. The surface shot was therefore
+  // aimed at the one piece of ground on the planet guaranteed to carry no
+  // relief, and it is what made "the close-in map is a featureless wash" look
+  // like a shading defect for a day longer than it was. `offsetM` walks off it;
+  // it defaults to 0 so every existing invocation frames exactly what it framed
+  // before, and the wide shots do not care either way.
+  const OFF = typeof A.offsetM === 'number' ? A.offsetM : 0;
+  of.teleport(lat0 + (OFF / R) * DEG, lon0, 2);
   await sleep(1.2);
 
   // THE REAL KEY, not `map('open')`: standing rule 3.
@@ -87,10 +99,10 @@
   const t = of.map('disc').terrain;
   const disc = of.map('disc').discovery;
   return {
-    valid: true, shot: SHOT, wantSpanM: WANT, notches,
+    valid: true, shot: SHOT, wantSpanM: WANT, notches, offsetM: OFF,
     mode: of.game().mode.mode, revealAll: of.game().mode.fullMapRevealed,
     spanM: Math.round(r.spanM), focus: r.focus.active,
-    painted: d.discoveredQuads, onBody: d.terrainSamples,
+    painted: d.discoveredQuads, onBody: d.terrainSamples, contrast: d.contrast,
     sampleSizeM: d.sampleSizeM, alphas: d.alphas, markers: d.markers,
     ore: d.oreDrawn, bodyFilled: d.bodyFilled, frames: r.view.frames,
     terrain: t,

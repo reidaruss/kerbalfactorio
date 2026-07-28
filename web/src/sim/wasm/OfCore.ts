@@ -54,7 +54,7 @@ import type { OfCoreModule } from './heap.js';
 // and it happened again at 4 against a shim reporting 5. AN ABI BUMP IS ATOMIC
 // ACROSS THE BRIDGE: the shim's version, the rebuilt and SYNCED wasm, this
 // constant and its callers land in one commit, and that commit boots.
-export const OF_ABI_VERSION = 13;
+export const OF_ABI_VERSION = 14;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 
