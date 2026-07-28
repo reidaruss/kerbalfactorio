@@ -34,6 +34,7 @@ export function installPauseMenu(s: Services, loop: Loop) {
     gameplay: () => s.gameplay,
     flight: () => s.flight,
     body: s.body,
+    cfg: s.cfg,
     // A BEAT BEFORE THE PAGE GOES. The receipt has to be readable, and the
     // banner saying which slot was destroyed has to be on screen for at least
     // one frame, or a player who pressed the wrong button never learns what it
@@ -46,11 +47,15 @@ export function installPauseMenu(s: Services, loop: Loop) {
     cheats.press(id);
     menu.invalidate();
   });
+  // GP-131. THE MENU ALWAYS OPENS ON ITS ROOT PAGE. A player who left it on the
+  // controls screen and pressed Escape twice must not come back to a sub-page
+  // they have forgotten they were on, which is the shape of "why is my menu
+  // broken" that costs a support message rather than a bug report.
 
   /** THE pointer transition. One place, both halves (GameplayChrome's rule). */
   const setPause = (open: boolean): void => {
     menu.setOpen(open);
-    if (open) { g.modals.touch(menu); menu.invalidate(); }
+    if (open) { cheats.press('page:'); g.modals.touch(menu); menu.invalidate(); }
     s.input.setUiCapture(open);
     g.hud.setVisible(!open);
     g.hotbarBar.setVisible(!open);
