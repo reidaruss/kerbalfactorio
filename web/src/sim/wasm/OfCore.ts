@@ -83,7 +83,16 @@ import type { OfCoreModule } from './heap.js';
 // `of_orb_park` / `of_orb_resume`, which are `orbital::park`/`resume` reaching
 // the browser, so an unattended vessel can be advanced ANALYTICALLY instead of
 // by keeping alive the object that leaving it was meant to retire.
-export const OF_ABI_VERSION = 18;
+// ABI 19 (2026-07-28): STORAGE EXISTS (factory_sim.h EntityKind::Container,
+// FS-66). Six of_net_container_* exports, purely additive. A container holds ONE
+// item type up to a capacity, refuses a second type with visible back pressure,
+// and RELEASES its type when emptied so a chest is reusable. It has no recipe,
+// no progress and no system of its own: the inserters do the work at both ends.
+// The absence of a recipe is the design, not an omission: FS-49 refused storage
+// as a pass-through machine because `producedCountOf` is a lifetime production
+// tally, so a box passing 500 iron along would have reported manufacturing 500
+// iron. Here that is impossible by construction rather than by rule.
+export const OF_ABI_VERSION = 19;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

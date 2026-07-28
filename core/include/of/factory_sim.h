@@ -431,6 +431,22 @@ enum class EntityKind : uint8_t {
   BeltLine,   // a transport line (its own TransportLine record)
   PowerGen,   // generator (supply)
   Miner,      // bound to a deposit: extracts raw ore at a rate into its out-slot
+  // FS-66: a STORAGE CONTAINER. Holds ONE item type up to a capacity, and has
+  // NO recipe, NO progress and NO system of its own: the inserters do all the
+  // work at both ends, so a container never ticks.
+  //
+  // THE ABSENCE OF A RECIPE IS THE WHOLE DESIGN, and it is why this is an
+  // EntityKind rather than the pass-through machine FS-49 refused. A machine
+  // whose recipe turns item X into item X in one tick would have worked, and it
+  // would have called `recordProduced` on every unit that passed through, so
+  // `producedCountOf` (a LIFETIME PRODUCTION tally that the report publishes and
+  // the probes read) would count a box passing 500 iron along as having
+  // MANUFACTURED 500 iron. Storage would become production in the one ledger
+  // that answers "what did the factory make". Here that cannot happen by
+  // CONSTRUCTION rather than by anybody remembering the rule: there is no
+  // Recipe to record against and no code path from a container to
+  // `recordProduced`.
+  Container,
 };
 
 // Inserter phase: a simple two-phase swing (pick -> drop).
@@ -494,6 +510,84 @@ class FactorySim {
     networkId_[h.index] = 0;
     crafting_[h.index] = 0;
     return h;
+  }
+
+  // FS-66: add a STORAGE CONTAINER holding up to `capacity` units of ONE item
+  // type. `item` may be given to pin the type up front (a filtered chest); left
+  // as kNoItem the FIRST item to arrive claims the slot, and everything else is
+  // refused from then on with back pressure, which is FS-37's typed-acceptance
+  // grammar applied to storage rather than a second acceptance model.
+  //
+  // ONE TYPE AND NOT A SLOT ARRAY, deliberately and for this version only. A
+  // multi-slot chest needs a slot array, a filter model and a stack model, and
+  // is a different mechanic; shipping one type with a capacity is a container
+  // that is honest about what it is, and it composes with the inserter's
+  // existing single-slot drain path with no special case.
+  //
+  // It occupies the out-slot arrays because a container's INPUT and OUTPUT are
+  // the same pool: an inserter drains it exactly as it drains a machine or a
+  // miner, which is why the drain branch needed one added kind rather than a
+  // new branch.
+  EntityHandle addContainer(uint16_t capacity, ItemId item = kNoItem) {
+    EntityHandle h = alloc(EntityKind::Container);
+    outSlotItem_[h.index] = item;
+    outSlotCount_[h.index] = 0;
+    outCap_[h.index] = capacity;
+    inSlotItem_[h.index] = kNoItem;
+    inSlotCount_[h.index] = 0;
+    in2SlotItem_[h.index] = kNoItem;
+    in2SlotCount_[h.index] = 0;
+    demandW_[h.index] = 0;
+    networkId_[h.index] = 0;
+    crafting_[h.index] = 0;
+    onRails_[h.index] = 0;
+    return h;
+  }
+
+  // Would this container take `item` right now? False when it is full, or when
+  // it already holds a different type. The ONE definition of container
+  // acceptance, exactly as `machineAcceptsItem` is the one definition for a
+  // machine (FS-37): the inserter asks this at pickup AND at drop, so a refused
+  // item stays where it is and the line backs up visibly.
+  bool containerAcceptsItem(EntityHandle h, ItemId item) const {
+    return h.valid() && kind_[h.index] == EntityKind::Container &&
+           item != kNoItem && containerAcceptsAt(h.index, item);
+  }
+  ItemId containerItem(EntityHandle h) const {
+    return h.valid() && kind_[h.index] == EntityKind::Container
+               ? outSlotItem_[h.index] : kNoItem;
+  }
+  uint16_t containerCount(EntityHandle h) const {
+    return h.valid() && kind_[h.index] == EntityKind::Container
+               ? outSlotCount_[h.index] : 0;
+  }
+  uint16_t containerCapacity(EntityHandle h) const {
+    return h.valid() && kind_[h.index] == EntityKind::Container
+               ? outCap_[h.index] : 0;
+  }
+  // Take up to `want` units out by hand. Returns what actually moved. Clearing
+  // the last unit RELEASES the type, so an emptied chest can be refilled with
+  // something else, which is what makes the one-type rule usable rather than a
+  // permanent commitment made by whatever wandered in first.
+  uint16_t containerTake(EntityHandle h, uint16_t want) {
+    if (!h.valid() || kind_[h.index] != EntityKind::Container) return 0;
+    const uint16_t got = want < outSlotCount_[h.index] ? want
+                                                       : outSlotCount_[h.index];
+    outSlotCount_[h.index] -= got;
+    if (outSlotCount_[h.index] == 0) outSlotItem_[h.index] = kNoItem;
+    return got;
+  }
+  // Hand-fill, for restoring a save and for tests. Returns what was ACCEPTED,
+  // so a caller stores what the container really holds rather than what it
+  // hoped to give it.
+  uint16_t containerInsert(EntityHandle h, ItemId item, uint16_t count) {
+    if (!containerAcceptsItem(h, item)) return 0;
+    const uint16_t room = static_cast<uint16_t>(outCap_[h.index] -
+                                                outSlotCount_[h.index]);
+    const uint16_t got = count < room ? count : room;
+    outSlotItem_[h.index] = item;
+    outSlotCount_[h.index] += got;
+    return got;
   }
 
   // Add an inserter that moves `item` from a belt-line head into a machine input
@@ -1455,6 +1549,33 @@ class FactorySim {
     return in2SlotItem_[i] != kNoItem && item == in2SlotItem_[i];
   }
 
+  // FS-66: does the container at dense index `i` accept `item`? True iff it has
+  // room AND either holds nothing yet or already holds this type. The exact
+  // analogue of `machineAcceptsAt` and, like it, the ONE definition, asked at
+  // both the pickup and the drop so a refused item stays on its belt and backs
+  // the line up where the player can see it, rather than being held invisibly.
+  bool containerAcceptsAt(uint32_t i, ItemId item) const {
+    if (item == kNoItem) return false;
+    if (outCap_[i] != 0 && outSlotCount_[i] >= outCap_[i]) return false;
+    return outSlotItem_[i] == kNoItem || outSlotItem_[i] == item;
+  }
+
+  // Whichever acceptance rule the DESTINATION uses, or "anything" for a belt.
+  // One place, because the pickup gate and the drop gate must never be able to
+  // disagree: an item accepted at pickup and refused at the drop is an item held
+  // forever, conserved but invisible, which is the failure FS-37 avoided by
+  // gating at both ends with the same predicate.
+  bool destAcceptsAt(EntityHandle dst, ItemId item) const {
+    if (!dst.valid()) return false;
+    if (kind_[dst.index] == EntityKind::Machine) {
+      return machineAcceptsAt(dst.index, item);
+    }
+    if (kind_[dst.index] == EntityKind::Container) {
+      return containerAcceptsAt(dst.index, item);
+    }
+    return true;  // a belt is transport, not a consumer.
+  }
+
   // ==========================================================================
   // §1.4(4) — InserterSystem. Each inserter: if holding, drop into dst input;
   // else if src head is ready, pick it up. O(1) per inserter — touches only the
@@ -1490,6 +1611,16 @@ class FactorySim {
           }
           insHeld_[i] = kNoItem;
           insPhase_[i] = InserterPhase::Idle;
+        } else if (dst.valid() && kind_[dst.index] == EntityKind::Container) {
+          // FS-66: the ONE new drop branch. Gated by the same predicate the
+          // pickup used, so a container that filled up between the pick and the
+          // drop stalls the arm instead of overfilling, exactly as a full
+          // machine does.
+          if (!containerAcceptsAt(dst.index, insHeld_[i])) continue;
+          outSlotItem_[dst.index] = insHeld_[i];
+          outSlotCount_[dst.index] += 1;
+          insHeld_[i] = kNoItem;
+          insPhase_[i] = InserterPhase::Idle;
         } else if (dst.valid() && kind_[dst.index] == EntityKind::BeltLine) {
           if (lines_[dst.index].tryPushTail(insHeld_[i])) {
             insHeld_[i] = kNoItem;
@@ -1507,24 +1638,63 @@ class FactorySim {
       // the drop is what keeps the item on the belt (a permanently-held item
       // would be conserved but invisible). Belt destinations take anything: a
       // belt is transport, not a consumer.
-      const bool dstIsMachine =
-          dst.valid() && kind_[dst.index] == EntityKind::Machine;
+      // FS-66 replaced `dstIsMachine ? machineAcceptsAt : true` with
+      // `destAcceptsAt`, which asks whichever rule the destination actually
+      // uses. Behaviour for a machine or a belt destination is unchanged
+      // literally: the helper's machine branch IS `machineAcceptsAt` and its
+      // fall-through IS the old `true`.
+      // FS-66: A CONTAINER DESTINATION CARRIES NO FILTER, and this is the one
+      // place a container genuinely differs from a machine rather than reusing
+      // its path. An inserter's `insItem_` is decided ONCE, at connect time, by
+      // `inferItem`, which is right for a machine because a machine's ingredient
+      // is fixed by its recipe before anything is built. A chest's contents are
+      // decided by what the player belts into it, so there is nothing to infer
+      // at connect time: the first draft inferred the belt's head item, the belt
+      // was empty, the filter pinned to kNoItem, and the arm then matched
+      // NOTHING for ever. The chest read 0 held while its belt backed up 40
+      // items, which is exactly what a correct refusal looks like and was in
+      // fact an arm that never tried.
+      //
+      // `containerAcceptsAt` is the real gate and it is asked below either way,
+      // so skipping the filter loses no safety: a full chest or a chest holding
+      // another type still refuses at the pickup and the line still backs up
+      // visibly. Gated on the DESTINATION KIND rather than on `insItem_` being
+      // kNoItem, because "kNoItem means anything" would silently re-point every
+      // existing arm whose inference failed, and those should keep doing nothing.
+      // FS-66 for a container, FS-67 for a two-ingredient machine: the arm
+      // carries WHATEVER THE DESTINATION EATS rather than one pinned type. In
+      // both cases the destination has a real acceptance rule of its own
+      // (`containerAcceptsAt`, `machineAcceptsAt`) which is asked below either
+      // way, so dropping the filter removes a redundant gate and not a real one.
+      // A single-input machine keeps its filter, because there the filter and
+      // the acceptance rule are the same answer and pinning costs nothing.
+      const bool dstUnfiltered =
+          dst.valid() && (kind_[dst.index] == EntityKind::Container ||
+                          (kind_[dst.index] == EntityKind::Machine &&
+                           in2SlotItem_[dst.index] != kNoItem));
       if (src.valid() && kind_[src.index] == EntityKind::BeltLine) {
         TransportLine& sl = lines_[src.index];
-        if (sl.headReady() && sl.headItem() == insItem_[i] &&
-            (!dstIsMachine || machineAcceptsAt(dst.index, sl.headItem()))) {
+        if (sl.headReady() && (dstUnfiltered || sl.headItem() == insItem_[i]) &&
+            destAcceptsAt(dst, sl.headItem())) {
           insHeld_[i] = sl.popHead();
           insPhase_[i] = InserterPhase::Holding;
         }
       } else if (src.valid() && (kind_[src.index] == EntityKind::Machine ||
-                                 kind_[src.index] == EntityKind::Miner)) {
-        // Drain a machine OR a miner out-slot (both live in outSlotCount_).
+                                 kind_[src.index] == EntityKind::Miner ||
+                                 kind_[src.index] == EntityKind::Container)) {
+        // Drain a machine, a miner OR a container out-slot: all three live in
+        // outSlotCount_, which is why a container needed one added kind here
+        // rather than a branch of its own. Emptying a container RELEASES its
+        // type, the same rule `containerTake` uses, so one authority decides it.
         if (outSlotCount_[src.index] > 0 &&
-            (!dstIsMachine ||
-             machineAcceptsAt(dst.index, outSlotItem_[src.index]))) {
+            destAcceptsAt(dst, outSlotItem_[src.index])) {
           outSlotCount_[src.index] -= 1;
           insHeld_[i] = outSlotItem_[src.index];
           insPhase_[i] = InserterPhase::Holding;
+          if (kind_[src.index] == EntityKind::Container &&
+              outSlotCount_[src.index] == 0) {
+            outSlotItem_[src.index] = kNoItem;
+          }
         }
       }
     }

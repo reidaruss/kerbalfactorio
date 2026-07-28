@@ -76,7 +76,10 @@ using GeneratorId = power::NodeId;
 // The UE layer holds these to query state + connect buildings. It wraps the
 // underlying sim EntityHandle plus a building kind so connect() can pick the
 // right transfer without the caller spelling out inserters.
-enum class BuildKind : uint8_t { None = 0, Miner, Belt, Smelter, Assembler };
+// FS-66 appends Container. Appended and never inserted, so no existing value
+// moves and no persisted or transmitted BuildKind is re-pointed.
+enum class BuildKind : uint8_t { None = 0, Miner, Belt, Smelter, Assembler,
+                                Container };
 
 struct BuildId {
   EntityHandle entity;          // the sim entity backing this building
@@ -176,6 +179,34 @@ class BuildableNetwork {
     if (outCap) sim_.setMachineOutputCap(e, outCap);
     sim_.setActive(e, true);
     return BuildId{e, BuildKind::Assembler};
+  }
+
+  // FS-66: place a STORAGE CONTAINER holding up to `capacity` units of ONE item
+  // type. `item` kNoItem lets the first arrival claim the type; passing one pins
+  // it, which is a filtered chest and costs nothing extra.
+  //
+  // A CONTAINER IS NOT A MACHINE AND DOES NOT APPEAR IN producedCount(). It has
+  // no recipe, so nothing can record production against it; see the EntityKind
+  // comment in factory_sim.h for why that is structural rather than a rule.
+  BuildId placeContainer(uint16_t capacity = 300, ItemId item = kNoItem) {
+    EntityHandle e = sim_.addContainer(capacity, item);
+    sim_.setActive(e, true);
+    return BuildId{e, BuildKind::Container};
+  }
+  ItemId containerItem(const BuildId& b) const {
+    return b.valid() ? sim_.containerItem(b.entity) : kNoItem;
+  }
+  uint16_t containerCount(const BuildId& b) const {
+    return b.valid() ? sim_.containerCount(b.entity) : 0;
+  }
+  uint16_t containerCapacity(const BuildId& b) const {
+    return b.valid() ? sim_.containerCapacity(b.entity) : 0;
+  }
+  uint16_t containerTake(const BuildId& b, uint16_t want) {
+    return b.valid() ? sim_.containerTake(b.entity, want) : 0;
+  }
+  uint16_t containerInsert(const BuildId& b, ItemId item, uint16_t count) {
+    return b.valid() ? sim_.containerInsert(b.entity, item, count) : 0;
   }
 
   // --------------------------------------------------------------------------
@@ -718,14 +749,64 @@ class BuildableNetwork {
         from.kind == BuildKind::Assembler) {
       return sim_.outputItemOf(from.entity);
     }
+    // FS-66: A CONTAINER'S OUTPUT IS WHATEVER IT CURRENTLY HOLDS, which is the
+    // one place a container differs from every other source: a machine's output
+    // item is fixed by its recipe at placement time, and a chest's is decided by
+    // what the player belted into it. An empty chest infers kNoItem, and the
+    // arm then carries nothing until something arrives, which is correct: an
+    // inserter drawn off an empty chest has nothing to be filtered to yet.
+    if (from.kind == BuildKind::Container) {
+      return sim_.containerItem(from.entity);
+    }
+    // A container SINK gets NO FILTER, and kNoItem here means exactly that.
+    // The first draft returned the belt's current head item, which is a snapshot
+    // taken at CONNECT time of a belt that has not started running: it pinned
+    // every chest arm to kNoItem and they matched nothing for ever. A chest's
+    // contents are the player's choice rather than a recipe's, so there is
+    // nothing to infer, and `inserterSystem` skips the filter for a container
+    // destination and lets `containerAcceptsAt` decide.
+    if (to.kind == BuildKind::Container) return kNoItem;
     // from is a belt -> a machine sink: match belt content to an input slot.
+    //
+    // FS-67: A MULTI-INPUT MACHINE GETS NO FILTER, and the old `return in1`
+    // fallback is why an assembler's SECOND ingredient could never be belted.
+    //
+    // The inference reads the belt's CURRENT head item, which is a snapshot
+    // taken at CONNECT time. For a single-input machine that is harmless,
+    // because there is only one answer. For a two-input machine it is fatal, and
+    // it is fatal ALWAYS rather than sometimes: the client rebuilds the whole
+    // network from the plan on every placement (`Factory.commit` calls
+    // `recreate`, since FactorySim has no entity removal by design), and a
+    // rebuild discards everything riding every belt, so EVERY belt is empty at
+    // the moment it is connected. The fallback then bound every belt-to-
+    // assembler arm to ingredient A, and the line carrying ingredient B waited
+    // for ingredient A for ever. Measured by `probes/assembler.js`: a 73-tile
+    // stone line saturated to 292 items with its outlet mated to
+    // `socket_item_in_b` at 0.5000 m and facing -1.0000, and delivered ZERO
+    // units across 5,988 ticks, while the iron line beside it worked perfectly
+    // because ingredient A happened to be what IT carried.
+    //
+    // kNoItem means NO FILTER here, and it is safe because it removes a
+    // redundant gate rather than a real one: `inserterSystem` still asks
+    // `machineAcceptsAt`, which is FS-37's typed-acceptance rule and accepts
+    // EITHER ingredient and nothing else. An explicit `connect(from, to, item)`
+    // still pins the arm, because this function is only consulted when the
+    // caller passed kNoItem.
+    //
+    // HONEST NOTE ON WHICH HALF OF THE FIX IS LOAD-BEARING, because reverting
+    // each half separately is the only way to know. The fix has two parts, this
+    // one and the `dstUnfiltered` gate in `inserterSystem`, and ONLY THE GATE
+    // MATTERS: with the old `return in1` restored here and the gate in place,
+    // the suite stays green (slot1 111, slot2 56, 54 crafts), and with this line
+    // in place and the gate reverted it fails by name (slot1 221, slot2 0, 0
+    // crafts). This change is kept because a filter that says "iron" on an arm
+    // that carries coal is a lie the next reader has to discover, not because it
+    // is doing work.
     if (to.kind == BuildKind::Smelter || to.kind == BuildKind::Assembler) {
-      ItemId belt = sim_.lineHeadItem(from.entity);
       ItemId in1 = sim_.inputItemOf(to.entity);
       ItemId in2 = sim_.input2ItemOf(to.entity);
-      if (belt != kNoItem && belt == in2) return in2;  // belt carries the 2nd arm
-      if (belt != kNoItem && belt == in1) return in1;  // belt carries the 1st arm
-      return in1;  // empty belt: default to the slot-1 ingredient
+      if (in2 != kNoItem) return kNoItem;  // two ingredients: let acceptance decide
+      return in1;  // single-input: one answer, and pinning it costs nothing
     }
     return kNoItem;
   }

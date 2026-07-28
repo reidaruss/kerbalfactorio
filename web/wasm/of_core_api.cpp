@@ -370,7 +370,31 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       vessel on rails" living inside the object whose retirement is the
 //       question (DW-26). The predicate stays of_fl_on_rails_eligible, and the
 //       conic pair is pure and handle-free like of_mn_*.
-OF_API int of_abi_version(void) { return 18; }
+//  19: STORAGE EXISTS (factory_sim.h EntityKind::Container, FS-66). Section 7
+//       adds six exports: of_net_place_container, of_net_container_item,
+//       of_net_container_count, of_net_container_capacity, of_net_container_take
+//       and of_net_container_insert (the last for restoring a save). PURELY
+//       ADDITIVE: not one existing export changed name, signature or scratch
+//       layout.
+//       WHAT A CONTAINER IS, because the shape is the decision. It holds ONE
+//       item type up to a capacity; the first item to arrive claims the type and
+//       everything else is refused with visible back pressure, which is FS-37's
+//       typed-acceptance grammar rather than a second acceptance model; emptying
+//       it RELEASES the type, so a chest is reusable rather than committed for
+//       ever by whatever wandered in first. It has NO recipe, NO progress and NO
+//       system of its own, because the inserters do all the work at both ends,
+//       so a container never ticks.
+//       THE ABSENCE OF A RECIPE IS THE POINT. FS-49 refused to build storage as
+//       a pass-through machine whose recipe turns item X into item X, because
+//       `producedCountOf` is a LIFETIME PRODUCTION tally that the client report
+//       publishes and the probes read, so a box passing 500 iron along would
+//       have reported MANUFACTURING 500 iron. Storage would have become
+//       production in the one ledger that answers what the factory made. Here
+//       that cannot happen by CONSTRUCTION: there is no Recipe to record against
+//       and no code path from a container to `recordProduced`. Driven proof in
+//       container_tests: a drill fills a chest with 221 units through a belt and
+//       `producedCountOf(ore)` equals the 241 MINED, not 241 plus 221.
+OF_API int of_abi_version(void) { return 19; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -1773,6 +1797,59 @@ OF_API int of_net_feed_machine2(int nId, int build, int count) {
   if (!b || !b->valid()) return -1;
   r->net->sim().feedMachine2(b->entity, static_cast<uint16_t>(count));
   return 1;
+}
+
+// --- FS-66 / ABI 19: STORAGE CONTAINERS ---------------------------------------
+// A container holds ONE item type up to a capacity. `item` 0 lets the first
+// arrival claim the type; passing one pins it, which is a filtered chest.
+OF_API int of_net_place_container(int nId, int capacity, int item) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return -1;
+  r->builds.push_back(r->net->placeContainer(
+      static_cast<uint16_t>(capacity), static_cast<fs::ItemId>(item)));
+  return static_cast<int>(r->builds.size()) - 1;
+}
+// What it holds, 0 for an empty chest, which is a chest with no TYPE rather than
+// a chest holding zero of something: emptying releases the type.
+OF_API int of_net_container_item(int nId, int build) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return 0;
+  au::BuildId* b = r->build(build);
+  return b ? static_cast<int>(r->net->containerItem(*b)) : 0;
+}
+OF_API int of_net_container_count(int nId, int build) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return 0;
+  au::BuildId* b = r->build(build);
+  return b ? static_cast<int>(r->net->containerCount(*b)) : 0;
+}
+OF_API int of_net_container_capacity(int nId, int build) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return 0;
+  au::BuildId* b = r->build(build);
+  return b ? static_cast<int>(r->net->containerCapacity(*b)) : 0;
+}
+// Take up to `want` out by hand. Returns what MOVED, so a caller records what
+// really left rather than what it asked for.
+OF_API int of_net_container_take(int nId, int build, int want) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return 0;
+  au::BuildId* b = r->build(build);
+  return b ? static_cast<int>(
+                 r->net->containerTake(*b, static_cast<uint16_t>(want)))
+           : 0;
+}
+// Hand-fill, which is how a save puts a chest's contents back. Returns what was
+// ACCEPTED: a full chest or a chest holding another type takes nothing, and a
+// caller that records what it OFFERED instead would drift from the sim.
+OF_API int of_net_container_insert(int nId, int build, int item, int count) {
+  NetRec* r = g_nets.get(nId);
+  if (!r) return 0;
+  au::BuildId* b = r->build(build);
+  return b ? static_cast<int>(r->net->containerInsert(
+                 *b, static_cast<fs::ItemId>(item),
+                 static_cast<uint16_t>(count)))
+           : 0;
 }
 
 OF_API void of_net_step(int nId) {

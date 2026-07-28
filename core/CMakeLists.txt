@@ -127,6 +127,23 @@ target_link_libraries(item_identity_tests PRIVATE of_core)
 target_include_directories(item_identity_tests PRIVATE tests)
 add_test(NAME item_identity_tests COMMAND item_identity_tests)
 
+# --- STORAGE (FS-66): a container is a real entity and storage is NOT
+#     production. FS-49 refused to build this as a pass-through machine because
+#     `producedCountOf` is a lifetime production tally, so a box passing 500 iron
+#     along would have reported MANUFACTURING 500 iron. The headline assertion
+#     here is therefore a negative one, asserted against a busy driven line
+#     rather than an empty scene: a drill fills a chest through a belt and
+#     producedCount() stays EXACTLY zero. Also the one-type rule with visible
+#     back pressure on the refused type, the capacity cap, type release on empty
+#     so a chest is reusable, and a chest DRAINING into a smelter, which is the
+#     half that makes it a buffer rather than a bin.
+add_executable(container_tests
+  tests/test_main.cpp
+  tests/test_container.cpp)
+target_link_libraries(container_tests PRIVATE of_core)
+target_include_directories(container_tests PRIVATE tests)
+add_test(NAME container_tests COMMAND container_tests)
+
 # --- ELECTRICITY (power.h + its automation.h binding): the grid. Generators
 #     produce, consumers demand, poles form networks by connectivity, and when
 #     demand exceeds supply EVERYTHING on that network slows by the same factor.

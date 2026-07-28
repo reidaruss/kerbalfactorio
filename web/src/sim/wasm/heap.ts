@@ -325,6 +325,14 @@ export interface OfCoreModule extends OfCoreProgressApi {
   _of_net_feed_machine(n: number, build: number, count: number): number;
   /** ABI 17 / FS-56: the SECOND ingredient slot of a multi-input machine. */
   _of_net_feed_machine2(n: number, build: number, count: number): number;
+  // FS-66 / ABI 19: storage containers. One item type, one capacity.
+  _of_net_place_container(n: number, capacity: number, item: number): number;
+  _of_net_container_item(n: number, build: number): number;
+  _of_net_container_count(n: number, build: number): number;
+  _of_net_container_capacity(n: number, build: number): number;
+  _of_net_container_take(n: number, build: number, want: number): number;
+  _of_net_container_insert(n: number, build: number, item: number,
+                           count: number): number;
   _of_net_take_output(n: number, build: number, want: number): number;
   _of_net_set_placement(n: number, build: number, typeId: number,
                         x: number, y: number, z: number, boundCm: number): void;
