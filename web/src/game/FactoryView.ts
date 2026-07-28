@@ -23,6 +23,7 @@ import { MachineBatch, type MachineTemplate } from './MachineBatch.js';
 import { TYPE_ID, type BuildKind, type Factory, type Placed } from './Factory.js';
 import { orient } from './Grid.js';
 import { cornersOf } from './BeltCorners.js';
+import { stalenessOf } from './FactoryStale.js';
 import { readMachineSockets, type SocketDef } from './FactorySnap.js';
 import { publishPorts } from './FactoryPorts.js';
 import { BeltCargo } from './BeltCargo.js';
@@ -338,7 +339,15 @@ export class FactoryView {
   get ghostVisible(): boolean { return this.ghost?.visible ?? false; }
 
   stats(): unknown {
+    // FS-89. `drawnParts` is the validity term beside `staleMaxM`, published
+    // rather than left implied: a zero measured over zero buildings is a probe
+    // that measured nothing, which INSTRUMENTS.md names as the most expensive
+    // kind of green because it costs nothing to obtain and survives review.
+    const stale = stalenessOf(this.lastPlan, this.slots, this.batch,
+      this.origin, this.p);
     return { ...this.batch.stats(), ghost: this.ghostVisible,
+      staleMaxM: stale.maxM, staleParts: stale.stale, drawnParts: stale.drawn,
+      staleWorstId: stale.worst,
       links: this.linkSlots.length, inserters: this.drawnInserters,
       cargo: this.cargo.stats(),
       curves: this.curves.length, curveTiles: this.curves,
