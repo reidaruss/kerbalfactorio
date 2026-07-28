@@ -167,8 +167,21 @@ other. It says nothing about whether either is HEAD.**
 Verified rather than argued: HEAD's committed binary was loaded in node and asked
 directly, `_of_abi_version()` returns **20**; a correct `git archive HEAD web`
 freeze bundles `client expects 20`, serves the 411607-byte wasm and reports
-**`abi=20`** with smoke PASS. So the build that printed 19 was not built from
-HEAD.
+**`abi=20`** with smoke PASS.
+
+**CORRECTION, and the correction is the interesting part.** I concluded from that
+"so the build that printed 19 was not built from HEAD". **That was wrong.** Admin
+ran the two commands below against the live demo and the freeze WAS building
+HEAD: bundle `client expects 20`, HEAD `OF_ABI_VERSION = 20`, served wasm byte
+identical to HEAD's. The real cause was a **stale server on a reused port** (see
+the entry above this one): the measurement never reached the new build at all.
+
+The lesson survives the wrong diagnosis and is arguably strengthened by it.
+**Neither of us could tell the difference from the inside.** A self-consistent
+report is compatible with a stale build, a stale server, and a correct build, and
+the boot line reads the same in all three. That is the whole argument for
+comparing against HEAD rather than trusting a self-report, and it is why the two
+commands below are worth running even when nothing looks wrong.
 
 **`OF_BUILD_STAMP` has the same shape and is worth naming beside it.**
 `vite.config.ts:20` takes the stamp from the environment and only falls back to
