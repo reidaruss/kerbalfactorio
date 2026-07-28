@@ -31,7 +31,7 @@ import { Factory, type Placed } from './Factory.js';
 import { FactoryView } from './FactoryView.js';
 import { BuildMode } from './BuildMode.js';
 import { Hotbar } from './Hotbar.js';
-import { ModeRules, type GameMode } from './GameMode.js';
+import { ModeRules, sandboxCombatFromUrl, type GameMode } from './GameMode.js';
 import { GameplayInput } from './GameplayInput.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
@@ -50,6 +50,8 @@ import { ObjectivePanel } from '../ui/ObjectivePanel.js';
 import { gameplayReport } from './GameplayReport.js';
 import { HealthBook } from './Health.js';
 import { reconcile } from './HealthCensus.js';
+import { PlayerVitals } from './PlayerVitals.js';
+import type { HurtSource } from './PlayerHealth.js';
 import { attachProgress, openMachinePanel, setPackPanel } from './GameplayChrome.js';
 import type { ProgressUi } from './ProgressUi.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
@@ -119,9 +121,13 @@ export class Gameplay {
    *  clamps. The space half of the game's entrance into the ground half. */
   readonly pads: LaunchPads;
   readonly padView: LaunchPadView;
-  /** GP-65: what every placed thing can take. `Gameplay` itself is the
-   *  `HealthPopulations` argument, because the four lists are already fields. */
+  /** GP-65 / GP-79: what every placed thing can take, and what the PLAYER can.
+   *  `Gameplay` is its own `HealthPopulations`, the four lists being fields
+   *  already; `hurtSources` is empty until the enemy lane fills it, which is a
+   *  correct state rather than a stub. Reasoning in Health.ts / PlayerHealth.ts. */
   readonly health = new HealthBook();
+  readonly vitals = new PlayerVitals(() => this.mode.hostile);
+  readonly hurtSources: HurtSource[] = [];
   /** W11: the three screens that show what the player has EARNED, over
    *  research.h, power.h and progression.h. Built in `create` because the grid
    *  panel needs the factory's own network. */
@@ -163,7 +169,8 @@ export class Gameplay {
   }
 
   private constructor(private readonly d: GameplayDeps) {
-    this.mode = new ModeRules(d.mode);
+    this.mode = new ModeRules(d.mode,
+      sandboxCombatFromUrl(typeof location === 'undefined' ? '' : location.href));
     this.host = d.host;
     this.game = new GameCore(d.core);
     this.field = new NodeField(this.game, d.origin);
@@ -324,16 +331,21 @@ export class Gameplay {
     // and iron accumulates" waits on no frame, panel or player proximity.
     this.machines.tick(1);
     this.factory.tick(1);
-    // GP-65. After the ticks (a commit replaces the whole plan) and every tick
-    // rather than on an event, because an event is a thing a future call site
-    // can forget to raise. Registering never heals: HealthCensus says why.
+    // GP-65/GP-79. After the ticks (a commit replaces the whole plan) and every
+    // tick rather than on an event, because an event is a thing a future call
+    // site can forget to raise. HealthCensus.ts says why registering never heals.
     reconcile(this.health, this);
+    this.vitals.step(1 / 60, this.hurtSources,
+      { player: this.d.player, hud: this.hud });
     this.fx.watchSmelters(this.factory, this.game);
     // AUTOSAVE on the sim clock too, so a driven run saves as often as a played
     // one does.
     if (++this.sinceSaveTicks >= AUTOSAVE_TICKS) { this.sinceSaveTicks = 0; void this.save(); }
 
-    if (this.uiOpen || this.suspended) {
+    // GP-79. A dead player does not swing, place or dig. The panels stay open
+    // to them, deliberately: locking somebody out of the UI mid-blackout is a
+    // punishment nobody asked for, and reading your own pack is harmless.
+    if (this.uiOpen || this.suspended || this.vitals.health.dead) {
       // A machine screen closes with the key that opened it; the pack is handled
       // by `chrome`. Either way nothing in the world is aimed at.
       this.keys.closeWithInteract(this);
@@ -418,6 +430,7 @@ export class Gameplay {
     if (this.openMachine !== null || this.openBuild !== null) {
       this.furnacePanel.render(screenView(this));
     }
+    this.hud.setHealth(this.vitals.health);
     const carried = this.game.carried().map((c) => ({
       name: c.name, count: c.count, icon: this.icons.for(c.name),
     }));

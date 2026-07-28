@@ -36,6 +36,11 @@ export class GameHud {
   private readonly bannerEl: HTMLElement;
   /** DW-31: the mode badge. Never hidden by `setVisible`; see the constructor. */
   private readonly mode: HTMLElement;
+  /** GP-79: the player's own health. NOT hidden by `setVisible`, for the same
+   *  reason the sandbox badge is not: the one moment you most need to know you
+   *  are on 12 health is while a panel is open in front of you. */
+  private readonly health: HTMLElement;
+  private lastHealth = '';
   private lastPrompt = '';
   private lastCarry = '';
   private toastLeft = 0;
@@ -60,6 +65,7 @@ export class GameHud {
     this.toast = this.div(parent, 'of-toast', 'of-ui');
     this.gainEl = this.div(parent, 'of-gain', 'of-ui');
     this.bannerEl = this.div(parent, 'of-banner', 'of-ui');
+    this.health = this.div(parent, 'of-health', 'of-ui');
     this.mode = this.div(parent, 'of-mode', 'of-ui');
     this.mode.textContent = badge;
     this.mode.style.display = badge === '' ? 'none' : 'block';
@@ -130,6 +136,39 @@ export class GameHud {
     this.toast.textContent = text;
     this.toast.classList.add('show');
     this.toastLeft = secs;
+  }
+
+  /**
+   * GP-79. The health bar, diffed like everything else here.
+   *
+   * IT SAYS `SAFE` RATHER THAN DISAPPEARING when the player cannot be hurt.
+   * That is DW-31's own rule from `Structures.affordInCore` applied to the HUD:
+   * a mode that lifts a rule must publish the answer it is overriding, and a bar
+   * that is simply absent in sandbox is indistinguishable from a bar that failed
+   * to render. It also stops a sandbox playtester reporting "enemies do no
+   * damage" as a bug.
+   */
+  setHealth(v: { hp: number; maxHp: number; fraction: number; dead: boolean;
+                 respawnIn: number; invulnerable: boolean } | null): void {
+    if (v === null) {
+      if (this.lastHealth !== 'none') { this.health.style.display = 'none'; this.lastHealth = 'none'; }
+      return;
+    }
+    const pct = Math.round(Math.max(0, Math.min(1, v.fraction)) * 100);
+    const label = v.invulnerable ? 'SAFE'
+      : v.dead ? `DOWN ${v.respawnIn.toFixed(1)}s`
+        : `${Math.ceil(v.hp)} / ${v.maxHp}`;
+    const key = `${pct}|${label}`;
+    if (key === this.lastHealth) return;
+    this.lastHealth = key;
+    this.health.style.display = 'block';
+    // The colour is the READING, not decoration: a bar that is only ever one
+    // colour makes a player read a number, and a player under attack does not
+    // read numbers.
+    const colour = v.invulnerable ? '#6fd3ff'
+      : pct > 60 ? '#63d47a' : pct > 25 ? '#e8c05a' : '#ff5a4a';
+    this.health.innerHTML = `<span class="hl">${esc(label)}</span>`
+      + `<div id="of-hpbar"><i style="width:${pct}%;background:${colour}"></i></div>`;
   }
 
   /** Called every frame. `dt` only ages the toast; the rest is diffed. */

@@ -78,6 +78,7 @@ import { asMode, type GameMode } from './GameMode.js';
 import type { SavedEdits } from './VoxelSave.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';
 import type { SavePad } from './LaunchPadSave.js';
+import type { PlayerHealthSave } from './PlayerHealth.js';
 
 export interface SaveBuilding {
   kind: string;
@@ -151,6 +152,10 @@ export interface SaveSlot {
    *  move: an absent list is an undamaged world, which is what every world
    *  written before tonight actually was. */
   health?: [string, number][];
+  /** GP-79: the PLAYER's own health and death count. Additive and optional
+   *  under the same rule as `health` above; absent reads as a player at full
+   *  health, which is what every world written before tonight was. */
+  vitals?: PlayerHealthSave;
   /** The progression spine (ABI 9). Optional, and the version was deliberately
    *  NOT bumped for it: see SAVE_VERSION above. An absent one restores an
    *  unresearched player with an empty suit, which is a legal world. */

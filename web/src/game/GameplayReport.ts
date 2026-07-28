@@ -79,6 +79,9 @@ export function gameplayReport(g: Gameplay): unknown {
       // healthy unless somebody publishes the difference (DW-28). A probe holds
       // both `missing` and `stale` at zero.
       health: g.health.report(censusOf(g)),
+      // GP-79. The PLAYER's health, separate from the buildings' book because
+      // they are different subjects: one is the base and one is you.
+      vitals: g.vitals.report(),
       autoCollected: g.autoCollected,
       fx: {
         ...(g.fx.report() as object),

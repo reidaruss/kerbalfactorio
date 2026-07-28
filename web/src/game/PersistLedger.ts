@@ -44,5 +44,8 @@ export interface RestoreLedger {
    *  stopped being stable, counted rather than dropped: the building would
    *  otherwise come back at FULL HEALTH with every other check still green. */
   health: { applied: number; orphans: number };
+  /** GP-79: whether the slot carried the player's own health. False on any
+   *  world written before tonight, which restores a player at full. */
+  vitals: boolean;
   savedAt: number;
 }

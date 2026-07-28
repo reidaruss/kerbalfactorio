@@ -425,6 +425,37 @@
   color: var(--of-dim);
 }
 
+/* --- the player's own health (GP-79) ------------------------------------ */
+/* Bottom LEFT, opposite the pack, and deliberately not hidden with the rest of
+   the HUD: the moment you most need to know you are on 12 health is while a
+   panel is open in front of you. Fixed width so the bar does not resize as the
+   label changes, which would read as the bar itself moving. */
+#of-health {
+  left: 18px;
+  bottom: 18px;
+  width: 190px;
+  padding: 6px 10px 8px;
+  background: rgba(16, 20, 24, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  pointer-events: none;
+  z-index: 38;
+}
+#of-health .hl {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #c8d2da;
+}
+#of-hpbar { height: 7px; margin-top: 6px; background: #232b31; }
+#of-hpbar > i {
+  display: block;
+  height: 100%;
+  /* The width transition is what makes a hit READ as a hit rather than as the
+     number having always been that. Short enough not to lag a burst. */
+  transition: width 0.12s linear;
+}
+
 /* --- the mode badge (DW-31) --------------------------------------------- */
 /* Top centre, always on in sandbox and absent in survival. It is NOT hidden
    with the rest of the HUD when a panel opens: staring at a craft list where

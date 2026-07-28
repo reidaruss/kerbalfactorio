@@ -92,7 +92,7 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
   'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff', 'gameplay',
   'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density',
-  'scatterfair', 'propgrow', 'detail',
+  'scatterfair', 'propgrow', 'detail', 'propcull',
   'vab', 'flight',
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one
@@ -102,7 +102,11 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'bloomlevels', 'bloomstrength', 'bloomthresh', 'exposure', 'msaa', 'fxaalod',
   // DW-31. Unlike every other entry here this is not an isolation switch: it
   // selects a game MODE, and the world it makes saves to its own slot.
-  'sandbox']) {
+  'sandbox',
+  // GP-79 / GP-82. Also not an isolation switch: it turns DANGER back on inside
+  // sandbox, which DW-31 leaves off by default so a designer testing a rocket is
+  // not fighting while they do it. Ignored in survival, which is always hostile.
+  'combat']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

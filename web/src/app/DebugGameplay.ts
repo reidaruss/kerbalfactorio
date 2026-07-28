@@ -257,6 +257,31 @@ export function gameplayApi(s: Services, loop: Loop) {
       return { key: sel.key, ...r };
     },
 
+    /**
+     * GP-79. Hurt the PLAYER, and stand them back up.
+     *
+     * `hurt` is the same `PlayerHealth.hurt` an enemy's contact will reach
+     * through `step`, so a probe driving it drives the real path: the death
+     * rule, the banner, the blackout and the respawn are all downstream of this
+     * one call and none of them is reimplemented for the test.
+     *
+     * `respawn` exists so a probe does not have to wait out the five second
+     * blackout in real time, and it is the SAME call the timer makes rather
+     * than a second way to stand up, which is what keeps the teleport and the
+     * heal from ever getting out of step.
+     */
+    hurt(sel: { amount?: number; cause?: string; respawn?: boolean }) {
+      const g = s.gameplay;
+      if (g === null) return null;
+      if (sel?.respawn === true) {
+        if (s.player === null) return null;
+        g.vitals.respawn({ player: s.player, hud: g.hud });
+      } else {
+        g.vitals.health.hurt(Number(sel?.amount ?? 0), String(sel?.cause ?? 'debug'));
+      }
+      return g.vitals.report();
+    },
+
     audio(op?: string | number) {
       const sfx = s.gameplay?.sfx;
       if (sfx === undefined) return null;

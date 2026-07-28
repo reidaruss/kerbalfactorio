@@ -38,7 +38,9 @@ export function asMode(v: unknown): GameMode {
  * setter, so no caller can flip the game halfway through a session.
  */
 export class ModeRules {
-  constructor(readonly mode: GameMode) {}
+  /** `sandboxCombat` is the `?combat=1` opt-in, read at boot and never again.
+   *  It is ignored in survival, which is always hostile: see `hostile`. */
+  constructor(readonly mode: GameMode, readonly sandboxCombat = false) {}
 
   get sandbox(): boolean { return this.mode === 'sandbox'; }
 
@@ -104,6 +106,30 @@ export class ModeRules {
    */
   get fullMapRevealed(): boolean { return this.sandbox; }
 
+  /**
+   * Can the world HURT the player, and will anything come for their base?
+   *
+   * DW-31 says sandbox is for playtesting without grind, and being killed by a
+   * wave while measuring a rocket is grind of the purest kind, so the default
+   * answer in sandbox is no: nothing spawns and the player cannot die. This is
+   * the FIFTH named question and not a reuse of `freeBuild`, for the reason
+   * `researchGated` gives at length: it is about DANGER rather than cost or
+   * availability, and the first person who wants to test a defensive layout
+   * without also mining the walls for it needs the two apart.
+   *
+   * `?combat=1` turns it back on IN SANDBOX, decided at boot like the mode
+   * itself and with no runtime setter, because GP-29's argument holds here too:
+   * a world that spent five minutes hostile and five minutes safe has no honest
+   * thing to say about why the base is in pieces. Survival is always hostile and
+   * the flag cannot turn it off, because a survival world in which nothing ever
+   * attacks is a sandbox world wearing the wrong label on its save slot.
+   *
+   * THE GATES THAT ASK THIS, so a reader can find them: `PlayerHealth.hurt`
+   * (through the `mortal` thunk) and, when it lands, whatever decides that a
+   * nest may dispatch into the world.
+   */
+  get hostile(): boolean { return !this.sandbox || this.sandboxCombat; }
+
   /** What the badge on screen says. Empty in survival: an always-on chip that
    *  says "SURVIVAL" is noise, and the failure being guarded against is a
    *  player who FORGOT they were in sandbox. */
@@ -116,7 +142,8 @@ export class ModeRules {
     return {
       mode: this.mode, sandbox: this.sandbox, freeBuild: this.freeBuild,
       fullCatalogue: this.fullCatalogue, researchGated: this.researchGated,
-      fullMapRevealed: this.fullMapRevealed, badge: this.badge,
+      fullMapRevealed: this.fullMapRevealed, hostile: this.hostile,
+      sandboxCombat: this.sandboxCombat, badge: this.badge,
     };
   }
 }
@@ -132,6 +159,23 @@ export const SURVIVAL = new ModeRules('survival');
  * minutes in each mode has no true label to write. A reload gives the new mode
  * its own boot, its own generated world and its own slot, and costs a second.
  */
+/**
+ * Is `?combat=1` set? See `ModeRules.hostile`.
+ *
+ * It is read HERE rather than in the boot config, and that is deliberate: this
+ * file already owns the URL encoding of a mode (`urlForMode` writes it), so the
+ * one place that knows `?sandbox=1` means sandbox is also the place that knows
+ * what `?combat=1` means. Passing it down through the boot would have put a
+ * second authority on mode semantics in a file three lanes are editing tonight.
+ */
+export function sandboxCombatFromUrl(href: string): boolean {
+  try {
+    return new URL(href).searchParams.get('combat') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function urlForMode(href: string, mode: GameMode): string {
   const u = new URL(href);
   if (mode === 'sandbox') u.searchParams.set('sandbox', '1');

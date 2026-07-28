@@ -35,6 +35,7 @@ import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
 import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 import type { HealthBook } from './Health.js';
+import type { PlayerHealthSave } from './PlayerHealth.js';
 import { rebuildHealth } from './HealthCensus.js';
 
 /** The three Services handles a whole-world save needs and gameplay does not own. */
@@ -108,7 +109,8 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          pads: LaunchPads,
                          hotbar: Hotbar, mode: GameMode,
                          progress: SaveProgress | undefined,
-                         health: HealthBook): SaveSlot {
+                         health: HealthBook,
+                         vitals: PlayerHealthSave): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -167,6 +169,8 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     // GP-65. The WOUNDS, and only the wounds: the book is the one authority on
     // the number, so nothing here re-derives it.
     health: health.serialize(),
+    // GP-79. The player is world state too.
+    vitals,
     buildings: factory.placed.map((p) => ({
       kind: p.kind, cell: p.cell, patch: p.patch,
       // Read LIVE off the grid rather than off the record, so a generator that
@@ -301,6 +305,8 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   //     and be counted as an orphan. The three-step order lives in `HealthCensus`
   //     with its reasoning, as one call, so a caller cannot get it wrong.
   const health = rebuildHealth(g.health, g, slot.health);
+  // GP-79. Independent of the base: a player's health belongs to the player.
+  const vitals = g.vitals.restore(slot.vitals);
 
   // 6. THE BAR. Last and independent of everything above: it is a setting, not
   //    a piece of the world, and a malformed row falls back to empty rather
@@ -321,7 +327,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     buildings, structures: restoredParts, pads: restoredPads,
     machines: restoredMachines, nodesDepleted: depleted,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
-    progress, discovery, health,
+    progress, discovery, health, vitals,
     mode: slot.mode ?? 'survival',
     savedAt: slot.savedAt,
   };
@@ -344,7 +350,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
     g.seed, g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
-    saveProgress(g), g.health);
+    saveProgress(g), g.health, g.vitals.serialize());
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
