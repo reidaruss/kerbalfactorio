@@ -117,42 +117,97 @@ Procedurally generate believable, deterministic-from-seed planets and moons: ter
 
 ### 6.1 WG-55 spawn shortlist, awaiting Reid's pick
 
-Not moved. `homeDir` re-baselines the ground under every live lane and every pad
-probe, and `pondDir` must move with it or the pond is orphaned. This is the
-prepared list; the pick is Reid's, because he has opinions about the starting
-biome and we do not.
+Not moved, deliberately. `homeDir` re-baselines the ground under every pad,
+level, build and terrain probe, and `pondDir` must move with it or the pond is
+orphaned. It goes when the checkout is quiet and Reid has picked.
 
-The prop snow line is the Mountains biome boundary, about 2,700 m of designed
-height. Every candidate below is under it. `rawRel` is the number `biomeAt`
-classifies on, and 0.330 is the boundary.
+#### Four things that are true and were not known before this survey
 
-| biome | lat | lon | alt m | rawRel | worst 4 m step | slope at 20 m | pad grade | relief in 6 km | note |
-|---|---|---|---|---|---|---|---|---|---|
-| Mountains | 2.00000 | 144.00000 | 4667.8 | 0.537 | 0.976 m | 23.88% | 32.37% | 1174 m | **the CONTROL, today's spawn. Ranks last of 21.** |
-| Hills | -31.16500 | -86.27401 | 2077.2 | 0.301 | 0.026 m | 0.75% | 12.42% | 403 m | **my recommendation.** 92.3% of the 6 km box is above it, so a real valley floor. Peaks 1,009 m above at 7.8 km and 1,788 m at 19 km. Mountains scenery starts 3.2 km away rather than underfoot. The pad adds 0.29 percentage points of grade over the natural ground, so it will read as a clearing and not a cut shelf. |
-| Hills | 22.28600 | 108.84406 | 1897.2 | 0.275 | 0.049 m | 2.44% | 9.91% | 249 m | quieter, no other biome within 4 km |
-| Plains | -7.96750 | 116.53189 | 331.8 | 0.092 | n/a | 0.31% | 4.54% | 26 m | a real basin floor, 97.8% of the 1 km disc above it. Caveat: 26 m of relief in 6 km is the empty green plane the probe's own header warns about. |
-| Beach | -35.60280 | 53.30131 | 12.2 | 0.007 | 0.010 m | 0.33% | 2.32% | 25 m | **the sand option.** Flattest ground on the planet, and one of only two biomes taking DRY_DETAIL props rather than grass. |
-| Beach | -57.93800 | -85.62600 | 8.3 | 0.004 | 0.007 m | 0.37% | 2.21% | 15 m | as above, flatter still |
-| Forest | -19.85000 | -72.78530 | 27.3 | 0.015 | 0.020 m | 0.63% | 3.13% | n/a | for completeness |
+Reid picks the site. The job here is to make sure he is picking from true
+statements, and four of the statements we were working from were false.
+
+**1. There is no Desert biome, and the desert he liked is Beach.** He asked for
+"the desert biome" by name. The biome set is Ocean, Beach, Plains, Forest,
+Hills, Mountains and Polar (`biome.h:53-67`), and that is all of it. What reads
+as desert is partly the post grade and partly **Beach**, whose palette entry is
+the sand colour `0xc8b48a` and which is one of only two biomes that take dry
+scrub props instead of grass. `docs/screenshots/WG53_site_beach.png` is a Beach
+site and it is unmistakably the look he meant: pale sand, dry tussocks, low
+scrub, open sky. **So the answer to "can I start in the desert" is yes, and it
+is called Beach.** Beach was invisible to the spawn probe because the probe's
+`minAlt = 200.0` (`spawn_probe.cpp:544`) cuts the entire coastal band.
+
+**2. The spawn probe could never have produced the current spawn.** It hard
+filters to Plains, Forest and Hills (`spawn_probe.cpp:134-136,425`) and the
+current spawn is Mountains. This is not a scoring near miss: the probe and the
+world disagree about what a legal spawn even is. Re-run over the current site it
+ranks it **last of 21, score -85.84 against the winner's +32.81**, with 23.88%
+slope at 20 m, which is 20x to 30x every candidate. It is also not the "Hills
+valley floor at 2,963 m" that `Config.ts` still documents: it is Mountains at
+4,667.79 m and it stands **+130.7 m above the mean of the surrounding 6 km**,
+which makes it a tabletop rather than a valley floor.
+
+**3. The probe's pad verdict is currently wrong, and my own pond is what broke
+it.** `probePadHere` moves `homeDir` to the candidate (`spawn_probe.cpp:487-491`)
+but never moves `pondDir` or zeroes `pondRadiusM`, and it measures with
+`sampleDesignedHeight`, which since WG-36 subtracts the pond basin. Its reported
+"worst 4 m step inside the flat radius 1.078601 m" at the current site is
+**entirely the pond**: inside the flat radius the un-ponded height is a bit-exact
+constant, so the basin is the only varying term, and the analytic 4 m span across
+the basin's steepest point is 1.080 m. Candidate rows read 0.000000 m only
+because the pond is thousands of km away from them. A feature of mine is
+degrading an instrument of mine, which is the shape worth remembering.
+
+**4. The snow line is a biome boundary, not an altitude.** `Mtn_SnowPatch` is
+keyed on the biome index with no elevation gate at all (`Registry.ts:143-144`),
+so the prop snow line is exactly the Mountains boundary, `kMountainsRel` 0.330 of
+6000 m of raw relief, about **2,700 m** of designed height. The shader's own
+snowfield is a separate thing entirely, 5,160 m to 6,840 m
+(`TerrainShader.ts:263-265`). The current spawn sits **1,239 m above the prop
+line and 492 m below the shader one**, which is precisely why WG-35's blue blobs
+were props rather than painted snow.
+
+#### And one thing the control picture settles
+
+`docs/screenshots/WG53_site_current.png` is today's spawn in daylight, and **the
+blue blobs are plainly in it and they read as puddles of water.** They are flat,
+saturated blue, and lying in the ground. They are `Mtn_SnowPatch` ice props, so
+the WG-35 diagnosis is confirmed on the picture as well as in the counts, but the
+useful half is the other direction: **Reid calling them water was the correct
+reading of what is on screen.** An ice prop that reads as standing water is an
+art defect independent of where the spawn goes, and moving the spawn out of
+Mountains hides it rather than fixes it. Flagged for the art and rendering lanes;
+not mine to change.
+
+#### The candidates
+
+Every site below is under the prop snow line. `rawRel` is the number `biomeAt`
+classifies on, and 0.330 is the Mountains boundary. Pictures are
+`docs/screenshots/WG53_site_<name>.png`, all shot in daylight at eye height with
+the same camera and settings, with the HUD left on so the biome index, latitude,
+longitude and altitude can be read back off each frame.
+
+| biome | lat | lon | alt m | rawRel | worst 4 m step | slope at 20 m | pad grade | relief in 6 km | picture | note |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Mountains | 2.00000 | 144.00000 | 4667.8 | 0.537 | see note 3 | 23.88% | 32.37% | 1174 m | `_current` | **the CONTROL, today's spawn. Ranks last of 21.** Verified on the frame: biome 5, 4.67 km relief, and the blue blobs. |
+| Hills | -31.16500 | -86.27401 | 2077.2 | 0.301 | 0.026 m | 0.75% | 12.42% | 403 m | `_hills` | **my recommendation on the numbers.** A real valley floor: 92.3% of the 6 km box stands above it, peaks 1,009 m above at 7.8 km. Mountain scenery starts 3.2 km away rather than underfoot. The pad adds 0.29 percentage points of grade over the natural ground, so it will read as a clearing and not a cut shelf. Verified on the frame: biome 4, slope 0, grounded. |
+| Hills | 22.28600 | 108.84406 | 1897.2 | 0.275 | 0.049 m | 2.44% | 9.91% | 249 m | `_hills2` | quieter, no other biome within 4 km |
+| Plains | -7.96750 | 116.53189 | 331.8 | 0.092 | n/a | 0.31% | 4.54% | 26 m | `_plains` | a real basin floor, 97.8% of the 1 km disc above it. **Two cautions, both visible on the frame:** 26 m of relief in 6 km is the empty green plane the probe's own header warns about, and it is the most expensive frame of the set at 2,660k triangles and 73,670 props against the Beach site's 839k and 15,135. |
+| Beach | -35.60280 | 53.30131 | 12.2 | 0.007 | 0.010 m | 0.33% | 2.32% | 25 m | `_beach` | **THE DESERT OPTION, and the one to show Reid first.** Flattest ground on the planet, dry scrub instead of grass, and the cheapest frame of the set. |
+| Beach | -57.93800 | -85.62600 | 8.3 | 0.004 | 0.007 m | 0.37% | 2.21% | 15 m | `_beach2` | as above, flatter still |
+| Forest | -19.85000 | -72.78530 | 27.3 | 0.015 | 0.020 m | 0.63% | 3.13% | n/a | `_forest` | for completeness |
 
 **Do not ship the probe's own rank 1** (lat 25.05, lon -27.17). At `rawRel`
-0.3243 it sits 0.0057 below `kMountainsRel`, about 34 m of raw relief, so a
+0.3243 it sits 0.0057 under `kMountainsRel`, about 34 m of raw relief, so a
 tuning nudge flips it into Mountains and it grows snow props.
 
-**Read this before offering Reid a desert.** There is no Desert biome. The look
-he liked is partly the post grade and partly Beach's `0xc8b48a` with dry props.
-If it is the grade he means rather than the sand, the driest Plains rows
-(moisture 0.29 to 0.34, well under the 0.55 Forest threshold) will read the same
-way on much better ground.
-
-**Two repairs are owed before any move**, both found by the survey and both
-mine: `probePadHere` must zero `pondRadiusM` or move `pondDir` with `homeDir`
-before it measures, and `printHomeDirLiteral` must emit a matching `pondDir`.
-Until then its pad verdict at any site near the pond is wrong by about 1.08 m.
-`homeDir` is encoded in 18 places and two ctests pin the current literal by
-name (`test_biome.cpp:208-216`, `test_water_field.cpp:138-148`); both failing on
-a move is correct behaviour, not an obstacle.
+**Two repairs are owed before any move**, both found by this survey and both
+mine to make: `probePadHere` must zero `pondRadiusM` or move `pondDir` with
+`homeDir` before it measures, and `printHomeDirLiteral` must emit a matching
+`pondDir`, since acting on its output as printed would orphan the pond.
+`homeDir` is encoded in 18 places and two ctests pin the current literal by name
+(`test_biome.cpp:208-216`, `test_water_field.cpp:138-148`). Both failing on a
+move is correct behaviour and is the point of them, not an obstacle.
 
 
 ## 7. Open questions & risks
