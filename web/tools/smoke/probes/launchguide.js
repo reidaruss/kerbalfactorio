@@ -152,12 +152,30 @@
   of.pause(true);
   await sleep(0.35);
   const btn = document.querySelector('#of-pause button[data-cheat="orbit"]');
+  check('the Teleport to orbit control is there and not blocked',
+    btn !== null && btn.disabled === false,
+    `${btn === null ? 'absent' : `disabled=${btn.disabled}`}`);
   btn?.click();
   await sleep(1.5);
   of.pause(false);
   await sleep(1.2);
   const s4 = snap('in orbit');
   log.push(`${s4.status}: "${s4.chip}"`);
+  // GP-156. THE ANTECEDENT IS NOW ASSERTED, and it is the whole point of this
+  // edit. The check below reads `status !== 'ORBIT' || names === 'map'`, which
+  // is an implication, and an implication with a FALSE antecedent is vacuously
+  // true: if the Teleport press had done nothing at all, the status would not
+  // be ORBIT, the antecedent would be false, and this probe would have gone
+  // green having tested nothing. That is `[].every(...)` wearing different
+  // clothes, and it is the class INSTRUMENTS.md names as the most expensive.
+  //
+  // Found by auditing every probe that presses a pause-menu button after
+  // `probes/startfresh.js`'s helper was caught reporting success on a click
+  // that landed on a detached node (GP-155). This one has no detached-node
+  // problem: it clicks with no await between the query and the click. What it
+  // had was no way to tell a press that worked from a press that did not.
+  check('the teleport actually put the craft in orbit', s4.status === 'ORBIT',
+    `status ${s4.status}`);
   check('in ORBIT it says so and points at the map',
     s4.status !== 'ORBIT' || s4.names === 'map',
     `${s4.status}, names=${s4.names}, chip="${s4.chip}"`);

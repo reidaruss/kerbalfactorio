@@ -42,7 +42,17 @@
     if (down === null) return false;
     down.dispatchEvent(new PointerEvent('pointerdown', opts));
     await sleep(0.11);
-    (document.querySelector(sel) ?? down).click();
+    // GP-156. RE-QUERIED, and the stale fallback REMOVED. This helper
+    // already re-queried, which is what kept it clear of the defect that
+    // caught `probes/startfresh.js` (GP-155): `PauseMenu.render` replaces
+    // `body.innerHTML` wholesale, so a node captured before an await can be
+    // detached, and a click on a detached node never reaches the delegated
+    // listener on `.body`. The `?? down` fallback was the one hole left: it
+    // silently clicked that stale node when the re-query missed. Returning
+    // false is loud, and every caller here already checks the return.
+    const el = document.querySelector(sel);
+    if (el === null) return false;
+    el.click();
     await sleep(0.45);
     return true;
   };
