@@ -64,6 +64,8 @@ COLLAR_TOP = 3.20
 DECK = 7.40
 DECK_TOP = 3.35
 MOUTH_D = HALF - BODY_HALF      # 0.40, the gap the slot frames live in
+BAND_T = 0.06                   # painted band thickness; it ends ON HALF and
+                                # the steel behind it stops short by this much
 
 IN_Z = 0.90                     # smelter's socket_item_in height
 OUT_Z = 0.45                    # smelter's socket_item_out height
@@ -101,21 +103,30 @@ def _mouth(mb, axis, sign, z_c, open_w, open_h, jamb, head_h, sill_h,
     lo, hi = z0 - sill_h, z1 + head_h
     outer_w = open_w + 2.0 * jamb
     jamb_c = (open_w + jamb) * 0.5
-    a_frame = sign * (HALF - MOUTH_D * 0.5)         # 3.80, the frame's middle
+
+    # THE FRAME STOPS ONE BAND SHORT OF THE EDGE, AND THAT IS THE WHOLE REASON
+    # THIS IS NOT ONE NUMBER. The band has to end at HALF because HALF is the
+    # hard footprint edge, so the band cannot move outward to clear the steel;
+    # the steel has to move inward instead. Give the frame the full MOUTH_D and
+    # both land their outer face on exactly HALF, the painted band is then
+    # coplanar with the steel it is painted on, and the depth test picks a
+    # winner per pixel: the band disappears, or worse, flickers with the camera.
+    frame_d = MOUTH_D - BAND_T                      # 0.34
+    a_frame = sign * (HALF - BAND_T - frame_d * 0.5)  # 3.77, stopping at 3.94
     a_throat = sign * (BODY_HALF + 0.05)            # 3.65, 0.30 back from 4.00
-    a_band = sign * (HALF - 0.03)                   # 3.97, flush with the edge
+    a_band = sign * (HALF - BAND_T * 0.5)           # 3.97, ending ON the edge
 
     for s in (-1, 1):
-        _put(mb, axis, jamb, MOUTH_D, hi - lo, s * jamb_c, a_frame,
+        _put(mb, axis, jamb, frame_d, hi - lo, s * jamb_c, a_frame,
              (lo + hi) * 0.5, "Steel")
-    _put(mb, axis, outer_w, MOUTH_D, head_h, 0.0, a_frame,
+    _put(mb, axis, outer_w, frame_d, head_h, 0.0, a_frame,
          z1 + head_h * 0.5, "Steel")
-    _put(mb, axis, outer_w, MOUTH_D, sill_h, 0.0, a_frame,
+    _put(mb, axis, outer_w, frame_d, sill_h, 0.0, a_frame,
          z0 - sill_h * 0.5, "Steel")
     _put(mb, axis, open_w, 0.10, open_h, 0.0, a_throat, z_c, "SteelDark")
-    _put(mb, axis, outer_w, 0.06, head_h * 0.5, 0.0, a_band,
+    _put(mb, axis, outer_w, BAND_T, head_h * 0.5, 0.0, a_band,
          z1 + head_h * 0.5, band_role)
-    _put(mb, axis, outer_w, 0.06, sill_h * 0.5, 0.0, a_band,
+    _put(mb, axis, outer_w, BAND_T, sill_h * 0.5, 0.0, a_band,
          z0 - sill_h * 0.5, band_role)
 
 
@@ -164,7 +175,14 @@ def build_lod0(root):
     # hazard skirt: the ring of plinth left proud of the body, painted. It is
     # the keep-out the old deck chevrons were, moved to where a 8 m machine
     # actually has spare deck.
-    mb.box((W, D, 0.07), (0, 0, PLINTH_H + 0.005), "Hazard")
+    #
+    # IT SITS ON TOP OF THE PLINTH, NOT INTO IT. The skirt is full W x D, so its
+    # four sides land on the footprint edge, which is where the plinth's sides
+    # already are; sink it 0.03 into the plinth and that much of both is the same
+    # plane and the paint fights the plinth for it. Stacking them makes the
+    # contact a line instead of an area, which no depth test has to arbitrate.
+    # The buttresses below already do this, and say so.
+    mb.box((W, D, 0.07), (0, 0, PLINTH_H + 0.035), "Hazard")
 
     # corner buttresses, sunk into the plinth and the collar at both ends so
     # no face of theirs is coplanar with a face of the shell
