@@ -5,7 +5,7 @@
 import { scratchF64, scratchI32 } from '../sim/wasm/heap.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import {
-  vesselAbi, ATTACH_RADIAL,
+  vesselAbi,
   MASS_PROPS_WORDS, PART_ROW_WORDS, STAGE_PERF_WORDS, TRANSFORM_WORDS,
 } from '../sim/wasm/vesselabi.js';
 import { normaliseRoot } from './VesselReroot.js';
@@ -269,34 +269,22 @@ export class VesselDesign {
       for (let i = 0; i < nD; ++i) dec.push(idx.get(a[2 + nA + i] ?? -1) ?? -1);
       stages.push({ act, dec });
     }
-    // GP-142. `off` WAS THE LITERAL 0, and a radial part therefore slid to the
-    // bottom of whatever it was strapped to on every save and load. Measured
-    // driven: a radial decoupler placed 2.8571 m up a 4 m tank, with a solid
-    // booster on its pylon, came back with BOTH parts at y = 0, each moved
-    // 2.8571 m. `fromJson` had always read `row.off ?? 0` correctly; the value
-    // was simply never written, because `of_vs_transforms` publishes
-    // `radialAngleRad` and not `radialOffsetM` and there was nothing to write.
+    // GP-161. `radialOffsetM` IS NOW READ, NOT RE-DERIVED, and closing this is
+    // the point of the entry.
     //
-    // It is re-derived here rather than remembered, which is the difference
-    // between an inverse and a second authority: `vessel.h::originFrom` places
-    // a radial child at `parent.originM.y + radialOffsetM` and nothing else
-    // touches that axis, so subtracting the two origins /core just published
-    // recovers /core's own input exactly. Remembering the value the bay passed
-    // to `attach` would be a copy that a later core change could silently
-    // falsify; this cannot disagree with the geometry, because it IS the
-    // geometry.
-    const originOf = new Map<number, [number, number, number]>();
-    for (const p of this.parts) originOf.set(p.handle, p.originM);
-    const radialOffset = (p: DesignPart): number => {
-      if (p.attach !== ATTACH_RADIAL || p.parent < 0) return 0;
-      const par = originOf.get(p.parent);
-      return par === undefined ? 0 : p.originM[1] - par[1];
-    };
+    // GP-142 recovered it by subtracting the two origins /core published,
+    // because `of_vs_transforms` had no field for it and writing the literal 0
+    // moved every strap-on 2.8571 m down the rocket on every save. That was an
+    // inverse rather than a second authority, and it was correct while it was
+    // the only way. ABI 20 appended the real field (PH-81), so `DesignPart`
+    // carries the value /core actually stored, and continuing to re-derive it
+    // WOULD now be a second authority: two ways to answer one question, which
+    // is the failure this project has paid for repeatedly.
     return {
       v: 1, name,
       parts: this.parts.map((p) => ({
         p: p.partId, parent: p.parent < 0 ? -1 : (idx.get(p.parent) ?? -1),
-        a: p.attach, ang: p.radialAngleRad, off: radialOffset(p), st: p.stage,
+        a: p.attach, ang: p.radialAngleRad, off: p.radialOffsetM, st: p.stage,
       })),
       stages,
       hs: handStaged,

@@ -414,7 +414,7 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       moves. Radial placement is two numbers and the row published one; the
 //       client re-derived the other by subtracting two origins, which was exact
 //       and left the row unable to describe a part on its own.
-OF_API int of_abi_version(void) { return 20; }
+OF_API int of_abi_version(void) { return 21; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the

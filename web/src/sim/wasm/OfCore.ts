@@ -101,7 +101,7 @@ import type { OfCoreModule } from './heap.js';
 // semantics, which is what buried half a strap-on booster inside a 1.25 m core.
 // Same bump: `of_vs_transforms` / `of_fl_transforms` are NINE doubles per part,
 // the ninth being `radialOffsetM`, appended so no existing index moves.
-export const OF_ABI_VERSION = 20;
+export const OF_ABI_VERSION = 21;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

@@ -149,7 +149,7 @@ OF_API int of_vs_part_index_of(int partId) {
   return -1;
 }
 
-// f64 scratch, EXACTLY 34 doubles, fixed stride:
+// f64 scratch, EXACTLY 35 doubles, fixed stride:
 //   0  id                    1  cls                  2  diameterM
 //   3  heightM               4  nodeTop               5  nodeBottom
 //   6  radialMount           7  dryMassKg             8  propellant
@@ -161,13 +161,21 @@ OF_API int of_vs_part_index_of(int partId) {
 //   24 crewCapacity          25 dragCdAxial           26 dragAreaAxialM2
 //   27 dragCdNormal          28 dragAreaNormalM2      29 normalForceSlopeM2
 //   30 chuteDragAreaM2       31 legReachM             32 dockCaptureRadiusM
-//   33 dockCaptureConeRad
-// Returns 34, or 0 for a bad index.
+//   33 dockCaptureConeRad     34 radialOrigin
+//
+// ABI 21: `radialOrigin` IS THE THIRTY-FIFTH WORD, appended rather than
+// inserted so no existing index moves. 0 is MountPlane and 1 is Axis, matching
+// `vs::RadialOrigin`. It is published because the CLIENT has to draw the
+// placement ghost in the same place `originFrom` will commit the part, and
+// `vessel.h` is explicit that this must not be re-derived: it is a required
+// constructor parameter precisely so that no rule about kind or mesh stands in
+// for it, because such a rule rots the first time an asset breaks the pattern.
+// Returns 35, or 0 for a bad index.
 OF_API int of_vs_part_info(int i) {
-  resetF64(34);
+  resetF64(35);
   const vs::PartDef* d = partAt(i);
   if (!d) return 0;
-  const double v[34] = {
+  const double v[35] = {
       static_cast<double>(d->id), static_cast<double>(d->cls), d->diameterM,
       d->heightM, d->nodeTop ? 1.0 : 0.0, d->nodeBottom ? 1.0 : 0.0,
       d->radialMount ? 1.0 : 0.0, d->dryMassKg, static_cast<double>(d->propellant),
@@ -179,9 +187,9 @@ OF_API int of_vs_part_info(int i) {
       static_cast<double>(d->crewCapacity), d->dragCdAxial, d->dragAreaAxialM2,
       d->dragCdNormal, d->dragAreaNormalM2, d->normalForceSlopeM2,
       d->chuteDragAreaM2, d->legReachM, d->dockCaptureRadiusM,
-      d->dockCaptureConeRad};
+      d->dockCaptureConeRad, static_cast<double>(d->radialOrigin)};
   for (double x : v) g_f64.push_back(x);
-  return 34;
+  return 35;
 }
 
 // Display name -> u8 scratch. Returns the byte count.

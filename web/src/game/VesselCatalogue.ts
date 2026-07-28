@@ -25,6 +25,11 @@ export interface PartRow {
   nodeTop: boolean;
   nodeBottom: boolean;
   radialMount: boolean;
+  /** GP-159 / ABI 21. 0 = the origin is the inboard MOUNT PLANE, 1 = it is the
+   *  part's own AXIS. Declared by `/core` and never derived here: `vessel.h`
+   *  makes it a required constructor parameter precisely so that no rule about
+   *  kind or mesh stands in for it. Read only for a radial attachment. */
+  radialOrigin: number;
   dryMassKg: number;
   propellant: number;
   propellantKg: number;
@@ -82,7 +87,26 @@ export function readCatalogue(M: OfCoreModule): PartRow[] {
   const rows: PartRow[] = [];
   for (let i = 0; i < n; ++i) {
     const got = V._of_vs_part_info(i);
-    if (got !== PART_INFO_WORDS) continue;
+    // GP-159. A STRIDE MISMATCH IS NEVER RECOVERABLE, so it THROWS rather than
+    // skipping the row.
+    //
+    // This was `continue`, and that is a ceiling that reports success: widening
+    // the published row without moving `PART_INFO_WORDS` skips EVERY part, so
+    // the entire assembly bay comes up empty with no error anywhere. Nothing
+    // downstream can tell "this build has no parts" from "this build cannot
+    // read its parts", and the first is a legitimate state (a mode may offer
+    // none) while the second is a broken bridge.
+    //
+    // It is the same class as the ABI guard one layer down: refusing to run
+    // against a bridge you do not agree with is the behaviour, and the fix is
+    // never to widen the tolerance. Standing rule 9's whole point is that half
+    // a bridge change is a broken build rather than an unfinished one, and a
+    // `continue` turns exactly that into a quiet one.
+    if (got !== PART_INFO_WORDS) {
+      throw new Error(`of_vs_part_info stride mismatch: wasm returned ${got} `
+        + `words, client expects ${PART_INFO_WORDS}. The wasm and the client `
+        + `disagree about the catalogue row; rebuild web/wasm and re-sync.`);
+    }
     const f = scratchF64(M, PART_INFO_WORDS).slice();
     const name = text(M, V._of_vs_part_name(i));
     const asset = text(M, V._of_vs_part_asset(i));
@@ -103,6 +127,7 @@ export function readCatalogue(M: OfCoreModule): PartRow[] {
       diameterM: f[2] ?? 0, heightM: f[3] ?? 0,
       nodeTop: (f[4] ?? 0) > 0.5, nodeBottom: (f[5] ?? 0) > 0.5,
       radialMount: (f[6] ?? 0) > 0.5,
+      radialOrigin: f[34] ?? 0,
       dryMassKg: f[7] ?? 0, propellant: f[8] ?? 0, propellantKg: f[9] ?? 0,
       thrustSeaLevelN: f[12] ?? 0, thrustVacuumN: f[13] ?? 0,
       ispSeaLevelS: f[14] ?? 0, ispVacuumS: f[15] ?? 0,

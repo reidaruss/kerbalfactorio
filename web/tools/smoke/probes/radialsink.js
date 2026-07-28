@@ -21,17 +21,21 @@
 // is true of the mount PLANE and false of the MESH, and no number in that pass
 // could have caught it because every number was about the plane.
 //
-// THIS PROBE ASSERTS THE DEFECT, DELIBERATELY, so it fails by name the day it
-// is fixed and points at this file rather than going quietly green. That is the
-// GP-146 pattern: a record of why something was ever like this, attached to the
-// check that will prove it no longer is. WHOEVER FIXES IT: invert section 2,
-// do not delete it.
+// FIXED at PH-81 / ABI 21, and section 2 is INVERTED rather than deleted, which
+// is what its own header asked for. It asserted the defect deliberately so the
+// fix would fail it by name, and it did. The before and after are both in
+// section 2 so the record of why the bay was ever like this stays attached to
+// the check that proves it no longer is.
 //
-// NOT THIS LANE'S TO FIX. `originFrom` is /core, and the question underneath it
-// is an art-contract one (is a radial part's origin its mount plane or its
-// axis?) before it is a code one. Routed by Admin to the physics lane together
-// with the `radialOffsetM` field missing from `of_vs_transforms`, as one ABI
-// bump with the per-part convention made an explicit declared property.
+// HOW IT WAS FIXED, because the shape is the point. The question underneath was
+// an art-contract one (is a radial part's origin its mount plane or its own
+// axis?) before it was a code one, so it was answered as a DECLARED PROPERTY:
+// `vs::RadialOrigin`, a required constructor parameter on `PartDef`, so a row
+// that does not say which convention its mesh uses does not compile. No rule
+// about kind or mesh stands in for it, because such a rule rots on the first
+// asset that breaks the pattern. Published to the client at ABI 21 as the
+// thirty-fifth word of `of_vs_part_info`, so the placement ghost can be drawn
+// where the part will actually commit (GP-160).
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
@@ -131,20 +135,40 @@
         && Math.abs(solar.axisRadiusM - coreR) < 1e-6,
         JSON.stringify({ fin: fin.axisRadiusM, solar: solar.axisRadiusM, coreR }));
 
-  // --- 2. THE DEFECT. Invert this section when it is fixed, do not delete it.
+  // --- 2. FIXED AT PH-81 / ABI 21, AND INVERTED RATHER THAN DELETED ---------
+  //
+  // This section asserted the defect on purpose so that the fix would fail it
+  // by name, and it did, with the numbers that make the whole story readable:
+  //
+  //   before   axis 0.775, inboard face 0.150  ->  0.475 m INSIDE the hull
+  //   after    axis 1.400, inboard face 0.775  ->  0.150 m CLEAR of it
+  //
+  // The 0.150 is the pleasing part. GP-116 wrote "a 1.25 m booster stands
+  // 0.15 m clear of a 1.25 m core", which was true of the mount PLANE and false
+  // of the MESH for as long as the mesh was drawn around its own axis. It is
+  // now true of both, and the number it always claimed is the number that comes
+  // out. The axis is at 1.400 rather than at `touchingWouldNeedAxisAtM` = 1.250
+  // because the pylon is a part too: 0.625 core + 0.150 decoupler + 0.625
+  // booster, so the booster's inboard face lands exactly on the decoupler's
+  // outboard face, which is what "strapped to a pylon" should mean.
+  //
+  // Kept rather than deleted because the record of why the bay was ever like
+  // this belongs attached to the check that proves it no longer is.
   const boost = await strap('Solid Booster', true);
   check('a booster straps to a radial decoupler', boost.axisRadiusM !== undefined,
         JSON.stringify(boost));
-  check('its axis sits at the pylon offset GP-116 measured',
-        Math.abs(boost.axisRadiusM - 0.775) < 1e-3, `${boost.axisRadiusM}`);
-  check('THE BOOSTER HULL IS INSIDE THE CORE HULL. This is the defect. When it '
-        + 'is fixed, this check fails and section 2 gets inverted, not deleted',
-        boost.overlapM > 0.4,
+  check('THE BOOSTER HULL IS OUTSIDE THE CORE HULL', boost.overlapM <= 0,
         `overlap ${boost.overlapM} m: inboard face at r=${boost.inboardFaceR} `
-        + `inside a core of radius ${boost.coreRadiusM}`);
-  check('and touching rather than intersecting would need the axis further out',
-        boost.touchingWouldNeedAxisAtM > boost.axisRadiusM,
-        `${boost.touchingWouldNeedAxisAtM} against ${boost.axisRadiusM}`);
+        + `against a core of radius ${boost.coreRadiusM}`);
+  check('it stands exactly the pylon length clear of the core, '
+        + 'which is what GP-116 claimed and could not deliver',
+        Math.abs(boost.inboardFaceR - (boost.coreRadiusM + 0.15)) < 1e-6,
+        `inboard face ${boost.inboardFaceR}, core ${boost.coreRadiusM}`);
+  // The tell that the fix is the DECLARED property and not a fudge: the axis
+  // moved out by exactly the booster's own radius and by nothing else.
+  check('the axis moved out by the booster own radius, exactly',
+        Math.abs(boost.axisRadiusM - (0.775 + boost.ownRadiusM)) < 1e-6,
+        `${boost.axisRadiusM} against 0.775 + ${boost.ownRadiusM}`);
 
   // The picture, on request, because the numbers above are the case and the
   // picture is what makes anyone believe it. Off by default so an ordinary run

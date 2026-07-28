@@ -23,7 +23,7 @@ export const PROP_MONO = 3;
 
 /** Fixed strides of the scratch rows this ABI writes. Named so a caller never
  *  types a magic number and a change here fails to compile rather than to run. */
-export const PART_INFO_WORDS = 34;
+export const PART_INFO_WORDS = 35;
 export const STAGE_PERF_WORDS = 12;
 export const MASS_PROPS_WORDS = 15;
 /** ABI 20: nine, not eight. The ninth is `radialOffsetM` (0 for a part that is

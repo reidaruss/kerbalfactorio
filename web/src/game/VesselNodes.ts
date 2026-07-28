@@ -18,6 +18,9 @@ import type { PartRow } from './VesselCatalogue.js';
 import { ATTACH_BOTTOM, ATTACH_RADIAL, ATTACH_TOP } from '../sim/wasm/vesselabi.js';
 import type { DesignPart } from './VesselDesign.js';
 
+/** `vs::RadialOrigin::Axis`. 0 is MountPlane; see VesselCatalogue.radialOrigin. */
+const RADIAL_ORIGIN_AXIS = 1;
+
 export type NodeKind = 'top' | 'bottom' | 'radial' | 'interstage' | 'pylon';
 
 export interface AttachNode {
@@ -255,7 +258,33 @@ export function isSideNode(node: AttachNode): boolean {
 export function ghostOrigin(node: AttachNode, hand: PartRow): [number, number, number] {
   const [x, y, z] = node.posM;
   if (node.kind === 'top') return [x, y, z];
-  if (isSideNode(node)) return [x, y, z];
+  if (isSideNode(node)) {
+    // GP-160 / ABI 21. THE GHOST HAS TO GO WHERE THE PART WILL GO, and for a
+    // side node that stopped being the node's own position the moment
+    // `originFrom` learned about `RadialOrigin` (PH-81).
+    //
+    // `return [x, y, z]` was a correct restatement of the old rule and is now
+    // the MOUNT-PLANE answer applied to an AXIS part, so the placement ghost
+    // for a Solid Booster was drawn 0.625 m INBOARD of where the part actually
+    // commits: the player is shown the interpenetration that PH-81 had just
+    // finished removing, and then the click puts it somewhere else. That is the
+    // more dangerous half of the pair, because a ghost teaches the mental model
+    // BEFORE the button goes down.
+    //
+    // The node already carries the parent's radius, so the outward direction
+    // and the mount point are both known; what was missing was the child's own
+    // half-diameter, and whether it counts. `radialOrigin` is asked and never
+    // inferred: `vessel.h` makes it a required constructor parameter precisely
+    // so no rule about kind or mesh stands in for it, and a rule like "the six
+    // radial-mount parts are the MountPlane ones" happens to be true today and
+    // rots on the first asset that breaks it.
+    if (hand.radialOrigin !== RADIAL_ORIGIN_AXIS || node.radiusM <= 0) {
+      return [x, y, z];
+    }
+    const push = hand.diameterM * 0.5;
+    return [x + Math.cos(node.angleRad) * push, y,
+            z + Math.sin(node.angleRad) * push];
+  }
   return [x, y - hand.heightM, z];   // bottom and interstage both hang below
 }
 
