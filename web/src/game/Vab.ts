@@ -96,7 +96,7 @@ export class Vab {
     this.catalogue = readCatalogue(d.M);
     this.cost = new VabCost(d.M, d.mode);
     for (const p of this.catalogue) this.byIdMap.set(p.id, p);
-    this.design = new VesselDesign(d.M, d.body);
+    this.design = new VesselDesign(d.M, d.body, (id) => this.byIdMap.get(id));
     this.view = new VabView(d.scene);
     this.cam = new VabCamera(d.camera);
     this.pointer = new VabPointer({

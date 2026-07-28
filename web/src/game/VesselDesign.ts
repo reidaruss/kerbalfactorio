@@ -8,6 +8,9 @@ import {
   vesselAbi, ATTACH_RADIAL,
   MASS_PROPS_WORDS, PART_ROW_WORDS, STAGE_PERF_WORDS, TRANSFORM_WORDS,
 } from '../sim/wasm/vesselabi.js';
+import { normaliseRoot } from './VesselReroot.js';
+import type { RerootReport } from './VesselReroot.js';
+import type { PartRow } from './VesselCatalogue.js';
 import type { OfVesselModule } from '../sim/wasm/vesselabi.js';
 
 export interface DesignPart {
@@ -74,10 +77,32 @@ export class VesselDesign {
 
   private readonly V: OfVesselModule;
 
-  constructor(private readonly M: OfCoreModule, private readonly body: number) {
+  /**
+   * GP-148. `byId` is the catalogue lookup the root normalisation needs, and it
+   * is OPTIONAL on purpose: passing it opts a design in to "the root is the top
+   * of the stack" (see VesselReroot.ts). The assembly bay passes it. The flight
+   * restore path in `FlightVessels.ts` deliberately does not, because a vessel
+   * that has already flown must not have its tree rearranged underneath it, and
+   * a design rebuilt from a save is not being edited.
+   */
+  constructor(private readonly M: OfCoreModule, private readonly body: number,
+              private readonly byId?: (id: number) => PartRow | undefined) {
     this.V = vesselAbi(M);
     this.handle = this.V._of_vs_create();
     this.refresh();
+  }
+
+  /** GP-148. Set while a re-root rebuild is running, so the `fromJson` it does
+   *  cannot re-enter it. */
+  private normalising = false;
+  /** What the last normalisation did, for the probe and for the report. */
+  lastReroot: RerootReport | null = null;
+
+  private normalise(): void {
+    if (this.byId === undefined || this.normalising) return;
+    this.normalising = true;
+    try { this.lastReroot = normaliseRoot(this, this.byId); }
+    finally { this.normalising = false; }
   }
 
   dispose(): void { this.V._of_vs_destroy(this.handle); }
@@ -102,14 +127,14 @@ export class VesselDesign {
   attach(parent: number, partId: number, how: number,
          angleRad = 0, offsetM = 0): number {
     const h = this.V._of_vs_attach(this.handle, parent, partId, how, angleRad, offsetM);
-    if (h >= 0) this.changed();
+    if (h >= 0) { this.changed(); this.normalise(); }
     return h;
   }
 
   /** Removes the part and everything below it. -> parts removed. */
   remove(handle: number): number {
     const n = this.V._of_vs_remove(this.handle, handle);
-    if (n > 0) this.changed();
+    if (n > 0) { this.changed(); this.normalise(); }
     return n;
   }
 

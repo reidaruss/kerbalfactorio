@@ -94,6 +94,15 @@ export function vabApi(s: Services): VabDebugApi {
         // assertion is against the screen and not against a second copy of the
         // sentence the client composed (the GP-64 rule, as `verdictBand` does).
         case 'line': return { text: v.panel.messageText };
+        // GP-148. What the last root normalisation did, so a probe asserts
+        // against the OPERATION and not only against its side effects.
+        case 'reroot': {
+          const r = v.design.lastReroot;
+          return r === null
+            ? { moved: false, fromPartId: -1, toPartId: -1, reversed: 0,
+                skipped: false, why: 'no normalisation has run' }
+            : r;
+        }
         // Every attachment node with the PIXEL it is drawn at, so a probe can
         // put the cursor where a player would look instead of teleporting the
         // snap. The hit test and the snap search still run for real.

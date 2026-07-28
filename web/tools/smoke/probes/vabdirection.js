@@ -207,24 +207,102 @@
   check('the two builds really are the same rocket on screen',
         JSON.stringify(remDown.before) === JSON.stringify(remUp.before),
         JSON.stringify({ a: remDown.before, b: remUp.before }));
-  check('and they really have different roots', remDown.root !== remUp.root,
+  // GP-148 INVERTED THESE TWO. They previously asserted that the asymmetry
+  // EXISTED, and the day the root was normalised they failed by name and named
+  // the two surviving stacks, which is the negative control for the fix and the
+  // reason the record was written as an assertion rather than as prose.
+  check('BOTH BUILD ORDERS NORMALISE TO THE SAME ROOT', remDown.root === remUp.root,
         `${remDown.root} vs ${remUp.root}`);
-  // THIS IS A RECORD, NOT YET A FIX. It is asserted so the day somebody makes
-  // removal root-independent, this check fails and points at the entry that
-  // says why it was ever like this.
-  check('REMOVING THE SAME PART LEAVES THE OPPOSITE HALF, by build order alone',
-        JSON.stringify(remDown.after) !== JSON.stringify(remUp.after),
-        JSON.stringify({ afterTopDownRoot: remDown.after,
-                         afterBottomUpRoot: remUp.after }));
-  log.push({ rootAsymmetry: { topDownRoot: remDown, bottomUpRoot: remUp } });
+  check('and it is the part at the TOP of the stack, not the one placed first',
+        remDown.root === 'Command Pod Mk1', remDown.root);
+  check('REMOVING THE SAME PART LEAVES THE SAME HALF, whichever end was built first',
+        JSON.stringify(remDown.after) === JSON.stringify(remUp.after),
+        JSON.stringify({ afterTopDownBuild: remDown.after,
+                         afterBottomUpBuild: remUp.after }));
+  check('and what survives is the payload end, which is what a player expects',
+        JSON.stringify(remDown.after) === JSON.stringify(['Command Pod Mk1']),
+        JSON.stringify(remDown.after));
+  log.push({ rootNormalised: { fromTopDownBuild: remDown, fromBottomUpBuild: remUp } });
+
+  // The operation itself, two-sided: a build that was ALREADY rooted correctly
+  // must not be rebuilt, or the normalisation is churning every placement.
+  await build(SHORT_DOWN);
+  const noMove = of.vab('reroot');
+  check('a top-down build needs no re-rooting at all',
+        mustHave(noMove, 'moved', 'reroot') === false, JSON.stringify(noMove));
+  await build(SHORT_UP);
+  const moved = of.vab('reroot');
+  check('a bottom-up build IS re-rooted', mustHave(moved, 'moved', 'reroot') === true,
+        JSON.stringify(moved));
+  check('and it reversed at least one stack edge',
+        mustNum(moved, 'reversed', 'reroot') >= 1, JSON.stringify(moved));
+  // The guard that refuses to invert a bottom edge under a part with no bottom
+  // socket. It should never fire, and the argument for why is in
+  // VesselReroot.ts. Asserted so that if the argument is wrong, it says so.
+  for (const [w, r] of [['top-down', noMove], ['bottom-up', moved]]) {
+    check(`the illegal-inversion guard did not fire on the ${w} build`,
+          mustHave(r, 'skipped', 'reroot') === false, JSON.stringify(r));
+  }
+  log.push({ reroot: { topDown: noMove, bottomUp: moved } });
+
+  // (d) STAGING, AND THIS ONE IS A GUARD RATHER THAN A FIX. SAY SO.
+  //     `of_vs_autostage` derives stage order from DEPTH FROM THE ROOT, so a
+  //     wrong root derives the stages from the wrong end. But the check below
+  //     PASSES WITH THE NORMALISATION DISABLED as well, measured, and it is
+  //     recorded here rather than claimed as a repair: a decoupler assigns its
+  //     own subtree, so a root in the MIDDLE still puts the lower stage on the
+  //     right side of it. Staging only goes wrong with the root BELOW a
+  //     decoupler, and the only builds that would put it there are the ones the
+  //     interstage rule already forbids (section (a): bottom-up dies at 3 of 6).
+  //     So this asserts that the two agree, which today they would anyway, and
+  //     it exists so that a future part which CAN be stack-mounted upward past
+  //     a decoupler cannot quietly reintroduce the asymmetry. An assertion that
+  //     has never been seen to fail is not an assertion, and this one has not
+  //     been; that is exactly why it is labelled instead of counted as evidence.
+  const stageShape = () => {
+    const rep = of.vab('report');
+    const v = of.vab('verdict');
+    return {
+      order: rep.parts.slice().sort((a, b) => a.origin[1] - b.origin[1])
+        .map((p) => `${nameOf(p.partId)}=s${p.stage === 2147483647 ? 'N' : p.stage}`),
+      burns: rep.stages.map((s) => `${s.engines}e/${s.decouplers}d/`
+        + `${s.deltaVVacuumMS.toFixed(1)}dv`),
+      liftBurn: v.liftBurn, ok: v.ok,
+    };
+  };
+  const canonical = await build(TOP_DOWN);
+  check('the canonical two-stage rocket built', canonical.placed === canonical.of,
+        JSON.stringify(canonical));
+  const wantStages = stageShape();
+  // MIXED: start at the upper tank, hang the stack off it, THEN cap it with the
+  // pod. The root ends up in the middle, which no amount of care by the player
+  // would avoid, because it is simply where they began.
+  const MIXED = [['Fuel Tank (small)'], ['Vacuum Engine', 'bottom'],
+                 ['Stack Decoupler', 'interstage'],
+                 ['Fuel Tank (large) [S]', 'bottom'], ['Main Engine', 'bottom'],
+                 ['Command Pod Mk1', 'top']];
+  const mixed = await build(MIXED);
+  check('the same rocket built starting from the middle', mixed.placed === mixed.of,
+        JSON.stringify(mixed));
+  const gotStages = stageShape();
+  const rr = of.vab('reroot');
+  check('starting from the middle really did leave the root there, and it moved',
+        mustHave(rr, 'moved', 'reroot') === true, JSON.stringify(rr));
+  check('THE STAGE TABLE IS THE SAME ROCKET WHICHEVER END IT WAS STARTED FROM',
+        JSON.stringify(gotStages) === JSON.stringify(wantStages),
+        JSON.stringify({ canonical: wantStages, mixed: gotStages }));
+  log.push({ staging: { canonical: wantStages, mixed: gotStages, reroot: rr } });
 
   return {
     valid: fails.length === 0,
     fails,
     log,
-    note: 'GP-145 the direction refusal names the direction that works; GP-146 '
-      + 'records that `of_vs_remove` deletes the subtree further from the root, '
-      + 'so which half of an identical rocket a delete destroys is decided by '
-      + 'which part the player happened to place first.',
+    note: 'GP-145 the direction refusal names the direction that works. GP-148 '
+      + 'normalises the root onto the top of the stack, so `of_vs_remove` '
+      + 'deleting the subtree further from the root no longer means that which '
+      + 'half of an identical rocket a delete destroys is decided by which part '
+      + 'the player happened to place first. Sections (c) and (d) were written '
+      + 'as GP-146, asserting the asymmetry EXISTED, and were inverted when it '
+      + 'was fixed: that failing run is the fix\'s negative control.',
   };
 })()
