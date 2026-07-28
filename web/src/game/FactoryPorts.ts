@@ -41,7 +41,7 @@
 //
 //   smelter  socket_item_in  [0, 0.90, -1.0]   socket_item_out [0, 0.45, +1.0]
 //   miner                    (no input port)   socket_item_out [0, 0.55, +1.0]
-//   box      socket_item_in  [0, 0.60, -0.5]   socket_item_out [0, 0.60, +0.5]
+//   box      socket_item_in  [0, 0.90, -2.0]   socket_item_out [0, 0.45, +2.0]
 //   belt     socket_belt_in  [0, 0.25, -0.5]   socket_belt_out [0, 0.25, +0.5]
 //
 // One convention across the whole set: items enter at local -Z and leave at
@@ -168,20 +168,20 @@ const PORT_NAMES: Partial<Record<BuildKind, { name: string; dir: PortDir }[]>> =
               { name: 'socket_item_out', dir: 'out' }],
 };
 
-// THE STORAGE CHEST IS NOT IN THAT TABLE YET, AND THE REASON IS NOT THE PORTS.
-//
-// `box.glb` has shipped for months carrying exactly the pair this model wants,
-// `socket_item_in` at [0, 0.60, -0.5] and `socket_item_out` at [0, 0.60, +0.5],
-// declared in `contracts.json` and now checked both ways by check-proxies. A
-// `chest` row here would give it working ports in a few lines and every one of
-// them would be honest. What is missing is the STORAGE: `factory_sim.h` has no
-// container entity, so a chest would have to be a machine whose recipe turns
-// item X into X in one tick, and `producedCountOf` is a LIFETIME PRODUCTION
-// tally (FS-13) that the report publishes and FS-41's probes read, so a box
-// passing 500 iron through would report having MANUFACTURED 500 iron. Storage
-// would start counting as production, in the one ledger that answers "what did
-// the factory make". Full argument and the shape of the real fix: FS-49 in
-// docs/controllers/factory-sim.md.
+// THE STORAGE CHEST IS NOT IN THIS TABLE YET, AND THE REASON IS NO LONGER THE
+// STORAGE: it is now only the client half. FS-49 deferred it because a chest would have had to be a machine whose recipe
+// turns item X into X in one tick, and `producedCountOf` is a LIFETIME
+// PRODUCTION tally (FS-13), so a box passing 500 iron along would have reported
+// MANUFACTURING it. FS-66 built the real thing: `EntityKind::Container` holds
+// ONE item type up to a capacity, refuses a second with visible back pressure,
+// releases its type when emptied, and has NO recipe at all, so nothing can
+// record production against it BY CONSTRUCTION. ABI 19 carries the six
+// `of_net_container_*` exports; `container_tests` drives it.
+// WHAT IS LEFT is a `chest` BuildKind, a row here, a panel view and persistence.
+// The asset MOVED with FS-57's treatment, 1.00 m to 4.00 m, and the header table
+// above is updated: its ports sit at the SMELTER's own heights now. `FOOTPRINT`
+// must be 4 to match `footprint_cells` or `socketReachM` and `stepsFor` are both
+// wrong for it.
 
 /**
  * Which face of the housing a socket sits on, from its position alone.

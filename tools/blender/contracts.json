@@ -157,17 +157,32 @@
     "box": {
       "glb": "assets/models/dist/machines/box.glb",
       "type_id": "0x14",
-      "footprint_cells": [1, 1],
+      "_comment": [
+        "4 x 4 m and 3 m tall: ONE structural module square (DW-32), half the",
+        "assembler. It shipped at 1 m, which made it the smallest thing in a",
+        "set whose largest member is 8 m, and it is about to be a real",
+        "placeable container rather than a prop.",
+        "The footprint is EVEN on purpose: FactorySnap.stepsFor steps a part",
+        "ceil((fpA + fpB) / 2) cells away on a 1 m grid, so an even footprint",
+        "keeps the half-cell residual PORT_MATE_M (0.65 m) was derived",
+        "against, and an odd one moves that bound for every machine.",
+        "socket_item_in at 0.90 and socket_item_out at 0.45 are the SMELTER's",
+        "own port heights, so one belt deck reaches every machine in the game.",
+        "Budgets moved with the body (300/520 to 700/1100) and materials from",
+        "4 to 6: the redraw adds a Hazard intake band and a Glass window."
+      ],
+      "footprint_cells": [4, 4],
       "lod0_node": "Box_LOD0",
       "lod_nodes": ["Box_LOD0", "Box_LOD1", "Box_LOD2"],
-      "dims_xyz_m": [1.0, 1.00, 1.0],
+      "dims_xyz_m": [4.0, 3.00, 4.0],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 300,
-      "max_tris_total": 520,
-      "max_materials": 4,
+      "max_tris_lod0": 700,
+      "max_tris_total": 1100,
+      "max_materials": 6,
       "sockets": ["socket_item_in", "socket_item_out", "socket_status"],
       "clips": ["Box_Lid"],
-      "collision": "col_Box"
+      "collision": "col_Box",
+      "double_sided_ok": ["OF_Glass"]
     },
     "generator": {
       "glb": "assets/models/dist/machines/generator.glb",
