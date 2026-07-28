@@ -52,6 +52,8 @@ import { HealthBook } from './Health.js';
 import { reconcile } from './HealthCensus.js';
 import { PlayerVitals } from './PlayerVitals.js';
 import { Gunnery } from './Gunnery.js';
+import { Enemies } from './Enemies.js';
+import { pickAim, type AimRayLike } from './GameplayAim.js';
 import type { Hittable } from './Weapon.js';
 import type { HurtSource } from './PlayerHealth.js';
 import { attachProgress, openMachinePanel, setPackPanel } from './GameplayChrome.js';
@@ -125,17 +127,19 @@ export class Gameplay {
   readonly padView: LaunchPadView;
   /** GP-65 / GP-79: what every placed thing can take, and what the PLAYER can.
    *  `Gameplay` is its own `HealthPopulations`, the four lists being fields
-   *  already; `hurtSources` is empty until the enemy lane fills it, which is a
-   *  correct state rather than a stub. Reasoning in Health.ts / PlayerHealth.ts. */
+   *  already. Reasoning in Health.ts / PlayerHealth.ts. */
   readonly health = new HealthBook();
   readonly vitals = new PlayerVitals(() => this.mode.hostile);
-  readonly hurtSources: HurtSource[] = [];
   /** GP-86: the gun. Its rule, its pictures and its sound, composed in
-   *  Gunnery.ts so this file grows by lines rather than by responsibilities.
-   *  `shootables` is the target list, rebuilt by whoever owns the population
-   *  and passed per shot so it cannot go stale (see Weapon.fire). */
+   *  Gunnery.ts so this file grows by lines rather than by responsibilities. */
   readonly gun = new Gunnery();
-  readonly shootables: Hittable[] = [];
+  /** GP-87 to GP-93: the enemies. It OWNS `shootables` and `hurtSources`, which
+   *  were declared empty here until the wave lane filled them, and everything
+   *  the swarm does; the two getters below are what the weapon and the vitals
+   *  already read, so nothing downstream of them moved. */
+  readonly enemies: Enemies;
+  get shootables(): readonly Hittable[] { return this.enemies.shootables; }
+  get hurtSources(): readonly HurtSource[] { return this.enemies.hurtSources; }
   /** W11: the three screens that show what the player has EARNED, over
    *  research.h, power.h and progression.h. Built in `create` because the grid
    *  panel needs the factory's own network. */
@@ -235,6 +239,7 @@ export class Gameplay {
     // Merge note: both lanes wrote this independently and agreed on the
     // behaviour; only the constructor's argument list differed, because the
     // pad lane had added `pads`/`padView` alongside.
+    this.enemies = new Enemies(d.core, d.bodyHandle, d.origin, this.mode);
     this.machines.onSmelt = (m, n) => this.fx.ingot(n, m.pos, m.up,
       this.game.itemName(this.game.furnaceState(m.handle)?.outItem ?? 0));
   }
@@ -262,11 +267,13 @@ export class Gameplay {
     d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
     d.scene.add(g.gun.fx.group);
+    d.scene.add(g.enemies.view.group);
     d.scene.add(g.factoryView.group);
     // Browsers refuse audio until the player has interacted; the listener arms
     // itself on the first pointer or key event and then removes itself.
     g.sfx.attach();
     g.populate();
+    g.enemies.init(g, g.walker.body.feet);
     // DW-17. The clearing is grown from the seed FIRST and then the diff is
     // applied on top, because the layout is regenerated and only what the
     // player changed is saved.
@@ -344,6 +351,11 @@ export class Gameplay {
     // tick rather than on an event, because an event is a thing a future call
     // site can forget to raise. HealthCensus.ts says why registering never heals.
     reconcile(this.health, this);
+    // BEFORE the vitals, and the order is the rule: this rebuilds hurtSources,
+    // and a tick that ran them the other way round would spend damage against
+    // the previous tick's list (Enemies.ts says why that shows as a corpse
+    // still biting).
+    this.enemies.step(1 / 60, this);
     this.gun.step(1 / 60);
     this.vitals.step(1 / 60, this.hurtSources,
       { player: this.d.player, hud: this.hud });
@@ -375,29 +387,12 @@ export class Gameplay {
       moving: f.fwd !== 0 || f.right !== 0 || f.up !== 0 };
   }
 
-  /** Re-pick what the crosshair is on. Machine, then building, then structure. */
-  aim(ray: { origin: { x: number; y: number; z: number };
-             dir: { x: number; y: number; z: number } }): void {
-    this.aimedMachine = this.machines.pick(ray.origin, ray.dir, 3.5);
-    // Belts ARE included here, because a belt is demolishable even though it is
-    // not interactive; `collectFrom` on one is a no-op with its own message.
-    this.aimedBuild = this.aimedMachine !== null ? null
-      : this.factory.pick(ray.origin, ray.dir, 3.5, true);
-    this.aimedPart = this.aimedMachine !== null || this.aimedBuild !== null ? null
-      : this.structures.pick(ray.origin, ray.dir, 3.5);
-    // GP-57. LAST, and the order is the rule: a pad is 24 m across, so a deck
-    // or a machine standing on it is INSIDE its bound, and a pad that won the
-    // tie would swallow every press aimed at anything on the launch site.
-    this.aimedPad = this.aimedMachine !== null || this.aimedBuild !== null
-      || this.aimedPart !== null ? null
-      : this.pads.pick(ray.origin, ray.dir, 3.5);
-  }
+  /** Re-pick what the crosshair is on. The ORDER is the rule: GameplayAim.ts. */
+  aim(ray: AimRayLike): void { pickAim(this, ray); }
 
-  /** GP-86. What a round arriving DOES, as a named seam rather than an
-   *  absence: the enemy lane fills `shootables` and assigns this, and nothing
-   *  in the weapon path has to learn what an enemy is. Firing itself lives in
-   *  Gunnery.ts (`pullTrigger`), because this file is 95 lines over its cap. */
-  onShotHit: (ref: unknown, damage: number) => void = () => {};
+  /** GP-86's named seam, FILLED (GP-91): a round arriving is the swarm's
+   *  business, and nothing in the weapon path learns what an enemy is. */
+  onShotHit(ref: unknown, damage: number): void { this.enemies.onShotHit(ref, damage); }
   /** The walker, for the two things outside this file that need its aim: the
    *  trigger (Gunnery.pullTrigger) and nothing else yet. A getter rather than
    *  making `d` public, so the surface stays one name wide. */
@@ -440,6 +435,7 @@ export class Gameplay {
     this.padView.sync(this.pads);
     this.fx.update(dt, this.d.origin);
     this.gun.fx.update(dt, this.d.origin);
+    this.enemies.frame(this);
     const eye = this.d.player.aimRay().origin;
     this.sfx.walk(dt, this.d.player.body.speedMps, this.d.player.body.grounded);
     this.fx.beds(this.factory, this.machines, eye, (base) =>

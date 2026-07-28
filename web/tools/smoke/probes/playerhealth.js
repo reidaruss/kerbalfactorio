@@ -58,7 +58,8 @@
 
   // --- 1. one bite ----------------------------------------------------------
   // 42 is roughly six seconds of a Skitterer's 7 dps, which is what this will
-  // be fed by when the enemy lane lands. Driven through of.hurt, which is the
+  // is fed by since GP-91 (one row per creature in reach). Driven through
+  // of.hurt here, which is the
   // same PlayerHealth.hurt an enemy in reach will reach through `step`.
   of.hurt({ amount: 42, cause: 'probe' });
   await sleep(0.2);

@@ -47,7 +47,12 @@ for (const a of process.argv.slice(2)) {
 }
 const base = args.get('url') ?? 'http://127.0.0.1:5211/';
 const phase = args.get('phase') ?? 'orbit';
-const url = `${base}?sandbox=1&debug=1`;
+// `--combat=1` is passed through to `?combat=1`, which is the ONE thing that
+// makes a sandbox world dangerous (GP-82 / GP-93). Without it a setup probe
+// that needs an enemy to damage a building runs in a world where nothing
+// spawns, and the reload proof would be about damage nobody dealt.
+const combat = args.get('combat') === '1' ? '&combat=1' : '';
+const url = `${base}?sandbox=1&debug=1${combat}`;
 const FLYTO = 'probes/flyto.js';
 const PADCLEAR = 'probes/padclear.js';
 const DAMAGESAVE = 'probes/damagesave.js';
@@ -226,7 +231,12 @@ try {
   // field, because by then every population is already standing and the book was
   // never emptied. Only a real reload rebuilds the world from the slot in boot
   // order, so only this runner can prove a damaged building is still damaged.
-  if (setup === DAMAGESAVE) {
+// WIDENED from `setup === DAMAGESAVE` to "any setup that publishes wounds".
+// The contract is the RETURN SHAPE (`damaged` plus `wounded`), not the file
+// name, and gating on the name meant a second probe that damages a building
+// silently skipped every assertion below while still reporting a pass. Note
+// which way the widening falls: a setup that publishes nothing still skips.
+  if (before.damaged !== undefined && before.wounded !== undefined) {
     const wounds = before.damaged ?? [];
     const sample = after.health?.sample ?? [];
     const found = new Map(sample.map((r) => [r.key, r.hp]));

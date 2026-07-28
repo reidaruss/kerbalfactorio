@@ -125,8 +125,9 @@ export class ModeRules {
    * attacks is a sandbox world wearing the wrong label on its save slot.
    *
    * THE GATES THAT ASK THIS, so a reader can find them: `PlayerHealth.hurt`
-   * (through the `mortal` thunk) and, when it lands, whatever decides that a
-   * nest may dispatch into the world.
+   * (through the `mortal` thunk) and `Enemies.init`, which in a safe world
+   * brings up NO loop, seeds NO nests and publishes the sentence it is
+   * overriding rather than reporting a quiet zero (GP-93).
    */
   get hostile(): boolean { return !this.sandbox || this.sandboxCombat; }
 

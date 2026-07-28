@@ -4,9 +4,10 @@
 // takes a list of `HurtSource` rows and spends `dt` seconds against them, so the
 // only thing it knows about an attacker is a rate, a reach and how far away it
 // is. Those three fields are exactly `enemies.h`'s `damagePerSecond`, `reachM`
-// and a distance, so when the combat lane hands over a wave the numbers come out
-// of `/core`'s own catalogue and nothing here re-authors them. Until then the
-// list is empty, which is a real and correct state rather than a stub.
+// and a distance, so the numbers come out of `/core`'s own catalogue and nothing
+// here re-authors them. The list is FILLED as of GP-91 by `EnemySwarm.step`,
+// which pushes one row per creature within reach and nothing else; this file
+// still has no idea what an enemy is, and that is the point of the shape.
 //
 // DEATH AND RESPAWN WAS UNSPECIFIED AND THIS IS THE CHOICE, made out loud
 // (GP-79). At zero the player DROPS NOTHING, blacks out for `RESPAWN_SECS` and

@@ -6,7 +6,9 @@
 // population, every save row and every restore path at the same time as the
 // thing that made the bug visible. So: the numbers first, with no attacker
 // anywhere in the client, and a reload that proves a wounded building is still
-// wounded when the player comes back.
+// wounded when the player comes back. The attacker arrived at GP-91 and the
+// order paid off exactly as intended: the swarm needed no change here at all,
+// it calls `damage(key, dps * dt)` and the reload proof already existed.
 //
 // WHY ONE BOOK KEYED BY A STRING RATHER THAN AN `hp` FIELD ON EACH ROW.
 // The obvious design is `Placed.hp`, `StructurePart.hp`, `Machine.hp`,

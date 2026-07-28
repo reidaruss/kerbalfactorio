@@ -13,6 +13,7 @@ import { clearSlot } from '../game/SaveGame.js';
 import { urlForMode } from '../game/GameMode.js';
 import { clearEdits } from '../game/VoxelSave.js';
 import { showGoals } from '../game/Objectives.js';
+import { enemyDebug } from '../game/EnemyDebug.js';
 import { isPart } from '../game/Hotbar.js';
 import { snapToGround } from '../game/Grid.js';
 import { STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M } from '../player/VoxelCollision.js';
@@ -280,6 +281,14 @@ export function gameplayApi(s: Services, loop: Loop) {
         g.vitals.health.hurt(Number(sel?.amount ?? 0), String(sel?.cause ?? 'debug'));
       }
       return g.vitals.report();
+    },
+
+    /** GP-87 to GP-93. The enemy loop, its nests and the swarm. `advance` is
+     *  the ONLY verb that changes anything and it changes only the CLOCK; there
+     *  is deliberately no way to conjure a wave. Reasoning in game/EnemyDebug.ts. */
+    enemies(op?: string | number, a?: number) {
+      const g = s.gameplay;
+      return g === null ? null : enemyDebug(g.enemies, g, s.oracle, op, a);
     },
 
     audio(op?: string | number) {

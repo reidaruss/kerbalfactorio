@@ -88,6 +88,13 @@ export function gameplayReport(g: Gameplay): unknown {
       // counter cannot tell it from a weapon that did not fire.
       gun: g.gun.report(),
       shootables: g.shootables.length,
+      // GP-87 to GP-93. THE CAUSE AND ITS CONSEQUENCE, in one object: what the
+      // base is emitting, what /core has done with it, the nests that ate it,
+      // the creatures on the ground, and BOTH ceilings (the pool that would
+      // stop drawing them and /core's own cap on wave size). `enabled` is first
+      // because a safe sandbox world reports zeroes everywhere below it and
+      // those zeroes mean something completely different (GP-93).
+      enemies: g.enemies.report(),
       autoCollected: g.autoCollected,
       fx: {
         ...(g.fx.report() as object),
