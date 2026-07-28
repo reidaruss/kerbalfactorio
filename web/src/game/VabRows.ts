@@ -4,6 +4,7 @@
 import { CLASS_L, detailOf } from './VesselCatalogue.js';
 import type { PartRow } from './VesselCatalogue.js';
 import type { DesignPart, StageRow } from './VesselDesign.js';
+import type { FlightVerdict } from './VabCheck.js';
 import type { VabPartRow, VabStageRow } from '../ui/VabPanel.js';
 
 export function partRows(offered: readonly PartRow[], handIndex: number,
@@ -21,7 +22,16 @@ export function partRows(offered: readonly PartRow[], handIndex: number,
   }));
 }
 
-export function stageRows(stages: readonly StageRow[]): VabStageRow[] {
+/**
+ * GP-118. The stage list, with the pre-flight verdict FOLDED IN rather than
+ * drawn beside it. `lifts` and `fault` come from `VabCheck.ts` and never from a
+ * second copy of its rules here, so a stage cannot be coloured as a fault the
+ * verdict band does not name, or named by a band no row is marked for.
+ */
+export function stageRows(stages: readonly StageRow[],
+                          verdict?: FlightVerdict): VabStageRow[] {
+  const faulted = new Set<number>();
+  for (const f of verdict?.faults ?? []) if (f.stage >= 0) faulted.add(f.stage);
   return stages.map((s) => ({
     index: s.index,
     deltaV: s.deltaVVacuumMS,
@@ -29,7 +39,10 @@ export function stageRows(stages: readonly StageRow[]): VabStageRow[] {
     burnS: s.burnTimeS,
     thrustKN: s.thrustVacuumN / 1000,
     engines: s.engines,
+    decouplers: s.decouplers,
     partCount: s.partCount,
+    lifts: verdict !== undefined && verdict.liftBurn === s.index,
+    fault: faulted.has(s.index),
   }));
 }
 

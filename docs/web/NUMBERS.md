@@ -42,7 +42,7 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-80, GP-81, GP-83, GP-84 | combat, claimed and unstarted | held |
 | GP-85 to GP-99 | combat continuation: the gun, enemies in the world | allocated |
 | GP-100 to GP-114 | Escape menu and cheat panel | allocated, not started |
-| GP-115 to GP-129 | VAB overhaul | allocated, not started |
+| GP-115 to GP-129 | VAB overhaul | GP-115 to GP-122 USED (snap near misses, the radial pylon, the probe vite config, the pre-flight verdict, the roll-out confirm, the tabbed rail, recover in the bay, the bay camera); GP-123 onward free |
 | WG-29 to WG-30 | the map draws the world | landed |
 | WG-31 to WG-32 | tunnel floor, tunnel mouth | landed |
 | WG-33 to WG-34 | close-in map contrast, ABI 14 | landed |

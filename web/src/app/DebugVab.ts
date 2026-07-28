@@ -49,7 +49,9 @@ export function vabApi(s: Services): VabDebugApi {
         case 'toggle': v.toggle(); return v.report();
         // Take a catalogue part in hand, by INDEX. Same call the panel makes.
         case 'take': {
-          const el = v.panel.partButton(Number(a));
+          // GP-120: through the tab, exactly as a player reaches a part that is
+          // not on the page they are looking at.
+          const el = v.panel.revealPart(Number(a));
           if (el === null) return { error: `part ${String(a)} is not offered` };
           el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
           return v.report();
@@ -110,6 +112,37 @@ export function vabApi(s: Services): VabDebugApi {
           if (el === null) return { error: 'no autostage control' };
           el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
           return v.report();
+        }
+        // GP-118. The pre-flight verdict, and the roll-out gate DRIVEN THROUGH
+        // THE BUTTON a player presses: `rollout` here is a real click on the
+        // real control, so a probe cannot arm the confirm by a route the player
+        // has no access to.
+        case 'verdict': return v.verdict;
+        // The verdict AS PAINTED, read back off the element's own text, so the
+        // assertion is against the screen rather than against a second copy of
+        // the client's own arithmetic (the GP-64 rule).
+        case 'verdictBand':
+          return { text: v.panel.verdictText, fault: v.panel.verdictIsFault };
+        case 'rollout': {
+          const el = v.panel.rollOutButton;
+          if (el === null) return { error: 'no rollout control' };
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          return { armed: v.rollOutArmed, refused: v.rollOutsRefused,
+                   forced: v.rollOutsForced, report: v.report() };
+        }
+        case 'recoverBtn': {
+          const el = v.panel.recoverButton;
+          if (el === null) return { error: 'no recover control' };
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          return { recoveries: v.recoveries, report: v.report() };
+        }
+        // GP-120. The tab strip, as clicks and as read-back state.
+        case 'tabs': return v.panel.tabReport();
+        case 'tab': {
+          const el = v.panel.tabButton(String(a));
+          if (el === null) return { error: `no tab ${String(a)}` };
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          return v.panel.tabReport();
         }
         case 'press': return clickByAttr(v.panel.root, String(a), v);
         default: return { error: `unknown vab op ${op}` };

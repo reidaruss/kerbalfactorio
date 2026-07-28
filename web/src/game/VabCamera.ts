@@ -74,6 +74,36 @@ export class VabCamera {
     this.apply();
   }
 
+  /**
+   * GP-122. KEEP AN ASSEMBLY IN VIEW AS IT GROWS, without touching the yaw, the
+   * pitch or the zoom the player chose.
+   *
+   * Reid: "i have to start with the engine and build up, but i should be able to
+   * drag the whole ship up and place things on the bottom." Measured before any
+   * change: building DOWNWARD already worked completely. Pod as root, tank
+   * attached StackBottom at y = -4.00, engine at y = -5.60, three parts, 8.10 m,
+   * with `_of_vs_attach(..., ATTACH_BOTTOM)` doing exactly what KSP does and
+   * `VabView.setFloor` sliding the floor down under it, which IS "the whole ship
+   * moved up" from the player's side. So the capability was never missing.
+   *
+   * What was missing is this: the camera framed once on entry and never again,
+   * so a stack that grew downward walked off the bottom of the view and the
+   * player had no reason to believe the click had done anything. Reframing whole
+   * would throw away a chosen angle, so only the TARGET follows, and only when
+   * the assembly has actually left the box that was framed.
+   */
+  keepInView(centre: THREE.Vector3, size: THREE.Vector3): boolean {
+    const half = Math.max(size.y * 0.5, size.x, size.z, 1.5);
+    const fov = (this.cam.fov * Math.PI) / 180;
+    const need = clamp((half / Math.tan(fov * 0.5)) * 1.55, MIN_DIST, MAX_DIST);
+    const drifted = Math.abs(centre.y - this.target.y) > size.y * 0.25 + 0.5;
+    if (!drifted && need <= this.distance) return false;
+    this.target.copy(centre);
+    this.distance = Math.max(this.distance, need);
+    this.apply();
+    return true;
+  }
+
   apply(): void {
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     this.cam.position.set(

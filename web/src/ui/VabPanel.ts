@@ -21,38 +21,19 @@
 
 import './styles/vab.css';
 import { esc } from './GameHud.js';
+import {
+  SKELETON, TAB_LABEL, chip, fix, groupsOf, partRow, readouts, stageRow,
+  verdictBand,
+} from './VabPanelHtml.js';
+import type {
+  VabPartRow, VabStageRow, VabStats, VabVerdict,
+} from './VabPanelTypes.js';
+
 import { Modal, type ModalStack } from './ModalStack.js';
 
-/** One row of the part catalogue. `index` is the catalogue index and the only
- *  identity this panel knows; every callback hands it straight back. */
-export interface VabPartRow {
-  index: number;
-  name: string;
-  /** 'Command' | 'Fuel' | 'Engines' | 'Coupling' | 'Aero' | 'Control' |
-   *  'Power' | 'Utility'. Unknown groups sort to the end rather than vanish. */
-  group: string;
-  /** 'S' (1.25 m) | 'L' (2.50 m) | 'radial'. */
-  cls: string;
-  /** Preformatted, e.g. '8 Iron + 2 Copper', or 'free' in sandbox. */
-  cost: string;
-  /** False renders greyed and marks the cost as a problem, but the row STAYS
-   *  clickable: the caller owns the refusal and reports it through `message`. */
-  affordable: boolean;
-  selected: boolean;
-  /** Preformatted, e.g. '1.25 x 2.50 m, 800 kg' or '200 kN vac, Isp 264/330 s'. */
-  detail: string;
-}
-
-export interface VabStageRow {
-  index: number; deltaV: number; twr: number; burnS: number;
-  thrustKN: number; engines: number; partCount: number;
-}
-
-export interface VabStats {
-  totalDeltaV: number; massKg: number; dryKg: number; propellantKg: number;
-  parts: number; lengthM: number; padTwr: number; staticMarginM: number;
-  stable: boolean; crew: number;
-}
+// Re-exported so every existing caller keeps importing these from `VabPanel`:
+// the split is a line-count fix, not an interface change.
+export type { VabPartRow, VabStageRow, VabStats, VabVerdict };
 
 export interface VabPanelHooks {
   pick(index: number): void;
@@ -68,15 +49,14 @@ export interface VabPanelHooks {
    *  The same thing the launch key does, because a key nobody can see is not a
    *  way in: Reid built a rocket and had to ask how to fly it. */
   rollOut(): void;
+  /** GP-121 / R11. Clear the pad from inside the bay. */
+  recover(): void;
   exit(): void;
 }
 
-/** Catalogue order. Anything not listed sorts after, in first-seen order. */
-const GROUPS = ['Command', 'Fuel', 'Engines', 'Coupling', 'Aero', 'Control',
-  'Power', 'Utility'];
-
 export class VabPanel extends Modal {
   private readonly el: HTMLElement;
+  private readonly tabsEl: HTMLElement;
   private readonly partsEl: HTMLElement;
   private readonly readEl: HTMLElement;
   private readonly stagesEl: HTMLElement;
@@ -85,6 +65,19 @@ export class VabPanel extends Modal {
   private readonly msgEl: HTMLElement;
   private readonly input: HTMLInputElement;
   private opened = false;
+  /**
+   * GP-120. WHICH TAB IS SHOWING. Reid: "the menu on the left should be tabbed
+   * for different component types like kerbal, i shouldnt have to horizontal
+   * scroll to see stuff." It lives here rather than in `Vab.ts` because which
+   * page of a list you are looking at is a property of the list, not of the
+   * design: switching tabs must not touch the model, must not autosave and must
+   * not re-derive a stage table. Empty means "not chosen yet", which resolves to
+   * the first group present, so a mode that offers fewer groups still opens on
+   * something real (GP-35 offers 13 parts in survival and 24 in sandbox).
+   */
+  private tab = '';
+  /** The last rows handed to render(), so a tab press can repaint without one. */
+  private parts: readonly VabPartRow[] = [];
   /** [catalogue, readouts + stages, bottom bar, message]. */
   private last = ['', '', '', ''];
 
@@ -96,6 +89,7 @@ export class VabPanel extends Modal {
     this.el.className = 'of-ui';
     this.el.innerHTML = SKELETON;
     parent.appendChild(this.el);
+    this.tabsEl = this.pick('.of-vtabs');
     this.partsEl = this.pick('.of-vparts');
     this.readEl = this.pick('.of-vread');
     this.stagesEl = this.pick('.of-vstages');
@@ -137,7 +131,17 @@ export class VabPanel extends Modal {
       case 'design': this.hooks.load(name); break;
       case 'design-del': this.hooks.remove(name); break;
       case 'rollout': this.hooks.rollOut(); break;
+      case 'recover': this.hooks.recover(); break;
       case 'exit': this.hooks.exit(); break;
+      // A tab press repaints the catalogue HERE and does not call back into the
+      // caller: which page of a list you are on is not a change to the design,
+      // and routing it through `Vab.after` would autosave the vessel every time
+      // somebody browsed the engine tab.
+      case 'tab': {
+        const g = t.getAttribute('data-group') ?? '';
+        if (g !== '' && g !== this.tab) { this.tab = g; this.paintCatalogue(); }
+        break;
+      }
       case 'sym': {
         const n = Number(t.getAttribute('data-n'));
         if (Number.isFinite(n)) this.hooks.symmetry(n);
@@ -168,6 +172,22 @@ export class VabPanel extends Modal {
 
   partButton(index: number): HTMLElement | null {
     return this.el.querySelector<HTMLElement>(`[data-vab="part"][data-index="${index}"]`);
+  }
+
+  /**
+   * GP-120. The button for a part, SWITCHING TABS to it if that is where it
+   * lives. With one tab painted at a time the other groups are genuinely not in
+   * the DOM, so `partButton` alone answers null for two thirds of the catalogue,
+   * and a caller that treated null as "not offered" would be wrong about a part
+   * that is one press away. This is the two presses a player makes, in order.
+   */
+  revealPart(index: number): HTMLElement | null {
+    const hit = this.partButton(index);
+    if (hit !== null) return hit;
+    const row = this.parts.find((p) => p.index === index);
+    if (row === undefined) return null;
+    if (row.group !== this.tab) { this.tab = row.group; this.paintCatalogue(); }
+    return this.partButton(index);
   }
 
   stageUpButton(index: number): HTMLElement | null {
@@ -204,27 +224,27 @@ export class VabPanel extends Modal {
    */
   render(parts: readonly VabPartRow[], stages: readonly VabStageRow[],
          stats: VabStats, designs: readonly string[], symmetry: number,
-         message: string): void {
+         message: string, verdict: VabVerdict): void {
     if (!this.opened) return;
-    const kParts = parts.map((p) => `${p.index}${p.selected ? '*' : ''}`
+    this.parts = parts;
+    const kParts = `${this.tab}|` + parts.map((p) => `${p.index}${p.selected ? '*' : ''}`
       + `${p.affordable ? '' : '!'}`).join(',');
     const kRead = `${fix(stats.totalDeltaV, 0)}/${fix(stats.massKg, 0)}/`
       + `${fix(stats.dryKg, 0)}/${fix(stats.propellantKg, 0)}/${stats.parts}/`
       + `${fix(stats.lengthM, 2)}/${fix(stats.padTwr, 2)}/`
       + `${fix(stats.staticMarginM, 2)}/${stats.stable ? 1 : 0}/${stats.crew}|`
       + stages.map((s) => `${s.index}:${fix(s.deltaV, 0)}:${fix(s.twr, 2)}:`
-        + `${fix(s.burnS, 1)}:${fix(s.thrustKN, 1)}:${s.engines}:${s.partCount}`)
-        .join(',');
+        + `${fix(s.burnS, 1)}:${fix(s.thrustKN, 1)}:${s.engines}:${s.decouplers}:`
+        + `${s.partCount}:${s.lifts ? 1 : 0}${s.fault ? 'F' : ''}`)
+        .join(',')
+      + `|${verdict.ok ? 'ok' : 'bad'}|${verdict.summary}`;
     const kBar = `${symmetry}|${designs.join(',')}`;
     if (kParts === this.last[0] && kRead === this.last[1]
       && kBar === this.last[2] && message === this.last[3]) return;
-    if (kParts !== this.last[0]) {
-      this.last[0] = kParts;
-      this.partsEl.innerHTML = catalogue(parts);
-    }
+    if (kParts !== this.last[0]) this.paintCatalogue();
     if (kRead !== this.last[1]) {
       this.last[1] = kRead;
-      this.readEl.innerHTML = readouts(stats);
+      this.readEl.innerHTML = verdictBand(verdict) + readouts(stats, verdict);
       this.stagesEl.innerHTML = stages.length === 0
         ? '<div class="none">No stages yet. Place a part to start a design.</div>'
         : stages.map((s, i) => stageRow(s, i === 0, i === stages.length - 1)).join('');
@@ -246,141 +266,91 @@ export class VabPanel extends Modal {
       this.msgEl.classList.toggle('on', message !== '');
     }
   }
-}
 
-/** The static frame. Built once; render() only fills the marked regions. */
-const SKELETON =
-  '<div class="rail left"><h3>Parts</h3><div class="of-vparts"></div></div>'
-  + '<div class="rail right"><h3>Vehicle</h3><div class="of-vread"></div>'
-  + '<h3 class="mid">Stages</h3><div class="of-vstages"></div></div>'
-  + '<div class="foot"><div class="of-vmsg"></div><div class="of-vbar">'
-  + '<span class="grp sym"></span>'
-  + '<span class="grp"><input id="of-vab-name" data-vab="name" type="text" '
-  + 'maxlength="40" placeholder="design name" autocomplete="off" '
-  + 'spellcheck="false"><button type="button" class="go" data-vab="save">'
-  + 'Save</button></span>'
-  + '<span class="grp designs"></span>'
-  + '<span class="grp acts"><button type="button" data-vab="autostage">'
-  + 'Autostage</button><button type="button" data-vab="clear">Clear</button>'
-  + '<button type="button" class="go" data-vab="exit">Exit VAB</button>'
-  // GP-54. The way OUT of the bay and into the sky, named on screen. The key
-  // works too and the label says which one, because a player who learns the key
-  // here never needs the button again, and a player who never finds the key has
-  // to ask, which is exactly what happened.
-  + '<button type="button" class="go launch" data-vab="rollout" '
-  + 'title="Leave the bay and set the rocket down in front of you">'
-  + 'Roll out &nbsp;<kbd>G</kbd></button></span>'
-  + '</div></div>';
-
-/** Group the catalogue, in GROUPS order, each group under a sticky heading. */
-function catalogue(parts: readonly VabPartRow[]): string {
-  if (parts.length === 0) return '<div class="none">No parts available.</div>';
-  const order: string[] = [];
-  const by = new Map<string, VabPartRow[]>();
-  for (const p of parts) {
-    let rows = by.get(p.group);
-    if (rows === undefined) { rows = []; by.set(p.group, rows); order.push(p.group); }
-    rows.push(p);
+  /**
+   * GP-120. Paint the tab strip and the ONE group it selects.
+   *
+   * Called both from `render` (the design moved) and directly from a tab press
+   * (only the view moved), which is why the diff key it writes is set here and
+   * not at the call site: two callers writing the same key from two places is
+   * how a region stops repainting.
+   */
+  private paintCatalogue(): void {
+    const groups = groupsOf(this.parts);
+    if (groups.length > 0 && !groups.includes(this.tab)) this.tab = groups[0] as string;
+    this.tabsEl.innerHTML = groups.map((g) => {
+      const n = this.parts.filter((p) => p.group === g).length;
+      return `<button type="button" class="of-vtab${g === this.tab ? ' on' : ''}" `
+        + `data-vab="tab" data-group="${esc(g)}" `
+        + `aria-pressed="${g === this.tab ? 'true' : 'false'}" `
+        + `title="${esc(g)}">${esc(TAB_LABEL[g] ?? g)}<span>${n}</span></button>`;
+    }).join('');
+    const shown = this.parts.filter((p) => p.group === this.tab);
+    this.partsEl.innerHTML = shown.length === 0
+      ? '<div class="none">No parts available.</div>'
+      : shown.map(partRow).join('');
+    this.last[0] = `${this.tab}|` + this.parts.map((p) =>
+      `${p.index}${p.selected ? '*' : ''}${p.affordable ? '' : '!'}`).join(',');
   }
-  // Stable sort, so unknown groups keep the order the caller handed them in.
-  order.sort((a, b) => rank(a) - rank(b));
-  return order.map((g) => {
-    const rows = by.get(g) ?? [];
-    return `<div class="grp"><h4>${esc(g)}<span>${rows.length}</span></h4>`
-      + rows.map(partRow).join('') + '</div>';
-  }).join('');
-}
 
-function rank(g: string): number {
-  const i = GROUPS.indexOf(g);
-  return i < 0 ? GROUPS.length : i;
-}
+  /** The tab currently showing, for a probe. */
+  get activeTab(): string { return this.tab; }
 
-function partRow(p: VabPartRow): string {
-  // No `disabled` on an unaffordable row, deliberately: the player still gets
-  // to press it, and the caller answers with a message that names what is
-  // missing. A dead button teaches nothing.
-  return `<button type="button" class="of-vpart${p.selected ? ' on' : ''}`
-    + `${p.affordable ? '' : ' poor'}" data-vab="part" data-index="${p.index}" `
-    + `aria-pressed="${p.selected ? 'true' : 'false'}">`
-    + `<span class="top"><span class="nm">${esc(p.name)}</span>`
-    + `<span class="cls">${esc(p.cls)}</span></span>`
-    + `<span class="det">${esc(p.detail)}</span>`
-    + `<span class="cost">${esc(p.cost)}</span></button>`;
-}
+  /**
+   * GP-120. The tab strip AS PAINTED, plus the one measurement that is the
+   * actual complaint: `scrollWidth` against `clientWidth` on the list element.
+   * Reid asked for tabs and reported horizontal scrolling, and those are two
+   * different defects; a probe that only counted tabs would go green while the
+   * sideways scrollbar he was complaining about was still there.
+   */
+  tabReport(): unknown {
+    const tabs = [...this.el.querySelectorAll<HTMLElement>('[data-vab="tab"]')]
+      .map((t) => t.getAttribute('data-group') ?? '');
+    const rows = this.partsEl.querySelectorAll('[data-vab="part"]').length;
+    const widest = [...this.partsEl.querySelectorAll<HTMLElement>('[data-vab="part"]')]
+      .reduce((m, r) => Math.max(m, r.scrollWidth), 0);
+    const bar = this.el.querySelector<HTMLElement>('.of-vbar');
+    return {
+      tabs,
+      active: this.tab,
+      rowsShown: rows,
+      rowsTotal: this.parts.length,
+      listScrollWidth: this.partsEl.scrollWidth,
+      listClientWidth: this.partsEl.clientWidth,
+      overflowPx: this.partsEl.scrollWidth - this.partsEl.clientWidth,
+      // The axis that ACTUALLY moved. Measured after the fact: the rail never
+      // could scroll sideways at any window width this project supports, and a
+      // 24-row column in a 330 px rail overflowed it VERTICALLY by hundreds of
+      // pixels. Both are published so the claim cannot quietly become the other.
+      listScrollHeight: this.partsEl.scrollHeight,
+      listClientHeight: this.partsEl.clientHeight,
+      scrollPx: this.partsEl.scrollHeight - this.partsEl.clientHeight,
+      widestRowPx: widest,
+      railClientWidth: (this.el.querySelector<HTMLElement>('.rail.left'))?.clientWidth ?? 0,
+      barOverflowPx: bar === null ? 0 : bar.scrollWidth - bar.clientWidth,
+    };
+  }
 
-function readouts(s: VabStats): string {
-  const twrLow = num(s.padTwr) < 1 && s.parts > 0;
-  return '<div class="big"><em>Total &#916;v</em>'
-    + `<b>${fix(s.totalDeltaV, 0)}</b><i>m/s</i></div>`
-    + '<div class="cells">'
-    + cell('Launch mass', grp(s.massKg), 'kg', '')
-    + cell('Pad TWR', fix(s.padTwr, 2), '', twrLow ? 'warn' : '')
-    + cell('Parts', `${Math.max(0, Math.round(num(s.parts)))}`, '', '')
-    + cell('Length', fix(s.lengthM, 2), 'm', '')
-    + cell('Dry', grp(s.dryKg), 'kg', '')
-    + cell('Propellant', grp(s.propellantKg), 'kg', '')
-    + cell('Crew', `${Math.max(0, Math.round(num(s.crew)))}`, '', '')
-    + cell('Static margin', fix(s.staticMarginM, 2), 'm', s.stable ? '' : 'warn')
-    + '</div>'
-    + `<div class="stab ${s.stable ? 'ok' : 'bad'}">Stability `
-    + `<b>${s.stable ? 'stable' : 'UNSTABLE'}</b></div>`;
-}
+  /** Every tab button, so a probe presses what a player presses. */
+  tabButton(group: string): HTMLElement | null {
+    return this.el.querySelector<HTMLElement>(`[data-vab="tab"][data-group="${group}"]`);
+  }
 
-function cell(label: string, value: string, unit: string, cls: string): string {
-  return `<div class="cell"><em>${label}</em>`
-    + `<b${cls === '' ? '' : ` class="${cls}"`}>${value}</b>`
-    + (unit === '' ? '' : `<i>${unit}</i>`) + '</div>';
-}
+  get rollOutButton(): HTMLElement | null {
+    return this.el.querySelector<HTMLElement>('[data-vab="rollout"]');
+  }
 
-function stageRow(s: VabStageRow, first: boolean, last: boolean): string {
-  // The stage NUMBER shown is the same integer the callbacks take, so what a
-  // probe reads on screen is what it passes back. No off-by-one to translate.
-  return '<div class="of-vstage"><div class="hd">'
-    + `<b>Stage ${Math.round(num(s.index))}</b>`
-    + `<span>${Math.max(0, Math.round(num(s.partCount)))} parts</span>`
-    + mv('stage-up', s.index, first, '&#9650;', 'Move this stage earlier')
-    + mv('stage-down', s.index, last, '&#9660;', 'Move this stage later')
-    + '</div><div class="figs">'
-    // A dead stage is a fault, not a blank: 0 m/s in the warning colour.
-    + fig('&#916;v', `${fix(s.deltaV, 0)} m/s`, num(s.deltaV) > 0 ? '' : 'warn')
-    + fig('TWR', fix(s.twr, 2), '')
-    + fig('burn', `${fix(s.burnS, 1)} s`, '')
-    + fig('thrust', `${fix(s.thrustKN, 1)} kN`, '')
-    + fig('engines', `${Math.max(0, Math.round(num(s.engines)))}`,
-      num(s.engines) > 0 ? '' : 'warn')
-    + '</div></div>';
-}
+  get recoverButton(): HTMLElement | null {
+    return this.el.querySelector<HTMLElement>('[data-vab="recover"]');
+  }
 
-function fig(label: string, value: string, cls: string): string {
-  return `<div class="f"><em>${label}</em>`
-    + `<b${cls === '' ? '' : ` class="${cls}"`}>${value}</b></div>`;
-}
+  /** The verdict as PAINTED, read back off the element. An assertion against
+   *  this is an assertion about the screen and not about the model. */
+  get verdictText(): string {
+    return this.el.querySelector<HTMLElement>('.of-vverdict')?.textContent ?? '';
+  }
 
-function mv(kind: string, index: number, off: boolean, glyph: string,
-            title: string): string {
-  return `<button type="button" class="mv" data-vab="${kind}" `
-    + `data-index="${Math.round(num(index))}"${off ? ' disabled' : ''} `
-    + `title="${title}">${glyph}</button>`;
-}
-
-function chip(name: string): string {
-  const n = esc(name);
-  return `<span class="of-vchip"><button type="button" data-vab="design" `
-    + `data-name="${n}" title="Load this design">${n}</button>`
-    + `<button type="button" class="del" data-vab="design-del" data-name="${n}" `
-    + 'title="Delete this design">&#215;</button></span>';
-}
-
-/** An empty design reads as zeros, never as NaN and never as a blank cell. */
-function num(v: number): number { return Number.isFinite(v) ? v : 0; }
-
-function fix(v: number, d: number): string { return num(v).toFixed(d); }
-
-/** Thousands separators, because a launch mass is a five-digit number and
- *  "12500" and "125000" are the same shape at a glance. */
-function grp(v: number): string {
-  const n = Math.round(num(v));
-  const s = Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return (n < 0 ? '-' : '') + s;
+  get verdictIsFault(): boolean {
+    return this.el.querySelector<HTMLElement>('.of-vverdict.bad') !== null;
+  }
 }

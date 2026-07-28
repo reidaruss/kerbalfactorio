@@ -26,6 +26,14 @@ export interface StageRow {
   ispVacuumS: number; thrustVacuumN: number; thrustSeaLevelN: number;
   deltaVVacuumMS: number; burnTimeS: number; twr: number;
   engines: number; partCount: number;
+  /**
+   * GP-118. How many parts this stage DECOUPLES, which `_of_vs_stage_info`
+   * already published in its second word and nothing had ever read. It is the
+   * fact that separates "this stage does nothing" from "this stage drops a spent
+   * booster", and without it the pre-flight check would have to refuse the
+   * decoupler-under-a-bell vehicle GP-73 measured actually flying.
+   */
+  decouplers: number;
 }
 
 export interface DesignStats {
@@ -169,13 +177,15 @@ export class VesselDesign {
     for (let k = 0; k < sc; ++k) {
       const b = k * STAGE_PERF_WORDS;
       const last = k === sc - 1;
+      const group = this.stageGroup(k);
       stages.push({
         index: k, startMassKg: sp[b + 1] ?? 0, endMassKg: sp[b + 2] ?? 0,
         propellantKg: sp[b + 3] ?? 0, ispVacuumS: sp[b + 4] ?? 0,
         thrustVacuumN: sp[b + 6] ?? 0, thrustSeaLevelN: sp[b + 7] ?? 0,
         deltaVVacuumMS: sp[b + 9] ?? 0, burnTimeS: sp[b + 11] ?? 0,
         twr: V._of_vs_twr(v, k, this.body, 0),
-        engines: this.stageEngineCount(k),
+        engines: group.activate,
+        decouplers: group.decouple,
         partCount: parts.filter((p) => (last ? p.stage >= k : p.stage === k)).length,
       });
     }
@@ -200,11 +210,14 @@ export class VesselDesign {
     };
   }
 
-  private stageEngineCount(k: number): number {
+  /** `_of_vs_stage_info` word 0 and word 1: how many parts this stage ACTIVATES
+   *  (autostage puts engines there) and how many it DECOUPLES. Read together,
+   *  in one call, because two calls would take two views of the same scratch. */
+  private stageGroup(k: number): { activate: number; decouple: number } {
     const w = this.V._of_vs_stage_info(this.handle, k);
-    if (w <= 0) return 0;
+    if (w <= 0) return { activate: 0, decouple: 0 };
     const a = scratchI32(this.M, w).slice();
-    return a[0] ?? 0;
+    return { activate: a[0] ?? 0, decouple: a[1] ?? 0 };
   }
 
   // --- serialisation --------------------------------------------------------

@@ -59,34 +59,71 @@
   font-style: italic;
 }
 
+/* --- GP-120: the tab strip ----------------------------------------------
+   Reid: "the menu on the left should be tabbed for different component types
+   like kerbal, i shouldnt have to horizontal scroll to see stuff."  The tabs
+   are the feature; `overflow-x: hidden` below is the actual cure for the
+   sideways scrollbar, and the two are separate fixes for the same sentence.
+   The strip WRAPS instead of scrolling, because a tab you have to scroll to
+   reach is the complaint again one level up. */
+#of-vab .of-vtabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--of-edge);
+}
+
+#of-vab .of-vtab {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--of-dim);
+  background: #151b21;
+  border: 1px solid #2c353d;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#of-vab .of-vtab:hover { background: #1c242b; color: var(--of-ink); }
+
+#of-vab .of-vtab.on {
+  color: var(--of-accent);
+  background: #2a2016;
+  border-color: var(--of-accent);
+}
+
+#of-vab .of-vtab > span {
+  margin-left: 5px;
+  font-size: 10px;
+  color: var(--of-dim);
+}
+
 /* --- the part catalogue -------------------------------------------------- */
 #of-vab .of-vparts {
   flex: 1 1 auto;
   overflow-y: auto;
+  /* THE HORIZONTAL SCROLLBAR, at its root. `overflow-y: auto` with the default
+     `overflow-x: visible` computes to `overflow-x: auto` per CSS overflow 3, so
+     this list has always been able to sprout a sideways scrollbar the moment a
+     row was wider than the rail, which a long part name plus its class chip
+     reliably is at min(330px, 28vw). Naming it here because it is not obvious
+     from reading either declaration alone. */
+  overflow-x: hidden;
   padding: 0 10px 14px;
 }
-
-#of-vab .grp > h4 {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  margin: 0 0 4px;
-  padding: 7px 2px 4px;
-  /* Opaque, not the rail's translucent panel: rows scroll UNDER this. */
-  background: #11161b;
-  border-bottom: 1px solid #2c353d;
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--of-accent);
-}
-
-#of-vab .grp > h4 span { float: right; letter-spacing: 0; color: var(--of-dim); }
 
 .of-vpart {
   display: block;
   width: 100%;
+  /* A button is a flex/grid item in no context here, but `min-width: auto` on
+     the flex row INSIDE it is what refused to shrink the name. Both ends are
+     pinned so a 40-character part name wraps rather than widening the rail. */
+  max-width: 100%;
   margin: 0 0 4px;
   padding: 5px 8px;
   font: inherit;
@@ -114,7 +151,10 @@
 .of-vpart.poor .cost { color: var(--of-bad); }
 
 .of-vpart .top { display: flex; justify-content: space-between; gap: 8px; }
-.of-vpart .nm { font-weight: 600; }
+/* min-width: 0 defeats the flex default of min-width: auto, which is what let a
+   long name push the row wider than the rail instead of wrapping inside it. */
+.of-vpart .nm { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.of-vpart .det, .of-vpart .cost { overflow-wrap: anywhere; }
 
 .of-vpart .cls {
   flex: 0 0 auto;
@@ -195,6 +235,41 @@
 #of-vab .stab.bad { border-color: var(--of-bad); background: rgba(255, 107, 90, 0.10); }
 #of-vab .stab.bad b { color: var(--of-bad); }
 
+/* --- GP-118: the pre-flight verdict --------------------------------------
+   Loud when it is bad and quiet when it is not. Two build cycles were lost to
+   an empty first stage and a stage-1 TWR of 0.98, both of which were already
+   drawn on this screen as figures. */
+#of-vab .of-vverdict {
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  font-size: 11px;
+  border: 1px solid #2c353d;
+  border-left-width: 3px;
+}
+
+#of-vab .of-vverdict b {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+#of-vab .of-vverdict > span { display: block; color: var(--of-dim); }
+#of-vab .of-vverdict i { display: block; margin-top: 3px; font-style: normal; }
+
+#of-vab .of-vverdict.ok { border-left-color: var(--of-good); }
+#of-vab .of-vverdict.ok b { color: var(--of-good); }
+#of-vab .of-vverdict.ok i { color: var(--of-dim); }
+
+#of-vab .of-vverdict.bad {
+  border-color: var(--of-bad);
+  background: rgba(255, 107, 90, 0.12);
+}
+
+#of-vab .of-vverdict.bad b { color: var(--of-bad); }
+#of-vab .of-vverdict.bad > span,
+#of-vab .of-vverdict.bad i { color: var(--of-ink); }
+
 /* --- the stage list ------------------------------------------------------ */
 #of-vab .of-vstages {
   flex: 1 1 auto;
@@ -249,6 +324,22 @@
 .of-vstage .f b { font-weight: 600; }
 /* Zero delta-v is a FAULT, and it has to look like one. */
 .of-vstage .f b.warn { color: var(--of-bad); }
+/* GP-118. `bad` is louder than `warn`: it is only ever set on the TWR of the
+   burn that lifts, which is the one figure that decides whether this design can
+   leave the pad at all. A TWR under 1 on any later burn is normal. */
+.of-vstage .f b.bad { color: var(--of-bad); font-weight: 800; }
+
+.of-vstage.lifts { border-left-color: var(--of-good); }
+.of-vstage.fault { border-left-color: var(--of-bad); background: rgba(255, 107, 90, 0.10); }
+
+.of-vstage .hd .tag {
+  padding: 0 4px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--of-good);
+  border: 1px solid var(--of-good);
+}
 
 /* --- the message line and the bottom bar --------------------------------- */
 #of-vab .foot {

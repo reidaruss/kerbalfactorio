@@ -13,8 +13,7 @@ import * as THREE from 'three';
 import { VabPanel } from '../ui/VabPanel.js';
 import type { ModalStack } from '../ui/ModalStack.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
-import { scratchU8 } from '../sim/wasm/heap.js';
-import { vesselAbi, ATTACH_RADIAL } from '../sim/wasm/vesselabi.js';
+import { ATTACH_RADIAL } from '../sim/wasm/vesselabi.js';
 import type { ModeRules } from './GameMode.js';
 import { offeredParts, readCatalogue } from './VesselCatalogue.js';
 import type { PartRow } from './VesselCatalogue.js';
@@ -24,10 +23,15 @@ import { VabCamera } from './VabCamera.js';
 import { VabPointer } from './VabInput.js';
 import { partRows, stageRows } from './VabRows.js';
 import { vabReport, vabJointGaps, vabCatalogue } from './VabReport.js';
+import { attachModeOf, attachNodes, fitAt, symmetryAngles } from './VesselNodes.js';
 import {
-  attachModeOf, attachNodes, fitAt, ghostOrigin, nearestNodeToRay, symmetryAngles,
-} from './VesselNodes.js';
+  vabAim, vabClick, vabDropHand, vabHover, vabRightClick,
+} from './VabAim.js';
 import type { AttachNode } from './VesselNodes.js';
+import { VabCost } from './VabCost.js';
+import { RollOutGate } from './VabRollOut.js';
+import { flightCheck } from './VabCheck.js';
+import type { FlightVerdict } from './VabCheck.js';
 import * as store from './VabStore.js';
 
 export interface VabDeps {
@@ -43,10 +47,15 @@ export interface VabDeps {
   setRenderMode(vab: boolean): void;  // flip to the bay's single pass
   rollOut(): void;                    // GP-54: leave, and put it on the ground
   setWorldUi(visible: boolean): void; // the bay is a PLACE, not an overlay, so
-}                                     // the surface HUD has no business in it
-
-/** How far from a node the cursor may be and still snap, in metres. */
-const SNAP_M = 1.6;
+  /**
+   * GP-121 / R11. GP-74's `recover` verb, which shipped with a key, a label and
+   * every message it needs and NO BUTTON. It returns whether anything was
+   * recovered so the bay can answer in its OWN message line: `setWorldUi(false)`
+   * has hidden the flight HUD that `recover` normally speaks through, and a
+   * refusal nobody can see is the defect the verb was written to fix.
+   */
+  recover(): boolean;
+}
 
 export class Vab {
   readonly design: VesselDesign;
@@ -64,26 +73,37 @@ export class Vab {
   placed = 0; refused = 0; removed = 0; enters = 0;
 
   private readonly byIdMap = new Map<number, PartRow>();
-  private readonly itemNames = new Map<number, string>();
+  private readonly cost: VabCost;
   nodes: AttachNode[] = [];   // public: a probe PROJECTS these to aim at a pixel
   /** Public for VabReport, which is a VIEW of this object and never a copy. */
   active: AttachNode | null = null;
+  /**
+   * GP-115. THE NEAR MISS: the node the cursor is on that the part in hand
+   * cannot take, and the sentence that says why. Held between the aim and the
+   * click so a refusal is the real reason rather than "no attachment node
+   * there", which was a false statement about a face the player was looking at.
+   */
+  blocked: { node: AttachNode; why: string } | null = null;
   private msgUntil = 0;
   // Once the player reorders a stage by hand the table is THEIRS: a later
   // placement must not silently rewrite it.
   handStaged = false;
+  /** GP-119. The roll-out confirm. Bound to a design revision; see VabRollOut. */
+  private readonly gate = new RollOutGate();
+  recoveries = 0;
 
   private constructor(private readonly d: VabDeps) {
     this.catalogue = readCatalogue(d.M);
+    this.cost = new VabCost(d.M, d.mode);
     for (const p of this.catalogue) this.byIdMap.set(p.id, p);
     this.design = new VesselDesign(d.M, d.body);
     this.view = new VabView(d.scene);
     this.cam = new VabCamera(d.camera);
     this.pointer = new VabPointer({
       canvas: d.canvas, camera: d.camera, cam: this.cam,
-      onAim: (x, y) => this.aim(x, y),
-      onClick: (x, y) => this.click(x, y),
-      onCancel: () => this.rightClick(),
+      onAim: (x, y) => vabAim(this, x, y),
+      onClick: (x, y) => vabClick(this, x, y),
+      onCancel: () => vabRightClick(this),
     });
     this.panel = new VabPanel(d.host, d.modals, {
       pick: (i) => this.takeInHand(i),
@@ -95,7 +115,8 @@ export class Vab {
       load: (n) => this.loadNamed(n),
       remove: (n) => { store.removeDesign(n); this.after(`deleted ${n}`); },
       symmetry: (n) => { this.symmetry = n; this.render(); },
-      rollOut: () => this.d.rollOut(),
+      rollOut: () => this.requestRollOut(),
+      recover: () => this.recover(),
       exit: () => this.leave(),
     });
     this.panel.closer = () => this.leave();
@@ -133,6 +154,8 @@ export class Vab {
     this.open = false;
     this.hand = null;
     this.active = null;
+    this.blocked = null;
+    this.gate.clear();
     this.view.clearGhost();
     this.view.clearNodes();
     this.panel.setOpen(false);
@@ -159,62 +182,17 @@ export class Vab {
     this.cam.frame(b.centre, b.size);
   }
 
-  // --- what the pointer means -----------------------------------------------
-  private aim(ndcX: number, ndcY: number): void {
-    const hand = this.hand;
-    if (hand === null) { this.view.clearGhost(); return; }
-    if (this.design.empty) {
-      this.active = null;
-      this.view.showGhost(hand, [0, 0, 0], 0, false, true);
-      return;
-    }
-    const ray = this.view.aimRay(this.d.camera, ndcX, ndcY);
-    this.active = nearestNodeToRay(this.nodes, hand, ray.o[0], ray.o[1], ray.o[2],
-                                   ray.d[0], ray.d[1], ray.d[2], SNAP_M);
-    this.view.showNodes(this.nodes, this.active);
-    if (this.active === null) { this.view.clearGhost(); return; }
-    const o = ghostOrigin(this.active, hand);
-    this.view.showGhost(hand, o, this.active.angleRad,
-                        this.active.kind === 'radial', true);
-  }
-
-  private click(ndcX: number, ndcY: number): void {
-    if (this.hand !== null) { this.aim(ndcX, ndcY); this.commitHere(); return; }
-    const hit = this.view.pick(this.d.camera, ndcX, ndcY);
-    this.selected = hit === null ? -1 : hit.handle;
-    this.view.highlight(this.selected >= 0 ? [this.selected] : []);
-    this.render();
-  }
+  // --- what the pointer means, in VabAim.ts ---------------------------------
 
   /** Drive the aim from a debug caller, through the path a real move takes. */
-  hoverNdc(ndcX: number, ndcY: number): void { this.pointer.aimAt(ndcX, ndcY); }
-  dropHand(): void {
-    this.hand = null;
-    this.active = null;
-    this.view.clearGhost();
-    this.view.clearNodes();
-    this.render();
-  }
+  hoverNdc(ndcX: number, ndcY: number): void { vabHover(this, ndcX, ndcY); }
+  dropHand(): void { vabDropHand(this); }
 
-  /**
-   * GP-55. THE RIGHT BUTTON, and which of its two meanings you get is decided
-   * by WHAT IS IN YOUR HAND, exactly as GP-26 decided the left button on foot.
-   * Reid: "i should be able to remove components i have placed in the VAB. I
-   * shouldnt have to clear and start over." The feature was finished at every
-   * layer (`_of_vs_remove`, and `removeAt` below refunds and re-stages) and
-   * NOTHING CALLED IT: no key, no control, and the only delete in the panel is
-   * `design-del`, which throws away a saved DESIGN and is what a player hunting
-   * for this would find first. Right-click rather than Delete-on-a-selection
-   * because `demolish` is ALREADY `Mouse2` on foot (Bindings.ts).
-   */
-  private rightClick(): void {
-    if (this.hand !== null) { this.dropHand(); return; }
-    const hit = this.view.pick(this.d.camera, this.pointer.ndcX, this.pointer.ndcY);
-    // A miss SAYS SO. A right-click on empty space that quietly did nothing is
-    // how a feature stays undiscovered, which is the whole reason this exists.
-    if (hit === null) { this.after('right-click a part to remove it'); return; }
-    this.removeAt(hit.handle);
-  }
+  /** Public ONLY so `VabAim.ts` can reach them; both are the bay's own verbs.
+   *  `say` shows a message and persists the work in progress; `repaint` redraws
+   *  the panel without touching the model. */
+  say(msg: string): void { this.after(msg); }
+  repaint(): void { this.render(); }
 
   // --- editing --------------------------------------------------------------
   private takeInHand(index: number): void {
@@ -246,7 +224,17 @@ export class Vab {
     }
 
     const node = this.active;
-    if (node === null) return this.refuse('no attachment node there');
+    if (node === null) {
+      // GP-115. The near miss speaks. Before this the only sentence reachable
+      // from a mouse was the one below, and it was wrong whenever a face WAS
+      // there: `nearestNodeToRay` had already filtered out everything that did
+      // not fit, so `fitAt` here could never fail and every message it composes
+      // was dead code. That is why "1.25 m will not mate with 2.50 m" had never
+      // once appeared on screen.
+      const b = this.blocked;
+      if (b !== null) return this.refuse(b.why === '' ? 'that will not fit there' : b.why);
+      return this.refuse('no attachment node there');
+    }
     const fit = fitAt(node, hand);
     if (!fit.ok) return this.refuse(fit.why);
 
@@ -282,10 +270,9 @@ export class Vab {
     const n = this.design.remove(handle);
     if (n <= 0) return false;
     if (!this.d.mode.freeBuild) {
-      const V = vesselAbi(this.d.M);
       for (const p of subtree) {
         const def = this.byIdMap.get(p.partId);
-        if (def !== undefined) V._of_vs_part_refund(def.index);
+        if (def !== undefined) this.cost.refund(def);
       }
     }
     this.removed += n;
@@ -296,47 +283,50 @@ export class Vab {
     return true;
   }
 
+  // --- rolling out, and the one check that had to exist ---------------------
+
+  /** The pre-flight verdict, recomputed from /core's own stage table. */
+  get verdict(): FlightVerdict {
+    return flightCheck(this.design.stages, this.design.stats);
+  }
+
+  /** GP-119. Roll out, unless the design cannot fly. See `VabRollOut.ts` for
+   *  why this is a confirm and never a block. */
+  requestRollOut(): boolean {
+    const v = this.verdict;
+    if (this.gate.press(v.ok, this.design.revision)) { this.d.rollOut(); return true; }
+    this.refuse(`${v.summary}. Press Roll out again to launch it anyway`);
+    return false;
+  }
+
+  /** Whether a second press right now would launch a refused design. */
+  get rollOutArmed(): boolean { return this.gate.armed(this.design.revision); }
+  get rollOutsRefused(): number { return this.gate.refused; }
+  get rollOutsForced(): number { return this.gate.forced; }
+
+  /** GP-121 / R11. The `recover` verb, reachable from the bay at last. */
+  recover(): boolean {
+    const ok = this.d.recover();
+    this.after(ok ? 'pad cleared, the design is still here'
+                  : 'nothing to recover: the pad is empty');
+    if (ok) this.recoveries += 1;
+    return ok;
+  }
+
   private moveStage(from: number, to: number): void {
     if (!this.design.stageMove(from, to)) return;
     this.handStaged = true;
     this.after(`stage ${from} to ${to}`);
   }
 
-  // --- cost, through GameMode and never through a boolean ------------------
+  // --- cost, through GameMode and never through a boolean (VabCost.ts) -----
 
-  private canAfford(p: PartRow): boolean {
-    return this.d.mode.freeBuild || this.affordInCore(p);
-  }
-
-  private pay(p: PartRow): boolean {
-    if (this.d.mode.freeBuild) return true;
-    return vesselAbi(this.d.M)._of_vs_part_pay(p.index) === 1;
-  }
-
-  /** /core's OWN verdict, not overridden by the mode. GP-29: a mode that lifts a
-   *  rule must publish what it overrides, or "12 placed" is indistinguishable
-   *  from a broken affordability check. */
-  affordInCore(p: PartRow): boolean {
-    return vesselAbi(this.d.M)._of_vs_part_can_afford(p.index) === 1;
-  }
-
-  private costWhy(p: PartRow): string { return `need ${this.costText(p)}`; }
-
-  private costText(p: PartRow): string {
-    if (this.d.mode.freeBuild) return 'free';
-    if (p.cost.length === 0) return 'no cost';
-    return p.cost.map((c) => `${c.count} ${this.itemName(c.item)}`).join(' + ');
-  }
-
-  private itemName(item: number): string {
-    const hit = this.itemNames.get(item);
-    if (hit !== undefined) return hit;
-    const n = this.d.M._of_gp_item_name(item);
-    const s = n > 0 ? new TextDecoder().decode(scratchU8(this.d.M, n).slice())
-                    : `item ${item}`;
-    this.itemNames.set(item, s);
-    return s;
-  }
+  private canAfford(p: PartRow): boolean { return this.cost.canAfford(p); }
+  private pay(p: PartRow): boolean { return this.cost.pay(p); }
+  private costWhy(p: PartRow): string { return this.cost.why(p); }
+  private costText(p: PartRow): string { return this.cost.text(p); }
+  /** /core's OWN verdict, not overridden by the mode (GP-29). */
+  affordInCore(p: PartRow): boolean { return this.cost.affordInCore(p); }
 
   private refuse(why: string): boolean {
     this.refused += 1;
@@ -344,20 +334,20 @@ export class Vab {
     return false;
   }
 
-  // --- designs -------------------------------------------------------------
+  // --- designs (GP-34: a library, NOT world state) --------------------------
 
   private saveAs(name: string): void {
     const ok = store.saveDesign(name, this.design.toJson(name, this.handStaged));
     this.after(ok ? `saved ${name}` : 'name the design first');
   }
 
+  /** GP-34: loading neither charges nor refunds, a stated balance hole. GP-75:
+   *  the latch travels with the table, so a blueprint whose author never touched
+   *  the arrows keeps re-deriving and a hand-ordered one keeps its order. */
   private loadNamed(name: string): void {
     const d = store.loadDesign(name);
     if (d === null) { this.after(`no design ${name}`); return; }
-    // GP-34: loading neither charges nor refunds, a stated balance hole.
     this.design.fromJson(d);
-    // GP-75: the design's OWN latch, so a blueprint whose author never touched
-    // the arrows keeps re-deriving and a hand-ordered one keeps its order.
     this.handStaged = d.hs === true;
     this.frameCamera();
     this.after(`loaded ${name}`);
@@ -371,8 +361,17 @@ export class Vab {
     this.rebuild();
   }
 
+  /** GP-122. How many times the camera has had to follow a growing assembly. */
+  reframes = 0;
+
   private rebuild(): void {
     this.view.rebuild(this.design.parts, (id) => this.byIdMap.get(id));
+    // The stack may have grown past the view. Only the target follows, and only
+    // when it has actually left; a full reframe would discard a chosen angle.
+    if (this.open && !this.design.empty) {
+      const b = this.view.bounds();
+      if (this.cam.keepInView(b.centre, b.size)) this.reframes += 1;
+    }
     this.view.highlight(this.selected >= 0 ? [this.selected] : []);
     this.render();
   }
@@ -380,11 +379,12 @@ export class Vab {
   private render(): void {
     if (!this.open) return;
     const offered = offeredParts(this.catalogue, this.d.mode);
+    const v = this.verdict;
     this.panel.render(
       partRows(offered, this.hand === null ? -1 : this.hand.index,
                (p) => this.costText(p), (p) => this.canAfford(p)),
-      stageRows(this.design.stages), this.design.stats,
-      store.listDesigns(), this.symmetry, this.message);
+      stageRows(this.design.stages, v), this.design.stats,
+      store.listDesigns(), this.symmetry, this.message, v);
   }
 
   // --- what a probe reads. The bodies live in VabReport.ts ------------------

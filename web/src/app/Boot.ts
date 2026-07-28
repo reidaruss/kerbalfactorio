@@ -47,6 +47,7 @@ import { ZFightProbe } from '../render/debug/ZFightProbe.js';
 import { Hud } from '../ui/Hud.js';
 import type { Gameplay } from '../game/Gameplay.js';
 import type { Vab } from '../game/Vab.js';
+import { bootVab, type VabExits } from './VabBoot.js';
 import { probeWorkerOracle } from './WorkerProbe.js';
 
 /**
@@ -293,39 +294,17 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     }
   }
 
-  // W8 the assembly bay. Dynamically imported for the same reason gameplay is
-  // (standing rule 7): `?vab=0` must isolate it for real. Built after gameplay
-  // because it spends the same pack.
-  // GP-54. The bay is built before flight (flight flies the bay's design), so
-  // its roll-out button cannot hold a reference to something that does not
-  // exist yet. Late-bound through one closure, and it REFUSES OUT LOUD under
-  // `?flight=0`: a dead button teaches the player the feature does not exist.
-  let doRollOut: (() => void) | null = null;
+  // W8 THE ASSEMBLY BAY, wired in VabBoot.ts (Boot is at its line cap). Built
+  // after gameplay because it spends the same pack, and before flight because
+  // flight flies its design handle, which is why its two exits are late-bound.
+  const vabExits: VabExits = { rollOut: null, recover: null };
   let vab: Vab | null = null;
   if (gameplay !== null && cfg.vab) {
-    const { Vab: VabMode } = await import('../game/Vab.js');
-    const g = gameplay;
-    vab = await VabMode.create({
-      M: core, body: body.handle, host, canvas, scene: scenes.vab,
-      camera: rig.vabCam, modals: g.modals, mode: g.mode,
-      // GP-54: the bay's OWN launch key, live only while the bay holds the
-      // pointer. Not on UI_ALLOWED, which is global and would give G to the
-      // inventory screen too. Systems.ts turns the press into leave + roll out.
-      setUiCapture: (on) => { input.setUiCapture(on, ['board']); },
+    vab = await bootVab({
+      core, bodyHandle: body.handle, host, canvas, scene: scenes.vab,
+      camera: rig.vabCam, input, gameplay,
       setRenderMode: (on) => { frame.vabActive = on; },
-      rollOut: () => {
-        if (doRollOut === null) {
-          g.hud.banner('flight is not loaded (?flight=0)', '#ffb4a2');
-          return;
-        }
-        doRollOut();
-      },
-      setWorldUi: (on) => {
-        g.hud.setVisible(on);
-        g.hotbarBar.setVisible(on);
-        g.goalPanel.setVisible(on && g.goals.visible);
-      },
-    });
+    }, vabExits);
   }
 
   // W9 FLIGHT. Needs the bay (it flies the bay's design handle) and gameplay
@@ -356,7 +335,10 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // Both entrances now run the SAME two calls in the same order, so the
     // button and the key cannot drift into meaning different things.
     const theFlight = flight;
-    doRollOut = () => theFlight.fromBay(() => theVab.leave());
+    vabExits.rollOut = () => theFlight.fromBay(() => theVab.leave());
+    // GP-121 / R11. The SAME method the Delete key reaches through Systems.ts,
+    // so the button and the key cannot drift into meaning different things.
+    vabExits.recover = () => theFlight.recover();
     // GP-53. The checklist learns about the rocket. It is a PORT rather than a
     // field on Gameplay because Gameplay is at its line cap and because the
     // checklist is the only thing that wants to know.

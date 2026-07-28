@@ -36,8 +36,17 @@ export function vabReport(v: Vab): unknown {
     symmetry: v.symmetry, selected: v.selected, nodes: v.nodes.length,
     snapped: v.active === null ? null
       : { parent: v.active.parent, kind: v.active.kind, pos: v.active.posM },
+    // GP-115. THE NEAR MISS the cursor is over but the hand cannot take, and the
+    // sentence that says why. Published because "the ghost went away" and "the
+    // snap search is broken" are the two readings a player has to choose between
+    // when neither is reported, and they need different fixes.
+    blocked: v.blocked === null ? null
+      : { parent: v.blocked.node.parent, kind: v.blocked.node.kind,
+          cls: v.blocked.node.cls, why: v.blocked.why },
     placed: v.placed, refused: v.refused, removed: v.removed,
-    enters: v.enters, handStaged: v.handStaged,
+    enters: v.enters, handStaged: v.handStaged, reframes: v.reframes,
+    rollOutsRefused: v.rollOutsRefused, rollOutsForced: v.rollOutsForced,
+    rollOutArmed: v.rollOutArmed, verdict: v.verdict,
     parts: v.design.parts.map((p) => ({
       handle: p.handle, partId: p.partId, parent: p.parent,
       attach: p.attach, stage: p.stage, origin: p.originM,

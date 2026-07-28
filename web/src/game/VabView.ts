@@ -341,14 +341,18 @@ export class VabView {
    * the eye is replaced.
    */
   projectNodes(cam: THREE.Camera, nodes: readonly AttachNode[]): {
-    parent: number; kind: string; angleRad: number; offsetM: number;
+    parent: number; kind: string; cls: number; angleRad: number; offsetM: number;
     pos: [number, number, number]; ndc: [number, number]; onScreen: boolean;
   }[] {
     const v = new THREE.Vector3();
     return nodes.map((n) => {
       v.set(n.posM[0], n.posM[1], n.posM[2]).project(cam);
       return {
-        parent: n.parent, kind: n.kind, angleRad: n.angleRad, offsetM: n.offsetM,
+        // GP-115: `cls` is REPORTED. The class a face presents is the one fact
+        // in a node that can be silently wrong, and a diagnosis that cannot read
+        // it has to infer it from a refusal string.
+        parent: n.parent, kind: n.kind, cls: n.cls,
+        angleRad: n.angleRad, offsetM: n.offsetM,
         pos: n.posM, ndc: [v.x, v.y] as [number, number],
         onScreen: v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1 && v.z < 1,
       };
