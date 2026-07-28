@@ -73,3 +73,27 @@ to FS-35/FS-36 when corner cargo reached main first.
 Standing rule 10 (path-limited commits) is the other half of this. Two lanes in
 one checkout collide on files as well as on numbers, and a broad `git add` has
 already swept one lane's work into another lane's commit.
+
+## Committing from a shared checkout without disturbing other lanes
+
+Standing rule 10 says commit path-limited. That is necessary and it is not
+sufficient: `git add <paths>` still writes the SHARED index, so a lane that
+stages 32 files and a lane that stages 3 fight over one file, and three times
+this project a broad `git add` swept another lane's work into the wrong commit.
+
+The Escape-menu lane solved it properly on 2026-07-28 and it is now the
+recommended technique when other lanes have staged work:
+
+1. Point `GIT_INDEX_FILE` at a private index file.
+2. Stage only your paths into it.
+3. `git commit-tree` and `git update-ref` to land the commit.
+
+The shared index is never touched, so a lane with a large staged set keeps it.
+
+When a file you own carries ANOTHER lane's uncommitted hunks in the working
+tree, do not commit the file wholesale. Build a **filtered blob** from `HEAD`
+plus your own hunks and stage that. Their work stays in the working tree for
+them to commit themselves.
+
+This is the difference between "I tried not to touch their work" and "I could
+not have touched their work". Prefer the second.
