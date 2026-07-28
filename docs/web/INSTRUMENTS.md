@@ -285,6 +285,55 @@ something that moved, an assertion that has never been seen to fail, a scene
 that cannot exhibit the defect, and a probe pointed at the wrong axis. This one
 is the tool declining to start.
 
+## A fixture whose value is the identity of the operation reads exactly like a pass (GP-142, GP-145)
+
+The other entries here are about a check that cannot see a defect. This one is
+about a **setup** that cannot produce one, which is worse, because the check is
+fine and reviewing it harder finds nothing.
+
+**Three instances in one night, all in the assembly bay.**
+
+**One.** `VesselDesign.toJson` wrote `off: 0` as a literal, so `radialOffsetM`,
+the number that says where along a hull a strap-on sits, was never serialised.
+Every strap-on slid to the base of its parent on every save and load. It shipped,
+and it survived because GP-116 authored the pylon at **offset 0**, and every
+strap-on probe since goes through the pylon. **The entire radial path was
+exercised at the one input where total loss of that input is invisible**, since
+zero is the identity of the addition being lost. Reading `off` back gave 0 and
+the expected value was 0, and both were right.
+
+**Two and three.** Writing the probe for GP-145 I did it twice more in ten
+minutes. The section needed a top face that an engine cannot take, so it built a
+lone Stack Decoupler. A lone decoupler has a free **bottom** face too, so the
+snap legitimately answered with that, and the line under test read "Vacuum
+Engine under Stack Decoupler": a correct answer to a question the section was
+not asking. Replacing it with a bare tank did exactly the same thing for exactly
+the same reason. The fixture only became capable of exhibiting the defect when
+it was a tank with an engine already under it, which closes the only downward
+face because an engine's own bottom is an interstage.
+
+The ancestor is already in this file under standing rule 11: a `fillSaturated()`
+helper that **wrote the end state directly** while claiming in a doc comment to
+model a belt that had been running, and every test of the operation that fills a
+belt pushing exactly one item. Same shape, one layer up.
+
+**Practice, and it is cheap.** A probe **asserts its own fixture before it
+asserts the behaviour**, in terms of the quantity under test. `probes/vabround.js`
+now checks that the ring it chose is more than 1.5 m off the base before it
+checks anything about the round trip, and `probes/vabdirection.js` checks that
+no free bottom face is left before it reads the refusal. Both would have been
+green against the defect without that line, and both fail loudly if a later
+change moves the fixture back to the degenerate value.
+
+The general form: **when a probe picks a value for a parameter it is not
+testing, ask what the operation under test does to the identity element of that
+parameter, and do not pick it.** Zero offsets, empty lists, single-item
+collections, one-part stacks and default angles are where a total loss of
+behaviour is indistinguishable from correct behaviour. This is the same reason
+R8 says a geometric probe runs on a slope as well as on the flat: the flat
+ground was the identity, and it hid a 10.1 degree belt misalignment as exactly
+zero across 39 driven keypresses.
+
 ## Cross-references
 
 Standing rules 4, 7, 10, 11 and DW-7, DW-20 in
