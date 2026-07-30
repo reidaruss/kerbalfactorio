@@ -30,6 +30,51 @@ const LENGTH_PER_RADIUS = 9;
 /** Below this the throttle counts as shut: the plume draws nothing at all. */
 const CUTOFF = 1e-3;
 
+// RN-125: THE FLICKER. A rocket plume is turbulent combustion and a cone of
+// constant size reads as a decal. Each nozzle's length, width and the core's
+// share of the length breathe independently on smoothed value noise, and the
+// AMPLITUDE follows the throttle: a deep-throttled engine burns steadier
+// than one at the stop, which is also what keeps the ignition crack visible
+// (the first frames at low throttle are not buried in jitter).
+//
+// NO SHADER. This is per-instance matrix writes plus two material opacities,
+// on meshes that already rewrite their matrices every frame, so the DW-10
+// ledger does not move and the cost is arithmetic on at most 16 nozzles.
+//
+// THE CLOCK is an internal step advanced once per set() call, i.e. once per
+// rendered frame while a stage burns. That is a WALL-adjacent clock and it
+// is chosen deliberately: flame turbulence at 60 Hz is a look, not a sim
+// quantity, and no gameplay reads it. The cost of that choice is that a
+// frame captured mid-burn is not reproducible frame for frame, so ?anim=0
+// (Config.anim, RN-121) zeroes the flicker and restores the pre-RN-125
+// rendering exactly: standing rule 7's isolation, and the setting any probe
+// that hashes frames during a burn should run under.
+/** Peak fractional length flicker at full throttle. */
+const FLICKER_LEN = 0.14;
+/** Peak fractional width flicker at full throttle. */
+const FLICKER_RAD = 0.07;
+/** Peak opacity flutter at full throttle. */
+const FLICKER_OPACITY = 0.06;
+/** Noise phase advance per rendered frame: ~2 flicker events a second at
+ *  60 fps per nozzle, which reads as burn rather than as strobe. */
+const FLICKER_STEP = 0.13;
+
+/** Deterministic hash noise in [-1, 1]. */
+function noise(seed: number): number {
+  const s = Math.sin(seed * 12.9898) * 43758.5453;
+  return (s - Math.floor(s)) * 2 - 1;
+}
+
+/** Smoothed value noise: lerp between integer steps of the phase. */
+function flicker(lane: number, phase: number): number {
+  const k = Math.floor(phase);
+  const f = phase - k;
+  const sm = f * f * (3 - 2 * f);
+  const a = noise(lane * 7919 + k * 131);
+  const b = noise(lane * 7919 + (k + 1) * 131);
+  return a + (b - a) * sm;
+}
+
 export class VesselPlume {
   private readonly geo: THREE.ConeGeometry;
   private readonly flameMat: THREE.MeshBasicMaterial;
@@ -39,10 +84,16 @@ export class VesselPlume {
   private readonly m = new THREE.Matrix4();
   private throttleV = 0;
   private countV = 0;
+  /** Flicker phase, advanced once per set() while burning. See RN-125 note. */
+  private phase = 0;
 
   /** `parent` is the object carrying the vessel's world placement, so the
-   *  plume inherits it and never needs a transform of its own. */
-  constructor(parent: THREE.Object3D) {
+   *  plume inherits it and never needs a transform of its own. `live` is
+   *  Config.anim (?anim=0): frozen, the flicker terms are exactly zero and
+   *  the drawing is the pre-RN-125 one. */
+  constructor(parent: THREE.Object3D,
+              private readonly live: boolean =
+                new URL(location.href).searchParams.get('anim') !== '0') {
     // Apex at the local origin, base one unit along -Y at radius 1. The vessel's
     // +Y is the stack axis toward the nose, so exhaust leaves DOWN the stack,
     // and a per-instance scale of (r, length, r) is then the whole placement.
@@ -78,17 +129,26 @@ export class VesselPlume {
     // A quarter of full length at a crack of throttle, so the ignition frame
     // reads as ignition rather than as nothing happening.
     const grow = 0.25 + 0.75 * t;
+    // Flicker amplitude follows the throttle; ?anim=0 zeroes it (RN-125).
+    const amp = this.live ? t : 0;
+    if (this.live) this.phase += FLICKER_STEP;
     for (let i = 0; i < n; ++i) {
       const z = nozzles[i];
       const r = Math.max(0.05, z.radiusM);
-      const len = r * LENGTH_PER_RADIUS * grow;
-      this.write(this.flame, i, z.pos, r * 1.05, len);
-      this.write(this.core, i, z.pos, r * 0.55, len * 0.62);
+      const fl = 1 + FLICKER_LEN * amp * flicker(i * 3 + 1, this.phase);
+      const fr = 1 + FLICKER_RAD * amp * flicker(i * 3 + 2, this.phase * 1.31);
+      // The core's SHARE of the flame breathes too, out of phase with the
+      // length, which is what makes the bright tongue lick rather than pump.
+      const coreShare = 0.62 + 0.05 * amp * flicker(i * 3 + 3, this.phase * 0.77);
+      const len = r * LENGTH_PER_RADIUS * grow * fl;
+      this.write(this.flame, i, z.pos, r * 1.05 * fr, len);
+      this.write(this.core, i, z.pos, r * 0.55 * fr, len * coreShare);
     }
     this.flame.instanceMatrix.needsUpdate = true;
     this.core.instanceMatrix.needsUpdate = true;
-    this.flameMat.opacity = 0.25 + 0.45 * t;
-    this.coreMat.opacity = 0.4 + 0.55 * t;
+    const op = FLICKER_OPACITY * amp * flicker(97, this.phase * 1.13);
+    this.flameMat.opacity = 0.25 + 0.45 * t + op;
+    this.coreMat.opacity = 0.4 + 0.55 * t + op;
   }
 
   private write(mesh: THREE.InstancedMesh, i: number, at: THREE.Vector3,
