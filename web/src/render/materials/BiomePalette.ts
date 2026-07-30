@@ -121,8 +121,13 @@ export function dugAlbedo(biome: THREE.Color, flat: number, band: number,
 const MAT_W: [number, number, number, number][] = [
   [0.00, 0.04, 0.20, 0.06], // Ocean: the visible part is the sandy bed
   [0.00, 0.03, 0.26, 0.05], // Beach: sand, grain dominant
-  [0.19, 0.00, 0.04, 0.09], // Plains: turf with bare patches
-  [0.15, 0.00, 0.03, 0.14], // Forest: turf under heavy litter/clod
+  // RN-149: Plains up 0.19 -> 0.24 (denser grass clumping was the second
+  // pass's brief) and Forest clod up 0.14 -> 0.18 (the litter read), both
+  // still inside the calibrated regime: the RN-78 speckle-soup failure was a
+  // table SUM near 0.6 with both scales stacked; these sums move 0.32 -> 0.37
+  // and 0.32 -> 0.36, nowhere near it, and the pairs are re-photographed.
+  [0.24, 0.00, 0.04, 0.09], // Plains: denser turf clumping
+  [0.15, 0.00, 0.03, 0.18], // Forest: turf under heavy litter/clod
   [0.21, 0.00, 0.03, 0.08], // Hills: the strongest turf read
   [0.04, 0.14, 0.08, 0.04], // Mountains: scree, rock grain on the flat too
   [0.00, 0.04, 0.08, 0.03], // Polar: subdued; snow is smooth
@@ -134,6 +139,44 @@ const MAT_W: [number, number, number, number][] = [
 /** Vector4 array for the uBiomeMat uniform, index == the /core Biome enum. */
 export function biomeMatWeights(): THREE.Vector4[] {
   return MAT_W.map(([x, y, z, w]) => new THREE.Vector4(x, y, z, w));
+}
+
+/**
+ * Per-biome RELIEF channel weights (RN-148): how much of each of RN-147's four
+ * ASYMMETRIC height fields a biome's flat cover shows through the bump. Order
+ * matches of_ground_relief's channels: x sand ripple, y clod, z scree step,
+ * w leaf litter.
+ *
+ * These weight a HEIGHT that feeds ofArtBump (lighting normal only), so their
+ * scale is not comparable to MAT_W's albedo percentages: the bump amplifies a
+ * field by its own frequency, and these fields are far finer than the vnoise
+ * octaves. Start table authored by intent, then CALIBRATED BY PHOTOGRAPH at
+ * grazing sun exactly as MAT_W was measured down from 0.6 (asymmetry is
+ * invisible at noon, so the calibration frames are morning and evening).
+ *
+ * Biome intent, stated so a retune has something to be checked against:
+ * Beach and the visible Ocean bed are RIPPLE-MARKED (the classic, and sand
+ * ripples are asymmetric by formation); Forest floor is LITTER; Plains and
+ * Hills are clumpy turf via CLOD; Mountains flat ground is SCREE; Polar stays
+ * near zero BY DESIGN (drifted snow is smooth and RN-78 shipped it clean on
+ * purpose; a snowfield with dirt clods is the named failure mode here).
+ */
+const RELIEF_W: [number, number, number, number][] = [
+  [0.30, 0.05, 0.05, 0.00], // Ocean: ripple-marked sandy bed
+  [0.42, 0.06, 0.03, 0.00], // Beach: ripples dominant
+  [0.05, 0.30, 0.02, 0.08], // Plains: clumpy turf
+  [0.00, 0.12, 0.02, 0.40], // Forest: leaf litter
+  [0.04, 0.32, 0.05, 0.10], // Hills: heavier clod
+  [0.02, 0.08, 0.40, 0.02], // Mountains: scree on the flat
+  [0.03, 0.03, 0.02, 0.00], // Polar: near zero; snow is smooth
+  [0.06, 0.12, 0.22, 0.02], // Regolith: gravel steps
+  [0.05, 0.10, 0.26, 0.02], // MoonHighland: coarser steps
+  [0.04, 0.10, 0.30, 0.03], // CraterFloor: broken rock
+];
+
+/** Vector4 array for the uBiomeRelief uniform, index == the /core Biome enum. */
+export function biomeReliefWeights(): THREE.Vector4[] {
+  return RELIEF_W.map(([x, y, z, w]) => new THREE.Vector4(x, y, z, w));
 }
 
 export function biomeColorFlat(): Float32Array {

@@ -258,6 +258,17 @@ export const TERRAIN_ART_BUMP = /* glsl */`
 export const ART_FINE_M = 4.2;
 
 /**
+ * The relief texture's finest authored wavelength in metres at the 16-repeat
+ * consumer tile (RN-148), feeding ofArtBump's footprint fade for the relief
+ * call. RN-78(d)'s lesson made quantitative: a derivative scales a field by
+ * its own frequency, so the MIP CHAIN bounds the sampled VALUE but never its
+ * gradient, and the throwaway test texture photographed exactly that as moire
+ * arcs at range. The fade completing by a third of this wavelength is what
+ * retires the term before its gradient can alias.
+ */
+export const RELIEF_FINE_M = 0.45;
+
+/**
  * WET GROUND AT THE WATERLINE (RN-57). The fourth term, and it is here for
  * exactly the reason the strata are: IN THIS ENGINE THE BEACH IS TERRAIN, NOT
  * WATER. A darkened ring around a pond drawn as its own geometry would be a
@@ -355,6 +366,36 @@ export const TERRAIN_ART_TEX = /* glsl */`
   }
 `;
 
+/**
+ * THE RELIEF MIX (RN-148), the sixth term: RN-147's four packed ASYMMETRIC
+ * height fields (R sand ripple, G clod, B scree step, A leaf litter) combined
+ * into ONE height that feeds ofArtBump, exactly as the vnoise octaves do.
+ *
+ * WHY A SECOND TEXTURE AND NOT THE FIRST ONE'S CHANNELS: RN-78 measured that
+ * the of_ground VALUE fields fed to the bump read as CHOPPY WATER at 2.4, at
+ * 0.8, and coarse-only at 2.0, because a smooth metre-scale undulation is
+ * liquid's signature whatever its height. The difference between water and
+ * dirt is ASYMMETRY: sharp crests over rounded bases, flat facets with sharp
+ * steps, skewed histograms. of_ground_relief's channels are AUTHORED
+ * asymmetric and groundtex.py asserts the asymmetry per channel with symmetric
+ * negative controls, so the named failure mode of this term (the RN-78 water
+ * read) is excluded at the asset, not tuned around in the shader.
+ *
+ * The mix mirrors ofArtTexMix deliberately: relW is the per-biome channel
+ * amplitude vector (BiomePalette's biomeReliefWeights), interpolated across
+ * biome edges as vMatW is, and steep ground rides the SAME coverSel that
+ * selects rock albedo, showing the scree-step channel where cover ends. One
+ * gate, shared with the albedo, so grain and relief cannot disagree about
+ * where a cliff starts.
+ */
+export const TERRAIN_ART_RELIEF = /* glsl */`
+  float ofArtRelMix(vec4 r, vec4 relW, float coverSel) {
+    vec4 h = r - vec4(0.5);
+    return mix(h.b * 0.34, dot(h, relW), coverSel);
+  }
+`;
+
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
+  + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
-  + TERRAIN_ART_WET + TERRAIN_ART_TEX;
+  + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF;

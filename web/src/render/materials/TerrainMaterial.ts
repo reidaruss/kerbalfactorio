@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import type { DepthPolicy } from '../DepthPolicy.js';
 import type { AtmosphereUniforms } from './Atmosphere.glsl.js';
-import { biomeColorArray, biomeMatWeights } from './BiomePalette.js';
+import { biomeColorArray, biomeMatWeights, biomeReliefWeights } from './BiomePalette.js';
 import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { FAR_SCALE } from '../Scenes.js';
@@ -127,14 +127,52 @@ function artAmpFromQuery(): THREE.Vector3 {
  * Surfaces.ts precedent: a missing map must be loud, because an untextured
  * ground is exactly the picture this pass exists to remove.
  */
+/**
+ * RN-150. `Number(null)` is 0 and 0 is finite, so the original
+ * `Number.isFinite(raw) ? raw : 1` made the DEFAULT branch unreachable: with
+ * no query param at all the amp booted at 0, and the RN-78 ground texture
+ * never drew a pixel in ordinary play. Nothing caught it because every
+ * instrument SET the amp explicitly (groundshot's `art.setTex(amp)`), which
+ * measured the term perfectly while the shipped default stayed dark, and the
+ * invariant counts do not depend on the amp. The wet-sand band had the same
+ * dead default. A missing param must read as MISSING, never as 0.
+ */
+function ampParam(p: URLSearchParams, key: string, fallback: number): number {
+  const v = p.get(key);
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? f : fallback;
+}
+
 function groundTexAmpFromQuery(): number {
   const p = new URLSearchParams(self.location.search);
   if (p.get('groundtex') === '0') return 0;
-  const raw = Number(p.get('groundtexamp'));
-  return Number.isFinite(raw) ? raw : 1;
+  return ampParam(p, 'groundtexamp', 1);
 }
 
-function makeGroundTexture(): THREE.IUniform<THREE.Texture> {
+/**
+ * RN-148: the relief bump's amplitude. The same flag pattern as groundtex, and
+ * the same identity argument: the placeholder is 0.5-centred, whose derivative
+ * is zero, so "not loaded yet", "amplitude 0" and "flat ground" are one
+ * picture. The default is deliberately far below the vnoise bump's 1.6: the
+ * bump amplifies a field by its own frequency, and these fields are an order
+ * finer than the vnoise octaves.
+ */
+// 0.08, calibrated DOWN from a first guess of 0.30 exactly as RN-78's weight
+// table was measured down from 0.6: at 0.30 a grazing sun crushed every ripple
+// trough to black (92% of the beach frame moved, 71% of it darker), at 0.12
+// the troughs still sat near black, and 0.06 to 0.08 photographs as luminous
+// rippled sand with the crests carrying the read. Grazing light is the
+// calibration frame BY DESIGN; noon flattens the term (asymmetry is invisible
+// at noon, reliefshot.js measures both).
+const RELIEF_DEFAULT = 0.08;
+
+function groundReliefAmpFromQuery(): number {
+  const p = new URLSearchParams(self.location.search);
+  if (p.get('groundrelief') === '0') return 0;
+  return ampParam(p, 'groundreliefamp', RELIEF_DEFAULT);
+}
+
+function makeGroundTexture(file: string): THREE.IUniform<THREE.Texture> {
   const ph = new THREE.DataTexture(new Uint8Array([128, 128, 128, 128]), 1, 1,
     THREE.RGBAFormat);
   ph.needsUpdate = true;
@@ -151,7 +189,7 @@ function makeGroundTexture(): THREE.IUniform<THREE.Texture> {
   // 'none' and colorSpaceConversion 'none' is the load path that hands the
   // sampler the file's actual bytes.
   const u: THREE.IUniform<THREE.Texture> = { value: ph };
-  fetch('assets/textures/of_ground.png')
+  fetch(`assets/textures/${file}`)
     .then(async (r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const bmp = await createImageBitmap(await r.blob(), {
@@ -180,7 +218,7 @@ function makeGroundTexture(): THREE.IUniform<THREE.Texture> {
       ph.dispose();
     })
     .catch((e: unknown) => {
-      console.error(`[of] terrain: of_ground.png did NOT load (${String(e)}).`
+      console.error(`[of] terrain: ${file} did NOT load (${String(e)}).`
         + ' The ground draws untextured; run `npm run sync-assets`.');
     });
   return u;
@@ -214,8 +252,8 @@ const WET_HEIGHT_M = 0.55;
 function wetBandFromQuery(w: TerrainWaterBand | null): THREE.Vector4 {
   if (w === null) return new THREE.Vector4(0, 1, WET_HEIGHT_M, 0);
   const p = new URLSearchParams(self.location.search);
-  const raw = Number(p.get('wetsandamp'));
-  const amp = p.get('wetsand') === '0' ? 0 : (Number.isFinite(raw) ? raw : 1);
+  // RN-150: same Number(null)-is-0 dead default as groundtexamp; see ampParam.
+  const amp = p.get('wetsand') === '0' ? 0 : ampParam(p, 'wetsandamp', 1);
   return new THREE.Vector4(w.levelM, w.shorelineM, WET_HEIGHT_M, amp);
 }
 
@@ -248,9 +286,14 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // The ground texture (RN-78): one shared IUniform for the map, one shared
   // holder for the amplitude, the biome weight table built once. All shared
   // by reference between the two materials for the reason artAmp is.
-  const groundTex = makeGroundTexture();
+  const groundTex = makeGroundTexture('of_ground.png');
   const groundAmp: THREE.IUniform<number> = { value: groundTexAmpFromQuery() };
   const biomeMat = biomeMatWeights();
+  // RN-148: the asymmetric relief pair, shared by reference exactly as the
+  // value texture is and for the same one-authority reason.
+  const reliefTex = makeGroundTexture('of_ground_relief.png');
+  const reliefAmp: THREE.IUniform<number> = { value: groundReliefAmpFromQuery() };
+  const biomeRelief = biomeReliefWeights();
   // The wet band, likewise ONE object shared by both materials by reference so
   // a runtime tweak cannot reach one and not the other. The amplitude is zero on
   // a dry body, which is what makes `ofArtWet` return on its first line and cost
@@ -289,7 +332,10 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uArtAmp: { value: artAmp },
       uGroundTex: groundTex,
       uGroundTexAmp: groundAmp,
+      uGroundRelief: reliefTex,
+      uGroundReliefAmp: reliefAmp,
       uBiomeMat: { value: biomeMat },
+      uBiomeRelief: { value: biomeRelief },
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },
     });
@@ -338,6 +384,15 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
     // instrument, not a page reload.
     setTex(amp: number): number { groundAmp.value = amp; return amp; },
     getTex(): number { return groundAmp.value; },
+    // RN-148, same handle for the same reason as setTex: the relief is a
+    // terrain art term and a probe toggling it wants the settled-frame
+    // instrument, not a page reload.
+    setRelief(amp: number): number { reliefAmp.value = amp; return amp; },
+    getRelief(): number { return reliefAmp.value; },
+    reliefState(): { w: number; h: number } {
+      const img = reliefTex.value.image as { width?: number; height?: number } | null;
+      return { w: img?.width ?? 0, h: img?.height ?? 0 };
+    },
     // The FIXTURE assertion for probes (INSTRUMENTS.md, GP-142): a pair taken
     // against the 1x1 placeholder is bit-identical by construction and reads
     // as a dead term when it is a dead fetch. width 1024 is "the real map is

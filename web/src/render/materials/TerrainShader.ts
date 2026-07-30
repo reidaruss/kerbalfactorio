@@ -15,11 +15,12 @@
 //     to be pushed per frame.
 
 import type { DepthPolicy } from '../DepthPolicy.js';
-import { BIOME_COUNT } from './BiomePalette.js';
+
 import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_ART_PARS } from './TerrainArt.glsl.js';
 import { TERRAIN_SUN_IRRADIANCE } from './TerrainAmbient.js';
 import { CASCADE_GLSL } from './CascadeShadow.glsl.js';
+import { BAYER } from './TerrainDither.glsl.js';
 
 /**
  * The direct-sun irradiance literal, INLINED into the GLSL rather than passed as
@@ -29,99 +30,11 @@ import { CASCADE_GLSL } from './CascadeShadow.glsl.js';
  */
 const SUN_IRR = TERRAIN_SUN_IRRADIANCE.toFixed(2);
 
-export function terrainVertexShader(depth: DepthPolicy): string {
-  return /* glsl */`
-    #include <common>
-    ${depth.vertexPars}
-    // BatchedMesh (DW-11): three declares the matrix textures and the multi-draw
-    // index lookup here, and sets USE_BATCHING itself from object.isBatchedMesh.
-    // A ShaderMaterial does its own vertex transform, so applying batchingMatrix
-    // is OUR job; the stock <project_vertex> path is not in play.
-    #include <batching_pars_vertex>
-    #include <shadowmap_pars_vertex>
-    attribute vec4 aBiome;
-    attribute float aHeight;
-    attribute float aFadeT0;
-    uniform vec3 uBiomeColor[${BIOME_COUNT}];
-    uniform vec4 uBiomeMat[${BIOME_COUNT}];
-    uniform float uTime;
-    uniform float uFadeDur;
-    varying vec3 vBiomeColor;
-    varying vec4 vMatW;
-    varying vec3 vNormalW;
-    varying vec3 vWorld;
-    varying float vRelief;
-    varying float vFade;
-    varying float vViewZ;
-    varying vec2 vChunkUv;
-
-    void main() {
-      #include <batching_vertex>
-      // The per-chunk placement now lives in the batch's matrix texture rather
-      // than in an object matrix, so the model matrix is the product of the two.
-      // Both are translation plus uniform scale, so the upper 3x3 still
-      // preserves direction after a normalize.
-      mat4 ofModel = modelMatrix;
-      mat3 ofNormalRot = mat3(modelMatrix);
-      #ifdef USE_BATCHING
-        ofModel = modelMatrix * batchingMatrix;
-        ofNormalRot = mat3(ofModel);
-      #endif
-      // aBiome.x is the /core Biome enum as an unnormalized uint8.
-      int bi = int(aBiome.x + 0.5);
-      vBiomeColor = uBiomeColor[bi];
-      // RN-78: texture weights, interpolated across biome edges as vBiomeColor is.
-      vMatW = uBiomeMat[bi];
-      vNormalW = normalize(ofNormalRot * normal);
-      vec4 worldPosition = ofModel * vec4(position, 1.0);
-      vWorld = worldPosition.xyz;
-      vRelief = aHeight;
-      // The chunk-LOCAL surface coordinate, normalized over the quad, uploaded
-      // as uint16 by /core since W2 and read by this shader ZERO times until
-      // RN-50 (WG-56 found it). It is the well-conditioned coordinate pM is
-      // not: one uint16 step is 0.883 mm on a depth-14 chunk, which is a
-      // quarter of a ground pixel at 2 m, against pM's quantum of nearly nine
-      // pixels there. No new attribute, no upload, no CPU work.
-      vChunkUv = uv;
-      // The SIGN of aFadeT0 selects the half of the dissolve: positive is the
-      // incoming chunk fading in, negative is the outgoing one fading out. One
-      // attribute, written once, carries both.
-      //
-      // The outgoing ramp is offset to [-2,-1] rather than negated into [-1,0]
-      // because a negated zero is -0.0, and in GLSL -0.0 >= 0.0 is TRUE. That
-      // put the outgoing chunk on the INCOMING branch for exactly the first
-      // frame of every dissolve, both halves discarded everything, and the
-      // bright far-scene terrain showed through the ground for one frame.
-      // Measured as a 191-unit tile impulse on a driven walk.
-      float fadeT = uFadeDur <= 0.0 ? 1.0
-        : clamp((uTime - abs(aFadeT0)) / uFadeDur, 0.0, 1.0);
-      vFade = aFadeT0 < 0.0 ? -1.0 - fadeT : fadeT;
-      vec4 mv = viewMatrix * worldPosition;
-      vViewZ = -mv.z;
-      // Only <shadowmap_vertex>'s normal-bias offset reads this, and the bias is
-      // in world units, so the batch rotation has to be in it or a chunk's
-      // contact shadow detaches from its caster.
-      vec3 transformedNormal = normalize(normalMatrix * normal);
-      #include <shadowmap_vertex>
-      gl_Position = projectionMatrix * mv;
-      ${depth.vertexBody}
-    }
-  `;
-}
-
-/** Ordered 4x4 Bayer threshold, in [0,1). */
-const BAYER = /* glsl */`
-  float ofBayer4(vec2 p) {
-    int x = int(mod(p.x, 4.0));
-    int y = int(mod(p.y, 4.0));
-    const float M[16] = float[16](
-      0.0,  8.0,  2.0, 10.0,
-     12.0,  4.0, 14.0,  6.0,
-      3.0, 11.0,  1.0,  9.0,
-     15.0,  7.0, 13.0,  5.0);
-    return (M[y * 4 + x] + 0.5) * 0.0625;
-  }
-`;
+// The VERTEX shader and BAYER moved to TerrainVertex.glsl.ts and
+// TerrainDither.glsl.ts at RN-148 (line-cap room; GLSL unchanged to the
+// character), on RN-78's CASCADE_GLSL precedent. Both re-exported or imported
+// here so every published import site holds.
+export { terrainVertexShader } from './TerrainVertex.glsl.js';
 
 // Moved to CascadeShadow.glsl.ts at RN-78 (line-cap room; GLSL unchanged to
 // the character). Re-exported so RN-52's published import site still holds.
@@ -142,6 +55,8 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     uniform vec3 uArtAmp;      // x macro colour, y detail bump, z rock strata
     uniform sampler2D uGroundTex;   // RN-77's four packed detail fields
     uniform float uGroundTexAmp;
+    uniform sampler2D uGroundRelief; // RN-147's four asymmetric height fields
+    uniform float uGroundReliefAmp;
     // RN-57. x water level (metres above datum), y shoreline radius m, z the
     // height in metres over which the wet band dries out, w amplitude.
     uniform vec4 uWetBand;
@@ -155,6 +70,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     uniform float uSkyAmbient;
     varying vec3 vBiomeColor;
     varying vec4 vMatW;
+    varying vec4 vRelW;
     varying vec3 vNormalW;
     varying vec3 vWorld;
     varying float vRelief;
@@ -271,6 +187,13 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         vec4 g1 = texture2D(uGroundTex, vChunkUv * 16.0);
         vec4 g2 = texture2D(uGroundTex, vChunkUv * 5.0);
         albedo *= 1.0 + texW * ofArtTexMix(g1, g2, vMatW, coverSel);
+        // RN-148: the relief sample. UNCONDITIONAL like g1/g2 and for the same
+        // measured reason (a fetch inside non-uniform control flow has
+        // UNDEFINED LOD; RN-78 paid a full hunt for it). One scale, the 16
+        // repeats: relief features are authored INSIDE the 3.6 m tile, and a
+        // second coarser lookup would re-import the smooth metre-scale
+        // undulation this texture exists to avoid.
+        vec4 rel = texture2D(uGroundRelief, vChunkUv * 16.0);
       #endif
 
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
@@ -333,6 +256,34 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           float hB = (ofArtVnoise(vec3(vChunkUv * 14.0, 0.5)) - 0.5) * 0.9
                    + (ofArtVnoise(vec3(vChunkUv * 5.3, 7.1)) - 0.5) * 0.5;
           n = ofArtBump(n, vWorld, hB, bumpW * 1.6, OF_ART_FINE_M);
+        }
+        // RN-148: the ASYMMETRIC relief drives the SAME surface-gradient bump
+        // as a second, separable call, so ?groundrelief=0 and ?terrainbump=0
+        // isolate their terms independently. The branch condition is a bare
+        // uniform, i.e. UNIFORM control flow: the derivatives inside ofArtBump
+        // are defined, exactly as they are inside the bumpW branch above (the
+        // sample itself is unconditional, taken beside g1/g2). The named
+        // failure mode of this term is RN-78's choppy water; it is excluded by
+        // the ASSET (groundtex.py asserts per-channel asymmetry with symmetric
+        // negative controls), not by shader tuning, and the fade story is the
+        // texture's own mip chain: a minified sample converges to the
+        // 0.5-centred mean, whose derivative is zero, so the term retires
+        // itself at range before ofArtBump's footprint fade acts.
+        if (uGroundReliefAmp > 0.0) {
+          float hR = ofArtRelMix(rel, vRelW, coverSel);
+          // OF_RELIEF_FINE_M, not OF_ART_FINE_M: the fade must protect THIS
+          // field's finest wavelength. The mip chain bounds the sampled value
+          // but never its gradient (RN-78d), measured again here as moire
+          // arcs when this call briefly rode the vnoise's 4.2 m constant.
+          //
+          // The DISTANCE fade is texW's argument, not a bump-aliasing guard:
+          // the chunk UV's world size doubles at every LOD step, so a coarser
+          // ring draws these ripples at double wavelength, and at grazing sun
+          // that photographed as a differently-textured chunk-shaped patch.
+          // 30 to 60 m completes inside the max-depth ring, where the UV
+          // scale is constant, so no LOD step is ever visible in the term.
+          float relW = uGroundReliefAmp * (1.0 - smoothstep(30.0, 60.0, dist));
+          n = ofArtBump(n, vWorld, hR, relW, OF_RELIEF_FINE_M);
         }
       #endif
 

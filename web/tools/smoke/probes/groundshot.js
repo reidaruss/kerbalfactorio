@@ -76,6 +76,17 @@
   // instrument artifact.
   const tex = art.texState();
   if (tex.w < 2) throw new Error(`groundshot: uGroundTex is still the ${tex.w}x${tex.h} placeholder; of_ground.png never loaded`);
+  // RN-150 fixture: the SHIPPED DEFAULT must be live on a page with no
+  // override. This probe always FORCED the amp through setTex, which is why a
+  // dead boot default (Number(null) is 0 and finite, so the fallback branch
+  // was unreachable) measured 12 green site pairs while the played game never
+  // drew the texture. The boot state is part of the fixture from now on.
+  {
+    const q = new URLSearchParams(location.search);
+    if (!q.has('groundtex') && !q.has('groundtexamp') && art.getTex() <= 0) {
+      throw new Error(`groundshot: boot default groundtex amp is ${art.getTex()} with no override in ${location.search}; the shipped default is dead (RN-150)`);
+    }
+  }
   const texLoaded = true;
 
   const grab = async () => {
