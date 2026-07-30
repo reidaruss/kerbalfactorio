@@ -17,6 +17,9 @@ export const ASSETS = {
   crudeAxe: `${ROOT}tools/crude_axe.glb`,
   armourSet: `${ROOT}player/armour_set.glb`,
   detailCards: `${ROOT}props/detail_cards.glb`,
+  // RN-122: the rigged creature. Loaded LAZILY by SpiderFlock on first
+  // contact with a live swarm, so a combat-free session never fetches it.
+  spider: `${ROOT}creatures/spider.glb`,
 } as const;
 
 /**

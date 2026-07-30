@@ -38,30 +38,70 @@ function put(g: THREE.BufferGeometry, x: number, y: number, z: number,
   return g;
 }
 
+/** A box swept from `a` to `b`, radius `r`, for a leg segment. */
+function limb(a: [number, number, number], b: [number, number, number],
+              r: number): THREE.BufferGeometry {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const dz = b[2] - a[2];
+  const len = Math.hypot(dx, dy, dz);
+  const g = new THREE.BoxGeometry(r * 2, len, r * 2);
+  g.translate(0, len / 2, 0);
+  const q = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(dx / len, dy / len, dz / len));
+  g.applyQuaternion(q);
+  g.translate(a[0], a[1], a[2]);
+  return g;
+}
+
 /**
- * A creature at unit size: about 2 m long, 1.2 m tall, standing on y = 0 and
- * facing +Z, which is the convention every other placed thing in this client
- * uses for its forward axis.
+ * RN-122: THE FAR SPIDER. The batch stand-in now shares the AUTHORED
+ * spider.glb's proportions (body mass ~2.2 m long topping at ~1.15 m, knees
+ * arching to ~1.55 m, feet spanning ~4.8 m tip to tip, all at unit scale),
+ * so a creature crossing the SpiderFlock claim boundary swaps ANIMATION, not
+ * SHAPE. Still one merged, vertex-tinted geometry per type in one
+ * BatchedMesh: the far swarm's whole cost is unchanged.
+ *
+ * Standing on y = 0, facing +Z, drawn at scale = the type's radiusM, exactly
+ * as before. The legs deliberately overreach the radiusM hit sphere: a leg
+ * is silhouette, not target, and the shot sphere stays the body mass.
  */
 export function creatureGeometry(tint: number): THREE.BufferGeometry {
   const dark = new THREE.Color(tint).multiplyScalar(0.55);
   const body = new THREE.Color(tint);
+  const pale = new THREE.Color(tint).multiplyScalar(0.85).addScalar(0.06);
   const parts: THREE.BufferGeometry[] = [
-    // Abdomen and thorax: two blocks, the rear one heavier.
-    tinted(put(new THREE.BoxGeometry(0.78, 0.60, 0.90), 0, 0.62, -0.34), body),
-    tinted(put(new THREE.BoxGeometry(0.64, 0.50, 0.62), 0, 0.66, 0.30), body),
-    // A wedge of a head, pointing the way it walks.
-    tinted(put(new THREE.ConeGeometry(0.30, 0.62, 4), 0, 0.66, 0.82,
-      Math.PI * 0.5), dark),
-    // Four legs, splayed. Cheap boxes: at the ranges a swarm is read at, a leg
-    // is a silhouette rather than a shape.
-    tinted(put(new THREE.BoxGeometry(0.13, 0.66, 0.13), -0.40, 0.33, -0.34), dark),
-    tinted(put(new THREE.BoxGeometry(0.13, 0.66, 0.13), 0.40, 0.33, -0.34), dark),
-    tinted(put(new THREE.BoxGeometry(0.13, 0.62, 0.13), -0.38, 0.31, 0.26), dark),
-    tinted(put(new THREE.BoxGeometry(0.13, 0.62, 0.13), 0.38, 0.31, 0.26), dark),
-    // A back plate, so a creature seen from above is not a flat rectangle.
-    tinted(put(new THREE.ConeGeometry(0.34, 0.36, 5), 0, 1.00, -0.30), dark),
+    // Abdomen: the raised rear bulb; cephalothorax: lower and flatter.
+    tinted(put(new THREE.BoxGeometry(0.86, 0.66, 1.10), 0, 0.82, -0.62), body),
+    tinted(put(new THREE.BoxGeometry(0.68, 0.44, 0.80), 0, 0.58, 0.28), body),
+    // Head cluster with down-forward fangs.
+    tinted(put(new THREE.BoxGeometry(0.40, 0.28, 0.30), 0, 0.56, 0.80), dark),
+    tinted(limb([0.10, 0.50, 0.92], [0.13, 0.22, 1.02], 0.035), pale),
+    tinted(limb([-0.10, 0.50, 0.92], [-0.13, 0.22, 1.02], 0.035), pale),
   ];
+  // Eight legs off the cephalothorax rim: femur up-out to the knee, tibia
+  // down-out to a pointed-enough foot. Angles match the authored gait's
+  // stance (leg 1 forward-raked to leg 4 rear-raked).
+  const HIP_Y = 0.62;
+  const KNEE_Y = 1.55;
+  const FOOT_R = 2.4;
+  const KNEE_R = 1.05;
+  const AZ = [35, 70, 110, 145];
+  for (const side of [1, -1]) {
+    for (let i = 0; i < AZ.length; i++) {
+      const a = (AZ[i] * Math.PI) / 180;
+      const ux = Math.sin(a) * side;
+      const uz = Math.cos(a);
+      const hip: [number, number, number] = [ux * 0.30, HIP_Y, uz * 0.30 + 0.20];
+      const knee: [number, number, number] =
+        [ux * KNEE_R, KNEE_Y, uz * KNEE_R + 0.20];
+      const foot: [number, number, number] =
+        [ux * FOOT_R, 0.02, uz * FOOT_R + 0.20];
+      parts.push(tinted(limb(hip, knee, 0.055), dark));
+      parts.push(tinted(limb(knee, foot, 0.035), dark));
+    }
+  }
   const g = mergeGeometries(parts, false) ?? parts[0];
   g.computeVertexNormals();
   g.computeBoundingSphere();

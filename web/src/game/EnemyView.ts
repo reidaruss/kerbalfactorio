@@ -33,6 +33,27 @@ import type { Vec3 } from './EnemyLoop.js';
 export const NEST_KEY = 'nest';
 
 /**
+ * Build the stand-on-a-sphere rotation basis into `out`: the body's up is its
+ * own radial, its forward the tangent heading, re-orthogonalised because a
+ * heading one march step old is a fraction of a degree out of plane and a
+ * non-orthogonal basis shears the mesh (RN-122: shared by the batch and the
+ * skinned spider rigs so there is exactly ONE derivation of "standing").
+ * Writes rotation and scale; the caller sets position.
+ */
+export function standBasis(out: THREE.Matrix4, up: Vec3, fwd: Vec3,
+                           scale: number, tmpA: THREE.Vector3,
+                           tmpB: THREE.Vector3, tmpC: THREE.Vector3): void {
+  const uy = tmpA.set(up.x, up.y, up.z).normalize();
+  const uz = tmpB.set(fwd.x, fwd.y, fwd.z);
+  uz.addScaledVector(uy, -uz.dot(uy));
+  if (uz.lengthSq() < 1e-12) uz.set(uy.z, uy.x, uy.y);
+  uz.normalize();
+  const ux = tmpC.crossVectors(uy, uz);
+  out.makeBasis(ux, uy, uz);
+  out.scale(tmpA.set(scale, scale, scale));
+}
+
+/**
  * Instances this pool STARTS with, and it is deliberately SMALLER than one
  * wave's maximum roster (`enemies.h`'s `maxWaveSize` is 100).
  *
@@ -65,6 +86,9 @@ export class EnemyView {
   private warned = false;
   private readonly m = new THREE.Matrix4();
   private readonly p = new THREE.Vector3();
+  private readonly ta = new THREE.Vector3();
+  private readonly tb = new THREE.Vector3();
+  private readonly tc = new THREE.Vector3();
 
   /** `capacity` is a STARTING size and never a limit; see `ENEMY_POOL_START`.
    *  The argument order matches `MachineBatch` so the two pools read alike. */
@@ -161,19 +185,8 @@ export class EnemyView {
    */
   place(slot: number, pos: Vec3, up: Vec3, fwd: Vec3, scale: number): void {
     if (this.mesh === null || slot < 0) return;
-    const uy = new THREE.Vector3(up.x, up.y, up.z).normalize();
-    const uz = new THREE.Vector3(fwd.x, fwd.y, fwd.z);
-    // Re-orthogonalise rather than trusting the caller: `facing` is a tangent
-    // vector at the position it was computed at, and one step of a march later
-    // it is a fraction of a degree out of plane. A basis that is not orthogonal
-    // shears the mesh, which reads as a creature melting.
-    uz.addScaledVector(uy, -uz.dot(uy));
-    if (uz.lengthSq() < 1e-12) uz.set(uy.z, uy.x, uy.y);
-    uz.normalize();
-    const ux = new THREE.Vector3().crossVectors(uy, uz);
+    standBasis(this.m, up, fwd, scale, this.ta, this.tb, this.tc);
     this.origin.toEngine(pos, this.p);
-    this.m.makeBasis(ux, uy, uz);
-    this.m.scale(new THREE.Vector3(scale, scale, scale));
     this.m.setPosition(this.p);
     this.mesh.setMatrixAt(slot, this.m);
     this.mesh.setVisibleAt(slot, true);

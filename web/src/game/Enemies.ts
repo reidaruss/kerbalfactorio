@@ -28,6 +28,7 @@ import { EnemyLoop, SYNC_TICKS, type EmitterRow, type Vec3, type WaveRow }
 import { EnemyTypes } from './EnemyTypes.js';
 import { EnemySwarm, type Creature, type SwarmContext } from './EnemySwarm.js';
 import { EnemyView, NEST_KEY } from './EnemyView.js';
+import { SpiderFlock } from './SpiderFlock.js';
 import { killAll, setPeaceful } from './EnemyCheats.js';
 import { emittersOf, targetsOf, type TargetPopulations, type TargetRow }
   from './EnemyTargets.js';
@@ -62,6 +63,7 @@ export class Enemies {
   readonly types = new EnemyTypes();
   readonly swarm = new EnemySwarm();
   readonly view: EnemyView;
+  readonly spiders: SpiderFlock;
   /** Rebuilt every tick: creatures and nests, in that order. Passed to
    *  `Weapon.fire` per shot so it can never go stale (see Weapon.ts). */
   readonly shootables: Hittable[] = [];
@@ -111,6 +113,11 @@ export class Enemies {
     this.bodyRadiusM = M._of_body_radius(bodyHandle) || 600000;
     this.loop = new EnemyLoop(M, this.bodyRadiusM);
     this.view = new EnemyView(origin);
+    // RN-122/RN-123: the skinned near-creature pool (view only, no sim
+    // knowledge). Its group rides inside the view's group so the scene
+    // wiring in Gameplay is untouched.
+    this.spiders = new SpiderFlock(origin);
+    this.view.group.add(this.spiders.group);
   }
 
   /**
@@ -163,6 +170,11 @@ export class Enemies {
     // release their instanced slots, instead of parking corpses mid-stride.
     if (!this.peaceful) for (const w of this.loop.step()) this.take(w, ctx);
     this.swarm.step(dt, ctx);
+    // The rig mixers advance HERE, on the fixed sim dt, never on a wall
+    // clock: a headless capture must reproduce (same argument as
+    // Avatar.animate on loop.simSecs). Which creature each rig shows is a
+    // per-frame choice and stays in frame().
+    this.spiders.update(dt);
     this.publishShootables(ctx);
     this.watchPool(host);
   }
@@ -297,9 +309,24 @@ export class Enemies {
    */
   frame(host: EnemyHost): void {
     if (!this.enabled || !this.view.ready) return;
+    // RN-123: the closest creatures are PROMOTED into skinned rigs and leave
+    // the batch for as long as a rig holds them. A claimed creature's batch
+    // slot is released here and lazily re-acquired the frame the claim
+    // drops, which is the acquire path that already exists below.
+    const f = host.walker.body.feet;
+    const claimed = this.spiders.assign(this.swarm.live,
+      { x: f.x, y: f.y, z: f.z });
     const liveIds = new Set<number>();
     for (const c of this.swarm.live) {
       liveIds.add(c.id);
+      if (claimed.has(c.id)) {
+        const held = this.creatureSlots.get(c.id);
+        if (held !== undefined) {
+          this.view.release(held);
+          this.creatureSlots.delete(c.id);
+        }
+        continue;
+      }
       let slot = this.creatureSlots.get(c.id);
       if (slot === undefined) {
         slot = this.view.acquire(c.type.name);
@@ -365,6 +392,10 @@ export class Enemies {
       // that would stop DRAWING creatures, and /core's own cap on how many a
       // wave may contain.
       ceilings: { ...this.loop.ceilings(), pool: this.view.stats() },
+      // RN-123. NOT a DW-28 ceiling: past MAX_RIGS a creature falls back to
+      // the batch and is still drawn, so `claimed` at the cap is the design
+      // working, not work being dropped.
+      spiders: this.spiders.stats(),
       types: this.types.report(),
       nestRows: this.loop.nests.map((n) => ({ id: n.id, generation: n.generation,
         health: +n.health.toFixed(1), maxHealth: n.maxHealth,
