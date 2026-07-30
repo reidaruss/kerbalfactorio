@@ -206,7 +206,7 @@ export class Headlamp {
    * object (ARCHITECTURE.md 3.6), never by applying a delta by hand.
    */
   update(dt: number, origin: FloatingOrigin, eye: Vec3d | null,
-    aim: THREE.Vector3, up: THREE.Vector3): void {
+    aim: THREE.Vector3, up: THREE.Vector3, sunElevationDot = 1): void {
     if (eye === null) {
       // No character: a free camera has no head to bolt a lamp to, and the
       // measurement must not leave the world dark for the orbit scenarios.
@@ -225,8 +225,21 @@ export class Headlamp {
     // sky it is off, and it is at full by 45%, which is roughly a metre of rock
     // overhead. Under open sky it contributes nothing, so leaving it enabled in
     // daylight costs one light's worth of shader work and changes no pixel.
+    //
+    // RN-153: AND at NIGHT. This gate keyed on sky OCCLUSION only, so the lamp
+    // that has existed since W5 never once lit a surface night: the one state
+    // a player most wants it (PH-86 landed the first real night and measured
+    // mid-field terrain unnavigable). The night half keys on the sun's own
+    // elevation, coming up over 0.03 to -0.05, the same band the starlight
+    // floor uses (TerrainAmbient.terrainNightAmbient), because both are
+    // statements about when the DIRECT term has collapsed: the terminator's
+    // transmittance has extinguished the sun well before elevation -0.05, and
+    // above 0.03 the ground is still sunlit and the lamp would read as a
+    // flashlight at noon. max(), not sum: a night-time tunnel is dark once.
     const dark = 1 - this.skyVis;
-    const lampK = this.enabled ? THREE.MathUtils.smoothstep(dark, 0.18, 0.55) : 0;
+    const occK = THREE.MathUtils.smoothstep(dark, 0.18, 0.55);
+    const nightK = THREE.MathUtils.smoothstep(-sunElevationDot, -0.03, 0.05);
+    const lampK = this.enabled ? Math.max(occK, nightK) : 0;
     this.spot.intensity = LAMP_CD * lampK;
 
     // Placing it is skipped while it is dark, not because of the cost but

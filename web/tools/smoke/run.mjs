@@ -106,6 +106,9 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // RN-148, the asymmetric relief bump. `groundrelief=0` removes the term;
   // `groundreliefamp=` sweeps it.
   'groundrelief', 'groundreliefamp',
+  // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
+  // night exactly); `starlightamp=` sweeps it.
+  'starlight', 'starlightamp',
   // RN-181, the foliage albedo cards. `leaftex=0` boots with the card maps
   // and their alpha test off: the pre-texture flora exactly.
   'leaftex',

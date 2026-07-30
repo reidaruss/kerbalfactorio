@@ -7,6 +7,7 @@ import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 import { windUpdate } from '../render/instancing/PropWind.js';
 import { dayAdvance } from '../sim/DayCycle.js';
+import { terrainNightAmbient } from '../render/materials/TerrainAmbient.js';
 
 /** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
 const NIGHT_DOT = -0.12;
@@ -251,6 +252,10 @@ export function registerSystems(s: Services, loop: Loop): void {
     // colour work at all in between.
     const up = s.observer.up;
     s.ibl.update(s.scenes.sky, elev, s.oracle.biomeAt(up.x, up.y, up.z));
+    // RN-152: the starlight floor rides the SAME elevation the sky, the IBL
+    // and the sun lights read, written into the shared TERRAIN_AMBIENT object
+    // both terrain materials and the sky ground shell hold by reference.
+    terrainNightAmbient(elev);
     const k = THREE.MathUtils.smoothstep(elev, NIGHT_DOT, DAY_DOT);
     sunColor.copy(HORIZON).lerp(NOON, THREE.MathUtils.smoothstep(elev, 0.0, 0.35));
     // W5. How much sky the EYE can see, measured before the lights are set so
@@ -262,7 +267,7 @@ export function registerSystems(s: Services, loop: Loop): void {
     const pv = flying ? null : s.player?.view ?? null;
     if (pv !== null) s.headlamp.measure(s.oracle, pv.eye);
     s.headlamp.update(loop.fixedDt, s.origin, pv?.eye ?? null,
-      pv?.aim ?? fwd, pv?.up ?? UP_FALLBACK);
+      pv?.aim ?? fwd, pv?.up ?? UP_FALLBACK, elev);
     const sunK = s.headlamp.sunScale;
     for (const light of s.sunLights) {
       // ShadowRig owns cascade 0's POSITION (fitted to the eye and texel
