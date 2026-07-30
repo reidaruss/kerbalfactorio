@@ -146,6 +146,10 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // the hooked program at exactly zero displacement, which is what separates
   // "the hook costs" from "the motion costs".
   'wind', 'windamp',
+  // RN-102, standing rule 7. `leafvar=0` bakes the flat greyscale vertex
+  // colour, i.e. the pre-RN-102 bytes exactly; the runtime pair lives on
+  // `__ofProps.setLeafVar` because a reload cannot hold the frame equal.
+  'leafvar',
   // RN-121, standing rule 7. `anim=0` freezes every skeletal AnimationMixer
   // (player body, FP arms, rigged creatures): rigs draw their rest pose and
   // nothing ticks. The negative control for every clip-playback claim and the

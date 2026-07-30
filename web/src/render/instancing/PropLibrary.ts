@@ -17,7 +17,8 @@ import { loadGlb } from '../../assets/Loaders.js';
 import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
-import { normalize, setBaseShade, type BaseBake } from './PropGeometry.js';
+import { normalize, setBaseShade, setLeafVar, type BaseBake }
+  from './PropGeometry.js';
 import { applyWind } from './PropWind.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
@@ -71,6 +72,10 @@ interface Batch {
   /** The baked colour bytes, saved lazily the first time `setBaseShade(false)`
    *  is called so the toggle can put them back. Zero cost until then. */
   savedColour: Uint8Array | null;
+  /** Foliage bake: which batches sway (PropWind) and carry the tip tint;
+   *  `savedTint` is `setLeafVar`'s lazy copy, zero cost until toggled off. */
+  foliage: boolean;
+  savedTint: Uint8Array | null;
 }
 
 /**
@@ -153,6 +158,7 @@ export class PropLibrary {
     // control, since every constructor argument here comes from `Boot.ts`.
     (window as unknown as { __ofProps: unknown }).__ofProps = {
       setBaseShade: (on: boolean): number => lib.setBaseShade(on),
+      setLeafVar: (on: boolean): number => setLeafVar(lib.batches.values(), on),
       stats: (): unknown => lib.stats(),
     };
     return lib;
@@ -182,16 +188,11 @@ export class PropLibrary {
         const key = mat + suffix;
         const batch = this.batchFor(key, mat, near.material as THREE.Material,
           suffix === '', suffix !== '' && this.cullDetail);
-        // The base gradient goes on PLANTS, and the predicate is imported from
-        // `ScatterLook` rather than rewritten here. Two copies of "which
-        // materials are plants" drift, and the drift would show up as one leaf
-        // role quietly failing to darken at its base.
-        // RN-62: EVERY prop takes a base-contact gradient now, and the only
-        // question is which profile. It used to be plants or nothing, which
-        // left a boulder meeting the terrain along a hard silhouette with bare
-        // ground either side, i.e. the pasted-on read `ScatterLook` names. The
-        // predicate is still imported rather than rewritten, because two copies
-        // of "which materials are plants" drift.
+        // RN-62: EVERY prop takes a base-contact gradient, and the only
+        // question is which profile (it used to be plants or nothing, which
+        // left boulders meeting the terrain along a hard silhouette). The
+        // predicate is imported from `ScatterLook` rather than rewritten,
+        // because two copies of "which materials are plants" drift.
         const bake: BaseBake = isFoliageMaterial(mat) ? 'foliage' : 'mineral';
         batch.shaded = true;
         const lod0 = batch.mesh.addGeometry(normalize(near.geometry, near.matrixWorld, bake));
@@ -234,10 +235,9 @@ export class PropLibrary {
     // decision rather than an omission: see surfaces.json's reason per role.
     attachSurface(material as THREE.MeshStandardMaterial,
       familyForRole(roleOfMaterialName(role)), `props:${key}`);
-    // WIND (RN-97): only plants sway. The predicate is the same imported one
-    // the base bake uses, so "which materials are plants" stays ONE answer and
-    // a rock can never inherit a breeze. With ?wind=0 this is a no-op and the
-    // material keeps its stock program (the negative control).
+    // WIND (RN-97): plants only, the same imported predicate the bake uses,
+    // so a rock can never inherit a breeze. Design and ?wind=0 semantics live
+    // in PropWind.ts's header.
     if (isFoliageMaterial(role)) {
       applyWind(material as THREE.MeshStandardMaterial, `props:${key}`);
     }
@@ -272,6 +272,7 @@ export class PropLibrary {
     const batch: Batch = {
       mesh, free: [], live: 0, cap: cap0, grows: 0, refused: 0, warned: false,
       shaded: false, savedColour: null,
+      foliage: isFoliageMaterial(role), savedTint: null,
     };
     this.batches.set(key, batch);
     return batch;

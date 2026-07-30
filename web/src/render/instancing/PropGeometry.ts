@@ -16,6 +16,10 @@ export interface ShadedBatch {
   mesh: THREE.BatchedMesh;
   shaded: boolean;
   savedColour: Uint8Array | null;
+  /** Whether this batch took the foliage bake, i.e. carries the tip tint. */
+  foliage: boolean;
+  /** Lazy copy of the tinted bytes, for `setLeafVar` to restore. */
+  savedTint: Uint8Array | null;
 }
 
 /**
@@ -121,6 +125,71 @@ const MINERAL_SHADE = 0.64;
 const MINERAL_FRAC = 0.20;
 
 /**
+ * LEAF TIP TINT (RN-102). A real plant is not one flat green: tips are
+ * sun-bleached toward yellow and the interior sits cooler. The vertex colour
+ * attribute is already there and already MULTIPLIES the material colour and
+ * the per-instance tint (see bakeColour's header), so a per-channel gradient
+ * costs the same zero everything the base shade costs.
+ *
+ * THE GREEN CHANNEL IS THE INVARIANT, BY DESIGN AND NOT BY TASTE. Only r and
+ * b are modulated, g carries exactly the greyscale the bake would have
+ * written without the tint. That is what makes `setLeafVar(false)` possible
+ * at all on a BatchedMesh, whose concatenated buffer has forgotten which
+ * geometry each byte came from: the untinted bake is recovered by copying g
+ * into r and b, no geometry needed.
+ *
+ * THE FIRST VERSION RAISED r AT THE TIPS AND THE PROBE FALSIFIED IT: a
+ * normalized Uint8 colour is a MULTIPLIER and cannot exceed 1.0, so "+16% r"
+ * clamps to nothing wherever the bake is already bright, which is everywhere
+ * above the base band, i.e. exactly the tips. 30 tiles moved, all darker
+ * (only the blue cut survived), peak 0.86. **A brighter tip is expressible
+ * in this encoding only as a darker interior**, so that is what this is: the
+ * interior loses red (cool, self-shadowed) and the tip loses blue (warm,
+ * sun-dried), both multipliers <= 1 so nothing clamps, and the tips carry
+ * the plant's full brightness while the body sits cooler behind them. The
+ * predicted toggle direction is therefore net DARKER with the tint on, and
+ * the probe asserts that, from this mechanism and not from a tuning.
+ *
+ * The named failure mode, checked for in the close-up rather than "general
+ * goodness": too strong and the field reads as autumn or as dirt showing
+ * through, a dying meadow rather than a lit one.
+ */
+const INNER_R = 0.10;
+const TIP_B = 0.16;
+const TIP_FRAC = 0.40;
+/** ?leafvar=0 bakes the flat greyscale, the pre-RN-102 bytes exactly. */
+const leafVarOn = new URLSearchParams(self.location.search).get('leafvar') !== '0';
+
+/**
+ * Toggle the tip tint INSIDE ONE SETTLED FRAME, `setBaseShade`'s shape for
+ * its reason (a reload cannot hold the frame equal). Restore is from a lazy
+ * saved copy; the off state is DERIVED from the green channel as above.
+ * NOTE the two toggles do not compose: `setBaseShade(false)` flattens to 255
+ * and its restore brings the tint back with it. Probes use one at a time.
+ */
+export function setLeafVar(batches: Iterable<ShadedBatch>, on: boolean): number {
+  let touched = 0;
+  for (const b of batches) {
+    if (!b.foliage) continue;
+    const attr = b.mesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const arr = attr.array as Uint8Array;
+    if (on) {
+      if (b.savedTint === null) continue;   // never switched off: already on
+      arr.set(b.savedTint);
+    } else {
+      if (b.savedTint === null) b.savedTint = arr.slice();
+      for (let i = 0; i < arr.length; i += 3) {
+        arr[i] = arr[i + 1];
+        arr[i + 2] = arr[i + 1];
+      }
+    }
+    attr.needsUpdate = true;
+    touched++;
+  }
+  return touched;
+}
+
+/**
  * Fill one geometry's vertex-colour attribute: a white constant, or the
  * base-contact gradient above.
  *
@@ -162,11 +231,25 @@ export function bakeColour(g: THREE.BufferGeometry, bake: BaseBake): void {
   // the ground plane has zero height, and 0/0 would write NaN into every
   // vertex and render the whole batch black.
   const span = Math.max(1e-4, (hi - lo) * frac);
+  const span0 = Math.max(1e-4, hi - lo);
+  const tint = bake === 'foliage' && leafVarOn;
   for (let i = 0; i < n; ++i) {
-    const t = Math.min(1, Math.max(0, (pos.getY(i) - lo) / span));
+    const y = pos.getY(i);
+    const t = Math.min(1, Math.max(0, (y - lo) / span));
     const s = shade + (1 - shade) * (t * t * (3 - 2 * t));
-    const b = Math.round(s * 255);
-    col[i * 3] = b; col[i * 3 + 1] = b; col[i * 3 + 2] = b;
+    const g = Math.round(s * 255);
+    if (tint) {
+      // Tip band over the geometry's own height, the same normalisation the
+      // base shade uses, so one constant serves a 0.4 m card and a 12 m crown.
+      const u = Math.min(1, Math.max(0,
+        ((y - lo) / span0 - (1 - TIP_FRAC)) / TIP_FRAC));
+      const t2 = u * u * (3 - 2 * u);
+      col[i * 3] = Math.round(s * (1 - INNER_R * (1 - t2)) * 255);
+      col[i * 3 + 1] = g;
+      col[i * 3 + 2] = Math.round(s * (1 - TIP_B * t2) * 255);
+    } else {
+      col[i * 3] = g; col[i * 3 + 1] = g; col[i * 3 + 2] = g;
+    }
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3, true));
 }
