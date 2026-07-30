@@ -9,20 +9,23 @@
 // which is the entire reason the texture pass shipped two shared tilings instead
 // of per-asset maps.
 //
-// THERE IS NO ALBEDO MAP AND ONE MUST NOT BE ADDED. `MachineBatch` sets
-// `vertexColors: true` and its `onBeforeCompile` writes `diffuseColor.rgb` AFTER
-// `<map_fragment>`, so a base-colour map would be silently overwritten for four
-// of five roles. Normal, roughness, metalness and AO all land earlier in the
-// meshphysical fragment (`<roughnessmap_fragment>`, `<metalnessmap_fragment>`
-// and `<normal_fragment_maps>` all precede `<emissivemap_fragment>`, which is
-// where that edit hooks), so all four survive it. See ASSET-SPECS 2.8.
+// NO ALBEDO MAP ON THE MACHINE PATH, EVER (RN-176 narrowed this from a global
+// ban). `MachineBatch` sets `vertexColors: true` and its `onBeforeCompile`
+// writes `diffuseColor.rgb` AFTER `<map_fragment>`, so a base-colour map would
+// be silently overwritten for four of five roles. Normal, roughness, metalness
+// and AO all land earlier in the meshphysical fragment, so all four survive it
+// (ASSET-SPECS 2.8). That argument is SPECIFIC to the machine hook: the flora
+// batch paths (PropLibrary, NodeBatch) have no such hook, and the albedo CARD
+// families (leaf, grass) attach `map` + alphaTest there. MachineBatch is
+// pinned to 'panel', which carries no albedo, so the ban holds structurally:
+// an albedo can only ever reach a family the machine path never asks for.
 //
 // UVs ARE IN METRES, so the consumer sets `repeat = 1 / tile_m` and the texel
 // density is a JSON edit rather than a rebuild of 48 binaries.
 
 import * as THREE from 'three';
 
-export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'flat';
+export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'leaf' | 'grass' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -50,8 +53,15 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // seam glint under a moving sun. Moves in the same commit as texgen's table
   // (RN-100's rule: verifyAgainstManifest makes a disagreement a failed run).
   CoalSeam: 'ore', CopperOre: 'ore', IronOre: 'ore',
-  EmissiveState: 'flat', Glass: 'flat', Grass: 'flat', Ice: 'flat',
-  Leaf: 'flat', LeafDeep: 'flat', LeafDry: 'flat', LeafLight: 'flat',
+  // RN-181: the foliage roles leave `flat` for the two ALBEDO CARD families.
+  // The recorded flat_roles objections are honoured, not overruled: they
+  // refused a NORMAL map on a card, and these families carry none. What a
+  // card family adds is an albedo whose alpha IS the shape, alpha-tested at
+  // the manifest's declared cutoff. Moves in the same commit as texgen's
+  // table (RN-100's rule: verifyAgainstManifest fails the run otherwise).
+  Grass: 'grass',
+  Leaf: 'leaf', LeafDeep: 'leaf', LeafDry: 'leaf', LeafLight: 'leaf',
+  EmissiveState: 'flat', Glass: 'flat', Ice: 'flat',
   Oil: 'flat', Skin: 'flat', Water: 'flat',
 };
 
@@ -77,16 +87,28 @@ interface Manifest {
 }
 
 interface Surface {
-  normal: THREE.Texture; orm: THREE.Texture;
-  tileM: number; sizePx: number; vramBytes: number;
+  /** A tiling PBR surface carries normal+orm; an albedo card family carries
+   *  `albedo` (+alphaTest/albedoMean). Never both, today. */
+  normal?: THREE.Texture; orm?: THREE.Texture; albedo?: THREE.Texture;
+  tileM?: number; sizePx: number; vramBytes: number;
+  alphaTest?: number; albedoMean?: number;
 }
 
 interface Reg {
   label: string; family: Family; mat: THREE.MeshStandardMaterial;
+  /** The material's own colour as authored, captured on first albedo apply so
+   *  the mean-neutral compensation (x 1/albedo_mean) is idempotent and the
+   *  `albedo: false` toggle can restore the exact pre-texture colour. */
+  baseColor: THREE.Color | null;
 }
 
-/** Which maps are currently bound. Both true is the shipped state. */
-const state = { normal: true, orm: true };
+/** Which maps are currently bound. All true is the shipped state.
+ *  `?leaftex=0` boots with the albedo cards off (standing rule 7 isolation);
+ *  `setMaps({albedo})` flips them inside one settled frame for matched pairs. */
+const state = {
+  normal: true, orm: true,
+  albedo: new URLSearchParams(self.location.search).get('leaftex') !== '0',
+};
 
 const registered: Reg[] = [];
 const surfaces = new Map<Family, Surface>();
@@ -191,6 +213,24 @@ export function noteShaderOrder(tag: string, frag: string): void {
   };
 }
 
+/**
+ * An albedo card map differs from the surface maps in every setting that
+ * matters: it is COLOUR (sRGB, where normal/orm are data), its UVs are UNIT
+ * card space so repeat stays 1 (no metre division), u wraps because a grass
+ * band may cross the seam while v CLAMPS because the card's tip rows are
+ * authored alpha-0 and must dissolve rather than wrap the roots back in.
+ */
+function makeAlbedoTexture(url: string,
+                           wrap?: { u: string; v: string }): Promise<THREE.Texture> {
+  return new THREE.TextureLoader().loadAsync(url).then((t) => {
+    t.wrapS = wrap?.u === 'clamp' ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+    t.wrapT = wrap?.v === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 16;
+    return t;
+  });
+}
+
 function makeTexture(url: string, tileM: number): Promise<THREE.Texture> {
   return new THREE.TextureLoader().loadAsync(url).then((t) => {
     t.wrapS = THREE.RepeatWrapping;
@@ -242,20 +282,27 @@ const ready = (async (): Promise<void> => {
   manifest = m;
   verifyAgainstManifest(m);
   for (const [name, f] of Object.entries(m.families)) {
-    // An albedo card family (leaf, grass) has no normal/orm pair. This pass
-    // SKIPS it entirely rather than half-loading it: no role maps to these
-    // families yet (the role move lands atomically with the attach code), so
-    // loading their maps now would spend VRAM nothing samples. Tolerating the
-    // manifest entry is the load-bearing part: the bark precedent is that a
-    // family addition must not break an older client, and `f.normal.file` on
-    // an albedo family would have thrown inside `ready` and taken every
-    // OTHER family down with it.
+    // Two family shapes (RN-176/RN-181). A tiling surface carries normal+orm
+    // in metres; an albedo card family carries `albedo` in unit card space.
+    // A family declaring NEITHER shape is tolerated and skipped, which is the
+    // bark precedent made structural: a family addition must not break an
+    // older client, and `f.normal.file` on an albedo family would have thrown
+    // inside `ready` and taken every other family down with it.
+    if (f.albedo !== undefined) {
+      const albedo = await makeAlbedoTexture(DIR + f.albedo.file, f.wrap);
+      // Base level plus the mip chain, which converges to 4/3 of the base.
+      const bytes = Math.round(f.size_px * f.size_px * 4 * (4 / 3));
+      surfaces.set(name as Family, {
+        albedo, sizePx: f.size_px, vramBytes: bytes,
+        alphaTest: f.alpha_test, albedoMean: f.albedo_mean,
+      });
+      continue;
+    }
     if (f.normal === undefined || f.orm === undefined || f.tile_m === undefined) continue;
     const [normal, orm] = await Promise.all([
       makeTexture(DIR + f.normal.file, f.tile_m),
       makeTexture(DIR + f.orm.file, f.tile_m),
     ]);
-    // Base level plus the mip chain, which converges to 4/3 of the base.
     const bytes = Math.round(f.size_px * f.size_px * 4 * 2 * (4 / 3));
     surfaces.set(name as Family, {
       normal, orm, tileM: f.tile_m, sizePx: f.size_px, vramBytes: bytes,
@@ -275,10 +322,29 @@ export function surfacesReady(): Promise<void> { return ready.catch(() => undefi
 function apply(r: Reg): void {
   const s = surfaces.get(r.family);
   if (s === undefined) return;                 // 'flat', or not loaded yet
-  r.mat.normalMap = state.normal ? s.normal : null;
-  r.mat.roughnessMap = state.orm ? s.orm : null;
-  r.mat.metalnessMap = state.orm ? s.orm : null;
-  r.mat.aoMap = state.orm ? s.orm : null;
+  if (s.albedo !== undefined) {
+    // The albedo card path (RN-181). Three composes
+    //   diffuse = material.color x map x vertexColour x instanceTint
+    // so the map is a FOURTH multiplier and would darken every card by its
+    // own mean. `albedo_mean` is measured into the manifest for exactly this:
+    // the material colour is scaled by 1/mean so the modulation is
+    // mean-neutral and the card keeps its palette brightness. alphaTest is
+    // the manifest's declared cutoff, and the depth material follows it
+    // (three's shadow variant copies map+alphaTest, WebGLShadowMap:481).
+    const on = state.albedo;
+    if (r.baseColor === null) r.baseColor = r.mat.color.clone();
+    r.mat.map = on ? s.albedo : null;
+    r.mat.alphaTest = (on && s.alphaTest !== undefined) ? s.alphaTest : 0;
+    const k = (on && s.albedoMean !== undefined && s.albedoMean > 0)
+      ? 1 / s.albedoMean : 1;
+    r.mat.color.copy(r.baseColor).multiplyScalar(k);
+    r.mat.needsUpdate = true;
+    return;
+  }
+  r.mat.normalMap = state.normal ? (s.normal ?? null) : null;
+  r.mat.roughnessMap = state.orm ? (s.orm ?? null) : null;
+  r.mat.metalnessMap = state.orm ? (s.orm ?? null) : null;
+  r.mat.aoMap = state.orm ? (s.orm ?? null) : null;
   if (r.mat.aoMap !== null) r.mat.aoMap.channel = 0;
   r.mat.needsUpdate = true;
 }
@@ -293,12 +359,12 @@ function apply(r: Reg): void {
  */
 export function attachSurface(mat: THREE.MeshStandardMaterial, family: Family,
                               label: string): void {
-  const r: Reg = { label, family, mat };
+  const r: Reg = { label, family, mat, baseColor: null };
   registered.push(r);
   apply(r);
 }
 
-export interface MapState { normal: boolean; orm: boolean }
+export interface MapState { normal: boolean; orm: boolean; albedo: boolean }
 
 /**
  * Bind or unbind the maps on every registered material, in place.
@@ -314,6 +380,7 @@ export interface MapState { normal: boolean; orm: boolean }
 export function setMaps(next: Partial<MapState>): MapState {
   if (next.normal !== undefined) state.normal = next.normal;
   if (next.orm !== undefined) state.orm = next.orm;
+  if (next.albedo !== undefined) state.albedo = next.albedo;
   for (const r of registered) apply(r);
   return { ...state };
 }
@@ -333,13 +400,21 @@ export interface SurfaceReport {
   shaderOrder: Record<string, unknown>;
   vramBytes: number;
   vramMB: number;
-  families: { name: string; tileM: number; sizePx: number; repeat: number }[];
+  families: {
+    name: string; tileM: number | null; sizePx: number; repeat: number | null;
+    albedo: boolean; alphaTest: number | null; albedoMean: number | null;
+  }[];
   materials: {
     label: string; family: Family; hasNormal: boolean; hasRough: boolean;
     hasMetal: boolean; hasAo: boolean; aoChannel: number | null;
     normalChannel: number | null; repeat: number | null;
     wrapRepeat: boolean; dataColorSpace: boolean; anisotropy: number | null;
     aoIntensity: number; roughness: number; metalness: number;
+    /** The albedo card path (RN-181): hasMap distinguishes a BOUND card map
+     *  from the grey-white silent-drop failure; mapSize catches the 1x1
+     *  placeholder version of the same lie (RN-78's groundshot lesson). */
+    hasMap: boolean; mapSize: number | null; alphaTest: number;
+    colorR: number;
   }[];
 }
 
@@ -350,7 +425,10 @@ export function surfaceReport(): SurfaceReport {
   for (const [name, s] of surfaces) {
     vram += s.vramBytes;
     families.push({
-      name, tileM: s.tileM, sizePx: s.sizePx, repeat: s.normal.repeat.x,
+      name, tileM: s.tileM ?? null, sizePx: s.sizePx,
+      repeat: s.normal?.repeat.x ?? null,
+      albedo: s.albedo !== undefined, alphaTest: s.alphaTest ?? null,
+      albedoMean: s.albedoMean ?? null,
     });
   }
   const roles: Record<string, Family> = {};
@@ -392,6 +470,11 @@ export function surfaceReport(): SurfaceReport {
         anisotropy: n === null ? null : n.anisotropy,
         aoIntensity: m.aoMapIntensity,
         roughness: m.roughness, metalness: m.metalness,
+        hasMap: m.map !== null,
+        mapSize: m.map === null ? null
+          : (m.map.image as { width?: number } | undefined)?.width ?? null,
+        alphaTest: m.alphaTest,
+        colorR: m.color.r,
       };
     }),
   };

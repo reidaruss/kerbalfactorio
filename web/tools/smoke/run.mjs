@@ -106,6 +106,9 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // RN-148, the asymmetric relief bump. `groundrelief=0` removes the term;
   // `groundreliefamp=` sweeps it.
   'groundrelief', 'groundreliefamp',
+  // RN-181, the foliage albedo cards. `leaftex=0` boots with the card maps
+  // and their alpha test off: the pre-texture flora exactly.
+  'leaftex',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',
