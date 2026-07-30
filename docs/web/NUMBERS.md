@@ -381,3 +381,37 @@ This is the fourth member of the sweep family. The others move a file into the
 wrong commit; this one moves a file **backwards in time** while every surface a
 lane normally checks (`git status`, the working tree, `cat-file -e HEAD:`) looks
 correct, because the stale content is only in the index.
+
+### A filtered blob is not enough when the artifact is GENERATED from a shared source
+
+The filtered-blob technique (commit only your own hunks of a file another lane
+has uncommitted work in) protects a file you EDIT. It does not protect a file
+you REGENERATE.
+
+On 2026-07-30 a lane regenerated `surfaces.json` from the shared surface-family
+source while a sibling lane had an uncommitted table move in that source. The
+generator read the sibling's working-tree state, and the regenerated artifact
+laundered their unlanded work into HEAD under an unrelated commit message. The
+blob was filtered; the INPUT was not.
+
+**Before committing any generated artifact, check whether its generator reads a
+file another lane is mid-edit in.** If it does, either regenerate from a clean
+`git archive HEAD` tree, or confirm the generator's inputs are all committed.
+`git status` on the GENERATOR'S INPUTS is the check, not `git status` on the
+artifact.
+
+This is the fifth member of the sweep family, and the sneakiest: every surface a
+lane normally inspects looks correct, because the artifact genuinely is the
+correct output of the tree as it stood.
+
+### Boot defaults: `Number(null)` is 0, so a feature can ship OFF
+
+`RN-150`: the ground texture and the wet-sand shoreline both had boot defaults
+that evaluated through `Number(null)` and landed on 0. Both features were fully
+built, measured, committed, and **invisible to the player** — the probes that
+proved them all passed an explicit flag, so nothing ever exercised the default.
+
+**A flag's DEFAULT is a fixture and must be asserted as one.** If a probe only
+ever runs the feature with `?feature=1`, it proves the feature works and proves
+nothing about whether anyone sees it. Assert the boot default in its own check,
+red-by-name when the default is wrong.
