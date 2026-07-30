@@ -43,7 +43,8 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
       fraction: n !== null && n.initial > 0 ? left / n.initial : 0,
       // `empty` is the HARVEST NODE's depleted caption; a machine has its own
       // words for being empty and does not want "node depleted" under them.
-      empty: false, distanceM: 0, action: `${TAKE}    ${REMOVE}`,
+      // GP-163: E opens the drill's screen now, and taking lives on it.
+      empty: false, distanceM: 0, action: `${OPEN}    ${REMOVE}`,
     };
   }
   if (b.kind === 'belt') {
@@ -91,6 +92,27 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
         : `${OPEN}    ${REMOVE}`,
     };
   }
+  // GP-163/GP-164. AN UNSET ASSEMBLER SAYS SO UNDER THE CROSSHAIR, in the
+  // GP-139 pattern: a standing, state-derived instruction. The generic branch
+  // below read "assembler  working" at a machine whose status is NO RECIPE,
+  // which is the one sentence that sends a player away from the fix. This is
+  // the machine Reid stood at when he reported "i cant click into an assembler
+  // to select recipe".
+  if (b.kind === 'assembler' && b.recipe <= 0) {
+    return {
+      name: 'assembler  NO RECIPE: it will make nothing until you pick one',
+      fraction: 0, empty: false, distanceM: 0,
+      action: `${OPEN} and pick a recipe    ${REMOVE}`,
+    };
+  }
+  // GP-164. A chest is storage, not a machine that "works": the generic line
+  // under it said "chest  working", a sentence about nothing.
+  if (b.kind === 'chest') {
+    return {
+      name: 'chest', fraction: 0, empty: false, distanceM: 0,
+      action: `${OPEN}    ${REMOVE}`,
+    };
+  }
   const out = b.build < 0 ? 0 : f.line.outputBuffer(b.build);
   // FS-45: AND A MACHINE SOMETHING IS POINTED AT SAYS SO FROM THE MACHINE'S END.
   //
@@ -102,13 +124,16 @@ export function buildPrompt(f: Factory, game: GameCore, b: Placed): HudTarget {
   // same fix, from whichever end they approach.
   const at = f.refusals.find((k) => k.to === b.id);
   return {
+    // GP-163: E opens the machine now, so the ready line stops promising that
+    // E takes (a chip naming a verb the key no longer runs is the failure this
+    // project has shipped three times, GP-140's family).
     name: at !== undefined ? `${b.kind}  NOT FED: ${at.reason}`
-      : out > 0 ? `${b.kind}  ${labelOf('interact')} to take ${out} ${name}`
+      : out > 0 ? `${b.kind}  ${out} ${name} ready`
         : `${b.kind}  working`,
     fraction: b.build < 0 ? 0 : f.line.progress01(b.build),
     empty: false,
     action: at !== undefined ? `${at.fix}    ${labelOf('rotate')} turn    ${REMOVE}`
-      : `${TAKE}    ${labelOf('rotate')} turn    ${REMOVE}`,
+      : `${OPEN}    ${labelOf('rotate')} turn    ${REMOVE}`,
     distanceM: 0,
   };
 }

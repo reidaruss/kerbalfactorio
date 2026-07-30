@@ -23,7 +23,7 @@
 // holds a key for ten frames acts once, exactly like a human press.
 
 import { collectFrom, stepBuild } from './GameplayActions.js';
-import { openAimedMachine } from './MachineScreen.js';
+import { openAimedMachine, openableMachine } from './MachineScreen.js';
 import { showGoals } from './Objectives.js';
 import { pullTrigger } from './Gunnery.js';
 import type { Gameplay } from './Gameplay.js';
@@ -188,7 +188,26 @@ export class GameplayInput {
   /** What E does, in the order a player expects: machine, then output, then door. */
   private doInteract(g: Gameplay): boolean {
     if (g.aimedMachine !== null) { g.openFurnace(g.aimedMachine); return true; }
-    if (g.aimedBuild !== null) { collectFrom(g, g.aimedBuild); return true; }
+    if (g.aimedBuild !== null) {
+      // GP-163. E OPENS a machine that has a screen, whatever is in the hand.
+      // Before this, the ONLY door into a factory machine's panel was a
+      // bare-hand left click (GP-61), so a player who walked up with a belt
+      // still selected had no path to the recipe menu at all: their click was
+      // a placement refusal and their E was a silent grab at an empty output.
+      // Measured (scratch drive, 2026-07-30): at a placed assembler, E with a
+      // part in hand and E with the bare hand BOTH left the screen shut. The
+      // quick-verbs E used to run here (refuel a generator, feed an esmelter,
+      // empty an output) all exist as buttons on the panel this opens, so
+      // nothing is lost; it costs one more click and buys a machine that can
+      // always be asked "what are you". Belts are not machines and keep
+      // FS-28's take-one-item; poles fall through to the old path unchanged.
+      if (openableMachine(g.aimedBuild.kind)) {
+        g.openBuildPanel(g.aimedBuild);
+        return true;
+      }
+      collectFrom(g, g.aimedBuild);
+      return true;
+    }
     if (g.aimedPart !== null) {
       const open = g.structures.toggle(g.aimedPart);
       if (open !== null) {

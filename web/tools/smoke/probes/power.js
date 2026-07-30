@@ -184,6 +184,15 @@
   const stop = async (dyaw, pitch) => {
     of.look(yaw + dyaw, pitch);
     await sleep(0.15);
+    // GP-163: E OPENS the machine now, and the feed is a button on its panel,
+    // which is the same verb a player runs. This is also SHARPER than the old
+    // crosshair feed: the panel is one named machine, so the sweep that used
+    // to refuel the generator "on the way" to a smelter (the GP-50 note below)
+    // now feeds exactly the machine it opened.
+    of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
+    await sleep(0.25);
+    const b = document.querySelector('#of-furnace button[data-load]');
+    if (b !== null) { b.click(); await sleep(0.1); }
     of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
     await sleep(0.2);
   };

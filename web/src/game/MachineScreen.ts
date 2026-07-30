@@ -43,6 +43,16 @@ const OPENABLE = new Set<BuildKind>(['miner', 'smelter', 'esmelter', 'generator'
   'chest']);
 
 /**
+ * GP-163: does this factory kind have a screen the interact key can open?
+ * Published for GameplayInput, which routes E to the panel for these kinds and
+ * keeps FS-28's take-one for belts. One set, one answer; a copy in the input
+ * layer would drift the first time a machine was added to one of them.
+ */
+export function openableMachine(kind: BuildKind): boolean {
+  return OPENABLE.has(kind);
+}
+
+/**
  * GP-61: what a bare-handed left click on the crosshair's machine does.
  * Returns true when it opened a screen, so the caller skips the swing.
  */
