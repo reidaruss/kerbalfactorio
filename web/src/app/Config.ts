@@ -229,6 +229,16 @@ export interface Config {
   /** Render-time interpolation of the 60 Hz capsule. ?interp=0 is the W1 behaviour. */
   readonly interpolate: boolean;
   /**
+   * `?anim=0` freezes every skeletal AnimationMixer in the client: the player
+   * body, the first-person arms, and any rigged creature. Rigs still load and
+   * draw, in their exported rest pose, and nothing ticks. Two uses, RN-121:
+   * the NEGATIVE CONTROL for any clip-playback claim (a frame pair that moves
+   * pixels with animation on must be bit-identical with it off, or the motion
+   * being measured is not the mixer's), and the perf isolator that prices the
+   * mixer tick as the only difference inside one binary.
+   */
+  readonly anim: boolean;
+  /**
    * Clear colour as 0xRRGGBB. ?clear=ff00ff paints the void magenta, which is
    * the only way to tell a HOLE in the terrain from a dark-shaded steep face:
    * against the default black sky the two look identical.
@@ -394,6 +404,7 @@ export function parseConfig(search: string): Config {
     // ?interp=0 reproduces the un-interpolated behaviour so the jitter fix has a
     // measured BEFORE in the same build, not an argument.
     interpolate: p.get('interp') !== '0',
+    anim: p.get('anim') !== '0',
     zSepRatio: Math.max(0, num(p, 'zsep', 0)),
     clearColor: (() => {
       const v = p.get('clear');

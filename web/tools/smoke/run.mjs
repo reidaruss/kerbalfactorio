@@ -139,7 +139,12 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // ground cover they shade are two costs that can be read apart in ONE
   // binary. A distance rather than a flag, so the same control sweeps the
   // cost, which goes as its square.
-  'canopy', 'canopyshade']) {
+  'canopy', 'canopyshade',
+  // RN-121, standing rule 7. `anim=0` freezes every skeletal AnimationMixer
+  // (player body, FP arms, rigged creatures): rigs draw their rest pose and
+  // nothing ticks. The negative control for every clip-playback claim and the
+  // perf isolator that prices the mixer inside one binary.
+  'anim']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

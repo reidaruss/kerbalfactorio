@@ -178,7 +178,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   origin.step(observer.position);
   sky.setSunT(cfg.sunTExplicit ?? SkyPass.solveSunT(observer.up, cfg.scenario.sunDot));
 
-  const avatar = player === null ? null : new Avatar();
+  const avatar = player === null ? null : new Avatar(cfg.anim);
   if (avatar !== null) {
     hud.banner('loading the character rig and the first-person arms ...');
     await avatar.load();

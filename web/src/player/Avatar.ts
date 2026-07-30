@@ -52,7 +52,15 @@ export class Avatar {
   private swingKind: SwingKind = 'pickaxe';
   private toolSwaps = 0;
 
-  constructor() {
+  /**
+   * `live` is `Config.anim` (`?anim=0`, RN-121). The guard sits HERE rather
+   * than in `Systems.ts` so the frame loop needs no knowledge of the flag and
+   * so the same constructor argument freezes any future rig this class grows.
+   * Frozen means `animate()` returns before the state machine and before the
+   * mixers tick: both rigs draw their exported REST pose, which is the static
+   * build a clip-playback measurement needs as its negative control.
+   */
+  constructor(private readonly live: boolean = true) {
     this.group.name = 'playerBody';
     this.group.matrixAutoUpdate = false;
     this.viewModel.name = 'playerViewModel';
@@ -106,6 +114,11 @@ export class Avatar {
 
   /** Drive both animation graphs from ONE state, computed from the capsule. */
   animate(dt: number, input: Omit<AnimInput, 'swingLeft' | 'swingKind'>): void {
+    // RN-121: the failure mode this flag exists to expose is a T-pose (or here,
+    // rest pose) on screen, i.e. "the mixer is not ticking". ?anim=0 produces
+    // that state ON PURPOSE, so a measurement can tell mixer motion from every
+    // other source of pixel change in the frame.
+    if (!this.live) return;
     if (this.swingLeft > 0) this.swingLeft = Math.max(0, this.swingLeft - dt);
     const state = resolveAnim({
       ...input, swingLeft: this.swingLeft, swingKind: this.swingKind,
@@ -167,6 +180,11 @@ export class Avatar {
 
   report(): unknown {
     return {
+      // RN-121. Published so a zero-motion reading under ?anim=0 can be told
+      // apart from a probe whose URL silently dropped the flag: the claim
+      // "frozen build shows no mixer motion" needs the build to SAY it is the
+      // frozen one.
+      animLive: this.live,
       bodyLoaded: this.body?.loaded ?? false,
       armsLoaded: this.arms?.loaded ?? false,
       bodyBones: this.body?.boneCount ?? 0,
