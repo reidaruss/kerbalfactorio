@@ -74,6 +74,11 @@ const SAVED = 'probes/savenamed.js';
 // name exactly as PADCLEAR's are, because a world with no chest in it has
 // nothing to say about chests.
 const CHESTSAVE = 'probes/chestsave.js';
+// WG-70. The setup that harvests a WORLD ROCK: a streamed node whose save key
+// is its lattice cell rather than its array index, which only a real reload
+// can prove, because the in-page round trip replays onto the same indices and
+// cannot see an index-keyed diff drain somebody else's node.
+const ROCKSAVE = 'probes/rockreload.js';
 const setup = args.get('setup') ?? FLYTO;
 // The default keeps `--phase` meaning exactly what it meant: the phase IS the
 // flyto probe's argument, so an untouched command line produces an untouched
@@ -193,6 +198,15 @@ try {
       // `persist` carries saves, the restore ledger and any refusal, which is
       // how "nothing came back" is told apart from "nothing was written".
       persist: g.persist ?? null,
+      // WG-70: the world-rock stream's own counters, plus the kind-1 rows in
+      // the ring, re-measured off the LIVE world so a rock that came back full
+      // is caught by position rather than trusted by count.
+      rocks: g.rocks ?? null,
+      rockRows: typeof of.nodes === 'function'
+        ? of.nodes().filter((n) => n.kind === 1 && n.distanceM < 175)
+          .map((n) => ({ x: n.x, y: n.y, z: n.z,
+            remaining: n.remaining, initial: n.initial }))
+        : [],
       // GP-137: the named-slot list AFTER the reload, read from the store the
       // reloaded page opened, so a slot that vanished with the session shows up
       // as missing rather than as remembered.
@@ -385,6 +399,44 @@ try {
     check('and the numbers being compared are not two zeroes agreeing',
           (c0?.count ?? 0) > 0 && (c0?.item ?? 0) > 0,
           JSON.stringify(c0));
+  }
+
+  // WG-70. THE ROCK HALF. A world rock's depletion is saved under its lattice
+  // cell and re-applied at the moment the rock MATERIALISES after boot, so
+  // this is the one assertion that exercises the whole chain: cell key written,
+  // slot read, diff parked pending, rock regrown from seed, drain applied
+  // through of_gp_node_drain. The rock is found by BIT-EXACT position, because
+  // its index after the reload is whatever visit order handed it.
+  if (setup === ROCKSAVE) {
+    const r0 = before.rock ?? null;
+    const hit = (after.rockRows ?? []).find((r) => r0 !== null
+      && r.x === r0.x && r.y === r0.y && r.z === r0.z) ?? null;
+    check('the harvested rock grew back in the same place, to the bit',
+          hit !== null,
+          `looked for ${JSON.stringify(r0)} in ${after.rockRows?.length} rows`);
+    // EXACT AT FLOAT32, which is the strongest claim the channel supports:
+    // /core stores RemainingAmount through of_gp_node_drain's
+    // `static_cast<float>` on the restore path, so a full-precision f64
+    // equality would assert something the contract does not promise (measured:
+    // 26.94265651702881 came back 26.942657470703125, the f32 quantum). A
+    // weaker "less than full" bar is refused for the usual reason: a restore
+    // clamped to one unit under full would pass it and be wrong.
+    check('THE ROCK CAME BACK AT THE REMAINING IT WAS LEFT AT (f32-exact)',
+          hit !== null && r0 !== null
+          && Math.fround(hit.remaining) === Math.fround(r0.remaining),
+          `left ${r0?.remaining}/${r0?.initial}, `
+          + `came back ${hit?.remaining ?? 'ABSENT'}`);
+    check('and the numbers compared are not a full rock agreeing with itself',
+          r0 !== null && r0.remaining < r0.initial,
+          JSON.stringify(r0));
+    check('the restore ledger counted the rock diff (applied now or pending)',
+          ((after.persist?.restored?.rocks ?? 0)
+           + (after.persist?.restored?.rocksPending ?? 0)) >= 1,
+          JSON.stringify({ rocks: after.persist?.restored?.rocks,
+            pending: after.persist?.restored?.rocksPending }));
+    check('and the drain was actually applied by the time this read ran',
+          (after.rocks?.drainedOnRestore ?? 0) >= 1,
+          `${after.rocks?.drainedOnRestore}`);
   }
 
   // GP-65. THE HEALTH HALF. Health is per-entity state no other field in the

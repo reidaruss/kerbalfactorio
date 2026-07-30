@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
 import { NodeField } from './NodeField.js';
+import { RockField } from './RockField.js';
 import { OreField } from './OreField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
@@ -61,6 +62,7 @@ import { attachProgress, openMachinePanel, setPackPanel } from './GameplayChrome
 import type { ProgressUi } from './ProgressUi.js';
 import { loadSlot, saveSlot, type RestoreLedger, type WorldPorts } from './Persist.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
+import type { WaterOracle } from '../world/WaterOracle.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Controller } from '../player/Controller.js';
 import type { Avatar } from '../player/Avatar.js';
@@ -84,6 +86,14 @@ export interface GameplayDeps {
   mode: GameMode;
   /** DW-17: the voxel, mesh and terrain handles a whole-world save needs. */
   ports?: Partial<WorldPorts>;
+  /** WG-69: body radius, the rock lattice's datum. READ from PlanetBody and
+   *  never transcribed (the DW-18 rule that cost a walker a wrong gravity). */
+  bodyRadiusM: number;
+  /** WG-69: the water authority for the rocks' wet gate, or null when dry. */
+  water: WaterOracle | null;
+  /** WG-69: `?rocks=0` is the negative control; density is the measurement
+   *  ladder's knob and 1 in play. */
+  rocks?: { enabled: boolean; density: number };
 }
 
 export class Gameplay {
@@ -92,6 +102,8 @@ export class Gameplay {
   readonly mode: ModeRules;
   readonly game: GameCore;
   readonly field: NodeField;
+  /** WG-67: the rocks of the world, streamed as real stone harvest nodes. */
+  readonly rocks: RockField;
   /** The ore in the ground: the patches, their skin and their outcrops. */
   readonly oreField: OreField;
   readonly interact: Interact;
@@ -188,6 +200,14 @@ export class Gameplay {
     this.game = new GameCore(d.core);
     this.field = new NodeField(this.game, d.origin);
     this.oreField = new OreField(d.core, d.bodyHandle, this.field, d.origin);
+    // WG-67: the rocks of the world, streamed as REAL harvest nodes. The edits
+    // handle is a thunk for the same reason the scatter's is: voxels are
+    // created after this and a rock streaming in over a dug pit must seat on
+    // the edited surface.
+    this.rocks = new RockField(d.core, this.game, this.field, d.bodyHandle,
+      d.seed, d.rocks?.enabled ?? true, d.rocks?.density ?? 1,
+      d.bodyRadiusM, d.water,
+      () => d.ports?.voxels?.handle ?? 0);
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
     // The badge is handed in rather than read, so the one place that decides
     // what a mode is called stays GameMode.ts.
@@ -310,6 +330,10 @@ export class Gameplay {
     // outcrops are nodes in that same array.
     this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed);
     this.patchesPlaced = this.oreField.populate(dir, 0);
+    // The rocks LAST: populate cleared the whole /core node array, so every
+    // index the rock stream held is stale. Everything regrows from seed on the
+    // next update, which is the same regenerate-then-diff order the load uses.
+    this.rocks.reset();
     this.nodesPlaced = this.field.placed.length;
   }
 
@@ -427,6 +451,9 @@ export class Gameplay {
   /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
   frame(dt: number): void {
     this.simSecs += dt;
+    // BEFORE field.update, so a rock added this frame is composed and drawn in
+    // the same frame rather than flashing in a frame late at the ring's edge.
+    this.rocks.update(this.d.player.body.feet);
     this.field.update(dt);
     this.oreField.update(dt, this.d.ports?.voxels?.handle ?? 0);
     this.machines.update();

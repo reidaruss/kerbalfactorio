@@ -21,6 +21,12 @@ export interface RestoreLedger {
   machines: number;
   nodesDepleted: number;
   patchesDepleted: number;
+  /** WG-70: world rocks drained back to their saved remaining RIGHT NOW. Rocks
+   *  outside the streamed ring restore later, at the moment they materialise;
+   *  `rocksPending` counts those, so "0 applied, 12 pending" and "nothing in
+   *  the slot" are different receipts. */
+  rocks: number;
+  rocksPending: number;
   packUnits: number;
   /** Fuel a furnace was burning. There is no item to give back for a tick. */
   fuelTicksLost: number;

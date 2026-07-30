@@ -299,24 +299,50 @@ const CANOPY_MOUNTAIN: readonly PropSpec[] = [
   C('Canopy_Pine', 55), C('Canopy_Fir', 25),
 ];
 
+/**
+ * THE DECOR-ROCK RETIREMENT (WG-68). Admin's ruling for this pass: there are
+ * no inert rocks. Anything rock-shaped and at or above the interaction-derived
+ * threshold is a harvest node (RockField) and gives stone; only decoration
+ * BELOW that size survives here.
+ *
+ * The threshold is RockTuning.DECOR_ROCK_MAX_H (0.27 m), derived, not chosen:
+ * the smallest harvestable silhouette that can exist is the LOW (spent) stub
+ * of the smallest-scaled placed stone node, 0.90 m authored height x 0.40 Low
+ * z-scale x 0.75 minimum placement scale. Decoration at that size or above is
+ * a lie the crosshair cannot catch, because the picker is ray-vs-node-sphere
+ * and scenery is invisible to it by construction.
+ *
+ * Retired against it, with their authored heights (tools/blender specs):
+ *   Ocean_SeabedRock 0.75, Beach_Rock 0.55, Plains_PebbleB 0.50,
+ *   Forest_Rock 0.85, Hills_LargeBoulder 1.55, Mtn_RockSpire 3.40,
+ *   Mtn_TalusChunk 0.72, Polar_IceBoulder 1.15.
+ * Kept, and why: Hills_ScreePatch 0.24 and Plains_PebbleA 0.18 are under the
+ * threshold; Detail_PebbleScatter is ankle gravel; Polar_IceShard 1.70 is a
+ * vertical translucent crystal, the distinct-silhouette rule the dead tree
+ * already uses, not a rock shape. THE MOON ROWS ARE DEFERRED with RockField's
+ * moon densities: on Cinder the rock decor still lies, logged as owed rather
+ * than half-fixed, because a moon pass has no measurement site in this pass.
+ *
+ * Mtn_RockSpire is the one visual loss worth naming: Mountains lose their
+ * spires until either a harvestable spire form exists in the node family or
+ * the terrain grows real crags. Flagged to the art and rendering lanes.
+ */
 export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [
-  [P('Ocean_Kelp', false, 900), P('Ocean_SeabedRock', true, 400)],
-  [P('Beach_Rock', true, 500), P('Beach_Driftwood', true, 260),
+  [P('Ocean_Kelp', false, 900)],
+  [P('Beach_Driftwood', true, 260),
     P('Beach_ShellCluster', false, 1400), P('Beach_DuneGrass', false, 5200),
     ...DRY_DETAIL],
   [P('Plains_GrassTuftA', false, 9000), P('Plains_GrassTuftB', false, 7000),
     P('Plains_FlowerCluster', false, 1800), P('Plains_PebbleA', false, 900),
-    P('Plains_PebbleB', true, 420), P('Plains_Shrub', false, 700),
+    P('Plains_Shrub', false, 700),
     ...GROUND_DETAIL, ...CANOPY_PLAINS],
   [P('Forest_Fern', false, 4200), P('Forest_DeadTree', true, 420),
     P('Forest_FallenLog', true, 260), P('Forest_MushroomCluster', false, 1500),
-    P('Forest_Rock', true, 520), ...GROUND_DETAIL, ...CANOPY_FOREST],
-  [P('Hills_LargeBoulder', true, 380), P('Hills_ScreePatch', false, 1600),
+    ...GROUND_DETAIL, ...CANOPY_FOREST],
+  [P('Hills_ScreePatch', false, 1600),
     P('Hills_Shrub', false, 2200), ...GROUND_DETAIL, ...CANOPY_HILLS],
-  [P('Mtn_RockSpire', true, 320), P('Mtn_TalusChunk', true, 1500),
-    P('Mtn_SnowPatch', false, 900), ...DRY_DETAIL, ...CANOPY_MOUNTAIN],
-  [P('Polar_IceShard', true, 700), P('Polar_SnowDrift', false, 1100),
-    P('Polar_IceBoulder', true, 380)],
+  [P('Mtn_SnowPatch', false, 900), ...DRY_DETAIL, ...CANOPY_MOUNTAIN],
+  [P('Polar_IceShard', true, 700), P('Polar_SnowDrift', false, 1100)],
   [P('Moon_RockSmall', false, 1800), P('Moon_RockLarge', true, 420),
     P('Moon_RegolithRipple', false, 700), D('Detail_PebbleScatter', 20000)],
   [P('Moon_HighlandOutcrop', true, 400), P('Moon_RockLarge', true, 500),

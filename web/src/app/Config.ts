@@ -173,6 +173,14 @@ export interface Config {
    */
   readonly canopyShade: boolean;
   /**
+   * WG-67: `?rocks=0` places NO world rocks and is the one-binary control for
+   * the whole rock pass, the same shape as `?canopy=0` one paragraph up.
+   * `?rockdensity=` scales every biome's rock ask together and exists for the
+   * measurement ladder, not for play; the shipped value is 1.
+   */
+  readonly rocks: boolean;
+  readonly rockDensity: number;
+  /**
    * `?proplod2=0` makes the UNDERSTOREY draw its LOD0 geometry at all ranges,
    * which is the state the four ground-detail cards were in until RN-45
    * authored their LOD2. It is the one-binary control for that asset change,
@@ -382,6 +390,8 @@ export function parseConfig(search: string): Config {
     // "the sampler refused the chunk".
     canopyRadiusM: Math.min(1600, Math.max(0, num(p, 'canopy', CANOPY_RADIUS_M))),
     canopyShade: p.get('canopyshade') !== '0',
+    rocks: p.get('rocks') !== '0',
+    rockDensity: Math.max(0, num(p, 'rockdensity', 1)),
     propLod2: p.get('proplod2') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',

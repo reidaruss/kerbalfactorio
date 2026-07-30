@@ -350,6 +350,23 @@ export class NodeField {
     this.felled++;
   }
 
+  /**
+   * Remove one node's PRESENTATION: slots released, entry dropped, exactly the
+   * inverse of `addOutcrop`. The /core node entry stays, deliberately: the sim
+   * array has no removal, and a streamed-out rock's depletion state is what
+   * RockField's save reads. This is the streaming-out half of a world-scale
+   * node, never a deletion of world state.
+   */
+  remove(index: number): boolean {
+    const at = this.placed.findIndex((n) => n.index === index);
+    if (at < 0) return false;
+    const pl = this.placed[at];
+    for (let i = 0; i < pl.parts.length; ++i)
+      this.batch.release(pl.parts[i].material, pl.slots[i]);
+    this.placed.splice(at, 1);
+    return true;
+  }
+
   /** worldgen::survival::NodeKind of a placed node, or -1. */
   kindOf(index: number): number {
     return this.placed.find((n) => n.index === index)?.kind ?? -1;

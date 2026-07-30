@@ -306,6 +306,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     gameplay = await Gameplay.create({
       core, origin, player, avatar, input, host, scene: scenes.near,
       bodyHandle: body.handle, seed: cfg.seedLo,
+      // WG-69: the rock lattice's datum and its water gate, both READ from the
+      // objects that own them (DW-18: transcribing a body constant is how the
+      // walker once fell at the wrong gravity). `?rocks=0` is the control.
+      bodyRadiusM: body.radiusM, water: oracle.water,
+      rocks: { enabled: cfg.rocks, density: cfg.rockDensity },
       // DW-31. The mode is decided ONCE, here, and everything downstream asks
       // the ModeRules object rather than re-reading the flag.
       mode: cfg.sandbox ? 'sandbox' : 'survival',

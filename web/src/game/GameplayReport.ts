@@ -20,6 +20,9 @@ export function gameplayReport(g: Gameplay): unknown {
       // and a report that does not say which mode it came from cannot be read.
       mode: g.mode.report(),
       nodes: g.field.stats(),
+      // WG-67: the streamed world rocks, with the delivery ratio over their own
+      // ground and every refusal counted beside its denominator.
+      rocks: g.rocks.stats(),
       placed: g.nodesPlaced,
       // THE DEPOSITS. A patch is the whole ore body, so `remaining` here is the
       // number a conservation check has to balance against: what a drill

@@ -172,6 +172,14 @@ export interface SaveSlot {
   /** ORE PATCH depletion: [index, remaining] for every patch below full. This
    *  is the diff that matters, because one patch is the whole deposit. */
   patches: [number, number][];
+  /** WORLD ROCK depletion (WG-70): [latCell, lonCell, slot, remaining] per
+   *  touched rock, keyed by RockField's lattice cell rather than by array
+   *  index, because streamed rocks join the /core node array in VISIT order
+   *  and an index-keyed diff would drain somebody else's node on reload.
+   *  Optional and additive: absent on older slots, which reads as no rock ever
+   *  harvested, and per the WG-29 lesson an optional field must NOT bump
+   *  SAVE_VERSION (the check is `!==`, a bump orphans every existing world). */
+  rocks?: [number, number, number, number][];
   buildings: SaveBuilding[];
   machines: SaveMachine[];
   /** The dug tunnels: /core's removed-cell bytes plus the strike log. */
