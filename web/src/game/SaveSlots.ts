@@ -23,7 +23,7 @@
 // is in flight, so a slow store reads as "saving" rather than as a dead button.
 
 import { snapshot, saveProgress } from './Persist.js';
-import { stampAssisted } from './SaveGame.js';
+import { writeSlot } from './SaveGame.js';
 import { allKeys, autoKeyFor, deleteKey, nameOk, namedKey, parseNamedKey,
   readKey, writeKey, NAME_MAX } from './SaveKeys.js';
 import type { SaveSlot } from './SaveGame.js';
@@ -44,6 +44,13 @@ export interface SlotRow {
   /** True for the slot the game writes unprompted. It cannot be deleted from
    *  here: Start Fresh is that verb, and it says what it destroys. */
   isAuto: boolean;
+  /** PS-13: this slot was written before the `writeSlot` stamps reached it
+   *  (every named save made before R46 was fixed, and every autosave older
+   *  than PH-86), so it carries no vessels, no player position and no time of
+   *  day. `dayT` is the discriminator because the unified writer ALWAYS stamps
+   *  it, while `vessels` is legitimately absent on a world with no rockets.
+   *  The summary states it in words; this flag is the same fact for probes. */
+  partial: boolean;
 }
 
 export interface SaveListView {
@@ -111,6 +118,7 @@ export class SaveSlots {
         summary: describe(slot),
         assisted: (slot.assisted?.used.length ?? 0) > 0,
         isAuto: named === null,
+        partial: slot.dayT === undefined,
       });
     }
     // The autosave first, then newest named save first: the two questions a
@@ -132,13 +140,18 @@ export class SaveSlots {
   /**
    * Snapshot the LIVE world under `name`.
    *
-   * It goes through `Persist.snapshot`, the same function the autosave uses, so
-   * a named save carries exactly what an autosave carries and no second idea of
-   * what a world is can appear. It cannot go through `writeSlot`, which derives
-   * the key from the mode by design, so it takes that function's own
-   * `stampAssisted` and then writes the key itself: one authority on the GP-102
-   * mark, two callers, because a named save of an assisted world is still
-   * assisted.
+   * It goes through `Persist.snapshot`, the same function the autosave uses,
+   * and then through `writeSlot`, the same WRITER the autosave uses, so a named
+   * save carries exactly what an autosave carries and no second idea of what a
+   * world is can appear.
+   *
+   * PS-13 / R46: the first version reasoned "`writeSlot` derives the key from
+   * the mode, so this path cannot use it", took its `stampAssisted` and called
+   * `writeKey` itself. That second writer knew about ONE stamped field and not
+   * the other three, so every named save silently lost the vessels, the player
+   * anchor and the time of day, and looked complete until it was loaded. The
+   * key became `writeSlot`'s parameter instead; this path enumerates no fields
+   * at all, so the set cannot diverge again.
    */
   async save(g: Gameplay, name: string): Promise<boolean> {
     if (!nameOk(name)) {
@@ -149,8 +162,7 @@ export class SaveSlots {
       return false;
     }
     this.busy = `saving "${name.trim()}"`;
-    const ok = await writeKey(namedKey(g.mode.mode, name),
-      stampAssisted(this.snapshotOf(g)));
+    const ok = await writeSlot(this.snapshotOf(g), namedKey(g.mode.mode, name));
     this.busy = '';
     if (ok) { this.saved++; this.note = `saved "${name.trim()}"`; }
     else { this.refusals++; this.note = 'the store refused the write'; }
@@ -174,12 +186,26 @@ export class SaveSlots {
       this.note = `"${name}" says it is a ${slot.mode} save; refusing`;
       return false;
     }
+    // THE COPY IS VERBATIM, so this is `writeKey` and deliberately NOT
+    // `writeSlot`: the slot being put in place is a STORED world, and the
+    // stamps would overwrite its vessels, position and time of day with the
+    // live session's, which is R46's defect mirrored onto the load path.
     if (!await writeKey(autoKeyFor(mode), slot)) {
       this.refusals++; this.note = 'could not put that save in place';
       return false;
     }
     this.loads++;
-    this.note = `loading "${name}", restarting`;
+    // PS-13: an old partial save (see SlotRow.partial) is LOADED, not
+    // repaired. Splicing the autosave's vessels into it was considered and
+    // refused: the autosave is a DIFFERENT MOMENT of the world, and a rocket
+    // from another timeline is PH-68's "two half-saves of different worlds"
+    // built on purpose. The absent fields restore the pre-PH-67 defaults (no
+    // vessels, the scenario spawn, the solved sun), the row said so before
+    // the press, and the note says it again here.
+    this.note = slot.dayT === undefined
+      ? `loading "${name}", restarting; this save predates vessel records, so`
+        + ' any rockets, the player position and the time of day are not in it'
+      : `loading "${name}", restarting`;
     this.restart();
     return true;
   }
@@ -207,7 +233,8 @@ export class SaveSlots {
     return { saved: this.saved, loads: this.loads, deleted: this.deleted,
       refusals: this.refusals, armed: this.armed, busy: this.busy,
       note: this.note, rows: this.rows.map((r) => ({ name: r.name, key: r.key,
-        isAuto: r.isAuto, summary: r.summary, assisted: r.assisted })) };
+        isAuto: r.isAuto, summary: r.summary, assisted: r.assisted,
+        partial: r.partial })) };
   }
 }
 
@@ -221,7 +248,14 @@ function describe(s: SaveSlot): string {
   const techs = s.progress?.techs.length ?? 0;
   if (techs > 0) bits.push(`${techs} tech`);
   if (s.voxels.cells.length > 0) bits.push('dug in');
-  return bits.length === 0 ? 'nothing built yet' : bits.join(', ');
+  const base = bits.length === 0 ? 'nothing built yet' : bits.join(', ');
+  // PS-13: the partial-slot notice, ON THE ROW, before the player loads it. A
+  // load that silently restores less than the player kept is R46's whole
+  // failure mode, so the row that offers the Load button is where the gap is
+  // stated. See SlotRow.partial for why `dayT` is the discriminator.
+  return s.dayT === undefined
+    ? `${base} (older save: any rockets, position and time of day not in it)`
+    : base;
 }
 
 function ago(ms: number): string {

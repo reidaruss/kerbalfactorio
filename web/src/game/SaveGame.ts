@@ -317,12 +317,28 @@ export async function tx<T>(mode: IDBTransactionMode,
   }
 }
 
-/** Write the slot under its OWN mode's key. A save is not a rule, so a failure
- *  resolves false rather than throwing. */
-export async function writeSlot(slot: SaveSlot): Promise<boolean> {
+/**
+ * Write a snapshot of the LIVE world. Under its own mode's autosave key by
+ * default; a NAMED save (GP-136) passes its key in.
+ *
+ * PS-13 / R46: THIS IS THE ONE WRITER OF LIVE SNAPSHOTS, and the `key`
+ * parameter is what makes that hold. The named-save path briefly wrote through
+ * `SaveKeys.writeKey` directly, on the stated grounds that this function
+ * derives its key from the mode, and every field stamped below silently fell
+ * out of named saves: a rocket parked in orbit, the player's position and the
+ * time of day were all missing, and the save LOOKED complete until it was
+ * loaded. Two writers enumerating stamped fields independently is how that
+ * happens, so the fix is the parameter, not a second stamping site.
+ * `SaveKeys.writeKey` remains the byte-mover for slots that are NOT live
+ * snapshots: the load path copies a STORED slot verbatim, and routing that
+ * copy through here would overwrite the loaded world's vessels, position and
+ * time of day with the live world's, which is the same defect mirrored.
+ *
+ * A save is not a rule, so a failure resolves false rather than throwing.
+ */
+export async function writeSlot(slot: SaveSlot, key?: string): Promise<boolean> {
   try {
-    const mode = asMode(slot.mode);
-    const key = slotKey(mode);
+    key ??= slotKey(asMode(slot.mode));
     // GP-102. THE ASSISTED MARK IS STAMPED AT THE CHOKE POINT, not by whoever
     // built the slot. Every write in the client comes through this one function,
     // so a snapshot path written next month carries the flag without knowing it
