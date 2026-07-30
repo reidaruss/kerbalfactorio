@@ -4,10 +4,13 @@
 
 ASSET-SPECS 4.5: angular rock, 5 to 7 large flat facets, no small detail. The
 ore is NOT a texture: three to five side facets are split out onto the ore
-material, so raw metal catches a specular highlight while the host rock stays
-matte. From 30 m an iron boulder reads as grey rock with bright chips in it and
-a coal seam reads as near-black gloss, and that contrast is the entire
-identification signal.
+material, so the seam mineral catches its own light while the host rock stays
+matte. The seam roles are the ORE-IN-ROCK palette rows (IronOre / CopperOre /
+CoalSeam, RN-156), not the refined-item metals: the item rows are metallic 1.0
+and the client's metalness batching turned an Iron seam into mirror metal that
+photographed as ice. From 30 m an iron boulder now reads as grey rock with
+blue-grey mineral in it and a coal seam reads as near-black gloss, and that
+contrast is the entire identification signal.
 
 WHY THIS FILE HAS ITS OWN PRIMITIVE. hc.lobe is a flat n-gon base, a stack of
 jittered rings and an apex: one radius per (ring, azimuth), re-jittered on every
@@ -74,11 +77,11 @@ KINDS = {
     "stone":  ("BoulderStone",  "cluster", (1.40, 1.20, 0.90),
                "Rock", "RockDark", "RockDark", 1301),
     "iron":   ("BoulderIron",   "wedge",   (1.60, 1.40, 1.10),
-               "Rock", "RockDark", "Iron", 1307),
+               "Rock", "RockDark", "IronOre", 1307),
     "copper": ("BoulderCopper", "pair",    (1.50, 1.30, 1.00),
-               "Rock", "RockDark", "Copper", 1319),
+               "Rock", "RockDark", "CopperOre", 1319),
     "coal":   ("BoulderCoal",   "slab",    (1.70, 1.40, 1.00),
-               "RockDark", "Rock", "Coal", 1327),
+               "RockDark", "Rock", "CoalSeam", 1327),
 }
 
 # Depletion: (bounding-box scale, mass count, chip count).

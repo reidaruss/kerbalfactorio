@@ -22,7 +22,7 @@
 
 import * as THREE from 'three';
 
-export type Family = 'panel' | 'coarse' | 'bark' | 'flat';
+export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -43,6 +43,13 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Coal: 'coarse', Copper: 'coarse',
   Iron: 'coarse', Regolith: 'coarse', Rock: 'coarse', RockDark: 'coarse',
   Rubber: 'coarse', Sand: 'coarse', Soil: 'coarse',
+  // RN-157: the ore SEAM roles (Admin's ruling: ore-in-rock and refined-item
+  // are different substances that coincidentally shared a colour; OF_Iron and
+  // friends stay untouched on the items). The `ore` family is vein banding
+  // with crystalline grain, and its ORM's roughness spread is what makes a
+  // seam glint under a moving sun. Moves in the same commit as texgen's table
+  // (RN-100's rule: verifyAgainstManifest makes a disagreement a failed run).
+  CoalSeam: 'ore', CopperOre: 'ore', IronOre: 'ore',
   EmissiveState: 'flat', Glass: 'flat', Grass: 'flat', Ice: 'flat',
   Leaf: 'flat', LeafDeep: 'flat', LeafDry: 'flat', LeafLight: 'flat',
   Oil: 'flat', Skin: 'flat', Water: 'flat',

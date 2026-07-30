@@ -57,6 +57,23 @@ PALETTE = {
     "Iron":         ("B4BAC0", 1.00, 0.40, 1.0, None),
     "Copper":       ("C06B3E", 1.00, 0.35, 1.0, None),
     "Coal":         ("1C1C1F", 0.00, 0.90, 1.0, None),
+    # Ore IN ROCK, split from the refined-item rows above (RN-156). The item
+    # roles are polished metal (metallic 1.0), and the client batches node
+    # materials by metalness > 0.5, so a boulder seam wearing Iron landed in
+    # the mirror-metal bucket and photographed as ice. A seam is a MINERAL:
+    # every row here keeps metallic under the 0.5 batching split, on purpose,
+    # and that bound is load-bearing, not aesthetic.
+    #   IronOre   magnetite blue-grey, the iron ground patch's hue family
+    #             (0x53687d), a full step cooler than Rock's warm 7A756C so
+    #             the two never read as one grey at 30 m.
+    #   CopperOre oxidised copper brown, the copper patch's 0xa04c19 family,
+    #             darker than the bright item metal C06B3E.
+    #   CoalSeam  near-black at LOW roughness: the vitreous glint is the
+    #             entire coal-not-dark-rock signal, where the Coal item row
+    #             above is matte 0.90 dust.
+    "IronOre":      ("6E7B8A", 0.25, 0.55, 1.0, None),
+    "CopperOre":    ("9A5228", 0.30, 0.50, 1.0, None),
+    "CoalSeam":     ("1A1B1E", 0.10, 0.30, 1.0, None),
     "Rock":         ("7A756C", 0.00, 0.90, 1.0, None),
     "RockDark":     ("57534C", 0.00, 0.92, 1.0, None),
     "Sand":         ("C9B283", 0.00, 0.95, 1.0, None),

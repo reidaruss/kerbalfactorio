@@ -240,10 +240,19 @@ export class NodeBatch {
   private makeBatch(name: string,
                     s: { verts: number; idx: number; src: THREE.Material }): Batch {
     const metal = name.endsWith(':metal');
+    const ore = name.startsWith('ore:');
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff, vertexColors: true,
-      metalness: metal ? 1.0 : 0.0,
-      roughness: metal ? 0.38 : 0.88,
+      // RN-158: the ore SEAM bucket. The old world had iron and copper seams
+      // in `coarse:metal` at metalness 1.0, i.e. a MIRROR whose only image is
+      // the sky: the iron crown photographed as ice and copper read near-black
+      // at any sun not overhead (RN-81). Ore in rock is MINERAL: dielectric
+      // base with a modest sheen, and the sparkle comes from the ore ORM's
+      // authored roughness spread (0.42..1.0 multiplier on this constant), not
+      // from mirror metalness. 0.72 x 0.42 puts a facet crest at 0.30, a wet
+      // glint; the dusty matrix stays near 0.72.
+      metalness: ore ? 0.25 : metal ? 1.0 : 0.0,
+      roughness: ore ? 0.72 : metal ? 0.38 : 0.88,
       // The leaf roles are authored double sided (of_lib DOUBLE_SIDED). Side
       // still keys on metalness ONLY, not on the new surface split, so the
       // bucketing change cannot move a silhouette: this is a materials pass.
@@ -253,9 +262,15 @@ export class NodeBatch {
     attachSurface(material, name.split(':')[0] as Family, `nodes:${name}`);
     // WIND (RN-98): the harvest trees' crowns sway; trunks stay near-rigid by
     // never being hooked (Bark is `coarse`, so it is not in this batch). The
-    // `flat` bucket can only hold leaf roles here: the node kinds are trees
-    // plus four boulder kinds (NodeArt.ART), and every boulder role is coarse.
-    if (name.startsWith('flat:')) applyWind(material, `nodes:${name}`);
+    // hook keys on the FOLIAGE families (RN-181 moved the leaf roles out of
+    // `flat` into `leaf`; `grass` never reaches a node but is listed so the
+    // rule reads as what it means). `flat` is deliberately NOT hooked any
+    // more: after the move it can only hold non-plants (Water, Oil), and a
+    // swaying pool surface was exactly the latent wrong-sway the old prefix
+    // permitted. Boulder roles are coarse or (since RN-158) `ore`.
+    if (name.startsWith('leaf:') || name.startsWith('grass:')) {
+      applyWind(material, `nodes:${name}`);
+    }
     const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
     mesh.name = `nodes:${name}`;
     mesh.castShadow = true;

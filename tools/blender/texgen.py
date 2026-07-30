@@ -38,7 +38,7 @@ DETERMINISM, STATED RATHER THAN HOPED:
     round-trip, and the rebuild gate checks the BYTES, so the two together tell
     those cases apart.
 
-THE SCHEME. Three shared tiling surfaces, not per-asset textures:
+THE SCHEME. Four shared tiling surfaces, not per-asset textures:
 
     panel   hard-surface industrial: plate seams, rivets, bolts, weld bead,
             scratches and grime. Steel, plate, painted accent, suit, ore metal.
@@ -49,6 +49,12 @@ THE SCHEME. Three shared tiling surfaces, not per-asset textures:
             `coarse` because rock pitting on a trunk reads as a stone pillar;
             bark's relief is strongly DIRECTIONAL and rock's is isotropic,
             which is not a difference a shared field can paper over.
+    ore     ore seams in host rock: warped parallel strata, crevices between
+            the bands, crystalline facet grain on them. IronOre, CopperOre,
+            CoalSeam only (RN-156). Split out for bark's reason exactly:
+            bedded mineral is DIRECTIONAL, rubble pitting is not, and the
+            roughness contrast between smooth facet glints and dusty matrix
+            is what sells a mineral under a moving sun.
 
 Each family ships TWO maps and no albedo:
 
@@ -76,7 +82,7 @@ functions of it. That is the "one authority" rule applied to a texture: the AO
 cannot darken a seam the normal map did not dent, because they are the same
 number read twice.
 
-TWO CARD FAMILIES BESIDE THE THREE SURFACES. `leaf` and `grass` are
+TWO CARD FAMILIES BESIDE THE FOUR SURFACES. `leaf` and `grass` are
 albedo+alpha CUTOUT CARDS (of_<name>_a.png, RGBA), not tiling PBR surfaces:
 unit UVs rather than metres, u wraps and v clamps, and the alpha channel IS
 the shape. They are the stated exception to ALBEDO IS DELIBERATELY ABSENT,
@@ -116,7 +122,10 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # `bark` matches coarse at 384: its tile is smaller still (0.6 m), so 384 px
 # lands at 640 px/m, already above the 512 px/m first-person target, and the
 # family covers exactly two roles on organic props the camera brushes past.
-FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384}
+# `ore` matches coarse and bark at 384: its 0.5 m tile lands at 768 px/m,
+# comfortably above the 512 px/m first-person target, on a family that covers
+# exactly three seam roles the camera only meets on boulder facets.
+FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -157,6 +166,23 @@ ROLE_FAMILY = {
     # with moss. Bark's structure is directional (fissures along the grain),
     # so it needs its own field, not a retune of the shared one.
     "Bark": "bark", "BarkLight": "bark",
+    # --- ore: seam mineral in host rock ---
+    # The ore-in-rock roles (RN-156), NOT the Iron/Copper/Coal item rows
+    # above, which stay in `coarse`. Same argument that split bark out: a
+    # seam face is bedded mineral, its structure is directional strata, and
+    # rubble pitting is the wrong fact about it.
+    "IronOre": "ore", "CopperOre": "ore", "CoalSeam": "ore",
+    # --- the albedo CARD families (RN-181) ---
+    # The foliage roles leave FLAT_ROLES for `leaf` and `grass`. The recorded
+    # objections below are honoured rather than overruled: they refused a
+    # NORMAL map on a card, and the card families carry none. What a card
+    # family adds is an albedo whose ALPHA is the shape, alpha-tested at the
+    # manifest's declared cutoff, over authored unit UVs (RN-180). This move
+    # lands in the same commit as the client's copy of this table, because
+    # verifyAgainstManifest makes a one-sided move a failed smoke run.
+    "Leaf": "leaf", "LeafDeep": "leaf", "LeafLight": "leaf",
+    "LeafDry": "leaf",
+    "Grass": "grass",
 }
 
 # Roles with NO map, and why. Each of these would be made worse by one.
@@ -165,11 +191,13 @@ FLAT_ROLES = {
     "Water": "transparent and animated by the shader, not by a map",
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
     "Oil": "a pool surface, deliberately mirror-flat",
-    "Leaf": "double-sided card; a normal map fights the flat-shaded silhouette",
-    "LeafDeep": "as Leaf",
-    "LeafLight": "as Leaf",
-    "LeafDry": "as Leaf",
-    "Grass": "sub-pixel blades at any real viewing distance",
+    # Leaf, LeafDeep, LeafLight, LeafDry and Grass lived here from DW-35 to
+    # RN-181 with two recorded reasons: "a normal map fights the flat-shaded
+    # silhouette" and "sub-pixel blades at any real viewing distance". Both
+    # were about the SURFACE families and both still hold; the roles moved to
+    # the albedo card families above, which carry no normal map, and the
+    # honest converse of the sub-pixel argument (RN-101: a 0.6 m blade spans
+    # ~100 px at 8 m) is what the card alpha is for.
     "Skin": "1.5 cm of visible wrist; a pore map is 5.6 MB for nothing",
     "EmissiveState": "a state light. Any AO or roughness on it is a lie about "
                      "what the surface is doing",
@@ -206,7 +234,12 @@ FLAT_ROLES = {
 # and a 4 m trunk carries ~6.7 repeats up, so the fissures read as many
 # parallel ridges rather than as one giant feature, while the tile stays big
 # enough that the repeat up the trunk is not countable at arm's length.
-FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6}
+# `ore` 0.5 m. The consumer is a boulder seam facet 0.3 to 0.6 m across, so
+# at ORE_BANDS = 5 per tile the band pitch is 10 cm and a facet carries three
+# to six bands: enough parallel strata to read as a vein rather than as one
+# stripe, few enough that the copies are not countable. coarse's 0.75 would
+# put a 15 cm pitch on the same facet, two bands, one feature.
+FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -765,6 +798,125 @@ def _bark_masks(w, h, height, aux):
 
 
 # ---------------------------------------------------------------------------
+# The `ore` family: seam mineral in host rock.
+# ---------------------------------------------------------------------------
+
+# Strata per tile. 5 bands across 0.5 m is a 10 cm band pitch (76.8 texels at
+# 384), sized so a 0.3 to 0.6 m boulder seam facet carries three to six bands,
+# and odd for bark's reason: an even count at this tile size lines the repeat
+# up with itself on a two-repeat surface, which is the countable-copies
+# failure the panel rubs comment documents.
+ORE_BANDS = 5
+ORE_WARP = 0.14           # max band-coordinate wander, in tile units: enough
+                          # that the strata visibly bow, not enough that two
+                          # bands can pinch shut (0.14 < half a 0.2 pitch)
+
+
+def _ore_height(w, h, rotated=False):
+    """(height, aux). Roughly parallel warped strata crossing v, a crevice
+    where each band meets the next, crystalline facet grain on the band
+    surface, occlusion living in the crevices.
+
+    WHICH AXIS THE BANDS CROSS, derived rather than assumed, from the same
+    box-projection fact _bark_height states in full: on the side faces of
+    anything upright, world-vertical is the v axis in both horizontal-normal
+    cases. Geological strata lie ACROSS the vertical, so the band coordinate
+    is v and the bands themselves run along u, warped by a low-frequency
+    field so they bow the way bedding does rather than ruling themselves
+    like a machined grate.
+
+    `rotated` is selftest-only: it feeds u to the band coordinate instead of
+    v, which is the exact defect the anisotropy check exists to catch, so the
+    check gets a negative control that fails honestly (DW-20).
+
+    AMPLITUDE. Band surface near 0.72 doming to 0.82 mid-band, crevice floor
+    0.45 lower over a ~1.6 cm bevel: between bark's fissure walls (0.55) and
+    coarse's facets, and `ore`'s normal_strength is chosen against that (see
+    FAMILIES). Facet grain rides on top at 0.14, small enough that the strata
+    stay the structure and the facets stay the detail, which is the same
+    structure-over-detail argument _coarse_height makes.
+
+    Returns aux masks the ORM pass needs rather than letting it re-derive
+    them from height windows, for _panel_height's stated reason: `glint` is
+    facet crest clear of any crevice (the polished read), `crevice` is the
+    cut mask (the dust trap)."""
+    warp = _fbm(w, h, 4, 3, seed=5209)
+    facets = _worley(w, h, 16, seed=7211)
+    grain = _fbm(w, h, 32, 3, seed=6113)
+
+    out = [0.0] * (w * h)
+    glint = [0.0] * (w * h)
+    crev = [0.0] * (w * h)
+    for y in range(h):
+        v = (y + 0.5) / h
+        base = y * w
+        for x in range(w):
+            u = (x + 0.5) / w
+            i = base + x
+            bc = u if rotated else v
+            # Band coordinate: the warp is periodic in both axes and the
+            # band count is an integer, so t's fractional part tiles even
+            # though t itself does not.
+            t = (bc + (warp[i] - 0.5) * ORE_WARP) * ORE_BANDS
+            f = t - math.floor(t)
+            d = min(f, 1.0 - f)      # 0 at a band boundary, 0.5 mid-band
+
+            # --- band surface, doming gently toward mid-band ---------------
+            z = 0.72 + 0.10 * _smoothstep(0.10, 0.42, d)
+
+            # --- the crevice between bands ----------------------------------
+            # 7 mm at the floor, bevel out to ~1.6 cm, in band units of a
+            # 10 cm pitch.
+            cut = 1.0 - _smoothstep(0.035, 0.16, d)
+            z -= 0.45 * cut
+            if cut > crev[i]:
+                crev[i] = cut
+
+            # --- crystalline facet grain ------------------------------------
+            # 1 - worley squared, coarse's fractured-facet read at 16 cells
+            # (~3 cm facets): crystal faces meeting at sharp valleys.
+            fc = (1.0 - facets[i]) ** 2
+            z += 0.14 * fc
+
+            # A facet crest inside a crevice is dust-buried, not polished, so
+            # the glint mask is the crest gated by the cut.
+            g = fc * (1.0 - cut)
+            if g > glint[i]:
+                glint[i] = g
+
+            # --- micro grain -------------------------------------------------
+            z += (grain[i] - 0.5) * 0.05
+            out[i] = z
+    return out, {"glint": glint, "crevice": crev}
+
+
+def _ore_masks(w, h, height, aux):
+    """(roughness, metalness) for ore. The roughness spread IS this family
+    (RN-156): smooth crystal glints against a dusty matrix is what makes a
+    mineral read as mineral under a moving sun, so the multiplier runs a
+    deliberately wide 0.4-ish to 1.0 - facet crests polished well below the
+    palette constant, crevices holding dust at full roughness, mottle on top.
+
+    Metalness identity, and here it is load-bearing rather than merely
+    tidy: the three ore roles' palette metallic values sit UNDER the
+    client's metalness > 0.5 batching split on purpose (the whole reason
+    this family exists is that the seam previously landed in the
+    mirror-metal bucket and photographed as ice), and 1.0 is the only
+    multiplier that cannot move them."""
+    mottle = _fbm(w, h, 12, 3, seed=8317)
+    glint = aux["glint"]
+    crev = aux["crevice"]
+    rough = [0.0] * (w * h)
+    metal = [1.0] * (w * h)      # identity: ore-in-rock is not polished metal
+    for i in range(w * h):
+        r = (1.0 - 0.52 * _smoothstep(0.10, 0.60, glint[i])
+             + 0.10 * crev[i]
+             + (mottle[i] - 0.5) * 0.14)
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+# ---------------------------------------------------------------------------
 # Heightfield -> normal and AO.
 # ---------------------------------------------------------------------------
 
@@ -1077,6 +1229,15 @@ FAMILIES = {
     "bark": dict(height=_bark_height, masks=_bark_masks,
                  normal_strength=12.0, ao_radius=9, ao_floor=0.45,
                  ao_gain=3.0),
+    # ore's crevice walls drop 0.45 over a ~1.6 cm bevel, just under bark's
+    # fissures, so 11 lands them near bark's shading weight while keeping the
+    # 0.14 facet grain from reading as corrugation. ao_gain by bark's
+    # argument: relief under the blur is ~0.4 in a crevice, so coarse's 7.0
+    # would clamp every crevice to the floor and paint the strata on as flat
+    # black stripes, which is exactly the read the relief exists to avoid.
+    "ore": dict(height=_ore_height, masks=_ore_masks,
+                normal_strength=11.0, ao_radius=9, ao_floor=0.46,
+                ao_gain=3.2),
 }
 
 
@@ -1590,6 +1751,11 @@ ALLOWED_CONSTANT = {
     ("bark", "orm", "B"):
         "bark is not a metal; the palette constant is already 0 and identity "
         "is the only multiplier that does not rescale it",
+    ("ore", "orm", "B"):
+        "ore-in-rock is mineral, not polished metal: the three ore roles' "
+        "palette metallic values sit under the client's 0.5 metal/matte "
+        "batching split on purpose (RN-156), and identity is the only "
+        "multiplier that cannot move them across it",
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -1978,6 +2144,43 @@ def selftest():
     check("bark fissures vertical", gu > 1.5 * gv,
           "sum |dz/du| %.1f vs sum |dz/dv| %.1f, ratio %.2f (need > 1.50)"
           % (gu, gv, gu / gv if gv > 0 else float("inf")))
+
+    # 7d. Ore's strata actually cross v. The family exists to put BANDING on
+    #     a seam facet (RN-156): world-vertical on a boulder's side facets is
+    #     the v axis (the same box-projection fact 7c rests on), geological
+    #     strata lie across it, so the field must change much faster along v
+    #     than along u - the mirror of bark's rule. An isotropic field lands
+    #     near 1.0x and fails, which is the regression this catches: someone
+    #     retunes ore into rubble and every seam quietly goes back to rock.
+    s = 192
+    oh, _ = _ore_height(s, s)
+    ou = ov = 0.0
+    for y in range(s):
+        row = y * s
+        for x in range(s):
+            here = oh[row + x]
+            ou += abs(oh[row + (x + 1) % s] - here)
+            ov += abs(oh[((y + 1) % s) * s + x] - here)
+    check("ore strata cross v", ov > 1.5 * ou,
+          "sum |dz/dv| %.1f vs sum |dz/du| %.1f, ratio %.2f (need > 1.50)"
+          % (ov, ou, ov / ou if ou > 0 else float("inf")))
+
+    # 7e. NEGATIVE CONTROL, per DW-20: the same measurement on the same
+    #     recipe with the bands fed the wrong axis must FAIL the rule above.
+    #     This is what catches an anisotropy check that has quietly become
+    #     rotation-invariant - a `rotated` flag someone disconnected, or a
+    #     measure rewritten in terms that cannot tell u from v.
+    rh, _ = _ore_height(s, s, rotated=True)
+    ru = rv = 0.0
+    for y in range(s):
+        row = y * s
+        for x in range(s):
+            here = rh[row + x]
+            ru += abs(rh[row + (x + 1) % s] - here)
+            rv += abs(rh[((y + 1) % s) * s + x] - here)
+    check("ore band control fails", not (rv > 1.5 * ru),
+          "rotated 90 degrees: ratio %.2f, correctly outside the > 1.50 rule"
+          % (rv / ru if ru > 0 else float("inf")))
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never

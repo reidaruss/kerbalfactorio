@@ -54,6 +54,21 @@
       "size_px": 384,
       "texels_per_m": 512.0
     },
+    "ore": {
+      "normal": {
+        "file": "of_ore_n.png",
+        "bytes": 200042,
+        "sha256": "de5eb79e67727e73d74aa06aac73d2f6fa2f4000b501965ecf715f9f4648af9f"
+      },
+      "orm": {
+        "file": "of_ore_orm.png",
+        "bytes": 130311,
+        "sha256": "ee004bf3887a2afb20ec7b266424189a957fbe7284be5f6d8ac2d1e5ba50c5bc"
+      },
+      "tile_m": 0.5,
+      "size_px": 384,
+      "texels_per_m": 768.0
+    },
     "panel": {
       "normal": {
         "file": "of_panel_n.png",
@@ -105,9 +120,17 @@
     "Bark": "bark",
     "BarkLight": "bark",
     "Coal": "coarse",
+    "CoalSeam": "ore",
     "Copper": "coarse",
+    "CopperOre": "ore",
+    "Grass": "grass",
     "Hazard": "panel",
     "Iron": "coarse",
+    "IronOre": "ore",
+    "Leaf": "leaf",
+    "LeafDeep": "leaf",
+    "LeafDry": "leaf",
+    "LeafLight": "leaf",
     "Plate": "panel",
     "Regolith": "coarse",
     "Rock": "coarse",
@@ -125,12 +148,7 @@
   "flat_roles": {
     "EmissiveState": "a state light. Any AO or roughness on it is a lie about what the surface is doing",
     "Glass": "transparent; a normal map on a 0.35-alpha pane reads as dirt",
-    "Grass": "sub-pixel blades at any real viewing distance",
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
-    "Leaf": "double-sided card; a normal map fights the flat-shaded silhouette",
-    "LeafDeep": "as Leaf",
-    "LeafDry": "as Leaf",
-    "LeafLight": "as Leaf",
     "Oil": "a pool surface, deliberately mirror-flat",
     "Skin": "1.5 cm of visible wrist; a pore map is 5.6 MB for nothing",
     "Water": "transparent and animated by the shader, not by a map"
