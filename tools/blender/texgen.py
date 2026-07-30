@@ -172,17 +172,6 @@ ROLE_FAMILY = {
     # seam face is bedded mineral, its structure is directional strata, and
     # rubble pitting is the wrong fact about it.
     "IronOre": "ore", "CopperOre": "ore", "CoalSeam": "ore",
-    # --- the albedo CARD families (RN-181) ---
-    # The foliage roles leave FLAT_ROLES for `leaf` and `grass`. The recorded
-    # objections below are honoured rather than overruled: they refused a
-    # NORMAL map on a card, and the card families carry none. What a card
-    # family adds is an albedo whose ALPHA is the shape, alpha-tested at the
-    # manifest's declared cutoff, over authored unit UVs (RN-180). This move
-    # lands in the same commit as the client's copy of this table, because
-    # verifyAgainstManifest makes a one-sided move a failed smoke run.
-    "Leaf": "leaf", "LeafDeep": "leaf", "LeafLight": "leaf",
-    "LeafDry": "leaf",
-    "Grass": "grass",
 }
 
 # Roles with NO map, and why. Each of these would be made worse by one.
@@ -191,13 +180,11 @@ FLAT_ROLES = {
     "Water": "transparent and animated by the shader, not by a map",
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
     "Oil": "a pool surface, deliberately mirror-flat",
-    # Leaf, LeafDeep, LeafLight, LeafDry and Grass lived here from DW-35 to
-    # RN-181 with two recorded reasons: "a normal map fights the flat-shaded
-    # silhouette" and "sub-pixel blades at any real viewing distance". Both
-    # were about the SURFACE families and both still hold; the roles moved to
-    # the albedo card families above, which carry no normal map, and the
-    # honest converse of the sub-pixel argument (RN-101: a 0.6 m blade spans
-    # ~100 px at 8 m) is what the card alpha is for.
+    "Leaf": "double-sided card; a normal map fights the flat-shaded silhouette",
+    "LeafDeep": "as Leaf",
+    "LeafLight": "as Leaf",
+    "LeafDry": "as Leaf",
+    "Grass": "sub-pixel blades at any real viewing distance",
     "Skin": "1.5 cm of visible wrist; a pore map is 5.6 MB for nothing",
     "EmissiveState": "a state light. Any AO or roughness on it is a lie about "
                      "what the surface is doing",
