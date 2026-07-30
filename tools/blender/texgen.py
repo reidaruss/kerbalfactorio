@@ -38,12 +38,17 @@ DETERMINISM, STATED RATHER THAN HOPED:
     round-trip, and the rebuild gate checks the BYTES, so the two together tell
     those cases apart.
 
-THE SCHEME. Two shared tiling surfaces, not per-asset textures:
+THE SCHEME. Three shared tiling surfaces, not per-asset textures:
 
     panel   hard-surface industrial: plate seams, rivets, bolts, weld bead,
             scratches and grime. Steel, plate, painted accent, suit, ore metal.
     coarse  rough non-metal: chipped facets and granular relief. Rock, soil,
-            sand, regolith, coal, bark, rubber.
+            sand, regolith, coal, rubber.
+    bark    tree trunks: near-vertical fissures and ridge plateaus, a few
+            horizontal breaks and knots. Bark and BarkLight only. Split out of
+            `coarse` because rock pitting on a trunk reads as a stone pillar;
+            bark's relief is strongly DIRECTIONAL and rock's is isotropic,
+            which is not a difference a shared field can paper over.
 
 Each family ships TWO maps and no albedo:
 
@@ -98,7 +103,10 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # rivets and a bolt head is the one that needs the pixels. Measured: coarse at
 # 512 cost 588 KB of the payload against panel's 484 KB, for a surface that is
 # noise and therefore incompressible, on assets the camera spends least time on.
-FAMILY_SIZE = {"panel": 512, "coarse": 384}
+# `bark` matches coarse at 384: its tile is smaller still (0.6 m), so 384 px
+# lands at 640 px/m, already above the 512 px/m first-person target, and the
+# family covers exactly two roles on organic props the camera brushes past.
+FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -131,7 +139,14 @@ ROLE_FAMILY = {
     "Iron": "coarse", "Copper": "coarse",
     "Rock": "coarse", "RockDark": "coarse", "Regolith": "coarse",
     "Sand": "coarse", "Soil": "coarse", "Coal": "coarse",
-    "Bark": "coarse", "BarkLight": "coarse", "Rubber": "coarse",
+    "Rubber": "coarse",
+    # --- bark: tree trunks ---
+    # Moved out of `coarse` for the same reason Iron and Copper moved out of
+    # `panel`: the family encoded the wrong FACT about the surface. `coarse`
+    # is isotropic fracture, and a trunk wearing it reads as a stone column
+    # with moss. Bark's structure is directional (fissures along the grain),
+    # so it needs its own field, not a retune of the shared one.
+    "Bark": "bark", "BarkLight": "bark",
 }
 
 # Roles with NO map, and why. Each of these would be made worse by one.
@@ -172,7 +187,16 @@ FLAT_ROLES = {
 # applied as texture.repeat, so they touch no pixel and no .glb. `panel` lands
 # at 341 px/m, above ASSET-SPECS 2.8's 256 px/m machine target; `coarse` at
 # 512 px/m, which is why FAMILY_SIZE went to 384 rather than staying at 256.
-FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75}
+#
+# `bark` 0.6 m. The consumer is a trunk 0.3 to 0.5 m across and 2 to 6 m tall,
+# and the thing being replaced is coarse's 0.75 m rock pitting, whose features
+# were sized for a 4 m foundation deck and therefore wrap a 0.4 m trunk barely
+# half a repeat: one facet becomes the whole trunk face. At 0.6 m a trunk
+# circumference (~1.3 m for 0.4 m diameter) carries about two repeats around
+# and a 4 m trunk carries ~6.7 repeats up, so the fissures read as many
+# parallel ridges rather than as one giant feature, while the tile stays big
+# enough that the repeat up the trunk is not countable at arm's length.
+FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -584,6 +608,153 @@ def _coarse_masks(w, h, height, aux):
 
 
 # ---------------------------------------------------------------------------
+# The `bark` family: tree trunks.
+# ---------------------------------------------------------------------------
+
+# Fissure count per tile. 7 fissures across 0.6 m is an 8.6 cm ridge pitch,
+# inside the 3 to 10 cm range mature conifer bark actually has, and odd on
+# purpose: an even count at this tile size puts two fissures exactly half a
+# tile apart, and the repeat around a two-repeat trunk then lines up with
+# itself, which is the countable-copies failure the panel rubs comment
+# documents.
+BARK_FISSURES = 7
+BARK_MEANDER = 0.030      # max lateral wander of a fissure, in tile u units
+BARK_MEANDER_PERIOD = 4   # lattice points of the periodic wander, per tile
+
+
+def _bark_height(w, h):
+    """(height, aux). Ridge plateaus near 1.0 cut by deep near-vertical
+    fissures, plus a few horizontal breaks and knot dimples.
+
+    WHICH TEXTURE AXIS IS VERTICAL, derived rather than assumed. UVs are
+    box-projected world metres (of_lib.MeshBuilder._project_uvs), and
+    validate_glb.py's uv_metres check states the exact post-export mapping per
+    dominant face axis:
+
+        Blender axis Z -> (u, v) = ( X, 1 + Z)     top / bottom caps
+        Blender axis X -> (u, v) = (-Z, 1 - Y)     side face, normal along X
+        Blender axis Y -> (u, v) = ( X, 1 - Y)     side face, normal along Y
+
+    glTF is Y-up after the exporter's conversion, so on the SIDE faces of a
+    vertical trunk (the two horizontal-normal cases) v = 1 - Y in BOTH cases:
+    the two cases AGREE, world-vertical is always the v axis, and there is no
+    minority orientation to trade away. Fissures therefore run along v
+    (image y), meandering slightly in u. The caps get fissures crossing the
+    end grain, which is wrong but invisible: a trunk's caps are its cut ends.
+
+    AMPLITUDE. The plateau sits near 1.0 and a fissure floor near 0.45, so
+    the walls are ~0.55 over a ~1.4 cm bevel: steeper than coarse's facets,
+    gentler than panel's grooves, and the family's normal_strength is chosen
+    against that (see FAMILIES)."""
+    grain = _fbm(w, h, 24, 3, seed=3307)
+    lumps = _fbm(w, h, 5, 3, seed=4409)
+
+    # Per-fissure meander tables, periodic in v BY CONSTRUCTION so the field
+    # tiles: BARK_MEANDER_PERIOD hashed offsets per fissure, interpolated with
+    # the same quintic the value noise uses, lattice indices wrapped with %.
+    mp = BARK_MEANDER_PERIOD
+    wander = [[(_hash01(k, j, 7331) - 0.5) * 2.0 * BARK_MEANDER
+               for j in range(mp)] for k in range(BARK_FISSURES)]
+    # Base u per fissure: even spacing plus a small hashed offset, small
+    # enough (0.25 of the pitch, on top of +/- BARK_MEANDER) that neighbours
+    # cannot cross.
+    base_u = [(k + 0.5 + (_hash01(k, 91, 5479) - 0.5) * 0.25) / BARK_FISSURES
+              for k in range(BARK_FISSURES)]
+
+    # Horizontal breaks: short shallow cracks across the grain. Few and short,
+    # for the reason the panel rubs comment gives: a long unique feature on a
+    # shared tiling surface is a repeat cue.
+    breaks = [
+        (0.08, 0.22, 0.30, 0.22),
+        (0.55, 0.61, 0.78, 0.63),
+        (0.72, 0.90, 0.88, 0.89),
+    ]
+    # Knots: a raised welt with a dimple inside, where a branch was.
+    knots = [(0.30, 0.72), (0.83, 0.34)]
+
+    # Fissure centres per ROW (u depends on v through the meander), hoisted
+    # out of the pixel loop: h rows x BARK_FISSURES instead of w*h.
+    centres = []
+    for y in range(h):
+        v = (y + 0.5) / h
+        f = v * mp
+        j0 = int(f) % mp
+        j1 = (j0 + 1) % mp
+        t = _smooth(f - int(f))
+        row = []
+        for k in range(BARK_FISSURES):
+            o0 = wander[k][j0]
+            o1 = wander[k][j1]
+            row.append((base_u[k] + o0 + (o1 - o0) * t) % 1.0)
+        centres.append(row)
+
+    out = [0.0] * (w * h)
+    fissure = [0.0] * (w * h)
+    for y in range(h):
+        v = (y + 0.5) / h
+        base = y * w
+        cs = centres[y]
+        for x in range(w):
+            u = (x + 0.5) / w
+            g = grain[base + x]
+
+            # --- ridge plateau, gently domed between fissures ---------------
+            du = min(_wrap_dist(u, c) for c in cs)
+            z = 0.88 + 0.12 * lumps[base + x]
+            z += 0.10 * _smoothstep(0.020, 0.055, du)
+
+            # --- the fissure itself -----------------------------------------
+            # Width breathes with the grain so the walls are ragged rather
+            # than machined: 6 to 10 mm at the floor, bevel out to ~2 cm.
+            w0 = 0.010 * (0.7 + 0.6 * g)
+            w1 = 0.033
+            cut = 1.0 - _smoothstep(w0, w1, du)
+            z -= 0.55 * cut
+            if cut > fissure[base + x]:
+                fissure[base + x] = cut
+
+            # --- horizontal breaks ------------------------------------------
+            for br in breaks:
+                db = _seg_dist(u, v, *br)
+                if db < 0.020:
+                    z -= 0.20 * (1.0 - _smoothstep(0.006, 0.020, db))
+
+            # --- knots -------------------------------------------------------
+            for (ku, kv) in knots:
+                dd = math.sqrt(_wrap_delta(u, ku) ** 2
+                               + _wrap_delta(v, kv) ** 2)
+                if dd < 0.085:
+                    z += 0.10 * (1.0 - _smoothstep(0.045, 0.085, dd))
+                    z -= 0.34 * (1.0 - _smoothstep(0.008, 0.045, dd))
+
+            # --- micro grain -------------------------------------------------
+            z += (g - 0.5) * 0.05
+            out[base + x] = z
+    return out, {"fissure": fissure}
+
+
+def _bark_masks(w, h, height, aux):
+    """(roughness, metalness) for bark.
+
+    Bark is matte everywhere, so the multiplier lives in roughly 0.8 to 1.0:
+    fissure interiors and hollows at full palette roughness, exposed ridge
+    crowns rubbed very slightly smoother, mottle on top so the spread clears
+    MUST_VARY without pretending bark has polished spots. Metalness identity,
+    exactly as coarse: the palette constant for both bark roles is already 0
+    and a multiplier of 1.0 is the only value that does not rescale it."""
+    mottle = _fbm(w, h, 12, 3, seed=7207)
+    fiss = aux["fissure"]
+    rough = [0.0] * (w * h)
+    metal = [1.0] * (w * h)      # identity: bark is not a metal
+    for i in range(w * h):
+        r = (1.0 - 0.13 * _smoothstep(0.60, 1.05, _clamp01(height[i]))
+             + (mottle[i] - 0.5) * 0.09
+             + 0.04 * fiss[i])
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+# ---------------------------------------------------------------------------
 # Heightfield -> normal and AO.
 # ---------------------------------------------------------------------------
 
@@ -806,6 +977,15 @@ FAMILIES = {
     "coarse": dict(height=_coarse_height, masks=_coarse_masks,
                    normal_strength=9.0, ao_radius=11, ao_floor=0.50,
                    ao_gain=7.0),
+    # bark sits between the two: its fissure walls drop 0.55 over a ~1.4 cm
+    # bevel, steeper than a coarse facet and shallower than a panel groove, so
+    # 12 gives the walls roughly the shading weight coarse's facets get from 9
+    # on their gentler slopes. ao_gain likewise: the relief under the blur is
+    # ~0.5 in a fissure where coarse's is ~0.1, so coarse's 7.0 here would
+    # clamp every fissure to the floor and read as painted-on black stripes.
+    "bark": dict(height=_bark_height, masks=_bark_masks,
+                 normal_strength=12.0, ao_radius=9, ao_floor=0.45,
+                 ao_gain=3.0),
 }
 
 
@@ -894,6 +1074,9 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
 ALLOWED_CONSTANT = {
     ("coarse", "orm", "B"):
         "no coarse role is a polished metal, so metalness is left at identity",
+    ("bark", "orm", "B"):
+        "bark is not a metal; the palette constant is already 0 and identity "
+        "is the only multiplier that does not rescale it",
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -1165,6 +1348,27 @@ def selftest():
     check("seam check can fail", edge > inner,
           "ramp: wrap step %.4f vs worst interior %.4f" % (edge, inner))
 
+    # 7c. Bark's fissures actually run along v. The whole reason `bark` exists
+    #     is orientation: world-vertical on a trunk's side faces is the v axis
+    #     (both horizontal-normal cases of the box projection agree, see
+    #     _bark_height), so the field must change much faster ACROSS u than
+    #     along v. Measured as the summed absolute wrapped difference per
+    #     axis; an isotropic field (coarse's, say) lands near 1.0x and would
+    #     fail, which is exactly the regression this catches: someone retunes
+    #     bark into rock and every trunk quietly goes back to stone.
+    s = 192
+    bh, _ = _bark_height(s, s)
+    gu = gv = 0.0
+    for y in range(s):
+        row = y * s
+        for x in range(s):
+            here = bh[row + x]
+            gu += abs(bh[row + (x + 1) % s] - here)
+            gv += abs(bh[((y + 1) % s) * s + x] - here)
+    check("bark fissures vertical", gu > 1.5 * gv,
+          "sum |dz/du| %.1f vs sum |dz/dv| %.1f, ratio %.2f (need > 1.50)"
+          % (gu, gv, gu / gv if gv > 0 else float("inf")))
+
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never
     #    examined: a new role added to of_lib.PALETTE would otherwise silently
@@ -1217,7 +1421,7 @@ def selftest():
 
     print("\n%s  %d check(s), %d failure(s)"
           % ("SELFTEST PASS" if not fails else "SELFTEST FAIL",
-             11 + len(FAMILIES), len(fails)))
+             12 + len(FAMILIES), len(fails)))
     return 0 if not fails else 1
 
 

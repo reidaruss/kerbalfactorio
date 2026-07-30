@@ -10,6 +10,21 @@
   "version": 1,
   "zlib": "1.3.1",
   "families": {
+    "bark": {
+      "normal": {
+        "file": "of_bark_n.png",
+        "bytes": 145547,
+        "sha256": "fae518140642f2fd6f0f64ec9f72e939e01b060fb6e7025016fe5cd06b360a2f"
+      },
+      "orm": {
+        "file": "of_bark_orm.png",
+        "bytes": 73510,
+        "sha256": "4d1a984a3abd3b119abfb1b7a9d27e92ce02749eb98d3bf20c2a27b03ff30c3c"
+      },
+      "tile_m": 0.6,
+      "size_px": 384,
+      "texels_per_m": 640.0
+    },
     "coarse": {
       "normal": {
         "file": "of_coarse_n.png",
@@ -43,8 +58,8 @@
   },
   "roles": {
     "Accent": "panel",
-    "Bark": "coarse",
-    "BarkLight": "coarse",
+    "Bark": "bark",
+    "BarkLight": "bark",
     "Coal": "coarse",
     "Copper": "coarse",
     "Hazard": "panel",

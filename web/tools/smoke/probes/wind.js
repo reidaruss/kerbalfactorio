@@ -45,7 +45,21 @@
   // that sway through `nodes:flat:matte` actually are).
   if (A.stay !== true) of.teleport(A.lat ?? 12, A.lon ?? 150, A.alt ?? 2);
   of.look(A.yaw ?? 300, A.pitch ?? -10);
-  of.setTime(A.sunT ?? 0.30);
+  if (A.noon === true) {
+    // Local solar noon, forestsite.js's solver verbatim: `setTime` is a
+    // BODY-frame direction, so a fixed t is a different hour at every
+    // longitude (WG-53). The first forest pair of RN-100 was shot at night
+    // because of exactly this.
+    let best = 0; let bestDot = -2;
+    for (let i = 0; i < 240; ++i) {
+      of.setTime(i / 240);
+      const d = of.stats().sky.elevationDot;
+      if (d > bestDot) { bestDot = d; best = i / 240; }
+    }
+    of.setTime(best);
+  } else {
+    of.setTime(A.sunT ?? 0.30);
+  }
   await of.run(2.0);
   let spin = 0;
   while (!of.world().chunks.converged && spin++ < 240) await of.run(0.5);

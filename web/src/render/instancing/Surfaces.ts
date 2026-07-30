@@ -1,10 +1,10 @@
-// The two shared tiling surfaces (ASSET-SPECS 2.8, DW-35) and the ONE place that
+// The shared tiling surfaces (ASSET-SPECS 2.8, DW-35) and the ONE place that
 // decides which of them a material gets. New file: the three batch paths
 // (MachineBatch, NodeBatch, PropLibrary) each build their own materials and each
 // copy-pasted the same `normalize()`, so putting the decision here is what stops
 // a third copy of it drifting.
 //
-// LOAD ONCE, SHARE EVERYWHERE. Four PNGs total, 3.1 MiB of base VRAM for the
+// LOAD ONCE, SHARE EVERYWHERE. Six PNGs total, ~5.7 MiB of base VRAM for the
 // whole 48-asset set. A per-file texture would multiply that by the asset count,
 // which is the entire reason the texture pass shipped two shared tilings instead
 // of per-asset maps.
@@ -22,7 +22,7 @@
 
 import * as THREE from 'three';
 
-export type Family = 'panel' | 'coarse' | 'flat';
+export type Family = 'panel' | 'coarse' | 'bark' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -39,7 +39,8 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Accent: 'panel', Hazard: 'panel', Plate: 'panel', Steel: 'panel',
   SteelDark: 'panel', SteelLight: 'panel', Suit: 'panel', SuitAccent: 'panel',
   SuitDark: 'panel',
-  Bark: 'coarse', BarkLight: 'coarse', Coal: 'coarse', Copper: 'coarse',
+  Bark: 'bark', BarkLight: 'bark',
+  Coal: 'coarse', Copper: 'coarse',
   Iron: 'coarse', Regolith: 'coarse', Rock: 'coarse', RockDark: 'coarse',
   Rubber: 'coarse', Sand: 'coarse', Soil: 'coarse',
   EmissiveState: 'flat', Glass: 'flat', Grass: 'flat', Ice: 'flat',
