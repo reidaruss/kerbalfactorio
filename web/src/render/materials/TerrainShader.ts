@@ -19,6 +19,7 @@ import { BIOME_COUNT } from './BiomePalette.js';
 import { ATMOSPHERE_PARS } from './Atmosphere.glsl.js';
 import { TERRAIN_ART_PARS } from './TerrainArt.glsl.js';
 import { TERRAIN_SUN_IRRADIANCE } from './TerrainAmbient.js';
+import { CASCADE_GLSL } from './CascadeShadow.glsl.js';
 
 /**
  * The direct-sun irradiance literal, INLINED into the GLSL rather than passed as
@@ -42,9 +43,11 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     attribute float aHeight;
     attribute float aFadeT0;
     uniform vec3 uBiomeColor[${BIOME_COUNT}];
+    uniform vec4 uBiomeMat[${BIOME_COUNT}];
     uniform float uTime;
     uniform float uFadeDur;
     varying vec3 vBiomeColor;
+    varying vec4 vMatW;
     varying vec3 vNormalW;
     varying vec3 vWorld;
     varying float vRelief;
@@ -67,6 +70,8 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       // aBiome.x is the /core Biome enum as an unnormalized uint8.
       int bi = int(aBiome.x + 0.5);
       vBiomeColor = uBiomeColor[bi];
+      // RN-78: texture weights, interpolated across biome edges as vBiomeColor is.
+      vMatW = uBiomeMat[bi];
       vNormalW = normalize(ofNormalRot * normal);
       vec4 worldPosition = ofModel * vec4(position, 1.0);
       vWorld = worldPosition.xyz;
@@ -118,47 +123,9 @@ const BAYER = /* glsl */`
   }
 `;
 
-/**
- * The cascade lookup, EXPORTED at RN-52 so the water surface shades itself from
- * the same three cascades the ground under it does. A second copy of this
- * selection would be a second authority on which cascade a range belongs to,
- * and the visible failure would be a pond whose glint stays lit inside a shadow
- * the shoreline is already in. It reads `uCascadeFar` and three's own shadow
- * uniforms, so any material using it needs `lights: true` and the shadowmap
- * chunks, exactly as this one does.
- */
-export const CASCADE_GLSL = /* glsl */`
-  float ofCascadeShadow(float vz) {
-    #if defined(USE_SHADOWMAP) && !defined(OF_SCALED) && OF_CASCADES > 0
-      float s = 1.0;
-      if (vz < uCascadeFar.x) {
-        s = getShadow(directionalShadowMap[0], directionalLightShadows[0].shadowMapSize,
-          directionalLightShadows[0].shadowIntensity, directionalLightShadows[0].shadowBias,
-          directionalLightShadows[0].shadowRadius, vDirectionalShadowCoord[0]);
-      }
-      #if OF_CASCADES > 1
-      else if (vz < uCascadeFar.y) {
-        s = getShadow(directionalShadowMap[1], directionalLightShadows[1].shadowMapSize,
-          directionalLightShadows[1].shadowIntensity, directionalLightShadows[1].shadowBias,
-          directionalLightShadows[1].shadowRadius, vDirectionalShadowCoord[1]);
-      }
-      #endif
-      #if OF_CASCADES > 2
-      else if (vz < uCascadeFar.z) {
-        s = getShadow(directionalShadowMap[2], directionalLightShadows[2].shadowMapSize,
-          directionalLightShadows[2].shadowIntensity, directionalLightShadows[2].shadowBias,
-          directionalLightShadows[2].shadowRadius, vDirectionalShadowCoord[2]);
-      }
-      #endif
-      // Fade the last cascade out rather than ending it, or the shadow set
-      // terminates on a hard arc that the eye reads instantly while walking.
-      float last = uCascadeFar[OF_CASCADES - 1];
-      return mix(s, 1.0, smoothstep(last * 0.82, last, vz));
-    #else
-      return 1.0;
-    #endif
-  }
-`;
+// Moved to CascadeShadow.glsl.ts at RN-78 (line-cap room; GLSL unchanged to
+// the character). Re-exported so RN-52's published import site still holds.
+export { CASCADE_GLSL } from './CascadeShadow.glsl.js';
 
 export function terrainFragmentShader(depth: DepthPolicy): string {
   return /* glsl */`
@@ -173,6 +140,8 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     ${ATMOSPHERE_PARS}
     ${TERRAIN_ART_PARS}
     uniform vec3 uArtAmp;      // x macro colour, y detail bump, z rock strata
+    uniform sampler2D uGroundTex;   // RN-77's four packed detail fields
+    uniform float uGroundTexAmp;
     // RN-57. x water level (metres above datum), y shoreline radius m, z the
     // height in metres over which the wet band dries out, w amplitude.
     uniform vec4 uWetBand;
@@ -185,6 +154,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     uniform vec3 uCascadeFar;
     uniform float uSkyAmbient;
     varying vec3 vBiomeColor;
+    varying vec4 vMatW;
     varying vec3 vNormalW;
     varying vec3 vWorld;
     varying float vRelief;
@@ -257,7 +227,8 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // bedding goes. vRelief is metres above the datum, which is exactly the
       // altitude a bed is a function of.
       vec3 rock = ofArtStrata(vec3(0.30, 0.28, 0.26), vRelief, pM, strataW);
-      vec3 albedo = mix(rock, vBiomeColor, smoothstep(0.55, 0.88, flat_));
+      float coverSel = smoothstep(0.55, 0.88, flat_);
+      vec3 albedo = mix(rock, vBiomeColor, coverSel);
 
       // MACRO VARIATION. Two effects off one field, because they answer two
       // different halves of "flat colour": the tint moves the ground between a
@@ -280,6 +251,27 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         albedo *= mix(vec3(1.0), tint, macroW);
         albedo *= 1.0 + macroW * 0.40 * hArt;
       }
+
+      // GROUND TEXTURE (RN-78): RN-77's tiling fields on the chunk UV at
+      // integer repeats per quad, mixed by the per-biome weights (the whole
+      // correctness argument: TerrainArt.glsl's ofArtTexMix note). BEFORE the
+      // snow lerp so a snowfield stays clean. Three load-bearing choices,
+      // each measured (rendering.md RN-78): (1) the samples are UNCONDITIONAL,
+      // because inside a non-uniform branch a fetch has UNDEFINED LOD, which
+      // photographed as mip-0 speckle at 40 m plus deep-mip mush at 3 m and
+      // was immune to every anisotropy setting; (2) ALBEDO ONLY, because fed
+      // to the bump these smooth fields read as choppy water at any
+      // coefficient (a smooth metre-scale undulation IS liquid's signature;
+      // the bump stays RN-50's vnoise exactly); (3) the near boost inside
+      // ~20 m, because the feet are where a texture pass is judged and dark
+      // biomes photographed nearly flat without it.
+      #ifndef OF_SCALED
+        float texW = uGroundTexAmp * (1.0 - smoothstep(35.0, 75.0, dist))
+                   * (1.0 + 0.6 * (1.0 - smoothstep(10.0, 22.0, dist)));
+        vec4 g1 = texture2D(uGroundTex, vChunkUv * 16.0);
+        vec4 g2 = texture2D(uGroundTex, vChunkUv * 5.0);
+        albedo *= 1.0 + texW * ofArtTexMix(g1, g2, vMatW, coverSel);
+      #endif
 
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
       // above it (6,520 m measured), so the snowline is expressed past 1.0

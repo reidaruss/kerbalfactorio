@@ -100,6 +100,9 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'proplod2', 'grassshort', 'scatterwet',
   'terrainart', 'macrovar', 'terrainbump', 'strata',
   'macroamp', 'bumpamp', 'strataamp',
+  // RN-78, the ground texture (albedo modulation). `groundtex=0` removes the
+  // term; `groundtexamp=` sweeps it.
+  'groundtex', 'groundtexamp',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',

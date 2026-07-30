@@ -12,7 +12,7 @@
 import * as THREE from 'three';
 import type { DepthPolicy } from '../DepthPolicy.js';
 import type { AtmosphereUniforms } from './Atmosphere.glsl.js';
-import { biomeColorArray } from './BiomePalette.js';
+import { biomeColorArray, biomeMatWeights } from './BiomePalette.js';
 import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 import { FAR_SCALE } from '../Scenes.js';
@@ -115,6 +115,78 @@ function artAmpFromQuery(): THREE.Vector3 {
 }
 
 /**
+ * THE GROUND TEXTURE (RN-77/RN-78): amplitude from the query, and the texture
+ * itself behind a 1x1 mid-grey placeholder so the first frame is exactly the
+ * untextured frame until the PNG lands. 128 is the modulation identity by the
+ * texture's own contract (every channel centred on 0.5), so "not loaded yet"
+ * and "amplitude 0" are the same picture and there is no pop-to-textured race
+ * a probe could catch mid-boot: a settled frame after load is the only frame
+ * anyone measures.
+ *
+ * A failed load is a console.error, which FAILS a smoke run. That is the
+ * Surfaces.ts precedent: a missing map must be loud, because an untextured
+ * ground is exactly the picture this pass exists to remove.
+ */
+function groundTexAmpFromQuery(): number {
+  const p = new URLSearchParams(self.location.search);
+  if (p.get('groundtex') === '0') return 0;
+  const raw = Number(p.get('groundtexamp'));
+  return Number.isFinite(raw) ? raw : 1;
+}
+
+function makeGroundTexture(): THREE.IUniform<THREE.Texture> {
+  const ph = new THREE.DataTexture(new Uint8Array([128, 128, 128, 128]), 1, 1,
+    THREE.RGBAFormat);
+  ph.needsUpdate = true;
+  // ONE IUniform object handed to BOTH materials, so the swap-on-load below
+  // reaches the near and the far material in one assignment and the two
+  // cannot disagree about which texture the ground wears.
+  //
+  // NOT TextureLoader, and the reason was MEASURED (RN-78): the HTMLImage
+  // decode path PREMULTIPLIES RGB by alpha, and this texture's alpha is a
+  // DATA channel sitting near 0.5, so every colour channel arrived halved,
+  // every field read below its 0.5 identity, and the "modulation" darkened
+  // the whole planet 89% one-way (257,065 darker against 31,457 lighter at
+  // the RN-15 camera, meanDelta 47). createImageBitmap with premultiplyAlpha
+  // 'none' and colorSpaceConversion 'none' is the load path that hands the
+  // sampler the file's actual bytes.
+  const u: THREE.IUniform<THREE.Texture> = { value: ph };
+  fetch('assets/textures/of_ground.png')
+    .then(async (r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const bmp = await createImageBitmap(await r.blob(), {
+        premultiplyAlpha: 'none', colorSpaceConversion: 'none',
+      });
+      const t = new THREE.Texture(bmp);
+      t.wrapS = THREE.RepeatWrapping;
+      t.wrapT = THREE.RepeatWrapping;
+      // A data texture: the channels are modulation fields, not colours.
+      t.colorSpace = THREE.NoColorSpace;
+      // 16, and the number is load-bearing, not a luxury: the walking camera
+      // sees ground at 8 degrees of grazing by 12 m, where the anisotropy
+      // ratio is already past 6, and any pixel past the budget UNDER-FILTERS
+      // into per-pixel texture deltas that the bump's derivative amplifies
+      // into black speckle. 16 holds proper filtering out to ~28 m, which is
+      // past where the bump's own footprint fade has retired that term.
+      // (An earlier sweep of this setting "did nothing" because the samples
+      // then sat in non-uniform control flow with UNDEFINED LOD; see
+      // TerrainShader's note. Filtering settings only mean anything once the
+      // LOD is defined.) three clamps to the device maximum at upload.
+      t.anisotropy = 16;
+      t.flipY = false;           // an ImageBitmap upload ignores UNPACK_FLIP_Y
+      t.generateMipmaps = true;  // the 0.5-centred channels NEED the mip chain
+      t.needsUpdate = true;
+      u.value = t;
+      ph.dispose();
+    })
+    .catch((e: unknown) => {
+      console.error(`[of] terrain: of_ground.png did NOT load (${String(e)}).`
+        + ' The ground draws untextured; run `npm run sync-assets`.');
+    });
+  return u;
+}
+
+/**
  * WHAT THE GROUND NEEDS TO KNOW ABOUT WATER, and it is deliberately the least
  * that will do (RN-57): a direction, two radii and a height. It is NOT a
  * WaterOracle and it is NOT `depthAt`. The ground does not ask where the water
@@ -173,6 +245,12 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // near material and not the far one would be a second authority on how the
   // ground looks, which is the exact bug class this file already guards.
   const artAmp = artAmpFromQuery();
+  // The ground texture (RN-78): one shared IUniform for the map, one shared
+  // holder for the amplitude, the biome weight table built once. All shared
+  // by reference between the two materials for the reason artAmp is.
+  const groundTex = makeGroundTexture();
+  const groundAmp: THREE.IUniform<number> = { value: groundTexAmpFromQuery() };
+  const biomeMat = biomeMatWeights();
   // The wet band, likewise ONE object shared by both materials by reference so
   // a runtime tweak cannot reach one and not the other. The amplitude is zero on
   // a dry body, which is what makes `ofArtWet` return on its first line and cost
@@ -209,6 +287,9 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uCascadeFar: { value: splits },
       uSkyAmbient: { value: TERRAIN_SKY_AMBIENT },
       uArtAmp: { value: artAmp },
+      uGroundTex: groundTex,
+      uGroundTexAmp: groundAmp,
+      uBiomeMat: { value: biomeMat },
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },
     });
@@ -252,6 +333,19 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
     // instrument RN-45 built for the other three.
     setWet(amp: number): number { wetBand.w = amp; return amp; },
     getWet(): [number, number, number, number] { return wetBand.toArray(); },
+    // RN-78, same handle for the same reason as setWet: the ground texture is
+    // a terrain art term and a probe toggling it wants the settled-frame
+    // instrument, not a page reload.
+    setTex(amp: number): number { groundAmp.value = amp; return amp; },
+    getTex(): number { return groundAmp.value; },
+    // The FIXTURE assertion for probes (INSTRUMENTS.md, GP-142): a pair taken
+    // against the 1x1 placeholder is bit-identical by construction and reads
+    // as a dead term when it is a dead fetch. width 1024 is "the real map is
+    // bound"; width 1 is "still the placeholder".
+    texState(): { w: number; h: number } {
+      const img = groundTex.value.image as { width?: number; height?: number } | null;
+      return { w: img?.width ?? 0, h: img?.height ?? 0 };
+    },
   };
   return {
     near,
@@ -263,6 +357,6 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       near.uniforms.uTime.value = simTimeSecs;
       far.uniforms.uTime.value = simTimeSecs;
     },
-    dispose() { near.dispose(); far.dispose(); },
+    dispose() { near.dispose(); far.dispose(); groundTex.value.dispose(); },
   };
 }

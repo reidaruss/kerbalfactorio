@@ -308,6 +308,53 @@ export const TERRAIN_ART_WET = /* glsl */`
   }
 `;
 
+/**
+ * THE GROUND TEXTURE MIX (RN-78), the fifth term: RN-77's four packed tiling
+ * detail fields (R grass clump, G rock grain, B granular, A clod) combined
+ * into ONE signed albedo modulation.
+ *
+ * THE COORDINATE DECISION, stated because the brief asked for it explicitly.
+ * The texture is sampled on `vChunkUv`, RN-50's per-quad chunk UV, and NOT on
+ * planet-centred metres, and at the near ring the UV can carry texture
+ * lookups outright. Three facts make that true and each was the failure mode
+ * of the alternative:
+ *
+ *  1. PRECISION. pM's float32 quantum at Forge's surface is 0.03125 m against
+ *     this texture's 3.5 mm texel, so a pM-keyed lookup would quantise to ~9
+ *     texels: stair-blocks wider than the near-field pixel footprint, plus a
+ *     dead uv derivative that breaks hardware mip selection (RN-45's arcs,
+ *     reached through the sampler instead of dFdx). The chunk UV's step is
+ *     0.883 mm on a depth-14 chunk, a quarter of a ground pixel at 2 m.
+ *  2. SEAMS. The repeat counts are INTEGERS per quad (16 and 5), so at a
+ *     shared edge between same-depth chunks one chunk's fract(k*1.0) meets
+ *     the other's fract(k*0.0) and the phase is continuous by arithmetic.
+ *     Non-integer frequencies (the bump's 14.0/5.3 octaves get away with it
+ *     on sub-metre lighting detail) would put a visible albedo step on every
+ *     chunk edge.
+ *  3. LOD. The UV normalises over the quad, so the texture's world size
+ *     doubles at every LOD step; that is RN-50's honest cost unchanged. It is
+ *     tolerable here for the same reason it was there, plus one better: the
+ *     term fades over 45 to 90 m, inside which the streamer is at max depth,
+ *     AND every channel is authored centred on 0.5, so a minified sample
+ *     converges to the modulation identity on its own before either gate acts.
+ *
+ * THE MIX. `matW` is the per-biome channel amplitude vector (BiomePalette's
+ * biomeMatWeights): weights, not a partition, so a biome states how much of
+ * each material character it shows and the sum IS its texture amplitude. The
+ * rock-grain branch rides `coverSel`, the same slope smoothstep that selects
+ * rock albedo, so scree and cliff faces grain up exactly where they stop
+ * being cover, with no second gate to disagree with the first. The 0.55 on
+ * the second scale keeps the 11.6 m repeat subordinate to the 3.6 m one; the
+ * 0.62 on the rock branch is the one number tuned by looking, and it is
+ * higher-contrast than any biome's cover because a rock face is all edges.
+ */
+export const TERRAIN_ART_TEX = /* glsl */`
+  float ofArtTexMix(vec4 g1, vec4 g2, vec4 matW, float coverSel) {
+    vec4 g = (g1 - vec4(0.5)) + 0.55 * (g2 - vec4(0.5));
+    return mix(g.g * 0.34, dot(g, matW), coverSel);
+  }
+`;
+
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
-  + TERRAIN_ART_WET;
+  + TERRAIN_ART_WET + TERRAIN_ART_TEX;
