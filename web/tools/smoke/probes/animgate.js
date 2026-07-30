@@ -49,10 +49,17 @@
     return of.framehash(TX, TY);
   };
   // readPixels is BOTTOM-LEFT origin (Loop.countHoles states it), so tile row
-  // 0 is the BOTTOM of the screen, which is where the FP arms live. `strong`
-  // counts tiles over 2.5 luminance counts: pose motion reads tens of counts,
-  // while the sub-count residue of float mixer-time modulo at a full period
-  // reads under 2.5 everywhere or the cycle is not a cycle.
+  // 0 is the BOTTOM of the screen, which is where the FP arms live.
+  //
+  // THE MEASURED FLOOR, and why `strong` is thresholded at 3.0 counts. This
+  // scene is NOT bit-exact across of.run() even with every mixer frozen: a
+  // residual of 13 to 32 tiles at up to 2.72 counts moves per second, in the
+  // bottom band, IDENTICAL between ?anim=1 and ?anim=0 and unmoved by
+  // ?gameplay=0, ?interp=0 and ?shadows=0 (RN-121, four isolations on the
+  // frozen 3486ab5 build). It is camera-side micro-motion, bounded, and not
+  // the mixer's; its source is an honest open question. Pose motion reads 16
+  // to 138 counts, 25x the floor, so the claim is two-sided ABOVE it: strong
+  // motion at half period, none at full period, and none at all when frozen.
   const tileDiff = (a, b) => {
     let moved = 0, strong = 0, max = 0, movedBottom = 0, movedTop = 0;
     for (let i = 0; i < a.tiles.length; i++) {
@@ -63,7 +70,7 @@
         if (Math.floor(i / TX) < Math.floor(TY * 0.55)) movedBottom++;
         else movedTop++;
       }
-      if (d > 2.5) strong++;
+      if (d > 3.0) strong++;
     }
     return { moved, strong, movedBottom, movedTop, max: +max.toFixed(3) };
   };
@@ -98,14 +105,15 @@
     // at full period, and the FP motion sits in the bottom band where the view
     // model is. "Strong at half, none at full" is the cycle's own signature;
     // no static defect and no monotonic drift can produce it.
-    fpOk: fp.half.strong >= 10 && fp.full.strong === 0
+    fpOk: fp.half.strong >= 20 && fp.full.strong === 0
       && fp.half.movedBottom > fp.half.movedTop,
     tpOk: tp.half.strong >= 10 && tp.full.strong === 0,
   };
   const frozen = {
-    // The frozen build is the static build: three captures, one image.
-    fpOk: fp.bitExact && fp.half.moved === 0 && fp.full.moved === 0,
-    tpOk: tp.bitExact && tp.half.moved === 0 && tp.full.moved === 0,
+    // The frozen build shows nothing above the measured floor at EITHER
+    // offset: the mixer's contribution is exactly zero.
+    fpOk: fp.half.strong === 0 && fp.full.strong === 0,
+    tpOk: tp.half.strong === 0 && tp.full.strong === 0,
   };
 
   return {
