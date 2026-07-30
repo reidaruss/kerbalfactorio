@@ -41,11 +41,15 @@ def kelp():
     p = hc.Parts()
     v, f, sm = hc.taper(0.055, 0.022, 0.0, 2.55, seg=5, lean=(0.10, 0.06),
                         smooth=False)
-    p.add(v, f, sm, "Leaf")
+    # The stipe is a stem on the Leaf role: a narrow band on the leaf card's
+    # opaque centreline, not the full three-repeat shell sweep.
+    p.add(v, f, sm, "Leaf",
+          uvs=pc.shell_uvs(v, 8101, u_scale=0.09, u_off=0.455))
     p.extend(pc.tuft(7, 2.90, 0.130, 0.045, 8101, bend=0.42, segs=5,
                      droop=0.10, role="Leaf", h_var=0.38))
-    p.add(*hc.lobe(0.20, 0.18, 0.10, seg=6, seed=8111, jit=0.30,
-                   rings=((0.0, 1.00), (0.60, 0.55)), role="Leaf"))
+    v, f, sm, roles = hc.lobe(0.20, 0.18, 0.10, seg=6, seed=8111, jit=0.30,
+                              rings=((0.0, 1.00), (0.60, 0.55)), role="Leaf")
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, 8111))
     return p
 
 
@@ -53,7 +57,8 @@ def kelp_lod2():
     p = hc.Parts()
     v, f, sm = hc.taper(0.055, 0.022, 0.0, 2.55, seg=3, lean=(0.10, 0.06),
                         smooth=False)
-    p.add(v, f, sm, "Leaf")
+    p.add(v, f, sm, "Leaf",
+          uvs=pc.shell_uvs(v, 8101, u_scale=0.09, u_off=0.455))
     p.extend(pc.tuft(3, 2.90, 0.220, 0.03, 8101, bend=0.42, segs=2,
                      droop=0.10, role="Leaf", h_var=0.20))
     return p
@@ -72,9 +77,14 @@ def seabed_rock():
             ((0.30, 0.18, 0.00), (0.28, 0.26, 0.26), "RockDark",
              (11, 13), 8131))
     for loc, r, role, facets, seed in plan:
-        p.add(*hc.lobe(r[0], r[1], r[2], loc=loc, seg=6, seed=seed, jit=0.20,
-                       rings=pc.SLAB_RINGS, role=role, ore_role="Leaf",
-                       ore_faces=facets))
+        v, f, sm, roles = hc.lobe(r[0], r[1], r[2], loc=loc, seg=6, seed=seed,
+                                  jit=0.20, rings=pc.SLAB_RINGS, role=role,
+                                  ore_role="Leaf", ore_faces=facets)
+        # Growth facets are the only foliage on the rock: shell UVs handed to
+        # the Leaf faces alone, the stone keeps its metres.
+        p.add(v, f, sm, roles,
+              uvs=pc.shell_uvs(v, seed, centre=(loc[0], loc[1])),
+              uv_roles={"Leaf"})
     return p
 
 

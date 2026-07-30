@@ -437,7 +437,14 @@
       "sockets": ["socket_hit", "socket_fell_pivot", "socket_item_pop"],
       "clips": ["Tree_Sway", "Tree_Fall"],
       "collision": "col_TreeConifer",
-      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"]
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"],
+      "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafDry", "OF_LeafLight"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
     "tree_broadleaf": {
       "glb": "assets/models/dist/nodes/tree_broadleaf.glb",
@@ -461,7 +468,14 @@
       "sockets": ["socket_hit", "socket_fell_pivot", "socket_item_pop"],
       "clips": ["Tree_Sway", "Tree_Fall"],
       "collision": "col_TreeBroadleaf",
-      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"]
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"],
+      "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafDry", "OF_LeafLight"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
     "bush_scrub": {
       "glb": "assets/models/dist/nodes/bush_scrub.glb",
@@ -480,7 +494,13 @@
       "sockets": ["socket_hit", "socket_item_pop"],
       "clips": ["Tree_Sway"],
       "collision": "col_BushScrub",
-      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"]
+      "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"],
+      "uv_authored_materials": ["OF_Leaf", "OF_LeafDry", "OF_LeafLight"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "water_pool": {
@@ -901,7 +921,11 @@
         {"node": "Beach_Driftwood_LOD0", "dims_xyz_m": [2.20, 0.36, 0.60], "max_tris": 160, "pivot": "ground"},
         {"node": "Beach_ShellCluster_LOD0", "dims_xyz_m": [0.58, 0.11, 0.50], "max_tris": 180, "pivot": "ground"},
         {"node": "Beach_DuneGrass_LOD0", "dims_xyz_m": [0.78, 0.88, 0.74], "max_tris": 100, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_LeafDry"],
+      "textures": {
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "props_plains": {
@@ -941,7 +965,14 @@
         {"node": "Plains_PebbleA_LOD0", "dims_xyz_m": [0.34, 0.18, 0.30], "max_tris": 60, "pivot": "ground"},
         {"node": "Plains_PebbleB_LOD0", "dims_xyz_m": [0.85, 0.50, 0.72], "max_tris": 100, "pivot": "ground"},
         {"node": "Plains_Shrub_LOD0", "dims_xyz_m": [1.05, 0.80, 0.95], "max_tris": 240, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_Grass", "OF_Leaf", "OF_LeafDry", "OF_LeafLight"],
+      "textures": {
+        "OF_Grass": {"family": "grass", "alpha": true, "max_px": 256},
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "props_forest": {
@@ -983,7 +1014,14 @@
         {"node": "Forest_FallenLog_LOD0", "dims_xyz_m": [2.60, 0.62, 0.68], "max_tris": 140, "pivot": "ground"},
         {"node": "Forest_MushroomCluster_LOD0", "dims_xyz_m": [0.46, 0.26, 0.42], "max_tris": 200, "pivot": "ground"},
         {"node": "Forest_Rock_LOD0", "dims_xyz_m": [1.45, 0.85, 1.25], "max_tris": 160, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafDry", "OF_LeafLight"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "props_hills": {
@@ -1015,7 +1053,11 @@
         {"node": "Hills_LargeBoulder_LOD0", "dims_xyz_m": [2.30, 1.55, 1.95], "max_tris": 180, "pivot": "ground"},
         {"node": "Hills_ScreePatch_LOD0", "dims_xyz_m": [1.70, 0.24, 1.45], "max_tris": 220, "pivot": "ground"},
         {"node": "Hills_Shrub_LOD0", "dims_xyz_m": [1.15, 0.78, 1.05], "max_tris": 200, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_Leaf"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "props_mountains": {
@@ -1110,7 +1152,11 @@
       "parts": [
         {"node": "Ocean_Kelp_LOD0", "dims_xyz_m": [0.98, 3.20, 0.88], "max_tris": 150, "pivot": "ground"},
         {"node": "Ocean_SeabedRock_LOD0", "dims_xyz_m": [1.85, 0.75, 1.55], "max_tris": 110, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_Leaf"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "props_moon": {
@@ -1263,7 +1309,13 @@
         {"node": "Canopy_Fir_LOD2", "dims_xyz_m": [2.60, 16.50, 2.60], "max_tris": 22, "pivot": "ground"},
         {"node": "Canopy_Broadleaf_LOD0", "dims_xyz_m": [9.00, 10.50, 9.00], "max_tris": 310, "pivot": "ground"},
         {"node": "Canopy_Broadleaf_LOD2", "dims_xyz_m": [9.00, 10.50, 9.00], "max_tris": 30, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight"],
+      "textures": {
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "detail_cards": {
@@ -1335,7 +1387,13 @@
         {"node": "Detail_BroadleafForb_LOD0", "dims_xyz_m": [0.60, 0.26, 0.56], "max_tris": 48, "pivot": "ground"},
         {"node": "Detail_FlowerSprig_LOD0", "dims_xyz_m": [0.46, 0.58, 0.42], "max_tris": 48, "pivot": "ground"},
         {"node": "Detail_SedgeRosette_LOD0", "dims_xyz_m": [0.66, 0.16, 0.62], "max_tris": 48, "pivot": "ground"}
-      ]
+      ],
+      "uv_authored_materials": ["OF_Grass", "OF_Leaf", "OF_LeafDry"],
+      "textures": {
+        "OF_Grass": {"family": "grass", "alpha": true, "max_px": 256},
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256}
+      }
     },
 
     "rocket_parts": {

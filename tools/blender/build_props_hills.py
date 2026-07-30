@@ -64,8 +64,10 @@ def hill_shrub():
                          ((-0.24, 0.14, 0.44), (0.24, 0.22, 0.26), 5147),
                          ((0.07, -0.26, 0.38), (0.22, 0.21, 0.24), 5153),
                          ((0.00, 0.00, 0.18), (0.20, 0.19, 0.22), 5159)):
-        p.add(*hc.lobe(r[0], r[1], r[2], loc=loc, seg=5, seed=seed, jit=0.24,
-                       role="Leaf"))
+        v, f, sm, roles = hc.lobe(r[0], r[1], r[2], loc=loc, seg=5, seed=seed,
+                                  jit=0.24, role="Leaf")
+        p.add(v, f, sm, roles,
+              uvs=pc.shell_uvs(v, seed, centre=(loc[0], loc[1])))
     return p
 
 

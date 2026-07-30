@@ -524,10 +524,23 @@ class MeshBuilder:
             # one are bytes with no reader.
             project_uv = not explicit and not name.startswith("col_")
         if explicit and not project_uv:
+            # MIXED coverage is legal and means: a vertex WITH a supplied UV
+            # keeps it (authored unit card space, see props_common's foliage
+            # UV helpers), and a vertex WITHOUT one falls back to the same
+            # box projection every untextured face already gets. That is what
+            # lets one prop mesh carry an alpha-card grass blade and a
+            # metre-projected pebble side by side without the blade's UVs
+            # leaking onto the stone or vice versa.
             layer = mesh.uv_layers.new(name="UVMap")
-            for loop in mesh.loops:
-                uv = self.uvs[loop.vertex_index]
-                layer.data[loop.index].uv = uv if uv is not None else (0.0, 0.0)
+            if all(uv is not None for uv in self.uvs):
+                for loop in mesh.loops:
+                    layer.data[loop.index].uv = self.uvs[loop.vertex_index]
+            else:
+                face_uv = self._project_uvs()
+                for poly, fuv in zip(mesh.polygons, face_uv):
+                    for k, li in enumerate(poly.loop_indices):
+                        uv = self.uvs[mesh.loops[li].vertex_index]
+                        layer.data[li].uv = uv if uv is not None else fuv[k]
         elif project_uv:
             layer = mesh.uv_layers.new(name="UVMap")
             face_uv = self._project_uvs()

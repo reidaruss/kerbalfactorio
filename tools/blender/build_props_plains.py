@@ -140,7 +140,7 @@ def _flower(height, azim, bend, seed, radius):
     p = hc.Parts()
     droop = 0.06
     p.add(*pc.blade(height, 0.022, azim, bend, segs=2, droop=droop),
-          role="Grass")
+          role="Grass", uvs=pc.blade_uvs("Grass", 2, seed))
     a = math.radians(azim)
     tip = (math.cos(a) * bend, math.sin(a) * bend, height * (1.0 - droop))
     p.add(*hc.ngon(5, radius, 0.0, loc=tip, seed=seed, jit=0.18),
@@ -203,7 +203,10 @@ def shrub():
         v, f, sm, roles = hc.lobe(r[0], r[1], r[2], loc=loc, seg=6, seed=seed,
                                   jit=0.22, role=role, ore_role=hi,
                                   ore_faces=top_fan if hi else ())
-        p.add(v, f, sm, roles)
+        # Every face of a shrub lobe is a foliage role, so the whole lobe
+        # takes the shell UV rule.
+        p.add(v, f, sm, roles,
+              uvs=pc.shell_uvs(v, seed, centre=(loc[0], loc[1])))
     return p
 
 

@@ -117,6 +117,11 @@ def _bands(rings, seg=6, seed=1, jit=0.07, phase_deg=0.0, lean=(0.0, 0.0),
     its top is buried in the crown, so two caps there are triangles no camera
     can reach.
 
+    Returns (verts, faces, smooth, roles, uvs, uv_roles), splat-ready for
+    Parts.add: a stack whose roles are ALL foliage carries authored shell UVs
+    (props_common.shell_uvs), a bark stack carries None and keeps its
+    box-projected metres.
+
     Triangles: caps * (seg - 2) + 2 * seg * (len(rings) - 1).
     """
     n = max(3, seg)
@@ -152,7 +157,9 @@ def _bands(rings, seg=6, seed=1, jit=0.07, phase_deg=0.0, lean=(0.0, 0.0),
             j = (i + 1) % n
             faces.append((lo + i, lo + j, hi + j, hi + i))
             froles.append(band_roles[b])
-    return verts, faces, [False] * len(faces), froles
+    uvs = (pc.shell_uvs(verts, seed, centre=(loc[0], loc[1]))
+           if set(band_roles) <= pc.FOLIAGE_ROLES else None)
+    return verts, faces, [False] * len(faces), froles, uvs, None
 
 
 def _dome(rx, ry, rz, loc=(0.0, 0.0, 0.0), seg=9, seed=1, jit=0.13,
@@ -204,7 +211,9 @@ def _dome(rx, ry, rz, loc=(0.0, 0.0, 0.0), seg=9, seed=1, jit=0.13,
         j = (i + 1) % n
         faces.append((last + i, last + j, top))
         froles.append(bands[-1])
-    return verts, faces, [False] * len(faces), froles
+    # A dome is always foliage, so it always carries authored shell UVs.
+    return (verts, faces, [False] * len(faces), froles,
+            pc.shell_uvs(verts, seed, centre=(loc[0], loc[1])), None)
 
 
 def _cone(r_bot, rz, loc, seg=5, seed=1, jit=0.05, r_mid=None, mid_z=0.52,
@@ -229,7 +238,12 @@ def _cone(r_bot, rz, loc, seg=5, seed=1, jit=0.05, r_mid=None, mid_z=0.52,
     roles[0] = under
     for i in range(len(roles) - n, len(roles)):
         roles[i] = tip
-    return v, f, sm, roles
+    # All three zones are foliage roles: shell UVs over the whole cone. The
+    # ripple is for the flat base fan, the only face `under` owns here: it
+    # needs a nonzero v extent of its own (see props_common.shell_uvs).
+    return (v, f, sm, roles,
+            pc.shell_uvs(v, seed, centre=(loc[0], loc[1]), v_ripple=0.05),
+            None)
 
 
 # ===========================================================================
@@ -421,7 +435,7 @@ def broadleaf_lod2():
     roles[0] = "LeafDeep"
     for i in range(len(roles) - 6, len(roles)):
         roles[i] = "LeafLight"
-    p.add(v, f, sm, roles)
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, 6803, v_ripple=0.05))
     return p
 
 

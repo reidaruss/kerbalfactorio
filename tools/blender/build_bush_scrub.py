@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import of_lib as of            # noqa: E402
 import harvest_common as hc    # noqa: E402
 import tree_common as tc       # noqa: E402
+import props_common as pc      # noqa: E402  (foliage card UV helpers)
 
 NAME = "BushScrub"
 OUT = of.dist_path("nodes", "bush_scrub.glb")
@@ -61,15 +62,19 @@ def _bush(count, role_of, seg_bias=0, jit=0.20):
         if role == "Leaf":
             # Two-tone: base/interior Leaf, sunlit top LeafLight. Real volume
             # for the same triangle count a flat-coloured blob already cost.
+            # The lobe is a closed SHELL, so it takes the shell UV rule
+            # (azimuth u at three repeats, elevation v off the clamped rows).
             v, f, sm, roles = tc.canopy_mass(
                 r[0], r[1], h, loc, seg=s, seed=SEED + k * 29, jit=jit,
                 rings=(0.30, 0.66), radii=(0.82, 0.80),
                 bands=("Leaf", "Leaf", "LeafLight"))
-            p.add(v, f, sm, roles)
+            p.add(v, f, sm, roles,
+                  uvs=pc.shell_uvs(v, SEED + k * 29, centre=(loc[0], loc[1])))
         else:
-            p.add(*hc.blob(r[0], r[1], h, loc, seg=s, seed=SEED + k * 29,
-                           jit=jit, rings=(0.30, 0.66), radii=(0.82, 0.80)),
-                  role=role)
+            v, f, sm = hc.blob(r[0], r[1], h, loc, seg=s, seed=SEED + k * 29,
+                               jit=jit, rings=(0.30, 0.66), radii=(0.82, 0.80))
+            p.add(v, f, sm, role,
+                  uvs=pc.shell_uvs(v, SEED + k * 29, centre=(loc[0], loc[1])))
     return p
 
 
@@ -96,11 +101,12 @@ def low_lod0():
     _stem(p)
     for k in (3, 4):
         loc, r, h, seg = LOBES[k]
-        p.add(*hc.blob(r[0] * 0.72, r[1] * 0.72, h * 0.62,
-                       (loc[0], loc[1], loc[2] * 0.62), seg=max(4, seg - 1),
-                       seed=SEED + k * 29, jit=0.22,
-                       rings=(0.30, 0.66), radii=(0.82, 0.80)),
-              role="LeafDry")
+        v, f, sm = hc.blob(r[0] * 0.72, r[1] * 0.72, h * 0.62,
+                           (loc[0], loc[1], loc[2] * 0.62), seg=max(4, seg - 1),
+                           seed=SEED + k * 29, jit=0.22,
+                           rings=(0.30, 0.66), radii=(0.82, 0.80))
+        p.add(v, f, sm, "LeafDry",
+              uvs=pc.shell_uvs(v, SEED + k * 29, centre=(loc[0], loc[1])))
     return p
 
 
@@ -108,10 +114,11 @@ def low_lod1():
     p = hc.Parts()
     _stem(p, seg=4)
     loc, r, h, _ = LOBES[3]
-    p.add(*hc.blob(r[0] * 0.80, r[1] * 0.80, h * 0.66,
-                   (loc[0], loc[1], loc[2] * 0.62), seg=4, seed=SEED + 87,
-                   jit=0.20, rings=(0.32, 0.68), radii=(0.84, 0.78)),
-          role="LeafDry")
+    v, f, sm = hc.blob(r[0] * 0.80, r[1] * 0.80, h * 0.66,
+                       (loc[0], loc[1], loc[2] * 0.62), seg=4, seed=SEED + 87,
+                       jit=0.20, rings=(0.32, 0.68), radii=(0.84, 0.78))
+    p.add(v, f, sm, "LeafDry",
+          uvs=pc.shell_uvs(v, SEED + 87, centre=(loc[0], loc[1])))
     return p
 
 

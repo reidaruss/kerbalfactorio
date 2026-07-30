@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import of_lib as of            # noqa: E402
 import harvest_common as hc    # noqa: E402
 import tree_common as tc       # noqa: E402
+import props_common as pc      # noqa: E402  (foliage card UV helpers)
 
 NAME = "TreeBroadleaf"
 OUT = of.dist_path("nodes", "tree_broadleaf.glb")
@@ -117,7 +118,7 @@ def _spray(p, centre, radii, count, seed, dry=False):
     cx, cy, cz = centre
     rx, ry, rz = radii
     rm = (rx + ry + rz) / 3.0
-    for _ in range(count):
+    for ci in range(count):
         th = 2.0 * math.pi * nxt()
         # Elevation biased upward: the sine is drawn from -0.62 to 0.94, so
         # roughly two thirds of the cards clothe the sunlit upper surface and
@@ -185,7 +186,11 @@ def _spray(p, centre, radii, count, seed, dry=False):
             role = "Leaf" if nxt() > 0.45 else "LeafDeep"
         else:
             role = "LeafLight" if nxt() > 0.38 else "Leaf"
-        p.add(verts, [(0, 1, 2, 3)], [False], role)
+        # A crown card is a whole leaf: the full "leaf" card once, upright
+        # in the card's own (u along, w up-slope) frame, mirror hashed from
+        # the card index so no rng draw moves the geometry.
+        p.add(verts, [(0, 1, 2, 3)], [False], role,
+              uvs=pc.quad_card_uvs(1, seed * 8191 + ci))
     return p
 
 
@@ -223,20 +228,23 @@ def full_lod1():
           role="Bark")
     p.add(*hc.taper(0.17, 0.10, 2.05, 3.25, seg=5, lean=(0.58, -0.30)),
           role="Bark")
-    p.add(*hc.blob(1.35, 1.25, 1.55, (-0.78, 0.30, 4.05), seg=6,
-                   seed=SEED + 1, rings=(0.30, 0.68), radii=(0.85, 0.80)),
-          role="Leaf")
-    p.add(*hc.blob(1.25, 1.35, 1.45, (0.72, -0.38, 3.95), seg=6,
-                   seed=SEED + 2, rings=(0.30, 0.68), radii=(0.85, 0.80)),
-          role="Leaf")
+    v, f, sm = hc.blob(1.35, 1.25, 1.55, (-0.78, 0.30, 4.05), seg=6,
+                       seed=SEED + 1, rings=(0.30, 0.68), radii=(0.85, 0.80))
+    p.add(v, f, sm, "Leaf",
+          uvs=pc.shell_uvs(v, SEED + 1, centre=(-0.78, 0.30)))
+    v, f, sm = hc.blob(1.25, 1.35, 1.45, (0.72, -0.38, 3.95), seg=6,
+                       seed=SEED + 2, rings=(0.30, 0.68), radii=(0.85, 0.80))
+    p.add(v, f, sm, "Leaf",
+          uvs=pc.shell_uvs(v, SEED + 2, centre=(0.72, -0.38)))
     return p
 
 
 def _impostor(width, height, z0, trunk_r, trunk_h):
-    # Never drawn by the client today; kept exactly as before.
+    # Never drawn by the client today; kept as before apart from the card UVs.
     p = hc.Parts()
     p.add(*hc.taper(trunk_r, trunk_r * 0.8, 0.0, trunk_h, seg=4), role="Bark")
-    p.add(*hc.crossed_quads(width, height, z0=z0), role="Leaf")
+    v, f, sm = hc.crossed_quads(width, height, z0=z0)
+    p.add(v, f, sm, "Leaf", uvs=pc.quad_card_uvs(2, int(width * 1000)))
     return p
 
 
@@ -266,9 +274,10 @@ def half_lod1():
     p.add(*hc.taper(0.34, 0.22, 0.0, 2.20, seg=6), role="Bark")
     p.add(*hc.taper(0.18, 0.11, FORK_Z, 3.20, seg=5, lean=(-0.55, 0.20)),
           role="Bark")
-    p.add(*hc.blob(1.05, 0.98, 1.20, (-0.66, 0.26, 3.75), seg=6,
-                   seed=SEED + 11, rings=(0.30, 0.68), radii=(0.85, 0.80)),
-          role="Leaf")
+    v, f, sm = hc.blob(1.05, 0.98, 1.20, (-0.66, 0.26, 3.75), seg=6,
+                       seed=SEED + 11, rings=(0.30, 0.68), radii=(0.85, 0.80))
+    p.add(v, f, sm, "Leaf",
+          uvs=pc.shell_uvs(v, SEED + 11, centre=(-0.66, 0.26)))
     return p
 
 
@@ -285,7 +294,8 @@ def low_lod0():
     p.add(v, f, sm, roles)
     v, f, sm = hc.blob(0.46, 0.44, 0.56, (-0.34, 0.14, 2.95), seg=6,
                        seed=SEED + 21, jit=0.20)
-    p.add(v, f, sm, role="LeafDry")
+    p.add(v, f, sm, role="LeafDry",
+          uvs=pc.shell_uvs(v, SEED + 21, centre=(-0.34, 0.14)))
     return p
 
 
@@ -293,9 +303,10 @@ def low_lod1():
     # Unchanged, not drawn by the client.
     p = hc.Parts()
     p.add(*hc.taper(0.34, 0.22, 0.0, 2.20, seg=6), role="Bark")
-    p.add(*hc.blob(0.46, 0.44, 0.56, (-0.34, 0.14, 2.95), seg=5,
-                   seed=SEED + 21, rings=(0.32, 0.70), radii=(0.85, 0.78)),
-          role="LeafDry")
+    v, f, sm = hc.blob(0.46, 0.44, 0.56, (-0.34, 0.14, 2.95), seg=5,
+                       seed=SEED + 21, rings=(0.32, 0.70), radii=(0.85, 0.78))
+    p.add(v, f, sm, "LeafDry",
+          uvs=pc.shell_uvs(v, SEED + 22, centre=(-0.34, 0.14)))
     return p
 
 
@@ -305,14 +316,18 @@ def stump_lod0():
     p = hc.Parts()
     p.add(*hc.taper(0.44, 0.30, 0.0, 0.40, seg=8), role="Bark")
     p.add(*hc.taper(0.29, 0.27, 0.38, 0.70, seg=8), role="Bark")
-    p.add(*hc.ngon(8, 0.265, 0.71, seed=SEED + 5, jit=0.04), role="LeafDry")
+    # Sapwood cut face on the LeafDry role: disc UVs on the card's opaque
+    # centre, same as the conifer stump.
+    v, f, sm = hc.ngon(8, 0.265, 0.71, seed=SEED + 5, jit=0.04)
+    p.add(v, f, sm, "LeafDry", uvs=pc.disc_uvs(v))
     return p
 
 
 def stump_lod1():
     p = hc.Parts()
     p.add(*hc.taper(0.42, 0.28, 0.0, 0.68, seg=6), role="Bark")
-    p.add(*hc.ngon(6, 0.275, 0.69, seed=SEED + 6, jit=0.03), role="LeafDry")
+    v, f, sm = hc.ngon(6, 0.275, 0.69, seed=SEED + 6, jit=0.03)
+    p.add(v, f, sm, "LeafDry", uvs=pc.disc_uvs(v))
     return p
 
 

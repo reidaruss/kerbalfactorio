@@ -67,6 +67,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import of_lib as of            # noqa: E402
 import harvest_common as hc    # noqa: E402
 import tree_common as tc       # noqa: E402
+import props_common as pc      # noqa: E402  (foliage card UV helpers)
 
 NAME = "TreeConifer"
 OUT = of.dist_path("nodes", "tree_conifer.glb")
@@ -173,11 +174,12 @@ def _stubs(p):
 
 
 def _leader(p):
-    """The green stem tip above the bark trunk."""
+    """The green stem tip above the bark trunk. A closed green sweep, so it
+    takes the SHELL UV rule (azimuth u, elevation v), not the blade rule."""
     v, f, sm, roles = tc.taper_bands(LEADER, seg=6, seed=SEED + 9, jit=0.16,
                                      phase_deg=18,
                                      roles=["Leaf", "Leaf", "LeafLight"])
-    p.add(v, f, sm, roles)
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, SEED + 9))
     return p
 
 
@@ -194,7 +196,7 @@ def _stem_r(z):
 
 
 def _frond(nxt, az_deg, r0, r1, z0, droop, roles, kink=0.30, wf=0.21,
-           wob=0.055):
+           wob=0.055, mirror=False):
     """ONE branch blade. Five vertices, three triangles, and no back side.
 
     This is the primitive the whole W12 pass turns on. A closed skirt tier is
@@ -229,7 +231,16 @@ def _frond(nxt, az_deg, r0, r1, z0, droop, roles, kink=0.30, wf=0.21,
     verts = [pt(r0, -w0, z0), pt(r0, w0, z0),
              pt(rm, -w1, zm), pt(rm, w1, zm),
              (r1 * ca, r1 * sa, z0 - droop)]
-    return verts, [(0, 2, 3, 1), (2, 4, 3)], [False, False], list(roles)
+    # Authored card UVs: the "leaf" texture is ONE full frond, so the blade
+    # spans the whole card width (u 0..1, tip on the centreline) and v runs
+    # base -> tip along the blade's own length (base ring, mid ring at 0.55,
+    # tip). `mirror` flips u for variety; it is hashed by the CALLER from the
+    # blade index so no rng draw is added here (positions must not move).
+    ul, ur = (1.0, 0.0) if mirror else (0.0, 1.0)
+    vb, vm, vt = pc._tip_v(0.0), pc._tip_v(0.55), pc._tip_v(1.0)
+    uvs = [(ul, vb), (ur, vb), (ul, vm), (ur, vm), (0.5, vt)]
+    return (verts, [(0, 2, 3, 1), (2, 4, 3)], [False, False], list(roles),
+            uvs)
 
 
 def _whorl(p, z, count, r_out, phase_deg, roles, seed):
@@ -249,9 +260,10 @@ def _whorl(p, z, count, r_out, phase_deg, roles, seed):
         # mottles instead of banding into horizontal stripes of one colour.
         rr = roles if nxt() > 0.26 else (roles[0], roles[0])
         r1 = r0 + (r_out - r0) * f
-        v, fc, sm, rl = _frond(nxt, az, r0, r1, zz,
-                               (r1 - r0) * (0.38 + 0.24 * nxt()), rr)
-        p.add(v, fc, sm, rl)
+        v, fc, sm, rl, uvs = _frond(nxt, az, r0, r1, zz,
+                                    (r1 - r0) * (0.38 + 0.24 * nxt()), rr,
+                                    mirror=pc._hash01(seed * 131071 + i) < 0.5)
+        p.add(v, fc, sm, rl, uvs=uvs)
     return p
 
 
@@ -275,7 +287,8 @@ def full_lod1():
                                (0.96, 0.34, 3.45, 4.95, 20),
                                (0.66, 0.24, 4.70, 5.85, 40),
                                (0.34, 0.05, 5.70, 6.55, 12)):
-        p.add(*hc.taper(r0, r1, z0, z1, seg=6, phase_deg=ph), role="Leaf")
+        v, f, sm = hc.taper(r0, r1, z0, z1, seg=6, phase_deg=ph)
+        p.add(v, f, sm, "Leaf", uvs=pc.shell_uvs(v, int(z0 * 100)))
     return p
 
 
@@ -284,7 +297,8 @@ def _impostor(width, height, z0, trunk_r, trunk_h):
     client today (NodeBatch.ts is LOD0-only); kept exactly as before."""
     p = hc.Parts()
     p.add(*hc.taper(trunk_r, trunk_r * 0.7, 0.0, trunk_h, seg=4), role="Bark")
-    p.add(*hc.crossed_quads(width, height, z0=z0), role="Leaf")
+    v, f, sm = hc.crossed_quads(width, height, z0=z0)
+    p.add(v, f, sm, "Leaf", uvs=pc.quad_card_uvs(2, int(width * 1000)))
     return p
 
 
@@ -301,11 +315,11 @@ def half_lod0():
     v, f, sm, roles = tc.taper_bands(((0.22, 4.80), (0.11, 5.70)), seg=8,
                                      seed=SEED + 203, jit=0.14, phase_deg=40,
                                      roles="LeafDry")
-    p.add(v, f, sm, roles)
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, SEED + 203))
     v, f, sm, roles = tc.taper_bands(((0.20, 5.60), (0.05, 6.40)), seg=7,
                                      seed=SEED + 204, jit=0.12, phase_deg=12,
                                      roles="LeafDry")
-    p.add(v, f, sm, roles)
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, SEED + 204))
     return p
 
 
@@ -316,7 +330,8 @@ def half_lod1():
     for r0, r1, z0, z1, role in ((0.86, 0.34, 2.30, 3.70, "Leaf"),
                                  (0.70, 0.26, 3.55, 4.80, "Leaf"),
                                  (0.48, 0.05, 4.65, 6.40, "LeafDry")):
-        p.add(*hc.taper(r0, r1, z0, z1, seg=6), role=role)
+        v, f, sm = hc.taper(r0, r1, z0, z1, seg=6)
+        p.add(v, f, sm, role, uvs=pc.shell_uvs(v, int(z0 * 100)))
     return p
 
 
@@ -333,10 +348,10 @@ def low_lod0():
     v, f, sm, roles = tc.taper_bands(((0.40, 5.05), (0.12, 5.95)), seg=8,
                                      seed=SEED + 301, jit=0.10, phase_deg=15,
                                      roles="LeafDry")
-    p.add(v, f, sm, roles)
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, SEED + 301))
     v, f, sm, roles = tc.taper_bands(((0.20, 5.85), (0.05, 6.35)), seg=6,
                                      seed=SEED + 302, jit=0.08, roles="LeafDry")
-    p.add(v, f, sm, roles)
+    p.add(v, f, sm, roles, uvs=pc.shell_uvs(v, SEED + 302))
     return p
 
 
@@ -344,7 +359,8 @@ def low_lod1():
     # Unchanged, not drawn by the client.
     p = hc.Parts()
     p.add(*hc.taper(0.26, 0.105, 0.0, TRUNK_Z1, seg=6), role="Bark")
-    p.add(*hc.taper(0.40, 0.05, 5.05, 6.35, seg=6), role="LeafDry")
+    v, f, sm = hc.taper(0.40, 0.05, 5.05, 6.35, seg=6)
+    p.add(v, f, sm, "LeafDry", uvs=pc.shell_uvs(v, SEED + 303))
     return p
 
 
@@ -354,14 +370,18 @@ def stump_lod0():
     p = hc.Parts()
     p.add(*hc.taper(0.34, 0.21, 0.0, 0.42, seg=8), role="Bark")
     p.add(*hc.taper(0.21, 0.19, 0.40, 0.62, seg=8), role="Bark")
-    p.add(*hc.ngon(8, 0.185, 0.63, seed=SEED + 5, jit=0.04), role="LeafDry")
+    # The sapwood cut face rides the LeafDry role: disc UVs on the card's
+    # opaque centre, so the alpha test never cuts a hole in a stump.
+    v, f, sm = hc.ngon(8, 0.185, 0.63, seed=SEED + 5, jit=0.04)
+    p.add(v, f, sm, "LeafDry", uvs=pc.disc_uvs(v))
     return p
 
 
 def stump_lod1():
     p = hc.Parts()
     p.add(*hc.taper(0.32, 0.20, 0.0, 0.60, seg=6), role="Bark")
-    p.add(*hc.ngon(6, 0.19, 0.61, seed=SEED + 6, jit=0.03), role="LeafDry")
+    v, f, sm = hc.ngon(6, 0.19, 0.61, seed=SEED + 6, jit=0.03)
+    p.add(v, f, sm, "LeafDry", uvs=pc.disc_uvs(v))
     return p
 
 

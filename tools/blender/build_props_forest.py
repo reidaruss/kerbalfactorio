@@ -75,10 +75,14 @@ def fern_lod2():
 
 def _stub(r0, r1, z0, z1, loc, lean, seed, seg=5):
     """A branch stub with a PALE SNAPPED END. hc.taper puts the top cap at
-    face index 1, so the break gets its own role for the cost of one list."""
+    face index 1, so the break gets its own role for the cost of one list.
+    The snapped end rides the LeafDry role, so it gets disc UVs on the leaf
+    card's opaque centre (see props_common.disc_uvs) and the bark sides keep
+    their box-projected metres."""
     v, f, sm = hc.taper(r0, r1, z0, z1, loc=loc, seg=seg, lean=lean,
                         phase_deg=(seed % 9) * 11.0, smooth=False)
-    return v, f, sm, ["Bark", "LeafDry"] + ["Bark"] * (len(f) - 2)
+    return (v, f, sm, ["Bark", "LeafDry"] + ["Bark"] * (len(f) - 2),
+            pc.disc_uvs(v), {"LeafDry"})
 
 
 def dead_tree():
@@ -110,8 +114,11 @@ def fallen_log():
                       seg=7, seed=4161, jit=0.10))
     for loc, r, seed in (((-0.55, 0.02, 0.20), (0.30, 0.16, 0.09), 4171),
                          ((0.62, -0.04, 0.19), (0.24, 0.14, 0.08), 4177)):
-        p.add(*hc.lobe(r[0], r[1], r[2], loc=loc, seg=5, seed=seed, jit=0.26,
-                       rings=((0.0, 1.00), (0.65, 0.60)), role="Leaf"))
+        v, f, sm, roles = hc.lobe(r[0], r[1], r[2], loc=loc, seg=5, seed=seed,
+                                  jit=0.26, rings=((0.0, 1.00), (0.65, 0.60)),
+                                  role="Leaf")
+        p.add(v, f, sm, roles,
+              uvs=pc.shell_uvs(v, seed, centre=(loc[0], loc[1])))
     return p
 
 
@@ -127,7 +134,12 @@ def mushroom_cluster():
     for (x, y), rs, h, rc, seed in plan:
         v, f, sm = hc.taper(rs, rs * 0.80, 0.0, h, loc=(x, y, 0.0), seg=4,
                             smooth=False)
-        p.add(v, f, sm, "LeafDry")
+        # A stalk is mushroom flesh riding the LeafDry role: a NARROW band on
+        # the card's centreline (the opaque midrib), v held off the clamped
+        # rows, so the alpha test cannot eat the stalk.
+        p.add(v, f, sm, "LeafDry",
+              uvs=pc.shell_uvs(v, seed, centre=(x, y), u_scale=0.09,
+                               u_off=0.455, v_lo=0.20, v_hi=0.65))
         p.add(*hc.lobe(rc, rc * 0.92, h * 0.30, loc=(x, y, h * 0.86), seg=5,
                        seed=seed, jit=0.14,
                        rings=((0.0, 1.00), (0.55, 0.66)), role="Bark"))

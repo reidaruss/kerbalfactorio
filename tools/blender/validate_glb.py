@@ -35,6 +35,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 CONTRACTS = os.path.join(HERE, "contracts.json")
 
+# The texture manifest the `textures` contract key is checked against. A
+# module global (not a constant folded into the check) so a test can point a
+# validation run at a doctored copy and prove the check can actually fail.
+SURFACES_PATH = os.path.join(ROOT, "assets", "textures", "dist",
+                             "surfaces.json")
+_SURFACES_CACHE = {}
+
+
+def load_surfaces(path):
+    """surfaces.json, parsed once per path per run."""
+    if path not in _SURFACES_CACHE:
+        with open(path, "r", encoding="utf-8") as fh:
+            _SURFACES_CACHE[path] = json.load(fh)
+    return _SURFACES_CACHE[path]
+
 
 # --------------------------------------------------------------------------
 # GLB container
@@ -651,7 +666,25 @@ def validate(asset, spec, verbose=False):
     # `uv_mode: "authored"` in the contract and are exempt from (2) only. The
     # engine plume is the one: its V is a distance-down-the-plume shader input,
     # which is a parameter and not a surface measurement.
+    #
+    # (3) PER-MATERIAL authored exemption (the foliage card pass). An asset
+    #     lists material NAMES in `uv_authored_materials`; every render
+    #     primitive wearing one of those materials carries hand-authored UNIT
+    #     card UVs instead of metres, so it is excluded from the equality and
+    #     instead asserts the card-space envelope: every v in [-0.001, 1.001]
+    #     (v clamps at the card edges), every u finite with |u| <= 8 (u wraps,
+    #     so a shell at three repeats or a band crossing 1.0 is legal, but a
+    #     metre-projected UV that slipped through is not), and a nonzero UV
+    #     bounding-box span in both axes (an all-one-point layer is a stub,
+    #     not an authoring). Everything NOT in the list keeps the equality.
     uv_mode = spec.get("uv_mode", "projected")
+    uv_auth = set(spec.get("uv_authored_materials", []))
+    mat_names = [m.get("name", "") for m in gltf.get("materials", [])]
+
+    def prim_mat(prim):
+        mi = prim.get("material")
+        return mat_names[mi] if mi is not None and mi < len(mat_names) else ""
+
     render_meshes = []
     for idx, (nname, _, _) in walked.items():
         mi = gltf["nodes"][idx].get("mesh")
@@ -675,6 +708,17 @@ def validate(asset, spec, verbose=False):
         interp_uv = []
         for nname, mi in render_meshes:
             for p in gltf["meshes"][mi]["primitives"]:
+                if prim_mat(p) in uv_auth:
+                    # Authored card UVs: checked below, not against the
+                    # equality. Their values still join the hull, because a
+                    # decimated NON-authored primitive is collapsed inside a
+                    # mesh whose UV layer contains both kinds, so its blends
+                    # can legitimately land between a metre value and a card
+                    # value.
+                    interp_hull = read_accessor(gltf, binc,
+                                                p["attributes"]["TEXCOORD_0"])
+                    exact_uv.extend(interp_hull)
+                    continue
                 pos = read_accessor(gltf, binc, p["attributes"]["POSITION"])
                 uvs = read_accessor(gltf, binc, p["attributes"]["TEXCOORD_0"])
                 ok = len(pos) == len(uvs) and len(pos) > 0
@@ -705,7 +749,20 @@ def validate(asset, spec, verbose=False):
             # and count, per standing rule 11: "0 conflicts" over geometry the
             # method never looked at is the shape of a check that passes on
             # nothing.
-            SLACK = 1e-3
+            #
+            # TWO slacks, because there are two regimes. On a pure metre
+            # layer the quadric collapse's worst measured overshoot is
+            # 8.3e-5, and 1e-3 stands an order above it. On a MIXED layer
+            # (an asset with uv_authored_materials: card-space foliage UVs
+            # and metre bark UVs in ONE mesh) the decimator can collapse an
+            # edge that straddles the card/metre boundary, and the quadric
+            # UV placement overshoots in proportion to the discontinuity it
+            # straddles, which is order-metres, not order-1e-4. Measured on
+            # the ten foliage assets the worst is 1.2e-2 (props_forest), so
+            # the mixed slack is 2e-2: one significant figure of headroom,
+            # with the measured worst printed on every run so drift toward
+            # the bound is visible rather than absorbed.
+            SLACK = 2e-2 if uv_auth else 1e-3
             lo_u = min(t[0] for t in exact_uv); hi_u = max(t[0] for t in exact_uv)
             lo_v = min(t[1] for t in exact_uv); hi_v = max(t[1] for t in exact_uv)
             worst_out = 0.0
@@ -720,6 +777,86 @@ def validate(asset, spec, verbose=False):
                           "" if len(names) <= 3 else ", +%d" % (len(names) - 3),
                           len(interp_uv), max(worst_out, 0.0), SLACK))
         r.check("uv_metres", ok, detail)
+
+    # --- authored card UVs, per material (the foliage pass) ---
+    if uv_auth and not no_uv:
+        bad, n_auth = [], 0
+        for nname, mi in render_meshes:
+            for p in gltf["meshes"][mi]["primitives"]:
+                mname = prim_mat(p)
+                if mname not in uv_auth:
+                    continue
+                n_auth += 1
+                uvs = read_accessor(gltf, binc, p["attributes"]["TEXCOORD_0"])
+                if not uvs:
+                    bad.append("%s/%s: empty TEXCOORD_0" % (nname, mname))
+                    continue
+                bad_v = sum(1 for (u, v) in uvs
+                            if not (-0.001 <= v <= 1.001))
+                bad_u = sum(1 for (u, v) in uvs
+                            if not (math.isfinite(u) and abs(u) <= 8.0))
+                if bad_v:
+                    bad.append("%s/%s: %d/%d v outside [-0.001, 1.001]"
+                               % (nname, mname, bad_v, len(uvs)))
+                if bad_u:
+                    bad.append("%s/%s: %d/%d u not finite or |u| > 8"
+                               % (nname, mname, bad_u, len(uvs)))
+                su = max(u for u, v in uvs) - min(u for u, v in uvs)
+                sv = max(v for u, v in uvs) - min(v for u, v in uvs)
+                if su <= 1e-6 or sv <= 1e-6:
+                    bad.append("%s/%s: uv bbox span is zero (u %.3g, v %.3g)"
+                               % (nname, mname, su, sv))
+        r.check("uv_authored", not bad and n_auth > 0,
+                "%d authored-material prim(s) inside the unit card envelope"
+                % n_auth if not bad and n_auth else
+                ("no primitive wears %s" % sorted(uv_auth) if not bad
+                 else "; ".join(bad[:4])))
+
+    # --- textures: the role -> card-family contract (surfaces.json) ---
+    tex = spec.get("textures", {})
+    if tex:
+        bad = []
+        try:
+            fams = load_surfaces(SURFACES_PATH).get("families", {})
+        except Exception as exc:
+            fams, bad = {}, ["cannot read %s: %s" % (SURFACES_PATH, exc)]
+        for mname in sorted(tex):
+            t = tex[mname]
+            fam = fams.get(t.get("family", ""))
+            if fam is None:
+                if fams:
+                    bad.append("%s: family %r not in surfaces.json"
+                               % (mname, t.get("family")))
+                continue
+            if "albedo" not in fam:
+                bad.append("%s: family %r declares no albedo map"
+                           % (mname, t["family"]))
+            if fam.get("size_px", 1 << 30) > t.get("max_px", 0):
+                bad.append("%s: family %r size_px %s > max_px %s"
+                           % (mname, t["family"], fam.get("size_px"),
+                              t.get("max_px")))
+            if t.get("alpha") and "alpha_test" not in fam:
+                # The grey-white silent-drop failure mode: an alpha map on a
+                # consumer that does NOT alpha-test never discards a texel, so
+                # the background baked into the card renders as grey-white
+                # fringes and solid rectangles, and nothing errors anywhere.
+                bad.append("%s: family %r carries alpha but declares no "
+                           "alpha_test - a consumer that does not alpha-test "
+                           "renders the background baked into the card"
+                           % (mname, t["family"]))
+            if mname not in uv_auth:
+                # An alpha cutout sampled through metre-projected UVs is a
+                # stencil applied at arbitrary world coordinates: it cuts
+                # arbitrary holes. The per-asset authored list is the opt-in.
+                bad.append("%s: textured role missing from "
+                           "uv_authored_materials - an alpha cutout over "
+                           "metre-projected UVs cuts arbitrary holes" % mname)
+            if mname not in mat_names:
+                bad.append("%s: role is not among this GLB's materials %s"
+                           % (mname, mat_names))
+        r.check("textures", not bad,
+                "%d textured role(s) match surfaces.json" % len(tex)
+                if not bad else "; ".join(bad[:4]))
 
     # --- collision proxy ---
     # One name for a single-asset file; a LIST for a biome atlas, where only

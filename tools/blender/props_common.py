@@ -51,6 +51,148 @@ import harvest_common as hc    # noqa: E402
 
 
 # ---------------------------------------------------------------------------
+# Foliage card UVs: AUTHORED, unit space, for the alpha-tested card textures
+# in assets/textures/dist/surfaces.json (albedo families "grass" and "leaf",
+# uv_space "unit", wrap u repeat / v clamp, alpha_test 0.35).
+#
+# Every foliage-role face gets a hand-authored UV in the [0, 1] card space
+# instead of the box-projected metre UVs everything else carries. Nothing in
+# the client samples these yet, so the change is visually inert until the
+# material switch lands; the validator's per-asset `uv_authored_materials`
+# list is what exempts these primitives from the uv_metres equality.
+#
+# FOLIAGE_TIP_V is the ONE orientation constant: in Blender UV space, BEFORE
+# the glTF exporter's v flip (v -> 1 - v), a blade TIP gets v = FOLIAGE_TIP_V
+# and a base gets 1 - FOLIAGE_TIP_V. The PNG/Blender/glTF flip stack has three
+# places to be wrong about which end of the card is the tip, and it will be
+# verified IN ENGINE once the client actually samples these UVs; if the stack
+# turns out inverted, flipping this constant to 0.0 and rebuilding the ten
+# foliage assets is the whole fix. Shell and cut-face helpers below route
+# their v through the same constant so the flip is global.
+FOLIAGE_TIP_V = 1.0
+
+# The five palette roles that wear a card texture, and which family each one
+# samples: OF_Grass wears "grass" (a bundle of ~11 blades, so one geometric
+# blade maps a NARROW vertical band of it); every OF_Leaf* wears "leaf" (ONE
+# full frond, so a strip spans the full card width).
+FOLIAGE_ROLES = {"Grass", "Leaf", "LeafDeep", "LeafLight", "LeafDry"}
+
+# Half-width in u of the band one grass blade samples from the grass bundle
+# texture. 0.045 is about one blade of the ~11 in the card.
+GRASS_BAND_HALF_U = 0.045
+
+
+def _hash01(key):
+    """Deterministic int -> [0, 1) hash, independent of every hc.rng stream.
+
+    UV variety (band centres, mirrors, shell phases) must NOT draw from the
+    rng streams the geometry already consumes: one extra draw would shift
+    every position generated after it and the rebuild would no longer be
+    byte-identical in POSITION, which is the invariant this whole pass is
+    built on. So UVs hash the parameters the builders already have."""
+    h = (int(key) * 2654435761) & 0xFFFFFFFF
+    h = (h * 1664525 + 1013904223) & 0xFFFFFFFF
+    h = (h ^ (h >> 16)) * 2246822519 & 0xFFFFFFFF
+    return (h & 0xFFFFFFFF) / 4294967296.0
+
+
+def _tip_v(t):
+    """t = 0 at a base, 1 at a tip -> the Blender-space v that end carries,
+    routed through FOLIAGE_TIP_V so a global orientation flip is one line."""
+    return (1.0 - FOLIAGE_TIP_V) + (2.0 * FOLIAGE_TIP_V - 1.0) * t
+
+
+def blade_uvs(role, segs, key):
+    """Per-vertex UVs for one blade() strip: segs pairs plus a tip vertex.
+
+    Grass-family blades (role Grass) map a narrow vertical band of the grass
+    bundle texture: centre u0 is a deterministic hash in [0, 1) and u wraps,
+    so a band crossing 1.0 is fine. Leaf-family blades span the full card
+    width (centreline u = 0.5) with a deterministic per-blade u-mirror for
+    variety. v runs base -> tip along the strip's own length."""
+    if role == "Grass":
+        u0 = _hash01(key)
+        ul, ur, ut = u0 - GRASS_BAND_HALF_U, u0 + GRASS_BAND_HALF_U, u0
+    else:
+        ul, ur = (1.0, 0.0) if _hash01(key * 2 + 1) < 0.5 else (0.0, 1.0)
+        ut = 0.5
+    uvs = []
+    for i in range(segs):
+        v = _tip_v(i / float(segs))
+        uvs.append((ul, v))
+        uvs.append((ur, v))
+    uvs.append((ut, _tip_v(1.0)))
+    return uvs
+
+
+def shell_uvs(verts, seed, centre=(0.0, 0.0), u_scale=3.0, u_off=0.0,
+              v_lo=0.10, v_hi=0.90, v_ripple=0.0):
+    """Per-vertex UVs for a closed shell or mass (canopy_mass, blob, lobe,
+    taper): u is azimuth about `centre` at three repeats around (u wraps in
+    the sampler, and the one face that crosses the atan2 seam interpolates
+    backwards across the repeats, which a repeating leaf texture absorbs),
+    v is normalized elevation mapped into [v_lo, v_hi] so the clamped v rows
+    at 0 and 1 are never sampled. The azimuth phase comes from a hash of the
+    seed the mass was already built with: no new randomness sources.
+
+    u_scale/u_off narrow the azimuth sweep: a stalk or stem that must stay on
+    the card's opaque centreline uses u_off 0.455, u_scale 0.09 (one narrow
+    band around u = 0.5) instead of the default three full repeats.
+
+    v_ripple adds a small azimuth-keyed v variation. A cone's flat base fan
+    sits at ONE elevation, and when that fan is the only face its role owns in
+    the mesh (the LOD2 canopy undersides) its primitive would have zero v
+    span, which the validator rightly rejects as a stub. The ripple hands it a
+    real extent; on a repeating canopy texture the wobble is invisible."""
+    zs = [p[2] for p in verts]
+    z0, z1 = min(zs), max(zs)
+    span = z1 - z0
+    ph = _hash01(seed)
+    out = []
+    for (x, y, z) in verts:
+        az = math.atan2(y - centre[1], x - centre[0])
+        f = (az / (2.0 * math.pi) + ph) % 1.0
+        t = (z - z0) / span if span > 1e-9 else 0.5
+        vv = v_lo + (v_hi - v_lo) * t
+        if v_ripple:
+            vv = min(v_hi, vv + v_ripple * abs(f * 2.0 - 1.0))
+        out.append((u_off + u_scale * f, _tip_v(vv)))
+    return out
+
+
+def disc_uvs(verts, plane="xy", r=0.08, at=(0.5, 0.45)):
+    """Per-vertex UVs for a CUT FACE that happens to sit on a foliage role:
+    stump sapwood n-gons, snapped-branch and log end caps. These are wood,
+    not leaves, but Parts.into() folds them into the foliage-role primitive,
+    so once that primitive alpha-tests a card texture they must sample
+    somewhere OPAQUE. A small disc around the card's centre (the frond's own
+    midrib, the densest part of the grass bundle) is the least-wrong patch
+    available, and it keeps the validator's nonzero-span rule honest.
+    `plane` picks the two axes the ring lies in ("yz" for a log along X)."""
+    i, j = {"xy": (0, 1), "yz": (1, 2), "xz": (0, 2)}[plane]
+    n = max(1, len(verts))
+    ci = sum(p[i] for p in verts) / n
+    cj = sum(p[j] for p in verts) / n
+    out = []
+    for p in verts:
+        a = math.atan2(p[j] - cj, p[i] - ci)
+        out.append((at[0] + r * math.cos(a), at[1] + r * math.sin(a)))
+    return out
+
+
+def quad_card_uvs(nquads, key):
+    """Per-vertex UVs for `nquads` four-corner leaf cards whose corners run
+    (-u,-v), (+u,-v), (+u,+v), (-u,+v): each card shows the full leaf texture
+    once, upright, with a deterministic per-card u-mirror."""
+    out = []
+    for q in range(nquads):
+        u0, u1 = (1.0, 0.0) if _hash01(key + 7919 * q) < 0.5 else (0.0, 1.0)
+        vb, vt = _tip_v(0.0), _tip_v(1.0)
+        out += [(u0, vb), (u1, vb), (u1, vt), (u0, vt)]
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Foliage. Built as real tapered blades, NOT as alpha-tested crossed quads.
 #
 # ASSET-SPECS 3.2 described detail_cards.glb as crossed quads drawn with alpha
@@ -121,7 +263,9 @@ def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
         base = (loc[0] + r * math.cos(aa), loc[1] + r * math.sin(aa), loc[2])
         rl = (alt_role if (alt_role and alt_every and i % alt_every == 0)
               else role)
-        p.add(*blade(h, w, a, b, segs=segs, loc=base, droop=droop), role=rl)
+        p.add(*blade(h, w, a, b, segs=segs, loc=base, droop=droop), role=rl,
+              uvs=(blade_uvs(rl, segs, seed * 131071 + i)
+                   if rl in FOLIAGE_ROLES else None))
     for k in range(heads):
         a = 360.0 * nxt() + phase
         h = height * head_scale * (0.90 + 0.20 * nxt())
@@ -130,8 +274,11 @@ def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
         r = radius * math.sqrt(nxt()) * 0.65
         aa = math.radians(a)
         base = (loc[0] + r * math.cos(aa), loc[1] + r * math.sin(aa), loc[2])
+        hr = head_role or role
         p.add(*blade(h, w, a, b, segs=segs + 1, loc=base, droop=droop * 0.55),
-              role=head_role or role)
+              role=hr,
+              uvs=(blade_uvs(hr, segs + 1, seed * 131071 + count + k)
+                   if hr in FOLIAGE_ROLES else None))
     return p
 
 
@@ -168,7 +315,13 @@ def rock(seed, role, facet_role=None, facets=(), lobes=3, seg=6, jit=0.20,
             lean=(lean_gain * (k - 1), -lean_gain * 0.8 * k), rings=rings,
             role=role, ore_role=facet_role,
             ore_faces=facets[k] if k < len(facets) else ())
-        p.add(v, f, sm, roles)
+        # A moss or lichen facet is a foliage-role face on a stone lobe: it
+        # gets shell UVs (authored card space), the stone keeps its metres.
+        foliage = {rl for rl in roles if rl in FOLIAGE_ROLES}
+        p.add(v, f, sm, roles,
+              uvs=(shell_uvs(v, seed + k * 17, centre=(loc[0], loc[1]))
+                   if foliage else None),
+              uv_roles=foliage or None)
     return p
 
 
@@ -231,7 +384,15 @@ def prism_x(rings, seg=7, seed=1, jit=0.14, side_role="Bark",
             j = (i + 1) % n
             faces.append((lo + i, lo + j, hi + j, hi + i))
             roles.append(side_role)
-    return verts, faces, [False] * len(faces), roles
+    # The pale cut ends usually sit on a foliage role (LeafDry); once that
+    # role wears an alpha-tested card they must sample an opaque patch, so
+    # the caps get disc UVs in the ring plane (YZ: the prism lies along X)
+    # and the bark sides keep their box-projected metres.
+    uvs = uv_roles = None
+    if cap_role in FOLIAGE_ROLES:
+        uvs = disc_uvs(verts, plane="yz")
+        uv_roles = {cap_role}
+    return verts, faces, [False] * len(faces), roles, uvs, uv_roles
 
 
 def limb(r_bot, r_top, z0, z1, loc=(0.0, 0.0, 0.0), lean=(0.0, 0.0), seg=6,

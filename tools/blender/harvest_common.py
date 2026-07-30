@@ -75,33 +75,52 @@ class Parts:
     three to five of its facets out onto the ore material without needing a
     second mesh: the rock body stays matte while the raw metal catches a
     specular highlight, and that contrast is the whole 30 m gameplay signal.
+
+    A group MAY also carry per-vertex AUTHORED UVs (unit card space, see
+    props_common.FOLIAGE_TIP_V). fit()/apply() scale positions only and leave
+    UVs alone, which is the point: an authored UV is a texture coordinate, not
+    a measurement, so it must survive the refit unchanged. `uv_roles` limits
+    which roles the UVs are handed to when into() splits the group into one
+    primitive per role: a mossed boulder authors UVs over the whole lobe but
+    hands them ONLY to the moss faces, so the rock faces keep the box-projected
+    metre UVs the validator's equality check demands.
     """
 
     def __init__(self):
         self.groups = []
 
-    def add(self, verts, faces, smooth=None, role="Rock"):
+    def add(self, verts, faces, smooth=None, role="Rock", uvs=None,
+            uv_roles=None):
         """role is either one palette role for the whole group, or a list with
-        one role per face."""
+        one role per face. uvs is one (u, v) per vertex or None; uv_roles is
+        an iterable of roles the uvs apply to (None means every role in the
+        group)."""
         faces = [tuple(f) for f in faces]
         if smooth is None:
             smooth = [False] * len(faces)
         roles = [role] * len(faces) if isinstance(role, str) else list(role)
         if len(roles) != len(faces) or len(smooth) != len(faces):
             raise ValueError("per-face lists must match the face count")
-        self.groups.append([list(verts), faces, list(smooth), roles])
+        if uvs is not None and len(uvs) != len(verts):
+            raise ValueError("uvs must be one (u, v) per vertex: %d for %d"
+                             % (len(uvs), len(verts)))
+        self.groups.append([list(verts), faces, list(smooth), roles,
+                            list(uvs) if uvs is not None else None,
+                            set(uv_roles) if uv_roles is not None else None])
         return self
 
     def extend(self, other):
         for g in other.groups:
-            self.groups.append([list(g[0]), list(g[1]), list(g[2]), list(g[3])])
+            self.groups.append([list(g[0]), list(g[1]), list(g[2]), list(g[3]),
+                                list(g[4]) if g[4] is not None else None,
+                                set(g[5]) if g[5] is not None else None])
         return self
 
     def bounds(self):
         lo = [1e30, 1e30, 1e30]
         hi = [-1e30, -1e30, -1e30]
-        for verts, _, _, _ in self.groups:
-            for p in verts:
+        for g in self.groups:
+            for p in g[0]:
                 for k in range(3):
                     lo[k] = min(lo[k], p[k])
                     hi[k] = max(hi[k], p[k])
@@ -172,7 +191,7 @@ class Parts:
 
     def tri_count(self):
         return sum(max(0, len(f) - 2)
-                   for _, faces, _, _ in self.groups for f in faces)
+                   for g in self.groups for f in g[1])
 
     def into(self, mb, role_order=None):
         """Pour into a MeshBuilder, one material slot per role.
@@ -184,16 +203,19 @@ class Parts:
         order = role_order or _ordered_unique(
             [r for g in self.groups for r in g[3]])
         for role in order:
-            for verts, faces, smooth, roles in self.groups:
+            for verts, faces, smooth, roles, uvs, uv_roles in self.groups:
                 idx = [i for i, r in enumerate(roles) if r == role]
                 if not idx:
                     continue
                 sub = [faces[i] for i in idx]
                 used = sorted({v for f in sub for v in f})
                 remap = {old: new for new, old in enumerate(used)}
+                sub_uvs = None
+                if uvs is not None and (uv_roles is None or role in uv_roles):
+                    sub_uvs = [uvs[i] for i in used]
                 mb.add_raw([verts[i] for i in used],
                            [tuple(remap[v] for v in f) for f in sub],
-                           [smooth[i] for i in idx], role)
+                           [smooth[i] for i in idx], role, uvs=sub_uvs)
         return mb
 
 
