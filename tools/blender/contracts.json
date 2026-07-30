@@ -715,6 +715,52 @@
       ]
     },
 
+    "spider": {
+      "glb": "assets/models/dist/creatures/spider.glb",
+      "_comment": [
+        "2026-07-29: the first rigged CREATURE. Proportions match the RN-122",
+        "far-LOD stand-in in web/src/game/EnemyArt.ts (knees ~1.55 m, feet on",
+        "a 2.4 m radius, azimuths 35/70/110/145), so crossing the SpiderFlock",
+        "claim boundary swaps animation, not shape. The client draws it at",
+        "scale = the enemy type's bodyRadiusM.",
+        "Spider_Walk is authored at exactly 2.5 m/s at unit scale, the",
+        "SPIDER_WALK_MPS constant in web/src/game/SpiderFlock.ts: a planted",
+        "foot sweeps a constant-rate 27.28 deg arc on a 2.100 m lever over the",
+        "0.400 s stance. Spider_Idle keeps the feet fixed: the thorax sway is",
+        "cancelled on every coxa and the residual foot drift is ~7 mm.",
+        "dims_xyz_m are MEASURED by the build printout: X is the foot span",
+        "tip to tip, Y tops out at the knee peak (the body mass tops ~1.15),",
+        "Z is the front-to-rear foot reach. pivot_tolerance_m 0.05 as on",
+        "player_body: the feet graze y = 0 and the foot ring is centred by",
+        "construction (the legs radiate from the origin).",
+        "No collision: the shot sphere is EnemyTypes.radiusM, not a mesh."
+      ],
+      "lod0_node": "Spider_LOD0",
+      "lod_nodes": ["Spider_LOD0", "Spider_LOD1", "Spider_LOD2"],
+      "pivot_mode": "ground",
+      "pivot_tolerance_m": 0.05,
+      "dims_xyz_m": [4.5317, 1.5943, 3.9569],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 1100,
+      "max_tris_total": 2600,
+      "max_materials": 4,
+      "sockets": [],
+      "rest_pose": true,
+      "frame1_identity": true,
+      "bones": [
+        "Root", "Abdomen", "Thorax", "Head",
+        "L1Coxa", "L1Femur", "L1Tibia",
+        "L2Coxa", "L2Femur", "L2Tibia",
+        "L3Coxa", "L3Femur", "L3Tibia",
+        "L4Coxa", "L4Femur", "L4Tibia",
+        "R1Coxa", "R1Femur", "R1Tibia",
+        "R2Coxa", "R2Femur", "R2Tibia",
+        "R3Coxa", "R3Femur", "R3Tibia",
+        "R4Coxa", "R4Femur", "R4Tibia"
+      ],
+      "clips": ["Spider_Idle", "Spider_Walk"]
+    },
+
     "crude_pickaxe": {
       "glb": "assets/models/dist/tools/crude_pickaxe.glb",
       "_comment": [
