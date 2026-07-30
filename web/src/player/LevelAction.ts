@@ -59,6 +59,22 @@ export const LEVEL = {
   idleAlpha: 0.16,
   activeAlpha: 0.5,
   /**
+   * Fixed ticks the IDLE (key-up) preview persists after the last press or
+   * application: 3 s at the 60 Hz tick. RN-146: without this window the idle
+   * preview drew FOREVER. The feet-fallback fix (see aimPreview) was right for
+   * the held key but it leaked into the idle state, so every player carried a
+   * permanent unlit 10 m pale disc (MeshBasicMaterial ignores sun and
+   * atmosphere) that washed ground contrast in every biome: it survived every
+   * terrain, post and atmosphere toggle and was attributed only by
+   * ?levelring=0 (probes/discshot.js; near-band warmth droop 19 counts with
+   * the ring, ~2 without). The window keeps both recorded intents: while
+   * terraforming (press, release, reposition, press) the faint footprint
+   * stays; once the player walks away it leaves the ground. The named failure
+   * mode of a too-short window is the ring flickering between repositioning
+   * presses, which is why this is seconds rather than a few ticks.
+   */
+  idleGraceTicks: 180,
+  /**
    * Radius fraction the "flat to X m" number is measured over. A pad cut into a
    * hill HAS a bank at its rim and every game in the genre draws one, so quoting
    * the bank as the pad's flatness would be a lie in the pessimistic direction.
@@ -163,6 +179,13 @@ export class LevelAction {
   private cooldown = 0;
   /** The floor height latched on the press. NaN means the key is up. */
   private target = NaN;
+  /**
+   * RN-146: idle-preview ticks remaining. Armed by the held key AND by
+   * `levelOnce` (the probe/__of path, so `probes/level.js`'s ringVisible
+   * assertion still measures a live ring); counted down while the key is up;
+   * at zero the ring HIDES instead of following the player forever.
+   */
+  private idleGrace = 0;
 
   constructor(
     private readonly voxels: VoxelWorld,
@@ -188,9 +211,20 @@ export class LevelAction {
       this.target = NaN;
       this.stats.targetHeightM = NaN;
       this.stats.latched = false;
-      this.aimPreview(origin, dir, feet, LEVEL.idleAlpha);
+      // RN-146: the idle preview is a TRAILING courtesy, not permanent scenery.
+      // It survives `idleGraceTicks` past the last press or application, which
+      // covers repositioning between presses, and then leaves the ground. The
+      // pre-fix behaviour (draw forever, following the feet) was the pale disc
+      // that washed ground contrast in every biome; see LEVEL.idleGraceTicks.
+      if (this.idleGrace > 0) {
+        this.idleGrace--;
+        this.aimPreview(origin, dir, feet, LEVEL.idleAlpha);
+      } else {
+        this.ring?.hide();
+      }
       return null;
     }
+    this.idleGrace = LEVEL.idleGraceTicks;
     if (Number.isNaN(this.target)) {
       this.target = this.heightUnder(feet);
       this.stats.targetHeightM = +this.target.toFixed(3);
@@ -213,6 +247,9 @@ export class LevelAction {
    */
   levelOnce(origin: Vec3d, dir: Vec3d, targetHeightM?: number,
             feet?: Vec3d): LevelResult | null {
+    // RN-146: an application arms the idle preview exactly as a press does, so
+    // the driven path and the key path agree about when the ring shows.
+    this.idleGrace = LEVEL.idleGraceTicks;
     const t0 = performance.now();
     const hit = this.discCentre(origin, dir, feet);
     if (hit === null) { this.stats.misses++; this.say('nothing to level here'); return null; }
@@ -222,6 +259,11 @@ export class LevelAction {
       LEVEL.maxCutM, LEVEL.maxFillM);
     const tOp = performance.now();
     this.noteDisc(hit, feet);
+    // RN-146: draw the footprint on the SAME call, as the key path does on its
+    // own tick. Before the grace window this line was unnecessary only because
+    // the idle preview drew every tick forever; probes (level.js's ringVisible)
+    // and players both read the ring in the application's own frame.
+    this.ring?.show(hit, LEVEL.radiusM, LEVEL.idleAlpha);
     this.stats.lastAimMs = +(tAim - t0).toFixed(3);
     this.stats.lastOpMs = +(tOp - tAim).toFixed(3);
     this.stats.lastRemeshMs = 0;
