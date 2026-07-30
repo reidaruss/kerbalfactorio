@@ -56,6 +56,15 @@
   const header = document.querySelector('#of-goals h4')?.textContent ?? '';
   check('the header hide-key is the goals binding', header.includes('H'), header);
 
+  // GP-166: the pack summary DRAWS on a fresh spawn. Its diff key used to
+  // initialise to '', which is exactly an empty pack's key, so the first
+  // render never ran and a wordless bordered rectangle sat where the summary
+  // belongs. The empty state is the one that teaches the pack key, so it must
+  // say so from frame one.
+  const carry = document.querySelector('#of-carry')?.innerHTML ?? '';
+  check('the pack summary is drawn at spawn, not an empty box',
+    carry.includes('empty') && carry.includes('Tab'), carry.slice(0, 80));
+
   // --- every resolved hint, from the same functions the panel draws ----------
   const hints = Object.fromEntries(of.goals().hints.map((h) => [h.id, h.hint]));
   check('the smelt hint names the click and E, not G',
