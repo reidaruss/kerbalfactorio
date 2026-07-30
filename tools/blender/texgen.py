@@ -75,6 +75,16 @@ gradient, the AO is its local relief, and the roughness and metalness masks are
 functions of it. That is the "one authority" rule applied to a texture: the AO
 cannot darken a seam the normal map did not dent, because they are the same
 number read twice.
+
+TWO CARD FAMILIES BESIDE THE THREE SURFACES. `leaf` and `grass` are
+albedo+alpha CUTOUT CARDS (of_<name>_a.png, RGBA), not tiling PBR surfaces:
+unit UVs rather than metres, u wraps and v clamps, and the alpha channel IS
+the shape. They are the stated exception to ALBEDO IS DELIBERATELY ABSENT,
+because a cutout cannot exist without its own texture, and they keep the
+palette-authority argument intact by being near-neutral VALUE textures: hue
+still comes from the client's colours, and the manifest publishes each card's
+measured albedo_mean so the client can divide it out via material.color and
+keep the modulation mean-neutral. See the ALBEDO CARD FAMILIES section.
 """
 
 import argparse
@@ -958,6 +968,87 @@ def read_png_rgb(path):
 
 
 # ---------------------------------------------------------------------------
+# RGBA PNG write/read, colour type 6, for the albedo+alpha card families.
+# Same chunk discipline as write_png (IHDR + IDAT + IEND only, pinned zlib),
+# same per-scanline filter search, one more byte per pixel. groundtex.py
+# carries its own copy of this pair; the duplication is known and left for a
+# later dedupe on purpose, because rebaselining a shipped tool mid-pass is
+# the wrong moment to share code (see write_png's note on two writers).
+# ---------------------------------------------------------------------------
+
+def write_png_rgba(path, w, h, rgba):
+    """Write 8-bit RGBA. Refuses a wrong-size buffer rather than misreading
+    it, exactly as write_png does."""
+    if len(rgba) != w * h * 4:
+        raise ValueError("expected %d bytes, got %d" % (w * h * 4, len(rgba)))
+    raw = _filter_rows(rgba, w, h, 4)
+    co = zlib.compressobj(ZLIB_LEVEL, zlib.DEFLATED, ZLIB_WBITS,
+                          ZLIB_MEMLEVEL, zlib.Z_DEFAULT_STRATEGY)
+    idat = co.compress(raw) + co.flush()
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+    blob = (b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", ihdr)
+            + _chunk(b"IDAT", idat) + _chunk(b"IEND", b""))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(blob)
+    return len(blob)
+
+
+def read_png_rgba(path):
+    """Minimal decoder for the checks. 8-bit RGBA non-interlaced only;
+    anything else raises rather than being silently misread."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("%s: not a PNG" % path)
+    off, idat, hdr = 8, [], None
+    while off + 8 <= len(data):
+        ln, tag = struct.unpack_from(">I4s", data, off)
+        off += 8
+        body = data[off:off + ln]
+        off += ln + 4
+        if tag == b"IHDR":
+            hdr = struct.unpack(">IIBBBBB", body)
+        elif tag == b"IDAT":
+            idat.append(body)
+        elif tag == b"IEND":
+            break
+    w, h, depth, ctype, comp, filt, inter = hdr
+    if (depth, ctype, inter) != (8, 6, 0):
+        raise ValueError("%s: only 8-bit RGBA non-interlaced is supported "
+                         "(depth=%d colour=%d interlace=%d)"
+                         % (path, depth, ctype, inter))
+    raw = zlib.decompress(b"".join(idat))
+    stride = w * 4
+    out = bytearray(w * h * 4)
+    prev = bytearray(stride)
+    p = 0
+    for y in range(h):
+        ftype = raw[p]
+        p += 1
+        line = bytearray(raw[p:p + stride])
+        p += stride
+        for i in range(stride):
+            a = line[i - 4] if i >= 4 else 0
+            b = prev[i]
+            c = prev[i - 4] if i >= 4 else 0
+            if ftype == 1:
+                line[i] = (line[i] + a) & 0xFF
+            elif ftype == 2:
+                line[i] = (line[i] + b) & 0xFF
+            elif ftype == 3:
+                line[i] = (line[i] + ((a + b) >> 1)) & 0xFF
+            elif ftype == 4:
+                pp = a + b - c
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pred) & 0xFF
+        out[y * stride:(y + 1) * stride] = line
+        prev = line
+    return w, h, bytes(out)
+
+
+# ---------------------------------------------------------------------------
 # Families
 # ---------------------------------------------------------------------------
 
@@ -1001,6 +1092,385 @@ def build_family(name, size=None):
     return height, normal, orm
 
 
+# ---------------------------------------------------------------------------
+# ALBEDO CARD FAMILIES: `leaf` and `grass`.
+#
+# Alpha-tested foliage cards, not tiling PBR surfaces, so almost every rule
+# above bends here and each bend is stated:
+#   * UNIT UVs, not metres. A card is a quad that shows the whole texture
+#     exactly once, so there is no tile_m and no texels_per_m.
+#   * WRAP: u repeats (the field is periodic in u by construction, so a bent
+#     card or a double-wide quad still reads), v CLAMPS: a card has a base
+#     and a tip, and the tip edge must dissolve to nothing (see the tip-rows
+#     rule below).
+#   * RGBA, not normal+orm: the alpha channel IS the shape, and the albedo is
+#     a near-neutral VALUE texture because hue comes from vertex colours in
+#     the client. The palette stays the colour authority.
+#
+# ROWS TO V, stated once so orientation is a fact rather than a guess per
+# call site. PNG row 0 is the TOP of the decoded image, and the client
+# samples glTF-convention UVs (flipY false), so uv (0, 0) reads the decoded
+# image's top-left. of_lib's exporter writes v flipped (v -> 1 - v), so mesh
+# v = 0 (the card base) samples the BOTTOM PNG rows and mesh v = 1 (the tip)
+# samples the TOP rows. The builders therefore author ROOTS in the bottom
+# rows and TIPS in the top rows. If the in-engine look proves that backwards,
+# flip ALBEDO_V_FLIP: it mirrors the composed field vertically before
+# dilation and is deliberately the one-line fix.
+ALBEDO_V_FLIP = False
+
+ALBEDO_EDGE = 0.006     # alpha edge ramp in tile units, ~1.5 px at 256:
+                        # anti-aliased enough not to stairstep, steep enough
+                        # that the mip chain does not go mushy
+
+ALBEDO_TIP_ROWS = 4     # top rows that MUST be fully transparent. v clamps,
+                        # so any alpha in the top row would smear upward
+                        # forever on a stretched sample; a frond tip has to
+                        # dissolve, not stop at a hard picture edge.
+
+
+def _strip_pt(px, py, ax, ay, bx, by):
+    """Distance and parameter from a point to a segment, wrapping in u ONLY.
+    _seg_dist wraps both axes, which is right for a tiling surface and wrong
+    for a card: v clamps, so a root near the bottom edge must never read as
+    close to a tip near the top edge through a v wrap."""
+    dx = _wrap_delta(bx, ax)
+    dy = by - ay
+    wx = _wrap_delta(px, ax)
+    wy = py - ay
+    den = dx * dx + dy * dy
+    t = 0.0 if den < 1e-12 else _clamp01((wx * dx + wy * dy) / den)
+    ex = wx - dx * t
+    ey = wy - dy * t
+    return math.sqrt(ex * ex + ey * ey), t
+
+
+# A strip is (ax, ay, bx, by, w0, w1, v0, v1, tint): a segment in (u, PNG-row
+# fraction) space with half-widths w0 -> w1 tapering along it, an albedo value
+# gradient v0 -> v1, and a warm/cool tint applied as R = v + tint, B = v - tint
+# (so |R - B| <= 6 counts when |tint| <= 3/255).
+
+def _grass_strips():
+    """A bundle of 11 tapering blades, each a 2-segment polyline from a root
+    at (or just below) the bottom edge to a tip well clear of the top rows,
+    curving slightly via the mid-point offset. Placement is PERIODIC in u:
+    even spacing plus a jitter smaller than the pitch, and every distance is
+    measured with the u wrap, so a blade crossing the seam continues on the
+    other side and the tile has no u seam by construction.
+
+    Widths: roots ~26-37 px full width, tips 0.012 half-width, which keeps
+    the tip's 50%-alpha contour at ~4.6 px: wide enough that mip averaging
+    erodes the tip gracefully instead of deleting it.
+
+    Values: per-blade base drawn from [0.60, 1.0], slightly darker at the
+    root rising ~10% toward the tip, faint per-texel noise on top, and a
+    per-blade warm/cool split of at most +/-6 counts between R and B."""
+    strips = []
+    nb = 11
+    for k in range(nb):
+        u0 = (k + 0.5) / nb + (_hash01(k, 3, 6011) - 0.5) * 0.55 / nb
+        y_root = 1.0 + 0.012 * _hash01(k, 5, 6011)
+        y_tip = 0.055 + 0.16 * _hash01(k, 7, 6011)
+        lean = (_hash01(k, 11, 6011) - 0.5) * 0.11
+        y_mid = y_root - (y_root - y_tip) * 0.5
+        u_mid = u0 + lean * 0.38
+        u_tip = u0 + lean
+        w_root = 0.058 + 0.024 * _hash01(k, 13, 6011)
+        w_tip = 0.012
+        w_mid = (w_root + w_tip) * 0.5
+        bk = 0.60 + 0.40 * _hash01(k, 17, 6011)
+        tint = (_hash01(k, 19, 6011) - 0.5) * (6.0 / 255.0)
+        strips.append((u0 % 1.0, y_root, u_mid % 1.0, y_mid,
+                       w_root, w_mid, bk * 0.90, bk * 0.95, tint))
+        strips.append((u_mid % 1.0, y_mid, u_tip % 1.0, y_tip,
+                       w_mid, w_tip, bk * 0.95, bk, tint))
+    return strips
+
+
+def _leaf_strips():
+    """A conifer-frond card: a central stem from base to tip with alternating
+    tapered leaflets angled 30 to 55 degrees off the stem (shorter toward the
+    tip), plus three partial background fronds, one of them across the u seam
+    so the u wrap is exercised rather than trivially empty. Background fronds
+    are sparser in PLACEMENT; their alpha is still full where they exist,
+    because a translucent card texel is exactly what alpha testing cannot
+    represent.
+
+    The 30-55 degree angle is built from sin values (0.50..0.82) and
+    cos = sqrt(1 - sin^2), because this module bans transcendentals (see the
+    determinism note at the top): sqrt is bit-portable, sin/cos are not."""
+    strips = []
+
+    def frond(cx, y_base, y_tip, needles, scale, seed):
+        lean = (_hash01(0, 1, seed) - 0.5) * 0.06
+        sx0, sy0 = cx, y_base
+        sx1, sy1 = cx + lean, y_tip
+        bs = 0.62 + 0.38 * _hash01(1, 2, seed)
+        stint = (_hash01(2, 3, seed) - 0.5) * (6.0 / 255.0)
+        strips.append((sx0 % 1.0, sy0, sx1 % 1.0, sy1,
+                       0.020 * scale, 0.009, bs * 0.93, bs, stint))
+        for j in range(needles):
+            t = (j + 1.0) / (needles + 1.0)
+            ax = (sx0 + (sx1 - sx0) * t) % 1.0
+            ay = sy0 + (sy1 - sy0) * t
+            side = 1.0 if j % 2 == 0 else -1.0
+            sn = 0.50 + 0.32 * _hash01(j, 5, seed)       # sin(30..55 deg)
+            cs = math.sqrt(1.0 - sn * sn)
+            ln = (0.46 * scale * (1.0 - 0.55 * t)
+                  * (0.85 + 0.30 * _hash01(j, 7, seed)))
+            ey = ay - cs * ln
+            if ey < 0.055:               # keep every leaflet out of the tip rows
+                ln = (ay - 0.055) / cs
+                ey = ay - cs * ln
+            ex = (ax + side * sn * ln) % 1.0
+            bv = 0.62 + 0.38 * _hash01(j, 11, seed)
+            tint = (_hash01(j, 13, seed) - 0.5) * (6.0 / 255.0)
+            strips.append((ax, ay, ex, ey, 0.072 * scale, 0.011,
+                           bv * 0.93, bv, tint))
+
+    frond(0.50, 1.005, 0.050, 18, 1.0, 9203)     # the main frond
+    frond(0.13, 1.010, 0.300, 8, 0.85, 9403)     # background thickeners
+    frond(0.86, 1.010, 0.280, 8, 0.85, 9601)
+    frond(0.995, 1.005, 0.380, 9, 0.90, 9803)    # crosses the u seam
+    return strips
+
+
+def _render_card(s, strips, noise_seed):
+    """Compose tapered strips into (rgb, alpha) byte buffers, PRE-dilation.
+
+    Alpha: 1 inside a strip, 0 outside, an ALBEDO_EDGE smoothstep ramp at the
+    boundary. Albedo: the winning strip's value gradient (winner = deepest
+    signed clearance, so overlaps resolve to whichever strip the texel is
+    most inside of) plus faint per-texel noise. Background texels are left
+    BLACK on purpose: _dilate_albedo must fill them, and a compose that
+    pre-filled them would make the dilation selftest unfalsifiable."""
+    noise = _fbm(s, s, 16, 3, seed=noise_seed)
+    rgb = bytearray(3 * s * s)
+    alpha = bytearray(s * s)
+    bounds = []
+    for st in strips:
+        wmax = max(st[4], st[5]) + ALBEDO_EDGE
+        bounds.append((min(st[1], st[3]) - wmax, max(st[1], st[3]) + wmax))
+    for y in range(s):
+        py = (y + 0.5) / s
+        act = [st for st, (y0, y1) in zip(strips, bounds) if y0 <= py <= y1]
+        base = y * s
+        for x in range(s):
+            px = (x + 0.5) / s
+            a_best = 0.0
+            cov_best = -1.0
+            win = None
+            wt = 0.0
+            for st in act:
+                d, t = _strip_pt(px, py, st[0], st[1], st[2], st[3])
+                hw = st[4] + (st[5] - st[4]) * t
+                a = 1.0 - _smoothstep(hw - ALBEDO_EDGE, hw, d)
+                if a > a_best:
+                    a_best = a
+                if hw - d > cov_best:
+                    cov_best = hw - d
+                    win = st
+                    wt = t
+            if a_best > 0.0 and win is not None:
+                val = win[6] + (win[7] - win[6]) * wt
+                val += (noise[base + x] - 0.5) * 0.06
+                tint = win[8]
+                o = (base + x) * 3
+                rgb[o] = int(_clamp01(val + tint) * 255.0 + 0.5)
+                rgb[o + 1] = int(_clamp01(val) * 255.0 + 0.5)
+                rgb[o + 2] = int(_clamp01(val - tint) * 255.0 + 0.5)
+                alpha[base + x] = int(a_best * 255.0 + 0.5)
+    return rgb, alpha
+
+
+def _dilate_albedo(rgb, alpha, w, h):
+    """Flood the covered region's albedo into every texel with alpha < 128:
+    iterative synchronous 8-neighbour rounds (u wraps, v clamps) where each
+    unfilled texel bordering a filled one takes the mean of its filled
+    neighbours' albedo, until nothing borders the frontier unfilled.
+
+    WHY: bilinear and mip filtering blend a texel's RGB regardless of its
+    alpha, so black background texels bleed a dark halo into every blade edge
+    and every distant mip. Flooding the blade colour outward makes the
+    invisible texels agree with the visible ones.
+
+    The u-wrapped grid is connected, so the flood reaches every texel and
+    nothing is left for a fully-enclosed fallback; the one unreachable case
+    (no covered texel at all) returns the buffer unchanged. Deterministic:
+    candidates are processed in sorted index order and every round reads only
+    the previous rounds' fills."""
+    n = w * h
+    out = bytearray(rgb)
+    filled = bytearray(1 if alpha[i] >= 128 else 0 for i in range(n))
+    front = [i for i in range(n) if filled[i]]
+    if not front:
+        return out
+    while front:
+        cand = set()
+        for i in front:
+            x = i % w
+            y = i // w
+            for dy in (-1, 0, 1):
+                ny = y + dy
+                if ny < 0 or ny >= h:
+                    continue
+                for dx in (-1, 0, 1):
+                    j = ny * w + (x + dx) % w
+                    if not filled[j]:
+                        cand.add(j)
+        newly = []
+        for j in sorted(cand):
+            x = j % w
+            y = j // w
+            rs = gs = bs = cnt = 0
+            for dy in (-1, 0, 1):
+                ny = y + dy
+                if ny < 0 or ny >= h:
+                    continue
+                for dx in (-1, 0, 1):
+                    k = ny * w + (x + dx) % w
+                    if filled[k]:
+                        o = k * 3
+                        rs += out[o]
+                        gs += out[o + 1]
+                        bs += out[o + 2]
+                        cnt += 1
+            o = j * 3
+            out[o] = (2 * rs + cnt) // (2 * cnt)
+            out[o + 1] = (2 * gs + cnt) // (2 * cnt)
+            out[o + 2] = (2 * bs + cnt) // (2 * cnt)
+            newly.append(j)
+        for j in newly:
+            filled[j] = 1
+        front = newly
+    return out
+
+
+def _halo_worst(rgb, alpha, w, h):
+    """(worst, examined): worst absolute difference between a fully
+    transparent texel's luma and the mean luma of its opaque (alpha >= 128)
+    8-neighbours (u wraps, v clamps), over every alpha == 0 texel that has at
+    least one. This is the halo measurement: an undilated build scores 100+
+    here (black next to a bright blade), a dilated one scores a few counts."""
+    worst = 0.0
+    examined = 0
+    for i in range(w * h):
+        if alpha[i] != 0:
+            continue
+        x = i % w
+        y = i // w
+        tot = cnt = 0
+        for dy in (-1, 0, 1):
+            ny = y + dy
+            if ny < 0 or ny >= h:
+                continue
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                k = ny * w + (x + dx) % w
+                if alpha[k] >= 128:
+                    o = k * 3
+                    tot += rgb[o] + rgb[o + 1] + rgb[o + 2]
+                    cnt += 1
+        if cnt:
+            o = i * 3
+            own = (rgb[o] + rgb[o + 1] + rgb[o + 2]) / 3.0
+            d = abs(own - tot / (3.0 * cnt))
+            if d > worst:
+                worst = d
+            examined += 1
+    return worst, examined
+
+
+def _alpha_coverage(alpha):
+    """Fraction of texels with alpha >= 128, the coverage the mip chain
+    converges toward."""
+    return sum(1 for a in alpha if a >= 128) / len(alpha)
+
+
+def _tip_rows_clear(alpha, w, rows=ALBEDO_TIP_ROWS):
+    """True when the top `rows` PNG rows (the card's dissolving tip edge, at
+    sampled v = 1 after the exporter's flip) are entirely alpha 0."""
+    return all(alpha[i] == 0 for i in range(rows * w))
+
+
+def _wrap_vs_interior_u(f, w, h):
+    """Selftest 7's wrap-vs-interior measure restricted to the u axis: the
+    card tiles in u only (v clamps), so only the u wrap step is a seam
+    claim. A tiling field's wrap step is an ordinary step; a seam is a
+    cliff there."""
+    edge = inner = 0.0
+    for y in range(h):
+        row = y * w
+        edge = max(edge, abs(f[row] - f[row + w - 1]))
+        for x in range(w - 1):
+            inner = max(inner, abs(f[row + x] - f[row + x + 1]))
+    return edge, inner
+
+
+def _albedo_mean_rgba(rgba, alpha_test):
+    """Mean RGB luma (arithmetic (R+G+B)/3, normalised to 0..1) over texels
+    whose alpha clears alpha_test * 255, measured from the packed bytes the
+    file actually ships. The client divides this out via material.color, so
+    the albedo modulation is mean-neutral and cannot shift the palette."""
+    thr = alpha_test * 255.0
+    tot = 0
+    cnt = 0
+    for o in range(0, len(rgba), 4):
+        if rgba[o + 3] >= thr:
+            tot += rgba[o] + rgba[o + 1] + rgba[o + 2]
+            cnt += 1
+    return 0.0 if cnt == 0 else tot / (cnt * 3.0 * 255.0)
+
+
+# The two card families. UNREFERENCED BY ANY ROLE THIS COMMIT, deliberately:
+# ROLE_FAMILY and FLAT_ROLES stay exactly as they are (Leaf*/Grass remain
+# flat, with their recorded reasons), and the role move lands later in the
+# same commit as the client change that consumes these, so the two cannot
+# ship half-wired.
+#
+# `coverage` is the shipped alpha-coverage band (fraction of texels with
+# alpha >= 128), asserted by check_maps against the shipped bytes. The FLOOR
+# is the load-bearing edge: under mipmapping, alpha averages toward the
+# card's mean coverage, so a sparse card whose distant mips fall under
+# alpha_test (0.35) DISSOLVES at range. Coverage well above 0.35 makes the
+# far mips converge toward solid instead of toward nothing; the ceiling
+# keeps the card reading as foliage rather than as a curtain.
+ALBEDO_FAMILIES = {
+    "leaf": dict(strips=_leaf_strips, size=256, alpha_test=0.35,
+                 wrap=("repeat", "clamp"), coverage=(0.60, 0.80),
+                 noise_seed=15013),
+    "grass": dict(strips=_grass_strips, size=256, alpha_test=0.35,
+                  wrap=("repeat", "clamp"), coverage=(0.55, 0.75),
+                  noise_seed=15101),
+}
+
+
+def build_albedo_family(name, size=None):
+    """(rgba, rgb, alpha): the packed shipped bytes plus the composed
+    channels, post-flip, post-dilation."""
+    spec = ALBEDO_FAMILIES[name]
+    s = spec["size"] if size is None else size
+    rgb, alpha = _render_card(s, spec["strips"](), spec["noise_seed"])
+    if ALBEDO_V_FLIP:
+        rgb2 = bytearray(len(rgb))
+        al2 = bytearray(len(alpha))
+        for y in range(s):
+            sy = s - 1 - y
+            al2[y * s:(y + 1) * s] = alpha[sy * s:(sy + 1) * s]
+            rgb2[y * s * 3:(y + 1) * s * 3] = rgb[sy * s * 3:(sy + 1) * s * 3]
+        rgb, alpha = rgb2, al2
+    rgb = _dilate_albedo(rgb, alpha, s, s)
+    rgba = bytearray(s * s * 4)
+    for i in range(s * s):
+        o = i * 4
+        r3 = i * 3
+        rgba[o] = rgb[r3]
+        rgba[o + 1] = rgb[r3 + 1]
+        rgba[o + 2] = rgb[r3 + 2]
+        rgba[o + 3] = alpha[i]
+    return bytes(rgba), rgb, alpha
+
+
 def generate(out_dir=OUT_DIR, size=None, quiet=False):
     files = {}
     sizes = {}
@@ -1021,6 +1491,18 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
                   % (name, n_bytes, o_bytes, fsize, fsize,
                      fsize / FAMILY_TILE_M[name]))
 
+    albedo_files = {}
+    for name in sorted(ALBEDO_FAMILIES):
+        fsize = ALBEDO_FAMILIES[name]["size"] if size is None else size
+        rgba, _, _ = build_albedo_family(name, fsize)
+        a_path = os.path.join(out_dir, "of_%s_a.png" % name)
+        a_bytes = write_png_rgba(a_path, fsize, fsize, rgba)
+        albedo_files[name] = {"file": os.path.basename(a_path),
+                              "bytes": a_bytes, "rgba": rgba, "size": fsize}
+        if not quiet:
+            print("[texgen] %-7s albedo %7d B                    (%dx%d, unit uv)"
+                  % (name, a_bytes, fsize, fsize))
+
     manifest = {
         "_comment": [
             "Generated by tools/blender/texgen.py. Do not hand-edit.",
@@ -1029,6 +1511,20 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
             "orm channels: R = occlusion, G = roughness, B = metalness, and all",
             "three MULTIPLY the material constant rather than replacing it.",
             "normal maps are OpenGL convention (+Y up), colorSpace NoColorSpace.",
+            "albedo families (grass, leaf) are CARD textures: albedo+alpha,",
+            "values are sRGB as authored, alpha is coverage. Their UVs are",
+            "UNIT (uv_space \"unit\"), not metres: a card shows the texture",
+            "exactly once, so there is no tile_m. wrap: u repeat, v clamp;",
+            "v = 1 is the tips as sampled with glTF UVs (the builder writes",
+            "roots at the image bottom and the exporter flips v).",
+            "alpha_test is the consumer contract: the material discards",
+            "below it. An albedo family whose alpha channel is in use MUST",
+            "declare alpha_test; the validator refuses one that does not",
+            "(that check lands in the validator, the rule is stated here).",
+            "albedo_mean is the mean RGB luma (0..1) over texels with",
+            "alpha >= alpha_test * 255, measured from the shipped bytes: the",
+            "client divides it out via material.color, so the modulation is",
+            "mean-neutral and cannot shift the palette.",
         ],
         "version": MANIFEST_VERSION,
         "zlib": zlib.ZLIB_RUNTIME_VERSION,
@@ -1046,16 +1542,33 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
             with open(p, "rb") as fh:
                 fam[k]["sha256"] = hashlib.sha256(fh.read()).hexdigest()
         manifest["families"][name] = fam
+    for name in sorted(ALBEDO_FAMILIES):
+        spec = ALBEDO_FAMILIES[name]
+        rec = albedo_files[name]
+        p = os.path.join(out_dir, rec["file"])
+        with open(p, "rb") as fh:
+            sha = hashlib.sha256(fh.read()).hexdigest()
+        manifest["families"][name] = {
+            "albedo": {"file": rec["file"], "bytes": rec["bytes"],
+                       "sha256": sha},
+            "size_px": rec["size"],
+            "uv_space": "unit",
+            "wrap": {"u": spec["wrap"][0], "v": spec["wrap"][1]},
+            "alpha_test": spec["alpha_test"],
+            "albedo_mean": round(_albedo_mean_rgba(rec["rgba"],
+                                                   spec["alpha_test"]), 4),
+        }
 
     m_path = os.path.join(out_dir, "surfaces.json")
     with open(m_path, "w", newline="\n", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, sort_keys=False)
         fh.write("\n")
     if not quiet:
-        total = sum(v[k]["bytes"] for v in files.values() for k in v)
+        total = (sum(v[k]["bytes"] for v in files.values() for k in v)
+                 + sum(v["bytes"] for v in albedo_files.values()))
         print("[texgen] manifest %s" % m_path)
         print("[texgen] %d files, %d bytes of texture payload"
-              % (len(files) * 2, total))
+              % (len(files) * 2 + len(albedo_files), total))
     return manifest
 
 
@@ -1106,6 +1619,97 @@ def _channel_stats(rgb, n):
     return out
 
 
+def _check_albedo_family(fam, spec, out_dir, say):
+    """The albedo-card half of check_maps: RGBA decode, sha, per-channel
+    stats, alpha variation, coverage band, covered-region albedo variation,
+    albedo_mean recompute, the alpha_test guard, and the uv_space/wrap
+    contract fields. Returns the texel count examined."""
+    code = ALBEDO_FAMILIES[fam]
+    rec = spec.get("albedo") or {}
+    path = os.path.join(out_dir, rec.get("file", ""))
+    if not rec or not os.path.isfile(path):
+        say(False, "%s.albedo" % fam, "MISSING: %s" % rec.get("file"))
+        return 0
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    digest = hashlib.sha256(blob).hexdigest()
+    if digest != rec.get("sha256"):
+        say(False, "%s.albedo sha" % fam,
+            "manifest %s.. != file %s.."
+            % (str(rec.get("sha256"))[:12], digest[:12]))
+        return 0
+    w, h, rgba = read_png_rgba(path)
+    n = w * h
+    say(w == h == spec.get("size_px") and len(blob) == rec.get("bytes"),
+        "%s.albedo file" % fam,
+        "%dx%d, %d B, sha %s.." % (w, h, len(blob), digest[:8]))
+
+    stats = []
+    for c in range(4):
+        vals = rgba[c::4]
+        stats.append((min(vals), max(vals), sum(vals) / n))
+    for c, cname in enumerate("RGB"):
+        lo, hi, mean = stats[c]
+        say(True, "%s.albedo %s" % (fam, cname),
+            "range %d..%d mean %.1f" % (lo, hi, mean))
+    alo, ahi, amean = stats[3]
+    say(ahi - alo >= MIN_SPREAD, "%s.albedo A" % fam,
+        "spread %d (min %d), range %d..%d mean %.1f%s"
+        % (ahi - alo, MIN_SPREAD, alo, ahi, amean,
+           "" if ahi - alo >= MIN_SPREAD
+           else "  -> a card with constant alpha has lost its cutout"))
+
+    cov = sum(1 for a in rgba[3::4] if a >= 128) / n
+    lo_b, hi_b = code["coverage"]
+    say(lo_b <= cov <= hi_b, "%s.albedo coverage" % fam,
+        "%.3f in band %.2f..%.2f (alpha >= 128; the floor keeps distant "
+        "mips above alpha_test)" % (cov, lo_b, hi_b))
+
+    lmin, lmax = 255.0, 0.0
+    for o in range(0, n * 4, 4):
+        if rgba[o + 3] >= 128:
+            lum = (rgba[o] + rgba[o + 1] + rgba[o + 2]) / 3.0
+            if lum < lmin:
+                lmin = lum
+            if lum > lmax:
+                lmax = lum
+    say(lmax - lmin >= MIN_SPREAD, "%s.albedo varies" % fam,
+        "covered-region luma spread %.0f (min %d), range %.0f..%.0f"
+        % (lmax - lmin, MIN_SPREAD, lmin, lmax))
+
+    measured = round(_albedo_mean_rgba(rgba, code["alpha_test"]), 4)
+    say(spec.get("albedo_mean") == measured, "%s.albedo_mean" % fam,
+        "manifest %r vs measured %.4f" % (spec.get("albedo_mean"), measured))
+
+    # THE GREY-WHITE / SILENT-DROP GUARD. A card whose alpha channel is in
+    # use but whose manifest declares no alpha_test leaves the consumer two
+    # bad defaults: render the background as grey-white fill (no test) or
+    # drop the family (unknown contract). Neither is a texture bug you can
+    # see in this tool, so the manifest is refused HERE, by name.
+    alpha_used = ahi > alo
+    has_test = "alpha_test" in spec
+    if alpha_used and not has_test:
+        say(False, "%s.alpha_test guard" % fam,
+            "ALPHA IN USE BUT alpha_test UNDECLARED: consumer would render "
+            "grey-white fill or silently drop the family; refused")
+    elif not alpha_used and has_test:
+        say(False, "%s.alpha_test guard" % fam,
+            "alpha_test declared on a constant-alpha family")
+    else:
+        say(has_test and spec.get("alpha_test") == code["alpha_test"],
+            "%s.alpha_test guard" % fam,
+            "alpha varies and alpha_test = %r (code declares %r)"
+            % (spec.get("alpha_test"), code["alpha_test"]))
+
+    say(spec.get("uv_space") == "unit", "%s.uv_space" % fam,
+        "%r (cards are unit UVs, not metres)" % spec.get("uv_space"))
+    wr = spec.get("wrap") or {}
+    say((wr.get("u"), wr.get("v")) == code["wrap"], "%s.wrap" % fam,
+        "u=%r v=%r (code declares u=%r v=%r)"
+        % (wr.get("u"), wr.get("v"), code["wrap"][0], code["wrap"][1]))
+    return n
+
+
 def check_maps(out_dir=OUT_DIR, verbose=True):
     """Returns (ok, lines). Every texel of every map is examined; the count is
     reported so 'all green' cannot mean 'looked at nothing'."""
@@ -1128,13 +1732,17 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
         % (man.get("version"), MANIFEST_VERSION, man.get("zlib")))
 
     declared = set(man.get("families", {}))
-    say(declared == set(FAMILIES), "families",
-        "%s" % sorted(declared) if declared == set(FAMILIES)
-        else "manifest %s != code %s" % (sorted(declared), sorted(FAMILIES)))
+    expected = set(FAMILIES) | set(ALBEDO_FAMILIES)
+    say(declared == expected, "families",
+        "%s" % sorted(declared) if declared == expected
+        else "manifest %s != code %s" % (sorted(declared), sorted(expected)))
 
     total_texels = 0
     for fam in sorted(declared):
         spec = man["families"][fam]
+        if fam in ALBEDO_FAMILIES:
+            total_texels += _check_albedo_family(fam, spec, out_dir, say)
+            continue
         for kind in ("normal", "orm"):
             rec = spec[kind]
             path = os.path.join(out_dir, rec["file"])
@@ -1216,8 +1824,10 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
 def selftest():
     import tempfile
     fails = []
+    count = [0]
 
     def check(label, ok, detail=""):
+        count[0] += 1
         print("  [%s] %-26s %s" % ("ok" if ok else "FAIL", label, detail))
         if not ok:
             fails.append(label)
@@ -1419,9 +2029,120 @@ def selftest():
               "NOT EXAMINED: %s does not exist, run `texgen.py` first" % OUT_DIR)
         check("check can fail", False, "NOT EXAMINED: same reason")
 
+    # 10. The RGBA encoder: round trip, stability, sensitivity, and the size
+    #     guard. Checks 1-4 cover the RGB path; what bpp 3 cannot see is a
+    #     filter that fails to invert at bpp 4.
+    w = h = 33
+    px4 = bytearray()
+    for y in range(h):
+        for x in range(w):
+            px4 += bytes(((x * 5) % 256, (y * 9) % 256,
+                          ((x ^ y) * 7) % 256, ((x + y) * 3) % 256))
+    p4 = os.path.join(tmp, "rt4.png")
+    write_png_rgba(p4, w, h, bytes(px4))
+    rw, rh, rgba = read_png_rgba(p4)
+    check("rgba round trip", (rw, rh) == (w, h) and rgba == bytes(px4),
+          "%dx%d, %d bytes" % (rw, rh, len(rgba)))
+    with open(p4, "rb") as fh:
+        blob4 = fh.read()
+    p5 = os.path.join(tmp, "rt5.png")
+    write_png_rgba(p5, w, h, bytes(px4))
+    with open(p5, "rb") as fh:
+        check("rgba encode is stable", fh.read() == blob4,
+              "%d bytes twice" % len(blob4))
+    px5 = bytearray(px4)
+    px5[4 * (17 * w + 11) + 2] ^= 0x20
+    p6 = os.path.join(tmp, "rt6.png")
+    write_png_rgba(p6, w, h, bytes(px5))
+    with open(p6, "rb") as fh:
+        check("rgba encode is sensitive", fh.read() != blob4,
+              "one texel changed the file")
+    try:
+        write_png_rgba(p6, w, h, bytes(px4[:-4]))
+        check("rgba refuses wrong size", False, "accepted a short buffer")
+    except ValueError as exc:
+        check("rgba refuses wrong size", True, str(exc)[:40])
+
+    # 11. The card families, composed ONCE at shipped size and measured
+    #     pre- and post-dilation. The pre-dilation buffer is the real
+    #     negative control for the halo check: compose leaves background
+    #     texels black precisely so this can fail (see _render_card).
+    for name in sorted(ALBEDO_FAMILIES):
+        spec = ALBEDO_FAMILIES[name]
+        s = spec["size"]
+        raw_rgb, alpha = _render_card(s, spec["strips"](), spec["noise_seed"])
+        dil = _dilate_albedo(raw_rgb, alpha, s, s)
+        edge, inner = _wrap_vs_interior_u([float(a) for a in alpha], s, s)
+        check("%s alpha tiles in u" % name, edge <= inner,
+              "wrap step %.0f vs worst interior %.0f" % (edge, inner))
+        cov = _alpha_coverage(alpha)
+        lo_b, hi_b = spec["coverage"]
+        check("%s coverage in band" % name, lo_b <= cov <= hi_b,
+              "%.3f in %.2f..%.2f (alpha >= 128)" % (cov, lo_b, hi_b))
+        worst_post, ex_post = _halo_worst(dil, alpha, s, s)
+        check("%s dilation kills halos" % name,
+              ex_post > 0 and worst_post <= 64.0,
+              "worst |luma - opaque-neighbour mean| %.1f over %d texels "
+              "(max 64)" % (worst_post, ex_post))
+        worst_pre, ex_pre = _halo_worst(raw_rgb, alpha, s, s)
+        check("%s halo fails undilated" % name,
+              ex_pre > 0 and worst_pre > 64.0,
+              "undilated worst %.1f over %d texels, correctly over 64"
+              % (worst_pre, ex_pre))
+        check("%s tip rows clear" % name, _tip_rows_clear(alpha, s),
+              "top %d rows all alpha 0 (the clamped tip edge dissolves)"
+              % ALBEDO_TIP_ROWS)
+
+    # 12. NEGATIVE CONTROLS for the card checks, per DW-20: each must be
+    #     shown able to fail on a field built to fail it.
+    s = 64
+    uramp = [x / s for y in range(s) for x in range(s)]
+    edge, inner = _wrap_vs_interior_u(uramp, s, s)
+    check("u-seam check can fail", edge > inner,
+          "u ramp: wrap step %.4f vs worst interior %.4f" % (edge, inner))
+    band = ALBEDO_FAMILIES["grass"]["coverage"]
+    c_ones = _alpha_coverage(bytes([255]) * (s * s))
+    c_zeros = _alpha_coverage(bytes(s * s))
+    check("coverage check can fail",
+          not (band[0] <= c_ones <= band[1])
+          and not (band[0] <= c_zeros <= band[1]),
+          "all-opaque %.2f and all-transparent %.2f both outside %.2f..%.2f"
+          % (c_ones, c_zeros, band[0], band[1]))
+    top_alpha = bytearray(s * s)
+    top_alpha[0:s] = b"\xff" * s
+    check("tip check can fail", not _tip_rows_clear(top_alpha, s),
+          "an opaque top row was caught")
+
+    # 13. The alpha_test guard, exercised against the SHIPPED manifest the
+    #     same way check 9 exercises the sha: copy, strip the field, and
+    #     check_maps must refuse by name.
+    if os.path.isdir(OUT_DIR):
+        import shutil
+        guard = os.path.join(tmp, "tex_guard")
+        shutil.copytree(OUT_DIR, guard)
+        gm_path = os.path.join(guard, "surfaces.json")
+        with open(gm_path, "r", encoding="utf-8") as fh:
+            gman = json.load(fh)
+        gfam = gman.get("families", {}).get("grass", {})
+        if "alpha_test" in gfam:
+            del gfam["alpha_test"]
+            with open(gm_path, "w", newline="\n", encoding="utf-8") as fh:
+                json.dump(gman, fh, indent=2, sort_keys=False)
+                fh.write("\n")
+            ok_guard, _ = check_maps(guard, verbose=False)
+            check("alpha_test guard can fail", not ok_guard,
+                  "grass without alpha_test was refused")
+        else:
+            check("alpha_test guard can fail", False,
+                  "NOT EXAMINED: shipped manifest has no grass alpha_test, "
+                  "run `texgen.py` first")
+    else:
+        check("alpha_test guard can fail", False,
+              "NOT EXAMINED: %s does not exist" % OUT_DIR)
+
     print("\n%s  %d check(s), %d failure(s)"
           % ("SELFTEST PASS" if not fails else "SELFTEST FAIL",
-             12 + len(FAMILIES), len(fails)))
+             count[0], len(fails)))
     return 0 if not fails else 1
 
 

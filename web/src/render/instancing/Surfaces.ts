@@ -52,8 +52,15 @@ const DIR = 'assets/textures/';
 
 interface ManifestMap { file: string; bytes: number; sha256: string }
 interface ManifestFamily {
-  normal: ManifestMap; orm: ManifestMap;
-  tile_m: number; size_px: number; texels_per_m: number;
+  /** The surface families carry normal+orm; the albedo card families (leaf,
+   *  grass) carry `albedo` only, with unit UVs and an alpha_test contract.
+   *  ALL map fields are therefore optional, and a family is consumed by
+   *  whichever fields it declares. */
+  normal?: ManifestMap; orm?: ManifestMap; albedo?: ManifestMap;
+  tile_m?: number; size_px: number; texels_per_m?: number;
+  uv_space?: 'unit' | 'metres';
+  wrap?: { u: 'repeat' | 'clamp'; v: 'repeat' | 'clamp' };
+  alpha_test?: number; albedo_mean?: number;
 }
 interface Manifest {
   version: number; zlib: string;
@@ -228,6 +235,15 @@ const ready = (async (): Promise<void> => {
   manifest = m;
   verifyAgainstManifest(m);
   for (const [name, f] of Object.entries(m.families)) {
+    // An albedo card family (leaf, grass) has no normal/orm pair. This pass
+    // SKIPS it entirely rather than half-loading it: no role maps to these
+    // families yet (the role move lands atomically with the attach code), so
+    // loading their maps now would spend VRAM nothing samples. Tolerating the
+    // manifest entry is the load-bearing part: the bark precedent is that a
+    // family addition must not break an older client, and `f.normal.file` on
+    // an albedo family would have thrown inside `ready` and taken every
+    // OTHER family down with it.
+    if (f.normal === undefined || f.orm === undefined || f.tile_m === undefined) continue;
     const [normal, orm] = await Promise.all([
       makeTexture(DIR + f.normal.file, f.tile_m),
       makeTexture(DIR + f.orm.file, f.tile_m),
