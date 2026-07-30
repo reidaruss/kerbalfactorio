@@ -268,9 +268,13 @@ export class VoxelMesh {
     this.geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     this.geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     if (this.opts.editFacesOnly) {
+      // The DESIGNED relief, not opts.surfaceRadiusAt: the skin colours by
+      // depth below the ORIGINAL ground (RN-80, VoxelSkin's note), and the
+      // edited surface would report a pit floor at depth zero.
       this.geo.setAttribute('color', new THREE.BufferAttribute(faceColours(
         positions, normals, [this.anchor.x, this.anchor.y, this.anchor.z],
-        this.opts.bodyRadiusM, this.opts.maxReliefM, biomeId), 3));
+        this.opts.bodyRadiusM, this.opts.maxReliefM, biomeId,
+        (dx, dy, dz) => this.M._of_base_height(this.bodyHandle, dx, dy, dz)), 3));
     }
     this.geo.setIndex(new THREE.BufferAttribute(indices, 1));
     this.geo.computeBoundingSphere();
