@@ -32,6 +32,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MAX_CAPACITY, registerPool, type PoolReport } from './InstancePools.js';
 import { attachSurface, copyUv, familyForMaterial, type Family }
   from '../render/instancing/Surfaces.js';
+import { applyWind } from '../render/instancing/PropWind.js';
 
 /** Merge one family's primitives into a single geometry. One is already merged. */
 function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -250,6 +251,11 @@ export class NodeBatch {
     });
     material.name = `nodes:${name}`;
     attachSurface(material, name.split(':')[0] as Family, `nodes:${name}`);
+    // WIND (RN-98): the harvest trees' crowns sway; trunks stay near-rigid by
+    // never being hooked (Bark is `coarse`, so it is not in this batch). The
+    // `flat` bucket can only hold leaf roles here: the node kinds are trees
+    // plus four boulder kinds (NodeArt.ART), and every boulder role is coarse.
+    if (name.startsWith('flat:')) applyWind(material, `nodes:${name}`);
     const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
     mesh.name = `nodes:${name}`;
     mesh.castShadow = true;

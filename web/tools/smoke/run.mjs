@@ -140,6 +140,12 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // binary. A distance rather than a flag, so the same control sweeps the
   // cost, which goes as its square.
   'canopy', 'canopyshade',
+  // RN-97, standing rule 7. `wind=0` removes the foliage wind hook entirely,
+  // so the program set is stock and the build is the static one (the negative
+  // control); `windamp=` sweeps the amplitude in place, and `windamp=0` keeps
+  // the hooked program at exactly zero displacement, which is what separates
+  // "the hook costs" from "the motion costs".
+  'wind', 'windamp',
   // RN-121, standing rule 7. `anim=0` freezes every skeletal AnimationMixer
   // (player body, FP arms, rigged creatures): rigs draw their rest pose and
   // nothing ticks. The negative control for every clip-playback claim and the

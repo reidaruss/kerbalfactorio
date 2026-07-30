@@ -18,6 +18,7 @@ import { SHARED_ATLAS } from '../../assets/Registry.js';
 import { LAYER_PROPS } from '../Scenes.js';
 import { isFoliageMaterial } from '../ScatterLook.js';
 import { normalize, setBaseShade, type BaseBake } from './PropGeometry.js';
+import { applyWind } from './PropWind.js';
 import { attachSurface, familyForRole, roleOfMaterialName, surfacesReady }
   from './Surfaces.js';
 
@@ -233,6 +234,13 @@ export class PropLibrary {
     // decision rather than an omission: see surfaces.json's reason per role.
     attachSurface(material as THREE.MeshStandardMaterial,
       familyForRole(roleOfMaterialName(role)), `props:${key}`);
+    // WIND (RN-97): only plants sway. The predicate is the same imported one
+    // the base bake uses, so "which materials are plants" stays ONE answer and
+    // a rock can never inherit a breeze. With ?wind=0 this is a no-op and the
+    // material keeps its stock program (the negative control).
+    if (isFoliageMaterial(role)) {
+      applyWind(material as THREE.MeshStandardMaterial, `props:${key}`);
+    }
     const cap0 = this.growable ? START_CAPACITY : LEGACY_CAPACITY;
     const mesh = new THREE.BatchedMesh(cap0, MAX_VERTS, MAX_VERTS * 3, material);
     mesh.name = `props:${key}`;

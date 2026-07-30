@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
+import { windUpdate } from '../render/instancing/PropWind.js';
 
 /** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
 const NIGHT_DOT = -0.12;
@@ -224,6 +225,10 @@ export function registerSystems(s: Services, loop: Loop): void {
     bodyCenterEngine.set(-s.origin.origin.x, -s.origin.origin.y, -s.origin.origin.z);
     s.gameplay?.frame(loop.fixedDt);
     s.materials.update(bodyCenterEngine, loop.simSecs);
+    // The foliage wind clock, beside the terrain's for the same reason the
+    // water shares the terrain's uTime: one sim clock, so pausing the sim
+    // stops the breeze exactly as it stops the ripples.
+    windUpdate(loop.simSecs);
     s.sky.update(s.observer.position, s.observer.up, s.observer.altM);
 
     // Stock materials (PlanetProxy, Avatar) are lit by these; TerrainMaterial is
