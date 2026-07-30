@@ -17,6 +17,7 @@
 
 import './styles/game.css';
 import { esc } from './GameHud.js';
+import { labelOf } from '../player/Bindings.js';
 
 export interface ObjectiveRow {
   text: string; hint: string; done: boolean; current: boolean;
@@ -57,7 +58,11 @@ export class ObjectivePanel {
       }
       return `<li class="soon">${esc(r.text)}</li>`;
     }).join('');
+    // GP-165: the hide key is spelled by the binding table, like every other
+    // control this panel names. It said a literal H, which was only ever right
+    // by coincidence with BINDINGS.goals.
     this.root.innerHTML = `<h4>Getting started`
-      + `<span>${doneCount} / ${rows.length} &nbsp; H</span></h4><ul>${body}</ul>`;
+      + `<span>${doneCount} / ${rows.length} &nbsp; ${esc(labelOf('goals'))}`
+      + `</span></h4><ul>${body}</ul>`;
   }
 }

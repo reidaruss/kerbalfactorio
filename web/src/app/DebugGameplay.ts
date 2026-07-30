@@ -331,7 +331,9 @@ export function gameplayApi(s: Services, loop: Loop) {
       const g = s.gameplay;
       if (g === undefined || g === null) return null;
       if (show !== undefined) showGoals(g, show);
-      return g.goals.report();
+      // GP-165: the resolved hints ride along so a probe can assert the
+      // derivation for rows the panel is not currently drawing.
+      return { ...(g.goals.report() as object), hints: g.goals.allHints(g) };
     },
 
     // DW-17, the voxel half of `repopulate`: put the rock back, so a restore is

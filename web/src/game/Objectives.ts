@@ -21,6 +21,8 @@
 // them a couple of counter reads, and the panel re-renders only when the text
 // it would produce changes.
 
+import { labelOf } from '../player/Bindings.js';
+import type { Action } from '../player/Bindings.js';
 import type { Gameplay } from './Gameplay.js';
 
 /** Seconds between checks. Fast enough to feel immediate, slow enough to vanish. */
@@ -46,43 +48,88 @@ export interface RocketPort {
 
 export interface Objective {
   id: string;
-  /** The imperative, and the key that does it. */
+  /** The imperative. */
   text: string;
-  hint: string;
+  /** GP-165: a FUNCTION of the live game, never a string, so a key or a slot
+   *  number can only ever be derived. See the block comment above OBJECTIVES. */
+  hint: (g: Gameplay) => string;
   done: (g: Gameplay, r: RocketPort | null) => boolean;
 }
 
 /** How many ingots off an automated line count as "it ran without you". */
 const AUTO_TARGET = 1;
 
+/**
+ * GP-165. THE NUMBER KEY FOR WHATEVER SLOT HOLDS `part` RIGHT NOW, read off
+ * the live hotbar, because the bar is editable (GP-108) and a hint that says
+ * "press 4" about a slot the player emptied is teaching a dead key. Falls back
+ * to naming the build menu, which can always put the part in hand.
+ */
+function slotOf(g: Gameplay, part: string): string {
+  const i = g.hotbar.slots.findIndex((s) => s.kind === 'part' && s.part === part);
+  return i >= 0 ? labelOf(`slot${i + 1}` as Action)
+    : `the build menu (${labelOf('build')})`;
+}
+
+/** The furnace's own slot, same derivation (it is a `furnace` kind, not a part). */
+function furnaceSlot(g: Gameplay): string {
+  const i = g.hotbar.slots.findIndex((s) => s.kind === 'furnace');
+  return i >= 0 ? labelOf(`slot${i + 1}` as Action)
+    : `the build menu (${labelOf('build')})`;
+}
+
+/**
+ * GP-165. EVERY KEY AND SLOT IN A HINT IS DERIVED, never typed.
+ *
+ * The first six hints a new player read carried FIVE wrong controls between
+ * them: "hold E" for a harvest the left button does (GP-26 moved it), "G to
+ * place" for a placement that is a click (GP-27 moved it), "press 1" for a
+ * drill that sits on slot 3, and "press 2 for belt, 3 for smelter" about
+ * slots 4 and 5. Every one was true when written and nobody re-read this file
+ * across two control remaps and a hotbar rework, which is the project's
+ * fourth wrong-key-on-screen incident (the mute hint, the map hint, GP-140's
+ * two prettifiers). Same fix as all three: the ONE binding table spells every
+ * control, and a slot number comes off the LIVE bar, so an edited hotbar
+ * re-teaches its own layout. `probes/goalhints.js` reassigns the drill
+ * mid-run and watches the drawn hint follow it, which no prose can pass.
+ */
 export const OBJECTIVES: Objective[] = [
   {
-    id: 'wood', text: 'Harvest a tree', hint: 'aim at one and hold E',
+    id: 'wood', text: 'Harvest a tree',
+    hint: () => `aim at one and hold ${labelOf('use')}`,
     done: (g) => g.game.count(g.game.ids.wood) >= 4,
   },
   {
-    id: 'tool', text: 'Craft a pickaxe', hint: 'Tab opens the pack',
+    id: 'tool', text: 'Craft a pickaxe',
+    hint: () => `${labelOf('pack')} opens the pack`,
     done: (g) => g.game.count(g.game.ids.pickaxe) >= 1,
   },
   {
-    id: 'ore', text: 'Mine iron ore', hint: 'the grey-blue patch of ground',
+    id: 'ore', text: 'Mine iron ore',
+    hint: () => 'the grey-blue patch of ground',
     done: (g) => g.game.count(g.game.ids.rawIron) >= 5,
   },
   {
-    id: 'smelt', text: 'Smelt it into iron', hint: 'craft a furnace, G to place, E to load',
+    id: 'smelt', text: 'Smelt it into iron',
+    hint: (g) => `craft a furnace, ${furnaceSlot(g)} and ${labelOf('use')} `
+      + `place it, ${labelOf('interact')} opens it`,
     done: (g) => g.game.count(g.game.ids.iron) >= 1,
   },
   {
-    id: 'miner', text: 'Put a drill on an ore patch', hint: 'press 1, then G',
+    id: 'miner', text: 'Put a drill on an ore patch',
+    hint: (g) => `press ${slotOf(g, 'miner')}, then ${labelOf('use')}`,
     done: (g) => g.factory.placed.some((p) => p.kind === 'miner'),
   },
   {
-    id: 'belt', text: 'Run a belt from it to a smelter', hint: 'press 2 for belt, 3 for smelter, R turns',
+    id: 'belt', text: 'Run a belt from it to a smelter',
+    hint: (g) => `${slotOf(g, 'belt')} is belt, ${slotOf(g, 'smelter')} is `
+      + `smelter, ${labelOf('rotate')} turns`,
     done: (g) => g.factory.placed.some((p) => p.kind === 'belt')
       && g.factory.placed.some((p) => p.kind === 'smelter'),
   },
   {
-    id: 'auto', text: 'Walk away, then take what it made', hint: 'E on the smelter',
+    id: 'auto', text: 'Walk away, then take what it made',
+    hint: () => `${labelOf('interact')} opens the smelter, click its output`,
     done: (g) => g.autoCollected >= AUTO_TARGET,
   },
   // GP-53. THE SPACE HALF OF THE GAME HAD NO ENTRANCE. The assembly bay and
@@ -114,17 +161,19 @@ export const OBJECTIVES: Objective[] = [
   // where the pad goes.
   {
     id: 'pad', text: 'Build a launch pad on a 6 x 6 foundation platform',
-    hint: 'research Launch Facilities (J), then slot 0 puts one in your hand',
+    hint: (g) => `research Launch Facilities (${labelOf('research')}), then `
+      + `${slotOf(g, 'launchpad')} puts one in your hand`,
     done: (g) => g.pads.list.length >= 1,
   },
   {
     id: 'rocket', text: 'Build a rocket in the assembly bay',
-    hint: 'press C to go in, click parts onto the stack',
+    hint: () => `press ${labelOf('assembly')} to go in, click parts onto the stack`,
     done: (_g, r) => r === null || r.parts() >= 2,
   },
   {
     id: 'launch', text: 'Roll it out and climb aboard',
-    hint: 'G rolls it onto the pad, G again straps you in',
+    hint: () => `${labelOf('board')} rolls it onto the pad, ${labelOf('board')} `
+      + `again straps you in`,
     done: (_g, r) => r === null || r.boardings() >= 1,
   },
 ];
@@ -169,11 +218,19 @@ export class Objectives {
     return o;
   }
 
-  /** The rows a panel draws: what is done, what is next, and what is coming. */
-  view(): ObjectiveView {
+  /**
+   * The rows a panel draws: what is done, what is next, and what is coming.
+   *
+   * GP-165: only the CURRENT row's hint is resolved, because only the current
+   * row draws one and the others would be ten derivations a frame for text
+   * nobody sees.
+   */
+  view(g: Gameplay): ObjectiveView {
     return {
       rows: OBJECTIVES.map((o, i) => ({
-        text: o.text, hint: o.hint, done: i < this.index, current: i === this.index,
+        text: o.text,
+        hint: i === this.index ? o.hint(g) : '',
+        done: i < this.index, current: i === this.index,
       })),
       doneCount: this.index,
       total: OBJECTIVES.length,
@@ -181,21 +238,37 @@ export class Objectives {
     };
   }
 
-  /** A cheap key for the panel's diff: the list only changes on a completion. */
-  get key(): string {
-    return `${this.index}|${this.visible ? 1 : 0}`;
+  /**
+   * A cheap key for the panel's diff. The CURRENT HINT is part of it (GP-165):
+   * a hotbar edit changes a hint under a fixed index, and a key that cannot
+   * see that is GP-137's stale-list defect (a screen built once per event that
+   * has a second trigger nobody keyed on).
+   */
+  private keyFor(currentHint: string): string {
+    return `${this.index}|${this.visible ? 1 : 0}|${currentHint}`;
   }
 
   /** The id of the objective now in front of the player. '' when finished. */
   get currentId(): string { return OBJECTIVES[this.index]?.id ?? ''; }
 
+  /**
+   * GP-165. Every hint, resolved NOW, for the debug report only. It is the
+   * same function the panel draws, which is what makes a probe reading it a
+   * probe of the screen's own derivation rather than of a parallel copy; the
+   * panel itself still resolves only the current row.
+   */
+  allHints(g: Gameplay): { id: string; hint: string }[] {
+    return OBJECTIVES.map((o) => ({ id: o.id, hint: o.hint(g) }));
+  }
+
   /** Force a re-render on the next frame. */
   invalidate(): void { this.lastId = ''; }
 
   /** True when the panel's content would differ from what it last drew. */
-  changed(): boolean {
-    if (this.key === this.lastId) return false;
-    this.lastId = this.key;
+  changed(currentHint: string): boolean {
+    const k = this.keyFor(currentHint);
+    if (k === this.lastId) return false;
+    this.lastId = k;
     return true;
   }
 
@@ -242,7 +315,8 @@ export function stepGoals(g: Gameplay, dt: number): void {
     g.sfx.chime(g.goals.index);
     g.goals.invalidate();
   }
-  if (!g.goals.visible || !g.goals.changed()) return;
-  const v = g.goals.view();
+  if (!g.goals.visible) return;
+  const v = g.goals.view(g);
+  if (!g.goals.changed(v.rows[g.goals.index]?.hint ?? '')) return;
   g.goalPanel.render(v.rows, v.doneCount, v.complete);
 }
