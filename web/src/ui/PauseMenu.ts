@@ -67,6 +67,8 @@ export interface PauseView {
   /** GP-102. Empty when nothing has marked the save. */
   assisted: string;
   cheats: CheatRow[];
+  /** GP-167. The Visit-site group: the seven surveyed spawn candidates. */
+  visits: CheatRow[];
   /** Set while Start Fresh is armed: the whole sentence the confirm shows. */
   confirm: string;
 }
@@ -294,7 +296,8 @@ export class PauseMenu extends Modal {
       + `${view.confirm}|${a.volume}|${a.muted ? 1 : 0}|${a.state}|`
       + `${a.silentBecause}|${sv.busy}|${sv.note}|${sv.confirmDelete}|`
       + sv.rows.map((r) => `${r.name}:${r.savedAt}`).join(',') + '|'
-      + view.cheats.map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
+      + [...view.cheats, ...view.visits]
+        .map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;
     // GP-152. The page identity is part of the focus decision, not just of the
@@ -309,7 +312,7 @@ export class PauseMenu extends Modal {
       : view.page === 'video' ? video(view.video)
         : view.page === 'audio' ? audio(view.audio)
           : view.page === 'save' ? saves(view.saves)
-            : header(view) + stubs() + testing(view);
+            : header(view) + stubs() + testing(view) + visitGroup(view);
     this.restoreFocus();
   }
 
@@ -357,22 +360,30 @@ function stubs(): string {
  * player can reach without first reading the sentence is not a confirm.
  */
 function testing(v: PauseView): string {
-  const rows = v.cheats.map((c) => {
-    if (c.destructive === true && v.confirm !== '') return armed(c, v.confirm);
-    const blocked = c.blocked !== undefined && c.blocked !== '';
-    const state = c.kind === 'toggle'
-      ? `<span class="state ${c.on === true ? 'on' : 'off'}">`
-        + `${c.on === true ? 'ON' : 'OFF'}</span>`
-      : '';
-    return `<div class="row cheat${blocked ? ' blocked' : ''}`
-      + `${c.destructive === true ? ' danger' : ''}" data-cheat-row="${esc(c.id)}">`
-      + `<span class="nm">${esc(c.label)}${state}</span>`
-      + `<span class="why">${esc(blocked ? (c.blocked ?? '') : c.note)}</span>`
-      + `<button type="button" data-cheat="${esc(c.id)}"${blocked ? ' disabled' : ''}>`
-      + `${c.kind === 'toggle' ? (c.on === true ? 'Turn off' : 'Turn on') : 'Do it'}`
-      + '</button></div>';
-  }).join('');
-  return '<div class="of-pgrp cheats"><h4>Testing</h4>' + rows + '</div>';
+  return '<div class="of-pgrp cheats"><h4>Testing</h4>'
+    + v.cheats.map((c) => (c.destructive === true && v.confirm !== '')
+      ? armed(c, v.confirm) : cheatRow(c, 'Do it')).join('') + '</div>';
+}
+
+/** GP-167. Same rows, same delegation, one renderer: only the verb differs. */
+function visitGroup(v: PauseView): string {
+  return '<div class="of-pgrp cheats visits"><h4>Visit site</h4>'
+    + v.visits.map((c) => cheatRow(c, 'Go')).join('') + '</div>';
+}
+
+function cheatRow(c: CheatRow, verb: string): string {
+  const blocked = c.blocked !== undefined && c.blocked !== '';
+  const state = c.kind === 'toggle'
+    ? `<span class="state ${c.on === true ? 'on' : 'off'}">`
+      + `${c.on === true ? 'ON' : 'OFF'}</span>`
+    : '';
+  return `<div class="row cheat${blocked ? ' blocked' : ''}`
+    + `${c.destructive === true ? ' danger' : ''}" data-cheat-row="${esc(c.id)}">`
+    + `<span class="nm">${esc(c.label)}${state}</span>`
+    + `<span class="why">${esc(blocked ? (c.blocked ?? '') : c.note)}</span>`
+    + `<button type="button" data-cheat="${esc(c.id)}"${blocked ? ' disabled' : ''}>`
+    + `${c.kind === 'toggle' ? (c.on === true ? 'Turn off' : 'Turn on') : verb}`
+    + '</button></div>';
 }
 
 function armed(c: CheatRow, sentence: string): string {
@@ -385,5 +396,3 @@ function armed(c: CheatRow, sentence: string): string {
     + `<button type="button" data-cheat="${esc(c.id)}:cancel">Cancel</button>`
     + '</span></div>';
 }
-
-

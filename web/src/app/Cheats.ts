@@ -26,6 +26,7 @@
 import { clearSlot, readSlot } from '../game/SaveGame.js';
 import { assistedReport, clearAssisted, isAssisted, noteCheat } from '../game/Assisted.js';
 import { livePropellantKg, refillTanks, warpToOrbit } from '../sim/FlightCheats.js';
+import { pressVisit, visitRows } from './VisitSites.js';
 import { optionPages, pressOption } from './OptionsPages.js';
 import { AudioBus } from '../audio/AudioBus.js';
 import type { CheatRow, PauseView } from '../ui/PauseMenu.js';
@@ -67,6 +68,10 @@ export interface CheatDeps {
   /** Probe-only: stop the port navigating, so a driven run can read the
    *  receipt. See the `norestart` branch in `press`. */
   suppressRestart: () => void;
+  /** GP-167. THE ground teleport, the one authority every site probe already
+   *  drives (`__of.teleport` -> ViewRouter -> the walker's spawn). A port, so
+   *  this file gains no second copy of it. See app/VisitSites.ts. */
+  teleport: (latDeg: number, lonDeg: number, altM: number) => void;
 }
 
 export interface CheatReceipt {
@@ -110,6 +115,12 @@ export class Cheats {
     const opt = pressOption(this.d.gameplay()?.sfx.bus ?? null, this.d.slots,
       this.d.gameplay(), id);
     if (opt !== '') return this.say(id, true, opt);
+    // GP-167 / GP-168. Visit a surveyed site. A REAL cheat: it marks the save.
+    const vis = pressVisit(id, this.d.flight(), this.d.teleport);
+    if (vis !== null) {
+      if (vis.done) this.mark('visit');
+      return this.say(id, vis.done, vis.message, vis.detail);
+    }
     if (id === 'startfresh') return this.arm();
     if (id === 'startfresh:cancel') { this.armed = false; return this.say(id, true, 'cancelled'); }
     if (id === 'startfresh:confirm') {
@@ -366,6 +377,9 @@ export class Cheats {
       assisted: isAssisted()
         ? 'this world has had testing controls used on it' : '',
       cheats,
+      // GP-167. Derived per view like everything else: the blocked reason
+      // follows `aboard` the frame it changes.
+      visits: visitRows(f),
       confirm: this.armed ? this.confirmSentence() : '',
     };
   }

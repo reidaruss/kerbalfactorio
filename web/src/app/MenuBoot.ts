@@ -56,11 +56,20 @@ export function installPauseMenu(s: Services, loop: Loop) {
     cfg: s.cfg,
     restart,
     suppressRestart: () => { restartOff = true; },
+    // GP-167. The ONE ground teleport, reused and never rewritten: this is the
+    // exact call `__of.teleport` makes (Debug.ts), so the cheat and every site
+    // probe walk one path. Aboard a vessel it is refused upstream (VisitSites),
+    // because the vessel source's teleport() is a no-op by design.
+    teleport: (latDeg, lonDeg, altM) => { s.observer.teleport(latDeg, lonDeg, altM); },
   });
 
   const menu = new PauseMenu(g.host, g.modals, (id) => {
-    cheats.press(id);
+    const r = cheats.press(id);
     menu.invalidate();
+    // GP-168. Arrival CLOSES the menu, through the same transition Escape
+    // takes, so the pointer and the HUD come back and the player is looking at
+    // the place they asked for rather than at the menu over it.
+    if (id.startsWith('visit:') && r.done) setPause(false);
   });
   // GP-131. THE MENU ALWAYS OPENS ON ITS ROOT PAGE. A player who left it on the
   // controls screen and pressed Escape twice must not come back to a sub-page
@@ -196,7 +205,8 @@ export function installPauseMenu(s: Services, loop: Loop) {
       return {
         open: menu.isOpen,
         escapeOpens: g.modals.whenNothingOpen !== null,
-        buttons: cheats.view().cheats.map((c) => ({
+        // GP-167: the visit rows ride the same report, same shape.
+        buttons: [...cheats.view().cheats, ...cheats.view().visits].map((c) => ({
           id: c.id, present: menu.buttonFor(c.id) !== null,
           disabled: menu.buttonFor(c.id)?.disabled ?? null,
           on: c.on ?? null, blocked: c.blocked ?? '',
