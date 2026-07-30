@@ -83,6 +83,7 @@ import type { SaveSite, SaveStructure } from './StructureSave.js';
 import type { SavePad } from './LaunchPadSave.js';
 import type { PlayerHealthSave } from './PlayerHealth.js';
 import { savePlayerAnchor, saveVessels, stashVessels } from './VesselSave.js';
+import { currentDayT, stashDayT } from '../sim/DayCycle.js';
 import type { SavePlayerAnchor, SaveVessel } from './VesselSave.js';
 
 export interface SaveBuilding {
@@ -237,6 +238,14 @@ export interface SaveSlot {
    *  planet. Same additive-and-optional rule; absent restores the scenario
    *  spawn, which is the old behaviour exactly. */
   player?: SavePlayerAnchor;
+  /** PH-86: THE TIME OF DAY, as the sun angle in turns [0,1), so a save made at
+   *  noon loads at noon. Stamped at the `writeSlot` choke point from the day
+   *  clock (`sim/DayCycle.ts`), on PH-67's argument. Additive and optional under
+   *  exactly the rule `vessels` and `player` were added by, so SAVE_VERSION
+   *  deliberately does NOT move: an absent field seeds from the boot solve,
+   *  which is the exact behaviour every slot written before the cycle existed
+   *  has always had (the spawn boots lit). */
+  dayT?: number;
   /** GP-102: which CHEATS this world has had used on it, in first-use order.
    *  Survival only; a sandbox slot never carries one, because `mode: sandbox`
    *  already says the stronger thing. Additive and optional under exactly the
@@ -328,6 +337,9 @@ export async function writeSlot(slot: SaveSlot): Promise<boolean> {
     // is what makes that true of `pagehide` and of the debug save as well.
     slot.vessels = saveVessels();
     slot.player = savePlayerAnchor();
+    // PH-86, same choke-point argument: the time of day is stamped here so no
+    // snapshot path has to know the day clock exists.
+    slot.dayT = currentDayT();
     await tx('readwrite', (s) => s.put(slot, key) as IDBRequest<IDBValidKey>);
     return true;
   } catch {
@@ -387,6 +399,9 @@ export async function readSlot(mode: GameMode): Promise<SlotRead> {
     // because the flight lane does not exist yet at this point in the boot and
     // the save layer must not reach into it (`ResumeBoot.ts` takes them).
     stashVessels(v.vessels, v.player);
+    // PH-86, same gate: an accepted slot's time of day is this world's. The day
+    // clock adopts it on the first fixed tick (see sim/DayCycle.ts).
+    stashDayT(v.dayT);
     return { slot: v, refusal: '', foundMode: found };
   } catch {
     return { slot: null, refusal: '', foundMode: null };

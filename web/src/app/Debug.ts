@@ -10,6 +10,7 @@ import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
 import type { BootMetrics } from './Services.js';
 import { BINDINGS } from '../player/Bindings.js';
+import { dayPin, dayReport } from '../sim/DayCycle.js';
 import { meshVertsNear } from '../world/TerrainDebug.js';
 import type { TapeEntry } from '../player/Input.js';
 import type { ObserverState } from '../player/ViewSource.js';
@@ -62,7 +63,7 @@ export interface OfDebugApi {
     pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
     shadow: unknown; ibl: unknown; lamp: unknown; props: unknown; avatar: unknown;
     assets: unknown;
-    sky: { sunT: number; daylight: number; elevationDot: number };
+    sky: { sunT: number; daylight: number; elevationDot: number; day: unknown };
     caps: unknown;
   };
   world(): WorldState;
@@ -264,6 +265,10 @@ export function installDebugApi(
           sunT: s.sky.sunT,
           daylight: Math.round(s.sky.daylight * 1000) / 1000,
           elevationDot: Math.round(s.sky.elevation(s.observer.up) * 1000) / 1000,
+          // PH-86: the day clock's own account. `t` is full precision where
+          // `elevationDot` above is rounded; a probe measuring the sweep rate
+          // reads this.
+          day: dayReport(),
         },
       };
     },
@@ -362,7 +367,9 @@ export function installDebugApi(
       s.observer.interpolate(1);
     },
 
-    setTime(t) { s.sky.setSunT(t); },
+    // PH-86: PINS the day clock as well as the sky, or the next fixed tick
+    // would overwrite the probe's sun with the running cycle's.
+    setTime(t) { dayPin(t); s.sky.setSunT(t); },
 
     input: {
       tape: (t) => s.input.playTape(t),

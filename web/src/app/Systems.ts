@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 import { windUpdate } from '../render/instancing/PropWind.js';
+import { dayAdvance } from '../sim/DayCycle.js';
 
 /** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
 const NIGHT_DOT = -0.12;
@@ -122,7 +123,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   let lastAnimSecs = 0;
   let lampHeld = false;
 
-  loop.onFixedStep.push(() => {
+  loop.onFixedStep.push((dt) => {
     if (s.regime.update(s.observer.altM)) {
       s.terrain.setNearDepthCutoff(s.regime.state.nearDepthCutoff);
       s.events.emit('RegimeChanged', { band: s.regime.state.band });
@@ -171,6 +172,13 @@ export function registerSystems(s: Services, loop: Loop): void {
     // the key is down is a torch button, and the player needs both hands.
     if (s.input.frame.lamp && !lampHeld) s.headlamp.toggle();
     lampHeld = s.input.frame.lamp;
+    // PH-86. THE SUN ADVANCES ON THE FIXED TICK, one full day+night per
+    // DAY_CYCLE_S of sim time. On the fixed tick and not in onDrain because the
+    // phase is SIM state (it is saved, and warp credits it); the per-frame
+    // consumers below read whatever this wrote, exactly as they always did.
+    // The first call seeds from the sky's boot value, or from a saved `dayT`
+    // stashed by `readSlot`; `?t=` on the command line beats both (RN-13).
+    s.sky.setSunT(dayAdvance(dt, s.sky.sunT, s.cfg.sunTExplicit !== null));
   });
 
   // The voxel mesh re-derives its engine transform from its 64-bit anchor, the

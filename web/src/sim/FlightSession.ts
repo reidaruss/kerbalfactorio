@@ -20,6 +20,7 @@ import { commandDirection, cycleSas, guidanceDir, levelWings, setSas, slew }
   from './FlightSas.js';
 import { horizonFrame } from './FlightAttitude.js';
 import { WARP_STEPS, warpSteps } from './FlightWarp.js';
+import { dayWarpCredit } from './DayCycle.js';
 import type { FlightPartRow, FlightStateRow, FlightTelemetryRow, OrbitRow, Vec3 } from './FlightAbi.js';
 
 export type FlightStatus = 'CLAMPED' | 'ASCENT' | 'COAST' | 'ORBIT' | 'DOWN';
@@ -278,6 +279,9 @@ export class FlightSession {
 
     const n = warpSteps(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
                         -dot(this.st.vel, this.up), dt);
+    // PH-86: the vessel takes n steps this tick, the world takes one. The day
+    // clock is credited the surplus so the sky keeps pace under warp.
+    dayWarpCredit((n - 1) * dt);
     this.V._of_fl_step_n(this.handle, dt, n);
     this.steps += n;
     this.metS += dt * n;
