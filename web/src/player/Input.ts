@@ -73,6 +73,22 @@ export class Input {
    * scenarios and for anyone whose browser refuses the lock.
    */
   private locked = false;
+  /**
+   * GP-162. THE ESCAPE PRESS THE BROWSER NEVER DELIVERS. While the pointer is
+   * locked, Escape is the user agent's own unlock gesture and the Pointer Lock
+   * spec forbids delivering keyboard events for it, so the one state a player
+   * is always in (locked, playing) is the one state where `keydown Escape`
+   * cannot arrive. Measured (tools/smoke/escapelock.mjs): a lock lost with
+   * ZERO keydowns left the menu shut, which is exactly "no menu pops up when i
+   * click escape". So a lock that drops WITHOUT this client having asked is
+   * read as the Escape press it was: `forcedCancel` holds the cancel binding's
+   * codes in the sampled set for a few frames, and the ordinary edge detection
+   * in GameplayInput does the rest. `expectUnlock` marks the one legitimate
+   * asker (setUiCapture opening a panel), so a panel opening never doubles as
+   * a second press.
+   */
+  private forcedCancel = 0;
+  private expectUnlock = false;
   /** False while the UI owns the pointer: no look, no movement, no use. */
   private lookEnabled = true;
   private uiHeld = false;
@@ -159,10 +175,20 @@ export class Input {
       if (this.lookEnabled && !this.locked) this.requestLock();
     });
     document.addEventListener('pointerlockchange', () => {
+      const was = this.locked;
       this.locked = document.pointerLockElement === el;
       // Escape also exits the lock, and the accumulated deltas from the frame
       // the lock dropped would otherwise land as a spin on the next sample.
       if (!this.locked) { this.dYaw = 0; this.dPitch = 0; }
+      // GP-162. A lock lost that nobody here asked for IS the player's Escape
+      // (or an alt-tab, which deserves the same menu: a game that lost the
+      // pointer without the player in a panel should say so, not sit deaf).
+      // Held for 3 samples so the fixed tick cannot straddle it; the edge
+      // detector turns it into exactly one press.
+      if (was && !this.locked && !this.expectUnlock && !this.uiHeld) {
+        this.forcedCancel = 3;
+      }
+      this.expectUnlock = false;
     });
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -229,8 +255,11 @@ export class Input {
     this.dYaw = 0;
     this.dPitch = 0;
     this.wheelAccum = 0;
-    if (on) { if (this.locked) document.exitPointerLock(); }
-    else this.requestLock();
+    if (on) {
+      // The ONE legitimate asker (GP-162): a panel taking the pointer is not
+      // an Escape press, so the change event this exit fires must not be.
+      if (this.locked) { this.expectUnlock = true; document.exitPointerLock(); }
+    } else this.requestLock();
   }
 
   /** Zero everything the UI is swallowing. See UI_ALLOWED for what survives. */
@@ -286,7 +315,17 @@ export class Input {
       if (++this.tapeHeld >= Math.max(1, e.hold)) { this.tapeIdx++; this.tapeHeld = 0; }
       return f;
     }
-    this.active = this.down;
+    // GP-162: the synthetic Escape, live path only. Merged rather than added
+    // to `down` because no keyup will ever come for it, and a set the browser
+    // owns must never hold a code the browser did not put there. If a real
+    // Escape keydown DID arrive as well (some drivers deliver it), the codes
+    // coincide and the edge detector still sees one press.
+    if (this.forcedCancel > 0) {
+      this.forcedCancel--;
+      const merged = new Set(this.down);
+      for (const c of BINDINGS.cancel) merged.add(c);
+      this.active = merged;
+    } else this.active = this.down;
     f.dYaw = this.dYaw;
     f.dPitch = this.dPitch;
     f.zoom = this.zoomAccum;
