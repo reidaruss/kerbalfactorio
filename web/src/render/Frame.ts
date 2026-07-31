@@ -42,6 +42,16 @@ export class Frame {
    */
   vabActive = false;
   /**
+   * The 3D map (GP-208). Like the bay it REPLACES the four passes rather than
+   * compositing over them: the map is a different world (FAR_SCALE units, its
+   * own sun) and shares no depth range with the scene it depicts. A nullable
+   * SLOT rather than a boolean, so "closed costs zero" is structural: while
+   * this is null no map object can reach the renderer at all. MapMode writes
+   * it on enter and clears it on leave; the bay wins when both are set,
+   * because M is dead inside the bay and a stale map slot must not eat it.
+   */
+  mapScene: THREE.Scene | null = null;
+  /**
    * The sun, resolved ONCE out of the near scene by the name `ShadowRig` gives
    * cascade 0, and handed to the post stack so the contact-shadow march knows
    * which way to walk.
@@ -105,6 +115,21 @@ export class Frame {
       t.sceneCalls = r.info().calls - post.calls;
       post.finish();
       t.sky = 0; t.far = 0; t.near = tv - t0; t.viewModel = 0;
+      t.post = post.timings.total;
+      t.postCalls = post.calls;
+      t.total = performance.now() - t0;
+      return;
+    }
+
+    if (this.mapScene !== null) {
+      // One pass, stock materials, no AO interpose: occlusion of a line chart
+      // is occlusion of nothing. finish() still runs so tonemap/AA land the
+      // frame on the canvas exactly as they do for the world.
+      r.render(this.mapScene, this.rig.mapCam);
+      const tm = performance.now();
+      t.sceneCalls = r.info().calls - post.calls;
+      post.finish();
+      t.sky = 0; t.far = 0; t.near = tm - t0; t.viewModel = 0;
       t.post = post.timings.total;
       t.postCalls = post.calls;
       t.total = performance.now() - t0;

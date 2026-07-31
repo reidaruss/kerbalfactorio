@@ -1,40 +1,34 @@
 // =============================================================================
-// MapMode.ts - THE map, on M, and the maneuver node that lives on it.
+// MapMode.ts - THE map, on M, and everything the player does from it.
 //
-// DW-36 widened it and the widening is a DELTA: the mode, the modal
-// registration, the allow list, the readout column and the node UI all survive.
-// What did not is the assumption that the projection is centred on the BODY and
-// that this is the FLIGHT map. `centreM` of [0,0,0] with a vessel's orbit normal
-// reproduces the old picture exactly.
+// DW-36 widened it and DW-37 made it a real scene: the mode, the modal
+// registration, the allow list, the readout column and the node UI all
+// survive, and the PICTURE is now the 3D orbital scene (`Map3D`) that Frame
+// renders in place of the four world passes while the map is up. FlightMode's
+// "there is no third render mode" argument was about FLIGHT, which must live
+// in the same near scene as the walker; the map is the VAB's case, an
+// instrument that shares no depth range with the world, and it takes the VAB's
+// mechanism (GP-208). The flat canvas painter still runs, hidden, because
+// `of.map('grid')`'s luma contract is world-gen's instrument (GP-209), and
+// `of.map('flat', {on:true})` brings it back as the whole picture.
 //
-// It is a MODE, in the Vab's family and not the navball's: it registers a
-// `Modal` (so Escape closes it through GP-25's derived list rather than a
-// second handler), it takes the pointer, and it hands the pointer back on the
-// way out. What it is NOT is a fifth render pass: the map is an orthographic
-// plan view drawn on a 2D canvas, so `Frame.vabActive` stays a boolean and
-// FlightMode's "there is no third render mode" argument is honoured rather than
-// answered. A 3D orbital camera is DEFERRED and named in the report.
-//
-// A NODE IS A PLAN AND NOT AN AUTOPILOT (PH-37). Nothing in this file sets a
-// throttle, starts a burn, warps to a node or cuts an engine. It computes what
-// a burn would cost, which way to point, when to light it and how long for, and
-// then a human does all four. DW-29 gates autopilot behind a research unlock
-// earned by reaching orbit manually and DW-30 keeps auto-circularising on the
-// far side of that gate; planning a burn and flying it are different skills and
-// only the second one is the game.
-//
-// The only thing it COMMANDS is hold-node, and that is the same SAS the player
-// already had (DW-30 item 2 ships prograde/retrograde hold on flight one) aimed
-// at a direction they chose. It points the ship; it does not fly it.
+// The maneuver node lives in MapNode.ts (lifted verbatim, GP-206). A node is a
+// plan and not an autopilot (PH-37); nothing here flies anything either. The
+// one exception is deliberate and guarded: TAKE CONTROL routes through the
+// published handoff seam (`leaveVessel` guard, then `resumeControl`, PH-76),
+// which is the door the physics lane built for exactly this feature.
 // =============================================================================
 import { MapView } from '../ui/MapView.js';
 // The painter's own framing. Imported rather than re-derived, because "how big
 // is this picture" has exactly one answer and it belongs where the pixels are.
 import { fitSpanM } from '../ui/MapDraw.js';
-import type { MapConic, MapReadout, V3 } from '../ui/MapTypes.js';
-import { nodePlan, orbitMeta, orbitPath } from '../sim/ManeuverAbi.js';
-import type { NodePlan, OrbitMeta, Vec3 } from '../sim/ManeuverAbi.js';
+import type { MapConic, MapReadout, MapVesselRow, V3 } from '../ui/MapTypes.js';
+import { orbitMeta, orbitPath } from '../sim/ManeuverAbi.js';
+import type { OrbitMeta, Vec3 } from '../sim/ManeuverAbi.js';
 import { MapFocus } from './MapFocus.js';
+import { MapNode } from './MapNode.js';
+import { registry } from '../sim/VesselRegistry.js';
+import { currentVesselTick, leaveVessel, resumeControl } from './FlightVessels.js';
 // The ports live in MapBoot, beside where they are built. Type-only, so there
 // is no runtime cycle even though MapBoot imports this file for its value.
 import type { MapDeps } from './MapBoot.js';
@@ -46,20 +40,6 @@ const SAMPLES = 192;
  *  are standing. A starting point and not a mode: the wheel runs continuously
  *  from here to the whole orbit and back with nothing switching on the way. */
 const FOOT_SPAN_M = 600;
-
-/**
- * A node is anchored to an ABSOLUTE mission time, never to "seconds from now".
- *
- * This was the fatal defect the driven probe found and it is worth writing
- * down, because it looked perfect on every instrument: `tFromNowS` was stored
- * and handed to /core unchanged every frame, so the node slid along the orbit
- * WITH the vessel and stayed a fixed distance ahead for ever. Measured: 40.0 s
- * of mission time elapsed with the countdown bit-identical at 1004.2540207730244
- * and the panel's "light it in" frozen at 16:44. Every number was internally
- * consistent, the picture was right, and the burn could never be flown because
- * the countdown could not reach zero.
- */
-interface Handles { atS: number; pro: number; nrm: number; rad: number }
 
 function conicFrom(points: Float64Array, m: OrbitMeta): MapConic {
   return {
@@ -74,23 +54,25 @@ export class MapMode {
   readonly view: MapView;
   open = false;
   opens = 0;
-  private node: Handles | null = null;
-  private holding = false;
-  private plan: NodePlan | null = null;
+  private readonly nodeCtl: MapNode;
   /** Metres across the short screen axis. 0 asks for an auto-fit next frame. */
   private spanM = 0;
   /** What the projection is centred on and which way it looks. */
   readonly focus: MapFocus;
+  /** The vessel the panel and the 3D markers highlight. 0 is none. */
+  selectedId = 0;
+  /** True shows the flat canvas as the picture (the pre-GP-208 map, exactly);
+   *  the default is the 3D scene. Flipped by `of.map('flat', ...)`. */
+  private flat = false;
   /** The sim clock the last frame ran at, so `frame` can difference it. */
   private lastFrameS = 0;
 
   /** Exposed so `__of.map` reads the rows the painter is handed, in `/core`'s
-   *  own numbers, rather than parsing them back off the panel's text: the way
-   *  the power panel was proven, and the only way an ore count can be checked
-   *  field for field against the integers it came from. */
+   *  own numbers, rather than parsing them back off the panel's text. */
   get world(): MapWorld | null { return this.d.world; }
 
   constructor(private readonly d: MapDeps) {
+    this.nodeCtl = new MapNode(d.M, d.flight, (m) => d.say(m));
     this.focus = new MapFocus({
       player: () => d.player(),
       vessel: () => {
@@ -104,28 +86,35 @@ export class MapMode {
       bodyName: 'Forge',
     });
     this.view = new MapView(d.host, d.modals, {
-      adjust: (axis, delta) => this.adjust(axis, delta),
-      place: () => this.place(),
-      clear: () => this.clearNode(),
-      holdNode: () => this.toggleHold(),
+      adjust: (axis, delta) => {
+        if (this.nodeCtl.placed) { this.nodeCtl.adjust(axis, delta); this.spanM = 0; }
+      },
+      place: () => { if (this.nodeCtl.place()) this.spanM = 0; },
+      clear: () => { this.nodeCtl.clear(); this.spanM = 0; },
+      holdNode: () => this.nodeCtl.toggleHold(),
       zoom: (mult) => { this.spanM = this.spanM * mult; },
       // Focus switching and re-centring are ONE mechanism (R17): a different
-      // origin in the same field, and NOTHING else changes. It deliberately
-      // does not touch the zoom - one map, one camera, one zoom parameter -
-      // which a first draft got wrong by resetting the span and yanking the
-      // player out to the planet whenever they looked at something else.
+      // origin in the same field, and NOTHING else changes, the zoom included.
       focus: (name) => { this.focus.set(name); },
+      look: (dx, dy) => { this.d.three?.look(dx, dy); },
+      pick: (x, y) => {
+        const id = this.d.three?.pick(x, y) ?? 0;
+        if (id > 0) this.select(id);
+      },
+      select: (id) => this.select(id),
+      takeControl: (id) => this.takeControl(id),
     });
     this.view.closer = () => this.leave();
   }
 
-  /** M, edge-detected by the caller. It no longer refuses on foot: DW-36 makes
-   *  this THE map rather than the flight map, and "centered around the player"
-   *  is the first thing it asks for. */
+  /** M, edge-detected by the caller. DW-36 makes this THE map rather than the
+   *  flight map: it opens on foot, centred around the player. */
   toggle(): void {
     if (this.open) { this.leave(); return; }
     this.enter();
   }
+
+  toggleHold(): void { this.nodeCtl.toggleHold(); }
 
   private enter(): void {
     this.open = true;
@@ -136,6 +125,7 @@ export class MapMode {
     this.view.setOpen(true);
     this.d.modals.touch(this.view);
     this.d.setUiCapture(true);
+    this.syncScene();
   }
 
   private leave(): void {
@@ -143,111 +133,79 @@ export class MapMode {
     this.open = false;
     this.view.setOpen(false);
     this.d.setUiCapture(false);
+    this.syncScene();
   }
 
-  // --- the node --------------------------------------------------------------
+  /** True while the map hides the world HUD, so the restore is owed exactly
+   *  once and never fights FlightMode's own setWorldUi. */
+  private hidUi = false;
 
-  /** Put a node on the path. The default is APOAPSIS when there is one, because
-   *  that is where the overwhelming majority of first burns belong (raise the
-   *  periapsis, circularise), and a node you must drag from zero before it says
-   *  anything useful is a worse first impression than one already somewhere
-   *  sensible. */
-  private place(): void {
-    // A node is a burn and there is nothing to burn on foot. It SAYS so, for
-    // `toggleHold`'s reason: a silently inert control teaches the player the
-    // feature does not exist. The refusal MOVED here; it did not vanish.
+  /** The picture in force: the 3D scene, or null (the world) in flat mode.
+   *  The world HUD hides while the 3D picture owns the screen and restores to
+   *  what the flight state expects (hidden aboard, visible on foot). */
+  private syncScene(): void {
+    const threeOn = this.open && !this.flat && this.d.three !== null;
+    this.d.frame.mapScene = threeOn && this.d.three !== null
+      ? this.d.three.scene : null;
+    if (threeOn && !this.hidUi) {
+      this.d.setWorldUi(false);
+      this.hidUi = true;
+    } else if (!threeOn && this.hidUi) {
+      this.d.setWorldUi(!this.d.flight.aboard);
+      this.hidUi = false;
+    }
+  }
+
+  setFlat(on: boolean): void {
+    this.flat = on;
+    this.syncScene();
+  }
+
+  private select(id: number): void {
+    this.selectedId = this.selectedId === id ? 0 : id;
+    if (this.d.three !== null) this.d.three.selectedId = this.selectedId;
+  }
+
+  /**
+   * TAKE CONTROL (GP-210): the map's focus-switch gesture wired to the handoff
+   * seam, exactly as ResumeBoot §5 published it. Leaving the current seat goes
+   * through `leaveVessel`, whose `mayLeave` refusal surfaces as its sentence
+   * and changes NOTHING; seating goes through `resumeControl`, which is
+   * promote-then-`takeControlRemote` and cannot half-seat. On success the map
+   * closes: the point of taking a seat is to see out of it.
+   */
+  private takeControl(id: number): void {
     const f = this.d.flight;
-    if (!f.aboard || !f.session.live) {
-      this.d.say('a maneuver node needs a vessel: board one first (G)');
+    const t = currentVesselTick();
+    const rec = registry.find(id);
+    if (rec === null) { this.d.say('no such vessel to take control of'); return; }
+    if (f.aboard && registry.promotedId === id) {
+      this.d.say(`you are already flying ${rec.name}`);
       return;
     }
-    const t = this.currentMeta();
-    const ahead = t.bound && t.timeToApoapsisS >= 0 ? t.timeToApoapsisS : 60;
-    this.node = { atS: this.nowS() + ahead, pro: 0, nrm: 0, rad: 0 };
-    this.spanM = 0;
-  }
-
-  /** The vessel's own mission clock, which is the clock a node is pinned to. */
-  private nowS(): number { return this.d.flight.session.state.timeS; }
-
-  /** Seconds until the node. Goes NEGATIVE once it is behind you, which is the
-   *  honest readout for "you missed it" and is what the panel colours red. */
-  private aheadS(): number {
-    return this.node === null ? 0 : this.node.atS - this.nowS();
-  }
-
-  private clearNode(): void {
-    this.node = null;
-    this.holding = false;
-    this.plan = null;
-    this.d.flight.nodeDir = null;
-    this.spanM = 0;
-  }
-
-  /** Hold-node: SAS Command pointed at the node's published burn direction.
-   *  There is no /core Maneuver mode and there does not need to be, because the
-   *  direction is fixed in inertial space the moment the node is placed. */
-  toggleHold(): void {
-    const f = this.d.flight;
-    if (!f.aboard || !f.session.live) return;
-    // NOT a silent return. There is no node to hold and saying so is the whole
-    // difference between "this key does nothing" and "this key needs a node".
-    if (this.node === null) {
-      f.session.flash('no maneuver node to hold: open the map (M) and place one');
+    if (f.aboard && f.session.live && !leaveVessel(f, t)) return;
+    if (!resumeControl(f, id, t)) {
+      this.d.say(`could not take control of ${rec.name}`);
       return;
     }
-    this.holding = !this.holding;
-    const s = f.session;
-    if (this.holding && this.plan !== null) {
-      s.commandDirection(this.plan.burnDirection);
-      s.flash('SAS holding the node');
-    } else {
-      s.flash('SAS released the node');
-    }
-  }
-
-  private adjust(axis: 'prograde' | 'normal' | 'radial' | 'time',
-                 delta: number): void {
-    const n = this.node;
-    if (n === null) return;
-    if (axis === 'prograde') n.pro += delta;
-    else if (axis === 'normal') n.nrm += delta;
-    else if (axis === 'radial') n.rad += delta;
-    // Moving the node cannot schedule it in the PAST. It may still drift there
-    // on its own, which is a different thing and is allowed to show.
-    else n.atS = Math.max(this.nowS(), n.atS + delta);
-    this.spanM = 0;
-  }
-
-  private currentMeta(): OrbitMeta {
-    const st = this.d.flight.session.state;
-    return orbitMeta(this.d.M, this.d.flight.session.handle,
-                     st.pos as Vec3, st.vel as Vec3);
+    this.selectedId = id;
+    if (this.d.three !== null) this.d.three.selectedId = id;
+    this.d.say(`control taken: ${rec.name}`);
+    this.leave();
   }
 
   // --- per frame -------------------------------------------------------------
 
   /**
-   * Rebuilt every frame the map is up, and the NODE is recomputed every frame
-   * whether it is up or not, because the navball's node marker and hold-node
-   * both depend on it and neither is a map feature. That is one plan feeding
-   * three consumers rather than three derivations of the same burn.
-   */
-  /**
-   * Every frame, MAP OPEN OR NOT, which is why discovery is fed from here: this
-   * method already ran regardless (the navball's node marker and hold-node need
-   * the plan, and neither is a map feature). Discovery has the same shape - it
-   * accumulates walking and flying and must not depend on whether a panel is up.
+   * Every frame, MAP OPEN OR NOT, which is why discovery is fed from here: the
+   * navball's node marker and hold-node need the plan, and neither is a map
+   * feature. Discovery has the same shape: it accumulates walking and flying
+   * and must not depend on whether a panel is up.
    *
-   * `nowS` IS A CLOCK, NOT A DELTA, and it is named for it because a first draft
-   * called it `dtS` and that ambiguity WAS the bug. `loop.simSecs` is
-   * cumulative, because `flight.frame` on the line above wants a clock, so
-   * accumulating it opened the 1 Hz gate every frame: measured at 144 passes per
-   * sim second, an orbital pass costing 2.2 ms per FRAME rather than per second.
-   * Worse, it made `gapRatio` measure frame-to-frame motion, ~8 cm against a
-   * 2 km sweep, which rounds to exactly 0 - so the check that makes the interval
-   * derived rather than hoped could never fire, and the defect it exists to
-   * catch hid behind it. Differencing here keeps it right whatever is passed.
+   * `nowS` IS A CLOCK, NOT A DELTA, named for it because a first draft called
+   * it `dtS` and that ambiguity WAS the bug (144 recompute passes per sim
+   * second, and a gapRatio check that could never fire). Differencing here
+   * keeps it right whatever is passed.
    */
   frame(nowS = 0): void {
     const f = this.d.flight;
@@ -268,24 +226,40 @@ export class MapMode {
         if (p !== null) disc.step(dtS, p, p.altM);
       }
     }
-    if (!flying) {
-      // The NODE belongs to a flight and goes with it. The MAP does not: closing
-      // it here is what made this the flight map (DW-36).
-      if (this.node !== null) this.clearNode();
-    } else {
-      const h = f.session.handle;
-      this.plan = this.node === null ? null
-        : nodePlan(this.d.M, h, this.aheadS(), this.node.pro,
-                   this.node.nrm, this.node.rad);
-      // The ball's marker. Written even while the map is closed, which is the
-      // point: a node you placed stays visible on the ball you fly by.
-      f.nodeDir = this.plan === null ? null : this.plan.burnDirection;
-      if (this.holding && this.plan !== null) {
-        f.session.commandDirection(this.plan.burnDirection);
-      }
-    }
+    // Landing or leaving takes the node with it; the auto-refit came with the
+    // old clearNode and is kept.
+    if (!flying && this.nodeCtl.placed) this.spanM = 0;
+    this.nodeCtl.frame(flying);
     if (!this.open) return;
-    this.view.render(this.readout(flying));
+    const r = this.readout(flying);
+    this.view.render(r);
+    if (!this.flat) this.d.three?.frame(r);
+  }
+
+  private vesselRows(flying: boolean): MapVesselRow[] {
+    const rows: MapVesselRow[] = [];
+    const R = this.d.bodyRadiusM;
+    for (const rec of registry.list()) {
+      const el = rec.where.kind === 'conic' ? rec.where.el : null;
+      const isFlying = flying && rec.id === registry.promotedId;
+      // A rails record's fuel table IS the live truth: unattended, nothing
+      // burns. The FLYING vessel's copy is synced only at save points, so the
+      // row says NaN and the flight block above it carries the live numbers
+      // (the R44b frozen-table lesson: never show the stale copy of a live
+      // thing).
+      let fuel = 0;
+      for (const [, kg] of rec.fuel) fuel += kg;
+      rows.push({
+        id: rec.id, name: rec.name,
+        mode: isFlying ? 'flying' : rec.mode,
+        fuelKg: isFlying ? NaN : fuel,
+        apoapsisAltM: el === null ? NaN : el.a * (1 + el.e) - R,
+        periapsisAltM: el === null ? NaN : el.a * (1 - el.e) - R,
+        selected: rec.id === this.selectedId,
+        promoted: rec.id === registry.promotedId,
+      });
+    }
+    return rows;
   }
 
   private readout(flying: boolean): MapReadout {
@@ -298,7 +272,7 @@ export class MapMode {
     let planned: MapConic | null = null;
     let nodePos: V3 | null = null;
     let shipPos: V3 | null = null;
-    const p = this.plan;
+    const p = this.nodeCtl.plan;
     if (flying) {
       const h = s.handle;
       const st = s.state;
@@ -319,9 +293,8 @@ export class MapMode {
     const w = this.d.world;
     const ore = w === null ? [] : w.ore();
     // ONE FRAMING AUTHORITY, and it is the painter's, because the painter knows
-    // how big things end up. This file carried its own copy measuring from the
-    // body centre; centring made the two disagree the moment a player looked at
-    // their base, which is the second-authority failure in miniature.
+    // how big things end up. A second copy here disagreed the moment a player
+    // looked at their base: the second-authority failure in miniature.
     const draft = {
       bodyRadiusM: this.d.bodyRadiusM,
       atmosphereCeilingM: this.d.atmosphereCeilingM,
@@ -331,11 +304,9 @@ export class MapMode {
       discovered: null, ore,
       revealAll: w !== null && w.readout().revealAll,
     };
-    // AN AUTO-FIT FRAMES BY REGIME, not by distance. In flight it frames the
-    // trajectory. On foot the same call correctly returns the distance to the
-    // atmosphere shell, ~206 km of air column overhead, which answers a question
-    // nobody asked. So the branch is on `flying`, a named state, and NOT on
-    // "is the centre near the surface", which would be a threshold.
+    // AN AUTO-FIT FRAMES BY REGIME, not by distance: on foot the trajectory
+    // fit would answer with the air column overhead. A named state, never a
+    // threshold.
     const spanM = this.spanM > 0 ? this.spanM
       : (flying ? fitSpanM(draft) : FOOT_SPAN_M);
     if (this.spanM <= 0) this.spanM = spanM;
@@ -347,18 +318,7 @@ export class MapMode {
 
     return {
       scene,
-      node: p === null || !flying ? null : {
-        progradeMS: this.node?.pro ?? 0, normalMS: this.node?.nrm ?? 0,
-        radialMS: this.node?.rad ?? 0,
-        deltaVMS: p.deltaVMS, timeToNodeS: p.timeToNodeS,
-        timeToBurnStartS: p.timeToBurnStartS, burnDurationS: p.burnDurationS,
-        deltaVAvailableMS: p.deltaVAvailableMS, shortfallMS: p.shortfallMS,
-        feasible: p.feasible, stagesUsed: p.stagesUsed,
-        burnFractionOfPeriod: p.burnFractionOfPeriod,
-        apoapsisAltM: p.apoapsisAltM, periapsisAltM: p.periapsisAltM,
-        eccentricity: p.eccentricity, periodS: p.periodS,
-        boundAfter: p.boundAfter, holding: this.holding,
-      },
+      node: this.nodeCtl.readout(flying),
       status: flying ? s.status : 'ON FOOT',
       sas: flying ? s.sasName : '---',
       metS: flying ? s.metS : -1,
@@ -371,28 +331,23 @@ export class MapMode {
       // /core's own predicate, never a threshold guessed again here.
       onRails: flying && this.d.M._of_fl_on_rails_eligible(s.handle) === 1,
       message: flying && s.message !== '' ? s.message : f.message,
+      vessels: this.vesselRows(flying),
+      three: !this.flat && this.d.three !== null,
     };
   }
 
-  /** Frame whatever is drawn, MEASURED FROM THE CENTRE rather than from the
-   *  body: framing off the body centre is exactly the assumption R17 named, and
-   *  left in place it would zoom out to the whole planet the moment a player
-   *  asked to look at their base. Measured off the POINTS rather than off (a,e),
-   *  because the points are what is actually painted. */
   report(): unknown {
-    const p = this.plan;
+    const n = this.nodeCtl.report();
     return {
-      open: this.open, opens: this.opens, holding: this.holding,
+      open: this.open, opens: this.opens, holding: n.holding,
       spanM: Math.round(this.spanM),
       focus: this.focus.report(),
       world: this.d.world === null ? null : this.d.world.report(),
-      // The handles AND the derived countdown, because "when is the node" is
-      // the question and `atS` alone does not answer it without the clock.
-      node: this.node === null ? null
-        : { ...this.node, tFromNowS: this.aheadS(), nowS: this.nowS() },
-      // The WHOLE plan. Publishing half of it made a probe read the other half
-      // off the panel's own DOM, which is a second reader of one answer.
-      plan: p === null ? null : { ...p },
+      node: n.node,
+      plan: n.plan,
+      selectedId: this.selectedId,
+      flat: this.flat,
+      three: this.d.three === null ? null : this.d.three.report(),
       view: this.view.report(),
     };
   }

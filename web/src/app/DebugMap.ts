@@ -50,6 +50,35 @@ export function mapApi(s: Services): MapDebugApi {
           m.view.hooks.zoom(typeof o?.mult === 'number' ? o.mult : 1.25);
           return m.report();
         }
+        // GP-208/GP-210. The 3D map's own surface, and the selection/handoff
+        // hooks, through the SAME functions the panel's rows call: a probe that
+        // seated the player any other way would be testing a door no player
+        // has. The DOM buttons remain the better probe; these exist for runs
+        // that cannot afford pixel coordinates.
+        case 'three':
+          return m.report();
+        case 'look': {
+          const o = a as { dx?: number; dy?: number } | undefined;
+          m.view.hooks.look(o?.dx ?? 0, o?.dy ?? 0);
+          return m.report();
+        }
+        case 'select': {
+          const o = a as { id?: number } | undefined;
+          m.view.hooks.select(o?.id ?? 0);
+          return m.report();
+        }
+        case 'control': {
+          const o = a as { id?: number } | undefined;
+          m.view.hooks.takeControl(o?.id ?? 0);
+          return m.report();
+        }
+        // The flat canvas as the picture: the pre-GP-208 map, exactly, for
+        // fallback and for any instrument that wants the painted pixels seen.
+        case 'flat': {
+          const o = a as { on?: boolean } | undefined;
+          m.setFlat(o?.on !== false);
+          return m.report();
+        }
         // DW-36. Focus goes through the panel's own hook, the same one the
         // buttons call, because switching focus IS re-centring and a probe that
         // wrote `centreM` directly would be testing a path no player can take.

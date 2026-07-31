@@ -23,6 +23,13 @@ export class CameraRig {
    * It is NOT driven by setView: the VAB orbits it around a rocket instead.
    */
   readonly vabCam: THREE.PerspectiveCamera;
+  /**
+   * The 3D map (GP-208). Here for the same reason vabCam is: rule 2 says this
+   * class owns every camera in the application. Like vabCam it is NOT driven by
+   * setView and NOT in cameras(): Map3D orbits it around the map's focus. Units
+   * are FAR_SCALE metres, so the whole planet sits inside a few hundred units.
+   */
+  readonly mapCam: THREE.PerspectiveCamera;
 
   private fovDeg = 60;
 
@@ -32,6 +39,8 @@ export class CameraRig {
     this.nearCam = new THREE.PerspectiveCamera(this.fovDeg, 1, 0.1, depth.nearFarPlaneM());
     this.vmCam = new THREE.PerspectiveCamera(this.fovDeg, 1, 0.01, 5);
     this.vabCam = new THREE.PerspectiveCamera(45, 1, 0.05, 400);
+    this.mapCam = new THREE.PerspectiveCamera(50, 1, 0.002, 5000);
+    this.mapCam.name = 'mapCam';
     this.vabCam.name = 'vabCam';
     this.skyCam.name = 'skyCam';
     this.farCam.name = 'farCam';
@@ -62,10 +71,12 @@ export class CameraRig {
   resize(width: number, height: number): void {
     const aspect = width / Math.max(1, height);
     for (const c of this.cameras()) { c.aspect = aspect; c.updateProjectionMatrix(); }
-    // vabCam is resized but is deliberately NOT in cameras(): it keeps its own
-    // 45 degree framing and is never touched by setFov or setView.
+    // vabCam and mapCam are resized but are deliberately NOT in cameras():
+    // each keeps its own framing and is never touched by setFov or setView.
     this.vabCam.aspect = aspect;
     this.vabCam.updateProjectionMatrix();
+    this.mapCam.aspect = aspect;
+    this.mapCam.updateProjectionMatrix();
   }
 
   /**

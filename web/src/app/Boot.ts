@@ -391,7 +391,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       boardings: () => theFlight.boardings,
     };
     // THE MAP, on M. Ports in MapBoot (Boot is at cap); DW-36 adds the walker.
-    map = await bootMap({ core, host, g, flight: theFlight, body, input, player, oracle });
+    map = await bootMap({ core, host, g, flight: theFlight, body, input, player, oracle,
+      frame, mapCam: rig.mapCam, sky, proxy });
   }
   // PH-64 to PH-69. THE WORLD COMES BACK AS IT WAS LEFT (ResumeBoot argues the
   // order). After the flight block, so a vessel has somewhere to be promoted

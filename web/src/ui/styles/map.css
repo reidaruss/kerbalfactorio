@@ -209,6 +209,95 @@
   color: var(--of-dim);
 }
 
+/* --- the vessels block (GP-210) ------------------------------------------ */
+#of-map .vrow {
+  margin-top: 5px;
+  padding: 5px 7px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--of-edge);
+  cursor: pointer;
+}
+
+#of-map .vrow.sel { border-color: var(--of-accent); }
+
+#of-map .vrow .vname {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--of-ink);
+}
+
+#of-map .vrow .vmode {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--of-accent);
+}
+
+#of-map .vrow button.wide {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: 5px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: #101418;
+  background: var(--of-accent);
+  border: 0;
+  cursor: pointer;
+}
+
+#of-map .vrow button.wide:hover { background: #ffb266; }
+
+#of-map .vrow button.wide:disabled {
+  color: #667581;
+  background: #2c353d;
+  cursor: default;
+}
+
+/* --- 3D mode (GP-208): the picture is the WebGL canvas behind this DOM ---- */
+/* The frame stretches to the whole viewport and goes transparent so the Map3D
+   scene shows through; the readout keeps its solid panel. The 2D canvas stays
+   in layout (visibility, NOT display: the painter reads clientWidth and keeps
+   painting for of.map('grid'), GP-209) but never composites a pixel. */
+#of-map.three { background: transparent; }
+
+#of-map.three .frame {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+#of-map.three .frame h3 {
+  padding: 6px 10px 7px;
+  background: rgba(4, 7, 10, 0.55);
+  border: 1px solid var(--of-edge);
+}
+
+#of-map.three .view {
+  background: transparent;
+  border: 0;
+}
+
+#of-map.three canvas.map-canvas { visibility: hidden; }
+
+#of-map.three .hint {
+  padding: 8px 10px;
+  background: rgba(4, 7, 10, 0.55);
+  border: 1px solid var(--of-edge);
+}
+
+/* The drag/zoom sentence only makes sense over the 3D picture. */
+#of-map .hint3d { display: none; }
+#of-map.three .hint3d { display: inline; color: var(--of-ink); }
+
 /* --- the hint line ------------------------------------------------------- */
 #of-map .hint {
   flex: 0 0 auto;

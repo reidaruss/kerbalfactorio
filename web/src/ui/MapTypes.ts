@@ -235,6 +235,29 @@ export interface MapDiscoveryReadout {
   revealAll: boolean;
 }
 
+/**
+ * One vessel of the registry, as the panel shows it (GP-210). LIVE state off
+ * the record: a rails record's numbers are frozen BY the physics (on rails,
+ * nothing burns and elements do not drift), so the copy is the truth. The one
+ * exception is the FLYING vessel, whose record is synced only at save points:
+ * its fuel reads NaN here and the flight block carries the live numbers
+ * instead, because showing a stale copy of a live thing is the frozen-table
+ * defect physics R44b documents.
+ */
+export interface MapVesselRow {
+  readonly id: number;
+  readonly name: string;
+  /** parked | rails | frozen, or 'flying' for the promoted vessel underway. */
+  readonly mode: string;
+  /** NaN when this row may not claim a number (the flying vessel). */
+  readonly fuelKg: number;
+  /** From the record's own elements; NaN when it has none (parked, frozen). */
+  readonly apoapsisAltM: number;
+  readonly periapsisAltM: number;
+  readonly selected: boolean;
+  readonly promoted: boolean;
+}
+
 /** One frame of everything the panel shows. */
 export interface MapReadout {
   scene: MapScene;
@@ -262,6 +285,11 @@ export interface MapReadout {
   /** FlightMode / FlightSession's message line, drawn here too so that a key
    *  pressed while the map is up has somewhere to answer. */
   message: string;
+  /** Every vessel the registry holds, one row each (GP-210). */
+  vessels: readonly MapVesselRow[];
+  /** True when the picture is the 3D scene; the panel adapts its hint and the
+   *  canvas hides (it keeps painting: `of.map('grid')`'s luma contract). */
+  three: boolean;
 }
 
 /** What the painter says it actually drew. Not a second opinion: these are the

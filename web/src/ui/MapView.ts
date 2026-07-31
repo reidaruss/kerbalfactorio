@@ -1,7 +1,7 @@
 // =============================================================================
-// MapView.ts - the map MODE's panel: DOM, the canvas, the readout, the node
-// controls. Plain DOM and plain data (DW-2, and check-limits enforces the
-// no-three.js half mechanically).
+// MapView.ts - the map MODE's panel: DOM, the canvas, the readout, the events.
+// Plain DOM and plain data (DW-2, and check-limits enforces the no-three.js
+// half mechanically). The readout HTML itself is built in MapPanels.ts.
 //
 // It is a `Modal`, so it joins ModalStack's DERIVED list in its own constructor
 // and Escape closes it through the one handler rather than a second one
@@ -10,12 +10,21 @@
 //
 // NOTHING HERE COMPUTES A TRAJECTORY. The conic, the apsides, the delta-v, the
 // burn time and the resulting orbit all arrive as numbers from /core.
+//
+// THE PICTURE (GP-208, DW-37). In 3D mode (`MapReadout.three`) the picture is
+// the Map3D scene on the main canvas BEHIND this DOM, so the view region goes
+// transparent and forwards the pointer: drag becomes `look`, a still click
+// becomes `pick`, the wheel stays `zoom`. The 2D canvas keeps PAINTING either
+// way, hidden by visibility (not display, which would zero its layout box and
+// starve the painter of a size): its per-sample luma is `of.map('grid')`'s
+// contract and world-gen's instruments read it (GP-209).
 // =============================================================================
 import './styles/map.css';
 import { Modal } from './ModalStack.js';
 import type { ModalStack } from './ModalStack.js';
 import { drawMap } from './MapDraw.js';
 import { labelOf } from '../player/Bindings.js';
+import { panelBody } from './MapPanels.js';
 import type { MapDrawReport, MapReadout } from './MapTypes.js';
 import { ZERO_CONTRAST } from './MapContrast.js';
 
@@ -31,50 +40,14 @@ export interface MapHooks {
   /** Look at something else. Focus switching and re-centring are ONE mechanism
    *  (DW-36): this writes a different `centreM` and nothing else changes. */
   focus(name: string): void;
-}
-
-const HANDLES: readonly (readonly ['prograde' | 'normal' | 'radial' | 'time',
-  string, number])[] = [
-    ['prograde', 'prograde', 10],
-    ['normal', 'normal', 10],
-    ['radial', 'radial out', 10],
-    ['time', 'node time', 60],
-  ];
-
-/** MM:SS, or H:MM:SS past an hour. A negative time reads as a countdown gone
- *  past, which is exactly what "you are late to start the burn" means. */
-export function clock(s: number): string {
-  if (!Number.isFinite(s)) return '--:--';
-  const neg = s < 0;
-  const t = Math.floor(Math.abs(s));
-  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
-  const two = (n: number): string => (n < 10 ? `0${n}` : `${n}`);
-  const body = h > 0 ? `${h}:${two(m)}:${two(sec)}` : `${two(m)}:${two(sec)}`;
-  return neg ? `-${body}` : body;
-}
-
-function km(m: number): string {
-  if (!Number.isFinite(m) || Math.abs(m) > 1e12) return '---';
-  return `${(m / 1000).toFixed(1)} km`;
-}
-
-function row(label: string, value: string, cls = ''): string {
-  return `<div class="row ${cls}"><em>${label}</em><b>${value}</b></div>`;
-}
-
-/** A fraction of a whole world is a very small number early on, and "0.00%"
- *  after a first survey pass reads as "the map is broken". */
-function pct(f: number): string {
-  if (!Number.isFinite(f)) return '---';
-  const v = f * 100;
-  return `${v > 0 && v < 0.01 ? '&lt;0.01' : v.toFixed(v < 10 ? 2 : 1)}%`;
-}
-
-/** Names come from the sim (a vessel's, a body's) and land in markup and in a
- *  data attribute. getAttribute decodes, so the focus round trip is exact. */
-function esc(s: string): string {
-  return String(s).replace(/[&<>"']/g, (c) => (c === '&' ? '&amp;'
-    : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'));
+  /** Orbit the 3D camera. Pixels of drag, straight off the mouse. */
+  look(dxPx: number, dyPx: number): void;
+  /** A still click on the picture, in NDC (-1..1, y up). */
+  pick(xNdc: number, yNdc: number): void;
+  /** Highlight a vessel row and its marker. */
+  select(id: number): void;
+  /** The handoff door (GP-210). Refusals arrive as sentences on the msg line. */
+  takeControl(id: number): void;
 }
 
 /** A fresh one each time: a shared literal would hand every MapView the same
@@ -92,10 +65,16 @@ function noDraw(): MapDrawReport {
 export class MapView extends Modal {
   private readonly root: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
+  private readonly viewEl: HTMLElement;
   private readonly readout: HTMLElement;
   private readonly msg: HTMLElement;
   private open = false;
   private lastKey = '';
+  /** Drag state for the 3D camera. `moved` separates a drag from a click. */
+  private dragging = false;
+  private dragMoved = 0;
+  private dragX = 0;
+  private dragY = 0;
   /** The report the LAST paint pass produced, for a probe. Not a second
    *  opinion: these are counts taken inside drawMap. */
   drawn: MapDrawReport = noDraw();
@@ -120,18 +99,18 @@ export class MapView extends Modal {
       + '<div class="readout"></div>'
       + '</div>'
       + // GP-131. THE KEYS ARE READ FROM THE BINDING TABLE, never spelled here.
-      // This line said a literal M for months and was the same defect the mute
-      // hint had for an hour (GameplayInput.chrome): a hint that names the wrong
-      // key is worse than no hint, because it teaches the player a control that
-      // does nothing. Nothing was wrong with it TODAY; it was one remap away
-      // from being wrong, which is exactly when to fix it.
-      `<div class="hint"><b>${labelOf('map')}</b> or <b>${labelOf('cancel')}</b> `
-      + 'returns to the ball. '
+      // A hint that names the wrong key is worse than no hint: it teaches the
+      // player a control that does nothing. One remap away from wrong is when
+      // to fix it, not after.
+      `<div class="hint"><span class="hint3d">Drag rotates · wheel zooms · `
+      + `click a marker selects. </span><b>${labelOf('map')}</b> or `
+      + `<b>${labelOf('cancel')}</b> returns to the ball. `
       + 'Flight controls stay live: throttle, stage, attitude, warp and every '
       + 'SAS mode work from here, exactly as they do from the navball.</div>'
       + '</div>';
     parent.appendChild(this.root);
     this.canvas = this.root.querySelector('.map-canvas') as HTMLCanvasElement;
+    this.viewEl = this.root.querySelector('.view') as HTMLElement;
     this.readout = this.root.querySelector('.readout') as HTMLElement;
     this.msg = this.root.querySelector('.msg') as HTMLElement;
 
@@ -139,27 +118,66 @@ export class MapView extends Modal {
     // readout is rebuilt whenever its key changes and per-node handlers would
     // be re-bound every time.
     this.readout.addEventListener('click', (e) => this.onClick(e));
-    this.canvas.addEventListener('wheel', (e) => {
+    // On the VIEW, not the canvas: in 3D mode the canvas is visibility-hidden
+    // and a hidden element receives no events at all.
+    this.viewEl.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.hooks.zoom(e.deltaY > 0 ? 1.25 : 0.8);
     }, { passive: false });
+    this.viewEl.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      this.dragging = true;
+      this.dragMoved = 0;
+      this.dragX = e.clientX;
+      this.dragY = e.clientY;
+    });
+    // Window, not the view: a drag that leaves the box must keep steering and
+    // must still end. The map being closed mid-drag just stops the callbacks.
+    window.addEventListener('mousemove', (e) => {
+      if (!this.dragging) return;
+      const dx = e.clientX - this.dragX, dy = e.clientY - this.dragY;
+      this.dragX = e.clientX;
+      this.dragY = e.clientY;
+      this.dragMoved += Math.abs(dx) + Math.abs(dy);
+      this.hooks.look(dx, dy);
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (!this.dragging) return;
+      this.dragging = false;
+      if (this.dragMoved < 5) {
+        // The 3D scene fills the WHOLE canvas behind this DOM, so NDC comes
+        // from the window, not from the view box.
+        const w = window.innerWidth || 1, h = window.innerHeight || 1;
+        this.hooks.pick((e.clientX / w) * 2 - 1, -(e.clientY / h) * 2 + 1);
+      }
+    });
   }
 
   private onClick(e: MouseEvent): void {
-    const b = (e.target as HTMLElement | null)?.closest('button');
-    if (b === null || b === undefined || b.disabled) return;
-    const act = b.getAttribute('data-act');
-    if (act === 'place') { this.hooks.place(); return; }
-    if (act === 'clear') { this.hooks.clear(); return; }
-    if (act === 'hold') { this.hooks.holdNode(); return; }
-    if (act === 'zoomin') { this.hooks.zoom(0.8); return; }
-    if (act === 'zoomout') { this.hooks.zoom(1.25); return; }
-    const f = b.getAttribute('data-focus');
-    if (f !== null) { this.hooks.focus(f); return; }
-    const axis = b.getAttribute('data-axis');
-    const d = Number(b.getAttribute('data-delta'));
-    if (axis !== null && Number.isFinite(d)) {
-      this.hooks.adjust(axis as 'prograde', d);
+    const t = e.target as HTMLElement | null;
+    const b = t?.closest('button');
+    if (b !== null && b !== undefined && !b.disabled) {
+      const act = b.getAttribute('data-act');
+      if (act === 'place') { this.hooks.place(); return; }
+      if (act === 'clear') { this.hooks.clear(); return; }
+      if (act === 'hold') { this.hooks.holdNode(); return; }
+      if (act === 'zoomin') { this.hooks.zoom(0.8); return; }
+      if (act === 'zoomout') { this.hooks.zoom(1.25); return; }
+      const ctl = b.getAttribute('data-ctl');
+      if (ctl !== null) { this.hooks.takeControl(Number(ctl)); return; }
+      const f = b.getAttribute('data-focus');
+      if (f !== null) { this.hooks.focus(f); return; }
+      const axis = b.getAttribute('data-axis');
+      const d = Number(b.getAttribute('data-delta'));
+      if (axis !== null && Number.isFinite(d)) {
+        this.hooks.adjust(axis as 'prograde', d);
+      }
+      return;
+    }
+    // Not a button: a vessel row selects.
+    const sel = t?.closest('[data-sel]');
+    if (sel !== null && sel !== undefined) {
+      this.hooks.select(Number(sel.getAttribute('data-sel')));
     }
   }
 
@@ -176,12 +194,13 @@ export class MapView extends Modal {
   render(r: MapReadout): void {
     if (!this.open) return;
     this.frames += 1;
+    this.root.classList.toggle('three', r.three);
     this.paint(r);
     this.msg.textContent = r.message;
     const key = this.keyOf(r);
     if (key === this.lastKey) return;
     this.lastKey = key;
-    this.readout.innerHTML = this.body(r);
+    this.readout.innerHTML = panelBody(r);
   }
 
   /** The canvas in CSS pixels, for the one caller that must know the SHAPE of
@@ -216,12 +235,16 @@ export class MapView extends Modal {
   private keyOf(r: MapReadout): string {
     const n = r.node, c = r.scene.current, d = r.discovery;
     return [
-      r.status, r.sas, r.onRails ? '1' : '0',
+      r.status, r.sas, r.onRails ? '1' : '0', r.three ? '3' : '2',
       c === null ? 'foot' : [
         c.apoapsisAltM.toFixed(0), c.periapsisAltM.toFixed(0),
         c.timeToApoapsisS.toFixed(0), c.timeToPeriapsisS.toFixed(0),
       ].join('|'),
       r.focusName, r.focusOptions.join('~'),
+      r.vessels.map((v) => [v.id, v.mode, v.selected ? 's' : '-',
+        Number.isFinite(v.fuelKg) ? v.fuelKg.toFixed(0) : 'x',
+        Number.isFinite(v.apoapsisAltM) ? v.apoapsisAltM.toFixed(0) : 'x',
+      ].join(':')).join('~'),
       d === null ? 'dark' : [
         d.surveyCells, d.exploreCells, d.revealAll ? 'all' : 'own',
         d.lastSurveyRadiusM.toFixed(0), d.lastExploreRadiusM.toFixed(0),
@@ -237,136 +260,6 @@ export class MapView extends Modal {
         n.holding ? 'h' : '-',
       ].join('|'),
     ].join(',');
-  }
-
-  private body(r: MapReadout): string {
-    const c = r.scene.current;
-    const out: string[] = [];
-    // ON FOOT there is no vessel and so no trajectory. The panel says where you
-    // are standing rather than blanking: a column of '---' where the orbit used
-    // to be reads as a broken map, which is the one thing it must not do.
-    if (c === null) {
-      out.push('<h4>Position</h4>');
-      out.push(row('state', esc(r.status)));
-      out.push(row('ALT', km(r.altitudeM)));
-      out.push(row('SPD', `${r.speedMS.toFixed(0)} m/s`));
-      out.push('<div class="note">No vessel: the map is centred on you. '
-        + 'Keep zooming out and it becomes the orbital view.</div>');
-    } else {
-      out.push('<h4>Orbit</h4>');
-      out.push(row('AP', c.bound ? km(c.apoapsisAltM) : '---'));
-      out.push(row('to AP', c.timeToApoapsisS >= 0 ? clock(c.timeToApoapsisS) : '---'));
-      out.push(row('PE', km(c.periapsisAltM),
-        c.periapsisAltM < r.scene.atmosphereCeilingM ? 'warn' : ''));
-      out.push(row('to PE', c.timeToPeriapsisS >= 0 ? clock(c.timeToPeriapsisS) : '---'));
-      out.push(row('period', c.bound ? clock(c.periodS) : '---'));
-      out.push(row('ecc', c.eccentricity.toFixed(4)));
-      out.push(row('ALT', km(r.altitudeM)));
-      out.push(row('SPD', `${r.speedMS.toFixed(0)} m/s`));
-      out.push(row('dV left', `${r.deltaVRemainingMS.toFixed(0)} m/s`));
-      out.push(row('SAS', r.sas));
-      // The conic is exact only in vacuum with the engine shut. Saying so is not
-      // a nicety: in the air the drawn path is where the vessel would go if the
-      // air and the thrust stopped now, which is a different claim.
-      if (!r.onRails) {
-        out.push(row('trajectory', 'PREDICTED (air or thrust)', 'warn'));
-      }
-    }
-    out.push(this.focusBlock(r));
-    out.push(this.discoveryBlock(r));
-    if (c !== null) out.push(this.nodeBlock(r));
-    return out.join('');
-  }
-
-  /** Focus switching IS re-centring: each button writes a different `centreM`
-   *  and nothing else about the map changes. */
-  private focusBlock(r: MapReadout): string {
-    const out: string[] = ['<h4>Focus</h4>'];
-    out.push(row('centred on', esc(r.focusName)));
-    out.push('<div class="nodectl">');
-    // The view controls live here rather than in the node block, because on
-    // foot there is no node block and the zoom is the one control the map
-    // always has. The wheel does the same thing, continuously.
-    out.push('<button class="wide" data-act="zoomout">zoom out</button>');
-    out.push('<button class="wide" data-act="zoomin">zoom in</button>');
-    for (const name of r.focusOptions) {
-      const on = name === r.focusName ? ' on' : '';
-      out.push(`<button class="wide${on}" data-focus="${esc(name)}">`
-        + `${esc(name)}</button>`);
-    }
-    out.push('</div>');
-    return out.join('');
-  }
-
-  /** What the map is allowed to show, and why. Two layers, because height buys
-   *  EXTENT and costs RESOLUTION: orbit fills in the shape of the world and
-   *  walking fills in its detail. */
-  private discoveryBlock(r: MapReadout): string {
-    const d = r.discovery;
-    const out: string[] = ['<h4>Discovery</h4>'];
-    if (d === null) {
-      out.push(row('seen', 'nothing yet'));
-      out.push('<div class="note">Nothing has been observed. Fly or walk and '
-        + 'the world fills in.</div>');
-      return out.join('');
-    }
-    // DW-31's stated failure mode is a player who forgot which mode they are
-    // in, so the badge is first and it is plain.
-    if (d.revealAll) out.push(row('mode', 'SANDBOX: everything visible', 'warn'));
-    out.push(row('survey', `${d.surveyCells} · ${pct(d.surveyFraction)}`));
-    out.push(row('last sweep', km(d.lastSurveyRadiusM)));
-    out.push(row('explore', `${d.exploreCells} · ${pct(d.exploreFraction)}`));
-    out.push(row('last sweep', km(d.lastExploreRadiusM)));
-    out.push(row('cell', km(d.cellSizeM)));
-    return out.join('');
-  }
-
-  private nodeBlock(r: MapReadout): string {
-    const n = r.node;
-    if (n === null) {
-      return '<h4>Maneuver</h4>'
-        + '<div class="nodectl">'
-        + '<button class="wide" data-act="place">place node</button></div>'
-        + '<div class="note">A node tells you the burn. It does not fly it.</div>';
-    }
-    const out: string[] = ['<h4>Maneuver</h4>'];
-    out.push(row('dV', `${n.deltaVMS.toFixed(1)} m/s`,
-      n.feasible ? 'good' : 'warn'));
-    if (!n.feasible) {
-      out.push(row('SHORT BY', `${n.shortfallMS.toFixed(0)} m/s`, 'warn'));
-    }
-    out.push(row('have', `${n.deltaVAvailableMS.toFixed(0)} m/s`));
-    out.push(row('burn', `${n.burnDurationS.toFixed(1)} s`));
-    // The number that matters most and is easiest to miss: START EARLY.
-    out.push(row('light it in', clock(n.timeToBurnStartS),
-      n.timeToBurnStartS < 0 ? 'warn' : n.timeToBurnStartS < 10 ? 'good' : ''));
-    out.push(row('node in', clock(n.timeToNodeS)));
-    if (n.stagesUsed > 1) out.push(row('stagings', `${n.stagesUsed - 1}`, 'warn'));
-    if (n.burnFractionOfPeriod > 0.02) {
-      out.push(row('long burn', `${(n.burnFractionOfPeriod * 100).toFixed(0)}% of an orbit`, 'warn'));
-    }
-    out.push(row('result AP', n.boundAfter ? km(n.apoapsisAltM) : 'ESCAPE'));
-    out.push(row('result PE', km(n.periapsisAltM),
-      n.periapsisAltM < r.scene.atmosphereCeilingM ? 'warn' : ''));
-    out.push('<div class="nodectl">');
-    for (const [axis, label, step] of HANDLES) {
-      const v = axis === 'prograde' ? n.progradeMS
-        : axis === 'normal' ? n.normalMS
-          : axis === 'radial' ? n.radialMS : n.timeToNodeS;
-      const shown = axis === 'time' ? clock(v) : v.toFixed(1);
-      out.push(`<em>${label}</em>`
-        + `<button data-axis="${axis}" data-delta="${-step}">-</button>`
-        + `<em class="val">${shown}</em>`
-        + `<button data-axis="${axis}" data-delta="${step}">+</button>`);
-    }
-    out.push(`<button class="wide${n.holding ? ' on' : ''}" data-act="hold">`
-      + `${n.holding ? 'holding the node (8)' : 'hold node (8)'}</button>`);
-    out.push('<button class="wide" data-act="clear">clear node</button>');
-    out.push('</div>');
-    out.push('<div class="note">Point at the node marker, then light the '
-      + 'engine when "light it in" reaches zero. Half the burn goes before the '
-      + 'node and half after.</div>');
-    return out.join('');
   }
 
   report(): unknown {

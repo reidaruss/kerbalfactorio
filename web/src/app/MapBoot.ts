@@ -14,6 +14,8 @@
 // is what stops it from growing a dependency on all of it.
 import { MapMode } from './MapMode.js';
 import { MapWorld } from './MapWorld.js';
+import { Map3D } from './Map3D.js';
+import { currentVesselTick } from './FlightVessels.js';
 import { Discovery } from '../world/Discovery.js';
 import { MapTerrain } from '../world/MapTerrain.js';
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
@@ -26,6 +28,7 @@ import type { Input } from '../player/Input.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
 import type { ModalStack } from '../ui/ModalStack.js';
 import type { OfVesselModule } from '../sim/wasm/vesselabi.js';
+import type * as THREE from 'three';
 
 /** The slice of the walker the map needs: where the FEET are and how high above
  *  the local surface. Named structurally rather than importing `Controller`,
@@ -43,7 +46,13 @@ export type { MapMode };
 /** The slice of Gameplay the map needs, named rather than imported whole. */
 export interface MapGameplayPorts {
   modals: ModalStack;
-  hud: { flash(msg: string): void };
+  /** `setVisible` because the 3D map owns the whole screen (GP-208): the HUD,
+   *  the hotbar and the checklist hide while it is up, exactly as they do
+   *  aboard a vessel, and restore to what the flight state expects. */
+  hud: { flash(msg: string): void; setVisible(on: boolean): void };
+  hotbarBar: { setVisible(on: boolean): void };
+  goalPanel: { setVisible(on: boolean): void };
+  goals: { visible: boolean };
   /** The ore in the ground. `oreField.patches` is the same object the drills
    *  and the dig payout read, so the count on the map is the count in the
    *  world by construction rather than by agreement (DW-25's ONE POOL). */
@@ -79,6 +88,13 @@ export interface MapDeps {
   world: MapWorld | null;
   /** The discovery field itself, so the map can FEED it. See `MapMode.frame`. */
   disc: Discovery | null;
+  /** The 3D scene (GP-208), or null when the render ports were not supplied. */
+  three: Map3D | null;
+  /** Frame's map slot: non-null renders the map INSTEAD of the world. */
+  frame: { mapScene: THREE.Scene | null };
+  /** Hide/show the world HUD around the 3D picture. Boot's own setWorldUi
+   *  recipe, wired here so the map and the flight cannot drift apart. */
+  setWorldUi(on: boolean): void;
 }
 
 export interface MapBootArgs {
@@ -98,6 +114,14 @@ export interface MapBootArgs {
   /** The walker. DW-36's "centered around the player" begins here, and their
    *  altitude is what the discovery horizon is computed from. */
   player: MapPlayerPort;
+  /** The render seams the 3D picture needs (GP-208): Frame's map slot, the
+   *  rig's own map camera (rule 2: the rig owns every camera), the sky's LIVE
+   *  sun vector (never `__ofPost`'s, which freezes below the horizon), and the
+   *  world's scaled planet, whose geometry the map globe shares. */
+  frame: { mapScene: THREE.Scene | null };
+  mapCam: THREE.PerspectiveCamera;
+  sky: { readonly sunDirection: THREE.Vector3 };
+  proxy: { readonly mesh: THREE.Mesh };
 }
 
 export async function bootMap(a: MapBootArgs): Promise<MapMode> {
@@ -124,6 +148,17 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     revealAll: () => a.g.mode.fullMapRevealed,
     itemName: (id) => a.g.game.itemName(id),
   });
+  // The 3D picture (GP-208). Stock materials only, so it costs no DW-10
+  // ledger slot; the globe is the proxy's own geometry, so it costs no VRAM.
+  const three = new Map3D({
+    core: a.core,
+    cam: a.mapCam,
+    globe: a.proxy.mesh,
+    sunDirection: a.sky.sunDirection,
+    revealAll: () => a.g.mode.fullMapRevealed,
+    pads: () => a.flight.d.pads?.()?.list ?? [],
+    tick: () => currentVesselTick(),
+  });
   return new MapMode({
     M: V,
     host: a.host,
@@ -146,5 +181,12 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     },
     world,
     disc,
+    three,
+    frame: a.frame,
+    setWorldUi: (on) => {
+      a.g.hud.setVisible(on);
+      a.g.hotbarBar.setVisible(on);
+      a.g.goalPanel.setVisible(on && a.g.goals.visible);
+    },
   });
 }
