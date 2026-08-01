@@ -50,7 +50,8 @@ import harvest_common as hc    # noqa: E402
 # ---------------------------------------------------------------------------
 
 def taper_bands(bands_rz, seg=9, seed=1, jit=0.12, phase_deg=0.0,
-                 loc=(0.0, 0.0, 0.0), lean=(0.0, 0.0), roles=None, cap=True):
+                 loc=(0.0, 0.0, 0.0), lean=(0.0, 0.0), roles=None, cap=True,
+                 offsets=None, ridge=None, flare=None):
     """A tapered stack of len(bands_rz) rings, bands_rz = [(r, z), ...] with
     at least 2 entries, each ring's radius jittered per vertex with a
     deterministic seeded LCG. This is harvest_common.taper's shape plus two
@@ -65,6 +66,34 @@ def taper_bands(bands_rz, seg=9, seed=1, jit=0.12, phase_deg=0.0,
     convention as harvest_common.taper, so a tier can droop or a limb can fork
     away from the trunk with no rotation machinery.
 
+    THREE SHAPE ARGUMENTS ADDED AT RN-271, ALL OPTIONAL, ALL COSTING ZERO
+    TRIANGLES, and all of them default to None so every existing caller
+    rebuilds byte-identical. Each is a function of the vertex's OWN azimuth and
+    OWN height, so it reshapes rings that already exist rather than adding any.
+
+    `offsets` is one (dx, dy) per ring and REPLACES `lean` when given. `lean`
+    can only express a straight line, because it interpolates one displacement
+    linearly down the stack, so a leaning trunk built with it is a tilted
+    dowel. A real trunk SWEEPS: it leaves the ground one way and recovers, and
+    that curve is most of what says "grown" rather than "extruded".
+
+    `ridge` is (lobes, depth, twist_deg) and multiplies every radius by
+    1 + depth * cos(lobes * azimuth - twist), with the twist accumulating up
+    the stack. The phase does NOT depend on the ring, which is the whole point:
+    the existing per-vertex `jit` redraws independently on every ring, so it is
+    surface NOISE and the silhouette it produces is a smooth line with a wobble
+    on it. A coherent azimuthal term instead runs a fixed set of ridges the
+    length of the trunk, which breaks the silhouette into flutes and agrees
+    with the direction of the bark texture's own fissures (RN-100 puts world
+    vertical in v, so the fissures run vertically on every trunk side).
+
+    `flare` is (lobes, depth, span) and ADDS buttressing to the bottom `span`
+    fraction of the stack, decaying quadratically to nothing: the radius gains
+    depth * (1 - t/span)^2 * max(0, cos(lobes * azimuth))^3. A mature trunk
+    does not meet the ground as a circle, it meets it as three or four root
+    swells with hollows between them, and that flare is the closest-range
+    silhouette a player standing beside a tree actually reads.
+
     Returns (verts, faces, smooth, roles) ready for harvest_common.Parts.add.
     """
     nxt = hc.rng(seed)
@@ -73,13 +102,29 @@ def taper_bands(bands_rz, seg=9, seed=1, jit=0.12, phase_deg=0.0,
     nb = len(bands_rz)
     if nb < 2:
         raise ValueError("taper_bands needs at least 2 rings")
+    if offsets is not None and len(offsets) != nb:
+        raise ValueError("taper_bands got %d offset(s) for %d ring(s)"
+                         % (len(offsets), nb))
     verts = []
     for bi, (r, z) in enumerate(bands_rz):
         t = bi / float(nb - 1)
-        dx, dy = lean[0] * t, lean[1] * t
+        if offsets is None:
+            dx, dy = lean[0] * t, lean[1] * t
+        else:
+            dx, dy = offsets[bi]
         for i in range(n):
             a = 2.0 * math.pi * i / n + ph
             rr = r * (1.0 + (nxt() - 0.5) * 2.0 * jit)
+            if ridge is not None:
+                lobes, depth, twist_deg = ridge
+                rr *= 1.0 + depth * math.cos(lobes * a
+                                             - math.radians(twist_deg) * t)
+            if flare is not None:
+                lobes, depth, span = flare
+                if t < span:
+                    fall = (1.0 - t / span) ** 2
+                    swell = max(0.0, math.cos(lobes * a)) ** 3
+                    rr += r * depth * fall * swell
             verts.append((loc[0] + dx + rr * math.cos(a),
                           loc[1] + dy + rr * math.sin(a), loc[2] + z))
 
@@ -91,8 +136,11 @@ def taper_bands(bands_rz, seg=9, seed=1, jit=0.12, phase_deg=0.0,
             raise ValueError("taper_bands got %d band role(s) for %d bands"
                              % (len(role_list), nb - 1))
 
+    # `cap` is a bool for both ends or a (bottom, top) pair. The pair form is
+    # tested for a TUPLE and not for truth, because (False, False) is truthy.
+    cap_lo, cap_hi = (cap, cap) if isinstance(cap, bool) else tuple(cap)
     faces, smooth, out_roles = [], [], []
-    if cap:
+    if cap_lo:
         faces.append(tuple(range(n - 1, -1, -1)))
         smooth.append(False)
         out_roles.append(role_list[0])
@@ -103,12 +151,130 @@ def taper_bands(bands_rz, seg=9, seed=1, jit=0.12, phase_deg=0.0,
             faces.append((lo + i, lo + j, hi + j, hi + i))
             smooth.append(False)
             out_roles.append(role_list[b])
-    if cap:
+    if cap_hi:
         top = (nb - 1) * n
         faces.append(tuple(range(top, top + n)))
         smooth.append(False)
         out_roles.append(role_list[-1])
     return verts, faces, smooth, out_roles
+
+
+def limb(path, radii, seg=4, seed=1, jit=0.10, roles="Bark", cap=(True, True),
+         phase_deg=0.0):
+    """A tapered tube swept along an arbitrary 3D polyline: a bough leaving a
+    trunk, a fork that keeps forking, a limb that droops at its outer end, a
+    snapped stub.
+
+    ADDED AT RN-271 BECAUSE THE FLORA FAMILY COULD NOT EXPRESS A BRANCH.
+    Everything before this was a stack of HORIZONTAL rings (`taper_bands`,
+    `_bands`, `hc.taper`), and `lean` offsets the top ring sideways. That is a
+    legal shape only while the limb is mostly vertical: push `lean` far enough
+    to make a limb reach OUT and its rings, still lying flat in XY, become
+    flatter and flatter slices of it, until at horizontal they are degenerate
+    and the limb is a ribbon. Every branch in this project is therefore either
+    steeply upright or a cheat, and "trunks are near-cylinders with nothing
+    coming off them" follows directly from that.
+
+    `path` is [(x, y, z), ...] with at least 2 points, in the caller's own
+    frame. `radii` is one radius per point. Each ring is built in the plane
+    PERPENDICULAR to the local tangent (central difference at interior points,
+    one-sided at the ends), so the tube keeps its cross section whatever
+    direction the limb is running, including dead horizontal and past it.
+
+    The ring frame is derived from the tangent and world +Z, falling back to
+    world +X when the limb is within about half a degree of vertical, so a
+    vertical limb is still well defined. Consecutive rings therefore share a
+    reference direction rather than being parallel-transported: a limb that
+    turns through more than about 90 degrees in one section will twist, which
+    is why boughs here are authored as three or four short sections.
+
+    Triangles: cap[0]*(seg-2) + cap[1]*(seg-2) + 2*seg*(len(path)-1).
+
+    Returns (verts, faces, smooth, roles) ready for harvest_common.Parts.add.
+    """
+    m = len(path)
+    if m < 2:
+        raise ValueError("limb needs at least 2 path points")
+    if len(radii) != m:
+        raise ValueError("limb got %d radii for %d path point(s)"
+                         % (len(radii), m))
+    nxt = hc.rng(seed)
+    n = max(3, seg)
+    ph = math.radians(phase_deg)
+    verts = []
+    for k in range(m):
+        p0 = path[max(0, k - 1)]
+        p1 = path[min(m - 1, k + 1)]
+        tx, ty, tz = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+        tl = math.sqrt(tx * tx + ty * ty + tz * tz)
+        if tl < 1e-9:
+            raise ValueError("limb path has two coincident points")
+        tx, ty, tz = tx / tl, ty / tl, tz / tl
+        # u = normalize(tangent x up), v = tangent x u. The cross with +Z
+        # collapses on a vertical limb, so the reference swaps to +X there.
+        ux, uy, uz = ty, -tx, 0.0
+        ul = math.hypot(ux, uy)
+        if ul < 1e-4:
+            ux, uy, uz = 0.0, tz, -ty
+            ul = math.hypot(uy, uz)
+        ux, uy, uz = ux / ul, uy / ul, uz / ul
+        vx = ty * uz - tz * uy
+        vy = tz * ux - tx * uz
+        vz = tx * uy - ty * ux
+        for i in range(n):
+            a = 2.0 * math.pi * i / n + ph
+            r = radii[k] * (1.0 + (nxt() - 0.5) * 2.0 * jit)
+            ca, sa = math.cos(a) * r, math.sin(a) * r
+            verts.append((path[k][0] + ux * ca + vx * sa,
+                          path[k][1] + uy * ca + vy * sa,
+                          path[k][2] + uz * ca + vz * sa))
+
+    role_list = [roles] * (m - 1) if isinstance(roles, str) else list(roles)
+    if len(role_list) != m - 1:
+        raise ValueError("limb got %d role(s) for %d section(s)"
+                         % (len(role_list), m - 1))
+    faces, out_roles = [], []
+    if cap[0]:
+        faces.append(tuple(range(n - 1, -1, -1)))
+        out_roles.append(role_list[0])
+    for b in range(m - 1):
+        lo, hi = b * n, (b + 1) * n
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((lo + i, lo + j, hi + j, hi + i))
+            out_roles.append(role_list[b])
+    if cap[1]:
+        top = (m - 1) * n
+        faces.append(tuple(range(top, top + n)))
+        out_roles.append(role_list[-1])
+    return verts, faces, [False] * len(faces), out_roles
+
+
+def arc(az_deg, reach, z0, rise, droop, steps=3, r0=0.0, sweep_deg=0.0):
+    """The path a bough takes: out along `az_deg` from (0, 0, z0), rising by
+    `rise` at the point of greatest height and finishing `droop` metres BELOW
+    that peak at full `reach`.
+
+    A branch is not a straight line and the difference is the whole read. A
+    straight limb gives a crown whose outline is a cone flank; a limb that
+    leaves the trunk steeply, flattens, and then lets its outer end fall is
+    what makes a canopy layered, and it is what puts foliage BELOW the level it
+    is attached at, which is the shape the eye reads as weight.
+
+    `r0` starts the path out from the trunk axis rather than on it, so a bough
+    emerges from the trunk surface instead of from inside it. `sweep_deg` turns
+    the bough in plan as it goes, so it curves rather than radiating: a crown
+    of perfectly radial limbs is a wheel seen from above and reads as one.
+    """
+    pts = []
+    for k in range(steps + 1):
+        t = k / float(steps)
+        a = math.radians(az_deg + sweep_deg * t * t)
+        d = r0 + (reach - r0) * t
+        # A parabola in t peaking at t = 0.62: up fast, then over and down.
+        z = z0 + rise * (1.0 - ((t - 0.62) / 0.62) ** 2) - droop * t ** 3
+        pts.append((d * math.cos(a), d * math.sin(a), z))
+    return pts
 
 
 def canopy_mass(rx, ry, rz, loc=(0.0, 0.0, 0.0), seg=9, seed=1, jit=0.15,

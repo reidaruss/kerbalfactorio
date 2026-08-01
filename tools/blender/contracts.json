@@ -1310,10 +1310,10 @@
         "Canopy_Broadleaf_LOD0", "Canopy_Broadleaf_LOD2"
       ],
       "pivot_mode": "ground",
-      "dims_xyz_m": [9.00, 10.50, 9.00],
+      "dims_xyz_m": [8.40, 10.50, 10.50],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 310,
-      "max_tris_total": 932,
+      "max_tris_lod0": 784,
+      "max_tris_total": 1996,
       "max_tris_collision": 12,
       "max_materials": 4,
       "sockets": [],
@@ -1321,12 +1321,12 @@
       "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight"],
       "collision": [],
       "parts": [
-        {"node": "Canopy_Pine_LOD0", "dims_xyz_m": [3.10, 12.00, 3.10], "max_tris": 296, "pivot": "ground"},
-        {"node": "Canopy_Pine_LOD2", "dims_xyz_m": [3.10, 12.00, 3.10], "max_tris": 26, "pivot": "ground"},
-        {"node": "Canopy_Fir_LOD0", "dims_xyz_m": [2.60, 16.50, 2.60], "max_tris": 248, "pivot": "ground"},
-        {"node": "Canopy_Fir_LOD2", "dims_xyz_m": [2.60, 16.50, 2.60], "max_tris": 22, "pivot": "ground"},
-        {"node": "Canopy_Broadleaf_LOD0", "dims_xyz_m": [9.00, 10.50, 9.00], "max_tris": 310, "pivot": "ground"},
-        {"node": "Canopy_Broadleaf_LOD2", "dims_xyz_m": [9.00, 10.50, 9.00], "max_tris": 30, "pivot": "ground"}
+        {"node": "Canopy_Pine_LOD0", "dims_xyz_m": [3.85, 12.00, 2.55], "max_tris": 742, "pivot": "ground"},
+        {"node": "Canopy_Pine_LOD2", "dims_xyz_m": [3.85, 12.00, 2.55], "max_tris": 50, "pivot": "ground"},
+        {"node": "Canopy_Fir_LOD0", "dims_xyz_m": [2.90, 16.50, 2.20], "max_tris": 334, "pivot": "ground"},
+        {"node": "Canopy_Fir_LOD2", "dims_xyz_m": [2.90, 16.50, 2.20], "max_tris": 28, "pivot": "ground"},
+        {"node": "Canopy_Broadleaf_LOD0", "dims_xyz_m": [8.40, 10.50, 10.50], "max_tris": 784, "pivot": "ground"},
+        {"node": "Canopy_Broadleaf_LOD2", "dims_xyz_m": [8.40, 10.50, 10.50], "max_tris": 58, "pivot": "ground"}
       ],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight"],
       "textures": {
