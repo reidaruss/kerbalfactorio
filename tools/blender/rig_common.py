@@ -385,7 +385,8 @@ def _basis(direction, ref):
     return d, u, v
 
 
-def oval_tube(points, radii_u, radii_v, seg=10, closed_caps=True):
+def oval_tube(points, radii_u, radii_v, seg=10, closed_caps=True,
+              smooth_sides=True):
     """A closed tube of ELLIPTICAL section through a polyline.
 
     `radii_u` is the half-extent along the carried up reference (vertical for a
@@ -394,7 +395,20 @@ def oval_tube(points, radii_u, radii_v, seg=10, closed_caps=True):
 
     This exists for the first-person hand. A hand is not round: it is roughly
     twice as wide as it is thick, and a round palm is exactly the shape that
-    reads as a mitt. It also builds the knuckle plate and the boot cuff."""
+    reads as a mitt. It also builds the knuckle plate and the boot cuff.
+
+    `smooth_sides=False` flat-shades the side quads. The default is True and
+    every caller written before 2026-08-01 keeps it, so nothing rebuilt.
+
+    WHY FLAT IS NOT A DOWNGRADE (ART-DIRECTION.md). A smooth-shaded tube of
+    seven or eight sides is a lie the shader tells: the normals claim a
+    cylinder while the silhouette shows a heptagon, and the lit result is an
+    even gradient with no edge anywhere on it. That is exactly the "smooth,
+    unweathered" read the art direction now calls a defect. Flat shading gives
+    the SAME triangles eight distinct lit values with hard boundaries between
+    them, which is what makes a leg segment read as plate rather than as clay.
+    It is the cheapest detail in this file: it costs zero triangles, and it
+    costs vertices only where a hard edge is wanted."""
     n = len(points)
     ref = [0.0, 0.0, 1.0]
     verts, ring_start = [], []
@@ -420,7 +434,7 @@ def oval_tube(points, radii_u, radii_v, seg=10, closed_caps=True):
         for j in range(seg):
             k = (j + 1) % seg
             faces.append((lo + j, lo + k, hi + k, hi + j))
-            smooth.append(True)
+            smooth.append(smooth_sides)
     if closed_caps:
         faces.append(tuple(range(seg - 1, -1, -1)))
         smooth.append(False)
@@ -430,7 +444,7 @@ def oval_tube(points, radii_u, radii_v, seg=10, closed_caps=True):
     return verts, faces, smooth
 
 
-def tube(points, radii, seg=10, closed_caps=True):
+def tube(points, radii, seg=10, closed_caps=True, smooth_sides=True):
     """A closed tube through a polyline, one ring per point.
 
     The rings are parallel-transported (each ring's frame is carried from the
@@ -438,7 +452,7 @@ def tube(points, radii, seg=10, closed_caps=True):
     the first-person forearm - does not twist between rings.
 
     Returns (verts, faces, smooth) for MeshBuilder.add_raw."""
-    return oval_tube(points, radii, radii, seg, closed_caps)
+    return oval_tube(points, radii, radii, seg, closed_caps, smooth_sides)
 
 
 def stack(rings):
