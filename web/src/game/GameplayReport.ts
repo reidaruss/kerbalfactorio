@@ -23,6 +23,10 @@ export function gameplayReport(g: Gameplay): unknown {
       // WG-67: the streamed world rocks, with the delivery ratio over their own
       // ground and every refusal counted beside its denominator.
       rocks: g.rocks.stats(),
+      // WG-116: the streamed world TREES, same shape and same discipline. The
+      // ruling that made them nodes ("no scenery trees") is only checkable if
+      // the delivery ratio and every refusal are published beside each other.
+      trees: g.trees.stats(),
       placed: g.nodesPlaced,
       // THE DEPOSITS. A patch is the whole ore body, so `remaining` here is the
       // number a conservation check has to balance against: what a drill

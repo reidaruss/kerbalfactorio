@@ -19,7 +19,8 @@
 
 import * as THREE from 'three';
 import { loadGlb } from '../assets/Loaders.js';
-import { NodeBatch, type NodePart } from './NodeBatch.js';
+import { NODE_LOD1_M, NODE_LOD2_M, NODE_LOD_HYST, NodeBatch,
+  type NodePart } from './NodeBatch.js';
 import { ART, frac, hash32, pickArt, variantFor, type NodeArt } from './NodeArt.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore, NodeState } from './GameCore.js';
@@ -96,8 +97,11 @@ interface Placed {
   /** Tangent axis the collapse leans about, fixed per node so it never jitters. */
   lean: THREE.Vector3;
   empty: boolean;
-  /** Art scale. An outcrop varies with the richness of the ground it sits in. */
+  /** Art scale. An outcrop varies with the richness of the ground it sits in,
+   *  and since WG-116 a tree's scale IS its yield. */
   scale: number;
+  /** Which LOD tier this node draws, 0 near. */
+  lod: number;
   /**
    * Metres pushed INWARD along the ground normal. Zero for a tree; positive for
    * an outcrop, which is the part of a buried ore body that breaks the surface
@@ -116,7 +120,19 @@ export interface HitPoint {
 export class NodeField {
   readonly group = new THREE.Group();
   readonly placed: Placed[] = [];
-  readonly batch = new NodeBatch();
+  readonly batch: NodeBatch;
+  /** WG-118: LOD tier changes since boot, CUMULATIVE.
+   *
+   *  It was per-frame for one measurement and that was useless: a probe reads
+   *  one frame in sixty, and at a handful of switches per frame across two
+   *  thousand nodes the sampled frame is almost always a zero, so a working LOD
+   *  reported itself dead. Cumulative makes the question a difference between
+   *  two reads, which is what "did it settle" wants and what a walk can
+   *  assert. */
+  lodSwitches = 0;
+  /** The same for the frame just composed, for a hitch hunt. */
+  lodSwitchesLastFrame = 0;
+  private readonly lodOn: boolean;
   private readonly templates = new Map<string, { root: string; scene: THREE.Object3D }>();
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
@@ -130,7 +146,12 @@ export class NodeField {
   /** Nodes that have visibly collapsed, for the HUD counters and the probe. */
   felled = 0;
 
-  constructor(private readonly core: GameCore, private readonly origin: FloatingOrigin) {
+  /** `opts.lod` is `?nodelod` and `opts.cull` is `?nodecull` (WG-118): two
+   *  separate claims, so two separate one-binary controls. */
+  constructor(private readonly core: GameCore, private readonly origin: FloatingOrigin,
+              opts: { lod?: boolean; cull?: boolean } = {}) {
+    this.lodOn = opts.lod !== false;
+    this.batch = new NodeBatch(opts.cull !== false);
     this.group.name = 'harvestNodes';
     this.group.add(this.batch.group);
   }
@@ -259,7 +280,7 @@ export class NodeField {
       pos: { x: st.x, y: st.y, z: st.z },
       up,
       yaw: frac(hash32(h, 5)) * Math.PI * 2,
-      variant: -1, punch: 0, fell: 0, lean, empty: st.remaining <= 0,
+      variant: -1, lod: 0, punch: 0, fell: 0, lean, empty: st.remaining <= 0,
       scale: scale * size, sinkM,
     };
     this.placed.push(pl);
@@ -271,8 +292,36 @@ export class NodeField {
     if (pl.variant === variant) return;
     pl.variant = variant;
     this.compose(pl, 0);
-    for (let i = 0; i < pl.parts.length; ++i)
-      this.batch.set(pl.parts[i].material, pl.slots[i], pl.parts[i].geom[variant], this.m);
+    this.writeGeom(pl);
+  }
+
+  /** Write the (variant, lod) geometry id and the composed matrix into every one
+   *  of a node's slots. `this.m` must already hold the transform. */
+  private writeGeom(pl: Placed): void {
+    for (let i = 0; i < pl.parts.length; ++i) {
+      this.batch.set(pl.parts[i].material, pl.slots[i],
+        this.batch.geomAt(pl.parts[i], pl.variant, pl.lod), this.m);
+    }
+  }
+
+  /**
+   * The LOD tier for one node, from its distance to the eye OVER ITS OWN SCALE.
+   *
+   * Hysteresis is applied against the tier it is ALREADY in, so a node standing
+   * on a boundary keeps what it has instead of rewriting a geometry id every
+   * frame. That is one comparison, and it is the difference between a free
+   * switch and a thousand texture writes a frame at the Forest site.
+   */
+  private lodFor(pl: Placed, d2: number): number {
+    const s = pl.scale > 0 ? pl.scale : 1;
+    const d = Math.sqrt(d2) / s;
+    const up = 1 + NODE_LOD_HYST, down = 1 - NODE_LOD_HYST;
+    if (pl.lod >= 2) return d > NODE_LOD2_M * down ? 2 : (d > NODE_LOD1_M ? 1 : 0);
+    if (pl.lod === 1) {
+      if (d > NODE_LOD2_M * up) return 2;
+      return d < NODE_LOD1_M * down ? 0 : 1;
+    }
+    return d > NODE_LOD2_M * up ? 2 : (d > NODE_LOD1_M * up ? 1 : 0);
   }
 
   /** Build `this.m` for a node: engine position, ground normal, yaw, hit reaction. */
@@ -392,8 +441,17 @@ export class NodeField {
     };
   }
 
-  /** Re-read every node's depletion state and re-place it in engine space. */
-  update(dt: number): void {
+  /**
+   * Re-read every node's depletion state, pick its LOD and re-place it.
+   *
+   * `eye` is the body-frame point LOD is measured from, and it is OPTIONAL: with
+   * no eye, or with `?nodelod=0`, every node draws LOD0 at every range, which is
+   * exactly what this class did before WG-118 and is therefore also the shape of
+   * the control.
+   */
+  update(dt: number, eye?: { x: number; y: number; z: number }): void {
+    this.lodSwitchesLastFrame = 0;
+    const lodOn = this.lodOn && eye !== undefined;
     for (const pl of this.placed) {
       const st = this.core.node(pl.index);
       if (st !== null) {
@@ -404,6 +462,20 @@ export class NodeField {
       if (pl.punch > 0) pl.punch = Math.max(0, pl.punch - dt);
       if (pl.fell > 0) pl.fell = Math.min(FELL_SECS, pl.fell + dt);
       this.compose(pl, pl.punch / PUNCH_SECS);
+      let lod = 0;
+      if (lodOn && eye !== undefined) {
+        const dx = pl.pos.x - eye.x, dy = pl.pos.y - eye.y, dz = pl.pos.z - eye.z;
+        lod = this.lodFor(pl, dx * dx + dy * dy + dz * dz);
+      }
+      if (lod !== pl.lod) {
+        pl.lod = lod;
+        this.lodSwitches++;
+        this.lodSwitchesLastFrame++;
+        // The geometry id AND the matrix in one write per slot: `set` does both,
+        // so a switching node does not also pay a `move`.
+        this.writeGeom(pl);
+        continue;
+      }
       for (let i = 0; i < pl.parts.length; ++i)
         this.batch.move(pl.parts[i].material, pl.slots[i], this.m);
     }
@@ -444,7 +516,8 @@ export class NodeField {
 
   stats(): { nodes: number; empty: number; felled: number; collapsing: number;
              batches: number; instances: number; free: number;
-             capacity: number; slots: number;
+             capacity: number; slots: number; lod0: number; lod1: number;
+             lod2: number; lodSwitches: number; lodSwitchesLastFrame: number;
              ceiling: number; grows: number; refused: number } {
     const b = this.batch.stats();
     let slots = 0;
@@ -458,6 +531,13 @@ export class NodeField {
       // `instances` is what the batch thinks is live and `slots` is what the
       // nodes actually hold. They must agree; a gap is a leak.
       free: this.batch.detail().free, capacity: b.capacity, slots,
+      // WG-118. The tier histogram is the LOD claim's evidence: a ring whose
+      // nodes are all lod0 has an LOD that is not reaching them.
+      lod0: this.placed.filter((p) => p.lod === 0).length,
+      lod1: this.placed.filter((p) => p.lod === 1).length,
+      lod2: this.placed.filter((p) => p.lod === 2).length,
+      lodSwitches: this.lodSwitches,
+      lodSwitchesLastFrame: this.lodSwitchesLastFrame,
       // DW-28. The pool now DOUBLES instead of returning -1 at a fixed 128, and
       // `refused` is the number that must stay zero: it counts nodes that exist
       // and can be mined and are not on screen. A silent exhaustion here is

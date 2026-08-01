@@ -181,6 +181,13 @@ export interface SaveSlot {
    *  harvested, and per the WG-29 lesson an optional field must NOT bump
    *  SAVE_VERSION (the check is `!==`, a bump orphans every existing world). */
   rocks?: [number, number, number, number][];
+  /** WORLD TREE depletion (WG-119): [latCell, lonCell, slot, remaining] per
+   *  chopped tree, keyed by TreeField's lattice cell for exactly the reason
+   *  `rocks` above is, and additive and optional under exactly the same rule,
+   *  so SAVE_VERSION deliberately does NOT move. An absent list is a world
+   *  where no streamed tree was ever chopped, which is what every world written
+   *  before tonight is; the check is `!==`, so a bump orphans all of them. */
+  trees?: [number, number, number, number][];
   buildings: SaveBuilding[];
   machines: SaveMachine[];
   /** The dug tunnels: /core's removed-cell bytes plus the strike log. */

@@ -23,6 +23,7 @@ import type { GameCore } from './GameCore.js';
 import type { Machines } from './Machines.js';
 import type { NodeField } from './NodeField.js';
 import type { RockField } from './RockField.js';
+import type { TreeField } from './TreeField.js';
 import type { OreField } from './OreField.js';
 import type { Structures } from './Structures.js';
 import type { Hotbar } from './Hotbar.js';
@@ -81,7 +82,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          progress: SaveProgress | undefined,
                          health: HealthBook,
                          vitals: PlayerHealthSave,
-                         rocks: RockField): SaveSlot {
+                         rocks: RockField, trees: TreeField): SaveSlot {
   // THE TUNNELS FIRST, because of_edits_serialize and of_gp_inventory_serialize
   // write into the SAME u8 scratch: the second call would silently overwrite the
   // first one's bytes if they were not copied out one at a time.
@@ -110,9 +111,13 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   // A rock's array index is its visit order, so the index-keyed diff below
   // would drain somebody else's node on a differently-walked reload.
   const rockIdx = rocks.coreIndices();
+  // WG-116: and the world TREES, same reason, and now the majority of the node
+  // array at a forested site: without this a reload drains a thousand strangers.
+  const treeIdx = trees.coreIndices();
   const depletion: [number, number][] = [];
   for (const pl of field.placed) {
-    if (outcrops.has(pl.index) || rockIdx.has(pl.index)) continue;
+    if (outcrops.has(pl.index) || rockIdx.has(pl.index)
+      || treeIdx.has(pl.index)) continue;
     const st = game.node(pl.index);
     if (st === null || st.remaining >= st.initial) continue;
     depletion.push([pl.index, st.remaining]);
@@ -137,6 +142,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     depletion,
     patches,
     rocks: rocks.serialize(),
+    trees: trees.serialize(),
     sites: saveSites(structures),
     structures: saveParts(structures),
     pads: savePads(pads),
@@ -231,6 +237,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   //     ring drain now; the rest go pending and drain the moment they
   //     materialise, through the same of_gp_node_drain the trees use.
   const rocksApplied = g.rocks.restore(slot.rocks);
+  const treesApplied = g.trees.restore(slot.trees);   // WG-116, the same path
 
   // 2. The pack, from /core's own bytes.
   let packUnits = 0;
@@ -316,6 +323,8 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     machines: restoredMachines, nodesDepleted: depleted,
     rocks: rocksApplied,
     rocksPending: g.rocks.stats().pending,
+    trees: treesApplied,
+    treesPending: g.trees.stats().pending,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
     progress, discovery, health, vitals,
     mode: slot.mode ?? 'survival',
@@ -340,7 +349,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
     g.seed, g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
-    saveProgress(g), g.health, g.vitals.serialize(), g.rocks);
+    saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
@@ -350,6 +359,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
     pads: slot.pads?.length ?? 0,
     machines: slot.machines.length, depletion: slot.depletion.length,
     patches: slot.patches.length, rocks: slot.rocks?.length ?? 0,
+    trees: slot.trees?.length ?? 0,
     health: slot.health?.length ?? 0,
     voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
   } : null;

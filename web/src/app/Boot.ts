@@ -320,6 +320,10 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       // walker once fell at the wrong gravity). `?rocks=0` is the control.
       bodyRadiusM: body.radiusM, water: oracle.water,
       rocks: { enabled: cfg.rocks, density: cfg.rockDensity },
+      // WG-116: the trees of the world, on the same lattice contract as the
+      // rocks and reading the same body datum. `?trees=0` is the control.
+      trees: { radiusM: cfg.treeRadiusM, density: cfg.treeDensity },
+      nodeArt: { lod: cfg.nodeLod, cull: cfg.nodeCull },
       // DW-31. The mode is decided ONCE, here, and everything downstream asks
       // the ModeRules object rather than re-reading the flag.
       mode: cfg.sandbox ? 'sandbox' : 'survival',

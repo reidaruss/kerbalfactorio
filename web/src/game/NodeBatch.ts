@@ -45,11 +45,36 @@ function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
 
 /** The depletion variants, in the order their geometry ids are stored. */
 export const VARIANTS = ['Full', 'Half', 'Low'] as const;
+/** LOD tiers per variant. The assets author 0, 1 and 2; anything past this is
+ *  ignored rather than silently folded into the far slot, which is the defect
+ *  `PropLibrary`'s else-branch still carries. */
+export const LODS = 3;
 
-/** One material a piece of node art uses, and its geometry per variant (-1 = absent). */
+/** How far a node draws its LOD0 / LOD1 geometry, in metres OF ITS OWN SIZE.
+ *
+ * The comparison is `distance / scale`, not distance, and that is the whole
+ * point: since WG-116 a tree's scale carries its yield and the world holds
+ * trees from 0.82 to 2.39 of the authored height, so one absolute distance
+ * would either pop the big ones or pay LOD0 for the small ones. Screen size is
+ * what an LOD is actually about and distance over size is its cheap proxy.
+ *
+ * The two numbers were measured, not chosen: world-gen.md section 6.5.
+ */
+export const NODE_LOD1_M = 55;
+export const NODE_LOD2_M = 165;
+/** Fraction of a threshold a node must cross back through before it switches
+ *  down again. Without it a node sitting on a boundary rewrites its geometry id
+ *  every frame, which is cheap per node and is not cheap at a thousand. */
+export const NODE_LOD_HYST = 0.12;
+
+/** One material a piece of node art uses, and its geometry per (variant, LOD),
+ *  -1 = absent. THREE LODs, because every node .glb in the project has shipped
+ *  `_LOD1` and `_LOD2` meshes since it was authored and this file loaded
+ *  neither: a harvest tree drew its 791-triangle LOD0 at 600 m while the 16
+ *  triangle impostor the same file contained was dead bytes. */
 export interface NodePart {
   readonly material: string;
-  readonly geom: number[];
+  readonly geom: number[][];
 }
 
 interface Batch {
@@ -147,6 +172,7 @@ function familyOf(m: THREE.Material): string {
 interface Found {
   file: string;
   variant: number;
+  lod: number;
   material: string;
   source: THREE.Material;
   geometry: THREE.BufferGeometry;
@@ -164,7 +190,9 @@ export class NodeBatch {
   private refused = 0;
   private warned = false;
 
-  constructor() {
+  /** `cull` is `?nodecull` (WG-118). Held rather than applied at once, because
+   *  no batch exists until `build`. */
+  constructor(private readonly cull = true) {
     this.group.name = 'harvestNodeBatches';
     // On the SAME HUD line as the machines, the structures and the props, so
     // one query covers every pool in the client and a new one cannot be added
@@ -188,12 +216,14 @@ export class NodeBatch {
         const m = o as THREE.Mesh;
         if (m.isMesh !== true || m.name.startsWith('col_')) return;
         // GLTFLoader appends _0/_1/... per primitive of a multi-material mesh.
-        const hit = /^(.*)_LOD0(?:_\d+)?$/.exec(m.name);
+        const hit = /^(.*)_LOD(\d)(?:_\d+)?$/.exec(m.name);
         if (hit === null) return;
+        const lod = Number(hit[2]);
+        if (!(lod >= 0 && lod < LODS)) return;
         const v = VARIANTS.indexOf(hit[1].replace(`${t.root}_`, '') as typeof VARIANTS[number]);
         if (v < 0) return;   // a Stump or anything else outside the three variants
         found.push({
-          file, variant: v, geometry: m.geometry, world: m.matrixWorld,
+          file, variant: v, lod, geometry: m.geometry, world: m.matrixWorld,
           material: familyOf(m.material as THREE.Material),
           source: m.material as THREE.Material,
         });
@@ -208,7 +238,8 @@ export class NodeBatch {
         ?? (f.geometry.getAttribute('position') as THREE.BufferAttribute).count;
       size.set(f.material, s);
     }
-    for (const [name, s] of size) this.batches.set(name, this.makeBatch(name, s));
+    for (const [name, s] of size)
+      this.batches.set(name, this.makeBatch(name, s, this.cull));
 
     // Everything a file draws in one family, for one variant, MERGES into one
     // geometry. A tree's Full variant is bark plus two leaf roles: three
@@ -216,29 +247,34 @@ export class NodeBatch {
     // three and the shadow pass sees a third of the work.
     const merged = new Map<string, THREE.BufferGeometry[]>();
     for (const f of found) {
-      const key = `${f.file}|${f.variant}|${f.material}`;
+      const key = `${f.file}|${f.variant}|${f.lod}|${f.material}`;
       const list = merged.get(key) ?? [];
       list.push(normalize(f.geometry, f.world,
         (f.source as THREE.MeshStandardMaterial).color ?? new THREE.Color(1, 1, 1)));
       merged.set(key, list);
     }
     for (const [key, list] of merged) {
-      const [file, vs, family] = key.split('|');
+      const [file, vs, ls, family] = key.split('|');
       const b = this.batches.get(family);
       if (b === undefined) continue;
       const parts = this.parts.get(file) ?? [];
       let part = parts.find((p) => p.material === family);
       if (part === undefined) {
-        part = { material: family, geom: [-1, -1, -1] };
+        part = {
+          material: family,
+          geom: Array.from({ length: VARIANTS.length },
+            () => new Array<number>(LODS).fill(-1)),
+        };
         parts.push(part);
         this.parts.set(file, parts);
       }
-      part.geom[Number(vs)] = b.mesh.addGeometry(concat(list));
+      part.geom[Number(vs)][Number(ls)] = b.mesh.addGeometry(concat(list));
     }
   }
 
   private makeBatch(name: string,
-                    s: { verts: number; idx: number; src: THREE.Material }): Batch {
+                    s: { verts: number; idx: number; src: THREE.Material },
+                    cull: boolean): Batch {
     const metal = name.endsWith(':metal');
     const ore = name.startsWith('ore:');
     const material = new THREE.MeshStandardMaterial({
@@ -275,17 +311,40 @@ export class NodeBatch {
     mesh.name = `nodes:${name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    // The clearing is 60 m across and always around the player, so a whole-batch
-    // cull would only ever be a false negative; per-instance culling and sorting
-    // cost more than they save at this object count (PropLibrary measured it).
+    // A whole-batch cull would only ever be a false negative: a node batch
+    // always has something in it near the player.
     mesh.frustumCulled = false;
     mesh.sortObjects = false;
-    mesh.perObjectFrustumCulled = false;
+    // PER-INSTANCE CULLING, and the line it replaces was RIGHT WHEN WRITTEN.
+    // It said per-instance culling "cost more than they save at this object
+    // count", and the object count was the 60 m clearing's two dozen nodes.
+    // WG-116 put a 620 m ring of trees in these same batches, so the count is
+    // now over a thousand and most of them are behind the player or outside a
+    // given shadow cascade. `?nodecull=0` is the one-binary control.
+    mesh.perObjectFrustumCulled = cull;
     this.group.add(mesh);
     return { mesh, live: 0, free: [], cap: START_CAPACITY };
   }
 
   partsOf(file: string): readonly NodePart[] | null { return this.parts.get(file) ?? null; }
+
+  /**
+   * The geometry id for one part at (variant, lod), FALLING BACK TOWARDS LOD0.
+   *
+   * `bush_scrub`, `oil_seep` and `water_pool` author LOD0 and LOD1 only, so a
+   * literal lookup at LOD2 would hand `set` a -1 and make them invisible past
+   * 165 m: a silent disappearance, which is the DW-28 failure shape. Walking
+   * down instead means an asset with no far tier behaves exactly as it did
+   * before this file learned that LODs existed.
+   */
+  geomAt(part: NodePart, variant: number, lod: number): number {
+    const row = part.geom[variant];
+    if (row === undefined) return -1;
+    for (let l = Math.min(lod, LODS - 1); l >= 0; --l) {
+      if (row[l] >= 0) return row[l];
+    }
+    return -1;
+  }
 
   /** A slot in `material`'s batch, or -1 only at the CEILING, and then loudly. */
   acquire(material: string): number {

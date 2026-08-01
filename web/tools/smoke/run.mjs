@@ -167,6 +167,15 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // one-binary control for the whole rock-node pass; `rockdensity=` scales
   // every biome's rock ask together for the cost ladder.
   'rocks', 'rockdensity',
+  // WG-116, standing rule 7. `trees=0` places NO world trees, which is the
+  // one-binary control for the whole tree-node pass; `treedensity=` scales
+  // every biome's tree ask together for the cost ladder, and `trees=<metres>`
+  // sweeps the ring radius, which is the number the pass is judged on.
+  'trees', 'treedensity',
+  // WG-118, standing rule 7. `nodelod=0` draws every harvest node at LOD0 at
+  // all ranges (the state before the batch loaded its own `_LOD1`/`_LOD2`);
+  // `nodecull=0` turns per-instance frustum culling off. Two claims, two flags.
+  'nodelod', 'nodecull',
   // WG-91 / WG-94, standing rule 7. `spires=0` drops rock_spire.glb from the
   // node art AND from the download set, so Mountains rocks are all boulders
   // exactly as before; `forestdetail=0` puts Forest's understorey back on the

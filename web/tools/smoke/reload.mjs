@@ -52,7 +52,15 @@ const phase = args.get('phase') ?? 'orbit';
 // that needs an enemy to damage a building runs in a world where nothing
 // spawns, and the reload proof would be about damage nobody dealt.
 const combat = args.get('combat') === '1' ? '&combat=1' : '';
-const url = `${base}?sandbox=1&debug=1${combat}`;
+// WG-119. `--params=lat=..&lon=..&mode=walk` is appended to BOTH phases' URL.
+// It exists because a reload proof about STREAMED world content cannot be run
+// at the default spawn: that spawn is Mountains at 4,668 m, which is above the
+// treeline, so a tree probe there would have nothing to chop and would report a
+// fixture failure rather than a persistence result. Appending to the one `url`
+// constant is what keeps phase 1 and phase 2 the same world, which is the
+// property this whole runner exists to hold.
+const extra = args.get('params') ? `&${args.get('params')}` : '';
+const url = `${base}?sandbox=1&debug=1${combat}${extra}`;
 const FLYTO = 'probes/flyto.js';
 const PADCLEAR = 'probes/padclear.js';
 const DAMAGESAVE = 'probes/damagesave.js';
@@ -79,6 +87,10 @@ const CHESTSAVE = 'probes/chestsave.js';
 // can prove, because the in-page round trip replays onto the same indices and
 // cannot see an index-keyed diff drain somebody else's node.
 const ROCKSAVE = 'probes/rockreload.js';
+// WG-119. The same question for the world TREES, which since WG-116 are the
+// majority of the node array at any forested site and are keyed by lattice cell
+// for the same reason the rocks are.
+const TREESAVE = 'probes/treereload.js';
 const setup = args.get('setup') ?? FLYTO;
 // The default keeps `--phase` meaning exactly what it meant: the phase IS the
 // flyto probe's argument, so an untouched command line produces an untouched
@@ -204,6 +216,15 @@ try {
       rocks: g.rocks ?? null,
       rockRows: typeof of.nodes === 'function'
         ? of.nodes().filter((n) => n.kind === 1 && n.distanceM < 175)
+          .map((n) => ({ x: n.x, y: n.y, z: n.z,
+            remaining: n.remaining, initial: n.initial }))
+        : [],
+      // WG-119: the same for the world TREES, over their own (much larger)
+      // ring, re-measured off the LIVE world so a tree that came back full is
+      // caught by position rather than trusted by a count.
+      trees: g.trees ?? null,
+      treeRows: typeof of.nodes === 'function'
+        ? of.nodes().filter((n) => n.kind === 0 && n.distanceM < 720)
           .map((n) => ({ x: n.x, y: n.y, z: n.z,
             remaining: n.remaining, initial: n.initial }))
         : [],
@@ -437,6 +458,42 @@ try {
     check('and the drain was actually applied by the time this read ran',
           (after.rocks?.drainedOnRestore ?? 0) >= 1,
           `${after.rocks?.drainedOnRestore}`);
+  }
+
+  // WG-119. THE TREE HALF, and it is the harder half: at the Forest site the
+  // ring holds over two thousand streamed trees, so an index-keyed diff would
+  // not merely drain the wrong node, it would drain a stranger every time. The
+  // tree is found by BIT-EXACT position for that exact reason.
+  if (setup === TREESAVE) {
+    const t0r = before.tree ?? null;
+    const hit = (after.treeRows ?? []).find((r) => t0r !== null
+      && r.x === t0r.x && r.y === t0r.y && r.z === t0r.z) ?? null;
+    check('the chopped tree grew back in the same place, to the bit',
+          hit !== null,
+          `looked for ${JSON.stringify(t0r)} in ${after.treeRows?.length} rows`);
+    // EXACT AT FLOAT32, for the reason the rock block states: /core stores
+    // RemainingAmount through of_gp_node_drain's `static_cast<float>`, so an f64
+    // equality would assert something the channel does not promise.
+    check('THE TREE CAME BACK AT THE REMAINING IT WAS LEFT AT (f32-exact)',
+          hit !== null && t0r !== null
+          && Math.fround(hit.remaining) === Math.fround(t0r.remaining),
+          `left ${t0r?.remaining}/${t0r?.initial}, `
+          + `came back ${hit?.remaining ?? 'ABSENT'}`);
+    check('and the numbers compared are not a full tree agreeing with itself',
+          t0r !== null && t0r.remaining < t0r.initial,
+          JSON.stringify(t0r));
+    check('the fixture was a STREAMED tree, not one of the clearing spiral',
+          (t0r?.distanceM ?? 0) > 70, `${t0r?.distanceM} m from spawn`);
+    check('the restore ledger counted the tree diff (applied now or pending)',
+          ((after.persist?.restored?.trees ?? 0)
+           + (after.persist?.restored?.treesPending ?? 0)) >= 1,
+          JSON.stringify({ trees: after.persist?.restored?.trees,
+            pending: after.persist?.restored?.treesPending }));
+    check('and the drain was actually applied by the time this read ran',
+          (after.trees?.drainedOnRestore ?? 0) >= 1,
+          `${after.trees?.drainedOnRestore}`);
+    check('the reloaded world regrew a real forest, not an empty ring',
+          (after.trees?.live ?? 0) > 100, `${after.trees?.live}`);
   }
 
   // GP-65. THE HEALTH HALF. Health is per-entity state no other field in the

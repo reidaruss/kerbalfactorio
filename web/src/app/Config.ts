@@ -4,7 +4,7 @@
 // makes a run reproducible.
 
 import { parsePost, type PostSettings } from '../render/post/PostConfig.js';
-import { CANOPY_RADIUS_M } from '../world/ScatterTuning.js';
+import { TREE_RADIUS_M } from '../game/TreeTuning.js';
 
 export type QualityTier = 'low' | 'med' | 'high';
 
@@ -154,15 +154,19 @@ export interface Config {
    */
   readonly iblGroundAmp: number;
   /**
-   * How far canopy trees reach, in metres. `?canopy=0` REMOVES THE FOREST and
-   * is the one-binary control for the whole of WG-59 to WG-63: the scatter
-   * takes the identical branch it took before the tier existed, so a before and
-   * an after picture differ in one query parameter rather than in two builds
-   * with two streamed chunk sets and two shadow states.
+   * How far SCENERY canopy trees reach, in metres, and **it now ships at 0**.
    *
-   * It is a distance rather than a boolean so the same control also sweeps the
-   * cost: the triangles a forest adds go as the SQUARE of this, and 260 / 520 /
-   * 900 measured in one binary is what set the shipping value.
+   * WG-116, Reid's ruling: "there should be no scenery trees. all trees should
+   * be minable." This tier is the scenery, so it is retired, and the retirement
+   * is a default rather than a deletion for one measured reason: `?canopy=620`
+   * reproduces the WG-59 world in the SAME binary, which is the only way to
+   * photograph what the ruling cost and what it bought without comparing two
+   * builds with two streamed chunk sets and two shadow states. `?trees=` is the
+   * tier that replaced it.
+   *
+   * It stays a distance rather than a boolean because the cost of a forest goes
+   * as the SQUARE of it, so the same control sweeps the ladder (260 / 520 / 900
+   * measured in one binary is what set the retired shipping value of 620).
    */
   readonly canopyRadiusM: number;
   /**
@@ -180,6 +184,22 @@ export interface Config {
    */
   readonly rocks: boolean;
   readonly rockDensity: number;
+  /**
+   * WG-116: how far streamed TREE harvest nodes reach, in metres. `?trees=0`
+   * places none and is the one-binary control for the whole tree pass, and a
+   * distance rather than a boolean for exactly `canopyRadiusM`'s reason: the
+   * cost goes as the square of it, so the same control sweeps the ladder that
+   * sets the shipping value. `?treedensity=` scales every biome's ask together
+   * and exists for the ladder, not for play; the shipped value is 1.
+   */
+  readonly treeRadiusM: number;
+  readonly treeDensity: number;
+  /** WG-118: `?nodelod=0` draws every harvest node at its LOD0 geometry at all
+   *  ranges, which is what the node batch did before it learned that its own
+   *  assets ship `_LOD1` and `_LOD2`. `?nodecull=0` turns per-instance frustum
+   *  culling back off. Two separate claims, so two separate controls. */
+  readonly nodeLod: boolean;
+  readonly nodeCull: boolean;
   /** WG-94: `?spires=0` drops `rock_spire.glb` from `NodeArt.ART`, so Mountains
    *  rocks are all boulders again AND the file is not fetched. */
   readonly spires: boolean;
@@ -395,10 +415,17 @@ export function parseConfig(search: string): Config {
     // chunks offer is coarser than `MAX_CELL_M` and the ring silently stops
     // growing, which would read as "the cost levelled off" rather than as
     // "the sampler refused the chunk".
-    canopyRadiusM: Math.min(1600, Math.max(0, num(p, 'canopy', CANOPY_RADIUS_M))),
+    // WG-116: the scenery canopy is RETIRED, so the default is 0 and
+    // `?canopy=620` (ScatterTuning.CANOPY_RADIUS_M, which still holds the
+    // measured reach and its argument) restores it as the before-picture.
+    canopyRadiusM: Math.min(1600, Math.max(0, num(p, 'canopy', 0))),
     canopyShade: p.get('canopyshade') !== '0',
     rocks: p.get('rocks') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),
+    treeRadiusM: Math.min(1600, Math.max(0, num(p, 'trees', TREE_RADIUS_M))),
+    treeDensity: Math.max(0, num(p, 'treedensity', 1)),
+    nodeLod: p.get('nodelod') !== '0',
+    nodeCull: p.get('nodecull') !== '0',
     spires: p.get('spires') !== '0',
     forestDetail: p.get('forestdetail') !== '0',
     propLod2: p.get('proplod2') !== '0',

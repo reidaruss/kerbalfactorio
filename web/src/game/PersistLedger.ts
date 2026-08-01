@@ -27,6 +27,11 @@ export interface RestoreLedger {
    *  the slot" are different receipts. */
   rocks: number;
   rocksPending: number;
+  /** WG-119: the same pair for the world TREES. Kept separate from `rocks`
+   *  rather than summed into a "world nodes" row, because the two lattices are
+   *  independent and a receipt that added them could not say which one failed. */
+  trees: number;
+  treesPending: number;
   packUnits: number;
   /** Fuel a furnace was burning. There is no item to give back for a tick. */
   fuelTicksLost: number;

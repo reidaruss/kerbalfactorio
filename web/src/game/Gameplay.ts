@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
 import { NodeField } from './NodeField.js';
 import { RockField } from './RockField.js';
+import { TreeField } from './TreeField.js';
 import { OreField } from './OreField.js';
 import { Interact } from '../player/Interact.js';
 import { GameHud } from '../ui/GameHud.js';
@@ -94,6 +95,12 @@ export interface GameplayDeps {
   /** WG-69: `?rocks=0` is the negative control; density is the measurement
    *  ladder's knob and 1 in play. */
   rocks?: { enabled: boolean; density: number };
+  /** WG-116: `?trees=0` is the negative control; the radius is the measurement
+   *  ladder's knob and the shipping reach in play. */
+  trees?: { radiusM: number; density: number };
+  /** WG-118: `?nodelod=0` draws every node at LOD0 as before, `?nodecull=0`
+   *  turns per-instance frustum culling off. Two claims, two controls. */
+  nodeArt?: { lod?: boolean; cull?: boolean };
 }
 
 export class Gameplay {
@@ -104,6 +111,9 @@ export class Gameplay {
   readonly field: NodeField;
   /** WG-67: the rocks of the world, streamed as real stone harvest nodes. */
   readonly rocks: RockField;
+  /** WG-116: the trees of the world, on the same contract. There are no
+   *  scenery trees; every tree the player can walk to gives wood. */
+  readonly trees: TreeField;
   /** The ore in the ground: the patches, their skin and their outcrops. */
   readonly oreField: OreField;
   readonly interact: Interact;
@@ -198,7 +208,7 @@ export class Gameplay {
       sandboxCombatFromUrl(typeof location === 'undefined' ? '' : location.href));
     this.host = d.host;
     this.game = new GameCore(d.core);
-    this.field = new NodeField(this.game, d.origin);
+    this.field = new NodeField(this.game, d.origin, d.nodeArt);
     this.oreField = new OreField(d.core, d.bodyHandle, this.field, d.origin);
     // WG-67: the rocks of the world, streamed as REAL harvest nodes. The edits
     // handle is a thunk for the same reason the scatter's is: voxels are
@@ -206,6 +216,11 @@ export class Gameplay {
     // the edited surface.
     this.rocks = new RockField(d.core, this.game, this.field, d.bodyHandle,
       d.seed, d.rocks?.enabled ?? true, d.rocks?.density ?? 1,
+      d.bodyRadiusM, d.water,
+      () => d.ports?.voxels?.handle ?? 0);
+    // WG-116: the trees, on the rocks' lattice contract and their edits thunk.
+    this.trees = new TreeField(d.core, this.game, this.field, d.bodyHandle,
+      d.seed, d.trees?.radiusM ?? 0, d.trees?.density ?? 1,
       d.bodyRadiusM, d.water,
       () => d.ports?.voxels?.handle ?? 0);
     this.interact = new Interact(this.game, this.field, d.player, d.avatar);
@@ -334,6 +349,10 @@ export class Gameplay {
     // index the rock stream held is stale. Everything regrows from seed on the
     // next update, which is the same regenerate-then-diff order the load uses.
     this.rocks.reset();
+    // The trees AFTER the rocks, for the same staleness reason, and after
+    // `field.populate` because `TreeField.reset` snapshots the clearing's own
+    // spiral to keep streamed trees out of it.
+    this.trees.reset();
     this.nodesPlaced = this.field.placed.length;
   }
 
@@ -454,7 +473,11 @@ export class Gameplay {
     // BEFORE field.update, so a rock added this frame is composed and drawn in
     // the same frame rather than flashing in a frame late at the ring's edge.
     this.rocks.update(this.d.player.body.feet);
-    this.field.update(dt);
+    this.trees.update(this.d.player.body.feet);
+    // The feet, not the camera: it is the same body-frame point the streaming
+    // rings use, so an LOD boundary and a ring boundary are measured from one
+    // origin and cannot disagree by an eye height.
+    this.field.update(dt, this.d.player.body.feet);
     this.oreField.update(dt, this.d.ports?.voxels?.handle ?? 0);
     this.machines.update();
     this.machines.updateFx(dt);
