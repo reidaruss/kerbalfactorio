@@ -114,6 +114,14 @@ def stack_part(root, name, pile, height, cls="S", top_cls=None,
     fitted the narrow end would leave the wide end sticking out of its own
     collision."""
     top_cls = cls if top_cls is None else top_cls
+    # THE DIMENSION CONTRACT, CHECKED BEFORE THE EXPORTER RUNS (RN-412).
+    # validate_glb.py checks the same thing off the shipped bytes, but only
+    # after a two-minute Blender round trip and with a message that names a
+    # node rather than a fitting. RN-414's pod came out 8 mm wide, RN-428's
+    # vernier 6 mm narrow AND 12 mm deep, and RN-420's booster studs 7 mm
+    # proud; every one of those was found here, by name, in seconds.
+    rk.assert_class_envelope(name, pile, cls if cls == top_cls else "L",
+                             height)
     grp = of.add_pivot(name, (0.0, 0.0, 0.0), root)
     _mesh(pile, name + "_LOD0", grp)
     if bottom:

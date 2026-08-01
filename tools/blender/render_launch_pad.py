@@ -54,7 +54,15 @@ import surface_preview  # noqa: E402
 
 DIST = os.path.join(ROOT, "assets", "models", "dist")
 OUT = os.path.join(ROOT, "docs", "screenshots")
-PREFIX = "W12_pad_"
+# OF_PAD_PREFIX EXISTS BECAUSE THIS TOOL OVERWROTE ITS OWN HISTORY (RN-437).
+# A matched pair is made by rendering the shipped bytes, restoring HEAD's .glb
+# into dist, rendering again and rebuilding. With a fixed prefix the second
+# pass silently replaced the eight W12_pad_* screenshots the GP-57 pad pass
+# committed, i.e. a tool for comparing two versions destroyed the older one.
+# They were recovered with `git checkout --`, which only worked because they
+# were tracked; had they been the usual untracked screenshot they would simply
+# have been gone.
+PREFIX = os.environ.get("OF_PAD_PREFIX", "") or "W12_pad_"
 
 PAD = os.path.join(DIST, "rocket", "launch_pad.glb")
 PARTS = os.path.join(DIST, "rocket", "rocket_parts.glb")

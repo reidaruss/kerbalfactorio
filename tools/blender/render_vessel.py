@@ -38,6 +38,20 @@ sys.path.insert(0, HERE)
 
 DIST = os.path.join(ROOT, "assets", "models", "dist", "rocket")
 OUT = os.path.join(ROOT, "docs", "screenshots")
+# A NAME PREFIX FOR MATCHED PAIRS (RN-436). Every shot here is a judgement
+# about a shape, and a judgement about a shape needs the other shape beside it.
+# The pair is made by rendering the shipped bytes, restoring HEAD's .glb into
+# dist, rendering again under a different prefix, and rebuilding; so the only
+# thing this file needs is somewhere else to write. Default is empty, so every
+# existing filename is unchanged.
+PREFIX = os.environ.get("OF_VESSEL_PREFIX", "")
+
+# The three parts Reid handles most, rendered LARGE and side by side. The
+# catalogue sheet renders 24 parts across 1800 px, i.e. about 60 px each, which
+# is enough to answer "are these different parts" and nowhere near enough to
+# answer "does this look like hardware". Those are different questions and they
+# need different shots.
+HEROES = ["LiquidEngineSmall", "LiquidTankSmallLong", "CommandPod"]
 
 # The reference vessel, bottom up. It is a genuine two-stage rocket rather
 # than a display chain: a class L core, an adapter down to class S, a small
@@ -253,7 +267,7 @@ def shoot(cam, pos, target, lens, name, ortho=None):
         cam.data.lens = lens
     cam.location = pos
     look_at(cam, target)
-    path = os.path.join(OUT, name + ".png")
+    path = os.path.join(OUT, PREFIX + name + ".png")
     bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
     print("[render_vessel] wrote %s" % path)
@@ -305,6 +319,41 @@ def main():
     place(meshes, "EngineVacuumSmall", (0.85, 0.0, 0.0))
     shoot(cam, (0.0, -9.0, 1.35), (0.0, 0.0, 0.72), 0.0,
           "vessel_engines", ortho=3.6)
+
+    # THE THREE HERO PARTS, ON THE NEUTRAL FLOOR, AT THE SIZE THEY ARE
+    # JUDGED AT (RN-436). Framed by the tallest part rather than by a typed
+    # height, and spaced by MEASURED width, so a part that grew pushes its
+    # neighbours apart instead of overlapping them.
+    cam, (meshes, tops, extra) = scene((1500, 940), sky=(0.40, 0.43, 0.48))
+    x, top = 0.0, 0.0
+    for name in HEROES:
+        w = radius_of(meshes, name) * 2.0
+        x += w * 0.5 + 0.95
+        place(meshes, name, (x, 0.0, 0.0))
+        top = max(top, tops.get(name, 2.6))
+        x += w * 0.5
+    # FRAMED BY THE MEASURED HEIGHT, WITH MARGIN, AND THE ARITHMETIC IS
+    # WRITTEN DOWN because the first take cropped the tank and the pod. At
+    # lens L on a 36 mm sensor fitted HORIZONTALLY, the vertical half-angle is
+    # atan(18 / aspect / L), so a 4.00 m part needs distance >= 2.4 / tan of
+    # that. 62 mm at 11.5 m covered 4.14 m about a centre of 1.84 and cut the
+    # top off at 3.91. This is the flora lane's `studio:` bug in a different
+    # tool: a shot framed by one number, aimed just past the thing it exists
+    # to show.
+    dist, lens, aspect = 15.0, 50.0, 1500.0 / 940.0
+    cover = 2.0 * dist * (18.0 / aspect) / lens
+    assert cover > top * 1.35, "hero frame covers %.2f m for a %.2f m part" \
+        % (cover, top)
+    shoot(cam, (x * 0.5 - 0.5, -dist, top * 0.66), (x * 0.5, 0.0, top * 0.50),
+          lens, "vessel_heroes")
+
+    # And the same three from a standing player's distance, which is the VAB's
+    # own working range and the only one at which a weld seam is a weld seam.
+    cam, (meshes, tops, extra) = scene((1500, 700), sky=(0.40, 0.43, 0.48))
+    place(meshes, "LiquidEngineSmall", (0.0, 0.0, 0.0))
+    place(meshes, "LiquidTankSmallLong", (2.00, 0.0, 0.0))
+    place(meshes, "CommandPod", (4.00, 0.0, 0.0))
+    shoot(cam, (2.00, -6.6, 1.62), (2.00, 0.0, 1.30), 50.0, "vessel_close")
 
 
 if __name__ == "__main__":

@@ -122,6 +122,19 @@ DECK_Z = 2.00            # deck top: socket_vessel and socket_clamp live here
 DECK_CAP = 0.45          # the poured cap; the mass below it is the plinth
 CAP_Z = DECK_Z - DECK_CAP           # 1.55
 INSET = 0.35             # cap setback from the plinth: a visible ledge
+# PAINT STOPS SHORT OF THE EDGE IT MARKS (RN-442). `ground()` and `striping()`
+# each derived the cap's Y boundary from HALF, INSET and STAIR_S, arriving
+# independently at the same three planes: -11.65, +11.65 and +9.20. The hazard
+# band's end faces therefore landed exactly on the concrete's own end faces,
+# same-facing, over the full band width: 24 pairs across LOD0 and LOD1, the
+# second largest group on the asset. A margin is not an epsilon here, it is
+# what painted deck edging actually does; nobody paints to the cut line.
+PAINT_MARGIN = 0.06
+# ...and the same rule around the flame hole. `HOLE` is the hole's half-width,
+# and both the hole plates and the hazard curb were placed as `HOLE + half of
+# my own size`, which cancels to a shared inner face at |x| or |y| = 1.50 (22
+# pairs). The curb now starts outboard of the plate's own edge.
+CURB_STANDOFF = 0.04
 
 # --- the trench -------------------------------------------------------------
 TR_HW = 3.60             # trench half-width; a 7.2 m channel through 24 m of Y
@@ -326,19 +339,31 @@ def mount(mb, detail=True):
     if not detail:
         return mb
     # Hazard curb around the hole: the line that says where not to stand.
+    # THE CURB IS A CLOSED FRAME, and that is what removes the last 12 pairs.
+    # Moving the bars outboard fixed their INNER faces but left the E/W pair
+    # `2 * HOLE` long, so its END faces were still at |y| = 1.50, which is the
+    # N/S hole plates' own inner edge. The same landmark, reached by a length
+    # instead of by an offset. Running both pairs to the frame's outer corner
+    # means every end face lands on another HAZARD face, and same-material
+    # overlaps are invisible by construction (see check_coplanar's header).
+    curb = HOLE + CURB_STANDOFF + 0.075
     for sy in (-1.0, 1.0):
-        mb.box((2 * HOLE + 0.30, 0.15, 0.10), (0.0, sy * (HOLE + 0.075),
-                                               DECK_Z), "Hazard")
-    for sx in (-1.0, 1.0):
-        mb.box((0.15, 2 * HOLE, 0.10), (sx * (HOLE + 0.075), 0.0, DECK_Z),
+        mb.box((2 * (curb + 0.075), 0.15, 0.10), (0.0, sy * curb, DECK_Z),
                "Hazard")
-    # Girders under the table, visible from inside the trench.
+    for sx in (-1.0, 1.0):
+        mb.box((0.15, 2 * (curb + 0.075), 0.10), (sx * curb, 0.0, DECK_Z),
+               "Hazard")
+    # Girders under the table, visible from inside the trench. The Y-running
+    # pair used to be `2 * MT_HW` long, and MT_HW is DEFINED as TR_HW, so a
+    # structural member that has no reason to reach the trench wall ended up
+    # flush with the steel liner standing on it: 8 pairs. 0.15 m shorter at
+    # each end is a girder that lands on the table and not on the wall.
     for sx in (-1.0, 1.0):
         mb.box((0.30, 2 * MT_HY, 0.34), (sx * (MT_HW - 0.20), 0.0,
                                          MT_UNDER - 0.17), "Steel")
     for sy in (-1.0, 1.0):
-        mb.box((2 * MT_HW, 0.30, 0.34), (0.0, sy * (MT_HY - 0.20),
-                                         MT_UNDER - 0.17), "Steel")
+        mb.box((2 * (MT_HW - 0.15), 0.30, 0.34), (0.0, sy * (MT_HY - 0.20),
+                                                  MT_UNDER - 0.17), "Steel")
     return mb
 
 
@@ -422,8 +447,13 @@ def swing_arm(mb, detail=True):
                  ARM_Z + 0.33, "Steel", spacing=2.5, mid_rail=False)
     mb.box((boom_x1 - x0 - 0.4, 0.24, 0.24), ((x0 + boom_x1) * 0.5, ty + 0.40,
                                               ARM_Z - 0.30), "Accent")
+    # Recessed 0.05 from the tip block's own outboard face. Both used to be
+    # written `UMB_X - half of my own size`, which cancels exactly: two solids
+    # anchored to the same published socket coordinate, ending on one plane
+    # (4 pairs). The trim is a fitting ON the tip block, so it stops short of
+    # it; UMB_X stays where socket_umbilical publishes it.
     for sy in (-1.0, 1.0):
-        mb.box((0.30, 0.22, 0.22), (UMB_X - 0.15, ty + sy * 0.28, ARM_Z),
+        mb.box((0.30, 0.22, 0.22), (UMB_X - 0.20, ty + sy * 0.28, ARM_Z),
                "Accent")
     return mb
 
@@ -440,8 +470,9 @@ def striping(mb):
     is 'this is a hole', the one inside the outer edge is 'this is the edge'.
     Neither crosses the trench, because paint on a hole is a lie."""
     z = DECK_Z - 0.04
-    for sx, y1 in ((-1.0, HALF - INSET), (1.0, STAIR_S)):
-        y0 = -HALF + INSET
+    for sx, y1 in ((-1.0, HALF - INSET - PAINT_MARGIN),
+                   (1.0, STAIR_S - PAINT_MARGIN)):
+        y0 = -HALF + INSET + PAINT_MARGIN
         cy, dy = (y0 + y1) * 0.5, y1 - y0
         mb.box((0.50, dy, 0.10), (sx * (TR_HW + 0.45), cy, z), "Hazard")
         mb.box((0.60, dy - 1.60, 0.10), (sx * (HALF - INSET - 0.50), cy, z),
@@ -547,7 +578,17 @@ def furniture(mb):
     # Propellant tank on the east bank. Every ring is a 12-gon, so the
     # coaxial facet check has nothing to compare (see check_mating.coaxial).
     tx, ty = 8.60, 3.60
-    mb.cylinder(1.50, 4.20, (tx, ty, DECK_Z + 2.10), segments=12, role="Steel")
+    # THE TANK STANDS IN ITS SKIRT, NOT ON THE DECK (RN-441). It used to be
+    # 4.20 tall centred at DECK_Z + 2.10, so its bottom was DECK_Z; the skirt
+    # ring is 0.36 centred at DECK_Z + 0.18, so its bottom is DECK_Z too. Two
+    # concentric 12-gons, the 1.50 nested entirely inside the 1.58, both
+    # bottom-capped by of_lib.cylinder, both facing down, in two materials:
+    # 25 same-facing pairs and the single largest group on this asset. Neither
+    # number was wrong; they were both derived from DECK_Z when only ONE of
+    # them is standing on the deck. The tank is now seated 0.12 m INSIDE the
+    # skirt, which is what a skirt is for, and its top is unmoved so the dome
+    # above it does not have to move either.
+    mb.cylinder(1.50, 4.08, (tx, ty, DECK_Z + 2.16), segments=12, role="Steel")
     mb.cylinder(1.58, 0.36, (tx, ty, DECK_Z + 0.18), segments=12,
                 role="SteelDark")
     mb.frustum(1.50, 0.42, 0.90, (tx, ty, DECK_Z + 4.65), segments=12,
@@ -642,7 +683,11 @@ def build_clamp(root):
     mb.box((0.28, 0.26, 1.10), (0.0, -0.18, 1.00), "Steel")       # ram
     mb.box((0.20, 0.20, 0.34), (0.0, -0.18, 1.62), "SteelDark")
     mb.box((0.86, 0.44, 0.34), (0.0, -0.03, CLAMP_H - 0.17), "SteelDark")
-    mb.box((0.30, 0.16, 0.90), (0.42, 0.24, 1.30), "Accent")      # hose
+    # 0.395 + 0.15 = 0.545, which stops 25 mm short of the strap's 0.57. The
+    # two used to reach the same face from unrelated arithmetic (0.50 + 0.07
+    # against 0.42 + 0.15), which is the "hand-tuned to the same sum" defect:
+    # neither literal is wrong and their difference is (3 pairs).
+    mb.box((0.30, 0.16, 0.90), (0.395, 0.24, 1.30), "Accent")     # hose
     _report.append(("LaunchClamp_LOD0", mb))
     obj = mb.build("LaunchClamp_LOD0", root)
 

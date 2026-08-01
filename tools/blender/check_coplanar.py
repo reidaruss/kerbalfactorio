@@ -121,14 +121,29 @@ AREA_EPS = 1e-9
 #
 # BASELINED 2026-07-28 (FS-75) from the shipped bytes. What they mostly are, in
 # case the next person to look assumes it is all painted bands:
-#   rocket_parts    778, and it is nine parts in one file. Far and away the
-#                   worst asset in the game, an order above anything else, and
-#                   nobody had ever looked. It wants its own pass.
 #   door / wall /   the structure kit. floor's 72 are its deck and its edging
 #   floor /         both landing on the tile edge at +/-2.0, which IS visible:
 #   foundation      a floor at the lip of a platform shows that side face.
-#   lander_landed,  large hand-built assemblies with panels flush to hulls.
-#   launch_pad
+# CLEARED 2026-08-01 (RN-411 to RN-443): the three Tier 2 vessel assets, which
+# were 982 pairs between them and 778 of those in rocket_parts alone, the worst
+# asset in the game by an order of magnitude. All three are now at 0 and are
+# held there by their absence. The attribution is worth reading before anyone
+# assumes the next bad asset is painted bands, because none of these were:
+#   rocket_parts    778. 704 of them (90.5%) are ONE mistake repeated in
+#                   eleven parts: rocket_common.tube caps BOTH ends, and every
+#                   stack part is concentric capped tubes SHARING AN END
+#                   PLANE, so a barrel's buried bottom disc sat on the collar's
+#                   mating face in a different material. Fixed by deleting the
+#                   buried cap (`caps=`), which is triangle-negative. The rest:
+#                   50 trim solids sized to land flush with a host's end plane,
+#                   16 a literally copied width, 8 two solids both started on a
+#                   radial part's mount plane.
+#   lander_landed   118, ALL of it inherited: the file is assembled out of
+#                   rocket_common, so it went to 0 with no edit of its own.
+#                   That is the evidence the fix was at the root.
+#   launch_pad      86, six causes, the largest being a propellant tank and its
+#                   own skirt ring both bottom-capped at DECK_Z because both
+#                   were derived from the deck when only one stands on it.
 # CLEARED 2026-07-28 (FS-88): the four belt tiles, the structural floor, the
 # survival smelter and the primitive furnace all went to 0 and are gone from
 # this table, so they are held there. What they turned out to be is written up
@@ -151,9 +166,6 @@ ALLOWED = {
     "props/props_hills": 12,
     "props/props_ocean": 8,
     "props/props_plains": 7,
-    "rocket/lander_landed": 118,
-    "rocket/launch_pad": 86,
-    "rocket/rocket_parts": 778,
     "structures/door": 120,
     "structures/foundation": 20,
     "structures/wall": 40,
