@@ -65,6 +65,7 @@ is that the numbers are handed out by one writer before the work starts.
 | PH-60 to PH-74 | physics: R18 fall through rock, R18b stuck in a wall | landed at PH-60 to PH-63. **THE TAIL OF THIS ROW OVERLAPS `PH-64 to PH-84` ABOVE AND IS SURRENDERED**: the later allocation is the live one, PH-64 to PH-70 are the vessel lane's, and nothing from the R18 lane may take a number above PH-63. Recorded rather than silently renumbered, because two lanes reading the same row differently is how a number gets used twice |
 | BT-27 | the build stamp | landed |
 | PS-13 to PS-16 | persistence: R46, named saves through the writeSlot choke point | PS-13 to PS-15 landed; PS-16 burned. Block taken per the Admin brief's own instruction (the PS series lived only in the controller file, ended at PS-12); recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible |
+| RN-241 to RN-270 | rendering, the rock geometry pass under ART-DIRECTION.md | RN-241 to RN-247 landed (the fracture vocabulary, four fracture behaviours, the budget raises, the harvestable spire, Mountains and Hills scree, the decoration size-rule correction); RN-248 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
 
 FS-34 is deliberately unused: the pollution lane renumbered its own FS-33/FS-34
 to FS-35/FS-36 when corner cargo reached main first.
@@ -409,7 +410,7 @@ correct output of the tree as it stood.
 
 `RN-150`: the ground texture and the wet-sand shoreline both had boot defaults
 that evaluated through `Number(null)` and landed on 0. Both features were fully
-built, measured, committed, and **invisible to the player** — the probes that
+built, measured, committed, and **invisible to the player**: the probes that
 proved them all passed an explicit flag, so nothing ever exercised the default.
 
 **A flag's DEFAULT is a fixture and must be asserted as one.** If a probe only
