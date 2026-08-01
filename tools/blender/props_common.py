@@ -204,14 +204,42 @@ def quad_card_uvs(nquads, key):
 # ---------------------------------------------------------------------------
 
 def blade(height, width, azim_deg, bend, segs=3, loc=(0.0, 0.0, 0.0),
-          droop=0.30):
+          droop=0.30, twist=0.0, kink=0.0):
     """One tapered, arching blade rising from `loc` and leaning along
     `azim_deg`. `segs` levels plus a tip: segs 3 is two quads and a triangle,
     which is 5 triangles for a shape that reads as grass from any angle.
 
     The blade is single-sided geometry on a double-sided role (Leaf/LeafDry are
     in of_lib.DOUBLE_SIDED), so one strip is visible from both faces and there
-    is no back-face pass to author."""
+    is no back-face pass to author.
+
+    TWO SHAPE ARGUMENTS ADDED AT RN-302, BOTH OPTIONAL, BOTH COSTING ZERO
+    TRIANGLES, and both defaulting to a branch that is not taken, so every
+    existing caller rebuilds byte-identical. They exist because the ground layer
+    is the single most instanced geometry in the game (Registry's GROUND_DETAIL
+    sums to 3.2 million per square kilometre after DENSITY_SCALE) and is
+    therefore the one place where a triangle cannot be spent, which leaves only
+    shape arguments that move vertices that already exist.
+
+    `twist` rolls the blade's CROSS SECTION about its own long axis, in radians
+    over the blade's full length: the strip leaves the ground face on and
+    presents an edge partway up. This is the closest thing to a free silhouette
+    that a three-triangle strip has. A flat strip is a parallelogram from every
+    direction and its outline is a function of the viewer only, which is RN-271's
+    solid-of-revolution defect wearing a different shape: the scatter yaws every
+    instance (`ScatterEmit.ts:153`) and a card of untwisted blades gives that
+    yaw almost nothing to act on. A twisted blade also catches light along part
+    of its length and not the rest, which is the thing a real grass field does
+    that a field of flat strips cannot.
+
+    `kink` displaces the blade's CENTRELINE sideways, perpendicular to the plane
+    it arches in, growing with t^2. Without it a blade is a PLANAR arc: bend and
+    droop both act in the one vertical plane through `azim_deg`, so however much
+    a blade leans it never leaves that plane, and a tuft is a set of flat fans
+    at different bearings. Callers pass a signed value so a tuft can lean its
+    blades both ways rather than curling them all one way, which reads as a
+    whorl.
+    """
     a = math.radians(azim_deg)
     ca, sa = math.cos(a), math.sin(a)
     px, py = -sa, ca                     # across the blade
@@ -224,10 +252,31 @@ def blade(height, width, azim_deg, bend, segs=3, loc=(0.0, 0.0, 0.0),
         cx = loc[0] + ca * h
         cy = loc[1] + sa * h
         cz = loc[2] + z
-        verts.append((cx - px * w * 0.5, cy - py * w * 0.5, cz))
-        verts.append((cx + px * w * 0.5, cy + py * w * 0.5, cz))
-    verts.append((loc[0] + ca * bend, loc[1] + sa * bend,
-                  loc[2] + height * (1.0 - droop)))
+        if kink:
+            k = kink * t * t
+            cx += px * k
+            cy += py * k
+        if twist:
+            # Roll about the blade's own bearing (ca, sa, 0). The across vector
+            # is perpendicular to that axis, so Rodrigues collapses to a plain
+            # cosine on the horizontal part and a sine straight up.
+            th = twist * t
+            ct, st = math.cos(th), math.sin(th)
+            ax, ay, az = px * ct, py * ct, st
+            verts.append((cx - ax * w * 0.5, cy - ay * w * 0.5,
+                          cz - az * w * 0.5))
+            verts.append((cx + ax * w * 0.5, cy + ay * w * 0.5,
+                          cz + az * w * 0.5))
+        else:
+            verts.append((cx - px * w * 0.5, cy - py * w * 0.5, cz))
+            verts.append((cx + px * w * 0.5, cy + py * w * 0.5, cz))
+    if kink:
+        verts.append((loc[0] + ca * bend + px * kink,
+                      loc[1] + sa * bend + py * kink,
+                      loc[2] + height * (1.0 - droop)))
+    else:
+        verts.append((loc[0] + ca * bend, loc[1] + sa * bend,
+                      loc[2] + height * (1.0 - droop)))
     faces = []
     for i in range(segs - 1):
         b = i * 2
@@ -240,7 +289,7 @@ def blade(height, width, azim_deg, bend, segs=3, loc=(0.0, 0.0, 0.0),
 def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
          role="Leaf", alt_role=None, alt_every=0, loc=(0.0, 0.0, 0.0),
          h_var=0.45, phase=0.0, heads=0, head_role=None, head_scale=1.45,
-         head_width=0.55):
+         head_width=0.55, twist=0.0, kink=0.0, droop_var=0.0, lean_var=0.0):
     """A ring of blades: the grass tuft, the dune grass, the fern, the kelp.
 
     alt_role/alt_every recolour every Nth blade, which is how a tuft gets a
@@ -250,9 +299,44 @@ def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
     width * head_width), scattered at random angles instead of evenly spaced,
     in `head_role` if given. A tuft with every blade the same height reads as
     a trimmed hedge; a couple of seed heads breaking the top line is the
-    difference between "grass" and "green fuzz"."""
+    difference between "grass" and "green fuzz".
+
+    FOUR PER-BLADE VARIATION ARGUMENTS ADDED AT RN-303, ALL ZERO TRIANGLES.
+    `twist` and `kink` are blade()'s own, given here as MAGNITUDES that each
+    blade draws its own signed share of; `droop_var` lets a blade arch over
+    further than its neighbours, up to `droop + droop_var`; `lean_var` scales
+    the blade's outward `bend` beyond the existing 0.55 to 1.45 band, which is
+    what makes one blade in a clump flop right out of it.
+
+    THEY DRAW FROM `_hash01`, NOT FROM `nxt`, AND THAT IS NOT A STYLE CHOICE.
+    Every value in this function comes off one seeded LCG in a fixed order, so a
+    single extra `nxt()` call shifts every position generated after it and the
+    whole file stops rebuilding byte-identical. `_hash01` was added for exactly
+    that reason when the authored UVs landed, and it is reused here so that
+    these four arguments at their defaults leave the existing thirty-odd callers
+    bit-for-bit unchanged. The keys are offsets of the same
+    `seed * 131071 + i` the UVs already use, so no new seed constants enter the
+    file either.
+
+    WHY A GRASS CARD NEEDED THIS AT ALL. h_var already varies height and the
+    ring azimuth is already jittered, so a tuft was varied in the two ways that
+    are cheapest to write and it was IDENTICAL in every way that shows: every
+    blade a flat strip, arching in its own vertical plane, by the same fraction,
+    to the same droop. Ground cover authored like that reads as a mown lawn of
+    spikes at any density you scatter it at, and no amount of scatter jitter
+    fixes it because the repetition is inside the one card.
+    """
     nxt = hc.rng(seed)
     p = hc.Parts()
+
+    def _shape(key, base_droop, base_bend):
+        """Per-blade (droop, bend, twist, kink) off the hash stream."""
+        d = base_droop + droop_var * _hash01(key + 17)
+        bb = base_bend * (1.0 + lean_var * (_hash01(key + 29) * 2.0 - 1.0))
+        tw = twist * (_hash01(key + 41) * 2.0 - 1.0)
+        kk = kink * (_hash01(key + 53) * 2.0 - 1.0)
+        return d, bb, tw, kk
+
     for i in range(count):
         a = 360.0 * i / count + phase + (nxt() - 0.5) * (360.0 / count)
         h = height * (1.0 - h_var * nxt())
@@ -263,8 +347,11 @@ def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
         base = (loc[0] + r * math.cos(aa), loc[1] + r * math.sin(aa), loc[2])
         rl = (alt_role if (alt_role and alt_every and i % alt_every == 0)
               else role)
-        p.add(*blade(h, w, a, b, segs=segs, loc=base, droop=droop), role=rl,
-              uvs=(blade_uvs(rl, segs, seed * 131071 + i)
+        key = seed * 131071 + i
+        dp, b, tw, kk = _shape(key, droop, b)
+        p.add(*blade(h, w, a, b, segs=segs, loc=base, droop=dp, twist=tw,
+                     kink=kk), role=rl,
+              uvs=(blade_uvs(rl, segs, key)
                    if rl in FOLIAGE_ROLES else None))
     for k in range(heads):
         a = 360.0 * nxt() + phase
@@ -275,9 +362,12 @@ def tuft(count, height, width, radius, seed, bend=0.22, segs=3, droop=0.30,
         aa = math.radians(a)
         base = (loc[0] + r * math.cos(aa), loc[1] + r * math.sin(aa), loc[2])
         hr = head_role or role
-        p.add(*blade(h, w, a, b, segs=segs + 1, loc=base, droop=droop * 0.55),
+        key = seed * 131071 + count + k
+        dp, b, tw, kk = _shape(key, droop * 0.55, b)
+        p.add(*blade(h, w, a, b, segs=segs + 1, loc=base, droop=dp, twist=tw,
+                     kink=kk),
               role=hr,
-              uvs=(blade_uvs(hr, segs + 1, seed * 131071 + count + k)
+              uvs=(blade_uvs(hr, segs + 1, key)
                    if hr in FOLIAGE_ROLES else None))
     return p
 

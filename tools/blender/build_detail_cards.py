@@ -99,7 +99,8 @@ def grass_card_a():
     card is a small mass rather than a spread of hairs. The default: this is
     the one that covers a plains chunk end to end."""
     return pc.tuft(6, 0.38, 0.090, 0.030, 1301, bend=0.14, segs=2, droop=0.32,
-                   role="Grass", h_var=0.35)
+                   role="Grass", h_var=0.35,
+                   twist=1.25, kink=0.055, droop_var=0.30, lean_var=0.55)
 
 
 def grass_card_b():
@@ -107,15 +108,23 @@ def grass_card_b():
     Scattered at maybe a fifth of A's density to break the uniformity, which
     is the only job it has."""
     return pc.tuft(8, 0.60, 0.085, 0.040, 1311, bend=0.26, segs=3, droop=0.40,
-                   role="Grass", h_var=0.40, phase=23.0)
+                   role="Grass", h_var=0.40, phase=23.0,
+                   twist=1.55, kink=0.085, droop_var=0.38, lean_var=0.60)
 
 
 def grass_card_c():
     """The dry note. Same shape budget as A, OF_LeafDry instead of OF_Leaf,
     so a chunk can be pushed toward parched by changing the mix ratio and
-    nothing else."""
+    nothing else.
+
+    It carries the LARGEST droop and twist in the file, because dry is a SHAPE
+    before it is a colour: dead grass lodges, folds and lies over, and a straw
+    blade standing as straight as the green one beside it is a recolour
+    pretending to be a second species. This is the one card where the art
+    direction's "sag and irregularity" line has an obvious physical reading."""
     return pc.tuft(6, 0.44, 0.058, 0.065, 1321, bend=0.18, segs=2, droop=0.30,
-                   role="LeafDry", h_var=0.40, phase=41.0)
+                   role="LeafDry", h_var=0.40, phase=41.0,
+                   twist=1.70, kink=0.105, droop_var=0.62, lean_var=0.80)
 
 
 def broadleaf_forb():
@@ -127,9 +136,15 @@ def broadleaf_forb():
     larger than the height so the leaf travels further OUT than UP, and a
     droop of 0.62 so the tip comes back down toward the ground. The result is
     a rosette of flat-ish paddles, which is the one silhouette in this file
-    that has no vertical stroke in it anywhere."""
+    that has no vertical stroke in it anywhere.
+
+    It takes the file's largest `kink` and its smallest `twist`, and the split
+    is the shape's own: a paddle is the widest strip here, so a lateral bow in
+    the midrib moves the most outline for the least parameter, while rolling a
+    wide paddle edge on would delete the very thing the prop exists to be."""
     return pc.tuft(6, 0.30, 0.24, 0.045, 1351, bend=0.36, segs=3, droop=0.62,
-                   role="Leaf", h_var=0.26, phase=11.0)
+                   role="Leaf", h_var=0.26, phase=11.0,
+                   twist=0.70, kink=0.145, droop_var=0.26, lean_var=0.45)
 
 
 def flower_sprig():
@@ -154,7 +169,8 @@ def flower_sprig():
     return pc.tuft(5, 0.26, 0.085, 0.030, 1361, bend=0.16, segs=2, droop=0.30,
                    role="Grass", h_var=0.30, phase=7.0,
                    heads=3, head_role="LeafDry", head_scale=1.90,
-                   head_width=0.95)
+                   head_width=0.95,
+                   twist=1.30, kink=0.060, droop_var=0.24, lean_var=0.50)
 
 
 def sedge_rosette():
@@ -173,7 +189,8 @@ def sedge_rosette():
     leaf and clearly a different plant, and it is the width that makes this
     prop a patch of covered ground rather than a spider."""
     return pc.tuft(12, 0.20, 0.105, 0.028, 1371, bend=0.40, segs=2, droop=0.80,
-                   role="Grass", h_var=0.34, phase=29.0)
+                   role="Grass", h_var=0.34, phase=29.0,
+                   twist=1.90, kink=0.115, droop_var=0.16, lean_var=0.65)
 
 
 def pebble_scatter():
@@ -286,7 +303,8 @@ def grass_card_a_lod2():
     """Four single-triangle blades, 2.7x the base width of LOD0's six.
     4 triangles against 18."""
     return pc.tuft(4, 0.38, 0.245, 0.018, 1301, bend=0.14, segs=1, droop=0.16,
-                   role="Grass", h_var=0.16)
+                   role="Grass", h_var=0.16,
+                   kink=0.075, droop_var=0.22, lean_var=0.50)
 
 
 def grass_card_b_lod2():
@@ -294,14 +312,16 @@ def grass_card_b_lod2():
     density, so it keeps the same 4-triangle budget rather than a larger one.
     4 triangles against 40, the biggest single saving in the file."""
     return pc.tuft(4, 0.60, 0.235, 0.024, 1311, bend=0.26, segs=1, droop=0.20,
-                   role="Grass", h_var=0.18, phase=23.0)
+                   role="Grass", h_var=0.18, phase=23.0,
+                   kink=0.110, droop_var=0.26, lean_var=0.55)
 
 
 def grass_card_c_lod2():
     """The dry note, on LeafDry so the far ground keeps its parched fraction.
     4 triangles against 18."""
     return pc.tuft(4, 0.44, 0.190, 0.030, 1321, bend=0.18, segs=1, droop=0.15,
-                   role="LeafDry", h_var=0.18, phase=41.0)
+                   role="LeafDry", h_var=0.18, phase=41.0,
+                   kink=0.130, droop_var=0.34, lean_var=0.70)
 
 
 def broadleaf_forb_lod2():
@@ -312,7 +332,8 @@ def broadleaf_forb_lod2():
     the LOD0 leaf is already a wide paddle, so dropping it to a single wide
     triangle loses the arc and keeps the paddle, which is the whole read."""
     return pc.tuft(4, 0.30, 0.455, 0.020, 1351, bend=0.36, segs=1, droop=0.30,
-                   role="Leaf", h_var=0.14, phase=11.0)
+                   role="Leaf", h_var=0.14, phase=11.0,
+                   kink=0.170, droop_var=0.20, lean_var=0.40)
 
 
 def flower_sprig_lod2():
@@ -327,9 +348,11 @@ def flower_sprig_lod2():
     far sprig that has lost its straw accent is just a shorter grass card and
     there was no reason to draw it."""
     p = pc.tuft(3, 0.26, 0.205, 0.018, 1361, bend=0.16, segs=1, droop=0.16,
-                role="Grass", h_var=0.14, phase=7.0)
+                role="Grass", h_var=0.14, phase=7.0,
+                kink=0.070, droop_var=0.18, lean_var=0.45)
     p.extend(pc.tuft(2, 0.49, 0.150, 0.012, 1367, bend=0.20, segs=1,
-                     droop=0.10, role="LeafDry", h_var=0.12, phase=53.0))
+                     droop=0.10, role="LeafDry", h_var=0.12, phase=53.0,
+                     kink=0.055, droop_var=0.14, lean_var=0.35))
     return p
 
 
@@ -349,7 +372,8 @@ def sedge_rosette_lod2():
     serve. Lifting the tips to 0.6 of the peak keeps the footprint fit()
     already guarantees and turns the covered area back toward the camera."""
     return pc.tuft(4, 0.20, 0.390, 0.016, 1371, bend=0.40, segs=1, droop=0.40,
-                   role="Grass", h_var=0.16, phase=29.0)
+                   role="Grass", h_var=0.16, phase=29.0,
+                   kink=0.145, droop_var=0.14, lean_var=0.55)
 
 
 def pebble_scatter_lod2():
