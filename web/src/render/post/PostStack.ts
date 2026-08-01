@@ -157,6 +157,7 @@ export class PostStack {
       tScene: { value: null }, tBloom: { value: this.black },
       uBloomStrength: { value: 0 }, uExposure: { value: tune.exposure },
       uGradeMix: { value: 0 }, uContrast: { value: tune.contrast },
+      uCurveMix: { value: tune.curveMix },
       uSaturation: { value: tune.saturation },
       uShadowTint: { value: new THREE.Vector3(...tune.shadowTint) },
       uHighlightTint: { value: new THREE.Vector3(...tune.highlightTint) },
@@ -349,6 +350,7 @@ export class PostStack {
     c.uExposure.value = this.tune.exposure;
     c.uGradeMix.value = this.flags.grade ? 1 : 0;
     c.uContrast.value = this.tune.contrast;
+    c.uCurveMix.value = this.tune.curveMix;
     c.uSaturation.value = this.tune.saturation;
     (c.uShadowTint.value as THREE.Vector3).set(...this.tune.shadowTint);
     (c.uHighlightTint.value as THREE.Vector3).set(...this.tune.highlightTint);

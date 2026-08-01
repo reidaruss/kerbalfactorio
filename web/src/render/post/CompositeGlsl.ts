@@ -26,6 +26,7 @@ uniform float uBloomStrength;
 uniform float uExposure;
 uniform float uGradeMix;
 uniform float uContrast;
+uniform float uCurveMix;
 uniform float uSaturation;
 uniform vec3  uShadowTint;
 uniform vec3  uHighlightTint;
@@ -78,10 +79,48 @@ vec3 srgbEncode(vec3 v) {
  * After the encode, mid-grey really is about 0.5, the pivot means what it says,
  * and a contrast of 1.06 moves the darks by a few counts instead of thirty.
  */
+/**
+ * THE CONTRAST TERM HAS TWO SHAPES AND uCurveMix IS THE ONLY THING BETWEEN
+ * THEM, DELIBERATELY SLOPE-MATCHED AT THE PIVOT (RN-207).
+ *
+ * The RN-10 shape is a straight line through 0.5: (c - 0.5) * uContrast + 0.5,
+ * followed by the clamp at the end of this function. That clamp is the problem
+ * and it is not a rounding detail. At uContrast 1.06 every display value above
+ * 0.972 lands on white and everything below 0.028 lands on black, so the top
+ * and bottom of the range stop carrying information at all: two sunlit facets a
+ * quarter stop apart are the same byte. Raising the contrast to do the work
+ * ART-DIRECTION.md asks of value makes that worse in exact proportion, so under
+ * the straight line "more contrast" and "less detail at the ends" are the same
+ * knob and there is no setting that gets one without the other.
+ *
+ * The S shape is c + k*(c - 0.5)*(1 - |2c - 1|) with k = uContrast - 1. The
+ * bracket is 1 at the pivot and falls linearly to 0 at both ends, so:
+ *   - at c = 0.5 the added term is zero and the curve passes through the pivot,
+ *   - the DERIVATIVE at the pivot is exactly 1 + k = uContrast, i.e. identical
+ *     to the straight line's,
+ *   - at c = 0 and c = 1 the added term is zero, so the ends are FIXED POINTS
+ *     and nothing is pushed out of range for the clamp to catch.
+ *
+ * The slope match is what makes uCurveMix an isolation rather than a second
+ * contrast knob: at one uContrast the two shapes agree on the mid tones to
+ * first order and differ ONLY in what happens at the toe and the shoulder. So a
+ * matched pair across uCurveMix answers exactly one question, which is whether
+ * rolling the ends is worth having, and the contrast level stays a separate
+ * measurement with its own pair.
+ *
+ * uCurveMix = 0.0 restores the RN-10 expression to the character, which is
+ * why the negative control for this whole pass is a uniform write and not a
+ * build: setPostTune({ curveMix: 0, contrast: 1.06, ... }) is the shipped
+ * image BIT-EXACTLY, assertable with of.framehash().hash.
+ */
 vec3 grade(vec3 c) {
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = (c - 0.5) * uContrast + 0.5;
+  vec3 straight = (c - 0.5) * uContrast + 0.5;
+  vec3 rolled = c + (uContrast - 1.0) * (c - 0.5) * (1.0 - abs(2.0 * c - 1.0));
+  c = mix(straight, rolled, uCurveMix);
   // Shadow lift with a toe, so blacks open up without turning grey everywhere.
+  // Negative values CRUSH instead, which is the direction ART-DIRECTION.md asks
+  // for, and the term keeps its shape either way.
   c += uLift * (1.0 - smoothstep(0.0, 0.55, l));
   // Split tone: the desert biome reads warm in the light and cool in shade, and
   // grading TOWARD that is the point rather than inventing a new palette.

@@ -12,17 +12,67 @@ export const BIOME_NAMES = [
   'Mountains', 'Polar', 'Regolith', 'MoonHighland', 'CraterFloor',
 ] as const;
 
+/**
+ * RN-347. THE VEGETATED BIOMES STOP BEING PAINTED THE COLOUR OF THEIR OWN
+ * VEGETATION, AND THIS IS THE SINGLE LARGEST THING IN A FOREST FRAME.
+ *
+ * WHAT THE PICTURE SHOWED, and no statistic in this pass found it first. Reid,
+ * on the forest floor: "Still plato-y smooth pastel." Standing eye at the Forest
+ * site pitched 26 degrees down, `docs/screenshots/RN347_floor_before.png` is a
+ * large, smooth, saturated emerald SHEET with sparse tufts standing on it. The
+ * tufts are the understorey and they were re-authored twice. The sheet is THIS
+ * TABLE, it is most of the pixels, and nobody had looked at it since W1.
+ *
+ * THE ERROR IS CATEGORICAL, NOT A MATTER OF DEGREE. `biomeAt` is a classifier
+ * over CLIMATE, and this table was filled in by naming the classes: forest is
+ * green, plains is green, hills is green. But the terrain material draws the
+ * GROUND, and the ground under a forest is not a forest. It is litter, humus,
+ * root, stone and bare soil, and the green belongs to the 3.2 million detail
+ * cards per square kilometre that stand ON it. Painting both the same green
+ * means the layer that is supposed to READ as vegetation has nothing to read
+ * against, and a plant loses its silhouette into a background of its own colour.
+ * That is why two passes of silhouette work on the understorey changed nothing
+ * Reid could see: the silhouettes were correct and they were invisible.
+ *
+ * ART-DIRECTION.md asks for "grounded, muted, layered colour, not pastel, not
+ * saturated primaries" and for "value and material contrast" to do the work.
+ * The old triple for Forest is HSV saturation 0.415 at hue 123 degrees, i.e. a
+ * green primary, and there is no value contrast available between a green
+ * ground and a green plant at all.
+ *
+ * WHAT CHANGED, and the three that did NOT are as deliberate as the four that
+ * did. Mountains, Polar, Regolith, MoonHighland and CraterFloor were already
+ * substrate colours and are untouched, which is the control: any measured
+ * difference at those sites is a bug in this change.
+ *
+ *   biome    old       S      new       S     what the new colour is
+ *   Beach    c8b48a  0.310    b3a184  0.263  damp-to-dry sand, a stop darker
+ *   Plains   5f7d38  0.552    6d6a47  0.349  dry turf over pale soil
+ *   Forest   2f5230  0.415    41392b  0.339  leaf litter and humus
+ *   Hills    6f7346  0.391    6b6650  0.252  thin turf over stony ground
+ *
+ * Every one moves DOWN in saturation and toward the soil it stands on, and
+ * Forest moves furthest because a closed canopy is where least green ground
+ * survives. Beach darkens rather than desaturating much, because the Beach
+ * measurement in this pass was the opposite complaint: it is the one site where
+ * the frame was already too bright (p50 150 to 172 under the new curve).
+ *
+ * THIS IS ALSO WHERE THE `dugAlbedo` PROFILE FINALLY MAKES SENSE. RN-80 shipped
+ * topsoil at (0.27, 0.21, 0.145), i.e. brown, because a pit floor the colour of
+ * a lawn read as absurd. The surface has now been brought into agreement with
+ * the material one metre below it instead of contradicting it.
+ */
 const HEX = [
   0x14406e, // Ocean
-  0xc8b48a, // Beach
-  0x5f7d38, // Plains
-  0x2f5230, // Forest
-  0x6f7346, // Hills
-  0x7c7a74, // Mountains
-  0xe8eef2, // Polar
-  0x8d8579, // Regolith
-  0xa9a294, // MoonHighland
-  0x5c574e, // CraterFloor
+  0xb3a184, // Beach: sand, a stop darker and less golden
+  0x6d6a47, // Plains: dry turf over pale soil, not a lawn
+  0x41392b, // Forest: leaf litter and humus, not a canopy
+  0x6b6650, // Hills: thin turf over stony ground
+  0x7c7a74, // Mountains: unchanged, already substrate
+  0xe8eef2, // Polar: unchanged
+  0x8d8579, // Regolith: unchanged
+  0xa9a294, // MoonHighland: unchanged
+  0x5c574e, // CraterFloor: unchanged
 ];
 
 export const BIOME_COUNT = BIOME_NAMES.length;

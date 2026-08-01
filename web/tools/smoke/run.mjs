@@ -112,6 +112,11 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // RN-181, the foliage albedo cards. `leaftex=0` boots with the card maps
   // and their alpha test off: the pre-texture flora exactly.
   'leaftex',
+  // RN-345, the foliage tone. `foliagetone=0` is the pre-RN-345 palette exactly
+  // and is the negative control for the whole foliage colour correction; any
+  // value between sweeps it, and the SHIPPED default is 1 whether or not this
+  // flag is passed, which is the half RN-150 says must be asserted separately.
+  'foliagetone',
   // RN-47, the underwater view. `underwater=0` removes the pass; the other
   // four tune extinction, tint, scatter and the path clamp.
   'underwater', 'uwext', 'uwtint', 'uwscatter', 'uwpath',
@@ -134,6 +139,12 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   'aoscale', 'aoslices', 'aosteps', 'aoradius', 'aostrength', 'aopower',
   'bloomlevels', 'bloomstrength', 'bloomthresh', 'exposure', 'msaa', 'fxaalod',
   'cslength', 'cssteps', 'csthick', 'csstrength',
+  // RN-207, the look-development grade. `curve=0` returns the contrast term to
+  // the RN-10 straight line, which is the negative control for the whole
+  // response-curve change; the other four sweep the grade from a URL instead of
+  // only from `of.setPostTune`, so a build can BOOT in a stated grade and the
+  // shipped default can be asserted as the fixture it is (RN-150).
+  'curve', 'contrast', 'saturation', 'lift', 'vignette',
   // DW-31. Unlike every other entry here this is not an isolation switch: it
   // selects a game MODE, and the world it makes saves to its own slot.
   'sandbox',

@@ -25,6 +25,8 @@
 
 import * as THREE from 'three';
 
+import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
+
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'leaf' | 'grass' | 'flat';
 
 /**
@@ -64,6 +66,8 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   EmissiveState: 'flat', Glass: 'flat', Ice: 'flat',
   Oil: 'flat', Skin: 'flat', Water: 'flat',
 };
+
+const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));
 
 const DIR = 'assets/textures/';
 
@@ -338,6 +342,13 @@ function apply(r: Reg): void {
     const k = (on && s.albedoMean !== undefined && s.albedoMean > 0)
       ? 1 / s.albedoMean : 1;
     r.mat.color.copy(r.baseColor).multiplyScalar(k);
+    // AFTER the mean-neutral scale and never before it. `albedo_mean` is a
+    // SCALAR that undoes the map's own average darkening, so it commutes with a
+    // value factor but not with a saturation one; putting the tone second means
+    // the number in the manifest keeps meaning what it says and this term is a
+    // separate, isolable act. Rewriting from `baseColor` on every call is what
+    // makes both idempotent, so `setMaps` can be flipped any number of times.
+    applyFoliageTone(r.mat.color, r.family);
     r.mat.needsUpdate = true;
     return;
   }
@@ -415,7 +426,15 @@ export interface SurfaceReport {
      *  placeholder version of the same lie (RN-78's groundshot lesson). */
     hasMap: boolean; mapSize: number | null; alphaTest: number;
     colorR: number;
+    /** RN-345. The material colour AFTER the mean-neutral scale and the foliage
+     *  tone, so a probe can read the shipped palette rather than infer it, and
+     *  `toned` says whether this family was one of the two that has one. */
+    colorG: number; colorB: number; toned: boolean;
   }[];
+  /** RN-345. The tone's amplitude and table, published so the BOOT DEFAULT is
+   *  assertable in its own right (RN-150: a flag whose default is never
+   *  exercised is a feature that can ship off and measure perfectly). */
+  foliageTone: { amp: number; families: Record<string, { sat: number; val: number }> };
 }
 
 /** Everything a probe needs to assert the maps are BOUND, not merely loaded. */
@@ -452,6 +471,7 @@ export function surfaceReport(): SurfaceReport {
     vramBytes: vram,
     vramMB: Math.round((vram / (1024 * 1024)) * 100) / 100,
     families,
+    foliageTone: foliageToneState(),
     materials: registered.map((r) => {
       const m = r.mat;
       const n = m.normalMap;
@@ -474,7 +494,8 @@ export function surfaceReport(): SurfaceReport {
         mapSize: m.map === null ? null
           : (m.map.image as { width?: number } | undefined)?.width ?? null,
         alphaTest: m.alphaTest,
-        colorR: m.color.r,
+        colorR: m.color.r, colorG: m.color.g, colorB: m.color.b,
+        toned: FOLIAGE_TONE_FAMILIES.has(r.family),
       };
     }),
   };
@@ -485,4 +506,11 @@ export function surfaceReport(): SurfaceReport {
 // it is removable in one line.
 (window as unknown as { __ofSurfaces: unknown }).__ofSurfaces = {
   report: surfaceReport, setMaps, ready: surfacesReady(),
+  /** RN-345. Re-applies every registered material, so a matched pair is one
+   *  call apart inside one settled frame rather than two page loads apart. */
+  setFoliageTone: (amp: number): number => {
+    const v = setFoliageTone(amp);
+    for (const r of registered) apply(r);
+    return v;
+  },
 };

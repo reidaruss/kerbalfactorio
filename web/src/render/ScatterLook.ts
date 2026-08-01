@@ -70,6 +70,54 @@ export function lookOf(materials: readonly string[]): Look {
  */
 const FLOWER_P = 0.055;
 /**
+ * RN-346. PLANT-TO-PLANT VARIATION, THE THIRD OF THE THREE FOLIAGE AXES, AND THE
+ * ONLY ONE THAT CAN MAKE A FIELD READ AS A POPULATION RATHER THAN AS A PAINT.
+ *
+ * The other two live elsewhere on purpose (see FoliageTone.ts's header): the
+ * family LEVEL and HUE are one correction in `Surfaces.ts`, the WITHIN-CARD
+ * detail is in texgen. This file owns the spread ACROSS instances, and the
+ * numbers below widen it, because measured at the Forest site the whole
+ * understorey layer was arriving inside a band far narrower than a real one.
+ *
+ * THREE CHANGES AND EACH ANSWERS A DIFFERENT COMPLAINT.
+ *
+ * 1. VALUE, 0.80..1.18 to 0.66..1.26. A +/-19 per cent band around the mean is
+ *    below what the eye reads as different plants; it reads as noise on one
+ *    plant. ART-DIRECTION.md asks for value to do the work, and the cheapest
+ *    value in the frame is the one already being drawn per instance for free.
+ *
+ * 2. THE DRY DRIFT STOPS BEING SQUARED. `t = d * d * 0.75` put the MEDIAN
+ *    instance at t = 0.19, i.e. 81 per cent of the way back to the one green,
+ *    and only about a quarter of the field anywhere near dry. That is a
+ *    distribution shaped like "green with a rare exception", and a real
+ *    understorey in late season is not: it is a continuum from green through
+ *    olive to straw with no mode. Linear at 0.85 puts the median at 0.43 and
+ *    spreads the field evenly along it.
+ *
+ * 3. A SECOND, INDEPENDENT HUE AXIS: CHROMA. Dry is a WARM drift (red up, blue
+ *    down), so a field varied only along it is a line through colour space and
+ *    everything on that line is still a saturated hue, just a different one.
+ *    Real foliage also varies in how GREY it is: waxy, dusty, shaded and
+ *    senescing leaves all lose chroma without going yellow. `mute` pulls an
+ *    instance toward its own luminance, so the field becomes an AREA rather
+ *    than a line, and the two axes are drawn independently so a plant can be
+ *    dry and vivid, or green and grey.
+ *
+ * THE EXTRA DRAW COMES FROM A RE-SEEDED STREAM, NOT A NEW INDEX, AND THAT IS
+ * DELIBERATE. The key here is `k * 8 + n`, so a fifth index would be `+12` and
+ * would alias exactly onto instance `k + 1`'s `+4`. Re-hashing with a different
+ * SEED gives an independent stream inside the same key space and cannot collide
+ * with any caller's index, present or future. Determinism is untouched: it is
+ * still a pure function of (seed, k).
+ */
+const DRY_T_GAIN = 0.85;
+const MUTE_MAX = 0.45;
+const V_LO = 0.66;
+const V_SPAN = 0.60;
+/** Any odd 32-bit constant would do; this is the golden-ratio one, used here
+ *  only to decorrelate the stream from the placement's. */
+const CHROMA_SEED_MIX = 0x9e3779b9;
+/**
  * Flower and grass tints MULTIPLY the material's albedo, which for `OF_Grass`
  * is 6F8F42 (0.44, 0.56, 0.26). The flower multiplier is above 1 in red and
  * green and well below 1 in blue, which lands near (0.75, 0.84, 0.10): a warm
@@ -78,8 +126,18 @@ const FLOWER_P = 0.055;
  * these are ceilings and not preferences.
  */
 const FLOWER = new THREE.Vector3(1.70, 1.50, 0.38);
-/** Dry, sun-bleached end of the grass spread. Warm, and slightly desaturated. */
-const DRY = new THREE.Vector3(1.22, 1.06, 0.62);
+/**
+ * Dry, sun-bleached end of the grass spread. Warm, and slightly desaturated.
+ *
+ * RN-346 pushed it further from the green: 1.22/1.06/0.62 to 1.34/1.10/0.58.
+ * Straw is not a slightly warmer leaf. Against `OF_Grass`'s (0.44, 0.56, 0.26)
+ * the old triple lands at (0.54, 0.59, 0.16), which still has GREEN as its
+ * largest channel and therefore still reads as a plant that is alive; the new
+ * one lands at (0.59, 0.62, 0.15) and, with the linear drift now putting real
+ * instances at t near 0.85, that is where the field finally acquires a warm end
+ * at all rather than a warmer green.
+ */
+const DRY = new THREE.Vector3(1.34, 1.10, 0.58);
 
 const scratch = new THREE.Color();
 
@@ -97,8 +155,11 @@ const scratch = new THREE.Color();
  * and the whole point of the mineral family is that it is one substance.
  */
 export function tintFor(look: Look, seed: number, k: number, out: THREE.Color): THREE.Color {
-  const v = 0.80 + frac(hash32(seed, k * 8 + 6)) * 0.38;
+  const v = V_LO + frac(hash32(seed, k * 8 + 6)) * V_SPAN;
   if (look === 'mineral') return out.setRGB(v, v, v);
+  // Flowers keep their chroma. A wildflower IS a saturated hue, and muting the
+  // 5.5 per cent of instances whose whole job is punctuation would remove the
+  // punctuation while leaving the cost.
   if (frac(hash32(seed, k * 8 + 7)) < FLOWER_P) {
     return out.setRGB(FLOWER.x * v, FLOWER.y * v, FLOWER.z * v);
   }
@@ -106,10 +167,19 @@ export function tintFor(look: Look, seed: number, k: number, out: THREE.Color): 
   // Toward DRY, but never all the way: a field where some blades are fully dry
   // and the rest are fully green reads as two species mixed, which is a
   // different and worse look than one species with variation in it.
-  const t = d * d * 0.75;
-  return out.setRGB(
-    v * (1 + (DRY.x - 1) * t), v * (1 + (DRY.y - 1) * t), v * (1 + (DRY.z - 1) * t),
-  );
+  const t = d * DRY_T_GAIN;
+  const r = v * (1 + (DRY.x - 1) * t);
+  const g = v * (1 + (DRY.y - 1) * t);
+  const b = v * (1 + (DRY.z - 1) * t);
+  // The chroma axis. Squared, so most instances keep most of their chroma and
+  // the grey ones are a tail rather than half the field: this term exists to
+  // widen the distribution, and a term that moved every instance by the same
+  // amount would be a global desaturation wearing a variation's clothes, which
+  // is exactly the mistake TerrainShader's macro-tint note records and the
+  // probe caught as a level change where a spread change was claimed.
+  const mute = 1 - frac(hash32(seed ^ CHROMA_SEED_MIX, k * 8 + 6)) ** 2 * MUTE_MAX;
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return out.setRGB(l + (r - l) * mute, l + (g - l) * mute, l + (b - l) * mute);
 }
 
 export const tintScratch = scratch;
