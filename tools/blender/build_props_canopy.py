@@ -5,39 +5,46 @@
 Produces assets/models/dist/props/props_canopy.glb. Three props, all scatter,
 none of them harvestable, none of them collidable.
 
-THE ONE DESIGN RULE. Forest already has two LIVE trees standing in it and both
-of them are harvest nodes: TreeConifer (2.40 x 2.40 x 6.50 m, skirted with
-branches all the way down to the ground) and TreeBroadleaf (4.00 x 4.00 x
+THE ONE DESIGN RULE THAT WAS. Forest already has two LIVE trees standing in it
+and both of them are harvest nodes: TreeConifer (2.40 x 2.40 x 6.50 m, skirted
+with branches all the way down to the ground) and TreeBroadleaf (4.00 x 4.00 x
 5.00 m, a wide low forked crown starting at 2.0 m). props_forest.py could
 therefore contain no live tree at all, because a scatter tree that looked like
-either one would read as a node the player cannot chop. This file is the way
-out of that, and the way out is a rule the game states in words:
+either one would read as a node the player cannot chop. This file was the way
+out of that, and the way out was a rule the game stated in words:
 
     HARVEST trees are small and branched to the ground.
     CANOPY trees are mature: twice the height or more, with a BARE TRUNK for
     the lower half and the crown carried high.
 
-That has to survive being read off a silhouette at 200 m, where colour, bark
-detail and the hover prompt are all gone and the only surviving signal is the
-outline. So the rule is enforced as geometry, strictly, with no foliage of any
-role below the stated fraction:
+RETIRED 2026-08-01 (RN-310) BY REID'S RULING, verbatim: "there should be no
+scenery trees. all trees should be minable." One family cannot be told apart
+from another family that no longer exists, so WG-13 to WG-17 are superseded and
+the `assert_bare_trunk` gate at the foot of this file is gone with them. The
+full attribution, and the lesson the gate leaves behind, are recorded there;
+the short version is that the gate was correct while the rule stood and is
+being removed because the rule was withdrawn, not because it was wrong.
 
-    Canopy_Pine        3.85 x 2.55 x 12.00 m   bare to 0.578 of height
-    Canopy_Fir         2.90 x 2.20 x 16.50 m   bare to 0.623 of height
-    Canopy_Broadleaf   8.40 x 10.50 x 10.50 m  bare to 0.516 of height
+BARE-TRUNK FRACTIONS ARE THEREFORE NO LONGER CONSTRAINED ON ANY TREE HERE.
+Root flare, low branching and forks may go wherever the form wants them, which
+under docs/web/ART-DIRECTION.md is a licence this set should use: holding a
+trunk bare to 0.62 of its height is a strong constraint on a shape, and it was
+being paid for a signal that has been withdrawn. What the trees currently
+happen to measure, for the record and not as a target:
 
-Those three fractions are MEASURED off the exported bytes, because Parts.fit
-rescales z after every build function has returned (WG-14's rule and WG-14's
-reason), and since RN-273 they are ASSERTED against a floor at the end of this
-file rather than merely written down here. See `assert_bare_trunk`.
+    Canopy_Pine        3.85 x 2.55 x 12.00 m   lowest foliage 0.597 of height
+    Canopy_Fir         2.90 x 2.20 x 16.50 m   lowest foliage 0.623
+    Canopy_Broadleaf   8.40 x 10.50 x 10.50 m  lowest foliage 0.586
 
-The broadleaf fell from 0.632 to 0.516 in this pass and that is a deliberate
-trade rather than a slip: the RN-271 crown hangs its outer plates BELOW their
-own attachment, which is what a spreading crown does and what the flat old
-version could not. It still clears the contract's 0.45 by 0.066, it still
-leaves 5.42 m of bare trunk against the harvest broadleaf's 2.0 m, and the
-scenery tree is still 2.1x the harvest tree's height, so nothing about the
-WG-13 read at a glance is at risk. The floor now stops it going further.
+Those are still MEASURED off the exported bytes and still printed by the build,
+because Parts.fit rescales z after every build function has returned (WG-14's
+rule and WG-14's reason) and a number nobody can see is a number that drifts.
+They are simply no longer a floor. See `report_foliage_ratio`.
+
+THE WIDER CONSEQUENCE OF REID'S RULING IS NOT THIS LANE'S TO LAND: if every
+tree is minable then these three props stop being scatter props at all and
+become harvest nodes, which is a Registry, world-gen and gameplay change well
+outside a Blender pass. Flagged up rather than half-done here.
 
 Canopy_Fir is the EMERGENT and it is the single most important silhouette in
 the set: at 16.5 m it is 2.5x the conifer harvest node and it is the shape that
@@ -705,67 +712,74 @@ PROPS = [
 ]
 
 
-# THE BARE-TRUNK FRACTION IS NOW A BUILD GATE, NOT A SENTENCE IN A DOCSTRING.
+# THE BARE-TRUNK FLOOR IS RETIRED, BY REID'S RULING AND NOT BY ANYONE JUDGING
+# THE GATE WRONG. RN-310, 2026-08-01.
 #
-# WG-14's own reasoning, applied to itself: "a rule stated in a docstring drifts
-# from the asset the first time either moves", which is why WG-14 measured the
-# fractions off the exported glb rather than off the source. This pass moved the
-# asset FOUR times and drifted the number THREE of them, in both directions, and
-# each time it was caught only because a human happened to re-run the tool. The
-# broadleaf went 0.632 -> 0.507 -> 0.558 -> 0.468 -> 0.516 while nothing in the
-# build said a word.
+# Reid ruled, verbatim: "there should be no scenery trees. all trees should be
+# minable." That abolishes the SCENERY-versus-HARVESTABLE distinction outright,
+# and WG-13 to WG-17 existed only to keep those two families apart at 200 m on
+# the silhouette alone. With one family there is nothing left to separate, so
+# bare-trunk fractions are no longer constrained on any tree in this project
+# and root flare, low branching and forks may go wherever the form wants them.
 #
-# So the floor is asserted here, against the bytes that were just written, and
-# the build fails by name if a crown droops through it. That is standing rule
-# 11's shape: an assertion nobody has watched fail is not an assertion, and this
-# one has been watched (floor temporarily raised to 0.70, build refused,
-# reverted, glb byte-identical).
+# THE GATE WAS RIGHT WHILE THE RULE STOOD, and it is worth saying so plainly
+# because it is being deleted. WG-14's own reasoning applied to itself: a rule
+# stated in a docstring drifts from the asset the first time either moves. The
+# RN-271 pass moved this asset FOUR times and drifted the number THREE of them,
+# in both directions (broadleaf 0.632 -> 0.507 -> 0.558 -> 0.468 -> 0.516),
+# each time caught only because a human happened to re-run the tool. It then
+# caught a genuine near miss: at 0.531 against the harvest broadleaf's 0.517
+# the two were the same tree at two sizes on the one signal the rule existed to
+# protect, a margin of 0.014. It was watched failing, too (floor temporarily
+# raised to 0.70, build refused by name, reverted, glb byte-identical).
 #
-# THE FLOORS, and why they are not all the same as the contract's:
-#   Pine 0.55, Fir 0.62 are the contract's own numbers, unchanged.
-#   Broadleaf 0.50 is STRICTER than the contract's 0.45 and looser than the
-#   0.632 the old asset happened to have. 0.45 is the fork height, which is
-#   where the rule was originally pinned; 0.50 is what makes the prose claim
-#   ("a BARE TRUNK for the lower half") literally true, and the prose claim is
-#   the one a player reads off a silhouette. The RN-271 crown droops its outer
-#   plates below their own attachment on purpose, so it will sit near this
-#   floor rather than far above it, and that is the trade being taken
-#   deliberately: droop is the art direction, and the fork height pays for it.
-BARE_FLOOR = {"Canopy_Pine": 0.55, "Canopy_Fir": 0.62, "Canopy_Broadleaf": 0.58}
+# THE LESSON OUTLIVES THE RULE, and it is the part to keep: A CONSTRAINT THAT
+# SEPARATES TWO FAMILIES CANNOT BE CHECKED BY MEASURING ONE OF THEM. WG-14
+# measured the SCENERY fractions off the exported bytes and never published the
+# HARVEST ones, so nothing in the project recorded that the broadleaf pair was
+# separated by 0.11 of height and by nothing else, and the margin could shrink
+# to 0.014 with every published number still looking healthy.
+#
+# WHAT SURVIVES, AND WHY IT IS NOT THE OLD RULE IN DISGUISE. The measurement is
+# kept and PRINTED, because a number nobody can see is a number that drifts,
+# and the geometry pass that follows Reid's ruling will want to watch these
+# fractions fall on purpose. The only thing still asserted is that every canopy
+# LOD0 has SOME foliage on it, which is a build defect (a tree exported as a
+# bare pole) rather than a design rule about two families: it does not name a
+# fraction, it cannot be satisfied by making a tree taller, and it would have
+# fired on `ratio is None` under the old gate too.
+CANOPY_TREES = ("Canopy_Pine", "Canopy_Fir", "Canopy_Broadleaf")
 
 
-def assert_bare_trunk(path):
-    """Refuse the build if any LOD0 crown hangs foliage below its floor.
+def report_foliage_ratio(path):
+    """Print each canopy LOD0's lowest foliage as a fraction of its height, and
+    refuse only a tree that has no foliage at all.
 
     Reads the EXPORTED file, not the in-memory Parts pile, for the reason
-    WG-14 gives: Parts.fit rescales z after every build function has returned,
-    so a ratio computed before the fit is a ratio of a shape that never
-    shipped."""
+    WG-14 gives and which still holds: Parts.fit rescales z after every build
+    function has returned, so a ratio computed before the fit is a ratio of a
+    shape that never shipped."""
     import flora_silhouette as fs   # noqa: E402  (pure python, no bpy)
     import validate_glb as vg       # noqa: E402
     gltf, binc, _n = vg.read_glb(path)
     walked = vg.walk(gltf)
-    bad = []
+    bare = []
     for idx, (nm, _m, _p) in sorted(walked.items()):
-        if not nm.endswith("_LOD0"):
-            continue
-        floor = BARE_FLOOR.get(nm[:-5])
-        if floor is None:
+        if not nm.endswith("_LOD0") or nm[:-5] not in CANOPY_TREES:
             continue
         ratio, h = fs.foliage_ratio(fs.node_triangles(gltf, binc, walked,
                                                       idx, []))
-        print("[canopy] %-18s h=%5.2f  lowest foliage at %.3f of height "
-              "(floor %.2f)"
-              % (nm[:-5], h, -1.0 if ratio is None else ratio, floor))
-        if ratio is None or ratio < floor:
-            bad.append("%s at %s, floor %.2f"
-                       % (nm[:-5], "no foliage" if ratio is None
-                          else "%.3f" % ratio, floor))
-    if bad:
-        raise SystemExit("[canopy] BARE-TRUNK RULE VIOLATED (WG-13, WG-14): "
-                         + "; ".join(bad))
+        print("[canopy] %-18s h=%5.2f  lowest foliage at %s of height "
+              "(unconstrained since RN-310)"
+              % (nm[:-5], h, "NONE" if ratio is None else "%.3f" % ratio))
+        if ratio is None:
+            bare.append(nm[:-5])
+    if bare:
+        raise SystemExit("[canopy] NO FOLIAGE ON: " + ", ".join(bare)
+                         + " (a canopy tree exported as a bare pole is a build"
+                           " defect, not an art choice)")
 
 
 if __name__ == "__main__":
     pc.build_atlas(NAME, OUT, PROPS)
-    assert_bare_trunk(OUT)
+    report_foliage_ratio(OUT)
