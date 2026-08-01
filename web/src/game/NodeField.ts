@@ -20,7 +20,7 @@
 import * as THREE from 'three';
 import { loadGlb } from '../assets/Loaders.js';
 import { NodeBatch, type NodePart } from './NodeBatch.js';
-import { ART, frac, hash32, variantFor, type NodeArt } from './NodeArt.js';
+import { ART, frac, hash32, pickArt, variantFor, type NodeArt } from './NodeArt.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore, NodeState } from './GameCore.js';
 import { NODE_KIND } from './GameCore.js';
@@ -215,20 +215,24 @@ export class NodeField {
    * it to its patch), so this is presentation only. `scale` and `sink` come from
    * deposits.h §P, which means a piece standing in rich ground is bigger and a
    * piece at the rim is a stub, and every one of them is part buried.
+   *
+   * `biome` is the biome.h index the node stands in, or -1 where the caller has
+   * none. It selects between the art entries of one kind (WG-94: a Mountains
+   * rock may be a spire and a beach rock may not), and -1 refuses every entry
+   * that gates on a biome rather than guessing one.
    */
-  addOutcrop(index: number, scale: number, sink: number): boolean {
+  addOutcrop(index: number, scale: number, sink: number, biome = -1): boolean {
     const st = this.core.node(index);
     if (st === null) return false;
     const before = this.placed.length;
-    this.build(index, st, st.kind, hash32(index, 0x0c40b), scale, sink);
+    this.build(index, st, st.kind, hash32(index, 0x0c40b), scale, sink, biome);
     return this.placed.length > before;
   }
 
   private build(index: number, st: NodeState, kind: number, h: number,
-                scale = 1, sinkM = 0): void {
-    const list = ART[kind];
-    if (list === undefined) return;
-    const art = list[Math.floor(frac(hash32(h, 3)) * list.length) % list.length];
+                scale = 1, sinkM = 0, biome = -1): void {
+    const art = pickArt(kind, h, biome);
+    if (art === null) return;
     const parts = this.batch.partsOf(art.file);
     if (parts === null) return;
     const slots = parts.map((p) => this.batch.acquire(p.material));

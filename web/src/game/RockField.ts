@@ -243,12 +243,12 @@ export class RockField {
     let n = Math.floor(e) + (frac(rockHash(h0, 1, 2, 3)) < e - Math.floor(e) ? 1 : 0);
     if (n > MAX_PER_CELL) n = MAX_PER_CELL;
     for (let k = 0; k < n; ++k) this.buildRock(rec, key, k, i, jw, latC, lonC,
-      dLat, dLon, wetNear);
+      dLat, dLon, wetNear, biome);
   }
 
   private buildRock(rec: CellRec, cellKey: string, k: number, i: number,
                     jw: number, latC: number, lonC: number, dLat: number,
-                    dLon: number, wetNear: boolean): void {
+                    dLon: number, wetNear: boolean, biome: number): void {
     const hk = rockHash(this.seed, i, jw, 0x9d2c + k);
     const lat = latC + (frac(rockHash(hk, 5, k, 1)) - 0.5) * dLat;
     const lon = lonC + (frac(rockHash(hk, 7, k, 2)) - 0.5) * dLon;
@@ -286,7 +286,13 @@ export class RockField {
     }
     const scale = ROCK_SCALE_MIN
       + frac(rockHash(hk, 11, k, 3)) * (ROCK_SCALE_MAX - ROCK_SCALE_MIN);
-    this.field.addOutcrop(index, scale, ROCK_SINK_FRAC * scale);
+    // THE BIOME IS CARRIED INTO THE ART (WG-94). The cell already knows it (it
+    // is what set the density), and it is what lets one Rock kind wear two
+    // forms: a Mountains rock may be a frost-shattered spire, a beach rock may
+    // not. Passing it here rather than re-querying keeps the art a pure function
+    // of the same (seed, cell) the position is, so a spire is as deterministic
+    // as the rock it replaces and the round-trip test still holds bit-exactly.
+    this.field.addOutcrop(index, scale, ROCK_SINK_FRAC * scale, biome);
     rec.placed.push(index);
     this.placedN++;
   }

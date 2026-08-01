@@ -99,8 +99,57 @@
       nodeCapacity: g?.nodes.capacity ?? null,
       nodeGrows: g?.nodes.grows ?? null,
       nodeRefused: g?.nodes.refused ?? null,
+      // --- WG-94, WHICH FORM EACH ROCK WEARS. `kind` cannot answer this: one
+      // NODE_KIND now has two art entries, so a spire and a boulder are the
+      // same kind. `of.nodes()` publishes the art root and the placement scale
+      // (GameplayViews.nodeDump), so the histogram is the instrument and the
+      // drawn-height range beside it is what says the size claim is real.
+      ...artCensus(of.nodes()),
+      // --- WG-91 / WG-92. The prop layer per MATERIAL BATCH, which is the one
+      // axis that separates the understorey species: `FOREST_DETAIL` moves
+      // demand off `OF_Grass:detail` onto `OF_Leaf:detail` and
+      // `OF_LeafDry:detail` at a CONSTANT total, so the two-sided claim is
+      // "the total held and the mix moved" rather than a single number.
+      propInstances: st.props?.instances ?? null,
+      propsPlaced: st.props?.propsPlaced ?? null,
+      propStems: st.props?.props ?? null,
+      propRefused: st.props?.refused ?? null,
+      perMaterial: (st.props?.perMaterial ?? [])
+        .filter((m) => m.live > 0)
+        .map((m) => `${m.name}=${m.live}`).join(' '),
     });
   }
 
   return { ticksAdvanced: of.world().tick - t0Tick, stamp: of.boot, rows };
+
+  /** Rock-kind nodes by art root, with the drawn height each form spans. */
+  function artCensus(nodes) {
+    const rocks = nodes.filter((n) => n.kind === 1 && n.distanceM < 175);
+    const by = new Map();
+    for (const n of rocks) {
+      const k = n.art ?? 'null';
+      const e = by.get(k) ?? { n: 0, lo: Infinity, hi: -Infinity };
+      e.n++;
+      if (typeof n.scale === 'number') {
+        e.lo = Math.min(e.lo, n.scale); e.hi = Math.max(e.hi, n.scale);
+      }
+      by.set(k, e);
+    }
+    // Authored heights, metres: the drawn height is scale * this. Transcribed
+    // from contracts.json dims_xyz_m, and the census prints BOTH so a wrong
+    // transcription is visible rather than folded into one number.
+    const H = { BoulderStone: 0.90, RockSpire: 2.60 };
+    const out = [];
+    for (const [root, e] of by) {
+      const h = H[root];
+      out.push(`${root}=${e.n}`
+        + (e.n > 0 && h !== undefined
+          ? ` (${(e.lo * h).toFixed(2)}..${(e.hi * h).toFixed(2)} m drawn)` : ''));
+    }
+    return {
+      rockArt: out.sort().join(' '),
+      spires: by.get('RockSpire')?.n ?? 0,
+      boulders: by.get('BoulderStone')?.n ?? 0,
+    };
+  }
 })()

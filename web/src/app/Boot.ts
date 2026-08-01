@@ -33,7 +33,9 @@ import { LevelAction } from '../player/LevelAction.js';
 import { LevelRing } from '../world/LevelRing.js';
 import { Scatter } from '../world/Scatter.js';
 import { PropLibrary } from '../render/instancing/PropLibrary.js';
-import { BIOME_ATLAS, SHARED_ATLAS, CANOPY_ATLAS } from '../assets/Registry.js';
+import { BIOME_ATLAS, SHARED_ATLAS, CANOPY_ATLAS, setForestDetail }
+  from '../assets/Registry.js';
+import { setSpires } from '../game/NodeArt.js';
 import { registerPool } from '../game/InstancePools.js';
 import { ObserverCamera } from '../player/ObserverCamera.js';
 import { ViewRouter } from '../player/ViewRouter.js';
@@ -228,6 +230,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // the `:detail` suffix and that suffix sets `castShadow = false`. See
   // `Registry.CANOPY_ATLAS`. It is dropped entirely at `?canopy=0`, so the
   // control does not merely place no trees, it does not load them either.
+  // WG-91 / WG-94, both BEFORE anything reads the tables they write: `Scatter`
+  // samples a chunk's props once at build time and `NodeField.load` derives its
+  // download set from `ART`, so a table written after either has run would be a
+  // control that changes nothing and reports success. See `Registry
+  // .setForestDetail` and `NodeArt.setSpires` for what each flag restores.
+  setForestDetail(cfg.forestDetail);
+  setSpires(cfg.spires);
   const canopy = cfg.canopyRadiusM > 0 ? [...CANOPY_ATLAS] : [];
   const atlases = cfg.props
     ? (cfg.detailCards ? [...BIOME_ATLAS, ...canopy, ...SHARED_ATLAS]

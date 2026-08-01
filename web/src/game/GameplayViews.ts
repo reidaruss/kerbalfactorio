@@ -84,8 +84,14 @@ export function recipeRows(game: GameCore, icon: IconFor = NO_ICON,
  * tell "I aimed at nothing" from "the pick is broken", which is exactly the
  * silent success DW-20 is about.
  */
-export function nodeDump(game: GameCore, indices: readonly { index: number }[],
-                         eye: { x: number; y: number; z: number }): unknown[] {
+export function nodeDump(
+  game: GameCore,
+  // WG-94: `art` and `scale` are published because ONE kind can now wear more
+  // than one form (a Mountains rock may be a spire), and without them a probe
+  // asking "did the spire draw" can only count rocks. `kind` cannot answer it.
+  indices: readonly { index: number; art?: { root: string }; scale?: number }[],
+  eye: { x: number; y: number; z: number },
+): unknown[] {
   const out = [];
   for (const pl of indices) {
     const st = game.node(pl.index);
@@ -95,6 +101,8 @@ export function nodeDump(game: GameCore, indices: readonly { index: number }[],
       x: st.x, y: st.y, z: st.z,
       name: game.itemName(st.resource),
       kind: st.kind,
+      art: pl.art?.root ?? null,
+      scale: pl.scale ?? null,
       remaining: st.remaining,
       initial: st.initial,
       fraction: st.initial > 0 ? st.remaining / st.initial : 0,

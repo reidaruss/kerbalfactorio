@@ -198,18 +198,15 @@ const C = (stem: string, density: number): PropSpec => ({
  *
  * SEVEN SPECIES, NOT FOUR, AND THE TOTAL IS UNCHANGED (RN-49). The three new
  * ones are paid for out of the existing four rather than added on top: 538,000
- * before and 538,000 after, to the unit. That is deliberate and it is the only
- * honest way to add species while DW-5 is not relaxed, because density is what
- * the triangle budget is spent on and "more variety" must not become "more
- * cost" by default. What changes is WHICH plant stands in a given spot, not how
- * many plants there are.
+ * before and 538,000 after, to the unit. That is the only honest way to add
+ * species while DW-5 is not relaxed, because density is what the triangle budget
+ * is spent on and "more variety" must not become "more cost" by default. It is
+ * also the rule `FOREST_DETAIL` below is held to.
  *
  * The mix is also CLUSTERED rather than uniform (ScatterLook.CLUSTER_BIAS).
- * Adding species to an unclustered scatter makes the ground MORE uniform, not
- * less: four species salt-and-peppered and seven species salt-and-peppered both
- * average out to one flat texture at any distance, and the second is merely a
- * more expensive way to get there. Species without clustering would have been a
- * cost with no picture.
+ * Adding species to an UNclustered scatter makes the ground more uniform, not
+ * less: four species and seven species both average out to one flat texture at
+ * any distance, and the second is a more expensive way to get there.
  */
 const GROUND_DETAIL: readonly PropSpec[] = [
   D('Detail_GrassCardA', 180000), D('Detail_GrassCardB', 105000),
@@ -223,6 +220,28 @@ const GROUND_DETAIL: readonly PropSpec[] = [
   // stands rather than spreading them evenly, which is the whole point.
   D('Detail_FlowerSprig', 24000),
 ];
+/**
+ * THE FOREST FLOOR, AND IT IS THE SAME BUDGET SPENT ON DIFFERENT SHAPES (WG-91).
+ *
+ * Measured by the understorey lane in a standing-eye 694 m2 forest patch
+ * populated by DENSITY rather than by count: the four Forest biome props place
+ * **27 instances against this layer's 2,244**, so 98.8% of what a player sees of
+ * a forest floor was decided by a table Forest shared VERBATIM with Plains and
+ * Hills. Re-weighting it moves more ground than every geometry edit in that
+ * pass put together, and it is BUDGET NEUTRAL ON BOTH AXES, the rule
+ * `GROUND_DETAIL` states above: pre-scale sum 538,000 before and after TO THE
+ * UNIT, so the instance count is identical, and +0.20% of triangles at the
+ * shipped per-card counts. A shaded floor is not a field of upright strokes, so
+ * the blades give up their share to the broad and the low, and `?forestdetail=0`
+ * is the control (rule 7).
+ */
+const FOREST_DETAIL: readonly PropSpec[] = [
+  D('Detail_GrassCardA', 90000), D('Detail_GrassCardB', 30000),
+  D('Detail_GrassCardC', 120000), D('Detail_PebbleScatter', 24000),
+  D('Detail_BroadleafForb', 150000), D('Detail_SedgeRosette', 110000),
+  D('Detail_FlowerSprig', 14000),
+];
+
 /** Dry and rocky biomes take the litter and the pebbles, not the grass. */
 const DRY_DETAIL: readonly PropSpec[] = [
   D('Detail_GrassCardC', 34000), D('Detail_PebbleScatter', 64000),
@@ -305,40 +324,55 @@ const CANOPY_MOUNTAIN: readonly PropSpec[] = [
  * threshold is a harvest node (RockField) and gives stone; only decoration
  * BELOW that size survives here.
  *
- * The threshold is RockTuning.DECOR_ROCK_MAX_H (0.27 m), derived, not chosen:
- * the smallest harvestable silhouette that can exist is the LOW (spent) stub
- * of the smallest-scaled placed stone node, 0.90 m authored height x 0.40 Low
- * z-scale x 0.75 minimum placement scale. Decoration at that size or above is
- * a lie the crosshair cannot catch, because the picker is ray-vs-node-sphere
- * and scenery is invisible to it by construction.
+ * The threshold and its derivation live in ONE place, `RockTuning
+ * .DECOR_ROCK_MAX_H` (0.27 m), and are not restated here. Retired against it:
+ * Ocean_SeabedRock, Beach_Rock, Plains_PebbleB, Forest_Rock, Hills_LargeBoulder,
+ * Mtn_RockSpire, Mtn_TalusChunk, Polar_IceBoulder. Kept: Detail_PebbleScatter is
+ * ankle gravel, and Polar_IceShard is a vertical translucent crystal, the
+ * distinct-silhouette rule rather than a rock shape. THE MOON ROWS ARE DEFERRED
+ * with RockField's moon densities: on Cinder the rock decor still lies.
  *
- * Retired against it, with their authored heights (tools/blender specs):
- *   Ocean_SeabedRock 0.75, Beach_Rock 0.55, Plains_PebbleB 0.50,
- *   Forest_Rock 0.85, Hills_LargeBoulder 1.55, Mtn_RockSpire 3.40,
- *   Mtn_TalusChunk 0.72, Polar_IceBoulder 1.15.
- * Kept, and why: Hills_ScreePatch 0.24 and Plains_PebbleA 0.18 are under the
- * threshold; Detail_PebbleScatter is ankle gravel; Polar_IceShard 1.70 is a
- * vertical translucent crystal, the distinct-silhouette rule the dead tree
- * already uses, not a rock shape. THE MOON ROWS ARE DEFERRED with RockField's
- * moon densities: on Cinder the rock decor still lies, logged as owed rather
- * than half-fixed, because a moon pass has no measurement site in this pass.
+ * WG-93: THAT THRESHOLD WAS DERIVED ON THE WRONG SIDE OF A SCALE, so two props
+ * it CLEARED were over it. RN-247: a NODE is placed at a uniform scale, but
+ * `ScatterLook.scaleFor` multiplies a non-foliage PROP's height by up to
+ * `MINERAL_H_HI` 1.24 on top of `1 +/- jitter`, so an authored h is DRAWN at up
+ * to h * 1.55 and the true authored cap is 0.27 / 1.25 / 1.24 = **0.174 m**.
+ * `Hills_ScreePatch` (0.24 m) was re-authored to 0.168; `Plains_PebbleA` (0.18 m,
+ * drawn to 0.279 m) was not, so its row is GONE. The read survives:
+ * `Detail_PebbleScatter` runs 26x its density inside the band where a 0.2 m
+ * pebble has pixels. One line restores it if it is re-authored under cap.
  *
- * Mtn_RockSpire is the one visual loss worth naming: Mountains lose their
- * spires until either a harvestable spire form exists in the node family or
- * the terrain grows real crags. Flagged to the art and rendering lanes.
+ * WG-92: RN-245's THREE MOUNTAINS STEMS GET NO ROW, AND THAT IS A MEASUREMENT
+ * RATHER THAN AN OMISSION. Wired at the retired pair's density (1,820 pre-scale)
+ * `Mtn_ScreeSheet` / `Mtn_TalusFan` / `Mtn_FrostShards` cost **+218,096
+ * triangles (+34.7%) and +8 draw calls** at the Mountains site, and at 1,050 and
+ * 520 the standing frame is INDISTINGUISHABLE from 1,820 and from ZERO. The
+ * near-ground pair settles it: pitched 38 degrees at the dirt, 360 placed
+ * instances and +59,936 DRAWN triangles give a frame no one can tell from the
+ * frame without them (`WG92_mtnclose_{none,520}.png`). The mechanism: a
+ * 1.75 x 1.50 m plate 0.155 m tall has almost no projected area from a 1.66 m
+ * eye, and its size band is ALREADY filled by `Detail_PebbleScatter` at **70x**
+ * the scree ask. The corrected 0.174 m cap and the visibility floor have
+ * collided: under the cap it cannot be seen, over it it lies to the crosshair.
+
+ * The backing array is MUTABLE so `setForestDetail` can swap Forest's
+ * understorey inside ONE binary; the export is the readonly view of it. Forest's
+ * own biome props are named apart so `setForestDetail` rebuilds from one copy.
  */
-export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [
+const FOREST_BASE: readonly PropSpec[] = [
+  P('Forest_Fern', false, 4200), P('Forest_DeadTree', true, 420),
+  P('Forest_FallenLog', true, 260), P('Forest_MushroomCluster', false, 1500),
+];
+const BIOME_PROPS_MUT: PropSpec[][] = [
   [P('Ocean_Kelp', false, 900)],
   [P('Beach_Driftwood', true, 260),
     P('Beach_ShellCluster', false, 1400), P('Beach_DuneGrass', false, 5200),
     ...DRY_DETAIL],
   [P('Plains_GrassTuftA', false, 9000), P('Plains_GrassTuftB', false, 7000),
-    P('Plains_FlowerCluster', false, 1800), P('Plains_PebbleA', false, 900),
+    P('Plains_FlowerCluster', false, 1800),
     P('Plains_Shrub', false, 700),
     ...GROUND_DETAIL, ...CANOPY_PLAINS],
-  [P('Forest_Fern', false, 4200), P('Forest_DeadTree', true, 420),
-    P('Forest_FallenLog', true, 260), P('Forest_MushroomCluster', false, 1500),
-    ...GROUND_DETAIL, ...CANOPY_FOREST],
+  [...FOREST_BASE, ...FOREST_DETAIL, ...CANOPY_FOREST],
   [P('Hills_ScreePatch', false, 1600),
     P('Hills_Shrub', false, 2200), ...GROUND_DETAIL, ...CANOPY_HILLS],
   [P('Mtn_SnowPatch', false, 900), ...DRY_DETAIL, ...CANOPY_MOUNTAIN],
@@ -350,3 +384,16 @@ export const BIOME_PROPS: readonly (readonly PropSpec[])[] = [
   [P('Moon_CraterRimRock', true, 460), P('Moon_ImpactGlass', false, 700),
     P('Moon_RockSmall', false, 1500), D('Detail_PebbleScatter', 20000)],
 ];
+
+/** The props each biome scatters. `Scatter.build` re-reads this per chunk. */
+export const BIOME_PROPS: readonly (readonly PropSpec[])[] = BIOME_PROPS_MUT;
+
+/**
+ * `?forestdetail=0` puts Forest back on the shared `GROUND_DETAIL`, the state
+ * the forest floor shipped in before WG-91. A BOOT flag and not a runtime
+ * toggle: a chunk's props are sampled once at build time, never re-sampled.
+ */
+export function setForestDetail(on: boolean): void {
+  BIOME_PROPS_MUT[3] = [...FOREST_BASE,
+    ...(on ? FOREST_DETAIL : GROUND_DETAIL), ...CANOPY_FOREST];
+}

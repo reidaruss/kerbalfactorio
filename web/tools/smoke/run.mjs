@@ -167,6 +167,11 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // one-binary control for the whole rock-node pass; `rockdensity=` scales
   // every biome's rock ask together for the cost ladder.
   'rocks', 'rockdensity',
+  // WG-91 / WG-94, standing rule 7. `spires=0` drops rock_spire.glb from the
+  // node art AND from the download set, so Mountains rocks are all boulders
+  // exactly as before; `forestdetail=0` puts Forest's understorey back on the
+  // shared GROUND_DETAIL meadow mix. One binary, one flag each.
+  'spires', 'forestdetail',
   // RN-97, standing rule 7. `wind=0` removes the foliage wind hook entirely,
   // so the program set is stock and the build is the static one (the negative
   // control); `windamp=` sweeps the amplitude in place, and `windamp=0` keeps

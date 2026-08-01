@@ -180,6 +180,13 @@ export interface Config {
    */
   readonly rocks: boolean;
   readonly rockDensity: number;
+  /** WG-94: `?spires=0` drops `rock_spire.glb` from `NodeArt.ART`, so Mountains
+   *  rocks are all boulders again AND the file is not fetched. */
+  readonly spires: boolean;
+  /** WG-91: `?forestdetail=0` puts Forest's understorey back on the shared
+   *  `GROUND_DETAIL` meadow mix, which is what its neutrality is measured
+   *  against rather than argued from. */
+  readonly forestDetail: boolean;
   /**
    * `?proplod2=0` makes the UNDERSTOREY draw its LOD0 geometry at all ranges,
    * which is the state the four ground-detail cards were in until RN-45
@@ -392,6 +399,8 @@ export function parseConfig(search: string): Config {
     canopyShade: p.get('canopyshade') !== '0',
     rocks: p.get('rocks') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),
+    spires: p.get('spires') !== '0',
+    forestDetail: p.get('forestdetail') !== '0',
     propLod2: p.get('proplod2') !== '0',
     gameplay: p.get('gameplay') !== '0',
     vab: p.get('vab') !== '0',
