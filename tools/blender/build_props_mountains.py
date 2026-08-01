@@ -6,17 +6,40 @@ Produces assets/models/dist/props/props_mountains.glb (ASSET-SPECS 3.2,
 Biome::Mountains).
 
 biome.h amplifies mountain relief by 1.60, so this is the biome with real
-vertical terrain and the one place where a scatter prop can be TALLER than the
-player and still look small. The rock spire is the whole point of the atlas:
-one vertical shape at 3.4 m breaks a ridgeline in a way no amount of ground
-detail can, and it is the only Tier-1 prop that reads from 200 m.
+vertical terrain. The old atlas leaned on that with a 3.40 m rock spire and a
+0.72 m talus chunk, and WG-68 retired BOTH from the world: there are no inert
+rocks, and a rock the crosshair cannot catch is a lie the player learns after
+one swing. Nothing in web/src has named them since (`grep -rn Mtn_RockSpire
+web/src` finds two lines of comment in Registry.ts and no table row), so they
+are removed from the ATLAS here as well rather than left in the file as art
+that a future lane could re-enable by accident.
 
-Materials (3): OF_Rock, OF_RockDark, OF_Ice. Three roles is the smallest
-atlas in the batch and it is deliberate - above the tree line there is nothing
-but stone and snow, and the renderer batches by material.
+WHAT REPLACES THEM.
 
-Collision: Mtn_RockSpire and Mtn_TalusChunk. The snow patch is a surface, not
-an obstacle, and is walk-through.
+  The spire, as a harvest node: assets/models/dist/nodes/rock_spire.glb, built
+  by build_rock_spire.py. It is the same silhouette doing the same job on a
+  ridgeline, and hitting it now gives stone.
+
+  The small stuff, here, all of it strictly under the derived decoration cap
+  (crag_common.decor_authored_max, 0.174 m for a Registry `P` prop). Three
+  forms rather than one, because a scree slope dressed in a single prop reads
+  as a repeating stamp no matter how good that prop is:
+
+    Mtn_ScreeSheet   a broad thin sheet of fractured plate, the ground a
+                     rockfall lands on. Widest footprint, lowest profile.
+    Mtn_TalusFan     fewer, chunkier blocks piled tight, leaning on each other:
+                     the heap under a cliff rather than the sheet spread away
+                     from it.
+    Mtn_FrostShards  thin platy splinters standing on edge at every bearing,
+                     which is what frost shattering actually leaves and what
+                     neither of the other two produces.
+
+Materials (3): OF_Rock, OF_RockDark, OF_Ice. Above the tree line there is
+nothing but stone and snow, and the renderer batches by material.
+
+Collision: NONE. Every rock in this atlas is now ankle-height debris, and a
+collider on ankle gravel is a player snagging on gravel. The two proxies this
+file used to author belonged to the two props that are gone.
 """
 
 import os
@@ -26,38 +49,45 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import props_common as pc      # noqa: E402
 import of_lib as of            # noqa: E402
 import harvest_common as hc    # noqa: E402
+import crag_common as cc       # noqa: E402
 
 NAME = "PropsMountains"
 OUT = of.dist_path("props", "props_mountains.glb")
 
-
-def rock_spire():
-    """A weathered tooth with one buttress at its foot. SPIRE_RINGS pulls the
-    radius in hard with height, which is what a frost-shattered pinnacle does
-    and what stops it reading as a cylinder."""
-    return pc.rock(6101, "Rock", "RockDark",
-                   ((1, 4, 8, 12), (2, 6, 11), (0, 5)),
-                   lobes=3, seg=7, jit=0.17, rings=pc.SPIRE_RINGS,
-                   lean_gain=0.10,
-                   plan=(((0.00, 0.00, 0.00), (0.36, 0.32, 1.00)),
-                         ((0.30, 0.16, 0.00), (0.24, 0.22, 0.38)),
-                         ((-0.24, -0.18, 0.00), (0.18, 0.20, 0.24))))
+# Each size tuple is written ONCE and used twice: as the prop's fitted box and
+# as the height crag_common.check_decor_height gates on. Two transcriptions of
+# one number is the catalogued defect class on this project, and here it would
+# be silent: a prop authored 0.20 m and checked at 0.15 m would pass the gate
+# and ship above the harvest threshold anyway.
+SCREE = (1.75, 1.50, 0.155)
+TALUS = (1.30, 1.15, 0.168)
+SHARDS = (1.45, 1.25, 0.160)
+SNOW = (2.60, 2.10, 0.22)
 
 
-def talus_chunk():
-    """One frost-shattered block with a splinter still leaning on it. High
-    jitter and few sides, because talus is fractured along planes and every
-    face should be flat and big."""
-    return pc.rock(6111, "RockDark", "Rock", ((0, 3, 7, 11), (2, 5)), lobes=2,
-                   seg=6, jit=0.30, rings=pc.SLAB_RINGS,
-                   plan=(((0.00, 0.00, 0.00), (0.50, 0.45, 0.42)),
-                         ((0.34, -0.18, 0.00), (0.22, 0.20, 0.26))))
+def scree_sheet():
+    return cc.scree_sheet("Mtn_ScreeSheet", 6141, "RockDark", "Rock",
+                          SCREE[2], count=14)
+
+
+def talus_fan():
+    return cc.talus_cluster("Mtn_TalusFan", 6151, "Rock", "RockDark",
+                            TALUS[2], count=7)
+
+
+def frost_shards():
+    return cc.frost_shards("Mtn_FrostShards", 6161, "RockDark", "Rock",
+                           SHARDS[2], count=9)
 
 
 def snow_patch():
     """Wind-packed snow lying in a hollow: three overlapping flat domes, not
     a disc. A disc has a hard circular edge that reads as a decal; three
-    domes give it a lobed shoreline for eight extra triangles."""
+    domes give it a lobed shoreline for eight extra triangles.
+
+    Unchanged, and deliberately so: this is the one prop in the atlas that is
+    not rock, the rocks lane does not own snow, and its bytes are held still so
+    that the atlas diff is entirely the rock work."""
     p = hc.Parts()
     plan = (((0.00, 0.00, 0.00), (0.52, 0.42, 0.30), 6121),
             ((0.36, 0.14, 0.00), (0.30, 0.28, 0.22), 6127),
@@ -69,13 +99,13 @@ def snow_patch():
 
 
 PROPS = [
-    pc.Prop("Mtn_RockSpire", (1.25, 1.10, 3.40), rock_spire,
-            ["Rock", "RockDark"], lod2=0.15, collide=True, col_role="Rock"),
-    pc.Prop("Mtn_TalusChunk", (0.95, 0.85, 0.72), talus_chunk,
-            ["RockDark", "Rock"], lod2=0.25, collide=True,
-            col_role="RockDark"),
-    pc.Prop("Mtn_SnowPatch", (2.60, 2.10, 0.22), snow_patch,
-            ["Ice"], lod2=0.18),
+    pc.Prop("Mtn_ScreeSheet", SCREE, scree_sheet, ["RockDark", "Rock"],
+            lod2=0.18),
+    pc.Prop("Mtn_TalusFan", TALUS, talus_fan, ["Rock", "RockDark"],
+            lod2=0.22),
+    pc.Prop("Mtn_FrostShards", SHARDS, frost_shards, ["RockDark", "Rock"],
+            lod2=0.22),
+    pc.Prop("Mtn_SnowPatch", SNOW, snow_patch, ["Ice"], lod2=0.18),
 ]
 
 

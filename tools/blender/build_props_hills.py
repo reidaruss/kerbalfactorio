@@ -22,6 +22,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import props_common as pc      # noqa: E402
+import crag_common as cc       # noqa: E402
 import of_lib as of            # noqa: E402
 import harvest_common as hc    # noqa: E402
 
@@ -40,12 +41,33 @@ def large_boulder():
                          ((-0.29, -0.21, 0.00), (0.25, 0.29, 0.27))))
 
 
+# The scree patch is written ONCE and used twice, as the fitted box and as the
+# height crag_common.check_decor_height gates on. See below for why 0.24 m was
+# not the safe number it looked like.
+SCREE = (1.70, 1.45, 0.168)
+
+
 def scree_patch():
-    """Nine angular fragments in a shallow fan, the debris the boulder above
-    is turning into. Flat rings: scree is fractured plate, not pebble."""
-    return pc.chips(9, (0.52, 0.44), (0.14, 0.12, 0.08), 5111, "RockDark",
-                    alt_role="Rock", alt_every=3, seg=5, jit=0.30,
-                    rings=((0.0, 1.00), (0.58, 0.62)))
+    """Fourteen fractured plates in a shallow fan, the debris the boulder above
+    is turning into.
+
+    RE-AUTHORED AND LOWERED (RN-246). It was nine `pc.chips` lobes, which are
+    apexed cones with no fracture plane and no bite, and it was 0.24 m tall.
+    Both were wrong, and the second was wrong in a way nobody could see.
+
+    WG-68 cleared this prop against RockTuning.DECOR_ROCK_MAX_H, 0.27 m, by
+    comparing its AUTHORED height. But a node is placed at a uniform scale and
+    a scatter prop is not: ScatterLook.scaleFor multiplies a non-foliage prop's
+    HEIGHT by up to MINERAL_H_HI (1.24) on top of the 1 +/- jitter (0.25 for a
+    Registry `P` prop), so 0.24 m authored is DRAWN at up to 0.372 m,
+    well
+    above the threshold it was measured against. The two sides of the
+    comparison were on opposite sides of a scale and only one was priced.
+    crag_common.decor_authored_max is that derivation, and it is a build-time
+    check rather than a comment because this rule has now been applied with a
+    factor missing once."""
+    return cc.scree_sheet("Hills_ScreePatch", 5111, "RockDark", "Rock",
+                          SCREE[2], count=14)
 
 
 def hill_shrub():
@@ -74,7 +96,7 @@ def hill_shrub():
 PROPS = [
     pc.Prop("Hills_LargeBoulder", (2.30, 1.95, 1.55), large_boulder,
             ["Rock", "RockDark"], lod2=0.15, collide=True, col_role="Rock"),
-    pc.Prop("Hills_ScreePatch", (1.70, 1.45, 0.24), scree_patch,
+    pc.Prop("Hills_ScreePatch", SCREE, scree_patch,
             ["RockDark", "Rock"], lod2=0.18),
     pc.Prop("Hills_Shrub", (1.15, 1.05, 0.78), hill_shrub,
             ["Bark", "Leaf"], lod2=0.20),

@@ -549,10 +549,11 @@ Poly budgets are LOD0 triangles. Dimensions are metres, given as
 | 5 | Conifer tree | `nodes/tree_conifer.glb` | `Tree` | 2.4 x 2.4 x 6.5 | 600 | 3 | sway, fall |
 | 6 | Broadleaf tree | `nodes/tree_broadleaf.glb` | `Tree` | 4.0 x 4.0 x 5.0 | 700 | 3 | sway, fall |
 | 7 | Scrub bush | `nodes/bush_scrub.glb` | `Tree` (low yield) | 1.0 x 1.0 x 0.9 | 200 | 2 | sway |
-| 8 | Stone boulder | `nodes/boulder_stone.glb` | `Rock` | 1.4 x 1.2 x 0.9 | 200 | 3 | none |
-| 9 | Iron boulder | `nodes/boulder_iron.glb` | `IronOre` | 1.6 x 1.4 x 1.1 | 220 | 3 | none |
-| 10 | Copper boulder | `nodes/boulder_copper.glb` | `CopperOre` | 1.5 x 1.3 x 1.0 | 220 | 3 | none |
-| 11 | Coal seam boulder | `nodes/boulder_coal.glb` | `CoalSeam` | 1.7 x 1.4 x 1.0 | 240 | 3 | none |
+| 8 | Stone boulder | `nodes/boulder_stone.glb` | `Rock` | 1.4 x 1.2 x 0.9 | 460 | 3 | none |
+| 9 | Iron boulder | `nodes/boulder_iron.glb` | `IronOre` | 1.6 x 1.4 x 1.1 | 290 | 3 | none |
+| 10 | Copper boulder | `nodes/boulder_copper.glb` | `CopperOre` | 1.5 x 1.3 x 1.0 | 570 | 3 | none |
+| 11 | Coal seam boulder | `nodes/boulder_coal.glb` | `CoalSeam` | 1.7 x 1.4 x 1.0 | 420 | 3 | none |
+| 11a | Rock spire | `nodes/rock_spire.glb` | `Rock` | 1.3 x 1.15 x 2.6 | 690 | 3 | none |
 | 12 | Water pool | `nodes/water_pool.glb` | `WaterPool` | 3.0 x 3.0 x 0.25 | 280 | 2 | ripple |
 | 13 | Oil seep | `nodes/oil_seep.glb` | `OilSeep` | 2.2 x 2.2 x 0.35 | 260 | 2 | bubble |
 
@@ -660,8 +661,8 @@ sit on the file origin, so a scatter placement matrix is pure terrain data.
 | `props/props_beach.glb` | `Beach` | `Beach_Rock`, `Beach_Driftwood`, `Beach_ShellCluster`, `Beach_DuneGrass` | 411 | 4 | 40 |
 | `props/props_plains.glb` | `Plains` | `Plains_GrassTuftA`, `Plains_GrassTuftB`, `Plains_FlowerCluster`, `Plains_PebbleA`, `Plains_PebbleB`, `Plains_Shrub` | 438 | 4 | 45 |
 | `props/props_forest.glb` | `Forest` | `Forest_Fern`, `Forest_DeadTree`, `Forest_FallenLog`, `Forest_MushroomCluster`, `Forest_Rock` | 527 | 4 | 53 |
-| `props/props_hills.glb` | `Hills` | `Hills_LargeBoulder`, `Hills_ScreePatch`, `Hills_Shrub` | 430 | 4 | 39 |
-| `props/props_mountains.glb` | `Mountains` | `Mtn_RockSpire`, `Mtn_TalusChunk`, `Mtn_SnowPatch` | 254 | 3 | 26 |
+| `props/props_hills.glb` | `Hills` | `Hills_LargeBoulder`, `Hills_ScreePatch`, `Hills_Shrub` | 436 | 4 | 39 |
+| `props/props_mountains.glb` | `Mountains` | `Mtn_ScreeSheet`, `Mtn_TalusFan`, `Mtn_FrostShards`, `Mtn_SnowPatch` | 650 | 3 | 62 |
 | `props/props_polar.glb` | `Polar` | `Polar_IceShard`, `Polar_SnowDrift`, `Polar_IceBoulder` | 306 | 3 | 29 |
 | `props/props_ocean.glb` | `Ocean` | `Ocean_Kelp`, `Ocean_SeabedRock` | 169 | 3 | 18 |
 | `props/props_moon.glb` | `Regolith`, `MoonHighland`, `CraterFloor` | `Moon_RockSmall`, `Moon_RockLarge`, `Moon_RegolithRipple`, `Moon_HighlandOutcrop`, `Moon_CraterRimRock`, `Moon_ImpactGlass` | 510 | 4 | 52 |
@@ -686,10 +687,30 @@ These eighteen carry a `col_<Prop>` box; the other twenty-three are walk-through
 
 | Collides | Walk-through |
 |---|---|
-| `Beach_Rock`, `Beach_Driftwood`, `Plains_PebbleB`, `Forest_DeadTree`, `Forest_FallenLog`, `Forest_Rock`, `Hills_LargeBoulder`, `Mtn_RockSpire`, `Mtn_TalusChunk`, `Polar_IceShard`, `Polar_IceBoulder`, `Ocean_SeabedRock`, `Moon_RockLarge`, `Moon_HighlandOutcrop`, `Moon_CraterRimRock`, `Cave_Stalagmite`, `Cave_CrystalCluster`, `Cave_SupportFrame` | all grass, flowers, ferns, kelp, both shrubs, shells, mushrooms, scree, rubble, snow patch, snow drift, regolith ripple, impact glass, small pebbles, the ore vein panel, and every detail card |
+| `Beach_Rock`, `Beach_Driftwood`, `Plains_PebbleB`, `Forest_DeadTree`, `Forest_FallenLog`, `Forest_Rock`, `Hills_LargeBoulder`, `Polar_IceShard`, `Polar_IceBoulder`, `Ocean_SeabedRock`, `Moon_RockLarge`, `Moon_HighlandOutcrop`, `Moon_CraterRimRock`, `Cave_Stalagmite`, `Cave_CrystalCluster`, `Cave_SupportFrame` | all grass, flowers, ferns, kelp, both shrubs, shells, mushrooms, scree, rubble, snow patch, snow drift, regolith ripple, impact glass, small pebbles, the ore vein panel, and every detail card |
 
 `col_Forest_DeadTree` is the **trunk box only** (0.50 x 0.50 x 4.20), the same rule the
 conifer follows: a player walks through where the branches were.
+
+**RN-245: `props_mountains.glb` lost `Mtn_RockSpire` and `Mtn_TalusChunk`.**
+WG-68 retired both from the world (there are no inert rocks: anything
+rock-shaped at or above the interaction threshold is a harvest node and
+gives stone), and they lingered in the atlas as art nothing referenced. The
+spire is back as `nodes/rock_spire.glb`, a real harvest node. Three new
+sub-threshold forms replace the decoration: `Mtn_ScreeSheet`,
+`Mtn_TalusFan` and `Mtn_FrostShards`. The atlas now carries NO collision
+proxy, because everything in it is ankle-height debris.
+
+**RN-246: the decoration size rule had a factor missing.** WG-68 cleared
+surviving decor by comparing AUTHORED height against
+`RockTuning.DECOR_ROCK_MAX_H` (0.27 m). A harvest node is placed at a
+uniform scale, but `ScatterLook.scaleFor` multiplies a non-foliage prop's
+HEIGHT by up to `MINERAL_H_HI` (1.24) on top of `1 +/- jitter`, so an
+authored 0.24 m scree patch is DRAWN at up to 0.372 m. The corrected cap is
+`0.27 / (1 + jitter) / 1.24`, i.e. 0.174 m for a `P` prop, and it is a
+build-time check in `crag_common.check_decor_height` rather than a comment.
+`Hills_ScreePatch` is lowered to 0.168 m here. **`Plains_PebbleA` at 0.18 m
+is still over it** (drawn at up to 0.279 m) and is owed a pass.
 
 **Two props have a non-standard contract.**
 
@@ -1480,10 +1501,19 @@ signal.
 
 | File | Dims (m) | Ore material | Tris |
 |---|---|---|---|
-| `boulder_stone.glb` | 1.4 x 1.2 x 0.9 | none (Rock + RockDark only) | 200 |
-| `boulder_iron.glb` | 1.6 x 1.4 x 1.1 | `OF_Iron` | 220 |
-| `boulder_copper.glb` | 1.5 x 1.3 x 1.0 | `OF_Copper` | 220 |
-| `boulder_coal.glb` | 1.7 x 1.4 x 1.0 | `OF_Coal` | 240 |
+| `boulder_stone.glb` | 1.4 x 1.2 x 0.9 | none (Rock + RockDark only) | 460 |
+| `boulder_iron.glb` | 1.6 x 1.4 x 1.1 | `OF_IronOre` | 290 |
+| `boulder_copper.glb` | 1.5 x 1.3 x 1.0 | `OF_CopperOre` | 570 |
+| `boulder_coal.glb` | 1.7 x 1.4 x 1.0 | `OF_CoalSeam` | 420 |
+| `rock_spire.glb` | 1.3 x 1.15 x 2.6 | none (Rock + RockDark only) | 690 |
+
+**The budgets above were raised at RN-243 and the ore material names were
+already wrong.** They read `OF_Iron` / `OF_Copper` / `OF_Coal`, the refined
+ITEM metals; RN-156 split the seams onto the ore-in-rock roles `OF_IronOre`,
+`OF_CopperOre` and `OF_CoalSeam` because the item rows are metallic 1.0 and an
+iron seam photographed as ice. The old 200 to 240 ceilings were sized for a
+low-poly game; see `docs/web/ART-DIRECTION.md` and the argument recorded in
+each `contracts.json` row.
 
 LODs: 100% / 45% / 15% by `add_lod_decimate` (organic, so decimation is correct).
 Materials (3): `OF_Rock`, `OF_RockDark`, plus the ore role. **Stone carries only

@@ -199,6 +199,94 @@ def seeds(kind, count=5, tag="after"):
 
 
 # ---------------------------------------------------------------------------
+# tall: one subject too tall for any render_check view
+# ---------------------------------------------------------------------------
+
+def tall(rel, stem, height, tag):
+    """Frame a subject by its own height rather than by a fixed camera.
+
+    render_check's VIEWS are all sized for a 1.8 m player or a 1 m machine and
+    its one tall view, `vessel34`, is set for a 6.4 m lander, so a 3.4 m spire
+    is a thumbnail in it. At 420 x 540 Blender fits the 36 mm sensor to the
+    LARGER dimension, which is the HEIGHT in portrait, so the vertical half
+    angle is atan(18 / f) and the distance that fits `h` metres is
+    (h / 2) / tan. Computed, so the camera follows the asset if the asset
+    changes rather than needing a person to notice."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    cam = studio(420, 540)
+    add_ground()
+    bpy.ops.import_scene.gltf(
+        filepath=os.path.join(ROOT, "assets", "models", "dist",
+                              *rel.split("/")))
+    hide_all_but_lod0_full()
+    lens = 55.0
+    d = (height * 1.18 * 0.5) / (18.0 / lens)
+    shoot(cam, (d * 0.42, -d * 0.90, height * 0.62), (0.0, 0.0, height * 0.46),
+          os.path.join(OUT, "%s_%s_full.png" % (stem, tag)), lens=lens)
+    # And the foot at walking distance, which is where the pits and the apron
+    # either read or do not.
+    shoot(cam, (0.75, -1.55, 1.35), (0.0, 0.0, 0.60),
+          os.path.join(OUT, "%s_%s_foot.png" % (stem, tag)), lens=lens)
+
+
+# ---------------------------------------------------------------------------
+# decor: a biome atlas laid out, because build_atlas stacks it on the origin
+# ---------------------------------------------------------------------------
+
+def decor(atlas, stem, names, step, tag, eye=1.62):
+    """Spread one atlas's props along X and photograph them at EYE HEIGHT.
+
+    Every prop in an atlas sits on the origin (props_common: a scatter pass
+    writes the placement matrix, so a layout offset would ride along on it and
+    every consumer would have to subtract it back out), which means importing
+    the .glb draws four props inside each other. So they are pulled apart here.
+
+    The camera is at 1.62 m looking slightly down, which is the only view that
+    answers the question ankle-height decoration exists to answer: a scree
+    field is judged from standing height at walking distance and never from a
+    hero three-quarter. A prop that looks good in a turntable and reads as grey
+    mush from the player's eye has failed at the one distance it is drawn."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    cam = studio(1200, 560)
+    add_ground()
+    bpy.ops.import_scene.gltf(
+        filepath=os.path.join(ROOT, "assets", "models", "dist",
+                              *atlas.split("/")))
+    hide_all_but_lod0_full()
+    # Props NOT in `names` are HIDDEN, not merely left where they are. The
+    # first attempt only moved the named ones, so an atlas-mate still on the
+    # origin filled the frame and the picture was of a different prop
+    # entirely, which is DW-7's other direction: a frame that looks like a
+    # render of something is not evidence about the thing you meant.
+    # The floor is exempt, because hiding it too gave a second wrong picture:
+    # ankle-height debris floating on a flat grey field, with no contact
+    # shadow and nothing to read scale against.
+    keep = tuple(names)
+    for o in bpy.data.objects:
+        if (o.type == "MESH" and o.name != "Ground"
+                and not o.name.startswith(keep)):
+            o.hide_render = True
+    x0 = -step * (len(names) - 1) * 0.5
+    for i, n in enumerate(names):
+        for o in bpy.data.objects:
+            if o.name.startswith(n):
+                o.location = (x0 + i * step, 0.0, 0.0)
+    # Frame widths are computed. At 1200 x 560 the sensor fits to the WIDTH, so
+    # the horizontal half angle is atan(18 / f) and the width covered at range
+    # D is 2 * D * 18 / f. The first attempt used a 35 mm lens at 0.30 of the
+    # span and covered a third of the row, so two of the four props exist only
+    # outside the frame that exists to compare four props.
+    # A one-prop row still needs a frame wide enough to show the prop AND
+    # the ground it lies on, so the span has a floor.
+    span = max(step * len(names), 4.2)
+    lens = 28.0
+    shoot(cam, (0.0, -span * 0.78, eye), (0.0, 0.0, 0.10),
+          os.path.join(OUT, "%s_%s.png" % (stem, tag)), lens=lens)
+    shoot(cam, (0.0, -span * 0.75, span * 0.45), (0.0, 0.0, 0.05),
+          os.path.join(OUT, "%s_%s_down.png" % (stem, tag)), lens=lens)
+
+
+# ---------------------------------------------------------------------------
 # crags: the spire node and the scree props, which live in other files
 # ---------------------------------------------------------------------------
 
@@ -206,9 +294,10 @@ def crags(tag):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     cam = studio(1200, 700)
     add_ground()
-    specs = (("nodes/rock_spire.glb", (-2.2, 0.4, 0.0)),
-             ("nodes/boulder_stone.glb", (1.1, 0.2, 0.0)),
-             ("props/props_mountains.glb", (2.9, -0.6, 0.0)))
+    specs = (("nodes/rock_spire.glb", (-2.0, 0.5, 0.0)),
+             ("nodes/boulder_stone.glb", (0.6, -0.2, 0.0)),
+             ("nodes/boulder_coal.glb", (2.6, 0.7, 0.0)),
+             ("props/props_mountains.glb", (1.7, -1.5, 0.0)))
     for rel, at in specs:
         path = os.path.join(ROOT, "assets", "models", "dist", *rel.split("/"))
         if not os.path.exists(path):
@@ -220,8 +309,8 @@ def crags(tag):
             if o.parent is None:
                 o.location = at
     hide_all_but_lod0_full()
-    shoot(cam, (1.2, -9.6, 3.3), (0.0, 0.0, 1.5),
-          os.path.join(OUT, "RN243_crags_%s.png" % tag))
+    shoot(cam, (1.2, -8.4, 2.6), (0.0, 0.0, 1.15),
+          os.path.join(OUT, "RN247_crags_%s.png" % tag), lens=32.0)
 
 
 def main():
@@ -239,6 +328,21 @@ def main():
         seeds(kind, tag=tag)
     elif mode == "crags":
         crags(tag)
+    elif mode == "spire":
+        tall("nodes/rock_spire.glb", "RN244_spire", 2.60, tag)
+    elif mode == "mtndecor":
+        # The BEFORE frame names the props HEAD ships and the AFTER frame
+        # names the props this pass ships, because atlas membership is part
+        # of what changed. One name list would silently drop whichever side
+        # it did not match and photograph an empty floor instead.
+        names = (("Mtn_RockSpire", "Mtn_TalusChunk", "Mtn_SnowPatch")
+                 if tag == "before" else
+                 ("Mtn_ScreeSheet", "Mtn_TalusFan", "Mtn_FrostShards",
+                  "Mtn_SnowPatch"))
+        decor("props/props_mountains.glb", "RN245_mtndecor", names, 2.9, tag)
+    elif mode == "hillsdecor":
+        decor("props/props_hills.glb", "RN246_hillsdecor",
+              ("Hills_ScreePatch",), 2.4, tag)
     else:
         print(__doc__)
 

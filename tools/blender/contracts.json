@@ -433,6 +433,44 @@
       "collision": "col_BoulderCoal"
     },
 
+    "rock_spire": {
+      "glb": "assets/models/dist/nodes/rock_spire.glb",
+      "_comment": [
+        "RN-244. The Mountains spire, restored as a HARVEST NODE after WG-68",
+        "retired the 3.40 m decor prop of the same name: there are no inert",
+        "rocks, so the shape that breaks a ridgeline has to give stone.",
+        "node_kind Rock is deliberate, so a client lane adds it as a SECOND",
+        "entry in NodeArt.ART[NODE_KIND.Rock] the way the two trees already",
+        "alternate, with no new resource and no new recipe.",
+        "2.60 m authored, not the decor prop 3.40: a node is placed at",
+        "ROCK_SCALE_MIN to MAX (0.75 to 1.5), so these stand 1.95 m to 3.90 m",
+        "and the tallest is taller than the retired prop ever was, while the",
+        "box stays close enough to the pile natural 1:2.0 that Parts.fit does",
+        "not stretch every pit and welded fragment to make the number true.",
+        "The collision proxy is the SHAFT at 0.62 of the footprint, not the",
+        "bounding box: a full-width box would also enclose the debris apron",
+        "and stop a player on scree they can see straight through."
+      ],
+      "node_kind": "Rock",
+      "lod0_node": "RockSpire_Full_LOD0",
+      "lod_nodes": [
+        "RockSpire_Full_LOD0", "RockSpire_Full_LOD1",
+        "RockSpire_Full_LOD2",
+        "RockSpire_Half_LOD0", "RockSpire_Half_LOD1",
+        "RockSpire_Half_LOD2",
+        "RockSpire_Low_LOD0", "RockSpire_Low_LOD1",
+        "RockSpire_Low_LOD2"
+      ],
+      "dims_xyz_m": [1.30, 2.60, 1.15],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 690,
+      "max_tris_total": 2200,
+      "max_materials": 2,
+      "sockets": ["socket_hit", "socket_item_pop"],
+      "clips": [],
+      "collision": "col_RockSpire"
+    },
+
     "tree_conifer": {
       "glb": "assets/models/dist/nodes/tree_conifer.glb",
       "node_kind": "Tree",
@@ -1048,7 +1086,15 @@
         "TIER 1, Biome::Hills - the prime ore zone. Hills_LargeBoulder is",
         "2.3 m across, deliberately bigger than the 1.7 m coal boulder that",
         "is the largest harvest node, so scenery and node are never confused.",
-        "Only the boulder collides."
+        "Only the boulder collides.",
+        "RN-246: Hills_ScreePatch dropped 0.24 m to 0.168 m. WG-68 cleared it",
+        "against RockTuning.DECOR_ROCK_MAX_H (0.27 m) by comparing AUTHORED",
+        "height, but ScatterLook.scaleFor multiplies a non-foliage prop height",
+        "by up to MINERAL_H_HI 1.24 on top of 1 plus or minus jitter 0.25, so",
+        "0.24 m was DRAWN at up to 0.372 m: above the threshold it was cleared",
+        "against. crag_common.decor_authored_max is that derivation and it is",
+        "a build-time check now, not a comment. Total 620 to 640: the patch is",
+        "14 fractured plates rather than 9 cones, plus six triangles."
       ],
       "lod0_node": "Hills_LargeBoulder_LOD0",
       "lod_nodes": [
@@ -1060,7 +1106,7 @@
       "dims_xyz_m": [2.30, 1.55, 1.95],
       "tolerance_m": 0.005,
       "max_tris_lod0": 180,
-      "max_tris_total": 620,
+      "max_tris_total": 640,
       "max_tris_collision": 12,
       "max_materials": 4,
       "sockets": [],
@@ -1069,7 +1115,7 @@
       "collision": ["col_Hills_LargeBoulder"],
       "parts": [
         {"node": "Hills_LargeBoulder_LOD0", "dims_xyz_m": [2.30, 1.55, 1.95], "max_tris": 180, "pivot": "ground"},
-        {"node": "Hills_ScreePatch_LOD0", "dims_xyz_m": [1.70, 0.24, 1.45], "max_tris": 220, "pivot": "ground"},
+        {"node": "Hills_ScreePatch_LOD0", "dims_xyz_m": [1.70, 0.168, 1.45], "max_tris": 220, "pivot": "ground"},
         {"node": "Hills_Shrub_LOD0", "dims_xyz_m": [1.15, 0.78, 1.05], "max_tris": 200, "pivot": "ground"}
       ],
       "uv_authored_materials": ["OF_Leaf"],
@@ -1084,28 +1130,41 @@
         "TIER 1, Biome::Mountains. Three roles is the smallest palette of any",
         "atlas and it is deliberate: above the tree line there is stone and",
         "snow and nothing else, and the renderer batches by material.",
-        "Mtn_RockSpire is the only Tier-1 prop that reads at 200 m.",
-        "The snow patch is a surface, not an obstacle: walk-through."
+        "RN-245: Mtn_RockSpire (3.40 m) and Mtn_TalusChunk (0.72 m) are GONE.",
+        "WG-68 retired both from the world because a rock the crosshair cannot",
+        "catch is a lie; they lingered in the atlas as art nothing referenced.",
+        "The spire returns as a HARVEST NODE, nodes/rock_spire.glb. What is",
+        "here now is the small stuff, all of it strictly under the decoration",
+        "cap crag_common.decor_authored_max derives (0.174 m for a Registry P",
+        "prop), in three silhouettes so a scree slope is not one stamp.",
+        "COLLISION IS NOW EMPTY, on purpose: everything left is ankle-height",
+        "debris and a collider on ankle gravel is a player snagging on gravel.",
+        "THE BUDGET ROSE 180 to 260 LOD0 and 400 to 900 total, and the reason",
+        "is arithmetic rather than ambition: the atlas went from three props",
+        "to four, and a field of fragments is MADE of its fragment count. The",
+        "old spire spent 120 triangles on one silhouette; 14 scree plates cost",
+        "168 for a field, and coverage is what decoration is for."
       ],
-      "lod0_node": "Mtn_RockSpire_LOD0",
+      "lod0_node": "Mtn_ScreeSheet_LOD0",
       "lod_nodes": [
-        "Mtn_RockSpire_LOD0", "Mtn_RockSpire_LOD2",
-        "Mtn_TalusChunk_LOD0", "Mtn_TalusChunk_LOD2",
+        "Mtn_ScreeSheet_LOD0", "Mtn_ScreeSheet_LOD2",
+        "Mtn_TalusFan_LOD0", "Mtn_TalusFan_LOD2",
+        "Mtn_FrostShards_LOD0", "Mtn_FrostShards_LOD2",
         "Mtn_SnowPatch_LOD0", "Mtn_SnowPatch_LOD2"
       ],
       "pivot_mode": "ground",
-      "dims_xyz_m": [1.25, 3.40, 1.10],
+      "dims_xyz_m": [1.75, 0.155, 1.50],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 180,
-      "max_tris_total": 400,
-      "max_tris_collision": 24,
+      "max_tris_lod0": 260,
+      "max_tris_total": 900,
       "max_materials": 3,
       "sockets": [],
       "clips": [],
-      "collision": ["col_Mtn_RockSpire", "col_Mtn_TalusChunk"],
+      "collision": [],
       "parts": [
-        {"node": "Mtn_RockSpire_LOD0", "dims_xyz_m": [1.25, 3.40, 1.10], "max_tris": 180, "pivot": "ground"},
-        {"node": "Mtn_TalusChunk_LOD0", "dims_xyz_m": [0.95, 0.72, 0.85], "max_tris": 100, "pivot": "ground"},
+        {"node": "Mtn_ScreeSheet_LOD0", "dims_xyz_m": [1.75, 0.155, 1.50], "max_tris": 200, "pivot": "ground"},
+        {"node": "Mtn_TalusFan_LOD0", "dims_xyz_m": [1.30, 0.168, 1.15], "max_tris": 210, "pivot": "ground"},
+        {"node": "Mtn_FrostShards_LOD0", "dims_xyz_m": [1.45, 0.160, 1.25], "max_tris": 260, "pivot": "ground"},
         {"node": "Mtn_SnowPatch_LOD0", "dims_xyz_m": [2.60, 0.22, 2.10], "max_tris": 100, "pivot": "ground"}
       ]
     },
