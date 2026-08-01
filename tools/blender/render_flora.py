@@ -159,6 +159,35 @@ def studio(cam, node, out_prefix):
         print("[render_flora] wrote %s  (h=%.2f w=%.2f)" % (path, h, r))
 
 
+def base(cam, node, out_prefix):
+    """The bottom 2 m of a trunk, from a standing player's eye.
+
+    A whole-tree render CANNOT judge root flare or bark ridging: on a 6.5 m
+    conifer the buttress is 3 percent of the frame height and the crown covers
+    most of the trunk anyway. These are close-range features and they need a
+    close-range frame, which is the same argument RN-100's `det*` views make
+    for surface maps and the same trap INSTRUMENTS.md names about the sun
+    glint: a term measured only where it cannot show reports its own absence."""
+    objs = lod0_objects(node.replace("_LOD0", ""))
+    lo, hi = bounds_of(objs)
+    for tag, az in (("basea", -58.0), ("baseb", 34.0)):
+        a = math.radians(az)
+        cam.data.lens = 50.0
+        # The GROUND CONTACT has to be in frame. The first version of this
+        # view looked at 0.72 m from 2.45 m and cropped the bottom 10 cm of the
+        # trunk out, which is precisely where a root flare lives: the shot was
+        # aimed just past the thing it exists to show.
+        cam.location = (3.30 * math.cos(a), 3.30 * math.sin(a), 1.45)
+        look_at(cam, (0.0, 0.0, 0.62))
+        path = os.path.join(ROOT, "%s_%s_%s.png"
+                            % (out_prefix, node.replace("_LOD0", "").lower(),
+                               tag))
+        bpy.context.scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        print("[render_flora] wrote %s  (base of %.2f m asset)"
+              % (path, hi[2] - lo[2]))
+
+
 def group(cam, stems, count, seed, out_prefix, tag="group"):
     """A mid-field stand: `count` instances of the given stems, placed in a
     band 26 to 78 m from the camera, each with its own yaw and non-uniform
@@ -230,6 +259,8 @@ def main():
         kind, rest = shot.split(":", 1)
         if kind == "studio":
             studio(cam, rest, out_prefix)
+        elif kind == "base":
+            base(cam, rest, out_prefix)
         elif kind == "group":
             stems, count, seed = rest.split(":")
             group(cam, stems.split(","), int(count), int(seed), out_prefix)

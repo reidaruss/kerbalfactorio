@@ -590,14 +590,14 @@ def broadleaf():
     # Buttressed, swept trunk. A 9 m crown standing on a 0.6 m dowel is the
     # other half of why the old one read as a prop; the flare is what makes it
     # look like it is holding the crown up.
-    p.add(*_bands(((0.66, 0.00), (0.50, 1.00), (0.40, 3.35), (0.33, 6.70)),
+    p.add(*_bands(((0.66, 0.00), (0.50, 1.00), (0.40, 3.80), (0.33, 7.45)),
                   seg=6, seed=6701, jit=0.05, roles="Bark",
                   offsets=((0.0, 0.0), (0.05, 0.04), (0.13, 0.09),
                            (0.20, 0.11)),
                   ridge=(4, 0.075, 30.0), flare=(4, 0.58, 0.30)))
     # Five primaries out of the fork. `_fan` puts them at uneven azimuths and
     # unequal reach, biased toward 118 degrees, and bough 2 is the broken one.
-    tips = _fan(p, 6600, 6, 7.05, 8.30, 12.0, 0.46, 3.30, 2.35, 1.20,
+    tips = _fan(p, 6600, 6, 8.10, 9.25, 12.0, 0.46, 3.30, 2.35, 0.88,
                 0.270, 0.105, 2.05, clumps=3, span=(0.34, 0.94), squash=1.02,
                 seg_l=4, seg_p=6, steps=3,
                 sweep=34.0, dead=2, plate_lift=0.06, lobe_deg=0.0,
@@ -628,9 +628,9 @@ def broadleaf():
     # A crown whose leaves are all on the outside is a shell, and a shell with
     # any hole in it shows you its own inside surface. These are what a player
     # standing under the tree looks up into.
-    for lx, ly, lz, pr, sd in ((0.55, 1.05, 8.85, 1.16, 6721),
-                               (-0.95, 0.20, 9.25, 0.98, 6727),
-                               (0.20, -0.90, 8.65, 0.86, 6733)):
+    for lx, ly, lz, pr, sd in ((0.55, 1.05, 9.75, 1.16, 6721),
+                               (-0.95, 0.20, 10.15, 0.98, 6727),
+                               (0.20, -0.90, 9.55, 0.86, 6733)):
         p.add(*_dome(pr, pr * 0.86, pr * 0.72, loc=(lx, ly, lz), seg=5,
                      seed=sd, jit=0.22, rings=(0.32, 0.74),
                      radii=(0.66, 1.00),
@@ -731,7 +731,7 @@ PROPS = [
 #   plates below their own attachment on purpose, so it will sit near this
 #   floor rather than far above it, and that is the trade being taken
 #   deliberately: droop is the art direction, and the fork height pays for it.
-BARE_FLOOR = {"Canopy_Pine": 0.55, "Canopy_Fir": 0.62, "Canopy_Broadleaf": 0.50}
+BARE_FLOOR = {"Canopy_Pine": 0.55, "Canopy_Fir": 0.62, "Canopy_Broadleaf": 0.58}
 
 
 def assert_bare_trunk(path):

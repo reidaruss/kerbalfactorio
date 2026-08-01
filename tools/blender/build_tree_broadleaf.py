@@ -44,7 +44,7 @@ import props_common as pc      # noqa: E402  (foliage card UV helpers)
 
 NAME = "TreeBroadleaf"
 OUT = of.dist_path("nodes", "tree_broadleaf.glb")
-DIMS = (4.00, 4.00, 5.00)
+DIMS = (4.35, 3.55, 5.00)
 ORDER = ["Bark", "LeafDeep", "Leaf", "LeafLight", "LeafDry"]
 
 FORK_Z = 2.00
@@ -63,29 +63,59 @@ SEED = 5107
 # through its own volume, and the gaps between them are the canopy's sky.
 #
 # Radii are oblate (z about 0.75 of the horizontal) per ASSET-SPECS 4.7.
+#
+# RN-284: the four centres and radii below are BIASED AND ELONGATED. They used
+# to sit in a near-symmetric ring about the trunk, which is the same defect the
+# canopy scenery had at RN-271: NodeBatch yaws every placed tree, so a crown
+# centred on its own trunk draws the same outline at every one of those yaws
+# and the variety machinery has nothing to act on. The mass now sits off the
+# axis toward -x and reaches further along x than across it.
 CLUSTERS = (
-    ((-0.92, 0.30, 3.98), (1.42, 1.30, 1.34), 72, 1),
-    ((0.86, -0.38, 3.72), (1.30, 1.42, 1.26), 68, 2),
-    ((0.14, 0.82, 3.48), (1.02, 0.96, 0.92), 52, 3),
+    ((-1.28, 0.26, 4.02), (1.62, 1.20, 1.34), 72, 1),
+    ((0.78, -0.34, 3.68), (1.38, 1.24, 1.22), 68, 2),
+    ((0.06, 0.86, 3.46), (1.06, 0.88, 0.90), 52, 3),
     # A fourth clump hung low and to the back, smaller and thinner than the
     # other three: it stops the crown resolving into a countable number of
     # equal lumps, which is what "three balloons tied to a stick" looks like.
-    ((-0.30, -0.66, 3.62), (0.94, 0.98, 0.76), 42, 4),
+    ((-0.52, -0.74, 3.56), (1.02, 0.90, 0.74), 42, 4),
 )
 
 
+# RN-282, THE TRUNK, the same three zero-cost moves the conifer takes at
+# RN-279 and for the same reason: this is a tree the player walks up to and
+# swings an axe at, and it was two frusta. Five rings for a CURVED taper
+# instead of a constant one, per-ring `offsets` for a sweep rather than a lean,
+# a coherent four-lobe RIDGE running the length of the stem (which also agrees
+# with the direction of RN-100's bark fissures), and a four-lobe root FLARE
+# dying out by 0.55 m. All of it reshapes rings that already existed, so the
+# trunk costs 20 triangles more than before and none of that is the shaping.
+#
+# A broadleaf gets four buttresses to the conifer's three and a slower ridge
+# twist, because the two trees are supposed to be unalike everywhere: the whole
+# reason this asset exists is to be the opposite silhouette to the conifer.
+TRUNK_RINGS = ((0.435, 0.00), (0.325, 0.42), (0.272, 1.05), (0.240, 1.60),
+               (0.215, 2.20))
+TRUNK_SWEEP = ((0.000, 0.000), (0.020, 0.012), (0.048, 0.028),
+               (0.058, 0.030), (0.052, 0.020))
+
+
 def _trunk(p):
-    """Root flare plus trunk to the fork. Identical in every variant. Jittered
-    (not a perfect cylinder) but still round enough to read as a turned
-    trunk."""
-    v, f, sm, roles = tc.taper_bands(((0.44, 0.0), (0.30, 0.40)), seg=8,
-                                     seed=SEED + 1, jit=0.05, roles="Bark")
-    p.add(v, f, sm, roles)
-    v, f, sm, roles = tc.taper_bands(((0.28, 0.36), (0.22, 2.20)), seg=8,
-                                     seed=SEED + 2, jit=0.05, phase_deg=18,
-                                     roles="Bark")
+    """Root flare plus trunk to the fork. Identical in every variant, and it
+    has to be: the depletion variants swap in place."""
+    v, f, sm, roles = tc.taper_bands(TRUNK_RINGS, seg=8, seed=SEED + 1,
+                                     jit=0.045, phase_deg=18, roles="Bark",
+                                     offsets=TRUNK_SWEEP,
+                                     ridge=(4, 0.070, -28.0),
+                                     flare=(4, 0.52, 0.24))
     p.add(v, f, sm, roles)
     return p
+
+
+# RN-283, A BROKEN LIMB, as (azimuth, r0, reach, z, dz, r_bot, r_top, seed).
+# The fork carries three live limbs and now one dead one: thick where it leaves
+# the trunk, snapped off short, carrying no crown at all. It is 8 triangles and
+# it is the only part of this tree that says anything happened to it.
+BROKEN = (214.0, 0.20, 0.62, 2.34, 0.10, 0.105, 0.072, SEED + 41)
 
 
 def _spray(p, centre, radii, count, seed, dry=False):
@@ -203,18 +233,25 @@ def _crown(p, clusters):
 def full_lod0():
     p = hc.Parts()
     _trunk(p)
-    v, f, sm, roles = tc.taper_bands(((0.18, FORK_Z), (0.11, 3.40)), seg=7,
-                                     seed=SEED + 11, jit=0.08,
-                                     lean=(-0.62, 0.22), roles="Bark")
-    p.add(v, f, sm, roles)
-    v, f, sm, roles = tc.taper_bands(((0.17, 2.05), (0.10, 3.25)), seg=7,
-                                     seed=SEED + 12, jit=0.08,
-                                     lean=(0.58, -0.30), roles="Bark")
-    p.add(v, f, sm, roles)
-    v, f, sm, roles = tc.taper_bands(((0.12, 2.30), (0.07, 3.10)), seg=6,
-                                     seed=SEED + 13, jit=0.08,
-                                     lean=(0.10, 0.55), roles="Bark")
-    p.add(v, f, sm, roles)
+    # The three live limbs. tree_common.limb along tree_common.arc, so each one
+    # leaves the fork steeply, flattens where the crown sits on it, and lets its
+    # outer end fall. The old version was `lean` on a stack of horizontal rings,
+    # which can only draw a straight tilted tube and cannot put a limb tip BELOW
+    # its own attachment, which is most of what a spreading crown looks like.
+    for az, reach, z0, rise, droop, rb, rt, sd, sw in (
+            (161.0, 0.72, FORK_Z, 1.20, 0.34, 0.175, 0.098, SEED + 11, 22.0),
+            (333.0, 0.68, 2.05, 1.02, 0.30, 0.165, 0.092, SEED + 12, -18.0),
+            (79.0, 0.60, 2.30, 0.82, 0.26, 0.120, 0.066, SEED + 13, 26.0)):
+        path = tc.arc(az, reach, z0, rise, droop, steps=2, r0=0.20,
+                      sweep_deg=sw)
+        p.add(*tc.limb(path, [rb, (rb + rt) * 0.5, rt], seg=5, seed=sd,
+                       jit=0.10, roles="Bark"))
+    az, r0, reach, z, dz, rb, rt, sd = BROKEN
+    a = math.radians(az)
+    p.add(*tc.limb([(r0 * math.cos(a), r0 * math.sin(a), z),
+                    ((r0 + reach) * math.cos(a), (r0 + reach) * math.sin(a),
+                     z + dz)], [rb, rt], seg=4, seed=sd, jit=0.14,
+                   roles="Bark"))
     _crown(p, CLUSTERS)
     return p
 

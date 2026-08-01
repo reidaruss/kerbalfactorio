@@ -447,7 +447,7 @@
         "TreeConifer_Stump_LOD0", "TreeConifer_Stump_LOD1",
         "TreeConifer_Stump_LOD2"
       ],
-      "dims_xyz_m": [2.4, 6.50, 2.4],
+      "dims_xyz_m": [2.62, 6.50, 2.10],
       "tolerance_m": 0.005,
       "max_tris_lod0": 900,
       "max_tris_total": 2600,
@@ -478,7 +478,7 @@
         "TreeBroadleaf_Stump_LOD0", "TreeBroadleaf_Stump_LOD1",
         "TreeBroadleaf_Stump_LOD2"
       ],
-      "dims_xyz_m": [4.0, 5.00, 4.0],
+      "dims_xyz_m": [4.35, 5.00, 3.55],
       "tolerance_m": 0.005,
       "max_tris_lod0": 1000,
       "max_tris_total": 2600,

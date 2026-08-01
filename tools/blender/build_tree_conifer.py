@@ -71,7 +71,7 @@ import props_common as pc      # noqa: E402  (foliage card UV helpers)
 
 NAME = "TreeConifer"
 OUT = of.dist_path("nodes", "tree_conifer.glb")
-DIMS = (2.40, 2.40, 6.50)
+DIMS = (2.62, 2.10, 6.50)
 ORDER = ["Bark", "LeafDeep", "Leaf", "LeafLight", "LeafDry"]
 
 TRUNK_Z1 = 5.35
@@ -141,35 +141,120 @@ HALF_WHORLS = (
     (4.96,  5, 0.28, 58, "LeafDry", "LeafDry"),
 )
 
-# Two bare branch stubs in the visible gap between the root flare (ends
-# z=0.42) and the first skirt tier (starts z=1.72): the cue that this is a
-# living trunk and not a cone on a dowel.
+# RN-280, THE CROWN IS BIASED, and it is the same two harmonics of azimuth
+# build_props_canopy._fan uses, for the same reason. NodeBatch yaws every placed
+# tree ("differing only in yaw", NodeBatch.ts:353), so anything that makes the
+# outline depend on bearing becomes per-instance variety for free. The first
+# harmonic leans the crown off the trunk; the second makes it elliptical in plan
+# so the projected WIDTH moves as it turns. Measured on the exported bytes, this
+# tree used to change its width by 2.0 percent over a whole revolution, which is
+# faceting and nothing else.
+CROWN_BIAS_DEG = 34.0
+CROWN_BIAS = 0.26
+CROWN_LOBE_DEG = 0.0
+CROWN_LOBE = 0.20
+
+# Bare branch structure on the trunk, as (azimuth, r0, reach, z, dz, r_bot,
+# r_top, seed). The first three sit in the visible gap between the root flare
+# and the first whorl, which is the cue that this is a living trunk and not a
+# cone on a dowel. The LAST ONE IS A SNAPPED SPAR: thick where it leaves the
+# trunk, cut off short, carrying nothing. Nothing in a forest is undamaged, and
+# a broken limb is the cheapest possible statement of that, at 8 triangles.
 STUBS = (
-    ((0.34, -0.10, 0.0), 0.95, 1.32, (0.05, -0.03), 4401),
-    ((-0.30, 0.16, 0.0), 1.18, 1.52, (-0.04, 0.05), 4407),
+    (18.0, 0.20, 0.36, 0.98, 0.14, 0.055, 0.022, 4401),
+    (156.0, 0.19, 0.30, 1.24, 0.18, 0.048, 0.020, 4407),
+    (283.0, 0.19, 0.25, 1.55, -0.09, 0.044, 0.019, 4409),
+    (96.0, 0.18, 0.52, 2.05, 0.05, 0.082, 0.052, 4411),
+)
+
+# RN-281, REAL BOUGHS INSIDE THE CROWN, as (azimuth, reach, z0, rise, droop,
+# r_bot, r_top, seed). RN-69 opened the crown into 121 separate blades, which
+# is what let sky through it, but it also left the blades attached to nothing:
+# every one of them springs straight off the trunk, so a player standing under
+# the tree looks up at a stem with needles glued to it. Three heavy boughs give
+# the lower crown the woody structure the blades hang around, and because they
+# are drawn with tree_common.limb they can run OUT and then DOWN, which no
+# stack of horizontal rings can do.
+BOUGHS = (
+    (52.0, 1.18, 1.62, 0.34, 0.46, 0.062, 0.026, 4421),
+    (198.0, 0.96, 2.24, 0.28, 0.38, 0.055, 0.024, 4427),
+    (312.0, 1.05, 2.86, 0.24, 0.34, 0.050, 0.022, 4433),
 )
 
 
+# RN-279, THE TRUNK. This is the asset the player stands next to, so it carries
+# the closest look in the whole flora set, and up to here it was two frusta:
+# a short flare cone and one straight taper, both perfectly round, both jittered
+# per ring at 5 percent. Three things are wrong with that and all three cost
+# NOTHING to fix, because they reshape rings that already exist.
+#
+# TAPER. A real trunk loses radius fast at the base and slowly higher up. Two
+# rings can only draw a straight line, so the old trunk had a constant taper
+# rate, which is a lathe turning. Five rings draw the curve.
+#
+# SWEEP. `offsets` moves each ring in x and y independently, so the trunk can
+# leave the ground one way and recover. `lean` could not do this: it
+# interpolates ONE displacement linearly, which is a tilted dowel, not a grown
+# stem. The sweep here is small (7 cm at its furthest, on a 5.35 m trunk) and
+# is meant to be felt rather than seen.
+#
+# RIDGING. The existing `jit` redraws independently on every ring, so it is
+# surface NOISE: the silhouette it makes is a smooth line with a wobble, and at
+# arm's length that reads as a slightly lumpy cylinder. `ridge` runs a fixed
+# set of five flutes the whole length of the trunk with a slow twist, so the
+# silhouette breaks into ridges and hollows that hold together as you walk
+# round. It also runs the SAME WAY as the bark texture's own fissures, which
+# RN-100 put in v by box projection, so geometry and texture agree instead of
+# competing.
+#
+# FLARE. Three root swells at the base, decaying to nothing by 0.70 m. A mature
+# trunk does not meet the ground as a circle. Kept modest on purpose: the
+# collision proxy is 0.50 m square and the trunk is already 0.68 m across at
+# the base, so the player has always stood a few centimetres inside the bark;
+# the buttress adds about 17 cm more at three azimuths at ankle height, which is
+# the same approximation and not a new one. Widening `col_TreeConifer` would be
+# a gameplay change and is not this pass's to make.
+TRUNK_RINGS = ((0.335, 0.00), (0.245, 0.55), (0.195, 1.60), (0.150, 3.20),
+               (0.105, TRUNK_Z1))
+TRUNK_SWEEP = ((0.000, 0.000), (0.025, -0.015), (0.055, -0.030),
+               (0.070, -0.020), (0.060, 0.010))
+
+
 def _trunk(p):
-    """Root flare plus trunk. IDENTICAL in every variant except the stump.
-    Jittered (not a perfect cylinder) but still round enough to read as a
-    turned trunk rather than a canopy tier."""
-    v, f, sm, roles = tc.taper_bands(((0.34, 0.0), (0.21, 0.42)), seg=8,
-                                     seed=SEED + 1, jit=0.05, roles="Bark")
-    p.add(v, f, sm, roles)
-    v, f, sm, roles = tc.taper_bands(((0.20, 0.38), (0.105, TRUNK_Z1)),
-                                     seg=8, seed=SEED + 2, jit=0.05,
-                                     phase_deg=22, roles="Bark")
+    """Root flare plus trunk. IDENTICAL in every variant except the stump, and
+    it has to be: the depletion variants are swapped in place, so a trunk that
+    differed by a millimetre between them would pop."""
+    v, f, sm, roles = tc.taper_bands(TRUNK_RINGS, seg=8, seed=SEED + 1,
+                                     jit=0.045, phase_deg=22, roles="Bark",
+                                     offsets=TRUNK_SWEEP,
+                                     ridge=(5, 0.075, 40.0),
+                                     flare=(3, 0.52, 0.155))
     p.add(v, f, sm, roles)
     return p
 
 
 def _stubs(p):
-    for loc, z0, z1, lean, seed in STUBS:
-        v, f, sm, roles = tc.taper_bands(((0.055, z0), (0.022, z1)), seg=4,
-                                         seed=seed, jit=0.10, lean=lean,
-                                         loc=loc, roles="Bark")
-        p.add(v, f, sm, roles)
+    """The bare limbs and the snapped spar. tree_common.limb, not taper_bands:
+    a stub built from horizontal rings has to stay near vertical or its rings
+    degenerate into slices, which is why every branch in this project used to
+    point almost straight up."""
+    for az, r0, reach, z, dz, rb, rt, seed in STUBS:
+        a = math.radians(az)
+        p.add(*tc.limb([(r0 * math.cos(a), r0 * math.sin(a), z),
+                        ((r0 + reach) * math.cos(a),
+                         (r0 + reach) * math.sin(a), z + dz)],
+                       [rb, rt], seg=3, seed=seed, jit=0.16, roles="Bark"))
+    return p
+
+
+def _boughs(p):
+    """Three heavy boughs through the lower crown, each rising off the trunk,
+    flattening and letting its outer end fall."""
+    for az, reach, z0, rise, droop, rb, rt, seed in BOUGHS:
+        path = tc.arc(az, reach, z0, rise, droop, steps=2, r0=0.19,
+                      sweep_deg=14.0 if seed % 2 else -12.0)
+        p.add(*tc.limb(path, [rb, (rb + rt) * 0.5, rt], seg=3, seed=seed,
+                       jit=0.14, roles="Bark"))
     return p
 
 
@@ -254,7 +339,10 @@ def _whorl(p, z, count, r_out, phase_deg, roles, seed):
         # bunch up and leave a real hole on the far side. Evenly spaced blades
         # rebuild the arc the tiers used to draw.
         az = phase_deg + 360.0 * i / count + (nxt() - 0.5) * (640.0 / count)
-        f = 0.60 + 0.40 * nxt()
+        f = (0.60 + 0.40 * nxt()) * (
+            (1.0 + CROWN_BIAS * math.cos(math.radians(az - CROWN_BIAS_DEG)))
+            * (1.0 + CROWN_LOBE
+               * math.cos(math.radians(2.0 * (az - CROWN_LOBE_DEG)))))
         zz = z + (nxt() - 0.5) * 0.16
         # One blade in four drops a step darker than its whorl, so the crown
         # mottles instead of banding into horizontal stripes of one colour.
@@ -271,6 +359,7 @@ def full_lod0():
     p = hc.Parts()
     _trunk(p)
     _stubs(p)
+    _boughs(p)
     _leader(p)
     for i, (z, count, r_out, ph, base, tip) in enumerate(WHORLS):
         _whorl(p, z, count, r_out, ph, (base, tip), SEED + 40 + i * 17)
