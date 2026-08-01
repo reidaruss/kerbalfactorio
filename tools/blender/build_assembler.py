@@ -68,6 +68,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine_form as mf  # noqa: E402
 import of_lib as of  # noqa: E402
 
 NAME = "Assembler"
@@ -135,6 +136,46 @@ PWR_X, PWR_Y, PWR_Z = 3.10, -3.10, 3.90
 ARM_X, ARM_Y, ARM_Z = -2.20, -2.20, H       # shoulder, on the roof deck plant
 BOOM = 2.60                     # shoulder to elbow
 GRIP_Z = -0.42                  # gripper point, in the arm's own frame
+
+# --- RN-372: the detail frame (machine_form.py) -----------------------------
+# The four body faces and the roof deck, as machine_form.Face objects. Each one
+# carries the HARD EDGE nothing mounted on it may cross, so a greeble that
+# would grow the 8 x 8 footprint or push past H = 4.00 fails the BUILD, by
+# name, with the overshoot in metres, rather than being found afterwards by
+# validate_glb in the shipped bytes.
+#
+# The faces are the BODY's, at 3.60, not the plinth's at 4.00. That is what
+# makes detail affordable at all: there is 0.40 m of clearance between the body
+# face and the footprint edge, and every layer in machine_form.LAYER fits
+# inside it. Nothing may be hung on the plinth or the skirt, whose own side
+# faces ARE the footprint edge.
+FRONT = mf.Face("Y", -1, -BODY_HALF, limit=-HALF, name="front (outlet)")
+REAR = mf.Face("Y", 1, BODY_HALF, limit=HALF, name="rear intake")
+FEED = mf.Face("X", 1, BODY_HALF, limit=HALF, name="side intake")
+SERV = mf.Face("X", -1, -BODY_HALF, limit=-HALF, name="service")
+ROOF = mf.Face("Z", 1, DECK_TOP, limit=H, name="roof deck")
+
+# |u| beyond this on a body face is INSIDE a corner buttress. The buttresses
+# are 0.70 square on +/-3.40, so they occupy 3.05 to 3.75 and stand 0.15 proud
+# of the body: any greeble past 3.05 would be swallowed by one. DERIVED from
+# the buttress's own numbers rather than typed, because the buttress is what
+# decides it.
+CLEAR = 3.40 - 0.70 * 0.5 - 0.05                        # 3.00
+BUTT_Y = -(3.40 + 0.70 * 0.5)                           # -3.75, its front face
+
+# The rubbing strip at the foot of every face. Its TOP is derived from the
+# painted skirt it stands on, and its height is 40 mm more than the exposed
+# part, so its underside is BURIED in the skirt rather than resting on the
+# skirt's top plane.
+KICK_TOP = PLINTH_H + SKIRT_H + 0.44                    # 0.86
+KICK_H = 0.44 + 0.04                                    # 0.48
+
+# The plating courses. Straps pass THROUGH the body, so each one shows on the
+# face it enters and the face it leaves. Positions clear the port mouths
+# (|u| <= 1.35) and the front status rail (|u| <= 2.20) on every face at once,
+# which is why one list serves both axes.
+SEAM_US = (-2.44, -1.68, 1.68, 2.44)
+SEAM_Z0, SEAM_Z1 = 0.52, 2.76
 
 
 def _put(mb, axis, across, along, zs, c_across, c_along, z, role):
@@ -245,16 +286,209 @@ def _shell(mb):
            (0, 0, (COLLAR_TOP + DECK_TOP) * 0.5), "Steel")
 
 
-def _plant(mb):
+def _plant(mb, detailed=False):
     """Roof plant: the turret pedestal the arm stands on, the exhaust manifold
     and its three stacks. These are what carry the housing to its full 4.00 m,
     which is why nothing else on the roof needs to reach the top and z-fight
-    the deck."""
+    the deck.
+
+    `detailed` is LOD0 only. The three stacks stop being square posts and
+    become real stacks with a flared foot and a rain cap: three diameters over
+    their own length instead of one, which is the difference between a chimney
+    and a bollard on the skyline. LOD1 keeps the posts, because LOD1 is the
+    band a decimator would have produced anyway."""
     mb.box((1.40, 1.40, H - COLLAR_TOP), (ARM_X, ARM_Y, (COLLAR_TOP + H) * 0.5),
            "Steel")
     mb.box((2.60, 1.20, 0.70), (1.40, 1.60, 3.60), "SteelDark")
     for x in (0.60, 1.40, 2.20):
-        mb.box((0.34, 0.34, H - 3.30), (x, 1.60, (3.30 + H) * 0.5), "Steel")
+        if detailed:
+            mf.stack(mb, x, 1.60, 3.28, H, 0.17, "Steel", "SteelDark",
+                     segments=6)
+        else:
+            mb.box((0.34, 0.34, H - 3.30), (x, 1.60, (3.30 + H) * 0.5), "Steel")
+
+
+def _plating(mb):
+    """The body stops being four blank sheets.
+
+    A 7.20 m panel is not one plate and never was. `through_seam` runs a strap
+    the whole way across the body in each horizontal direction, so twelve
+    triangles buy TWO visible seams and the two can never drift out of line
+    with each other, because they are one box. Sixteen visible plate joints
+    over four faces for ninety-six triangles is the best ratio in this file,
+    and it is the same trick build_smelter.py and build_box.py already use for
+    their body ribs, named and pointed at plating."""
+    mf.through_seam(mb, "Y", BODY_HALF, SEAM_US, SEAM_Z0, SEAM_Z1, 0.11,
+                    "SteelDark")
+    mf.through_seam(mb, "X", BODY_HALF, SEAM_US, SEAM_Z0, SEAM_Z1, 0.11,
+                    "SteelDark")
+
+
+def _anchors(mb):
+    """The machine is BOLTED DOWN, and the plinth stops being a blank slab.
+
+    Two anchor pads per side, each carrying one bolt, on the painted skirt's
+    top face. This is the answer to the one frame in the pass that showed
+    nothing: a player-eye detail view of the front-lower corner was a picture
+    of an empty yellow band and an empty dark slab, which is precisely the
+    "extruded box with flat colour" the redirect named.
+
+    They sit at |u| = 2.50 rather than at the corners, because the corners are
+    where the buttresses land, and clear of |x| < 1.30 on the -Y side, because
+    that is where `_notched` deliberately removes the foundation for the outlet
+    and a pad there would stand on nothing."""
+    skirt = mf.Face("Z", 1, PLINTH_H + SKIRT_H, limit=H, name="skirt top")
+    pad_top = mf.Face("Z", 1, skirt.out(mf.layer("boss")), limit=H,
+                      name="anchor pad")
+    for s in (-1, 1):
+        for u in (-2.50, 2.50):
+            for along, loc in (("X", (u, s * 3.78)), ("Y", (s * 3.78, u))):
+                du, dv = (0.34, 0.26) if along == "X" else (0.26, 0.34)
+                skirt.part(mb, du, dv, loc[0], loc[1], "boss", "SteelDark")
+                pad_top.part(mb, 0.09, 0.09, loc[0], loc[1], "bolt", "Steel")
+
+
+def _front_detail(mb):
+    """The -Y face: the one a player stands at, because it carries the outlet
+    and the status rail.
+
+    Everything here is aimed at a person 3 m away and 1.7 m tall, which is why
+    the instruments are at 1.52 and the rating plate is beside them rather than
+    anywhere a render would put them for composition."""
+    # The rubbing strip, in two runs either side of the outlet, and THE -X RUN
+    # IS KICKED IN. That dent is this lane's whole answer to "wear", and it is
+    # a shape rather than a mark on purpose: look development owns every albedo
+    # and roughness value in this game, so a scuff cannot be authored here. A
+    # dent can, and a dent is the cause a scuff is the effect of.
+    mf.kick_plate(mb, FRONT, -CLEAR, -1.44, KICK_TOP, KICK_H, "Hazard",
+                  dent=0.78, dent_at=-1)
+    mf.kick_plate(mb, FRONT, 1.44, CLEAR, KICK_TOP, KICK_H, "Hazard")
+    for u0, u1 in ((-2.86, -1.62), (1.62, 2.86)):
+        mf.bolt_run(mb, FRONT, u0, u1, KICK_TOP - 0.14, 4, 0.05, "SteelDark")
+
+    # The middle band, 1.05 to 1.98, was the one part of this face still blank
+    # after the first cut, and a blank band at chest height on the face a
+    # player stands at is the worst possible place to leave one. A cable run
+    # crosses it, a junction box terminates the run, and the instruments sit
+    # under it where somebody reading them would want them.
+    mf.tray_h(mb, FRONT, -2.86, 2.86, 1.82, 0.13, 6, "SteelDark", "Steel")
+    mf.junction(mb, FRONT, -2.58, 1.28, 0.48, 0.56, "SteelDark", "Steel")
+
+    # The eave over the working face, with five gussets under it. Bought for
+    # the OUTLINE: from every bearing this machine was a rectangle from the
+    # ground to the roof, and a lip that stands 0.29 m out at 2.56 m breaks the
+    # vertical at one height and drops a hard shadow over everything below it.
+    mf.eave(mb, FRONT, -2.92, 2.92, 2.56, 0.29, 5, "Steel", "SteelDark")
+    # A hood over the outlet, leaning out as it FALLS, so the mouth is under a
+    # canopy rather than in a flat wall.
+    FRONT.warped(mb, [(-1.46, 1.08, 4.30), (1.46, 1.08, 4.30),
+                      (1.46, 1.44, 1.00), (-1.46, 1.44, 1.00)],
+                 "tray", "SteelDark")
+
+    mf.gauge_cluster(mb, FRONT, 2.16, 1.30, 3, "SteelDark", "Steel")
+    mf.placard(mb, FRONT, -1.92, 1.52, 0.50, 0.32, "Accent")
+    mf.tray(mb, FRONT, 2.86, 1.06, 2.44, 0.14, 4, "SteelDark", "Steel")
+    # Bolts on the two front buttresses, on the buttress's OWN outer face and
+    # not on the body's, which is what BUTT_Y is for. A corner is where a
+    # player's eye goes and where a machine is actually bolted together.
+    butt = mf.Face("Y", -1, BUTT_Y, limit=-HALF, name="front buttress")
+    for cx in (-3.40, 3.40):
+        mf.bolts(mb, butt, (cx,), (0.72, 1.62, 2.52), 0.055, "Steel")
+
+
+def _rear_detail(mb):
+    """The +Y face: an INTAKE, and it has to look like one.
+
+    The asymmetry is the point of this function existing separately from
+    `_front_detail`. A machine whose four sides are the same object with the
+    same fittings is a symmetric solid however much is bolted to it; this side
+    gets a feed hood, a cable riser and a junction box, the front gets
+    instruments and a canopy, and the -X side gets the vents and the hatch."""
+    mf.kick_plate(mb, REAR, -CLEAR, CLEAR, KICK_TOP, KICK_H, "Hazard")
+    # The feed hood: leaning out as it RISES, the opposite of the outlet's
+    # canopy, so the two intakes and the one outlet are distinguishable from
+    # across the base by shape alone.
+    REAR.warped(mb, [(-1.52, 1.80, 1.00), (1.52, 1.80, 1.00),
+                     (1.52, 2.28, 4.60), (-1.52, 2.28, 4.60)],
+                "tray", "SteelDark")
+    mf.tray(mb, REAR, -2.52, 0.95, 2.60, 0.16, 5, "SteelDark", "Steel")
+    mf.junction(mb, REAR, 2.44, 1.92, 0.52, 0.62, "SteelDark", "Steel")
+    mf.louvre(mb, REAR, -0.10, 2.42, 2.10, 0.48, 3, "SteelDark", "Steel")
+
+
+def _feed_detail(mb):
+    """The +X face: the second intake, and THE CLIMB.
+
+    A ladder is the best triangles in this pass and the reason is scale, not
+    detail. It is the only greeble whose size a player already knows, so it
+    says the machine is four metres tall more loudly than the machine being
+    four metres tall does, and it puts a hard vertical notch in an outline that
+    was otherwise a rectangle.
+
+    It stops at 2.42 and arrives at a bracketed landing rather than running to
+    the deck. That is arithmetic and not a decision: the collar is 0.20 m proud
+    of the body from 2.90 to 3.20, and a stringer stands 0.139 m proud, so a
+    ladder taken any higher DISAPPEARS INSIDE the collar for 30 cm and then
+    reappears as a stub above the deck edge."""
+    mf.kick_plate(mb, FEED, -CLEAR, -1.44, KICK_TOP, KICK_H, "Hazard")
+    mf.kick_plate(mb, FEED, 1.44, CLEAR, KICK_TOP, KICK_H, "Hazard",
+                  dent=0.45, dent_at=1)
+    mf.step_tread(mb, FEED, -2.58, 0.74, 0.62, "SteelDark",
+                  base=PLINTH_H + SKIRT_H)
+    mf.ladder(mb, FEED, -2.58, 1.04, 2.42, 0.46, 6, "Steel")
+    FEED.part(mb, 0.92, 0.07, -2.58, 2.62, "duct", "SteelDark")
+    for s in (-1, 1):
+        FEED.wedge(mb, -2.58 + s * 0.34, 0.07, 2.58, 0.24, 0.30, "bracket",
+                   "SteelDark")
+    mf.placard(mb, FEED, 2.30, 1.62, 0.46, 0.30, "Accent")
+
+
+def _service_detail(mb):
+    """The -X face: vents, the maintenance hatch, and the electrics.
+
+    This face used to be a flat louvre plate with four strips laid on it and a
+    door-shaped rectangle above. Both are now the real things: a coaming with
+    blades set back inside it, and a hatch with hinge knuckles on one side, a
+    latch on the other and three bolts along its sill. The hinge side is what
+    makes this the SERVICE face rather than a fourth identical wall."""
+    mf.kick_plate(mb, SERV, -CLEAR, CLEAR, KICK_TOP, KICK_H, "Hazard",
+                  dent=0.40, dent_at=-1)
+    mf.louvre(mb, SERV, 0.98, 1.55, 2.06, 1.06, 5, "SteelDark", "Steel")
+    mf.hatch(mb, SERV, -1.66, 1.55, 1.30, 1.06, "Steel", "SteelDark",
+             "Accent", hinge_side=-1)
+    mf.junction(mb, SERV, -2.52, 2.46, 0.50, 0.60, "SteelDark", "Steel")
+    mf.tray_h(mb, SERV, -2.46, 1.20, 2.46, 0.14, 4, "SteelDark", "Steel")
+    mf.placard(mb, SERV, 2.46, 2.46, 0.46, 0.30, "Accent")
+
+
+def _roof_detail(mb):
+    """The deck: a real railing, a blower, an access hatch and the plumbing.
+
+    THE RAILING IS THE MOST EXPENSIVE THING IN THIS FILE AND IT IS THE RIGHT
+    PLACE TO SPEND. A roof edge drawn as one box is a parapet, and a parapet is
+    solid: the roofline stays a straight line from every bearing. Posts, a top
+    rail, a mid rail and a toe board let the sky through, so the top edge of an
+    8 m machine acquires structure at the exact place a player looking across a
+    base sees it against the sky. Twenty-four boxes for four sides."""
+    for s in (-1, 1):
+        mf.railing(mb, 3, -RAIL_C, RAIL_C, s * RAIL_C, DECK_TOP, 0.44,
+                   "SteelDark", along="X")
+        mf.railing(mb, 3, -RAIL_C, RAIL_C, s * RAIL_C, DECK_TOP, 0.44,
+                   "SteelDark", along="Y")
+    mf.hatch(mb, ROOF, 2.30, -2.60, 1.00, 0.86, "Steel", "SteelDark",
+             "Accent", hinge_side=-1)
+    # The extract blower. Round, and paid for: `finned_drum`'s own note says a
+    # drum is where round is worth the triangles, because it is large and reads
+    # as a machined part where a hexagonal pipe does not.
+    mf.finned_drum(mb, 0.29, 0.86, (-0.40, -2.30, 3.70), "X", 3, "SteelDark",
+                   "Steel", segments=8, fin_span=2.0)
+    # Plumbing: blower to manifold, and the power feed from the inlet nub to
+    # the arm turret it actually powers. A machine's fittings should go
+    # somewhere, and both of these do.
+    mf.pipe_run(mb, [(-0.40, -1.80, 3.70), (-0.40, 1.30, 3.70),
+                     (1.40, 1.30, 3.70)], 0.20, "SteelDark", "Steel")
+    mf.pipe_run(mb, [(PWR_X, PWR_Y, 3.52), (PWR_X, -1.60, 3.52),
+                     (ARM_X, -1.60, 3.52)], 0.13, "SteelDark", "Steel")
 
 
 def build_lod0(root):
@@ -299,27 +533,30 @@ def build_lod0(root):
     _mouth(mb, "Y", -1, OUT_Z, OUT_W, OUT_H, OUT_JAMB, OUT_HEAD, OUT_SILL,
            "Accent")
 
-    # -X is the service face: a louvre bank and an access door
-    mb.box((0.10, 4.60, 1.10), (-3.58, 0, 1.10), "SteelDark")
-    for z in (0.70, 1.00, 1.30, 1.60):
-        mb.box((0.14, 4.40, 0.14), (-3.64, 0, z), "Steel")
-    mb.box((0.12, 2.20, 0.65), (-3.64, 0, 2.325), "SteelDark")
-    mb.box((0.10, 0.12, 0.36), (-3.72, 0.80, 2.325), "Steel")
-
-    # roof deck railing, then the plant. The rails are DECK - 0.20 long and
-    # stand on RAIL_C, so no end face of a rail lands on the deck's own side
-    # plane at 3.70. See RAIL_C for what that cost before.
-    for s in (-1, 1):
-        mb.box((DECK - 0.20, 0.10, 0.44), (0, s * RAIL_C, 3.53), "SteelDark")
-        mb.box((0.10, DECK - 0.20, 0.44), (s * RAIL_C, 0, 3.53), "SteelDark")
-    _plant(mb)
+    # RN-372 to RN-377: the form pass. Plating first, then one function per
+    # face, because the four faces now differ and a machine whose sides differ
+    # is a machine with a front.
+    _plating(mb)
+    _anchors(mb)
+    _front_detail(mb)
+    _rear_detail(mb)
+    _feed_detail(mb)
+    _service_detail(mb)
+    _plant(mb, detailed=True)
     mb.box((0.30, 0.30, 0.60), (PWR_X, PWR_Y, 3.60), "Steel")
+    _roof_detail(mb)
 
     # front status rail. Bezel and inlay before the chip: OF_EmissiveState has
     # to stay the LAST material slot on every mesh.
     mb.box((4.40, 0.14, 0.44), (0, -3.67, STATUS_Z), "Steel")
     mb.box((4.00, 0.06, 0.28), (0, -3.76, STATUS_Z), "SteelDark")
     mb.box((3.60, 0.05, 0.20), (0, -3.785, STATUS_Z), "EmissiveState")
+    # THE DECLARED BOX IS ASSERTED WHERE IT IS CAUSED. contracts.json says
+    # 8.00 x 4.00 x 8.00 and validate_glb measures the shipped bytes against
+    # it, but by then the geometry is written and the failure is a post-mortem.
+    # A greeble that grows the footprint now fails the BUILD, with the axis
+    # named and the overshoot in metres.
+    mf.assert_inside(mb, HALF, HALF, H, "Assembler_LOD0")
     return mb, mb.build(NAME + "_LOD0", root)
 
 
