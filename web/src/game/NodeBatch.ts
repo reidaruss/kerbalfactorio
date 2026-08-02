@@ -33,6 +33,9 @@ import { MAX_CAPACITY, registerPool, type PoolReport } from './InstancePools.js'
 import { attachSurface, copyUv, familyForMaterial, type Family }
   from '../render/instancing/Surfaces.js';
 import { applyWind } from '../render/instancing/PropWind.js';
+import { attachShadowLod, emptyIndex, indexRow, publishLadders, type LodRow }
+  from '../render/ShadowLod.js';
+import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
 
 /** Merge one family's primitives into a single geometry. One is already merged. */
 function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -253,6 +256,11 @@ export class NodeBatch {
         (f.source as THREE.MeshStandardMaterial).color ?? new THREE.Color(1, 1, 1)));
       merged.set(key, list);
     }
+    // The concatenated geometry is KEPT (RN-684), because the shadow-LOD rule is
+    // measured off the very mesh the batch is about to draw and not off the
+    // source primitives: `concat` is where the variant's several roles become
+    // the one silhouette a cascade will rasterise.
+    const geo = new Map<string, THREE.BufferGeometry>();
     for (const [key, list] of merged) {
       const [file, vs, ls, family] = key.split('|');
       const b = this.batches.get(family);
@@ -268,8 +276,67 @@ export class NodeBatch {
         parts.push(part);
         this.parts.set(file, parts);
       }
-      part.geom[Number(vs)][Number(ls)] = b.mesh.addGeometry(concat(list));
+      const g = concat(list);
+      geo.set(key, g);
+      part.geom[Number(vs)][Number(ls)] = b.mesh.addGeometry(g);
     }
+    this.ladder(geo);
+  }
+
+  /**
+   * THE SECOND SAVING ON THE NODES, and it is not the one the tree lane took.
+   *
+   * `NODE_LOD1_M` / `NODE_LOD2_M` is a DISTANCE ladder and it pays 81.9% on the
+   * forest because the trees are spread over a 620 m ring. It does nothing at
+   * all for the tree three metres away, which still draws its LOD0 into all
+   * three cascades. This is that other half: a cascade whose texels are 211 mm
+   * cannot resolve a leaf card either way, whatever the node's distance says.
+   *
+   * The two COMPOSE and do not fight, because `attachShadowLod` takes the
+   * coarser of the two: a node already at LOD2 for distance is never promoted
+   * back to LOD1 by a near cascade. Rocks, spires and trees all cast, so all
+   * three are in it.
+   *
+   * WHAT IT ACTUALLY PAYS, measured, and it is small: -470 triangles at the
+   * RN-15 camera, -1,880 at Plains and ZERO at Forest. The trees are the reason.
+   * `tree_conifer`'s Full variant deviates 925 mm at LOD1 and 3,126 mm at LOD2,
+   * and `tree_broadleaf`'s leaf row 1,070 mm, so the crowns are refused at every
+   * cascade and only the boulders and spires (58 to 110 mm at LOD1) are ever
+   * admitted. A node ladder authored for DISTANCE is not a ladder authored for
+   * a 15.47 mm texel, and this is the number that says so.
+   */
+  private ladder(geo: ReadonlyMap<string, THREE.BufferGeometry>): void {
+    const rows: LodRow[] = [];
+    for (const [family, b] of this.batches) {
+      const ix = emptyIndex();
+      for (const [file, parts] of this.parts) {
+        for (const part of parts) {
+          if (part.material !== family) continue;
+          for (let v = 0; v < VARIANTS.length; ++v) {
+            const ids = part.geom[v];
+            const base = geo.get(`${file}|${v}|0|${family}`);
+            if (base === undefined) continue;
+            const row: LodRow = {
+              label: `${file}|${VARIANTS[v]}|${family}`,
+              ids,
+              tris: ids.map((_, l) => {
+                const g = geo.get(`${file}|${v}|${l}|${family}`);
+                return g === undefined ? 0 : triCount(g);
+              }),
+              dev: ids.map((_, l) => {
+                if (l === 0) return 0;
+                const g = geo.get(`${file}|${v}|${l}|${family}`);
+                return g === undefined ? Infinity : surfaceDeviation(base, g);
+              }),
+            };
+            rows.push(row);
+            indexRow(ix, row);
+          }
+        }
+      }
+      attachShadowLod(b.mesh, ix);
+    }
+    publishLadders('nodes', rows);
   }
 
   private makeBatch(name: string,

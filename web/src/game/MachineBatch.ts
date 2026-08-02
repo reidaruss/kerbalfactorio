@@ -24,11 +24,12 @@
 // for doubling are in `InstancePools.ts`; the fix is here.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
   from './InstancePools.js';
 import { attachSurface, noteShaderOrder } from '../render/instancing/Surfaces.js';
-import { LOD0, normalize, roleOf, type MachineTemplate }
+import { attachShadowLod, emptyIndex, indexRow, publishLadders, SHADOW_LOD_ON }
+  from '../render/ShadowLod.js';
+import { addLadder, gatherTiers, tierSize, type MachineTemplate }
   from './MachineGeometry.js';
 
 export type { MachineTemplate };
@@ -45,6 +46,8 @@ export class MachineBatch {
   private readonly geomId = new Map<string, number>();
   /** The same map reversed, for the read-back below and for nothing else. */
   private readonly geomKey = new Map<number, string>();
+  /** Geometry id -> which tier ladder it is a rung of (RN-681). */
+  private readonly lod = emptyIndex();
   private fxData!: Float32Array;
   private fxTex!: THREE.DataTexture;
   private readonly uniforms = {
@@ -182,28 +185,27 @@ if ( vRole > 2.5 ) {
    * Register every template at once. Two passes, for the reason NodeBatch
    * documents: a BatchedMesh sizes its vertex and index pools at construction,
    * so the totals must be known before the first one exists.
+   *
+   * RN-681: the totals are now the WHOLE LADDER, not tier 0. Every machine file
+   * ships `_LOD1` and `_LOD2` and this class read neither, so the three shadow
+   * cascades each rasterised the eye's mesh. `render/ShadowLod.ts` carries the
+   * rule that admits a tier to a cascade and the reason it is measured rather
+   * than picked. `?shadowlod=0` keeps tiers 1 and 2 out of the pools entirely,
+   * so the negative control restores the previous geometry count and the
+   * previous vertex-buffer size, not merely the previous draw.
    */
   build(templates: ReadonlyMap<string, { def: MachineTemplate; scene: THREE.Object3D }>): void {
-    const per = new Map<string, THREE.BufferGeometry[]>();
+    const per = new Map<string, (THREE.BufferGeometry | null)[]>();
     let verts = 0, idx = 0;
     for (const [key, t] of templates) {
-      t.scene.updateWorldMatrix(true, true);
-      const list: THREE.BufferGeometry[] = [];
-      t.scene.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.isMesh !== true || m.name.startsWith('col_')) return;
-        if (!(t.def.nodeMatch ?? LOD0).test(m.name)) return;
-        const src = m.material as THREE.MeshStandardMaterial;
-        list.push(normalize(m.geometry, m.matrixWorld,
-          src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, t.def)));
-      });
-      if (list.length === 0) continue;
-      const g = list.length === 1 ? list[0] : (mergeGeometries(list, false) ?? list[0]);
-      g.computeBoundingSphere();
-      per.set(key, [g]);
-      this.merged.set(key, g);
-      verts += (g.getAttribute('position') as THREE.BufferAttribute).count;
-      idx += g.getIndex()?.count ?? 0;
+      const tiers = gatherTiers(t.def, t.scene);
+      if (tiers[0] === null) continue;
+      if (!SHADOW_LOD_ON) { tiers[1] = null; tiers[2] = null; }
+      per.set(key, tiers);
+      this.merged.set(key, tiers[0]);
+      const s = tierSize(tiers);
+      verts += s.verts;
+      idx += s.idx;
     }
     if (per.size === 0) return;
     const mesh = new THREE.BatchedMesh(this.capacity, verts, idx, this.material);
@@ -215,11 +217,18 @@ if ( vRole > 2.5 ) {
     mesh.frustumCulled = false;
     mesh.sortObjects = false;
     mesh.perObjectFrustumCulled = false;
-    for (const [key, list] of per) {
-      const id = mesh.addGeometry(list[0]);
-      this.geomId.set(key, id);
-      this.geomKey.set(id, key);
+    const rows = [];
+    for (const [key, tiers] of per) {
+      const row = addLadder(mesh, `${this.name}:${key}`, tiers);
+      rows.push(row);
+      indexRow(this.lod, row);
+      this.geomId.set(key, row.ids[0]);
+      // EVERY tier maps back to the key, so FS-40's `drawnKeyAt` read-back still
+      // answers during a cascade rather than returning null for a swapped slot.
+      for (const id of row.ids) if (id >= 0) this.geomKey.set(id, key);
     }
+    attachShadowLod(mesh, this.lod);
+    publishLadders(this.name, rows);
     this.mesh = mesh;
     this.group.add(mesh);
   }

@@ -206,7 +206,16 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // than in a probe, and it is the same failure RN-152 caught once already when
   // `--starlight=0` went unforwarded and both sides of a "pair" ran with the
   // feature on.
-  'fur', 'partmat']) {
+  'fur', 'partmat',
+  // RN-681, standing rule 7. `shadowlod=0` restores the pre-change build
+  // exactly: the machine ladders' tiers 1 and 2 are never added to the geometry
+  // pools, so the geometry COUNT and the vertex-buffer size go back too, and no
+  // batch installs a shadow hook. `shadowlodk=` sweeps the one texel of
+  // silhouette error the rule allows a cascade, so "why one texel and not the
+  // Nyquist two" is a measurement rather than an argument. Listed here in the
+  // same commit that introduces them, which is the `fur`/`partmat` lesson two
+  // entries up: a control the runner drops is a control that does not exist.
+  'shadowlod', 'shadowlodk']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

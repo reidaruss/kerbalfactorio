@@ -75,24 +75,58 @@ export class LaunchPadView {
    * the clamp's, because `LaunchClamp_LOD0` is the clamp column authored at the
    * file origin: leaving it in the body would draw a fifth clamp standing in the
    * middle of the launch mount, where the rocket goes.
+   *
+   * RN-682: EXCEPT THAT IT NEVER DID, AND THE TRIANGLE COUNT SAID SO. The old
+   * test was `c === clampCol` over `root.children`, and `launch_pad.glb` has
+   * exactly ONE root node (`LaunchPad`) with everything else beneath it, so
+   * `root.children` is a list of one and the identity test could never match
+   * anything. `getObjectByName` searches the whole subtree and found the clamp;
+   * the loop it fed was comparing against a grandchild. Every pad has therefore
+   * been drawing the fifth clamp the comment above forbids, standing at the
+   * launch mount where the rocket goes, since the pad shipped. Measured off the
+   * batch's own ladder: the body template gathered 2,672 triangles where
+   * `LaunchPad_LOD0` is 2,564, and the 108 difference is `LaunchClamp_LOD0`
+   * exactly. The exclusion is now by NAME OVER THE WHOLE SUBTREE, which is what
+   * the comment always claimed it was.
+   *
+   * RN-683: and it is widened one tier at the same time. The file also ships
+   * `LaunchClamp_LOD2`, so the moment `MachineBatch` learned to gather `_LOD2`
+   * an identity test would have put a clamp column at the file origin into the
+   * body's tier-2 rung: visible only in cascade 2 and only as a shadow, which is
+   * the least likely thing anyone would ever have found by looking.
+   *
+   * The column template gets the clamp's whole ladder for the same reason it
+   * gets its LOD0. `launch_pad.glb` ships `LaunchPad_LOD1` (608 tri) and
+   * `LaunchPad_LOD2` (96 tri) that nothing in this project had ever loaded, plus
+   * `LaunchClamp_LOD2` (24 tri).
    */
   build(pads: LaunchPads): void {
     const root = pads.scene;
     if (root === null) return;
+    root.updateWorldMatrix(true, true);
+    const clamp: THREE.Object3D[] = [];
+    // ANCHORED, and the anchor is load bearing. GLTFLoader splits a
+    // multi-primitive mesh into a Group plus one child per primitive and names
+    // the children `LaunchClamp_LOD0_0`, `_1`, ... An unanchored pattern matches
+    // the Group AND every child, so the column template gathered each triangle
+    // twice: measured 216 where `LaunchClamp_LOD0` is 108.
+    root.traverse((o) => { if (/^LaunchClamp_LOD\d$/.test(o.name)) clamp.push(o); });
     const clampCol = root.getObjectByName('LaunchClamp_LOD0');
     const arm = root.getObjectByName('LaunchClamp_Arm');
     const body = new THREE.Group();
-    root.updateWorldMatrix(true, true);
-    for (const c of [...root.children]) {
-      if (c === clampCol || c.name === 'clamp_pivot') continue;
-      body.add(c.clone(true));
-    }
+    const trunk = root.clone(true);
+    const drop: THREE.Object3D[] = [];
+    trunk.traverse((o) => {
+      if (o.name === 'clamp_pivot' || o.name.startsWith('LaunchClamp')) drop.push(o);
+    });
+    for (const o of drop) o.removeFromParent();
+    body.add(trunk);
     const templates = new Map<string, { def: { url: string; root: string;
       nodeMatch?: RegExp }; scene: THREE.Object3D }>();
     templates.set(BODY, { def: { url: BODY, root: BODY }, scene: body });
     if (clampCol !== undefined) {
       templates.set(COLUMN, { def: { url: COLUMN, root: COLUMN },
-        scene: wrap(clampCol) });
+        scene: wrap(clamp) });
     }
     if (arm !== undefined) {
       // PIVOT-LOCAL, exactly as the door leaf is hinge-local: the arm is a child
@@ -263,16 +297,25 @@ export class LaunchPadView {
   }
 }
 
-/** A node in a holder at identity, which is the shape `MachineBatch.build`
+/** Node(s) in a holder at identity, which is the shape `MachineBatch.build`
  *  traverses. Cloned so the source scene, which is also the measurement's, is
- *  never re-parented out from under it. */
-function wrap(node: THREE.Object3D): THREE.Object3D {
+ *  never re-parented out from under it.
+ *
+ *  RN-683 made it a LIST so a template can carry its whole LOD ladder. Flatting
+ *  each clone to identity is exact here and not a convenience: `launch_pad.glb`
+ *  authors `LaunchClamp_LOD0` and `LaunchClamp_LOD2` as siblings with no
+ *  translation, rotation or scale of their own, so identity IS their transform
+ *  and the two rungs stay co-located. A file that ever authored them apart would
+ *  need this to compose rather than overwrite. */
+function wrap(nodes: THREE.Object3D | readonly THREE.Object3D[]): THREE.Object3D {
   const holder = new THREE.Group();
-  const clone = node.clone(true);
-  clone.position.set(0, 0, 0);
-  clone.quaternion.identity();
-  clone.scale.set(1, 1, 1);
-  holder.add(clone);
+  for (const node of Array.isArray(nodes) ? nodes : [nodes as THREE.Object3D]) {
+    const clone = node.clone(true);
+    clone.position.set(0, 0, 0);
+    clone.quaternion.identity();
+    clone.scale.set(1, 1, 1);
+    holder.add(clone);
+  }
   return holder;
 }
 

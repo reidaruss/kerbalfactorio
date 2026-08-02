@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import type { QualityKnobs } from './Quality.js';
 import { LAYER_PLAYER_BODY, LAYER_PROPS } from './Scenes.js';
+import { publishCascade } from './ShadowLod.js';
 
 /** Cascade far planes in metres, for the 3-cascade tiers. */
 const SPLITS_3 = [22, 80, 300];
@@ -127,6 +128,14 @@ export class ShadowRig {
       // Texel snapping. Without it the ortho box slides continuously with the
       // walk and every shadow edge crawls, which reads as worse than no shadows.
       const texel = (2 * r) / this.mapSize;
+      // THE SAME NUMBER, PUBLISHED (RN-681). A cascade's world metres per texel
+      // is already computed here for the snap, and it is also the entire input
+      // to the shadow-LOD rule in `ShadowLod.ts`. Publishing it rather than
+      // letting the batches re-derive it is what stops a second copy of
+      // `(2 * far * 0.72) / mapSize` drifting away from this one the next time a
+      // split or a map size moves. Keyed on the shadow CAMERA because that is
+      // the only object three's shadow pass hands a caster.
+      publishCascade(light.name, cam, texel);
       // Bias in WORLD units has to scale with the cascade, or cascade 0 at
       // 11 mm per texel is offset by the same amount as cascade 2 at 200 mm and
       // the contact shadow detaches from the caster.
