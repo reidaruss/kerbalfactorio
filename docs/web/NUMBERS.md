@@ -67,7 +67,6 @@ is that the numbers are handed out by one writer before the work starts.
 | PS-13 to PS-16 | persistence: R46, named saves through the writeSlot choke point | PS-13 to PS-15 landed; PS-16 burned. Block taken per the Admin brief's own instruction (the PS series lived only in the controller file, ended at PS-12); recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible |
 | RN-241 to RN-270 | rendering, the rock geometry pass under ART-DIRECTION.md | RN-241 to RN-247 landed (the fracture vocabulary, four fracture behaviours, the budget raises, the harvestable spire, Mountains and Hills scree, the decoration size-rule correction); RN-248 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
 | RN-331 to RN-370 | rendering, the look-development pass under ART-DIRECTION.md | RN-331 to RN-337, RN-345 to RN-347 and RN-352 landed (the findings, the adopted response curve, the fourth site that disagreed, the ground/sky mask and the night answer, the foliage tone, the instance variation, the biome substrate table, and the written target at rendering.md 2.1); RN-338 to RN-340 are FINDINGS ONLY and are named as not-done in the entry; RN-348 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
-| RN-511 to RN-550 | rendering, the dusk attribution and the fur motion verification | RN-511 to RN-518 landed (the wash attributed to a build ghost rather than to any lighting term, the noon control that kills the dusk diagnosis, `probes/dusk.js` and `probes/duskghost.js`, dusk reference luminances in rendering.md 2.1, the `__ofFur` handle and the `fur`/`partmat` whitelist entries that were missing, the wind and lag measurements, and the in-game creature shot); RN-519 onward free and earmarked for the flat families. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
 
 FS-34 is deliberately unused: the pollution lane renumbered its own FS-33/FS-34
 to FS-35/FS-36 when corner cargo reached main first.
@@ -460,3 +459,53 @@ Use `git write-tree` plus `git commit-tree`, which do not refresh, and
 **assert the tree BEFORE it is written rather than inspecting the commit
 afterwards.** Inspecting afterwards tells you what happened; asserting before
 tells you whether to proceed.
+
+### A filtered commit protects the files you NAME, not the inputs your BUILD READ
+
+Two laundering hazards were already recorded: staging a file another lane is
+mid-edit in, and regenerating a shared artifact whose generator source is
+uncommitted. **This is a third and it defeats both defences.**
+
+On 2026-08-02 a lane staged four paths by name and deliberately did NOT stage a
+dirty `of_lib.py`. **The staging was correct. The artifact was not.**
+`build_smelter.py` READS `of_lib.py` at build time, so the `smelter.glb` it
+committed carried a sibling lane's unreleased palette edit, baked into the
+bytes.
+
+**Explicit-path staging gives ZERO protection here**, because the contamination
+is inside the artifact before staging begins. Every gate passes on it: the
+validator, the coplanar check, the byte-identical rebuild control (it rebuilds
+from the same dirty input), and `git diff --cached` all read clean.
+
+**The only check that catches it is a `git archive HEAD` rebuild and a hash
+compare.** Measured: a clean rebuild produced `0848bc10` against the committed
+`9226b56f`.
+
+**Before committing any built artifact, ask what its build script READS, not
+just what you are staging.** If any input is dirty, rebuild from a clean
+`git archive HEAD` tree and compare hashes.
+
+### Read a gate's VERDICT TOKEN, never its last lines
+
+A lane ran `check_coplanar.py | tail -2` and shipped a red gate. On success the
+last line **is** the verdict. On failure the verdict is followed by a six-line
+explanatory footer, **so the same `tail` showed prose and hid `FAIL` six lines
+above it.**
+
+**A truncation that is safe on the happy path and lossy on the failure path
+fails in exactly the direction nobody checks.** Grep the verdict token
+(`FAIL`, `OVER`, `over allowance`) rather than slicing the tail.
+
+### An implausible magnitude is an instrument bug until proven otherwise
+
+`check_shadow_lod.py` treated a whole file's LOD nodes as one ladder, so on
+`launch_pad` (which declares `LaunchPad_LOD0/1/2` **and** `LaunchClamp_LOD0/2`)
+it measured a pad against a clamp standing 14 m away and reported a deviation of
+**14,090 mm**.
+
+Two lanes and Admin propagated that number as an asset defect within an hour,
+and it became a task. **Fourteen metres is not a plausible LOD deviation for a
+2,564-triangle asset.** The tell was there and nobody looked.
+
+**When a measurement is implausible in magnitude, suspect the instrument before
+writing it down as a finding.**
