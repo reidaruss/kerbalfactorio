@@ -2,9 +2,30 @@
 
     blender --background --python tools/blender/build_spider.py
 
-Produces assets/models/dist/creatures/spider.glb: 28 bones, 2 clips
-(Spider_Idle, Spider_Walk), three LODs, no sockets, no collision (the shot
-sphere is EnemyTypes.radiusM, not a mesh).
+Produces assets/models/dist/creatures/spider.glb: 28 bones, three clips
+(Spider_Bite, Spider_Idle, Spider_Walk), three LODs, no sockets, no collision
+(the shot sphere is EnemyTypes.radiusM, not a mesh).
+
+RN-601 to RN-612 (2026-08-01), THE ANIMATION PASS. ONE clip is ADDED and
+neither existing clip is renamed, retimed or re-authored, because clip names
+and impact frames are a gameplay contract (DW-34) and that makes an ADDITION
+safe where an edit is not. Spider_Bite is the clip a player actually
+experiences, it was named as owed when the creature was built, and it publishes
+an impact frame: see BITE_IMPACT for what that number is and who it is for.
+
+WHAT IS DELIBERATELY NOT HERE, so the next pass does not re-derive it. The
+recorded "31% foot slip" is NOT a defect in this file and no edit here can
+repair it. It is the client clamping timeScale at WALK_TIMESCALE_MAX 2.2
+(web/src/game/SpiderFlock.ts) against a Skitterer that needs 3.2, and 2.2/3.2
+is exactly the 31.25% recorded. A faster clip does not help: the client already
+multiplies cycle rate by timeScale, so a clip that is only "the walk at half
+the duration" produces a bit-identical pose sequence at the same wall rate. The
+ONLY thing that buys ground speed at a readable leg rate is a LONGER STRIDE,
+which means a bigger coxa sweep, which is bounded by adjacent same-side legs
+crossing at the frozen 35 degree azimuth spacing. That bound is a measurement,
+tools/blender/gait_check.py takes it, and a Spider_Run authored against it has
+to land in the same commit as the client line that selects it or it is dead
+payload in the .glb.
 
 RN-452 (2026-08-01), THE FORM PASS UNDER docs/web/ART-DIRECTION.md. Reid saw
 v1 and said "a good start", and then the art direction moved: realistic,
@@ -693,6 +714,29 @@ def build_mesh(name, arm):
 
 IDLE_N = 121                     # 2.0 s at 60 fps: (121 - 1) / 60
 WALK_N = 49                      # 0.8 s: (49 - 1) / 60
+BITE_N = 43                      # 0.7 s: (43 - 1) / 60
+
+# THE IMPACT FRAME IS A CONTRACT AND THIS ONE IS BEING PUBLISHED, NOT READ.
+#
+# DW-34: "a published index into an asset is an interface, and an asset change
+# that moves it is a contract change, not a content change." The player's three
+# swing clips already publish theirs (build_player_body._swing, authored 17/18/16)
+# and web/src/player/AnimGraph.ts consumes them as SWING_CLIPS[kind].impactTicks.
+#
+# The creature side has no consumer YET, and that is stated rather than papered
+# over: web/src/game/EnemySwarm.ts charges damagePerSecond * dt on every one of
+# the 60 ticks a second while `Creature.biting` is non-empty, so there is no
+# discrete attack event in the sim for an impact frame to gate. This constant is
+# therefore an OFFER to the combat lane in the vocabulary AnimGraph.ts already
+# uses, not a reading of a requirement. Publishing it now is the cheap half; if
+# the sim later grows a per-bite event, the number it needs already exists and
+# already matches the pose on screen.
+#
+# AUTHORED (1-based) frame 22, and authored frame 1 exports at t = 0
+# (of_lib.clip_frame), so the runtime tick is 21 and the time is 0.3500 s.
+BITE_IMPACT = 22
+BITE_IMPACT_TICK = BITE_IMPACT - 1          # 21
+BITE_IMPACT_S = BITE_IMPACT_TICK / 60.0     # 0.3500
 
 # The declared ground speed of the walk cycle at unit scale. MUST equal
 # web/src/game/SpiderFlock.ts SPIDER_WALK_MPS; the stance sweep is derived
@@ -808,7 +852,121 @@ def clip_idle(n=IDLE_N):
     return t
 
 
-CLIPS = [("Spider_Idle", clip_idle), ("Spider_Walk", clip_walk)]
+def clip_bite(n=BITE_N, impact=BITE_IMPACT):
+    """The strike. Rear on to the back two pairs, drive the chelicerae down and
+    forward through `impact`, recover. Loops while Creature.biting is set.
+
+    THE SHAPE IS build_player_body._swing's, deliberately: wind, impact,
+    settle, with the same 10-frame wind lead-in and the same (n - impact) // 3
+    settle. A player's pickaxe and a spider's fangs are the same event seen from
+    the two ends, and a second authored shape for it would be a second
+    authority on what a strike looks like.
+
+    WHERE THE AMPLITUDE LIVES, AND WHY IT IS NOT THE THORAX. Every one of the
+    24 leg bones is a child of Thorax, so a degree of thorax pitch drags all
+    eight coxa heads through an arc about the thorax pivot and no rotation
+    downstream can undo a parent's TRANSLATION. Head is the only bone on this
+    rig with no leg children, so a degree of head pitch is free. The visible
+    strike is therefore 34 degrees of head against 7 of thorax, which is also
+    the anatomy: a spider strikes with its chelicerae, not by nodding.
+
+    THE FANGS DO NOT OPEN, and that is a rig limit rather than a choice. The
+    chelicerae are geometry weighted to Head; there is no bone to spread them
+    with. A L/R chelicera pair is priced in the report as the one place two
+    more bones would buy something a clip cannot.
+    """
+    wind = max(2, impact - 10)                     # 12
+    settle = impact + max(4, (n - impact) // 3)    # 29
+
+    # Authored ONCE, and read twice: the brace legs below cancel it by negating
+    # this very list. Two parts independently restating the pitch is exactly the
+    # drift this file's header calls the project's catalogued defect class.
+    thorax_x = [(1, 0.0), (wind, -5.0), (impact, 7.0), (settle, 2.0), (n, 0.0)]
+
+    t = {"Thorax": {"rot": [(f, (v, 0.0, 0.0)) for f, v in thorax_x]}}
+    # THE STRIKE IS FORWARD, NOT DOWN, and the first version of this clip had it
+    # down. At +34 degrees of nose pitch the chelicerae rotate UNDER the
+    # carapace and the impact frame renders as a crouch: the fang is plainly
+    # visible on the wind-up and hidden at the one frame that has to read as
+    # contact. It is also wrong about the target. A spider bites a player or a
+    # building, both of which stand at roughly its own height, so the fangs
+    # finish pointing ALONG the ground rather than into it. +15 keeps them lit
+    # and out; the DRIVE comes from the thorax pitch and the root lunge below.
+    t["Head"] = {"rot": [(1, (0.0, 0.0, 0.0)), (wind, (-22.0, 0.0, 2.5)),
+                         (impact, (15.0, 0.0, 0.0)),
+                         (settle, (6.0, 0.0, -1.5)), (n, (0.0, 0.0, 0.0))]}
+    # The counterweight, opposite in sign to the thorax at every key: the
+    # abdomen dips as the front rears and rises as the front strikes. Without it
+    # the creature hinges at the waist and reads as weightless.
+    t["Abdomen"] = {"rot": [(1, (0.0, 0.0, 0.0)), (wind, (4.0, 0.0, 0.0)),
+                            (impact, (-7.0, 0.0, 0.0)),
+                            (settle, (-2.0, 0.0, 0.0)), (n, (0.0, 0.0, 0.0))]}
+    # Root translation carries the feet with it and NOTHING can cancel it, so it
+    # is small and it returns to zero every cycle: a bob, not a drift. -Y is
+    # forward, so the lunge is negative. gait_check.py measures what it costs
+    # the braced feet rather than this docstring claiming it is nothing.
+    t["Root"] = {"loc": [(1, (0.0, 0.0, 0.0)), (wind, (0.0, 0.030, 0.035)),
+                         (impact, (0.0, -0.040, -0.045)),
+                         (settle, (0.0, -0.010, -0.012)),
+                         (n, (0.0, 0.0, 0.0))]}
+
+    for pre, s in SIDES:
+        for i, az in enumerate(AZIMUTH_DEG, start=1):
+            phi = leg_phi(az, s)
+            coxa, femur, tibia = leg_bones(pre, i)
+            if i <= 2:
+                # THE STRIKE PAIRS leave the ground. A rearing spider carries
+                # its front legs up and open, and bringing them down on the
+                # target at the impact frame is most of what makes the frame
+                # read as contact from any angle, including the ones where the
+                # fangs are hidden by the carapace.
+                lead = 1.0 if i == 1 else 0.62     # leg 1 leads, leg 2 answers
+                out = -9.0 * lead                  # -Z is forward on side s=+1
+                # THEY STAY UP THROUGH THE IMPACT. Version one drove them back
+                # down on to the ground at the impact frame and the result read
+                # as a crouch rather than a strike: eight legs on the floor is
+                # the pose of a creature doing nothing. A spider PINS with the
+                # front pair and bites what it is holding, so these reach
+                # FURTHEST forward at exactly the frame the fangs land.
+                t[coxa] = {"rot": [(1, (0.0, 0.0, 0.0)),
+                                   (wind, (0.0, 0.0, s * out)),
+                                   (impact, (0.0, 0.0, s * out * 0.7)),
+                                   (settle, (0.0, 0.0, s * out * 0.5)),
+                                   (n, (0.0, 0.0, 0.0))]}
+                t[femur] = {"rot": [(1, lift_rot(phi, 0.0)),
+                                    (wind, lift_rot(phi, 30.0 * lead)),
+                                    (impact, lift_rot(phi, 13.0 * lead)),
+                                    (settle, lift_rot(phi, 8.0 * lead)),
+                                    (n, lift_rot(phi, 0.0))]}
+                t[tibia] = {"rot": [(1, lift_rot(phi, 0.0)),
+                                    (wind, lift_rot(phi, -22.0 * lead)),
+                                    (impact, lift_rot(phi, -6.0 * lead)),
+                                    (settle, lift_rot(phi, -3.0 * lead)),
+                                    (n, lift_rot(phi, 0.0))]}
+            else:
+                # THE BRACE PAIRS stay down, so they cancel the thorax pitch the
+                # way clip_idle cancels the thorax sway: an equal and opposite
+                # armature-X rotation on the coxa, leaving only the coxa head's
+                # own arc about the thorax pivot as residual foot travel.
+                t[coxa] = {"rot": [(f, (-v, 0.0, 0.0)) for f, v in thorax_x]}
+                # ...and then take the load, because a body that drives forward
+                # over legs that do not compress is a body with no weight.
+                comp = 5.0 if i == 3 else 7.0
+                t[femur] = {"rot": [(1, lift_rot(phi, 0.0)),
+                                    (wind, lift_rot(phi, comp * 0.35)),
+                                    (impact, lift_rot(phi, -comp)),
+                                    (settle, lift_rot(phi, -comp * 0.30)),
+                                    (n, lift_rot(phi, 0.0))]}
+                t[tibia] = {"rot": [(1, lift_rot(phi, 0.0)),
+                                    (wind, lift_rot(phi, -comp * 0.30)),
+                                    (impact, lift_rot(phi, comp * 0.85)),
+                                    (settle, lift_rot(phi, comp * 0.25)),
+                                    (n, lift_rot(phi, 0.0))]}
+    return t
+
+
+CLIPS = [("Spider_Bite", clip_bite), ("Spider_Idle", clip_idle),
+         ("Spider_Walk", clip_walk)]
 
 
 # ---------------------------------------------------------------------------
@@ -854,6 +1012,13 @@ def main():
           % (FOOT_LEVER_M * SWEEP_RAD / (WALK_CYCLE_S * STANCE_FRAC),
              FOOT_LEVER_M, math.degrees(SWEEP_RAD),
              WALK_CYCLE_S * STANCE_FRAC))
+
+    # THE PUBLISHED INTERFACE, printed at build time so it is in the build log
+    # of every asset that ships rather than only in a doc that can go stale.
+    print("[spider] CONTRACT Spider_Bite: duration %.4f s, impact authored "
+          "frame %d = runtime tick %d = %.4f s"
+          % ((BITE_N - 1) / 60.0, BITE_IMPACT, BITE_IMPACT_TICK,
+             BITE_IMPACT_S))
 
     # Leave the armature unposed so nothing but the rest pose can be baked
     # into the joint nodes; export_rest_position_armature is belt and braces.

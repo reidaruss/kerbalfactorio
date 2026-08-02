@@ -964,7 +964,7 @@
         "R3Coxa", "R3Femur", "R3Tibia",
         "R4Coxa", "R4Femur", "R4Tibia"
       ],
-      "clips": ["Spider_Idle", "Spider_Walk"]
+      "clips": ["Spider_Bite", "Spider_Idle", "Spider_Walk"]
     },
 
     "crude_pickaxe": {
