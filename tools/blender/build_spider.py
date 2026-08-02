@@ -944,9 +944,17 @@ def clip_bite(n=BITE_N, impact=BITE_IMPACT):
     # is small and it returns to zero every cycle: a bob, not a drift. -Y is
     # forward, so the lunge is negative. gait_check.py measures what it costs
     # the braced feet rather than this docstring claiming it is nothing.
-    t["Root"] = {"loc": [(1, (0.0, 0.0, 0.0)), (wind, (0.0, 0.030, 0.035)),
-                         (impact, (0.0, -0.040, -0.045)),
-                         (settle, (0.0, -0.010, -0.012)),
+    # THE VERTICAL DRIVE IS NEARLY GONE AND gait_check.py IS WHY. Version one
+    # dropped the root 45 mm at the impact frame to sell the body's weight
+    # landing. In a forward-kinematic clip the root carries the FEET with it and
+    # no leg rotation downstream can hold them up, so the braced rear pair went
+    # 46 to 53 mm BELOW z = 0, which with the claw's 10 mm tube is about 6 cm of
+    # foot through the ground on the one clip a player watches from two metres
+    # away. The lunge is horizontal now, and the sense of drop is carried by the
+    # thorax and head pitch, which pivot about a point rather than translating.
+    t["Root"] = {"loc": [(1, (0.0, 0.0, 0.0)), (wind, (0.0, 0.026, 0.014)),
+                         (impact, (0.0, -0.040, -0.002)),
+                         (settle, (0.0, -0.010, -0.004)),
                          (n, (0.0, 0.0, 0.0))]}
 
     for pre, s in SIDES:
@@ -988,18 +996,22 @@ def clip_bite(n=BITE_N, impact=BITE_IMPACT):
                 # armature-X rotation on the coxa, leaving only the coxa head's
                 # own arc about the thorax pivot as residual foot travel.
                 t[coxa] = {"rot": [(f, (-v, 0.0, 0.0)) for f, v in thorax_x]}
-                # ...and then take the load, because a body that drives forward
-                # over legs that do not compress is a body with no weight.
-                comp = 5.0 if i == 3 else 7.0
+                # ...and the compression is SMALL and signed the way the ground
+                # allows. A negative lift drives the distal end DOWN, and in FK
+                # that is the foot going through the floor rather than the body
+                # settling on to the leg, which is the other half of the sink
+                # gait_check.py found. Femur and tibia are opposed so the knee
+                # takes the flex and the tip stays put.
+                comp = 1.6 if i == 3 else 2.2
                 t[femur] = {"rot": [(1, lift_rot(phi, 0.0)),
                                     (wind, lift_rot(phi, comp * 0.35)),
-                                    (impact, lift_rot(phi, -comp)),
-                                    (settle, lift_rot(phi, -comp * 0.30)),
+                                    (impact, lift_rot(phi, comp)),
+                                    (settle, lift_rot(phi, comp * 0.30)),
                                     (n, lift_rot(phi, 0.0))]}
                 t[tibia] = {"rot": [(1, lift_rot(phi, 0.0)),
-                                    (wind, lift_rot(phi, -comp * 0.30)),
-                                    (impact, lift_rot(phi, comp * 0.85)),
-                                    (settle, lift_rot(phi, comp * 0.25)),
+                                    (wind, lift_rot(phi, -comp * 0.35)),
+                                    (impact, lift_rot(phi, -comp)),
+                                    (settle, lift_rot(phi, -comp * 0.30)),
                                     (n, lift_rot(phi, 0.0))]}
     return t
 
