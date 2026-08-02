@@ -33,9 +33,40 @@ import { MAX_CAPACITY, registerPool, type PoolReport } from './InstancePools.js'
 import { attachSurface, copyUv, familyForMaterial, type Family }
   from '../render/instancing/Surfaces.js';
 import { applyWind } from '../render/instancing/PropWind.js';
+import { assertPartMatBase, bakePartMat, partMatEnabled }
+  from '../render/materials/PartMaterial.js';
+import { applyRockMat, rockMatEnabled } from '../render/materials/RockShader.js';
 import { attachShadowLod, emptyIndex, indexRow, publishLadders, type LodRow }
   from '../render/ShadowLod.js';
 import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
+
+/**
+ * Which batches take the per-mineral material channel, asked ONCE and answered
+ * in ONE place, because the hook install and the vertex bake must agree.
+ *
+ * MINERAL FAMILIES ONLY, and the exclusions are decisions rather than
+ * omissions. `leaf:` and `grass:` already carry `applyWind`, and a second
+ * `onBeforeCompile` on the same material would overwrite the first, so hooking
+ * them would silently stop the crowns swaying. `flat:` holds Water and Oil
+ * (RN-181 moved the foliage roles out of it), and giving a pool surface its
+ * authored response is a change nobody asked for and is out of scope for a
+ * pass about rock.
+ */
+function mineralFamily(name: string): boolean {
+  return name.startsWith('coarse:') || name.startsWith('ore:');
+}
+
+/**
+ * Whether the per-part channel is LIVE, read once at module load from two
+ * immutable URL flags rather than per batch, so `makeBatch`'s base constants
+ * and `build`'s bake gate cannot disagree about it mid-build.
+ *
+ * BOTH flags, not just `rockmat`. `?rockmat=0` removes the hook, and
+ * `?partmat=0` leaves the hook installed but makes `injectPartMat` and
+ * `bakePartMat` no-ops, so in that second state nothing divides the base back
+ * out and it must stay at its old literal value. See `makeBatch`.
+ */
+const ROCK_CHANNEL = rockMatEnabled() && partMatEnabled();
 
 /** Merge one family's primitives into a single geometry. One is already merged. */
 function concat(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
@@ -124,9 +155,19 @@ const START_CAPACITY = 128;
  * roles can share one material. `mat.color` is already in the renderer's linear
  * working space (GLTFLoader converted it), which is the space three expects a
  * vertex colour to be in, so the components copy across untouched.
+ *
+ * `bake` is the source material AGAIN, and passing it is what turns the
+ * per-part roughness and metalness channel on for this primitive; `null` means
+ * do not bake. It is a separate argument rather than a flag read in here on
+ * purpose: `PartMaterial` does not know which hook will read its attribute, so
+ * only the caller can know whether one will be compiled, and a bake with no
+ * consumer is a dead per-vertex buffer that no program binds (RockShader.ts
+ * failure mode (b)). Colour is baked unconditionally right below and always
+ * has been; this rides beside it.
  */
 function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
-                   tint: THREE.Color): THREE.BufferGeometry {
+                   tint: THREE.Color,
+                   bake: THREE.MeshStandardMaterial | null): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const pos = src.getAttribute('position') as THREE.BufferAttribute;
   g.setAttribute('position', pos.clone());
@@ -140,6 +181,10 @@ function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
     col[i * 3] = tint.r; col[i * 3 + 1] = tint.g; col[i * 3 + 2] = tint.b;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  // The channel the merge used to throw away, carried exactly the way the
+  // colour one line up is: the proof that per-vertex data survives this merge
+  // and the BatchedMesh behind it was already sitting there.
+  if (bake !== null) bakePartMat(g, pos.count, bake, bake.name);
   const idx = src.getIndex();
   if (idx !== null) g.setIndex(idx.clone());
   else {
@@ -248,12 +293,27 @@ export class NodeBatch {
     // geometry. A tree's Full variant is bark plus two leaf roles: three
     // primitives that are now one, so the node needs one instance rather than
     // three and the shadow pass sees a third of the work.
+    //
+    // THE PER-PART BAKE IS GATED ON THE HOOK, and the gate is per FAMILY, not
+    // per primitive. `mineralFamily` is the same predicate `makeBatch` installs
+    // the hook with, so the attribute is written exactly when a program that
+    // reads it will be compiled: no dead buffer on a `leaf:` batch nobody
+    // hooks, and none at all under `?rockmat=0`, which is what keeps that flag
+    // bit-exact rather than merely equivalent-looking.
+    //
+    // ALL OR NONE WITHIN A BATCH, which this gets for free by keying on the
+    // family: a family is constant across a merge key AND across a batch, so
+    // every geometry `mergeGeometries` and `addGeometry` see carries the same
+    // attribute set. That matters because `mergeGeometries` returns null on a
+    // mismatch and `concat` swallows it with `?? list[0]`, so a partial bake
+    // would not be a wrong material, it would be most of a node silently gone.
     const merged = new Map<string, THREE.BufferGeometry[]>();
     for (const f of found) {
       const key = `${f.file}|${f.variant}|${f.lod}|${f.material}`;
       const list = merged.get(key) ?? [];
-      list.push(normalize(f.geometry, f.world,
-        (f.source as THREE.MeshStandardMaterial).color ?? new THREE.Color(1, 1, 1)));
+      const src = f.source as THREE.MeshStandardMaterial;
+      list.push(normalize(f.geometry, f.world, src.color ?? new THREE.Color(1, 1, 1),
+        ROCK_CHANNEL && mineralFamily(f.material) ? src : null));
       merged.set(key, list);
     }
     // The concatenated geometry is KEPT (RN-684), because the shadow-LOD rule is
@@ -344,6 +404,10 @@ export class NodeBatch {
                     cull: boolean): Batch {
     const metal = name.endsWith(':metal');
     const ore = name.startsWith('ore:');
+    // Does this batch carry the per-mineral channel? ONE predicate, shared with
+    // the bake gate in `build`, because a hook with no attribute and an
+    // attribute with no hook are both silent.
+    const rock = ROCK_CHANNEL && mineralFamily(name);
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff, vertexColors: true,
       // RN-158: the ore SEAM bucket. The old world had iron and copper seams
@@ -354,7 +418,26 @@ export class NodeBatch {
       // authored roughness spread (0.42..1.0 multiplier on this constant), not
       // from mirror metalness. 0.72 x 0.42 puts a facet crest at 0.30, a wet
       // glint; the dusty matrix stays near 0.72.
-      metalness: ore ? 0.25 : metal ? 1.0 : 0.0,
+      //
+      // THESE TWO ARE NOW A BASE, NOT A RESPONSE, whenever `rock` is true, and
+      // the distinction is the whole of RockShader.ts. The injected GLSL turns
+      // `roughnessFactor` (which is `roughness x ormG` at that point) into
+      // `authored x ormG` by dividing this constant straight back out, so with
+      // the channel ON these numbers decide nothing at all: the FAMILY MAP
+      // supplies the variation and the AUTHORED ROLE supplies the level. They
+      // decide the fallback, and only the fallback, when the channel is off.
+      //
+      // WHICH IS WHY THE MATTE BASE MOVES OFF ZERO, AND ONLY THEN.
+      // `assertPartMatBase` throws unless both are > 0, because a zero
+      // denominator is a total and silent loss of the channel rather than a
+      // visible one, and `coarse:matte` has always been metalness 0.0. 0.02 is
+      // enough for the ratio to carry and changes nothing it multiplies: every
+      // role in that bucket authors metalness 0.0 (Rock, RockDark, Sand, Soil,
+      // Regolith), so `partM = metalnessFactor x (0.0 / 0.02)` is 0 and the
+      // EFFECTIVE metalness stays exactly 0. With the channel off it stays the
+      // literal 0.0, which is what makes `?rockmat=0` bit-exact with the build
+      // before this pass rather than merely similar to it.
+      metalness: ore ? 0.25 : metal ? 1.0 : rock ? 0.02 : 0.0,
       roughness: ore ? 0.72 : metal ? 0.38 : 0.88,
       // The leaf roles are authored double sided (of_lib DOUBLE_SIDED). Side
       // still keys on metalness ONLY, not on the new surface split, so the
@@ -373,6 +456,16 @@ export class NodeBatch {
     // permitted. Boulder roles are coarse or (since RN-158) `ore`.
     if (name.startsWith('leaf:') || name.startsWith('grass:')) {
       applyWind(material, `nodes:${name}`);
+    }
+    // THE PER-MINERAL CHANNEL, on the mineral families only. `mineralFamily`
+    // carries the reason the other three are excluded; the short form is that
+    // `leaf:` and `grass:` are already hooked one branch up and a material
+    // holds ONE `onBeforeCompile`, so hooking them here would not add a channel,
+    // it would delete the wind. The assert runs before the install so a bad
+    // base is a throw at boot rather than a channel that is quietly inert.
+    if (rock) {
+      assertPartMatBase(material);
+      applyRockMat(material, `nodes:${name}`);
     }
     const mesh = new THREE.BatchedMesh(START_CAPACITY, s.verts, s.idx, material);
     mesh.name = `nodes:${name}`;

@@ -71,9 +71,60 @@ PALETTE = {
     #   CoalSeam  near-black at LOW roughness: the vitreous glint is the
     #             entire coal-not-dark-rock signal, where the Coal item row
     #             above is matte 0.90 dust.
-    "IronOre":      ("6E7B8A", 0.25, 0.55, 1.0, None),
-    "CopperOre":    ("9A5228", 0.30, 0.50, 1.0, None),
-    "CoalSeam":     ("1A1B1E", 0.10, 0.30, 1.0, None),
+    #
+    # RN-732: THE THREE ROWS BELOW NOW REACH A PIXEL, AND UNTIL THIS PASS THEY
+    # DID NOT. `NodeBatch.makeBatch` built ONE material per family bucket with
+    # `metalness: ore ? 0.25 : ...` and `roughness: ore ? 0.72 : ...` as
+    # literals, and the merge baked only COLOUR into a vertex attribute, so all
+    # three of these rows drew at exactly 0.72 / 0.25. Four minerals had TWO
+    # material responses between them and both were constants in a ternary.
+    # RN-731's per-vertex channel (RockShader.ts, inheriting PartMaterial.ts)
+    # carries `authored x familyOrmChannel` through that merge, so these numbers
+    # are now the level and the `ore` ORM supplies the variation. Re-authoring
+    # them before the channel existed would have been writing into a void, which
+    # is why RN-156 left them at look-dev's defaults and said so.
+    #
+    # WHAT EACH ONE NOW CLAIMS, in material terms rather than hue, measured
+    # against the shipped `ore` ORM green (p05 0.486, p50 0.984, p95 1.000, and
+    # 12.8 per cent of texels under 0.60, which are the facet crests):
+    #
+    #   IronOre    DENSE, with a metallic glint on FRESH FRACTURE. Metalness up
+    #              0.25 -> 0.42 and roughness down 0.55 -> 0.44, so effective
+    #              roughness is 0.21 to 0.44: a tight bright highlight on the
+    #              crests against a matrix that stays dull. 0.42 is still UNDER
+    #              the client's metalness > 0.5 batching split, which is
+    #              load-bearing and not aesthetic (see the note above).
+    #   CopperOre  OXIDE BLOOM AND WEATHERING, and the metalness goes DOWN
+    #              rather than up, which is the whole point: an oxide crust is a
+    #              DIELECTRIC over the metal, not exposed metal. 0.30 -> 0.16
+    #              and roughness 0.50 -> 0.62, effective 0.30 to 0.62: the
+    #              broadest and dullest sheen of the three, which is what a
+    #              weathered nodular surface has and what a cleaved one does not.
+    #   CoalSeam   Reid's brief says coal is matte and light-drinking, and RN-156
+    #              says the vitreous glint is the entire coal signal. BOTH ARE
+    #              TRUE OF REAL COAL and they are not in conflict: the LIGHT
+    #              DRINKING is the albedo (1A1B1E is luma 27, the darkest row in
+    #              the palette), and the seam roles are painted on FRESH FRACTURE
+    #              faces, which in coal are conchoidal and vitreous. A uniformly
+    #              matte near-black reads as a hole in the world, not as coal.
+    #              So the glint stays and gets tighter, 0.30 -> 0.34 only to lift
+    #              the p05 off section 2.1's 0.15 roughness floor (0.30 x 0.486
+    #              was 0.146, i.e. under it), and metalness 0.10 -> 0.04 because
+    #              carbon is a dielectric and 0.10 was borrowing a metallic tint
+    #              the material has no claim to. The MATTE half of Reid's note is
+    #              real and belongs to the CRUMBS, which is a separate change.
+    #
+    # BLAST RADIUS, CHECKED BEFORE EDITING AND THE REASON ONLY THESE THREE MOVED:
+    # of_lib writes metallic and roughness into the exported glTF material, so a
+    # palette edit rewrites the bytes of every asset using that role. These three
+    # roles appear in exactly ONE asset each (boulder_iron, boulder_copper,
+    # boulder_coal). `Rock` is in 23 assets and `RockDark` in 15, including a
+    # sibling lane's in-flight smelter, so the host-rock rows are NOT touched
+    # here and are escalated instead. That is RN-151's laundering hazard in .glb
+    # form and it is avoided by arithmetic, not by care.
+    "IronOre":      ("6E7B8A", 0.42, 0.44, 1.0, None),
+    "CopperOre":    ("9A5228", 0.16, 0.62, 1.0, None),
+    "CoalSeam":     ("1A1B1E", 0.04, 0.34, 1.0, None),
     "Rock":         ("7A756C", 0.00, 0.90, 1.0, None),
     "RockDark":     ("57534C", 0.00, 0.92, 1.0, None),
     "Sand":         ("C9B283", 0.00, 0.95, 1.0, None),
