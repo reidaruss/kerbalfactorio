@@ -121,6 +121,21 @@ def build_lod1(root):
     for sy in (-1, 1):
         mb.box((ROLLER_L, ROLLER_FLAT, ROLLER_FLAT),
                (0.0, sy * ROLLER_Y, DECK_TOP - 0.03), "Steel")
+    # THE STATE CHIP, AND ITS ABSENCE WAS THIS TIER'S ENTIRE SHADOW DEVIATION
+    # (RN-569). The chip straddles the rail's inner face: it spans x 0.38 to
+    # 0.46 where the rail spans 0.40 to 0.50, so its inboard 0.020 hangs over
+    # the deck with nothing under it. Omit it and the worst any LOD0 vertex
+    # can be from this mesh's surface is exactly that 0.020, measured at
+    # 20.00 mm against cascade 0's 15.47 mm: a 4.53 mm miss that cost this
+    # asset a whole cascade.
+    #
+    # Twelve triangles buy it back, and they are the cheapest in my domain:
+    # portcost's reference base carries 57 belts against 22 smelters, so a
+    # belt is the most numerous object in a factory by a wide margin. It is
+    # also a correctness fix on its own terms, because a belt at LOD1 range
+    # had NO state readout at all while every other machine's LOD1 keeps its
+    # EmissiveState chip.
+    mb.box((0.08, 0.12, 0.011), (CHIP_X, 0.0, CHIP_Z), "EmissiveState")
     return mb, mb.build(NAME + "_LOD1", root)
 
 
