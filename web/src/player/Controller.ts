@@ -52,6 +52,39 @@ export class Controller implements ViewSource {
     this.interpolate(1);
   }
 
+  /**
+   * PH-90. Put the feet at a BODY-FRAME point, and nothing else.
+   *
+   * An INSTRUMENT, not a second teleport, and the difference is the whole
+   * reason it is a separate verb. `teleport` above takes lat/lon/alt and
+   * DISCARDS the altitude (`_altM`), because `Config.ts` line 51 states that
+   * contract out loud ("alt is ignored (the capsule spawns ON the surface)")
+   * and both walk scenarios ship `alt: 2`. Widening `teleport` to honour its
+   * third argument would therefore move the spawn of every walking probe in
+   * the suite by two metres, which is a suite-wide reinterpretation disguised
+   * as a one-line fix.
+   *
+   * So the question "can the walker stand somewhere that is not the ground"
+   * gets its own door, in Cartesian body-frame metres, with no geodesy in it
+   * at all. It does not reframe the camera and it does not touch the view
+   * mode; it seeds `prevFeet` from the destination so the render lerp does not
+   * draw a 400 km streak on the frame it lands (PH-31's lesson, which cost a
+   * whole pass when `renderPos` was left at its constructed value).
+   *
+   * Velocity is zeroed and `grounded` is left FALSE: whether there is a floor
+   * here is exactly what the caller is asking, so asserting one would be the
+   * instrument answering its own question.
+   */
+  standAt(x: number, y: number, z: number): void {
+    const b = this.body;
+    b.feet.x = x; b.feet.y = y; b.feet.z = z;
+    b.vel.x = 0; b.vel.y = 0; b.vel.z = 0;
+    b.grounded = false;
+    this.prevFeet.x = x; this.prevFeet.y = y; this.prevFeet.z = z;
+    this.view.update(b.feet, CAPSULE.eyeHeightM, 1 / 60);
+    this.interpolate(1);
+  }
+
   look(dYaw: number, dPitch: number): void { this.view.look(dYaw, dPitch); }
 
   setMode(mode: CameraMode): void {

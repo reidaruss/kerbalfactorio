@@ -212,6 +212,25 @@ export function gameplayApi(s: Services, loop: Loop) {
       return { armed: t !== null, total: t?.total ?? 0, samples: t?.dump() ?? [] };
     },
 
+    /**
+     * PH-90. Put the walker's feet at a BODY-FRAME point and report where they
+     * ended up. The companion to `stand()`: that one asks WHICH authority held
+     * the player up, this one puts the player somewhere there is no terrain
+     * authority at all so the question can be asked off the heightfield.
+     *
+     * Deliberately NOT routed through `__of.teleport`, which is lat/lon/alt and
+     * discards the altitude by a documented contract every walking probe in the
+     * suite depends on (Config.ts line 51). See `Controller.standAt`.
+     */
+    standAt(x: number, y: number, z: number) {
+      const p = s.player;
+      if (p === null || p === undefined) return null;
+      p.standAt(x, y, z);
+      const f = p.body.feet;
+      return { feet: [f.x, f.y, f.z], r: Math.hypot(f.x, f.y, f.z),
+        grounded: p.body.grounded, onDeck: p.body.onDeck };
+    },
+
     collect(id: number) {
       const f = s.gameplay?.factory;
       const b = f?.placed.find((p) => p.id === id);
