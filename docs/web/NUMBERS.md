@@ -418,3 +418,44 @@ proved them all passed an explicit flag, so nothing ever exercised the default.
 ever runs the feature with `?feature=1`, it proves the feature works and proves
 nothing about whether anyone sees it. Assert the boot default in its own check,
 red-by-name when the default is wrong.
+
+### A filtered blob built from a STALE BASE is a revert, not an omission
+
+The filtered-blob technique (commit HEAD's content plus only your own hunks, so
+a sibling lane's in-flight work in the same file is not swept) was adopted to
+fix the sweep family. **It carries the same defect it was adopted to fix, for
+the same reason: it is built FROM A BASE, and a base is a point in time.**
+
+Measured on 2026-08-01. A lane committed ten files and fourteen screenshots. The
+very next commit **reverted all of them** — not carelessly, but because it built
+its blob as "HEAD plus only my hunks" against **the HEAD that existed when its
+pass started**, which was the first commit's parent. The blob faithfully
+preserved every row that existed when the lane began and silently deleted every
+row that arrived afterwards.
+
+This is the `git checkout --` entry generalised. That one says a checkout is
+unsafe when HEAD moves under you mid-pass. **A filtered blob has exactly the
+same property, and it is the technique we adopted BECAUSE of that entry.**
+
+**Two rules, both required:**
+
+1. **Pin the base SHA once**, at the moment you decide to commit, and build
+   every blob from that exact SHA (`git show <sha>:<path>`), never from the
+   moving `HEAD:` ref.
+2. **Verify HEAD is still that SHA in the same breath as the commit**, and
+   refuse if it moved. Re-read, rebuild the blob, retry.
+
+That is "the check has to be adjacent to the write", applied to the thing that
+actually moves.
+
+### `git commit` refreshes the index and can discard a `--cacheinfo` blob
+
+`git commit` runs `refresh_index()` and re-reads stat-dirty paths from the
+working tree, **which can silently replace a blob you staged with
+`--cacheinfo` by whatever the shared tree currently holds.** A carefully
+filtered blob does not survive it.
+
+Use `git write-tree` plus `git commit-tree`, which do not refresh, and
+**assert the tree BEFORE it is written rather than inspecting the commit
+afterwards.** Inspecting afterwards tells you what happened; asserting before
+tells you whether to proceed.
