@@ -103,12 +103,18 @@
       },
       "orm": {
         "file": "of_panel_orm.png",
-        "bytes": 83576,
-        "sha256": "7bc33f4180f8ba5befcdbfb83c10c0e29088aaf8a63114faf5eaa1cef8c075c2"
+        "bytes": 137847,
+        "sha256": "243175c55bf6b1027b1edebf196b5ed0c08ed9b989fd94d3d9bdff25f60f310c"
+      },
+      "albedo": {
+        "file": "of_panel_a.png",
+        "bytes": 77398,
+        "sha256": "a4a6c9f1c01867223ca8ef521835aafcdfba6fdcf210339b418cb5e68d709953"
       },
       "tile_m": 1.5,
       "size_px": 512,
-      "texels_per_m": 341.3333333333333
+      "texels_per_m": 341.3333333333333,
+      "albedo_mean": 0.5386
     },
     "suitfab": {
       "normal": {

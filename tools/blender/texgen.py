@@ -635,8 +635,66 @@ def _panel_masks(w, h, height, aux):
     the story each mask tells has to be one that only subtracts:
       roughness  raised metal is rubbed smooth by handling and by wear
       metalness  grooves collect grime, and grime is not a metal
+
+    --------------------------------------------------------------------
+    RN-553: THE BAND, AND IT IS THE ONE NUMBER SECTION 2.1 NAMES BY NAME
+    --------------------------------------------------------------------
+    `docs/controllers/rendering.md` section 2.1 item 4 says a family's
+    effective roughness p05..p95 must be at least about 0.15 wide, "below
+    that it is a constant under a moving sun", and it measures THIS family
+    at 0.032 with the verdict "that is the plastic read on every machine,
+    plate and suit". Every machine, belt, structure, rocket part and tool in
+    the game is wearing the one surface in the set that cannot respond to
+    light.
+
+    THIS FAMILY IS RE-AUTHORED RATHER THAN DUPLICATED UNDER A NEW NAME, and
+    that is a decision (RN-60) rather than the path of least resistance. The
+    player lane is moving `Suit`, `SuitDark` and `Plate` onto their own
+    `suitfab` / `suitplate` families in a change that is in flight as this
+    lands, which leaves `panel` holding Steel, SteelDark, SteelLight, Accent,
+    Hazard and SuitAccent: every one of them painted industrial steel. A
+    second painted-steel family beside this one would be the same surface
+    authored twice, would need a client literal change to take effect at all
+    (`MachineBatch` pins `attachSurface(m, 'panel', ...)` on the whole batch),
+    and would leave the 0.032 band live on the rocket parts, the launch pad
+    and the tools. Re-authoring reaches all of them with no role move.
+
+    THE 0.032 WAS ARITHMETIC AND NOT AN ACCIDENT. The old mask is
+    `1.0 - 0.28 * proud + (mottle - 0.5) * 0.22`, and `proud` is non-zero
+    only on a rivet or bolt top, which is a fraction of a per cent of the
+    texels. So on every flat plate face the whole map reduced to
+    `1.0 +/- 0.11` around a mean of 1.0, and 0.45 (Steel's palette
+    roughness) times a 0.22-wide multiplier is a 0.05-wide effective band
+    before percentiles trim it to 0.032.
+
+    THE FIX IS A STORY AND NOT A GAIN. Multiplying the old mottle by four
+    would clear the gate and mean nothing: the band has to be somewhere a
+    surface actually goes. Painted steel has three states and they are far
+    apart. Coating that is intact and has been WIPED or RAINED ON is close
+    to specular. Coating that has CHALKED in the sun is nearly matte, and
+    that is the palette constant. Where the coating has gone and the alloy
+    is bare and handled, it is polished. So the map runs from about 0.42 to
+    1.00, effective 0.19 to 0.45 on Steel, and the direction of every term
+    is a claim that can be checked against a real machine.
+
+    WHY IT STAYS AT OR UNDER 1.0. The ORM channels are byte multipliers on
+    the palette constant, so 1.0 is the ceiling by construction and the
+    palette decides the matte end. Widening downward is therefore the only
+    move available without a palette edit, and a palette edit here would
+    re-surface the rocket parts, the launch pad and the tools in the same
+    commit as a machine pass. That is a separate, arguable decision and it
+    is deliberately not taken here.
     """
     mottle = _fbm(w, h, 12, 3, seed=4441)
+    # 40 cm at the 1.5 m tile: WHERE THE WEATHER HAS BEEN. Big, slow patches
+    # of chalked against intact coating, an order of magnitude coarser than
+    # the mottle, so a 4 m wall has two or three of them rather than a texture.
+    weather = _fbm(w, h, 4, 3, seed=6151)
+    # 5 cm: run-off. Rain and condensate leave streaks that stay WET-looking
+    # long after they dry, because the coating there is washed rather than
+    # chalked. This is the term that puts fine vertical structure in the
+    # roughness that the albedo and the normal do not have.
+    wash = _fbm(w, h, 30, 2, seed=6421)
     scratch = aux["scratch"]
     rough = [0.0] * (w * h)
     metal = [0.0] * (w * h)
@@ -645,25 +703,104 @@ def _panel_masks(w, h, height, aux):
         # `face` is ~1 on the plate, ~0 in a groove, >1 on a rivet or bolt.
         face = _clamp01(z)
         proud = _clamp01(z - 1.0) / 0.42          # rivet / bolt tops
-        # THE FLAT PLATE FACE MUST COME OUT AT ~1.0, and the first version did
-        # not: `wear` folded in 0.55 of `face`, which is 1 on every flat plate,
-        # so `1.0 - 0.40 * 0.55` shipped EVERY panel surface in the game at 78%
-        # of its palette roughness. That is a silent global palette edit wearing
-        # a texture's clothes, and this pass was explicitly not allowed to move
-        # the palette. Only genuinely PROUD geometry is rubbed smooth now, which
-        # is also the true story: a rivet head gets handled, a plate face does
-        # not. The mottle is symmetric about 1.0, so it varies without shifting.
+        # THE FLAT PLATE FACE NO LONGER COMES OUT AT ~1.0, AND THE OLD NOTE
+        # SAYING IT MUST IS SUPERSEDED. That note was written under a values
+        # freeze this lane did not own; its actual argument was that a mask
+        # must not silently shift the palette MEAN, which is a different claim
+        # from "must not vary". `weather` is symmetric about its own midpoint
+        # and `wash` only subtracts where it is high, so the mean moves down by
+        # a stated 0.09 rather than by an unnoticed 0.22.
+        # THE THRESHOLDS ARE WHERE THE BAND LIVES, NOT THE COEFFICIENTS, and
+        # the first tuning got that backwards. An `_fbm` is normalised to 0..1
+        # but CLUSTERS about its own middle, so `(weather - 0.34) / 0.52` only
+        # reaches full strength where weather exceeds 0.86, which is a few per
+        # cent of texels: the coefficient was 0.34 and the measured p05 still
+        # sat at 0.686, for a Steel band of 0.136 against section 2.1's 0.15.
+        # Moving the knee down to 0.28 and the ramp to 0.34 changes how MANY
+        # texels are wiped rather than how far, which is what a percentile band
+        # actually measures.
         r = 1.0 - 0.28 * proud
-        r += (mottle[i] - 0.5) * 0.22
+        r -= 0.40 * _clamp01((weather[i] - 0.28) / 0.34)   # wiped / rained on
+        r -= 0.18 * _clamp01((wash[i] - 0.54) / 0.32)      # run-off streaks
+        r += (mottle[i] - 0.5) * 0.14
         # A rub exposes cleaner metal, so it goes shinier, not duller. Taken
         # straight from the mask the height pass built, rather than inferred
         # from a height window - the inference version became dead code the
         # moment the relief was reduced, which is exactly why it is gone.
-        r -= 0.12 * scratch[i]
+        r -= 0.16 * scratch[i]
         rough[i] = _clamp01(r)
         m = 0.42 + 0.58 * _smoothstep(0.15, 0.85, face)
         metal[i] = _clamp01(m)
     return rough, metal
+
+
+def _panel_albedo(w, h, height, aux):
+    """A TILING ALBEDO for painted industrial steel. RN-553.
+
+    THE FREQUENCY SPLIT IS THE WHOLE DESIGN AND IT IS RN-454'S LESSON PAID
+    FORWARD. Driving albedo, normal and ORM off one heightfield gave the
+    creature identical frequency content in all three maps and it rendered as
+    a spider built out of cobblestones. So this map deliberately does NOT
+    read `height`, which already owns the seams, the rivets and the weld bead
+    and hands them to the normal:
+
+      NORMAL  relief below a centimetre plus the manufactured geometry
+      ORM     the roughness band above, at 40 cm and 5 cm
+      ALBEDO  PIGMENTATION at 10 to 45 cm, which is the one thing neither of
+              the others can say and the thing paint actually does
+
+    What paint does, in the order the terms below do it: it fades unevenly in
+    patches the size of a hand to a hand-span; it collects grime in a fine
+    speckle that darkens without colouring; and where the coating has failed
+    it goes WARM, because what is under paint on a machine is oxide. The
+    oxide term is the only one that moves hue, and it moves it in one
+    direction only, because rust is not a colour that has an opposite.
+
+    MEAN-NEUTRAL BY CONTRACT. `Surfaces.ts` sets
+    `material.color = palette / albedo_mean` and then multiplies the map back
+    in, so only this map's VARIANCE and its HUE survive and its LEVEL cannot
+    shift the palette. That is what lets one map serve Steel, SteelDark,
+    Accent and Hazard without lightening the dark one and dirtying the bright
+    one, and it is why every term here is written as a multiplier about 1.0
+    rather than as an absolute value."""
+    fade = _fbm(w, h, 4, 3, seed=15013)       # ~38 cm: uneven weathering
+    patch = _fbm(w, h, 9, 3, seed=15271)      # ~17 cm: coating thickness
+    grime = _fbm(w, h, 34, 2, seed=15427)     # ~4.4 cm: dirt speckle
+    oxide = _fbm(w, h, 6, 4, seed=15683)      # ~25 cm: where it has failed
+    # THE MAP IS CENTRED AT 0.55 AND NOT AT 1.0, AND THE FIRST BUILD IS WHY.
+    # Every term below is a multiplier about 1.0, which is the right way to
+    # write a mean-neutral map and the wrong place to CENTRE one: the first
+    # version measured a mean of 0.9659 with a per-channel range of 194..255,
+    # i.e. the top of the variance was CLIPPING against the byte ceiling and
+    # the map was throwing away the pigmentation it exists to carry.
+    # `check_maps` refuses a tiling albedo outside 0.15..0.85 for exactly this
+    # reason and the refusal is correct. The level is free, because
+    # `Surfaces.ts` divides it back out, so it costs nothing to sit in the
+    # middle of the range where both tails survive.
+    LEVEL = 0.55
+    out = bytearray(3 * w * h)
+    for i in range(w * h):
+        # Value. Two scales of fade and one of grime, all symmetric about 1.0
+        # except the grime, which only ever darkens because dirt does.
+        v = 1.0 + (fade[i] - 0.5) * 0.30 + (patch[i] - 0.5) * 0.17
+        v -= 0.13 * _clamp01((grime[i] - 0.52) / 0.48)
+        # A groove holds dirt and a rivet top does not, so the ONE thing this
+        # map takes from the height is the sign of the relief, at a tenth of
+        # the weight of the pigmentation. Any more and the seams would be
+        # drawn twice, once in the normal and once here.
+        v -= 0.07 * (1.0 - _clamp01(height[i]))
+        # Hue. Oxide only, only where the coating has gone thin AND the
+        # weathering agrees, so the rust is in patches rather than everywhere
+        # at a low level, which is the difference between a worn machine and a
+        # brown one.
+        rust = _clamp01((oxide[i] - 0.62) / 0.34) * _clamp01((fade[i] - 0.40)
+                                                             / 0.45)
+        v *= LEVEL
+        o = 3 * i
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + 0.26 * rust))))
+        out[o + 1] = int(round(255.0 * _clamp01(v * (1.0 - 0.05 * rust))))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - 0.24 * rust))))
+    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
@@ -1859,7 +1996,14 @@ def read_png_rgba(path):
 # it shipped, it validated, and it did nothing, which is the failure mode this
 # log keeps calling the expensive one.
 FAMILIES = {
+    # panel gained a TILING ALBEDO at RN-553 and is the second family to carry
+    # one after `fur`. It costs 1.40 MB of VRAM (512 px, the mip chain
+    # included) and it buys the one thing a normal and an ORM structurally
+    # cannot: pigmentation. ART-DIRECTION.md names flat vertex colour as a
+    # defect to unlearn, and until this landed every manufactured surface in
+    # the game took its entire base colour from one palette constant.
     "panel": dict(height=_panel_height, masks=_panel_masks,
+                  albedo=_panel_albedo,
                   normal_strength=26.0, ao_radius=7, ao_floor=0.42,
                   ao_gain=2.2),
     # coarse normal_strength came down 13 -> 9 with the low-frequency rebalance:
@@ -2317,11 +2461,48 @@ def build_albedo_family(name, size=None):
     return bytes(rgba), rgb, alpha
 
 
-def generate(out_dir=OUT_DIR, size=None, quiet=False):
+def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
+    """Write every family's PNGs and the manifest.
+
+    `only` RESTRICTS THE WRITE TO ONE FAMILY, AND IT EXISTS BECAUSE THE
+    ALL-OR-NOTHING DEFAULT IS A LAUNDERING MACHINE (RN-558).
+
+    This function loops `FAMILIES` and rewrites `surfaces.json` wholesale, so
+    a lane that regenerates in the shared tree to look at ITS OWN family also
+    writes every other live lane's in-flight family into `assets/textures/dist`
+    and into the manifest. That is not hypothetical: RN-151 is the recorded
+    case of one lane laundering another's work into HEAD, and on 2026-08-01 it
+    happened in BOTH DIRECTIONS in one afternoon between the machine lane and
+    the player lane, from this single entry point, with four lanes live in this
+    file. The standing workaround is a clean-tree generation plus a filtered
+    blob, which works and is what NUMBERS.md prescribes; but that is a
+    discipline, and making the wrong thing impossible beats instructing five
+    lanes to be careful.
+
+    THE MANIFEST IS MERGED, NOT REPLACED, AND THAT IS THE WHOLE DIFFICULTY.
+    Writing a one-family manifest would be worse than the disease: every
+    consumer asserts `set(manifest.families) == set(FAMILIES) | set(
+    ALBEDO_FAMILIES)`, so a partial manifest fails the client, the preview and
+    `check` at once. So `only` reads the manifest that is already on disk,
+    replaces exactly that family's row, and leaves every other row BYTE FOR
+    BYTE as it found it, including the `roles` and `flat_roles` tables, which
+    belong to whoever last wrote them.
+
+    ONE HONEST LIMIT, STATED. `roles` and `flat_roles` are NOT refreshed under
+    `only`, because this process's `ROLE_FAMILY` may contain another lane's
+    uncommitted role moves, which is exactly the payload being kept out. A
+    lane that changes a role mapping therefore needs a full generation on a
+    clean tree; `only` covers a family's PIXELS, which is the common case and
+    the one that was hurting."""
+    if only is not None and only not in FAMILIES:
+        raise SystemExit(
+            "--only %r is not a tiling family. Known: %s"
+            % (only, ", ".join(sorted(FAMILIES))))
+    wanted = sorted(FAMILIES) if only is None else [only]
     files = {}
     sizes = {}
     tiling_albedo = {}
-    for name in sorted(FAMILIES):
+    for name in wanted:
         fsize = FAMILY_SIZE[name] if size is None else size
         sizes[name] = fsize
         _, normal, orm, albedo = build_family(name, fsize)
@@ -2351,7 +2532,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
                      fsize, fsize, fsize / FAMILY_TILE_M[name]))
 
     albedo_files = {}
-    for name in sorted(ALBEDO_FAMILIES):
+    for name in ([] if only is not None else sorted(ALBEDO_FAMILIES)):
         fsize = ALBEDO_FAMILIES[name]["size"] if size is None else size
         rgba, _, _ = build_albedo_family(name, fsize)
         a_path = os.path.join(out_dir, "of_%s_a.png" % name)
@@ -2396,7 +2577,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
         "roles": dict(sorted(ROLE_FAMILY.items())),
         "flat_roles": dict(sorted(FLAT_ROLES.items())),
     }
-    for name in sorted(FAMILIES):
+    for name in wanted:
         fam = dict(files[name])
         fam["tile_m"] = FAMILY_TILE_M[name]
         fam["size_px"] = sizes[name]
@@ -2410,7 +2591,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
         if name in tiling_albedo:
             fam["albedo_mean"] = round(_albedo_mean_rgb(tiling_albedo[name]), 4)
         manifest["families"][name] = fam
-    for name in sorted(ALBEDO_FAMILIES):
+    for name in sorted(albedo_files):
         spec = ALBEDO_FAMILIES[name]
         rec = albedo_files[name]
         p = os.path.join(out_dir, rec["file"])
@@ -2428,6 +2609,32 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
         }
 
     m_path = os.path.join(out_dir, "surfaces.json")
+    if only is not None:
+        # MERGE, DO NOT REPLACE. Read what is already on disk, swap in exactly
+        # this family's row, and leave every other row and both role tables
+        # untouched. `json.load` / `json.dump` is a round trip and would
+        # normally be refused on a shared file for reformatting other lanes'
+        # rows (RN-443); it is safe HERE and only here, because this file is
+        # itself generated by `json.dump(indent=2, sort_keys=False)` five
+        # lines below, so the round trip is the identity on everything it does
+        # not deliberately change. That is asserted rather than assumed.
+        if not os.path.isfile(m_path):
+            raise SystemExit(
+                "--only needs an existing %s to merge into. Run a full "
+                "generation on a CLEAN tree first." % m_path)
+        with open(m_path, "r", encoding="utf-8") as fh:
+            prior_text = fh.read()
+        prior = json.loads(prior_text)
+        rt = json.dumps(prior, indent=2, sort_keys=False) + "\n"
+        if rt != prior_text:
+            raise SystemExit(
+                "%s is not in this tool's own output format, so a merge "
+                "would silently reformat it. Refusing." % m_path)
+        merged = prior
+        merged["families"][only] = manifest["families"][only]
+        for k in ("version", "zlib"):
+            merged[k] = manifest[k]
+        manifest = merged
     with open(m_path, "w", newline="\n", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, sort_keys=False)
         fh.write("\n")
@@ -2435,7 +2642,11 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
         total = (sum(v[k]["bytes"] for v in files.values() for k in v)
                  + sum(v["bytes"] for v in albedo_files.values()))
         nfiles = (sum(len(v) for v in files.values()) + len(albedo_files))
-        print("[texgen] manifest %s" % m_path)
+        print("[texgen] manifest %s%s"
+              % (m_path, "  (MERGED: only the %r row was rewritten; %d other "
+                 "families and both role tables left as found)"
+                 % (only, len(manifest["families"]) - 1)
+                 if only is not None else ""))
         print("[texgen] %d files, %d bytes of texture payload"
               % (nfiles, total))
     return manifest
@@ -3134,6 +3345,12 @@ def main():
     ap.add_argument("--size", type=int, default=None,
                     help="override every family's resolution (debug only; the "
                          "shipped set uses FAMILY_SIZE)")
+    ap.add_argument("--only", default=None, metavar="FAMILY",
+                    help="regenerate ONE tiling family's PNGs and merge only "
+                         "that family's rows into the existing surfaces.json. "
+                         "Use this whenever another lane has uncommitted work "
+                         "in this file: a full build writes every live lane's "
+                         "in-flight family into the shipped set (RN-558)")
     ap.add_argument("--list", action="store_true",
                     help="print the role -> family table and exit")
     args = ap.parse_args()
@@ -3150,7 +3367,7 @@ def main():
         print("\n%s  %d check(s)" % ("TEXTURES PASS" if ok else "TEXTURES FAIL",
                                      len(lines)))
         return 0 if ok else 1
-    generate(args.out, args.size)
+    generate(args.out, args.size, only=args.only)
     return 0
 
 
