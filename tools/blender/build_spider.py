@@ -752,6 +752,42 @@ SWEEP_RAD = SPIDER_WALK_MPS * WALK_CYCLE_S * STANCE_FRAC / FOOT_LEVER_M
 
 LIFT_DEG = 15.0                  # swing knee lift (spec: 12 to 18)
 TUCK_DEG = 8.0                   # tibia fold under the lifted knee
+THORAX_SWAY_DEG = 2.0            # the walk's body yaw amplitude
+
+
+def thorax_sway(x):
+    """The walk's body yaw about armature Z, degrees, at cycle phase x.
+
+    READ TWICE, ON PURPOSE: once to sway the thorax, and once to CANCEL that
+    sway on every coxa. It is a function rather than two literals because two
+    independent restatements of one body motion is precisely how the planted
+    feet came to be dragged, and clip_idle already learned this lesson.
+
+    WHY THE CANCELLATION IS NEEDED AT ALL. All 24 leg bones are children of
+    Thorax, so a body yaw is added to every foot whether that foot is in the
+    air or standing on the ground. A foot in swing should inherit it. A foot in
+    STANCE must not, because the ground does not sway.
+
+    MEASURED, and this is the whole reason the fix exists. gait_check.py read
+    the shipped bytes and found the instantaneous stance speed swinging 1.7936
+    to 3.2200 m/s about a mean of 2.5096: a worst deviation of 0.7222 m/s, or
+    28.89% of the declared 2.5, INSIDE a stance that is supposed to be a
+    straight line at constant rate. The mean was right the whole time, which is
+    why nothing caught it: build_spider.py's own print divides one arc by one
+    duration and gets 2.500, and no arithmetic of that shape can see a ripple
+    inside the window it is averaging over.
+
+    ATTRIBUTED RATHER THAN GUESSED. A 2 degree sine at one cycle per 0.8 s is
+    an angular rate of 0.274 rad/s, and the feet stand 2.1921 m (leg 1) to
+    2.6172 m (leg 4) from the thorax pivot, which predicts a peak drag of
+    0.6010 and 0.7175 m/s. Measured: 0.6076 and 0.7222. Within 1.1% and 0.7%,
+    and the ratio between the two legs matches to 0.5%, so the mechanism is
+    identified and not merely correlated. A first hypothesis, that pose_clip's
+    default BEZIER handles were bowing the straight ramp, was TESTED AND
+    REFUTED: rebuilding the walk with interpolation="LINEAR" produced a
+    byte-identical .glb and identical measurements to four decimals.
+    """
+    return rc.wave(x, THORAX_SWAY_DEG)
 
 
 def leg_phi(az, s):
@@ -792,8 +828,11 @@ def walk_legs():
                 u = (p - STANCE_FRAC) / (1.0 - STANCE_FRAC)
                 return math.sin(math.pi * u)
 
+            # The coxa carries its own stance sweep MINUS the body yaw, so a
+            # planted foot sees only the sweep. See thorax_sway.
             t[names[0]] = {"rot": rc.keys(
-                WALK_N, WALK_N - 1, lambda x, yaw=yaw: [("Z", yaw(x))])}
+                WALK_N, WALK_N - 1,
+                lambda x, yaw=yaw: [("Z", yaw(x) - thorax_sway(x))])}
             t[names[1]] = {"rot": rc.keys(
                 WALK_N, WALK_N - 1,
                 lambda x, sw=swing, phi=phi: lift_rot(phi, LIFT_DEG * sw(x)))}
@@ -810,7 +849,7 @@ def clip_walk(n=WALK_N):
     t["Root"] = {"loc": rc.keys(
         n, n - 1, lambda x: (0.0, 0.0, rc.wave(x, 0.02, cycles=2.0)))}
     t["Thorax"] = {"rot": rc.keys(
-        n, n - 1, lambda x: (0.0, 0.0, rc.wave(x, 2.0)))}
+        n, n - 1, lambda x: (0.0, 0.0, thorax_sway(x)))}
     t["Abdomen"] = {"rot": rc.keys(
         n, n - 1, lambda x: (rc.wave(x, 1.5, cycles=2.0, phase=0.2), 0.0, 0.0))}
     t["Head"] = {"rot": rc.keys(
