@@ -112,9 +112,16 @@
     of.build(0);
     of.input.tape([{ hold: 2, keys: [] }]);
     await sleep(1.4);
-    // Look back AT the factory. A cost measured with the base behind the player
-    // is a measurement of a hillside.
-    of.look(yaw + 180, -8);
+    // Look AT the factory, and the heading is `yaw` and NOT `yaw + 180`.
+    //
+    // The row is laid while the player BACKS AWAY from it (see above), so it
+    // grows towards the player and ends up in FRONT of them on the original
+    // heading. The half turn this line used to do was pointing the camera at
+    // the empty ground the player had just retreated over, which cost nothing
+    // in the triangle numbers (the batch is drawn either way, `frustumCulled`
+    // is false) and quietly produced a comparison SCREENSHOT with no factory in
+    // it. A framing bug is invisible in an aggregate and fatal in a picture.
+    of.look(yaw, A.lookPitch ?? -8);
     await sleep(1.0);
     scene.built = fac().buildings;
     log.push(`built ${scene.built} (${scene.smelters} smelters, ${scene.belts} belts)`);
