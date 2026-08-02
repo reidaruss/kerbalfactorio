@@ -233,7 +233,13 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // Nyquist two" is a measurement rather than an argument. Listed here in the
   // same commit that introduces them, which is the `fur`/`partmat` lesson two
   // entries up: a control the runner drops is a control that does not exist.
-  'shadowlod', 'shadowlodk']) {
+  // RN-696. `shadowlodpx=` opts into the per-cascade budget derived from each
+  // cascade's own screen footprint; without it the rule is uniform one texel.
+  // Added in the same edit that discovered it was missing: a verification run
+  // reported `policy uniform` for BOTH sides of a pair because the runner
+  // dropped the flag, which is the `fur`/`partmat` failure a dozen lines up
+  // happening again to the lane that had just finished writing it down.
+  'shadowlod', 'shadowlodk', 'shadowlodpx']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');

@@ -16,6 +16,13 @@ import * as THREE from 'three';
 import type { QualityKnobs } from './Quality.js';
 import { LAYER_PLAYER_BODY, LAYER_PROPS } from './Scenes.js';
 import { publishCascade } from './ShadowLod.js';
+import { NEAREST_CASTER_M } from './ShadowLodK.js';
+// SIDE EFFECT ONLY, and it is load bearing: `ShadowLodReport.ts` registers
+// `window.__ofShadowLod`, and nothing else imports it. Split out of
+// `ShadowLod.ts` for the 400-line cap, a probe surface that no module pulls in
+// is a probe surface that does not exist, and every check would have read
+// `undefined` while the feature worked perfectly.
+import './ShadowLodReport.js';
 
 /** Cascade far planes in metres, for the 3-cascade tiers. */
 const SPLITS_3 = [22, 80, 300];
@@ -135,7 +142,10 @@ export class ShadowRig {
       // `(2 * far * 0.72) / mapSize` drifting away from this one the next time a
       // split or a map size moves. Keyed on the shadow CAMERA because that is
       // the only object three's shadow pass hands a caster.
-      publishCascade(light.name, cam, texel);
+      // AND ITS NEAR WORKING DISTANCE, which is the other half of the screen
+      // footprint (RN-696). Cascade 0 has no split below it, so the nearest a
+      // caster can actually be stands in for one.
+      publishCascade(light.name, cam, texel, i === 0 ? NEAREST_CASTER_M : this.splits[i - 1]);
       // Bias in WORLD units has to scale with the cascade, or cascade 0 at
       // 11 mm per texel is offset by the same amount as cascade 2 at 200 mm and
       // the contact shadow detaches from the caster.

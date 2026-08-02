@@ -74,14 +74,12 @@
 
 import * as THREE from 'three';
 
-import { measureStats } from './ShadowLodMeasure.js';
+import { budgetFor, NEAREST_CASTER_M } from './ShadowLodK.js';
 
-/** How many texels of silhouette error a cascade may be given. See above. */
-export const SHADOW_LOD_TEXELS = ((): number => {
-  const raw = new URLSearchParams(self.location.search).get('shadowlodk');
-  const n = raw === null ? NaN : Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : 1;
-})();
+// The k policy moved to `ShadowLodK.ts` at RN-696, because it stopped being one
+// number: a texel's SCREEN footprint differs 3x between cascade 0 and the other
+// two, so one k in texels is three different k's to the eye. That file carries
+// the derivation and the measurement that forced it.
 
 /**
  * THE BOOT DEFAULT IS A FIXTURE, not an inference (rendering.md section 2.6).
@@ -92,6 +90,8 @@ export const SHADOW_LOD_TEXELS = ((): number => {
  */
 const RAW = new URLSearchParams(self.location.search).get('shadowlod');
 export const SHADOW_LOD_ON = RAW === null ? true : RAW !== '0';
+/** The raw query value, for the report's boot-default fixture. */
+export const SHADOW_LOD_RAW = RAW;
 
 /** One tier ladder: geometry ids per tier and the deviation that admits them. */
 export interface LodRow {
@@ -129,19 +129,31 @@ export function indexRow(ix: LodIndex, row: LodRow): void {
 // tier changed.
 // ---------------------------------------------------------------------------
 
-const texelByCamera = new WeakMap<THREE.Camera, number>();
-const published: { name: string; texelM: number }[] = [];
+interface Cascade { name: string; texelM: number; nearM: number }
 
-export function publishCascade(name: string, cam: THREE.Camera, texelM: number): void {
-  texelByCamera.set(cam, texelM);
+const byCamera = new WeakMap<THREE.Camera, Cascade>();
+const published: Cascade[] = [];
+
+/** `nearM` is the cascade's own near working distance: the previous split, or
+ *  `NEAREST_CASTER_M` for cascade 0, which has no split below it. It is what the
+ *  texel's screen footprint is evaluated at. */
+export function publishCascade(name: string, cam: THREE.Camera, texelM: number,
+                               nearM: number): void {
+  const c: Cascade = { name, texelM, nearM };
+  byCamera.set(cam, c);
   const at = published.findIndex((p) => p.name === name);
-  if (at < 0) published.push({ name, texelM });
-  else published[at].texelM = texelM;
+  if (at < 0) published.push(c);
+  else { published[at].texelM = texelM; published[at].nearM = nearM; }
+}
+
+/** The cascade a shadow camera belongs to, or null for one nobody published. */
+export function cascadeOf(cam: THREE.Camera): Cascade | null {
+  return byCamera.get(cam) ?? null;
 }
 
 /** Metres per shadow texel for a cascade, or 0 for a camera nobody published. */
 export function texelOf(cam: THREE.Camera): number {
-  return texelByCamera.get(cam) ?? 0;
+  return byCamera.get(cam)?.texelM ?? 0;
 }
 
 /**
@@ -149,9 +161,10 @@ export function texelOf(cam: THREE.Camera): number {
  * which is the safe direction: an unregistered shadow camera draws exactly what
  * it drew before this file existed.
  */
-export function tierFor(dev: readonly number[], texelM: number): number {
+export function tierFor(dev: readonly number[], texelM: number,
+                        nearM = NEAREST_CASTER_M): number {
   if (!SHADOW_LOD_ON || !(texelM > 0)) return 0;
-  const budget = texelM * SHADOW_LOD_TEXELS;
+  const budget = budgetFor(texelM, nearM);
   let t = 0;
   for (let i = 1; i < dev.length; ++i) if (dev[i] <= budget) t = i;
   return t;
@@ -270,10 +283,11 @@ export function attachShadowLod(mesh: THREE.BatchedMesh, ix: LodIndex): void {
   mesh.onBeforeShadow = function onBeforeShadow(renderer, object, camera,
                                                 shadowCamera, geometry,
                                                 depthMaterial, group): void {
-    const texel = texelOf(shadowCamera);
+    const cascade = cascadeOf(shadowCamera);
+    const texel = cascade === null ? 0 : cascade.texelM;
     saved.length = 0;
     let pass = 0;
-    if (texel > 0) {
+    if (cascade !== null && texel > 0) {
       stats.passes++;
       const n = m.instanceCount;
       stats.instances = n;
@@ -281,7 +295,7 @@ export function attachShadowLod(mesh: THREE.BatchedMesh, ix: LodIndex): void {
         const cur = m.getGeometryIdAt(i);
         const row = ix.row[cur];
         if (row === undefined || row === null) continue;
-        const want = Math.max(ix.tier[cur], tierFor(row.dev, texel));
+        const want = Math.max(ix.tier[cur], tierFor(row.dev, texel, cascade.nearM));
         const next = idAt(row, want);
         if (next < 0 || next === cur) continue;
         saved.push(i, cur);
@@ -329,68 +343,14 @@ export function publishLadders(pool: string, rows: LodRow[]): void {
   else ladders[at].rows = rows;
 }
 
-export interface ShadowLodReport {
-  /** The flag AS PARSED. `raw: null` with `on: true` is the boot default. */
-  flag: { raw: string | null; on: boolean; bootDefault: boolean; k: number };
-  cascades: { name: string; texelM: number; texelMM: number }[];
-  swaps: number;
-  instances: number;
-  /** Cumulative triangles the swap removed, and the cascade passes it ran in.
-   *  `saved / passes * cascades` is the per-FRAME saving to check an A/B with. */
-  savedTriangles: number;
-  passes: number;
-  batches: number;
-  savedPerFrame: number;
-  measure: { calls: number; ms: number };
-  pools: {
-    pool: string;
-    rows: {
-      label: string; tris: number[]; devMM: number[];
-      /** Tier this ladder is admitted to at each published cascade, in the
-       *  published order, at the shipped k and at k = 2 beside it. */
-      tierPerCascade: number[]; tierPerCascadeK2: number[];
-    }[];
-  }[];
+/** Accessors for `ShadowLodReport.ts`, which owns the probe surface. Exported
+ *  rather than the mutable arrays themselves so nothing outside can write them. */
+export function cascadesPublished(): readonly Cascade[] { return published; }
+export function laddersPublished(): readonly { pool: string; rows: LodRow[] }[] {
+  return ladders;
 }
-
-export function shadowLodReport(): ShadowLodReport {
-  return {
-    flag: { raw: RAW, on: SHADOW_LOD_ON, bootDefault: true, k: SHADOW_LOD_TEXELS },
-    cascades: published.map((p) => ({
-      name: p.name, texelM: p.texelM,
-      texelMM: Math.round(p.texelM * 1e5) / 100,
-    })),
-    swaps: stats.swaps,
-    instances: stats.instances,
-    savedTriangles: stats.saved,
-    passes: stats.passes,
-    batches: stats.batches,
-    // THE LAST FRAME, not a lifetime mean. Published so it can be checked
-    // AGAINST an A/B rather than instead of one; if the two disagree, the
-    // counter is the one to doubt and the frame is the one to believe.
-    savedPerFrame: frameSaving(),
-    measure: measureStats(),
-    pools: ladders.map((l) => ({
-      pool: l.pool,
-      rows: l.rows.map((r) => ({
-        label: r.label, tris: [...r.tris],
-        devMM: r.dev.map((d) => (Number.isFinite(d) ? Math.round(d * 1e5) / 100 : -1)),
-        tierPerCascade: published.map((p) => tierFor(r.dev, p.texelM)),
-        tierPerCascadeK2: published.map((p) => {
-          const budget = p.texelM * 2;
-          let t = 0;
-          for (let i = 1; i < r.dev.length; ++i) if (r.dev[i] <= budget) t = i;
-          return SHADOW_LOD_ON && p.texelM > 0 ? t : 0;
-        }),
-      })),
-    })),
-  };
+export function swapStats(): { swaps: number; instances: number; saved: number;
+  passes: number; batches: number } {
+  return { ...stats };
 }
-
-(self as unknown as { __ofShadowLod: unknown }).__ofShadowLod = {
-  report: shadowLodReport,
-  // Not routed through `window.__of`: `Debug.ts` is at the 400-line cap and
-  // belongs to another lane tonight. `Surfaces.ts` set this precedent and gave
-  // the same reason; both are removable in one line.
-  on: SHADOW_LOD_ON, k: SHADOW_LOD_TEXELS,
-};
+export { frameSaving };

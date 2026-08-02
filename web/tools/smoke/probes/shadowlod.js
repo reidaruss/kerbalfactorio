@@ -164,6 +164,9 @@
   return {
     site: site.name, sun,
     flag: r.flag, askedOff, controlIsReal, bootDefaultAsserted,
+    // RN-696: the k POLICY and its inputs, so the per-cascade k can be
+    // re-derived from the rig's own geometry rather than taken on trust.
+    budget: r.budget,
     cascades: r.cascades,
     swaps: r.swaps, instancesSwept: r.instances,
     savedTriangles: r.savedTriangles, passes: r.passes, batches: r.batches,
@@ -188,6 +191,12 @@
       // Section 2.1's number, re-derived rather than remembered. A cascade 0
       // that stopped being 15.47 mm would silently change every tier here.
       && Math.abs(r.cascades[0].texelMM - 15.47) < 0.05
+      // RN-696. The screen footprint is the whole basis of the per-cascade k, so
+      // it is asserted rather than assumed: cascade 0's texel must be about 3x
+      // coarser ON SCREEN than cascade 1's, which is the asymmetry the policy
+      // exists for. If the splits or the FOV ever make them equal, one k would
+      // be correct again and this check is what would say so.
+      && r.cascades[0].pxPerTexel > 2.4 * r.cascades[1].pxPerTexel
       // The measurement ran at all, ON THE SIDE THAT HAS ONE. `calls === 0` with
       // a full ladder table would be a deviation array of zeroes admitting every
       // tier; but the control side deliberately never adds a tier 1 or 2 to a

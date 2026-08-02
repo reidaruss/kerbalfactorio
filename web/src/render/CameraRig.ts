@@ -6,6 +6,10 @@ import * as THREE from 'three';
 import type { DepthPolicy } from './DepthPolicy.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 import { FAR_SCALE, LAYER_PLAYER_BODY, LAYER_PROPS } from './Scenes.js';
+// RN-696: the shadow-LOD budget is a SCREEN error, so it needs the FOV the
+// client is actually running. Published here because this is the one place that
+// knows, and RN-641 already moved this number once.
+import { publishFov } from './ShadowLodK.js';
 
 export class CameraRig {
   /** Pass 1. Rotation only: never translated, so the sky is at infinity. */
@@ -65,6 +69,7 @@ export class CameraRig {
 
   setFov(deg: number): void {
     this.fovDeg = deg;
+    publishFov(deg);
     for (const c of this.cameras()) { c.fov = deg; c.updateProjectionMatrix(); }
   }
 
