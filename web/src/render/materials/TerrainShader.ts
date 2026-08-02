@@ -57,6 +57,9 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     uniform float uGroundTexAmp;
     uniform sampler2D uGroundRelief; // RN-147's four asymmetric height fields
     uniform float uGroundReliefAmp;
+    // RN-741. 1 takes the relief's slope over a fixed tile-space support, 0 is
+    // the pre-RN-741 screen derivative that printed the etched squiggles.
+    uniform float uReliefGrad;
     // RN-57. x water level (metres above datum), y shoreline radius m, z the
     // height in metres over which the wet band dries out, w amplitude.
     uniform vec4 uWetBand;
@@ -290,6 +293,38 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // itself at range before ofArtBump's footprint fade acts.
         if (uGroundReliefAmp > 0.0) {
           float hR = ofArtRelMix(rel, vRelW, coverSel);
+          // RN-741. THE GRADIENT IS BAND-LIMITED AND THE FIELD IS NOT TOUCHED.
+          // See ofArtRelGrad's note in TerrainArt.glsl for the mechanism: a
+          // screen derivative of an authored SHARP CREST is a discontinuity,
+          // and it printed as etched squiggles on every close frame. The two
+          // extra fetches are of a texture already bound and already sampled at
+          // this exact coordinate, and they sit inside this branch, whose
+          // condition is a bare uniform and therefore uniform control flow.
+          //
+          // ROUGH FIELD BY EXPLICIT OFFSET, SMOOTH MAPPING BY dFdx. ruv is
+          // linear across a triangle, so its screen derivatives are exact and
+          // are the right tool; the height is not, and is differenced over a
+          // fixed tile-space support instead.
+          vec2 ruv = vChunkUv * 16.0;
+          float gx, gy;
+          if (uReliefGrad > 0.5) {
+            float e = OF_RELIEF_GRAD_UV;
+            float hU = ofArtRelMix(texture2D(uGroundRelief, ruv + vec2(e, 0.0)),
+                                   vRelW, coverSel);
+            float hV = ofArtRelMix(texture2D(uGroundRelief, ruv + vec2(0.0, e)),
+                                   vRelW, coverSel);
+            float dhdu = (hU - hR) / e;
+            float dhdv = (hV - hR) / e;
+            vec2 dx = dFdx(ruv);
+            vec2 dy = dFdy(ruv);
+            gx = dhdu * dx.x + dhdv * dx.y;
+            gy = dhdu * dy.x + dhdv * dy.y;
+          } else {
+            // ?reliefgrad=0, the exact pre-RN-741 path, so the pair is ONE FLAG
+            // apart on ONE build under ONE light rather than two commits apart.
+            gx = dFdx(hR);
+            gy = dFdy(hR);
+          }
           // OF_RELIEF_FINE_M, not OF_ART_FINE_M: the fade must protect THIS
           // field's finest wavelength. The mip chain bounds the sampled value
           // but never its gradient (RN-78d), measured again here as moire
@@ -302,7 +337,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // 30 to 60 m completes inside the max-depth ring, where the UV
           // scale is constant, so no LOD step is ever visible in the term.
           float relW = uGroundReliefAmp * (1.0 - smoothstep(30.0, 60.0, dist));
-          n = ofArtBump(n, vWorld, hR, relW, OF_RELIEF_FINE_M);
+          n = ofArtBumpG(n, vWorld, gx, gy, relW, OF_RELIEF_FINE_M);
         }
       #endif
 

@@ -232,7 +232,12 @@ export const TERRAIN_ART_STRATA = /* glsl */`
  * for the same reason and by the same term.
  */
 export const TERRAIN_ART_BUMP = /* glsl */`
-  vec3 ofArtBump(vec3 n, vec3 pos, float h, float amp, float fineM) {
+  // RN-741. The body of ofArtBump, taking the height's screen derivatives as
+  // ARGUMENTS rather than computing them, so a caller whose field is too rough
+  // to differentiate at pixel scale can supply a band-limited pair instead.
+  // Everything else, the footprint fade and the surface-gradient algebra, is
+  // unchanged to the character and is shared by both entry points.
+  vec3 ofArtBumpG(vec3 n, vec3 pos, float hx, float hy, float amp, float fineM) {
     if (amp <= 0.0) return n;
     vec3 sx = dFdx(pos);
     vec3 sy = dFdy(pos);
@@ -243,8 +248,16 @@ export const TERRAIN_ART_BUMP = /* glsl */`
     vec3 r2 = cross(n, sx);
     float det = dot(sx, r1);
     if (abs(det) < 1.0e-12) return n;
-    vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+    vec3 grad = sign(det) * (hx * r1 + hy * r2);
     return normalize(abs(det) * n - amp * grad);
+  }
+
+  // The original entry point, behaviour unchanged: it differentiates the height
+  // in screen space, which is correct for the vnoise octaves because they are
+  // ANALYTIC and smooth at pixel scale. It is NOT correct for a sampled field
+  // with authored crests; see ofArtRelGrad.
+  vec3 ofArtBump(vec3 n, vec3 pos, float h, float amp, float fineM) {
+    return ofArtBumpG(n, pos, dFdx(h), dFdy(h), amp, fineM);
   }
 `;
 
@@ -267,6 +280,33 @@ export const ART_FINE_M = 4.2;
  * retires the term before its gradient can alias.
  */
 export const RELIEF_FINE_M = 0.45;
+
+/**
+ * RN-741. The support the relief's slope is measured over, in TILE UNITS, where
+ * one unit is one repeat of `of_ground_relief` at the 16-repeat consumer
+ * coordinate.
+ *
+ * DERIVED, NOT PICKED. A depth-14 chunk is 57.856 m and carries 16 repeats, so
+ * one repeat is 3.616 m and the finest authored wavelength RELIEF_FINE_M of
+ * 0.45 m is 0.1244 of a repeat. The support is a QUARTER of that finest
+ * wavelength, which is the widest offset that still resolves the feature it is
+ * differencing (half a wavelength is where a central difference starts reading
+ * the next crest instead of this one, named failure mode 2) and the narrowest
+ * that spans meaningfully more than the ~2 cm crest whose discontinuity is the
+ * defect.
+ *
+ *     0.45 / 3.616 * 0.25 = 0.0311
+ *
+ * In metres at depth 14 that is 0.112 m, so the slope is averaged over about a
+ * hand's width of ground rather than over one pixel.
+ *
+ * The same LOD caveat the rest of this file carries applies and is bounded the
+ * same way: the chunk UV's world size doubles at every LOD step, so this is a
+ * growing world distance at coarser rings. It does not matter here because the
+ * relief term fades out over 30 to 60 m and the streamer is at max depth inside
+ * that, so no LOD step is reachable while the term is live.
+ */
+export const RELIEF_GRAD_UV = 0.0311;
 
 /**
  * WET GROUND AT THE WATERLINE (RN-57). The fourth term, and it is here for
@@ -412,6 +452,65 @@ export const TERRAIN_ART_RELIEF = /* glsl */`
     vec4 h = r - vec4(0.5);
     return mix(h.b * 0.34, dot(h, relW), coverSel);
   }
+
+  // RN-741. THE ETCHED SQUIGGLES, AND WHY THE AMPLITUDE COULD NEVER HAVE FIXED
+  // THEM.
+  //
+  // The relief bump took dFdx/dFdy OF THE SAMPLED HEIGHT. A screen derivative
+  // is a finite difference over one pixel, and this field is authored with
+  // SHARP CRESTS: groundtex.py asserts per-channel asymmetry precisely because
+  // RN-78's symmetric attempt photographed as choppy water. A sharp crest is a
+  // SLOPE DISCONTINUITY, so its derivative jumps, so the normal flips hard
+  // along every crest line and prints a hairline exactly there. Rendered, that
+  // is a field of etched squiggles tracing the crest contours, which is what
+  // Reid has been looking at.
+  //
+  // THE IRONY IS THE PART WORTH KEEPING: the asymmetry is authored ON PURPOSE
+  // and is the whole reason this field is not the RN-78 water read, and that
+  // same asymmetry is what breaks the derivative. So the fix must not touch the
+  // field.
+  //
+  // AND IT IS WHY THE AMPLITUDE SWEEP NEVER HELPED. RELIEF_DEFAULT came down
+  // 0.30 to 0.12 to 0.08 chasing this, and 0.30 to 0.08 SCALES a discontinuity;
+  // it does not remove one. A term whose defect is structural does not have a
+  // magnitude that makes it correct.
+  //
+  // THE FIX IS TO SMOOTH THE GRADIENT, NOT THE FIELD. The height keeps every
+  // authored crest, so the asymmetry that earns this texture its place survives
+  // untouched. What changes is the SUPPORT the slope is measured over: instead
+  // of one pixel, a fixed offset in TILE units, which is a fixed world distance
+  // inside the band where this term is live. Differencing over a support wider
+  // than the crest spreads the slope change across that distance instead of
+  // across one pixel, so the normal turns over the crest rather than snapping
+  // at it.
+  //
+  // WHICH DERIVATIVE IS TAKEN WHERE IS THE WHOLE POINT, and both halves are
+  // deliberate: the ROUGH field is differenced by explicit offsets, and the
+  // SMOOTH mapping from tile UV to screen is still dFdx, because uv and
+  // position are LINEAR across a triangle and their screen derivatives are
+  // exact. Nothing rough is differentiated in screen space any more and nothing
+  // smooth is sampled twice.
+  //
+  // COST: two extra fetches of a texture already bound and already sampled at
+  // this exact coordinate, both inside the amplitude branch, whose condition is
+  // a BARE UNIFORM and therefore uniform control flow with defined LOD (the
+  // same argument the unconditional g1/g2 samples rest on, applied in the other
+  // direction). At amplitude 0 they cost nothing at all.
+  //
+  // NAMED FAILURE MODES, BEFORE MEASURING:
+  //   1. THE BUMP GOES LIMP. Averaging the slope over a wider support lowers it
+  //      wherever the field is sharp, so the term gets weaker as well as
+  //      smoother, and "the squiggles are gone" would then be indistinguishable
+  //      from "the relief is gone". The pair therefore has to show the relief
+  //      still present, not merely the artefact absent.
+  //   2. THE OFFSET BECOMES A SECOND FREQUENCY. Too wide and the difference
+  //      starts sampling the NEXT crest rather than this one, which reads as a
+  //      lower-frequency ripple that no channel authored.
+  //   3. IT IS A FORWARD DIFFERENCE, so the gradient is biased half an offset
+  //      along +u and +v. That is acceptable ONLY because nothing else keys on
+  //      this field: the albedo uses of_ground, not of_ground_relief, so there
+  //      is no second term for the relief to slide against.
+  float ofArtRelGradStep() { return OF_RELIEF_GRAD_UV; }
 `;
 
 /**
@@ -544,5 +643,6 @@ export const TERRAIN_ART_SPEC = /* glsl */`
 
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
   + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
+  + `#define OF_RELIEF_GRAD_UV ${RELIEF_GRAD_UV.toFixed(4)}\n`
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
   + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_SPEC;

@@ -185,6 +185,19 @@ function groundReliefAmpFromQuery(): number {
  * restores the pure-Lambert terrain exactly, which is the before half of every
  * pair this term is judged by, one flag apart on one build under one light.
  */
+/**
+ * RN-741. Whether the relief bump takes its slope over a fixed tile-space
+ * support (1, shipped) or as a screen derivative of the sampled height (0, the
+ * exact pre-RN-741 path).
+ *
+ * This is a NEGATIVE CONTROL rather than a taste knob, so it is a hard 0 or 1
+ * and not an amplitude: the thing it restores is a defect, and an intermediate
+ * value would be a blend of two derivations rather than either of them.
+ */
+function reliefGradFromQuery(): number {
+  return new URLSearchParams(self.location.search).get('reliefgrad') === '0' ? 0 : 1;
+}
+
 function specAmpFromQuery(): THREE.Vector2 {
   const p = new URLSearchParams(self.location.search);
   const all = p.get('terrainspec') === '0' ? 0 : 1;
@@ -325,6 +338,10 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // toggle that reached the near material and not the far one would be a
   // second opinion about how the ground responds to light.
   const specAmp = specAmpFromQuery();
+  // RN-741, shared by reference into both materials for the one-authority
+  // reason artAmp is: a control that reached the near material and not the far
+  // one would make the negative control a statement about one scene only.
+  const reliefGrad: THREE.IUniform<number> = { value: reliefGradFromQuery() };
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -366,6 +383,7 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },
       uSpecAmp: { value: specAmp },
+      uReliefGrad: reliefGrad,
     });
     const m = new THREE.ShaderMaterial({
       uniforms,
@@ -417,6 +435,16 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
     // instrument, not a page reload.
     setRelief(amp: number): number { reliefAmp.value = amp; return amp; },
     getRelief(): number { return reliefAmp.value; },
+    /** RN-741. 1 is the band-limited tile-space slope, 0 the pre-RN-741 screen
+     *  derivative. Runtime, so a probe gets RN-30's settled-frame pair rather
+     *  than two page loads, which is what the shadow-LOD `k` comparison could
+     *  NOT have and had to state as a bound instead. */
+    setReliefGrad(v: number): number { reliefGrad.value = v > 0.5 ? 1 : 0; return reliefGrad.value; },
+    getReliefGrad(): number { return reliefGrad.value; },
+    reliefGradDefault(): { present: boolean; value: number } {
+      const p = new URLSearchParams(self.location.search);
+      return { present: p.get('reliefgrad') !== null, value: reliefGradFromQuery() };
+    },
     // RN-731, same handle for the same reason as setRelief: the specular is a
     // terrain art term, and a probe toggling it wants RN-30's settled-frame
     // instrument (two frames with the camera, sun, streamed chunk set and

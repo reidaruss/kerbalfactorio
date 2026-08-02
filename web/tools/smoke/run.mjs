@@ -106,6 +106,11 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // RN-148, the asymmetric relief bump. `groundrelief=0` removes the term;
   // `groundreliefamp=` sweeps it.
   'groundrelief', 'groundreliefamp',
+  // RN-741, the relief bump's gradient. `reliefgrad=0` restores the screen
+  // derivative of the sampled height, i.e. the etched squiggles exactly, and
+  // is the negative control for the whole fix. It is a hard 0 or 1 and not an
+  // amplitude, because what it restores is a defect rather than a level.
+  'reliefgrad',
   // RN-731, the per-part material channel on the rock and ore node batches.
   // `rockmat=0` removes the hook entirely and restores the stock three
   // program, i.e. every ore seam back at one roughness and one metalness.
