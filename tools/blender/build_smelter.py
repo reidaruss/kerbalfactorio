@@ -75,12 +75,55 @@ blocked and no-power stay standard so the scanning rule still holds.
 HALF IS A HARD EDGE. No LOD0 geometry crosses it in any axis in the tangent
 plane, which is what makes the exported bounding box exactly 4 x 4 and the
 grid-footprint check exact rather than approximate.
+
+--------------------------------------------------------------------------
+RN-552: THE FORM PASS, under docs/web/ART-DIRECTION.md
+--------------------------------------------------------------------------
+The machine above is correct against every gate it has and it is the defect
+ART-DIRECTION.md names: an extruded box with flat colour, four identical
+sides, nothing at ankle height, and a firebox that reads as a television
+because it is a large white rectangle in a flat wall.
+
+WHAT A SMELTER IS, WHICH IS THE WHOLE BRIEF FOR THIS PASS. It is a shaft
+furnace. It is lined with refractory brick that expands when it is hot, so it
+is held in COMPRESSION by steel tie rods running the full height of every
+corner with a nut and a bearing plate at each end. That single detail is worth
+more than any other on this machine, because it is the thing that makes a box
+read as a FURNACE rather than as a generic housing, and nothing else in the
+machine set has it. It is charged from above and behind, it pours from a
+launder at the front, its firebox door is a heavy casting with a dog latch and
+a peep hole rather than a pane of glass, and the brick around the pour mouth is
+where a furnace shows its age.
+
+THE CLEARANCE IS 0.30 m AND THAT IS THE DESIGN CONSTRAINT, NOT AN OBSTACLE.
+The body is 3.40 across on a 4.00 footprint, so a greeble on a body face has
+0.30 m before it reaches the hard edge, where the assembler had 0.40. All three
+4 m machines share BODY = 3.40, so this is a family fact and narrowing this one
+to buy room would break the family for one asset's convenience. Working inside
+it has one consequence worth writing down rather than discovering:
+`machine_form.junction` stacks a `plate` (0.024) on a `housing` (0.281) and
+reaches 0.305, so A JUNCTION BOX DOES NOT FIT ON A 4 m MACHINE'S BODY FACE and
+`Face._check` refuses it by name. It goes on the roof, which has 0.68 m of room
+between the deck pan and H. That is the footprint assertion doing its job at
+design time instead of the validator finding it in the shipped bytes.
+
+WHERE THE TRIANGLES WENT, AND WHY THIS IS NOT THE ASSEMBLER'S BUDGET. The
+assembler is the RAREST machine in a base and portcost's own 79-building
+reference base contains none at all; it contains TWENTY-TWO SMELTERS. Every
+triangle added here is multiplied by 22 and then again by the four passes
+`MachineBatch` draws (one main plus three CSM cascades), so this asset's raise
+is worth roughly forty times the assembler's in a real frame. The detail is
+therefore spent on the two faces a player stands at and on the ONE silhouette
+feature (the tie rods and the stack), and the roof railing the assembler bought
+for its 8 m roofline is deliberately NOT repeated here: a 4 m roof seen from
+the ground is mostly its own rim.
 """
 
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine_form as mf  # noqa: E402
 import of_lib as of  # noqa: E402
 
 NAME = "Smelter"
@@ -114,6 +157,7 @@ IN_Z = 0.90                     # FS-57's item_in height, unchanged
 OUT_Z = 0.45                    # FS-57's item_out height, unchanged
 STATUS_Z = 1.90
 DOOR_Z = 1.70                   # firebox centre, ABOVE the outlet slot's head
+PEEP_Z = DOOR_Z + 0.14          # the sight port, above the door's own centre
 
 # Intake slot. The sill is short (0.18) on purpose: it puts the slot's bottom
 # edge at 0.37, clear of the painted skirt at 0.30 to 0.36, so the intake's
@@ -145,6 +189,65 @@ CORNERS = [(sx * POST_C, sy * POST_C) for sx in (-1, 1) for sy in (-1, 1)]
 PWR_X, PWR_Y, PWR_Z = 1.98, 1.10, 3.02
 
 RIB_YS = (-1.35, -0.90, 0.90, 1.35)
+
+# --- RN-552: the detail frame (machine_form.py) ----------------------------
+# The four body faces and the roof pan, each carrying the HARD EDGE nothing
+# mounted on it may cross. A greeble that would grow the 4 x 4 footprint or
+# push past H fails the BUILD, by name, with the overshoot in metres.
+#
+# The faces are the BODY's at 1.70, not the plinth's at 2.00, so every layer in
+# machine_form.LAYER has 0.30 m to live in. See the module docstring: that is
+# 0.10 m less than the assembler had and it is the reason a junction box is on
+# the roof here and on a wall there.
+FRONT = mf.Face("Y", -1, -BODY_HALF, limit=-HALF, name="front (pour)")
+REAR = mf.Face("Y", 1, BODY_HALF, limit=HALF, name="rear (charge)")
+SERV = mf.Face("X", -1, -BODY_HALF, limit=-HALF, name="service")
+STAT = mf.Face("X", 1, BODY_HALF, limit=HALF, name="status")
+ROOF = mf.Face("Z", 1, DECK_TOP, limit=H, name="roof pan")
+
+# |u| beyond this on a body face is INSIDE a brick post. The posts are 0.36
+# square centred on 1.72, so they occupy 1.54 to 1.90 and stand 0.02 proud of
+# the body: a greeble past 1.54 would be swallowed by one. DERIVED from the
+# post's own numbers rather than typed, because the post is what decides it.
+CLEAR = POST_C - POST * 0.5 - 0.04                      # 1.50
+
+# The rubbing strip at the foot of every face. Its TOP is derived from the
+# painted skirt it stands on and its height is 40 mm more than the exposed
+# part, so its underside is BURIED in the skirt rather than resting on the
+# skirt's top plane.
+KICK_TOP = PLINTH_H + SKIRT_H + 0.40                    # 0.76
+KICK_H = 0.40 + 0.04                                    # 0.44
+
+# Plate courses through the body, showing on the +Y and -Y faces. They clear
+# the port mouths, whose frames reach |u| = 1.20, and stop short of the brick
+# posts' inner edge at 1.54.
+SEAM_US = (-1.42, 1.42)
+SEAM_Z0, SEAM_Z1 = 0.46, 2.44
+
+# --- the tie rods, and they are the best idea in this pass ------------------
+# A shaft furnace is lined with refractory that grows when it is hot, so the
+# lining is held in COMPRESSION by steel rods running the full height of the
+# shell with a nut and a bearing plate at each end. It is the detail that makes
+# a box read as a FURNACE rather than as a housing, nothing else in the machine
+# set has one, and it costs three boxes per corner.
+#
+# THE ROD IS OUTBOARD OF THE BRICK POST, NOT ON IT. A rod centred on the post
+# would be swallowed: the post stands 0.02 proud of the body and the rod is
+# 0.09 across. It sits on the post's own DIAGONAL, pushed out to 1.86 in both
+# axes, which is 0.14 inside the footprint edge and clear of both slot frames.
+TIE_C = 1.86
+TIE_W = 0.09
+# THE ROD'S FOOT IS BURIED IN THE PLINTH, NOT STOOD ON IT, and the coplanar
+# gate is what said so. The first version used TIE_Z0 = PLINTH_H exactly, on
+# the reasonable-sounding grounds that a tie rod stands on the foundation. The
+# painted skirt's own UNDERSIDE is also at PLINTH_H and also points down, so
+# every rod put a Steel down-face on an Accent down-face: 8 of this asset's 12
+# new same-facing pairs, and RN-411's catalogued cause verbatim, a part whose
+# extent lands exactly on its host's boundary plane. Buried by BODY_Z0's own
+# reasoning and DERIVED from the plinth rather than typed, so moving the plinth
+# moves the rod with it.
+TIE_Z0 = PLINTH_H - 0.06        # inside the plinth, sharing no plane with it
+TIE_Z1 = 2.84                   # under the roof pan, so the top nut is visible
 
 
 def _mouth(mb, sign, z_c, open_w, open_h, jamb, head_h, sill_h, band_role):
@@ -231,6 +334,277 @@ def _posts(mb):
                (cx, cy, (POST_Z0 + POST_TOP) * 0.5), "Rock")
 
 
+def _tie_rods(mb):
+    """Four full-height tie rods with a bearing plate and a nut at each end.
+
+    See the TIE_C block above for why they exist and why they are outboard of
+    the brick. The plate is WIDER than the nut and the nut is proud of the
+    plate, so the three parts of an end fitting have three different outer
+    planes and none of them can be coplanar with another."""
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            x, y = sx * TIE_C, sy * TIE_C
+            mb.box((TIE_W, TIE_W, TIE_Z1 - TIE_Z0), (x, y, (TIE_Z0 + TIE_Z1)
+                                                     * 0.5), "Steel")
+            for z, s in ((TIE_Z0 + 0.11, 1), (TIE_Z1 - 0.11, -1)):
+                mb.box((0.24, 0.24, 0.07), (x, y, z), "SteelDark")
+                mb.box((0.15, 0.15, 0.11), (x, y, z + s * 0.055), "Steel")
+
+
+def _posts_coursed(mb):
+    """The refractory posts, laid in COURSES instead of extruded.
+
+    Three stacked blocks of alternating width rather than one 2.46 m box. Brick
+    is the only non-steel material on this machine and the thing that tells it
+    apart from the storage box at 40 m, so it is worth two extra boxes per
+    corner to make it read as masonry rather than as a painted pilaster. The
+    middle course is 20 mm narrower, which puts a horizontal shadow line at two
+    heights on every corner of the machine for twenty-four triangles apiece."""
+    zs = ((POST_Z0, 1.05, POST), (1.05, 1.86, POST - 0.04), (1.86, POST_TOP,
+                                                             POST))
+    for cx, cy in CORNERS:
+        for z0, z1, w in zs:
+            mb.box((w, w, z1 - z0), (cx, cy, (z0 + z1) * 0.5), "Rock")
+
+
+def _plating(mb):
+    """Plate courses across the +Y and -Y faces.
+
+    `through_seam` runs one strap the whole way through the body, so twelve
+    triangles buy TWO visible seams and the two can never drift out of line
+    with each other, because they are one box. The ribs this machine already
+    had do the same job on the +X and -X faces at a heavier stand-off, so the
+    two axes now read as ribs one way and plate joints the other, which is what
+    a welded shell inside a stiffened frame actually looks like."""
+    mf.through_seam(mb, "Y", BODY_HALF, SEAM_US, SEAM_Z0, SEAM_Z1, 0.10,
+                    "SteelDark")
+
+
+def _anchors(mb):
+    """The machine is BOLTED DOWN, and the skirt stops being a blank ring.
+
+    One anchor pad per side, each carrying a bolt. This closes the same frame
+    the assembler's anchors closed: a player-eye view of the front-lower corner
+    was a picture of an empty band and an empty slab. The -Y pad is at +X only,
+    because `_plinth` deliberately removes the foundation across the outlet and
+    a pad over the notch would stand on nothing."""
+    skirt = mf.Face("Z", 1, PLINTH_H + SKIRT_H, limit=H, name="skirt top")
+    pad = mf.Face("Z", 1, skirt.out(mf.layer("boss")), limit=H, name="pad top")
+    for loc in ((0.0, 1.82), (0.0, -1.82), (1.82, 0.0), (-1.82, 0.0),
+                (1.60, -1.82)):
+        if loc[1] < -1.0 and abs(loc[0]) < SLOT_HALF:
+            continue
+        du, dv = (0.30, 0.22) if abs(loc[1]) > abs(loc[0]) else (0.22, 0.30)
+        skirt.part(mb, du, dv, loc[0], loc[1], "boss", "SteelDark")
+        pad.part(mb, 0.08, 0.08, loc[0], loc[1], "bolt", "Steel")
+
+
+def _front_detail(mb):
+    """The -Y face: THE POUR SIDE, and the one a player stands at.
+
+    It carries the firebox and the launder, so this is where the triangles go.
+    Everything here is aimed at a person 3 m away and 1.7 m tall."""
+    # The rubbing strip, in two runs either side of the outlet, and the -X run
+    # is KICKED IN. Wear as geometry, which is the half of wear that survives
+    # whatever any texture does: a dent is the CAUSE a scuff is the effect of.
+    # This corner is where the ingot cart hits, which is why the dent is here
+    # and not on a face nothing passes.
+    #
+    # STEELDARK AND NOT ACCENT, AND THE FIRST BUILD PROVED WHY. A kick plate
+    # is a rubbing strip and rubbing strips are bare metal; painting it in the
+    # machine's own accent put THREE orange bands within 0.5 m of the ground
+    # (the port sill's, the painted skirt's and this one), which the detail
+    # render showed as a solid orange plinth with the geometry lost inside it.
+    # The Accent on this machine means "here is where it hands you something",
+    # and a colour that means one thing has to be spent on one thing.
+    mf.kick_plate(mb, FRONT, -CLEAR, -1.02, KICK_TOP, KICK_H, "SteelDark",
+                  dent=0.72, dent_at=-1)
+    mf.kick_plate(mb, FRONT, 1.02, CLEAR, KICK_TOP, KICK_H, "SteelDark")
+
+    # THE FIREBOX STOPS BEING A TELEVISION. It was a 1.60 x 0.86 emissive slab
+    # flush in a flat wall, which is a lit rectangle and not a door. A furnace
+    # door is a heavy casting: it sits inside a raised coaming, it is hung on
+    # two knuckles down one side, it is dogged shut by a lever on the other,
+    # and the only light that gets out gets out through a PEEP HOLE. So the
+    # emissive area drops to a 0.30 x 0.22 port and a thin sight strip, and the
+    # rest of what used to glow is now iron.
+    FRONT.coaming(mb, 1.34, 0.94, 0.0, DOOR_Z, "SteelDark", rail=0.085)
+    FRONT.part(mb, 1.34, 0.94, 0.0, DOOR_Z, "plate", "Steel")
+    door = mf.Face("Y", -1, FRONT.out(mf.layer("plate")), limit=-HALF,
+                   name="firebox door")
+    for s in (-1, 1):
+        door.part(mb, 0.10, 0.24, -0.60, DOOR_Z + s * 0.30, "hinge",
+                  "SteelDark")
+    door.part(mb, 0.09, 0.46, 0.60, DOOR_Z, "latch", "SteelDark")
+    door.part(mb, 0.34, 0.09, 0.30, DOOR_Z - 0.02, "latch", "Steel")
+    mf.bolt_run(mb, door, -0.42, 0.42, DOOR_Z - 0.38, 4, 0.055, "SteelDark")
+    # The peep hole's SURROUND. A sight port in a furnace door is a heavy
+    # casting with a cover you swing aside, so the hole stands off the door on
+    # its own boss rather than being a hole in flat plate.
+    door.part(mb, 0.40, 0.32, 0.0, PEEP_Z, "boss", "SteelDark")
+
+    # A cable riser on the -X third and NOTHING on the +X third, which is the
+    # asymmetry this face was still missing. Both thirds were blank between the
+    # kick plate and the collar, and giving them the same fitting would have
+    # made the front symmetric about the door again. The +X third has the
+    # placard instead, at a different height, so the two sides balance by mass
+    # without matching.
+    mf.tray(mb, FRONT, -1.24, 0.98, 1.86, 0.12, 3, "SteelDark", "Steel")
+
+    # The launder: the outlet stops being a shelf and becomes a channel.
+    # A pour that runs off the side of a flat shelf is a pour on the floor, so
+    # a real one has CHEEKS. They are taller than the floor of the channel and
+    # narrower than the lip, so the three parts stack without sharing a plane.
+    mb.box((1.30, 0.24, 0.10), (0, -1.86, 0.25), "SteelDark")
+    for s in (-1, 1):
+        mb.box((0.09, 0.26, 0.20), (s * 0.66, -1.85, 0.34), "SteelDark")
+    mb.box((1.44, 0.08, 0.06), (0, -1.96, 0.25), "Accent")
+    # The crust. A launder that has poured is a launder with slag frozen on its
+    # lip, and that is a fact about the SHAPE, not only about the colour: two
+    # small blocks of unequal size on unequal centres, which is the cheapest
+    # asymmetry in the file at twenty-four triangles.
+    #
+    # BOTH ARE SUNK INTO THE LAUNDER FLOOR. Their first version started at
+    # z = 0.30, which is the launder floor's top AND the painted skirt's own
+    # underside, and slag lying exactly on a boundary plane is the remaining 4
+    # of this asset's 12 new coplanar pairs. Slag does not sit on a surface, it
+    # welds itself to one, so burying the block is also the truer shape.
+    # AND THEIR FRONT FACES STOP SHORT OF THE LAUNDER'S OWN. The second build
+    # still read 2 pairs: the larger block was 0.10 deep centred on -1.93, so
+    # its front landed on exactly -1.98, which is the launder floor's front
+    # plane, Rock against SteelDark. Same cause as the two already fixed above,
+    # one axis over, and it is worth writing down that the SECOND fix for a
+    # cause re-committed it: burying the block in Z said nothing about Y.
+    mb.box((0.22, 0.09, 0.07), (-0.34, -1.925, 0.315), "Rock")
+    mb.box((0.14, 0.08, 0.06), (0.41, -1.915, 0.310), "Rock")
+
+    mf.placard(mb, FRONT, -1.24, 2.12, 0.40, 0.26, "Accent")
+    mf.bolt_run(mb, FRONT, -CLEAR + 0.10, CLEAR - 0.10, 2.40, 6, 0.05,
+                "SteelDark")
+
+
+def _rear_detail(mb):
+    """The +Y face: THE CHARGE SIDE, and it has to look like one.
+
+    The asymmetry is why this is a separate function from `_front_detail`. A
+    machine whose four sides are the same object with the same fittings is a
+    symmetric solid however much is bolted to it. This side gets a charging
+    hood and the vibrator that shakes ore down it; the front gets the door and
+    the launder; the service side gets the air and the hatch."""
+    mf.kick_plate(mb, REAR, -CLEAR, CLEAR, KICK_TOP, KICK_H, "SteelDark")
+    # The charging hood, leaning out as it RISES: ore is tipped in from above,
+    # so the mouth is wider than its throat. It leans the OPPOSITE way to the
+    # front's launder lip, which is what makes the intake and the outlet
+    # distinguishable by SHAPE from across the base rather than by colour.
+    REAR.warped(mb, [(-1.16, 1.34, 1.00), (1.16, 1.34, 1.00),
+                     (1.16, 1.86, 3.60), (-1.16, 1.86, 3.60)],
+                "tray", "SteelDark")
+    for s in (-1, 1):
+        REAR.wedge(mb, s * 1.06, 0.07, 1.34, 0.22, 0.30, "bracket",
+                   "SteelDark")
+    # The hopper vibrator. Round and paid for: `finned_drum`'s own note is that
+    # a drum is where round is worth the triangles, because it is large and
+    # reads as a machined part where a hexagonal pipe does not. Mounted on ONE
+    # side, because a machine with a motor on both sides is symmetric again.
+    #
+    # 0.17 AND 1.80 ARE WHAT THE FOOTPRINT ALLOWS, AND THE GATE PICKED THEM.
+    # The first version was 0.20 at 1.90 centred on y = 1.86, which puts the
+    # drum's own shoulder at 2.06 and `assert_inside` refused the build with
+    # "Y high by 0.06000". `finned_drum`'s docstring predicts exactly this and
+    # names the number that has to move: on a machine with 0.30 m of clearance
+    # a drum reaches out by its RADIUS and its fins by half their SPAN, so the
+    # two have to be solved together against the hard edge rather than chosen.
+    # 0.17 + 1.82 puts the drum at 1.99 and the fins at 1.973.
+    mf.finned_drum(mb, 0.17, 0.52, (-1.06, 1.82, 2.16), "X", 3, "SteelDark",
+                   "Steel", segments=8, fin_span=1.80)
+    mf.tray(mb, REAR, 1.14, 0.95, 2.34, 0.13, 4, "SteelDark", "Steel")
+
+
+def _service_detail(mb):
+    """The -X face: combustion air, the maintenance hatch, and THE CLIMB.
+
+    THE LADDER IS THE BEST TRIANGLES ON THIS MACHINE AND THE REASON IS SCALE,
+    NOT DETAIL. It is the only greeble whose size a player already knows, so it
+    says the machine is nearly four metres tall more loudly than the machine
+    being four metres tall does, and it puts a hard vertical notch in an
+    outline that was otherwise a rectangle.
+
+    It stops at 2.28 and arrives at a bracketed landing rather than running to
+    the pan. That is arithmetic and not a decision: the collar is 0.23 proud of
+    the body from 2.60 to 2.76 and a stringer stands 0.139 proud, so a ladder
+    taken any higher DISAPPEARS INSIDE the collar and reappears as a stub."""
+    mf.kick_plate(mb, SERV, -CLEAR, CLEAR, KICK_TOP, KICK_H, "SteelDark",
+                  dent=0.38, dent_at=1)
+    mf.louvre(mb, SERV, 0.86, 1.32, 1.10, 0.86, 4, "SteelDark", "Steel")
+    mf.step_tread(mb, SERV, -0.96, 0.66, 0.54, "SteelDark",
+                  base=PLINTH_H + SKIRT_H)
+    mf.ladder(mb, SERV, -0.96, 0.96, 2.28, 0.42, 5, "Steel")
+    SERV.part(mb, 0.84, 0.07, -0.96, 2.46, "duct", "SteelDark")
+    for s in (-1, 1):
+        SERV.wedge(mb, -0.96 + s * 0.30, 0.07, 2.42, 0.20, 0.26, "bracket",
+                   "SteelDark")
+
+
+def _status_detail(mb):
+    """The +X face: the instruments and the maintenance hatch.
+
+    A furnace is the one machine in this set where a gauge cluster is not
+    decoration: temperature and pressure are the two things an operator reads,
+    and they are read from where somebody stands, which is why they are at
+    1.42 and not wherever a render would put them."""
+    mf.kick_plate(mb, STAT, -CLEAR, CLEAR, KICK_TOP, KICK_H, "SteelDark")
+    mf.gauge_cluster(mb, STAT, -0.92, 1.42, 2, "SteelDark", "Steel")
+    mf.hatch(mb, STAT, 0.72, 1.46, 0.90, 1.00, "Steel", "SteelDark",
+             "Accent", hinge_side=1)
+    mf.tray(mb, STAT, -1.34, 0.95, 2.52, 0.12, 4, "SteelDark", "Steel")
+    mf.placard(mb, STAT, -0.92, 2.14, 0.38, 0.24, "Accent")
+
+
+def _roof_detail(mb):
+    """The pan: the stack, its cleanout, and the electrics.
+
+    THE JUNCTION BOX IS HERE AND NOT ON A WALL, AND THAT IS THE FOOTPRINT
+    TALKING. `machine_form.junction` stands a `plate` lid on a `housing` body
+    and reaches 0.305 m proud; a body face on a 4 m machine has 0.30 m. It is
+    refused by name on every wall of this machine and fits with 0.38 m to
+    spare on the pan, which is the gate deciding a layout question at design
+    time instead of the validator finding it in the shipped bytes."""
+    mf.junction(mb, ROOF, -1.10, -1.06, 0.44, 0.52, "SteelDark", "Steel")
+    # The stack's plumbing goes SOMEWHERE: the junction box feeds the vibrator
+    # motor on the rear face, and the run is the only thing on the pan that
+    # crosses it. A machine's fittings that end in mid-air are decoration.
+    mf.pipe_run(mb, [(-1.10, -0.82, 3.00), (-1.10, 1.30, 3.00),
+                     (-1.06, 1.30, 3.00)], 0.11, "SteelDark", "Steel")
+
+
+def _stack(mb):
+    """The chimney: a flared foot, a tube, a rain cap, and a CLEANOUT.
+
+    It was three concentric cylinders of three diameters, which is already
+    better than a pipe, and the two things it lacked are the two things that
+    make a stack read as a working one. A cleanout door at the foot, where soot
+    is actually raked out, and a spark arrestor band under the cap. Both sit on
+    the tube rather than beside it, so neither costs a silhouette that the
+    0.34 m radius has not already paid for."""
+    mb.cylinder(CHIM_R + 0.12, 0.14, (0, CHIM_Y, DECK_TOP + 0.07), axis="Z",
+                segments=8, role="SteelDark")
+    mb.cylinder(CHIM_R, (CAP_Z0 + 0.04) - CHIM_Z0,
+                (0, CHIM_Y, (CHIM_Z0 + CAP_Z0 + 0.04) * 0.5), axis="Z",
+                segments=12, role="Steel")
+    # The cleanout, on the -Y quadrant so it faces the player who is already
+    # looking at the firebox. It is a door with a hinge and a dog, at a quarter
+    # the size of the firebox's, because it is the same idea one scale down.
+    mb.box((0.26, 0.06, 0.24), (0, CHIM_Y - CHIM_R - 0.02, 3.16), "SteelDark")
+    mb.box((0.09, 0.05, 0.09), (0.10, CHIM_Y - CHIM_R - 0.05, 3.16), "Steel")
+    # The spark arrestor: a band of a third diameter between the tube and the
+    # cap, so the stack now has FOUR diameters over its length instead of
+    # three, and the eye reads a fitting rather than a taper.
+    mb.cylinder(CHIM_R + 0.05, 0.10, (0, CHIM_Y, CAP_Z0 - 0.09), axis="Z",
+                segments=8, role="SteelDark")
+    mb.cylinder(CHIM_R + 0.10, H - CAP_Z0, (0, CHIM_Y, (CAP_Z0 + H) * 0.5),
+                axis="Z", segments=8, role="SteelDark")
+
+
 def build_lod0(root):
     mb = of.MeshBuilder()
     _shell(mb)
@@ -240,7 +614,8 @@ def build_lod0(root):
     # never overlap the plinth's own on the footprint plane. It is also why the
     # intake slot's sill stops at 0.37 and not lower.
     mb.box((W, D, SKIRT_H), (0, 0, PLINTH_H + SKIRT_H * 0.5), "Accent")
-    _posts(mb)
+    _posts_coursed(mb)
+    _tie_rods(mb)
 
     # body ribs. ONE box per rib spans the whole width and shows on BOTH side
     # faces, so eight visible ribs cost four boxes and neither ribbed face can
@@ -264,40 +639,60 @@ def build_lod0(root):
     _mouth(mb, 1, IN_Z, IN_W, IN_H, IN_JAMB, IN_HEAD, IN_SILL, "Accent")
     _mouth(mb, -1, OUT_Z, OUT_W, OUT_H, OUT_JAMB, OUT_HEAD, OUT_SILL, "Accent")
 
-    # output chute: a shelf inside the recess and a lip that reaches the cell
-    # edge, so the outlet hands items DOWN rather than merely being a hole. The
-    # lip is WIDER than the shelf and sits inside the shelf's height, so the two
-    # share no plane at all.
-    mb.box((1.30, 0.24, 0.10), (0, -1.86, 0.25), "SteelDark")
-    mb.box((1.44, 0.08, 0.06), (0, -1.96, 0.25), "Accent")
-
     # power inlet nub on the +X shoulder, under socket_power_in
     mb.box((0.28, 0.40, 0.44), (1.84, PWR_Y, 2.80), "Steel")
+    _stack(mb)
 
-    # chimney: collar, stack and cap. The stack's foot is sunk 0.06 into the
-    # roof pan and its head 0.04 into the cap, so neither end of the Steel tube
-    # shares a plane with the SteelDark it meets.
-    mb.cylinder(CHIM_R + 0.12, 0.14, (0, CHIM_Y, DECK_TOP + 0.07), axis="Z",
-                segments=8, role="SteelDark")
-    mb.cylinder(CHIM_R, (CAP_Z0 + 0.04) - CHIM_Z0,
-                (0, CHIM_Y, (CHIM_Z0 + CAP_Z0 + 0.04) * 0.5), axis="Z",
-                segments=12, role="Steel")
-    mb.cylinder(CHIM_R + 0.10, H - CAP_Z0, (0, CHIM_Y, (CAP_Z0 + H) * 0.5),
-                axis="Z", segments=8, role="SteelDark")
+    # RN-552: the form pass. Plating first, then one function per face, because
+    # the four faces now differ and a machine whose sides differ is a machine
+    # with a front.
+    _plating(mb)
+    _anchors(mb)
+    _front_detail(mb)
+    _rear_detail(mb)
+    _service_detail(mb)
+    _status_detail(mb)
+    _roof_detail(mb)
 
-    # Firebox surround and status bezel go down BEFORE the emissive parts, so
-    # OF_EmissiveState is always the LAST material slot on every mesh (the
-    # renderer indexes it by position).
-    mb.box((1.90, 0.08, 1.16), (0, -1.74, DOOR_Z), "SteelDark")
+    # Status bezel goes down BEFORE the emissive parts, so OF_EmissiveState is
+    # always the LAST material slot on every mesh (the renderer indexes it by
+    # position).
     mb.box((0.10, 0.72, 0.40), (1.75, 0.0, STATUS_Z), "Steel")
     mb.box((0.06, 0.56, 0.26), (1.81, 0.0, STATUS_Z), "SteelDark")
 
-    # --- state surfaces: the firebox door and the +X status chip ---
-    # Both stand PROUD of the bezel behind them rather than flush with it. The
+    # --- state surfaces: the firebox peep and the +X status chip ---
+    # Both stand PROUD of the metal behind them rather than flush with it. The
     # 2 m smelter had its door at exactly the surround's outer plane, which is
     # the same coplanar-paint defect the slot bands were fixed for.
-    mb.box((1.60, 0.08, 0.86), (0, -1.80, DOOR_Z), "EmissiveState")
+    #
+    # THE EMISSIVE AREA IS NOW A TWENTIETH OF WHAT IT WAS, and that is the
+    # point of `_front_detail`'s door. A 1.60 x 0.86 lit slab is 1.376 m2 of
+    # pure emission in the middle of the face a player stands at: it blows out
+    # under any exposure that renders the rest of the machine, it has no form
+    # inside it at any distance, and it is why this machine photographed as a
+    # television. Fire seen through a peep hole and a sight strip is 0.083 m2,
+    # reads hotter for being smaller, and leaves the door itself as iron that
+    # the sun can model.
+    # THE PEEP SITS ON ITS BOSS, NOT ON THE DOOR, and the first build is why:
+    # the boss stands 0.037 proud and the peep 0.006, so a peep on the door's
+    # own plane is 31 mm INSIDE the casting that surrounds it and the render
+    # showed a dark rectangle where the fire should be. A stack of greebles has
+    # to be walked outward one layer at a time; `Face.part` returns the outer
+    # coordinate for exactly this reason.
+    door_p = FRONT.out(mf.layer("plate"))
+    peep = mf.Face("Y", -1, door_p - mf.layer("boss"), limit=-HALF,
+                   name="firebox peep")
+    peep.part(mb, 0.30, 0.22, 0.0, PEEP_Z, "scribe", "EmissiveState")
+    sight = mf.Face("Y", -1, door_p, limit=-HALF, name="firebox sight strip")
+    sight.part(mb, 0.86, 0.05, 0.0, DOOR_Z - 0.26, "scribe", "EmissiveState")
     mb.box((0.05, 0.44, 0.18), (1.845, 0.0, STATUS_Z), "EmissiveState")
+
+    # THE DECLARED BOX IS ASSERTED WHERE IT IS CAUSED. contracts.json says
+    # 4.00 x 3.60 x 4.00 and validate_glb measures the shipped bytes against
+    # it, but by then the geometry is written and the failure is a post-mortem.
+    # A greeble that grows the footprint now fails the BUILD, with the axis
+    # named and the overshoot in metres.
+    mf.assert_inside(mb, HALF, HALF, H, "Smelter_LOD0")
     return mb, mb.build(NAME + "_LOD0", root)
 
 
@@ -329,14 +724,27 @@ def build_lod2(root):
 
 
 def build_glow(root):
-    """The glow card in front of the firebox door. Built centred on its OWN
+    """The glow card in front of the firebox PEEP. Built centred on its OWN
     origin so the scale clip pulses it in place instead of sliding it toward
     0,0,0. It is a sibling of _LOD0, so its growth cannot enlarge the LOD0
-    bounding box the footprint check reads."""
+    bounding box the footprint check reads.
+
+    RN-552 MOVED AND SHRANK IT, AND THE FIRST BUILD OF THE NEW DOOR IS WHY.
+    The card was 1.40 x 0.70 standing at y = -1.86, which is 0.14 m PROUD of
+    the new door's own outer plane: it drew a white slab straight over the
+    coaming, the hinges, the dog latch and the bolt run, and the studio render
+    of the pass showed the same television the pass existed to delete, with the
+    door visible only as a rim around it. The card is not part of _LOD0, so
+    nothing in the geometry gate could have caught that; only the picture
+    could, which is the argument for taking the picture."""
     mb = of.MeshBuilder()
-    mb.box((1.40, 0.02, 0.70), (0, 0, 0), "EmissiveState")
+    mb.box((0.34, 0.02, 0.26), (0, 0, 0), "EmissiveState")
     obj = mb.build("Smelter_Glow", root)
-    obj.location = (0.0, -1.86, DOOR_Z)
+    # Just outside the peep's own front plane (the door plate at `plate`, plus
+    # the peep at `scribe`), DERIVED rather than typed, so a change to either
+    # layer moves the card with them instead of stranding it inside the door.
+    obj.location = (0.0, -(BODY_HALF + mf.layer("plate") + mf.layer("boss")
+                           + mf.layer("scribe") + 0.012), PEEP_Z)
     return mb, obj
 
 

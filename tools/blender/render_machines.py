@@ -50,10 +50,35 @@ is 0.30 m tall and a plinth is wider than it is high.
 
 Cycles on the CPU with a modest sample count, for render_check.py's reason: a
 check that only runs where a GPU context exists is not a check. Lighting is
-deliberately plain and is IDENTICAL across a before/after pair. It is not a
-look-development statement and must not be read as one: this pass is geometry,
-look development owns every material value, and the lighting exists only so
-that two geometries can be compared under it.
+deliberately plain and is IDENTICAL across a before/after pair.
+
+RN-551 CHANGED WHAT THAT SENTENCE IS ALLOWED TO MEAN. Through RN-378 this rig
+existed to compare two GEOMETRIES, look development owned every material value,
+and the note above said so. The values freeze is lifted for the machine and
+structure set, so this rig now has to be able to judge a SURFACE, and three
+things it inherited make that impossible until they are fixed:
+
+  1. IT RENDERED UNDER BLENDER'S VIEW TRANSFORM. Blender 5.0 defaults to AgX,
+     which is far flatter and more desaturating than the shipped ACES at
+     exposure 1.2 and contrast 1.45 (rendering.md section 2.1). RN-456 spent
+     three renders of the creature pass tuning a map against AgX before
+     anybody re-derived it, and the finding was written down precisely so the
+     next lane would not pay for it again. `setup_view_transform` prints its
+     transform, look and exposure on EVERY run, for the same reason.
+  2. THE WORLD WAS A FLAT 0.20/0.23/0.27 GREY AT STRENGTH 1. That is a large
+     share of the light in the frame and it arrives from every direction at
+     once, which fills every crease a normal map spends its whole budget
+     darkening. It is why a machine under this rig could only ever look like
+     one material: an ambient that bright IS a matte look.
+  3. THE FLOOR WAS 0.20 NEUTRAL GREY. Section 2.1 puts groundNear at luma 35
+     to 55 in soil and litter at HSV saturation 0.25 to 0.35, and a machine
+     bounces its floor. A neutral floor makes a painted machine read cooler
+     than the game will ever draw it.
+
+`--maps` / `--merged` wire the shipped surface families on through
+surface_preview, which is the same consumer the client is written against, so a
+before/after pair is ONE FLAG apart on ONE build under ONE light rather than
+two commits apart.
 """
 
 import math
@@ -66,6 +91,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+
+# Set from the command line in main(). Module level rather than threaded
+# through every shot function, because a shot's job is framing and a flag that
+# has to be passed through five signatures gets dropped from one of them.
+_MAPS = False
+_MERGED = False
 
 
 def look_at(obj, target):
@@ -89,6 +120,41 @@ def set_res(w, h, samples):
     scn.cycles.samples = samples
 
 
+def setup_view_transform(scn):
+    """Get the studio render onto the SHIPPED response curve, not Blender's.
+
+    THIS IS RN-456'S FINDING, PORTED RATHER THAN REDISCOVERED, and porting it
+    is the whole reason it was written down. rendering.md section 2.1 is the
+    calibrated target: ACES, exposure 1.2, contrast 1.45 on a slope-matched S,
+    saturation 0.92, zero lift. Blender 5.0 defaults to AgX, which is a
+    substantially flatter and more desaturating transform, applied to every
+    pixel AFTER the material has done its work.
+
+    Under AgX a painted steel plate reads as chalky grey-blue whatever its
+    albedo is, which is a statement about the view transform and not about the
+    paint. `Standard` plus +0.26 stops (2 ** 0.26 = 1.20) plus a high-contrast
+    look is the closest the stock OCIO config gets. IT IS NOT ACES and this is
+    not a claim that it is; what it buys is that the studio frame and the game
+    frame are wrong in the same DIRECTION rather than opposite ones, so a
+    material judged here is not re-judged from scratch in the browser."""
+    vs = scn.view_settings
+    for want in ("Standard", "Filmic", "AgX"):
+        try:
+            vs.view_transform = want
+            break
+        except TypeError:
+            continue
+    vs.exposure = 0.26
+    for want in ("High Contrast", "Medium High Contrast", "None"):
+        try:
+            vs.look = want
+            break
+        except TypeError:
+            continue
+    print("[render_machines] view transform %r, look %r, exposure %+.2f stops"
+          % (vs.view_transform, vs.look, vs.exposure))
+
+
 def setup_world(w, h, samples):
     scn = bpy.context.scene
     scn.render.engine = "CYCLES"
@@ -96,17 +162,29 @@ def setup_world(w, h, samples):
     scn.cycles.use_denoising = True
     set_res(w, h, samples)
     scn.render.film_transparent = False
+    setup_view_transform(scn)
     world = bpy.data.worlds.new("W")
     world.use_nodes = True
+    # A COOL, DIM sky rather than the old flat 0.20/0.23/0.27 at strength 1.
+    # That ambient was roughly half the light in the frame and it arrived from
+    # every direction at once, which fills every crease a normal map exists to
+    # darken: under it a machine could not read as anything but matte, whatever
+    # its ORM said. The game's ambient is sky-coloured and the sun does most of
+    # the work, so this rig now does the same and the shadow side of a plate is
+    # allowed to be dark. Same value the creature rig settled on.
     world.node_tree.nodes["Background"].inputs[0].default_value = (
-        0.20, 0.23, 0.27, 1)
+        0.048, 0.058, 0.076, 1)
     world.node_tree.nodes["Background"].inputs[1].default_value = 1.0
     scn.world = world
 
     sun = bpy.data.objects.new("Sun", bpy.data.lights.new("Sun", "SUN"))
-    sun.data.energy = 3.4
-    sun.data.angle = math.radians(3.0)
-    sun.rotation_euler = (math.radians(58), 0.0, math.radians(34))
+    sun.data.energy = 5.2
+    # 2 degrees rather than 3. Painted steel's whole material claim is a
+    # specular that MOVES across a panel, and a wide source smears that into a
+    # broad sheen: the same mechanism that made three creature renders read as
+    # matte leather no matter what the roughness map said.
+    sun.data.angle = math.radians(2.0)
+    sun.rotation_euler = (math.radians(52), 0.0, math.radians(38))
     bpy.context.scene.collection.objects.link(sun)
 
     cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam"))
@@ -119,9 +197,14 @@ def setup_world(w, h, samples):
 
 
 def add_ground(size=160.0):
-    """A neutral floor. Mid grey, matte, no texture: the point of every frame
-    here is form against a background, and a patterned floor competes with the
-    thing being judged."""
+    """A SUBSTRATE-coloured floor, not a neutral grey and not Blender's 0.8.
+
+    Section 2.1 item 2 gives the shipped groundNear luma as 35 to 55 at the
+    vegetated sites and item 3 says the terrain is soil and litter at HSV
+    saturation 0.25 to 0.35. The old 0.20 neutral was the right call while this
+    rig only compared two geometries; it is wrong now that it has to judge a
+    painted surface, because a machine BOUNCES its floor and a neutral bounce
+    makes warm paint read cool. The floor is part of the measurement."""
     mesh = bpy.data.meshes.new("Ground")
     mesh.from_pydata([(-size, -size, 0), (size, -size, 0),
                       (size, size, 0), (-size, size, 0)], [], [(0, 1, 2, 3)])
@@ -130,11 +213,27 @@ def add_ground(size=160.0):
     mat = bpy.data.materials.new("Floor")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (0.20, 0.20, 0.21, 1.0)
-    bsdf.inputs["Roughness"].default_value = 0.92
+    bsdf.inputs["Base Color"].default_value = (0.052, 0.045, 0.033, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.95
     obj.data.materials.append(mat)
     bpy.context.scene.collection.objects.link(obj)
     return obj
+
+
+def apply_surfaces():
+    """Wire the shipped surface families onto the imported OF_* materials.
+
+    Called once, after every .glb is imported and before any shot, because
+    `surface_preview` walks `bpy.data.materials` and a material that does not
+    exist yet cannot be wired. `--merged` reproduces what the client's
+    single-material batch can actually draw (of_lib.BARE_ROLES wear no family
+    maps), for RN-456's instrument-honesty reason: a studio render showing
+    something the game cannot draw flatters in the direction nobody
+    double-checks."""
+    import surface_preview
+    rep = surface_preview.apply_all(off=not _MAPS, merged=bool(_MAPS
+                                                               and _MERGED))
+    return rep
 
 
 def _is_lodn(name):
@@ -425,7 +524,17 @@ def line(cam, seed, out_prefix, tag="line"):
 
 
 def main():
+    global _MAPS, _MERGED
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    # Pulled out wherever they sit, so the three positional arguments keep the
+    # meaning and the order they have always had (render_check.py's rule).
+    for tok, val in (("--maps", True), ("--nomaps", False)):
+        while tok in argv:
+            argv.remove(tok)
+            _MAPS = val
+    while "--merged" in argv:
+        argv.remove("--merged")
+        _MERGED = True
     if len(argv) < 3:
         print(__doc__)
         return
@@ -447,6 +556,7 @@ def main():
                                                  one))
         bpy.ops.import_scene.gltf(filepath=one)
     add_ground()
+    apply_surfaces()
     os.makedirs(os.path.join(ROOT, os.path.dirname(out_prefix)), exist_ok=True)
     for shot in shots:
         kind, rest = shot.split(":", 1)
