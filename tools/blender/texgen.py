@@ -158,7 +158,6 @@ ZLIB_WBITS = 15
 # ---------------------------------------------------------------------------
 ROLE_FAMILY = {
     # --- panel: anything manufactured ---
-    # --- panel: anything manufactured ---
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
     "Accent": "panel", "Hazard": "panel",
     # SuitAccent stays on `panel` although it is a suit colour, and this is
@@ -2046,6 +2045,15 @@ FAMILIES = {
                 albedo=_fur_albedo,
                 normal_strength=14.0, ao_radius=3, ao_floor=0.42,
                 ao_gain=3.4),
+    # suitfab's relief is SHALLOW and FINE: a yarn crown stands about 0.10 of
+    # a unit over the gap beside it, across a 2.5 texel half-pitch. That is a
+    # steeper local gradient than fur's strands on a much smaller amplitude,
+    # so the strength lands between fur's 14 and panel's 26. At panel's 26 the
+    # weave reads as corrugated iron, which was the first version of it.
+    # ao_radius 3, not panel's 7: the occluder here is the neighbouring yarn
+    # 2.5 texels away, and a 7-texel blur averages over four whole threads and
+    # returns a uniform grey - the "it shipped, it validated, it did nothing"
+    # failure this table's own header warns about.
     "suitfab": dict(height=_suitfab_height, masks=_suitfab_masks,
                     albedo=_suitfab_albedo,
                     normal_strength=2.4, ao_radius=3, ao_floor=0.46,

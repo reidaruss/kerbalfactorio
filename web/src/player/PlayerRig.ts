@@ -11,6 +11,8 @@
 
 import * as THREE from 'three';
 import { loadGlb, selectLod } from '../assets/Loaders.js';
+import { attachSurface, familyForMaterial }
+  from '../render/instancing/Surfaces.js';
 import { AnimGraph, type ClipMap, type PlayerAnim } from './AnimGraph.js';
 
 export interface RigOptions {
@@ -50,8 +52,59 @@ export class PlayerRig {
   boneCount = 0;
   clipCount = 0;
 
+  /**
+   * Materials already registered with Surfaces, so a material shared between
+   * primitives is registered ONCE.
+   *
+   * `attachSurface` appends to its own list unconditionally, so registering the
+   * same material twice binds identical maps twice (harmless) and double-counts
+   * it in `surfaceReport` (not harmless: that report is what a probe asserts
+   * against). The body ships 8 materials across 3 LOD nodes and the tool atlas
+   * is shared between both rigs and every instance of them, so this is a real
+   * duplicate and not a theoretical one.
+   */
+  private readonly surfaced = new Set<THREE.Material>();
+
+  /** `fparms` or `body`, from the asset filename: the surface-registry label
+   *  prefix that keeps the two rigs' identically-named roles apart. */
+  private readonly tag: string;
+
   private constructor(private readonly opts: RigOptions) {
     this.group.name = `rig:${opts.url}`;
+    this.tag = opts.url.includes('fp_arms') ? 'fparms' : 'body';
+  }
+
+  /**
+   * Give every material on `o` its surface family. RN-648.
+   *
+   * WHY THIS DID NOT EXIST UNTIL NOW, because the omission is more interesting
+   * than the fix. `surfaces.json` has mapped `Suit`, `SuitDark` and `Plate` to
+   * a family since DW-35, `surface_preview.py` honours that mapping, and every
+   * studio render of the player since then has therefore shown maps THE GAME
+   * DID NOT APPLY: this file never imported Surfaces at all. The four
+   * consumers were `PropLibrary`, `MachineBatch`, `NodeBatch` and
+   * `SpiderFlock`, which is to say every batched path and no per-object one.
+   * The player is the only rendered asset in the game that is neither batched
+   * nor merged, so it fell through the one gap in the coverage.
+   *
+   * `familyForMaterial` is used rather than a local role table for the reason
+   * ASSET-SPECS 2.9 gives: the manifest is the authority, and a second copy of
+   * the mapping on the client is a copy that goes stale. It reports an unknown
+   * role as a `console.error`, which is a failed smoke run, so a material this
+   * pass has not thought about announces itself rather than drawing untextured.
+   *
+   * Costs ZERO DW-10 slots: these are stock `MeshStandardMaterial` map slots
+   * and the textures are the shared ones every other consumer already holds.
+   */
+  private surface(o: THREE.Object3D, tag: string): void {
+    const m = (o as THREE.Mesh).material;
+    if (m === undefined || m === null) return;
+    for (const one of Array.isArray(m) ? m : [m]) {
+      if (this.surfaced.has(one)) continue;
+      this.surfaced.add(one);
+      attachSurface(one as THREE.MeshStandardMaterial,
+        familyForMaterial(one), `${tag}:${one.name}`);
+    }
   }
 
   static async create(opts: RigOptions): Promise<PlayerRig> {
@@ -73,6 +126,18 @@ export class PlayerRig {
         // A SkinnedMesh's bounds are the BIND pose, and a clip moves vertices
         // outside them, so three would frustum-cull the character mid-stride.
         m.frustumCulled = false;
+        // AFTER selectLod, so the LOD nodes this rig does not draw are not
+        // registered: the FP arms ship LOD0 only, and registering a hidden
+        // LOD1 would put a material in `surfaceReport` that never rasterises.
+        //
+        // The tag carries WHICH RIG, because the body and the FP arms are two
+        // PlayerRig instances loading two .glb files that share every role
+        // name. Tagging both `player:` gives two registry rows called
+        // `player:OF_Suit` holding two genuinely different material objects,
+        // which is indistinguishable in the report from the real defect of one
+        // material registered twice. The first version of this did exactly
+        // that and the probe reported six duplicates that were not duplicates.
+        this.surface(m, this.tag);
       }
       if ((m as THREE.SkinnedMesh).isSkinnedMesh === true && this.skeleton === null) {
         this.skeleton = (m as THREE.SkinnedMesh).skeleton;
@@ -108,6 +173,9 @@ export class PlayerRig {
         m.castShadow = this.opts.castShadow;
         m.receiveShadow = this.opts.receiveShadow;
         m.frustumCulled = false;
+        // The held tool too: in first person a pickaxe haft crosses more of
+        // the frame than either glove does.
+        this.surface(m, `${this.tag}:tool`);
       }
     });
     // carryTilt is a VIEW decision, not an asset offset. The FP arms' bind pose
@@ -174,6 +242,10 @@ export class PlayerRig {
       piece.frustumCulled = false;
       piece.castShadow = this.opts.castShadow;
       piece.receiveShadow = this.opts.receiveShadow;
+      // `clone()` SHARES the material with the source mesh, so the `surfaced`
+      // set is what stops an armour set equipped, unequipped and re-equipped
+      // from registering the same five materials over and over.
+      this.surface(piece, `${this.tag}:armour:${slot}`);
       if (this.opts.layer !== null) piece.layers.set(this.opts.layer);
       this.group.add(piece);
       pieces.push(piece);

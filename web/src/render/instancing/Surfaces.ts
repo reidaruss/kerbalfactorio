@@ -28,7 +28,7 @@ import * as THREE from 'three';
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
 
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'fur' | 'leaf'
-  | 'grass' | 'flat';
+  | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -42,9 +42,27 @@ export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'fur' | 'leaf'
  * role, one reason per entry in the manifest's `flat_roles`.
  */
 const ROLE_FAMILY: Readonly<Record<string, Family>> = {
-  Accent: 'panel', Hazard: 'panel', Plate: 'panel', Steel: 'panel',
-  SteelDark: 'panel', SteelLight: 'panel', Suit: 'panel', SuitAccent: 'panel',
-  SuitDark: 'panel',
+  Accent: 'panel', Hazard: 'panel', Steel: 'panel',
+  SteelDark: 'panel', SteelLight: 'panel',
+  // SuitAccent stays on `panel` and that is deliberate rather than an
+  // oversight: rocket_common.py and build_lander_landed.py both paint with it,
+  // so it is NOT a player-only role and moving it would re-surface another
+  // lane's assets.
+  SuitAccent: 'panel',
+  // RN-643 / RN-644: the pressure garment. `Suit`, `SuitDark` and `Plate` are
+  // used by build_player_body.py, build_player_fp_arms.py and
+  // build_armour_set.py and by NOTHING else in the repo, which is what makes
+  // re-pointing them a player-only act. They were on `panel`, and panel
+  // encodes MANUFACTURE OUT OF PLATE (seams, rivet rows, a weld bead), which
+  // is the wrong fact about a woven garment in the way `coarse` was the wrong
+  // fact about bark. Section 2.1 item 4 measures panel's effective roughness
+  // band at 0.032 and names it as the plastic read on every machine, plate and
+  // suit; suitfab and suitplate measure 0.224 and 0.268 on the same roles.
+  // Moves in the same commit as texgen's table (RN-100's rule:
+  // verifyAgainstManifest makes a one-sided move a failed smoke run, and it
+  // did exactly that when this edit was first forgotten).
+  Suit: 'suitfab', SuitDark: 'suitfab',
+  Plate: 'suitplate',
   Bark: 'bark', BarkLight: 'bark',
   Coal: 'coarse', Copper: 'coarse',
   Iron: 'coarse', Regolith: 'coarse', Rock: 'coarse', RockDark: 'coarse',
