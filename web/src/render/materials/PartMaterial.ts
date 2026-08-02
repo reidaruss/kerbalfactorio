@@ -71,6 +71,15 @@
 // bit-exact. Both DEFAULTS are fixtures and are published separately from the
 // values (RN-150: `Number(null)` is 0, so a probe that always passes an
 // explicit flag never exercises the shipped default).
+//
+// RN-498, AND IT IS THE CALLER'S JOB, NOT THIS FILE'S. This module does not
+// read the `fur` flag, because it does not know which hook a given asset
+// splices it into; a merged machine will have a different one. The rule is
+// that `bakePartMat` is only called when a hook that reads the attribute will
+// actually be compiled, and the caller is the only place that knows. Bake it
+// with no consumer and the geometry carries a dead per-vertex buffer (about
+// 52 KB on the spider) that no program binds, which would quietly break
+// whatever bit-exactness claim that asset's control flag makes.
 
 import * as THREE from 'three';
 

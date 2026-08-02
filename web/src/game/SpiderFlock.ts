@@ -169,6 +169,13 @@ export class SpiderFlock {
     // pass instead of one per material, which is the whole cap arithmetic in
     // the header. The skin attributes ride along untouched because every
     // primitive indexes the same skin.
+    // RN-498. The per-part attribute is only worth writing if a hook will
+    // READ it, and the only hook this asset has is the fur one. `?fur=0`
+    // removes that hook entirely, so baking anyway would leave a dead
+    // ~52 KB buffer on the template geometry and the flag would stop being
+    // bit-exact to the build before FurShader.ts existed. `?fur=0` is the
+    // stock-program control and the perf isolator; it has to stay one.
+    const furOn = furState().enabled;
     const parts: THREE.BufferGeometry[] = [];
     for (const pm of prims) {
       const g = pm.geometry.clone();
@@ -187,7 +194,7 @@ export class SpiderFlock {
       // in one vec3 attribute baked exactly the way the colour above is. The
       // proof that per-vertex data survives this merge was always sitting one
       // line up; this carries a second channel the same way.
-      bakePartMat(g, n, mat, mat.name || pm.name);
+      if (furOn) bakePartMat(g, n, mat, mat.name || pm.name);
       // uv SURVIVES the merge now (RN-455) and is copied through the one
       // function that does it unconditionally, for the reason that function
       // documents: mergeGeometries returns null on a mismatched attribute set
