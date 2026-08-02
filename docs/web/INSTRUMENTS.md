@@ -505,3 +505,70 @@ dipped in paint" and chose 0.64 over the bottom 20% against foliage's 0.42 over
 38% for that reason. The frame was then checked for that specific artefact rather
 than for general goodness. A named prediction is falsifiable; a justification
 written after the screenshot is not, and reads the same in the diff.
+
+## Summing independent fields narrows the distribution (RN-644)
+
+`suitplate`'s wear mask was the sum of four independent noise fields. Its
+measured effective metalness band came out at **0.074, against the 0.406 of the
+`panel` family it was replacing**: a straight regression on the single number
+the family had been built to fix, in a map whose whole argument was that
+metalness should carry information.
+
+Nothing was wrong with any of the four fields. The central limit theorem was
+doing exactly what it says: a sum of independent terms concentrates around its
+mean, so a mask assembled that way is unimodal and narrow no matter how much
+structure went into it.
+
+The fix is to ask what shape the quantity really has. **Paint does not thin, it
+CHIPS**: a coating is either there or it is not, so the physically right
+distribution is bimodal, and a `smoothstep` over the raw sum produces that.
+The knee is **centred on the measured raw median**, not guessed: a knee placed
+by eye at 0.20 to 0.46 against a raw median of 0.25 left 95 per cent of the
+plate fully coated and the roughness band at 0.115, which is a bimodal design
+with only one of its two modes populated.
+
+Generalised: **before spending effort on the inputs to a mask, measure the
+distribution of its output.** A band that is too narrow is far more often a
+statement about how the terms were combined than about the terms.
+
+## Anything a player can count reads as hand-made (RN-643)
+
+`suitfab`'s first version used a 5 mm thread pitch, which is roughly what a real
+technical weave has. It rendered as **knitted wool**. At 5 mm a player counts
+about twenty-four threads across the back of a glove, and a countable repeat
+reads as hand-knitting whatever the material is supposed to be.
+
+The pitch went to 3.3 mm, just at the texel floor, and the amplitude came down
+with it, because **amplitude and pitch are not independent**: a crown height
+that is fine at one pitch is a corrugation slope at half of it, and no amount of
+adjusting the normal strength afterwards recovers the read.
+
+The rule that generalises: a repeating structure has to sit either **clearly
+above** the resolution, where it is a designed feature, or **at or below** it,
+where it is a texture. The band in between, where the eye can just resolve
+individual elements and therefore count them, is where a surface stops looking
+like a material and starts looking like a craft project.
+
+## "Mostly hidden" is a claim that has to be rendered (RN-646)
+
+Two versions of the first-person knuckle guard were killed by looking at them,
+and both were killed by geometry that was reasoned about rather than viewed.
+
+Version one authored four plates at 12.5 mm half-width against 10.5 mm
+half-thickness, which is very nearly round in section, with the long axis
+running forward along the hand. Reasoned in the abstract that is "four plates on
+the knuckle line". Seen from a camera sitting behind the hand, which is where
+the first-person camera always is, it is **four forward-pointing claws**, and it
+was worse than the single slab it replaced.
+
+Version two added a thin dark carrier strip for the plates to be riveted to,
+described in its own comment as "mostly hidden". It was authored **wider than
+the four plates meant to hide it** and tapered to a point at its forward end,
+so what rendered was a dark triangle down the back of the glove: the most
+conspicuous thing in the frame, added by a part whose entire justification was
+that you would not see it.
+
+**A part authored to explain another part is only worth its triangles if it is
+actually hidden, and whether it is hidden is a measurement, not an assumption.**
+The cheap check is the one that was skipped twice: render it from the camera the
+asset is actually seen from, before believing the reasoning.
