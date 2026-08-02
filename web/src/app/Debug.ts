@@ -260,6 +260,9 @@ export function installDebugApi(
         lamp: s.headlamp.stats(),
         props: { ...s.props.stats(), ...s.scatter.stats() },
         avatar: s.avatar?.report() ?? null,
+        // RN-821. The station's DRAW, which is not the station: `__of.station()`
+        // is the record, the orbit and the proxies, and this is the mesh.
+        stationDraw: s.station?.stats() ?? null,
         assets: { ...assetStats, ms: Math.round(assetStats.ms) },
         sky: {
           sunT: s.sky.sunT,

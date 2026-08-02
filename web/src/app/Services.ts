@@ -42,6 +42,7 @@ import type { Vab } from '../game/Vab.js';
 import type { FlightMode } from './FlightMode.js';
 import type { MapMode } from './MapMode.js';
 import type { ViewRouter } from '../player/ViewRouter.js';
+import type { StationView } from '../render/StationView.js';
 
 /** One-off numbers measured at boot, surfaced through window.__of.stats(). */
 export interface BootMetrics {
@@ -116,6 +117,11 @@ export interface Services {
   readonly map: MapMode | null;
   /** W9. THE eye router: which ViewSource is the streaming observer right now. */
   readonly router: ViewRouter;
+  /** RN-821. The derelict station's hull and fitout. Null whenever the station
+   *  itself is absent: no gameplay, no character, `?station=0`, or an asset
+   *  that did not arrive. It is NOT the station's authority about anything;
+   *  the record and the collision solid are `SpaceStation.ts`'s. */
+  readonly station: StationView | null;
   readonly boot: BootMetrics;
 }
 

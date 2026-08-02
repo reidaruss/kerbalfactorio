@@ -19,8 +19,10 @@ import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { resumeWorld } from './ResumeBoot.js';
 import {
-  installStation, learnStationProxies, learnStationSockets, STATION_ASSET,
+  installStation, learnStationProxies, learnStationSockets, stationQuat,
+  STATION_ASSET,
 } from '../game/SpaceStation.js';
+import { StationView } from '../render/StationView.js';
 import { loadGlb } from '../assets/Loaders.js';
 import { volumes } from '../game/GravityVolumes.js';
 import { installStationGravity } from '../game/StationGravity.js';
@@ -418,6 +420,12 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // into; outside it, because the body anchor is owed to `?flight=0` too.
   resumeWorld({ flight, vab, router, origin });
 
+  // RN-821. Outside the conditional block below because `Services` needs them
+  // and the block is optional: `?station=0`, no gameplay and no character each
+  // leave the station out of the world, and null is the honest view for that.
+  let stationRoot: THREE.Object3D | null = null;
+  let station: StationView | null = null;
+
   // PH-94. THE STATION, after `resumeWorld` and not before, because the record
   // is the authority: a restored world must adopt its SAVED station and only a
   // genuinely new one may mint a fresh record. Installing first would mint a
@@ -433,8 +441,16 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // than falling back to a hand-authored shape (see SpaceStation.ts).
     // `loadGlb` is cached and the failure is caught: a station whose asset did
     // not arrive must not take the whole boot down with it.
+    //
+    // RN-821: the SAME parsed scene also builds the render view, because the
+    // boxes a player stands on and the hull they see have to be two readings of
+    // one file. StationView.ts carries the rest of the argument.
     await loadGlb(STATION_ASSET)
-      .then((g) => { learnStationProxies(g.scene); learnStationSockets(g.scene); })
+      .then((g) => {
+        learnStationProxies(g.scene);
+        learnStationSockets(g.scene);
+        stationRoot = g.scene;
+      })
       .catch(() => { learnStationProxies(null); learnStationSockets(null); });
     const u = router.up;
     const st = installStation(core, gameplay.structures.bodies,
@@ -448,6 +464,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     if (st !== null) {
       player.body.gravity = volumes;
       installStationGravity(volumes, st.pos, body.gravityAccel(st.deckR));
+      // RN-821. THE MESH, posed from the SAME `st.pos` the collision solid was
+      // built from a line above, with `stationQuat` read rather than rebuilt.
+      // Gated on the install report, so a station that refused (no proxies,
+      // which is also no mesh) draws nothing rather than a hull round nobody.
+      station = new StationView(origin);
+      station.build(stationRoot);
+      station.place(st.pos, stationQuat(st.pos));
+      scenes.near.add(station.group);
     }
   }
 
@@ -479,7 +503,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
     hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
     level, levelRing,
-    gameplay, vab, flight, map, router, boot,
+    gameplay, vab, flight, map, router, boot, station,
   };
   return { services, canvas };
 }

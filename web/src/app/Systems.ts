@@ -302,6 +302,13 @@ export function registerSystems(s: Services, loop: Loop): void {
     // rebased every 4 km, so a radius measured from it would put the foliage
     // ring kilometres away from the player.
     s.scatter.update(s.terrain.residentViews.values(), eye);
+    // RN-821. THE STATION, recomposed from its f64 body-frame pose, every
+    // frame, and never cached in engine space. Here rather than in `onDrain`
+    // for the reason the vessel is here: the visibility gate is a distance
+    // from THIS eye, and an eye a tick stale is 125 m out at orbital speed.
+    // `cam.far` rather than `depth.nearFarPlaneM()` so the gate reads the plane
+    // the camera is actually built with, not the policy it was built from.
+    s.station?.sync(eye, cam.far);
     cam.getWorldDirection(fwd);
     // Two reasons to skip the whole pass, both worth 58 draw calls:
     // nothing on the ground casts onto anything at orbital range (section 3.5,
