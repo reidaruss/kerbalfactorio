@@ -509,3 +509,33 @@ and it became a task. **Fourteen metres is not a plausible LOD deviation for a
 
 **When a measurement is implausible in magnitude, suspect the instrument before
 writing it down as a finding.**
+
+### The marginal multiplier prices the NEXT triangle; it is not a saving
+
+The shadow-cascade work gave asset lanes a lever: an asset's marginal multiplier
+is `1 + (cascades still drawing tier 0)`, so making a lower tier shadow-safe
+takes an asset from 4x to 3x to 2x to 1x, and every triangle after that costs
+proportionally less frame.
+
+**It is a price on future growth, not a recovery on present cost, and treating
+it as the latter produces work that measures well and saves nothing.**
+
+Measured on 2026-08-02. `floor` missed cascade 0 by 20.00 mm, exactly like
+`belt_segment`, and looked like the same cheap win. It is not. The 20.00 mm is
+the ribs' tops penetrating 0.020 into the plate, and **`Floor_LOD1`'s entire
+saving IS the omission of those ribs**, 132 triangles down to 60. Adding them
+back to clear the gate returns LOD1 to 132, **identical to LOD0**. Cascade 0
+would draw the same triangles either way, the multiplier would read a triumphant
+1.0x, and nothing whatsoever would have been saved.
+
+**Where making a tier shadow-safe costs that tier its entire reason to exist,
+the multiplier becomes a false proxy for the thing it stands for.** Check what
+the lower tier actually omits before spending anything to make it admissible.
+An asset that is not about to grow does not benefit from a cheaper next
+triangle.
+
+`belt_segment` is the honest opposite case and shows what a real one looks like:
+its 20.00 mm was a **dropped state chip**, so restoring it cost twelve triangles,
+took the asset to 1.87 mm and 1.0x, **and fixed a correctness defect on its own
+terms** (a belt at LOD1 range had no state readout at all, while every other
+machine's LOD1 keeps its chip).
