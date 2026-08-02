@@ -76,6 +76,20 @@ export interface StandSample {
    *  every tick of ordinary play; a non-zero value is a rescue, and one that
    *  repeats is an oscillation somebody has to explain. */
   ejectM: number;
+
+  // --- WHAT THE CAPSULE WEIGHED (PH-98) ------------------------------------
+  // Per TICK for the same reason everything else here is: the float gate is
+  // hysteretic and a mode that flips is a defect (R36's shape), and a flip is
+  // invisible in any per-FRAME reading. `apparentG` beside `trueG` is what
+  // separates "I am in orbit" from "gravity is switched off", which look
+  // identical in the walker's behaviour and are not the same world.
+
+  /** True local gravity from the one authority, m/s^2. */
+  trueG: number;
+  /** What a body here actually weighed, m/s^2 radially inward. */
+  apparentG: number;
+  /** The float gate's answer: the thrust model owned this tick. */
+  floating: boolean;
 }
 
 /**

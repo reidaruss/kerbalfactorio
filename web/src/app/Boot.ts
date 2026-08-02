@@ -19,6 +19,8 @@ import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { resumeWorld } from './ResumeBoot.js';
 import { installStation } from '../game/SpaceStation.js';
+import { volumes } from '../game/GravityVolumes.js';
+import { installStationGravity } from '../game/StationGravity.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
 import { PlanetBody } from '../world/PlanetBody.js';
 import { SurfaceOracle } from '../world/SurfaceOracle.js';
@@ -423,8 +425,18 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // the box list cannot drift away from the orbit it hangs on.
   if (gameplay !== null && player !== null && cfg.station) {
     const u = router.up;
-    installStation(core, gameplay.structures.bodies,
+    const st = installStation(core, gameplay.structures.bodies,
       [u.x, u.y, u.z], body.radiusM, body.muM3S2, 0);
+    // PH-98. WHAT YOU WEIGH IN IT, which the record and the interior cannot say
+    // between them. A station in orbit is in FREEFALL and its occupants have no
+    // weight; the deck holding you up is a fact about the deck, not about
+    // gravity. `carrierG` is read from the ONE gravity authority at the
+    // station's own radius, because a body on a free trajectory accelerates at
+    // exactly the local g. See StationGravity.ts.
+    if (st !== null) {
+      player.body.gravity = volumes;
+      installStationGravity(volumes, st.pos, body.gravityAccel(st.deckR));
+    }
   }
 
   const boot: BootMetrics = {

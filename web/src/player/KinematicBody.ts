@@ -22,6 +22,8 @@ import {
   dragTangentFactor, dragUpFactor, moveAccel, moveSpeed, newSwimState,
   radialAccel, readWater, SWIM, type SwimState,
 } from './Swim.js';
+import type { GravityField } from './GravityPort.js';
+import { newWeightState, readWeight, thrustStep, type WeightState } from './ZeroG.js';
 
 export interface MoveIntent {
   /** Desired tangent direction, body frame, unit or zero. */
@@ -29,6 +31,16 @@ export interface MoveIntent {
   /** Target ground speed in m/s for that direction. */
   speed: number;
   jump: boolean;
+  /**
+   * Radial thrust command, -1 (toward the body) to +1 (away). FREEFALL ONLY.
+   *
+   * Ignored entirely while the capsule has weight, where the radial axis
+   * belongs to gravity and to the jump, and where giving the player a second
+   * opinion about it would be a flight mode wearing a walker's clothes. It is
+   * a separate field rather than a third component of `w` because `w` is a
+   * TANGENT direction by contract and every consumer of it assumes that.
+   */
+  up: number;
 }
 
 
@@ -96,8 +108,25 @@ export class KinematicBody {
    * multiplied by a frac of 0.
    */
   water: WaterOracle | null = null;
+  /**
+   * Regions that change what the capsule WEIGHS (PH-98). Null leaves every
+   * path below bit-for-bit what it was: `readWeight` returns the caller's own
+   * `trueG` untouched and `weightless` is false, so the whole freefall branch
+   * is unreachable on a world that has no volumes in it.
+   *
+   * A PORT, like `solids` and for the same reason: what a body weighs is not
+   * what gravity is, and `PlanetBody.gravityAccel` stays the sole authority
+   * for the second of those. See GravityPort.ts.
+   */
+  gravity: GravityField | null = null;
   /** How wet the capsule is this tick, and the only place that is decided. */
   readonly swim: SwimState = newSwimState();
+  /** What the capsule weighs this tick, and the only place THAT is decided. */
+  readonly weight: WeightState = newWeightState();
+  /** True while the capsule is in freefall and the thrust model owns the tick. */
+  floating = false;
+  /** Volume tests the gravity port made this tick, charged to the budget. */
+  gravityTests = 0;
   speedMps = 0;
   oracleCalls = 0;
   /**
@@ -159,35 +188,68 @@ export class KinematicBody {
     const wet = readWater(this.swim, this.water, p, CAPSULE.heightM,
       CAPSULE.eyeHeightM, dt);
 
-    // Steer the tangential velocity toward the intent, then apply drag.
-    const accel = moveAccel(wet, this.grounded, CAPSULE.groundAccel, CAPSULE.airAccel);
-    const wantSpeed = moveSpeed(wet, intent.speed);
-    const gx = intent.wx * wantSpeed, gy = intent.wy * wantSpeed, gz = intent.wz * wantSpeed;
-    let dx = gx - tx, dy = gy - ty, dz = gz - tz;
-    const dLen = Math.hypot(dx, dy, dz);
-    const dMax = accel * dt;
-    if (dLen > dMax && dLen > 1e-9) { const s = dMax / dLen; dx *= s; dy *= s; dz *= s; }
-    tx += dx; ty += dy; tz += dz;
-    if (this.grounded && intent.speed === 0) {
-      const k = Math.max(0, 1 - CAPSULE.groundDrag * dt);
-      tx *= k; ty *= k; tz *= k;
-    }
+    // WHAT THE CAPSULE WEIGHS, which is NOT what gravity is here the moment the
+    // floor is itself falling (PH-98). One query, at the feet, exactly as the
+    // water is read. With no field installed this is `gravityAccel(r)` and
+    // nothing else, bit for bit.
+    if (this.gravity !== null) this.gravity.resetTests();
+    const wt = readWeight(this.weight, this.gravity, p.x, p.y, p.z,
+      this.gravityAccel(r));
+    this.gravityTests = this.gravity === null ? 0 : this.gravity.tests;
+    // WATER WINS OVER FREEFALL. Nothing today can be both (there is no pond in
+    // orbit), so this decides nothing yet; it is written down because the
+    // alternative is that the answer is decided by which branch happens to be
+    // first, and that is the kind of thing this project has paid for.
+    const freefall = wt.weightless && !wet.inWater;
+    this.floating = freefall;
 
-    // Weight, less buoyancy. Out of water `frac` is 0 and this is exactly the
-    // gravity term it replaced. In water it changes sign at the float line, so
-    // a swimmer rises to it and a wader is still held down by it, with no state
-    // switch anywhere: the equilibrium is a fixed point, not a branch (Swim.ts).
-    vUp += radialAccel(wet, this.gravityAccel(r)) * dt;
-    if (wet.inWater) {
-      // Held jump is SWIM UP, because what it is really for is climbing out at
-      // the bank, which is a sustained push rather than a jump.
-      if (intent.jump) vUp += SWIM.riseAccel * dt;
-      vUp *= dragUpFactor(wet, dt);
-      const k = dragTangentFactor(wet, dt);
-      tx *= k; ty *= k; tz *= k;
-    } else if (intent.jump && this.grounded && this.slopeCos >= CAPSULE.slopeLimitCos) {
-      vUp = CAPSULE.jumpSpeedMps;
-      this.grounded = false;
+    if (freefall) {
+      // THE COMMAND IS A THRUST AND NOTHING TAKES IT AWAY. See ZeroG.ts for the
+      // argument; the short form is that the servo below is friction, friction
+      // is real on the ground, and in vacuum it is a lie with no mechanism.
+      const speed = Math.hypot(tx, ty, tz, vUp);
+      const on = intent.speed > 0 ? 1 : 0;
+      tx += thrustStep(intent.wx * on, tx, speed, dt);
+      ty += thrustStep(intent.wy * on, ty, speed, dt);
+      tz += thrustStep(intent.wz * on, tz, speed, dt);
+      vUp += thrustStep(intent.up, vUp, speed, dt);
+      // THE RESIDUAL WEIGHT IS REAL AND IS APPLIED RATHER THAN ROUNDED AWAY.
+      // Inside a station it is the TIDAL difference across the volume, about
+      // 1e-4 m/s^2 over `Anchorage`, and that is not an error term: it is what
+      // the word microgravity means. Dropping it would be inventing an exactly
+      // zero field that no orbit has ever had.
+      vUp += radialAccel(wet, wt.apparentG) * dt;
+    } else {
+      // Steer the tangential velocity toward the intent, then apply drag.
+      const accel = moveAccel(wet, this.grounded, CAPSULE.groundAccel, CAPSULE.airAccel);
+      const wantSpeed = moveSpeed(wet, intent.speed);
+      const gx = intent.wx * wantSpeed, gy = intent.wy * wantSpeed, gz = intent.wz * wantSpeed;
+      let dx = gx - tx, dy = gy - ty, dz = gz - tz;
+      const dLen = Math.hypot(dx, dy, dz);
+      const dMax = accel * dt;
+      if (dLen > dMax && dLen > 1e-9) { const s = dMax / dLen; dx *= s; dy *= s; dz *= s; }
+      tx += dx; ty += dy; tz += dz;
+      if (this.grounded && intent.speed === 0) {
+        const k = Math.max(0, 1 - CAPSULE.groundDrag * dt);
+        tx *= k; ty *= k; tz *= k;
+      }
+
+      // Weight, less buoyancy. Out of water `frac` is 0 and this is exactly the
+      // gravity term it replaced. In water it changes sign at the float line, so
+      // a swimmer rises to it and a wader is still held down by it, with no state
+      // switch anywhere: the equilibrium is a fixed point, not a branch (Swim.ts).
+      vUp += radialAccel(wet, wt.apparentG) * dt;
+      if (wet.inWater) {
+        // Held jump is SWIM UP, because what it is really for is climbing out at
+        // the bank, which is a sustained push rather than a jump.
+        if (intent.jump) vUp += SWIM.riseAccel * dt;
+        vUp *= dragUpFactor(wet, dt);
+        const k = dragTangentFactor(wet, dt);
+        tx *= k; ty *= k; tz *= k;
+      } else if (intent.jump && this.grounded && this.slopeCos >= CAPSULE.slopeLimitCos) {
+        vUp = CAPSULE.jumpSpeedMps;
+        this.grounded = false;
+      }
     }
 
     // Integrate in the body frame. The tangential part is a chord, not an arc;
@@ -251,7 +313,15 @@ export class KinematicBody {
       qx = s.x; qy = s.y; qz = s.z;
       qr = Math.hypot(qx, qy, qz) || 1;
       dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
-      if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByRock = true; }
+      if (s.blocked) {
+        tx = 0; ty = 0; tz = 0; this.blockedByRock = true;
+        // CONTACT IS INELASTIC, RADIAL HALF INCLUDED (PH-99). Under weight the
+        // radial axis belongs to gravity and the floor snap owns it, so zeroing
+        // only the tangent was complete. In freefall nothing else will ever
+        // take a radial velocity away and a capsule pressed into a ceiling
+        // would keep pushing at it for ever.
+        if (freefall) vUp = 0;
+      }
       // The rise allowance is the walker's OWN first voxel rung, the reading
       // GP-53 made the structural port take and for the same reason: a floor
       // the feet have sunk into is still that floor, so seating on it corrects
@@ -282,7 +352,15 @@ export class KinematicBody {
       qx = s.x; qy = s.y; qz = s.z;
       qr = Math.hypot(qx, qy, qz) || 1;
       dxn = qx / qr; dyn = qy / qr; dzn = qz / qr;
-      if (s.blocked) { tx = 0; ty = 0; tz = 0; this.blockedByBuild = true; }
+      if (s.blocked) {
+        tx = 0; ty = 0; tz = 0; this.blockedByBuild = true;
+        // See the voxel branch: in freefall the radial half has no other owner.
+        // THIS IS ALSO THE WHOLE OF "HOW DO YOU STOP" (PH-101). A drifting
+        // player who meets structure keeps nothing, which is what a suited
+        // human does with their arms, and it needs no grab key, no authored
+        // handrail and no new UI.
+        if (freefall) vUp = 0;
+      }
       // A deck is only ever a metre or two under the feet: a bigger search would
       // let a player standing beside a tower be grounded on its roof.
       //
@@ -321,8 +399,20 @@ export class KinematicBody {
       // difference matters: standing on the bed under the float line, buoyancy
       // is lifting, and zeroing that every tick would pin a swimmer to the
       // bottom of the pond while the acceleration said otherwise.
-      vUp = vUp > 0 && wet.floating ? vUp : 0;
-      this.grounded = true;
+      //
+      // IN FREEFALL IT MUST NOT HOLD YOU EITHER, and this is the sticky-deck
+      // defect that would otherwise have shipped: with no weight pressing the
+      // capsule onto the surface there is nothing for the surface to hold, and
+      // zeroing an upward push every tick means a player resting on a deck can
+      // thrust away from it for ever and never leave.
+      vUp = vUp > 0 && (wet.floating || freefall) ? vUp : 0;
+      // GROUNDED IS A CLAIM ABOUT WEIGHT, NOT ABOUT CONTACT. Letting it go true
+      // in freefall would arm the snap branch above (`grounded && gap <= snapM`,
+      // which reaches 0.35 m) and that would pull a drifting player back onto a
+      // deck they had already pushed off: a magnet, reported as a landing.
+      // `onDeck` is left alone, because "there is a deck under me" is still
+      // true and is still what a probe wants to read.
+      this.grounded = !freefall;
     } else {
       this.grounded = false;
     }
@@ -374,6 +464,7 @@ export class KinematicBody {
         blockedByBuild: this.blockedByBuild,
         underRock: this.underRock, preSnapR, pushM: this.voxelPushM, pushUpM,
         buried: this.buried, ejectM: this.ejectM,
+        trueG: wt.trueG, apparentG: wt.apparentG, floating: freefall,
       });
     }
   }

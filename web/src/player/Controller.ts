@@ -23,7 +23,8 @@ export class Controller implements ViewSource {
 
   private readonly prevFeet: Vec3d = { x: 0, y: 0, z: 0 };
   private readonly lerpFeet: Vec3d = { x: 0, y: 0, z: 0 };
-  private readonly intent: MoveIntent = { wx: 0, wy: 0, wz: 0, speed: 0, jump: false };
+  private readonly intent: MoveIntent =
+    { wx: 0, wy: 0, wz: 0, speed: 0, jump: false, up: 0 };
   private toggleHeld = false;
 
   constructor(
@@ -118,6 +119,14 @@ export class Controller implements ViewSource {
     }
     it.wx = wx; it.wy = wy; it.wz = wz;
     it.jump = inp.jump;
+    // THE RADIAL AXIS IN FREEFALL, ON THE TWO KEYS THAT HAVE NOTHING ELSE TO DO
+    // THERE (PH-101). Jump is already "push away from the surface" and sprint
+    // is meaningless when there is no walk to make faster, so Space/Shift
+    // becomes up/down and no binding is added, no key is stolen and the
+    // controls screen needs no new row. `KinematicBody` ignores this field
+    // entirely while the capsule has weight, so nothing about walking, jumping
+    // or sprinting changes by one bit.
+    it.up = (inp.jump ? 1 : 0) - (inp.boost ? 1 : 0);
 
     this.prevFeet.x = this.body.feet.x;
     this.prevFeet.y = this.body.feet.y;
