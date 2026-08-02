@@ -18,7 +18,10 @@ import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { resumeWorld } from './ResumeBoot.js';
-import { installStation } from '../game/SpaceStation.js';
+import {
+  installStation, learnStationProxies, learnStationSockets, STATION_ASSET,
+} from '../game/SpaceStation.js';
+import { loadGlb } from '../assets/Loaders.js';
 import { volumes } from '../game/GravityVolumes.js';
 import { installStationGravity } from '../game/StationGravity.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
@@ -424,6 +427,15 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // saved, so there is exactly one thing on disk (nine numbers and a clock) and
   // the box list cannot drift away from the orbit it hangs on.
   if (gameplay !== null && player !== null && cfg.station) {
+    // PH-105. THE INTERIOR IS THE SHIPPED MESH'S, read here because `Boot` is
+    // where every other asset in this game is read and because the proxies must
+    // be learned BEFORE `installStation`, which now refuses without them rather
+    // than falling back to a hand-authored shape (see SpaceStation.ts).
+    // `loadGlb` is cached and the failure is caught: a station whose asset did
+    // not arrive must not take the whole boot down with it.
+    await loadGlb(STATION_ASSET)
+      .then((g) => { learnStationProxies(g.scene); learnStationSockets(g.scene); })
+      .catch(() => { learnStationProxies(null); learnStationSockets(null); });
     const u = router.up;
     const st = installStation(core, gameplay.structures.bodies,
       [u.x, u.y, u.z], body.radiusM, body.muM3S2, 0);

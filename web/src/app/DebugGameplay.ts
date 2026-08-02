@@ -19,13 +19,14 @@ import { snapToGround } from '../game/Grid.js';
 import { STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M } from '../player/VoxelCollision.js';
 import { StandTrace } from '../player/StandTrace.js';
 import {
-  findStation, lastStationInstall, STATION_ALT_M, STATION_PROXIES, STATION_TAG,
-  stationAxes,
+  findStation, lastStationInstall, STATION_ALT_M, STATION_TAG,
+  stationAxes, stationProxies,
 } from '../game/SpaceStation.js';
 import { registry, stateOf } from '../sim/VesselRegistry.js';
 import { volumes } from '../game/GravityVolumes.js';
 import {
-  lastStationGravity, setStationGravityPowered, stationGravityPowered,
+  airlockPlaneM, lastStationGravity, setStationGravityPowered,
+  stationGravityPowered,
 } from '../game/StationGravity.js';
 import { StackedGravity, UniformGravity } from '../player/GravityPort.js';
 import { ZEROG } from '../player/ZeroG.js';
@@ -252,8 +253,16 @@ export function gameplayApi(s: Services, loop: Loop) {
         speedMps: Math.hypot(st.vel[0], st.vel[1], st.vel[2]),
         designParts: rec.design.parts.length,
         clockS: rec.clockS, stampedTick: rec.stampedTick,
-        proxies: STATION_PROXIES.length,
-        proxyNames: STATION_PROXIES.map((b) => b.name),
+        proxies: stationProxies().length,
+        proxyNames: stationProxies().map((b) => b.name),
+        /** Every proxy's own box, so a probe can aim at a named deck rather
+         *  than at a coordinate it transcribed out of the Blender source.
+         *  Standing rule 11: a probe that re-derived the layout would agree
+         *  with itself whatever the asset did. */
+        proxyBoxes: stationProxies().map((b) => ({
+          name: b.name, min: b.min, max: b.max,
+        })),
+        airlockX: airlockPlaneM(stationProxies()),
         nominalAltM: STATION_ALT_M,
         el: el === null ? null : { ...el },
         axes: stationAxes(st.pos),

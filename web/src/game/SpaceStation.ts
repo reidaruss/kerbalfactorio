@@ -82,68 +82,150 @@ export const STATION_TAG = 'station:anchorage';
 const STATION_SOLID_ID = Number.NaN;
 
 /**
- * THE PLACEHOLDER INTERIOR, in the station's own frame, +Y up, floor top faces
- * at y = 0. THIS IS SCAFFOLDING AND IS MEANT TO BE DELETED: the Blender lane is
- * authoring the real mesh, and when it lands `proxiesOf(root)` returns exactly
- * this shape (one array of `col_*` boxes off one glb root) so the swap is a
- * one-line change in `stationSolid` and nothing else in this file moves.
+ * THE REAL INTERIOR, READ OFF THE SHIPPED ASSET (PH-105).
  *
- * It is authored to the conventions PH-90 to PH-93 published, so the wiring is
- * proven against the same numbers the real asset is being cut to:
+ * The placeholder that used to be here is gone. It was twelve boxes authored in
+ * code at 2.5 m headroom, and its comment argued that 4.0 m "would make the
+ * corridor look like a lift shaft". THE ASSET LANE WENT TO 4.0 m AT 3.0 m WIDE
+ * AND ITS SCALE RENDER DISPROVES THAT, so the argument goes with the boxes it
+ * was defending. Nothing about it survives except the conventions it was cut to,
+ * and the shipped mesh honours every one of them (measured off the glb, not
+ * taken on trust):
  *
- *   * 2.5 m clear corridor width, 2.5 m clear headroom.
- *   * floors, walls and ceilings as SEPARATE boxes. A single enclosing box
- *     cannot describe an interior, and `deckUnder`'s search window is what
- *     keeps a ceiling from being read as a floor.
- *   * EVERY OVERHEAD PROXY IS 0.8 m THICK (R48). Above the feet the walker has
- *     only three point samples 0.75 m apart and no capsule radius at all, so a
- *     horizontal proxy thinner than that gap fits BETWEEN two samples and is
- *     passed clean through: measured, a 0.3 m ceiling puts the player on the
- *     roof at local y 5.119928. 0.8 m is the first thickness that cannot.
- *   * the doorway is a GAP between two wall boxes, the same three-box trick
- *     `col_Door_Jamb*` uses, because hulling a wall shut is the one mistake
- *     that makes an interior unreachable and reads fine in a screenshot.
+ *   deck top faces      y = 0.000 on all six deck runs, which is the datum the
+ *                       frozen pose and `stateOf` already share.
+ *   headroom            4.000 m (ceiling undersides at y = 4.000 against deck
+ *                       tops at 0.000), against the placeholder's 2.5.
+ *   corridor width      3.000 m clear (wall inner faces at z = +/- 1.500).
+ *   overhead proxies    0.800 m thick, which is R48's floor exactly: above the
+ *                       feet the walker has three point samples 0.75 m apart
+ *                       and no capsule radius, so a thinner slab fits BETWEEN
+ *                       two samples and is passed clean through.
+ *   doorways            gaps between jamb pairs with a lintel over them, never
+ *                       a hulled-shut wall.
  *
- * A jumping player DOES meet the 2.5 m ceiling here (contact at feet 0.85 m,
- * which is 2.5 minus the 1.65 m top sample). That is a bonk, not a leak, and it
- * is the deliberate choice: raising the headroom to the ~4.0 m a free jump
- * needs in this gravity would make the corridor look like a lift shaft.
+ * THERE IS NO FALLBACK SHAPE AND THAT IS DELIBERATE. A hand-authored stand-in
+ * for a file that failed to load is a second authority about the station's
+ * interior, and it would be silently wrong rather than loudly absent: the player
+ * would walk around inside a twelve-box ghost of a fifty-seven-box station and
+ * every instrument would agree with itself. If the glb does not arrive,
+ * `installStation` returns null and says so.
  */
-const HALF_W = 1.25;           // 2.5 m clear corridor width
-const HEAD = 2.5;              // 2.5 m clear headroom
-const WALL_T = 0.3;
-const DECK_T = 0.5;
-const OVERHEAD_T = 0.8;        // R48: must exceed the 0.75 m sample gap
-const HUB = 6;                 // half extent of the hub room
-const CORR_END = 40;           // corridor runs from the hub face to here
+export const STATION_ASSET = 'assets/structures/space_station.glb';
 
-function box(name: string, min: [number, number, number],
-             max: [number, number, number]): LocalBox & { name: string } {
-  return { name, min, max, leaf: false };
+/** A proxy that still knows its own name. */
+export interface NamedBox extends LocalBox { name: string }
+
+/**
+ * WHY THIS IS NOT `proxiesOf(root)`, which is the same traversal one field
+ * narrower.
+ *
+ * `StructureBody.proxiesOf` drops the node name, because for a machine or a wall
+ * the boxes are interchangeable and only their geometry matters. They are not
+ * interchangeable here. `StationGravity.ts` derives the artificial-gravity
+ * volume from the DECK proxies and stops it at the aft bulkhead jamb, so it has
+ * to be able to tell `col_SpineAftFloor` from `col_SpineAftCeil` and to find
+ * `col_JambAftFrameL` by name. Running `proxiesOf` for the collider and a second
+ * traversal for the gravity would be two answers to "which boxes does this
+ * asset have", which is the two-authority failure this project has paid for
+ * repeatedly. One traversal, one list, and `stationSolid` drops the names it
+ * does not need.
+ */
+let learned: readonly NamedBox[] = [];
+
+export function learnStationProxies(root: THREE.Object3D | null): number {
+  if (root === null) { learned = []; return 0; }
+  const out: NamedBox[] = [];
+  root.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const m = new THREE.Matrix4();
+  const seen = new Set<string>();
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh !== true || !mesh.name.startsWith('col_')) return;
+    // One proxy per NAMED node, exactly as `proxiesOf` does: GLTFLoader splits a
+    // multi-material mesh into `Name_0`, `Name_1`, and the asset lane ships
+    // `col_LaunchStep1` rather than `col_LaunchStep_1` because of this rule.
+    const base = mesh.name.replace(/_\d+$/, '');
+    if (seen.has(base)) return;
+    seen.add(base);
+    mesh.geometry.computeBoundingBox();
+    const bb = mesh.geometry.boundingBox;
+    if (bb === null) return;
+    const b = bb.clone().applyMatrix4(m.multiplyMatrices(inv, mesh.matrixWorld));
+    out.push({ name: base,
+      min: [b.min.x, b.min.y, b.min.z],
+      max: [b.max.x, b.max.y, b.max.z], leaf: false });
+  });
+  learned = out;
+  return out.length;
 }
 
-export const STATION_PROXIES: readonly (LocalBox & { name: string })[] = [
-  // --- the hub, a 12 x 12 m room centred on the station origin --------------
-  box('col_HubDeck', [-HUB, -DECK_T, -HUB], [HUB, 0, HUB]),
-  box('col_HubWall_Xneg', [-HUB - WALL_T, 0, -HUB], [-HUB, HEAD, HUB]),
-  box('col_HubWall_Xpos', [HUB, 0, -HUB], [HUB + WALL_T, HEAD, HUB]),
-  box('col_HubWall_Zneg', [-HUB - WALL_T, 0, -HUB - WALL_T], [HUB + WALL_T, HEAD, -HUB]),
-  // The +Z wall is TWO boxes with a 2.5 m gap between them: that gap is the
-  // door into the corridor and it is why these are not one box.
-  box('col_HubWall_ZposL', [-HUB - WALL_T, 0, HUB], [-HALF_W, HEAD, HUB + WALL_T]),
-  box('col_HubWall_ZposR', [HALF_W, 0, HUB], [HUB + WALL_T, HEAD, HUB + WALL_T]),
-  box('col_HubCeiling', [-HUB - WALL_T, HEAD, -HUB - WALL_T],
-    [HUB + WALL_T, HEAD + OVERHEAD_T, HUB + WALL_T]),
+/** The station's collision proxies, names kept. Empty until the glb is read. */
+export function stationProxies(): readonly NamedBox[] { return learned; }
 
-  // --- the corridor, running +Z out of the hub ------------------------------
-  box('col_CorrDeck', [-HALF_W, -DECK_T, HUB], [HALF_W, 0, CORR_END]),
-  box('col_CorrWall_Xneg', [-HALF_W - WALL_T, 0, HUB], [-HALF_W, HEAD, CORR_END]),
-  box('col_CorrWall_Xpos', [HALF_W, 0, HUB], [HALF_W + WALL_T, HEAD, CORR_END]),
-  box('col_CorrCap', [-HALF_W - WALL_T, 0, CORR_END],
-    [HALF_W + WALL_T, HEAD, CORR_END + WALL_T]),
-  box('col_CorrCeiling', [-HALF_W - WALL_T, HEAD, HUB],
-    [HALF_W + WALL_T, HEAD + OVERHEAD_T, CORR_END]),
-];
+/**
+ * WHERE A BODY CAN STAND, and the asset says so rather than this file guessing.
+ *
+ * THE STATION'S ORIGIN IS NO LONGER EMPTY, which is the single most
+ * consequential difference between the placeholder and the shipped mesh and the
+ * one that broke a green probe. The placeholder was a 12 x 12 m hub centred on
+ * local (0, 0, 0) with nothing in the middle of it, so "the station's position"
+ * and "somewhere you can be" were the same point, and everything that wanted to
+ * put a player in the station used `stateOf`'s answer directly. The real hub has
+ * a STRUCTURAL CORE up the middle of it: `col_HallCore` is a solid column from
+ * y = 0.000 to 5.400 spanning +/- 1.548 m in both horizontal axes, and the
+ * origin is inside it. `stationwalk.js` P2 went red with "the air above the deck
+ * reads solid", which is exactly true and was the right complaint.
+ *
+ * So the spawn is read from the asset's own `socket_*` empties, which the
+ * Blender lane already places and tags (`of_role: spawn`). `socket_hall` sits at
+ * local (0, 0, 4.000), four metres out from the core and clear of it. Deriving
+ * it means a hub that gets rearranged moves the spawn with it, and it means this
+ * file never holds a second opinion about where the floor is.
+ */
+let spawns = new Map<string, [number, number, number]>();
+
+export function learnStationSockets(root: THREE.Object3D | null): number {
+  spawns = new Map();
+  if (root === null) return 0;
+  root.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const p = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.name.startsWith('socket_')) return;
+    p.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv);
+    spawns.set(o.name, [p.x, p.y, p.z]);
+  });
+  return spawns.size;
+}
+
+/** A named socket in station-local metres, or null. */
+export function stationSocket(name: string): [number, number, number] | null {
+  return spawns.get(name) ?? null;
+}
+
+/** Every socket the asset ships, for the debug surface and for probes. */
+export function stationSockets(): ReadonlyMap<string, [number, number, number]> {
+  return spawns;
+}
+
+/**
+ * The spot a player arriving at the station should be put, in station-local
+ * metres, with the feet-clearance already added.
+ *
+ * Falls back to `socket_entry` (the docking vestibule) and then to a point 4 m
+ * along +Z, which is the hall socket's own value: if the asset ever ships with
+ * no sockets at all, standing 4 m off the core still beats standing inside it.
+ */
+export function stationStandLocal(): [number, number, number] {
+  const s = stationSocket('socket_hall') ?? stationSocket('socket_entry');
+  const p = s ?? [0, 0, 4];
+  return [p[0], p[1] + 0.6, p[2]];
+}
+
+/** Forget the asset. For a teardown; a fresh boot re-learns it. */
+export function resetStationProxies(): void { learned = []; spawns = new Map(); }
 
 /** A design with no parts. `adoptSaved` requires `design.parts` to be an array
  *  and nothing else, and a station has no parts because it is not built in the
@@ -213,8 +295,19 @@ export function mintStation(M: OfCoreModule, up: Vec3n, bodyRadiusM: number,
  * its own position: NADIR POINTING, which PH-91 established is the only
  * orientation that works. "Down" in this codebase is `p/|p|` derived per tick
  * from the feet, with no override anywhere, so a deck is a floor exactly to the
- * degree that its top face is perpendicular to the planet radial. That also
- * buys real artificial gravity for free at the local inverse-square value.
+ * degree that its top face is perpendicular to the planet radial.
+ *
+ * WHAT USED TO BE THE NEXT SENTENCE IS RETRACTED (PH-98, and this is its
+ * correction rather than its deletion). It said nadir pointing "buys real
+ * artificial gravity for free at the local inverse-square value, 3.49886
+ * m/s^2". That is true of the FIELD STRENGTH and false of what an occupant
+ * feels, and the difference is the whole of orbital flight: a station at 400 km
+ * is in FREEFALL, it accelerates toward the planet at exactly the local g, and
+ * so does everything inside it, so nothing inside has any weight at all. The
+ * frozen-in-the-body-frame station this file builds is dynamically A TOWER ON A
+ * 400 KM PILLAR, and a tower is the one thing an orbit is not. Nadir pointing
+ * buys the deck an ORIENTATION and nothing else. The gravity on it is
+ * GENERATED, it is `StationGravity.ts`'s, and it can be switched off.
  *
  * `setFromUnitVectors` rather than a hand-rolled axis-angle: the first version
  * of `probes/orbitdeck.js` hand-rolled it, got the cross-product sign backwards
@@ -239,12 +332,34 @@ export function stationAxes(pos: Vec3n): { up: Vec3n; along: Vec3n; across: Vec3
     const w = new THREE.Vector3(x, y, z).applyQuaternion(q);
     return [w.x, w.y, w.z];
   };
-  return { up: v(0, 1, 0), along: v(0, 0, 1), across: v(1, 0, 0) };
+  // `along` IS THE SPINE, AND IT CHANGED AXIS WITH THE ASSET (PH-105).
+  //
+  // It used to be local +Z, because the placeholder's one corridor ran +Z out
+  // of a hub. The shipped station's spine runs along local X -- 66 m of it, aft
+  // at -X to the blown bulkhead and forward at +X to the docking collar -- and
+  // the branches run along Z. A probe that kept walking +Z would have walked
+  // into the side of the hall and reported a corridor that did not go anywhere,
+  // which is a name lying rather than a number being wrong. `along` means along
+  // the corridor; the corridor moved; the axis follows it.
+  return { up: v(0, 1, 0), along: v(1, 0, 0), across: v(0, 0, 1) };
+}
+
+/**
+ * `stationStandLocal()` in the BODY frame: the point to put a player at.
+ *
+ * The one place the local-to-body transform for the spawn is written, so a
+ * caller never composes the quaternion themselves. `stationwalk.js` P4 already
+ * pays for the general version of that lesson.
+ */
+export function stationStandBody(pos: Vec3n): Vec3n {
+  const l = stationStandLocal();
+  const v = new THREE.Vector3(l[0], l[1], l[2]).applyQuaternion(stationQuat(pos));
+  return [pos[0] + v.x, pos[1] + v.y, pos[2] + v.z];
 }
 
 export function stationSolid(pos: Vec3n): Solid {
   const quat = stationQuat(pos);
-  const boxes = STATION_PROXIES.map((b) => ({ min: b.min, max: b.max, leaf: b.leaf }));
+  const boxes = learned.map((b) => ({ min: b.min, max: b.max, leaf: b.leaf }));
   return {
     id: STATION_SOLID_ID,
     pos: { x: pos[0], y: pos[1], z: pos[2] },
@@ -266,6 +381,10 @@ export interface StationReport {
   deckR: number;
   altM: number;
   proxies: number;
+  /** Sockets the asset ships. 0 means the spawn fell back (see `stationStandLocal`). */
+  sockets: number;
+  /** Body-frame point a player arriving at the station should be placed at. */
+  standPos: Vec3n;
   solids: number;
 }
 
@@ -286,6 +405,11 @@ export function lastStationInstall(): StationReport | null { return lastReport; 
  * only a genuinely new world mints one. The interior is derived from the record
  * on EVERY boot and is never itself saved, which is the whole reason the reload
  * proof is about nine numbers and not about a box list.
+ *
+ * REFUSES WITH NO PROXIES LEARNED, and that refusal is the point of having no
+ * fallback shape: a station whose asset did not arrive is a record with nothing
+ * to stand on, and installing it would put a player in a place with an orbit, a
+ * map marker and a panel row but no floor. Better absent than hollow.
  */
 export function installStation(M: OfCoreModule, bodies: StructureBodies,
                                up: Vec3n, bodyRadiusM: number, muM3S2: number,
@@ -294,6 +418,7 @@ export function installStation(M: OfCoreModule, bodies: StructureBodies,
     bodies.remove((s) => s === installed);
     installed = null;
   }
+  if (learned.length === 0) return null;
   const existing = findStation();
   const rec = existing ?? mintStation(M, up, bodyRadiusM, muM3S2);
   if (rec === null) return null;
@@ -307,7 +432,9 @@ export function installStation(M: OfCoreModule, bodies: StructureBodies,
     pos,
     deckR: Math.hypot(pos[0], pos[1], pos[2]),
     altM: Math.hypot(pos[0], pos[1], pos[2]) - bodyRadiusM,
-    proxies: STATION_PROXIES.length,
+    proxies: learned.length,
+    sockets: spawns.size,
+    standPos: stationStandBody(pos),
     solids: bodies.count,
   };
   return lastReport;
