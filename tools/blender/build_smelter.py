@@ -281,14 +281,30 @@ def _mouth(mb, sign, z_c, open_w, open_h, jamb, head_h, sill_h, band_role):
 
 
 def _mouth_block(mb, sign, z_c, open_w, open_h, jamb, head_h, sill_h):
-    """The same slot at LOD1: one filled frame block plus a dark inset, so the
-    port is still where it was and still reads dark, at two boxes instead of
-    seven. A decimator cannot do this to a slot; it closes the hole."""
+    """The same slot at LOD1: a filled frame block plus a dark inset, so the
+    port is still where it was and still reads dark, at three boxes instead of
+    seven. A decimator cannot do this to a slot; it closes the hole.
+
+    THE STEEL STOPS AT FRAME_D AND THE ACCENT BAND OWNS THE EDGE, WHICH IS
+    LOD0'S OWN RULE AND THIS TIER WAS BREAKING IT. `_mouth` puts its frame at
+    1.70 to 1.94 and lets the painted band fill 1.94 to 2.00, precisely so that
+    nothing but paint occupies the footprint plane. This block ran Steel the
+    whole way from 1.70 to HALF instead.
+
+    That was harmless for as long as nothing else Accent reached y = 2.00 on
+    this mesh, and it stopped being harmless the moment RN-561 gave this tier
+    the painted skirt it needed for the anchor bolts' contact shadow: skirt
+    side against mouth-block face, Accent against Steel, both outward, both on
+    2.0000. Seven pairs, four at the intake and three at the outlet, and the
+    fix is not to move the skirt but to make this block obey the rule the
+    detailed tier already obeys."""
     lo = z_c - open_h * 0.5 - sill_h
     hi = z_c + open_h * 0.5 + head_h
     outer_w = open_w + 2.0 * jamb
-    mb.box((outer_w, MOUTH_D, hi - lo),
-           (0, sign * (HALF - MOUTH_D * 0.5), (lo + hi) * 0.5), "Steel")
+    mb.box((outer_w, FRAME_D, hi - lo),
+           (0, sign * (BODY_HALF + FRAME_D * 0.5), (lo + hi) * 0.5), "Steel")
+    mb.box((outer_w, BAND_D, hi - lo),
+           (0, sign * (HALF - BAND_D * 0.5), (lo + hi) * 0.5), "Accent")
     mb.box((open_w, 0.10, open_h), (0, sign * (HALF - 0.06), z_c), "SteelDark")
 
 

@@ -153,54 +153,63 @@ def _pt_tri_dist2(p, a, b, c):
     return sum((p[i] - q[i]) ** 2 for i in range(3))
 
 
-def deviation(v0, verts_t, tris_t, cell=0.35):
+def deviation(v0, verts_t, tris_t):
     """max over LOD0's vertices of the distance to the tier's SURFACE.
 
-    Uniform-grid broad phase over the tier's triangles, then the exact
-    point-to-triangle distance for the candidates. The grid is what makes this
-    a second rather than a minute: the smelter is 2,276 triangles against
-    ~1,300 vertices, and the naive product is 3 million exact tests per pair.
-    The radius grows until it finds something, so a sparse tier is correct and
-    merely slower rather than wrong."""
+    BOUNDING-SPHERE PRUNE, NOT A UNIFORM GRID, AND THE FIRST VERSION IS WHY.
+    A grid looks like the obvious broad phase and is the wrong one here,
+    because the meshes it is asked about are exactly the ones it handles worst.
+    The first version grew a shell radius until it found a candidate, which is
+    correct and fast when the tier is dense and PATHOLOGICAL when it is sparse:
+    a 48-triangle LOD2 leaves almost every cell empty, so the search expanded
+    to its 24-shell cap and did roughly 117,000 dict lookups PER VERTEX. On
+    `launch_pad` (5,026 vertices against a 48-triangle tier) that is about 590
+    million lookups for one pair, and the whole-set sweep did not finish.
+
+    Cost here is honestly O(V x T), which sounds worse and is far better at
+    these sizes: every tier in the set is between 36 and 1,302 triangles, so
+    the product is bounded and the constant is tiny. Each triangle carries a
+    centroid and a radius, and a triangle whose sphere cannot beat the best
+    distance found so far is skipped before the exact test runs. The prune is
+    what does the work; the loop is just a loop.
+
+    The exact test is still Ericson's, so the ANSWER is unchanged: this
+    function was swapped for speed alone and the smelter still reads 325.00 mm
+    against the pre-swap bytes, which is the control that matters."""
     if not tris_t:
         return float("inf")
-    grid = {}
+    prepared = []
     for t in tris_t:
         a, b, c = verts_t[t[0]], verts_t[t[1]], verts_t[t[2]]
-        lo = [min(a[i], b[i], c[i]) for i in range(3)]
-        hi = [max(a[i], b[i], c[i]) for i in range(3)]
-        for ix in range(int(math.floor(lo[0] / cell)), int(math.floor(hi[0] / cell)) + 1):
-            for iy in range(int(math.floor(lo[1] / cell)), int(math.floor(hi[1] / cell)) + 1):
-                for iz in range(int(math.floor(lo[2] / cell)), int(math.floor(hi[2] / cell)) + 1):
-                    grid.setdefault((ix, iy, iz), []).append(t)
+        cx = (a[0] + b[0] + c[0]) / 3.0
+        cy = (a[1] + b[1] + c[1]) / 3.0
+        cz = (a[2] + b[2] + c[2]) / 3.0
+        rad = max(math.sqrt((v[0] - cx) ** 2 + (v[1] - cy) ** 2
+                            + (v[2] - cz) ** 2) for v in (a, b, c))
+        prepared.append((cx, cy, cz, rad, a, b, c))
+    # Nothing about the order is required for correctness, but starting from
+    # the tier's own centre of mass makes the first candidate a good one for
+    # most vertices, which is what makes the prune bite immediately instead of
+    # after a few hundred triangles.
+    mx = sum(p[0] for p in prepared) / len(prepared)
+    my = sum(p[1] for p in prepared) / len(prepared)
+    mz = sum(p[2] for p in prepared) / len(prepared)
+    prepared.sort(key=lambda p: (p[0] - mx) ** 2 + (p[1] - my) ** 2
+                  + (p[2] - mz) ** 2)
     worst = 0.0
     for p in v0:
-        home = tuple(int(math.floor(p[i] / cell)) for i in range(3))
+        px, py, pz = p[0], p[1], p[2]
         best = float("inf")
-        r = 0
-        while True:
-            got = False
-            for dx in range(-r, r + 1):
-                for dy in range(-r, r + 1):
-                    for dz in range(-r, r + 1):
-                        if r > 0 and max(abs(dx), abs(dy), abs(dz)) != r:
-                            continue
-                        for t in grid.get((home[0] + dx, home[1] + dy,
-                                           home[2] + dz), ()):
-                            got = True
-                            d2 = _pt_tri_dist2(p, verts_t[t[0]], verts_t[t[1]],
-                                               verts_t[t[2]])
-                            if d2 < best:
-                                best = d2
-            # Stop only when the shell searched is provably farther than the
-            # best hit so far: a nearer triangle cannot hide in a ring whose
-            # inner face already exceeds it.
-            if best < float("inf") and (r * cell) ** 2 >= best:
-                break
-            if not got and r > 24:
-                break
-            r += 1
-        worst = max(worst, best)
+        for (cx, cy, cz, rad, a, b, c) in prepared:
+            dc = math.sqrt((px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2)
+            lower = dc - rad
+            if lower > 0.0 and lower * lower >= best:
+                continue
+            d2 = _pt_tri_dist2(p, a, b, c)
+            if d2 < best:
+                best = d2
+        if best > worst:
+            worst = best
     return math.sqrt(worst)
 
 
@@ -237,34 +246,59 @@ def main():
             continue
         gltf, binary = glb_chunks(path)
         by = {m.get("name", ""): m for m in gltf.get("meshes", [])}
-        lods = [n for n in c["lod_nodes"] if n in by]
-        if len(lods) < 2:
-            continue
-        v0, _t0 = mesh_geometry(gltf, binary, by[lods[0]])
-        tiers = [0]
-        print("  %-22s %8s %10s  %s" % (name, "LOD0", "0.00", "all (it IS the reference)"))
-        for li, ln in enumerate(lods[1:], start=1):
-            vt, tt = mesh_geometry(gltf, binary, by[ln])
-            d = deviation(v0, vt, tt)
-            t = tier_for(d)
-            earns = ("none" if t is None
-                     else ", ".join("c%d" % k for k in range(t, len(CASCADE_M))))
-            print("  %-22s %8s %10.2f  %s"
-                  % ("", "LOD%d" % li, d * 1000.0, earns))
-            tiers.append(t)
-        # Which tier each cascade actually gets: the finest tier admitted.
-        drawn = []
-        for ci in range(len(CASCADE_M)):
-            pick = 0
-            for li in range(len(tiers) - 1, 0, -1):
-                if tiers[li] is not None and tiers[li] <= ci:
-                    pick = li
-                    break
-            drawn.append(pick)
-        m = marginal(drawn)
-        rows.append((name, drawn, m))
-        print("  %-22s %8s %10s  cascades draw tiers %s -> MARGINAL %.1fx"
-              % ("", "", "", ",".join(str(d) for d in drawn), m))
+
+        # GROUP BY STEM. An asset is not one ladder: `launch_pad` declares
+        # `LaunchPad_LOD0/1/2` AND `LaunchClamp_LOD0/2` AND `LaunchClamp_Arm`
+        # in one `lod_nodes` list. Reading that list as a single six-tier
+        # ladder measures a pad against a clamp standing 14 m away and reports
+        # 14,090 mm, which is not a deviation, it is two different objects.
+        # THE FIRST VERSION OF THIS TOOL DID EXACTLY THAT, and a table
+        # published from it would have been worse than no table: every number
+        # would have looked precise and five of them would have been fiction.
+        ladders = {}
+        for n in c["lod_nodes"]:
+            if n not in by:
+                continue
+            k = n.rsplit("_LOD", 1)
+            if len(k) != 2 or not k[1].isdigit():
+                continue            # a sibling like LaunchClamp_Arm, not a tier
+            ladders.setdefault(k[0], []).append((int(k[1]), n))
+        printed = False
+        for stem in sorted(ladders):
+            rung = sorted(ladders[stem])
+            if len(rung) < 2 or rung[0][0] != 0:
+                continue
+            v0, _t0 = mesh_geometry(gltf, binary, by[rung[0][1]])
+            label = name if not printed else ""
+            printed = True
+            sub = "" if len(ladders) == 1 else " [%s]" % stem
+            print("  %-22s %8s %10s  %s"
+                  % (label, "LOD0", "0.00",
+                     "all (it IS the reference)" + sub))
+            tiers = {0: 0}
+            for lvl, ln in rung[1:]:
+                vt, tt = mesh_geometry(gltf, binary, by[ln])
+                d = deviation(v0, vt, tt)
+                t = tier_for(d)
+                earns = ("none" if t is None
+                         else ", ".join("c%d" % k
+                                        for k in range(t, len(CASCADE_M))))
+                print("  %-22s %8s %10.2f  %s"
+                      % ("", "LOD%d" % lvl, d * 1000.0, earns))
+                tiers[lvl] = t
+            # Which tier each cascade actually gets: the finest tier admitted.
+            drawn = []
+            for ci in range(len(CASCADE_M)):
+                pick = 0
+                for lvl in sorted(tiers, reverse=True):
+                    if lvl and tiers[lvl] is not None and tiers[lvl] <= ci:
+                        pick = lvl
+                        break
+                drawn.append(pick)
+            m = marginal(drawn)
+            rows.append(("%s%s" % (name, sub), drawn, m))
+            print("  %-22s %8s %10s  cascades draw tiers %s -> MARGINAL %.1fx"
+                  % ("", "", "", ",".join(str(d) for d in drawn), m))
     print("-" * 78)
     worst = [r for r in rows if r[2] >= 4.0]
     if worst:

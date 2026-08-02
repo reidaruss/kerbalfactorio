@@ -572,3 +572,67 @@ that you would not see it.
 actually hidden, and whether it is hidden is a measurement, not an assumption.**
 The cheap check is the one that was skipped twice: render it from the camera the
 asset is actually seen from, before believing the reasoning.
+
+## A ladder authored for screen distance is admitted by a different test than a shadow cascade uses (RN-561)
+
+Every LOD ladder in this project was authored against ONE question: at what
+screen size does a cruder tier stop being distinguishable? That question is
+about how SMALL the object looks. A shadow cascade asks a different one: how
+far did the SURFACE move? Those two admit different meshes, and nothing in the
+project had ever asked the second one, so no asset had ever been measured
+against it.
+
+The consequence was not a wrong ladder, which would have been visible. It was a
+ladder that is correct for its own purpose and silently unusable for another,
+which is why it survived every gate: `validate_glb` checks tier triangle
+counts, `check_coplanar` checks paint, and neither has any opinion about the
+distance between two tiers' surfaces.
+
+**How it surfaced.** The machine lane priced a triangle raise against a
+recovery in which the three CSM cascades would draw the cruder tiers that
+already ship in every `.glb`: `2276 + 192 + 2x48 = 2564` against `2276 x 4`, a
+factor of 34. The cost half of that estimate was independently reproduced and
+was right. The recovery half was never measured. Cascade 0 is **15.47 mm per
+shadow texel** and the smelter's `_LOD1` deviates **325 mm** from its `_LOD0`,
+so no cascade fine enough to matter may draw it, and the factor of 34 is a
+factor of **1.00**.
+
+**The cause predates the raise and belongs to nobody's pass**: the pre-raise
+592-triangle smelter's `_LOD1` already measured 264.8 mm. This is not a defect
+somebody introduced, it is a question nobody had asked.
+
+**The measurement is asymmetric and that is load-bearing.** It is taken from
+LOD0's VERTICES to the tier's SURFACE, never between vertex sets. A base ring
+that the cruder tier lifted by 30 mm must report 30 mm; a vertex-set comparison
+scores it at zero, because every vertex of the cruder tier does have a near
+neighbour in the finer one. The three failure modes it bounds are a shifted
+shadow edge, a DETACHED CONTACT shadow (the most legible, because the eye reads
+it as the object floating), and a thin feature that vanishes from its own
+shadow.
+
+**What an asset lane actually banks is the marginal multiplier**, `1 +
+(cascades still drawing tier 0)`: 4.0x when every cascade is stuck on tier 0,
+2.0x at 0,1,1. Halving it doubles what that asset can afford at LOD0 across
+every instance in the world. **Authoring a shadow-safe tier therefore buys more
+frame than trimming any LOD0 ever will**, because it moves the multiplier
+rather than the term.
+
+**The authoring rule, and the four causes nobody would have guessed.** Block in
+every LOD0 feature standing more than about 56 mm proud (cascade 1's texel),
+one box at the feature's envelope; below that the cascade cannot resolve it
+anyway. Reproducing the greebles is not the job. Measured on the smelter, the
+features whose absence dominated were: a roof junction box over a bare pan
+(325 mm), a hopper vibrator over a bare rear face (290 mm), **a ladder's
+bracketed landing, which is WIDER THAN THE LADDER, so a block sized to the
+obvious feature still missed by 160 mm**, a roof pipe run (150 mm), and a
+painted skirt the tier never had, which left the anchor bolts 141 mm over a
+plinth. Not one of them is a silhouette feature; every one of them is a shadow.
+
+**Measure it where it is authored.** The running client's
+`__ofShadowLod.report()` is the authority, and it is the wrong place to author
+against: an asset lane edits a build script and runs Blender, and should not
+have to boot a browser to learn whether the edit bought anything.
+`tools/blender/check_shadow_lod.py` is the same number offline from the shipped
+bytes, and it is trustworthy for exactly one reason: it reproduces `report()`'s
+325.00 mm **to the penny**. An offline instrument that merely agrees in spirit
+with the shipping one is a second opinion, not a check.
