@@ -44,12 +44,21 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { loadGlb } from '../assets/Loaders.js';
 import { ASSETS } from '../assets/Registry.js';
+import { attachSurface, copyUv } from '../render/instancing/Surfaces.js';
 import { standBasis, type OriginPort } from './EnemyView.js';
 import type { Creature } from './EnemySwarm.js';
 import type { Vec3 } from './EnemyLoop.js';
 
 /** Rigged bodies at once. Priced in the header; measured in stats(). */
 export const MAX_RIGS = 8;
+/**
+ * The ONE roughness and the ONE metalness the merged creature has (RN-455).
+ * `tools/blender/render_creatures.py` repeats them as CLIENT_MERGE_ROUGH_METAL
+ * so a studio render previews what the game can actually draw; if they ever
+ * disagree, the studio pair is fiction and it flatters.
+ */
+const CHITIN_ROUGHNESS = 0.8;
+const CHITIN_METALNESS = 0.04;
 /** Promote a creature inside this range of the player, metres. */
 const CLAIM_M = 80;
 /** Demote it only beyond this, so the boundary does not flicker. */
@@ -149,7 +158,22 @@ export class SpiderFlock {
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      for (const drop of ['uv', 'uv1', 'uv2', 'tangent']) {
+      // uv SURVIVES the merge now (RN-455) and is copied through the one
+      // function that does it unconditionally, for the reason that function
+      // documents: mergeGeometries returns null on a mismatched attribute set
+      // and the `?? list[0]` below would swallow it, so one primitive without
+      // UVs would silently reduce the whole creature to its first primitive.
+      // copyUv also COUNTS, so `surfaceReport().uv.byConsumer.spider` is the
+      // evidence the map reached the geometry rather than an assumption.
+      //
+      // THE NAMED FAILURE MODE, before measuring: this file used to DELETE uv
+      // here, so a chitin map bound to the material would have sampled uv 0,0
+      // on every vertex and the whole creature would draw one flat texel. That
+      // is the flora lane's grey-white silent drop with a different colour: a
+      // map is bound, a probe asking "hasMap" says yes, and nothing is
+      // textured.
+      copyUv(pm.geometry, g, n, 'spider');
+      for (const drop of ['uv1', 'uv2', 'tangent']) {
         if (g.getAttribute(drop) !== undefined) g.deleteAttribute(drop);
       }
       parts.push(g);
@@ -182,9 +206,19 @@ export class SpiderFlock {
     if (m === undefined) {
       m = new THREE.MeshStandardMaterial({
         color: new THREE.Color(0xffffff).lerp(new THREE.Color(tint), TINT_LERP),
-        vertexColors: true, metalness: 0.05, roughness: 0.8,
+        vertexColors: true, metalness: CHITIN_METALNESS,
+        roughness: CHITIN_ROUGHNESS,
       });
       m.name = `spider:type${typeId}`;
+      // RN-455. The merge above collapses six authored materials into one, so
+      // THESE TWO NUMBERS ARE THE ONLY ROUGHNESS AND METALNESS THE WHOLE
+      // CREATURE HAS, and every per-part material response the .glb declares
+      // (a fang at 0.30, an eye at 0.10) is thrown away here. What survives is
+      // colour, baked to the vertex attribute above. The `chitin` family's ORM
+      // is therefore the only thing that can vary the response across the
+      // body, which is why it was authored to a p05..p95 band and not to a
+      // pretty number.
+      attachSurface(m, 'chitin', m.name);
       this.materials.set(typeId, m);
     }
     return m;

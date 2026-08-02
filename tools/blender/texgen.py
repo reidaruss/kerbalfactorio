@@ -125,7 +125,13 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # `ore` matches coarse and bark at 384: its 0.5 m tile lands at 768 px/m,
 # comfortably above the 512 px/m first-person target, on a family that covers
 # exactly three seam roles the camera only meets on boulder facets.
-FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384}
+# `chitin` matches coarse, bark and ore at 384: its 0.30 m tile lands at
+# 1280 px/m, well above the 512 px/m first-person target, on a family whose
+# punctate pits are sub-millimetre and would alias away at anything less.
+# It carries THREE maps rather than two, so 384 rather than 512 is also what
+# keeps the addition at 2.36 MB of VRAM instead of 4.19 MB.
+FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
+               "chitin": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -147,6 +153,10 @@ ROLE_FAMILY = {
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
     "Accent": "panel", "Hazard": "panel", "Plate": "panel",
     "Suit": "panel", "SuitDark": "panel", "SuitAccent": "panel",
+    # --- chitin: the creature shell (RN-455). The first tiling family with
+    #     an albedo, and the first authored for a body rather than a prop.
+    "Chitin": "chitin", "ChitinBand": "chitin", "ChitinUnder": "chitin",
+    "Fang": "chitin",
     # --- coarse: anything dug up or grown ---
     # Iron and Copper were in `panel` for one pass and it was the clearest
     # regression in the whole set: an ore vein wearing plate seams, rivet rows
@@ -201,6 +211,14 @@ FLAT_ROLES = {
     "Skin": "1.5 cm of visible wrist; a pore map is 5.6 MB for nothing",
     "EmissiveState": "a state light. Any AO or roughness on it is a lie about "
                      "what the surface is doing",
+    # RN-455. Both eye roles are 3 to 6 cm of convex bead on a creature the
+    # player meets at 2 m: chitin pitting at that size is one texel across
+    # and reads as noise, and an eye is the one part of a spider that IS a
+    # polished sphere. They differ from each other by VALUE, which is the
+    # only channel that survives SpiderFlock's merge.
+    "EyeGlow": "a wet convex bead 6 cm across; relief and grain belong to "
+               "the shell around it, not to it",
+    "EyeDark": "the six secondary eyes, same argument as EyeGlow",
 }
 
 # Metres of world space one repeat of the texture covers. UVs ship in METRES
@@ -239,7 +257,8 @@ FLAT_ROLES = {
 # to six bands: enough parallel strata to read as a vein rather than as one
 # stripe, few enough that the copies are not countable. coarse's 0.75 would
 # put a 15 cm pitch on the same facet, two bands, one feature.
-FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5}
+FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
+                 "chitin": 0.3}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -917,6 +936,161 @@ def _ore_masks(w, h, height, aux):
 
 
 # ---------------------------------------------------------------------------
+# The `chitin` family: the first CREATURE surface, and the first TILING family
+# to carry an ALBEDO (RN-455).
+#
+# THE SHAPE OF THIS FAMILY IS THE GENERAL THING, not the spider. Every tiling
+# family before it is normal+orm and leaves base colour to the palette
+# constant, because the machine path structurally cannot take an albedo
+# (MachineBatch overwrites diffuseColor after <map_fragment>). That argument
+# was always specific to that hook, and ART-DIRECTION.md names "flat vertex
+# colour as the primary albedo source" as a defect to unlearn. So `chitin` is
+# normal + orm + ALBEDO at metre UVs, mean-neutral exactly as the card
+# families are, and the player suit, the machines and the rocks can each take
+# the same shape when their lane comes to it.
+#
+# WHY THE ALBEDO HAS TO CARRY THE OCCLUSION. The near creature is drawn
+# through SpiderFlock's merge, which collapses every primitive to ONE
+# material, so per-part roughness does not exist, and the screen-space AO
+# clamps bind inside 0.37 m (section 2.1 item 5). Value darkening into the
+# creases is in the map or it is nowhere. It is mean-neutral (the client
+# divides `albedo_mean` out through material.color), so it cannot shift the
+# palette: what survives is the spatial variance and the hue, which is exactly
+# the split section 2.1 item 4 states for the foliage cards.
+# ---------------------------------------------------------------------------
+
+def _normalise(field):
+    lo = min(field)
+    hi = max(field)
+    span = (hi - lo) or 1.0
+    return [(v - lo) / span for v in field]
+
+
+def _chitin_height(w, h):
+    """Four scales, and the two that carry the read are the smallest.
+
+    A shell is not rock and not bark: it is a SMOOTH domed plate covered in
+    punctate pits and bristle sockets. Those two terms are the whole
+    difference between chitin and painted plastic, and they are what survives
+    at a 0.30 m tile where a fracture facet would not exist at all."""
+    dome = _fbm(w, h, 3, 3, seed=3301)
+    scute = _worley(w, h, 5, seed=4409)
+    micro = _worley(w, h, 26, seed=5507)
+    punct = _worley(w, h, 46, seed=6619)
+    socket = _worley(w, h, 9, seed=7727)
+    grain = _fbm(w, h, 72, 2, seed=8831)
+    out = [0.0] * (w * h)
+    pit = [0.0] * (w * h)
+    hole = [0.0] * (w * h)
+    for i in range(w * h):
+        z = 0.55 * dome[i]
+        # 1 - worley gives domed plates meeting in sharp valleys. 1.6 rather
+        # than coarse's 2.0: a scute crown is flatter than a rock facet.
+        #
+        # THE FIRST VERSION PUT 0.40 HERE AT 7 CELLS AND IT WAS THE WHOLE
+        # DEFECT. On a 0.30 m tile that is 43 mm cells at nearly half the
+        # amplitude, and rendered, the creature is a spider built out of
+        # cobblestones: it read as rock because the frequency content WAS
+        # rock's. A shell is mostly smooth. Plate structure at 10 to 30 cm is
+        # the job of the geometry (the carapace margin, the tergites, the
+        # joint pinches all exist), so the map's job starts BELOW a centimetre
+        # and this term is now a broad undulation, not a pattern.
+        z += 0.030 * (1.0 - scute[i]) ** 1.6
+        z += 0.045 * (1.0 - micro[i]) ** 2
+        p = 1.0 - _smoothstep(0.0, 0.26, punct[i])
+        pit[i] = p * p
+        z -= 0.13 * pit[i]
+        # A bristle socket is a raised annulus with a hole in it, so it reads
+        # as something a hair grew out of rather than as a dent. Both terms
+        # come off ONE worley field, which is what keeps them concentric.
+        d = socket[i]
+        ring = math.exp(-((d - 0.13) / 0.055) ** 2)
+        hole[i] = 1.0 - _smoothstep(0.0, 0.075, d)
+        z += 0.050 * ring - 0.075 * hole[i]
+        z += 0.028 * grain[i]
+        out[i] = z
+    return out, {"pit": pit, "hole": hole, "hn": _normalise(out)}
+
+
+def _chitin_masks(w, h, height, aux):
+    """Crowns polished, creases and pits matte, and the SPREAD is the point.
+
+    Section 2.1 item 4: a family's effective roughness p05..p95 must be at
+    least ~0.15 wide or it is a constant under a moving sun, and `panel`
+    measures 0.032, which is the plastic read on every machine and every suit
+    in the game. This is the first family authored against that number on
+    purpose rather than measured against it afterwards."""
+    mottle = _fbm(w, h, 13, 3, seed=9127)
+    hn = aux["hn"]
+    rough = [0.0] * (w * h)
+    # Honest constant. Chitin is a dielectric: the sheen is low roughness, not
+    # metalness, and section 2.1 asks that a flat channel say so rather than
+    # pretend otherwise. 1.0 is the identity, so effective metalness is the
+    # material's own 0.04.
+    metal = [1.0] * (w * h)
+    for i in range(w * h):
+        r = (0.99 - 0.78 * _smoothstep(0.30, 0.95, hn[i])
+             + (mottle[i] - 0.5) * 0.12
+             + 0.22 * aux["pit"][i] + 0.16 * aux["hole"][i])
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+def _chitin_albedo(w, h, height, aux):
+    """RGB bytes: crease darkening, pit specks and a crown-to-crease hue lean.
+
+    The consumer makes this mean-neutral, so it authors VARIANCE and HUE and
+    the palette role authors LEVEL."""
+    # THE ALBEDO CARRIES THE MEDIUM FREQUENCIES AND THE NORMAL CARRIES THE
+    # FINE ONES, and getting that split wrong cost this pass two renders.
+    # Version one drove everything off the heightfield, so the two maps had
+    # identical frequency content: pushing the relief fine enough to stop
+    # reading as cobblestone ALSO deleted every feature the creature had at 7 m,
+    # and it went from rock to dusty clay without ever passing through chitin.
+    # `patch` is pigmentation, not relief. It is the thing a real spider
+    # actually has at 10 to 20 cm, it costs no normal-map amplitude, and it is
+    # what puts something on the abdomen to look at from across a clearing.
+    patch = _fbm(w, h, 2, 2, seed=12347)
+    blotch = _fbm(w, h, 9, 3, seed=10133)
+    speck = _fbm(w, h, 96, 2, seed=11239)
+    hn = aux["hn"]
+    out = bytearray(w * h * 3)
+    for i in range(w * h):
+        # Half the value range of the first version. An albedo that swings
+        # 0.44 to 0.86 across 4 cm is a mottled stone, and the mean-neutral
+        # divide means every count of that swing lands on the creature.
+        v = 0.66 + 0.17 * _smoothstep(0.12, 0.95, hn[i])
+        v *= 1.0 - 0.22 * aux["pit"][i]
+        v *= 1.0 - 0.16 * aux["hole"][i]
+        v *= 0.86 + 0.28 * patch[i]
+        v *= 0.94 + 0.12 * blotch[i]
+        v *= 0.96 + 0.08 * speck[i]
+        # A crown catches more of whatever light there is and reads warmer, a
+        # crease does the opposite. Six per cent is a LEAN, not a tint:
+        # anything stronger and the map is deciding the creature's colour,
+        # which belongs to the palette role.
+        warm = 0.04 * _smoothstep(0.20, 0.90, hn[i])
+        o = i * 3
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + warm))))
+        out[o + 1] = int(round(255.0 * _clamp01(v)))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - warm * 0.9))))
+    return bytes(out)
+
+
+def _albedo_mean_rgb(rgb):
+    """Mean RGB luma (0..1) over every texel: the opaque counterpart of
+    `_albedo_mean_rgba`. No alpha, so no coverage test and every texel counts."""
+    n = len(rgb) // 3
+    if n == 0:
+        return 0.0
+    tot = 0.0
+    for i in range(n):
+        o = i * 3
+        tot += 0.2126 * rgb[o] + 0.7152 * rgb[o + 1] + 0.0722 * rgb[o + 2]
+    return tot / (n * 255.0)
+
+
+# ---------------------------------------------------------------------------
 # Heightfield -> normal and AO.
 # ---------------------------------------------------------------------------
 
@@ -1238,10 +1412,23 @@ FAMILIES = {
     "ore": dict(height=_ore_height, masks=_ore_masks,
                 normal_strength=11.0, ao_radius=9, ao_floor=0.46,
                 ao_gain=3.2),
+    # chitin is the shallowest relief in the set and the highest frequency:
+    # a pit is 0.16 deep over about 2 mm, so 16 is what gives a pit the
+    # shading weight bark gets from 12 on a fissure ten times as wide. The
+    # ao_radius is small for the same reason (the occluder IS the pit), and
+    # the floor is the highest in the set because a shell is not a cave: a
+    # crease darkens, it does not go black.
+    "chitin": dict(height=_chitin_height, masks=_chitin_masks,
+                   albedo=_chitin_albedo,
+                   normal_strength=12.0, ao_radius=5, ao_floor=0.70,
+                   ao_gain=2.2),
 }
 
 
 def build_family(name, size=None):
+    """(height, normal, orm, albedo). `albedo` is None unless the family
+    declares one: a tiling family MAY carry a base colour now (RN-455) and
+    every family authored before it deliberately does not."""
     spec = FAMILIES[name]
     size = FAMILY_SIZE[name] if size is None else size
     height, aux = spec["height"](size, size)
@@ -1250,7 +1437,9 @@ def build_family(name, size=None):
              spec["ao_gain"])
     normal = _normal_rgb(height, size, size, spec["normal_strength"])
     orm = _pack_orm(ao, rough, metal, size, size)
-    return height, normal, orm
+    alb = spec.get("albedo")
+    albedo = None if alb is None else alb(size, size, height, aux)
+    return height, normal, orm, albedo
 
 
 # ---------------------------------------------------------------------------
@@ -1635,10 +1824,11 @@ def build_albedo_family(name, size=None):
 def generate(out_dir=OUT_DIR, size=None, quiet=False):
     files = {}
     sizes = {}
+    tiling_albedo = {}
     for name in sorted(FAMILIES):
         fsize = FAMILY_SIZE[name] if size is None else size
         sizes[name] = fsize
-        _, normal, orm = build_family(name, fsize)
+        _, normal, orm, albedo = build_family(name, fsize)
         n_path = os.path.join(out_dir, "of_%s_n.png" % name)
         o_path = os.path.join(out_dir, "of_%s_orm.png" % name)
         n_bytes = write_png(n_path, fsize, fsize, normal)
@@ -1647,10 +1837,22 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
             "normal": {"file": os.path.basename(n_path), "bytes": n_bytes},
             "orm": {"file": os.path.basename(o_path), "bytes": o_bytes},
         }
+        if albedo is not None:
+            # RGB, not RGBA, and that is the contract rather than an omission:
+            # a tiling body surface is OPAQUE, so it declares no alpha channel
+            # and therefore cannot trip the validator's rule that an albedo
+            # with alpha must publish an alpha_test.
+            a_path = os.path.join(out_dir, "of_%s_a.png" % name)
+            a_bytes = write_png(a_path, fsize, fsize, albedo)
+            files[name]["albedo"] = {"file": os.path.basename(a_path),
+                                     "bytes": a_bytes}
+            tiling_albedo[name] = albedo
         if not quiet:
-            print("[texgen] %-7s normal %7d B   orm %7d B   (%dx%d, %g px/m)"
-                  % (name, n_bytes, o_bytes, fsize, fsize,
-                     fsize / FAMILY_TILE_M[name]))
+            print("[texgen] %-7s normal %7d B   orm %7d B%s   (%dx%d, %g px/m)"
+                  % (name, n_bytes, o_bytes,
+                     ("   albedo %7d B" % files[name]["albedo"]["bytes"])
+                     if albedo is not None else "",
+                     fsize, fsize, fsize / FAMILY_TILE_M[name]))
 
     albedo_files = {}
     for name in sorted(ALBEDO_FAMILIES):
@@ -1672,6 +1874,11 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
             "orm channels: R = occlusion, G = roughness, B = metalness, and all",
             "three MULTIPLY the material constant rather than replacing it.",
             "normal maps are OpenGL convention (+Y up), colorSpace NoColorSpace.",
+            "A TILING family may also carry an `albedo` (chitin, RN-455).",
+            "It is RGB with no alpha, uv_space is metres like its normal and",
+            "orm siblings, and it publishes albedo_mean for the same",
+            "mean-neutral divide the card families use. A family carrying all",
+            "three maps is the shape a body surface takes.",
             "albedo families (grass, leaf) are CARD textures: albedo+alpha,",
             "values are sRGB as authored, alpha is coverage. Their UVs are",
             "UNIT (uv_space \"unit\"), not metres: a card shows the texture",
@@ -1698,10 +1905,14 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
         fam["tile_m"] = FAMILY_TILE_M[name]
         fam["size_px"] = sizes[name]
         fam["texels_per_m"] = sizes[name] / FAMILY_TILE_M[name]
-        for k in ("normal", "orm"):
+        for k in ("normal", "orm", "albedo"):
+            if k not in fam:
+                continue
             p = os.path.join(out_dir, fam[k]["file"])
             with open(p, "rb") as fh:
                 fam[k]["sha256"] = hashlib.sha256(fh.read()).hexdigest()
+        if name in tiling_albedo:
+            fam["albedo_mean"] = round(_albedo_mean_rgb(tiling_albedo[name]), 4)
         manifest["families"][name] = fam
     for name in sorted(ALBEDO_FAMILIES):
         spec = ALBEDO_FAMILIES[name]
@@ -1727,9 +1938,10 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False):
     if not quiet:
         total = (sum(v[k]["bytes"] for v in files.values() for k in v)
                  + sum(v["bytes"] for v in albedo_files.values()))
+        nfiles = (sum(len(v) for v in files.values()) + len(albedo_files))
         print("[texgen] manifest %s" % m_path)
         print("[texgen] %d files, %d bytes of texture payload"
-              % (len(files) * 2 + len(albedo_files), total))
+              % (nfiles, total))
     return manifest
 
 
@@ -1756,6 +1968,11 @@ ALLOWED_CONSTANT = {
         "palette metallic values sit under the client's 0.5 metal/matte "
         "batching split on purpose (RN-156), and identity is the only "
         "multiplier that cannot move them across it",
+    ("chitin", "orm", "B"):
+        "chitin is a dielectric. The sheen on a shell is LOW ROUGHNESS, not "
+        "metalness, and section 2.1 asks that a flat channel say so rather "
+        "than invent variation it does not have; identity leaves the "
+        "material's own 0.04 exactly where the palette put it",
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -1909,7 +2126,9 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
         if fam in ALBEDO_FAMILIES:
             total_texels += _check_albedo_family(fam, spec, out_dir, say)
             continue
-        for kind in ("normal", "orm"):
+        for kind in ("normal", "orm", "albedo"):
+            if kind not in spec:
+                continue                 # only chitin carries a tiling albedo
             rec = spec[kind]
             path = os.path.join(out_dir, rec["file"])
             if not os.path.isfile(path):
@@ -1930,6 +2149,29 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
             say(size_ok, "%s.%s file" % (fam, kind),
                 "%dx%d, %d B, sha %s.." % (w, h, len(blob), digest[:8]))
 
+            if kind == "albedo":
+                # A TILING albedo (RN-455). Three claims, and they are the
+                # three ways this map can ship dead: it must VARY (a flat
+                # albedo is the flat vertex colour ART-DIRECTION.md rejects),
+                # it must not be so dark that the mean-neutral divide blows
+                # the palette up, and its published mean must be the mean of
+                # the bytes actually written, because the client divides by
+                # that number and a stale one shifts every colour it touches.
+                stats = _channel_stats(rgb, n)
+                lo = min(st[0] for st in stats)
+                hi = max(st[1] for st in stats)
+                say(hi - lo >= 40, "%s.albedo varies" % fam,
+                    "luma spread %d (min 40), range %d..%d" % (hi - lo, lo, hi))
+                measured = _albedo_mean_rgb(rgb)
+                declared = spec.get("albedo_mean")
+                say(declared is not None
+                    and abs(declared - measured) < 5e-4,
+                    "%s.albedo_mean" % fam,
+                    "manifest %s vs measured %.4f" % (declared, measured))
+                say(0.15 <= measured <= 0.85, "%s.albedo level" % fam,
+                    "mean %.4f in 0.15..0.85 (the client divides by it)"
+                    % measured)
+                continue
             stats = _channel_stats(rgb, n)
             for c, cname in enumerate("RGB"):
                 lo, hi, mean = stats[c]

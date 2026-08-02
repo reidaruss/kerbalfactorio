@@ -82,19 +82,14 @@ import rig_common as rc  # noqa: E402
 NAME = "Spider"
 OUT = of.dist_path("creatures", "spider.glb")
 
-# The creature palette. Injected at runtime rather than edited into of_lib's
-# PALETTE: these four roles belong to exactly one asset, and of_lib.PALETTE is
-# the shared game-wide surface set. Same tuple shape, same get_material path.
-of.PALETTE.update({
-    # very dark desaturated chitin; the body reads as silhouette
-    "Chitin":      ("2B2126", 0.00, 0.75, 1.0, None),
-    # lighter warm underside: the belly and the light-catching leg blend
-    "ChitinUnder": ("5C5049", 0.00, 0.80, 1.0, None),
-    "Fang":        ("D8CCB4", 0.00, 0.55, 1.0, None),
-    # warm, glossy: roughness 0.12 is what makes the eyes catch the light
-    "EyeGlow":     ("FFB347", 0.00, 0.12, 1.0, None),
-})
-CHITIN, UNDER, FANG, EYE = "Chitin", "ChitinUnder", "Fang", "EyeGlow"
+# The creature palette now lives in of_lib.PALETTE (RN-455) rather than being
+# injected here at runtime. The v1 argument was that these roles belong to
+# exactly one asset; that stopped being the whole story the moment they wear a
+# SURFACE, because texgen's ROLE_FAMILY, surfaces.json, surface_preview and
+# the client's role table all read the palette, and texgen's "no stale roles"
+# gate refuses a family row for a role of_lib has never heard of.
+CHITIN, BAND, UNDER = "Chitin", "ChitinBand", "ChitinUnder"
+FANG, EYE, EYE_DARK = "Fang", "EyeGlow", "EyeDark"
 
 # ---------------------------------------------------------------------------
 # Landmarks. Blender axes: +Z up, -Y forward. The spider stands on z = 0,
@@ -438,6 +433,25 @@ def build_mesh(name, arm):
                              [ru for _, _, ru, _ in ab],
                              [rv for _, _, _, rv in ab],
                              seg=10, smooth_sides=False), role=CHITIN)
+    # TERGITE BANDING, and it is a MATERIAL decision wearing geometry (RN-455).
+    # A band is one ring pair lifted 9 mm off the plate it covers, 80 triangles
+    # for all four, and it exists because colour is the ONLY per-part channel
+    # that survives SpiderFlock's merge: the client bakes each primitive's
+    # material colour into a vertex attribute and then draws the whole creature
+    # with one material, so roughness, metalness and emissive are gone and hue
+    # is not. Banding is therefore the only species identity the near rig can
+    # carry, and a fifth and sixth material cost nothing through that merge.
+    # Each band covers the LIP ITSELF, the 18 to 20 mm step where one plate
+    # overhangs the next. The first version covered the whole rising front of
+    # the following plate and read as a tan patch stuck on the abdomen rather
+    # than as segmentation: a seam is narrow or it is a panel.
+    for lo in (1, 3, 5, 7):
+        pair = ab[lo:lo + 2]
+        mb.add_raw(*rc.oval_tube(
+            [(0, ay + d, az_ + dz) for d, dz, _, _ in pair],
+            [ru + 0.009 for _, _, ru, _ in pair],
+            [rv + 0.009 for _, _, _, rv in pair],
+            seg=10, closed_caps=False, smooth_sides=False), role=BAND)
     # the lighter venter, one plate under the abdomen only (v1 ran one mass
     # under BOTH body segments, which is what filled the waist in)
     mb.add_raw(*rc.oval_tube(
@@ -501,12 +515,21 @@ def build_mesh(name, arm):
     # EIGHT eyes in the two rows a spider actually has, not six cubes: a big
     # anterior median pair, a smaller anterior lateral pair, and a posterior
     # row of four set back on the tubercle.
-    for x, dy, dz, r in ((0.040, 0.055, 0.150, 0.030), (-0.040, 0.055, 0.150, 0.030),
-                         (0.100, 0.080, 0.135, 0.022), (-0.100, 0.080, 0.135, 0.022),
-                         (0.048, 0.175, 0.205, 0.019), (-0.048, 0.175, 0.205, 0.019),
-                         (0.112, 0.195, 0.178, 0.016), (-0.112, 0.195, 0.178, 0.016)):
+    # The anterior median PAIR keeps the amber: predator eyeshine is the tell
+    # that the thing has seen you and it is the only part of the creature that
+    # reads at 40 m. The other six are near-black, which is both what a wet
+    # convex bead looks like and the only way an eye can read as WET through a
+    # merge that keeps colour and throws roughness away.
+    for x, dy, dz, r, role in (
+            (0.040, 0.055, 0.150, 0.030, EYE), (-0.040, 0.055, 0.150, 0.030, EYE),
+            (0.100, 0.080, 0.135, 0.022, EYE_DARK),
+            (-0.100, 0.080, 0.135, 0.022, EYE_DARK),
+            (0.048, 0.175, 0.205, 0.019, EYE_DARK),
+            (-0.048, 0.175, 0.205, 0.019, EYE_DARK),
+            (0.112, 0.195, 0.178, 0.016, EYE_DARK),
+            (-0.112, 0.195, 0.178, 0.016, EYE_DARK)):
         mb.add_raw(*eye_dome((x, hy + dy, hz + dz),
-                             (x * 0.9, -0.55, 0.45), r), role=EYE)
+                             (x * 0.9, -0.55, 0.45), r), role=role)
     for _, s in SIDES:
         # the paturon: the heavy basal segment the fang folds against. v1 had
         # a fang and no jaw behind it, which is why the mouth read as two

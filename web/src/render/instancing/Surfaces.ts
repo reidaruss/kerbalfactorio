@@ -27,7 +27,8 @@ import * as THREE from 'three';
 
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
 
-export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'leaf' | 'grass' | 'flat';
+export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'chitin' | 'leaf'
+  | 'grass' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -63,8 +64,14 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // table (RN-100's rule: verifyAgainstManifest fails the run otherwise).
   Grass: 'grass',
   Leaf: 'leaf', LeafDeep: 'leaf', LeafDry: 'leaf', LeafLight: 'leaf',
-  EmissiveState: 'flat', Glass: 'flat', Ice: 'flat',
-  Oil: 'flat', Skin: 'flat', Water: 'flat',
+  // RN-455: the first CREATURE family, and the first tiling family that also
+  // carries an albedo. The two eye roles stay flat and the manifest records
+  // why: a 3 to 6 cm convex bead is one texel of chitin pitting across, and an
+  // eye is the one part of a spider that genuinely is a polished sphere.
+  Chitin: 'chitin', ChitinBand: 'chitin', ChitinUnder: 'chitin',
+  Fang: 'chitin',
+  EmissiveState: 'flat', EyeDark: 'flat', EyeGlow: 'flat', Glass: 'flat',
+  Ice: 'flat', Oil: 'flat', Skin: 'flat', Water: 'flat',
 };
 
 const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));
@@ -91,8 +98,10 @@ interface Manifest {
 }
 
 interface Surface {
-  /** A tiling PBR surface carries normal+orm; an albedo card family carries
-   *  `albedo` (+alphaTest/albedoMean). Never both, today. */
+  /** THREE shapes now (RN-455). A tiling PBR surface carries normal+orm; an
+   *  albedo CARD family carries `albedo` in unit space with an alphaTest; and
+   *  a tiling BODY family carries all three, metre UVs, no alpha. The union is
+   *  the same fields, so a consumer is still "whatever this family declares". */
   normal?: THREE.Texture; orm?: THREE.Texture; albedo?: THREE.Texture;
   tileM?: number; sizePx: number; vramBytes: number;
   alphaTest?: number; albedoMean?: number;
@@ -235,6 +244,27 @@ function makeAlbedoTexture(url: string,
   });
 }
 
+/**
+ * A TILING albedo (RN-455): sRGB like a card, metre-repeated like a normal map.
+ *
+ * It is neither of the two existing cases and mixing them up is silent both
+ * ways: loaded as a card it would show one 0.30 m tile stretched over a whole
+ * creature, and loaded as a surface it would be decoded as data and come out
+ * washed out. The colour space belongs to what the map MEANS and the repeat
+ * belongs to what its UVs are, and those are independent.
+ */
+function makeTilingAlbedo(url: string, tileM: number): Promise<THREE.Texture> {
+  return new THREE.TextureLoader().loadAsync(url).then((t) => {
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1 / tileM, 1 / tileM);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 16;
+    t.channel = 0;
+    return t;
+  });
+}
+
 function makeTexture(url: string, tileM: number): Promise<THREE.Texture> {
   return new THREE.TextureLoader().loadAsync(url).then((t) => {
     t.wrapS = THREE.RepeatWrapping;
@@ -292,25 +322,38 @@ const ready = (async (): Promise<void> => {
     // bark precedent made structural: a family addition must not break an
     // older client, and `f.normal.file` on an albedo family would have thrown
     // inside `ready` and taken every other family down with it.
+    // One map per DECLARED field rather than one branch per family shape
+    // (RN-455). The old form was `if (albedo) {...; continue}` followed by the
+    // normal+orm case, which structurally could not express a family carrying
+    // both, and would have silently loaded chitin as a card: one 0.30 m tile
+    // stretched over a whole creature, with no normal map and no roughness.
+    // Silently, because every check downstream asks "is a map bound" and one
+    // was.
+    const per = Math.round(f.size_px * f.size_px * 4 * (4 / 3));
+    const surf: Surface = { sizePx: f.size_px, vramBytes: 0 };
     if (f.albedo !== undefined) {
-      const albedo = await makeAlbedoTexture(DIR + f.albedo.file, f.wrap);
-      // Base level plus the mip chain, which converges to 4/3 of the base.
-      const bytes = Math.round(f.size_px * f.size_px * 4 * (4 / 3));
-      surfaces.set(name as Family, {
-        albedo, sizePx: f.size_px, vramBytes: bytes,
-        alphaTest: f.alpha_test, albedoMean: f.albedo_mean,
-      });
-      continue;
+      surf.albedo = f.uv_space === 'unit' || f.tile_m === undefined
+        ? await makeAlbedoTexture(DIR + f.albedo.file, f.wrap)
+        : await makeTilingAlbedo(DIR + f.albedo.file, f.tile_m);
+      surf.alphaTest = f.alpha_test;
+      surf.albedoMean = f.albedo_mean;
+      surf.vramBytes += per;
     }
-    if (f.normal === undefined || f.orm === undefined || f.tile_m === undefined) continue;
-    const [normal, orm] = await Promise.all([
-      makeTexture(DIR + f.normal.file, f.tile_m),
-      makeTexture(DIR + f.orm.file, f.tile_m),
-    ]);
-    const bytes = Math.round(f.size_px * f.size_px * 4 * 2 * (4 / 3));
-    surfaces.set(name as Family, {
-      normal, orm, tileM: f.tile_m, sizePx: f.size_px, vramBytes: bytes,
-    });
+    if (f.normal !== undefined && f.orm !== undefined && f.tile_m !== undefined) {
+      const [normal, orm] = await Promise.all([
+        makeTexture(DIR + f.normal.file, f.tile_m),
+        makeTexture(DIR + f.orm.file, f.tile_m),
+      ]);
+      surf.normal = normal;
+      surf.orm = orm;
+      surf.tileM = f.tile_m;
+      surf.vramBytes += per * 2;
+    }
+    // A family declaring NEITHER shape is tolerated and skipped, which is the
+    // bark precedent made structural: a family addition must not break an
+    // older client.
+    if (surf.albedo === undefined && surf.normal === undefined) continue;
+    surfaces.set(name as Family, surf);
   }
   for (const r of registered) apply(r);
 })();
@@ -350,7 +393,9 @@ function apply(r: Reg): void {
     // makes both idempotent, so `setMaps` can be flipped any number of times.
     applyFoliageTone(r.mat.color, r.family);
     r.mat.needsUpdate = true;
-    return;
+    // NO early return (RN-455). A tiling body family carries an albedo AND a
+    // normal AND an orm, and the `return` that used to sit here is why the
+    // card path and the surface path could never be the same family.
   }
   r.mat.normalMap = state.normal ? (s.normal ?? null) : null;
   r.mat.roughnessMap = state.orm ? (s.orm ?? null) : null;

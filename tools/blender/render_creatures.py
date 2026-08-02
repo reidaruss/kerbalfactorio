@@ -47,6 +47,39 @@ import bpy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+if HERE not in sys.path:
+    # Blender only puts the script's directory on sys.path for some invocation
+    # paths, so `import surface_preview` is made explicit rather than lucky.
+    sys.path.insert(0, HERE)
+
+# What SpiderFlock.materialFor() builds. Repeated here because a preview that
+# does not use the SHIPPED constants is a preview of something else, and the
+# merge means these two numbers are the ONLY roughness and metalness the near
+# creature has. Keep them equal to the client or the studio pair is fiction.
+CLIENT_MERGE_ROUGH_METAL = (0.80, 0.04)
+
+# Set by the argument parser: None leaves materials exactly as the .glb shipped
+# them, True applies the surface maps, False strips them and rewrites the flat
+# palette constants (which is a positive statement about the BEFORE half rather
+# than an assumption that nothing has touched it).
+_MAPS = None
+_MERGED = False
+
+
+def apply_maps():
+    """Wire the shipped surface maps, once, after an import.
+
+    Imported here rather than at module scope so that a caller who asks for no
+    maps does not depend on assets/textures/dist/ existing."""
+    if _MAPS is None:
+        return
+    import surface_preview
+    rep = surface_preview.apply_all(
+        off=not _MAPS,
+        force=CLIENT_MERGE_ROUGH_METAL if (_MAPS and _MERGED) else None)
+    print("[render_creatures] surface maps %s: %d mapped, %d flat, %d skipped"
+          % ("ON" if _MAPS else "OFF (stripped)", len(rep["mapped"]),
+             len(rep["flat"]), len(rep["skipped"])))
 
 # Creature-scaled views. Positions are metres, target is the look-at point, and
 # the third entry is the focal length. The wide three frame the whole 4.53 m
@@ -79,6 +112,45 @@ def look_at(obj, target):
                           math.atan2(d[1], d[0]) + math.pi * 0.5)
 
 
+def setup_view_transform(scn):
+    """Get the studio render onto the SHIPPED response curve, not Blender's.
+
+    docs/controllers/rendering.md section 2.1 is the calibrated target and the
+    client's curve is ACES with exposure 1.2, contrast 1.45 on a slope-matched
+    S and saturation 0.92. Blender 5.0 defaults to AgX, which is a
+    substantially FLATTER and more desaturating transform than any of that, and
+    it is applied to every pixel after the material has done its work.
+
+    That is not a detail. Judged under AgX the chitin reads as dusty
+    terracotta, which is a statement about the view transform and not about the
+    map, and it is the exact shape of INSTRUMENTS.md's dominant failure: a
+    control that depends on something nobody re-derived. Three renders of this
+    pass were spent tuning a map against the wrong curve before this was found.
+
+    `Standard` plus an exposure of +0.26 stops (2 ** 0.26 = 1.20) plus a
+    high-contrast look is the closest the stock OCIO config gets. It is NOT
+    ACES and this is not a claim that it is: what it buys is that the studio
+    frame and the game frame are now wrong in the same DIRECTION rather than
+    opposite ones, so a material judged here is not re-judged from scratch in
+    the browser. The in-game shot remains the answer on lighting."""
+    vs = scn.view_settings
+    for want in ("Standard", "Filmic", "AgX"):
+        try:
+            vs.view_transform = want
+            break
+        except TypeError:
+            continue
+    vs.exposure = 0.26
+    for want in ("High Contrast", "Medium High Contrast", "None"):
+        try:
+            vs.look = want
+            break
+        except TypeError:
+            continue
+    print("[render_creatures] view transform %r, look %r, exposure %+.2f stops"
+          % (vs.view_transform, vs.look, vs.exposure))
+
+
 def setup_world(samples=28):
     scn = bpy.context.scene
     scn.render.engine = "CYCLES"
@@ -86,21 +158,31 @@ def setup_world(samples=28):
     scn.cycles.samples = samples
     scn.cycles.use_denoising = True
     scn.render.film_transparent = False
+    setup_view_transform(scn)
     world = bpy.data.worlds.new("W")
     world.use_nodes = True
-    world.node_tree.nodes["Background"].inputs[0].default_value = (0.16, 0.17, 0.19, 1)
+    # A COOL, DIM sky rather than a flat mid grey. The old 0.16 neutral was
+    # half the light in the frame and it arrived from every direction at once,
+    # which fills every crease the map spent its whole budget darkening. The
+    # game's ambient is sky-coloured and the sun does most of the work, so the
+    # studio rig now does the same and the shadow side of a leg is allowed to
+    # be dark.
+    world.node_tree.nodes["Background"].inputs[0].default_value = (0.048, 0.058, 0.076, 1)
     world.node_tree.nodes["Background"].inputs[1].default_value = 1.0
     scn.world = world
 
     sun = bpy.data.objects.new("Sun", bpy.data.lights.new("Sun", "SUN"))
-    sun.data.energy = 4.0
-    sun.data.angle = math.radians(6.0)
+    sun.data.energy = 5.2
+    # 2 degrees rather than 6: a shell's specular is a TIGHT highlight, and a
+    # 6 degree source smears it into the broad sheen that made three renders of
+    # this pass read as matte leather no matter what the roughness map said.
+    sun.data.angle = math.radians(2.0)
     sun.rotation_euler = (math.radians(52), 0.0, math.radians(38))
     bpy.context.scene.collection.objects.link(sun)
 
     fill = bpy.data.objects.new("Fill", bpy.data.lights.new("Fill", "AREA"))
-    fill.data.energy = 900.0
-    fill.data.size = 6.0
+    fill.data.energy = 320.0
+    fill.data.size = 5.0
     fill.location = (-5.0, -4.0, 3.4)
     look_at(fill, (0, 0, 1.0))
     bpy.context.scene.collection.objects.link(fill)
@@ -114,10 +196,26 @@ def setup_world(samples=28):
 
 
 def add_ground(half=22.0):
+    """A SUBSTRATE-coloured floor, not Blender's default 0.8 grey.
+
+    Section 2.1 item 2 gives the shipped groundNear luma as 35 to 55 at the
+    vegetated sites and item 3 says the terrain is soil and litter at HSV
+    saturation 0.25 to 0.35. A default-material floor is 0.8 albedo, which
+    under the response curve above clips to paper white, throws a large
+    bounce back up into every shadow on the subject, and makes any dark
+    creature look darker than it will ever look in the game. The floor is part
+    of the measurement."""
     mesh = bpy.data.meshes.new("Ground")
     mesh.from_pydata([(-half, -half, 0), (half, -half, 0),
                       (half, half, 0), (-half, half, 0)], [], [(0, 1, 2, 3)])
     mesh.update()
+    mat = bpy.data.materials.new("StudioGround")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf is not None:
+        bsdf.inputs["Base Color"].default_value = (0.052, 0.045, 0.033, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.95
+    mesh.materials.append(mat)
     bpy.context.scene.collection.objects.link(
         bpy.data.objects.new("Ground", mesh))
 
@@ -235,6 +333,7 @@ def mode_single(argv):
     arm, _ = import_asset(glb, scale)
     print("[render_creatures] armature %s, actions %s"
           % (arm.name if arm else None, sorted(a.name for a in bpy.data.actions)))
+    apply_maps()
     for shot in argv[3:]:
         clip, frame, view = shot.split(":")
         play(arm, clip, frame)
@@ -257,6 +356,7 @@ def mode_scale(argv):
                            1.0, (-3.30, -0.55, 0.0), spin_deg=-144.0)
     sarm, _ = import_asset("assets/models/dist/creatures/spider.glb",
                            sscale, (1.35, 0.0, 0.0), spin_deg=18.0)
+    apply_maps()
     play(parm, "Idle", 0)
     play(sarm, "Spider_Walk", 12)
     scn = bpy.context.scene
@@ -284,6 +384,7 @@ def mode_sheet(argv):
     arm, meshes = import_asset(glb, scale)
     if arm is None:
         raise SystemExit("[render_creatures] %s has no armature" % glb)
+    apply_maps()
     step = 5.05 * scale
     span = step * (len(frames) - 1)
     for k, f in enumerate(frames):
@@ -344,7 +445,17 @@ MODES = {"single": mode_single, "scale": mode_scale, "sheet": mode_sheet}
 
 
 def main():
+    global _MAPS, _MERGED
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    # Pulled out wherever they sit, so the positional arguments keep the
+    # meaning and the order they have always had (render_check.py's rule).
+    for tok, val in (("--maps", True), ("--nomaps", False)):
+        while tok in argv:
+            argv.remove(tok)
+            _MAPS = val
+    while "--merged" in argv:
+        argv.remove("--merged")
+        _MERGED = True
     if not argv or argv[0] not in MODES:
         print(__doc__)
         return

@@ -6,6 +6,11 @@
     "orm channels: R = occlusion, G = roughness, B = metalness, and all",
     "three MULTIPLY the material constant rather than replacing it.",
     "normal maps are OpenGL convention (+Y up), colorSpace NoColorSpace.",
+    "A TILING family may also carry an `albedo` (chitin, RN-455).",
+    "It is RGB with no alpha, uv_space is metres like its normal and",
+    "orm siblings, and it publishes albedo_mean for the same",
+    "mean-neutral divide the card families use. A family carrying all",
+    "three maps is the shape a body surface takes.",
     "albedo families (grass, leaf) are CARD textures: albedo+alpha,",
     "values are sRGB as authored, alpha is coverage. Their UVs are",
     "UNIT (uv_space \"unit\"), not metres: a card shows the texture",
@@ -38,6 +43,27 @@
       "tile_m": 0.6,
       "size_px": 384,
       "texels_per_m": 640.0
+    },
+    "chitin": {
+      "normal": {
+        "file": "of_chitin_n.png",
+        "bytes": 283507,
+        "sha256": "dc322b632d5bc2e943a985ca0d7f28f65fef8a5e8c1351db33f12970b5f9684e"
+      },
+      "orm": {
+        "file": "of_chitin_orm.png",
+        "bytes": 131547,
+        "sha256": "6e656ad3e657b1273495c7a311a926d9da7cdc37fec2bd51284119af8e33fb9b"
+      },
+      "albedo": {
+        "file": "of_chitin_a.png",
+        "bytes": 147952,
+        "sha256": "e09610c09027531082e2e7690c98d7a98e3546eb8d7d4e2ad97cffb58049bc42"
+      },
+      "tile_m": 0.3,
+      "size_px": 384,
+      "texels_per_m": 1280.0,
+      "albedo_mean": 0.7056
     },
     "coarse": {
       "normal": {
@@ -119,10 +145,14 @@
     "Accent": "panel",
     "Bark": "bark",
     "BarkLight": "bark",
+    "Chitin": "chitin",
+    "ChitinBand": "chitin",
+    "ChitinUnder": "chitin",
     "Coal": "coarse",
     "CoalSeam": "ore",
     "Copper": "coarse",
     "CopperOre": "ore",
+    "Fang": "chitin",
     "Grass": "grass",
     "Hazard": "panel",
     "Iron": "coarse",
@@ -147,6 +177,8 @@
   },
   "flat_roles": {
     "EmissiveState": "a state light. Any AO or roughness on it is a lie about what the surface is doing",
+    "EyeDark": "the six secondary eyes, same argument as EyeGlow",
+    "EyeGlow": "a wet convex bead 6 cm across; relief and grain belong to the shell around it, not to it",
     "Glass": "transparent; a normal map on a 0.35-alpha pane reads as dirt",
     "Ice": "near-specular; relief belongs in the mesh at this poly count",
     "Oil": "a pool surface, deliberately mirror-flat",

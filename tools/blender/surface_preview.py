@@ -93,9 +93,19 @@ def _clear(mat):
     return nt
 
 
-def apply_material(mat, manifest, role):
+def apply_material(mat, manifest, role, force=None):
     """Wire the family's maps onto one OF_<role> material. Returns the family
-    name, or None if the role is deliberately flat."""
+    name, or None if the role is deliberately flat.
+
+    `force` is (roughness, metalness) and OVERRIDES the palette constants for
+    every role. It exists for ONE reason and it is an instrument-honesty one
+    (RN-456): a creature drawn through SpiderFlock's merge has every primitive
+    collapsed into one material, so the shipped near rig has exactly ONE
+    roughness and ONE metalness for the whole body, and only COLOUR survives
+    per part. A studio render that gives the fangs 0.30 and the eyes 0.10
+    therefore shows something the game cannot draw, and it flatters in the
+    direction nobody double-checks. Passing the client's own constants here
+    makes the preview a preview."""
     fam_name = texgen.ROLE_FAMILY.get(role)
     nt = _clear(mat)
     bsdf = nt.nodes.get("Principled BSDF")
@@ -104,6 +114,8 @@ def apply_material(mat, manifest, role):
     # Palette constants, re-read every time so a second apply() is not
     # compounding on the first.
     hexstr, metallic, rough, alpha, _ = texgen_palette()[role]
+    if force is not None:
+        rough, metallic = force
     base = hex_to_linear_rgba(hexstr, alpha)
     bsdf.inputs["Base Color"].default_value = base
     bsdf.inputs["Metallic"].default_value = metallic
@@ -168,7 +180,28 @@ def apply_material(mat, manifest, role):
         nt.links.new(sep.outputs["Red"], ao.inputs[k])
     tint = node("ShaderNodeVectorMath", -200, 100)
     tint.operation = "MULTIPLY"
-    tint.inputs[0].default_value = base[:3]
+    # A TILING ALBEDO (RN-455), reproducing Surfaces.ts exactly:
+    #     material.color = palette / albedo_mean
+    #     diffuse        = material.color * albedoMap * aoMap.r
+    # The divide is what makes the modulation mean-neutral, so the map decides
+    # variance and hue and the palette role decides level. Without it the
+    # preview would show the creature darkened by the map's own 0.5954 mean
+    # and the render would disagree with the game by a factor nobody wrote
+    # down, which is the failure this whole module exists to prevent.
+    if "albedo" in fam:
+        mean = fam.get("albedo_mean") or 1.0
+        atex = node("ShaderNodeTexImage", -950, 550)
+        atex.image = _image(os.path.join(TEX_DIR, fam["albedo"]["file"]))
+        atex.image.colorspace_settings.name = "sRGB"
+        atex.extension = "REPEAT"
+        nt.links.new(mapn.outputs["Vector"], atex.inputs["Vector"])
+        amul = node("ShaderNodeVectorMath", -400, 400)
+        amul.operation = "MULTIPLY"
+        amul.inputs[0].default_value = tuple(c / mean for c in base[:3])
+        nt.links.new(atex.outputs["Color"], amul.inputs[1])
+        nt.links.new(amul.outputs["Vector"], tint.inputs[0])
+    else:
+        tint.inputs[0].default_value = base[:3]
     nt.links.new(ao.outputs["Color"], tint.inputs[1])
     nt.links.new(tint.outputs["Vector"], bsdf.inputs["Base Color"])
     return fam_name
@@ -186,7 +219,7 @@ def hex_to_linear_rgba(hexstr, alpha=1.0):
     return of_lib.hex_to_linear_rgba(hexstr, alpha)
 
 
-def apply_all(off=False, quiet=False):
+def apply_all(off=False, quiet=False, force=None):
     """Wire every OF_<role> material in the file. Returns a report dict.
 
     `off=True` strips the maps and restores the flat palette constants, which
@@ -214,16 +247,20 @@ def apply_all(off=False, quiet=False):
                 bsdf.inputs["Roughness"].default_value = rough
             flat.append(role)
             continue
-        fam = apply_material(mat, manifest, role)
+        fam = apply_material(mat, manifest, role, force)
         (mapped if fam else flat).append(role)
 
     if not quiet:
         # Report what was NOT touched, by name and count. A preview that says
         # "12 materials textured" while silently ignoring three is how a render
         # comes to disagree with the game.
-        print("[surface_preview] %s: %d mapped %s, %d flat %s"
+        print("[surface_preview] %s: %d mapped %s, %d flat %s%s"
               % ("OFF" if off else "ON", len(mapped), sorted(set(mapped)),
-                 len(flat), sorted(set(flat))))
+                 len(flat), sorted(set(flat)),
+                 "" if force is None
+                 else "  [MERGED: roughness %.2f metalness %.2f forced on "
+                      "every role, reproducing the client's one-material "
+                      "collapse]" % force))
         if skipped:
             print("[surface_preview] NOT EXAMINED: %d material(s) not in the "
                   "palette: %s" % (len(skipped), sorted(set(skipped))))

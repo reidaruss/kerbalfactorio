@@ -96,6 +96,44 @@ PALETTE = {
     "SuitAccent":   ("2E7DBE", 0.00, 0.55, 1.0, None),
     "Plate":        ("7E8790", 0.70, 0.42, 1.0, None),
     "Skin":         ("C08A63", 0.00, 0.70, 1.0, None),
+    # --- creature (RN-455) ---
+    # These four lived in build_spider.py as a runtime PALETTE.update() on the
+    # argument that they belong to exactly one asset. That was right while the
+    # spider was untextured and is wrong now: texgen's ROLE_FAMILY table, the
+    # surfaces.json manifest, surface_preview and the client's role table all
+    # read the palette, and texgen's own "no stale roles" gate refuses a family
+    # row for a role of_lib has never heard of. A role that wears a surface is
+    # a first-class palette role.
+    #
+    # VALUES ARE OWNED HERE ONLY FOR THE CREATURE ROLES (Admin lifted the
+    # look-dev freeze for the spider, 2026-08-01). Everything above is still
+    # look-dev's.
+    #
+    # Chitin came UP from v1's 2B2126, which is the single biggest value
+    # decision in the pass. Section 2.1's reference groundNear luma is 35 to 55
+    # at the vegetated sites; a creature at luma 36 is the same value as the
+    # ground it stands on and has no separation from it at any sun angle, and
+    # the shipped grade (contrast 1.45, lift 0) crushes the difference further.
+    # 4A3B36 reads luma 62: darker than anything else that moves, lighter than
+    # the ground, and with enough room under it for the albedo's crease
+    # darkening to land somewhere.
+    "Chitin":       ("4A3B36", 0.04, 0.80, 1.0, None),
+    # The tergite seams. DARKER than the shell rather than lighter, which is
+    # the second version: a light band wide enough to see reads as a tan patch
+    # glued to the abdomen, and a dark one reads as the shadow under a plate
+    # that overlaps the plate behind it, which is what it physically is. This
+    # is also the only per-part signal that survives SpiderFlock's merge,
+    # because colour is the one channel that merge bakes.
+    "ChitinBand":   ("2C2422", 0.04, 0.84, 1.0, None),
+    "ChitinUnder":  ("6B5A4C", 0.04, 0.84, 1.0, None),
+    "Fang":         ("C9BCA2", 0.02, 0.30, 1.0, None),
+    # The anterior median pair keeps the amber eyeshine: it is the tell that
+    # the thing has seen you, and it reads at a distance where nothing else on
+    # the creature does. The other six are near-black, which is what a wet
+    # convex bead actually looks like, and the pair reads as wet by VALUE
+    # against the shell rather than by a specular the merge cannot give it.
+    "EyeGlow":      ("E8913A", 0.00, 0.10, 1.0, None),
+    "EyeDark":      ("1A1418", 0.00, 0.10, 1.0, None),
     # --- state light: ONE material per machine, driven at runtime ---
     # base is near-black so an unlit chip reads as "off"; emission is white and
     # three.js recolours material.emissive per FFactoryEntityState.VisualState.
