@@ -133,7 +133,33 @@ PALETTE = {
     # because colour is the one channel that merge bakes.
     "ChitinBand":   ("2C2422", 0.02, 0.96, 1.0, None),
     "ChitinUnder":  ("6B5A4C", 0.02, 0.96, 1.0, None),
-    "Fang":         ("C9BCA2", 0.02, 0.30, 1.0, None),
+    # RN-491. Reid, on the pelt build: "the fangs appear to have the texture
+    # as well. the fangs can be solid white with a sheen". Both halves of that
+    # are now reachable, because the merge carries per-part roughness and a
+    # bare flag (see BARE_ROLES below and PartMaterial.ts). C9BCA2 was a bone
+    # tan that the fur albedo then painted over.
+    #
+    # THE VALUE IS TAKEN FROM THE MATERIAL AND NOT FROM THE RENDER, and the
+    # first version of this row was the other way round and was measurably
+    # wrong. EDE8DC (linear 0.826) measured a fang whose MEDIAN pixel was 255:
+    # over half the part was clipped, the form was gone, and the specular had
+    # nothing left to be brighter than, which is the opposite of a sheen. But
+    # tuning that number down against the STUDIO would have repeated RN-456
+    # exactly, because the studio renders on Standard + High Contrast, which
+    # clips, while the game is on ACES, which rolls off: at exposure 1.2 a
+    # scene-linear 1.0 lands near display 233 and it takes about 8.0 to reach
+    # 251. So the number comes from neither render. Keratin and ivory sit at
+    # 0.60 to 0.70 diffuse reflectance, and D5D1C6 is linear 0.646/0.622/0.556.
+    # It reads luma ~209 against the shell's 62 and section 2.1's groundNear
+    # 35 to 55, which is the largest value step anywhere on the creature and
+    # is the whole point of a fang, and it leaves the specular somewhere to
+    # go. Not FFFFFF: ART-DIRECTION.md names clean as a defect, and the hair
+    # of warmth is what keeps it keratin rather than paper.
+    # 0.30 to 0.18 is the sheen. It is the only value on the creature under
+    # section 2.1's 0.15 floor plus a margin, and it is deliberately far from
+    # the shell's 0.745..0.95 band: hard wet keratin against soft velvet is
+    # what makes both read.
+    "Fang":         ("D5D1C6", 0.02, 0.18, 1.0, None),
     # The anterior median pair keeps the amber eyeshine: it is the tell that
     # the thing has seen you, and it reads at a distance where nothing else on
     # the creature does. The other six are near-black, which is what a wet
@@ -151,6 +177,32 @@ PALETTE = {
 # which is roughly half the fragment work on a scene made of boxes.
 DOUBLE_SIDED = {"Glass", "Leaf", "LeafDeep", "LeafLight", "LeafDry", "Grass",
                 "Water"}
+
+# Roles that are NOT members of their asset's dominant surface family, and so
+# must not wear its tiling maps: no family albedo, no family strand normal, no
+# family ORM. They render as their own authored colour and their own authored
+# roughness and metalness. RN-491.
+#
+# THIS IS THE GENERAL MECHANISM AND NOT A FANG SPECIAL CASE. Every merged
+# single-material asset after the spider has the same shape of problem: the
+# player suit is fabric plus a glass visor plus metal fittings, and a machine
+# is painted steel plus glass plus rubber. One family cannot describe all of
+# them, and the part that is not the family is exactly the part a viewer looks
+# at. `bare` is the escape hatch for that part. It composes with the per-part
+# roughness and metalness channel, so a bare part is not merely unmapped, it
+# has its own material response.
+#
+# HOW IT REACHES THE CLIENT: as a glTF material `extras` entry (`of_bare`),
+# written from a Blender material custom property, which of_lib exports
+# because GLTF_SETTINGS has export_extras=True. three's GLTFLoader assigns
+# material extras to `material.userData`, so no name parsing and no duplicated
+# role table on the client side. Set on the MATERIAL rather than the mesh
+# because a role is the thing that is or is not a family member.
+#
+# The property is written ONLY for roles in this set, so every material of
+# every other asset exports exactly the bytes it exported before, which is
+# what makes the rebuild gate meaningful here.
+BARE_ROLES = {"Fang"}
 
 # FFactoryEntityState.VisualState -> emissive colour, straight off
 # FactorySim::entityVisualState() in core/include/of/factory_sim.h.
@@ -210,6 +262,12 @@ def get_material(role):
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     mat.use_backface_culling = role not in DOUBLE_SIDED
+    # RN-491. A custom property on the material becomes glTF material extras
+    # (export_extras=True), which three's GLTFLoader assigns to
+    # material.userData. Written only for BARE_ROLES so no other asset's
+    # material bytes move.
+    if role in BARE_ROLES:
+        mat["of_bare"] = 1.0
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = hex_to_linear_rgba(hexstr, alpha)
     bsdf.inputs["Metallic"].default_value = metallic

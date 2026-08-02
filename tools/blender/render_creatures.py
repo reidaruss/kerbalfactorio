@@ -52,11 +52,29 @@ if HERE not in sys.path:
     # paths, so `import surface_preview` is made explicit rather than lucky.
     sys.path.insert(0, HERE)
 
-# What SpiderFlock.materialFor() builds. Repeated here because a preview that
-# does not use the SHIPPED constants is a preview of something else, and the
-# merge means these two numbers are the ONLY roughness and metalness the near
-# creature has. Keep them equal to the client or the studio pair is fiction.
-CLIENT_MERGE_ROUGH_METAL = (0.95, 0.02)
+# RN-491 DELETED CLIENT_MERGE_ROUGH_METAL, and the deletion is the result.
+#
+# It used to hold (0.95, 0.02) and force those two numbers onto every role,
+# because SpiderFlock's merge collapsed six authored materials into one and
+# only COLOUR survived: a studio render giving the fangs 0.30 was a picture of
+# something the game could not draw. The merge now carries the authored
+# roughness and metalness per part (web/src/render/materials/PartMaterial.ts),
+# and the client's effective response is `authored role value x family ORM`,
+# which is precisely what surface_preview wires from the palette with no
+# forcing. The honest preview and the plain preview became the same thing, so
+# the constant that reconciled them has nothing left to do.
+#
+# What `--merged` still means is of_lib.BARE_ROLES: parts that wear no family
+# maps at all. surface_preview owns that, reading of_lib rather than keeping a
+# second copy of the set.
+#
+# The constant survives for ONE job: `--nopart`, the studio's `?partmat=0`.
+# The client's control cannot photograph itself while Reid is in the game, so
+# the BEFORE half of an RN-491 pair is produced here, one flag apart on one
+# build under one light, rather than two commits apart. These are
+# SpiderFlock's FUR_ROUGHNESS and FUR_METALNESS, which is what the merged
+# creature falls back to when the channel is removed.
+CLIENT_MERGE_BASE = (0.95, 0.02)
 
 # Set by the argument parser: None leaves materials exactly as the .glb shipped
 # them, True applies the surface maps, False strips them and rewrites the flat
@@ -64,6 +82,12 @@ CLIENT_MERGE_ROUGH_METAL = (0.95, 0.02)
 # than an assumption that nothing has touched it).
 _MAPS = None
 _MERGED = False
+# RN-491. False is the CONTROL, not the default: `--nopart` sets it.
+_NOPART = False
+# RN-491. None is the shipped picture mode; a float is diagnostic exposure in
+# stops with the look removed. Never None-vs-0.0 confused: 0.0 stops is a
+# legitimate diagnostic exposure, so the absence of the flag is None.
+_DIAG = None
 
 
 def apply_maps():
@@ -75,8 +99,8 @@ def apply_maps():
         return
     import surface_preview
     rep = surface_preview.apply_all(
-        off=not _MAPS,
-        force=CLIENT_MERGE_ROUGH_METAL if (_MAPS and _MERGED) else None)
+        off=not _MAPS, merged=bool(_MAPS and _MERGED),
+        force=CLIENT_MERGE_BASE if (_MAPS and _MERGED and _NOPART) else None)
     print("[render_creatures] surface maps %s: %d mapped, %d flat, %d skipped"
           % ("ON" if _MAPS else "OFF (stripped)", len(rep["mapped"]),
              len(rep["flat"]), len(rep["skipped"])))
@@ -147,6 +171,24 @@ def setup_view_transform(scn):
             break
         except TypeError:
             continue
+    # RN-491, MEASUREMENT MODE, and it exists because the picture mode above
+    # structurally cannot answer one question. Standard clips: a part whose
+    # albedo is 9.5x the shell's lands over display 255 at any exposure that
+    # renders the shell correctly, so a WHITE part photographs as a white slab
+    # with no form and no visible specular no matter what its roughness is.
+    # That is a statement about the transform, exactly as RN-456's terracotta
+    # was, and the fix is not to darken the material until the instrument
+    # stops complaining. `--diag <stops>` drops the exposure and removes the
+    # look, so the frame is a plain sRGB encode of scene radiance and the
+    # linear value can be read back out of it and put through the client's own
+    # ACES arithmetic. It is a MEASUREMENT and never a picture; the shipped
+    # pair is always taken in the mode above.
+    if _DIAG is not None:
+        vs.exposure = _DIAG
+        try:
+            vs.look = "None"
+        except TypeError:
+            pass
     print("[render_creatures] view transform %r, look %r, exposure %+.2f stops"
           % (vs.view_transform, vs.look, vs.exposure))
 
@@ -445,7 +487,7 @@ MODES = {"single": mode_single, "scale": mode_scale, "sheet": mode_sheet}
 
 
 def main():
-    global _MAPS, _MERGED
+    global _MAPS, _MERGED, _NOPART, _DIAG
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     # Pulled out wherever they sit, so the positional arguments keep the
     # meaning and the order they have always had (render_check.py's rule).
@@ -456,6 +498,15 @@ def main():
     while "--merged" in argv:
         argv.remove("--merged")
         _MERGED = True
+    # The studio's ?partmat=0 (RN-491). Only meaningful with --maps --merged,
+    # which is where the client's merge is being reproduced at all.
+    while "--nopart" in argv:
+        argv.remove("--nopart")
+        _NOPART = True
+    if "--diag" in argv:
+        i = argv.index("--diag")
+        _DIAG = float(argv[i + 1])
+        del argv[i:i + 2]
     if not argv or argv[0] not in MODES:
         print(__doc__)
         return

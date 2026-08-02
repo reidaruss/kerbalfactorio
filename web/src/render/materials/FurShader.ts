@@ -50,11 +50,24 @@
 // creature that goes black when the sun moves behind it is the rim being added
 // to diffuse instead of to outgoing radiance.
 
+// RN-491. The pelt is not the whole creature. A fang is bare keratin and an
+// eye is a wet lens, and neither is fur, so both the map and the motion have
+// to stop somewhere. `PartMaterial` is the general form of "somewhere": it
+// carries the per-part response the merge throws away, and it rides THIS hook
+// rather than installing one of its own, so the DW-10 ledger stays at 4 + 3.
+// Every fur term below is therefore weighted by `1 - bare`.
 import * as THREE from 'three';
+import { PART_BARE_GLSL, injectPartMat } from './PartMaterial.js';
 
 const q = new URLSearchParams(self.location.search).get('fur');
-/** `?fur=0` removes the hook: stock programs, and the pelt stops moving. */
+/** `?fur=0` removes the hook: stock programs, and the pelt stops moving. It
+ *  removes the per-part channel with it, which is correct for a control whose
+ *  definition is "this material compiles the stock program". `?partmat=0`
+ *  isolates that channel on its own while the pelt keeps running. */
 const enabled = q !== '0';
+/** Present-or-absent, so the shipped DEFAULT is assertable in its own right
+ *  and not inferred from `enabled` (RN-150). */
+const flagPresent = q !== null;
 
 /** Metres of sway at the tip of a hair standing fully off the surface. */
 const SWAY_M = 0.018;
@@ -94,6 +107,12 @@ const FUR_GLSL = `
   vec3 furR = normalize( transformed - vec3( 0.0, transformed.y * 0.0, 0.0 ) );
   float furOut = clamp( abs( dot( furN, normalize( furR + vec3( 1e-5 ) ) ) ), 0.0, 1.0 );
   furOut = smoothstep( 0.55, 0.98, furOut );
+  // A BARE part does not sway. furOut is inferred from the normal, and a
+  // fang is a three-sided cone whose normals point hard away from the body,
+  // so without this line the one part of the creature that is rigid keratin
+  // reads as the FURRIEST thing on it and streams in the wind. That is a
+  // latent bug in the shipped build, not a new risk from this pass.
+  furOut *= 1.0 - ${PART_BARE_GLSL};
   vec3 furW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
   float furPh = dot( modelMatrix[3].xyz, vec3( 0.331, 0.089, 0.397 ) );
   float furT = uFurTime;
@@ -124,6 +143,10 @@ const RIM_FRAG = `
   float furFres = 1.0 - abs( dot( normalize( vNormal ), normalize( vViewPosition ) ) );
   float furRim = pow( clamp( furFres, 0.0, 1.0 ), uFurRim.x );
   furRim *= 0.55 + 0.45 * vFurNoise;
+  // The rim is the SILHOUETTE SCATTER of many strands. Bare keratin has no
+  // strands to scatter through, and a warm fuzzy halo painted around a fang
+  // would undo the exact contrast this pass exists to create.
+  furRim *= 1.0 - ${PART_BARE_GLSL};
   outgoingLight += uFurTint * ( uFurRim.y * furRim ) * diffuseColor.rgb;
 }
 `;
@@ -152,6 +175,12 @@ function hook(shader: {
     .replace('#include <common>', '#include <common>\n'
       + 'uniform vec2 uFurRim;\nuniform vec3 uFurTint;\nvarying float vFurNoise;')
     .replace('#include <opaque_fragment>', RIM_FRAG + '\n#include <opaque_fragment>');
+  // RN-491, and the ORDER IS FREE. Both this function and injectPartMat
+  // anchor on `#include <common>` and both put the include BACK, so neither
+  // can eat the other's anchor whichever runs first. Splicing here rather
+  // than installing a second onBeforeCompile is the whole reason the per-part
+  // channel costs no DW-10 slot.
+  injectPartMat(shader);
 }
 
 /**
@@ -192,13 +221,13 @@ export function furUpdate(simSecs: number, dir: THREE.Vector3,
 export function furFreeze(on: boolean): void { frozen = on; }
 
 export function furState(): {
-  enabled: boolean; frozen: boolean; hooked: string[];
+  enabled: boolean; flagPresent: boolean; frozen: boolean; hooked: string[];
   swayM: number; lag: [number, number, number]; rimPower: number;
   rimGain: number; time: number;
 } {
   const l = uniforms.uFurLag.value;
   return {
-    enabled, frozen, hooked: [...hooked],
+    enabled, flagPresent, frozen, hooked: [...hooked],
     swayM: uniforms.uFurSway.value,
     lag: [l.x, l.y, l.z],
     rimPower: uniforms.uFurRim.value.x,

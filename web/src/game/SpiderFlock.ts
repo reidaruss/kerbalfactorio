@@ -46,6 +46,8 @@ import { loadGlb } from '../assets/Loaders.js';
 import { ASSETS } from '../assets/Registry.js';
 import { attachSurface, copyUv } from '../render/instancing/Surfaces.js';
 import { applyFur, furState, furUpdate } from '../render/materials/FurShader.js';
+import { assertPartMatBase, bakePartMat, partMatState }
+  from '../render/materials/PartMaterial.js';
 import { standBasis, type OriginPort } from './EnemyView.js';
 import type { Creature } from './EnemySwarm.js';
 import type { Vec3 } from './EnemyLoop.js';
@@ -57,10 +59,18 @@ export const MAX_RIGS = 8;
 const FUR_SUM = new THREE.Vector3();
 const FUR_TMP = new THREE.Vector3();
 /**
- * The ONE roughness and the ONE metalness the merged creature has (RN-455).
- * `tools/blender/render_creatures.py` repeats them as CLIENT_MERGE_ROUGH_METAL
- * so a studio render previews what the game can actually draw; if they ever
- * disagree, the studio pair is fiction and it flatters.
+ * The BASE roughness and metalness of the merged creature.
+ *
+ * RN-455 called these "the one roughness and the one metalness the creature
+ * has" and that was true until RN-491. They are now the denominator of the
+ * per-part ratio in PartMaterial.ts: a part's effective response is its own
+ * AUTHORED value times the family's ORM, and these two only decide the
+ * fallback when `?partmat=0` or `?fur=0` removes the channel. Both must stay
+ * NON-ZERO, which assertPartMatBase checks at material construction.
+ *
+ * `tools/blender/render_creatures.py` no longer has to force these onto every
+ * role to make a studio render honest, because the studio's own
+ * "palette roughness x ORM" is now what the client computes.
  */
 // RN-461: 0.80 / 0.04 was the shell. Reid: "it looks like its made of
 // shiny stone." Fur has no sharp specular anywhere, so the constant goes
@@ -170,6 +180,14 @@ export class SpiderFlock {
         col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      // RN-491. Colour was the ONLY channel this merge kept, which is why
+      // RN-455 had to spend colour on things that are really material
+      // properties (a near-black eye standing in for a wet specular). It now
+      // keeps the authored roughness, metalness and the `of_bare` flag too,
+      // in one vec3 attribute baked exactly the way the colour above is. The
+      // proof that per-vertex data survives this merge was always sitting one
+      // line up; this carries a second channel the same way.
+      bakePartMat(g, n, mat, mat.name || pm.name);
       // uv SURVIVES the merge now (RN-455) and is copied through the one
       // function that does it unconditionally, for the reason that function
       // documents: mergeGeometries returns null on a mismatched attribute set
@@ -231,6 +249,16 @@ export class SpiderFlock {
       // body, which is why it was authored to a p05..p95 band and not to a
       // pretty number. RN-461 moved that band to the top of the range
       // rather than the middle of it: fur, not shell.
+      //
+      // RN-491 RETRACTS THE SENTENCE ABOVE, and leaves it standing because
+      // the reasoning it produced is still why the ORM is authored the way it
+      // is. These two numbers are no longer the only response the creature
+      // has: they are now the BASE that PartMaterial's per-vertex channel
+      // divides against, so the effective response of a part is its own
+      // authored roughness times the family's ORM. They must both be non-zero
+      // for that ratio to carry, which is asserted rather than hoped for; a
+      // zero base is a total, silent loss of the channel.
+      assertPartMatBase(m);
       attachSurface(m, 'fur', m.name);
       // RN-463: the pelt's rim scatter, wind sway and motion lag. One shared
       // hook object across every creature material, so three's program cache
@@ -410,6 +438,12 @@ export class SpiderFlock {
    *  `?fur=0` boot default is what it claims, rather than inferring either
    *  from a pixel (RN-150: an unexercised default ships off silently). */
   furStats(): unknown { return furState(); }
+
+  /** RN-491. Published separately from furStats so "the hook is installed"
+   *  and "the per-part channel reached the geometry" are two assertions and
+   *  not one: the first can hold while the second is inert, and that pair of
+   *  states is exactly failure mode 1 in PartMaterial.ts. */
+  partMatStats(): unknown { return partMatState(); }
 
   stats(): unknown {
     return {

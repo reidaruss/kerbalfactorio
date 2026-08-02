@@ -93,19 +93,36 @@ def _clear(mat):
     return nt
 
 
-def apply_material(mat, manifest, role, force=None):
+def apply_material(mat, manifest, role, merged=False, force=None):
     """Wire the family's maps onto one OF_<role> material. Returns the family
     name, or None if the role is deliberately flat.
 
-    `force` is (roughness, metalness) and OVERRIDES the palette constants for
-    every role. It exists for ONE reason and it is an instrument-honesty one
-    (RN-456): a creature drawn through SpiderFlock's merge has every primitive
-    collapsed into one material, so the shipped near rig has exactly ONE
-    roughness and ONE metalness for the whole body, and only COLOUR survives
-    per part. A studio render that gives the fangs 0.30 and the eyes 0.10
-    therefore shows something the game cannot draw, and it flatters in the
-    direction nobody double-checks. Passing the client's own constants here
-    makes the preview a preview."""
+    `merged` reproduces what a merge-to-one-material asset can actually draw,
+    and it exists for one instrument-honesty reason (RN-456): a studio render
+    showing something the game cannot draw flatters in the direction nobody
+    double-checks.
+
+    RN-491 CHANGED WHAT THAT MEANS, and the change is almost all deletion.
+    The old version forced ONE roughness and ONE metalness onto every role,
+    because SpiderFlock's merge threw the per-part values away and only colour
+    survived. The merge now carries them (web/src/render/materials/
+    PartMaterial.ts), and the client computes `authored role value x family
+    ORM channel`, which is exactly what this module already wired with no
+    forcing at all. So the two agree by construction and there is nothing left
+    to force.
+
+    What remains merged-specific is the BARE set: roles that are not members
+    of their asset's dominant family and wear no family maps at all. Those are
+    drawn here as flat authored colour, roughness and metalness, which is what
+    the client's `vPartMat.z` path produces.
+
+    `force` is (roughness, metalness) and is THE STUDIO'S `?partmat=0`: it
+    restores the pre-RN-491 collapse, one roughness and one metalness on every
+    role and no bare set, so a before/after pair can be one flag apart on ONE
+    build under ONE light instead of being two commits apart. A control that
+    only exists in the client cannot photograph the thing it controls."""
+    if force is None and merged and role in of_lib_bare_roles():
+        return None
     fam_name = texgen.ROLE_FAMILY.get(role)
     nt = _clear(mat)
     bsdf = nt.nodes.get("Principled BSDF")
@@ -214,12 +231,21 @@ def texgen_palette():
     return of_lib.PALETTE
 
 
+def of_lib_bare_roles():
+    """of_lib.BARE_ROLES: the roles that wear no family maps (RN-491). One
+    source of truth, read rather than repeated, because a studio preview that
+    keeps its own copy of this set is the exact class of fiction this module
+    exists to prevent."""
+    import of_lib
+    return of_lib.BARE_ROLES
+
+
 def hex_to_linear_rgba(hexstr, alpha=1.0):
     import of_lib
     return of_lib.hex_to_linear_rgba(hexstr, alpha)
 
 
-def apply_all(off=False, quiet=False, force=None):
+def apply_all(off=False, quiet=False, merged=False, force=None):
     """Wire every OF_<role> material in the file. Returns a report dict.
 
     `off=True` strips the maps and restores the flat palette constants, which
@@ -247,7 +273,7 @@ def apply_all(off=False, quiet=False, force=None):
                 bsdf.inputs["Roughness"].default_value = rough
             flat.append(role)
             continue
-        fam = apply_material(mat, manifest, role, force)
+        fam = apply_material(mat, manifest, role, merged, force)
         (mapped if fam else flat).append(role)
 
     if not quiet:
@@ -257,10 +283,16 @@ def apply_all(off=False, quiet=False, force=None):
         print("[surface_preview] %s: %d mapped %s, %d flat %s%s"
               % ("OFF" if off else "ON", len(mapped), sorted(set(mapped)),
                  len(flat), sorted(set(flat)),
-                 "" if force is None
-                 else "  [MERGED: roughness %.2f metalness %.2f forced on "
-                      "every role, reproducing the client's one-material "
-                      "collapse]" % force))
+                 ("  [PARTMAT OFF (control): roughness %.2f metalness %.2f "
+                  "forced on every role and no bare set, reproducing the "
+                  "pre-RN-491 one-material collapse]" % force)
+                 if force is not None
+                 else "" if not merged
+                 else "  [MERGED: bare roles %s wear no family maps, "
+                      "reproducing the client's vPartMat.z path; every other "
+                      "role's authored roughness and metalness now survive "
+                      "the merge and need no forcing]"
+                      % sorted(of_lib_bare_roles())))
         if skipped:
             print("[surface_preview] NOT EXAMINED: %d material(s) not in the "
                   "palette: %s" % (len(skipped), sorted(set(skipped))))
