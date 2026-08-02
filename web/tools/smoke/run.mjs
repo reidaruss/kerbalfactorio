@@ -86,7 +86,9 @@ const rawScript = evalFile
 const evalScript = rawScript ? `(()=>{${PRELUDE} return (${rawScript});})()` : rawScript;
 
 const params = new URLSearchParams();
-for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',
+// Named so the unknown-flag check below can SUGGEST from it. An error that says
+// only "no" is half an error.
+const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'pool', 'maxdepth',
   'split',
   't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
@@ -235,14 +237,54 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // entries up: a control the runner drops is a control that does not exist.
   // RN-696. `shadowlodpx=` opts into the per-cascade budget derived from each
   // cascade's own screen footprint; without it the rule is uniform one texel.
-  // Added in the same edit that discovered it was missing: a verification run
+  // Added in the same edit that discovered it was missing: the run above
   // reported `policy uniform` for BOTH sides of a pair because the runner
   // dropped the flag, which is the `fur`/`partmat` failure a dozen lines up
   // happening again to the lane that had just finished writing it down.
-  'shadowlod', 'shadowlodk', 'shadowlodpx']) {
+  'shadowlod', 'shadowlodk', 'shadowlodpx'];
+for (const k of PAGE_PARAMS) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');
+
+// AN UNRECOGNISED FLAG IS A FAILED RUN, NOT A DEFAULT (RN-698).
+//
+// The list above is a WHITELIST and everything else was silently discarded. That
+// is not a hypothetical: it has produced a vacuous green three times in one
+// night. `--fur=0` and `--partmat=0` shipped as the stated negative controls for
+// the pelt and neither was on the list, so no probe could reach either; RN-152
+// lost a whole "pair" to `--starlight=0` going unforwarded with both sides
+// running the feature ON; and RN-698 caught it again with `--shadowlodpx=4`,
+// which reported `policy uniform` for BOTH sides of a pair, twelve lines below
+// the comment describing exactly this.
+//
+// The failure is silent and it fails in the FLATTERING direction: the page boots
+// at the default, the probe reads the default, and the report says the default
+// as though it were the request. Nothing anywhere says the flag was dropped.
+//
+// So a flag that is neither a page parameter nor one of this runner's own is a
+// hard exit before the browser is even launched. `--allow-unknown-flags` is the
+// door for a caller that means it, and it has to be typed, which is the point.
+const RUNNER_OWN = new Set(['url', 'out', 'width', 'height', 'settle', 'wait',
+  'evalfile', 'evalargs', 'eval', 'debug', 'allow-unknown-flags']);
+const dropped = [...args.keys()].filter((k) => !RUNNER_OWN.has(k) && !params.has(k));
+if (dropped.length > 0 && !args.has('allow-unknown-flags')) {
+  const known = [...PAGE_PARAMS, ...RUNNER_OWN];
+  for (const k of dropped) {
+    // A near miss is nearly always a typo or a flag whose author forgot the
+    // whitelist, so name the candidates rather than only the offence.
+    const near = known.filter((c) => c.startsWith(k.slice(0, 3)) || k.startsWith(c.slice(0, 3)));
+    console.error(`smoke: unknown flag --${k}. It is not one of this runner's own`
+      + ` flags and it is NOT in the page-parameter list in run.mjs, so it would`
+      + ` have been DISCARDED and the page would have booted at the default while`
+      + ` the report described it as the request.`
+      + (near.length > 0 ? ` Did you mean: ${near.map((c) => '--' + c).join(', ')}?` : '')
+      + ` If the flag is real, add it to the list in run.mjs in the same commit`
+      + ` that introduces it. To run anyway, pass --allow-unknown-flags.`);
+  }
+  process.exit(2);
+}
+
 const url = `${base}?${params.toString()}`;
 
 const CHROME_CANDIDATES = [

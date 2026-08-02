@@ -636,3 +636,78 @@ have to boot a browser to learn whether the edit bought anything.
 bytes, and it is trustworthy for exactly one reason: it reproduces `report()`'s
 325.00 mm **to the penny**. An offline instrument that merely agrees in spirit
 with the shipping one is a second opinion, not a check.
+
+## An absolute threshold where a relative one belongs (RN-697)
+
+`probes/shadowk.js` had to be rewritten twice before it could answer its
+question, and **both rewrites were the same mistake**: a constant standing where
+a quantity measured in the same run belonged. It is worth the space because the
+probe was written by a lane that had already caught this shape twice that night
+in other people's code.
+
+**Instance 1: a whole-frame convention applied to a sub-population.** This
+project's frozen-scene micro-motion allowance is 2.7 counts, and that number is
+about a WHOLE FRAME. The probe's metric is restricted to a mask which is, by
+construction, the silhouette-edge population of every LOD-bearing caster. This
+renderer moves those edges **24 counts between two consecutive frames at an
+unchanged input**, while holding the rest of the same frame at **0.24**.
+Asserting 2.7 there is asserting the engine is something it is not, and it
+failed a run whose actual result was good.
+
+**Instance 2, and worse: a floor taken once is not a floor, it is one sample.**
+The same probe, unchanged, read a floor of **22.3, then 24.0, then 11.4** counts
+on three consecutive runs at the same site. Every ratio built on it moved with
+it: one site read 0.64 and then 0.316, another 1.09 and then 1.917. A
+single-sample denominator turns a stable signal into a random verdict, and the
+verdict looked precise both times.
+
+**Instance 3, in the acceptance test itself.** The control region was required
+to move less than 0.5%, when the floor's OWN control movement was 0.48 to 1.25%.
+The check was failing runs for containing a normal amount of noise.
+
+**The fix, and it is the same fix all three times.** Interleave A/B/A/B in one
+page; take the floor from SAME-state pairs and the signal from ADJACENT
+different-state pairs; average both over several samples so slow drift enters
+each equally and cancels. Then compare the signal to that floor rather than to a
+constant.
+
+**The rule to carry forward:** when the thing being thresholded is a statistic
+of a jittery sub-population, the threshold has to come from that same
+population's own variation, measured in the same run. A project-wide constant is
+a statement about a different population. And publish the spread beside the
+mean: `min` and `max` on the floor are what made instance 2 visible at all,
+where the mean alone had looked fine three times running with three different
+answers.
+
+**The bound that survived, and it bounds the conclusion rather than the
+instrument:** this metric measures the MAGNITUDE of a change and not its
+DIRECTION. The policy under test was stricter in one cascade and looser in two,
+so some pixels counted against it had changed for the better. A mean cannot tell
+an improvement from a degradation. That is what the pictures are for.
+
+## A whitelist that silently drops an unknown flag reports the default as the request (RN-698)
+
+`tools/smoke/run.mjs` builds the page query from a whitelist and **discarded
+everything else without a word**. The failure is silent and it fails in the
+flattering direction: the page boots at the default, the probe reads the
+default, and the report describes the default as though it were what was asked
+for. Both sides of a "pair" then run the same way and the difference is zero.
+
+**Three vacuous greens from this one mechanism**, and the third is the tell that
+it is a class and not an incident: `--fur=0` and `--partmat=0` shipped as the
+stated negative controls for the pelt and neither was on the list, so no probe
+driven through the runner could reach either; RN-152 lost a pair to
+`--starlight=0` going unforwarded with both sides running the feature ON; and
+RN-698 lost one to `--shadowlodpx=4` reporting `policy uniform` on BOTH sides,
+**twelve lines below the comment describing exactly this**.
+
+**Fixed structurally rather than by remembering.** An argument that is neither a
+page parameter nor one of the runner's own flags is now a hard exit before the
+browser launches, naming the flag, naming the near matches, and saying where the
+list lives. `--allow-unknown-flags` is the door for a caller that means it, and
+it has to be typed.
+
+**The general shape:** any lookup that maps a request onto a known set and
+drops the misses is a silent-default generator. If the miss is a user's typed
+intent, it must be loud. The cost of the check is nine lines and it ends the
+class.
