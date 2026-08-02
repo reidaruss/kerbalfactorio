@@ -37,6 +37,12 @@ import { labelOf } from '../player/Bindings.js';
 import { readCatalogue } from '../game/VesselCatalogue.js';
 import type { LaunchPads, PadPart } from '../game/LaunchPad.js';
 import type { PartRow } from '../game/VesselCatalogue.js';
+import { registry } from '../sim/VesselRegistry.js';
+import { mayLeave, whyNotLeave } from './ResumeBoot.js';
+import { releaseControl, syncPromoted } from './FlightVessels.js';
+import {
+  evaActive, evaStandPoint, installVesselFreefall, removeVesselFreefall,
+} from '../game/VesselGravity.js';
 
 /** How close the player must stand to a vessel to climb aboard, metres. */
 const BOARD_RANGE_M = 18;
@@ -85,6 +91,9 @@ export class FlightMode {
    *  ball's marker and the map's are ONE direction from one plan. */
   nodeDir: Vec3 | null = null;
   rollouts = 0;
+  /** PH-110: spacewalks begun. Beside `boardings` and `disembarks`, so the
+   *  report can tell the three doors apart. */
+  evas = 0;
   /** GP-57. Roll-outs that landed on a real pad rather than on R12's stand-in
    *  patch of ground, the pad the LIVE vessel stands on, and the measured gap
    *  between the vessel's own base and that pad's published `socket_vessel`
@@ -143,7 +152,26 @@ export class FlightMode {
    * of you and says so.
    */
   board(): void {
-    if (this.aboard) { this.disembark(); return; }
+    if (this.aboard) {
+      // PH-110. TWO DOORS OUT, AND THE VESSEL CHOOSES, NOT THE KEY.
+      //
+      // `disembark` is climbing out onto the ground and its guard is right for
+      // that: it refuses above 2 m/s because a walker cannot survive stepping
+      // out at 2.3 km/s. In orbit that guard reads the state vector, sees
+      // 7.8 km/s, and refuses -- which is the correct answer to the question it
+      // is asking and the wrong answer to the one the player is asking.
+      //
+      // So this is a door BESIDE it, exactly as `takeControlRemote` was added
+      // beside `board()` rather than by loosening the 18 m range check.
+      // `disembark`'s guard is not touched, does not move, and still owns every
+      // ground case. `evaOut` has a guard of its own and it is a STRICTER one:
+      // `mayLeave`, which is `/core`'s own on-rails predicate, so the only
+      // vessel you may push off from is one that is coasting in vacuum on a
+      // conic that arithmetic can describe. A vessel under thrust or in
+      // atmosphere is `frozen` and both doors refuse it.
+      if (this.canEva()) { this.evaOut(); return; }
+      this.disembark(); return;
+    }
     if (!this.session.live) { this.rollOut(); return; }
     const d = this.distanceToVessel();
     if (d <= BOARD_RANGE_M) { this.climbIn(); return; }
@@ -238,6 +266,12 @@ export class FlightMode {
   }
 
   private climbIn(): void {
+    // PH-110. The spacewalk is over the moment the hatch shuts, and the volume
+    // goes with it. Left behind it would be a 60 m bubble of freefall parked at
+    // wherever the rocket happened to be, which would silently switch gravity
+    // off for anyone who later walked through that patch of sky. Idempotent, so
+    // the ordinary ground boarding pays nothing for this line.
+    removeVesselFreefall();
     this.aboard = true;
     this.boardings += 1;
     this.observer.yaw = 0;
@@ -256,6 +290,104 @@ export class FlightMode {
     // does NOT restore, which is the player being strapped in.
     this.flash('aboard: Space stages, Shift throttles up, WASD flies, '
       + `${labelOf('recover')} clears the pad`);
+  }
+
+  /**
+   * PH-110, R54. May the player push off from this vessel and float beside it?
+   *
+   * The predicate is `/core`'s, through `mayLeave`, and it is asked of a record
+   * that has just been SYNCED. `makeRecord` stamps `mode: 'parked'` at roll-out
+   * and `modeOf` only rewrites it from the live sim, so an unsynced guard would
+   * wave a rocket away under full thrust: PH-69 pays for that lesson already and
+   * `leaveVessel` calls `syncPromoted` before consulting it for exactly this
+   * reason. The sync happens in `evaOut`, and this predicate is deliberately
+   * cheap and read-only so `board()` can ask it without side effects.
+   *
+   * Also refused on the ground, which `mayLeave` alone would NOT catch: a vessel
+   * standing on the pad is `parked`, which `mayLeave` permits, and turning a pad
+   * disembark into a spacewalk would be absurd. `CLAMPED`/`DOWN` is the same
+   * discriminator `disembark` uses for its own airborne test, read the same way.
+   */
+  canEva(): boolean {
+    if (!this.aboard || !this.session.live) return false;
+    const rec = registry.promoted;
+    if (rec === null) return false;
+    const onGround = this.session.status === 'CLAMPED' || this.session.status === 'DOWN';
+    return !onGround && this.session.onRails();
+  }
+
+  /**
+   * PH-110, R54. GET OUT HERE, and keep the rocket.
+   *
+   * Three things happen and the ORDER is the whole of it.
+   *
+   *   1. SYNC, then guard. See `canEva`.
+   *   2. Place the body BEFORE releasing the seat. `releaseControl` sets
+   *      `aboard = false`, which re-arms the on-foot HUD, the build ghost and
+   *      the walker's own step; a body still parked at the launch pad for even
+   *      one tick of that is a player standing on the ground with a navball
+   *      shutting behind them.
+   *   3. Install the freefall volume BEFORE the first tick the walker owns, or
+   *      that tick reads `gravityAccel(r)` at 8.6 m/s^2 and starts a 200 km
+   *      fall. `installVesselFreefall` is called from here rather than from
+   *      `KinematicBody`, because the walker reaches gravity through a PORT and
+   *      must never learn what a vessel is.
+   *
+   * The vessel is NOT demoted. `demoteVessel` destroys the `/core` FlightSim and
+   * disposes the design, and a rocket you cannot see is not a rocket you can
+   * EVA around. It stays promoted, live and drawn, and it does not move, because
+   * nothing steps a promoted vessel while nobody is aboard (VesselGravity.ts
+   * header). Climbing back in is the ordinary `board()` at 18 m.
+   */
+  evaOut(): boolean {
+    if (!this.aboard || !this.session.live) return false;
+    const rec = registry.promoted;
+    if (rec === null) { this.refuse('no vessel to leave'); return false; }
+    syncPromoted(this, this.session.fixedTick);
+    if (!mayLeave(rec)) { this.refuse(whyNotLeave(rec)); return false; }
+    if (!this.canEva()) { this.refuse('cannot spacewalk from here'); return false; }
+
+    // UN-STAMP THE RECORD, AND THIS LINE IS THE WHOLE OF PH-111.
+    //
+    // The first driven run of `probes/eva.js` failed E4 with the vessel 6829.55
+    // m away after three seconds, against 6867.76 m of "what it would be at
+    // orbital speed". That looked like the blocker everyone expected and it was
+    // not: `VesselObserver.step` is where `flight.step(dt)` is called, the
+    // observer is only stepped while it is the router's source, so THE LIVE SIM
+    // GENUINELY DOES NOT ADVANCE while nobody is aboard. What advanced was the
+    // RECORD. `syncPromoted` stamps it, and a stamped record's `clockAt` runs
+    // with the world clock, so `stateOf` kept solving the conic forward while
+    // the thing it describes sat still. (The 0.6% between the two figures is the
+    // conic's arc against a straight-line chord, which is the tell.)
+    //
+    // Two authorities for one rocket, and they had drifted 6.8 km apart in three
+    // seconds: the map would draw the marker somewhere the player is not, and
+    // the next demote/promote would teleport the hull there.
+    //
+    // `stampedTick = -1` is exactly what `mintStation` does and for exactly the
+    // same reason (SpaceStation.ts: "NEVER STAMPED, WHICH IS WHAT MAKES THE
+    // FREEZE HONEST rather than a second authority"). An unstamped record does
+    // not advance, so the frozen sim and the derived conic position are THE SAME
+    // NUMBER BY CONSTRUCTION and cannot come apart. The next `syncPromoted`
+    // after the player climbs back in re-stamps it and the vessel resumes.
+    rec.stampedTick = -1;
+
+    const p = this.session.state.pos;
+    const stand = evaStandPoint([p[0], p[1], p[2]], this.session.baseOffsetM);
+    const r = Math.hypot(p[0], p[1], p[2]);
+    // The ONE gravity authority, at the vessel's own radius. A body on a free
+    // trajectory accelerates at exactly the local g, which is the entire reason
+    // its occupants have no weight (GravityPort.ts).
+    // `oracle.body.gravityAccel` is the SAME call `KinematicBody` makes for the
+    // walker's own weight, reached the same way. Not a second gravity, and not
+    // a new port on `FlightDeps`: standing rule 1.
+    installVesselFreefall(stand, this.d.oracle.body.gravityAccel(r));
+    this.d.player.standAt(stand[0], stand[1], stand[2]);
+    releaseControl(this);
+    this.evas += 1;
+    this.flash('EVA: WASD thrusts, Space and Shift for up and down, '
+      + `${labelOf('board')} to get back in`);
+    return true;
   }
 
   /** The reverse MUST work or a player who lands is stuck. It is refused only
@@ -418,6 +550,11 @@ export class FlightMode {
       aboard: this.aboard, rollouts: this.rollouts, boardings: this.boardings,
       disembarks: this.disembarks, recoveries: this.recoveries,
       refusals: this.refusals,
+      // PH-110. The spacewalk's three observables, beside the other doors'
+      // counters rather than on a surface of their own: how many were begun,
+      // whether one is live right now, and whether one COULD be from here. The
+      // last is what lets a probe prove the refusal fired rather than infer it.
+      evas: this.evas, evaActive: evaActive(), canEva: this.canEva(),
       ...padReport(this),
       distanceToVesselM: this.session.live
         ? Math.round(this.distanceToVessel() * 100) / 100 : -1,

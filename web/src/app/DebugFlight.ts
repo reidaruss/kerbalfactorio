@@ -18,6 +18,7 @@ import { mayLeave, resumeReport, whyNotLeave } from './ResumeBoot.js';
 import { playerAnchorReport } from './PlayerAnchor.js';
 import { vesselSaveReport } from '../game/VesselSave.js';
 import { registry, stateOf } from '../sim/VesselRegistry.js';
+import { evaActive, lastVesselGravity } from '../game/VesselGravity.js';
 import type { Services } from './Services.js';
 
 export interface FlightDebugApi {
@@ -164,6 +165,19 @@ export function flightApi(s: Services): FlightDebugApi {
         case 'leave': {
           const ok = leaveVessel(f, currentVesselTick());
           return { ok, vessels: vesselReport(currentVesselTick()),
+                   report: f.report() };
+        }
+        // PH-110, R54. THE SPACEWALK, and it is a THIRD verb rather than a flag
+        // on `leave`, because the two do opposite things to the vessel: `leave`
+        // DEMOTES it (the /core FlightSim is destroyed and the meshes go), and
+        // an EVA must keep it promoted, live and drawn, or the player floats
+        // beside nothing. `canEva` is published alongside so a probe can assert
+        // that the refusal fired rather than inferring it from a false.
+        case 'eva': {
+          const may = f.canEva();
+          const ok = f.evaOut();
+          return { ok, may, eva: evaActive(), gravity: lastVesselGravity(),
+                   vessels: vesselReport(currentVesselTick()),
                    report: f.report() };
         }
         case 'resume': {

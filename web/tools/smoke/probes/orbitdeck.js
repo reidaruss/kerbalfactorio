@@ -1,9 +1,9 @@
 // CAN THE WALKER BE HELD UP BY A col_* PROXY WITH NO HEIGHTFIELD UNDER IT?
 //
-// This is the measurement the space station question turns on, and it is asked
-// BEFORE any station exists, deliberately: if the answer is no, then a station
-// interior is a substantial piece of new walker work and nobody should author an
-// asset against it yet.
+// This is the measurement the space station question turns on. It was asked
+// BEFORE any station existed, deliberately: if the answer had been no, then a
+// station interior would have been a substantial piece of new walker work and
+// nobody should have authored an asset against it yet.
 //
 // The premise being tested is that `KinematicBody.step` composes TWO floors and
 // takes the higher: `groundR` starts as the terrain's answer and is replaced by
@@ -15,14 +15,24 @@
 // losing.
 //
 // So the probe puts a corridor in ORBIT, out of the same `LocalBox` proxies a
-// foundation is made of, and stands the player in it.
+// foundation is made of, and stands the player in it. The corridor is INJECTED
+// rather than borrowed, and that is still the right shape for the question: the
+// mechanism has to be provable without the shipped station, or a red run could
+// never be told apart from a bad asset.
 //
-// THE GEOMETRY IS THE BLENDER LANE'S STATED CONVENTION, NOT A CONVENIENT ONE:
-// 2.5 m clear corridor width, 2.5 m clear headroom, floor and walls and ceiling
-// as SEPARATE boxes rather than one enclosing box, local +Y up. If those
-// conventions do not survive contact with the walker, this is where it shows.
+// BUT ITS CROSS SECTION IS NO LONGER TRANSCRIBED (PH-105). This probe used to
+// hold 2.5 m clear width, 2.5 m clear headroom, 0.3 m walls and a 0.5 m deck as
+// private constants and call them "the Blender lane's stated convention". They
+// were the PLACEHOLDER's convention, and the shipped asset does not share one
+// of them: `space_station.glb` runs 3.0 m clear and 4.0 m to the ceiling with
+// 0.6 m walls, a 0.3 m deck and 0.8 m of overhead slab. A probe that keeps its
+// own copy of a convention agrees with itself whatever the asset does, which is
+// exactly the failure this file shipped and passed with, so the cross section
+// is now READ off `of.station().proxyBoxes` by name and only the corridor's
+// existence is the probe's own. The injected corridor runs along its own local
+// Z while the shipped spine runs along local X; only the section is borrowed.
 //
-// FIVE PROPERTIES:
+// SIX PROPERTIES:
 //   P1 the player stands. Grounded, onDeck, and the feet radius is CONSTANT
 //      over 300 stationary ticks. The spread is the result, in metres.
 //   P2 the radius they stand at IS the floor box's own top face, found by
@@ -36,6 +46,9 @@
 //      tick, and actually travels.
 //   P5 a driven walk INTO a wall is refused (`blockedByBuild`) and does not
 //      leave the corridor.
+//   P6 headroom, against the SHIPPED number rather than against a remembered
+//      one, plus the capsule sample-gap control that explains what a ceiling
+//      has to be thicker than.
 //
 // RUN IN SANDBOX (--sandbox=1): this places nothing and spends nothing, but the
 // walk scenario's harvesting economy is noise here, same argument as
@@ -54,16 +67,63 @@
   const len = (p) => Math.hypot(p[0], p[1], p[2]);
   const yield0 = () => new Promise((r) => { setTimeout(r, 0); });
 
+  if (!of.sandbox().sandbox) return { fail: 'run this with --sandbox=1', log };
+  if (typeof of.standAt !== 'function') {
+    return { fail: 'no __of.standAt: rebuild the client', log };
+  }
+  if (typeof of.stand !== 'function') return { fail: 'no __of.stand', log };
+  if (typeof of.station !== 'function') return { fail: 'no __of.station: rebuild', log };
+  const structures = of.structures();
+  if (structures === null || structures === undefined) {
+    return { fail: 'no structural layer', log };
+  }
+
+  // --- the corridor's SECTION, read off the shipped spine ------------------
+  // By name, never by coordinate. `col_SpineFwdFloor` is one of the two 20 m
+  // runs of the station's spine and it carries every number this probe used to
+  // keep privately: the clear width in its z span, the deck thickness in its y
+  // span, the headroom in the gap up to the ceiling proxy, the wall thickness
+  // in the side proxy's z span and the overhead slab in the ceiling's y span.
+  await of.run(0.8, 60);
+  const sta = of.station();
+  if (sta === null) return { fail: 'no station record: nothing to read a section off', log };
+  if (sta.proxies === 0) return { fail: 'no proxies learned: the glb did not load', log };
+  const byName = new Map(sta.proxyBoxes.map((b) => [b.name, b]));
+  const need = ['col_SpineFwdFloor', 'col_SpineFwdCeil', 'col_SpineFwdWallL'];
+  const missing = need.filter((n) => !byName.has(n));
+  if (missing.length > 0) return { fail: 'asset is missing proxies', missing, log };
+  const spine = byName.get('col_SpineFwdFloor');
+  const spineCeil = byName.get('col_SpineFwdCeil');
+  const spineWall = byName.get('col_SpineFwdWallL');
+
+  const HALF_W = spine.max[2];                                  // clear half width
+  const DECK_T = spine.max[1] - spine.min[1];                   // slab thickness
+  const HEAD = spineCeil.min[1] - spine.max[1];                 // clear headroom
+  const WALL_T = spineWall.max[2] - spineWall.min[2];            // wall thickness
+  const CEIL_T = spineCeil.max[1] - spineCeil.min[1];            // overhead slab
+  const HALF_L = (spine.max[0] - spine.min[0]) / 2;             // run length
+  const section = {
+    from: 'col_SpineFwd*',
+    clearWidthM: r6(HALF_W * 2),
+    clearHeadroomM: r6(HEAD),
+    deckThickM: r6(DECK_T),
+    wallThickM: r6(WALL_T),
+    ceilingThickM: r6(CEIL_T),
+    runLengthM: r6(HALF_L * 2),
+  };
+  log.push({ section });
+  if (!(HALF_W > 0 && DECK_T > 0 && HEAD > 0 && WALL_T > 0 && CEIL_T > 0 && HALF_L > 1)) {
+    return { fail: 'the shipped section does not describe a corridor', section, log };
+  }
+
   // --- the corridor, in its own frame, +Y up, floor top face at y = 0 -------
-  // Clear width 2.5 (x in [-1.25, 1.25]), clear headroom 2.5 (y in [0, 2.5]).
-  const HALF_W = 1.25, HALF_L = 15, WALL_T = 0.3, DECK_T = 0.5, HEAD = 2.5;
   const boxes = [
     { name: 'col_Deck', min: [-HALF_W, -DECK_T, -HALF_L], max: [HALF_W, 0, HALF_L] },
     { name: 'col_WallXneg', min: [-HALF_W - WALL_T, 0, -HALF_L], max: [-HALF_W, HEAD, HALF_L] },
     { name: 'col_WallXpos', min: [HALF_W, 0, -HALF_L], max: [HALF_W + WALL_T, HEAD, HALF_L] },
     { name: 'col_CapZneg', min: [-HALF_W - WALL_T, 0, -HALF_L - WALL_T], max: [HALF_W + WALL_T, HEAD, -HALF_L] },
     { name: 'col_CapZpos', min: [-HALF_W - WALL_T, 0, HALF_L], max: [HALF_W + WALL_T, HEAD, HALF_L + WALL_T] },
-    { name: 'col_Ceiling', min: [-HALF_W - WALL_T, HEAD, -HALF_L], max: [HALF_W + WALL_T, HEAD + 0.3, HALF_L] },
+    { name: 'col_Ceiling', min: [-HALF_W - WALL_T, HEAD, -HALF_L], max: [HALF_W + WALL_T, HEAD + CEIL_T, HALF_L] },
   ].map((b) => ({ min: b.min, max: b.max, leaf: false, name: b.name }));
 
   let bound = 0;
@@ -73,16 +133,7 @@
 
   const fail = async (why, extra) => { await home(); return { fail: why, ...extra, log }; };
 
-  if (!of.sandbox().sandbox) return { fail: 'run this with --sandbox=1', log };
-  if (typeof of.standAt !== 'function') {
-    return { fail: 'no __of.standAt: rebuild the client', log };
-  }
-  if (typeof of.stand !== 'function') return { fail: 'no __of.stand', log };
-  const st = of.structures();
-  if (st === null || st === undefined) return { fail: 'no structural layer', log };
-
   // --- where the ground is, and therefore where orbit is -------------------
-  await of.run(0.8, 60);
   const feet0 = of.world().player.feet.slice();
   const rGround = len(feet0);
   const u = [feet0[0] / rGround, feet0[1] / rGround, feet0[2] / rGround];
@@ -118,8 +169,8 @@
     cx: pos.x, cy: pos.y, cz: pos.z, cr: bound, shut: true,
   };
 
-  const addStation = () => { st.bodies.add(solid); };
-  const dropStation = () => { st.bodies.remove((q) => q === solid); };
+  const addStation = () => { structures.bodies.add(solid); };
+  const dropStation = () => { structures.bodies.remove((q) => q === solid); };
 
   /** Back to the ground, camera and all. See the header. */
   const home = async () => {
@@ -202,15 +253,19 @@
   // P2. THE RADIUS IS THE BOX'S OWN TOP FACE, found on the walker's predicate.
   // =========================================================================
   const solidAt = (r) => of.solidBuild(u[0] * r, u[1] * r, u[2] * r);
-  if (!solidAt(rStation - 0.25)) return fail('P2: the deck interior does not read solid');
-  if (solidAt(rStation + 0.25)) return fail('P2: the air above the deck reads solid');
-  let lo = rStation - 0.25, hi = rStation + 0.25;
+  // The bracket is half the SHIPPED slab, so a thinner deck cannot silently put
+  // the "interior" sample in the vacuum underneath it. The old fixed 0.25 m
+  // would have done exactly that against a 0.3 m slab if it had ever grown.
+  const BR = DECK_T * 0.5;
+  if (!solidAt(rStation - BR)) return fail('P2: the deck interior does not read solid', { BR: r6(BR) });
+  if (solidAt(rStation + BR)) return fail('P2: the air above the deck reads solid', { BR: r6(BR) });
+  let lo = rStation - BR, hi = rStation + BR;
   for (let i = 0; i < 60; ++i) {
     const mid = (lo + hi) / 2;
     if (solidAt(mid)) lo = mid; else hi = mid;
   }
   const topFace = hi;
-  const p2 = { topFace: r6(topFace), feetR: p1.feetR.min,
+  const p2 = { topFace: r6(topFace), feetR: p1.feetR.min, bracketM: r6(BR),
     deltaM: r6(p1.feetR.min - topFace) };
   log.push({ P2: p2 });
   if (Math.abs(p2.deltaM) > 1e-6) {
@@ -249,14 +304,13 @@
   addStation();
   of.standAt(u[0] * (rStation + 0.5), u[1] * (rStation + 0.5), u[2] * (rStation + 0.5));
   await drive(1.5, []);
-  const before = of.world().player.feet.slice();
 
   // SOLVE for the corridor's heading rather than sweeping for it. The first
   // version of this probe swept four yaws and kept the furthest, and every one
   // of them travelled about 2 m: the minimal rotation taking local +Y onto the
   // radial leaves local X and Z anywhere in the tangent plane, so 0/90/180/270
-  // sampled four directions that all crossed the 2.5 m width at an angle. A
-  // sweep that never runs the corridor cannot tell "the walker cannot walk"
+  // sampled four directions that all crossed the corridor's width at an angle.
+  // A sweep that never runs the corridor cannot tell "the walker cannot walk"
   // from "the walker was never pointed down the hall".
   const qrot = (q, v) => {
     // v + 2 * qv x (qv x v + w v)
@@ -342,7 +396,7 @@
   // asserting the flag would be asserting a failure mode rather than the
   // property. What the player needs is that the wall keeps them in the
   // corridor, so that is what is measured: the local X coordinate after two
-  // seconds of walking straight at it, against the 1.25 m clear half width.
+  // seconds of walking straight at it, against the SHIPPED clear half width.
   if (!(Math.abs(wallLeg.endLocal.x) <= HALF_W + 1e-3)) {
     return fail('P5: the player walked THROUGH the corridor wall', { wallLeg,
       clearHalfWidthM: HALF_W });
@@ -353,29 +407,29 @@
 
   // =========================================================================
   // P6. HEADROOM, measured rather than assumed, because the Blender lane is
-  //     authoring to a number and 2.5 m turns out to have almost no margin.
+  //     authoring to a number and the placeholder's 2.5 m turned out to have
+  //     none. The shipped 4.0 m is the number under test now.
   // =========================================================================
   // 1.65 m is the walker's TOPMOST structural sample (CAPSULE_SAMPLES_M); the
   // capsule's 1.8 m height and 0.4 m radius are NOT what collides with a
   // structure. The three samples are 0.75 m apart, and that spacing is the
-  // whole of this measurement.
+  // whole of the ceiling control below.
   const TOP_SAMPLE_M = 1.65;
   const SAMPLE_GAP_M = 0.75;
 
   /**
-   * Jump for 1.5 s under a ceiling of the given thickness, and report.
-   * `thickM === 0` removes the ceiling entirely, which is the only way to see
-   * the FREE apex: with any ceiling present the rise stops at the height where
-   * the topmost capsule sample meets its underside, and reading that as an
-   * apex is how this probe twice reported a jump speed the walker does not
-   * have.
+   * Jump for 1.5 s under a ceiling of the given thickness at the given clear
+   * height, and report. `thickM === 0` removes the ceiling entirely, which is
+   * the only way to see the FREE apex: with any ceiling present the rise stops
+   * at the height where the topmost capsule sample meets its underside, and
+   * reading that as an apex is how this probe twice reported a jump speed the
+   * walker does not have.
    */
-  const jumpUnder = async (thickM) => {
+  const jumpUnder = async (thickM, headM) => {
     dropStation();
     const ceil = boxes.find((b) => b.name === 'col_Ceiling');
-    ceil.max[1] = HEAD + Math.max(thickM, 0.001);
-    ceil.min[1] = thickM === 0 ? 1e9 : HEAD;
-    ceil.max[1] = thickM === 0 ? 1e9 + 0.3 : HEAD + thickM;
+    ceil.min[1] = thickM === 0 ? 1e9 : headM;
+    ceil.max[1] = thickM === 0 ? 1e9 + CEIL_T : headM + thickM;
     addStation();
     of.standAt(u[0] * (rStation + 0.2), u[1] * (rStation + 0.2), u[2] * (rStation + 0.2));
     await drive(0.6, []);
@@ -383,24 +437,34 @@
     const apexM = Math.max(...sj.map((q) => q.feetR)) - rStation;
     const endY = local(of.world().player.feet.slice())[1];
     return {
-      ceilingThickM: thickM,
-      ceilingSpanM: [HEAD, r6(HEAD + thickM)],
+      ceilingHeadM: r6(headM),
+      ceilingThickM: r6(thickM),
+      ceilingSpanM: [r6(headM), r6(headM + thickM)],
       jumpApexM: r6(apexM),
       endLocalY: r6(endY),
-      escaped: endY > HEAD - 1e-3,
+      escaped: endY > headM - 1e-3,
       blockedTicks: sj.filter((q) => q.blockedByBuild).length,
     };
   };
 
-  // FREE: no ceiling at all, the true v^2/2g. THIN: the authored 0.3 m.
-  // THICK: 0.8 m, just over the sample gap.
-  const free = await jumpUnder(0);
-  const thin = await jumpUnder(0.3);
-  const thick = await jumpUnder(0.8);
-  // Restore the authored geometry so nothing downstream reads the control's.
+  // FREE: no ceiling at all, the true v^2/2g.
+  const free = await jumpUnder(0, HEAD);
+  // THE CONTROL CEILING IS HUNG WHERE THE JUMP REACHES IT, and it has to be,
+  // because the shipped 4.0 m of headroom is more than the walker can reach:
+  // running the leak control at the authored height would report "contained"
+  // for a ceiling nothing ever touched and call that a result. Half the free
+  // apex above the topmost sample is a height the rise passes with room on both
+  // sides, and it is derived from the measurement rather than picked.
+  const ctrlHead = TOP_SAMPLE_M + free.jumpApexM * 0.5;
+  // THIN is under the capsule's sample spacing, THICK is the slab the asset
+  // actually ships. The pair is the assertion: if the thick one leaks too then
+  // the mechanism is not the spacing and the whole reading is wrong.
+  const thin = await jumpUnder(SAMPLE_GAP_M * 0.5, ctrlHead);
+  const thick = await jumpUnder(CEIL_T, ctrlHead);
+  // Restore the shipped geometry so nothing downstream reads the control's.
   dropStation();
   const ceilBox = boxes.find((b) => b.name === 'col_Ceiling');
-  ceilBox.min[1] = HEAD; ceilBox.max[1] = HEAD + 0.3;
+  ceilBox.min[1] = HEAD; ceilBox.max[1] = HEAD + CEIL_T;
 
   const gStation = of.gravity(rStation);
   const gGround = of.gravity(rGround);
@@ -417,20 +481,22 @@
     // topmost sample, or a jumping player meets the ceiling.
     headroomNeededAtStationM: r6(free.jumpApexM + TOP_SAMPLE_M),
     headroomNeededAtGroundM: r6(apexGround + TOP_SAMPLE_M),
-    authoredHeadroomM: HEAD,
+    shippedHeadroomM: r6(HEAD),
+    shippedCeilingThickM: r6(CEIL_T),
     marginAtStationM: r6(HEAD - (free.jumpApexM + TOP_SAMPLE_M)),
     marginAtGroundM: r6(HEAD - (apexGround + TOP_SAMPLE_M)),
     // The height a ceiling stops the rise at, which is NOT an apex.
-    ceilingContactFeetM: r6(HEAD - TOP_SAMPLE_M),
+    controlHeadM: r6(ctrlHead),
+    controlContactFeetM: r6(ctrlHead - TOP_SAMPLE_M),
     thinCeiling: thin,
     thickCeiling: thick,
     gStationMps2: r6(gStation),
     gGroundMps2: r6(gGround),
   };
   log.push({ P6: p6 });
-  // THE CONTROL IS THE ASSERTION. A ceiling thicker than the sample gap must
-  // hold; if the thick one leaks too then the mechanism is not the spacing and
-  // this whole reading is wrong.
+  // THE CONTROL IS THE ASSERTION. A ceiling thicker than the capsule sample gap
+  // must hold; if the thick one leaks too then the mechanism is not the spacing
+  // and this whole reading is wrong.
   if (thick.escaped) {
     return fail('P6: a ceiling thicker than the capsule sample gap did not '
       + 'contain the jump, so the thin-ceiling leak is NOT explained by the '
@@ -452,6 +518,7 @@
   return {
     ok: true,
     altM: ALT_M,
+    section,
     P1: p1, P2: p2, P3: p3, P4: runLeg, P5: wallLeg, P6: p6,
     gravity,
     returnedToGroundM: r6(Math.abs(backR - rGround)),

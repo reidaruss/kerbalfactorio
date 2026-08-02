@@ -116,6 +116,18 @@ export function flightReport(s: FlightSession): unknown {
     // reads the state and this read the telemetry, so the same quantity had two
     // values that disagreed only in the one state nothing asserts on.
     speedMS: round(len(s.state.vel), 2),
+    // PH-111. WHERE THE LIVE SIM SAYS IT IS, and it was not published before,
+    // which is how two authorities for one rocket drifted 6829.55 m apart in
+    // three seconds without any instrument being able to say so. `railsAt`
+    // answers for the RECORD's conic; this answers for the `/core` FlightSim,
+    // and an EVA is the first state in which those two can disagree.
+    //
+    // DELIBERATELY NOT ROUNDED, unlike every other figure on this report. The
+    // assertion it exists for is "these two agree", and rounding to centimetres
+    // would conceal a disagreement under a centimetre while appearing to prove
+    // there was none.
+    pos: [s.state.pos[0], s.state.pos[1], s.state.pos[2]],
+    baseOffsetM: s.baseOffsetM,
     verticalMS: round(dot(s.state.vel, s.up), 2),
     apoapsisM: round(o.apoapsisAltM, 1), periapsisM: round(o.periapsisAltM, 1),
     eccentricity: round(o.eccentricity, 5), periodS: round(o.periodS, 1),
