@@ -186,9 +186,16 @@
     if (aboard.aboard === true) {
       of.pause(true);
       await sleep(0.4);
-      const rows = of.pause().buttons.filter((b) => b.id.startsWith('visit:'));
+      // GP-236: THE SEVEN THIS FILE OWNS, matched by id off its own table and
+      // no longer by the `visit:` prefix. GP-233 added an eighth destination of
+      // a different kind under that prefix (the orbital station, its own group,
+      // its own probe) and this row's `length === 7` went red on a screen that
+      // had grown correctly, which is GP-154's lesson recurring: a literal
+      // count is a check being right about the wrong thing.
+      const ids = SITES.map((s) => `visit:${s.id}`);
+      const rows = of.pause().buttons.filter((b) => ids.includes(b.id));
       check('aboard, every visit row is DISABLED',
-        rows.length === 7 && rows.every((b) => b.disabled === true),
+        rows.length === SITES.length && rows.every((b) => b.disabled === true),
         JSON.stringify(rows.map((b) => [b.id, b.disabled])));
       check('and each says WHY with the keys that fix it',
         rows.every((b) => b.blocked.includes('aboard')

@@ -27,8 +27,50 @@
 // a no-op ("a vessel is rolled out, never teleported", VesselObserver.ts). So a
 // press while flying would report success and move nothing, which is worse
 // than a refusal. A craft parked on the pad is fine: the walker is the source.
+//
+// ---------------------------------------------------------------------------
+// GP-231 to GP-234. THE EIGHTH DESTINATION IS NOT A SITE, AND IT DRAWS IN ITS
+// OWN GROUP.
+//
+// PH-94 to PH-97 put a walkable station in a 400 km orbit and Reid asked to be
+// able to get to it from this menu. It is handled in this file, because this is
+// where a teleport destination lives, and it is drawn under its OWN heading,
+// for three reasons that are all about the seven rows above it rather than
+// about tidiness:
+//
+//   1. THOSE SEVEN ARE A DECISION TOOL. They are the WG-55 survey's candidate
+//      SPAWNS and each carries sun, treeline and ground so Reid can compare
+//      them (world-gen 6.1 is his pending pick). An eighth row that is not a
+//      candidate would put a non-comparable thing in the comparison.
+//   2. THE GUARDS DIFFER. A site cannot be switched off; the station can
+//      (`?station=0`), and then there is literally nothing up there to stand
+//      on. One group greying for a reason the others can never have would read
+//      as a bug in the group.
+//   3. THE DOOR DIFFERS, and this is the load-bearing one. A site goes through
+//      the lat/lon ground teleport, which DISCARDS its altitude argument by a
+//      documented contract (Config.ts line 51) that two walking scenarios ship
+//      `alt: 2` against. The station is not on the heightfield at all, so it
+//      goes through `Controller.standAt`, PH-90's body-frame Cartesian door,
+//      built for exactly this. Honouring `altM` instead would have moved every
+//      walking probe in the suite by two metres, which is why R50 exists.
+//
+// The row still uses the panel's one row renderer and the same `Go` verb, and
+// its id keeps the `visit:` prefix so GP-168's arrival-closes-the-menu applies
+// with nothing added to MenuBoot.
+//
+// THE RECEIPT DOES NOT CLAIM THE PLAYER IS GROUNDED, deliberately.
+// `Controller.standAt` writes the feet and leaves `grounded` FALSE, because
+// "whether there is a floor here is exactly what the caller is asking, so
+// asserting one would be the instrument answering its own question" (its own
+// words). Whether the deck caught the player is a fact one fixed tick later, so
+// `probes/stationvisit.js` asserts `grounded` AND `onDeck` after ticking, and
+// this file asserts neither. GP-155's pending/terminal rule, applied the other
+// way round from the site rows: the position IS terminal, the footing is not.
 
 import { labelOf } from '../player/Bindings.js';
+import {
+  STATION_ALT_M, STATION_NAME, lastStationInstall,
+} from '../game/SpaceStation.js';
 import type { CheatRow } from '../ui/PauseMenu.js';
 import type { FlightMode } from './FlightMode.js';
 
@@ -82,6 +124,28 @@ export const VISIT_SITES: readonly VisitSite[] = [
  *  matters to a free camera; 2.0 is what sitelook.js has always passed. */
 export const VISIT_EYE_ALT_M = 2.0;
 
+/** GP-231. The station row's id. `visit:` so GP-168's close-on-arrival, which
+ *  matches on that prefix in MenuBoot, covers this row with nothing added. */
+export const STATION_ROW_ID = 'visit:station';
+
+/**
+ * The two ports a press needs, held as one shape so `Cheats.press` hands over
+ * its own deps and no third copy of either call exists. `teleport` is the
+ * lat/lon ground door (altitude discarded by contract); `standAt` is the
+ * body-frame Cartesian one and returns false when there is no walker.
+ */
+export interface VisitPorts {
+  teleport: (latDeg: number, lonDeg: number, altM: number) => void;
+  standAt: (x: number, y: number, z: number) => boolean;
+}
+
+/** Just enough of `PlanetBody` to say what the gravity is up there. Structural
+ *  rather than imported so this file gains no dependency on world/. */
+export interface GravityRef {
+  readonly radiusM: number;
+  gravityAccel(rM: number): number;
+}
+
 /** Why no site can be visited right now, or ''. One sentence, naming the keys
  *  that fix it, off the binding table and never a literal (GP-140). */
 export function visitBlocked(f: FlightMode | null): string {
@@ -99,6 +163,62 @@ export function visitRows(f: FlightMode | null): CheatRow[] {
     kind: 'button' as const, blocked }));
 }
 
+/**
+ * GP-232. Why the station cannot be visited right now, or ''.
+ *
+ * THE ORDER IS NOT ARBITRARY. "There is no station" comes first because it is
+ * the one a player cannot act on: it is a property of how this world was
+ * booted, and telling someone to disembark first, so that they can then press a
+ * button that would refuse anyway, is a worse sentence than the true one.
+ *
+ * `lastStationInstall()` and NOT `findStation()` is the authority, and the
+ * difference is the whole guard. The record is a `VesselRecord` and it SAVES;
+ * the interior is a `Solid` derived at boot and never saved (SpaceStation.ts).
+ * So a world saved with a station and reloaded with `?station=0` has the record
+ * and no floor, and a check on the record would happily put the player 400 km
+ * up with nothing under them. The install report exists exactly when the solid
+ * was added to `StructureBodies`, which is the thing being stood on.
+ */
+export function stationBlocked(f: FlightMode | null): string {
+  if (lastStationInstall() === null) {
+    return 'this world was booted with ?station=0, so there is no station in '
+      + 'orbit: reload without that flag and it will be there';
+  }
+  return visitBlocked(f);
+}
+
+/**
+ * GP-233. The station's row, in its own group. One row or none, so the group is
+ * data like every other group here.
+ *
+ * THE NUMBERS ARE READ OFF THE LIVE WORLD rather than written into the prose
+ * (GP-165's rule): the altitude is the install's own, and both gravities come
+ * from `PlanetBody`, which is the client's single gravity authority. A row that
+ * said "400 km" as a literal would keep saying it after the orbit moved, and
+ * this project has put the wrong number on screen enough times to have a rule
+ * about it. The jump ratio is `g_surface / g_here` because apex height goes as
+ * 1/g at a fixed take-off speed, and it is on the row because the 2.5 m
+ * headroom up there is REACHABLE: a player who jumps meets the ceiling, which
+ * is a bonk and not a leak (SpaceStation.ts says so), and a player who was told
+ * reads it as the place being low rather than the game being broken.
+ */
+export function stationRows(f: FlightMode | null, body: GravityRef): CheatRow[] {
+  const st = lastStationInstall();
+  const altM = st?.altM ?? STATION_ALT_M;
+  const deckR = st?.deckR ?? body.radiusM + STATION_ALT_M;
+  const g = body.gravityAccel(deckR);
+  const g0 = body.gravityAccel(body.radiusM);
+  const note = `${(altM / 1000).toFixed(0)} km circular orbit. Gravity up `
+    + `there is ${g.toFixed(2)} m/s2, ${((100 * g) / g0).toFixed(0)}% of the `
+    + `surface, so a jump goes ${(g0 / g).toFixed(1)} times as high and the `
+    + '2.5 m ceiling is within reach of one. You arrive standing in the hub, '
+    + 'with a doorway out into the corridor';
+  return [{
+    id: STATION_ROW_ID, label: `${STATION_NAME}: the orbital station`,
+    note, kind: 'button' as const, blocked: stationBlocked(f),
+  }];
+}
+
 export interface VisitOutcome {
   done: boolean;
   message: string;
@@ -113,20 +233,59 @@ export interface VisitOutcome {
  * returns the player IS at the site. What follows is streaming, and the world
  * already reports that on its own channel (`chunks.converged`).
  */
-export function pressVisit(id: string, f: FlightMode | null,
-  teleport: (latDeg: number, lonDeg: number, altM: number) => void,
+export function pressVisit(id: string, f: FlightMode | null, ports: VisitPorts,
 ): VisitOutcome | null {
   if (!id.startsWith('visit:')) return null;
+  if (id === STATION_ROW_ID) return pressStation(f, ports);
   const s = VISIT_SITES.find((x) => `visit:${x.id}` === id) ?? null;
   if (s === null) return { done: false, message: `no such site: ${id.slice(6)}` };
   const blocked = visitBlocked(f);
   if (blocked !== '') return { done: false, message: `refused: ${blocked}` };
-  teleport(s.latDeg, s.lonDeg, VISIT_EYE_ALT_M);
+  ports.teleport(s.latDeg, s.lonDeg, VISIT_EYE_ALT_M);
   return {
     done: true,
     message: `standing at ${s.label} (lat ${s.latDeg}, lon ${s.lonDeg}) while `
       + 'the ground streams in',
     detail: { site: s.id, latDeg: s.latDeg, lonDeg: s.lonDeg,
       groundM: s.groundM },
+  };
+}
+
+/**
+ * GP-234. Put the player in the station's hub.
+ *
+ * THE DESTINATION IS THE INSTALL'S OWN `pos` AND NOTHING IS RECOMPUTED HERE.
+ * The station is nadir pointing and its local origin is both the hub centre and
+ * the deck's top face (SpaceStation.ts), so `pos` IS the spot to stand on, and
+ * `|pos|` is `deckR`. A second derivation, even the obvious `up * (R + alt)`,
+ * would be a second authority on where the station is, and the day it disagreed
+ * with the conic the player would arrive beside the floor rather than on it.
+ * `probes/stationwalk.js` P2 is the assertion that keeps those two in step.
+ *
+ * NO DROP HEIGHT. The feet go exactly on the top face, so the walker's very
+ * first tick has `gap <= 0` and lands (KinematicBody.step), rather than the
+ * half-second fall a clearance would buy. The rise allowance in `deckUnder` is
+ * the walker's own first step rung, so being a hair inside the 0.5 m slab seats
+ * the feet on top of it: that is GP-53's fix and it is why arriving exactly at
+ * the face is safe rather than a coin flip about which side of it we land on.
+ */
+function pressStation(f: FlightMode | null, ports: VisitPorts): VisitOutcome {
+  const blocked = stationBlocked(f);
+  if (blocked !== '') return { done: false, message: `refused: ${blocked}` };
+  const st = lastStationInstall();
+  // Unreachable while `stationBlocked` returns '' for a non-null install, and
+  // kept because the compiler cannot know that and a thrown null here would be
+  // a crash in a menu press.
+  if (st === null) return { done: false, message: 'refused: no station' };
+  const [x, y, z] = st.pos;
+  if (!ports.standAt(x, y, z)) {
+    return { done: false, message: 'refused: there is no walker to move' };
+  }
+  return {
+    done: true,
+    message: `standing in the hub of ${STATION_NAME}, `
+      + `${(st.altM / 1000).toFixed(0)} km up`,
+    detail: { site: 'station', name: STATION_NAME, altM: st.altM,
+      deckR: st.deckR, feet: [x, y, z], proxies: st.proxies },
   };
 }

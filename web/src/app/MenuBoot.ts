@@ -61,6 +61,19 @@ export function installPauseMenu(s: Services, loop: Loop) {
     // probe walk one path. Aboard a vessel it is refused upstream (VisitSites),
     // because the vessel source's teleport() is a no-op by design.
     teleport: (latDeg, lonDeg, altM) => { s.observer.teleport(latDeg, lonDeg, altM); },
+    // GP-231. THE OTHER teleport door, and it is a different one on purpose.
+    // `Controller.standAt` (PH-90) puts the feet at a body-frame Cartesian
+    // point with no geodesy in it, which is the only way to reach a floor that
+    // is not on the heightfield. It is NOT reached by giving the lat/lon
+    // teleport its altitude back: that argument is discarded by a documented
+    // contract two walking scenarios ship `alt: 2` against, so honouring it
+    // would move every walking probe in the suite by two metres (R50).
+    // Returns false with no walker, which is a refusal and not a crash.
+    standAt: (x, y, z) => {
+      if (s.player === null) return false;
+      s.player.standAt(x, y, z);
+      return true;
+    },
   });
 
   const menu = new PauseMenu(g.host, g.modals, (id) => {
@@ -205,8 +218,11 @@ export function installPauseMenu(s: Services, loop: Loop) {
       return {
         open: menu.isOpen,
         escapeOpens: g.modals.whenNothingOpen !== null,
-        // GP-167: the visit rows ride the same report, same shape.
-        buttons: [...cheats.view().cheats, ...cheats.view().visits].map((c) => ({
+        // GP-167 / GP-233: the visit rows and the station row ride the same
+        // report, same shape, so `disabled` and `blocked` are asserted off the
+        // live DOM for every group rather than for the two that were here first.
+        buttons: [...cheats.view().cheats, ...cheats.view().visits,
+          ...cheats.view().station].map((c) => ({
           id: c.id, present: menu.buttonFor(c.id) !== null,
           disabled: menu.buttonFor(c.id)?.disabled ?? null,
           on: c.on ?? null, blocked: c.blocked ?? '',

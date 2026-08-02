@@ -19,7 +19,6 @@
 // all, which is the same split `ResearchPanel` and `research.h` have.
 
 import './styles/pause.css';
-import { esc } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
 import type { ControlGroup } from '../player/BindingText.js';
 import type { VideoRow } from '../app/VideoSettings.js';
@@ -27,6 +26,8 @@ import type { AudioView } from '../app/AudioSettings.js';
 import type { SaveListView } from '../game/SaveSlots.js';
 import { codesFor } from '../player/Bindings.js';
 import { audio, controls, saves, video } from './OptionPagesHtml.js';
+// GP-235. The root page's HTML, lifted whole so this file stays under its cap.
+import { rootPage } from './PauseRootHtml.js';
 
 /** One testing control, as data. The panel has no opinion about any of them. */
 export interface CheatRow {
@@ -69,39 +70,14 @@ export interface PauseView {
   cheats: CheatRow[];
   /** GP-167. The Visit-site group: the seven surveyed spawn candidates. */
   visits: CheatRow[];
+  /** GP-233. The In-orbit group: the walkable station, or one blocked row
+   *  saying why there is not one. A SEPARATE array and not an eighth visit,
+   *  because the seven above are a spawn-pick comparison and this is not a
+   *  spawn: see app/VisitSites.ts for the argument. */
+  station: CheatRow[];
   /** Set while Start Fresh is armed: the whole sentence the confirm shows. */
   confirm: string;
 }
-
-/** Everything the shell reserves and does not build. Data, so adding the fifth
- *  section later is a row here rather than a layout. */
-const STUBS: readonly { name: string; waiting: string; page: string }[] = [
-  // GP-137. The last stub to become real. Named slots, manual save, a load list
-  // and delete, keyed by mode AND name so a sandbox world cannot be loaded into
-  // a survival session.
-  { name: 'Save Game', page: 'save',
-    waiting: 'named saves for this mode, and the autosave. Loading restarts.' },
-  // GP-131. THE FIRST STUB TO BECOME REAL, and it stays in this list rather
-  // than being promoted out of it, because the shape the shell reserved is the
-  // shape it turned out to want: a named section with a page behind it.
-  { name: 'Options / Controls', page: 'controls',
-    waiting: 'every control the game listens to, read live from the one binding '
-      + 'table. Rebinding is not built yet.' },
-  // GP-132. READ ONLY. Every knob already exists as a URL flag and is read once
-  // at boot by files another lane owns; showing what this session is running at
-  // is worth having on its own and needs no renderer contact whatsoever.
-  { name: 'Options / Video', page: 'video',
-    waiting: 'what this session is running at, read live from the parsed '
-      + 'config. Changing them from here is not built yet.' },
-  // GP-134. The only options page that WRITES, because `AudioBus` already has
-  // live persisted setters and nothing else is editing web/src/audio/ this
-  // round. It also diagnoses a silent game, which nothing anywhere could do.
-  { name: 'Options / Audio', page: 'audio',
-    waiting: 'master volume, mute, and why the game might be silent.' },
-  { name: 'Multiplayer', page: '',
-    waiting: 'not yet: host, join and the server list. The sim is already '
-      + 'deterministic and command-driven, which is the hard half.' },
-];
 
 /** GP-152 to GP-154. Everything focusable a player can reach in here. */
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled])';
@@ -296,7 +272,11 @@ export class PauseMenu extends Modal {
       + `${view.confirm}|${a.volume}|${a.muted ? 1 : 0}|${a.state}|`
       + `${a.silentBecause}|${sv.busy}|${sv.note}|${sv.confirmDelete}|`
       + sv.rows.map((r) => `${r.name}:${r.savedAt}`).join(',') + '|'
-      + [...view.cheats, ...view.visits]
+      // GP-233: the station rows are IN THE KEY, for the reason the save list
+      // had to be. Its blocked sentence changes when the player boards, and a
+      // group left out of the diff would keep drawing an enabled button for a
+      // press that now refuses.
+      + [...view.cheats, ...view.visits, ...view.station]
         .map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;
@@ -312,7 +292,7 @@ export class PauseMenu extends Modal {
       : view.page === 'video' ? video(view.video)
         : view.page === 'audio' ? audio(view.audio)
           : view.page === 'save' ? saves(view.saves)
-            : header(view) + stubs() + testing(view) + visitGroup(view);
+            : rootPage(view);
     this.restoreFocus();
   }
 
@@ -326,73 +306,4 @@ export class PauseMenu extends Modal {
     return this.root.querySelector<HTMLButtonElement>(
       `button[data-cheat="${id}"]`);
   }
-}
-
-function header(v: PauseView): string {
-  return '<div class="of-pgrp world"><h4>World</h4>'
-    + `<div class="row"><span class="nm">Mode</span>`
-    + `<span class="val" data-mode="${esc(v.mode)}">${esc(v.mode)}</span></div>`
-    + `<div class="row"><span class="nm">Save slot</span>`
-    + `<span class="val" data-slot="${esc(v.slotKey)}">${esc(v.slotKey)}</span></div>`
-    + (v.assisted === '' ? ''
-      : `<div class="row assist"><span class="nm">Assisted</span>`
-        + `<span class="val">${esc(v.assisted)}</span></div>`)
-    + '</div>';
-}
-
-function stubs(): string {
-  return '<div class="of-pgrp stubs"><h4>Options</h4>'
-    + STUBS.map((s) => `<div class="row stub${s.page === '' ? '' : ' live'}" `
-      + `data-stub="${esc(s.name)}">`
-      + `<span class="nm">${esc(s.name)}</span>`
-      + `<span class="why">${esc(s.waiting)}</span>`
-      + (s.page === '' ? ''
-        : `<button type="button" data-cheat="page:${esc(s.page)}">Open</button>`)
-      + '</div>').join('')
-    + '</div>';
-}
-
-
-/**
- * The testing block. The destructive row is rendered in one of two states and
- * never in both: ARMED shows the sentence and two buttons, and that is the only
- * state from which the confirm button exists in the DOM at all. A confirm the
- * player can reach without first reading the sentence is not a confirm.
- */
-function testing(v: PauseView): string {
-  return '<div class="of-pgrp cheats"><h4>Testing</h4>'
-    + v.cheats.map((c) => (c.destructive === true && v.confirm !== '')
-      ? armed(c, v.confirm) : cheatRow(c, 'Do it')).join('') + '</div>';
-}
-
-/** GP-167. Same rows, same delegation, one renderer: only the verb differs. */
-function visitGroup(v: PauseView): string {
-  return '<div class="of-pgrp cheats visits"><h4>Visit site</h4>'
-    + v.visits.map((c) => cheatRow(c, 'Go')).join('') + '</div>';
-}
-
-function cheatRow(c: CheatRow, verb: string): string {
-  const blocked = c.blocked !== undefined && c.blocked !== '';
-  const state = c.kind === 'toggle'
-    ? `<span class="state ${c.on === true ? 'on' : 'off'}">`
-      + `${c.on === true ? 'ON' : 'OFF'}</span>`
-    : '';
-  return `<div class="row cheat${blocked ? ' blocked' : ''}`
-    + `${c.destructive === true ? ' danger' : ''}" data-cheat-row="${esc(c.id)}">`
-    + `<span class="nm">${esc(c.label)}${state}</span>`
-    + `<span class="why">${esc(blocked ? (c.blocked ?? '') : c.note)}</span>`
-    + `<button type="button" data-cheat="${esc(c.id)}"${blocked ? ' disabled' : ''}>`
-    + `${c.kind === 'toggle' ? (c.on === true ? 'Turn off' : 'Turn on') : verb}`
-    + '</button></div>';
-}
-
-function armed(c: CheatRow, sentence: string): string {
-  return `<div class="row cheat danger armed" data-cheat-row="${esc(c.id)}">`
-    + `<span class="nm">${esc(c.label)}</span>`
-    + `<span class="why warn">${esc(sentence)}</span>`
-    + `<span class="pair">`
-    + `<button type="button" class="go" data-cheat="${esc(c.id)}:confirm">`
-    + 'Yes, destroy it</button>'
-    + `<button type="button" data-cheat="${esc(c.id)}:cancel">Cancel</button>`
-    + '</span></div>';
 }

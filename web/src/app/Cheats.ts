@@ -26,7 +26,7 @@
 import { clearSlot, readSlot } from '../game/SaveGame.js';
 import { assistedReport, clearAssisted, isAssisted, noteCheat } from '../game/Assisted.js';
 import { livePropellantKg, refillTanks, warpToOrbit } from '../sim/FlightCheats.js';
-import { pressVisit, visitRows } from './VisitSites.js';
+import { pressVisit, stationRows, visitRows, type VisitPorts } from './VisitSites.js';
 import { optionPages, pressOption } from './OptionsPages.js';
 import { AudioBus } from '../audio/AudioBus.js';
 import type { CheatRow, PauseView } from '../ui/PauseMenu.js';
@@ -51,7 +51,9 @@ const ORBIT_ALT_M = 100000;
  *  this makes the gauge visibly swing. */
 const FUEL_FLOOR = 0.9;
 
-export interface CheatDeps {
+/** GP-231. `VisitPorts` (the two teleport doors, argued in app/VisitSites.ts)
+ *  is EXTENDED rather than held as a field, so `press` hands `this.d` over. */
+export interface CheatDeps extends VisitPorts {
   gameplay: () => Gameplay | null;
   flight: () => FlightMode | null;
   body: PlanetBody;
@@ -68,10 +70,6 @@ export interface CheatDeps {
   /** Probe-only: stop the port navigating, so a driven run can read the
    *  receipt. See the `norestart` branch in `press`. */
   suppressRestart: () => void;
-  /** GP-167. THE ground teleport, the one authority every site probe already
-   *  drives (`__of.teleport` -> ViewRouter -> the walker's spawn). A port, so
-   *  this file gains no second copy of it. See app/VisitSites.ts. */
-  teleport: (latDeg: number, lonDeg: number, altM: number) => void;
 }
 
 export interface CheatReceipt {
@@ -115,8 +113,9 @@ export class Cheats {
     const opt = pressOption(this.d.gameplay()?.sfx.bus ?? null, this.d.slots,
       this.d.gameplay(), id);
     if (opt !== '') return this.say(id, true, opt);
-    // GP-167 / GP-168. Visit a surveyed site. A REAL cheat: it marks the save.
-    const vis = pressVisit(id, this.d.flight(), this.d.teleport);
+    // GP-167 / GP-168. Visit a surveyed site, or GP-231's orbital station. A
+    // REAL cheat either way: it marks the save.
+    const vis = pressVisit(id, this.d.flight(), this.d);
     if (vis !== null) {
       if (vis.done) this.mark('visit');
       return this.say(id, vis.done, vis.message, vis.detail);
@@ -380,6 +379,8 @@ export class Cheats {
       // GP-167. Derived per view like everything else: the blocked reason
       // follows `aboard` the frame it changes.
       visits: visitRows(f),
+      // GP-233. Its own group, argued in VisitSites.ts.
+      station: stationRows(f, this.d.body),
       confirm: this.armed ? this.confirmSentence() : '',
     };
   }
