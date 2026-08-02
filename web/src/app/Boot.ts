@@ -18,6 +18,7 @@ import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { resumeWorld } from './ResumeBoot.js';
+import { installStation } from '../game/SpaceStation.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
 import { PlanetBody } from '../world/PlanetBody.js';
 import { SurfaceOracle } from '../world/SurfaceOracle.js';
@@ -411,6 +412,20 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // order). After the flight block, so a vessel has somewhere to be promoted
   // into; outside it, because the body anchor is owed to `?flight=0` too.
   resumeWorld({ flight, vab, router, origin });
+
+  // PH-94. THE STATION, after `resumeWorld` and not before, because the record
+  // is the authority: a restored world must adopt its SAVED station and only a
+  // genuinely new one may mint a fresh record. Installing first would mint a
+  // second station on every load, and the two would sit in the same orbit.
+  //
+  // The interior is derived from the record on every boot and is never itself
+  // saved, so there is exactly one thing on disk (nine numbers and a clock) and
+  // the box list cannot drift away from the orbit it hangs on.
+  if (gameplay !== null && player !== null && cfg.station) {
+    const u = router.up;
+    installStation(core, gameplay.structures.bodies,
+      [u.x, u.y, u.z], body.radiusM, body.muM3S2, 0);
+  }
 
   const boot: BootMetrics = {
     wasmLoadMs,

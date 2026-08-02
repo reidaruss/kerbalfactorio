@@ -93,6 +93,10 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   't', 'gnomon', 'side', 'proxy', 'skirts', 'skirtfrac',
   'mode', 'view', 'stitch', 'rebase', 'walkspeed', 'interp', 'clear', 'zsep',
   'sundot', 'shell', 'fade', 'shadows', 'atmos', 'stars', 'cutoff', 'gameplay',
+  // PH-94: `station=0` installs no orbital station. Registered here in the
+  // same commit that introduces it, which is what this list's own guard asks
+  // for a few lines below.
+  'station',
   'props', 'lamp', 'voxelskin', 'voxelnear', 'aimshell', 'levelring', 'density',
   'scatterfair', 'propgrow', 'detail', 'propcull',
   // RN-45 / RN-46. The ground-detail LOD2, the understorey height band, the

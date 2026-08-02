@@ -183,6 +183,16 @@ export interface Config {
    * measurement ladder, not for play; the shipped value is 1.
    */
   readonly rocks: boolean;
+  /**
+   * PH-94: `?station=0` installs NO orbital station and is the one-binary
+   * control for it (standing rule 7). It matters more than most isolation
+   * flags because the station is the FIRST thing to put a solid in
+   * `StructureBodies` on a world with no base in it, and `KinematicBody.step`
+   * skips the whole structural port on `count === 0`. So installing one flips
+   * every bare world from "the port never runs" to "the port runs and answers
+   * nothing", and this flag is how that is measured rather than argued.
+   */
+  readonly station: boolean;
   readonly rockDensity: number;
   /**
    * WG-116: how far streamed TREE harvest nodes reach, in metres. `?trees=0`
@@ -421,6 +431,7 @@ export function parseConfig(search: string): Config {
     canopyRadiusM: Math.min(1600, Math.max(0, num(p, 'canopy', 0))),
     canopyShade: p.get('canopyshade') !== '0',
     rocks: p.get('rocks') !== '0',
+    station: p.get('station') !== '0',
     rockDensity: Math.max(0, num(p, 'rockdensity', 1)),
     treeRadiusM: Math.min(1600, Math.max(0, num(p, 'trees', TREE_RADIUS_M))),
     treeDensity: Math.max(0, num(p, 'treedensity', 1)),

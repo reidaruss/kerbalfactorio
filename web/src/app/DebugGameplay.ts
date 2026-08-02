@@ -18,6 +18,11 @@ import { isPart } from '../game/Hotbar.js';
 import { snapToGround } from '../game/Grid.js';
 import { STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M } from '../player/VoxelCollision.js';
 import { StandTrace } from '../player/StandTrace.js';
+import {
+  findStation, lastStationInstall, STATION_ALT_M, STATION_PROXIES, STATION_TAG,
+  stationAxes,
+} from '../game/SpaceStation.js';
+import { registry, stateOf } from '../sim/VesselRegistry.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
 
@@ -210,6 +215,41 @@ export function gameplayApi(s: Services, loop: Loop) {
       }
       const t = b.trace;
       return { armed: t !== null, total: t?.total ?? 0, samples: t?.dump() ?? [] };
+    },
+
+    /**
+     * PH-94. THE STATION, read from the RECORD rather than from the installed
+     * solid, so a probe comparing across a reload is comparing the thing that
+     * is actually on disk. `pos` is `stateOf`, one Kepler solve, derived on
+     * demand and cached nowhere.
+     *
+     * `deckR` is the radius the interior's floor sits at, which is `|pos|`
+     * because the station is nadir pointing and the deck top face is its own
+     * local y = 0. A probe wanting the floor the walker will stand on should
+     * bisect `solidBuild` instead, which is the walker's own predicate; this is
+     * the ORBIT's answer and the two agreeing is a real assertion (PH-96).
+     */
+    station() {
+      const rec = findStation();
+      if (rec === null) return null;
+      const st = stateOf(s.core, registry, rec, 0);
+      const r = Math.hypot(st.pos[0], st.pos[1], st.pos[2]);
+      const el = rec.where.kind === 'conic' ? rec.where.el : null;
+      return {
+        id: rec.id, name: rec.name, mode: rec.mode, tag: rec.status,
+        expectTag: STATION_TAG,
+        pos: st.pos, vel: st.vel, deckR: r,
+        speedMps: Math.hypot(st.vel[0], st.vel[1], st.vel[2]),
+        designParts: rec.design.parts.length,
+        clockS: rec.clockS, stampedTick: rec.stampedTick,
+        proxies: STATION_PROXIES.length,
+        proxyNames: STATION_PROXIES.map((b) => b.name),
+        nominalAltM: STATION_ALT_M,
+        el: el === null ? null : { ...el },
+        axes: stationAxes(st.pos),
+        install: lastStationInstall(),
+        records: registry.count,
+      };
     },
 
     /**
