@@ -64,6 +64,18 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     uniform vec3 uBodyCenter;
     uniform float uMaxRelief;
     uniform vec3 uAmbient;
+    // RN-731. Amplitude of the specular lobe, on uGroundTexAmp's pattern
+    // exactly: ?terrainspec=0 removes the term with no branch left behind
+    // and ?terrainspecamp= sweeps it, so the control is one flag on one
+    // build rather than two commits apart.
+    // x is the SUN lobe (the GGX highlight), y is the SKY lobe (the grazing
+    // reflection). Two components rather than one because they fail
+    // differently and therefore have to be isolable separately: the sun half
+    // is a local highlight and the sky half is the one that can turn into a
+    // broad ambient lift over the whole middle distance, which is named
+    // failure mode 1. A single amplitude would only ever have been able to
+    // answer "is the specular on", never "which half is doing this".
+    uniform vec2 uSpecAmp;
     uniform float uFadeDur;
     uniform float uMetresPerUnit;
     uniform vec3 uCascadeFar;
@@ -208,8 +220,15 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // ON the finished ground rather than another kind of ground. Compiled out
       // of the scaled scene, where the whole 22 m pond is under one pixel; that
       // is RN-45's confinement by the call graph, and it is free.
+      //
+      // RN-731 takes the SCALAR out separately rather than calling ofArtWet,
+      // because the specular below needs the same number and deriving it twice
+      // is how a pond edge ends up darkening in one term and glinting in
+      // another half a metre away. The tint constant still has one home.
+      float wetF = 0.0;
       #ifndef OF_SCALED
-        albedo = ofArtWet(albedo, pM, vRelief, uWetDir, uWetBand);
+        wetF = ofArtWetness(pM, vRelief, uWetDir, uWetBand);
+        albedo = ofArtWetTint(albedo, wetF);
       #endif
 
       // The bump perturbs the LIGHTING normal only, and it does so after every
@@ -326,6 +345,40 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         + sunT * (${SUN_IRR} * max(dot(up, sd), 0.0) * shadow));
       vec3 lit = albedo * (uAmbient + skyAmb * skyView + ground * (1.0 - skyView)
         + sunT * (${SUN_IRR} * ndl * shadow));
+
+      // THE SPECULAR LOBE (RN-731). Until this existed the line above WAS the
+      // entire lighting model: albedo times irradiance, pure Lambert, with no
+      // specular term and no roughness input anywhere in the material. Ground
+      // that cannot glint is a large part of why the world reads as paper, and
+      // no amount of grading fixes it because there was nothing to grade.
+      //
+      // IT RIDES THE BUMPED NORMAL, deliberately, and that is the opposite of
+      // the flat_ decision fifty lines up. flat_ asks what the SLOPE is and
+      // must not be told by a 4 m ripple; a specular asks which way the SURFACE
+      // faces at this pixel, and the ripple is exactly the thing that should
+      // break a highlight into glitter. Both bump terms have already run.
+      //
+      // THE SUN HALF reuses sunT, SUN_IRR and shadow unchanged, so the
+      // highlight reddens through the terminator and dies under a cascade for
+      // free rather than by a second set of rules that could disagree with the
+      // diffuse. THE SKY HALF reuses skyAmb, already computed above.
+      //
+      // ENERGY, STATED HONESTLY: this is ADDITIVE and the diffuse is not
+      // reduced by what the specular takes. At a dielectric F0 of 0.04 the
+      // error is bounded by a few per cent except at extreme grazing, where a
+      // real surface genuinely does go mirror. The reference luminances in
+      // section 2.1 are re-taken against this and the move is reported rather
+      // than assumed away.
+      #ifndef OF_SCALED
+        if (uSpecAmp.x > 0.0 || uSpecAmp.y > 0.0) {
+          float rough = ofArtRough(vMatW, coverSel, snow, wetF);
+          vec3 vd = -rd;                  // rd runs camera -> fragment
+          lit += uSpecAmp.x
+               * sunT * (${SUN_IRR} * ofArtSpec(n, vd, sd, rough) * shadow);
+          lit += uSpecAmp.y
+               * ofArtSkySpec(skyAmb, max(dot(n, vd), 0.0), rough);
+        }
+      #endif
 
       // Aerial perspective. Same function, same parameters as the sky quad, so a
       // mountain at 40 km goes blue and MATCHES the horizon behind it exactly.

@@ -172,6 +172,28 @@ function groundReliefAmpFromQuery(): number {
   return ampParam(p, 'groundreliefamp', RELIEF_DEFAULT);
 }
 
+/**
+ * RN-731: the SPECULAR LOBE's amplitude, on the groundtex/relief flag pattern
+ * exactly, including RN-150's dead-default guard (`Number(null)` is 0, so a
+ * missing parameter must read as MISSING and never as an amplitude of zero;
+ * this file has already shipped that bug twice, in `groundtexamp` and in the
+ * wet-sand band).
+ *
+ * The default is 1.0 rather than a fraction because the term's own strength is
+ * authored inside `ofArtRough` and `ofArtSpec`, where it is a physical
+ * quantity, not here. This multiplier exists to be an ISOLATOR: `?terrainspec=0`
+ * restores the pure-Lambert terrain exactly, which is the before half of every
+ * pair this term is judged by, one flag apart on one build under one light.
+ */
+function specAmpFromQuery(): THREE.Vector2 {
+  const p = new URLSearchParams(self.location.search);
+  const all = p.get('terrainspec') === '0' ? 0 : 1;
+  return new THREE.Vector2(
+    all * (p.get('terrainspecsun') === '0' ? 0 : ampParam(p, 'terrainspecamp', 1)),
+    all * (p.get('terrainspecsky') === '0' ? 0 : ampParam(p, 'terrainspecskyamp', 1)),
+  );
+}
+
 function makeGroundTexture(file: string): THREE.IUniform<THREE.Texture> {
   const ph = new THREE.DataTexture(new Uint8Array([128, 128, 128, 128]), 1, 1,
     THREE.RGBAFormat);
@@ -298,6 +320,11 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // a runtime tweak cannot reach one and not the other. The amplitude is zero on
   // a dry body, which is what makes `ofArtWet` return on its first line and cost
   // the fragment a compare rather than two lengths.
+  // RN-731. One shared holder for the specular amplitude, by reference into
+  // both materials for the same one-authority reason artAmp is: a runtime
+  // toggle that reached the near material and not the far one would be a
+  // second opinion about how the ground responds to light.
+  const specAmp = specAmpFromQuery();
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -338,6 +365,7 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uBiomeRelief: { value: biomeRelief },
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },
+      uSpecAmp: { value: specAmp },
     });
     const m = new THREE.ShaderMaterial({
       uniforms,
@@ -389,6 +417,33 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
     // instrument, not a page reload.
     setRelief(amp: number): number { reliefAmp.value = amp; return amp; },
     getRelief(): number { return reliefAmp.value; },
+    // RN-731, same handle for the same reason as setRelief: the specular is a
+    // terrain art term, and a probe toggling it wants RN-30's settled-frame
+    // instrument (two frames with the camera, sun, streamed chunk set and
+    // scatter equal BY CONSTRUCTION) rather than a page reload, which holds
+    // none of those equal.
+    /** `sun` is the GGX highlight, `sky` is the grazing sky reflection. Both
+     *  are written into the SHARED vector, so the near and far materials cannot
+     *  disagree, and neither needs a uniform push (three uploads a
+     *  ShaderMaterial's uniforms every frame). */
+    setSpec(sun: number, sky?: number): [number, number] {
+      specAmp.set(sun, sky ?? sun);
+      return [specAmp.x, specAmp.y];
+    },
+    getSpec(): [number, number] { return [specAmp.x, specAmp.y]; },
+    /** The boot DEFAULT as its own fixture, separate from the live value, so a
+     *  probe that always passes an explicit flag still exercises what ships
+     *  (RN-150: `Number(null)` is 0 and 0 is finite). */
+    specDefault(): { present: boolean; sun: number; sky: number } {
+      const p = new URLSearchParams(self.location.search);
+      const boot = specAmpFromQuery();
+      const keys = ['terrainspec', 'terrainspecamp', 'terrainspecsun',
+        'terrainspecsky', 'terrainspecskyamp'];
+      return {
+        present: keys.some((k) => p.get(k) !== null),
+        sun: boot.x, sky: boot.y,
+      };
+    },
     reliefState(): { w: number; h: number } {
       const img = reliefTex.value.image as { width?: number; height?: number } | null;
       return { w: img?.width ?? 0, h: img?.height ?? 0 };

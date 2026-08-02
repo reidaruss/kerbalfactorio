@@ -297,8 +297,13 @@ export const RELIEF_FINE_M = 0.45;
  * left behind, and `?wetsandamp=` sweeps it.
  */
 export const TERRAIN_ART_WET = /* glsl */`
-  vec3 ofArtWet(vec3 albedo, vec3 pM, float reliefM, vec3 dir, vec4 band) {
-    if (band.w <= 0.0) return albedo;
+  // RN-731: the wetness SCALAR, split out of ofArtWet unchanged to the
+  // character so the albedo darkening and the specular roughness drop read the
+  // identical number. Two call sites deriving "how wet is this fragment" from
+  // the same inputs by separate arithmetic is the shape of bug where a pond
+  // edge darkens in one term and glints in another half a metre away.
+  float ofArtWetness(vec3 pM, float reliefM, vec3 dir, vec4 band) {
+    if (band.w <= 0.0) return 0.0;
     // Perpendicular distance from the pond's axis. At pond scale on a 600 km
     // body this is the great-circle arc to four decimal places.
     float lat = length(pM - dir * dot(pM, dir));
@@ -310,12 +315,26 @@ export const TERRAIN_ART_WET = /* glsl */`
     // the water, where a bright dry-looking bottom is the single thing that most
     // makes a pond read as a blue sheet laid over a lawn.
     float wet = inBasin * (1.0 - smoothstep(-0.04, band.z, reliefM - band.x));
-    wet = clamp(wet * band.w, 0.0, 1.0);
-    // Darker and slightly cooler: a water film is a specular layer over the same
-    // pigment, so the diffuse it lets back out is reduced and blue-biased, and
-    // the red end loses most because the film absorbs it hardest. The triple is
-    // the same ordering as WATER_SIGMA and for the same physical reason.
+    return clamp(wet * band.w, 0.0, 1.0);
+  }
+
+  // The tint, as its own function so the constant has ONE home. The caller
+  // that also needs the scalar takes ofArtWetness + this pair and pays for the
+  // basin arithmetic once; ofArtWet below is the unchanged one-call form.
+  //
+  // Darker and slightly cooler: a water film is a specular layer over the same
+  // pigment, so the diffuse it lets back out is reduced and blue-biased, and
+  // the red end loses most because the film absorbs it hardest. The triple is
+  // the same ordering as WATER_SIGMA and for the same physical reason.
+  vec3 ofArtWetTint(vec3 albedo, float wet) {
     return albedo * mix(vec3(1.0), vec3(0.44, 0.49, 0.56), wet);
+  }
+
+  // Unchanged in behaviour and kept as the published entry point. With wet 0
+  // the mix returns exactly vec3(1.0) and the multiply is bit-exact, so the
+  // dry-ground frame is untouched by the split.
+  vec3 ofArtWet(vec3 albedo, vec3 pM, float reliefM, vec3 dir, vec4 band) {
+    return ofArtWetTint(albedo, ofArtWetness(pM, reliefM, dir, band));
   }
 `;
 
@@ -395,7 +414,135 @@ export const TERRAIN_ART_RELIEF = /* glsl */`
   }
 `;
 
+/**
+ * THE SPECULAR LOBE (RN-731), the seventh term, and the one that reaches every
+ * frame rather than a band of ground.
+ *
+ * WHAT WAS ACTUALLY WRONG. Until this landed the terrain's entire lighting was
+ *
+ *     lit = albedo * irradiance
+ *
+ * i.e. pure Lambert with NO specular lobe of any kind and no roughness input at
+ * all. Ground that cannot glint is a large part of why the world reads as
+ * paper, and it is not a tuning problem: there was no term to tune. Wet sand,
+ * wet rock inside the pond basin, mineral sparkle in scree and a sun raking
+ * along a slope were all unreachable by construction.
+ *
+ * WHY THE ROUGHNESS NEEDS NO MAP, NO UNIFORM AND NO VARYING, which is what
+ * makes this cheap enough to argue for. Every signal it needs has ALREADY been
+ * computed by the fragment that calls it:
+ *
+ *   `matW`     the per-biome material weights (BiomePalette's MAT_W), whose
+ *              channels are literally x grass clump, y rock grain, z granular,
+ *              w clod. That is a material identity, interpolated across biome
+ *              edges by the same vertex path the albedo uses, and it is free.
+ *   `coverSel` the slope smoothstep that already decides rock against cover.
+ *              ONE gate shared with the albedo, the grain and the relief, so
+ *              roughness cannot disagree with them about where a cliff starts.
+ *   `snow`     already computed for the albedo lerp.
+ *   `wet`      RN-57's wet band, which until now only DARKENED the albedo. A
+ *              water film is physically a smooth dielectric layer over the same
+ *              pigment; the darkening was half of that and this is the other
+ *              half. `ofArtWetness` is split out of `ofArtWet` so both halves
+ *              read the identical scalar and cannot drift apart.
+ *
+ * THE WEIGHTS ARE NOT A PARTITION (BiomePalette says so: they are amplitudes
+ * summing near 0.3), so they are normalised here rather than assumed. A biome
+ * whose weights are all zero would divide by zero, so the sum is floored and
+ * the fallback is the cover roughness rather than an accidental mirror.
+ *
+ * THE FLOOR IS SECTION 2.1's 0.15 AND IT IS LOAD-BEARING, not a safety rail: a
+ * GGX denominator at roughness 0 is a delta function, and one texel of it under
+ * a moving sun is a firefly that no amount of temporal smoothing removes.
+ *
+ * NAMED FAILURE MODES, BEFORE ANY MEASUREMENT (INSTRUMENTS.md):
+ *   1. THE WHOLE GROUND GOES SATIN. If the roughness band lands too low the
+ *      term stops being a highlight and becomes a uniform sheen, which reads as
+ *      wet plastic and is worse than Lambert. The band is therefore authored
+ *      HIGH (0.62 to 0.97 dry) and only the wet film and snow reach under it.
+ *   2. IT ONLY SHOWS AT NOON, i.e. it is measured at one sun elevation and is
+ *      invisible at the one that matters. A specular is a GRAZING phenomenon,
+ *      so the calibration frame is a low sun, exactly as RELIEF_DEFAULT was
+ *      calibrated at grazing rather than at noon.
+ *   3. IT MOVES SECTION 2.1's REFERENCE LUMINANCES. It adds energy, so the four
+ *      site luminances must be re-taken and any move over a few counts owed an
+ *      explanation. That is what the amplitude uniform and `?terrainspec=0`
+ *      exist for: the control is one flag on one build.
+ *
+ * COMPILED OUT OF THE SCALED SCENE. At 1e5 metres per unit the whole near
+ * world is under a pixel, so the term would cost arithmetic to modulate
+ * nothing. That is RN-45's confinement by the call graph and it is free.
+ */
+export const TERRAIN_ART_SPEC = /* glsl */`
+  float ofArtRough(vec4 matW, float coverSel, float snow, float wet) {
+    // Amplitudes, not a partition: normalise, and floor the divisor so a
+    // zero-weight biome falls back to cover rather than to a mirror.
+    float wsum = dot(matW, vec4(1.0));
+    vec4 wn = matW / max(wsum, 1e-4);
+    // x grass clump, y rock grain, z granular, w clod. Organic cover and soil
+    // clods are the roughest things on a planet; rock grain is the only
+    // channel that has any business approaching a sheen.
+    float cover = wn.x * 0.95 + wn.y * 0.72 + wn.z * 0.86 + wn.w * 0.97;
+    cover = mix(0.93, cover, step(1e-4, wsum));
+    // Steep ground is bare rock: smoother than the cover that would otherwise
+    // sit on it, because what makes a cliff a cliff is that nothing soft stays
+    // on it. Same gate as the albedo, so the two cannot disagree.
+    float r = mix(0.62, cover, coverSel);
+    // Snow is smoother than dirt and nowhere near a mirror.
+    r = mix(r, 0.50, snow);
+    // The water film. This is the term the wet band always implied and never
+    // had, and it is the largest single move in the function.
+    r = mix(r, 0.10, wet);
+    return clamp(r, 0.15, 1.0);
+  }
+
+  // GGX/Trowbridge-Reitz with a Smith-Schlick height-correlated visibility and
+  // a Schlick Fresnel at the dielectric F0 every natural ground surface has.
+  // Returns the specular WEIGHT for the sun; the caller multiplies it by the
+  // same sun radiance, transmittance and shadow the diffuse term uses, so the
+  // highlight extinguishes in the terminator and under a cascade for free
+  // rather than by a second set of rules.
+  float ofArtSpec(vec3 n, vec3 v, vec3 l, float rough) {
+    vec3 hv = normalize(l + v);
+    float NoH = max(dot(n, hv), 0.0);
+    float NoV = max(dot(n, v), 1e-4);
+    float NoL = max(dot(n, l), 0.0);
+    float VoH = max(dot(v, hv), 0.0);
+    float a = rough * rough;
+    float a2 = a * a;
+    float d = NoH * NoH * (a2 - 1.0) + 1.0;
+    float D = a2 / max(PI * d * d, 1e-8);
+    float Vs = 0.5 / max(mix(2.0 * NoL * NoV, NoL + NoV, a), 1e-5);
+    float F = 0.04 + 0.96 * pow(1.0 - VoH, 5.0);
+    return D * Vs * F * NoL;
+  }
+
+  // The SKY half, and it is what stops wet ground from being dead whenever the
+  // sun is not in the mirror direction. A smooth surface seen at a grazing
+  // VIEW angle returns the sky rather than its own pigment; that is the sheen
+  // on a wet road looking away from the sun, and the sky radiance it needs is
+  // already computed one line above the call site for the diffuse ambient.
+  //
+  // THE ROUGHNESS WEIGHT IS SQUARED, and that is a correction rather than a
+  // preference. Schlick's Fresnel goes to 1 at grazing, and a walking camera
+  // sees ground at about 8 degrees of grazing by 12 m, so nearly ALL the
+  // ground in an ordinary frame is at high F. With a linear (1 - rough) weight
+  // dry ground at roughness 0.86 would still return 14 per cent of the sky,
+  // and section 2.1 measures masked sky at p50 191 against masked ground at 33
+  // to 55: 14 per cent of the sky is a quarter of the ground's own value,
+  // applied to the whole middle distance. That is named failure mode 1 (the
+  // whole ground goes satin) arriving through the ambient rather than through
+  // the sun. Squared, dry ground returns 2.0 per cent and wet ground 81 per
+  // cent, which is the shape the term is actually claiming: this is a WET
+  // effect that dry ground is merely not exempt from.
+  vec3 ofArtSkySpec(vec3 skyAmb, float NoV, float rough) {
+    float F = 0.04 + 0.96 * pow(1.0 - NoV, 5.0);
+    float g = 1.0 - rough;
+    return skyAmb * F * g * g;
+  }
+`;
+
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
   + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
-  + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF;
+  + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_SPEC;

@@ -106,6 +106,19 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // RN-148, the asymmetric relief bump. `groundrelief=0` removes the term;
   // `groundreliefamp=` sweeps it.
   'groundrelief', 'groundreliefamp',
+  // RN-731, the per-part material channel on the rock and ore node batches.
+  // `rockmat=0` removes the hook entirely and restores the stock three
+  // program, i.e. every ore seam back at one roughness and one metalness.
+  'rockmat',
+  // RN-731, the terrain SPECULAR lobe. `terrainspec=0` restores the pure
+  // Lambert ground exactly, which is what the terrain had from W3 until this
+  // pass: albedo times irradiance, no specular term and no roughness input
+  // anywhere in the material. The two halves isolate separately because they
+  // fail differently, `terrainspecsun=0` leaving the grazing sky reflection
+  // and `terrainspecsky=0` leaving the sun highlight; the two amp flags sweep
+  // them.
+  'terrainspec', 'terrainspecsun', 'terrainspecsky',
+  'terrainspecamp', 'terrainspecskyamp',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
   'starlight', 'starlightamp',
