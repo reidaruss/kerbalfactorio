@@ -27,7 +27,7 @@ import * as THREE from 'three';
 
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
 
-export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'chitin' | 'leaf'
+export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'fur' | 'leaf'
   | 'grass' | 'flat';
 
 /**
@@ -64,12 +64,14 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // table (RN-100's rule: verifyAgainstManifest fails the run otherwise).
   Grass: 'grass',
   Leaf: 'leaf', LeafDeep: 'leaf', LeafDry: 'leaf', LeafLight: 'leaf',
-  // RN-455: the first CREATURE family, and the first tiling family that also
-  // carries an albedo. The two eye roles stay flat and the manifest records
-  // why: a 3 to 6 cm convex bead is one texel of chitin pitting across, and an
-  // eye is the one part of a spider that genuinely is a polished sphere.
-  Chitin: 'chitin', ChitinBand: 'chitin', ChitinUnder: 'chitin',
-  Fang: 'chitin',
+  // RN-455, retargeted RN-461: the first CREATURE family, and the first
+  // tiling family that also carries an albedo. The ROLE names stay chitin
+  // because a tarantula cuticle is chitin; the FAMILY is `fur` because the
+  // setae growing out of it are what you see. The two eye roles stay flat
+  // and the manifest records why: an eye is the one part of a spider that
+  // genuinely is a polished sphere, and it is 3 to 6 cm across.
+  Chitin: 'fur', ChitinBand: 'fur', ChitinUnder: 'fur',
+  Fang: 'fur',
   EmissiveState: 'flat', EyeDark: 'flat', EyeGlow: 'flat', Glass: 'flat',
   Ice: 'flat', Oil: 'flat', Skin: 'flat', Water: 'flat',
 };

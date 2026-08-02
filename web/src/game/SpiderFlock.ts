@@ -45,20 +45,28 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { loadGlb } from '../assets/Loaders.js';
 import { ASSETS } from '../assets/Registry.js';
 import { attachSurface, copyUv } from '../render/instancing/Surfaces.js';
+import { applyFur, furState, furUpdate } from '../render/materials/FurShader.js';
 import { standBasis, type OriginPort } from './EnemyView.js';
 import type { Creature } from './EnemySwarm.js';
 import type { Vec3 } from './EnemyLoop.js';
 
 /** Rigged bodies at once. Priced in the header; measured in stats(). */
 export const MAX_RIGS = 8;
+/** Scratch for the per-frame fur motion difference. Module scope so the
+ *  per-frame path allocates nothing. */
+const FUR_SUM = new THREE.Vector3();
+const FUR_TMP = new THREE.Vector3();
 /**
  * The ONE roughness and the ONE metalness the merged creature has (RN-455).
  * `tools/blender/render_creatures.py` repeats them as CLIENT_MERGE_ROUGH_METAL
  * so a studio render previews what the game can actually draw; if they ever
  * disagree, the studio pair is fiction and it flatters.
  */
-const CHITIN_ROUGHNESS = 0.8;
-const CHITIN_METALNESS = 0.04;
+// RN-461: 0.80 / 0.04 was the shell. Reid: "it looks like its made of
+// shiny stone." Fur has no sharp specular anywhere, so the constant goes
+// to the top of the range and the `fur` family ORM takes it 0.76 to 0.95.
+const FUR_ROUGHNESS = 0.95;
+const FUR_METALNESS = 0.02;
 /** Promote a creature inside this range of the player, metres. */
 const CLAIM_M = 80;
 /** Demote it only beyond this, so the boundary does not flicker. */
@@ -98,6 +106,10 @@ export class SpiderFlock {
   } | null = null;
   private readonly materials = new Map<number, THREE.MeshStandardMaterial>();
   private readonly rigs: Rig[] = [];
+  /** Sim seconds, accumulated from the fixed dt Enemies.step passes in, for
+   *  the same reason the mixers tick on it: a headless capture reproduces. */
+  private furSecs = 0;
+  private readonly furLast = new Map<number, THREE.Vector3>();
   private readonly byCreature = new Map<number, Rig>();
   private loadState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
   private loadError = '';
@@ -206,8 +218,8 @@ export class SpiderFlock {
     if (m === undefined) {
       m = new THREE.MeshStandardMaterial({
         color: new THREE.Color(0xffffff).lerp(new THREE.Color(tint), TINT_LERP),
-        vertexColors: true, metalness: CHITIN_METALNESS,
-        roughness: CHITIN_ROUGHNESS,
+        vertexColors: true, metalness: FUR_METALNESS,
+        roughness: FUR_ROUGHNESS,
       });
       m.name = `spider:type${typeId}`;
       // RN-455. The merge above collapses six authored materials into one, so
@@ -217,8 +229,15 @@ export class SpiderFlock {
       // colour, baked to the vertex attribute above. The `chitin` family's ORM
       // is therefore the only thing that can vary the response across the
       // body, which is why it was authored to a p05..p95 band and not to a
-      // pretty number.
-      attachSurface(m, 'chitin', m.name);
+      // pretty number. RN-461 moved that band to the top of the range
+      // rather than the middle of it: fur, not shell.
+      attachSurface(m, 'fur', m.name);
+      // RN-463: the pelt's rim scatter, wind sway and motion lag. One shared
+      // hook object across every creature material, so three's program cache
+      // key stays identical and they still share one program. `?fur=0` skips
+      // it entirely and the material keeps its stock program, which is what
+      // makes that flag a bit-exact control rather than a zeroed amplitude.
+      applyFur(m, m.name);
       this.materials.set(typeId, m);
     }
     return m;
@@ -359,7 +378,38 @@ export class SpiderFlock {
     for (const rig of this.rigs) {
       if (rig.creatureId >= 0) rig.mixer.update(dt);
     }
+    this.furSecs += dt;
+    // THE FLOCK'S OWN MOTION, measured rather than asked for. `Creature` does
+    // not publish a velocity, and adding one would be a sim change for a
+    // rendering want, so the lag is differenced off the rig roots this class
+    // already positions. It is the MEAN over claimed rigs and not per rig: the
+    // cheap version, with its limit written down in FurShader.furUpdate.
+    let n = 0;
+    FUR_SUM.set(0, 0, 0);
+    for (const rig of this.rigs) {
+      if (rig.creatureId < 0) continue;
+      const was = this.furLast.get(rig.creatureId);
+      if (was !== undefined) {
+        FUR_SUM.add(FUR_TMP.copy(rig.root.position).sub(was));
+        n++;
+      }
+      (was ?? this.furLast.set(rig.creatureId, new THREE.Vector3())
+        .get(rig.creatureId) as THREE.Vector3).copy(rig.root.position);
+    }
+    if (n > 0 && dt > 1e-6) {
+      FUR_SUM.divideScalar(n * dt);
+      const sp = FUR_SUM.length();
+      if (sp > 1e-4) furUpdate(this.furSecs, FUR_SUM.normalize(), sp);
+      else furUpdate(this.furSecs, FUR_SUM.set(0, 0, 0), 0);
+    } else {
+      furUpdate(this.furSecs, FUR_SUM.set(0, 0, 0), 0);
+    }
   }
+
+  /** RN-463. Published so a probe can assert the hook is INSTALLED and the
+   *  `?fur=0` boot default is what it claims, rather than inferring either
+   *  from a pixel (RN-150: an unexercised default ships off silently). */
+  furStats(): unknown { return furState(); }
 
   stats(): unknown {
     return {

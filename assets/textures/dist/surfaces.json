@@ -44,27 +44,6 @@
       "size_px": 384,
       "texels_per_m": 640.0
     },
-    "chitin": {
-      "normal": {
-        "file": "of_chitin_n.png",
-        "bytes": 283507,
-        "sha256": "dc322b632d5bc2e943a985ca0d7f28f65fef8a5e8c1351db33f12970b5f9684e"
-      },
-      "orm": {
-        "file": "of_chitin_orm.png",
-        "bytes": 131547,
-        "sha256": "6e656ad3e657b1273495c7a311a926d9da7cdc37fec2bd51284119af8e33fb9b"
-      },
-      "albedo": {
-        "file": "of_chitin_a.png",
-        "bytes": 147952,
-        "sha256": "e09610c09027531082e2e7690c98d7a98e3546eb8d7d4e2ad97cffb58049bc42"
-      },
-      "tile_m": 0.3,
-      "size_px": 384,
-      "texels_per_m": 1280.0,
-      "albedo_mean": 0.7056
-    },
     "coarse": {
       "normal": {
         "file": "of_coarse_n.png",
@@ -79,6 +58,27 @@
       "tile_m": 0.75,
       "size_px": 384,
       "texels_per_m": 512.0
+    },
+    "fur": {
+      "normal": {
+        "file": "of_fur_n.png",
+        "bytes": 374109,
+        "sha256": "2a94cc1f253bc22e13f553f73d0a7115c22001f40726ba52e9fbadb1bc58afa8"
+      },
+      "orm": {
+        "file": "of_fur_orm.png",
+        "bytes": 241351,
+        "sha256": "23679a03d79ce4b0e0b4b93cb36796f9251916cd7da839490d2e339c7dfe38b9"
+      },
+      "albedo": {
+        "file": "of_fur_a.png",
+        "bytes": 210417,
+        "sha256": "dce2d64f3ae010904ddff3883981f0381e25f8b968530f044bd0b78249584597"
+      },
+      "tile_m": 0.3,
+      "size_px": 384,
+      "texels_per_m": 1280.0,
+      "albedo_mean": 0.5892
     },
     "ore": {
       "normal": {
@@ -145,14 +145,14 @@
     "Accent": "panel",
     "Bark": "bark",
     "BarkLight": "bark",
-    "Chitin": "chitin",
-    "ChitinBand": "chitin",
-    "ChitinUnder": "chitin",
+    "Chitin": "fur",
+    "ChitinBand": "fur",
+    "ChitinUnder": "fur",
     "Coal": "coarse",
     "CoalSeam": "ore",
     "Copper": "coarse",
     "CopperOre": "ore",
-    "Fang": "chitin",
+    "Fang": "fur",
     "Grass": "grass",
     "Hazard": "panel",
     "Iron": "coarse",

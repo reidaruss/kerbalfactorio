@@ -333,6 +333,94 @@ def hash_seed(pre, i):
 
 
 # ---------------------------------------------------------------------------
+# THE TWO BODY PROFILES, hoisted to module scope at RN-462 so the fuzz can be
+# SEATED on them by arithmetic instead of by hand.
+#
+# The v1 bristles were fourteen hand-typed (x, dy, dz) triples, and every one
+# of them had to be checked against the interpolated ring profile by hand to
+# stop it floating; two of them still needed correcting once. That does not
+# scale to a hundred, and a hundred is what "very short fur" needs. So the
+# profile is a table, `surface_at` evaluates it, and a bristle is placed by
+# (dy, angle) with its root pushed 25% INSIDE the surface it grows from.
+# ---------------------------------------------------------------------------
+
+ABDOMEN_RINGS = ((-0.470, -0.170, 0.095, 0.110),
+                 (-0.330, -0.055, 0.243, 0.306),
+                 (-0.310, -0.048, 0.196, 0.248),
+                 (-0.125, +0.012, 0.308, 0.406),
+                 (-0.105, +0.016, 0.250, 0.338),
+                 (+0.105, +0.024, 0.318, 0.454),
+                 (+0.125, +0.020, 0.256, 0.380),
+                 (+0.320, -0.006, 0.270, 0.388),
+                 (+0.340, -0.012, 0.212, 0.312),
+                 (+0.510, -0.070, 0.168, 0.238),
+                 (+0.615, -0.130, 0.075, 0.105))
+
+CARAPACE_RINGS = ((-0.400, -0.055, 0.090, 0.130),
+                  (-0.255, +0.010, 0.160, 0.235),
+                  (-0.090, +0.042, 0.196, 0.290),
+                  (+0.075, +0.048, 0.202, 0.298),
+                  (+0.235, +0.020, 0.175, 0.250),
+                  (+0.395, -0.035, 0.090, 0.128))
+
+
+def profile_at(table, dy):
+    """(dz, ru, rv) linearly interpolated between the two rings dy sits in."""
+    if dy <= table[0][0]:
+        return table[0][1:]
+    for k in range(1, len(table)):
+        d0, z0, u0, v0 = table[k - 1]
+        d1, z1, u1, v1 = table[k]
+        if dy <= d1:
+            f = 0.0 if d1 <= d0 else (dy - d0) / (d1 - d0)
+            return (z0 + (z1 - z0) * f, u0 + (u1 - u0) * f,
+                    v0 + (v1 - v0) * f)
+    return table[-1][1:]
+
+
+def surface_at(centre, table, dy, ang, sink=0.25):
+    """(root, tip_dir) for a hair at (dy, ang) on an elliptical body.
+
+    `ang` is measured from +X about the body's own fore-aft axis, so 90 degrees
+    is straight up. The root is pulled `sink` of the local radius INSIDE the
+    surface, which is the only reason a hundred of these can be placed without
+    checking each one: the profile steps between rings and a hair seated on the
+    nominal surface floats wherever it steps. RN-246's floating scree, avoided
+    by construction rather than by inspection."""
+    dz, ru, rv = profile_at(table, dy)
+    ca, sa = math.cos(ang), math.sin(ang)
+    nx, nz = ca / rv, sa / ru
+    n = math.hypot(nx, nz) or 1.0
+    nx, nz = nx / n, nz / n
+    k = 1.0 - sink
+    return ((rv * ca * k, centre[1] + dy, centre[2] + dz + ru * sa * k),
+            (nx, 0.0, nz))
+
+
+def fuzz_field(mb, centre, table, dy0, dy1, count, seed, role,
+               ln=(0.052, 0.086), rad=0.0085, up_only=True):
+    """`count` very short hairs scattered over a body profile, seeded.
+
+    THE LENGTH IS THE WHOLE POINT. v1's bristles were 185 mm and read as
+    SPINES, which is a different animal: Reid asked for "very short fur". These
+    are 52 to 86 mm at unit scale, i.e. 65 to 107 mm as the largest spider is
+    drawn, so they break the silhouette without ever reading as spikes."""
+    nxt = rng(seed)
+    lo, hi = math.radians(12.0), math.radians(168.0)
+    for _ in range(count):
+        dy = dy0 + (dy1 - dy0) * nxt()
+        ang = lo + (hi - lo) * nxt() if up_only else 2.0 * math.pi * nxt()
+        root, d = surface_at(centre, table, dy, ang)
+        # lean the hair backward along the body, which is the flow direction
+        # the fur MAP is authored along, so geometry and texture agree
+        lean = 0.34 + 0.20 * nxt()
+        L = ln[0] + (ln[1] - ln[0]) * nxt()
+        tip = (root[0] + d[0] * L, root[1] + lean * L * 0.55,
+               root[2] + d[2] * L)
+        mb.add_raw(*spike(root, tip, rad), role=role)
+
+
+# ---------------------------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------------------------
 
@@ -372,13 +460,8 @@ def build_mesh(name, arm):
         [0.036, 0.044, 0.030, 0.020],
         [0.030, 0.038, 0.026, 0.016],
         seg=6, smooth_sides=False), role=CHITIN)
-    for k, (bx, by, bz, ln) in enumerate(((0.150, -0.130, 0.150, 0.205),
-                                          (-0.150, -0.130, 0.150, 0.205),
-                                          (0.115, 0.190, 0.140, 0.175),
-                                          (-0.115, 0.190, 0.140, 0.175))):
-        mb.add_raw(*spike((bx, cy + by, cz + bz),
-                          (bx * 1.55, cy + by - 0.045, cz + bz + ln),
-                          0.011), role=CHITIN)
+    fuzz_field(mb, CEPH_C, CARAPACE_RINGS, -0.36, 0.34, 22, 6101, CHITIN,
+               ln=(0.048, 0.078))
 
     # --- sternum: the hard ventral plate the eight coxae ring -------------
     mb.add_raw(*rc.oval_tube(
@@ -418,17 +501,7 @@ def build_mesh(name, arm):
     # edge overhangs the plate behind it. Four steps, watertight, 80 triangles
     # more than v1's smooth egg, and it is the whole segmentation read.
     mb.bind(["Abdomen"])
-    ab = ((-0.470, -0.170, 0.095, 0.110),
-          (-0.330, -0.055, 0.243, 0.306),
-          (-0.310, -0.048, 0.196, 0.248),
-          (-0.125, +0.012, 0.308, 0.406),
-          (-0.105, +0.016, 0.250, 0.338),
-          (+0.105, +0.024, 0.318, 0.454),
-          (+0.125, +0.020, 0.256, 0.380),
-          (+0.320, -0.006, 0.270, 0.388),
-          (+0.340, -0.012, 0.212, 0.312),
-          (+0.510, -0.070, 0.168, 0.238),
-          (+0.615, -0.130, 0.075, 0.105))
+    ab = ABDOMEN_RINGS
     mb.add_raw(*rc.oval_tube([(0, ay + d, az_ + dz) for d, dz, _, _ in ab],
                              [ru for _, _, ru, _ in ab],
                              [rv for _, _, _, rv in ab],
@@ -478,23 +551,13 @@ def build_mesh(name, arm):
     # dorsal bristles. Two of them are BROKEN OFF (blunt, half length): the
     # asset ships one seed and eight of these are on screen at once, so the
     # only asymmetry available is asymmetry inside the body itself.
-    # Every base below is authored INSIDE the tergite it grows from, by 15 to
-    # 30 mm against the interpolated ring profile. A spike seated on the
-    # nominal surface floats wherever the profile steps between its two
-    # rings, and a field of floating fragments is exactly the defect the
-    # Hills scree prop shipped with at RN-246.
-    nxt = rng(4409)
-    for k, (bx, by, bz) in enumerate(((0.105, -0.240, 0.200), (-0.115, -0.215, 0.210),
-                                      (0.155, 0.010, 0.264), (-0.150, 0.020, 0.266),
-                                      (0.120, 0.245, 0.238), (-0.135, 0.235, 0.238),
-                                      (0.060, 0.430, 0.128), (-0.070, 0.420, 0.133),
-                                      (0.000, -0.120, 0.272), (0.010, 0.150, 0.268))):
-        broken = k in (3, 6)
-        ln = (0.090 if broken else 0.215) * (0.85 + 0.30 * nxt())
-        mb.add_raw(*spike((bx, ay + by, az_ + bz),
-                          (bx * 1.45, ay + by - 0.055, az_ + bz + ln),
-                          0.013, r_tip=0.010 if broken else 0.0035),
-                   role=CHITIN)
+    # The pelt. 46 hairs over the abdomen and 22 over the carapace, seeded and
+    # seated, where v1 had ten and four hand-typed SPINES at 185 mm. Reid:
+    # "very short fur". These are 52 to 86 mm and they exist for the
+    # SILHOUETTE: short fur is invisible on the flat of a plate and reads
+    # almost entirely at the outline and at grazing angles, so the count that
+    # matters is the count crossing an edge, not the count on the surface.
+    fuzz_field(mb, ABD_C, ABDOMEN_RINGS, -0.42, 0.56, 46, 4409, CHITIN)
 
     # --- head: capsule, eye tubercle, eight eyes, chelicerae, fangs, palps -
     mb.bind(["Head"])
@@ -577,6 +640,38 @@ def build_mesh(name, arm):
             mb.bind(leg_bones(pre, i))
             mb.add_raw(*rc.tube(pts, rad, seg=LEG_SEG, smooth_sides=False),
                        role=CHITIN)
+            # Six hairs per leg, and a leg is where the fuzz is SEEN: eight
+            # of them are the creature's outline from every angle, and a limb
+            # crossing the sky is the one place short fur cannot be missed.
+            # THE RANGES SKIP THE KNEE, and that is an envelope constraint
+            # rather than an anatomical preference. The knee apex is the
+            # highest point on the whole creature at 1.6036, so a hair pointing
+            # straight up off ring 5 or 6 becomes the new top of the asset: the
+            # first version measured 1.6710, a 4% growth in drawn size, which
+            # is exactly the Admin cap being breached by decoration. Ring 3.0
+            # to 4.2 is the femur below the knuckle and 8.5 to 10.5 is the
+            # tibia below it, and both are also where a leg actually carries
+            # its hair.
+            nx = rng(hash_seed(pre, i) + 991)
+            perp = (-u[1], u[0], 0.0)
+            for hh in range(6):
+                f = (3.0 + 1.2 * nx()) if hh % 2 == 0 else (8.5 + 2.0 * nx())
+                k0 = int(f)
+                fr = f - k0
+                c0 = pts[k0]
+                c1 = pts[min(k0 + 1, len(pts) - 1)]
+                base = tuple(c0[j] + (c1[j] - c0[j]) * fr for j in range(3))
+                rr = rad[k0] + (rad[min(k0 + 1, len(rad) - 1)] - rad[k0]) * fr
+                a = 2.0 * math.pi * nx()
+                ca, sa = math.cos(a), math.sin(a)
+                d = (perp[0] * ca, perp[1] * ca, sa)
+                dn = math.sqrt(sum(c * c for c in d)) or 1.0
+                d = tuple(c / dn for c in d)
+                L = 0.046 + 0.030 * nx()
+                mb.add_raw(*spike(
+                    tuple(base[j] + d[j] * rr * 0.72 for j in range(3)),
+                    tuple(base[j] + d[j] * (rr + L) for j in range(3)),
+                    0.0075), role=CHITIN)
             for ring, out, down, ln, r in LEG_SPINES[:3 if i <= 2 else 2]:
                 d = (u[0] * out, u[1] * out, down)
                 dn = math.sqrt(sum(c * c for c in d))

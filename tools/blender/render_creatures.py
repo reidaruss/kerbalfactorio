@@ -56,7 +56,7 @@ if HERE not in sys.path:
 # does not use the SHIPPED constants is a preview of something else, and the
 # merge means these two numbers are the ONLY roughness and metalness the near
 # creature has. Keep them equal to the client or the studio pair is fiction.
-CLIENT_MERGE_ROUGH_METAL = (0.80, 0.04)
+CLIENT_MERGE_ROUGH_METAL = (0.95, 0.02)
 
 # Set by the argument parser: None leaves materials exactly as the .glb shipped
 # them, True applies the surface maps, False strips them and rewrites the flat

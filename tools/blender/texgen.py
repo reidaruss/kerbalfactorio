@@ -125,13 +125,13 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # `ore` matches coarse and bark at 384: its 0.5 m tile lands at 768 px/m,
 # comfortably above the 512 px/m first-person target, on a family that covers
 # exactly three seam roles the camera only meets on boulder facets.
-# `chitin` matches coarse, bark and ore at 384: its 0.30 m tile lands at
+# `fur` matches coarse, bark and ore at 384: its 0.30 m tile lands at
 # 1280 px/m, well above the 512 px/m first-person target, on a family whose
-# punctate pits are sub-millimetre and would alias away at anything less.
+# finer strand layer is 7.5 mm apart and would alias away at anything less.
 # It carries THREE maps rather than two, so 384 rather than 512 is also what
 # keeps the addition at 2.36 MB of VRAM instead of 4.19 MB.
 FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
-               "chitin": 384}
+               "fur": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -153,10 +153,14 @@ ROLE_FAMILY = {
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
     "Accent": "panel", "Hazard": "panel", "Plate": "panel",
     "Suit": "panel", "SuitDark": "panel", "SuitAccent": "panel",
-    # --- chitin: the creature shell (RN-455). The first tiling family with
-    #     an albedo, and the first authored for a body rather than a prop.
-    "Chitin": "chitin", "ChitinBand": "chitin", "ChitinUnder": "chitin",
-    "Fang": "chitin",
+    # --- fur: the creature pelt (RN-455, retargeted RN-461). The ROLE
+    #     names stay: a tarantula cuticle really is chitin and the setae
+    #     grow out of it, so the role says what the part IS and the family
+    #     says what it LOOKS like. Fang is on it only because the client
+    #     merge gives the whole creature one material anyway; at 4 cm of
+    #     geometry the map on it is unobservable either way.
+    "Chitin": "fur", "ChitinBand": "fur", "ChitinUnder": "fur",
+    "Fang": "fur",
     # --- coarse: anything dug up or grown ---
     # Iron and Copper were in `panel` for one pass and it was the clearest
     # regression in the whole set: an ore vein wearing plate seams, rivet rows
@@ -258,7 +262,7 @@ FLAT_ROLES = {
 # stripe, few enough that the copies are not countable. coarse's 0.75 would
 # put a 15 cm pitch on the same facet, two bands, one feature.
 FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
-                 "chitin": 0.3}
+                 "fur": 0.3}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -936,8 +940,36 @@ def _ore_masks(w, h, height, aux):
 
 
 # ---------------------------------------------------------------------------
-# The `chitin` family: the first CREATURE surface, and the first TILING family
-# to carry an ALBEDO (RN-455).
+# The `fur` family: the first CREATURE surface, and the first TILING family to
+# carry an ALBEDO (RN-455, retargeted at RN-461).
+#
+# RN-461, AND THE CORRECTION IS THE WHOLE ENTRY. This family shipped as
+# `chitin`: a hard shell with a specular sheen on the plate crowns and an
+# effective roughness band 0.242 to 0.792 wide. Reid looked at it and said "it
+# looks like its made of shiny stone. it should look like it has almost like a
+# fur. very short fur." He is right and the brief was wrong. A sharp specular
+# highlight is the single strongest HARD SURFACE cue there is, and the wider
+# the roughness band the harder the thing reads. The machinery was good and it
+# was aimed at beetle carapace when the subject is a tarantula.
+#
+# FUR IS CLOSE TO THE OPPOSITE, and every term below inverts one above it:
+#   - roughness HIGH everywhere and no sharp specular anywhere. The band stays
+#     over section 2.1's 0.15 minimum but now sits at 0.76 to 0.95 instead of
+#     straddling the middle of the range.
+#   - the relief is DIRECTIONAL. Fur flows, and flow is what turns a round
+#     highlight into a stretched one. `_hair_layer` lays real, discrete,
+#     tapered strands along a wobbling flow field rather than filtering
+#     isotropic noise, because an anisotropic look cannot be built out of an
+#     isotropic generator no matter how it is tuned.
+#   - the strands are FINE: two layers at 20 and 40 cells over a 0.30 m tile,
+#     so 15 mm and 7.5 mm apart, well under the punctate pitting the shell
+#     version authored.
+#   - value darkens at the ROOT and lifts at the TIP, which is what fur does
+#     and what a pitted shell does not.
+#
+# What did NOT change is the SHAPE of the family (normal + orm + a tiling
+# albedo, mean-neutral) or the reason for it, so the paragraph below still
+# stands as written and the player suit still inherits it.
 #
 # THE SHAPE OF THIS FAMILY IS THE GENERAL THING, not the spider. Every tiling
 # family before it is normal+orm and leaves base colour to the palette
@@ -966,110 +998,145 @@ def _normalise(field):
     return [(v - lo) / span for v in field]
 
 
-def _chitin_height(w, h):
-    """Four scales, and the two that carry the read are the smallest.
+def _hair_layer(w, h, cells, seed, length, radius, taper, flow_deg, wobble_deg):
+    """Discrete tapered STRANDS on a jittered lattice, laid along a flow field.
 
-    A shell is not rock and not bark: it is a SMOOTH domed plate covered in
-    punctate pits and bristle sockets. Those two terms are the whole
-    difference between chitin and painted plastic, and they are what survives
-    at a 0.30 m tile where a fracture facet would not exist at all."""
+    Returns (ridge, tip): `ridge` is 1 on a strand centreline falling to 0
+    between strands, `tip` is 0 at a strand root and 1 at its point.
+
+    WHY STRANDS AND NOT FILTERED NOISE. Fur reads as fur because its relief is
+    ANISOTROPIC: high frequency across the flow, low frequency along it. Every
+    noise generator in this file is isotropic by construction (worley is
+    distance to a POINT, fbm is a lattice of scalars), and no amount of tuning
+    grows a direction on an isotropic field. So the strands are laid down as
+    segments and the field is the distance to the nearest one, bucketed 3x3 the
+    way `_worley` buckets its points so the cost stays linear in texels.
+
+    The flow is one base angle plus a low-frequency wobble, both periodic, so
+    the tile still wraps and the fur has a grain rather than a swirl."""
+    wob = _fbm(w, h, 3, 2, seed=seed + 77)
+    seeds = []
+    for cy in range(cells):
+        for cx in range(cells):
+            jx = _hash01(cx, cy, seed)
+            jy = _hash01(cx, cy, seed + 1)
+            jd = _hash01(cx, cy, seed + 2)
+            ang = math.radians(flow_deg + (jd * 2.0 - 1.0) * wobble_deg)
+            seeds.append(((cx + jx) / cells, (cy + jy) / cells, ang))
+    ridge = [0.0] * (w * h)
+    tip = [0.0] * (w * h)
+    ln = length / cells
+    rad = radius / cells
+    for y in range(h):
+        py = y / h
+        gy = int(py * cells)
+        base = y * w
+        for x in range(w):
+            px = x / w
+            gx = int(px * cells)
+            # the wobble bends a whole neighbourhood together, so strands in
+            # one region agree with each other instead of crossing
+            bend = (wob[base + x] - 0.5) * 2.0 * math.radians(wobble_deg)
+            best = 0.0
+            bestt = 0.0
+            for oy in (-1, 0, 1):
+                ry = (gy + oy) % cells
+                for ox in (-1, 0, 1):
+                    rx = (gx + ox) % cells
+                    ax, ay, ang = seeds[ry * cells + rx]
+                    ca = math.cos(ang + bend)
+                    sa = math.sin(ang + bend)
+                    dx = _wrap_delta(px, ax)
+                    dy = _wrap_delta(py, ay)
+                    t = (dx * ca + dy * sa) / ln
+                    if t < 0.0:
+                        t = 0.0
+                    elif t > 1.0:
+                        t = 1.0
+                    ex = dx - ca * t * ln
+                    ey = dy - sa * t * ln
+                    d = math.sqrt(ex * ex + ey * ey)
+                    # a strand narrows toward its point, so the ridge does too
+                    r = rad * (1.0 - taper * t)
+                    v = math.exp(-(d / r) * (d / r)) if r > 1e-9 else 0.0
+                    if v > best:
+                        best = v
+                        bestt = t
+            ridge[base + x] = best
+            tip[base + x] = bestt
+    return ridge, tip
+
+
+def _fur_height(w, h):
+    """Two strand layers over a soft body undulation, and nothing else.
+
+    The shell version's punctate pits and bristle sockets are GONE. They were
+    the correct detail for a carapace and they are the wrong one here: a pit is
+    a hard-surface cue, and at this tile size they were also the COARSEST thing
+    on the map, which is backwards for a surface whose whole character is that
+    it is finer than everything around it."""
     dome = _fbm(w, h, 3, 3, seed=3301)
-    scute = _worley(w, h, 5, seed=4409)
-    micro = _worley(w, h, 26, seed=5507)
-    punct = _worley(w, h, 46, seed=6619)
-    socket = _worley(w, h, 9, seed=7727)
-    grain = _fbm(w, h, 72, 2, seed=8831)
+    r1, t1 = _hair_layer(w, h, 20, 4409, length=1.55, radius=0.26,
+                         taper=0.62, flow_deg=90.0, wobble_deg=26.0)
+    r2, t2 = _hair_layer(w, h, 40, 5507, length=1.35, radius=0.24,
+                         taper=0.70, flow_deg=90.0, wobble_deg=34.0)
+    grain = _fbm(w, h, 84, 2, seed=8831)
     out = [0.0] * (w * h)
-    pit = [0.0] * (w * h)
-    hole = [0.0] * (w * h)
+    ridge = [0.0] * (w * h)
+    tip = [0.0] * (w * h)
     for i in range(w * h):
-        z = 0.55 * dome[i]
-        # 1 - worley gives domed plates meeting in sharp valleys. 1.6 rather
-        # than coarse's 2.0: a scute crown is flatter than a rock facet.
-        #
-        # THE FIRST VERSION PUT 0.40 HERE AT 7 CELLS AND IT WAS THE WHOLE
-        # DEFECT. On a 0.30 m tile that is 43 mm cells at nearly half the
-        # amplitude, and rendered, the creature is a spider built out of
-        # cobblestones: it read as rock because the frequency content WAS
-        # rock's. A shell is mostly smooth. Plate structure at 10 to 30 cm is
-        # the job of the geometry (the carapace margin, the tergites, the
-        # joint pinches all exist), so the map's job starts BELOW a centimetre
-        # and this term is now a broad undulation, not a pattern.
-        z += 0.030 * (1.0 - scute[i]) ** 1.6
-        z += 0.045 * (1.0 - micro[i]) ** 2
-        p = 1.0 - _smoothstep(0.0, 0.26, punct[i])
-        pit[i] = p * p
-        z -= 0.13 * pit[i]
-        # A bristle socket is a raised annulus with a hole in it, so it reads
-        # as something a hair grew out of rather than as a dent. Both terms
-        # come off ONE worley field, which is what keeps them concentric.
-        d = socket[i]
-        ring = math.exp(-((d - 0.13) / 0.055) ** 2)
-        hole[i] = 1.0 - _smoothstep(0.0, 0.075, d)
-        z += 0.050 * ring - 0.075 * hole[i]
-        z += 0.028 * grain[i]
+        coarse = r1[i] >= r2[i] * 0.85
+        ridge[i] = r1[i] if coarse else r2[i]
+        tip[i] = t1[i] if coarse else t2[i]
+        z = 0.42 * dome[i]
+        z += 0.62 * r1[i]
+        z += 0.34 * r2[i]
+        z += 0.020 * grain[i]
         out[i] = z
-    return out, {"pit": pit, "hole": hole, "hn": _normalise(out)}
+    return out, {"ridge": ridge, "tip": tip, "hn": _normalise(out)}
 
 
-def _chitin_masks(w, h, height, aux):
-    """Crowns polished, creases and pits matte, and the SPREAD is the point.
+def _fur_masks(w, h, height, aux):
+    """HIGH everywhere, and the small band that remains runs ALONG the strands.
 
-    Section 2.1 item 4: a family's effective roughness p05..p95 must be at
-    least ~0.15 wide or it is a constant under a moving sun, and `panel`
-    measures 0.032, which is the plastic read on every machine and every suit
-    in the game. This is the first family authored against that number on
-    purpose rather than measured against it afterwards."""
+    Section 2.1 item 4 asks for an effective p05..p95 band at least ~0.15 wide,
+    and that rule exists so a family is not a constant under a moving sun. It
+    does NOT ask for the band to sit in the middle of the range, and for fur it
+    must not: with the material at 0.95 this lands 0.76 to 0.95, a real band
+    with no part of it anywhere near a hard specular.
+
+    The slight dip on a strand crown is the only sheen fur has, and because the
+    crowns are collinear it reads as a STRETCHED highlight rather than a round
+    one, which is the anisotropy doing its job with an isotropic BRDF."""
     mottle = _fbm(w, h, 13, 3, seed=9127)
-    hn = aux["hn"]
     rough = [0.0] * (w * h)
-    # Honest constant. Chitin is a dielectric: the sheen is low roughness, not
-    # metalness, and section 2.1 asks that a flat channel say so rather than
-    # pretend otherwise. 1.0 is the identity, so effective metalness is the
-    # material's own 0.04.
+    # Honest constant, and more honest here than on the shell: fur is not a
+    # metal by any reading, and the material constant is 0.02.
     metal = [1.0] * (w * h)
     for i in range(w * h):
-        r = (0.99 - 0.78 * _smoothstep(0.30, 0.95, hn[i])
-             + (mottle[i] - 0.5) * 0.12
-             + 0.22 * aux["pit"][i] + 0.16 * aux["hole"][i])
+        r = (1.0 - 0.20 * aux["ridge"][i] * (1.0 - 0.45 * aux["tip"][i])
+             + (mottle[i] - 0.5) * 0.05)
         rough[i] = _clamp01(r)
     return rough, metal
 
 
-def _chitin_albedo(w, h, height, aux):
-    """RGB bytes: crease darkening, pit specks and a crown-to-crease hue lean.
-
-    The consumer makes this mean-neutral, so it authors VARIANCE and HUE and
-    the palette role authors LEVEL."""
-    # THE ALBEDO CARRIES THE MEDIUM FREQUENCIES AND THE NORMAL CARRIES THE
-    # FINE ONES, and getting that split wrong cost this pass two renders.
-    # Version one drove everything off the heightfield, so the two maps had
-    # identical frequency content: pushing the relief fine enough to stop
-    # reading as cobblestone ALSO deleted every feature the creature had at 7 m,
-    # and it went from rock to dusty clay without ever passing through chitin.
-    # `patch` is pigmentation, not relief. It is the thing a real spider
-    # actually has at 10 to 20 cm, it costs no normal-map amplitude, and it is
-    # what puts something on the abdomen to look at from across a clearing.
+def _fur_albedo(w, h, height, aux):
+    """Dark at the root, lifted at the tip, over a broad pigmentation patch."""
     patch = _fbm(w, h, 2, 2, seed=12347)
     blotch = _fbm(w, h, 9, 3, seed=10133)
-    speck = _fbm(w, h, 96, 2, seed=11239)
-    hn = aux["hn"]
+    ridge = aux["ridge"]
+    tip = aux["tip"]
     out = bytearray(w * h * 3)
     for i in range(w * h):
-        # Half the value range of the first version. An albedo that swings
-        # 0.44 to 0.86 across 4 cm is a mottled stone, and the mean-neutral
-        # divide means every count of that swing lands on the creature.
-        v = 0.66 + 0.17 * _smoothstep(0.12, 0.95, hn[i])
-        v *= 1.0 - 0.22 * aux["pit"][i]
-        v *= 1.0 - 0.16 * aux["hole"][i]
+        # between the strands is the ROOT layer and it is in shadow: the base
+        # value is low, and a strand lifts it, most at the point.
+        v = 0.44 + 0.40 * ridge[i] * (0.55 + 0.45 * tip[i])
         v *= 0.86 + 0.28 * patch[i]
         v *= 0.94 + 0.12 * blotch[i]
-        v *= 0.96 + 0.08 * speck[i]
-        # A crown catches more of whatever light there is and reads warmer, a
-        # crease does the opposite. Six per cent is a LEAN, not a tint:
-        # anything stronger and the map is deciding the creature's colour,
-        # which belongs to the palette role.
-        warm = 0.04 * _smoothstep(0.20, 0.90, hn[i])
+        # A hair tip is where light gets through it, so it warms; the root
+        # layer is where it does not. Same six per cent lean the shell had,
+        # driven by the strand rather than by the height.
+        warm = 0.06 * ridge[i] * tip[i]
         o = i * 3
         out[o] = int(round(255.0 * _clamp01(v * (1.0 + warm))))
         out[o + 1] = int(round(255.0 * _clamp01(v)))
@@ -1418,10 +1485,16 @@ FAMILIES = {
     # ao_radius is small for the same reason (the occluder IS the pit), and
     # the floor is the highest in the set because a shell is not a cave: a
     # crease darkens, it does not go black.
-    "chitin": dict(height=_chitin_height, masks=_chitin_masks,
-                   albedo=_chitin_albedo,
-                   normal_strength=12.0, ao_radius=5, ao_floor=0.70,
-                   ao_gain=2.2),
+    # fur has the shallowest relief and the highest frequency in the set,
+    # and it self-shadows hard at the root layer, which is where the velvet
+    # look comes from at every angle that is not the silhouette. So the
+    # normal is strong for its amplitude, the AO radius is the smallest
+    # here (the occluder is the neighbouring STRAND) and the floor is the
+    # lowest of any family: between hairs really is dark.
+    "fur": dict(height=_fur_height, masks=_fur_masks,
+                albedo=_fur_albedo,
+                normal_strength=14.0, ao_radius=3, ao_floor=0.42,
+                ao_gain=3.4),
 }
 
 
@@ -1968,11 +2041,11 @@ ALLOWED_CONSTANT = {
         "palette metallic values sit under the client's 0.5 metal/matte "
         "batching split on purpose (RN-156), and identity is the only "
         "multiplier that cannot move them across it",
-    ("chitin", "orm", "B"):
-        "chitin is a dielectric. The sheen on a shell is LOW ROUGHNESS, not "
-        "metalness, and section 2.1 asks that a flat channel say so rather "
-        "than invent variation it does not have; identity leaves the "
-        "material's own 0.04 exactly where the palette put it",
+    ("fur", "orm", "B"):
+        "fur is not a metal by any reading, and section 2.1 asks that a "
+        "flat channel say so rather than invent variation it does not "
+        "have; identity leaves the material's own 0.02 exactly where the "
+        "palette put it",
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.

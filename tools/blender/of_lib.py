@@ -109,6 +109,13 @@ PALETTE = {
     # look-dev freeze for the spider, 2026-08-01). Everything above is still
     # look-dev's.
     #
+    # RN-461: the three shell roles went 0.80/0.84 roughness to 0.95/0.96
+    # and 0.04 metalness to 0.02. Reid on the shipped shell: "it looks like
+    # its made of shiny stone". A sharp specular is the strongest hard
+    # surface cue there is, so the creature loses it everywhere except the
+    # FANG, which is bare cuticle and keeps 0.30 on purpose: it is the one
+    # part that should still catch a light.
+    #
     # Chitin came UP from v1's 2B2126, which is the single biggest value
     # decision in the pass. Section 2.1's reference groundNear luma is 35 to 55
     # at the vegetated sites; a creature at luma 36 is the same value as the
@@ -117,15 +124,15 @@ PALETTE = {
     # 4A3B36 reads luma 62: darker than anything else that moves, lighter than
     # the ground, and with enough room under it for the albedo's crease
     # darkening to land somewhere.
-    "Chitin":       ("4A3B36", 0.04, 0.80, 1.0, None),
+    "Chitin":       ("4A3B36", 0.02, 0.95, 1.0, None),
     # The tergite seams. DARKER than the shell rather than lighter, which is
     # the second version: a light band wide enough to see reads as a tan patch
     # glued to the abdomen, and a dark one reads as the shadow under a plate
     # that overlaps the plate behind it, which is what it physically is. This
     # is also the only per-part signal that survives SpiderFlock's merge,
     # because colour is the one channel that merge bakes.
-    "ChitinBand":   ("2C2422", 0.04, 0.84, 1.0, None),
-    "ChitinUnder":  ("6B5A4C", 0.04, 0.84, 1.0, None),
+    "ChitinBand":   ("2C2422", 0.02, 0.96, 1.0, None),
+    "ChitinUnder":  ("6B5A4C", 0.02, 0.96, 1.0, None),
     "Fang":         ("C9BCA2", 0.02, 0.30, 1.0, None),
     # The anterior median pair keeps the amber eyeshine: it is the tell that
     # the thing has seen you, and it reads at a distance where nothing else on

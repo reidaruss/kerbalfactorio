@@ -1,4 +1,4 @@
-// RN-459: IS THE CHITIN MAP ON THE CREATURE IN THE GAME, and can this probe
+// RN-459 / RN-461: IS THE FUR MAP ON THE CREATURE IN THE GAME, and can this probe
 // tell if it were not?
 //
 //   node tools/smoke/run.mjs --sandbox=1 --combat=1 --scenario=walk \
@@ -51,18 +51,18 @@
   check('no unknown roles', r0.unknownRoles.length === 0,
         JSON.stringify(r0.unknownRoles));
   const fam = Object.fromEntries(r0.families.map((f) => [f.name, f]));
-  const ch = fam.chitin;
-  check('the chitin family loaded', ch !== undefined,
+  const ch = fam.fur;
+  check('the fur family loaded', ch !== undefined,
         JSON.stringify(Object.keys(fam)));
   if (ch !== undefined) {
-    check('chitin carries an albedo AND a tiling repeat',
+    check('fur carries an albedo AND a tiling repeat',
           ch.albedo === true && ch.tileM === 0.3, JSON.stringify(ch));
-    check('chitin is 384 px', ch.sizePx === 384, `${ch.sizePx}`);
-    check('chitin declares NO alpha test (it is opaque)',
+    check('fur is 384 px', ch.sizePx === 384, `${ch.sizePx}`);
+    check('fur declares NO alpha test (it is opaque)',
           ch.alphaTest === null, `${ch.alphaTest}`);
-    check('chitin publishes an albedo mean',
+    check('fur publishes an albedo mean',
           typeof ch.albedoMean === 'number' && ch.albedoMean > 0.1,
-          `${ch.albedoMean}`);
+          `${ch.albedoMean}`);   // RN-461: family renamed chitin -> fur
   }
 
   // ---- the scene: spiderwalk's own recipe, and stand BESIDE the column ---
@@ -118,7 +118,7 @@
   check('a spider material registered', mats.length > 0,
         JSON.stringify(r1.materials.map((m) => m.label)));
   for (const m of mats) {
-    check(`${m.label} is on chitin`, m.family === 'chitin', m.family);
+    check(`${m.label} is on fur`, m.family === 'fur', m.family);
     check(`${m.label} has all four maps`,
           m.hasNormal && m.hasRough && m.hasMetal && m.hasAo && m.hasMap,
           JSON.stringify(m));
@@ -130,7 +130,7 @@
     check(`${m.label} alphaTest stays 0 (opaque body)`, m.alphaTest === 0,
           `${m.alphaTest}`);
     check(`${m.label} carries the client's merged constants`,
-          Math.abs(m.roughness - 0.8) < 1e-6 && Math.abs(m.metalness - 0.04) < 1e-6,
+          Math.abs(m.roughness - 0.95) < 1e-6 && Math.abs(m.metalness - 0.02) < 1e-6,
           JSON.stringify({ r: m.roughness, mt: m.metalness }));
   }
 
@@ -206,7 +206,7 @@
 
   return {
     valid: true, fails, pass: fails.length === 0,
-    chitin: ch ?? null,
+    fur: ch ?? null,
     uv: r1.uv,
     vramMB: r1.vramMB,
     spiderMaterials: mats,
