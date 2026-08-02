@@ -235,3 +235,36 @@ export function furState(): {
     time: uniforms.uFurTime.value,
   };
 }
+
+// RN-514. THE HANDLE, BECAUSE "PUBLISHED" AND "REACHABLE" ARE DIFFERENT THINGS.
+// RN-465 shipped `furStats()` on `SpiderFlock` and recorded that it existed so
+// the hook and the `?fur=0` boot default could each be asserted in their own
+// right. It was never wired to anything: `SpiderFlock.furStats` is called by no
+// file in the repository and no debug surface exposes the flock, so a probe
+// could not read one field of it. That is INSTRUMENTS.md's "a tool that reports
+// nothing may not be running" in its purest form, since the tool was never
+// started at all.
+//
+// It is registered HERE rather than on the flock, on PropWind's own precedent
+// (`__ofWind` is registered in module scope in the file that owns the uniforms),
+// and for the same reason: this module owns the one shared uniform record, so it
+// is the only place that can reach every hooked material at once. It costs no
+// program, no draw call and no uniform.
+//
+// `freeze` is what makes the WIND measurable. The sway is a function of
+// `uFurTime` alone, so two captures at two pinned times differ by the sway and
+// by nothing else, which is exactly the technique the flora lane built for
+// `__ofWind` and the only way to photograph a motion whose amplitude is 18 mm.
+(self as unknown as Record<string, unknown>).__ofFur = {
+  state: (): unknown => furState(),
+  /** Pin the fur clock. Two calls at two times ARE the matched pair. */
+  freeze: (t: number): number => { frozen = true; uniforms.uFurTime.value = t; return t; },
+  thaw: (): void => { frozen = false; },
+  /** Set the lag vector directly, so "does lag respond to velocity" is a
+   *  question about the SHADER rather than about whether a creature happened to
+   *  be running when the shutter opened. */
+  setLag: (x: number, y: number, z: number): number[] => {
+    uniforms.uFurLag.value.set(x, y, z);
+    return uniforms.uFurLag.value.toArray();
+  },
+};

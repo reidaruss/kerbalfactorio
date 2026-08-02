@@ -195,7 +195,18 @@ for (const k of ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth', 'p
   // (player body, FP arms, rigged creatures): rigs draw their rest pose and
   // nothing ticks. The negative control for every clip-playback claim and the
   // perf isolator that prices the mixer inside one binary.
-  'anim']) {
+  'anim',
+  // RN-465 / RN-491, standing rule 7, ADDED AT RN-514 BECAUSE THEY WERE MISSING.
+  // `?fur=0` removes FurShader's onBeforeCompile entirely (stock programs, a
+  // bit-exact build) and `?partmat=0` isolates the per-part channel that rides
+  // the same hook. Both shipped as the stated negative controls for the pelt and
+  // NEITHER WAS ON THIS LIST, so no probe driven through run.mjs could reach
+  // either one: the flags existed, the runner dropped them, and the URL arrived
+  // without them. That is GP-156's vacuous-control shape in the runner rather
+  // than in a probe, and it is the same failure RN-152 caught once already when
+  // `--starlight=0` went unforwarded and both sides of a "pair" ran with the
+  // feature on.
+  'fur', 'partmat']) {
   if (args.has(k)) params.set(k, args.get(k));
 }
 params.set('debug', args.get('debug') ?? '1');
