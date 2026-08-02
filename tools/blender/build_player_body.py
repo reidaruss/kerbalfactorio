@@ -126,7 +126,21 @@ def build_mesh(name, arm):
     for sx in (-3, -1, 1, 3):
         mb.add_raw(*of.box_data((0.032, 0.020, 0.120),
                                 (sx * 0.042, -0.188, 1.320)), role=DARK)
-    mb.add_raw(*of.box_data((0.070, 0.020, 0.035), (0.0, -0.190, 1.395)),
+    # RN-642, COPLANAR CAUSE 1 OF 2, worth 2 of the asset's 10 same-facing
+    # pairs. The pack is 0.095 deep centred at -0.1525, so its front face is
+    # at y = -0.2000 exactly; this indicator was 0.020 deep centred at -0.190,
+    # so ITS front face was at y = -0.2000 too. Two front faces, same plane,
+    # same direction, both surviving the backface cull, both writing the same
+    # depth: which one you see is whichever the rasteriser visited last, and
+    # the one that loses is the state light, which is the part of a chest pack
+    # a player actually reads.
+    #
+    # The fix is to make it PROUD rather than flush, which is what an
+    # indicator is anyway. Centred at -0.196 it spans -0.206 to -0.186: the
+    # front face stands 6 mm off the pack and the back face is 14 mm inside
+    # it, so it can never come apart from its host either. The four vent slots
+    # beside it were already proud by 2 mm and were never part of the defect.
+    mb.add_raw(*of.box_data((0.070, 0.020, 0.035), (0.0, -0.196, 1.395)),
                role=EM)
 
     # --- the back pack. The declared depth envelope went 0.39 to 0.46
@@ -238,9 +252,20 @@ def build_mesh(name, arm):
     mb.add_raw(*of.cyl_data(0.130, 0.028, (0, 0, 1.552), "Z", 10), role=PLATE)
     mb.add_raw(*of.arc_band_data(0.118, 0.136, 0.075, (0, 0, 1.660),
                                  -142.0, -38.0, 8), role=GLASS)
-    # the fin tops out at exactly z = 1.800, the same as the helmet crown, so
-    # the declared 1.80 m height stays bone-and-crown driven
-    mb.add_raw(*of.box_data((0.030, 0.150, 0.058), (0.0, 0.020, 1.771)),
+    # RN-642, COPLANAR CAUSE 2 OF 2, and it is the other 8 pairs. The comment
+    # that used to sit here said the fin "tops out at exactly z = 1.800, the
+    # same as the helmet crown, so the declared 1.80 m height stays
+    # bone-and-crown driven". That reasoning was right about the envelope and
+    # it is exactly what CAUSED the defect: the crown cap is a 10-gon fan
+    # facing up at z = 1.800 and the fin's top face is a quad facing up at
+    # z = 1.800, overlapping, in OF_Plate against OF_Suit.
+    #
+    # The two goals were never in tension. The height is driven by the CROWN,
+    # so the fin only has to stay at or below it, not ON it. Dropping the
+    # centre 3 mm puts the fin's top at 1.797 and leaves the asset's 1.800 m
+    # exactly where the crown put it: the declared dims_xyz_m are untouched to
+    # the digit, which validate_glb re-checks at +/- 0.005.
+    mb.add_raw(*of.box_data((0.030, 0.150, 0.058), (0.0, 0.020, 1.768)),
                role=PLATE)
     mb.add_raw(*of.arc_band_data(0.126, 0.140, 0.090, (0, 0, 1.640),
                                  48.0, 132.0, 6), role=GLOVE)

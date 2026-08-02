@@ -48,6 +48,7 @@ t = 0 (of_lib.clip_frame), so the RUNTIME tick is one lower than the number
 written here: 16, 17 and 15, at 0.2667, 0.2833 and 0.2500 s (DW-34).
 """
 
+import math
 import os
 import sys
 
@@ -127,11 +128,49 @@ def build_mesh(name, arm_obj):
                                  [0.016, 0.015, 0.013],
                                  [0.042, 0.039, 0.035], seg=6), role=PLATE)
 
-        # cuff: the sleeve's end, and the top of the bare wrist
+        # THE WRIST DISCONNECT. RN-645.
+        #
+        # This was one 0.15-long OF_SuitAccent tube, and OF_SuitAccent is
+        # 2E7DBE, a saturated primary blue. Under the corrected 60 degree FOV
+        # it is the largest single block of colour in the first-person frame,
+        # and ART-DIRECTION.md names pastel and saturated primaries as the
+        # thing to unlearn: "value and material contrast do the work rather
+        # than hue". It also could not be re-surfaced out of the problem,
+        # because SuitAccent is shared with rocket_common.py and the lander.
+        #
+        # A pressure glove does not attach with a painted band. It attaches
+        # with a METAL LOCKING RING, and that is both the honest object and
+        # the one that fixes the frame: the ring is OF_Plate, so it wears
+        # `suitplate` and reads as worn alloy, and the accent survives as a
+        # 6 mm index stripe rather than a 150 mm slab. Same silhouette, one
+        # hundredth of the saturated area.
         mb.bind([pre + "ForeArm", pre + "Hand"])
-        mb.add_raw(*rc.tube([_pt(_lerp(el, wr, 0.64), s),
-                             _pt(_lerp(el, wr, 0.79), s)],
-                            [0.056, 0.056], seg=12), role=ACC)
+        # the ring proper: two courses, the outboard one slightly proud, so
+        # there is a hard machined step where the sleeve ends
+        mb.add_raw(*rc.tube([_pt(_lerp(el, wr, 0.645), s),
+                             _pt(_lerp(el, wr, 0.700), s),
+                             _pt(_lerp(el, wr, 0.760), s),
+                             _pt(_lerp(el, wr, 0.800), s)],
+                            [0.057, 0.062, 0.062, 0.055], seg=12),
+                   role=PLATE)
+        # THREE LATCH LUGS, at 40, 160 and 280 degrees around the ring.
+        # Not four and not evenly on the axes: a lug on the top centre line
+        # is the one place the camera looks straight down at, where it reads
+        # as a lump rather than as hardware, and three at 120 degrees is what
+        # a real bayonet fitting uses.
+        for ang in (40.0, 160.0, 280.0):
+            a = math.radians(ang)
+            up = (0.0, 0.0, 0.011 * math.cos(a))
+            side = (0.011 * math.sin(a) * s, 0.0, 0.0)
+            c0 = _off(_off(_pt(_lerp(el, wr, 0.690), s), up), side)
+            c1 = _off(_off(_pt(_lerp(el, wr, 0.775), s), up), side)
+            mb.add_raw(*rc.oval_tube([c0, c1], [0.0075, 0.0068],
+                                     [0.0135, 0.0120], seg=4), role=DARK)
+        # the accent, reduced to an index stripe: the mark you line up to
+        # seat the ring. 6 mm of the colour instead of 150.
+        mb.add_raw(*rc.tube([_pt(_lerp(el, wr, 0.706), s),
+                             _pt(_lerp(el, wr, 0.718), s)],
+                            [0.0635, 0.0635], seg=12), role=ACC)
         # bare skin, cuff to glove, running past the wrist into the palm
         mb.add_raw(*rc.tube([_pt(_lerp(el, wr, 0.74), s),
                              _pt(_lerp(el, wr, 0.97), s),
@@ -151,12 +190,73 @@ def build_mesh(name, arm_obj):
                                  [0.052, 0.049, 0.045, 0.043, 0.028],
                                  [0.053, 0.056, 0.062, 0.065, 0.046], seg=8),
                    role=GLOVE)
+        # THE KNUCKLE GUARD, RN-646, and it is now FOUR plates and not one.
+        #
+        # It was a single 0.046-half-width oval slab running the length of the
+        # back of the hand, and at the corrected framing it is the second
+        # largest thing in the frame after the glove itself. One slab has one
+        # silhouette and one specular, which is why the before render reads as
+        # a chrome tile glued to a mitten: a mirror highlight sliding across an
+        # unbroken 9 cm face is the single strongest "this is one flat hard
+        # object" cue there is.
+        #
+        # Four plates on the four knuckles break that highlight into four, give
+        # the back of the hand a knuckle LINE in silhouette, and let the guard
+        # articulate visually with the fingers under it. The widths taper
+        # outboard the way a hand does. They sit on a shared carrier strip so
+        # there is still something holding them on.
         mb.bind([pre + "Hand"])
-        mb.add_raw(*rc.oval_tube(
-            [_off(_pt(_lerp(wr, hd, 0.35), s), (0, 0, 0.034)),
-             _off(_pt(_lerp(wr, hd, 0.75), s), (0, 0, 0.036)),
-             _off(_pt(_lerp(wr, hd, 1.10), s), (0, 0, 0.032))],
-            [0.016, 0.017, 0.013], [0.046, 0.050, 0.044], seg=6), role=PLATE)
+        # NO CARRIER STRIP. The first version had a thin dark OF_SteelDark
+        # oval running the length of the back of the hand for the plates to be
+        # riveted to, on the reasoning that hardware needs something holding it
+        # on. It was authored 43 to 47 mm half-width, WIDER than the four
+        # plates that were supposed to hide it, and it tapered to a point at
+        # its forward end. What the render showed was not a carrier: it was a
+        # dark triangle sitting between the plates, pointing down the hand,
+        # and it was the most conspicuous thing on the glove.
+        #
+        # The lesson is the same one the claw version taught an hour earlier
+        # and it is worth writing down once: on a view model, a part authored
+        # to explain another part is only worth its triangles if it is
+        # actually hidden, and "mostly hidden" is a claim that has to be
+        # rendered rather than assumed. The plates sit on the glove.
+        # A PLATE IS FLAT, AND THE FIRST VERSION OF THIS WAS NOT.
+        #
+        # The first four plates were authored 12.5 mm half-width against
+        # 10.5 mm half-thickness, which is very nearly ROUND in section, with
+        # their long axis running forward along the hand and the middle ring
+        # raised. Four near-round forward-pointing wedges seen from a camera
+        # sitting behind the hand do not read as knuckle guards. They read as
+        # CLAWS, and the render caught it immediately: it was a worse frame
+        # than the single slab it was meant to improve.
+        #
+        # The numbers that fix it are the aspect ratio and the standoff. A
+        # guard is a flat pad: 16 mm half-width against 4.5 mm half-thickness
+        # is 3.6:1 rather than 1.2:1, so it presents a FACE to the camera
+        # instead of an edge. The long axis is now ACROSS the hand, following
+        # the knuckle line, which is the direction a knuckle guard actually
+        # runs. And it sits 3 mm off the carrier rather than 7, so the plates
+        # lie ON the back of the hand instead of standing proud of it.
+        # (across-hand offset, half-width, half-thickness, along-hand centre)
+        # seg=8, not 6. On a section this flat the segment count decides how
+        # wide the TOP facet is: a hexagon puts two facets across the top at a
+        # slant, so the sun catches each at a grazing angle and the plate
+        # reads as a dark chip. An octagon gives one broad facet lying nearly
+        # parallel to the back of the hand, which is the face that is supposed
+        # to catch the light and is the whole reason for putting metal here.
+        # 6 mm half-thickness rather than 4.6 for the same reason: the plate
+        # has to have a visible EDGE to read as a plate rather than as a decal.
+        for dx, hw, ht, t0 in ((-0.031, 0.0165, 0.0060, 0.85),
+                               (-0.007, 0.0175, 0.0064, 0.91),
+                               (0.017, 0.0165, 0.0061, 0.87),
+                               (0.039, 0.0135, 0.0052, 0.79)):
+            c = _off(_pt(_lerp(wr, hd, t0), s), (dx * s, 0.0, 0.0360))
+            a = _off(c, (0.0, 0.014, -0.0020))
+            b = _off(c, (0.0, -0.013, -0.0024))
+            mb.add_raw(*rc.oval_tube([a, c, b],
+                                     [ht * 0.82, ht, ht * 0.72],
+                                     [hw * 0.90, hw, hw * 0.80], seg=8),
+                       role=PLATE)
 
         # Five finger tubes on three bone chains. The Middle chain carries
         # three of them, offset across the knuckle line, so the hand has four

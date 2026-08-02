@@ -160,7 +160,13 @@ ALLOWED = {
     "nodes/boulder_copper": 23,
     "nodes/boulder_iron": 27,
     "nodes/boulder_stone": 34,
-    "player/player_body": 10,
+    # player/player_body was 10 until RN-642 and is now held at 0, alongside
+    # the four clean machines and the three rocket assets. Its two causes were
+    # a chest state light flush with the pack face it is mounted on, and a comm
+    # fin whose top face was authored to land exactly on the helmet crown so
+    # that the declared 1.80 m height stayed crown-driven. The second one is
+    # the interesting one: the reasoning that caused the defect was correct
+    # about the envelope and simply did not need the surfaces to TOUCH.
     "props/props_beach": 13,
     "props/props_cave": 13,
     "props/props_hills": 12,
