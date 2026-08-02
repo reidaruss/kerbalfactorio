@@ -38,12 +38,25 @@ DETERMINISM, STATED RATHER THAN HOPED:
     round-trip, and the rebuild gate checks the BYTES, so the two together tell
     those cases apart.
 
-THE SCHEME. Four shared tiling surfaces, not per-asset textures:
+THE SCHEME. Shared tiling surfaces, not per-asset textures. The count in this
+line has been wrong twice, so it is deliberately not stated as a number any
+more: a family is added by appending a row here and to FAMILIES, and a header
+that has to be decremented is a header nobody updates.
 
     panel   hard-surface industrial: plate seams, rivets, bolts, weld bead,
-            scratches and grime. Steel, plate, painted accent, suit, ore metal.
-    coarse  rough non-metal: chipped facets and granular relief. Rock, soil,
-            sand, regolith, coal, rubber.
+            scratches and grime. Steel, painted accent, ore metal.
+    coarse  rough non-metal, GRANULAR and dug-up rather than bedded: soil,
+            sand, regolith, rubber, and the Coal, Iron and Copper ITEM chunks,
+            which are loose material rather than rock in place.
+    stone   HOST ROCK in place: angular fracture facets meeting at sharp
+            arrises, chip scars, a micro cusp, and dust held in the crevices.
+            Rock and RockDark only (RN-742). Split out of `coarse` for bark's
+            reason, and the measurement is the argument: `coarse` has a mean
+            normal tilt of 7.69 degrees with a MAXIMUM of 27.12 and 0.0 per
+            cent of its ORM green under 0.60, so nothing wearing it can glint
+            or catch a raking sun, and that surface is most of every boulder,
+            the whole spire and all the scree. `stone` measures 17.18 and
+            74.31 with 29.3 per cent under 0.60.
     bark    tree trunks: near-vertical fissures and ridge plateaus, a few
             horizontal breaks and knots. Bark and BarkLight only. Split out of
             `coarse` because rock pitting on a trunk reads as a stone pillar;
