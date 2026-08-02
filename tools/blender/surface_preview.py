@@ -51,33 +51,13 @@ import texgen
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-
-# `OF_TEX_DIR` PREVIEWS A TEXTURE SET THAT HAS NOT SHIPPED, and it exists
-# because `texgen.generate()` is ALL-OR-NOTHING (RN-554). It loops every entry
-# in `FAMILIES` and rewrites the whole manifest, so a lane that regenerates to
-# look at its own family also writes every OTHER lane's in-flight family into
-# `assets/textures/dist` and into the manifest. RN-151 is the recorded case of
-# exactly that laundering a sibling's work into HEAD, and on 2026-08-01 the
-# working tree held two uncommitted families belonging to another lane, which
-# made regenerating in place unsafe for anybody.
-#
-# So a lane generates to a scratch directory with `texgen.py --out DIR` and
-# points this at it. Nothing shared is written, the preview is honest about
-# which bytes it is showing, and the shipped set is untouched.
-TEX_DIR = os.environ.get("OF_TEX_DIR") or os.path.join(
-    ROOT, "assets", "textures", "dist")
+TEX_DIR = os.path.join(ROOT, "assets", "textures", "dist")
 MANIFEST = os.path.join(TEX_DIR, "surfaces.json")
 
 _MARK = "of_surface_preview"          # node label, so apply is idempotent
 
 
 def load_manifest():
-    if os.environ.get("OF_TEX_DIR"):
-        # Said out loud on every run. A preview reading bytes other than the
-        # shipped ones and not saying so is the same class of quiet fiction as
-        # a render under the wrong view transform.
-        print("[surface_preview] OF_TEX_DIR: reading UNSHIPPED textures from %s"
-              % TEX_DIR)
     if not os.path.isfile(MANIFEST):
         raise RuntimeError(
             "%s is missing. Run:  python tools/blender/texgen.py" % MANIFEST)

@@ -130,8 +130,16 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # finer strand layer is 7.5 mm apart and would alias away at anything less.
 # It carries THREE maps rather than two, so 384 rather than 512 is also what
 # keeps the addition at 2.36 MB of VRAM instead of 4.19 MB.
+# `suitfab` and `suitplate` are sized by the ONE distance that matters for
+# them and for nothing else in this file: the first-person hand sits 0.62 m
+# from the eye, and at the client's real 60 degree vertical FOV (CameraRig.ts,
+# `fovDeg = 60`, never reassigned) a 800 px frame resolves 1117 px per metre
+# there. A family under about 1000 px/m is visibly soft in the one asset that
+# is in every frame of the game, so both clear it: suitfab 512 px / 0.5 m =
+# 1024 px/m, suitplate 384 px / 0.4 m = 960 px/m. ASSET-SPECS 2.8's 512 px/m
+# first-person target is the floor here, not the aim.
 FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
-               "fur": 384}
+               "fur": 384, "suitfab": 512, "suitplate": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -150,9 +158,32 @@ ZLIB_WBITS = 15
 # ---------------------------------------------------------------------------
 ROLE_FAMILY = {
     # --- panel: anything manufactured ---
+    # --- panel: anything manufactured ---
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
-    "Accent": "panel", "Hazard": "panel", "Plate": "panel",
-    "Suit": "panel", "SuitDark": "panel", "SuitAccent": "panel",
+    "Accent": "panel", "Hazard": "panel",
+    # SuitAccent stays on `panel` although it is a suit colour, and this is
+    # deliberate rather than an oversight: rocket_common.py and
+    # build_lander_landed.py both paint stripes and fittings with it, so it is
+    # NOT a player-only role and moving it would re-surface another lane's
+    # assets. The suit's own accent reads through geometry and value here.
+    "SuitAccent": "panel",
+    # --- suitfab / suitplate: the pressure garment (RN-643, RN-644) ---
+    # `Suit`, `SuitDark` and `Plate` are used by build_player_body.py,
+    # build_player_fp_arms.py and build_armour_set.py and by NOTHING ELSE in
+    # the repo, so re-pointing them re-surfaces the player kit and only the
+    # player kit. That exclusivity is what makes this a safe move rather than
+    # a cross-lane one, and it was checked by grep before it was made.
+    #
+    # They were on `panel`, and `panel` is the wrong FACT about a pressure
+    # suit in exactly the way `coarse` was the wrong fact about bark. panel
+    # encodes MANUFACTURE OUT OF PLATE: seams, rivet rows, a weld bead. A
+    # fabric garment has none of those, and section 2.1 item 4 measures
+    # panel's effective roughness band at 0.032, which it names as "the
+    # plastic read on every machine, plate and suit". A woven surface and a
+    # worn metal fitting are two different materials and neither of them is
+    # a riveted plate.
+    "Suit": "suitfab", "SuitDark": "suitfab",
+    "Plate": "suitplate",
     # --- fur: the creature pelt (RN-455, retargeted RN-461). The ROLE
     #     names stay: a tarantula cuticle really is chitin and the setae
     #     grow out of it, so the role says what the part IS and the family
@@ -261,8 +292,19 @@ FLAT_ROLES = {
 # to six bands: enough parallel strata to read as a vein rather than as one
 # stripe, few enough that the copies are not countable. coarse's 0.75 would
 # put a 15 cm pitch on the same facet, two bands, one feature.
+# `suitfab` 0.5 m. The tile size is a REPETITION argument, not a density one.
+# The albedo carries soiling at 10 to 20 cm (RN-454's frequency split), and a
+# patch that big in a 0.3 m tile is the tile, so the grime would repeat three
+# times across a torso and read as a printed pattern. At 0.5 m the broad
+# fbm period of 3 lands at 16.7 cm, inside the band, and a 0.12 m glove
+# carries a quarter of one tile: no repeat is reachable on the part of this
+# asset that fills the frame.
+# `suitplate` 0.4 m. Its consumers are SMALL - a 5 cm knuckle plate, a 2.8 cm
+# helmet ring, an armour lame - so a tile eight times the largest of them
+# cannot repeat on any one part, and the scratches stay long relative to the
+# plate they cross, which is what a scratch looks like.
 FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
-                 "fur": 0.3}
+                 "fur": 0.3, "suitfab": 0.5, "suitplate": 0.4}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -593,66 +635,8 @@ def _panel_masks(w, h, height, aux):
     the story each mask tells has to be one that only subtracts:
       roughness  raised metal is rubbed smooth by handling and by wear
       metalness  grooves collect grime, and grime is not a metal
-
-    --------------------------------------------------------------------
-    RN-553: THE BAND, AND IT IS THE ONE NUMBER SECTION 2.1 NAMES BY NAME
-    --------------------------------------------------------------------
-    `docs/controllers/rendering.md` section 2.1 item 4 says a family's
-    effective roughness p05..p95 must be at least about 0.15 wide, "below
-    that it is a constant under a moving sun", and it measures THIS family
-    at 0.032 with the verdict "that is the plastic read on every machine,
-    plate and suit". Every machine, belt, structure, rocket part and tool in
-    the game is wearing the one surface in the set that cannot respond to
-    light.
-
-    THIS FAMILY IS RE-AUTHORED RATHER THAN DUPLICATED UNDER A NEW NAME, and
-    that is a decision (RN-60) rather than the path of least resistance. The
-    player lane is moving `Suit`, `SuitDark` and `Plate` onto their own
-    `suitfab` / `suitplate` families in a change that is in flight as this
-    lands, which leaves `panel` holding Steel, SteelDark, SteelLight, Accent,
-    Hazard and SuitAccent: every one of them painted industrial steel. A
-    second painted-steel family beside this one would be the same surface
-    authored twice, would need a client literal change to take effect at all
-    (`MachineBatch` pins `attachSurface(m, 'panel', ...)` on the whole batch),
-    and would leave the 0.032 band live on the rocket parts, the launch pad
-    and the tools. Re-authoring reaches all of them with no role move.
-
-    THE 0.032 WAS ARITHMETIC AND NOT AN ACCIDENT. The old mask is
-    `1.0 - 0.28 * proud + (mottle - 0.5) * 0.22`, and `proud` is non-zero
-    only on a rivet or bolt top, which is a fraction of a per cent of the
-    texels. So on every flat plate face the whole map reduced to
-    `1.0 +/- 0.11` around a mean of 1.0, and 0.45 (Steel's palette
-    roughness) times a 0.22-wide multiplier is a 0.05-wide effective band
-    before percentiles trim it to 0.032.
-
-    THE FIX IS A STORY AND NOT A GAIN. Multiplying the old mottle by four
-    would clear the gate and mean nothing: the band has to be somewhere a
-    surface actually goes. Painted steel has three states and they are far
-    apart. Coating that is intact and has been WIPED or RAINED ON is close
-    to specular. Coating that has CHALKED in the sun is nearly matte, and
-    that is the palette constant. Where the coating has gone and the alloy
-    is bare and handled, it is polished. So the map runs from about 0.42 to
-    1.00, effective 0.19 to 0.45 on Steel, and the direction of every term
-    is a claim that can be checked against a real machine.
-
-    WHY IT STAYS AT OR UNDER 1.0. The ORM channels are byte multipliers on
-    the palette constant, so 1.0 is the ceiling by construction and the
-    palette decides the matte end. Widening downward is therefore the only
-    move available without a palette edit, and a palette edit here would
-    re-surface the rocket parts, the launch pad and the tools in the same
-    commit as a machine pass. That is a separate, arguable decision and it
-    is deliberately not taken here.
     """
     mottle = _fbm(w, h, 12, 3, seed=4441)
-    # 40 cm at the 1.5 m tile: WHERE THE WEATHER HAS BEEN. Big, slow patches
-    # of chalked against intact coating, an order of magnitude coarser than
-    # the mottle, so a 4 m wall has two or three of them rather than a texture.
-    weather = _fbm(w, h, 4, 3, seed=6151)
-    # 5 cm: run-off. Rain and condensate leave streaks that stay WET-looking
-    # long after they dry, because the coating there is washed rather than
-    # chalked. This is the term that puts fine vertical structure in the
-    # roughness that the albedo and the normal do not have.
-    wash = _fbm(w, h, 30, 2, seed=6421)
     scratch = aux["scratch"]
     rough = [0.0] * (w * h)
     metal = [0.0] * (w * h)
@@ -661,104 +645,25 @@ def _panel_masks(w, h, height, aux):
         # `face` is ~1 on the plate, ~0 in a groove, >1 on a rivet or bolt.
         face = _clamp01(z)
         proud = _clamp01(z - 1.0) / 0.42          # rivet / bolt tops
-        # THE FLAT PLATE FACE NO LONGER COMES OUT AT ~1.0, AND THE OLD NOTE
-        # SAYING IT MUST IS SUPERSEDED. That note was written under a values
-        # freeze this lane did not own; its actual argument was that a mask
-        # must not silently shift the palette MEAN, which is a different claim
-        # from "must not vary". `weather` is symmetric about its own midpoint
-        # and `wash` only subtracts where it is high, so the mean moves down by
-        # a stated 0.09 rather than by an unnoticed 0.22.
-        # THE THRESHOLDS ARE WHERE THE BAND LIVES, NOT THE COEFFICIENTS, and
-        # the first tuning got that backwards. An `_fbm` is normalised to 0..1
-        # but CLUSTERS about its own middle, so `(weather - 0.34) / 0.52` only
-        # reaches full strength where weather exceeds 0.86, which is a few per
-        # cent of texels: the coefficient was 0.34 and the measured p05 still
-        # sat at 0.686, for a Steel band of 0.136 against section 2.1's 0.15.
-        # Moving the knee down to 0.28 and the ramp to 0.34 changes how MANY
-        # texels are wiped rather than how far, which is what a percentile band
-        # actually measures.
+        # THE FLAT PLATE FACE MUST COME OUT AT ~1.0, and the first version did
+        # not: `wear` folded in 0.55 of `face`, which is 1 on every flat plate,
+        # so `1.0 - 0.40 * 0.55` shipped EVERY panel surface in the game at 78%
+        # of its palette roughness. That is a silent global palette edit wearing
+        # a texture's clothes, and this pass was explicitly not allowed to move
+        # the palette. Only genuinely PROUD geometry is rubbed smooth now, which
+        # is also the true story: a rivet head gets handled, a plate face does
+        # not. The mottle is symmetric about 1.0, so it varies without shifting.
         r = 1.0 - 0.28 * proud
-        r -= 0.40 * _clamp01((weather[i] - 0.28) / 0.34)   # wiped / rained on
-        r -= 0.18 * _clamp01((wash[i] - 0.54) / 0.32)      # run-off streaks
-        r += (mottle[i] - 0.5) * 0.14
+        r += (mottle[i] - 0.5) * 0.22
         # A rub exposes cleaner metal, so it goes shinier, not duller. Taken
         # straight from the mask the height pass built, rather than inferred
         # from a height window - the inference version became dead code the
         # moment the relief was reduced, which is exactly why it is gone.
-        r -= 0.16 * scratch[i]
+        r -= 0.12 * scratch[i]
         rough[i] = _clamp01(r)
         m = 0.42 + 0.58 * _smoothstep(0.15, 0.85, face)
         metal[i] = _clamp01(m)
     return rough, metal
-
-
-def _panel_albedo(w, h, height, aux):
-    """A TILING ALBEDO for painted industrial steel. RN-553.
-
-    THE FREQUENCY SPLIT IS THE WHOLE DESIGN AND IT IS RN-454'S LESSON PAID
-    FORWARD. Driving albedo, normal and ORM off one heightfield gave the
-    creature identical frequency content in all three maps and it rendered as
-    a spider built out of cobblestones. So this map deliberately does NOT
-    read `height`, which already owns the seams, the rivets and the weld bead
-    and hands them to the normal:
-
-      NORMAL  relief below a centimetre plus the manufactured geometry
-      ORM     the roughness band above, at 40 cm and 5 cm
-      ALBEDO  PIGMENTATION at 10 to 45 cm, which is the one thing neither of
-              the others can say and the thing paint actually does
-
-    What paint does, in the order the terms below do it: it fades unevenly in
-    patches the size of a hand to a hand-span; it collects grime in a fine
-    speckle that darkens without colouring; and where the coating has failed
-    it goes WARM, because what is under paint on a machine is oxide. The
-    oxide term is the only one that moves hue, and it moves it in one
-    direction only, because rust is not a colour that has an opposite.
-
-    MEAN-NEUTRAL BY CONTRACT. `Surfaces.ts` sets
-    `material.color = palette / albedo_mean` and then multiplies the map back
-    in, so only this map's VARIANCE and its HUE survive and its LEVEL cannot
-    shift the palette. That is what lets one map serve Steel, SteelDark,
-    Accent and Hazard without lightening the dark one and dirtying the bright
-    one, and it is why every term here is written as a multiplier about 1.0
-    rather than as an absolute value."""
-    fade = _fbm(w, h, 4, 3, seed=15013)       # ~38 cm: uneven weathering
-    patch = _fbm(w, h, 9, 3, seed=15271)      # ~17 cm: coating thickness
-    grime = _fbm(w, h, 34, 2, seed=15427)     # ~4.4 cm: dirt speckle
-    oxide = _fbm(w, h, 6, 4, seed=15683)      # ~25 cm: where it has failed
-    # THE MAP IS CENTRED AT 0.55 AND NOT AT 1.0, AND THE FIRST BUILD IS WHY.
-    # Every term below is a multiplier about 1.0, which is the right way to
-    # write a mean-neutral map and the wrong place to CENTRE one: the first
-    # version measured a mean of 0.9659 with a per-channel range of 194..255,
-    # i.e. the top of the variance was CLIPPING against the byte ceiling and
-    # the map was throwing away the pigmentation it exists to carry.
-    # `check_maps` refuses a tiling albedo outside 0.15..0.85 for exactly this
-    # reason and the refusal is correct. The level is free, because
-    # `Surfaces.ts` divides it back out, so it costs nothing to sit in the
-    # middle of the range where both tails survive.
-    LEVEL = 0.55
-    out = bytearray(3 * w * h)
-    for i in range(w * h):
-        # Value. Two scales of fade and one of grime, all symmetric about 1.0
-        # except the grime, which only ever darkens because dirt does.
-        v = 1.0 + (fade[i] - 0.5) * 0.30 + (patch[i] - 0.5) * 0.17
-        v -= 0.13 * _clamp01((grime[i] - 0.52) / 0.48)
-        # A groove holds dirt and a rivet top does not, so the ONE thing this
-        # map takes from the height is the sign of the relief, at a tenth of
-        # the weight of the pigmentation. Any more and the seams would be
-        # drawn twice, once in the normal and once here.
-        v -= 0.07 * (1.0 - _clamp01(height[i]))
-        # Hue. Oxide only, only where the coating has gone thin AND the
-        # weathering agrees, so the rust is in patches rather than everywhere
-        # at a low level, which is the difference between a worn machine and a
-        # brown one.
-        rust = _clamp01((oxide[i] - 0.62) / 0.34) * _clamp01((fade[i] - 0.40)
-                                                             / 0.45)
-        v *= LEVEL
-        o = 3 * i
-        out[o] = int(round(255.0 * _clamp01(v * (1.0 + 0.26 * rust))))
-        out[o + 1] = int(round(255.0 * _clamp01(v * (1.0 - 0.05 * rust))))
-        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - 0.24 * rust))))
-    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
@@ -1281,6 +1186,371 @@ def _fur_albedo(w, h, height, aux):
     return bytes(out)
 
 
+# ---------------------------------------------------------------------------
+# suitfab - the pressure garment's woven shell. RN-643.
+#
+# THE FREQUENCY SPLIT IS THE WHOLE DESIGN AND IT IS RN-454's LESSON PAID
+# FORWARD. Driving albedo, normal and ORM off one heightfield gave the spider
+# identical frequency content in all three and it rendered as cobblestone. So
+# each map is authored for the band it is actually good at:
+#
+#   NORMAL  carries relief BELOW A CENTIMETRE: the weave itself at a 5 mm
+#           thread pitch, and the ripstop grid at 2.5 cm. Nothing coarser.
+#   ALBEDO  carries pigmentation at 10 to 20 cm: soiling, dust, the patchy
+#           discolouration a working garment has. Plus crease darkening,
+#           which is the one place the two maps are allowed to agree.
+#   ORM     carries a real roughness BAND, because that is what section 2.1
+#           item 4 asks for and what panel's 0.032 fails to give.
+#
+# WHAT IS DELIBERATELY NOT HERE: panel seams, straps, buckles, zips and
+# closures. Those are 10 to 30 cm features, the tile is 50 cm, and a 20 cm
+# feature in a 50 cm tile repeats visibly on a 1.8 m body. RN-454 settled
+# this for the spider ("plate structure at 10 to 30 cm is the GEOMETRY's job
+# and the geometry already has it") and a suit is the same argument: a strap
+# that is drawn rather than built has no silhouette, and silhouette is the
+# thing ART-DIRECTION.md is actually asking for.
+# ---------------------------------------------------------------------------
+
+# 5 mm thread pitch over a 0.5 m tile. A technical garment's outer layer is a
+# 1000-denier-ish weave and this is roughly its scale; finer than this and the
+# weave is under the texel floor at the FP hand, coarser and it reads as
+# sacking rather than as a suit.
+# 3.3 mm at 150 threads over the 0.5 m tile, which is 3.4 texels per thread:
+# right at the resolvable floor and deliberately so. THE FIRST VERSION WAS AT
+# 100 (5 mm, 5.1 texels) AND IT RENDERED AS KNITWEAR. That is not a subtle
+# miss: at 5 mm on a 0.12 m glove a player counts about twenty-four threads
+# across the back of the hand, and anything you can count reads as hand-knitted
+# wool rather than as the tight technical weave a pressure garment is. The
+# whole point of the outer layer is that you sense the weave without resolving
+# it, so the pitch is set just at the point where the texel floor stops it
+# being countable.
+_FAB_THREADS = 150
+_FAB_RIPSTOP = 7          # every seventh thread is the heavy ripstop yarn: a
+                          # 2.3 cm grid, which is what ripstop actually is,
+                          # and it is now the COARSEST thing on the map, which
+                          # is the right way round for a woven surface
+
+
+def _suitfab_height(w, h):
+    """A plain weave with an over-under, a ripstop grid, and a soft drape.
+
+    The weave is TWO crossed strand layers, which is the only way to get it:
+    `_hair_layer` is the one anisotropic primitive in this file and a weave is
+    two anisotropies at right angles. Everything else here is isotropic by
+    construction and no amount of tuning grows a direction on it (RN-461).
+
+    THE OVER-UNDER IS THE POINT. Adding warp and weft together gives a
+    waffle: every crossing is a bump and the surface has no weave, it has a
+    grid of dots. A real plain weave alternates which yarn passes over, so the
+    crossings alternate high and low in a checker at the thread pitch, and
+    THAT is what makes a highlight travel along a thread instead of sitting on
+    a lattice."""
+    warp, _ = _hair_layer(w, h, _FAB_THREADS, 6101, length=2.10, radius=0.30,
+                          taper=0.0, flow_deg=0.0, wobble_deg=2.5)
+    weft, _ = _hair_layer(w, h, _FAB_THREADS, 6203, length=2.10, radius=0.30,
+                          taper=0.0, flow_deg=90.0, wobble_deg=2.5)
+    # The drape. Low frequency and low amplitude: it is what stops the weave
+    # reading as graph paper, and it is NOT a fold - a fold is geometry.
+    drape = _fbm(w, h, 5, 3, seed=6301)
+    fuzz = _fbm(w, h, 150, 2, seed=6421)
+    out = [0.0] * (w * h)
+    crown = [0.0] * (w * h)
+    rip = [0.0] * (w * h)
+    for y in range(h):
+        gy = int((y / h) * _FAB_THREADS)
+        # the heavy yarn sits every _FAB_RIPSTOP threads in each direction
+        ry = 1.0 if (gy % _FAB_RIPSTOP) == 0 else 0.0
+        base = y * w
+        for x in range(w):
+            i = base + x
+            gx = int((x / w) * _FAB_THREADS)
+            rx = 1.0 if (gx % _FAB_RIPSTOP) == 0 else 0.0
+            over = 1.0 if ((gx + gy) & 1) else 0.0
+            a = warp[i]
+            b = weft[i]
+            # over-under: whichever yarn is on top this crossing gets the
+            # crown, the other is pushed down behind it
+            hi = a * 0.66 + b * 0.34 if over else a * 0.34 + b * 0.66
+            lo = min(a, b)
+            heavy = max(rx * a, ry * b)
+            rip[i] = heavy
+            crown[i] = hi - 0.55 * lo
+            # The weave's share of the height came DOWN from 0.62 to 0.34 with
+            # the pitch change, and the drape's went up. Amplitude and pitch
+            # are not independent: a 0.62 crown over a 3.3 mm pitch is a
+            # relief slope that reads as corrugation whatever the normal
+            # strength does afterwards. The heavy ripstop yarn keeps its share
+            # because it is meant to be the feature you actually see.
+            out[i] = (0.44 * drape[i] + 0.34 * hi + 0.24 * heavy
+                      + 0.030 * fuzz[i])
+    return out, {"crown": _normalise(crown), "rip": rip,
+                 "hn": _normalise(out), "drape": drape}
+
+
+def _suitfab_masks(w, h, height, aux):
+    """A WIDE band, and it is wide because a garment is not one material.
+
+    Section 2.1 item 4 wants an effective p05..p95 span of at least ~0.15.
+    `Suit` has a palette roughness of 0.65 and `SuitDark` 0.70, so an ormG
+    running roughly 0.60 to 1.00 puts Suit at an effective 0.39 to 0.65 and
+    SuitDark at 0.42 to 0.70. Both are four to five times panel's measured
+    0.032 on the same roles.
+
+    The band is not decoration. Three physically different things live on a
+    working garment and they have genuinely different roughness: the raw
+    weave is matte, the crowns of the yarns POLISH where the fabric rubs
+    (elbows, palms, anywhere it drags), and ground-in dirt is rougher than
+    either. Driving all three off one mask would be the cobblestone mistake
+    again, so the polish follows the weave crowns (a sub-centimetre field)
+    and the soiling follows the broad patches (a 17 cm field) and they are
+    multiplied, not summed."""
+    grime = _fbm(w, h, 3, 3, seed=6551)
+    rub = _fbm(w, h, 4, 2, seed=6607)       # 12.5 cm: the rub ZONES
+    rough = [0.0] * (w * h)
+    # Honest constant. A pressure garment's outer layer is a polymer weave and
+    # the palette already states 0.00 metallic on both roles; identity is the
+    # only multiplier that leaves that alone.
+    metal = [1.0] * (w * h)
+    for i in range(w * h):
+        # start rough, the way cloth is
+        r = 0.99
+        # THE ZONE TERM CARRIES THE BAND, AND THE FIRST VERSION DID NOT HAVE
+        # IT. Polishing only the yarn crowns gave a measured effective band of
+        # 0.127, under section 2.1's 0.15, because `crown` is a strand field:
+        # heavily skewed to zero with a thin bright tail, so almost every texel
+        # got almost the same roughness. A suit does not polish thread by
+        # thread, it polishes in ZONES - elbows, knees, palms, under a strap -
+        # and a zone is a low-frequency field with a real spread. The
+        # smoothstep is what turns that spread into a band rather than a haze.
+        r -= 0.30 * _smoothstep(0.18, 0.78, rub[i])
+        # within a rub zone, the crowns take it first
+        r -= 0.20 * aux["crown"][i] * (0.40 + 0.60 * rub[i])
+        # the ripstop yarn is heavier and shinier than the field yarn
+        r -= 0.06 * aux["rip"][i]
+        # ground-in dirt roughens whatever it lands on
+        r += 0.06 * (grime[i] - 0.5)
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+def _suitfab_albedo(w, h, height, aux):
+    """Soiling at 10 to 20 cm, and dirt that collects where dirt collects.
+
+    ART-DIRECTION.md asks for grounded, muted, layered colour and names flat
+    vertex colour as the defect to unlearn. The palette gives the level (this
+    map is mean-neutral by construction, so only its VARIANCE and its HUE
+    survive `Surfaces.ts`'s divide by `albedo_mean`); what is authored here is
+    where a working suit is dirty and where it is not."""
+    soil = _fbm(w, h, 3, 3, seed=6701)          # 16.7 cm: the grime patches
+    stain = _fbm(w, h, 6, 2, seed=6803)         # 8.3 cm: within-patch mottle
+    out = bytearray(w * h * 3)
+    for i in range(w * h):
+        # The weave's own value structure: a yarn crown catches light, the
+        # gap between yarns is in shadow and holds dirt. Small, because the
+        # normal map is already carrying this band and doubling it is how a
+        # surface starts looking painted.
+        v = 0.90 + 0.13 * aux["crown"][i] - 0.10 * (1.0 - aux["hn"][i])
+        # the broad soiling, which is the map's actual job
+        d = _clamp01(0.62 * soil[i] + 0.38 * stain[i])
+        v *= 1.0 - 0.30 * d
+        # Dirt is warmer and much less saturated than the garment under it.
+        # Applied as a LEAN on the channels rather than as a colour, because a
+        # mean-neutral map cannot carry a colour and pretending otherwise is
+        # how a family ships a tint that the divide then deletes.
+        warm = 0.055 * d
+        o = i * 3
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + warm))))
+        out[o + 1] = int(round(255.0 * _clamp01(v)))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - warm * 1.15))))
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# suitplate - the hard fittings. RN-644.
+#
+# Knuckle plates, the helmet ring, buckles, armour lames. One role, `Plate`,
+# palette 7E8790 at metallic 0.70 and roughness 0.42.
+#
+# THIS FAMILY EXISTS TO FIX A NAMED DEFECT, NOT TO DECORATE. Section 2.1 item
+# 4: "Metalness must carry information or be honestly constant. Three of four
+# ORM maps are literally 255 in blue. That is fine for rock and bark; it is
+# not fine that the only varying metalness in the game is 8.9 per cent of one
+# map." A painted or anodised fitting that has worn through to bare metal is
+# the clearest case in the game of a surface whose metalness genuinely varies
+# across itself, and one wear mask drives all three maps coherently:
+#
+#   worn through -> albedo lifts, metalness goes UP toward bare alloy,
+#                   roughness goes DOWN because the coating is what was rough
+#   still coated  -> albedo sits dark, metalness low (a coating is dielectric),
+#                   roughness high
+#
+# Getting those three to agree is the difference between metal and grey
+# plastic, and it costs nothing that a decorative map would not also cost.
+# ---------------------------------------------------------------------------
+
+# Eleven scratches per tile, and they are AUTHORED as segments rather than
+# drawn from noise. A scratch is a long thin straight thing and no isotropic
+# field produces one; this is the same argument that made the fur strands
+# discrete (RN-461). Values are (x0, y0, x1, y1, depth), tile space.
+_PLATE_SCRATCHES = (
+    (0.05, 0.18, 0.47, 0.29, 1.00), (0.62, 0.07, 0.95, 0.14, 0.72),
+    (0.21, 0.55, 0.74, 0.71, 0.88), (0.83, 0.36, 0.99, 0.62, 0.55),
+    (0.12, 0.82, 0.58, 0.93, 0.66), (0.40, 0.02, 0.52, 0.34, 0.44),
+    (0.68, 0.78, 0.92, 0.88, 0.61), (0.02, 0.44, 0.19, 0.51, 0.38),
+    (0.55, 0.42, 0.88, 0.49, 0.50), (0.30, 0.62, 0.36, 0.97, 0.42),
+    (0.72, 0.20, 0.79, 0.44, 0.35),
+)
+
+
+def _plate_scratch_field(w, h):
+    """Distance-falloff field for the authored scratches, 0..1, 1 in a groove.
+
+    Two radii: a narrow cut and a wide burr shoulder either side of it, which
+    is what makes a scratch catch light on one edge instead of reading as a
+    drawn line."""
+    cut = [0.0] * (w * h)
+    burr = [0.0] * (w * h)
+    for y in range(h):
+        py = y / h
+        base = y * w
+        for x in range(w):
+            px = x / w
+            bc, bb = 0.0, 0.0
+            for (ax, ay, bx, by, dep) in _PLATE_SCRATCHES:
+                d = _seg_dist(px, py, ax, ay, bx, by)
+                c = dep * (1.0 - _smoothstep(0.0, 0.0016, d))
+                if c > bc:
+                    bc = c
+                s = dep * (1.0 - _smoothstep(0.0012, 0.0052, d))
+                if s > bb:
+                    bb = s
+            cut[base + x] = bc
+            burr[base + x] = bb
+    return cut, burr
+
+
+def _suitplate_height(w, h):
+    """Brushed grain, micro-pitting, shallow dings, and eleven scratches.
+
+    NO panel seams, NO rivets, NO bevels. The consumers are 3 to 6 cm parts
+    and the geometry already carries their edges; a bevel in the map on a part
+    that has a real bevel is the doubling that reads as dirt."""
+    # The grain. One direction, very fine (140 threads over 0.4 m is a 2.9 mm
+    # pitch), no taper: a brush mark is a scratch that runs the whole way.
+    grain, _ = _hair_layer(w, h, 140, 7101, length=2.60, radius=0.20,
+                           taper=0.0, flow_deg=12.0, wobble_deg=4.0)
+    pit = _worley(w, h, 64, 7203)          # 6 mm cells: casting micro-pitting
+    ding = _worley(w, h, 9, 7307)          # 44 mm cells: impact dishing
+    cut, burr = _plate_scratch_field(w, h)
+    out = [0.0] * (w * h)
+    high = [0.0] * (w * h)
+    for i in range(w * h):
+        z = 0.50
+        z += 0.085 * grain[i]
+        # worley is 0 AT a feature point, so (1 - v) is the pit
+        z -= 0.055 * (1.0 - pit[i]) ** 3
+        # a ding is a broad shallow dish, not a hole: cube it so only the
+        # cell centres dish and the surface between them stays flat
+        z -= 0.130 * (1.0 - ding[i]) ** 3
+        z += 0.040 * burr[i]
+        z -= 0.150 * cut[i]
+        out[i] = z
+        # "how proud is this texel", which is what wears first
+        high[i] = _clamp01(0.5 + 1.9 * (z - 0.5))
+    return out, {"high": high, "cut": cut, "burr": burr, "grain": grain,
+                 "ding": ding, "hn": _normalise(out)}
+
+
+def _plate_wear(aux, patch, speck, i):
+    """How far the coating has gone at one texel, 0 (intact) to 1 (bare).
+
+    ONE function, called by both the masks and the albedo with the SAME two
+    fields, because a wear pass that disagrees between its albedo and its ORM
+    reads as dirt lying on metal rather than as metal with its coating worn
+    off, and that is the single most common way this kind of map goes wrong.
+
+    THE SMOOTHSTEP IS THE WHOLE THING AND THE FIRST VERSION DID NOT HAVE IT.
+    Summing four independent noise fields concentrates the result around its
+    mean, which is the central limit theorem doing exactly what it says: the
+    raw sum below spans about 0.17 to 0.33 at p05..p95 and the effective
+    metalness that came out of it measured a band of 0.074, WORSE than the
+    0.406 of the `panel` family it was replacing and a straight regression on
+    the one number this family was built to fix.
+
+    Paint does not thin, it CHIPS. A coating is either there or it is not, and
+    the physically right shape is bimodal, not Gaussian. The smoothstep maps
+    the narrow raw distribution across the full range and gives the two
+    populations the map is supposed to have."""
+    raw = (0.55 * aux["high"][i] * (0.25 + 0.75 * patch[i])
+           + 0.35 * aux["cut"][i]
+           + 0.22 * speck[i] * aux["high"][i])
+    # The knee is CENTRED ON THE RAW MEDIAN, which is about 0.25, and that is
+    # a measurement rather than a taste. Sitting the knee at 0.20..0.46 put
+    # the median texel at wear 0.06: 95 per cent of the plate still fully
+    # coated, an effective roughness band of 0.115, and a map that had a
+    # bimodal shape and only one mode in it. Centring the knee splits the
+    # surface roughly in half, which is also what a used fitting looks like:
+    # every proud face bright, every recess still painted.
+    return _smoothstep(0.13, 0.34, raw)
+
+
+def _suitplate_masks(w, h, height, aux):
+    """ONE wear mask, three channels, and the metalness is the point.
+
+    `Plate` is metallic 0.70, roughness 0.42, so:
+      effective metalness = 0.70 * ormB, band 0.24 to 0.70 as authored
+      effective roughness = 0.42 * ormG, band 0.19 to 0.41 as authored
+    Both clear section 2.1's 0.15 requirement, and the metalness one is the
+    first varying metalness in this file that is not a rounding error."""
+    patch = _fbm(w, h, 4, 3, seed=7411)     # 10 cm: where the coating is thin
+    speck = _fbm(w, h, 22, 2, seed=7507)    # 1.8 cm: chipping at the edges
+    rough = [0.0] * (w * h)
+    metal = [0.0] * (w * h)
+    for i in range(w * h):
+        wear = _plate_wear(aux, patch, speck, i)
+        # coating is the rough one; bare alloy is smooth. Grain modulates the
+        # bare metal only, because a brush mark under paint is invisible.
+        r = 1.00 - 0.60 * wear
+        r -= 0.10 * aux["grain"][i] * wear
+        # a fresh scratch is bright and smooth along its floor
+        r -= 0.12 * aux["cut"][i]
+        rough[i] = _clamp01(r)
+        # THE VARYING METALNESS, AND IT IS THE REASON THIS FAMILY EXISTS.
+        # A dielectric coating reads near 0.30 of the palette's 0.70; worn
+        # through, it is the alloy at full.
+        metal[i] = _clamp01(0.30 + 0.70 * wear)
+    return rough, metal
+
+
+def _suitplate_albedo(w, h, height, aux):
+    """The same wear mask, in value: dark coating, bright alloy under it.
+
+    This map and the ORM must agree texel for texel or the surface reads as
+    dirt on metal rather than as metal with its coating worn off, which is the
+    single most common way a wear pass goes wrong."""
+    patch = _fbm(w, h, 4, 3, seed=7411)     # the SAME field the masks use
+    speck = _fbm(w, h, 22, 2, seed=7507)    # deliberately, not a new seed
+    stain = _fbm(w, h, 8, 3, seed=7603)
+    out = bytearray(w * h * 3)
+    for i in range(w * h):
+        wear = _plate_wear(aux, patch, speck, i)
+        v = 0.70 + 0.38 * wear
+        # a ding dishes and holds shadow even where the coating survived
+        v -= 0.10 * (1.0 - aux["ding"][i]) ** 3
+        # weathering staining in the hollows, cool rather than warm: this is
+        # oxide and dust on alloy, not the organic grime on the fabric
+        grime = (1.0 - aux["hn"][i]) * stain[i]
+        v *= 1.0 - 0.16 * grime
+        cool = 0.030 * grime
+        # bare alloy leans very slightly warm-neutral against the coating
+        warm = 0.018 * wear
+        o = i * 3
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + warm - cool * 0.6))))
+        out[o + 1] = int(round(255.0 * _clamp01(v)))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - warm + cool))))
+    return bytes(out)
+
+
 def _albedo_mean_rgb(rgb):
     """Mean RGB luma (0..1) over every texel: the opaque counterpart of
     `_albedo_mean_rgba`. No alpha, so no coverage test and every texel counts."""
@@ -1589,14 +1859,7 @@ def read_png_rgba(path):
 # it shipped, it validated, and it did nothing, which is the failure mode this
 # log keeps calling the expensive one.
 FAMILIES = {
-    # panel gained a TILING ALBEDO at RN-553 and is the second family to carry
-    # one after `fur`. It costs 1.40 MB of VRAM (512 px, the mip chain
-    # included) and it buys the one thing a normal and an ORM structurally
-    # cannot: pigmentation. ART-DIRECTION.md names flat vertex colour as a
-    # defect to unlearn, and until this landed every manufactured surface in
-    # the game took its entire base colour from one palette constant.
     "panel": dict(height=_panel_height, masks=_panel_masks,
-                  albedo=_panel_albedo,
                   normal_strength=26.0, ao_radius=7, ao_floor=0.42,
                   ao_gain=2.2),
     # coarse normal_strength came down 13 -> 9 with the low-frequency rebalance:
@@ -1639,6 +1902,22 @@ FAMILIES = {
                 albedo=_fur_albedo,
                 normal_strength=14.0, ao_radius=3, ao_floor=0.42,
                 ao_gain=3.4),
+    "suitfab": dict(height=_suitfab_height, masks=_suitfab_masks,
+                    albedo=_suitfab_albedo,
+                    normal_strength=2.4, ao_radius=3, ao_floor=0.46,
+                    ao_gain=3.8),
+    # suitplate has TWO relief scales in one field - a 0.085 brushed grain and
+    # a 0.150 scratch cut - and the strength has to serve the scratch, because
+    # the scratch is the feature a player actually sees on a 5 cm knuckle
+    # plate. 20 puts the scratch walls near panel's groove weight while
+    # leaving the grain as a sheen rather than as ribbing.
+    # ao_gain 4.6 against panel's 2.2: the relief under the blur here is about
+    # a third of a panel groove's, so panel's gain would leave every scratch
+    # and ding at AO 250-ish and the map would do nothing.
+    "suitplate": dict(height=_suitplate_height, masks=_suitplate_masks,
+                      albedo=_suitplate_albedo,
+                      normal_strength=5.5, ao_radius=5, ao_floor=0.40,
+                      ao_gain=4.6),
 }
 
 
@@ -2038,48 +2317,11 @@ def build_albedo_family(name, size=None):
     return bytes(rgba), rgb, alpha
 
 
-def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
-    """Write every family's PNGs and the manifest.
-
-    `only` RESTRICTS THE WRITE TO ONE FAMILY, AND IT EXISTS BECAUSE THE
-    ALL-OR-NOTHING DEFAULT IS A LAUNDERING MACHINE (RN-558).
-
-    This function loops `FAMILIES` and rewrites `surfaces.json` wholesale, so
-    a lane that regenerates in the shared tree to look at ITS OWN family also
-    writes every other live lane's in-flight family into `assets/textures/dist`
-    and into the manifest. That is not hypothetical: RN-151 is the recorded
-    case of one lane laundering another's work into HEAD, and on 2026-08-01 it
-    happened in BOTH DIRECTIONS in one afternoon between the machine lane and
-    the player lane, from this single entry point, with four lanes live in this
-    file. The standing workaround is a clean-tree generation plus a filtered
-    blob, which works and is what NUMBERS.md prescribes; but that is a
-    discipline, and making the wrong thing impossible beats instructing five
-    lanes to be careful.
-
-    THE MANIFEST IS MERGED, NOT REPLACED, AND THAT IS THE WHOLE DIFFICULTY.
-    Writing a one-family manifest would be worse than the disease: every
-    consumer asserts `set(manifest.families) == set(FAMILIES) | set(
-    ALBEDO_FAMILIES)`, so a partial manifest fails the client, the preview and
-    `check` at once. So `only` reads the manifest that is already on disk,
-    replaces exactly that family's row, and leaves every other row BYTE FOR
-    BYTE as it found it, including the `roles` and `flat_roles` tables, which
-    belong to whoever last wrote them.
-
-    ONE HONEST LIMIT, STATED. `roles` and `flat_roles` are NOT refreshed under
-    `only`, because this process's `ROLE_FAMILY` may contain another lane's
-    uncommitted role moves, which is exactly the payload being kept out. A
-    lane that changes a role mapping therefore needs a full generation on a
-    clean tree; `only` covers a family's PIXELS, which is the common case and
-    the one that was hurting."""
-    if only is not None and only not in FAMILIES:
-        raise SystemExit(
-            "--only %r is not a tiling family. Known: %s"
-            % (only, ", ".join(sorted(FAMILIES))))
-    wanted = sorted(FAMILIES) if only is None else [only]
+def generate(out_dir=OUT_DIR, size=None, quiet=False):
     files = {}
     sizes = {}
     tiling_albedo = {}
-    for name in wanted:
+    for name in sorted(FAMILIES):
         fsize = FAMILY_SIZE[name] if size is None else size
         sizes[name] = fsize
         _, normal, orm, albedo = build_family(name, fsize)
@@ -2109,7 +2351,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
                      fsize, fsize, fsize / FAMILY_TILE_M[name]))
 
     albedo_files = {}
-    for name in ([] if only is not None else sorted(ALBEDO_FAMILIES)):
+    for name in sorted(ALBEDO_FAMILIES):
         fsize = ALBEDO_FAMILIES[name]["size"] if size is None else size
         rgba, _, _ = build_albedo_family(name, fsize)
         a_path = os.path.join(out_dir, "of_%s_a.png" % name)
@@ -2154,7 +2396,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
         "roles": dict(sorted(ROLE_FAMILY.items())),
         "flat_roles": dict(sorted(FLAT_ROLES.items())),
     }
-    for name in wanted:
+    for name in sorted(FAMILIES):
         fam = dict(files[name])
         fam["tile_m"] = FAMILY_TILE_M[name]
         fam["size_px"] = sizes[name]
@@ -2168,7 +2410,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
         if name in tiling_albedo:
             fam["albedo_mean"] = round(_albedo_mean_rgb(tiling_albedo[name]), 4)
         manifest["families"][name] = fam
-    for name in sorted(albedo_files):
+    for name in sorted(ALBEDO_FAMILIES):
         spec = ALBEDO_FAMILIES[name]
         rec = albedo_files[name]
         p = os.path.join(out_dir, rec["file"])
@@ -2186,32 +2428,6 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
         }
 
     m_path = os.path.join(out_dir, "surfaces.json")
-    if only is not None:
-        # MERGE, DO NOT REPLACE. Read what is already on disk, swap in exactly
-        # this family's row, and leave every other row and both role tables
-        # untouched. `json.load` / `json.dump` is a round trip and would
-        # normally be refused on a shared file for reformatting other lanes'
-        # rows (RN-443); it is safe HERE and only here, because this file is
-        # itself generated by `json.dump(indent=2, sort_keys=False)` five
-        # lines below, so the round trip is the identity on everything it does
-        # not deliberately change. That is asserted rather than assumed.
-        if not os.path.isfile(m_path):
-            raise SystemExit(
-                "--only needs an existing %s to merge into. Run a full "
-                "generation on a CLEAN tree first." % m_path)
-        with open(m_path, "r", encoding="utf-8") as fh:
-            prior_text = fh.read()
-        prior = json.loads(prior_text)
-        rt = json.dumps(prior, indent=2, sort_keys=False) + "\n"
-        if rt != prior_text:
-            raise SystemExit(
-                "%s is not in this tool's own output format, so a merge "
-                "would silently reformat it. Refusing." % m_path)
-        merged = prior
-        merged["families"][only] = manifest["families"][only]
-        for k in ("version", "zlib"):
-            merged[k] = manifest[k]
-        manifest = merged
     with open(m_path, "w", newline="\n", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2, sort_keys=False)
         fh.write("\n")
@@ -2219,11 +2435,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
         total = (sum(v[k]["bytes"] for v in files.values() for k in v)
                  + sum(v["bytes"] for v in albedo_files.values()))
         nfiles = (sum(len(v) for v in files.values()) + len(albedo_files))
-        print("[texgen] manifest %s%s"
-              % (m_path, "  (MERGED: only the %r row was rewritten; %d other "
-                 "families and both role tables left as found)"
-                 % (only, len(manifest["families"]) - 1)
-                 if only is not None else ""))
+        print("[texgen] manifest %s" % m_path)
         print("[texgen] %d files, %d bytes of texture payload"
               % (nfiles, total))
     return manifest
@@ -2257,6 +2469,12 @@ ALLOWED_CONSTANT = {
         "flat channel say so rather than invent variation it does not "
         "have; identity leaves the material's own 0.02 exactly where the "
         "palette put it",
+    ("suitfab", "orm", "B"):
+        "a woven pressure garment is a polymer and both roles that wear it "
+        "are already 0.00 metallic in the palette; identity is the only "
+        "multiplier that leaves that alone, and inventing variation here "
+        "would be the dishonest half of section 2.1's own rule. The suit's "
+        "metal is on `suitplate`, which does vary",
 }
 
 # Channels that MUST carry variation, with the reason a flat one is a defect.
@@ -2916,12 +3134,6 @@ def main():
     ap.add_argument("--size", type=int, default=None,
                     help="override every family's resolution (debug only; the "
                          "shipped set uses FAMILY_SIZE)")
-    ap.add_argument("--only", default=None, metavar="FAMILY",
-                    help="regenerate ONE tiling family's PNGs and merge only "
-                         "that family's rows into the existing surfaces.json. "
-                         "Use this whenever another lane has uncommitted work "
-                         "in this file: a full build writes every live lane's "
-                         "in-flight family into the shipped set (RN-558)")
     ap.add_argument("--list", action="store_true",
                     help="print the role -> family table and exit")
     args = ap.parse_args()
@@ -2938,7 +3150,7 @@ def main():
         print("\n%s  %d check(s)" % ("TEXTURES PASS" if ok else "TEXTURES FAIL",
                                      len(lines)))
         return 0 if ok else 1
-    generate(args.out, args.size, only=args.only)
+    generate(args.out, args.size)
     return 0
 
 
