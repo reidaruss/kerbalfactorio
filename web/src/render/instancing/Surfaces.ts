@@ -9,16 +9,41 @@
 // which is the entire reason the texture pass shipped two shared tilings instead
 // of per-asset maps.
 //
-// NO ALBEDO MAP ON THE MACHINE PATH, EVER (RN-176 narrowed this from a global
-// ban). `MachineBatch` sets `vertexColors: true` and its `onBeforeCompile`
-// writes `diffuseColor.rgb` AFTER `<map_fragment>`, so a base-colour map would
-// be silently overwritten for four of five roles. Normal, roughness, metalness
-// and AO all land earlier in the meshphysical fragment, so all four survive it
-// (ASSET-SPECS 2.8). That argument is SPECIFIC to the machine hook: the flora
-// batch paths (PropLibrary, NodeBatch) have no such hook, and the albedo CARD
-// families (leaf, grass) attach `map` + alphaTest there. MachineBatch is
-// pinned to 'panel', which carries no albedo, so the ban holds structurally:
-// an albedo can only ever reach a family the machine path never asks for.
+// THE MACHINE PATH NOW CARRIES AN ALBEDO, AND THE BAN ABOVE IT IS RETIRED
+// RATHER THAN QUIETLY BROKEN (RN-560). The paragraph that stood here said
+// "NO ALBEDO MAP ON THE MACHINE PATH, EVER", and closed with the structural
+// guarantee that `MachineBatch` is pinned to 'panel', 'panel' carries no
+// albedo, and therefore an albedo could only ever reach a family the machine
+// path never asks for. RN-553 gave `panel` a tiling albedo, which made the
+// last sentence FALSE while every word above it still read as current. A
+// comment asserting a guarantee that has stopped holding is worse than no
+// comment, because the next lane reasons from it instead of from the code.
+//
+// WHAT IS ACTUALLY TRUE, ROLE BY ROLE. `MachineBatch` sets `vertexColors:
+// true` and its `onBeforeCompile` writes `diffuseColor.rgb` after
+// `<map_fragment>`, but it does so INSIDE a role test, so the map's fate
+// differs per role rather than being lost wholesale:
+//
+//   role 0  every plinth, body, collar, plate, greeble and brick: the hook
+//           does not run at all, so the albedo survives intact. This is the
+//           overwhelming majority of machine surface area and it is the
+//           entire point of giving `panel` an albedo.
+//   roles 2,3,4  belt decks and both curve handednesses: `mix(diffuseColor,
+//           cargo, blob)`, so the albedo survives wherever there is no cargo
+//           blob and is displaced where there is. That is correct: cargo is
+//           meant to cover the deck it sits on.
+//   role 1  the status chip: `diffuseColor.rgb = c * 0.22`, a hard write. The
+//           albedo is discarded. Also correct: an indicator's colour is the
+//           entity's visual state and must not be modulated by paint wear.
+//
+// The mean-neutral divide holds across all of this because it lives in
+// `material.color` (x 1/albedo_mean) and three composes
+// `material.color x map x vertexColour`, both of which land before the hook.
+// Normal, roughness, metalness and AO land earlier still (ASSET-SPECS 2.8).
+//
+// NOT MEASURED IN THE CLIENT, AND SAID SO. The above is read off the shader
+// source and the three composition order, not off a frame. The in-game look
+// of the machine albedo is owed.
 //
 // UVs ARE IN METRES, so the consumer sets `repeat = 1 / tile_m` and the texel
 // density is a JSON edit rather than a rebuild of 48 binaries.

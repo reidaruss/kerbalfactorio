@@ -697,14 +697,108 @@ def build_lod0(root):
 
 
 def build_lod1(root):
+    """The middle tier, RE-AUTHORED AS A SHADOW PROXY (RN-561).
+
+    IT WAS AUTHORED FOR SCREEN DISTANCE AND WAS NEVER SHADOW-SAFE, and that is
+    older than this pass rather than a consequence of it: the pre-raise
+    592-triangle smelter's LOD1 already measured 264.8 mm against LOD0.
+    Nothing had ever asked a cascade to draw a cruder tier, so the one number
+    that decides whether it may had never been taken.
+
+    WHAT THE NUMBER IS. `ShadowLod.ts` measures from LOD0's VERTICES to this
+    mesh's SURFACE, so a feature this tier simply does not have reports its
+    full stand-off. `tools/blender/check_shadow_lod.py` is that measurement
+    offline; it read 325.00 mm here, agreeing with the client's own figure to
+    the penny, and named the two causes: the roof JUNCTION BOX (325 mm, over a
+    bare pan) and the hopper VIBRATOR (290 mm, over a bare rear face). Neither
+    is subtle and neither could have been guessed, because both are features
+    whose absence is invisible in a silhouette and total in a shadow.
+
+    THE RULE THIS TIER IS NOW AUTHORED TO. Anything on LOD0 standing more than
+    about 56 mm proud of a surface this tier does have must be BLOCKED IN,
+    because 56.25 mm is cascade 1's texel and the whole object of the exercise
+    is to earn cascade 1 and 2. Below that the cascade cannot resolve it
+    anyway. So the greebles are not reproduced, they are boxed: one box per
+    feature, at the feature's own envelope. A ladder is a slab the size of its
+    stringers, a gauge cluster is a slab the size of its boss, a louvre is a
+    slab the size of its coaming.
+
+    WHAT IT BUYS, AND IT IS THE POINT. The marginal cost of one more LOD0
+    triangle is `1 + (cascades still drawing tier 0)`. At 325 mm that is 4.0x
+    and every LOD0 triangle on every smelter in the base is paid four times.
+    Under 56.25 mm cascades 1 and 2 draw THIS mesh instead, the marginal drops
+    to 2.0x, and what a machine can afford at LOD0 doubles. That is why this
+    is worth more than trimming any LOD0: it is the multiplier, not the term.
+    """
     mb = of.MeshBuilder()
     _shell(mb)
     _posts(mb)
     _mouth_block(mb, 1, IN_Z, IN_W, IN_H, IN_JAMB, IN_HEAD, IN_SILL)
     _mouth_block(mb, -1, OUT_Z, OUT_W, OUT_H, OUT_JAMB, OUT_HEAD, OUT_SILL)
-    # the stack as one square tube, foot sunk into the pan as at LOD0
-    mb.box((CHIM_R * 2, CHIM_R * 2, H - CHIM_Z0),
-           (0, CHIM_Y, (CHIM_Z0 + H) * 0.5), "Steel")
+
+    # The roof rim, which LOD0 carries to RIM_TOP and this tier stopped at the
+    # pan: a flat 200 mm all the way round the roofline.
+    rim_c = DECK * 0.5 - 0.05
+    for s in (-1, 1):
+        mb.box((DECK + 0.06, RIM_T, RIM_TOP - DECK_TOP),
+               (0, s * rim_c, (DECK_TOP + RIM_TOP) * 0.5), "SteelDark")
+        mb.box((RIM_T, DECK + 0.06, RIM_TOP - DECK_TOP),
+               (s * rim_c, 0, (DECK_TOP + RIM_TOP) * 0.5), "SteelDark")
+
+    # The stack, ROUND rather than square. A square tube of half-width CHIM_R
+    # leaves LOD0's own cap vertices 129 mm from anything, because they sit at
+    # radius 0.44 on a diagonal where the square is wider and on an axis where
+    # it is narrower. An 8-gon against LOD0's 12-gon is 0.44 * (1 - cos 22.5)
+    # = 33 mm, comfortably inside cascade 1, for sixteen more triangles.
+    mb.cylinder(CHIM_R, (CAP_Z0 + 0.04) - CHIM_Z0,
+                (0, CHIM_Y, (CHIM_Z0 + CAP_Z0 + 0.04) * 0.5), axis="Z",
+                segments=8, role="Steel")
+    mb.cylinder(CHIM_R + 0.10, H - CAP_Z0, (0, CHIM_Y, (CAP_Z0 + H) * 0.5),
+                axis="Z", segments=8, role="SteelDark")
+
+    # THE TWO THE MEASUREMENT NAMED, blocked in at their own envelopes.
+    mb.box((0.50, 0.58, 0.32), (-1.10, -1.06, DECK_TOP + 0.16), "SteelDark")
+    mb.box((0.54, 0.42, 0.42), (-1.06, 1.82, 2.16), "SteelDark")
+    # The roof plumbing. A 2.1 m run standing 135 mm over a bare pan is a
+    # shadow this tier simply did not cast, and on a roof that is exactly the
+    # surface a low sun rakes across.
+    mb.box((0.15, 2.20, 0.15), (-1.10, 0.24, 3.00), "SteelDark")
+
+    # The charging hood on +Y, which leans out to 1.966 and is 266 mm of
+    # nothing on this tier. One box at its mean stand-off.
+    mb.box((2.32, 0.24, 0.52), (0.0, 1.84, 1.60), "SteelDark")
+    # The firebox assembly on -Y: coaming plus door plus the peep boss reach
+    # about 145 mm proud of the body face.
+    mb.box((1.50, 0.16, 1.10), (0.0, -1.78, DOOR_Z), "SteelDark")
+    # The launder, which reaches the cell edge and casts the contact shadow a
+    # player standing at the pour side is looking straight at.
+    mb.box((1.44, 0.30, 0.22), (0.0, -1.87, 0.30), "SteelDark")
+    # The painted skirt. This tier never had it, so the anchor pads and their
+    # bolts (which top out at 0.441 on the skirt at 0.36) stood 141 mm above
+    # a plinth that stops at 0.30. The cheapest 12 triangles in this function
+    # and the one that fixes the CONTACT shadow, which is the deviation class
+    # ShadowLod.ts calls the most legible of the three.
+    mb.box((W, D, SKIRT_H + 0.09), (0, 0, PLINTH_H + (SKIRT_H + 0.09) * 0.5),
+           "Accent")
+    # -X: the ladder stringers and the louvre coaming. The block is 0.84 wide
+    # and not 0.52, because the widest thing on this face is not the ladder,
+    # it is the bracketed LANDING at its top, and a block sized to the obvious
+    # feature left the landing's own ends 160 mm from anything.
+    mb.box((0.22, 0.86, 1.76), (-1.80, -0.96, 1.62), "Steel")
+    mb.box((0.16, 1.00, 0.96), (-1.77, 0.86, 1.32), "SteelDark")
+    # +X: the gauge cluster boss, the hatch coaming and the power nub.
+    mb.box((0.24, 0.40, 0.26), (1.79, -0.92, 1.42), "SteelDark")
+    mb.box((0.16, 1.04, 1.14), (1.77, 0.72, 1.46), "SteelDark")
+    mb.box((0.28, 0.40, 0.44), (1.84, PWR_Y, 2.80), "Steel")
+    # The tie rods' BEARING PLATES reach 1.98, which is 80 mm past the brick
+    # post this tier already has. The rod itself is inside the post and needs
+    # nothing; the plates do.
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            for z in (TIE_Z0 + 0.11, TIE_Z1 - 0.11):
+                mb.box((0.24, 0.24, 0.18), (sx * TIE_C, sy * TIE_C, z),
+                       "SteelDark")
+
     mb.box((0.05, 0.44, 0.18), (1.845, 0.0, STATUS_Z), "EmissiveState")
     return mb, mb.build(NAME + "_LOD1", root)
 
