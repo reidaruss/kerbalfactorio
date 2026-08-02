@@ -116,6 +116,27 @@
       "texels_per_m": 341.3333333333333,
       "albedo_mean": 0.5386
     },
+    "stone": {
+      "normal": {
+        "file": "of_stone_n.png",
+        "bytes": 301888,
+        "sha256": "542a8521bd118754fa72dac7e453ff8c6b1d0f0539b3b425f7c033c15e0df6b6"
+      },
+      "orm": {
+        "file": "of_stone_orm.png",
+        "bytes": 192127,
+        "sha256": "16e175bb34d14177699e38eb7f43078632d71c28c4975cbf1ee519ccc8c7ca97"
+      },
+      "albedo": {
+        "file": "of_stone_a.png",
+        "bytes": 38666,
+        "sha256": "7929ea3c37429b81de5bb997d0c8389d5a123916208a0f2fbd9ffa31ecea33b3"
+      },
+      "tile_m": 0.6,
+      "size_px": 384,
+      "texels_per_m": 640.0,
+      "albedo_mean": 0.4962
+    },
     "suitfab": {
       "normal": {
         "file": "of_suitfab_n.png",
@@ -211,8 +232,8 @@
     "LeafLight": "leaf",
     "Plate": "suitplate",
     "Regolith": "coarse",
-    "Rock": "coarse",
-    "RockDark": "coarse",
+    "Rock": "stone",
+    "RockDark": "stone",
     "Rubber": "coarse",
     "Sand": "coarse",
     "Soil": "coarse",

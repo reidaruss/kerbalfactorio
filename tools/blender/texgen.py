@@ -138,8 +138,17 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # is in every frame of the game, so both clear it: suitfab 512 px / 0.5 m =
 # 1024 px/m, suitplate 384 px / 0.4 m = 960 px/m. ASSET-SPECS 2.8's 512 px/m
 # first-person target is the floor here, not the aim.
+# `stone` matches coarse, bark and ore at 384, and lands at the same 640 px/m
+# `bark` ships at, comfortably over the 512 px/m first-person target: its
+# 0.6 m tile is bark's tile exactly. The floor under it is its own finest
+# authored feature, the 4.7 mm grain octave, which is three texels at 384 and
+# would alias at 256. The ceiling over it is that it carries THREE maps rather
+# than two, so 384 keeps the addition at 2.36 MB of VRAM instead of 4.19 MB at
+# 512, which is `fur`'s argument and literally the same arithmetic (RGBA8,
+# mip chain included).
 FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
-               "fur": 384, "suitfab": 512, "suitplate": 384}
+               "fur": 384, "suitfab": 512, "suitplate": 384,
+               "stone": 384}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -200,9 +209,37 @@ ROLE_FAMILY = {
     # Ore wants relief, just not that relief; metalness still comes from the
     # palette constant, which `coarse` leaves at identity.
     "Iron": "coarse", "Copper": "coarse",
-    "Rock": "coarse", "RockDark": "coarse", "Regolith": "coarse",
+    "Regolith": "coarse",
     "Sand": "coarse", "Soil": "coarse", "Coal": "coarse",
     "Rubber": "coarse",
+    # --- stone: the HOST ROCK (RN-742) ---
+    # `Rock` and `RockDark` leave `coarse` on exactly the argument that moved
+    # Bark out of it and Suit out of `panel`: the family encoded the wrong FACT
+    # about the surface. Measured, and this is the whole case:
+    #
+    #   coarse  normal mean tilt 7.69 deg, MAX 27.12 deg, and 0.0 per cent of
+    #           its ORM green below 0.60
+    #   stone   mean 17.18 deg, max 74.31 deg, 29.3 per cent below 0.60
+    #
+    # No texel in `coarse` is steeper than 27 degrees and no part of it is ever
+    # smooth, so host rock wearing it can neither glint nor catch a raking sun.
+    # That surface is most of every boulder, the whole spire and all the scree,
+    # which made it the flattest thing in the game by measurement and the
+    # single largest gap against ART-DIRECTION.md's "surfaces that respond to
+    # light like materials".
+    #
+    # WHAT STAYS ON `coarse` IS WHAT `coarse` ACTUALLY DESCRIBES WELL: granular
+    # and dug-up things. Sand, Soil, Regolith, Rubber, and the Iron, Copper and
+    # Coal ITEM chunks, which are loose material rather than bedded rock. The
+    # ore-in-rock seam roles stay on `ore` for RN-156's reason, unchanged.
+    #
+    # THIS MOVE COSTS ZERO ASSET BYTES on its own, because role-to-family
+    # binding is resolved at RUNTIME from the manifest. The .glb rewrite in the
+    # same commit is the PALETTE change travelling with it, not this.
+    #
+    # Moves in the same commit as the client's copy of this table (RN-100's
+    # rule: verifyAgainstManifest makes a one-sided move a failed smoke run).
+    "Rock": "stone", "RockDark": "stone",
     # --- bark: tree trunks ---
     # Moved out of `coarse` for the same reason Iron and Copper moved out of
     # `panel`: the family encoded the wrong FACT about the surface. `coarse`
@@ -302,8 +339,20 @@ FLAT_ROLES = {
 # helmet ring, an armour lame - so a tile eight times the largest of them
 # cannot repeat on any one part, and the scratches stay long relative to the
 # plate they cross, which is what a scratch looks like.
+# `stone` 0.6 m, and the consumer sets it: a boulder 1.0 to 1.5 m across, plus
+# the spire and the scree. At 0.6 m a 1.5 m boulder carries 2.5 repeats, which
+# is few enough that no copy is countable on the asset the camera spends most
+# of its rock time on, and STONE_FACETS = 8 then lands the facets at 7.5 cm,
+# so that boulder shows about twenty facets across its face: a fractured rock
+# rather than a feature. The two neighbours bracket it and both are worse
+# here. coarse's 0.75 m gives 2 repeats and 9 cm facets, which is the "one
+# facet becomes the whole face" complaint the bark row above records, one size
+# up. ore's 0.5 m gives 3 repeats, and three copies of a 20 cm pigment band
+# across one boulder is exactly the countable repetition the suitfab row
+# warns about.
 FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
-                 "fur": 0.3, "suitfab": 0.5, "suitplate": 0.4}
+                 "fur": 0.3, "suitfab": 0.5, "suitplate": 0.4,
+                 "stone": 0.6}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -1115,6 +1164,336 @@ def _ore_masks(w, h, height, aux):
              + (mottle[i] - 0.5) * 0.14)
         rough[i] = _clamp01(r)
     return rough, metal
+
+
+# ---------------------------------------------------------------------------
+# The `stone` family: the HOST ROCK a boulder is made of. RN-742.
+#
+# WHY IT EXISTS, AND IT IS A MEASUREMENT RATHER THAN A TASTE. `coarse` served
+# the host rock of every boulder, the whole rock spire and all the scree.
+# Measured on its own shipped field: mean normal tilt 7.69 degrees with a
+# MAXIMUM of 27.19, and 0.0 per cent of its ORM green below 0.60. So no texel
+# of it is steeper than a loading ramp and no part of it is ever smooth: it
+# cannot glint and it cannot catch a raking sun. That is the flattest surface
+# in the game by measurement, on the family that owns most of the screen area
+# of every rock. `stone` replaces it for the host-rock roles; `coarse` keeps
+# the soil, sand, regolith, rubber and loose-item roles it is right for.
+#
+# WHY COARSE MEASURES THAT WAY, which is the part that makes this a new family
+# rather than a retune. Its facet term is `(1.0 - worley) ** 2`. The
+# derivative of that form is 2 * (1 - w), and it goes to ZERO exactly at
+# w = 1, which is the cell boundary, which is where two facets meet. The one
+# place a fractured rock has an edge is the one place that form is guaranteed
+# smooth. No amplitude fixes it, because the SHAPE is wrong and not the scale,
+# and that is the same argument bark and ore were split out on: the family
+# encoded the wrong fact about the surface.
+#
+# THE FREQUENCY SPLIT IS NOT NEGOTIABLE, AND IT IS RN-454's LESSON PAID
+# FORWARD. Driving albedo, normal and ORM off one heightfield gave the spider
+# identical frequency content in all three and it rendered as COBBLESTONE. The
+# subject here IS rock, so cobblestone is the failure this family is most
+# likely to reproduce and least likely to notice: a pigment field that agreed
+# with the facet field would not look like a bug, it would look like a wall of
+# cobbles and nobody would look twice. So each map is authored for one band:
+#
+#   NORMAL  fracture relief from 7.5 cm down to 1.8 cm, plus a grain under
+#           5 mm. Angular facets meeting at sharp arrises, nothing coarser
+#           than a facet, and nothing that says anything about colour.
+#   ALBEDO  PIGMENTATION at 10 to 20 cm and nothing else: mineral banding,
+#           iron staining, pale lichen and dust. It never reads `height`,
+#           on purpose. See _stone_albedo.
+#   ORM     its own band, keyed on facet CREST versus CREVICE. This is the
+#           channel that fixes the 0.0-per-cent-below-0.60 finding, and it is
+#           the one DW-35 ranks first ("roughness variation matters more than
+#           albedo detail").
+# ---------------------------------------------------------------------------
+
+# Facet cells per tile. Over a 0.6 m tile, 8 cells is a 7.5 cm facet and 19 is
+# a 3.2 cm chip riding on it, which brackets the 2 to 8 cm band this family's
+# relief is authored in; the 34-cell micro layer at 1.8 cm is the hand-off to
+# the grain below it. `coarse` puts its two worley layers at 6 and 14 cells
+# over a 0.75 m tile, i.e. 12.5 cm and 5.4 cm: coarser features, and rounded
+# ones. Nothing here is harmonic with anything else here, for the reason the
+# panel rubs comment gives: features that share a period line their copies up.
+STONE_FACETS = 8
+STONE_CHIPS = 19
+STONE_MICRO = 34
+
+# Arris width, in units of the (second-nearest minus nearest) distance gap,
+# which runs at about twice the perpendicular distance from a cell boundary.
+# 0.010 is therefore a bevel about 1.9 texels each side of a facet edge at
+# 384 px, i.e. 3 mm of rounding on a 7.5 cm facet; 0.007 is 2 mm on a 3.2 cm
+# chip. A ZERO-width arris is a one-texel cliff, which aliases into a drawn
+# black line rather than reading as an edge and puts the family's steepest
+# slope on the texel grid instead of on the rock. Measured: narrowing these to
+# 0.006 / 0.004 moves the maximum tilt from 74.2 to 78.1 degrees and nothing
+# else, so the width is bought cheaply and there is no case for a cliff.
+FACET_ARRIS = 0.010
+CHIP_ARRIS = 0.007
+
+
+def _stone_planes(w, h, cells, seed, tilt, arris, rounded=False):
+    """Piecewise-PLANAR fracture facets. Returns (face, edge).
+
+    `face` is the height of the nearest cell's own plane, and every cell gets
+    its own base height AND its own tilt, so a cell is FLAT and two
+    neighbouring cells meet at an ANGLE. `edge` is 1 on the arris between two
+    cells and falls to 0 inside a facet, which is the crevice mask the ORM
+    pass keys on.
+
+    WHY NOT `(1.0 - worley) ** 2`, which is what both `_coarse_height` and
+    `_ore_height` use. That form's derivative vanishes at the cell boundary,
+    so the one place a fracture has an edge is the one place the field is
+    smooth, and coarse's measured 27-degree ceiling is that fact and nothing
+    else. A plane per cell has no such ceiling, because the step across a
+    boundary is set by the two BASE HEIGHTS rather than by the shape of the
+    distance field.
+
+    The two nearest planes are BLENDED across `arris` rather than switched
+    between, for the reason FACET_ARRIS states: a switch is a one-texel cliff.
+    At the boundary the blend is the mean of the two planes, which is exactly
+    what a bevelled arris is.
+
+    `rounded` is selftest-only. It replaces the plane pair with coarse's
+    rounded dome at the same cell count, the same seed and the same amplitude,
+    which is precisely the defect this family exists to fix, so the tilt check
+    gets a negative control that fails honestly (DW-20)."""
+    pts = []
+    for cy in range(cells):
+        for cx in range(cells):
+            jx = _hash01(cx, cy, seed)
+            jy = _hash01(cx, cy, seed + 1)
+            bh = _hash01(cx, cy, seed + 2)
+            sx = _hash01(cx, cy, seed + 3) * 2.0 - 1.0
+            sy = _hash01(cx, cy, seed + 4) * 2.0 - 1.0
+            pts.append(((cx + jx) / cells, (cy + jy) / cells, bh,
+                        sx * tilt, sy * tilt))
+    scale = cells * 1.4142135623730951      # _worley's own normalisation
+    face = [0.0] * (w * h)
+    edge = [0.0] * (w * h)
+    for y in range(h):
+        py = (y + 0.5) / h
+        gy = int(py * cells)
+        base = y * w
+        for x in range(w):
+            px = (x + 0.5) / w
+            gx = int(px * cells)
+            # Nearest AND second nearest, bucketed 3x3 exactly as `_worley`
+            # buckets its points, so the cost stays linear in texels and the
+            # field is periodic in both axes by construction.
+            d1 = d2 = 4.0
+            p1 = p2 = None
+            ax = ay = bx = by = 0.0
+            for oy in (-1, 0, 1):
+                ry = (gy + oy) % cells
+                for ox in (-1, 0, 1):
+                    rx = (gx + ox) % cells
+                    p = pts[ry * cells + rx]
+                    dx = px - p[0]
+                    dy = py - p[1]
+                    if dx > 0.5:
+                        dx -= 1.0
+                    elif dx < -0.5:
+                        dx += 1.0
+                    if dy > 0.5:
+                        dy -= 1.0
+                    elif dy < -0.5:
+                        dy += 1.0
+                    d = dx * dx + dy * dy
+                    if d < d1:
+                        d2, p2, bx, by = d1, p1, ax, ay
+                        d1, p1, ax, ay = d, p, dx, dy
+                    elif d < d2:
+                        d2, p2, bx, by = d, p, dx, dy
+            i = base + x
+            if rounded:
+                # The DEFECT, built on purpose: coarse's construction at this
+                # family's cell count. `edge` stays 0 because a rounded dome
+                # has no arris to mask, which is the whole complaint.
+                m = 1.0 - min(1.0, math.sqrt(d1) * scale)
+                face[i] = m * m
+                continue
+            za = p1[2] + p1[3] * ax + p1[4] * ay
+            zb = p2[2] + p2[3] * bx + p2[4] * by
+            t = _smoothstep(0.0, arris, math.sqrt(d2) - math.sqrt(d1))
+            face[i] = zb + (za - zb) * (0.5 + 0.5 * t)
+            edge[i] = 1.0 - t
+    return face, edge
+
+
+def _stone_height(w, h, rounded=False):
+    """(height, aux). Angular fracture facets meeting at sharp arrises, a
+    finer chip facet on them, a micro-facet cusp under that, and a sub-5 mm
+    grain at the bottom. Occlusion lives in the arrises.
+
+    AMPLITUDE, AND IT IS A HIERARCHY ON PURPOSE, which is _coarse_height's own
+    structure-over-detail argument applied to a field that can actually carry
+    an edge: 0.52 on the 7.5 cm facets, 0.19 on the 3.2 cm chips, 0.075 on the
+    1.8 cm micro cusp, 0.055 on the grain. Measured contribution to mean
+    normal tilt at the shipped strength, each layer added to the one before:
+    facets alone 7.12 degrees, plus chips 12.04, plus the micro cusp 16.48,
+    plus the grain 17.18. THE FRACTURE CARRIES THE NUMBER. The grain is the
+    last 0.70 of a degree and exists so a facet interior is not mirror-flat,
+    not to make the measurement: a family that got its tilt from a grain layer
+    would be sandpaper, which is the other failure _coarse_height's header
+    records ("stucco or a popcorn ceiling").
+
+    THE MICRO LAYER IS `sqrt(1 - worley)` AND THAT IS THE WHOLE POINT OF IT.
+    `_ore_height` uses `(1 - worley) ** 2` for its crystal grain, and that
+    form is FLAT where two cells meet. The square root is the same distance
+    field with the derivative inverted: it goes VERTICAL there instead. Same
+    field, opposite edge behaviour, and the cell boundary becomes the high
+    ground with the feature point as a pit, which is which way round a
+    fracture actually breaks.
+
+    Returns aux masks the ORM pass needs rather than letting it re-derive them
+    from height windows, following _ore_height's contract exactly. `crest` is
+    fresh planar facet, clear of both arris bands and standing high: the
+    broken face that catches a raking sun. `crevice` is the arris band in the
+    low ground: the dust trap.
+
+    `rounded` is selftest-only; see _stone_planes."""
+    facet, e1 = _stone_planes(w, h, STONE_FACETS, 4211, 0.85, FACET_ARRIS,
+                              rounded)
+    chip, e2 = _stone_planes(w, h, STONE_CHIPS, 4517, 1.70, CHIP_ARRIS,
+                             rounded)
+    micro = _worley(w, h, STONE_MICRO, seed=4801)
+    grain = _fbm(w, h, 64, 2, seed=4933)     # 9.4 mm and 4.7 mm octaves
+    out = [0.0] * (w * h)
+    for i in range(w * h):
+        z = 0.52 * facet[i] + 0.19 * chip[i]
+        m = 1.0 - micro[i]
+        z -= 0.075 * (m * m if rounded else math.sqrt(m))
+        z += (grain[i] - 0.5) * 0.055
+        out[i] = z
+    # The MASKS read a normalised copy and the returned height does not get
+    # one. "Standing high" has to mean high relative to this tile, and the raw
+    # range moves with every amplitude above; but the normal and the AO are
+    # both differential, so rescaling what they read would silently retune
+    # normal_strength and ao_gain out from under the FAMILIES row.
+    lo = min(out)
+    span = (max(out) - lo) or 1.0
+    crest = [0.0] * (w * h)
+    crev = [0.0] * (w * h)
+    for i in range(w * h):
+        hn = (out[i] - lo) / span
+        clear = (1.0 - e1[i]) * (1.0 - e2[i])
+        crest[i] = clear * _smoothstep(0.30, 0.80, hn)
+        e = e1[i] if e1[i] > e2[i] else e2[i]
+        crev[i] = e * (1.0 - _smoothstep(0.20, 0.70, hn))
+    return out, {"crest": crest, "crevice": crev}
+
+
+def _stone_masks(w, h, height, aux):
+    """(roughness, metalness). THIS is the channel `coarse` never had.
+
+    `coarse`'s ORM green measures 0.0 per cent of its texels below 0.60: a
+    rock family that is never smooth anywhere, so nothing on it glints and a
+    raking sun does nothing to it. The band here runs from about 0.36 at a
+    fresh fracture crest to a hard 1.00 in the crevices, wider even than
+    `ore`'s deliberately wide band and for the same reason one tier along: a
+    stone face reads as stone when the freshly broken parts take light and the
+    weathered, dusted and shadowed parts do not.
+
+    WHY IT IS KEYED ON `crest` AND NOT ON HEIGHT. A high texel inside an arris
+    is a chip of rubble jammed in a crack, not a polished face, and the two sit
+    at the same height. `crest` is the conjunction the field already knows:
+    planar, clear of both arris bands, and standing high. Reading height alone
+    would polish the rubble too.
+
+    Metalness identity, for `_coarse_masks`'s reason exactly: no host-rock role
+    is a polished metal, and 1.0 is the only multiplier that leaves the
+    palette's own metallic constant where the palette put it."""
+    mottle = _fbm(w, h, 14, 3, seed=5077)    # ~4.3 cm: weathering
+    dust = _fbm(w, h, 5, 2, seed=5233)       # ~12 cm: where dust has settled
+    crest = aux["crest"]
+    crev = aux["crevice"]
+    rough = [0.0] * (w * h)
+    metal = [1.0] * (w * h)      # identity: host rock is not a polished metal
+    for i in range(w * h):
+        r = (1.0 - 0.58 * _smoothstep(0.12, 0.72, crest[i])
+             + 0.12 * crev[i]
+             + 0.10 * _clamp01((dust[i] - 0.50) / 0.50)
+             + (mottle[i] - 0.5) * 0.16)
+        rough[i] = _clamp01(r)
+    return rough, metal
+
+
+def _stone_albedo(w, h, height, aux):
+    """A TILING ALBEDO for host rock: pigmentation at 10 to 20 cm, and nothing
+    else. RN-742.
+
+    IT READS NEITHER `height` NOR `aux`, AND THAT IS THE ENTIRE DESIGN. RN-454
+    is this project's recorded case of albedo, normal and ORM sharing one
+    heightfield, and the creature rendered as cobblestone. The subject here IS
+    rock, so a pigment field that agreed with the facet field would not read
+    as a mistake at all: it would read as a wall of cobbles. The fields below
+    are a different band (10 to 20 cm against the facets' 7.5 to 1.8 cm) and a
+    different seed range, and the measured Pearson correlation between this
+    map's luminance and the heightfield is +0.07, which is what two
+    independent fields agree by chance. For scale: `panel`'s tiling albedo,
+    which deliberately reads the height at a tenth weight, measures +0.29 on
+    the same statistic, and an albedo that simply WAS the height measures
+    +1.00.
+
+    THE ONE THING THAT COSTS, stated rather than discovered later. `panel`
+    darkens its grooves here at a tenth of the pigmentation weight and this
+    map does not, so "dust in the low ground" is authored as its own 10 cm
+    field rather than keyed on the facets. The AO in the ORM's red channel
+    already darkens exactly the crevices the normal dents, because it is the
+    same heightfield read a second time; drawing them a THIRD time here is
+    what cobblestone is.
+
+    WHAT ROCK PIGMENT ACTUALLY DOES, in the order the terms do it: it bands,
+    because bedded and banded rock is most of the rock there is; it varies in
+    mineral content inside a band; it stains WARM where iron has moved through
+    it, in patches rather than everywhere at a low level, which is the
+    difference between a weathered rock and a brown one; and it carries pale
+    lichen and settled dust, which lighten and very slightly cool. Only the
+    iron moves hue far, and it moves it in one direction, because rust is not
+    a colour that has an opposite.
+
+    CENTRED AT 0.50 AND NOT AT 1.0, which is RN-559's lesson taken as read
+    rather than re-learned. Every term below is a multiplier about 1.0,
+    because that is how a mean-neutral map is written and the wrong place to
+    CENTRE one: `panel` shipped a first version at mean 0.9659 with the top of
+    its variance flattened against the byte ceiling, and `check_maps` refuses
+    a tiling albedo outside 0.15..0.85 for exactly that reason. The level is
+    free, because `Surfaces.ts` divides `albedo_mean` back out through
+    material.color, so it costs nothing to sit in the middle of the range
+    where both tails survive."""
+    # Two octaves each, never three: the second octave of a period-3 field is
+    # already at 10 cm and of a period-6 field at 5 cm, and a third would put
+    # albedo detail down inside the 3.2 cm chip facet, which is the frequency
+    # overlap this family exists to avoid. Every term here is at or above
+    # 5 cm, and the ones carrying real weight are at 10 to 20 cm.
+    band = _fbm(w, h, 3, 2, seed=16033)      # ~20 cm: the bedding
+    vein = _fbm(w, h, 4, 2, seed=16187)      # ~15 cm: mineral content
+    iron = _fbm(w, h, 5, 2, seed=16487)      # ~12 cm: where iron has moved
+    lichen = _fbm(w, h, 6, 2, seed=16673)    # ~10 cm: lichen and settled dust
+    LEVEL = 0.50
+    out = bytearray(3 * w * h)
+    for i in range(w * h):
+        # Value. Banding carries the most amplitude because it is the thing
+        # rock most obviously does; the mineral term breaks the band up so it
+        # does not read as a painted stripe.
+        v = 1.0 + (band[i] - 0.5) * 0.34 + (vein[i] - 0.5) * 0.20
+        # Hue. Iron only where it has actually moved AND the bedding agrees,
+        # so the stain sits in patches along the beds rather than everywhere.
+        rust = _clamp01((iron[i] - 0.56) / 0.34) * _clamp01((band[i] - 0.30)
+                                                            / 0.50)
+        # Lichen and dust lighten, and they are the only term that can push
+        # the map up; they never darken, because neither of them does.
+        lich = _clamp01((lichen[i] - 0.60) / 0.32)
+        v *= LEVEL * (1.0 + 0.20 * lich)
+        o = 3 * i
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + 0.30 * rust
+                                                 - 0.04 * lich))))
+        out[o + 1] = int(round(255.0 * _clamp01(v * (1.0 - 0.02 * rust
+                                                     + 0.05 * lich))))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - 0.28 * rust
+                                                     - 0.01 * lich))))
+    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
@@ -2029,6 +2408,32 @@ FAMILIES = {
     "ore": dict(height=_ore_height, masks=_ore_masks,
                 normal_strength=11.0, ao_radius=9, ao_floor=0.46,
                 ao_gain=3.2),
+    # stone sits BETWEEN coarse and ore on strength and it is the only row
+    # here whose number was chosen against a measured angle rather than
+    # against a wall of pixels. coarse's 9.0 on its own gentle facets measures
+    # a mean normal tilt of 7.69 degrees and a maximum of 27.19, which is the
+    # finding this family exists to answer; 10.0 on stone's field measures
+    # 17.18 and 74.24. It is only one count over coarse because stone's relief
+    # is genuinely bigger, not because the map is being pushed: the arris does
+    # the work, and the maximum is already 74 degrees at 9.0. Ore's 11.0 would
+    # take the mean to 18.54, which is corrugation rather than rock, and 9.0
+    # lands the mean at 15.76, under the 16-degree floor the selftest holds
+    # this family to. 10.0 is the only count in that gap.
+    # ao_radius 9, matching bark and ore rather than coarse's 11: the occluder
+    # here is the neighbouring CHIP facet 3.2 cm away, which is 20 texels, so
+    # a 19-texel window sees exactly one facet and its arris. coarse's 11
+    # averages across the chip structure and returns the uniform grey this
+    # table's header calls the expensive failure.
+    # ao_gain 5.0 between coarse's 7.0 and ore's 3.2, by the same reasoning
+    # both of those state: the relief left under the blur is about 0.15 to
+    # 0.20 in an arris, well over coarse's ~0.1 and well under a bark fissure,
+    # so 7.0 would clamp every arris to the floor and paint the facet edges on
+    # as flat black lines. Measured at 5.0 the AO runs 0.440 to 1.000 with its
+    # 5th percentile at 0.491, i.e. it reaches the floor without living there.
+    "stone": dict(height=_stone_height, masks=_stone_masks,
+                  albedo=_stone_albedo,
+                  normal_strength=10.0, ao_radius=9, ao_floor=0.44,
+                  ao_gain=5.0),
     # chitin is the shallowest relief in the set and the highest frequency:
     # a pit is 0.16 deep over about 2 mm, so 16 is what gives a pit the
     # shading weight bark gets from 12 on a fissure ten times as wide. The
@@ -2688,6 +3093,11 @@ ALLOWED_CONSTANT = {
         "flat channel say so rather than invent variation it does not "
         "have; identity leaves the material's own 0.02 exactly where the "
         "palette put it",
+    ("stone", "orm", "B"):
+        "host rock is not a polished metal, and the roles that wear this "
+        "family are the same non-metallic rock roles `coarse` left at "
+        "identity for the same reason; inventing metalness variation on a "
+        "boulder would be the dishonest half of section 2.1's own rule",
     ("suitfab", "orm", "B"):
         "a woven pressure garment is a polymer and both roles that wear it "
         "are already 0.00 metallic in the palette; identity is the only "
@@ -3144,6 +3554,65 @@ def selftest():
     check("ore band control fails", not (rv > 1.5 * ru),
           "rotated 90 degrees: ratio %.2f, correctly outside the > 1.50 rule"
           % (rv / ru if ru > 0 else float("inf")))
+
+    # 7f. Stone's facets are actually ANGULAR, and this is the check the whole
+    #     family exists to satisfy (RN-742). `coarse` served every rock and
+    #     measured a mean normal tilt of 7.69 degrees with a MAXIMUM of 27.19,
+    #     so nothing on it could glint and nothing on it could catch a raking
+    #     sun. The rule is a CONJUNCTION on purpose: the mean says the relief
+    #     is there at all, the maximum says it has EDGES, and 7g below shows
+    #     that it is the maximum doing the discriminating.
+    #
+    #     The measurement is the heightfield's own gradient angle, which is
+    #     the same angle `_normal_rgb` stores as acos(blue) before 8-bit
+    #     quantisation, taken at the SHIPPED size and the SHIPPED
+    #     normal_strength so that retuning either one has to come past this
+    #     check. atan and degrees appear here and nowhere in the field
+    #     synthesis: the module header's no-transcendentals rule is about the
+    #     bytes that ship, and a measurement writes none of them.
+    def _tilt_stats(field, s, strength):
+        tot, mx = 0.0, 0.0
+        for y in range(s):
+            ym = ((y - 1) % s) * s
+            yp = ((y + 1) % s) * s
+            row = y * s
+            for x in range(s):
+                dx = (field[row + (x + 1) % s]
+                      - field[row + (x - 1) % s]) * strength
+                dy = (field[yp + x] - field[ym + x]) * strength
+                t = math.degrees(math.atan(math.sqrt(dx * dx + dy * dy)))
+                tot += t
+                if t > mx:
+                    mx = t
+        return tot / (s * s), mx
+
+    s = FAMILY_SIZE["stone"]
+    stone_k = FAMILIES["stone"]["normal_strength"]
+    sh, _ = _stone_height(s, s)
+    s_mean, s_max = _tilt_stats(sh, s, stone_k)
+    cs = FAMILY_SIZE["coarse"]
+    chf, _ = _coarse_height(cs, cs)
+    c_mean, c_max = _tilt_stats(chf, cs, FAMILIES["coarse"]["normal_strength"])
+    check("stone facets angular", s_mean >= 16.0 and s_max >= 55.0,
+          "mean %.2f deg (need 16.00), max %.2f deg (need 55.00); `coarse`, "
+          "the field this replaces, measures %.2f / %.2f"
+          % (s_mean, s_max, c_mean, c_max))
+
+    # 7g. NEGATIVE CONTROL, per DW-20: the SAME recipe with the arrises
+    #     rounded off - coarse's `(1 - worley) ** 2` dome in place of the
+    #     plane pair, at the same cells, seeds and amplitudes - must FAIL the
+    #     rule above. What this catches is a tilt check that has quietly
+    #     become a test of AMPLITUDE rather than of edges, and the numbers say
+    #     that is a live risk rather than a theoretical one: the rounded field
+    #     still clears the mean clause comfortably, because a steep cone is
+    #     steep, and only the maximum clause refuses it. A version of this
+    #     check written on the mean alone would pass on the exact defect.
+    rsh, _ = _stone_height(s, s, rounded=True)
+    r_mean, r_max = _tilt_stats(rsh, s, stone_k)
+    check("stone round control fails", not (r_mean >= 16.0 and r_max >= 55.0),
+          "arrises rounded: mean %.2f, max %.2f, correctly outside the "
+          "16.00 / 55.00 rule (the max clause is the one that refuses it)"
+          % (r_mean, r_max))
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never

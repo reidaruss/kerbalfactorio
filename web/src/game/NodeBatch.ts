@@ -53,7 +53,14 @@ import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
  * pass about rock.
  */
 function mineralFamily(name: string): boolean {
-  return name.startsWith('coarse:') || name.startsWith('ore:');
+  // RN-742 adds `stone:`, and it is the one that MATTERS most of the three:
+  // the host rock is the bulk of every boulder, the whole spire and all the
+  // scree, and after the role move it is no longer reached by `coarse:`. A
+  // family split that forgot this line would have silently taken the per-part
+  // channel away from the exact surfaces this pass exists to skin, and it would
+  // have looked like the channel simply doing nothing rather than like a bug.
+  return name.startsWith('coarse:') || name.startsWith('ore:')
+    || name.startsWith('stone:');
 }
 
 /**

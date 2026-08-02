@@ -52,8 +52,8 @@ import * as THREE from 'three';
 
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
 
-export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'fur' | 'leaf'
-  | 'grass' | 'suitfab' | 'suitplate' | 'flat';
+export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
+  | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -90,8 +90,25 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Plate: 'suitplate',
   Bark: 'bark', BarkLight: 'bark',
   Coal: 'coarse', Copper: 'coarse',
-  Iron: 'coarse', Regolith: 'coarse', Rock: 'coarse', RockDark: 'coarse',
+  Iron: 'coarse', Regolith: 'coarse',
   Rubber: 'coarse', Sand: 'coarse', Soil: 'coarse',
+  // RN-742: the HOST ROCK roles leave `coarse` for their own family, on the
+  // exact argument that moved Bark out of it and Suit out of `panel`: the
+  // family encoded the wrong FACT about the surface. Measured, `coarse` has a
+  // mean normal tilt of 7.69 degrees with a MAXIMUM of 27.12, so no texel in
+  // it is steeper than 27 degrees, and 0.0 per cent of its ORM green falls
+  // below 0.60, so no part of it is ever smooth. Host rock that can neither
+  // glint nor catch a raking sun was the flattest thing in the game by
+  // measurement, and it is most of the screen area of every boulder, the whole
+  // spire and all the scree.
+  //
+  // What stays on `coarse` is what `coarse` actually describes well: granular
+  // and dug-up things. Sand, Soil, Regolith, the Coal and Iron and Copper ITEM
+  // chunks, and Rubber.
+  //
+  // Moves in the same commit as texgen's table (RN-100's rule:
+  // verifyAgainstManifest makes a one-sided move a failed smoke run).
+  Rock: 'stone', RockDark: 'stone',
   // RN-157: the ore SEAM roles (Admin's ruling: ore-in-rock and refined-item
   // are different substances that coincidentally shared a colour; OF_Iron and
   // friends stay untouched on the items). The `ore` family is vein banding

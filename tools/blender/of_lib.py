@@ -125,8 +125,47 @@ PALETTE = {
     "IronOre":      ("6E7B8A", 0.42, 0.44, 1.0, None),
     "CopperOre":    ("9A5228", 0.16, 0.62, 1.0, None),
     "CoalSeam":     ("1A1B1E", 0.04, 0.34, 1.0, None),
-    "Rock":         ("7A756C", 0.00, 0.90, 1.0, None),
-    "RockDark":     ("57534C", 0.00, 0.92, 1.0, None),
+    # RN-742. THE HOST ROCK, and these two rows are a PAIR that tells one story
+    # the geometry has been telling since RN-242 and the surface never has.
+    #
+    # `rock_form` paints a mass's shear and fracture planes with the DARK role
+    # and its weathered outer skin with the light one, on every boulder, the
+    # spire and the scree. So `Rock` is a face that has been rained on for a
+    # long time and `RockDark` is a face that was made when the rock broke.
+    # Until now both drew at 0.88 flat (NodeBatch's literal) and, once RN-723
+    # made the authored value reach a pixel, both were still within 0.02 of each
+    # other, which is not a difference any sun can find.
+    #
+    #   Rock      0.90 -> 0.94. Weathered, dusty, DRIER than before. The level
+    #             can go UP because the `stone` family now supplies the
+    #             variation: effective roughness is 0.42 to 0.94 across the map
+    #             instead of a near-constant.
+    #   RockDark  0.92 -> 0.80. A fresh fracture face is the one part of a rock
+    #             that has not been dulled by weather, so it is the part that
+    #             can still catch a raking sun. Effective 0.36 to 0.80.
+    #
+    # That is a 0.14 authored separation where there was 0.02, and it costs no
+    # geometry: the faces are already painted, they were simply drawing the same
+    # material. The stone boulder's whole "it shattered" story now reads off the
+    # surface as well as the silhouette.
+    #
+    # METALNESS STAYS 0.00 ON BOTH. Stone is a dielectric and the `stone` ORM
+    # holds metalness at identity, so there is nothing here for a metalness to
+    # say. It is honestly constant rather than decoratively varied, which is
+    # what section 2.1 item 4 asks for.
+    #
+    # THE HEX IS DELIBERATELY UNTOUCHED. Colour is look-dev's and Admin approved
+    # a RESPONSE move, not a restyle; `stone` carries a mean-neutral tiling
+    # albedo so the palette still owns the level, and moving both at once would
+    # make the pair unattributable.
+    #
+    # BLAST RADIUS: `Rock` is in 23 shipped assets and `RockDark` in 15, so this
+    # rewrites bytes far outside this lane. It is deliberately serialised with
+    # Admin holding the other lanes rather than filtered, because the collision
+    # would be in the .glb BYTES rather than in text and no commit discipline we
+    # have survives that.
+    "Rock":         ("7A756C", 0.00, 0.94, 1.0, None),
+    "RockDark":     ("57534C", 0.00, 0.80, 1.0, None),
     "Sand":         ("C9B283", 0.00, 0.95, 1.0, None),
     "Soil":         ("5B4A38", 0.00, 1.00, 1.0, None),
     "Regolith":     ("6E6A66", 0.00, 0.95, 1.0, None),
