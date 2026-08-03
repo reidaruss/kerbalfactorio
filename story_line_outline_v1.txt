@@ -1,0 +1,44 @@
+So storyline / lore is as follows. This is a rough draft and is subject to change.
+
+# Background
+
+You are a traveler from another solar system. You have gone on an interstellar journey to reach this new system in hopes that the resources you find could be extracted and used to support your home system. You crash landed on this planet and woke up as the only survivor (or if playing multiplayer, those in your party). You start with some supplies (tbd on what). You discover that an ancient civilization once lived on the planet but dont know what happened to them. Later it is revealed that the enemies on the planet destroyed them.
+
+
+# Sequence
+
+The goals in order (subject to change and addition) will be to:
+
+- gather wood
+- gather stone (we need to add loose stones on the ground you can pick up) (you should not be able to mine ore deposits or stone nodes on top of the ground without some sort of picaxe)
+- craft stone picaxe
+- mine coal
+- mine iron
+- build a stone furnace / smelter
+- smelt the iron
+- mine copper
+- smelt the copper
+- build a mining rig
+- place the mining rig
+- connect the mining rig output to a stone furnace via belts
+- Then the next thing will be to build a research station (where research will be conducted)
+- Research scanning antenna
+- Build scanning antenna (upon building the scanning antenna it shows the location of nearby ruins)
+- Investigate ruins (upon searching the ruins you gain the ability to research and build an antenna upgrade, as well as research electricity) (researching electricity unlocks researching electric smelters, electric generation, electric distribution, electric miners, launch pad, etc)
+- research and build scanning antenna upgrade (upon upgrading the scanning antenna the solar system map will be revealed, and a 'mysterious signal' in orbit which is the space station)
+- Research launch Pad
+- Build Launch Pad
+- Build a ship
+- Investigate mysterious signal (dock with space station)
+- Upon investigation you discover some technology that gives you the ability to research and build the autopilot unit for craft as well as another antenna upgrade, upon which upgrading shows a detailed scan of the moon and resource deposits on it. Also allows you to research and build a mobile scanning unit that allows you to add a module to a rocket, which when in orbit around a planet and activate provides access to the entire world map of the starting planet and resources locations.
+
+The above is a rough draft of major story line tech progression. We will fill out the actual story side of it later. This is just the bones. The above is the point I want to reach fully developed for a pre-alpha version of the game. 
+
+After that point we will slate:
+- teleporter technology (build teleporters where you can transfer between orbital space stations, moon, other planets, etc.)
+- Build a colony on the moon
+- Progression on the moon
+- building out other planets, technology to reach those planets and progression on other planets
+
+
+After that and all of the niche things that go in between and facilitate each of these items, as well as a host of other things- once the other planet progression is built out, all known bugs fixed, graphics get a MAJOR reskinning and playability is actually fun and built out we can enter into an alpha state. During the alpha state we can build out the end game- which will be to build a dyson sphere and launch an interstellar voyage. Launching the interstellar voyage will be beating the game, and opens up further development later on for developing a new solar system.
