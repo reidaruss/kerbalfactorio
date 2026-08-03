@@ -101,9 +101,29 @@ export function planAct(pl: MapPlanner, say: (m: string) => void,
     // THE REFUSAL IS PHYSICS' OWN SENTENCE, PRINTED VERBATIM. Paraphrasing it
     // here would give one failure two vocabularies (GP-270's family), and the
     // executor is the authority on why it would not take the program.
-    say(r.armed
+    // GP-301. A PROGRAMME WITH NO BURNS IS NOT AN ARMED PROGRAMME, and the
+    // default requested orbit is the one you are already in.
+    //
+    // Found by playing the whole loop rather than by any probe: the
+    // requested-orbit row defaults to 100 km and TELEPORT TO ORBIT puts you at
+    // 100 km, so a player's very FIRST autopilot press asks to be taken where
+    // they already are. `holdOrbit` answers honestly with a VALID programme of
+    // ZERO burns and the note "already there", the executor completes it
+    // instantly, and this line said `autopilot armed: program complete`.
+    //
+    // Nothing was wrong anywhere. /core was right, the executor was right, and
+    // the screen reported that something had been set up when nothing was ever
+    // going to happen. That is INSTRUMENTS.md's identity-element trap standing
+    // in the PLAYER's way rather than in a probe: the parameter's DEFAULT is
+    // the value at which the whole operation is a no-op, so the first press
+    // teaches that the button does nothing.
+    const armedReal = r.armed && pl.currentRun.burnCount > 0;
+    say(armedReal
       ? `autopilot armed: ${r.note}`
-      : `autopilot refused: ${r.note}`);
+      : r.armed
+        ? 'you are already on that orbit, so there is nothing to fly. Change '
+          + 'the altitude and arm it again.'
+        : `autopilot refused: ${r.note}`);
   }
 }
 
