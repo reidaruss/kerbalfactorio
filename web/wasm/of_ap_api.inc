@@ -547,42 +547,232 @@ OF_API int of_ap_arm_transfer(int f, double tDepartFromNowS, double smaM,
 // The program it arms is three burns: injection, a RESERVED correction the
 // executor fills from the state the injection really produced, and a capture in
 // the moon's own frame. The handoff happens inside `of_fl_step`.
-OF_API int of_ap_arm_body_transfer(int f, double tDepartFromNowS, int bodyId,
-                                   double captureAltitudeM) {
-  fl::FlightSim* s = g_flights.get(f);
-  if (!s || bodyId != 1) return 0;
-  s->craft.layout();
-  const double mu = s->env.muM3S2;
-  const of::orbital::Elements ship = s->park();
-  const double depart = s->state.timeS + tDepartFromNowS;
-
+// ONE PLACE ANSWERS "WHAT DOES GOING TO THIS BODY AT THIS TIME COST", AND THE
+// CHART, THE REACH ROW AND THE ARM ALL CALL IT (PH-171).
+//
+// The existing vessel calls already say why: a player who was shown a cost on
+// the chart must be armed with the transfer that produced it rather than with a
+// second opinion about the same trip. That was one copy of the tof scan while
+// only the arm existed; adding two more callers made it a function.
+//
+// THE BODY'S OWN EPHEMERIS COMES FROM /core AND NEVER FROM THE CALLER (PH-162),
+// which is why a body is a separate entry point rather than an appended id on
+// the nine orbit words: naming a body is a different question from describing
+// an orbit, and there must be nothing here for a caller to get wrong.
+struct BodySolve {
+  bool ok = false;
   tf::Target tgt;
-  // THE BODY'S OWN EPHEMERIS, from /core, never from the caller.
-  tgt.el = of::orbital::park(of::orbital::cinderStateAt(depart), mu, depart);
-  tgt.muM3S2 = of::orbital::kCinderMu;
-  tgt.soiRadiusM = of::orbital::kCinderSoiRadius;
-  tgt.bodyRadiusM = of::orbital::kCinderRadiusM;
-  tgt.captureAltitudeM = captureAltitudeM;
+  tf::Transfer tr;
+  of::orbital::Elements ship;
+  double tofS = 0.0;
+};
 
-  const double tH = tf::hohmannTimeS(ship.a, tgt.el.a, mu);
-  if (!(tH > 0.0)) return 0;
-  tf::Transfer best;
+static BodySolve apSolveToBody(fl::FlightSim& s, double departAbsS, int bodyId,
+                               double captureAltitudeM) {
+  BodySolve out;
+  if (bodyId != 1) return out;              // Cinder is the only moon there is
+  s.craft.layout();
+  const double mu = s.env.muM3S2;
+  out.ship = s.park();
+
+  out.tgt.el = of::orbital::park(of::orbital::cinderStateAt(departAbsS), mu,
+                                 departAbsS);
+  out.tgt.muM3S2 = of::orbital::kCinderMu;
+  out.tgt.soiRadiusM = of::orbital::kCinderSoiRadius;
+  out.tgt.bodyRadiusM = of::orbital::kCinderRadiusM;
+  out.tgt.captureAltitudeM = captureAltitudeM;
+
+  const double tH = tf::hohmannTimeS(out.ship.a, out.tgt.el.a, mu);
+  if (!(tH > 0.0)) return out;
   double bestDv = 1e308;
   for (int j = 0; j < kApTofSamples; ++j) {
     const double g = static_cast<double>(j) / (kApTofSamples - 1);
-    const tf::Transfer c =
-        tf::solveTransfer(ship, tgt, depart, (0.25 + g * 1.5) * tH);
+    const double tof = (0.25 + g * 1.5) * tH;
+    const tf::Transfer c = tf::solveTransfer(out.ship, out.tgt, departAbsS, tof);
     if (!c.valid || !(c.totalDvMS < bestDv)) continue;
     bestDv = c.totalDvMS;
-    best = c;
+    out.tr = c;
+    out.tofS = tof;
   }
-  if (!best.valid) return 0;
-  const ap::Program p = ap::flyTransfer(best, ship, tgt, s->craft);
+  out.ok = out.tr.valid;
+  return out;
+}
+
+OF_API int of_ap_arm_body_transfer(int f, double tDepartFromNowS, int bodyId,
+                                   double captureAltitudeM) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  const double depart = s->state.timeS + tDepartFromNowS;
+  const BodySolve b = apSolveToBody(*s, depart, bodyId, captureAltitudeM);
+  if (!b.ok) return 0;
+  const ap::Program p = ap::flyTransfer(b.tr, b.ship, b.tgt, s->craft);
   PilotSlot& slot = g_pilots[f];
   slot = PilotSlot();
-  slot.target = tgt;
+  slot.target = b.tgt;
   slot.pilot.arm(p);
   return p.valid ? 1 : 0;
+}
+
+// -----------------------------------------------------------------------------
+// §21.7: THE CHART AND THE REACH ROW, FOR A MOON (R74, PH-171).
+//
+// `of_ap_departure_curve` and `of_ap_flight_reach` take NINE ORBIT WORDS, and
+// PH-163 established that a body cannot be described in those. So the chart drew
+// confidently for a station and could not answer at all for Cinder, and the
+// consequence is not a missing feature that fails safely:
+//
+//   MEASURED, one Cinder period swept in 241 departures from an 80 km parking
+//   orbit: the cheapest is 1119.0795 m/s and an arbitrary one is 1720.5216.
+//   The upper stage carries 3065, SO BOTH ARM AND BOTH FLY.
+//
+// A player with no chart loses 600 m/s and is told nothing. That is a hole to
+// fall into silently, which is why this is the same four words per sample and
+// the same refusal convention as the vessel chart rather than anything new.
+//
+//   of_ap_body_departure_curve(f, tStartS, tEndS, samples, bodyId, captureAltM)
+//     -> the SAMPLE COUNT, 4 words each, in `of_ap_departure_curve`'s order:
+//        0 tDepart from now (s)
+//        1 dvRequired at that departure, all legs plus the 5% reserve, or NaN
+//        2 feasible 1/0 against the craft's own remaining delta-v
+//        3 arrival from now (s), or NaN
+//
+//   of_ap_body_reach(f, tDepartFromNowS, bodyId, captureAltM)
+//     -> 10 words, `apPushReach`'s row exactly, so ONE client reader serves the
+//        station and the moon.
+//
+// A NaN COST IS A REFUSAL AND NOT A ZERO, which is the vessel chart's own rule
+// and matters more here: a departure at the wrong phase does not fail, it
+// produces an expensive trajectory, so the ones that genuinely have no answer
+// must not draw as the cheapest point on the chart. `Autopilot.ts` already
+// filters on `Number.isFinite`.
+//
+// WHY THE CHART PRICES THE CAPTURE WITH `arrivalCostMS` AND THE ARMED PROGRAM
+// DOES NOT, stated because two numbers for one trip is exactly the shape this
+// project keeps getting caught by. `transfer::arrivalCostMS` bills a capture
+// into the orbit the caller ASKED FOR. `transfer::planCapture`, which the armed
+// program uses, captures at the arrival hyperbola's OWN periapsis and publishes
+// that radius, because aiming the periapsis is a mid-course correction rather
+// than a capture (PH-156). They are two honest answers to slightly different
+// questions. What the CHART has to get right is which departure is cheapest,
+// and that is measured against the arm rather than assumed (physics.md R74).
+// -----------------------------------------------------------------------------
+OF_API int of_ap_body_reach(int f, double tDepartFromNowS, int bodyId,
+                            double captureAltitudeM) {
+  resetF64(0);
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  const double depart = s->state.timeS + tDepartFromNowS;
+  const BodySolve b = apSolveToBody(*s, depart, bodyId, captureAltitudeM);
+  if (!b.ok) return 0;
+  const ap::Program p = ap::flyTransfer(b.tr, b.ship, b.tgt, s->craft);
+  // A transfer that exists but cannot be captured is a REFUSAL, not a row with
+  // a large number in it. Same rule as the curve's NaN and as `of_body_state`'s
+  // 0 words for an unknown body.
+  if (!p.valid) return 0;
+
+  // Already in orbit, so the ascent leg is a PHYSICAL zero and says so.
+  const tf::AscentCost noAscent;
+  tf::MissionBudget bud = tf::missionBudget(s->craft, b.ship, b.tgt, b.tr,
+                                            noAscent);
+  if (!bud.ok) return 0;
+
+  // THE ARRIVAL LEG IS THE CAPTURE THAT WILL ACTUALLY BE FLOWN, AND THIS WAS
+  // WRONG IN THE FIRST VERSION OF THIS EXPORT.
+  //
+  // `missionBudget` prices arrival with `arrivalCostMS`, a capture into the
+  // orbit the caller ASKED FOR; `flyTransfer` prices it with `planCapture`, at
+  // the arrival hyperbola's OWN periapsis (PH-156). Both are correct answers to
+  // different questions, and shipping both meant this row and the departure
+  // chart beside it disagreed by 53.1 m/s at the same departure: two
+  // authorities for one number, in two exports added in one commit, which is
+  // the failure this project has paid for repeatedly and I nearly shipped it
+  // again.
+  //
+  // The DECOMPOSITION stays `missionBudget`'s, because the plane-change leg is
+  // an allocation between two solved transfers and nothing else computes it.
+  // Only the arrival leg is replaced, and the total is rebuilt from the legs so
+  // words 5..9 still sum to word 1 exactly, which a screen drawing five bars
+  // beside a total depends on.
+  // THE INJECTION IS SPLIT, THE CAPTURE IS REPLACED, AND THE TWO HALVES ARE
+  // KEPT SEPARATE. `missionBudget` allocates the plane change against a total
+  // that includes ITS OWN arrival figure, so substituting only the arrival leg
+  // left 6.5 m/s of the old capture buried inside `transfer + planeChange`,
+  // and the row still disagreed with the chart. Measured that way: 1181.5304
+  // against 1175.0334.
+  //
+  // For a body there are exactly two burns, so the decomposition is exactly:
+  // `transfer + planeChange` is the injection and nothing else, `arrival` is
+  // the capture and nothing else. `transferMS` stays `missionBudget`'s
+  // coplanar injection, because that is the one number here nothing else
+  // computes, and the mismatch is the remainder.
+  bud.transferMS = std::fmin(bud.transferMS, b.tr.departDvMS);
+  bud.planeChangeMS = std::fmax(0.0, b.tr.departDvMS - bud.transferMS);
+  bud.arrivalMS = p.totalDvMS - p.burns[0].deltaVMS;
+  const double mission =
+      bud.ascentMS + bud.planeChangeMS + bud.transferMS + bud.arrivalMS;
+  bud.reserveMS = mission * tf::kMissionReserveFraction;
+  bud.totalMS = mission + bud.reserveMS;
+  bud.availableMS = vs::remainingDeltaVVacuumMS(s->craft);
+  bud.marginMS = bud.availableMS - bud.totalMS;
+  bud.feasible = bud.marginMS >= 0.0;
+  return apPushReach(bud);
+}
+
+OF_API int of_ap_body_departure_curve(int f, double tStartS, double tEndS,
+                                      int samples, int bodyId,
+                                      double captureAltitudeM) {
+  resetF64(0);
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s || samples < 2 || !(tEndS > tStartS)) return 0;
+  // AN UNKNOWN BODY REFUSES, IT DOES NOT DRAW A CHART OF NOTHING. The first
+  // version returned `samples` rows of NaN for `bodyId 7`, and a chart of NaNs
+  // is indistinguishable from "this moon is unreachable for the next orbit",
+  // which is a far more alarming claim than "there is no such moon".
+  // `of_body_state` already refuses an unknown body with 0 words; this matches.
+  if (bodyId != 1) return 0;
+  const int n = samples > kApMaxCurveSamples ? kApMaxCurveSamples : samples;
+  const double available = vs::remainingDeltaVVacuumMS(s->craft);
+
+  resetF64(static_cast<size_t>(n) * 4);
+  for (int i = 0; i < n; ++i) {
+    const double fr = static_cast<double>(i) / (n - 1);
+    const double fromNow = tStartS + fr * (tEndS - tStartS);
+    const double depart = s->state.timeS + fromNow;
+    const BodySolve b = apSolveToBody(*s, depart, bodyId, captureAltitudeM);
+    // THE CHART PRICES WHAT THE ARM WILL ACTUALLY FLY, and the first version
+    // did not. Pricing the capture with `arrivalCostMS` is cheaper (0.60 ms a
+    // sample against 1.31) and it is a DIFFERENT MISSION: measured over one
+    // Cinder period, 22 of 121 departures got a confident price from it and
+    // were then REFUSED by `flyTransfer`, and its cheapest departure was 11
+    // samples away from the one the arm actually likes.
+    //
+    // A chart that quotes a price for a trip the arm will not arm is worse than
+    // no chart, because the player has been told a number. So every sample runs
+    // the whole planner: the tof scan, the SOI root-find and `planCapture`,
+    // which is the same call `of_ap_arm_body_transfer` makes with the same
+    // arguments. The chart and the arm are now ONE FUNCTION apart and cannot
+    // disagree about either the cost or the refusal.
+    double dv = 0.0, arriveFromNow = 0.0;
+    bool got = false;
+    if (b.ok) {
+      const ap::Program p = ap::flyTransfer(b.tr, b.ship, b.tgt, s->craft);
+      if (p.valid) {
+        // The 5% mission reserve is the vessel chart's own policy and is kept
+        // here so one client reader draws both, and so the chart is a BUDGET
+        // while the armed program is a PLAN. `of_ap_body_reach` word 9 is the
+        // same number said out loud.
+        dv = p.totalDvMS * (1.0 + tf::kMissionReserveFraction);
+        arriveFromNow = fromNow + b.tofS;
+        got = true;
+      }
+    }
+    g_f64.push_back(fromNow);
+    g_f64.push_back(got ? dv : std::numeric_limits<double>::quiet_NaN());
+    g_f64.push_back(got && dv <= available ? 1.0 : 0.0);
+    g_f64.push_back(got ? arriveFromNow
+                        : std::numeric_limits<double>::quiet_NaN());
+  }
+  return n;
 }
 
 OF_API int of_ap_cancel(int f) {

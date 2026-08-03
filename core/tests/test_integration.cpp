@@ -182,12 +182,39 @@ TEST(journey_forge_surface_to_cinder_landing_composes_all_cores) {
   // ACTIVE integration is used here (the craft is being flown across): the
   // symplectic integrator handles any approach geometry; Forge's pull at this
   // 9.5e6 m radius is ~0.04 m/s², so the craft essentially coasts to Cinder.
-  const double cinderX = 1.2e7;                  // Forge-frame x of Cinder centre
+  // CINDER'S POSITION IS READ, NOT ASSUMED (D-014, PH-172). This used to be
+  // `const double cinderX = 1.2e7`, a third copy of a constant that lives in
+  // `orbital.h`, and it was correct only while the moon stood still. It now
+  // moves, and a hardcoded centre is exactly the two-authority failure D-014
+  // was ruled to end.
+  const Vec3 cinderNow = world.cinderCentreForgeFrame();
   const double soiR = world.cinderSoiRadius();   // 2.4e6 m
-  // Start ~50 km outside the SOI bubble, offset off-axis, heading in toward it.
-  const Vec3 approachR{cinderX - (soiR + 5.0e4) * 0.92,
-                       -(soiR + 5.0e4) * 0.39, 0.0};
-  const Vec3 approachV{1400.0, 560.0, 0.0};      // ~1.5 km/s closing toward Cinder
+
+  // ASSERT THE FIXTURE BEFORE ASSERTING THE BEHAVIOUR. The previous four
+  // stages have taken 9,400 ticks at 60 Hz, so 156.67 s have passed and Cinder
+  // has gone 85.0 km round its orbit. If the moon were still static this would
+  // read zero and the crossing below would be testing nothing new; asserting
+  // it means this test fails the day somebody freezes the frame again.
+  {
+    const Vec3 atZero = orbital::cinderStateAt(0.0).r;
+    const double moved = (cinderNow - atZero).length();
+    CHECK(moved > 8.0e4);
+    CHECK_NEAR(moved, 8.50e4, 2.0e3);
+    // and it moved the way an orbit moves: almost all of it across the radius,
+    // not along it, because 156 s is 0.0071 rad of a 1.6 day period.
+    CHECK(std::fabs(cinderNow.z - atZero.z) > 8.0e4);
+    CHECK(std::fabs(cinderNow.x - atZero.x) < 1.0e3);
+  }
+
+  // Start ~50 km outside the SOI bubble, offset off-axis, heading in toward it,
+  // all of it RELATIVE TO WHERE THE MOON ACTUALLY IS.
+  const Vec3 approachR = cinderNow + Vec3{-(soiR + 5.0e4) * 0.92,
+                                          -(soiR + 5.0e4) * 0.39, 0.0};
+  // ~1.5 km/s of closing speed, PLUS the moon's own velocity, so the approach
+  // geometry is the same one in Cinder's frame that it always was. Without the
+  // carrier term the vehicle would be aimed at where the moon was rather than
+  // where it is going, which is the same mistake at a smaller scale.
+  const Vec3 approachV = world.cinderVelocityForgeFrame() + Vec3{1400.0, 560.0, 0.0};
   world.setVesselState(orbital::StateVector{approachR, approachV});
   world.makeActiveFromCurrentState();  // fly the crossing ACTIVE (use this state)
   world.setThrust(Vec3{0, 0, 0});      // coast across (gravity negligible here)

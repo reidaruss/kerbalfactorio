@@ -5,8 +5,14 @@
 namespace of {
 
 // One node in the reference-frame hierarchy (star -> planet -> moon -> ...).
-// For the Wave-0 core, frames are static offsets; orbital motion (frames moving
-// over SimTime) is layered on by the physics core (spike2).
+//
+// FRAMES MOVE (D-014, PH-172). This used to say "for the Wave-0 core, frames
+// are static offsets; orbital motion is layered on by the physics core", and
+// that placeholder was correct until something looked at both copies of where
+// a moon is. `setOffset` below is the layering-on: the OFFSET is still a plain
+// vector and this file still has no opinion about ephemerides, because where a
+// body is belongs to `of::orbital` (DW-18's rule about mu, applied to
+// position). What changed is that the offset is no longer assumed constant.
 struct Frame {
   FrameId id = kRootFrame;
   FrameId parent = kRootFrame;
@@ -22,6 +28,17 @@ class FrameGraph {
     const FrameId id = static_cast<FrameId>(frames_.size()) + 1;  // 0 = root
     frames_[id] = Frame{id, parent, offsetFromParent, soiRadius};
     return id;
+  }
+
+  // MOVE A FRAME. The caller owns the ephemeris and this owns the graph, which
+  // is the split that keeps there being ONE answer to where a body is: nothing
+  // here computes a position, and nothing outside here re-implements the walk
+  // up the parent chain. A frame that does not exist is ignored rather than
+  // created, because silently creating one would put a body at an offset
+  // nobody asked for.
+  void setOffset(FrameId f, const Vec3& offsetFromParent) {
+    auto it = frames_.find(f);
+    if (it != frames_.end()) it->second.offsetFromParent = offsetFromParent;
   }
 
   // Position of a frame's origin expressed in root (star) coordinates.

@@ -244,6 +244,28 @@ class SimWorld {
       state_ = orbital::resume(elements_, nextTime);
     }
 
+    // 2b. CINDER MOVES, AND IT MOVES TO THE SAME TIME THE VESSEL JUST DID
+    //     (D-014, PH-172).
+    //
+    // This frame was a static offset, and the rendering lane found the cost of
+    // that the moment they drew the moon from `of_body_state`: the drawn Cinder
+    // and the frame graph's Cinder SEPARATE AT 542.5 m/s, which is not a
+    // tolerance, it is exactly `sqrt(mu / kCinderOrbitRadiusM)`, the whole of
+    // Cinder's orbital speed, because one of them was standing still. After an
+    // hour of sim that is 1953 km, or 9.8 Cinder radii. An autopilot flying to
+    // one of them would visibly miss the other, with every number on screen
+    // agreeing with itself.
+    //
+    // THE TIME IS `simTime() + dt` AND NOT `simTime()`, which is the whole
+    // subtlety here. `clock_.advance(dt)` is step 5, so during this function
+    // the clock still reads the time BEFORE the tick while the vessel state in
+    // step 2 has already been advanced past it. The on-rails branch above
+    // states the same convention in the same words (`nextTime`), and the SOI
+    // test below compares the two positions to each other, so a moon left one
+    // tick behind would put a 9 m error straight into the crossing.
+    frames_.setOffset(cinderFrame_,
+                      orbital::cinderStateAt(clock_.simTime() + dt).r);
+
     // 3. Reference-frame (SOI) transition — patched conics (D-002).
     maybeCrossSOI();
 
@@ -276,6 +298,17 @@ class SimWorld {
   int soiSwitchCount() const { return soiSwitches_; }
   double cinderSoiRadius() const { return orbital::kCinderSoiRadius; }
 
+  // WHERE CINDER IS RIGHT NOW, in Forge's frame, and where it is going. Read
+  // this rather than assuming `(1.2e7, 0, 0)`: since PH-172 the moon moves, and
+  // a caller that hardcodes the radius is the third copy of a fact that has
+  // already cost this project one measured defect (D-014).
+  Vec3 cinderCentreForgeFrame() const {
+    return frames_.frame(cinderFrame_).offsetFromParent;
+  }
+  Vec3 cinderVelocityForgeFrame() const {
+    return orbital::cinderStateAt(clock_.simTime()).v;
+  }
+
   // Distance from the vessel (in root space) to Cinder's centre (root space).
   double distanceToCinderCentre() const {
     const Vec3 vRoot = vesselRootCoord().pos;
@@ -298,7 +331,13 @@ class SimWorld {
                                    orbital::kForgeSoiRadius);
     // Cinder orbits Forge. Its offset is well inside Forge's SOI (8.4e7 m) and
     // far enough out that Cinder's own SOI (2.4e6 m) is a small bubble around it.
-    cinderFrame_ = frames_.addFrame(forgeFrame_, Vec3{kCinderOrbitRadiusM, 0, 0},
+    //
+    // INSTALLED FROM THE EPHEMERIS AT t = 0, NOT FROM A LITERAL (D-014, PH-172).
+    // `cinderStateAt(0)` is bit-exactly `(kCinderOrbitRadiusM, 0, 0)` by its own
+    // construction, so this line changes no number today; what it removes is the
+    // SECOND PLACE that knew where Cinder is. `step()` advances it from the same
+    // function, so the frame graph and every other consumer read one ephemeris.
+    cinderFrame_ = frames_.addFrame(forgeFrame_, orbital::cinderStateAt(0.0).r,
                                     orbital::kCinderSoiRadius);
     vesselFrame_ = forgeFrame_;
   }
