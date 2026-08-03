@@ -1097,3 +1097,48 @@ comes out wrong.**
 verify**, because the argument will never do it for you. When a number is quoted
 to justify a decision, ask whether the decision would change if the number were
 half or double. **If the answer is no, that number has no defender.**
+
+### A count that happens to equal a total reads as success
+
+A render rig imported twelve `.glb` files into one scene. Blender's ID namespace
+is per file, so the second import's `OF_Steel` arrives as `OF_Steel.001`, which
+resolves to the role name `"Steel.001"`, which is not a role. **Eleven of twelve
+assets rendered with no material mapping at all.**
+
+The rig reported it honestly. It printed *"44 material(s) not in the palette"*
+and, on the same line, **"10 mapped"**.
+
+**Ten is exactly how many roles exist.** So the number that meant "ten roles were
+matched at least once" read as "ten of the twelve things you asked for worked",
+and nobody opened the skip list. **Every production-line comparison this project
+made was one asset's real surface against eleven assets' flat constants, in both
+halves of every pair.**
+
+**Print the denominator you mean.** "10 mapped" and "10 of 12 assets mapped" and
+"10 of 54 materials mapped" are three different claims and only one of them is
+what a reader assumes. A bare count next to a plausible total is a coincidence
+waiting to be misread.
+
+### A control whose arming step silently fails is indistinguishable from a passing control
+
+A lane armed three negative controls by writing a modified instrument through a
+Python heredoc using an absolute `/tmp` path. **Git Bash translates `/tmp`; the
+Windows Python it invoked does not.** The write raised, **the file was never
+modified, and all three controls ran the unmodified instrument and passed.**
+
+The closing claim, **"revert byte-identical", was vacuously true**, because
+nothing had been changed to revert.
+
+It was caught only because **all three printed the same success line** instead of
+three different refusals. Three distinct sabotages producing one identical
+message is the tell.
+
+**A control must assert that its own arming took effect** before it draws any
+conclusion from the run: read the file back, diff it, or check the exit status of
+the step that wrote it. Otherwise a broken setup and a genuinely passing subject
+produce the same output.
+
+This is a cousin of **when two steps share a workspace the second cannot tell you
+whether the first happened**, and of **a guard whose verdict nothing acts on is
+not a guard**. The family is the same: **a step that can fail quietly, upstream
+of the thing you are reading.**
