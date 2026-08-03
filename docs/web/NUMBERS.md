@@ -427,7 +427,7 @@ fix the sweep family. **It carries the same defect it was adopted to fix, for
 the same reason: it is built FROM A BASE, and a base is a point in time.**
 
 Measured on 2026-08-01. A lane committed ten files and fourteen screenshots. The
-very next commit **reverted all of them** — not carelessly, but because it built
+very next commit **reverted all of them**, not carelessly, but because it built
 its blob as "HEAD plus only my hunks" against **the HEAD that existed when its
 pass started**, which was the first commit's parent. The blob faithfully
 preserved every row that existed when the lane began and silently deleted every
@@ -539,3 +539,82 @@ its 20.00 mm was a **dropped state chip**, so restoring it cost twelve triangles
 took the asset to 1.87 mm and 1.0x, **and fixed a correctness defect on its own
 terms** (a belt at LOD1 range had no state readout at all, while every other
 machine's LOD1 keeps its chip).
+
+### A completed attribution with no owner ships forever
+
+The near ground on Forge has carried a pattern of dark etched contour lines in
+every close frame for months. Reid reported it directly. It was then attributed
+**definitively, by elimination**: it survives `?groundtexamp=0` and vanishes
+under `?groundreliefamp=0`, so it is the ground relief bump. A second lane
+independently flagged the identical artefact from in-world frames without
+knowing that attribution already existed.
+
+**Two lanes measured it, both were mid-pass on something else, both correctly
+declined to reach outside their slice, and nobody fixed it.** Every individual
+decision was right and the outcome was a known defect shipping in every build.
+
+The gap is Admin's, not the lanes'. **A lane that finds a defect outside its
+slice has discharged its duty by reporting it. Converting that report into an
+owned task in the same turn is the controller's job**, and a report that lands
+only in a controller file is a report that has been filed rather than routed.
+
+When two independent lanes report the same symptom, that is not corroboration
+to be noted. **It is evidence that the routing failed once already.**
+
+### An unowned load-bearing file is a bug in the agent architecture
+
+`web/src/world/FloatingOrigin.ts` has **zero decision tags and is named in no
+controller doc**, and a runtime body switch turns on it. `Services.body` is a
+`readonly` scalar on a 45-field all-`readonly` record **with no teardown of any
+kind**, and it is likewise unclaimed.
+
+Floating origin is listed in core-engine's charter in `CLAUDE.md` in those exact
+words. **It has been theirs the entire time and their context file never said
+so.** Nothing was contested; the file simply fell between the charter and the
+context file, which is where rot accumulates without anyone deciding to allow
+it.
+
+**Ownership recorded only in the charter is not ownership.** When a domain
+touches a file that its own context file does not name, adding it there is part
+of the work, not paperwork after it.
+
+### A registered parameter that does not move the picture is worse than a missing one
+
+`--sundot` is registered in `PAGE_PARAMS`. `--sundot=0.28` and `--sundot=0.92`
+produce **visually identical frames** in the walk scenario.
+
+A lane reached for it to reproduce a grazing-light condition and got a confident
+null result: the artefact under investigation appeared unchanged across the
+whole range, which is exactly what "this is not lighting dependent" looks like.
+**A missing flag fails loudly. A dead one returns a clean answer to a question
+it never asked.**
+
+Being in the params list is a claim that the control works. **Either make it do
+what its name says or delete it**, and treat any registered control that has
+never been proven to move its own output as unverified rather than available.
+
+### An unmergeable binary cannot be owned by more than one lane at a time
+
+On 2026-08-02 three lanes were concurrently rebuilding `web/wasm/dist/of-core.wasm`:
+physics adding transfer exports, gameplay adding a catalogue row, world-gen
+adding a body. **A `.wasm` is one opaque blob and git cannot merge it. Whoever
+commits second silently reverts the others, and it looks green, because the
+binary still parses and only the missing exports are wrong.**
+
+The world-gen lane caught this unprompted and refused to commit, because two
+physics commits touching `orbital.h` and `transfer.h` had landed after its
+build. That refusal is the correct instinct and it should not have to be
+rediscovered per lane.
+
+**Standing rule.** Lanes commit headers, `.inc` files, TS and probes freely,
+because text merges. **No lane commits `web/wasm/dist/of-core.wasm` or
+`web/wasm/test/expected.json`.** They are built, used, and left dirty. Admin
+does one settled rebuild from a tree holding every lane's sources, regenerates
+the fixture, verifies the exports, and commits the binary alone. Every lane
+states the exact export names and word counts it added, so the rebuild verifies
+them without reading diffs.
+
+Related and separately load-bearing: **an ABI bump and its wasm must land in one
+commit that boots.** A half-bridge window reached `main` earlier the same night,
+client at ABI 22 while the wasm was still 21, before the following commit closed
+it.
