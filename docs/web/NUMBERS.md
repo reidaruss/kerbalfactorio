@@ -1047,3 +1047,50 @@ which is the artefact Reid has complained about repeatedly.
 green, the gate has quietly become a specification** and nobody decided that it
 should be one. The tell is a constraint in the generator whose stated purpose is
 to protect a measurement rather than to serve the output.
+
+### In an `&&`-chained aggregate, where you put a gate decides whether it IS a gate
+
+A lane added a new check to `npm run check`. **`check` is an `&&` chain, and one
+of its existing links has been red for everybody for some time** (29 files over a
+line-count cap, nobody's fault, nobody's tonight).
+
+**A gate appended to the end of that chain would never have executed a single
+line**, while its own commit message truthfully said it had been added to the
+aggregate check. It would have read as covered and been dead from the day it
+landed.
+
+They placed it **before** the failing link and **verified rather than reasoned**:
+`npm run check` prints `posecheck: PASS (9 checks)` and *then* goes red further
+down, in that order.
+
+**The rule: adding a gate to a chain is not the same as running it.** Check what
+is upstream of your link and whether any of it is currently failing. **A
+long-broken link converts everything after it into decoration**, and the decay is
+silent because each new gate's author verifies their gate in isolation.
+
+Corollary, and it is why the situation persists: **a permanently red aggregate
+trains everyone to stop reading it**, which is what makes the next dead gate
+invisible. Fix the red link or split the chain; do not add to a chain nobody
+runs.
+
+### A wrong number that changes nothing is the one no process catches
+
+Admin wrote an orbital speed of 7.6 km/s into the authoritative decision log. It
+came from a domain report, it was repeated in a source file and in two risk
+entries, and **it is 4.05x out**: the real figure is 1879.26 m/s. 7.5 km/s is
+Earth's low orbit, and this planet's mu is 3.5316e12.
+
+**Every conclusion drawn from it was correct.** The argument it supported (that
+two representations of one object disagreed, and that the disagreement was large)
+holds at either value. **So no reader ever had a reason to check it**, and it
+survived three independent transcriptions.
+
+`NUMBERS.md` already says **an implausible magnitude is an instrument bug until
+proven otherwise**. This is the complement: **a plausible magnitude in a
+load-bearing document is checked by nobody, precisely because nothing it touches
+comes out wrong.**
+
+**Quantities that decorate an argument rather than drive it are the ones to
+verify**, because the argument will never do it for you. When a number is quoted
+to justify a decision, ask whether the decision would change if the number were
+half or double. **If the answer is no, that number has no defender.**
