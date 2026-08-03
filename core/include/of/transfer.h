@@ -355,6 +355,180 @@ inline Window scanWindow(const orbital::Elements& vesselEl, const Target& tgt,
 }
 
 // =============================================================================
+// §4b - THE SOI CROSSING (PH-156). Patched conics, finally patched.
+//
+// This is spike2-physics PH-Build 0 step 4, "predictive SOI root-find", which
+// has been outstanding since the propagator was written. It was not needed
+// while everything flew around one body. It is needed the moment a plan has to
+// survive being re-expressed in another body's frame, which is Reid's second
+// named test: orbit around the moon.
+//
+// D-002 is patched conics, not n-body: a vessel feels exactly ONE body at a
+// time. So a trip to Cinder is TWO conics with a discontinuity between them,
+// and the whole content of the handoff is
+//
+//     r_rel = r_ship - r_body        v_rel = v_ship - v_body
+//
+// evaluated at the instant the separation equals the SOI radius. That is a
+// SUBTRACTION, and the reason it needs a root-find is only that the instant is
+// not known in closed form.
+//
+// THE PLAN IS STILL COMPUTED ONCE. `autopilot.h`'s rule is that the executor
+// does not re-derive in flight, and an SOI crossing looks like the exception:
+// the capture burn cannot be expressed in the departure frame at all. It is
+// not an exception, because the crossing time and the arrival hyperbola are
+// both PREDICTABLE from the departure state. The solver produces both burns up
+// front, each tagged with the frame it lives in, and the executor flies each in
+// its own frame. Nothing is re-derived; the plan simply has two frames in it.
+// =============================================================================
+
+struct SoiCrossing {
+  bool found = false;
+  double timeS = 0.0;                  // absolute sim time of ENTRY
+  orbital::StateVector relative;       // state RELATIVE TO THE BODY at entry
+  orbital::Elements hyperbola;         // its conic ABOUT THE BODY
+  double vInfMS = 0.0;                 // speed relative to the body at entry
+  double periapsisRadiusM = 0.0;       // of the arrival conic, about the body
+  double timeToPeriapsisS = 0.0;       // from entry
+  bool impacts = false;                // periapsis is inside the body
+  const char* note = "no crossing";
+};
+
+// Separation between the vessel and the body at a time, both on their own
+// conics about the shared primary.
+inline double separationAt(const orbital::Elements& shipEl, const Target& body,
+                           double t) {
+  const orbital::StateVector s = orbital::elementsToState(shipEl, t);
+  const orbital::StateVector b = orbital::elementsToState(body.el, t);
+  return (s.r - b.r).length();
+}
+
+// WHEN DOES THE VESSEL FALL INTO THE BODY'S SPHERE OF INFLUENCE.
+//
+// Sampled, then bisected on the FIRST inward crossing. Sampling rather than
+// solving because the separation of two conics about a shared primary has no
+// closed form, and FIRST because a trajectory that grazes the SOI, leaves and
+// returns must hand off at the first entry: handing off at the second would
+// integrate the wrong conic through the gap between them.
+//
+// `samples` is the coarse pass. It has to be fine enough not to step over the
+// whole SOI: the vessel crosses Cinder's 2.4e6 m bubble in about 1500 s at a
+// typical arrival speed, so the default 2000 over a 30000 s window (15 s a
+// step) has two orders of magnitude of margin. Too coarse and the crossing is
+// MISSED rather than mislocated, which is why this is stated rather than tuned.
+inline SoiCrossing findSoiEntry(const orbital::Elements& shipEl,
+                                const Target& body, double fromS, double toS,
+                                int samples = 2000) {
+  SoiCrossing x;
+  if (!body.isBody() || !(toS > fromS) || samples < 2) {
+    x.note = "not a body, or an empty window";
+    return x;
+  }
+  const double soi = body.soiRadiusM;
+  double tPrev = fromS;
+  double dPrev = separationAt(shipEl, body, fromS) - soi;
+  if (dPrev <= 0.0) {
+    x.note = "already inside the sphere of influence at the window's start";
+    return x;
+  }
+
+  double tLo = 0.0, tHi = 0.0;
+  bool bracketed = false;
+  for (int i = 1; i <= samples; ++i) {
+    const double t = fromS + (toS - fromS) * (static_cast<double>(i) / samples);
+    const double d = separationAt(shipEl, body, t) - soi;
+    if (d <= 0.0) { tLo = tPrev; tHi = t; bracketed = true; break; }
+    tPrev = t;
+    dPrev = d;
+  }
+  if (!bracketed) {
+    x.note = "the trajectory never enters the sphere of influence";
+    return x;
+  }
+
+  // Bisect. 80 halvings takes a 30000 s window to well under a nanosecond, so
+  // the loop is bounded by the double's mantissa rather than by the tolerance.
+  for (int i = 0; i < 80 && (tHi - tLo) > 1e-6; ++i) {
+    const double tm = 0.5 * (tLo + tHi);
+    if (separationAt(shipEl, body, tm) - soi > 0.0) tLo = tm; else tHi = tm;
+  }
+  x.timeS = tHi;
+  x.found = true;
+
+  // THE HANDOFF ITSELF, which is one subtraction.
+  const orbital::StateVector s = orbital::elementsToState(shipEl, x.timeS);
+  const orbital::StateVector b = orbital::elementsToState(body.el, x.timeS);
+  x.relative = orbital::StateVector{s.r - b.r, s.v - b.v};
+  x.vInfMS = x.relative.v.length();
+  x.hyperbola = orbital::stateToElements(x.relative, body.muM3S2, x.timeS);
+  x.periapsisRadiusM = x.hyperbola.a * (1.0 - x.hyperbola.e);
+  x.impacts = x.periapsisRadiusM < body.bodyRadiusM;
+  x.note = x.impacts ? "enters, and hits the surface" : "enters";
+
+  // TIME TO PERIAPSIS BY ROOT-FINDING ON r.v, NOT BY INVERTING KEPLER AGAIN.
+  // Periapsis is exactly where the radial velocity changes sign, so this is a
+  // bisection on a quantity the PROPAGATOR produces, which means the answer
+  // agrees with the trajectory that will actually be flown rather than with a
+  // second derivation of it.
+  {
+    const double crossS = 4.0 * soi / std::fmax(1.0, x.vInfMS);
+    double lo = 0.0, hi = crossS;
+    auto radialRate = [&](double dt) {
+      const orbital::StateVector q = orbital::propagate(x.relative, dt, body.muM3S2);
+      return q.r.dot(q.v);
+    };
+    if (radialRate(0.0) < 0.0 && radialRate(hi) > 0.0) {
+      for (int i = 0; i < 80 && (hi - lo) > 1e-6; ++i) {
+        const double m = 0.5 * (lo + hi);
+        if (radialRate(m) < 0.0) lo = m; else hi = m;
+      }
+      x.timeToPeriapsisS = 0.5 * (lo + hi);
+    }
+  }
+  return x;
+}
+
+// THE CAPTURE BURN, IN THE BODY'S OWN FRAME.
+//
+// At periapsis the radial velocity is zero, so the arrival velocity is purely
+// tangential and the burn is purely retrograde: the whole manoeuvre is
+// |v_hyperbolic| - |v_circular| at whatever radius the hyperbola happens to
+// have. It captures at THAT radius rather than at a requested altitude,
+// because aiming the periapsis is a mid-course correction and not a capture,
+// and pretending otherwise would publish a burn that does not produce the
+// orbit it claims. The radius reached is published so a caller can see it.
+struct CaptureBurn {
+  bool valid = false;
+  double timeS = 0.0;                 // absolute, at periapsis
+  Vec3 deltaV{0, 0, 0};               // IN THE BODY'S FRAME
+  double deltaVMS = 0.0;
+  double circularRadiusM = 0.0;       // the orbit it produces
+  orbital::StateVector atPeriapsis;   // relative to the body, BEFORE the burn
+  const char* note = "no capture";
+};
+
+inline CaptureBurn planCapture(const SoiCrossing& x, const Target& body) {
+  CaptureBurn c;
+  if (!x.found || !body.isBody()) { c.note = "nothing to capture into"; return c; }
+  if (x.impacts) { c.note = "the arrival conic hits the surface"; return c; }
+  if (!(x.timeToPeriapsisS > 0.0)) { c.note = "no periapsis ahead"; return c; }
+
+  c.atPeriapsis = orbital::propagate(x.relative, x.timeToPeriapsisS, body.muM3S2);
+  const double r = c.atPeriapsis.r.length();
+  if (!(r > body.bodyRadiusM)) { c.note = "periapsis is inside the body"; return c; }
+
+  const double vCirc = std::sqrt(body.muM3S2 / r);
+  const Vec3 vHat = orbital::normalized(c.atPeriapsis.v);
+  c.deltaV = vHat * vCirc - c.atPeriapsis.v;   // retrograde, by construction
+  c.deltaVMS = c.deltaV.length();
+  c.timeS = x.timeS + x.timeToPeriapsisS;
+  c.circularRadiusM = r;
+  c.valid = true;
+  c.note = "capture at the arrival periapsis";
+  return c;
+}
+
+// =============================================================================
 // §5 - THE MISSION BUDGET: the five legs a reach readout draws.
 //
 // The gameplay lane's `Autopilot.ts` publishes `REACH_LEGS = [ascent, plane

@@ -143,9 +143,27 @@ OF_API int of_fl_capture_hold(int f) {
   return 1;
 }
 
+// THE AUTOPILOT RIDES INSIDE THE STEP, and that is a deliberate choice rather
+// than a convenience.
+//
+// An autopilot has to run once per fixed tick, BEFORE the integrator, on the
+// same dt. Exposing it as a separate `of_ap_tick(f, dt)` would put a second
+// call in the client's hot loop that it has to remember, in the right order,
+// with the right dt, in BOTH `of_fl_step` and `of_fl_step_n`, and forgetting it
+// under time warp is a silent failure: the vehicle coasts through its own burn
+// and arrives somewhere else. Driving it from in here means ARMING is the only
+// thing a client does, and a warped step flies the program exactly like a
+// real-time one.
+//
+// Defined in of_ap_api.inc, which is included after this file, so it is
+// forward-declared here. Same pattern as `of_gp_init` reaching the research
+// layer at the foot of of_core_api.cpp.
+void apDriveAutopilot(int f, fl::FlightSim& s, double dt);
+
 OF_API int of_fl_step(int f, double dt) {
   fl::FlightSim* s = g_flights.get(f);
   if (!s || !(dt > 0.0)) return 0;
+  apDriveAutopilot(f, *s, dt);
   s->step(dt);
   return 1;
 }
@@ -155,7 +173,10 @@ OF_API int of_fl_step_n(int f, double dt, int n) {
   fl::FlightSim* s = g_flights.get(f);
   if (!s || !(dt > 0.0) || n <= 0) return 0;
   const int lim = n > 2000000 ? 2000000 : n;
-  for (int i = 0; i < lim; ++i) s->step(dt);
+  for (int i = 0; i < lim; ++i) {
+    apDriveAutopilot(f, *s, dt);
+    s->step(dt);
+  }
   return lim;
 }
 // -> jettisoned mass in kg, or -1 if there was nothing left to fire.

@@ -32,10 +32,13 @@
 // see §21.1, which is the one place the published contract had a hole.
 // =============================================================================
 #include <limits>
+#include <map>
 
+#include "of/autopilot.h"
 #include "of/transfer.h"
 
 namespace tf = of::transfer;
+namespace ap = of::autopilot;
 
 // The departure-curve cap. Same argument as kMnMaxSamples: past a couple of
 // hundred points a chart is drawing sub-pixel, and a bound turns one mistyped
@@ -355,4 +358,187 @@ OF_API int of_ap_plan(int f, double tDepartFromNowS, double smaM, double ecc,
       p.after.v.x, p.after.v.y, p.after.v.z};
   for (double x : a) g_f64.push_back(x);
   return 32;
+}
+
+// =============================================================================
+// §21.5: EXECUTION. Arm, cancel, status.
+//
+// PUBLISHED BY THIS LANE FIRST, deliberately. The planning half worked because
+// the gameplay lane wrote its contract into a committed file before the other
+// side existed. This is the same pattern with the sides swapped: execution is
+// physics' half, so physics publishes and gameplay binds. Names, word counts
+// and order are settled here, and this comment is the specification.
+//
+// THREE CALLS AND NO TICK. The autopilot is driven from inside `of_fl_step` and
+// `of_fl_step_n` (see of_flight_api.inc), so a client ARMS a program and then
+// steps the flight exactly as it already does. There is no per-frame autopilot
+// call to forget, no ordering to get wrong, and a time-warped step flies the
+// program identically to a real-time one, which matters because a scheduled
+// departure hours away is only reachable under warp.
+//
+// A SCHEDULED DEPARTURE NEEDS NO SEPARATE MECHANISM. Reid's ask is "set it to a
+// later time if you don't have enough fuel right now but will at a more optimal
+// time". A program armed now whose first ignition is hours away simply coasts
+// until then: the future departure is a number in the plan, not a state in the
+// executor, so there is nothing extra to persist, cancel or get wrong.
+//
+// STILL NO ABI BUMP. Additive, no stride moves, and symbol-presence detection
+// keeps an old client working and naming what it waits for. ABI stays 22.
+//
+//   of_ap_arm_hold_orbit(f, targetRadiusM)                 -> 1 armed, 0 refused
+//   of_ap_arm_transfer(f, tDepartFromNowS, ...9 target)    -> 1 armed, 0 refused
+//   of_ap_cancel(f)                                        -> 1 if it was armed
+//   of_ap_status(f)                                        -> 18, or 0
+//   of_ap_note(f)                                          -> UTF-8 byte count
+//
+// A REFUSAL IS AN ANSWER. `arm` returns 0 when the program is not flyable, and
+// `of_ap_note` then says why in words a screen can print: "not enough delta-v
+// aboard for this orbit" is a different sentence from "degenerate orbit
+// request", and a UI given one boolean could not tell a player which.
+// =============================================================================
+
+// One autopilot per FLIGHT handle, in a map rather than as a member of
+// FlightSim. An executor is not part of what a vessel IS: the same craft flown
+// by hand and flown by autopilot is the same object, and only the bridge knows
+// which is happening. Keeping it here also means /core stays free of the
+// question and `flight.h` needs no field it would have to serialise.
+namespace { std::map<int, ap::Autopilot> g_pilots; }
+
+// Called from of_fl_step / of_fl_step_n, once per tick, before the integrator.
+void apDriveAutopilot(int f, fl::FlightSim& s, double dt) {
+  auto it = g_pilots.find(f);
+  if (it == g_pilots.end()) return;
+  ap::Autopilot& pilot = it->second;
+  if (!pilot.running()) return;
+  const ap::Command c = pilot.update(s, dt);
+  ap::Autopilot::apply(s, c);
+}
+
+OF_API int of_ap_arm_hold_orbit(int f, double targetRadiusM) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  s->craft.layout();
+  const ap::Program p = ap::holdOrbit(s->orbitalState(), s->state.timeS,
+                                      s->env.muM3S2, targetRadiusM, s->craft);
+  g_pilots[f].arm(p);
+  return p.valid ? 1 : 0;
+}
+
+OF_API int of_ap_arm_transfer(int f, double tDepartFromNowS, double smaM,
+                              double ecc, double incRad, double lanRad,
+                              double argpRad, double taRad, double epochS) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  s->craft.layout();
+  const double mu = s->env.muM3S2;
+  const of::orbital::Elements ship = s->park();
+  const double depart = s->state.timeS + tDepartFromNowS;
+  const tf::Target tgt =
+      apTarget(smaM, ecc, incRad, lanRad, argpRad, taRad, epochS, mu);
+
+  // The SAME time-of-flight search the reach row and the departure curve use,
+  // so a player who was shown a cost on the chart is armed with the transfer
+  // that produced it rather than with a second opinion about the same trip.
+  const double tH = tf::hohmannTimeS(ship.a, smaM, mu);
+  if (!(tH > 0.0)) return 0;
+  tf::Transfer best;
+  double bestDv = 1e308;
+  for (int j = 0; j < kApTofSamples; ++j) {
+    const double g = static_cast<double>(j) / (kApTofSamples - 1);
+    const tf::Transfer c =
+        tf::solveTransfer(ship, tgt, depart, (0.25 + g * 1.5) * tH);
+    if (!c.valid || !(c.totalDvMS < bestDv)) continue;
+    bestDv = c.totalDvMS;
+    best = c;
+  }
+  if (!best.valid) return 0;
+  // A vessel target is MATCHED; a body is CAPTURED, and transfer.h refuses to
+  // publish an arrival vector for a capture so that nobody flies one across a
+  // frame change. A body therefore arms as a single injection burn today, and
+  // PH-156 is opening that seam rather than working around it.
+  const ap::Program p = ap::flyTransfer(best, s->craft, !tgt.isBody());
+  g_pilots[f].arm(p);
+  return p.valid ? 1 : 0;
+}
+
+OF_API int of_ap_cancel(int f) {
+  auto it = g_pilots.find(f);
+  if (it == g_pilots.end()) return 0;
+  // Cutting the throttle is PART of cancelling. Leaving the engine lit because
+  // the executor stopped looking is the worst possible reading of the word.
+  fl::FlightSim* s = g_flights.get(f);
+  if (s) s->state.throttle = 0.0;
+  g_pilots.erase(it);
+  return 1;
+}
+
+// f64 scratch, EXACTLY 18. Returns 18, or 0 when nothing is armed for `f`.
+//    0  running        1 while the program is still going (Coast/Orient/Burn),
+//                      0 once it is Done or Aborted. This is the word an ARM
+//                      button reads. It is NOT "is something armed", because
+//                      the COUNT already says that: a refused arm returns 18
+//                      with running 0 and phase 5, so a screen can show the
+//                      refusal and its note instead of forgetting it happened.
+//    1  phase          0 Idle, 1 Coast, 2 Orient, 3 Burn, 4 Done, 5 Aborted
+//    2  mode           0 Off, 1 HoldOrbit, 2 Transfer
+//    3  burnIndex      which burn is next or running
+//    4  burnCount
+//    5  timeToIgnitionS  of that burn. NEGATIVE means the burn is OVERDUE,
+//                        which is exactly what a vehicle still slewing looks
+//                        like, and is a state a screen should be able to show.
+//    6  dvSpentTotalMS   integrated from thrust ACTUALLY delivered, not planned
+//    7  dvThisBurnMS     spent so far on the current burn
+//    8  currentBurnDvMS  what that burn is meant to cost
+//    9  pointingErrorDeg
+//   10  rateDegS
+//   11  burningNow     1/0
+//   12  throttleNow    what the executor last commanded
+//   13  programDvMS    the whole program
+//   14  targetRadiusM  HoldOrbit only, else 0
+//   15-17 the current burn's direction, unit, inertial. A navball can draw this
+//         directly, and it is the SAME vector the executor is holding, so the
+//         marker and the ship can never disagree.
+OF_API int of_ap_status(int f) {
+  resetF64(18);
+  auto it = g_pilots.find(f);
+  if (it == g_pilots.end()) return 0;
+  const ap::Autopilot& pilot = it->second;
+  const ap::Program& p = pilot.program;
+  const ap::Status& st = pilot.status;
+  const int bi = (st.burnIndex >= 0 && st.burnIndex < p.burnCount) ? st.burnIndex : 0;
+  const of::Vec3 dir = (p.burnCount > 0)
+      ? of::orbital::normalized(p.burns[bi].deltaV) : of::Vec3{0, 1, 0};
+  fl::FlightSim* s = g_flights.get(f);
+  const double a[18] = {
+      pilot.running() ? 1.0 : 0.0,
+      static_cast<double>(st.phase),
+      static_cast<double>(p.mode),
+      static_cast<double>(st.burnIndex),
+      static_cast<double>(p.burnCount),
+      st.timeToIgnitionS,
+      st.dvSpentTotalMS,
+      st.dvSpentThisBurnMS,
+      (p.burnCount > 0) ? p.burns[bi].deltaVMS : 0.0,
+      st.pointingErrorDeg,
+      st.rateDegS,
+      st.burningNow ? 1.0 : 0.0,
+      s ? s->state.throttle : 0.0,
+      p.totalDvMS,
+      p.targetRadiusM,
+      dir.x, dir.y, dir.z};
+  for (double x : a) g_f64.push_back(x);
+  return 18;
+}
+
+// Why it refused, or what it is doing, in words a screen can print. u8 scratch,
+// UTF-8, NOT null terminated; returns the byte count. Same convention as
+// `of_vs_part_name`, through the same `textOut` helper so there is one string
+// path across the whole bridge.
+OF_API int of_ap_note(int f) {
+  auto it = g_pilots.find(f);
+  if (it == g_pilots.end()) return textOut("nothing armed");
+  const ap::Autopilot& pilot = it->second;
+  const char* n = (pilot.status.note && pilot.status.note[0] != '\0')
+                  ? pilot.status.note : pilot.program.note;
+  return textOut(n);
 }

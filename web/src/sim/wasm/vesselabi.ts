@@ -32,6 +32,12 @@ export const PART_INFO_WORDS = 35;
  *  same row from the same function in of_staging_api.inc. */
 export const STAGE_PERF_WORDS = 13;
 export const MASS_PROPS_WORDS = 15;
+/** PH-157. The autopilot EXECUTION status row. Additive at ABI 22 and detected
+ *  by symbol presence, the same way `Autopilot.ts::apMissing` detects the
+ *  planning half, so a client built before these existed keeps working and can
+ *  name what it is waiting for. See of_ap_api.inc section 21.5 for the full
+ *  field list, which is the specification. */
+export const AP_STATUS_WORDS = 18;
 /** ABI 20: nine, not eight. The ninth is `radialOffsetM` (0 for a part that is
  *  not radially attached), appended so every existing index is unmoved. Shared
  *  by `_of_vs_transforms` and `_of_fl_transforms`, which write the same row. */
@@ -117,6 +123,56 @@ export interface VesselAbi {
    *  THE DESIGN, which is a blueprint that never burns a gram. For the craft
    *  that is actually flying use `_of_fl_stage_performance` (§13.2). */
   _of_vs_stage_performance(v: number): number;
+
+  // --- section 21.5: AUTOPILOT EXECUTION (PH-157) ----------------------------
+  // PUBLISHED BY THE PHYSICS LANE, which owns execution. Three calls and NO
+  // per-frame tick: the autopilot is driven from inside `_of_fl_step` and
+  // `_of_fl_step_n`, so a client ARMS a program and then steps the flight
+  // exactly as it already does. There is no ordering to get wrong and a warped
+  // step flies the program identically to a real-time one, which is what makes
+  // a departure scheduled hours out reachable at all.
+  //
+  // MEASURED through this bridge with the client only calling `_of_fl_step`:
+  // hold-orbit from 680 km to a requested 800 km lands at a 799997.2,
+  // e 0.000000, having spent exactly its planned 177.5676 m/s. Under
+  // `_of_fl_step_n` at 200 ticks a call the result is identical.
+
+  /** Arm "take it to this orbit": a circular orbit at `targetRadiusM` from the
+   *  body's CENTRE, not an altitude. Returns 1 armed, 0 refused. A refusal is
+   *  an answer and `_of_ap_note` says why in words a screen can print. */
+  _of_ap_arm_hold_orbit(f: number, targetRadiusM: number): number;
+  /** Arm a transfer to a target orbit, departing `tDepartFromNowS` from now.
+   *  A FUTURE departure needs no separate mechanism: the program simply coasts
+   *  until its first ignition, so scheduling is a number in the plan rather
+   *  than a state in the executor. Target words are the same nine, in the same
+   *  order, as `_of_ap_flight_reach`, and the time-of-flight search is the
+   *  same one, so a player is armed with the transfer the chart quoted. */
+  _of_ap_arm_transfer(f: number, tDepartFromNowS: number, sma: number,
+                      ecc: number, inc: number, lan: number, argp: number,
+                      ta: number, epoch: number): number;
+  /** Disarm, and CUT THE THROTTLE, because leaving the engine lit is the worst
+   *  possible reading of the word. Returns 1 if something was armed. */
+  _of_ap_cancel(f: number): number;
+  /** f64 scratch, AP_STATUS_WORDS. Returns 18, or 0 when nothing is armed:
+   *  [running, phase, mode, burnIndex, burnCount, timeToIgnitionS,
+   *   dvSpentTotalMS, dvThisBurnMS, currentBurnDvMS, pointingErrorDeg,
+   *   rateDegS, burningNow, throttleNow, programDvMS, targetRadiusM,
+   *   dirX, dirY, dirZ].
+   *  phase: 0 Idle, 1 Coast, 2 Orient, 3 Burn, 4 Done, 5 Aborted.
+   *  mode:  0 Off, 1 HoldOrbit, 2 Transfer.
+   *  `running` is 0 once the program is Done or Aborted, so it is the word an
+   *  arm button reads; the COUNT is what says whether anything is armed at all,
+   *  and a REFUSED arm returns 18 with running 0 and phase 5 so the screen can
+   *  show the refusal rather than forgetting it happened.
+   *  `timeToIgnitionS` goes NEGATIVE when a burn is overdue, which is exactly
+   *  what a vehicle still slewing onto its attitude looks like.
+   *  dir is the current burn's direction, unit, inertial, and it is the SAME
+   *  vector the executor is holding, so a navball marker and the ship cannot
+   *  disagree. */
+  _of_ap_status(f: number): number;
+  /** u8 scratch, UTF-8, NOT null terminated; returns the byte count. Why it
+   *  refused, or what it is doing. Same convention as `_of_vs_part_name`. */
+  _of_ap_note(f: number): number;
   _of_vs_total_dv_vacuum(v: number): number;
   _of_vs_remaining_dv_vacuum(v: number): number;
   /** f64 scratch, MASS_PROPS_WORDS:
