@@ -185,7 +185,31 @@ PALETTE = {
     "SuitDark":     ("6E6A60", 0.00, 0.70, 1.0, None),
     "SuitAccent":   ("2E7DBE", 0.00, 0.55, 1.0, None),
     "Plate":        ("7E8790", 0.70, 0.42, 1.0, None),
-    "Skin":         ("C08A63", 0.00, 0.70, 1.0, None),
+    # RN-858. WAS C08A63, WHICH MEASURED 93 COUNTS OF CHROMA (max channel
+    # minus min, on 0..255) AND WAS THE SEVENTH MOST SATURATED ROW IN THIS
+    # WHOLE TABLE, above Water and every leaf. On a first-person frame it
+    # rendered at 87 counts at p50, which is the number that matters: the
+    # authored chroma predicts the rendered chroma almost exactly, so this row
+    # WAS the orange, not the lighting.
+    #
+    # ART-DIRECTION.md asks for "grounded, muted, layered colour. Not pastel,
+    # not saturated primaries. Value and material contrast do the work rather
+    # than hue." A wrist is the one part of this game that is a person, and
+    # 93 counts of orange is a colour no person is.
+    #
+    # A58C73 is 50 counts of chroma at luma 143.5, against the old 93 at
+    # 146.7: the SATURATION halves and the VALUE is held inside 4 counts, on
+    # purpose. The skin still reads as skin because of what it sits against,
+    # which is `Suit` at luma 211 and 18 counts of chroma. That contrast is a
+    # value contrast, which is what the direction asks the work to be done by.
+    #
+    # BLAST RADIUS, MEASURED BEFORE EDITING rather than reasoned about: this
+    # role appears in exactly TWO shipped binaries, `player_body.glb` and
+    # `player_fp_arms.glb`, and no others. Checked by reading the material
+    # names out of all 52 shipped `.glb` files, not by grepping build scripts,
+    # because of_lib writes the colour into the exported glTF material and it
+    # is the BINARY that carries it.
+    "Skin":         ("A58C73", 0.00, 0.70, 1.0, None),
     # --- creature (RN-455) ---
     # These four lived in build_spider.py as a runtime PALETTE.update() on the
     # argument that they belong to exactly one asset. That was right while the
