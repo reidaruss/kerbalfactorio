@@ -51,9 +51,25 @@ namespace worldgen {
 #endif
 #if OF_NOISE_COUNT
 inline uint64_t& noiseCalls() { static uint64_t n = 0; return n; }
+// WG-149 (closes R18). craterField and craterFieldConfined contain NO valueNoise
+// call at all: they hash lattice cells directly. So noiseCalls() was blind to
+// the most expensive layer on a moon and understated Cinder by roughly ten
+// valueNoise-equivalents per sample, while still reporting a confident-looking
+// number. A cost meter that cannot see the dominant term is worse than no meter,
+// so crater CELL EVALUATIONS are counted separately.
+//
+// They are deliberately NOT summed into one figure. A cell evaluation and a
+// valueNoise call are different units, and the conversion between them is a
+// measured property of the two functions rather than a constant anyone should
+// hard-code into a report. Every consumer must print both, and terrain_probe's
+// COST section refuses to present a single "noise calls" cost for a body whose
+// crater count is non-zero.
+inline uint64_t& craterCells() { static uint64_t n = 0; return n; }
 #define OF_COUNT_NOISE() (++::of::worldgen::noiseCalls())
+#define OF_COUNT_CRATER_CELL() (++::of::worldgen::craterCells())
 #else
 #define OF_COUNT_NOISE() ((void)0)
+#define OF_COUNT_CRATER_CELL() ((void)0)
 #endif
 
 // =============================================================================
@@ -636,6 +652,7 @@ inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
       const uint64_t hxy =
           hashCombine(hx, static_cast<uint64_t>(static_cast<int64_t>(cy + dy)));
       for (int dz = -1; dz <= 1; ++dz) {
+        OF_COUNT_CRATER_CELL();
         const uint64_t cell = hashCombine(
             hxy, static_cast<uint64_t>(static_cast<int64_t>(cz + dz)));
         // Existence first: a cell with no crater must not pay for a centre.
@@ -668,6 +685,7 @@ inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
 // and sit under three full rungs, so no one lattice is legible. This is a
 // deliberate trade and the picture is the arbiter, not this comment.
 inline double craterFieldConfined(uint64_t seed, const Vec3& dir, double freq) {
+  OF_COUNT_CRATER_CELL();
   const Vec3 p = dir * freq;
   const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
   uint64_t cell = mix64(seed ^ 0xC7A7E812ull);

@@ -250,12 +250,13 @@ void probeCost(const BodyParams& body, const Vec3& centre) {
   // that does not, homeDir is the zero vector (not a unit direction), so asking
   // for a height there would report a number sampled off the sphere entirely.
   const bool hasPad = body.homeFlatRadiusM > 0.0;
-  uint64_t n[5];
-  n[0] = noiseCalls(); sampleHeightField(body, far);
-  n[1] = noiseCalls(); sampleDesignedHeight(body, far);
-  n[2] = noiseCalls(); biomeAt(body, far);
-  n[3] = noiseCalls(); if (hasPad) sampleDesignedHeight(body, body.homeDir);
-  n[4] = noiseCalls();
+  uint64_t n[5], c[5];
+  n[0] = noiseCalls(); c[0] = craterCells(); sampleHeightField(body, far);
+  n[1] = noiseCalls(); c[1] = craterCells(); sampleDesignedHeight(body, far);
+  n[2] = noiseCalls(); c[2] = craterCells(); biomeAt(body, far);
+  n[3] = noiseCalls(); c[3] = craterCells();
+  if (hasPad) sampleDesignedHeight(body, body.homeDir);
+  n[4] = noiseCalls(); c[4] = craterCells();
   if (hasPad) {
     std::printf("   valueNoise calls/sample: sampleHeightField=%llu  biomeAt=%llu"
                 "  sampleDesignedHeight=%llu  (inside pad=%llu)\n",
@@ -267,6 +268,23 @@ void probeCost(const BodyParams& body, const Vec3& centre) {
                 "body)\n",
                 (unsigned long long)(n[1] - n[0]), (unsigned long long)(n[3] - n[2]),
                 (unsigned long long)(n[2] - n[1]));
+  }
+  // R18 / WG-149. The crater fields hash lattice cells directly and never call
+  // valueNoise, so on a cratered body the line above is NOT the cost, and it
+  // used to be printed as though it were. Report the second unit, and say
+  // plainly that the two do not add up.
+  const uint64_t craterPerSample = c[1] - c[0];
+  std::printf("   crater cell evals/sample: sampleHeightField=%llu"
+              "  sampleDesignedHeight=%llu\n",
+              (unsigned long long)craterPerSample,
+              (unsigned long long)(c[2] - c[1]));
+  if (craterPerSample > 0) {
+    std::printf("   NOTE: this body is cratered, so the valueNoise figure above "
+                "is NOT its cost.\n"
+                "         A cell eval and a valueNoise call are different units "
+                "and do not sum.\n"
+                "         Use the verts/sec below as the cost authority for this "
+                "body.\n");
   }
 
   // verts/sec through both samplers. Sampled around `far`, NOT the pad centre:

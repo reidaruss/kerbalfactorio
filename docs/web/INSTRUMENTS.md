@@ -637,77 +637,75 @@ bytes, and it is trustworthy for exactly one reason: it reproduces `report()`'s
 325.00 mm **to the penny**. An offline instrument that merely agrees in spirit
 with the shipping one is a second opinion, not a check.
 
-## An absolute threshold where a relative one belongs (RN-697)
+## When the instrument reports ~1.0x on a change you can see, suspect the instrument (WG-146)
 
-`probes/shadowk.js` had to be rewritten twice before it could answer its
-question, and **both rewrites were the same mistake**: a constant standing where
-a quantity measured in the same run belonged. It is worth the space because the
-probe was written by a lane that had already caught this shape twice that night
-in other people's code.
+Cinder's height field was rewritten from a single crater layer into a nine-rung
+crater ladder. The obvious way to prove it worked was to measure the RMS and
+median height difference between samples a few metres apart: rough ground gives
+a big number, a plane gives a small one.
 
-**Instance 1: a whole-frame convention applied to a sub-population.** This
-project's frozen-scene micro-motion allowance is 2.7 counts, and that number is
-about a WHOLE FRAME. The probe's metric is restricted to a mask which is, by
-construction, the silhouette-edge population of every LOD-bearing caster. This
-renderer moves those edges **24 counts between two consecutive frames at an
-unchanged input**, while holding the rest of the same frame at **0.24**.
-Asserting 2.7 there is asserting the engine is something it is not, and it
-failed a run whose actual result was good.
+**It reported a 1.3x improvement, and the eye reported a different world.**
 
-**Instance 2, and worse: a floor taken once is not a floor, it is one sample.**
-The same probe, unchanged, read a floor of **22.3, then 24.0, then 11.4** counts
-on three consecutive runs at the same site. Every ratio built on it moved with
-it: one site read 0.64 and then 0.316, another 1.09 and then 1.917. A
-single-sample denominator turns a stable signal into a random verdict, and the
-verdict looked precise both times.
+The instrument was not broken. It was answering a different question. A crater
+wall is a continuous 24 to 48 percent grade at EVERY scale you sample it, so a
+moon whose smallest landform is a kilometre across still returns a perfectly
+healthy 0.554 m median step over a 4 m baseline. The old field was never a
+plane. **It was tilted without being featured**, and slope cannot tell those
+apart, because slope is exactly the quantity a tilt saturates.
 
-**Instance 3, in the acceptance test itself.** The control region was required
-to move less than 0.5%, when the floor's OWN control movement was 0.48 to 1.25%.
-The check was failing runs for containing a normal amount of noise.
+The quantity that separates them is **curvature**, the second difference
+`h(a-d) - 2h(a) + h(a+d)`. A straight slope of any steepness has none. A feature
+of size `d` has curvature of order its own depth. On curvature the same two
+fields separate by **33x at a 4 m baseline and 18x at 40 m**, against slope's
+1.31x and 1.35x. Same data, same loop, same seed; one instrument said "tweak"
+and the other said "different world".
 
-**The fix, and it is the same fix all three times.** Interleave A/B/A/B in one
-page; take the floor from SAME-state pairs and the signal from ADJACENT
-different-state pairs; average both over several samples so slow drift enters
-each equally and cancels. Then compare the signal to that floor rather than to a
-constant.
+**The rule.** When a measurement says a change is marginal and looking at it
+says otherwise, do not conclude the change is marginal and do not conclude the
+eye is wrong. Work out what quantity the instrument actually saturates on, and
+find one that the difference you can see is expressed in. The eye was reading
+curvature the whole time; the instrument had to be told to.
 
-**The rule to carry forward:** when the thing being thresholded is a statistic
-of a jittery sub-population, the threshold has to come from that same
-population's own variation, measured in the same run. A project-wide constant is
-a statement about a different population. And publish the spread beside the
-mean: `min` and `max` on the floor are what made instance 2 visible at all,
-where the mean alone had looked fine three times running with three different
-answers.
+**Two corollaries, both paid for on the same pass.**
 
-**The bound that survived, and it bounds the conclusion rather than the
-instrument:** this metric measures the MAGNITUDE of a change and not its
-DIRECTION. The policy under test was stricter in one cascade and looser in two,
-so some pixels counted against it had changed for the better. A mean cannot tell
-an improvement from a degradation. That is what the pictures are for.
+*Use the median, not the mean or the RMS, when the field is heavy-tailed.*
+Curvature over a crater field is dominated by the few percent of samples sitting
+on a rim, so a mean would pass on a handful of features while typical ground
+stayed smooth. p50 asks whether the ground a player is standing on has shape.
 
-## A whitelist that silently drops an unknown flag reports the default as the request (RN-698)
+*An implausible magnitude is an instrument bug until proven otherwise, and this
+is the second time this project has caught one by magnitude alone.* The first
+version of the negative control reported the OLD field at 22.16 m RMS over a 4 m
+step, a 550 percent grade, which should be impossible for a smooth field. It
+decomposed exactly: 346 misses in 160,000 samples is 0.2 percent of ground, the
+worst clipped crater profile was 0.1906 against a 2467 m layer amplitude, and
+`sqrt(0.002 * 470^2)` is 21 m. The control was faithfully measuring a
+**discontinuity in the field it was supposed to be a control for**, and that is
+how a 470 m cliff that had been shipping since the spike was found. A control
+that reports a number too large to be real has found something; it just has not
+found what you asked it to.
 
-`tools/smoke/run.mjs` builds the page query from a whitelist and **discarded
-everything else without a word**. The failure is silent and it fails in the
-flattering direction: the page boots at the default, the probe reads the
-default, and the report describes the default as though it were what was asked
-for. Both sides of a "pair" then run the same way and the difference is zero.
+## A bug class that crosses bodies will cross them again (WG-144)
 
-**Three vacuous greens from this one mechanism**, and the third is the tell that
-it is a class and not an incident: `--fur=0` and `--partmat=0` shipped as the
-stated negative controls for the pelt and neither was on the list, so no probe
-driven through the runner could reach either; RN-152 lost a pair to
-`--starlight=0` going unforwarded with both sides running the feature ON; and
-RN-698 lost one to `--shadowlodpx=4` reporting `policy uniform` on BOTH sides,
-**twelve lines below the comment describing exactly this**.
+WG-25 fixed a specific pathology on the planet Forge: the terrain design layer
+switched its relief gain on the DISCRETE biome, so the shaped surface stepped
+by the gain difference the instant a sample crossed a biome threshold, putting
+kilometre-tall walls along contour lines. The cure was a continuous gain curve
+over the same bands.
 
-**Fixed structurally rather than by remembering.** An argument that is neither a
-page parameter nor one of the runner's own flags is now a hard exit before the
-browser launches, naming the flag, naming the near matches, and saying where the
-list lives. `--allow-unknown-flags` is the door for a caller that means it, and
-it has to be typed.
+**The moon had the identical bug, untouched, for the whole time.** Same
+function, same mechanism, 120 m and 40 m walls instead of 985 m ones only
+because the moon's gain factors happened to be closer together. The comment
+above it even asserted the moon was fine, in those words, and had never been
+measured.
 
-**The general shape:** any lookup that maps a request onto a known set and
-drops the misses is a silent-default generator. If the miss is a user's typed
-intent, it must be loud. The cost of the check is nine lines and it ends the
-class.
+It was the third thing about Cinder in that category on one pass: the noise
+stack was the pre-rework original, the design layer was the pre-rework original,
+and the biome bands had never been re-derived. **Forge got looked at because
+somebody was looking at Forge.**
+
+**The rule.** When a fix lands on one body, one biome, one mode, one entity
+type, or one platform, write down the CLASS and go and check the siblings in the
+same pass. A per-instance fix to a per-class bug leaves the remaining instances
+in a worse state than before, because the fix is now evidence that somebody
+looked.
