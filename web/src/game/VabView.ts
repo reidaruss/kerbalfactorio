@@ -59,6 +59,8 @@ export class VabView {
   private assemblyBaseY = 0;
   private markerBaseY: number | null = null;
   private ghostBaseY: number | null = null;
+  /** GP-297. The last ghost drawn was an INSERT preview. */
+  ghostInsert = false;
 
   constructor(private readonly scene: THREE.Scene) {
     this.assembly.name = 'vabAssembly';
@@ -226,14 +228,20 @@ export class VabView {
   // --- the ghost and the node markers ---------------------------------------
 
   showGhost(def: PartRow, origin: [number, number, number],
-            angleRad: number, radial: boolean, ok: boolean): void {
+            angleRad: number, radial: boolean, ok: boolean,
+            insert = false): void {
     this.clearGhost();
     const o = this.instance(def);
     o.position.set(origin[0], origin[1], origin[2]);
     if (radial) o.rotation.y = -angleRad;
-    // GP-8's colour code: green valid, red hard-invalid. A ghost SHOULD be
-    // recoloured, because it is not a part yet.
-    paint(o, ok ? 0x66ff99 : 0xff5555, 0.6);
+    // GP-8's colour code: green valid, red hard-invalid, and GP-297 adds amber
+    // for a valid INSERT. That is a third thing rather than a shade of either:
+    // the placement is valid AND it is a different operation, and the arriving
+    // part is drawn at the seam either way so the picture cannot otherwise say
+    // that the stack is about to grow. `ghostInsert` is published so a probe
+    // reads the state the painter was given rather than sampling a pixel.
+    this.ghostInsert = ok && insert;
+    paint(o, ok ? (insert ? 0xffa040 : 0x66ff99) : 0xff5555, 0.6);
     this.ghost.add(o);
     // A part's local origin is its own base (`instance` puts the placeholder
     // cylinder at `heightM * 0.5`), so the ghost's lowest point is its origin.
@@ -246,6 +254,7 @@ export class VabView {
   clearGhost(): void {
     for (const o of [...this.ghost.children]) this.ghost.remove(o);
     this.ghostBaseY = null;
+    this.ghostInsert = false;
     this.applyFloor();
   }
 
@@ -265,11 +274,23 @@ export class VabView {
     const geo = new THREE.SphereGeometry(0.09, 8, 6);
     const dim = new THREE.MeshBasicMaterial({ color: 0x55ddff, transparent: true, opacity: 0.5 });
     const hot = new THREE.MeshBasicMaterial({ color: 0xffee66 });
+    // GP-297. A SEAM IS A DIFFERENT KIND OF PLACE AND IS DRAWN AS ONE.
+    //
+    // The markers exist because "an invisible snap is indistinguishable from a
+    // broken one" (this method's own comment), and the same argument decides
+    // the colour: a seam that looks exactly like a free face is a place the
+    // player has no reason to believe in until they happen to hover it. Amber
+    // rather than cyan means the joints of a finished rocket are visibly
+    // somewhere you can put something, which is the discoverable half of
+    // GP-296. The HOT colour is deliberately shared, because what is under the
+    // crosshair is one idea and should not have two highlights.
+    const seam = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.6 });
     for (const n of nodes) {
       const isHot = active !== null && n.parent === active.parent
         && n.kind === active.kind && Math.abs(n.angleRad - active.angleRad) < 1e-9
         && Math.abs(n.offsetM - active.offsetM) < 1e-9;
-      const m = new THREE.Mesh(geo, isHot ? hot : dim);
+      const m = new THREE.Mesh(geo,
+        isHot ? hot : (n.kind === 'insert' ? seam : dim));
       m.position.set(n.posM[0], n.posM[1], n.posM[2]);
       if (isHot) m.scale.setScalar(1.8);
       this.markers.add(m);

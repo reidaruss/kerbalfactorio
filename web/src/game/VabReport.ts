@@ -42,6 +42,12 @@ export function vabReport(v: Vab): unknown {
       // child is an attach node wearing a different name.
       : { parent: v.active.parent, kind: v.active.kind, pos: v.active.posM,
           child: v.active.child ?? -1 },
+    // GP-297. Whether the DRAWN ghost is the insert tint, read off the view
+    // that painted it rather than sampled from a pixel.
+    ghostInsert: v.view.ghostInsert,
+    // GP-297. The line as DRAWN (GP-64's rule), so a probe asserts the
+    // sentence a player reads rather than the model that produced it.
+    messageText: v.panel.messageText,
     // GP-115. THE NEAR MISS the cursor is over but the hand cannot take, and the
     // sentence that says why. Published because "the ghost went away" and "the
     // snap search is broken" are the two readings a player has to choose between

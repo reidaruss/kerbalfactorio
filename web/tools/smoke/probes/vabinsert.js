@@ -206,6 +206,18 @@
     check('aiming at a seam SNAPS to it',
           act !== null && act !== undefined && act.kind === 'insert',
           `snapped node is ${act === null || act === undefined ? 'null' : act.kind}`);
+    // GP-297. IT READS AS INSERTION BEFORE THE CLICK, which is the whole of the
+    // cosmetic half: the arriving part is drawn at the seam either way, so the
+    // picture alone cannot say the stack is about to grow. The sentence is read
+    // off the DRAWN element (`messageText`, GP-64's rule) and not off the model
+    // that produced it.
+    const aimText = R().messageText ?? '';
+    check('the bay SAYS it is an insert and names what moves',
+          /INTO the joint/.test(aimText) && /pushing/.test(aimText),
+          `drawn line "${aimText}"`);
+    check('and the ghost carries the insert tint rather than the plain valid '
+          + 'green', R().ghostInsert === true,
+          `ghostInsert ${R().ghostInsert}`);
     of.vab('place');
     await sleep(0.5);
     const partsAfter = R().parts.length;
@@ -222,6 +234,24 @@
 
   // ---- THE REFUSALS, EACH REACHABLE --------------------------------------
   // A gate with no reachable refusing case is decoration, so each is driven.
+  // THE CONTROL FOR BOTH CUES. A tint that is on for every ghost and a sentence
+  // that appears for every hover say nothing at all, so an ordinary free face is
+  // hovered and both must be ABSENT. Without this, the two checks above pass on
+  // a build that simply always claims to be inserting.
+  const frees = of.vab('nodes').filter((n) => n.kind !== 'insert' && n.onScreen);
+  check('there is a free face to use as the control', frees.length > 0,
+        'every node on screen is a seam, so the tint and the sentence prove '
+        + 'nothing');
+  if (frees.length > 0) {
+    of.vab('hover', frees[0].ndc[0], frees[0].ndc[1]);
+    await sleep(0.35);
+    check('a FREE face does not claim to be an insert',
+          R().ghostInsert === false
+          && !/INTO the joint/.test(R().messageText ?? ''),
+          `on a ${frees[0].kind} node: ghostInsert ${R().ghostInsert}, `
+          + `drawn "${R().messageText}"`);
+  }
+
   // REBASED ON THE STATE THE GESTURE LEFT, not on `after`. The gesture section
   // above deliberately inserts a SECOND module, so every count from here on is
   // measured against a fresh reading: comparing against a baseline the run has

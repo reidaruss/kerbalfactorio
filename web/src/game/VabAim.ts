@@ -67,6 +67,25 @@ function aimLine(v: Vab): string {
     const parent = v.design.parts.find((p) => p.handle === node.parent);
     const owner = parent === undefined ? 'the stack'
       : (v.catalogue.find((c) => c.id === parent.partId)?.label ?? 'the stack');
+    // GP-297. AN INSERT SAYS WHAT MOVES, because that is the whole difference
+    // between it and an attach and it is the only difference a player cannot
+    // see in the ghost. The arriving part is drawn at the seam either way; what
+    // the picture does not show is that everything below is about to shift
+    // down, so the sentence carries it.
+    //
+    // It names BOTH parts, which is the same argument GP-142 made for naming
+    // the face: "Autopilot Module INTO the joint under Command Pod, pushing
+    // Fuel Tank (small) and everything below it down" is a sentence that could
+    // not have been produced by a bay where a seam was not a place, and a
+    // player who reads it knows before clicking that their rocket is about to
+    // get longer rather than that a part is about to sit somewhere.
+    if (node.kind === 'insert') {
+      const kid = v.design.parts.find((p) => p.handle === node.child);
+      const kidName = kid === undefined ? 'the stack below'
+        : (v.catalogue.find((c) => c.id === kid.partId)?.label ?? 'the stack below');
+      return `${hand.label} INTO the joint under ${owner}, pushing ${kidName} `
+        + 'and everything below it down';
+    }
     return `${hand.label} ${faceWord(node.kind)} ${owner}`;
   }
   const b = v.blocked;
@@ -98,8 +117,13 @@ export function vabAim(v: Vab, ndcX: number, ndcY: number): void {
   v.panel.setAim(aimLine(v));
   if (shown === null) { v.view.clearGhost(); return; }
   const o = ghostOrigin(shown, hand);
+  // GP-297. AN INSERT GHOST IS TINTED DIFFERENTLY, because the arriving part is
+  // drawn at the seam either way and the picture alone cannot say that the
+  // stack is about to grow. Green/red is GP-8's valid/invalid code and this is
+  // a third thing rather than a shade of either: the placement is valid AND it
+  // is a different operation.
   v.view.showGhost(hand, o, shown.angleRad, isSideNode(shown),
-                      v.active !== null);
+                   v.active !== null, shown.kind === 'insert');
 }
 
 export function vabClick(v: Vab, ndcX: number, ndcY: number): void {
