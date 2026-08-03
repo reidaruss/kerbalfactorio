@@ -18,8 +18,10 @@
 // on the pad is not a blueprint - and means the assembly view and a live flight
 // can coexist without either aliasing the other.
 // =============================================================================
+#include "of/ascent.h"      // R87: the ribbon's airless schedule, one source
 #include "of/atmosphere.h"
 #include "of/flight.h"
+#include "of/landing.h"     // SurfaceFrame, the ground the ribbon is handed
 
 namespace at = of::atmo;
 namespace fl = of::flight;
@@ -422,13 +424,79 @@ OF_API int of_orb_resume(double a, double e, double i, double lan, double argp,
   return 6;
 }
 
-// The gravity-turn guidance ribbon (DW-30 item 6): the pitch, in radians from
-// vertical, a good ascent holds at this altitude. It does NOT fly anything.
-// f64 scratch, EXACTLY 2: [pitchFromVerticalRad, headingIsPrograde].
-OF_API int of_fl_guidance_pitch(double altitudeM) {
-  resetF64(2);
-  const fl::GravityTurnProgram g;
-  g_f64.push_back(g.pitchFromVerticalRad(altitudeM));
-  g_f64.push_back(altitudeM >= g.verticalUntilM ? 1.0 : 0.0);
-  return 2;
+// The guidance ribbon (DW-30 item 6), and it now TAKES A BODY (R87).
+//
+// WHAT THIS REPLACES AND WHY THE NAME CHANGED. `of_fl_guidance_pitch(altitudeM)`
+// built a DEFAULT `flight::GravityTurnProgram` and was handed one number. Its
+// constants are Forge's, so off an airless moon whose whole parking orbit is
+// 20 km it asked for a launch that is still 33 degrees from horizontal at
+// 20 km and does not level out until 45 km. While the navball only DREW the
+// ribbon that was an inaccuracy. PH-201 gave it a key, so it became a wrong
+// instruction a player can follow.
+//
+// IT IS A RENAME AND NOT A WIDENING, DELIBERATELY. Adding parameters to the old
+// name would leave a client built against the new signature calling an OLD
+// binary with the flight handle sitting where an altitude used to be: a small
+// integer, a plausible altitude, a pitch of 0.0, and no error anywhere. That is
+// exactly the confidently-incorrect class this project keeps paying for. A new
+// name makes a stale binary fail by symbol, which the client already detects.
+//
+// `targetApoapsisM` is the orbit being bought, datum-relative. It is IGNORED on
+// a body with air and REQUIRED without one, because the airless schedule's
+// independent variable is the share of the target already bought. There is no
+// defensible default for it, so word 4 goes to 0 and the caller draws nothing.
+// `altitudeAglM` is the caller's, because terrain is the caller's: /core's
+// flight sim knows the DATUM radius and nothing about the ground under it.
+//
+// f64 scratch, EXACTLY 5:
+//   [0] pitchFromVerticalRad  the COMMANDED pitch, after every clamp: what to
+//                             draw and what a follow mode should fly. Compose
+//                             it with your own east; east stays the client's
+//                             (PH-40: this codebase already carries two
+//                             inclination conventions and does not need a third)
+//   [1] schedulePitchRad      what the schedule asked BEFORE the terrain clamp.
+//                             Equal to [0] where no clamp applies, so the two
+//                             apart is a terrain veto a screen can show
+//   [2] apoapsisAltM          datum-relative, off the state vector via arcPeak
+//                             and never off a `bound` flag (R14). The airless
+//                             schedule's own independent variable
+//   [3] atmospheric           1 = the altitude schedule, scheduled off this
+//                             body's own air; 0 = the apoapsis-progress one
+//   [4] usable                0 = airless with no target set, so there is no
+//                             schedule and the ribbon must say nothing
+OF_API int of_fl_ascent_guidance(int f, double targetApoapsisM,
+                                 double altitudeAglM) {
+  resetF64(5);
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  s->craft.layout();
+  const of::vessel::MassProperties mp = of::vessel::massProperties(s->craft);
+  const fl::PropulsionOutput full = fl::evaluatePropulsion(s->craft, 1.0, 0.0);
+  const double aFull = full.thrustN / std::fmax(1.0, mp.totalKg);
+
+  // The ground frame the airless law takes, built from what the caller knows.
+  // `upUnit` is the radial, which is what the client's own horizon frame uses.
+  of::landing::SurfaceFrame ground;
+  ground.upUnit = of::orbital::normalized(s->state.posM);
+  ground.radiusM = s->state.posM.length() - std::fmax(0.0, altitudeAglM);
+  ground.normalUnit = ground.upUnit;
+
+  // THE DOWNRANGE HINT IS SYNTHETIC AND THAT IS SOUND, because the returned
+  // quantity is a PITCH and this law's pitch is independent of the azimuth: the
+  // heading enters `ascent::guide` only through "is there a heading at all" and
+  // through building a direction this export then measures the angle of. Any
+  // non-degenerate horizontal vector gives the same pitch, so passing the
+  // client's east would be a parameter whose value is discarded.
+  Vec3 hint = of::orbital::cross(Vec3{0, 1, 0}, ground.upUnit);
+  if (hint.length() < 1e-9) hint = of::orbital::cross(Vec3{1, 0, 0}, ground.upUnit);
+
+  const of::ascent::Ribbon rb = of::ascent::ribbon(
+      s->state.posM, s->state.velMS, ground, hint, s->env.air, s->env.muM3S2,
+      s->env.bodyRadiusM, aFull, targetApoapsisM);
+  g_f64.push_back(rb.pitchFromVerticalRad);
+  g_f64.push_back(rb.schedulePitchRad);
+  g_f64.push_back(rb.apoapsisAltM);
+  g_f64.push_back(rb.atmospheric ? 1.0 : 0.0);
+  g_f64.push_back(rb.usable ? 1.0 : 0.0);
+  return 5;
 }

@@ -19,9 +19,9 @@
 // would be a second thing that can disagree about which way the nose is
 // pointing.
 
-import { SAS_COMMAND, SAS_PROGRADE, SAS_RETROGRADE, add, guidancePitch, norm,
+import { SAS_COMMAND, SAS_PROGRADE, SAS_RETROGRADE, add, ascentGuidance, norm,
   rotateAbout, scale } from './FlightAbi.js';
-import type { Vec3 } from './FlightAbi.js';
+import type { AscentGuidance, Vec3 } from './FlightAbi.js';
 import {
   holdRoll, horizonFrame, rollAngle, rollDefined, slewCommand,
 } from './FlightAttitude.js';
@@ -94,7 +94,7 @@ export function commandDirection(s: FlightSession, dir: Vec3): void {
  *
  * IT IS NOT A `/core` MODE, AND THE REASON IS AUTHORITY RATHER THAN EFFORT.
  * The ribbon's PITCH is `/core`'s and stays there: `guidanceDir` reads it
- * through `_of_fl_guidance_pitch` and nothing here recomputes it. What a
+ * through `_of_fl_ascent_guidance` and nothing here recomputes it. What a
  * `flight.h` mode would ALSO need is EAST, and east is the client's:
  * `horizonFrame` is the frame the ball, the ribbon and the pitch/yaw keys all
  * share, and PH-40 already records this codebase carrying two inclination
@@ -108,10 +108,21 @@ export function commandDirection(s: FlightSession, dir: Vec3): void {
 export function followRibbon(s: FlightSession): void {
   if (s.handle <= 0) return;
   const d = guidanceDir(s);
-  if (d === null) { s.flash('no guidance here'); return; }
+  // R87. THE REFUSAL NAMES ITSELF, because "no guidance here" on an airless
+  // moon is indistinguishable from a bug, and the player can fix this one.
+  if (d === null) {
+    s.flash(s.ascentTargetApoapsisM > 0
+      ? 'no guidance here'
+      : 'no ascent ribbon on an airless body until you set a target orbit');
+    return;
+  }
   commandDirection(s, d);
   s.followGuidance = true;
-  s.flash('SAS GDN, following the ascent ribbon');
+  const g = ascentRibbon(s);
+  s.flash(g !== null && !g.atmospheric
+    ? 'SAS GDN, following the ascent ribbon to '
+      + `${(s.ascentTargetApoapsisM / 1000).toFixed(0)} km`
+    : 'SAS GDN, following the ascent ribbon');
 }
 
 /** One tick of the follow, called from `FlightSession.step` BEFORE the physics
@@ -182,9 +193,38 @@ export function levelWings(s: FlightSession, dt: number): void {
  * the same profile as one at sea level.
  */
 export function guidanceDir(s: FlightSession): Vec3 | null {
-  if (s.handle <= 0) return null;
-  const g = guidancePitch(s.core, Math.max(0, s.altitudeAglM));
+  const g = ascentRibbon(s);
+  if (g === null) return null;
   const u = s.up;
   const p = g.pitchFromVerticalRad;
   return norm(add(scale(u, Math.cos(p)), horizonFrame(u).east, Math.sin(p)));
+}
+
+/**
+ * THE RIBBON ITSELF, or null when this body has no schedule to draw (R87).
+ *
+ * Split out from `guidanceDir` because the ANGLE and the DIRECTION are two
+ * questions and only one of them needs a frame: a screen that wants to say
+ * "the terrain is holding your turn down" needs `schedulePitchRad`, and
+ * building a vector to throw most of it away would be the wrong shape.
+ *
+ * The altitude handed down is above the PAD (DW-30 item 6), so a launch from a
+ * plateau flies the same profile as one at sea level.
+ *
+ * WHY `ascentTargetApoapsisM` HAS NO DEFAULT, which is the whole of R87's fix
+ * on this side. The airless schedule pitches on the SHARE of the target
+ * apoapsis already bought, so with no target there is no schedule. 20 km is
+ * Cinder's number and 80 km is Forge's; substituting either here would be the
+ * Forge-tuned literal R87 is about, wearing a new name. So it stays 0, this
+ * returns null, the navball draws no marker and `GDN` refuses by name. A body
+ * WITH air needs none of it, because its schedule is written against altitude
+ * and has no target in it: that is why the Forge launch is untouched, to the
+ * degree, and why the only thing that changed there is that 45,000 m is now
+ * read off 60 km of atmosphere instead of typed in.
+ */
+export function ascentRibbon(s: FlightSession): AscentGuidance | null {
+  if (s.handle <= 0) return null;
+  const g = ascentGuidance(s.core, s.handle, s.ascentTargetApoapsisM,
+                           Math.max(0, s.altitudeAglM));
+  return g.usable ? g : null;
 }

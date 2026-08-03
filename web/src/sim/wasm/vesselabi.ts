@@ -271,8 +271,26 @@ export interface VesselAbi {
    *  Exists for one caller: putting a half-empty tank back after a reload. The
    *  clamp is the safety property, because a save file is untrusted input. */
   _of_fl_set_propellant(f: number, partHandle: number, kg: number): number;
-  /** f64 scratch, 2: [pitchFromVerticalRad, pastTheVerticalHold]. */
-  _of_fl_guidance_pitch(altitudeM: number): number;
+  /**
+   * R87 / PH-250. The guidance ribbon, and it TAKES A BODY now.
+   *
+   * It replaces `_of_fl_guidance_pitch(altitudeM)`, which built a default
+   * Forge gravity turn and was handed one number: off an airless moon whose
+   * whole parking orbit is 20 km that ribbon was still 33 degrees from
+   * horizontal at 20 km and did not level out until 45 km. PH-201 put a key on
+   * it, so it stopped being decoration and became an instruction.
+   *
+   * A RENAME, NOT A WIDENING. Adding arguments to the old name would let a new
+   * client call an old binary with the flight handle sitting where an altitude
+   * used to be: a small integer, a plausible altitude, a pitch of 0, and no
+   * error anywhere. The new name fails by symbol instead, which is detectable.
+   *
+   * `targetApoapsisM` is ignored on a body with air and REQUIRED without one.
+   * f64 scratch, 5: [pitchFromVerticalRad, schedulePitchRad, apoapsisAltM,
+   *                  atmospheric, usable].
+   */
+  _of_fl_ascent_guidance(f: number, targetApoapsisM: number,
+                         altitudeAglM: number): number;
 
   // --- §13.3 ON RAILS (ABI 18). Pure, handle-free; nothing is stored. --------
   /** Fit a conic to a state vector. f64 scratch, ORBIT_ELEMENT_WORDS:

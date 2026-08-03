@@ -188,8 +188,15 @@ struct Flown {
 // a second above it. Above `Profile::clearedAtM` the clamp cannot bind and no
 // other decision reads the ground, so up there the sample is an INSTRUMENT and
 // not an input. Driven, not assumed: see the control test.
+// `altitudeRibbon`: fly the shipped ALTITUDE schedule in the two ascent legs
+// instead of the apoapsis-progress one, and change NOTHING else. That makes the
+// R87 comparison a single-variable experiment: the legs, the throttle ceiling,
+// the cutoff band, the insertion lead and the gate are all still this header's,
+// so a difference between two rows is the schedule and cannot be anything else.
+// Default null, so every existing caller is bit-identical.
 static Flown fly(const Site& site, const as::Profile& prof, double limitS,
-                 bool cheapTerrain = true, double aglMultiplier = 1.0) {
+                 bool cheapTerrain = true, double aglMultiplier = 1.0,
+                 const GravityTurnProgram* altitudeRibbon = nullptr) {
   const worldgen::BodyParams cinder = worldgen::makeCinder(1);
   FlightSim sim;
   sim.craft = lander();
@@ -229,9 +236,16 @@ static Flown fly(const Site& site, const as::Profile& prof, double limitS,
     const double mass = std::fmax(1.0, massProperties(sim.craft).totalKg);
     const double aFull = full.thrustN / mass;
 
-    const as::Guidance g =
+    as::Guidance g =
         as::guide(sim.state.posM, sim.state.velMS, sim.state.forward, ground,
                   east, sim.env.muM3S2, cinder.radiusM, aFull, dt, prof);
+    if (altitudeRibbon && static_cast<int>(g.leg) <= 1) {
+      const double p =
+          altitudeRibbon->pitchFromVerticalRad(std::fmax(0.0, g.altitudeAglM));
+      g.pitchFromVerticalRad = p;
+      g.sasCommand = orbital::normalized(ground.upUnit * std::cos(p)
+                                         + east * std::sin(p));
+    }
     if (g.altitudeAglM < f.minAglM) {
       f.minAglM = g.altitudeAglM;
       f.minAglAtDatumM = g.altitudeDatumM;
@@ -781,4 +795,276 @@ TEST(the_cinder_ascent_calibration_agrees_with_a_flown_ascent) {
               forge80.deltaVMS, forge80.deltaVMS - 3724.649392);
   CHECK(forge80.calibrated);
   CHECK_NEAR(forge80.deltaVMS, 3720.907932, 1e-5);
+}
+
+// =============================================================================
+// R87: THE GUIDANCE RIBBON TAKES A BODY.
+//
+// `of_fl_guidance_pitch` built a DEFAULT `GravityTurnProgram` and was handed
+// nothing but an altitude. PH-201 put a key on the ribbon it draws, so the
+// inaccuracy became an instruction. These four tests pin the fix: Forge does
+// not move at all, the airless branch is measurably better than the one it
+// replaces, the refusal is reachable, and the ribbon cannot drift away from the
+// program it claims to be drawing.
+// =============================================================================
+
+TEST(the_atmospheric_turn_constant_is_read_off_the_body_and_forge_does_not_move) {
+  // FORGE IS BIT-IDENTICAL, PINNED WITH `==` AND NOT A TOLERANCE. 45000 was
+  // always three quarters of the way up 60 km of air; saying so in code must
+  // not move a single flight, and `==` is the only assertion that proves it.
+  const GravityTurnProgram shipped;
+  const GravityTurnProgram derived =
+      GravityTurnProgram::forAtmosphere(atmo::makeForgeAtmosphere());
+  CHECK(derived.turnCompleteM == 45000.0);
+  CHECK(derived.turnCompleteM == shipped.turnCompleteM);
+  CHECK(derived.verticalUntilM == shipped.verticalUntilM);
+  CHECK(derived.exponent == shipped.exponent);
+  int sampled = 0;
+  for (double h = 0.0; h <= 90000.0; h += 250.0) {
+    CHECK(derived.pitchFromVerticalRad(h) == shipped.pitchFromVerticalRad(h));
+    ++sampled;
+  }
+
+  // THE POSITIVE CONTROL, because a derivation that gives the same answer for
+  // every input has derived nothing. A thinner atmosphere must move the turn,
+  // and by the stated fraction.
+  atmo::AtmosphereProfile thin = atmo::makeForgeAtmosphere();
+  thin.topM = 30000.0;
+  thin.fadeStartM = 25000.0;
+  const GravityTurnProgram thinTurn = GravityTurnProgram::forAtmosphere(thin);
+  CHECK(thinTurn.turnCompleteM == 22500.0);
+  CHECK(thinTurn.pitchFromVerticalRad(20000.0)
+        > shipped.pitchFromVerticalRad(20000.0) + 0.1);
+  std::printf("    [R87] Forge 0.75 * 60000 = %.1f m, identical to the shipped "
+              "literal at all %d sampled altitudes. A 30 km atmosphere gives "
+              "%.1f m and is %.2f deg further over at 20 km.\n",
+              derived.turnCompleteM, sampled, thinTurn.turnCompleteM,
+              (thinTurn.pitchFromVerticalRad(20000.0)
+               - shipped.pitchFromVerticalRad(20000.0)) * kDeg);
+}
+
+TEST(the_airless_ribbon_refuses_without_a_target_and_answers_with_one) {
+  const worldgen::BodyParams cinder = worldgen::makeCinder(1);
+  const Site pad = findFlatPad(cinder);
+  const ld::SurfaceFrame ground = ld::surfaceFrame(cinder, pad.dir, kFootprintM);
+  const Vec3 east = eastAt(ground.upUnit);
+  const Vec3 pos = ground.upUnit * (ground.radiusM + 5000.0);
+  const Vec3 vel = ground.upUnit * 200.0 + east * 150.0;
+
+  // THE REFUSAL, AND IT IS REACHED. An airless body with no ascent target has
+  // no schedule, because the schedule's independent variable is the share of
+  // the target already bought. It says so instead of substituting Cinder's own
+  // 20 km, which would be R87's literal wearing a new name.
+  const as::Ribbon none =
+      as::ribbon(pos, vel, ground, east, atmo::makeCinderAtmosphere(),
+                 cinder.muM3S2, cinder.radiusM, 5.0, 0.0);
+  CHECK(!none.usable);
+  CHECK(none.pitchFromVerticalRad == 0.0);
+
+  // THE POSITIVE CONTROL ON THE OTHER SIDE OF THE SAME BOUND.
+  const as::Ribbon some =
+      as::ribbon(pos, vel, ground, east, atmo::makeCinderAtmosphere(),
+                 cinder.muM3S2, cinder.radiusM, 5.0, 20000.0);
+  CHECK(some.usable);
+  CHECK(!some.atmospheric);
+  CHECK(some.pitchFromVerticalRad > 0.0);
+
+  // AND A BODY WITH AIR NEEDS NO TARGET AND IS NOT REFUSED, which is the third
+  // corner of the same table: the two branches take different inputs because
+  // they are different laws, and the caller must not have to know that.
+  const worldgen::BodyParams forge = worldgen::makeForge(1);
+  ld::SurfaceFrame fg;
+  fg.upUnit = Vec3{1, 0, 0};
+  fg.radiusM = forge.radiusM;
+  const as::Ribbon air =
+      as::ribbon(Vec3{forge.radiusM + 20000.0, 0, 0}, Vec3{200, 150, 0}, fg,
+                 Vec3{0, 1, 0}, atmo::makeForgeAtmosphere(), forge.muM3S2,
+                 forge.radiusM, 5.0, 0.0);
+  CHECK(air.usable);
+  CHECK(air.atmospheric);
+
+  // AND THE TWO BODIES DO NOT AGREE, which is the defect R87 names. Compared at
+  // the SAME altitude, because two angles read off two different heights would
+  // be a comparison of the heights.
+  const GravityTurnProgram shipped;
+  std::printf("    [R87] airless with no target: usable=%d, \"%s\".\n"
+              "    [R87] at 5000 m AGL: the airless schedule commands %.2f deg "
+              "from vertical, the shipped Forge ribbon %.2f deg. The ribbon is "
+              "still %.2f deg from horizontal at 20 km, which is Cinder's WHOLE "
+              "parking orbit, and does not reach horizontal until 45 km.\n",
+              none.usable ? 1 : 0, none.note, some.pitchFromVerticalRad * kDeg,
+              shipped.pitchFromVerticalRad(5000.0) * kDeg,
+              90.0 - shipped.pitchFromVerticalRad(20000.0) * kDeg);
+  CHECK(air.pitchFromVerticalRad == shipped.pitchFromVerticalRad(20000.0));
+}
+
+TEST(the_ribbon_draws_the_schedule_the_program_actually_flies) {
+  // THE ONE-SOURCE ASSERTION, AND IT IS THE WHOLE POINT OF R87's FIX.
+  //
+  // The old ribbon and the ascent program were two unrelated pieces of code
+  // that happened to both be called a gravity turn. This flies a real ascent
+  // and, at EVERY tick, asks the ribbon what it would draw and the program what
+  // it commands. They must be the same angle, because the ribbon calls the
+  // program. If somebody ever gives the ribbon its own schedule again, this
+  // goes red on the first tick.
+  const worldgen::BodyParams cinder = worldgen::makeCinder(1);
+  const Site pad = findFlatPad(cinder);
+  FlightSim sim;
+  sim.craft = lander();
+  sim.env = cinderEnv();
+  ld::SurfaceFrame ground = ld::surfaceFrame(cinder, pad.dir, kFootprintM);
+  const Vec3 east = eastAt(ground.upUnit);
+  sim.state.posM = ground.upUnit * (ground.radiusM + 1.0);
+  sim.state.forward = ground.upUnit;
+  sim.state.right = east;
+  sim.sas = SasMode::Command;
+  sim.sasCommand = ground.upUnit;
+
+  as::Profile prof;
+  const double dt = 1.0 / 60.0;
+  double worstDiffRad = 0.0;
+  int ticks = 0, legsSeen = 0, clampedTicks = 0;
+  bool seen[6] = {false, false, false, false, false, false};
+  for (int i = 0; i < 60000; ++i) {
+    const Vec3 dir = orbital::normalized(sim.state.posM);
+    ground = ld::surfaceFrame(cinder, dir, kFootprintM);
+    sim.craft.layout();
+    const PropulsionOutput full = evaluatePropulsion(sim.craft, 1.0, 0.0);
+    const double aFull =
+        full.thrustN / std::fmax(1.0, massProperties(sim.craft).totalKg);
+    const as::Guidance g =
+        as::guide(sim.state.posM, sim.state.velMS, sim.state.forward, ground,
+                  east, sim.env.muM3S2, cinder.radiusM, aFull, dt, prof);
+    const as::Ribbon rb =
+        as::ribbon(sim.state.posM, sim.state.velMS, ground, east, sim.env.air,
+                   sim.env.muM3S2, cinder.radiusM, aFull, prof.targetApoapsisM);
+    // The program's commanded direction, expressed the way the ribbon does it.
+    const double commandedPitch =
+        as::pointingErrorRad(g.sasCommand, ground.upUnit);
+    const double d = std::fabs(rb.pitchFromVerticalRad - commandedPitch);
+    if (d > worstDiffRad) worstDiffRad = d;
+    if (!seen[static_cast<int>(g.leg)]) {
+      seen[static_cast<int>(g.leg)] = true;
+      ++legsSeen;
+    }
+    if (rb.schedulePitchRad > rb.pitchFromVerticalRad + 1e-9) ++clampedTicks;
+    ++ticks;
+    if (g.leg == as::Leg::Orbit || g.leg == as::Leg::Aborted) break;
+    sim.sasCommand = g.sasCommand;
+    sim.state.throttle = g.throttle;
+    sim.step(dt);
+  }
+  std::printf("    [R87] %d ticks, %d of the 5 flying legs visited, worst "
+              "ribbon-vs-command disagreement %.3e rad, terrain clamp visible "
+              "in the ribbon on %d ticks\n",
+              ticks, legsSeen, worstDiffRad, clampedTicks);
+  // A POSITIVE CONTROL THAT THE RUN REACHED THE END, so a flight that fell out
+  // of the loop after one tick cannot read as agreement.
+  CHECK(seen[static_cast<int>(as::Leg::Orbit)]);
+  CHECK(legsSeen >= 4);
+  CHECK(ticks > 10000);
+  CHECK(worstDiffRad == 0.0);
+  // AND THAT WORD 1 IS NOT A COPY OF WORD 0. If the clamp were never visible
+  // in the ribbon the second word would be decoration.
+  CHECK(clampedTicks > 0);
+}
+
+TEST(the_apoapsis_schedule_is_cheaper_on_an_airless_body_which_is_why_it_is_picked) {
+  // THE MEASUREMENT THE DECISION RESTS ON, kept as a test so it cannot rot.
+  //
+  // One driver, one vehicle, one pad, one profile. The ONLY difference between
+  // the two rows is which schedule sets the pitch in the two ascent legs.
+  const worldgen::BodyParams cinder = worldgen::makeCinder(1);
+  const Site flat = findFlatPad(cinder);
+  as::Profile prof;
+  const GravityTurnProgram forgeRibbon;
+  const Flown apoapsis = fly(flat, prof, 3000.0);
+  const Flown altitude = fly(flat, prof, 3000.0, true, 1.0, &forgeRibbon);
+  std::printf("    [R87] Cinder, 20 km: apoapsis-progress %.4f m/s -> %.1f x "
+              "%.1f km | Forge's altitude ribbon %.4f m/s -> %.1f x %.1f km | "
+              "the ribbon costs %+.4f m/s, %+.1f%%\n",
+              apoapsis.dvMS, apoapsis.apoAltM / 1000.0, apoapsis.periAltM / 1000.0,
+              altitude.dvMS, altitude.apoAltM / 1000.0, altitude.periAltM / 1000.0,
+              altitude.dvMS - apoapsis.dvMS,
+              100.0 * (altitude.dvMS - apoapsis.dvMS) / apoapsis.dvMS);
+  // BOTH REACH ORBIT. The defect is a PRICE, not a failure, and overstating it
+  // would be as wrong as missing it.
+  CHECK(apoapsis.orbit);
+  CHECK(altitude.orbit);
+  CHECK(altitude.dvMS > apoapsis.dvMS + 50.0);
+  CHECK_NEAR(apoapsis.dvMS, 740.6796, 1e-3);
+  CHECK_NEAR(altitude.dvMS, 823.2355, 1e-3);
+}
+
+TEST(the_ribbon_still_answers_on_a_vehicle_that_cannot_lift_off) {
+  // FOUND BY DRIVING THE BRIDGE, not by reading, and it is the same class of
+  // defect R87 is about.
+  //
+  // `guide` REFUSES a vehicle whose thrust cannot beat gravity, and it refuses
+  // by returning "point up" BEFORE computing any schedule. Through the bridge
+  // that meant a lander on Cinder with its engine not yet lit, holding 19.8 km
+  // of a 20 km apoapsis, was told to point STRAIGHT UP. Correct for a program
+  // deciding whether to fly; a wrong instruction on a display.
+  const worldgen::BodyParams cinder = worldgen::makeCinder(1);
+  const Site pad = findFlatPad(cinder);
+  const ld::SurfaceFrame ground = ld::surfaceFrame(cinder, pad.dir, kFootprintM);
+  const Vec3 east = eastAt(ground.upUnit);
+  // 5 km up, most of the target apoapsis already bought.
+  const Vec3 pos = ground.upUnit * (ground.radiusM + 5000.0);
+  const Vec3 vel = ground.upUnit * 200.0 + east * 150.0;
+
+  const as::Ribbon flying =
+      as::ribbon(pos, vel, ground, east, atmo::makeCinderAtmosphere(),
+                 cinder.muM3S2, cinder.radiusM, 5.0, 20000.0);
+  // ZERO THRUST: the engine is not lit. `guide` aborts; the ribbon must not.
+  const as::Ribbon dead =
+      as::ribbon(pos, vel, ground, east, atmo::makeCinderAtmosphere(),
+                 cinder.muM3S2, cinder.radiusM, 0.0, 20000.0);
+  as::Profile prof;
+  const as::Guidance g =
+      as::guide(pos, vel, Vec3{0, 0, 0}, ground, east, cinder.muM3S2,
+                cinder.radiusM, 0.0, 0.0, prof);
+  std::printf("    [R87] engine unlit: guide says leg=%d \"%s\" and commands "
+              "%.2f deg; the RIBBON says %.2f deg against the flying vehicle's "
+              "%.2f deg\n",
+              static_cast<int>(g.leg), g.note,
+              as::pointingErrorRad(g.sasCommand, ground.upUnit) * kDeg,
+              dead.pitchFromVerticalRad * kDeg,
+              flying.pitchFromVerticalRad * kDeg);
+  // The program really is refusing, so this test is exercising the branch it
+  // claims to. Without this the whole test could pass on a vehicle that flies.
+  CHECK(g.leg == as::Leg::Aborted);
+  CHECK(as::pointingErrorRad(g.sasCommand, ground.upUnit) == 0.0);
+  // AND THE RIBBON STILL ANSWERS, with the same angle the flying vehicle gets:
+  // the schedule is a function of progress and clearance, and thrust is in
+  // neither of them.
+  CHECK(dead.usable);
+  CHECK(dead.pitchFromVerticalRad == flying.pitchFromVerticalRad);
+  CHECK(dead.pitchFromVerticalRad > 1.0);
+}
+
+TEST(one_schedule_serves_both_the_program_and_the_ribbon) {
+  // `turnPitch` exists so that "the ribbon draws what the program flies" is
+  // structural rather than a coincidence two files maintain. This walks the
+  // schedule's whole domain and asserts the two agree EXACTLY, including
+  // through the terrain clamp, which is the part that would drift first.
+  as::Profile prof;
+  int clampedSeen = 0, freeSeen = 0;
+  for (double apo = 0.0; apo <= 25000.0; apo += 250.0)
+    for (double agl = 0.0; agl <= 4000.0; agl += 100.0) {
+      const as::TurnPitch t = as::turnPitch(apo, agl, prof);
+      CHECK(t.commandedRad <= t.scheduleRad + 1e-18);
+      if (t.clamped) ++clampedSeen; else ++freeSeen;
+    }
+  // BOTH SIDES OF THE CLAMP ARE WALKED. A sweep that only ever saw one of them
+  // would be asserting nothing about the other.
+  std::printf("    [R87] schedule sweep: %d clamped cells, %d free cells\n",
+              clampedSeen, freeSeen);
+  CHECK(clampedSeen > 100);
+  CHECK(freeSeen > 100);
+  // AND THE CLAMP IS EXACTLY THE PROFILE'S OWN TWO NUMBERS, which is what makes
+  // "the terrain vetoed your turn" a statement about the terrain.
+  CHECK(as::turnPitch(20000.0, prof.clearanceM - 1.0, prof).commandedRad == 0.0);
+  CHECK(as::turnPitch(20000.0, prof.clearedAtM + 1.0, prof).commandedRad
+        == as::turnPitch(20000.0, prof.clearedAtM + 1.0, prof).scheduleRad);
 }

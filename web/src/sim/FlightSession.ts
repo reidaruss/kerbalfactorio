@@ -118,6 +118,11 @@ export class FlightSession {
    *  17, deliberately, and that disagreement is the truth: the mode is a client
    *  aimer over /core's Command. */
   followGuidance = false;
+  /** R87 / PH-250. The orbit the ascent ribbon aims at, datum-relative metres,
+   *  0 for "not set" and deliberately not defaulted. Why there is no default,
+   *  and why a body with air does not need one, is beside the only reader:
+   *  `FlightSas.ascentRibbon`. */
+  ascentTargetApoapsisM = 0;
   private throttle = 0;
   private parts: FlightPartRow[] = [];
   private stages: FlightStageRow[] = [];

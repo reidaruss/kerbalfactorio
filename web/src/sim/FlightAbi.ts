@@ -164,14 +164,53 @@ export function flightParts(M: OfCoreModule, f: number): FlightPartRow[] {
   return out;
 }
 
-/** DW-30 item 6: the gravity-turn ribbon, in radians from local vertical.
- *  `pastVertical` is false while the program is still holding straight up. */
-export function guidancePitch(M: OfCoreModule, altitudeM: number):
-    { pitchFromVerticalRad: number; pastVertical: boolean } {
-  const n = vesselAbi(M)._of_fl_guidance_pitch(altitudeM);
-  if (n !== 2) return { pitchFromVerticalRad: 0, pastVertical: false };
+export interface AscentGuidance {
+  /** Where to aim, as an angle from the local vertical, AFTER every clamp.
+   *  Compose it with your own east: east stays this side's (PH-40). */
+  pitchFromVerticalRad: number;
+  /** What the schedule asked for BEFORE the terrain clamp. Apart from the
+   *  above means the ground is vetoing the turn, which a screen can say. */
+  schedulePitchRad: number;
+  /** Datum-relative, off the state vector rather than a `bound` flag (R14).
+   *  0 when the arc does not come back down. */
+  apoapsisAltM: number;
+  /** WHICH LAW IS DRAWING. True: the altitude schedule, scheduled off this
+   *  body's own air. False: apoapsis progress, which is what an airless ascent
+   *  actually flies and is 82.56 m/s cheaper on Cinder than the other one. */
+  atmospheric: boolean;
+  /** False when this body is airless and no ascent target has been set, so
+   *  there is no schedule to draw. Draw nothing and refuse by name. */
+  usable: boolean;
+}
+
+/**
+ * DW-30 item 6, R87: the guidance ribbon, with a body under it.
+ *
+ * `targetApoapsisM` is ignored on a body with air and required without one.
+ * `altitudeAglM` is this side's, because terrain is this side's: /core's flight
+ * sim knows the datum radius and nothing about the ground under the vehicle.
+ *
+ * A ZERO-WORD ANSWER IS A REFUSAL AND NOT A ZERO PITCH, which is why `usable`
+ * is false rather than the pitch being 0: pitch 0 is a legitimate command
+ * (straight up, off the pad, every launch) and must never double as "no idea".
+ */
+export function ascentGuidance(M: OfCoreModule, f: number,
+                               targetApoapsisM: number,
+                               altitudeAglM: number): AscentGuidance {
+  const none: AscentGuidance = {
+    pitchFromVerticalRad: 0, schedulePitchRad: 0, apoapsisAltM: 0,
+    atmospheric: false, usable: false,
+  };
+  const n = vesselAbi(M)._of_fl_ascent_guidance(f, targetApoapsisM, altitudeAglM);
+  if (n !== 5) return none;
   const a = scratchF64(M, n);
-  return { pitchFromVerticalRad: a[0] ?? 0, pastVertical: (a[1] ?? 0) !== 0 };
+  return {
+    pitchFromVerticalRad: a[0] ?? 0,
+    schedulePitchRad: a[1] ?? 0,
+    apoapsisAltM: a[2] ?? 0,
+    atmospheric: (a[3] ?? 0) !== 0,
+    usable: (a[4] ?? 0) !== 0,
+  };
 }
 
 // --- small vector helpers, used by the session and the observer -------------

@@ -67,6 +67,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "of/atmosphere.h"
+#include "of/flight.h"
 #include "of/landing.h"
 #include "of/orbital.h"
 #include "of/vec3.h"
@@ -263,6 +265,51 @@ struct Profile {
   double insertionArcRad = 22.5 * orbital::kPi / 180.0;
 };
 
+// -----------------------------------------------------------------------------
+// THE TURN'S PITCH, AS A FUNCTION OF PROGRESS AND CLEARANCE AND NOTHING ELSE.
+//
+// Factored out so that `guide`, which FLIES the turn, and `ribbon`, which DRAWS
+// it, are provably reading one schedule rather than two that agree today.
+//
+// It exists because the ribbon could not simply read `guide`'s answer in every
+// case. `guide` REFUSES a vehicle that cannot lift off, and it refuses by
+// returning early with "point up", before any schedule is computed. That is
+// right for a program and wrong for a display: driven through the bridge, a
+// lander sitting on Cinder with its engine not yet lit and 19.8 km of a 20 km
+// apoapsis already bought was told to point STRAIGHT UP. A ribbon must answer
+// where to aim even when the vehicle is in no state to go there, or it becomes
+// the same wrong instruction in a new place.
+// -----------------------------------------------------------------------------
+struct TurnPitch {
+  double scheduleRad = 0.0;    // what progress alone asks for
+  double commandedRad = 0.0;   // after the terrain's veto
+  bool clamped = false;
+};
+
+inline TurnPitch turnPitch(double apoapsisAltM, double altitudeAglM,
+                           const Profile& p) {
+  TurnPitch t;
+  const double frac = (p.targetApoapsisM > 0.0)
+      ? std::fmax(0.0, std::fmin(1.0, apoapsisAltM / p.targetApoapsisM))
+      : 1.0;
+  t.scheduleRad = 0.5 * orbital::kPi * std::pow(frac, p.turnExponent);
+
+  // THE TERRAIN'S VETO. Under `clearanceM` nothing but straight up is allowed;
+  // between there and `clearedAtM` the schedule is released linearly. It is a
+  // CLAMP and never a command of its own, so over ground that is already far
+  // below, the schedule is untouched and this whole paragraph is invisible.
+  double allowed = 0.5 * orbital::kPi;
+  if (altitudeAglM <= p.clearanceM) {
+    allowed = 0.0;
+  } else if (altitudeAglM < p.clearedAtM && p.clearedAtM > p.clearanceM) {
+    allowed = 0.5 * orbital::kPi * (altitudeAglM - p.clearanceM)
+              / (p.clearedAtM - p.clearanceM);
+  }
+  t.commandedRad = (t.scheduleRad > allowed) ? allowed : t.scheduleRad;
+  t.clamped = t.commandedRad < t.scheduleRad;
+  return t;
+}
+
 enum class Leg : uint8_t {
   Vertical,     // off the pad, clearing the terrain
   Turn,         // the gravity turn, pitched on apoapsis progress
@@ -449,28 +496,13 @@ inline Guidance guide(const Vec3& posM, const Vec3& velMS, const Vec3& forwardUn
       g.throttle = 0.0;
       return g;
     }
-    const double frac = (p.targetApoapsisM > 0.0)
-        ? std::fmax(0.0, std::fmin(1.0, g.apoapsisAltM / p.targetApoapsisM))
-        : 1.0;
-    double pitch = 0.5 * orbital::kPi * std::pow(frac, p.turnExponent);
-    g.schedulePitchRad = pitch;
-
-    // THE TERRAIN'S VETO. Under `clearanceM` nothing but straight up is
-    // allowed; between there and `clearedAtM` the schedule is released
-    // linearly. It is a CLAMP and never a command of its own, so over ground
-    // that is already far below the schedule is untouched and this whole
-    // paragraph is invisible.
-    double allowed = 0.5 * orbital::kPi;
-    if (g.altitudeAglM <= p.clearanceM) {
-      allowed = 0.0;
-    } else if (g.altitudeAglM < p.clearedAtM && p.clearedAtM > p.clearanceM) {
-      allowed = 0.5 * orbital::kPi * (g.altitudeAglM - p.clearanceM)
-                / (p.clearedAtM - p.clearanceM);
-    }
-    if (pitch > allowed) pitch = allowed;
+    const TurnPitch t = turnPitch(g.apoapsisAltM, g.altitudeAglM, p);
+    g.schedulePitchRad = t.scheduleRad;
+    double pitch = t.commandedRad;
     // No usable heading: fly straight up rather than pick one. A vertical climb
     // is a legal, if useless, ascent; an invented azimuth is a plane the caller
-    // did not ask for.
+    // did not ask for. It stays HERE and not in `turnPitch`, because it is a
+    // fact about what the caller supplied and not part of the schedule.
     if (headingUnit.length() < 1e-9) pitch = 0.0;
     g.pitchFromVerticalRad = pitch;
 
@@ -576,6 +608,150 @@ inline Guidance guide(const Vec3& posM, const Vec3& velMS, const Vec3& forwardUn
   g.throttle = th;
   g.note = "insertion burn";
   return g;
+}
+
+// =============================================================================
+// THE GUIDANCE RIBBON (R87), AND WHY IT IS A SELECTION RATHER THAN A TUNING.
+//
+// The navball has drawn an ascent ribbon since W12 and PH-201 gave it a key, so
+// a player can now FLY it. What it drew was `flight::GravityTurnProgram` built
+// with its defaults and handed nothing but an altitude: no body, no air, no
+// target. On Forge that is the profile that works. On an airless moon whose
+// whole parking orbit is 20 km it is still asking for 57.17 degrees from
+// vertical at 20 km and does not go horizontal until 45 km, which is 2.25x the
+// destination. While the ribbon was decoration that was an inaccuracy; with a
+// key on it, it is a wrong instruction a player can follow.
+//
+// THE OBVIOUS FIX IS THE WRONG ONE, AND IT WAS MEASURED BEFORE IT WAS REFUSED.
+//
+// "One law for every body" would mean flying the apoapsis-progress schedule
+// everywhere. Flown, with the schedule as the ONLY variable and the legs, the
+// throttle, the cutoff and the insertion held identical:
+//
+//   Cinder, airless, 20 km:  apoapsis schedule 740.6796 m/s
+//                            altitude ribbon   823.2355 m/s   (+82.5559, +11.1%)
+//   Forge,  air,     80 km:  altitude ribbon  3681.9085 m/s
+//                            apoapsis schedule 3780.5195 m/s   (+98.6110, +2.7%)
+//
+// EACH SCHEDULE IS CHEAPER ON THE BODY IT WAS WRITTEN FOR, which is this
+// header's opening argument turned from prose into a number. The atmospheric
+// angle-of-attack clamp cannot rescue the apoapsis schedule on Forge either: it
+// bound 7085 times and cost a FURTHER 78.9 m/s (3859.4268), because holding
+// nearer the airflow just means climbing for longer. Against the altitude
+// ribbon the same clamp bound 0 times, which was counted rather than assumed
+// after two rows came out bit-identical.
+//
+// So there are two schedules because there are two physical regimes, and the
+// single-authority rule is honoured by making the SELECTION single: this
+// function is the one place that decides, neither schedule is reimplemented,
+// and the atmospheric one's only body-shaped constant is now read off the body
+// (`GravityTurnProgram::forAtmosphere`).
+//
+// AND ON AN AIRLESS BODY WITH NO TARGET IT REFUSES.
+//
+// The apoapsis schedule's independent variable is the share of the target
+// apoapsis already bought, so without a target there is no schedule. There is
+// no defensible default: 20 km is Cinder's number, not an airless body's, and
+// substituting it here would be the same literal R87 is about wearing a new
+// name. `usable` goes false, the client draws no marker and the follow mode
+// refuses BY NAME. A ribbon that says nothing is honest; one that says 45 km on
+// a 20 km orbit is not.
+// =============================================================================
+struct Ribbon {
+  // What to point at, as an angle from the local vertical, to be composed with
+  // the caller's own downrange direction. AFTER every clamp, so it is what a
+  // follow mode should fly and what the navball should draw.
+  //
+  // It is an angle and not a vector on purpose: east is the CLIENT's (PH-40
+  // records this codebase already carrying two inclination conventions, and
+  // `FlightSas.horizonFrame` is the frame the ball, the ribbon and the pitch
+  // keys already share). Publishing a direction here would make it three.
+  double pitchFromVerticalRad = 0.0;
+  // What the schedule asked for BEFORE the terrain clamp. Equal to the above
+  // wherever no clamp applies, and that equality is checkable rather than
+  // assumed. A screen showing the two apart is showing a terrain veto.
+  double schedulePitchRad = 0.0;
+  // The airless schedule's own independent variable, datum-relative, taken
+  // from the state vector through `arcPeak` and never from a `bound` flag
+  // (R14). Published so that "the pitch tracks apoapsis progress" is a claim a
+  // probe can check, rather than a metric flat in the variable it is named for.
+  double apoapsisAltM = 0.0;
+  // WHICH LAW IS FLYING. Made visible deliberately: a selection nobody can see
+  // is a selection nobody can test.
+  bool atmospheric = false;
+  bool usable = false;
+  const char* note = "";
+};
+
+// `targetApoapsisM` is the orbit being bought, datum-relative. It is IGNORED on
+// a body with air (the altitude schedule does not have a target in it) and
+// REQUIRED without. `thrustAccelFull` and `velMS` are only read on the airless
+// branch, which is the only one whose schedule is a function of the trajectory.
+inline Ribbon ribbon(const Vec3& posM, const Vec3& velMS,
+                     const landing::SurfaceFrame& ground,
+                     const Vec3& downrangeHint,
+                     const atmo::AtmosphereProfile& air, double muM3S2,
+                     double bodyRadiusM, double thrustAccelFull,
+                     double targetApoapsisM) {
+  Ribbon rb;
+  const double r = posM.length();
+  if (!(r > 0.0) || !(muM3S2 > 0.0) || !(bodyRadiusM > 0.0)) {
+    rb.note = "no vehicle";
+    return rb;
+  }
+  const ArcPeak peak = arcPeak(posM, velMS, muM3S2);
+  rb.apoapsisAltM = peak.comesBackDown ? peak.apoapsisRadiusM - bodyRadiusM : 0.0;
+
+  if (air.present()) {
+    const flight::GravityTurnProgram g =
+        flight::GravityTurnProgram::forAtmosphere(air);
+    // AGL, because DW-30 item 6 says the profile is measured off the pad: a
+    // launch from a plateau flies the same shape as one from sea level.
+    const double aglM = std::fmax(0.0, r - ground.radiusM);
+    rb.schedulePitchRad = g.pitchFromVerticalRad(aglM);
+    rb.pitchFromVerticalRad = rb.schedulePitchRad;
+    rb.atmospheric = true;
+    rb.usable = true;
+    rb.note = "gravity turn on altitude, scheduled against this body's air";
+    return rb;
+  }
+
+  if (!(targetApoapsisM > 0.0)) {
+    rb.note = "airless: set an ascent target and this becomes a schedule";
+    return rb;
+  }
+
+  Profile p;
+  p.targetApoapsisM = targetApoapsisM;
+  // NO NOSE AND NO STEP. `guide` reads `forwardUnit` only for the attitude gate
+  // and `dtS` only for the insertion's proportional last tick, and BOTH are
+  // documented to fall back to the ungated law when they are absent. A ribbon
+  // is a display: it says where to point, so it must not withhold the answer
+  // because the vehicle is not pointing there yet, and it must not depend on
+  // the caller's tick rate.
+  const Guidance g = guide(posM, velMS, Vec3{0, 0, 0}, ground, downrangeHint,
+                           muM3S2, bodyRadiusM, thrustAccelFull, 0.0, p);
+  rb.atmospheric = false;
+  rb.usable = true;
+  rb.note = g.note;
+
+  if (g.leg == Leg::Aborted) {
+    // THE VEHICLE CANNOT LIFT OFF, WHICH IS NOT THE RIBBON'S PROBLEM. `guide`
+    // returns "point up" here without ever computing a schedule, so the ribbon
+    // asks the schedule itself. Same function, same profile, no second copy.
+    const TurnPitch t = turnPitch(g.apoapsisAltM, g.altitudeAglM, p);
+    rb.schedulePitchRad = t.scheduleRad;
+    rb.pitchFromVerticalRad = t.commandedRad;
+    return rb;
+  }
+
+  rb.pitchFromVerticalRad = pointingErrorRad(g.sasCommand, ground.upUnit);
+  // Only the two ascent legs HAVE a schedule to be clamped; past them the
+  // command is the insertion's own vector and there is nothing above it, so the
+  // two words are equal and say so.
+  rb.schedulePitchRad = (static_cast<int>(g.leg) <= 1) ? g.schedulePitchRad
+                                                       : rb.pitchFromVerticalRad;
+  return rb;
 }
 
 }  // namespace ascent

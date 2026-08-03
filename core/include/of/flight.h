@@ -900,15 +900,54 @@ inline OrbitSummary summarize(const orbital::StateVector& sv, double mu,
 // =============================================================================
 // §7 - the gravity-turn guidance ribbon (DW-30 item 6).
 //
-// This publishes the pitch profile a good ascent follows. It does NOT fly it:
-// the whole point of DW-29's progression is that reaching orbit is a manual
-// skill first, so this is what the navball draws, and the player (or, after the
-// research unlock, an autopilot) is what tracks it.
+// This publishes the pitch profile a good ATMOSPHERIC ascent follows. It does
+// not fly it itself: the whole point of DW-29's progression is that reaching
+// orbit is a manual skill first, so this is what the navball draws and the
+// player is what tracks it.
+//
+// TWO THINGS HAVE CHANGED SINCE THAT WAS WRITTEN AND BOTH MATTER.
+//
+// (1) PH-201 shipped a SAS mode that follows the ribbon, so "the player is what
+// tracks it" now includes a key. A ribbon that is drawn and never flown can be
+// approximately right; one with a key on it is an instruction.
+//
+// (2) THIS PROGRAM IS FOR A BODY WITH AIR AND IS NOT A GENERAL ASCENT. It
+// pitches on ALTITUDE because the atmosphere is the thing being raced, and that
+// is the wrong variable where there is no air: on Cinder it is still 33 degrees
+// from horizontal at 20 km, which is that moon's entire parking orbit. The
+// airless schedule is `ascent.h`'s, and `ascent::ribbon` is the ONE place that
+// chooses between them. Nothing should construct this directly to draw a ribbon
+// on an arbitrary body; go through `ascent::ribbon` (R87).
 // =============================================================================
 struct GravityTurnProgram {
   double verticalUntilM = 500.0;   // straight up off the pad
   double turnCompleteM = 45000.0;  // horizontal by here
   double exponent = 0.55;          // shape of the turn
+
+  // THE SAME PROGRAM, WITH ITS ONE BODY-SHAPED CONSTANT READ OFF THE BODY.
+  //
+  // `turnCompleteM = 45000` is not a free parameter and never was: it is three
+  // quarters of the way up Forge's air, and the reason the turn finishes there
+  // is that above it there is nothing left to be through. Stated as a fraction
+  // of `AtmosphereProfile::topM` it is EXACTLY the shipped number on Forge
+  // (0.75 * 60000 == 45000, pinned with `==` in test_ascent.cpp), so this
+  // introduces no new value: it explains the existing one and lets a second
+  // atmospheric body get a correct schedule without anybody tuning a literal.
+  //
+  // `verticalUntilM` is NOT derived, because it is not about air. It is pad
+  // clearance, and it is deliberately the same 500 m that
+  // `ascent::Profile::clearanceM` holds: one clearance number appearing in two
+  // programs rather than two numbers that happen to agree.
+  //
+  // An airless profile has `topM == 0`, which would collapse the turn to a
+  // step at the pad. It is REFUSED rather than clamped: `ascent::ribbon` picks
+  // the apoapsis-progress schedule for an airless body and never calls this,
+  // and a caller that reaches here with no air has asked the wrong question.
+  static GravityTurnProgram forAtmosphere(const atmo::AtmosphereProfile& air) {
+    GravityTurnProgram g;
+    if (air.present()) g.turnCompleteM = 0.75 * air.topM;
+    return g;
+  }
 
   // Angle from local vertical, radians: 0 straight up, pi/2 horizontal.
   double pitchFromVerticalRad(double altitudeM) const {
