@@ -86,8 +86,18 @@
   check('the loop is ticking', w0.tick > 0, `tick ${w0.tick}`);
   const f0 = F();
   check('the flight lane loaded its meshes', f0.loaded === true);
-  check('the part catalogue crossed the bridge', f0.catalogue === 24,
+  // A BOUND, NOT AN EQUALITY, AND THAT CHANGE IS THE POINT (PH-202).
+  //
+  // This read `=== 24`. The catalogue grew to 25 when a part was added, and
+  // this line took THE WHOLE FLIGHT ACCEPTANCE down at its own section 0 --
+  // together with probes/flightabuse.js, which carried the same literal. Both
+  // sat red at HEAD, before any rocket was built, and nothing said so: two
+  // acceptances of this domain had stopped running and the failure looked like
+  // a setup detail. The question this line exists to ask is whether the bridge
+  // carried the catalogue at all, and a growing catalogue is not a regression.
+  check('the part catalogue crossed the bridge', f0.catalogue >= 24,
         `${f0.catalogue}`);
+  log.push(`catalogue: ${f0.catalogue} parts across the bridge`);
   check('no vessel exists yet', f0.flight.live === false);
   check('nobody is aboard yet', f0.aboard === false);
   const c0 = CT();

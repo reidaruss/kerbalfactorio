@@ -79,7 +79,11 @@
         JSON.stringify(gm));
   check('the loop is ticking', of.world().tick > 0);
   check('the flight lane loaded', F().loaded === true);
-  check('the catalogue crossed the bridge', F().catalogue === 24, `${F().catalogue}`);
+  // A BOUND, NOT AN EQUALITY (PH-202). `=== 24` held this probe red at HEAD
+  // from the moment a 25th part was added, before anything was flown, and
+  // probes/ascent.js carried the identical literal. The question is whether the
+  // bridge carried the catalogue, and a catalogue that grew is not a defect.
+  check('the catalogue crossed the bridge', F().catalogue >= 24, `${F().catalogue}`);
   if (fails.length > 0) return { valid: false, why: 'setup', fails };
 
   // ==========================================================================
