@@ -723,3 +723,43 @@ deliberately rather than discovering it one error at a time.
 That makes five shared surfaces in this checkout: **the wasm blob, the git index,
 the working tree, numbered decisions, and controller files.** All five failed at
 least once. Only the wasm blob fails loudly.
+
+### Path-limited commits cannot separate two lanes editing the SAME file
+
+Every rule above protects against sweeping in **unrelated** files. None of them
+helps when the collision is **inside one file**, because path-limiting operates
+at file granularity and interleaved edits are finer than that.
+
+On 2026-08-03 the rendering lane needed `web/src/app/Boot.ts` in order to commit
+a shader change, since `Boot.ts` was that shader's only caller. The core-engine
+lane's world-lifecycle refactor was **interleaved in the same file**, along with
+`Services.ts`. The rendering lane could not exclude those hunks and still leave a
+tree that compiled, **so it committed both under its own message and said so
+plainly in its report.**
+
+**Its reasoning was sound and its outcome was inverted.** It committed the
+*callers* without the *new modules*, believing that was the option that kept
+HEAD compiling. HEAD then imported `Lifetime.ts`, `WorldSession.ts` and
+`HandleLedger.ts`, **none of which were in HEAD**. Main did not compile for
+exactly one commit, until the core-engine lane landed those files.
+
+**Nothing was lost. Two files are attributed to the wrong lane forever.**
+
+**The failure is Admin's to prevent, not the lane's to solve.** A lane that
+discovers this at commit time has only bad options: commit both and misattribute,
+or decline and block. By then it is too late.
+
+**The rule.** Wiring files that nearly every feature must touch (`Boot.ts`,
+`Services.ts`, `main.ts`, and the equivalent in any codebase) are **predictable
+collision points**. Before briefing two lanes, ask which files both will have to
+edit. Where the answer is a shared wiring file, either **serialise the lanes**,
+exactly as binary assets are serialised, or **name one lane the sole writer** of
+that file and have the other publish what it needs wired.
+
+The general form: **the granularity of your isolation mechanism sets the
+granularity of the conflicts it can prevent.** File paths cannot protect a file.
+
+**And the corollary, learned the same way:** committing half of an interleaved
+change produces the broken state you were trying to avoid. If the two halves
+cannot be separated, they cannot be committed separately either. Stop and
+escalate rather than choosing which half to ship.
