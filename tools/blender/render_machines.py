@@ -81,8 +81,10 @@ before/after pair is ONE FLAG apart on ONE build under ONE light rather than
 two commits apart.
 """
 
+import io
 import math
 import os
+import re
 import sys
 
 import bpy
@@ -97,6 +99,11 @@ if HERE not in sys.path:
 # has to be passed through five signatures gets dropped from one of them.
 _MAPS = False
 _MERGED = False
+# RN-1111. DEFAULT ON, and `--noclient` is the escape rather than `--client`
+# being the opt-in. The honest picture is the one the game can draw, so it is
+# what a run gives you without being asked; and every run prints which mode it
+# is in, because RN-150's rule is that an unexercised default ships silently.
+_CLIENT = True
 
 
 def look_at(obj, target):
@@ -280,6 +287,61 @@ def collapse_role_materials():
     return folded, len(canon)
 
 
+MACHINE_BATCH_TS = os.path.join(ROOT, "web", "src", "game", "MachineBatch.ts")
+
+
+def client_machine_material():
+    """RN-1111. The (roughness, metalness) the CLIENT actually draws every
+    machine role at, READ OUT OF THE CLIENT'S OWN SOURCE.
+
+    WHY THIS FUNCTION EXISTS AND WHY IT PARSES RATHER THAN HARDCODES. The
+    numbers it returns are a client constant. Typed here they would be a copy
+    that drifts silently the first time the client lane touches that line, and
+    the whole point of the value is to make this render agree with the game.
+    Read from the file, a divergence is either corrected automatically or
+    raises. `check_shadow_lod` reads the client's cascade splits for the same
+    reason.
+
+    WHAT IT IS FOR, AND IT IS THE SECOND HALF OF RN-456. `apply_material`'s
+    `force` argument is documented as "the studio's ?partmat=0", and
+    `apply_all`'s no-force path is justified by "the merge now carries them
+    (PartMaterial.ts), so the two agree by construction". **That justification
+    is true of SpiderFlock and NodeBatch and FALSE of MachineBatch, which
+    contains zero references to PartMaterial.** So a machine rendered with
+    `--merged` and no force previews per-role roughness and metalness that the
+    game throws away, which is RN-456's catalogued failure - a studio render
+    showing something the game cannot draw - reappearing on a different asset
+    class, in the rig that was built to prevent it.
+
+    Returns (roughness, metalness, has_partmat). `has_partmat` is the flag
+    that makes this instrument survive its own fix: the day MachineBatch bakes
+    and injects the per-part channel the way NodeBatch does, forcing becomes
+    the WRONG thing to do and this says so instead of quietly lying the other
+    way."""
+    if not os.path.exists(MACHINE_BATCH_TS):
+        raise SystemExit("[render_machines] FAIL: cannot read the client's "
+                         "machine material from %s" % MACHINE_BATCH_TS)
+    src = io.open(MACHINE_BATCH_TS, encoding="utf-8").read()
+    has_partmat = ("PartMaterial" in src) or ("partMat" in src)
+    m = re.search(r"new\s+THREE\.MeshStandardMaterial\(\{(.*?)\}\)", src,
+                  re.S)
+    if m is None:
+        raise SystemExit("[render_machines] FAIL: MachineBatch.ts no longer "
+                         "constructs a MeshStandardMaterial the way this "
+                         "parser expects. An instrument that guesses a client "
+                         "constant is worse than one that stops.")
+    block = m.group(1)
+    got = {}
+    for key in ("roughness", "metalness"):
+        k = re.search(r"\b%s\s*:\s*([0-9.]+)" % key, block)
+        if k is None:
+            raise SystemExit("[render_machines] FAIL: MachineBatch's material "
+                             "declares no %s. Cannot state what the game "
+                             "draws, so this render will not claim to." % key)
+        got[key] = float(k.group(1))
+    return got["roughness"], got["metalness"], has_partmat
+
+
 def apply_surfaces():
     """Wire the shipped surface families onto the imported OF_* materials.
 
@@ -289,11 +351,35 @@ def apply_surfaces():
     single-material batch can actually draw (of_lib.BARE_ROLES wear no family
     maps), for RN-456's instrument-honesty reason: a studio render showing
     something the game cannot draw flatters in the direction nobody
-    double-checks."""
+    double-checks.
+
+    RN-1111: `--client` (the DEFAULT, and `--noclient` turns it off) is the
+    other half of that same reason for machines specifically. See
+    `client_machine_material`."""
     import surface_preview
     collapse_role_materials()
-    rep = surface_preview.apply_all(off=not _MAPS, merged=bool(_MAPS
-                                                               and _MERGED))
+    force = None
+    if _MAPS and _CLIENT:
+        rough, metal, has_partmat = client_machine_material()
+        if has_partmat:
+            print("[render_machines] --client: MachineBatch.ts now references "
+                  "PartMaterial, so per-role roughness and metalness DO reach "
+                  "the game. Not forcing; the authored values are the truth.")
+        else:
+            force = (rough, metal)
+            print("[render_machines] --client: MachineBatch.ts draws EVERY "
+                  "machine role at roughness %.2f metalness %.2f and carries "
+                  "no PartMaterial channel, so every per-role value in the "
+                  ".glb is discarded. Forcing that pair onto every role, "
+                  "which is what the game will show." % (rough, metal))
+    else:
+        print("[render_machines] --client is %s: per-role roughness and "
+              "metalness are previewed AS AUTHORED, which for a machine is "
+              "NOT what MachineBatch draws."
+              % ("OFF (--noclient given)" if _MAPS else "moot (--nomaps)"))
+    rep = surface_preview.apply_all(off=not _MAPS,
+                                    merged=bool(_MAPS and _MERGED),
+                                    force=force)
     # RN-1101's GATE, and it is the half that stops the defect coming back. An
     # `OF_` material that reaches here unexamined is a role rendering with no
     # surface while the report line above says the surfaces are on. There is
@@ -613,7 +699,7 @@ def line(cam, seed, out_prefix, tag="line"):
 
 
 def main():
-    global _MAPS, _MERGED
+    global _MAPS, _MERGED, _CLIENT
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     # Pulled out wherever they sit, so the three positional arguments keep the
     # meaning and the order they have always had (render_check.py's rule).
@@ -624,6 +710,10 @@ def main():
     while "--merged" in argv:
         argv.remove("--merged")
         _MERGED = True
+    for tok, val in (("--client", True), ("--noclient", False)):
+        while tok in argv:
+            argv.remove(tok)
+            _CLIENT = val
     if len(argv) < 3:
         print(__doc__)
         return
