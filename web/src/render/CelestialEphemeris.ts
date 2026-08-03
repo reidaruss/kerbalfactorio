@@ -157,3 +157,31 @@ export function airProfile(M: EphemerisModule, id: number, n = 13):
   }
   return out;
 }
+
+/**
+ * PLANETSHINE: what fraction of the sun's irradiance one body delivers to
+ * another by reflection.
+ *
+ *   E / E_sun  =  (2/3) * A * (R/d)^2 * (1 + cos alpha) / 2
+ *
+ * A Lambert sphere of albedo `A` and radius `R` seen at distance `d` and phase
+ * angle alpha (sun, at the reflecting body, to the receiver). The 2/3 is the
+ * disc integral of a Lambert sphere at full phase and not a fudge factor; the
+ * last term is the illuminated fraction of the disc the receiver can see.
+ *
+ * IT IS ONE FUNCTION BECAUSE IT IS ONE QUESTION ASKED TWICE, and the two
+ * answers are wildly different sizes. Forge lighting Cinder is the reason a
+ * lunar night is not pitch black; Cinder lighting Forge is nothing at all. If
+ * these were two expressions in two places the first would eventually be tuned
+ * for the picture and the second would silently inherit the tuning.
+ *
+ * SANITY, so an implausible number is caught by SIZE: earthshine on our own
+ * Moon is about 1e-4 of sunlight, and Forge subtends three times the angle
+ * Earth does from the Moon, so a few times 1e-4 is the expected order here.
+ * Anything near 1e-2 or near 1e-6 is a bug, not a discovery.
+ */
+export function planetshineFraction(albedo: number, radiusM: number,
+  distanceM: number, cosPhase: number): number {
+  const rd = radiusM / Math.max(1, distanceM);
+  return (2 / 3) * albedo * rd * rd * 0.5 * (1 + Math.max(-1, Math.min(1, cosPhase)));
+}

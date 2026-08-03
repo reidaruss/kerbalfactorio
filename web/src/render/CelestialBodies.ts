@@ -40,42 +40,14 @@ import type { BodyId, Vec3d } from '../world/PlanetBody.js';
 import { tangentFrame } from '../player/ViewSource.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import {
-  discover, hasEphemeris, readFacts, relativeTo, stateOf,
+  discover, hasEphemeris, planetshineFraction, readFacts, relativeTo, stateOf,
   type BodyFacts, type EphemerisModule,
 } from './CelestialEphemeris.js';
 
 export type { BodyFacts } from './CelestialEphemeris.js';
+export type { CelestialReport, BodyAim } from './CelestialReport.js';
+import type { CelestialReport, BodyAim } from './CelestialReport.js';
 
-export interface CelestialReport {
-  readonly present: boolean;
-  /** Why nothing is drawn, when nothing is drawn. Never silent. */
-  readonly reason: string | null;
-  readonly drawn: string[];
-  /** The id the discovery loop REFUSED, proving the terminator is real. */
-  readonly refusedId: number;
-  readonly texW: number;
-  readonly texH: number;
-  readonly bakeMs: number;
-  readonly oracleSamples: number;
-  /** Max |dirForUv(uv) - normalize(position)| over the sphere's vertices. */
-  readonly uvResidual: number;
-  /** The EYE in body-frame metres at the instant of the report. Published so a
-   *  probe can reconstruct `aim().distanceM` from `bodies[].posM` EXACTLY and
-   *  check the two paths against each other, rather than against a tolerance
-   *  somebody guessed. The first version of that check asserted the two agree
-   *  to "well under a per-cent"; they differ by 4.45 per cent at the spawn,
-   *  because one measures from the body CENTRE and the other from the eye, and
-   *  Forge's 600 km radius is 5 per cent of 1.2e7 m. The instrument was wrong,
-   *  not the code, and a tighter tolerance would have "found" a bug that is a
-   *  planet's radius. */
-  readonly eyeM: [number, number, number];
-  readonly bodies: {
-    name: string; distanceM: number; angularDiamDeg: number;
-    posM: [number, number, number]; visible: boolean;
-    reliefMinM: number; reliefMaxM: number; texelM: number;
-  }[];
-  readonly simSecs: number;
-}
 
 /** Equirect bake size. `?skybodytex=` overrides; see the report's `texelM`. */
 const TEX_W_DEFAULT = 512;
@@ -87,6 +59,11 @@ interface Drawn {
   reliefMinM: number;
   reliefMaxM: number;
   texelM: number;
+  /** This body's own mean surface reflectance, for the shine it casts. */
+  albedo: THREE.Color;
+  /** Irradiance this body delivers to the HOST's surface, as a fraction of the
+   *  sun's. The number the ground ambient wants; see planetshine(). */
+  ground: THREE.Color;
 }
 
 export interface CelestialDeps {
@@ -108,18 +85,6 @@ export interface CelestialDeps {
   readonly up: () => THREE.Vector3;
 }
 
-/** Where a body is FROM THE PLAYER: an azimuth, an elevation, and the aim the
- *  debug `of.look` takes. Angles in degrees. */
-export interface BodyAim {
-  readonly name: string;
-  readonly yawDeg: number;
-  readonly pitchDeg: number;
-  readonly elevationDeg: number;
-  readonly angularDiamDeg: number;
-  readonly distanceM: number;
-  /** False when the body is below the local horizon; aiming still works. */
-  readonly aboveHorizon: boolean;
-}
 
 export class CelestialBodies {
   readonly group = new THREE.Group();
@@ -201,6 +166,8 @@ export class CelestialBodies {
     return {
       facts, mesh, uniforms, reliefMinM: baked.minM, reliefMaxM: baked.maxM,
       texelM: (2 * Math.PI * facts.radiusM) / W,
+      albedo: meanAlbedo(core, facts.id, seedLo, seedHi),
+      ground: new THREE.Color(0, 0, 0),
     };
   }
 
@@ -237,13 +204,24 @@ export class CelestialBodies {
       // Moon is about 1e-4, and Forge subtends three times the angle Earth does
       // from the Moon.
       const dM = Math.max(1, p.length());
-      const cosA = -p.dot(this.d.sunDir) / dM;   // -p points host -> sun side
-      const k = (2 / 3) * (this.hostRadiusM / dM) * (this.hostRadiusM / dM)
-        * 0.5 * (1 + cosA);
-      this.shine.copy(this.hostAlbedo).multiplyScalar(k);
+      // Phase angle at the HOST, looking from host to the body being drawn.
+      const cosA = -p.dot(this.d.sunDir) / dM;
+      this.shine.setRGB(
+        planetshineFraction(this.hostAlbedo.r, this.hostRadiusM, dM, cosA),
+        planetshineFraction(this.hostAlbedo.g, this.hostRadiusM, dM, cosA),
+        planetshineFraction(this.hostAlbedo.b, this.hostRadiusM, dM, cosA));
       b.uniforms.uShine.value.copy(this.shine)
         .multiplyScalar(b.uniforms.uSunIrr.value);
       b.uniforms.uShineDir.value.copy(p).multiplyScalar(-1 / dM);
+      // THE OTHER DIRECTION, and it is the one Admin asked for: what the DRAWN
+      // body puts on the GROUND the player is standing on. Same function, the
+      // drawn body's own radius and mean albedo, and the phase angle reversed,
+      // because the illuminated fraction the player sees of Forge is not the
+      // fraction Forge sees of them.
+      b.ground.setRGB(
+        planetshineFraction(b.albedo.r, b.facts.radiusM, dM, -cosA),
+        planetshineFraction(b.albedo.g, b.facts.radiusM, dM, -cosA),
+        planetshineFraction(b.albedo.b, b.facts.radiusM, dM, -cosA));
     }
   }
 
@@ -258,11 +236,25 @@ export class CelestialBodies {
 
   /** Planetshine irradiance at the drawn body, as a fraction of the sun's.
    *  Published so the GROUND can be lit by the same number the disc is. */
-  planetshine(): { r: number; g: number; b: number; hostRadiusM: number;
-    hostAlbedo: [number, number, number] } {
-    return { r: this.shine.r, g: this.shine.g, b: this.shine.b,
+  planetshine(): {
+    hostRadiusM: number; hostAlbedo: [number, number, number];
+    /** Per drawn body: what it puts on the ground under the player, and what
+     *  the host puts back on it. Both as a fraction of the sun's irradiance. */
+    onGround: { name: string; rgb: [number, number, number]; lumaFrac: number }[];
+    onBody: [number, number, number];
+  } {
+    return {
       hostRadiusM: this.hostRadiusM,
-      hostAlbedo: [this.hostAlbedo.r, this.hostAlbedo.g, this.hostAlbedo.b] };
+      hostAlbedo: [this.hostAlbedo.r, this.hostAlbedo.g, this.hostAlbedo.b],
+      onBody: [this.shine.r, this.shine.g, this.shine.b],
+      onGround: this.drawn.map((b) => ({
+        name: b.facts.name,
+        rgb: [b.ground.r, b.ground.g, b.ground.b] as [number, number, number],
+        // Rec.709 luma, so the one number a lighting lane would use is the one
+        // published rather than left to be re-derived from three.
+        lumaFrac: 0.2126 * b.ground.r + 0.7152 * b.ground.g + 0.0722 * b.ground.b,
+      })),
+    };
   }
 
   setRelief(g: number): number {
