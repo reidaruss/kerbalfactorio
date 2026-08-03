@@ -51,6 +51,25 @@ export interface TargetOrbit {
   muM3S2: number;
 }
 
+/**
+ * GP-291. A BODY DESTINATION, and it is deliberately NOT an orbit.
+ *
+ * `TargetOrbit` is nine numbers, and there is no way in that vocabulary to say
+ * "and it is a moon". Physics measured what happens when you try: armed with
+ * Cinder's elements, the solver planned a VESSEL rendezvous with the moon's
+ * centre, a two-burn match at 1561.330 m/s against a thing that is 200 km of
+ * rock. Everything ran and the answer was confidently wrong.
+ *
+ * So a body carries a `bodyId` and a capture ALTITUDE and nothing else. There
+ * is nothing here to get wrong because there is nothing to supply: physics owns
+ * the ephemeris, and `of_ap_arm_body_transfer` will not accept one.
+ */
+export interface BodyDestination {
+  readonly bodyId: number;
+  /** The orbit to capture into, above the surface. */
+  readonly captureAltitudeM: number;
+}
+
 export interface AutopilotTarget {
   /** Stable within a session. 'v:<recordId>', 'b:<name>', 'orbit'. */
   readonly id: string;
@@ -60,6 +79,18 @@ export interface AutopilotTarget {
    *  numbers beside it: the numbers are drawn from `orbit`. */
   readonly detail: string;
   readonly orbit: TargetOrbit | null;
+  /**
+   * GP-291. Set INSTEAD of `orbit` for a planetary body. The row's invariant was
+   * "an orbit or a reason it has none, never neither and never both"; there are
+   * now three shapes and EXACTLY ONE is set: `orbit` (a ring or an object),
+   * `body` (a world, whose ephemeris is physics') or `blocked` (a reason).
+   *
+   * The third arriving is the source's own argument coming true: GP-261 said a
+   * body is a SOURCE and not a special case, and it was right about the list.
+   * What it did not anticipate is that a body is a different KIND OF QUESTION,
+   * not a different row, which is why this is a field rather than a subclass.
+   */
+  readonly body: BodyDestination | null;
   /** '' when this row can be planned for. Otherwise WHY NOT, as a sentence the
    *  screen prints verbatim. A row is never both plannable and blocked. */
   readonly blocked: string;
@@ -115,7 +146,7 @@ export function registrySource(home: HomeBody, excludeId = 0): TargetSource {
             detail: rec.mode === 'parked'
               ? 'on the ground: nothing to rendezvous with'
               : 'held in flight: it is not on a conic',
-            orbit: null,
+            orbit: null, body: null,
             blocked: rec.mode === 'parked'
               ? `${rec.name} is on the ground, not in orbit`
               : `${rec.name} is in powered or atmospheric flight, so it has no `
@@ -133,6 +164,7 @@ export function registrySource(home: HomeBody, excludeId = 0): TargetSource {
             lanRad: el.lan, argpRad: el.argp, trueAnomalyRad: el.nu,
             epochS: el.epoch, muM3S2: el.mu,
           },
+          body: null,
           blocked: '',
         });
       }
@@ -157,35 +189,37 @@ export interface BodyRow {
   readonly blocked: string;
 }
 
+export interface BodyRow {
+  readonly name: string;
+  readonly detail: string;
+  readonly blocked: string;
+  /** GP-291. Set once physics can fly there. Null keeps the row a named
+   *  refusal, which is what Cinder was until R71 and R72 closed. */
+  readonly dest: BodyDestination | null;
+}
+
+/**
+ * GP-291. CINDER IS PLANNABLE. R71 (the correction deadlocking at the tick the
+ * bridge actually uses) and R72 (the SOI handoff never firing through the
+ * bridge) are both closed, and the moon flies from the client: driven through
+ * `of_fl_step_n` at 1/60, injection 862.64 m/s, a mid-course correction, the
+ * handoff 37 m inside the SOI boundary, capture, ending bound at a = 283814.9 m
+ * and e = 0.000729, an 84 km circular orbit about Cinder, with flight and plan
+ * agreeing to 9e-6 m/s.
+ *
+ * The `blocked` sentence this row carried is DELETED rather than reworded,
+ * which is the point of having written it as a reason: it named exactly what
+ * was missing, the thing arrived, and the row became a destination with no
+ * consumer changing.
+ */
+export const CINDER_CAPTURE_ALT_M = 84000;
+
 export const BODIES: readonly BodyRow[] = [
   {
     name: 'Cinder',
-    detail: 'the moon: a transfer leaves the gravity you are in',
-    // GP-279. THE REASON CHANGED, SO THE SENTENCE CHANGED. It used to say the
-    // hand-off "is not flown yet", and that is no longer true: physics has
-    // flown a full moon mission in /core, ending in a bound orbit about Cinder
-    // at 61.5 x 124.0 km with nobody at the controls. What is not true is the
-    // BRIDGE. `of_ap_arm_transfer` builds a two-burn program and inserts no
-    // mid-course correction, and nothing on the wasm face exposes the hand-off
-    // at all, so a body armed through it today would fly its injection and
-    // MISS. That distinction matters enough to spend a sentence on, because a
-    // row that refuses for a reason that has already been fixed teaches a
-    // player to distrust every other refusal on the screen.
-    //
-    // It is a REFUSAL and not an absence for GP-114's reason, and it refuses
-    // rather than flying badly for the reason the numbers make obvious: the
-    // injection's finite-burn residue is 468 km of error at the sphere of
-    // influence against a 543 km aim offset, so the error is the same size as
-    // the thing it perturbs, and an open-loop moon transfer put a planned
-    // 250 km capture orbit 14 km underground.
-    blocked: 'the moon flight itself works: physics flies injection, a '
-      + 'mid-course correction, the hand-off between the two gravities and the '
-      + 'capture, ending in a real orbit around Cinder. What is missing is the '
-      + 'bridge into this game: the arm call builds a two-burn programme with '
-      + 'no correction in it, and a moon transfer flown without one misses by '
-      + 'more than the moon is wide. So this row refuses rather than flying '
-      + 'you into the ground. Orbits around this body, and rendezvous with '
-      + 'anything in it, can be flown today.',
+    detail: 'the moon: injection, a correction, then capture into orbit',
+    blocked: '',
+    dest: { bodyId: 1, captureAltitudeM: CINDER_CAPTURE_ALT_M },
   },
 ];
 
@@ -195,7 +229,7 @@ export function bodySource(): TargetSource {
     list(): AutopilotTarget[] {
       return BODIES.map((b) => ({
         id: `b:${b.name.toLowerCase()}`, kind: 'body' as const, name: b.name,
-        detail: b.detail, orbit: null, blocked: b.blocked,
+        detail: b.detail, orbit: null, body: b.dest, blocked: b.blocked,
       }));
     },
   };
@@ -222,6 +256,7 @@ export function requestedOrbit(home: HomeBody, altitudeM: number,
       lanRad: 0, argpRad: 0, trueAnomalyRad: NaN, epochS: 0,
       muM3S2: home.muM3S2,
     },
+    body: null,
     blocked: altitudeM > 0 ? '' : 'an orbit has to be above the ground',
   };
 }

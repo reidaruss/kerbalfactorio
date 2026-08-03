@@ -284,6 +284,13 @@ export interface MapPlannerReadout {
   readonly selectedId: string;
   /** Non-empty when the selected row cannot be planned for at all. */
   readonly blockedWhy: string;
+  /** GP-291. The selected destination is a WORLD. It can be flown and it
+   *  cannot yet be priced against departure time, and those are different
+   *  facts, so the panel needs to know which row it is drawing. */
+  readonly isBody: boolean;
+  /** GP-291. The capture orbit a body arm would aim for, metres above the
+   *  surface. Drawn so the player knows what they are being taken to. */
+  readonly bodyCaptureAltM: number;
   readonly curve: readonly MapPlannerSample[];
   readonly windowS: number;
   readonly chosen: number;

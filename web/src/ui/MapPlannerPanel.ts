@@ -229,6 +229,51 @@ export function plannerBlock(p: MapPlannerReadout | null): string {
     out.push(`<div class="note">${esc(p.blockedWhy)}</div>`);
     return out.join('');
   }
+  // =========================================================================
+  // GP-291. A WORLD: FLYABLE, AND NOT YET PRICEABLE AGAINST DEPARTURE TIME.
+  //
+  // Those are two different facts and the screen says both. `of_ap_arm_body_
+  // transfer` flies the moon end to end; `of_ap_departure_curve` takes nine
+  // orbit words and a body cannot be described in them, so there is no chart
+  // for this row and there is no honest way to draw one.
+  //
+  // AND THE COST OF NOT SAYING SO IS A MEASURED NUMBER, so it is on screen
+  // rather than in a comment. Physics swept it: leaving at the wrong moment
+  // costs 1720.5216 m/s against an optimum of 1119.0795, and BOTH arm and BOTH
+  // fly. This is not a missing feature that fails safely; it is a 600 m/s
+  // mistake a player can make with no signal at all. Naming it is the whole
+  // difference between a gap and a trap, and it is the same pattern as REACH
+  // PENDING and NOT NOW BUT LATER: the screen states what it does not know.
+  // =========================================================================
+  if (p.isBody) {
+    out.push('<div class="pverdict pend">FLYABLE, BUT NOT YET TIMEABLE</div>');
+    out.push('<div class="note">The autopilot can fly this: injection, a '
+      + 'mid-course correction, the hand-off between the two gravities, and a '
+      + `capture into a ${km(p.bodyCaptureAltM)} orbit. What it cannot do yet `
+      + 'is tell you WHEN to leave. The departure chart prices a trip from an '
+      + 'orbit, and a world is not an orbit, so there is no curve for this row '
+      + 'and none is drawn rather than a flat one that would look like an '
+      + 'answer.</div>');
+    out.push('<div class="note warn">Leaving at a bad moment has been measured '
+      + 'at 1721 m/s against 1119 for the same trip at a good one, and both of '
+      + 'those arm and both of them fly. Until the window is priced, that '
+      + '600 m/s is yours to lose with no warning. Physics is taking it '
+      + 'next (R74).</div>');
+    out.push(row('you have', `${p.dvAvailableMS.toFixed(0)} m/s`));
+    out.push('<div class="nodectl">');
+    out.push('<button class="wide" data-plan-act="arm">set autopilot for '
+      + `${esc(p.rows.find((r) => r.id === p.selectedId)?.name ?? 'this world')}`
+      + '</button></div>');
+    if (p.runWaitingOn !== '') {
+      out.push('<div class="note">The autopilot EXECUTOR is not on this bridge '
+        + `yet: waiting for ${esc(p.runWaitingOn)}.</div>`);
+    }
+    out.push('<div class="note">Autopilot flies a vessel you are aboard, or '
+      + 'one you are following. A transfer to the moon is hours long: warp '
+      + 'through the coast and the burns will drop you back to 1x for '
+      + 'themselves.</div>');
+    return out.join('');
+  }
   out.push(chart(p));
   out.push(row('leave in', fromNow(p.chosenTS)));
   out.push(row('costs', Number.isFinite(p.chosenDvMS)

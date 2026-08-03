@@ -67,6 +67,57 @@ function occupied(parts: readonly DesignPart[], self: DesignPart, how: number): 
  * snap, and 30 degrees times a ring every fifth of the hull is fine enough that
  * no reachable spot is more than a few centimetres from a node.
  */
+/**
+ * GP-290. THE FACES THIS SEARCH WILL NEVER OFFER, and why the bay reads as
+ * "snapping is broken".
+ *
+ * `attachNodes` omits a face the moment something is attached to it. That is
+ * correct for what it was written to do (a joint cannot take two children) and
+ * it has a consequence nobody had measured: **a joint between two parts is not
+ * a place, so a part can never be put THERE.** Adding a part to the middle of a
+ * finished stack is not hard in this bay, it is unrepresentable: the only way
+ * is to delete back to the joint and rebuild, and `of_vs_remove` takes the
+ * whole subtree further from the root with it.
+ *
+ * From the player's chair that is exactly two sentences: "snapping is broken"
+ * (you aim at the seam between two parts and nothing happens, because there is
+ * nothing there) and "you can only build bottom-up" (every revision means
+ * demolishing back to it). GP-145 measured the DIRECTION constraint and was
+ * right about it; the direction was never the whole complaint, because the
+ * reference vehicle is always built once, from nothing, in a single pass, and
+ * a fixture that never revises cannot exhibit this.
+ *
+ * `suppressedNodes` publishes what was withheld, so the bay can say
+ * "there IS a face here and it is taken" instead of saying nothing at all, and
+ * so a probe can point at a seam and assert the count rather than infer it from
+ * a silence.
+ */
+export function suppressedNodes(parts: readonly DesignPart[],
+                                byId: (id: number) => PartRow | undefined)
+: AttachNode[] {
+  const out: AttachNode[] = [];
+  for (const p of parts) {
+    const def = byId(p.partId);
+    if (!def) continue;
+    const [x, y, z] = p.originM;
+    if (def.nodeTop && occupied(parts, p, ATTACH_TOP)) {
+      out.push({
+        parent: p.handle, kind: 'top', posM: [x, y + def.heightM, z],
+        cls: classAtTop(def), angleRad: 0, offsetM: 0, radiusM: def.diameterM * 0.5,
+      });
+    }
+    const term = def.nodeTop && !def.nodeBottom;
+    if ((def.nodeBottom || term) && occupied(parts, p, ATTACH_BOTTOM)) {
+      out.push({
+        parent: p.handle, kind: term ? 'interstage' : 'bottom', posM: [x, y, z],
+        cls: def.nodeBottom ? classAtBottom(def) : def.diameterM,
+        angleRad: 0, offsetM: 0, radiusM: def.diameterM * 0.5,
+      });
+    }
+  }
+  return out;
+}
+
 export function attachNodes(parts: readonly DesignPart[],
                             byId: (id: number) => PartRow | undefined): AttachNode[] {
   const out: AttachNode[] = [];

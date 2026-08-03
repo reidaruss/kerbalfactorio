@@ -73,8 +73,8 @@ import { scratchF64, scratchU8 } from '../sim/wasm/heap.js';
 /** Every export this file needs, so ONE list drives both detection and the
  *  sentence on screen. Same discipline as `Autopilot.ts::AP_EXPORTS`. */
 export const APX_EXPORTS = [
-  '_of_ap_arm_hold_orbit', '_of_ap_arm_transfer', '_of_ap_cancel',
-  '_of_ap_status', '_of_ap_note',
+  '_of_ap_arm_hold_orbit', '_of_ap_arm_transfer', '_of_ap_arm_body_transfer',
+  '_of_ap_cancel', '_of_ap_status', '_of_ap_note',
 ] as const;
 
 interface ApxModule {
@@ -82,6 +82,8 @@ interface ApxModule {
   _of_ap_arm_transfer(f: number, t: number, sma: number, ecc: number,
                       inc: number, lan: number, argp: number, ta: number,
                       epoch: number): number;
+  _of_ap_arm_body_transfer(f: number, t: number, bodyId: number,
+                           captureAltM: number): number;
   _of_ap_cancel(f: number): number;
   _of_ap_status(f: number): number;
   _of_ap_note(f: number): number;
@@ -236,8 +238,9 @@ export interface ArmResult {
   /** Physics' own sentence. Empty only when the solver is not on the bridge. */
   note: string;
   /** Which call was made, so a probe can assert that a phaseless target took
-   *  the hold-orbit door and a phased one took the transfer door. */
-  via: 'hold-orbit' | 'transfer' | 'none';
+   *  the hold-orbit door, a phased one took the transfer door, and a world took
+   *  the body door. */
+  via: 'hold-orbit' | 'transfer' | 'body' | 'none';
 }
 
 /**
@@ -269,6 +272,20 @@ export function armFor(M: OfCoreModule, flightHandle: number,
   const missing = apxMissing(M);
   if (missing.length > 0) {
     return { armed: false, waitingOn: missing.join(', '), note: '', via: 'none' };
+  }
+  // GP-291. A WORLD TAKES ITS OWN DOOR, and it is checked FIRST because a body
+  // has no orbit at all: falling through to the orbit branch is exactly the
+  // mistake physics measured, a two-burn rendezvous with the moon's centre at
+  // 1561.330 m/s against a thing that is 200 km of rock. The client cannot make
+  // that mistake now, because `of_ap_arm_body_transfer` takes a body id and a
+  // capture altitude and will not accept an ephemeris.
+  const b = target.body;
+  if (b !== null && flightHandle > 0) {
+    const A2 = M as unknown as ApxModule;
+    const ok2 = A2._of_ap_arm_body_transfer(flightHandle, tDepartFromNowS,
+                                            b.bodyId, b.captureAltitudeM) === 1;
+    return { armed: ok2, waitingOn: '', note: runNote(M, flightHandle),
+             via: 'body' };
   }
   const o = target.orbit;
   if (flightHandle <= 0 || o === null) {
