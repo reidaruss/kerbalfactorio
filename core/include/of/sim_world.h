@@ -369,9 +369,10 @@ class SimWorld {
 
   // Constants (root-space layout; sensible, inside Forge's SOI).
   static constexpr double kForgeStarDistanceM = 1.5e11;   // ~1 AU from the star
-  static constexpr double kCinderOrbitRadiusM = 1.2e7;    // 12,000 km Forge↔Cinder
-                                                          // (> Cinder SOI 2.4e6,
-                                                          //  ≪ Forge SOI 8.4e7)
+  // ONE AUTHORITY, in orbital.h, because this was a PRIVATE static in a header
+  // the wasm build does not include, so no export could say where the moon is
+  // and the rendering lane could not draw it (PH-161, R70).
+  static constexpr double kCinderOrbitRadiusM = orbital::kCinderOrbitRadiusM;
 
   // Owned subsystems (the four cores + the integration state).
   SimClock clock_;

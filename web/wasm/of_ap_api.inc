@@ -542,3 +542,78 @@ OF_API int of_ap_note(int f) {
                   ? pilot.status.note : pilot.program.note;
   return textOut(n);
 }
+
+// =============================================================================
+// §21.6: WHERE A BODY IS (PH-161). Unblocks the rendering lane.
+//
+// They hit a hard stop drawing Cinder in the sky and reported it precisely:
+// `sim_world.h` is not in the wasm build, `kCinderOrbitRadiusM` existed in C++
+// only, and OF 207 EXPORTS NOT ONE RETURNED A BODY POSITION. They deliberately
+// did not transcribe the constant, which is why this is a clean move of one
+// fact rather than a second copy of it: `orbital.h` now owns it and
+// `sim_world.h` aliases it.
+//
+// PHYSICS, NOT RENDERING, OWNS WHERE A BODY IS, for the same reason DW-18 says
+// physics owns mu. A renderer that computed a moon's position would be a second
+// ephemeris, and the first thing that disagreed with it would be the autopilot
+// flying to a moon that is not drawn where it is.
+//
+//   of_body_state(bodyId, simTimeS) -> 6 words, or 0 for an unknown body:
+//     [px, py, pz, vx, vy, vz] in the PARENT body's frame, metres and m/s.
+//
+// bodyId follows the existing convention: 0 is Forge, 1 is Cinder.
+//
+// FORGE RETURNS ZEROS AND THAT IS THE TRUTH, not a stub: Forge IS the parent
+// frame, so its position in its own frame is the origin. A caller that wants
+// Forge relative to the star is asking a question this build does not have an
+// answer to, because there is no star in /core.
+//
+// CINDER IS PHASED SO t = 0 IS EXACTLY THE FRAME GRAPH'S STATIC OFFSET. The
+// world does not advance Cinder yet (R70); a renderer that passes 0 gets
+// bit-for-bit what `sim_world.h` installs, and one that passes a real clock
+// gets the orbit `transfer.h` plans against. That choice is the caller's and
+// the disagreement is Admin's to route, but neither side had to invent a number
+// to make this call.
+//
+// SIZED BY THE ASKING LANE, and their figures are the acceptance: at their
+// FAR_SCALE of 1e-5 Cinder sits 120 units away and subtends about 1.9 degrees,
+// and Forge seen from Cinder about 5.7 degrees.
+// =============================================================================
+OF_API int of_body_state(int bodyId, double simTimeS) {
+  resetF64(6);
+  if (bodyId == 0) {
+    // Forge is the parent frame. Its own origin, at rest, exactly.
+    for (int i = 0; i < 6; ++i) g_f64.push_back(0.0);
+    return 6;
+  }
+  if (bodyId == 1) {
+    const of::orbital::StateVector s = of::orbital::cinderStateAt(simTimeS);
+    g_f64.push_back(s.r.x); g_f64.push_back(s.r.y); g_f64.push_back(s.r.z);
+    g_f64.push_back(s.v.x); g_f64.push_back(s.v.y); g_f64.push_back(s.v.z);
+    return 6;
+  }
+  return 0;
+}
+
+// The scalars a renderer needs alongside the position, so nobody transcribes a
+// radius either. f64 scratch, EXACTLY 4:
+//   [radiusM, muM3S2, soiRadiusM, orbitPeriodS]
+// `orbitPeriodS` is 0 for a body that does not orbit anything in this build.
+OF_API int of_body_facts(int bodyId) {
+  resetF64(4);
+  if (bodyId == 0) {
+    g_f64.push_back(of::orbital::kForgeRadiusM);
+    g_f64.push_back(of::orbital::kForgeMu);
+    g_f64.push_back(of::orbital::kForgeSoiRadius);
+    g_f64.push_back(0.0);
+    return 4;
+  }
+  if (bodyId == 1) {
+    g_f64.push_back(of::orbital::kCinderRadiusM);
+    g_f64.push_back(of::orbital::kCinderMu);
+    g_f64.push_back(of::orbital::kCinderSoiRadius);
+    g_f64.push_back(of::orbital::cinderPeriodS());
+    return 4;
+  }
+  return 0;
+}

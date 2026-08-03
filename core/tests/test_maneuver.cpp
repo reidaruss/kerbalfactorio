@@ -1924,32 +1924,40 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
 
   CHECK(pilot.status.phase == ap::Phase::Done);
 
-  // THE ONE NUMBER THAT DOES NOT AGREE, RECORDED RATHER THAN TOLERATED (R69).
-  // The program's total is 1385.2607 m/s and the vehicle spent 1153.6880: the
-  // re-planned CAPTURE is priced about 232 m/s dearer than the burn that was
-  // actually flown to produce this orbit. Every other figure in this file
-  // matches its plan to well under a metre per second, so this is a specific
-  // defect in `replanCaptureAtHandoff`'s pricing and not general slack. It is
-  // asserted as the KNOWN GAP so that it cannot quietly grow, and it is not
-  // wallpapered over with a wide tolerance on the check above.
-  CHECK(pilot.status.dvSpentTotalMS < pilot.program.totalDvMS);
-  CHECK_NEAR(pilot.program.totalDvMS - pilot.status.dvSpentTotalMS, 231.6, 5.0);
+  // R69, CLOSED. This assertion used to pin a 232 m/s GAP between the plan and
+  // the flight, deliberately, rather than widening a tolerance over it. The
+  // cause was an index: `replanCaptureAtHandoff` wrote the new capture to
+  // `burns[1]` while re-arming at `burnCount - 1`, and once a mid-course
+  // correction is INSERTED at index 1 those are different slots. So it
+  // overwrote the correction with the capture, left the STALE capture at index
+  // 2, and then flew the stale one. Everything ran, nothing threw, the vehicle
+  // captured into the wrong orbit, and the total double-counted a burn it never
+  // flew. The index is now derived from the same expression the re-arm uses.
+  //
+  // The plan and the flight now agree to 2.0e-07 m/s.
+  CHECK_NEAR(pilot.status.dvSpentTotalMS, pilot.program.totalDvMS, 1e-5);
 
   // THE ASSERTION REID NAMED: in orbit around the moon.
   const OrbitSummary o = summarize(moonSim.orbitalState(), orbital::kCinderMu,
                                    orbital::kCinderRadiusM);
   CHECK(o.bound);                                  // captured, not flying past
   CHECK(o.periapsisAltM > 0.0);                    // and not into the ground
-  // MEASURED, and this IS Reid's second acceptance test: semi-major axis
-  // 292750.2 m about Cinder, eccentricity 0.106588, apoapsis 123953.8 m and
-  // periapsis 61546.6 m ABOVE the surface, reached by an autopilot that flew an
-  // injection, a mid-course correction, an SOI handoff and a capture without a
-  // hand on the controls. It is not the 270369.7 m circle the plan asked for,
-  // and the gap is R69's, above.
-  CHECK_NEAR(o.semiMajorAxisM, 292750.2, 2000.0);
-  CHECK_NEAR(o.eccentricity, 0.106588, 0.01);
-  CHECK(o.periapsisAltM > 50.0e3);       // comfortably clear of the ground
-  CHECK(o.apoapsisAltM < 200.0e3);       // and a low orbit, not a long ellipse
+  // MEASURED, and this IS Reid's second acceptance test: a CIRCULAR orbit about
+  // Cinder at a semi-major axis of 270379.5 m against a planned 270369.7, which
+  // is 9.8 m, with an eccentricity of 0.000448. Reached by an autopilot that
+  // flew an injection, a mid-course correction, an SOI handoff and a capture
+  // with no hand on the controls at any point.
+  //
+  // Before R69 was closed this same flight ended at 292750.2 m and e 0.106588,
+  // which is what flying a stale capture burn looks like: still bound, still
+  // clear of the ground, and wrong by 22 km and two orders of magnitude of
+  // eccentricity. Both sets of numbers are kept because the difference between
+  // them is the whole value of having pinned the gap instead of widening it.
+  CHECK_NEAR(o.semiMajorAxisM, 270379.5, 200.0);
+  CHECK(o.eccentricity < 0.002);
+  CHECK_NEAR(o.semiMajorAxisM, pilot.program.captureRadiusM, 100.0);
+  CHECK(o.periapsisAltM > 65.0e3);       // comfortably clear of the ground
+  CHECK(o.apoapsisAltM < 80.0e3);        // and a LOW orbit, not a long ellipse
   // The orbit is about CINDER and nothing else: its radius is a few hundred km,
   // not the 1.2e7 m it would be if the frame had not changed.
   CHECK(o.semiMajorAxisM < moon.soiRadiusM);

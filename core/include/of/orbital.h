@@ -44,6 +44,20 @@ constexpr double kCinderSurfaceG  = 1.63;
 constexpr double kCinderMu        = kCinderSurfaceG * kCinderRadiusM * kCinderRadiusM;  // 6.52e10
 constexpr double kCinderSoiRadius = 2.4e6;  // m (spike2-physics §1.3)
 
+// WHERE CINDER IS, AND THE ONE PLACE THAT ANSWERS IT (PH-161).
+//
+// This lived as a PRIVATE static inside `sim_world.h`, which is NOT in the wasm
+// build, so of 207 exports not one could say where the moon is. The rendering
+// lane hit that as a hard stop trying to draw it in the sky, and DELIBERATELY
+// DID NOT TRANSCRIBE THE NUMBER, which is the right refusal and the reason this
+// is a clean move rather than a duplicated fact.
+//
+// It is here, in the header every domain already includes and which IS in the
+// wasm build, so `sim_world.h`, `transfer.h`, the bridge and the renderer all
+// read one number. `sim_world.h` now aliases this rather than owning it.
+constexpr double kCinderOrbitRadiusM = 1.2e7;   // Forge to Cinder, m
+
+
 constexpr double kPi    = 3.14159265358979323846;
 constexpr double kTwoPi = 2.0 * kPi;
 
@@ -63,6 +77,35 @@ struct StateVector {
   Vec3 r;  // position relative to the central body (m)
   Vec3 v;  // velocity in the central body's frame (m/s)
 };
+
+// CINDER DOES NOT ORBIT YET, AND THAT IS A REAL DISAGREEMENT rather than a
+// simplification (R70, routed to Admin).
+//
+// `sim_world.h` installs Cinder as a STATIC frame offset at
+// (kCinderOrbitRadiusM, 0, 0) and nothing advances it, which is consistent with
+// a build that has no body rotation and no sun in /core. But `transfer.h`
+// solves transfers against a Cinder that MOVES, because a rendezvous with a
+// stationary moon is not the problem anyone means.
+//
+// The two are reconciled rather than picked between: this is phased so that
+// t = 0 is EXACTLY the (1.2e7, 0, 0) the frame graph installs. A caller that
+// wants today's world asks for t = 0 and gets bit-for-bit what the frame graph
+// has; a caller that wants the physics asks for a real time. Which one becomes
+// true is a world decision, not a physics one, so it is Admin's to route.
+inline double cinderPeriodS() {
+  return kTwoPi * std::sqrt(kCinderOrbitRadiusM * kCinderOrbitRadiusM
+                            * kCinderOrbitRadiusM / kForgeMu);
+}
+
+// Cinder's state in FORGE's frame at a time. Circular, in the x/z plane.
+inline StateVector cinderStateAt(double simTimeS) {
+  const double a = (kTwoPi / cinderPeriodS()) * simTimeS;
+  const double v = std::sqrt(kForgeMu / kCinderOrbitRadiusM);
+  return StateVector{
+      Vec3{kCinderOrbitRadiusM * std::cos(a), 0.0,
+           -kCinderOrbitRadiusM * std::sin(a)},
+      Vec3{-v * std::sin(a), 0.0, -v * std::cos(a)}};
+}
 
 // --- Classical Keplerian element set (spike2-physics §1.1, FOrbitalElements) --
 // a is negative for hyperbolic orbits (e > 1). Anomaly is stored as the mean

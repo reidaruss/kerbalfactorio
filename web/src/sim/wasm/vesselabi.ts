@@ -38,6 +38,10 @@ export const MASS_PROPS_WORDS = 15;
  *  name what it is waiting for. See of_ap_api.inc section 21.5 for the full
  *  field list, which is the specification. */
 export const AP_STATUS_WORDS = 18;
+/** PH-161. `[px,py,pz,vx,vy,vz]` in the PARENT body's frame, metres and m/s. */
+export const BODY_STATE_WORDS = 6;
+/** PH-161. `[radiusM, muM3S2, soiRadiusM, orbitPeriodS]`. */
+export const BODY_FACTS_WORDS = 4;
 /** ABI 20: nine, not eight. The ninth is `radialOffsetM` (0 for a part that is
  *  not radially attached), appended so every existing index is unmoved. Shared
  *  by `_of_vs_transforms` and `_of_fl_transforms`, which write the same row. */
@@ -173,6 +177,29 @@ export interface VesselAbi {
   /** u8 scratch, UTF-8, NOT null terminated; returns the byte count. Why it
    *  refused, or what it is doing. Same convention as `_of_vs_part_name`. */
   _of_ap_note(f: number): number;
+
+  // --- section 21.6: WHERE A BODY IS (PH-161) --------------------------------
+  // PHYSICS OWNS THIS, for the same reason DW-18 says physics owns mu. A
+  // renderer that computed a moon's position would be a second ephemeris, and
+  // the first thing to disagree with it would be an autopilot flying to a moon
+  // that is not drawn where it is.
+  //
+  // `kCinderOrbitRadiusM` used to be a private static in `sim_world.h`, which
+  // is not in the wasm build, so of 207 exports not one could say where the
+  // moon was. It now lives in `orbital.h` and `sim_world.h` aliases it.
+
+  /** f64 scratch, BODY_STATE_WORDS, or 0 for an unknown body. bodyId 0 is
+   *  Forge, 1 is Cinder.
+   *  Forge returns zeros and that is the TRUTH rather than a stub: Forge is the
+   *  parent frame, so its position in its own frame is the origin.
+   *  Cinder is phased so `simTimeS` 0 is EXACTLY the (1.2e7, 0, 0) the frame
+   *  graph installs, verified `=== 1.2e7`. Pass 0 for today's world, which does
+   *  not advance the moon; pass a real clock for the orbit `transfer.h` plans
+   *  against. That disagreement is R70 and it is Admin's to route. */
+  _of_body_state(bodyId: number, simTimeS: number): number;
+  /** f64 scratch, BODY_FACTS_WORDS, or 0. `orbitPeriodS` is 0 for a body that
+   *  orbits nothing in this build. Measured: Cinder 138984.4 s. */
+  _of_body_facts(bodyId: number): number;
   _of_vs_total_dv_vacuum(v: number): number;
   _of_vs_remaining_dv_vacuum(v: number): number;
   /** f64 scratch, MASS_PROPS_WORDS:

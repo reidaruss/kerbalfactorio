@@ -667,14 +667,24 @@ inline bool replanCaptureAtHandoff(Autopilot& pilot,
   const transfer::CaptureBurn cap = transfer::planCapture(x, body);
   if (!cap.valid) return false;
 
-  p.burns[1].nodeTimeS = cap.timeS;
-  p.burns[1].deltaV = cap.deltaV;
-  p.burns[1].deltaVMS = cap.deltaVMS;
-  p.burns[1].frame = BurnFrame::Target;
+  // R69. THE CAPTURE IS THE LAST BURN, NOT BURN 1, and hardcoding 1 cost
+  // 232 m/s and an orbit nobody asked for. A mid-course correction gets
+  // INSERTED at index 1 (see ), which pushes the capture to 2, so
+  // writing to 1 overwrote the CORRECTION with the capture and left the stale
+  // capture at 2 -- and  below then flew that stale
+  // one. Everything ran, nothing threw, and the vehicle captured into the
+  // wrong orbit while the programme total double-counted a burn it never flew.
+  // The index is derived from the same expression the re-arm uses, so the two
+  // cannot disagree again.
+  const int last = p.burnCount - 1;
+  p.burns[last].nodeTimeS = cap.timeS;
+  p.burns[last].deltaV = cap.deltaV;
+  p.burns[last].deltaVMS = cap.deltaVMS;
+  p.burns[last].frame = BurnFrame::Target;
   p.captureRadiusM = cap.circularRadiusM;
   const maneuver::BurnEstimate e = maneuver::estimateBurn(craft, cap.deltaVMS);
-  p.burns[1].durationS = e.durationS;
-  p.burns[1].leadS = 0.5 * e.durationS;
+  p.burns[last].durationS = e.durationS;
+  p.burns[last].leadS = 0.5 * e.durationS;
   // Sum EVERY burn, not the first plus the capture: a mid-course correction may
   // have been inserted since the program was built, and dropping it here would
   // make the executor and its own total disagree by exactly that burn.
@@ -682,7 +692,7 @@ inline bool replanCaptureAtHandoff(Autopilot& pilot,
   for (int i = 0; i < p.burnCount; ++i) p.totalDvMS += p.burns[i].deltaVMS;
 
   // Re-arm at the SECOND burn: the injection is flown and must not be repeated.
-  pilot.armFrom(p, p.burnCount - 1);
+  pilot.armFrom(p, last);
   return true;
 }
 
