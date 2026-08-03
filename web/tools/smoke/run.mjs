@@ -152,6 +152,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // airless night are separable. Registered in the same commit that introduces
   // it, per this list's own rule.
   'starlight', 'starlightamp', 'terrainfloor',
+  // RN-953. `tile=suitplate:0.12` overrides a surface family's tile_m, so the
+  // tile-size question can be swept in the running client instead of by
+  // regenerating eight PNGs. Comma-separated for several families at once.
+  // Registered in the same commit that introduces it, per this list's rule.
+  'tile',
   // RN-181, the foliage albedo cards. `leaftex=0` boots with the card maps
   // and their alpha test off: the pre-texture flora exactly.
   'leaftex',

@@ -148,6 +148,60 @@ const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));
 
 const DIR = 'assets/textures/';
 
+/**
+ * RN-953. Override a family's `tile_m` from the URL, e.g.
+ * `?tile=suitplate:0.12` or `?tile=suitplate:0.12,stone:0.5`.
+ *
+ * WHY THIS IS A SWEEP AND NOT A NEW DEFAULT. `tile_m` is authored in
+ * texgen.py's `FAMILY_TILE_M` and baked into the shipped manifest, and that is
+ * the right home for it: the tile size is an argument about the generator's own
+ * feature spectrum. But the manifest's `uv_space: metres` contract exists
+ * precisely so the consumer divides, which means the client can ASK the
+ * question without a regeneration, and asking it costs one multiply instead of
+ * eight PNGs and a full re-bake of every other family.
+ *
+ * THE QUESTION IS REAL AND THE PREMISE UNDER IT WAS MEASURED FALSE.
+ * `suitplate`'s generator states its consumers are "3 to 6 cm parts" and sizes
+ * the tile at 0.4 m so that "a tile eight times the largest of them cannot
+ * repeat on any one part". Measured off the shipped bytes, by connected
+ * component through the index lists of all four .glb that carry `OF_Plate`:
+ * the literal 3 to 6 cm band contains ZERO components; the small cluster is 32
+ * finger plates at 24.7 to 28.4 mm totalling 0.001 per cent of the material's
+ * area; and the parts a player actually looks at are 146 to 455 mm, which at a
+ * 0.4 m tile carry 0.4 to 1.1 repeats. One repeat means the tile's own
+ * lowest-frequency content is at helmet scale, which is the "spattered
+ * concrete" read, and it is the opposite failure to the one the generator was
+ * defending against.
+ *
+ * THE BLAST RADIUS IS THE PLAYER KIT AND NOTHING ELSE, and that is a fact
+ * about the CLIENT rather than about the bytes. `space_station.glb` carries
+ * 99.7 per cent of all `OF_Plate` surface area on 3.3 to 9.2 m hull panels,
+ * which looks like a shared-family blocker until you read `MachineBatch.ts`:
+ * it calls `attachSurface(m, 'panel', ...)` unconditionally, so a machine's
+ * authored role NEVER reaches `familyForRole` and the station's plate draws on
+ * `panel` at 1.5 m. Measuring the bytes alone would have refused a safe change
+ * for a reason that does not exist.
+ */
+const TILE_OVERRIDE: Readonly<Record<string, number>> = ((): Record<string, number> => {
+  const out: Record<string, number> = {};
+  const raw = new URLSearchParams(self.location.search).get('tile');
+  if (raw === null) return out;
+  for (const part of raw.split(',')) {
+    const [name, v] = part.split(':');
+    const m = Number(v);
+    // A malformed entry is a LOUD failure, not a silently ignored one: this is
+    // a measurement flag, and a sweep that quietly ran at the default is the
+    // vacuous-control shape run.mjs's own whitelist exists to stop.
+    if (name === undefined || !Number.isFinite(m) || m <= 0) {
+      console.error(`[of] surfaces: ?tile= entry '${part}' is not '<family>:<metres>'`
+        + ' with a positive number. Nothing was overridden.');
+      continue;
+    }
+    out[name] = m;
+  }
+  return out;
+})();
+
 interface ManifestMap { file: string; bytes: number; sha256: string }
 interface ManifestFamily {
   /** The surface families carry normal+orm; the albedo card families (leaf,
@@ -401,22 +455,30 @@ const ready = (async (): Promise<void> => {
     // was.
     const per = Math.round(f.size_px * f.size_px * 4 * (4 / 3));
     const surf: Surface = { sizePx: f.size_px, vramBytes: 0 };
+    // RN-953. ONE resolved tile per family, used by every map this family
+    // declares. Resolving it once rather than at each call site is the whole
+    // safety of the override: an albedo left on the manifest value while the
+    // normal moved would put the paint and the relief on different scales,
+    // which reads as a blurred surface rather than as a wrong tile and is the
+    // hardest kind of mistake to see in a picture.
+    const tileM = f.tile_m === undefined ? undefined
+      : (TILE_OVERRIDE[name] ?? f.tile_m);
     if (f.albedo !== undefined) {
-      surf.albedo = f.uv_space === 'unit' || f.tile_m === undefined
+      surf.albedo = f.uv_space === 'unit' || tileM === undefined
         ? await makeAlbedoTexture(DIR + f.albedo.file, f.wrap)
-        : await makeTilingAlbedo(DIR + f.albedo.file, f.tile_m);
+        : await makeTilingAlbedo(DIR + f.albedo.file, tileM);
       surf.alphaTest = f.alpha_test;
       surf.albedoMean = f.albedo_mean;
       surf.vramBytes += per;
     }
-    if (f.normal !== undefined && f.orm !== undefined && f.tile_m !== undefined) {
+    if (f.normal !== undefined && f.orm !== undefined && tileM !== undefined) {
       const [normal, orm] = await Promise.all([
-        makeTexture(DIR + f.normal.file, f.tile_m),
-        makeTexture(DIR + f.orm.file, f.tile_m),
+        makeTexture(DIR + f.normal.file, tileM),
+        makeTexture(DIR + f.orm.file, tileM),
       ]);
       surf.normal = normal;
       surf.orm = orm;
-      surf.tileM = f.tile_m;
+      surf.tileM = tileM;
       surf.vramBytes += per * 2;
     }
     // A family declaring NEITHER shape is tolerated and skipped, which is the
@@ -529,6 +591,11 @@ export interface SurfaceReport {
   families: {
     name: string; tileM: number | null; sizePx: number; repeat: number | null;
     albedo: boolean; alphaTest: number | null; albedoMean: number | null;
+    /** RN-953. The manifest's own tile, and whether `?tile=` displaced it. A
+     *  sweep whose flag was dropped reports the default and reads as a result,
+     *  which is RN-698's failure; this makes the ask and the outcome separate
+     *  fields so a probe can assert the sweep actually took. */
+    manifestTileM: number | null; tileOverridden: boolean;
   }[];
   materials: {
     label: string; family: Family; hasNormal: boolean; hasRough: boolean;
@@ -563,6 +630,8 @@ export function surfaceReport(): SurfaceReport {
       repeat: s.normal?.repeat.x ?? null,
       albedo: s.albedo !== undefined, alphaTest: s.alphaTest ?? null,
       albedoMean: s.albedoMean ?? null,
+      manifestTileM: manifest?.families[name]?.tile_m ?? null,
+      tileOverridden: TILE_OVERRIDE[name] !== undefined,
     });
   }
   const roles: Record<string, Family> = {};
