@@ -991,3 +991,59 @@ the fix was measured on both sides: 0 burns at 100 km, 2 burns and 207.31 m/s at
 Related and distinct from **a fixture that never performs the action cannot
 exhibit a defect in the action**: that one is about the fixture not doing enough,
 this one is about the fixture being unable to do nothing.
+
+### A metric that is flat in its own independent variable is not measuring that variable
+
+A lane swept a rotation strength and watched two numbers. Local anisotropy fell
+monotonically, as expected. **The between-window orientation spread saturated at
+37 to 38 degrees from the very smallest swing onward and never moved again.**
+
+They read that as "0.4 is the efficient point". **The correct reading is that the
+spread was not responding to the thing being swept at all**, and a quantity that
+does not respond to its own independent variable is not measuring it.
+
+**Only looking at the picture caught it.** The image was a field of concentric
+fingerprint whorls, visibly far worse than the artefact it was meant to fix.
+
+**When a sweep produces a number that is flat across the range, do not read off an
+optimum. Ask what that number is actually a function of.** Saturation from the
+first step is the signature.
+
+### A second side removes one class of false pass and guarantees nothing else
+
+The same instrument was **deliberately built two-sided** to dodge a trap already
+recorded here: a single whole-frame anisotropy number would fall both when the
+artefact was fixed and when the signal was destroyed. So the claim became **each
+local window is still a corduroy, AND the windows disagree with each other**, and
+it was validated first on synthetics through the identical code (0.9894 for a pure
+corduroy with orientation exact, 0.0462 for white noise, 0.1743 for isotropic
+blobs).
+
+**It passed the fingerprint at every setting.** Local coherence went *up*, 0.5214
+to 0.7147. Spread went up, 16.97 to 37.76 degrees. **Both halves were true
+statements about the image, and the image was wrong.**
+
+**Concentric contours are locally near-parallel and turn with position, so a
+fingerprint satisfies both sides by construction.** The missing property was
+**local wavelength**, and nothing in the claim mentioned frequency.
+
+**The rule: adding a side removes one class of false pass. It says nothing about
+the classes you have not enumerated.** Two-sided is better than one-sided and is
+not a proof. **Name what a passing image could still be** before trusting a green,
+and write that list in the instrument's own header so the next reader cannot
+trust it naively.
+
+### A gate that constrains the thing it measures has become a design
+
+`_relief_ripple` caps how far it warps its wave vector, specifically so the vector
+**never flips sign**, because a sign flip would break the skew asymmetry that the
+generator's own selftest measures.
+
+**The test is not wrong and the cap is not careless.** Together they are the
+reason the ground ripple has **no orientation freedom anywhere on the planet**,
+which is the artefact Reid has complained about repeatedly.
+
+**A gate is supposed to observe the work. When the work is shaped to keep the gate
+green, the gate has quietly become a specification** and nobody decided that it
+should be one. The tell is a constraint in the generator whose stated purpose is
+to protect a measurement rather than to serve the output.
