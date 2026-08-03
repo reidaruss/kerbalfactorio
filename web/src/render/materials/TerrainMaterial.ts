@@ -15,6 +15,11 @@ import type { AtmosphereUniforms } from './Atmosphere.glsl.js';
 import { biomeColorArray, biomeMatWeights, biomeReliefWeights } from './BiomePalette.js';
 import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
+// RN-843. The shipped support for the relief slope, now a uniform's DEFAULT
+// rather than a `#define`. Imported from where it is derived and documented,
+// so there is still one authority for the number and the sweep cannot drift
+// from the value the sweep is measured against.
+import { RELIEF_GRAD_UV } from './TerrainArt.glsl.js';
 import { FAR_SCALE } from '../Scenes.js';
 
 // ?side= overrides this for a one-off diagnosis; the committed default is what
@@ -198,6 +203,37 @@ function reliefGradFromQuery(): number {
   return new URLSearchParams(self.location.search).get('reliefgrad') === '0' ? 0 : 1;
 }
 
+/**
+ * RN-843. `?reliefgraduv=` overrides the support the relief slope is
+ * differenced over, in TILE UNITS (one unit is one repeat of
+ * `of_ground_relief`). A missing parameter is MISSING and takes the boot
+ * default, never `Number(null) === 0`, which would ship the term with a zero
+ * support and difference a texel against itself (NUMBERS.md, boot defaults).
+ */
+function reliefGradUvFromQuery(): number {
+  const v = new URLSearchParams(self.location.search).get('reliefgraduv');
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : RELIEF_GRAD_UV;
+}
+
+/**
+ * RN-842. `?horizonocc=` overrides the measured occlusion, and `?horizonocc=0`
+ * is the EXACT negative control: at zero the shader's two ambient weights are
+ * algebraically the pre-RN-842 expressions, so the control restores the old
+ * behaviour rather than approximating it.
+ *
+ * Returns null when the parameter is ABSENT, which is what lets Boot tell "the
+ * caller asked for zero" apart from "nobody asked". Parsing a missing flag as
+ * `Number(null) === 0` is how a feature ships off with its own control
+ * permanently engaged (NUMBERS.md, boot defaults).
+ */
+function horizonOccFromQuery(): number | null {
+  const v = new URLSearchParams(self.location.search).get('horizonocc');
+  if (v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(0.45, Math.max(0, n)) : null;
+}
+
 function specAmpFromQuery(): THREE.Vector2 {
   const p = new URLSearchParams(self.location.search);
   const all = p.get('terrainspec') === '0' ? 0 : 1;
@@ -342,6 +378,24 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // reason artAmp is: a control that reached the near material and not the far
   // one would make the negative control a statement about one scene only.
   const reliefGrad: THREE.IUniform<number> = { value: reliefGradFromQuery() };
+  // RN-843. The relief slope's SUPPORT, promoted from a `#define` to a shared
+  // uniform. It was a compile-time constant because it was believed to be
+  // derived and settled; it is neither (see RELIEF_GRAD_UV's note), and the
+  // measurement that showed so needed to sweep it inside ONE page, one camera
+  // and one streamed chunk set, which a define cannot do.
+  const reliefGradUv: THREE.IUniform<number> = { value: reliefGradUvFromQuery() };
+  // RN-842. The body's own horizon occlusion. Written by Boot from
+  // `measureHorizonOcclusion`; the boot value here is the flat-plane model, so
+  // a material built before the measurement lands behaves exactly as it did
+  // before RN-842 rather than guessing.
+  const horizonOcc: THREE.IUniform<number> = { value: horizonOccFromQuery() ?? 0 };
+  // RN-841. Shared by reference into both materials for the one-authority
+  // reason artAmp is. A hard 0 or 1 and not an amplitude, on reliefGrad's
+  // precedent: what 0 restores is a defect, and an intermediate value would be
+  // a blend of two derivations rather than either of them.
+  const bounceLit: THREE.IUniform<number> = {
+    value: new URLSearchParams(self.location.search).get('bouncelit') === '0' ? 0 : 1,
+  };
   const wetBand = wetBandFromQuery(o.water);
   const wetDir = new THREE.Vector3(
     o.water?.dirX ?? 0, o.water?.dirY ?? 1, o.water?.dirZ ?? 0);
@@ -384,6 +438,9 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uWetDir: { value: wetDir },
       uSpecAmp: { value: specAmp },
       uReliefGrad: reliefGrad,
+      uReliefGradUv: reliefGradUv,
+      uHorizonOcc: horizonOcc,
+      uBounceLit: bounceLit,
     });
     const m = new THREE.ShaderMaterial({
       uniforms,
@@ -444,6 +501,41 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
     reliefGradDefault(): { present: boolean; value: number } {
       const p = new URLSearchParams(self.location.search);
       return { present: p.get('reliefgrad') !== null, value: reliefGradFromQuery() };
+    },
+    /** RN-843. The relief slope's SUPPORT in tile units, at runtime, because
+     *  the shipped value is the defect and finding the right one needs a sweep
+     *  inside one page rather than one build per rung. */
+    setReliefGradUv(v: number): number {
+      if (Number.isFinite(v) && v > 0) reliefGradUv.value = v;
+      return reliefGradUv.value;
+    },
+    getReliefGradUv(): number { return reliefGradUv.value; },
+    /** RN-843. The shipped default and whether the URL moved it, so a sweep can
+     *  assert its own fixture before reading any rung (GP-142). */
+    reliefGradUvDefault(): { present: boolean; value: number; shipped: number } {
+      const p = new URLSearchParams(self.location.search);
+      return {
+        present: p.get('reliefgraduv') !== null,
+        value: reliefGradUvFromQuery(),
+        shipped: RELIEF_GRAD_UV,
+      };
+    },
+    /** RN-841. 1 is the unshadowed bounce source, 0 the pre-RN-841 expression. */
+    setBounceLit(v: number): number { bounceLit.value = v > 0.5 ? 1 : 0; return bounceLit.value; },
+    getBounceLit(): number { return bounceLit.value; },
+    bounceLitDefault(): { present: boolean; value: number } {
+      const p = new URLSearchParams(self.location.search);
+      return { present: p.get('bouncelit') !== null, value: p.get('bouncelit') === '0' ? 0 : 1 };
+    },
+    /** RN-842. The body's horizon occlusion. 0 is the exact flat-plane model. */
+    setHorizonOcc(v: number): number {
+      horizonOcc.value = Math.min(0.45, Math.max(0, v));
+      return horizonOcc.value;
+    },
+    getHorizonOcc(): number { return horizonOcc.value; },
+    horizonOccDefault(): { present: boolean; value: number | null } {
+      const p = new URLSearchParams(self.location.search);
+      return { present: p.get('horizonocc') !== null, value: horizonOccFromQuery() };
     },
     // RN-731, same handle for the same reason as setRelief: the specular is a
     // terrain art term, and a probe toggling it wants RN-30's settled-frame

@@ -117,6 +117,48 @@ export function forgeAtmosphere(planetRadiusM: number): AtmosphereParams {
   };
 }
 
+/**
+ * RN-840. A VACUUM, as an AtmosphereParams. Cinder and every future airless
+ * body take this instead of Forge's profile.
+ *
+ * A real record and not a null, because the shader's uniform block is shared by
+ * reference with two terrain materials and the sky box (DW-22), and a null would
+ * force every consumer to grow a branch for a case better expressed as zeroed
+ * coefficients. Every scattering term is EXACTLY zero and so is the thickness,
+ * which is what `airDensityAt` below keys on. `sunIntensity` is NOT zeroed: it
+ * is the sun disc's radiance and the star field's reference level, and the sun
+ * is still there. A vacuum removes the scattering, not the star.
+ */
+export function airlessAtmosphere(planetRadiusM: number): AtmosphereParams {
+  return {
+    planetRadiusM,
+    thicknessM: 0,
+    // Never divided by while thicknessM is 0 (every consumer gates on the
+    // thickness first), but 1 rather than 0 so that a future caller that
+    // forgets the gate gets exp(-h) and not a NaN.
+    rayleighScaleM: 1,
+    mieScaleM: 1,
+    betaR: new THREE.Vector3(0, 0, 0),
+    betaM: 0,
+    mieG: 0,
+    sunIntensity: 15.0,
+    aerosolSigma: 0,
+    aerosolScaleM: 1,
+    aerosolMs: 0,
+    aerosolTint: new THREE.Vector3(0, 0, 0),
+    aerosolG: 0,
+  };
+}
+
+/**
+ * RN-840. THE selector, so `Boot.ts` never names a body. `hasAtmosphere` is
+ * `PlanetBody.hasAtmosphere`, which is /core's own `AtmosphereProfile::present()`
+ * read back through `_of_atmo_*`. Nothing here knows what a Cinder is.
+ */
+export function atmosphereForBody(planetRadiusM: number, hasAtmosphere: boolean): AtmosphereParams {
+  return hasAtmosphere ? forgeAtmosphere(planetRadiusM) : airlessAtmosphere(planetRadiusM);
+}
+
 export interface AtmosphereUniforms {
   uSunDir: { value: THREE.Vector3 };
   uSunColor: { value: THREE.Color };
@@ -332,6 +374,16 @@ export const ATMOSPHERE_PARS = /* glsl */`
 
 /** Air density fraction at an altitude, for CPU-side masking heuristics. */
 export function airDensityAt(p: AtmosphereParams, altM: number): number {
+  // RN-840. A VACUUM HAS NO DENSITY TO DECAY. Without this line the exponential
+  // returns exactly 1 at the datum whatever the coefficients are, because a
+  // scale height is not a presence test, and `daylightFactor` below therefore
+  // washed the stars out of Cinder's noon sky with air that is not there.
+  //
+  // The gate is the THICKNESS and not the scattering coefficients, because the
+  // thickness is the term /core's `AtmosphereProfile::present()` is written in
+  // (`topM > 0`), so the two authorities agree by construction rather than by
+  // both happening to be zero.
+  if (p.thicknessM <= 0) return 0;
   return Math.exp(-Math.max(0, altM) / p.rayleighScaleM);
 }
 

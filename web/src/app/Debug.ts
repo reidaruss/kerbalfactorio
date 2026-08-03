@@ -11,6 +11,10 @@ import type { FrameStats } from '../render/debug/StatsProbe.js';
 import type { BootMetrics } from './Services.js';
 import { BINDINGS } from '../player/Bindings.js';
 import { dayPin, dayReport } from '../sim/DayCycle.js';
+// RN-844. The VALUE, not the type: `setSunElev` calls the static solver, and
+// calling the same one `Boot.ts` uses for `?sundot=` is what stops the two
+// paths drifting into two answers.
+import { SkyPass } from '../render/SkyPass.js';
 import { meshVertsNear } from '../world/TerrainDebug.js';
 import type { TapeEntry } from '../player/Input.js';
 import type { ObserverState } from '../player/ViewSource.js';
@@ -63,7 +67,10 @@ export interface OfDebugApi {
     pool: { inUse: number; free: number; exhausted: number }; stitch: StitchReport;
     shadow: unknown; ibl: unknown; lamp: unknown; props: unknown; avatar: unknown;
     assets: unknown;
-    sky: { sunT: number; daylight: number; elevationDot: number; day: unknown };
+    sky: {
+      sunT: number; daylight: number; elevationDot: number; day: unknown;
+      air: unknown;
+    };
     caps: unknown;
   };
   world(): WorldState;
@@ -108,6 +115,36 @@ export interface OfDebugApi {
   /** Absolute aim, in degrees. Framing a capture should not need an input tape. */
   look(yawDeg: number, pitchDeg: number): void;
   setTime(t: number): void;
+  /**
+   * RN-844. Put the sun at a given elevation ABOVE THE OBSERVER'S CURRENT
+   * HORIZON, and return what was actually achieved.
+   *
+   * `setTime` takes a phase and `?sundot=` takes an elevation, and the gap
+   * between them is a trap that has now cost two lanes a wrong conclusion.
+   * `elevationDot` is `dot(sunDir, localUp)`, so the SAME phase is a different
+   * elevation at every site: `?sundot=` is solved once at boot against the
+   * SPAWN's up, and a probe that teleports keeps the phase and loses the
+   * elevation. Measured on Cinder: asks of 0.28 / 0.55 / 0.92 are delivered at
+   * the spawn to three digits (0.286 / 0.551 / 0.920) and at the crater-floor
+   * site land at -0.778 / -0.815 / -0.706. All three are NIGHT and the whole
+   * 0.64 of requested range has collapsed into 0.109, which is why two very
+   * different `?sundot=` values produced frames a lane read as identical and
+   * reported the flag as dead. The flag was not dead. It was answering about
+   * somewhere else.
+   *
+   * This solves against `observer.up` AT THE MOMENT OF THE CALL, so it is
+   * correct after a teleport by construction. It returns `{ wantDot, gotDot,
+   * err, t }` rather than void, because a target above the site's maximum sun
+   * is unreachable and silently landing at the nearest achievable elevation is
+   * the same failure one layer down: the caller must be able to see the miss.
+   *
+   * RISING SIDE ONLY, so one elevation names ONE time of day (lookdev.js's
+   * rule). Pinning also means `of.run` will drift it, so re-pin before a
+   * capture (RN-13).
+   */
+  setSunElev(elevationDot: number): {
+    wantDot: number; gotDot: number; err: number; t: number;
+  };
   /**
    * The input tape, and it speaks ACTIONS as well as key codes.
    *
@@ -272,6 +309,28 @@ export function installDebugApi(
           // `elevationDot` above is rounded; a probe measuring the sweep rate
           // reads this.
           day: dayReport(),
+          // RN-840. THE TERMS, NEVER THE VERDICT (RN-823's rule).
+          //
+          // "The sky is black" is equally consistent with a correct vacuum, a
+          // sky box that failed to build, `?atmos=0`, a `?clear=` census run and
+          // a night, and those five want opposite fixes. So publish what each of
+          // them would set differently: whether the box EXISTS, whether the
+          // INTEGRAL runs, and the two /core numbers the choice was made from.
+          // A probe can then distinguish "airless, correctly" from "sky
+          // missing", which a single boolean cannot.
+          // RN-844. WHERE THE BOOT SUN WAS SOLVED, so a probe can see that the
+          // `?sundot=` it passed was aimed at a site it has since left. Without
+          // this the only observable is `elevationDot`, which is a correct
+          // reading of the wrong question and looks exactly like a working flag.
+          sunSolve: s.sky.solvedFor,
+          air: {
+            box: s.sky.hasSkyBox,
+            atmosOn: s.sky.atmos.uAtmosOn.value,
+            thicknessM: s.sky.params.thicknessM,
+            coreSeaLevelDensity: s.body.seaLevelDensityKgM3,
+            coreSpaceAltitudeM: s.body.atmosphereTopM,
+            hasAtmosphere: s.body.hasAtmosphere,
+          },
         },
       };
     },
@@ -373,6 +432,28 @@ export function installDebugApi(
     // PH-86: PINS the day clock as well as the sky, or the next fixed tick
     // would overwrite the probe's sun with the running cycle's.
     setTime(t) { dayPin(t); s.sky.setSunT(t); },
+
+    // RN-844. Reuses `SkyPass.solveSunT`, the SAME solver `Boot.ts` runs for
+    // `?sundot=`, so this cannot drift from the boot path: the only difference
+    // is which `up` it is handed, and that difference is the entire bug.
+    setSunElev(elevationDot) {
+      const up = s.observer.up;
+      const t = SkyPass.solveSunT(up, elevationDot);
+      dayPin(t);
+      s.sky.setSunT(t);
+      const gotDot = s.sky.elevation(up);
+      return {
+        wantDot: elevationDot,
+        gotDot: Math.round(gotDot * 1e4) / 1e4,
+        // THE MISS, published rather than swallowed. `solveSunT` scans 720
+        // phases and returns the closest, so an unreachable target (a polar
+        // site in winter asking for a high sun) returns the site's maximum
+        // with no complaint. A caller that asserts on `err` sees that; a
+        // caller that trusts a void return does not.
+        err: Math.round(Math.abs(gotDot - elevationDot) * 1e4) / 1e4,
+        t,
+      };
+    },
 
     input: {
       tape: (t) => s.input.playTape(t),

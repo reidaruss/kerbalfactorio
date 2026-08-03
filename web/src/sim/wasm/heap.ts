@@ -36,6 +36,20 @@ export interface OfCoreModule extends OfCoreProgressApi {
   _of_gravity_accel(body: number, rM: number): number;
   _of_body_kind(body: number): number;
 
+  // --- RN-840: THE BODY'S AIR, from /core, so the renderer cannot disagree
+  //     with the flight model about whether a world has an atmosphere.
+  //
+  //     These are PURE functions of the bodyId (`atmo::atmosphereForBody`,
+  //     core/include/of/atmosphere.h), not of the body handle, which is why
+  //     they take a number rather than a pointer. They are already exported
+  //     and already shipping: `app/MapBoot.ts` draws the map's air line from
+  //     `_of_atmo_space_altitude`. Declared here so the RENDER path can read
+  //     the same authority instead of assuming Forge everywhere.
+  /** Sea-level density kg/m^3. EXACTLY 0 on an airless body. */
+  _of_atmo_density(bodyId: number, altM: number): number;
+  /** The ceiling above which density is exactly 0. Also 0 when there is no air. */
+  _of_atmo_space_altitude(bodyId: number): number;
+
   _of_base_height(body: number, dx: number, dy: number, dz: number): number;
   /** WG-22. Metres of PLACED ground stacked on the base under this dir. */
   _of_derived_raising(body: number, edits: number, dx: number, dy: number,

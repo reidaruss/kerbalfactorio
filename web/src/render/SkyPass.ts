@@ -17,7 +17,24 @@ export interface SkyOptions {
   readonly seedLo: number;
   readonly sunT: number;
   readonly tier: QualityTier;
+  /**
+   * Whether the SKY BOX EXISTS AT ALL. `?atmos=0` and `?clear=` set this false,
+   * which is the pre-RN-840 meaning of the flag and is left exactly as it was:
+   * no box, no ground half, nothing painted, so a crack probe can count void
+   * pixels. It is NOT the airless case.
+   */
   readonly atmosphere: boolean;
+  /**
+   * RN-840. Whether the SCATTERING INTEGRAL RUNS, i.e. `uAtmosOn`. False on an
+   * airless body, where the box still exists and still paints (black above the
+   * horizon, and the RN-64 ground half below it, which is the whole of the
+   * airless ambient). Splitting this from `atmosphere` is the entire fix: the
+   * two were one boolean, so the only way to stop the aerial perspective
+   * veiling Cinder's craters was to delete the object that supplies the props
+   * their bounce, and the moon went from a white fog bank to a black
+   * lithograph without ever passing through correct.
+   */
+  readonly scattering: boolean;
   readonly stars: boolean;
   readonly pixelRatio: number;
   /** `?iblground=0` builds no ground shell at all, which is RN-64's control. */
@@ -35,6 +52,20 @@ export class SkyPass {
   sunT = 0;
   /** 0 in space or at night, 1 in lit air. Drives the star fade. */
   daylight = 0;
+  /**
+   * RN-844. WHAT THE BOOT SUN SOLVE WAS AIMED AT, and where.
+   *
+   * `?sundot=` is an elevation and `sunT` is a phase, and the map between them
+   * is the observer's local up. Boot solves once, at the spawn. Every probe
+   * that teleports afterwards keeps the phase and silently loses the elevation:
+   * on Cinder, asks of 0.28 / 0.55 / 0.92 delivered 0.286 / 0.551 / 0.920 at the
+   * spawn and -0.778 / -0.815 / -0.706 at the crater floor, i.e. three nights
+   * inside a 0.109 band. Publishing the site the solve was for is what lets a
+   * probe notice that; `elevationDot` alone cannot, because it is a correct
+   * answer to a question the caller stopped asking. Null under `?t=`, which is
+   * an absolute phase and was never solved for anywhere.
+   */
+  solvedFor: { wantDot: number; latDeg: number; lonDeg: number } | null = null;
   private readonly sky: SkyAtmosphere | null;
   /** RN-64. False under `?iblground=0` or `?atmos=0`. */
   private readonly iblGroundOn: boolean;
@@ -43,7 +74,7 @@ export class SkyPass {
 
   constructor(params: AtmosphereParams, o: SkyOptions) {
     this.params = params;
-    this.atmos = createAtmosphereUniforms(params, o.atmosphere);
+    this.atmos = createAtmosphereUniforms(params, o.scattering);
     // The aerial-perspective control, and it is a RUNTIME toggle for the same
     // reason `PropLibrary.setVisible` is: the claim being measured is a matched
     // pair, and a page reload cannot guarantee the same camera, the same
@@ -61,6 +92,20 @@ export class SkyPass {
         this.atmos.uAerosol.value.x, this.atmos.uAerosol.value.y,
         this.atmos.uAerosol.value.z,
       ],
+      // RN-840. THE SCATTERING INTEGRAL, at runtime, for the same reason
+      // `setAerial` is a runtime toggle and not a page flag: the claim under
+      // test is a MATCHED PAIR, and a reload cannot guarantee the same camera,
+      // the same streamed chunk set or the same sun. It buys the airless probe
+      // something a reload cannot: one mask, built from the frame where sky and
+      // ground are unambiguous, reused on the frame where they are not.
+      //
+      // It is also what makes `?atmos=0`'s meaning safe to leave alone. That
+      // flag deletes the sky box; this one only stops the integral.
+      setScattering: (on: boolean): number => {
+        this.atmos.uAtmosOn.value = on ? 1 : 0;
+        return this.atmos.uAtmosOn.value;
+      },
+      atmosOn: (): number => this.atmos.uAtmosOn.value,
     };
 
     this.sky = o.atmosphere ? createSkyAtmosphere(this.atmos, o.tier) : null;
@@ -78,6 +123,20 @@ export class SkyPass {
     // wiring diagnosis, never a small effect. The one mesh that is certainly in
     // the capture is the one the capture has always worked from, so the ground
     // half goes there and the graph question disappears.
+    // RN-840. NO `o.scattering` TERM, and that omission is the load-bearing
+    // half of the airless ambient.
+    //
+    // The ground half is not made of sky. Its fragment shader computes
+    // TerrainShader's flat-ground radiance, `albedo * (ambient + skyAmb +
+    // sunT * SUN_IRR * dot(up, sd))`, in which the only scattering-dependent
+    // term is `skyAmb`, and that term correctly goes to zero in a vacuum while
+    // the direct term does not. So on an airless body this shell still paints
+    // the lower hemisphere with sunlit regolith, which is exactly the fill that
+    // stops a prop's shadowed side being a silhouette. Deleting it there was
+    // the difference between the Apollo surface and a black lithograph.
+    //
+    // `?iblground=0` still removes it: that is RN-64's own control and it is
+    // untouched.
     this.iblGroundOn = o.atmosphere && o.iblGround && this.sky !== null;
     this.sky?.setGroundGain(o.iblGroundAmp);
 
@@ -125,6 +184,13 @@ export class SkyPass {
 
   /** RN-64. Whether a ground half exists to be raised at all. */
   get hasIblGround(): boolean { return this.iblGroundOn; }
+
+  /**
+   * RN-840. Whether the sky box was BUILT. Distinct from `uAtmosOn`, and the
+   * distinction is the whole point: an airless body has a box and no integral,
+   * `?atmos=0` has neither, and both paint a black sky.
+   */
+  get hasSkyBox(): boolean { return this.sky !== null; }
 
   /** RN-64. The biome albedo the ground half of the environment is built from. */
   setGroundAlbedo(c: THREE.Color): void { this.sky?.setGroundAlbedo(c); }

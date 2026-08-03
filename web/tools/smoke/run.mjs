@@ -117,6 +117,19 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // is the negative control for the whole fix. It is a hard 0 or 1 and not an
   // amplitude, because what it restores is a defect rather than a level.
   'reliefgrad',
+  // RN-842, the horizon occlusion the ambient's sky/ground split is weighted
+  // by. `horizonocc=0` is the EXACT pre-RN-842 flat-tangent-plane model, and it
+  // also SUPPRESSES the boot measurement, so it is a control over the whole
+  // mechanism rather than over one value it produced.
+  'horizonocc',
+  // RN-841, the bounce source's shadow term. `bouncelit=0` restores the
+  // pre-RN-841 expression, in which a fragment's own shadow extinguished the
+  // light bouncing off the sunlit ground beside it.
+  'bouncelit',
+  // RN-843, the support the relief slope is differenced over, in tile units.
+  // A sweep rather than an on/off: the shipped 0.0311 is the defect and the
+  // question is which value is right, not whether the term should exist.
+  'reliefgraduv',
   // RN-731, the per-part material channel on the rock and ore node batches.
   // `rockmat=0` removes the hook entirely and restores the stock three
   // program, i.e. every ore seam back at one roughness and one metalness.

@@ -14,7 +14,9 @@ import { SkyPass } from '../render/SkyPass.js';
 import { ShadowRig } from '../render/ShadowRig.js';
 import { SkyIbl } from '../render/SkyIbl.js';
 import { Headlamp } from '../render/Headlamp.js';
-import { forgeAtmosphere } from '../render/materials/Atmosphere.glsl.js';
+import { atmosphereForBody } from '../render/materials/Atmosphere.glsl.js';
+import { measureHorizonOcclusion, type HorizonOcclusion }
+  from '../render/materials/HorizonOcclusion.js';
 import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { resumeWorld } from './ResumeBoot.js';
@@ -32,7 +34,10 @@ import { SurfaceOracle } from '../world/SurfaceOracle.js';
 import { FloatingOrigin } from '../world/FloatingOrigin.js';
 import { PlanetProxy } from '../world/PlanetProxy.js';
 import { Regime } from '../world/Regime.js';
-import { bootTerrain } from '../world/TerrainBoot.js';
+import { bootTerrain, type TerrainBootResult } from '../world/TerrainBoot.js';
+import { Lifetime } from './Lifetime.js';
+import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
+import type { TerrainStream } from '../world/TerrainStream.js';
 import { VoxelWorld } from '../world/VoxelWorld.js';
 import { VoxelMesh } from '../world/VoxelMesh.js';
 import { DigFx } from '../render/DigFx.js';
@@ -104,6 +109,12 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const core = await loadOfCore();
   const wasmLoadMs = performance.now() - tWasm;
 
+  // RN-842. Filled in once the terrain materials exist and the body scope is
+  // known; stays null when `?horizonocc=` supplied the value, because "measured
+  // 0.149" and "told 0.149" are different facts and only one of them is
+  // evidence.
+  let horizonOcc: HorizonOcclusion | null = null;
+
   const body = PlanetBody.create(core, cfg.bodyId, cfg.seedLo, cfg.seedHi);
   const oracle = new SurfaceOracle(core, body);
   const oracleTiming = benchOracle(core, body.handle, 3000);
@@ -117,13 +128,22 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const rig = new CameraRig(renderer.depth);
   const frame = new Frame(renderer, scenes, rig);
   const stats = new StatsProbe();
-  const atmosParams = forgeAtmosphere(body.radiusM);
+  // RN-840. THE BODY CHOOSES ITS OWN AIR. This was `forgeAtmosphere(...)`
+  // unconditionally, which is why the moon had a blue sky: the only body-derived
+  // input was the radius, so Cinder got Earth's Rayleigh coefficients over a
+  // 200 km ball. `body.hasAtmosphere` is /core's `AtmosphereProfile::present()`
+  // read back through `_of_atmo_*`, so nothing on this line knows what a Cinder
+  // is and a third body needs no edit here.
+  const atmosParams = atmosphereForBody(body.radiusM, body.hasAtmosphere);
   const sky = new SkyPass(atmosParams, {
     seedLo: cfg.seedLo, sunT: 0, tier: cfg.quality,
     // ?clear= exists to count VOID pixels, and a painted sky makes every void
     // pixel opaque, so the census would silently read zero. Disable the sky with
     // the clear colour rather than making every crack probe remember --atmos=0.
     atmosphere: cfg.atmosphere && cfg.clearColor === 0,
+    // RN-840. The integral runs only where there is something to scatter in.
+    // `cfg.atmosphere` still forces it off, so `?atmos=0` is unchanged.
+    scattering: cfg.atmosphere && cfg.clearColor === 0 && body.hasAtmosphere,
     stars: cfg.stars,
     pixelRatio: renderer.pixelRatio,
     iblGround: cfg.iblGround,
@@ -187,6 +207,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   }
   origin.step(observer.position);
   sky.setSunT(cfg.sunTExplicit ?? SkyPass.solveSunT(observer.up, cfg.scenario.sunDot));
+  // RN-844. Record WHAT the solve was for and WHERE, so a probe that teleports
+  // can see that its `?sundot=` no longer applies. `?t=` is an absolute phase
+  // and was never solved against a site, so it records nothing.
+  sky.solvedFor = cfg.sunTExplicit !== null ? null : {
+    wantDot: cfg.scenario.sunDot,
+    latDeg: cfg.scenario.lat,
+    lonDeg: cfg.scenario.lon,
+  };
 
   const avatar = player === null ? null : new Avatar(cfg.anim);
   if (avatar !== null) {
@@ -211,21 +239,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   hud.banner('starting the worker WASM instance ...');
   const wp = await probeWorkerOracle(core, body, cfg);
 
-  hud.banner('starting terrain.worker and preallocating the chunk pool ...');
-  const tTerrain = performance.now();
   const regime = new Regime(cfg.nearCutoff > 0 ? cfg.nearCutoff : renderer.depth.nearDepthCutoff());
   regime.update(observer.altM);
-  const t = await bootTerrain({
-    cfg, quality, depth: renderer.depth, events, scenes, origin, body,
-    atmosphere: sky.atmos, cascadeSplits: shadows.splits,
-    // WG-42: the pond's surface is built and anchored inside bootTerrain, so
-    // this is the only line the water costs the boot site.
-    oracle,
-  });
-  const terrain = t.stream;
-  terrain.setNearDepthCutoff(regime.state.nearDepthCutoff);
-  const terrainBootMs = performance.now() - tTerrain;
-  stats.extraVramBytes = t.pooledBytes + t.indexBytes + shadows.vramBytes();
 
   hud.banner('loading the biome prop atlases ...');
   // Every atlas, not just the biome under the observer: a walk crosses biome
@@ -256,29 +271,121 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // do, so a refusal reaches the HUD as `POOL FULL: n NOT DRAWN` rather than
   // being counted into a field nothing prints.
   registerPool(props);
-  // RN-46: the scatter consults the water authority so nothing grows on the
-  // pond bed. The edits handle is a thunk because `voxels` is created below.
+
+  // ---------------------------------------------------------------------------
+  // CE-20. THE BODY SCOPE, in ONE function used by boot AND by every rebuild.
   //
-  // MIND THE SENSE. `?scatterwet=1` means wet scattering is ALLOWED, i.e. the
-  // rejection is OFF, so the oracle goes in when the flag is FALSE. RN-46 had
-  // it inverted, which handed the oracle over only in the one configuration
-  // that then refuses to use it, so the feature never ran in ANY build while
-  // every reading looked healthy. See WET_REJECT_M.
-  // WG-59: the body radius is the datum the TREELINE is measured from, and it
-  // is READ from the body rather than written down here, on the DW-18 rule that
-  // cost a walker a wrong gravity constant. `canopyRadiusM` 0 is the control.
-  const scatter = new Scatter(props, t.pool, cfg.props, cfg.density,
-    cfg.scatterFair, cfg.grassShort,
-    cfg.scatterWet ? null : oracle.water, () => voxels?.handle ?? 0,
-    body.radiusM, cfg.canopyRadiusM, cfg.canopyShade);
-  // WG-64: THE REBASE PATH, which had no caller. `Scatter.replace` documents
-  // itself as "THE rebase path" and nothing ever called it, so every prop was
-  // left behind by the whole rebase delta each time the origin moved. Measured
-  // on a driven 4 km sprint before this line existed: 4,000.089191 m of
-  // displacement across 43 of 43 scattered chunks. It hangs off the streamer's
-  // own hook rather than off a second `OriginRebased` subscription so it cannot
-  // run before the views it reads have been re-placed.
-  t.stream.afterRebase = () => scatter.replace(t.stream.residentViews);
+  // The props above moved ABOVE the terrain for this: they are an async fetch
+  // that depends on nothing the terrain makes, and leaving them below it forced
+  // the terrain and the scatter to be built at two different points in `boot`,
+  // which would have meant a second construction path for the rebuild. Two paths
+  // that must agree is the second-authority failure this project has paid for
+  // repeatedly; there is exactly one here, and the boot you get is the reboot
+  // you get, by construction rather than by review.
+  //
+  // Everything constructed inside is registered with the scope's `Lifetime`,
+  // which is what `WorldSession.reboot` ends. See world/WorldSession.ts for why
+  // the oracle and the origin are RE-SEATED rather than appearing here.
+  const built: { v: TerrainBootResult | null } = { v: null };
+  const buildBodyScope: BuildBodyScope = async (bodyId, lt) => {
+    // The session re-seats the oracle before calling this, so `oracle.body` is
+    // the authority for which body is being built. Asserted rather than assumed:
+    // if these two ever disagree the worker generates one planet and the main
+    // thread walks on another, silently, which is the exact defect that reading
+    // `cfg.bodyId` inside `bootTerrain` used to guarantee.
+    if (oracle.body.bodyId !== bodyId) {
+      throw new Error(`body scope: asked for ${bodyId}, oracle holds ${oracle.body.bodyId}`);
+    }
+    const t = await bootTerrain({
+      cfg, quality, depth: renderer.depth, events, scenes, origin, body: oracle.body,
+      atmosphere: sky.atmos, cascadeSplits: shadows.splits,
+      // WG-42: the pond's surface is built and anchored inside bootTerrain, so
+      // this is the only line the water costs the boot site.
+      oracle,
+      lifetime: lt,
+    });
+    t.stream.setNearDepthCutoff(regime.state.nearDepthCutoff);
+
+    // RN-842. MEASURE THIS BODY'S OWN HORIZON OCCLUSION and hand it to the
+    // terrain materials, which were built a few lines up holding the flat-plane
+    // value. It happens HERE rather than beside the atmosphere because it needs
+    // the oracle for THIS body scope (CE-20: `oracle.body`, never the boot
+    // body) and because the materials have to exist to receive it.
+    //
+    // `?horizonocc=` WINS ABSOLUTELY, and the null return is what makes that
+    // possible: a caller asking for 0 and nobody asking at all are different
+    // states, and collapsing them is how a feature ships with its own negative
+    // control permanently engaged.
+    {
+      const art = (self as unknown as {
+        __ofTerrainArt?: {
+          horizonOccDefault(): { present: boolean; value: number | null };
+          setHorizonOcc(v: number): number;
+        };
+      }).__ofTerrainArt;
+      const asked = art?.horizonOccDefault();
+      if (art !== undefined && asked !== undefined && !asked.present) {
+        const h = measureHorizonOcclusion(
+          oracle, oracle.body, cfg.scenario.lat, cfg.scenario.lon);
+        art.setHorizonOcc(h.omega);
+        horizonOcc = h;
+      }
+    }
+    // RN-46: the scatter consults the water authority so nothing grows on the
+    // pond bed. The edits handle is a thunk because `voxels` is created below.
+    //
+    // MIND THE SENSE. `?scatterwet=1` means wet scattering is ALLOWED, i.e. the
+    // rejection is OFF, so the oracle goes in when the flag is FALSE. RN-46 had
+    // it inverted, which handed the oracle over only in the one configuration
+    // that then refuses to use it, so the feature never ran in ANY build while
+    // every reading looked healthy. See WET_REJECT_M.
+    // WG-59: the body radius is the datum the TREELINE is measured from, and it
+    // is READ from the body rather than written down here, on the DW-18 rule that
+    // cost a walker a wrong gravity constant. `canopyRadiusM` 0 is the control.
+    // CE-20: `oracle.body.radiusM` and not `body.radiusM`, because the second is
+    // the boot body forever and the first is whichever body this scope is for.
+    const sc = new Scatter(props, t.pool, cfg.props, cfg.density,
+      cfg.scatterFair, cfg.grassShort,
+      cfg.scatterWet ? null : oracle.water, () => voxels?.handle ?? 0,
+      oracle.body.radiusM, cfg.canopyRadiusM, cfg.canopyShade);
+    // WG-64: THE REBASE PATH, which had no caller. `Scatter.replace` documents
+    // itself as "THE rebase path" and nothing ever called it, so every prop was
+    // left behind by the whole rebase delta each time the origin moved. Measured
+    // on a driven 4 km sprint before this line existed: 4,000.089191 m of
+    // displacement across 43 of 43 scattered chunks. It hangs off the streamer's
+    // own hook rather than off a second `OriginRebased` subscription so it cannot
+    // run before the views it reads have been re-placed.
+    t.stream.afterRebase = () => sc.replace(t.stream.residentViews);
+    // The hook holds the scatter, and the scatter holds the pool. Dropping it is
+    // already `TerrainStream.dispose`'s job; this registration is what releases
+    // the props THIS scope placed, in the scope that placed them.
+    lt.add('scatter.placed', () => { sc.clearPlaced(); });
+    built.v = t;
+    return { body: oracle.body, terrain: t.stream, scatter: sc, workerHandles: t.workerHandles };
+  };
+
+  hud.banner('starting terrain.worker and preallocating the chunk pool ...');
+  const tTerrain = performance.now();
+  const bodyLifetime = new Lifetime('body#0');
+  const firstScope = await buildBodyScope(body.bodyId, bodyLifetime);
+  if (built.v === null) throw new Error('body scope produced no terrain');
+  const t = built.v;
+  const terrainBootMs = performance.now() - tTerrain;
+  stats.extraVramBytes = t.pooledBytes + t.indexBytes + shadows.vramBytes();
+
+  const session = WorldSession.adopt({
+    core, events, oracle, origin, build: buildBodyScope,
+    observerPos: () => observer.position,
+    seedLo: cfg.seedLo, seedHi: cfg.seedHi,
+  }, firstScope, bodyLifetime);
+  // CE-20. THE LIVE READ. A rebuild replaces the `TerrainStream` object, so
+  // anything holding the old one is holding a terminated worker. Everything
+  // reached through `Services` follows the session for free (the record's fields
+  // are getters below); the three collaborators that used to take a
+  // `TerrainStream` BY VALUE in a constructor take this thunk instead. Three,
+  // measured, not "about a dozen": `DigAction`, `LevelAction`, and gameplay's
+  // `ports.terrain`.
+  const terrainOf = (): TerrainStream => session.terrain;
 
   // W5. Created only when there is a character: with no player nobody digs, and
   // an unbound edits handle would arm voxel collision for a flying camera. The
@@ -299,14 +406,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const digFx = voxels === null ? null : new DigFx(origin, (r) => body.gravityAccel(r));
   if (digFx !== null) scenes.near.add(digFx.points);
   const dig = voxels === null || voxelMesh === null ? null
-    : new DigAction(voxels, voxelMesh, terrain, digFx);
+    : new DigAction(voxels, voxelMesh, terrainOf, digFx);
   // WG-22 terraforming. The ring is a ground decal, so it goes in the NEAR
   // scene beside the voxel mesh; `?levelring=0` isolates it (standing rule 7).
   const levelRing = voxels === null || !cfg.levelRing ? null
     : new LevelRing(oracle, origin);
   if (levelRing !== null) scenes.near.add(levelRing.mesh);
   const level = voxels === null || voxelMesh === null ? null
-    : new LevelAction(voxels, voxelMesh, terrain, oracle, levelRing);
+    : new LevelAction(voxels, voxelMesh, terrainOf, oracle, levelRing);
 
   // W5 gameplay. Also player-gated: the pack, the clearing and the swing all
   // hang off a character, and a free camera has no hands. It is built LAST
@@ -337,7 +444,10 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       mode: cfg.sandbox ? 'sandbox' : 'survival',
       // DW-17: the voxel handles live here, so the save slot is handed them
       // rather than gameplay reaching for a global.
-      ports: { voxels, voxelMesh, terrain },
+      // CE-20. A GETTER, so gameplay's port follows a rebuild. It held the
+      // TerrainStream object, and a rebuilt scope would have left every dig and
+      // every level press posting to a terminated worker with no error anywhere.
+      ports: { voxels, voxelMesh, get terrain() { return session.terrain; } },
     });
     // DIGGING INTO AN ORE BODY PAYS. The dig action lives in Services and the
     // ore pool lives in the gameplay layer, so this line is the seam between
@@ -477,6 +587,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
 
   const boot: BootMetrics = {
     wasmLoadMs,
+    horizonOcc,
     oracleUs: {
       baseHeight: oracleTiming.baseHeightUs,
       surfaceHeight: oracleTiming.surfaceHeightUs,
@@ -497,11 +608,23 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     bootMs: performance.now() - t0,
   };
 
+  // CE-20. FOUR FIELDS ARE NOW GETTERS, and the shape of the record is otherwise
+  // untouched: `Services` still publishes `body`, `terrain`, `materials` and
+  // `scatter` as `readonly`, and a getter satisfies a `readonly` field, so not
+  // one of the ~90 call sites that read them changed. That is the point. The
+  // alternative was churning every reader to go through `services.session`,
+  // which would have been a large diff whose only effect was to move the same
+  // staleness somewhere else. What actually mattered was that the VALUE stopped
+  // being frozen at boot, and this is the whole of that change.
   const services: Services = {
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
-    core, body, oracle, origin, proxy, terrain, regime,
-    materials: terrain.materials, observer, player, avatar, input, jitter, zfight,
-    hud, sunLights, shadows, ibl, headlamp, props, scatter, voxels, voxelMesh, dig, digFx,
+    core, oracle, origin, proxy, regime, session,
+    get body() { return session.body; },
+    get terrain() { return session.terrain; },
+    get materials() { return session.terrain.materials; },
+    get scatter() { return session.scatter; },
+    observer, player, avatar, input, jitter, zfight,
+    hud, sunLights, shadows, ibl, headlamp, props, voxels, voxelMesh, dig, digFx,
     level, levelRing,
     gameplay, vab, flight, map, router, boot, station,
   };

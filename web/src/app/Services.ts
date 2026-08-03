@@ -3,6 +3,7 @@
 // (main.ts) and a test can substitute any part of it.
 
 import type { Config } from './Config.js';
+import type { HorizonOcclusion } from '../render/materials/HorizonOcclusion.js';
 import type { Events } from './Events.js';
 import type { QualityKnobs } from '../render/Quality.js';
 import type { OFRenderer } from '../render/Renderer.js';
@@ -28,6 +29,7 @@ import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { PlanetProxy } from '../world/PlanetProxy.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
+import type { WorldSession } from '../world/WorldSession.js';
 import type { Regime } from '../world/Regime.js';
 import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
 import type { ViewSource } from '../player/ViewSource.js';
@@ -60,6 +62,12 @@ export interface BootMetrics {
   indexCount: number;
   pooledBytes: number;
   bootMs: number;
+  /**
+   * RN-842. The body's measured horizon occlusion, or null when `?horizonocc=`
+   * overrode it (in which case nothing was measured and saying so is the point:
+   * a reported number that no measurement produced is worse than none).
+   */
+  horizonOcc: HorizonOcclusion | null;
 }
 
 export interface Services {
@@ -73,11 +81,23 @@ export interface Services {
   readonly sky: SkyPass;
   readonly stats: StatsProbe;
   readonly core: OfCoreModule;
+  /**
+   * CE-20. STILL `readonly`, no longer a SCALAR FIXED AT BOOT. Boot satisfies
+   * this with a getter onto `session`, so every reader here follows a body
+   * switch with no change at the call site. What a `readonly` field promises is
+   * that the HOLDER may not write it, which is unchanged and correct; what it
+   * silently also meant, until there was a second body, was "this value is the
+   * same for the life of the process", and that was never something anybody
+   * decided.
+   */
   readonly body: PlanetBody;
   readonly oracle: SurfaceOracle;
   readonly origin: FloatingOrigin;
   readonly proxy: PlanetProxy;
+  /** Also a getter (CE-20): a rebuild replaces the stream object. */
   readonly terrain: TerrainStream;
+  /** CE-20. The body-scoped lifetime and the teardown/rebuild entry point. */
+  readonly session: WorldSession;
   readonly regime: Regime;
   readonly materials: TerrainMaterials;
   /** Whatever drives the eye this run: the free camera or the walking capsule. */

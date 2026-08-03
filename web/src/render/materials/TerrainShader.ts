@@ -60,6 +60,21 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // RN-741. 1 takes the relief's slope over a fixed tile-space support, 0 is
     // the pre-RN-741 screen derivative that printed the etched squiggles.
     uniform float uReliefGrad;
+    // RN-843. The SUPPORT the relief slope is differenced over, in tile units.
+    // A UNIFORM and no longer the OF_RELIEF_GRAD_UV define, because the shipped
+    // value turned out to be the defect and a define cannot be swept inside one
+    // page, one camera and one streamed chunk set. ?reliefgraduv= moves it; the
+    // boot default is RELIEF_GRAD_UV.
+    uniform float uReliefGradUv;
+    // RN-842. The fraction of a hemisphere the body's own terrain occludes.
+    // 0 is the pre-RN-842 flat-tangent-plane model, exactly. See
+    // HorizonOcclusion.ts for what it is and why it is measured, not chosen.
+    uniform float uHorizonOcc;
+    // RN-841. 1 takes the bounce source from the UNSHADOWED flat ground (the
+    // expression SkyAtmosphere's ground shell already uses), 0 restores the
+    // pre-RN-841 form where a fragment's own shadow extinguished the light
+    // bouncing off the sunlit ground beside it. ?bouncelit=0 is the control.
+    uniform float uBounceLit;
     // RN-57. x water level (metres above datum), y shoreline radius m, z the
     // height in metres over which the wet band dries out, w amplitude.
     uniform vec4 uWetBand;
@@ -308,7 +323,7 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           vec2 ruv = vChunkUv * 16.0;
           float gx, gy;
           if (uReliefGrad > 0.5) {
-            float e = OF_RELIEF_GRAD_UV;
+            float e = uReliefGradUv;
             float hU = ofArtRelMix(texture2D(uGroundRelief, ruv + vec2(e, 0.0)),
                                    vRelW, coverSel);
             float hV = ofArtRelMix(texture2D(uGroundRelief, ruv + vec2(0.0, e)),
@@ -376,9 +391,67 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       //   part of it falls to zero together at night, under a shadow, and in
       //   the terminator's transmittance.
       float skyView = 0.5 + 0.5 * dot(n, up);
+
+      // RN-842. THE LOCAL HORIZON, and it is the term that made an airless body
+      // render as a lithograph.
+      //
+      // skyView above is the sky-view factor of a facet on an INFINITE
+      // TANGENT PLANE. A real cratered surface stands its horizon up in every
+      // direction, so every facet sees less sky and more ground than that. On a
+      // body with air the error is invisible: skyAmb and the ground's own
+      // radiance are comparable, so moving weight between the channels barely
+      // moves a pixel. IN A VACUUM skyAmb IS EXACTLY ZERO AND THE WHOLE AMBIENT
+      // RIDES ON THE GROUND CHANNEL, whose weight the flat-plane assumption had
+      // already driven to nearly nothing: measured on Cinder at a 16 degree sun,
+      // a 21 degree slope was told it sees 96.7 per cent sky and 3.3 per cent
+      // ground, and 3.3 per cent of a bounce is a black hillside.
+      //
+      // uHorizonOcc is MEASURED FROM THE BODY'S OWN HEIGHT FIELD at boot
+      // (HorizonOcclusion.ts), never chosen: it is (2/pi) * atan(median slope)
+      // over an 8 m support. Cinder reads 0.149 and Forge 0.034, and that gap
+      // is the whole reason this can fix a vacuum without relighting a
+      // calibrated planet.
+      //
+      // THE TWO WEIGHTS SUM TO EXACTLY 1 FOR EVERY NORMAL AND EVERY OCCLUSION,
+      // so this cannot brighten a frame on its own. It can only move irradiance
+      // out of a channel that is zero in a vacuum into one that is not. At
+      // uHorizonOcc = 0 both lines are algebraically the pre-RN-842
+      // expressions, which is what makes ?horizonocc=0 an EXACT control.
+      float skyViewEff = skyView * (1.0 - uHorizonOcc);
+      float groundView = 1.0 - skyViewEff;
+
+      // RN-841. THE BOUNCE SOURCE IS THE GROUND BESIDE THIS FRAGMENT, NOT THIS
+      // FRAGMENT, so it is not extinguished by this fragment's own shadow.
+      //
+      // This term is the radiance of the flat ground AROUND the point, and it
+      // carried a multiply by shadow, the cascade sample for the point ITSELF,
+      // so a fragment in shadow was told its whole neighbourhood was shadowed
+      // and its bounce went to zero. That is wrong wherever a shadow is smaller
+      // than the field it sits in, which is every rock shadow, every cut bank
+      // and every crater rim: the thing casting the shadow is standing in
+      // sunlight, and on an airless body it is the only thing lighting what it
+      // shades.
+      //
+      // THE STRONGEST ARGUMENT FOR THIS IS CONSISTENCY, NOT PHOTOGRAPHY.
+      // SkyAtmosphere's ground shell (RN-64) computes this same expression for
+      // the environment's lower hemisphere and ALREADY drops the shadow term,
+      // and says so in its own comment: "THE ONE TERM THAT IS NOT CARRIED OVER
+      // IS shadow ... the error is bounded and it is in the direction of too
+      // much bounce inside a shadow, where the direct term is already gone."
+      // TerrainAmbient.ts exists precisely so the props' idea of the ground and
+      // the ground's idea of the ground cannot drift apart. They had drifted on
+      // this term, and this is the side that was wrong.
+      //
+      // WHAT IT COSTS, NAMED: inside a shadow LARGER than the bounce's own
+      // gather distance (a mountain's shadow, a night terminator) there is no
+      // sunlit ground nearby and this over-lights. The error is bounded by the
+      // ground-view weight, which is at most 0.45 + the facet's own tilt, and
+      // it is in the direction of too much fill in a place the direct term has
+      // already left. ?bouncelit=0 restores the old expression exactly.
+      float bounceShadow = mix(shadow, 1.0, uBounceLit);
       vec3 ground = vBiomeColor * (uAmbient + skyAmb
-        + sunT * (${SUN_IRR} * max(dot(up, sd), 0.0) * shadow));
-      vec3 lit = albedo * (uAmbient + skyAmb * skyView + ground * (1.0 - skyView)
+        + sunT * (${SUN_IRR} * max(dot(up, sd), 0.0) * bounceShadow));
+      vec3 lit = albedo * (uAmbient + skyAmb * skyViewEff + ground * groundView
         + sunT * (${SUN_IRR} * ndl * shadow));
 
       // THE SPECULAR LOBE (RN-731). Until this existed the line above WAS the
