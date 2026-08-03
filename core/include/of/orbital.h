@@ -341,6 +341,167 @@ inline double orbitalPeriod(double a, double mu) {
 }
 
 // =============================================================================
+// LAMBERT'S PROBLEM (PH-145). Two positions and a time of flight, one conic.
+//
+// Given where you are, where you want to be and how long you are willing to
+// take, find the transfer orbit that connects them. This is the ONE inverse in
+// this header: everything else maps a state forward, and `maneuver::plan` only
+// evaluates a burn you already chose. Rendezvous, transfer windows and the
+// departure-time curve are all this function called in a loop, which is exactly
+// why it lives here beside the Stumpff functions it shares rather than being
+// re-derived a second time in TypeScript.
+//
+// Universal-variable formulation (Bate/Mueller/White; Curtis alg. 5.2), so it is
+// the SAME z, C(z) and S(z) as `propagate` above and it handles elliptic and
+// hyperbolic transfers on one code path with no branch on conic type.
+//
+// THE SWEEP DIRECTION IS NOT TAKEN FROM AN AXIS. The textbook decides prograde
+// versus retrograde by the sign of (r1 x r2).z, which silently assumes the plane
+// of interest is near the equator of whatever frame you happen to be in. This
+// codebase has TWO inclination conventions live at once (Elements::i against +Z,
+// the map's against +Y, PH-40), so an axis test here would be a third. The
+// caller passes the REFERENCE NORMAL instead, which for a transfer is the
+// departure orbit's own h = r x v: "the short way round, in the direction I am
+// already going" is then frame-free and true in any convention.
+//
+// `valid` is false rather than the result being garbage when: the two positions
+// are collinear (no plane is determined), the time of flight is not positive, or
+// the iteration does not converge. A caller that ignores `valid` gets zeros.
+struct LambertSolution {
+  bool valid = false;
+  Vec3 v1;              // velocity at r1 on the transfer conic
+  Vec3 v2;              // velocity at r2 on the transfer conic
+  double sweepRad = 0.0;   // transfer angle actually flown (0 .. 2pi)
+  int iterations = 0;
+};
+
+inline LambertSolution lambert(const Vec3& r1, const Vec3& r2, double tofS,
+                               double mu, const Vec3& referenceNormal) {
+  LambertSolution out;
+  const double R1 = r1.length(), R2 = r2.length();
+  if (!(tofS > 0.0) || !(mu > 0.0) || R1 <= 0.0 || R2 <= 0.0) return out;
+
+  const Vec3 c12 = cross(r1, r2);
+  // Collinear positions determine no plane at all. Refuse rather than pick one.
+  if (c12.length() <= 1e-9 * R1 * R2) return out;
+
+  double cosD = r1.dot(r2) / (R1 * R2);
+  if (cosD > 1.0) cosD = 1.0;
+  if (cosD < -1.0) cosD = -1.0;
+  double dnu = std::acos(cosD);
+  // The long way round if the short way would go against the reference normal.
+  if (c12.dot(referenceNormal) < 0.0) dnu = kTwoPi - dnu;
+  out.sweepRad = dnu;
+
+  const double sinD = std::sin(dnu);
+  const double denom = 1.0 - cosD;
+  if (denom <= 0.0) return out;
+  const double A = sinD * std::sqrt(R1 * R2 / denom);
+  if (std::fabs(A) < 1e-12) return out;
+
+  const double sqrtMu = std::sqrt(mu);
+  auto yOf = [&](double z) {
+    const double C = stumpffC(z);
+    if (C <= 0.0) return -1.0;
+    return R1 + R2 + A * (z * stumpffS(z) - 1.0) / std::sqrt(C);
+  };
+  auto tOf = [&](double z, double y) {
+    const double C = stumpffC(z);
+    const double x = std::sqrt(y / C);
+    return (x * x * x * stumpffS(z) + A * std::sqrt(y)) / sqrtMu;
+  };
+
+  // BRACKET FIRST, THEN NEWTON INSIDE IT. Newton alone on this function walks
+  // out of the admissible domain (y(z) <= 0, where the conic does not exist) and
+  // comes back with a plausible number for nothing. t(z) is monotonically
+  // INCREASING in z, so a bracket is cheap, and it turns "did not converge" into
+  // an answer this function can REFUSE rather than one it publishes.
+  //
+  // The upper cap is one full revolution MINUS a margin. At z = (2pi)^2 exactly
+  // both C(z) and (z S(z) - 1) are zero, so y is a 0/0 there and the flight time
+  // has already gone to infinity on the way in; stopping just short is finite,
+  // well conditioned and slower than any time of flight a caller can ask for.
+  const double zRev = kTwoPi * kTwoPi;
+  const double zCap = (kTwoPi - 1e-4) * (kTwoPi - 1e-4);
+  const double zStep = 0.02 * zRev;
+
+  // Walk up from deep on the hyperbolic side to the first admissible z. Below it
+  // y is negative for the long way round AND, less obviously, for the short way
+  // too, because (z S - 1) / sqrt(C) diverges to minus infinity as z does.
+  double zLo = -8.0 * zRev;
+  for (int k = 0; k < 4000 && zLo < zCap && !(yOf(zLo) > 0.0); ++k) zLo += zStep;
+  if (!(yOf(zLo) > 0.0)) return out;
+  // If even the fastest admissible conic takes longer than the request, these
+  // two points cannot be joined in that time at all.
+  if (tOf(zLo, yOf(zLo)) > tofS) return out;
+
+  double zHi = zLo;
+  {
+    double step = zStep;
+    bool bracketed = false;
+    for (int k = 0; k < 4000 && zHi < zCap; ++k) {
+      const double zN = (zHi + step < zCap) ? zHi + step : zCap;
+      const double yN = yOf(zN);
+      if (yN > 0.0 && tOf(zN, yN) >= tofS) { zHi = zN; bracketed = true; break; }
+      if (yN > 0.0) zLo = zN;          // still too fast: raise the floor too
+      zHi = zN;
+      step *= 1.4;
+    }
+    if (!bracketed) return out;
+  }
+
+  double z = 0.5 * (zLo + zHi);
+  double y = 0.0;
+  int it = 0;
+  for (; it < 200; ++it) {
+    y = yOf(z);
+    if (y <= 0.0) { z = 0.5 * (zLo + zHi); continue; }
+    const double t = tOf(z, y);
+    if (std::fabs(t - tofS) <= 1e-10 * tofS) break;
+    if (t < tofS) zLo = z; else zHi = z;     // t INCREASES with z
+
+    // Curtis's derivative, with the z == 0 limit written out rather than
+    // approached, because 1/(2z) is the whole expression's only singularity.
+    const double C = stumpffC(z), S = stumpffS(z);
+    double dtdz;
+    if (std::fabs(z) > 1e-8) {
+      dtdz = (std::pow(y / C, 1.5)
+                * ((1.0 / (2.0 * z)) * (C - 1.5 * S / C) + 0.75 * S * S / C)
+              + (A / 8.0) * (3.0 * (S / C) * std::sqrt(y)
+                             + A * std::sqrt(C / y))) / sqrtMu;
+    } else {
+      const double y0 = yOf(0.0);
+      dtdz = (std::sqrt(2.0) / 40.0 * std::pow(y0, 1.5)
+              + (A / 8.0) * (std::sqrt(y0)
+                             + A * std::sqrt(0.5 / y0))) / sqrtMu;
+    }
+    double zNext = (std::fabs(dtdz) > 1e-300) ? z - (t - tofS) / dtdz : z;
+    // Newton is only allowed to move inside the bracket. Outside it, bisect.
+    if (!(zNext > zLo && zNext < zHi) || !std::isfinite(zNext))
+      zNext = 0.5 * (zLo + zHi);
+    if (std::fabs(zNext - z) < 1e-14) { z = zNext; break; }
+    z = zNext;
+  }
+  y = yOf(z);
+  if (!(y > 0.0) || it >= 200) return out;
+  if (std::fabs(tOf(z, y) - tofS) > 1e-6 * tofS + 1e-6) return out;
+
+  // Lagrange coefficients. gdot is not needed for v1 and fdot is not needed for
+  // v2, so neither is computed: fewer terms, fewer ways to mistype one.
+  const double f = 1.0 - y / R1;
+  const double g = A * std::sqrt(y / mu);
+  const double gdot = 1.0 - y / R2;
+  if (std::fabs(g) < 1e-300) return out;
+  out.v1 = (r2 - r1 * f) * (1.0 / g);
+  out.v2 = (r2 * gdot - r1) * (1.0 / g);
+  out.iterations = it;
+  out.valid = std::isfinite(out.v1.x) && std::isfinite(out.v1.y)
+              && std::isfinite(out.v1.z) && std::isfinite(out.v2.x)
+              && std::isfinite(out.v2.y) && std::isfinite(out.v2.z);
+  return out;
+}
+
+// =============================================================================
 // The prograde / normal / radial-out triad at a state.
 //
 // PH-39: there is ONE derivation of "which way is normal", and it lives here,

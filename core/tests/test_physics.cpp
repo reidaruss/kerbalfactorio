@@ -304,6 +304,193 @@ TEST(body_mu_values_match_D006) {
 }
 
 // =============================================================================
+// LAMBERT (PH-145). The one INVERSE in orbital.h, and the piece every transfer,
+// rendezvous and departure-time chart is built out of.
+//
+// THE ORACLE IS THE PROPAGATOR ITSELF AND IT NEEDS NO OUTSIDE DATA. Take a real
+// conic, ask the forward solver where it is at t0 and at t0+dt, then hand those
+// two positions and that dt to the inverse and demand it return the conic's OWN
+// velocities. Any error in the sweep angle, the branch, the Lagrange
+// coefficients or the Stumpff arguments shows up as a velocity that does not
+// match, and the two solvers share only C(z) and S(z), so this is not a
+// tautology: `propagate` iterates on chi with r0 and v0 known, `lambert`
+// iterates on z with r1 and r2 known.
+// =============================================================================
+TEST(lambert_recovers_the_conic_the_propagator_flew) {
+  // Deliberately eccentric and inclined, so no term can be zero by luck.
+  const StateVector s0{Vec3(7.0e5, 1.2e5, -2.0e5),
+                       Vec3(-400.0, 2100.0, 900.0)};
+  const Vec3 h = cross(s0.r, s0.v);
+
+  // The conic's period is 2584.54 s. Every time of flight below is UNDER it,
+  // which is not a detail: see the next test.
+  const double tofs[4] = {120.0, 600.0, 1500.0, 2400.0};
+  for (double tof : tofs) {
+    const StateVector s1 = propagate(s0, tof, kForgeMu);
+    const LambertSolution L = lambert(s0.r, s1.r, tof, kForgeMu, h);
+    CHECK(L.valid);
+    // 1 mm/s against velocities of ~2.3 km/s. The MEASURED agreement is 1e-8
+    // m/s or better; the tolerance is loose so a future retune of the iteration
+    // limit does not turn a 4 ULP change into a red line.
+    CHECK_NEAR(L.v1.x, s0.v.x, 1e-3);
+    CHECK_NEAR(L.v1.y, s0.v.y, 1e-3);
+    CHECK_NEAR(L.v1.z, s0.v.z, 1e-3);
+    CHECK_NEAR(L.v2.x, s1.v.x, 1e-3);
+    CHECK_NEAR(L.v2.y, s1.v.y, 1e-3);
+    CHECK_NEAR(L.v2.z, s1.v.z, 1e-3);
+    CHECK(L.sweepRad > 0.0 && L.sweepRad < kTwoPi);
+    // and the sweep it reports is the one actually flown.
+    const Vec3 c = cross(s0.r, s1.r);
+    double cd = s0.r.dot(s1.r) / (s0.r.length() * s1.r.length());
+    if (cd > 1.0) cd = 1.0;
+    if (cd < -1.0) cd = -1.0;
+    const double flown = (c.dot(h) >= 0.0) ? std::acos(cd) : kTwoPi - std::acos(cd);
+    CHECK_NEAR(L.sweepRad, flown, 1e-12);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// AND THE RESTRICTION, MEASURED RATHER THAN ASSUMED, because it is the one way
+// this function returns a CONFIDENT WRONG ANSWER.
+//
+// `lambert` solves the SINGLE-REVOLUTION problem. Ask it for a time of flight
+// longer than the period and it does not fail and it does not warn: it correctly
+// answers a different question, "reach that point sweeping 0.05 rad in 2600 s",
+// which is a huge slow ellipse rather than the orbit you were on. The signature
+// is unmistakable once you look for it (a 3.5 km/s error on a 2.3 km/s orbit),
+// and the rule that avoids it belongs to the CALLER, who knows the period:
+// keep the time of flight under one revolution. `transfer.h` does exactly that.
+// -----------------------------------------------------------------------------
+TEST(lambert_is_single_revolution_and_this_pins_where_that_bites) {
+  const StateVector s0{Vec3(7.0e5, 1.2e5, -2.0e5), Vec3(-400.0, 2100.0, 900.0)};
+  const Vec3 h = cross(s0.r, s0.v);
+  const Elements el = stateToElements(s0, kForgeMu, 0.0);
+  const double period = orbitalPeriod(el.a, kForgeMu);
+  CHECK_NEAR(period, 2584.54, 0.01);
+
+  // Just under: it is the orbit we flew, to the last digit that matters.
+  const double under = period * 0.99;
+  const StateVector a1 = propagate(s0, under, kForgeMu);
+  const LambertSolution A = lambert(s0.r, a1.r, under, kForgeMu, h);
+  CHECK(A.valid);
+  CHECK((A.v1 - s0.v).length() < 1e-3);
+
+  // Just over: still `valid`, still finite, and NOT the orbit we flew.
+  const double over = period * 1.01;
+  const StateVector b1 = propagate(s0, over, kForgeMu);
+  const LambertSolution B = lambert(s0.r, b1.r, over, kForgeMu, h);
+  CHECK(B.valid);
+  CHECK((B.v1 - s0.v).length() > 1000.0);
+}
+
+// -----------------------------------------------------------------------------
+// AND THE CLOSED-FORM CROSS-CHECK, because the test above would still pass if
+// the two solvers shared one wrong constant. A HOHMANN transfer between two
+// coplanar circular orbits has a delta-v every textbook publishes.
+//
+// IT CANNOT BE ASKED FOR DIRECTLY, and that is a property rather than a
+// nuisance: a Hohmann sweeps EXACTLY 180 degrees, so its two endpoints are
+// collinear through the focus, and collinear endpoints determine no plane.
+// Every Lambert solver in existence is singular there. So the assertion is the
+// LIMIT: as the sweep approaches 180 degrees the two-burn total must converge
+// to the textbook figure FROM ABOVE and never go under it, because Hohmann is
+// the optimum and nothing may beat it.
+//
+// Hand figures for Forge, 700 km to 1000 km (Anchorage's radius):
+//   v1c 2246.139545   vP 2436.280400   dv1 190.140854
+//   v2c 1879.255172   vA 1705.396280   dv2 173.858892
+//   total 363.999746   half-period 1310.063984 s
+// -----------------------------------------------------------------------------
+TEST(lambert_converges_to_the_textbook_hohmann_from_above) {
+  const double mu = kForgeMu;
+  const double r1 = kForgeRadiusM + 100.0e3;
+  const double r2 = kForgeRadiusM + 400.0e3;
+  const double aT = 0.5 * (r1 + r2);
+  const double v1c = std::sqrt(mu / r1);
+  const double vP = std::sqrt(mu * (2.0 / r1 - 1.0 / aT));
+  const double vA = std::sqrt(mu * (2.0 / r2 - 1.0 / aT));
+  const double dv1Book = vP - v1c;
+  const double dv2Book = std::sqrt(mu / r2) - vA;
+  const double totalBook = dv1Book + dv2Book;
+  const double tofBook = kPi * std::sqrt(aT * aT * aT / mu);
+  CHECK_NEAR(dv1Book, 190.140854, 1e-5);
+  CHECK_NEAR(dv2Book, 173.858892, 1e-5);
+  CHECK_NEAR(tofBook, 1310.063984, 1e-5);
+
+  // The transfer ellipse itself, departing prograde at periapsis.
+  const StateVector t0{Vec3(r1, 0.0, 0.0), Vec3(0.0, vP, 0.0)};
+  const Vec3 h = cross(t0.r, t0.v);
+
+  const double fracs[4] = {0.90, 0.95, 0.99, 0.999};
+  double prevTotal = 1e9;
+  for (double f : fracs) {
+    const double tof = tofBook * f;
+    const StateVector t1 = propagate(t0, tof, mu);
+    const LambertSolution L = lambert(t0.r, t1.r, tof, mu, h);
+    CHECK(L.valid);
+    // It recovers the transfer ellipse it was handed, first of all.
+    CHECK((L.v1 - t0.v).length() < 1e-6);
+    CHECK((L.v2 - t1.v).length() < 1e-6);
+
+    // Departure is AT periapsis in every case, so this burn is exactly the
+    // textbook one at every sweep and not only in the limit.
+    const double burn1 = (L.v1 - Vec3(0.0, v1c, 0.0)).length();
+    CHECK_NEAR(burn1, dv1Book, 1e-6);
+
+    // Arrival: circularise at whatever radius the sweep actually reached.
+    const double R = t1.r.length();
+    const Vec3 east = cross(normalized(h), normalized(t1.r));
+    const double burn2 = (east * std::sqrt(mu / R) - L.v2).length();
+
+    const double total = burn1 + burn2;
+    CHECK(total >= totalBook);        // nothing beats Hohmann
+    CHECK(total < prevTotal);         // and it converges monotonically
+    prevTotal = total;
+  }
+  // MEASURED: 378.330602, 367.719292, 364.150422, 364.001254 against a book
+  // 363.999746. The last is 0.0015 m/s over at a sweep of 179.872 degrees.
+  CHECK(prevTotal - totalBook < 0.01);
+  CHECK_NEAR(prevTotal, 364.001254, 1e-4);
+}
+
+// -----------------------------------------------------------------------------
+// It REFUSES rather than inventing an answer. Every one of these has exactly one
+// honest response and it is `valid == false`.
+// -----------------------------------------------------------------------------
+TEST(lambert_refuses_the_cases_that_have_no_answer) {
+  const Vec3 a(7.0e5, 0.0, 0.0), b(0.0, 7.0e5, 0.0);
+  const Vec3 n = cross(a, b);
+  CHECK(!lambert(a, b, 0.0, kForgeMu, n).valid);        // no time
+  CHECK(!lambert(a, b, -100.0, kForgeMu, n).valid);     // negative time
+  CHECK(!lambert(a, b, 600.0, 0.0, n).valid);           // no gravity
+  CHECK(!lambert(a, a * 2.0, 600.0, kForgeMu, n).valid);   // collinear, same way
+  CHECK(!lambert(a, a * -1.0, 600.0, kForgeMu, n).valid);  // collinear, opposite
+  CHECK(!lambert(Vec3(0, 0, 0), b, 600.0, kForgeMu, n).valid);  // at the centre
+  // A refused solve returns zeros, not garbage, so a caller that ignores
+  // `valid` gets an obviously wrong answer rather than a plausible one.
+  const LambertSolution bad = lambert(a, b, -1.0, kForgeMu, n);
+  CHECK(bad.v1.lengthSq() == 0.0 && bad.v2.lengthSq() == 0.0);
+}
+
+// -----------------------------------------------------------------------------
+// The reference normal, not an axis, decides the sweep. Flip it and the SAME
+// two points are joined the long way round, which is the property that makes
+// this work in a codebase carrying two inclination conventions (PH-40).
+// -----------------------------------------------------------------------------
+TEST(lambert_takes_its_direction_from_the_reference_normal) {
+  const Vec3 a(7.0e5, 0.0, 0.0), b(0.0, 7.0e5, 0.0);
+  const Vec3 n = cross(a, b);
+  const LambertSolution shortWay = lambert(a, b, 900.0, kForgeMu, n);
+  const LambertSolution longWay = lambert(a, b, 900.0, kForgeMu, n * -1.0);
+  CHECK(shortWay.valid);
+  CHECK(longWay.valid);
+  CHECK_NEAR(shortWay.sweepRad, kPi / 2.0, 1e-9);
+  CHECK_NEAR(longWay.sweepRad, 1.5 * kPi, 1e-9);
+  // Same endpoints, same clock, different conic: the velocities must differ.
+  CHECK((shortWay.v1 - longWay.v1).length() > 100.0);
+}
+
+// =============================================================================
 // Thrust integration — the symplectic integrator accepts a constant thrust
 // accel and a coast (zero thrust) reproduces the analytic conic. Light sanity
 // that the integrator's thrust path is wired and gravity-only matches Kepler.

@@ -28,6 +28,7 @@
 #include "of/flight.h"
 #include "of/maneuver.h"
 #include "of/orbital.h"
+#include "of/transfer.h"
 #include "of/vessel.h"
 #include "test_framework.h"
 
@@ -551,4 +552,271 @@ TEST(leading_the_burn_by_half_its_duration_is_load_bearing) {
   // is under a third of a percent of an orbit.
   mn::Node s; s.progradeMS = kDvHand;
   CHECK(mn::plan(now, kMu, kR, craft, s).burn.burnFractionOfPeriod < 0.003);
+}
+
+// =============================================================================
+// TRANSFERS, WINDOWS AND THE FUEL GATE (PH-146, of/transfer.h).
+//
+// Reid's ask, in the order he asked it: "tell me if there is enough fuel on the
+// current rocket to rendezvous with the destination", then "a chart showing how
+// optimal the current time would be to launch vs waiting later in terms of fuel
+// burn", then "do not let me program a destination I cannot reach, but do let me
+// set a later time if I will be able to reach it then".
+//
+// Every one of those sentences is a delta-v figure being true, which is why R43
+// had to be closed before any of this was worth building.
+//
+// The target is `Anchorage`: a 400 km circular orbit about Forge, r = 1e6 m
+// exactly (`SpaceStation.ts` mints it at a = 1000000.0000000002, e = 1.3e-16).
+// =============================================================================
+namespace tr = of::transfer;
+
+static orbital::Elements circularAbout(double radiusM, double mu, double phaseRad) {
+  const Vec3 r(radiusM * std::cos(phaseRad), 0.0, -radiusM * std::sin(phaseRad));
+  const double v = std::sqrt(mu / radiusM);
+  const Vec3 vel(-v * std::sin(phaseRad), 0.0, -v * std::cos(phaseRad));
+  return orbital::park(orbital::StateVector{r, vel}, mu, 0.0);
+}
+
+// -----------------------------------------------------------------------------
+// The transfer itself, against the closed form. A vehicle in an 80 km circular
+// orbit (r = 680 km, the orbit every other test in this file uses) going to
+// Anchorage at r = 1000 km:
+//
+//   v1c = sqrt(mu / 680e3)                    = 2278.931638 m/s
+//   v2c = sqrt(mu / 1000e3)                   = 1879.255172 m/s
+//   aT  = 840e3,  vP = sqrt(mu(2/r1 - 1/aT))  = 2486.518270 m/s
+//                 vA = sqrt(mu(2/r2 - 1/aT))  = 1690.832424 m/s
+//   dv1 = 207.586632,  dv2 = 188.422748,  total 396.009380 m/s
+//   Hohmann time = pi sqrt(aT^3 / mu) = 1287.013338 s
+// -----------------------------------------------------------------------------
+TEST(a_transfer_to_a_station_costs_what_the_closed_form_says) {
+  const double r1 = kR1, r2 = 1.0e6;
+  const double v1c = std::sqrt(kMu / r1), v2c = std::sqrt(kMu / r2);
+  const double aT = 0.5 * (r1 + r2);
+  const double vP = std::sqrt(kMu * (2.0 / r1 - 1.0 / aT));
+  const double vA = std::sqrt(kMu * (2.0 / r2 - 1.0 / aT));
+  const double dv1 = vP - v1c, dv2 = v2c - vA;
+  CHECK_NEAR(dv1, 207.586632, 1e-5);
+  CHECK_NEAR(dv2, 188.422748, 1e-5);
+  CHECK_NEAR(tr::hohmannTimeS(r1, r2, kMu), 1287.013338, 1e-5);
+
+  // Put the station where a Hohmann would land: half a revolution ahead of the
+  // vehicle, minus what the station itself travels during the flight.
+  const double tH = tr::hohmannTimeS(r1, r2, kMu);
+  const double stationRate = std::sqrt(kMu / (r2 * r2 * r2));   // rad/s
+  tr::Target tgt;
+  tgt.el = circularAbout(r2, kMu, orbital::kPi - stationRate * tH);
+  tgt.dockingRadiusM = 0.60;
+  CHECK(!tgt.isBody());
+
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+  // 0.999 of the Hohmann time, because a 180 degree sweep is exactly the
+  // collinear case Lambert is singular on (pinned in test_physics.cpp).
+  const tr::Transfer t = tr::solveTransfer(ship, tgt, 0.0, tH * 0.999);
+  CHECK(t.valid);
+  // It lands ON the station, which is the check that would catch a clock or a
+  // frame error before any delta-v number is believed.
+  CHECK(t.missDistanceM < 1e-6);
+  CHECK_NEAR(t.departDvMS, dv1, 0.5);
+  CHECK_NEAR(t.arriveDvMS, dv2, 0.5);
+  CHECK(t.totalDvMS >= dv1 + dv2);          // nothing beats Hohmann
+  CHECK(t.totalDvMS - (dv1 + dv2) < 0.5);
+  // The arrival burn is a velocity MATCH for a vessel target, so flying it puts
+  // the two at rest with respect to each other.
+  CHECK((t.transferEnd.v + t.arriveDv - t.targetState.v).length() < 1e-6);
+}
+
+// -----------------------------------------------------------------------------
+// THE CHART. Delta-v as a function of DEPARTURE TIME, which is the artefact Reid
+// asked for and the reason this publishes a sampled curve rather than one best
+// number.
+//
+// Two coplanar circular orbits have a phase angle that drifts, so the cost of
+// leaving NOW depends on where the station happens to be, and the curve must
+// have a real minimum somewhere inside one synodic period.
+// -----------------------------------------------------------------------------
+TEST(the_departure_window_is_a_curve_with_a_real_minimum) {
+  const double r1 = kR1, r2 = 1.0e6;
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+  tr::Target tgt;
+  tgt.el = circularAbout(r2, kMu, 0.35);    // deliberately a bad phase right now
+
+  const double syn = tr::synodicPeriodS(r1, r2, kMu);
+  CHECK(syn > 0.0);
+  // Periods 1874.81 s and 3343.44 s, so the geometry comes round every 4268 s.
+  CHECK_NEAR(orbital::orbitalPeriod(r1, kMu), 1874.810958, 1e-4);
+  CHECK_NEAR(orbital::orbitalPeriod(r2, kMu), 3343.444468, 1e-4);
+  CHECK_NEAR(syn, 4268.135166, 1e-3);
+
+  const tr::Window w = tr::scanWindow(ship, tgt, 0.0, 0.0, 48, 24);
+  CHECK(static_cast<int>(w.samples.size()) == 48);
+  CHECK(w.validCount == 48);                 // every departure admits a transfer
+  CHECK_NEAR(w.horizonS, syn, 1e-9);         // horizon 0 asks for one synodic
+  CHECK(w.bestIndex >= 0);
+
+  // A CURVE, not a constant: waiting genuinely changes the price.
+  CHECK(w.maxDvMS > w.minDvMS * 1.05);
+  // and the minimum is INSIDE the scan rather than at an end, which is what
+  // makes "wait until t" an answer rather than "leave now" or "leave last".
+  CHECK(w.bestIndex > 0);
+  CHECK(w.bestIndex < 47);
+  // The cheapest departure is a Hohmann, so it cannot beat the closed form.
+  const double hohmann = 207.586632 + 188.422748;   // 396.009380
+  CHECK(w.minDvMS >= hohmann);
+  CHECK(w.minDvMS < hohmann + 5.0);
+  // and the sample the index points at is the one the window published.
+  CHECK_NEAR(w.samples[static_cast<size_t>(w.bestIndex)].totalDvMS, w.minDvMS, 1e-12);
+  CHECK(w.best.valid);
+  CHECK_NEAR(w.best.totalDvMS, w.minDvMS, 1e-9);
+  CHECK(w.best.missDistanceM < 1e-6);
+  // Every sample's own time of flight stays inside the single-revolution bound
+  // the scan set, which is the rule that keeps Lambert answering the question
+  // it was asked (test_physics.cpp pins what happens when it does not).
+  for (const tr::WindowSample& s : w.samples) {
+    if (!s.valid) continue;
+    CHECK(s.timeOfFlightS >= w.tofMinS - 1e-9);
+    CHECK(s.timeOfFlightS <= w.tofMaxS + 1e-9);
+    CHECK(s.timeOfFlightS < orbital::orbitalPeriod(r2, kMu));
+    CHECK_NEAR(s.totalDvMS, s.departDvMS + s.arriveDvMS, 1e-9);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// THE GATE. "It should not let you program in a destination for autopilot if you
+// do not have enough fuel to reach it, but you should be able to set it to a
+// later time if you don't have enough fuel right now but will at a more optimal
+// time." That is three distinct verdicts and this pins all three.
+// -----------------------------------------------------------------------------
+TEST(the_fuel_gate_tells_now_from_later_from_never) {
+  const double r1 = kR1, r2 = 1.0e6;
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+  tr::Target tgt;
+  tgt.el = circularAbout(r2, kMu, 0.35);
+
+  // The reference vehicle's upper stage, in orbit with its lower stage gone.
+  Ascender a = makeAscender();
+  Vessel craft = a.v;
+  craft.nextStageIndex = 2;
+  const double available = remainingDeltaVVacuumMS(craft);
+  CHECK_NEAR(available, 3065.115301, 1e-5);
+
+  const tr::Verdict rich = tr::verdictFor(craft, ship, tgt, 0.0, 0.0, 48, 24);
+  CHECK(rich.anyTransferExists);
+  CHECK(rich.feasibleNow);
+  CHECK(rich.feasibleLater);
+  // Waiting saves something real, and it is reported as a number rather than a
+  // recommendation.
+  CHECK(rich.savingByWaitingMS > 1.0);
+  CHECK_NEAR(rich.nowTotalDvMS - rich.bestTotalDvMS, rich.savingByWaitingMS, 1e-9);
+  CHECK(rich.budgetNow.marginMS > 0.0);
+  CHECK(rich.budgetBest.marginMS > rich.budgetNow.marginMS);
+  CHECK_NEAR(rich.budgetBest.availableMS, available, 1e-9);
+  // Both burns are billed, and the second on the mass left after the first.
+  CHECK(rich.budgetBest.departBurnS > 0.0);
+  CHECK(rich.budgetBest.arriveBurnS > 0.0);
+
+  // NOW DRAIN IT to between the two prices: it cannot go yet, but it can go at
+  // the window. This is the case Reid named, and it is the reason the verdict
+  // carries two booleans rather than one.
+  Vessel poor = craft;
+  {
+    const double want = rich.bestTotalDvMS + 2.0;
+    for (auto& p : poor.parts)
+      if (poor.def(p).propellant == Propellant::LiquidFuel) p.propellantKg = 0.0;
+    for (auto& p : poor.parts) {
+      if (poor.def(p).propellant != Propellant::LiquidFuel) continue;
+      double lo = 0.0, hi = poor.def(p).propellantCapacityKg;
+      for (int i = 0; i < 200; ++i) {
+        const double mid = 0.5 * (lo + hi);
+        p.propellantKg = mid;
+        if (remainingDeltaVVacuumMS(poor) < want) lo = mid; else hi = mid;
+      }
+      p.propellantKg = 0.5 * (lo + hi);
+      break;
+    }
+  }
+  const double poorDv = remainingDeltaVVacuumMS(poor);
+  CHECK_NEAR(poorDv, rich.bestTotalDvMS + 2.0, 0.5);
+  CHECK(poorDv < rich.nowTotalDvMS);          // cannot afford to leave now
+  CHECK(poorDv > rich.bestTotalDvMS);         // can afford the window
+
+  const tr::Verdict later = tr::verdictFor(poor, ship, tgt, 0.0, 0.0, 48, 24);
+  CHECK(later.anyTransferExists);
+  CHECK(!later.feasibleNow);                  // REFUSED right now
+  CHECK(later.feasibleLater);                 // ALLOWED at later.bestDepartS
+  CHECK(later.bestDepartS > 0.0);
+  CHECK(later.budgetNow.marginMS < 0.0);
+  CHECK(later.budgetBest.marginMS > 0.0);
+
+  // And a vehicle that cannot make it at ANY departure is refused outright,
+  // rather than being offered a time that would not work either.
+  Vessel empty = craft;
+  for (auto& p : empty.parts) p.propellantKg = 0.0;
+  const tr::Verdict never = tr::verdictFor(empty, ship, tgt, 0.0, 0.0, 48, 24);
+  CHECK(never.anyTransferExists);             // the GEOMETRY is fine
+  CHECK(!never.feasibleNow);
+  CHECK(!never.feasibleLater);                // the VEHICLE is not
+  CHECK(never.budgetBest.availableMS == 0.0);
+}
+
+// -----------------------------------------------------------------------------
+// A BODY IS NOT A SPECIAL CASE. Cinder orbits Forge at 1.2e7 m (sim_world.h
+// `kCinderOrbitRadiusM`), well inside Forge's 8.4e7 m SOI, so flying to the moon
+// is the SAME same-primary Lambert as flying to the station. The one thing that
+// differs is what arrival costs, and this measures that difference rather than
+// asserting the code path exists.
+// -----------------------------------------------------------------------------
+TEST(a_moon_is_the_same_transfer_with_a_cheaper_arrival) {
+  const double r1 = kR1, rMoon = 1.2e7;
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+
+  const double tH = tr::hohmannTimeS(r1, rMoon, kMu);
+  const double rate = std::sqrt(kMu / (rMoon * rMoon * rMoon));
+
+  tr::Target moon;
+  moon.el = circularAbout(rMoon, kMu, orbital::kPi - rate * tH);
+  moon.muM3S2 = orbital::kCinderMu;
+  moon.soiRadiusM = orbital::kCinderSoiRadius;
+  moon.bodyRadiusM = orbital::kCinderRadiusM;
+  moon.captureAltitudeM = 50.0e3;
+  CHECK(moon.isBody());
+
+  // The same target with its gravity removed: identical geometry, arrival billed
+  // as a velocity match instead of a capture.
+  tr::Target asIfVessel = moon;
+  asIfVessel.muM3S2 = 0.0;
+  asIfVessel.soiRadiusM = 0.0;
+  CHECK(!asIfVessel.isBody());
+
+  const tr::Transfer body = tr::solveTransfer(ship, moon, 0.0, tH * 0.999);
+  const tr::Transfer vess = tr::solveTransfer(ship, asIfVessel, 0.0, tH * 0.999);
+  CHECK(body.valid && vess.valid);
+  CHECK(body.missDistanceM < 1e-4 && vess.missDistanceM < 1e-4);
+
+  // The injection burn is IDENTICAL to the last bit: the geometry does not know
+  // what is waiting at the far end.
+  CHECK(body.departDvMS == vess.departDvMS);
+  CHECK(body.sweepRad == vess.sweepRad);
+  // The arrival is not. Capturing into a 50 km orbit is cheaper than matching,
+  // because the moon's own gravity does part of the work.
+  CHECK(body.arriveDvMS < vess.arriveDvMS);
+  CHECK(body.arriveDvMS > 0.0);
+  // Hand check: v_inf is the match cost, r_c = 200 km + 50 km = 250 km,
+  // dv = sqrt(v_inf^2 + 2 mu_c / r_c) - sqrt(mu_c / r_c).
+  {
+    const double vInf = vess.arriveDvMS;
+    const double rc = orbital::kCinderRadiusM + 50.0e3;
+    const double hand = std::sqrt(vInf * vInf + 2.0 * orbital::kCinderMu / rc)
+                        - std::sqrt(orbital::kCinderMu / rc);
+    CHECK_NEAR(body.arriveDvMS, hand, 1e-9);
+  }
+  // A flyby costs nothing at all on arrival, which is the third case and needs
+  // no third code path.
+  tr::Target flyby = moon;
+  flyby.captureAltitudeM = 0.0;
+  const tr::Transfer past = tr::solveTransfer(ship, flyby, 0.0, tH * 0.999);
+  CHECK(past.valid);
+  CHECK(past.arriveDvMS == 0.0);
+  CHECK(past.totalDvMS == past.departDvMS);
 }
