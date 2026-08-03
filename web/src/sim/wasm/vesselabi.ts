@@ -271,6 +271,13 @@ export interface VesselAbi {
    *  Exists for one caller: putting a half-empty tank back after a reload. The
    *  clamp is the safety property, because a save file is untrusted input. */
   _of_fl_set_propellant(f: number, partHandle: number, kg: number): number;
+  /** PH-251. Where the ground is, absolute radius, 0 to switch the rule off.
+   *  MUST be the same radius the caller's own arrest uses, or two authorities
+   *  pin the vehicle to two heights. A refusal, not a contact model: the
+   *  velocity is kept because `landing.h` reads it to classify the arrival. */
+  _of_fl_set_surface(f: number, radiusM: number): number;
+  /** PH-251. f64 scratch, 3: [groundRefusals, deepestRefusalM, onGround]. */
+  _of_fl_ground(f: number): number;
   /**
    * R87 / PH-250. The guidance ribbon, and it TAKES A BODY now.
    *

@@ -316,6 +316,22 @@ export class FlightSession {
     guidanceTick(this);
     const n = warpSteps(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
                         -dot(this.st.vel, this.up), dt);
+    // PH-251. TELL /core WHERE THE GROUND IS, BEFORE THE STEP.
+    //
+    // The arrest below has always been the only thing stopping a vehicle, and
+    // it runs AFTER all n sub-steps: at warp a descending vehicle went through
+    // the ground inside one `step_n` and was snapped back out of it, which
+    // `FlightWarp.ts` records in its own comment. Pushing the radius down means
+    // the refusal happens on the sub-step that reaches it.
+    //
+    // IT IS THE SAME NUMBER THE ARREST USES, character for character, so this
+    // moves the existing authority one layer down instead of adding a second
+    // one that could disagree with it by the base offset.
+    {
+      const u = this.up;
+      this.V._of_fl_set_surface(
+        this.handle, this.p.surfaceRadius(u[0], u[1], u[2]) + this.baseOffsetM);
+    }
     // PH-86: the vessel takes n steps this tick, the world takes one. The day
     // clock is credited the surplus so the sky keeps pace under warp.
     dayWarpCredit((n - 1) * dt);

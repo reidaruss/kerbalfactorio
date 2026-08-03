@@ -107,6 +107,48 @@ OF_API int of_fl_set_attitude(int f, double fx, double fy, double fz,
   s->state.right = vec(rx, ry, rz);
   return 1;
 }
+// PH-251. WHERE THE GROUND IS, absolute radius, 0 to switch the rule off.
+//
+// `flight.h` has no contact model and had nothing that stopped a vehicle at
+// all: a periapsis inside the body propagated straight through it, measured at
+// 540,153.9 m below Forge's datum with every instrument reading healthy. This
+// hands /core the one thing it cannot work out for itself.
+//
+// IT MUST BE THE SAME RADIUS THE CALLER'S OWN ARREST USES, or there are two
+// authorities pinning a vehicle to two different heights. `FlightSession` pushes
+// `surfaceRadius(up) + baseOffsetM`, which is character-for-character what its
+// DOWN state snaps to, so this moves the existing rule one layer down rather
+// than adding a second one. What that buys is WARP: `of_fl_step_n` takes up to
+// n sub-steps per call and the client's arrest only runs after all n, so a
+// descending vehicle went through the ground and was snapped back out of it.
+//
+// It is a REFUSAL and not contact: no gear, no friction, no tip-over, no impact
+// tolerance. The velocity is deliberately kept, because it is what `landing.h`
+// reads to say whether an arrival was a landing or a crash.
+OF_API int of_fl_set_surface(int f, double radiusM) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  s->env.surfaceRadiusM = radiusM > 0.0 ? radiusM : 0.0;
+  return 1;
+}
+
+// How the refusal is doing. f64 scratch, EXACTLY 3:
+//   [0] groundRefusals   cumulative count of steps that ended pinned
+//   [1] deepestRefusalM  how far under the surface the worst refused step
+//                        WOULD have gone. THE instrument: 0.4 m of settling and
+//                        9 km of tunnelling are both "refused" and are not the
+//                        same event, and the second one is what this exists for
+//   [2] onGround         1 if the step just taken was refused
+OF_API int of_fl_ground(int f) {
+  resetF64(3);
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  g_f64.push_back(static_cast<double>(s->telemetry.groundRefusals));
+  g_f64.push_back(s->telemetry.deepestRefusalM);
+  g_f64.push_back(s->telemetry.onGround ? 1.0 : 0.0);
+  return 3;
+}
+
 OF_API int of_fl_set_ang_vel(int f, double x, double y, double z) {
   fl::FlightSim* s = g_flights.get(f);
   if (!s) return 0;

@@ -71,6 +71,43 @@ struct FlightState {
 };
 
 struct FlightEnvironment {
+  // =========================================================================
+  // THE GROUND, AND IT IS A REFUSAL RATHER THAN A CONTACT MODEL (PH-251).
+  //
+  // Absolute radius of the surface under the vehicle RIGHT NOW. 0 means "no
+  // surface authority", which is the default and is what every caller written
+  // before this line silently gets, bit-for-bit: the branch below is not taken
+  // and adds no floating-point operation to the integration path, which is what
+  // keeps `coasting_above_the_atmosphere_is_bit_identical_to_the_orbital_
+  // integrator` exact.
+  //
+  // WHY IT IS PUSHED IN AND NOT DERIVED. `FlightSim` knows `bodyRadiusM`, the
+  // DATUM, and nothing at all about terrain; Cinder's relief is about -3.0 to
+  // +2.7 km, so the datum is not the ground. The bridge does not help: of_fl_
+  // create reads mu, radius and air off the body handle and then discards the
+  // handle, and never sees the voxel-edit handle at all. So the surface arrives
+  // the same way it arrives in `descent.h` and `ascent.h`: sampled by the
+  // caller, who is the only one who can.
+  //
+  // WHAT THIS IS NOT. It is not gear, friction, tip-over, bounce, crush or
+  // impact tolerance. It is one rule: a vehicle does not end a step inside the
+  // body, and when it would have, that is COUNTED and MEASURED rather than
+  // being silently true. Nothing here decides whether an arrival was survivable
+  // (that is `landing.h`, and R82 records that its four bounds are stated
+  // policy because no structural model exists to derive them from).
+  //
+  // WHY IT KEEPS THE VELOCITY. The velocity IS the evidence. `landing::evaluate`
+  // reads `velMS` to say what kind of arrival this was, and a refusal that
+  // zeroed it would turn an 81 m/s crash into a 0 m/s touchdown and destroy the
+  // only signal that distinguishes them. So position is pinned to the surface
+  // and velocity is left exactly alone, which does mean a crashed vehicle is
+  // left skating along the ground at its arrival speed. That is deliberate and
+  // it is the caller's to resolve: the client's own DOWN state already arrests,
+  // and a program that ignores `groundRefusals` is a program that has decided
+  // not to look.
+  // =========================================================================
+  double surfaceRadiusM = 0.0;
+
   double muM3S2 = 0.0;        // THE gravity authority (BodyParams::muM3S2)
   double bodyRadiusM = 0.0;
   atmo::AtmosphereProfile air;
@@ -640,6 +677,26 @@ struct FlightTelemetry {
   double sasErrorRad = 0.0;
   bool sasSaturated = false;
   bool inSpace = false;
+
+  // --- the ground refusal (PH-251). CUMULATIVE, unlike everything above. -----
+  /** How many steps ended with the vehicle pinned to the surface instead of
+   *  under it. A COUNT and not a flag, because "touched once" and "has been
+   *  dragging along the ground for six hundred ticks" are different situations
+   *  and a bool cannot tell a caller which one it is in. */
+  int groundRefusals = 0;
+  /** THE INSTRUMENT THAT NAMES THE DEFECT THIS EXISTS FOR: how far below the
+   *  supplied surface the deepest refused step WOULD have put the vehicle.
+   *
+   *  A lander once flew 9,364 m below Cinder's datum and out the other side
+   *  while every instrument read healthy, because there was no instrument for
+   *  this. It is kept even though the position is pinned, precisely so the
+   *  magnitude of what was refused is visible rather than being hidden by the
+   *  fix: 0.4 m of settling and 9 km of tunnelling are both "refused" and are
+   *  not the same event. */
+  double deepestRefusalM = 0.0;
+  /** True on the step that was just refused, so a caller can react on the tick
+   *  it happened rather than by differencing the count. */
+  bool onGround = false;
 };
 
 class FlightSim {
@@ -779,6 +836,31 @@ class FlightSim {
 
     state.timeS += dt;
 
+    // --- the ground, if the caller supplied one --------------------------
+    //
+    // AFTER the integration and never inside it: the arithmetic above must stay
+    // term-for-term identical to `orbital::Integrator::step` so that a coasting
+    // vehicle is BIT-IDENTICAL to the analytic path (asserted with `==` in
+    // test_flight.cpp). A branch that is not taken costs that identity nothing;
+    // folding a clamp into the position update would break it even with no
+    // surface set.
+    telemetry.onGround = false;
+    if (env.surfaceRadiusM > 0.0) {
+      const double r = state.posM.length();
+      if (r > 0.0 && r < env.surfaceRadiusM) {
+        const double below = env.surfaceRadiusM - r;
+        if (below > telemetry.deepestRefusalM) telemetry.deepestRefusalM = below;
+        ++telemetry.groundRefusals;
+        telemetry.onGround = true;
+        // Pinned ALONG THE RADIAL to the surface, and not left where it was.
+        // Leaving it put would strand the vehicle up to one tick's travel above
+        // the ground (1.35 m at 81 m/s and 1/60 s), which is outside
+        // `landing::evaluate`'s 0.5 m contact tolerance, so the landing gate
+        // could never fire and the fix would make the arrival unclassifiable.
+        state.posM = state.posM * (env.surfaceRadiusM / r);
+      }
+    }
+
     telemetry.altitudeM = state.altitudeM(env.bodyRadiusM);
     telemetry.speedMS = state.velMS.length();
     telemetry.machlessQPa = af.dynamicPressurePa;
@@ -813,7 +895,15 @@ class FlightSim {
   // telemetry is one step stale and a caller is entitled to ask this question
   // before the first step of a session or immediately after cutting the engine.
   bool onRailsEligible() const {
-    const double alt = state.posM.length() - env.bodyRadiusM;
+    const double r = state.posM.length();
+    // A VEHICLE SITTING ON THE GROUND IS NOT ON A CONIC, and on an airless body
+    // nothing else was catching that. `inSpace` is true at EVERY altitude when
+    // `topM` is 0, so a lander parked on Cinder with the engine off read as
+    // rails-eligible, and parking it would have fitted a conic that goes
+    // straight through the moon. Only checked when the caller supplied a
+    // surface, so this changes nothing for anyone who has not (PH-251).
+    if (env.surfaceRadiusM > 0.0 && r <= env.surfaceRadiusM) return false;
+    const double alt = r - env.bodyRadiusM;
     if (!atmo::inSpace(env.air, alt)) return false;
     return evaluatePropulsion(craft, state.throttle, 0.0).thrustN <= 0.0;
   }

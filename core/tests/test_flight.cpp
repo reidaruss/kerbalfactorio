@@ -12,6 +12,7 @@
 
 #include "of/cubed_sphere.h"
 #include "of/flight.h"
+#include "of/landing.h"   // PH-251: the gate that reads what the refusal leaves
 #include "of/orbital.h"
 #include "of/vessel.h"
 #include "test_framework.h"
@@ -1249,4 +1250,204 @@ TEST(sas_damps_roll_instead_of_driving_it_at_the_browsers_own_tick) {
     const double after = sim.state.angVelRadS.dot(normalized(sim.state.forward));
     CHECK_NEAR(after, 1e-3 * (1.0 - tune.kd * dt), 1e-12);
   }
+}
+
+// =============================================================================
+// THE GROUND (PH-251), AND IT IS A REFUSAL RATHER THAN A CONTACT MODEL.
+//
+// `flight.h` had NOTHING that stopped a vehicle. Nothing bounces, bends,
+// carries a load or arrests, and a vehicle whose periapsis is inside the body
+// propagated straight through it: a lander once flew 9,364 m below Cinder's
+// datum and out the other side while every instrument read healthy.
+//
+// `landing.h` did not catch it and was never going to. It is a GATE that
+// decides whether an arrival WAS a landing (R82); it reads a state and writes
+// nothing. So a bad insertion, a deorbit or a failed abort was silently a
+// tunnelling vehicle rather than a crash.
+//
+// What is built here is the minimum honest thing and it says so: a step does
+// not end inside the body, the refusal is COUNTED, and the depth it refused is
+// MEASURED so 0.4 m of settling and 9 km of tunnelling are distinguishable.
+// Gear, friction, tip-over and impact tolerance are not here, and the four
+// numbers `landing.h` refuses above remain stated policy until parts carry
+// load ratings.
+// =============================================================================
+
+// A vehicle on an orbit whose periapsis is well inside the body. This is the
+// shape every one of the reachable cases has: a bad insertion, a deorbit, an
+// aborted ascent. It is set up as a state vector rather than flown into,
+// because the point is the PROPAGATION and not how it got there.
+static FlightSim subsurfaceOrbit(double surfaceRadiusM) {
+  const FlightEnvironment base = forgeEnv();
+  FlightSim sim;
+  sim.craft = makeAscender(true).v;
+  sim.env = base;
+  sim.env.surfaceRadiusM = surfaceRadiusM;
+  // Apoapsis 200 km up, periapsis 100 km INSIDE the body: r = R + 200 km with
+  // the speed for a semi-major axis of R - 50 km.
+  const double R = base.bodyRadiusM;
+  const double rNow = R + 200.0e3;
+  const double a = R - 50.0e3;
+  const double v = std::sqrt(std::fmax(0.0, base.muM3S2 * (2.0 / rNow - 1.0 / a)));
+  sim.state.posM = Vec3{rNow, 0, 0};
+  sim.state.velMS = Vec3{0, v, 0};
+  sim.state.forward = Vec3{1, 0, 0};
+  sim.state.right = Vec3{0, 1, 0};
+  sim.state.throttle = 0.0;
+  sim.sas = SasMode::Off;
+  return sim;
+}
+
+TEST(without_a_surface_a_subsurface_periapsis_flies_straight_through_the_body) {
+  // THE NEGATIVE CONTROL, AND IT IS THE DEFECT. It has to be seen to happen or
+  // the fix below is a guard against nothing.
+  FlightSim sim = subsurfaceOrbit(0.0);     // 0 = no surface authority
+  double deepestM = 0.0;
+  const double R = sim.env.bodyRadiusM;
+  for (int i = 0; i < 120000; ++i) {
+    sim.step(0.02);
+    const double below = R - sim.state.posM.length();
+    if (below > deepestM) deepestM = below;
+    if (sim.state.timeS > 1800.0) break;
+  }
+  std::printf("    [PH-251] with NO surface set: the vehicle reached %.1f m "
+              "BELOW the datum, %d refusals recorded, deepest refusal %.1f m\n",
+              deepestM, sim.telemetry.groundRefusals,
+              sim.telemetry.deepestRefusalM);
+  CHECK(deepestM > 40000.0);                       // tens of km inside the body
+  CHECK(sim.telemetry.groundRefusals == 0);        // nothing was watching
+  CHECK(sim.telemetry.deepestRefusalM == 0.0);
+}
+
+TEST(with_a_surface_the_same_flight_is_refused_and_the_depth_is_measured) {
+  const double R = forgeEnv().bodyRadiusM;
+  FlightSim sim = subsurfaceOrbit(R);
+  double worstBelowM = 0.0;
+  int ticks = 0;
+  for (int i = 0; i < 120000; ++i) {
+    sim.step(0.02);
+    ++ticks;
+    const double below = R - sim.state.posM.length();
+    if (below > worstBelowM) worstBelowM = below;
+    if (sim.state.timeS > 1800.0) break;
+  }
+  std::printf("    [PH-251] with the surface set: worst ACTUAL depth %.3e m "
+              "over %d ticks, %d refusals, deepest refused step %.4f m\n",
+              worstBelowM, ticks, sim.telemetry.groundRefusals,
+              sim.telemetry.deepestRefusalM);
+  // THE PROPERTY: the vehicle is never inside the body. Asserted on the
+  // POSITION rather than on the flag, because the flag is the thing under test.
+  CHECK(worstBelowM <= 1e-9);
+  // AND THE RUN REALLY REACHED THE GROUND, so a flight that stayed in orbit
+  // cannot read as a refusal that worked.
+  CHECK(sim.telemetry.groundRefusals > 1000);
+  CHECK(ticks > 10000);
+  // AND THE DEPTH IS ONE TICK'S TRAVEL AND NOT NINE KILOMETRES, which is the
+  // difference between the guard firing and the guard being the only thing
+  // between the vehicle and the far side of the planet.
+  CHECK(sim.telemetry.deepestRefusalM > 0.0);
+  CHECK(sim.telemetry.deepestRefusalM < 200.0);
+}
+
+TEST(the_refusal_keeps_the_velocity_because_the_velocity_is_the_evidence) {
+  // A refusal that zeroed the velocity would turn every crash into a
+  // touchdown. `landing::evaluate` reads `velMS` to decide which it was, so
+  // this asserts that the gate can still tell them apart AFTER the refusal.
+  const double R = forgeEnv().bodyRadiusM;
+  FlightSim sim = subsurfaceOrbit(R);
+  landing::SurfaceFrame ground;
+  double arrivalSpeedMS = 0.0;
+  for (int i = 0; i < 120000; ++i) {
+    sim.step(0.02);
+    if (sim.telemetry.onGround) { arrivalSpeedMS = sim.state.velMS.length(); break; }
+  }
+  ground.upUnit = normalized(sim.state.posM);
+  ground.normalUnit = ground.upUnit;
+  ground.radiusM = R;
+  const landing::Touchdown t =
+      landing::evaluate(sim.state.posM, sim.state.velMS, sim.state.forward,
+                        ground, landing::TouchdownLimits{});
+  std::printf("    [PH-251] arrival at %.1f m/s: onGround=%d landed=%d "
+              "vertical %.1f horizontal %.1f | \"%s\"\n",
+              arrivalSpeedMS, t.onGround ? 1 : 0, t.landed ? 1 : 0,
+              t.verticalMS, t.horizontalMS, t.note);
+  CHECK(arrivalSpeedMS > 1000.0);
+  // THE GATE CAN STILL SEE IT. Both halves matter: it knows contact happened
+  // (which the pin to the surface is what makes reachable) and it knows this
+  // was not a landing (which keeping the velocity is what makes possible).
+  CHECK(t.onGround);
+  CHECK(!t.landed);
+  CHECK(t.verticalMS > 100.0);
+}
+
+TEST(a_surface_that_is_never_reached_changes_the_flight_by_exactly_nothing) {
+  // The default is OFF and must cost nothing, and "nothing" is asserted with
+  // `==` because this file's whole handoff contract is bit-exactness.
+  //
+  // Two runs of the SAME orbit, one with no surface and one with a surface far
+  // below anything the trajectory visits. If the branch ever leaks into the
+  // arithmetic, this goes red.
+  const FlightEnvironment base = forgeEnv();
+  const double rNow = base.bodyRadiusM + 200.0e3;
+  const double v = std::sqrt(base.muM3S2 / rNow);
+  FlightSim a, b;
+  for (FlightSim* s : {&a, &b}) {
+    s->craft = makeAscender(true).v;
+    s->env = base;
+    s->state.posM = Vec3{rNow, 0, 0};
+    s->state.velMS = Vec3{0, v, 0};
+    s->state.forward = Vec3{1, 0, 0};
+    s->state.right = Vec3{0, 1, 0};
+    s->state.throttle = 0.0;
+    s->sas = SasMode::Off;
+  }
+  b.env.surfaceRadiusM = base.bodyRadiusM;   // 200 km below the orbit
+  for (int i = 0; i < 30000; ++i) { a.step(0.02); b.step(0.02); }
+  std::printf("    [PH-251] 30,000 steps, surface off vs surface 200 km below: "
+              "dx %.3e dy %.3e dz %.3e, refusals %d\n",
+              b.state.posM.x - a.state.posM.x, b.state.posM.y - a.state.posM.y,
+              b.state.posM.z - a.state.posM.z, b.telemetry.groundRefusals);
+  CHECK(b.state.posM.x == a.state.posM.x);
+  CHECK(b.state.posM.y == a.state.posM.y);
+  CHECK(b.state.posM.z == a.state.posM.z);
+  CHECK(b.state.velMS.x == a.state.velMS.x);
+  CHECK(b.state.velMS.y == a.state.velMS.y);
+  CHECK(b.state.velMS.z == a.state.velMS.z);
+  // AND THE GUARD REALLY WAS ARMED, so this is not two runs with the feature
+  // off comparing equal to each other.
+  CHECK(b.env.surfaceRadiusM > 0.0);
+  CHECK(b.telemetry.groundRefusals == 0);
+}
+
+TEST(a_vehicle_sitting_on_the_ground_is_not_eligible_for_rails) {
+  // AN AIRLESS BODY HAS `inSpace` TRUE AT EVERY ALTITUDE, because `topM` is 0.
+  // So a lander parked on Cinder with the engine off read as rails-eligible,
+  // and parking it would have fitted a conic that goes through the moon.
+  FlightEnvironment cinder;
+  cinder.muM3S2 = orbital::kCinderMu;
+  cinder.bodyRadiusM = orbital::kCinderRadiusM;
+  cinder.air = atmo::makeCinderAtmosphere();
+
+  FlightSim landed;
+  landed.craft = makeAscender(true).v;
+  landed.env = cinder;
+  landed.state.posM = Vec3{orbital::kCinderRadiusM, 0, 0};
+  landed.state.velMS = Vec3{0, 0, 0};
+  landed.state.throttle = 0.0;
+
+  // WITHOUT a surface it still answers the old way, which is the honest
+  // statement of what changed: this is not a new global rule, it is a rule that
+  // exists exactly where a caller has said where the ground is.
+  CHECK(landed.onRailsEligible());
+  landed.env.surfaceRadiusM = orbital::kCinderRadiusM;
+  CHECK(!landed.onRailsEligible());
+
+  // AND THE POSITIVE CONTROL: 50 km up over the same surface, engine off, it is
+  // eligible again. Without this the assertion above could be satisfied by a
+  // function that always says no.
+  landed.state.posM = Vec3{orbital::kCinderRadiusM + 50000.0, 0, 0};
+  CHECK(landed.onRailsEligible());
+  std::printf("    [PH-251] Cinder, engine off: on the ground eligible=%d with "
+              "a surface, 50 km up eligible=%d\n",
+              0, landed.onRailsEligible() ? 1 : 0);
 }
