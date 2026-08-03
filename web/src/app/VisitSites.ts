@@ -155,9 +155,29 @@ export function visitBlocked(f: FlightMode | null): string {
     : '';
 }
 
-/** The rows the panel draws. Derived per view, like every other row. */
-export function visitRows(f: FlightMode | null): CheatRow[] {
-  const blocked = visitBlocked(f);
+/**
+ * The rows the panel draws. Derived per view, like every other row.
+ *
+ * GP-502. THE SEVEN ARE FORGE'S, AND THEY REFUSE ON ANY OTHER BODY. Every one
+ * of them is a WG-55 survey candidate: a latitude, a longitude, and a sentence
+ * about the sun angle, the treeline and the ground there. The lat/lon is a
+ * valid point on any sphere, so `Controller.teleport` would happily land the
+ * player somewhere on Cinder and every word of the note would be false -- a
+ * desert with no trees, on an airless moon that has no trees anywhere.
+ *
+ * This became reachable the moment GP-500 gave the player a door to another
+ * body, which is the general shape worth naming: a new destination does not
+ * only add a row, it can make an existing row's sentence untrue.
+ *
+ * `hereId` defaults to Forge so no existing caller changed, and the default is
+ * the correct answer for every world that shipped before this one.
+ */
+export function visitRows(f: FlightMode | null, hereId = 0): CheatRow[] {
+  const blocked = hereId !== 0
+    ? 'these seven are surveyed sites ON FORGE and their sun, treeline and '
+      + 'ground are Forge\'s: go back to Forge (Another world, below) and they '
+      + 'come back'
+    : visitBlocked(f);
   return VISIT_SITES.map((s) => ({
     id: `visit:${s.id}`, label: s.label, note: s.note,
     kind: 'button' as const, blocked }));
@@ -234,12 +254,17 @@ export interface VisitOutcome {
  * already reports that on its own channel (`chunks.converged`).
  */
 export function pressVisit(id: string, f: FlightMode | null, ports: VisitPorts,
-): VisitOutcome | null {
+                           hereId = 0): VisitOutcome | null {
   if (!id.startsWith('visit:')) return null;
   if (id === STATION_ROW_ID) return pressStation(f, ports);
   const s = VISIT_SITES.find((x) => `visit:${x.id}` === id) ?? null;
   if (s === null) return { done: false, message: `no such site: ${id.slice(6)}` };
-  const blocked = visitBlocked(f);
+  // GP-502. The VERB refuses off-Forge too, and not only the button. A greyed
+  // row cannot be clicked, so a guard that lived only in `visitRows` would be
+  // reachable exactly by `of.cheat`, which is the startfresh-refusal pattern
+  // and the reason that one is asserted at the entry point.
+  const blocked = hereId !== 0
+    ? visitRows(f, hereId)[0].blocked ?? '' : visitBlocked(f);
   if (blocked !== '') return { done: false, message: `refused: ${blocked}` };
   ports.teleport(s.latDeg, s.lonDeg, VISIT_EYE_ALT_M);
   return {

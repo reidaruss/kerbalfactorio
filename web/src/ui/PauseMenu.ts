@@ -75,6 +75,12 @@ export interface PauseView {
    *  because the seven above are a spawn-pick comparison and this is not a
    *  spawn: see app/VisitSites.ts for the argument. */
   station: CheatRow[];
+  /** GP-500. The Another-world group: one row per body, the one you are
+   *  standing on blocked by name. Its own array for GP-233's reason a third
+   *  time -- a body is a different KIND of destination from a spawn candidate
+   *  and from an orbit, and it is the only one whose door is a page reload.
+   *  See app/VisitWorlds.ts. */
+  worlds: CheatRow[];
   /** Set while Start Fresh is armed: the whole sentence the confirm shows. */
   confirm: string;
 }
@@ -276,7 +282,10 @@ export class PauseMenu extends Modal {
       // had to be. Its blocked sentence changes when the player boards, and a
       // group left out of the diff would keep drawing an enabled button for a
       // press that now refuses.
-      + [...view.cheats, ...view.visits, ...view.station]
+      // GP-500: the world rows are in the key on the same argument. Their
+      // blocked sentence changes the moment the player boards, and one of the
+      // two changes meaning entirely when the body does.
+      + [...view.cheats, ...view.visits, ...view.station, ...view.worlds]
         .map((c) => `${c.id}:${c.on === true ? 1 : 0}:${c.blocked ?? ''}`)
         .join(',');
     if (key === this.last) return;

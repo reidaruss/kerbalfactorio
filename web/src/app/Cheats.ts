@@ -27,6 +27,7 @@ import { clearSlot, readSlot } from '../game/SaveGame.js';
 import { assistedReport, clearAssisted, isAssisted, noteCheat } from '../game/Assisted.js';
 import { livePropellantKg, refillTanks, warpToOrbit } from '../sim/FlightCheats.js';
 import { pressVisit, stationRows, visitRows, type VisitPorts } from './VisitSites.js';
+import { pressWorld, worldRows, type WorldPorts } from './VisitWorlds.js';
 import { optionPages, pressOption } from './OptionsPages.js';
 import { AudioBus } from '../audio/AudioBus.js';
 import type { CheatRow, PauseView } from '../ui/PauseMenu.js';
@@ -53,7 +54,7 @@ const FUEL_FLOOR = 0.9;
 
 /** GP-231. `VisitPorts` (the two teleport doors, argued in app/VisitSites.ts)
  *  is EXTENDED rather than held as a field, so `press` hands `this.d` over. */
-export interface CheatDeps extends VisitPorts {
+export interface CheatDeps extends VisitPorts, WorldPorts {
   gameplay: () => Gameplay | null;
   flight: () => FlightMode | null;
   body: PlanetBody;
@@ -115,10 +116,18 @@ export class Cheats {
     if (opt !== '') return this.say(id, true, opt);
     // GP-167 / GP-168. Visit a surveyed site, or GP-231's orbital station. A
     // REAL cheat either way: it marks the save.
-    const vis = pressVisit(id, this.d.flight(), this.d);
+    const vis = pressVisit(id, this.d.flight(), this.d, this.d.body.bodyId);
     if (vis !== null) {
       if (vis.done) this.mark('visit');
       return this.say(id, vis.done, vis.message, vis.detail);
+    }
+    // GP-500. Go to another body. A REAL cheat: it marks the save, and it is
+    // the only control here whose door is a page reload (VisitWorlds.ts).
+    const wld = pressWorld(id, this.d.flight(), this.d.body.bodyId,
+      window.location.href, this.d);
+    if (wld !== null) {
+      if (wld.done) this.mark('world');
+      return this.say(id, wld.done, wld.message, wld.detail);
     }
     if (id === 'startfresh') return this.arm();
     if (id === 'startfresh:cancel') { this.armed = false; return this.say(id, true, 'cancelled'); }
@@ -378,9 +387,12 @@ export class Cheats {
       cheats,
       // GP-167. Derived per view like everything else: the blocked reason
       // follows `aboard` the frame it changes.
-      visits: visitRows(f),
+      visits: visitRows(f, this.d.body.bodyId),
       // GP-233. Its own group, argued in VisitSites.ts.
       station: stationRows(f, this.d.body),
+      // GP-500. `body.bodyId` is CE-22's one body identity, read live, so the
+      // "you are already here" refusal follows the world and not a boot copy.
+      worlds: worldRows(f, this.d.body.bodyId),
       confirm: this.armed ? this.confirmSentence() : '',
     };
   }

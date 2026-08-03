@@ -48,6 +48,35 @@ export function installPauseMenu(s: Services, loop: Loop) {
     window.setTimeout(() => { window.location.reload(); }, 400);
   };
   const slots = new SaveSlots(restart);
+
+  // GP-500. THE DOOR TO THE OTHER BODY, and it is `restart`'s sibling rather
+  // than a second mechanism: both take the running world away and boot into
+  // one. The difference is one query flag, derived in app/VisitWorlds.ts.
+  //
+  // THE SAVE IS HERE AND IT IS AWAITED. `Gameplay` already saves on `pagehide`
+  // (Gameplay.ts), but `pagehide` cannot await two IndexedDB round trips, so on
+  // the one gesture that deliberately navigates away it is a race the player
+  // would lose up to 20 seconds of Forge to. Awaiting it makes "your world is
+  // saved first", which the row promises, TRUE rather than intended.
+  //
+  // A FAILED SAVE STILL TRAVELS. `saveSlot` swallows its own errors by design
+  // ("a save is not a rule"), and stranding a player on the world they asked to
+  // leave because a write failed would be a worse answer than the one they
+  // asked for. The autosave and `pagehide` are both still behind it.
+  //
+  // THE SUPPRESSION IS CHECKED AT NAVIGATION TIME, not at call time, so a
+  // driven probe that has pressed `norestart` still performs the real save and
+  // can then assert it happened. `restart` reads the same flag; one flag, both
+  // exits, which is GP-137's own lesson about a flag only one verb consulted.
+  const goTo = (url: string): void => {
+    void (s.gameplay?.save() ?? Promise.resolve(null))
+      .catch(() => null)
+      .then(() => {
+        if (restartOff) return;
+        window.setTimeout(() => { window.location.assign(url); }, 400);
+      });
+  };
+
   const cheats = new Cheats({
     slots,
     gameplay: () => s.gameplay,
@@ -55,6 +84,7 @@ export function installPauseMenu(s: Services, loop: Loop) {
     body: s.body,
     cfg: s.cfg,
     restart,
+    goTo,
     suppressRestart: () => { restartOff = true; },
     // GP-167. The ONE ground teleport, reused and never rewritten: this is the
     // exact call `__of.teleport` makes (Debug.ts), so the cheat and every site
@@ -221,8 +251,10 @@ export function installPauseMenu(s: Services, loop: Loop) {
         // GP-167 / GP-233: the visit rows and the station row ride the same
         // report, same shape, so `disabled` and `blocked` are asserted off the
         // live DOM for every group rather than for the two that were here first.
+        // GP-500: the world rows ride it too, same shape, so a probe asserting
+        // that the body you are standing on is greyed reads the live DOM.
         buttons: [...cheats.view().cheats, ...cheats.view().visits,
-          ...cheats.view().station].map((c) => ({
+          ...cheats.view().station, ...cheats.view().worlds].map((c) => ({
           id: c.id, present: menu.buttonFor(c.id) !== null,
           disabled: menu.buttonFor(c.id)?.disabled ?? null,
           on: c.on ?? null, blocked: c.blocked ?? '',

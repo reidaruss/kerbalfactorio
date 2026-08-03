@@ -53,7 +53,8 @@ const STUBS: readonly { name: string; waiting: string; page: string }[] = [
 
 /** The whole root page, in the order it is read down the screen. */
 export function rootPage(v: PauseView): string {
-  return header(v) + stubs() + testing(v) + visitGroup(v) + stationGroup(v);
+  return header(v) + stubs() + testing(v) + visitGroup(v) + stationGroup(v)
+    + worldGroup(v);
 }
 
 function header(v: PauseView): string {
@@ -107,6 +108,22 @@ function visitGroup(v: PauseView): string {
 function stationGroup(v: PauseView): string {
   return '<div class="of-pgrp cheats visits orbit"><h4>In orbit</h4>'
     + v.station.map((c) => cheatRow(c, 'Go')).join('') + '</div>';
+}
+
+/**
+ * GP-500. The other bodies, under their own heading, through the SAME row
+ * renderer and the same verb. Why it is not a ninth Visit-site row is argued
+ * where the rows are built, in app/VisitWorlds.ts; the short version is that
+ * the seven are a spawn-pick comparison on ONE planet and this group changes
+ * which planet that is.
+ *
+ * It is drawn LAST on purpose. It is the only control in the whole menu that
+ * takes the running page away, so it sits below everything a player might want
+ * to press on the way past.
+ */
+function worldGroup(v: PauseView): string {
+  return '<div class="of-pgrp cheats visits world-jump"><h4>Another world</h4>'
+    + v.worlds.map((c) => cheatRow(c, 'Go')).join('') + '</div>';
 }
 
 function cheatRow(c: CheatRow, verb: string): string {
