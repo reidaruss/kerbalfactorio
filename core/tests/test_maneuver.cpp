@@ -1723,16 +1723,28 @@ TEST(a_body_transfer_that_cannot_capture_says_which_way_it_failed) {
     const tr::Transfer t = tr::solveTransfer(ship, moon, 0.0, tH * 0.999);
     const ap::Program p = ap::flyTransfer(t, ship, moon, craft);
     CHECK(p.valid);
-    CHECK(p.burnCount == 2);
+    // THREE burns for a body: injection, a RESERVED correction, capture.
+    CHECK(p.burnCount == 3);
     CHECK(p.crossesSoi);
     CHECK(p.burns[0].frame == ap::BurnFrame::Primary);
-    CHECK(p.burns[1].frame == ap::BurnFrame::Target);
+    CHECK(p.burns[2].frame == ap::BurnFrame::Target);
     CHECK_NEAR(p.targetMuM3S2, orbital::kCinderMu, 1e-6);
-    CHECK(p.soiEntryS > 0.0 && p.soiEntryS < p.burns[1].nodeTimeS);
+    CHECK(p.soiEntryS > 0.0 && p.soiEntryS < p.burns[2].nodeTimeS);
     CHECK(p.captureRadiusM > orbital::kCinderRadiusM);
     // The capture is the cheaper half, which is the whole reason a body is
     // billed differently from a station.
-    CHECK(p.burns[1].deltaVMS < p.burns[0].deltaVMS);
+    CHECK(p.burns[2].deltaVMS < p.burns[0].deltaVMS);
+
+    // THE CORRECTION IS RESERVED AND EMPTY, which is the honest state of a
+    // burn whose size depends on an injection that has not happened yet.
+    CHECK(p.correctionIndex == 1);
+    CHECK(p.burns[1].deltaVMS == 0.0);
+    CHECK(p.burns[1].frame == ap::BurnFrame::Primary);
+    CHECK(p.burns[1].nodeTimeS > p.burns[0].nodeTimeS);
+    CHECK(p.burns[1].nodeTimeS < p.burns[2].nodeTimeS);
+    // and the plan carries what the executor will need to fill it.
+    CHECK(p.arriveS > 0.0);
+    CHECK(p.aimPointM.length() > 0.0);
   }
 }
 
@@ -1811,31 +1823,27 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
   // Lambert from where the vehicle ACTUALLY is to the aim point it was always
   // going to, in the time that is left.
   {
-    const double tTcm = t.departS + 0.35 * (t.arriveS - t.departS);
-    const double coastToTcm = tTcm - sim.state.timeS;
-    CHECK(coastToTcm > 0.0);
-    const orbital::StateVector atTcm =
-        orbital::propagate(afterBurn, coastToTcm, kMu);
-    const ap::Burn tcm = ap::midCourseCorrection(atTcm, tTcm, t.aimPointM,
-                                                 t.arriveS, kMu, sim.craft);
+    // THE PLAN RESERVED THE SLOT; THE EXECUTOR FILLS IT from the state the
+    // injection really produced. Nothing here builds a burn by hand any more.
+    CHECK(pilot.program.burns[1].deltaVMS == 0.0);       // reserved, empty
+    CHECK(ap::fillCorrection(pilot, afterBurn, sim.state.timeS, kMu, sim.craft));
+    const ap::Burn tcm = pilot.program.burns[1];
     CHECK(tcm.deltaVMS > 0.0);
     // It is SMALL against the injection, which is what makes a correction a
     // correction rather than a second mission.
     CHECK(tcm.deltaVMS < 0.1 * p.burns[0].deltaVMS);
-
-    ap::Program corrected = pilot.program;
-    CHECK(ap::insertBurn(corrected, 1, tcm));
-    CHECK(corrected.burnCount == 3);
-    pilot.armFrom(corrected, 1);
+    CHECK(pilot.status.burnIndex == 1);
 
     // Fly it for real, in Forge's frame, like any other burn.
-    sim.state.posM = atTcm.r;
-    sim.state.velMS = atTcm.v;
-    sim.state.timeS = tTcm - ap::kOrientLeadS - 5.0;   // arrive with slew time
+    const double tTcm = tcm.nodeTimeS;
+    const orbital::StateVector atTcm =
+        orbital::propagate(afterBurn, tTcm - sim.state.timeS, kMu);
+    const double tStart = tTcm - ap::kOrientLeadS - 5.0;
     const orbital::StateVector back =
-        orbital::propagate(atTcm, sim.state.timeS - tTcm, kMu);
+        orbital::propagate(atTcm, tStart - tTcm, kMu);
     sim.state.posM = back.r;
     sim.state.velMS = back.v;
+    sim.state.timeS = tStart;
     sim.state.forward = orbital::normalized(tcm.deltaV);
     sim.state.right = orbital::normalized(orbital::cross(back.r, back.v));
     for (int i = 0; i < 300000; ++i) {
@@ -1892,6 +1900,7 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
   }
   CHECK(ap::replanCaptureAtHandoff(pilot, entry, tCross, moon, sim.craft));
   CHECK(pilot.status.burnIndex == 2);                // injection and TCM stand
+  CHECK(pilot.program.burnCount == 3);
   CHECK(pilot.program.burns[2].frame == ap::BurnFrame::Target);
 
   const double tIgnite = pilot.program.burns[2].ignitionS();
@@ -1953,7 +1962,7 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
   // clear of the ground, and wrong by 22 km and two orders of magnitude of
   // eccentricity. Both sets of numbers are kept because the difference between
   // them is the whole value of having pinned the gap instead of widening it.
-  CHECK_NEAR(o.semiMajorAxisM, 270379.5, 200.0);
+  CHECK_NEAR(o.semiMajorAxisM, 270141.1, 200.0);
   CHECK(o.eccentricity < 0.002);
   CHECK_NEAR(o.semiMajorAxisM, pilot.program.captureRadiusM, 100.0);
   CHECK(o.periapsisAltM > 65.0e3);       // comfortably clear of the ground

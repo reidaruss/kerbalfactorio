@@ -402,14 +402,72 @@ OF_API int of_ap_plan(int f, double tDepartFromNowS, double smaM, double ecc,
 // by hand and flown by autopilot is the same object, and only the bridge knows
 // which is happening. Keeping it here also means /core stays free of the
 // question and `flight.h` needs no field it would have to serialise.
-namespace { std::map<int, ap::Autopilot> g_pilots; }
+// A pilot plus everything the HANDOFF needs, because a body destination is not
+// finished when the injection is: the correction has to be filled from the
+// state that burn actually produced, and the frame has to change part-way.
+struct PilotSlot {
+  ap::Autopilot pilot;
+  tf::Target target;          // the body, if this is a body destination
+  bool corrected = false;     // the reserved correction has been filled
+  bool handedOff = false;     // the SOI has been crossed and the frame swapped
+};
+namespace { std::map<int, PilotSlot> g_pilots; }
 
 // Called from of_fl_step / of_fl_step_n, once per tick, before the integrator.
+//
+// R68. THE WHOLE BODY MISSION HAPPENS IN HERE, and it has to, for exactly the
+// reason a separate `of_ap_tick` was refused: a client that had to remember to
+// fill a correction and swap a frame at the right instants, in both step
+// exports, under warp, would forget, and forgetting is silent. Before this, a
+// body destination armed through the bridge flew its injection and MISSED
+// (PH-159 measured the miss: 468 km at the sphere of influence, and a planned
+// 250 km capture periapsis becoming 185669 m against a 200000 m body).
+//
+// Three things, each once, each gated on a measurement rather than a clock:
+//   1. fill the reserved correction, once the injection has been flown;
+//   2. hand off, when the vehicle is ACTUALLY inside the sphere of influence;
+//   3. re-plan the capture from the state the world delivered.
 void apDriveAutopilot(int f, fl::FlightSim& s, double dt) {
   auto it = g_pilots.find(f);
   if (it == g_pilots.end()) return;
-  ap::Autopilot& pilot = it->second;
+  PilotSlot& slot = it->second;
+  ap::Autopilot& pilot = slot.pilot;
   if (!pilot.running()) return;
+  const ap::Program& p = pilot.program;
+
+  // 1. THE CORRECTION, filled from what the injection really did. Gated on the
+  //    executor having finished burn 0, not on a time, because a burn that ran
+  //    late must not have its correction computed from a state it never had.
+  if (!slot.corrected && p.correctionIndex > 0
+      && pilot.status.burnIndex >= p.correctionIndex
+      && p.burns[p.correctionIndex].deltaVMS <= 0.0) {
+    const of::orbital::StateVector now{s.state.posM, s.state.velMS};
+    if (ap::fillCorrection(pilot, now, s.state.timeS, s.env.muM3S2, s.craft))
+      slot.corrected = true;
+  }
+
+  // 2. THE HANDOFF, on the MEASURED separation and never on the predicted
+  //    crossing time. PH-159: the plan is about twenty minutes early, because
+  //    the injection is a finite burn and the coast is seven hours long.
+  if (!slot.handedOff && p.crossesSoi && slot.target.isBody()) {
+    const of::orbital::StateVector body =
+        of::orbital::cinderStateAt(s.state.timeS);
+    const of::Vec3 rel = s.state.posM - body.r;
+    if (rel.length() <= p.targetSoiRadiusM) {
+      // D-002, one body at a time. The whole handoff is a subtraction.
+      s.state.posM = rel;
+      s.state.velMS = s.state.velMS - body.v;
+      s.env.muM3S2 = slot.target.muM3S2;
+      s.env.bodyRadiusM = slot.target.bodyRadiusM;
+      s.env.air = of::atmo::atmosphereForBody(1);
+      slot.handedOff = true;
+      // 3. and the capture is re-planned from the state that just arrived.
+      const of::orbital::StateVector entry{s.state.posM, s.state.velMS};
+      ap::replanCaptureAtHandoff(pilot, entry, s.state.timeS, slot.target,
+                                 s.craft);
+    }
+  }
+
   const ap::Command c = pilot.update(s, dt);
   ap::Autopilot::apply(s, c);
 }
@@ -420,7 +478,9 @@ OF_API int of_ap_arm_hold_orbit(int f, double targetRadiusM) {
   s->craft.layout();
   const ap::Program p = ap::holdOrbit(s->orbitalState(), s->state.timeS,
                                       s->env.muM3S2, targetRadiusM, s->craft);
-  g_pilots[f].arm(p);
+  PilotSlot& slot = g_pilots[f];
+  slot = PilotSlot();
+  slot.pilot.arm(p);
   return p.valid ? 1 : 0;
 }
 
@@ -457,7 +517,71 @@ OF_API int of_ap_arm_transfer(int f, double tDepartFromNowS, double smaM,
   // frame change. A body therefore arms as a single injection burn today, and
   // PH-156 is opening that seam rather than working around it.
   const ap::Program p = ap::flyTransfer(best, ship, tgt, s->craft);
-  g_pilots[f].arm(p);
+  PilotSlot& slot = g_pilots[f];
+  slot = PilotSlot();
+  slot.target = tgt;             // kept for the handoff, which needs the body
+  slot.pilot.arm(p);
+  return p.valid ? 1 : 0;
+}
+
+// A BODY DESTINATION IS ITS OWN CALL, AND IT HAS TO BE (R68).
+//
+// `of_ap_arm_transfer`'s nine target words describe an ORBIT: semi-major axis,
+// eccentricity, inclination, node, argument, anomaly, epoch. There is no way in
+// that vocabulary to say "and it is a moon". Armed with Cinder's orbital
+// elements it therefore planned a VESSEL rendezvous with the moon's centre,
+// which is a two-burn match at 1561.330 m/s against a thing that is 200 km of
+// rock. Everything ran and the answer was confidently wrong, which is this
+// project's most familiar shape.
+//
+// It could have been fixed by appending a body id to the existing call. It is a
+// separate export instead, because naming a body is a DIFFERENT QUESTION from
+// describing an orbit: physics owns where Cinder is (PH-162), so a caller must
+// not be able to pass the moon's ephemeris at all. There is nothing to get
+// wrong here because there is nothing to supply.
+//
+//   of_ap_arm_body_transfer(f, tDepartFromNowS, bodyId, captureAltitudeM)
+//     bodyId 1 is Cinder. captureAltitudeM is the orbit to capture into, above
+//     the surface. -> 1 armed, 0 refused, and `of_ap_note` says which.
+//
+// The program it arms is three burns: injection, a RESERVED correction the
+// executor fills from the state the injection really produced, and a capture in
+// the moon's own frame. The handoff happens inside `of_fl_step`.
+OF_API int of_ap_arm_body_transfer(int f, double tDepartFromNowS, int bodyId,
+                                   double captureAltitudeM) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s || bodyId != 1) return 0;
+  s->craft.layout();
+  const double mu = s->env.muM3S2;
+  const of::orbital::Elements ship = s->park();
+  const double depart = s->state.timeS + tDepartFromNowS;
+
+  tf::Target tgt;
+  // THE BODY'S OWN EPHEMERIS, from /core, never from the caller.
+  tgt.el = of::orbital::park(of::orbital::cinderStateAt(depart), mu, depart);
+  tgt.muM3S2 = of::orbital::kCinderMu;
+  tgt.soiRadiusM = of::orbital::kCinderSoiRadius;
+  tgt.bodyRadiusM = of::orbital::kCinderRadiusM;
+  tgt.captureAltitudeM = captureAltitudeM;
+
+  const double tH = tf::hohmannTimeS(ship.a, tgt.el.a, mu);
+  if (!(tH > 0.0)) return 0;
+  tf::Transfer best;
+  double bestDv = 1e308;
+  for (int j = 0; j < kApTofSamples; ++j) {
+    const double g = static_cast<double>(j) / (kApTofSamples - 1);
+    const tf::Transfer c =
+        tf::solveTransfer(ship, tgt, depart, (0.25 + g * 1.5) * tH);
+    if (!c.valid || !(c.totalDvMS < bestDv)) continue;
+    bestDv = c.totalDvMS;
+    best = c;
+  }
+  if (!best.valid) return 0;
+  const ap::Program p = ap::flyTransfer(best, ship, tgt, s->craft);
+  PilotSlot& slot = g_pilots[f];
+  slot = PilotSlot();
+  slot.target = tgt;
+  slot.pilot.arm(p);
   return p.valid ? 1 : 0;
 }
 
@@ -502,7 +626,7 @@ OF_API int of_ap_status(int f) {
   resetF64(18);
   auto it = g_pilots.find(f);
   if (it == g_pilots.end()) return 0;
-  const ap::Autopilot& pilot = it->second;
+  const ap::Autopilot& pilot = it->second.pilot;
   const ap::Program& p = pilot.program;
   const ap::Status& st = pilot.status;
   const int bi = (st.burnIndex >= 0 && st.burnIndex < p.burnCount) ? st.burnIndex : 0;
@@ -537,7 +661,7 @@ OF_API int of_ap_status(int f) {
 OF_API int of_ap_note(int f) {
   auto it = g_pilots.find(f);
   if (it == g_pilots.end()) return textOut("nothing armed");
-  const ap::Autopilot& pilot = it->second;
+  const ap::Autopilot& pilot = it->second.pilot;
   const char* n = (pilot.status.note && pilot.status.note[0] != '\0')
                   ? pilot.status.note : pilot.program.note;
   return textOut(n);

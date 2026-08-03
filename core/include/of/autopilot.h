@@ -122,6 +122,19 @@ struct Program {
   double targetMuM3S2 = 0.0;       // the body it hands off TO
   double targetSoiRadiusM = 0.0;
   double captureRadiusM = 0.0;     // the circular orbit the capture produces
+  int targetBodyId = -1;           // which body the handoff is TO, -1 for none
+  Vec3 aimPointM{0, 0, 0};         // what the transfer was aimed at
+  double arriveS = 0.0;            // when it was aimed to get there
+
+  // A CORRECTION SLOT, RESERVED AT PLAN TIME AND FILLED AT EXECUTION TIME.
+  // A moon transfer needs a mid-course correction (PH-159: 468 km of error at
+  // the sphere of influence against a 543 km aim offset), and its delta-v
+  // cannot be known when the plan is made, because it corrects for what the
+  // burn ACTUALLY did. So the plan reserves the burn and says when it happens;
+  // the executor computes its vector once, from the state the injection really
+  // produced. That is the same sanctioned category as the capture re-plan: not
+  // re-deriving the mission, but measuring what the world did to it.
+  int correctionIndex = -1;        // which burn is the reserved correction
 };
 
 struct Command {
@@ -241,6 +254,25 @@ class Autopilot {
     const Burn& b = program.burns[burnIndex_];
     const double now = sim.state.timeS;
     status.timeToIgnitionS = b.ignitionS() - now;
+
+    // A RESERVED BURN THAT WAS NEVER FILLED IN IS SKIPPED, not pointed at.
+    // `normalized` of a zero vector is a zero vector, so a correction slot the
+    // executor never got round to computing would otherwise command the SAS to
+    // aim at nothing and hold there for ever. Skipping is the safe failure:
+    // the vehicle flies the uncorrected trajectory, which is wrong in a way
+    // that is visible, rather than stopping dead in a way that is not.
+    if (b.deltaVMS <= 0.0) {
+      ++burnIndex_;
+      dvThis_ = 0.0;
+      if (burnIndex_ >= program.burnCount) {
+        status.phase = Phase::Done;
+        status.note = "program complete";
+      } else {
+        status.phase = Phase::Coast;
+        status.note = "skipped an empty burn";
+      }
+      return c;
+    }
 
     // Point at the burn, always: there is no phase in which a different
     // attitude is wanted, and holding it early costs nothing.
@@ -531,11 +563,28 @@ inline Program flyTransfer(const transfer::Transfer& tr,
     p.targetMuM3S2 = tgt.muM3S2;
     p.targetSoiRadiusM = tgt.soiRadiusM;
     p.captureRadiusM = cap.circularRadiusM;
-    p.burns[1].nodeTimeS = cap.timeS;
-    p.burns[1].deltaV = cap.deltaV;
-    p.burns[1].deltaVMS = cap.deltaVMS;
-    p.burns[1].frame = BurnFrame::Target;    // Cinder's frame, not Forge's
-    p.burnCount = 2;
+    p.aimPointM = tr.aimPointM;
+    p.arriveS = tr.arriveS;
+
+    // RESERVE THE MID-COURSE CORRECTION. Its delta-v CANNOT be known now: it
+    // corrects for what the injection actually did, and the injection has not
+    // happened. So the plan says WHEN and the executor says HOW MUCH, which is
+    // measurement rather than re-derivation (PH-159: without one, 468 km of
+    // error at the sphere of influence against a 543 km aim offset, and a
+    // planned 250 km capture becomes a 14 km deep hole in the ground).
+    //
+    // A third of the way is early enough to be cheap and late enough that the
+    // error it is correcting has fully expressed itself.
+    p.burns[1] = Burn();
+    p.burns[1].nodeTimeS = tr.departS + 0.35 * (tr.arriveS - tr.departS);
+    p.burns[1].frame = BurnFrame::Primary;
+    p.correctionIndex = 1;
+
+    p.burns[2].nodeTimeS = cap.timeS;
+    p.burns[2].deltaV = cap.deltaV;
+    p.burns[2].deltaVMS = cap.deltaVMS;
+    p.burns[2].frame = BurnFrame::Target;    // Cinder's frame, not Forge's
+    p.burnCount = 3;
     p.totalDvMS += cap.deltaVMS;
   }
 
@@ -604,6 +653,40 @@ inline bool insertBurn(Program& p, int at, const Burn& b) {
   p.burns[at] = b;
   ++p.burnCount;
   p.totalDvMS += b.deltaVMS;
+  return true;
+}
+
+// FILL THE RESERVED CORRECTION FROM WHERE THE VEHICLE ACTUALLY IS.
+//
+// Called once, after the injection has been flown, while there is still most of
+// the coast left. It is the second half of the slot `flyTransfer` reserved: the
+// plan said when, this says how much, and the how-much is a measurement of what
+// the injection really did rather than a second opinion about what it should
+// have done. The Lambert is the same solver the mission was planned with.
+inline bool fillCorrection(Autopilot& pilot, const orbital::StateVector& actual,
+                           double nowS, double mu, const vessel::Vessel& craft) {
+  Program p = pilot.program;
+  const int i = p.correctionIndex;
+  if (i < 0 || i >= p.burnCount) return false;
+  if (p.burns[i].deltaVMS > 0.0) return false;      // already filled
+  if (!(p.arriveS > nowS)) return false;
+
+  // PROPAGATE TO THE NODE FIRST. `midCourseCorrection` solves a Lambert FROM
+  // the position it is handed, so handing it TODAY position with TOMORROW time
+  // of flight asks for a transfer that starts where the vehicle is not. The
+  // first version of this did exactly that and produced a 2016 m/s correction
+  // against an 861 m/s injection, which is not a correction, it is a second
+  // mission with the wrong departure point.
+  const double tNode = (p.burns[i].nodeTimeS > nowS) ? p.burns[i].nodeTimeS : nowS;
+  const orbital::StateVector atNode =
+      (tNode > nowS) ? orbital::propagate(actual, tNode - nowS, mu) : actual;
+  const Burn b = midCourseCorrection(atNode, tNode, p.aimPointM, p.arriveS,
+                                     mu, craft);
+  if (!(b.deltaVMS > 0.0)) return false;
+  p.burns[i] = b;
+  p.totalDvMS = 0.0;
+  for (int k = 0; k < p.burnCount; ++k) p.totalDvMS += p.burns[k].deltaVMS;
+  pilot.armFrom(p, i);
   return true;
 }
 
