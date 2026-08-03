@@ -85,11 +85,34 @@ def _assert_arm_proportions():
     which is a PUBLISHED interface (contracts.json dims_xyz_m x = 1.80 at a
     5 mm tolerance) and is the reason the textbook 335 mm humerus is not
     reachable here at all."""
+    # THE TARGET ITSELF IS GUARDED, AND THAT GAP WAS FOUND BY A CONTROL THAT
+    # FAILED TO GO RED. RN-906 tried to prove this assertion by setting
+    # HUMERUS_TO_FOREARM back to the shipped 1.120 and the build went green,
+    # because ELBOW_X is DERIVED from the target, so moving the target moves
+    # both sides of the equality below and it can never see it. The check was
+    # only ever guarding a TYPED elbow.
+    #
+    # That is not academic. The thing Admin predicted a future lane would do is
+    # set this number to the VIEW MODEL's 1.06, and the equality would have
+    # waved it through. So the band is on the target, and 1.06 is deliberately
+    # outside it.
+    if not (1.15 <= HUMERUS_TO_FOREARM <= 1.40):
+        raise ValueError(
+            "HUMERUS_TO_FOREARM is %.4f, outside the 1.15..1.40 that any "
+            "anatomical argument leaves. If this was set to about 1.06 to "
+            "agree with the first-person rig, that is the confusion this band "
+            "exists to stop: THIS rig models a person and THAT one frames a "
+            "shot, and _assert_fp_framing owns the other one's constraint."
+            % HUMERUS_TO_FOREARM)
     hum, fore = ELBOW_X - SHOULDER_X, WRIST_X - ELBOW_X
     ratio = hum / fore
     if abs(ratio - HUMERUS_TO_FOREARM) > 1e-9:
-        raise ValueError("humerus/forearm is %.4f, wanted %.4f"
-                         % (ratio, HUMERUS_TO_FOREARM))
+        raise ValueError(
+            "humerus/forearm is %.4f, wanted %.4f. THIS IS THE THIRD-PERSON "
+            "RIG, WHICH MODELS A PERSON. The view model's arm chain further "
+            "down this file is 1.06 and is deliberately NOT this number: it "
+            "FRAMES A SHOT, and _assert_fp_framing owns its constraint."
+            % (ratio, HUMERUS_TO_FOREARM))
     # the chain has to fit inside half the declared span with a hand left over
     if not (0.10 < hum < 0.40 and 0.10 < fore < 0.40):
         raise ValueError("arm segments %.4f / %.4f are outside anything a "
@@ -234,6 +257,103 @@ _FP_ELBOW_IN = (0.235, -0.030, -0.205)     # deltoid, where the upper arm starts
 _FP_ELBOW = (0.367, -0.165, -0.335)
 _FP_WRIST = (0.222, -0.500, -0.300)
 _FP_HAND = (0.200, -0.620, -0.302)
+
+
+# ---------------------------------------------------------------------------
+# THE VIEW MODEL IS FRAMED, NOT ANATOMICAL, AND THE FRAMING IS THE CONSTRAINT.
+# RN-906, ruled by Admin 2026-08-03.
+#
+# READ THIS BEFORE "FIXING" THE ARM PROPORTIONS ABOVE. Measured on this rig:
+#
+#     humerus (Shoulder + Arm bones)   0.3889 m
+#     forearm (ForeArm bone)           0.3667 m
+#     ratio                            1.061
+#
+# against the third-person rig's 1.274 and a real adult's ~1.27. **That is not
+# a defect here and it must not be corrected.** RN-905 fixed exactly this ratio
+# on BODY_BONES, so the next lane that measures this one will find 1.06, will
+# recognise the number, and will "fix" it. This block exists to stop that.
+#
+# THE DISTINCTION, because it is the whole reason the same ratio means
+# different things in the two rigs. **The third-person rig MODELS A PERSON.
+# The view model FRAMES A SHOT.** Its camera sits at the eye, so real arm
+# proportions put the hands out of frame or foreshortened to nothing, and every
+# game in this genre authors them non-anatomically for that reason. The hand's
+# distance from the eye is the constraint and anatomy is downstream of it.
+#
+# WG-144 says a bug class that crosses bodies will cross them again, and
+# checking the sibling was right. **This is the class NOT crossing**, and that
+# is a finding rather than an exemption.
+#
+# WHY IT IS A GATE AND NOT A PARAGRAPH. NUMBERS.md: prose is for the reason and
+# never for the constraint, because a comment is what a future correction reads
+# and overrules, while a gate is what stops it. RN-641 and RN-857 both paid for
+# this distance and RN-857 closed a complaint Reid made in his own words, so
+# moving it re-opens "large white mitts" for the third time.
+# ---------------------------------------------------------------------------
+
+# The framing, as authored. Depth is along the view axis and drop is below the
+# eye; the model's origin IS the camera point.
+FP_HAND_DEPTH_M = 0.620
+FP_HAND_DROP_M = 0.302
+
+# The client's shipped vertical field of view, read off web/src/render/
+# CameraRig.ts (`private fovDeg = 60`, applied to every camera including
+# vmCam, and never changed because setFov has no caller). It is a COPY of a
+# number that lives in another domain: if the client's FOV moves, this moves
+# with it, and the band below is what will notice.
+CLIENT_FOV_V_DEG = 60.0
+
+# One glove's share of the visible frame height. This is the quantity Reid
+# actually complained about - not the hand's size and not its distance, but how
+# much of the screen it eats - and it is the reason 0.620 is the number.
+FP_GLOVE_FRAME_FRACTION_MAX = 1.0 / 6.0
+
+
+def _assert_fp_framing():
+    """The view model's hand may not leave its authored framing.
+
+    TWO CHECKS, and the first is exact on purpose. A tuned threshold can be
+    widened by whoever it inconveniences; an equality cannot, and any change to
+    the arm segments that moves the hand trips it.
+
+    The second is the REASON, computed rather than asserted in prose, so the
+    failure explains itself. Measured across the three states this asset has
+    been in:
+
+        depth 0.620, 96 mm glove   visible frame 0.7159 m   one glove  13.4%
+        depth 0.435, 96 mm glove   visible frame 0.5023 m   one glove  19.1%
+        depth 0.435, 130 mm glove  visible frame 0.5023 m   one glove  25.9%
+
+    The last row is what Reid saw and called "large white mitts". The band is
+    one sixth, which sits between the shipped 13.4 and the 19.1 that merely
+    restoring the old DISTANCE produces, so it refuses the regression without
+    needing the old mitten section back as well."""
+    lat, depth, drop = _FP_HAND[0], -_FP_HAND[1], -_FP_HAND[2]
+    if abs(depth - FP_HAND_DEPTH_M) > 1e-9 or abs(drop - FP_HAND_DROP_M) > 1e-9:
+        raise ValueError(
+            "the view model's hand sits %.4f m from the eye and %.4f m below "
+            "it, not the authored %.4f / %.4f. THIS RIG IS FRAMED, NOT "
+            "ANATOMICAL: its arm segments exist to put the hand at that "
+            "distance, so a change made to correct the humerus/forearm ratio "
+            "(1.06 here against the body rig's 1.274, deliberately) has moved "
+            "the shot. RN-641 and RN-857 both paid for 0.620 m and RN-857 "
+            "closed Reid's 'large white mitts' in his own words."
+            % (depth, drop, FP_HAND_DEPTH_M, FP_HAND_DROP_M))
+    visible_h = 2.0 * depth * math.tan(math.radians(CLIENT_FOV_V_DEG) * 0.5)
+    frac = (2.0 * HAND_HALF_W) / visible_h
+    if frac > FP_GLOVE_FRAME_FRACTION_MAX:
+        raise ValueError(
+            "one glove is %.1f per cent of the visible frame height (%.0f mm "
+            "of glove in a %.4f m frame at %.0f degrees and %.3f m), over the "
+            "%.1f per cent this asset was rebuilt twice to reach. That is the "
+            "measurement behind 'large white mitts'."
+            % (frac * 100.0, 2000.0 * HAND_HALF_W, visible_h,
+               CLIENT_FOV_V_DEG, depth, FP_GLOVE_FRAME_FRACTION_MAX * 100.0))
+    return depth, drop, visible_h, frac
+
+
+FP_FRAMING = _assert_fp_framing()
 
 # One entry per finger CHAIN: (knuckle offset from _FP_HAND, three segment
 # vectors). The old rig gave every finger ONE straight direction repeated three
