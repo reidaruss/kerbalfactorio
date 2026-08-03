@@ -142,8 +142,16 @@ def class_scale(cls):
 # glass" or "the state-orange trim" of any part indexes the same slot on every
 # one of them. Parts.into() skips roles a part does not use, so passing the
 # full list never creates an empty slot.
+# RN-851 APPENDS "Rubber" AND DOES NOT REORDER, which is the whole point of a
+# pinned list: every existing index is unchanged, so nothing that indexes a
+# slot today has to be found and edited. It buys the ONE dielectric on an
+# otherwise entirely metallic catalogue, the docking port's seal gasket, and
+# that is a material claim rather than a colour one: metalness 0.85 -> 0.00 and
+# roughness 0.55 -> 0.85 is a surface that answers the light differently, which
+# is exactly what ART-DIRECTION.md asks a surface to do. A dark grey painted
+# onto steel is not a seal; it is steel that has been told to look like one.
 ROLES = ["SteelLight", "Steel", "SteelDark", "Accent", "Hazard", "Glass",
-         "SuitAccent"]
+         "SuitAccent", "Rubber"]
 
 # Deploy geometry, shared with the landed lander so the static assembly and the
 # animated part agree to the millimetre.
@@ -240,7 +248,7 @@ def disc(p, r, thickness, loc, role, seg=8, axis="Z"):
     return p.add(v, f, sm, role)
 
 
-def ring_band(p, r_in, r_out, z0, z1, role, seg=SEG):
+def ring_band(p, r_in, r_out, z0, z1, role, seg=SEG, phase_deg=0.0):
     """A true ANNULUS prism: a ring with a hole all the way through it.
 
     Everything else in this file is a capped tube, and a capped tube inside a
@@ -252,9 +260,25 @@ def ring_band(p, r_in, r_out, z0, z1, role, seg=SEG):
     sweep puts its start and end caps on the same plane, and mesh.validate()
     deletes the degenerate result - which would make the reported triangle
     count a lie (of_lib.arc_band_data says the same thing about r_in). The two
-    seam caps that remain are coincident, interior and backface-culled."""
+    seam caps that remain are coincident, interior and backface-culled.
+
+    `phase_deg` ROTATES WHERE THE SEAM IS, and it exists because "coincident,
+    interior and backface-culled" stops being true the moment two rings of
+    DIFFERENT MATERIALS overlap radially. RN-851 stacked three concentric
+    annuli to build a sealing interface (a metal contact land, a seal land and
+    a rubber gasket) and `check_coplanar.py` immediately found 16 same-facing
+    pairs on the plane y = 0: every ring puts its two seam caps on that one
+    plane, so where two rings overlap, one ring's cap is painted on another
+    ring's cap in a different material.
+
+    Phasing by a WHOLE SEGMENT STEP moves the cap plane without moving a single
+    vertex: an annulus phased by 22.5 degrees at seg 16 has the same ring of
+    vertex azimuths as one phased by 0, because the set {0, 22.5, 45, ...} is
+    closed under a 22.5 shift. So the facets still line up with the barrel and
+    with each other, and only the seam moves. Phase by something that is NOT a
+    segment step and the facets stop aligning, which is a different defect."""
     loc = (0.0, 0.0, (z0 + z1) * 0.5)
-    for a0 in (0.0, 180.0):
+    for a0 in (phase_deg, phase_deg + 180.0):
         v, f, sm = of.arc_band_data(r_in, r_out, z1 - z0, loc,
                                     a0, a0 + 180.0, max(1, seg // 2))
         p.add(v, f, sm, role)
@@ -441,6 +465,88 @@ def stud_ring(p, size, radius, count, z, role, phase=0.0, clearance=None):
                             max(abs(x), abs(y)) + half, clearance))
         slab(p, size, (x, y, z), role)
     return p
+
+
+def hexa(p, bottom, top, role):
+    """An arbitrary eight-vertex solid: two quads, matching corner order.
+
+    Everything else in this file is a solid of revolution or an axis-aligned
+    box, and both of those are yawed at most. A GUIDE PETAL is neither: its
+    inner face has to lie on a cone at a stated angle, its width has to change
+    along its length, and it has to be a closed solid so it can be lit from
+    both sides. Twelve triangles buys all of that, which is cheaper than any
+    approximation out of tubes.
+
+    `bottom` and `top` are four points each, in the SAME rotational order,
+    counter-clockwise seen from +Z. Winding is then of_lib._box_data's exactly:
+    the bottom quad reversed, the top quad forward, and the four sides walking
+    the same corner pairs. Copied from that function rather than reasoned out,
+    because a face wound the wrong way is invisible in Blender (which draws
+    both sides) and a hole in the browser (which does not).
+
+    `role` may be one role or a list of six, bottom, top, then the four sides
+    in corner order. The per-face form is how a petal gets a POLISHED INNER
+    FACE against a dull outer one, which is what a part that has been scraped
+    by another hull actually looks like."""
+    if len(bottom) != 4 or len(top) != 4:
+        raise ValueError("hexa needs four points top and bottom")
+    v = list(bottom) + list(top)
+    f = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
+         (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+    return p.add(v, f, [False] * 6, role)
+
+
+def petal(p, az_deg, r_tip, z_tip, z_root, cone_deg, thickness,
+          half_w_root, half_w_tip, role, clearance=None, skew_deg=0.0):
+    """A docking guide petal: a tapered plate whose INNER face is a cone.
+
+    THE TWO CATALOGUE NUMBERS ARE THIS SHAPE AND NOT A COMMENT. `vessel.h`
+    publishes `dockCaptureRadiusM` and `dockCaptureConeRad` for the docking
+    port, and until now no geometry anywhere expressed either of them: the
+    part could have been any diameter with any lead-in and every gate would
+    have passed. Here `r_tip` IS the capture radius (the circle a petal tip
+    sweeps at the mating plane) and `cone_deg` IS the capture cone (the angle
+    the inner face makes with the stack axis), so a change to either number in
+    the catalogue moves the mesh, and a mesh that cannot honour a number
+    raises here instead of disagreeing quietly.
+
+    `skew_deg` rotates the tip relative to the root about the stack axis. Real
+    petals are not skewed; a petal that has been loaded sideways by thirty
+    dockings is. It is per-petal so no two need to match.
+
+    `clearance` is the class mating radius every corner must stay inside,
+    checked on the CORNERS rather than on the centre line, because the corner
+    of a wide tip near an axis reaches much further than its centre does.
+    """
+    dz = z_tip - z_root
+    if dz <= 0.0:
+        raise ValueError("petal tip must be above its root")
+    r_root = r_tip - dz * math.tan(math.radians(cone_deg))
+    if r_root <= 0.0:
+        raise ValueError("petal cone %.1f deg over %.3f m eats the whole "
+                         "radius" % (cone_deg, dz))
+    out = []
+    for (r_in, z, half_w, extra_az) in ((r_root, z_root, half_w_root, 0.0),
+                                        (r_tip, z_tip, half_w_tip, skew_deg)):
+        a = math.radians(az_deg + extra_az)
+        ca, sa = math.cos(a), math.sin(a)
+        ux, uy = ca, sa                 # radial
+        tx, ty = -sa, ca                # tangential
+        quad = []
+        for (dr, dw) in ((0.0, -half_w), (thickness, -half_w),
+                         (thickness, half_w), (0.0, half_w)):
+            r = r_in + dr
+            quad.append((r * ux + dw * tx, r * uy + dw * ty, z))
+        out.append(quad)
+    if clearance is not None:
+        for q in out:
+            for (x, y, _z) in q:
+                if max(abs(x), abs(y)) > clearance:
+                    raise ValueError(
+                        "petal at azimuth %.1f reaches %.4f on an axis, past "
+                        "the %.4f class radius"
+                        % (az_deg, max(abs(x), abs(y)), clearance))
+    return hexa(p, out[0], out[1], role)
 
 
 def bell(p, profile, role, seg=SEG, wall=0.030, flute=0.0, sleeve=0.30,
@@ -1330,47 +1436,248 @@ def battery():
 
 DOCK_H = 0.30
 
+# THE TWO NUMBERS THE CATALOGUE ALREADY PUBLISHES, and the whole reason this
+# part was re-authored. `core/include/of/vessel.h` carries, for parts::
+# DockingPort, `dockCaptureRadiusM = 0.60` and `dockCaptureConeRad = 30 deg`.
+# They are the gameplay contract: a port captures another port whose axis lands
+# within 0.60 m laterally and within 30 degrees angularly.
+#
+# UNTIL THIS PASS NO GEOMETRY ANYWHERE EXPRESSED EITHER OF THEM. The shipped
+# mesh's widest guide feature sat at r 0.478 and its lead-in had no angle at
+# all, so the picture and the rule were unrelated objects that happened to
+# share a name, and every gate in the project passed on that: validate_glb
+# measures the 1.25 m class box, check_coplanar measures paint, and neither has
+# any opinion about whether a capture radius is anywhere in the file.
+#
+# So they are mirrored here as the DRIVING dimensions rather than as prose:
+# `petal()` takes them, the petal tip circle IS the capture radius, the petal's
+# inner face IS the capture cone, and `_assert_capture_geometry` below refuses
+# to build a port whose geometry cannot honour them inside the class box. The
+# direction of the dependency matters: the catalogue is the authority and the
+# mesh conforms, which is why the numbers are copied with the file and line
+# they are copied FROM. If they ever move, this raises rather than drifts.
+DOCK_CAPTURE_R = 0.600          # vessel.h dockCaptureRadiusM
+DOCK_CONE_DEG = 30.0            # vessel.h dockCaptureConeRad, in degrees
+
+# THE ROLL DATUM, and it is a machine-readable interface and not decoration.
+# A docking port is a body of revolution, so position and axis do not pin its
+# orientation: something has to say which way is UP across the joint, or two
+# mated hulls have a free rotation between them and nothing can be aligned
+# across the seam (a hatch, a handrail, a solar wing, a label).
+#
+# The datum is azimuth 0 in this part's own frame, which after export is the
+# socket node's LOCAL +X. Two features mark it and they are the only two
+# things on the part at that bearing: a full-height Accent stripe down the
+# barrel (readable from any approach bearing, at range) and an Accent bar on
+# the seal land (readable through the mouth, at contact). A datum a pilot
+# cannot see is a datum only the code believes in.
+DOCK_INDEX_AZ = 0.0
+
+# Every other bearing on the part, in one table, because RN-426's rule is that
+# nothing shares an azimuth with anything else and a rule like that is only
+# keepable if the azimuths are in one place where they can be read at a glance.
+DOCK_AZ_LATCH = (27.0, 147.0, 267.0)     # the three capture latches
+# THE PETAL BEARINGS ARE CONSTRAINED, not chosen, and the constraint is the
+# class box rather than taste. A petal tip is a WIDE feature at very nearly the
+# class mating radius, so near an axis its tangential half-width adds to the
+# same coordinate its radius does: at azimuth 183 a tip at r 0.618 with a
+# 0.115 half-width reaches 0.628 on x and widens the part past 1.25 m. `petal`
+# raised exactly that, by name, on the first build of this pass.
+#
+# With three petals at a 120 degree pitch the offsets from the nearest axis
+# repeat every 30 degrees, so the best achievable worst-case offset is 15
+# degrees, and 45 / 165 / 285 is one of the bearings that achieves it. The tip
+# width and plate thickness below are then sized against that 15 degrees with
+# margin, WITH the skew counted, because a skew moves a tip toward an axis.
+DOCK_AZ_PETAL = (45.0, 165.0, 285.0)     # the three guide petals
+DOCK_PETAL_T = 0.016                     # plate thickness, radial
+DOCK_PETAL_W = (0.062, 0.090)            # half width at the root, at the tip
+DOCK_PETAL_SKEW = (0.0, 1.6, -1.7)       # thirty dockings of side loading
+DOCK_PETAL_Z0 = 0.158                    # root height; see docking_port
+DOCK_AZ_UMBILICAL = 206.0                # power and data across the joint
+DOCK_AZ_PLACARD = 322.0                  # the one flat spot on a round part
+DOCK_AZ_HANDRAIL = 88.0                  # EVA hand hold
+
+
+def _assert_capture_geometry(r_tip, cone_deg, thickness, half_w_tip):
+    """Refuse a port whose published capture numbers do not fit its class box.
+
+    This is the check that makes the two constants above load-bearing instead
+    of ornamental. A petal tip at r_tip plus its plate thickness must stay
+    inside the 0.625 class mating radius, or the part silently widens past
+    1.25 m and `assert_class_envelope` fails much later with a message about a
+    span rather than about a capture radius.
+
+    It also states the one relationship a reader would otherwise have to
+    derive: the cone is measured FROM THE STACK AXIS, so a bigger angle makes
+    the funnel shallower, not deeper."""
+    reach = r_tip + thickness
+    if reach > R:
+        raise ValueError(
+            "docking port: capture radius %.3f plus a %.3f petal reaches "
+            "%.4f, past the %.4f class mating radius. Either the catalogue's "
+            "dockCaptureRadiusM is wrong for a class S part or the petal is "
+            "too thick." % (r_tip, thickness, reach, R))
+    if not 0.0 < cone_deg < 90.0:
+        raise ValueError("docking port: capture cone %.1f deg is not an angle "
+                         "from the stack axis" % cone_deg)
+    # A tip half-width wide enough to overlap its neighbour is a closed ring
+    # with three seams in it, not three petals, and it reads as a mistake.
+    pitch = 360.0 / len(DOCK_AZ_PETAL)
+    span = math.degrees(math.atan2(half_w_tip, r_tip)) * 2.0
+    if span >= pitch:
+        raise ValueError("docking port: a petal spans %.1f deg at its tip, "
+                         "which meets its neighbour at a %.1f deg pitch"
+                         % (span, pitch))
+
 
 def docking_port():
-    """1.25 x 1.25 x 0.30. The androgynous mating ring.
+    """1.25 x 1.25 x 0.30. The androgynous mating interface.
 
     Its top face IS a mating plane, so socket_dock and socket_stack_top are
     co-located: docking is stacking that happened in orbit, and the engine
     should not need two rules for it.
 
-    The ring is a real ANNULUS (see ring_band) rather than a disc with a
-    darker disc painted on it. A docking port is 0.30 m tall against a 6 m
-    booster, so the hole is the only thing that identifies it at any distance
-    at all, and a painted hole is not a hole from 15 degrees off axis.
+    RN-851 RE-AUTHORS THIS PART, and the reason is not that the old one was
+    ugly. It is that this is the only part in the catalogue whose GAMEPLAY
+    NUMBERS live in `vessel.h` as a capture radius and a capture cone, and the
+    old mesh expressed neither. A docking port whose geometry has no
+    relationship to its own capture volume is a picture of a docking port. See
+    DOCK_CAPTURE_R above for the full argument; the short form is that the
+    petal tips now sweep exactly the published 0.60 m circle and their inner
+    faces are exactly the published 30 degree cone.
 
-    RN-426 FIXES THE 21 PAIRS THIS PART OWNED, and both were the same
-    mistake: a trim solid whose extent was written so that it lands exactly on
-    its host's own end plane. The three latches were `z 0.265, height 0.07`,
-    and 0.265 + 0.035 is exactly 0.30, the capture ring's top face (17 pairs).
-    The index mark was `z 0.085, height 0.03`, and 0.085 + 0.015 is exactly
-    0.10, the base collar's top face (4 pairs). Neither number is wrong on its
-    own; each is wrong because it was chosen to be FLUSH, which is the one
-    relationship two painted surfaces may not have. Both are now derived from
-    their host's span with an explicit standoff.
+    WHAT IT LOOKS LIKE, and this half is `docs/web/ART-DIRECTION.md` rather
+    than `vessel.h`. A docking port is the one piece of a spacecraft that is
+    repeatedly slammed into another spacecraft, so the wear is not sprinkled
+    over it, it is CONCENTRATED WHERE CONTACT HAPPENS and absent everywhere
+    else:
 
-    The rest is RN-426's detail: three guide petals ramping into the ring
-    (which is how a real androgynous port captures), an electrical umbilical
-    connector on one bearing only, and a target cross offset from all three
-    latches so nothing on this part shares an azimuth with anything else."""
-    ring_z1, collar_z1 = DOCK_H, 0.10
+      - the contact land and the petal INNER faces are SteelLight, the
+        brightest and smoothest role in the palette, because a surface that
+        another hull grinds against is scraped back to bare metal;
+      - the petal OUTER faces, which nothing ever touches, are SteelDark on
+        the same solid, via `hexa`'s per-face role list. One petal, two
+        materials, twelve triangles, and the wear story is in the geometry
+        rather than in a decal;
+      - the seal is Rubber, the only dielectric in this catalogue. Metal
+        against metal is a colour difference; metal against rubber is a
+        material difference, and only the second survives a lighting change.
+
+    Asymmetry is by bearing (see the DOCK_AZ_* table) and by wear: the three
+    petals carry different skews, because a petal that has been loaded
+    sideways by thirty dockings is not where the drawing put it, and three
+    identical petals on a body of revolution give the engine's instance
+    rotation nothing to act on.
+
+    THE HATCH IS MODELLED AND IT IS NOT DECORATION. The old part was an
+    annulus over a bulkhead disc, so the "hole" bottomed out 0.02 m in. Here
+    the mouth opens into a 0.09 m well onto a real hatch with a handle, three
+    dogs and a porthole, which is what a player looking into a port from a
+    metre away is entitled to see, and it costs nothing at range because it is
+    all inside the silhouette.
+
+    RN-426's rule survives intact and is why every solid below OVERLAPS its
+    neighbour instead of abutting it: a trim solid whose extent lands exactly
+    on its host's end plane is a coplanar pair, and coplanar pairs are how the
+    mating face of every tank in this game once resolved to whichever material
+    the rasteriser visited last. There is no shared plane anywhere in this
+    function, on purpose."""
     p = hc.Parts()
-    tube(p, R, 0.00, collar_z1, "SteelDark")                # base collar
-    tube(p, 0.56, collar_z1, 0.18, "Steel", caps="hi")      # bulkhead
-    ring_band(p, 0.34, 0.52, 0.18, ring_z1, "SteelLight")   # capture ring
-    # Derived, with an explicit 12 mm standoff below the ring's own top face.
-    stud_ring(p, (0.12, 0.09, 0.07), 0.40, 3, ring_z1 - 0.012 - 0.035,
-              "Steel", clearance=R)                         # latches
-    # Guide petals, on the half-pitch between the latches, ramping outward.
-    for i in range(3):
-        fitting(p, (0.055, 0.15, 0.10), 0.478, 120.0 * i + 60.0, 0.245,
-                "SteelDark", R)
-    fitting(p, (0.075, 0.11, 0.055), 0.560, 23.0, 0.052, "Accent", R)
-    fitting(p, (0.055, 0.085, 0.06), 0.545, 197.0, 0.145, "SteelDark", R)
+    r_tip, cone, th = DOCK_CAPTURE_R, DOCK_CONE_DEG, DOCK_PETAL_T
+    _assert_capture_geometry(r_tip, cone, th, DOCK_PETAL_W[1])
+
+    # --- structure, bottom up. Every span overlaps the one below it. -------
+    tube(p, R, 0.000, 0.086, "SteelDark")                    # base collar
+    tube(p, 0.586, 0.068, 0.132, "Steel", caps="hi")         # bolt flange
+    stud_ring(p, (0.040, 0.034, 0.026), 0.550, 8, 0.126, "SteelDark",
+              phase=math.pi / 8.0, clearance=R)              # flange bolts
+    tube(p, 0.524, 0.118, 0.254, "Steel", caps="none")       # body barrel
+    weld(p, 0.524, 0.148, "SteelLight")                      # course weld
+
+    # --- the tunnel and the hatch at the bottom of it ----------------------
+    # A capped tube rather than a disc, so the well has a WALL: the seal
+    # land's inner radius is 0.336 and this stands 6 mm inside it, which is
+    # what stops a player looking into the port and seeing the inside of the
+    # barrel's single-sided skin.
+    tube(p, 0.330, 0.104, 0.248, "Steel", caps="hi")         # hatch pan
+    # Hatch furniture, all off-centre. A hatch handle on the axis is a target
+    # cross; a hatch handle to one side is a hatch.
+    for dx in (-0.075, 0.075):
+        slab(p, (0.026, 0.026, 0.030), (dx - 0.055, 0.118, 0.262), "Steel")
+    slab(p, (0.196, 0.028, 0.024), (-0.055, 0.118, 0.284), "SteelLight")
+    for i, (hx, hy) in enumerate(((0.196, -0.104), (-0.190, -0.118),
+                                  (0.012, 0.226))):
+        slab(p, (0.048, 0.036, 0.020), (hx, hy, 0.260), "Steel",
+             rot_z=31.0 * (i + 1))                           # hatch dogs
+    disc(p, 0.104, 0.016, (0.104, -0.062, 0.252), "SteelLight", seg=8)
+    disc(p, 0.084, 0.016, (0.104, -0.062, 0.259), "Glass", seg=8)
+
+    # --- the two lands. This is the part. ---------------------------------
+    # A real ANNULUS (see ring_band), because "flat ring with a hole in it" is
+    # the port's whole silhouette and a painted hole is not a hole from 15
+    # degrees off axis. Two of them at two heights is a SEALING interface
+    # rather than a washer: the outer one is the metal land that takes the
+    # load, the inner one is 18 mm lower and carries the gasket.
+    # THE THREE PHASES ARE NOT DECORATION. Three concentric annuli of three
+    # materials that all seam on y = 0 paint 16 coplanar pairs on that plane
+    # where they overlap radially. One whole segment step apart, they cannot.
+    ring_band(p, 0.452, 0.570, 0.230, DOCK_H, "SteelLight", phase_deg=0.0)
+    ring_band(p, 0.336, 0.462, 0.236, 0.282, "Steel", phase_deg=22.5)
+    ring_band(p, 0.352, 0.416, 0.274, 0.292, "Rubber", phase_deg=45.0)
+
+    # --- capture latches, inboard of the land, under the mating plane ------
+    # 2 mm under, and that 2 mm is RN-426's whole lesson: the old latches were
+    # written to land exactly on 0.300 and produced 17 coplanar pairs.
+    #
+    # z 0.288 rather than 0.286, and the 2 mm is the same lesson a second time.
+    # At 0.286 with a 0.024 height the latch's UNDERSIDE lands on 0.274, which
+    # is exactly the gasket's own underside, and the two overlap in radius:
+    # 12 more same-facing pairs, found by the gate rather than by reading.
+    for az in DOCK_AZ_LATCH:
+        fitting(p, (0.052, 0.096, 0.022), 0.430, az, 0.288, "Steel", R)
+
+    # --- the capture cone, as three petals ---------------------------------
+    # The tips sweep DOCK_CAPTURE_R and the inner faces lie on DOCK_CONE_DEG.
+    # Per-face roles: bottom, top, then the four sides in corner order, which
+    # for `petal` are inner, +tangential, outer, -tangential.
+    # Steel everywhere the petal is merely hardware, SteelLight on the ONE
+    # face another hull grinds against. The first version painted the outer
+    # face SteelDark and the petals read as three black wedges bolted to the
+    # outside of the ring rather than as a funnel; a scraped face is BRIGHTER
+    # than its surroundings, not darker, and making the rest dark to
+    # exaggerate that inverted the read.
+    petal_roles = ["Steel", "Steel", "SteelLight",
+                   "Steel", "Steel", "Steel"]
+    #
+    # THE ROOT HEIGHT IS SET BY LOOKING, and the first version got it wrong in
+    # a way no number would have caught. Rooted at z 0.232 the petals were
+    # geometrically correct, honoured both catalogue numbers exactly, and
+    # rendered as three small tabs clipped to the outside of the ring: 68 mm
+    # of run is not a funnel, it is a chamfer. Rooted at DOCK_PETAL_Z0 they
+    # run 142 mm from the barrel out to the tip circle and read as what they
+    # are from any bearing. Same two published numbers, same triangle count.
+    for az, skew in zip(DOCK_AZ_PETAL, DOCK_PETAL_SKEW):
+        petal(p, az, r_tip, DOCK_H, DOCK_PETAL_Z0, cone, th,
+              DOCK_PETAL_W[0], DOCK_PETAL_W[1],
+              petal_roles, clearance=R, skew_deg=skew)
+
+    # --- one-off hardware, one bearing each --------------------------------
+    fitting(p, (0.072, 0.112, 0.058), 0.532, DOCK_AZ_UMBILICAL, 0.186,
+            "SteelDark", R)                                  # umbilical body
+    fitting(p, (0.030, 0.048, 0.030), 0.578, DOCK_AZ_UMBILICAL, 0.210,
+            "Accent", R)                                     # its keyed cap
+    fitting(p, (0.012, 0.092, 0.056), 0.530, DOCK_AZ_PLACARD, 0.190,
+            "SteelLight", R)                                 # placard
+    for d in (-7.5, 7.5):
+        fitting(p, (0.026, 0.026, 0.072), 0.538, DOCK_AZ_HANDRAIL + d, 0.182,
+                "Steel", R)                                  # rail stanchions
+    fitting(p, (0.024, 0.152, 0.024), 0.566, DOCK_AZ_HANDRAIL, 0.212,
+            "SteelLight", R)                                 # the rail itself
+
+    # --- the roll datum, at DOCK_INDEX_AZ and nowhere else -----------------
+    fitting(p, (0.016, 0.052, 0.104), 0.530, DOCK_INDEX_AZ, 0.184, "Accent", R)
+    fitting(p, (0.052, 0.030, 0.014), 0.400, DOCK_INDEX_AZ, 0.286, "Accent", R)
     return p
 
 

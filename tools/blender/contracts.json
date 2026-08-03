@@ -1762,7 +1762,7 @@
       "max_tris_lod0": 990,
       "max_tris_total": 13000,
       "max_tris_collision": 320,
-      "max_materials": 7,
+      "max_materials": 8,
       "sockets": [
         "socket_stack_bottom",
         "socket_stack_top",
@@ -1775,6 +1775,14 @@
         "socket_leg_foot",
         "socket_dock"
       ],
+      "socket_frames": {
+        "socket_dock": {"under": "DockingPort", "pos": [0, 0.30, 0],
+                        "face": [0, 1, 0], "roll": [1, 0, 0], "role": "dock"},
+        "socket_stack_top": {"under": "DockingPort", "pos": [0, 0.30, 0],
+                             "face": [0, 1, 0], "role": "stack_top_s"},
+        "socket_stack_bottom": {"under": "DockingPort", "pos": [0, 0, 0],
+                                "face": [0, -1, 0], "role": "stack_bottom_s"}
+      },
       "clips": ["Leg_Deploy", "Solar_Deploy"],
       "frame1_identity": true,
       "double_sided_ok": ["OF_Glass"],
@@ -1802,7 +1810,7 @@
         {"node": "MonopropTank_LOD0", "dims_xyz_m": [1.25, 1.00, 1.25], "max_tris": 400, "pivot": "ground"},
         {"node": "ReactionWheel_LOD0", "dims_xyz_m": [1.25, 0.40, 1.25], "max_tris": 400, "pivot": "ground"},
         {"node": "Battery_LOD0", "dims_xyz_m": [1.25, 0.60, 1.25], "max_tris": 570, "pivot": "ground"},
-        {"node": "DockingPort_LOD0", "dims_xyz_m": [1.25, 0.30, 1.25], "max_tris": 400, "pivot": "ground"},
+        {"node": "DockingPort_LOD0", "dims_xyz_m": [1.25, 0.30, 1.25], "max_tris": 1060, "pivot": "ground"},
         {"node": "LiquidTankLarge_LOD0", "dims_xyz_m": [2.50, 4.00, 2.50], "max_tris": 780, "pivot": "ground"},
         {"node": "LiquidEngineLarge_LOD0", "dims_xyz_m": [2.50, 2.60, 2.50], "max_tris": 900, "pivot": "ground"},
         {"node": "StackDecouplerLarge_LOD0", "dims_xyz_m": [2.50, 0.35, 2.50], "max_tris": 700, "pivot": "ground"},
@@ -2367,7 +2375,7 @@
         "StationInt_LOD0", "StationInt_LOD1"
       ],
       "pivot_mode": "none",
-      "dims_xyz_m": [66.9693, 23.6680, 61.6940],
+      "dims_xyz_m": [67.1093, 23.6680, 61.6940],
       "tolerance_m": 0.005,
       "max_tris_lod0": 17600,
       "max_tris_total": 72000,
@@ -2375,6 +2383,12 @@
       "max_materials": 12,
       "sockets": ["socket_dock", "socket_entry", "socket_hall",
                   "socket_breach"],
+      "socket_frames": {
+        "socket_dock": {"pos": [30.40, 2.20, 0], "face": [1, 0, 0],
+                        "roll": [0, 1, 0], "role": "dock"},
+        "socket_entry": {"pos": [26.80, 0, 0], "face": [1, 0, 0],
+                         "role": "spawn"}
+      },
       "clips": [],
       "collision": ["col_SpineAftFloor", "col_SpineFwdFloor", "col_HabFloor",
                     "col_ReactorFloor", "col_HoldFloor", "col_HallFloor",
@@ -2405,9 +2419,9 @@
                     "col_ReactorCeil", "col_HoldCeil"],
       "double_sided_ok": ["OF_Glass", "OF_Hazard"],
       "parts": [
-        {"node": "Station_LOD0", "dims_xyz_m": [66.9693, 23.6680, 61.6940], "max_tris": 17600, "pivot": "none"},
-        {"node": "Station_LOD1", "dims_xyz_m": [66.9693, 23.6680, 61.6940], "max_tris": 15100, "pivot": "none"},
-        {"node": "Station_LOD2", "dims_xyz_m": [66.9693, 23.6680, 61.6940], "max_tris": 8400, "pivot": "none"},
+        {"node": "Station_LOD0", "dims_xyz_m": [67.1093, 23.6680, 61.6940], "max_tris": 17600, "pivot": "none"},
+        {"node": "Station_LOD1", "dims_xyz_m": [67.1093, 23.6680, 61.6940], "max_tris": 15100, "pivot": "none"},
+        {"node": "Station_LOD2", "dims_xyz_m": [67.1093, 23.6680, 61.6940], "max_tris": 8400, "pivot": "none"},
         {"node": "StationInt_LOD0", "dims_xyz_m": [57.7913, 8.1950, 29.8800], "max_tris": 16400, "pivot": "none"},
         {"node": "StationInt_LOD1", "dims_xyz_m": [57.7913, 8.1950, 29.8800], "max_tris": 14900, "pivot": "none"}
       ]

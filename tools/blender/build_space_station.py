@@ -165,6 +165,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import of_lib as of  # noqa: E402
 import machine_form as mf  # noqa: E402
+import rocket_common as rk  # noqa: E402
 import station_form as sf  # noqa: E402
 
 NAME = "Station"
@@ -249,6 +250,25 @@ AFT_X = -36.00          # the torn aft rim, open to space
 BLOWN_X = -28.00        # the bulkhead that failed
 FWD_X = 30.00           # forward end of the pressure hull
 DOCK_X = 30.00
+
+# THE DOCKING INTERFACE, and these three numbers are NOT this file's to choose.
+#
+# `core/include/of/vessel.h` publishes, for parts::DockingPort, a 1.25 m part
+# (so a 0.625 m mating radius), `dockCaptureRadiusM = 0.60` and
+# `dockCaptureConeRad = 30 deg`. `tools/blender/rocket_common.py` mirrors the
+# last two as DOCK_CAPTURE_R and DOCK_CONE_DEG and builds the ship's half of
+# the joint from them. This end of the joint is built from the SAME numbers,
+# imported rather than retyped, because a mating interface whose two halves
+# carry their own copies of a dimension is a joint that will silently stop
+# being one the first time somebody edits a single copy.
+#
+# DOCK_MATE_X is the plane the two ports touch on, and it is where socket_dock
+# sits. It stands 0.14 m proud of the collar's own guide ring (DOCK_X + 0.26)
+# so an approaching vessel meets the port and nothing else.
+DOCK_MATE_R = rk.CLASS["S"][0]          # 0.625, the class mating radius
+DOCK_CAPTURE_R = rk.DOCK_CAPTURE_R      # 0.600
+DOCK_CONE_DEG = rk.DOCK_CONE_DEG        # 30.0
+DOCK_MATE_X = DOCK_X + 0.40
 
 HUB_Z0, HUB_Z1 = -1.30, 12.00
 MEZZ_Z = 5.10           # gallery deck TOP: 4.80 m clear underneath it
@@ -665,6 +685,15 @@ def hull_ends(mb, tier):
     reads which end is which from 500 m."""
     sf.docking_ring(mb, "X", DOCK_X, 2.20, HULL_D, HULL_L, HULL_L, sides=12,
                     centre=(0, 0, AX_Z), latches=8)
+    # ...AND THE CLASS-S PORT ON ITS AXIS, WITHOUT WHICH THE COLLAR IS NOT AN
+    # INTERFACE. See station_form.docking_adapter for the full argument; the
+    # short form is that this collar's clear throat is 2.64 m and the only
+    # docking part in the vessel catalogue is 1.25 m across, so nothing the
+    # player can build could ever have touched it.
+    sf.docking_adapter(mb, "X", DOCK_MATE_X, (0, 0, AX_Z),
+                       DOCK_MATE_R, DOCK_CAPTURE_R, DOCK_CONE_DEG,
+                       HULL_D, HULL_L, HULL, SEAL, TRIM,
+                       throat_r=2.20 * 0.60, sides=12, tier=tier)
     sh = sf.Shell("X", (0, 0, AX_Z), SP_RO, 1, min_layer=tier)
     collar = sh.girth(mb, DOCK_X - 1.40, 0.36, HULL_L, kind="bracket",
                       segs=SIDES)
@@ -1424,8 +1453,47 @@ def build_collision(root):
 # ---------------------------------------------------------------------------
 
 def build_sockets(root):
-    of.add_socket("socket_dock", (DOCK_X + 0.30, 0.0, AX_Z),
-                  rot=of.deg3(z=-90.0), parent=root,
+    # `socket_dock` IS A FRAME AND IT WAS POINTING THE WRONG WAY (RN-853).
+    #
+    # A socket exports as a childless glTF node, so it carries a full TRS and
+    # ASSET-SPECS 2.6 fixes the reading: the socket's local -Y in Blender is
+    # its facing, which after export_yup is the node's local +Z in three.js.
+    # ASSET-SPECS 4.23 then states the mating rule: two mated sockets are
+    # ANTI-PARALLEL, each facing AWAY from the part it belongs to, so "do these
+    # faces mate" is a dot product.
+    #
+    # This socket was authored `of.deg3(z=-90.0)`, which faces Blender -X, and
+    # +X is the forward end this collar is ON. So the station's docking frame
+    # pointed INTO the station. Read as an approach vector it aimed an arriving
+    # vessel at the far side of the hull; read under the anti-parallel rule it
+    # would have accepted a vessel flying out of the station's interior and
+    # refused one arriving from space.
+    #
+    # NOTHING CAUGHT IT AND NOTHING COULD HAVE. `validate_glb.py`'s
+    # `part_sockets` block checks a socket's POSITION and has never had an
+    # opinion about its axis, and the client's `learnStationSockets` reduces
+    # every socket to `[x, y, z]` at the door with `setFromMatrixPosition`, so
+    # the rotation is discarded before any consumer could disagree with it.
+    # The `socket_frames` block added to contracts.json in this pass is the
+    # check that would have caught it, and it goes red on the old value.
+    # THE ROLL HALF, and it is a second bug hiding behind the first. Turning
+    # the socket round with `z=90` alone gets the FACING right (+X, out of the
+    # collar) and leaves the roll pointing at three.js -Z, i.e. to starboard,
+    # which is a bearing nothing on this asset marks. A docking port is a body
+    # of revolution, so position and axis do not pin it: something has to say
+    # which way is UP across the joint or two mated hulls have a free rotation
+    # between them and no hatch, handrail or label can be aligned across the
+    # seam.
+    #
+    # `docking_adapter` puts its datum marks at hull angle 0, which for a tube
+    # on X is Blender +Z, i.e. three.js +Y, i.e. the station's own up. So the
+    # socket's roll reference must be +Y, and `of.deg3(y=-90, z=90)` is the
+    # rotation that gives facing +X with roll +Y. That was MEASURED in Blender
+    # rather than derived on paper, because the Euler order, the -Y facing
+    # convention and the Z-up-to-Y-up export compose into a mapping that is
+    # easy to get right by accident and hard to get right by reasoning.
+    of.add_socket("socket_dock", (DOCK_MATE_X, 0.0, AX_Z),
+                  rot=of.deg3(y=-90.0, z=90.0), parent=root,
                   extras={"of_role": "dock"})
     of.add_socket("socket_entry", (DOCK_X - 3.2, 0.0, DECK_Z),
                   rot=of.deg3(z=90.0), parent=root,

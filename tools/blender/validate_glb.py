@@ -417,6 +417,90 @@ def validate(asset, spec, verbose=False):
         r.check("part_sockets", not bad, "%d part(s)%s"
                 % (len(part_sockets), "" if not bad else "; " + "; ".join(bad)))
 
+    # --- socket FRAMES: position was never the whole of a socket -----------
+    #
+    # RN-852. `part_sockets` above checks a socket's POSITION and has never had
+    # an opinion about which way it points. That was fine while every socket
+    # was a spawn point or a stack plane whose axis is implied by the stack.
+    # IT IS NOT FINE FOR A DOCKING PORT, and the cost was measured rather than
+    # imagined: the space station's `socket_dock` shipped facing -X, back into
+    # its own hull, on a collar at the +X end. Under ASSET-SPECS 4.23's rule
+    # that two mated sockets are ANTI-PARALLEL, that frame accepts a vessel
+    # arriving from inside the station and refuses one arriving from space.
+    # Every gate in the project passed on it, because no gate looked.
+    #
+    # A socket node exports a full TRS, so the frame is already in the bytes
+    # and nothing new has to be invented to carry it. ASSET-SPECS 2.6 fixes the
+    # reading: a socket's local -Y in Blender is its facing, which after
+    # export_yup is the node's local +Z in three.js. Its local +X is then the
+    # ROLL REFERENCE, which a body of revolution needs and a position cannot
+    # express: without it two mated hulls have a free rotation between them.
+    #
+    #   "socket_frames": {
+    #     "<node>": {"under": "<part group>",       # optional
+    #                "face": [0, 1, 0],             # three.js unit vector
+    #                "roll": [1, 0, 0],             # optional
+    #                "role": "dock"}                # optional of_role extra
+    #   }
+    #
+    # Directions are compared by DOT PRODUCT against 1.0, not component by
+    # component, so a contract may state a unit vector and the check stays
+    # meaningful under the floating-point noise a quaternion round trip leaves.
+    frames = spec.get("socket_frames", {})
+    if frames:
+        nodes_j = gltf.get("nodes", [])
+        bad = []
+        for sname in sorted(frames):
+            want = frames[sname]
+            under = want.get("under")
+            idx = None
+            if under is None:
+                idx = by_name.get(sname)
+            elif under not in by_name:
+                bad.append("%s: group %s missing" % (sname, under))
+                continue
+            else:
+                stack = [by_name[under]]
+                while stack:
+                    i = stack.pop()
+                    if walked[i][0] == sname:
+                        idx = i
+                        break
+                    stack.extend(nodes_j[i].get("children", []))
+            if idx is None:
+                bad.append("%s: not found%s"
+                           % (sname, "" if under is None else " under " + under))
+                continue
+            m = walked[idx][1]
+            # Columns 0, 1, 2 of the world matrix ARE the node's local axes.
+            axes = {"roll": [m[0], m[1], m[2]],
+                    "up": [m[4], m[5], m[6]],
+                    "face": [m[8], m[9], m[10]]}
+            for key in ("face", "roll"):
+                if key not in want:
+                    continue
+                got, wnt = axes[key], want[key]
+                gl = math.sqrt(sum(c * c for c in got)) or 1.0
+                wl = math.sqrt(sum(c * c for c in wnt)) or 1.0
+                dot = sum(got[k] * wnt[k] for k in range(3)) / (gl * wl)
+                if dot < 0.999:
+                    bad.append("%s %s is %s, want %s (dot %.4f)"
+                               % (sname, key,
+                                  [round(c / gl, 4) for c in got], wnt, dot))
+            if "pos" in want:
+                got = [m[12], m[13], m[14]]
+                if any(abs(got[k] - want["pos"][k]) > tol for k in range(3)):
+                    bad.append("%s at %s want %s"
+                               % (sname, [round(v, 4) for v in got],
+                                  want["pos"]))
+            if "role" in want:
+                role = (nodes_j[idx].get("extras") or {}).get("of_role")
+                if role != want["role"]:
+                    bad.append("%s of_role is %r, want %r"
+                               % (sname, role, want["role"]))
+        r.check("socket_frames", not bad, "%d frame(s)%s"
+                % (len(frames), "" if not bad else "; " + "; ".join(bad)))
+
     # --- materials: budget + every name is a palette role ---
     mats = [m.get("name", "") for m in gltf.get("materials", [])]
     bad = [m for m in mats if not m.startswith("OF_")]
