@@ -36,6 +36,10 @@
   await of.run(1.0);
   if (typeof of.build === 'function') of.build(0);
   if (A.props !== true && typeof of.propsVisible === 'function') of.propsVisible(false);
+  // The BOOT state, read before anything touches it, so `?lamp=0` can be
+  // asserted as the boot default in its own right (RN-150) rather than only
+  // through a runtime call that would have made it true either way.
+  const lampAtBoot = of.stats().lamp.enabled;
   if (A.lamp === false) {
     of.lamp(false);
     await of.settle(4);
@@ -73,6 +77,8 @@
       gotDot: +solve.gotDot.toFixed(4), err: +solve.err.toFixed(4),
       elevationDeg: +((Math.asin(Math.max(-1, Math.min(1, solve.gotDot))) * 180) / Math.PI).toFixed(2),
     },
+    lampAtBoot,
+    lamp: st.lamp,
     draw: { calls: mustNum(st.draw, 'calls', 'stats.draw'), triangles: mustNum(st.draw, 'triangles', 'stats.draw'), programs: mustNum(st.draw, 'programs', 'stats.draw') },
     chunks: w.chunks,
     shots: { frame: `data:image/png;base64,${btoa(s)}` },

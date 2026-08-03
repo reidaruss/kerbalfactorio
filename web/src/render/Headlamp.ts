@@ -123,8 +123,32 @@ export class Headlamp {
   private readonly tmp = new THREE.Vector3();
   private readonly eyeM: Vec3d = { x: 0, y: 0, z: 0 };
 
-  /** Player toggle (KeyL). Auto behaviour lives in the sky-visibility curve. */
-  enabled = true;
+  /**
+   * Player toggle (KeyL). Auto behaviour lives in the sky-visibility curve.
+   *
+   * RN-1011. `?lamp=0` BOOTS IT OFF, and this line is the whole fix for a flag
+   * that has been registered, forwarded and dead. `lamp` was in `run.mjs`'s
+   * PAGE_PARAMS, so the runner put it in the query string and no file in
+   * `web/src` ever read it. That is worse than an absent flag: RN-153 made this
+   * lamp AUTO-ENABLE at night on the sun's own elevation, so every night
+   * measurement taken with `?lamp=0` in the URL was taken with the lamp on,
+   * while its filename and its report said otherwise. RN-846's night hunt lists
+   * "it survives `?lamp=0`" as one of four eliminations; that elimination was
+   * vacuous, and it happens to survive for the TERRAIN only because
+   * `TerrainShader` reads no three.js light at all, which is luck rather than
+   * method and does not extend to props, rocks or the player.
+   *
+   * Read HERE rather than in Boot or Config because this class already owns
+   * every other decision about how dark it is and what lights you, and a
+   * default that lives beside the thing it defaults is a default that cannot
+   * drift from it. `of.lamp(on)` still works and still wins, because it is the
+   * same field: the flag sets the BOOT state, not a lock.
+   *
+   * A missing parameter is MISSING and takes the boot default true, never
+   * `Number(null) === 0`; only the exact string '0' turns it off, so `?lamp=1`
+   * and `?lamp=` cannot silently mean the opposite of what they read like.
+   */
+  enabled = new URLSearchParams(self.location.search).get('lamp') !== '0';
   /** Smoothed 0..1. 1 is open sky, 0 is fully enclosed. */
   skyVis = 1;
   private rawVis = 1;
