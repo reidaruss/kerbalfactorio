@@ -22,8 +22,46 @@ export class SurfaceOracle {
    */
   readonly water: WaterOracle;
 
-  constructor(private readonly M: OfCoreModule, readonly body: PlanetBody) {
+  private currentBody: PlanetBody;
+
+  /**
+   * The body every answer below is about.
+   *
+   * CE-20. A GETTER, not a `readonly` constructor property, and that one word is
+   * what makes a body switch possible at all. Roughly a dozen collaborators
+   * reach through here for a radius or a handle (`ObserverCamera`,
+   * `WaterSurface`, `Cheats`, the debug surface); when this was a fixed field
+   * they were all holding a snapshot of the world at boot without anybody having
+   * decided that. Now they are holding a reference to the thing that knows, and
+   * `reseat` moves all of them at once.
+   */
+  get body(): PlanetBody { return this.currentBody; }
+
+  constructor(private readonly M: OfCoreModule, body: PlanetBody) {
+    this.currentBody = body;
     this.water = new WaterOracle(M, body);
+  }
+
+  /**
+   * Point this oracle at a different body, in place.
+   *
+   * RE-SEAT RATHER THAN REBUILD, and the rule behind the choice generalises:
+   * an object is RE-SEATED when its identity is "the thing that answers about
+   * the current body", and REBUILT when its state is a cache SHAPED BY the
+   * current body. This class holds no per-body state at all (every method is a
+   * pass-through to a handle), so rebuilding it would only invalidate a dozen
+   * references for nothing. `WaterOracle` does hold cached state, so it gets
+   * the same call and recomputes it.
+   *
+   * `editsHandle` is deliberately NOT touched: it is the voxel edit set, and
+   * whether a body switch should carry it, swap it or refuse is a PERSISTENCE
+   * question with a save-corruption bug behind it (a tunnel dug on Forge
+   * reappears as a hole at the same absolute cell on Cinder, because the set is
+   * one global with no body in it). Silently clearing it here would hide that.
+   */
+  reseat(body: PlanetBody): void {
+    this.currentBody = body;
+    this.water.reseat(body);
   }
 
   /** The designed surface relief in metres. baseHeight === sampleDesignedHeight (WG-21). */

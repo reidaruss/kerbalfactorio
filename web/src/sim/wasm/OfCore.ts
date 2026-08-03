@@ -6,6 +6,7 @@
 // single-threaded instance, with no SharedArrayBuffer and no COOP/COEP.
 
 import type { OfCoreModule } from './heap.js';
+import { HandleLedger } from './HandleLedger.js';
 
 // ABI 2 (2026-07-25, the surface-authority audit): of_observer_latlon_alt gained
 // an `edits` parameter and now reads the oracle, of_quadmesh_generate's last
@@ -123,7 +124,20 @@ export async function loadOfCore(): Promise<OfCoreModule> {
   if (abi !== OF_ABI_VERSION) {
     throw new Error(`of-core ABI mismatch: wasm reports ${abi}, client expects ${OF_ABI_VERSION}`);
   }
+  // CE-19. Every handle this thread mints is counted from here on. This is the
+  // only module-construction site in the client, on the main thread and in every
+  // worker, which is what makes the census total rather than opt-in: a caller
+  // cannot bypass it without constructing a module some other way, and nothing
+  // does. See sim/wasm/HandleLedger.ts for what it can and cannot see.
+  HandleLedger.install(M, threadLabel());
   return M;
+}
+
+/** 'main', or the Worker's own `name` ('of-terrain', 'of-oracle-probe'). */
+function threadLabel(): string {
+  if (typeof window !== 'undefined') return 'main';
+  const n = (self as unknown as { name?: string }).name;
+  return n !== undefined && n !== '' ? n : 'worker';
 }
 
 export interface OracleTiming {

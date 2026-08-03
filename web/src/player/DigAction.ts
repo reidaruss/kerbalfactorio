@@ -81,7 +81,10 @@ export class DigAction {
   constructor(
     private readonly voxels: VoxelWorld,
     private readonly mesh: VoxelMesh,
-    private readonly terrain: TerrainStream,
+    /** CE-20. A THUNK, not the stream: a body switch replaces the object,
+     *  and a dig posted to the previous scope's worker goes nowhere and
+     *  says nothing. Read at the moment of the dig, never cached. */
+    private readonly terrain: () => TerrainStream,
     private readonly fx: DigFx | null = null,
   ) {}
 
@@ -115,7 +118,7 @@ export class DigAction {
     // is the web restaging of the five surfaces (DW-16 names it exactly).
     this.mesh.applyDirty(r.dirty);
     if (r.hit !== null) {
-      this.terrain.digAt(r.hit.x, r.hit.y, r.hit.z, DIG.radiusM);
+      this.terrain().digAt(r.hit.x, r.hit.y, r.hit.z, DIG.radiusM);
       this.fx?.burst(r.hit, dir);
     }
     this.stats.digs++;

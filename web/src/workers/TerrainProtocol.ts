@@ -29,6 +29,19 @@ export interface TerrainInitedMsg {
   radiusM: number;
   maxReliefM: number;
   loadMs: number;
+  /**
+   * CE-19. This worker's OWN WASM handle census, at the moment it finished
+   * initialising: `{ body: 1, streamer: 1 }` on a fresh instance.
+   *
+   * It travels in the init reply because it is the only evidence the main
+   * thread can get that a rebuilt terrain scope got a NEW heap rather than a
+   * re-used one. Handle ids are per module instance, so a worker that had been
+   * re-initialised instead of replaced would report `{ body: 2, streamer: 2 }`
+   * and keep climbing. The number is the difference between "we asked it to
+   * start again" and "the previous world's objects are gone", and nothing else
+   * visible from the main thread distinguishes those two.
+   */
+  handles: Readonly<Record<string, number>>;
 }
 
 // Note: /core exposes no runtime setter for maxDepth or genBudget; both are

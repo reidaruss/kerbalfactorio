@@ -49,22 +49,34 @@ export class WaterOracle {
   readonly noValue: number;
 
   /** The pond, or null if this body has none. Constant for the body's life. */
-  readonly disc: WaterDisc | null;
+  disc: WaterDisc | null;
 
-  constructor(private readonly M: OfCoreModule, readonly body: PlanetBody) {
+  private currentBody: PlanetBody;
+
+  /** The body this water belongs to. A getter for SurfaceOracle's reason (CE-20). */
+  get body(): PlanetBody { return this.currentBody; }
+
+  constructor(private readonly M: OfCoreModule, body: PlanetBody) {
+    this.currentBody = body;
     this.noValue = M._of_water_no_value();
-    const n = M._of_water_disc(body.handle);
-    if (n !== 7) {
-      this.disc = null;
-    } else {
-      // Standing rule 5: the heap view is taken AFTER the call that filled it,
-      // and copied out before the next call into WASM.
-      const s = scratchF64(M, 7);
-      this.disc = {
-        dirX: s[0], dirY: s[1], dirZ: s[2],
-        shorelineM: s[3], basinRadiusM: s[4], levelM: s[5], maxDepthM: s[6],
-      };
-    }
+    this.disc = readDisc(M, body);
+  }
+
+  /**
+   * CE-20. Point at a different body and RECOMPUTE the cached disc.
+   *
+   * This class is the re-seat rule's other half: `disc` is state SHAPED BY the
+   * body (Forge's pond is not Cinder's absence of one), so re-seating without
+   * recomputing it would leave a 600 km world's pond floating over a 200 km
+   * moon. `noValue` is a /core constant and does not move.
+   *
+   * Note what this does NOT reach: `TerrainMaterial` reads `disc` ONCE at
+   * creation to darken the waterline, so the terrain materials must be REBUILT
+   * on a switch, not re-seated. They are, because the whole terrain scope is.
+   */
+  reseat(body: PlanetBody): void {
+    this.currentBody = body;
+    this.disc = readDisc(this.M, body);
   }
 
   /** Does this body have water at all? */
@@ -113,4 +125,23 @@ export class WaterOracle {
   submerged(x: number, y: number, z: number): boolean {
     return this.submersionM(x, y, z) > 0;
   }
+}
+
+/**
+ * The pond's seven doubles for one body, or null where there is none.
+ *
+ * Lifted out of the constructor so the constructor and `reseat` cannot drift:
+ * a second copy of this read is exactly how a re-seated oracle would end up
+ * with a subtly different disc from a freshly built one, and nothing would say
+ * so.
+ */
+function readDisc(M: OfCoreModule, body: PlanetBody): WaterDisc | null {
+  if (M._of_water_disc(body.handle) !== 7) return null;
+  // Standing rule 5: the heap view is taken AFTER the call that filled it, and
+  // copied out before the next call into WASM.
+  const s = scratchF64(M, 7);
+  return {
+    dirX: s[0], dirY: s[1], dirZ: s[2],
+    shorelineM: s[3], basinRadiusM: s[4], levelM: s[5], maxDepthM: s[6],
+  };
 }

@@ -12,6 +12,7 @@ import { mapApi } from './app/DebugMap.js';
 import { scatterApi } from './app/DebugScatter.js';
 import { armourApi } from './app/DebugArmour.js';
 import { postApi } from './app/DebugPost.js';
+import { lifecycleApi } from './app/DebugLifecycle.js';
 import { installPauseMenu } from './app/MenuBoot.js';
 import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
@@ -45,6 +46,9 @@ boot(cfg, host, hud).then(({ services }) => {
   // (Systems.ts: flight owns its own eye). See app/MenuBoot.ts.
   Object.assign(api, vabApi(services), flightApi(services), mapApi(services),
     scatterApi(services, loop), armourApi(services), postApi(services, loop),
+    // CE-19 / CE-20. `of.life()` and `of.reboot()`: the world lifecycle's driven
+    // surface. See app/DebugLifecycle.ts for why `reboot` is debug-only.
+    lifecycleApi(services),
     installPauseMenu(services, loop));
 
   let hudFrame = 0;

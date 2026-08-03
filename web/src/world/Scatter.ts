@@ -311,6 +311,38 @@ export class Scatter {
     }
   }
 
+  /**
+   * CE-19. Release every prop instance this scatter placed, and forget the keys.
+   *
+   * The body scope's teardown step. It goes through `drop`, one key at a time,
+   * rather than clearing the map, because every placed chunk owns slots in the
+   * shared `PropLibrary` batches and those batches SURVIVE a body switch: they
+   * are process-scoped (one atlas load for the run) while the props standing on
+   * a chunk are not. Clearing `placed` without releasing would leak the slots
+   * into a pool that reports itself full, which DW-28 names as the worst failure
+   * class this project can have, a ceiling that reports success.
+   *
+   * It also matters that this is keyed teardown and not "drop what is no longer
+   * resident": after `TerrainStream.dispose` the resident set is already empty,
+   * so the ordinary per-frame reclaim in `update` would never run again and
+   * every prop on screen at the moment of the switch would be orphaned.
+   */
+  /**
+   * CE-20. The body radius THIS scatter was built against.
+   *
+   * Published only so the stale-holder census can compare it with the live body
+   * and prove this object followed a rebuild. It is a POSITIVE CONTROL for that
+   * census: a switch rebuilds the scatter, so this row must always read clean,
+   * and a census in which every row is stale is a census that is measuring
+   * itself rather than the client.
+   */
+  get bodyRadiusForAudit(): number { return this.bodyRadiusM; }
+
+  clearPlaced(): void {
+    for (const key of [...this.placed.keys()]) this.drop(key);
+    this.chunksScattered = 0;
+  }
+
   private drop(key: string): void {
     const pl = this.placed.get(key);
     if (pl === undefined) return;

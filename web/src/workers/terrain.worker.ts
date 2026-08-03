@@ -17,6 +17,7 @@ import {
   type ChunkBlobLayout,
 } from '../world/ChunkFormat.js';
 import { createBodyHandle } from '../world/PlanetBody.js';
+import { HandleLedger } from '../sim/wasm/HandleLedger.js';
 import type {
   TerrainChunkMsg, TerrainDigMsg, TerrainInitMsg, TerrainInitedMsg,
   TerrainEditsMsg, TerrainLevelMsg, TerrainObserveMsg, TerrainUpdateMsg,
@@ -63,6 +64,8 @@ async function init(msg: TerrainInitMsg): Promise<void> {
     radiusM: M._of_body_radius(body),
     maxReliefM: M._of_body_max_relief(body),
     loadMs,
+    // CE-19. Read AFTER the handles above are minted, so it counts them.
+    handles: HandleLedger.of(M)?.mark() ?? {},
   };
   ctx.postMessage(reply, [reply.index]);
 }

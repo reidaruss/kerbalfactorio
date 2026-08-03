@@ -125,6 +125,22 @@ export function registerSystems(s: Services, loop: Loop): void {
   let lampHeld = false;
 
   loop.onFixedStep.push((dt) => {
+    // CE-20. NOTHING TOUCHES THE WORLD WHILE IT IS BETWEEN LIFETIMES.
+    //
+    // A rebuild is asynchronous (a worker load plus a streaming ring), and
+    // MEASURED AT NINE ANIMATION FRAMES. Without this gate those nine frames
+    // run against the OUTGOING scope: `request` posts an observe to a
+    // terminated worker, `drain` walks an emptied inbox, and `scatter.update`
+    // is handed an empty resident set, whose ordinary reclaim then releases
+    // all 10,170 prop slots as a SIDE EFFECT of the world being gone.
+    //
+    // That last one is the reason this gate exists rather than being tidiness.
+    // The release was happening by accident of frame timing, so the explicit
+    // teardown step that is supposed to do it could be deleted with no
+    // measurable consequence: a negative control that could not go red, over a
+    // resource that is a GPU instance pool. The gate makes the explicit step
+    // load-bearing again and stops the client rendering a half-torn-down world.
+    if (s.session.isRebooting) return;
     if (s.regime.update(s.observer.altM)) {
       s.terrain.setNearDepthCutoff(s.regime.state.nearDepthCutoff);
       s.events.emit('RegimeChanged', { band: s.regime.state.band });
@@ -188,6 +204,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   s.events.on('OriginRebased', () => { s.voxelMesh?.place(); s.levelRing?.place(); });
 
   loop.onDrain.push(() => {
+    if (s.session.isRebooting) return;   // CE-20, see onFixedStep above.
     // The cross-fade ramp is SIM time, not wall clock, so a driven run on the
     // synthetic clock (Loop.run) dissolves at exactly the rate a real one does.
     s.terrain.nowSecs = loop.simSecs;
@@ -285,6 +302,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   // AFTER the camera is placed: the cascades are fitted to the near camera, so
   // fitting them in onDrain would shadow last frame's pose.
   loop.onPreRender.push(() => {
+    if (s.session.isRebooting) return;   // CE-20, see onFixedStep above.
     // AFTER observer.interpolate and rig.setView: the vessel is drawn at the
     // interpolated instant the camera was placed for, so the model and the eye
     // agree. Placing it in onDrain instead put it a whole tick of travel out,

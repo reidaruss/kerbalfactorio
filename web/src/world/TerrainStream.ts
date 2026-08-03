@@ -103,10 +103,19 @@ export class TerrainStream {
     this.scenes.far.add(pool.farBatch);
     this.retiring = new ChunkRetire(pool, opts.fadeSecs);
     this.edits = new TerrainEditChannel(worker, () => ++this.seq);
-    this.worker.addEventListener('message', (e) => this.onMessage(e as MessageEvent<FromTerrain>));
+    this.onWorkerMessage = (e) => this.onMessage(e as MessageEvent<FromTerrain>);
+    this.worker.addEventListener('message', this.onWorkerMessage);
     // Exactly one subscriber to the one broadcast (ARCHITECTURE.md 3.6).
-    this.events.on('OriginRebased', () => this.onOriginRebased());
+    // CE-19: the unsubscribe is KEPT. `Events.on` has always returned one; this
+    // was one of four call sites that threw it away, which is why a torn-down
+    // stream used to keep re-placing the chunks of a world that no longer
+    // existed every time the origin moved.
+    this.offOriginRebased = this.events.on('OriginRebased', () => this.onOriginRebased());
   }
+
+  private readonly offOriginRebased: () => void;
+  private readonly onWorkerMessage: (e: MessageEvent) => void;
+  private disposed = false;
 
   private onMessage(e: MessageEvent<FromTerrain>): void {
     const msg = e.data;
@@ -409,12 +418,44 @@ export class TerrainStream {
     return probeStakes(this.views.values(), out, maxStakes, cam, this.nearest, this.nearestD2, this.pool);
   }
 
+  /**
+   * Release everything this stream owns. CE-19 / the five clauses in
+   * `app/Lifetime.ts`.
+   *
+   * This method existed for a year with NO CALLER, and the four things it was
+   * missing are exactly what a method with no caller is missing: it left the
+   * `OriginRebased` subscription attached (so a dead stream kept re-placing the
+   * chunks of a world that had been thrown away), it left the worker's message
+   * listener and the `afterRebase` hook holding this object and everything it
+   * references alive, it was not idempotent, and it answered questions
+   * afterwards as though nothing had happened.
+   *
+   * The worker is TERMINATED rather than sent a reset. That is the stronger
+   * choice and the reasoning is worth keeping: handle id spaces are per module
+   * instance, so killing the thread releases the whole heap and every handle in
+   * it atomically. `terrain.worker.ts` frees none of the three it mints, and a
+   * reset message would mean keeping a per-handle release list in step with
+   * every handle a future lane adds, which is the same maintenance burden that
+   * produced the leak in the first place. Termination costs one module load
+   * (measured at 7 to 15 ms) and cannot be incomplete.
+   */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.offOriginRebased();
+    this.worker.removeEventListener('message', this.onWorkerMessage);
     this.worker.terminate();
+    // The hook closes over Scatter, which closes over the prop library and the
+    // pool. Left set, a disposed stream keeps the whole scatter graph alive.
+    this.afterRebase = null;
     this.pool.nearBatch.removeFromParent();
     this.pool.farBatch.removeFromParent();
     this.views.clear();
+    this.inbox.length = 0;
     this.pool.disposeAll();
     this.materials.dispose();
   }
+
+  /** Clause 4: a disposed stream must be loud, not quietly stale. */
+  get isDisposed(): boolean { return this.disposed; }
 }

@@ -4,6 +4,7 @@
 
 import type { Config } from '../app/Config.js';
 import type { Events } from '../app/Events.js';
+import type { Lifetime } from '../app/Lifetime.js';
 import type { QualityKnobs } from '../render/Quality.js';
 import type { DepthPolicy } from '../render/DepthPolicy.js';
 import type { Scenes } from '../render/Scenes.js';
@@ -45,6 +46,8 @@ export interface TerrainBootResult {
   workerLoadMs: number;
   verts: number;
   indexCount: number;
+  /** CE-19. The terrain worker's own handle census at init. See TerrainProtocol. */
+  workerHandles: Readonly<Record<string, number>>;
   /** The pond's surface. `mesh` is null on a body with no water. */
   water: WaterSurface;
 }
@@ -61,6 +64,16 @@ export interface TerrainBootDeps {
   cascadeSplits: number[];
   /** The surface oracle, whose `water` sibling this boot reads (WG-42). */
   oracle: SurfaceOracle;
+  /**
+   * CE-19. The scope everything built here belongs to. REQUIRED, not optional:
+   * a boot function that mints a Worker, two `BatchedMesh`es, three WASM handles
+   * on another thread and an event subscription, and does not say who releases
+   * them, is the exact shape that left `TerrainStream.dispose()` uncalled for a
+   * year. The general rule this instance is standing in for: a function that
+   * constructs disposable things takes the lifetime they belong to, so
+   * "released by whom" is answered at the call site rather than deferred.
+   */
+  lifetime: Lifetime;
 }
 
 export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult> {
@@ -82,7 +95,16 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     worker.onerror = (e) => { clearTimeout(timer); reject(new Error(`terrain.worker: ${e.message}`)); };
     const init: TerrainInitMsg = {
       type: 'init',
-      bodyId: cfg.bodyId,
+      // CE-22. FROM THE BODY, NOT FROM THE CONFIG. `cfg.bodyId` is frozen at
+      // boot and `PlanetBody` is the object that owns the handle these ids
+      // index, so the two agree only for as long as nothing ever changes body.
+      // Reading the config here meant the worker would keep generating Forge
+      // while the main thread had moved to Cinder: the same seed, two different
+      // planets, with the terrain the player walks on coming from the wrong one
+      // and no error anywhere. `cfg.bodyId` is now read at exactly one site in
+      // the client, `PlanetBody.create`, which is what makes it a config value
+      // rather than a second authority.
+      bodyId: body.bodyId,
       seedLo: cfg.seedLo, seedHi: cfg.seedHi,
       splitRatio: cfg.splitRatio, mergeHysteresis: 0.6,
       maxDepth: cfg.maxDepth,
@@ -115,6 +137,15 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     skirts: cfg.skirts, stitching: cfg.stitch, fadeSecs: cfg.fadeSecs, shell: cfg.shell,
   });
   stream.setNearDepthCutoff(depth.nearDepthCutoff());
+  // CE-19. REGISTERED HERE, IMMEDIATELY AFTER CONSTRUCTION, and that placement
+  // is the whole mechanism rather than a style. Registration order IS
+  // construction order only if every step is registered where its subject is
+  // built; collect them at the end of the function instead and you are writing
+  // the dependency order out by hand a second time, which is the thing reverse
+  // teardown exists to avoid needing. Concretely: the water below borrows this
+  // stream's near material, so the water must be released FIRST, and it is,
+  // because it is registered LAST.
+  d.lifetime.add('terrain.stream', () => { stream.dispose(); });
 
   // THE POND'S SURFACE (WG-42). Built here, and not at the boot site, because
   // it is world data with the terrain's own anchoring problem: it lives at a
@@ -136,8 +167,12 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     refractAllowed: cfg.post.flags.post && cfg.post.tune.samples === 0,
   });
   if (water.mesh !== null) {
-    scenes.near.add(water.mesh);
-    events.on('OriginRebased', () => water.reanchor());
+    const mesh = water.mesh;
+    scenes.near.add(mesh);
+    // CE-19. Two teardown steps, registered where the thing is created, which is
+    // the only place that knows both what was made and who made it.
+    d.lifetime.addUnsubscribe('water.reanchor', events.on('OriginRebased', () => water.reanchor()));
+    d.lifetime.add('water.mesh', () => { mesh.removeFromParent(); water.dispose(); });
   }
 
   return {
@@ -150,5 +185,6 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     workerLoadMs: inited.loadMs,
     verts: inited.verts,
     indexCount: inited.indexCount,
+    workerHandles: inited.handles,
   };
 }

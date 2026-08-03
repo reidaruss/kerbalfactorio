@@ -287,6 +287,9 @@ export class VoxelMesh {
     this.stats.bricks = this.bricks.size;
   }
 
+  /** CE-20. The body handle this mesher was built against; see Scatter's. */
+  get bodyHandleForAudit(): number { return this.bodyHandle; }
+
   dispose(): void {
     this.geo.dispose();
     this.ownMaterial.dispose();

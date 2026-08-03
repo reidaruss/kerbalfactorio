@@ -190,7 +190,8 @@ export class LevelAction {
   constructor(
     private readonly voxels: VoxelWorld,
     private readonly mesh: VoxelMesh,
-    private readonly terrain: TerrainStream,
+    /** CE-20. A THUNK, for DigAction's reason. */
+    private readonly terrain: () => TerrainStream,
     private readonly oracle: SurfaceOracle,
     private readonly ring: LevelRing | null = null,
   ) {}
@@ -294,7 +295,7 @@ export class LevelAction {
     const tm = performance.now();
     this.mesh.applyDirty(r.dirty);
     this.stats.lastRemeshMs = +(performance.now() - tm).toFixed(3);
-    this.terrain.levelAt(hit.x, hit.y, hit.z, LEVEL.radiusM, target,
+    this.terrain().levelAt(hit.x, hit.y, hit.z, LEVEL.radiusM, target,
       LEVEL.maxCutM, LEVEL.maxFillM);
     this.stats.levels++;
     this.stats.cellsDug += r.dug;
