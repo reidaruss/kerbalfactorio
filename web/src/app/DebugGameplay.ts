@@ -6,6 +6,7 @@
 // that reached past these into the sim would be verifying a path no player can
 // take, which is the quiet way an acceptance test stops meaning anything.
 
+import { PLANT_KINDS, STARTER, starterPlanFor } from '../game/StarterContent.js';
 import { demolishBuild, demolishMachine, demolishStructure } from '../game/Demolition.js';
 import { renderVoices } from '../audio/Sfx.js';
 import { renderBeds } from '../audio/Beds.js';
@@ -482,6 +483,26 @@ export function gameplayApi(s: Services, loop: Loop) {
     // generated world, so restoring onto a world that is already more depleted
     // than the save is a state a real boot can never be in.
     repopulate() { s.gameplay?.populate(); return s.gameplay?.report() ?? null; },
+    /**
+     * GP-268 / R16. THE STARTER GATE AS A PURE FUNCTION, so the invariant can
+     * be driven with an answer no shipped body produces. A READ and never a
+     * mutation (the allowlist rule): it places nothing and changes nothing.
+     *
+     * This exists because the shipped tables cannot exercise the rule. Forge
+     * has air and Cinder has an empty list, so on the two bodies that exist
+     * the refusal branch is never taken, and a rule that is never taken is a
+     * rule nobody knows is there. `kinds` lets a probe hand it the case that
+     * matters: a table that ASKS for a tree on an airless body.
+     */
+    starterPlan(bodyId: unknown, airless: unknown, kinds?: unknown) {
+      const t = Array.isArray(kinds) ? kinds.map(Number) : undefined;
+      return {
+        plan: starterPlanFor(Number(bodyId), airless === true, t),
+        tables: STARTER.map((x) => ({ bodyId: x.bodyId, name: x.name,
+                                      count: x.kinds.length, why: x.why })),
+        plantKinds: [...PLANT_KINDS],
+      };
+    },
 
     // W7. The H key's own handler, so a probe cannot hide the checklist by a
     // path a player has no access to.

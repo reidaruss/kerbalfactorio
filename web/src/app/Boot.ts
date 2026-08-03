@@ -322,7 +322,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     const { digOrePort } = await import('../game/DigOre.js');
     gameplay = await Gameplay.create({
       core, origin, player, avatar, input, host, scene: scenes.near,
-      bodyHandle: body.handle, seed: cfg.seedLo,
+      bodyHandle: body.handle, bodyId: body.bodyId, seed: cfg.seedLo,
       // WG-69: the rock lattice's datum and its water gate, both READ from the
       // objects that own them (DW-18: transcribing a body constant is how the
       // walker once fell at the wrong gravity). `?rocks=0` is the control.

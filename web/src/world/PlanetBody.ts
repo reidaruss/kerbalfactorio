@@ -44,22 +44,67 @@ export class PlanetBody {
   readonly muM3S2: number;
   readonly kind: BodyKind;
   readonly name: string;
+  /** GP-268. /core's own `BodyParams::bodyId` (0 Forge, 1 Cinder), CARRIED
+   *  rather than re-derived from `kind`. Two moons would both be kind 1 and a
+   *  consumer keyed on kind would confuse them; `of_atmo_*` is indexed by this
+   *  same id (atmosphere.h section 2), so passing it on is passing /core's own
+   *  key rather than a second one. There is no `of_body_id` export to read it
+   *  back from a handle, which is why it travels with the object. */
+  readonly bodyId: BodyId;
 
-  private constructor(private readonly M: OfCoreModule, handle: number, name: string) {
+  /**
+   * RN-840. THE BODY'S AIR, and the reason it lives here rather than in the
+   * renderer is the reason this class exists at all.
+   *
+   * `forgeAtmosphere()` was called unconditionally at `Boot.ts:120`, so Cinder,
+   * which /core declares AIRLESS (D-006: `makeCinderAtmosphere()` returns an
+   * empty profile and `present()` is false), was rendered with Earth's Rayleigh
+   * coefficients scaled to a 200 km radius. That gave the moon a blue sky, an
+   * aerial perspective that veiled every crater in a white sheet, and a
+   * `daylightFactor` reading a full column of air that is not there.
+   *
+   * The fix is deliberately NOT a boolean somebody has to remember to set when
+   * a body is added. These are the same two /core queries `app/MapBoot.ts`
+   * already draws the map's air line from, indexed by the same `bodyId`, so a
+   * third body authored in `atmosphere.h` renders correctly with no change on
+   * this side at all.
+   */
+  readonly seaLevelDensityKgM3: number;
+  /** The ceiling: at or above it /core's density is exactly 0. */
+  readonly atmosphereTopM: number;
+
+  private constructor(private readonly M: OfCoreModule, handle: number, name: string,
+                      bodyId: BodyId) {
     if (handle <= 0) throw new Error(`of_body_create failed for ${name}`);
     this.handle = handle;
     this.name = name;
+    this.bodyId = bodyId;
     this.radiusM = M._of_body_radius(handle);
     this.maxReliefM = M._of_body_max_relief(handle);
     this.muM3S2 = M._of_body_mu(handle);
     this.kind = M._of_body_kind(handle) === 1 ? 'moon' : 'planet';
+    // A DENSITY AT ALTITUDE 0 rather than a stored "sea level" constant:
+    // `_of_atmo_density` clamps below the datum, so this IS the profile's rho0
+    // by construction and there is no second number to keep in step.
+    this.seaLevelDensityKgM3 = M._of_atmo_density(bodyId, 0);
+    this.atmosphereTopM = M._of_atmo_space_altitude(bodyId);
+  }
+
+  /**
+   * `AtmosphereProfile::present()`, term for term and in the same order. Both
+   * halves are required: a profile with a density and no ceiling, or a ceiling
+   * and no density, is not an atmosphere, and /core makes exactly that call.
+   */
+  get hasAtmosphere(): boolean {
+    return this.seaLevelDensityKgM3 > 0 && this.atmosphereTopM > 0;
   }
 
   /** Build whichever body the config chose. The two named factories below are
    *  now shorthands for this, so there is one construction path, not three. */
   static create(M: OfCoreModule, bodyId: BodyId, seedLo: number, seedHi: number): PlanetBody {
     return new PlanetBody(
-      M, createBodyHandle(M, bodyId, seedLo, seedHi), bodyId === 1 ? 'Cinder' : 'Forge',
+      M, createBodyHandle(M, bodyId, seedLo, seedHi),
+      bodyId === 1 ? 'Cinder' : 'Forge', bodyId,
     );
   }
 

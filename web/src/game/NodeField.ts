@@ -25,6 +25,7 @@ import { ART, frac, hash32, pickArt, variantFor, type NodeArt } from './NodeArt.
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { GameCore, NodeState } from './GameCore.js';
 import { NODE_KIND } from './GameCore.js';
+import { PLANT_KINDS, starterPlanFor } from './StarterContent.js';
 
 /**
  * The warm, sun-bleached end of the tree spread. MUCH weaker than the
@@ -182,7 +183,8 @@ export class NodeField {
    * 0.0003 rad, which is 180 m at Forge's 600 km radius, so at any walkable ring
    * radius the jitter is an order of magnitude larger than the ring.
    */
-  populate(body: number, edits: number, dir: THREE.Vector3, seed: number): number {
+  populate(body: number, edits: number, dir: THREE.Vector3, seed: number,
+           bodyId = 0, airless = false): number {
     this.core.clearNodes();
     // RELEASED, not just hidden. A slot that is only hidden is never handed out
     // again, so regrowing the clearing leaks one instance per node per regrow.
@@ -199,7 +201,20 @@ export class NodeField {
     const t2 = new THREE.Vector3().crossVectors(d, t1).normalize();
     const R = 600000;   // only the SCALE of the offset; the snap is the oracle's
 
-    const plan = this.plan();
+    // GP-268 / R16. The spiral is PER BODY and a plant may not stand in vacuum.
+    // Both, and the second is the one that matters: a table alone would let the
+    // next person put a tree back on the moon.
+    const sp = starterPlanFor(bodyId, airless);
+    this.starterRefused = sp.refused;
+    this.starterUnknownBody = sp.unknownBody;
+    // ENTRIES, not instances. `populate` returns `this.placed.length`, which
+    // counts ART PIECES (a tree is several), so it is 49 for a 14-entry spiral
+    // and is the wrong number to assert a content table against. The first
+    // draft of the probe compared them and went red for a reason that had
+    // nothing to do with the rule under test.
+    this.starterPlanned = sp.kinds.length;
+    this.starterPlants = sp.kinds.filter((k) => PLANT_KINDS.includes(k)).length;
+    const plan = sp.kinds;
     for (let i = 0; i < plan.length; ++i) {
       const h = hash32(seed, i);
       // Golden-angle spiral: even coverage with no clumping and no grid look.
@@ -220,14 +235,18 @@ export class NodeField {
     return this.placed.length;
   }
 
-  /**
-   * The clearing's standalone contents: trees, and nothing else. Wood is one
-   * half of every starting tool; the other half is ore, and ore now comes out of
-   * the ground the drills stand on.
-   */
-  private plan(): number[] {
-    return new Array<number>(14).fill(NODE_KIND.Tree);
-  }
+  /** GP-268. Every starter entry the airless invariant threw out, with its
+   *  reason. Published rather than dropped: something loudly wrong can be
+   *  fixed and something quietly absent cannot. */
+  starterRefused: string[] = [];
+  /** GP-268. Set when the body has no starter table at all, which places
+   *  nothing and says so instead of falling back to Forge's list. */
+  starterUnknownBody = '';
+  /** GP-268. How many spiral ENTRIES survived the invariant (not art pieces). */
+  starterPlanned = 0;
+  /** GP-268. How many of those are PLANTS. Must be 0 on an airless body, and
+   *  that is the sentence R16 was about. */
+  starterPlants = 0;
 
   /**
    * Add one OUTCROP: a piece of an ore patch breaking the surface.

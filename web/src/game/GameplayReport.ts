@@ -28,6 +28,19 @@ export function gameplayReport(g: Gameplay): unknown {
       // the delivery ratio and every refusal are published beside each other.
       trees: g.trees.stats(),
       placed: g.nodesPlaced,
+      // GP-268 / R16. THE STARTER SPIRAL, per body, and every entry the airless
+      // invariant refused. `refused` non-empty is a LOUD condition and not an
+      // error: it means a table asked for a plant on a body with no air, which
+      // is a content bug someone can now see. World-gen found 14 trees on
+      // Cinder because nothing published any of this.
+      starter: {
+        bodyId: g.starterBodyId,
+        planned: g.field.starterPlanned,
+        plants: g.field.starterPlants,
+        artPieces: g.nodesPlaced,
+        refused: [...g.field.starterRefused],
+        unknownBody: g.field.starterUnknownBody,
+      },
       // THE DEPOSITS. A patch is the whole ore body, so `remaining` here is the
       // number a conservation check has to balance against: what a drill
       // extracted plus what a hand mined must equal what the patch lost.

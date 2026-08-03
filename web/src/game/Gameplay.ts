@@ -14,6 +14,7 @@
 // deltas, because a frame of unlocked movement applied on re-lock reads as a
 // bug.
 
+import { vesselAbi } from '../sim/wasm/vesselabi.js';
 import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
 import { NodeField } from './NodeField.js';
@@ -82,6 +83,9 @@ export interface GameplayDeps {
   host: HTMLElement;
   scene: THREE.Object3D;
   bodyHandle: number;
+  /** GP-268. /core BodyParams::bodyId. Keys the starter table AND indexes
+   *  the atmosphere (atmosphere.h section 2), so one id answers both. */
+  bodyId: number;
   seed: number;
   /** DW-31: which mode created this world. Fixed for its whole lifetime. */
   mode: GameMode;
@@ -190,6 +194,9 @@ export class Gameplay {
   /** GP-57: the launch pad under the crosshair, or null. Picked LAST. */
   aimedPad: PadPart | null = null;
   suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
+
+  /** GP-268. The body the starter table was keyed on, for the report. */
+  get starterBodyId(): number { return this.d.bodyId; }
 
   /** What a save needs: the module handle, the seed, and the voxel handles,
    * which live in Services and are null in a scenario with no character. */
@@ -343,7 +350,13 @@ export class Gameplay {
     const dir = this.spawnDir;
     // NodeField FIRST: it clears the whole node array, and the ore field's
     // outcrops are nodes in that same array.
-    this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed);
+    // GP-268 / R16. AIRLESS IS /core's ANSWER, not "is it a moon": of_atmo_*
+    // is indexed by the same BodyParams::bodyId, and atmosphere.h says a body
+    // that is not Forge returns exactly 0. A moon WITH air would keep its
+    // trees, which `kind === 'moon'` could never express.
+    const airless = vesselAbi(this.d.core)._of_atmo_density(this.d.bodyId, 0) === 0;
+    this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed,
+                                           this.d.bodyId, airless);
     this.patchesPlaced = this.oreField.populate(dir, 0);
     // The rocks LAST: populate cleared the whole /core node array, so every
     // index the rock stream held is stale. Everything regrows from seed on the
