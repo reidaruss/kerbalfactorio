@@ -20,10 +20,12 @@
 // =============================================================================
 #include "of/ascent.h"      // R87: the ribbon's airless schedule, one source
 #include "of/atmosphere.h"
+#include "of/docking.h"     // PH-303: the capture test, inside the step (R77)
 #include "of/flight.h"
 #include "of/landing.h"     // SurfaceFrame, the ground the ribbon is handed
 
 namespace at = of::atmo;
+namespace dk = of::docking;
 namespace fl = of::flight;
 
 namespace { Registry<fl::FlightSim> g_flights; }
@@ -86,7 +88,11 @@ OF_API int of_fl_create(int v, int body) {
   f->captureHold();
   return g_flights.add(f);
 }
-OF_API void of_fl_destroy(int f) { g_flights.remove(f); }
+// The dock rig is erased with the flight (PH-303). A rig that outlived its
+// handle would be inherited by the next vessel to be allocated the same slot,
+// which is a latched docking on a rocket that has never seen a station.
+void dkForget(int f);
+OF_API void of_fl_destroy(int f) { dkForget(f); g_flights.remove(f); }
 
 OF_API int of_fl_set_pos_vel(int f, double px, double py, double pz,
                              double vx, double vy, double vz) {
@@ -187,6 +193,64 @@ OF_API int of_fl_capture_hold(int f) {
   return 1;
 }
 
+// =============================================================================
+// PH-301: TRANSLATIONAL RCS REACHES THE PLAYER.
+//
+// `flight.h` has had `rcsTranslate` since PH-173 and nothing outside /core
+// could set it, which made "move sideways in orbit" a capability the engine had
+// and the game did not. Reid's storyline hand-flies the first docking, and
+// without translation a vehicle can POINT or MOVE and not both: a rocket
+// accelerates along its nose, and an approach has to hold the port aimed while
+// correcting sideways.
+//
+// THE DIRECTION IS INERTIAL, VERBATIM `flight.h`'s FIELD, and that is a refusal
+// rather than an omission. A vessel-frame argument would mean this file holding
+// an opinion about which way the vehicle points, and the client already reads
+// `forward` and `right` off `of_fl_state` every tick. Two derivations of the
+// vessel basis is exactly the class of defect PH-40 keeps paying for, and it
+// would arrive as an approach that drifts left when the pilot presses right.
+//
+// IT IS STATE AND NOT AN IMPULSE, exactly like the throttle. `flight.h` keeps
+// the vector until it is overwritten, so a client that stops writing it does
+// not stop thrusting. The client therefore writes it EVERY tick, zero included,
+// which is what `FlightControls` does with pitch and yaw already.
+//
+// The MAGNITUDE is the throttle, 0 to 1, of the vehicle's total RCS thrust, and
+// `flight.h` clamps it. Zero is off. -> 1 on success, 0 for a bad handle.
+OF_API int of_fl_rcs_translate(int f, double x, double y, double z) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  s->rcsTranslate = vec(x, y, z);
+  return 1;
+}
+
+// WHAT THE RCS IS DOING, so a screen can tell three states apart that all look
+// like "nothing happened": no command, no thruster, no monopropellant.
+//
+// f64 scratch, EXACTLY 4:
+//   [0] deliveredN   `telemetry.rcsThrustN`, what the LAST step actually
+//                    applied. Never the command: a vehicle out of monoprop is
+//                    commanded and delivering nothing, and an approach that
+//                    assumed its command landed would fly into the station
+//   [1] availableN   `rcsTranslationThrustN(craft)`, which is already zero when
+//                    the monopropellant is gone, so [1] == 0 with [2] == 0 is
+//                    "empty" and [1] == 0 with [2] > 0 is "no blocks fitted"
+//   [2] monopropKg   what is left aboard
+//   [3] commandT     the commanded throttle, |rcsTranslate| clamped to 1
+OF_API int of_fl_rcs(int f) {
+  resetF64(4);
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  s->craft.layout();
+  const double want = s->rcsTranslate.length();
+  g_f64.push_back(s->telemetry.rcsThrustN);
+  g_f64.push_back(fl::rcsTranslationThrustN(s->craft));
+  g_f64.push_back(of::vessel::propellantAboardKg(
+      s->craft, of::vessel::Propellant::Monopropellant));
+  g_f64.push_back(want > 1.0 ? 1.0 : want);
+  return 4;
+}
+
 // THE AUTOPILOT RIDES INSIDE THE STEP, and that is a deliberate choice rather
 // than a convenience.
 //
@@ -204,11 +268,135 @@ OF_API int of_fl_capture_hold(int f) {
 // layer at the foot of of_core_api.cpp.
 void apDriveAutopilot(int f, fl::FlightSim& s, double dt);
 
+// =============================================================================
+// PH-303: THE CAPTURE TEST RIDES INSIDE THE STEP, WHICH IS R77's WHOLE POINT.
+//
+// `docking::sweptCapture` needs the two port poses at BOTH ENDS of a tick,
+// because a port's capture radius is 0.60 m and a tick is 1/60 s: a
+// point-in-sphere test at tick boundaries is blind above about 72 m/s of
+// relative speed. An `of_dk_test(...)` the client called once a FRAME would be
+// handed the pose at two ends of a FRAME, and under `of_fl_step_n` a frame can
+// be a thousand ticks. So the test lives where the tick does, for exactly the
+// reason `of_ap_tick` was refused: arming is the only thing a client does, and
+// a warped step tests the capture as often as a real-time one.
+//
+// WHAT THE CLIENT OWNS AND WHAT THIS OWNS. Where a port IS, is a vessel-layout
+// question and `vessel.h` owns it, so the client passes the vessel's own port
+// in the VESSEL'S LOCAL FRAME once, and this places it every sub-step through
+// `docking::portAt`. Where the OTHER port is, is the registry's, so the client
+// passes an inertial pose and a velocity, and this advances it linearly across
+// each sub-step. Linear is exact for a rails target over 1/60 s: a 400 km
+// circular orbit turns 0.0000188 rad in a tick, i.e. 5.5 mm of chord error
+// against a 0.60 m capture radius.
+//
+// ON CAPTURE THE VEHICLE IS PINNED AND ITS VELOCITY BECOMES THE TARGET'S, which
+// is the honest end state and not a physical join: nothing in this project has
+// a constraint solver, so "latched" means the two are one rigid thing and the
+// arriving vessel adopts the other's motion. It stops stepping under thrust the
+// moment it latches, because a latched vehicle that kept integrating would fly
+// out of the port it just entered.
+namespace {
+
+struct DockRig {
+  bool armed = false;
+  dk::Limits lim;
+  dk::PortPose portLocal;        // the vessel's own port, in the vessel frame
+  dk::PortPose target;           // the other port, body-centred inertial
+  Vec3 targetVelMS{0, 0, 0};
+  bool captured = false;
+  double separationM = 0.0;
+  double closestApproachM = 1.0e308;   // over the whole approach, not one tick
+  double closingMS = 0.0;
+  double coneErrorRad = 0.0;
+  int reason = 0;                // 0 none, 1 out of range, 2 cone, 3 too fast
+  // THE PASS THAT MATTERED, kept beside the live tick because they answer two
+  // different questions and this file's own test caught them being one field.
+  // A refusal is reported on the tick it happens and then OVERWRITTEN by every
+  // later tick, on which the vehicle is simply flying away and the reason is
+  // always "never came within the capture radius". A 40 m/s arrival therefore
+  // read as a range miss, and the one sentence a player needed ("too fast") had
+  // existed for a single tick and been thrown away.
+  int bestReason = 0;
+  double bestClosingMS = 0.0;
+  double bestConeErrorRad = 0.0;
+  long long tests = 0;           // sweeps run: a gate nobody exercised and a
+                                 // gate that never fires read the same
+};
+
+std::map<int, DockRig> g_docks;
+
+// WHY THE CAPTURE FAILED, in `sweptCapture`'s own order of precedence.
+//
+// The epsilon is load-bearing rather than defensive: on a refused capture the
+// separation is reported AT THE SPHERE BOUNDARY, i.e. exactly the capture
+// radius up to rounding, so a bare `>` classified a too-fast arrival as a range
+// miss whenever the last bit fell the wrong way.
+int reasonOf(const dk::CaptureResult& r, const dk::Limits& lim) {
+  if (r.captured) return 0;
+  if (r.separationM > lim.captureRadiusM * (1.0 + 1e-9)) return 1;
+  if (r.coneErrorRad > lim.captureConeRad) return 2;
+  return 3;
+}
+
+// One sub-step's capture test. `p0`,`f0`,`r0` are the vessel's state BEFORE
+// `step`, read by the caller so this never has to guess when it is being run.
+void dkCaptureStep(int f, fl::FlightSim& s, double dt,
+                   const Vec3& p0, const Vec3& fwd0, const Vec3& rgt0) {
+  auto it = g_docks.find(f);
+  if (it == g_docks.end()) return;
+  DockRig& d = it->second;
+  if (!d.armed || d.captured) return;
+
+  const dk::PortPose a0 = dk::portAt(p0, fwd0, rgt0, d.portLocal);
+  const dk::PortPose a1 = dk::portAt(s.state.posM, s.state.forward,
+                                     s.state.right, d.portLocal);
+  dk::PortPose b0 = d.target;
+  dk::PortPose b1 = d.target;
+  b1.posM = b0.posM + d.targetVelMS * dt;
+
+  const dk::CaptureResult r = dk::sweptCapture(a0, a1, b0, b1, d.lim, dt);
+  d.tests += 1;
+  d.separationM = r.separationM;
+  d.closingMS = r.closingMS;
+  d.coneErrorRad = r.coneErrorRad;
+  d.reason = reasonOf(r, d.lim);
+  if (r.closestApproachM < d.closestApproachM) {
+    d.closestApproachM = r.closestApproachM;
+    d.bestReason = d.reason;
+    d.bestClosingMS = r.closingMS;
+    d.bestConeErrorRad = r.coneErrorRad;
+  }
+
+  // THE TARGET MOVES WHETHER OR NOT WE LATCH, or the second tick of an approach
+  // would be measured against where the target was on the first.
+  d.target.posM = b1.posM;
+
+  if (!r.captured) return;
+  const dk::MatedPose m = dk::matedPose(d.target, d.portLocal);
+  s.state.posM = m.originM;
+  s.state.forward = m.forward;
+  s.state.right = m.right;
+  s.state.velMS = d.targetVelMS;
+  s.state.angVelRadS = Vec3{0, 0, 0};
+  s.state.throttle = 0.0;
+  s.rcsTranslate = Vec3{0, 0, 0};
+  s.captureHold();
+  d.captured = true;
+  d.separationM = 0.0;
+  d.closingMS = 0.0;
+}
+
+}  // namespace
+
+void dkForget(int f) { g_docks.erase(f); }
+
 OF_API int of_fl_step(int f, double dt) {
   fl::FlightSim* s = g_flights.get(f);
   if (!s || !(dt > 0.0)) return 0;
+  const Vec3 p0 = s->state.posM, f0 = s->state.forward, r0 = s->state.right;
   apDriveAutopilot(f, *s, dt);
   s->step(dt);
+  dkCaptureStep(f, *s, dt, p0, f0, r0);
   return 1;
 }
 // n fixed steps of dt. Returns the number taken; capped so a mistyped argument
@@ -218,10 +406,117 @@ OF_API int of_fl_step_n(int f, double dt, int n) {
   if (!s || !(dt > 0.0) || n <= 0) return 0;
   const int lim = n > 2000000 ? 2000000 : n;
   for (int i = 0; i < lim; ++i) {
+    const Vec3 p0 = s->state.posM, f0 = s->state.forward, r0 = s->state.right;
     apDriveAutopilot(f, *s, dt);
     s->step(dt);
+    dkCaptureStep(f, *s, dt, p0, f0, r0);
   }
   return lim;
+}
+
+// ARM THE CAPTURE TEST. The vessel's own port is given in the VESSEL'S LOCAL
+// FRAME (`flight.h`'s convention: local +Y is forward, +X is right, +Z the
+// third axis), which is the frame `of_fl_transforms` already reports part
+// origins in, so the client passes what it already has.
+//
+// The three limits come from the caller because they come off the PART
+// (`vessel.h`'s `dockCaptureRadiusM` and `dockCaptureConeRad`), for the same
+// reason physics owns mu: one authority, passed, never duplicated. Pass 0 for
+// any of them to take `docking::Limits`'s own default.
+//
+// Arming RESETS the approach's running closest approach, because a closest
+// approach that survived a re-arm would describe a pass the pilot has already
+// flown away from. -> 1 on success, 0 for a bad handle.
+OF_API int of_fl_dock_arm(int f, double capRadiusM, double coneRad,
+                          double maxClosingMS,
+                          double px, double py, double pz,
+                          double fx, double fy, double fz,
+                          double rx, double ry, double rz) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  DockRig& d = g_docks[f];
+  d = DockRig();
+  d.armed = true;
+  if (capRadiusM > 0.0) d.lim.captureRadiusM = capRadiusM;
+  if (coneRad > 0.0) d.lim.captureConeRad = coneRad;
+  if (maxClosingMS > 0.0) d.lim.maxClosingMS = maxClosingMS;
+  d.portLocal.posM = vec(px, py, pz);
+  d.portLocal.faceAxis = vec(fx, fy, fz);
+  d.portLocal.rollAxis = vec(rx, ry, rz);
+  return 1;
+}
+
+// WHERE THE OTHER PORT IS, body-centred inertial, plus its velocity so the
+// sweep can carry it across a tick the client is not present for. Call it once
+// a frame; the step advances it in between.
+//
+// A ROTATING TARGET IS NOT MODELLED AND THAT IS SAID RATHER THAN ASSUMED: the
+// face and roll axes are held fixed across the sub-steps between two client
+// calls. For a station that holds attitude, which is every station this project
+// has, the error is exactly zero.
+OF_API int of_fl_dock_target(int f, double px, double py, double pz,
+                             double fx, double fy, double fz,
+                             double rx, double ry, double rz,
+                             double vx, double vy, double vz) {
+  if (!g_flights.get(f)) return 0;
+  auto it = g_docks.find(f);
+  if (it == g_docks.end()) return 0;
+  DockRig& d = it->second;
+  d.target.posM = vec(px, py, pz);
+  d.target.faceAxis = vec(fx, fy, fz);
+  d.target.rollAxis = vec(rx, ry, rz);
+  d.targetVelMS = vec(vx, vy, vz);
+  return 1;
+}
+
+OF_API int of_fl_dock_clear(int f) {
+  return g_docks.erase(f) > 0 ? 1 : 0;
+}
+
+// HOW THE APPROACH IS GOING. f64 scratch, EXACTLY 11.
+//
+// WORDS 2 AND 4 TO 6 ARE THIS TICK; WORDS 3 AND 8 TO 10 ARE THE BEST PASS, and
+// the split is not tidiness. A live approach display wants what is happening
+// now. A post-mortem ("why did it not dock") wants the tick the ports were
+// closest on, because every tick after a failed pass reports the vehicle flying
+// away, and its reason is always 1.
+//   [0] armed            1 while a capture test is running
+//   [1] captured         1 once the ports have latched
+//   [2] separationM      this tick, at the sphere crossing or closest approach
+//   [3] closestApproachM the BEST over the whole approach since arming
+//   [4] closingMS        this tick's relative speed of the two ports
+//   [5] coneErrorRad     this tick, how far the faces are from antiparallel
+//   [6] reason           this tick: 0 captured or nothing yet, 1 never came
+//                        within the capture radius, 2 not facing each other,
+//                        3 too fast. THREE REFUSALS AND NOT ONE BOOLEAN,
+//                        because "it did not dock" is a sentence a player
+//                        cannot act on
+//   [7] tests            sweeps run since arming. A gate that has never been
+//                        exercised and a gate that never fires read the same
+//                        from outside, which is standing rule 11's shape
+//   [8] bestReason       the reason AT the closest pass. THE ONE A SCREEN SHOWS
+//   [9] bestClosingMS    the closing rate at that pass
+//  [10] bestConeErrorRad the cone error at that pass
+OF_API int of_fl_dock_status(int f) {
+  resetF64(11);
+  auto it = g_docks.find(f);
+  const bool have = it != g_docks.end();
+  const DockRig d = have ? it->second : DockRig();
+  const double a[11] = {
+    have && d.armed ? 1.0 : 0.0,
+    d.captured ? 1.0 : 0.0,
+    d.separationM,
+    d.closestApproachM > 1.0e307 ? -1.0 : d.closestApproachM,
+    d.closingMS,
+    d.coneErrorRad,
+    static_cast<double>(d.reason),
+    static_cast<double>(d.tests),
+    static_cast<double>(d.bestReason),
+    d.bestClosingMS,
+    d.bestConeErrorRad,
+  };
+  for (double x : a) g_f64.push_back(x);
+  return 11;
 }
 // -> jettisoned mass in kg, or -1 if there was nothing left to fire.
 OF_API double of_fl_stage(int f) {

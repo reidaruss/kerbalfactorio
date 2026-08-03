@@ -5,6 +5,7 @@ import { scratchF64 } from './wasm/heap.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import { STAGE_PERF_WORDS, vesselAbi } from './wasm/vesselabi.js';
 import { dot, flightParts, len } from './FlightAbi.js';
+import { rcsOf } from './FlightRcs.js';
 import type { FlightSession, FlightStageRow } from './FlightSession.js';
 
 export function round(v: number, d: number): number {
@@ -161,5 +162,18 @@ export function flightReport(s: FlightSession): unknown {
     message: s.message,
     clampTicks: s.clampTicks, clampStepOk: s.clampStepOk,
     timeS: round(s.state.timeS, 3),
+    // PH-301. THE RCS, RE-READ FROM /core rather than mirrored, for R44a's
+    // reason: `deliveredN` is written by the step, and a client copy of it
+    // would read as a working thruster on an empty tank. `deliveredN` and
+    // `commandT` are published SIDE BY SIDE deliberately, because "commanded
+    // and delivering nothing" is the state an empty tank produces and it must
+    // be distinguishable from "not commanded" without a second call.
+    rcs: (() => {
+      const r = rcsOf(s);
+      return {
+        deliveredN: round(r.deliveredN, 3), availableN: round(r.availableN, 3),
+        monopropKg: round(r.monopropKg, 4), commandT: round(r.commandT, 4),
+      };
+    })(),
   };
 }

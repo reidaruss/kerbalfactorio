@@ -11,7 +11,7 @@ import { scratchF64, scratchI32 } from './wasm/heap.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import {
   vesselAbi, FLIGHT_STATE_WORDS, SAS_MODE_UNKNOWN, TELEMETRY_WORDS, ORBIT_WORDS,
-  PART_ROW_WORDS, TRANSFORM_WORDS,
+  PART_ROW_WORDS, TRANSFORM_WORDS, RCS_WORDS, DOCK_STATUS_WORDS,
 } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
 
@@ -211,6 +211,77 @@ export function ascentGuidance(M: OfCoreModule, f: number,
     atmospheric: (a[3] ?? 0) !== 0,
     usable: (a[4] ?? 0) !== 0,
   };
+}
+
+/** PH-301. What the RCS is doing, which is three states that all look like
+ *  "nothing happened" from outside: no command, no blocks, no monopropellant. */
+export interface RcsRow {
+  /** What the LAST STEP actually applied. Never the command: a vehicle out of
+   *  monopropellant is commanded and delivering nothing, and an approach that
+   *  assumed its command landed would fly into the station. */
+  deliveredN: number;
+  /** Already zero when the monopropellant is gone, so `availableN === 0` with
+   *  `monopropKg > 0` is "no blocks fitted" and with 0 is "empty". */
+  availableN: number;
+  monopropKg: number;
+  commandT: number;
+}
+
+export function flightRcs(M: OfCoreModule, f: number): RcsRow {
+  const none: RcsRow = { deliveredN: 0, availableN: 0, monopropKg: 0, commandT: 0 };
+  const n = vesselAbi(M)._of_fl_rcs?.(f) ?? 0;
+  if (n < RCS_WORDS) return none;
+  const a = scratchF64(M, RCS_WORDS);
+  return { deliveredN: a[0] ?? 0, availableN: a[1] ?? 0,
+           monopropKg: a[2] ?? 0, commandT: a[3] ?? 0 };
+}
+
+/** PH-303. How the approach is going. Words 2 and 4..6 describe THIS TICK;
+ *  words 3 and 8..10 describe the BEST PASS since arming, and the split is why
+ *  a screen can say "too fast" after the vehicle has already flown past. */
+export interface DockStatusRow {
+  armed: boolean; captured: boolean;
+  separationM: number; closestApproachM: number;
+  closingMS: number; coneErrorRad: number;
+  /** 0 captured or nothing yet, 1 never within the capture radius, 2 not
+   *  facing each other, 3 too fast. THIS TICK. */
+  reason: number;
+  tests: number;
+  /** The reason AT the closest pass. THE ONE A SCREEN SHOWS. */
+  bestReason: number;
+  bestClosingMS: number;
+  bestConeErrorRad: number;
+}
+
+const NO_DOCK: DockStatusRow = {
+  armed: false, captured: false, separationM: 0, closestApproachM: -1,
+  closingMS: 0, coneErrorRad: 0, reason: 0, tests: 0,
+  bestReason: 0, bestClosingMS: 0, bestConeErrorRad: 0,
+};
+
+export function dockStatus(M: OfCoreModule, f: number): DockStatusRow {
+  const n = vesselAbi(M)._of_fl_dock_status?.(f) ?? 0;
+  if (n < DOCK_STATUS_WORDS) return NO_DOCK;
+  const a = scratchF64(M, DOCK_STATUS_WORDS);
+  return {
+    armed: (a[0] ?? 0) !== 0, captured: (a[1] ?? 0) !== 0,
+    separationM: a[2] ?? 0, closestApproachM: a[3] ?? -1,
+    closingMS: a[4] ?? 0, coneErrorRad: a[5] ?? 0,
+    reason: a[6] ?? 0, tests: a[7] ?? 0,
+    bestReason: a[8] ?? 0, bestClosingMS: a[9] ?? 0,
+    bestConeErrorRad: a[10] ?? 0,
+  };
+}
+
+/** PH-303. The sentence for a refusal code. It lives here rather than in a
+ *  panel because two panels would otherwise write two vocabularies for one
+ *  answer, and `docking.h`'s own `note` is a `const char*` the bridge cannot
+ *  carry. Kept word for word in step with that header. */
+export function dockReasonText(reason: number): string {
+  if (reason === 1) return 'the ports never came within the capture radius';
+  if (reason === 2) return 'the ports are not facing each other';
+  if (reason === 3) return 'closing too fast to latch';
+  return '';
 }
 
 // --- small vector helpers, used by the session and the observer -------------

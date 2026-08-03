@@ -75,6 +75,16 @@ export interface NavballReadout {
    *  how to light the engine. '' when nothing is owed. */
   nextStep: string;
   message: string;
+  /**
+   * PH-301. THE RCS, and it is on the ball because the storyline's first
+   * docking is hand-flown and a translation key that does nothing has to say
+   * WHY. `monopropKg` alone would not: a vehicle with fuel and no blocks and a
+   * vehicle with blocks and no fuel are the same dead key and different fixes.
+   *
+   * Null when the vehicle has no RCS at all, so the row is absent rather than
+   * reading 0 N on a rocket that was never going to have any.
+   */
+  rcs: { deliveredN: number; availableN: number; monopropKg: number } | null;
 }
 
 /** CSS pixels. The canvas backing store is this times the device ratio. */
@@ -192,6 +202,16 @@ export class Navball {
       + (r.message === '' ? '' : `<span class="chip msg">${esc(r.message)}</span>`);
   }
 
+  /** PH-301. The RCS cell, or nothing at all. `DRY` rather than `0 kg` because
+   *  the number a player needs is not the quantity, it is that the keys have
+   *  stopped working and why. */
+  private rcsCellRows(r: NavballReadout): [string, string][] {
+    if (r.rcs === null) return [];
+    if (r.rcs.availableN <= 0) return [['RCS', 'DRY']];
+    const on = r.rcs.deliveredN > 0 ? '  ON' : '';
+    return [['RCS', `${fix(r.rcs.monopropKg, 0)} kg${on}`]];
+  }
+
   private numbers(r: NavballReadout): void {
     const left = cells([
       ['ALT AGL', alt(r.altitudeM)],
@@ -200,6 +220,9 @@ export class Navball {
       ['ORB', `${spd(r.orbitalSpeedMS)} m/s`],
       ['V/S', `${signed(r.verticalSpeedMS, 1)} m/s`],
       ['MET', met(r.metS)],
+      // PH-301. Present only when the vehicle HAS thrusters (see the field's
+      // own note): an absent row and a row reading zero are different claims.
+      ...this.rcsCellRows(r),
     ]);
     const right = cells([
       ['AP', conic(r.apoapsisM, r.bound)],

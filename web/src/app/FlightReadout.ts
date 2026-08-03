@@ -25,11 +25,21 @@ import { saveInhibit } from '../sim/SaveInhibit.js';
 import { launchStep } from '../sim/LaunchSteps.js';
 import type { NavballReadout, BallMarker } from '../ui/Navball.js';
 import type { FlightMode } from './FlightMode.js';
+import type { FlightSession } from '../sim/FlightSession.js';
+import { rcsOf } from '../sim/FlightRcs.js';
 
 /** Heading and pitch of a unit direction in THE local horizon frame, which is
  *  `FlightAttitude`'s, so the ball, the ribbon and the keys agree on east. */
 function marker(dir: Vec3 | null, up: Vec3): BallMarker | null {
   return dir === null ? null : horizonAngles(dir, up);
+}
+
+/** The RCS row, or null for a vehicle that carries no thrusters. */
+function rcsRow(s: FlightSession): NavballReadout['rcs'] {
+  const r = rcsOf(s);
+  if (r.availableN <= 0 && r.monopropKg <= 0) return null;
+  return { deliveredN: r.deliveredN, availableN: r.availableN,
+           monopropKg: r.monopropKg };
 }
 
 export function readout(m: FlightMode): NavballReadout {
@@ -104,5 +114,11 @@ export function readout(m: FlightMode): NavballReadout {
     // triggered it.
     nextStep: launchStep(s),
     message: s.message !== '' ? s.message : m.message,
+    // PH-301. NULL WHEN THE VEHICLE HAS NO RCS HARDWARE AT ALL, which is a
+    // different statement from "the tank is empty" and is why the test is on
+    // the monopropellant CAPACITY rather than on `availableN`: `availableN`
+    // is already zero on a dry vehicle, so using it here would hide the row
+    // exactly when the player most needs to be told the tank is dry.
+    rcs: rcsRow(s),
   };
 }

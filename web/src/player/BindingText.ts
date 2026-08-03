@@ -116,6 +116,13 @@ export const ACTION_TEXT: Record<Action, Desc> = {
   sasNode: { group: 'Autopilot', label: 'Hold the maneuver node' },
   sasGuidance: { group: 'Autopilot', label: 'Follow the ascent guidance' },
 
+  rcsFore: { group: 'Flying', label: 'RCS: push toward the nose' },
+  rcsAft: { group: 'Flying', label: 'RCS: push toward the tail' },
+  rcsLeft: { group: 'Flying', label: 'RCS: slide left' },
+  rcsRight: { group: 'Flying', label: 'RCS: slide right' },
+  rcsUp: { group: 'Flying', label: 'RCS: slide up' },
+  rcsDown: { group: 'Flying', label: 'RCS: slide down' },
+
   menuUp: { group: 'Menus', label: 'Move up the menu' },
   menuDown: { group: 'Menus', label: 'Move down the menu' },
   menuSelect: { group: 'Menus', label: 'Press the highlighted row' },

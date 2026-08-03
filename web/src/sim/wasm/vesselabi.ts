@@ -56,6 +56,12 @@ export const FLIGHT_STATE_WORDS = 18;
 export const SAS_MODE_UNKNOWN = -1;
 export const TELEMETRY_WORDS = 12;
 export const ORBIT_WORDS = 6;
+/** PH-301. `[deliveredN, availableN, monopropKg, commandT]`. */
+export const RCS_WORDS = 4;
+/** PH-303. `[armed, captured, separationM, closestApproachM, closingMS,
+ *  coneErrorRad, reason, tests, bestReason, bestClosingMS, bestConeErrorRad]`.
+ *  Read as a MINIMUM and not an equality, for FLIGHT_STATE_WORDS's reason. */
+export const DOCK_STATUS_WORDS = 11;
 export const ORBIT_META_WORDS = 18;
 export const NODE_PLAN_WORDS = 26;
 /** ABI 18: [a, e, i, lan, argp, nu, m0, epoch, mu]. */
@@ -298,6 +304,52 @@ export interface VesselAbi {
    */
   _of_fl_ascent_guidance(f: number, targetApoapsisM: number,
                          altitudeAglM: number): number;
+
+  /**
+   * PH-301. TRANSLATIONAL RCS. An INERTIAL direction whose magnitude is the
+   * throttle, 0 to 1, of the vehicle's total RCS thrust.
+   *
+   * INERTIAL and not vessel-frame, deliberately: this side already reads
+   * `forward` and `right` off `_of_fl_state` every tick, and a vessel-frame
+   * argument would put a second derivation of the vessel basis inside the
+   * bridge. Two of those is how a press of "right" comes out as a drift left.
+   *
+   * IT IS STATE, LIKE THE THROTTLE, so a client that stops writing it does not
+   * stop thrusting. Write it every tick, zero included.
+   */
+  _of_fl_rcs_translate(f: number, x: number, y: number, z: number): number;
+  /** PH-301. f64 scratch, 4: [deliveredN, availableN, monopropKg, commandT].
+   *  DELIVERED is not the command: a vehicle out of monopropellant is
+   *  commanded and delivering nothing, and those must be tellable apart. */
+  _of_fl_rcs(f: number): number;
+
+  /**
+   * PH-303 / R77. THE CAPTURE TEST, ARMED HERE AND RUN INSIDE THE STEP.
+   *
+   * It cannot be a call this side makes once a frame: `docking::sweptCapture`
+   * needs the poses at both ends of a TICK, and under `_of_fl_step_n` a frame
+   * is up to a thousand ticks. Same argument that refused `of_ap_tick`.
+   *
+   * The vessel's own port is given in the VESSEL'S LOCAL FRAME, which is the
+   * frame `_of_fl_transforms` already reports part origins in. Pass 0 for any
+   * limit to take `docking::Limits`'s own default.
+   */
+  _of_fl_dock_arm(f: number, capRadiusM: number, coneRad: number,
+                  maxClosingMS: number,
+                  px: number, py: number, pz: number,
+                  fx: number, fy: number, fz: number,
+                  rx: number, ry: number, rz: number): number;
+  /** PH-303. Where the other port is, body-centred inertial, plus its velocity
+   *  so the sweep can carry it across ticks this side is not present for. */
+  _of_fl_dock_target(f: number, px: number, py: number, pz: number,
+                     fx: number, fy: number, fz: number,
+                     rx: number, ry: number, rz: number,
+                     vx: number, vy: number, vz: number): number;
+  _of_fl_dock_clear(f: number): number;
+  /** PH-303. f64 scratch, DOCK_STATUS_WORDS. Words 2 and 4..6 are THIS TICK;
+   *  words 3 and 8..10 are the BEST PASS, because every tick after a failed
+   *  pass reports the vehicle flying away and its reason is always 1. */
+  _of_fl_dock_status(f: number): number;
 
   // --- §13.3 ON RAILS (ABI 18). Pure, handle-free; nothing is stored. --------
   /** Fit a conic to a state vector. f64 scratch, ORBIT_ELEMENT_WORDS:

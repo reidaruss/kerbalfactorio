@@ -42,6 +42,11 @@ export type Action =
   | 'sasStability' | 'sasPrograde' | 'sasRetrograde'
   | 'sasNormal' | 'sasAntinormal' | 'sasRadialIn' | 'sasRadialOut' | 'sasNode'
   | 'sasGuidance'
+  // PH-301. TRANSLATIONAL RCS: six directions in the VESSEL frame, which is the
+  // control that turns docking from impossible into hard. They are six separate
+  // actions rather than three axes because every other flight control here is a
+  // held boolean, and because a probe presses actions.
+  | 'rcsFore' | 'rcsAft' | 'rcsLeft' | 'rcsRight' | 'rcsUp' | 'rcsDown'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
   | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10' | 'slot11'
@@ -176,6 +181,27 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // The NINTH SAS key. The ribbon has been drawn since W12 and nothing could
   // point at it, so reaching orbit was the one link a player had to hand-fly.
   sasGuidance: ['Digit9'],
+  // PH-301. THE NUMPAD, AND THE LETTER ROW WAS REFUSED RATHER THAN OVERLOOKED.
+  //
+  // All twenty-six letters are already bound, and the precedent this file leans
+  // on for sharing a code ("a digit is a hotbar slot on foot and nothing at all
+  // in a rocket") does not carry here: the letters that are idle IN FLIGHT are
+  // idle because they open PANELS, and a translation key that also opened the
+  // research tree mid-approach is the mute-on-M defect this file already
+  // carries a scar from. `stage` already shares KeyN with `freeSnap`, which is
+  // one shared code too many to add five more beside.
+  //
+  // The numpad is unbound apart from Enter, and it is also the right SHAPE:
+  // 4/6 and 8/2 are a direction pad a player already reads that way, and 9/3
+  // take the axis into and out of the screen. The cost is a laptop that has no
+  // numpad, which is why the controls screen lists them and why this table is
+  // the only place they live.
+  rcsLeft: ['Numpad4'],
+  rcsRight: ['Numpad6'],
+  rcsUp: ['Numpad8'],
+  rcsDown: ['Numpad2'],
+  rcsFore: ['Numpad9'],
+  rcsAft: ['Numpad3'],
   slotNext: [],
   slotPrev: [],
   slot1: ['Digit1'], slot2: ['Digit2'], slot3: ['Digit3'],
@@ -314,6 +340,8 @@ export function prettyCode(code: string): string {
     .replace('Mouse2', 'Right click')
     .replace('ShiftLeft', 'Left Shift')
     .replace('ShiftRight', 'Right Shift')
+    // "Numpad8" reads as an identifier; "Numpad 8" reads as a key. PH-301.
+    .replace(/^Numpad(?=[0-9])/, 'Numpad ')
     .replace('Backquote', '`')
     .replace('Backslash', '\\');
 }

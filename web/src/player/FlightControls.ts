@@ -22,6 +22,8 @@ import {
   SAS_ANTINORMAL, SAS_COMMAND, SAS_HOLD, SAS_NORMAL, SAS_OFF, SAS_PROGRADE,
   SAS_RADIAL_IN, SAS_RADIAL_OUT, SAS_RETROGRADE,
 } from '../sim/FlightAbi.js';
+import { applyRcs, rcsRefusal } from '../sim/FlightRcs.js';
+import type { RcsIntent } from '../sim/FlightRcs.js';
 
 const DEG = Math.PI / 180;
 
@@ -53,12 +55,21 @@ const EDGE: readonly Action[] = [
   ...SAS_KEYS.map(([a]) => a),
 ];
 
+/** The six translation keys, in the order the report lists them. Held, never
+ *  edge-detected: a thruster fires for as long as the key is down. */
+export const RCS_KEYS: readonly Action[] = [
+  'rcsFore', 'rcsAft', 'rcsLeft', 'rcsRight', 'rcsUp', 'rcsDown',
+];
+
 export class FlightControls {
   /** Per-action counts of PRESSES this session. The probe's proof that a key it
    *  sent actually arrived, which twenty green probes once failed to show. */
   readonly presses = new Map<Action, number>();
 
   private readonly held = new Map<Action, boolean>();
+  /** Whether an RCS key was down LAST tick, so the refusal is said once per
+   *  press instead of sixty times a second. */
+  private rcsAsked = false;
 
   constructor(private readonly input: Input) {
     for (const a of EDGE) this.held.set(a, false);
@@ -99,6 +110,31 @@ export class FlightControls {
              yaw * FLIGHT_SLEW_DEG_S * DEG * dt,
              roll * FLIGHT_ROLL_DEG_S * DEG * dt);
     }
+
+    // PH-301. TRANSLATIONAL RCS, and it is written EVERY TICK INCLUDING ZERO.
+    //
+    // `flight.h`'s `rcsTranslate` is STATE, exactly like the throttle, so a
+    // client that only wrote it while a key was held would leave the thrusters
+    // firing for ever the moment the key came up. That is why this block has no
+    // `if` around the call: the sequence "press, release" must end in a write
+    // of zero, and a conditional write is how it would not.
+    //
+    // The refusal is spoken ONCE PER PRESS rather than per tick, because three
+    // different states make these keys do nothing (no blocks, no monoprop, not
+    // flying) and a key that is silently inert is R15's shape. A player pressing
+    // an RCS key with an empty tank has to be told which of the three it is.
+    const want: RcsIntent = {
+      fore: (held('rcsFore') ? 1 : 0) - (held('rcsAft') ? 1 : 0),
+      right: (held('rcsRight') ? 1 : 0) - (held('rcsLeft') ? 1 : 0),
+      up: (held('rcsUp') ? 1 : 0) - (held('rcsDown') ? 1 : 0),
+    };
+    const asked = want.fore !== 0 || want.right !== 0 || want.up !== 0;
+    if (asked && !this.rcsAsked) {
+      const why = rcsRefusal(f);
+      if (why !== '') f.flash(`RCS: ${why}`);
+    }
+    this.rcsAsked = asked;
+    applyRcs(f, want);
 
     // The seven mode keys. `setSas` is the one call a button and a key both
     // go through, and it flashes the name, so a mode change is never silent.
