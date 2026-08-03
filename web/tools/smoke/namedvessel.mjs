@@ -68,7 +68,19 @@ const note = (m) => errors.set(m.slice(0, 160), (errors.get(m.slice(0, 160)) ?? 
 const wrap = (file, argsJson) =>
   `((OF_ARGS) => (\n${readFileSync(resolve(here, file), 'utf8')}\n))(${argsJson})`;
 
-const WAIT_BOOT = `(async () => {
+// PS-43. THE RECORD THIS RUNNER IS ABOUT, BY ID, and never `list[0]`.
+//
+// This runner shipped asserting `records === 1` and reading `vessels[0]`, which
+// was true when it was written and false the night D-015 gave Anchorage a real
+// design: the station is now a vessel record, so every count is 2 and index 0 is
+// whichever of the two the registry happens to enumerate first. Five checks went
+// red on `main` with nothing wrong in the save path at all, and a red gate
+// nobody can attribute is a gate nobody reads.
+//
+// The flown vessel is identified as THE RECORD THAT WAS NOT THERE BEFORE THE
+// FLIGHT, which needs no knowledge of the station, survives a second scenery
+// vessel, and cannot be got wrong by an enumeration order.
+const waitBoot = (flownId = -1) => `(async () => {
   const t0 = Date.now();
   while (!window.__of && Date.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 250));
   if (!window.__of) throw new Error('no __of after 60 s');
@@ -83,7 +95,9 @@ const WAIT_BOOT = `(async () => {
   return {
     sunT: s.sky.sunT,
     records: v.records, resume: v.resume, anchor: v.anchor,
-    rec: (v.list || [])[0] || null,
+    ids: (v.list || []).map((r) => r.id),
+    rec: ${flownId} < 0 ? ((v.list || [])[0] || null)
+      : ((v.list || []).find((r) => r.id === ${flownId}) || null),
     aboard: of.flight('report').aboard,
     lat: rr === 0 ? null : (Math.asin(feet[1] / rr) * 180) / Math.PI,
     lon: rr === 0 ? null : (Math.atan2(feet[2], feet[0]) * 180) / Math.PI,
@@ -92,7 +106,7 @@ const WAIT_BOOT = `(async () => {
 
 // Both slots, raw off the store, reduced to the comparable fields. The
 // reduction is shared so the two sides cannot be reduced differently.
-const READ_SLOTS = `(async () => {
+const readSlots = (flownId) => `(async () => {
   const open = () => new Promise((res, rej) => {
     const q = indexedDB.open('orbital-foundry', 1);
     q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
@@ -102,18 +116,27 @@ const READ_SLOTS = `(async () => {
     const t = db.transaction('saves', 'readonly').objectStore('saves').get(k);
     t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error);
   });
-  const reduce = (s) => (s === undefined || s === null) ? null : {
-    hasVessels: Array.isArray(s.vessels),
-    vesselCount: Array.isArray(s.vessels) ? s.vessels.length : 0,
-    vesselId: Array.isArray(s.vessels) && s.vessels[0] ? s.vessels[0].id : 0,
-    fuelJson: Array.isArray(s.vessels) && s.vessels[0]
-      ? JSON.stringify(s.vessels[0].fuel) : null,
-    whereJson: Array.isArray(s.vessels) && s.vessels[0]
-      ? JSON.stringify(s.vessels[0].where) : null,
+  const reduce = (s) => {
+    if (s === undefined || s === null) return null;
+    const all = Array.isArray(s.vessels) ? s.vessels : null;
+    // The FLOWN record, by id. Index 0 was the STATION on the first run of this
+    // after D-015: its fuel is the empty list and its conic is the 1000 km
+    // parking orbit, so every fuel and conic comparison below was comparing two
+    // copies of the station and could not have failed. (No backticks in here:
+    // this comment lives inside a template literal.)
+    const v = all === null ? null : (all.find((x) => x.id === ${flownId}) ?? null);
+    return {
+    hasVessels: all !== null,
+    vesselCount: all === null ? 0 : all.length,
+    hasFlown: v !== null,
+    vesselId: v ? v.id : 0,
+    fuelJson: v ? JSON.stringify(v.fuel) : null,
+    whereJson: v ? JSON.stringify(v.where) : null,
     player: s.player === undefined ? null
       : { lat: s.player.lat, lon: s.player.lon, aboard: s.player.aboard },
     dayT: s.dayT === undefined ? null : s.dayT,
     buildings: s.buildings.length, savedAt: s.savedAt,
+    };
   };
   const auto = reduce(await get(${JSON.stringify(AUTO)}));
   const named = reduce(await get(${JSON.stringify(KEY)}));
@@ -241,10 +264,14 @@ page.on('console', (m) => {
 
 let sideBySide = null; let cut = null; let back = null;
 let stripped = null; let oldRow = null; let oldBoot = null; let bootSolve = null;
+// PS-43: the ids present BEFORE anything is flown (Anchorage, and anything else
+// the scenario mints), and the id of the vessel this run is actually about.
+let baseIds = []; let flownId = -1;
 try {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  const boot1 = await page.evaluate(WAIT_BOOT);
+  const boot1 = await page.evaluate(waitBoot());
   bootSolve = boot1.sunT;
+  baseIds = boot1.ids ?? [];
 
   // --- the scene: a vessel flown to orbit and LEFT there, on rails ----------
   const flew = await page.evaluate(wrap('probes/flyto.js',
@@ -258,11 +285,20 @@ try {
     await of.run(2);
     const l = of.flight('leave');
     return { ok: l.ok, records: l.vessels.records,
-             mode: ((l.vessels.list || [])[0] || {}).mode ?? null };
+             list: (l.vessels.list || []).map((r) => ({ id: r.id, mode: r.mode })) };
   })()`);
+  // PS-43: the flown vessel is the record the boot did not have. Asserted to be
+  // exactly one, because "which of the two new ones did I fly" is not a question
+  // this runner should ever have to answer.
+  const fresh = left.list.filter((r) => !baseIds.includes(r.id));
+  flownId = fresh.length === 1 ? fresh[0].id : -1;
+  check('the flight added exactly ONE vessel record to the ones already there',
+    fresh.length === 1,
+    `boot had ${JSON.stringify(baseIds)}, after the flight ${JSON.stringify(left.list)}`);
   check('the vessel was LEFT in orbit, on rails',
-    left.ok === true && left.records === 1 && left.mode === 'rails',
-    JSON.stringify(left));
+    left.ok === true && left.records === baseIds.length + 1
+    && (fresh[0] ?? {}).mode === 'rails',
+    JSON.stringify({ ...left, baseIds }));
   if (left.ok !== true) throw new Error('no vessel on rails, nothing to lose');
 
   // --- pin the day so dayT is distinctive, then write BOTH saves ------------
@@ -279,16 +315,16 @@ try {
     panelSave.row !== null && panelSave.row.partial === false,
     JSON.stringify(panelSave.row));
 
-  cut = await page.evaluate(WAIT_BOOT);
+  cut = await page.evaluate(waitBoot(flownId));
 
   // --- A. THE SIDE-BY-SIDE: both slots raw off the store --------------------
-  sideBySide = await page.evaluate(READ_SLOTS);
+  sideBySide = await page.evaluate(readSlots(flownId));
   const A = sideBySide.auto; const N = sideBySide.named;
-  check('S1 the AUTOSAVE carries the vessel (the scene control)',
-    A !== null && A.vesselCount === 1, JSON.stringify(A));
-  check('S2 THE NAMED SLOT CARRIES VESSELS AT ALL',
-    N !== null && N.hasVessels === true && N.vesselCount === 1,
-    `named slot vessels: ${JSON.stringify({ hasVessels: N?.hasVessels, count: N?.vesselCount })}`);
+  check('S1 the AUTOSAVE carries the flown vessel (the scene control)',
+    A !== null && A.hasFlown === true, JSON.stringify(A));
+  check('S2 THE NAMED SLOT CARRIES THE FLOWN VESSEL AT ALL',
+    N !== null && N.hasVessels === true && N.hasFlown === true,
+    `named slot: ${JSON.stringify({ hasVessels: N?.hasVessels, count: N?.vesselCount, flown: N?.hasFlown })}`);
   check('S3 the SAME vessel, fuel BIT-IDENTICAL to the autosave',
     N !== null && A !== null && N.vesselId === A.vesselId
     && N.fuelJson !== null && N.fuelJson === A.fuelJson,
@@ -310,12 +346,12 @@ try {
   check('Load was pressed and counted', loaded.pressed === true
     && loaded.slots.loads === 1, JSON.stringify(loaded.slots));
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-  back = await page.evaluate(WAIT_BOOT);
+  back = await page.evaluate(waitBoot(flownId));
   const b = cut.rec; const r = back.rec;
-  check('R1 exactly ONE vessel came back from the NAMED save',
-    back.records === 1 && back.resume.adopted === 1 && r !== null
-    && b !== null && r.id === b.id,
-    `records ${back.records}, adopted ${back.resume?.adopted}, id ${b?.id} -> ${r?.id}`);
+  check('R1 the flown vessel came back from the NAMED save, and no more than was there',
+    back.records === cut.records && r !== null && b !== null && r.id === b.id,
+    `records ${cut.records} -> ${back.records}, adopted ${back.resume?.adopted}, `
+    + `id ${b?.id} -> ${r?.id}`);
   check('R2 with the fuel it ACTUALLY had',
     r !== null && b !== null && Math.abs(r.fuelKg - b.fuelKg) < 1e-9,
     `${b?.fuelKg} kg -> ${r?.fuelKg} kg`);
@@ -358,9 +394,13 @@ try {
   check('O3 loading it is not refused', oldRow.pressed === true
     && oldRow.slots.loads === 1, JSON.stringify(oldRow.slots));
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-  oldBoot = await page.evaluate(WAIT_BOOT);
-  check('O4 an old partial named save BOOTS, honestly empty: no vessels',
-    oldBoot.records === 0, `records ${oldBoot.records}`);
+  oldBoot = await page.evaluate(waitBoot(flownId));
+  check('O4 an old partial named save BOOTS, honestly empty: the FLOWN vessel '
+    + 'is not in it',
+    (oldBoot.ids ?? []).includes(flownId) === false
+    && oldBoot.records === baseIds.length,
+    `ids ${JSON.stringify(oldBoot.ids)}, flown ${flownId}, `
+    + `boot had ${JSON.stringify(baseIds)}`);
   check('O5 the anchor is defaulted, not invented (restored null: the spawn)',
     oldBoot.anchor.restored === null, JSON.stringify(oldBoot.anchor));
   check('O6 and the sun is at the boot solve, the pre-cycle behaviour',

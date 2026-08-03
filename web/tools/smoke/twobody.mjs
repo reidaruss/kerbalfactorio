@@ -182,6 +182,49 @@ const RAW = `(async () => {
   };
 })()`;
 
+// THE STRIP CONTROL. Force a save so the top-level world is the PLANET's (phase
+// 4 left the page on Forge, and phase 5 read a store whose top world was still
+// the moon's, because the moon wrote last), then delete the two new fields from
+// the record in place. What is left is byte-for-byte the shape of every slot
+// written before this commit, which is the shape of every slot Reid owns.
+const STRIP = `(async () => {
+  await window.__of.save();
+  const put = (slot) => new Promise((res, rej) => {
+    const q = indexedDB.open('orbital-foundry', 1);
+    q.onerror = () => rej(q.error);
+    q.onsuccess = () => {
+      const db = q.result;
+      const r = db.transaction('saves', 'readwrite').objectStore('saves')
+        .put(slot, 'auto-sandbox');
+      r.onsuccess = () => { res(true); db.close(); };
+      r.onerror = () => { rej(r.error); db.close(); };
+    };
+  });
+  const get = () => new Promise((res, rej) => {
+    const q = indexedDB.open('orbital-foundry', 1);
+    q.onerror = () => rej(q.error);
+    q.onsuccess = () => {
+      const db = q.result;
+      const g = db.transaction('saves', 'readonly').objectStore('saves').get('auto-sandbox');
+      g.onsuccess = () => { res(g.result ?? null); db.close(); };
+      g.onerror = () => { rej(g.error); db.close(); };
+    };
+  });
+  const slot = await get();
+  if (slot === null) return null;
+  const hadBody = slot.body !== undefined;
+  const hadOthers = slot.others !== undefined;
+  const topBody = slot.body ?? 0;
+  const topOps = slot.voxels && slot.voxels.ops ? slot.voxels.ops.length : -1;
+  delete slot.body;
+  delete slot.others;
+  await put(slot);
+  const back = await get();
+  return { hadBody, hadOthers, topBody, topOps,
+           nowHasBody: back.body !== undefined,
+           nowHasOthers: back.others !== undefined };
+})()`;
+
 let exitCode = 0;
 const out = {};
 // How far the run actually got. Advanced once per phase, INSIDE the try, so an
@@ -291,6 +334,42 @@ try {
              && w0.discoveryBytes > 0 && w1.discoveryBytes > 0,
            `Forge ${w0 === null ? 'no world' : w0.discoveryBytes} bytes, `
            + `Cinder ${w1 === null ? 'no world' : w1.discoveryBytes} bytes`);
+  // 6. THE CASE NOBODY WRITES: A SAVE THAT PREDATES ALL OF THIS.
+  //
+  // Every slot Reid already has was written without `body` and without `others`.
+  // The whole run above writes slots that HAVE them, so it proves the new world
+  // and says nothing about the old one, and "an older save must degrade to
+  // something correct and named, not to zeros" is exactly the R39 shape a schema
+  // change fails in. It is also the identity case: one body, no others, no body
+  // field, which is what a differential fixture is built to avoid because there
+  // is nothing to measure against.
+  //
+  // So this STRIPS the two new fields off the stored slot, in the store, and
+  // boots again. `worldIn` reads an absent `body` as 0 and hands back the
+  // top-level fields, so a pre-PS-40 Forge save must restore EXACTLY what it
+  // restored before this commit existed: the same cells, the same ops, and a
+  // ledger that says the body had a world rather than that it did not.
+  stage = 6;
+  const stripped = await page.evaluate(STRIP);
+  out.stripped = stripped;
+  check('the strip control actually removed both fields',
+        stripped !== null && stripped.hadBody === true && stripped.hadOthers === true
+          && stripped.nowHasBody === false && stripped.nowHasOthers === false,
+        JSON.stringify(stripped));
+  await boot(FORGE);
+  const old = await page.evaluate(ARRIVED);
+  out.oldSaveBoot = old;
+  check("a save written before the body dimension loads as the planet, whole",
+        old.removedCells === forge.removedCells && old.ops === forge.ops
+          && old.restoredBody === 0 && old.bodyHadWorld === true,
+        `dug ${forge.removedCells}/${forge.ops}, an unstamped slot gave `
+        + `${old.removedCells}/${old.ops}, body ${old.restoredBody}, `
+        + `hadWorld ${old.bodyHadWorld}`);
+  check('and it is carrying nothing it does not have',
+        Array.isArray(old.otherBodies) && old.otherBodies.length === 0,
+        JSON.stringify(old.otherBodies));
+  check('and what the player explored is still there',
+        old.discovery > 0, `${old.discovery}`);
 } catch (e) {
   fails.push(`threw: ${String(e)}`);
 } finally {
@@ -304,8 +383,8 @@ try {
 // red naming the phase it stopped at. A green from a harness that never reached
 // its assertions is indistinguishable from one that ran them all, which is what
 // this line exists to tell apart.
-check('the run reached its last phase (positive control)', stage === 5,
-      `stopped after phase ${stage} of 5`);
+check('the run reached its last phase (positive control)', stage === 6,
+      `stopped after phase ${stage} of 6`);
 
 out.stageReached = stage;
 console.log(JSON.stringify(out, null, 2));
