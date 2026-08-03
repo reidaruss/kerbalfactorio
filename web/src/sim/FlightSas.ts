@@ -22,7 +22,9 @@
 import { SAS_COMMAND, SAS_PROGRADE, SAS_RETROGRADE, add, guidancePitch, norm,
   rotateAbout, scale } from './FlightAbi.js';
 import type { Vec3 } from './FlightAbi.js';
-import { holdRoll, horizonFrame, slewCommand } from './FlightAttitude.js';
+import {
+  holdRoll, horizonFrame, rollAngle, rollDefined, slewCommand,
+} from './FlightAttitude.js';
 import type { FlightSession } from './FlightSession.js';
 
 /** How fast SAS takes roll back out. Slower than the player's own roll rate, so
@@ -75,12 +77,41 @@ export function cycleSas(s: FlightSession): void {
     : s.sasMode === SAS_PROGRADE ? SAS_RETROGRADE : SAS_COMMAND);
 }
 
-/** Stability assist's third axis (FlightAttitude.holdRoll). */
+/**
+ * Stability assist's third axis (FlightAttitude.holdRoll).
+ *
+ * R73. IT MEASURES BEFORE IT CORRECTS, and that is the whole of this change.
+ *
+ * This function rewrites `right` every tick, so for months it was repairing the
+ * only signal that could have shown a 41.98 deg/s roll instability in the sim
+ * (PH-165 to PH-169). Nobody was hiding anything: the damper was doing its job
+ * and its job happens to destroy the evidence. **An instrument that silently
+ * repairs its own input cannot report on it**, which is why the reading is
+ * taken FIRST and published whether or not a correction follows.
+ *
+ * `rollBeforeHoldDeg` is what the navball would show with no damper, and
+ * `rollHeldDegS` is how hard the damper is working. A vessel whose held rate
+ * sits near the `ROLL_HOLD_DEG_S` ceiling is one the damper is losing to, which
+ * is a real condition (an asymmetric rocket makes 5.55 deg/s) and one nothing
+ * could previously distinguish from a vessel flying straight.
+ */
 export function levelWings(s: FlightSession, dt: number): void {
   if (s.sasName === 'OFF' || s.handle <= 0) return;
+  // FIRST, AND UNCONDITIONALLY. Reading after the correction, or only when a
+  // correction happens, reproduces the concealment in a smaller form.
+  s.rollBeforeHoldDeg = rollDefined(s.st.forward, s.up)
+    ? rollAngle(s.st.forward, s.st.right, s.up) * (180 / Math.PI) : NaN;
   const r = holdRoll(s.st.forward, s.st.right, s.up,
                      ROLL_HOLD_DEG_S * (Math.PI / 180) * dt);
-  if (r === s.st.right) return;
+  if (r === s.st.right) { s.rollHeldDegS = 0; return; }
+  // How much roll the damper took out this tick, as a RATE, so it is
+  // comparable with the ceiling and with physics' own 5.55 deg/s figure rather
+  // than being a per-tick angle nobody can size.
+  const after = rollDefined(s.st.forward, s.up)
+    ? rollAngle(s.st.forward, r, s.up) * (180 / Math.PI) : NaN;
+  s.rollHeldDegS = dt > 0 && Number.isFinite(after)
+    && Number.isFinite(s.rollBeforeHoldDeg)
+    ? Math.abs(s.rollBeforeHoldDeg - after) / dt : 0;
   const f = s.st.forward;
   s.V._of_fl_set_attitude(s.handle, f[0], f[1], f[2], r[0], r[1], r[2]);
   s.st.right = r;

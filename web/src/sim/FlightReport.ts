@@ -137,6 +137,12 @@ export function flightReport(s: FlightSession): unknown {
     eccentricity: round(o.eccentricity, 5), periodS: round(o.periodS, 1),
     bound: o.bound,
     throttle: round(s.throttleValue, 3), sas: s.sasName, warp: s.warpFactor,
+    // R73. The roll BEFORE stability assist damps it, and how hard it is
+    // damping. Published because the damper rewrites the very field the navball
+    // draws, so without these two an instrument that is silently repairing its
+    // own input reads identically to a vessel flying straight.
+    rollBeforeHoldDeg: round(s.rollBeforeHoldDeg, 4),
+    rollHeldDegS: round(s.rollHeldDegS, 4),
     massKg: round(tm.massKg, 1), thrustN: round(tm.thrustN, 0),
     twr: round(s.currentTwr(), 4),
     qPa: round(tm.qPa, 1), maxQPa: round(s.maxQPa, 1),

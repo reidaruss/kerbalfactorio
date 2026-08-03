@@ -56,6 +56,21 @@ export class FlightSession {
   /** Sim seconds since the clamp released. -1 while still held. */
   metS = -1;
   warpIndex = 0;
+  /**
+   * R73. The roll the navball WOULD show if stability assist were not damping
+   * it, in degrees, sampled every tick BEFORE the correction. NaN where the
+   * nose is near vertical and roll has no reference.
+   *
+   * It exists because `levelWings` rewrites `right` every tick, so for months
+   * the only signal that could have shown a 41.98 deg/s sim roll instability
+   * was being repaired before it was drawn. The damper was doing its job; its
+   * job destroys the evidence.
+   */
+  rollBeforeHoldDeg = NaN;
+  /** R73. How hard the damper is working, deg/s. Near `ROLL_HOLD_DEG_S` means
+   *  it is losing, which an asymmetric rocket can genuinely cause (5.55 deg/s)
+   *  and which nothing could previously tell from flying straight. */
+  rollHeldDegS = 0;
   maxQPa = 0;
   stagings = 0;
   steps = 0;

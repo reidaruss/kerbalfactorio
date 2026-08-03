@@ -99,12 +99,32 @@ export function rollDefined(forward: Vec3, up: Vec3): boolean {
  *
  * `/core`'s SAS points the NOSE and has no opinion about roll, and the only
  * thing that damps roll in `flight.h` is an aerodynamic derivative, which does
- * nothing in vacuum. So a vessel that picks up half a degree per second on the
- * way up arrives in orbit lying on its side. Nothing flies worse for it, and
- * that is exactly the trap: what it wrecks is the NAVBALL, which rolls with the
- * craft as KSP's does, so the horizon ends up vertical and the single most
- * important instrument in the game reads as broken. Measured on the first orbit
- * captured: ROL -93 degrees with no roll input given at any point.
+ * nothing in vacuum. What it protects is the NAVBALL, which rolls with the
+ * craft as KSP's does, so an undamped vessel ends up with a vertical horizon
+ * and the single most important instrument in the game reads as broken.
+ *
+ * R73, 2026-08-03. THE EVIDENCE THIS COMMENT USED TO CITE WAS A BUG, AND THE
+ * BUG IS FIXED, SO THE MEASUREMENT IS RETRACTED AND THE REASON IS KEPT.
+ *
+ * It said a vessel "picks up half a degree per second on the way up" and named
+ * an aerodynamic derivative as the cause. The real cause was a sim INERTIA
+ * error that the physics lane found and fixed (PH-165 to PH-169), peaking at
+ * 41.98 deg/s on ninety seconds of ordinary ascent. That is not a rounding
+ * drift, it is the shipped rocket rolling hard, and nobody reported it for
+ * months because THIS FUNCTION WAS HIDING IT: `levelWings` rewrites `right`
+ * every tick, so the one instrument that would have shown it was being
+ * corrected before it was drawn. An instrument that silently repairs its own
+ * input cannot report on it.
+ *
+ * So the function is NOT deletable and its job is now a different one. On the
+ * reference rocket it has nothing left to do (2.1e-15 deg/s), which is what
+ * "the bug is fixed" looks like from here. An ASYMMETRIC rocket still develops
+ * a real 5.55 deg/s from real asymmetric thrust and drag, and that is physics
+ * rather than a defect: it is exactly the case a roll damper is for, and it is
+ * the case the original 0.5 deg/s figure never described.
+ *
+ * The old measurement is left in the retraction rather than deleted, because a
+ * comment that quietly stops citing a number reads as though it never had one.
  *
  * It is bounded per tick, so it is assistance and not a weld: a player rolling
  * on purpose out-runs it and it settles them afterwards.
