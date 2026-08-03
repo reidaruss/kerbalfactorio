@@ -649,7 +649,31 @@ assurance.
 4. **Three-argument `update-ref refs/heads/main <new> <base>`**, so a moved HEAD
    fails loudly rather than clobbering.
 5. **`git show --stat` afterwards** and confirm the file list is what you meant.
+6. **Then `git reset -- <your paths>` on the SHARED index.** See below: this
+   step is not tidiness, it is the fix for a worse bug than the one above.
+
+**The second failure mode, which is worse: a private index does not clean up
+after itself.** Once you commit from one, your files are still sitting in the
+shared index in their **pre-commit** state, and relative to the new HEAD that
+state is a **revert**.
+
+Measured on this tree the same night, after two lanes had correctly adopted
+private indexes: the shared index held **seven stale entries and would have
+deleted 137 lines across two lanes** on the next commit anyone made from it. It
+included a screenshot staged as a **deletion** moments after it had been
+committed, and 35 lines of this file, **the entry documenting the first half of
+this very bug.**
+
+Repair is a path-limited `git reset -- <paths>`, which resets index entries to
+HEAD and does not touch the working tree.
+
+**A stale index entry is a silent revert wearing a normal-looking commit.** It is
+one level worse than the empty commit: an empty commit merely loses your work,
+while a stale entry actively removes somebody else's, and the diff of the
+offending commit looks like ordinary work.
 
 The general form, which is the part worth carrying elsewhere: **when several
 writers share one mutable staging area, correctness cannot be established at the
-ends of the operation. It has to be established inside it.**
+ends of the operation. It has to be established inside it.** And **a writer that
+opts out of the shared area still owes it a write**, because everyone else is
+still reading it.
