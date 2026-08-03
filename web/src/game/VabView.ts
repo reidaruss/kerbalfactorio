@@ -413,6 +413,28 @@ export class VabView {
    * hit test, the snap search and the ghost all still run for real, and only
    * the eye is replaced.
    */
+  /**
+   * GP-299. A PART's own screen position, so a probe can aim at the PART rather
+   * than at an attachment node.
+   *
+   * Every existing verb projects nodes, because until now every gesture in the
+   * bay was a placement. Removal aims at a part, and there was no way to drive
+   * that without inventing screen coordinates, which is the thing `projectNodes`
+   * exists to avoid. Centroid rather than origin: a part's origin is its base,
+   * which for the lowest part in a stack sits on the floor line and picks
+   * unreliably.
+   */
+  projectPart(cam: THREE.Camera, centroidM: readonly number[]): {
+    ndc: [number, number]; onScreen: boolean;
+  } {
+    const v = new THREE.Vector3(centroidM[0] ?? 0, centroidM[1] ?? 0,
+                                centroidM[2] ?? 0).project(cam);
+    return {
+      ndc: [v.x, v.y],
+      onScreen: v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1 && v.z < 1,
+    };
+  }
+
   projectNodes(cam: THREE.Camera, nodes: readonly AttachNode[]): {
     parent: number; kind: string; cls: number; angleRad: number; offsetM: number;
     /** GP-296. INSERT NODES: the part that would be displaced downward, -1 on

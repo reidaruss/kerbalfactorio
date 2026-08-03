@@ -93,9 +93,49 @@ function aimLine(v: Vab): string {
   return `point at an attachment point to place ${hand.label}`;
 }
 
+/**
+ * GP-299. WHAT A RIGHT CLICK WOULD DESTROY, said before it destroys it.
+ *
+ * GP-146's sentence had two halves. The first, that which half of an identical
+ * rocket a delete destroys depends on which part the player happened to place
+ * first, was closed by GP-148 and is asserted two ways in
+ * `probes/vabdirection.js`. **The second half was never done: "and nothing on
+ * screen says why".**
+ *
+ * `of_vs_remove` takes the subtree further from the root, so removing a part in
+ * the middle of a stack removes everything below it. That is now DETERMINISTIC,
+ * which is the fix, and it is still SILENT, which is the remaining edge and the
+ * worse one for a player: a deterministic rule you are not told about is
+ * indistinguishable from an arbitrary one the first time it costs you a rocket.
+ *
+ * The count comes from `design.subtree`, the same call `removeAt` uses to issue
+ * the refunds, so the sentence and the deletion cannot disagree about how much
+ * is going.
+ */
+function removeLine(v: Vab): string {
+  const hit = v.view.pick(v.camera, v.pointer.ndcX, v.pointer.ndcY);
+  if (hit === null) return '';
+  const part = v.design.find(hit.handle);
+  if (part === null) return '';
+  const label = v.catalogue.find((c) => c.id === part.partId)?.label ?? 'that part';
+  // THE SAME CALL `removeAt` MAKES. Counting the tree a second way here would
+  // be a second answer to "how much is about to go", and the two would drift.
+  const n = v.design.subtree(hit.handle).length;
+  if (n <= 1) return `right click removes ${label}`;
+  return `right click removes ${label} AND THE ${n - 1} PART`
+    + `${n === 2 ? '' : 'S'} BELOW IT`;
+}
+
 export function vabAim(v: Vab, ndcX: number, ndcY: number): void {
   const hand = v.hand;
-  if (hand === null) { v.view.clearGhost(); v.panel.setAim(''); return; }
+  // GP-299. WITH AN EMPTY HAND THE AIM LINE WAS BLANK, so the one gesture in
+  // the bay that destroys work was the only one that said nothing at all. The
+  // ghost is still cleared: there is nothing being placed.
+  if (hand === null) {
+    v.view.clearGhost();
+    v.panel.setAim(removeLine(v));
+    return;
+  }
   if (v.design.empty) {
     v.active = null;
     v.blocked = null;

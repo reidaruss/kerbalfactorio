@@ -137,6 +137,13 @@ export function vabApi(s: Services): VabDebugApi {
         // put the cursor where a player would look instead of teleporting the
         // snap. The hit test and the snap search still run for real.
         case 'nodes': return v.view.projectNodes(v.camera, v.nodes);
+        /** GP-299. A PART's screen position, so a probe can aim at the thing a
+         *  removal removes rather than at a placement node. */
+        case 'project': {
+          const part = v.design.find(Number(a));
+          if (part === null) return null;
+          return v.view.projectPart(v.camera, part.centroidM);
+        }
         // The panel controls, driven as REAL DOM clicks on the real elements.
         // Nothing here reaches past the button a player would press.
         case 'save': {
