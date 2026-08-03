@@ -749,3 +749,72 @@ for the attitude pushed the burn late and a late burn is a different error that
 nothing was watching. **When a fix improves the thing you were measuring, check
 the thing you were not.** The real fault was upstream of both and only visible
 once the first two were out of the way.
+
+## An implausible number is caught by size; a WRONG-FIELD number is caught by shape (PH-158)
+
+A node driver read `of_fl_telemetry` word 0 as `thrustN` and reported **80000.0
+newtons of thrust after a cancel had cut the throttle**. Word 0 is `altitudeM`,
+the vehicle was at 80 km, and thrust is word 5 and was 0.0 the whole time. The
+row layout is written out in full above the export in `of_flight_api.inc`. It
+was not read before indexing.
+
+**The existing rule would not have caught it.** "An implausible magnitude is an
+instrument bug until proven otherwise" works on size, and 80 kN is a perfectly
+plausible thrust for this vehicle: the engine it had just been told to shut down
+produces 60 kN. Nothing about the magnitude was wrong.
+
+**What was wrong was the SHAPE.** It was 80000.0 exactly. Real thrust from a
+throttled engine at a lapsing ambient pressure is 59954.3 or 182966.1; it is
+never round. That is the whole tell, and it generalises:
+
+- **too round.** A physical quantity that has been through a division, an
+  interpolation or an atmosphere does not land on a power of ten. A round number
+  in a float field is usually a different quantity, a default, or a constant.
+- **it moves when nothing should move it.** A field that tracks something you
+  did not change is reading a neighbour.
+- **it holds still while the world changes.** The mirror image, and the one R44b
+  was: a stage delta-v that never fell while the tank drained.
+- **the units almost work.** 80000 metres reads as 80000 newtons without
+  complaint. Fields adjacent in a struct are often adjacent in magnitude too,
+  which is exactly why the wrong index survives a sanity check.
+
+**The rule.** Before indexing a scratch row by number, read the layout comment
+at the producing export, and then check the SHAPE of what comes back and not
+only its size. If a value looks like it was typed by a human rather than
+computed by physics, you are reading the wrong field.
+
+## Nothing checks the harness (PH-154, PH-155, PH-158)
+
+Three defects were found in one night's work on the autopilot. **All three were
+in the measuring apparatus and none was in the physics.**
+
+- a flight driver that stopped when the PROGRAM finished rather than at a stated
+  time, so a control ended 66 s in, still in the parking orbit, reporting a
+  525 km closest approach to a target it had not set off towards;
+- two orbit fixtures, `circularAbout` and `circular80km`, that run in OPPOSITE
+  senses, so mixing them planned a retrograde rendezvous at 3818.69 m/s against
+  a Hohmann of 396;
+- the telemetry misread above.
+
+**This is not bad luck and it is not sloppiness, it is structural.** The
+simulation has ctest, a cross-toolchain parity suite, and now a vehicle that
+flies itself to a measured 5.8 m. **The harness that observes all of that has
+nothing looking at it.** It is written once, quickly, in service of measuring
+something else, and it is never the subject of a test.
+
+Two consequences worth acting on:
+
+**A surprising result is more likely to be the harness than the system.** Check
+the instrument before you believe a catastrophe. The 525 km closest approach
+would have read as a total failure of the transfer solver to anyone who trusted
+the driver.
+
+**A negative control tests the harness as well as the claim**, which is why it
+is worth the time twice over. Both the driver bug and the fixture bug were found
+by controls, not by the assertions they were supporting.
+
+**And a convention policed at the API boundary can still collide in the
+fixtures.** `orbital::lambert` deliberately takes a reference normal instead of
+testing an axis, precisely so that two inclination conventions could never
+collide. Then two test helpers built their orbits in opposite senses and the
+collision arrived through the back door. Police the fixtures too.

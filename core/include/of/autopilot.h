@@ -62,13 +62,31 @@ namespace autopilot {
 // §1 - the program.
 // =============================================================================
 
-// One scheduled impulse, in the primary's inertial frame.
+// WHICH FRAME A BURN'S VECTOR LIVES IN (PH-159).
+//
+// A trip to a moon crosses a sphere-of-influence boundary, and past it the
+// vessel is on a conic about a DIFFERENT body. The capture burn cannot be
+// expressed in the departure frame at all: it is retrograde relative to
+// Cinder, and Cinder is itself doing 1.7 km/s round Forge.
+//
+// This looks like the exception to "the executor does not re-derive in flight"
+// and it is not, because the crossing time and the arrival hyperbola are both
+// PREDICTABLE from the departure state. The solver produces both burns up
+// front and tags each with the frame it lives in; the executor flies each one
+// in its own frame. Nothing is re-derived. The plan simply has two frames.
+enum class BurnFrame : uint8_t {
+  Primary = 0,   // the body the program was planned around
+  Target = 1,    // the destination body's own frame, after the SOI handoff
+};
+
+// One scheduled impulse.
 struct Burn {
   double nodeTimeS = 0.0;    // when the IMPULSE is centred (absolute sim time)
-  Vec3 deltaV{0, 0, 0};      // inertial
+  Vec3 deltaV{0, 0, 0};      // inertial, IN `frame`
   double deltaVMS = 0.0;
   double durationS = 0.0;    // predicted, from estimateBurn at the mass it has
   double leadS = 0.0;        // half of it: light the engine this early
+  BurnFrame frame = BurnFrame::Primary;
 
   // Light the engine here, so the impulse straddles the node. `leadS` is
   // maneuver.h's own half-duration and is not halved a second time here.
@@ -95,6 +113,15 @@ struct Program {
   double totalDvMS = 0.0;
   bool valid = false;
   const char* note = "";
+
+  // THE SOI HANDOFF, when the program crosses into a body's sphere of
+  // influence. Everything an executor needs to switch frames at the right
+  // instant, published by the SOLVER rather than discovered in flight.
+  bool crossesSoi = false;
+  double soiEntryS = 0.0;          // absolute sim time of the handoff
+  double targetMuM3S2 = 0.0;       // the body it hands off TO
+  double targetSoiRadiusM = 0.0;
+  double captureRadiusM = 0.0;     // the circular orbit the capture produces
 };
 
 struct Command {
@@ -147,6 +174,18 @@ class Autopilot {
  public:
   Program program;
   Status status;
+
+  // Re-arm at a chosen burn, keeping the delta-v already spent on the record.
+  // Used by the SOI handoff, which replaces burn 1 after burn 0 has been flown
+  // and must not rewind the programme to the start.
+  void armFrom(const Program& p, int startBurn) {
+    const double spent = dvAll_;
+    arm(p);
+    burnIndex_ = startBurn;
+    status.burnIndex = startBurn;
+    dvAll_ = spent;
+    status.dvSpentTotalMS = spent;
+  }
 
   void arm(const Program& p) {
     program = p;
@@ -418,14 +457,29 @@ inline Program holdOrbit(const orbital::StateVector& atCall, double callS,
   return p;
 }
 
-// A TRANSFER, EXECUTED. The same shape, built from a `transfer::Transfer` the
-// solver already produced rather than from anything computed here: burn one is
-// its injection, burn two is its arrival match. A body capture publishes no
-// arrival VECTOR (transfer.h refuses to, so nobody flies one), so a body target
-// yields a single-burn program and the capture is a separate plan made inside
-// the moon's own frame after the SOI crossing.
+// A TRANSFER, EXECUTED. Built from a `transfer::Transfer` the solver already
+// produced rather than from anything computed here: burn one is its injection,
+// burn two is its arrival.
+//
+// THE GUARD IS DOWN (PH-159). This used to take a bare `arrivalIsMatch` bool
+// and a body target simply got a one-burn program, because `transfer.h` will
+// not publish an arrival VECTOR for a capture and there was nowhere to put a
+// burn in another frame. That was a categorical refusal standing in for work.
+// It now does the work: for a body it finds the SOI entry, plans the capture at
+// the arrival hyperbola's own periapsis, and tags that burn `BurnFrame::Target`.
+//
+// AND IT REFUSES FOR A REASON RATHER THAN CATEGORICALLY. There are three
+// distinct ways a body transfer has no capture, and a caller that could not
+// tell them apart would show the same message for a trajectory that misses the
+// moon entirely and one that hits it:
+//   * the trajectory never enters the sphere of influence;
+//   * it enters, and the arrival conic hits the surface;
+//   * it enters cleanly but the vehicle cannot pay for the capture.
+// Each sets `note` to its own sentence and leaves `valid` false.
 inline Program flyTransfer(const transfer::Transfer& tr,
-                           const vessel::Vessel& craft, bool arrivalIsMatch) {
+                           const orbital::Elements& shipEl,
+                           const transfer::Target& tgt,
+                           const vessel::Vessel& craft) {
   Program p;
   p.mode = Mode::Transfer;
   if (!tr.valid) {
@@ -435,15 +489,54 @@ inline Program flyTransfer(const transfer::Transfer& tr,
   p.burns[0].nodeTimeS = tr.departS;
   p.burns[0].deltaV = tr.departDv;
   p.burns[0].deltaVMS = tr.departDvMS;
+  p.burns[0].frame = BurnFrame::Primary;
   p.burnCount = 1;
   p.totalDvMS = tr.departDvMS;
 
-  if (arrivalIsMatch && tr.arriveDvMS > 0.0) {
-    p.burns[1].nodeTimeS = tr.arriveS;
-    p.burns[1].deltaV = tr.arriveDv;
-    p.burns[1].deltaVMS = tr.arriveDvMS;
+  if (!tgt.isBody()) {
+    // A VESSEL: the arrival is a velocity match, in the same frame.
+    if (tr.arriveDvMS > 0.0) {
+      p.burns[1].nodeTimeS = tr.arriveS;
+      p.burns[1].deltaV = tr.arriveDv;
+      p.burns[1].deltaVMS = tr.arriveDvMS;
+      p.burns[1].frame = BurnFrame::Primary;
+      p.burnCount = 2;
+      p.totalDvMS += tr.arriveDvMS;
+    }
+  } else if (tgt.captureAltitudeM > 0.0 || tgt.bodyRadiusM > 0.0) {
+    // A BODY: find the handoff, then plan the capture inside its frame.
+    //
+    // The conic searched is the POST-INJECTION one, `transferStart`, because
+    // that is the trajectory the vehicle will actually be on. Searching the
+    // pre-burn orbit would find a crossing that never happens.
+    const orbital::Elements after =
+        orbital::park(tr.transferStart, shipEl.mu, tr.departS);
+    // The window runs a little past the planned arrival, because the SOI is
+    // entered BEFORE the point the Lambert solve aimed at: the sphere has a
+    // radius and the aim point is its centre.
+    const double window = (tr.arriveS - tr.departS) * 1.25 + 600.0;
+    const transfer::SoiCrossing x =
+        transfer::findSoiEntry(after, tgt, tr.departS, tr.departS + window);
+    if (!x.found) {
+      p.note = x.note;                       // names WHICH way it failed
+      return p;
+    }
+    const transfer::CaptureBurn cap = transfer::planCapture(x, tgt);
+    if (!cap.valid) {
+      p.note = cap.note;
+      return p;
+    }
+    p.crossesSoi = true;
+    p.soiEntryS = x.timeS;
+    p.targetMuM3S2 = tgt.muM3S2;
+    p.targetSoiRadiusM = tgt.soiRadiusM;
+    p.captureRadiusM = cap.circularRadiusM;
+    p.burns[1].nodeTimeS = cap.timeS;
+    p.burns[1].deltaV = cap.deltaV;
+    p.burns[1].deltaVMS = cap.deltaVMS;
+    p.burns[1].frame = BurnFrame::Target;    // Cinder's frame, not Forge's
     p.burnCount = 2;
-    p.totalDvMS += tr.arriveDvMS;
+    p.totalDvMS += cap.deltaVMS;
   }
 
   const maneuver::BurnEstimate e1 = maneuver::estimateBurn(craft, p.burns[0].deltaVMS);
@@ -461,6 +554,136 @@ inline Program flyTransfer(const transfer::Transfer& tr,
   p.valid = true;
   p.note = "transfer";
   return p;
+}
+
+// A MID-COURSE CORRECTION, AND THE MEASUREMENT THAT MAKES IT COMPULSORY.
+//
+// A moon transfer CANNOT BE FLOWN OPEN-LOOP, and the numbers say why rather
+// than a rule of thumb. The injection to Cinder is 861 m/s, which is a long
+// burn, and an impulsive plan's finite-burn residue over a 7.4 hour coast comes
+// out at 468 km of position error at the sphere of influence. The aim offset
+// that keeps the vehicle out of the moon is itself only 543 km, so the error is
+// the same size as the thing it is perturbing: MEASURED, the flown arrival
+// hyperbola has a periapsis of 185669 m against a body radius of 200000 m. The
+// planned 250 km capture orbit is a 14 km deep hole in the ground.
+//
+// This is not a defect in the solver and it is not slack in the executor. It is
+// the reason every real interplanetary mission budgets trajectory correction
+// manoeuvres, and it is R66 arriving at a scale where it stops being a residue
+// and starts being the mission.
+//
+// The correction is one Lambert from WHERE THE VEHICLE ACTUALLY IS to the aim
+// point it was always going to, in the time that is left. It is small, it is
+// early enough to be cheap, and it uses the same solver the mission was planned
+// with rather than a second opinion about the same trajectory.
+inline Burn midCourseCorrection(const orbital::StateVector& actual, double nowS,
+                                const Vec3& aimPointM, double arriveS, double mu,
+                                const vessel::Vessel& craft) {
+  Burn b;
+  b.nodeTimeS = nowS;
+  b.frame = BurnFrame::Primary;
+  const double tof = arriveS - nowS;
+  if (!(tof > 0.0) || !(mu > 0.0)) return b;
+  const Vec3 h = orbital::cross(actual.r, actual.v);
+  const orbital::LambertSolution L =
+      orbital::lambert(actual.r, aimPointM, tof, mu, h);
+  if (!L.valid) return b;
+  b.deltaV = L.v1 - actual.v;
+  b.deltaVMS = b.deltaV.length();
+  const maneuver::BurnEstimate e = maneuver::estimateBurn(craft, b.deltaVMS);
+  b.durationS = e.durationS;
+  b.leadS = 0.5 * e.durationS;
+  return b;
+}
+
+// Put a burn into a program at `at`, shuffling the rest along. Returns false if
+// there is no room, which is a refusal rather than a silent drop.
+inline bool insertBurn(Program& p, int at, const Burn& b) {
+  if (at < 0 || at > p.burnCount || p.burnCount >= Program::kMaxBurns) return false;
+  for (int i = p.burnCount; i > at; --i) p.burns[i] = p.burns[i - 1];
+  p.burns[at] = b;
+  ++p.burnCount;
+  p.totalDvMS += b.deltaVMS;
+  return true;
+}
+
+// THE ONE PLACE THE EXECUTOR RE-PLANS, AND THE MEASUREMENT THAT FORCES IT.
+//
+// Everything else in this header flies the plan the solver produced. This does
+// not, and the reason is a number rather than a preference.
+//
+// An injection to Cinder is 861 m/s, which is a LONG burn, and the impulsive
+// plan's finite-burn residue is then amplified by a 7.4 hour coast. MEASURED:
+// the vehicle reaches the sphere of influence 468 km from where the solver
+// predicted, which at the arrival closing speed is about twenty minutes late.
+// The capture burn's time, direction and magnitude were all computed for a
+// state the vehicle does not arrive in, and flying them open-loop produced a
+// 1046804 m orbit where the plan said 253999 m.
+//
+// So the handoff is a MEASUREMENT, not a prediction. The world says when the
+// boundary was actually crossed and in what relative state; this re-plans the
+// capture from that state and replaces the second burn. The MISSION is not
+// re-derived: the destination, the injection and the decision to capture all
+// stand. What is recomputed is one burn, in a frame that did not exist when the
+// plan was made, from data that did not exist either.
+//
+// The alternative is a mid-course correction burn part-way along the coast,
+// which is what real missions fly and what R68 tracks. That would let the
+// original capture plan stand, at the cost of a third burn and a fourth thing
+// to get wrong. This is the smaller change and it is honest about being one.
+inline bool replanCaptureAtHandoff(Autopilot& pilot,
+                                   const orbital::StateVector& relativeState,
+                                   double nowS, const transfer::Target& body,
+                                   const vessel::Vessel& craft) {
+  if (!body.isBody()) return false;
+  Program p = pilot.program;
+  if (!p.crossesSoi || p.burnCount < 2) return false;
+
+  // Rebuild the crossing from what the world actually delivered.
+  transfer::SoiCrossing x;
+  x.found = true;
+  x.timeS = nowS;
+  x.relative = relativeState;
+  x.vInfMS = relativeState.v.length();
+  x.hyperbola = orbital::stateToElements(relativeState, body.muM3S2, nowS);
+  x.periapsisRadiusM = x.hyperbola.a * (1.0 - x.hyperbola.e);
+  x.impacts = x.periapsisRadiusM < body.bodyRadiusM;
+  {
+    const double crossS = 4.0 * body.soiRadiusM / std::fmax(1.0, x.vInfMS);
+    double lo = 0.0, hi = crossS;
+    auto radialRate = [&](double dt) {
+      const orbital::StateVector q =
+          orbital::propagate(x.relative, dt, body.muM3S2);
+      return q.r.dot(q.v);
+    };
+    if (radialRate(0.0) < 0.0 && radialRate(hi) > 0.0) {
+      for (int i = 0; i < 80 && (hi - lo) > 1e-6; ++i) {
+        const double m = 0.5 * (lo + hi);
+        if (radialRate(m) < 0.0) lo = m; else hi = m;
+      }
+      x.timeToPeriapsisS = 0.5 * (lo + hi);
+    }
+  }
+  const transfer::CaptureBurn cap = transfer::planCapture(x, body);
+  if (!cap.valid) return false;
+
+  p.burns[1].nodeTimeS = cap.timeS;
+  p.burns[1].deltaV = cap.deltaV;
+  p.burns[1].deltaVMS = cap.deltaVMS;
+  p.burns[1].frame = BurnFrame::Target;
+  p.captureRadiusM = cap.circularRadiusM;
+  const maneuver::BurnEstimate e = maneuver::estimateBurn(craft, cap.deltaVMS);
+  p.burns[1].durationS = e.durationS;
+  p.burns[1].leadS = 0.5 * e.durationS;
+  // Sum EVERY burn, not the first plus the capture: a mid-course correction may
+  // have been inserted since the program was built, and dropping it here would
+  // make the executor and its own total disagree by exactly that burn.
+  p.totalDvMS = 0.0;
+  for (int i = 0; i < p.burnCount; ++i) p.totalDvMS += p.burns[i].deltaVMS;
+
+  // Re-arm at the SECOND burn: the injection is flown and must not be repeated.
+  pilot.armFrom(p, p.burnCount - 1);
+  return true;
 }
 
 }  // namespace autopilot

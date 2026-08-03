@@ -124,8 +124,34 @@ struct Transfer {
   orbital::StateVector targetState;   // the target at arriveS
 
   double sweepRad = 0.0;            // transfer angle actually flown
-  double missDistanceM = 0.0;       // |transferEnd.r - targetState.r|, a residual
+  double missDistanceM = 0.0;       // distance to the AIM POINT, a residual
+  // A BODY IS AIMED OFF-CENTRE ON PURPOSE (PH-159). See `aimOffsetFor` below:
+  // 0 for a vessel target, and the impact parameter for a body.
+  double aimOffsetM = 0.0;
+  Vec3 aimPointM{0, 0, 0};          // where the Lambert actually aimed
 };
+
+// HOW FAR OFF THE BODY'S CENTRE TO AIM, AND WHY AIMING AT IT IS A CRATER.
+//
+// A Lambert solve aims at a POINT. Given the body's centre, it delivers the
+// vehicle to the body's centre, and the arrival hyperbola's periapsis is then
+// essentially zero: MEASURED on a Hohmann to Cinder, periapsis 1214.7 m against
+// a body radius of 200000 m. `planCapture` correctly refused it as "enters, and
+// hits the surface", which is a true statement about a plan nobody should fly.
+//
+// Real missions aim at an OFFSET, and the offset is the impact parameter b. For
+// a hyperbola with periapsis r_p and hyperbolic excess v_inf,
+//
+//     b = r_p * sqrt(1 + 2 mu / (r_p v_inf^2))
+//
+// which for a 250 km periapsis at Cinder and a v_inf of 348.94 m/s is 574670 m,
+// comfortably inside the 2.4e6 m sphere of influence.
+inline double aimOffsetFor(double periapsisRadiusM, double bodyMu,
+                           double vInfMS) {
+  if (!(periapsisRadiusM > 0.0) || !(bodyMu > 0.0) || !(vInfMS > 0.0)) return 0.0;
+  return periapsisRadiusM
+         * std::sqrt(1.0 + 2.0 * bodyMu / (periapsisRadiusM * vInfMS * vInfMS));
+}
 
 // Leave at `departS`, arrive `tofS` later. Everything else follows.
 //
@@ -145,13 +171,43 @@ inline Transfer solveTransfer(const orbital::Elements& vesselEl,
   out.targetState = targetStateAt(tgt, out.arriveS);
 
   const Vec3 h = orbital::cross(out.departState.r, out.departState.v);
+  Vec3 aim = out.targetState.r;
+
+  // AIMING A BODY OFF-CENTRE. Two passes, because the offset depends on v_inf
+  // and v_inf depends on the offset. It converges immediately in practice: the
+  // offset is a few hundred km against a transfer of twelve thousand, so the
+  // second pass moves v_inf by well under a percent. Solving it exactly would
+  // be a fixed point on a quantity whose own error bar is larger than the
+  // correction, which is arithmetic for its own sake.
+  if (tgt.isBody() && tgt.captureAltitudeM > 0.0) {
+    const double rp = tgt.bodyRadiusM + tgt.captureAltitudeM;
+    for (int pass = 0; pass < 2; ++pass) {
+      const orbital::LambertSolution probe =
+          orbital::lambert(out.departState.r, aim, tofS, vesselEl.mu, h);
+      if (!probe.valid) break;
+      const Vec3 vRel = probe.v2 - out.targetState.v;
+      const double vInf = vRel.length();
+      const double b = aimOffsetFor(rp, tgt.muM3S2, vInf);
+      if (!(b > 0.0)) break;
+      // Perpendicular to the arrival velocity, in the transfer plane. The sign
+      // decides which way round the body the capture orbit goes; this one is
+      // the same sense as the transfer, so a prograde trip captures prograde.
+      const Vec3 dir = orbital::normalized(orbital::cross(h, vRel));
+      if (dir.lengthSq() <= 0.0) break;
+      aim = out.targetState.r + dir * b;
+      out.aimOffsetM = b;
+      out.aimPointM = aim;
+    }
+  }
+
   const orbital::LambertSolution L =
-      orbital::lambert(out.departState.r, out.targetState.r, tofS, vesselEl.mu, h);
+      orbital::lambert(out.departState.r, aim, tofS, vesselEl.mu, h);
   if (!L.valid) return out;
+  if (out.aimOffsetM == 0.0) out.aimPointM = aim;
 
   out.sweepRad = L.sweepRad;
   out.transferStart = orbital::StateVector{out.departState.r, L.v1};
-  out.transferEnd = orbital::StateVector{out.targetState.r, L.v2};
+  out.transferEnd = orbital::StateVector{out.aimPointM, L.v2};
   out.departDv = L.v1 - out.departState.v;
   out.departDvMS = out.departDv.length();
   out.arriveDvMS = arrivalCostMS(tgt, L.v2, out.targetState.v);
@@ -164,7 +220,7 @@ inline Transfer solveTransfer(const orbital::Elements& vesselEl,
   // target's position by construction, so this is the arithmetic's own error
   // and it is the number that would catch a mismatched clock or a target whose
   // elements are about a different primary.
-  out.missDistanceM = (out.transferEnd.r - out.targetState.r).length();
+  out.missDistanceM = (out.transferEnd.r - out.aimPointM).length();
   out.valid = true;
   return out;
 }

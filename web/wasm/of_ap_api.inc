@@ -456,7 +456,7 @@ OF_API int of_ap_arm_transfer(int f, double tDepartFromNowS, double smaM,
   // publish an arrival vector for a capture so that nobody flies one across a
   // frame change. A body therefore arms as a single injection burn today, and
   // PH-156 is opening that seam rather than working around it.
-  const ap::Program p = ap::flyTransfer(best, s->craft, !tgt.isBody());
+  const ap::Program p = ap::flyTransfer(best, ship, tgt, s->craft);
   g_pilots[f].arm(p);
   return p.valid ? 1 : 0;
 }
