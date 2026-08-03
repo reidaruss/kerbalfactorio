@@ -845,3 +845,23 @@ every negative control anyone runs here.
 
 The general form: **any procedure whose intermediate state is a lie must not
 have an exit that stops in the middle.**
+
+### A build and a test in one shell line will report the PREVIOUS build's verdict
+
+Twice in one night a build failed, **the stale binary from the previous build ran,
+and the suite reported green.** Once it nearly recorded a false negative control,
+which is the worst possible place for it: the whole point of that procedure is
+that the reverted code must fail, and a stale binary makes it pass.
+
+`INSTRUMENTS.md` already says **a tool that reports nothing may not be running.**
+This is the sharper form: **a tool that reports something may be reporting on
+code that no longer exists.**
+
+`make && ./tests` is safe. `make; ./tests` is not, and neither is any pipeline
+where the test output is what gets read and the compiler output scrolls past.
+**Grep the compiler output separately from the test output**, or fail the whole
+line on a non-zero build status. It costs one line.
+
+The general form, and it is the same shape as the empty commit and the stale
+index: **when two steps share a workspace, the second one cannot tell you whether
+the first one happened.** Ask the first step directly.
