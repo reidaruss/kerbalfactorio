@@ -291,6 +291,44 @@ export class StructureView {
   hideGhost(): void { if (this.ghost !== null) this.ghost.visible = false; }
   get ghostVisible(): boolean { return this.ghost?.visible ?? false; }
 
+  /**
+   * GP-288. The ghost's world size and its distance from the eye, measured off
+   * the mesh the renderer is holding rather than off the target that was asked
+   * for. Null when nothing is being previewed.
+   *
+   * Engine space IS the eye's neighbourhood under a floating origin, so
+   * `|centre|` is the distance a player is standing from the preview, and a
+   * 4 m foundation two metres away and a 4 m foundation sitting on the camera
+   * differ in exactly that number.
+   */
+  ghostBox(): unknown {
+    const o = this.ghost;
+    if (o === null || !o.visible || o.geometry === null) return null;
+    const g = o.geometry;
+    if (g.getAttribute('position') === undefined) return null;
+    g.computeBoundingBox();
+    const bb = g.boundingBox;
+    if (bb === null) return null;
+    const box = bb.clone().applyMatrix4(o.matrixWorld);
+    const size = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(c);
+    // NEAREST FACE, not just the centre, and whether the box CONTAINS the eye.
+    // A building centred a few metres ahead can still have its near edge behind
+    // the player if it is wide enough, and `DoubleSide` means the inside faces
+    // then fill the viewport. Only these two numbers can say so.
+    const near = Math.max(0, c.length() - 0.5 * size.length());
+    return {
+      sizeM: [+size.x.toFixed(3), +size.y.toFixed(3), +size.z.toFixed(3)],
+      centreEngine: [+c.x.toFixed(3), +c.y.toFixed(3), +c.z.toFixed(3)],
+      distM: +c.length().toFixed(3),
+      nearestM: +near.toFixed(3),
+      encloses: box.containsPoint(new THREE.Vector3(0, 0, 0)),
+      scale: [o.scale.x, o.scale.y, o.scale.z],
+    };
+  }
+
   /** Geometry keys the batch knows, so a probe can assert the door split. */
   get keys(): string[] {
     return [...STRUCTURE_KINDS, LEAF, ...PILLAR_PARTS.map(pillarKey)];
@@ -304,6 +342,14 @@ export class StructureView {
       tallest = Math.max(tallest, d.gap);
     }
     return { ...this.batch.stats(), ghost: this.ghostVisible,
+      // GP-288. WHAT THE GHOST ACTUALLY IS, not just whether it is on. Reid
+      // reported the placement preview filling the screen instead of sitting
+      // on the ground, and `ghost: true` cannot tell an enormous mesh from one
+      // sitting on top of the camera, which are different bugs with different
+      // fixes. `sizeM` is the world-space bounding box of the geometry the
+      // renderer is using and `distM` is how far its centre is from the eye in
+      // engine space, which under a floating origin is the eye's own frame.
+      ghostBox: this.ghostBox(),
       doors: this.leafSlots.size,
       // DW-32. `tall` is the count past the art lane's 10 m readability limit:
       // the pillar is still drawn, because a clamped one would float and a

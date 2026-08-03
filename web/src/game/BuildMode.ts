@@ -245,7 +245,14 @@ export class BuildMode {
     if (this.pads === null || this.padView === null) return 0;
     const t = resolvePadTarget(this.pads, this.structures, ray, this.padLocked);
     this.padTarget = t;
-    this.padView.showGhost(t);
+    // GP-289. The preview is ALWAYS on the ground now, at every pitch: see
+    // `StructurePlacement.fallbackOnGround`. `t.aimed` rides along as
+    // information (false means the ray reached its full 24 m without touching
+    // anything, which on a 600 km body is the ordinary case near the horizon)
+    // and is deliberately NOT a gate: hiding the preview whenever the march
+    // missed would hide it on flat open ground, which was the first version of
+    // this fix and was worse than the bug.
+    if (t.overhead) this.padView.hideGhost(); else this.padView.showGhost(t);
     if (!pressed) return 0;
     const made = commitPad(this.pads, t);
     if (made === null) { this.refusals++; return 0; }
@@ -263,7 +270,10 @@ export class BuildMode {
     const t = resolveTarget(this.structures, kind, ray, this.rotation,
       this.freePlace);
     this.structTarget = t;
-    this.structView.showGhost(t);
+    // GP-289. Drawn everywhere except the narrow overhead cone, where every
+    // position is a guess and the nearest guess is one the player is inside.
+    if (t.overhead) this.structView.hideGhost();
+    else this.structView.showGhost(t);
     const prev = this.dragPrevKey;
     this.dragPrevKey = t.key;
     if (!pressed && !held) return 0;

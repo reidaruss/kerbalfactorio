@@ -233,8 +233,42 @@ export class LaunchPadView {
   hideGhost(): void { if (this.ghost !== null) this.ghost.visible = false; }
   get ghostVisible(): boolean { return this.ghost?.visible ?? false; }
 
+  /**
+   * GP-288. The ghost's world size and its distance from the eye. Identical in
+   * shape to `StructureView.ghostBox` on purpose: Reid's report is about the
+   * PREVIEW, and a report that could only answer for one of the two views would
+   * have measured whichever one happened not to be the culprit.
+   */
+  ghostBox(): unknown {
+    const o = this.ghost;
+    if (o === null || !o.visible || o.geometry === null) return null;
+    const g = o.geometry;
+    if (g.getAttribute('position') === undefined) return null;
+    g.computeBoundingBox();
+    const bb = g.boundingBox;
+    if (bb === null) return null;
+    const box = bb.clone().applyMatrix4(o.matrixWorld);
+    const size = new THREE.Vector3();
+    const c = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(c);
+    // NEAREST FACE, not just the centre. A 24 m pad centred 6 m ahead has its
+    // near edge BEHIND the player, and only this number says so.
+    const near = Math.max(0, c.length() - 0.5 * size.length());
+    return {
+      sizeM: [+size.x.toFixed(3), +size.y.toFixed(3), +size.z.toFixed(3)],
+      centreEngine: [+c.x.toFixed(3), +c.y.toFixed(3), +c.z.toFixed(3)],
+      distM: +c.length().toFixed(3),
+      nearestM: +near.toFixed(3),
+      encloses: box.containsPoint(new THREE.Vector3(0, 0, 0)),
+      scale: [o.scale.x, o.scale.y, o.scale.z],
+    };
+  }
+
+
   stats(): unknown {
     return { ...this.batch.stats(), ghost: this.ghostVisible,
+      ghostBox: this.ghostBox(),
       pads: this.slots.size, keys: [BODY, COLUMN, ARM], ...this.staleness() };
   }
 

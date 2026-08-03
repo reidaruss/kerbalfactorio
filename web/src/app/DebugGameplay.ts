@@ -107,6 +107,26 @@ export function gameplayApi(s: Services, loop: Loop) {
 
     /** The base: every part, every site, the module and the costs. */
     structures: () => s.gameplay?.structures ?? null,
+    /**
+     * GP-288. THE STRUCTURE VIEW, which is a different object from the model
+     * above and is the one that owns the placement ghost. Reid reported the
+     * preview filling the screen, and `structures()` could not answer that
+     * because the model has no idea what is drawn.
+     */
+    structView: () => s.gameplay?.structView.stats() ?? null,
+    /** GP-288. The launch pad's own view, which owns a SECOND ghost. */
+    padView: () => s.gameplay?.padView.stats() ?? null,
+    /**
+     * GP-289. WHICH BRANCH THE AIM TOOK, so a probe can tell a real ground hit
+     * from the mid-air fallback from the overhead cone. Without it "the preview
+     * encloses the player" has three different causes and one number.
+     */
+    buildAim: () => {
+      const t = s.gameplay?.build.structTarget ?? null;
+      if (t === null) return null;
+      return { aimed: t.aimed, overhead: t.overhead, ok: t.ok,
+               reason: t.reason, freePlaced: t.freePlaced };
+    },
 
     /**
      * GP-57. The launch pads, LIVE, so a probe can measure against the pad's

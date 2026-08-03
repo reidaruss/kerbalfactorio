@@ -49,6 +49,9 @@ export interface EnemyHost extends TargetPopulations {
     groundRadius(x: number, y: number, z: number): number;
   };
   walker: { body: { feet: { x: number; y: number; z: number } } };
+  /** GP-287. /core's BodyParams::bodyId, so the life invariant can ask the
+   *  atmosphere about THIS body. Gameplay already publishes it. */
+  starterBodyId: number;
 }
 
 /** What a shot's `ref` is when it hit a nest rather than a creature. */
@@ -138,7 +141,7 @@ export class Enemies {
     }
     this.types.load(this.M);
     this.view.build(this.types.all);
-    this.loop.seedNests(spawnDir, host.seed);
+    this.loop.seedNests(spawnDir, host.seed, host.starterBodyId);
     this.enabled = true;
     this.disabledWhy = '';
     return true;
@@ -376,6 +379,9 @@ export class Enemies {
       // IS and the other is what a cheat has done to it this session.
       peaceful: this.peaceful,
       nests: this.loop.nests.length,
+      // GP-287. WHY there are none, when there are none. Beside the count
+      // and never instead of it, the same way `why` sits beside `enabled`.
+      lifeRefusedWhy: this.loop.lifeRefusedWhy,
       nestsSeeded: this.loop.nestsSeeded,
       nestsKilled: this.nestsKilled,
       shotsIntoNests: this.shotsIntoNests,

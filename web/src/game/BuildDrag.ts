@@ -132,6 +132,11 @@ export class MachineDrag {
       (x, y, z) => this.structures.groundRadius(x, y, z), this.view.sockets,
       !(held && this.dragLast !== null));
     this.host.target = t;
+    // GP-289. The machine half of the same rule, and its fallback is the
+    // WORST of the three: `FactoryGhost.FALLBACK_M` is 2.6 m, so a machine
+    // preview aimed at the sky sits 2.6 m above the player's own head, closer
+    // in than a building's 6 m. Found by sweeping the class (WG-144) rather
+    // than by a second report.
     if (t !== null) this.view.showGhost(kind, t.pos, t.up, t.fwd, t.ok);
     else this.view.hideGhost();
     if (t === null) return 0;

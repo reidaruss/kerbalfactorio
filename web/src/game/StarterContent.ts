@@ -56,6 +56,63 @@ export function bodyIsAirless(M: OfCoreModule, bodyId: number): boolean {
   return vesselAbi(M)._of_atmo_density(bodyId, 0) === 0;
 }
 
+/**
+ * GP-287. THE INVARIANT, GENERALISED FROM PLANTS TO EVERYTHING ALIVE.
+ *
+ * NOTHING THAT BREATHES MAY BE PLACED ON A BODY WITH NO AIR. Returns '' when
+ * this body can carry life, and otherwise the SENTENCE naming what was refused
+ * and why, because something loudly wrong can be fixed and something quietly
+ * absent cannot.
+ *
+ * It started as a rule about trees. It is the same rule about creatures, and
+ * that is not an analogy: a nest full of Skitterers on an airless moon is a
+ * plant in vacuum with a different noun. The mechanism is deliberately shared
+ * rather than parallel, so a third kind of living thing joins by calling this
+ * and a body that grows an atmosphere gets its trees, its fauna and its
+ * tutorial back in one change.
+ *
+ * WHAT WAS ACTUALLY WRONG WAS THAT NOBODY HAD ASKED. `EnemyLoop.seedNests`
+ * walked its ring with no body test of ANY kind, so Cinder had four nests for
+ * the same reason Forge does: not a decision, an absent question. Measured
+ * 2026-08-03: 4 nests on Forge and 4 on Cinder, identical.
+ *
+ * ------------------------------------------------------------------------
+ * REID: THIS IS A DESIGN DECISION AND IT IS CHEAP TO OVERRULE.
+ *
+ * Cinder is lifeless. The argument is GP-2's, the one the whole crossover
+ * turns on: off-world resources gate mid tech, so the moon is a place you
+ * EARN, and a hostile ecology already living up there says the opposite. If
+ * Cinder has trees and creatures it is Forge with a different sky, and vacuum
+ * with nothing alive in it is the cheapest way to make arriving feel like an
+ * achievement.
+ *
+ * To put life back, delete one condition. It is additive and nothing else
+ * moves. But the reason to think first is not the code: A CREATURE THAT LIVES
+ * IN VACUUM NEEDS A STORY, and nobody has written one. Pressurised? A machine?
+ * Something you built and lost control of? Any of those is more interesting
+ * than the default nobody chose, and picking one is yours rather than a lane's.
+ * ------------------------------------------------------------------------
+ */
+export function vacuumRefusalText(bodyId: number, what: string): string {
+  return `${what} is alive and body ${bodyId} has no air, so it is refused. `
+    + 'Nothing that breathes may be placed in vacuum. This is a decision '
+    + '(see StarterContent.ts) and not a limitation: life on an airless body '
+    + 'needs a story, and none has been written.';
+}
+
+/**
+ * The same rule, for a caller that has not already asked the world. Split from
+ * the wording above ON PURPOSE: `starterPlanFor` is a PURE function that takes
+ * `airless` as an argument so a probe can drive it with either answer,
+ * including the one no shipped body produces, and threading a wasm module
+ * through it to re-ask a question it was already told would have cost that.
+ * One rule, one sentence, two entry points differing only in who asks.
+ */
+export function livingThingRefusedOn(M: OfCoreModule, bodyId: number,
+                                     what: string): string {
+  return bodyIsAirless(M, bodyId) ? vacuumRefusalText(bodyId, what) : '';
+}
+
 /** Which node kinds are PLANTS, and therefore need air. Data, so a new plant
  *  kind joins the invariant by being listed rather than by being remembered. */
 export const PLANT_KINDS: readonly number[] = [NODE_KIND.Tree];
@@ -124,9 +181,12 @@ export function starterPlanFor(bodyId: number, airless: boolean,
   const kinds: number[] = [];
   const refused: string[] = [];
   for (const k of t) {
+    // THROUGH THE ONE FUNCTION, not a second sentence about the same rule.
+    // `airless` is still computed by the caller and passed in, so this stays a
+    // pure function of its arguments for the tests; the invariant itself is
+    // `livingThingRefusedOn` and both callers use it.
     if (airless && PLANT_KINDS.includes(k)) {
-      refused.push(`node kind ${k} is a plant and body ${bodyId} has no air, `
-        + 'so it is refused. A starter table may not put a plant in vacuum.');
+      refused.push(vacuumRefusalText(bodyId, `node kind ${k} (a plant)`));
       continue;
     }
     kinds.push(k);

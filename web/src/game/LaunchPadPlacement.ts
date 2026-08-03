@@ -40,7 +40,7 @@
 
 import * as THREE from 'three';
 import { orient } from './Grid.js';
-import { aimPoint } from './StructurePlacement.js';
+import { aimHit } from './StructurePlacement.js';
 import { MAX_LEVEL, deckKey, type Site } from './StructureGrid.js';
 import { padAnchor, padBlockAt, padKey, type LaunchPads, type PadPart }
   from './LaunchPad.js';
@@ -50,6 +50,11 @@ import type { HudTarget } from '../ui/GameHud.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
 export interface PadTarget {
+  /** GP-289. FALSE when the aim ray hit nothing, which on a 600 km body is the
+   *  ordinary case near the horizon and is NOT a reason to hide anything. */
+  aimed: boolean;
+  /** GP-289. TRUE in the narrow straight-up cone, where nothing may be drawn. */
+  overhead: boolean;
   site: Site | null;
   i: number; j: number; level: number;
   key: string;
@@ -91,9 +96,14 @@ export function resolvePadTarget(pads: LaunchPads, s: Structures,
                                  ray: { origin: Vec3d; dir: Vec3d },
                                  locked: string): PadTarget {
   const cells = pads.cells(s.module.cellM);
-  const hit = aimPoint(s, ray);
+  // GP-289. The pad inherited the structure march, so it inherited the
+  // silent fallback too, and a 28 m preview six metres up a ray pointing at
+  // the sky is the worst instance of the three.
+  const aim = aimHit(s, ray);
+  const hit = aim.p;
   const site = s.nearestSite(hit);
   const t: PadTarget = {
+    aimed: aim.found, overhead: aim.overhead,
     site, i: 0, j: 0, level: 0, key: '',
     pos: { x: hit.x, y: hit.y, z: hit.z },
     up: new THREE.Vector3(hit.x, hit.y, hit.z).normalize(),

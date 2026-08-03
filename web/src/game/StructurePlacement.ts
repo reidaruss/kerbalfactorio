@@ -43,8 +43,52 @@ const REACH_M = 24.0;
 /** Where the ghost falls back to when the aim meets neither ground nor build.
  *  A cell and a half, keeping the quarter-of-reach ratio 3.0 had against 12. */
 const FALLBACK_M = 6.0;
+/**
+ * GP-289. How much tangential aim is enough to say which way the player is
+ * facing. `dir` is a unit vector, so this is sin(angle from the local
+ * vertical): 0.09 is about 5 degrees, i.e. the preview is refused only inside a
+ * narrow cone straight up or straight down where no heading exists at all. It
+ * is a bound rather than a taste, and the alternative was picking an arbitrary
+ * bearing and watching the preview swing as the camera crossed the pole.
+ */
+const OVERHEAD_TAN = 0.09;
+/**
+ * GP-289. THE NEAREST A PREVIEW MAY BE PLACED, and this is the number Reid's
+ * report is actually about.
+ *
+ * Measured before fixing, foundation in hand, pitch swept: at 0 degrees the
+ * preview sits 6.051 m away and the player is outside it; at -30, 3.206 m and
+ * outside; at -60, 1.645 m and INSIDE; at -85, 1.385 m and INSIDE. The aim ray
+ * is hitting real ground every time. Nothing is malfunctioning: look down and
+ * the ground is close, so the building goes where you are standing, and the
+ * preview material is `DoubleSide` with `depthWrite` off, so the inside faces
+ * of a 4 m slab you are within ARE the viewport. "The translucent preview fills
+ * the screen rather than sitting on the ground where the thing will go" is that
+ * sentence exactly, and it happens at any downward pitch past about 45 degrees,
+ * which is most of the time somebody is placing something.
+ *
+ * 3.2 m is the smallest value that keeps a standing eye outside the largest
+ * 4 m module's box (half-diagonal 2.83 m plus a margin), derived rather than
+ * tuned. THIS IS A SEMANTICS CHANGE AND IT IS FLAGGED: a player can no longer
+ * put a building directly under their own feet, they have to take a step back.
+ * That is how every builder this game is like behaves, and the alternative is a
+ * preview that cannot be seen at the moment it matters most, but it is Reid's
+ * call and it is one constant.
+ */
+const MIN_PLACE_M = 3.2;
 
 export interface StructureTarget {
+  /** GP-289. FALSE when the aim ray reached its full reach without touching
+   *  ground or a solid, i.e. the player is looking at the sky. `pos` is then a
+   *  fallback point in mid-air and NOTHING MAY BE DRAWN AT IT: the preview
+   *  material is DoubleSide, so a slab six metres up a ray pointing at the sky
+   *  is a slab the player is standing inside, and its inner faces are the whole
+   *  viewport. That was Reid's report. */
+  aimed: boolean;
+  /** GP-289. TRUE inside the narrow cone straight up or down where the aim has
+   *  no heading at all. Nothing may be drawn: every position is a guess and the
+   *  nearest guess puts the player inside the preview. */
+  overhead: boolean;
   kind: StructureKind;
   site: Site | null;
   addr: Addr | null;
@@ -94,7 +138,25 @@ export function ghostPrompt(t: StructureTarget | null): HudTarget | null {
  * foundation would be told about the soil underneath it, and no upper storey
  * could ever be aimed at.
  */
-export function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec3d {
+/**
+ * GP-289. THE MARCH, AND WHETHER IT HIT ANYTHING.
+ *
+ * `found` is false when the ray reached `REACH_M` without touching ground or a
+ * solid, which is what happens the moment a player looks up. The point is still
+ * returned, at `FALLBACK_M`, because callers want somewhere to put a crosshair
+ * even then; what they may NOT do any longer is draw a building there.
+ *
+ * REID'S BUG WAS THIS FALLBACK BEING SILENT. Measured 2026-08-03: with a
+ * foundation in hand and the camera pitched at the sky, the preview lands
+ * 1.385 m from the eye with the eye INSIDE its bounding box, and the ghost
+ * material is `DoubleSide` with `depthWrite: false`, so what fills the viewport
+ * is the inside of a 4 m slab you are standing in. "The translucent preview
+ * fills the screen rather than sitting on the ground where the thing will go"
+ * is exactly that, and the fallback distance is why: 6 m along a ray pointing
+ * at the sky is 6 m of air over your own head.
+ */
+export function aimHit(s: Structures, ray: { origin: Vec3d; dir: Vec3d }):
+{ p: Vec3d; found: boolean; overhead: boolean } {
   const o = ray.origin, d = ray.dir;
   let tGround = -1;
   for (let t = 0.6; t <= REACH_M; t += STEP_M) {
@@ -102,19 +164,95 @@ export function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec
     if (Math.hypot(x, y, z) <= s.groundRadius(x, y, z)) { tGround = t; break; }
   }
   const tSolid = s.bodies.rayHit(o, d, REACH_M, STEP_M);
-  let t = FALLBACK_M;
-  if (tGround >= 0 && tSolid >= 0) t = Math.min(tGround, tSolid);
-  else if (tGround >= 0) t = tGround;
-  else if (tSolid >= 0) t = tSolid;
-  return { x: o.x + d.x * t, y: o.y + d.y * t, z: o.z + d.z * t };
+  if (tGround >= 0 || tSolid >= 0) {
+    const raw = tGround >= 0 && tSolid >= 0 ? Math.min(tGround, tSolid)
+      : tGround >= 0 ? tGround : tSolid;
+    // PUSHED OUT TO ARM'S LENGTH, then dropped back onto the surface. Moving
+    // along the ray alone would lift the point off the ground as the pitch
+    // steepens, which trades one wrong preview for another; `fallbackOnGround`
+    // already knows how to put a point on the surface in the direction the
+    // player is facing, so a close hit reuses it rather than inventing a second
+    // projection.
+    if (raw < MIN_PLACE_M) {
+      return { p: fallbackOnGround(s, o, d), found: true,
+               overhead: overheadOf(o, d) };
+    }
+    return { p: { x: o.x + d.x * raw, y: o.y + d.y * raw, z: o.z + d.z * raw },
+             found: true, overhead: false };
+  }
+  return { p: fallbackOnGround(s, o, d), found: false,
+           overhead: overheadOf(o, d) };
+}
+
+/**
+ * GP-289. WHERE A BUILDING GOES WHEN THE AIM RAY HITS NOTHING, and it is ON THE
+ * GROUND rather than wherever the ray happened to be at six metres.
+ *
+ * THE MISS IS THE NORMAL CASE, WHICH IS THE PART THAT WAS NOT UNDERSTOOD. The
+ * march runs 24 m across a body 600 km in radius, so a ray anywhere near the
+ * horizontal never dips below the surface: measured on a fresh spawn looking at
+ * flat open ground, the foundation preview sat at 6.014 m, which is
+ * `FALLBACK_M` to the millimetre. It had NEVER been a hit. So the old fallback
+ * was not an edge case for a player staring at the sky, it was the ordinary
+ * path, and it worked by accident only while the camera was roughly level: at
+ * that pitch "six metres along the ray" and "six metres ahead on the ground"
+ * are nearly the same point, and they diverge exactly as the player looks up,
+ * until at full pitch the point is six metres above their own head and the
+ * DoubleSide preview they are standing inside becomes the whole viewport.
+ *
+ * The fix is to stop using the ray's own direction for the distance. Take the
+ * aim direction's component in the local TANGENT PLANE, step `FALLBACK_M` along
+ * that from under the eye, and put the result on the surface. It agrees with
+ * the old behaviour where the old behaviour was right, it is defined at every
+ * pitch, and it means the preview is on the ground by construction rather than
+ * by the player happening to look at it.
+ */
+/** How much heading the aim has, as sin(angle from the local vertical). */
+function overheadOf(o: Vec3d, d: Vec3d): boolean {
+  const up = new THREE.Vector3(o.x, o.y, o.z).normalize();
+  const tan = new THREE.Vector3(d.x, d.y, d.z);
+  tan.addScaledVector(up, -tan.dot(up));
+  return tan.length() < OVERHEAD_TAN;
+}
+
+function fallbackOnGround(s: Structures, o: Vec3d, d: Vec3d): Vec3d {
+  const up = new THREE.Vector3(o.x, o.y, o.z).normalize();
+  const fwd = new THREE.Vector3(d.x, d.y, d.z);
+  fwd.addScaledVector(up, -fwd.dot(up));
+  // STRAIGHT UP OR STRAIGHT DOWN has no heading of its own, so the ghost goes
+  // where the player is standing rather than in a direction invented here. Any
+  // invented direction would be a preview that moves when the camera passes
+  // through the pole, which is worse than one that sits at your feet.
+  if (fwd.lengthSq() < OVERHEAD_TAN * OVERHEAD_TAN) {
+    // STRAIGHT UP OR STRAIGHT DOWN HAS NO HEADING, and every answer here is a
+    // guess. Returning the player's own feet was the second wrong version of
+    // this fix: a 4 m slab centred where you stand is a slab you are inside,
+    // which is the very thing being fixed. The point is still returned so a
+    // caller has something, and `overhead` tells `BuildMode` to draw nothing.
+    const r0 = s.groundRadius(up.x, up.y, up.z);
+    return { x: up.x * r0, y: up.y * r0, z: up.z * r0 };
+  }
+  fwd.normalize();
+  const p = new THREE.Vector3(o.x, o.y, o.z)
+    .addScaledVector(fwd, Math.max(FALLBACK_M, MIN_PLACE_M));
+  p.normalize();
+  const r = s.groundRadius(p.x, p.y, p.z);
+  return { x: p.x * r, y: p.y * r, z: p.z * r };
+}
+
+/** The point alone, for callers that genuinely do not care. Unchanged. */
+export function aimPoint(s: Structures, ray: { origin: Vec3d; dir: Vec3d }): Vec3d {
+  return aimHit(s, ray).p;
 }
 
 /** Where a part would go and whether it would be accepted. */
 export function resolveTarget(s: Structures, kind: StructureKind,
                               ray: { origin: Vec3d; dir: Vec3d },
                               flip: number, freePlaced: boolean): StructureTarget {
-  const hit = aimPoint(s, ray);
-  if (freePlaced) return freeTarget(s, kind, hit, ray.dir, flip);
+  const aim = aimHit(s, ray);
+  const hit = aim.p;
+  if (freePlaced) return { ...freeTarget(s, kind, hit, ray.dir, flip),
+                           aimed: aim.found, overhead: aim.overhead };
   const site = s.nearestSite(hit) ?? s.prospectiveSite(hit);
   // GP-37. The bare grid answers first, then a socket is allowed to overrule it.
   // The grid is kept as the fallback rather than replaced, because a player
@@ -139,6 +277,7 @@ export function resolveTarget(s: Structures, kind: StructureKind,
     kind, site, addr, key: addrKey(site.id, addr), pos: a.pos, up: site.up.clone(),
     fwd: a.fwd, quat: orient(site.up, a.fwd), ok: true, reason: '',
     unevennessM: 0, freePlaced: false, snapped, carryRun: 0,
+    aimed: aim.found, overhead: aim.overhead,
   };
   if (s.has(t.key)) { t.ok = false; t.reason = 'already built here'; return t; }
   if (addr.level > MAX_LEVEL) { t.ok = false; t.reason = 'too high'; return t; }
@@ -264,6 +403,10 @@ function freeTarget(s: Structures, kind: StructureKind, hit: Vec3d, dir: Vec3d,
     pos: { x: up.x * r, y: up.y * r, z: up.z * r },
     up, fwd, quat: orient(up, fwd), ok: true, reason: '', unevennessM: 0,
     freePlaced: true, snapped: null, carryRun: 0,
+    // The caller overwrites this with the real answer; `true` here keeps
+    // `freeTarget` usable on its own and the spread in `resolveTarget` is what
+    // actually decides.
+    aimed: true, overhead: false,
   };
   // No cantilever off the grid: a carried deck is carried by an ADDRESS, and a
   // freely placed part has none, so there is nothing to be adjacent to.

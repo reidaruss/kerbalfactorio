@@ -29,7 +29,7 @@ import { linksBetween, machinePorts, portsOf, PORT_MATE_M,
 import { aimedAt, refusalFor } from './FactoryRefusal.js';
 import { orient } from './Grid.js';
 import type { BuildKind, Factory } from './Factory.js';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 
 /** Aim march: step and reach, in metres. */
 const STEP_M = 0.35;
@@ -44,6 +44,9 @@ export interface BuildRay {
 }
 
 export interface BuildTarget {
+  /** GP-289. FALSE when the aim ray hit nothing, so `pos` is a fallback point
+   *  in mid-air. Nothing may be DRAWN there: see `march`. */
+  aimed: boolean;
   pos: { x: number; y: number; z: number };
   up: THREE.Vector3;
   fwd: THREE.Vector3;
@@ -102,15 +105,35 @@ export interface BuildTarget {
 
 /** March the aim ray until it is below the LIVE ground. */
 function march(ground: (x: number, y: number, z: number) => number,
-               ray: BuildRay): { x: number; y: number; z: number } {
+               ray: BuildRay): { x: number; y: number; z: number; found: boolean } {
   const o = ray.origin, d = ray.dir;
   let hitT = -1;
   for (let t = 0.6; t <= REACH_M; t += STEP_M) {
     const x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;
     if (Math.hypot(x, y, z) <= ground(x, y, z)) { hitT = t; break; }
   }
-  const t = hitT < 0 ? FALLBACK_M : hitT;
-  return { x: o.x + d.x * t, y: o.y + d.y * t, z: o.z + d.z * t };
+  // GP-289. THE SAME DEFECT AS `StructurePlacement.aimHit`, in a second file,
+  // with a CLOSER fallback: 2.6 m along a ray pointing at the sky is 2.6 m
+  // above the player's own head, so a machine preview aimed at nothing sits
+  // even further inside the camera than a building's did. Found by sweeping the
+  // class after the structure one (WG-144's rule) rather than by a second
+  // report.
+  //
+  // The cure is the same and it is a POINT ON THE GROUND rather than a point
+  // along the ray: take the aim direction's component in the local tangent
+  // plane, step the fallback along that, and put it on the surface.
+  if (hitT >= 0) {
+    return { x: o.x + d.x * hitT, y: o.y + d.y * hitT, z: o.z + d.z * hitT,
+             found: true };
+  }
+  const up = new THREE.Vector3(o.x, o.y, o.z).normalize();
+  const fwd = new THREE.Vector3(d.x, d.y, d.z);
+  fwd.addScaledVector(up, -fwd.dot(up));
+  const p = new THREE.Vector3(o.x, o.y, o.z);
+  if (fwd.lengthSq() >= 1e-9) p.addScaledVector(fwd.normalize(), FALLBACK_M);
+  p.normalize();
+  const r = ground(p.x, p.y, p.z);
+  return { x: p.x * r, y: p.y * r, z: p.z * r, found: false };
 }
 
 /**
@@ -241,7 +264,7 @@ BuildTarget | null {
       reason = `${ratePerSec.toFixed(1)} ore/s here`;
     }
   }
-  return { pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr,
+  return { aimed: hp.found, pos: s.pos, up: s.up, fwd, cell: s.cell, addr: s.addr,
     prospective: s.addr.prospective, snapped, hit, chains, ok, reason, patch,
     ratePerSec, ports: ok ? portPreview(f, kind, s.pos, s.up, fwd) : '' };
 }

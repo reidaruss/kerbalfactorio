@@ -32,6 +32,7 @@
 import { enemyAbi, EnEvolution, EnPollution, EnThreat, EnWave, EN_EVOLUTION_WORDS,
   EN_POLLUTION_WORDS, EN_THREAT_WORDS, EN_WAVE_WORDS } from '../sim/wasm/enemyabi.js';
 import { scratchF64, type OfCoreModule } from '../sim/wasm/heap.js';
+import { livingThingRefusedOn } from './StarterContent.js';
 
 export interface Vec3 { x: number; y: number; z: number }
 
@@ -133,6 +134,18 @@ export class EnemyLoop {
   wavesDispatched = 0;
   /** DW-28: rows the sync wanted and /core refused. Must be 0. */
   emitterRefusals = 0;
+  /**
+   * GP-287. '' when this world may carry native life. Otherwise the sentence
+   * saying why it may not, in the invariant's own words.
+   *
+   * REFUSED AND NAMED, never silently zero. A world that seeded no nests and
+   * said nothing is indistinguishable from one whose ring happened to be empty
+   * and from one where `of_en_add_nest` refused four times, and this project
+   * has already paid for that ambiguity once: `emitterRefusals` exists because
+   * a ring that quietly placed three of four nests looks exactly like a world
+   * that is simply quiet.
+   */
+  lifeRefusedWhy = '';
 
   constructor(private readonly M: OfCoreModule,
               private readonly bodyRadiusM: number) {}
@@ -154,8 +167,20 @@ export class EnemyLoop {
    * maxNests ceiling is binding, and a ring that quietly placed three of four
    * nests would look exactly like a world that is simply quiet.
    */
-  seedNests(spawnDir: Vec3, seed: number): number {
+  seedNests(spawnDir: Vec3, seed: number, bodyId: number): number {
     if (!this.ready) return 0;
+    // GP-287. NOTHING THAT BREATHES GOES ON A BODY WITH NO AIR, and the test is
+    // the same one that refuses a tree. Before this there was no body test of
+    // ANY kind here, so Cinder had four nests for exactly the reason Forge
+    // does: nobody had asked. The check is inside the verb rather than at its
+    // call site, so a second caller cannot arrive without it.
+    this.lifeRefusedWhy = livingThingRefusedOn(this.M, bodyId,
+                                               'a nest of native creatures');
+    if (this.lifeRefusedWhy !== '') {
+      this.nestsSeeded = 0;
+      this.nests = [];
+      return 0;
+    }
     const E = enemyAbi(this.M);
     const d = norm(spawnDir);
     let made = 0;
