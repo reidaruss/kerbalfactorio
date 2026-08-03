@@ -11,6 +11,8 @@
 // what is in hand, what a click means, and who pays.
 import * as THREE from 'three';
 import { VabPanel } from '../ui/VabPanel.js';
+import { VabDestination } from '../ui/VabDestination.js';
+import { VabDest } from './VabDest.js';
 import type { ModalStack } from '../ui/ModalStack.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import { ATTACH_RADIAL } from '../sim/wasm/vesselabi.js';
@@ -64,6 +66,8 @@ export class Vab {
   readonly panel: VabPanel;
   readonly pointer: VabPointer;
   readonly catalogue: PartRow[];
+  readonly dest: VabDest;
+  readonly destView: VabDestination;
 
   open = false;
   hand: PartRow | null = null;
@@ -120,6 +124,20 @@ export class Vab {
       exit: () => this.leave(),
     });
     this.panel.closer = () => this.leave();
+    // GP-264/GP-265. The destination block mounts into the panel's right rail
+    // and keeps its own state, because a chosen destination is not a property
+    // of the design and must survive every rebuild of it.
+    this.dest = new VabDest({
+      M: d.M, body: d.body,
+      designHandle: () => this.design.handle,
+      parts: () => this.design.parts,
+      catalogueIds: () => this.catalogue.map((p) => p.id),
+      dvAvailableMS: () => this.design.stats.totalDeltaV,
+    });
+    this.destView = new VabDestination(this.panel.root, {
+      select: (id) => { this.dest.select(id); this.render(); },
+      setOrbit: (a, i) => { this.dest.setOrbit(a, i); this.render(); },
+    });
   }
 
   static async create(d: VabDeps): Promise<Vab> {
@@ -386,6 +404,7 @@ export class Vab {
                (p) => this.costText(p), (p) => this.canAfford(p)),
       stageRows(this.design.stages, v), this.design.stats,
       store.listDesigns(), this.symmetry, this.message, v);
+    this.destView.render(this.dest.state());
   }
 
   // --- what a probe reads. The bodies live in VabReport.ts ------------------

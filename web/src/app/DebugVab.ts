@@ -94,6 +94,26 @@ export function vabApi(s: Services): VabDebugApi {
         // assertion is against the screen and not against a second copy of the
         // sentence the client composed (the GP-64 rule, as `verdictBand` does).
         case 'line': return { text: v.panel.messageText };
+        // GP-266. The destination block AS DRAWN, read back off the elements,
+        // beside the model's own numbers. Both, deliberately: a screen agreeing
+        // with itself proves nothing, and the pair is what catches a painter
+        // that stopped repainting (GP-136's third defect).
+        case 'dest': return {
+          drawn: {
+            gate: v.destView.gateText,
+            verdict: v.destView.verdictText,
+            rowIds: v.destView.rowIds,
+            blockedRowIds: v.destView.blockedRowIds,
+            selectedRowId: v.destView.selectedRowId,
+            altBox: v.destView.altInput.value,
+            incBox: v.destView.incInput.value,
+            orbitBoxesShown: v.destView.root
+              .querySelector('.of-vdorbit')?.classList.contains('on') === true,
+            reachText: v.destView.root
+              .querySelector('.of-vdreach')?.textContent ?? '',
+          },
+          model: v.dest.report(),
+        };
         // GP-148. What the last root normalisation did, so a probe asserts
         // against the OPERATION and not only against its side effects.
         case 'reroot': {

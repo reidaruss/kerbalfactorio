@@ -47,6 +47,8 @@ export function vabReport(v: Vab): unknown {
     enters: v.enters, handStaged: v.handStaged, reframes: v.reframes,
     rollOutsRefused: v.rollOutsRefused, rollOutsForced: v.rollOutsForced,
     rollOutArmed: v.rollOutArmed, verdict: v.verdict,
+    // GP-265. The destination choice and the reach verdict, in /core's units.
+    destination: v.dest.report(),
     parts: v.design.parts.map((p) => ({
       handle: p.handle, partId: p.partId, parent: p.parent,
       attach: p.attach, stage: p.stage, origin: p.originM,

@@ -463,3 +463,105 @@
 
 #of-vab .of-vparts::-webkit-scrollbar-track,
 #of-vab .of-vstages::-webkit-scrollbar-track { background: transparent; }
+
+/* --- GP-264: the destination block, in the right rail -------------------- */
+#of-vab .of-vdwrap { display: block; }
+
+#of-vab .of-vdest {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The LIST scrolls, not the block: the gate and the verdict must stay on
+   screen whatever is in the list, which is the defect the first screenshot
+   showed (REACH PENDING cut off at the rail's bottom edge). */
+#of-vab .of-vdrows { max-height: 22vh; overflow-y: auto; }
+
+#of-vab .of-vdgate > div {
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 4px 6px;
+  border-radius: 3px;
+  border: 1px solid #2c353d;
+}
+
+#of-vab .of-vdgate > div.ok { color: var(--of-good); border-color: #24402c; }
+#of-vab .of-vdgate > div.warn { color: var(--of-warn); border-color: #40391f; }
+
+#of-vab .of-vdrows { display: flex; flex-direction: column; gap: 3px; }
+
+#of-vab .of-vdrows::-webkit-scrollbar { width: 8px; }
+#of-vab .of-vdrows::-webkit-scrollbar-thumb {
+  background: #2c353d;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+#of-vab .of-vdrows::-webkit-scrollbar-track { background: transparent; }
+
+#of-vab .of-vdrow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 4px 6px;
+  color: var(--of-fg);
+  background: #171d23;
+  border: 1px solid #2c353d;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+
+#of-vab .of-vdrow:hover { border-color: #47555f; }
+#of-vab .of-vdrow.sel { border-color: var(--of-accent); background: #1d2833; }
+#of-vab .of-vdrow.blocked { opacity: 0.55; }
+
+#of-vab .of-vdrow .top { display: flex; justify-content: space-between; gap: 6px; }
+#of-vab .of-vdrow .nm { font-size: 12px; }
+#of-vab .of-vdrow .kind { font-size: 10px; color: var(--of-dim); text-transform: uppercase; }
+#of-vab .of-vdrow .det { font-size: 10px; color: var(--of-dim); line-height: 1.3; }
+
+#of-vab .of-vdorbit { display: none; gap: 8px; padding: 2px 6px; }
+#of-vab .of-vdorbit.on { display: flex; }
+#of-vab .of-vdorbit label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--of-dim); }
+#of-vab .of-vdorbit input {
+  width: 56px;
+  padding: 2px 4px;
+  color: var(--of-fg);
+  background: #101418;
+  border: 1px solid #2c353d;
+  border-radius: 2px;
+  font: inherit;
+  font-size: 11px;
+}
+#of-vab .of-vdorbit i { font-style: normal; font-size: 10px; }
+
+#of-vab .of-vdband {
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  border: 1px solid #2c353d;
+}
+#of-vab .of-vdband.ok { color: var(--of-good); border-color: #24402c; background: #14251a; }
+#of-vab .of-vdband.bad { color: var(--of-bad); border-color: #43222a; background: #241418; }
+#of-vab .of-vdband.pend { color: var(--of-warn); border-color: #40391f; background: #232014; }
+#of-vab .of-vdband.none { color: var(--of-dim); }
+
+#of-vab .of-vdline { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; padding: 0 6px; }
+#of-vab .of-vdline em { font-style: normal; color: var(--of-dim); }
+#of-vab .of-vdline.leg em { padding-left: 8px; opacity: 0.8; }
+#of-vab .of-vdline.leg b { opacity: 0.8; }
+#of-vab .of-vdline.ok b { color: var(--of-good); }
+#of-vab .of-vdline.bad b { color: var(--of-bad); }
+#of-vab .of-vdline.src b { color: var(--of-accent); }
+
+#of-vab .of-vdest .note {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--of-dim);
+  padding: 2px 6px;
+}
+#of-vab .of-vdest .none { font-size: 11px; color: var(--of-dim); padding: 4px 6px; }
