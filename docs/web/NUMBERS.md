@@ -763,3 +763,50 @@ granularity of the conflicts it can prevent.** File paths cannot protect a file.
 change produces the broken state you were trying to avoid. If the two halves
 cannot be separated, they cannot be committed separately either. Stop and
 escalate rather than choosing which half to ship.
+
+### A sentence in a comment is not an invariant
+
+An asset file asserted, in prose, that a cuff's first ring inradius swallows the
+skin band's circumradius. **It was true when it was written.** Months later a
+change to a neighbouring proportion broke it, and **the bare wrist burst out of
+the cuff as an orange collar.** One line below, knuckle plates sat at a typed
+`z` tuned against the old palm thickness; against the new palm they would have
+**floated 15 mm above it**.
+
+**Two latent traps, both armed by a change that had nothing to do with either,
+both documented in prose, neither checked by anything.** The render caught the
+first immediately. Nothing would have caught the second.
+
+The same file had already produced a second instance of the same thing that
+morning: a docstring justifying two LOD thresholds with the numbers 52 mm and
+163 mm, where the measured values are **139.87 mm and 278.37 mm**. **A comment
+that justifies a number is a number nobody is checking**, and the next person
+reasons from it.
+
+**The rule.** When you write down a relationship between two authored values,
+either **derive one from the other** or **assert it in the build**. Prose is for
+the reason, never for the constraint. A relationship that matters enough to
+explain matters enough to fail.
+
+The tell that you are about to do this: any comment containing "so that",
+"which means", "hence", or a number that appears nowhere in the code beneath it.
+
+### Measure the authored table, not the picture
+
+The same pass found that a hand's five finger tubes were **one fused solid**.
+Two circles are separate only when their centres are further apart than the
+**sum** of their radii, and every adjacent pair overlapped: 12.0 mm, 18.5 mm,
+16.0 mm. **The hand could not show a gap between two fingers at any pose, from
+any camera, under any lighting.**
+
+An earlier pass had looked at the same complaint and fixed the colour, the
+distance and the finger *count*. All three were real defects. **The section was
+the mitten**: a palm authored 130 x 86 mm at 1.5:1 against a real hand's roughly
+90 x 28 at 3.2:1, with 43 mm fingers against a real 18 to 20.
+
+**A frame shows you a symptom and every plausible cause for that symptom is
+wrong.** The webbing looked like missing detail and was tube intersection. The
+mitten looked like a modelling style and was two numbers in a table.
+
+**When an art complaint survives a pass that addressed it, stop looking at the
+render and go read the numbers the asset was built from.**
