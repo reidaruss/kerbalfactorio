@@ -78,6 +78,191 @@ RUN_CLIP_MPS = 4.5
 
 
 # ---------------------------------------------------------------------------
+# THE HELMET AND ITS VISOR. RN-900 and RN-901.
+#
+# Every number the two parts share lives here, because the failure this section
+# is fixing was three parts each authored against a snapshot of the others.
+# ---------------------------------------------------------------------------
+
+# The aperture cut in the shell. The shell is built as TWO tubes with a rear
+# filler band between them, so the hole is real geometry rather than paint.
+APERTURE_LO, APERTURE_HI = 1.616, 1.716
+# The rear filler's azimuth span, degrees, 0 along +X and -90 straight ahead.
+FILLER_A0, FILLER_A1 = -34.0, 214.0
+# The pane. It reaches 4 mm past the aperture at top and bottom so it laps
+# onto the shell rather than meeting it on a plane.
+PANE_A0, PANE_A1 = -150.0, -30.0
+PANE_R_IN, PANE_R_OUT = 0.120, 0.133
+PANE_LO, PANE_HI = APERTURE_LO - 0.004, APERTURE_HI + 0.004
+# The head inside the helmet. Its widest corner has to clear the pane's inner
+# wall, or the face pokes through its own visor.
+FACE_LO, FACE_HI = 1.612, 1.714
+
+
+def _assert_visor_is_a_window():
+    """The three properties that make a pane of glass a visor and not a decal.
+
+    MEASURED ON THE SHIPPED ASSET, 2026-08-03, and every one of them failed:
+
+      1. THE PANE HAD NOTHING BEHIND IT. It was an arc band spanning r 0.118
+         to 0.136 laid over a SOLID barrel of radius 0.125, so radially the
+         first opaque thing under the glass was the barrel itself, 5 mm in.
+         A 0.35-alpha pane over an opaque wall is a tinted decal, and the
+         render showed the shell's own weave straight through the visor.
+      2. THE FACE WAS NOWHERE NEAR IT. The one OF_Skin part inside the helmet
+         was a box spanning z 1.5175 to 1.5725. The pane spanned 1.6225 to
+         1.6975. The face sat 50.0 mm BELOW the bottom edge of the visor and
+         could not be seen through it from any camera at any angle. It was
+         not even inside the shell: its front corners stood at radius 0.1145
+         against a shell radius of 0.107 at that height, so what it actually
+         contributed to the render was a pale lump poking out under the chin.
+      3. THERE WAS NO CLOSURE PROPERTY AT ALL, because there was no hole.
+         Cutting a real aperture creates a way to leave a slot open, and an
+         open slot lets the camera see the SKY THROUGH THE HEAD: the far wall
+         of the shell is backface-culled, so nothing stops the ray. The rear
+         filler and the pane therefore have to overlap at BOTH ends and at
+         top and bottom, and that is checked here rather than asserted in a
+         comment.
+    """
+    # 1. the pane must span the whole aperture, so no sliver of hole is bare
+    if not (PANE_LO < APERTURE_LO and PANE_HI > APERTURE_HI):
+        raise ValueError(
+            "the pane spans z %.4f..%.4f and the aperture %.4f..%.4f: a strip "
+            "of the hole has no glass in it and the camera sees through the "
+            "head" % (PANE_LO, PANE_HI, APERTURE_LO, APERTURE_HI))
+    # 2. the face must be visible through the aperture, i.e. overlap it in z
+    overlap = min(APERTURE_HI, FACE_HI) - max(APERTURE_LO, FACE_LO)
+    if overlap < 0.060:
+        raise ValueError(
+            "the face spans z %.4f..%.4f and the aperture %.4f..%.4f: they "
+            "share %.1f mm, which is not a face in a window"
+            % (FACE_LO, FACE_HI, APERTURE_LO, APERTURE_HI, overlap * 1000.0))
+    # 3. filler + pane must cover every azimuth, with overlap at both ends.
+    #    The filler runs FILLER_A0 -> FILLER_A1 the long way round the back,
+    #    so the hole is the arc from FILLER_A1 forward to FILLER_A0 + 360.
+    hole_lo, hole_hi = FILLER_A1, FILLER_A0 + 360.0
+    pane_lo, pane_hi = PANE_A0 + 360.0, PANE_A1 + 360.0
+    lap_lo, lap_hi = hole_lo - pane_lo, pane_hi - hole_hi
+    if lap_lo <= 0.0 or lap_hi <= 0.0:
+        raise ValueError(
+            "the shell is open from %.1f to %.1f degrees and the pane covers "
+            "%.1f to %.1f: the overlaps are %+.1f and %+.1f degrees, and a "
+            "negative one is a slot the camera sees the sky through"
+            % (hole_lo, hole_hi, pane_lo, pane_hi, lap_lo, lap_hi))
+    return overlap, lap_lo, lap_hi
+
+
+_VISOR_FIT = _assert_visor_is_a_window()
+
+
+# ---------------------------------------------------------------------------
+# THE HAND. RN-902.
+#
+# The section is rig_common's, shared with the first-person hand, because the
+# two are the same character's hand and RN-857 fixed only one of them.
+# ---------------------------------------------------------------------------
+
+HAND_HALF_W, HAND_HALF_T = rc.HAND_HALF_W, rc.HAND_HALF_T
+
+# The palm's centreline, cuff mouth to nose, for the character's LEFT hand.
+# `y` drifts positive along it because a hand cants slightly rearward off the
+# forearm; the profile multipliers are rig_common's, so the taper is the same
+# taper the view model has.
+_PALM = ((0.688, 0.000, 1.4506),
+         (0.724, 0.008, 1.4502),
+         (0.760, 0.016, 1.4496),
+         (0.798, 0.024, 1.4488),
+         (0.828, 0.030, 1.4480))
+_KNUCKLE = 3           # index into _PALM of the knuckle line
+
+# One row per finger: (name, offset ACROSS the hand from the palm centreline,
+# radius, tip x). The offsets are in y, which is the hand's width axis, and the
+# radii are a padded glove's - about 21 mm across a finger against a bare adult
+# finger's 18 to 20.
+_FINGERS = (("Index",  -0.035, 0.0112, 0.891),
+            ("Middle", -0.011, 0.0112, 0.899),
+            ("Ring",    0.013, 0.0104, 0.892),
+            ("Little",  0.036, 0.0092, 0.873))
+
+
+def _palm_at(x):
+    """(y, z) of the palm centreline at this x, by linear interpolation."""
+    for (x0, y0, z0), (x1, y1, z1) in zip(_PALM, _PALM[1:]):
+        if x <= x1 or (x1, y1, z1) == _PALM[-1]:
+            t = (x - x0) / (x1 - x0)
+            return y0 + (y1 - y0) * t, z0 + (z1 - z0) * t
+    raise AssertionError
+
+
+def _assert_body_fingers():
+    """No two finger tubes may intersect at the knuckle line.
+
+    THE SHIPPED HAND FAILED THIS AT EVERY ADJACENT PAIR. Two circles are
+    separate only when their centres are further apart than the SUM of their
+    radii, and measured off the old table at the second ring:
+
+        Index    to Middle-1   centres 31.1 mm apart, radii sum 42.0  -10.94
+        Middle-1 to Middle-2   centres 28.0 mm apart, radii sum 40.5  -12.50
+        Middle-2 to Middle-3   centres 26.0 mm apart, radii sum 36.5  -10.50
+
+    so the four tubes were ONE FUSED SOLID and the hand could not show a gap
+    between two fingers at any pose, from any camera, under any lighting. It
+    is the identical defect RN-857 found in the view model, still live in the
+    third-person body a week later, on a table nobody had re-read.
+
+    This is the same check rig_common._assert_fp_fingers runs, applied to the
+    other hand. Written as an assertion and not as a comment for the reason
+    NUMBERS.md gives: the numbers are close enough that a later nudge re-fuses
+    them without anything looking obviously wrong in the source."""
+    rows = sorted(((n, dy, r) for n, dy, r, _t in _FINGERS), key=lambda t: t[1])
+    gaps = []
+    for (na, ya, ra), (nb, yb, rb) in zip(rows, rows[1:]):
+        gap = abs(yb - ya) - (ra + rb)
+        if gap <= 0.0:
+            raise ValueError(
+                "body fingers %s and %s intersect: centres %.1f mm apart, "
+                "radii sum %.1f mm. The hand cannot show a gap between them."
+                % (na, nb, abs(yb - ya) * 1000.0, (ra + rb) * 1000.0))
+        gaps.append(gap)
+    # and the four of them together have to fit on the knuckle line they sit on
+    span = (rows[-1][1] + rows[-1][2]) - (rows[0][1] - rows[0][2])
+    if span > 2.0 * HAND_HALF_W:
+        raise ValueError(
+            "the fingers span %.1f mm across a knuckle line %.1f mm wide"
+            % (span * 1000.0, 2.0 * HAND_HALF_W * 1000.0))
+    return gaps, span
+
+
+_FINGER_GAPS, _FINGER_SPAN = _assert_body_fingers()
+
+# The cuff ring the palm emerges from, at the wrist. Its radius is here and
+# not typed at the call site because the palm's first ring has to fit inside
+# it, and that is exactly the relationship that fired on the view model in
+# RN-857: a proportion change took the glove mouth below the skin tube's typed
+# radius and the bare wrist burst out of the cuff as an orange collar. That
+# file said so in a comment and nothing checked it.
+CUFF_R = 0.058
+
+
+def _assert_palm_clears_the_cuff():
+    """The cuff ring must swallow the palm's first ring.
+
+    The ellipse's binding dimension is its LONG axis, because that is the part
+    that pokes out first."""
+    mouth = max(rc.PALM_PROFILE_T[0] * HAND_HALF_T,
+                rc.PALM_PROFILE_W[0] * HAND_HALF_W)
+    if mouth >= CUFF_R:
+        raise ValueError(
+            "the palm's first ring reaches %.4f and the cuff ring is %.4f: "
+            "the hand comes out through the side of its own cuff"
+            % (mouth, CUFF_R))
+    return CUFF_R - mouth
+
+
+_CUFF_CLEARANCE = _assert_palm_clears_the_cuff()
+
+
+# ---------------------------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------------------------
 
@@ -160,21 +345,62 @@ def build_mesh(name, arm):
                role=DARK)
 
     # --- the accent stripe, shoulder to hip, following the torso taper so it
-    # never floats off the surface ---
+    # never floats off the surface. RN-904 NARROWS IT from 76 mm to 34 mm.
+    # It was a 76 mm wide band of 2E7DBE running the full height of the torso
+    # on both sides, and together with the two pauldrons it made a saturated
+    # primary the dominant hue of the whole character. A suit has an index
+    # stripe; it does not have a racing livery.
     mb.bind(["Hips", "Spine", "Spine1", "Spine2"])
     for _, s in SIDES:
-        mb.add_raw(*rc.stack([((s * 0.150, -0.050, 1.000), 0.012, 0.038),
-                              ((s * 0.178, -0.050, 1.220), 0.012, 0.038),
-                              ((s * 0.196, -0.050, 1.420), 0.012, 0.038)]),
+        mb.add_raw(*rc.stack([((s * 0.150, -0.050, 1.000), 0.012, 0.017),
+                              ((s * 0.178, -0.050, 1.220), 0.012, 0.017),
+                              ((s * 0.196, -0.050, 1.420), 0.012, 0.017)]),
                    role=ACC)
 
     for pre, s in SIDES:
-        # shoulder pad, sized to sit ON the thickened upper arm rather than
-        # inside it
+        # THE PAULDRON. RN-904, and it carried two defects that the direction
+        # names in so many words.
+        #
+        # ROLE. It was OF_SuitAccent, which is 2E7DBE: a saturated primary
+        # blue, on `panel`. RN-645 removed exactly this colour from exactly
+        # this character six days ago and wrote down why - "value and material
+        # contrast do the work rather than hue" - and then reduced a 150 mm
+        # slab of it to a 6 mm index stripe. Two 200 mm pads of the same blue
+        # survived on the body, and in a front render they are the loudest
+        # thing on the asset. A shoulder pad on a pressure suit is a HARD
+        # PAULDRON, so it is OF_Plate and wears `suitplate` like the helmet it
+        # sits under: same argument, one part over.
+        #
+        # FORM. Three rings of an eight-sided extruded tube, symmetric about
+        # its middle ring, smooth shaded. ART-DIRECTION.md rules out
+        # "smooth-shaded, unweathered, symmetric forms" directly, and the
+        # render showed the failure mode precisely: eight facets 45 degrees
+        # apart under a smooth normal read as folded paper rather than as a
+        # shell. Ten sides, flat shaded, and an asymmetric profile - the crown
+        # is inboard of centre and the outboard end drops further than the
+        # inboard one, which is what a pauldron does because a shoulder is not
+        # symmetric either.
         mb.bind([pre + "Shoulder", pre + "Arm"])
-        mb.add_raw(*rc.tube([(s * 0.130, 0, 1.430), (s * 0.180, 0, 1.462),
-                             (s * 0.235, 0, 1.436)],
-                            [0.100, 0.106, 0.092], seg=8), role=ACC)
+        mb.add_raw(*rc.tube([(s * 0.126, 0.004, 1.427),
+                             (s * 0.170, 0.000, 1.464),
+                             (s * 0.212, -0.004, 1.455),
+                             (s * 0.246, -0.002, 1.428)],
+                            [0.101, 0.109, 0.101, 0.087], seg=10,
+                            smooth_sides=False), role=PLATE)
+        # The rolled rim at the outboard edge, and the reason it is a separate
+        # part is silhouette: an edge that steps has an outline, and an edge
+        # that tapers to nothing has none.
+        mb.add_raw(*rc.tube([(s * 0.238, -0.002, 1.433),
+                             (s * 0.258, -0.001, 1.426)],
+                            [0.093, 0.083], seg=10, smooth_sides=False),
+                   role=DARK)
+        # What survives of the accent: an index band at the pauldron's root,
+        # 12 mm of the colour instead of 200. Same move RN-645 made on the
+        # wrist ring, for the same reason.
+        mb.add_raw(*rc.tube([(s * 0.124, 0.004, 1.426),
+                             (s * 0.136, 0.003, 1.436)],
+                            [0.103, 0.104], seg=10, smooth_sides=False),
+                   role=ACC)
         # arm: ONE tube shoulder to wrist, with a ring exactly on the elbow.
         # Thicker at the shoulder than it was (0.078 -> 0.088), because a thin
         # tube hanging off a boxy torso is the proportion that read wrong.
@@ -195,63 +421,187 @@ def build_mesh(name, arm):
         mb.add_raw(*of.cyl_data(0.076, 0.050, (s * 0.450, 0, 1.45), "X", 10),
                    role=DARK)
 
-        # --- the hand. A palm is roughly twice as wide as it is thick, and a
-        # round one can never read as a hand from any angle: the old glove was
-        # a 0.105 x 0.095 box with three finger blocks and it read as a mitt in
-        # first person AND at 5 m in third. So: an elliptical palm widening to
-        # a knuckle line, a proud knuckle plate, four separate finger tubes and
-        # a thumb, on the same three frozen bone chains. The Middle chain
-        # carries three finger tubes; a tube offset from the chain it is
-        # whitelisted to still curls with it, so this costs no bones.
+        # --- the hand. RN-902, AND IT IS THE FIRST-PERSON HAND'S OWN DEFECT,
+        # STILL LIVE HERE. The section was authored 144 mm across and 94 mm
+        # thick at the knuckle line, a 1.53:1 ratio, against a real adult
+        # hand's 90 x 28 at 3.2:1. RN-857 had condemned the view model's palm
+        # at 130 x 86 and 1.5:1 as "the mitten" six days earlier; this one is
+        # 14 mm WIDER and 8 mm THICKER than the thing that was removed.
+        #
+        # And the four finger tubes were ONE FUSED SOLID. Two circles are
+        # separate only when their centres are further apart than the SUM of
+        # their radii, and every adjacent pair failed it by 8.7 to 12.5 mm, so
+        # the hand could not show a gap between two fingers at any pose, from
+        # any camera, under any lighting. The render agrees: the only breaks
+        # visible in the shipped glove are where the tubes END at different x.
+        #
+        # NEITHER WAS VISIBLE IN A FRAME AND BOTH WERE OBVIOUS IN THE TABLE,
+        # which is the whole reason this pass measured the table first. The
+        # section now comes from rig_common, shared with the view model, and
+        # `_assert_body_fingers` runs at import so a build that re-fuses them
+        # fails in the build rather than in a render nobody happens to look at.
         mb.bind([pre + "ForeArm", pre + "Hand"])
-        mb.add_raw(*of.cyl_data(0.058, 0.028, (s * 0.700, 0, 1.45), "X", 10),
+        mb.add_raw(*of.cyl_data(CUFF_R, 0.028, (s * 0.700, 0, 1.45), "X", 10),
                    role=ACC)
-        mb.add_raw(*rc.oval_tube([(s * 0.688, 0.000, 1.450),
-                                  (s * 0.735, 0.012, 1.450),
-                                  (s * 0.785, 0.022, 1.449),
-                                  (s * 0.818, 0.026, 1.448)],
-                                 [0.050, 0.050, 0.047, 0.040],
-                                 [0.054, 0.066, 0.072, 0.064], seg=8),
-                   role=GLOVE)
-        mb.bind([pre + "Hand"])
-        mb.add_raw(*rc.oval_tube([(s * 0.748, 0.014, 1.482),
-                                  (s * 0.788, 0.022, 1.485),
-                                  (s * 0.818, 0.026, 1.481)],
-                                 [0.016, 0.017, 0.013],
-                                 [0.056, 0.062, 0.054], seg=6), role=PLATE)
-        # thumb: already on its own axis in the frozen rig (it runs +X and -Y
-        # while the fingers run +X flat), which is exactly what makes it read
-        mb.bind([pre + "Hand"] + rc.finger_bones(pre, ["Thumb"]))
-        mb.add_raw(*rc.tube([(s * 0.752, -0.029, 1.436),
-                             (s * 0.800, -0.045, 1.432),
-                             (s * 0.838, -0.056, 1.429),
-                             (s * 0.868, -0.062, 1.427)],
-                            [0.022, 0.024, 0.022, 0.019], seg=6), role=GLOVE)
-        mb.bind([pre + "Hand"] + rc.finger_bones(pre, ["Index"]))
-        mb.add_raw(*rc.tube([(s * 0.782, -0.012, 1.453),
-                             (s * 0.830, -0.011, 1.450),
-                             (s * 0.868, -0.010, 1.447),
-                             (s * 0.898, -0.010, 1.445)],
-                            [0.020, 0.021, 0.019, 0.016], seg=6), role=GLOVE)
-        mb.bind([pre + "Hand"] + rc.finger_bones(pre, ["Middle"]))
-        for dy, rad, tip in ((0.018, 0.021, 0.898), (0.046, 0.0195, 0.884),
-                             (0.072, 0.017, 0.856)):
-            mb.add_raw(*rc.tube([(s * 0.782, dy, 1.451),
-                                 (s * 0.830, dy + 0.002, 1.448),
-                                 (s * ((0.830 + tip) * 0.5), dy + 0.003, 1.446),
-                                 (s * tip, dy + 0.004, 1.444)],
-                                [rad * 0.95, rad, rad * 0.9, rad * 0.8], seg=6),
-                       role=GLOVE)
+        palm_t = [t * HAND_HALF_T for t in rc.PALM_PROFILE_T]
+        palm_w = [w * HAND_HALF_W for w in rc.PALM_PROFILE_W]
+        mb.add_raw(*rc.oval_tube([(s * p[0], p[1], p[2]) for p in _PALM],
+                                 palm_t, palm_w, seg=8), role=GLOVE)
 
-    # --- helmet: chamfered cylinder, ring, wide visor band, lamp, comm fin ---
+        # THE KNUCKLE GUARD, FOUR PLATES AND NOT ONE, and both numbers that
+        # place them are derived rather than typed. RN-646 killed two versions
+        # of this on the view model and the lessons transfer exactly: a plate
+        # is FLAT (a near-round section reads as a claw, not a guard), and a
+        # constant tuned against another part's dimension is only correct
+        # until that dimension moves. The old single slab sat at a typed
+        # z = 1.485 against a palm half-thickness of 0.047; against the
+        # corrected 0.021 palm the same number would have left it floating.
+        mb.bind([pre + "Hand"])
+        kx, (ky, kz) = _PALM[_KNUCKLE][0], _PALM[_KNUCKLE][1:]
+        plate_z = kz + HAND_HALF_T - 0.0015
+        for _name, dy, frad, _tip in _FINGERS:
+            hw, ht = frad * 0.94, 0.0052
+            c = (s * kx, ky + dy, plate_z)
+            a = (s * (kx - 0.012), c[1], plate_z - 0.0022)
+            b = (s * (kx + 0.013), c[1], plate_z - 0.0019)
+            mb.add_raw(*rc.oval_tube([a, c, b],
+                                     [ht * 0.80, ht, ht * 0.72],
+                                     [hw * 0.88, hw, hw * 0.80], seg=6),
+                       role=PLATE)
+
+        # thumb: already on its own axis in the frozen rig (it runs +X and -Y
+        # while the fingers run +X flat), which is exactly what makes it read.
+        # Thinned with the rest of the hand: it was 48 mm across at its widest
+        # against a real gloved thumb's 26.
+        mb.bind([pre + "Hand"] + rc.finger_bones(pre, ["Thumb"]))
+        mb.add_raw(*rc.tube([(s * 0.742, -0.026, 1.4448),
+                             (s * 0.786, -0.040, 1.4420),
+                             (s * 0.818, -0.050, 1.4400),
+                             (s * 0.844, -0.058, 1.4384)],
+                            [0.0128, 0.0134, 0.0122, 0.0102], seg=6),
+                   role=GLOVE)
+
+        # Four fingers on TWO bone chains. The Middle chain carries three of
+        # them, offset across the knuckle line, so the hand has four fingers
+        # in silhouette and the rig still has its frozen 44 bones: a tube
+        # offset from the chain it is whitelisted to still curls with it.
+        for i, (_name, dy, frad, tip) in enumerate(_FINGERS):
+            chain = "Index" if i == 0 else "Middle"
+            mb.bind([pre + "Hand"] + rc.finger_bones(pre, [chain]))
+            root_x, knuck_x = 0.780, 0.822
+            ry, rz = _palm_at(root_x)
+            ny, nz = _palm_at(knuck_x)
+            mid = (knuck_x + tip) * 0.5
+            # the finger droops as it goes out, which is what gives the hand a
+            # knuckle line instead of four spikes
+            mb.add_raw(*rc.tube([(s * root_x, ry + dy, rz + 0.0008),
+                                 (s * knuck_x, ny + dy, nz - 0.0010),
+                                 (s * mid, ny + dy + 0.001, nz - 0.0032),
+                                 (s * tip, ny + dy + 0.002, nz - 0.0058)],
+                                [frad * 0.94, frad, frad * 0.90, frad * 0.82],
+                                seg=6), role=GLOVE)
+
+    # --- helmet. RN-900: IT IS A HARD SHELL AND IT WAS WEARING THE SUIT'S
+    # CLOTH FAMILY. That is a ROLE-TO-FAMILY ERROR, not a styling preference,
+    # and it is the same class as everything else that has cost this project
+    # time: a thing that is one kind, described to the renderer as another
+    # kind, running cleanly and looking plausible.
+    #
+    # The barrel was painted OF_Suit. `Suit` is bound to `suitfab` in texgen's
+    # ROLE_FAMILY, and `suitfab` is a WOVEN PRESSURE GARMENT: a 3.3 mm thread
+    # pitch, a weave normal and a fabric ORM. So a rigid pressure vessel was
+    # being rendered as cloth, and the render is unambiguous about it - the
+    # head is a knitted beanie.
+    #
+    # THE FAMILY IS CHOSEN FROM `suitplate`'s OWN STATED PURPOSE rather than
+    # from taste. texgen.py's generator header for it reads "Knuckle plates,
+    # THE HELMET RING, buckles, armour lames", a painted coating worn through
+    # to bare alloy, with no panel seams and no rivets "because the consumers
+    # are 3 to 6 cm parts and the geometry already carries their edges". That
+    # is a description of a helmet shell.
+    #
+    # IT RIDES THE EXISTING `Plate` ROLE RATHER THAN A NEW ONE, DELIBERATELY.
+    # A new role needs a matching row in the client's own copy of the role
+    # table (web/src/render/instancing/Surfaces.ts), which this lane may not
+    # edit, and a role the client has never heard of binds to NO maps at all:
+    # the helmet would go from the wrong family to no family, which is a
+    # regression on the exact axis being fixed. `Plate` is already wired,
+    # already in the manifest, and is already what the neck ring the shell
+    # bolts to is made of.
     mb.bind(["Head"])
-    mb.add_raw(*rc.tube([(0, 0, 1.530), (0, 0, 1.580), (0, 0, 1.700),
-                         (0, 0, 1.755), (0, 0, 1.800)],
-                        [0.098, 0.125, 0.125, 0.105, 0.055], seg=10),
-               role=SUIT)
+    # THE SHELL, IN TWO PIECES WITH A REAL HOLE BETWEEN THEM. See
+    # _assert_visor_is_a_window: the pane used to be laid over a solid barrel,
+    # so the first opaque thing under the glass was the barrel.
+    #
+    # FLAT SHADED, and rc.oval_tube's own docstring is the argument: a
+    # smooth-shaded decagon is a lie the shader tells, because the normals
+    # claim a cylinder while the silhouette shows ten sides, and the lit
+    # result is an even gradient with no edge anywhere on it. That is the
+    # "smooth, unweathered" read ART-DIRECTION.md names as a defect, and
+    # fixing it costs zero triangles.
+    mb.add_raw(*rc.tube([(0, 0, 1.530), (0, 0, 1.575), (0, 0, APERTURE_LO)],
+                        [0.098, 0.125, 0.127], seg=10, smooth_sides=False),
+               role=PLATE)
+    mb.add_raw(*rc.tube([(0, 0, APERTURE_HI), (0, 0, 1.762), (0, 0, 1.800)],
+                        [0.126, 0.104, 0.055], seg=10, smooth_sides=False),
+               role=PLATE)
+    # The rear filler closing the back of the aperture. OF_SteelDark, and it
+    # is doing two jobs for one part's triangles: from OUTSIDE it is a dark
+    # band round the back of the shell at eye level, which breaks a plain
+    # dome into two masses; from INSIDE it is the surface a ray through the
+    # pane lands on at any angle that misses the face, so the camera can
+    # never see daylight out of the back of the head.
+    mb.add_raw(*of.arc_band_data(0.118, 0.127, APERTURE_HI - APERTURE_LO,
+                                 (0, 0, (APERTURE_HI + APERTURE_LO) * 0.5),
+                                 FILLER_A0, FILLER_A1, 10), role=DARK)
     mb.add_raw(*of.cyl_data(0.130, 0.028, (0, 0, 1.552), "Z", 10), role=PLATE)
-    mb.add_raw(*of.arc_band_data(0.118, 0.136, 0.075, (0, 0, 1.660),
-                                 -142.0, -38.0, 8), role=GLASS)
+
+    # THE HEAD INSIDE THE HELMET. A visor is the most material-expressive
+    # surface a suit has - glass over a dark interior - and it cannot be any
+    # of that with nothing behind it. This is a plain three-ring form: a jaw,
+    # a cheek line pushed forward, a brow. At 0.35 alpha behind a tinted pane
+    # that is all that is legible, and it is the difference between a window
+    # and a sticker.
+    mb.add_raw(*rc.stack([((0.0, -0.026, FACE_LO), 0.036, 0.044),
+                          ((0.0, -0.038, 1.664), 0.044, 0.052),
+                          ((0.0, -0.030, FACE_HI), 0.040, 0.046)]), role=SKIN)
+
+    # THE PANE. It laps 4 mm onto the shell top and bottom rather than meeting
+    # it on a plane, which is both the overlap rule and what stops the
+    # aperture showing a bare slot at its edges.
+    # FOURTEEN SEGMENTS, not eight. arc_band_data flat-shades every face it
+    # makes, so the segment count IS the curvature: at eight the pane's 120
+    # degrees came out as eight 15-degree facets and the visor read as a
+    # faceted gem. A visor is the one surface on this asset that has to look
+    # like a smooth optical part, and at 14 the facet is 8.6 degrees, which is
+    # below where the eye separates them at 4 m.
+    mb.add_raw(*of.arc_band_data(PANE_R_IN, PANE_R_OUT, PANE_HI - PANE_LO,
+                                 (0, 0, (PANE_HI + PANE_LO) * 0.5),
+                                 PANE_A0, PANE_A1, 14), role=GLASS)
+    # The aperture's hardware: a brow rail, a chin rail and two corner
+    # pillars. They are what make the visor read as a HOLE IN A SHELL rather
+    # than as a constant-height band of tape, because the visible glass is
+    # then bounded by hardware instead of by its own flat edges.
+    # The two rails top out at r 0.137, NOT at the 0.141 the first version
+    # used. build_armour_set.py's crown cap is a 10-gon starting at r 0.143 at
+    # z 1.702 and falling to 0.134 by 1.752, so it is down to 0.1405 where the
+    # brow rail sits, and a 0.141 rail pokes half a millimetre of helmet
+    # through the helmet armour. That is the armour set's clearance budget
+    # being spent by a part in a different file, which is exactly the class of
+    # thing the 15 to 20 mm clearance in that file exists to absorb and is
+    # not a reason to spend it.
+    mb.add_raw(*of.arc_band_data(0.121, 0.137, 0.034, (0, 0, 1.724),
+                                 PANE_A0 - 3.0, PANE_A1 + 3.0, 10), role=PLATE)
+    mb.add_raw(*of.arc_band_data(0.121, 0.137, 0.028, (0, 0, 1.605),
+                                 PANE_A0 - 3.0, PANE_A1 + 3.0, 10), role=PLATE)
+    for deg in (PANE_A0, PANE_A1):
+        a = math.radians(deg)
+        px, py = 0.125 * math.cos(a), 0.125 * math.sin(a)
+        mb.add_raw(*rc.tube([(px, py, APERTURE_LO - 0.006),
+                             (px, py, 1.666),
+                             (px, py, APERTURE_HI + 0.006)],
+                            [0.015, 0.017, 0.014], seg=5,
+                            smooth_sides=False), role=PLATE)
     # RN-642, COPLANAR CAUSE 2 OF 2, and it is the other 8 pairs. The comment
     # that used to sit here said the fin "tops out at exactly z = 1.800, the
     # same as the helmet crown, so the declared 1.80 m height stays
@@ -267,14 +617,31 @@ def build_mesh(name, arm):
     # the digit, which validate_glb re-checks at +/- 0.005.
     mb.add_raw(*of.box_data((0.030, 0.150, 0.058), (0.0, 0.020, 1.768)),
                role=PLATE)
-    mb.add_raw(*of.arc_band_data(0.126, 0.140, 0.090, (0, 0, 1.640),
-                                 48.0, 132.0, 6), role=GLOVE)
+    # The rear pack. It was OF_SuitDark, i.e. `suitfab`, so a hard equipment
+    # box on the back of a helmet was ALSO wearing the weave. Same class as
+    # the shell, one part smaller, and it is the reason WG-144's rule is in
+    # the pass at all: a fix that lands on one instance of a class and not its
+    # siblings leaves the siblings worse, because the fix is now evidence
+    # somebody looked. OF_Plate rather than OF_SteelDark, so it reads as a
+    # hard box ON the dark band rather than merging into it.
+    mb.add_raw(*of.arc_band_data(0.124, 0.140, 0.076, (0, 0, 1.662),
+                                 52.0, 128.0, 6), role=PLATE)
     mb.add_raw(*of.box_data((0.050, 0.032, 0.032), (0.0, -0.126, 1.742)),
                role=EM)
-    mb.add_raw(*of.box_data((0.100, 0.070, 0.055), (0.0, -0.068, 1.545)),
-               role=SKIN)
+    # THE OLD OF_Skin BOX THAT LIVED HERE IS GONE. It was 0.100 x 0.070 x
+    # 0.055 at z 1.545, described as the face, and it was two things at once:
+    # invisible where it was supposed to be (50 mm below the visor, behind an
+    # opaque shell) and visible where it was not (its front corners stood at
+    # radius 0.1145 against a shell radius of 0.107 at that height, so it
+    # poked out under the chin as a pale lump). The face is now inside the
+    # aperture where a face goes.
+    # THE NECK IS A SEAL, NOT A NECK. It was OF_Skin, so a pressure suit whose
+    # helmet bolts to a metal ring had 100 mm of bare skin between the ring
+    # and the collar, and the front render shows it as a tan band under the
+    # helmet. The one place skin belongs on a sealed suit is behind the visor,
+    # which is now where the only OF_Skin part is.
     mb.bind(["Neck", "Head", "Spine2"])
-    mb.add_raw(*of.cyl_data(0.058, 0.100, (0, 0, 1.500), "Z", 8), role=SKIN)
+    mb.add_raw(*of.cyl_data(0.058, 0.100, (0, 0, 1.500), "Z", 8), role=GLOVE)
 
     # --- legs: tapered tube with a ring on the knee, and a boot that has a
     # separate TOE, because ToeBase is a real bone and the locomotion clips

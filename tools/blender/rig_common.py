@@ -105,6 +105,43 @@ BODY_BONES = (_SPINE
               + _leg_bones("L", 1.0, "Hips") + _leg_bones("R", -1.0, "Hips"))
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# THE CHARACTER'S HAND SECTION AT THE KNUCKLE LINE. RN-902.
+#
+# Half extents in metres, so the glove is 96 mm across and 42 mm thick. A real
+# adult hand measures about 90 mm across the knuckles and 28 mm thick; a padded
+# work glove is legitimately thicker than that and is not much wider, which is
+# exactly the ratio here.
+#
+# WHY THIS LIVES IN rig_common AND NOT IN EITHER BUILD SCRIPT. RN-857 fixed the
+# first-person hand, which was authored 130 x 86 mm at 1.5:1, and named the
+# defect precisely: the section was the mitten, so every part sitting on it
+# inherited the mitten. It fixed ONE of the two hands. Measured 2026-08-03, the
+# THIRD-PERSON hand was 144 mm across and 94 mm thick at the knuckle line, a
+# 1.53:1 section, i.e. wider AND thicker than the mitten that had just been
+# removed from the view model.
+#
+# That is WG-144's rule in asset form: a fix that lands on one instance of a
+# class leaves the others in a worse state than before, because the fix is now
+# evidence that somebody looked. The two hands belong to one character and there
+# has never been an argument for them being different sizes, so there is now one
+# declaration and both read it.
+# ---------------------------------------------------------------------------
+
+HAND_HALF_W = 0.048
+HAND_HALF_T = 0.021
+
+# The glove's first ring, i.e. the cuff mouth, as multiples of the two above.
+# Named because THREE separate things depend on it: the palm's own first ring,
+# the skin band that has to fit inside it, and build_player_fp_arms's assertion.
+GLOVE_MOUTH_W, GLOVE_MOUTH_T = 0.79, 1.24
+
+# The palm profile, cuff mouth to knuckle line to nose, as multiples of the two
+# constants above. Both hands use it, so the taper cannot drift between them.
+PALM_PROFILE_T = (1.24, 1.14, 1.05, 1.00, 0.71)
+PALM_PROFILE_W = (0.79, 0.85, 0.96, 1.00, 0.71)
+
+
 # The first-person arms: the SAME bone names and the same hierarchy from the
 # shoulders down, plus a Root, and nothing else. 27 bones.
 #

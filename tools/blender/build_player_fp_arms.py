@@ -74,16 +74,22 @@ GLOVE, PLATE, GRIME = "SuitDark", "Plate", "SuitGrime"
 #
 # THE PREVIOUS VALUES WERE 130 mm ACROSS AND 86 mm THICK. Nothing was wrong
 # with any single part of the old hand; the section was a mitten, so every
-# part that sat on it inherited the mitten. Keeping the two numbers here, and
-# deriving the palm rings, the finger radii and the knuckle plates from them,
-# is what stops a later pass fixing one and leaving the others behind.
-HAND_HALF_W = 0.048
-HAND_HALF_T = 0.021
+# part that sat on it inherited the mitten. Keeping the two numbers in ONE
+# place, and deriving the palm rings, the finger radii and the knuckle plates
+# from them, is what stops a later pass fixing one and leaving the others
+# behind.
+#
+# RN-902 MOVED THE DECLARATION TO rig_common, AND THE VALUES ARE UNCHANGED TO
+# THE DIGIT. The reason is that fixing this hand and not the third-person one
+# left the body's palm at 144 x 94 mm, i.e. a bigger mitten than the one that
+# had just been removed from here. Both hands belong to one character; there is
+# now one declaration and both read it.
+HAND_HALF_W, HAND_HALF_T = rc.HAND_HALF_W, rc.HAND_HALF_T
 
 # The glove's first ring, i.e. the cuff mouth, as multiples of the two above.
 # Named because THREE separate things depend on it: the palm's own first ring,
 # the skin band that has to fit inside it, and the assertion below.
-GLOVE_MOUTH_W, GLOVE_MOUTH_T = 0.79, 1.24
+GLOVE_MOUTH_W, GLOVE_MOUTH_T = rc.GLOVE_MOUTH_W, rc.GLOVE_MOUTH_T
 
 # The bare wrist's radius. A round tube has to fit inside an ELLIPSE, so the
 # binding dimension is the ellipse's SHORT axis, never its long one. 0.86 of
@@ -274,8 +280,8 @@ def build_mesh(name, arm_obj):
         # clean and the knuckle-to-tip nose is grimed, matching the fingers
         # that continue out of it. Same overlap rule as the fingers, one
         # shared ring rather than a shared plane.
-        prof_t = [t * HAND_HALF_T for t in (1.24, 1.14, 1.05, 1.00, 0.71)]
-        prof_w = [w * HAND_HALF_W for w in (0.79, 0.85, 0.96, 1.00, 0.71)]
+        prof_t = [t * HAND_HALF_T for t in rc.PALM_PROFILE_T]
+        prof_w = [w * HAND_HALF_W for w in rc.PALM_PROFILE_W]
         mb.add_raw(*rc.oval_tube(palm[:4], prof_t[:4], prof_w[:4], seg=8),
                    role=GLOVE)
         mb.add_raw(*rc.oval_tube(palm[3:], prof_t[3:], prof_w[3:], seg=8),

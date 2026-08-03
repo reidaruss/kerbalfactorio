@@ -68,16 +68,22 @@ PLATE, DARK, UNDER, HAZ, EMIT = ("Plate", "SteelDark", "SuitDark", "Hazard",
 # ---------------------------------------------------------------------------
 # 1. HEAD  Armour_Head_LOD0   bones: Head, Neck
 #
-# The body's helmet is a 10-segment tube (r 0.098 / 0.125 / 0.125 / 0.105 /
-# 0.055 over z 1.530..1.800) with a 0.130 ring at z 1.552 and a Glass visor
-# band whose OUTER radius is 0.136 over z 1.6225..1.6975.
+# RESTATED 2026-08-03 (RN-900/RN-901), because the helmet under this armour
+# was rebuilt and the numbers below were a snapshot of the old one. The body's
+# helmet is now TWO 10-segment tubes with a real aperture between them: a
+# lower shell r 0.098 / 0.125 / 0.127 over z 1.530..1.616, an upper shell
+# r 0.126 / 0.104 / 0.055 over z 1.716..1.800, and a rear filler band closing
+# the back of the aperture at r 0.118..0.127. The neck ring is still 0.130 at
+# z 1.552. The visor PANE now spans r 0.120..0.133 over z 1.612..1.720, and
+# its brow and chin rails top out at r 0.137.
 #
 # The visor is why this is not simply a bigger helmet. A full shell clearing
-# the visor band would need circumradius 0.136 / cos(18 deg) = 0.143, whose
-# flat faces land exactly ON the band; and the visor is the one part of the
-# character a player reads as a face. So the head slot is an OPEN set of
-# plates: a crown cap above the visor, cheek plates either side of it, a nape
-# behind, a brow bar over it, and a crest that changes the outline.
+# the pane would need circumradius 0.133 / cos(18 deg) = 0.140, whose flat
+# faces land within 3 mm of the rails; and the visor is the one part of the
+# character a player reads as a face, and now genuinely has a face behind it.
+# So the head slot is an OPEN set of plates: a crown cap above the visor,
+# cheek plates either side of it, a nape behind, a brow bar over it, and a
+# crest that changes the outline.
 # ---------------------------------------------------------------------------
 
 def build_head(mb):
@@ -184,9 +190,14 @@ def build_chest(mb):
     mb.add_raw(*of.box_data((0.220, 0.016, 0.050), (0.0, 0.174, 1.180)),
                role=DARK)
 
-    # Pauldrons. EIGHT segments, matching the body's 8-segment shoulder pad:
-    # a 10-gon over an 8-gon at these radii is the sawtooth ring check_mating
-    # already caught once on this character.
+    # Pauldrons. TEN segments, matching the body's shoulder pad, which went
+    # from eight to ten in RN-904 because eight facets 45 degrees apart under
+    # a smooth normal read as folded paper rather than as a shell. The rule is
+    # unchanged and it is why this number moved with it: two coaxial round
+    # surfaces with different segment counts do not share a surface at the
+    # same radius, and the joint renders as a sawtooth ring. Measured at the
+    # tightest station, x 0.246, this 10-gon's inradius is 0.1084 against the
+    # body pad's circumradius of 0.087, so it clears by 21 mm.
     # A SuitDark shoulder gusset was built here and then removed. It filled the
     # armpit at rest and protruded past the pauldron's lower rim as a stray
     # wedge the moment the arm swung, because it straddled a joint whose two
@@ -196,7 +207,7 @@ def build_chest(mb):
         mb.bind([pre + "Shoulder", pre + "Arm"])
         mb.add_raw(*rc.tube([(s * 0.120, 0, 1.428), (s * 0.188, 0, 1.470),
                              (s * 0.278, 0, 1.448)],
-                            [0.120, 0.132, 0.104], seg=8), role=PLATE)
+                            [0.120, 0.132, 0.104], seg=10), role=PLATE)
     return mb
 
 
