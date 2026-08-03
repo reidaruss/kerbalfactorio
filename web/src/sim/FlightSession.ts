@@ -16,7 +16,8 @@ import {
 import { clampHoldReason, mayStageWhileClamped, STAGE_REFUSAL } from './FlightClamp.js';
 import { flightReport, propellantAboardKg, readStagePerformance }
   from './FlightReport.js';
-import { commandDirection, cycleSas, guidanceDir, levelWings, setSas, slew }
+import { commandDirection, cycleSas, followRibbon, guidanceDir, guidanceTick,
+  levelWings, setSas, slew }
   from './FlightSas.js';
 import { horizonFrame } from './FlightAttitude.js';
 import { WARP_STEPS, warpSteps } from './FlightWarp.js';
@@ -111,6 +112,12 @@ export class FlightSession {
   /** PUBLIC for FlightSas.ts, which owns every transition either one makes. */
   sasMode = SAS_COMMAND;
   command: Vec3 = [0, 1, 0];
+  /** The ninth mode, and it is a CLIENT flag rather than a `/core` `SasMode`,
+   *  because pointing at the ribbon needs east and east is this side's
+   *  (FlightSas.followRibbon). /core still reads `CMD` in `of_fl_state` word
+   *  17, deliberately, and that disagreement is the truth: the mode is a client
+   *  aimer over /core's Command. */
+  followGuidance = false;
   private throttle = 0;
   private parts: FlightPartRow[] = [];
   private stages: FlightStageRow[] = [];
@@ -138,7 +145,10 @@ export class FlightSession {
   get orbit(): OrbitRow { return this.orb; }
   get stageRows(): readonly FlightStageRow[] { return this.stages; }
   get throttleValue(): number { return this.throttle; }
-  get sasName(): string { return SAS_NAMES[this.sasMode] ?? 'OFF'; }
+  get sasName(): string {
+    if (this.followGuidance) return 'GDN';
+    return SAS_NAMES[this.sasMode] ?? 'OFF';
+  }
   get warpFactor(): number { return WARP_STEPS[this.warpIndex] ?? 1; }
   get clamped(): boolean { return this.status === 'CLAMPED'; }
   get up(): Vec3 { return norm(this.st.pos); }
@@ -230,6 +240,7 @@ export class FlightSession {
   setSas(mode: number): void { setSas(this, mode); }
   commandDirection(dir: Vec3): void { commandDirection(this, dir); }
   cycleSas(): void { cycleSas(this); }
+  followRibbon(): void { followRibbon(this); }
 
   setWarp(i: number): void {
     this.warpIndex = Math.max(0, Math.min(WARP_STEPS.length - 1, i));
@@ -295,6 +306,9 @@ export class FlightSession {
     if (this.status === 'CLAMPED') { this.stepClamped(dt); return; }
     if (this.status === 'DOWN') { this.sample(); return; }
 
+    // The ribbon-follow re-aims BEFORE the step, so the nose chases this tick's
+    // guidance rather than last tick's. It is a no-op unless the ninth key is on.
+    guidanceTick(this);
     const n = warpSteps(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
                         -dot(this.st.vel, this.up), dt);
     // PH-86: the vessel takes n steps this tick, the world takes one. The day

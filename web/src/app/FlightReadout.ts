@@ -49,7 +49,10 @@ export function readout(m: FlightMode): NavballReadout {
     headingDeg: nose.headingDeg, pitchDeg: nose.pitchDeg,
     rollDeg: (roll * 180) / Math.PI,
     prograde: pro, retrograde: retro,
-    command: marker(s.sasName === 'CMD' ? s.commandDir : null, u),
+    // GDN aims the SAME command, so the marker has to survive the rename or
+    // the mode that follows the ribbon is the one mode with no nose target.
+    command: marker(s.sasName === 'CMD' || s.sasName === 'GDN'
+      ? s.commandDir : null, u),
     guidance: marker(s.guidanceDir(), u),
     node: marker(m.nodeDir, u),
     altitudeM: s.altitudeAglM, altitudeDatumM: tm.altitudeM,

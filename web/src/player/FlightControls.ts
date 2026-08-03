@@ -49,7 +49,7 @@ const THROTTLE_RATE = 0.5;
 
 const EDGE: readonly Action[] = [
   'stage', 'sasToggle', 'sasMode', 'warpUp', 'warpDown',
-  'throttleFull', 'throttleCut',
+  'throttleFull', 'throttleCut', 'sasGuidance',
   ...SAS_KEYS.map(([a]) => a),
 ];
 
@@ -103,6 +103,11 @@ export class FlightControls {
     // The seven mode keys. `setSas` is the one call a button and a key both
     // go through, and it flashes the name, so a mode change is never silent.
     for (const [a, mode] of SAS_KEYS) if (pressed(a)) f.setSas(mode);
+    // The NINTH key, and it is not in the table above for the same reason
+    // `sasNode` is not: it is not a /core mode. It is Command re-aimed at the
+    // guidance ribbon every tick, which is the one marker on the ball that
+    // nothing could previously fly to.
+    if (pressed('sasGuidance')) f.followRibbon();
 
     if (pressed('stage')) f.fireStage();
     if (pressed('sasMode')) f.cycleSas();

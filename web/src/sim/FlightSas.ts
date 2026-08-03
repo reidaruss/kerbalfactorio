@@ -54,20 +54,74 @@ export function setSas(s: FlightSession, mode: number): void {
   s.sasMode = mode;
   s.V._of_fl_set_sas(s.handle, mode);
   if (mode === SAS_COMMAND) commandDirection(s, norm(s.st.forward));
+  s.followGuidance = false;
   s.flash(`SAS ${s.sasName}`);
 }
 
 /** Point SAS at an inertial direction, switching to Command if needed. This IS
  *  hold-node: a node's burn direction is fixed in inertial space, so /core needs
- *  no Maneuver mode and the caller refreshes it as handles move. */
+ *  no Maneuver mode and the caller refreshes it as handles move.
+ *
+ *  IT ALSO CANCELS RIBBON-FOLLOW, unconditionally, and that ONE line is the
+ *  whole interlock. PH-44 is this file's founding bug: a mode that another
+ *  entry point can silently undo. So rather than teach `slew`, hold-node and
+ *  every future aimer to remember a ninth mode, the rule is stated once here
+ *  as "any aim cancels the follow", and the follower below re-arms itself
+ *  immediately afterwards. A caller that does not know ribbon-follow exists
+ *  still takes control correctly, which is the only version of this that stays
+ *  true as callers are added. */
 export function commandDirection(s: FlightSession, dir: Vec3): void {
   if (s.handle <= 0) return;
   s.command = norm(dir);
+  s.followGuidance = false;
   if (s.sasMode !== SAS_COMMAND) {
     s.sasMode = SAS_COMMAND;
     s.V._of_fl_set_sas(s.handle, SAS_COMMAND);
   }
   s.V._of_fl_set_sas_command(s.handle, s.command[0], s.command[1], s.command[2]);
+}
+
+/**
+ * FOLLOW THE RIBBON: the ninth SAS key, and the one that makes an ascent
+ * flyable without a hand on the stick (GP, 2026-08-03).
+ *
+ * The navball has drawn a guidance ribbon since W12 and its own comment said
+ * "Shown, never flown". Eight modes point at the orbital triad and none of them
+ * points at the marker the game is telling the player to fly to, so reaching
+ * orbit was the one link in the chain that could not be done unaided. Every
+ * feature downstream of it (the departure chart, the transfer, the moon, the
+ * landing, the docking approach) flies itself.
+ *
+ * IT IS NOT A `/core` MODE, AND THE REASON IS AUTHORITY RATHER THAN EFFORT.
+ * The ribbon's PITCH is `/core`'s and stays there: `guidanceDir` reads it
+ * through `_of_fl_guidance_pitch` and nothing here recomputes it. What a
+ * `flight.h` mode would ALSO need is EAST, and east is the client's:
+ * `horizonFrame` is the frame the ball, the ribbon and the pitch/yaw keys all
+ * share, and PH-40 already records this codebase carrying two inclination
+ * conventions. A ninth `SasMode` would have made it three, to point at a
+ * quantity `/core` already publishes.
+ *
+ * So it is `SAS_COMMAND` re-aimed every tick, which is exactly what hold-node
+ * already is (`FlightAbi`: "there is no Node mode"). This is the same shape as
+ * the eighth key, one file down.
+ */
+export function followRibbon(s: FlightSession): void {
+  if (s.handle <= 0) return;
+  const d = guidanceDir(s);
+  if (d === null) { s.flash('no guidance here'); return; }
+  commandDirection(s, d);
+  s.followGuidance = true;
+  s.flash('SAS GDN, following the ascent ribbon');
+}
+
+/** One tick of the follow, called from `FlightSession.step` BEFORE the physics
+ *  step so the nose is aimed at this tick's ribbon and not the last one's. */
+export function guidanceTick(s: FlightSession): void {
+  if (!s.followGuidance) return;
+  const d = guidanceDir(s);
+  if (d === null) { s.followGuidance = false; return; }
+  commandDirection(s, d);       // clears the flag ...
+  s.followGuidance = true;      // ... and the follower is the one thing that re-arms
 }
 
 /** Command / Prograde / Retrograde, in that cycle. DW-30 item 2. The seven mode

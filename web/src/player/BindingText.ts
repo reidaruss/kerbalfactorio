@@ -114,6 +114,7 @@ export const ACTION_TEXT: Record<Action, Desc> = {
   sasRadialIn: { group: 'Autopilot', label: 'Hold radial in' },
   sasRadialOut: { group: 'Autopilot', label: 'Hold radial out' },
   sasNode: { group: 'Autopilot', label: 'Hold the maneuver node' },
+  sasGuidance: { group: 'Autopilot', label: 'Follow the ascent guidance' },
 
   menuUp: { group: 'Menus', label: 'Move up the menu' },
   menuDown: { group: 'Menus', label: 'Move down the menu' },

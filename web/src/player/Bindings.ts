@@ -41,6 +41,7 @@ export type Action =
   | 'map'
   | 'sasStability' | 'sasPrograde' | 'sasRetrograde'
   | 'sasNormal' | 'sasAntinormal' | 'sasRadialIn' | 'sasRadialOut' | 'sasNode'
+  | 'sasGuidance'
   | 'slotNext' | 'slotPrev'
   | 'slot1' | 'slot2' | 'slot3' | 'slot4' | 'slot5'
   | 'slot6' | 'slot7' | 'slot8' | 'slot9' | 'slot10' | 'slot11'
@@ -172,6 +173,9 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   sasRadialIn: ['Digit6'],
   sasRadialOut: ['Digit7'],
   sasNode: ['Digit8'],
+  // The NINTH SAS key. The ribbon has been drawn since W12 and nothing could
+  // point at it, so reaching orbit was the one link a player had to hand-fly.
+  sasGuidance: ['Digit9'],
   slotNext: [],
   slotPrev: [],
   slot1: ['Digit1'], slot2: ['Digit2'], slot3: ['Digit3'],
@@ -254,7 +258,7 @@ export const MAP_ALLOWED: readonly Action[] = [
   'pitchUp', 'pitchDown', 'yawLeft', 'yawRight', 'rollLeft', 'rollRight',
   'sasToggle', 'sasMode', 'warpUp', 'warpDown',
   'sasStability', 'sasPrograde', 'sasRetrograde', 'sasNormal',
-  'sasAntinormal', 'sasRadialIn', 'sasRadialOut', 'sasNode',
+  'sasAntinormal', 'sasRadialIn', 'sasRadialOut', 'sasNode', 'sasGuidance',
 ];
 
 const CODE_TO_ACTIONS = new Map<string, Action[]>();
