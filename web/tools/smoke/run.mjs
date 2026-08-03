@@ -135,6 +135,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // pre-RN-961 sample coordinate exactly, so it is the negative control for
   // the whole term. Registered in the same commit that introduces it.
   'reliefswing',
+  // RN-1005, the direction field's two SCALES, promoted out of two `#define`s
+  // in the same commit. `reliefcell` is the cell edge in tile units and
+  // `reliefcellnoise` is the angle noise's frequency on the cell lattice.
+  // Neither has an "off" value: `reliefswing=0` is the control for the whole
+  // mechanism and a second one would be a second way to say the same state.
+  // Registered in the same commit that introduces them, per this list's rule.
+  'reliefcell', 'reliefcellnoise',
   // RN-731, the per-part material channel on the rock and ore node batches.
   // `rockmat=0` removes the hook entirely and restores the stock three
   // program, i.e. every ore seam back at one roughness and one metalness.

@@ -310,24 +310,43 @@ export const RELIEF_GRAD_UV = 0.0311;
 
 /**
  * RN-961. The ripple direction cell, in TILE UNITS (one unit is one repeat of
- * `of_ground_relief`, which is 3.6 m). 2.0 is 7.2 m.
+ * `of_ground_relief`, which is 3.6 m). **1.0 is 3.6 m.**
  *
  * Chosen against two bounds rather than picked. TOO LARGE and the beach is
  * back to one direction over everything a player can see, since the relief
  * term is fully faded by 60 m. TOO SMALL and the seam density rises without
  * the direction field gaining anything, because the ANGLE's own scale is set
- * by OF_REL_CELL_NOISE and not by the cell.
+ * by REL_CELL_NOISE and not by the cell.
  *
  * 16 tile units is exactly one chunk UV, so an integer cell count per chunk
- * (8 at 2.0) keeps whole cells inside a chunk and no cell straddles a chunk
+ * (16 at 1.0) keeps whole cells inside a chunk and no cell straddles a chunk
  * edge, where the UV derivative changes at an LOD step.
+ *
+ * RN-1005: this is the BOOT DEFAULT of the `uReliefCell` uniform rather than a
+ * compile-time constant. The prose above was written when the value was 2.0
+ * and still said "2.0 is 7.2 m" and "8 cells per chunk" after 92a4fb0 lowered
+ * it to 1.0; a docstring whose arithmetic is a version behind is the same
+ * defect class as a stale table, and it is corrected rather than deleted so
+ * the reason for the bound survives.
  */
 export const REL_CELL = 1.0;
 
 /**
  * RN-961. Cells per period of the angle noise. 0.25 means the direction field
- * repeats every 4 cells, i.e. every 8 tile units or 28.8 m, which is the scale
- * a real ripple field swings over.
+ * repeats every 4 cells, which at the shipped REL_CELL of 1.0 is 4 tile units
+ * or **14.4 m**.
+ *
+ * RN-1005 corrects the arithmetic and it matters more than a typo would. The
+ * prose said "8 tile units or 28.8 m", which was right when REL_CELL was 2.0
+ * and became wrong in 92a4fb0. The two constants MULTIPLY, so neither can be
+ * documented without the other, and the number that decides how many
+ * directions are on screen at once is their PRODUCT and not either alone. At
+ * 14.4 m a walking frame covering about 30 m of usable ground holds roughly
+ * two correlation lengths, which is why RN-1001's walking pair still reads as
+ * one direction: the swing was doing less work than the frame needed AND the
+ * field it swings was correlated across most of the frame.
+ *
+ * RN-1005: this is now the BOOT DEFAULT of the `uReliefCellNoise` uniform.
  *
  * THE PER-CHUNK REPEAT IS REAL AND IS BOUNDED BY THE TERM'S OWN FADE. The cell
  * grid is built on `vChunkUv`, which resets at every chunk, so the whole
@@ -336,12 +355,34 @@ export const REL_CELL = 1.0;
  * 60 m and is gone before one full period is on screen, so the repeat cannot
  * be observed at the only distance the term exists. Stated rather than hidden,
  * because if the fade is ever pushed out this becomes a defect the same day.
+ *
+ * RN-1005 RAISES THIS FROM 0.25 TO 0.5, and the UPPER bound turns out to be
+ * structural rather than a matter of taste. `ofRelVnoise` is sampled at
+ * `c * noise` for an INTEGER cell index c, so at noise = 1.0 the argument is
+ * always an integer, `fract` is always 0, and the interpolation returns
+ * `ofRelHash(c)` exactly. **At 1.0 the value noise degenerates into the
+ * per-cell hash the whole construction exists to avoid**, and every seam
+ * becomes a maximal jump. That is certain from the arithmetic, and the 1.0
+ * frame confirms it by eye: the ripples stop being coherent and read as
+ * mottle. So the field is 1/noise samples per period and noise must stay
+ * comfortably below 1: 0.5 gives two samples per period (a hash value and the
+ * midpoint of its two neighbours), which is the coarsest non-degenerate
+ * setting and halves the correlation length from 14.4 m to 7.2 m.
+ *
+ * Why halve it at all: a walking frame at eye height covers about 30 m of
+ * ground on which this term is visible, so at 14.4 m the whole visible patch
+ * held about two independent directions and read as one. At 7.2 m it holds
+ * about four, which is where the frame stops reading as a single corduroy.
+ * That is the measurement in RN-1006 and it was settled by looking at
+ * matched frames one uniform apart, not by this arithmetic.
+ *
+ * 16 cells per chunk divided by the 2-cell period is 8 whole periods, so the
+ * angle field still closes on the chunk boundary exactly as it did at 0.25.
  */
-export const REL_CELL_NOISE = 0.25;
+export const REL_CELL_NOISE = 0.5;
 
 /**
  * RN-961. The ripple direction's peak-to-peak swing across cells, in RADIANS.
- * 1.05 is about +/- 30 degrees.
  *
  * Bounded from both sides and neither bound is taste. TOO SMALL and the beach
  * still reads as one direction, which is Reid's complaint verbatim. TOO LARGE
@@ -354,8 +395,30 @@ export const REL_CELL_NOISE = 0.25;
  * quilt. Different failure, different bound, and the instrument's side C is
  * blind to it (a quilt of rigid patches has a perfectly stable wavelength), so
  * this one is settled by looking.
+ *
+ * RN-1006 RAISES THIS FROM 1.05 TO PI, and pi is DERIVED rather than tuned.
+ *
+ * A ripple field is 180-degree periodic in appearance: rotating a set of
+ * parallel crests by pi maps it onto itself. So the set of DISTINGUISHABLE
+ * orientations has measure pi, and a peak-to-peak swing of pi is exactly the
+ * amount that covers all of them. Every radian past pi re-covers directions
+ * the field could already reach WHILE increasing the largest possible angle
+ * difference between two neighbouring cells, which is precisely what a seam
+ * costs. Pi is therefore the unique point of full orientation coverage at
+ * minimum seam, and it is not a number anyone has to defend as taste.
+ *
+ * The picture agrees with the derivation, which is the part that matters:
+ * 4.5 rad was photographed at close range and the crests visibly CURL (the
+ * failure side D of `winaniso.py` exists to name), while pi does not, at
+ * either the walking pose or a 0.35-to-5.5 m one. See RN-1006.
+ *
+ * WHY 1.05 WAS NOT ENOUGH, stated so the mistake is not repeated: +/- 30
+ * degrees leaves every crest within 30 degrees of one mean direction, and a
+ * frame full of lines within 30 degrees of each other IS a frame of lines
+ * running one way. The value was settled on a diagnostic pose that covers
+ * three metres of ground, where the question does not arise.
  */
-export const REL_SWING_DEFAULT = 1.05;
+export const REL_SWING_DEFAULT = Math.PI;
 
 /**
  * WET GROUND AT THE WATERLINE (RN-57). The fourth term, and it is here for
@@ -609,10 +672,17 @@ export const TERRAIN_ART_RELIEF = /* glsl */`
   }
   // xy is the rotated sample coordinate, z is this grid's blend weight.
   // The off argument selects the grid: vec2(0.0) and vec2(0.5) are the two used.
-  vec3 ofRelCell(vec2 p, float cell, float swing, vec2 off) {
+  // RN-1005. The noise argument was OF_REL_CELL_NOISE and the cell argument
+  // came from OF_REL_CELL.
+  // Both are arguments now, for RN-843's reason exactly: they were compile-time
+  // constants because they were believed settled, and the walking-distance
+  // frame says the direction field's SCALE is a live question. A define cannot
+  // be swept inside one page, one camera and one streamed chunk set, and two
+  // page loads is what made the first swing value look sufficient.
+  vec3 ofRelCell(vec2 p, float cell, float noise, float swing, vec2 off) {
     vec2 q = p / cell + off;
     vec2 c = floor(q);
-    float t = (ofRelVnoise(c * OF_REL_CELL_NOISE) - 0.5) * swing;
+    float t = (ofRelVnoise(c * noise) - 0.5) * swing;
     float cs = cos(t);
     float sn = sin(t);
     vec2 a = (c + 0.5 - off) * cell;      // the cell centre, in tile units
@@ -758,7 +828,10 @@ export const TERRAIN_ART_SPEC = /* glsl */`
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
   + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + `#define OF_RELIEF_GRAD_UV ${RELIEF_GRAD_UV.toFixed(4)}\n`
-  + `#define OF_REL_CELL ${REL_CELL.toFixed(4)}\n`
-  + `#define OF_REL_CELL_NOISE ${REL_CELL_NOISE.toFixed(4)}\n`
+  // RN-1005. OF_REL_CELL and OF_REL_CELL_NOISE are GONE rather than left
+  // behind: they are uniforms now (uReliefCell, uReliefCellNoise), and a dead
+  // define that still compiles is exactly how a lane ends up sweeping one
+  // authority while the shader reads the other. REL_CELL and REL_CELL_NOISE
+  // remain the boot defaults, in TypeScript, with one home each.
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
   + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_SPEC;

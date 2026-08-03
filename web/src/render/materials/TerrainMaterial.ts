@@ -19,7 +19,7 @@ import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 // rather than a `#define`. Imported from where it is derived and documented,
 // so there is still one authority for the number and the sweep cannot drift
 // from the value the sweep is measured against.
-import { RELIEF_GRAD_UV, REL_SWING_DEFAULT } from './TerrainArt.glsl.js';
+import { RELIEF_GRAD_UV, REL_SWING_DEFAULT, REL_CELL, REL_CELL_NOISE } from './TerrainArt.glsl.js';
 import { FAR_SCALE } from '../Scenes.js';
 
 // ?side= overrides this for a one-off diagnosis; the committed default is what
@@ -232,6 +232,31 @@ function reliefSwingFromQuery(): number {
 }
 
 /**
+ * RN-1005. The direction field's two SCALES, on reliefSwingFromQuery's pattern.
+ * `?reliefcell=` is the cell edge in tile units and `?reliefcellnoise=` is the
+ * angle noise's frequency on the cell lattice. Both are strictly positive: zero
+ * would divide by zero and a negative cell mirrors the lattice, so a bad value
+ * takes the boot default rather than being clamped into a state nothing
+ * documents.
+ *
+ * There is NO "off" value for either, and that is correct rather than an
+ * oversight: the negative control for the whole mechanism is `?reliefswing=0`,
+ * which collapses every rotation to the identity and makes both scales
+ * unobservable. A second control over the same term would be two ways to
+ * express one state, and the pair could disagree.
+ */
+function reliefCellFromQuery(): number {
+  const v = new URLSearchParams(self.location.search).get('reliefcell');
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : REL_CELL;
+}
+function reliefCellNoiseFromQuery(): number {
+  const v = new URLSearchParams(self.location.search).get('reliefcellnoise');
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) && n > 0 ? n : REL_CELL_NOISE;
+}
+
+/**
  * RN-842. `?horizonocc=` overrides the measured occlusion, and `?horizonocc=0`
  * is the EXACT negative control: at zero the shader's two ambient weights are
  * algebraically the pre-RN-842 expressions, so the control restores the old
@@ -403,6 +428,11 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // reason artAmp is: a control that reached the near material and not the far
   // one would make the negative control a statement about one scene only.
   const reliefSwing: THREE.IUniform<number> = { value: reliefSwingFromQuery() };
+  // RN-1005. Shared by reference into both materials for the one-authority
+  // reason artAmp is: a scale that reached the near material and not the far
+  // one would make the sweep a statement about one scene only.
+  const reliefCell: THREE.IUniform<number> = { value: reliefCellFromQuery() };
+  const reliefCellNoise: THREE.IUniform<number> = { value: reliefCellNoiseFromQuery() };
   // RN-842. The body's own horizon occlusion. Written by Boot from
   // `measureHorizonOcclusion`; the boot value here is the flat-plane model, so
   // a material built before the measurement lands behaves exactly as it did
@@ -459,6 +489,8 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uReliefGrad: reliefGrad,
       uReliefGradUv: reliefGradUv,
       uReliefSwing: reliefSwing,
+      uReliefCell: reliefCell,
+      uReliefCellNoise: reliefCellNoise,
       uHorizonOcc: horizonOcc,
       uBounceLit: bounceLit,
     });
@@ -538,6 +570,66 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
         present: p.get('reliefgraduv') !== null,
         value: reliefGradUvFromQuery(),
         shipped: RELIEF_GRAD_UV,
+      };
+    },
+    /** RN-1000. The ripple direction's peak-to-peak swing in radians, at
+     *  runtime, on setReliefGradUv's precedent exactly and for the sharper
+     *  version of its reason. RN-961 shipped `?reliefswing=` and no handle, so
+     *  the only available before/after pair was TWO PAGE LOADS: two streamed
+     *  chunk sets, two scatter draws, two sun solves and two convergence
+     *  histories, with the term's effect somewhere inside all of that. The
+     *  artefact this term exists to remove is judged BY LOOKING at a pair, and
+     *  a pair whose two halves differ in more than the term is not a pair. With
+     *  this handle the camera, the sun, the chunks and the props are equal by
+     *  construction and every moved pixel is the term's.
+     *
+     *  Negative values are refused rather than clamped: a negative swing is a
+     *  caller error (the term is peak-to-peak) and silently reading it as its
+     *  own magnitude would make a mistyped sweep look like a working one. */
+    setReliefSwing(v: number): number {
+      if (Number.isFinite(v) && v >= 0) reliefSwing.value = v;
+      return reliefSwing.value;
+    },
+    getReliefSwing(): number { return reliefSwing.value; },
+    /** RN-1000. The shipped default and whether the URL moved it, so a pair can
+     *  assert its own fixture before reading either half (GP-142), and so the
+     *  BOOT DEFAULT is assertable in its own right rather than only reachable
+     *  by passing an explicit flag (RN-150: two features have already shipped
+     *  dark because every probe passed one). */
+    reliefSwingDefault(): { present: boolean; value: number; shipped: number } {
+      const p = new URLSearchParams(self.location.search);
+      return {
+        present: p.get('reliefswing') !== null,
+        value: reliefSwingFromQuery(),
+        shipped: REL_SWING_DEFAULT,
+      };
+    },
+    /** RN-1005. The direction field's two scales at runtime. Strictly positive
+     *  in the setter as well as in the parser, because a sweep that silently
+     *  ignored a bad rung would report the PREVIOUS rung's frame under the new
+     *  rung's label, which is worse than failing. */
+    setReliefCell(v: number): number {
+      if (Number.isFinite(v) && v > 0) reliefCell.value = v;
+      return reliefCell.value;
+    },
+    getReliefCell(): number { return reliefCell.value; },
+    setReliefCellNoise(v: number): number {
+      if (Number.isFinite(v) && v > 0) reliefCellNoise.value = v;
+      return reliefCellNoise.value;
+    },
+    getReliefCellNoise(): number { return reliefCellNoise.value; },
+    reliefCellDefault(): {
+      present: boolean; value: number; shipped: number;
+      noisePresent: boolean; noiseValue: number; noiseShipped: number;
+    } {
+      const p = new URLSearchParams(self.location.search);
+      return {
+        present: p.get('reliefcell') !== null,
+        value: reliefCellFromQuery(),
+        shipped: REL_CELL,
+        noisePresent: p.get('reliefcellnoise') !== null,
+        noiseValue: reliefCellNoiseFromQuery(),
+        noiseShipped: REL_CELL_NOISE,
       };
     },
     /** RN-841. 1 is the unshadowed bounce source, 0 the pre-RN-841 expression. */

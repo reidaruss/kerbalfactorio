@@ -71,6 +71,16 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // the pre-RN-961 sample coordinate exactly, so ?reliefswing=0 is the
     // negative control for the whole term on one build.
     uniform float uReliefSwing;
+    // RN-1005. The direction field's two SCALES, promoted out of
+    // OF_REL_CELL / OF_REL_CELL_NOISE for RN-843's reason. uReliefCell is the
+    // cell edge in tile units (1 tile = 3.6 m), i.e. how far you walk before
+    // the ripple can point somewhere else. uReliefCellNoise is the frequency
+    // of the angle noise ON the cell lattice, so 1/uReliefCellNoise is the
+    // number of cells over which the direction is CORRELATED: the two
+    // together, and not the swing alone, decide how many directions are on
+    // screen at once. ?reliefcell= and ?reliefcellnoise= sweep them.
+    uniform float uReliefCell;
+    uniform float uReliefCellNoise;
     // RN-842. The fraction of a hemisphere the body's own terrain occludes.
     // 0 is the pre-RN-842 flat-tangent-plane model, exactly. See
     // HorizonOcclusion.ts for what it is and why it is measured, not chosen.
@@ -236,8 +246,8 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // rigid per-cell rotation buys wavelength preservation with a seam and
         // the second grid is what pays the seam back.
         vec2 relP = vChunkUv * 16.0;
-        vec3 cellA = ofRelCell(relP, OF_REL_CELL, uReliefSwing, vec2(0.0));
-        vec3 cellB = ofRelCell(relP, OF_REL_CELL, uReliefSwing, vec2(0.5));
+        vec3 cellA = ofRelCell(relP, uReliefCell, uReliefCellNoise, uReliefSwing, vec2(0.0));
+        vec3 cellB = ofRelCell(relP, uReliefCell, uReliefCellNoise, uReliefSwing, vec2(0.5));
         float relWsum = max(cellA.z + cellB.z, 1e-4);
         float relWa = cellA.z / relWsum;
         float relWb = cellB.z / relWsum;
