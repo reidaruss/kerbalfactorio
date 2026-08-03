@@ -1,8 +1,19 @@
 """
 machine_form.py - the vocabulary a factory MACHINE is detailed with.
 
-Not a build script. Imported by build_assembler.py, build_smelter.py,
-build_miner.py, build_box.py and the rest of the machine set.
+Not a build script. Imported by build_assembler.py, build_smelter.py and
+build_miner.py, plus station_form.py which extends it.
+
+**THAT LIST IS THE SHIPPED TRUTH AND IT IS DELIBERATELY SHORT.** It read
+"build_assembler.py, build_smelter.py, build_miner.py, build_box.py and the
+rest of the machine set" from the day this module was written, when only the
+first two imported it: it described the intent and was read as a description
+of the code, which is how a vocabulary comes to be built for thirteen machines
+and applied to two. RN-1103 took the miner and corrected the sentence in the
+same commit. **The eight machines still not on this list are box, generator,
+power pole, inserter, primitive furnace, survival smelter, belt tile and belt
+curve, and none of them has had a pass under docs/web/ART-DIRECTION.md.**
+Anyone adding a name here: add it after the import exists, not before.
 
 WHY IT IS A NEW MODULE AND NOT AN EXTENSION OF of_lib.py. `of_lib` is shared
 with every Blender lane in this project and every one of the 51 shipped assets
@@ -211,12 +222,16 @@ class Face:
             return
         over = (front - self.limit) if self.sign > 0 else (self.limit - front)
         if over > 0.0:
+            # RN-1103: `what` was interpolated TWICE, so the message read "a
+            # bracket bracket reaching 0.34: a bracket bracket reaching 0.34
+            # reaches ...". Cosmetic, and it is fixed because the whole value
+            # of a build-time refusal is that the sentence is readable at 2am.
             raise ValueError(
-                "%s: %s reaches %.4f past the hard edge at %.4f on face %s. "
+                "%s reaches %.4f past the hard edge at %.4f on face %s. "
                 "The footprint is sim-load-bearing (FactorySnap.stepsFor "
                 "derives the mating distance from the declared box), so the "
                 "DETAIL has to move, not the edge."
-                % (what, what, over, self.limit, self.name))
+                % (what, over, self.limit, self.name))
 
     def _loc(self, u, v, along):
         if self.axis == "X":

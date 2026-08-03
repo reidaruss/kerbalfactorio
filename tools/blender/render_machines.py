@@ -220,6 +220,66 @@ def add_ground(size=160.0):
     return obj
 
 
+def collapse_role_materials():
+    """RN-1101. Fold every `OF_<Role>.001` back onto `OF_<Role>`, and say how
+    many. **This has to run before `apply_surfaces` or the line shot renders
+    almost entirely unmapped, which is what it has been doing.**
+
+    THE DEFECT. The line shot imports twelve .glb files into one scene.
+    Blender's ID namespace is per-FILE, not per-import, so the second file's
+    `OF_Steel` arrives as `OF_Steel.001`, the third as `OF_Steel.002`, and so
+    on. `surface_preview.apply_all` resolves a role as `mat.name[3:]`, which
+    for `OF_Steel.001` is the role `"Steel.001"`; that is not in the palette,
+    so the material is SKIPPED. It printed the skip honestly ("44 material(s)
+    not in the palette") and nobody read the list, because the same line also
+    said "10 mapped" and ten is the number of roles there are.
+
+    So the maps landed on whichever .glb was named FIRST on the command line
+    and on nothing else. A `--maps` / `--nomaps` pair of the production line
+    was one asset's surface against eleven assets' flat palette constants, in
+    both halves.
+
+    WHY COLLAPSING IS THE RIGHT FIX AND NOT STRIPPING THE SUFFIX IN
+    `surface_preview`. The client draws this whole set through ONE
+    `MeshStandardMaterial` (`MachineBatch.makeMaterial`), so twelve copies of
+    `OF_Steel` is not a thing the game has; it is an artefact of importing
+    twelve files. Collapsing makes the studio scene's material count equal the
+    client's, which is the property this rig exists to preserve. Teaching the
+    role parser to ignore a numeric suffix would instead make `OF_Steel.001` a
+    legal name, and the next lane that genuinely wants two steels would get
+    one silently.
+
+    Returns (folded, canonical) counts."""
+    canon, dups = {}, []
+    for mat in bpy.data.materials:
+        if not mat.name.startswith("OF_"):
+            continue
+        stem = mat.name.rsplit(".", 1)
+        # `.001` and not `.Foo`: only a 3-digit numeric tail is Blender's
+        # collision suffix. `OF_Steel.001` folds; a hypothetical
+        # `OF_Steel.Rusty` is a different role and must NOT be swallowed.
+        if len(stem) == 2 and len(stem[1]) == 3 and stem[1].isdigit():
+            dups.append((stem[0], mat))
+        else:
+            canon.setdefault(mat.name, mat)
+    folded = 0
+    for base, mat in dups:
+        target = canon.get(base)
+        if target is None:
+            # The base name is not in the file at all, so this .001 IS the
+            # only copy. Rename rather than remap: dropping it would delete a
+            # role from the scene, which is worse than the defect being fixed.
+            mat.name = base
+            canon[base] = mat
+            continue
+        mat.user_remap(target)
+        bpy.data.materials.remove(mat)
+        folded += 1
+    print("[render_machines] collapsed %d duplicate OF_ material(s) onto %d "
+          "canonical role(s)" % (folded, len(canon)))
+    return folded, len(canon)
+
+
 def apply_surfaces():
     """Wire the shipped surface families onto the imported OF_* materials.
 
@@ -231,8 +291,20 @@ def apply_surfaces():
     something the game cannot draw flatters in the direction nobody
     double-checks."""
     import surface_preview
+    collapse_role_materials()
     rep = surface_preview.apply_all(off=not _MAPS, merged=bool(_MAPS
                                                                and _MERGED))
+    # RN-1101's GATE, and it is the half that stops the defect coming back. An
+    # `OF_` material that reaches here unexamined is a role rendering with no
+    # surface while the report line above says the surfaces are on. There is
+    # no legitimate case: every `OF_` name IS a palette role by construction.
+    stray = sorted(m.name for m in bpy.data.materials
+                   if m.name.startswith("OF_")
+                   and m.name[3:] not in surface_preview.texgen_palette())
+    if stray:
+        raise SystemExit("[render_machines] FAIL: %d OF_ material(s) are not "
+                         "palette roles and rendered unsurfaced: %s"
+                         % (len(stray), ", ".join(stray)))
     return rep
 
 
@@ -258,6 +330,13 @@ def visible_objects(stem=None):
         if o.type != "MESH":
             continue
         n = o.name
+        # RN-1102, the same exemption `line` needs and for the same reason:
+        # the floor is scenery, not a subject. It is not appended to `out`
+        # either, because callers frame the bounding box of what this returns
+        # and a 320 m plane would frame the county.
+        if n == "Ground":
+            o.hide_render = False
+            continue
         if n.startswith("col_") or _is_lodn(n):
             o.hide_render = True
             continue
@@ -463,7 +542,17 @@ def line(cam, seed, out_prefix, tag="line"):
     src, roots = {}, {}
     set_res(1180, 560, 26)
     for o in list(bpy.data.objects):
-        if o.type == "MESH":
+        # RN-1102. THE GROUND IS EXEMPT FROM THE HIDE SWEEP, and it was not.
+        # This loop hides every mesh so a shot shows only what it places, and
+        # `_place_copy` unhides the COPIES it makes. The floor is never a copy,
+        # so it was hidden here and never unhidden, and every line shot ever
+        # taken rendered the factory floating in ambient with NO CONTACT
+        # SHADOW AND NO BOUNCE. `add_ground`'s own docstring is the argument
+        # against that ("a machine BOUNCES its floor and a neutral bounce makes
+        # warm paint read cool"), so the rig was contradicting its own reason.
+        # The `studio`/`face`/`det` shots go through `visible_objects`, which
+        # has the same shape, so they lost the floor too.
+        if o.type == "MESH" and o.name != "Ground":
             o.hide_render = True
     for o in list(bpy.data.objects):
         n = o.name
