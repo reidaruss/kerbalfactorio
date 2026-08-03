@@ -1346,3 +1346,200 @@ TEST(a_burn_is_cut_on_delivered_delta_v_and_not_on_the_predicted_duration) {
     CHECK_NEAR(r.orbit.semiMajorAxisM, 800.0e3, 3000.0);
   }
 }
+
+// =============================================================================
+// RENDEZVOUS, FLOWN (PH-154). Reid: "when on autopilot it should fly
+// automatically and rendezvous at the destination."
+//
+// Admin's acceptance, verbatim: prove arrival with a NUMBER, not a screenshot,
+// and the numbers are the closing distance and the relative velocity at the
+// match burn against what the plan predicted.
+//
+// This is the same machine as hold-this-orbit with a harder target: instead of
+// a ring at a radius there is an object with a PHASE, so the arrival has to
+// happen at a place AND a time, and the second burn is a velocity match rather
+// than a circularisation.
+// =============================================================================
+
+struct RendezvousResult {
+  double closingDistanceAtMatchM = -1.0;   // when the match burn lights
+  double closingSpeedAtMatchMS = -1.0;
+  double finalDistanceM = -1.0;            // after the match burn
+  double finalRelativeSpeedMS = -1.0;
+  double closestApproachM = 1e308;
+  double dvSpentMS = 0.0;
+  ap::Phase phase = ap::Phase::Idle;
+  double worstPointingWhileBurningDeg = 0.0;
+};
+
+// Fly a transfer program and watch the TARGET the whole way, so the assertion at
+// the end is about two objects and not about one conic.
+// `coastUntilS` is not a convenience. The driver used to stop the instant the
+// PROGRAM finished, which makes the single-burn control below meaningless: it
+// ended 66 s in, still in the parking orbit, and reported a closest approach of
+// 525 km against a target it had not started travelling towards. A control has
+// to fly the same trajectory and differ in ONE thing.
+static RendezvousResult flyToTarget(const ap::Program& prog, const Vessel& craft,
+                                    const orbital::StateVector& start,
+                                    const tr::Target& tgt, double dt,
+                                    double limitS, double coastUntilS) {
+  FlightSim sim;
+  sim.craft = craft;
+  sim.env = forgeEnv();
+  sim.state.posM = start.r;
+  sim.state.velMS = start.v;
+  sim.state.forward = orbital::normalized(start.v);
+  sim.state.right = orbital::normalized(orbital::cross(start.r, start.v));
+  sim.sas = SasMode::Command;
+  sim.sasCommand = sim.state.forward;
+
+  ap::Autopilot pilot;
+  pilot.arm(prog);
+
+  RendezvousResult out;
+  bool sawMatchStart = false;
+  const int steps = static_cast<int>(limitS / dt) + 2;
+  for (int i = 0; i < steps; ++i) {
+    const ap::Command c = pilot.update(sim, dt);
+    ap::Autopilot::apply(sim, c);
+
+    const orbital::StateVector ts = tr::targetStateAt(tgt, sim.state.timeS);
+    const double d = (sim.state.posM - ts.r).length();
+    if (d < out.closestApproachM) out.closestApproachM = d;
+    // The instant the SECOND burn lights is "the match burn", and it is
+    // recorded once rather than being recomputed at the end from a time.
+    if (!sawMatchStart && pilot.status.burningNow && pilot.status.burnIndex == 1) {
+      sawMatchStart = true;
+      out.closingDistanceAtMatchM = d;
+      out.closingSpeedAtMatchMS = (sim.state.velMS - ts.v).length();
+    }
+    if (pilot.status.burningNow
+        && pilot.status.pointingErrorDeg > out.worstPointingWhileBurningDeg)
+      out.worstPointingWhileBurningDeg = pilot.status.pointingErrorDeg;
+
+    sim.step(dt);
+    if (!pilot.running() && sim.state.timeS >= coastUntilS) break;
+  }
+  const orbital::StateVector ts = tr::targetStateAt(tgt, sim.state.timeS);
+  out.finalDistanceM = (sim.state.posM - ts.r).length();
+  out.finalRelativeSpeedMS = (sim.state.velMS - ts.v).length();
+  out.dvSpentMS = pilot.status.dvSpentTotalMS;
+  out.phase = pilot.status.phase;
+  return out;
+}
+
+// -----------------------------------------------------------------------------
+// THE ACCEPTANCE. An 80 km parking orbit to Anchorage's 400 km ring, phased so
+// the vehicle actually has somewhere to arrive, flown end to end.
+// -----------------------------------------------------------------------------
+TEST(the_autopilot_flies_a_rendezvous_and_arrives_with_the_relative_velocity_gone) {
+  const double r1 = kR1, r2 = 1.0e6;
+  const double slew = ap::kOrientLeadS;
+  const Vessel craft = upperStageOnly();
+
+  // BOTH orbits are built by , and that is not tidiness. It and
+  //  run in OPPOSITE senses, so mixing them plans a RETROGRADE
+  // rendezvous: the first draft of this test asked for 3818.69 m/s against a
+  // Hohmann of 396 and was correctly refused as infeasible by a vehicle
+  // carrying 3065. One convention per test.
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+  const orbital::StateVector start = orbital::elementsToState(ship, 0.0);
+  const double tH = tr::hohmannTimeS(r1, r2, kMu);
+  const double tof = tH * 0.999;
+  const double rate = std::sqrt(kMu / (r2 * r2 * r2));
+  tr::Target tgt;
+  tgt.el = circularAbout(r2, kMu, orbital::kPi - rate * (slew + tof));
+  tgt.dockingRadiusM = 0.60;
+
+  const tr::Transfer trans = tr::solveTransfer(ship, tgt, slew, tof);
+  CHECK(trans.valid);
+  // The PLAN's own prediction, which is what the flown numbers are measured
+  // against: Lambert lands on the target by construction, so the plan says the
+  // closing distance is zero and the match burn removes all of the relative
+  // velocity.
+  CHECK(trans.missDistanceM < 1e-6);
+  CHECK((trans.transferEnd.v + trans.arriveDv - trans.targetState.v).length() < 1e-6);
+
+  const ap::Program prog = ap::flyTransfer(trans, craft, /*arrivalIsMatch=*/true);
+  CHECK(prog.valid);
+  CHECK(prog.burnCount == 2);
+  CHECK_NEAR(prog.burns[0].deltaVMS, trans.departDvMS, 1e-12);
+  CHECK_NEAR(prog.burns[1].deltaVMS, trans.arriveDvMS, 1e-12);
+  CHECK_NEAR(prog.burns[0].nodeTimeS, slew, 1e-12);
+  CHECK_NEAR(prog.burns[1].nodeTimeS, slew + tof, 1e-12);
+
+  const RendezvousResult r =
+      flyToTarget(prog, craft, start, tgt, 0.002, slew + tof + 200.0, slew + tof);
+
+  // DW-20: prove the flight happened before believing the arrival. Without
+  // this, a vehicle that never left the pad would report a beautiful zero
+  // closing speed against a target it is 320 km away from.
+  CHECK(r.phase == ap::Phase::Done);
+  CHECK_NEAR(r.dvSpentMS, prog.totalDvMS, 0.5);
+  CHECK(r.worstPointingWhileBurningDeg < 0.5);
+
+  // THE TWO NUMBERS ADMIN ASKED FOR.
+  //
+  // Closing distance at the moment the match burn lights, against a plan that
+  // predicted zero; and the relative velocity left after it, against a plan
+  // that predicted zero. Both are the finite-burn residue of an impulsive plan
+  // accumulated over a 1286 s transfer, and both are reported rather than
+  // tolerated: if either grows, the arithmetic upstream has moved.
+  //
+  // MEASURED: the match burn lights at 1306.61 m and 206.4555 m/s of closing
+  // speed, and the flight ends 108.87 m from the station at 0.23133 m/s. The
+  // plan predicted zero for both, so those figures ARE the accumulated
+  // finite-burn residue of an impulsive plan over a 1286 s transfer, which is
+  // real physics rather than slack. 458.8236 m/s spent.
+  CHECK(r.closingDistanceAtMatchM >= 0.0);      // the match burn DID light
+  CHECK(r.closingDistanceAtMatchM < 2000.0);
+  CHECK(r.closingSpeedAtMatchMS > 100.0);       // it was still closing fast
+  CHECK_NEAR(r.closingSpeedAtMatchMS, 206.4555, 1.0);
+  CHECK(r.finalDistanceM < 300.0);
+  // THE RENDEZVOUS ITSELF: the relative velocity is gone. Two objects at rest
+  // with respect to each other is what "rendezvous" means, and it is the one
+  // number a docking approach would start from.
+  CHECK(r.finalRelativeSpeedMS < 1.0);
+  // and it is a THOUSAND-fold reduction from the speed it arrived at, which is
+  // what makes the match burn the thing that did it rather than luck.
+  CHECK(r.finalRelativeSpeedMS < 0.02 * r.closingSpeedAtMatchMS);
+  // 0.23133 against 206.4555 is a factor of 892.
+}
+
+// -----------------------------------------------------------------------------
+// AND THE NEGATIVE CONTROL, because every number above would look just as good
+// on a vehicle that flew the injection and then coasted past. Fly ONLY the
+// first burn and assert the arrival is a fly-by rather than a rendezvous.
+// -----------------------------------------------------------------------------
+TEST(without_the_match_burn_the_same_flight_is_a_fly_past) {
+  const double r1 = kR1, r2 = 1.0e6;
+  const double slew = ap::kOrientLeadS;
+  const Vessel craft = upperStageOnly();
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+  const orbital::StateVector start = orbital::elementsToState(ship, 0.0);
+  const double tH = tr::hohmannTimeS(r1, r2, kMu);
+  const double tof = tH * 0.999;
+  const double rate = std::sqrt(kMu / (r2 * r2 * r2));
+  tr::Target tgt;
+  tgt.el = circularAbout(r2, kMu, orbital::kPi - rate * (slew + tof));
+
+  const tr::Transfer trans = tr::solveTransfer(ship, tgt, slew, tof);
+  CHECK(trans.valid);
+  // `arrivalIsMatch = false` is the same call a BODY target makes, so this
+  // control also exercises the single-burn path a capture will use.
+  const ap::Program prog = ap::flyTransfer(trans, craft, /*arrivalIsMatch=*/false);
+  CHECK(prog.valid);
+  CHECK(prog.burnCount == 1);
+
+  const RendezvousResult r =
+      flyToTarget(prog, craft, start, tgt, 0.002, slew + tof + 200.0, slew + tof);
+  CHECK(r.phase == ap::Phase::Done);
+  // It still gets THERE: the injection alone puts it alongside.
+  CHECK(r.closestApproachM < 5000.0);
+  // But it is not a rendezvous, and the difference is the whole point: the
+  // injection puts you alongside the station at 200-odd m/s, which is a fly-by
+  // and not an arrival. The match burn is what turns one into the other.
+  CHECK(r.finalRelativeSpeedMS > 150.0);
+  // The match burn was never scheduled, so it was never recorded.
+  CHECK(r.closingDistanceAtMatchM < 0.0);
+}

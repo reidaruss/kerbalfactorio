@@ -709,3 +709,43 @@ type, or one platform, write down the CLASS and go and check the siblings in the
 same pass. A per-instance fix to a per-class bug leaves the remaining instances
 in a worse state than before, because the fix is now evidence that somebody
 looked.
+
+## Automating a control loop is itself an instrument (PH-151)
+
+`flight::stabilityAssist` derives its rotation axis from `cross(forward,
+target)`. For two exactly opposed unit vectors that cross product is the ZERO
+VECTOR, so the demanded torque was zero and **a vehicle commanded to flip
+exactly 180 degrees never turned.** It reported `errorRad` as pi the whole
+time: the controller knew, said so, and did nothing.
+
+**This is a shipped bug and it is the player's, not the autopilot's.** Anyone
+flying perfectly prograde who presses retrograde hits it. It is rare because
+humans do not fly perfectly prograde, not because the code is safe.
+
+**It survived every hand test this project has ever run, and the reason is
+structural rather than bad luck.** A human at the controls jitters. Their
+attitude is never exactly antiparallel to anything, their timing is never
+exactly on a node, their throttle is never exactly proportional. Hand testing
+therefore samples a neighbourhood AROUND the singular cases and routes past
+them without the tester ever knowing one was there. **Automation goes straight
+through the middle**, because a geometric plan produces exact values by
+construction: circularising at apoapsis points exactly retrograde relative to
+the burn that raised the orbit, so the second burn of every hold-orbit program
+lands on the singularity every single time.
+
+Measured: 180.000 degrees held for 600 s of sim, and the burn never happened.
+
+**The rule.** When you automate something a human was doing, you have built a
+new instrument, and its first job is not the feature: it is to walk the exact
+cases hand-testing structurally cannot reach. Expect to find bugs in code that
+has been shipped and exercised for months. Budget for them, and log them in
+terms of the PLAYER's exposure rather than the automation's, because "the
+autopilot could not flip" undersells "the ship cannot turn round".
+
+**The second-order form is the same night's other finding.** Fixing the
+attitude gate in isolation made the ORBIT WORSE: pointing improved from 3.92
+degrees to 0.32, and eccentricity went six times the other way, because holding
+for the attitude pushed the burn late and a late burn is a different error that
+nothing was watching. **When a fix improves the thing you were measuring, check
+the thing you were not.** The real fault was upstream of both and only visible
+once the first two were out of the way.
