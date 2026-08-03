@@ -394,6 +394,12 @@ export class VabView {
    */
   projectNodes(cam: THREE.Camera, nodes: readonly AttachNode[]): {
     parent: number; kind: string; cls: number; angleRad: number; offsetM: number;
+    /** GP-296. INSERT NODES: the part that would be displaced downward, -1 on
+     *  every other kind. Reported because a seam with no child is an attach
+     *  node wearing a different name and the splice would have nothing to move,
+     *  and a probe that could not read it would have to infer it from a
+     *  refusal. */
+    child: number;
     pos: [number, number, number]; ndc: [number, number]; onScreen: boolean;
   }[] {
     const v = new THREE.Vector3();
@@ -403,7 +409,7 @@ export class VabView {
         // GP-115: `cls` is REPORTED. The class a face presents is the one fact
         // in a node that can be silently wrong, and a diagnosis that cannot read
         // it has to infer it from a refusal string.
-        parent: n.parent, kind: n.kind, cls: n.cls,
+        parent: n.parent, kind: n.kind, cls: n.cls, child: n.child ?? -1,
         angleRad: n.angleRad, offsetM: n.offsetM,
         pos: n.posM, ndc: [v.x, v.y] as [number, number],
         onScreen: v.x >= -1 && v.x <= 1 && v.y >= -1 && v.y <= 1 && v.z < 1,

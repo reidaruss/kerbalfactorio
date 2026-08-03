@@ -37,7 +37,11 @@ export function vabReport(v: Vab): unknown {
     handIndex: v.hand === null ? -1 : v.hand.index,
     symmetry: v.symmetry, selected: v.selected, nodes: v.nodes.length,
     snapped: v.active === null ? null
-      : { parent: v.active.parent, kind: v.active.kind, pos: v.active.posM },
+      // GP-296. `child` rides along so a probe can tell a seam the snap
+      // caught from a free face at the same place: an insert node with no
+      // child is an attach node wearing a different name.
+      : { parent: v.active.parent, kind: v.active.kind, pos: v.active.posM,
+          child: v.active.child ?? -1 },
     // GP-115. THE NEAR MISS the cursor is over but the hand cannot take, and the
     // sentence that says why. Published because "the ghost went away" and "the
     // snap search is broken" are the two readings a player has to choose between

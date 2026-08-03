@@ -164,8 +164,72 @@
   log.push(`after: ${after.parts.length} parts, ${afterLen.toFixed(3)} m, `
     + `${after.stages?.length} stages, verdict ok ${after.verdict?.ok}`);
 
+  // ---- THE GESTURE: AIM AT A SEAM AND CLICK ------------------------------
+  //
+  // Everything above drives `of.vab('insert', ...)`, which is the VERB. That
+  // was GP-293 and it is only half of Reid's sentence: he said snapping is
+  // broken AND you can only build bottom-up, and those are one cause. The
+  // splice fixed the second half. THIS is the first half, and it is the half he
+  // can actually see.
+  //
+  // Driven, not screenshotted. The claim is that a seam is now a place the
+  // player can aim at, so the probe hovers the node the bay itself publishes
+  // and presses the same button a player presses.
+  const seams = of.vab('nodes').filter((n) => n.kind === 'insert');
+  check('THE BAY NOW OFFERS SEAMS AS NODES', seams.length > 0,
+        `kinds on offer: [${[...new Set(of.vab('nodes').map((n) => n.kind))].join(', ')}]. `
+        + 'Zero means attachNodes still omits every occupied face and a player '
+        + 'aiming at a joint finds nothing there, which IS the complaint.');
+  // AND THEY CARRY BOTH SIDES. An insert node with no child is an attach node
+  // wearing a different name, and the splice would have nothing to displace.
+  check('and each seam names the part it would displace',
+        seams.every((n) => typeof n.child === 'number' && n.child >= 0),
+        JSON.stringify(seams.map((n) => ({ k: n.kind, p: n.parent, c: n.child }))));
+  const onScreen = seams.filter((n) => n.onScreen);
+  check('at least one seam is actually aimable on screen', onScreen.length > 0,
+        `${seams.length} seams, ${onScreen.length} on screen`);
+
+  let gestureGrew = 0;
+  if (onScreen.length > 0) {
+    const partsBefore = R().parts.length;
+    const lenBefore = R().stats?.lengthM ?? 0;
+    const apIdx = idx(AUTOPILOT);
+    of.vab('take', apIdx);
+    await sleep(0.25);
+    const seam = onScreen[0];
+    of.vab('hover', seam.ndc[0], seam.ndc[1]);
+    await sleep(0.25);
+    // THE SNAP CAUGHT THE SEAM, asserted before the click: if the hover landed
+    // on some other node the click below would attach normally and the part
+    // count would still go up, which reads exactly like a pass.
+    const act = R().snapped;
+    check('aiming at a seam SNAPS to it',
+          act !== null && act !== undefined && act.kind === 'insert',
+          `snapped node is ${act === null || act === undefined ? 'null' : act.kind}`);
+    of.vab('place');
+    await sleep(0.5);
+    const partsAfter = R().parts.length;
+    gestureGrew = (R().stats?.lengthM ?? 0) - lenBefore;
+    check('and clicking there INSERTS through the gesture',
+          partsAfter === partsBefore + 1,
+          `${partsBefore} -> ${partsAfter} parts`);
+    check('the stack grew by the inserted part, not by a part on the end',
+          gestureGrew > 0.2 && gestureGrew < 0.5,
+          `grew ${gestureGrew.toFixed(3)} m`);
+    log.push(`gesture: aimed at a seam, ${partsBefore} -> ${partsAfter} parts, `
+      + `grew ${gestureGrew.toFixed(3)} m`);
+  }
+
   // ---- THE REFUSALS, EACH REACHABLE --------------------------------------
   // A gate with no reachable refusing case is decoration, so each is driven.
+  // REBASED ON THE STATE THE GESTURE LEFT, not on `after`. The gesture section
+  // above deliberately inserts a SECOND module, so every count from here on is
+  // measured against a fresh reading: comparing against a baseline the run has
+  // since moved past is how a probe reports a failure that is its own
+  // bookkeeping rather than the code's.
+  const settled = R();
+  const settledParts = settled.parts.length;
+  const settledLen = settled.stats?.lengthM ?? 0;
   const rRoot = of.vab('insert', 0, AUTOPILOT);
   check('inserting at the ROOT is refused, because nothing is above it',
         rRoot.ok === false && /top of the stack/i.test(rRoot.why ?? ''),
@@ -175,8 +239,8 @@
         rGone.ok === false && /no part at that joint/i.test(rGone.why ?? ''),
         JSON.stringify(rGone));
   check('and a refused insert changed nothing',
-        R().parts.length === after.parts.length,
-        `${R().parts.length} vs ${after.parts.length}`);
+        R().parts.length === settledParts,
+        `${R().parts.length} vs ${settledParts}`);
 
   // ---- AND IT SURVIVES A ROUND TRIP --------------------------------------
   // The splice rebuilds through `fromJson`, which is the same path a save and
@@ -197,11 +261,11 @@
   await sleep(0.5);
   const back = R();
   check('the spliced design round-trips through save and load',
-        back.parts.length === after.parts.length,
-        `${after.parts.length} -> ${back.parts.length}`);
+        back.parts.length === settledParts,
+        `${settledParts} -> ${back.parts.length}`);
   check('and comes back the same length',
-        Math.abs((back.stats?.lengthM ?? 0) - afterLen) < 1e-6,
-        `${afterLen.toFixed(6)} -> ${(back.stats?.lengthM ?? 0).toFixed(6)} m`);
+        Math.abs((back.stats?.lengthM ?? 0) - settledLen) < 1e-6,
+        `${settledLen.toFixed(6)} -> ${(back.stats?.lengthM ?? 0).toFixed(6)} m`);
 
   of.vab('leave');
   return {
@@ -214,6 +278,9 @@
     afterLenM: afterLen,
     grewM: grew,
     roundTripParts: back.parts.length,
+    seams: seams.length,
+    seamsOnScreen: onScreen.length,
+    gestureGrewM: gestureGrew,
     note: 'the fixture is the deliverable: it BUILDS and then CHANGES ITS MIND, '
       + 'because every previous VAB fixture built once from nothing in a single '
       + 'pass and therefore could not exhibit a defect in revising',

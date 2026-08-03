@@ -21,10 +21,23 @@ import type { DesignPart } from './VesselDesign.js';
 /** `vs::RadialOrigin::Axis`. 0 is MountPlane; see VesselCatalogue.radialOrigin. */
 const RADIAL_ORIGIN_AXIS = 1;
 
-export type NodeKind = 'top' | 'bottom' | 'radial' | 'interstage' | 'pylon';
+/** GP-296. `insert` is a SEAM between two parts, which was not a place until
+ *  now: a face is omitted from `attachNodes` the moment a child holds it, so
+ *  aiming between a pod and a tank found nothing there. It carries both
+ *  sides of the joint (`parent` and `child`) because a splice needs both,
+ *  where an attach only ever needed one. */
+export type NodeKind = 'top' | 'bottom' | 'radial' | 'interstage' | 'pylon'
+  | 'insert';
 
 export interface AttachNode {
   parent: number;          // the handle a new part would attach to
+  /**
+   * GP-296. INSERT NODES ONLY: the handle of the part currently sitting on this
+   * face, which the arriving part will displace downward. -1 on every ordinary
+   * node, and it is what makes the seam a place: an insert has to know BOTH
+   * sides of the joint, where an attach only ever knew one.
+   */
+  child?: number;
   kind: NodeKind;
   /** Vessel-frame position of the mating plane centre (radial: on the hull). */
   posM: [number, number, number];
@@ -100,16 +113,24 @@ export function suppressedNodes(parts: readonly DesignPart[],
     const def = byId(p.partId);
     if (!def) continue;
     const [x, y, z] = p.originM;
-    if (def.nodeTop && occupied(parts, p, ATTACH_TOP)) {
+    // ONLY A FACE HELD BY A CHILD, never one spent by the part's own attach.
+    // `occupied` is true for both, and they are different things: a part that
+    // is itself mated upward has no free top, but there is no CHILD there to
+    // displace, so there is nothing to insert between. Offering it would be an
+    // insert node with no other side.
+    const kidTop = parts.find((q) => q.parent === p.handle && q.attach === ATTACH_TOP);
+    const kidBot = parts.find((q) => q.parent === p.handle && q.attach === ATTACH_BOTTOM);
+    if (def.nodeTop && kidTop !== undefined) {
       out.push({
-        parent: p.handle, kind: 'top', posM: [x, y + def.heightM, z],
+        parent: p.handle, child: kidTop.handle, kind: 'insert',
+        posM: [x, y + def.heightM, z],
         cls: classAtTop(def), angleRad: 0, offsetM: 0, radiusM: def.diameterM * 0.5,
       });
     }
     const term = def.nodeTop && !def.nodeBottom;
-    if ((def.nodeBottom || term) && occupied(parts, p, ATTACH_BOTTOM)) {
+    if ((def.nodeBottom || term) && kidBot !== undefined) {
       out.push({
-        parent: p.handle, kind: term ? 'interstage' : 'bottom', posM: [x, y, z],
+        parent: p.handle, child: kidBot.handle, kind: 'insert', posM: [x, y, z],
         cls: def.nodeBottom ? classAtBottom(def) : def.diameterM,
         angleRad: 0, offsetM: 0, radiusM: def.diameterM * 0.5,
       });
@@ -246,6 +267,30 @@ function directionWhy(node: AttachNode, hand: PartRow): string {
 
 /** Does the part in hand fit this node, and if not, why not (for the ghost)? */
 export function fitAt(node: AttachNode, hand: PartRow): { ok: boolean; why: string } {
+  if (node.kind === 'insert') {
+    // GP-296. AN INSERT ASKS TWO QUESTIONS AND AN ATTACH ASKS ONE. The arriving
+    // part must mate with the face above it AND carry the stack below it, so a
+    // part with only one usable end can sit on a free face and can NOT be
+    // spliced into a joint. Checking only the first would admit a nose cone
+    // into the middle of a rocket, which would then rebuild with everything
+    // below it orphaned.
+    if (!hand.nodeTop || !hand.nodeBottom) {
+      return {
+        ok: false,
+        why: `${hand.label} mates by one end only, so it can cap a stack but `
+          + 'cannot be inserted into one: something has to hang from it.',
+      };
+    }
+    if (Math.abs(classAtTop(hand) - node.cls) > 1e-9
+        && Math.abs(classAtBottom(hand) - node.cls) > 1e-9) {
+      return {
+        ok: false,
+        why: `${hand.label} is a different diameter class from this joint: put `
+          + 'a Stack Adapter in instead, then build from it.',
+      };
+    }
+    return { ok: true, why: '' };
+  }
   if (node.kind === 'pylon') {
     // A pylon carries a strap-on, not another pylon: a decoupler on a decoupler
     // is the accidental tower the blanket rule above exists to prevent.
@@ -287,12 +332,16 @@ export function fitAt(node: AttachNode, hand: PartRow): { ok: boolean; why: stri
 /** The Attach enum value a node implies. */
 export function attachModeOf(node: AttachNode): number {
   if (node.kind === 'radial' || node.kind === 'pylon') return ATTACH_RADIAL;
+  // An insert takes the face's own sense, which the splice reads off the child
+  // it displaces rather than from here; this keeps the function total.
+  if (node.kind === 'insert') return ATTACH_BOTTOM;
   return node.kind === 'top' ? ATTACH_TOP : ATTACH_BOTTOM;
 }
 
 /** Is this a stack face at all (as opposed to a radial mount)? */
 export function isStackNode(node: AttachNode): boolean {
-  return node.kind === 'top' || node.kind === 'bottom' || node.kind === 'interstage';
+  return node.kind === 'top' || node.kind === 'bottom' || node.kind === 'interstage'
+    || node.kind === 'insert';
 }
 
 /** Does this node place its tenant on a parent's SIDE? */

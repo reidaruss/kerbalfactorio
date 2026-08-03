@@ -26,7 +26,9 @@ import { VabCamera } from './VabCamera.js';
 import { VabPointer } from './VabInput.js';
 import { partRows, stageRows } from './VabRows.js';
 import { vabReport, vabJointGaps, vabCatalogue } from './VabReport.js';
-import { attachModeOf, attachNodes, fitAt, symmetryAngles } from './VesselNodes.js';
+import {
+  attachModeOf, attachNodes, fitAt, suppressedNodes, symmetryAngles,
+} from './VesselNodes.js';
 import {
   vabAim, vabClick, vabDropHand, vabHover, vabRightClick,
 } from './VabAim.js';
@@ -235,10 +237,26 @@ export class Vab {
     this.hand = p;
     this.selected = -1;
     this.view.highlight([]);
-    this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
+    this.nodes = this.allNodes();
     this.view.showNodes(this.nodes, this.active);
     this.render();
     this.hoverNdc(this.pointer.ndcX, this.pointer.ndcY);   // GP-143, see VabAim
+  }
+
+  /**
+   * GP-296. FREE FACES AND SEAMS, in one list, because a player aims at a place
+   * and does not care which kind it is.
+   *
+   * The seams come last so that where a free face and a seam are at the same
+   * distance from the aim ray, `nearestNodeToRay` keeps the free face: it
+   * prefers the earlier node on a tie, and attaching to a free end is the far
+   * commoner intent. Aiming AT a seam still wins, because there is no free face
+   * there to tie with.
+   */
+  private allNodes(): AttachNode[] {
+    const byId = (id: number): PartRow | undefined => this.byIdMap.get(id);
+    return [...attachNodes(this.design.parts, byId),
+            ...suppressedNodes(this.design.parts, byId)];
   }
 
   /** Commit the part in hand wherever it is currently snapped. */
@@ -272,6 +290,25 @@ export class Vab {
     const fit = fitAt(node, hand);
     if (!fit.ok) return this.refuse(fit.why);
 
+    // GP-296. A SEAM IS COMMITTED BY SPLICING, not by attaching. This is the
+    // gesture half of Reid's complaint: the splice has existed since GP-293 and
+    // had only a debug verb, so a player could still aim at a joint and find
+    // nothing there. `insertAtJoint` does the paying, the stage remap, the save
+    // and the redraw, so nothing about that path is duplicated here.
+    if (node.kind === 'insert') {
+      const kid = this.design.parts.findIndex((q) => q.handle === node.child);
+      if (kid < 0) return this.refuse('that joint has moved; aim again');
+      const r = this.insertAtJoint(kid, hand.id);
+      if (!r.ok) return this.refuse(r.why);
+      this.placed += 1;
+      // `insertAtJoint` already went through `after`, which saves and rebuilds,
+      // so this only has to do what afterPlace does ABOUT THE HAND.
+      this.nodes = this.allNodes();
+      this.view.showNodes(this.nodes, null);
+      this.hoverNdc(this.pointer.ndcX, this.pointer.ndcY);
+      return true;
+    }
+
     const how = attachModeOf(node);
     const angles = how === ATTACH_RADIAL
       ? symmetryAngles(node, this.symmetry) : [node.angleRad];
@@ -293,7 +330,7 @@ export class Vab {
   private afterPlace(hand: PartRow): boolean {
     if (!this.handStaged) this.design.autostage();
     this.after(`placed ${hand.label}`);
-    this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
+    this.nodes = this.allNodes();
     this.view.showNodes(this.nodes, this.active);
     return true;
   }
@@ -352,7 +389,7 @@ export class Vab {
     this.selected = -1;
     if (!this.handStaged) this.design.autostage();
     this.after(`removed ${n} part${n === 1 ? '' : 's'}`);
-    this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
+    this.nodes = this.allNodes();
     return true;
   }
 
