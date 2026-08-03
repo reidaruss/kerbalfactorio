@@ -503,6 +503,22 @@ target_link_libraries(approach_tests PRIVATE of_core)
 target_include_directories(approach_tests PRIVATE tests)
 add_test(NAME approach_tests COMMAND approach_tests)
 
+# --- DESCENT: the touchdown gate (landing.h) and the powered descent
+#     (descent.h). The gate decides whether an arrival was a landing and names
+#     which of four ways it was not; the program flies to one. THE FIXTURE IS
+#     THE POINT: every landing is flown onto real Cinder through
+#     worldgen::sampleHeightField, at sites the test SEARCHES FOR BY SLOPE and
+#     then states the slope of, because a descent tested only onto flat ground
+#     is the flat-spawn trap this project has been caught by four times. The
+#     slope baseline is the vehicle's own footprint, and the same point read
+#     over a kilometre is a different number (WG-146).
+add_executable(descent_tests
+  tests/test_main.cpp
+  tests/test_descent.cpp)
+target_link_libraries(descent_tests PRIVATE of_core)
+target_include_directories(descent_tests PRIVATE tests)
+add_test(NAME descent_tests COMMAND descent_tests)
+
 # --- ENEMIES: the pollution / evolution / nest-attack feedback loop (W11 lane
 #     E). enemies.h is the Factorio-inspired base-defense loop as a SIMULATION
 #     rather than a wave timer: machines emit pollution into a coarse sparse
