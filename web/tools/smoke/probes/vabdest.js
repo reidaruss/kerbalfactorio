@@ -280,6 +280,26 @@
     check('solver present: feasible agrees with the margin too',
           m.feasible === (m.marginMS >= 0),
           `feasible ${m.feasible}, margin ${m.marginMS}`);
+    // GP-270. THE FIVE LEGS SUM TO THE TOTAL. This is the assertion that
+    // catches a mislabelled or misordered word, which is the failure mode a
+    // stride-correct row still has: every number arrives, every number is
+    // finite, and one of them is under the wrong heading. Physics publishes
+    // ascent + planeMatch + transfer + arrival + reserve and says they sum to
+    // the real burn to 1e-9.
+    const legs = Array.isArray(m.legsMS) ? m.legsMS : [];
+    const sum = legs.reduce((a, b) => a + b, 0);
+    check('solver present: five legs came back', legs.length === 5,
+          JSON.stringify(legs));
+    check('solver present: the legs SUM to the required total',
+          Math.abs(sum - m.dvRequiredMS) < 1e-6,
+          `legs sum ${sum} vs required ${m.dvRequiredMS}: ${JSON.stringify(legs)}`);
+    // AND THE SOLVER SAID YES. Word 0 is `ok` and this screen ignored it until
+    // GP-270: on a refusal `feasible` is 0 too, so an unread `ok` draws a
+    // confident CANNOT REACH over a question that was never answered.
+    check('solver present: and it actually answered (word 0)', m.solverOk === true,
+          `solverOk ${m.solverOk}`);
+    check('an answered reach never draws the NO ANSWER band',
+          !/NO ANSWER/.test(dOrbit.drawn.verdict), dOrbit.drawn.verdict);
   }
 
   // --- 6. ONE DELTA-V AUTHORITY --------------------------------------------

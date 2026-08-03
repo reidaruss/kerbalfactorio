@@ -28,7 +28,7 @@
 // =============================================================================
 import type { AutopilotTarget } from '../game/AutopilotTargets.js';
 import type { ModuleFit, Reach } from '../game/Autopilot.js';
-import { REACH_LEGS, waitingSentence } from '../game/Autopilot.js';
+import { LEG_NOTE, REACH_LEGS, waitingSentence } from '../game/Autopilot.js';
 import { esc } from './GameHud.js';
 
 export interface VabDestHooks {
@@ -132,7 +132,13 @@ export class VabDestination {
     const kGate = `${s.fit.fitted ? 1 : 0}|${s.fit.reason}`;
     const kRows = `${s.selectedId}|`
       + s.rows.map((r) => `${r.id}:${r.detail}:${r.blocked === '' ? 1 : 0}`).join(',');
-    const kReach = `${s.reach.waitingOn}|${fmt(s.reach.dvRequiredMS, 1)}|`
+    // `ok` IS IN THE KEY. It was not, and that is a repaint bug waiting: a
+    // solver that went from answering to refusing changes only this boolean on
+    // a target whose numbers all read NaN either way, so the band would have
+    // kept saying CANNOT REACH while the model said NO ANSWER. A page drawn
+    // once and never again is this seat's most-repeated defect.
+    const kReach = `${s.reach.waitingOn}|${s.reach.ok ? 1 : 0}|`
+      + `${fmt(s.reach.dvRequiredMS, 1)}|`
       + `${fmt(s.dvAvailableMS, 1)}|${fmt(s.reach.marginMS, 1)}|`
       + `${s.reach.feasible ? 1 : 0}|${s.selectedId}`;
     const kOrbit = s.selectedId === 'orbit' ? '1' : '0';
@@ -242,6 +248,25 @@ function reachBlock(s: VabDestState): string {
       + line('vehicle dV', `${fmt(s.dvAvailableMS)} m/s`, 'src')
       + `<div class="note">${esc(waitingSentence(r.waitingOn))}</div>`;
   }
+  // GP-270. THE SOLVER IS ALLOWED TO REFUSE, AND A REFUSAL IS NOT A VERDICT.
+  //
+  // Word 0 of the reach row is `ok`, and until now this screen never read it.
+  // That is the same defect as the negative control that justified the pending
+  // state: `feasible` is 0 on a refusal too, so an unread `ok` would have drawn
+  // a confident CANNOT REACH with a margin of NaN over a question the solver
+  // declined to answer. It declines for a real reason: the ascent budget is
+  // CALIBRATED against a measured Forge flight and will not price a launch from
+  // a body nobody has flown off, because an airless moon's gravity loss is a
+  // few percent where Forge's is 35.
+  if (!r.ok) {
+    return '<div class="of-vdband pend">NO ANSWER</div>'
+      + line('vehicle dV', `${fmt(s.dvAvailableMS)} m/s`, 'src')
+      + '<div class="note">The transfer solver declined this one rather than '
+      + 'guessing. The commonest reason is a launch from a body whose ascent '
+      + 'has never been measured; the budget is calibrated against a real '
+      + 'flight, not modelled, so it refuses instead of inventing a number.'
+      + '</div>';
+  }
   const good = r.feasible;
   const out = [`<div class="of-vdband ${good ? 'ok' : 'bad'}">`
     + `${good ? 'CAN REACH' : 'CANNOT REACH'}</div>`];
@@ -252,7 +277,12 @@ function reachBlock(s: VabDestState): string {
   for (let k = 0; k < REACH_LEGS.length; ++k) {
     const v = r.legsMS[k];
     if (v === undefined || !(v > 0)) continue;
-    out.push(line(REACH_LEGS[k] ?? '', `${fmt(v)} m/s`, 'leg'));
+    const label = REACH_LEGS[k] ?? '';
+    out.push(line(label, `${fmt(v)} m/s`, 'leg'));
+    // The note only prints when its leg does, so a coplanar transfer never
+    // explains a line it did not draw.
+    const note = LEG_NOTE[label];
+    if (note !== undefined) out.push(`<div class="note leg">${esc(note)}</div>`);
   }
   return out.join('');
 }

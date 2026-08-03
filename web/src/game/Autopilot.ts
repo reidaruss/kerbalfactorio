@@ -129,10 +129,44 @@ function apModule(M: OfCoreModule): ApModule | null {
   return apMissing(M).length === 0 ? (M as unknown as ApModule) : null;
 }
 
-/** One leg of the budget, so the screen can show WHERE the fuel goes and not
- *  just a total. Labels are fixed here; the numbers are all physics'. */
-export const REACH_LEGS = ['ascent', 'plane change', 'transfer', 'arrival',
+/**
+ * One leg of the budget, so the screen can show WHERE the fuel goes and not
+ * just a total. Labels are fixed here; the numbers are all physics'.
+ *
+ * GP-270. THREE OF THESE FIVE MEAN SOMETHING MORE PARTICULAR THAN THEIR NAME,
+ * and the physics lane corrected all three after the first version shipped:
+ *
+ *  - `plane match` was called "plane change", which invited exactly the wrong
+ *    reading. It is NOT a separable burn a player could skip or do later. A 3D
+ *    Lambert already prices the plane mismatch INSIDE the departure burn and
+ *    prices it better than two burns would, so a textbook `2 v sin(t/2)` beside
+ *    the transfer would double-count, and splitting the vector into components
+ *    gives two numbers that add in quadrature rather than adding. What is
+ *    published is the difference between TWO TRANSFERS THAT WERE BOTH ACTUALLY
+ *    SOLVED: the real one, and the same trip with the target rotated coplanar.
+ *    Exactly 0.0 when the planes match. The label and `LEG_NOTE` below say so,
+ *    because a player who reads "plane change" reasonably concludes there is a
+ *    cheaper route that skips it.
+ *  - `ascent` is CALIBRATED, not modelled (0.047% against a real flight), and
+ *    it therefore REFUSES a body nobody has flown off, because 35% gravity loss
+ *    is an atmosphere and a modest pad TWR and an airless moon's is a few
+ *    percent. That refusal arrives as `ok = 0`, which is why `Reach.ok` is a
+ *    drawn state here and not an ignored word.
+ *  - `reserve` is the one POLICY constant in the stack, 5%, and is named as
+ *    policy rather than physics so nobody hunts for the equation behind it.
+ */
+export const REACH_LEGS = ['ascent', 'plane match', 'transfer', 'arrival',
   'reserve'] as const;
+
+/** The sentence a leg needs beside it, or '' for the ones that speak for
+ *  themselves. Shown only when the leg is drawn, so an all-coplanar transfer
+ *  never explains a line it did not print. */
+export const LEG_NOTE: Record<string, string> = {
+  'plane match': 'priced inside the departure burn, not a separate one: there '
+    + 'is no cheaper route that skips it.',
+  reserve: 'policy, 5%: a gate that says yes at zero margin says yes to a '
+    + 'mission that fails.',
+};
 
 export interface Reach {
   /**

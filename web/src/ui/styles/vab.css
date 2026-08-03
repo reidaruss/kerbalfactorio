@@ -565,3 +565,10 @@
   padding: 2px 6px;
 }
 #of-vab .of-vdest .none { font-size: 11px; color: var(--of-dim); padding: 4px 6px; }
+
+/* GP-270: a leg's own footnote, printed only when its leg is. */
+#of-vab .of-vdest .note.leg {
+  padding-left: 16px;
+  opacity: 0.75;
+  font-size: 9.5px;
+}

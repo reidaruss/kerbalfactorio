@@ -120,6 +120,8 @@ export class VabDest {
       lockedByTech: s.fit.lockedByTech,
       moduleReason: s.fit.reason,
       waitingOn: s.reach.waitingOn,
+      solverOk: s.reach.ok,
+      legsMS: [...s.reach.legsMS],
       dvAvailableMS: s.dvAvailableMS,
       dvRequiredMS: s.reach.dvRequiredMS,
       marginMS: s.reach.marginMS,
