@@ -258,6 +258,50 @@ export interface MapVesselRow {
   readonly promoted: boolean;
 }
 
+
+/** GP-271. One frame of the autopilot planner, for `plannerBlock`. */
+export interface MapPlannerRow {
+  readonly id: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly detail: string;
+  readonly blocked: string;
+}
+
+export interface MapPlannerSample {
+  readonly tS: number;
+  /** NaN for a departure with no solution. Drawn as a GAP, never as zero. */
+  readonly dvMS: number;
+  readonly feasible: boolean;
+}
+
+export interface MapPlannerReadout {
+  /** '' when the solver is on the bridge, else the exports it waits for. */
+  readonly waitingOn: string;
+  /** The planner only plans for a vessel you are flying. */
+  readonly aboard: boolean;
+  readonly rows: readonly MapPlannerRow[];
+  readonly selectedId: string;
+  /** Non-empty when the selected row cannot be planned for at all. */
+  readonly blockedWhy: string;
+  readonly curve: readonly MapPlannerSample[];
+  readonly windowS: number;
+  readonly chosen: number;
+  readonly cheapest: number;
+  readonly earliest: number;
+  readonly chosenTS: number;
+  readonly chosenDvMS: number;
+  readonly chosenFeasible: boolean;
+  readonly dvAvailableMS: number;
+  readonly verdict: string;
+  readonly why: string;
+  readonly armed: boolean;
+  readonly planDeltaVMS: number;
+  readonly planBurnS: number;
+  readonly planApoapsisAltM: number;
+  readonly planPeriapsisAltM: number;
+}
+
 /** One frame of everything the panel shows. */
 export interface MapReadout {
   scene: MapScene;
@@ -287,6 +331,8 @@ export interface MapReadout {
   message: string;
   /** Every vessel the registry holds, one row each (GP-210). */
   vessels: readonly MapVesselRow[];
+  /** GP-271. The autopilot planner, or null when it is not built. */
+  planner: MapPlannerReadout | null;
   /** True when the picture is the 3D scene; the panel adapts its hint and the
    *  canvas hides (it keeps painting: `of.map('grid')`'s luma contract). */
   three: boolean;

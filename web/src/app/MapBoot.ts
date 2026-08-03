@@ -75,6 +75,9 @@ export interface MapDeps {
   modals: ModalStack;
   flight: FlightMode;
   bodyRadiusM: number;
+  /** GP-271. The body gravitational parameter, for the planner target list.
+   *  /core's own (DW-18), never a constant. */
+  muM3S2: number;
   atmosphereCeilingM: number;
   setUiCapture(on: boolean): void;
   /** Where a refusal goes when there is no navball to put it on. Supplied by
@@ -164,11 +167,14 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     host: a.host,
     modals: a.g.modals,
     flight: a.flight,
-    bodyRadiusM: a.body.radiusM,
-    // bodyId 0 is Forge; anything else is airless (atmosphere.h §2), and the
-    // only two bodies that exist are a planet and a moon. Read from /core so
-    // the line the map draws the air at is the air the vessel flies through.
-    atmosphereCeilingM: V._of_atmo_space_altitude(a.body.kind === 'moon' ? 1 : 0),
+    bodyRadiusM: a.body.radiusM, muM3S2: a.body.muM3S2,
+    // bodyId 0 is Forge; anything else is airless (atmosphere.h section 2).
+    // GP-271: this passes the body's OWN `bodyId` rather than the old
+    // `kind === 'moon' ? 1 : 0`, which was a transcription that happened to be
+    // right for exactly the two bodies that exist. Two moons would both be
+    // kind 1 and would have shared one atmosphere; `of_atmo_*` is indexed by
+    // BodyParams::bodyId and PlanetBody now carries it (GP-268).
+    atmosphereCeilingM: V._of_atmo_space_altitude(a.body.bodyId),
     // MAP_ALLOWED and NOT the global UI_ALLOWED. A map over a live flight has
     // to keep every flight key working, and an inventory screen must not: that
     // difference is exactly what `setUiCapture`'s second argument is for, and

@@ -48,6 +48,10 @@ export interface MapHooks {
   select(id: number): void;
   /** The handoff door (GP-210). Refusals arrive as sentences on the msg line. */
   takeControl(id: number): void;
+  /** GP-271. Choose an autopilot destination by its target-row id. */
+  planSelect(id: string): void;
+  /** GP-271. One of: earlier, later, cheapest, earliest, arm. */
+  planAct(act: string): void;
 }
 
 /** A fresh one each time: a shared literal would hand every MapView the same
@@ -163,6 +167,8 @@ export class MapView extends Modal {
       if (act === 'hold') { this.hooks.holdNode(); return; }
       if (act === 'zoomin') { this.hooks.zoom(0.8); return; }
       if (act === 'zoomout') { this.hooks.zoom(1.25); return; }
+      const pa = b.getAttribute('data-plan-act');
+      if (pa !== null) { this.hooks.planAct(pa); return; }
       const ctl = b.getAttribute('data-ctl');
       if (ctl !== null) { this.hooks.takeControl(Number(ctl)); return; }
       const f = b.getAttribute('data-focus');
@@ -175,6 +181,11 @@ export class MapView extends Modal {
       return;
     }
     // Not a button: a vessel row selects.
+    const prow = t?.closest('[data-plan]');
+    if (prow !== null && prow !== undefined) {
+      this.hooks.planSelect(prow.getAttribute('data-plan') ?? '');
+      return;
+    }
     const sel = t?.closest('[data-sel]');
     if (sel !== null && sel !== undefined) {
       this.hooks.select(Number(sel.getAttribute('data-sel')));
@@ -234,6 +245,7 @@ export class MapView extends Modal {
    *  granularity, which is the discipline this key already had. */
   private keyOf(r: MapReadout): string {
     const n = r.node, c = r.scene.current, d = r.discovery;
+    const pk = r.planner;
     return [
       r.status, r.sas, r.onRails ? '1' : '0', r.three ? '3' : '2',
       c === null ? 'foot' : [
@@ -258,6 +270,23 @@ export class MapView extends Modal {
         n.burnDurationS.toFixed(1), n.apoapsisAltM.toFixed(0),
         n.periapsisAltM.toFixed(0), n.feasible ? 'y' : 'n',
         n.holding ? 'h' : '-',
+      ].join('|'),
+      // GP-271. THE PLANNER HAD NO TERMS IN THIS KEY AT ALL, so its block was
+      // rebuilt only when something else happened to move. In orbit the
+      // altitude ticks most frames and it LOOKED live; the probe caught it at
+      // the one departure where it did not, and the arm button was showing the
+      // previous sample's state. A page drawn once and never again.
+      //
+      // The terms are the ones the block can DISAGREE about: which target,
+      // which departure, whether it can be flown, and the verdict word. The
+      // curve itself is not keyed, because it is a function of the target and
+      // the latch, and keying 64 floats would rebuild the panel on the last
+      // digit of a Lambert solve.
+      pk === null ? 'noplan' : [
+        pk.selectedId, pk.rows.length, pk.chosen,
+        pk.chosenFeasible ? 'y' : 'n', pk.verdict, pk.armed ? 'a' : '-',
+        Number.isFinite(pk.chosenDvMS) ? pk.chosenDvMS.toFixed(0) : 'x',
+        pk.cheapest, pk.earliest, pk.curve.length, pk.waitingOn,
       ].join('|'),
     ].join(',');
   }

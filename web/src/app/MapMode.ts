@@ -22,11 +22,14 @@ import { MapView } from '../ui/MapView.js';
 // The painter's own framing. Imported rather than re-derived, because "how big
 // is this picture" has exactly one answer and it belongs where the pixels are.
 import { fitSpanM } from '../ui/MapDraw.js';
-import type { MapConic, MapReadout, MapVesselRow, V3 } from '../ui/MapTypes.js';
+import type {
+  MapConic, MapPlannerReadout, MapReadout, MapVesselRow, V3,
+} from '../ui/MapTypes.js';
 import { orbitMeta, orbitPath } from '../sim/ManeuverAbi.js';
 import type { OrbitMeta, Vec3 } from '../sim/ManeuverAbi.js';
 import { MapFocus } from './MapFocus.js';
 import { MapNode } from './MapNode.js';
+import { CURVE_WINDOW_S, MapPlanner } from './MapPlanner.js';
 import { registry } from '../sim/VesselRegistry.js';
 import { currentVesselTick, leaveVessel, resumeControl } from './FlightVessels.js';
 // The ports live in MapBoot, beside where they are built. Type-only, so there
@@ -55,6 +58,9 @@ export class MapMode {
   open = false;
   opens = 0;
   private readonly nodeCtl: MapNode;
+  /** GP-271. The autopilot planner: the target list, the departure curve,
+   *  the schedule and the transfer arc. It computes nothing itself. */
+  readonly planner: MapPlanner;
   /** Metres across the short screen axis. 0 asks for an auto-fit next frame. */
   private spanM = 0;
   /** What the projection is centred on and which way it looks. */
@@ -73,6 +79,15 @@ export class MapMode {
 
   constructor(private readonly d: MapDeps) {
     this.nodeCtl = new MapNode(d.M, d.flight, (m) => d.say(m));
+    this.planner = new MapPlanner({
+      M: d.M,
+      flightHandle: () => (d.flight.aboard && d.flight.session.live
+        ? d.flight.session.handle : 0),
+      home: () => ({ name: 'home', radiusM: d.bodyRadiusM,
+                     muM3S2: d.muM3S2 }),
+      flyingId: () => registry.promotedId,
+      nowS: () => this.lastFrameS,
+    });
     this.focus = new MapFocus({
       player: () => d.player(),
       vessel: () => {
@@ -103,6 +118,8 @@ export class MapMode {
       },
       select: (id) => this.select(id),
       takeControl: (id) => this.takeControl(id),
+      planSelect: (id) => { this.planner.select(id); this.spanM = 0; },
+      planAct: (a) => this.planAct(a),
     });
     this.view.closer = () => this.leave();
   }
@@ -164,7 +181,43 @@ export class MapMode {
   private select(id: number): void {
     this.selectedId = this.selectedId === id ? 0 : id;
     if (this.d.three !== null) this.d.three.selectedId = this.selectedId;
+    // GP-271. CLICKING A MARKER IS CHOOSING A DESTINATION. Reid asked for
+    // both a list and click-to-select, and they must be the SAME act or a
+    // player who clicks the station and then reads the panel sees two
+    // different selections. Deselecting a marker leaves the destination
+    // alone, deliberately: the planner's list has rows the map has no
+    // marker for (a requested orbit, a body), so clearing it from here
+    // would make those rows unselectable by accident.
+    if (this.selectedId > 0) this.planner.selectVesselId(this.selectedId);
   }
+
+  /** GP-271. The planner's five buttons, in one place. */
+  private planAct(act: string): void {
+    const pl = this.planner;
+    if (act === 'earlier') { pl.nudge(-1); return; }
+    if (act === 'later') { pl.nudge(1); return; }
+    if (act === 'cheapest') { pl.pickCheapest(); return; }
+    if (act === 'earliest') { pl.pickEarliestFlyable(); return; }
+    if (act === 'arm') {
+      // THE GATE. Refused per DEPARTURE TIME and never globally, which is
+      // Reid's rule: a destination you cannot reach now is not refused
+      // outright, it is refused AT THIS DEPARTURE. The button is disabled
+      // in that state AND the verb refuses, because a disabled button is a
+      // hint and a refusal is a rule.
+      const sch = pl.schedule();
+      if (!sch.chosenFeasible) { this.d.say(sch.why); return; }
+      // EXECUTION IS THE FLIGHT LANE'S AND IS NOT BUILT. Arming records the
+      // intent and says so plainly rather than pretending to fly it: a
+      // button that looks armed and does nothing is worse than one that
+      // says what it is waiting for (GP-62).
+      this.armed = true;
+      this.d.say('departure set. Execution is the flight lane and is not '
+        + 'wired yet: the plan is held, nothing is flown.');
+    }
+  }
+
+  /** GP-271. Set by the arm button. Cleared whenever the plan changes. */
+  armed = false;
 
   /**
    * TAKE CONTROL (GP-210): the map's focus-switch gesture wired to the handoff
@@ -231,6 +284,7 @@ export class MapMode {
     if (!flying && this.nodeCtl.placed) this.spanM = 0;
     this.nodeCtl.frame(flying);
     if (!this.open) return;
+    this.planner.frame();
     const r = this.readout(flying);
     this.view.render(r);
     if (!this.flat) this.d.three?.frame(r);
@@ -286,6 +340,21 @@ export class MapMode {
           orbitPath(this.d.M, h, p.position, p.postBurnVel, SAMPLES),
           orbitMeta(this.d.M, h, p.position, p.postBurnVel));
       }
+      // GP-271. THE TRANSFER ARC, drawn by the SAME propagator and into the
+      // same amber slot as a manual node's. `of_ap_plan` publishes its
+      // post-burn state precisely so this needs no second propagator, and
+      // using one slot means the two arcs cannot disagree about what a
+      // planned orbit looks like. A hand-placed node WINS if both exist,
+      // because the player put it there on purpose.
+      const tp = this.planner.currentPlan;
+      if (planned === null && tp !== null && tp.valid) {
+        nodePos = tp.nodePosM;
+        planned = conicFrom(
+          orbitPath(this.d.M, h, tp.postBurnPosM as Vec3,
+                    tp.postBurnVelMS as Vec3, SAMPLES),
+          orbitMeta(this.d.M, h, tp.postBurnPosM as Vec3,
+                    tp.postBurnVelMS as Vec3));
+      }
     }
 
     const pl = this.d.player();
@@ -332,7 +401,38 @@ export class MapMode {
       onRails: flying && this.d.M._of_fl_on_rails_eligible(s.handle) === 1,
       message: flying && s.message !== '' ? s.message : f.message,
       vessels: this.vesselRows(flying),
+      planner: this.plannerReadout(flying),
       three: !this.flat && this.d.three !== null,
+    };
+  }
+
+  /** GP-271. One frame of the planner, as plain data (DW-2). */
+  private plannerReadout(flying: boolean): MapPlannerReadout {
+    const pl = this.planner;
+    const t = pl.target();
+    const sch = pl.schedule();
+    const c = pl.currentCurve;
+    const tp = pl.currentPlan;
+    const s = c.samples[pl.chosen];
+    return {
+      waitingOn: c.waitingOn,
+      aboard: flying,
+      rows: pl.rows().map((r) => ({ id: r.id, kind: r.kind, name: r.name,
+                                    detail: r.detail, blocked: r.blocked })),
+      selectedId: pl.selectedId,
+      blockedWhy: t === null ? '' : t.blocked,
+      curve: c.samples.map((x) => ({ tS: x.tS, dvMS: x.dvRequiredMS,
+                                     feasible: x.feasible })),
+      windowS: CURVE_WINDOW_S,
+      chosen: pl.chosen, cheapest: sch.cheapest, earliest: sch.earliest,
+      chosenTS: s?.tS ?? NaN, chosenDvMS: s?.dvRequiredMS ?? NaN,
+      chosenFeasible: sch.chosenFeasible,
+      dvAvailableMS: flying ? this.d.flight.session.remainingDvMS() : 0,
+      verdict: sch.verdict, why: sch.why, armed: this.armed,
+      planDeltaVMS: tp === null ? 0 : tp.deltaVMS,
+      planBurnS: tp === null ? 0 : tp.burnDurationS,
+      planApoapsisAltM: tp === null ? 0 : tp.apoapsisAltM,
+      planPeriapsisAltM: tp === null ? 0 : tp.periapsisAltM,
     };
   }
 
@@ -349,6 +449,7 @@ export class MapMode {
       flat: this.flat,
       three: this.d.three === null ? null : this.d.three.report(),
       view: this.view.report(),
+      planner: this.planner.report(),
     };
   }
 }
