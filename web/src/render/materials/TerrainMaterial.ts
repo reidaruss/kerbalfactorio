@@ -19,7 +19,7 @@ import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 // rather than a `#define`. Imported from where it is derived and documented,
 // so there is still one authority for the number and the sweep cannot drift
 // from the value the sweep is measured against.
-import { RELIEF_GRAD_UV } from './TerrainArt.glsl.js';
+import { RELIEF_GRAD_UV, REL_SWING_DEFAULT } from './TerrainArt.glsl.js';
 import { FAR_SCALE } from '../Scenes.js';
 
 // ?side= overrides this for a one-off diagnosis; the committed default is what
@@ -217,6 +217,21 @@ function reliefGradUvFromQuery(): number {
 }
 
 /**
+ * RN-961. `?reliefswing=` is the ripple direction's peak-to-peak swing across
+ * cells, in radians. `?reliefswing=0` collapses every cell's rotation to the
+ * identity and restores the pre-RN-961 sample coordinate exactly, so it is the
+ * negative control for the whole term on one build rather than two commits
+ * apart. A missing parameter is MISSING and takes the boot default (NUMBERS.md,
+ * boot defaults), never `Number(null) === 0`, which would ship the term off
+ * while every filename claimed it was on.
+ */
+function reliefSwingFromQuery(): number {
+  const v = new URLSearchParams(self.location.search).get('reliefswing');
+  const n = v === null ? NaN : Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : REL_SWING_DEFAULT;
+}
+
+/**
  * RN-842. `?horizonocc=` overrides the measured occlusion, and `?horizonocc=0`
  * is the EXACT negative control: at zero the shader's two ambient weights are
  * algebraically the pre-RN-842 expressions, so the control restores the old
@@ -384,6 +399,10 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // measurement that showed so needed to sweep it inside ONE page, one camera
   // and one streamed chunk set, which a define cannot do.
   const reliefGradUv: THREE.IUniform<number> = { value: reliefGradUvFromQuery() };
+  // RN-961. Shared by reference into both materials for the one-authority
+  // reason artAmp is: a control that reached the near material and not the far
+  // one would make the negative control a statement about one scene only.
+  const reliefSwing: THREE.IUniform<number> = { value: reliefSwingFromQuery() };
   // RN-842. The body's own horizon occlusion. Written by Boot from
   // `measureHorizonOcclusion`; the boot value here is the flat-plane model, so
   // a material built before the measurement lands behaves exactly as it did
@@ -439,6 +458,7 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uSpecAmp: { value: specAmp },
       uReliefGrad: reliefGrad,
       uReliefGradUv: reliefGradUv,
+      uReliefSwing: reliefSwing,
       uHorizonOcc: horizonOcc,
       uBounceLit: bounceLit,
     });

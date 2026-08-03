@@ -130,6 +130,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // A sweep rather than an on/off: the shipped 0.0311 is the defect and the
   // question is which value is right, not whether the term should exist.
   'reliefgraduv',
+  // RN-961, the ripple direction's peak-to-peak swing across cells, radians.
+  // 0 collapses every cell's rotation to the identity and restores the
+  // pre-RN-961 sample coordinate exactly, so it is the negative control for
+  // the whole term. Registered in the same commit that introduces it.
+  'reliefswing',
   // RN-731, the per-part material channel on the rock and ore node batches.
   // `rockmat=0` removes the hook entirely and restores the stock three
   // program, i.e. every ore seam back at one roughness and one metalness.

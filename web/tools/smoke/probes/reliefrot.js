@@ -19,6 +19,15 @@
 //   BUMP: it is invisible at noon and it is the entire image at a grazing sun,
 //   so an unpinned sun does not change the measurement slightly, it decides it.
 //
+//   THE FRAMING MUST MATCH THE CLAIM, which is the correction RN-961 paid for.
+//   At 2 m and -62 degrees this pose covers about six metres of ground, and
+//   REAL sand ripples are parallel over six metres. Side B (the windows
+//   disagree) therefore cannot move on a close pose no matter how good the fix
+//   is, because there is nothing for it to measure. The complaint being fixed
+//   is that every beach on the planet runs the same way, which is a statement
+//   about TENS of metres, so A.alt and A.pitch exist to pull the camera back
+//   far enough for the claim and the measurement to be about the same thing.
+//
 //   THE SITE IS TELEPORTED TO AND CONVERGED. A window statistic over a frame
 //   that is still streaming reads the LOD ring rather than the ground.
 (async (A) => {
@@ -35,7 +44,7 @@
   };
   walk(document.body);
 
-  of.teleport(A.lat, A.lon, 2.0);
+  of.teleport(A.lat, A.lon, A.alt ?? 2.0);
   await of.run(1.0);
   let spin = 0;
   while (!of.world().chunks.converged && spin++ < 240) await of.run(0.5);

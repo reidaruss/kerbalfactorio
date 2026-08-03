@@ -66,6 +66,11 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     // page, one camera and one streamed chunk set. ?reliefgraduv= moves it; the
     // boot default is RELIEF_GRAD_UV.
     uniform float uReliefGradUv;
+    // RN-961. The ripple direction's swing in RADIANS, peak to peak, across
+    // cells. 0 collapses every cell's rotation to the identity, which restores
+    // the pre-RN-961 sample coordinate exactly, so ?reliefswing=0 is the
+    // negative control for the whole term on one build.
+    uniform float uReliefSwing;
     // RN-842. The fraction of a hemisphere the body's own terrain occludes.
     // 0 is the pre-RN-842 flat-tangent-plane model, exactly. See
     // HorizonOcclusion.ts for what it is and why it is measured, not chosen.
@@ -223,7 +228,22 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
         // repeats: relief features are authored INSIDE the 3.6 m tile, and a
         // second coarser lookup would re-import the smooth metre-scale
         // undulation this texture exists to avoid.
-        vec4 rel = texture2D(uGroundRelief, vChunkUv * 16.0);
+        // RN-961. THE RIPPLE'S DIRECTION IS A PROPERTY OF THE PLACE, and the
+        // rotation that supplies it is RIGID rather than merely small. See
+        // ofRelCell in TerrainArt.glsl for why theta must be constant inside a
+        // cell and continuous between cells, and why that is not a
+        // contradiction. Two offset grids, blended by centrality, because a
+        // rigid per-cell rotation buys wavelength preservation with a seam and
+        // the second grid is what pays the seam back.
+        vec2 relP = vChunkUv * 16.0;
+        vec3 cellA = ofRelCell(relP, OF_REL_CELL, uReliefSwing, vec2(0.0));
+        vec3 cellB = ofRelCell(relP, OF_REL_CELL, uReliefSwing, vec2(0.5));
+        float relWsum = max(cellA.z + cellB.z, 1e-4);
+        float relWa = cellA.z / relWsum;
+        float relWb = cellB.z / relWsum;
+        vec4 relA = texture2D(uGroundRelief, cellA.xy);
+        vec4 relB = texture2D(uGroundRelief, cellB.xy);
+        vec4 rel = relWa * relA + relWb * relB;
       #endif
 
       // /core's maxRelief is a nominal 6,000 m on Forge but baseHeight peaks
@@ -320,18 +340,41 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // linear across a triangle, so its screen derivatives are exact and
           // are the right tool; the height is not, and is differenced over a
           // fixed tile-space support instead.
-          vec2 ruv = vChunkUv * 16.0;
+          // RN-961. THE DIFFERENCE IS TAKEN INSIDE EACH GRID'S OWN ROTATED
+          // FRAME AND THE TWO GRADIENTS ARE BLENDED WITH THE SAME WEIGHTS THE
+          // VALUE USED. Differencing the blended height directly would be
+          // wrong in a way that is easy to miss: the blend weights vary across
+          // the surface, so a difference of the blend contains a term in
+          // grad(w) that belongs to the BLEND and not to the ground, and it
+          // would light a ridge along every cell boundary. Blending the two
+          // gradients instead keeps every difference inside a frame where the
+          // sample coordinate is a rigid function of position.
+          //
+          // dFdx is taken on the UNROTATED relP, deliberately. It is the
+          // screen mapping of the chunk UV and is still exactly linear across
+          // a triangle; a rigid rotation does not change the length of
+          // anything, so no per-grid correction is owed. RN-955's approximation
+          // caveat does not apply here, because nothing curves.
           float gx, gy;
           if (uReliefGrad > 0.5) {
             float e = uReliefGradUv;
-            float hU = ofArtRelMix(texture2D(uGroundRelief, ruv + vec2(e, 0.0)),
-                                   vRelW, coverSel);
-            float hV = ofArtRelMix(texture2D(uGroundRelief, ruv + vec2(0.0, e)),
-                                   vRelW, coverSel);
-            float dhdu = (hU - hR) / e;
-            float dhdv = (hV - hR) / e;
-            vec2 dx = dFdx(ruv);
-            vec2 dy = dFdy(ruv);
+            float hAu = ofArtRelMix(texture2D(uGroundRelief, cellA.xy + vec2(e, 0.0)),
+                                    vRelW, coverSel);
+            float hAv = ofArtRelMix(texture2D(uGroundRelief, cellA.xy + vec2(0.0, e)),
+                                    vRelW, coverSel);
+            float hBu = ofArtRelMix(texture2D(uGroundRelief, cellB.xy + vec2(e, 0.0)),
+                                    vRelW, coverSel);
+            float hBv = ofArtRelMix(texture2D(uGroundRelief, cellB.xy + vec2(0.0, e)),
+                                    vRelW, coverSel);
+            // relA and relB, NOT two more fetches at the same coordinates.
+            // The centre samples are already in hand from the value above,
+            // and re-reading them cost two of eight taps for nothing.
+            float hA = ofArtRelMix(relA, vRelW, coverSel);
+            float hB = ofArtRelMix(relB, vRelW, coverSel);
+            float dhdu = (relWa * (hAu - hA) + relWb * (hBu - hB)) / e;
+            float dhdv = (relWa * (hAv - hA) + relWb * (hBv - hB)) / e;
+            vec2 dx = dFdx(relP);
+            vec2 dy = dFdy(relP);
             gx = dhdu * dx.x + dhdv * dx.y;
             gy = dhdu * dy.x + dhdv * dy.y;
           } else {

@@ -309,6 +309,55 @@ export const RELIEF_FINE_M = 0.45;
 export const RELIEF_GRAD_UV = 0.0311;
 
 /**
+ * RN-961. The ripple direction cell, in TILE UNITS (one unit is one repeat of
+ * `of_ground_relief`, which is 3.6 m). 2.0 is 7.2 m.
+ *
+ * Chosen against two bounds rather than picked. TOO LARGE and the beach is
+ * back to one direction over everything a player can see, since the relief
+ * term is fully faded by 60 m. TOO SMALL and the seam density rises without
+ * the direction field gaining anything, because the ANGLE's own scale is set
+ * by OF_REL_CELL_NOISE and not by the cell.
+ *
+ * 16 tile units is exactly one chunk UV, so an integer cell count per chunk
+ * (8 at 2.0) keeps whole cells inside a chunk and no cell straddles a chunk
+ * edge, where the UV derivative changes at an LOD step.
+ */
+export const REL_CELL = 1.0;
+
+/**
+ * RN-961. Cells per period of the angle noise. 0.25 means the direction field
+ * repeats every 4 cells, i.e. every 8 tile units or 28.8 m, which is the scale
+ * a real ripple field swings over.
+ *
+ * THE PER-CHUNK REPEAT IS REAL AND IS BOUNDED BY THE TERM'S OWN FADE. The cell
+ * grid is built on `vChunkUv`, which resets at every chunk, so the whole
+ * direction pattern repeats every 57.6 m. That would be a visible tiling if
+ * the relief were visible at that range; it is not. The bump fades over 30 to
+ * 60 m and is gone before one full period is on screen, so the repeat cannot
+ * be observed at the only distance the term exists. Stated rather than hidden,
+ * because if the fade is ever pushed out this becomes a defect the same day.
+ */
+export const REL_CELL_NOISE = 0.25;
+
+/**
+ * RN-961. The ripple direction's peak-to-peak swing across cells, in RADIANS.
+ * 1.05 is about +/- 30 degrees.
+ *
+ * Bounded from both sides and neither bound is taste. TOO SMALL and the beach
+ * still reads as one direction, which is Reid's complaint verbatim. TOO LARGE
+ * and the SEAM is what grows: the rotation stays rigid at any swing (that is
+ * the point of the construction), so wavelength is safe, but the discontinuity
+ * where two cells meet scales with the angle DIFFERENCE between them, and past
+ * some swing the blend can no longer hide it and the ground reads as tiles.
+ *
+ * So the failure mode this value guards is NOT the RN-955 mush; it is a
+ * quilt. Different failure, different bound, and the instrument's side C is
+ * blind to it (a quilt of rigid patches has a perfectly stable wavelength), so
+ * this one is settled by looking.
+ */
+export const REL_SWING_DEFAULT = 1.05;
+
+/**
  * WET GROUND AT THE WATERLINE (RN-57). The fourth term, and it is here for
  * exactly the reason the strata are: IN THIS ENGINE THE BEACH IS TERRAIN, NOT
  * WATER. A darkened ring around a pond drawn as its own geometry would be a
@@ -511,6 +560,71 @@ export const TERRAIN_ART_RELIEF = /* glsl */`
   //      this field: the albedo uses of_ground, not of_ground_relief, so there
   //      is no second term for the relief to slide against.
   float ofArtRelGradStep() { return OF_RELIEF_GRAD_UV; }
+
+  // RN-961. SHEAR-FREE DIRECTIONAL VARIATION FOR THE RIPPLE FIELD.
+  //
+  // RN-955 rotated the sample coordinate by a CONTINUOUS angle field and got
+  // fingerprints. The diagnosis was that rotating about the UV origin is not a
+  // rotation of the pattern, and the sharper statement is this: the shear came
+  // from theta VARYING, not from where the rotation was centred. A map
+  // p -> R(theta(p)) * p has Jacobian R + (dR/dtheta)(grad theta)p^T, and that
+  // second term is the whole disease. It scales with |p|, which at
+  // vChunkUv * 16.0 reaches 16 tile units, so the local wavelength collapsed
+  // from 41.3 px to 5.2 px (RN-958 measured it).
+  //
+  // HOLD THETA CONSTANT INSIDE A CELL AND THE SECOND TERM IS IDENTICALLY ZERO.
+  // The map becomes p -> R*(p - a) + a with R and a both constant: a rotation
+  // about a point, which is a rigid motion. Not a bounded shear, not a small
+  // shear. An isometry, exactly, so the ripple's wavelength is preserved to the
+  // last bit and side C of the instrument cannot fire on it by construction.
+  //
+  // WHAT IT COSTS INSTEAD IS A SEAM, and that is the honest trade: the pattern
+  // is discontinuous where two cells meet. Two things pay it down.
+  //
+  //   THE ANGLE IS A VALUE NOISE ON THE CELL INDEX, not a per-cell hash. A
+  //   hash makes neighbouring cells independent and every seam a maximal jump.
+  //   Sampling a smooth noise AT the integer cell index keeps theta constant
+  //   inside the cell (so the isometry holds) while making adjacent cells
+  //   nearly agree (so the jump is small). Those two requirements sound
+  //   opposed and are not: constant WITHIN, continuous BETWEEN.
+  //
+  //   TWO OFFSET GRIDS, blended by centrality. Where one grid is at a seam the
+  //   other is at a cell centre, so the weights are complementary by
+  //   construction and no point is served only by a discontinuity.
+  //
+  // NO TEXTURE FETCH. The angle is ALU. RN-955 took its angle from g2, which
+  // was free only because g2 was already in hand for the albedo; here the
+  // angle must be evaluated at the CELL INDEX rather than at the fragment, and
+  // a dependent fetch at a computed coordinate is neither free nor cheap.
+  float ofRelHash(vec2 c) {
+    return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453);
+  }
+  float ofRelVnoise(vec2 x) {
+    vec2 i = floor(x);
+    vec2 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(ofRelHash(i), ofRelHash(i + vec2(1.0, 0.0)), f.x),
+               mix(ofRelHash(i + vec2(0.0, 1.0)), ofRelHash(i + vec2(1.0, 1.0)), f.x),
+               f.y);
+  }
+  // xy is the rotated sample coordinate, z is this grid's blend weight.
+  // The off argument selects the grid: vec2(0.0) and vec2(0.5) are the two used.
+  vec3 ofRelCell(vec2 p, float cell, float swing, vec2 off) {
+    vec2 q = p / cell + off;
+    vec2 c = floor(q);
+    float t = (ofRelVnoise(c * OF_REL_CELL_NOISE) - 0.5) * swing;
+    float cs = cos(t);
+    float sn = sin(t);
+    vec2 a = (c + 0.5 - off) * cell;      // the cell centre, in tile units
+    vec2 d = p - a;
+    vec2 f = fract(q) - 0.5;
+    // Centrality, Chebyshev so the falloff matches the square cell it belongs
+    // to. 1 at the centre, 0 at the edge, and the two grids are half a cell
+    // apart so wA + wB is never 0.
+    float w = 1.0 - smoothstep(0.24, 0.5, max(abs(f.x), abs(f.y)));
+    return vec3(a + vec2(cs * d.x - sn * d.y, sn * d.x + cs * d.y), w);
+  }
+
 `;
 
 /**
@@ -644,5 +758,7 @@ export const TERRAIN_ART_SPEC = /* glsl */`
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
   + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + `#define OF_RELIEF_GRAD_UV ${RELIEF_GRAD_UV.toFixed(4)}\n`
+  + `#define OF_REL_CELL ${REL_CELL.toFixed(4)}\n`
+  + `#define OF_REL_CELL_NOISE ${REL_CELL_NOISE.toFixed(4)}\n`
   + TERRAIN_ART_NOISE + TERRAIN_ART_MACRO + TERRAIN_ART_STRATA + TERRAIN_ART_BUMP
   + TERRAIN_ART_WET + TERRAIN_ART_TEX + TERRAIN_ART_RELIEF + TERRAIN_ART_SPEC;
