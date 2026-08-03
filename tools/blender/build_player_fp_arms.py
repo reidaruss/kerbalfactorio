@@ -63,6 +63,54 @@ SIDES = (("Left", 1.0), ("Right", -1.0))
 SUIT, ACC, DARK, SKIN = "Suit", "SuitAccent", "SteelDark", "Skin"
 GLOVE, PLATE = "SuitDark", "Plate"
 
+# THE HAND'S SECTION AT THE KNUCKLE LINE, and every other number on the hand
+# is derived from these two (RN-857). They are half extents in metres, so the
+# glove is 96 mm across and 42 mm thick.
+#
+# A real adult hand measures about 90 mm across the knuckles and 28 mm thick.
+# A padded work glove is legitimately thicker than that and is not much wider,
+# which is exactly the ratio here: the width is a hand's width and the
+# thickness is a hand plus 7 mm of padding on each face.
+#
+# THE PREVIOUS VALUES WERE 130 mm ACROSS AND 86 mm THICK. Nothing was wrong
+# with any single part of the old hand; the section was a mitten, so every
+# part that sat on it inherited the mitten. Keeping the two numbers here, and
+# deriving the palm rings, the finger radii and the knuckle plates from them,
+# is what stops a later pass fixing one and leaving the others behind.
+HAND_HALF_W = 0.048
+HAND_HALF_T = 0.021
+
+# The glove's first ring, i.e. the cuff mouth, as multiples of the two above.
+# Named because THREE separate things depend on it: the palm's own first ring,
+# the skin band that has to fit inside it, and the assertion below.
+GLOVE_MOUTH_W, GLOVE_MOUTH_T = 0.79, 1.24
+
+# The bare wrist's radius. A round tube has to fit inside an ELLIPSE, so the
+# binding dimension is the ellipse's SHORT axis, never its long one. 0.86 of
+# that leaves a 3 mm sleeve of glove all the way round.
+WRIST_R = HAND_HALF_T * GLOVE_MOUTH_T * 0.86
+
+
+def _assert_wrist_fits():
+    """The glove's mouth must swallow the skin band's end.
+
+    This file has always said so in a comment and nothing has ever checked it,
+    which cost exactly one render in RN-857: re-proportioning the glove took
+    its mouth below the skin tube's typed 45 mm radius and the bare wrist burst
+    out of the cuff as an orange collar. A sentence in a comment is not an
+    invariant; this is."""
+    mouth_t = HAND_HALF_T * GLOVE_MOUTH_T
+    mouth_w = HAND_HALF_W * GLOVE_MOUTH_W
+    if WRIST_R >= min(mouth_t, mouth_w):
+        raise ValueError(
+            "the skin band's radius %.4f is not inside the glove mouth's "
+            "%.4f x %.4f half extents: the wrist will poke out through the "
+            "cuff" % (WRIST_R, mouth_w, mouth_t))
+    return WRIST_R
+
+
+_assert_wrist_fits()
+
 
 def _pt(p, s):
     return (p[0] * s, p[1], p[2])
@@ -171,24 +219,62 @@ def build_mesh(name, arm_obj):
         mb.add_raw(*rc.tube([_pt(_lerp(el, wr, 0.706), s),
                              _pt(_lerp(el, wr, 0.718), s)],
                             [0.0635, 0.0635], seg=12), role=ACC)
-        # bare skin, cuff to glove, running past the wrist into the palm
+        # Bare skin, cuff to glove, running past the wrist into the palm.
+        #
+        # IT TAPERS TO A WRIST NOW (RN-857), and the reason is an invariant
+        # this file already stated in prose and nothing checked. The glove's
+        # first ring has to SWALLOW this tube's end, or the skin pokes out
+        # through the glove as a collar. That held while the tube was a
+        # constant 45 mm and the glove's first ring was 48 mm; re-proportioning
+        # the glove took its first ring to 26 x 38 mm and the skin band
+        # immediately burst out of it as a fat orange cuff, which the render
+        # showed at once.
+        #
+        # So the last radius is DERIVED from the glove's own first ring rather
+        # than typed beside it, and `_assert_wrist_fits` proves it. A real
+        # forearm also narrows into the wrist, which this never did: 46 mm at
+        # the cuff down to the glove's own section is an arm rather than a
+        # pipe, and it is the same silhouette argument as the palm's.
+        wrist_r = WRIST_R
         mb.add_raw(*rc.tube([_pt(_lerp(el, wr, 0.74), s),
                              _pt(_lerp(el, wr, 0.97), s),
                              _pt(_lerp(wr, hd, 0.20), s)],
-                            [0.046, 0.045, 0.045], seg=12), role=SKIN)
+                            [0.046, wrist_r * 1.06, wrist_r], seg=12),
+                   role=SKIN)
 
-        # The glove. An ELLIPSE, 0.12 m across and 0.09 m thick at the palm,
-        # starting 0.04 m behind the wrist so the skin band can never come
-        # apart from it. Its first ring's inradius (0.0480) swallows the skin
-        # band's circumradius (0.045).
+        # The glove.
+        #
+        # RN-857 RE-PROPORTIONS IT, AND THE REASON IS A MEASUREMENT RATHER
+        # THAN A TASTE. Reid's original complaint about this asset was "large
+        # white mitts". RN-641 fixed the colour and the distance and left the
+        # SECTION alone, and the section was the mitten: the palm was authored
+        # 0.065 half-width against 0.043 half-thickness, i.e. **130 mm across
+        # and 86 mm thick**. A real hand at the knuckles is about 90 mm across
+        # and 28 mm thick, so this was 1.4x too wide and **3.1x too thick**,
+        # and its aspect ratio was 1.5:1 where a hand is about 3.2:1.
+        #
+        # That is not a hand that needs more detail. It is the shape of a
+        # mitten, and no amount of knuckle plates, finger tubes or weave was
+        # ever going to make it read as anything else. The comment above this
+        # block used to say "an ELLIPSE, twice as wide as it is thick", which
+        # is what it was reaching for and is not what the numbers said.
+        #
+        # A padded glove is legitimately thicker than the hand inside it, so
+        # this does not go to 28 mm. It goes to 42 mm thick and 96 mm across,
+        # a 2.3:1 section, which is a heavy work glove rather than a mitten.
+        # Every other number on the hand is now derived from HAND_HALF_W and
+        # HAND_HALF_T below, so the palm, the fingers and the knuckle plates
+        # cannot drift apart from each other again.
         mb.bind([pre + "ForeArm", pre + "Hand"])
         palm = [_pt(_lerp(wr, hd, t), s)
                 for t in (-0.32, 0.06, 0.50, 1.00, 1.32)]
         # Widest at the KNUCKLE line and then stepping hard down: the width
         # step is most of what separates a hand from a paddle in silhouette.
         mb.add_raw(*rc.oval_tube(palm,
-                                 [0.052, 0.049, 0.045, 0.043, 0.028],
-                                 [0.053, 0.056, 0.062, 0.065, 0.046], seg=8),
+                                 [t * HAND_HALF_T for t in
+                                  (1.24, 1.14, 1.05, 1.00, 0.71)],
+                                 [w * HAND_HALF_W for w in
+                                  (0.79, 0.85, 0.96, 1.00, 0.71)], seg=8),
                    role=GLOVE)
         # THE KNUCKLE GUARD, RN-646, and it is now FOUR plates and not one.
         #
@@ -246,11 +332,24 @@ def build_mesh(name, arm_obj):
         # to catch the light and is the whole reason for putting metal here.
         # 6 mm half-thickness rather than 4.6 for the same reason: the plate
         # has to have a visible EDGE to read as a plate rather than as a decal.
-        for dx, hw, ht, t0 in ((-0.031, 0.0165, 0.0060, 0.85),
-                               (-0.007, 0.0175, 0.0064, 0.91),
-                               (0.017, 0.0165, 0.0061, 0.87),
-                               (0.039, 0.0135, 0.0052, 0.79)):
-            c = _off(_pt(_lerp(wr, hd, t0), s), (dx * s, 0.0, 0.0360))
+        #
+        # RN-857: THE PLATES NOW SIT ON THE FINGERS THEY GUARD, and both
+        # numbers that put them there are derived rather than typed. Their
+        # across-hand positions come from `rc._FP_FINGER_LAYOUT`, which is the
+        # same table the finger tubes are built from, so a knuckle guard can no
+        # longer end up between two knuckles. Their height comes from
+        # HAND_HALF_T, which matters more than it sounds: the old plates sat at
+        # a typed z of 0.0360 against a palm half-thickness of 0.043, i.e.
+        # BURIED 7 mm inside the glove, and against the corrected 0.021 palm
+        # the same typed number would have left them floating 15 mm ABOVE it.
+        # A constant tuned against another part's dimension is only correct
+        # until that dimension moves, and this one just did.
+        plate_z = HAND_HALF_T - 0.0015
+        for (_fn, dx, frad), t0 in zip(rc._FP_FINGER_LAYOUT,
+                                       (0.85, 0.91, 0.87, 0.79)):
+            hw = frad * 0.92          # a guard is as wide as the knuckle it is on
+            ht = 0.0058
+            c = _off(_pt(_lerp(wr, hd, t0), s), (dx * s, 0.0, plate_z))
             a = _off(c, (0.0, 0.014, -0.0020))
             b = _off(c, (0.0, -0.013, -0.0024))
             mb.add_raw(*rc.oval_tube([a, c, b],

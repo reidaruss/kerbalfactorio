@@ -162,11 +162,56 @@ _FP_FINGERS = (
 # carries THREE tubes instead of one fat block: three fingers' worth of
 # silhouette for zero extra bones, because a tube offset from the chain it is
 # whitelisted to still curls with it. (offset from the chain, radius, length).
-_FP_MIDDLE_TUBES = (((-0.011, 0.000, 0.002), 0.0215, 1.00),
-                    ((0.012, 0.000, 0.000), 0.0200, 0.94),
-                    ((0.033, -0.005, -0.007), 0.0170, 0.82))
+#
+# RN-857 RE-SPACES AND THINS THEM, and it is arithmetic rather than taste.
+# TWO CIRCLES ARE SEPARATE ONLY WHEN THEIR CENTRES ARE FURTHER APART THAN THE
+# SUM OF THEIR RADII, and measured off the old table every adjacent pair
+# failed that test:
+#
+#   Index    to Middle-1   centres 31.0 mm apart, radii sum 43.0   OVERLAP 12.0
+#   Middle-1 to Middle-2   centres 23.0 mm apart, radii sum 41.5   OVERLAP 18.5
+#   Middle-2 to Middle-3   centres 21.0 mm apart, radii sum 37.0   OVERLAP 16.0
+#
+# So the five tubes were one fused solid and the hand COULD NOT show a gap
+# between two fingers at any pose, from any camera, under any lighting. That
+# is why it read as a webbed paddle: the webbing was not missing detail, it
+# was the tubes intersecting. A finger was also 43 mm across against a real
+# adult finger's 18 to 20.
+#
+# The new radii are a padded glove's, about 24 mm across a finger, and the
+# offsets put every adjacent pair 1.4 to 2.8 mm APART. `_assert_fp_fingers`
+# below checks that rather than trusting this comment, because the numbers are
+# close enough that a later nudge could re-fuse them without anything looking
+# obviously wrong in the source.
+_FP_MIDDLE_TUBES = (((-0.017, 0.000, 0.002), 0.0118, 1.00),
+                    ((0.008, 0.000, 0.000), 0.0110, 0.94),
+                    ((0.031, -0.005, -0.007), 0.0092, 0.82))
 
-_FP_FINGER_R = {"Thumb": 0.0245, "Index": 0.0215, "Middle": 0.0215}
+_FP_FINGER_R = {"Thumb": 0.0140, "Index": 0.0118, "Middle": 0.0118}
+
+
+def _assert_fp_fingers():
+    """No two finger tubes may intersect at the knuckle line.
+
+    Cheap, and it is the check that would have caught the defect this table
+    was rewritten to fix. It runs at import, so a build that fuses the fingers
+    fails in the build rather than in a render nobody happens to look at."""
+    root_x = {n: r[0] for n, r, _s in _FP_FINGERS}
+    tubes = [("Index", root_x["Index"], _FP_FINGER_R["Index"])]
+    for i, (off, rad, _sc) in enumerate(_FP_MIDDLE_TUBES):
+        tubes.append(("Middle-%d" % (i + 1), root_x["Middle"] + off[0], rad))
+    tubes.sort(key=lambda t: t[1])
+    for (na, xa, ra), (nb, xb, rb) in zip(tubes, tubes[1:]):
+        gap = abs(xb - xa) - (ra + rb)
+        if gap <= 0.0:
+            raise ValueError(
+                "FP fingers %s and %s intersect: centres %.1f mm apart, radii "
+                "sum %.1f mm. The hand cannot show a gap between them."
+                % (na, nb, abs(xb - xa) * 1000.0, (ra + rb) * 1000.0))
+    return tubes
+
+
+_FP_FINGER_LAYOUT = _assert_fp_fingers()
 
 
 def fp_finger_points(fname, scale=1.0, offset=(0.0, 0.0, 0.0)):
