@@ -86,7 +86,15 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // Moves in the same commit as texgen's table (RN-100's rule:
   // verifyAgainstManifest makes a one-sided move a failed smoke run, and it
   // did exactly that when this edit was first forgotten).
-  Suit: 'suitfab', SuitDark: 'suitfab',
+  // RN-950: `SuitGrime` wears the SAME family the suit does, and the reason it
+  // is on `suitfab` rather than on a family of its own is texgen's: the dirt is
+  // meant to read as dirt ON fabric, so the weave has to come through it, and
+  // the roughness that separates the two lives in the glTF material (0.92
+  // against SuitDark's 0.70) rather than in the surface. This row was in
+  // texgen's table and in the shipped manifest and NOT here, so the grime drew
+  // with no weave and no ORM while keeping its roughness, which is exactly the
+  // half of the effect that survives a missing surface family.
+  Suit: 'suitfab', SuitDark: 'suitfab', SuitGrime: 'suitfab',
   Plate: 'suitplate',
   Bark: 'bark', BarkLight: 'bark',
   Coal: 'coarse', Copper: 'coarse',
