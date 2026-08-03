@@ -371,16 +371,32 @@ TEST(survival_tree_shape_and_id_space) {
     for (const TechDef& b : tree.allTechs())
       CHECK(a.id != b.id);
 
-  // Every survival tech either grants something or is a flag another lane
-  // reads, and the ONE that grants nothing is named, so a tech that silently
-  // unlocks nothing cannot be added without this line failing.
+  // GP-267. EVERY SURVIVAL TECH NOW GRANTS SOMETHING, and this line used to
+  // say the opposite. It read `grantsNothing == 1` with `FlightAutopilot`
+  // named as the one exception, because that tech shipped as a bare flag:
+  // the comment beside it said inventing a part for it there would be one
+  // lane authoring another lane's content. The gameplay lane has now
+  // authored that part (`vessel::parts::AutopilotModule`, 0x010D) and this
+  // tech grants it. The assertion is kept and INVERTED rather than deleted,
+  // so a tech that silently unlocks nothing still cannot be added without
+  // this line failing.
   size_t grantsNothing = 0;
   for (const TechDef& t : tree.allTechs()) {
     if (t.unlockItems.empty() && t.unlockEntities.empty() && t.unlockRecipes.empty())
       ++grantsNothing;
   }
-  CHECK(grantsNothing == 1);
-  CHECK(tree.tech(techs::FlightAutopilot)->unlockItems.empty());
+  CHECK(grantsNothing == 0);
+  // And it grants EXACTLY the part, by id. The id is checked as a literal on
+  // purpose: `parts_items::AutopilotModule` is a hand-written copy of a
+  // mapping owned by web/wasm/of_vessel_api.inc, that file carries a
+  // static_assert pinning the two together, and this is the third leg. A
+  // gate wired to the wrong ItemId unlocks nothing and reads on screen as
+  // "you have not researched it" for ever, which is indistinguishable from
+  // working.
+  CHECK(tree.tech(techs::FlightAutopilot)->unlockItems.size() == 1);
+  CHECK(tree.tech(techs::FlightAutopilot)->unlockItems[0]
+        == parts_items::AutopilotModule);
+  CHECK(parts_items::AutopilotModule == 0x005D);
 
   // Restore-from-persistence carries the ITEM unlocks too, not only the techs:
   // a reloaded world in which the pole was researched but not available is the

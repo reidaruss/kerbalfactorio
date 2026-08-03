@@ -9,7 +9,6 @@
 // is about; this one is a view of the live object and nothing more.
 
 import * as store from './VabStore.js';
-import { offeredParts } from './VesselCatalogue.js';
 import { catalogueReport, jointGapReport } from './VabRows.js';
 import { VabView } from './VabView.js';
 import type { Vab } from './Vab.js';
@@ -27,7 +26,10 @@ export function vabReport(v: Vab): unknown {
   return {
     open: v.open, mode: v.modeRules.mode, freeBuild: v.modeRules.freeBuild,
     catalogue: v.catalogue.length,
-    offered: offeredParts(v.catalogue, v.modeRules).length,
+    offered: v.offered().length,
+    // GP-267. The part ids actually on offer, so a probe asserts WHICH row
+    // the research gate withheld rather than only that a count moved.
+    offeredIds: v.offered().map((p) => p.id),
     meshesMissing: [...v.view.missing],
     assetsRenamed: [...v.view.renamed],
     renameDebt: VabView.renameCount,

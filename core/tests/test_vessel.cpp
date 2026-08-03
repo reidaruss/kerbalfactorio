@@ -72,8 +72,12 @@ static Ascender makeAscender(bool withFins = true) {
 // =============================================================================
 TEST(catalogue_is_complete_and_self_consistent) {
   const PartCatalogue& c = catalogue();
-  // Class S Tier 1 (13) + Tier 2 (7) + class L (4) = 24 authored parts.
-  CHECK(c.size() == 24);
+  // Class S Tier 1 (13) + the autopilot (1) + Tier 2 (7) + class L (4) = 25.
+  // GP-267 added `AutopilotModule` out of the reserved 0x010D..0x010F gap.
+  // Admin-sanctioned cross-lane edit: the row is the gameplay lane's and
+  // this file is the physics lane's, and a catalogue row whose test does
+  // not know it exists is a row nobody can trust.
+  CHECK(c.size() == 25);
 
   // Every id resolves, and no id is duplicated.
   for (const PartDef& d : c.all()) {
@@ -104,7 +108,7 @@ TEST(catalogue_is_complete_and_self_consistent) {
     CHECK(isS || isL);
     if (isS) ++classS; else ++classL;
   }
-  CHECK(classS == 14);
+  CHECK(classS == 15);   // GP-267: + AutopilotModule, a class-S stack part.
   CHECK(classL == 4);
   // Class L is exactly twice class S across, which is what makes an adapter a
   // single part rather than a family of them.
@@ -227,7 +231,7 @@ TEST(radial_origin_is_declared_not_assumed) {
   for (const PartDef& d : c.all()) {
     if (d.radialOrigin == RadialOrigin::Axis) ++axis; else ++plane;
   }
-  CHECK(axis == 18);
+  CHECK(axis == 19);   // GP-267: + AutopilotModule, a stack part, so Axis.
   CHECK(plane == 6);
 
   // --- the geometry, on one 1.25 m host ------------------------------------

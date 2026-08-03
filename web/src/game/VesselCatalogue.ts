@@ -159,8 +159,31 @@ export function classLetter(p: PartRow): string {
  * written here asks a NAMED question rather than testing a boolean, so when
  * research lands it replaces the `tier1` fallback and nothing else moves.
  */
-export function offeredParts(all: readonly PartRow[], mode: ModeRules): PartRow[] {
-  return mode.fullCatalogue ? all.slice() : all.filter((p) => p.tier1);
+export function offeredParts(all: readonly PartRow[], mode: ModeRules,
+                             unlockedByTech?: (itemId: number) => boolean): PartRow[] {
+  if (mode.fullCatalogue) return all.slice();
+  // GP-267. RESEARCH JOINS THE TIER GATE, it does not replace it.
+  //
+  // The note above said research would replace the `tier1` fallback, and doing
+  // that wholesale tonight would silently re-price the whole survival
+  // catalogue: 13 parts are offered today by tier alone and none of them is
+  // gated by a tech, so every one of them would vanish. The additive rule is
+  // the one that is true right now: a part is offered if it is Tier 1 OR its
+  // item has been unlocked. `FlightAutopilot` unlocks exactly one item, so
+  // this changes exactly one row and the day more techs carry parts it keeps
+  // working with no edit here.
+  //
+  // THE PREDICATE IS "A TECH GATES THIS AND IT HAS BEEN RESEARCHED", NOT
+  // "NOTHING IS STOPPING IT". The first draft passed a lock-reason function and
+  // treated the empty string as unlocked; that string is empty for an UNGATED
+  // item too, so every Tier-2 part in the catalogue read as unlocked and
+  // survival offered 24 of 25 instead of 13. Found by driving it, invisible in
+  // the source, and the reason the port is named for the thing it asserts.
+  //
+  // A missing port means NOT unlocked, never "unlocked". A gate that opens when
+  // its authority is absent is not a gate.
+  return all.filter((p) => p.tier1
+    || (unlockedByTech !== undefined && p.itemId > 0 && unlockedByTech(p.itemId)));
 }
 
 /** One line of specification for the catalogue list. */

@@ -61,6 +61,26 @@ export async function bootVab(p: VabBootPorts, exits: VabExits): Promise<Vab> {
       }
       return exits.recover();
     },
+    // GP-267. THE RESEARCH GATE, asked exactly as the build menu asks it.
+    // `researchGated` is `!sandbox`, so this returns '' for every item in
+    // sandbox and the real answer in survival: the branch that matters is the
+    // one no sandbox probe can reach, which is why `probes/vabdest.js` runs
+    // in both and asserts the DIFFERENCE between them.
+    lockOf: (item: number): string => {
+      if (item <= 0 || !g.mode.researchGated) return '';
+      const rs = g.progress.research;
+      if (rs.itemAvailable(item)) return '';
+      return rs.techForItem(item)?.name ?? 'a technology';
+    },
+    // The OFFER question, which is a different question from the LOCK question.
+    // `itemGated` asks whether any tech claims this item at all; `itemAvailable`
+    // asks whether it has been earned. Both, and in that order: an ungated item
+    // is offered by the TIER rule or not at all, and must never be dragged into
+    // the survival catalogue by a research clause that meant to admit one part.
+    unlockedByTech: (item: number): boolean => {
+      const rs = g.progress.research;
+      return item > 0 && rs.itemGated(item) && rs.itemAvailable(item);
+    },
     setWorldUi: (on) => {
       g.hud.setVisible(on);
       g.hotbarBar.setVisible(on);

@@ -81,6 +81,13 @@ static constexpr PartId LandingLeg          = 0x0109;
 static constexpr PartId Parachute           = 0x010A;
 static constexpr PartId Fin                 = 0x010B;
 static constexpr PartId CargoBay            = 0x010C;
+// GP-267. The autopilot. Allocated out of the 0x010D..0x010F gap this block has
+// always held, so no id moves and no ItemId moves: `of_vessel_api.inc` maps
+// ItemId = 0x0050 + (PartId - 0x0100), which puts this at 0x005D, inside the
+// reserved 0x0050..0x006A block. It sits with Tier 1 by ID and is NOT Tier 1 by
+// availability: `research.h`'s `techs::FlightAutopilot` unlocks it, which is the
+// item that tech was written for and never had (see its own comment there).
+static constexpr PartId AutopilotModule     = 0x010D;
 // --- Tier 2 (DW-29): control, power, docking. --------------------------------
 static constexpr PartId RcsBlock            = 0x0110;
 static constexpr PartId TankMonoprop        = 0x0111;
@@ -505,6 +512,33 @@ class PartCatalogue {
       d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(1.25);
       d.dragCdNormal = 1.10; d.dragAreaNormalM2 = 1.25 * 1.60;
       d.normalForceSlopeM2 = tubeCn(1.25, 1.60);
+      defs_.push_back(d);
+    }
+
+    {  // GP-267. THE AUTOPILOT MODULE. A guidance can, and it is deliberately
+       // a stack part on the class-S diameter rather than a radial box: a
+       // player has to make ROOM for it, which is the cost that makes fitting
+       // one a decision. It carries a little reaction torque because a thing
+       // that flies the vehicle with no authority of its own would be a lie
+       // about what it does; `flight.h` sums `reactionTorqueNm` over all parts
+       // with no flag, so this needs no new mechanism. It is a tenth of a
+       // reaction wheel's, so it is a hint and never a substitute.
+       //
+       // NO NEW FIELD, and that is the whole reason this row costs no ABI bump:
+       // "this part is an autopilot" is its PartId, which the gameplay lane
+       // already has to know in order to gate its own screens on.
+      PartDef d(RadialOrigin::Axis);
+      d.id = parts::AutopilotModule; d.name = "Autopilot Module";
+      d.asset = "AutopilotModule";
+      d.cls = PartClass::Control;
+      d.diameterM = kStackDiameterS; d.heightM = 0.30;
+      d.nodeTop = true; d.nodeBottom = true;
+      d.dryMassKg = 45.0;
+      d.reactionTorqueNm = 1500.0;
+      d.electricCapacity = 50.0;
+      d.dragCdAxial = 0.30; d.dragAreaAxialM2 = discArea(kStackDiameterS);
+      d.dragCdNormal = 1.10; d.dragAreaNormalM2 = kStackDiameterS * 0.30;
+      d.normalForceSlopeM2 = tubeCn(kStackDiameterS, 0.30);
       defs_.push_back(d);
     }
 

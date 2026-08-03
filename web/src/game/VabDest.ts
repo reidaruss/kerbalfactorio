@@ -13,7 +13,7 @@
 // here, so a planetary body arriving later changes nothing in this file.
 // =============================================================================
 import type { OfCoreModule } from '../sim/wasm/heap.js';
-import { designReach, moduleFitted } from './Autopilot.js';
+import { AUTOPILOT_ITEM_ID, designReach, moduleFitted } from './Autopilot.js';
 import type { Reach } from './Autopilot.js';
 import {
   bodySource, collect, findTarget, registrySource, requestedOrbit,
@@ -37,6 +37,12 @@ export interface VabDestPorts {
   catalogueIds(): readonly number[];
   /** /core's own total delta-v for the design as drawn. */
   dvAvailableMS(): number;
+  /** GP-267. '' when the item is available or ungated, else the NAME of the
+   *  tech that unlocks it. Optional so `?research=0` and every existing
+   *  caller keep working, and an absent authority reads as UNGATED. */
+  lockOf?(itemId: number): string;
+  /** GP-267. TRUE only when a tech gates this item AND it is researched. */
+  unlockedByTech?(itemId: number): boolean;
 }
 
 export class VabDest {
@@ -85,7 +91,8 @@ export class VabDest {
   state(): VabDestState {
     const rows = this.rows();
     const sel = findTarget(rows, this.selectedId);
-    const fit = moduleFitted(this.p.parts(), this.p.catalogueIds());
+    const fit = moduleFitted(this.p.parts(), this.p.catalogueIds(),
+                             this.p.lockOf?.bind(this.p));
     let reach: Reach = {
       waitingOn: '', ok: false, dvRequiredMS: NaN, dvAvailableMS: NaN,
       marginMS: NaN, feasible: false, legsMS: [],
@@ -110,6 +117,7 @@ export class VabDest {
       moduleFitted: s.fit.fitted,
       moduleCount: s.fit.count,
       partMissingFromCatalogue: s.fit.partMissingFromCatalogue,
+      lockedByTech: s.fit.lockedByTech,
       moduleReason: s.fit.reason,
       waitingOn: s.reach.waitingOn,
       dvAvailableMS: s.dvAvailableMS,
@@ -117,6 +125,15 @@ export class VabDest {
       marginMS: s.reach.marginMS,
       feasible: s.reach.feasible,
       altKm: s.altKm, incDeg: s.incDeg,
+      // GP-267. /core's OWN two answers about the part item, published side by
+      // side so a probe asserts the GATE rather than the sentence the gate
+      // produced. `lock` is empty for an ungated item and for an unlocked one;
+      // `unlocked` is true only for a gated-and-earned one. A probe that read
+      // one without the other could not tell survival-before-research from
+      // sandbox, which is the exact confusion this pass already made once.
+      partItemId: AUTOPILOT_ITEM_ID,
+      partLock: this.p.lockOf?.(AUTOPILOT_ITEM_ID) ?? '',
+      partUnlockedByTech: this.p.unlockedByTech?.(AUTOPILOT_ITEM_ID) ?? false,
     };
   }
 }

@@ -139,19 +139,57 @@
   check('the destination block is on screen', d0.drawn.rowIds.length > 0,
         `rowIds ${JSON.stringify(d0.drawn.rowIds)}`);
 
-  // --- 1. THE MODULE GATE, ASSERTED AS THE FIXTURE IT IS -------------------
-  // The catalogue row for the Autopilot Module belongs to /core (vessel.h) and
-  // is not in yet. That is a STATE, not an absence, and the screen distinguishes
-  // it from "you forgot to fit one". Asserting the default here is what makes
-  // the day it changes a red row rather than a silent one.
+  // --- 1. THE PART, AND THE THREE STATES OF THE MODULE GATE ----------------
+  //
+  // GP-267 landed the catalogue row, so `partMissingFromCatalogue` is now FALSE
+  // and this block asserts the opposite of what it asserted last night. That is
+  // the fixture doing its job: it was written to go red the day the row landed.
+  //
+  // The three states are NOT interchangeable and the probe drives all three:
+  //   not in the catalogue  -> a broken build, and nobody's fault
+  //   locked by a tech      -> survival, before Flight Autopilot
+  //   not fitted            -> sandbox, or survival after the unlock
   const gate = d0.model;
-  check('gate: the part is not in the catalogue yet', gate.partMissingFromCatalogue === true,
+  const apRow = cat0.find((c) => c.id === 0x010d);
+  check('the Autopilot Module is in the catalogue', apRow !== undefined,
+        `catalogue has ${cat0.length} parts`);
+  check('gate: the catalogue-missing state is behind us',
+        gate.partMissingFromCatalogue === false,
         `partMissingFromCatalogue ${gate.partMissingFromCatalogue}`);
-  check('gate: no module counted', gate.moduleCount === 0, `count ${gate.moduleCount}`);
-  check('gate: the reason names the part id',
-        /0x10d/i.test(gate.moduleReason), gate.moduleReason);
-  check('gate: the reason is DRAWN', d0.drawn.gate.includes('0x10d'),
-        `drawn gate: ${d0.drawn.gate}`);
+  check('gate: no module counted on a bare rocket', gate.moduleCount === 0,
+        `count ${gate.moduleCount}`);
+  // THE ITEM ID THE RESEARCH GATE HANGS ON, asserted against the catalogue's
+  // own row rather than against the constant that produced it. `research.h`
+  // carries a hand-written copy of `0x0050 + (PartId - 0x0100)` and the wasm
+  // carries a static_assert pinning the two; this is the client leg of the same
+  // invariant. Wrong here and the gate would test an item nobody can hold,
+  // which reads on screen as "not researched" for ever.
+  check('the part item id is 0x005d, off /core\'s own catalogue row',
+        apRow !== undefined && apRow.itemId === 0x005d,
+        apRow === undefined ? 'no row' : `itemId 0x${apRow.itemId.toString(16)}`);
+
+  if (sandbox) {
+    check('sandbox: the gate says FIT ONE, not RESEARCH ONE',
+          gate.lockedByTech === '' && /fit one/i.test(gate.moduleReason),
+          `lockedByTech "${gate.lockedByTech}" reason "${gate.moduleReason}"`);
+    check('sandbox: the part is offered', of.vab('report').offeredIds.includes(0x010d),
+          JSON.stringify(of.vab('report').offeredIds));
+  } else {
+    // THE BRANCH NO SANDBOX PROBE CAN REACH. `GameMode.researchGated` is
+    // `!sandbox`, so a feature gated behind a tech looks perfect in every
+    // sandbox run and is locked in Reid's actual world. This is that case.
+    check('survival: the gate says the tech, by name',
+          gate.lockedByTech !== '', `lockedByTech "${gate.lockedByTech}"`);
+    check('survival: the tech named is Flight Autopilot',
+          /autopilot/i.test(gate.lockedByTech), gate.lockedByTech);
+    check('survival: the reason is DRAWN and says researched',
+          /researched/i.test(d0.drawn.gate), d0.drawn.gate);
+    check('survival: the part is WITHHELD from the catalogue',
+          !of.vab('report').offeredIds.includes(0x010d),
+          JSON.stringify(of.vab('report').offeredIds));
+    check('survival: exactly 13 parts offered before the unlock',
+          of.vab('report').offered === 13, `${of.vab('report').offered}`);
+  }
 
   // --- 2. THE LIST: three kinds, one row type ------------------------------
   const ids = d0.drawn.rowIds;
@@ -261,6 +299,79 @@
         orbitRow !== null && orbitRow.textContent.includes('250 km'),
         orbitRow === null ? 'no row' : orbitRow.textContent);
 
+  // --- 9. THE GATE ITSELF, /core's OWN TWO ANSWERS ------------------------
+  //
+  // Not the sentence the gate produced: the two booleans it is made of.
+  // `partLock` is empty for an UNGATED item and for an unlocked one;
+  // `partUnlockedByTech` is true only for a gated-and-earned one. Reading one
+  // without the other is exactly the mistake this pass made and measured: the
+  // first draft offered on `lock === ''` and put 24 of 25 parts in a survival
+  // bay that offers 13.
+  const g9 = of.vab('dest').model;
+  check('the gate is read on the part item, 0x005d', g9.partItemId === 0x005d,
+        '0x' + Number(g9.partItemId).toString(16));
+  if (sandbox) {
+    check('sandbox: /core reports no lock', g9.partLock === '', g9.partLock);
+    check('sandbox: and no tech unlock is claimed',
+          g9.partUnlockedByTech === false, String(g9.partUnlockedByTech));
+  } else {
+    check('survival: /core names the tech that locks it',
+          g9.partLock !== '' && /autopilot/i.test(g9.partLock), g9.partLock);
+    check('survival: and it is NOT unlocked by tech',
+          g9.partUnlockedByTech === false, String(g9.partUnlockedByTech));
+    check('survival: which is exactly why the row is withheld',
+          !of.vab('report').offeredIds.includes(0x010d),
+          JSON.stringify(of.vab('report').offeredIds));
+  }
+
+  // --- 10. THE PROMISE: NO MODULE, NO PLANNER; ONE MODULE, PLANNER --------
+  //
+  // The brief's rule is that the PART'S PRESENCE unlocks the feature. Asserted
+  // by actually fitting one through the bay's own snap path (sandbox only:
+  // survival withholds the row, which section 9 just proved).
+  let fittedAfter = null;
+  let gateAfterFit = null;
+  if (sandbox) {
+    const ap = cat0.find((c) => c.id === 0x010d);
+    if (ap !== undefined) {
+      of.vab('frame');
+      of.vab('take', ap.index);
+      await sleep(0.15);
+      // TRY EVERY NODE THE CURSOR COULD REACH, not one guessed by geometry.
+      // The first draft aimed at the lowest part's bottom face; the lowest
+      // part is the Main Engine and an engine publishes only
+      // `socket_stack_top`, so there was no node there and nothing was placed.
+      // The refusal reason is captured either way, so a future failure says
+      // WHY rather than 'count 0'.
+      const cands = of.vab('nodes').filter((q) => q.onScreen);
+      let placedIt = false;
+      const why = [];
+      for (const nd of cands) {
+        of.vab('hover', nd.ndc[0], nd.ndc[1]);
+        await sleep(0.05);
+        const res = of.vab('place');
+        if (res && res.ok) { placedIt = true; break; }
+        const b = of.vab('report').blocked;
+        if (b && b.why) why.push(nd.kind + ': ' + b.why);
+      }
+      check('the autopilot part found a node it could take', placedIt,
+            'tried ' + cands.length + ' nodes; ' + why.slice(0, 3).join(' | '));
+      await sleep(0.3);
+      of.vab('drop');
+      await sleep(0.25);
+      const m = of.vab('dest');
+      fittedAfter = m.model.moduleFitted;
+      gateAfterFit = m.drawn.gate;
+      check('fitting the part turns the module gate ON', fittedAfter === true,
+            'moduleFitted ' + String(fittedAfter) + ', count '
+            + String(m.model.moduleCount));
+      check('the gate line says so on the SCREEN',
+            /fitted/i.test(gateAfterFit), gateAfterFit);
+      check('exactly one module counted', m.model.moduleCount === 1,
+            String(m.model.moduleCount));
+    }
+  }
+
   const dEnd = of.vab('dest');
   return {
     valid: fails.length === 0,
@@ -276,6 +387,12 @@
     altKm: dEnd.model.altKm,
     altBox: dEnd.drawn.altBox,
     partMissingFromCatalogue: dEnd.model.partMissingFromCatalogue,
+    lockedByTech: dEnd.model.lockedByTech,
+    partLock: dEnd.model.partLock,
+    partUnlockedByTech: dEnd.model.partUnlockedByTech,
+    offered: of.vab('report').offered,
+    autopilotOffered: of.vab('report').offeredIds.includes(0x010d),
+    fittedAfter, gateAfterFit,
     note: 'the mission-cost half is of_ap_design_reach and is the physics '
       + 'lane; every vehicle figure here is /core\'s own',
   };

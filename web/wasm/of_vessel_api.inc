@@ -39,8 +39,9 @@ Registry<vs::Vessel> g_vessels;
 //
 //     ItemId(part) = 0x0050 + (PartId - 0x0100)
 //
-// That reserves 0x0050..0x006A (27 ids for the 27-wide PartId range; 24 are in
-// use and the three gaps are held by the PartId gap at 0x010D..0x010F). It sits
+// That reserves 0x0050..0x006A (27 ids for the 27-wide PartId range; 25 are in
+// use since GP-267 took 0x010D for the Autopilot Module, and the two remaining
+// gaps are 0x010E..0x010F). It sits
 // clear of every pinned block: slice 0x0001..0x0016, science 0x0020+, survival
 // 0x0030..0x003C, structures 0x0040..0x0043.
 //
@@ -51,9 +52,25 @@ Registry<vs::Vessel> g_vessels;
 // PAID for and placed on the rocket, the same contract of_gp_structure_pay has,
 // where the thing produced is a building rather than a stack.
 constexpr int kPartItemBase = 0x0050;
-inline gp::ItemId partItemId(vs::PartId id) {
+constexpr gp::ItemId partItemIdOf(vs::PartId id) {
   return static_cast<gp::ItemId>(kPartItemBase + (id - 0x0100));
 }
+inline gp::ItemId partItemId(vs::PartId id) { return partItemIdOf(id); }
+
+// GP-267. THE CROSS-FILE INVARIANT, CHECKED BY THE COMPILER.
+//
+// `research.h`'s `FlightAutopilot` unlocks `parts_items::AutopilotModule`, and
+// that constant is a hand-written copy of the mapping THIS file owns, because
+// /core cannot include the bridge. The two are pinned together here rather than
+// left to agree by inspection: if either the PartId or the base moves, the
+// build stops. Left to a runtime test, the failure mode is a research gate that
+// unlocks an item nobody has, which reads on screen as "you have not researched
+// it" for ever and is indistinguishable from working.
+static_assert(partItemIdOf(vs::parts::AutopilotModule)
+                  == gp::parts_items::AutopilotModule,
+              "the autopilot part's ItemId and research.h's copy of it have "
+              "drifted: fix parts_items::AutopilotModule in core/include/of/"
+              "research.h to match 0x0050 + (PartId - 0x0100).");
 
 // --- Build costs -------------------------------------------------------------
 //
@@ -89,6 +106,10 @@ const std::vector<PartCost>& partCosts() {
       mk(vs::parts::Parachute,           {{it::Iron, 2}, {it::Copper, 1}}),
       mk(vs::parts::Fin,                 {{it::Iron, 1}, {it::Wood, 1}}),
       mk(vs::parts::CargoBay,            {{it::Iron, 4}}),
+      // GP-267. The autopilot: copper-heavy, because what it costs is
+      // wiring rather than structure, and it is the priciest thing on a
+      // first rocket on purpose.
+      mk(vs::parts::AutopilotModule,     {{it::Iron, 4}, {it::Copper, 6}}),
       // Tier 2.
       mk(vs::parts::RcsBlock,            {{it::Copper, 2}}),
       mk(vs::parts::TankMonoprop,        {{it::Iron, 2}, {it::Copper, 1}}),
@@ -134,8 +155,8 @@ int textOut(const char* s) {
 // and before any body exists.
 // =============================================================================
 
-// 24. The count is asserted in core/tests/test_vessel.cpp, so a client that
-// checks it against a literal is checking the wasm is not stale.
+// 25 since GP-267. The count is asserted in core/tests/test_vessel.cpp, so a
+// client that checks it against a literal is checking the wasm is not stale.
 OF_API int of_vs_part_count(void) {
   return static_cast<int>(vs::catalogue().size());
 }

@@ -163,6 +163,23 @@ static constexpr TechId CinderRefining = 0x0015;     // OFF-WORLD GATE over surv
 static constexpr TechId LaunchFacilities = 0x0016;   // DW-29: the launch pad (GP-57)
 }  // namespace techs
 
+// GP-267. THE ITEM `FlightAutopilot` UNLOCKS, and the one id in this file that
+// is allocated somewhere else.
+//
+// `vessel.h` says in its own header that the ITEM form of a part belongs to a
+// pinned table and not to it, so the block is allocated in
+// `web/wasm/of_vessel_api.inc` as `ItemId = 0x0050 + (PartId - 0x0100)`.
+// `vessel::parts::AutopilotModule` is 0x010D, so the item is 0x005D.
+//
+// It is NOT re-derived here and it is NOT trusted: `of_vessel_api.inc` carries
+// a `static_assert` that `partItemId(parts::AutopilotModule)` equals this
+// constant, so the day either side moves the BUILD fails rather than the gate
+// quietly unlocking nothing. A cross-file invariant that only a test can catch
+// is a cross-file invariant that gets shipped broken once.
+namespace parts_items {
+static constexpr ItemId AutopilotModule = 0x005D;
+}  // namespace parts_items
+
 // =============================================================================
 // A MILESTONE is a thing the player DID, not a thing they bought.
 //
@@ -668,8 +685,15 @@ inline std::vector<TechDef> survivalTechs() {
   // DW-29. The autopilot is not bought, it is EARNED and then bought: you fly
   // the ascent by hand once, and only then may you spend the science that lets
   // the machine do it. Its payload is the unlock flag itself, which the flight
-  // lane reads; it deliberately unlocks no item, because inventing a part for
-  // it here would be this lane authoring another lane's content.
+  // lane reads.
+  //
+  // GP-267: IT NOW UNLOCKS AN ITEM. This comment used to end "it deliberately
+  // unlocks no item, because inventing a part for it here would be this lane
+  // authoring another lane's content." That was right, and the gameplay lane is
+  // the lane in question; it has now authored the part
+  // (`vessel::parts::AutopilotModule`, 0x010D) and this is the tech that was
+  // written for it. The sentence is kept above rather than deleted because the
+  // REASON the field was empty is still the reason it took this long to fill.
   TechDef autopilot;
   autopilot.id = techs::FlightAutopilot;
   autopilot.name = "Flight Autopilot";
@@ -677,6 +701,7 @@ inline std::vector<TechDef> survivalTechs() {
   autopilot.requiresMilestone = milestones::ReachedOrbit;
   autopilot.cost = {ItemStack{items::AutomationScience, 25},
                     ItemStack{items::LogisticScience, 15}};
+  autopilot.unlockItems = {parts_items::AutopilotModule};
   t.push_back(autopilot);
 
   // DW-29 / GP-57. THE LAUNCH PAD, gated behind ground progression.

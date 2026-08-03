@@ -57,6 +57,16 @@ export interface VabDeps {
    * refusal nobody can see is the defect the verb was written to fix.
    */
   recover(): boolean;
+  /** GP-267. '' when the item is available or ungated, else the NAME of the
+   *  tech that unlocks it. The bay asks the same question the build menu asks
+   *  (`Buildables.lockOf`), through the same shape, so one screen cannot come
+   *  to a different answer than the other about the same item. */
+  lockOf?(itemId: number): string;
+  /** GP-267. TRUE only when a tech gates this item AND it has been researched.
+   *  Deliberately NOT `lockOf(x) === ''`: that is empty for an UNGATED item
+   *  too, and offering on it put 24 of 25 parts in a survival bay that should
+   *  offer 13. Two questions, two ports, neither standing in for the other. */
+  unlockedByTech?(itemId: number): boolean;
 }
 
 export class Vab {
@@ -133,6 +143,10 @@ export class Vab {
       parts: () => this.design.parts,
       catalogueIds: () => this.catalogue.map((p) => p.id),
       dvAvailableMS: () => this.design.stats.totalDeltaV,
+      lockOf: d.lockOf === undefined ? undefined
+        : (item) => (d.lockOf as (i: number) => string)(item),
+      unlockedByTech: d.unlockedByTech === undefined ? undefined
+        : (item) => (d.unlockedByTech as (i: number) => boolean)(item),
     });
     this.destView = new VabDestination(this.panel.root, {
       select: (id) => { this.dest.select(id); this.render(); },
@@ -397,7 +411,7 @@ export class Vab {
 
   private render(): void {
     if (!this.open) return;
-    const offered = offeredParts(this.catalogue, this.d.mode);
+    const offered = this.offered();
     const v = this.verdict;
     this.panel.render(
       partRows(offered, this.hand === null ? -1 : this.hand.index,
@@ -414,6 +428,14 @@ export class Vab {
 
   /** The mode rules, so `VabReport` can read them without reaching into `d`. */
   get modeRules(): ModeRules { return this.d.mode; }
+
+  /** GP-267. What this mode and this world's research actually offer. ONE
+   *  place, so the panel, the report and every probe read the same list. */
+  offered(): PartRow[] {
+    const un = this.d.unlockedByTech;
+    return offeredParts(this.catalogue, this.d.mode,
+      un === undefined ? undefined : (item) => un.call(this.d, item));
+  }
 
   report(): unknown { return vabReport(this); }
 }

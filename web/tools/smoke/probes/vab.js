@@ -62,7 +62,7 @@
   };
   // The /core fixture. Any disagreement here is a defect in the screen.
   const CORE = {
-    parts: 24, stage0DV: 1857.79, stage1DV: 3065.12, totalDV: 4922.91,
+    parts: 25, stage0DV: 1857.79, stage1DV: 3065.12, totalDV: 4922.91,
     massKg: 9845, padTwr: 1.6567, lengthM: 12.10,
   };
 
@@ -122,9 +122,21 @@
   // 1. THE CATALOGUE, AND EVERY PART HAS A MESH
   // ==========================================================================
   const rows = cat();
-  check('24 parts in the catalogue', rows.length === CORE.parts, `${rows.length}`);
-  const noMesh = rows.filter((p) => !p.hasMesh).map((p) => p.asset);
-  check('every part has a shipped mesh', noMesh.length === 0, noMesh.join(', '));
+  check('25 parts in the catalogue', rows.length === CORE.parts, `${rows.length}`);
+  // GP-267. THE MESH DEBT IS A NAMED FIXTURE, NOT A TOLERANCE.
+  //
+  // This read `noMesh.length === 0`. The Autopilot Module's catalogue row
+  // landed before its mesh did (the Blender lane is authoring an
+  // `AutopilotModule` node; Admin requested it), so the part draws through
+  // `VabView`'s magenta wireframe fallback. The list is asserted EXACTLY
+  // rather than bounded, so this goes RED the day the mesh lands and
+  // somebody has to come back and delete the exception. A `<= 1` here would
+  // absorb the fix silently and would also absorb the next missing mesh.
+  const MESH_PENDING = ['AutopilotModule'];
+  const noMesh = rows.filter((p) => !p.hasMesh).map((p) => p.asset).sort();
+  check('the missing-mesh set is exactly the one part awaiting art',
+        JSON.stringify(noMesh) === JSON.stringify(MESH_PENDING),
+        `missing [${noMesh.join(', ')}], expected [${MESH_PENDING.join(', ')}]`);
   // The rename debt is BOUNDED and asserted, so it cannot grow quietly. Two
   // catalogue names disagree with the glb (vessel.h calls them
   // LiquidEngineVacuumSmall and DecouplerRadial; the file calls them
@@ -142,8 +154,16 @@
   // 2. THE MODE GATE. Sandbox offers everything, survival does not, and /core's
   //    own affordability answer is published in BOTH (GP-29).
   // ==========================================================================
+  // GP-267. Survival still offers 13, NOT 14: the autopilot part is Tier 2 by
+  // availability and `techs::FlightAutopilot` has not been researched in a
+  // fresh world. That 13 is therefore an assertion about the RESEARCH GATE
+  // and not only about the tier gate, and `probes/vabdest.js` is the one
+  // that drives the unlock and watches it become 14.
   check('the offered catalogue matches the mode',
-        r.offered === (sandbox ? 24 : 13), `${r.offered} offered in ${r.mode}`);
+        r.offered === (sandbox ? 25 : 13), `${r.offered} offered in ${r.mode}`);
+  check('the autopilot part is withheld in survival until researched',
+        sandbox || !r.offeredIds.includes(0x010d),
+        `offeredIds ${JSON.stringify(r.offeredIds)}`);
   const coreSaysYes = rows.filter((p) => p.affordInCore).length;
   log.push(`/core says ${coreSaysYes} of ${rows.length} parts are affordable right now`);
 

@@ -73,6 +73,18 @@ import type { DesignPart } from './VesselDesign.js';
  */
 export const AUTOPILOT_PART_ID = 0x010d;
 
+/**
+ * Its ITEM form, which is what `research.h` gates on. `of_vessel_api.inc` maps
+ * `ItemId = 0x0050 + (PartId - 0x0100)`, so this is 0x005D. It is written out
+ * rather than computed from `AUTOPILOT_PART_ID` deliberately: the mapping is
+ * /core's and a client that re-derived it would be a second copy of a formula
+ * that already has two (the bridge owns it, `research.h` carries a
+ * `static_assert`-pinned copy). A wrong value here would gate the part on an
+ * item nobody can ever hold, which reads on screen as "not researched" for
+ * ever, so `probes/vabdest.js` asserts it against the catalogue's own row.
+ */
+export const AUTOPILOT_ITEM_ID = 0x005d;
+
 export const AP_REACH_WORDS = 10;
 export const AP_CURVE_WORDS = 4;
 /** `of_mn_plan`'s 26, then post-burn [px,py,pz,vx,vy,vz]. */
@@ -264,29 +276,60 @@ export interface ModuleFit {
   /** True when /core publishes no such part, i.e. the catalogue row is not in
    *  yet. A DIFFERENT condition from "not fitted" and it says so. */
   partMissingFromCatalogue: boolean;
+  /** GP-267. The part exists but this world has not researched it. A THIRD
+   *  state, and the one Reid's survival world is actually in: `GameMode`
+   *  gates on `!sandbox`, so a probe that only ran in sandbox would see this
+   *  branch never taken and call the feature done. */
+  lockedByTech: string;
   count: number;
 }
 
+/**
+ * @param lockOf '' when the item is available or ungated, otherwise the NAME of
+ *   the tech that would unlock it. Same shape as `Buildables.lockOf`, so the
+ *   bay and the build menu answer this question the same way. Undefined means
+ *   no research authority is wired, which reads as UNGATED (the sandbox and
+ *   `?research=0` case), never as locked.
+ */
 export function moduleFitted(parts: readonly DesignPart[],
-                             catalogueIds: readonly number[]): ModuleFit {
+                             catalogueIds: readonly number[],
+                             lockOf?: (itemId: number) => string): ModuleFit {
   const known = catalogueIds.includes(AUTOPILOT_PART_ID);
   const count = parts.filter((p) => p.partId === AUTOPILOT_PART_ID).length;
+  const base = { fitted: false, count: 0, partMissingFromCatalogue: false,
+                 lockedByTech: '' };
   if (!known) {
     return {
-      fitted: false, count: 0, partMissingFromCatalogue: true,
+      ...base, partMissingFromCatalogue: true,
       reason: `this build has no part 0x${AUTOPILOT_PART_ID.toString(16)} in `
         + 'the catalogue, so no vehicle can carry an autopilot yet. The '
         + 'catalogue row belongs to /core (vessel.h) and is not in.',
     };
   }
+  // THE ORDER MATTERS. A locked part that IS somehow on the vehicle still
+  // reports fitted, because the vehicle is the fact and the lock is about what
+  // the shop will sell you; but a locked part that is NOT fitted must say
+  // "research it" rather than "go and fit one", which is advice a player
+  // cannot follow.
+  const lock = count === 0 && lockOf !== undefined
+    ? lockOf(AUTOPILOT_ITEM_ID) : '';
+  if (lock !== '') {
+    return {
+      ...base, lockedByTech: lock,
+      reason: `no Autopilot Module on this vehicle, and it is not researched `
+        + `yet: ${lock} unlocks it. Reaching orbit by hand is what earns the `
+        + 'right to research it.',
+    };
+  }
   if (count === 0) {
     return {
-      fitted: false, count: 0, partMissingFromCatalogue: false,
+      ...base,
       reason: 'no Autopilot Module on this vehicle: fit one from the Ctrl tab '
         + 'and the destination planner turns on.',
     };
   }
-  return { fitted: true, count, partMissingFromCatalogue: false, reason: '' };
+  return { fitted: true, count, partMissingFromCatalogue: false,
+           lockedByTech: '', reason: '' };
 }
 
 /** The one sentence a screen prints when the solver is not on the bridge. It
