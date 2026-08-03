@@ -364,6 +364,22 @@ target_link_libraries(water_field_tests PRIVATE of_core)
 target_include_directories(water_field_tests PRIVATE tests)
 add_test(NAME water_field_tests COMMAND water_field_tests)
 
+# --- POI / SITE PLACEMENT (poi.h, WG-200 to WG-206): where a ruin may stand.
+#     The world says WHERE a site is and never what is inside one. Proves the
+#     four ways this goes wrong: an instance instead of a type (both anchor
+#     modes run through one admit), a missing body test (Cinder and an unknown
+#     body place nothing and say why), a gate that cannot see the case it
+#     exists for (each gate has a REACHABLE refusing case proven red in the same
+#     loop by loosening only that gate), and a save pointing at a site that
+#     moved (the id is keyed on the ordinal, so a site may move and stay the
+#     same site). Consumes cubed_sphere.h / biome.h / water_field.h READ-ONLY. --
+add_executable(poi_tests
+  tests/test_main.cpp
+  tests/test_poi.cpp)
+target_link_libraries(poi_tests PRIVATE of_core)
+target_include_directories(poi_tests PRIVATE tests)
+add_test(NAME poi_tests COMMAND poi_tests)
+
 # --- World-gen DISCOVERABLE MAP (WG-29 / DW-36): discovery.h is the record of
 #     what the player has SEEN of a body, which is WORLD state rather than UI
 #     state, so it is deterministic and it persists. ONE rule -- a cell is
@@ -747,6 +763,19 @@ target_link_libraries(terrain_probe PRIVATE of_core)
 add_executable(spawn_probe
   tools/spawn_probe.cpp)
 target_link_libraries(spawn_probe PRIVATE of_core)
+
+# --- Tools: site_probe (WG-200): world-gen DIAGNOSTIC for POI PLACEMENT. Sweeps
+#     an arc band about the spawn and reports the DISTRIBUTION of buildable
+#     ground in it, so a placement threshold is a percentile of the real world
+#     rather than taste. The footprint metric is a least-squares PLANE FIT over
+#     the site disc reporting tilt AND p95 residual separately, because "on a
+#     cliff" is two failures (a uniform grade, and broken ground inside an
+#     otherwise level footprint) and a single slope sample is blind to the
+#     second. It also prints the span-only gate the pair replaces and counts
+#     where the two disagree. A pure CONSUMER of of_core (not a ctest). ---
+add_executable(site_probe
+  tools/site_probe.cpp)
+target_link_libraries(site_probe PRIVATE of_core)
 
 # --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
 #     means a future loader/DLL failure fails FAST instead of stalling ~1000 s
