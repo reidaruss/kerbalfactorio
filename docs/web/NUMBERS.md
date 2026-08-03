@@ -71,6 +71,23 @@ is that the numbers are handed out by one writer before the work starts.
 | WG-140 to WG-199 | world-gen, Cinder the moon and the lifecycle boundary | WG-141 to WG-150 USED (the moon reachable from the client, the crater ladder, the neighbourhood defect, the rim step, the biome-gain bug one body over, the curvature instrument, the noise counter's blind spot, the atmosphere routing, and the seam analysis); WG-151 onward free |
 | GP-261 to GP-271 | gameplay, the autopilot part, VAB reach panel and map planner | landed (the published `of_ap_*` contract, the pending state, the part 0x010D, the reach gate, the NO ANSWER band, the departure chart, the drawn arc, the airless-body plant invariant) |
 | GP-272 to GP-299 | gameplay, autopilot execution: arm, cancel, per-frame status | allocated 2026-08-03 |
+| RN-845 to RN-899 | rendering, drawing a second body in the sky | allocated 2026-08-03 |
+| RN-851, RN-856 to RN-859 | asset lane, docking port and first-person arms | **LANDED INSIDE THE ROW ABOVE. Admin's failure, see note.** Those five are **burned**; the rendering lane must not reuse them |
+| RN-900 to RN-949 | asset lane, third-person body and armour set | allocated 2026-08-03 |
+
+**The RN collision above was Admin's, and rule 5 is exactly what would have caught
+it.** I allocated RN-845 to RN-899 to a rendering lane in its brief, and at the
+same time ran an asset lane with **no block at all**, having told it to continue
+the RN series. It took RN-851 and RN-856 to RN-859, inside the other lane's
+range. Nothing broke, because the rendering lane had not reached those numbers
+yet; **that is luck, not process.**
+
+The cause is one line above in this file: I had already written that not
+allocating blocks to those lanes was "a judgement call, not an oversight",
+justified by there being **one lane per domain**. That justification was wrong
+within the hour, because an asset lane and a rendering lane are **two lanes in
+one number series** even when they are different domains by charter. **The unit
+that collides is the number prefix, not the org chart.**
 
 **Blocks NOT allocated tonight, deliberately and with the reason recorded**, since
 rule 5 says an unrecorded decision is invisible: the rendering and core-engine
@@ -810,3 +827,21 @@ mitten looked like a modelling style and was two numbers in a table.
 
 **When an art complaint survives a pass that addressed it, stop looking at the
 render and go read the numbers the asset was built from.**
+
+### Put the re-apply of a negative control in a `finally`
+
+A negative control means deliberately reverting your fix, rebuilding, proving the
+defect returns, and then putting the fix back. **The middle of that procedure is
+a tree containing a known defect on purpose.**
+
+If the process dies there, is interrupted, or the lane runs out of context, **the
+deliberate defect is what is left in the working tree**, and it looks exactly
+like ordinary in-progress work to whoever finds it.
+
+**Make revert and re-apply one process with the re-apply in a `finally`**, so no
+interruption can leave the reverted state behind. An asset lane did this
+unprompted tonight while proving a palette change, and it is the right shape for
+every negative control anyone runs here.
+
+The general form: **any procedure whose intermediate state is a lie must not
+have an exit that stops in the middle.**
