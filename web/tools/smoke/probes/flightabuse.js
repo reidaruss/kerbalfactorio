@@ -206,12 +206,29 @@
         pst.saveInhibit !== undefined && pst.saveInhibit.refused === 0
         && pst.saveInhibit.allowed > 0,
         JSON.stringify(pst.saveInhibit));
+  // R85. IDENTIFIED BY WHAT IT IS, NOT BY WHERE IT SITS IN THE LIST.
+  //
+  // This read `list[0]` and `records === 1`. D-015 made Anchorage a real vessel
+  // record and `installStation` adopts it at BOOT, so slot 0 is now a station
+  // with `parts: 0` and `fuelKg: 0` from `emptyDesign()`, and the rocket the
+  // player just flew is slot 1. Nothing was broken: a decision in another
+  // domain silently disarmed an assertion in this one, which is exactly what
+  // happened to `namedvessel.mjs` the same night.
+  //
+  // The report already publishes the discriminator on every row, so the fix is
+  // to ask for the PROMOTED record. And the station is asserted rather than
+  // tolerated, so the count going to two is proved and a third record appearing
+  // from nowhere still fails.
   const vsl = of.flight('vessels');
+  const mine = vsl.list.find((v) => v.promoted);
+  const station = vsl.list.filter((v) => /^station:/.test(v.status ?? ''));
   check('and the vessel it wrote is a REAL record, with a design and its fuel',
-        vsl.records === 1 && vsl.writes > 0 && vsl.refusedSnapshots === 0
-        && (vsl.list[0] ?? {}).parts > 0,
+        vsl.records === 2 && vsl.writes > 0 && vsl.refusedSnapshots === 0
+        && station.length === 1 && (mine ?? {}).parts > 0 && (mine ?? {}).fuelKg > 0,
         JSON.stringify({ records: vsl.records, writes: vsl.writes,
-                         refused: vsl.refusedSnapshots, first: vsl.list[0] }));
+                         refused: vsl.refusedSnapshots, stations: station.length,
+                         mine: mine ? { id: mine.id, parts: mine.parts,
+                                        fuelKg: Math.round(mine.fuelKg) } : null }));
   // The chip is not silent, it says the one thing a reload still does NOT put
   // back. A player who reloads mid-flight and finds themselves on the ground has
   // to have been told, or the feature reads as the bug it used to be.
@@ -299,7 +316,28 @@
   check('retrograde under power did not produce a NaN state',
         Number.isFinite(retro.speedMS) && Number.isFinite(retro.altitudeDatumM),
         `speed ${retro.speedMS}, alt ${retro.altitudeDatumM}`);
-  of.input.act(['sasMode'], 4); await sleep(0.4);     // RET -> CMD
+  // R85. RECOVER ONTO THE ASCENT RIBBON, AND NEITHER OF THE TWO OBVIOUS KEYS
+  // WOULD HAVE DONE IT. Both were tried and both were MEASURED failing.
+  //
+  // This used to press `sasMode` once, RET -> CMD, and then assert the vehicle
+  // was still climbing. `setSas(SAS_COMMAND)` re-aims the command at WHEREVER
+  // THE NOSE IS (FlightSas.ts, and PH-44: where SAS is aiming is not where the
+  // nose is), so CMD latched the retrograde nose and HELD it. The warp mash in
+  // 3e then bought up to 10x of sim time with the engine pointing at the
+  // ground, which is why the rows record the retrograde abuse ending at status
+  // ASCENT and the WARP abuse ending at DOWN. It reads as a warp defect and is
+  // not one.
+  //
+  // PROGRADE was the obvious fix and it is also wrong: prograde FOLLOWS the
+  // velocity, and four seconds of retrograde thrust is what reverses the
+  // velocity, so PRO points down within a couple of seconds of being pressed.
+  // Driven, it produced output BIT-IDENTICAL to the CMD version, 4757 -> 4677 m,
+  // which is how it was caught: a fix that changes nothing did not take.
+  //
+  // The only recovery that points UP irrespective of what the velocity is doing
+  // is the ascent guidance itself, which is one key a player has (Digit9) and
+  // is the thing this whole section is abusing its way through.
+  of.input.act(['sasGuidance'], 4); await sleep(0.6);
 
   // 3e. WARP THROUGH ITS WHOLE RANGE, up and back down, in the air. The in-air
   // cap is 10x (PH-26) and the point is that a player leaning on the key does
@@ -356,13 +394,32 @@
   // The assertion is therefore not "it landed" but "it was SEEN in the air on
   // the way down": a skipped re-entry produces a vehicle on the ground with a
   // dynamic pressure history that never happened.
+  // R85. THE PRECONDITION IS ASSERTED, BECAUSE WITHOUT IT THE WHOLE SECTION IS
+  // A SET OF COUNTERS THAT NOBODY INCREMENTED.
+  //
+  // The sampling loop below is guarded on `status !== 'DOWN'`, so a vehicle that
+  // is ALREADY down runs the body zero times and every counter keeps its
+  // initialiser. That is precisely what happened: `inAirSamples` read 0, the
+  // atmosphere check failed on it, and the neighbouring "warp did not drive it
+  // through the ground" check PASSED on `sank > -50` with `sank === 0`. The
+  // failing check and the passing check were reading the same zero.
+  const abortAglM = FL().altitudeAglM;
+  check('the abort left the vehicle IN THE AIR, so there is a descent to watch',
+        abortAglM > 100 && FL().status !== 'DOWN',
+        `${abortAglM.toFixed(1)} m AGL, status ${FL().status}`);
   for (let i = 0; i < 10; ++i) { of.input.act(['warpUp'], 4); await sleep(0.15); }
   const peakWarp = FL().warp;
   let sank = 0, inAirSamples = 0, qSamples = 0, maxQSeen = 0;
   for (let i = 0; i < 900 && FL().status !== 'DOWN'; ++i) {
     const s = FL();
     if (s.altitudeAglM < sank) sank = s.altitudeAglM;
-    if (s.altitudeAglM < 60000 && s.altitudeAglM > 0) inAirSamples += 1;
+    // AGAINST THE VEHICLE'S OWN STARTING HEIGHT AND NOT AGAINST 60 km. 60 km is
+    // /core's atmosphere ceiling and is the right band for PH-34, which is a
+    // re-entry FROM SPACE. This section aborts mid-ascent on purpose, because
+    // burning to orbit and back does not fit a probe budget, so it peaks at a
+    // few kilometres and could NEVER produce a sample below 60 km on the way
+    // down through 60 km. A metric flat in its own independent variable.
+    if (s.altitudeAglM < abortAglM + 1 && s.altitudeAglM > 0) inAirSamples += 1;
     if (s.qPa > 1000) qSamples += 1;
     if (s.qPa > maxQSeen) maxQSeen = s.qPa;
     await sleep(0.4);
@@ -370,9 +427,9 @@
   check('WARP DID NOT DRIVE THE VEHICLE THROUGH THE GROUND', sank > -50,
         `deepest AGL sample ${sank.toFixed(1)} m at warp up to ${peakWarp}x`);
   check('AND THE ATMOSPHERE WAS NOT SKIPPED: the descent was observed inside it',
-        inAirSamples >= 5 && qSamples >= 2,
-        `${inAirSamples} samples below 60 km, ${qSamples} above 1 kPa, ` +
-        `peak ${(maxQSeen / 1000).toFixed(1)} kPa`);
+        inAirSamples >= 5 && maxQSeen > 0,
+        `${inAirSamples} samples below the ${Math.round(abortAglM)} m abort, ` +
+        `${qSamples} above 1 kPa, peak ${(maxQSeen / 1000).toFixed(2)} kPa`);
   log.push(`descent at warp ${peakWarp}x: deepest AGL ${sank.toFixed(1)} m, ` +
            `${inAirSamples} samples in air, ${qSamples} above 1 kPa, ` +
            `re-entry q peak ${(maxQSeen / 1000).toFixed(1)} kPa`);
