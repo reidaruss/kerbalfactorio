@@ -2375,7 +2375,7 @@
         "StationInt_LOD0", "StationInt_LOD1"
       ],
       "pivot_mode": "none",
-      "dims_xyz_m": [67.1093, 23.6680, 61.6940],
+      "dims_xyz_m": [66.9693, 23.6680, 61.6940],
       "tolerance_m": 0.005,
       "max_tris_lod0": 17600,
       "max_tris_total": 72000,
@@ -2419,9 +2419,9 @@
                     "col_ReactorCeil", "col_HoldCeil"],
       "double_sided_ok": ["OF_Glass", "OF_Hazard"],
       "parts": [
-        {"node": "Station_LOD0", "dims_xyz_m": [67.1093, 23.6680, 61.6940], "max_tris": 17600, "pivot": "none"},
-        {"node": "Station_LOD1", "dims_xyz_m": [67.1093, 23.6680, 61.6940], "max_tris": 15100, "pivot": "none"},
-        {"node": "Station_LOD2", "dims_xyz_m": [67.1093, 23.6680, 61.6940], "max_tris": 8400, "pivot": "none"},
+        {"node": "Station_LOD0", "dims_xyz_m": [66.9693, 23.6680, 61.6940], "max_tris": 17600, "pivot": "none"},
+        {"node": "Station_LOD1", "dims_xyz_m": [66.9693, 23.6680, 61.6940], "max_tris": 15100, "pivot": "none"},
+        {"node": "Station_LOD2", "dims_xyz_m": [66.9693, 23.6680, 61.6940], "max_tris": 8400, "pivot": "none"},
         {"node": "StationInt_LOD0", "dims_xyz_m": [57.7913, 8.1950, 29.8800], "max_tris": 16400, "pivot": "none"},
         {"node": "StationInt_LOD1", "dims_xyz_m": [57.7913, 8.1950, 29.8800], "max_tris": 14900, "pivot": "none"}
       ]

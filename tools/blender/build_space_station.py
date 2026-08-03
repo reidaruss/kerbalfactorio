@@ -290,27 +290,47 @@ WING_NX, WING_NY = 10, 3
 
 TRUSS_Z = 6.60
 
-# THE TWO LADDER THRESHOLDS, AND THEY ARE THE ONLY TWO NUMBERS THE LADDER HAS.
-# A tier's worst-case surface deviation from LOD0 is exactly the shallowest
-# LAYER it keeps, because nothing on this asset stands proud by an amount the
-# call site chose. So a threshold is picked by reading machine_form.LAYER and
-# the cascade table together, and `check_shadow_lod.py` then confirms rather
-# than discovers.
+# THE TWO LADDER THRESHOLDS. They decide which greebles a tier drops, and
+# THEY ARE NOT THE DEVIATION THAT TIER MEASURES. That distinction is written
+# in capitals because the previous version of this comment did not draw it and
+# a later reader would have reasoned from the wrong numbers.
 #
 #   cascade 0   15.47 mm   nothing can reach this: `seam` alone is 13 mm and a
 #                          tier that keeps seams saves nothing worth having
 #   cascade 1   56.25 mm   `hinge` is 52 mm and `clip` is 61 mm, so a tier that
-#                          drops everything up to and including hinge measures
-#                          52.00 mm and clears the gate by 4.25 mm
-#   cascade 2  210.94 mm   `gauge` is 163 mm and `duct` is 196 mm, so a tier
-#                          that drops up to and including gauge measures 163.00
-#                          and clears by 47.94 mm. IT KEEPS `duct` ON PURPOSE:
-#                          `scorch_ribs` is on that layer and it is the exposed
-#                          structure standing INSIDE the breach, where the hull
-#                          it would otherwise be measured against is the part
-#                          that is missing. Dropping it measured 940.86 mm.
-LOD1_MIN = mf.LAYER["clip"]       # 0.061: drops <= hinge, so deviation is 52 mm
-LOD2_MIN = mf.LAYER["duct"]       # 0.196: drops <= gauge, deviation 163 mm
+#                          drops everything up to and including hinge drops no
+#                          GREEBLE deeper than 52.00 mm
+#   cascade 2  210.94 mm   `gauge` is 163 mm and `duct` is 196 mm. LOD2 KEEPS
+#                          `duct` ON PURPOSE: `scorch_ribs` is on that layer
+#                          and it is the exposed structure standing INSIDE the
+#                          breach, where the hull it would otherwise be
+#                          measured against is the part that is missing.
+#                          Dropping it measured 940.86 mm.
+#
+# WHAT THE SHIPPED TIERS ACTUALLY MEASURE, off the bytes, 2026-08-03:
+#
+#   Station_LOD1   139.87 mm   earns cascade 2 only
+#   Station_LOD2   278.37 mm   earns NO cascade
+#   StationInt_LOD1 52.80 mm   earns cascades 1 and 2
+#
+# So the exterior ladder is NOT where this comment used to say it was. It
+# claimed 52 mm and 163 mm, which are the LAYER depths, and asserted that "a
+# tier's worst-case surface deviation from LOD0 is exactly the shallowest LAYER
+# it keeps, because nothing on this asset stands proud by an amount the call
+# site chose". **That premise is false and the measurement is what falsifies
+# it**: the interior obeys it almost exactly (52.80 against a 52 mm layer),
+# and the exterior misses by 2.7x and 1.7x, so something on the exterior does
+# stand proud by an amount a call site chose rather than by a LAYER.
+#
+# THE CAUSE IS NOT DIAGNOSED HERE and is deliberately not guessed at. The
+# numbers above were measured while trimming the docking adapter (RN-855) and
+# are recorded rather than acted on, because attributing them means auditing
+# every exterior call that does not go through a `Shell`. The consequence is
+# concrete and is the reason it is worth writing down: **Station_LOD2 is
+# shadow-unusable**, so the three cascades draw tiers 0, 0, 1 and the asset's
+# marginal multiplier is 3.0x rather than the 2.0x the interior gets.
+LOD1_MIN = mf.LAYER["clip"]       # 0.061: drops every greeble <= hinge
+LOD2_MIN = mf.LAYER["duct"]       # 0.196: drops every greeble <= gauge
 assert mf.LAYER["hinge"] < 0.05625 and LOD1_MIN > 0.05625, (
     "LOD1 must drop everything under cascade 1's 56.25 mm and keep the rest")
 assert mf.LAYER["gauge"] < 0.21094 and LOD2_MIN > mf.LAYER["gauge"], (
@@ -685,15 +705,19 @@ def hull_ends(mb, tier):
     reads which end is which from 500 m."""
     sf.docking_ring(mb, "X", DOCK_X, 2.20, HULL_D, HULL_L, HULL_L, sides=12,
                     centre=(0, 0, AX_Z), latches=8)
-    # ...AND THE CLASS-S PORT ON ITS AXIS, WITHOUT WHICH THE COLLAR IS NOT AN
+    # ...AND THE MOUNT FOR THE CLASS-S PORT, WITHOUT WHICH THE COLLAR IS NOT AN
     # INTERFACE. See station_form.docking_adapter for the full argument; the
     # short form is that this collar's clear throat is 2.64 m and the only
     # docking part in the vessel catalogue is 1.25 m across, so nothing the
     # player can build could ever have touched it.
+    #
+    # THE PORT ITSELF IS NOT BUILT HERE. Per D-015 it is a part instance in
+    # this station's design, drawn at `socket_dock` from the same
+    # `rocket_parts.glb` node every vessel draws, so the station is not a
+    # special case and the thing on screen is the thing the sim believes in.
     sf.docking_adapter(mb, "X", DOCK_MATE_X, (0, 0, AX_Z),
-                       DOCK_MATE_R, DOCK_CAPTURE_R, DOCK_CONE_DEG,
-                       HULL_D, HULL_L, HULL, SEAL, TRIM,
-                       throat_r=2.20 * 0.60, sides=12, tier=tier)
+                       DOCK_MATE_R, rk.DOCK_H, HULL_D, HULL,
+                       throat_r=2.20 * 0.60, sides=12)
     sh = sf.Shell("X", (0, 0, AX_Z), SP_RO, 1, min_layer=tier)
     collar = sh.girth(mb, DOCK_X - 1.40, 0.36, HULL_L, kind="bracket",
                       segs=SIDES)

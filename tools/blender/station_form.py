@@ -715,12 +715,9 @@ def docking_ring(mb, axis, at, r, role_body, role_face, role_metal, sides=12,
                 role_metal)
 
 
-def docking_adapter(mb, axis, at, centre, r_mate, capture_r, cone_deg,
-                    role_body, role_face, role_metal, role_seal, role_mark,
-                    throat_r, sides=12, tier=0.0, petal_az=(45.0, 165.0,
-                                                            285.0),
-                    latch_az=(27.0, 147.0, 267.0), index_az=0.0):
-    """THE CLASS-S DOCKING INTERFACE, ON A STATION-SIZED BERTHING COLLAR.
+def docking_adapter(mb, axis, at, centre, r_mate, part_h, role_body,
+                    role_metal, throat_r, sides=12):
+    """THE MOUNT A CLASS-S DOCKING PORT IS BOLTED TO. NOT THE PORT.
 
     WHY THIS EXISTS, and it is a defect report before it is a feature.
     `docking_ring` above authors a 2.20 m collar whose clear throat is 2.64 m
@@ -729,14 +726,32 @@ def docking_adapter(mb, axis, at, centre, r_mate, capture_r, cone_deg,
     ship's port passes through the station's throat with 0.70 m of clearance
     all the way round and touches nothing, and every gate in this project
     passed on that for the whole time both assets have shipped, because no
-    checker anywhere compares two assets to each other.
+    checker anywhere compares two assets to each other. Every gate asks whether
+    ONE asset is internally consistent, and docking is the first feature where
+    two assets have to agree.
 
-    So this is the missing half of the interface: an androgynous class-S port
-    on the collar's own axis, standing proud of the guide ring on four struts.
-    That is also what the real hardware does, and the reason is the same one.
     A big collar is a BERTHING ring, mated by an arm at zero relative velocity;
     a small port is a DOCKING ring, flown into under its own power. A station
-    that offers both carries an adapter, and the adapter is this.
+    that offers both carries an adapter between them, and this is that adapter:
+    a hollow pedestal on the collar's axis, held on four struts.
+
+    WHAT IT DELIBERATELY DOES NOT BUILD, per Admin decision D-015. The first
+    version of this function authored the whole port here: lands, gasket,
+    latches, guide petals and a roll datum. That was wrong, and the reason is
+    worth more than the geometry. D-015 makes a docking port a PART INSTANCE IN
+    A DESIGN precisely so the station stops being a special case; a station
+    carrying a bespoke port baked into its hull is special again in exactly the
+    way that decision rejects, and a player looking at a station they built
+    later would see a different object from the one on ours. It is also the
+    two-authority bug in a new costume: a mesh-only port beside a sim-only part
+    is two answers to "where is the port", and this project has already paid
+    for the station existing twice and for two inclination conventions.
+
+    So the port is DRAWN from its part instance at `socket_dock`, and this
+    builds only what the station itself owns: the thing the port is bolted to.
+    `part_h` is that port's own height, and the pedestal deliberately runs
+    20 mm PAST the part's base plane so the two overlap rather than abut, which
+    is the same no-shared-plane rule every solid in this file obeys.
 
     THE STRUTS RATHER THAN A BULKHEAD IS A DELIBERATE CHOICE. Closing the
     throat with a plate would be cheaper and would seal a hole that currently
@@ -745,95 +760,33 @@ def docking_adapter(mb, axis, at, centre, r_mate, capture_r, cone_deg,
     in through it. Four struts leave the throat exactly as passable as it was
     and change nothing that another lane may depend on.
 
-    EVERY NUMBER IS THE VESSEL PORT'S. `capture_r` and `cone_deg` come from the
-    same two catalogue fields `rocket_common.docking_port` is built against, so
-    the two halves of the joint are the same interface rather than two things
-    that look alike. `r_mate` is the class mating radius, 0.625.
-
-    `tier` is the shadow-LOD gate, in `machine_form.LAYER` units, and it is
-    used exactly as `Shell.min_layer` is: a coarser tier keeps the rings, which
-    are structure, and drops the petals, latches, gasket and datum marks, which
-    are trim. The worst-case surface deviation that costs is a dropped petal
-    tip, `capture_r - r_land`, which is 30 mm and inside cascade 1's 56.25 mm.
+    NO TIER GATE, and that is not an oversight. Everything left here is
+    structure: a tube and four beams, no greeble on any `machine_form.LAYER`.
+    A coarser tier that dropped it would lose the mount entirely and leave the
+    drawn port hanging in a hole, which is a silhouette change rather than a
+    surface one and is exactly what a LOD ladder must not do.
     """
     ax, _e0, _e9 = frame(axis)
-    r_land_in, r_land_out = r_mate * 0.723, r_mate * 0.912   # 0.452, 0.570
-    r_seal_in, r_seal_out = r_mate * 0.538, r_mate * 0.739   # 0.336, 0.462
-    keep_trim = tier <= mf.LAYER["clip"]
+    r_out = r_mate * 0.96          # 0.600, just inside the port's own collar
+    base = at - part_h             # where the drawn part's own base plane is
 
-    # The pedestal: a hollow barrel from the collar's sealing face out to the
-    # port, so the port is on the end of something rather than floating.
-    hull_tube(mb, axis, at - 0.46, at - 0.06, r_seal_in, r_mate * 0.84, sides,
+    # The pedestal: a hollow barrel from inside the collar out to the port.
+    # Hollow because the port it carries has a hole through it, and a solid
+    # plug behind an open hatch is a wall the player can see and not reach.
+    hull_tube(mb, axis, at - 1.10, base + 0.02, r_mate * 0.538, r_out, sides,
               role_body, centre=centre)
-    # The two lands, at two heights, which is what makes it a SEALING face
-    # rather than a washer. The outer one's outboard plane IS the mating plane
-    # and is the surface `socket_dock` sits on.
-    hull_tube(mb, axis, at - 0.07, at, r_land_in, r_land_out, sides,
-              role_face, centre=centre, smooth=False)
-    hull_tube(mb, axis, at - 0.064, at - 0.018, r_seal_in, r_seal_out, sides,
-              role_metal, centre=centre, smooth=False)
-    if keep_trim:
-        hull_tube(mb, axis, at - 0.026, at - 0.008, r_mate * 0.563,
-                  r_mate * 0.666, sides, role_seal, centre=centre,
-                  smooth=False)                                  # the gasket
 
-    # Four struts out to the collar throat. Sized to the gap they span, so a
-    # change to either radius moves them rather than leaving them short.
-    span = throat_r - r_mate * 0.84
+    # Four struts out to the collar throat. Sized to the gap they actually
+    # span, so a change to either radius moves them rather than leaving them
+    # short of the wall they are supposed to reach.
+    span = throat_r - r_out
     for k in range(4):
         deg = 45.0 + 90.0 * k
         u = radial(axis, deg)
         v = tangent(axis, deg)
-        mid = tuple(centre[j] + ax[j] * (at - 0.30)
-                    + u[j] * (r_mate * 0.84 + span * 0.5) for j in range(3))
+        mid = tuple(centre[j] + ax[j] * (base - 0.20)
+                    + u[j] * (r_out + span * 0.5) for j in range(3))
         oriented_box(mb, mid, u, v, ax, (span, 0.14, 0.16), role_metal)
-
-    if not keep_trim:
-        return
-    # The capture cone, as three petals. A petal is a plate whose inner face
-    # lies on `cone_deg` from the axis and whose tip sweeps `capture_r`, which
-    # is the same construction `rocket_common.petal` uses and the same two
-    # published numbers. Authored as an oriented box canted by (90 - cone),
-    # because on this side of the joint the petal is 90 mm long and a box that
-    # long at the right angle is indistinguishable from a tapered plate.
-    run = 0.16
-    r_root = capture_r - run * math.tan(math.radians(cone_deg))
-    tilt = math.radians(90.0 - cone_deg)
-    for deg in petal_az:
-        u = radial(axis, deg)
-        v = tangent(axis, deg)
-        # w runs up the petal: outward in radius, outboard along the axis.
-        w = tuple(u[j] * math.cos(tilt) + ax[j] * math.sin(tilt)
-                  for j in range(3))
-        n = tuple(-u[j] * math.sin(tilt) + ax[j] * math.cos(tilt)
-                  for j in range(3))
-        # Length is the HYPOTENUSE, run / cos(cone), not the axial run. The
-        # first draft divided by cos(tilt) instead and produced petals twice
-        # as long as the port is wide.
-        length, thick = run / math.cos(math.radians(cone_deg)), 0.022
-        mid = tuple(centre[j] + ax[j] * (at - run * 0.5)
-                    + u[j] * ((r_root + capture_r) * 0.5)
-                    - n[j] * thick * 0.5 for j in range(3))
-        oriented_box(mb, mid, w, v, n, (length, 0.17, thick), role_face)
-    # Capture latches, inboard of the land and UNDER the mating plane, which is
-    # the one relationship they may not break: a latch flush with the mating
-    # plane is a coplanar pair with it and is what RN-426 spent a pass fixing
-    # on the vessel side of this same joint.
-    for deg in latch_az:
-        u = radial(axis, deg)
-        v = tangent(axis, deg)
-        mid = tuple(centre[j] + ax[j] * (at - 0.026)
-                    + u[j] * (r_mate * 0.688) for j in range(3))
-        oriented_box(mb, mid, u, v, ax, (0.052, 0.096, 0.024), role_metal)
-    # THE ROLL DATUM, at index_az and nowhere else, matching the vessel port's.
-    # Two marks: one on the seal land for the close-in view, one on the
-    # pedestal for the approach.
-    for (along, r, size) in ((at - 0.030, r_mate * 0.64, (0.052, 0.030, 0.014)),
-                             (at - 0.24, r_mate * 0.86, (0.052, 0.104, 0.016))):
-        u = radial(axis, index_az)
-        v = tangent(axis, index_az)
-        mid = tuple(centre[j] + ax[j] * along + u[j] * r for j in range(3))
-        oriented_box(mb, mid, u, v, ax, size, role_mark)
 
 
 def radiator(mb, root, span, length, panels, role_panel, role_frame,

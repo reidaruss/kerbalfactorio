@@ -50,6 +50,9 @@ PART = "DockingPort"
 
 # How far off the station's mating plane the vessel port is held for shot 3.
 STANDOFF_M = 1.10
+# The port's own height, i.e. how far its mating face is above its own origin.
+# Kept here rather than imported so this file needs no Blender-side module.
+DOCK_H = 0.30
 
 
 def look_at(obj, target):
@@ -219,6 +222,54 @@ def fresh(res, **kw):
     return setup_world(res, **kw)
 
 
+def build_station_scene(want_maps, standoff_m):
+    """The station, plus a DockingPort part instance placed at its own
+    `socket_dock`, held `standoff_m` off the mating plane.
+
+    THIS FUNCTION IS THE POINT OF THE FILE. Nothing here types a position: the
+    port is put where the station's socket says, facing the way the socket
+    faces. So if the asset's frame is wrong the picture is wrong, which is what
+    caught the socket that pointed back into the hull.
+
+    It is also, at `standoff_m` 0, exactly what the client does under D-015:
+    the station .glb carries a mount and no port, and the port is a part
+    instance drawn from `rocket_parts.glb` at the socket. Composing them here
+    means this file renders the shipped result rather than half of it."""
+    port, _ = import_port()
+    bpy.ops.import_scene.gltf(filepath=STATION_GLB)
+    station_sock = None
+    for o in bpy.data.objects:
+        if o.type == "EMPTY" and o.name.startswith("socket_dock") \
+                and o.get("of_role") == "dock" and o is not port:
+            # The station's is the one that is not at the origin.
+            if o.matrix_world.translation.length > 1.0:
+                station_sock = o
+    hide_non_lod0({PART + "_LOD0", "Station_LOD0", "StationInterior_LOD0"})
+    port.hide_render = False
+    if station_sock is None:
+        print("[render_dock] WARNING no station socket_dock, port left at origin")
+    else:
+        m = station_sock.matrix_world
+        print("[render_dock] station socket_dock at %s, standoff %.2f m"
+              % (tuple(round(c, 4) for c in m.translation), standoff_m))
+        # The port's own dock face is its +Z top at DOCK_H; put that face on
+        # the station socket, facing back down the socket's own facing, then
+        # stand it off along that facing.
+        #
+        # A NON-ZERO STANDOFF IS FOR THE APPROACH SHOT AND IT IS NOT A CHEAT.
+        # At zero the two mating planes are coincident, which is what "mated"
+        # means, and an ANDROGYNOUS interface mated to its own twin photographs
+        # as one object. Held apart it reads as an approach, which is the state
+        # a player actually flies.
+        from mathutils import Matrix
+        port.matrix_world = (Matrix.Translation(m.translation)
+                             @ Matrix.Translation((standoff_m, 0.0, 0.0))
+                             @ Matrix.Rotation(math.radians(90.0), 4, "Y")
+                             @ Matrix.Translation((0.0, 0.0, -DOCK_H)))
+    maps_on(off=not want_maps)
+    return port, station_sock
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     want_maps = "--nomaps" not in argv
@@ -255,52 +306,27 @@ def main():
     # The port is placed at the station's OWN socket_dock, with the socket's
     # own facing. If the two halves disagree, the picture disagrees.
     cam = fresh((1500, 900), sky=(0.04, 0.05, 0.08), sun=5.2)
-    port, _ = import_port()
-    bpy.ops.import_scene.gltf(filepath=STATION_GLB)
-    station_sock = None
-    for o in bpy.data.objects:
-        if o.type == "EMPTY" and o.name.startswith("socket_dock") \
-                and o.get("of_role") == "dock" and o is not port:
-            # The station's is the one that is not at the origin.
-            if o.matrix_world.translation.length > 1.0:
-                station_sock = o
-    hide_non_lod0({PART + "_LOD0", "Station_LOD0", "StationInterior_LOD0"})
-    port.hide_render = False
-    if station_sock is not None:
-        m = station_sock.matrix_world
-        print("[render_dock] station socket_dock at %s"
-              % (tuple(round(c, 4) for c in m.translation),))
-        # The port's own dock face is its +Z top at 0.30; put that face on the
-        # station socket, facing back down the socket's own facing, and then
-        # STAND IT OFF by STANDOFF_M along that facing.
-        #
-        # The standoff is what makes the shot legible and it is not a cheat.
-        # Placed at zero the two ports interpenetrate, which is geometrically
-        # what "mated" means and photographs as one object: the whole point of
-        # an ANDROGYNOUS interface is that the two halves are the same shape,
-        # so a mated pair cannot show you that there are two of them. Held
-        # apart by a metre it reads as an approach, which is the state a player
-        # actually flies, and both halves are visible at once.
-        from mathutils import Matrix
-        port.matrix_world = (Matrix.Translation(m.translation)
-                             @ Matrix.Translation((STANDOFF_M, 0.0, 0.0))
-                             @ Matrix.Rotation(math.radians(90.0), 4, "Y")
-                             @ Matrix.Translation((0.0, 0.0, -0.30)))
-    maps_on(off=not want_maps)
+    build_station_scene(want_maps, STANDOFF_M)
     shoot(cam, (40.5, -11.0, 7.4), (27.5, 0.0, 2.2), 44.0,
           "dock_interface_scale")
 
-    # ---- 4. the station collar and its adapter ---------------------------
-    # THE STUDIO SKY AGAIN, and for the shot's purpose rather than for
-    # realism. Shot 3 above is the honest orbital light and this is the same
-    # geometry lit so a human can see the shape of it: the first version of
-    # this shot rendered the adapter as a black silhouette inside a black
-    # collar, which is exactly what it will look like in shadow and exactly
-    # useless for judging whether the adapter is the right size.
+    # ---- 4. THE STATION AS THE PLAYER WILL SEE IT ------------------------
+    # STANDOFF ZERO, i.e. the port INSTALLED on its mount, because that is now
+    # what ships. Under Admin decision D-015 the station's port is a part
+    # instance drawn at `socket_dock` rather than geometry baked into the hull,
+    # so the station's own .glb carries only the pedestal and struts and this
+    # shot has to compose the two exactly as the client will. Rendering the
+    # station .glb alone would photograph an empty mount and would be a picture
+    # of something no player ever sees.
+    #
+    # THE STUDIO SKY AGAIN, and for the shot's purpose rather than for realism.
+    # Shot 3 above is the honest orbital light; this is the same geometry lit
+    # so a human can see the shape of it. An early version of this shot
+    # rendered the mount as a black silhouette inside a black collar, which is
+    # exactly what it looks like in shadow and exactly useless for judging
+    # whether it is the right size.
     cam = fresh((1300, 950), sky=(0.30, 0.33, 0.38), sun=4.4)
-    bpy.ops.import_scene.gltf(filepath=STATION_GLB)
-    hide_non_lod0({"Station_LOD0", "StationInterior_LOD0"})
-    maps_on(off=not want_maps)
+    build_station_scene(want_maps, 0.0)
     shoot(cam, (36.2, -6.4, 5.4), (29.0, 0.0, 2.2), 46.0, "dock_collar")
 
 
