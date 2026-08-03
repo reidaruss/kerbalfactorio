@@ -749,6 +749,23 @@ TEST(the_fuel_gate_tells_now_from_later_from_never) {
   CHECK(later.budgetNow.marginMS < 0.0);
   CHECK(later.budgetBest.marginMS > 0.0);
 
+  // THE EARLIEST FLYABLE DEPARTURE IS NOT THE CHEAPEST ONE, which the gameplay
+  // lane raised and which a screen conflating the two would get wrong. On the
+  // rich vehicle it can leave immediately and the two answers are far apart; on
+  // the drained one it must wait, and even then the first window it can pay for
+  // comes BEFORE the optimum.
+  CHECK(rich.anyFeasible);
+  CHECK(rich.firstFeasibleIndex == 0);        // it can afford to go right now
+  CHECK(rich.firstFeasibleDepartS < rich.bestDepartS);
+  CHECK(rich.firstFeasibleTotalDvMS > rich.bestTotalDvMS);   // and pay for it
+
+  CHECK(later.anyFeasible);
+  CHECK(later.firstFeasibleIndex > 0);        // not now
+  CHECK(later.firstFeasibleDepartS > 0.0);
+  CHECK(later.firstFeasibleDepartS <= later.bestDepartS);
+  CHECK(later.firstFeasibleTotalDvMS <= later.budgetBest.availableMS);
+  CHECK(later.firstFeasibleTotalDvMS >= later.bestTotalDvMS);
+
   // And a vehicle that cannot make it at ANY departure is refused outright,
   // rather than being offered a time that would not work either.
   Vessel empty = craft;
@@ -757,6 +774,8 @@ TEST(the_fuel_gate_tells_now_from_later_from_never) {
   CHECK(never.anyTransferExists);             // the GEOMETRY is fine
   CHECK(!never.feasibleNow);
   CHECK(!never.feasibleLater);                // the VEHICLE is not
+  CHECK(!never.anyFeasible);
+  CHECK(never.firstFeasibleIndex == -1);      // there is no such window
   CHECK(never.budgetBest.availableMS == 0.0);
 }
 

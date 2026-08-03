@@ -362,12 +362,25 @@ struct Verdict {
   bool anyTransferExists = false;   // the geometry admits a transfer at all
   bool feasibleNow = false;         // affordable leaving at the first sample
   bool feasibleLater = false;       // affordable at SOME departure in the horizon
-  double bestDepartS = 0.0;         // the cheapest departure in the horizon
+  double bestDepartS = 0.0;         // the CHEAPEST departure in the horizon
   double bestTotalDvMS = 0.0;
   double nowTotalDvMS = 0.0;
   double savingByWaitingMS = 0.0;   // now minus best; 0 if now IS the best
   Budget budgetNow;
   Budget budgetBest;
+
+  // THE EARLIEST AFFORDABLE DEPARTURE, WHICH IS NOT THE CHEAPEST ONE.
+  //
+  // The gameplay lane raised this and it is right: "the cheapest window and the
+  // first flyable window are different questions, and a screen that conflated
+  // them would let a player schedule a departure they still cannot afford".
+  // A vehicle can often afford to go a while before the optimum arrives, and a
+  // player in a hurry wants that time; a player saving fuel wants the other.
+  // Both are published so neither has to be re-derived.
+  bool anyFeasible = false;
+  double firstFeasibleDepartS = 0.0;
+  double firstFeasibleTotalDvMS = 0.0;
+  int firstFeasibleIndex = -1;
 };
 
 inline Verdict verdictFor(const vessel::Vessel& craft,
@@ -393,6 +406,21 @@ inline Verdict verdictFor(const vessel::Vessel& craft,
     v.budgetNow = budgetFor(craft, tNow);
     v.feasibleNow = v.budgetNow.feasible;
     v.savingByWaitingMS = std::fmax(0.0, s0.totalDvMS - best.totalDvMS);
+  }
+
+  // The earliest departure the vehicle can actually pay for. One pass over the
+  // curve against the SAME `availableMS` the budget used, so the two answers
+  // cannot drift apart. `feasibleLater` stays the "is it ever possible" flag;
+  // this is "and the first time it is".
+  const double available = v.budgetBest.availableMS;
+  for (size_t i = 0; i < w.samples.size(); ++i) {
+    const WindowSample& s = w.samples[i];
+    if (!s.valid || s.totalDvMS > available) continue;
+    v.anyFeasible = true;
+    v.firstFeasibleIndex = static_cast<int>(i);
+    v.firstFeasibleDepartS = s.departS;
+    v.firstFeasibleTotalDvMS = s.totalDvMS;
+    break;
   }
   return v;
 }
