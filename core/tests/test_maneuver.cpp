@@ -895,16 +895,32 @@ TEST(the_ascent_leg_reproduces_the_ascent_this_project_actually_flew) {
   CHECK_NEAR(a.deltaVMS - dry.deltaVMS,
              2426.107994 * tr::kAscentDragLossFraction, 1e-6);
 
-  // AND IT REFUSES A BODY IT HAS NEVER FLOWN OFF. A 35% gravity loss is what an
-  // atmosphere and a modest pad TWR cost; on an airless low-gravity moon you fly
-  // nearly horizontally from the first second and it is a few percent. Rather
-  // than publish a fraction nobody measured, this says it does not know.
+  // CINDER USED TO BE REFUSED HERE AND IS NOT ANY MORE (R63 CLOSED, PH-203).
+  //
+  // These two lines read `CHECK(!moon.calibrated)` and `moon.deltaVMS == 0.0`,
+  // and they went red the day somebody flew the ascent they were waiting for,
+  // which is exactly what an assertion about a refusal is FOR. `ascent.h` now
+  // flies a lander off real Cinder terrain to a 20 km circular orbit for
+  // 740.6796 m/s, and `test_ascent.cpp` re-flies it and checks the published
+  // constant against the flight. The prediction the old comment made here was
+  // wrong and is corrected in transfer.h rather than deleted: an airless body's
+  // fraction is not "a few percent", it is 0.343781, because gravity loss does
+  // not care about air and because this formula's baseline charges the ideal
+  // transfer to the loss term.
   const tr::AscentCost moon = tr::ascentDvMS(orbital::kCinderMu,
                                              orbital::kCinderRadiusM,
-                                             orbital::kCinderRadiusM + 10.0e3,
+                                             orbital::kCinderRadiusM + 20.0e3,
                                              false);
-  CHECK(!moon.calibrated);
-  CHECK(moon.deltaVMS == 0.0);
+  CHECK(moon.calibrated);
+  CHECK_NEAR(moon.deltaVMS, 740.679514, 1e-5);
+
+  // AND THE REFUSAL ITSELF IS STILL LIVE, on a body nobody has flown off. Two
+  // calibrated bodies is not "every body", and the day there is a third pad it
+  // must fail loudly rather than answer.
+  const tr::AscentCost unflown =
+      tr::ascentDvMS(4.9028e12, 1.737e6, 1.737e6 + 20.0e3, false);
+  CHECK(!unflown.calibrated);
+  CHECK(unflown.deltaVMS == 0.0);
   // and the degenerate arguments refuse too, rather than returning a speed.
   CHECK(!tr::ascentDvMS(kMu, R, R, true).calibrated);          // orbit at the surface
   CHECK(!tr::ascentDvMS(0.0, R, rPark, true).calibrated);      // no gravity

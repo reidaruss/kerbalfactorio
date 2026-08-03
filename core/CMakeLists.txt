@@ -519,6 +519,22 @@ target_link_libraries(descent_tests PRIVATE of_core)
 target_include_directories(descent_tests PRIVATE tests)
 add_test(NAME descent_tests COMMAND descent_tests)
 
+# --- ASCENT: the airless ascent program (ascent.h), which is descent.h read
+#     upwards, and the R63 calibration that falls out of flying it. Same
+#     fixture rule as the descent: every launch is off REAL Cinder through
+#     worldgen::sampleHeightField, from pads this test SEARCHES FOR, and one of
+#     them is the floor of a hole with the rim standing a kilometre above it,
+#     because an ascent tested only from a flat pad is the flat-spawn trap
+#     wearing a different hat. It also pins R14 from both sides: `summarize()`
+#     really does report a vertical climb as unbound, and `arcPeak` really does
+#     return the peak anyway.
+add_executable(ascent_tests
+  tests/test_main.cpp
+  tests/test_ascent.cpp)
+target_link_libraries(ascent_tests PRIVATE of_core)
+target_include_directories(ascent_tests PRIVATE tests)
+add_test(NAME ascent_tests COMMAND ascent_tests)
+
 # --- ENEMIES: the pollution / evolution / nest-attack feedback loop (W11 lane
 #     E). enemies.h is the Factorio-inspired base-defense loop as a SIMULATION
 #     rather than a wave timer: machines emit pollution into a coarse sparse

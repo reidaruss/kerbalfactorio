@@ -617,6 +617,44 @@ inline CaptureBurn planCapture(const SoiCrossing& x, const Target& body) {
 constexpr double kAscentGravityLossFraction = 0.3500;
 constexpr double kAscentDragLossFraction    = 0.2459;   // sums to the measured
                                                         // 0.5959 at Forge
+
+// R63 CLOSED FOR CINDER, 2026-08-03 (PH-203), AND THE PREDICTION IT MADE WAS
+// WRONG IN A WAY WORTH KEEPING.
+//
+// R63 said an airless low-gravity body's losses would be "a few percent"
+// against Forge's 35. `ascent.h` now flies one, off REAL Cinder terrain from a
+// pad this project's own test searches for, and the measured fraction in THIS
+// FORMULA'S TERMS is the constant below: about two fifths of Forge's, not a
+// tenth of it.
+//
+// TWO SEPARATE REASONS, AND SEPARATING THEM IS THE FINDING:
+//
+//  1. THE FORMULA'S BASELINE IS NOT THE IDEAL COST. `vPark` is the speed of the
+//     destination orbit, and reaching it costs more than that even with an
+//     infinitely powerful engine: the two-impulse Hohmann from Cinder's surface
+//     to a 20 km circular orbit is 597.52 m/s against a vPark of 544.39, so
+//     0.0931 of vSurf is arithmetic that NO ascent can avoid and that this
+//     "loss" fraction is charged for. On Forge the same term is 0.1230.
+//  2. GRAVITY LOSS DOES NOT CARE ABOUT AIR. What an airless body saves is DRAG,
+//     and drag is the smaller half of Forge's number. The genuine guidance-plus-
+//     gravity loss measured here is about 0.25 of vSurf, against Forge's 0.47
+//     under the same decomposition.
+//
+// WHAT THE NUMBER IS AND IS NOT. It is what THIS PROJECT'S ascent program spends,
+// exactly as Forge's is what this project's reference ascent spent. It is not an
+// optimum: Apollo's ascent stage left the Moon at a comparable pad
+// thrust-to-weight of 2.06 and spent about 0.15 of surface circular speed over
+// its own impulsive ideal, against 0.25 here, so roughly a third of this number
+// is the difference between a scheduled gravity turn and real explicit guidance.
+// Recorded so that nobody later reads it as physics.
+//
+// ITS DOMAIN IS STATED BECAUSE IT IS NOT A CONSTANT OF THE BODY ALONE. Flown at
+// five parking altitudes the fraction moves from 0.283 at 10 km to 0.682 at
+// 100 km, while the loss over the impulsive ideal barely moves (0.235 to 0.317).
+// The published number is calibrated at a LOW parking orbit, which is the case a
+// lander returning to a waiting ship actually flies. R83 carries the form
+// problem to Admin, because fixing it changes Forge's published answer.
+constexpr double kAscentLossFractionCinder = 0.343781;
 struct AscentCost {
   bool calibrated = false;   // false: this body has no measured ascent
   double deltaVMS = 0.0;
@@ -627,15 +665,20 @@ inline AscentCost ascentDvMS(double muM3S2, double bodyRadiusM,
   AscentCost a;
   if (!(muM3S2 > 0.0) || !(bodyRadiusM > 0.0) || !(parkingRadiusM > bodyRadiusM))
     return a;
-  // Only the body this lane has actually flown a rocket off.
+  // ONLY THE BODIES THIS PROJECT HAS ACTUALLY FLOWN A ROCKET OFF. Two now, and
+  // a third still gets nothing rather than a plausible-looking number.
   const bool isForge = std::fabs(muM3S2 - orbital::kForgeMu) < 1e6
                        && std::fabs(bodyRadiusM - orbital::kForgeRadiusM) < 1.0;
-  if (!isForge) return a;
+  const bool isCinder = std::fabs(muM3S2 - orbital::kCinderMu) < 1e6
+                        && std::fabs(bodyRadiusM - orbital::kCinderRadiusM) < 1.0;
+  if (!isForge && !isCinder) return a;
   a.calibrated = true;
   const double vPark = std::sqrt(muM3S2 / parkingRadiusM);
   const double vSurf = std::sqrt(muM3S2 / bodyRadiusM);
-  const double loss = kAscentGravityLossFraction
-                      + (hasAtmosphere ? kAscentDragLossFraction : 0.0);
+  const double loss =
+      isForge ? kAscentGravityLossFraction
+                    + (hasAtmosphere ? kAscentDragLossFraction : 0.0)
+              : kAscentLossFractionCinder;
   a.deltaVMS = vPark + vSurf * loss;
   return a;
 }
