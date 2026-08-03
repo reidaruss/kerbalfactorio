@@ -13,6 +13,7 @@ import { scatterApi } from './app/DebugScatter.js';
 import { armourApi } from './app/DebugArmour.js';
 import { postApi } from './app/DebugPost.js';
 import { lifecycleApi } from './app/DebugLifecycle.js';
+import { carrierApi } from './app/DebugCarrier.js';
 import { installPauseMenu } from './app/MenuBoot.js';
 import { dumpChunks } from './world/TerrainDebug.js';
 import { Hud } from './ui/Hud.js';
@@ -49,6 +50,9 @@ boot(cfg, host, hud).then(({ services }) => {
     // CE-19 / CE-20. `of.life()` and `of.reboot()`: the world lifecycle's driven
     // surface. See app/DebugLifecycle.ts for why `reboot` is debug-only.
     lifecycleApi(services),
+    // CE-37. `of.carrier()`: the carrier frame's driven surface. Debug-only for
+    // the same reason `reboot` is, and app/DebugCarrier.ts says which one.
+    carrierApi(services, loop),
     installPauseMenu(services, loop));
 
   let hudFrame = 0;

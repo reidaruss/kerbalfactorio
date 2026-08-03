@@ -218,8 +218,19 @@ export class Loop {
   }
 
   private fixedTick(): void {
-    const { input, observer, origin } = this.s;
-    observer.step(input.sample(), FIXED_DT);
+    const { input, observer, origin, ride } = this.s;
+    // CE-33. THE CARRIER SANDWICH, and the ordering is the whole of it: the
+    // walker steps INSIDE the carrier's frame and is transformed out before
+    // anything else in this tick reads its position. `ride.tick` takes the step
+    // as a callback rather than exposing a before/after pair, so there is no
+    // way for this call site to do half of it; with nothing boarded it is
+    // `step()` and nothing else. Note it must be HERE and not in `onFixedStep`:
+    // `origin.step` on the next line reads `observer.position`, and a carried
+    // walker whose transport ran after the rebase would be rebasing against
+    // last tick's position.
+    const step = (): void => { observer.step(input.sample(), FIXED_DT); };
+    if (ride === null) step();
+    else ride.tick(this.tickIndex, FIXED_DT, step);
     // THE rebase authority runs before any render read in the same tick.
     origin.step(observer.position);
     for (const fn of this.onFixedStep) fn(FIXED_DT, this.tickIndex);

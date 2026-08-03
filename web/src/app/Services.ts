@@ -30,6 +30,8 @@ import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { PlanetProxy } from '../world/PlanetProxy.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import type { WorldSession } from '../world/WorldSession.js';
+import type { CarrierRegistry } from '../world/CarrierFrame.js';
+import type { CarrierRide } from '../world/CarrierRide.js';
 import type { Regime } from '../world/Regime.js';
 import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
 import type { ViewSource } from '../player/ViewSource.js';
@@ -98,6 +100,21 @@ export interface Services {
   readonly terrain: TerrainStream;
   /** CE-20. The body-scoped lifetime and the teardown/rebuild entry point. */
   readonly session: WorldSession;
+  /**
+   * CE-31. The carrier frames that currently exist, in THIS body's frame.
+   *
+   * PROCESS-scoped object, BODY-scoped contents: the registry's identity
+   * outlives a switch (`Services` hands out one reference) while every carrier
+   * in it is a position in a frame that a switch destroys. `CarrierRegistry
+   * .bindTo` registers the clear with the body `Lifetime`, so the split is
+   * enforced by the teardown rather than remembered by a reader.
+   */
+  readonly carriers: CarrierRegistry;
+  /**
+   * CE-33. The walker's ride. Non-null exactly when `player` is: with no
+   * capsule there is nobody to carry.
+   */
+  readonly ride: CarrierRide | null;
   readonly regime: Regime;
   readonly materials: TerrainMaterials;
   /** Whatever drives the eye this run: the free camera or the walking capsule. */

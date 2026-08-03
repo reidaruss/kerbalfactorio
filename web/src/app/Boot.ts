@@ -37,6 +37,8 @@ import { Regime } from '../world/Regime.js';
 import { bootTerrain, type TerrainBootResult } from '../world/TerrainBoot.js';
 import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
+import { CarrierRegistry } from '../world/CarrierFrame.js';
+import { CarrierRide } from '../world/CarrierRide.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import { VoxelWorld } from '../world/VoxelWorld.js';
 import { VoxelMesh } from '../world/VoxelMesh.js';
@@ -287,7 +289,27 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // which is what `WorldSession.reboot` ends. See world/WorldSession.ts for why
   // the oracle and the origin are RE-SEATED rather than appearing here.
   const built: { v: TerrainBootResult | null } = { v: null };
+  // CE-31 / CE-33. Constructed HERE, above the scope builder, because the
+  // builder is what registers their teardown and a `const` referenced from a
+  // closure that runs before its own declaration is a temporal-dead-zone throw
+  // at boot. Both objects are PROCESS-scoped and both hold BODY-scoped state,
+  // which is why neither is `lt.own(...)`.
+  const carriers = new CarrierRegistry();
+  const ride = player === null ? null : new CarrierRide(player.body);
   const buildBodyScope: BuildBodyScope = async (bodyId, lt) => {
+    // CE-31 / CE-34. ONE registration site for every scope, boot's included. A
+    // carrier is a position in THIS body's frame, so a carrier that survived a
+    // switch would be CE-21's nonsense a second time: Anchorage's 1,000,000 m
+    // orbit about Forge is five body-radii outside Cinder.
+    //
+    // ORDER: the registry's clear is registered first and the ride's release
+    // second, so teardown (reverse registration) RELEASES THE RIDER BEFORE IT
+    // DROPS THE FRAMES. The other order leaves one instant in which the ride
+    // holds a carrier the registry has already forgotten, which is a handle to
+    // a dead frame and is precisely the state clause 4 of the teardown contract
+    // exists to make impossible.
+    carriers.bindTo(lt);
+    ride?.bindTo(lt);
     // The session re-seats the oracle before calling this, so `oracle.body` is
     // the authority for which body is being built. Asserted rather than assumed:
     // if these two ever disagree the worker generates one planet and the main
@@ -618,7 +640,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // being frozen at boot, and this is the whole of that change.
   const services: Services = {
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
-    core, oracle, origin, proxy, regime, session,
+    core, oracle, origin, proxy, regime, session, carriers, ride,
     get body() { return session.body; },
     get terrain() { return session.terrain; },
     get materials() { return session.terrain.materials; },
