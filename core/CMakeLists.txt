@@ -472,6 +472,22 @@ target_link_libraries(maneuver_tests PRIVATE of_core)
 target_include_directories(maneuver_tests PRIVATE tests)
 add_test(NAME maneuver_tests COMMAND maneuver_tests)
 
+# --- DOCKING: the capture test and the join (D-015, PH-170). Two ports, two
+#     poses each, and one question: did they mate during this tick and if not
+#     which condition failed. The acceptance is the TUNNELLING case, because it
+#     is the whole reason the test is swept rather than a point-in-sphere: two
+#     ports passing exactly through each other at 7.6 km/s are 63.3 m apart at
+#     BOTH ends of the tick, 105 capture radii out, and a boundary test sees
+#     nothing. The join is checked by closing the loop (mate, place the port,
+#     assert it lands on the station's) rather than by inspecting a matrix, and
+#     it is driven against the port frames measured off the shipped `.glb`.
+add_executable(docking_tests
+  tests/test_main.cpp
+  tests/test_docking.cpp)
+target_link_libraries(docking_tests PRIVATE of_core)
+target_include_directories(docking_tests PRIVATE tests)
+add_test(NAME docking_tests COMMAND docking_tests)
+
 # --- ENEMIES: the pollution / evolution / nest-attack feedback loop (W11 lane
 #     E). enemies.h is the Factorio-inspired base-defense loop as a SIMULATION
 #     rather than a wave timer: machines emit pollution into a coarse sparse
