@@ -325,6 +325,7 @@
   let flown = null;
   if (rm.armed === true) {
     const tFly = Date.now();
+    const metAtArm = F().metS;
     let lastPhase = -1;
     const phases = [];
     while (Date.now() - tFly < 90000) {
@@ -342,6 +343,25 @@
       await sleep(0.2);
     }
     if (flown === null) flown = 'timed out';
+    // GP-351. THE TIME BOX EXPLAINS ITSELF NOW, because "timed out" on its own
+    // reads exactly like a hang and that reading has already cost this project
+    // a pass: the lane that built the executor watched its own runs and assumed
+    // they had stopped working. `quotedTripS` is `of_ap_departure_curve` word 3
+    // latched at the arm press, and `timeToIgnitionS` is the executor's own
+    // countdown to the FIRST burn. The arithmetic is the finding: at 50x, 90 s
+    // of wall clock is 4,500 sim seconds against an 8,219 s coast to ignition,
+    // so this box CANNOT reach the first burn and was never going to.
+    const tripS = rm.quotedTripS;
+    const igS = rm.timeToIgnitionS;
+    // The SIM clock, not the final warp factor. A first draft multiplied 90 s
+    // by `F().warp` and read "90 s of sim", which was wrong for the reason the
+    // whole entry is about: the run had warped through the entire 8,219 s coast
+    // and was sitting at 1x because GP-275 pins warp for the BURN. Reading a
+    // rate at the end and calling it the average is the same mistake as reading
+    // a countdown and calling it the trip.
+    note(`moon trip length: ${Number.isFinite(tripS) ? tripS.toFixed(0) : '?'} s `
+      + `of sim, first ignition ${Number.isFinite(igS) ? igS.toFixed(0) : '?'} s `
+      + `out; this 90 s box bought ${(F().metS - metAtArm).toFixed(0)} s of sim`);
     note(`moon flight wall clock: ${((Date.now() - tFly) / 1000).toFixed(0)} s `
       + `for ${phases.length} phase change(s); warp ${F().warp}x`);
     note(`moon flight: ${flown}, phases [${phases.join(' | ')}]`);

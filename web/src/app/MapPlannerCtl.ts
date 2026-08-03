@@ -208,6 +208,7 @@ runDvThisBurnMS: run.dvThisBurnMS,
     runWaitingToDepart: waitingToDepart(run),
     runNote: pl.currentNote,
     runQuotedAtArmMS: pl.armedQuoteMS,
+    runQuotedTripS: pl.armedTripS,
     runStalled: pl.burnStalled,
     runRangeM: close === null ? NaN : close.rangeM,
     runClosingMS: close === null ? NaN : close.closingMS,
@@ -219,11 +220,22 @@ runDvThisBurnMS: run.dvThisBurnMS,
 isBody: t !== null && t.body !== null,
 bodyCaptureAltM: t === null || t.body === null ? NaN
   : t.body.captureAltitudeM,
+    // GP-351. `arrivalFromNowS` is carried now. It has been in every sample
+    // since GP-271 and was dropped here, which is why nothing downstream could
+    // say how long a transfer takes even though /core had always answered.
     curve: c.samples.map((x) => ({ tS: x.tS, dvMS: x.dvRequiredMS,
-                                   feasible: x.feasible })),
+                                   feasible: x.feasible,
+                                   arriveTS: x.arrivalFromNowS })),
     windowS: CURVE_WINDOW_S,
     chosen: pl.chosen, cheapest: sch.cheapest, earliest: sch.earliest,
     chosenTS: s?.tS ?? NaN, chosenDvMS: s?.dvRequiredMS ?? NaN,
+    // NaN IN, NaN OUT. A departure with no solution has no arrival, and a trip
+    // length of 0 would draw as "it is instant", which is the same class of lie
+    // as drawing a NaN cost at the bottom of the chart.
+    chosenArriveTS: s === undefined || !Number.isFinite(s.dvRequiredMS)
+      ? NaN : s.arrivalFromNowS,
+    chosenTripS: s === undefined || !Number.isFinite(s.dvRequiredMS)
+      ? NaN : s.arrivalFromNowS - s.tS,
     chosenFeasible: sch.chosenFeasible,
     dvAvailableMS,
     verdict: sch.verdict, why: sch.why,

@@ -28,6 +28,10 @@ export interface ObjectiveRow {
 export class ObjectivePanel {
   private readonly root: HTMLElement;
   private shown = true;
+  /** What the world HUD last asked for. */
+  private wish = true;
+  /** GP-350. What the CHECKLIST asks for, which is a different question. */
+  private pin = false;
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -36,12 +40,46 @@ export class ObjectivePanel {
     parent.appendChild(this.root);
   }
 
-  setVisible(v: boolean): void {
-    this.shown = v;
-    this.root.style.display = v ? '' : 'none';
+  /**
+   * The WORLD HUD's wish. Three composition roots drive it (flight, the bay,
+   * the map), each saying "the walker's HUD is up" or "it is not".
+   */
+  setVisible(v: boolean): void { this.wish = v; this.apply(); }
+
+  /**
+   * GP-350. THE CHECKLIST'S OWN WISH, and it is a second input rather than a
+   * second caller of the first one.
+   *
+   * The list ended at the launch pad, so every row it had was a row the walker
+   * could do and hiding it with the walker's HUD was always right. Three flight
+   * rows make that false: strapping in is how you reach "fly it to orbit", and
+   * the panel went dark on the same frame the row became possible. `stepGoals`
+   * decides when; this only has to make the two wishes composable.
+   *
+   * TWO INPUTS AND ONE DERIVED STATE, not a caller that lies. Each writer still
+   * says exactly what it means and neither has to know about the other, which
+   * is the shape `Input.setUiCapture`'s per-panel allowance already has here
+   * (GP-53): a global answer to a per-panel question is what swallowed the
+   * launch key. The player's own H switch is upstream of both, in
+   * `Objectives.visible`, so hiding the list still hides it.
+   */
+  setPinned(p: boolean): void { this.pin = p; this.apply(); }
+
+  private apply(): void {
+    this.shown = this.wish || this.pin;
+    this.root.style.display = this.shown ? '' : 'none';
+    // MOVED, NOT JUST KEPT. Pinned means the walker's HUD is down and something
+    // else owns the screen; on the right the list sits where the flight chips
+    // and the map's own rail go. Left is empty in exactly the states that pin.
+    this.root.classList.toggle('pinned', this.pin && !this.wish);
   }
 
   get isVisible(): boolean { return this.shown; }
+
+  /** Published for the acceptance: "the world HUD hid it" and "the checklist
+   *  held it up" are different facts and a probe must be able to tell them
+   *  apart, since both can be true while `isVisible` reads the same. */
+  get isPinned(): boolean { return this.pin; }
 
   /**
    * Draw the list. `complete` retires it: the caller decides when that is, and

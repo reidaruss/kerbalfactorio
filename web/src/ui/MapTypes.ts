@@ -273,6 +273,11 @@ export interface MapPlannerSample {
   /** NaN for a departure with no solution. Drawn as a GAP, never as zero. */
   readonly dvMS: number;
   readonly feasible: boolean;
+  /** GP-351. WHEN THE TRIP ENDS, seconds from now: `of_ap_departure_curve`'s
+   *  own word 3, which this readout dropped on the floor from GP-271 until
+   *  tonight. It is the only number in the client that says how long a transfer
+   *  takes, and a moon transfer is hours. */
+  readonly arriveTS: number;
 }
 
 export interface MapPlannerReadout {
@@ -297,6 +302,11 @@ export interface MapPlannerReadout {
   readonly cheapest: number;
   readonly earliest: number;
   readonly chosenTS: number;
+  /** GP-351. Seconds from now that the chosen departure ARRIVES, and how long
+   *  it is under way. NaN when the sample has no solution, which is the one
+   *  case where "how long" has no answer. */
+  readonly chosenArriveTS: number;
+  readonly chosenTripS: number;
   readonly chosenDvMS: number;
   readonly chosenFeasible: boolean;
   readonly dvAvailableMS: number;
@@ -335,6 +345,14 @@ export interface MapPlannerReadout {
    *  down, drawn BESIDE the executor's own programme cost rather than instead
    *  of it. NaN before anything is armed. */
   readonly runQuotedAtArmMS: number;
+  /** GP-351. HOW LONG THE CHART SAID THIS TRIP WOULD TAKE, latched at the arm
+   *  press beside `runQuotedAtArmMS` and for the same reason (GP-280): the
+   *  executor publishes a countdown to the NEXT ignition and has no field for
+   *  the whole voyage, so without this the screen can say "light it in 2:16:59"
+   *  and never once say the journey is hours long. NaN before anything is
+   *  armed. It is labelled as the CHART's number wherever it is drawn, because
+   *  it is a plan and the executor's countdown is a measurement. */
+  readonly runQuotedTripS: number;
   /** GP-281. A commanded burn that has produced nothing for two seconds. The
    *  vehicle has no lit engine, which the executor cannot see and the player
    *  can fix. */

@@ -289,15 +289,37 @@
         !Number.isFinite(rendezvousSpread) || rendezvousSpread > 1.0,
         `rendezvous spread ${rendezvousSpread} m/s`);
 
-  // --- 7. THE BLOCKED BODY STILL REFUSES, WITH ITS OWN SENTENCE ------------
+  // --- 7. THE BODY ROW IS A DESTINATION NOW -------------------------------
+  //
+  // THIS SECTION USED TO ASSERT THE OPPOSITE AND WAS RED AT HEAD (GP-352 found
+  // it). When it was written Cinder carried a `blocked` sentence, so the checks
+  // were "a body that cannot be planned says CANNOT PLAN" and "no arm button is
+  // offered for it". R71, R72 and R74 landed, GP-291 DELETED that sentence and
+  // GP-295 gave the moon its own departure chart, so both premises retired and
+  // the probe went on asserting them: it is INSTRUMENTS.md's control-that-
+  // depends-on-something-that-moved, in a probe rather than in a threshold.
+  // Confirmed by running this file against HEAD's own sources in a scratch tree
+  // before touching it, which failed identically by name, so it is not a
+  // regression from the pass that found it.
+  //
+  // THE CANNOT PLAN BRANCH IS NOT DELETED FROM THE UI and is still reachable:
+  // `AutopilotTargets` blocks a vessel record that is PARKED (on the ground) or
+  // held in powered flight. It is simply not reachable from THIS fixture, which
+  // has one rails station and one flying rocket, so the claim is made about the
+  // state this run can actually produce rather than asserted against a case it
+  // cannot reach.
   const rBody = await pressRow('b:cinder');
   check('the body row selected', rBody.sel === 'b:cinder', rBody.sel);
-  await sleep(0.4);
+  await sleep(1.6);                     // past the curve latch for this row
   const txt = document.querySelector('#of-map .pverdict')?.textContent ?? '';
-  check('a body that cannot be planned says CANNOT PLAN', /CANNOT PLAN/.test(txt),
-        txt);
-  check('and no arm button is offered for it',
-        document.querySelector('#of-map [data-plan-act="arm"]') === null);
+  check('a body is planned rather than refused', !/CANNOT PLAN/.test(txt), txt);
+  check('and it gets one of the three scheduling verdicts',
+        /CAN FLY THIS DEPARTURE|NOT NOW, BUT LATER|NOT WITH THIS VEHICLE/
+          .test(txt), txt);
+  check('an arm button IS offered for it',
+        document.querySelector('#of-map [data-plan-act="arm"]') !== null);
+  check('and it has a chart of its own (GP-295)',
+        document.querySelector('#of-map .pchart svg') !== null);
 
   // --- 8. THE CURVE IS ON A LATCH, NOT A FRAME COUNTER ---------------------
   const b0 = P().curveBuilds;

@@ -21,188 +21,19 @@
 // them a couple of counter reads, and the panel re-renders only when the text
 // it would produce changes.
 
-import { labelOf } from '../player/Bindings.js';
-import type { Action } from '../player/Bindings.js';
+// GP-350. THE ROWS THEMSELVES MOVED TO `ObjectiveList.ts` (its header argues
+// the split). They are RE-EXPORTED here so every existing importer is
+// unchanged: this file is still the name the checklist answers to, and the
+// other one is where the content lives.
 import type { Gameplay } from './Gameplay.js';
-import { bodyIsAirless } from './StarterContent.js';
+import { OBJECTIVES } from './ObjectiveList.js';
+import type { Objective, RocketPort, VoyagePort } from './ObjectiveList.js';
+
+export { OBJECTIVES } from './ObjectiveList.js';
+export type { Objective, RocketPort, VoyagePort } from './ObjectiveList.js';
 
 /** Seconds between checks. Fast enough to feel immediate, slow enough to vanish. */
 const CHECK_SECS = 0.25;
-
-/**
- * What the checklist is allowed to know about the assembly bay and flight.
- *
- * A PORT, set by the composition root once both exist, because both are
- * dynamically imported and neither is built when this list is defined. Null
- * with `?vab=0` or `?flight=0`, and the two objectives below retire themselves
- * in that case rather than stalling a checklist for ever on a feature the run
- * deliberately isolated.
- */
-export interface RocketPort {
-  /** Parts on the assembly bay's stand right now. */
-  parts(): number;
-  /** Vessels set down on the ground this session. */
-  rollouts(): number;
-  /** Times the player has climbed into one. */
-  boardings(): number;
-}
-
-export interface Objective {
-  id: string;
-  /** The imperative. */
-  text: string;
-  /** GP-165: a FUNCTION of the live game, never a string, so a key or a slot
-   *  number can only ever be derived. See the block comment above OBJECTIVES. */
-  hint: (g: Gameplay) => string;
-  done: (g: Gameplay, r: RocketPort | null) => boolean;
-  /**
-   * GP-286. '' when this card applies to the world the player is standing on.
-   * Otherwise the SENTENCE saying why this world cannot satisfy it.
-   *
-   * A checklist that names a task the world has refused to make possible is
-   * GP-165's defect one level up: not a wrong KEY for a real task, a wrong
-   * TASK. `Harvest a tree` has been the first thing a player reads on Cinder,
-   * which is airless and on which `StarterContent`'s own invariant REFUSES to
-   * place a tree. The card was impossible, the list parked on it, and nothing
-   * downstream of it could ever be reached.
-   *
-   * A moot card is DRAWN AND NAMED rather than filtered out, which is GP-114's
-   * rule (a locked thing named beats an absent thing) and is why this returns a
-   * sentence rather than a boolean: "there are no trees here" teaches a player
-   * something about where they are, and a list that silently got shorter
-   * teaches them nothing and looks like a bug.
-   */
-  moot?: (g: Gameplay) => string;
-}
-
-/** How many ingots off an automated line count as "it ran without you". */
-const AUTO_TARGET = 1;
-
-/**
- * GP-165. THE NUMBER KEY FOR WHATEVER SLOT HOLDS `part` RIGHT NOW, read off
- * the live hotbar, because the bar is editable (GP-108) and a hint that says
- * "press 4" about a slot the player emptied is teaching a dead key. Falls back
- * to naming the build menu, which can always put the part in hand.
- */
-function slotOf(g: Gameplay, part: string): string {
-  const i = g.hotbar.slots.findIndex((s) => s.kind === 'part' && s.part === part);
-  return i >= 0 ? labelOf(`slot${i + 1}` as Action)
-    : `the build menu (${labelOf('build')})`;
-}
-
-/** The furnace's own slot, same derivation (it is a `furnace` kind, not a part). */
-function furnaceSlot(g: Gameplay): string {
-  const i = g.hotbar.slots.findIndex((s) => s.kind === 'furnace');
-  return i >= 0 ? labelOf(`slot${i + 1}` as Action)
-    : `the build menu (${labelOf('build')})`;
-}
-
-/**
- * GP-165. EVERY KEY AND SLOT IN A HINT IS DERIVED, never typed.
- *
- * The first six hints a new player read carried FIVE wrong controls between
- * them: "hold E" for a harvest the left button does (GP-26 moved it), "G to
- * place" for a placement that is a click (GP-27 moved it), "press 1" for a
- * drill that sits on slot 3, and "press 2 for belt, 3 for smelter" about
- * slots 4 and 5. Every one was true when written and nobody re-read this file
- * across two control remaps and a hotbar rework, which is the project's
- * fourth wrong-key-on-screen incident (the mute hint, the map hint, GP-140's
- * two prettifiers). Same fix as all three: the ONE binding table spells every
- * control, and a slot number comes off the LIVE bar, so an edited hotbar
- * re-teaches its own layout. `probes/goalhints.js` reassigns the drill
- * mid-run and watches the drawn hint follow it, which no prose can pass.
- */
-export const OBJECTIVES: Objective[] = [
-  {
-    id: 'wood', text: 'Harvest a tree',
-    hint: () => `aim at one and hold ${labelOf('use')}`,
-    done: (g) => g.game.count(g.game.ids.wood) >= 4,
-    // THE SAME AUTHORITY THAT REFUSED TO PLACE THE TREE. Not a body name and
-    // not a second atmosphere test: `bodyIsAirless` is the one copy of the
-    // question, so the day a body grows an atmosphere its trees and this card
-    // come back together.
-    moot: (g) => (bodyIsAirless(g.core, g.starterBodyId)
-      ? 'nothing grows here: this body has no air, so there is no tree to '
-        + 'harvest and no wood on it at all.' : ''),
-  },
-  {
-    id: 'tool', text: 'Craft a pickaxe',
-    hint: () => `${labelOf('pack')} opens the pack`,
-    done: (g) => g.game.count(g.game.ids.pickaxe) >= 1,
-  },
-  {
-    id: 'ore', text: 'Mine iron ore',
-    hint: () => 'the grey-blue patch of ground',
-    done: (g) => g.game.count(g.game.ids.rawIron) >= 5,
-  },
-  {
-    id: 'smelt', text: 'Smelt it into iron',
-    hint: (g) => `craft a furnace, ${furnaceSlot(g)} and ${labelOf('use')} `
-      + `place it, ${labelOf('interact')} opens it`,
-    done: (g) => g.game.count(g.game.ids.iron) >= 1,
-  },
-  {
-    id: 'miner', text: 'Put a drill on an ore patch',
-    hint: (g) => `press ${slotOf(g, 'miner')}, then ${labelOf('use')}`,
-    done: (g) => g.factory.placed.some((p) => p.kind === 'miner'),
-  },
-  {
-    id: 'belt', text: 'Run a belt from it to a smelter',
-    hint: (g) => `${slotOf(g, 'belt')} is belt, ${slotOf(g, 'smelter')} is `
-      + `smelter, ${labelOf('rotate')} turns`,
-    done: (g) => g.factory.placed.some((p) => p.kind === 'belt')
-      && g.factory.placed.some((p) => p.kind === 'smelter'),
-  },
-  {
-    id: 'auto', text: 'Walk away, then take what it made',
-    hint: () => `${labelOf('interact')} opens the smelter, click its output`,
-    done: (g) => g.autoCollected >= AUTO_TARGET,
-  },
-  // GP-53. THE SPACE HALF OF THE GAME HAD NO ENTRANCE. The assembly bay and
-  // flight have been in the build since W8 and W9 and NOTHING on screen named
-  // either of them: not the HUD, not the pack, not the hotbar, not this list.
-  // Reid built a base and then had to ask "how do i build a launchpad and
-  // rocket, i cant find it in the menu", and he was right, it was not there.
-  //
-  // This list is the answer rather than a HUD line or a menu entry, for three
-  // reasons. It already teaches the opening step by step and RETIRES itself
-  // when done, so it costs nothing after the first hour where a permanent HUD
-  // line is clutter for ever. It is data, so the wording iterates without code.
-  // And it is ORDERED, so the rocket appears after the factory that pays for
-  // it, which is DW-29's "ground progression first" stated where a player can
-  // actually read it. Both rows are visible as upcoming from the first minute,
-  // which is the part that answers "I cannot find it".
-  // GP-57. THE PAD, NAMED, and BEFORE the rocket rather than after it.
-  //
-  // The order is the teaching. A player who builds a rocket first and then
-  // discovers it needs a launch site has done the two halves in the order that
-  // makes the second one feel like a tax; doing the platform first makes the
-  // rocket the reward. It is also the honest order for the costs: 36
-  // foundations plus 60 Iron is a project, and finding that out AFTER assembling
-  // a vehicle is the sort of thing that makes a player put a game down.
-  //
-  // The row RETIRES on the pad existing rather than on the tech being bought,
-  // because what the player has to do is build the thing, and a checklist that
-  // ticks itself when you press a research button has taught you nothing about
-  // where the pad goes.
-  {
-    id: 'pad', text: 'Build a launch pad on a 6 x 6 foundation platform',
-    hint: (g) => `research Launch Facilities (${labelOf('research')}), then `
-      + `${slotOf(g, 'launchpad')} puts one in your hand`,
-    done: (g) => g.pads.list.length >= 1,
-  },
-  {
-    id: 'rocket', text: 'Build a rocket in the assembly bay',
-    hint: () => `press ${labelOf('assembly')} to go in, click parts onto the stack`,
-    done: (_g, r) => r === null || r.parts() >= 2,
-  },
-  {
-    id: 'launch', text: 'Roll it out and climb aboard',
-    hint: () => `${labelOf('board')} rolls it onto the pad, ${labelOf('board')} `
-      + `again straps you in`,
-    done: (_g, r) => r === null || r.boardings() >= 1,
-  },
-];
 
 export interface ObjectiveView {
   rows: { text: string; hint: string; done: boolean; current: boolean;
@@ -226,6 +57,9 @@ export class Objectives {
   visible = true;
   /** Set by the composition root once the bay and flight exist. See RocketPort. */
   rocket: RocketPort | null = null;
+  /** GP-350. Set by `bootMap`, which is the only place all three facts exist.
+   *  Null retires the three flight rows; `report().voyage` says which. */
+  voyage: VoyagePort | null = null;
   /** Objectives completed this session, for the report. */
   completions = 0;
   private since = 0;
@@ -262,7 +96,7 @@ export class Objectives {
     // unreachable on an airless moon. It is NOT counted as a completion,
     // because the player did not do it.
     if (mootOf(o, g) !== '') { this.index++; return null; }
-    if (!o.done(g, this.rocket)) return null;
+    if (!o.done(g, this.rocket, this.voyage)) return null;
     this.index++;
     this.completions++;
     return o;
@@ -321,6 +155,29 @@ export class Objectives {
   get currentId(): string { return OBJECTIVES[this.index]?.id ?? ''; }
 
   /**
+   * GP-350. EVERY ROW'S PREDICATE, EVALUATED NOW, for the debug report only.
+   *
+   * `view()`'s `done` is a POSITION (`i < index`), which is the right thing to
+   * draw and the wrong thing to test with: a row is not `done` until the list
+   * has walked to it, so a probe reading that field cannot tell "the world does
+   * not satisfy this" from "the list has not got there yet". Those are exactly
+   * the two states a fixture has to distinguish to prove a new row works
+   * without first driving the ten rows in front of it.
+   *
+   * It is also what lets a probe assert the DEFAULT, which is the thing
+   * INSTRUMENTS.md says nobody writes: at spawn all three flight rows must read
+   * false, and a build where the port is missing reads them all TRUE while
+   * looking identical on screen.
+   */
+  satisfied(g: Gameplay): { id: string; satisfied: boolean; moot: boolean }[] {
+    return OBJECTIVES.map((o) => ({
+      id: o.id,
+      satisfied: o.done(g, this.rocket, this.voyage),
+      moot: mootOf(o, g) !== '',
+    }));
+  }
+
+  /**
    * GP-165. Every hint, resolved NOW, for the debug report only. It is the
    * same function the panel draws, which is what makes a probe reading it a
    * probe of the screen's own derivation rather than of a parallel copy; the
@@ -352,6 +209,15 @@ export class Objectives {
       completions: this.completions, visible: this.visible,
       current: this.currentId,
       done: OBJECTIVES.slice(0, this.index).map((o) => o.id),
+      // GP-350. THE ORDER, so a probe asserts that the chain continues past the
+      // pad by reading the list rather than by counting it. A count would pass
+      // on three rows about anything.
+      ids: OBJECTIVES.map((o) => o.id),
+      // GP-350. WHETHER THE FLIGHT PORT IS WIRED AT ALL. Null makes three rows
+      // report done, which is correct for `?flight=0` and is indistinguishable
+      // on screen from a build where the wiring was dropped, so it is published
+      // and asserted rather than assumed.
+      voyage: this.voyage !== null,
     };
   }
 }
@@ -384,6 +250,29 @@ export function stepGoals(g: Gameplay, dt: number): void {
     g.sfx.chime(g.goals.index);
     g.goals.invalidate();
   }
+  // GP-350. THE CHECKLIST STAYS UP IN THE COCKPIT, and this is set BEFORE the
+  // early return below.
+  //
+  // The list ended at the launch pad, so every row it had was a row the walker
+  // could do, and hiding it with the walker's HUD was always right. Three
+  // flight rows make that false in the sharpest possible way: STRAPPING IN IS
+  // HOW YOU REACH "fly it to orbit", so the panel went dark on the same frame
+  // the row became possible.
+  //
+  // `g.suspended` is the one condition, and it is deliberately not "the current
+  // row is a flight row". A second term would be a branch nothing drives: the
+  // ground rows in front of it need a whole factory, so a fixture that reached
+  // it would depend on another lane's live files, and an untested branch that
+  // only ever ADDS visibility is not worth the claim (INSTRUMENTS.md: an
+  // assertion never seen to fail is not an assertion). One term, both values
+  // driven. The bay and the map still hide it, which is right: both own the
+  // whole screen and both instruct on their own.
+  //
+  // `Gameplay.frame` runs every drain whether or not the player is strapped in
+  // (only the ON-FOOT half is suspended), so this is re-derived in the cockpit.
+  // `goals.visible` is the player's own H switch and still wins, so a list they
+  // hid stays hidden.
+  g.goalPanel.setPinned(g.goals.visible && !g.goals.complete && g.suspended);
   if (!g.goals.visible) return;
   const v = g.goals.view(g);
   if (!g.goals.changed(v.rows[g.goals.index]?.hint ?? '')) return;

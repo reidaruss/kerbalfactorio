@@ -557,6 +557,15 @@ export function gameplayApi(s: Services, loop: Loop) {
         mootCount: g.goals.mootCount(g),
         doneCount: v.doneCount,
         rows: v.rows,
+        // GP-350. EVERY ROW'S PREDICATE EVALUATED NOW, which is a different
+        // question from `rows[i].done` (a POSITION in the walk). It is what
+        // lets a fixture test a row without first driving the ten in front of
+        // it, and in particular test it at its DEFAULT.
+        satisfied: g.goals.satisfied(g),
+        // Whether the CHECKLIST is holding the panel up, as opposed to the
+        // world HUD leaving it up. Both read `isVisible` the same.
+        panelPinned: g.goalPanel.isPinned,
+        panelVisible: g.goalPanel.isVisible,
       };
     },
 

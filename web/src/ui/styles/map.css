@@ -389,8 +389,33 @@
 }
 #of-map .pchart polyline { fill: none; stroke: var(--of-accent); stroke-width: 1.5; }
 #of-map .pchart line.afford { stroke: var(--of-good); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+/* GP-352. The rule is off the top or the bottom of the drawn band. Pinned to
+   the edge and marked, because the state it matters most in is the one where
+   it used to be omitted entirely: every departure priced, none affordable. */
+#of-map .pchart line.afford.pinned { stroke: var(--of-bad); stroke-dasharray: 1 2; opacity: 1; }
+/* GP-352. A REFUSED departure: no solution at any price. Drawn rather than left
+   as blank chart, so "the line stops here" and "the line is off the top of the
+   window" stop being the same picture. */
+#of-map .pchart rect.gap {
+  fill: var(--of-bad);
+  opacity: 0.14;
+  stroke: none;
+}
 #of-map .pchart circle.best { fill: var(--of-good); }
 #of-map .pchart circle.chosen { fill: #fff; stroke: var(--of-accent); stroke-width: 1.5; }
 #of-map .pcaption { display: flex; justify-content: space-between; font-size: 9px; color: var(--of-dim); }
 #of-map .pcaption em { font-style: normal; }
+/* GP-352. The two counts, in one vocabulary on both charts, so the difference
+   between the station's unbroken line and the moon's broken one is a pair of
+   numbers a player can read rather than a shape they have to interpret. */
+#of-map .plegend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  margin-top: 1px;
+  color: var(--of-dim);
+}
+#of-map .plegend em { font-style: normal; }
+#of-map .plegend em.bad { color: var(--of-bad); }
+#of-map .plegend em.dim { opacity: 0.55; }
 #of-map button.off { opacity: 0.45; cursor: default; }

@@ -17,6 +17,7 @@
 // =============================================================================
 import type { MapPlannerReadout } from './MapTypes.js';
 import { clock, esc, km, row } from './MapPanels.js';
+import { chart } from './MapChart.js';
 
 // =============================================================================
 // GP-271: THE AUTOPILOT PLANNER BLOCK, and the chart Reid asked for by name.
@@ -28,7 +29,8 @@ import { clock, esc, km, row } from './MapPanels.js';
 // else under src/ui is plain DOM (DW-2): a probe can read the points back out
 // of the markup and assert the DRAWN shape rather than the model that produced
 // it. The chart is the thing that makes the scheduling rule legible, so it is
-// not decoration and it gets asserted like a readout.
+// not decoration and it gets asserted like a readout. GP-352 moved the drawing
+// itself to `MapChart.ts`; its header carries the rest of this argument.
 //
 // NaN IS DRAWN AS A GAP, NEVER AS ZERO. Physics publishes NaN for a departure
 // with no solution precisely because zero would render as the cheapest point on
@@ -36,12 +38,55 @@ import { clock, esc, km, row } from './MapPanels.js';
 // a departure that cannot be flown at any price.
 // =============================================================================
 
-const CH_W = 260;
-const CH_H = 72;
-
 /** MM:SS from now, for a departure offset. */
 function fromNow(s: number): string {
   return Number.isFinite(s) ? clock(s) : '--:--';
+}
+
+// =============================================================================
+// GP-351. HOW LONG THE TRIP IS, WHICH THIS SCREEN HAS NEVER ONCE SAID.
+//
+// Measured before it was changed: with Cinder selected the panel read
+// `LEAVE IN 00:00 / COSTS 1386 m/s / YOU HAVE 2167 m/s / CAPTURE INTO 84.0 km`
+// and then, in prose, "A transfer to the moon is hours long: warp through the
+// coast". HOW MANY HOURS appeared nowhere, on either chart, before or after
+// arming. The station's rendezvous was the same: `BURN 5.7 s` and an arrival
+// orbit, and nothing about the coast to it.
+//
+// The number was never missing. `of_ap_departure_curve` word 3 is the arrival
+// time from now and every sample has carried it since GP-271;
+// `plannerReadout` mapped three of the four words and dropped it.
+//
+// WHY IT MATTERS MORE THAN A NICETY. An armed moon programme reads
+// `WAITING TO DEPART` with `LIGHT IT IN 2:16:59` and a throttle at 0%, and then
+// coasts for hours with nothing on screen changing but a countdown. The lane
+// that built the executor watched its own runs and assumed they had HUNG. If
+// the person who wrote it cannot tell it is working, a player will arm it, wait,
+// and conclude the button is broken. A duration is what turns "nothing is
+// happening" into "this is what this looks like".
+// =============================================================================
+
+/** The trip rows: how long it is under way, and when it gets there. Shared by
+ *  both destination kinds, because a rendezvous coasts too. */
+function tripRows(p: MapPlannerReadout): string[] {
+  if (!Number.isFinite(p.chosenTripS)) return [];
+  return [
+    row('trip takes', clock(p.chosenTripS)),
+    row('arrive in', fromNow(p.chosenArriveTS)),
+  ];
+}
+
+/** The sentence about warping, with the measured length in it rather than the
+ *  word "hours". Drawn only when the coast is long enough to be worth warping,
+ *  which is the condition it is actually about; a five-minute rendezvous gets
+ *  no advice it does not need. */
+function warpNote(p: MapPlannerReadout): string {
+  if (!(p.chosenTripS > 600)) return '';
+  return `<div class="note">This trip is ${clock(p.chosenTripS)} long once the `
+    + 'first burn is done. Warp through the coast: the autopilot drops back to '
+    + '1x for each burn by itself, and the panel counts down to the next '
+    + 'ignition the whole way, so a still screen means coasting and not '
+    + 'stuck.</div>';
 }
 
 /**
@@ -85,6 +130,15 @@ function runBlock(p: MapPlannerReadout): string {
     out.push(row(late ? 'burn OVERDUE by' : 'light it in',
                  clock(Math.abs(p.runTimeToIgnitionS)), late ? 'warn' : ''));
   }
+  // GP-351. A LONG COAST LOOKS EXACTLY LIKE A HANG, and this panel had nothing
+  // to say about the difference. `runPhase === 1` is Coast. Ten minutes is the
+  // point past which a player is no longer watching a manoeuvre and is instead
+  // waiting, which is when they start wondering whether it is broken.
+  if (p.runRunning && p.runPhase === 1 && p.runTimeToIgnitionS > 600) {
+    out.push('<div class="note">Coasting, and this is what working looks like: '
+      + 'nothing will move until that countdown reaches zero. Warp freely, the '
+      + 'autopilot drops back to 1x for the burn itself.</div>');
+  }
   if (p.runRunning && Number.isFinite(p.runPointingErrorDeg)) {
     out.push(row('pointing', `${p.runPointingErrorDeg.toFixed(1)} deg off`));
   }
@@ -124,6 +178,15 @@ function runBlock(p: MapPlannerReadout): string {
   if (Number.isFinite(p.runQuotedAtArmMS)) {
     out.push(row('the chart quoted', `${p.runQuotedAtArmMS.toFixed(0)} m/s`
       + ' incl. reserve'));
+  }
+  // GP-351. THE SCALE OF THE VOYAGE, which the executor's 18 words do not
+  // carry. Labelled as the CHART's number, beside the chart's cost, because it
+  // is a plan: the countdown above it is a measurement and the two must not
+  // read as one kind of thing. Without it the only duration on this panel is a
+  // countdown to the next ignition, and a player watching a three-hour coast
+  // has no way to know whether that is the trip or a hang.
+  if (Number.isFinite(p.runQuotedTripS)) {
+    out.push(row('the chart said the trip is', clock(p.runQuotedTripS)));
   }
   // THE THROTTLE THE EXECUTOR IS COMMANDING, not the player's own mirror.
   // `FlightSession.throttle` is written only when the player moves it, so
@@ -264,6 +327,10 @@ export function plannerBlock(p: MapPlannerReadout | null): string {
     }
     out.push(chart(p));
     out.push(row('leave in', fromNow(p.chosenTS)));
+    // GP-351. THE LENGTH OF THE TRIP, next to when it starts, because those are
+    // the two halves of "when am I getting there" and this panel only ever had
+    // the first.
+    for (const r of tripRows(p)) out.push(r);
     // A GAP IS A REFUSAL HERE, and it is worth saying in words as well as
     // drawing: on this chart NaN means the arm will decline that departure, not
     // that the sampler had nothing to say.
@@ -294,24 +361,35 @@ export function plannerBlock(p: MapPlannerReadout | null): string {
     // than instead of it. The sentence it replaces ("1721 against 1119") was
     // the honest thing to show while there was no curve; the curve says the
     // same thing better, so the claim is discharged rather than dropped.
+    //
+    // GP-352. Its second half moved INTO the chart, where it belongs: what a
+    // gap means is a property of the picture and not of the moon, and the
+    // station's curve can carry gaps too. Saying it only here meant the
+    // explanation of a refusal appeared on exactly one of the two screens that
+    // can draw one.
     out.push('<div class="note">The dip is worth finding: the same trip has '
       + 'been measured at 1721 m/s at a bad moment against 1119 at a good one, '
-      + 'and both of those arm and both of them fly. A gap in the line is a '
-      + 'departure the autopilot will refuse, not a departure it has no '
-      + 'opinion about.</div>');
+      + 'and both of those arm and both of them fly.</div>');
     if (p.runWaitingOn !== '') {
       out.push('<div class="note">The autopilot EXECUTOR is not on this bridge '
         + `yet: waiting for ${esc(p.runWaitingOn)}.</div>`);
     }
-    out.push('<div class="note">A transfer to the moon is hours long: warp '
-      + 'through the coast and the burns will drop you back to 1x for '
-      + 'themselves. Autopilot flies a vessel you are aboard or following.</div>');
+    // GP-351. "HOURS LONG" IS NOW A NUMBER. The old sentence told the player to
+    // warp through a coast whose length appeared nowhere on this screen, which
+    // is the sentence a player reads just before deciding the thing has hung.
+    out.push(warpNote(p));
+    out.push('<div class="note">Autopilot flies a vessel you are aboard or '
+      + 'following.</div>');
     return out.join('');
   }
   out.push(chart(p));
   out.push(row('leave in', fromNow(p.chosenTS)));
+  // GP-351. A RENDEZVOUS COASTS TOO, and the station's panel was as silent
+  // about it as the moon's: it drew a 5.7 s burn and an arrival orbit and never
+  // said how long the vehicle is under way between them.
+  for (const r of tripRows(p)) out.push(r);
   out.push(row('costs', Number.isFinite(p.chosenDvMS)
-    ? `${p.chosenDvMS.toFixed(0)} m/s` : 'no solution',
+    ? `${p.chosenDvMS.toFixed(0)} m/s` : 'the arm refuses this departure',
   p.chosenFeasible ? 'good' : 'warn'));
   out.push(row('you have', `${p.dvAvailableMS.toFixed(0)} m/s`));
   if (p.planDeltaVMS > 0) {
@@ -354,6 +432,7 @@ export function plannerBlock(p: MapPlannerReadout | null): string {
       + 'autopilot EXECUTOR is not on this bridge yet: waiting for '
       + `${esc(p.runWaitingOn)}. Nothing will be flown.</div>`);
   }
+  out.push(warpNote(p));
   // The sentence about unattended vessels, which is a rule players will
   // otherwise discover by losing a ship.
   out.push('<div class="note">Autopilot flies a vessel you are aboard, or one '
@@ -362,64 +441,4 @@ export function plannerBlock(p: MapPlannerReadout | null): string {
     + 'departure fires when you are there to see it. The plan is computed once '
     + 'and kept, not re-derived, so it does not drift while you are away.</div>');
   return out.join('');
-}
-
-/**
- * THE CHART: cost against departure time, with the chosen sample marked.
- *
- * Points are emitted into a `data-pts` attribute as well as into the polyline,
- * so a probe reads the DRAWN series rather than re-deriving it. An unsolved
- * sample breaks the line: a `polyline` cannot express a gap, so the series is
- * emitted as one `polyline` per solved run.
- */
-function chart(p: MapPlannerReadout): string {
-  const s = p.curve;
-  const solved = s.filter((x) => Number.isFinite(x.dvMS));
-  if (solved.length === 0) {
-    return '<div class="note">No departure in this window has a solution.</div>';
-  }
-  const lo = Math.min(...solved.map((x) => x.dvMS));
-  const hi = Math.max(...solved.map((x) => x.dvMS));
-  // A FLAT curve is the right answer for a ring (no phase, so no window), and
-  // a zero span must not divide. It is drawn as a level line, which is the
-  // truthful picture: waiting buys nothing.
-  const span = hi - lo < 1e-9 ? 1 : hi - lo;
-  const n = s.length;
-  const xOf = (i: number): number => (n <= 1 ? 0 : (i / (n - 1)) * CH_W);
-  const yOf = (v: number): number => CH_H - ((v - lo) / span) * (CH_H - 8) - 4;
-  const runs: string[] = [];
-  let cur: string[] = [];
-  for (let i = 0; i < n; ++i) {
-    const v = s[i]?.dvMS ?? NaN;
-    if (!Number.isFinite(v)) {
-      if (cur.length > 1) runs.push(cur.join(' '));
-      cur = [];
-      continue;
-    }
-    cur.push(`${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`);
-  }
-  if (cur.length > 1) runs.push(cur.join(' '));
-  const marks: string[] = [];
-  const mark = (i: number, cls: string): void => {
-    const v = s[i]?.dvMS ?? NaN;
-    if (i < 0 || !Number.isFinite(v)) return;
-    marks.push(`<circle class="${cls}" cx="${xOf(i).toFixed(1)}" `
-      + `cy="${yOf(v).toFixed(1)}" r="3"/>`);
-  };
-  mark(p.cheapest, 'best');
-  mark(p.chosen, 'chosen');
-  const affordable = p.dvAvailableMS;
-  const yAff = affordable >= lo && affordable <= hi
-    ? `<line class="afford" x1="0" y1="${yOf(affordable).toFixed(1)}" `
-      + `x2="${CH_W}" y2="${yOf(affordable).toFixed(1)}"/>` : '';
-  return `<div class="pchart"><svg viewBox="0 0 ${CH_W} ${CH_H}" `
-    + `preserveAspectRatio="none" data-pts="${esc(runs.join(';'))}" `
-    + `data-lo="${lo.toFixed(3)}" data-hi="${hi.toFixed(3)}">`
-    + yAff
-    + runs.map((r) => `<polyline points="${r}"/>`).join('')
-    + marks.join('')
-    + '</svg>'
-    + `<div class="pcaption"><em>${lo.toFixed(0)} m/s</em>`
-    + `<em>cost vs departure, next ${Math.round(p.windowS / 60)} min</em>`
-    + `<em>${hi.toFixed(0)}</em></div></div>`;
 }

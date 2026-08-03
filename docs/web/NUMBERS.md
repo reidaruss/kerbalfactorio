@@ -79,6 +79,7 @@ is that the numbers are handed out by one writer before the work starts.
 | RN-845 to RN-899 | rendering, drawing a second body in the sky | allocated 2026-08-03 |
 | RN-851, RN-856 to RN-859 | asset lane, docking port and first-person arms | **LANDED INSIDE THE ROW ABOVE. Admin's failure, see note.** Those five are **burned**; the rendering lane must not reuse them |
 | RN-900 to RN-949 | asset lane, third-person body and armour set | allocated 2026-08-03 |
+| GP-350 to GP-399 | gameplay, the thread past the launch pad, the length of a transfer, and the two charts' refusal vocabulary | GP-350 to GP-353 USED (the three flight rows and the `VoyagePort`, the trip duration off curve word 3, the drawn refusal columns and the pinned affordability rule, the `mapplanner.js` premise that GP-291/GP-295 retired); GP-354 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
 
 **The RN collision above was Admin's, and rule 5 is exactly what would have caught
 it.** I allocated RN-845 to RN-899 to a rendering lane in its brief, and at the

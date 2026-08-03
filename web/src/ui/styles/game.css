@@ -423,6 +423,16 @@
   border-left: 2px solid var(--of-accent);
   pointer-events: none;
 }
+/* GP-350. PINNED: the walker's HUD is down and the checklist is holding itself
+   up because its current row can only be done from the cockpit.
+   IT DOES NOT MOVE, and that was decided by LOOKING (DW-7). The first version
+   put it on the LEFT on the reasoning that the right column carries the flight
+   chips; the screenshot showed it landing on top of the debug HUD, which is at
+   `top:10px left:12px` and is ON by default. The right column above the stage
+   box is empty in the cockpit, and under the map it is covered by the map's own
+   frame, which is right: the map instructs itself. The class stays because it
+   is what a probe reads to tell "the world HUD left it up" from "the checklist
+   held it up", and those are different facts that render identically. */
 #of-goals h4 {
   margin: 0 0 6px;
   font-size: 11px;

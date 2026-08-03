@@ -28,6 +28,7 @@ import type { Input } from '../player/Input.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
 import type { ModalStack } from '../ui/ModalStack.js';
 import type { OfVesselModule } from '../sim/wasm/vesselabi.js';
+import type { VoyagePort } from '../game/Objectives.js';
 import type * as THREE from 'three';
 
 /** The slice of the walker the map needs: where the FEET are and how high above
@@ -52,7 +53,10 @@ export interface MapGameplayPorts {
   hud: { flash(msg: string): void; setVisible(on: boolean): void };
   hotbarBar: { setVisible(on: boolean): void };
   goalPanel: { setVisible(on: boolean): void };
-  goals: { visible: boolean };
+  /** GP-350. `voyage` is SET here, not read: the map is the only place that
+   *  knows how many times it has been opened and what the planner has
+   *  selected, and it is built after `Boot` has already wired `rocket`. */
+  goals: { visible: boolean; voyage: VoyagePort | null };
   /** The ore in the ground. `oreField.patches` is the same object the drills
    *  and the dig payout read, so the count on the map is the count in the
    *  world by construction rather than by agreement (DW-25's ONE POOL). */
@@ -168,7 +172,7 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     pads: () => a.flight.d.pads?.()?.list ?? [],
     tick: () => currentVesselTick(),
   });
-  return new MapMode({
+  const mode = new MapMode({
     M: V,
     host: a.host,
     modals: a.g.modals,
@@ -201,4 +205,17 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
       a.g.goalPanel.setVisible(on && a.g.goals.visible);
     },
   });
+  // GP-350. THE CHECKLIST LEARNS ABOUT FLYING, exactly as GP-53 taught it about
+  // the rocket, and for the same reason: the chain ended at the pad and a
+  // player who did everything the list asked was handed a vehicle and no next
+  // sentence. Three readings, no state: the session's own status word, the
+  // map's own open count, and the planner's own selection. Nothing here caches
+  // "has been to orbit", because a flag is a second place a fact is true
+  // (DW-26) and the checklist's index already remembers.
+  a.g.goals.voyage = {
+    status: () => a.flight.session.status,
+    mapOpens: () => mode.opens,
+    destinationId: () => mode.planner.selectedId,
+  };
+  return mode;
 }

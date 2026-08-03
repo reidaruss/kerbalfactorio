@@ -118,6 +118,14 @@ export class MapPlanner {
    *  disagreement between a planned capture and the burn actually flown by
    *  keeping exactly this kind of pair visible instead of reconciling it. */
   armedQuoteMS = NaN;
+  /** GP-351. HOW LONG THE CHART SAID THE TRIP WOULD TAKE, latched at the same
+   *  instant and for the same reason as `armedQuoteMS`. The executor's 18 words
+   *  carry a countdown to the NEXT ignition and nothing about the voyage, so
+   *  once a programme is armed this is the only place the scale of it exists.
+   *  Kept as a DURATION rather than as an arrival clock, because a clock would
+   *  need this client to run a second timer beside the sim's and the two would
+   *  drift under warp; a duration is a fact about the plan and cannot. */
+  armedTripS = NaN;
 
   constructor(private readonly p: PlannerPorts) {}
 
@@ -145,6 +153,8 @@ export class MapPlanner {
       : armFor(this.p.M, f, t, s?.tS ?? 0);
     this.lastArm = r;
     this.armedQuoteMS = s === undefined ? NaN : s.dvRequiredMS;
+    this.armedTripS = s === undefined || !Number.isFinite(s.dvRequiredMS)
+      ? NaN : s.arrivalFromNowS - s.tS;
     this.refreshRun();
     return r;
   }
@@ -390,6 +400,12 @@ export class MapPlanner {
       chosen: this.chosen,
       chosenDvMS: c.samples[this.chosen]?.dvRequiredMS ?? NaN,
       chosenTS: c.samples[this.chosen]?.tS ?? NaN,
+      // GP-351. THE TRIP LENGTH, published so a probe asserts the number the
+      // screen draws against /core's own word 3 rather than against a second
+      // copy of the subtraction.
+      chosenArriveTS: c.samples[this.chosen]?.arrivalFromNowS ?? NaN,
+      chosenTripS: (c.samples[this.chosen]?.arrivalFromNowS ?? NaN)
+        - (c.samples[this.chosen]?.tS ?? NaN),
       verdict: sch.verdict,
       earliest: sch.earliest,
       cheapest: sch.cheapest,
@@ -437,6 +453,7 @@ export class MapPlanner {
         note: this.note,
         armPresses: this.armPresses,
         quotedAtArmMS: this.armedQuoteMS,
+        quotedTripS: this.armedTripS,
         stalled: this.burnStalled,
         stallFrames: this.stallFrames,
         lastArm: this.lastArm,
