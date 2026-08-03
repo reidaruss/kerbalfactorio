@@ -71,6 +71,11 @@ is that the numbers are handed out by one writer before the work starts.
 | WG-140 to WG-199 | world-gen, Cinder the moon and the lifecycle boundary | WG-141 to WG-150 USED (the moon reachable from the client, the crater ladder, the neighbourhood defect, the rim step, the biome-gain bug one body over, the curvature instrument, the noise counter's blind spot, the atmosphere routing, and the seam analysis); WG-151 onward free |
 | GP-261 to GP-271 | gameplay, the autopilot part, VAB reach panel and map planner | landed (the published `of_ap_*` contract, the pending state, the part 0x010D, the reach gate, the NO ANSWER band, the departure chart, the drawn arc, the airless-body plant invariant) |
 | GP-272 to GP-299 | gameplay, autopilot execution: arm, cancel, per-frame status | allocated 2026-08-03 |
+| GP-300 to GP-349 | gameplay, the end-to-end playthrough of everything landed 2026-08-03 | allocated 2026-08-03 |
+| PH-200 to PH-249 | physics, the airless ascent program and R63's calibration | allocated 2026-08-03 |
+| PS-40 to PS-89 | persistence, the save has no notion of a second body, and an armed programme does not survive a reload | allocated 2026-08-03 |
+| CE-30 to CE-79 | core-engine, the carrier frame term | allocated 2026-08-03 |
+| RN-950 to RN-999 | rendering, the untextured role, the tile scale, the ambient floor | allocated 2026-08-03 |
 | RN-845 to RN-899 | rendering, drawing a second body in the sky | allocated 2026-08-03 |
 | RN-851, RN-856 to RN-859 | asset lane, docking port and first-person arms | **LANDED INSIDE THE ROW ABOVE. Admin's failure, see note.** Those five are **burned**; the rendering lane must not reuse them |
 | RN-900 to RN-949 | asset lane, third-person body and armour set | allocated 2026-08-03 |
@@ -922,3 +927,28 @@ cannot.
 **Where a complaint can be expressed as a measurement, gate that measurement.**
 A proxy is only as good as the assumption connecting it to the thing anyone
 cares about, and that assumption is rarely written down.
+
+### A finding that a later entry fixes must say so where the finding is
+
+Admin briefed a lane on GP-146, a recorded defect marked "RECORDED, NOT FIXED":
+`of_vs_remove` takes the subtree further from the root, so which half of an
+identical rocket a delete destroys depends on which part was placed first.
+
+**It had been fixed two entries later by GP-148**, which normalised the root to
+the top of the stack. Nothing in GP-146 pointed forward. The lane discovered it
+by **re-running the probe at HEAD rather than trusting the record**, and found
+green.
+
+**The decision log is now over 300 entries deep.** A reader who lands on a
+finding has no way to know the story continued, and the cost falls on whoever
+routes work from it. **That is one wasted round trip and it will not be the
+last.**
+
+**The rule: when an entry closes an earlier finding, edit the earlier finding to
+point forward.** Backward references are free and useless; a later entry naming
+an earlier one is only visible to somebody already reading the later one.
+
+**And the corollary the same lane supplied:** those delete assertions were
+**inverted in place** when GP-148 landed. **A probe edited to expect the opposite
+result is exactly the artefact you cannot take on trust**, because a claim
+inverted once can be inverted wrongly. Re-run, do not read.
