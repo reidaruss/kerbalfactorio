@@ -677,3 +677,36 @@ writers share one mutable staging area, correctness cannot be established at the
 ends of the operation. It has to be established inside it.** And **a writer that
 opts out of the shared area still owes it a write**, because everyone else is
 still reading it.
+
+### The shared WORKING TREE is a collision surface too, so measure in an isolated one
+
+A lane hit `ReferenceError: Lifetime is not defined` in `Boot.ts`, reasonably
+concluded that `main` was broken, and reported it as such.
+
+**`main` was fine.** `Lifetime` appears nowhere in HEAD. `web/src/app/Lifetime.ts`
+was an **untracked file** belonging to another lane that had **22 modified and 5
+new files in flight** for a mid-refactor that did not boot yet and was never
+meant to.
+
+Nobody was at fault. A refactor is unbootable in the middle by nature, and the
+lane that found it drew the only conclusion its evidence supported.
+
+**The rule: measure in `git archive HEAD` plus your own files, on your own
+port.** Never against the shared working tree.
+
+Two distinct things go wrong without it, and the second is worse:
+
+- **You measure somebody else's half-finished work** and attribute it to yours,
+  or to `main`.
+- **A green result is not yours either.** Passing in a tree that contains another
+  lane's uncommitted fixes proves nothing about what you are about to commit.
+
+Corollary for the lane doing the refactoring: **commit in bootable slices where
+you can**, because to everyone else an unbootable working copy is
+indistinguishable from a broken `main`. Where a seam genuinely cannot boot until
+all of it lands, say so out loud, so the other lanes stop trusting the tree
+deliberately rather than discovering it one error at a time.
+
+That makes five shared surfaces in this checkout: **the wasm blob, the git index,
+the working tree, numbered decisions, and controller files.** All five failed at
+least once. Only the wasm blob fails loudly.
