@@ -25,6 +25,10 @@
 #include <cmath>
 
 #include "of/cubed_sphere.h"
+#include <cstdio>
+#include <string>
+
+#include "of/autopilot.h"
 #include "of/flight.h"
 #include "of/maneuver.h"
 #include "of/orbital.h"
@@ -1027,4 +1031,318 @@ TEST(the_plane_change_leg_is_the_difference_between_two_real_transfers) {
   // and availability here is the REMAINING figure, not the design's total,
   // because the subject is a craft that has already burned a stage (R44b).
   CHECK_NEAR(bTilt.availableMS, remainingDeltaVVacuumMS(craft), 1e-12);
+}
+
+// =============================================================================
+// HOLD THIS ORBIT: THE FIRST THING THAT ACTUALLY FLIES (PH-150, autopilot.h).
+//
+// Reid's fifth ask, verbatim: "You should also be able to set an automatic
+// 'take it to this orbit'." Admin called it the smallest closed loop that
+// proves execution, and it is: a target orbit, a burn schedule, and a vessel
+// that ends up where it said it would. Everything after it is the same machine
+// with a harder target.
+//
+// THE ASSERTION IS THE ORBIT REACHED, NOT THE PLAN AGREEING WITH ITSELF. The
+// same rule as the node acceptance above it: an autopilot whose plan is
+// internally consistent and unflyable is worse than no autopilot. So the driver
+// below runs the REAL `FlightSim` at a real tick, applies the autopilot's own
+// Command every step, and the check at the end is the summarised conic.
+// =============================================================================
+namespace ap = of::autopilot;
+
+struct AutoResult {
+  OrbitSummary orbit;
+  double dvSpentMS = 0.0;
+  double burnTicks = 0.0;
+  double flownS = 0.0;
+  ap::Phase phase = ap::Phase::Idle;
+  const char* note = "";
+  double worstPointingWhileBurningDeg = 0.0;
+};
+
+// Fly a program to completion. `dt` is the driver tick; `limitS` bounds the
+// run so a program that never finishes fails as a timeout rather than hanging.
+static AutoResult flyProgram(const ap::Program& prog, const Vessel& craft,
+                             const orbital::StateVector& start, double dt,
+                             double limitS) {
+  FlightSim sim;
+  sim.craft = craft;
+  sim.env = forgeEnv();
+  sim.state.posM = start.r;
+  sim.state.velMS = start.v;
+  // Start pointed PROGRADE, which is where a coasting vehicle actually is, so
+  // the autopilot has to slew for itself rather than being handed the attitude.
+  sim.state.forward = orbital::normalized(start.v);
+  sim.state.right = orbital::normalized(orbital::cross(start.r, start.v));
+  sim.sas = SasMode::Command;
+  sim.sasCommand = sim.state.forward;
+
+  ap::Autopilot pilot;
+  pilot.arm(prog);
+
+  AutoResult out;
+  const int steps = static_cast<int>(limitS / dt) + 2;
+  for (int i = 0; i < steps; ++i) {
+    const ap::Command c = pilot.update(sim, dt);
+    ap::Autopilot::apply(sim, c);
+    if (pilot.status.burningNow) {
+      out.burnTicks += 1.0;
+      if (pilot.status.pointingErrorDeg > out.worstPointingWhileBurningDeg)
+        out.worstPointingWhileBurningDeg = pilot.status.pointingErrorDeg;
+    }
+    sim.step(dt);
+    out.flownS = sim.state.timeS;
+    if (!pilot.running()) break;
+  }
+  out.dvSpentMS = pilot.status.dvSpentTotalMS;
+  out.phase = pilot.status.phase;
+  out.note = pilot.status.note;
+  out.orbit = summarize(sim.orbitalState(), sim.env.muM3S2, sim.env.bodyRadiusM);
+  return out;
+}
+
+// -----------------------------------------------------------------------------
+// THE ACCEPTANCE. 80 km circular, asked for 200 km circular, flown.
+//
+// Hand figures, computed before the code ran:
+//   r1 = 680 km, r2 = 800 km, aT = 740 km
+//   v1 = sqrt(mu/r1)              = 2278.931638
+//   vP = sqrt(mu(2/r1 - 1/aT))    = 2369.520287   burn 1 =  90.588649
+//   vA = sqrt(mu(2/r2 - 1/aT))    = 2014.092244
+//   v2 = sqrt(mu/r2)              = 2101.071155   burn 2 =  86.978911
+//   total 177.567560 m/s, coast = pi sqrt(aT^3/mu) = 1064.171683 s
+// -----------------------------------------------------------------------------
+TEST(hold_this_orbit_flies_itself_to_the_orbit_it_promised) {
+  const orbital::StateVector start = circular80km();
+  const Vessel craft = upperStageOnly();
+  const double rTarget = 800.0e3;
+
+  const ap::Program p = ap::holdOrbit(start, 0.0, kMu, rTarget, craft);
+  CHECK(p.valid);
+  CHECK(p.burnCount == 2);
+  CHECK_NEAR(p.burns[0].deltaVMS, 90.588649, 1e-4);
+  CHECK_NEAR(p.burns[1].deltaVMS, 86.978911, 1e-4);
+  CHECK_NEAR(p.totalDvMS, 177.567560, 1e-3);
+  CHECK_NEAR(p.burns[1].nodeTimeS - p.burns[0].nodeTimeS, 1064.171683, 1e-3);
+  // The first burn is scheduled a SLEW ALLOWANCE ahead of the call, not for
+  // right now, and the plan is computed from where the vehicle will be then.
+  CHECK_NEAR(p.burns[0].nodeTimeS, ap::kOrientLeadS, 1e-9);
+  // The second burn is billed at the mass the FIRST ONE LEFT BEHIND, which is
+  // lower, so the same engine accelerates harder and the burn is SHORTER even
+  // though the two delta-v figures are within 4 m/s of each other. 5.523 s
+  // against 5.171 s. Pricing burn 2 on its own would have used the pre-burn
+  // mass and come out long.
+  CHECK(p.burns[1].durationS < p.burns[0].durationS);
+  CHECK_NEAR(p.burns[0].durationS, 5.523, 0.01);
+  CHECK_NEAR(p.burns[1].durationS, 5.171, 0.01);
+  CHECK_NEAR(p.burns[0].leadS, 0.5 * p.burns[0].durationS, 1e-12);
+
+  const AutoResult r = flyProgram(p, craft, start, 0.002, 1400.0);
+
+  // DW-20: prove the setup before believing the measurement. If it never
+  // burned, the orbit below would be the one it started in.
+  CHECK(r.phase == ap::Phase::Done);
+  CHECK(r.burnTicks > 100.0);
+  CHECK_NEAR(r.dvSpentMS, p.totalDvMS, 0.5);
+
+  // IT NEVER BURNED WHILE MIS-POINTED. The gate is 2 degrees at ignition; this
+  // is the worst it reached at any instant with the engine lit.
+  CHECK(r.worstPointingWhileBurningDeg < 3.0);
+
+  // THE ASSERTION THAT MATTERS. Both apsides at 200 km, and a circular orbit
+  // means the two agree with each other as well as with the request.
+  //
+  // MEASURED: apoapsis 200295.1, periapsis 199693.3, e 0.000376, semi-major
+  // axis 799994.2 against a requested 800000. Five point eight metres of
+  // semi-major axis on a 120 km orbit raise, flown by the autopilot with no
+  // hand on the throttle. The residue is the finite-burn error of an impulsive
+  // plan and it is real physics rather than slack.
+  CHECK_NEAR(r.orbit.apoapsisAltM, 200.0e3, 400.0);
+  CHECK_NEAR(r.orbit.periapsisAltM, 200.0e3, 400.0);
+  CHECK(r.orbit.eccentricity < 0.001);
+  CHECK(r.orbit.bound);
+  // and the radius it actually holds is the radius that was asked for.
+  CHECK_NEAR(r.orbit.semiMajorAxisM, rTarget, 400.0);
+}
+
+// -----------------------------------------------------------------------------
+// IT GOES DOWN AS WELL AS UP, which is the same code with the sign of the
+// transfer reversed and is worth one test because "raise the orbit" is the case
+// everyone writes and "lower it" is the one that finds a sign error.
+// -----------------------------------------------------------------------------
+TEST(hold_this_orbit_lowers_an_orbit_too) {
+  orbital::StateVector start;
+  start.r = Vec3{900.0e3, 0.0, 0.0};
+  start.v = Vec3{0.0, 0.0, std::sqrt(kMu / 900.0e3)};
+  const Vessel craft = upperStageOnly();
+  const double rTarget = 700.0e3;
+
+  const ap::Program p = ap::holdOrbit(start, 0.0, kMu, rTarget, craft);
+  CHECK(p.valid);
+  CHECK(p.burnCount == 2);
+  // Both burns are RETROGRADE now: the delta-v opposes the motion.
+  CHECK(p.burns[0].deltaV.dot(start.v) < 0.0);
+
+  const AutoResult r = flyProgram(p, craft, start, 0.002, 1400.0);
+  CHECK(r.phase == ap::Phase::Done);
+  CHECK_NEAR(r.orbit.semiMajorAxisM, rTarget, 400.0);
+  CHECK(r.orbit.eccentricity < 0.001);
+  // MEASURED: worst attitude with the engine lit 0.0521 deg, semi-major axis
+  // 700004.99 against a requested 700000 (FIVE METRES), eccentricity 0.000016,
+  // 264.1895 m/s spent. Both burns of this program are retrograde and the
+  // vehicle starts prograde, so it is the case that found all three defects
+  // below at once.
+  CHECK(r.worstPointingWhileBurningDeg < 0.5);
+  CHECK_NEAR(r.orbit.semiMajorAxisM, rTarget, 50.0);
+  CHECK(r.orbit.eccentricity < 0.0002);
+}
+
+// -----------------------------------------------------------------------------
+// IT CIRCULARISES AN ECCENTRIC ORBIT, which is the case that justifies taking
+// the whole velocity VECTOR in burn one rather than a tangential magnitude. A
+// vehicle on an ellipse has a radial velocity component, and a plan that only
+// changed the speed would leave it there and need a third burn.
+// -----------------------------------------------------------------------------
+TEST(hold_this_orbit_takes_the_whole_vector_so_an_ellipse_needs_no_third_burn) {
+  orbital::StateVector start = circular80km();
+  start.v = start.v * 1.15;                    // an ellipse, periapsis here
+  // Tilt the velocity so there IS a radial component to remove: a pure speed
+  // change could not fix this and the test would catch it.
+  start.v = start.v + orbital::normalized(start.r) * 60.0;
+  const Vessel craft = upperStageOnly();
+  const double rTarget = 800.0e3;
+
+  const ap::Program p = ap::holdOrbit(start, 0.0, kMu, rTarget, craft);
+  CHECK(p.valid);
+  CHECK(p.burnCount == 2);
+
+  const AutoResult r = flyProgram(p, craft, start, 0.002, 1600.0);
+  CHECK(r.phase == ap::Phase::Done);
+  // MEASURED: a single 18.634 s burn of 315.4429 m/s takes an ellipse with a
+  // radial component straight to a circle, semi-major axis 799927.87 against
+  // 800000 (72 m) and eccentricity 0.000173. The burn is three times longer
+  // than the circular case's, and the residue is correspondingly larger and is
+  // still under a tenth of a kilometre: that is the finite-burn error of an
+  // impulsive plan, which `maneuver::BurnEstimate::burnFractionOfPeriod`
+  // exists to let a caller see coming.
+  CHECK_NEAR(p.burns[0].durationS, 18.634, 0.01);
+  CHECK_NEAR(r.orbit.semiMajorAxisM, rTarget, 200.0);
+  CHECK(r.orbit.eccentricity < 0.0005);        // circular, from an ellipse
+  CHECK(r.worstPointingWhileBurningDeg < 0.5);
+}
+
+// -----------------------------------------------------------------------------
+// THE THREE REFUSALS. Each of these is a way an autopilot loses a vehicle, and
+// each is asserted rather than described.
+// -----------------------------------------------------------------------------
+TEST(the_autopilot_refuses_rather_than_flying_something_it_cannot) {
+  const orbital::StateVector start = circular80km();
+
+  // (1) IT WILL NOT PLAN A BURN IT CANNOT PAY FOR.
+  //
+  //     THE FIRST DRAFT OF THIS ASSERTION WAS WRONG AND THE MEASUREMENT IS
+  //     WORTH KEEPING: it asked for a 20,000 km orbit expecting that to be out
+  //     of reach, and it is not. A two-burn Hohmann from 680 km to a circular
+  //     orbit costs at MOST about 1222 m/s (peaking near 10,000 km and falling
+  //     again after, because both burns shrink as the target recedes), so the
+  //     upper stage's 3065 m/s reaches EVERY bound orbit around Forge. The
+  //     refusal has to be provoked with a vehicle, not with a distance.
+  {
+    Vessel craft = upperStageOnly();
+    // Confirm the finding rather than just asserting around it.
+    const ap::Program rich = ap::holdOrbit(start, 0.0, kMu, 1.0e7, craft);
+    CHECK(rich.valid);
+    CHECK(rich.totalDvMS < 1300.0);
+
+    // Now drain it to 200 m/s, which cannot buy a 10,000 km orbit.
+    for (auto& q : craft.parts)
+      if (craft.def(q).propellant == Propellant::LiquidFuel) q.propellantKg *= 0.05;
+    const double have = remainingDeltaVVacuumMS(craft);
+    CHECK(have > 0.0);
+    CHECK(have < rich.totalDvMS);
+
+    const ap::Program p = ap::holdOrbit(start, 0.0, kMu, 1.0e7, craft);
+    CHECK(!p.valid);
+    CHECK(p.burnCount == 2);            // it still SAYS what the trip would be
+    CHECK(p.totalDvMS > have);
+    ap::Autopilot pilot;
+    pilot.arm(p);
+    CHECK(pilot.status.phase == ap::Phase::Aborted);
+    CHECK(!pilot.running());
+  }
+
+  // (2) IT WILL NOT BURN WHILE MIS-POINTED. Arm a program whose burn is due
+  //     immediately, start the vehicle pointing the WRONG WAY, and assert that
+  //     the first tick commands attitude and NOT throttle.
+  {
+    const Vessel craft = upperStageOnly();
+    const ap::Program p = ap::holdOrbit(start, 0.0, kMu, 800.0e3, craft);
+    CHECK(p.valid);
+    FlightSim sim;
+    sim.craft = craft;
+    sim.env = forgeEnv();
+    sim.state.posM = start.r;
+    sim.state.velMS = start.v;
+    sim.state.forward = orbital::normalized(start.v) * -1.0;   // 180 degrees out
+    sim.state.right = orbital::normalized(orbital::cross(start.r, start.v));
+    ap::Autopilot pilot;
+    pilot.arm(p);
+    // Several ticks, so it gets past the coast-to-orient transition and is
+    // genuinely sitting at the ignition time with the nose in the wrong place.
+    for (int i = 0; i < 5; ++i) {
+      const ap::Command c = pilot.update(sim, 0.002);
+      CHECK(c.throttle == 0.0);              // NEVER, while it is this far off
+      CHECK(c.sas == SasMode::Command);      // and it IS trying to turn
+      CHECK(pilot.status.phase != ap::Phase::Burn);
+      ap::Autopilot::apply(sim, c);
+      sim.step(0.002);
+    }
+    CHECK(pilot.status.pointingErrorDeg > 90.0);
+    // It is HOLDING rather than failing: the burn will be late, not sideways.
+    CHECK(pilot.running());
+  }
+
+  // (3) A REQUEST FOR THE ORBIT IT IS ALREADY ON IS A VALID PROGRAM WITH NO
+  //     BURNS, not an error and not a burn of zero.
+  {
+    const Vessel craft = upperStageOnly();
+    const ap::Program p = ap::holdOrbit(start, 0.0, kMu, kR1, craft);
+    CHECK(p.valid);
+    CHECK(p.burnCount == 0);
+    CHECK(p.totalDvMS == 0.0);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// A BURN IS CUT ON MEASURED DELTA-V, NOT ON A STOPWATCH, and this is the test
+// that says why that is executing the plan rather than re-deriving it.
+//
+// `estimateBurn`'s duration is a PREDICTION. Terminating on it banks the
+// prediction's error into the orbit. Terminating on the integral of what the
+// engine actually delivered spends exactly what the plan asked for, whatever
+// the prediction was, so the two ways of being wrong are separated: a bad plan
+// gives a bad orbit and a bad predictor gives only a slightly late shutdown.
+// -----------------------------------------------------------------------------
+TEST(a_burn_is_cut_on_delivered_delta_v_and_not_on_the_predicted_duration) {
+  const orbital::StateVector start = circular80km();
+  const Vessel craft = upperStageOnly();
+  ap::Program p = ap::holdOrbit(start, 0.0, kMu, 800.0e3, craft);
+  CHECK(p.valid);
+  const double honestDuration = p.burns[0].durationS;
+
+  // SABOTAGE THE PREDICTION by 40% in both directions, changing nothing else.
+  // A stopwatch-driven autopilot would spend 40% too much or too little; this
+  // one must spend the same delta-v and reach the same orbit either way.
+  for (double factor : {0.6, 1.4}) {
+    ap::Program bad = p;
+    bad.burns[0].durationS = honestDuration * factor;
+    bad.burns[0].leadS = 0.5 * bad.burns[0].durationS;
+    const AutoResult r = flyProgram(bad, craft, start, 0.002, 1400.0);
+    CHECK(r.phase == ap::Phase::Done);
+    // The delta-v spent is the delta-v PLANNED, not the delta-v the sabotaged
+    // duration implies.
+    CHECK_NEAR(r.dvSpentMS, p.totalDvMS, 0.5);
+    // and the orbit still arrives, because only the burn's CENTRING moved.
+    CHECK_NEAR(r.orbit.semiMajorAxisM, 800.0e3, 3000.0);
+  }
 }

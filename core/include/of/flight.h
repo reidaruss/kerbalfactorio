@@ -460,7 +460,38 @@ inline SasOutput stabilityAssist(vessel::Vessel& v, const vessel::MassProperties
   const double sinA = axis.length();
   const double cosA = std::fmax(-1.0, std::fmin(1.0, f.dot(t)));
   out.errorRad = std::atan2(sinA, cosA);
-  if (sinA > 1e-12) axis = axis * (1.0 / sinA);
+  if (sinA > 1e-12) {
+    axis = axis * (1.0 / sinA);
+  } else if (cosA < 0.0) {
+    // EXACTLY ANTIPARALLEL, AND THIS USED TO STALL THE VEHICLE FOR EVER
+    // (PH-151). The cross product of two opposed unit vectors is zero, so the
+    // demanded torque was zero, so a vessel commanded to flip exactly 180
+    // degrees sat in an unstable equilibrium and never turned. `errorRad` was
+    // correctly reported as pi the whole time, which is the part that makes it
+    // nasty: the controller knew, said so, and did nothing.
+    //
+    // MEASURED, and it is not a corner case for an autopilot: circularising at
+    // apoapsis points exactly retrograde relative to the burn that raised the
+    // orbit, BY CONSTRUCTION, so the second burn of every hold-orbit program
+    // hits it. The vehicle held 180.000 degrees for 600 s of sim and the burn
+    // never happened. A player only ever hits it by being perfectly prograde
+    // and pressing retrograde, which is rare; a geometric plan hits it always.
+    //
+    // At exactly pi every axis perpendicular to `f` is an equally valid
+    // rotation axis, so one is CHOSEN rather than found: cross `f` with
+    // whichever cardinal axis it is least aligned with, which is guaranteed
+    // non-degenerate and depends on `f` alone, so it stays bit-deterministic.
+    const double ax = std::fabs(f.x), ay = std::fabs(f.y), az = std::fabs(f.z);
+    const Vec3 pick = (ax <= ay && ax <= az) ? Vec3{1, 0, 0}
+                      : (ay <= az)           ? Vec3{0, 1, 0}
+                                             : Vec3{0, 0, 1};
+    axis = normalized(cross(f, pick));
+  } else {
+    // Parallel: already pointed. `errorRad` is ~0, so the deadband below stops
+    // the proportional term and only the rate term runs, which is what damps a
+    // residual spin.
+    axis = Vec3{0, 0, 0};
+  }
 
   const double I = std::fmax(1.0, std::fmax(mp.IxxKgM2, mp.IzzKgM2));
   Vec3 demand{0, 0, 0};

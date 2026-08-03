@@ -1014,3 +1014,90 @@ TEST(flight_is_bit_deterministic) {
   CHECK(f1 < 6450.0);
   CHECK(s1.posM.length() > env.bodyRadiusM + 1000.0);
 }
+
+// =============================================================================
+// PH-151. SAS COMMANDED EXACTLY BACKWARDS USED TO NEVER TURN THE VEHICLE.
+//
+// `stabilityAssist` derives its rotation axis from `cross(forward, target)`.
+// For two exactly opposed unit vectors that cross product is the zero vector,
+// so the demanded torque was zero, so a vessel told to flip 180.000 degrees sat
+// in an unstable equilibrium for ever. `errorRad` was reported correctly as pi
+// the whole time, which is what makes it nasty: the controller knew, said so,
+// and did nothing.
+//
+// IT IS NOT A CORNER CASE FOR AN AUTOPILOT. Circularising at apoapsis points
+// exactly retrograde relative to the burn that raised the orbit, BY
+// CONSTRUCTION, so the second burn of every hold-orbit program lands on it. It
+// was found by flying one: the vehicle held 180.000 degrees for 600 s of sim
+// and the burn never happened. A human only reaches it by being perfectly
+// prograde and pressing retrograde; a geometric plan reaches it every time.
+// =============================================================================
+TEST(sas_commanded_exactly_backwards_turns_the_vehicle_round) {
+  Ascender a = makeAscender(true);
+  a.v.layout();
+  const MassProperties mp = massProperties(a.v);
+
+  FlightState s;
+  s.posM = Vec3{680.0e3, 0.0, 0.0};
+  s.velMS = Vec3{0.0, 0.0, 2278.931638};
+  s.forward = Vec3{0.0, 0.0, 1.0};
+  s.right = Vec3{1.0, 0.0, 0.0};
+  const Vec3 backwards = Vec3{0.0, 0.0, -1.0};
+
+  // EXACTLY antiparallel, so the cross product is exactly the zero vector.
+  CHECK(cross(s.forward, backwards).length() == 0.0);
+
+  const ControlAuthority ca = controlAuthority(a.v, mp, 0.0, 0.0);
+  CHECK(ca.totalNm() > 0.0);          // the vehicle CAN turn; the question is
+                                      // whether it is asked to
+  const SasTuning tune;
+  const SasOutput out = stabilityAssist(a.v, mp, s, SasMode::Command,
+                                        Vec3{0, 1, 0}, backwards, ca, tune, 0.02);
+
+  // The error was always reported correctly. It is the torque that was zero.
+  CHECK_NEAR(out.errorRad, orbital::kPi, 1e-12);
+  CHECK(out.torqueNm.length() > 0.0);        // WAS EXACTLY 0.0 before PH-151
+  CHECK(out.appliedNm > 0.0);
+  // and the axis it picked is perpendicular to the nose, which is the only
+  // property that makes it a valid rotation axis at all.
+  CHECK_NEAR(normalized(out.torqueNm).dot(s.forward), 0.0, 1e-12);
+
+  // DETERMINISTIC: the same input gives the same axis, because the choice is a
+  // function of `forward` alone. This project hashes double bits for
+  // determinism, so an arbitrary axis would have to be arbitrary the same way
+  // every time.
+  const SasOutput again = stabilityAssist(a.v, mp, s, SasMode::Command,
+                                          Vec3{0, 1, 0}, backwards, ca, tune, 0.02);
+  CHECK(out.torqueNm.x == again.torqueNm.x);
+  CHECK(out.torqueNm.y == again.torqueNm.y);
+  CHECK(out.torqueNm.z == again.torqueNm.z);
+
+  // AND IT ACTUALLY GETS THERE. Integrate the real sim and watch the nose come
+  // round, rather than trusting one torque sample.
+  FlightSim sim;
+  sim.craft = a.v;
+  sim.env.muM3S2 = orbital::kForgeMu;
+  sim.env.bodyRadiusM = orbital::kForgeRadiusM;
+  sim.env.air = atmo::makeForgeAtmosphere();
+  sim.state = s;
+  sim.sas = SasMode::Command;
+  sim.sasCommand = backwards;
+  double best = 180.0;
+  for (int i = 0; i < 30000; ++i) {          // 300 s at 0.01
+    sim.step(0.01);
+    double c = normalized(sim.state.forward).dot(backwards);
+    if (c > 1.0) c = 1.0;
+    if (c < -1.0) c = -1.0;
+    const double deg = std::acos(c) * 180.0 / orbital::kPi;
+    if (deg < best) best = deg;
+    if (best < 0.5) break;
+  }
+  CHECK(best < 0.5);
+
+  // THE CONTROL: pointing exactly AT the target must still demand no
+  // proportional torque, so the fix did not turn "already there" into a spin.
+  const SasOutput aligned = stabilityAssist(a.v, mp, s, SasMode::Command,
+                                            Vec3{0, 1, 0}, s.forward, ca, tune, 0.02);
+  CHECK_NEAR(aligned.errorRad, 0.0, 1e-12);
+  CHECK(aligned.torqueNm.length() == 0.0);
+}
