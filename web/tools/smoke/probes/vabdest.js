@@ -15,12 +15,14 @@
 //     to the caller, so a button that is present and inert fails here. That is
 //     GP-155's finding: a press helper that could not fail is worth nothing.
 //
-// (b) THE SEAM IS ASSERTED BY NAME. The mission-cost half of this feature is
-//     the physics lane's `of_ap_design_reach` and it is not on the bridge yet.
-//     The screen must say so, in those words, and must NOT show a confident
-//     verdict. `REACH PENDING` and the export name are both asserted, so the
-//     day the export lands this row goes red and someone has to look at it,
-//     which is the only kind of pending state worth having.
+// (b) THE SEAM IS ASSERTED ON BOTH SIDES, AND WHICH SIDE RAN IS MEASURED.
+//     The mission cost is the physics lane's `of_ap_design_reach`, which landed
+//     mid-session (PH-147 to PH-149). Before it, the screen had to say
+//     `REACH PENDING` and name the export; after it, the screen must give a
+//     decided verdict and must NEVER still say pending. `solverPresent` is read
+//     off the model and PUBLISHED in the result, so a green run cannot hide
+//     that it took the trivial branch: an implication whose antecedent is never
+//     asserted proves nothing.
 //
 // (c) THE VEHICLE FIGURE IS ASSERTED EQUAL TO /core's OWN, in the same frame.
 //     The whole point of R43 is that there is ONE delta-v authority. If this
@@ -233,22 +235,52 @@
   check('a blocked row never claims a margin',
         !/CAN REACH/.test(dCinder.drawn.verdict), dCinder.drawn.verdict);
 
-  // --- 5. THE SEAM, BY NAME ------------------------------------------------
+  // --- 5. THE SEAM: BOTH BRANCHES, AND WHICH ONE RAN IS MEASURED -----------
+  //
+  // The physics lane's four `of_ap_*` exports landed mid-session (PH-147 to
+  // PH-149), so this probe has to be true on either side of that bridge. It is
+  // NOT written as "pending or fine either way": the antecedent is MEASURED
+  // (`solverPresent`, off the model's own `waitingOn`), it is PUBLISHED in the
+  // result, and each branch carries real assertions. An implication whose
+  // antecedent is never asserted proves nothing, and a probe that could
+  // silently take the trivial branch is the same defect wearing a hat.
   await press('orbit');
   const dOrbit = of.vab('dest');
   check('the orbit row selected', dOrbit.drawn.selectedRowId === 'orbit',
         dOrbit.drawn.selectedRowId);
   check('the two orbit boxes appear with it', dOrbit.drawn.orbitBoxesShown === true);
-  check('the verdict is REACH PENDING',
-        dOrbit.drawn.verdict.includes('REACH PENDING'), dOrbit.drawn.verdict);
-  check('the pending sentence names the export it waits for',
-        dOrbit.drawn.reachText.includes('of_ap_design_reach'),
-        dOrbit.drawn.reachText);
-  check('the model names the same export',
-        String(dOrbit.model.waitingOn).includes('of_ap_design_reach'),
-        String(dOrbit.model.waitingOn));
-  check('no confident verdict while the solver is absent',
-        !/CAN REACH/.test(dOrbit.drawn.verdict), dOrbit.drawn.verdict);
+  const solverPresent = String(dOrbit.model.waitingOn) === '';
+  if (!solverPresent) {
+    check('no solver: the verdict is REACH PENDING',
+          dOrbit.drawn.verdict.includes('REACH PENDING'), dOrbit.drawn.verdict);
+    check('no solver: the sentence names the export it waits for',
+          dOrbit.drawn.reachText.includes('of_ap_design_reach'),
+          dOrbit.drawn.reachText);
+    check('no solver: and NO confident verdict is shown',
+          !/CAN REACH/.test(dOrbit.drawn.verdict), dOrbit.drawn.verdict);
+  } else {
+    // THE SOLVER IS ON THE BRIDGE. The verdict must now be one of the two real
+    // ones, must never still say PENDING, and the margin must be exactly
+    // available minus required: that identity is what catches a screen that
+    // started doing its own arithmetic, which is the whole thing this feature
+    // is forbidden from doing.
+    const m = dOrbit.model;
+    check('solver present: the verdict is decided, not pending',
+          /CAN REACH|CANNOT REACH/.test(dOrbit.drawn.verdict)
+          && !/PENDING/.test(dOrbit.drawn.verdict), dOrbit.drawn.verdict);
+    check('solver present: a real mission cost came back',
+          Number.isFinite(m.dvRequiredMS) && m.dvRequiredMS > 0,
+          `dvRequiredMS ${m.dvRequiredMS}`);
+    check('solver present: margin IS available minus required, to the bit',
+          Math.abs(m.marginMS - (m.dvAvailableMS - m.dvRequiredMS)) < 1e-9,
+          `${m.marginMS} vs ${m.dvAvailableMS - m.dvRequiredMS}`);
+    check('solver present: the verdict agrees with the sign of the margin',
+          (m.marginMS >= 0) === /(?<!CANNOT )CAN REACH/.test(dOrbit.drawn.verdict),
+          `margin ${m.marginMS}, verdict "${dOrbit.drawn.verdict}"`);
+    check('solver present: feasible agrees with the margin too',
+          m.feasible === (m.marginMS >= 0),
+          `feasible ${m.feasible}, margin ${m.marginMS}`);
+  }
 
   // --- 6. ONE DELTA-V AUTHORITY --------------------------------------------
   // The screen's vehicle figure must BE /core's, to the digit it prints.
@@ -381,7 +413,14 @@
     blocked: dEnd.drawn.blockedRowIds,
     gateDrawn: dEnd.drawn.gate,
     verdictDrawn: dEnd.drawn.verdict,
+    // WHICH BRANCH RAN, published so a green run cannot hide that it took
+    // the trivial one. Reading 'solverPresent: false' after PH-149 is
+    // itself a finding.
+    solverPresent,
     waitingOn: dEnd.model.waitingOn,
+    dvRequiredMS: dEnd.model.dvRequiredMS,
+    marginMS: dEnd.model.marginMS,
+    feasible: dEnd.model.feasible,
     dvAvailableMS: dEnd.model.dvAvailableMS,
     drawnDv,
     altKm: dEnd.model.altKm,
