@@ -488,6 +488,21 @@ target_link_libraries(docking_tests PRIVATE of_core)
 target_include_directories(docking_tests PRIVATE tests)
 add_test(NAME docking_tests COMMAND docking_tests)
 
+# --- APPROACH: D-015 layer two, the program that drives from rendezvous to
+#     contact. Needs translational RCS, which flight.h did not have: a rocket
+#     accelerates along its nose, and a docking approach must hold the PORT
+#     aimed while correcting sideways, so without it a vehicle can point OR
+#     move. The acceptance is a FLIGHT at the browser's own 1/60 s, starting
+#     from PH-154's measured rendezvous arrival, ending with
+#     docking::sweptCapture saying the ports mated, with a negative control
+#     that removes only the thruster command and misses.
+add_executable(approach_tests
+  tests/test_main.cpp
+  tests/test_approach.cpp)
+target_link_libraries(approach_tests PRIVATE of_core)
+target_include_directories(approach_tests PRIVATE tests)
+add_test(NAME approach_tests COMMAND approach_tests)
+
 # --- ENEMIES: the pollution / evolution / nest-attack feedback loop (W11 lane
 #     E). enemies.h is the Factorio-inspired base-defense loop as a SIMULATION
 #     rather than a wave timer: machines emit pollution into a coarse sparse

@@ -399,6 +399,24 @@ inline ControlAuthority controlAuthority(const vessel::Vessel& v,
   return ca;
 }
 
+// TOTAL TRANSLATIONAL RCS THRUST, and the one simplification in it is stated
+// rather than buried: the block's rated thrust is treated as available in ANY
+// direction. A real cluster has nozzle groups and cannot push equally every
+// way, but `PartDef` carries one scalar and no nozzle geometry, so modelling
+// the asymmetry would mean inventing the placements. Inventing them would make
+// a docking approach depend on numbers nobody authored.
+//
+// Torque and translation are billed from the SAME TANK and are not otherwise
+// coupled: SAS can be damping a spin while the approach translates, and both
+// draw monopropellant until it runs out, at which point both stop.
+inline double rcsTranslationThrustN(const vessel::Vessel& v) {
+  if (vessel::propellantAboardKg(v, vessel::Propellant::Monopropellant) <= 0.0)
+    return 0.0;
+  double n = 0.0;
+  for (const auto& p : v.parts) n += v.def(p).rcsThrustN;
+  return n;
+}
+
 struct SasTuning {
   double kp = 2.5;   // proportional gain on the attitude error, per second^2
   double kd = 3.0;   // rate gain, per second
@@ -605,6 +623,11 @@ inline Vec3 rotateAbout(const Vec3& v, const Vec3& k, double ang) {
 }
 
 struct FlightTelemetry {
+  /** Translational RCS actually delivered this tick, newtons. 0 when the
+   *  command is zero OR when the monopropellant has run out, and those are
+   *  different situations that a screen has to be able to tell apart, so an
+   *  approach program reads this rather than assuming its command landed. */
+  double rcsThrustN = 0.0;
   double altitudeM = 0.0;
   double speedMS = 0.0;
   double machlessQPa = 0.0;
@@ -630,6 +653,24 @@ class FlightSim {
   Vec3 sasHold{0, 1, 0};
   Vec3 sasCommand{0, 1, 0};
   FlightTelemetry telemetry;
+
+  // TRANSLATIONAL RCS (PH-173). An INERTIAL direction whose magnitude is the
+  // throttle, 0 to 1, of the vehicle's total RCS thrust. Zero means off, which
+  // is the default and is what every existing flight does.
+  //
+  // WHY THIS HAD TO EXIST BEFORE A DOCKING APPROACH COULD. A rocket accelerates
+  // along its nose. A docking approach has to hold the PORT pointed at the
+  // other port while closing, and those two directions are only the same if you
+  // approach exactly along your own thrust axis and never need to correct
+  // sideways. Correcting sideways is the entire job of an approach, so without
+  // translation a vehicle can point OR move, and a program that pointed the
+  // nose wherever it needed to push would arrive with its port facing the wrong
+  // way and fail the capture cone.
+  //
+  // `rcsThrustN` has been authored on the RCS block (1000 N, Isp 240 s) since
+  // the catalogue was written and was consumed for TORQUE ONLY, which is R15's
+  // shape again: a part doing half of what its own data says.
+  Vec3 rcsTranslate{0, 0, 0};
 
   // Set the hold attitude to whatever the vessel is doing now.
   void captureHold() { sasHold = normalized(state.forward); }
@@ -657,6 +698,40 @@ class FlightSim {
     const double massKg = std::fmax(1.0, mp.totalKg);
     const Vec3 f = normalized(state.forward);
     const Vec3 thrustAccel = f * (prop.thrustN / massKg);
+
+    // --- translational RCS: evaluate, then consume, exactly as above -------
+    Vec3 rcsAccel{0, 0, 0};
+    telemetry.rcsThrustN = 0.0;
+    {
+      const double want = rcsTranslate.length();
+      const double avail = rcsTranslationThrustN(craft);
+      if (want > 1e-9 && avail > 0.0) {
+        const double th = std::fmin(1.0, want);
+        const double T = avail * th;
+        rcsAccel = rcsTranslate * (T / (want * massKg));
+        telemetry.rcsThrustN = T;
+        // Monopropellant, through the same Isp the torque path uses. Averaged
+        // over the blocks that have one, for the same reason `stabilityAssist`
+        // averages: there is one tank and no per-nozzle bookkeeping.
+        double isp = 0.0, k = 0.0;
+        for (const auto& p : craft.parts) {
+          const vessel::PartDef& d = craft.def(p);
+          if (d.rcsThrustN <= 0.0 || d.rcsIspS <= 0.0) continue;
+          isp += d.rcsIspS; k += 1.0;
+        }
+        if (k > 0.0 && isp > 0.0) {
+          double left = T / ((isp / k) * atmo::kG0) * dt;
+          for (auto& p : craft.parts) {
+            if (craft.def(p).propellant != vessel::Propellant::Monopropellant)
+              continue;
+            const double take = std::fmin(left, p.propellantKg);
+            p.propellantKg -= take;
+            left -= take;
+            if (left <= 0.0) break;
+          }
+        }
+      }
+    }
 
     // --- aerodynamics ----------------------------------------------------
     const AeroForces af = aerodynamics(craft, mp, state, env, aero);
@@ -695,9 +770,9 @@ class FlightSim {
     // this is BIT-IDENTICAL to it (asserted in test_flight.cpp), which is what
     // makes the handoff at the atmosphere ceiling free of a seam.
     {
-      const Vec3 a0 = gravity(state.posM) + thrustAccel + dragAccel;
+      const Vec3 a0 = gravity(state.posM) + thrustAccel + dragAccel + rcsAccel;
       state.posM = state.posM + state.velMS * dt + a0 * (0.5 * dt * dt);
-      const Vec3 a1 = gravity(state.posM) + thrustAccel + dragAccel;
+      const Vec3 a1 = gravity(state.posM) + thrustAccel + dragAccel + rcsAccel;
       state.velMS = state.velMS + (a0 + a1) * (0.5 * dt);
       telemetry.accelMS2 = a0.length();
     }
