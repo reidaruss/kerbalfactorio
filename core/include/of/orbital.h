@@ -365,18 +365,47 @@ inline double orbitalPeriod(double a, double mu) {
 // already going" is then frame-free and true in any convention.
 //
 // `valid` is false rather than the result being garbage when: the two positions
-// are collinear (no plane is determined), the time of flight is not positive, or
-// the iteration does not converge. A caller that ignores `valid` gets zeros.
+// are collinear (no plane is determined), the time of flight is not positive,
+// the iteration does not converge, OR the answer would be AMBIGUOUS (see R62
+// below). A caller that ignores `valid` gets zeros.
+//
+// R62, AND THIS IS WHY THE FUNCTION REFUSES RATHER THAN WARNING IN A COMMENT.
+// This solves the SINGLE-revolution problem. Hand it a time of flight in which
+// the geometry could also have been flown with one or more extra laps and it
+// does not fail and cannot warn: it correctly answers a DIFFERENT question, and
+// the error is enormous (measured: 3.5 km/s on a 2.3 km/s orbit). Relying on
+// every future caller to have read a comment is how that ships.
+//
+// So the ambiguity is DETECTED. The minimum-energy conic through two points has
+// a = s/2 with s the semiperimeter (r1 + r2 + chord)/2, and EVERY conic through
+// them has a >= that, so every one has a period of at least
+// P_min = 2 pi sqrt((s/2)^3 / mu). An N-lap transfer must therefore take at
+// least N * P_min, and `floor(tof / P_min)` is an upper bound on how many extra
+// laps the geometry could admit. Zero means the single-revolution answer is
+// PROVABLY the only one.
+//
+// It is a NECESSARY condition and not a sufficient one, so refusing on it is
+// conservative: it turns away some requests that were in fact unambiguous. That
+// is the correct direction for a refusal. A caller that knows which branch it
+// wants passes `acceptAmbiguousLaps` and gets the single-revolution answer with
+// its eyes open; `ambiguousLaps` is published either way.
 struct LambertSolution {
   bool valid = false;
   Vec3 v1;              // velocity at r1 on the transfer conic
   Vec3 v2;              // velocity at r2 on the transfer conic
   double sweepRad = 0.0;   // transfer angle actually flown (0 .. 2pi)
   int iterations = 0;
+
+  // R62. Upper bound on the extra laps this geometry could admit in this time.
+  // 0 = the answer below is the only one. > 0 = it is one of several and the
+  // caller asked for the single-revolution branch.
+  int ambiguousLaps = 0;
+  double minPeriodS = 0.0;   // period of the minimum-energy conic through r1,r2
 };
 
 inline LambertSolution lambert(const Vec3& r1, const Vec3& r2, double tofS,
-                               double mu, const Vec3& referenceNormal) {
+                               double mu, const Vec3& referenceNormal,
+                               int acceptAmbiguousLaps = 0) {
   LambertSolution out;
   const double R1 = r1.length(), R2 = r2.length();
   if (!(tofS > 0.0) || !(mu > 0.0) || R1 <= 0.0 || R2 <= 0.0) return out;
@@ -384,6 +413,17 @@ inline LambertSolution lambert(const Vec3& r1, const Vec3& r2, double tofS,
   const Vec3 c12 = cross(r1, r2);
   // Collinear positions determine no plane at all. Refuse rather than pick one.
   if (c12.length() <= 1e-9 * R1 * R2) return out;
+
+  // R62: the ambiguity test, before any iteration, because a refusal should
+  // cost nothing.
+  {
+    const double chord = (r2 - r1).length();
+    const double aMin = 0.25 * (R1 + R2 + chord);      // (s/2), s = perimeter/2
+    out.minPeriodS = kTwoPi * std::sqrt(aMin * aMin * aMin / mu);
+    if (out.minPeriodS > 0.0)
+      out.ambiguousLaps = static_cast<int>(std::floor(tofS / out.minPeriodS));
+    if (out.ambiguousLaps > acceptAmbiguousLaps) return out;
+  }
 
   double cosD = r1.dot(r2) / (R1 * R2);
   if (cosD > 1.0) cosD = 1.0;

@@ -322,13 +322,14 @@ TEST(lambert_recovers_the_conic_the_propagator_flew) {
                        Vec3(-400.0, 2100.0, 900.0)};
   const Vec3 h = cross(s0.r, s0.v);
 
-  // The conic's period is 2584.54 s. Every time of flight below is UNDER it,
-  // which is not a detail: see the next test.
-  const double tofs[4] = {120.0, 600.0, 1500.0, 2400.0};
+  // The conic's period is 2584.54 s. Every time of flight below is one the
+  // geometry admits UNAMBIGUOUSLY, which the next test shows is not a detail.
+  const double tofs[3] = {120.0, 600.0, 1500.0};
   for (double tof : tofs) {
     const StateVector s1 = propagate(s0, tof, kForgeMu);
     const LambertSolution L = lambert(s0.r, s1.r, tof, kForgeMu, h);
     CHECK(L.valid);
+    CHECK(L.ambiguousLaps == 0);       // there is only one conic to return
     // 1 mm/s against velocities of ~2.3 km/s. The MEASURED agreement is 1e-8
     // m/s or better; the tolerance is loose so a future retune of the iteration
     // limit does not turn a 4 ULP change into a red line.
@@ -350,37 +351,69 @@ TEST(lambert_recovers_the_conic_the_propagator_flew) {
 }
 
 // -----------------------------------------------------------------------------
-// AND THE RESTRICTION, MEASURED RATHER THAN ASSUMED, because it is the one way
-// this function returns a CONFIDENT WRONG ANSWER.
+// R62: IT REFUSES AN AMBIGUOUS TIME OF FLIGHT INSTEAD OF GUESSING, and the
+// refusal replaces a comment nobody would have read.
 //
-// `lambert` solves the SINGLE-REVOLUTION problem. Ask it for a time of flight
-// longer than the period and it does not fail and it does not warn: it correctly
-// answers a different question, "reach that point sweeping 0.05 rad in 2600 s",
-// which is a huge slow ellipse rather than the orbit you were on. The signature
-// is unmistakable once you look for it (a 3.5 km/s error on a 2.3 km/s orbit),
-// and the rule that avoids it belongs to the CALLER, who knows the period:
-// keep the time of flight under one revolution. `transfer.h` does exactly that.
+// `lambert` solves the SINGLE-revolution problem. Ask it for a flight time in
+// which the same two points could also have been joined with extra laps and it
+// cannot fail and cannot warn: it correctly answers a different question, and
+// the answer is enormous nonsense (below: 3.5 km/s of error on a 2.3 km/s
+// orbit). The first version of this file pinned that trap and left the guard to
+// every future caller. Admin was right that this is exactly the shape of thing
+// that ships silently, so the guard is now inside the function.
+//
+// THE TEST IS CHEAP AND EXACT AS A NECESSARY CONDITION. Every conic through two
+// points has a >= s/2 with s the semiperimeter, so every one has a period of at
+// least P_min, so `floor(tof / P_min)` bounds the extra laps the geometry could
+// admit. It is deliberately conservative: it turns away some requests that were
+// unambiguous, which is the correct direction for a refusal.
+//
+// A caller who knows which branch it wants says so and gets it. That is the
+// whole difference: the trap is still reachable, but only on purpose.
 // -----------------------------------------------------------------------------
-TEST(lambert_is_single_revolution_and_this_pins_where_that_bites) {
+TEST(lambert_refuses_an_ambiguous_time_of_flight_instead_of_guessing) {
   const StateVector s0{Vec3(7.0e5, 1.2e5, -2.0e5), Vec3(-400.0, 2100.0, 900.0)};
   const Vec3 h = cross(s0.r, s0.v);
   const Elements el = stateToElements(s0, kForgeMu, 0.0);
   const double period = orbitalPeriod(el.a, kForgeMu);
   CHECK_NEAR(period, 2584.54, 0.01);
 
-  // Just under: it is the orbit we flew, to the last digit that matters.
+  // JUST UNDER one period. The two points are nearly back on top of each other,
+  // so the chord is short, the minimum-energy conic is small and fast, and three
+  // extra laps would fit. REFUSED, even though this one happens to be the orbit
+  // we flew: the function cannot tell, and saying so is the point.
   const double under = period * 0.99;
   const StateVector a1 = propagate(s0, under, kForgeMu);
   const LambertSolution A = lambert(s0.r, a1.r, under, kForgeMu, h);
-  CHECK(A.valid);
-  CHECK((A.v1 - s0.v).length() < 1e-3);
+  CHECK(!A.valid);
+  CHECK(A.ambiguousLaps == 3);
+  CHECK(A.minPeriodS > 0.0 && A.minPeriodS < period);
+  CHECK(A.v1.lengthSq() == 0.0);          // refused means zeros, not a guess
 
-  // Just over: still `valid`, still finite, and NOT the orbit we flew.
+  // Asked for ON PURPOSE, it is the orbit we flew, to the last digit that
+  // matters. So the guard costs a caller who knows nothing but a parameter.
+  const LambertSolution Aok = lambert(s0.r, a1.r, under, kForgeMu, h, 3);
+  CHECK(Aok.valid);
+  CHECK(Aok.ambiguousLaps == 3);
+  CHECK((Aok.v1 - s0.v).length() < 1e-3);
+
+  // JUST OVER one period, which is where the trap actually bites. Refused by
+  // default; asked for on purpose it is finite, confident and WRONG.
   const double over = period * 1.01;
   const StateVector b1 = propagate(s0, over, kForgeMu);
-  const LambertSolution B = lambert(s0.r, b1.r, over, kForgeMu, h);
+  CHECK(!lambert(s0.r, b1.r, over, kForgeMu, h).valid);
+  const LambertSolution B = lambert(s0.r, b1.r, over, kForgeMu, h, 9);
   CHECK(B.valid);
   CHECK((B.v1 - s0.v).length() > 1000.0);
+
+  // And a genuinely unambiguous request is untouched by any of this: the guard
+  // must not cost the ordinary case a thing.
+  const double clear = 600.0;
+  const StateVector c1 = propagate(s0, clear, kForgeMu);
+  const LambertSolution C = lambert(s0.r, c1.r, clear, kForgeMu, h);
+  CHECK(C.valid);
+  CHECK(C.ambiguousLaps == 0);
+  CHECK(clear < C.minPeriodS);            // which is exactly why it is 0
 }
 
 // -----------------------------------------------------------------------------

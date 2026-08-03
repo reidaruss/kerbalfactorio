@@ -354,6 +354,247 @@ inline Window scanWindow(const orbital::Elements& vesselEl, const Target& tgt,
   return w;
 }
 
+// =============================================================================
+// §5 - THE MISSION BUDGET: the five legs a reach readout draws.
+//
+// The gameplay lane's `Autopilot.ts` publishes `REACH_LEGS = [ascent, plane
+// change, transfer, arrival, reserve]` and a 10-word row. Admin's rule for this
+// header was "either compute them or say the split is wrong, and do not publish
+// a zero into a field a screen will draw". Four of the five are computed and the
+// fifth is a POLICY that is named as one. Where a leg is genuinely zero it is
+// zero because the physics says so, and where physics cannot answer, `ok` is
+// false and the whole row is refused rather than padded.
+// =============================================================================
+
+// The pad-to-orbit leg, and it is the one number here with no closed form.
+//
+// Ascent delta-v is orbital speed PLUS gravity and drag losses, and the losses
+// depend on the vehicle's thrust-to-weight and the profile it flies. There is no
+// formula. So this is CALIBRATED against this project's own flown reference
+// ascent rather than modelled: `flight_tests` puts Ascender I from the Forge pad
+// into an 86.9 x 75.5 km orbit with 1200 m/s left of 4922.91, so it spent
+// 3722.91 m/s to reach a mean radius of 681.2 km whose circular speed is
+// 2277.0 m/s. The losses are therefore 1445.9 m/s against a surface circular
+// speed of 2426.06, which is the fraction below.
+//
+// THE CALIBRATION IS FORGE'S AND IT DOES NOT TRANSFER. A 35% gravity loss is
+// what an atmosphere and a modest pad TWR cost; on an airless low-gravity body
+// you fly nearly horizontally from the first second and the losses are a few
+// percent. Rather than publish a fraction nobody measured, `ascentDvMS` REFUSES
+// for a body it has not been calibrated against. There is no launch site off
+// Forge today, so this costs nothing now and it fails loudly the day there is
+// one (R63).
+constexpr double kAscentGravityLossFraction = 0.3500;
+constexpr double kAscentDragLossFraction    = 0.2459;   // sums to the measured
+                                                        // 0.5959 at Forge
+struct AscentCost {
+  bool calibrated = false;   // false: this body has no measured ascent
+  double deltaVMS = 0.0;
+};
+
+inline AscentCost ascentDvMS(double muM3S2, double bodyRadiusM,
+                             double parkingRadiusM, bool hasAtmosphere) {
+  AscentCost a;
+  if (!(muM3S2 > 0.0) || !(bodyRadiusM > 0.0) || !(parkingRadiusM > bodyRadiusM))
+    return a;
+  // Only the body this lane has actually flown a rocket off.
+  const bool isForge = std::fabs(muM3S2 - orbital::kForgeMu) < 1e6
+                       && std::fabs(bodyRadiusM - orbital::kForgeRadiusM) < 1.0;
+  if (!isForge) return a;
+  a.calibrated = true;
+  const double vPark = std::sqrt(muM3S2 / parkingRadiusM);
+  const double vSurf = std::sqrt(muM3S2 / bodyRadiusM);
+  const double loss = kAscentGravityLossFraction
+                      + (hasAtmosphere ? kAscentDragLossFraction : 0.0);
+  a.deltaVMS = vPark + vSurf * loss;
+  return a;
+}
+
+// THE RESERVE, AND IT IS THE ONE POLICY IN THIS HEADER.
+//
+// It is not a physics quantity and it is not pretending to be. It is included in
+// the total because three measured facts say a plan costing exactly what you
+// carry does not fly:
+//   * the burns are FINITE, not impulsive. `test_maneuver.cpp` measured a burn
+//     at 0.023 of a period landing 0.61% low on apoapsis, which is 39.5 km on a
+//     200 km target;
+//   * the window scan is a GRID, and its best sample was measured 2.32 m/s (0.6%)
+//     above the true Hohmann optimum on the Anchorage case;
+//   * a gate that says yes at a margin of 0.0 says yes to a mission that fails.
+// Five percent covers all three with room, and it is ONE named constant so
+// gameplay can argue with it in one place rather than in five.
+constexpr double kMissionReserveFraction = 0.05;
+
+// The whole row, in the order `Autopilot.ts` draws it. The first four sum to
+// the mission and the fifth is added on top, so `totalMS` is all five.
+struct MissionBudget {
+  bool ok = false;              // false: physics refuses to answer, not "zero"
+  double ascentMS = 0.0;
+  double planeChangeMS = 0.0;
+  double transferMS = 0.0;
+  double arrivalMS = 0.0;
+  double reserveMS = 0.0;
+  double totalMS = 0.0;         // the sum of the five, exactly
+  double availableMS = 0.0;
+  double marginMS = 0.0;
+  bool feasible = false;
+};
+
+// Rotate a state so its orbit lies in `targetNormal`'s plane, keeping radius,
+// speed and the angle between them. Rodrigues about the axis between the two
+// normals: an identity when the planes already match, which is what makes the
+// plane-change leg exactly 0 for a coplanar transfer rather than nearly 0.
+inline orbital::StateVector coplanarWith(const orbital::StateVector& s,
+                                         const Vec3& targetNormal) {
+  const Vec3 nS = orbital::normalized(orbital::cross(s.r, s.v));
+  const Vec3 nT = orbital::normalized(targetNormal);
+  const Vec3 axis = orbital::cross(nS, nT);
+  const double sinA = axis.length();
+  double cosA = nS.dot(nT);
+  if (cosA > 1.0) cosA = 1.0;
+  if (cosA < -1.0) cosA = -1.0;
+  if (sinA < 1e-15) return s;                 // already coplanar, or antipodal
+  const Vec3 k = axis * (1.0 / sinA);
+  const double angle = std::atan2(sinA, cosA);
+  const double c = std::cos(angle), sn = std::sin(angle);
+  auto rot = [&](const Vec3& v) {
+    return v * c + orbital::cross(k, v) * sn + k * (k.dot(v) * (1.0 - c));
+  };
+  return orbital::StateVector{rot(s.r), rot(s.v)};
+}
+
+// THE PLANE-CHANGE LEG IS ALLOCATED, NOT DECOMPOSED, and the difference matters.
+//
+// `solveTransfer` is a 3D Lambert: it already prices the plane mismatch INSIDE
+// the departure burn, and it prices it better than two separate burns would,
+// because a combined burn beats the sum of its parts. So splitting the vector
+// into in-plane and out-of-plane components would publish two numbers that do
+// not add up to the burn (they add in quadrature), and billing a textbook
+// `2 v sin(theta/2)` alongside the transfer would DOUBLE-COUNT it.
+//
+// What is published instead is the difference between two transfers that were
+// both actually solved: the same trip with the target rotated into the vehicle's
+// plane, and the real one. `transfer` and `arrival` are what the trip would cost
+// if the planes matched; `plane change` is exactly what the mismatch adds. The
+// three sum to the real burn total by construction, and the leg is exactly 0
+// when the planes match rather than a small residue.
+inline MissionBudget missionBudget(const vessel::Vessel& craft,
+                                   const orbital::Elements& vesselEl,
+                                   const Target& tgt, const Transfer& tr,
+                                   const AscentCost& ascent) {
+  MissionBudget b;
+  if (!tr.valid) return b;
+  if (!ascent.calibrated && ascent.deltaVMS != 0.0) return b;
+  b.ascentMS = ascent.deltaVMS;
+
+  // The same trip, coplanar. Rotate the TARGET's arrival state into the
+  // vehicle's plane and re-price arrival and departure against it.
+  const Vec3 hV = orbital::cross(tr.departState.r, tr.departState.v);
+  const orbital::StateVector flat = coplanarWith(tr.targetState, hV);
+  const orbital::LambertSolution L =
+      orbital::lambert(tr.departState.r, flat.r, tr.timeOfFlightS, vesselEl.mu, hV);
+  if (L.valid) {
+    b.transferMS = (L.v1 - tr.departState.v).length();
+    b.arrivalMS = arrivalCostMS(tgt, L.v2, flat.v);
+    const double flatTotal = b.transferMS + b.arrivalMS;
+    b.planeChangeMS = std::fmax(0.0, tr.totalDvMS - flatTotal);
+    // If the coplanar reference somehow came out DEARER, the allocation is
+    // meaningless and the real burn is billed to `transfer` whole rather than
+    // to a leg that would read as a negative saving.
+    if (tr.totalDvMS < flatTotal) {
+      b.transferMS = tr.departDvMS;
+      b.arrivalMS = tr.arriveDvMS;
+      b.planeChangeMS = 0.0;
+    }
+  } else {
+    // No coplanar reference solves, so there is nothing to allocate against.
+    // Bill the real burn and say the plane change is not separable here.
+    b.transferMS = tr.departDvMS;
+    b.arrivalMS = tr.arriveDvMS;
+    b.planeChangeMS = 0.0;
+  }
+
+  const double mission = b.ascentMS + b.planeChangeMS + b.transferMS + b.arrivalMS;
+  b.reserveMS = mission * kMissionReserveFraction;
+  b.totalMS = mission + b.reserveMS;
+  b.availableMS = vessel::remainingDeltaVVacuumMS(craft);
+  b.marginMS = b.availableMS - b.totalMS;
+  b.feasible = b.marginMS >= 0.0;
+  b.ok = true;
+  return b;
+}
+
+// =============================================================================
+// §6 - THE LAUNCH BUDGET: the bay's question, which is a different question.
+//
+// `of_ap_design_reach` asks "can this vehicle, as drawn, reach that orbit at
+// all". It is NOT a rendezvous: the bay's call carries no true anomaly, because
+// a rocket on a pad has no phase relationship with anything until it launches,
+// and the target orbit is a RING rather than a place. So there is no window, no
+// Lambert and no departure curve here. It is ascent, then a Hohmann up to the
+// ring, and the plane is chosen with the launch azimuth.
+//
+// THE BODY. A design handle carries no body: `vs::Vessel` is parts and geometry,
+// and every `of_vs_*` that needs gravity takes a body handle explicitly. The
+// gameplay lane's published signature has no room for one, and a JS-supplied mu
+// is forbidden (DW-18). It does not need one: `ascentDvMS` is calibrated against
+// a flown Forge ascent and REFUSES every other body, so the only launch this
+// function can price is a Forge launch, and `orbital::kForgeMu` is that body's
+// one authority rather than a second copy of it (test_vessel.cpp pins
+// `worldgen::makeForge().muM3S2 == orbital::kForgeMu`). The day there is a pad
+// anywhere else this refuses instead of guessing (R63).
+//
+// THE PARKING ORBIT is 80 km, which is not a round number chosen for looks: it
+// is the orbit this project's reference ascent actually reaches and the one the
+// ascent calibration above was measured against.
+constexpr double kParkingAltitudeM = 80.0e3;
+
+// A Hohmann between two circular radii, both burns. The bay's transfer leg.
+inline void hohmannBurnsMS(double r1, double r2, double mu,
+                           double* dv1, double* dv2) {
+  *dv1 = 0.0;
+  *dv2 = 0.0;
+  if (!(mu > 0.0) || !(r1 > 0.0) || !(r2 > 0.0)) return;
+  if (std::fabs(r2 - r1) < 1e-9) return;          // already there: exactly 0
+  const double aT = 0.5 * (r1 + r2);
+  *dv1 = std::fabs(std::sqrt(mu * (2.0 / r1 - 1.0 / aT)) - std::sqrt(mu / r1));
+  *dv2 = std::fabs(std::sqrt(mu / r2) - std::sqrt(mu * (2.0 / r2 - 1.0 / aT)));
+}
+
+// The bay's whole row. `targetRadiusM` is the ring the design must reach.
+//
+// `planeChangeMS` is 0 and it is a PHYSICAL zero rather than an uncomputed one:
+// a launch picks its orbital plane with its azimuth and pays nothing for it, for
+// any inclination at or above the launch site's latitude. Physics does not know
+// the site (the design handle carries none), so the assumption is stated rather
+// than hidden, and the dogleg a low-inclination target would cost is R63.
+inline MissionBudget launchBudget(const vessel::Vessel& craft,
+                                  double targetRadiusM) {
+  MissionBudget b;
+  const double mu = orbital::kForgeMu;
+  const double R = orbital::kForgeRadiusM;
+  const double rPark = R + kParkingAltitudeM;
+  if (!(targetRadiusM > R)) return b;             // inside the planet: refuse
+
+  const AscentCost a = ascentDvMS(mu, R, rPark, true);
+  if (!a.calibrated) return b;
+  b.ascentMS = a.deltaVMS;
+  b.planeChangeMS = 0.0;
+  hohmannBurnsMS(rPark, targetRadiusM, mu, &b.transferMS, &b.arrivalMS);
+
+  const double mission = b.ascentMS + b.planeChangeMS + b.transferMS + b.arrivalMS;
+  b.reserveMS = mission * kMissionReserveFraction;
+  b.totalMS = mission + b.reserveMS;
+  // THE DESIGN'S number, which is the whole vehicle from the pad, and not
+  // `remainingDeltaVVacuumMS`, which is what is left from the CURRENT stage.
+  // On an unfired design they agree; the distinction is R44b's, one call up.
+  b.availableMS = vessel::totalDeltaVVacuumMS(craft);
+  b.marginMS = b.availableMS - b.totalMS;
+  b.feasible = b.marginMS >= 0.0;
+  b.ok = true;
+  return b;
+}
+
 // "Can I go now, and if not, when?" in one call: the whole answer a VAB gate
 // needs. It refuses a destination the vehicle cannot reach AT ANY departure time
 // in the horizon, and it distinguishes that from "not now, but at t you can",

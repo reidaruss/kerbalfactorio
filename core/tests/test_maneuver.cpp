@@ -839,3 +839,192 @@ TEST(a_moon_is_the_same_transfer_with_a_cheaper_arrival) {
   CHECK(past.arriveDvMS == 0.0);
   CHECK(past.totalDvMS == past.departDvMS);
 }
+
+// =============================================================================
+// THE FIVE LEGS THE REACH ROW DRAWS (PH-147, transfer.h §5 and §6).
+//
+// Admin's rule for this work was "either compute them or say the split is wrong,
+// and do not publish a zero into a field a screen will draw". Four of the five
+// are computed here and the fifth is a policy that is named as one. The two
+// zeros that DO appear are physical (a launch pays nothing for its plane, a
+// craft already in orbit pays nothing for ascent) and both are asserted as
+// zeros-that-mean-zero rather than left unexamined.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// The ascent leg is CALIBRATED against this project's own flown ascent, and it
+// refuses every body it has not flown off.
+//
+//   flight_tests: Ascender I, Forge pad to 86.9 x 75.5 km, 1200 m/s left of
+//   4922.91, so 3722.91 m/s spent to a mean radius of 681.2 km whose circular
+//   speed is 2276.9235. Losses 1445.9865 against a surface circular speed of
+//   2426.107994, which is a fraction of 0.596011.
+//
+//   The published constants are 0.3500 + 0.2459 = 0.5959, so the model returns
+//   3724.649392 against the 3722.91 that was flown: 1.74 m/s, or 0.047%.
+// -----------------------------------------------------------------------------
+TEST(the_ascent_leg_reproduces_the_ascent_this_project_actually_flew) {
+  const double R = orbital::kForgeRadiusM;
+  const double rPark = R + tr::kParkingAltitudeM;
+  CHECK_NEAR(std::sqrt(kMu / rPark), 2278.931638, 1e-5);
+  CHECK_NEAR(std::sqrt(kMu / R), 2426.107994, 1e-5);
+
+  const tr::AscentCost a = tr::ascentDvMS(kMu, R, rPark, true);
+  CHECK(a.calibrated);
+  CHECK_NEAR(a.deltaVMS, 3724.649392, 1e-4);
+  // Against the flown figure, which is the whole point of a calibration.
+  CHECK(std::fabs(a.deltaVMS - 3722.91) < 2.0);
+
+  // No atmosphere on the same body drops exactly the drag fraction and nothing
+  // else, so the two constants are separable in the answer as well as in source.
+  const tr::AscentCost dry = tr::ascentDvMS(kMu, R, rPark, false);
+  CHECK(dry.calibrated);
+  CHECK_NEAR(a.deltaVMS - dry.deltaVMS,
+             2426.107994 * tr::kAscentDragLossFraction, 1e-6);
+
+  // AND IT REFUSES A BODY IT HAS NEVER FLOWN OFF. A 35% gravity loss is what an
+  // atmosphere and a modest pad TWR cost; on an airless low-gravity moon you fly
+  // nearly horizontally from the first second and it is a few percent. Rather
+  // than publish a fraction nobody measured, this says it does not know.
+  const tr::AscentCost moon = tr::ascentDvMS(orbital::kCinderMu,
+                                             orbital::kCinderRadiusM,
+                                             orbital::kCinderRadiusM + 10.0e3,
+                                             false);
+  CHECK(!moon.calibrated);
+  CHECK(moon.deltaVMS == 0.0);
+  // and the degenerate arguments refuse too, rather than returning a speed.
+  CHECK(!tr::ascentDvMS(kMu, R, R, true).calibrated);          // orbit at the surface
+  CHECK(!tr::ascentDvMS(0.0, R, rPark, true).calibrated);      // no gravity
+}
+
+// -----------------------------------------------------------------------------
+// THE BAY'S ROW, end to end, on the reference vehicle. This is the number Reid's
+// "is there enough fuel to get there" gate will actually print.
+// -----------------------------------------------------------------------------
+TEST(the_bay_prices_the_reference_rocket_to_anchorage) {
+  Ascender a = makeAscender();
+  const tr::MissionBudget b = tr::launchBudget(a.v, 1.0e6);   // Anchorage
+  CHECK(b.ok);
+
+  //   ascent  3724.649392   (80 km parking orbit, calibrated above)
+  //   plane        0        (a launch picks its plane with its azimuth)
+  //   transfer  207.586632  (Hohmann 680 km -> 1000 km, first burn)
+  //   arrival   188.422748  (the circularising burn at the far end)
+  //   reserve   206.032939  (5% policy, transfer.h kMissionReserveFraction)
+  //   total    4326.691711  against 4922.91 aboard: margin 596.218289
+  CHECK_NEAR(b.ascentMS, 3724.649392, 1e-4);
+  CHECK(b.planeChangeMS == 0.0);
+  CHECK_NEAR(b.transferMS, 207.586632, 1e-5);
+  CHECK_NEAR(b.arrivalMS, 188.422748, 1e-5);
+  CHECK_NEAR(b.reserveMS, 206.032939, 1e-4);
+  CHECK_NEAR(b.totalMS, 4326.691711, 1e-3);
+
+  // THE FIVE SUM TO THE TOTAL EXACTLY. A screen that draws five bars beside a
+  // total must be able to add them up, and this is what makes that true.
+  CHECK_NEAR(b.ascentMS + b.planeChangeMS + b.transferMS + b.arrivalMS
+             + b.reserveMS, b.totalMS, 1e-9);
+  // and the reserve is exactly the stated fraction of the four real legs.
+  CHECK_NEAR(b.reserveMS,
+             (b.ascentMS + b.planeChangeMS + b.transferMS + b.arrivalMS)
+             * tr::kMissionReserveFraction, 1e-12);
+
+  // The availability is the DESIGN's whole-vehicle figure, because a design on
+  // the pad has fired nothing.
+  //
+  // 4964.635217 and NOT the 4922.91 the other suites pin, because THIS file's
+  // `makeAscender` carries no fins: four at 40 kg is 160 kg off stage 0's dry
+  // mass, which lifts stage 0 from 1857.79 to 1899.519915 and leaves stage 1's
+  // 3065.115301 untouched. Written out because a reader who knows the reference
+  // figure would otherwise think this one was wrong, and because it is the
+  // cheapest possible proof that the fixture is being read rather than a
+  // constant being repeated.
+  CHECK_NEAR(b.availableMS, 4964.635217, 1e-4);
+  CHECK_NEAR(b.availableMS, totalDeltaVVacuumMS(a.v), 1e-12);
+  CHECK_NEAR(b.availableMS - 4922.91,
+             330.0 * atmo::kG0 * std::log(9685.0 / 5385.0)
+             - 330.0 * atmo::kG0 * std::log(9845.0 / 5545.0), 0.01);
+  CHECK_NEAR(b.marginMS, 637.943506, 1e-3);
+  CHECK(b.feasible);
+
+  // A ring it cannot reach is refused rather than shrugged at: 20,000 km needs
+  // far more than this rocket carries.
+  const tr::MissionBudget far = tr::launchBudget(a.v, 2.0e7);
+  CHECK(far.ok);                       // physics ANSWERED
+  CHECK(!far.feasible);                // and the answer is no
+  CHECK(far.marginMS < 0.0);
+  // A target inside the planet is not an answer at all.
+  CHECK(!tr::launchBudget(a.v, 1.0e5).ok);
+}
+
+// -----------------------------------------------------------------------------
+// THE PLANE-CHANGE LEG IS ALLOCATED, NOT DECOMPOSED, and this is the test that
+// says why. A 3D Lambert already prices the plane mismatch inside the departure
+// burn, and it prices it BETTER than two separate burns would, so billing a
+// textbook `2 v sin(theta/2)` beside the transfer would double-count it. What is
+// published is the difference between two transfers that were both solved.
+// -----------------------------------------------------------------------------
+TEST(the_plane_change_leg_is_the_difference_between_two_real_transfers) {
+  const double r1 = kR1, r2 = 1.0e6;
+  const orbital::Elements ship = circularAbout(r1, kMu, 0.0);
+  const double tH = tr::hohmannTimeS(r1, r2, kMu);
+  const double rate = std::sqrt(kMu / (r2 * r2 * r2));
+
+  Ascender a = makeAscender();
+  Vessel craft = a.v;
+  craft.nextStageIndex = 2;
+  const tr::AscentCost none;                    // already in orbit: no ascent
+
+  // COPLANAR FIRST. The leg must be EXACTLY zero, not nearly zero, because the
+  // rotation that makes the reference is the identity when the planes match.
+  tr::Target flat;
+  flat.el = circularAbout(r2, kMu, orbital::kPi - rate * tH);
+  const tr::Transfer tFlat = tr::solveTransfer(ship, flat, 0.0, tH * 0.999);
+  CHECK(tFlat.valid);
+  const tr::MissionBudget bFlat = tr::missionBudget(craft, ship, flat, tFlat, none);
+  CHECK(bFlat.ok);
+  CHECK(bFlat.ascentMS == 0.0);                 // a real zero: it is up already
+  CHECK(bFlat.planeChangeMS == 0.0);            // a real zero: the planes match
+  CHECK_NEAR(bFlat.transferMS + bFlat.arrivalMS, tFlat.totalDvMS, 1e-9);
+
+  // NOW TILT THE TARGET. Same radius, same phase, 15 degrees out of plane.
+  const double tilt = 15.0 * orbital::kPi / 180.0;
+  tr::Target tilted;
+  {
+    const orbital::StateVector s = orbital::elementsToState(flat.el, 0.0);
+    const double c = std::cos(tilt), sn = std::sin(tilt);
+    // Rotate about the x axis, which is across the orbit built by circularAbout.
+    auto rx = [&](const Vec3& v) { return Vec3(v.x, v.y * c - v.z * sn,
+                                               v.y * sn + v.z * c); };
+    tilted.el = orbital::park(orbital::StateVector{rx(s.r), rx(s.v)}, kMu, 0.0);
+  }
+  const tr::Transfer tTilt = tr::solveTransfer(ship, tilted, 0.0, tH * 0.999);
+  CHECK(tTilt.valid);
+  const tr::MissionBudget bTilt = tr::missionBudget(craft, ship, tilted, tTilt, none);
+  CHECK(bTilt.ok);
+
+  // The mismatch costs something real, and it is the WHOLE of the difference.
+  CHECK(bTilt.planeChangeMS > 100.0);
+  CHECK_NEAR(bTilt.transferMS + bTilt.arrivalMS + bTilt.planeChangeMS,
+             tTilt.totalDvMS, 1e-9);
+  // The in-plane legs are what the trip would cost with the planes matched, so
+  // they are close to the coplanar case rather than inflated by the tilt.
+  CHECK(std::fabs(bTilt.transferMS - bFlat.transferMS) < 5.0);
+  CHECK(std::fabs(bTilt.arrivalMS - bFlat.arrivalMS) < 5.0);
+  // And the whole trip really did get dearer by about the plane-change leg.
+  CHECK(tTilt.totalDvMS > tFlat.totalDvMS + 100.0);
+
+  // THE ONE THAT WOULD HAVE BEEN DOUBLE-COUNTED. Billing a separate textbook
+  // plane change at the departure speed and ADDING it to the coplanar transfer
+  // overstates the trip, because the 3D solve does both in one burn.
+  const double vDep = orbital::elementsToState(ship, 0.0).v.length();
+  const double textbook = 2.0 * vDep * std::sin(0.5 * tilt);
+  CHECK(textbook > bTilt.planeChangeMS);
+  CHECK(bFlat.transferMS + bFlat.arrivalMS + textbook > tTilt.totalDvMS);
+
+  // The five still sum, on the tilted case too.
+  CHECK_NEAR(bTilt.ascentMS + bTilt.planeChangeMS + bTilt.transferMS
+             + bTilt.arrivalMS + bTilt.reserveMS, bTilt.totalMS, 1e-9);
+  // and availability here is the REMAINING figure, not the design's total,
+  // because the subject is a craft that has already burned a stage (R44b).
+  CHECK_NEAR(bTilt.availableMS, remainingDeltaVVacuumMS(craft), 1e-12);
+}

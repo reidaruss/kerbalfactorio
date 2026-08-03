@@ -2870,3 +2870,4 @@ OF_API int of_gp_item_ids(void) {
 // survey bit it writes per sample.
 #include "of_map_api.inc"       // §19  ABI 14: the map samples the world (DW-37)
 #include "of_enemies_api.inc" // §20  ABI 15: the pollution/evolution/nest loop
+#include "of_ap_api.inc"      // §21  autopilot mission planning (additive at ABI 22)
