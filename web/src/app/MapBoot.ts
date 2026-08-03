@@ -131,9 +131,15 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
   const V = vesselAbi(a.core);
   // DISCOVERY IS WORLD STATE and its authority is `/core` (discovery.h). This
   // object is a driver: it decides when to take an observation and caches the
-  // one query the map repaints from. bodyId 0 is Forge, 1 is anything else,
-  // which is the same convention §1 of the bridge already uses.
-  const disc = new Discovery(a.core, a.body.kind === 'moon' ? 1 : 0);
+  // one query the map repaints from.
+  // CE-22: `a.body.bodyId`, and the last `kind === 'moon' ? 1 : 0` in the client
+  // goes with it. GP-271 already made this argument for the line below; the two
+  // were the same defect in the same function and only one of them had been
+  // found. `_of_disc_ensure` is indexed by `BodyParams::bodyId`, so passing
+  // /core's own key is the difference between one convention and two, and two
+  // conventions for one identity is how a discovery field ends up cut for the
+  // wrong body the day a third body exists.
+  const disc = new Discovery(a.core, a.body.bodyId);
   // THE GROUND (DW-37). It takes the body HANDLE, not the 0/1 bodyId above:
   // the biome and the designed height belong to this seed's body, while the
   // discovery lattice only needs the body's radius. It is handed the discovery

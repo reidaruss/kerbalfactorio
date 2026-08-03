@@ -55,7 +55,11 @@ export async function probeWorkerOracle(
     worker.onmessage = (e: MessageEvent<OracleProbeReply>) => { clearTimeout(timer); resolve(e.data); };
     worker.onerror = (e) => { clearTimeout(timer); reject(new Error(`worker error: ${e.message}`)); };
     const req: OracleProbeRequest = {
-      type: 'probe', bodyId: cfg.bodyId,
+      // CE-22. FROM THE BODY, not the config. This probe exists to prove the
+      // worker's instance agrees with the main thread's; asking the CONFIG which
+      // body to build over there while comparing the answer against THIS body's
+      // radius is a comparison whose two sides have different authorities.
+      type: 'probe', bodyId: body.bodyId,
       seedLo: cfg.seedLo, seedHi: cfg.seedHi, dirs: dirs.slice(),
     };
     worker.postMessage(req, [req.dirs.buffer]);
