@@ -61,7 +61,7 @@ OUT = of.dist_path("player", "player_fp_arms.glb")
 
 SIDES = (("Left", 1.0), ("Right", -1.0))
 SUIT, ACC, DARK, SKIN = "Suit", "SuitAccent", "SteelDark", "Skin"
-GLOVE, PLATE = "SuitDark", "Plate"
+GLOVE, PLATE, GRIME = "SuitDark", "Plate", "SuitGrime"
 
 # THE HAND'S SECTION AT THE KNUCKLE LINE, and every other number on the hand
 # is derived from these two (RN-857). They are half extents in metres, so the
@@ -270,12 +270,16 @@ def build_mesh(name, arm_obj):
                 for t in (-0.32, 0.06, 0.50, 1.00, 1.32)]
         # Widest at the KNUCKLE line and then stepping hard down: the width
         # step is most of what separates a hand from a paddle in silhouette.
-        mb.add_raw(*rc.oval_tube(palm,
-                                 [t * HAND_HALF_T for t in
-                                  (1.24, 1.14, 1.05, 1.00, 0.71)],
-                                 [w * HAND_HALF_W for w in
-                                  (0.79, 0.85, 0.96, 1.00, 0.71)], seg=8),
+        # RN-859 splits it at the knuckle line: the cuff-to-knuckle length is
+        # clean and the knuckle-to-tip nose is grimed, matching the fingers
+        # that continue out of it. Same overlap rule as the fingers, one
+        # shared ring rather than a shared plane.
+        prof_t = [t * HAND_HALF_T for t in (1.24, 1.14, 1.05, 1.00, 0.71)]
+        prof_w = [w * HAND_HALF_W for w in (0.79, 0.85, 0.96, 1.00, 0.71)]
+        mb.add_raw(*rc.oval_tube(palm[:4], prof_t[:4], prof_w[:4], seg=8),
                    role=GLOVE)
+        mb.add_raw(*rc.oval_tube(palm[3:], prof_t[3:], prof_w[3:], seg=8),
+                   role=GRIME)
         # THE KNUCKLE GUARD, RN-646, and it is now FOUR plates and not one.
         #
         # It was a single 0.046-half-width oval slab running the length of the
@@ -360,6 +364,27 @@ def build_mesh(name, arm_obj):
         # Five finger tubes on three bone chains. The Middle chain carries
         # three of them, offset across the knuckle line, so the hand has four
         # fingers and a thumb in silhouette and the rig still has 27 bones.
+        #
+        # RN-859: THE LAST TWO SEGMENTS ARE FILTHY, and this is the whole
+        # grime pass rather than a detail of it. ART-DIRECTION.md asks for
+        # wear, dirt and staining more directly than for anything else and
+        # says "clean is a defect" in those words, and this asset was the
+        # cleanest thing on screen while being in every frame.
+        #
+        # WHERE grime goes is not a taste question, it is a question about
+        # what the object touches. A work glove is filthy at the FINGERTIPS
+        # and along the leading edge, because that is the 20 per cent of it
+        # that contacts everything, and it stays comparatively clean across
+        # the back of the hand. Putting the dirt anywhere else would read as
+        # a paint scheme. It also happens to be the part of the glove nearest
+        # the camera in the first-person frame, so it is dirt the player can
+        # actually see rather than dirt on the palm that faces away.
+        #
+        # Each finger is emitted as TWO tubes sharing their middle rings, so
+        # the split costs one extra tube per finger and no new machinery. The
+        # tubes OVERLAP by one segment rather than abutting, for the reason
+        # every solid in this project overlaps its neighbour: two surfaces
+        # that end on the same plane are a coplanar pair.
         for fname, _root, segs in rc._FP_FINGERS:
             r = rc._FP_FINGER_R[fname]
             variants = (rc._FP_MIDDLE_TUBES if fname == "Middle"
@@ -369,9 +394,11 @@ def build_mesh(name, arm_obj):
                 pts = rc.fp_finger_points(fname, scale=scale, offset=offset)
                 root = tuple(pts[0][k] - segs[0][k] * 0.55 for k in range(3))
                 ring = [_pt(root, s)] + [_pt(p, s) for p in pts]
-                mb.add_raw(*rc.tube(ring,
-                                    [rad * 0.90, rad, rad * 0.92, rad * 0.85,
-                                     rad * 0.72], seg=8), role=GLOVE)
+                rads = [rad * 0.90, rad, rad * 0.92, rad * 0.85, rad * 0.72]
+                # Clean, from the knuckle to the second joint.
+                mb.add_raw(*rc.tube(ring[:4], rads[:4], seg=8), role=GLOVE)
+                # Dirty, from the first joint to the tip, one ring of overlap.
+                mb.add_raw(*rc.tube(ring[2:], rads[2:], seg=8), role=GRIME)
 
     mb.bind(None)
     return mb, mb.build(name, arm_obj)

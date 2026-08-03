@@ -203,7 +203,13 @@ ROLE_FAMILY = {
     # plastic read on every machine, plate and suit". A woven surface and a
     # worn metal fitting are two different materials and neither of them is
     # a riveted plate.
-    "Suit": "suitfab", "SuitDark": "suitfab",
+    # RN-859: `SuitGrime` wears the SAME family the suit does, on purpose. A
+    # new family would be a new set of PNGs and a full regeneration of every
+    # other family with it; reusing `suitfab` adds one row to the manifest's
+    # role table and changes not one texel. It is also the better look: the
+    # weave reads through the dirt, so it is dirt ON fabric rather than a
+    # patch of different fabric.
+    "Suit": "suitfab", "SuitDark": "suitfab", "SuitGrime": "suitfab",
     "Plate": "suitplate",
     # --- fur: the creature pelt (RN-455, retargeted RN-461). The ROLE
     #     names stay: a tarantula cuticle really is chitin and the setae

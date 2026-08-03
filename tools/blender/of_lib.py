@@ -183,6 +183,23 @@ PALETTE = {
     # --- character ---
     "Suit":         ("D8D3C6", 0.00, 0.65, 1.0, None),
     "SuitDark":     ("6E6A60", 0.00, 0.70, 1.0, None),
+    # RN-859. GROUND-IN DIRT, and it is a ROLE rather than a darker tint
+    # because ART-DIRECTION.md's "clean is a defect" is a claim about MATERIAL
+    # and not about value. Grime is matte: roughness 0.92 against SuitDark's
+    # 0.70, so the two answer a light differently and the dirty part of a
+    # glove stops catching the sheen the clean part does. That difference
+    # survives a lighting change, which a darker paint does not.
+    #
+    # 15 counts of chroma at luma 69, i.e. deliberately one of the LEAST
+    # saturated rows in this table. Dirt on a light suit is not brown, it is
+    # the absence of the suit's own value, and a saturated brown would be the
+    # exact mistake RN-858 just took out of `Skin`.
+    #
+    # It wears `suitfab`, the family the suit already wears, so no new texture
+    # is generated and no family PNG changes: the weave still reads through
+    # the dirt, which is what makes it look like dirt ON fabric rather than a
+    # patch of different fabric.
+    "SuitGrime":    ("4A443B", 0.00, 0.92, 1.0, None),
     "SuitAccent":   ("2E7DBE", 0.00, 0.55, 1.0, None),
     "Plate":        ("7E8790", 0.70, 0.42, 1.0, None),
     # RN-858. WAS C08A63, WHICH MEASURED 93 COUNTS OF CHROMA (max channel

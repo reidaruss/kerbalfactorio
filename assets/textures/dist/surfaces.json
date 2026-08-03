@@ -242,7 +242,8 @@
     "SteelLight": "panel",
     "Suit": "suitfab",
     "SuitAccent": "panel",
-    "SuitDark": "suitfab"
+    "SuitDark": "suitfab",
+    "SuitGrime": "suitfab"
   },
   "flat_roles": {
     "EmissiveState": "a state light. Any AO or roughness on it is a lie about what the surface is doing",

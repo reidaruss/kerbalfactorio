@@ -797,9 +797,9 @@
       "pivot_mode": "none",
       "dims_xyz_m": [0.860, 0.580, 0.920],
       "tolerance_m": 0.02,
-      "max_tris_lod0": 2600,
-      "max_tris_total": 2600,
-      "max_materials": 7,
+      "max_tris_lod0": 2900,
+      "max_tris_total": 2900,
+      "max_materials": 8,
       "sockets": ["socket_hand_R", "socket_hand_L"],
       "bone_sockets": {
         "socket_hand_R": "RightHand",
