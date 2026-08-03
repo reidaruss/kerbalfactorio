@@ -36,6 +36,69 @@ SHOULDER_Z = 1.45
 HIP_Z = 0.95
 EYE_Z = 1.65
 
+# ---------------------------------------------------------------------------
+# THE ARM CHAIN, AND THE ELBOW IS DERIVED RATHER THAN TYPED. RN-905.
+#
+# WHAT WAS WRONG, AND A CORRECTION TO HOW IT WAS FIRST REPORTED. RN-902's
+# proportion sweep measured the shoulder-to-elbow segment at 280 mm and called
+# it "16.4 per cent short" against a textbook 335 mm (0.186 H). **That framing
+# was partly the instrument's own error and it is worth writing down**, because
+# the three textbook arm lengths CANNOT ALL BE TRUE OF A HORIZONTAL CHAIN:
+# 0.186 H + 0.146 H + 0.108 H is 0.440 H, i.e. 792 mm per side, which with any
+# plausible shoulder-joint x gives an arm span of about 1.93 m on a 1.80 m
+# person. Arm span is approximately equal to height. Those numbers are measured
+# from the ACROMION and to the DACTYLION over soft tissue and they overlap; a
+# joint-centre chain is shorter.
+#
+# WHAT IS ACTUALLY WRONG SURVIVES THAT CORRECTION AND IS SHARPER FOR IT.
+# Measured on the shipped rig:
+#
+#   shoulder joint 0.170 to fingertip 0.8996  = 0.7296 m
+#   a real 1.80 m adult, same chain           ~ 0.72   m   (span = height,
+#                                                            joint at ~0.18)
+#
+# so the TOTAL arm is right to about one per cent and always was. The defect is
+# entirely in the SPLIT. Humerus to forearm is the one arm number that does not
+# depend on how the endpoints are defined, because both segments are bounded by
+# joint centres, and every source puts it at about 1.27 (0.186 / 0.146). This
+# rig had 0.280 / 0.250 = 1.120, a 12 per cent error in the distribution.
+#
+# So the wrist is HELD, which keeps the hand, the fingertip, the 1.80 m arm
+# span, the two hand sockets and everything RN-902 landed untouched, and the
+# elbow alone moves to put the ratio right. Nothing here has a z in it, which
+# is the point: an upper arm is a limb segment and may not move a vertical.
+# ---------------------------------------------------------------------------
+
+SHOULDER_X = 0.170          # the glenohumeral joint, inside the torso shell
+WRIST_X = 0.700
+HUMERUS_TO_FOREARM = 1.274
+
+ELBOW_X = SHOULDER_X + (WRIST_X - SHOULDER_X) * (
+    HUMERUS_TO_FOREARM / (1.0 + HUMERUS_TO_FOREARM))
+
+
+def _assert_arm_proportions():
+    """The humerus/forearm ratio, and the total the 1.80 m span allows.
+
+    Derived above rather than typed, so this cannot disagree with it; what it
+    guards is somebody later typing a station back in, and the span budget,
+    which is a PUBLISHED interface (contracts.json dims_xyz_m x = 1.80 at a
+    5 mm tolerance) and is the reason the textbook 335 mm humerus is not
+    reachable here at all."""
+    hum, fore = ELBOW_X - SHOULDER_X, WRIST_X - ELBOW_X
+    ratio = hum / fore
+    if abs(ratio - HUMERUS_TO_FOREARM) > 1e-9:
+        raise ValueError("humerus/forearm is %.4f, wanted %.4f"
+                         % (ratio, HUMERUS_TO_FOREARM))
+    # the chain has to fit inside half the declared span with a hand left over
+    if not (0.10 < hum < 0.40 and 0.10 < fore < 0.40):
+        raise ValueError("arm segments %.4f / %.4f are outside anything a "
+                         "1.80 m figure can carry" % (hum, fore))
+    return hum, fore
+
+
+ARM_HUMERUS, ARM_FOREARM = _assert_arm_proportions()
+
 _SPINE = [
     ("Root", (0.0, 0.0, 0.0), (0.0, 0.0, 0.14), None),
     ("Hips", (0.0, 0.0, HIP_Z), (0.0, 0.0, 1.06), "Root"),
@@ -72,12 +135,12 @@ def _arm_bones(side, s, parent):
     pre = "Left" if side == "L" else "Right"
     out = [
         (pre + "Shoulder", _mirror_pt((0.040, 0.0, 1.420), s),
-         _mirror_pt((0.170, 0.0, SHOULDER_Z), s), parent),
-        (pre + "Arm", _mirror_pt((0.170, 0.0, SHOULDER_Z), s),
-         _mirror_pt((0.450, 0.0, SHOULDER_Z), s), pre + "Shoulder"),
-        (pre + "ForeArm", _mirror_pt((0.450, 0.0, SHOULDER_Z), s),
-         _mirror_pt((0.700, 0.0, SHOULDER_Z), s), pre + "Arm"),
-        (pre + "Hand", _mirror_pt((0.700, 0.0, SHOULDER_Z), s),
+         _mirror_pt((SHOULDER_X, 0.0, SHOULDER_Z), s), parent),
+        (pre + "Arm", _mirror_pt((SHOULDER_X, 0.0, SHOULDER_Z), s),
+         _mirror_pt((ELBOW_X, 0.0, SHOULDER_Z), s), pre + "Shoulder"),
+        (pre + "ForeArm", _mirror_pt((ELBOW_X, 0.0, SHOULDER_Z), s),
+         _mirror_pt((WRIST_X, 0.0, SHOULDER_Z), s), pre + "Arm"),
+        (pre + "Hand", _mirror_pt((WRIST_X, 0.0, SHOULDER_Z), s),
          _mirror_pt((0.790, 0.0, SHOULDER_Z), s), pre + "ForeArm"),
     ]
     for fname, head, tails in _FINGERS:

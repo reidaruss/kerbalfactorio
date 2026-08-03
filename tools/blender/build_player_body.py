@@ -156,6 +156,59 @@ _VISOR_FIT = _assert_visor_is_a_window()
 
 
 # ---------------------------------------------------------------------------
+# THE ARM TUBE AND THE ELBOW BAND. RN-905.
+#
+# The stations come from rig_common's bone chain, so the ring that is supposed
+# to sit ON the elbow sits on wherever the elbow actually is.
+# ---------------------------------------------------------------------------
+
+ARM_SHOULDER_X, ARM_ELBOW_X, ARM_WRIST_X = (rc.SHOULDER_X, rc.ELBOW_X,
+                                            rc.WRIST_X)
+ARM_RADII = (0.088, 0.078, 0.066, 0.058, 0.050)
+ELBOW_BAND_R, ELBOW_BAND_L = 0.076, 0.050
+
+
+def _arm_stations():
+    return [ARM_SHOULDER_X, (ARM_SHOULDER_X + ARM_ELBOW_X) * 0.5, ARM_ELBOW_X,
+            (ARM_ELBOW_X + ARM_WRIST_X) * 0.5, ARM_WRIST_X]
+
+
+def _arm_radius_at(x):
+    """The arm tube's radius at a station, by linear interpolation."""
+    pts = list(zip(_arm_stations(), ARM_RADII))
+    if x <= pts[0][0]:
+        return pts[0][1]
+    for (x0, r0), (x1, r1) in zip(pts, pts[1:]):
+        if x <= x1:
+            return r0 + (r1 - r0) * (x - x0) / (x1 - x0)
+    return pts[-1][1]
+
+
+def _assert_elbow_band_clears_the_arm():
+    """A 10-gon band over a 10-gon arm nests only if the band's INRADIUS
+    clears the arm's CIRCUMRADIUS, and the arm tapers, so the binding station
+    is the band's inboard edge where the arm is thickest.
+
+    This was a sentence in a comment with three numbers in it and no code
+    behind any of them. It is the relationship that moving the elbow breaks,
+    so it is derived from the elbow rather than written beside it."""
+    lo = ARM_ELBOW_X - ELBOW_BAND_L * 0.5
+    hi = ARM_ELBOW_X + ELBOW_BAND_L * 0.5
+    worst = max(_arm_radius_at(lo), _arm_radius_at(hi))
+    inradius = ELBOW_BAND_R * math.cos(math.pi / 10.0)
+    if inradius <= worst:
+        raise ValueError(
+            "the elbow band's 10-gon inradius is %.4f and the arm reaches "
+            "%.4f across it (x %.4f..%.4f): the band's flat faces sit inside "
+            "the arm's vertices and the joint renders as a sawtooth ring"
+            % (inradius, worst, lo, hi))
+    return inradius - worst
+
+
+_ELBOW_BAND_CLEARANCE = _assert_elbow_band_clears_the_arm()
+
+
+# ---------------------------------------------------------------------------
 # THE HAND. RN-902.
 #
 # The section is rig_common's, shared with the first-person hand, because the
@@ -404,21 +457,32 @@ def build_mesh(name, arm):
         # arm: ONE tube shoulder to wrist, with a ring exactly on the elbow.
         # Thicker at the shoulder than it was (0.078 -> 0.088), because a thin
         # tube hanging off a boxy torso is the proportion that read wrong.
+        #
+        # EVERY STATION IS DERIVED FROM THE BONE IT RIDES (RN-905). The elbow
+        # ring used to be a typed 0.450 sitting on a bone whose tail was a
+        # separately typed 0.450, and the two mid-arm stations were typed
+        # midpoints of those. Moving the elbow to correct the humerus/forearm
+        # ratio would have left the ring 17 mm off the joint and the whole
+        # taper wrong, silently, because nothing related the two numbers.
         mb.bind([pre + "Shoulder", pre + "Arm", pre + "ForeArm", pre + "Hand"])
-        mb.add_raw(*rc.tube([(s * 0.170, 0, 1.45), (s * 0.310, 0, 1.45),
-                             (s * 0.450, 0, 1.45), (s * 0.575, 0, 1.45),
-                             (s * 0.700, 0, 1.45)],
-                            [0.088, 0.078, 0.066, 0.058, 0.050], seg=10),
-                   role=SUIT)
+        mb.add_raw(*rc.tube([(s * x, 0, 1.45) for x in _arm_stations()],
+                            list(ARM_RADII), seg=10), role=SUIT)
         mb.bind([pre + "Arm", pre + "ForeArm"])
         # TEN segments, not eight, and it has to match the arm it covers.
         # Two coaxial polygons only nest cleanly if one's circumradius clears
         # the other's inradius, and the cheap way to guarantee that is to give
-        # them the same segment count. The arm reaches 0.0681 across this band,
-        # so the band's 10-gon inradius (0.076 * cos(pi/10) = 0.0723) clears it
-        # by 4 mm. check_mating.py's coaxial pass asserts this; it is the check
-        # that found the original 8-gon-over-10-gon sawtooth.
-        mb.add_raw(*of.cyl_data(0.076, 0.050, (s * 0.450, 0, 1.45), "X", 10),
+        # them the same segment count. check_mating.py's coaxial pass asserts
+        # this; it is the check that found the original 8-gon-over-10-gon
+        # sawtooth.
+        #
+        # THE CLEARANCE IS COMPUTED, NOT RESTATED. The comment that used to sit
+        # here said "the arm reaches 0.0681 across this band, so the band's
+        # 10-gon inradius (0.076 * cos(pi/10) = 0.0723) clears it by 4 mm".
+        # That was true of a 0.450 elbow and nothing checked it; the moment the
+        # elbow moved it became a number nobody was checking, which is the
+        # exact tell NUMBERS.md names.
+        mb.add_raw(*of.cyl_data(ELBOW_BAND_R, ELBOW_BAND_L,
+                                (s * ARM_ELBOW_X, 0, 1.45), "X", 10),
                    role=DARK)
 
         # --- the hand. RN-902, AND IT IS THE FIRST-PERSON HAND'S OWN DEFECT,
