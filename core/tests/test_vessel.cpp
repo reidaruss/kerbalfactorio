@@ -452,6 +452,135 @@ TEST(per_stage_delta_v_matches_the_hand_computation) {
   CHECK(tsiolkovsky(0.0, 1000.0, 500.0) == 0.0);
 }
 
+// =============================================================================
+// R43. A STAGE THAT LIGHTS TWO PROPELLANT KINDS AT ONCE.
+//
+// The defect this pins was not an approximation, it was a quantity that does
+// not exist: the old code pooled ONE kind's propellant and divided it by EVERY
+// engine's mass flow, so a solid booster beside a liquid engine reported
+// `propellantKg 4300, burnTimeS 11.203, dvVac 656.02` while the flight burned
+// the booster's 9000 kg for 27.95 s and ran the engine to 69.58 s.
+//
+// Every number below was computed by hand off the authored masses BEFORE this
+// code ran, the same way the Ascender's were:
+//
+//   mdot_solid  = 672000 / (212.8 * 9.80665) = 322.015646 kg/s
+//   mdot_liquid = 200000 / (330.0 * 9.80665) =  61.800983 kg/s
+//   t_solid  = 9000 / 322.015646 = 27.948953 s   <- FIRST flameout, fullThrustS
+//   t_liquid = 4300 /  61.800983 = 69.578182 s   <- LAST  flameout, burnTimeS
+//   m0 = pod 840 + stack decoupler 50 + tank 4730 + engine 1200
+//        + radial decoupler 25 + booster 10300  = 17145
+//   m1 = 17145 - (9000 + 4300)                  =  3845
+//
+//   phase 1, 0 -> 27.948953 s, BOTH engines:
+//     Isp_vac = 872000 / (672000/212.8 + 200000/330) = 231.671186 s
+//     mass at the end = 17145 - 383.816629 * 27.948953 = 6417.727273
+//     dv = 231.671186 * 9.80665 * ln(17145 / 6417.727273) = 2232.4835 m/s
+//   phase 2, 27.948953 -> 69.578182 s, the LIQUID ENGINE ALONE:
+//     dv = 330 * 9.80665 * ln(6417.727273 / 3845) = 1657.8715 m/s
+//   total vacuum 3890.3550 m/s   (sea level 1945.7425 + 1326.2972 = 3272.0397)
+//
+// The 656.02 the old code published was 17% of the truth.
+// =============================================================================
+TEST(a_mixed_propellant_stage_has_two_burn_times_and_one_delta_v) {
+  Vessel v;
+  const PartHandle pod = v.addRoot(parts::CommandPod);
+  const PartHandle dec = v.attach(pod, parts::DecouplerStackSmall, Attach::StackBottom);
+  const PartHandle tank = v.attach(dec, parts::TankLiquidSmallLong, Attach::StackBottom);
+  const PartHandle eng = v.attach(tank, parts::EngineLiquidSmall, Attach::StackBottom);
+  const PartHandle decR = v.attach(tank, parts::DecouplerRadial, Attach::Radial, 0.0, 1.0);
+  const PartHandle srb = v.attach(decR, parts::SolidBooster, Attach::Radial, 0.0, -1.0);
+  v.assignSubtreeToStage(dec, 0);          // decoupler and everything below it
+  Stage s0; s0.activate.push_back(eng); s0.activate.push_back(srb);
+  Stage s1; s1.decouple.push_back(dec);
+  v.stages.push_back(s0);
+  v.stages.push_back(s1);
+  v.layout();
+
+  const StagePerformance sp = stagePerformance(v, 0);
+
+  // Both kinds are pooled, so the mass timeline is the real one.
+  CHECK_NEAR(sp.startMassKg, 17145.0, 1e-9);
+  CHECK_NEAR(sp.propellantKg, 13300.0, 1e-9);
+  CHECK_NEAR(sp.endMassKg, 3845.0, 1e-9);
+
+  // TWO burn times. This is the pair the old single `burnTimeS` could not hold.
+  CHECK_NEAR(sp.fullThrustS, 27.948953, 1e-5);   // the booster quits here
+  CHECK_NEAR(sp.burnTimeS, 69.578182, 1e-5);     // the engine runs to here
+  CHECK(sp.burnTimeS > sp.fullThrustS);
+  // and NEITHER of them is the number the defect published.
+  CHECK(std::fabs(sp.burnTimeS - 11.203267) > 1.0);
+
+  // Ignition figures: the booster's thrust is present, which is the half a
+  // naive `consumes` filter on the engine loop would have thrown away.
+  CHECK_NEAR(sp.thrustVacuumN, 872000.0, 1e-6);
+  CHECK_NEAR(sp.thrustSeaLevelN, 760000.0, 1e-6);
+  CHECK_NEAR(sp.ispVacuumS, 231.671186, 1e-5);
+  CHECK_NEAR(sp.ispSeaLevelS, 201.915254, 1e-5);
+  CHECK_NEAR(sp.massFlowKgS, 383.816629, 1e-5);
+
+  // ONE delta-v, summed across the two phases.
+  CHECK_NEAR(sp.deltaVVacuumMS, 3890.3550, 0.01);
+  CHECK_NEAR(sp.deltaVSeaLevelMS, 3272.0397, 0.01);
+  // The single-ratio answer over the whole stage is NOT this number, so the
+  // phase split is doing work rather than agreeing with the shortcut.
+  CHECK(std::fabs(sp.deltaVVacuumMS
+                  - tsiolkovsky(sp.ispVacuumS, 17145.0, 3845.0)) > 100.0);
+}
+
+// -----------------------------------------------------------------------------
+// R43, the other half: on a stage that burns ONE kind, every figure is exactly
+// what it was before the fix, and the two burn times collapse to one. This is
+// what makes the Ascender's 1857.79 + 3065.12 a regression pin rather than a
+// coincidence.
+// -----------------------------------------------------------------------------
+TEST(a_single_propellant_stage_is_bit_identical_across_the_r43_fix) {
+  Ascender a = makeAscender();
+  const std::vector<StagePerformance> sp = allStagePerformance(a.v);
+  for (const StagePerformance& s : sp) {
+    CHECK(s.fullThrustS == s.burnTimeS);
+    // Tsiolkovsky over the whole stage, to the LAST BIT, not to a tolerance.
+    CHECK(s.deltaVVacuumMS
+          == tsiolkovsky(s.ispVacuumS, s.startMassKg, s.endMassKg));
+    CHECK(s.deltaVSeaLevelMS
+          == tsiolkovsky(s.ispSeaLevelS, s.startMassKg, s.endMassKg));
+    // and burn time is still propellant over flow.
+    CHECK_NEAR(s.burnTimeS, s.propellantKg / s.massFlowKgS, 1e-12);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// R43, the third consequence: an engine whose propellant is NOT in its own
+// stage is not firing, so it contributes no thrust. Before the fix it reported
+// its full thrust with zero propellant, which is a pad thrust-to-weight that
+// counts an engine that cannot light.
+// -----------------------------------------------------------------------------
+TEST(an_unfed_engine_contributes_no_thrust_to_its_stage) {
+  Vessel v;
+  const PartHandle pod = v.addRoot(parts::CommandPod);
+  const PartHandle tank = v.attach(pod, parts::TankLiquidSmallLong, Attach::StackBottom);
+  const PartHandle dec = v.attach(tank, parts::DecouplerStackSmall, Attach::StackBottom);
+  const PartHandle eng = v.attach(dec, parts::EngineLiquidSmall, Attach::StackBottom);
+  v.assignSubtreeToStage(dec, 0);          // the ENGINE is stage 0, the TANK is not
+  Stage s0; s0.activate.push_back(eng);
+  Stage s1; s1.decouple.push_back(dec);
+  v.stages.push_back(s0);
+  v.stages.push_back(s1);
+  v.layout();
+
+  const StagePerformance sp = stagePerformance(v, 0);
+  CHECK_NEAR(sp.propellantKg, 0.0, 1e-12);
+  CHECK_NEAR(sp.thrustVacuumN, 0.0, 1e-12);      // was 200000 before R43
+  CHECK_NEAR(sp.thrustSeaLevelN, 0.0, 1e-12);
+  CHECK_NEAR(sp.massFlowKgS, 0.0, 1e-12);
+  CHECK_NEAR(sp.burnTimeS, 0.0, 1e-12);
+  CHECK_NEAR(sp.fullThrustS, 0.0, 1e-12);
+  CHECK_NEAR(sp.deltaVVacuumMS, 0.0, 1e-12);
+  // and the TWR that reads those figures says so out loud.
+  CHECK_NEAR(thrustToWeight(v, 0, orbital::kForgeMu, orbital::kForgeRadiusM,
+                            0.0, atmo::makeForgeAtmosphere()), 0.0, 1e-12);
+}
+
 // -----------------------------------------------------------------------------
 // Thrust-to-weight. Gravity comes from BodyParams::muM3S2 and nothing else
 // (DW-18), so this test reads the body the world generator publishes rather

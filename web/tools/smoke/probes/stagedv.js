@@ -16,19 +16,23 @@
 //     burn seconds per stage and IS on screen for the whole flight. Its dv for
 //     the stage that is burning never falls either.
 //
-//     BUT NOT FOR THE SAME REASON, AND THIS FILE'S JOB IS TO SHOW THAT.
-//     `FlightReport.readStagePerformance` calls `_of_vs_stage_performance` with
-//     the DESIGN handle, not the flight handle. The design is the blueprint the
-//     rocket was copied out of (`_of_fl_create` COPIES), so it never burns a
-//     gram and its table is a constant for the whole flight. Calling
-//     `refreshParts` on every frame would produce bit-identical numbers. The
-//     table is not STALE, it is reading the WRONG VESSEL, and /core exports no
-//     way to read the right one: `stagePerformance` takes a `Vessel&` and
-//     `FlightSim::craft` (the drained one) is not reachable through any
-//     `of_fl_*` export. Section 6 MEASURES this rather than asserting the file
-//     read: it stages for real, which is the one moment mid-flight that
-//     `refreshParts` runs, and shows the jettisoned stage still reporting its
-//     roll-out delta-v with its engine and tank physically gone.
+//     BUT NOT FOR THE SAME REASON, AND THIS FILE'S JOB WAS TO SHOW THAT.
+//     `FlightReport.readStagePerformance` used to call `_of_vs_stage_performance`
+//     with the DESIGN handle. The design is the blueprint the rocket was copied
+//     out of (`_of_fl_create` COPIES), so it never burned a gram and its table
+//     was a constant for the whole flight. Calling `refreshParts` on every
+//     frame would have produced bit-identical numbers. The table was not STALE,
+//     it was reading the WRONG VESSEL, and /core exported no way to read the
+//     right one: `stagePerformance` takes a `Vessel&` and `FlightSim::craft`
+//     (the drained one) was not reachable through any `of_fl_*` export.
+//
+//     CLOSED AT ABI 22 (R44b, PH-143) by the missing export,
+//     `of_fl_stage_performance(f)`, and by moving the read into
+//     `FlightSession.sample()` beside the other three live instruments rather
+//     than leaving it in `refreshParts`, which bumps `partsRevision` and would
+//     redraw the whole vehicle to update a number. Section 6 still MEASURES the
+//     source rather than asserting the file read: it stages for real and now
+//     shows the jettisoned stage reporting ~0 with its engine and tank gone.
 //
 // WHAT IS ALREADY LIVE AND CORRECT, asserted here as the positive control so a
 // flat trace cannot be blamed on a rocket that never burned anything:
@@ -38,13 +42,11 @@
 //   node tools/smoke/run.mjs --url=http://127.0.0.1:5517/ --sandbox=1 --settle=6 \
 //     --evalfile=tools/smoke/probes/stagedv.js
 //
-// `--evalargs='{"liveStages":1}'` flips section 5 from asserting the CURRENT
-// frozen behaviour to asserting the behaviour R44 wants. It is a flag rather
-// than a plain assertion because the stage-table half cannot be fixed in the
-// client: it needs a new `of_fl_stage_performance(f)` export and an ABI number.
-// Leaving a permanently red line in the tree teaches the suite to be ignored;
-// leaving a line that asserts the defect means the day somebody fixes it this
-// file goes red and says exactly which flag to flip.
+// There WAS a `--evalargs='{"liveStages":1}'` flag here, flipping section 5
+// between asserting the frozen behaviour and asserting the fix, because the
+// defect could not be fixed in the client. The export landed at ABI 22, the
+// probe went red exactly as designed and said which flag to flip, and both
+// branches are now gone: section 5 asserts the fix unconditionally.
 //
 // It REFUSES without --sandbox=1: the reference vehicle needs the full
 // catalogue, and measuring a different rocket from the one named is worse than
@@ -56,8 +58,6 @@
   if (typeof of.vab !== 'function') return { valid: false, why: 'no __of.vab' };
 
   const A = (typeof OF_ARGS === 'object' && OF_ARGS !== null) ? OF_ARGS : {};
-  // See the header. false asserts the defect, true asserts the fix.
-  const EXPECT_LIVE_STAGES = A.liveStages === 1;
   const BURN_S = A.burnS || 45;
   const HZ = A.hz || 45;
 
@@ -344,24 +344,22 @@
         Math.abs(last.reportedPropellantKg - last.liveTankKg) < 2,
         `${last.reportedPropellantKg} vs ${last.liveTankKg} kg`);
 
-  // --- R44 half two: the navball's stage table -------------------------------
-  // See the header. This one is NOT fixable in the client.
+  // --- R44 half two: the navball's stage table (R44b, CLOSED at ABI 22) ------
   const stageDvFell = fell('activeStageDvMS', 50);
-  if (EXPECT_LIVE_STAGES) {
-    check('R44b: the ACTIVE stage row\'s delta-v FELL as its own tank drained, '
-          + 'which is what a player burning stage 0 is watching for',
-          stageDvFell,
-          `stage ${last.activeStageIndex}: ${first.activeStageDvMS} -> `
-          + `${last.activeStageDvMS} m/s`);
-  } else {
-    check('R44b IS STILL OPEN: the active stage row\'s delta-v did NOT move a '
-          + 'metre while the tank feeding it emptied. When somebody lands '
-          + 'of_fl_stage_performance this line goes red; re-run with '
-          + '--evalargs=\'{"liveStages":1}\' and delete this branch',
-          !stageDvFell,
-          `stage ${last.activeStageIndex}: ${first.activeStageDvMS} -> `
-          + `${last.activeStageDvMS} m/s, which is a FALL and means R44b is fixed`);
-  }
+  check('R44b: the ACTIVE stage row\'s delta-v FELL as its own tank drained, '
+        + 'which is what a player burning stage 0 is watching for',
+        stageDvFell,
+        `stage ${last.activeStageIndex}: ${first.activeStageDvMS} -> `
+        + `${last.activeStageDvMS} m/s`);
+  // The burn-seconds column is the same read and it must count DOWN in real
+  // time: one second of burn is one second off the stage's remaining burn.
+  const burnFell = first.activeStageBurnS - last.activeStageBurnS;
+  const elapsed = last.metS - first.metS;
+  check('R44b: and the stage\'s remaining BURN SECONDS fall one per second of '
+        + 'burn, which a frozen table cannot do and a merely-moving one need not',
+        Math.abs(burnFell - elapsed) < 1.0,
+        `${first.activeStageBurnS} -> ${last.activeStageBurnS} s over `
+        + `${elapsed.toFixed(2)} s of MET`);
   log.push(`the burn: ${first.metS}s -> ${last.metS}s, live tank `
     + `${first.liveTankKg} -> ${last.liveTankKg} kg, reported propellant `
     + `${first.reportedPropellantKg} -> ${last.reportedPropellantKg} kg, `
@@ -411,14 +409,13 @@
   const gone = afterStaging.stages.find((s) => s.index === 0);
   const goneDv = gone === undefined ? -1 : gone.dv;
   const designSourced = Math.abs(goneDv - pad.stage0Dv) < 1;
-  check('DIAGNOSIS: with refreshParts freshly run and stage 0 physically off '
-        + 'the vehicle, its row still reports the delta-v it had ON THE PAD. '
-        + 'The stage table is not STALE, it is reading the DESIGN '
-        + '(_of_vs_stage_performance takes the design handle), so no refresh '
-        + 'cadence can ever make it move',
-        designSourced,
-        `stage 0 reads ${goneDv} m/s, pad value ${pad.stage0Dv} m/s; if these `
-        + `now DIFFER the table has become live and this diagnosis is stale`);
+  check('THE DECIDING ONE (R44b): with stage 0 physically off the vehicle its '
+        + 'row reads ~0, not the delta-v it had ON THE PAD. The table is read '
+        + 'off the LIVE CRAFT (_of_fl_stage_performance, ABI 22) and not off '
+        + 'the design, which is the blueprint the rocket was copied out of and '
+        + 'which never burns a gram',
+        !designSourced && Math.abs(goneDv) < 1,
+        `stage 0 reads ${goneDv} m/s, pad value ${pad.stage0Dv} m/s`);
 
   // FRAME TIME AFTER. Same shape as the before sample, taken after the same
   // renderer has been running the whole flight.
@@ -432,7 +429,6 @@
   return {
     valid: true,
     pass: fails.length === 0,
-    expectLiveStages: EXPECT_LIVE_STAGES,
     fails,
     log,
     pad,

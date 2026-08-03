@@ -199,26 +199,34 @@ OF_API int of_vs_next_stage_index(int v) {
 // changes, and it is one pass over a tree of tens of parts.
 // =============================================================================
 
-// f64 scratch, 12 per stage, in firing order:
+// ABI 22: THIRTEEN per stage, not twelve. f64 scratch, in firing order:
 //   [index, startMassKg, endMassKg, propellantKg, ispVacuumS, ispSeaLevelS,
 //    thrustVacuumN, thrustSeaLevelN, massFlowKgS, deltaVVacuumMS,
-//    deltaVSeaLevelMS, burnTimeS]
-// Returns the STAGE COUNT (so the element count is 12x that).
+//    deltaVSeaLevelMS, burnTimeS, fullThrustS]
+// Returns the STAGE COUNT (so the element count is 13x that).
+//
+// `burnTimeS` is the LAST flameout and `fullThrustS` is the FIRST. They differ
+// only on a stage lighting more than one propellant kind, where the stage holds
+// its ignition thrust to `fullThrustS` and then runs on whatever is left to
+// `burnTimeS` (R43, vessel.h §7). One row is written by ONE function, shared by
+// this export and `of_fl_stage_performance` below it.
+static void pushStagePerfRow(const vs::StagePerformance& s) {
+  g_f64.push_back(static_cast<double>(s.index));
+  g_f64.push_back(s.startMassKg);   g_f64.push_back(s.endMassKg);
+  g_f64.push_back(s.propellantKg);  g_f64.push_back(s.ispVacuumS);
+  g_f64.push_back(s.ispSeaLevelS);  g_f64.push_back(s.thrustVacuumN);
+  g_f64.push_back(s.thrustSeaLevelN); g_f64.push_back(s.massFlowKgS);
+  g_f64.push_back(s.deltaVVacuumMS);  g_f64.push_back(s.deltaVSeaLevelMS);
+  g_f64.push_back(s.burnTimeS);       g_f64.push_back(s.fullThrustS);
+}
+
 OF_API int of_vs_stage_performance(int v) {
   vs::Vessel* p = g_vessels.get(v);
-  resetF64(p ? p->stages.size() * 12 : 0);
+  resetF64(p ? p->stages.size() * 13 : 0);
   if (!p) return 0;
   p->layout();
   const std::vector<vs::StagePerformance> all = vs::allStagePerformance(*p);
-  for (const vs::StagePerformance& s : all) {
-    g_f64.push_back(static_cast<double>(s.index));
-    g_f64.push_back(s.startMassKg);   g_f64.push_back(s.endMassKg);
-    g_f64.push_back(s.propellantKg);  g_f64.push_back(s.ispVacuumS);
-    g_f64.push_back(s.ispSeaLevelS);  g_f64.push_back(s.thrustVacuumN);
-    g_f64.push_back(s.thrustSeaLevelN); g_f64.push_back(s.massFlowKgS);
-    g_f64.push_back(s.deltaVVacuumMS);  g_f64.push_back(s.deltaVSeaLevelMS);
-    g_f64.push_back(s.burnTimeS);
-  }
+  for (const vs::StagePerformance& s : all) pushStagePerfRow(s);
   return static_cast<int>(all.size());
 }
 

@@ -27,6 +27,9 @@ export type FlightStatus = 'CLAMPED' | 'ASCENT' | 'COAST' | 'ORBIT' | 'DOWN';
 
 export interface FlightStageRow {
   index: number; dvVacMS: number; twr: number; burnS: number;
+  /** ABI 22 / R43: the FIRST flameout, where the stage stops holding its
+   *  ignition thrust. `burnS` is the LAST. Equal on a single-kind stage. */
+  fullThrustS: number;
   thrustVacN: number; propellantKg: number;
 }
 
@@ -352,15 +355,24 @@ export class FlightSession {
     this.st = flightState(M, this.handle);
     this.tm = flightTelemetry(M, this.handle);
     this.orb = flightOrbit(M, this.handle);
+    // R44b, ABI 22. The per-stage table is a LIVE INSTRUMENT and belongs here
+    // with the other three, not in `refreshParts`. It used to be read off the
+    // DESIGN, which is a blueprint the rocket was copied out of and which never
+    // burns a gram, so stage 0 sat at its roll-out 1857.79 m/s while its engine
+    // and its tank were physically off the vehicle. `_of_fl_stage_performance`
+    // reads the craft that is flying. It is here rather than in `refreshParts`
+    // because that call also bumps `partsRevision`, which rebuilds every drawn
+    // mesh (R44a), so a per-frame refresh through it would redraw the vehicle
+    // to update a number.
+    this.stages = readStagePerformance(M, this.handle, this.p.bodyHandle,
+                                       this.p.bodyRadiusM);
   }
 
   /** PUBLIC for FlightCheats.ts: the revision bump redraws the craft (GP-104). */
   refreshParts(): void {
     this.parts = flightParts(this.p.M, this.handle);
     this.partsRevision += 1;
-    this.stages = readStagePerformance(this.p.M, this.design, this.p.bodyHandle,
-                                       this.p.bodyRadiusM);
-    this.sample();
+    this.sample();   // the stage table comes with it (R44b)
   }
 
   /** Public: anything that answers a key answers on the line the sim uses. */

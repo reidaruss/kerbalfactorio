@@ -612,15 +612,33 @@
   }
 
   // ==========================================================================
-  // 11. THE ROUND TRIP. Getting out in orbit is refused; the world is still
-  //     coherent; and handing the eye back to the walker works.
+  // 11. THE ROUND TRIP. You CAN climb out in orbit, the world is still
+  //     coherent, and handing the eye back to the walker works.
+  //
+  //     THIS ASSERTION USED TO READ THE OTHER WAY ROUND ("you cannot climb out
+  //     in orbit", aboard still true and one refusal counted) and it was right
+  //     when it was written. PH-105 to PH-111 shipped EVA from a rocket: out at
+  //     80.287 km at apparentG 0.000108 against a trueG of 7.631206, 0.000643 m
+  //     of drift in three seconds, and back in on the ordinary board key. The
+  //     line is flipped rather than deleted because the round trip is the point:
+  //     a probe that only proves you can get OUT has proved half a bug.
   // ==========================================================================
-  const beforeOut = F().refusals;
+  const beforeOut = F().evas;
   of.input.act(['board'], 4);
   await sleep(0.3);
   r = F();
-  check('you cannot climb out in orbit', r.aboard === true
-        && r.refusals === beforeOut + 1, `aboard ${r.aboard}, refusals ${r.refusals}`);
+  check('you can climb out in orbit, and it is an EVA rather than a refusal',
+        r.aboard === false && r.evaActive === true && r.evas === beforeOut + 1,
+        `aboard ${r.aboard}, evaActive ${r.evaActive}, evas ${r.evas}`);
+  // and back in on the same key, because the deorbit below is flown from inside
+  // the pod and a probe that left the pilot outside would fly an empty rocket.
+  of.input.act(['board'], 4);
+  await sleep(0.4);
+  r = F();
+  check('and back IN on the same key, which is the half that makes it a round '
+        + 'trip rather than a one-way exit',
+        r.aboard === true && r.evaActive === false,
+        `aboard ${r.aboard}, evaActive ${r.evaActive}`);
 
   // Deorbit: turn retrograde and burn the reserve away, then ride it down.
   of.input.act(['sasMode'], 4); await sleep(0.3);   // PRO -> RET

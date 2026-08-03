@@ -1172,15 +1172,16 @@ struct StagePerformance {
   int index = -1;
   double startMassKg = 0.0;      // m0
   double endMassKg = 0.0;        // m1
-  double propellantKg = 0.0;     // burned by this stage
-  double ispVacuumS = 0.0;       // thrust-weighted across the stage's engines
+  double propellantKg = 0.0;     // burned by this stage, ALL kinds it can drink
+  double ispVacuumS = 0.0;       // thrust-weighted, AT IGNITION (see R43 below)
   double ispSeaLevelS = 0.0;
-  double thrustVacuumN = 0.0;
+  double thrustVacuumN = 0.0;    // AT IGNITION: fed engines only
   double thrustSeaLevelN = 0.0;
-  double massFlowKgS = 0.0;      // altitude-invariant by construction
-  double deltaVVacuumMS = 0.0;
+  double massFlowKgS = 0.0;      // AT IGNITION; altitude-invariant by construction
+  double deltaVVacuumMS = 0.0;   // summed ACROSS the burn's phases
   double deltaVSeaLevelMS = 0.0;
-  double burnTimeS = 0.0;
+  double burnTimeS = 0.0;        // LAST flameout: the stage is spent
+  double fullThrustS = 0.0;      // FIRST flameout: ignition thrust ends here
 };
 
 // Does part `p` belong to stage `k` or to a later one? kNeverDecoupled counts
@@ -1196,22 +1197,68 @@ inline double tsiolkovsky(double ispS, double m0Kg, double m1Kg) {
   return ispS * atmo::kG0 * std::log(m0Kg / m1Kg);
 }
 
+// R43, fixed 2026-08-02. A stage that lights two propellant KINDS at once has
+// TWO burn times and ONE delta-v, and the old code had neither. It pooled the
+// FIRST engine's kind of propellant and then divided that by EVERY engine's
+// mass flow: a solid booster beside a liquid engine reported 4300 kg over
+// 61.801 + 321.99 kg/s = 11.203 s, against a flight that burned the booster's
+// 9000 kg for 27.95 s and ran the engine to 69.58 s. The readout was not
+// approximate, it was measuring a quantity that does not exist.
+//
+// The model here is per-kind and phase-integrated:
+//
+//   * each propellant kind has its own tankage in this stage, its own engines,
+//     its own mass flow (altitude-invariant, because T_sl/Isp_sl == T_vac/Isp_vac
+//     for every authored engine) and therefore its OWN flameout time;
+//   * the burn is CUT at every flameout and Tsiolkovsky is applied across each
+//     phase with that phase's thrust-weighted Isp, then summed. One ratio over
+//     the whole stage is wrong the instant the kinds differ, because losing an
+//     engine part-way changes the effective Isp of everything after it;
+//   * `fullThrustS` is the FIRST flameout (how long the stage holds its ignition
+//     thrust) and `burnTimeS` is the LAST (when the stage is spent). On a
+//     single-kind stage they are equal and every figure this function published
+//     before R43 is unmoved to the last bit, which is what the reference
+//     vehicle's 1857.79 + 3065.12 m/s pins;
+//   * an engine whose kind has NO propellant in this stage is NOT FIRING, so it
+//     contributes neither thrust nor Isp nor mass flow. A thrust-to-weight that
+//     counts a dry engine is the same class of lie as the burn time above.
+//
+// Why not simply filter the engine loop by `consumes`, which is the one-line
+// version: because that DROPS the booster's 672 kN out of a stage it dominates
+// and reports a pad TWR that says the vehicle cannot leave the ground. Trading
+// an understated burn time for an understated thrust is not a fix.
 inline StagePerformance stagePerformance(const Vessel& v, int k) {
   StagePerformance sp;
   sp.index = k;
   if (k < 0 || k > static_cast<int>(v.stages.size())) return sp;
 
-  // Which engines does this stage light?
-  std::vector<const PartInstance*> engines;
-  Propellant consumes = Propellant::None;
+  // Indexed by the Propellant enumerator. 0 is None and is never used.
+  constexpr int kKinds = 5;
+  double fuelKg[kKinds] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  double mdot[kKinds]   = {0.0, 0.0, 0.0, 0.0, 0.0};
+  double thrVac[kKinds] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  double thrSl[kKinds]  = {0.0, 0.0, 0.0, 0.0, 0.0};
+  double invVac[kKinds] = {0.0, 0.0, 0.0, 0.0, 0.0};   // sum(T_vac / Isp_vac)
+  double invSl[kKinds]  = {0.0, 0.0, 0.0, 0.0, 0.0};   // sum(T_sl  / Isp_sl)
+  bool   drinks[kKinds] = {false, false, false, false, false};
+
+  // Which engines does this stage light, and what does each of them drink?
   if (k < static_cast<int>(v.stages.size())) {
     for (PartHandle h : v.stages[k].activate) {
       const PartInstance* p = v.find(h);
       if (!p) continue;
       const PartDef& d = v.def(*p);
       if (!d.isEngine()) continue;
-      engines.push_back(p);
-      if (consumes == Propellant::None) consumes = d.consumes;
+      const int c = static_cast<int>(d.consumes);
+      if (c <= 0 || c >= kKinds) continue;
+      drinks[c] = true;
+      thrVac[c] += d.thrustVacuumN;
+      thrSl[c] += d.thrustSeaLevelN;
+      if (d.ispVacuumS > 0.0) {
+        invVac[c] += d.thrustVacuumN / d.ispVacuumS;
+        mdot[c] += d.thrustVacuumN / (d.ispVacuumS * atmo::kG0);
+      }
+      if (d.ispSeaLevelS > 0.0) invSl[c] += d.thrustSeaLevelN / d.ispSeaLevelS;
     }
   }
 
@@ -1219,7 +1266,9 @@ inline StagePerformance stagePerformance(const Vessel& v, int k) {
   for (const auto& p : v.parts)
     if (partPresentAtStage(p, k)) sp.startMassKg += partMassKg(v, p);
 
-  // The propellant this stage can actually burn.
+  // The propellant this stage can actually burn, pooled BY KIND. Membership is
+  // unchanged: a stage-k tank, or a never-decoupled tank on the final stage.
+  // A kind no engine here drinks stays inert and sits in both m0 and m1.
   for (const auto& p : v.parts) {
     if (p.stage != k) {
       // A never-decoupled part belongs to the final stage.
@@ -1227,28 +1276,77 @@ inline StagePerformance stagePerformance(const Vessel& v, int k) {
                                 (v.stages.empty() && k == 0);
       if (!(isFinalStage && p.stage == kNeverDecoupled)) continue;
     }
-    if (v.def(p).propellant == consumes) sp.propellantKg += p.propellantKg;
+    const int c = static_cast<int>(v.def(p).propellant);
+    if (c <= 0 || c >= kKinds || !drinks[c]) continue;
+    fuelKg[c] += p.propellantKg;
+  }
+
+  // The kinds that actually burn: an engine to drink them AND fuel to drink.
+  int live[kKinds];
+  int nLive = 0;
+  double tOut[kKinds] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  for (int c = 1; c < kKinds; ++c) {
+    if (mdot[c] <= 0.0 || fuelKg[c] <= 0.0) continue;
+    tOut[c] = fuelKg[c] / mdot[c];
+    live[nLive++] = c;
+    sp.propellantKg += fuelKg[c];
   }
   sp.endMassKg = sp.startMassKg - sp.propellantKg;
 
-  // Thrust-weighted Isp across the stage's engines (the correct combination
-  // rule: Isp = sum(T) / sum(T / Isp), NOT the arithmetic mean).
-  double invVac = 0.0, invSl = 0.0;
-  for (const PartInstance* p : engines) {
-    const PartDef& d = v.def(*p);
-    sp.thrustVacuumN += d.thrustVacuumN;
-    sp.thrustSeaLevelN += d.thrustSeaLevelN;
-    if (d.ispVacuumS > 0.0) invVac += d.thrustVacuumN / d.ispVacuumS;
-    if (d.ispSeaLevelS > 0.0) invSl += d.thrustSeaLevelN / d.ispSeaLevelS;
+  // Ignition figures: fed engines only, with the correct Isp combination rule
+  // (Isp = sum(T) / sum(T / Isp), NOT the arithmetic mean).
+  double invVac0 = 0.0, invSl0 = 0.0;
+  for (int i = 0; i < nLive; ++i) {
+    const int c = live[i];
+    sp.thrustVacuumN += thrVac[c];
+    sp.thrustSeaLevelN += thrSl[c];
+    sp.massFlowKgS += mdot[c];
+    invVac0 += invVac[c];
+    invSl0 += invSl[c];
   }
-  if (invVac > 0.0) sp.ispVacuumS = sp.thrustVacuumN / invVac;
-  if (invSl > 0.0) sp.ispSeaLevelS = sp.thrustSeaLevelN / invSl;
+  if (invVac0 > 0.0) sp.ispVacuumS = sp.thrustVacuumN / invVac0;
+  if (invSl0 > 0.0) sp.ispSeaLevelS = sp.thrustSeaLevelN / invSl0;
 
-  if (sp.ispVacuumS > 0.0) sp.massFlowKgS = sp.thrustVacuumN / (sp.ispVacuumS * atmo::kG0);
-  if (sp.massFlowKgS > 0.0) sp.burnTimeS = sp.propellantKg / sp.massFlowKgS;
+  // Flameouts in time order. At most 4 kinds, so an insertion sort is both the
+  // fastest and the only one worth reading.
+  for (int i = 1; i < nLive; ++i) {
+    const int key = live[i];
+    int j = i - 1;
+    while (j >= 0 && tOut[live[j]] > tOut[key]) { live[j + 1] = live[j]; --j; }
+    live[j + 1] = key;
+  }
+  if (nLive > 0) {
+    sp.fullThrustS = tOut[live[0]];
+    sp.burnTimeS = tOut[live[nLive - 1]];
+  }
 
-  sp.deltaVVacuumMS = tsiolkovsky(sp.ispVacuumS, sp.startMassKg, sp.endMassKg);
-  sp.deltaVSeaLevelMS = tsiolkovsky(sp.ispSeaLevelS, sp.startMassKg, sp.endMassKg);
+  // Walk the phases. Between two flameouts the thrust, the Isp and the flow are
+  // all constant, so each phase is one honest Tsiolkovsky.
+  bool spent[kKinds] = {false, false, false, false, false};
+  double tPrev = 0.0;
+  double m = sp.startMassKg;
+  for (int i = 0; i < nLive; ++i) {
+    const double tNow = tOut[live[i]];
+    double flow = 0.0, tv = 0.0, ts = 0.0, iv = 0.0, is = 0.0;
+    for (int j = 0; j < nLive; ++j) {
+      const int c = live[j];
+      if (spent[c]) continue;
+      flow += mdot[c]; tv += thrVac[c]; ts += thrSl[c];
+      iv += invVac[c]; is += invSl[c];
+    }
+    // The LAST phase lands on m1 exactly rather than on an accumulated product,
+    // so a single-kind stage reproduces tsiolkovsky(isp, m0, m1) bit for bit.
+    const bool last = (i == nLive - 1);
+    const double mNext = last ? sp.endMassKg : (m - flow * (tNow - tPrev));
+    if (mNext < m && flow > 0.0) {
+      if (iv > 0.0) sp.deltaVVacuumMS += tsiolkovsky(tv / iv, m, mNext);
+      if (is > 0.0) sp.deltaVSeaLevelMS += tsiolkovsky(ts / is, m, mNext);
+      m = mNext;
+    }
+    tPrev = tNow;
+    for (int j = 0; j < nLive; ++j)
+      if (tOut[live[j]] <= tNow) spent[live[j]] = true;
+  }
   return sp;
 }
 

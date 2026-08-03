@@ -35,6 +35,12 @@ export interface StageRow {
   index: number; startMassKg: number; endMassKg: number; propellantKg: number;
   ispVacuumS: number; thrustVacuumN: number; thrustSeaLevelN: number;
   deltaVVacuumMS: number; burnTimeS: number; twr: number;
+  /** ABI 22 / R43. `burnTimeS` is the LAST flameout of the stage, this is the
+   *  FIRST: on a stage lighting more than one propellant kind (a solid booster
+   *  beside a liquid engine) the stage holds `thrustVacuumN` only until here and
+   *  then runs on what is left. Equal to `burnTimeS` on a single-kind stage, so
+   *  a readout showing one number can keep showing `burnTimeS`. */
+  fullThrustS: number;
   engines: number; partCount: number;
   /**
    * GP-118. How many parts this stage DECOUPLES, which `_of_vs_stage_info`
@@ -216,6 +222,7 @@ export class VesselDesign {
         propellantKg: sp[b + 3] ?? 0, ispVacuumS: sp[b + 4] ?? 0,
         thrustVacuumN: sp[b + 6] ?? 0, thrustSeaLevelN: sp[b + 7] ?? 0,
         deltaVVacuumMS: sp[b + 9] ?? 0, burnTimeS: sp[b + 11] ?? 0,
+        fullThrustS: sp[b + 12] ?? 0,
         twr: V._of_vs_twr(v, k, this.body, 0),
         engines: group.activate,
         decouplers: group.decouple,

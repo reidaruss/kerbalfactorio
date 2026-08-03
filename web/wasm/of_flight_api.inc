@@ -236,6 +236,28 @@ OF_API double of_fl_remaining_dv_vacuum(int f) {
   return vs::remainingDeltaVVacuumMS(s->craft);
 }
 
+// ABI 22 / R44b: PER-STAGE PERFORMANCE OF THE CRAFT THAT IS ACTUALLY FLYING.
+//
+// `of_vs_stage_performance` takes a DESIGN handle, and `of_fl_create` above
+// does `f->craft = *p`, so the design is a blueprint that never burns a gram.
+// A navball table fed from it is frozen for the whole flight and no refresh
+// cadence can help, because the object being read is the wrong object: after
+// staging for real, with stage 0's engine and tank physically gone, stage 0's
+// row still read its pad value of 1857.79 m/s.
+//
+// Identical 13-word rows in the same order (pushStagePerfRow, of_staging_api.inc
+// §12.2), so ONE client reader serves both and the only difference is the
+// subject. Returns the STAGE COUNT.
+OF_API int of_fl_stage_performance(int f) {
+  fl::FlightSim* s = g_flights.get(f);
+  resetF64(s ? s->craft.stages.size() * 13 : 0);
+  if (!s) return 0;
+  s->craft.layout();
+  const std::vector<vs::StagePerformance> all = vs::allStagePerformance(s->craft);
+  for (const vs::StagePerformance& q : all) pushStagePerfRow(q);
+  return static_cast<int>(all.size());
+}
+
 // The live craft's tree, for the renderer: same layouts as of_vs_parts /
 // of_vs_transforms, so one reader serves the assembly view and flight.
 OF_API int of_fl_parts(int f) {

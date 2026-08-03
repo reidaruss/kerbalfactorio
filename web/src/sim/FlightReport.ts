@@ -41,41 +41,44 @@ export function propellantAboardKg(M: OfCoreModule, handle: number): number {
 }
 
 /**
- * Per-stage delta-v straight out of `of_vs_stage_performance`. DW-30 item 4
- * makes this readout non-negotiable, so it is read on every structural change
- * and NEVER estimated here: if a number on the navball disagrees with
+ * Per-stage delta-v straight out of `of_fl_stage_performance`. DW-30 item 4
+ * makes this readout non-negotiable, so it is read from /core and NEVER
+ * estimated here: if a number on the navball disagrees with
  * core/tests/test_vessel.cpp, the navball is wrong.
  *
- * It takes the DESIGN handle, not the flight handle, and that is not a
- * convenience. `of_vs_*` and `of_fl_*` are separate registries that both number
- * from 1, so passing a flight handle here silently answers about whatever
- * vessel happens to hold the same integer. The per-stage table is a property of
- * the vehicle AS BUILT and is what the assembly view shows; what the flown craft
- * has left is `of_fl_remaining_dv_vacuum`, which is a different question and a
- * different call.
+ * R44b, CLOSED at ABI 22, AND IT LIVED HERE. This used to take the DESIGN
+ * handle and call `of_vs_stage_performance`. `of_fl_create` does `f->craft = *p`,
+ * so the design is a blueprint the rocket was COPIED out of and it never burns
+ * a gram: the table on the navball (`ui/Navball.ts` `table()`, via
+ * `app/FlightReadout.ts`) was a CONSTANT for the whole flight and no refresh
+ * cadence could fix it, because the object being read was the wrong object.
+ * `probes/stagedv.js` measured it the deciding way, by staging for real and
+ * finding the jettisoned stage 0 still reporting all 1857.79 m/s with its
+ * engine and its tank physically off the vehicle. The fix was the new export,
+ * because `vessel::stagePerformance` takes a `Vessel&` and `FlightSim::craft`
+ * is the drained one that no `of_fl_*` export reached.
  *
- * R44b, OPEN, AND IT LIVES HERE. The navball puts this table on screen for the
- * whole flight (`ui/Navball.ts` `table()`, via `app/FlightReadout.ts`), so a
- * player burning stage 0 watches its delta-v sit at the roll-out value and never
- * fall. That is NOT a stale cache, and no refresh cadence can fix it: the design
- * is a blueprint the rocket was COPIED out of, so this table is a constant for
- * the whole flight. `probes/stagedv.js` measures it the deciding way, by staging
- * for real (the one moment mid-flight that `refreshParts` runs) and finding the
- * jettisoned stage 0 still reporting all 1857.79 m/s with its engine and its
- * tank physically off the vehicle. The fix needs a NEW EXPORT and therefore an
- * ABI number: `vessel::stagePerformance` takes a `Vessel&`, `FlightSim::craft`
- * is the drained one, and no `of_fl_*` export reaches it.
+ * IT TAKES THE FLIGHT HANDLE. `of_vs_*` and `of_fl_*` are separate registries
+ * that both number from 1, so passing the wrong one here silently answers about
+ * whatever vessel happens to hold the same integer. The assembly view keeps
+ * `of_vs_stage_performance` on the design, which is the right subject there:
+ * the vehicle AS BUILT is exactly what a player is editing.
  *
  * The stage TWR uses sea-level thrust against the stage's own start mass and
  * `of_gravity_accel` at the datum, which is the number a player judges a pad
  * departure by. mu/r^2 is the one gravity authority (DW-18); kG0 is a unit
  * conversion and takes no part in it (PH-18).
+ *
+ * `fullThrustS` (ABI 22, word 12) is carried alongside `burnS`. They differ only
+ * on a stage lighting more than one propellant kind, where the stage holds its
+ * ignition thrust to the first flameout and then runs on what is left to the
+ * last (R43).
  */
 export function readStagePerformance(
-  M: OfCoreModule, designHandle: number, bodyHandle: number, bodyRadiusM: number,
+  M: OfCoreModule, flightHandle: number, bodyHandle: number, bodyRadiusM: number,
 ): FlightStageRow[] {
-  if (designHandle <= 0) return [];
-  const n = vesselAbi(M)._of_vs_stage_performance(designHandle);
+  if (flightHandle <= 0) return [];
+  const n = vesselAbi(M)._of_fl_stage_performance(flightHandle);
   if (n <= 0) return [];
   // GRAVITY FIRST, THEN THE VIEW. `scratchF64` hands back a SUBARRAY of the
   // heap, not a copy, and the rule (`FlightAbi.ts`) is that nothing may call
@@ -93,6 +96,7 @@ export function readStagePerformance(
     const thrustSl = a[q + 7] ?? 0;
     out.push({
       index: a[q] ?? i, dvVacMS: a[q + 9] ?? 0, burnS: a[q + 11] ?? 0,
+      fullThrustS: a[q + 12] ?? 0,
       thrustVacN: a[q + 6] ?? 0, propellantKg: a[q + 3] ?? 0,
       twr: m0 > 0 && g > 0 ? thrustSl / (m0 * g) : 0,
     });

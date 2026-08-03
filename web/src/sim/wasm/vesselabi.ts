@@ -24,7 +24,13 @@ export const PROP_MONO = 3;
 /** Fixed strides of the scratch rows this ABI writes. Named so a caller never
  *  types a magic number and a change here fails to compile rather than to run. */
 export const PART_INFO_WORDS = 35;
-export const STAGE_PERF_WORDS = 12;
+/** ABI 22: thirteen, not twelve. The thirteenth is `fullThrustS`, the FIRST
+ *  flameout of a stage that lights more than one propellant kind; index 11
+ *  `burnTimeS` is unmoved and is now the LAST. They are equal on a single-kind
+ *  stage. Shared by `_of_vs_stage_performance` (the design) and
+ *  `_of_fl_stage_performance` (the craft actually flying), which write the
+ *  same row from the same function in of_staging_api.inc. */
+export const STAGE_PERF_WORDS = 13;
 export const MASS_PROPS_WORDS = 15;
 /** ABI 20: nine, not eight. The ninth is `radialOffsetM` (0 for a part that is
  *  not radially attached), appended so every existing index is unmoved. Shared
@@ -107,7 +113,9 @@ export interface VesselAbi {
   // --- §12.2 the derived figures (DW-30 item 4) ------------------------------
   /** f64 scratch, STAGE_PERF_WORDS per stage. Returns the STAGE COUNT:
    *  [index, m0, m1, propellantKg, ispVac, ispSl, thrustVacN, thrustSlN,
-   *   massFlowKgS, dVVacMS, dVSlMS, burnTimeS]. */
+   *   massFlowKgS, dVVacMS, dVSlMS, burnTimeS, fullThrustS].
+   *  THE DESIGN, which is a blueprint that never burns a gram. For the craft
+   *  that is actually flying use `_of_fl_stage_performance` (§13.2). */
   _of_vs_stage_performance(v: number): number;
   _of_vs_total_dv_vacuum(v: number): number;
   _of_vs_remaining_dv_vacuum(v: number): number;
@@ -163,6 +171,11 @@ export interface VesselAbi {
   /** f64 scratch, ORBIT_WORDS. Unbound reports apoapsis 1e308, bound 0. */
   _of_fl_orbit(f: number): number;
   _of_fl_remaining_dv_vacuum(f: number): number;
+  /** ABI 22 / R44b. f64 scratch, STAGE_PERF_WORDS per stage, the SAME row as
+   *  `_of_vs_stage_performance` writes. Returns the STAGE COUNT. The subject is
+   *  the craft that is flying, whose tanks actually drain, rather than the
+   *  design it was copied out of, which never does. */
+  _of_fl_stage_performance(f: number): number;
   _of_fl_parts(f: number): number;
   _of_fl_transforms(f: number): number;
   /** ABI 18 / PH-66. Set ONE part's propellant, CLAMPED to its own capacity.

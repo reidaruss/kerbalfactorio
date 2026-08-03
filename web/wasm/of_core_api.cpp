@@ -414,7 +414,30 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       moves. Radial placement is two numbers and the row published one; the
 //       client re-derived the other by subtracting two origins, which was exact
 //       and left the row unable to describe a part on its own.
-OF_API int of_abi_version(void) { return 21; }
+//  22: A STAGE'S DELTA-V AND ITS BURN TIME STOP LYING (PH-142/PH-143, R43+R44b).
+//       TWO items, one bump, because both are the same sentence ("how much
+//       delta-v have I actually got") and bumping twice for it would be worse.
+//       (a) STAGE_PERF_WORDS is THIRTEEN, not twelve. The appended word is
+//       `fullThrustS`, the FIRST flameout in a stage that lights more than one
+//       propellant kind; `burnTimeS` (index 11, unmoved) is now the LAST. R43:
+//       `stagePerformance` used to pool one kind's propellant and divide it by
+//       EVERY engine's mass flow, so a solid booster beside a liquid engine
+//       published `propellantKg 4300, burnTimeS 11.203, dvVac 656.02` against a
+//       flight that burned 9000 kg of solid for 27.95 s and ran the liquid
+//       engine to 69.58 s. The stage's real figures are 13300 kg, 27.948953 s
+//       to first flameout, 69.578182 s to last, and 3890.36 m/s. The old number
+//       was 17% of the truth and it is the number an autopilot fuel gate would
+//       have been built on. Every SINGLE-kind stage is bit-identical across the
+//       fix (pinned in test_vessel.cpp against `tsiolkovsky` with `==`), so the
+//       reference vehicle's 1857.79 + 3065.12 m/s has not moved.
+//       (b) NEW EXPORT `of_fl_stage_performance(f)` over the LIVE craft. R44b:
+//       the navball's per-stage table asked `of_vs_stage_performance` about the
+//       DESIGN handle and `_of_fl_create` does `f->craft = *p`, so the blueprint
+//       never burned a gram: after staging for real, with stage 0's engine and
+//       tank physically gone, stage 0's row still read its pad value 1857.79.
+//       No refresh cadence could fix that, because the object being read was
+//       the wrong object. Same 13-word rows, same reader, different subject.
+OF_API int of_abi_version(void) { return 22; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
