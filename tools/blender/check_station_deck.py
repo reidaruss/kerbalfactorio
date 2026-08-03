@@ -42,15 +42,27 @@ being enclosed and not a sufficient one for it being playable; `stationwalk.js`
 remains the instrument that decides that, and this one exists to stop that
 probe's single route from being mistaken for coverage.
 
-KNOWN RED, and it is reported rather than tolerated: see R59 in
-docs/controllers/rendering.md. The hall's twelve wall proxies are twelve
+WAS RED AT 290 OF 360 AZIMUTHS (80.6%) AND IS NOW GREEN AT 0 OF 2880 (GP-400).
+The number this tool printed is what the fix was aimed at, and it is worth
+keeping the target on the record: the hall's twelve wall proxies were twelve
 IDENTICALLY ORIENTED boxes spaced round a circle, because `of_lib`'s
 `add_collision_box` has no `rot_z` and the runtime consumes each proxy as an
 axis-aligned bound anyway (`SpaceStation.learnStationProxies`), so a rotated
 chord could not survive the trip even if Blender authored one. Only the two
-whose tangent happens to be parallel to a world axis came out as walls; the two
-at 90 and 270 degrees are radial fins pointing out of the room; the other eight
-are oblique slabs. This tool prints that as a number so the fix has a target.
+whose tangent happened to be parallel to a world axis came out as walls; the two
+at 90 and 270 degrees were radial fins pointing out of the room; the other eight
+were oblique slabs. Reid found it from inside: "i can move through walls and if
+i jump i then fall through the floor".
+
+The hall is now walled by a STAIRCASE of axis-aligned boxes whose floor and wall
+come off one list of rectangles (`hall_steps()` in build_space_station.py), so
+the deck stops exactly where the wall does at every azimuth. WHAT IS STILL TRUE
+is the sentence above about rotation: an axis-aligned set cannot follow a circle,
+so the player stops up to 1.085 m inside the visible wall at eight points round
+the room, and halving that costs twice the boxes. That residual is a comfort
+defect rather than a safety one and this tool cannot see it, because both
+questions it asks are answered correctly. `probes/stationwalk.js` P6 publishes it
+as `wallStopRM.min`, driven.
 """
 
 import json

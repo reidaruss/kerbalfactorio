@@ -412,9 +412,196 @@
     return fail('P5: the walk out of the hall did not reach the doorway', P5);
   }
 
+  // ======================================================================
+  // P6. WALK OUT OF THE HALL IN EVERY DIRECTION, AND JUMP AT THE END OF EACH.
+  //
+  //     GP-400, AND THIS PHASE EXISTS BECAUSE P4 AND P5 BOTH WALK THE SAME
+  //     LINE. Every driven metre above this point is along `A.along`, the spine
+  //     centreline, and R56 was recorded as "the hall wall blocks the mouth"
+  //     from a measurement taken on that one axis. Reid walked the room and
+  //     reported the opposite: "i can move through walls and if i jump i then
+  //     fall through the floor". Both were true. The hall's twelve wall proxies
+  //     were twelve boxes translated round a circle and never turned to face
+  //     it, so the two that happened to line up with +-X over-blocked and the
+  //     other ten were oblique slabs with 2 to 10 m of open air beside them.
+  //     A station walk that only walks one axis cannot tell those apart, which
+  //     is the whole reason this phase is 24 headings and not one.
+  //
+  //     TWO JUMPS PER HEADING, and they ask different questions. The first is
+  //     Reid's literally: stand where the wall stopped you and jump straight
+  //     up. The second holds the walk key through the jump, which is the case
+  //     that finds a floor edge, because 1.33 s of airtime at station gravity
+  //     carries a walker several metres past anything a standing test reaches.
+  //
+  //     THE REFUSING CASE IS THE SAME FUNCTION, NOT A SECOND ONE. `leg` is run
+  //     once more from 200 m beside the station, where there is provably no
+  //     structure, and the run fails if that leg comes back anything other than
+  //     lost. A sweep whose verdict function cannot say "lost" would report 24
+  //     green legs through a hull made of fog.
+  // ======================================================================
+  const AZ_N = (typeof OF_ARGS === 'object' && OF_ARGS?.azimuths) || 24;
+  // A JUMP AT STATION GRAVITY TAKES 2.30 s IN THE AIR, not the 0.83 s a surface
+  // jump takes: apex 2.319915 m at 3.49886 m/s^2 is a 4.030 m/s launch and
+  // twice that over g. The first draft gave the hop 1.4 s and the run-and-hop
+  // 2.4 s, so 8 of 24 legs were still airborne when the leg ended and reported
+  // `endGrounded: false` for a jump that was going perfectly well. Both windows
+  // are the airtime plus a settle now, and the number is derived above rather
+  // than tuned until it went green.
+  const SETTLE_S = 0.8, OUT_S = 1.6, HOP_S = 3.0, RUNHOP_S = 3.4;
+  // Powered, and restored afterwards. With the generator off the whole station
+  // is in freefall and NOTHING here is grounded, so a sweep run in the dark
+  // would be 24 legs of vacuously-not-falling.
+  const gravBefore = of.stationGravity().powered;
+  of.stationGravity(true);
+  // The vented section, from the asset's own aft-most jamb (StationGravity.ts
+  // derives the airlock plane the same way). A leg that ends aft of it is
+  // WEIGHTLESS rather than fallen, so it is held to the deck-radius test and
+  // not to the grounded one: a floating player has not left the station.
+  const airlockX = Math.min(...st.proxyBoxes
+    .filter((b) => b.name.startsWith('col_Jamb'))
+    .map((b) => (b.min[0] + b.max[0]) * 0.5));
+
+  const driveTape = async (secs, tape) => {
+    of.input.tape(tape);
+    of.stand(true);
+    await of.run(secs, 60);
+    await yield0();
+    const t = of.stand();
+    of.stand(false);
+    return t.samples;
+  };
+  const jumpTape = (secs, keys) => [
+    { hold: 2, keys: [...keys, 'Space'] },
+    { hold: Math.ceil(secs * 60) + 120, keys },
+  ];
+
+  /**
+   * One heading: stand, walk outward, hop, then run-and-hop. Returns numbers
+   * only; every verdict below is taken from them and never from inside here,
+   * so the refusing control runs the identical code.
+   */
+  const leg = async (label, startLocal, aimDir) => {
+    const q = at(startLocal[0], 0.6, startLocal[2]);
+    of.standAt(q[0], q[1], q[2]);
+    const s0 = await drive(SETTLE_S, []);
+    of.look(yawOf(aimDir), 0);
+    const b0 = loc(of.world().player.feet.slice());
+    const s1 = await drive(OUT_S, ['KeyW']);
+    const wallStop = loc(of.world().player.feet.slice());
+    const s2 = await driveTape(HOP_S, jumpTape(HOP_S, []));
+    const s3 = await driveTape(RUNHOP_S, jumpTape(RUNHOP_S, ['KeyW']));
+    const end = loc(of.world().player.feet.slice());
+    const all = [...s0, ...s1, ...s2, ...s3];
+    const minR = Math.min(...all.map((p) => p.feetR));
+    const maxR = Math.max(...all.map((p) => p.feetR));
+    const tail = all.slice(-30);
+    const last = all[all.length - 1];
+    return {
+      label,
+      startLocal: [r6(b0[0]), r6(b0[2])],
+      wallStopLocal: [r6(wallStop[0]), r6(wallStop[2])],
+      wallStopRM: r6(Math.hypot(wallStop[0], wallStop[2])),
+      endLocal: [r6(end[0]), r6(end[1]), r6(end[2])],
+      endRM: r6(Math.hypot(end[0], end[2])),
+      travelledM: r6(Math.hypot(end[0] - b0[0], end[2] - b0[2])),
+      // How far below the deck plane the feet EVER got. On a deck this is the
+      // bulge and rounding; off one it is the fall.
+      fellM: r6(st.deckR - minR),
+      roseM: r6(maxR - st.deckR),
+      blockedTicks: all.filter((p) => p.blockedByBuild).length,
+      airborneTicks: all.filter((p) => !p.grounded).length,
+      endGrounded: tail.every((p) => p.grounded),
+      // THE VERDICT IS `onDeck` AND NOT `grounded`, and the first draft got
+      // that wrong in the flattering direction's opposite: it called three
+      // headings lost whose `fellM` was -0.000004 m, because a walker still
+      // rising off a wall he had just jumped beside is not grounded and is very
+      // much still in the station. `grounded` is a claim about WEIGHT
+      // (KinematicBody sets it false in freefall on purpose, so the aft vented
+      // section could never satisfy it either); `onDeck` is the claim about
+      // GEOMETRY, which is the one this phase is making.
+      endOnDeck: tail.every((p) => p.onDeck),
+      endBelowDeckM: r6(deckRAt(end) - last.feetR),
+      vented: end[0] < airlockX,
+      ticks: all.length,
+    };
+  };
+
+  const legs = [];
+  for (let k = 0; k < AZ_N; ++k) {
+    const th = (2 * Math.PI * k) / AZ_N;
+    const c = Math.cos(th), sn = Math.sin(th);
+    const dir = [
+      A.along[0] * c + A.across[0] * sn,
+      A.along[1] * c + A.across[1] * sn,
+      A.along[2] * c + A.across[2] * sn,
+    ];
+    // 3.0 m out from the hall's centre: clear of `col_HallCore` (1.548) and
+    // well inside the deck, so the walk starts on floor at every heading.
+    legs.push(await leg(`az${r6((th * 180) / Math.PI)}`, [3.0 * c, 0, 3.0 * sn], dir));
+  }
+  // THE REFUSING CASE, through the same `leg`. 200 m across, deck radius,
+  // nothing built. It must come back lost or the verdict is not a verdict.
+  const ctlDir = [A.across[0], A.across[1], A.across[2]];
+  const ctl = await leg('control:200m-beside', [0, 0, 200], ctlDir);
+
+  const FELL_TOL = 0.25;
+  const lostOf = (L) => L.fellM > FELL_TOL || L.endBelowDeckM > FELL_TOL
+    || !L.endOnDeck;
+  const lost = legs.filter(lostOf);
+  const P6 = {
+    azimuths: AZ_N,
+    gravityPowered: of.stationGravity().powered,
+    airlockPlaneXM: r6(airlockX),
+    fellToleranceM: FELL_TOL,
+    lostAzimuths: lost.map((L) => L.label),
+    lostCount: lost.length,
+    blockedLegs: legs.filter((L) => L.blockedTicks > 0).length,
+    ventedLegs: legs.filter((L) => L.vented).length,
+    minTravelledM: r6(Math.min(...legs.map((L) => L.travelledM))),
+    maxFellM: r6(Math.max(...legs.map((L) => L.fellM))),
+    maxEndBelowDeckM: r6(Math.max(...legs.map((L) => L.endBelowDeckM))),
+    // THE MEASUREMENT THE ASSET PREDICTS, DRIVEN. `HALL_STANDOFF` in
+    // build_space_station.py is R (1 - sqrt(M/(M+1))) = 1.0852 m at three
+    // steps, so the tightest wall stop in the hall should be 8.100 - 1.085 =
+    // 7.015 m from the station's axis. Published rather than asserted: it is
+    // the number that says how much of the room the axis-aligned proxy set
+    // still costs, and the day it goes to zero is the day the client carries a
+    // per-proxy rotation.
+    wallStopRM: stats(legs.map((L) => L.wallStopRM)),
+    control: ctl,
+    controlIsLost: lostOf(ctl),
+    legs,
+  };
+  log.push({ P6 });
+  of.stationGravity(gravBefore);
+
+  // The refusing case first: if the verdict cannot fail, nothing below it means
+  // anything, and it is checked before the thing it licenses rather than after.
+  if (!P6.controlIsLost) {
+    return fail('P6: the control leg 200 m beside the station was not reported '
+      + 'lost, so the sweep could not have detected a fall', P6);
+  }
+  // POSITIVE CONTROL THAT THE SWEEP RAN. A leg where the player never moved is
+  // a leg that proves nothing, and 24 of those would still be zero lost.
+  if (legs.length !== AZ_N) return fail('P6: the sweep did not run every heading', P6);
+  if (!(P6.minTravelledM > 1.0)) {
+    return fail('P6: some heading never moved the player, so its green is empty',
+      P6);
+  }
+  // AND THAT THE WALLS ARE DOING THE WORK. Every heading but the two spine
+  // mouths must be stopped by structure; a room whose legs all ran down
+  // corridors would also report nothing lost.
+  if (!(P6.blockedLegs >= AZ_N - 4)) {
+    return fail('P6: too few headings were stopped by any wall, so the hall is '
+      + 'open rather than enclosed', P6);
+  }
+  if (P6.lostCount > 0) {
+    return fail('P6: the player walked or jumped out of the station', P6);
+  }
+
   await back();
   return { ok: true, station: { id: st.id, name: st.name, deckR: r6(st.deckR),
     altM: r6(st.deckR - 600000), speedMps: r6(st.speedMps), e: st.el?.e,
     proxies: st.proxies, minted: st.install?.minted ?? null },
-  P0, P1, P2, P3, P4, P5, log };
+  P0, P1, P2, P3, P4, P5, P6, log };
 })()

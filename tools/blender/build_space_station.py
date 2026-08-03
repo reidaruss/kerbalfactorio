@@ -193,6 +193,56 @@ HUB_RO, HUB_RI = 8.40, 8.10      # the hall, 16.20 m across inside
 SIDES = 12
 HUB_SIDES = 16
 
+# GP-400. How many axis-aligned rectangles approximate the hall's round floor,
+# and therefore how finely its wall steps round the room. See `collision_boxes`
+# for why a round room can only be walled with AXIS-ALIGNED boxes at all.
+HALL_STEPS = 3
+
+
+def hall_steps():
+    """Half-extents (x, y) of the rectangles whose union is the hall's deck.
+
+    THE ANGLES ARE NOT EVENLY SPACED AND THAT IS THE WHOLE OF THIS FUNCTION.
+    Every rectangle has its corner ON the circle, so the union touches the wall
+    at 4 * STEPS points and falls short between them; the shortfall is worst at
+    the INSIDE corners, where one rectangle's x meets the next one's y. Spacing
+    the angles evenly dumps almost all of that error at 45 degrees: three even
+    steps stand 2.372 m inside the hull there, which is worse than the 2.251 m
+    R56 was raised for.
+
+    Equalising it instead has a closed form, and it is worth writing down
+    because it looks like it should need a solver. Put the corners at angles t_j
+    and let the shortfall be R(1 - k). The inside corner between step j and j+1
+    sits at radius R * sqrt(cos^2 t_(j+1) + sin^2 t_j), so holding every one of
+    them at Rk gives sin^2 t_(j+1) = sin^2 t_j + (1 - k^2): the SQUARED SINES
+    ARE AN ARITHMETIC PROGRESSION. Closing it symmetrically about 45 degrees
+    (sin t_last = cos t_0 = k) forces k^2 = M / (M + 1) and therefore
+
+        t_j = asin(sqrt((j + 1) / (M + 1)))      shortfall = R (1 - sqrt(M/(M+1)))
+
+    which is 1.085 m at three steps against the even spacing's 2.372, for the
+    same boxes and the same names.
+    """
+    out = []
+    for j in range(HALL_STEPS):
+        t = math.asin(math.sqrt((j + 1.0) / (HALL_STEPS + 1.0)))
+        out.append((HUB_RI * math.cos(t), HUB_RI * math.sin(t)))
+    return out
+
+
+# HOW FAR INSIDE THE VISIBLE WALL A PLAYER STOPS, AND IT IS A LIMIT RATHER THAN
+# A SETTING. Halving it costs twice the boxes (0.601 m at six steps, 0.295 m at
+# thirteen, 8 * STEPS wall proxies each time), because an axis-aligned box set
+# simply cannot follow a circle. The fix that takes it to ZERO is not another
+# step: it is a per-proxy ROTATION surviving into the client, which would let
+# this ring be the sixteen chords the hull already is. See `collision_boxes`.
+HALL_STANDOFF = HUB_RI * (1.0 - math.sqrt(HALL_STEPS / (HALL_STEPS + 1.0)))
+assert HALL_STANDOFF < 1.20, (
+    "%d steps stop the player %.4f m short of the hall wall, which is worse "
+    "than the 1.085 m this shipped at and worse than R56's 2.251 m was in one "
+    "direction; a room nobody can reach the edge of is the defect wearing a "
+    "different hat" % (HALL_STEPS, HALL_STANDOFF))
+
 CEIL_PROXY_T = 0.80     # R48: below 0.75 m the walker jumps clean through
 
 # WHERE ANYTHING THAT STANDS ON THE DECK ACTUALLY STARTS, and it is not zero.
@@ -1320,8 +1370,27 @@ def collision_boxes():
         put(ceils, "col_%sCeil" % stem, ln, (hw * 2.0, cross),
             CEIL_PROXY_T, ceil_z + CEIL_PROXY_T * 0.5)
 
-    run("SpineAft", "X", BLOWN_X, -HUB_RI + 0.25, 0.0, CORR_HW, CORR_CZ)
-    run("SpineFwd", "X", HUB_RI - 0.25, 28.20, 0.0, CORR_HW, CORR_CZ)
+    # THE TWO SPINE RUNS START INSIDE THE HALL, NOT AT ITS HULL, and that is
+    # what retires R57 rather than bridging it (GP-400).
+    #
+    # They used to begin at `HUB_RI - 0.25` = 7.850 while the hall's deck ended
+    # at 5.751, and the 2.099 m of nothing between was papered over with
+    # `col_HallSill{Fwd,Aft}`, a plank as wide as the corridor. That works on
+    # the centreline and nowhere else: the vestibule the plank made had OPEN
+    # SIDES, so a player who walked through the hatch and then stepped sideways
+    # went off the edge of it. A sill wide enough to fix that is wider than the
+    # doorway it serves and puts unwalled deck outside the hall wall, which is
+    # the same defect moved 2 m out.
+    #
+    # So the corridor simply starts where the hall's deck stops, lapped 50 mm
+    # inside it, and brings its OWN two walls and its own ceiling with it. There
+    # is no vestibule left to fall out of the side of, no sill, and no pair of
+    # slab edges authored to land on the same coordinate and hoped into
+    # agreement through a float32 glb.
+    SPINE_LAP = 0.05
+    spine_x = hall_steps()[0][0] - SPINE_LAP
+    run("SpineAft", "X", BLOWN_X, -spine_x, 0.0, CORR_HW, CORR_CZ)
+    run("SpineFwd", "X", spine_x, 28.20, 0.0, CORR_HW, CORR_CZ)
     run("Hab", "Y", 1.20, HAB_Y1 - 0.6, HAB_X, CORR_HW, CORR_CZ)
     run("Reactor", "Y", -8.20, -1.20, REACTOR_X, CORR_HW, CORR_CZ)
     run("Hold", "Y", CB_Y1 + 0.6, -1.20, CARGO_X, CARGO_HW, CARGO_CZ)
@@ -1373,83 +1442,186 @@ def collision_boxes():
             ("HabFrame", "Y", 2.9, HAB_X, CORR_HW)):
         frame(stem, axis, at, cross, hw + WALL_T, CORR_CZ)
 
-    # The hall. A round room cannot be one convex box, so its floor is one slab
-    # (a player standing on a disc only touches its top) and its wall is TWELVE
-    # chords round the polygon inscribed in it. Twelve rather than eight
-    # because a chord's sagitta at r 8.10 over 30 degrees is 0.276 m, which is
-    # how far a player walks into the wall before stopping; at eight it would
-    # be 0.616 m, which is visible. THE NUMBER IS A DECISION, NOT A DEFAULT.
-    floors.append(("col_HallFloor", (HUB_RI * 1.42, HUB_RI * 1.42, DECK_T),
-                   (0.0, 0.0, DECK_Z - DECK_T * 0.5)))
-    hall_wall_d = HUB_RI + 0.15
-    hall_wall_hw = HUB_RI * 0.28          # half of the 4.536 m chord
-    hall_wall_cz = CORR_CZ + 2.0
-    for k in range(12):
-        # R56. A AND G ARE PIERCED RATHER THAN PLACED, and they are the only two
-        # of the twelve that need it: k = 0 faces +X and k = 6 faces -X, which
-        # are the two spine mouths. `HUB_PORTAL_DEG` cuts a 4.40 m gap in the
-        # HULL at exactly these two angles and this list did not, so the wall a
-        # player could see through was solid to walk into. Measured by the
-        # physics lane: the walker stopped dead at local x 8.098644, which is
-        # this box's inner face, 2.251356 m short of `col_JambHallFwdR`.
-        #
-        # THE OPENING IS THE SAME HATCH AS THE BULKHEAD'S, through the same
-        # emitter, so the hall's doorway and the spine's bulkhead 1.65 m beyond
-        # it are the same 2.10 m wide by 2.30 m tall hole and a player walks a
-        # straight line through both. Making it the portal's 4.40 m instead was
-        # considered and refused: the portal is what the HULL cuts, the hatch is
-        # what a player walks through, and a doorway wider than every other
-        # doorway on the station is a different room's convention.
-        if k in (0, 6):
-            frame("Mouth" + ("Fwd" if k == 0 else "Aft"), "X",
-                  hall_wall_d if k == 0 else -hall_wall_d,
-                  0.0, hall_wall_hw, hall_wall_cz)
-            continue
-        a = 30.0 * k
-        c = sf.radial("Z", a)
-        d = hall_wall_d
-        walls.append(("col_HallWall%s" % "ABCDEFGHIJKL"[k],
-                      (0.30, hall_wall_hw * 2.0, hall_wall_cz),
-                      (c[0] * d, c[1] * d, hall_wall_cz * 0.5)))
+    # THE HALL, AND GP-400 REBUILT ITS WHOLE SHELL. What stood here placed
+    # twelve boxes on a circle at 30 degree intervals and NEVER TURNED ANY OF
+    # THEM TO FACE IT, because `of_lib.add_collision_box(name, size, loc, ...)`
+    # has no rotation argument and never had one. Only k = 0 and k = 6 were
+    # accidentally right, they were the two the mouth pierce replaced, and the
+    # ten that shipped were 0.30 m slabs lying across the room at whatever angle
+    # a translation alone left them: `col_HallWallD` ran from radius 5.982 to
+    # 10.518 pointing straight OUT through the hull. Swept at 5 degrees, 24 of
+    # the 60 hall azimuths had NO WALL WITHIN 12 m and the rest met one 1.3 to
+    # 3.1 m OUTSIDE the last floor. Reid's report was "i can move through walls
+    # and if i jump i then fall through the floor" and both halves are that.
+    #
+    # R56 IS NOT CONTRADICTED, IT WAS MEASURED ALONG THE ONE AXIS WHERE THE
+    # PINWHEEL POINTED THE RIGHT WAY. Walking +X really did stop dead at 8.0986;
+    # every other heading walked out of the station.
+    #
+    # WHY THE ANSWER IS A STAIRCASE OF AXIS-ALIGNED BOXES AND NOT A ROTATED
+    # RING. Rotating them would not have helped either, and this is the load
+    # bearing sentence for anyone tempted to add a rotation argument: the client
+    # reads every proxy through `Box3.applyMatrix4` (SpaceStation.learnStation-
+    # Proxies), which returns the AABB OF THE TRANSFORMED CORNERS, so a proxy's
+    # rotation is discarded before anything can collide with it. A 4.536 x 0.30
+    # chord turned 30 degrees arrives in the walker as a 4.08 x 2.53 slab
+    # reaching 2.2 m back into the room. An axis-aligned proxy set is not a
+    # convention here, it is the only thing the collision representation can
+    # carry, so a round room is walled the way a raster draws a circle.
+    #
+    # `hall_steps()` is the one list, and THE FLOOR AND THE WALL BOTH COME OFF
+    # IT, which is what makes the shell close rather than merely look closed:
+    # its angles are symmetric about 45 degrees, so the x extents are the y
+    # extents reversed, so every riser's outer end lands exactly on the
+    # perpendicular riser of the far axis and no corner has a diagonal leak.
+    # Two lists could not have that property, and a floor list that drifted
+    # from a wall list is a room with a gap you only find by falling in it.
+    #
+    # WHAT IS STILL WRONG WITH THIS, STATED RATHER THAN LEFT TO BE FOUND: the
+    # player stops `HALL_STANDOFF` = 1.085 m short of the visible wall at eight
+    # points around the room. That is a comfort defect and not a safety one -
+    # the deck stops exactly where the wall does, so nobody falls - and it is
+    # the price of the client reading proxies as axis-aligned bounds. THE FIX
+    # IS ROTATION, NOT MORE STEPS: `learnStationProxies` collapses each proxy
+    # through `Box3.applyMatrix4`, and a `Solid` carries ONE quaternion for its
+    # whole box list, so the client change is to install one `Solid` per proxy
+    # frame instead of one for the station. `StructureBodies.inside` and
+    # `.deckUnder` already handle an arbitrary `Solid.quat` and need no change
+    # at all. With that in place this ring becomes the sixteen chords the hull
+    # already is and the stand-off becomes zero.
+    steps = hall_steps()
+    assert HALL_STEPS == 3, (
+        "the three deck slabs below are named X / (bare) / Z for the wide, "
+        "square and tall step; %d steps wants a name rule rather than three "
+        "literals" % HALL_STEPS)
+    # `col_HallFloor` KEEPS ITS NAME AND ITS JOB and is now derived rather than
+    # a 1.42 factor: it is the middle step, the square inscribed in the room,
+    # and it is what `stationwalk.js` brackets the deck thickness with.
+    for (i, tag) in ((0, "X"), (1, ""), (2, "Z")):
+        (ax, bz) = steps[i]
+        floors.append(("col_HallFloor%s" % tag,
+                       (ax * 2.0, bz * 2.0, DECK_T),
+                       (0.0, 0.0, DECK_Z - DECK_T * 0.5)))
+        # The lid, on the same three rectangles so it can never be a different
+        # shape from the deck it caps. CEIL_PROXY_T thick for R48.
+        ceils.append(("col_HallCeil%s" % tag,
+                      (ax * 2.0, bz * 2.0, CEIL_PROXY_T),
+                      (0.0, 0.0, HUB_Z1 + CEIL_PROXY_T * 0.5)))
 
-    # R57. THE SILL, and there was 2.099 m of nothing where it goes.
+    # THE HALL'S SHELL IS AS TALL AS THE HALL, and it used to be 6.00 m of a
+    # 13.30 m room. Under weight that costs nothing, because the jump apex at
+    # station gravity is 2.319915 m and nobody reaches 6 m; with the generator
+    # OFF it is a way out, because a weightless player under sustained thrust
+    # arrives at whatever is above them every time they press Space. That is
+    # exactly R48's "in freefall a ceiling is the normal case", and
+    # `probes/zerog.js` Z6 has been red on it at HEAD ("the rise never stopped").
+    # Height costs no boxes at all, so the wall is the drum's own height and the
+    # ceiling below is the same three rectangles as the deck, one storey up.
+    hall_wall_cz = HUB_Z1
+    # OUTWARD of the floor edge, never inward: the player stops exactly where
+    # the deck stops, so no reachable square metre of this room is unwalled and
+    # no walled metre is unfloored. 0.30 m is more than two tick-steps at the
+    # walker's top speed, so a step cannot straddle it.
+    hall_wall_t = 0.30
+    for (axis, sgn, stem) in (("X", 1.0, "Fwd"), ("X", -1.0, "Aft"),
+                              ("Y", 1.0, "Port"), ("Y", -1.0, "Stbd")):
+        ai, oi = (0, 1) if axis == "X" else (1, 0)
+        for i in range(HALL_STEPS):
+            # Riser i stands at THIS step's extent on its own axis and spans the
+            # cross axis from the next SHORTER step's extent out to its own,
+            # which is the tread the staircase just climbed. Written as a search
+            # rather than as `steps[i - 1]` because the two extent lists run in
+            # opposite directions (x shrinks with i, z grows), so index
+            # arithmetic that is right for one axis is off by two for the other,
+            # and the first draft of this loop laid a wall clean across the
+            # middle of the room that way.
+            at, hi = steps[i][ai], steps[i][oi]
+            lo = max([s[oi] for s in steps if s[oi] < hi - 1e-9] + [0.0])
+            # THE OUTER END IS EXTENDED BY THE WALL'S OWN THICKNESS AND THE
+            # INNER END IS NOT, and the asymmetry is the whole of whether the
+            # shell closes. At the `hi` end the deck beyond is SHORTER, so there
+            # is no floor for an extension to eat and the extension is what
+            # fills the outside corner: without it a diagonal step of 0.13 m,
+            # which is one tick at walking speed, lands past the end of one
+            # riser and short of the next and the player walks out through the
+            # corner. At the `lo` end the deck beyond is LONGER, and extending
+            # there would stand a wall in the middle of walkable floor, which is
+            # R56 rebuilt. Inside corners need no help: both risers start on the
+            # same point and grow outward, so they already overlap.
+            hi += hall_wall_t
+            # THE TWO SPINE MOUTHS ARE PIERCED RATHER THAN PLACED (R56). They
+            # are the risers standing across the spine centreline, which is the
+            # X pair whose span reaches the middle. The opening is the SAME
+            # hatch as every bulkhead's, through the same emitter, so the hall's
+            # doorway and the spine's bulkhead 1.65 m beyond it are one 2.10 by
+            # 2.30 m hole a player walks straight through.
+            if axis == "X" and lo == 0.0:
+                frame("Mouth" + stem, "X", sgn * (at + hall_wall_t * 0.5),
+                      0.0, hi, hall_wall_cz, thick=hall_wall_t)
+                continue
+            pairs = (("", 0.0),) if lo == 0.0 else (("L", 1.0), ("R", -1.0))
+            for (side, s) in pairs:
+                size, loc = [0.0, 0.0, hall_wall_cz], [0.0, 0.0, hall_wall_cz * 0.5]
+                size[ai], loc[ai] = hall_wall_t, sgn * (at + hall_wall_t * 0.5)
+                size[oi] = (hi - lo) if lo > 0.0 else hi * 2.0
+                loc[oi] = s * (lo + hi) * 0.5
+                walls.append(("col_HallWall%s%s%s"
+                              % (stem, "ABCDEFGH"[i], side),
+                              tuple(size), tuple(loc)))
+
+    # R57 IS RETIRED ABOVE RATHER THAN HERE. `col_HallSill{Fwd,Aft}` are gone:
+    # the two spine runs now start 50 mm inside the hall's own deck edge and
+    # bring their walls with them, so there is no join left to plank over. The
+    # assertion that replaces the sill's is the one that says the corridor
+    # actually overlaps the room it opens off.
+    assert spine_x < steps[0][0], (
+        "the forward spine deck starts at %.4f and the hall's deck stops at "
+        "%.4f, so they no longer overlap and there is open sky between them; "
+        "SPINE_LAP is what holds them together and it must be positive"
+        % (spine_x, steps[0][0]))
+
+    # The gallery had the SAME defect as the hall wall and it is fixed the same
+    # way: four quadrant slabs placed on the diagonals and never turned to face
+    # them, so `col_GalleryFloorN` shipped as a rectangle from x 1.716 to 6.416
+    # by z -8.197 to 0.065. The ring is `union(steps) minus the inner square`,
+    # which decomposes into two planks per step per axis with no rotation and no
+    # remainder: the X planks carry |x| in [MEZZ_RI, ax] at any |z| <= bz, the Z
+    # planks carry |z| in [MEZZ_RI, bz] at any |x| <= ax, and a step whose extent
+    # is already inside the well contributes nothing.
     #
-    # The hall's deck is a SQUARE inscribed in a round room, so it stops at
-    # +-5.751 while the spine's deck starts at +-7.850, and the physics lane
-    # fell through the difference for 51 ticks with 400 km underneath. Both ends
-    # are DERIVED from the two slabs the sill joins rather than typed, so
-    # resizing either one takes the sill with it and the gap cannot silently
-    # reopen; the assertion below is what says so out loud.
-    #
-    # It spans the corridor's full 3.00 m rather than the hatch's 2.10, because
-    # the vestibule between the hall wall and the spine bulkhead is 3.00 m wide
-    # and a player who steps sideways in it needs deck under them too.
-    sill_x0 = HUB_RI * 1.42 * 0.5
-    sill_x1 = HUB_RI - 0.25
-    assert sill_x1 > sill_x0, (
-        "the hall deck already reaches the spine deck (%.4f >= %.4f); this sill "
-        "is now an overlap rather than a bridge and wants deleting, not moving"
-        % (sill_x0, sill_x1))
-    for (tag, s) in (("Fwd", 1.0), ("Aft", -1.0)):
-        floors.append(("col_HallSill%s" % tag,
-                       (sill_x1 - sill_x0, CORR_HW * 2.0, DECK_T),
-                       (s * (sill_x0 + sill_x1) * 0.5, 0.0,
-                        DECK_Z - DECK_T * 0.5)))
-    # The gallery is a floor a player stands on and its inner rail is the only
-    # thing between them and a 5 m drop, so both are proxies. Four quadrant
-    # slabs rather than an annulus, because an annulus is not convex. The slab
-    # is CEIL_PROXY_T thick and its TOP is the walking surface, so it is also
-    # the ceiling of the deck below and satisfies R48 in that role too.
-    for k in range(4):
-        a = 90.0 * k + 45.0
-        c = sf.radial("Z", a)
-        d = (MEZZ_RI + HUB_RI) * 0.5
-        floors.append(("col_GalleryFloor%s" % "NESW"[k],
-                       (HUB_RI - MEZZ_RI, HUB_RI * 1.02, CEIL_PROXY_T),
-                       (c[0] * d, c[1] * d, MEZZ_Z - CEIL_PROXY_T * 0.5)))
-        walls.append(("col_GalleryRail%s" % "NESW"[k],
-                      (0.18, MEZZ_RI * 1.34, 1.15),
-                      (c[0] * MEZZ_RI, c[1] * MEZZ_RI, MEZZ_Z + 0.575)))
+    # NOBODY CAN REACH IT TODAY AND IT IS STILL BUILT RIGHT. The deck is 5.10 m
+    # up against a 2.319915 m jump apex at station gravity and the ladder is
+    # rendered geometry with no proxy and no climb verb, so this whole ring is
+    # unreachable; it is also the hall's ceiling, 4.30 m over a jump that
+    # reaches 2.32. Authoring it correctly costs eight boxes and means the day a
+    # ladder becomes climbable nobody has to rediscover GP-400.
+    for (i, tag) in ((0, "A"), (1, "B"), (2, "C")):
+        (ax, bz) = steps[i]
+        if ax > MEZZ_RI:
+            for (side, s) in (("Fwd", 1.0), ("Aft", -1.0)):
+                floors.append(("col_GalleryFloor%s%s" % (tag, side),
+                               (ax - MEZZ_RI, bz * 2.0, CEIL_PROXY_T),
+                               (s * (ax + MEZZ_RI) * 0.5, 0.0,
+                                MEZZ_Z - CEIL_PROXY_T * 0.5)))
+        if bz > MEZZ_RI:
+            for (side, s) in (("Port", 1.0), ("Stbd", -1.0)):
+                floors.append(("col_GalleryFloor%s%s" % (tag, side),
+                               (ax * 2.0, bz - MEZZ_RI, CEIL_PROXY_T),
+                               (0.0, s * (bz + MEZZ_RI) * 0.5,
+                                MEZZ_Z - CEIL_PROXY_T * 0.5)))
+    # The rail is the only thing between a player on the gallery and a 5 m drop,
+    # so it errs OUTWARD: a square ring on the well's own half width touches the
+    # round rail at the four side mid-points and stands up to 1.41 m proud of it
+    # at the corners. Over-blocking a fall guard is the safe direction and
+    # under-blocking one is not, which is why this is four boxes and not a
+    # second staircase.
+    for (axis, side, s) in (("X", "Fwd", 1.0), ("X", "Aft", -1.0),
+                            ("Y", "Port", 1.0), ("Y", "Stbd", -1.0)):
+        ai, oi = (0, 1) if axis == "X" else (1, 0)
+        size, loc = [0.0, 0.0, 1.15], [0.0, 0.0, MEZZ_Z + 0.575]
+        size[ai], loc[ai] = 0.18, s * MEZZ_RI
+        size[oi] = MEZZ_RI * 2.0
+        walls.append(("col_GalleryRail%s" % side, tuple(size), tuple(loc)))
     walls.append(("col_HallCore", (CORE_R * 1.72, CORE_R * 1.72, MEZZ_Z + 0.3),
                   (0.0, 0.0, (MEZZ_Z + 0.3) * 0.5)))
 
