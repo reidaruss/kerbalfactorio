@@ -865,3 +865,60 @@ line on a non-zero build status. It costs one line.
 The general form, and it is the same shape as the empty commit and the stale
 index: **when two steps share a workspace, the second one cannot tell you whether
 the first one happened.** Ask the first step directly.
+
+### A control that fails to go red is a finding, not a nuisance
+
+A lane wrote a gate asserting a rig's humerus-to-forearm ratio, then tried to
+prove it by setting the constant back to the shipped, defective value.
+
+**The build went green.**
+
+The elbow position is **derived** from that ratio, so moving the ratio moves both
+sides of the equality. **The gate structurally could not see the case it was
+written for.** It was only ever guarding a *typed* elbow, and the elbow had
+stopped being typed in the same commit that added the gate.
+
+**And the case it could not see was the exact one it existed to prevent.** Admin
+had predicted in writing that a future lane would set that target to the view
+model's 1.06 by mistake. The equality would have waved it through.
+
+**The gap was found by a control failing, not by a gate passing.** Every green in
+that build was truthful and the check was worthless.
+
+The fix was to give the target its own **plausibility band** (1.15 to 1.40, with
+1.06 deliberately outside it and named in the message), which is a claim about
+the value rather than a relationship between two values that move together.
+
+**Two rules.**
+
+**When a negative control does not go red, do not adjust the control until it
+does. Ask first whether the gate can see that class of change at all.** A control
+that has to be tuned to fail is telling you something about the gate.
+
+**And beware asserting a relationship between quantities that are derived from
+each other.** `assert(a == f(b))` proves nothing when `b` was computed from `a`.
+The identity holds by construction, at every value, including every wrong one.
+
+### Gate the complaint, not a proxy for it
+
+The same pass had to protect a first-person rig from a "correction" that would
+reopen a closed complaint. The obvious gate is the hand's distance from the eye,
+which is the number two previous passes fought over.
+
+**The lane gated the complaint instead**: one glove's share of the visible frame
+height at the shipped 60 degree FOV, which is what the user actually objected to.
+
+| state | visible frame | one glove |
+|---|---|---|
+| shipped | 0.7159 m | **13.4%** |
+| old distance restored | 0.5023 m | **19.1%** |
+| old distance **and** the old section | 0.5023 m | **25.9%** |
+
+A band at one sixth sits between 13.4 and 19.1, **so it refuses the regression
+without needing the old section restored as well.** A distance gate would have
+passed anything that kept the distance while making the hand huge; this one
+cannot.
+
+**Where a complaint can be expressed as a measurement, gate that measurement.**
+A proxy is only as good as the assumption connecting it to the thing anyone
+cares about, and that assumption is rarely written down.
