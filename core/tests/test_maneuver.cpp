@@ -1067,6 +1067,7 @@ struct AutoResult {
   ap::Phase phase = ap::Phase::Idle;
   const char* note = "";
   double worstPointingWhileBurningDeg = 0.0;
+  int stagings = 0;
 };
 
 // Fly a program to completion. `dt` is the driver tick; `limitS` bounds the
@@ -1106,6 +1107,7 @@ static AutoResult flyProgram(const ap::Program& prog, const Vessel& craft,
   out.dvSpentMS = pilot.status.dvSpentTotalMS;
   out.phase = pilot.status.phase;
   out.note = pilot.status.note;
+  out.stagings = pilot.stagings();
   out.orbit = summarize(sim.orbitalState(), sim.env.muM3S2, sim.env.bodyRadiusM);
   return out;
 }
@@ -1788,12 +1790,32 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
   sim.sas = SasMode::Command;
   sim.sasCommand = sim.state.forward;
   const double dt = 0.002;
+  double worstInBurnDeg = 0.0, rateAtIgnitionDegS = -1.0;
   for (int i = 0; i < 200000; ++i) {
     const ap::Command c = pilot.update(sim, dt);
     ap::Autopilot::apply(sim, c);
+    if (pilot.status.burningNow) {
+      if (rateAtIgnitionDegS < 0.0) rateAtIgnitionDegS = pilot.status.rateDegS;
+      if (pilot.status.pointingErrorDeg > worstInBurnDeg)
+        worstInBurnDeg = pilot.status.pointingErrorDeg;
+    }
     sim.step(dt);
     if (pilot.status.burnIndex >= 1) break;      // injection done
   }
+  // WHY 0.5 deg/s IS STILL THE RIGHT GATE FOR A 47 SECOND BURN (PH-166).
+  //
+  // The gate's own comment prices its residue open loop: 0.4994 deg/s over
+  // 47.178 s "is" 23.6 degrees. It is not, because the SAS rate term keeps
+  // running while the engine burns. This is the closed-loop number, and it is
+  // the reason a drift-form gate was measured and then refused: it bought
+  // 0.3548 -> 0.0716 degrees and cost a 1.166 s late ignition and 880 m of
+  // capture orbit. Asserted here rather than described, because the whole
+  // argument rests on it, and it fails by name the day SAS stops damping under
+  // thrust.
+  CHECK_NEAR(rateAtIgnitionDegS, 0.4994, 0.01);      // it really does use the gate
+  CHECK(rateAtIgnitionDegS <= ap::kRateGateDegS);
+  CHECK_NEAR(worstInBurnDeg, 0.3548, 0.02);
+  CHECK(worstInBurnDeg < 0.05 * rateAtIgnitionDegS * p.burns[0].durationS);
   CHECK(pilot.status.burnIndex == 1);
   CHECK_NEAR(pilot.status.dvSpentTotalMS, p.burns[0].deltaVMS, 0.5);
 
@@ -1846,6 +1868,19 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
     sim.state.timeS = tStart;
     sim.state.forward = orbital::normalized(tcm.deltaV);
     sim.state.right = orbital::normalized(orbital::cross(back.r, back.v));
+    // AND THE ANGULAR VELOCITY GOES WITH THE ATTITUDE (PH-165). This block
+    // propagates the vehicle BACKWARDS in time and re-points it, which is a
+    // harness convenience and not a manoeuvre, so whatever it was rotating at
+    // is meaningless on the other side of it, and the old attitude's rate is
+    // not perpendicular to the NEW nose, so leaving it in place is a way for
+    // the fixture to inject a ROLL the vehicle never earned.
+    //
+    // MEASURED, AND IT CHANGES NOTHING TODAY: the injection leaves
+    // w = (4.5e-30, 3.7e-14, 2.3e-30) rad/s, so the run is bit-identical with
+    // and without this line. It is here so that a future change which leaves a
+    // real rate cannot silently start seeding roll through a teleport, which
+    // is precisely the class R71 turned out to be.
+    sim.state.angVelRadS = Vec3{0, 0, 0};
     for (int i = 0; i < 300000; ++i) {
       const ap::Command c = pilot.update(sim, dt);
       ap::Autopilot::apply(sim, c);
@@ -1924,12 +1959,23 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
   moonSim.state.right = orbital::normalized(orbital::cross(rel.r, rel.v));
   moonSim.sas = SasMode::Command;
   moonSim.sasCommand = moonSim.state.forward;
+  double worstRollDegS = 0.0;
   for (int i = 0; i < 400000; ++i) {
     const ap::Command c = pilot.update(moonSim, dt);
     ap::Autopilot::apply(moonSim, c);
     moonSim.step(dt);
+    {
+      const Vec3 fN = orbital::normalized(moonSim.state.forward);
+      const double roll = std::fabs(moonSim.state.angVelRadS.dot(fN)) * 180.0 / orbital::kPi;
+      if (roll > worstRollDegS) worstRollDegS = roll;
+    }
     if (!pilot.running()) break;
   }
+  // AND IT DOES NOT SPIN ON ITS OWN AXIS WHILE DOING IT (R71, PH-165). Roll is
+  // the channel the SAS rate term used to divide by the wrong inertia, and it
+  // is invisible to every other assertion in this test because roll does not
+  // move the thrust axis. Measured here: 1.06e-28 deg/s.
+  CHECK(worstRollDegS < 1e-6);
 
   CHECK(pilot.status.phase == ap::Phase::Done);
 
@@ -1971,4 +2017,182 @@ TEST(the_autopilot_flies_to_the_moon_and_ends_in_orbit_around_it) {
   // not the 1.2e7 m it would be if the frame had not changed.
   CHECK(o.semiMajorAxisM < moon.soiRadiusM);
   CHECK(o.semiMajorAxisM > orbital::kCinderRadiusM);
+}
+
+// =============================================================================
+// A PROGRAM THAT CAN NO LONGER MAKE PROGRESS SAYS SO (PH-167).
+//
+// R71 and the gameplay lane's stuck burn arrived from opposite directions and
+// are the same bug: THE EXECUTOR HOLDS ON A CONDITION, AND HOLDING IS ONLY
+// CORRECT WHILE THE CONDITION CAN STILL ARRIVE.
+//
+//   * R71: a vehicle spinning about its own axis is perfectly AIMED and never
+//     still, so the rate gate refuses for ever. Measured through the bridge as
+//     40000 s of sim in Orient reporting "still swinging through the target".
+//   * the stuck burn: a vehicle commanded to burn that produces no thrust
+//     never spends any delta-v, and a burn cut on MEASURED delta-v is then
+//     waiting on a number that cannot move. Measured from the client as 900
+//     polls at full throttle, 0.0000 m/s spent, every status field healthy.
+//
+// Neither was silent because a check was missing. Both were silent because a
+// HOLD looks exactly like a hold that is about to end. In a player's hands
+// that is a hang, and a hang is worse than a refusal, because a refusal can be
+// printed. So both now abort with a sentence.
+//
+// THE ATTITUDE HALF IS A PROGRESS TEST AND NOT A DEADLINE, deliberately: a
+// large, low-authority vehicle that is slewing correctly but slowly is a
+// vehicle a player can build, and a deadline would kill it.
+// =============================================================================
+
+// A vehicle with an engine, tanks, and NO ATTITUDE CONTROL WHATSOEVER: no pod,
+// so no reaction wheel; no monopropellant, so no RCS; and the gimbal is worth
+// nothing while the throttle is shut, which is exactly when pointing happens.
+static Vessel rudderless() {
+  Vessel v;
+  PartHandle tank = v.addRoot(parts::TankLiquidSmall);
+  PartHandle eng = v.attach(tank, parts::EngineVacuumSmall, Attach::StackBottom);
+  Stage s0; s0.activate.push_back(eng);
+  v.stages.push_back(s0);
+  v.layout();
+  fireStage(v);
+  v.layout();
+  return v;
+}
+
+TEST(a_vehicle_that_cannot_point_aborts_by_name_instead_of_holding_for_ever) {
+  // Lowering an orbit, because the first burn of a LOWERING is retrograde and
+  // the vehicle starts prograde: 180 degrees, the hardest thing to ask for and
+  // the case PH-151 already showed is the normal one rather than the exotic.
+  orbital::StateVector start;
+  start.r = Vec3{900.0e3, 0.0, 0.0};
+  start.v = Vec3{0.0, 0.0, std::sqrt(kMu / 900.0e3)};
+
+  const Vessel dead = rudderless();
+  // ASSERT THE FIXTURE IN THE UNITS OF THE THING UNDER TEST. If this vehicle
+  // could turn, the test would pass for the wrong reason.
+  {
+    Vessel v = dead;
+    v.layout();
+    const MassProperties mp = massProperties(v);
+    CHECK(controlAuthority(v, mp, 0.0, 0.0).totalNm() == 0.0);
+    // and it is not refused for some OTHER reason: it has fuel and it can pay.
+    CHECK(remainingDeltaVVacuumMS(v) > 500.0);
+  }
+
+  const ap::Program p = ap::holdOrbit(start, 0.0, kMu, 700.0e3, dead);
+  CHECK(p.valid);                          // the PLAN is fine; the vehicle is not
+  const AutoResult r = flyProgram(p, dead, start, 0.02, 600.0);
+
+  // MEASURED: it gives up 60 s (`kNoProgressS`) after the first tick on which
+  // the gate refused, having improved its distance from that gate by nothing
+  // at all, and it says which gate.
+  CHECK(r.phase == ap::Phase::Aborted);
+  CHECK(std::string(r.note) == "aborted: the vehicle will not point at the burn");
+  CHECK(r.dvSpentMS == 0.0);
+  CHECK(r.burnTicks == 0.0);
+  // It waited, rather than aborting the instant the gate refused: a burn that
+  // is late is still a burn, and PH-150's whole refusal design says so.
+  CHECK(r.flownS > p.burns[0].ignitionS() + ap::kNoProgressS);
+  CHECK(r.flownS < p.burns[0].ignitionS() + ap::kNoProgressS + 2.0);
+
+  // THE POSITIVE CONTROL, WHICH IS WHAT MAKES THE REFUSAL MEAN ANYTHING: the
+  // identical program, the identical 180 degree slew, on a vehicle that has a
+  // reaction wheel. Same loop, one difference.
+  const Vessel alive = upperStageOnly();
+  const ap::Program q = ap::holdOrbit(start, 0.0, kMu, 700.0e3, alive);
+  const AutoResult ok = flyProgram(q, alive, start, 0.02, 1400.0);
+  CHECK(ok.phase == ap::Phase::Done);
+  CHECK_NEAR(ok.orbit.semiMajorAxisM, 700.0e3, 400.0);
+}
+
+// -----------------------------------------------------------------------------
+// AND THE OTHER HALF: THE EXECUTOR CAN STAGE.
+//
+// The gap the gameplay lane found is not the cut condition, it is a MISSING
+// VERB. Every program is priced against `remainingDeltaVVacuumMS`, which sums
+// from `nextStageIndex - 1` to the end of the stage list, so the PLANNER has
+// always assumed a staging the EXECUTOR could not perform. A rocket that has
+// not lit anything yet is affordable on paper and produces no thrust in fact.
+// -----------------------------------------------------------------------------
+TEST(the_autopilot_stages_a_vehicle_that_has_not_lit_anything_yet) {
+  const orbital::StateVector start = circular80km();
+  Vessel cold = makeAscender().v;          // NOTHING FIRED: no engine is live
+  cold.layout();
+
+  // THE FIXTURE, ASSERTED: affordable on paper, and dead in fact. This is the
+  // exact pair of facts that produced 900 polls at 0.0000 m/s.
+  CHECK(remainingDeltaVVacuumMS(cold) > 1000.0);
+  CHECK(cold.nextStageIndex == 0);
+  {
+    const PropulsionOutput pr = evaluatePropulsion(cold, 1.0, 0.0);
+    CHECK(pr.thrustN == 0.0);
+  }
+
+  const ap::Program p = ap::holdOrbit(start, 0.0, kMu, 800.0e3, cold);
+  CHECK(p.valid);
+  const AutoResult r = flyProgram(p, cold, start, 0.02, 2000.0);
+
+  // It pressed the button a player would have pressed, once, and then flew the
+  // orbit it promised.
+  CHECK(r.stagings >= 1);
+  CHECK(r.phase == ap::Phase::Done);
+  CHECK(r.burnTicks > 10.0);
+  CHECK_NEAR(r.orbit.semiMajorAxisM, 800.0e3, 3000.0);
+}
+
+// -----------------------------------------------------------------------------
+// AND WHEN THERE IS NOTHING LEFT TO STAGE IT ABORTS RATHER THAN WAITING.
+//
+// This is the branch the staging verb falls through to, and it is provoked by
+// FAULT INJECTION rather than by a contrived vessel, because the honest way to
+// reach it is for a burn to lose its engine after the ignition-time delta-v
+// check has already passed. The injection is stated in the loop below and is
+// the only thing in this file that reaches into a running craft.
+// -----------------------------------------------------------------------------
+TEST(a_burn_that_loses_its_engine_aborts_rather_than_waiting_on_a_number) {
+  const orbital::StateVector start = circular80km();
+  const Vessel craft = upperStageOnly();
+  const ap::Program p = ap::holdOrbit(start, 0.0, kMu, 800.0e3, craft);
+  CHECK(p.valid);
+
+  FlightSim sim;
+  sim.craft = craft;
+  sim.env = forgeEnv();
+  sim.state.posM = start.r;
+  sim.state.velMS = start.v;
+  sim.state.forward = orbital::normalized(start.v);
+  sim.state.right = orbital::normalized(orbital::cross(start.r, start.v));
+  sim.sas = SasMode::Command;
+  sim.sasCommand = sim.state.forward;
+
+  ap::Autopilot pilot;
+  pilot.arm(p);
+  bool emptied = false;
+  double dvWhenEmptied = 0.0;
+  const double dt = 0.02;
+  for (int i = 0; i < 40000; ++i) {
+    const ap::Command c = pilot.update(sim, dt);
+    ap::Autopilot::apply(sim, c);
+    if (!emptied && pilot.status.dvSpentThisBurnMS > 20.0) {
+      // THE FAULT: every drop of propellant vanishes, mid-burn, after the
+      // ignition-time affordability check has already said yes.
+      for (auto& part : sim.craft.parts) part.propellantKg = 0.0;
+      sim.craft.layout();
+      emptied = true;
+      dvWhenEmptied = pilot.status.dvSpentThisBurnMS;
+    }
+    sim.step(dt);
+    if (!pilot.running()) break;
+  }
+
+  CHECK(emptied);                                    // the fault really landed
+  CHECK(dvWhenEmptied > 20.0);
+  CHECK(dvWhenEmptied < p.burns[0].deltaVMS);        // and it landed MID-burn
+  CHECK(pilot.status.phase == ap::Phase::Aborted);
+  CHECK(std::string(pilot.status.note)
+        == "aborted: the engine is commanded on and produces no thrust");
+  // It stopped where the fuel stopped rather than pretending to finish.
+  CHECK(pilot.status.dvSpentTotalMS < p.burns[0].deltaVMS);
+  CHECK(pilot.status.dvSpentTotalMS > 20.0);
+  CHECK(pilot.stagings() == 0);                      // there was nothing to stage
 }

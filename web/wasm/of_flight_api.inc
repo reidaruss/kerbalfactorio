@@ -199,19 +199,41 @@ OF_API int of_fl_on_rails_eligible(int f) {
 
 // f64 scratch, EXACTLY 17:
 //   [posX,Y,Z, velX,Y,Z, fwdX,Y,Z, rightX,Y,Z, angVelX,Y,Z, timeS, throttle]
+// WORD 17 IS THE SAS MODE, AND IT IS ONE WORD BECAUSE ONE WORD WAS ASKED FOR
+// (PH-168).
+//
+// Nothing published /core's sas mode, so a client's SAS chip could only ever
+// show the client's own mirror of what it last requested. `of_ap_cancel`
+// leaves the vehicle in `SasMode::Command`, so after a cancel the chip and the
+// vehicle disagreed and nothing could tell which was right. The gameplay lane
+// refused to fix that by re-asserting their own mode, which would have changed
+// what the vehicle DOES in order to correct what a chip SAYS, and that refusal
+// is why this word exists.
+//
+// They were offered tank delta-v, arrival time and a reason code alongside it
+// and turned all three down. A field nobody reads is how `ok` came to be
+// published and ignored until it drew a refusal as a confident CANNOT REACH,
+// so the row grows by exactly what has a reader.
+//
+// APPENDED, so words 0..16 mean what every shipped reader thinks. See
+// `FlightAbi.ts`: its stride check is now a MINIMUM rather than an equality,
+// because an exact-stride check turns an additive word into a silent total
+// loss of position, velocity and attitude (R39's shape, on the row that
+// carries the vehicle's state).
 OF_API int of_fl_state(int f) {
-  resetF64(17);
+  resetF64(18);
   fl::FlightSim* s = g_flights.get(f);
   if (!s) return 0;
   const fl::FlightState& st = s->state;
-  const double a[17] = {st.posM.x, st.posM.y, st.posM.z,
+  const double a[18] = {st.posM.x, st.posM.y, st.posM.z,
                         st.velMS.x, st.velMS.y, st.velMS.z,
                         st.forward.x, st.forward.y, st.forward.z,
                         st.right.x, st.right.y, st.right.z,
                         st.angVelRadS.x, st.angVelRadS.y, st.angVelRadS.z,
-                        st.timeS, st.throttle};
+                        st.timeS, st.throttle,
+                        static_cast<double>(s->sas)};
   for (double x : a) g_f64.push_back(x);
-  return 17;
+  return 18;
 }
 
 // f64 scratch, EXACTLY 12:

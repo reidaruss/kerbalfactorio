@@ -493,12 +493,63 @@ inline SasOutput stabilityAssist(vessel::Vessel& v, const vessel::MassProperties
     axis = Vec3{0, 0, 0};
   }
 
-  const double I = std::fmax(1.0, std::fmax(mp.IxxKgM2, mp.IzzKgM2));
+  // EACH CHANNEL IS PAID FOR WITH THE INERTIA THE INTEGRATOR WILL DIVIDE IT BY,
+  // AND GETTING THAT WRONG MADE SAS A ROLL OSCILLATOR AT THE CLIENT'S OWN TICK
+  // (PH-165).
+  //
+  // This is a torque, and §6 below splits it into a roll component divided by
+  // Iyy and a perpendicular component divided by max(Ixx, Izz). It used to be
+  // built with the TRANSVERSE inertia throughout, so the roll channel's closed
+  // loop was not `omega' = -kd omega` but `omega' = -kd (Itrans/Iroll) omega`,
+  // and an explicit step of that diverges once `kd (Itrans/Iroll) dt > 2`.
+  //
+  // MEASURED, and the prediction and the measurement agree to the third
+  // decimal. A rocket is long and thin, so Itrans/Iroll is large by
+  // construction: the shipped reference Ascender is 46.26 with its fins on and
+  // 83.71 with the booster nearly dry. At the browser's fixed tick of 1/60 s
+  // that makes the threshold ratio 40.0, and one step then turns a roll rate
+  // of +1e-3 rad/s into -1.3132e-3, which is larger than the input and points
+  // the other way.
+  //
+  // THIS IS NOT A CORNER CASE AND IT NEEDED NO SEED. Ninety seconds of an
+  // ORDINARY ASCENT, the shipped rocket, throttle open, a fifteen degree
+  // pitch-over, nothing injected anywhere:
+  //     dt 0.002    peak roll 9.9e-17 deg/s
+  //     dt 1/60     peak roll 41.98   deg/s
+  // The four fins' aerodynamic forces do not cancel to the last bit, and the
+  // unstable mode takes that to 42 degrees per second.
+  //
+  // WHY NOTHING CAUGHT IT, and it took three tries to find because each layer
+  // hid it from the next. Roll does not move the thrust axis, so the ascent
+  // acceptance (apoapsis, periapsis, staging time, max q, angle of attack,
+  // pointing error) is blind to it by construction, and so is
+  // `the_ascent_does_not_depend_on_the_step_size`, which flies 0.02 and 0.01,
+  // one either side of the 0.0144 s threshold. The CLIENT then hid the
+  // symptom: `FlightSas.levelWings` rewrites `right` every tick to keep the
+  // navball level, so the craft LOOKS level while `angVelRadS` keeps its roll.
+  // Its own comment records the evidence and misattributes it, in these words:
+  // "a vessel that picks up half a degree per second on the way up arrives in
+  // orbit lying on its side ... Measured on the first orbit captured: ROL -93
+  // degrees with no roll input given at any point." That was this bug.
+  //
+  // And what finally reported it was the autopilot, whose ignition gate reads
+  // the WHOLE angular velocity: a vehicle perfectly aimed, apparently level,
+  // and turning at 42 deg/s can never satisfy a 0.5 deg/s gate, so the burn
+  // never happens and the program holds for ever (R71).
+  //
+  // The P term needs no split: `axis` is a normalized cross product with `f`,
+  // so it is perpendicular to `f` by construction and is purely transverse.
+  const double Itrans = std::fmax(1.0, std::fmax(mp.IxxKgM2, mp.IzzKgM2));
+  const double Iroll = std::fmax(1.0, mp.IyyKgM2);
   Vec3 demand{0, 0, 0};
-  if (out.errorRad > tune.deadbandRad) demand = axis * (tune.kp * out.errorRad * I);
+  if (out.errorRad > tune.deadbandRad)
+    demand = axis * (tune.kp * out.errorRad * Itrans);
   // Rate term opposes the whole angular velocity, including roll, so SAS also
-  // stops a spin rather than only pointing the nose.
-  demand = demand - s.angVelRadS * (tune.kd * I);
+  // stops a spin rather than only pointing the nose. Both channels now decay at
+  // `kd` per second, which is what `kd` has always claimed to be.
+  const Vec3 wRoll = f * s.angVelRadS.dot(f);
+  const Vec3 wPerp = s.angVelRadS - wRoll;
+  demand = demand - (wPerp * (tune.kd * Itrans) + wRoll * (tune.kd * Iroll));
 
   out.demandedNm = demand.length();
   const double limit = ca.totalNm();

@@ -47,7 +47,13 @@ export const BODY_FACTS_WORDS = 4;
  *  by `_of_vs_transforms` and `_of_fl_transforms`, which write the same row. */
 export const TRANSFORM_WORDS = 9;
 export const PART_ROW_WORDS = 5;
-export const FLIGHT_STATE_WORDS = 17;
+/** 18 since PH-168: word 17 is /core's OWN sas mode, appended, so 0..16 are
+ *  unmoved. `FlightAbi.flightState` treats this as a MINIMUM and not an
+ *  equality, so a wasm built before the word existed still yields a correct
+ *  state row with `sasMode` reported as -1 rather than yielding nothing. */
+export const FLIGHT_STATE_WORDS = 18;
+/** What word 17 reads on a build that does not publish it. */
+export const SAS_MODE_UNKNOWN = -1;
 export const TELEMETRY_WORDS = 12;
 export const ORBIT_WORDS = 6;
 export const ORBIT_META_WORDS = 18;

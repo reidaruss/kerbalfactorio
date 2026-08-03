@@ -701,6 +701,12 @@ struct AscentResult {
   double apoAltM = 0.0, periAltM = 0.0, eccentricity = 0.0, periodS = 0.0;
   double remainingDeltaVMS = 0.0, propellantLeftKg = 0.0, finalMassKg = 0.0;
   double maxQPa = 0.0, maxQAltM = 0.0, maxAoADeg = 0.0, maxSasErrDeg = 0.0;
+  // R71 / PH-165. THRUST ACTS ALONG `forward`, SO ROLLING ABOUT `forward`
+  // MOVES NOTHING THIS STRUCT OTHERWISE RECORDS. Every field above is a
+  // property of the trajectory or of where the nose is pointing, and roll
+  // changes neither, which is why an ascent that spun up to 41.98 deg/s at
+  // the browser's own tick passed this whole file for months.
+  double maxRollDegS = 0.0;
   double maxAoAUnderLoadDeg = 0.0, maxSasErrUnderLoadDeg = 0.0;
   double stageTimeS = -1.0, cutoffTimeS = -1.0, circStartS = -1.0, totalTimeS = 0.0;
   double speedAtCutoffMS = 0.0;
@@ -842,6 +848,11 @@ static AscentResult flyToOrbit(double targetApoM, double dt) {
       maxSasErrUnderLoadDeg =
           std::fmax(maxSasErrUnderLoadDeg, sim.telemetry.sasErrorRad * kDeg);
     r.maxSasErrDeg = std::fmax(r.maxSasErrDeg, sim.telemetry.sasErrorRad * kDeg);
+    {
+      const Vec3 fN = normalized(sim.state.forward);
+      r.maxRollDegS = std::fmax(r.maxRollDegS,
+                                std::fabs(sim.state.angVelRadS.dot(fN)) * kDeg);
+    }
 
     if (!staged) {
       double lf = 0.0;
@@ -924,6 +935,13 @@ TEST(a_reference_rocket_flies_from_the_pad_to_a_stable_orbit) {
   // costs nothing.
   CHECK(r.maxSasErrUnderLoadDeg < 5.0);
   CHECK(r.maxSasErrDeg < 35.0);
+  // AND IT DOES NOT SPIN ON ITS OWN AXIS ON THE WAY UP (R71, PH-165). This is
+  // the first assertion in this file that roll can fail, and the reason it is
+  // worth having is that NOTHING ELSE HERE CAN SEE IT: thrust acts along the
+  // nose, so roll costs no altitude, no apoapsis, no pointing error and no
+  // angle of attack. Measured against the old control law at the browser's
+  // 1/60 tick, this same ascent peaked at 41.98 deg/s.
+  CHECK(r.maxRollDegS < 1e-6);
   // Max q is in the low tens of kPa, in the altitude band where it belongs.
   CHECK(r.maxQPa > 5000.0 && r.maxQPa < 60000.0);
   CHECK(r.maxQAltM > 3000.0 && r.maxQAltM < 20000.0);
@@ -952,7 +970,31 @@ TEST(a_reference_rocket_flies_from_the_pad_to_a_stable_orbit) {
 TEST(the_ascent_does_not_depend_on_the_step_size) {
   const AscentResult coarse = flyToOrbit(80000.0, 0.02);
   const AscentResult fine = flyToOrbit(80000.0, 0.01);
-  CHECK(coarse.reachedOrbit && fine.reachedOrbit);
+  const AscentResult browser = flyToOrbit(80000.0, 1.0 / 60.0);
+  CHECK(coarse.reachedOrbit && fine.reachedOrbit && browser.reachedOrbit);
+
+  // R71, PH-165, AND THIS TEST IS EXACTLY WHERE IT SHOULD HAVE BEEN CAUGHT.
+  //
+  // It already flew 0.02 and 0.01, one either side of the 0.0144 s step at
+  // which the old SAS rate term went unstable in ROLL, and it compared only
+  // apoapsis, periapsis, staging time and reserve. Roll moves none of those,
+  // because thrust acts along the nose. So the one test in the project whose
+  // entire purpose is step-independence was blind to the one quantity that was
+  // not step-independent.
+  //
+  // MEASURED under the old law, same three flights:
+  //   dt 0.01     peak roll 9.9e-17 deg/s
+  //   dt 0.0167   peak roll 41.98  deg/s      <- the browser's own tick
+  //   dt 0.02     peak roll 41.98  deg/s
+  // and it is now 2.1e-15 at all three. A third step is flown here on purpose:
+  // 1/60 is what `Loop.ts` uses and neither of the other two is it.
+  CHECK(coarse.maxRollDegS < 1e-6);
+  CHECK(fine.maxRollDegS < 1e-6);
+  CHECK(browser.maxRollDegS < 1e-6);
+  // and the SHAPE of the claim, not just the magnitude: the three agree with
+  // each other, which is what step-independence means and what a bare bound on
+  // each one separately would not say.
+  CHECK(std::fabs(coarse.maxRollDegS - browser.maxRollDegS) < 1e-9);
   // Staging fires on a propellant quantity, so it lands on the same second
   // whatever the step: 4300 kg at 61.8010 kg/s.
   CHECK_NEAR(coarse.stageTimeS, fine.stageTimeS, 0.05);
@@ -1100,4 +1142,111 @@ TEST(sas_commanded_exactly_backwards_turns_the_vehicle_round) {
                                             Vec3{0, 1, 0}, s.forward, ca, tune, 0.02);
   CHECK_NEAR(aligned.errorRad, 0.0, 1e-12);
   CHECK(aligned.torqueNm.length() == 0.0);
+}
+
+// =============================================================================
+// R71, PH-165: SAS WAS A ROLL OSCILLATOR AT THE BROWSER'S OWN TICK RATE, AND
+// NOTHING IN THIS FILE COULD SEE IT.
+//
+// The rate term is a TORQUE. `FlightSim::step` splits a torque into a roll
+// component divided by Iyy and a perpendicular component divided by
+// max(Ixx, Izz), and the rate term used to be built with the transverse
+// inertia throughout. So the roll channel's closed loop was
+// `omega' = -kd (Itrans/Iroll) omega` instead of `omega' = -kd omega`, and an
+// explicit step of that diverges once `kd (Itrans/Iroll) dt > 2`.
+//
+// A ROCKET IS LONG AND THIN, SO Itrans/Iroll IS LARGE BY CONSTRUCTION. At the
+// browser's fixed tick of 1/60 s and kd = 3 the threshold ratio is 40.0, and
+// the shipped reference Ascender is 47.37 on the pad. This is not an exotic
+// vehicle; it is THE vehicle.
+//
+// WHY EVERY EXISTING TEST MISSED IT, and the reason generalises: thrust acts
+// along `forward`, and rolling about `forward` does not move `forward`. So the
+// whole ascent acceptance (apoapsis, periapsis, staging time, max q, angle of
+// attack, SAS pointing error) is blind to it BY CONSTRUCTION, including
+// `the_ascent_does_not_depend_on_the_step_size`, which flies 0.02 and 0.01,
+// one either side of the threshold, and compares only the trajectory. Both now
+// assert `maxRollDegS`, which is where this really belongs; this test is the
+// one-step statement of the mechanism.
+//
+// IT NEEDED NO SEED IN FLIGHT: the reference rocket's ascent reaches 41.98
+// deg/s on its own at 1/60 and 9.9e-17 at 0.002. The seeded form below is here
+// because it isolates the CHANNEL and the RATE, which an ascent cannot.
+// =============================================================================
+TEST(sas_damps_roll_instead_of_driving_it_at_the_browsers_own_tick) {
+  const double dt = 1.0 / 60.0;               // Loop.ts FIXED_DT
+  Ascender a = makeAscender(true);
+  a.v.layout();
+  const MassProperties mp = massProperties(a.v);
+  const double Itrans = std::fmax(1.0, std::fmax(mp.IxxKgM2, mp.IzzKgM2));
+  const double Iroll = std::fmax(1.0, mp.IyyKgM2);
+  const SasTuning tune;
+
+  // THE FIXTURE, ASSERTED IN THE UNITS OF THE THING UNDER TEST. A vehicle with
+  // a small inertia ratio cannot exhibit this defect at all, so a test built on
+  // one would pass for the wrong reason. This one is in the divergent regime
+  // for the OLD control law, and says so as a number.
+  CHECK_NEAR(Itrans / Iroll, 46.2644, 0.01);
+  CHECK(tune.kd * (Itrans / Iroll) * dt > 2.0);       // the old law diverges here
+  CHECK_NEAR(2.0 / (tune.kd * (Itrans / Iroll)), 0.0144099, 1e-6);  // its threshold dt
+
+  auto flySeeded = [&](double rollSeedRadS, double transverseSeedRadS) {
+    FlightSim sim;
+    sim.craft = a.v;
+    sim.env = forgeEnv();
+    sim.state.posM = Vec3{680.0e3, 0.0, 0.0};
+    sim.state.velMS = Vec3{0.0, 0.0, 2278.931638};
+    sim.state.forward = Vec3{0.0, 0.0, 1.0};
+    sim.state.right = Vec3{1.0, 0.0, 0.0};
+    sim.sas = SasMode::Command;
+    sim.sasCommand = sim.state.forward;       // already pointed: error is zero
+    sim.state.angVelRadS = sim.state.forward * rollSeedRadS
+                         + sim.state.right * transverseSeedRadS;
+    for (int i = 0; i < 3600; ++i) sim.step(dt);   // 60 s
+    const Vec3 f = normalized(sim.state.forward);
+    return std::fabs(sim.state.angVelRadS.dot(f)) * kDeg;
+  };
+
+  // THE ASSERTION. Seeded with 1e-6 rad/s of roll, which is 5.7e-5 deg/s, and
+  // flown for 60 s at the browser's tick.
+  //
+  // MEASURED, BOTH SIDES, SAME BINARY, ONE HEADER HUNK APART:
+  //   this control law   9.68497804e-12 deg/s   (decayed by 5.9e6)
+  //   the old one        1.06062164     deg/s   (GREW by 1.9e4)
+  //
+  // The number `autopilot::kRateGateDegS` reads is the WHOLE angular velocity,
+  // so 1.06 deg/s is twice that 0.5 deg/s gate: a vehicle perfectly aimed and
+  // quietly spinning about its own axis could never light its engine, which is
+  // exactly what R71 looked like from the client.
+  const double rolled = flySeeded(1e-6, 0.0);
+  CHECK(rolled < 1e-9);
+
+  // THE CONTROL. The transverse channel was always correct and must not have
+  // moved: same seed, same 60 s, still damped, and it reads exactly 0 under
+  // both laws, which is what makes the roll number above attributable.
+  const double transverse = flySeeded(0.0, 1e-6);
+  CHECK(transverse < 1e-9);
+
+  // AND HERE IS THE WHOLE DEFECT IN ONE STEP, WHICH IS WHY IT IS THE ASSERTION
+  // WORTH KEEPING. A pure roll of 1e-3 rad/s, one tick, no other motion:
+  //   this control law   +9.5000e-4    = 1e-3 * (1 - kd*dt)
+  //   the old one        -1.3132e-3    = 1e-3 * (1 - kd*(Itrans/Iroll)*dt)
+  // The old value is LARGER THAN THE INPUT AND POINTS THE OTHER WAY, which is
+  // the definition of the instability and needs no 60 second flight to see.
+  // Both channels now decay at `kd`, which is what `kd` has always claimed.
+  {
+    FlightSim sim;
+    sim.craft = a.v;
+    sim.env = forgeEnv();
+    sim.state.posM = Vec3{680.0e3, 0.0, 0.0};
+    sim.state.velMS = Vec3{0.0, 0.0, 2278.931638};
+    sim.state.forward = Vec3{0.0, 0.0, 1.0};
+    sim.state.right = Vec3{1.0, 0.0, 0.0};
+    sim.sas = SasMode::Command;
+    sim.sasCommand = sim.state.forward;
+    sim.state.angVelRadS = sim.state.forward * 1e-3;
+    sim.step(dt);
+    const double after = sim.state.angVelRadS.dot(normalized(sim.state.forward));
+    CHECK_NEAR(after, 1e-3 * (1.0 - tune.kd * dt), 1e-12);
+  }
 }

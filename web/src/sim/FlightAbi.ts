@@ -10,7 +10,7 @@
 import { scratchF64, scratchI32 } from './wasm/heap.js';
 import type { OfCoreModule } from './wasm/heap.js';
 import {
-  vesselAbi, FLIGHT_STATE_WORDS, TELEMETRY_WORDS, ORBIT_WORDS,
+  vesselAbi, FLIGHT_STATE_WORDS, SAS_MODE_UNKNOWN, TELEMETRY_WORDS, ORBIT_WORDS,
   PART_ROW_WORDS, TRANSFORM_WORDS,
 } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
@@ -22,6 +22,10 @@ export type Vec3 = [number, number, number];
 export interface FlightStateRow {
   pos: Vec3; vel: Vec3; forward: Vec3; right: Vec3; angVel: Vec3;
   timeS: number; throttle: number;
+  /** /core's OWN sas mode, indexes `SAS_NAMES`. `SAS_MODE_UNKNOWN` (-1) means
+   *  the wasm predates the word; it is NOT a mode and must not be shown as
+   *  OFF, which is a real mode and a different claim. */
+  sasMode: number;
 }
 
 /** flight.h `FlightTelemetry`. `altitudeM` is above the 600 km DATUM, not above
@@ -70,16 +74,33 @@ function v3(a: Float64Array, i: number): Vec3 {
   return [a[i] ?? 0, a[i + 1] ?? 0, a[i + 2] ?? 0];
 }
 
+/** THE STRIDE CHECK IS A MINIMUM AND NOT AN EQUALITY, AND THAT IS DELIBERATE
+ *  (PH-168). `!== FLIGHT_STATE_WORDS` was here, and it means that appending a
+ *  single word to `of_fl_state` without bumping the constant in the same commit
+ *  returns THE ZERO ROW: no position, no velocity, no attitude, silently, for
+ *  every consumer. That is R39's shape (`of_vs_part_info`'s exact stride would
+ *  have emptied the whole parts catalogue) landing on the row that carries the
+ *  vehicle itself, and it is a trap in a repository where the wasm binary and
+ *  the TypeScript are committed by different lanes at different times.
+ *
+ *  The row is a PREFIX CONTRACT: words 0..16 have one meaning for ever, and
+ *  anything past them is read defensively. So an older wasm yields a correct
+ *  state row and `sasMode` -1, which a screen can render as "unknown" instead
+ *  of rendering a vehicle at the origin. */
+const FLIGHT_STATE_WORDS_MIN = 17;
+
 export function flightState(M: OfCoreModule, f: number): FlightStateRow {
   const n = vesselAbi(M)._of_fl_state(f);
-  if (n !== FLIGHT_STATE_WORDS) {
+  if (n < FLIGHT_STATE_WORDS_MIN) {
     return { pos: ZERO, vel: ZERO, forward: [0, 1, 0], right: [1, 0, 0],
-             angVel: ZERO, timeS: 0, throttle: 0 };
+             angVel: ZERO, timeS: 0, throttle: 0, sasMode: SAS_MODE_UNKNOWN };
   }
   const a = scratchF64(M, n);
   return {
     pos: v3(a, 0), vel: v3(a, 3), forward: v3(a, 6), right: v3(a, 9),
     angVel: v3(a, 12), timeS: a[15] ?? 0, throttle: a[16] ?? 0,
+    sasMode: n >= FLIGHT_STATE_WORDS ? (a[17] ?? SAS_MODE_UNKNOWN)
+                                     : SAS_MODE_UNKNOWN,
   };
 }
 

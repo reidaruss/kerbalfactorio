@@ -176,6 +176,56 @@ const double kPointingGateDeg = 2.0;
 // deadband, so this is a bound rather than an estimate.
 const double kRateGateDegS = 0.5;
 
+// AND IT WAS PROPOSED THAT THIS GATE BE RE-EXPRESSED AS A DRIFT, AND MEASURED,
+// AND REFUSED (PH-166). The refusal is recorded because the argument for the
+// change is a good one and only a measurement defeats it.
+//
+// The argument: the sentence above justifies 0.5 deg/s entirely by "over a 5 s
+// burn that is 2.5 degrees", so the quantity actually being bounded is the
+// ATTITUDE the residual rate adds while the engine is lit, and a bare rate is
+// a proxy for it calibrated at exactly one burn length. This executor flies
+// 5.5 s (a hold-orbit circularisation), 12.7 s (a lunar capture) and 47.2 s
+// (a lunar injection), so on paper the proxy is nine times too loose at the
+// long end: 0.4994 deg/s should add 23.6 degrees over the injection.
+//
+// IT ADDS 0.3548 DEGREES. The premise "if nothing damped it" is false, and it
+// is false by construction rather than by luck: the SAS rate term keeps
+// running while the engine burns, so the drift is a CLOSED-LOOP quantity and
+// the open-loop bound overstates it by a factor of 66.
+//
+// The two flights side by side, same mission, only the gate changed:
+//   gate 0.5 deg/s     rate at ignition 0.4994   worst attitude lit 0.3548 deg
+//   gate 2.5/47.178    rate at ignition 0.0529   worst attitude lit 0.0716 deg
+// and the tightening COSTS: waiting for a rate 9.4x lower is 2.24 e-foldings
+// at kd = 3, so ignition goes 1.166 s late, and a late burn is exactly what
+// PH-38's lead exists to prevent. Measured, that moved the flown capture orbit
+// from 270141.1 m to 271020.9 m, 880 m, and moved the mid-course correction
+// from 33.330 to 35.215 m/s. It bought 0.28 degrees of attitude that no
+// assertion in this project was close to failing on.
+//
+// So the gate stays a bare rate, and what gets written down instead of a new
+// constant is the DEPENDENCY that makes it adequate: 0.5 deg/s is safe at any
+// burn length only because stability assist stays active under thrust. If a
+// future change ever gates SAS on the throttle, this gate becomes the
+// open-loop one its own comment describes and 23.6 degrees becomes real.
+
+// HOW LONG THE EXECUTOR WILL WAIT FOR A CONDITION THAT MAY NEVER ARRIVE.
+//
+// R71, and the gameplay lane's stuck burn, are ONE BUG WITH TWO FACES: the
+// executor holds on a condition, and holding is only correct while the
+// condition can still arrive. When it cannot, holding is a hang, and a hang in
+// a player's hands is worse than a refusal because nothing on screen says so.
+//
+// This is deliberately a PROGRESS test and not a deadline. A deadline would
+// abort a big, low-authority vehicle that is slewing correctly but slowly,
+// which is a real vehicle a player can build. Progress cannot: a converging
+// controller keeps improving its own worst-case distance from the gate, and a
+// limit cycle, a dead reaction wheel or an empty monopropellant tank does not.
+// 60 s is `kOrientLeadS`: the burn was given that long to point before it was
+// due, and a further lead's worth of overdue with NO improvement at all is not
+// a slow vehicle, it is a stuck one.
+const double kNoProgressS = 60.0;
+
 // How early to start pointing. A burn that has to slew 180 degrees needs time;
 // starting the slew 60 s out and holding costs nothing on a coast.
 const double kOrientLeadS = 60.0;
@@ -192,12 +242,16 @@ class Autopilot {
   // Used by the SOI handoff, which replaces burn 1 after burn 0 has been flown
   // and must not rewind the programme to the start.
   void armFrom(const Program& p, int startBurn) {
+    // The delta-v already spent and the stagings already made are FACTS ABOUT
+    // THE FLIGHT and survive a re-arm; the plan is what is being replaced.
     const double spent = dvAll_;
+    const int staged = stagings_;
     arm(p);
     burnIndex_ = startBurn;
     status.burnIndex = startBurn;
     dvAll_ = spent;
     status.dvSpentTotalMS = spent;
+    stagings_ = staged;
   }
 
   void arm(const Program& p) {
@@ -209,12 +263,18 @@ class Autopilot {
     dvThis_ = 0.0;
     dvAll_ = 0.0;
     lastThrottle_ = 0.0;
+    stagings_ = 0;
+    bestGap_ = 1e300;
+    bestGapAtS_ = 0.0;
   }
 
   void disarm() {
     program = Program();
     status = Status();
     lastThrottle_ = 0.0;
+    stagings_ = 0;
+    bestGap_ = 1e300;
+    bestGapAtS_ = 0.0;
   }
 
   bool running() const {
@@ -289,6 +349,8 @@ class Autopilot {
       if (status.timeToIgnitionS <= kOrientLeadS) {
         status.phase = Phase::Orient;
         status.note = "slewing to the burn attitude";
+        bestGap_ = 1e300;
+        bestGapAtS_ = now;
       }
       return c;
     }
@@ -299,12 +361,27 @@ class Autopilot {
       // nose has to be STILL as well as aimed: igniting as a slewing vehicle
       // sweeps through the target just moves the error into the burn.
       status.rateDegS = sim.state.angVelRadS.length() * 180.0 / orbital::kPi;
-      if (status.pointingErrorDeg > kPointingGateDeg) {
-        status.note = "holding: not pointed yet, the burn will be late";
-        return c;
-      }
-      if (status.rateDegS > kRateGateDegS) {
-        status.note = "holding: still swinging through the target";
+      const bool aimed = status.pointingErrorDeg <= kPointingGateDeg;
+      const bool still = status.rateDegS <= kRateGateDegS;
+      if (!aimed || !still) {
+        // THE PROGRESS TEST. `gap` is how far the worse of the two gated
+        // quantities is from its own threshold, normalised so that 1.0 IS the
+        // threshold and the two are comparable. A vehicle that is converging
+        // keeps setting a new best; one that cannot pass stops.
+        const double gap = std::fmax(status.pointingErrorDeg / kPointingGateDeg,
+                                     status.rateDegS / kRateGateDegS);
+        if (gap < bestGap_ * (1.0 - 1e-9)) {
+          bestGap_ = gap;
+          bestGapAtS_ = now;
+        } else if (now - bestGapAtS_ > kNoProgressS) {
+          status.phase = Phase::Aborted;
+          status.note = aimed
+              ? "aborted: the vehicle will not stop turning, so the burn cannot start"
+              : "aborted: the vehicle will not point at the burn";
+          return c;
+        }
+        status.note = aimed ? "holding: still swinging through the target"
+                            : "holding: not pointed yet, the burn will be late";
         return c;
       }
       // And it will not start a burn it cannot pay for. A staging since the
@@ -340,10 +417,35 @@ class Autopilot {
         status.note = "throttled back: attitude lost";
         return c;
       }
-      // THE LAST TICK IS THROTTLED PROPORTIONALLY, so the terminal error is
-      // second order in dt instead of a whole tick of thrust. `aFull` is what
-      // one tick at full throttle would deliver.
+      // A COMMANDED BURN THAT PRODUCES NO THRUST USED TO RUN FOR EVER (PH-167).
+      //
+      // Measured from the client by the gameplay lane: 900 polls at full
+      // throttle, 0.0000 m/s spent, the orbit unmoved, and every status field
+      // reporting healthy. This is R71's shape with a different quantity, and
+      // the cause is that the executor had NO VERB FOR STAGING while the
+      // PLANNER prices every program against `remainingDeltaVVacuumMS`, which
+      // sums across stages. The plan therefore assumes a staging the executor
+      // could not perform, and a burn cut on measured delta-v then waits on a
+      // number that can never move.
+      //
+      // Cutting on measured delta-v is NOT the thing to revert (PH-150 pinned
+      // it by sabotaging the predicted duration 40% both ways). The gap is the
+      // missing verb, so here it is: when the engine is commanded on and the
+      // vehicle produces no thrust at all, press the button a player would
+      // press. It cannot loop, because `fireStage` runs out and then this
+      // aborts by name instead of holding.
       const double aFull = thrustAccel(sim, 1.0);
+      if (!(aFull > 0.0)) {
+        const vessel::StageResult sr = sim.stage();
+        if (sr.fired) {
+          ++stagings_;
+          status.note = "staged: the burning stage was dry";
+          return c;
+        }
+        status.phase = Phase::Aborted;
+        status.note = "aborted: the engine is commanded on and produces no thrust";
+        return c;
+      }
       double th = 1.0;
       if (aFull * dt > left && aFull * dt > 0.0) th = left / (aFull * dt);
       if (th < 0.0) th = 0.0;
@@ -363,11 +465,22 @@ class Autopilot {
     sim.state.throttle = c.throttle;
   }
 
+  // How many times the executor pressed the staging button for itself. A screen
+  // that says "it staged" is telling the truth about something the player did
+  // not do, so it is counted rather than only mentioned in a note that the next
+  // tick overwrites.
+  int stagings() const { return stagings_; }
+
  private:
   int burnIndex_ = 0;
   double dvThis_ = 0.0;
   double dvAll_ = 0.0;
   double lastThrottle_ = 0.0;
+  int stagings_ = 0;
+  // The progress test's memory: the best (lowest) normalised distance from the
+  // ignition gate seen since this Orient began, and when it was last improved.
+  double bestGap_ = 1e300;
+  double bestGapAtS_ = 0.0;
 
   // Thrust acceleration at a throttle setting, through the SAME
   // `evaluatePropulsion` and `massProperties` the integrator uses.
