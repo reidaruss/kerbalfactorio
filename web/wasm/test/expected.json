@@ -6,24 +6,24 @@
   "forgeSeedLo": 1238091061,
   "forgeSeedHi": 468707404,
   "heights": [
-    {"dirX": "3ff0000000000000", "dirY": "0000000000000000", "dirZ": "0000000000000000", "raw": "c08038fbc01c2cf7", "designed": "c082a7ee502066e8", "base": "c082a7ee502066e8", "surface": "c082a7ee502066e8", "moonRaw": "4088c2c4cc8f03a0", "moonBase": "4088c2c4cc8f03a0"},
-    {"dirX": "3fe761be7bc854c2", "dirY": "3fd2e9cd95baba33", "dirZ": "3fe3b1b901cf6051", "raw": "4093c23366515bf4", "designed": "409483e8ff0100dc", "base": "409483e8ff0100dc", "surface": "409483e8ff0100dc", "moonRaw": "40a260454cabea39", "moonBase": "40a521e94b5f4d5b"},
-    {"dirX": "bfdd17f4f633d5b8", "dirY": "bfdbd679adf94625", "dirZ": "3fe8df6e817718b5", "raw": "4079320b42b73002", "designed": "406e24e43f36b767", "base": "406e24e43f36b767", "surface": "406e24e43f36b767", "moonRaw": "c0a115fb899f50f5", "moonBase": "c0a2cb617dc8d90e"},
-    {"dirX": "3fbf0fe7839a43cf", "dirY": "3fec84c54c2d6338", "dirZ": "bfdbf8e4be934648", "raw": "409c60fdde178aa8", "designed": "40a051dc89b51264", "base": "40a051dc89b51264", "surface": "40a051dc89b51264", "moonRaw": "c09357fd912b35a1", "moonBase": "c09547308615ee32"},
-    {"dirX": "3fbe3bd9922a35bb", "dirY": "3fefc44e08da43dc", "dirZ": "3f9883c7ee6493bc", "raw": "c0838b286f923932", "designed": "c080d9a1b381c1c6", "base": "c080d9a1b381c1c6", "surface": "c080d9a1b381c1c6", "moonRaw": "4087924e75e73e30", "moonBase": "4087924e75e73e30"},
-    {"dirX": "bfc309534c19865c", "dirY": "bfefa3090592969a", "dirZ": "3f95b567ce28caf4", "raw": "408764e48cc7b61a", "designed": "40850a845f716ae6", "base": "40850a845f716ae6", "surface": "40850a845f716ae6", "moonRaw": "4092f4ec8fe81164", "moonBase": "4095ccdcd8b14733"},
-    {"dirX": "bfe59e35a59a7045", "dirY": "3fe297d70c8aaec7", "dirZ": "bfdd0c7b11067f5f", "raw": "408077154812b2a3", "designed": "4073c21989b00990", "base": "4073c21989b00990", "surface": "4073c21989b00990", "moonRaw": "40612c27c6ed391d", "moonBase": "40612c27c6ed391d"},
-    {"dirX": "3fdf7ca9e0b09f05", "dirY": "bfc320c9e9dfed22", "dirZ": "3feb72239d3bff03", "raw": "c06ce6c67d971620", "designed": "c0709e4bbb6a131f", "base": "c0709e4bbb6a131f", "surface": "c0709e4bbb6a131f", "moonRaw": "407087e2024d2af0", "moonBase": "407087e2024d2af0"}
+    {"dirX": "3ff0000000000000", "dirY": "0000000000000000", "dirZ": "0000000000000000", "raw": "c08038fbc01c2cf7", "designed": "c082a7ee502066e8", "base": "c082a7ee502066e8", "surface": "c082a7ee502066e8", "moonRaw": "40802b05c17783db", "moonBase": "40824a49203e8790"},
+    {"dirX": "3fe761be7bc854c2", "dirY": "3fd2e9cd95baba33", "dirZ": "3fe3b1b901cf6051", "raw": "4093c23366515bf4", "designed": "409483e8ff0100dc", "base": "409483e8ff0100dc", "surface": "409483e8ff0100dc", "moonRaw": "4083dd331240839a", "moonBase": "4086d6b0fb51c528"},
+    {"dirX": "bfdd17f4f633d5b8", "dirY": "bfdbd679adf94625", "dirZ": "3fe8df6e817718b5", "raw": "4079320b42b73002", "designed": "406e24e43f36b767", "base": "406e24e43f36b767", "surface": "406e24e43f36b767", "moonRaw": "c0830d989ea33923", "moonBase": "c084ef0cc370bf55"},
+    {"dirX": "3fbf0fe7839a43cf", "dirY": "3fec84c54c2d6338", "dirZ": "bfdbf8e4be934648", "raw": "409c60fdde178aa8", "designed": "40a051dc89b51264", "base": "40a051dc89b51264", "surface": "40a051dc89b51264", "moonRaw": "c08923a577d69a65", "moonBase": "c08ba73603d276a3"},
+    {"dirX": "3fbe3bd9922a35bb", "dirY": "3fefc44e08da43dc", "dirZ": "3f9883c7ee6493bc", "raw": "c0838b286f923932", "designed": "c080d9a1b381c1c6", "base": "c080d9a1b381c1c6", "surface": "c080d9a1b381c1c6", "moonRaw": "408b326f741414b4", "moonBase": "408f46ccf8b0b168"},
+    {"dirX": "bfc309534c19865c", "dirY": "bfefa3090592969a", "dirZ": "3f95b567ce28caf4", "raw": "408764e48cc7b61a", "designed": "40850a845f716ae6", "base": "40850a845f716ae6", "surface": "40850a845f716ae6", "moonRaw": "40884ad4411e2c00", "moonBase": "408befa74ae2b299"},
+    {"dirX": "bfe59e35a59a7045", "dirY": "3fe297d70c8aaec7", "dirZ": "bfdd0c7b11067f5f", "raw": "408077154812b2a3", "designed": "4073c21989b00990", "base": "4073c21989b00990", "surface": "4073c21989b00990", "moonRaw": "408f87d38200450d", "moonBase": "4092214cd1268e1a"},
+    {"dirX": "3fdf7ca9e0b09f05", "dirY": "bfc320c9e9dfed22", "dirZ": "3feb72239d3bff03", "raw": "c06ce6c67d971620", "designed": "c0709e4bbb6a131f", "base": "c0709e4bbb6a131f", "surface": "c0709e4bbb6a131f", "moonRaw": "408d404856a8ea2f", "moonBase": "4090d1c331d45374"}
   ],
   "biomes": [
-    {"planet": 0, "moon": 7, "planetMat": 0, "moonMat": 7, "hardness": "3fb999999999999a", "temp": "3fe92a78d401a600", "moist": "3fddad03d67844c8"},
+    {"planet": 0, "moon": 8, "planetMat": 0, "moonMat": 8, "hardness": "3fb999999999999a", "temp": "3fe92a78d401a600", "moist": "3fddad03d67844c8"},
     {"planet": 4, "moon": 8, "planetMat": 4, "moonMat": 8, "hardness": "3fe4cccccccccccd", "temp": "3fe6c8aedfe9addb", "moist": "3fe7786c1b037490"},
     {"planet": 2, "moon": 9, "planetMat": 2, "moonMat": 9, "hardness": "3fdccccccccccccd", "temp": "3fe54f9148d2b366", "moist": "3fdca463f89e980f"},
     {"planet": 4, "moon": 9, "planetMat": 4, "moonMat": 9, "hardness": "3fe4cccccccccccd", "temp": "3fd77c79a5efaa76", "moist": "3fe0ddde89a5186c"},
-    {"planet": 6, "moon": 7, "planetMat": 6, "moonMat": 7, "hardness": "3fe999999999999a", "temp": "3fd6231ba9ee9c5e", "moist": "3fca9ec62b1fac84"},
+    {"planet": 6, "moon": 8, "planetMat": 6, "moonMat": 8, "hardness": "3fe999999999999a", "temp": "3fd6231ba9ee9c5e", "moist": "3fca9ec62b1fac84"},
     {"planet": 6, "moon": 8, "planetMat": 6, "moonMat": 8, "hardness": "3fe999999999999a", "temp": "3fd2f65ae4ba6e58", "moist": "3fdbe303c653adca"},
-    {"planet": 3, "moon": 7, "planetMat": 3, "moonMat": 7, "hardness": "3fe0000000000000", "temp": "3fe48303d9c883e5", "moist": "3fe21d751de72e17"},
-    {"planet": 0, "moon": 7, "planetMat": 0, "moonMat": 7, "hardness": "3fb999999999999a", "temp": "3fe67ef4b2040f3f", "moist": "3fdd29e185e9d739"}
+    {"planet": 3, "moon": 8, "planetMat": 3, "moonMat": 8, "hardness": "3fe0000000000000", "temp": "3fe48303d9c883e5", "moist": "3fe21d751de72e17"},
+    {"planet": 0, "moon": 8, "planetMat": 0, "moonMat": 8, "hardness": "3fb999999999999a", "temp": "3fe67ef4b2040f3f", "moist": "3fdd29e185e9d739"}
   ],
   "quadmesh": {"gridDim": 33, "vertexCount": 1089, "contentHashLo": 542543859, "contentHashHi": 3699177917, "rawContentHashLo": 3210450286, "rawContentHashHi": 4142074147, "heightHash": 310702141, "posHash": 2912842418, "nrmHash": 1977832220, "centerX": "c10d158fcf541c4f", "centerY": "4120672b0a7667ee", "centerZ": "c0fd77e13453002e", "chunkRadius": "40d446728a621842", "h0": "40780b7907ee8d95", "h544": "4074122920dee253", "h1088": "4070fe352f91e637", "seamOk": 1},
   "indices": {"count": 6144, "hash": 2014026705},
