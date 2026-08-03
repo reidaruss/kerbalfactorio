@@ -5,6 +5,7 @@
 
 import { parsePost, type PostSettings } from '../render/post/PostConfig.js';
 import { TREE_RADIUS_M } from '../game/TreeTuning.js';
+import type { BodyId } from '../world/PlanetBody.js';
 
 export type QualityTier = 'low' | 'med' | 'high';
 
@@ -56,6 +57,8 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
 };
 
 export interface Config {
+  /** Which body to boot on. ?body=cinder|moon|1 picks the moon (PlanetBody). */
+  readonly bodyId: BodyId;
   readonly seedLo: number;
   readonly seedHi: number;
   readonly seedText: string;
@@ -363,6 +366,7 @@ export function parseConfig(search: string): Config {
     pitchDeg: base.pitchDeg,
   };
   return {
+    bodyId: ['cinder', 'moon', '1'].includes(p.get('body') ?? '') ? 1 : 0,
     seedLo: seed.lo,
     seedHi: seed.hi,
     seedText: seed.text,

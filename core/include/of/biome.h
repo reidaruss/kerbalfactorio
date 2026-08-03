@@ -164,12 +164,26 @@ inline Biome biomeAtPlanet(const BodyParams& body, const Vec3& dir) {
   return biomeAtPlanetH(body, dir, sampleHeightField(body, dir));
 }
 
+// Airless: no oceans, no forests. Elevation bands only.
+//
+// WG-141 RE-TUNED THE THRESHOLDS, and the reason is worth keeping because it is
+// a coupling that is easy to miss: `maxReliefM` is BOTH the declared relief
+// bound AND the denominator these bands are expressed in. Raising it to cover
+// the crater ladder's real extremes therefore widened every band at the same
+// time, and the split went to Regolith 89.9% / MoonHighland 2.0% / CraterFloor
+// 8.1%. A biome carrying 2% of a body is a biome whose props and palette will
+// essentially never be drawn.
+//
+// The bands are narrow because the field's mass is narrow: the base fbm puts
+// most ground within a few hundred metres of the datum and the crater ladder
+// supplies the tails, so a threshold placed at a fifth of maxRelief sits far out
+// in the tail. `moon_biomes_are_all_populated` asserts the split and will catch
+// the next person who moves maxReliefM without looking here.
 inline Biome biomeAtMoonH(const BodyParams& body, double h) {
   const double rel = h / reliefDenom(body);
-  // Airless: no oceans/forests. Elevation bands only.
-  if (rel < -0.10) return Biome::CraterFloor;   // deep crater interiors
-  if (rel > 0.20) return Biome::MoonHighland;   // raised highlands
-  return Biome::Regolith;                        // default dusty plain
+  if (rel < -0.070) return Biome::CraterFloor;   // crater interiors
+  if (rel > 0.070) return Biome::MoonHighland;   // raised, rough highland
+  return Biome::Regolith;                         // the dusty plain / mare
 }
 
 inline Biome biomeAtMoon(const BodyParams& body, const Vec3& dir) {
@@ -266,10 +280,20 @@ inline double hardnessForBiome(Biome b) {
 // =============================================================================
 inline double designedReliefFactor(Biome b) {
   // Multiplicative gain applied to the base relief above the datum.
-  // PLANET biomes no longer read this: see designedGainForRelief below. It
-  // remains the MOON's shaping table (the moon's bands are elevation-derived and
-  // its factors are close enough together not to step) and a description of the
-  // relief character each biome is meant to have.
+  //
+  // NOTHING READS THIS FOR SHAPING ANY MORE. It is retained as the DESCRIPTION
+  // of the relief character each biome is meant to have, and as the table the
+  // two continuous gain curves below were derived from.
+  //
+  // WG-141 retired its last caller, the moon. The comment that used to sit here
+  // claimed the moon's bands were "close enough together not to step", and that
+  // claim was false and had never been measured. `terrain_probe --body cinder`
+  // measured the steps directly: the 1.00 -> 1.15 jump at rel 0.20 puts a 120 m
+  // wall along a contour line, and the 1.00 -> 1.10 jump at rel -0.10 puts a
+  // 40 m one. They show up in the biome histogram as gaps no sample can land in
+  // (Regolith topping out at 797.9 m with MoonHighland starting at 923.9 m).
+  // This is the same defect WG-25 fixed on the planet, one body later, and it is
+  // the third thing about Cinder that was simply never revisited.
   switch (b) {
     case Biome::Mountains:    return 1.60;
     case Biome::Hills:        return 1.25;
@@ -314,6 +338,27 @@ inline double designedGainForRelief(double rel) {
   return g;
 }
 
+// designedGainForMoonRelief: the same cure, for the moon (WG-141).
+//
+// The bands are the moon's own, straddling biomeAtMoonH's thresholds rather than
+// switching on them, so the BIOME stays discrete (it is a material id, it should
+// be) while the HEIGHT stays continuous. Values come from designedReliefFactor's
+// moon rows: crater floors deepen slightly, the regolith plain is unchanged, the
+// highland steepens.
+//
+// Monotone, which is the property that matters: d(rel * g)/drel stays positive
+// across both blends (checked at the band edges, worst case 1.25), so higher
+// base relief always means higher shaped ground and the design layer can never
+// fold the terrain over itself.
+//
+// Multiply/add only: no trig, no pow (DW-14).
+inline double designedGainForMoonRelief(double rel) {
+  double g = 1.10;                                     // crater floor: deepen
+  g = lerp(g, 1.00, smoothstep(-0.130, -0.010, rel));  // regolith plain
+  g = lerp(g, 1.15, smoothstep(0.010, 0.130, rel));    // highland: steepen
+  return g;
+}
+
 // -----------------------------------------------------------------------------
 // designedHeightNoPad: the designed surface BEFORE the home flat pad.
 //
@@ -335,8 +380,10 @@ inline double designedHeightNoPad(const BodyParams& body, const Vec3& dir) {
     return shaped;
   }
 
-  // Moon: scale relief by the biome factor about zero (no datum clamp).
-  return base * designedReliefFactor(biomeAtMoonH(body, base));
+  // Moon: scale relief by the CONTINUOUS gain about zero (no datum clamp).
+  // Was `designedReliefFactor(biomeAtMoonH(base))`, which stepped on the
+  // discrete biome and walled the contour lines; see the note on that function.
+  return base * designedGainForMoonRelief(base / denom);
 }
 
 // -----------------------------------------------------------------------------

@@ -16,6 +16,7 @@
 //        + tangent warp uniformity      -> better edge-length ratio than naive
 //   - WV7 Query correctness             -> SampleTerrainHeight == mesh at a point
 //        + planet vs moon distinct       -> different height variance
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -275,4 +276,270 @@ TEST(planet_and_moon_terrain_differ) {
   // The two bodies are not the same terrain (different noise stacks + seeds).
   const double ratio = vForge > vCinder ? vForge / vCinder : vCinder / vForge;
   CHECK(ratio > 1.05);  // measurably different relief character
+}
+
+// =============================================================================
+// WG-141 â€” the moon. Four properties, and three of them demonstrate a REACHABLE
+// refusing case inside the test itself, because this lane has twice shipped a
+// gate that could not fire.
+// =============================================================================
+
+// Local helpers: cubed_sphere.h has no cross product and no sphere lattice, and
+// pulling deposits.h in for one function would add a dependency this suite does
+// not otherwise have.
+static Vec3 vcross(const Vec3& a, const Vec3& b) {
+  return Vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+static Vec3 vnorm(const Vec3& v) {
+  const double l = v.length();
+  return (l > 0.0) ? v * (1.0 / l) : Vec3(0, 1, 0);
+}
+// Fibonacci sphere lattice: even coverage without clustering at the poles.
+static Vec3 sphereDir(int n, int count) {
+  const double y = 1.0 - 2.0 * (static_cast<double>(n) + 0.5) / count;
+  const double r = std::sqrt((y * y < 1.0) ? (1.0 - y * y) : 0.0);
+  const double th = 2.39996322972865332 * n;  // golden angle
+  return Vec3(std::cos(th) * r, y, std::sin(th) * r);
+}
+// Step `metres` along the surface from `dir`, in a tangent direction.
+static Vec3 stepDir(const Vec3& dir, double radiusM, double metres) {
+  const Vec3 up = (std::fabs(dir.y) < 0.9) ? Vec3(0, 1, 0) : Vec3(1, 0, 0);
+  const Vec3 t = vnorm(vcross(up, dir));
+  return vnorm(dir + t * (metres / radiusM));
+}
+
+// Reference crater field, parameterised on the radius span and the neighbourhood
+// half-width, so a test can ask "would a WIDER neighbourhood have found more?".
+// Deliberately unhoisted and written in the shipped nesting order, so it doubles
+// as the bit-identity reference for the WG-141 hash hoist.
+static double craterRef(uint64_t seed, const Vec3& dir, double freq, double span,
+                        int halfWidth) {
+  const Vec3 p = dir * freq;
+  const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
+  const int cx = static_cast<int>(fx), cy = static_cast<int>(fy),
+            cz = static_cast<int>(fz);
+  double h = 0.0;
+  for (int dx = -halfWidth; dx <= halfWidth; ++dx)
+    for (int dy = -halfWidth; dy <= halfWidth; ++dy)
+      for (int dz = -halfWidth; dz <= halfWidth; ++dz) {
+        uint64_t cell = mix64(seed ^ 0xC0FFEEull);
+        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cx + dx)));
+        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cy + dy)));
+        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cz + dz)));
+        if (hashToUnit(hashCombine(cell, 4)) > kCraterExistMax) continue;
+        const Vec3 centre(fx + dx + hashToUnit(hashCombine(cell, 1)),
+                          fy + dy + hashToUnit(hashCombine(cell, 2)),
+                          fz + dz + hashToUnit(hashCombine(cell, 3)));
+        const double dist = (p - centre).length();
+        const double cr = kCraterRadiusMin + span * hashToUnit(hashCombine(cell, 5));
+        if (dist > cr * kCraterReach) continue;
+        h += craterProfile(dist / cr);
+      }
+  return h;
+}
+
+// The SPIKE-ERA crater field, verbatim: the 0.45 radius span AND the
+// discontinuous profile that steps by 0.5 at every rim. Used only by the
+// negative control below, so that "old" means what actually shipped rather than
+// the old frequencies wearing the new profile.
+static double craterSpike(uint64_t seed, const Vec3& dir, double freq) {
+  const Vec3 p = dir * freq;
+  const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
+  const int cx = static_cast<int>(fx), cy = static_cast<int>(fy),
+            cz = static_cast<int>(fz);
+  double h = 0.0;
+  for (int dz = -1; dz <= 1; ++dz)
+    for (int dy = -1; dy <= 1; ++dy)
+      for (int dx = -1; dx <= 1; ++dx) {
+        uint64_t cell = mix64(seed ^ 0xC0FFEEull);
+        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cx + dx)));
+        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cy + dy)));
+        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cz + dz)));
+        const Vec3 centre(fx + dx + hashToUnit(hashCombine(cell, 1)),
+                          fy + dy + hashToUnit(hashCombine(cell, 2)),
+                          fz + dz + hashToUnit(hashCombine(cell, 3)));
+        if (hashToUnit(hashCombine(cell, 4)) > 0.55) continue;
+        const double dist = (p - centre).length();
+        const double cr = 0.30 + 0.45 * hashToUnit(hashCombine(cell, 5));
+        if (dist > cr * 1.6) continue;
+        const double t = dist / cr;
+        double prof;
+        if (t < 1.0) {
+          prof = -(1.0 - t * t);
+        } else {
+          const double rim = (t - 1.0) / 0.6;
+          prof = (rim < 1.0) ? (1.0 - rim) * 0.5 : 0.0;
+        }
+        h += prof;
+      }
+  return h;
+}
+
+// The shipped 3x3x3 neighbourhood must find EVERY crater that contributes, so
+// widening it to 5x5x5 must change nothing, bitwise. That is only true because
+// WG-141 capped the radius so a crater's reach is at most one cell.
+//
+// THE REFUSING CASE IS REACHABLE AND THIS TEST PROVES IT IN THE SAME BREATH: the
+// same sweep at the OLD 0.45 span (reach 1.2 cells) DOES disagree between 3x3x3
+// and 5x5x5, so the property is a real constraint and not a tautology.
+TEST(crater_neighbourhood_is_sufficient) {
+  const BodyParams cinder = makeCinder(2026ull);
+  const uint64_t s = cinder.bodySeed;
+  const double freqs[4] = {9.0, 27.0, 81.0, 243.0};
+
+  long shippedMismatch = 0, oldMismatch = 0;
+  double worstOldStep = 0.0;
+  const int N = 40000;
+  for (int i = 0; i < N; ++i) {
+    const Vec3 d = sphereDir(i, N);
+    for (int k = 0; k < 4; ++k) {
+      const double f = freqs[k];
+      // Shipped span: a wider neighbourhood must find nothing extra.
+      if (!bitEqual(craterRef(s, d, f, kCraterRadiusSpan, 1),
+                    craterRef(s, d, f, kCraterRadiusSpan, 2))) {
+        ++shippedMismatch;
+      }
+      // Old span: the negative control. This is what used to ship.
+      const double o1 = craterRef(s, d, f, 0.45, 1);
+      const double o2 = craterRef(s, d, f, 0.45, 2);
+      if (!bitEqual(o1, o2)) {
+        ++oldMismatch;
+        const double step = std::fabs(o1 - o2);
+        if (step > worstOldStep) worstOldStep = step;
+      }
+    }
+  }
+  std::printf("      crater neighbourhood: shipped span %.3f -> %ld misses; "
+              "old span 0.450 -> %ld misses, worst clipped profile %.4f "
+              "(x 2467 m = %.1f m step)\n",
+              kCraterRadiusSpan, shippedMismatch, oldMismatch, worstOldStep,
+              worstOldStep * 2467.0);
+  CHECK(shippedMismatch == 0);   // the property
+  CHECK(oldMismatch > 0);        // the property is REACHABLE, not inert
+}
+
+// The WG-141 hash hoist changed which operands are recomputed, never their
+// values or their order, so it must be bit-identical to an unhoisted reference
+// at the same loop nesting.
+TEST(crater_hoist_is_bit_identical) {
+  const BodyParams cinder = makeCinder(2026ull);
+  const uint64_t s = cinder.bodySeed;
+  const double freqs[4] = {9.0, 27.0, 81.0, 243.0};
+  const int N = 20000;
+  for (int i = 0; i < N; ++i) {
+    const Vec3 d = sphereDir(i, N);
+    for (int k = 0; k < 4; ++k) {
+      CHECK(bitEqual(craterField(s, d, freqs[k]),
+                     craterRef(s, d, freqs[k], kCraterRadiusSpan, 1)));
+    }
+  }
+}
+
+// The old moon stack as the negative control for the test below, with ONE
+// deliberate correction: it evaluates its crater layer over a 5x5x5
+// neighbourhood, which is the width the old 0.45 span actually needed.
+//
+// THAT CORRECTION IS THE WHOLE POINT AND IT COST ME A WRONG ANSWER FIRST. Run
+// verbatim at 3x3x3, the old stack reports 22.16 m RMS over a 4 m step, which
+// would say the old moon had ample content at human scale. It does not: that
+// number is ENTIRELY its own discontinuity. The measured miss rate is 346 in
+// 160,000 samples at a worst clipped profile of 0.1906, i.e. 0.2% of ground
+// carrying a ~470 m cliff, and sqrt(0.002 * 470^2) is 21 m. The instrument was
+// faithfully reporting a defect as if it were terrain. An implausible magnitude
+// is an instrument bug until proven otherwise, and this one was proven.
+static double oldMoonHeight(const BodyParams& body, const Vec3& dir) {
+  const double M0 = fbm(body.bodySeed, dir, 3.0, 3, 41);
+  const double M1 = craterSpike(body.bodySeed, dir, 9.0);
+  const double M2 = fbm(body.bodySeed, dir, 90.0, 2, 53);
+  // 4000 was the old declared maxReliefM; WG-141 raised it, and the control has
+  // to keep the old constant or it is not the old field.
+  return (M0 * 0.4 + M1 * 0.7 + M2 * 0.03) * 4000.0;
+}
+
+// THE FEATURE TEST, and getting to it took a correction I should record because
+// the first version of it gave a confident wrong answer.
+//
+// I expected the old moon to be a PLANE underfoot, on the arithmetic that its
+// finest layer had a 1.11 km wavelength. It is not, and SLOPE is the wrong
+// instrument for the question. A crater wall is a continuous 24% to 48% grade at
+// EVERY scale you sample it, so even a field whose only crater is 22 km across
+// reports a healthy median slope over a 4 m step: measured, the old stack gives
+// p50 0.554 m over 4 m, a 14% grade, against the new stack's 0.727 m. On slope
+// alone the rewrite would look like a 1.3x tweak.
+//
+// What the old moon actually lacked was STRUCTURE, not gradient: no crater you
+// could walk into, no rim you could stand on, no shape at all under a kilometre.
+// The quantity that separates "tilted" from "featured" is CURVATURE, the second
+// difference h(a-d) - 2h(a) + h(a+d). A straight slope of any steepness has
+// none; a crater of size d has curvature of order its own depth. That is the
+// measurement below, and it separates the two fields by about two orders of
+// magnitude where slope separated them by 1.3x.
+TEST(moon_has_features_at_human_scale) {
+  const BodyParams cinder = makeCinder(2026ull);
+  const double R = cinder.radiusM;
+  const int N = 4000;
+  const double spacings[2] = {4.0, 40.0};
+
+  // The MEDIAN is the gate, not the mean. Curvature over a crater field is
+  // heavy-tailed: the few percent of samples sitting on a rim carry enormous
+  // values and would let a mean pass on a handful of features. p50 asks the
+  // honest question, which is whether TYPICAL ground has shape.
+  for (int k = 0; k < 2; ++k) {
+    const double d = spacings[k];
+    std::vector<double> cNew(N), cOld(N), sNew(N), sOld(N);
+    for (int i = 0; i < N; ++i) {
+      const Vec3 a = sphereDir(i, N);
+      const Vec3 lo = stepDir(a, R, -d), hi = stepDir(a, R, d);
+      const double n0 = sampleHeightField(cinder, lo);
+      const double n1 = sampleHeightField(cinder, a);
+      const double n2 = sampleHeightField(cinder, hi);
+      const double o0 = oldMoonHeight(cinder, lo);
+      const double o1 = oldMoonHeight(cinder, a);
+      const double o2 = oldMoonHeight(cinder, hi);
+      cNew[i] = std::fabs(n0 - 2.0 * n1 + n2);
+      cOld[i] = std::fabs(o0 - 2.0 * o1 + o2);
+      sNew[i] = std::fabs(n2 - n1);
+      sOld[i] = std::fabs(o2 - o1);
+    }
+    std::sort(cNew.begin(), cNew.end());
+    std::sort(cOld.begin(), cOld.end());
+    std::sort(sNew.begin(), sNew.end());
+    std::sort(sOld.begin(), sOld.end());
+    // A feature of size d has curvature of order its own depth. The crater
+    // ladder's amplitude law puts that near 0.045 * d, so a floor of 0.005 * d
+    // is a ninth of the design target: passing it means "has shape", not "is
+    // well tuned". The old stack is measured in the same loop as the control.
+    const double floorM = d * 0.005;
+    std::printf("      features @ %5.1f m: curvature p50 new %.4f m / old "
+                "%.5f m (%.0fx), floor %.3f m | slope p50 new %.3f m / old "
+                "%.3f m (%.2fx)\n",
+                d, cNew[N / 2], cOld[N / 2],
+                cOld[N / 2] > 0.0 ? cNew[N / 2] / cOld[N / 2] : 0.0, floorM,
+                sNew[N / 2], sOld[N / 2],
+                sOld[N / 2] > 0.0 ? sNew[N / 2] / sOld[N / 2] : 0.0);
+    CHECK(cNew[N / 2] > floorM);   // the property
+    CHECK(cOld[N / 2] < floorM);   // REACHABLE: the old stack fails it
+  }
+}
+
+// Relief must stay inside the body's own declared maxReliefM, because that is
+// what biome.h divides by and what the renderer is told. The WG-141 moon stack
+// is written in absolute metres rather than as a fraction of maxRelief, so this
+// is a real constraint on the amplitude ladder and not an identity.
+TEST(moon_relief_within_declared_max) {
+  const BodyParams cinder = makeCinder(2026ull);
+  const int N = 200000;
+  double lo = 0.0, hi = 0.0;
+  for (int i = 0; i < N; ++i) {
+    const double h = sampleHeightField(cinder, sphereDir(i, N));
+    if (h < lo) lo = h;
+    if (h > hi) hi = h;
+  }
+  std::printf("      moon relief over %d samples: min %.1f m, max %.1f m, "
+              "declared maxRelief %.1f m\n", N, lo, hi, cinder.maxReliefM);
+  CHECK(hi <= cinder.maxReliefM);
+  CHECK(lo >= -cinder.maxReliefM);
+  // And it must actually USE its range: a moon that never leaves a tenth of its
+  // declared relief has a maxReliefM that is a fiction.
+  CHECK(hi - lo > cinder.maxReliefM * 0.5);
 }

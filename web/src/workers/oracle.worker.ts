@@ -5,9 +5,13 @@
 
 import { loadOfCore } from '../sim/wasm/OfCore.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
+import { createBodyHandle, type BodyId } from '../world/PlanetBody.js';
 
 export interface OracleProbeRequest {
   type: 'probe';
+  /** The body to answer from. This instance builds its own handle, because the
+   *  point of the probe is that nothing but the seed crosses the boundary. */
+  bodyId: BodyId;
   seedLo: number;
   seedHi: number;
   dirs: Float64Array;
@@ -47,7 +51,7 @@ ctx.onmessage = async (e: MessageEvent<OracleProbeRequest>) => {
   const msg = e.data;
   if (msg.type !== 'probe') return;
   const mod = await core();
-  const body = mod._of_body_create_forge(msg.seedLo >>> 0, msg.seedHi >>> 0);
+  const body = createBodyHandle(mod, msg.bodyId, msg.seedLo, msg.seedHi);
   const n = msg.dirs.length / 3;
   const heights = new Float64Array(n);
   const biomes = new Int32Array(n);

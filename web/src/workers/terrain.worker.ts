@@ -16,6 +16,7 @@ import {
   chunkBlobLayout, chunkBlobViews, chunkKey, deinterleave,
   type ChunkBlobLayout,
 } from '../world/ChunkFormat.js';
+import { createBodyHandle } from '../world/PlanetBody.js';
 import type {
   TerrainChunkMsg, TerrainDigMsg, TerrainInitMsg, TerrainInitedMsg,
   TerrainEditsMsg, TerrainLevelMsg, TerrainObserveMsg, TerrainUpdateMsg,
@@ -39,7 +40,7 @@ async function init(msg: TerrainInitMsg): Promise<void> {
   const t0 = performance.now();
   M = await loadOfCore();
   const loadMs = performance.now() - t0;
-  body = M._of_body_create_forge(msg.seedLo >>> 0, msg.seedHi >>> 0);
+  body = createBodyHandle(M, msg.bodyId, msg.seedLo, msg.seedHi);
   streamer = M._of_streamer_create(
     body, msg.splitRatio, msg.mergeHysteresis, msg.maxDepth,
     msg.minResidentDepth, msg.skirtFraction, msg.genBudget,

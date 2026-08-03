@@ -87,46 +87,6 @@ inline double ridged(uint64_t seed, const Vec3& dir, double freq, int octaves,
   return sum;
 }
 
-inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
-  const Vec3 p = dir * freq;
-  const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
-  const int cx = static_cast<int>(fx), cy = static_cast<int>(fy),
-            cz = static_cast<int>(fz);
-  double h = 0.0;
-  for (int dz = -1; dz <= 1; ++dz)
-    for (int dy = -1; dy <= 1; ++dy)
-      for (int dx = -1; dx <= 1; ++dx) {
-        uint64_t cell = mix64(seed ^ 0xC0FFEEull);
-        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cx + dx)));
-        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cy + dy)));
-        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cz + dz)));
-        const Vec3 centre(fx + dx + hashToUnit(hashCombine(cell, 1)),
-                          fy + dy + hashToUnit(hashCombine(cell, 2)),
-                          fz + dz + hashToUnit(hashCombine(cell, 3)));
-        const double exist = hashToUnit(hashCombine(cell, 4));
-        if (exist > 0.55) continue;
-        const Vec3 d = p - centre;
-        const double dist = d.length();
-        const double cr = 0.30 + 0.45 * hashToUnit(hashCombine(cell, 5));
-        if (dist > cr * 1.6) continue;
-        const double t = dist / cr;
-        double prof;
-        if (t < 1.0) {
-          prof = -(1.0 - t * t);
-        } else {
-          const double rim = (t - 1.0) / 0.6;
-          prof = (rim < 1.0) ? (1.0 - rim) * 0.5 : 0.0;
-        }
-        h += prof;
-      }
-  return h;
-}
-
-// WG-25 re-baselined this reference COMPOSITION to the current noise stack. What
-// the benchmark proves is unchanged and is worth restating, because it is easy to
-// re-baseline the wrong half: `ref::valueNoise` above is still the ORIGINAL eight
-// independent hash chains, so the comparison still measures exactly the WG-16
-// shared-prefix hoist. Only the stack the hoist is exercised through moved.
 inline double smoothstep(double e0, double e1, double x) {
   if (!(e1 > e0)) return x < e0 ? 0.0 : 1.0;
   double t = (x - e0) / (e1 - e0);
@@ -174,12 +134,38 @@ inline double sampleHeightFieldPlanetRef(const BodyParams& body, const Vec3& dir
   h *= body.maxReliefM;
   return h;
 }
+// WG-141 re-baseline: this tracks sampleHeightFieldMoon, exactly as the planet
+// reference above tracks sampleHeightFieldPlanet. What the bench measures is
+// unchanged, because ref::valueNoise is still the naive eight-chain version and
+// every fbm below routes through it.
+//
+// The crater rungs call the REAL of::worldgen functions on purpose. Neither
+// craterField nor craterFieldConfined contains a valueNoise call (they hash
+// cells directly), so a local copy would measure nothing this bench is about and
+// would be a third place to keep the ladder in sync. ref::craterField is gone
+// for that reason; its cost now appears identically on both sides of the
+// comparison, which is the honest way to time a part that did not change.
 inline double sampleHeightFieldMoonRef(const BodyParams& body, const Vec3& dir) {
-  const double M0 = fbm(body.bodySeed, dir, 3.0, 3, 41);
-  const double M1 = craterField(body.bodySeed, dir, 9.0);
-  const double M2 = fbm(body.bodySeed, dir, 90.0, 2, 53);
-  double h = (M0 * 0.4 + M1 * 0.7 + M2 * 0.03) * body.maxReliefM;
-  return h;
+  const uint64_t s = body.bodySeed;
+  const double base = fbm(s, dir, 2.5, 4, 41) * 1200.0;
+  const double c0 = of::worldgen::craterField(s, dir, 9.0)  * 1644.0;
+  const double c1 = of::worldgen::craterField(s, dir, 27.0) * 548.0;
+  const double big = c0 + c1;
+  const double mareN = fbm(s, dir, 2.0, 3, 61);
+  const double basinGate = 1.0 - of::worldgen::smoothstep(-800.0, 0.0, big);
+  const double mare =
+      of::worldgen::smoothstep(0.02, 0.26, mareN) * (0.35 + 0.65 * basinGate);
+  const double young = 1.0 - 0.72 * mare;
+  const double c2 = of::worldgen::craterField(s, dir, 81.0)  * 183.0;
+  const double c3 = of::worldgen::craterField(s, dir, 243.0) * 60.9;
+  const double c4 = of::worldgen::craterFieldConfined(s, dir, 270.0)   * 22.5;
+  const double c5 = of::worldgen::craterFieldConfined(s, dir, 810.0)   * 7.51;
+  const double c6 = of::worldgen::craterFieldConfined(s, dir, 2430.0)  * 2.50;
+  const double c7 = of::worldgen::craterFieldConfined(s, dir, 7290.0)  * 0.834;
+  const double c8 = of::worldgen::craterFieldConfined(s, dir, 21870.0) * 0.278;
+  const double rego = fbm(s, dir, 833.0, 3, 53) * 10.0;
+  return base - mare * 800.0 + big
+       + (c2 + c3 + c4 + c5 + c6 + c7 + c8) * young + rego;
 }
 inline double sampleHeightField(const BodyParams& body, const Vec3& dir) {
   return body.kind == kPlanet ? sampleHeightFieldPlanetRef(body, dir)

@@ -55,7 +55,8 @@ export async function probeWorkerOracle(
     worker.onmessage = (e: MessageEvent<OracleProbeReply>) => { clearTimeout(timer); resolve(e.data); };
     worker.onerror = (e) => { clearTimeout(timer); reject(new Error(`worker error: ${e.message}`)); };
     const req: OracleProbeRequest = {
-      type: 'probe', seedLo: cfg.seedLo, seedHi: cfg.seedHi, dirs: dirs.slice(),
+      type: 'probe', bodyId: cfg.bodyId,
+      seedLo: cfg.seedLo, seedHi: cfg.seedHi, dirs: dirs.slice(),
     };
     worker.postMessage(req, [req.dirs.buffer]);
   });

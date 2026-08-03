@@ -1,8 +1,14 @@
 // The terrain.worker message contract. One file so the client and the worker
 // cannot drift; importing this costs no runtime code (types plus two consts).
 
+import type { BodyId } from '../world/PlanetBody.js';
+
 export interface TerrainInitMsg {
   type: 'init';
+  /** Which body to stream. The worker creates its OWN handle from this rather
+   *  than being handed one, because heaps are never shared across workers
+   *  (DW-16, and see the same discipline for edits at terrain.worker.ts:33). */
+  bodyId: BodyId;
   seedLo: number;
   seedHi: number;
   splitRatio: number;

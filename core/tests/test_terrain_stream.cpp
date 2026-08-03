@@ -370,31 +370,6 @@ inline double ridged(uint64_t s, const Vec3& d, double fr, int oc, uint64_t ch) 
     n=1.0-std::fabs(n); n*=n; sum+=amp*n*prev; prev=n; f*=2; amp*=0.5; }
   return sum;
 }
-inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
-  const Vec3 p = dir*freq;
-  const double fx=std::floor(p.x), fy=std::floor(p.y), fz=std::floor(p.z);
-  const int cx=(int)fx, cy=(int)fy, cz=(int)fz;
-  double h=0;
-  for (int dz=-1;dz<=1;++dz) for (int dy=-1;dy<=1;++dy) for (int dx=-1;dx<=1;++dx){
-    uint64_t cell=mix64(seed^0xC0FFEEull);
-    cell=hashCombine(cell,(uint64_t)(int64_t)(cx+dx));
-    cell=hashCombine(cell,(uint64_t)(int64_t)(cy+dy));
-    cell=hashCombine(cell,(uint64_t)(int64_t)(cz+dz));
-    const Vec3 centre(fx+dx+hashToUnit(hashCombine(cell,1)),
-                      fy+dy+hashToUnit(hashCombine(cell,2)),
-                      fz+dz+hashToUnit(hashCombine(cell,3)));
-    const double exist=hashToUnit(hashCombine(cell,4));
-    if (exist>0.55) continue;
-    const Vec3 dd=p-centre; const double dist=dd.length();
-    const double cr=0.30+0.45*hashToUnit(hashCombine(cell,5));
-    if (dist>cr*1.6) continue;
-    const double t=dist/cr; double prof;
-    if (t<1.0) prof=-(1.0-t*t);
-    else { const double rim=(t-1.0)/0.6; prof=(rim<1.0)?(1.0-rim)*0.5:0.0; }
-    h+=prof;
-  }
-  return h;
-}
 // WG-25 re-baseline: the PLANET composition below tracks the current
 // sampleHeightFieldPlanet. What this oracle exists to prove is unchanged, 
 // orig::valueNoise above is still the NAIVE eight-independent-corner-chains
@@ -425,10 +400,36 @@ inline double sampleHeightField(const BodyParams& b, const Vec3& dir) {
     double h=L0*0.58+uplift*L1*0.52+L2*0.0021; h*=b.maxReliefM;
     return h;
   } else {
-    const double M0=fbm(b.bodySeed,dir,3.0,3,41);
-    const double M1=craterField(b.bodySeed,dir,9.0);
-    const double M2=fbm(b.bodySeed,dir,90.0,2,53);
-    return (M0*0.4+M1*0.7+M2*0.03)*b.maxReliefM;
+    // WG-141 re-baseline, exactly as the WG-25 note above describes for the
+    // planet: the MOON composition now tracks sampleHeightFieldMoon. The point
+    // this oracle exists to prove is untouched, because orig::valueNoise above
+    // is still the naive eight-independent-corner-chains version and every fbm
+    // below routes through it.
+    //
+    // The crater rungs deliberately call the REAL of::worldgen functions rather
+    // than a copy. craterField and craterFieldConfined contain no valueNoise
+    // call at all, they hash cells directly, so a duplicate here would prove
+    // nothing about the hoist and would only be one more thing to keep in sync.
+    // orig::craterField was removed for that reason.
+    const double base = fbm(b.bodySeed,dir,2.5,4,41) * 1200.0;
+    const double c0 = of::worldgen::craterField(b.bodySeed,dir,9.0)  * 1644.0;
+    const double c1 = of::worldgen::craterField(b.bodySeed,dir,27.0) * 548.0;
+    const double big = c0 + c1;
+    const double mareN = fbm(b.bodySeed,dir,2.0,3,61);
+    const double basinGate = 1.0 - of::worldgen::smoothstep(-800.0,0.0,big);
+    const double mare = of::worldgen::smoothstep(0.02,0.26,mareN)
+                      * (0.35 + 0.65*basinGate);
+    const double young = 1.0 - 0.72*mare;
+    const double c2 = of::worldgen::craterField(b.bodySeed,dir,81.0)  * 183.0;
+    const double c3 = of::worldgen::craterField(b.bodySeed,dir,243.0) * 60.9;
+    const double c4 = of::worldgen::craterFieldConfined(b.bodySeed,dir,270.0)   * 22.5;
+    const double c5 = of::worldgen::craterFieldConfined(b.bodySeed,dir,810.0)   * 7.51;
+    const double c6 = of::worldgen::craterFieldConfined(b.bodySeed,dir,2430.0)  * 2.50;
+    const double c7 = of::worldgen::craterFieldConfined(b.bodySeed,dir,7290.0)  * 0.834;
+    const double c8 = of::worldgen::craterFieldConfined(b.bodySeed,dir,21870.0) * 0.278;
+    const double rego = fbm(b.bodySeed,dir,833.0,3,53) * 10.0;
+    return base - mare*800.0 + big
+         + (c2+c3+c4+c5+c6+c7+c8)*young + rego;
   }
 }
 }  // namespace orig

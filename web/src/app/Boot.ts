@@ -104,7 +104,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   const core = await loadOfCore();
   const wasmLoadMs = performance.now() - tWasm;
 
-  const body = PlanetBody.forge(core, cfg.seedLo, cfg.seedHi);
+  const body = PlanetBody.create(core, cfg.bodyId, cfg.seedLo, cfg.seedHi);
   const oracle = new SurfaceOracle(core, body);
   const oracleTiming = benchOracle(core, body.handle, 3000);
 

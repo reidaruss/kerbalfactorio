@@ -245,7 +245,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // reported `policy uniform` for BOTH sides of a pair because the runner
   // dropped the flag, which is the `fur`/`partmat` failure a dozen lines up
   // happening again to the lane that had just finished writing it down.
-  'shadowlod', 'shadowlodk', 'shadowlodpx'];
+  'shadowlod', 'shadowlodk', 'shadowlodpx',
+  // Like `sandbox` above, not an isolation switch: it selects WHICH BODY the
+  // client boots on. `body=cinder` (or `moon`, or `1`) boots the moon; absent
+  // or anything else is Forge, which is every existing probe unchanged.
+  // Registered in the same commit that introduces it, per this list's own rule.
+  'body'];
 for (const k of PAGE_PARAMS) {
   if (args.has(k)) params.set(k, args.get(k));
 }

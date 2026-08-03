@@ -82,6 +82,7 @@ export async function bootTerrain(d: TerrainBootDeps): Promise<TerrainBootResult
     worker.onerror = (e) => { clearTimeout(timer); reject(new Error(`terrain.worker: ${e.message}`)); };
     const init: TerrainInitMsg = {
       type: 'init',
+      bodyId: cfg.bodyId,
       seedLo: cfg.seedLo, seedHi: cfg.seedHi,
       splitRatio: cfg.splitRatio, mergeHysteresis: 0.6,
       maxDepth: cfg.maxDepth,

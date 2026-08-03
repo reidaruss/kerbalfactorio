@@ -376,7 +376,20 @@ inline BodyParams makeCinder(uint64_t worldSeed) {
   b.bodySeed = mix64(worldSeed ^ 0x0C0C0C0Cull);
   b.radiusM = 2.0e5;          // 200 km
   b.kind = kMoon;
-  b.maxReliefM = 4000.0;      // ~4 km craters + rolling
+  // WG-141: 4000 was the spike's guess and the crater ladder overruns it. The
+  // MEASURED extremes of the shipped field over 200,000 lattice directions are
+  // about -5.1 km to +4.9 km, so the declared relief is raised to cover them
+  // with margin. `moon_relief_within_declared_max` asserts both the bound and
+  // that the field genuinely uses its range, so this number cannot drift back
+  // into being a fiction. For scale, KSP's Mun is also a 200 km body and carries
+  // roughly 7 km of relief, so this is dramatic but not absurd.
+  //
+  // 5000 rather than 6000, and the difference is not cosmetic: this number is
+  // ALSO the denominator biomeAtMoonH's bands are expressed in, so every metre
+  // of headroom added here widens every biome band. The worst measured seed of
+  // five is -4565 m to +3985 m, so 5000 covers the field with margin while
+  // keeping the bands tight enough that all three moon biomes stay populated.
+  b.maxReliefM = 5000.0;
   b.seaLevelM = 0.0;
   // mu = 1.63 * 200e3^2 = 6.52e10. MUST equal of::orbital::kCinderMu.
   b.muM3S2 = 1.63 * 2.0e5 * 2.0e5;
@@ -540,44 +553,139 @@ inline Vec3 domainWarp(uint64_t seed, const Vec3& dir, double freq, double amp,
               dir.z + amp * valueNoise(seed, p, channel + 2u));
 }
 
+// Crater profile constants (WG-141). `kCraterReach` is the profile's outer ZERO
+// measured in crater radii: at t == kCraterReach the rim contribution is exactly
+// 0, so clipping at that distance loses nothing. `kCraterRadiusMax * kCraterReach
+// <= 1.0` is the EXACT condition that makes a 3x3x3 cell neighbourhood
+// sufficient, which is the subject of the defect note on craterField below.
+constexpr double kCraterReach      = 1.6;
+constexpr double kCraterRadiusMin  = 0.30;
+constexpr double kCraterRadiusSpan = 0.325;  // max 0.625; 0.625 * 1.6 == 1.0
+constexpr double kCraterExistMax   = 0.55;   // fraction of cells holding one
+constexpr double kCraterRimHeight  = 0.50;   // crest height above the datum
+
+// THE crater profile, shared by both crater fields so the two cannot disagree.
+// `t` is distance from the centre in crater radii. The profile is -1 on the
+// floor, rises to +kCraterRimHeight at the crest (t == 1), then fades to exactly
+// zero with zero slope at t == kCraterReach. Floor-to-crest depth is therefore
+// (1 + kCraterRimHeight) times the layer amplitude, which is what the amplitude
+// ladder in sampleHeightFieldMoon is calibrated against.
+//
+// WG-141 FIXES A DISCONTINUITY HERE, AND IT WAS A LARGE ONE. The spike profile
+// was `-(1 - t*t)` inside and `(1 - rim) * 0.5` outside. The first tends to 0 as
+// t approaches 1 from below; the second is 0.5 AT t == 1. That is a step of half
+// the layer amplitude AT EVERY CRATER RIM, on every body that has craters. On
+// the old moon it was a 1,400 m vertical wall ringing every crater, which is why
+// a 2 m-spacing slope sample on a crater floor could report a 1,589 m step and
+// why the wavelength sweep's RMS column was unreadable. The crest is now simply
+// the top of the bowl, which is also what a crater looks like.
+//
+// The outer fade is squared rather than linear so its slope reaches zero at the
+// same point its value does; a linear fade leaves a circular crease in the
+// derivative, which a shaded normal shows even though the height is continuous.
+inline double craterProfile(double t) {
+  if (t < 1.0) return -1.0 + (1.0 + kCraterRimHeight) * t * t;
+  const double rim = (t - 1.0) / (kCraterReach - 1.0);
+  const double f = 1.0 - rim;
+  return (f > 0.0) ? kCraterRimHeight * f * f : 0.0;
+}
+
 // Hashed-grid crater field (moon signature, spike §2.2). Hash cells on the
 // scaled direction; one candidate crater per cell; accumulate nearest profiles.
 // Position-hashed so craters are identical across runs / LOD.
+//
+// WG-141 makes TWO changes here, and the first is a DEFECT FIX, not a tuning.
+//
+// (1) THE 3x3x3 NEIGHBOURHOOD WAS NOT BIG ENOUGH FOR THE RADIUS IT ALLOWED.
+// A crater reaches `cr * 1.6` cells from its centre and the centre is jittered
+// anywhere inside its own cell, so a crater influences ground up to `cr * 1.6`
+// cells BEYOND that cell. The old `cr` maximum of 0.75 gives a reach of 1.2
+// cells, so a crater sitting in a cell TWO away could touch a sample this loop
+// never visits: the profile is then clipped part way down its rim and the field
+// takes a STEP. Worked case: a sample at a cell's near edge, a crater centred on
+// the far edge of the cell two away, distance 1.0, cr 0.75, so t = 1.333 and the
+// clipped profile is 0.222, which against this layer's metre amplitude is a
+// several-hundred-metre cliff out of nothing. Rare, but real, and it had been
+// in the field since the spike.
+// The bound is exact and cheap to honour: 3x3x3 is sufficient IF AND ONLY IF the
+// reach is at most 1.0 cell, so the radius is capped at 0.625. This MOVES BITS
+// on the moon deliberately. `crater_neighbourhood_is_sufficient` in
+// test_world_gen.cpp asserts it by brute force against a 5x5x5 sweep and fails
+// on the old coefficients by name, so the refusing case is reachable.
+//
+// (2) The hash chain is hoisted exactly as WG-16 hoisted valueNoise's. The base
+// mix is loop-invariant (it was recomputed 27 times), the x stage depends only
+// on dx (3 values, was 27) and the xy stage only on dx and dy (9, was 27); the
+// existence draw is pulled AHEAD of the centre jitter so the ~45% of cells with
+// no crater cost one hash instead of five. This requires the loop NESTING to
+// match the hash chain order, so dx is now outermost. That reorders the `h +=`
+// accumulation and is therefore not bit-preserving on its own; the hoist itself
+// is proven bit-identical against a verbatim unhoisted reference at the same
+// nesting in `crater_hoist_is_bit_identical`.
 inline double craterField(uint64_t seed, const Vec3& dir, double freq) {
   const Vec3 p = dir * freq;
   const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
   const int cx = static_cast<int>(fx), cy = static_cast<int>(fy),
             cz = static_cast<int>(fz);
+  const uint64_t base = mix64(seed ^ 0xC0FFEEull);
   double h = 0.0;
-  for (int dz = -1; dz <= 1; ++dz)
-    for (int dy = -1; dy <= 1; ++dy)
-      for (int dx = -1; dx <= 1; ++dx) {
-        uint64_t cell = mix64(seed ^ 0xC0FFEEull);
-        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cx + dx)));
-        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cy + dy)));
-        cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(cz + dz)));
+  for (int dx = -1; dx <= 1; ++dx) {
+    const uint64_t hx =
+        hashCombine(base, static_cast<uint64_t>(static_cast<int64_t>(cx + dx)));
+    for (int dy = -1; dy <= 1; ++dy) {
+      const uint64_t hxy =
+          hashCombine(hx, static_cast<uint64_t>(static_cast<int64_t>(cy + dy)));
+      for (int dz = -1; dz <= 1; ++dz) {
+        const uint64_t cell = hashCombine(
+            hxy, static_cast<uint64_t>(static_cast<int64_t>(cz + dz)));
+        // Existence first: a cell with no crater must not pay for a centre.
+        if (hashToUnit(hashCombine(cell, 4)) > kCraterExistMax) continue;
         // Jittered crater centre within the cell.
         const Vec3 centre(fx + dx + hashToUnit(hashCombine(cell, 1)),
                           fy + dy + hashToUnit(hashCombine(cell, 2)),
                           fz + dz + hashToUnit(hashCombine(cell, 3)));
-        const double exist = hashToUnit(hashCombine(cell, 4));
-        if (exist > 0.55) continue;  // not every cell has a crater
         const Vec3 d = p - centre;
         const double dist = d.length();
-        const double cr = 0.30 + 0.45 * hashToUnit(hashCombine(cell, 5));  // radius
-        if (dist > cr * 1.6) continue;
-        // Crater profile: bowl (negative) + raised rim (positive bump).
-        const double t = dist / cr;
-        double prof;
-        if (t < 1.0) {
-          prof = -(1.0 - t * t);            // bowl
-        } else {
-          const double rim = (t - 1.0) / 0.6;
-          prof = (rim < 1.0) ? (1.0 - rim) * 0.5 : 0.0;  // rim falloff
-        }
-        h += prof;
+        const double cr =
+            kCraterRadiusMin + kCraterRadiusSpan * hashToUnit(hashCombine(cell, 5));
+        if (dist > cr * kCraterReach) continue;
+        h += craterProfile(dist / cr);
       }
+    }
+  }
   return h;
+}
+
+// CONFINED crater field (WG-141): exactly one candidate crater per lattice cell,
+// jittered so that the whole profile INCLUDING its rim fits inside that cell.
+// That makes a ONE-cell lookup exact where craterField needs twenty-seven, which
+// is the entire reason the fine rungs of the crater ladder are affordable: a
+// confined rung costs about one twelfth of a full rung.
+//
+// The price is that craters on a single rung can neither overlap nor cross a
+// cell boundary, which on its own would read as a lattice. The ladder pays it
+// back, because four confined rungs at 3x frequency ratios overlap EACH OTHER
+// and sit under three full rungs, so no one lattice is legible. This is a
+// deliberate trade and the picture is the arbiter, not this comment.
+inline double craterFieldConfined(uint64_t seed, const Vec3& dir, double freq) {
+  const Vec3 p = dir * freq;
+  const double fx = std::floor(p.x), fy = std::floor(p.y), fz = std::floor(p.z);
+  uint64_t cell = mix64(seed ^ 0xC7A7E812ull);
+  cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int>(fx))));
+  cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int>(fy))));
+  cell = hashCombine(cell, static_cast<uint64_t>(static_cast<int64_t>(static_cast<int>(fz))));
+  if (hashToUnit(hashCombine(cell, 4)) > 0.62) return 0.0;
+  // Radius small enough that bowl + rim fit within the cell: cr * kCraterReach
+  // is the half-extent, so 2 * cr * kCraterReach must be under 1.
+  const double cr = 0.10 + 0.18 * hashToUnit(hashCombine(cell, 5));  // <= 0.28
+  const double half = cr * kCraterReach;                             // <= 0.448
+  const double span = 1.0 - 2.0 * half;
+  const Vec3 centre(fx + half + span * hashToUnit(hashCombine(cell, 1)),
+                    fy + half + span * hashToUnit(hashCombine(cell, 2)),
+                    fz + half + span * hashToUnit(hashCombine(cell, 3)));
+  const double dist = (p - centre).length();
+  if (dist > half) return 0.0;
+  return craterProfile(dist / cr);
 }
 
 // =============================================================================
@@ -647,12 +755,93 @@ inline double sampleHeightFieldPlanet(const BodyParams& body, const Vec3& dir) {
   return h;
 }
 
+// -----------------------------------------------------------------------------
+// WG-141: the moon noise stack.
+//
+// THE DIAGNOSIS, and it is WG-25's diagnosis one body later. The stack this
+// replaces was the spike-era original and it was never revisited when the planet
+// was. On Cinder (R = 200 km) a frequency f has a feature size of 200000/f
+// metres of arc, and an N-octave fbm at lacunarity 2 tops out at f * 2^(N-1):
+//   M0  fbm f=3, 3 oct    top f 12    16.7 km    amplitude 1600 m
+//   M1  craterField f=9   cell 22.2 km           craters 13 to 33 km across
+//   M2  fbm f=90, 2 oct   top f 180   1.11 km    amplitude 120 m
+// BELOW 1.11 km THE FIELD HAD NO CONTENT AT ALL. The smallest landform on the
+// entire moon was a kilometre wide, so a player standing on Cinder saw smooth
+// grey rolling ground and could not have walked into a single crater. Craters
+// are the whole character of an airless body, and at human scale there were
+// none. That is not a moon, it is a grey planet.
+//
+// THE LADDER. Craters are scale-free in two ways that a single noise layer
+// cannot express: the production population goes roughly as N(>D) ~ D^-2, and
+// simple craters hold a near-constant depth-to-diameter ratio around 0.12. A
+// GEOMETRIC LADDER of crater rungs reproduces both at once. Tripling the
+// frequency shrinks the cell to a third, which puts NINE times as many craters
+// per unit surface area at a third of the diameter, and thirding the amplitude
+// alongside holds the depth ratio fixed. Eight rungs span 28 km down to 5.5 m.
+//
+// Amplitudes are chosen from the ratio, not guessed. craterProfile spans 1.5
+// units floor-to-crest, so a layer amplitude A yields a crater 1.5A deep; for a
+// full rung the mean crater is 0.925 cells across and for a confined rung 0.38,
+// giving A = (0.12 / 1.5) * 0.925 * R/f = 14800/f and A = 6080/f respectively.
+// Those two closed forms are where every crater number below comes from, and
+// they are why the ladder is self-similar: every rung has the same wall grade.
+//
+// THE DICHOTOMY. The one thing that makes a moon read as a moon in a wide shot
+// is mare against highland: dark smooth flooded plain against bright rough
+// crater-saturated upland. `mare` is a low-frequency mask BIASED INTO THE BASINS
+// the big rungs dig, because that is where lava actually ponded. It lowers the
+// ground and it suppresses the fine rungs, since a flooded surface is young and
+// its small craters are buried. It also finally makes the three moon biome names
+// in biome.h mean something a classifier can see.
+//
+// EJECTA RAYS ARE DELIBERATELY ABSENT FROM THIS FIELD. Real rays are albedo, not
+// topography: they are bright dust lying flat on the ground. Putting them in the
+// height field would be a lie that also costs a transcendental. They are routed
+// to rendering as a material ask instead.
 inline double sampleHeightFieldMoon(const BodyParams& body, const Vec3& dir) {
-  const double M0 = fbm(body.bodySeed, dir, 3.0, 3, 41);           // rolling base
-  const double M1 = craterField(body.bodySeed, dir, 9.0);          // craters
-  const double M2 = fbm(body.bodySeed, dir, 90.0, 2, 53);          // detail
-  double h = (M0 * 0.4 + M1 * 0.7 + M2 * 0.03) * body.maxReliefM;
-  return h;
+  const uint64_t s = body.bodySeed;
+
+  // Base relief: broad rises and basins, 80 km down to 10 km.
+  const double base = fbm(s, dir, 2.5, 4, 41) * 1200.0;
+
+  // The two coarse rungs are the BASINS, so they are computed first: the mare
+  // mask needs to know where the ground is already low.
+  const double c0 = craterField(s, dir, 9.0)   * 1644.0;   // 13.3 to 27.8 km
+  const double c1 = craterField(s, dir, 27.0)  * 548.0;    // 4.44 to 9.26 km
+  const double big = c0 + c1;
+
+  // MARE. A low-frequency field gated into the basins: `basinGate` is 1 deep
+  // inside a big crater and 0 on open highland, and the mask keeps a little
+  // presence outside so the maria are not perfect discs of the rungs above.
+  const double mareN = fbm(s, dir, 2.0, 3, 61);
+  const double basinGate = 1.0 - smoothstep(-800.0, 0.0, big);
+  const double mare = smoothstep(0.02, 0.26, mareN) * (0.35 + 0.65 * basinGate);
+  // Fine craters survive on highland and are buried by the flood in the mare.
+  const double young = 1.0 - 0.72 * mare;
+
+  // The fine rungs. Full-neighbourhood down to 494 m, then CONFINED, which is
+  // what makes eight rungs cost about what three would have.
+  const double c2 = craterField(s, dir, 81.0)   * 183.0;   // 1.48 to 3.09 km
+  const double c3 = craterField(s, dir, 243.0)  * 60.9;    // 494 m to 1.03 km
+  const double c4 = craterFieldConfined(s, dir, 270.0)   * 22.5;  // 148 to 415 m
+  const double c5 = craterFieldConfined(s, dir, 810.0)   * 7.51;  // 49 to 138 m
+  const double c6 = craterFieldConfined(s, dir, 2430.0)  * 2.50;  // 16.5 to 46 m
+  const double c7 = craterFieldConfined(s, dir, 7290.0)  * 0.834; // 5.5 to 15.4 m
+  // The bottom rung earns its place on a MEASUREMENT, not on symmetry: without
+  // it the median curvature over a 4 m baseline is 0.0204 m against a 0.020 m
+  // floor, i.e. the ladder passed its own feature test by 2%. Small craters are
+  // also the rung a player standing still actually looks at. The terrain mesh
+  // resolves about 0.6 m per vertex at maxDepth on this body, so this is the
+  // last rung that is not mostly aliased away.
+  const double c8 = craterFieldConfined(s, dir, 21870.0) * 0.278; // 1.8 to 5.1 m
+
+  // Regolith roll: the layer underfoot, 240 m down to 60 m. Small in absolute
+  // metres but it is what stops the ground between craters being a polished
+  // plane. 10 m over an 833 base frequency reads as a ~7% local grade.
+  const double rego = fbm(s, dir, 833.0, 3, 53) * 10.0;
+
+  return base - mare * 800.0 + big
+       + (c2 + c3 + c4 + c5 + c6 + c7 + c8) * young + rego;
 }
 
 inline double sampleHeightField(const BodyParams& body, const Vec3& dir) {

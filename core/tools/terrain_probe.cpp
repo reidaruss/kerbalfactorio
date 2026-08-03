@@ -4,7 +4,11 @@
 // "where does the height field actually have detail, and where is it a plane?".
 //
 //  1 PATCH STATS      min/max/mean over a 6 km patch at the start point, the
-//                     nearest mountain, and the nearest plains.
+//                     high site and the low site. On a PLANET those are the
+//                     nearest mountain and the nearest plains; on a MOON there
+//                     are no such biomes (biome.h §1: a moon is Regolith /
+//                     MoonHighland / CraterFloor), so they are the nearest
+//                     MoonHighland and the nearest CraterFloor.
 //  2 SLOPE SPECTRUM   the |dh| distribution between horizontally adjacent
 //                     samples at 2 m / 10 m / 100 m / 1 km. A field that is
 //                     locally a PLANE gives p50 == p90 == max; real content
@@ -12,17 +16,28 @@
 //  3 WAVELENGTH SWEEP RMS neighbour difference vs spacing, 1 m to 10 km. Below
 //                     the shortest wavelength present the RMS falls LINEARLY
 //                     with spacing, so the RMS/spacing column goes flat. That
-//                     plateau is the smoking gun.
+//                     plateau is the smoking gun. The MEDIAN |dh| is reported
+//                     beside the RMS because RMS alone cannot be read on a field
+//                     that contains STEP discontinuities: a vertical jump of J
+//                     metres is straddled by a fraction of the pairs
+//                     proportional to s, so it contributes rms ~ sqrt(s) and
+//                     drives rms/s UPWARD as s falls, which looks exactly like
+//                     fine content and is not. p50 ignores the rare straddling
+//                     pair and reports the typical ground.
 //  4 PLANETARY RELIEF raw + designed extremes and a per-biome histogram.
 //  5 COST             measured valueNoise calls per sample, and verts/sec.
 //  6 FLAT PAD         worst height step over a 4 m span inside the pad, the max
 //                     blend-annulus slope against the natural slope of the same
 //                     ground, and the radius past which the pad provably stops
-//                     perturbing the field (uint64 bit compare).
+//                     perturbing the field (uint64 bit compare). SKIPPED on a
+//                     body that declares no pad (makeCinder sets no homeDir and
+//                     no homeFlatRadiusM), because there is nothing to measure.
 //
 // Sections 1 to 3 sample designedHeightNoPad, NOT sampleDesignedHeight, so the
 // terrain numbers are not contaminated by the home pad; section 6 measures the
-// pad. Usage: terrain_probe [--seed <hex|dec>] [--pad flat,blend]
+// pad.
+// Usage: terrain_probe [--body forge|cinder] [--seed <hex|dec>] [--pad flat,blend]
+// --body defaults to forge, so every pre-existing invocation is unchanged.
 // =============================================================================
 #define OF_NOISE_COUNT 1
 
@@ -146,10 +161,13 @@ void probePatch(const BodyParams& body, const char* label, const Vec3& centre) {
 void probeWavelength(const BodyParams& body, const Vec3& centre,
                      const char* label) {
   const double R = body.radiusM;
-  std::printf("\n## wavelength sweep at %s: RMS |h(p+s) - h(p)| vs spacing s\n"
-              "   (RMS/s CONSTANT as s falls => NO content below that scale; "
-              "RMS/s RISING as s falls => content present)\n"
-              "   | spacing s |    rms dh |  rms/s (grade) |\n", label);
+  std::printf("\n## wavelength sweep at %s: |h(p+s) - h(p)| vs spacing s\n"
+              "   (ratio/s CONSTANT as s falls => NO content below that scale; "
+              "ratio/s RISING as s falls => content present)\n"
+              "   (read p50/s when the field has STEP discontinuities: a jump "
+              "inflates rms/s at small s and fakes content)\n"
+              "   | spacing s |    rms dh |  rms/s (grade) |    p50 dh |"
+              "  p50/s (grade) |\n", label);
   const double spacings[] = {1, 2, 5, 10, 20, 50, 100, 200, 500,
                              1000, 2000, 5000, 10000};
   const int K = 3000;
@@ -165,15 +183,22 @@ void probeWavelength(const BodyParams& body, const Vec3& centre,
     base.push_back(p);
     frames.push_back(frameAt(p));
   }
+  std::vector<double> dh;
+  dh.reserve(K);
   for (double s : spacings) {
     double s2 = 0;
+    dh.clear();
     for (int i = 0; i < K; ++i) {
       const double h0 = designedHeightNoPad(body, base[i]);
       const double h1 = designedHeightNoPad(body, offsetDir(frames[i], R, s, 0));
       s2 += (h1 - h0) * (h1 - h0);
+      dh.push_back(std::fabs(h1 - h0));
     }
     const double rms = std::sqrt(s2 / K);
-    std::printf("   | %9.0f | %9.5f | %13.5f%% |\n", s, rms, 100.0 * rms / s);
+    std::sort(dh.begin(), dh.end());
+    const double p50 = dh[dh.size() / 2];
+    std::printf("   | %9.0f | %9.5f | %13.5f%% | %9.5f | %13.5f%% |\n", s, rms,
+                100.0 * rms / s, p50, 100.0 * p50 / s);
   }
 }
 
@@ -221,16 +246,28 @@ void probeCost(const BodyParams& body, const Vec3& centre) {
   // Measured well OUTSIDE the home pad: inside it sampleDesignedHeight
   // legitimately evaluates the field twice (sample + pad centre).
   const Vec3 far = offsetDir(f, R, 60000.0, 40000.0);
+  // The "inside pad" figure is only meaningful on a body that HAS a pad. On one
+  // that does not, homeDir is the zero vector (not a unit direction), so asking
+  // for a height there would report a number sampled off the sphere entirely.
+  const bool hasPad = body.homeFlatRadiusM > 0.0;
   uint64_t n[5];
   n[0] = noiseCalls(); sampleHeightField(body, far);
   n[1] = noiseCalls(); sampleDesignedHeight(body, far);
   n[2] = noiseCalls(); biomeAt(body, far);
-  n[3] = noiseCalls(); sampleDesignedHeight(body, body.homeDir);
+  n[3] = noiseCalls(); if (hasPad) sampleDesignedHeight(body, body.homeDir);
   n[4] = noiseCalls();
-  std::printf("   valueNoise calls/sample: sampleHeightField=%llu  biomeAt=%llu"
-              "  sampleDesignedHeight=%llu  (inside pad=%llu)\n",
-              (unsigned long long)(n[1] - n[0]), (unsigned long long)(n[3] - n[2]),
-              (unsigned long long)(n[2] - n[1]), (unsigned long long)(n[4] - n[3]));
+  if (hasPad) {
+    std::printf("   valueNoise calls/sample: sampleHeightField=%llu  biomeAt=%llu"
+                "  sampleDesignedHeight=%llu  (inside pad=%llu)\n",
+                (unsigned long long)(n[1] - n[0]), (unsigned long long)(n[3] - n[2]),
+                (unsigned long long)(n[2] - n[1]), (unsigned long long)(n[4] - n[3]));
+  } else {
+    std::printf("   valueNoise calls/sample: sampleHeightField=%llu  biomeAt=%llu"
+                "  sampleDesignedHeight=%llu  (inside pad=n/a, no pad on this "
+                "body)\n",
+                (unsigned long long)(n[1] - n[0]), (unsigned long long)(n[3] - n[2]),
+                (unsigned long long)(n[2] - n[1]));
+  }
 
   // verts/sec through both samplers. Sampled around `far`, NOT the pad centre:
   // inside the pad sampleDesignedHeight legitimately evaluates the field twice,
@@ -265,7 +302,15 @@ void probeCost(const BodyParams& body, const Vec3& centre) {
 void probePad(const BodyParams& body) {
   std::printf("\n## home flat pad\n");
   if (body.homeFlatRadiusM <= 0.0) {
-    std::printf("   (disabled: homeFlatRadiusM = 0)\n");
+    const bool noHome = (body.homeDir.x == 0.0 && body.homeDir.y == 0.0 &&
+                         body.homeDir.z == 0.0);
+    if (noHome) {
+      std::printf("   SKIPPED: this body declares no home pad at all (no "
+                  "homeDir, homeFlatRadiusM = 0), so there is no pad to "
+                  "measure.\n");
+    } else {
+      std::printf("   (disabled: homeFlatRadiusM = 0)\n");
+    }
     return;
   }
   const Vec3 c = body.homeDir;
@@ -337,16 +382,35 @@ void probePad(const BodyParams& body) {
               " (blend radius %.0f m)\n", firstClean, body.homeBlendRadiusM);
 }
 
-// One scan of the cap around `centre`: the highest-relief Mountains dir (falling
-// back to the highest relief of any biome) and the NEAREST Plains dir. Plains is
-// the ground the player walks on for most of the game and is the case a
-// mountain-only probe would never show.
-struct Sites { Vec3 peak, plains; bool foundMountain = false; };
+// One scan of the cap around `centre` for the two patch sites, HIGH and LOW.
+//
+// PLANET: high = the highest-relief Mountains dir (falling back to the highest
+// relief of any biome), low = the NEAREST Plains dir. Plains is the ground the
+// player walks on for most of the game and is the case a mountain-only probe
+// would never show.
+//
+// MOON: neither Mountains nor Plains exists on a moon. biome.h's biomeAtMoonH
+// returns only Regolith / MoonHighland / CraterFloor, so a Mountains/Plains
+// search on a moon would find nothing and silently report the cap centre as if
+// it were a peak. The moon therefore searches for the NEAREST MoonHighland and
+// the NEAREST CraterFloor, and a search that finds neither says so.
+struct Site {
+  Vec3 dir;
+  bool found = false;     // the requested biome was actually located
+  bool fallback = false;  // high site fell back to "highest relief of any biome"
+};
+struct Sites { Site high, low; };
+
 Sites findSites(const BodyParams& body, const Vec3& centre, double capM) {
+  const bool moon = (body.kind != kPlanet);
+  const Biome hiB = moon ? Biome::MoonHighland : Biome::Mountains;
+  const Biome loB = moon ? Biome::CraterFloor : Biome::Plains;
   const Frame f = frameAt(centre);
   const double R = body.radiusM;
-  Sites s{centre, centre, false};
-  double bestM = -1e300, bestAny = -1e300, nearest = 1e300;
+  Sites s;
+  s.high.dir = centre;
+  s.low.dir = centre;
+  double bestH = -1e300, bestAny = -1e300, nearH = 1e300, nearL = 1e300;
   Vec3 outAny = centre;
   const int N = 400;
   const double st = 2.0 * capM / N;
@@ -358,11 +422,19 @@ Sites findSites(const BodyParams& body, const Vec3& centre, double capM) {
       const double h = designedHeightNoPad(body, d);
       const Biome b = biomeAt(body, d);
       if (h > bestAny) { bestAny = h; outAny = d; }
-      if (b == Biome::Mountains && h > bestM) { bestM = h; s.peak = d; }
-      if (b == Biome::Plains && d2 < nearest) { nearest = d2; s.plains = d; }
+      if (b == hiB) {
+        // Planet picks the HIGHEST such site, the moon the NEAREST one: on a
+        // planet "the mountain" means the biggest one in range, on a moon a
+        // highland is a band rather than a summit, so nearest is the honest ask.
+        if (moon) {
+          if (d2 < nearH) { nearH = d2; s.high.dir = d; s.high.found = true; }
+        } else if (h > bestH) {
+          bestH = h; s.high.dir = d; s.high.found = true;
+        }
+      }
+      if (b == loB && d2 < nearL) { nearL = d2; s.low.dir = d; s.low.found = true; }
     }
-  s.foundMountain = bestM > -1e299;
-  if (!s.foundMountain) s.peak = outAny;
+  if (!s.high.found) { s.high.dir = outAny; s.high.fallback = true; }
   return s;
 }
 
@@ -371,43 +443,92 @@ Sites findSites(const BodyParams& body, const Vec3& centre, double capM) {
 int main(int argc, char** argv) {
   uint64_t worldSeed = 0x0bf00d01ull;
   double padFlat = -1.0, padBlend = -1.0;
+  const char* bodyArg = "forge";
   for (int i = 1; i + 1 < argc; ++i) {
     if (std::strcmp(argv[i], "--seed") == 0)
       worldSeed = std::strtoull(argv[i + 1], nullptr, 0);
     if (std::strcmp(argv[i], "--pad") == 0)
       std::sscanf(argv[i + 1], "%lf,%lf", &padFlat, &padBlend);
+    if (std::strcmp(argv[i], "--body") == 0)
+      bodyArg = argv[i + 1];
+  }
+  const bool wantCinder = std::strcmp(bodyArg, "cinder") == 0;
+  if (!wantCinder && std::strcmp(bodyArg, "forge") != 0) {
+    std::fprintf(stderr, "terrain_probe: unknown --body '%s' (want forge or "
+                         "cinder)\n", bodyArg);
+    return 2;
   }
 
-  BodyParams forge = makeForge(worldSeed);
-  if (padFlat >= 0.0) { forge.homeFlatRadiusM = padFlat;
-                        forge.homeBlendRadiusM = padBlend; }
+  // --body defaults to forge, so a bare invocation is the run this tool has
+  // always been: same body, same seed, same sites, same numbers.
+  BodyParams body = wantCinder ? makeCinder(worldSeed) : makeForge(worldSeed);
+  const char* bodyName = wantCinder ? "Cinder (moon)" : "Forge";
+  const bool moon = (body.kind != kPlanet);
+  if (padFlat >= 0.0) {
+    if (body.homeDir.x == 0.0 && body.homeDir.y == 0.0 &&
+        body.homeDir.z == 0.0) {
+      std::fprintf(stderr, "terrain_probe: --pad ignored, %s declares no "
+                           "homeDir to put a pad on\n", bodyName);
+    } else {
+      body.homeFlatRadiusM = padFlat;
+      body.homeBlendRadiusM = padBlend;
+    }
+  }
+  // The same lat/lon on both bodies. On Forge it is the pad / scenario spawn; on
+  // Cinder it is simply a reference point, since the moon declares no home.
   const Vec3 home = latLonToDir(kHomeLatDeg * kDeg, kHomeLonDeg * kDeg);
+  const char* homeWord = moon ? "reference" : "home";
 
-  std::printf("=== terrain_probe: Forge R=%.0f km, worldSeed 0x%llx, "
+  std::printf("=== terrain_probe: %s R=%.0f km, worldSeed 0x%llx, "
               "bodySeed 0x%llx ===\n"
-              "home lat %.1f lon %.1f -> dir (%.17g, %.17g, %.17g)\n"
-              "home raw %.2f m, designed %.2f m, biome %s\n",
-              forge.radiusM / 1000.0, (unsigned long long)worldSeed,
-              (unsigned long long)forge.bodySeed, kHomeLatDeg, kHomeLonDeg,
-              home.x, home.y, home.z, sampleHeightField(forge, home),
-              sampleDesignedHeight(forge, home),
-              biomeName(biomeAt(forge, home)));
+              "%s lat %.1f lon %.1f -> dir (%.17g, %.17g, %.17g)\n"
+              "%s raw %.2f m, designed %.2f m, biome %s\n",
+              bodyName, body.radiusM / 1000.0, (unsigned long long)worldSeed,
+              (unsigned long long)body.bodySeed, homeWord, kHomeLatDeg,
+              kHomeLonDeg, home.x, home.y, home.z, homeWord,
+              sampleHeightField(body, home), sampleDesignedHeight(body, home),
+              biomeName(biomeAt(body, home)));
 
-  const Sites sites = findSites(forge, home, 200000.0);
-  double plat, plon; dirToLatLon(sites.peak, plat, plon);
-  std::printf("peak within 200 km: lat %.3f lon %.3f, designed %.1f m, biome %s"
-              " (Mountains found: %s)\n", plat / kDeg, plon / kDeg,
-              designedHeightNoPad(forge, sites.peak),
-              biomeName(biomeAt(forge, sites.peak)),
-              sites.foundMountain ? "yes" : "NO, fell back to highest relief");
+  // A cap of one third of the body radius: exactly the 200 km this tool has
+  // always used on Forge (600 km / 3), and the same ANGULAR extent on the much
+  // smaller moon, where a literal 200 km cap would be a full radian of arc and
+  // the gnomonic offset would stop meaning what it says.
+  const double capM = body.radiusM / 3.0;
+  const Sites sites = findSites(body, home, capM);
 
-  probePatch(forge, "home (lat 2, lon 144)", home);
-  probePatch(forge, "peak within 200 km", sites.peak);
-  probePatch(forge, "nearest Plains", sites.plains);
-  probeWavelength(forge, home, "home");
-  probeWavelength(forge, sites.peak, "peak");
-  probePlanetary(forge);
-  probeCost(forge, home);
-  probePad(forge);
+  char hiPatch[96], loPatch[96], hiWave[48];
+  std::snprintf(hiWave, sizeof hiWave, "%s",
+                moon ? "nearest MoonHighland" : "peak");
+  std::snprintf(hiPatch, sizeof hiPatch, "%s within %.0f km", hiWave,
+                capM / 1000.0);
+  std::snprintf(loPatch, sizeof loPatch, "nearest %s",
+                moon ? "CraterFloor" : "Plains");
+
+  double plat, plon; dirToLatLon(sites.high.dir, plat, plon);
+  std::printf("%s: lat %.3f lon %.3f, designed %.1f m, biome %s"
+              " (%s found: %s)\n", hiPatch, plat / kDeg, plon / kDeg,
+              designedHeightNoPad(body, sites.high.dir),
+              biomeName(biomeAt(body, sites.high.dir)),
+              moon ? "MoonHighland" : "Mountains",
+              sites.high.found ? "yes" : "NO, fell back to highest relief");
+  if (!sites.low.found) {
+    std::printf("%s: NOT FOUND anywhere within %.0f km of %s. No patch or "
+                "sweep is reported for it; the site below would be the cap "
+                "centre, not a %s.\n", loPatch, capM / 1000.0, homeWord,
+                moon ? "crater floor" : "plain");
+  }
+
+  char homePatch[64];
+  std::snprintf(homePatch, sizeof homePatch, "%s (lat %.0f, lon %.0f)",
+                moon ? "reference point" : "home", kHomeLatDeg, kHomeLonDeg);
+
+  probePatch(body, homePatch, home);
+  probePatch(body, hiPatch, sites.high.dir);
+  if (sites.low.found) probePatch(body, loPatch, sites.low.dir);
+  probeWavelength(body, home, homeWord);
+  probeWavelength(body, sites.high.dir, hiWave);
+  probePlanetary(body);
+  probeCost(body, home);
+  probePad(body);
   return 0;
 }

@@ -622,3 +622,123 @@ TEST(region_query_returns_local_deposits) {
   FDepositNode after; CHECK(mut.GetDeposit(id0, after));
   CHECK(after.RemainingAmount < before.RemainingAmount);
 }
+
+// =============================================================================
+// WG-141 â€” the MOON twin of the cliff test above, and the reason it exists is
+// that the moon never got WG-25's cure. `designedReliefFactor` switched on the
+// DISCRETE biome, so the shaped moon surface stepped by the gain difference the
+// instant a sample crossed an elevation band: 1.00 -> 1.15 at rel 0.20 and
+// 1.00 -> 1.10 at rel -0.10, measured by terrain_probe as a 120 m and a 40 m
+// wall following contour lines around the whole body.
+//
+// The negative control is computed in the SAME loop from the SAME samples, so
+// the bar is demonstrably reachable rather than decorative.
+// =============================================================================
+TEST(moon_designed_surface_has_no_biome_boundary_cliffs) {
+  const BodyParams cinder = makeCinder(kTunedSeed);
+  const double denom = reliefDenom(cinder);
+  double worst = 0.0, worstOld = 0.0, worstAtCross = 0.0;
+  int crossings = 0, samples = 0;
+  for (int t = 0; t < 24; ++t) {
+    const Vec3 c = fibonacciDir(t * 977, 24000);
+    const TFrame f = tframe(c);
+    auto shaped = [&](const Vec3& d) {
+      return sampleHeightField(cinder, d)
+           * designedGainForMoonRelief(sampleHeightField(cinder, d) / denom);
+    };
+    // The retired band-switching form, kept here and NOWHERE ELSE as the control.
+    auto shapedOld = [&](const Vec3& d) {
+      const double base = sampleHeightField(cinder, d);
+      return base * designedReliefFactor(biomeAtMoonH(cinder, base));
+    };
+    Vec3 p0 = toff(f, cinder.radiusM, -50000.0, 0);
+    double prev = shaped(p0), prevOld = shapedOld(p0);
+    Biome prevB = biomeAt(cinder, p0);
+    for (int i = -499; i <= 500; ++i) {
+      const Vec3 d = toff(f, cinder.radiusM, i * 100.0, 0.0);
+      const double h = shaped(d), hOld = shapedOld(d);
+      const Biome b = biomeAt(cinder, d);
+      const double step = std::fabs(h - prev), stepOld = std::fabs(hOld - prevOld);
+      if (step > worst) worst = step;
+      // The comparison has to be made AT A CROSSING, which cost me one wrong
+      // assertion: compared globally, both forms peak on the same genuine crater
+      // wall (173.8 m either way) and the artifact is invisible. The band switch
+      // can only act where the band changes, so that is the only place worth
+      // looking, and there it is the whole difference.
+      if (b != prevB) {
+        ++crossings;
+        if (stepOld > worstOld) worstOld = stepOld;
+        if (step > worstAtCross) worstAtCross = step;
+      }
+      prev = h; prevOld = hOld; prevB = b;
+      ++samples;
+    }
+  }
+  std::printf("      moon cliffs over %d samples, %d biome crossings: worst "
+              "step anywhere %.1f m | AT A CROSSING continuous %.1f m vs "
+              "band-switched %.1f m\n",
+              samples, crossings, worst, worstAtCross, worstOld);
+  CHECK(samples > 20000);
+  CHECK(crossings > 50);              // the transects really do cross boundaries
+  CHECK(worst < 300.0);               // the property
+  CHECK(worstOld > worstAtCross);     // REACHABLE: the retired form is worse
+}
+
+// All three moon biomes must be REACHED, and reached in quantity. The bands are
+// elevation-derived, so a change to the height field's range silently
+// re-proportions them; without this, a rewrite could empty CraterFloor and
+// nothing would notice until the props for it never drew.
+TEST(moon_biomes_are_all_populated) {
+  const BodyParams cinder = makeCinder(kTunedSeed);
+  const int N = 40000;
+  int counts[10] = {0};
+  for (int i = 0; i < N; ++i) {
+    const Biome b = biomeAt(cinder, fibonacciDir(i, N));
+    counts[static_cast<int>(b)]++;
+  }
+  const int rego = counts[static_cast<int>(Biome::Regolith)];
+  const int high = counts[static_cast<int>(Biome::MoonHighland)];
+  const int floorC = counts[static_cast<int>(Biome::CraterFloor)];
+  std::printf("      moon biomes over %d dirs: Regolith %.1f%%, "
+              "MoonHighland %.1f%%, CraterFloor %.1f%%\n",
+              N, 100.0 * rego / N, 100.0 * high / N, 100.0 * floorC / N);
+  // Every moon sample must be one of the three: no planet biome may leak.
+  CHECK(rego + high + floorC == N);
+  // Each one carries at least 5% of the body, so none is a curiosity.
+  CHECK(rego > N / 20);
+  CHECK(high > N / 20);
+  CHECK(floorC > N / 20);
+}
+
+// The relief bound, ACROSS SEEDS. One seed is a confident wrong answer here:
+// the crater ladder's extremes come from rare overlaps, so a single seed can sit
+// comfortably inside a bound another seed blows through. The old field did
+// exactly that, overrunning its declared 4000 m by 50 to 60% on every seed
+// tried while the one assertion that existed sampled only a few hundred deposit
+// positions on one seed and walked straight past it.
+TEST(moon_relief_bound_holds_across_seeds) {
+  const uint64_t seeds[5] = {0x0bf00d01ull, 99ull, 0xdeadbeefull, 2026ull, 7ull};
+  const int N = 60000;
+  double worstLo = 0.0, worstHi = 0.0;
+  for (int k = 0; k < 5; ++k) {
+    const BodyParams cinder = makeCinder(seeds[k]);
+    double lo = 0.0, hi = 0.0;
+    for (int i = 0; i < N; ++i) {
+      const double h = sampleDesignedHeight(cinder, fibonacciDir(i, N));
+      if (h < lo) lo = h;
+      if (h > hi) hi = h;
+    }
+    std::printf("      seed %016llx: designed relief %.1f to %.1f m "
+                "(declared +/- %.0f)\n",
+                static_cast<unsigned long long>(seeds[k]), lo, hi,
+                cinder.maxReliefM);
+    CHECK(hi <= cinder.maxReliefM);
+    CHECK(lo >= -cinder.maxReliefM);
+    if (lo < worstLo) worstLo = lo;
+    if (hi > worstHi) worstHi = hi;
+  }
+  // And the declared bound must not be wildly loose either, or it stops being a
+  // useful number for the renderer and the streamer to size anything by.
+  const BodyParams ref = makeCinder(seeds[0]);
+  CHECK(worstHi - worstLo > ref.maxReliefM * 0.5);
+}
