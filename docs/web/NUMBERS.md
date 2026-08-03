@@ -952,3 +952,42 @@ an earlier one is only visible to somebody already reading the later one.
 **inverted in place** when GP-148 landed. **A probe edited to expect the opposite
 result is exactly the artefact you cannot take on trust**, because a claim
 inverted once can be inverted wrongly. Re-run, do not read.
+
+### The fixture that must differ from the default will never test the default
+
+An end-to-end playthrough found that **the very first autopilot press a player
+ever makes did nothing and reported success.**
+
+The requested-orbit field defaults to 100 km. The teleport-to-orbit cheat puts a
+player at 100 km. **So the default destination is the orbit you are already in.**
+The solver correctly returned a valid programme of **zero burns**, the executor
+correctly completed it instantly, and the screen correctly said the programme was
+complete.
+
+**Nothing was wrong anywhere.** Every component behaved to specification. **The
+identity element was standing in the player's path and each part was right while
+it did.**
+
+**No test caught it, and the reason is the rule.** Every autopilot probe written
+that night **moves the altitude first, on purpose, so that there is something to
+measure.** A zero-burn programme is useless as a fixture: you cannot assert a
+delta-v, a burn count or an arrival against it. So every test author,
+independently and for a good reason, **excluded the exact case a player meets
+first.**
+
+**The rule: a fixture that must differ from the default in order to measure
+anything will never test the default.** And defaults are what a new player, a
+new caller and a fresh install all encounter before anything else.
+
+The general form: **identity cases are invisible to differential testing.** Zero
+burns, an empty list, a no-op edit, a destination equal to the origin, a rename to
+the same name. Each is a case where the correct behaviour is *nothing*, which is
+also what a broken implementation does.
+
+**Test them explicitly and assert on the report rather than on the change.** Here
+the fix was measured on both sides: 0 burns at 100 km, 2 burns and 207.31 m/s at
+250 km. The first half of that pair is the one nobody writes.
+
+Related and distinct from **a fixture that never performs the action cannot
+exhibit a defect in the action**: that one is about the fixture not doing enough,
+this one is about the fixture being unable to do nothing.
