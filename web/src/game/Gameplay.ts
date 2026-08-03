@@ -14,9 +14,9 @@
 // deltas, because a frame of unlocked movement applied on re-lock reads as a
 // bug.
 
-import { vesselAbi } from '../sim/wasm/vesselabi.js';
 import * as THREE from 'three';
 import { GameCore } from './GameCore.js';
+import { bodyIsAirless } from './StarterContent.js';
 import { NodeField } from './NodeField.js';
 import { RockField } from './RockField.js';
 import { TreeField } from './TreeField.js';
@@ -354,7 +354,7 @@ export class Gameplay {
     // is indexed by the same BodyParams::bodyId, and atmosphere.h says a body
     // that is not Forge returns exactly 0. A moon WITH air would keep its
     // trees, which `kind === 'moon'` could never express.
-    const airless = vesselAbi(this.d.core)._of_atmo_density(this.d.bodyId, 0) === 0;
+    const airless = bodyIsAirless(this.d.core, this.d.bodyId);
     this.nodesPlaced = this.field.populate(this.d.bodyHandle, 0, dir, this.d.seed,
                                            this.d.bodyId, airless);
     this.patchesPlaced = this.oreField.populate(dir, 0);

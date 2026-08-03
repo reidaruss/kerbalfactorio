@@ -21,6 +21,8 @@ import { labelOf } from '../player/Bindings.js';
 
 export interface ObjectiveRow {
   text: string; hint: string; done: boolean; current: boolean;
+  /** GP-286. This world cannot satisfy it; `hint` carries the reason. */
+  moot?: boolean;
 }
 
 export class ObjectivePanel {
@@ -51,6 +53,15 @@ export class ObjectivePanel {
     // can see all seven steps at once is reading a manual.
     const upto = Math.min(rows.length, doneCount + 3);
     const body = rows.slice(0, upto).map((r) => {
+      // GP-286. A CARD THIS WORLD CANNOT SATISFY IS DRAWN AND EXPLAINED, never
+      // silently dropped: a list that quietly got shorter looks like a bug and
+      // teaches nothing, while "nothing grows here" teaches a player where they
+      // are. Checked BEFORE `done`, because the list steps past a moot card and
+      // it would otherwise draw as an achievement nobody earned.
+      if (r.moot === true) {
+        return `<li class="moot">${esc(r.text)}`
+          + `<span class="hint">${esc(r.hint)}</span></li>`;
+      }
       if (r.done) return `<li class="ok">${esc(r.text)}</li>`;
       if (r.current) {
         return `<li class="now">${esc(r.text)}`

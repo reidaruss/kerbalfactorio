@@ -35,6 +35,26 @@
 // build, and it would want its trees; what a tree cannot live in is vacuum.
 // =============================================================================
 import { NODE_KIND } from './GameCore.js';
+import { vesselAbi } from '../sim/wasm/vesselabi.js';
+import type { OfCoreModule } from '../sim/wasm/heap.js';
+
+/**
+ * GP-286. DOES THIS BODY HAVE AIR. /core's own answer, and now the ONLY copy
+ * of the question.
+ *
+ * It was already the rule here and it was written a SECOND time inline in
+ * `Gameplay.reset`, which is how this project has lost an afternoon before: two
+ * expressions of one fact, correct together until somebody changes one. Both
+ * readers now call this, so a body that grows an atmosphere changes its trees
+ * and its tutorial in the same breath.
+ *
+ * Deliberately NOT `kind === 'moon'`. A moon with an atmosphere is a thing this
+ * project may well build and it would want its trees; what a plant cannot live
+ * in is vacuum.
+ */
+export function bodyIsAirless(M: OfCoreModule, bodyId: number): boolean {
+  return vesselAbi(M)._of_atmo_density(bodyId, 0) === 0;
+}
 
 /** Which node kinds are PLANTS, and therefore need air. Data, so a new plant
  *  kind joins the invariant by being listed rather than by being remembered. */

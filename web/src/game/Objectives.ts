@@ -24,6 +24,7 @@
 import { labelOf } from '../player/Bindings.js';
 import type { Action } from '../player/Bindings.js';
 import type { Gameplay } from './Gameplay.js';
+import { bodyIsAirless } from './StarterContent.js';
 
 /** Seconds between checks. Fast enough to feel immediate, slow enough to vanish. */
 const CHECK_SECS = 0.25;
@@ -54,6 +55,24 @@ export interface Objective {
    *  number can only ever be derived. See the block comment above OBJECTIVES. */
   hint: (g: Gameplay) => string;
   done: (g: Gameplay, r: RocketPort | null) => boolean;
+  /**
+   * GP-286. '' when this card applies to the world the player is standing on.
+   * Otherwise the SENTENCE saying why this world cannot satisfy it.
+   *
+   * A checklist that names a task the world has refused to make possible is
+   * GP-165's defect one level up: not a wrong KEY for a real task, a wrong
+   * TASK. `Harvest a tree` has been the first thing a player reads on Cinder,
+   * which is airless and on which `StarterContent`'s own invariant REFUSES to
+   * place a tree. The card was impossible, the list parked on it, and nothing
+   * downstream of it could ever be reached.
+   *
+   * A moot card is DRAWN AND NAMED rather than filtered out, which is GP-114's
+   * rule (a locked thing named beats an absent thing) and is why this returns a
+   * sentence rather than a boolean: "there are no trees here" teaches a player
+   * something about where they are, and a list that silently got shorter
+   * teaches them nothing and looks like a bug.
+   */
+  moot?: (g: Gameplay) => string;
 }
 
 /** How many ingots off an automated line count as "it ran without you". */
@@ -98,6 +117,13 @@ export const OBJECTIVES: Objective[] = [
     id: 'wood', text: 'Harvest a tree',
     hint: () => `aim at one and hold ${labelOf('use')}`,
     done: (g) => g.game.count(g.game.ids.wood) >= 4,
+    // THE SAME AUTHORITY THAT REFUSED TO PLACE THE TREE. Not a body name and
+    // not a second atmosphere test: `bodyIsAirless` is the one copy of the
+    // question, so the day a body grows an atmosphere its trees and this card
+    // come back together.
+    moot: (g) => (bodyIsAirless(g.core, g.starterBodyId)
+      ? 'nothing grows here: this body has no air, so there is no tree to '
+        + 'harvest and no wood on it at all.' : ''),
   },
   {
     id: 'tool', text: 'Craft a pickaxe',
@@ -179,10 +205,19 @@ export const OBJECTIVES: Objective[] = [
 ];
 
 export interface ObjectiveView {
-  rows: { text: string; hint: string; done: boolean; current: boolean }[];
+  rows: { text: string; hint: string; done: boolean; current: boolean;
+          /** GP-286. This world cannot satisfy it; `hint` says why. */
+          moot: boolean }[];
   doneCount: number;
   total: number;
   complete: boolean;
+}
+
+/** '' when the card applies. A card with no `moot` always applies, so the
+ *  field is optional and the default is the answer every existing card
+ *  wants. */
+function mootOf(o: Objective, g: Gameplay): string {
+  return o.moot === undefined ? '' : o.moot(g);
 }
 
 export class Objectives {
@@ -199,6 +234,14 @@ export class Objectives {
   /** Everything done and the list retired? Then it stops drawing itself. */
   get complete(): boolean { return this.index >= OBJECTIVES.length; }
 
+  /** How many rows this world made impossible. Published so a probe asserts the
+   *  skip happened rather than inferring it from a shorter list, and so
+   *  "the player did all eight" and "the world skipped one" stay different
+   *  claims. */
+  mootCount(g: Gameplay): number {
+    return OBJECTIVES.filter((o) => mootOf(o, g) !== '').length;
+  }
+
   /**
    * Advance the list. Returns the objective just completed, or null.
    *
@@ -212,6 +255,13 @@ export class Objectives {
     if (this.since < CHECK_SECS || this.complete) return null;
     this.since = 0;
     const o = OBJECTIVES[this.index];
+    // A MOOT CARD IS STEPPED PAST, NOT WAITED ON. The list is a checklist and
+    // its whole contract is that the current row is achievable; a row this
+    // world cannot satisfy would park it for ever and silently hide every row
+    // behind it, which is how `Harvest a tree` made the entire chain
+    // unreachable on an airless moon. It is NOT counted as a completion,
+    // because the player did not do it.
+    if (mootOf(o, g) !== '') { this.index++; return null; }
     if (!o.done(g, this.rocket)) return null;
     this.index++;
     this.completions++;
@@ -227,11 +277,30 @@ export class Objectives {
    */
   view(g: Gameplay): ObjectiveView {
     return {
-      rows: OBJECTIVES.map((o, i) => ({
-        text: o.text,
-        hint: i === this.index ? o.hint(g) : '',
-        done: i < this.index, current: i === this.index,
-      })),
+      rows: OBJECTIVES.map((o, i) => {
+        const why = mootOf(o, g);
+        return {
+          text: o.text,
+          // THE REASON REPLACES THE HINT, because a hint tells you how to do a
+          // thing and there is no how. Drawn on the moot row whether or not it
+          // is current, since the point is that a player scanning the list
+          // learns why it is greyed rather than wondering.
+          hint: why !== '' ? why : (i === this.index ? o.hint(g) : ''),
+          // `index` IS A POSITION, NOT A CLAIM OF ACHIEVEMENT, and until this
+          // line those were the same thing. `step` walks past a moot card, so
+          // `i < index` became true for it and the row published `done: true`
+          // about a tree nobody harvested on a world with no trees. The PANEL
+          // was already right (it tests `moot` before `done`), so nothing on
+          // screen was wrong and the lie was only in the published field:
+          // exactly the kind a probe reads and a screenshot cannot.
+          //
+          // Caught by this probe's own `it is NOT drawn as done` check, which
+          // was written because crediting the player with an impossible task is
+          // worse than the bug it replaced.
+          done: i < this.index && why === '', current: i === this.index,
+          moot: why !== '',
+        };
+      }),
       doneCount: this.index,
       total: OBJECTIVES.length,
       complete: this.complete,

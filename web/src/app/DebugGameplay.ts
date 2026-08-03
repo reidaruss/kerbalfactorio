@@ -19,8 +19,9 @@ import { isPart } from '../game/Hotbar.js';
 import { snapToGround } from '../game/Grid.js';
 import { STRUCTURE_STEP_UP_M, VOXEL_STEP_UP_M } from '../player/VoxelCollision.js';
 import { StandTrace } from '../player/StandTrace.js';
+import { bodyIsAirless } from '../game/StarterContent.js';
 import {
-  findStation, lastStationInstall, STATION_ALT_M, STATION_TAG,
+  findStation, lastStationInstall, stationSockets, STATION_ALT_M, STATION_TAG,
   stationAxes, stationProxies,
 } from '../game/SpaceStation.js';
 import { registry, stateOf } from '../sim/VesselRegistry.js';
@@ -264,6 +265,16 @@ export function gameplayApi(s: Services, loop: Loop) {
           name: b.name, min: b.min, max: b.max,
         })),
         airlockX: airlockPlaneM(stationProxies()),
+        /** GP-284. EVERY SOCKET AS A FRAME, so a probe can assert the AXIS the
+         *  asset ships rather than only the position. Physics needs `face` and
+         *  `roll` to aim a docking capture, and until this pass the client read
+         *  the rotation out of the glb and dropped it on the floor: two hulls
+         *  meeting nose to nose and nose to tail have identical socket
+         *  positions, so a point cannot express the difference. The names are
+         *  the asset's own and nothing here renames them. */
+        sockets: [...stationSockets()].map(([name, f]) => ({
+          name, pos: f.pos, face: f.face, roll: f.roll,
+        })),
         nominalAltM: STATION_ALT_M,
         el: el === null ? null : { ...el },
         axes: stationAxes(st.pos),
@@ -512,7 +523,21 @@ export function gameplayApi(s: Services, loop: Loop) {
       if (show !== undefined) showGoals(g, show);
       // GP-165: the resolved hints ride along so a probe can assert the
       // derivation for rows the panel is not currently drawing.
-      return { ...(g.goals.report() as object), hints: g.goals.allHints(g) };
+      // GP-286. THE DRAWN ROWS, not just the counters, plus the two facts a
+      // probe needs to tell "this world refused it" from "the player has not
+      // done it yet". `airless` and `woodPlaceable` come off the same
+      // authority the card and the tree placement share, so a probe cannot
+      // agree with a second copy of the rule.
+      const v = g.goals.view(g);
+      return {
+        ...(g.goals.report() as object), hints: g.goals.allHints(g),
+        bodyId: g.starterBodyId,
+        airless: bodyIsAirless(g.core, g.starterBodyId),
+        woodPlaceable: !bodyIsAirless(g.core, g.starterBodyId),
+        mootCount: g.goals.mootCount(g),
+        doneCount: v.doneCount,
+        rows: v.rows,
+      };
     },
 
     // DW-17, the voxel half of `repopulate`: put the rock back, so a restore is

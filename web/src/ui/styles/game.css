@@ -442,6 +442,12 @@
 }
 #of-goals li::before { position: absolute; left: 0; content: "\00b7"; }
 #of-goals li.ok { color: #4d5a65; text-decoration: line-through; }
+/* GP-286. A card this world cannot satisfy. Deliberately NOT styled as
+   done: a tick would credit the player with something they never did, and
+   the strike-through would say "finished" about a task that was never
+   available. Dimmed with a dash, and its reason is drawn beside it. */
+#of-goals li.moot { color: #55606b; }
+#of-goals li.moot::before { content: "4"; color: #55606b; }
 #of-goals li.ok::before { content: "\2713"; color: var(--of-accent); }
 #of-goals li.now { color: var(--of-ink); font-weight: 600; }
 #of-goals li.now::before { content: "\25b8"; color: var(--of-accent); }
