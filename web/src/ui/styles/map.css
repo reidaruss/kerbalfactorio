@@ -364,6 +364,20 @@
 #of-map .pverdict.pend { color: var(--of-warn); border-color: #40391f; background: #232014; }
 #of-map .pverdict.bad { color: var(--of-bad); border-color: #43222a; background: #241418; }
 
+/* GP-273. The burn bar. Its WIDTH is the assertion (GP-64): a probe reads the
+   drawn element's own width back and compares it against the executor, so the
+   claim is the painted bar against /core rather than the client against a
+   second copy of its own arithmetic. */
+#of-map .pbar {
+  height: 6px;
+  margin: 3px 0;
+  background: #1a2126;
+  border: 1px solid #2c353d;
+  border-radius: 2px;
+  overflow: hidden;
+}
+#of-map .pbar > i { display: block; height: 100%; background: var(--of-accent); }
+
 #of-map .pchart { margin: 4px 0; }
 #of-map .pchart svg {
   width: 100%;

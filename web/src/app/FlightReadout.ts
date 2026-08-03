@@ -59,7 +59,22 @@ export function readout(m: FlightMode): NavballReadout {
     // degenerate conic through the planet's centre, so the pad readout was
     // PE -600.00 km: right, and it reads as a broken instrument.
     bound: s.orbit.bound && s.status !== 'CLAMPED' && s.status !== 'DOWN',
-    throttle: s.throttleValue,
+    // GP-278. /core's OWN throttle, not `s.throttleValue`.
+    //
+    // `FlightSession.throttle` is the player's mirror and is written only when
+    // the PLAYER moves it, so it is right for every flight a human flies and
+    // wrong for every flight the autopilot flies: the executor writes
+    // `sim.state.throttle` inside `of_fl_step`, the mirror never hears about
+    // it, and the gauge on the navball read 0% with the engine at full while
+    // the autopilot burned. `state.throttle` is `of_fl_state` word 16, re-read
+    // from /core by every `sample()`, so this is the number the engine is
+    // actually getting rather than the number somebody last asked for.
+    //
+    // Same family as R44b (the design handle still reporting pad figures after
+    // a real staging) and as `cachedTotalKg` beside `liveTotalKg`: when a
+    // client keeps a copy of something the sim owns, the copy is correct
+    // exactly until the sim changes it without being asked.
+    throttle: s.state.throttle,
     stages: s.stageRows.map((q) => ({
       index: q.index, dvVacMS: q.dvVacMS, twr: q.twr, burnS: q.burnS,
       active: q.index === Math.max(0, next - 1),

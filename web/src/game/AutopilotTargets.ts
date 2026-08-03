@@ -161,9 +161,31 @@ export const BODIES: readonly BodyRow[] = [
   {
     name: 'Cinder',
     detail: 'the moon: a transfer leaves the gravity you are in',
-    blocked: 'a transfer to Cinder crosses out of the home gravity and back '
-      + 'into the moon, and that hand-off is not flown yet (physics R5). '
-      + 'Orbits around this body can be planned today.',
+    // GP-279. THE REASON CHANGED, SO THE SENTENCE CHANGED. It used to say the
+    // hand-off "is not flown yet", and that is no longer true: physics has
+    // flown a full moon mission in /core, ending in a bound orbit about Cinder
+    // at 61.5 x 124.0 km with nobody at the controls. What is not true is the
+    // BRIDGE. `of_ap_arm_transfer` builds a two-burn program and inserts no
+    // mid-course correction, and nothing on the wasm face exposes the hand-off
+    // at all, so a body armed through it today would fly its injection and
+    // MISS. That distinction matters enough to spend a sentence on, because a
+    // row that refuses for a reason that has already been fixed teaches a
+    // player to distrust every other refusal on the screen.
+    //
+    // It is a REFUSAL and not an absence for GP-114's reason, and it refuses
+    // rather than flying badly for the reason the numbers make obvious: the
+    // injection's finite-burn residue is 468 km of error at the sphere of
+    // influence against a 543 km aim offset, so the error is the same size as
+    // the thing it perturbs, and an open-loop moon transfer put a planned
+    // 250 km capture orbit 14 km underground.
+    blocked: 'the moon flight itself works: physics flies injection, a '
+      + 'mid-course correction, the hand-off between the two gravities and the '
+      + 'capture, ending in a real orbit around Cinder. What is missing is the '
+      + 'bridge into this game: the arm call builds a two-burn programme with '
+      + 'no correction in it, and a moon transfer flown without one misses by '
+      + 'more than the moon is wide. So this row refuses rather than flying '
+      + 'you into the ground. Orbits around this body, and rendezvous with '
+      + 'anything in it, can be flown today.',
   },
 ];
 

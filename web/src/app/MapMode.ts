@@ -23,13 +23,16 @@ import { MapView } from '../ui/MapView.js';
 // is this picture" has exactly one answer and it belongs where the pixels are.
 import { fitSpanM } from '../ui/MapDraw.js';
 import type {
-  MapConic, MapPlannerReadout, MapReadout, MapVesselRow, V3,
+  MapConic, MapReadout, MapVesselRow, V3,
 } from '../ui/MapTypes.js';
 import { orbitMeta, orbitPath } from '../sim/ManeuverAbi.js';
 import type { OrbitMeta, Vec3 } from '../sim/ManeuverAbi.js';
 import { MapFocus } from './MapFocus.js';
 import { MapNode } from './MapNode.js';
-import { CURVE_WINDOW_S, MapPlanner } from './MapPlanner.js';
+import { MapPlanner } from './MapPlanner.js';
+import {
+  holdWarpForBurn, newWarpHold, planAct, plannerReadout,
+} from './MapPlannerCtl.js';
 import { registry } from '../sim/VesselRegistry.js';
 import { currentVesselTick, leaveVessel, resumeControl } from './FlightVessels.js';
 // The ports live in MapBoot, beside where they are built. Type-only, so there
@@ -72,6 +75,8 @@ export class MapMode {
   private flat = false;
   /** The sim clock the last frame ran at, so `frame` can difference it. */
   private lastFrameS = 0;
+  /** GP-275. The warp the player had before the autopilot took over. */
+  private readonly warpHold = newWarpHold();
 
   /** Exposed so `__of.map` reads the rows the painter is handed, in `/core`'s
    *  own numbers, rather than parsing them back off the panel's text. */
@@ -87,6 +92,15 @@ export class MapMode {
                      muM3S2: d.muM3S2 }),
       flyingId: () => registry.promotedId,
       nowS: () => this.lastFrameS,
+      // GP-273. /core's own state for the flown vessel, so the range to the
+      // target is a subtraction of two positions /core produced.
+      shipState: () => {
+        const f = d.flight;
+        if (!f.aboard || !f.session.live) return null;
+        return { pos: f.session.state.pos, vel: f.session.state.vel };
+      },
+      // The registry's own clock, the same one `takeControl` reads.
+      tick: () => currentVesselTick(),
     });
     this.focus = new MapFocus({
       player: () => d.player(),
@@ -119,7 +133,7 @@ export class MapMode {
       select: (id) => this.select(id),
       takeControl: (id) => this.takeControl(id),
       planSelect: (id) => { this.planner.select(id); this.spanM = 0; },
-      planAct: (a) => this.planAct(a),
+      planAct: (a) => planAct(this.planner, (m) => this.d.say(m), a),
     });
     this.view.closer = () => this.leave();
   }
@@ -191,33 +205,6 @@ export class MapMode {
     if (this.selectedId > 0) this.planner.selectVesselId(this.selectedId);
   }
 
-  /** GP-271. The planner's five buttons, in one place. */
-  private planAct(act: string): void {
-    const pl = this.planner;
-    if (act === 'earlier') { pl.nudge(-1); return; }
-    if (act === 'later') { pl.nudge(1); return; }
-    if (act === 'cheapest') { pl.pickCheapest(); return; }
-    if (act === 'earliest') { pl.pickEarliestFlyable(); return; }
-    if (act === 'arm') {
-      // THE GATE. Refused per DEPARTURE TIME and never globally, which is
-      // Reid's rule: a destination you cannot reach now is not refused
-      // outright, it is refused AT THIS DEPARTURE. The button is disabled
-      // in that state AND the verb refuses, because a disabled button is a
-      // hint and a refusal is a rule.
-      const sch = pl.schedule();
-      if (!sch.chosenFeasible) { this.d.say(sch.why); return; }
-      // EXECUTION IS THE FLIGHT LANE'S AND IS NOT BUILT. Arming records the
-      // intent and says so plainly rather than pretending to fly it: a
-      // button that looks armed and does nothing is worse than one that
-      // says what it is waiting for (GP-62).
-      this.armed = true;
-      this.d.say('departure set. Execution is the flight lane and is not '
-        + 'wired yet: the plan is held, nothing is flown.');
-    }
-  }
-
-  /** GP-271. Set by the arm button. Cleared whenever the plan changes. */
-  armed = false;
 
   /**
    * TAKE CONTROL (GP-210): the map's focus-switch gesture wired to the handoff
@@ -283,12 +270,22 @@ export class MapMode {
     // old clearNode and is kept.
     if (!flying && this.nodeCtl.placed) this.spanM = 0;
     this.nodeCtl.frame(flying);
+    // GP-273/GP-275. THE EXECUTOR IS READ EVERY FRAME, MAP OPEN OR NOT, and
+    // the warp rule is applied here for the same reason. A program keeps
+    // flying while the panel is shut, and a player waiting out a long coast
+    // has the map shut and the warp up: that is precisely when the burn
+    // arrives, so a rule that only ran with the panel open would only ever
+    // fire for a player who was already watching.
+    this.planner.frameRun();
+    holdWarpForBurn(this.warpHold, this.planner, this.d.flight.session,
+                    flying, (m) => this.d.say(m));
     if (!this.open) return;
     this.planner.frame();
     const r = this.readout(flying);
     this.view.render(r);
     if (!this.flat) this.d.three?.frame(r);
   }
+
 
   private vesselRows(flying: boolean): MapVesselRow[] {
     const rows: MapVesselRow[] = [];
@@ -401,40 +398,12 @@ export class MapMode {
       onRails: flying && this.d.M._of_fl_on_rails_eligible(s.handle) === 1,
       message: flying && s.message !== '' ? s.message : f.message,
       vessels: this.vesselRows(flying),
-      planner: this.plannerReadout(flying),
+      planner: plannerReadout(this.planner, flying,
+        flying ? this.d.flight.session.remainingDvMS() : 0),
       three: !this.flat && this.d.three !== null,
     };
   }
 
-  /** GP-271. One frame of the planner, as plain data (DW-2). */
-  private plannerReadout(flying: boolean): MapPlannerReadout {
-    const pl = this.planner;
-    const t = pl.target();
-    const sch = pl.schedule();
-    const c = pl.currentCurve;
-    const tp = pl.currentPlan;
-    const s = c.samples[pl.chosen];
-    return {
-      waitingOn: c.waitingOn,
-      aboard: flying,
-      rows: pl.rows().map((r) => ({ id: r.id, kind: r.kind, name: r.name,
-                                    detail: r.detail, blocked: r.blocked })),
-      selectedId: pl.selectedId,
-      blockedWhy: t === null ? '' : t.blocked,
-      curve: c.samples.map((x) => ({ tS: x.tS, dvMS: x.dvRequiredMS,
-                                     feasible: x.feasible })),
-      windowS: CURVE_WINDOW_S,
-      chosen: pl.chosen, cheapest: sch.cheapest, earliest: sch.earliest,
-      chosenTS: s?.tS ?? NaN, chosenDvMS: s?.dvRequiredMS ?? NaN,
-      chosenFeasible: sch.chosenFeasible,
-      dvAvailableMS: flying ? this.d.flight.session.remainingDvMS() : 0,
-      verdict: sch.verdict, why: sch.why, armed: this.armed,
-      planDeltaVMS: tp === null ? 0 : tp.deltaVMS,
-      planBurnS: tp === null ? 0 : tp.burnDurationS,
-      planApoapsisAltM: tp === null ? 0 : tp.apoapsisAltM,
-      planPeriapsisAltM: tp === null ? 0 : tp.periapsisAltM,
-    };
-  }
 
   report(): unknown {
     const n = this.nodeCtl.report();

@@ -295,7 +295,51 @@ export interface MapPlannerReadout {
   readonly dvAvailableMS: number;
   readonly verdict: string;
   readonly why: string;
-  readonly armed: boolean;
+  // --- GP-273: the EXECUTOR. A SEPARATE SEAM from `waitingOn` above, because
+  // planning and execution are two export sets and a build can have one and
+  // not the other. Every build before tonight was exactly that build.
+  readonly runWaitingOn: string;
+  /** Something is armed: the status row came back at all. NOT `running`. */
+  readonly runArmed: boolean;
+  /** Still going. 0 once the program is Done or Aborted, which is why a
+   *  refused arm can still be shown rather than forgotten. */
+  readonly runRunning: boolean;
+  readonly runPhase: number;
+  readonly runPhaseWord: string;
+  readonly runBurnIndex: number;
+  readonly runBurnCount: number;
+  /** NEGATIVE means overdue: the vehicle is still slewing. Drawn as such. */
+  readonly runTimeToIgnitionS: number;
+  /** Spent on the WHOLE programme. */
+  readonly runDvSpentMS: number;
+  /** Spent on the CURRENT burn, which is a different number from the second
+   *  burn onward and was drawn as the total until a screenshot's own figures
+   *  were read back against the executor's. */
+  readonly runDvThisBurnMS: number;
+  readonly runProgramDvMS: number;
+  readonly runCurrentBurnDvMS: number;
+  readonly runBurnProgress01: number;
+  readonly runPointingErrorDeg: number;
+  readonly runThrottle: number;
+  readonly runWaitingToDepart: boolean;
+  /** PHYSICS' OWN SENTENCE, printed verbatim and never parsed. */
+  readonly runNote: string;
+  /** GP-280. What the departure chart quoted at the moment the button went
+   *  down, drawn BESIDE the executor's own programme cost rather than instead
+   *  of it. NaN before anything is armed. */
+  readonly runQuotedAtArmMS: number;
+  /** GP-281. A commanded burn that has produced nothing for two seconds. The
+   *  vehicle has no lit engine, which the executor cannot see and the player
+   *  can fix. */
+  readonly runStalled: boolean;
+  /** NaN when the target is not an object with a position. */
+  readonly runRangeM: number;
+  /** Signed: positive is closing. NaN when there is no object target. */
+  readonly runClosingMS: number;
+  /** GP-277. The requested orbit the player has dialled in, so the four
+   *  buttons that move it can draw the value they are moving. */
+  readonly orbitAltKm: number;
+  readonly orbitIncDeg: number;
   readonly planDeltaVMS: number;
   readonly planBurnS: number;
   readonly planApoapsisAltM: number;

@@ -284,10 +284,27 @@ export class MapView extends Modal {
       // digit of a Lambert solve.
       pk === null ? 'noplan' : [
         pk.selectedId, pk.rows.length, pk.chosen,
-        pk.chosenFeasible ? 'y' : 'n', pk.verdict, pk.armed ? 'a' : '-',
+        pk.chosenFeasible ? 'y' : 'n', pk.verdict,
         Number.isFinite(pk.chosenDvMS) ? pk.chosenDvMS.toFixed(0) : 'x',
         pk.cheapest, pk.earliest, pk.curve.length, pk.waitingOn,
       ].join('|'),
+      // GP-273. THE EXECUTOR'S TERMS, and they are separate from the planner's
+      // for the same reason GP-271 had to add the planner's at all: a block
+      // that is not in the key is a block that repaints only when something
+      // else happens to move. `pk.armed` used to sit in the line above and was
+      // a boolean this client kept about itself; it is gone, because the
+      // executor is now the only place that fact lives.
+      //
+      // Granularity is chosen per term rather than uniformly: 0.1 m/s on the
+      // spend so the burn bar is live over a five-second burn, 1 s on the
+      // countdown, and the phase word because it is what the band says.
+      pk === null || !pk.runArmed ? 'norun' : [
+        pk.runPhase, pk.runRunning ? 'r' : '-', pk.runBurnIndex,
+        pk.runDvSpentMS.toFixed(1), pk.runTimeToIgnitionS.toFixed(0),
+        pk.runThrottle.toFixed(2), pk.runNote,
+        Number.isFinite(pk.runRangeM) ? pk.runRangeM.toFixed(0) : 'x',
+      ].join('|'),
+      pk === null ? '' : pk.runWaitingOn,
     ].join(',');
   }
 

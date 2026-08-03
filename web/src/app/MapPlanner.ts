@@ -31,9 +31,15 @@ import {
 } from '../game/Autopilot.js';
 import type { Curve, Schedule, TransferPlan } from '../game/Autopilot.js';
 import {
+  armFor, burnProgress01, cancelRun, dvLeftInProgramMS, idleStatus,
+  phaseWord, runNote, runStatus, waitingToDepart,
+} from '../game/AutopilotRun.js';
+import type { ArmResult, CancelResult, RunStatus } from '../game/AutopilotRun.js';
+import {
   bodySource, collect, findTarget, registrySource, requestedOrbit,
 } from '../game/AutopilotTargets.js';
 import type { AutopilotTarget, HomeBody } from '../game/AutopilotTargets.js';
+import { registry, stateOf } from '../sim/VesselRegistry.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 /** How far ahead the chart looks, and how finely. One orbit of the target is
@@ -54,6 +60,13 @@ export interface PlannerPorts {
   flyingId(): number;
   /** Seconds, the map's own clock, for the curve latch. */
   nowS(): number;
+  /** GP-273. The flown vessel's inertial position and velocity, body-centred,
+   *  as /core published them this frame. Used ONLY for the range and closing
+   *  rate to the target, which is a subtraction of two states /core produced
+   *  and not a second physics: see AutopilotRun.ts's named ask. */
+  shipState(): { pos: readonly number[]; vel: readonly number[] } | null;
+  /** The registry's clock, for `stateOf`. */
+  tick(): number;
 }
 
 export class MapPlanner {
@@ -76,7 +89,142 @@ export class MapPlanner {
   /** The cheaper of the two rebuilds: one Lambert solve, once per press. */
   planBuilds = 0;
 
+  // --- GP-273: the EXECUTION half -------------------------------------------
+  /** The executor's own 18 words, re-read every frame. THE CLIENT KEEPS NO
+   *  SHADOW OF THIS. There is no `armed` boolean here, no phase mirror and no
+   *  progress counter, because every one of them would be a second place a
+   *  fact is true (DW-26) and would go stale the instant the executor aborted
+   *  on its own, which it does: it refuses a burn it cannot pay for. */
+  private run: RunStatus = idleStatus();
+  /** Physics' own sentence, printed verbatim and never parsed. */
+  private note = '';
+  /** What the LAST arm press answered. Kept only so a refusal stays on screen
+   *  after the press, since a refused program is erased from the executor by
+   *  the next successful arm and the player would otherwise see the refusal
+   *  flash for one frame. */
+  lastArm: ArmResult | null = null;
+  lastCancel: CancelResult | null = null;
+  /** Counted so a probe can prove the press reached the verb. */
+  armPresses = 0;
+  /** GP-280. WHAT THE CHART SAID THIS TRIP COST, at the instant the button was
+   *  pressed. Kept so the panel can show it BESIDE the executor's own
+   *  programme cost rather than choosing between them. The two are different
+   *  quantities (the chart prices the mission including the policy reserve;
+   *  the programme is the burns) and they are both true, so a screen that drew
+   *  one and called it "the cost" would be picking. Physics found a 232 m/s
+   *  disagreement between a planned capture and the burn actually flown by
+   *  keeping exactly this kind of pair visible instead of reconciling it. */
+  armedQuoteMS = NaN;
+
   constructor(private readonly p: PlannerPorts) {}
+
+  get currentRun(): RunStatus { return this.run; }
+  get currentNote(): string { return this.note; }
+
+  /**
+   * ARM THE CHOSEN DEPARTURE. Returns the executor's answer, refusal included.
+   *
+   * THE GATE IS NOT REPEATED HERE. `scheduleFor` already decides whether this
+   * departure is affordable and the button is disabled when it is not (GP-271);
+   * the executor decides again, on its own numbers, and if the two ever
+   * disagree the executor wins and its sentence is what the player reads. Two
+   * gates is not duplication when the second one is the authority and the first
+   * one exists to keep the player away from it.
+   */
+  arm(): ArmResult {
+    this.armPresses += 1;
+    const t = this.target();
+    const f = this.p.flightHandle();
+    const s = this.curve.samples[this.chosen];
+    const r = t === null
+      ? { armed: false, waitingOn: '', note: 'no destination is selected.',
+          via: 'none' as const }
+      : armFor(this.p.M, f, t, s?.tS ?? 0);
+    this.lastArm = r;
+    this.armedQuoteMS = s === undefined ? NaN : s.dvRequiredMS;
+    this.refreshRun();
+    return r;
+  }
+
+  /** Cancel, mid-burn included. The residual is sampled BEFORE the call,
+   *  because afterwards there is no row left to read it from. */
+  cancel(): CancelResult {
+    const c = cancelRun(this.p.M, this.p.flightHandle());
+    this.lastCancel = c;
+    this.lastArm = null;
+    this.refreshRun();
+    return c;
+  }
+
+  /** JUST THE EXECUTOR, for the frames the map is shut. One wasm call and a
+   *  scratch read; the curve and the Lambert solve stay behind the open gate. */
+  frameRun(): void { this.refreshRun(); }
+
+  /**
+   * GP-281. HOW MANY CONSECUTIVE FRAMES THE BURN HAS SPENT NOTHING.
+   *
+   * Found by driving: the executor commanded full throttle in `Phase::Burn`
+   * for 900 consecutive polls having spent 0.0000 of a planned 144.9070 m/s,
+   * with the orbit unmoved, because the vehicle's next engine had never been
+   * STAGED and the executor has no verb for that. A burn is terminated on
+   * measured delta-v, so a burn producing no thrust never terminates and the
+   * program hangs for ever with every field reading healthy.
+   *
+   * This client cannot and must not fix that: staging is the vehicle's and the
+   * abort is the executor's. What it CAN do is notice, which is a statement
+   * about a published number failing to move and not a second physics.
+   */
+  private stallFrames = 0;
+
+  private refreshRun(): void {
+    const f = this.p.flightHandle();
+    const prev = this.run;
+    this.run = runStatus(this.p.M, f);
+    this.note = this.run.answered ? runNote(this.p.M, f) : '';
+    this.stallFrames = this.run.burningNow
+      && this.run.dvThisBurnMS === prev.dvThisBurnMS
+      && this.run.burnIndex === prev.burnIndex
+      ? this.stallFrames + 1 : 0;
+  }
+
+  /** True once a commanded burn has produced nothing for long enough that it
+   *  cannot be a rounding artefact. Two seconds at 60 Hz. */
+  get burnStalled(): boolean { return this.stallFrames > 120; }
+
+  /**
+   * RANGE AND CLOSING RATE TO THE SELECTED TARGET.
+   *
+   * The two numbers that say whether a rendezvous WORKED, and the two the 18
+   * status words do not carry (AutopilotRun.ts's named ask). Computed as a
+   * SUBTRACTION of two states /core itself produced: the flight state off
+   * `of_fl_state`, the target off the registry's own `of_orb_resume`. Nothing
+   * is propagated, fitted or integrated here.
+   *
+   * Null when there is no phased target, which is the honest answer for a
+   * requested orbit: a ring has no position to be a distance from.
+   */
+  closing(): { rangeM: number; closingMS: number } | null {
+    const t = this.target();
+    if (t === null || t.kind !== 'vessel') return null;
+    const rec = registry.list().find((r) => `v:${r.id}` === t.id);
+    const me = this.p.shipState();
+    if (rec === undefined || me === null) return null;
+    const them = stateOf(this.p.M, registry, rec, this.p.tick());
+    const dx = (them.pos[0] ?? 0) - (me.pos[0] ?? 0);
+    const dy = (them.pos[1] ?? 0) - (me.pos[1] ?? 0);
+    const dz = (them.pos[2] ?? 0) - (me.pos[2] ?? 0);
+    const rangeM = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const vx = (them.vel[0] ?? 0) - (me.vel[0] ?? 0);
+    const vy = (them.vel[1] ?? 0) - (me.vel[1] ?? 0);
+    const vz = (them.vel[2] ?? 0) - (me.vel[2] ?? 0);
+    // POSITIVE IS CLOSING. The sign is the whole information: 100 m out at
+    // +0.2 m/s is arriving and 100 m out at -0.2 m/s is drifting away while the
+    // program believes it is finished, and a screen that drew the magnitude
+    // would call both of those a success.
+    const closingMS = rangeM > 0
+      ? -((dx * vx + dy * vy + dz * vz) / rangeM) : 0;
+    return { rangeM, closingMS };
+  }
 
   rows(): AutopilotTarget[] {
     const h = this.p.home();
@@ -141,6 +289,11 @@ export class MapPlanner {
    *  per frame while the map is open; cheap when nothing moved. */
   frame(): void {
     const f = this.p.flightHandle();
+    // FIRST, AND OUTSIDE EVERY EARLY RETURN BELOW. A program keeps flying
+    // whether or not a destination is still selected, and the executor can
+    // abort on its own between two frames, so the status read may not be
+    // conditional on anything this panel happens to have chosen.
+    this.refreshRun();
     const t = this.target();
     if (f <= 0 || t === null || t.orbit === null) {
       this.curve = { waitingOn: this.curve.waitingOn, samples: [] };
@@ -191,6 +344,10 @@ export class MapPlanner {
     return {
       open: this.open,
       selectedId: this.selectedId,
+      // GP-277. The requested orbit's own two numbers, published so a probe
+      // asserts the buttons MOVED them rather than trusting the press.
+      altKm: this.altKm,
+      incDeg: this.incDeg,
       rowIds: this.rows().map((r) => r.id),
       targetName: t === null ? '' : t.name,
       waitingOn: c.waitingOn,
@@ -222,6 +379,40 @@ export class MapPlanner {
         timeToNodeS: this.plan.timeToNodeS,
         apoapsisAltM: this.plan.apoapsisAltM,
         periapsisAltM: this.plan.periapsisAltM,
+      },
+      // GP-273. THE EXECUTION HALF, published so a probe asserts the executor's
+      // own words and never this panel's reading of them.
+      run: {
+        answered: this.run.answered,
+        waitingOn: this.run.waitingOn,
+        armed: this.run.armed,
+        running: this.run.running,
+        phase: this.run.phase,
+        phaseWord: phaseWord(this.run),
+        mode: this.run.mode,
+        burnIndex: this.run.burnIndex,
+        burnCount: this.run.burnCount,
+        timeToIgnitionS: this.run.timeToIgnitionS,
+        dvSpentTotalMS: this.run.dvSpentTotalMS,
+        dvThisBurnMS: this.run.dvThisBurnMS,
+        currentBurnDvMS: this.run.currentBurnDvMS,
+        programDvMS: this.run.programDvMS,
+        dvLeftMS: dvLeftInProgramMS(this.run),
+        burnProgress01: burnProgress01(this.run),
+        pointingErrorDeg: this.run.pointingErrorDeg,
+        rateDegS: this.run.rateDegS,
+        burningNow: this.run.burningNow,
+        throttleNow: this.run.throttleNow,
+        targetRadiusM: this.run.targetRadiusM,
+        waitingToDepart: waitingToDepart(this.run),
+        note: this.note,
+        armPresses: this.armPresses,
+        quotedAtArmMS: this.armedQuoteMS,
+        stalled: this.burnStalled,
+        stallFrames: this.stallFrames,
+        lastArm: this.lastArm,
+        lastCancel: this.lastCancel,
+        closing: this.closing(),
       },
     };
   }

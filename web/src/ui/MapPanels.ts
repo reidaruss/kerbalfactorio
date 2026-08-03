@@ -10,7 +10,8 @@
 // TAKE CONTROL as a button whose refusals arrive as sentences through the
 // message line, never as a silently dead control.
 // =============================================================================
-import type { MapPlannerReadout, MapReadout, MapVesselRow } from './MapTypes.js';
+import type { MapReadout, MapVesselRow } from './MapTypes.js';
+import { plannerBlock } from './MapPlannerPanel.js';
 
 const HANDLES: readonly (readonly ['prograde' | 'normal' | 'radial' | 'time',
   string, number])[] = [
@@ -37,7 +38,9 @@ export function km(m: number): string {
   return `${(m / 1000).toFixed(1)} km`;
 }
 
-function row(label: string, value: string, cls = ''): string {
+/** Shared with MapPlannerPanel (GP-283), which was lifted out of this
+ *  file and still draws the same rows. */
+export function row(label: string, value: string, cls = ''): string {
   return `<div class="row ${cls}"><em>${label}</em><b>${value}</b></div>`;
 }
 
@@ -219,166 +222,3 @@ function nodeBlock(r: MapReadout): string {
   return out.join('');
 }
 
-// =============================================================================
-// GP-271: THE AUTOPILOT PLANNER BLOCK, and the chart Reid asked for by name.
-//
-// "A chart should also show up showing how optimal the current time would be to
-// launch vs waiting later in terms of fuel burn."
-//
-// It is an inline SVG polyline and not a canvas, for the same reason everything
-// else under src/ui is plain DOM (DW-2): a probe can read the points back out
-// of the markup and assert the DRAWN shape rather than the model that produced
-// it. The chart is the thing that makes the scheduling rule legible, so it is
-// not decoration and it gets asserted like a readout.
-//
-// NaN IS DRAWN AS A GAP, NEVER AS ZERO. Physics publishes NaN for a departure
-// with no solution precisely because zero would render as the cheapest point on
-// the curve, which is the exact opposite of the truth. A gap is honest: that is
-// a departure that cannot be flown at any price.
-// =============================================================================
-
-const CH_W = 260;
-const CH_H = 72;
-
-/** MM:SS from now, for a departure offset. */
-function fromNow(s: number): string {
-  return Number.isFinite(s) ? clock(s) : '--:--';
-}
-
-export function plannerBlock(p: MapPlannerReadout | null): string {
-  if (p === null) return '';
-  const out: string[] = ['<h4>Autopilot</h4>'];
-  if (p.waitingOn !== '') {
-    out.push('<div class="note">The transfer solver is not on this bridge: '
-      + `waiting for ${esc(p.waitingOn)}.</div>`);
-    return out.join('');
-  }
-  if (!p.aboard) {
-    out.push('<div class="note">Autopilot plans from the vessel you are '
-      + 'flying. Take control of one and the destinations appear here.</div>');
-    return out.join('');
-  }
-  // The list. Same rows, same ids and same order as the assembly bay's, so a
-  // destination chosen before launch is the destination shown in flight.
-  for (const r of p.rows) {
-    const sel = r.id === p.selectedId ? ' sel' : '';
-    const bad = r.blocked !== '' ? ' blocked' : '';
-    out.push(`<div class="prow${sel}${bad}" data-plan="${esc(r.id)}">`
-      + `<div class="pname">${esc(r.name)}<span class="pkind">`
-      + `${esc(r.kind)}</span></div>`
-      + `<div class="pdet">${esc(r.blocked !== '' ? r.blocked : r.detail)}</div>`
-      + '</div>');
-  }
-  if (p.selectedId === '') {
-    out.push('<div class="note">Pick a destination, or click one on the map.</div>');
-    return out.join('');
-  }
-  if (p.blockedWhy !== '') {
-    out.push('<div class="pverdict bad">CANNOT PLAN</div>');
-    out.push(`<div class="note">${esc(p.blockedWhy)}</div>`);
-    return out.join('');
-  }
-  out.push(chart(p));
-  out.push(row('leave in', fromNow(p.chosenTS)));
-  out.push(row('costs', Number.isFinite(p.chosenDvMS)
-    ? `${p.chosenDvMS.toFixed(0)} m/s` : 'no solution',
-  p.chosenFeasible ? 'good' : 'warn'));
-  out.push(row('you have', `${p.dvAvailableMS.toFixed(0)} m/s`));
-  if (p.planDeltaVMS > 0) {
-    out.push(row('burn', `${p.planBurnS.toFixed(1)} s`));
-    out.push(row('arrive AP/PE', `${km(p.planApoapsisAltM)} / `
-      + `${km(p.planPeriapsisAltM)}`));
-  }
-  // THE VERDICT, and it is Reid's rule in three states rather than two.
-  const cls = p.verdict === 'go' ? 'ok' : p.verdict === 'wait' ? 'pend' : 'bad';
-  const word = p.verdict === 'go' ? 'CAN FLY THIS DEPARTURE'
-    : p.verdict === 'wait' ? 'NOT NOW, BUT LATER' : 'NOT WITH THIS VEHICLE';
-  out.push(`<div class="pverdict ${cls}">${word}</div>`);
-  out.push(`<div class="note">${esc(p.why)}</div>`);
-  out.push('<div class="nodectl">');
-  out.push('<button data-plan-act="earlier">earlier</button>');
-  out.push('<button data-plan-act="later">later</button>');
-  out.push('<button class="wide" data-plan-act="cheapest">jump to the cheapest '
-    + 'departure</button>');
-  if (p.earliest >= 0 && !p.chosenFeasible) {
-    out.push('<button class="wide" data-plan-act="earliest">jump to the '
-      + 'earliest one I can fly</button>');
-  }
-  // ARMED ONLY WHEN THE CHOSEN DEPARTURE IS AFFORDABLE. This is the gate, and
-  // it is per departure time rather than global, which is the whole of Reid's
-  // rule: a destination you cannot reach now is not refused outright, it is
-  // refused AT THIS DEPARTURE, and the chart shows where it stops being so.
-  out.push(`<button class="wide${p.chosenFeasible ? '' : ' off'}" `
-    + `data-plan-act="arm"${p.chosenFeasible ? '' : ' disabled'}>`
-    + `${p.armed ? 'autopilot ARMED' : 'set autopilot for this departure'}`
-    + '</button>');
-  out.push('</div>');
-  // The sentence about unattended vessels, which is a rule players will
-  // otherwise discover by losing a ship.
-  out.push('<div class="note">Autopilot flies a vessel you are aboard, or one '
-    + 'you are following. It does not fly ships you have left behind. A parked '
-    + 'vessel is nine numbers and a clock, not a simulation, so a scheduled '
-    + 'departure fires when you are there to see it. The plan is computed once '
-    + 'and kept, not re-derived, so it does not drift while you are away.</div>');
-  return out.join('');
-}
-
-/**
- * THE CHART: cost against departure time, with the chosen sample marked.
- *
- * Points are emitted into a `data-pts` attribute as well as into the polyline,
- * so a probe reads the DRAWN series rather than re-deriving it. An unsolved
- * sample breaks the line: a `polyline` cannot express a gap, so the series is
- * emitted as one `polyline` per solved run.
- */
-function chart(p: MapPlannerReadout): string {
-  const s = p.curve;
-  const solved = s.filter((x) => Number.isFinite(x.dvMS));
-  if (solved.length === 0) {
-    return '<div class="note">No departure in this window has a solution.</div>';
-  }
-  const lo = Math.min(...solved.map((x) => x.dvMS));
-  const hi = Math.max(...solved.map((x) => x.dvMS));
-  // A FLAT curve is the right answer for a ring (no phase, so no window), and
-  // a zero span must not divide. It is drawn as a level line, which is the
-  // truthful picture: waiting buys nothing.
-  const span = hi - lo < 1e-9 ? 1 : hi - lo;
-  const n = s.length;
-  const xOf = (i: number): number => (n <= 1 ? 0 : (i / (n - 1)) * CH_W);
-  const yOf = (v: number): number => CH_H - ((v - lo) / span) * (CH_H - 8) - 4;
-  const runs: string[] = [];
-  let cur: string[] = [];
-  for (let i = 0; i < n; ++i) {
-    const v = s[i]?.dvMS ?? NaN;
-    if (!Number.isFinite(v)) {
-      if (cur.length > 1) runs.push(cur.join(' '));
-      cur = [];
-      continue;
-    }
-    cur.push(`${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`);
-  }
-  if (cur.length > 1) runs.push(cur.join(' '));
-  const marks: string[] = [];
-  const mark = (i: number, cls: string): void => {
-    const v = s[i]?.dvMS ?? NaN;
-    if (i < 0 || !Number.isFinite(v)) return;
-    marks.push(`<circle class="${cls}" cx="${xOf(i).toFixed(1)}" `
-      + `cy="${yOf(v).toFixed(1)}" r="3"/>`);
-  };
-  mark(p.cheapest, 'best');
-  mark(p.chosen, 'chosen');
-  const affordable = p.dvAvailableMS;
-  const yAff = affordable >= lo && affordable <= hi
-    ? `<line class="afford" x1="0" y1="${yOf(affordable).toFixed(1)}" `
-      + `x2="${CH_W}" y2="${yOf(affordable).toFixed(1)}"/>` : '';
-  return `<div class="pchart"><svg viewBox="0 0 ${CH_W} ${CH_H}" `
-    + `preserveAspectRatio="none" data-pts="${esc(runs.join(';'))}" `
-    + `data-lo="${lo.toFixed(3)}" data-hi="${hi.toFixed(3)}">`
-    + yAff
-    + runs.map((r) => `<polyline points="${r}"/>`).join('')
-    + marks.join('')
-    + '</svg>'
-    + `<div class="pcaption"><em>${lo.toFixed(0)} m/s</em>`
-    + `<em>cost vs departure, next ${Math.round(p.windowS / 60)} min</em>`
-    + `<em>${hi.toFixed(0)}</em></div></div>`;
-}
