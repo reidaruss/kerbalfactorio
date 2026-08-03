@@ -202,6 +202,16 @@ export class Gameplay {
    * which live in Services and are null in a scenario with no character. */
   get core(): OfCoreModule { return this.d.core; }
   get seed(): number { return this.d.seed; }
+  /** PS-40: WHICH BODY THIS WORLD IS ON, for the save. It is the same `d.bodyId`
+   *  `starterBodyId` reads and is exposed under its own name rather than through
+   *  that one, because "the body the starter table was keyed on" and "the body
+   *  this slot describes" are two claims that happen to share a number today and
+   *  a reader of either should not have to know that. Fixed for the lifetime of
+   *  this Gameplay: a runtime `WorldSession.reboot` rebuilds the body scope and
+   *  deliberately does NOT rebuild gameplay, so this stays what boot built and
+   *  the save follows it. That residue is measured by `staleHolders()` and is
+   *  core-engine's, not this getter's, to close. */
+  get bodyId(): number { return this.d.bodyId; }
   /** H-4: the body the armour goes on. Null with no character. */
   get avatar(): Avatar | null { return this.d.avatar; }
   get ports(): WorldPorts {

@@ -58,5 +58,18 @@ export interface RestoreLedger {
   /** GP-79: whether the slot carried the player's own health. False on any
    *  world written before tonight, which restores a player at full. */
   vitals: boolean;
+  /** PS-40: the body this load restored, as /core's own `BodyParams::bodyId`. */
+  body: number;
+  /** PS-40: whether the slot HELD a world for that body. False and a zero
+   *  restore count are the same numbers and different facts: "this save has
+   *  never been played here" is a fresh world, and "the world here was empty"
+   *  is a world the player has stood in and not changed. A loader that could
+   *  only report the count would make the moon's first visit indistinguishable
+   *  from a moon whose contents were dropped. */
+  bodyHadWorld: boolean;
+  /** PS-41: the OTHER bodies whose worlds this session is carrying through
+   *  untouched. Non-empty is the proof that visiting somewhere else did not
+   *  destroy home; it is what the two-body reload runner asserts on. */
+  otherBodies: number[];
   savedAt: number;
 }

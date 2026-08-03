@@ -79,6 +79,7 @@ export const SAVE_VERSION = 5;
 import { asMode, type GameMode } from './GameMode.js';
 import { assistedFor, restoreAssisted, type AssistedRecord } from './Assisted.js';
 import type { SavedEdits } from './VoxelSave.js';
+import type { SaveWorld } from './SaveWorlds.js';
 import type { SaveSite, SaveStructure } from './StructureSave.js';
 import type { SavePad } from './LaunchPadSave.js';
 import type { PlayerHealthSave } from './PlayerHealth.js';
@@ -266,6 +267,21 @@ export interface SaveSlot {
    *  written before the generator existed. It is `undefined`, never `false`,
    *  that means "this slot predates the field" -- see `stashStationPower`. */
   stationPower?: boolean;
+  /** PS-40: WHICH BODY THE FIELDS ABOVE DESCRIBE. `SaveSlot` had no body key at
+   *  all, so booting the same world with `?body=cinder` restored the Forge
+   *  world onto the moon and then autosaved the moon back over it. Absent reads
+   *  as 0 (Forge), which is what every slot written before tonight is. See
+   *  `SaveWorlds.ts` for the measurement and for why this is a bucket and not a
+   *  second key. Additive and optional under exactly the rule `dayT` and
+   *  `stationPower` were added by, so SAVE_VERSION deliberately does NOT move. */
+  body?: number;
+  /** PS-41: the OTHER bodies' worlds, each complete and each naming its body.
+   *  A load applies the one that matches the running body and CARRIES THE REST
+   *  THROUGH UNTOUCHED, which is what makes visiting the moon safe: the Forge
+   *  world is not read, not merged and not overwritten. Absent reads as a world
+   *  that has only ever been played on one body. Same additive rule, so
+   *  SAVE_VERSION deliberately does NOT move. */
+  others?: SaveWorld[];
   /** GP-102: which CHEATS this world has had used on it, in first-use order.
    *  Survival only; a sandbox slot never carries one, because `mode: sandbox`
    *  already says the stronger thing. Additive and optional under exactly the

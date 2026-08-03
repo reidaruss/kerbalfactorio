@@ -14,9 +14,8 @@
 // rather than a mystery.
 
 import * as THREE from 'three';
-import { rescueBefore } from './FactoryRescue.js';
-import { SAVE_VERSION, chestStore, readSlot, slotKey, writeSlot, type SaveMachine,
-  type SaveProgress, type SaveSlot, type SlotRefusal } from './SaveGame.js';
+import { SAVE_VERSION, chestStore, type SaveMachine,
+  type SaveProgress, type SaveSlot } from './SaveGame.js';
 import type { GameMode } from './GameMode.js';
 import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
@@ -34,25 +33,14 @@ import { restorePads, savePads } from './LaunchPadSave.js';
 import type { LaunchPads } from './LaunchPad.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort } from './VoxelSave.js';
+import { keptWorlds } from './SaveWorlds.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
-import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 import type { HealthBook } from './Health.js';
 import type { PlayerHealthSave } from './PlayerHealth.js';
 import { rebuildHealth } from './HealthCensus.js';
 
 /** The three Services handles a whole-world save needs and gameplay does not own. */
-/**
- * Why the last load refused a slot that EXISTS, for the report.
- *
- * Module state rather than a field on Gameplay because the refusal happens
- * before anything is restored, so there is no ledger to hang it on, and DW-20
- * says a harness must be able to prove its own setup: a probe asserting "the
- * survival boot did not read the sandbox world" needs to see the refusal, not
- * just an absence.
- */
-let lastRefusal: SlotRefusal = '';
-export function lastSlotRefusal(): SlotRefusal { return lastRefusal; }
 
 export interface WorldPorts {
   voxels: VoxelPort | null;
@@ -63,7 +51,7 @@ export interface WorldPorts {
 // FS-82. The research and player half moved to `PersistProgress.ts` when the
 // rescue copy pushed this file past its cap; re-exported because every caller in
 // the client asks `Persist` for it, which is the same call `PersistLedger` made.
-import { restoreProgress, saveProgress } from './PersistProgress.js';
+import { restoreProgress } from './PersistProgress.js';
 export { restoreProgress, saveProgress } from './PersistProgress.js';
 
 // The receipt a load hands back. It lives in its own file (this one is at its
@@ -75,7 +63,7 @@ export type { RestoreLedger } from './PersistLedger.js';
 
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
-                         seed: number, ports: WorldPorts,
+                         seed: number, bodyId: number, ports: WorldPorts,
                          ore: OreField, structures: Structures,
                          pads: LaunchPads,
                          hotbar: Hotbar, mode: GameMode,
@@ -131,6 +119,12 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   return {
     version: SAVE_VERSION,
     seed,
+    // PS-40 / PS-41. WHICH BODY EVERYTHING BELOW IS ABOUT, and the worlds this
+    // session is NOT standing on, put back exactly as they were loaded. Stamped
+    // beside `seed` and `mode` because they are the same kind of fact and this
+    // is the one place a slot is built. See SaveWorlds.ts for all of it.
+    body: bodyId,
+    others: keptWorlds(),
     // DW-31. The mode is written into the slot as well as deciding its key, so
     // a world can always answer what it is without anybody consulting where it
     // was found. SaveGame.ts has the argument for keeping both.
@@ -189,6 +183,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
                       slot: SaveSlot, ports: WorldPorts,
                       ore: OreField, structures: Structures,
                       structView: StructureView, hotbar: Hotbar,
+                      carried: { hadWorld: boolean; others: number[] },
                       rescue = ''): RestoreLedger {
   // 0. THE TUNNELS, before anything reads the ground. A restored dig lowers the
   //    surface the oracle reports, and a miner or a machine placed against the
@@ -327,72 +322,19 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     treesPending: g.trees.stats().pending,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
     progress, discovery, health, vitals,
+    // PS-40. Which body, whether the slot HELD one for it, and which others came
+    // through. The middle one is the fact no count carries: a first visit and a
+    // world restored to nothing are identical everywhere else on this receipt.
+    body: slot.body ?? 0,
+    bodyHadWorld: carried.hadWorld,
+    otherBodies: carried.others,
     mode: slot.mode ?? 'survival',
     savedAt: slot.savedAt,
   };
 }
 
-/**
- * The two calls Gameplay actually makes. They live here rather than there
- * because a save is a whole-world operation and Gameplay is a composition: the
- * type import is erased, so the apparent cycle costs nothing at runtime.
- */
-export async function saveSlot(g: Gameplay): Promise<unknown> {
-  // PH-30 / physics R11. A save that cannot describe the world is refused here
-  // rather than written and hoped over: the slot has no field for a vessel, so
-  // one written mid-flight is a VALID GROUND state that silently deletes the
-  // flight on the next load. Refusing leaves the last GROUND save on disk,
-  // which is where a reload should put somebody whose flight was not saved,
-  // and the navball says so while it is happening.
-  const inhibit = saveInhibit();
-  if (inhibit !== '') { noteSave(true); return { refused: inhibit }; }
-  noteSave(false);
-  const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
-    saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
-  const ok = await writeSlot(slot);
-  if (ok) g.saves++;
-  return ok ? {
-    mode: slot.mode,
-    bytes: slot.pack.length, buildings: slot.buildings.length,
-    structures: slot.structures?.length ?? 0, sites: slot.sites?.length ?? 0,
-    pads: slot.pads?.length ?? 0,
-    machines: slot.machines.length, depletion: slot.depletion.length,
-    patches: slot.patches.length, rocks: slot.rocks?.length ?? 0,
-    trees: slot.trees?.length ?? 0,
-    health: slot.health?.length ?? 0,
-    voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
-  } : null;
-}
-
-export async function loadSlot(g: Gameplay): Promise<RestoreLedger | null> {
-  const read = await readSlot(g.mode.mode);
-  const slot = read.slot;
-  // DW-31. A slot refused for its MODE is said out loud rather than dropped: a
-  // world that silently arrives empty is the single most alarming thing a save
-  // system can do, and "that save was made in sandbox mode" is the sentence that
-  // stops the player thinking their base is gone. Their base is not gone; it is
-  // under the other mode's key and nothing here will write over it.
-  lastRefusal = read.refusal;
-  if (read.refusal === 'mode' && read.foundMode !== null) {
-    g.hud.flash(`that save was made in ${read.foundMode} mode, `
-      + `this world is ${g.mode.mode}`, 3.2);
-  }
-  // A slot from another seed is a different planet, and loading it would drop
-  // buildings onto terrain that is not there.
-  if (slot === null || slot.seed !== g.seed) return null;
-  // FS-79. THE RESCUE COPY, TAKEN BEFORE `apply` TOUCHES ANYTHING, and returning
-  // '' both when none was needed and when one could not be written. Passing it in
-  // is what makes it a PRECONDITION: `restorePlan` will not re-space a plan
-  // without the key of a copy that already exists.
-  const rescue = await rescueBefore(slotKey(g.mode.mode), slot);
-  g.restored = apply(g, g.core, g.game, g.factory, g.machines, slot, g.ports,
-    g.oreField, g.structures, g.structView, g.hotbar, rescue);
-  g.hotbarBar.invalidate();
-  g.panel.invalidate();
-  const dug = g.restored.voxels.cells;
-  g.hud.flash(`restored ${g.restored.buildings} buildings, `
-    + `${g.restored.packUnits} items`
-    + (dug > 0 ? `, ${dug} m³ of tunnel` : ''), 2.6);
-  return g.restored;
-}
+// FS-82's move, made again for the same reason: the two calls Gameplay makes
+// are in `PersistSlot.ts` because the body dimension pushed this file back over
+// its 400-line cap. Re-exported because every caller in the client asks
+// `Persist` for them, exactly as `RestoreLedger` and `saveProgress` are.
+export { lastSlotRefusal, loadSlot, saveSlot } from './PersistSlot.js';

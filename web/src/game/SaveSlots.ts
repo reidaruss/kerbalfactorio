@@ -51,6 +51,16 @@ export interface SlotRow {
    *  it, while `vessels` is legitimately absent on a world with no rockets.
    *  The summary states it in words; this flag is the same fact for probes. */
   partial: boolean;
+  /** PS-40: the body this slot's SUMMARY describes, as /core's own bodyId. The
+   *  summary counts one world, and after PS-41 a slot can hold several, so the
+   *  row has to say which one it is talking about or "3 built" is a claim about
+   *  an unnamed planet. */
+  body: number;
+  /** PS-41: how many OTHER bodies' worlds this slot is carrying. Stated on the
+   *  row because loading it restores only ONE of them, and a player looking at
+   *  "nothing built yet" on a save they know has a base is entitled to see that
+   *  the base is in there, under a body they are not standing on. */
+  otherWorlds: number;
 }
 
 export interface SaveListView {
@@ -119,6 +129,8 @@ export class SaveSlots {
         assisted: (slot.assisted?.used.length ?? 0) > 0,
         isAuto: named === null,
         partial: slot.dayT === undefined,
+        body: slot.body ?? 0,
+        otherWorlds: slot.others?.length ?? 0,
       });
     }
     // The autosave first, then newest named save first: the two questions a
@@ -225,7 +237,7 @@ export class SaveSlots {
 
   private snapshotOf(g: Gameplay): SaveSlot {
     return snapshot(g.core, g.game, g.field, g.factory, g.machines, g.seed,
-      g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
+      g.bodyId, g.ports, g.oreField, g.structures, g.pads, g.hotbar, g.mode.mode,
       saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
   }
 
@@ -234,7 +246,7 @@ export class SaveSlots {
       refusals: this.refusals, armed: this.armed, busy: this.busy,
       note: this.note, rows: this.rows.map((r) => ({ name: r.name, key: r.key,
         isAuto: r.isAuto, summary: r.summary, assisted: r.assisted,
-        partial: r.partial })) };
+        partial: r.partial, body: r.body, otherWorlds: r.otherWorlds })) };
   }
 }
 
@@ -248,7 +260,22 @@ function describe(s: SaveSlot): string {
   const techs = s.progress?.techs.length ?? 0;
   if (techs > 0) bits.push(`${techs} tech`);
   if (s.voxels.cells.length > 0) bits.push('dug in');
-  const base = bits.length === 0 ? 'nothing built yet' : bits.join(', ');
+  let base = bits.length === 0 ? 'nothing built yet' : bits.join(', ');
+  // PS-41: and how many worlds this counts, because after the body dimension
+  // the count above is ONE body's. The other bodies are named by number and not
+  // by name deliberately: four separate tables in this client already map a
+  // bodyId to a word ("Forge" appears as a literal in MapMode, in
+  // StarterContent's table, in CelestialEphemeris' ternary, and on /core's own
+  // PlanetBody), and a fifth authored here for a list row would be the fifth
+  // copy of a fact this project has already paid for four times. Routed up
+  // instead. A stored slot has no live PlanetBody for a body nobody is standing
+  // on, so the number is what this function can honestly say.
+  const others = s.others?.length ?? 0;
+  if (others > 0) {
+    base += `, on body ${s.body ?? 0} of ${others + 1}`;
+  } else if ((s.body ?? 0) !== 0) {
+    base += `, on body ${s.body ?? 0}`;
+  }
   // PS-13: the partial-slot notice, ON THE ROW, before the player loads it. A
   // load that silently restores less than the player kept is R46's whole
   // failure mode, so the row that offers the Load button is where the gap is
