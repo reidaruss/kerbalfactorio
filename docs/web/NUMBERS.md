@@ -618,3 +618,38 @@ Related and separately load-bearing: **an ABI bump and its wasm must land in one
 commit that boots.** A half-bridge window reached `main` earlier the same night,
 client at ABI 22 while the wasm was still 21, before the following commit closed
 it.
+
+### The shared git index is a second collision surface, and it fails silently
+
+On 2026-08-02 a lane **landed a commit containing zero files.** `fe1268a` has a
+full message, reads perfectly normally in `git log`, and is empty. **A
+concurrent lane reset the shared index between its `git add` and its
+`git write-tree`, two bash calls apart.**
+
+Compare the two failure modes. A `.wasm` clobber at least leaves a wrong binary
+that a probe can catch. **An eaten index leaves a commit that looks correct in
+every log and history view and contains nothing**, and the work stays in the
+working tree looking exactly like work that was committed.
+
+**The check that was already in place did not catch it.** Confirming
+`git diff --cached` is empty at both ends passes trivially when the index was
+already empty when it was read. **A check that passes for the wrong reason is
+worse than no check**, because it converts an unexamined risk into a recorded
+assurance.
+
+**Standing rule while lanes share a tree:**
+
+1. **Private index.** `GIT_INDEX_FILE` under your own scratchpad,
+   `git read-tree HEAD` into it, stage explicit paths into it. Never the shared
+   index.
+2. **The whole sequence in ONE shell invocation.** Between two calls another
+   lane can and will run.
+3. **Verify the written tree actually differs from the base tree** before
+   `commit-tree`. Equality with base is the failure signature.
+4. **Three-argument `update-ref refs/heads/main <new> <base>`**, so a moved HEAD
+   fails loudly rather than clobbering.
+5. **`git show --stat` afterwards** and confirm the file list is what you meant.
+
+The general form, which is the part worth carrying elsewhere: **when several
+writers share one mutable staging area, correctness cannot be established at the
+ends of the operation. It has to be established inside it.**
