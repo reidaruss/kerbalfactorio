@@ -346,18 +346,47 @@ inline BodyParams makeForge(uint64_t worldSeed) {
   // MUST equal of::orbital::kForgeMu; world_gen_tests pins the two together so
   // the walker and the propagator can never disagree about the same planet.
   b.muM3S2 = 9.81 * 6.0e5 * 6.0e5;
-  // WG-26: the home flat pad at lat 2 deg, lon 144 deg (the scenario spawn).
+  // WG-214: the home flat pad at lat -3.41413 deg, lon 150.27984 deg.
+  //
+  // MOVED FROM lat 2 / lon 144 on 2026-08-03, and the reason is a measurement
+  // rather than taste. The old point had drifted to 4,667.789 m in the
+  // MOUNTAINS biome, 2,817.8 m above the client's TREELINE_BARE_M, while
+  // Config.ts still described it in words as "a Hills valley floor at 2,963 m".
+  // A sweep at 20,000 candidates a band found 100% Mountains and 0% below the
+  // treeline at every band out to 20 km, so the ONLY wood within 20 km of the
+  // spawn was the 14 hand-placed starter trees, and the first goal of the
+  // game's progression spine is "gather wood".
+  //
+  // This site is a Hills valley floor at 797.6 m with 623 m of relief inside a
+  // 6 km box and 54.2% of that box standing above it, its whole 620 m tree ring
+  // is one biome, and it carries an estimated 1,296 trees even under the
+  // pessimistic treeline wander. `spawn_site` is the tool and `test_spawn.cpp`
+  // is the gate: every claim in this comment is asserted there, because a
+  // comment describing a place the spawn is not is exactly how this drifted
+  // 1.7 km unnoticed.
   // LITERAL doubles, never latLonToDir at runtime: DW-14 says cos/sin can differ
   // by 1 ULP between mingw libm and emscripten musl, and since height is
   // position-hashed from raw bits, a 1-ULP difference in this vector would hash
   // the pad to an entirely unrelated height on the other toolchain. These are
-  // the exact bits latLonToDir(2*pi/180, 144*pi/180) produces; test_biome.cpp
-  // pins them against it to 1e-12.
-  b.homeDir = Vec3(-0.80852416308088182, 0.034899496702500969,
-                   0.58742718939820271);
+  // the exact bits latLonToDir(-3.41413*pi/180, 150.27984*pi/180) produces;
+  // test_biome.cpp pins them against it to 1e-12.
+  b.homeDir = Vec3(-0.86691576711993334, -0.059552552708419144,
+                   0.49488437658181161);
   // 300 m of dead-level ground to start a base on, blended back to the natural
-  // surface by 600 m. Measured: the blend adds ~1 percentage point of grade over
-  // the natural slope of the same ground, so it does not read as a cut disc.
+  // surface by 600 m.
+  //
+  // THIS COMMENT USED TO CLAIM "the blend adds ~1 percentage point of grade
+  // over the natural slope of the same ground". WG-208 measured it over an
+  // 18 m disc at the OLD spawn and found the blend reaching a 42.1% grade at
+  // 450 m against the natural ground's 37.2%, i.e. 4.9 percentage points, so
+  // the claim held only at whatever baseline it was originally taken at and
+  // nothing was checking it. The honest statement is the one that is asserted:
+  // outside homeBlendRadiusM the designed height is BIT-IDENTICAL to the
+  // un-padded field (test_biome.cpp), and how steep the blend gets in between
+  // depends entirely on how much work the pad has to do at the site. That is
+  // why `spawn_site` reports the pad's own plane fit on NATURAL ground and why
+  // test_spawn.cpp gates it: at the old site the pad flattened a 10.517 degree
+  // slope with a p95 residual of 8.424 m; at this one it is 2.429 and 3.492.
   b.homeFlatRadiusM = 150.0;
   b.homeBlendRadiusM = 600.0;
   // WG-36: the home pond, 55.000000 m from the pad centre and therefore wholly
@@ -366,8 +395,8 @@ inline BodyParams makeForge(uint64_t worldSeed) {
   // contour of the noise. Literal doubles for the DW-14 reason above; these are
   // the exact bits of homeDir rotated 55 m along a heading 30 deg east of north,
   // and test_water_field.cpp pins both the unit length and the 55 m separation.
-  b.pondDir = Vec3(-0.80849497812912174, 0.034978833858176704,
-                   0.58746263840512714);
+  b.pondDir = Vec3(-0.86689714668285123, -0.059473307692452633,
+                   0.49492652257203795);
   // 22 m basin, 4 m deep at the middle, water standing 0.60 m below the rim.
   // Solving t*t*(3 - 2t) = 1 - 0.60/4.00 = 0.85 gives t = 0.755598, so the
   // waterline is at 16.623148 m: a 33.2 m pond inside a 44 m bowl, leaving a

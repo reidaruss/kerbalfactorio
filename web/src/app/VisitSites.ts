@@ -89,9 +89,15 @@ export interface VisitSite {
 
 /** Doc order (world-gen.md section 6.1, "The candidates"): the control first. */
 export const VISIT_SITES: readonly VisitSite[] = [
-  { id: 'current', label: 'Mountains: the current spawn',
-    note: 'the control, 4,668 m: noon sun 69.2 deg, snow props, 1,174 m of '
-      + 'relief in 6 km. The survey ranks it last of 21',
+  { id: 'spawn', label: 'Hills: the spawn',
+    note: 'THE SPAWN since WG-214, 797.6 m: below the treeline, ~1,296 trees '
+      + 'in the 620 m ring, 623 m of relief in 6 km with 54.2% of it above, '
+      + 'noon sun 63.8 deg. core/tests/test_spawn.cpp asserts all of it',
+    latDeg: -3.41413, lonDeg: 150.27984, groundM: 797.6 },
+  { id: 'current', label: 'Mountains: the FORMER spawn (retired WG-214)',
+    note: 'retired 2026-08-03, 4,668 m: noon sun 69.2 deg, snow props, 1,174 m '
+      + 'of relief in 6 km. 2,818 m ABOVE the treeline, so zero natural wood '
+      + 'within 20 km. The survey ranked it last of 21',
     latDeg: 2.0, lonDeg: 144.0, groundM: 4667.8 },
   { id: 'hills', label: 'Hills: the valley floor',
     note: '2,077 m, ABOVE the treeline: no forest at all. Noon sun 36.1 deg. '

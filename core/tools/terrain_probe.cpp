@@ -60,7 +60,10 @@ using namespace of::worldgen;
 namespace {
 
 constexpr double kDeg = 3.14159265358979323846 / 180.0;
-constexpr double kHomeLatDeg = 2.0, kHomeLonDeg = 144.0;
+// WG-214: moved from lat 2 / lon 144, which had drifted to 4,667.789 m
+// in the Mountains, 2,817.8 m above the treeline. `core/tests/test_spawn.cpp`
+// is the gate; `core/tools/spawn_site.cpp` is the search that chose this.
+constexpr double kHomeLatDeg = -3.41413, kHomeLonDeg = 150.27984;
 
 static uint64_t asBits(double d) {
   uint64_t u; std::memcpy(&u, &d, sizeof(u)); return u;

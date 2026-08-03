@@ -380,6 +380,24 @@ target_link_libraries(poi_tests PRIVATE of_core)
 target_include_directories(poi_tests PRIVATE tests)
 add_test(NAME poi_tests COMMAND poi_tests)
 
+# --- THE SPAWN (WG-213 to WG-218): the gate that would have caught the drift.
+#     `Config.ts` described the spawn in prose as "a Hills valley floor at
+#     2,963 m" while it measured 4,667.789 m in the Mountains, and nothing
+#     asserted it, so the +1,704.789 m drift and the biome change went unseen
+#     for months. The spawn's description is now assertions: the homeDir
+#     literal agrees with Config.ts's lat/lon, the biome bears trees, the site
+#     is below the treeline with the wander's own margin, there is wood in the
+#     shipped 620 m ring, the pad sits on already-flat ground, the pond moved
+#     with the pad, the land is rugged and is a floor rather than a tabletop,
+#     and the ruin still places and is still a walk. Carries a NEGATIVE CONTROL
+#     proving all four headline gates refuse the old spawn. ---
+add_executable(spawn_tests
+  tests/test_main.cpp
+  tests/test_spawn.cpp)
+target_link_libraries(spawn_tests PRIVATE of_core)
+target_include_directories(spawn_tests PRIVATE tests)
+add_test(NAME spawn_tests COMMAND spawn_tests)
+
 # --- World-gen DISCOVERABLE MAP (WG-29 / DW-36): discovery.h is the record of
 #     what the player has SEEN of a body, which is WORLD state rather than UI
 #     state, so it is deterministic and it persists. ONE rule -- a cell is
@@ -776,6 +794,23 @@ target_link_libraries(spawn_probe PRIVATE of_core)
 add_executable(site_probe
   tools/site_probe.cpp)
 target_link_libraries(site_probe PRIVATE of_core)
+
+# --- Tools: spawn_site (WG-213): world-gen DIAGNOSTIC that chose the spawn.
+#     `spawn_probe` searched for FLAT / TEMPERATE / SCENIC / DRY and is not
+#     superseded; it simply predates the treeline being a gameplay constraint,
+#     and its shortlist's two Hills sites sit at 2,077 m and 1,897 m with 0
+#     canopy trees between them. This adds the criterion that decides it:
+#     expected trees in the shipped 620 m ring, reported at the pessimistic,
+#     nominal and optimistic treeline wander rather than at one number. Also
+#     reports the pad's own plane fit on NATURAL ground (how much work the pad
+#     has to do), the 6 km relief and the fraction of it standing above the
+#     site (a valley floor against a tabletop), the fraction of the tree ring
+#     that is one biome (a boundary site can be flipped by a tuning nudge), and
+#     the highest the sun ever gets at that latitude. Emits paste-ready homeDir
+#     and pondDir literals. A pure CONSUMER of of_core (not a ctest). ---
+add_executable(spawn_site
+  tools/spawn_site.cpp)
+target_link_libraries(spawn_site PRIVATE of_core)
 
 # --- Per-test timeout: every suite finishes in seconds; a generous 120 s cap
 #     means a future loader/DLL failure fails FAST instead of stalling ~1000 s

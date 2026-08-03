@@ -205,10 +205,14 @@ TEST(designed_height_preserves_shared_edge_bit_identity) {
 // can differ 1 ULP between mingw libm and emscripten musl, and height is
 // position-hashed from raw bits, so a 1-ULP difference would hash the pad to an
 // unrelated height). This pins the literal to the geodetic coordinate it claims.
-TEST(home_dir_literal_matches_lat2_lon144) {
+// WG-214 moved the spawn from lat 2 / lon 144 (which had drifted to 4,667.789 m
+// in the Mountains) to lat -3.41413 / lon 150.27984. The lat/lon here and
+// `web/src/app/Config.ts`'s HOME are two encodings of one place;
+// `core/tests/test_spawn.cpp` pins THAT pair and asserts what the site IS.
+TEST(home_dir_literal_matches_its_lat_lon) {
   const BodyParams forge = makeForge(kTunedSeed);
   const double kPi = 3.14159265358979323846;
-  const Vec3 want = latLonToDir(2.0 * kPi / 180.0, 144.0 * kPi / 180.0);
+  const Vec3 want = latLonToDir(-3.41413 * kPi / 180.0, 150.27984 * kPi / 180.0);
   CHECK(std::fabs(forge.homeDir.x - want.x) < 1e-12);
   CHECK(std::fabs(forge.homeDir.y - want.y) < 1e-12);
   CHECK(std::fabs(forge.homeDir.z - want.z) < 1e-12);

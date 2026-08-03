@@ -28,12 +28,31 @@ export interface Scenario {
 
 export type PlayerMode = 'walk' | 'fly';
 
-// lat 2 / lon 144 on Forge at seed 0x0bf00d01: a Hills valley floor at 2,963 m
-// with 3,200 m of relief and peaks 2,668 m above it inside a 6 km box, found by
-// sweeping baseHeight and biomeAt through the oracle. The default start is
-// deliberately on rugged land: an ocean or plateau start makes every terrain
-// screenshot useless.
-const HOME = { lat: 2, lon: 144 };
+// lat -3.41413 / lon 150.27984 on Forge at seed 0x0bf00d01 (WG-214).
+//
+// **THIS COMMENT IS NO LONGER THE ONLY THING MAKING THE CLAIM.** Its previous
+// version described lat 2 / lon 144 as "a Hills valley floor at 2,963 m". By
+// 2026-08-03 that point measured 4,667.789 m in the MOUNTAINS: a drift of
+// +1,704.789 m and a biome change, unnoticed for months because nothing
+// asserted it. The spawn stood 2,817.8 m above `TREELINE_BARE_M`, a sweep found
+// 100% Mountains and 0% sub-treeline ground at every band out to 20 km, and the
+// only wood within 20 km was the 14 hand-placed starter trees. The first goal
+// of the progression spine is "gather wood".
+//
+// Every number below is now ASSERTED in `core/tests/test_spawn.cpp`, which also
+// carries a negative control proving all four gates refuse the old site. If
+// this comment ever disagrees with the world again, that suite goes red.
+//
+// A Hills valley floor at 797.6 m, below the treeline with the wander's own
+// margin, carrying an estimated 1,296 trees in the shipped 620 m ring even
+// pessimistically. 623 m of relief inside a 6 km box with 54.2% of that box
+// standing above it, so it is a floor rather than a tabletop: the start is
+// deliberately on rugged land, because an ocean or plateau start makes every
+// terrain screenshot useless. Noon sun reaches 63.8 degrees.
+//
+// The lat/lon here and `BodyParams::homeDir` in cubed_sphere.h are two
+// encodings of one place and `test_spawn.cpp` pins them to each other.
+const HOME = { lat: -3.41413, lon: 150.27984 };
 
 export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   // Whole planet in frame, everything in the far scaled scene.

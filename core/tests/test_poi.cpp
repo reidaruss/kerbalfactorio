@@ -406,11 +406,21 @@ TEST(a_steep_direction_is_refused_by_tilt_and_admitted_when_tilt_is_loosened) {
 TEST(broken_ground_is_refused_by_the_residual_that_tilt_cannot_see) {
   const BodyParams forge = makeForge(kSeed);
   SiteSpec spec = forgeRuinSpec();
+  // A WIDER BAND THAN THE SHIPPED ONE, on purpose. The shipped 700 to 1400 m
+  // band around the WG-214 spawn is gentle Hills, and 4096 candidates in it
+  // yield no case that passes tilt and fails residual: the reachable refusing
+  // case for this gate is not reachable THERE any more. Widening the band is
+  // the honest response, because the gate is band-independent and the
+  // alternative (loosening the assertion until the shipped band satisfies it)
+  // would leave the gate untested. It was reachable in the shipped band at the
+  // old Mountains spawn, which is a fact about the terrain, not about the gate.
+  spec.minArcM = 700.0;
+  spec.maxArcM = 60000.0;
   // The case the whole plane fit exists for: a direction whose FITTED PLANE is
   // inside the tilt gate and whose ground is broken inside the footprint. A
   // slope-only gate admits this, every time.
   bool found = false;
-  for (uint32_t i = 0; i < 4096 && !found; ++i) {
+  for (uint32_t i = 0; i < 16384 && !found; ++i) {
     const Vec3 d = candidateDir(forge, spec, forge.homeDir, i);
     const Verdict v = admit(forge, forge.homeDir, d, spec);
     if (v.refusal != Refusal::Residual) continue;
