@@ -884,9 +884,36 @@ TEST(the_ascent_leg_reproduces_the_ascent_this_project_actually_flew) {
 
   const tr::AscentCost a = tr::ascentDvMS(kMu, R, rPark, true);
   CHECK(a.calibrated);
-  CHECK_NEAR(a.deltaVMS, 3724.649392, 1e-4);
-  // Against the flown figure, which is the whole point of a calibration.
-  CHECK(std::fabs(a.deltaVMS - 3722.91) < 2.0);
+  // 3724.649392 WAS THE NUMBER HERE AND IT IS NOW 3720.907932 (R83, PH-204).
+  //
+  // The baseline changed from `vPark` to the ideal two-impulse transfer, so the
+  // published figure at this 80 km parking orbit drops by 3.741460 m/s, which
+  // is 0.1005%. That is a deliberate, Admin-ruled move and not a drift: the old
+  // form was accurate only at the altitude it was calibrated at, and the VAB
+  // lets a player pick the altitude.
+  CHECK_NEAR(a.deltaVMS, 3720.907932, 1e-4);
+  // THE LINE THAT USED TO BE HERE COMPARED AN 80 km PREDICTION AGAINST AN
+  // 81.2 km FLIGHT, AND IT IS DELETED RATHER THAN RETUNED.
+  //
+  // It read `fabs(a.deltaVMS - 3722.91) < 2.0`, and 3722.91 m/s is what
+  // Ascender I spent reaching a mean radius of 681.2 km, while `rPark` here is
+  // 680.0 km. Holding a formula to a flight at a DIFFERENT altitude is the same
+  // category error the old constants were built on, and it passed only because
+  // the two altitudes are close. It is asserted at the flight's own radius
+  // instead, immediately below, where it is exact.
+  //
+  // (For the record, since the temptation is to keep both: at 680 km the new
+  // form is 2.002 m/s from 3722.91 and the old was 1.739. The new form is not
+  // "closer to the flight" here and the first draft of this comment claimed it
+  // was, wrongly. It is closer where the comparison means something.)
+
+  // AT THE FLOWN VEHICLE'S OWN RADIUS IT IS EXACT, which is the condition Admin
+  // set: 3722.91 m/s to a mean radius of 681.2 km is the only ground truth here.
+  const tr::AscentCost flown = tr::ascentDvMS(kMu, R, 681.2e3, true);
+  CHECK_NEAR(flown.deltaVMS, 3722.91, 1e-3);
+  // THE IDEAL IS THE FLOOR AND IT IS EXACT, no fitted constants in it at all.
+  CHECK_NEAR(tr::idealAscentDvMS(kMu, R, 681.2e3), 2575.142516, 1e-5);
+  CHECK(tr::idealAscentDvMS(kMu, R, rPark) < a.deltaVMS);
 
   // No atmosphere on the same body drops exactly the drag fraction and nothing
   // else, so the two constants are separable in the answer as well as in source.
@@ -904,15 +931,15 @@ TEST(the_ascent_leg_reproduces_the_ascent_this_project_actually_flew) {
   // 740.6796 m/s, and `test_ascent.cpp` re-flies it and checks the published
   // constant against the flight. The prediction the old comment made here was
   // wrong and is corrected in transfer.h rather than deleted: an airless body's
-  // fraction is not "a few percent", it is 0.343781, because gravity loss does
-  // not care about air and because this formula's baseline charges the ideal
-  // transfer to the loss term.
+  // genuine loss is not "a few percent", it is 0.250733 of surface circular
+  // speed, because gravity loss does not care about air. What an airless body
+  // saves is DRAG, and drag is the smaller half of Forge's number.
   const tr::AscentCost moon = tr::ascentDvMS(orbital::kCinderMu,
                                              orbital::kCinderRadiusM,
                                              orbital::kCinderRadiusM + 20.0e3,
                                              false);
   CHECK(moon.calibrated);
-  CHECK_NEAR(moon.deltaVMS, 740.679514, 1e-5);
+  CHECK_NEAR(moon.deltaVMS, 740.679591, 1e-3);
 
   // AND THE REFUSAL ITSELF IS STILL LIVE, on a body nobody has flown off. Two
   // calibrated bodies is not "every body", and the day there is a third pad it
@@ -935,18 +962,29 @@ TEST(the_bay_prices_the_reference_rocket_to_anchorage) {
   const tr::MissionBudget b = tr::launchBudget(a.v, 1.0e6);   // Anchorage
   CHECK(b.ok);
 
-  //   ascent  3724.649392   (80 km parking orbit, calibrated above)
-  //   plane        0        (a launch picks its plane with its azimuth)
-  //   transfer  207.586632  (Hohmann 680 km -> 1000 km, first burn)
-  //   arrival   188.422748  (the circularising burn at the far end)
-  //   reserve   206.032939  (5% policy, transfer.h kMissionReserveFraction)
-  //   total    4326.691711  against 4922.91 aboard: margin 596.218289
-  CHECK_NEAR(b.ascentMS, 3724.649392, 1e-4);
+  // THE WHOLE ROW MOVED ON 2026-08-03 (R83, PH-204) AND IT MOVED BY DESIGN.
+  //
+  // `ascentDvMS`'s baseline changed from the parking SPEED to the ideal
+  // two-impulse TRANSFER, because the old form was accurate only at the
+  // altitude it was calibrated at and the VAB lets a player choose the
+  // altitude. The ascent leg drops 3.741460 m/s, the reserve follows it down by
+  // 5% of that, and the margin gains the difference. Every number below is the
+  // new one and the old one is kept beside it, because this is the row
+  // `of_ap_design_reach` draws and a lane or a player will notice it move.
+  //
+  //   ascent   3720.907932  (was 3724.649392, -3.741460)
+  //   plane         0       (a launch picks its plane with its azimuth)
+  //   transfer   207.586632 (Hohmann 680 km -> 1000 km, first burn; unmoved)
+  //   arrival    188.422748 (the circularising burn at the far end; unmoved)
+  //   reserve    205.845866 (was 206.032939; 5% of four legs, so it tracks)
+  //   total     4322.763178 (was 4326.691711)
+  //   margin     641.872039 (was 637.943506, and the player is better off)
+  CHECK_NEAR(b.ascentMS, 3720.907932, 1e-4);
   CHECK(b.planeChangeMS == 0.0);
   CHECK_NEAR(b.transferMS, 207.586632, 1e-5);
   CHECK_NEAR(b.arrivalMS, 188.422748, 1e-5);
-  CHECK_NEAR(b.reserveMS, 206.032939, 1e-4);
-  CHECK_NEAR(b.totalMS, 4326.691711, 1e-3);
+  CHECK_NEAR(b.reserveMS, 205.845866, 1e-4);
+  CHECK_NEAR(b.totalMS, 4322.763178, 1e-3);
 
   // THE FIVE SUM TO THE TOTAL EXACTLY. A screen that draws five bars beside a
   // total must be able to add them up, and this is what makes that true.
@@ -972,7 +1010,7 @@ TEST(the_bay_prices_the_reference_rocket_to_anchorage) {
   CHECK_NEAR(b.availableMS - 4922.91,
              330.0 * atmo::kG0 * std::log(9685.0 / 5385.0)
              - 330.0 * atmo::kG0 * std::log(9845.0 / 5545.0), 0.01);
-  CHECK_NEAR(b.marginMS, 637.943506, 1e-3);
+  CHECK_NEAR(b.marginMS, 641.872039, 1e-3);
   CHECK(b.feasible);
 
   // A ring it cannot reach is refused rather than shrugged at: 20,000 km needs

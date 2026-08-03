@@ -614,9 +614,59 @@ inline CaptureBurn planCapture(const SoiCrossing& x, const Target& body) {
 // for a body it has not been calibrated against. There is no launch site off
 // Forge today, so this costs nothing now and it fails loudly the day there is
 // one (R63).
-constexpr double kAscentGravityLossFraction = 0.3500;
-constexpr double kAscentDragLossFraction    = 0.2459;   // sums to the measured
-                                                        // 0.5959 at Forge
+// THE BASELINE IS THE IDEAL TWO-IMPULSE TRANSFER AND NOT THE PARKING SPEED
+// (R83, ruled by Admin 2026-08-03, PH-204).
+//
+// The old form was `vPark + vSurf * loss`, and `vPark` is the SPEED OF THE
+// DESTINATION rather than the cost of reaching it. Getting from a surface at R
+// to a circular orbit at rPark costs more than vPark even with an infinitely
+// powerful engine, and how much more GROWS WITH rPark. So the old "loss"
+// fraction was a physical quantity plus a bookkeeping artefact added together,
+// and it was accurate only at the altitude it was calibrated at.
+//
+// That matters because the VAB lets a player choose the altitude. A number that
+// is right only where it was calibrated, on a screen that invites you to vary
+// the very thing it was calibrated against, is a trap. Measured on Forge, the
+// old form and the new one differ by -107.6 m/s at a 50 km parking orbit and
+// +787.0 m/s at 400 km, crossing over near 80 km where it was calibrated.
+//
+// This is the floor: burn at the surface onto a transfer ellipse whose apoapsis
+// is the parking radius, coast, circularise. It is exact, it has no fitted
+// constants, and everything left over after subtracting it is genuinely loss.
+inline double idealAscentDvMS(double muM3S2, double bodyRadiusM,
+                              double parkingRadiusM) {
+  if (!(muM3S2 > 0.0) || !(bodyRadiusM > 0.0) || !(parkingRadiusM > bodyRadiusM))
+    return 0.0;
+  const double sum = bodyRadiusM + parkingRadiusM;
+  const double vDepart =
+      std::sqrt(muM3S2 * (2.0 / bodyRadiusM - 2.0 / sum));
+  const double vArrive =
+      std::sqrt(muM3S2 * (2.0 / parkingRadiusM - 2.0 / sum));
+  return vDepart + (std::sqrt(muM3S2 / parkingRadiusM) - vArrive);
+}
+
+// FORGE, RE-DERIVED AGAINST THE NEW BASELINE AT THE FLOWN VEHICLE'S OWN
+// ALTITUDE, WHICH IS THE ONLY GROUND TRUTH THIS PROJECT HAS.
+//
+// `flight_tests` puts Ascender I from the Forge pad into an 86.9 x 75.5 km
+// orbit with 1200 m/s left of 4922.91, so it spent 3722.91 m/s to reach a mean
+// radius of 681.2 km. The ideal two-impulse cost of that orbit is 2575.142516,
+// so the genuine loss is 1147.767484 against a surface circular speed of
+// 2426.107994: the fraction below.
+//
+// The old constants were calibrated at 680,000 m while the flight reached
+// 681,200 m, so the "0.047% off" recorded for them was itself measured at the
+// wrong radius. At the flight's OWN radius the old form was 3722.641227, which
+// is 0.2688 m/s low; the new form is exact there by construction.
+//
+// THE GRAVITY/DRAG SPLIT IS A CONVENTION AND ONLY THE SUM WAS EVER MEASURED.
+// PH-147 published 0.3500 / 0.2459 without a measurement separating them, and
+// nothing since has separated them either. The ratio is preserved here so that
+// `hasAtmosphere` keeps meaning what it meant, and it is labelled rather than
+// quietly re-derived: one flight cannot tell gravity loss from drag loss.
+constexpr double kAscentGravityLossFraction = 0.277867944;
+constexpr double kAscentDragLossFraction    = 0.195222078;   // sums to the
+                                                             // measured 0.473090022
 
 // R63 CLOSED FOR CINDER, 2026-08-03 (PH-203), AND THE PREDICTION IT MADE WAS
 // WRONG IN A WAY WORTH KEEPING.
@@ -648,13 +698,12 @@ constexpr double kAscentDragLossFraction    = 0.2459;   // sums to the measured
 // is the difference between a scheduled gravity turn and real explicit guidance.
 // Recorded so that nobody later reads it as physics.
 //
-// ITS DOMAIN IS STATED BECAUSE IT IS NOT A CONSTANT OF THE BODY ALONE. Flown at
-// five parking altitudes the fraction moves from 0.283 at 10 km to 0.682 at
-// 100 km, while the loss over the impulsive ideal barely moves (0.235 to 0.317).
-// The published number is calibrated at a LOW parking orbit, which is the case a
-// lander returning to a waiting ship actually flies. R83 carries the form
-// problem to Admin, because fixing it changes Forge's published answer.
-constexpr double kAscentLossFractionCinder = 0.343781;
+// AND IT IS NOW A CONSTANT OF THE BODY AND THE PROGRAM RATHER THAN OF THE BODY,
+// THE PROGRAM AND THE PARKING ALTITUDE, which is what R83 was about. Flown to
+// five parking altitudes, the old fraction and the new one are both printed by
+// `test_ascent.cpp` and the new one is asserted to be the more stable of the
+// two, so this claim is a measurement and not a preference.
+constexpr double kAscentLossFractionCinder = 0.250732713;
 struct AscentCost {
   bool calibrated = false;   // false: this body has no measured ascent
   double deltaVMS = 0.0;
@@ -673,13 +722,13 @@ inline AscentCost ascentDvMS(double muM3S2, double bodyRadiusM,
                         && std::fabs(bodyRadiusM - orbital::kCinderRadiusM) < 1.0;
   if (!isForge && !isCinder) return a;
   a.calibrated = true;
-  const double vPark = std::sqrt(muM3S2 / parkingRadiusM);
   const double vSurf = std::sqrt(muM3S2 / bodyRadiusM);
   const double loss =
       isForge ? kAscentGravityLossFraction
                     + (hasAtmosphere ? kAscentDragLossFraction : 0.0)
               : kAscentLossFractionCinder;
-  a.deltaVMS = vPark + vSurf * loss;
+  a.deltaVMS = idealAscentDvMS(muM3S2, bodyRadiusM, parkingRadiusM)
+               + vSurf * loss;
   return a;
 }
 

@@ -663,6 +663,58 @@ TEST(the_cheap_terrain_schedule_changes_nothing_it_is_allowed_to_change) {
 // NOT `a == f(a)`: the flight does not read the constant and the constant does
 // not read the flight.
 // =============================================================================
+// -----------------------------------------------------------------------------
+// R83'S EVIDENCE: THE OLD FRACTION MOVED WITH THE PARKING ALTITUDE AND THE NEW
+// ONE DOES NOT, AND BOTH ARE FLOWN RATHER THAN ARGUED.
+//
+// This test exists because the risk entry that asked for the form change quoted
+// a spread taken from flights that had NOT COMPLETED: the sweep behind it ran
+// with a time limit that three of its seven rows exceeded, and their delta-v was
+// therefore a partial ascent. The claim was probably right and the evidence was
+// not, which is the same class of error as everything else in this file. So it
+// is re-flown here, to completion, and the comparison is asserted.
+// -----------------------------------------------------------------------------
+TEST(the_new_loss_fraction_holds_across_parking_altitudes_and_the_old_one_did_not) {
+  const worldgen::BodyParams cinder = worldgen::makeCinder(1);
+  const Site flat = findFlatPad(cinder);
+  const double R = orbital::kCinderRadiusM, mu = orbital::kCinderMu;
+  const double vSurf = std::sqrt(mu / R);
+
+  double oldLo = 1e300, oldHi = -1e300, newLo = 1e300, newHi = -1e300;
+  int flown = 0;
+  std::printf("    [R83]  parkM      dv        ideal      OLD frac   NEW frac\n");
+  for (double alt : {5000.0, 10000.0, 20000.0, 40000.0, 80000.0}) {
+    as::Profile p;
+    p.targetApoapsisM = alt;
+    const Flown f = fly(flat, p, 30000.0);
+    // A ROW THAT DID NOT FINISH IS NOT A DATA POINT. This is the assertion the
+    // sweep behind R83 did not have, and it is why that sweep was wrong.
+    CHECK(f.orbit);
+    if (!f.orbit) continue;
+    ++flown;
+    const double rPark = R + alt;
+    const double oldF = (f.dvMS - std::sqrt(mu / rPark)) / vSurf;
+    const double ideal = transfer::idealAscentDvMS(mu, R, rPark);
+    const double newF = (f.dvMS - ideal) / vSurf;
+    std::printf("    [R83] %7.0f  %9.4f  %9.4f  %.6f   %.6f\n",
+                alt, f.dvMS, ideal, oldF, newF);
+    if (oldF < oldLo) oldLo = oldF;
+    if (oldF > oldHi) oldHi = oldF;
+    if (newF < newLo) newLo = newF;
+    if (newF > newHi) newHi = newF;
+  }
+  CHECK(flown == 5);
+  const double oldSpread = oldHi - oldLo, newSpread = newHi - newLo;
+  std::printf("    [R83] OLD fraction spans %.6f (%.6f to %.6f); NEW spans "
+              "%.6f (%.6f to %.6f). The new baseline removes %.1f%% of the "
+              "variation.\n", oldSpread, oldLo, oldHi, newSpread, newLo, newHi,
+              100.0 * (1.0 - newSpread / oldSpread));
+  // THE CLAIM, ASSERTED: the ideal-transfer baseline is what makes the fraction
+  // a property of the body and the program rather than of the destination too.
+  CHECK(newSpread < oldSpread);
+  CHECK(oldSpread > 0.10);      // the old one really did move, a lot
+}
+
 TEST(the_cinder_ascent_calibration_agrees_with_a_flown_ascent) {
   const worldgen::BodyParams cinder = worldgen::makeCinder(1);
   const Site flat = findFlatPad(cinder);
@@ -674,18 +726,18 @@ TEST(the_cinder_ascent_calibration_agrees_with_a_flown_ascent) {
   const double rPark = R + prof.targetApoapsisM;
   const double vPark = std::sqrt(mu / rPark);
   const double vSurf = std::sqrt(mu / R);
-  const double measured = (a.dvMS - vPark) / vSurf;
   // The two-impulse Hohmann from the surface: the floor NO ascent can beat, and
-  // the reason the published fraction is not "a few percent".
-  const double ideal = std::sqrt(mu * (2.0 / R - 2.0 / (R + rPark)))
-      + (vPark - std::sqrt(mu * (2.0 / rPark - 2.0 / (R + rPark))));
-  std::printf("    [R63] flown %.4f m/s to a %.1f x %.1f km orbit. vPark "
-              "%.4f, vSurf %.4f -> loss fraction %.6f. The impulsive ideal is "
-              "%.4f m/s, which is ALREADY %.6f of vSurf, so %.6f of the "
-              "fraction is guidance and the rest is arithmetic.\n",
-              a.dvMS, a.apoAltM / 1000.0, a.periAltM / 1000.0, vPark, vSurf,
-              measured, ideal, (ideal - vPark) / vSurf,
-              (a.dvMS - ideal) / vSurf);
+  // since PH-204 it is the BASELINE rather than a footnote.
+  const double ideal = transfer::idealAscentDvMS(mu, R, rPark);
+  const double measured = (a.dvMS - ideal) / vSurf;
+  std::printf("    [R63] flown %.4f m/s to a %.1f x %.1f km orbit. The "
+              "impulsive ideal is %.4f m/s and vSurf is %.4f, so the genuine "
+              "loss fraction is %.6f. Against the RETIRED baseline (vPark "
+              "%.4f) the same flight read %.6f, and the %.6f between them is "
+              "the ideal transfer the old formula charged to the loss term.\n",
+              a.dvMS, a.apoAltM / 1000.0, a.periAltM / 1000.0, ideal, vSurf,
+              measured, vPark, (a.dvMS - vPark) / vSurf,
+              (ideal - vPark) / vSurf);
 
   const transfer::AscentCost c = transfer::ascentDvMS(mu, R, rPark, false);
   std::printf("    [R63] ascentDvMS: calibrated=%d, %.6f m/s against the flown "
@@ -702,12 +754,31 @@ TEST(the_cinder_ascent_calibration_agrees_with_a_flown_ascent) {
   CHECK(!none.calibrated);
   CHECK(none.deltaVMS == 0.0);
 
-  // Forge's own number has NOT moved, which is what says this change added a
-  // body rather than edited one. 3724.649392 is PH-147's published figure.
-  const transfer::AscentCost forge =
+  // FORGE, AND THE FIRST CONDITION ADMIN SET WHEN RULING R83: the published
+  // number must still match the REAL Ascender I flight AT THAT FLIGHT'S OWN
+  // ALTITUDE, because 3722.91 m/s to a mean radius of 681.2 km is the only
+  // ground truth this project has. The new form is exact there by construction.
+  // The OLD form returned 3722.641227 there, 0.2688 m/s low, because it was
+  // calibrated at 680,000 m against a flight that reached 681,200 m: the
+  // "0.047% off" on record for it was itself measured at the wrong radius.
+  const transfer::AscentCost flownForge =
+      transfer::ascentDvMS(orbital::kForgeMu, orbital::kForgeRadiusM,
+                           681200.0, true);
+  std::printf("    [R63] Forge at the FLOWN radius 681200 m: %.6f m/s against "
+              "the flight's own 3722.91\n", flownForge.deltaVMS);
+  CHECK(flownForge.calibrated);
+  CHECK_NEAR(flownForge.deltaVMS, 3722.91, 1e-3);
+
+  // AND THE SECOND CONDITION: what the published number BECOMES, stated rather
+  // than discovered. At the 80 km parking orbit PH-147 published, 3724.649392
+  // becomes 3720.907932: 3.741460 m/s lower, 0.1005%. `of_ap_design_reach`
+  // draws this, so it is pinned here by name and not left to be noticed.
+  const transfer::AscentCost forge80 =
       transfer::ascentDvMS(orbital::kForgeMu, orbital::kForgeRadiusM,
                            680000.0, true);
-  std::printf("    [R63] Forge, untouched: %.6f m/s\n", forge.deltaVMS);
-  CHECK(forge.calibrated);
-  CHECK_NEAR(forge.deltaVMS, 3724.649392, 1e-5);
+  std::printf("    [R63] Forge at an 80 km parking orbit: PH-147 published "
+              "3724.649392, this publishes %.6f, a move of %+.6f m/s\n",
+              forge80.deltaVMS, forge80.deltaVMS - 3724.649392);
+  CHECK(forge80.calibrated);
+  CHECK_NEAR(forge80.deltaVMS, 3720.907932, 1e-5);
 }
