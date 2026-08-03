@@ -368,8 +368,10 @@ export class Cheats {
         note: 'keeps every tank topped up while you fly' },
       { id: 'orbit', label: 'Teleport to orbit', kind: 'button', blocked: noCraft,
         note: `the craft you are flying, into a ${(ORBIT_ALT_M / 1000).toFixed(0)} km circular orbit` },
+      // GP-552. A world with no enemy loop IS peaceful, so the chip says so. It
+      // read OFF beside a refusing button, i.e. the opposite of the world.
       { id: 'peaceful', label: 'Peaceful mode', kind: 'toggle',
-        on: g?.enemies.peaceful ?? false, blocked: noEnemies,
+        on: (g?.enemies.peaceful ?? false) || noEnemies !== '', blocked: noEnemies,
         note: 'no more waves are dispatched, and the live ones die' },
       { id: 'killall', label: 'Kill all enemies', kind: 'button', blocked: noEnemies,
         note: 'every creature and every nest, through the same damage a shot does' },

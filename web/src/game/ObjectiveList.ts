@@ -110,11 +110,26 @@ function slotOf(g: Gameplay, part: string): string {
     : `the build menu (${labelOf('build')})`;
 }
 
+/**
+ * GP-550. THE WHOLE PHRASE, not a bare key, for the hints that need a verb in
+ * front of it. `slotOf` returns "2" or "the build menu (B)", and both of those
+ * were being spliced into sentences that then read "craft a furnace, 2 and Left
+ * click place it" and "press the build menu (B), then Left click". The
+ * derivation is untouched (GP-165's whole point) and only the grammar moves:
+ * one branch needs "press", the other needs "open", and only the function that
+ * knows which branch it took can say which.
+ */
+function holdPhrase(g: Gameplay, part: string): string {
+  const i = g.hotbar.slots.findIndex((s) => s.kind === 'part' && s.part === part);
+  return i >= 0 ? `press ${labelOf(`slot${i + 1}` as Action)}`
+    : `open the build menu (${labelOf('build')})`;
+}
+
 /** The furnace's own slot, same derivation (it is a `furnace` kind, not a part). */
-function furnaceSlot(g: Gameplay): string {
+function furnaceHold(g: Gameplay): string {
   const i = g.hotbar.slots.findIndex((s) => s.kind === 'furnace');
-  return i >= 0 ? labelOf(`slot${i + 1}` as Action)
-    : `the build menu (${labelOf('build')})`;
+  return i >= 0 ? `press ${labelOf(`slot${i + 1}` as Action)}`
+    : `open the build menu (${labelOf('build')})`;
 }
 
 /**
@@ -157,13 +172,13 @@ export const OBJECTIVES: Objective[] = [
   },
   {
     id: 'smelt', text: 'Smelt it into iron',
-    hint: (g) => `craft a furnace, ${furnaceSlot(g)} and ${labelOf('use')} `
-      + `place it, ${labelOf('interact')} opens it`,
+    hint: (g) => `craft a furnace, ${furnaceHold(g)} to hold it, `
+      + `${labelOf('use')} to place it, then ${labelOf('interact')} opens it`,
     done: (g) => g.game.count(g.game.ids.iron) >= 1,
   },
   {
     id: 'miner', text: 'Put a drill on an ore patch',
-    hint: (g) => `press ${slotOf(g, 'miner')}, then ${labelOf('use')}`,
+    hint: (g) => `${holdPhrase(g, 'miner')}, then ${labelOf('use')}`,
     done: (g) => g.factory.placed.some((p) => p.kind === 'miner'),
   },
   {
@@ -208,7 +223,7 @@ export const OBJECTIVES: Objective[] = [
   {
     id: 'pad', text: 'Build a launch pad on a 6 x 6 foundation platform',
     hint: (g) => `research Launch Facilities (${labelOf('research')}), then `
-      + `${slotOf(g, 'launchpad')} puts one in your hand`,
+      + `${holdPhrase(g, 'launchpad')} to put one in your hand`,
     done: (g) => g.pads.list.length >= 1,
   },
   {

@@ -130,8 +130,12 @@ export class Enemies {
   init(host: EnemyHost, spawnDir: Vec3): boolean {
     if (!this.mode.hostile) {
       this.enabled = false;
-      this.disabledWhy = 'sandbox is safe by default (DW-31 / GP-82); '
-        + 'add ?combat=1 to make this world dangerous';
+      // GP-551. The decision IDs came off the sentence: this string is drawn on
+      // the player's own menu, and a reason that cites a ticket number is a
+      // reason written for the lane that wrote it. The wording a probe reads
+      // ("sandbox is safe by default") is unchanged, deliberately.
+      this.disabledWhy = 'sandbox is safe by default; '
+        + 'add ?combat=1 to the address to make this world dangerous';
       return false;
     }
     if (!this.loop.init(this.bodyHandle, host.seed)) {

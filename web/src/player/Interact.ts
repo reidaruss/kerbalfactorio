@@ -90,7 +90,6 @@ export class Interact {
   private cooldown = 0;
   private pending = -1;
   private pendingIndex = -1;
-  private held = false;
 
   constructor(
     private readonly core: GameCore,
@@ -110,9 +109,20 @@ export class Interact {
     this.aim();
     if (this.cooldown > 0) this.cooldown--;
 
-    const pressed = held && !this.held;
-    this.held = held;
-    if (pressed && this.cooldown === 0 && this.target !== null && !this.target.empty) {
+    // GP-553. HOLDING THE BUTTON SWINGS AGAIN, which is what the very first
+    // sentence this game shows a player already promises ("aim at one and hold
+    // Left click") and what the same button already did at bare ground.
+    //
+    // It fired on the RISING EDGE only, so a held button gave exactly one swing
+    // for ever: measured, 45 frames of hold against a 35-tick axe cooldown
+    // produced `swings: 1`. Felling one tree was five separate clicks. The
+    // decisive argument is not the hint, it is that `DigAction.step` takes the
+    // SAME `use` frame and says in its own comment "the cooldown makes it
+    // repeat", so one button repeated at dirt and did not repeat at a tree.
+    // The edge latch is DELETED rather than left dead: it was the whole
+    // mechanism, and a field kept "in case" is a field the next reader has to
+    // work out the purpose of.
+    if (held && this.cooldown === 0 && this.target !== null && !this.target.empty) {
       const kind: SwingKind = this.target.kind === NODE_KIND.Tree ? 'axe' : 'pickaxe';
       const t = swingTiming(kind);
       this.cooldown = t.cooldown;

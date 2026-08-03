@@ -129,8 +129,8 @@ export class PauseMenu extends Modal {
     this.root.innerHTML = '<div class="frame"><h3>Game menu'
       + '<span class="esc">Escape closes</span></h3>'
       + '<div class="body"></div>'
-      + '<div class="hint">The simulation KEEPS RUNNING while this is open '
-      + '(GP-101). Your factory does not stop because you opened a menu.</div>'
+      + '<div class="hint">The simulation KEEPS RUNNING while this is open. '
+      + 'Your factory does not stop because you opened a menu.</div>'
       + '</div>';
     parent.appendChild(this.root);
     this.body = this.root.querySelector('.body') as HTMLElement;
