@@ -27,7 +27,8 @@
 // is a latch rather than a frame counter.
 // =============================================================================
 import {
-  bestIndex, departureCurve, planTransfer, scheduleFor,
+  bestIndex, bodyDepartureCurve, bodyReach, departureCurve, legSumErrorMS,
+  planTransfer, scheduleFor,
 } from '../game/Autopilot.js';
 import type { Curve, Schedule, TransferPlan } from '../game/Autopilot.js';
 import {
@@ -106,6 +107,8 @@ export class MapPlanner {
   lastCancel: CancelResult | null = null;
   /** Counted so a probe can prove the press reached the verb. */
   armPresses = 0;
+  /** GP-295. The moon's reach row for the chosen departure, or null. */
+  bodyRow: import('../game/Autopilot.js').Reach | null = null;
   /** GP-280. WHAT THE CHART SAID THIS TRIP COST, at the instant the button was
    *  pressed. Kept so the panel can show it BESIDE the executor's own
    *  programme cost rather than choosing between them. The two are different
@@ -295,6 +298,32 @@ export class MapPlanner {
     // conditional on anything this panel happens to have chosen.
     this.refreshRun();
     const t = this.target();
+    // GP-295, R74. A WORLD HAS A CHART NOW, and it comes from its own export
+    // because a body cannot be described in nine orbit words. Same latch, same
+    // key, same sample count: the only thing that differs is which export is
+    // asked, so every consumer below (the schedule, the drawn SVG, the arm
+    // gate) is unchanged.
+    if (f > 0 && t !== null && t.body !== null) {
+      const now = this.p.nowS();
+      const key = `${this.selectedId}|${f}|body`;
+      if (key !== this.builtKey || now - this.builtAtS >= CURVE_MAX_AGE_S) {
+        this.builtKey = key;
+        this.builtAtS = now;
+        this.curveBuilds += 1;
+        this.curve = bodyDepartureCurve(this.p.M, f, 0, CURVE_WINDOW_S,
+                                        CURVE_SAMPLES, t.body.bodyId,
+                                        t.body.captureAltitudeM);
+        if (this.chosen >= this.curve.samples.length) this.chosen = 0;
+      }
+      // The reach row for the CHOSEN departure, so the panel can show the legs
+      // and so `legSumErrorMS` can be asserted on the client side too.
+      const s2 = this.curve.samples[this.chosen];
+      this.bodyRow = s2 === undefined ? null
+        : bodyReach(this.p.M, f, s2.tS, t.body.bodyId, t.body.captureAltitudeM);
+      this.plan = null;
+      return;
+    }
+    this.bodyRow = null;
     if (f <= 0 || t === null || t.orbit === null) {
       this.curve = { waitingOn: this.curve.waitingOn, samples: [] };
       this.plan = null;
@@ -413,6 +442,14 @@ export class MapPlanner {
         lastArm: this.lastArm,
         lastCancel: this.lastCancel,
         closing: this.closing(),
+        // GP-295. The five legs and whether they ADD UP, published so a probe
+        // asserts the sum rather than trusting it: two exports in one commit
+        // disagreed by 53.1 m/s about one trip and this is the check that
+        // found it.
+        bodyLegsMS: this.bodyRow === null ? null : this.bodyRow.legsMS,
+        bodyRequiredMS: this.bodyRow === null ? NaN : this.bodyRow.dvRequiredMS,
+        bodyLegSumErrMS: this.bodyRow === null ? NaN : legSumErrorMS(this.bodyRow),
+        bodyOk: this.bodyRow === null ? null : this.bodyRow.ok,
       },
     };
   }

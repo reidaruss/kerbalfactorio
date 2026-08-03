@@ -246,32 +246,66 @@ export function plannerBlock(p: MapPlannerReadout | null): string {
   // PENDING and NOT NOW BUT LATER: the screen states what it does not know.
   // =========================================================================
   if (p.isBody) {
-    out.push('<div class="pverdict pend">FLYABLE, BUT NOT YET TIMEABLE</div>');
-    out.push('<div class="note">The autopilot can fly this: injection, a '
-      + 'mid-course correction, the hand-off between the two gravities, and a '
-      + `capture into a ${km(p.bodyCaptureAltM)} orbit. What it cannot do yet `
-      + 'is tell you WHEN to leave. The departure chart prices a trip from an '
-      + 'orbit, and a world is not an orbit, so there is no curve for this row '
-      + 'and none is drawn rather than a flat one that would look like an '
-      + 'answer.</div>');
-    out.push('<div class="note warn">Leaving at a bad moment has been measured '
-      + 'at 1721 m/s against 1119 for the same trip at a good one, and both of '
-      + 'those arm and both of them fly. Until the window is priced, that '
-      + '600 m/s is yours to lose with no warning. Physics is taking it '
-      + 'next (R74).</div>');
+    // GP-295, R74. THE BAND IS GONE, deleted the same way Cinder's `blocked`
+    // sentence was: it named what was missing, the thing arrived, and it
+    // becomes a chart with no consumer changing. A refusal or a caveat written
+    // as a REASON discharges itself; one written as a status has to be edited.
+    //
+    // ZERO SAMPLES IS A REFUSAL, not an empty window. An unknown body returns 0
+    // rather than a chart of NaNs, because those read as "unreachable for the
+    // next orbit" and are a different sentence.
+    if (p.curve.length === 0) {
+      out.push('<div class="pverdict bad">NO ANSWER</div>');
+      out.push('<div class="note">The solver returned no departures at all for '
+        + 'this world, which is a refusal rather than an empty window. Nothing '
+        + 'is drawn, because a chart of gaps would read as "unreachable for '
+        + 'the next few hours" and that is a different statement.</div>');
+      return out.join('');
+    }
+    out.push(chart(p));
+    out.push(row('leave in', fromNow(p.chosenTS)));
+    // A GAP IS A REFUSAL HERE, and it is worth saying in words as well as
+    // drawing: on this chart NaN means the arm will decline that departure, not
+    // that the sampler had nothing to say.
+    out.push(row('costs', Number.isFinite(p.chosenDvMS)
+      ? `${p.chosenDvMS.toFixed(0)} m/s` : 'the arm refuses this departure',
+    p.chosenFeasible ? 'good' : 'warn'));
     out.push(row('you have', `${p.dvAvailableMS.toFixed(0)} m/s`));
+    out.push(row('capture into', km(p.bodyCaptureAltM)));
+    const cls = p.verdict === 'go' ? 'ok' : p.verdict === 'wait' ? 'pend' : 'bad';
+    const word = p.verdict === 'go' ? 'CAN FLY THIS DEPARTURE'
+      : p.verdict === 'wait' ? 'NOT NOW, BUT LATER' : 'NOT WITH THIS VEHICLE';
+    out.push(`<div class="pverdict ${cls}">${word}</div>`);
+    out.push(`<div class="note">${esc(p.why)}</div>`);
     out.push('<div class="nodectl">');
-    out.push('<button class="wide" data-plan-act="arm">set autopilot for '
-      + `${esc(p.rows.find((r) => r.id === p.selectedId)?.name ?? 'this world')}`
-      + '</button></div>');
+    out.push('<button data-plan-act="earlier">earlier</button>');
+    out.push('<button data-plan-act="later">later</button>');
+    out.push('<button class="wide" data-plan-act="cheapest">jump to the '
+      + 'cheapest departure</button>');
+    if (p.earliest >= 0 && !p.chosenFeasible) {
+      out.push('<button class="wide" data-plan-act="earliest">jump to the '
+        + 'earliest one I can fly</button>');
+    }
+    out.push(`<button class="wide${p.chosenFeasible ? '' : ' off'}" `
+      + `data-plan-act="arm"${p.chosenFeasible ? '' : ' disabled'}>`
+      + 'set autopilot for this departure</button>');
+    out.push('</div>');
+    // THE COST OF TIMING IS STILL SAID, and it is now said BY the chart rather
+    // than instead of it. The sentence it replaces ("1721 against 1119") was
+    // the honest thing to show while there was no curve; the curve says the
+    // same thing better, so the claim is discharged rather than dropped.
+    out.push('<div class="note">The dip is worth finding: the same trip has '
+      + 'been measured at 1721 m/s at a bad moment against 1119 at a good one, '
+      + 'and both of those arm and both of them fly. A gap in the line is a '
+      + 'departure the autopilot will refuse, not a departure it has no '
+      + 'opinion about.</div>');
     if (p.runWaitingOn !== '') {
       out.push('<div class="note">The autopilot EXECUTOR is not on this bridge '
         + `yet: waiting for ${esc(p.runWaitingOn)}.</div>`);
     }
-    out.push('<div class="note">Autopilot flies a vessel you are aboard, or '
-      + 'one you are following. A transfer to the moon is hours long: warp '
+    out.push('<div class="note">A transfer to the moon is hours long: warp '
       + 'through the coast and the burns will drop you back to 1x for '
-      + 'themselves.</div>');
+      + 'themselves. Autopilot flies a vessel you are aboard or following.</div>');
     return out.join('');
   }
   out.push(chart(p));

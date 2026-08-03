@@ -74,26 +74,14 @@ export function planAct(pl: MapPlanner, say: (m: string) => void,
     return;
   }
   if (act === 'arm') {
-    // GP-291. A WORLD IS ARMED WITHOUT THE CHART'S PERMISSION, because the
-    // chart has no opinion about it. `of_ap_departure_curve` takes nine orbit
-    // words and a body cannot be described in them, so `chosenFeasible` is
-    // false for a world for exactly the reason it is false for an empty curve.
-    // Letting the gate below stand would refuse every moon mission with the
-    // sentence "no departure in this window is affordable", which is a
-    // confident answer to a question nobody asked. The EXECUTOR still refuses
-    // on its own numbers and its sentence is what the player reads.
-    const tb = pl.target();
-    if (tb !== null && tb.body !== null) {
-      const rb = pl.arm();
-      if (rb.waitingOn !== '') {
-        say('the autopilot executor is not on this bridge yet: waiting for '
-          + `${rb.waitingOn}.`);
-        return;
-      }
-      say(rb.armed ? `autopilot armed: ${rb.note}`
-        : `autopilot refused: ${rb.note}`);
-      return;
-    }
+    // GP-295. THE BYPASS IS GONE, and removing it is part of the chart landing.
+    // GP-291 armed a world WITHOUT the chart's permission, because there was no
+    // chart and `chosenFeasible` was false for a world for exactly the reason
+    // it is false for an empty curve. R74 gave a body its own curve, so the
+    // gate now means what it says for every destination, and leaving the
+    // bypass in would let a player arm a departure the chart is drawing as a
+    // gap: on the moon's curve a gap IS the arm's own refusal, so the two
+    // would contradict each other on one screen.
     // THE GATE. Refused per DEPARTURE TIME and never globally, which is
     // Reid's rule: a destination you cannot reach now is not refused
     // outright, it is refused AT THIS DEPARTURE. The button is disabled

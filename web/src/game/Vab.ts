@@ -20,6 +20,7 @@ import type { ModeRules } from './GameMode.js';
 import { offeredParts, readCatalogue } from './VesselCatalogue.js';
 import type { PartRow } from './VesselCatalogue.js';
 import { VesselDesign } from './VesselDesign.js';
+import { insertAt } from './VesselInsert.js';
 import { VabView } from './VabView.js';
 import { VabCamera } from './VabCamera.js';
 import { VabPointer } from './VabInput.js';
@@ -295,6 +296,45 @@ export class Vab {
     this.nodes = attachNodes(this.design.parts, (id) => this.byIdMap.get(id));
     this.view.showNodes(this.nodes, this.active);
     return true;
+  }
+
+  /**
+   * GP-293. PUT THE PART IN HAND INTO AN EXISTING JOINT.
+   *
+   * `childIndex` is the part SITTING ON the joint, which is what a player is
+   * pointing at when they aim at a seam: the tank's own mating face, not the
+   * pod above it.
+   *
+   * IT IS A SPLICE AND A REBUILD, not surgery on the live tree. The design is a
+   * flat array with parent INDICES and `fromJson` already walks one; GP-148
+   * leaned on exactly that for the re-root. So this needs no `of_vs_reparent`,
+   * no ABI bump, and nothing from a lane that is live in another header
+   * tonight.
+   *
+   * THE STAGE TABLE IS PRESERVED THE SAME WAY THE RE-ROOT PRESERVES IT: through
+   * `toJson`, spliced, and back through `fromJson`, with `handStaged` carried
+   * across so a player's own staging is not silently replaced by the
+   * derivation (GP-75's latch).
+   */
+  insertAtJoint(childIndex: number, partId: number): { ok: boolean; why: string } {
+    const before = this.design.toJson('insert', this.handStaged);
+    const r = insertAt(before, childIndex, partId);
+    if (r.design === null) return { ok: false, why: r.why };
+    // THE ARRIVING PART IS PAID FOR THROUGH THE SAME GATE AS ANY OTHER, and
+    // BEFORE the tree is touched: a splice that half-succeeded because the
+    // player could not afford the part would leave a rebuilt design with the
+    // part missing from it, which is worse than a refusal. `cost` is the one
+    // authority (VabCost, through GameMode) and the sentence is its own.
+    const row = this.byIdMap.get(partId);
+    if (row === undefined) return { ok: false, why: 'no such part.' };
+    if (!this.canAfford(row)) return { ok: false, why: this.costWhy(row) };
+    if (!this.pay(row)) return { ok: false, why: this.costWhy(row) };
+    this.design.fromJson(r.design);
+    this.handStaged = r.design.hs === true;
+    // `after` is the one place a structural change is saved and redrawn, so an
+    // insert goes through it rather than saving itself.
+    this.after(`inserted ${row.name}`);
+    return { ok: true, why: '' };
   }
 
   removeAt(handle: number): boolean {

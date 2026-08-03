@@ -70,6 +70,16 @@ export function vabApi(s: Services): VabDebugApi {
         case 'pick': return v.view.pick(v.camera, Number(a), Number(b));
         case 'drop': v.dropHand(); return v.report();
         case 'remove': return { ok: v.removeAt(Number(a)), report: v.report() };
+        /**
+         * GP-293. INSERT INTO A JOINT. `a` is the index of the part SITTING ON
+         * the joint (what a player aims at when they aim at a seam); `b` is the
+         * PartId arriving. Through the bay's own verb, so the cost gate, the
+         * stage table and the save all go the one way they already go.
+         */
+        case 'insert': {
+          const r = v.insertAtJoint(Number(a), Number(b));
+          return { ok: r.ok, why: r.why, report: v.report() };
+        }
         case 'frame': v.frameCamera(); return v.report();
         case 'orbit': {
           v.cam.yaw = Number(a);

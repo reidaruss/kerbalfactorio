@@ -94,6 +94,10 @@ export const AP_PLAN_WORDS = 32;
 export const AP_EXPORTS = [
   '_of_ap_design_reach', '_of_ap_flight_reach',
   '_of_ap_departure_curve', '_of_ap_plan',
+  // GP-295, R74. The moon's own chart. Same shapes as the two above, so ONE
+  // client reader serves the station and the world, which is the point of
+  // physics having published them in `apPushReach`'s row exactly.
+  '_of_ap_body_departure_curve', '_of_ap_body_reach',
 ] as const;
 
 interface ApModule {
@@ -107,6 +111,10 @@ interface ApModule {
                          argp: number, ta: number, epoch: number): number;
   _of_ap_plan(f: number, t: number, sma: number, ecc: number, inc: number,
               lan: number, argp: number, ta: number, epoch: number): number;
+  _of_ap_body_departure_curve(f: number, t0: number, t1: number, n: number,
+                              bodyId: number, captureAltM: number): number;
+  _of_ap_body_reach(f: number, t: number, bodyId: number,
+                    captureAltM: number): number;
 }
 
 /**
@@ -271,6 +279,75 @@ export function departureCurve(M: OfCoreModule, flightHandle: number,
     });
   }
   return { waitingOn: '', samples: out };
+}
+
+/**
+ * GP-295. THE MOON'S CHART, and it reuses `readReach` and the curve loop above
+ * because physics published the same two shapes on purpose.
+ *
+ * THREE THINGS ABOUT IT THAT ARE NOT TRUE OF THE ORBIT CHART, all of them
+ * physics' own corrections and all of them things a client can get wrong:
+ *
+ *  1. **NaN MEANS THE ARM WILL REFUSE THIS DEPARTURE**, not "no data". Their
+ *     first version priced the requested-orbit capture while the arm used the
+ *     arrival hyperbola's own periapsis, and it quoted confident prices for 22
+ *     of 121 departures the arm then refused, with its cheapest eleven samples
+ *     away from the arm's. So a gap is drawn as a gap and NOTHING interpolates
+ *     across it, which `MapPlannerPanel.chart` already does correctly because
+ *     it emits one polyline per solved run.
+ *  2. **ZERO SAMPLES IS A REFUSAL**, not an empty window. An unknown body
+ *     returns 0 rather than a chart of NaNs, because those were
+ *     indistinguishable from "this moon is unreachable for the next orbit".
+ *  3. **WORDS 5 TO 9 SUM TO WORD 1**, and asserting it is what caught two
+ *     exports in one commit disagreeing by 53.1 m/s about one trip, with 6.5
+ *     of the old capture still buried inside the plane-change allocation after
+ *     the obvious half was fixed.
+ */
+export function bodyDepartureCurve(M: OfCoreModule, flightHandle: number,
+                                   tStartS: number, tEndS: number,
+                                   samples: number, bodyId: number,
+                                   captureAltM: number): Curve {
+  const A = apModule(M);
+  if (A === null) return { waitingOn: apMissing(M).join(', '), samples: [] };
+  const n = A._of_ap_body_departure_curve(flightHandle, tStartS, tEndS, samples,
+                                          bodyId, captureAltM);
+  if (n <= 0) return { waitingOn: '', samples: [] };
+  const f = scratchF64(M, n * AP_CURVE_WORDS).slice();
+  const out: CurveSample[] = [];
+  for (let k = 0; k < n; ++k) {
+    const b = k * AP_CURVE_WORDS;
+    out.push({
+      tS: f[b] ?? 0, dvRequiredMS: f[b + 1] ?? NaN,
+      feasible: (f[b + 2] ?? 0) > 0.5, arrivalFromNowS: f[b + 3] ?? 0,
+    });
+  }
+  return { waitingOn: '', samples: out };
+}
+
+/** The moon's reach row, in `apPushReach`'s own ten words. */
+export function bodyReach(M: OfCoreModule, flightHandle: number,
+                          tDepartS: number, bodyId: number,
+                          captureAltM: number): Reach {
+  const A = apModule(M);
+  if (A === null) return pending(apMissing(M));
+  return readReach(M, A._of_ap_body_reach(flightHandle, tDepartS, bodyId,
+                                          captureAltM));
+}
+
+/**
+ * GP-295. DO THE FIVE LEGS ADD UP TO THE TOTAL. Returns the signed error.
+ *
+ * Physics added two exports in one commit that disagreed by 53.1 m/s about one
+ * trip, because the reach row and the chart priced arrival differently, and
+ * after the obvious half was substituted 6.5 m/s of the old capture was still
+ * buried in the plane-change allocation. This sum is the check that found it,
+ * and it costs one addition, so the client runs it too: a row where every
+ * number arrives and one sits under the wrong heading is exactly what it
+ * catches, and nothing else on the screen can.
+ */
+export function legSumErrorMS(r: Reach): number {
+  if (r.legsMS.length === 0) return NaN;
+  return r.legsMS.reduce((a, b) => a + b, 0) - r.dvRequiredMS;
 }
 
 /** The cheapest sample, or -1 on an empty curve. */

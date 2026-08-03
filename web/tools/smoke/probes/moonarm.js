@@ -116,21 +116,47 @@
         `${sel.sel} ${sel.why}`);
 
   // (2) FIRST, because this is the state a player reads while DECIDING.
-  const band = document.querySelector('#of-map .pverdict')?.textContent ?? '';
-  const text = document.querySelector('#of-map')?.textContent ?? '';
-  check('Cinder is no longer refused', !/CANNOT PLAN/.test(band), band);
-  check('the band says it is flyable but not yet timeable',
-        /NOT YET TIMEABLE/.test(band), band);
-  check('and the screen says the chart cannot price a world',
-        /a world is not an orbit/i.test(text), text.slice(0, 240));
-  // THE MEASURED COST OF THE GAP IS ON SCREEN. That is the difference between
-  // a gap and a trap: both departures arm and both fly.
-  check('and it names what leaving at a bad moment costs',
-        /1721/.test(text) && /1119/.test(text),
-        'the 600 m/s a player can lose with no signal is not on screen');
-  check('no departure chart is drawn for a world',
-        document.querySelector('#of-map .pchart') === null,
-        'a chart IS drawn, and a flat or empty one looks like an answer');
+  //
+  // R74 landed the moon's own chart, so the FLYABLE-BUT-NOT-TIMEABLE band is
+  // gone and this asserts the curve instead. The claim that survives the change
+  // is the one that mattered: a player is still told what timing costs. It was
+  // a sentence when there was no curve; it is a drawn dip plus a sentence now.
+  const p1 = P();
+  check('a departure curve was built for a WORLD', p1.samples > 0,
+        `${p1.samples} samples. Zero is a REFUSAL (an unknown body returns 0 `
+        + 'rather than a chart of NaNs) and must not read as an empty window.');
+  check('the chart is DRAWN', document.querySelector('#of-map .pchart') !== null,
+        'no .pchart in the panel');
+  const svg = document.querySelector('#of-map .pchart svg');
+  let drawnPts = 0;
+  if (svg !== null) {
+    const runs = (svg.getAttribute('data-pts') ?? '').split(';').filter((x) => x);
+    for (const r of runs) drawnPts += r.trim().split(/\s+/).filter((x) => x).length;
+    // A NaN ON THIS CURVE MEANS THE ARM WILL REFUSE THAT DEPARTURE, not "no
+    // data", so it is drawn as a GAP and nothing interpolates across it. The
+    // drawn point count is therefore the SOLVED count and never the sample
+    // count, and the two differ exactly when some departure is refused.
+    check('the drawn points equal the SOLVED samples, so refusals are GAPS',
+          drawnPts === p1.solved,
+          `drew ${drawnPts}, solved ${p1.solved} of ${p1.samples}`);
+  }
+  check('and the player is still told what timing costs',
+        /1721/.test(document.querySelector('#of-map')?.textContent ?? ''),
+        'the measured cost of leaving at a bad moment is not on screen');
+  // THE FIVE LEGS ADD UP. This is the check that caught two exports in one
+  // commit disagreeing by 53.1 m/s about one trip, with 6.5 still buried in
+  // the plane-change allocation after the obvious half was fixed. It costs one
+  // addition and nothing else on the screen can see that failure.
+  const legs = p1.run && p1.run.bodyLegsMS;
+  check('the reach row came back with five legs', Array.isArray(legs)
+        && legs.length === 5, JSON.stringify(legs));
+  if (Array.isArray(legs)) {
+    const err = Number(p1.run.bodyLegSumErrMS);
+    check('AND THE FIVE LEGS SUM TO THE TOTAL', Math.abs(err) < 1e-6,
+          `legs ${JSON.stringify(legs)} sum to `
+          + `${legs.reduce((a, b) => a + b, 0)} against a required `
+          + `${p1.run.bodyRequiredMS}, error ${err}`);
+  }
 
   // (1) IT ARMS, THROUGH THE BODY DOOR.
   const arm = await pressAct('arm', 1.5);
@@ -161,10 +187,15 @@
     fails,
     log,
     via,
+    samples: p1.samples,
+    solved: p1.solved,
+    drawnPts,
+    legs: p1.run && p1.run.bodyLegsMS,
+    legSumErrMS: p1.run && p1.run.bodyLegSumErrMS,
     burns: r1.burnCount,
     programDvMS: r1.programDvMS,
     executorNote: r1.note,
-    band,
+    band: document.querySelector('#of-map .pverdict')?.textContent ?? '',
     note: 'arming and pricing are asserted separately because they are '
       + 'different facts: the moon flies end to end and the departure chart '
       + 'still cannot say when to leave',
