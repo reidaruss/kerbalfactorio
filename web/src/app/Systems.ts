@@ -8,6 +8,7 @@ import type { Loop } from './Loop.js';
 import { windUpdate } from '../render/instancing/PropWind.js';
 import { dayAdvance } from '../sim/DayCycle.js';
 import { terrainNightAmbient } from '../render/materials/TerrainAmbient.js';
+import { bootCelestialBodies } from '../render/CelestialBoot.js';
 
 /** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
 const NIGHT_DOT = -0.12;
@@ -18,6 +19,20 @@ const HORIZON = new THREE.Color(0xff9b52);
 const UP_FALLBACK = new THREE.Vector3(0, 1, 0);
 
 export function registerSystems(s: Services, loop: Loop): void {
+  // RN-845. THE SECOND BODY. Here rather than in `Boot.ts` because that file is
+  // at its cap and is another lane's this round; everything it needs is already
+  // on `Services`. `s.session.body.bodyId` is read as a THUNK, so a CE-20 world
+  // rebuild onto Cinder swaps which body is the sky and which is the ground
+  // with no further wiring. See render/CelestialBoot.ts.
+  bootCelestialBodies({
+    core: s.core, scene: s.scenes.far, seedLo: s.cfg.seedLo, seedHi: s.cfg.seedHi,
+    observerBody: () => s.session.body.bodyId,
+    sunDir: s.sky.sunDirection,
+    simSecs: () => loop.simSecs,
+    eye: () => s.observer.position,
+    up: () => s.observer.up,
+  }, () => s.rig.farCam.position, (fn) => { loop.onPreRender.push(fn); },
+  (deg) => { s.rig.setFov(deg); });
   // W8. The assembly bay is entered and left with ONE key, edge-detected here
   // rather than inside Gameplay because the bay is not part of Gameplay: it owns
   // its own pointer, its own scene and its own pass. Escape still closes it, and

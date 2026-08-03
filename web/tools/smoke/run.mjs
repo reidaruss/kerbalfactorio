@@ -263,7 +263,17 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // client boots on. `body=cinder` (or `moon`, or `1`) boots the moon; absent
   // or anything else is Forge, which is every existing probe unchanged.
   // Registered in the same commit that introduces it, per this list's own rule.
-  'body'];
+  'body',
+  // RN-845. The second body in the sky. `skybodies=0` is the STRUCTURAL
+  // control: the class is never constructed, so no oracle is sampled, no
+  // texture is allocated and nothing joins the far scene, which is what makes
+  // a byte-identical negative control possible at all. `skybodyrelief` and
+  // `skybodydetail` are the two halves of the surface, separable because "the
+  // body is in the wrong place" and "the body's surface is wrong" are
+  // different faults; `skybodytex` is the bake resolution and `skybodytime`
+  // pins the ephemeris clock so a disc can be posed at a chosen phase.
+  // Registered in the same commit that introduces them, per this list's rule.
+  'skybodies', 'skybodyrelief', 'skybodydetail', 'skybodytex', 'skybodytime'];
 for (const k of PAGE_PARAMS) {
   if (args.has(k)) params.set(k, args.get(k));
 }
