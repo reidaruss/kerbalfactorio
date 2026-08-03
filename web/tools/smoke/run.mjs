@@ -145,7 +145,13 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   'terrainspecamp', 'terrainspecskyamp',
   // RN-152, the starlight floor. `starlight=0` removes it (the PH-86 black
   // night exactly); `starlightamp=` sweeps it.
-  'starlight', 'starlightamp',
+  // RN-952, the DAYLIGHT floor underneath it, which had no control at all and
+  // is therefore the term four experiments could not reach: `starlight=0`
+  // removes only the term above it. `terrainfloor=0` removes this one and
+  // `terrainfloor=` sweeps it, so the two halves of the constant ambient on an
+  // airless night are separable. Registered in the same commit that introduces
+  // it, per this list's own rule.
+  'starlight', 'starlightamp', 'terrainfloor',
   // RN-181, the foliage albedo cards. `leaftex=0` boots with the card maps
   // and their alpha test off: the pre-texture flora exactly.
   'leaftex',

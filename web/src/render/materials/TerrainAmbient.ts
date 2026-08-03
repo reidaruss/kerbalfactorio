@@ -25,8 +25,36 @@ import * as THREE from 'three';
  * The floor under everything: what a face receives with no sky and no sun. It
  * is what stops a fully shadowed slope reading as a hole in the world rather
  * than as shaded ground.
+ *
+ * RN-952: IT HAD NO CONTROL, AND THAT IS WHY IT WENT UNFOUND FOR A NIGHT.
+ * `?starlight=0` removes the term BELOW this one and leaves this one standing,
+ * so the previous lane's search for the constant on Cinder's night ground
+ * turned off the lamp, the ground IBL, the bounce and the horizon occlusion,
+ * found it unmoved, and correctly concluded that no mechanism they knew about
+ * accounted for it. All four of those are mechanisms this domain BUILT and can
+ * name; this literal is a mechanism this domain built and could not switch
+ * off, which made it the one candidate no experiment could reach. Standing
+ * rule 7 says every term gets a control that restores the state immediately
+ * before it, and a term that predates the rule is exactly the term that ends
+ * up unfalsifiable.
+ *
+ * `?terrainfloor=0` removes it; `?terrainfloor=` sweeps it. Applied at
+ * construction so it reaches BOTH holders of this object by reference (the two
+ * terrain materials and SkyAtmosphere's ground shell), including on any frame
+ * before `terrainNightAmbient` has run.
  */
-export const TERRAIN_AMBIENT = new THREE.Color(0.030, 0.034, 0.045);
+const FLOOR_AMP = ((): number => {
+  const p = new URLSearchParams(self.location.search);
+  const v = p.get('terrainfloor');
+  const f = v === null ? NaN : Number(v);
+  return Number.isFinite(f) ? f : 1;
+})();
+
+/** The authored daylight floor, kept as a literal so the number in this file
+ *  stays the number that is being discussed. */
+const AMBIENT_DAY = new THREE.Color(0.030, 0.034, 0.045);
+
+export const TERRAIN_AMBIENT = AMBIENT_DAY.clone().multiplyScalar(FLOOR_AMP);
 
 /** The daylight value of the floor, kept so the night writer below is
  *  idempotent: it always writes base + starlight * k, never accumulates. */
@@ -69,6 +97,8 @@ const STARLIGHT_AMP = ((): number => {
  * Drive the shared ambient from the sun's elevation. Called once per frame by
  * Systems beside the sky update; idempotent by construction.
  */
+let lastK = 0;
+
 export function terrainNightAmbient(elevationDot: number): number {
   const t = Math.min(1, Math.max(0, (0.03 - elevationDot) / 0.08));
   const k = t * t * (3 - 2 * t) * STARLIGHT_AMP;
@@ -76,8 +106,41 @@ export function terrainNightAmbient(elevationDot: number): number {
   TERRAIN_AMBIENT.r += STARLIGHT.r * k;
   TERRAIN_AMBIENT.g += STARLIGHT.g * k;
   TERRAIN_AMBIENT.b += STARLIGHT.b * k;
+  lastK = k;
   return k;
 }
+
+/**
+ * RN-952. What the floor ACTUALLY IS this frame, published so a probe can read
+ * the linear number instead of inferring it from pixels through an exposure, a
+ * tone curve and a grade.
+ *
+ * The previous lane's whole difficulty was that a constant in the frame could
+ * not be attributed to a constant in the code, because every quantity between
+ * them is nonlinear. Two halves and the elevation that drove them, read
+ * directly, turns that into arithmetic.
+ *
+ * Not routed through `window.__of` for Surfaces.ts's reason: Debug.ts belongs
+ * to another lane and is over the line cap. One property, removable in one
+ * line.
+ */
+export function terrainAmbientState(): {
+  floorAmp: number; starlightAmp: number;
+  day: [number, number, number]; starlight: [number, number, number];
+  current: [number, number, number]; nightK: number;
+} {
+  return {
+    floorAmp: FLOOR_AMP, starlightAmp: STARLIGHT_AMP,
+    day: [AMBIENT_BASE.r, AMBIENT_BASE.g, AMBIENT_BASE.b],
+    starlight: [STARLIGHT.r, STARLIGHT.g, STARLIGHT.b],
+    current: [TERRAIN_AMBIENT.r, TERRAIN_AMBIENT.g, TERRAIN_AMBIENT.b],
+    nightK: lastK,
+  };
+}
+
+(window as unknown as { __ofAmbient: unknown }).__ofAmbient = {
+  report: terrainAmbientState,
+};
 
 /**
  * How much of the sky-scattering integral reaches a fully open facet. Not 1:
