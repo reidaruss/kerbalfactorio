@@ -52,7 +52,54 @@ PALETTE = {
     "Accent":       ("FF8A1E", 0.00, 0.50, 1.0, None),
     "Hazard":       ("F2C531", 0.00, 0.60, 1.0, None),
     "Rubber":       ("23262B", 0.00, 0.85, 1.0, None),
-    "Glass":        ("9FD8E8", 0.00, 0.05, 0.35, None),
+    # RN-907. WAS 9FD8E8: LUMA 205 AND 73 COUNTS OF CHROMA, THE HIGHEST-VALUE
+    # AND MOST SATURATED SURFACE ON THE PLAYER. Taken in a serialised window
+    # (Admin, 2026-08-03) because this row is written into the bytes of SEVEN
+    # shipped binaries and a .glb collision survives no commit discipline.
+    #
+    # I EXPECTED TO HAVE TO SPLIT THIS ROLE AND I DID NOT. Eight uses across
+    # the seven files, and the two I expected to fight the change are the two
+    # that wanted it most:
+    #
+    #   the visor, a machine's viewing pane, the pod's forward window, its
+    #     side port, its instrument lens, and the station's viewports  - all
+    #     want a window
+    #   the oil flask, whose stated read is "the dark fill sitting two thirds
+    #     up a transparent body", and the canister's sight strip - both want
+    #     to be SEEN THROUGH
+    #   the cave crystal, five 4-sided prisms whose own docstring says "four
+    #     flat faces catch a helmet lamp as four distinct highlights"
+    #
+    # The crystal was the one I thought would break. It is RN-491's fang
+    # exactly: a base at luma 205 in a dark cave has NOTHING LEFT TO BE
+    # BRIGHTER THAN, so four facets cannot read as four highlights. Every one
+    # of the eight wants a dark base with a sharp specular, so the role is not
+    # doing two jobs and no new role (and therefore no client wiring) is
+    # needed.
+    #
+    # WHY THE VALUE IS THE DEFECT, ARITHMETICALLY. In a BLEND material the pane
+    # lays `alpha * baseColor` over whatever is behind it. At 0.35 x 205 that
+    # is a **72-count pale wash** over the face RN-901 put inside the helmet
+    # and over the oil inside the flask. At 0.35 x 57 it is **20 counts**, a
+    # tint rather than a wash. What it does NOT do is flatten anything: the
+    # separation between two things seen through the pane is 0.65 x their own
+    # difference either way, i.e. 41.7 counts between that face and the
+    # interior behind it, before and after, unchanged. The pane stops adding
+    # 50 counts of brightness to everything behind it and hands that headroom
+    # to the specular, which is the whole point of glass.
+    #
+    # 2A3C44 is luma 57 and 26 counts of chroma: a quarter of the saturation,
+    # not zero, because a real laminate pane does carry a faint cool tint and
+    # ART-DIRECTION.md asks for muted rather than neutral.
+    #
+    # ROUGHNESS 0.05 AND METALNESS 0.00 ARE DELIBERATELY UNTOUCHED. Glass is
+    # the one row in this table that should have a mirror-sharp highlight and
+    # it already did; the highlight was invisible because the base was as
+    # bright as it was. ALPHA STAYS 0.35 TOO, and that is a decision rather
+    # than an omission: three.js multiplies the whole shaded output including
+    # the specular by alpha, so lowering it to buy transparency would take the
+    # reflection with it. The transparency now comes from the dark base.
+    "Glass":        ("2A3C44", 0.00, 0.05, 0.35, None),
     # --- materials / ores ---
     "Iron":         ("B4BAC0", 1.00, 0.40, 1.0, None),
     "Copper":       ("C06B3E", 1.00, 0.35, 1.0, None),
