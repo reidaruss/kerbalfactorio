@@ -30,8 +30,13 @@
 // nothing keeps them in step except SpaceStation.ts deriving the interior's
 // pose from the record. If someone ever caches a position, this goes red.
 //
-// P5 IS A MEASUREMENT AND NOT YET AN ASSERTION, and it is the finding of this
-// pass: the hall the player SPAWNS in has no way out. Numbers in P5.
+// P5 IS NOW AN ASSERTION (RN-832). It was a measurement because the defect was
+// in the ASSET and a probe red until Blender ships again is a probe nobody
+// runs. Blender has shipped: `col_HallWall{A,G}` are a jamb pair plus a lintel,
+// `col_HallSill{Fwd,Aft}` bridge the deck, and the walk that stopped dead at
+// local x 8.098644 now goes through. The numbers it published are all still
+// published; three `if`s were added under them, which is all promoting one
+// costs and is exactly why the numbers were published in that shape.
 //
 // RETURNS THE PLAYER TO THE GROUND BEFORE IT RESOLVES (PH-89): run.mjs settles
 // on terrain convergence and a walker parked 400 km up with the streamer
@@ -324,18 +329,25 @@
   }
 
   // ======================================================================
-  // P5. THE HALL HAS NO WAY OUT, AND THIS IS A MEASUREMENT RATHER THAN AN
-  //     ASSERTION ON PURPOSE. It is a defect in the ASSET, not in this lane's
-  //     code, and a probe that went red on it would be red until Blender ships
-  //     again; the numbers are published so the fix has something to hit.
+  // P5. THE HALL OPENS INTO THE SPINE, AND THE PLAYER WALKS IT.
   //
-  //     Two independent things stand between the spawn socket and the spine:
-  //       * the hall's floor slab is a SQUARE that stops short of the spine
-  //         deck, leaving `floorGapM` of nothing to walk on at z = 0;
-  //       * the dodecagon's twelve wall segments are unbroken, so the segment
-  //         facing +X stands across the whole 3 m spine mouth, full height.
-  //     The walk below is the demonstration: it starts on the hall floor on the
-  //     spine centreline and reports where it stops.
+  //     Two independent things used to stand between the spawn socket and the
+  //     spine, and RN-831 fixed both in the asset:
+  //       * the hall's floor slab is a SQUARE inscribed in a round room, so it
+  //         stopped 2.099 m short of the spine deck and the walker fell through
+  //         for 51 ticks. `col_HallSill{Fwd,Aft}` bridge it, and `floorGapM` is
+  //         still published because a resized hall could reopen it.
+  //       * the segment of the hall ring facing +X stood across the whole 3 m
+  //         spine mouth at full height. It is a jamb pair plus a lintel now,
+  //         cut by the SAME emitter as the corridor bulkheads, so the hall's
+  //         doorway and the bulkhead 1.65 m beyond it are one straight line.
+  //
+  //     THE THREE ASSERTIONS ARE THE THREE WAYS IT CAN GO WRONG AGAIN, and they
+  //     are separate on purpose: a wall back across the mouth, a deck gap back
+  //     under it, and a `col_HallWall*` box overlapping the opening are three
+  //     different regressions wanting three different fixes, and one combined
+  //     boolean would name none of them. `wallsAcrossTheSpineMouth` is the
+  //     query the old measurement already ran; it just has an `if` under it.
   // ======================================================================
   const spineMouthX = spineFwd.min[0];
   const blockers = st.proxyBoxes.filter((b) => b.name.startsWith('col_HallWall')
@@ -343,6 +355,20 @@
     && b.min[2] < spineFwd.max[2] && b.max[2] > spineFwd.min[2]
     && b.min[1] < lintelFwd.min[1] && b.max[1] > hallFloor.max[1] + 0.1);
   const hx = (hallFloor.max[0] + spineMouthX) / 2;
+  // UNFLOORED METRES ON THE CENTRELINE, and it is deliberately not
+  // `spineMouthX - hallFloor.max[0]`. That subtraction was the right question
+  // while the two slabs were the only two decks in the room, and it is now the
+  // wrong one: `col_HallSillFwd` bridges them, so the difference between their
+  // edges is still 2.099 m and is no longer a hole. The measurement asks the
+  // WHOLE deck set instead, at 5 cm along the spine centreline, so any deck
+  // proxy that covers the gap closes it and no proxy has to be named here.
+  const decks = st.proxyBoxes.filter((b) => b.max[1] > -0.001 && b.max[1] < 0.001);
+  const floored = (x) => decks.some((b) => b.min[0] <= x && x <= b.max[0]
+    && b.min[2] <= 0 && 0 <= b.max[2]);
+  let unfloored = 0;
+  for (let x = hallFloor.max[0]; x <= spineMouthX + 1e-9; x += 0.05) {
+    if (!floored(x)) unfloored += 0.05;
+  }
   const q1 = at(hallFloor.max[0] - 2.5, 0.6, 0);
   of.standAt(q1[0], q1[1], q1[2]);
   await drive(0.8, []);
@@ -353,7 +379,12 @@
   const P5 = {
     hallFloorEndsAtXM: r6(hallFloor.max[0]),
     spineDeckStartsAtXM: r6(spineMouthX),
-    floorGapM: r6(spineMouthX - hallFloor.max[0]),
+    slabEdgeGapM: r6(spineMouthX - hallFloor.max[0]),
+    /** What the slab-edge gap USED to imply and no longer does. Zero is the
+     *  claim; the sill is what makes it zero and it is not named here. */
+    unflooredOnCentrelineM: r6(unfloored),
+    decksBridging: decks.filter((b) => b.min[0] < spineMouthX
+      && b.max[0] > hallFloor.max[0]).map((b) => b.name),
     gapCentreXM: r6(hx),
     wallsAcrossTheSpineMouth: blockers.map((b) => ({ name: b.name,
       x: [r6(b.min[0]), r6(b.max[0])], y: [r6(b.min[1]), r6(b.max[1])],
@@ -369,6 +400,17 @@
     stoppedShortOfDoorwayM: r6(doorX - he[0]),
   };
   log.push({ P5 });
+
+  if (P5.wallsAcrossTheSpineMouth.length > 0) {
+    return fail('P5: a hall wall segment stands across the spine mouth again; '
+      + 'it wants splitting into a jamb pair and a lintel', P5);
+  }
+  if (P5.unflooredOnCentrelineM > 1e-6 || P5.fellThroughTheGap) {
+    return fail('P5: there is no deck between the hall and the spine', P5);
+  }
+  if (!P5.hallReachesSpine) {
+    return fail('P5: the walk out of the hall did not reach the doorway', P5);
+  }
 
   await back();
   return { ok: true, station: { id: st.id, name: st.name, deckR: r6(st.deckR),

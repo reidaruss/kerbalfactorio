@@ -1280,26 +1280,45 @@ def collision_boxes():
     # version built a tag from abs(int(at * 10)), which gave the bulkheads at
     # x = -10.2 and x = +10.2 the same three names, and `check-proxies` would
     # have reported a set six names short with nothing saying which six.
+    #
+    # RN-831: FACTORED, because a SECOND caller arrived. The hall wall needs the
+    # identical pierce and the two must not hold private copies of HATCH_HW and
+    # HATCH_H: the physics lane's own caution from `orbitdeck.js` is that a file
+    # holding 2.5 m width and headroom as private constants was green for the
+    # wrong reason while calling them the project's convention. One emitter, one
+    # hatch, and a doorway cut in the hall lines up with the bulkhead 1.65 m
+    # down the corridor because there is nowhere for them to disagree.
+    #
+    # `flank` is the HALF WIDTH OF THE WALL BEING PIERCED and it is a parameter
+    # rather than `hw + WALL_T` inline, because that expression is only the
+    # right answer for a corridor bulkhead. The hall's wall is a 4.536 m chord
+    # and its flank is that chord's half length; passing the corridor's 1.60
+    # would have left 0.668 m of wall standing either side of the opening with
+    # nothing holding it up and a 1.34 m hole in the drum.
+    def frame(tag, axis, at, cross, flank, cz, thick=0.30):
+        ai, oi = (0, 1) if axis == "X" else (1, 0)
+        assert flank > HATCH_HW, (
+            "%s: a %.3f m flank cannot carry a %.3f m hatch half width"
+            % (tag, flank, HATCH_HW))
+        for (side, s) in (("L", 1), ("R", -1)):
+            size, loc = [0.0, 0.0, cz], [0.0, 0.0, cz * 0.5]
+            size[ai], loc[ai] = thick, at
+            size[oi] = flank - HATCH_HW
+            loc[oi] = cross + s * (HATCH_HW + size[oi] * 0.5)
+            walls.append(("col_Jamb%s%s" % (tag, side), tuple(size),
+                          tuple(loc)))
+        size, loc = [0.0, 0.0, cz - HATCH_H], [0.0, 0.0, (cz + HATCH_H) * 0.5]
+        size[ai], loc[ai] = thick, at
+        size[oi], loc[oi] = HATCH_HW * 2.0, cross
+        walls.append(("col_Lintel%s" % tag, tuple(size), tuple(loc)))
+
     for (stem, axis, at, cross, hw) in (
             ("AftFrame", "X", -20.0, 0.0, CORR_HW),
             ("HallAft", "X", -10.2, 0.0, CORR_HW),
             ("HallFwd", "X", 10.2, 0.0, CORR_HW),
             ("FwdFrame", "X", 24.0, 0.0, CORR_HW),
             ("HabFrame", "Y", 2.9, HAB_X, CORR_HW)):
-        tag = stem
-        ai, oi = (0, 1) if axis == "X" else (1, 0)
-        cz = CORR_CZ
-        for (side, s) in (("L", 1), ("R", -1)):
-            size, loc = [0.0, 0.0, cz], [0.0, 0.0, cz * 0.5]
-            size[ai], loc[ai] = 0.30, at
-            size[oi] = hw + WALL_T - HATCH_HW
-            loc[oi] = cross + s * (HATCH_HW + size[oi] * 0.5)
-            walls.append(("col_Jamb%s%s" % (tag, side), tuple(size),
-                          tuple(loc)))
-        size, loc = [0.0, 0.0, cz - HATCH_H], [0.0, 0.0, (cz + HATCH_H) * 0.5]
-        size[ai], loc[ai] = 0.30, at
-        size[oi], loc[oi] = HATCH_HW * 2.0, cross
-        walls.append(("col_Lintel%s" % tag, tuple(size), tuple(loc)))
+        frame(stem, axis, at, cross, hw + WALL_T, CORR_CZ)
 
     # The hall. A round room cannot be one convex box, so its floor is one slab
     # (a player standing on a disc only touches its top) and its wall is TWELVE
@@ -1309,13 +1328,60 @@ def collision_boxes():
     # be 0.616 m, which is visible. THE NUMBER IS A DECISION, NOT A DEFAULT.
     floors.append(("col_HallFloor", (HUB_RI * 1.42, HUB_RI * 1.42, DECK_T),
                    (0.0, 0.0, DECK_Z - DECK_T * 0.5)))
+    hall_wall_d = HUB_RI + 0.15
+    hall_wall_hw = HUB_RI * 0.28          # half of the 4.536 m chord
+    hall_wall_cz = CORR_CZ + 2.0
     for k in range(12):
+        # R56. A AND G ARE PIERCED RATHER THAN PLACED, and they are the only two
+        # of the twelve that need it: k = 0 faces +X and k = 6 faces -X, which
+        # are the two spine mouths. `HUB_PORTAL_DEG` cuts a 4.40 m gap in the
+        # HULL at exactly these two angles and this list did not, so the wall a
+        # player could see through was solid to walk into. Measured by the
+        # physics lane: the walker stopped dead at local x 8.098644, which is
+        # this box's inner face, 2.251356 m short of `col_JambHallFwdR`.
+        #
+        # THE OPENING IS THE SAME HATCH AS THE BULKHEAD'S, through the same
+        # emitter, so the hall's doorway and the spine's bulkhead 1.65 m beyond
+        # it are the same 2.10 m wide by 2.30 m tall hole and a player walks a
+        # straight line through both. Making it the portal's 4.40 m instead was
+        # considered and refused: the portal is what the HULL cuts, the hatch is
+        # what a player walks through, and a doorway wider than every other
+        # doorway on the station is a different room's convention.
+        if k in (0, 6):
+            frame("Mouth" + ("Fwd" if k == 0 else "Aft"), "X",
+                  hall_wall_d if k == 0 else -hall_wall_d,
+                  0.0, hall_wall_hw, hall_wall_cz)
+            continue
         a = 30.0 * k
         c = sf.radial("Z", a)
-        d = HUB_RI + 0.15
+        d = hall_wall_d
         walls.append(("col_HallWall%s" % "ABCDEFGHIJKL"[k],
-                      (0.30, HUB_RI * 0.56, CORR_CZ + 2.0),
-                      (c[0] * d, c[1] * d, (CORR_CZ + 2.0) * 0.5)))
+                      (0.30, hall_wall_hw * 2.0, hall_wall_cz),
+                      (c[0] * d, c[1] * d, hall_wall_cz * 0.5)))
+
+    # R57. THE SILL, and there was 2.099 m of nothing where it goes.
+    #
+    # The hall's deck is a SQUARE inscribed in a round room, so it stops at
+    # +-5.751 while the spine's deck starts at +-7.850, and the physics lane
+    # fell through the difference for 51 ticks with 400 km underneath. Both ends
+    # are DERIVED from the two slabs the sill joins rather than typed, so
+    # resizing either one takes the sill with it and the gap cannot silently
+    # reopen; the assertion below is what says so out loud.
+    #
+    # It spans the corridor's full 3.00 m rather than the hatch's 2.10, because
+    # the vestibule between the hall wall and the spine bulkhead is 3.00 m wide
+    # and a player who steps sideways in it needs deck under them too.
+    sill_x0 = HUB_RI * 1.42 * 0.5
+    sill_x1 = HUB_RI - 0.25
+    assert sill_x1 > sill_x0, (
+        "the hall deck already reaches the spine deck (%.4f >= %.4f); this sill "
+        "is now an overlap rather than a bridge and wants deleting, not moving"
+        % (sill_x0, sill_x1))
+    for (tag, s) in (("Fwd", 1.0), ("Aft", -1.0)):
+        floors.append(("col_HallSill%s" % tag,
+                       (sill_x1 - sill_x0, CORR_HW * 2.0, DECK_T),
+                       (s * (sill_x0 + sill_x1) * 0.5, 0.0,
+                        DECK_Z - DECK_T * 0.5)))
     # The gallery is a floor a player stands on and its inner rail is the only
     # thing between them and a 5 m drop, so both are proxies. Four quadrant
     # slabs rather than an annulus, because an annulus is not convex. The slab

@@ -97,7 +97,18 @@
   //    place the local-to-body transform for the spawn is written; a probe
   //    composing the quaternion itself is what PH-105 already paid for.
   // ======================================================================
-  const p = st.install.standPos;
+  // `atX` frames the OTHER picture: stand on the spine centreline at a chosen
+  // station-local x and look back down the corridor, which is the view that
+  // shows whether the hall mouth is a doorway or a wall. The transform is
+  // composed from the station's OWN published axes rather than from a
+  // quaternion rebuilt here, for the reason `stationStandBody` exists.
+  const P0 = st.install.pos;
+  const ax = st.axes;
+  const local = (lx, ly, lz) => [
+    P0[0] + ax.along[0] * lx + ax.up[0] * ly + ax.across[0] * lz,
+    P0[1] + ax.along[1] * lx + ax.up[1] * ly + ax.across[1] * lz,
+    P0[2] + ax.along[2] * lx + ax.up[2] * ly + ax.across[2] * lz];
+  const p = A.atX === undefined ? st.install.standPos : local(A.atX, 0.6, 0);
   const at = of.standAt(p[0], p[1], p[2]);
   check('the walker reached the spawn socket', at !== null, JSON.stringify(at));
   await sleep(1.2);
@@ -129,8 +140,11 @@
   const north = [u[1] * east[2] - u[2] * east[1], u[2] * east[0] - u[0] * east[2],
     u[0] * east[1] - u[1] * east[0]];
   const al = st.axes.along;
-  const yaw = A.yaw ?? (Math.atan2(dot(al, east), dot(al, north)) * 180) / Math.PI;
-  of.look(yaw, -2);
+  const fwd = (Math.atan2(dot(al, east), dot(al, north)) * 180) / Math.PI;
+  // `back: true` turns round and looks AFT down the spine, which from the
+  // vestibule is the hall mouth head on.
+  const yaw = A.yaw ?? (A.back === true ? fwd + 180 : fwd);
+  of.look(yaw, A.pitch ?? -2);
   await of.settle(20);
   const present = table();
 
