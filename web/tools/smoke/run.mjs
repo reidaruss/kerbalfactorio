@@ -146,6 +146,18 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // `rockmat=0` removes the hook entirely and restores the stock three
   // program, i.e. every ore seam back at one roughness and one metalness.
   'rockmat',
+  // RN-1200, the same per-part channel on the MACHINE batch, which is the
+  // factory, the structures, the launch pad, the belt cargo and the space
+  // station. Three values, not two, and the middle one is the point:
+  // `machinemat=0` bakes and injects nothing (the pre-change program exactly),
+  // `machinemat=flat` runs the WHOLE path with every part baked at the batch's
+  // own base so the shader arithmetic is an identity, and absent is the shipped
+  // default. `=flat` is the positive control that says the plumbing ran, so a
+  // null result under `=1` can be told apart from a dead injection.
+  // `machinebare=0` isolates the second half (the `flat`-family roles drawing
+  // as non-members instead of wearing `panel`'s rivets) from the first.
+  // Registered in the same commit that introduces them, per this list's rule.
+  'machinemat', 'machinebare',
   // RN-731, the terrain SPECULAR lobe. `terrainspec=0` restores the pure
   // Lambert ground exactly, which is what the terrain had from W3 until this
   // pass: albedo times irradiance, no specular term and no roughness input

@@ -117,10 +117,21 @@ let injections = 0;
  * Call it in the merge loop, beside whatever already bakes the colour. The
  * caller must merge with a matching attribute set on EVERY part (that is the
  * `mergeGeometries` contract), so this is called for all parts or none.
+ *
+ * `bareOverride` (RN-1203) lets a CALLER declare a part bare that the asset did
+ * not. It is additive, never subtractive: an asset that authored `of_bare` is
+ * bare whatever the caller says, because that is the asset lane's decision and
+ * a consumer must not be able to revoke it. The machine path uses it for the
+ * roles whose authored family is `flat`, i.e. the roles the texture pass
+ * DECIDED not to map, which the machine batch's pinned `panel` was overriding;
+ * `MachineMat.bareForRole` carries the whole argument. It is a parameter rather
+ * than a second baker because two bakers would be two authorities on one
+ * attribute layout, and a partial bake is not a wrong material, it is most of
+ * an asset silently gone (failure mode 3 above).
  */
 export function bakePartMat(g: THREE.BufferGeometry, count: number,
                             src: THREE.MeshStandardMaterial,
-                            label: string): void {
+                            label: string, bareOverride = false): void {
   if (!enabled) return;
   // `of_bare` arrives as a glTF material `extras` entry, which three's
   // GLTFLoader assigns to material.userData. Missing is parsed as MISSING and
@@ -128,7 +139,8 @@ export function bakePartMat(g: THREE.BufferGeometry, count: number,
   // into a legitimate-looking 0.
   const ud = src.userData as Record<string, unknown> | undefined;
   const flag = ud === undefined ? undefined : ud.of_bare;
-  const bare = flag === undefined ? 0 : (Number(flag) > 0 ? 1 : 0);
+  const authored = flag === undefined ? 0 : (Number(flag) > 0 ? 1 : 0);
+  const bare = (authored > 0 || bareOverride) ? 1 : 0;
   const r = src.roughness;
   const m = src.metalness;
   const a = new Float32Array(count * 3);

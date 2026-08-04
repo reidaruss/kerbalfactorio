@@ -27,6 +27,8 @@ import * as THREE from 'three';
 import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
   from './InstancePools.js';
 import { attachSurface, noteShaderOrder } from '../render/instancing/Surfaces.js';
+import { injectPartMat } from '../render/materials/PartMaterial.js';
+import { assertMachineBase, machineMatEnabled } from '../render/materials/MachineMat.js';
 import { attachShadowLod, emptyIndex, indexRow, publishLadders, SHADOW_LOD_ON }
   from '../render/ShadowLod.js';
 import { addLadder, gatherTiers, tierSize, type MachineTemplate }
@@ -104,10 +106,16 @@ export class MachineBatch {
   }
 
   private makeMaterial(): THREE.MeshStandardMaterial {
+    // THESE TWO STAY NUMERIC LITERALS. `tools/blender/render_machines.py`
+    // regex-reads them out of this file to state what the game draws, and
+    // raises rather than guess. RN-1200: they are also the BASE the per-part
+    // channel divides back out, so `assertMachineBase` checks them against
+    // `MachineMat`'s copy at boot instead of a comment claiming they agree.
     const m = new THREE.MeshStandardMaterial({
       color: 0xffffff, vertexColors: true, metalness: 0.45, roughness: 0.55,
     });
     m.name = 'factory:machines';
+    assertMachineBase(m);
     // ASSET-SPECS 2.9 option (a): `panel` on the whole batch. `Rubber` decks
     // and the furnace's `Rock` are `coarse` and take plate seams they should
     // not; option (b) selects per family off aRole for one extra fetch.
@@ -116,6 +124,14 @@ export class MachineBatch {
     m.userData.uniforms = uniforms;
     m.onBeforeCompile = (shader) => {
       noteShaderOrder(this.name, shader.fragmentShader);
+      // RN-1200. The per-part channel, spliced into the hook DW-8 already
+      // spent. It lands BEFORE the role edits below and that is safe rather
+      // than lucky: it anchors on the roughness, metalness, normal and AO
+      // chunks, all of which `noteShaderOrder` asserts sit either side of
+      // `<emissivemap_fragment>` and none of which is `<emissivemap_fragment>`.
+      // Both add to `#include <common>` and both keep the needle, so the two
+      // declaration blocks stack rather than displace each other.
+      if (machineMatEnabled()) injectPartMat(shader);
       shader.uniforms.uFx = uniforms.uFx;
       shader.uniforms.uFxW = uniforms.uFxW;
       shader.uniforms.uTime = uniforms.uTime;

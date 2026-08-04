@@ -9,7 +9,8 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { copyUv } from '../render/instancing/Surfaces.js';
+import { copyUv, roleOfMaterialName } from '../render/instancing/Surfaces.js';
+import { bakeMachineMat } from '../render/materials/MachineMat.js';
 import { type LodRow } from '../render/ShadowLod.js';
 import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
 
@@ -75,7 +76,7 @@ export function gatherTiers(def: MachineTemplate,
       if (!re.test(m.name)) return;
       const src = m.material as THREE.MeshStandardMaterial;
       list.push(normalize(m.geometry, m.matrixWorld,
-        src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, def)));
+        src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, def), src));
     });
     if (list.length === 0) continue;
     const g = list.length === 1 ? list[0] : (mergeGeometries(list, false) ?? list[0]);
@@ -125,9 +126,25 @@ export function roleOf(matName: string, def: MachineTemplate): number {
   return ROLE_BODY;
 }
 
-/** Bake colour and role per vertex so one material can draw every role. */
+/**
+ * Bake colour and role per vertex so one material can draw every role.
+ *
+ * `mat` is the SOURCE material again, and passing it is what turns the per-part
+ * roughness and metalness channel on for this primitive (RN-1200). It is a
+ * separate argument rather than something derived from `tint` for `NodeBatch`'s
+ * reason: `MachineMat` owns whether a consuming hook will be compiled, and a
+ * bake with no consumer is a dead per-vertex buffer that no program binds.
+ *
+ * ALL OR NONE ACROSS THE WHOLE PATH, which this gets structurally: the gate is
+ * one module-level constant, so every primitive `mergeGeometries` and
+ * `addGeometry` see carries the same attribute set. That matters because
+ * `mergeGeometries` returns null on a mismatch and `gatherTiers` swallows it
+ * with `?? list[0]`, so a partial bake would not be a wrong material, it would
+ * be most of a machine silently gone.
+ */
 export function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
-                          tint: THREE.Color, role: number): THREE.BufferGeometry {
+                          tint: THREE.Color, role: number,
+                          mat?: THREE.MeshStandardMaterial): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const pos = src.getAttribute('position') as THREE.BufferAttribute;
   g.setAttribute('position', pos.clone());
@@ -144,6 +161,10 @@ export function normalize(src: THREE.BufferGeometry, world: THREE.Matrix4,
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.setAttribute('aRole', new THREE.BufferAttribute(rol, 1));
+  // The channel the merge used to throw away, carried exactly the way the
+  // colour three lines up is. The proof that per-vertex data survives this
+  // merge and the BatchedMesh behind it was already sitting there.
+  if (mat !== undefined) bakeMachineMat(g, pos.count, mat, roleOfMaterialName(mat.name));
   const idx = src.getIndex();
   if (idx !== null) g.setIndex(idx.clone());
   else {
