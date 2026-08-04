@@ -66,6 +66,75 @@ export function copyPose(a: FramePose, out: FramePose): FramePose {
 }
 
 /**
+ * CE-82. `out = a^-1`: the parent -> local pose.
+ *
+ * The partner of `composePose` and it exists for one question: "what is this
+ * thing's FIXED pose inside that frame?", answered by `compose(invert(frame),
+ * authored)`. A consumer with an authored attitude (the station's nadir-from-Y
+ * hull) and a carrier with its own basis (an LVLH deck) do not agree, and
+ * neither is wrong; measuring the constant between them once is the only
+ * answer that does not require one of them to change convention.
+ *
+ * `out` may be `a`. The gate asserts `compose(a, invert(a))` is the identity
+ * to 1e-12 over random poses, which is the only check that cannot pass by
+ * transcribing the same sign error into both functions.
+ */
+export function invertPose(a: FramePose, out: FramePose): FramePose {
+  const qx = -a.qx, qy = -a.qy, qz = -a.qz, qw = a.qw;
+  // -R(a)^-1 . a.p, i.e. rotate the negated translation by the conjugate.
+  const px = -a.px, py = -a.py, pz = -a.pz;
+  const tx = 2 * (qy * pz - qz * py);
+  const ty = 2 * (qz * px - qx * pz);
+  const tz = 2 * (qx * py - qy * px);
+  out.px = px + qw * tx + qy * tz - qz * ty;
+  out.py = py + qw * ty + qz * tx - qx * tz;
+  out.pz = pz + qw * tz + qx * ty - qy * tx;
+  out.qx = qx; out.qy = qy; out.qz = qz; out.qw = qw;
+  return out;
+}
+
+/**
+ * CE-82. `out = a . b`: the pose of a frame `b` that is fixed INSIDE frame `a`,
+ * expressed in `a`'s parent.
+ *
+ * The defining identity, and it is what `posecheck.mjs` asserts rather than the
+ * arithmetic: `apply(compose(a, b), x) === apply(a, apply(b, x))` for every `x`.
+ * That is the only property any caller wants and it is checkable without
+ * anybody agreeing on a quaternion convention first.
+ *
+ * IT EXISTS FOR THE CONSTANT OFFSET AND FOR NOTHING ELSE. A carrier answers
+ * where the moving thing is; a docking port, a deck light or a seat is a FIXED
+ * pose within it, and the alternative to composing here is every consumer
+ * rotating its own offset by the carrier's quaternion by hand, which is the
+ * one-hand-rolled-copy-per-subsystem outcome `setPoseFromBasis` was written to
+ * stop. Physics R77's per-tick port pose is exactly this call with
+ * `stationSocketFrame('socket_dock')` as `b`.
+ *
+ * ALIASING IS SAFE for `a` and `b` but `out` must not be either of them: the
+ * translation is read after the rotation is written otherwise. Asserted in the
+ * gate rather than left to a reader, because the failure is a silently wrong
+ * pose and not a throw.
+ */
+export function composePose(a: FramePose, b: FramePose, out: FramePose): FramePose {
+  // R(a) . b.p, inline rather than through `rotate` so `out` may be `a`'s twin
+  // without a scratch V3 allocation on a per-tick path.
+  const { qx: ax, qy: ay, qz: az, qw: aw } = a;
+  const tx = 2 * (ay * b.pz - az * b.py);
+  const ty = 2 * (az * b.px - ax * b.pz);
+  const tz = 2 * (ax * b.py - ay * b.px);
+  const rx = b.px + aw * tx + ay * tz - az * ty;
+  const ry = b.py + aw * ty + az * tx - ax * tz;
+  const rz = b.pz + aw * tz + ax * ty - ay * tx;
+  const qx = aw * b.qx + ax * b.qw + ay * b.qz - az * b.qy;
+  const qy = aw * b.qy - ax * b.qz + ay * b.qw + az * b.qx;
+  const qz = aw * b.qz + ax * b.qy - ay * b.qx + az * b.qw;
+  const qw = aw * b.qw - ax * b.qx - ay * b.qy - az * b.qz;
+  out.px = a.px + rx; out.py = a.py + ry; out.pz = a.pz + rz;
+  out.qx = qx; out.qy = qy; out.qz = qz; out.qw = qw;
+  return out;
+}
+
+/**
  * Seat a pose from a translation and an ORTHONORMAL basis given as three
  * columns of the local->parent rotation (the local x, y and z axes expressed in
  * the parent frame).

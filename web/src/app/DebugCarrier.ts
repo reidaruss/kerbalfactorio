@@ -23,7 +23,9 @@
 import { FixedCarrier, LinearCarrier, type CarrierFrame } from '../world/CarrierFrame.js';
 import { EphemerisCarrier, OrbitCarrier, RotorCarrier } from '../world/CarrierSources.js';
 import { newPose, type FramePose, type V3 } from '../world/FramePose.js';
-import { findStation } from '../game/SpaceStation.js';
+import { findStation, lastStationSolid } from '../game/SpaceStation.js';
+import { lastStationVolumes } from '../game/StationGravity.js';
+import { mountStationOn } from './StationMount.js';
 import type { EphemerisModule } from '../render/CelestialEphemeris.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
@@ -189,6 +191,61 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
                    registry: s.carriers.census() };
 
         /**
+         * CE-80. WHAT GEOMETRY IS RIDING WHAT, plus the station's live pose read
+         * straight off the collision solid.
+         *
+         * `solid` is the object `StructureBodies` queries, not a copy of it, so
+         * a probe asserting that the deck moved is asserting about the thing the
+         * walker resolves against.
+         */
+        case 'mounts': {
+          const solid = lastStationSolid();
+          return {
+            tick, mounts: s.mounts.census(),
+            solid: solid === null ? null : {
+              pos: [solid.pos.x, solid.pos.y, solid.pos.z],
+              quat: [solid.quat.x, solid.quat.y, solid.quat.z, solid.quat.w],
+              c: [solid.cx, solid.cy, solid.cz], cr: solid.cr,
+            },
+            volumes: lastStationVolumes().map((v) => ({
+              mode: v.mode, pos: [v.pos.x, v.pos.y, v.pos.z],
+              c: [v.cx, v.cy, v.cz], cr: v.cr,
+            })),
+          };
+        }
+
+        /**
+         * CE-86. PUT THE STATION ON A DIFFERENT FRAME, keeping it exactly where
+         * it is at this tick.
+         *
+         * THE ONLY REASON THIS EXISTS: Anchorage's record ships frozen
+         * (`stampedTick = -1`), so the shipping mount writes identical numbers
+         * forever and IS the identity element of the operation it performs. A
+         * probe that drove only that would be GP-142 exactly, and the whole
+         * point of the mount is what happens when the frame MOVES. Re-mounting
+         * onto a `rotor` or `linear` instrument frame is the moving fixture,
+         * through `mountStationOn`, which is the SAME function boot calls.
+         *
+         * It is debug-only on the same terms as `board` and `reboot`: unfreezing
+         * the real conic is physics' half of D-014 and is not this file's to do.
+         */
+        case 'remount': {
+          const f = s.carriers.get(str(a, 'id', ''));
+          if (f === null) return { error: `no carrier '${str(a, 'id', '')}'` };
+          s.mounts.clear();
+          const m = mountStationOn(s.mounts, f, s.station, tick);
+          if (m === null) return { error: 'no station solid to mount' };
+          return { mounted: m.report(), at: tick, mounts: s.mounts.census() };
+        }
+
+        /** CE-80's negative control, reachable from the same loop: drop every
+         *  mount and leave the geometry where it last was. A frame that then
+         *  moves is HEAD's own defect, measured rather than argued. */
+        case 'unmount':
+          s.mounts.clear();
+          return { mounts: s.mounts.census() };
+
+        /**
          * Board. Returns the state on BOTH sides of the verb, so continuity is
          * something the probe reads rather than something this file claims.
          */
@@ -289,7 +346,7 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
 
         default:
           return { error: `unknown op '${op}'. ops: census register survey remove `
-            + `board release local standLocal` };
+            + `board release local standLocal mounts remount unmount` };
       }
     },
   };

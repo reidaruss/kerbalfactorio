@@ -39,6 +39,8 @@ import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
 import { CarrierRegistry } from '../world/CarrierFrame.js';
 import { CarrierRide } from '../world/CarrierRide.js';
+import { CarrierMounts } from '../world/CarrierGeometry.js';
+import { mountStation } from './StationMount.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import { VoxelWorld } from '../world/VoxelWorld.js';
 import { VoxelMesh } from '../world/VoxelMesh.js';
@@ -296,6 +298,9 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // which is why neither is `lt.own(...)`.
   const carriers = new CarrierRegistry();
   const ride = player === null ? null : new CarrierRide(player.body);
+  // CE-80. The consumer half of the same term, constructed beside it and for
+  // the same reason: process-scoped object, body-scoped contents.
+  const mounts = new CarrierMounts();
   const buildBodyScope: BuildBodyScope = async (bodyId, lt) => {
     // CE-31 / CE-34. ONE registration site for every scope, boot's included. A
     // carrier is a position in THIS body's frame, so a carrier that survived a
@@ -310,6 +315,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // exists to make impossible.
     carriers.bindTo(lt);
     ride?.bindTo(lt);
+    // CE-80. LAST, so reverse-of-registration teardown clears the mounts BEFORE
+    // it releases the rider and drops the frames. A mount surviving into the
+    // next body would be posing Forge's station against Cinder, one radius-ratio
+    // away from being obviously wrong and therefore silent.
+    mounts.bindTo(lt);
     // The session re-seats the oracle before calling this, so `oracle.body` is
     // the authority for which body is being built. Asserted rather than assumed:
     // if these two ever disagree the worker generates one planet and the main
@@ -604,6 +614,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       station.build(stationRoot);
       station.place(st.pos, stationQuat(st.pos));
       scenes.near.add(station.group);
+      mountStation(core, carriers, mounts, station);
     }
   }
 
@@ -640,7 +651,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // being frozen at boot, and this is the whole of that change.
   const services: Services = {
     cfg, events, quality, renderer, scenes, rig, frame, sky, stats,
-    core, oracle, origin, proxy, regime, session, carriers, ride,
+    core, oracle, origin, proxy, regime, session, carriers, ride, mounts,
     get body() { return session.body; },
     get terrain() { return session.terrain; },
     get materials() { return session.terrain.materials; },

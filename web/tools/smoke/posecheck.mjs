@@ -156,6 +156,81 @@ try {
     check('and the right-handed version of the same axes is accepted', ok);
   }
 
+  // ---------------------------------------------------------------------
+  // CE-82. composePose / invertPose, checked as IDENTITIES over the same
+  // 4,000 random poses rather than as arithmetic.
+  //
+  // The defining property is the only thing any caller wants and it is the
+  // only thing that cannot be satisfied by transcribing one sign error into
+  // both functions:
+  //     apply(compose(a, b), x) === apply(a, apply(b, x))
+  // A quaternion product with the operands the wrong way round satisfies
+  // |q| = 1, satisfies compose(a, identity) === a, and fails this.
+  // ---------------------------------------------------------------------
+  {
+    let worstComp = 0, worstInv = 0, worstRT = 0, worstOrder = 0;
+    const A = P.newPose(); const B = P.newPose(); const AB = P.newPose();
+    const BA = P.newPose(); const I = P.newPose();
+    const via = { x: 0, y: 0, z: 0 };
+    const direct = { x: 0, y: 0, z: 0 };
+    seed = 11;
+    const basis = (out) => {
+      const X = norm([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5]);
+      let Y = [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5];
+      const d = Y[0] * X[0] + Y[1] * X[1] + Y[2] * X[2];
+      Y = norm([Y[0] - X[0] * d, Y[1] - X[1] * d, Y[2] - X[2] * d]);
+      const Z = cross(X, Y);
+      P.setPoseFromBasis(out, 1e6 * (rnd() - 0.5), 1e6 * (rnd() - 0.5),
+        1e6 * (rnd() - 0.5), X[0], X[1], X[2], Y[0], Y[1], Y[2], Z[0], Z[1], Z[2]);
+    };
+    for (let i = 0; i < 4000; ++i) {
+      basis(A); basis(B);
+      P.composePose(A, B, AB);
+      const x = [rnd() * 1e4, rnd() * 1e4, rnd() * 1e4];
+      // apply(A . B, x) vs apply(A, apply(B, x))
+      P.apply(AB, x[0], x[1], x[2], direct);
+      P.apply(B, x[0], x[1], x[2], via);
+      P.apply(A, via.x, via.y, via.z, o);
+      worstComp = Math.max(worstComp,
+        Math.hypot(direct.x - o.x, direct.y - o.y, direct.z - o.z));
+      // A . A^-1 is the identity pose.
+      P.invertPose(A, I);
+      P.composePose(A, I, BA);
+      worstInv = Math.max(worstInv, Math.hypot(BA.px, BA.py, BA.pz)
+        + Math.abs(Math.abs(BA.qw) - 1));
+      // invert round trip on a point: applyInv is the existing authority.
+      P.apply(I, x[0], x[1], x[2], via);
+      P.applyInv(A, x[0], x[1], x[2], direct);
+      worstRT = Math.max(worstRT,
+        Math.hypot(via.x - direct.x, via.y - direct.y, via.z - direct.z));
+      // ORDER MATTERS, and this is the negative control for the first check:
+      // a `composePose` that ignored one operand, or that multiplied the
+      // quaternions the other way round, would satisfy the identity above on
+      // a symmetric fixture. B . A must differ from A . B.
+      P.composePose(B, A, BA);
+      worstOrder = Math.max(worstOrder,
+        Math.hypot(AB.px - BA.px, AB.py - BA.py, AB.pz - BA.pz));
+    }
+    check('compose(a, b) applied is apply(a, apply(b, .))',
+      worstComp < 1e-6, `${worstComp} m`);
+    check('a . a^-1 is the identity pose', worstInv < 1e-8, `${worstInv}`);
+    check('invert(a) applied is applyInv(a, .)', worstRT < 1e-6, `${worstRT} m`);
+    // The refusing case, in the same loop: if this is ~0 the composition is
+    // not composing, and the three checks above are all vacuously true.
+    check('and composition does NOT commute, so the order is real',
+      worstOrder > 1e3, `${worstOrder} m, want a large disagreement`);
+    // ALIASING. `out` may be neither operand: the translation is read after
+    // the rotation is written. Stated in the doc comment, so it is checked.
+    basis(A); basis(B);
+    P.composePose(A, B, AB);
+    const alias = P.copyPose(A, P.newPose());
+    P.composePose(alias, B, alias);
+    check('compose into one of its own operands still agrees',
+      Math.hypot(alias.px - AB.px, alias.py - AB.py, alias.pz - AB.pz) < 1e-6
+      && Math.abs(alias.qw - AB.qw) < 1e-12,
+      `${Math.hypot(alias.px - AB.px, alias.py - AB.py, alias.pz - AB.pz)} m`);
+  }
+
   // pointVelocity must be the finite difference the tick uses, exactly.
   const pa = P.newPose(); pa.px = 0;
   const pb = P.newPose(); pb.px = 600;
@@ -169,7 +244,7 @@ try {
   rmSync(out, { recursive: true, force: true });
 }
 
-const EXPECTED_CHECKS = 9;
+const EXPECTED_CHECKS = 14;
 if (checks !== EXPECTED_CHECKS) {
   fails.push(`ran ${checks} checks, expected ${EXPECTED_CHECKS}: the run did not `
     + 'reach the end, or a check was added without updating the count');

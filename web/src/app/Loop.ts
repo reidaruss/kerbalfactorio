@@ -218,7 +218,7 @@ export class Loop {
   }
 
   private fixedTick(): void {
-    const { input, observer, origin, ride } = this.s;
+    const { input, observer, origin, ride, mounts } = this.s;
     // CE-33. THE CARRIER SANDWICH, and the ordering is the whole of it: the
     // walker steps INSIDE the carrier's frame and is transformed out before
     // anything else in this tick reads its position. `ride.tick` takes the step
@@ -235,6 +235,26 @@ export class Loop {
     origin.step(observer.position);
     for (const fn of this.onFixedStep) fn(FIXED_DT, this.tickIndex);
     this.tickIndex++;
+    // CE-85. CARRIER-LOCAL GEOMETRY, AFTER THE INCREMENT, AND THE POSITION IS
+    // THE WHOLE DECISION.
+    //
+    // `CarrierRide.tick(t)` runs the walker's own step "against geometry at
+    // pose A", where A is `poseAt(t)` (CarrierRide.ts step 2), and leaves the
+    // rider at pose B = `poseAt(t+1)`. So the deck has to be AT `poseAt(t)`
+    // when tick `t` steps, and at `poseAt(t+1)` by the time anything draws.
+    // Syncing here, with `tickIndex` already advanced, satisfies both with ONE
+    // call: the frame is put at the tick that is about to run, so the render
+    // between ticks sees the deck and the rider at the same instant, and the
+    // next `fixedTick` finds the geometry already where its own step needs it.
+    //
+    // Syncing at the TOP instead would leave every drawn frame showing the deck
+    // one tick behind the person standing on it: 31.32 m at Anchorage's real
+    // orbital speed, which is a player floating outside their own station.
+    //
+    // With no mount registered this is an empty loop, which is the same shape
+    // `ride` has with nothing boarded: a world with no carrier runs the
+    // instruction sequence it ran before any of this existed.
+    mounts.syncAt(this.tickIndex);
   }
 
   private frame(now: number): void {

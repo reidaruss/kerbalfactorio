@@ -32,6 +32,7 @@ import type { TerrainStream } from '../world/TerrainStream.js';
 import type { WorldSession } from '../world/WorldSession.js';
 import type { CarrierRegistry } from '../world/CarrierFrame.js';
 import type { CarrierRide } from '../world/CarrierRide.js';
+import type { CarrierMounts } from '../world/CarrierGeometry.js';
 import type { Regime } from '../world/Regime.js';
 import type { TerrainMaterials } from '../render/materials/TerrainMaterial.js';
 import type { ViewSource } from '../player/ViewSource.js';
@@ -115,6 +116,15 @@ export interface Services {
    * capsule there is nobody to carry.
    */
   readonly ride: CarrierRide | null;
+  /**
+   * CE-80. The geometry that rides a carrier: the CONSUMER half of the term
+   * above. Never null, because a world with no station has an empty set rather
+   * than an absent one, and `Loop.fixedTick` must not carry a branch for it.
+   *
+   * Same split as `carriers`: the object is process-scoped, its contents are
+   * body-scoped, and `bindTo` is what enforces it.
+   */
+  readonly mounts: CarrierMounts;
   readonly regime: Regime;
   readonly materials: TerrainMaterials;
   /** Whatever drives the eye this run: the free camera or the walking capsule. */

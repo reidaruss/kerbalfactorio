@@ -289,6 +289,17 @@ export function stashStationPower(v: unknown): void {
 
 let installed: GravityVolume[] = [];
 
+/**
+ * CE-83. The two registered volumes themselves (freefall, generator), or empty.
+ *
+ * The sibling of `lastStationSolid` and published for the same one reason: a
+ * station that travels has to take its freefall region and its deck generators
+ * with it, or a player standing on a moving deck would be weightless in the
+ * place the station used to be. `GravityVolumes.weightOf` reads `pos`/`quat`
+ * off the stored volume every call, so re-posing these objects is the binding.
+ */
+export function lastStationVolumes(): readonly GravityVolume[] { return installed; }
+
 export interface StationGravityReport {
   /** Gravity at the station's own centre: its freefall acceleration. */
   carrierG: number;

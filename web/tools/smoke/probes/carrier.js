@@ -494,8 +494,15 @@
     settledBefore && before.verts > 100 && !before.capped
     && mustNum(of.stats().props, 'propsPlaced', 'stats.props') > 0,
     JSON.stringify({ settledBefore, settledMid, ...before }));
-  check('C7 the fixture: five carriers are registered and one is being ridden',
-    mustNum(censusBefore.registry, 'size', 'registry') === 5
+  // SIX, not five, since CE-80: `Boot` now registers `station:anchorage` for the
+  // station's own geometry mount, so this probe's five instrument frames sit
+  // beside one real one. The count is raised rather than loosened to `>= 5`,
+  // because the number is the fixture and a range would stop noticing that a
+  // seventh frame had appeared from somewhere. The id is asserted by name for
+  // the same reason.
+  check('C7 the fixture: six carriers are registered and one is being ridden',
+    mustNum(censusBefore.registry, 'size', 'registry') === 6
+    && censusBefore.registry.ids.includes('station:anchorage')
     && censusBefore.ride.carrier === 'moon'
     && mustNum(censusBefore.ride, 'applied', 'ride') > 0,
     JSON.stringify(censusBefore.registry) + ' ' + JSON.stringify(censusBefore.ride));
@@ -518,9 +525,22 @@
   };
   check('C7 the teardown ran clean', rb.teardown.failed.length === 0,
     JSON.stringify(rb.teardown.failed));
-  check('C7 the scope registers both carrier teardown steps, in that order',
+  // CE-80 added a THIRD step and it must come FIRST in the teardown list, which
+  // is `Lifetime`'s reverse-of-registration order seen from the other end: the
+  // mounts are registered last so they are dropped first, before the rider lets
+  // go and before the frames are cleared. A mount holding a frame the registry
+  // has already forgotten is the dead-handle state the contract's clause 4
+  // exists to make impossible.
+  // `of.life().scope` lists REGISTRATION order and the teardown is its reverse,
+  // which the first version of this edit got backwards and the run said so.
+  // CE-80's `mounts:clear` is therefore registered LAST and torn down FIRST:
+  // the mounts drop before the rider lets go and before the frames are cleared,
+  // so no mount ever holds a frame the registry has already forgotten, which is
+  // the dead-handle state clause 4 of the teardown contract refuses.
+  check('C7 the scope registers all three carrier steps, so teardown reverses them',
     lifeAfter.scope.indexOf('carriers:clear') === 0
-    && lifeAfter.scope.indexOf('carrier:release') === 1,
+    && lifeAfter.scope.indexOf('carrier:release') === 1
+    && lifeAfter.scope.indexOf('mounts:clear') === 2,
     JSON.stringify(lifeAfter.scope));
   check('C7 every carrier is gone', mustNum(censusAfter.registry, 'size', 'registry') === 0,
     JSON.stringify(censusAfter.registry));

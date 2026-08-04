@@ -485,6 +485,23 @@ let lastReport: StationReport | null = null;
 export function lastStationInstall(): StationReport | null { return lastReport; }
 
 /**
+ * CE-83. The registered collision solid itself, or null.
+ *
+ * Published so that core-engine's `CarrierMount` can re-pose the SAME object
+ * `bodies` already holds, once per tick, from the station record's own carrier
+ * frame (Admin ruling R13: carrier-local geometry). It is deliberately the
+ * object and not a copy: `StructureBodies` queries read `pos`, `quat` and
+ * `cx/cy/cz` off the stored solid on every call, so writing those five fields
+ * is the entire binding, and handing out a copy would create the second
+ * authority for where the station is that D-014 has just finished removing.
+ *
+ * NOTHING HERE DECIDES WHEN IT MOVES. This file still poses the solid once, at
+ * install, from `stateOf`; if no mount is wired the station sits exactly where
+ * it always has and every existing assertion about it is unchanged.
+ */
+export function lastStationSolid(): Solid | null { return installed; }
+
+/**
  * Put the station in the world: ensure the record exists, derive the interior's
  * pose from it, and register the interior with the walker's solid set.
  *
