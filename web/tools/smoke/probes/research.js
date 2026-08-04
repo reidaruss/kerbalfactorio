@@ -82,7 +82,11 @@
   if (!p0) return { valid: false, fails, why: 'no progress in the report' };
   check('this is survival, so the gate is live',
     of.game().mode.researchGated === true, JSON.stringify(of.game().mode));
-  check('six techs in the tree', p0.research.techs === 6, p0.research.techs);
+  // GP-611. SEVEN, NOT SIX. `research.h` gained `LaunchFacilities` (0x0016) with
+  // the launch pad at GP-57, and this line was last touched before that landed,
+  // so it has been the FIRST failure of a 24-failure run ever since. The tree is
+  // correct and the probe was stale about it.
+  check('seven techs in the tree', p0.research.techs === 7, p0.research.techs);
   check('nothing unlocked at boot', p0.research.unlocked === 0,
     p0.research.unlocked);
   // THE NUMBER THAT WAS ZERO: every unlock every locked tech is still holding.
@@ -103,12 +107,39 @@
   // furnace was crafted, paid for and gone, and the only symptom four
   // assertions downstream was "the furnace went down: false". Escalated to the
   // roadmap; six swings is the workaround.
+  // GP-611. A PER-RESOURCE BUDGET, BECAUSE "SIX SWINGS A NODE" WAS CALIBRATED
+  // AGAINST A WORLD THAT NO LONGER EXISTS.
+  //
+  // The comment above is right about the mechanism and its arithmetic died. It
+  // assumed roughly forty harvestable nodes. Three world-gen passes since then
+  // (every substantial rock gives stone, every tree is choppable) took the
+  // clearing to **749** nodes of these kinds, so 424 swings landed and the pack
+  // finished at `Wood 1000, Stone 400, Coal 180, Raw iron 126, Raw copper 144`,
+  // which at 100 a stack is EXACTLY 20 of 20 slots. Every craft after that
+  // returned `PackFull`, no furnace was ever made, and **23 of the 24 failures
+  // in this suite were downstream of that one line**.
+  //
+  // A node count is the wrong thing to budget against, because world-gen owns it
+  // and will move it again. The budget is per RESOURCE, which is what the pack
+  // actually holds, so this stays correct at any node density.
+  const WANT = { Wood: 60, Stone: 20, Coal: 40, 'Raw iron': 40, 'Raw copper': 30 };
   for (const n of of.nodes()) {
     if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
-    for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
+    for (let k = 0; k < 6; ++k) {
+      const short = Object.entries(WANT).some(([k2, v]) => have(k2) < v);
+      if (!short) break;
+      if (of.harvest(n.index).ok) harvests++;
+    }
   }
-  check('the pack has room to craft into', of.game().carried.length < 20,
-    of.game().carried.length);
+  // GP-611. A REAL SLOT COUNT. The old guard read `carried.length < 20`, and
+  // `GameCore.carried()` collapses the pack to ONE LINE PER ITEM TYPE, so with
+  // five resource types it reported `5` while the pack was genuinely full. It
+  // passed by construction and could never fail: the one check written to catch
+  // this exact hazard was structurally incapable of seeing it.
+  const slotsUsed = () => Object.values(pack())
+    .reduce((a, c) => a + Math.ceil(c / 100), 0);
+  check('the pack has room to craft into', slotsUsed() < 20,
+    `${slotsUsed()} of 20 slots: ${JSON.stringify(pack())}`);
   log.push(`stocked in ${harvests} swings: ${JSON.stringify(pack())}`);
   check('the clearing had raw iron in it', have('Raw iron') > 0, JSON.stringify(pack()));
   check('the clearing had raw copper in it', have('Raw copper') > 0);
