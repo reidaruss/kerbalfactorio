@@ -176,6 +176,14 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // airless night are separable. Registered in the same commit that introduces
   // it, per this list's own rule.
   'starlight', 'starlightamp', 'terrainfloor',
+  // RN-1251, the same floor for the STOCK materials, which had their own two
+  // W4 hex literals instead. Three values and the middle one is the point, on
+  // RN-1201's precedent: `stockfloor=0` does not install the writer at all and
+  // is the pre-change frame exactly, `stockfloor=legacy` runs the whole writer
+  // and returns the two literals so the frame must come back identical, and a
+  // number sweeps the shipped floor. Registered in the same commit that
+  // introduces it, per this list's rule.
+  'stockfloor',
   // RN-953. `tile=suitplate:0.12` overrides a surface family's tile_m, so the
   // tile-size question can be swept in the running client instead of by
   // regenerating eight PNGs. Comma-separated for several families at once.

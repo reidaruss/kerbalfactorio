@@ -26,6 +26,7 @@ import * as THREE from 'three';
 import type { SurfaceOracle } from '../world/SurfaceOracle.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
 import type { Vec3d } from '../world/PlanetBody.js';
+import { stockFloor, STOCK_FLOOR_MODE } from './materials/StockFill.js';
 
 /**
  * Samples taken up the column between the eye and the sky. THIS IS A THICKNESS
@@ -293,9 +294,18 @@ export class Headlamp {
     // so the tint still crosses over smoothly.
     const k = vis * vis;
     const h = this.nearHemi;
-    h.intensity = THREE.MathUtils.lerp(CAVE_HEMI.intensity, SKY_HEMI.intensity, k);
-    h.color.set(CAVE_HEMI.sky).lerp(TMP_SKY.set(SKY_HEMI.sky), vis);
-    h.groundColor.set(CAVE_HEMI.ground).lerp(TMP_GROUND.set(SKY_HEMI.ground), vis);
+    // RN-1251. The OPEN-SKY endpoint now comes from `StockFill`, which reads the
+    // terrain's own shared floor, instead of from the two literals below. The
+    // cave endpoint, the squared intensity ramp and the linear colour ramp are
+    // all untouched, so `?stockfloor=0` skips the call and reproduces this
+    // block exactly and `?stockfloor=legacy` runs it and returns the literals.
+    let openI = SKY_HEMI.intensity;
+    TMP_SKY.set(SKY_HEMI.sky);
+    TMP_GROUND.set(SKY_HEMI.ground);
+    if (STOCK_FLOOR_MODE !== 'off') openI = stockFloor(TMP_SKY, TMP_GROUND);
+    h.intensity = THREE.MathUtils.lerp(CAVE_HEMI.intensity, openI, k);
+    h.color.set(CAVE_HEMI.sky).lerp(TMP_SKY, vis);
+    h.groundColor.set(CAVE_HEMI.ground).lerp(TMP_GROUND, vis);
 
     // The arms are ALWAYS inside the cone, so underground they are lit by the
     // lamp by definition. Modelling that as a fill costs nothing and avoids a

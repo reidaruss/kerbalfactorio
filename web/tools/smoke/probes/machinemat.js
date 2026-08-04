@@ -145,6 +145,12 @@
   const f = fac();
   const mm = self.__ofMachineMat.state();
   const tb = self.__ofMachineMat.table();
+  // RN-1251, ADDITIVE. The ambient floor the machine is standing in, read from
+  // the same page as the frame. `writes` is what tells `?stockfloor=legacy`
+  // (the writer ran and returned the old numbers) apart from `?stockfloor=0`
+  // (the writer was never installed), which produce the SAME frame on purpose:
+  // without it the positive control and the negative control are one reading.
+  const sf = self.__ofStockFill.report();
   return {
     valid: f.buildings >= 1 && mm.mode !== undefined,
     placed: f.buildings, kinds: f.list.map((b) => b.kind),
@@ -154,6 +160,11 @@
     machineMat: { mode: mm.mode, flagPresent: mm.flagPresent, baked: mm.baked,
       bare: mm.bare, bareOn: mm.bareOn },
     distinct: tb.distinct, injections: tb.injections, missingAnchors: tb.missing,
+    stockFloor: { mode: sf.mode, flagPresent: sf.flagPresent, amp: sf.amp,
+      writes: sf.writes,
+      sky: sf.sky.map((v) => +v.toFixed(5)), ground: sf.ground.map((v) => +v.toFixed(5)),
+      legacySky: sf.legacySky.map((v) => +v.toFixed(5)),
+      legacyGround: sf.legacyGround.map((v) => +v.toFixed(5)) },
     log,
   };
 })()
