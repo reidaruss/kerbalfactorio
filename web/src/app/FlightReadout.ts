@@ -24,6 +24,8 @@ import { horizonAngles, rollAngle } from '../sim/FlightAttitude.js';
 import { saveInhibit } from '../sim/SaveInhibit.js';
 import { launchStep } from '../sim/LaunchSteps.js';
 import type { NavballReadout, BallMarker } from '../ui/Navball.js';
+import { navPublication } from './FlightNav.js';
+import type { NavPublication } from './FlightNav.js';
 import type { FlightMode } from './FlightMode.js';
 import type { FlightSession } from '../sim/FlightSession.js';
 import { rcsOf } from '../sim/FlightRcs.js';
@@ -42,7 +44,17 @@ function rcsRow(s: FlightSession): NavballReadout['rcs'] {
            monopropKg: r.monopropKg };
 }
 
-export function readout(m: FlightMode): NavballReadout {
+/**
+ * PH-350. THE RETURN TYPE IS AN INTERSECTION AND THAT IS DELIBERATE.
+ *
+ * `NavballReadout` is `ui/Navball.ts`'s published contract and belongs to the
+ * gameplay lane; `NavPublication` is this lane's block of numbers a hand pilot
+ * needs (see FlightNav.ts). Widening here means the instrument's own contract
+ * is unchanged, the new numbers reach `__of.flight('readout')` the moment they
+ * exist, and whichever lane draws them does so by reading fields that are
+ * already on the object rather than by waiting on this one.
+ */
+export function readout(m: FlightMode): NavballReadout & NavPublication {
   const s = m.session;
   const st = s.state;
   const tm = s.telemetry;
@@ -120,5 +132,9 @@ export function readout(m: FlightMode): NavballReadout {
     // is already zero on a dry vehicle, so using it here would hide the row
     // exactly when the player most needs to be told the tank is dry.
     rcs: rcsRow(s),
+    // PH-350. THE HAND PILOT'S BLOCK, composed in FlightNav.ts and spread here
+    // rather than nested, so a probe reads `readout().timeToApoapsisS` and an
+    // instrument draws it without either of them learning a second shape.
+    ...navPublication(m),
   };
 }

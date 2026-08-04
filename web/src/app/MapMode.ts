@@ -277,6 +277,12 @@ export class MapMode {
     // arrives, so a rule that only ran with the panel open would only ever
     // fire for a player who was already watching.
     this.planner.frameRun();
+    // PH-350 / R90. THE TARGET'S RANGE AND CLOSING RATE ONTO THE BALL, every
+    // frame, map open or shut, on exactly the precedent `nodeDir` set above.
+    // Both numbers already existed and both were drawn only inside the
+    // autopilot's ARMED block, which the storyline gates behind the mission
+    // that needs them. One computation, two instruments.
+    f.navTarget = flying ? this.planner.closing() : null;
     holdWarpForBurn(this.warpHold, this.planner, this.d.flight.session,
                     flying, (m) => this.d.say(m));
     if (!this.open) return;
@@ -414,6 +420,12 @@ export class MapMode {
       world: this.d.world === null ? null : this.d.world.report(),
       node: n.node,
       plan: n.plan,
+      // PH-350. The node's countdown and the spend it is derived from, so a
+      // probe asserts the decrement against the delta-v actually flown rather
+      // than against the plan's own opinion of itself.
+      burn: n.burn,
+      spentMS: n.spentMS,
+      wantedMS: n.wantedMS,
       selectedId: this.selectedId,
       flat: this.flat,
       three: this.d.three === null ? null : this.d.three.report(),

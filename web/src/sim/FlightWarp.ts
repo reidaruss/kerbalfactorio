@@ -39,20 +39,56 @@ const IN_AIR_MAX = 10;
 const CLOSING_FRACTION = 0.1;
 
 /**
- * `factor` is the ladder value the player selected; the rest is where the
- * vehicle actually is. Returns at least 1, so a tick always advances.
+ * PH-350. WHY A BLOCK WAS SHORTER THAN THE PLAYER ASKED FOR, or '' when it was
+ * not shortened at all.
+ *
+ * The two limits have different cures and must not read as one thing: `air`
+ * goes away by leaving the atmosphere and `ground` goes away by stopping the
+ * descent. When both bind, the TIGHTER one is reported, because that is the one
+ * whose cure actually returns the warp.
  */
-export function warpSteps(factor: number, inSpace: boolean,
-                          altitudeAglM: number, closingMS: number,
-                          dt: number): number {
-  let n = factor > 1 ? Math.floor(factor) : 1;
-  if (!inSpace && n > IN_AIR_MAX) n = IN_AIR_MAX;
+export type WarpLimit = '' | 'air' | 'ground';
+
+export interface WarpDecision {
+  /** Sub-steps this tick may take. At least 1, so a tick always advances. */
+  steps: number;
+  limitedBy: WarpLimit;
+}
+
+/**
+ * `factor` is the ladder value the player selected; the rest is where the
+ * vehicle actually is.
+ *
+ * PH-350, AND THE SECOND FIELD IS THE POINT OF THE REWRITE. This function has
+ * always returned a number smaller than the one on the chip, and the chip was
+ * the only thing ever drawn about warp: it flashed `warp 1000x` while the sim
+ * advanced ten MET-seconds per wall second, which is a label wrong by 100x on
+ * an instrument with no second opinion anywhere. The clamp was never the bug.
+ * Not publishing it was.
+ */
+export function warpDecision(factor: number, inSpace: boolean,
+                             altitudeAglM: number, closingMS: number,
+                             dt: number): WarpDecision {
+  const asked = factor > 1 ? Math.floor(factor) : 1;
+  let n = asked;
+  let limitedBy: WarpLimit = '';
+  if (!inSpace && n > IN_AIR_MAX) { n = IN_AIR_MAX; limitedBy = 'air'; }
   if (n > 1 && closingMS > 0 && dt > 0) {
     const room = Math.max(0, altitudeAglM) * CLOSING_FRACTION;
     const maxN = Math.floor(room / (closingMS * dt));
-    if (n > maxN) n = maxN < 1 ? 1 : maxN;
+    if (n > maxN) { n = maxN < 1 ? 1 : maxN; limitedBy = 'ground'; }
   }
-  return n;
+  // A clamp that did not actually shorten anything is not a limit. Without
+  // this an in-air ladder of exactly 10x would report `air` for ever while
+  // running at precisely the rate the player asked for.
+  return { steps: n, limitedBy: n < asked ? limitedBy : '' };
+}
+
+/** The steps alone, for the caller that only advances the sim. */
+export function warpSteps(factor: number, inSpace: boolean,
+                          altitudeAglM: number, closingMS: number,
+                          dt: number): number {
+  return warpDecision(factor, inSpace, altitudeAglM, closingMS, dt).steps;
 }
 
 export { IN_AIR_MAX as WARP_IN_AIR_MAX, CLOSING_FRACTION as WARP_CLOSING_FRACTION };

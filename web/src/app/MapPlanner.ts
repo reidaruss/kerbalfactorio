@@ -216,12 +216,29 @@ export class MapPlanner {
    * Null when there is no phased target, which is the honest answer for a
    * requested orbit: a ring has no position to be a distance from.
    */
-  closing(): { rangeM: number; closingMS: number } | null {
+  closing(): { rangeM: number; closingMS: number; name: string;
+               frozen: boolean } | null {
     const t = this.target();
     if (t === null || t.kind !== 'vessel') return null;
     const rec = registry.list().find((r) => `v:${r.id}` === t.id);
     const me = this.p.shipState();
     if (rec === undefined || me === null) return null;
+    // PH-350 / R92. WHETHER THE TARGET'S CLOCK IS RUNNING AT ALL, published
+    // beside the range and never folded into it.
+    //
+    // `clockAt` returns the stored clock UNCHANGED while `stampedTick` is -1,
+    // so an unstamped record's position does not advance while its published
+    // velocity does: Anchorage finite-differences to exactly 0 m of travel
+    // while reporting 1879.255 m/s off the same conic. The range below is
+    // therefore the range to where the target WAS. R92 is ruled and closed:
+    // the record is not to be quietly zeroed, because the armed autopilot
+    // rendezvous that works today aims at this same conic, and the real fix is
+    // sequenced behind core-engine's carrier term (R79, then PH-305).
+    //
+    // What this one boolean buys is that the discrepancy becomes ATTRIBUTABLE
+    // rather than silent. An implausible magnitude is caught by anybody; a
+    // plausible one is checked by nobody, and 1606.4 km is entirely plausible.
+    const frozen = rec.stampedTick < 0;
     const them = stateOf(this.p.M, registry, rec, this.p.tick());
     const dx = (them.pos[0] ?? 0) - (me.pos[0] ?? 0);
     const dy = (them.pos[1] ?? 0) - (me.pos[1] ?? 0);
@@ -236,7 +253,7 @@ export class MapPlanner {
     // would call both of those a success.
     const closingMS = rangeM > 0
       ? -((dx * vx + dy * vy + dz * vz) / rangeM) : 0;
-    return { rangeM, closingMS };
+    return { rangeM, closingMS, name: t.name, frozen };
   }
 
   rows(): AutopilotTarget[] {

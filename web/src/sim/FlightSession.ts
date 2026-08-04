@@ -20,7 +20,8 @@ import { commandDirection, cycleSas, followRibbon, guidanceDir, guidanceTick,
   levelWings, setSas, slew }
   from './FlightSas.js';
 import { horizonFrame } from './FlightAttitude.js';
-import { WARP_STEPS, warpSteps } from './FlightWarp.js';
+import { WARP_STEPS, warpDecision } from './FlightWarp.js';
+import type { WarpLimit } from './FlightWarp.js';
 import { dayWarpCredit } from './DayCycle.js';
 import type { FlightPartRow, FlightStateRow, FlightTelemetryRow, OrbitRow, Vec3 } from './FlightAbi.js';
 
@@ -57,6 +58,21 @@ export class FlightSession {
   /** Sim seconds since the clamp released. -1 while still held. */
   metS = -1;
   warpIndex = 0;
+  /**
+   * PH-350. WHAT WARP ACTUALLY DID ON THE LAST TICK, beside what was asked for.
+   *
+   * `warpFactor` is the ladder value the player selected and it is the ONLY
+   * thing that was ever drawn: the chip flashed `warp 1000x` while `warpSteps`
+   * was quietly handing the step loop 10, so the label was wrong by 100x with
+   * nothing anywhere to contradict it. These two are the measurement, so an
+   * instrument can say "1000x requested, 10x running, held by the air" instead
+   * of stating the request as if it were the rate.
+   *
+   * 1 and '' whenever the vessel is clamped or down, reset at the top of every
+   * `step` rather than left holding the last flying tick's answer.
+   */
+  warpStepsTaken = 1;
+  warpLimitedBy: WarpLimit = '';
   /**
    * R73. The roll the navball WOULD show if stability assist were not damping
    * it, in degrees, sampled every tick BEFORE the correction. NaN where the
@@ -308,14 +324,21 @@ export class FlightSession {
   /** One fixed sim tick. `dt` is the loop's fixed step. */
   step(dt: number): void {
     if (this.handle <= 0) return;
+    // PH-350. RESET BEFORE THE EARLY RETURNS, not after them: a vehicle that
+    // lands while warping keeps the last flying tick's answer for ever
+    // otherwise, and `10x, held by the ground` on a stationary wreck is the
+    // same class of lie as the chip this pair exists to correct.
+    this.warpStepsTaken = 1; this.warpLimitedBy = '';
     if (this.status === 'CLAMPED') { this.stepClamped(dt); return; }
     if (this.status === 'DOWN') { this.sample(); return; }
 
     // The ribbon-follow re-aims BEFORE the step, so the nose chases this tick's
     // guidance rather than last tick's. It is a no-op unless the ninth key is on.
     guidanceTick(this);
-    const n = warpSteps(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
-                        -dot(this.st.vel, this.up), dt);
+    const wd = warpDecision(this.warpFactor, this.tm.inSpace, this.altitudeAglM,
+                            -dot(this.st.vel, this.up), dt);
+    const n = wd.steps;
+    this.warpStepsTaken = n; this.warpLimitedBy = wd.limitedBy;
     // PH-251. TELL /core WHERE THE GROUND IS, BEFORE THE STEP.
     //
     // The arrest below has always been the only thing stopping a vehicle, and

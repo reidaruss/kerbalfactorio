@@ -138,6 +138,12 @@ export function flightReport(s: FlightSession): unknown {
     eccentricity: round(o.eccentricity, 5), periodS: round(o.periodS, 1),
     bound: o.bound,
     throttle: round(s.throttleValue, 3), sas: s.sasName, warp: s.warpFactor,
+    // PH-350. THE WARP THAT IS ACTUALLY RUNNING, beside the one that was asked
+    // for. `warp` above is the ladder value and it was the only thing anything
+    // published: the chip flashed `warp 1000x` while the sim advanced ten
+    // MET-seconds per wall second. A rate and a request are different claims
+    // and had one name between them.
+    warpEffectiveX: s.warpStepsTaken, warpLimitedBy: s.warpLimitedBy,
     // R73. The roll BEFORE stability assist damps it, and how hard it is
     // damping. Published because the damper rewrites the very field the navball
     // draws, so without these two an instrument that is silently repairing its

@@ -30,6 +30,7 @@ import { Navball } from '../ui/Navball.js';
 import type { NavballReadout } from '../ui/Navball.js';
 import { allowSave } from '../sim/SaveInhibit.js';
 import { readout as computeReadout } from './FlightReadout.js';
+import type { NavPublication, NavTarget, NodeBurn } from './FlightNav.js';
 import { choosePad, padReport, rollOutOnPad, stepPadClamps as stepPad }
   from './FlightPad.js';
 import { recoverVessel } from './FlightRecover.js';
@@ -90,6 +91,14 @@ export class FlightMode {
   /** The node's burn direction, inertial, or null. Written by MapMode so the
    *  ball's marker and the map's are ONE direction from one plan. */
   nodeDir: Vec3 | null = null;
+  /** PH-350. The node's CLOCK and its countdown, written by MapNode on exactly
+   *  the precedent `nodeDir` set, so the ball's burn timer and the map's are
+   *  one computation. null when there is no node. */
+  nodeBurn: NodeBurn | null = null;
+  /** PH-350 / R90. The selected target's range and closing rate, written by
+   *  MapMode every frame whether the map is open or shut. null when nothing is
+   *  selected, which is a different claim from "range 0". */
+  navTarget: NavTarget | null = null;
   rollouts = 0;
   /** PH-110: spacewalks begun. Beside `boardings` and `disembarks`, so the
    *  report can tell the three doors apart. */
@@ -537,7 +546,7 @@ export class FlightMode {
 
   /** The navball's whole readout, composed in FlightReadout.ts. Kept as a
    *  method because probes and DebugFlight.ts call it. */
-  readout(): NavballReadout { return computeReadout(this); }
+  readout(): NavballReadout & NavPublication { return computeReadout(this); }
 
   /** GP-57: once per FIXED tick, from `Systems`. Why, and what the tick is
    *  compared against, is in FlightPad.ts. */
