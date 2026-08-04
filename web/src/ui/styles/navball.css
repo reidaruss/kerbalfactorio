@@ -142,6 +142,62 @@
 }
 
 /* --- the stage table (DW-30 item 4: never optional) ---------------------- */
+/* GP-610. THE BURN AND TARGET BLOCK.
+
+   It sits between the ball and the stage table and it is EMPTY most of the
+   time: there is no node and no target on an ascent, so `of-nburn` collapses to
+   nothing and costs no pixels. That is why it is `display: contents` when empty
+   rather than a bordered panel with a placeholder in it. */
+#of-navball .of-nburn:empty { display: none; }
+#of-navball .of-nburn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 176px;
+}
+#of-navball .of-burnrow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 6px 9px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  /* Amber like the stage table, so the eye reads them as one instrument. */
+  border-left: 3px solid var(--of-accent);
+  font-size: 11px;
+}
+#of-navball .of-burnrow em {
+  font-style: normal;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--of-dim);
+}
+#of-navball .of-burnrow b { font-weight: 600; color: var(--of-ink); }
+/* The planned total, beside the remainder rather than instead of it. Dimmer,
+   because the remainder is the number being flown and the plan is the context
+   for it. */
+#of-navball .of-burnrow .of-of {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--of-dim);
+}
+#of-navball .of-burnrow b.warn { color: #ffcf70; }
+/* LATE. The countdown has gone negative and the window is closing or closed;
+   this is the one state on the block that should catch the eye without being
+   read. */
+#of-navball .of-burnrow.late { border-left-color: #ff6b5a; }
+#of-navball .of-burnrow.late b { color: #ffb0a6; }
+#of-navball .of-burnrow.tgt { border-left-color: #6fc9ff; }
+
+/* GP-610. The warp chip is STANDING, not a flash (the old one expired after
+   five seconds, so a long warp drew nothing at all). `held` is the state where
+   what the sim is doing differs from what the player asked for, which is the
+   whole reason the chip prints two numbers. */
+#of-navball .chip.warp { color: #9fd7ff; border-color: #35566b; }
+#of-navball .chip.warp.held { color: #ffcf70; border-color: #6b5a35; }
+
 #of-navball .of-nstages {
   width: 176px;
   padding: 7px 9px;

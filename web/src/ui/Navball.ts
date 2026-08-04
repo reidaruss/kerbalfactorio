@@ -16,6 +16,7 @@
 
 import './styles/navball.css';
 import { esc } from './GameHud.js';
+import type { NavPublication } from '../app/FlightNav.js';
 import {
   dirOf, viewOf, frontMarks, drawBall, drawMarks, type Mark,
 } from './NavballDraw.js';
@@ -25,6 +26,19 @@ export interface BallMarker { headingDeg: number; pitchDeg: number }
 export interface StageReadout {
   index: number; dvVacMS: number; twr: number; burnS: number; active: boolean;
 }
+
+/**
+ * GP-610. The hand pilot's numbers, and this instrument does NOT redeclare them.
+ *
+ * `NavPublication` is physics' published contract (`app/FlightNav.ts`), and
+ * `FlightReadout` already spreads it onto the object this file is handed. So
+ * the drawing side asks for the intersection and gets thirteen fields it cannot
+ * disagree with about shape. Restating them here would have been a second copy
+ * of somebody else's interface, which is the thing this project has paid for
+ * five times over; and `Partial` is deliberately NOT used, because a field that
+ * silently goes missing is exactly the class `mustNum` exists to make loud.
+ */
+export type NavballFullReadout = NavballReadout & NavPublication;
 
 export interface NavballReadout {
   /** Vessel nose attitude in the LOCAL horizon frame. heading 0 = north,
@@ -103,11 +117,16 @@ export class Navball {
   private readonly thrEl: HTMLElement;
   private readonly dpr: number;
   private visible = true;
+  private readonly burnEl: HTMLElement;
   private renders = 0;
   private marks: string[] = [];
   private snap: NavballReadout | null = null;
   /** [ball, left, right, stages, chips, throttle]. */
-  private last = ['', '', '', '', '', ''];
+  // GP-610: slot 6 is the burn/target block. The array is sized by hand, so a
+  // new region that forgot to widen it would silently share a neighbour's key
+  // and stop redrawing; adding the slot in the same edit as the region is the
+  // only thing that keeps them together.
+  private last = ['', '', '', '', '', '', ''];
 
   constructor(host: HTMLElement) {
     this.root = document.createElement('div');
@@ -119,6 +138,7 @@ export class Navball {
     this.leftEl = this.pick('.of-nread.left');
     this.rightEl = this.pick('.of-nread.right');
     this.stagesEl = this.pick('.of-nstage-rows');
+    this.burnEl = this.root.querySelector('.of-nburn') as HTMLElement;
     this.footEl = this.pick('.of-nstage-foot');
     this.attEl = this.pick('.of-natt');
     this.thrEl = this.pick('.of-nthr');
@@ -140,15 +160,16 @@ export class Navball {
   }
 
   /** Force the next render to rebuild, ignoring the diff keys. */
-  invalidate(): void { this.last = ['', '', '', '', '', '']; }
+  invalidate(): void { this.last = ['', '', '', '', '', '', '']; }
 
-  render(r: NavballReadout): void {
+  render(r: NavballFullReadout): void {
     this.renders++;
     this.snap = r;
     if (!this.visible) { this.marks = []; return; }
     this.paint(r);
     this.chips(r);
     this.numbers(r);
+    this.burn(r);
     this.table(r);
   }
 
@@ -181,15 +202,27 @@ export class Navball {
     drawMarks(c, SIZE, w, front);
   }
 
-  private chips(r: NavballReadout): void {
+  private chips(r: NavballFullReadout): void {
     const warn = r.warning ?? '';
     const step = r.nextStep ?? '';
-    const key = `${r.status}|${r.sas}|${r.message}|${warn}|${step}`;
+    // The warp and SAS terms join the diff key, or the chip row would keep
+    // drawing a stale warp factor until the status happened to change.
+    const key = `${r.status}|${r.sas}|${r.message}|${warn}|${step}`
+      + `|${sasErr(r)}|${warpChip(r)}`;
     if (key === this.last[4]) return;
     this.last[4] = key;
     this.chipsEl.innerHTML = `<span class="chip st">${esc(r.status)}</span>`
+      // GP-610. THE SAS CHIP SAYS WHETHER THE MODE IS WINNING, not just which
+      // mode is on. `SAS HOLD` was drawn while the heading walked HDG 285 to
+      // HDG 000 and nothing on the instrument distinguished a HELD nose from a
+      // CHASING one. `sasErrDeg` existed in the flight report the whole time
+      // (measured at 0.221 while the ball said HOLD) and never reached the ball.
+      // `SAT` is drawn beside it because a saturated vehicle is being asked for
+      // more torque than it has, which is the state in which a held mode never
+      // arrives at all, and that is a different problem from a large error.
       + `<span class="chip sas${r.sas === 'OFF' ? ' off' : ''}">SAS `
-      + `${esc(r.sas)}</span>`
+      + `${esc(r.sas)}${sasErr(r)}</span>`
+      + warpChip(r)
       // GP-139. THE INSTRUCTION COMES FIRST of the three, ahead of the standing
       // warning and the transient flash, because it is the only one of them the
       // player can act on and a narrow window truncates from the right. Reid sat
@@ -212,7 +245,7 @@ export class Navball {
     return [['RCS', `${fix(r.rcs.monopropKg, 0)} kg${on}`]];
   }
 
-  private numbers(r: NavballReadout): void {
+  private numbers(r: NavballFullReadout): void {
     const left = cells([
       ['ALT AGL', alt(r.altitudeM)],
       ['ALT MSL', alt(r.altitudeDatumM)],
@@ -224,9 +257,27 @@ export class Navball {
       // own note): an absent row and a row reading zero are different claims.
       ...this.rcsCellRows(r),
     ]);
+    // GP-610. THE FOUR KSP NUMBERS THAT EXISTED AND WERE DRAWN ONLY IN THE MAP.
+    // A pilot flying an ascent watches the ball, not the map, and the sweep
+    // called this the biggest expectation gap it found.
+    //
+    // `PE` NOW DRAWS ON `periapsisMeaningful` AND NOT ON `bound`, which is the
+    // fix for `PE -600.00 km` on ascent. The old guard listed the two statuses
+    // that produce it on the pad and could not exclude a near-vertical climb,
+    // which produces the same figure with the vehicle flying. Physics published
+    // the physical fact as its own boolean precisely so this cell does not need
+    // a list of states to keep up to date, or a threshold of my own invention.
+    // Same rule as GP-600: the number is information and the FLAG is the
+    // verdict, so I draw their flag rather than deriving a second opinion.
     const right = cells([
-      ['AP', conic(r.apoapsisM, r.bound)],
-      ['PE', conic(r.periapsisM, r.bound)],
+      ['AP', conic(r.apoapsisM, r.bound) + at(r.timeToApoapsisS)],
+      // A periapsis below the datum is not a place you pass through, it is the
+      // ground. Saying so, with its time, is worth more than `---`: physics'
+      // own note beside the field suggests exactly this.
+      ['PE', r.periapsisMeaningful
+        ? conic(r.periapsisM, true) + at(r.timeToPeriapsisS)
+        : impact(r.timeToPeriapsisS, r.bound)],
+      ...(nm(r.periodS) > 0 ? [['PER', clock(r.periodS)] as [string, string]] : []),
       ['TWR', fix(r.twr, 2)],
       ['MASS', mass(r.massKg)],
       ['Q', `${fix(nm(r.qPa) / 1000, 2)} kPa`],
@@ -241,6 +292,75 @@ export class Navball {
     this.thrEl.innerHTML = '<em>THR</em>'
       + `<span class="bar"><i style="width:${pct}%"></i></span><b>${pct}%</b>`
       + `<span class="maxq">max Q ${fix(nm(r.maxQPa) / 1000, 1)} kPa</span>`;
+  }
+
+  /**
+   * GP-610. THE BURN COUNTDOWN AND THE TARGET, and both are ABSENT when they do
+   * not apply rather than drawn as zeroes. Same rule the RCS row already keeps:
+   * an absent row and a row reading zero are different claims.
+   *
+   * THE TWO DELTA-V FIGURES ARE BOTH DRAWN AND THAT IS THE POINT. `plannedDvMS`
+   * is the size of the plan and does not shrink because you flew some of it;
+   * `remainingDvMS` is what is left. Before physics separated them, one field
+   * read 200.00 m/s at BOTH ENDS of a burn that moved apoapsis by 294 km, so a
+   * hand-flying player had no cut-off cue at all. Drawing only the remainder
+   * would lose the size of the job; drawing only the plan is the old defect.
+   *
+   * AND THE POINTING ERROR IS DRAWN BESIDE THEM, because "80 m/s left" means
+   * nothing on its own: a nose 90 degrees off is spending delta-v and taking
+   * the remainder DOWN slower than the tank empties, and one pointing backwards
+   * takes it UP. The two numbers are one instrument.
+   */
+  private burn(r: NavballFullReadout): void {
+    const b = r.burn;
+    const t = r.target;
+    const key = b === null ? '-' : `${fix(b.startS, 0)}|${fix(b.remainingDvMS, 1)}`
+      + `|${fix(b.pointingErrorDeg, 0)}|${b.feasible ? 1 : 0}|${fix(b.durationS, 0)}`;
+    const tkey = t === null ? '-' : `${t.name}|${fix(t.rangeM, 0)}`
+      + `|${fix(t.closingMS, 2)}|${t.frozen ? 1 : 0}`;
+    if (`${key}#${tkey}` === this.last[6]) return;
+    this.last[6] = `${key}#${tkey}`;
+    let html = '';
+    if (b !== null) {
+      // NEGATIVE IS LATE, and it is drawn as such rather than clamped to zero.
+      // "T-0:00" held for thirty seconds while the window closes is the same
+      // lie as a warp label that says 1000x: it reports the number the pilot
+      // wishes were true. `signed` keeps the minus sign visible.
+      const late = nm(b.startS) < 0;
+      html += '<div class="of-burnrow' + (late ? ' late' : '') + '">'
+        + `<em>BURN IN</em><b>${late ? '-' : ''}${clock(Math.abs(nm(b.startS)))}</b>`
+        + `<em>FOR</em><b>${clock(b.durationS)}</b>`
+        + `<em>&#916;v LEFT</em><b>${fix(b.remainingDvMS, 1)}`
+        + `<span class="of-of">of ${fix(b.plannedDvMS, 1)}</span></b>`
+        + `<em>POINT</em><b class="${nm(b.pointingErrorDeg) > 10 ? 'warn' : ''}">`
+        + `${fix(b.pointingErrorDeg, 1)}&deg;</b>`
+        // FEASIBLE IS DRAWN ONLY WHEN IT IS FALSE. A chip reading "feasible" on
+        // every node the player ever plans is noise they learn to stop reading,
+        // and the one time it matters it looks the same as all the others.
+        + (b.feasible ? ''
+          : '<b class="warn">not enough &#916;v in the vehicle</b>')
+        + '</div>';
+    }
+    if (t !== null) {
+      // POSITIVE IS CLOSING, per physics' own note, so the sign carries the
+      // whole information: 100 m out at +0.2 is arriving and 100 m out at -0.2
+      // is drifting away. `signed` never hides it.
+      html += '<div class="of-burnrow tgt">'
+        + `<em>TGT</em><b>${esc(t.name)}</b>`
+        + `<em>RANGE</em><b>${alt(t.rangeM)}</b>`
+        + `<em>CLOSING</em><b>${signed(t.closingMS, 2)} m/s</b>`
+        // GP-610 / Admin's steer, and it is the sandbox ruling again: a number
+        // is information and the flag is the verdict. The station's record is
+        // not always stamped, and while it is not, the range above is a
+        // SNAPSHOT rather than a measurement. Hiding the row would throw away a
+        // true number; drawing it silently would be the `PE -600 km` mistake in
+        // a new place. So the number stays and the flag says what it is worth.
+        + (t.frozen
+          ? '<b class="warn" title="the target\'s clock is not running, so this '
+            + 'range is where it was, not where it is">SNAPSHOT</b>' : '')
+        + '</div>';
+    }
+    this.burnEl.innerHTML = html;
   }
 
   /** DW-30 item 4. A stage with no delta-v reads as a fault, not as a blank. */
@@ -318,6 +438,12 @@ const SKELETON =
   + `style="width:${SIZE}px;height:${SIZE}px"></canvas>`
   + '<div class="of-natt"></div></div>'
   + '<div class="of-nread right"></div>'
+  // GP-610. THE BURN AND TARGET BLOCK, between the ball and the stage table.
+  // It is its own region rather than two more rows in the right-hand column
+  // because it is the thing a pilot stares at during the twenty seconds that
+  // decide the mission, and because it is ABSENT most of the time: there is
+  // no node and no target on an ascent, and an empty region costs no pixels.
+  + '<div class="of-nburn"></div>'
   + '<div class="of-nstages"><h4>Stages<span>&#916;v / TWR / burn</span></h4>'
   + '<div class="of-nstage-rows"></div><div class="of-nstage-foot"></div></div>'
   + '</div><div class="of-nthr"></div></div>';
@@ -330,6 +456,79 @@ function add(out: Mark[], kind: Mark['kind'], m: BallMarker | null): void {
 
 function cells(rows: readonly (readonly [string, string])[]): string {
   return rows.map(([k, v]) => `<div class="c"><em>${k}</em><b>${v}</b></div>`).join('');
+}
+
+/**
+ * GP-610. " in 1:23" for a time that exists, and NOTHING for one that does not.
+ * -1 is physics' "there is no such time" (an unbound trajectory has no
+ * apoapsis), and it must never reach the eye as a number: `AP 120 km in -1`
+ * would be the same class of defect as `PE -600.00 km`, which is a true number
+ * printed where it cannot mean anything.
+ */
+function at(secs: number): string {
+  return Number.isFinite(secs) && secs >= 0 ? `  in ${clock(secs)}` : '';
+}
+
+/**
+ * What to draw where the periapsis would go when the periapsis is underground.
+ *
+ * `---` is honest and useless. If the conic is closed and its low point is
+ * below the datum, the vehicle is on a trajectory that meets the ground, and
+ * WHEN is the single most useful number on the instrument at that moment.
+ */
+function impact(secs: number, bound: boolean): string {
+  return bound && Number.isFinite(secs) && secs >= 0
+    ? `impact in ${clock(secs)}` : '---';
+}
+
+/** h:mm:ss past an hour, m:ss below it. An orbital period is often both. */
+function clock(secs: number): string {
+  const t = Math.max(0, Math.round(nm(secs)));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const ss = `0${t % 60}`.slice(-2);
+  return h > 0 ? `${h}:${`0${m}`.slice(-2)}:${ss}` : `${m}:${ss}`;
+}
+
+/**
+ * GP-610. The SAS error, in degrees, appended to the mode chip.
+ *
+ * Drawn only when SAS is actually ON: an error figure beside `SAS OFF` is a
+ * measurement of nothing, and the mode chip is the one thing on this row a
+ * player reads at a glance.
+ */
+function sasErr(r: NavballFullReadout): string {
+  if (r.sas === 'OFF' || !Number.isFinite(r.sasErrDeg)) return '';
+  return `  ${fix(r.sasErrDeg, 1)}\u00b0${r.sasSaturated ? '  SAT' : ''}`;
+}
+
+/**
+ * GP-610. THE WARP CHIP, AND IT DRAWS THE RATE THE SIM IS ACTUALLY RUNNING AT.
+ *
+ * The flight sweep measured the chip flashing `warp 1000x` while the simulation
+ * advanced 10 MET-seconds per second, a lie of 100x, and it was the ONLY thing
+ * ever drawn about warp: the old flash expired after five seconds, so 32 s at
+ * ladder 200x in orbit drew no warp indicator at all.
+ *
+ * So this is STANDING rather than transient, it draws `warpEffectiveX` (what
+ * the sim did) rather than `warpFactor` (what was asked), and when they differ
+ * it says both and names the limit. Nothing here computes a rate: all three
+ * numbers are physics' own.
+ */
+function warpChip(r: NavballFullReadout): string {
+  const asked = nm(r.warpFactor);
+  const got = nm(r.warpEffectiveX);
+  if (asked <= 1 && got <= 1) return '';
+  const why = r.warpLimitedBy === '' ? '' : `  (${esc(r.warpLimitedBy)} limit)`;
+  const differ = Math.abs(asked - got) > 0.01;
+  return `<span class="chip warp${differ ? ' held' : ''}">warp ${trim(got)}x`
+    + (differ ? `  asked ${trim(asked)}x${why}` : '') + '</span>';
+}
+
+/** 10 rather than 10.0, but 2.5 rather than 3. */
+function trim(v: number): string {
+  const a = nm(v);
+  return Number.isInteger(a) ? a.toFixed(0) : a.toFixed(1);
 }
 
 /** A missing number reads as zero, never as NaN and never as a blank cell. */
