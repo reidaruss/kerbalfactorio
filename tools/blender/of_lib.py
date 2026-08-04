@@ -46,9 +46,103 @@ import bpy
 # role -> (hex sRGB, metallic, roughness, alpha, emission hex or None)
 PALETTE = {
     # --- industrial ---
-    "Steel":        ("8A9199", 0.85, 0.45, 1.0, None),
-    "SteelDark":    ("4A5057", 0.85, 0.55, 1.0, None),
-    "SteelLight":   ("B9C0C7", 0.80, 0.35, 1.0, None),
+    #
+    # RN-1300 to RN-1310. THE THREE STEEL ROLES WERE AUTHORED AS BARE POLISHED
+    # METAL AND WHAT THEY DEPICT IS A COATED MACHINE HOUSING. Unblocked by
+    # RN-1250 to RN-1254, which measured every lighting lever this project owns
+    # on one close-up machine frame and found the light adequate: the RN-64
+    # ground bounce is already 29.1 per cent of the light on the camera-facing
+    # face, the stock ambient floor buys 2.1 per cent and the screen-space
+    # occlusion 24.9. So re-authoring here is not the boulder-albedo mistake
+    # ART-DIRECTION.md exists to prevent; the light it would be compensating
+    # for has been measured.
+    #
+    # WHICH LEVER ACTUALLY DOMINATES, MEASURED RATHER THAN ASSUMED. My brief
+    # named two candidates - the albedo values are dark, or metalness 0.85
+    # leaves almost no diffuse - and told me to find out which before moving
+    # either. NEITHER, as stated. Composing three's own terms, a surface lit
+    # entirely by a low-frequency environment returns
+    #
+    #     total  ~=  F0 + diffuse
+    #            =  [0.04 + (c - 0.04) * m]  +  [c * (1 - m)]
+    #            =  c + 0.04 * (1 - m)
+    #
+    # where `c` is the COMPOSITED diffuse colour. The metalness terms cancel to
+    # first order: the specular a metal gains is the diffuse it loses, and what
+    # is left is a dielectric floor worth at most 0.04 of absolute reflectance.
+    # The frame agrees. On the RN-1250 machine box, metalness 0.85/0.85/0.80 ->
+    # 0.20/0.20/0.18, which is a 4.35x rise in effective DIFFUSE albedo, moved
+    # the median 12.44 -> 14.44 counts (+16 per cent); a 1.6x rise in the
+    # authored COLOUR alone, with metalness untouched, moved the same median to
+    # 20.22 (+63 per cent). A 1.6x on the colour beats a 4.35x on the diffuse
+    # by four to one, so the albedo term is the lever and metalness is second
+    # order. Both arms are one-lever, isolated and published.
+    #
+    # AND YET THE COLOURS ARE MOSTLY NOT MOVED, BECAUSE THE BIGGEST FACTOR IN
+    # `c` IS NOT IN THIS TABLE. `c = palette * 0.4692` on the panel family:
+    # `surfaces.json` publishes `albedo_mean` as the sRGB-DOMAIN mean of the
+    # map (panel 0.5386) and `Surfaces.ts` divides it out through
+    # `material.color`, which three stores and multiplies in LINEAR working
+    # space against a map whose LINEAR mean is 0.2526. The "mean-neutral"
+    # compensation therefore under-compensates by 2.132x, on all seven albedo
+    # families (worst on `stone` at 0.4244 and `panel` at 0.4692, i.e. on rock
+    # and machine). `?leaftex=0` removes both halves and lifts this box's
+    # median 12.44 -> 28.21, +127 per cent against +113 predicted. That is the
+    # single largest term on the whole question and it is a colour-space
+    # mismatch, not an authoring choice. BRIGHTENING THIS TABLE TO CANCEL IT
+    # WOULD BE THE BOULDER-ALBEDO MISTAKE EXACTLY - it would leave the next
+    # lane a palette tuned to cancel a bug, and every machine 2.1x too bright
+    # the day the bug is fixed. It is reported up, not compensated here.
+    #
+    # SO ONLY TWO THINGS MOVE, AND BOTH SURVIVE THAT FIX UNCHANGED.
+    #
+    # (1) METALNESS, ON THE GROUND THAT IT IS WRONG RATHER THAN THAT IT IS
+    #     DARK. 0.85 is bare mill-finish steel. A machine housing is painted,
+    #     powder-coated or galvanised, and paint is a dielectric; RN-1200
+    #     already caught the same defect one layer up ("roughness 0.12 at
+    #     metalness 0.43 IS polished metal", the chrome-rivet read) and fixed
+    #     it for the two PAINT roles by making the channel reach a pixel at
+    #     all, leaving these three still authored as mirrors. NOT 0.00: the
+    #     panel ORM's blue channel runs 0.4196 to 1.0, so at 0.20 the effective
+    #     metalness is 0.084 to 0.20 and the map's authored wear stays alive as
+    #     bare metal showing through a coating, which is ART-DIRECTION.md's
+    #     "surfaces that respond to light like materials" rather than a flat
+    #     dielectric. Worth +0.032 of absolute reflectance, which is small in
+    #     the highlights and large in the shade, and that is the point.
+    #
+    # (2) SteelDark's VALUE, and it is DERIVED, not tuned. The family is a
+    #     three-step value ladder and it was lopsided: SteelLight sat 1.909 /
+    #     1.862 / 1.793 above Steel per linear channel while Steel sat 3.711 /
+    #     3.530 / 3.342 above SteelDark. 666D75 is the value that makes the
+    #     lower step equal the upper one - Steel^2 / SteelLight per channel,
+    #     giving 1.912 / 1.852 / 1.791 - so the ladder is geometric and the
+    #     number comes from the other two rows rather than from a render.
+    #     NUMBERS.md's "derive one from the other" in its cheapest form. This
+    #     matters more than one row looks: SteelDark is 219 primitives across
+    #     24 shipped binaries and 41.6 per cent of the machine pool's vertices,
+    #     i.e. it IS the machine body. Steel and SteelLight are NOT moved, on
+    #     purpose: Steel's linear 0.2542 is already at parity with the biome
+    #     albedo near 0.25 in the same frame, so there is nothing wrong with it
+    #     and "the palette is dark" is false of it.
+    #
+    # WHAT THE PAIR DOES TO THE FRAME, and the shape is the assertion rather
+    # than the size (RN-1202). Machine box, game-lit, sun pinned at dot 0.45:
+    # p05 1.30 -> 5.89 (+353%), p25 3.19 -> 11.07 (+247%), p50 12.44 -> 15.11
+    # (+21%), p90 31.24 -> 32.22 (+3.1%), p99 81.49 -> 82.98 (+1.8%), max
+    # 173.48 -> 173.48 UNCHANGED TO THE DIGIT. A gain multiplies every
+    # percentile by one ratio; this multiplies the dark quarter by 3.5 and the
+    # bright tail by 1.02, which is a fill's signature and is what "the
+    # shadowed faces are too dark" asks for and what "do not blow the
+    # highlights" requires. A single constant cannot do it.
+    #
+    # ROUGHNESS IS DELIBERATELY NOT TOUCHED, and it is owed. 0.35 x the panel
+    # ORM's green (0.2235 at its glossiest) is an effective 0.078, which is a
+    # mirror; on a dielectric that is a small bright spec rather than chrome,
+    # so it is survivable, but it has not been argued and one lever at a time
+    # is what makes the two above readable.
+    "Steel":        ("8A9199", 0.20, 0.45, 1.0, None),
+    "SteelDark":    ("666D75", 0.20, 0.55, 1.0, None),
+    "SteelLight":   ("B9C0C7", 0.18, 0.35, 1.0, None),
     "Accent":       ("FF8A1E", 0.00, 0.50, 1.0, None),
     "Hazard":       ("F2C531", 0.00, 0.60, 1.0, None),
     "Rubber":       ("23262B", 0.00, 0.85, 1.0, None),
