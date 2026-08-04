@@ -32,13 +32,46 @@
 // --evalargs={"expect":"sandbox"|"survival"}
 (async () => {
   const of = window.__of;
-  if (!of) return { valid: false, why: 'no __of' };
+  if (!of) throw new Error('probe: no __of on the page');
   const sleep = (n) => of.run(n);
   const fails = [];
   const log = [];
   const check = (name, ok, detail) => {
     log.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail === undefined ? '' : `  [${detail}]`}`);
     if (!ok) fails.push(`${name} :: ${detail}`);
+  };
+  // GP-609. A FAILED CHECK NOW THROWS, BECAUSE `smoke: PASS` DOES NOT MEAN THE
+  // CHECKS HELD. Measured directly against `run.mjs`: a probe returning
+  // `fails: ['DELIBERATE FAILURE']` exits **0** and prints `smoke: PASS`, and
+  // so does one returning `valid: false`. The runner's exit code is a function
+  // of console errors and failed requests ONLY. So every probe on this project
+  // that reports through a `fails` array has been relying on a human reading
+  // the JSON, and a suite whose green is unconditional is a suite that cannot
+  // go red.
+  //
+  // A THROW is the one thing that does reach the exit code: it rejects
+  // `page.evaluate`, and the runner already treats that as a FAILURE with a
+  // non-zero exit (its own PRELUDE comment says so about `mustNum`). Verified
+  // both ways before adopting it: throwing gives exit 1 with the failing names
+  // printed, and the same shape with nothing failing still gives exit 0.
+  //
+  // `run.mjs` itself is NOT changed here. It is build-tooling's file, another
+  // lane has uncommitted work in it, and flipping its exit semantics would turn
+  // every currently-green run in the repo red at once. That is Admin's call,
+  // and it is raised rather than taken.
+  // GP-609. AN EARLY BAIL-OUT THROWS TOO. `valid:false` exits 0 (measured), so a
+  // probe that gives up half way through, having explicitly recorded that it
+  // measured nothing, was reporting `smoke: PASS` for a run that tested nothing.
+  // That is the exact failure this retrofit exists to remove, and returning a
+  // flag instead of throwing would have left it in place at the one point where
+  // the probe already KNOWS it has failed.
+  const bail = (why) => { throw new Error(`probe: ABANDONED, ${why}`); };
+  const finish = (out) => {
+    if (fails.length > 0) {
+      throw new Error(`probe: ${fails.length} of ${log.length} checks failed:\n  `
+        + fails.join('\n  '));
+    }
+    return { ...out, valid: true, log };
   };
   const txt = (el) => (el === null || el === undefined ? null
     : (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim());
@@ -62,7 +95,7 @@
   check('the world is in the mode this run was asked for',
         sandbox === (expect === 'sandbox'), `expect=${expect} sandbox=${sandbox}`);
   if (sandbox !== (expect === 'sandbox')) {
-    return { ...out, valid: false, why: 'wrong mode; nothing below was measured' };
+    return bail('wrong mode; nothing below this line was measured');
   }
 
   // ---- 1. THE BUILD MENU -------------------------------------------------
@@ -241,6 +274,5 @@
           /^research Launch Facilities/i.test(padHint), padHint);
   }
 
-  out.valid = true;
-  return out;
+  return finish(out);
 })()
