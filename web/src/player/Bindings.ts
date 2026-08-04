@@ -17,6 +17,10 @@ export type Action =
   | 'jump' | 'sprint'
   | 'use' | 'interact' | 'cancel'
   | 'pack' | 'level' | 'demolish' | 'view' | 'lamp'
+  // GP-605. THE RIGHT-CLICK THAT USED TO DEMOLISH. It is an action of its own
+  // rather than an absence, so the press stays observable and can be answered
+  // with the key that does work. See `demolish` in the table below.
+  | 'demolishAsk'
   | 'rotate' | 'freeSnap' | 'mute' | 'goals' | 'assembly' | 'build'
   // W11 PROGRESSION SCREENS. Three panels, three verbs, no raw codes anywhere
   // downstream (H-5). They landed as literal 'KeyJ'/'KeyU'/'KeyK' inside
@@ -83,12 +87,36 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   cancel: ['Escape'],
   pack: ['Tab'],
   level: ['KeyQ'],
-  // RIGHT CLICK is the genre's demolish and X is kept because it was already
-  // documented. Neither belongs on the hotbar: levelling and removing apply to
-  // whatever is under the crosshair whatever is in hand, so putting them in
-  // slots would cost two of nine and force a swap-and-swap-back for a two
-  // second action, exactly when the player is mid-way through laying a base.
-  demolish: ['KeyX', 'Mouse2'],
+  // GP-605. RIGHT CLICK NO LONGER DEMOLISHES ON FOOT, and X is unchanged.
+  //
+  // It was `['KeyX', 'Mouse2']`, and the QOL sweep's sentence for it is the
+  // whole argument: **a right-click reflex destroys a building**, with no
+  // confirmation, in the one button a player presses without deciding to. Right
+  // click is aim, cancel or inspect in almost every 3D game there is, so the
+  // press that arrives by muscle memory was wired to the one irreversible verb
+  // on the crosshair.
+  //
+  // WHY THE VAB AND THE HOTBAR KEEP THEIRS. Both cite "demolish is already
+  // Mouse2 on foot" in their own comments (`VabAim.vabRightClick`,
+  // `HotbarBar`'s contextmenu handler), so unbinding it here could read as
+  // orphaning them. It does not, and the distinction is worth naming: those two
+  // gestures act on things that cost NOTHING to undo (a VAB part returns to the
+  // catalogue, a hotbar slot is a preference). This one acts on WORLD STATE
+  // that took materials and placement to make. Right click removing a
+  // preference and right click removing a building are not the same gesture
+  // because they share a button.
+  //
+  // The press is NOT swallowed. `demolishAsk` below keeps Mouse2 observable so
+  // the reflex is ANSWERED with the key to press, rather than becoming a dead
+  // button that teaches nothing. A silently ignored control is the other half
+  // of this defect, not the cure for it.
+  //
+  // Neither belongs on the hotbar: levelling and removing apply to whatever is
+  // under the crosshair whatever is in hand, so putting them in slots would
+  // cost two of nine and force a swap-and-swap-back for a two second action,
+  // exactly when the player is mid-way through laying a base.
+  demolish: ['KeyX'],
+  demolishAsk: ['Mouse2'],
   view: ['KeyV'],
   lamp: ['KeyL'],
   rotate: ['KeyR'],

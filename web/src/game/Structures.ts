@@ -21,6 +21,7 @@
 // `automation.h`'s entity arrays. See gameplay.h §S.6 and GP-21.
 
 import * as THREE from 'three';
+import { costText } from './CostText.js';
 import { BURY_TOLERANCE_FALLBACK_M, CANTILEVER_STOREYS, FLOAT_TOLERANCE_M }
   from './StructureTolerance.js';
 import { readSockets, type SocketDef } from './StructureSnap.js';
@@ -204,13 +205,14 @@ export class Structures {
   }
 
   /** The cost as a sentence, so a refusal can say exactly what is missing.
-   *  In sandbox there is no cost, and the ghost says so rather than quoting a
-   *  price nothing will be charged: a HUD that lies is worse than a quiet one. */
+   *  GP-600: in sandbox it still QUOTES THE PRICE and says who is paying it,
+   *  rather than deleting the number. `CostText.costText` is the one authority
+   *  for the wording and its header has the argument. */
   costText(kind: StructureKind): string {
     const d = this.defFor(kind);
     if (d === null) return '';
-    if (this.mode.freeBuild) return 'free  (sandbox)';
-    return d.cost.map((c) => `${c.count} ${this.core.itemName(c.item)}`).join(' + ');
+    return costText(d.cost.map((c) => (
+      { count: c.count, name: this.core.itemName(c.item) })), this.mode.freeBuild);
   }
 
   canAfford(kind: StructureKind): boolean {

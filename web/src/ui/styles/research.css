@@ -206,6 +206,12 @@
 #of-research .cost i { font-style: normal; }
 #of-research .cost i.ok { color: var(--of-good); }
 #of-research .cost i.no { color: var(--of-bad); }
+/* GP-600: the sandbox-is-paying state. See --of-free in game.css. */
+#of-research .cost i.free {
+  color: var(--of-free);
+  text-decoration: underline dashed 1px;
+  text-underline-offset: 3px;
+}
 
 #of-research .gives {
   margin-top: 5px;

@@ -105,3 +105,9 @@
 .of-btile .ing i { font-style: normal; margin-right: 5px; }
 .of-btile .ing i.ok { color: var(--of-good); }
 .of-btile .ing i.no { color: var(--of-bad); }
+/* GP-600: the sandbox-is-paying state. See --of-free in game.css. */
+.of-btile .ing i.free {
+  color: var(--of-free);
+  text-decoration: underline dashed 1px;
+  text-underline-offset: 2px;
+}

@@ -36,6 +36,7 @@ import { BuildMode } from './BuildMode.js';
 import { Hotbar } from './Hotbar.js';
 import { ModeRules, sandboxCombatFromUrl, type GameMode } from './GameMode.js';
 import { GameplayInput } from './GameplayInput.js';
+import { labelOf } from '../player/Bindings.js';
 import { Structures, type StructurePart } from './Structures.js';
 import { StructureView } from './StructureView.js';
 import { LaunchPads, type PadPart } from './LaunchPad.js';
@@ -272,7 +273,33 @@ export class Gameplay {
     this.modals.register({
       modalName: 'hand',
       get isOpen(): boolean { return hotbar.partInHand !== null; },
-      requestClose: () => { hotbar.clearHand(); },
+      // GP-604. IT SAYS WHAT IT PUT DOWN.
+      //
+      // Measured in the QOL sweep (GP-557): with a foundation in hand the FIRST
+      // Escape returned the hand to `hands` with the menu still shut and the
+      // SECOND opened the menu, and NEITHER press drew a single character. The
+      // modal stack is behaving exactly as GP-100 designed it and the design is
+      // right; what was missing is that a destructive, invisible action was
+      // also a SILENT one, so the commonest reason to press Escape mid-build
+      // (reach the menu) cost the player their pick with no explanation and no
+      // hint that a second press was now needed.
+      //
+      // THE LABEL IS READ BEFORE THE HAND IS CLEARED, which is the only order
+      // that works: `hotbar.label` is derived from what is held, so reading it
+      // after `clearHand()` reports `hands` every time. That is the same class
+      // as GP-557's own harness bug and it is worth the comment, because the
+      // wrong order still compiles, still runs, and still prints a sentence.
+      //
+      // GP-25 IS NOT WEAKENED. Escape still empties the hand on the first press
+      // and still opens the menu on the second; the derivation is untouched.
+      // Only the silence goes.
+      requestClose: () => {
+        const what = hotbar.label;
+        if (hotbar.clearHand()) {
+          this.hud.flash(`put the ${what} down  (${labelOf('cancel')} again `
+            + 'for the menu)', 1.8);
+        }
+      },
     });
     this.ambience = new Ambience(d.core, d.bodyHandle);
     // The factory ticks on the SIM clock, like everything else that is a rule.
@@ -480,6 +507,31 @@ export class Gameplay {
     const [ky, kp] = this.fx.kick.step(this.d.player.view.pitch);
     if (kp !== 0 || ky !== 0) this.d.player.look(ky, kp);
     return got;
+  }
+
+  /**
+   * GP-605. IS THERE ANYTHING UNDER THE CROSSHAIR THAT `demolish` WOULD TAKE?
+   *
+   * DERIVED FROM THE SAME FOUR FIELDS `demolish` PASSES TO `raze`, and that is
+   * the point of it existing at all rather than the caller testing them: two
+   * lists of "what counts as a demolish target" would agree today and disagree
+   * the first time a fifth buildable kind arrives, and the failure mode is a
+   * right click that says "press X to remove the pad" about a thing X will not
+   * remove. One list, both readers.
+   */
+  get hasDemolishTarget(): boolean {
+    return this.aimedMachine !== null || this.aimedBuild !== null
+      || this.aimedPart !== null || this.aimedPad !== null;
+  }
+
+  /** What that thing is CALLED, for the sentence. '' when there is none. */
+  get demolishTargetName(): string {
+    if (this.aimedMachine !== null) {
+      return this.aimedMachine.tier === 1 ? 'smelter' : 'furnace';
+    }
+    if (this.aimedBuild !== null) return this.aimedBuild.kind;
+    if (this.aimedPart !== null) return this.aimedPart.kind;
+    return this.aimedPad !== null ? 'launch pad' : '';
   }
 
   /** Remove whatever the crosshair is on. Returns true if something went. */

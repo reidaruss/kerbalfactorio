@@ -159,7 +159,10 @@ export class ProgressUi {
   }
 
   researchViewNow(): ResearchView {
-    return researchView(this.research, this.d.game, this.d.icon);
+    // GP-600: the mode reaches the research SCREEN at last. `d.mode` has been
+    // on this object the whole time and only `wear` asked it; the panel drew a
+    // survival tree in sandbox because nobody passed it down.
+    return researchView(this.research, this.d.game, this.d.icon, this.d.mode);
   }
   powerViewNow(): PowerView {
     return powerView(this.power, this.d.offGrid(), this.d.offGridGenerators());

@@ -125,6 +125,33 @@ function holdPhrase(g: Gameplay, part: string): string {
     : `open the build menu (${labelOf('build')})`;
 }
 
+/**
+ * GP-602. A STEP THE MODE HAS ALREADY SATISFIED SAYS SO, RATHER THAN
+ * INSTRUCTING THE PLAYER TO DO IT.
+ *
+ * The pad hint read `research Launch Facilities (J), then press 0 ...` in
+ * SANDBOX, where `ModeRules.researchGated` is false, the tech gates nothing,
+ * and the build menu two keys away was already offering the pad for free. So
+ * the very first sentence a sandbox player read about the launch pad sent them
+ * to a screen that could not help them, to buy a thing they already had.
+ *
+ * This is GP-165's argument one level up. GP-165 made every KEY in a hint
+ * derived so a remap could not leave a wrong control on screen. A gate is the
+ * same kind of fact: it is true in one mode and false in another, and a hint
+ * that hard-codes it is a wrong instruction in exactly the mode Reid plays.
+ * So the prerequisite CLAUSE is derived from the mode too, and a future row
+ * that names a gate gets it right by calling this rather than by remembering.
+ *
+ * It does NOT delete the tech's name in sandbox, deliberately. Reid uses
+ * sandbox to test the real game, so the sentence still tells him what survival
+ * would ask for; it just stops telling him to go and do it.
+ */
+function gateClause(g: Gameplay, tech: string): string {
+  return g.mode.researchGated
+    ? `research ${tech} (${labelOf('research')}), then `
+    : `${tech} is not needed in sandbox, so `;
+}
+
 /** The furnace's own slot, same derivation (it is a `furnace` kind, not a part). */
 function furnaceHold(g: Gameplay): string {
   const i = g.hotbar.slots.findIndex((s) => s.kind === 'furnace');
@@ -222,7 +249,7 @@ export const OBJECTIVES: Objective[] = [
   // where the pad goes.
   {
     id: 'pad', text: 'Build a launch pad on a 6 x 6 foundation platform',
-    hint: (g) => `research Launch Facilities (${labelOf('research')}), then `
+    hint: (g) => `${gateClause(g, 'Launch Facilities')}`
       + `${holdPhrase(g, 'launchpad')} to put one in your hand`,
     done: (g) => g.pads.list.length >= 1,
   },

@@ -59,6 +59,12 @@ export const ACTION_TEXT: Record<Action, Desc> = {
   use: { group: 'Hands and building', label: 'Use what is in your hand' },
   interact: { group: 'Hands and building', label: 'Interact (open, take, work a door)' },
   demolish: { group: 'Hands and building', label: 'Remove what you are aiming at' },
+  // GP-605. LISTED, because this screen's whole claim is that it shows every
+  // control the game listens to, and Mouse2 is still listened to: it now says
+  // which key removes instead of removing. A control that exists to correct a
+  // reflex has to be findable by the player having the reflex.
+  demolishAsk: { group: 'Hands and building',
+    label: 'Right click: says which key removes (it no longer removes)' },
   rotate: { group: 'Hands and building', label: 'Turn the part in hand' },
   freeSnap: { group: 'Hands and building', label: 'Free placement (ignore the grid)' },
   level: { group: 'Hands and building', label: 'Level the ground' },

@@ -38,6 +38,8 @@ export class GameplayInput {
   private use = false;
   private interact = false;
   private raze = false;
+  /** GP-605: the retired right-click, so its reflex is answered once. */
+  private razeAsk = false;
   private mute = false;
   private goals = false;
   private readonly slots = new Set<Action>();
@@ -142,6 +144,26 @@ export class GameplayInput {
     const razePressed = raze && !this.raze;
     this.raze = raze;
     if (razePressed && g.demolish()) return true;
+
+    // GP-605. THE RETIRED RIGHT CLICK ANSWERS INSTEAD OF DOING NOTHING.
+    //
+    // Mouse2 stopped demolishing because a reflex press was destroying
+    // buildings. Leaving it unbound would swap one defect for another: a
+    // control that silently does nothing is exactly the class the QOL sweep
+    // spent its night on, and a player whose muscle memory says "right click
+    // removes it" would conclude the removal was broken rather than moved.
+    //
+    // It only speaks when there IS something under the crosshair to remove, so
+    // right-clicking at the sky is still silent, which is right: the sentence
+    // is an answer to an attempt, not a nag.
+    const askRaze = act('demolishAsk');
+    const askPressed = askRaze && !this.razeAsk;
+    this.razeAsk = askRaze;
+    if (askPressed && g.hasDemolishTarget) {
+      g.hud.flash(`right click no longer removes things: press `
+        + `${labelOf('demolish')} to remove the ${g.demolishTargetName}`, 2.4);
+      return true;
+    }
 
     // --- E: interact, and never harvest -------------------------------------
     const interactPressed = f.interact && !this.interact;

@@ -40,6 +40,7 @@
 // at all and is therefore free. So there is no fourth naming authority to go
 // stale, which is the mistake this project has paid for five times.
 
+import { costText } from './CostText.js';
 import { GATED_BY_ITEM, TYPE_ID } from './FactoryKinds.js';
 import { STRUCTURE_KINDS, type StructureKind } from './StructureGrid.js';
 import { PART_INFO, type PartKind, type SlotContent } from './Hotbar.js';
@@ -152,7 +153,12 @@ function machineRow(g: Gameplay, kind: string, inHand: boolean): BuildRow {
     // FREE, and it says so rather than showing an empty price. The placement
     // path really does charge nothing (GP-110): the crafted item in the pack is
     // a research-gate token today and is never consumed.
-    cost: r === null ? 'free' : priceText(g, r),
+    //
+    // GP-600: this bare `free` and `priceText`'s sandbox form used to be two
+    // different words for free on adjacent tiles in one menu. They now differ
+    // ON PURPOSE and the difference is the fact: `free` means free in EVERY
+    // mode, `free  (sandbox pays ...)` means survival charges and you are not.
+    cost: r === null ? costText([], g.mode.freeBuild) : priceText(g, r),
     needs: r === null ? [] : r.needs,
     affordable: true,
     lockedBy: lockOf(g, item), inHand,
@@ -176,7 +182,7 @@ function handRow(g: Gameplay, tier: number, holdingAny: boolean): BuildRow {
     label: tier === 0 ? 'hand furnace' : 'hand smelter',
     icon: g.icons.for(name), group: 'Production',
     cost: have > 0 ? `1 ${name} (already made)`
-      : r === null ? 'free' : priceText(g, r),
+      : r === null ? costText([], g.mode.freeBuild) : priceText(g, r),
     needs: have > 0 ? [{ item, name, have, need: 1 }] : r?.needs ?? [],
     affordable: g.mode.freeBuild || have > 0 || (r?.affordable ?? false),
     lockedBy: lockOf(g, item),
@@ -212,8 +218,8 @@ export function recipeIndexFor(g: Gameplay, item: number): number {
 }
 
 function priceText(g: Gameplay, r: Priced): string {
-  if (g.mode.freeBuild) return 'free  (sandbox)';
-  return r.needs.map((n) => `${n.need} ${n.name}`).join(' + ');
+  return costText(r.needs.map((n) => ({ count: n.need, name: n.name })),
+                  g.mode.freeBuild);
 }
 
 function ingredient(g: Gameplay, item: number, need: number) {

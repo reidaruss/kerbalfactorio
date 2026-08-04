@@ -16,7 +16,7 @@
 // rebuilds only when that key moves. A closed panel returns before it builds one.
 
 import './styles/research.css';
-import { esc, iconTag } from './GameHud.js';
+import { costClass, esc, iconTag } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
 
 /** One line of a tech's price. `icon` is a baked data URL (ItemIcons) or ''. */
@@ -51,6 +51,22 @@ export interface ResearchView {
   /** How many techs are unlocked out of how many exist, for the header. */
   done: number;
   total: number;
+  /**
+   * GP-600. DOES THIS TREE GATE ANYTHING? `ModeRules.researchGated`, and it is
+   * false in sandbox.
+   *
+   * This is the field that stops the screen lying. Every number on it was TRUE
+   * in sandbox and the SCREEN was false, which is the harder kind: `0 / 7
+   * unlocked` beside seven greyed cards reads as "you have almost nothing and
+   * this is what is stopping you", in a mode where the tree stops nothing at
+   * all and every machine, recipe and part it names is already buildable.
+   *
+   * It does NOT make research free. Spending science through `of_rs_try` is
+   * real in both modes, so the cards keep their true costs and their true
+   * refusals; what changes is that the screen says once, at the top, that none
+   * of it is in the player's way.
+   */
+  gated: boolean;
 }
 
 export interface ResearchPanelHooks { onResearch: (techId: number) => void }
@@ -109,7 +125,19 @@ export class ResearchPanel extends Modal {
     this.head.innerHTML = header(view);
     this.tree.innerHTML = view.techs.length === 0
       ? '<div class="none">No technologies defined.</div>'
-      : columns(view.techs);
+      : columns(view.techs, view.gated);
+    const hint = this.root.querySelector('.hint');
+    if (hint !== null) {
+      hint.innerHTML = view.gated
+        ? 'Escape closes. A tech turns gold the moment its science is in '
+          + 'the pack.'
+        // GP-600. THE SENTENCE THAT MAKES THE REST OF THE SCREEN HONEST.
+        : 'Escape closes. <b>Sandbox: this tree gates nothing.</b> Every '
+          + 'machine, recipe and part it lists is already yours to build and '
+          + 'craft, so researching here is optional and is only for seeing how '
+          + 'the survival tree behaves. Science still has to be in the pack to '
+          + 'press a button, and in sandbox you can craft it for nothing.';
+    }
   }
 
   /** Force the next render to rebuild, e.g. right after a successful research
@@ -135,27 +163,41 @@ export class ResearchPanel extends Modal {
  * stale-label bug the day somebody swaps trees mid-session.
  */
 function keyOf(view: ResearchView): string {
-  return `${view.done}/${view.total}|`
+  return `${view.done}/${view.total}|${view.gated ? 1 : 0}|`
     + view.science.map((s) => `${s.item}:${s.count}`).join(',') + '|'
     + view.techs.map((t) => `${t.id}:${t.tier}:${t.state}:${t.name}:${t.reason}:`
       + t.cost.map((c) => `${c.item}=${c.have}/${c.need}`).join('+') + ':'
       + t.unlocks.join('/')).join(';');
 }
 
-/** `Research 2 / 6 unlocked` plus the science the player is holding. */
+/**
+ * `Research 2 / 6 researched` plus the science the player is holding.
+ *
+ * GP-600 changed one word and it is the load-bearing one. `2 / 6 unlocked` is a
+ * claim about what the PLAYER MAY USE, and in sandbox that number is 6 of 6
+ * while this line said 0. `researched` is a claim about what they have SPENT
+ * SCIENCE ON, which is true in both modes and is what the counter has always
+ * actually counted. The sandbox row underneath then states the availability
+ * separately, because they are two different facts and one number cannot be
+ * both.
+ */
 function header(view: ResearchView): string {
   const chips = view.science.length === 0
     ? '<span class="none">no science held yet</span>'
     : view.science.map((s) => `<span class="sci" data-sci="${s.item}">`
       + `${iconTag(s.icon, 'ico-sm')}${esc(s.name)} <b>${s.count}</b></span>`)
       .join('');
+  const avail = view.gated ? ''
+    : `<span class="sbx" data-avail="${view.total}">sandbox: all `
+      + `${view.total} available already</span>`;
   return `<h3>Research <span class="prog" data-done="${view.done}" `
-    + `data-total="${view.total}">${view.done} / ${view.total} unlocked</span></h3>`
+    + `data-total="${view.total}" data-gated="${view.gated ? 1 : 0}">`
+    + `${view.done} / ${view.total} researched</span>${avail}</h3>`
     + `<div class="held">${chips}</div>`;
 }
 
 /** One column per distinct tier, ascending; cards inside a column sort by id. */
-function columns(techs: readonly TechRow[]): string {
+function columns(techs: readonly TechRow[], gated: boolean): string {
   const names = new Map<number, string>();
   for (const t of techs) names.set(t.id, t.name);
   const tiers = [...new Set(techs.map((t) => t.tier))].sort((a, b) => a - b);
@@ -164,11 +206,11 @@ function columns(techs: readonly TechRow[]): string {
       .sort((a, b) => a.id - b.id);
     return `<div class="col" data-tier="${tier}">`
       + `<h4>Tier ${tier}<span>${rows.length}</span></h4>`
-      + rows.map((t) => card(t, names)).join('') + '</div>';
+      + rows.map((t) => card(t, names, gated)).join('') + '</div>';
   }).join('');
 }
 
-function card(t: TechRow, names: Map<number, string>): string {
+function card(t: TechRow, names: Map<number, string>, gated: boolean): string {
   // An unlocked tech gets a tick and NO button: a dead "Research" on something
   // already researched reads as a fault the player then goes hunting for.
   const act = t.state === 'unlocked'
@@ -177,7 +219,11 @@ function card(t: TechRow, names: Map<number, string>): string {
       + `${t.state === 'available' ? '' : ' disabled'}>Research</button>`;
   const needs = t.prereqs.map((p) => '<i class="need">needs '
     + esc(names.get(p) ?? `#${p}`) + '</i>').join('');
-  const cost = t.cost.map((c) => `<i class="${c.have >= c.need ? 'ok' : 'no'}">`
+  // GP-600: `free` rather than `no` in sandbox. Science really does have to be
+  // in the pack to press the button, so this is NOT saying the cost is waived;
+  // it is saying the cost is not standing between the player and the content,
+  // because the content is already theirs. The number is unchanged either way.
+  const cost = t.cost.map((c) => `<i class="${costClass(c.have, c.need, !gated)}">`
     + `${iconTag(c.icon, 'ico-sm')}${esc(c.name)} ${c.have}/${c.need}</i>`)
     .join(' &nbsp;+&nbsp; ');
   return `<div class="tech ${cls(t.state)}" data-tech="${t.id}" `
@@ -186,7 +232,8 @@ function card(t: TechRow, names: Map<number, string>): string {
     + (needs === '' ? '' : `<div class="needs">${needs}</div>`)
     + (cost === '' ? '' : `<div class="cost">${cost}</div>`)
     + (t.unlocks.length === 0 ? ''
-      : `<div class="gives">unlocks: ${esc(t.unlocks.join(', '))}</div>`)
+      : `<div class="gives">${gated ? 'unlocks' : 'already available'}: `
+        + `${esc(t.unlocks.join(', '))}</div>`)
     + (t.reason === '' ? '' : `<div class="why">${esc(t.reason)}</div>`)
     + '</div>';
 }

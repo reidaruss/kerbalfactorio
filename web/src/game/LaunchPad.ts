@@ -40,6 +40,7 @@
 // or 1.90: change the Blender build and this follows.
 
 import * as THREE from 'three';
+import { costText } from './CostText.js';
 import { orient } from './Grid.js';
 import { PAD_FALLBACK, PAD_KIND, clampProxies, measurePad,
   padKey, padProxies, type PadModule } from './LaunchPadModule.js';
@@ -137,11 +138,12 @@ export class LaunchPads {
     return Math.max(1, Math.round(this.module.spanM / cellM));
   }
 
+  /** GP-600: sandbox quotes the survival price and names who is paying it,
+   *  rather than deleting the number Reid opened sandbox to read. */
   costText(): string {
     if (this.def === null) return '';
-    if (this.mode.freeBuild) return 'free  (sandbox)';
-    return this.def.cost.map((c) => `${c.count} ${this.core.itemName(c.item)}`)
-      .join(' + ');
+    return costText(this.def.cost.map((c) => (
+      { count: c.count, name: this.core.itemName(c.item) })), this.mode.freeBuild);
   }
 
   canAfford(): boolean {

@@ -30,7 +30,7 @@
 // already own it and hands over strings and booleans.
 
 import './styles/build.css';
-import { esc, iconTag } from './GameHud.js';
+import { costClass, esc, iconTag } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
 
 /** One buildable, as data. Mirrors `game/Buildables.BuildRow`. */
@@ -50,7 +50,8 @@ export interface BuildMenuView {
   rows: BuildMenuRow[];
   /** What is in hand right now, for the footer. '' when nothing is. */
   holding: string;
-  /** True in sandbox, so the footer can say why everything is lit. */
+  /** True in sandbox, so the footer can say why everything is lit AND so the
+   *  price chips stop drawing a shortfall as a refusal (GP-600). */
   free: boolean;
 }
 
@@ -104,7 +105,8 @@ export class BuildMenu extends Modal {
     for (const r of view.rows) if (!groups.includes(r.group)) groups.push(r.group);
     this.body.innerHTML = groups.map((gname) => `<div class="grp">`
       + `<h4>${esc(gname)}</h4><div class="tiles">`
-      + view.rows.filter((r) => r.group === gname).map(tile).join('')
+      + view.rows.filter((r) => r.group === gname)
+        .map((r) => tile(r, view.free)).join('')
       + '</div></div>').join('');
     const foot = this.root.querySelector('.foot');
     if (foot !== null) {
@@ -113,8 +115,15 @@ export class BuildMenu extends Modal {
     const hint = this.root.querySelector('.hint');
     if (hint !== null) {
       hint.innerHTML = view.free
-        ? 'Sandbox: everything is free and nothing is locked. '
-          + 'Click one to hold it, <b>Escape</b> to put it down.'
+        // GP-600. THE SENTENCE NAMES WHAT THE NUMBERS ARE FOR. The prices below
+        // it are real and are what SURVIVAL would charge; saying "everything is
+        // free" and then printing `Stone 0/40` in red beside it was the single
+        // worst contradiction the QOL sweep found. Now the note explains the
+        // numbers instead of denying them.
+        ? 'Sandbox: nothing is locked and sandbox pays for everything. '
+          + 'The prices below are what <b>survival</b> would charge, so you can '
+          + 'still see the real cost. Click one to hold it, '
+          + '<b>Escape</b> to put it down.'
         : 'Click one to hold it and the ghost shows where it will go. '
           + '<b>Escape</b> closes this, and again puts it down. '
           + 'Greyed out means you are short of materials; you can still pick '
@@ -130,13 +139,16 @@ export class BuildMenu extends Modal {
   }
 }
 
-function tile(r: BuildMenuRow): string {
+function tile(r: BuildMenuRow, free: boolean): string {
   const locked = r.lockedBy !== '';
+  // GP-600: `short` is a REFUSAL class (it dims the tile), and in sandbox no
+  // tile refuses. `free` is passed down rather than read off the row because
+  // the mode is a property of the SCREEN, not of any one buildable.
   const cls = `of-btile${locked ? ' locked' : r.affordable ? ' can' : ' short'}`
     + `${r.inHand ? ' held' : ''}`;
   const art = r.icon !== '' ? iconTag(r.icon, 'ico')
     : `<span class="tx">${esc(r.label)}</span>`;
-  const needs = r.needs.map((n) => `<i class="${n.have >= n.need ? 'ok' : 'no'}">`
+  const needs = r.needs.map((n) => `<i class="${costClass(n.have, n.need, free)}">`
     + `${esc(n.name)} ${n.have}/${n.need}</i>`).join(' ');
   return `<div class="${cls}" data-build="${esc(r.id)}" `
     + `data-afford="${r.affordable ? 1 : 0}" data-locked="${esc(r.lockedBy)}">`

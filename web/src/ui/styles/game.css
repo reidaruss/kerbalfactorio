@@ -12,6 +12,14 @@
   --of-accent: #ff9a3c;
   --of-good: #7ddc7d;
   --of-bad: #ff6b5a;
+  /* GP-600. THE SANDBOX-IS-PAYING COLOUR, and it is deliberately neither
+     --of-good nor --of-bad. A shortfall sandbox covers is not a refusal (red
+     would be a lie: the button works) and it is not a satisfied cost either
+     (green would erase the one thing Reid uses sandbox to see, which is what
+     survival would have charged). It is the dim ink with a dashed underline:
+     legible as a price, mute as a verdict. `costClass` in GameHud.ts is the one
+     place that chooses it. */
+  --of-free: #9fb0be;
 }
 
 .of-ui {
@@ -253,6 +261,11 @@
 .of-recipe .ing i { font-style: normal; }
 .of-recipe .ing i.ok { color: var(--of-good); }
 .of-recipe .ing i.no { color: var(--of-bad); }
+.of-recipe .ing i.free {
+  color: var(--of-free);
+  text-decoration: underline dashed 1px;
+  text-underline-offset: 3px;
+}
 .of-recipe button {
   padding: 4px 14px;
   font: inherit;

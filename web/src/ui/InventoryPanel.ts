@@ -10,7 +10,7 @@
 // and the character controller is how you get a cursor that is visible over a
 // camera that is still turning.
 
-import { esc, iconTag } from './GameHud.js';
+import { costClass, esc, iconTag } from './GameHud.js';
 import { Modal, type ModalStack } from './ModalStack.js';
 import { SURVIVAL, type GameMode, type ModeRules } from '../game/GameMode.js';
 
@@ -89,7 +89,18 @@ export class InventoryPanel extends Modal {
       + 'and a placeable item here goes on the selected slot.</div>'
       + modeRow(this.mode) + '</div>'
       + '<div class="col craft"><h3>Hand crafting<span></span></h3><div class="list"></div>'
-      + '<div class="hint">Tools are not required to harvest: they multiply the '
+      // GP-600. THE SANDBOX SENTENCE IS HERE AND NOT IN THE ROWS. In sandbox
+      // `GameplayActions.craft` GRANTS the output and spends nothing, so every
+      // red `Iron 0/5` this column drew beside a live orange Craft button was a
+      // refusal about a button that does not refuse. The numbers stay (they are
+      // the survival recipe, which is what sandbox is for looking at) and the
+      // column says once, at the foot, who is paying.
+      + '<div class="hint">'
+      + (this.mode.freeBuild
+        ? 'Sandbox: crafting is free and instant. The amounts below are what '
+          + '<b>survival</b> would spend, so you can still read the recipe.<br>'
+        : '')
+      + 'Tools are not required to harvest: they multiply the '
       + 'yield, so there is no bootstrap deadlock.</div></div>'
       + '</div>';
     parent.appendChild(this.root);
@@ -157,7 +168,8 @@ export class InventoryPanel extends Modal {
     if (craftKey === this.lastCraft) return;
     this.lastCraft = craftKey;
     this.craft.innerHTML = recipes.map((r) => {
-      const ing = r.inputs.map((i) => `<i class="${i.have >= i.need ? 'ok' : 'no'}">`
+      const ing = r.inputs.map((i) =>
+        `<i class="${costClass(i.have, i.need, this.mode.freeBuild)}">`
         + `${iconTag(i.icon, 'ico-sm')}${esc(i.name)} ${i.have}/${i.need}</i>`)
         .join(' &nbsp;+&nbsp; ');
       const n = r.outputCount > 1 ? ` x${r.outputCount}` : '';
