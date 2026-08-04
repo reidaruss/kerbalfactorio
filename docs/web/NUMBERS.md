@@ -1142,3 +1142,41 @@ This is a cousin of **when two steps share a workspace the second cannot tell yo
 whether the first happened**, and of **a guard whose verdict nothing acts on is
 not a guard**. The family is the same: **a step that can fail quietly, upstream
 of the thing you are reading.**
+
+### A probe that prints and never asserts passes forever
+
+A building survey ran **thirteen stages** and reported `smoke: PASS` every time.
+**Not one of the thirteen contained an assertion.** They gathered text, printed
+it, and exited zero. Thirteen green runs supporting **zero claims**.
+
+Worse, the gathering itself was wrong. `txt()` was `innerText || textContent`,
+and **`innerText` falls back to `textContent` on an unrendered element**, so a
+hidden prompt returned a **stale string naming the previous item** and the probe
+reported it as drawn. Jammed-together words were the only tell.
+
+**So every reading in that survey's reports is tainted, and the PASS beside them
+never meant anything.** The two failures compound: an instrument that reads the
+wrong thing, inside a harness with nothing to catch it.
+
+**A probe's exit status must depend on a claim.** If a stage only observes, say
+so in its own output and do not let it contribute a PASS. **A suite whose green
+is unconditional is a suite that cannot go red**, which is the same family as
+*a control that will not go red is a finding* and *a guard whose verdict nothing
+acts on is not a guard*.
+
+### A NUL byte makes git call your source file binary, and every diff since is unreadable
+
+`web/src/ui/GameHud.ts` contained a **literal NUL byte**. Git therefore treated
+it as binary, so **every diff of that file for months rendered as "Binary files
+differ"** rather than as lines.
+
+Nobody noticed, because a diff that shows nothing looks like a file that changed
+in a way you did not need to read.
+
+Found by `git diff --numstat` printing **`-` for both the added and removed
+columns**, which is git's own signal for "I am not counting lines here".
+
+**If a text file's diff has ever been unreadable, check for a control character
+before assuming the tooling is at fault.** And `--numstat`'s dashes are worth
+knowing as a tell: a file that never reports line counts is a file git has
+stopped reading as text.
