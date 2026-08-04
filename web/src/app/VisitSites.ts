@@ -69,7 +69,7 @@
 
 import { labelOf } from '../player/Bindings.js';
 import {
-  STATION_ALT_M, STATION_NAME, lastStationInstall,
+  STATION_ALT_M, STATION_NAME, lastStationInstall, stationBodyPosNow,
 } from '../game/SpaceStation.js';
 import type { CheatRow } from '../ui/PauseMenu.js';
 import type { FlightMode } from './FlightMode.js';
@@ -285,13 +285,21 @@ export function pressVisit(id: string, f: FlightMode | null, ports: VisitPorts,
 /**
  * GP-234. Put the player in the station's hub.
  *
- * THE DESTINATION IS THE INSTALL'S OWN `pos` AND NOTHING IS RECOMPUTED HERE.
+ * THE DESTINATION IS THE SOLID'S LIVE `pos` AND NOTHING IS RECOMPUTED HERE.
  * The station is nadir pointing and its local origin is both the hub centre and
- * the deck's top face (SpaceStation.ts), so `pos` IS the spot to stand on, and
+ * the deck's top face (SpaceStation.ts), so that IS the spot to stand on, and
  * `|pos|` is `deckR`. A second derivation, even the obvious `up * (R + alt)`,
  * would be a second authority on where the station is, and the day it disagreed
  * with the conic the player would arrive beside the floor rather than on it.
  * `probes/stationwalk.js` P2 is the assertion that keeps those two in step.
+ *
+ * PH-357: IT USED TO BE THE INSTALL REPORT'S `pos`, WHICH WAS A FACT ABOUT THE
+ * STATION FOR EXACTLY AS LONG AS THE STATION NEVER MOVED. Anchorage's record is
+ * stamped now, so it travels 1879.255 m/s and the boot position is 112 km stale
+ * one minute in: the player would have arrived in empty space and fallen 400 km
+ * while the install report went on being perfectly true about the install.
+ * `stationBodyPosNow()` reads the solid `CarrierMount` re-poses every tick,
+ * which is the object the feet are actually resolved against.
  *
  * NO DROP HEIGHT. The feet go exactly on the top face, so the walker's very
  * first tick has `gap <= 0` and lands (KinematicBody.step), rather than the
@@ -308,7 +316,9 @@ function pressStation(f: FlightMode | null, ports: VisitPorts): VisitOutcome {
   // kept because the compiler cannot know that and a thrown null here would be
   // a crash in a menu press.
   if (st === null) return { done: false, message: 'refused: no station' };
-  const [x, y, z] = st.pos;
+  // The live solid, falling back to the install pose only when there is no
+  // solid at all, which `stationBlocked` has already refused above.
+  const [x, y, z] = stationBodyPosNow() ?? st.pos;
   if (!ports.standAt(x, y, z)) {
     return { done: false, message: 'refused: there is no walker to move' };
   }

@@ -228,14 +228,18 @@ export class MapPlanner {
     //
     // `clockAt` returns the stored clock UNCHANGED while `stampedTick` is -1,
     // so an unstamped record's position does not advance while its published
-    // velocity does: Anchorage finite-differences to exactly 0 m of travel
-    // while reporting 1879.255 m/s off the same conic. The range below is
-    // therefore the range to where the target WAS. R92 is ruled and closed:
-    // the record is not to be quietly zeroed, because the armed autopilot
-    // rendezvous that works today aims at this same conic, and the real fix is
-    // sequenced behind core-engine's carrier term (R79, then PH-305).
+    // velocity does. Anchorage was exactly that until PH-357: 0 m of travel
+    // over 60,000 ticks while reporting 1879.255 m/s off the same conic, so
+    // the range below was the range to where the target had been at boot.
     //
-    // What this one boolean buys is that the discrepancy becomes ATTRIBUTABLE
+    // IT IS STAMPED NOW AND THIS BOOLEAN STAYS, because the condition it
+    // reports has not gone away. `stashVessels` drops `stampedTick` on every
+    // save (it is a reference into a loop clock that restarts at zero on every
+    // page load), so any rails record between a load and its first stamp is in
+    // the same state, and a station whose asset failed to arrive never reaches
+    // `installStation` at all.
+    //
+    // What this one boolean buys is that the discrepancy is ATTRIBUTABLE
     // rather than silent. An implausible magnitude is caught by anybody; a
     // plausible one is checked by nobody, and 1606.4 km is entirely plausible.
     const frozen = rec.stampedTick < 0;

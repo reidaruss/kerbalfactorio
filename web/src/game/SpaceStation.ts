@@ -32,15 +32,30 @@
 // ground-track coupling), so nothing dynamical couples to the omission; it is a
 // missing view out of the window and not a missing physics.
 //
-// AND THE RECORD IS NEVER STAMPED, WHICH IS WHAT MAKES THE FREEZE HONEST rather
-// than a second authority. `VesselRegistry.clockAt` returns `rec.clockS`
-// unchanged while `stampedTick` is -1, so an unstamped record never advances
-// along its conic: nothing asks, so it never moves (PH-65's rule taken to its
-// limit). The interior's frozen pose and `stateOf`'s derived position are
-// therefore THE SAME NUMBER BY CONSTRUCTION and cannot drift apart, which is
-// exactly the two-authority trap DW-26 exists to refuse. If a future lane wants
-// the station to actually travel, the thing to change is this sentence, and the
-// walker needs a carrier frame before that is possible.
+// THE PARAGRAPH THAT USED TO BE HERE SAID THE RECORD IS NEVER STAMPED, AND
+// ENDED "if a future lane wants the station to actually travel, the thing to
+// change is this sentence, and the walker needs a carrier frame before that is
+// possible." PH-357, 2026-08-03: the walker has a carrier frame now (CE-80 to
+// CE-86 bound the collision solid, both gravity volumes and the drawn hull to
+// one `poseAt`, with a rider drifting 1.7e-9 m over 600 ticks), so this is that
+// sentence being changed. `installStation` stamps the record.
+//
+// WHAT THE FREEZE BOUGHT, so it is clear what was given up: an unstamped record
+// never advances, so the interior's boot pose and `stateOf`'s derived position
+// were THE SAME NUMBER BY CONSTRUCTION and could not drift apart. That is now
+// held by construction of a different kind: both are derived from the ONE
+// `poseAt` the rider uses, so they are still one concept with two consumers
+// rather than two authorities (DW-26). What the freeze COST was the mission:
+// matching a fixed point means killing all 1879.255 m/s of orbital velocity
+// against a 2.0 m/s capture limit, which is impossible rather than hard.
+//
+// AND ONE THING IS STILL WRONG AND IS NAMED RATHER THAN HIDDEN (R97). The
+// registry's clock is the LOOP's fixed tick and the flying vessel's is
+// `of_fl_step_n`'s, so under time warp the vessel outruns the station: measured
+// at ladder 1000x, 121,000 sub-steps against 120 loop ticks. A rendezvous flown
+// at 1x is now possible; a rendezvous WARPED to is not, and the fix is a warp
+// credit on the rails clock beside the one `dayWarpCredit` already applies to
+// the sky.
 
 import * as THREE from 'three';
 import { boundOf, type LocalBox, type Solid, type StructureBodies }
@@ -502,6 +517,28 @@ export function lastStationInstall(): StationReport | null { return lastReport; 
 export function lastStationSolid(): Solid | null { return installed; }
 
 /**
+ * PH-357. WHERE THE STATION IS RIGHT NOW, body-frame metres, or null.
+ *
+ * Read off the SOLID rather than re-solved from the record, and that is the
+ * whole point of it: `CarrierMount.syncAt` writes that solid's `pos` every
+ * fixed tick from the record's own `poseAt`, so this is not a second Kepler
+ * solve and not a second opinion about where the station is. It is the position
+ * of the object the player's feet are resolved against, which is exactly the
+ * question every caller is really asking.
+ *
+ * IT EXISTS BECAUSE STAMPING THE RECORD BROKE A CALLER. `installStation`'s
+ * report carries the position the solid was FIRST put at, which was a fact
+ * about the station for as long as the station never moved. `VisitSites`
+ * teleported the player to it, and one minute of world time after boot that is
+ * 112 km from the deck: the player would arrive in empty space and fall 400 km,
+ * with every assertion in the install report still perfectly true.
+ */
+export function stationBodyPosNow(): Vec3n | null {
+  const s = installed;
+  return s === null ? null : [s.pos.x, s.pos.y, s.pos.z];
+}
+
+/**
  * Put the station in the world: ensure the record exists, derive the interior's
  * pose from it, and register the interior with the walker's solid set.
  *
@@ -526,6 +563,26 @@ export function installStation(M: OfCoreModule, bodies: StructureBodies,
   const existing = findStation();
   const rec = existing ?? mintStation(M, up, bodyRadiusM, muM3S2);
   if (rec === null) return null;
+  // PH-357. THE STATION'S CLOCK STARTS HERE, and this one line is D-014's other
+  // half: core-engine bound the collision solid, both gravity volumes and the
+  // drawn hull to one `poseAt` (CE-80 to CE-86), and their handback names this
+  // as the whole remaining change on the station's side.
+  //
+  // IT IS HERE AND NOT IN `mintStation` BECAUSE THERE ARE TWO PATHS. A restored
+  // world adopts its saved record, and `stashVessels` drops `stampedTick` on
+  // the way out (it is a reference into a loop clock that restarts at zero on
+  // every page load), so a station stamped only at mint would freeze again on
+  // the first reload and nothing would say so. This function is the one place
+  // the station enters the world on both paths.
+  //
+  // THE TICK MATTERS AND IT IS THE SAME ONE `mountStation` COMPOSES AT.
+  // `StationMount` measures the interior's fixed offset as
+  // `poseAt(0)^-1 . authored` at the install tick, so stamping at any other
+  // tick would rotate and translate the shipped interior by however far the
+  // conic had run in between: the deck, the hull and the gravity boxes would
+  // all move together and every assertion in the client would still pass.
+  // Boot calls this with 0 and `mountStation` composes at 0.
+  registry.stamp(rec, tick);
   const { pos } = stateOf(M, registry, rec, tick);
   const solid = stationSolid(pos);
   bodies.add(solid);
