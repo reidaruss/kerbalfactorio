@@ -619,6 +619,13 @@ of the work, not paperwork after it.
 
 ### A registered parameter that does not move the picture is worse than a missing one
 
+> **SUPERSEDED IN PART, 2026-08-03 (RN-1206).** `--sundot` is NOT dead. It moves
+> the ground box 66.98 to 105.29 at `--sundot=0.85`. RN-844 fixed the `up`-vector
+> bug this entry was really about. **The rule below stands; this instance was
+> retired and nobody came back to say so**, which is exactly what the
+> forward-pointer rule in this file exists to prevent. Admin owns this file and
+> let it sit for a day.
+
 `--sundot` is registered in `PAGE_PARAMS`. `--sundot=0.28` and `--sundot=0.92`
 produce **visually identical frames** in the walk scenario.
 
