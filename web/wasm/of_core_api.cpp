@@ -437,7 +437,12 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       tank physically gone, stage 0's row still read its pad value 1857.79.
 //       No refresh cadence could fix that, because the object being read was
 //       the wrong object. Same 13-word rows, same reader, different subject.
-OF_API int of_abi_version(void) { return 22; }
+//       ABI 23 / GP-506: `of_gp_node_harvest`'s i32 scratch grows a 5th word,
+//       `refusal` (a `HarvestRefusal` code — 0 none, 1 tool required), and a
+//       new pure query `of_gp_node_harvest_gate(i)` answers the same question
+//       without swinging. Both are additive: every prior caller reading the
+//       first four words is unaffected.
+OF_API int of_abi_version(void) { return 23; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2465,8 +2470,9 @@ OF_API int of_gp_node_state(int i) {
   return 8;
 }
 
-// One hand harvest. i32 scratch [granted, usedTool, nodeEmpty, resource].
-// Returns the granted count (0 when the node is empty or the pack is full).
+// One hand harvest. i32 scratch [granted, usedTool, nodeEmpty, resource, refusal].
+// Returns the granted count (0 when the node is empty, the pack is full, or
+// GP-506's tool gate refused the swing — `refusal` tells the three apart).
 //
 // PASS 0 FOR BOTH YIELDS and gameplay.h applies its authored pacing (§S.2a):
 // swings-to-clear is the constant and the per-swing yield is derived from the
@@ -2478,14 +2484,15 @@ OF_API int of_gp_node_state(int i) {
 // rounds a positive remainder up to one unit and drains the node. Nothing to
 // paper over here any more.
 OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
-  resetI32(4);
+  resetI32(5);
   if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpNodes.size()) return 0;
   wg::FDepositNode& n = g_gpNodes[static_cast<size_t>(i)];
   const auto kind =
       static_cast<wg::survival::NodeKind>(g_gpKinds[static_cast<size_t>(i)]);
   // An OUTCROP goes through §S.5, which is harvestNode with the patch's pool
   // handed in and the deduction taken back out of the patch. Same rule, one
-  // pool; the yields it uses are deposits.h §P's, not this file's.
+  // pool (and the SAME gate, inherited rather than re-checked); the yields it
+  // uses are deposits.h §P's, not this file's.
   wg::patches::OrePatch* patch = patchOfNode(i);
   if (patch) {
     sv::HarvestResult pr = sv::harvestPatch(*patch, n, kind, *g_inv);
@@ -2493,6 +2500,7 @@ OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
     g_i32.push_back(pr.usedTool ? 1 : 0);
     g_i32.push_back(pr.nodeEmpty ? 1 : 0);
     g_i32.push_back(static_cast<int32_t>(n.Resource));
+    g_i32.push_back(static_cast<int32_t>(pr.refusal));
     return static_cast<int>(pr.granted);
   }
   sv::HarvestResult r = sv::harvestNode(
@@ -2502,7 +2510,23 @@ OF_API int of_gp_node_harvest(int i, int baseYield, int toolYield) {
   g_i32.push_back(r.usedTool ? 1 : 0);
   g_i32.push_back(r.nodeEmpty ? 1 : 0);
   g_i32.push_back(static_cast<int32_t>(n.Resource));
+  g_i32.push_back(static_cast<int32_t>(r.refusal));
   return static_cast<int>(r.granted);
+}
+
+// GP-506. ASK BEFORE SWINGING (GP-51's rule, applied to harvest): a pure
+// query, no mutation, so a caller can decide NOT to commit a swing's
+// animation and cooldown before finding out it would be refused. Returns a
+// `HarvestRefusal` code: 0 none, 1 tool required. Empty-node and full-pack
+// refusals are NOT this code (they can only be known by actually swinging,
+// since a full pack depends on the pull size) — this is only the gate that is
+// knowable in advance, from what is in the pack and what the node is.
+OF_API int of_gp_node_harvest_gate(int i) {
+  if (!gpReady() || i < 0 || static_cast<size_t>(i) >= g_gpNodes.size())
+    return static_cast<int>(sv::HarvestRefusal::None);
+  const auto kind =
+      static_cast<wg::survival::NodeKind>(g_gpKinds[static_cast<size_t>(i)]);
+  return static_cast<int>(sv::harvestGate(kind, *g_inv));
 }
 
 // Drain `units` of ore out of a node WITHOUT granting them to the pack, and

@@ -840,9 +840,15 @@ class ObjectiveTracker {
 //                 faster tier. (See the Furnace doc-comment for WHY this is its
 //                 own type and not a factory-sim machine.)
 //
-// TOOL / BOOTSTRAP (no deadlock): hand harvest always works (slow, low yield);
-// the matching tool (axe for wood, pickaxe for stone/coal/ore) raises the yield.
-// "Tool helps but isn't required" — encoded in harvestNode() below.
+// TOOL / BOOTSTRAP (no deadlock): wood and stone are bare-hand nodes, ALWAYS
+// (requiresToolFor is false for both) — that is the whole bootstrap chain:
+// gather wood, gather stone, hand-craft a crude pickaxe (Stone x2 + Wood x1,
+// never ore). "Tool helps but isn't required" still describes those two: the
+// assisting tool (axe for wood, pickaxe for stone) raises the yield but a bare
+// hand always grants something. Coal, iron and copper ore are the opposite —
+// GATED behind the matching tool as DATA on the node kind (requiresToolFor): a
+// bare-hand swing on them is REFUSED outright, with a named HarvestRefusal
+// code, never a silent zero. Encoded in harvestNode() / harvestGate() below.
 // =============================================================================
 namespace survival {
 
@@ -1027,6 +1033,49 @@ inline ItemId itemForTool(ToolKind t) {
   return kNoItem;
 }
 
+// -----------------------------------------------------------------------------
+// THE GATE, AS DATA — GP-506. Which node kinds refuse a bare-hand swing
+// outright, versus merely paying it less (assistingToolFor's yield-multiplier
+// rule, unchanged). Storyline rung 2 (story_line_outline_v1.txt): gather wood
+// -> gather loose stones -> craft a pickaxe -> only THEN mine coal/iron/copper.
+// Wood and stone must stay false here or the pickaxe recipe below (Stone x2 +
+// Wood x1) has no bare-hand path and every fresh spawn deadlocks.
+// -----------------------------------------------------------------------------
+inline bool requiresToolFor(worldgen::survival::NodeKind k) {
+  using NK = worldgen::survival::NodeKind;
+  switch (k) {
+    case NK::Tree:      return false;
+    case NK::Rock:      return false;
+    case NK::CoalSeam:  return true;
+    case NK::IronOre:   return true;
+    case NK::CopperOre: return true;
+    case NK::WaterPool: return false;
+    case NK::OilSeep:   return false;
+  }
+  return false;
+}
+
+// Named refusal code (published across the ABI, GP-506): a gated swing without
+// the tool is refused with a REASON, never a silent zero grant that reads
+// exactly like an empty node.
+enum class HarvestRefusal : uint8_t {
+  None = 0,
+  ToolRequired = 1,
+};
+
+// Pure query, no mutation: would a swing on `kind` be refused right now, given
+// what `inv` holds? Exists so a caller (the client, GP-51's "ask before" rule
+// applied to harvest) can decide NOT to commit a swing's animation/cooldown
+// before finding out it was refused, rather than paying the cooldown for a
+// swing that granted nothing.
+inline HarvestRefusal harvestGate(worldgen::survival::NodeKind kind,
+                                  const Inventory& inv) {
+  if (!requiresToolFor(kind)) return HarvestRefusal::None;
+  const ItemId toolItem = itemForTool(assistingToolFor(kind));
+  const bool hasTool = (toolItem != kNoItem) && inv.has(toolItem, 1);
+  return hasTool ? HarvestRefusal::None : HarvestRefusal::ToolRequired;
+}
+
 // =============================================================================
 // §S.1 — Content registration. Appends the survival items + smelting recipes
 // into an existing SliceRegistry (the SAME additive registerItem/registerRecipe
@@ -1153,6 +1202,9 @@ struct HarvestResult {
   uint16_t granted = 0;       // units added to inventory
   bool usedTool = false;      // the assisting tool was present (improved yield)
   bool nodeEmpty = false;     // node hit 0 (or was already empty)
+  // GP-506: None unless the swing was refused by requiresToolFor's gate. A
+  // refusal always carries granted == 0 and leaves the node untouched.
+  HarvestRefusal refusal = HarvestRefusal::None;
 };
 
 // -----------------------------------------------------------------------------
@@ -1190,11 +1242,22 @@ inline HarvestResult harvestNode(worldgen::FDepositNode& node,
     res.nodeEmpty = true;
     return res;
   }
-  // Tool helps but isn't required: if the pack holds the assisting tool, the pull
-  // is the higher toolYield; otherwise bare-hands baseYield (still > 0).
   const ToolKind tool = assistingToolFor(kind);
   const ItemId toolItem = itemForTool(tool);
   const bool hasTool = (toolItem != kNoItem) && inv.has(toolItem, 1);
+
+  // THE GATE (GP-506, data not a multiplier): a kind marked requiresToolFor
+  // refuses a bare-hand swing outright, before anything is pulled or
+  // decremented — a refusal is reported by a NAMED code, never a silent zero
+  // that reads exactly like an empty node, and it costs the node nothing.
+  if (requiresToolFor(kind) && !hasTool) {
+    res.refusal = HarvestRefusal::ToolRequired;
+    return res;
+  }
+
+  // Tool helps but isn't required (the kinds that reach here): if the pack
+  // holds the assisting tool, the pull is the higher toolYield; otherwise
+  // bare-hands baseYield (still > 0).
   uint16_t pull = hasTool ? toolYield : baseYield;
   if (pull == 0)  // 0 = "use the authored pacing", derived from this node's size.
     pull = yieldPerSwing(node.InitialAmount > 0.0 ? node.InitialAmount
@@ -1244,10 +1307,15 @@ inline HarvestResult harvestNode(worldgen::FDepositNode& node,
 //
 // The two yields are authored in deposits.h §P rather than derived from the
 // node's size, because a patch holds thousands of units and the §S.2a pacing
-// (six swings to clear) would hand over six hundred ore in one swing. Bare hands
-// still always work: that is the no-bootstrap-deadlock invariant, and it matters
-// more here than anywhere else, because a drill is the thing you cannot build
-// until you have mined by hand.
+// (six swings to clear) would hand over six hundred ore in one swing.
+//
+// GP-506: every ore patch kind (CoalSeam/IronOre/CopperOre) is requiresToolFor
+// true, so "bare hands always work" no longer holds for a patch — the gate is
+// inherited from harvestNode (called below) rather than re-implemented here, a
+// second authority for the same rule being exactly the mistake this project
+// keeps paying for. What DOES still always work bare-handed is the pickaxe
+// itself: it is priced in Stone + Wood (§S.3), never in patch ore, so a drill
+// is reachable without ever needing to mine one by hand first.
 // =============================================================================
 inline HarvestResult harvestPatch(worldgen::patches::OrePatch& patch,
                                   worldgen::FDepositNode& outcrop,
@@ -1285,13 +1353,22 @@ struct CraftRecipe {
 };
 
 // The pinned survival HAND recipes (data; the UE layer lists/offers these).
+//
+// GP-506: BOTH tools are now priced in Stone + Wood, never RawIron. RawIron is
+// requiresToolFor-gated (harvestGate above), so a pickaxe priced in ore was a
+// deadlock a fresh spawn could never break out of — nothing could ever grant
+// the RawIron this recipe needed. Stone and Wood are the two bare-hand-always
+// node kinds, so the bootstrap chain (gather wood, gather stone, craft a
+// pickaxe, ONLY THEN mine ore) has a legal path from an empty inventory; the
+// bootstrap ctest pins exactly this. The axe moves with it for the same
+// reason — leaving it priced in ore would trade one deadlock for another.
 inline CraftRecipe recipeCrudePickaxe() {
   return CraftRecipe{items::CrudePickaxe, 1,
-                     {ItemStack{items::RawIron, 1}, ItemStack{items::Wood, 1}}};
+                     {ItemStack{items::Stone, 2}, ItemStack{items::Wood, 1}}};
 }
 inline CraftRecipe recipeCrudeAxe() {
   return CraftRecipe{items::CrudeAxe, 1,
-                     {ItemStack{items::RawIron, 1}, ItemStack{items::Wood, 1}}};
+                     {ItemStack{items::Stone, 2}, ItemStack{items::Wood, 1}}};
 }
 inline CraftRecipe recipePrimitiveFurnace() {
   return CraftRecipe{items::PrimitiveFurnace, 1,

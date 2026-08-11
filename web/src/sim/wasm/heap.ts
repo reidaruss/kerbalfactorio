@@ -232,8 +232,14 @@ export interface OfCoreModule extends OfCoreProgressApi {
                   dx: number, dy: number, dz: number): number;
   /** f64 scratch [x,y,z,remaining,initial,grade,kind,resource]. Returns 8. */
   _of_gp_node_state(i: number): number;
-  /** i32 scratch [granted,usedTool,nodeEmpty,resource]. Returns granted. */
+  /** i32 scratch [granted,usedTool,nodeEmpty,resource,refusal]. Returns granted.
+   *  ABI 23 / GP-506: `refusal` is a `HarvestRefusal` code (0 none, 1 tool
+   *  required); 0 granted no longer means only "empty node" or "pack full". */
   _of_gp_node_harvest(i: number, baseYield: number, toolYield: number): number;
+  /** ABI 23 / GP-506. Pure query, no mutation: would a swing on node `i` be
+   *  refused by the tool gate right now? A `HarvestRefusal` code, so a caller
+   *  can decide not to commit a swing's animation/cooldown in advance. */
+  _of_gp_node_harvest_gate(i: number): number;
 
   _of_gp_recipe_count(): number;
   /** i32 scratch [out,outN,can,inN,(item,have,need)*inN]. Returns the length. */
