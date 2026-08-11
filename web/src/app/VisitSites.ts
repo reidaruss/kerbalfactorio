@@ -169,6 +169,18 @@ export interface VisitPorts {
    * shipped, and the press below falls back to it rather than refusing.
    */
   rideStation?: () => StationSeat | null;
+  /**
+   * CE-49. WHERE THE FEET GO, for the door that has no carrier.
+   *
+   * `rideStation` above already lands on this point; this port exists so the
+   * FALLBACK lands on it too. Both go through `StationMount.stationArrivalBody`,
+   * so there is one answer to "where does an arriving player stand" and not two.
+   * Without it the fallback aims at the hub centre, which is inside
+   * `col_HallCore`: measured, `solidBuild` reads TRUE at the feet and at all
+   * three walker sample heights there. Optional and null-returning, like the
+   * other one.
+   */
+  stationArrival?: () => [number, number, number] | null;
 }
 
 /** Just enough of `PlanetBody` to say what the gravity is up there. Structural
@@ -361,14 +373,15 @@ function pressStation(f: FlightMode | null, ports: VisitPorts): VisitOutcome {
         carrier: seat.carrier, velMS: seat.speedMS, tick: seat.tick },
     };
   }
-  // PH-357's destination for the fallback, and the two halves of this merge are
-  // ONE authority rather than two. `stationBodyPosNow()` and
-  // `seatOnStationDeck` both read `lastStationSolid()`, the object
-  // `CarrierMount.syncAt` re-poses every tick and the one the feet are actually
-  // resolved against; neither re-solves the conic. So the carrier door and the
-  // bare teleport now land on the same point, and they still differ only in the
+  // THE FALLBACK'S DESTINATION, AND ALL THREE GENERATIONS OF IT ARE ONE POINT
+  // NOW. GP-234 aimed at the install report's `pos`; PH-357 made that live with
+  // `stationBodyPosNow()` because the station had started moving; CE-49 moves it
+  // OFF THE HUB CENTRE, because the centre is inside `col_HallCore` and always
+  // was once the shipped asset replaced the empty placeholder hub. All three
+  // read the same live solid and none re-solves the conic, so the carrier door
+  // and the bare teleport land on the same metre and differ only in the
   // velocity, which is the whole of CE-41.
-  const [x, y, z] = stationBodyPosNow() ?? st.pos;
+  const [x, y, z] = ports.stationArrival?.() ?? stationBodyPosNow() ?? st.pos;
   if (!ports.standAt(x, y, z)) {
     return { done: false, message: 'refused: there is no walker to move' };
   }

@@ -48,13 +48,20 @@
 import type { CarrierMounts, CarrierMount } from '../world/CarrierGeometry.js';
 import { OrbitCarrier } from '../world/CarrierSources.js';
 import {
-  applyInv, composePose, invertPose, newPose, type V3,
+  apply, applyInv, composePose, invertPose, newPose,
+  type FramePose, type V3,
 } from '../world/FramePose.js';
 import * as THREE from 'three';
 import {
   findStation, installStation, lastStationSolid, stationQuat,
-  type StationReport,
+  stationStandLocal, type StationReport,
 } from '../game/SpaceStation.js';
+// CE-49. THE WALKER'S OWN NUMBERS, imported rather than retyped. A helper that
+// wrote its own 0.15 / 0.9 / 1.65 and its own 0.4 m radius would agree with
+// itself and not with `KinematicBody`, which is the failure this whole file
+// keeps arguing against.
+import { CAPSULE_SAMPLES_M } from '../player/VoxelCollision.js';
+import { CAPSULE } from '../player/Capsule.js';
 import {
   installStationGravity, lastStationVolumes,
 } from '../game/StationGravity.js';
@@ -258,6 +265,147 @@ export function installAndMountStation(d: StationInstallDeps, tick: number)
 }
 
 // ===========================================================================
+// CE-49. WHERE THE FEET GO, AND WHY THE HUB CENTRE WAS NEVER IT.
+// ===========================================================================
+//
+// REID'S BUG, ON A REAL GPU: the `visit:station` press seated him INSIDE A WALL.
+// Grounded, 0.00 m/s, 398.11 km, carried correctly, and the left half of the
+// frame solid black because the camera was inside interior geometry. Measured
+// here at the seat point the press used: `solidBuild` reads TRUE at the feet AND
+// at all three walker sample heights (0.15 / 0.9 / 1.65 m).
+//
+// THE CAUSE IS ONE WORD IN GP-234. It said "the station's local origin is both
+// the hub centre and the deck's top face, so `pos` IS the spot to stand on".
+// That was true of the PLACEHOLDER station, a 12 x 12 m hub with nothing in the
+// middle. `SpaceStation.ts` says in as many words what the shipped asset did to
+// it: "THE STATION'S ORIGIN IS NO LONGER EMPTY ... `col_HallCore` is a solid
+// column from y = 0.000 to 5.400 spanning +/- 1.548 m in both horizontal axes,
+// and the origin is inside it." The press kept aiming at the origin.
+//
+// AND THE RIGHT ANSWER WAS ALREADY PUBLISHED, TWICE, WHICH IS THE REAL LESSON.
+// `stationStandLocal()` reads the asset's own `socket_hall` empty, 4 m off the
+// core, and `StationReport.standPos` carries it in the body frame with the
+// comment "Body-frame point a player arriving at the station should be placed
+// at". The press had a correct point and a wrong point on the same object and
+// took the wrong one. Nothing caught it because `probes/stationvisit.js`
+// asserted `grounded`, `onDeck` and the distance from the hub CENTRE, and being
+// inside the core satisfies all three: it is grounded, it is on the deck, and it
+// is zero metres off centre. **A point can be exactly where you asked and still
+// be inside a pillar.**
+//
+// SO THIS IS NOT A NEW AUTHORITY, IT IS THE EXISTING ONE MADE LIVE AND CHECKED.
+// The socket is still the asset's; what this adds is that the offset is applied
+// to the LIVE solid's pose rather than to the boot pose (PH-357's staleness, one
+// layer up: `standPos` is computed at install and the station has moved 4,888 m
+// by the time anybody presses the row), and that the result is VERIFIED against
+// the walker's own collision predicate before the feet are put there.
+//
+// THE SCAN IS THE GUARD AND IT IS DETERMINISTIC. If the socket is clear, the
+// socket is used and the scan never runs; that is the shipping case, measured.
+// If a re-authored asset ever puts furniture on the spawn, this walks outward
+// along the DECK PLANE in fixed rings and takes the first clear spot, with the
+// ring order fixed so two runs of the same world produce the same metre. It
+// invents no geometry: every test is `StructureBodies.blocks`, the exact call
+// `KinematicBody` resolves the walker against, at the exact heights
+// `CAPSULE_SAMPLES_M` gives it.
+
+/** The walker's own collision query, structurally. `StructureBodies` satisfies
+ *  it and is not imported: this file must not learn what a structure registry
+ *  is, only what "is this point solid" means. */
+export interface SolidQuery {
+  blocks(x: number, y: number, z: number): boolean;
+}
+
+/** Directions tried per ring, and the ring spacing. 8 and 0.5 m give a 0.38 m
+ *  arc at the first ring, well under the capsule's 0.4 m radius, so a clear
+ *  pocket cannot be stepped over. */
+const SCAN_DIRS = 8;
+const SCAN_STEP_M = 0.5;
+/** Past this the search has left the hall, and a spawn 12 m from the socket is
+ *  not the room the button promised. Refusing is better than wandering. */
+const SCAN_MAX_M = 12;
+
+export interface StationArrival {
+  /** Body-frame feet position. */
+  pos: [number, number, number];
+  /** How far along the deck the scan had to walk. 0 is the shipping case. */
+  scannedM: number;
+  /** False when nothing within `SCAN_MAX_M` was clear. The caller still seats
+   *  the player (a menu press that silently does nothing is worse), and the
+   *  probe asserts this is true so a re-authored asset fails loudly. */
+  clear: boolean;
+}
+
+/**
+ * CE-49. Is a whole capsule clear of every structure box at this LOCAL point?
+ *
+ * FIVE COLUMNS AND NOT ONE, because the capsule is 0.4 m in radius and its axis
+ * being clear says nothing about its shoulders: the centre plus four offsets at
+ * exactly `CAPSULE.radiusM` in the deck plane. Three heights each, and they are
+ * `CAPSULE_SAMPLES_M` imported rather than retyped, because a probe or a helper
+ * that wrote its own 0.15 / 0.9 / 1.65 would agree with itself and not with the
+ * walker.
+ */
+function capsuleClearAt(q: SolidQuery, pose: FramePose,
+                        lx: number, ly: number, lz: number): boolean {
+  const p: V3 = { x: 0, y: 0, z: 0 };
+  const R = CAPSULE.radiusM;
+  const cols: readonly [number, number][] =
+    [[0, 0], [R, 0], [-R, 0], [0, R], [0, -R]];
+  for (const [dx, dz] of cols) {
+    for (const h of CAPSULE_SAMPLES_M) {
+      apply(pose, lx + dx, ly + h, lz + dz, p);
+      if (q.blocks(p.x, p.y, p.z)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * CE-49. WHERE AN ARRIVING PLAYER'S FEET GO, in the body frame, right now.
+ *
+ * The asset's own spawn socket, carried by the LIVE solid's pose, verified
+ * against the walker's own collision query, and scanned outward along the deck
+ * only if that point is occupied. Returns null when there is no station.
+ */
+export function stationArrivalBody(q: SolidQuery): StationArrival | null {
+  const solid = lastStationSolid();
+  if (solid === null) return null;
+  // The live pose of the object the feet are resolved against. Not a second
+  // derivation of where the station is: it IS the collision body, re-posed every
+  // fixed tick by `CarrierMount.syncAt`.
+  const pose = newPose();
+  pose.px = solid.pos.x; pose.py = solid.pos.y; pose.pz = solid.pos.z;
+  pose.qx = solid.quat.x; pose.qy = solid.quat.y;
+  pose.qz = solid.quat.z; pose.qw = solid.quat.w;
+  const [lx, ly, lz] = stationStandLocal();
+  const out: V3 = { x: 0, y: 0, z: 0 };
+
+  if (capsuleClearAt(q, pose, lx, ly, lz)) {
+    apply(pose, lx, ly, lz, out);
+    return { pos: [out.x, out.y, out.z], scannedM: 0, clear: true };
+  }
+  // RINGS OUTWARD IN THE DECK PLANE (station-local XZ; local +Y is up, which is
+  // the whole reason the offset is applied in LOCAL space and transformed once).
+  // Fixed order, so the same world seats at the same metre every time.
+  for (let r = SCAN_STEP_M; r <= SCAN_MAX_M + 1e-9; r += SCAN_STEP_M) {
+    for (let i = 0; i < SCAN_DIRS; i++) {
+      const a = (2 * Math.PI * i) / SCAN_DIRS;
+      const cx = lx + Math.cos(a) * r;
+      const cz = lz + Math.sin(a) * r;
+      if (!capsuleClearAt(q, pose, cx, ly, cz)) continue;
+      apply(pose, cx, ly, cz, out);
+      return { pos: [out.x, out.y, out.z], scannedM: r, clear: true };
+    }
+  }
+  // Nothing clear. Seat at the socket anyway and say so: a press that refuses
+  // leaves the player with no way to reach the station at all, and `clear:
+  // false` is the loud reading a probe fails on.
+  apply(pose, lx, ly, lz, out);
+  return { pos: [out.x, out.y, out.z], scannedM: SCAN_MAX_M, clear: false };
+}
+
+// ===========================================================================
 // CE-41. ARRIVING ON A MOVING DECK.
 // ===========================================================================
 //
@@ -315,6 +463,12 @@ export interface DeckWalker {
 }
 
 export interface StationSeat {
+  /** CE-49. Metres the arrival scan had to walk along the deck. 0 is the
+   *  shipping case (the socket was clear); null when no query was supplied. */
+  scannedM: number | null;
+  /** CE-49. Whether the capsule is clear at the seat point. Null with no query;
+   *  FALSE is the loud reading a re-authored asset produces. */
+  clear: boolean | null;
   carrier: string;
   /** Body-frame feet the player was actually put at. */
   feet: [number, number, number];
@@ -348,6 +502,12 @@ export interface StationSeat {
 export function seatOnStationDeck(
   mounts: CarrierMounts, seat: DeckSeat | null, walker: DeckWalker | null,
   tick: number, dt: number,
+  /** CE-49. The walker's own collision query, so the destination can be checked
+   *  before the feet are put there. Optional so a caller with no structure
+   *  registry keeps the behaviour that shipped, and null-safe rather than
+   *  refusing: a menu press that silently does nothing is worse than one that
+   *  lands on the socket unverified. */
+  solids: SolidQuery | null = null,
 ): StationSeat | null {
   if (seat === null || walker === null) return null;
   const solid = lastStationSolid();
@@ -355,9 +515,16 @@ export function seatOnStationDeck(
   if (solid === null || mount === null) return null;
 
   const frame = mount.frame;
+  // CE-49. THE ARRIVAL POINT, WHICH IS NOT THE HUB CENTRE. It used to be
+  // `solid.pos`, the station's local origin, and `col_HallCore` is a solid
+  // column through it: measured, `solidBuild` reads TRUE at the feet and at all
+  // three walker sample heights there. `stationArrivalBody` is the asset's own
+  // spawn socket on the LIVE pose, verified against the walker's own predicate.
+  const arrival = solids === null ? null : stationArrivalBody(solids);
+  const target = arrival?.pos
+    ?? [solid.pos.x, solid.pos.y, solid.pos.z] as [number, number, number];
   const dest: V3 = { x: 0, y: 0, z: 0 };
-  applyInv(frame.poseAt(tick, newPose()),
-    solid.pos.x, solid.pos.y, solid.pos.z, dest);
+  applyInv(frame.poseAt(tick, newPose()), target[0], target[1], target[2], dest);
 
   seat.board(frame);
   const pos: V3 = { x: 0, y: 0, z: 0 };
@@ -372,6 +539,8 @@ export function seatOnStationDeck(
   walker.body.vel.y = vel.y;
   walker.body.vel.z = vel.z;
   return {
+    scannedM: arrival?.scannedM ?? null,
+    clear: arrival?.clear ?? null,
     carrier: frame.id,
     feet: [pos.x, pos.y, pos.z],
     vel: [vel.x, vel.y, vel.z],

@@ -28,7 +28,7 @@ import type { Services } from './Services.js';
 import { labelOf } from '../player/Bindings.js';
 import { CONTROL_GROUPS } from '../player/BindingText.js';
 import type { Loop } from './Loop.js';
-import { seatOnStationDeck } from './StationMount.js';
+import { seatOnStationDeck, stationArrivalBody } from './StationMount.js';
 
 export function installPauseMenu(s: Services, loop: Loop) {
   const g = s.gameplay;
@@ -111,7 +111,14 @@ export function installPauseMenu(s: Services, loop: Loop) {
     // core-engine's own file, so the shipped press and `__of.carrier` drive one
     // function rather than two that have to agree.
     rideStation: () => seatOnStationDeck(s.mounts, s.ride, s.player,
-      loop.tickIndex, loop.fixedDt),
+      loop.tickIndex, loop.fixedDt, s.gameplay?.structures.bodies ?? null),
+    // CE-49. THE SAME ARRIVAL POINT FOR THE DOOR WITH NO CARRIER. One function
+    // behind both ports, so the two doors cannot drift apart about where a
+    // player stands.
+    stationArrival: () => {
+      const b = s.gameplay?.structures.bodies ?? null;
+      return b === null ? null : stationArrivalBody(b)?.pos ?? null;
+    },
   });
 
   const menu = new PauseMenu(g.host, g.modals, (id) => {
