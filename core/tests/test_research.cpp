@@ -258,3 +258,75 @@ TEST(research_is_deterministic_across_identical_runs) {
   // 100 - 10(BasicSmelting) - 15(Logistics) - 20(CinderiteRefining) = 55.
   CHECK(autoA == 55);
 }
+
+// =============================================================================
+// 5. MILESTONES (DW-29) — a thing the player DID, not something bought. GP-530
+// gives the web client's `Research.earn` its first live caller (`grantMilestone`
+// in `web/src/game/Research.ts`, wired off a real ORBIT status transition in
+// `web/src/app/Systems.ts`); this is the ctest for the mechanism underneath it,
+// `ResearchState::setMilestone`/`hasMilestone`, run here because it needs no
+// browser and no vessel to prove "grant twice, state changes once."
+// =============================================================================
+TEST(milestone_grant_is_idempotent_and_gates_the_tech) {
+  TechTree tree = survivalTechTree();  // FlightAutopilot lives in the survival tree
+  ResearchState rs(tree);
+
+  // Not earned yet: FlightAutopilot's own milestone requirement is unmet. This
+  // is the exact live bug GP-530 fixes in the client — `Research.earn` had no
+  // caller that could ever reach this line outside a save restore.
+  CHECK(!rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.milestoneMet(techs::FlightAutopilot));
+
+  // First grant: succeeds, the milestone is now held.
+  CHECK(rs.setMilestone(milestones::ReachedOrbit));
+  CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(rs.milestoneMet(techs::FlightAutopilot));
+  CHECK(rs.milestones().size() == 1);
+
+  // SECOND grant of the SAME milestone: a no-op. Returns false and the held
+  // set does not grow — "grant twice, research state changes once," which is
+  // the property `grantMilestone`'s idempotence in the client rests on
+  // entirely: it adds a logged cause and nothing else (Research.ts).
+  CHECK(!rs.setMilestone(milestones::ReachedOrbit));
+  CHECK(rs.milestones().size() == 1);
+  CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+
+  // A second, DIFFERENT milestone grants independently and does not disturb
+  // the first (the set is a set, not a single slot) — LandedOffWorld, granted
+  // on landing off Forge, is the client's other live caller.
+  CHECK(rs.setMilestone(milestones::LandedOffWorld));
+  CHECK(rs.milestones().size() == 2);
+  CHECK(rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(rs.hasMilestone(milestones::LandedOffWorld));
+}
+
+// A save RESTORE (PersistProgress.ts's `restoreProgress`) calls `earn`/
+// `setMilestone` directly, once per saved milestone id, and must not grant a
+// SECOND time on a second load of the same save. Modelled here as calling
+// `setMilestone` again for an id already held from a "previous session":
+// still idempotent, by the same mechanism proven above, so the restore path
+// needs no separate dedup logic of its own.
+TEST(milestone_restore_of_an_already_held_id_is_a_no_op) {
+  TechTree tree = survivalTechTree();
+  ResearchState rs(tree);
+
+  // "Session 1": earned live, then saved.
+  CHECK(rs.setMilestone(milestones::ReachedOrbit));
+  const std::vector<MilestoneId> savedMilestones = rs.milestones();
+
+  // "Session 2": a fresh state, restoring from the save — the restore path's
+  // OWN shape (PersistProgress.ts iterates `saved.milestones` and calls
+  // `earn` per id, never `grantMilestone`).
+  ResearchState restored(tree);
+  int grantedOnRestore = 0;
+  for (MilestoneId m : savedMilestones) if (restored.setMilestone(m)) ++grantedOnRestore;
+  CHECK(grantedOnRestore == 1);
+  CHECK(restored.hasMilestone(milestones::ReachedOrbit));
+
+  // A SECOND load of the SAME save (e.g. a reload of a reload) must not grant
+  // again: the restore call is applied to a state that already holds it.
+  int grantedOnSecondRestore = 0;
+  for (MilestoneId m : savedMilestones) if (restored.setMilestone(m)) ++grantedOnSecondRestore;
+  CHECK(grantedOnSecondRestore == 0);
+  CHECK(restored.milestones().size() == 1);
+}

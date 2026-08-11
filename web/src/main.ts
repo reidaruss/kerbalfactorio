@@ -9,6 +9,7 @@ import { installDebugApi } from './app/Debug.js';
 import { vabApi } from './app/DebugVab.js';
 import { flightApi } from './app/DebugFlight.js';
 import { mapApi } from './app/DebugMap.js';
+import { markersApi } from './app/DebugMarkers.js';
 import { scatterApi } from './app/DebugScatter.js';
 import { armourApi } from './app/DebugArmour.js';
 import { postApi } from './app/DebugPost.js';
@@ -46,6 +47,7 @@ boot(cfg, host, hud).then(({ services }) => {
   // its testing controls reach the flight session and Gameplay cannot see one
   // (Systems.ts: flight owns its own eye). See app/MenuBoot.ts.
   Object.assign(api, vabApi(services), flightApi(services), mapApi(services),
+    markersApi(),
     scatterApi(services, loop), armourApi(services), postApi(services, loop),
     // CE-19 / CE-20. `of.life()` and `of.reboot()`: the world lifecycle's driven
     // surface. See app/DebugLifecycle.ts for why `reboot` is debug-only.

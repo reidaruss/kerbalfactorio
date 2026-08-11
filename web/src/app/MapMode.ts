@@ -34,6 +34,7 @@ import {
   holdWarpForBurn, newWarpHold, planAct, plannerReadout,
 } from './MapPlannerCtl.js';
 import { registry } from '../sim/VesselRegistry.js';
+import { markerRegistry } from '../game/MarkerRegistry.js';
 import { currentVesselTick, leaveVessel, resumeControl } from './FlightVessels.js';
 // The ports live in MapBoot, beside where they are built. Type-only, so there
 // is no runtime cycle even though MapBoot imports this file for its value.
@@ -374,6 +375,10 @@ export class MapMode {
       centreM: foc.centreM, focusName: foc.name, axisName: foc.axisName,
       shipPos, playerPos, current, planned, nodePos, spanM: 0,
       discovered: null, ore,
+      // GP-520. ONE registry, read here and in Map3D's syncMarkers: neither
+      // map queries it a second way, and neither gates it a second time
+      // (MapMarker's own `known` field is the only gate, honoured downstream).
+      markers: markerRegistry.list(),
       revealAll: w !== null && w.readout().revealAll,
     };
     // AN AUTO-FIT FRAMES BY REGIME, not by distance: on foot the trajectory

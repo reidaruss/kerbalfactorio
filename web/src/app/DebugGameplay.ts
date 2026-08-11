@@ -43,6 +43,12 @@ export function gameplayApi(s: Services, loop: Loop) {
   return {
     game: () => s.gameplay?.report() ?? null,
     nodes: () => s.gameplay?.nodes() ?? [],
+    /** GP-530. THE TECH TREE, full rows (`Research.list()`), not the summary
+     *  counts `game().progress.research` already carries: a probe asking
+     *  "is FlightAutopilot researchable yet" needs the one row's own
+     *  `canResearch`/`block`/`milestone`, which no existing debug surface
+     *  published before the milestone bus needed proving. */
+    research: () => s.gameplay?.progress.research.list() ?? [],
     panel(open: boolean) { s.gameplay?.setPanel(open); return s.gameplay?.report() ?? null; },
     craft: (index: number) => s.gameplay?.game.craft(index) ?? false,
     lamp(on?: boolean) {

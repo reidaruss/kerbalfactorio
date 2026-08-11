@@ -63,6 +63,8 @@ function noDraw(): MapDrawReport {
     discoveredQuads: 0, terrainSamples: 0, sampleSizeM: 0,
     oreDrawn: 0, oreDrawnRows: [], bodyFilled: false,
     contrast: ZERO_CONTRAST,
+    markerRows: [],
+    proj: { cx: 0, cy: 0, m2p: 0, ox: 0, oy: 0, oz: 0, u: [1, 0, 0], v: [0, 1, 0] },
   };
 }
 

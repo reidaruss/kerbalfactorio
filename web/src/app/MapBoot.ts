@@ -171,6 +171,7 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     revealAll: () => a.g.mode.fullMapRevealed,
     pads: () => a.flight.d.pads?.()?.list ?? [],
     tick: () => currentVesselTick(),
+    bodyRadiusM: a.body.radiusM,
   });
   const mode = new MapMode({
     M: V,

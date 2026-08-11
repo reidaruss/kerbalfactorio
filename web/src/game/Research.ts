@@ -213,6 +213,34 @@ export class Research {
   }
 }
 
+/**
+ * GP-530. THE ONE ENTRY POINT for a LIVE grant. `Research.earn` alone was
+ * reachable from exactly one call site in the whole web tree
+ * (`PersistProgress.ts`'s restore path) and from nowhere that a player's own
+ * play could reach: FlightAutopilot's `ReachedOrbit` gate was unearnable in a
+ * fresh world, a live bug this wraps the fix for.
+ *
+ * A THIN WRAPPER, on purpose: `earn` (`_of_rs_set_milestone`) is already the
+ * one authority and is already idempotent (research.h's `setMilestone`
+ * no-ops on a milestone already held), so this adds nothing to the rule and
+ * only adds the RECEIPT — the cause is logged so "why did this unlock" has an
+ * answer beyond "it did". Returns what `earn` returned: true the first time,
+ * false every time after.
+ *
+ * NOT for the restore path. `PersistProgress.ts` calls `p.research.earn`
+ * directly and must keep doing so: a LOAD is not something the player DID
+ * (SaveGame.ts's own `SaveProgress` header states the same rule for why
+ * techs and milestones are separate lists), so it is deliberately not routed
+ * through the function that exists to say a cause for live play.
+ */
+export function grantMilestone(r: Research, m: number, cause: string): boolean {
+  const granted = r.earn(m);
+  if (granted) {
+    console.info(`[of] milestone earned: ${r.milestoneName(m)} (0x${m.toString(16)}) - ${cause}`);
+  }
+  return granted;
+}
+
 /** A read of the four progression f64 fields, shared by Progression.ts. */
 export function readF64(M: OfCoreModule, n: number): number[] {
   return n > 0 ? Array.from(scratchF64(M, n).slice()) : [];
