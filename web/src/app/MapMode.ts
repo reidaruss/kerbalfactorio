@@ -34,6 +34,10 @@ import {
   holdWarpForBurn, newWarpHold, planAct, plannerReadout,
 } from './MapPlannerCtl.js';
 import { registry } from '../sim/VesselRegistry.js';
+// GP-650. The one answer to "which body is this record at, and what is that
+// body". Read here rather than re-derived: three call sites needed it and three
+// copies of `a(1 +/- e) - R` is three chances to pick the wrong R.
+import { recordOrbit } from '../world/VesselBody.js';
 import { markerRegistry } from '../game/MarkerRegistry.js';
 import { currentVesselTick, leaveVessel, resumeControl } from './FlightVessels.js';
 // The ports live in MapBoot, beside where they are built. Type-only, so there
@@ -89,8 +93,11 @@ export class MapMode {
       M: d.M,
       flightHandle: () => (d.flight.aboard && d.flight.session.live
         ? d.flight.session.handle : 0),
-      home: () => ({ name: 'home', radiusM: d.bodyRadiusM,
-                     muM3S2: d.muM3S2 }),
+      // GP-650. THE LIVE body, read per call. It was already a thunk; what it
+      // read was a boot-time copy, so a planner opened on the moon sized every
+      // departure curve off Forge.
+      home: () => ({ name: d.body().name, radiusM: d.body().radiusM,
+                     muM3S2: d.body().muM3S2, bodyId: d.body().bodyId }),
       flyingId: () => registry.promotedId,
       nowS: () => this.lastFrameS,
       // GP-273. /core's own state for the flown vessel, so the range to the
@@ -113,7 +120,12 @@ export class MapMode {
                             st.vel as Vec3);
         return { pos: st.pos as V3, normal: m.normal as V3, name: 'vessel' };
       },
-      bodyName: 'Forge',
+      // GP-650. THE WORLD IN FRONT OF YOU, NAMED BY /core. This was the string
+      // literal `'Forge'`, so the map on Cinder offered a focus option called
+      // Forge that centred on Cinder. `PlanetBody.name` is the fourth of the
+      // four bodyId-to-word tables SaveSlots.ts counted, and it is the one that
+      // is /core's own, so this reads it rather than adding a fifth.
+      bodyName: () => d.body().name,
     });
     this.view = new MapView(d.host, d.modals, {
       adjust: (axis, delta) => {
@@ -294,11 +306,26 @@ export class MapMode {
   }
 
 
+  /**
+   * GP-650. ONE ROW PER REGISTRY RECORD, EACH AGAINST ITS OWN BODY.
+   *
+   * This function used to subtract `this.d.bodyRadiusM` -- the OBSERVER's radius
+   * -- from every record's apoapsis, which is why Anchorage read 400 km on Forge
+   * and 800 km on the moon off one unchanged 1,000,000 m conic. `recordOrbit` is
+   * the one authority now: it resolves the record's own `bodyId` and subtracts
+   * THAT body's radius, so the number does not depend on where the player is
+   * standing, which is the whole of D-014 applied to an altitude.
+   *
+   * A row for a vessel at another body is KEPT and NAMES ITS BODY rather than
+   * being dropped. "My station is not in the list" is a bug report; "Anchorage,
+   * 400 km / 400 km, at Forge" is an answer, and it is the answer that tells a
+   * player on the moon where their station actually is.
+   */
   private vesselRows(flying: boolean): MapVesselRow[] {
     const rows: MapVesselRow[] = [];
-    const R = this.d.bodyRadiusM;
+    const here = this.d.body();
     for (const rec of registry.list()) {
-      const el = rec.where.kind === 'conic' ? rec.where.el : null;
+      const orb = recordOrbit(this.d.core, rec, here.bodyId);
       const isFlying = flying && rec.id === registry.promotedId;
       // A rails record's fuel table IS the live truth: unattended, nothing
       // burns. The FLYING vessel's copy is synced only at save points, so the
@@ -311,8 +338,14 @@ export class MapMode {
         id: rec.id, name: rec.name,
         mode: isFlying ? 'flying' : rec.mode,
         fuelKg: isFlying ? NaN : fuel,
-        apoapsisAltM: el === null ? NaN : el.a * (1 + el.e) - R,
-        periapsisAltM: el === null ? NaN : el.a * (1 - el.e) - R,
+        apoapsisAltM: orb.apoapsisAltM,
+        periapsisAltM: orb.periapsisAltM,
+        bodyId: orb.body === null ? -1 : orb.body.id,
+        // The name is only WORTH saying when it is not the world in front of
+        // you: a panel that repeats "at Forge" on every row while you are on
+        // Forge is noise, and noise is what a player learns to skip past.
+        bodyName: orb.body === null ? 'an unknown body'
+          : (orb.body.id === here.bodyId ? '' : orb.body.name),
         selected: rec.id === this.selectedId,
         promoted: rec.id === registry.promotedId,
       });
@@ -325,6 +358,9 @@ export class MapMode {
     const s = f.session;
     const foc = this.focus.current();
     const b = this.focus.basis(foc.pole);
+    /** GP-650. The body the picture is OF, read once per readout so the globe,
+     *  the air line, the framing and every altitude beside them are one world. */
+    const here = this.d.body();
 
     let current: MapConic | null = null;
     let planned: MapConic | null = null;
@@ -369,8 +405,8 @@ export class MapMode {
     // how big things end up. A second copy here disagreed the moment a player
     // looked at their base: the second-authority failure in miniature.
     const draft = {
-      bodyRadiusM: this.d.bodyRadiusM,
-      atmosphereCeilingM: this.d.atmosphereCeilingM,
+      bodyRadiusM: here.radiusM,
+      atmosphereCeilingM: here.atmosphereTopM,
       planeU: b.u, planeV: b.v,
       centreM: foc.centreM, focusName: foc.name, axisName: foc.axisName,
       shipPos, playerPos, current, planned, nodePos, spanM: 0,
@@ -418,8 +454,18 @@ export class MapMode {
 
   report(): unknown {
     const n = this.nodeCtl.report();
+    const f = this.d.flight;
+    const here = this.d.body();
     return {
       open: this.open, opens: this.opens, holding: n.holding,
+      // GP-650. THE BODY THE MAP IS OF, and THE ROWS THE PANEL IS HANDED, both
+      // published so a probe reads what the player sees rather than parsing it
+      // back off the markup or re-deriving it from the registry. `vessels` goes
+      // through the SAME `vesselRows` the panel is built from, so a probe cannot
+      // pass against a second computation kept in agreement with the first.
+      body: { bodyId: here.bodyId, name: here.name, radiusM: here.radiusM,
+              muM3S2: here.muM3S2, atmosphereTopM: here.atmosphereTopM },
+      vessels: this.vesselRows(f.aboard && f.session.live),
       spanM: Math.round(this.spanM),
       focus: this.focus.report(),
       world: this.d.world === null ? null : this.d.world.report(),

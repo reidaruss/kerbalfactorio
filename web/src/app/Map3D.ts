@@ -40,6 +40,9 @@ import { OrbitLines } from './MapOrbits.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { MapReadout, V3 } from '../ui/MapTypes.js';
 import { markerPosM } from '../ui/MapPaint.js';
+import type { MapBodyPort } from './MapBoot.js';
+import { proxyRadiusUnits } from '../world/PlanetProxy.js';
+import { bodyIdOf } from '../world/VesselBody.js';
 
 export interface Map3DDeps {
   core: OfCoreModule;
@@ -53,11 +56,17 @@ export interface Map3DDeps {
   pads(): readonly { pos: { x: number; y: number; z: number } }[];
   /** The world tick rails positions are asked at (FlightVessels' clock). */
   tick(): number;
-  /** GP-520. Real body-frame metres, so a registry marker's `dirBody` (a unit
-   *  vector) can be placed ON the sphere through `MapPaint.markerPosM` before
-   *  FAR_SCALE ever touches it — `globeR` below is already scaled and cannot
-   *  be reused for this. */
-  bodyRadiusM: number;
+  /**
+   * GP-650. THE BODY THIS PICTURE IS OF, LIVE.
+   *
+   * Was `bodyRadiusM: number`, captured once in `bootMap`. It supplied GP-520's
+   * marker radius (real body-frame metres, so a marker's unit `dirBody` lands
+   * ON the sphere before FAR_SCALE touches it) and nothing else knew which body
+   * the scene was about at all. A thunk, and the whole body rather than one
+   * number, because the globe's SIZE, the marker radius and the "is this record
+   * even at this body" test are three readings of one fact.
+   */
+  body(): MapBodyPort;
 }
 
 const MIN_DIST = 0.004;
@@ -106,7 +115,17 @@ export class Map3D {
   private readonly scratch = new THREE.Vector3();
   private readonly ndc = new THREE.Vector2();
   private readonly ray = new THREE.Raycaster();
-  private readonly globeR: number;
+  /** The radius, in far-scene units, the globe is CURRENTLY drawn at. Not a
+   *  constant since GP-650: the body changes under a running client. */
+  private globeR: number;
+  /** The proxy geometry's own baked radius, so `syncGlobe` can tell "the proxy
+   *  is the body I am of" from "the proxy is a world I have left". */
+  private readonly proxyR: number;
+  /** Geometry this class built for a body the proxy is not, or null while the
+   *  proxy's own geometry is being borrowed (the shipped path, zero VRAM). */
+  private ownGeo: THREE.BufferGeometry | null = null;
+  /** 'proxy' while the world's planet is borrowed, 'own' while it is not. */
+  private globeSource: 'proxy' | 'own' = 'proxy';
   private reveal: boolean | null = null;
   private distUnits = 10;
   /** What the last marker sync put up, BY KIND, so a probe asserts the exact
@@ -114,12 +133,17 @@ export class Map3D {
   private kinds: Record<MarkerKind, number> = {
     player: 0, pad: 0, vessel: 0, flying: 0, ruin: 0, signal: 0, deposit: 0,
   };
+  /** GP-650. Registry records the last sync left OUT because they are at another
+   *  body. Published so "nothing was drawn" and "nothing belongs here" are
+   *  different readings rather than the same zero. */
+  private elsewhere = 0;
 
   constructor(private readonly d: Map3DDeps) {
     this.scene.name = 'mapScene';
     const geo = d.globe.geometry;
     if (geo.boundingSphere === null) geo.computeBoundingSphere();
-    this.globeR = geo.boundingSphere?.radius ?? 6;
+    this.proxyR = geo.boundingSphere?.radius ?? 6;
+    this.globeR = this.proxyR;
     this.globeMesh = new THREE.Mesh(geo, this.neutralMat);
     this.globeMesh.name = 'mapGlobe';
     this.scene.add(this.globeMesh);
@@ -161,17 +185,69 @@ export class Map3D {
   frame(r: MapReadout): void {
     this.frames += 1;
     this.sun.position.copy(this.d.sunDirection).multiplyScalar(60);
-    const reveal = this.d.revealAll();
-    if (reveal !== this.reveal) {
-      this.reveal = reveal;
-      this.globeMesh.material = reveal ? this.d.globe.material : this.neutralMat;
-    }
+    const here = this.d.body();
+    this.syncGlobe(here);
     const flying = r.scene.current !== null;
     this.lines.syncFlight(r.scene.current, r.scene.planned);
+    // GP-650. ONLY THIS BODY'S ORBITS. There is one globe in this scene, so a
+    // conic drawn here is a claim about the body under it, and a record at
+    // another body drawn in this frame is Reid's screenshot: a 1000 km Forge
+    // orbit wrapped around a 200 km moon. `syncRails` disposes the lines of
+    // records it no longer sees, so a body switch clears them by construction.
     this.lines.syncRails(registry.list(), this.d.tick(),
-                         flying ? registry.promotedId : 0, this.selectedId);
-    this.syncMarkers(r, flying);
+                         flying ? registry.promotedId : 0, this.selectedId,
+                         this.d.core, here.bodyId);
+    this.syncMarkers(r, flying, here);
     this.updateCamera(r.scene.centreM, r.scene.spanM);
+  }
+
+  /**
+   * GP-650. THE GLOBE IS THE BODY YOU ARE ON, BOTH DIRECTIONS.
+   *
+   * The globe was `PlanetProxy`'s mesh geometry, taken once in the constructor,
+   * and the proxy is one of the holders `WorldSession.staleHolders` already
+   * names as surviving a body switch. So after `of.reboot(1)` the map drew
+   * Forge's 5.937-unit sphere on a 200 km moon, and drew it again on the way
+   * back: measured at HEAD, `globeRadiusUnits` 5.937 before, 5.937 after.
+   *
+   * BORROWING IS KEPT WHEREVER IT IS TRUE, which is every shipped frame today:
+   * a page-reloaded boot has a proxy built for the body it booted on, the radii
+   * agree, and this class holds the proxy's own geometry exactly as it did (no
+   * extra VRAM, and reveal-all still wears the proxy's biome tint, which is the
+   * world's own colours and is only honest while it IS the world). When they
+   * disagree the map builds its own neutral sphere at the live radius and says
+   * so in the report, rather than either lying about the size or wearing another
+   * planet's biome colours.
+   */
+  private syncGlobe(here: MapBodyPort): void {
+    const wantR = proxyRadiusUnits(here);
+    const borrow = Math.abs(wantR - this.proxyR) <= 1e-6 * Math.max(wantR, this.proxyR);
+    const reveal = this.d.revealAll();
+    const source: 'proxy' | 'own' = borrow ? 'proxy' : 'own';
+    if (source !== this.globeSource || Math.abs(wantR - this.globeR) > 1e-9) {
+      if (borrow) {
+        this.globeMesh.geometry = this.d.globe.geometry;
+        this.ownGeo?.dispose();
+        this.ownGeo = null;
+      } else {
+        this.ownGeo?.dispose();
+        // The proxy's own shape, at the live body's size. Detail 3 rather than
+        // the proxy's 16: this sphere carries no per-vertex biome colour and is
+        // a reference body under a line chart, not the ground.
+        this.ownGeo = new THREE.IcosahedronGeometry(wantR, 3);
+        this.globeMesh.geometry = this.ownGeo;
+      }
+      this.globeSource = source;
+      this.globeR = wantR;
+      // Force the material branch below to re-decide: an owned globe may never
+      // wear the proxy's tint, whatever `reveal` says.
+      this.reveal = null;
+    }
+    if (reveal !== this.reveal) {
+      this.reveal = reveal;
+      this.globeMesh.material = reveal && borrow
+        ? this.d.globe.material : this.neutralMat;
+    }
   }
 
   private putMarker(key: string, kind: MarkerKind, posM: readonly number[],
@@ -201,7 +277,7 @@ export class Map3D {
     }
   }
 
-  private syncMarkers(r: MapReadout, flying: boolean): void {
+  private syncMarkers(r: MapReadout, flying: boolean, here: MapBodyPort): void {
     for (const s of this.markers.values()) s.userData.live = false;
     this.kinds = {
       player: 0, pad: 0, vessel: 0, flying: 0, ruin: 0, signal: 0, deposit: 0,
@@ -219,10 +295,19 @@ export class Map3D {
     // that reveals a marker on unwalked ground is the point of a scan.
     for (const mk of markerRegistry.list()) {
       if (!mk.known) continue;
-      this.putMarker(mk.key, mk.kind, markerPosM(mk.dirBody, this.d.bodyRadiusM), true);
+      this.putMarker(mk.key, mk.kind, markerPosM(mk.dirBody, here.radiusM), true);
     }
     const tick = this.d.tick();
+    this.elsewhere = 0;
     for (const rec of registry.list()) {
+      // GP-650. A MARKER IS A PLACE IN THIS BODY'S FRAME, so a record at another
+      // body has no place here. Counted rather than silently skipped: "the
+      // station is not on my map" has to be answerable, and the panel's row for
+      // it says which body it orbits (MapPanels' `orbits` line).
+      if (bodyIdOf(this.d.core, rec, here.bodyId) !== here.bodyId) {
+        this.elsewhere += 1;
+        continue;
+      }
       const isFlying = flying && rec.id === registry.promotedId;
       const pos: V3 | null = isFlying ? r.scene.shipPos
         : rec.where.kind === 'fixed' ? rec.where.pos
@@ -258,10 +343,19 @@ export class Map3D {
   }
 
   report(): unknown {
+    const here = this.d.body();
     return {
       frames: this.frames,
-      globeTint: this.reveal === true ? 'biome' : 'neutral',
+      globeTint: this.globeMesh.material === this.neutralMat ? 'neutral' : 'biome',
       globeRadiusUnits: this.globeR,
+      // GP-650. Which body the picture is of, and whether the world's own planet
+      // is what is being drawn. `globeBodyId` is what a probe asserts a body
+      // switch against; `globeSource` tells a borrowed globe from a built one,
+      // so "the proxy went stale" and "the map coped" are separable readings.
+      globeBodyId: here.bodyId,
+      globeBodyName: here.name,
+      globeSource: this.globeSource,
+      vesselsElsewhere: this.elsewhere,
       camera: { yawRad: this.yawRad, pitchRad: this.pitchRad,
         distM: Math.round(this.distUnits / FAR_SCALE),
         centreUnits: this.centre.toArray() },

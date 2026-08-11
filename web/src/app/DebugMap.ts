@@ -88,6 +88,16 @@ export function mapApi(s: Services): MapDebugApi {
           m.view.hooks.focus(o.name);
           return m.report();
         }
+        // GP-650. THE VESSEL ROWS THE PANEL IS HANDED, and the body the map is
+        // OF, both already in `report()` and named here so a probe reads them
+        // without wading through the whole report. NOT a second computation:
+        // `MapMode.report` calls the same `vesselRows` the panel is built from,
+        // so a probe cannot go green against numbers no player ever sees, which
+        // is the failure this file's own header is about.
+        case 'vessels': {
+          const r = m.report() as { body?: unknown; vessels?: unknown };
+          return { body: r.body, vessels: r.vessels };
+        }
         // The discovery field, straight off /core.
         case 'disc': return m.world?.report() ?? { error: 'no world layer' };
         // THE GROUND THE PAINTER WAS HANDED, sample for sample (WG-33). The

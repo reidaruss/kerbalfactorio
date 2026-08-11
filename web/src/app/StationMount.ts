@@ -221,6 +221,10 @@ export interface StationInstallDeps {
   readonly up: Vec3n;
   readonly bodyRadiusM: number;
   readonly muM3S2: number;
+  /** GP-650. /core's own `BodyParams::bodyId` for the body above, stamped onto
+   *  the record on a mint so the map can ask which body it orbits instead of
+   *  assuming the observer's. Only read on a mint, like `up`. */
+  readonly bodyId: number;
   /** The ONE gravity authority, at the station's own radius. */
   readonly gravityAccel: (rM: number) => number;
 }
@@ -238,7 +242,8 @@ export interface StationInstallDeps {
  */
 export function installAndMountStation(d: StationInstallDeps, tick: number)
     : StationReport | null {
-  const st = installStation(d.core, d.bodies, d.up, d.bodyRadiusM, d.muM3S2, tick);
+  const st = installStation(d.core, d.bodies, d.up, d.bodyRadiusM, d.muM3S2,
+                            tick, d.bodyId);
   if (st === null) return null;
   // PH-98. WHAT YOU WEIGH IN IT, which the record and the interior cannot say
   // between them. A station in orbit is in FREEFALL and its occupants have no

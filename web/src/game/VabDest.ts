@@ -32,6 +32,11 @@ export interface VabDestPorts {
   M: OfCoreModule;
   /** The /core body handle the bay is on. */
   body: number;
+  /** GP-650. And its `BodyParams::bodyId`, which no export reads back off a
+   *  handle (`PlanetBody`'s own note), so it travels beside it. The
+   *  destination list needs it for the same reason the map's does: a record at
+   *  another body is not a place this design can be sent. */
+  bodyId: number;
   designHandle(): number;
   parts(): readonly DesignPart[];
   catalogueIds(): readonly number[];
@@ -62,6 +67,7 @@ export class VabDest {
         name: 'home',
         radiusM: this.p.M._of_body_radius(this.p.body),
         muM3S2: this.p.M._of_body_mu(this.p.body),
+        bodyId: this.p.bodyId,
       };
     }
     return this.home;
@@ -69,7 +75,7 @@ export class VabDest {
 
   rows(): AutopilotTarget[] {
     const h = this.body();
-    const out = collect([registrySource(h), bodySource()]);
+    const out = collect([registrySource(h, 0, this.p.M, h.bodyId), bodySource()]);
     // The requested orbit is LAST because it is the one that is always
     // available: a list whose first row is the same every session teaches the
     // player nothing about what is up there.

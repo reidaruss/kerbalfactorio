@@ -262,7 +262,8 @@ export class MapPlanner {
 
   rows(): AutopilotTarget[] {
     const h = this.p.home();
-    const out = collect([registrySource(h, this.p.flyingId()), bodySource()]);
+    const out = collect([registrySource(h, this.p.flyingId(), this.p.M,
+                                        h.bodyId), bodySource()]);
     out.push(requestedOrbit(h, this.altKm * 1000, this.incDeg));
     return out;
   }
