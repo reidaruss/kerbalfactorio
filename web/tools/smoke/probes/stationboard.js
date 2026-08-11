@@ -24,6 +24,11 @@
 // (CE-41) rather than at rest in the body frame at 31.32 m per tick of being
 // left behind.
 //
+// AND SINCE PH-357 MERGED, ANCHORAGE ACTUALLY TRAVELS, so this is no longer a
+// claim about what would happen: it is the first station mission's own floor,
+// measured on the station Reid will fly to. All three links of the state of the
+// union's §4a are now in one build, and this file is where they meet.
+//
 // ===========================================================================
 // THE FAILURE MODES, NAMED BEFORE ANYTHING IS MEASURED (NUMBERS.md rule 4)
 // ===========================================================================
@@ -43,16 +48,25 @@
 //                            moving one.
 //   F6  REBASE COLLAPSE.     A boarded rider at 1879.26 m/s crosses the 4 km
 //                            floating-origin threshold every 128 ticks forever.
-//   F7  VACUOUS PASS.        Everything measured against Anchorage as it ships,
-//                            whose conic is FROZEN (`stampedTick = -1`), so the
-//                            transport is the identity and zero drift is
-//                            arithmetic rather than evidence (GP-142).
+//   F7  VACUOUS PASS.        Everything measured against a station whose conic
+//                            is FROZEN (`stampedTick = -1`), so the transport is
+//                            the identity and zero drift is arithmetic rather
+//                            than evidence (GP-142).
 //
-// F7 IS THE ONE THAT DECIDES THE SHAPE OF THIS FILE. Section 3 refuses to run
-// the rest unless it is looking at a frame that genuinely moves at the station's
-// own measured 31.320919525472796 m per tick, and that frame is a `rotor`
-// DERIVED FROM ANCHORAGE'S OWN r x v, re-mounted through `mountStationOn`, which
-// is the same function boot calls.
+// F7 IS THE ONE THAT DECIDES THE SHAPE OF THIS FILE, AND PH-357 CHANGED HOW IT
+// IS ANSWERED. When this probe was first written, `mintStation` left the record
+// unstamped for ever, so the only moving carrier reachable was a `rotor`
+// instrument derived from the record's own r x v with the station re-mounted
+// onto it. `installStation` stamps the record now: **the shipped station moves,
+// and every number in this file is measured on the one the player visits. There
+// is no instrument frame anywhere in it.**
+//
+// The refusal is unchanged in force and now points at the shipping path: section
+// 2 reads the rate BEFORE the press and stops the run if it is not
+// 31.320919525472796 m per tick. That is not paranoia about a change that has
+// already landed. `stashVessels` drops `stampedTick` on every save, so any world
+// between a load and its first stamp is frozen again, and on that world all of
+// this would be the identity element of its own operation.
 //
 // EVERY WINDOW IS IN TICKS, NEVER SECONDS. `of.run(s)` takes seconds and the
 // tick count it produces is read back off the census rather than assumed; the
@@ -151,35 +165,82 @@
     ground !== null && ground.insideBoard === false && ground.depthM > 100000,
     JSON.stringify(ground));
 
-  // --- 2. THE SHIPPED PRESS, ON THE STATION AS IT SHIPS -------------------
-  // THE POSITIVE CONTROL, and the reason it is worth a section: the station's
-  // conic is frozen, so `seatOnStationDeck`'s live deck position and GP-234's
-  // tick-0 install position are THE SAME NUMBER, bitwise. If the arrival ever
-  // starts landing somewhere else on a frozen station, it is this check that
-  // says so, before any moving fixture can be blamed.
+  // --- 2. THE FIXTURE, FIRST, AND IT IS NOW THE SHIPPED STATION (F7) -----
+  //
+  // THIS SECTION USED TO BUILD AN INSTRUMENT AND IT NO LONGER DOES. Before
+  // PH-357, `mintStation` left `stampedTick = -1`, `clockAt` returned the same
+  // clock for every tick, and the only moving carrier reachable was a `rotor`
+  // derived from the record's own r x v with the station re-mounted onto it.
+  // `installStation` stamps the record now, so the conic runs and **every number
+  // below is measured on the station the player actually visits**, with no
+  // instrument frame anywhere in this file.
+  //
+  // The refusal stays exactly as sharp. A record between a load and its first
+  // stamp reads `stampedTick = -1` again (`stashVessels` drops it on every save),
+  // and on that world all of this would be the identity element of its own
+  // operation. So the rate is checked BEFORE the press, and a station that is
+  // not moving stops the run here rather than producing a page of zeros.
+  const surv = of.carrier('survey', { id: STATION, ticks: 600 });
+  if (!(surv.perTickM > 1)) {
+    return { valid: false, fails,
+      why: `F7 REFUSAL: the SHIPPED station does not move (perTickM `
+        + `${surv.perTickM}). Its record is unstamped, so every drift number `
+        + 'below would be the identity element of the operation under test. '
+        + 'Nothing else is measured.' };
+  }
+  check('FIXTURE: the shipped station travels at its own measured orbital rate',
+    Math.abs(surv.perTickM - PER_TICK_M) < 1e-6,
+    `${surv.perTickM} m/tick against ${PER_TICK_M}`);
+  check('FIXTURE: and it turns as it goes, so the quaternion path is exercised',
+    surv.turnPerTickRad > 1e-9, `${surv.turnPerTickRad} rad/tick`);
+  notes.push(`shipped station perTickM = ${surv.perTickM}, and the rotor `
+    + 'instrument this probe used to need derived 31.320919525472796 from the '
+    + 'same record while it was still frozen: two independent routes to one rate');
+
+  // --- 3. THE SHIPPED PRESS, ON A STATION THAT IS ACTUALLY MOVING --------
+  //
+  // `row.click()` runs `Cheats.press` SYNCHRONOUSLY, so the census read on the
+  // line after it is the seat's own numbers with no ticks in between. That is
+  // where F2 is sharpest: `standAt` alone would leave |vel| at 0 here, and the
+  // whole feature is that it reads 1879.2552.
+  const installPos = of.station()?.install?.pos ?? null;
   of.pause(true);
   await sleep(0.35);
   const row = document.querySelector('#of-pause button[data-cheat="visit:station"]');
   if (row === null) return { valid: false, why: 'no station row in the menu', fails };
+  const deckAtPress = M().solid.pos.slice();
   row.click();
-  await sleep(1.2);
+  const cPress = C();
+  const pressSpeed = len(cPress.vel);
+  check('THE SHIPPED PRESS BOARDS THE PLAYER (todo #1: this read 0 at HEAD)',
+    cPress.ride.boards === 1 && cPress.ride.carrier === STATION,
+    JSON.stringify(cPress.ride));
+  check('F2 CONTROL: the press seats the player AT REST IN THE FRAME',
+    Math.abs(pressSpeed - PER_TICK_M * 60) < 1e-3,
+    `|vel| ${pressSpeed} m/s, wanted ${PER_TICK_M * 60}. A standAt-only arrival `
+    + 'reads ~0 here, and that ~0 is the defect');
+  check('and the feet are on the LIVE deck, to the millimetre',
+    d3(cPress.feet, deckAtPress) < 1e-3,
+    `${d3(cPress.feet, deckAtPress)} m from the hub centre`);
+  // PH-357'S REGRESSION, ASSERTED AS A POSITIVE FACT. The install report's `pos`
+  // is where the solid was FIRST posed, and it is a fact about the install for
+  // ever. If the press still used it, the player would be exactly this far out,
+  // in empty space, 400 km up. The check above passing WHILE this one reports a
+  // large number is the two-sided evidence that the arrival is aimed live.
+  const installStale = installPos === null ? 0 : d3(deckAtPress, installPos);
+  check('and NOT on the boot position, which is now demonstrably stale',
+    installStale > 100,
+    `install pos is ${installStale} m from the live deck: too close to tell a `
+    + 'live-deck arrival from a boot-position one, so this proves neither');
   of.pause(false);
   await sleep(1.2);
   const c1 = C();
-  const frozenSolid = M().solid.pos.slice();
-  check('THE SHIPPED PRESS BOARDS THE PLAYER (todo #1: this read 0 at HEAD)',
-    c1.ride.boards === 1 && c1.ride.carrier === STATION, JSON.stringify(c1.ride));
-  check('...exactly once: the press boarded, the per-tick rule did not repeat it',
+  check('...boarded exactly once: the press did it, the per-tick rule did not',
     c1.ride.boards === 1 && c1.ride.releases === 0, JSON.stringify(c1.ride));
   check('...and the per-tick rule boarded nobody, so the press is the author',
     c1.mounts.boarding.boarded === 0, `boarded ${c1.mounts.boarding.boarded}`);
   check('the ride is now applying a transport every tick',
     c1.ride.applied > 50, `applied ${c1.ride.applied}`);
-  check('POSITIVE CONTROL: the feet are ON the frozen deck, to the metre',
-    d3(c1.feet, frozenSolid) < 1.0, `${d3(c1.feet, frozenSolid)} m from the hub`);
-  const frozenSpeed = len(c1.vel);
-  check('and on a FROZEN station the seat velocity is zero, not 1879',
-    frozenSpeed < 1e-9, `${frozenSpeed} m/s`);
   // The deck depth is SCANNED, never typed. A hard-coded 0.35 m read false on
   // stationride.js's first run while the world said `onDeck: true`, which is a
   // fixture that cannot exhibit the defect wearing the name of one that can.
@@ -196,52 +257,20 @@
   }
   const DECK_M = scan[Math.floor(scan.length / 2)];
 
-  // --- 3. THE FIXTURE. REFUSE TO CONTINUE IF IT DOES NOT MOVE (F7) --------
-  const survFrozen = of.carrier('survey', { id: STATION, ticks: 600 });
-  notes.push(`shipped station perTickM = ${survFrozen.perTickM} (frozen by design)`);
-  const spin = of.carrier('register',
-    { kind: 'rotor', id: 'spin', from: STATION, ticks: 600 });
-  if (spin.error) return { valid: false, why: `rotor: ${spin.error}`, fails };
-  if (!(spin.perTickM > 1)) {
-    return { valid: false, fails,
-      why: `F7 REFUSAL: the fixture does not move (perTickM ${spin.perTickM}). `
-        + 'Every drift number below would be the identity element of the '
-        + 'operation under test. Nothing else is measured.' };
-  }
-  check('FIXTURE: the moving frame travels at Anchorage\'s own measured rate',
-    Math.abs(spin.perTickM - PER_TICK_M) < 1e-6,
-    `${spin.perTickM} m/tick against ${PER_TICK_M}`);
-  check('FIXTURE: and it turns, so the quaternion path is exercised too',
-    spin.turnPerTickRad > 1e-9, `${spin.turnPerTickRad} rad/tick`);
-
-  // --- 4. ARRIVE ON A MOVING STATION -------------------------------------
-  // Let go first, so what follows is a boarding rather than a re-boarding, then
-  // re-mount the station's geometry onto the moving frame. `remount` holds the
-  // geometry exactly where it is at this tick, so nothing teleports.
-  of.carrier('release');
-  const beforeSwap = M().solid.pos.slice();
-  const swap = of.carrier('remount', { id: 'spin' });
-  if (swap.error) return { valid: false, why: `remount: ${swap.error}`, fails };
-  check('re-mounting moves the station by exactly nothing',
-    d3(beforeSwap, M().solid.pos) === 0, `${d3(beforeSwap, M().solid.pos)} m`);
-  // R14: NO `await` between seating and running. `of.run` restarts the rAF loop
-  // when it returns, so a yield here would age the seat velocity by an
-  // unmeasured number of ticks, which on a turning frame is a real relative
-  // velocity the rest of this section would then be measuring.
-  const seat = of.carrier('seat');
-  if (seat.error) return { valid: false, why: `seat: ${seat.error}`, fails };
+  // --- 4. THE WINDOW OPENS WHERE THE PRESS LEFT THE PLAYER ---------------
+  // No remount, no instrument, no second boarding: this is the state the press
+  // produced, ticked forward.
   const cA = C();
   const tA = cA.tick;
   const feetA = cA.feet.slice();
   const localA = of.carrier('local').local.slice();
   const deckA = M().solid.pos.slice();
   const rebasesA = mustNum(cA, 'rebases', 'census');
-  check('F2 CONTROL: the arrival is at rest IN THE FRAME, not in the body frame',
-    Math.abs(len(cA.vel) - PER_TICK_M * 60) < 1e-3,
-    `|vel| ${len(cA.vel)} m/s, wanted ${PER_TICK_M * 60} (a body-frame arrival `
-    + 'reads ~0 here, and that is the defect)');
-  check('and it is the moving frame that is carrying the player',
-    cA.ride.carrier === 'spin', `${cA.ride.carrier}`);
+  check('the player is still riding the station 1.2 s after the press',
+    cA.ride.carrier === STATION, `${cA.ride.carrier}`);
+  check('and still at the station\'s own speed, not decaying toward the body frame',
+    Math.abs(len(cA.vel) - PER_TICK_M * 60) < 1.0,
+    `|vel| ${len(cA.vel)} m/s against ${PER_TICK_M * 60}`);
 
   // --- 5. 600 TICKS ON A MOVING DECK -------------------------------------
   await sleep(10);
@@ -341,13 +370,13 @@
   // no. `board` + `standLocal` puts the rider back at the deck at rest, then
   // `release` hands the question back to the rule, which must answer it on the
   // very next tick.
-  of.carrier('board', { id: 'spin' });
+  of.carrier('board', { id: STATION });
   of.carrier('standLocal', { x: localB[0], y: localB[1], z: localB[2] });
   of.carrier('release');
   await sleep(0.5);
   const cIn = C();
   check('F1: the per-tick rule boards a rider standing on the deck, with no press',
-    cIn.ride.carrier === 'spin'
+    cIn.ride.carrier === STATION
     && cIn.mounts.boarding.boarded === boardedBefore + 1,
     `carrier ${cIn.ride.carrier}, boarded ${cIn.mounts.boarding.boarded}`);
   check('and the floor is under them again',
@@ -363,18 +392,18 @@
   const unmounted = of.carrier('unmount');
   const rel = of.carrier('release');
   check('the control armed: no mounts, and the rider let go',
-    unmounted.mounts.size === 0 && rel.was === 'spin',
+    unmounted.mounts.size === 0 && rel.was === STATION,
     `${JSON.stringify(unmounted.mounts)} was ${rel.was}`);
   check('CE-33 CONTROL: release itself changes the velocity by nothing',
     d3(rel.before.vel, rel.after.vel) === 0,
     `${d3(rel.before.vel, rel.after.vel)} m/s lost at release`);
   const cC = C();
   const tC = cC.tick;
-  const localC = of.carrier('local', { id: 'spin' }).local.slice();
+  const localC = of.carrier('local', { id: STATION }).local.slice();
   await sleep(10);
   const cD = C();
   const ticks2 = cD.tick - tC;
-  const localD = of.carrier('local', { id: 'spin' }).local.slice();
+  const localD = of.carrier('local', { id: STATION }).local.slice();
   const looseDrift = d3(localC, localD);
   check('CONTROL: it stayed un-boarded, so the rule cannot heal the control',
     cD.ride.carrier === null, `${cD.ride.carrier}`);
@@ -395,14 +424,15 @@
   return {
     valid: true,
     fails,
-    checks: 27,
+    checks: 28,
     notes,
     deck: { boundRadiusM: deckR, depthM: DECK_M, depthScanHits: scan.length },
-    frozen: { perTickM: survFrozen.perTickM, seatSpeedMS: frozenSpeed,
-              boards: c1.ride.boards, carrier: c1.ride.carrier,
-              feetToHubM: d3(c1.feet, frozenSolid) },
-    fixture: { id: 'spin', perTickM: spin.perTickM, wantedPerTickM: PER_TICK_M,
-               turnPerTickRad: spin.turnPerTickRad },
+    fixture: { id: STATION, perTickM: surv.perTickM, wantedPerTickM: PER_TICK_M,
+               turnPerTickRad: surv.turnPerTickRad, instrumentFrames: 0 },
+    press: { boards: cPress.ride.boards, carrier: cPress.ride.carrier,
+             seatSpeedMS: pressSpeed, wantedSeatSpeedMS: PER_TICK_M * 60,
+             feetToLiveHubM: d3(cPress.feet, deckAtPress),
+             installPosStaleM: installStale },
     boarded: { ticks: ticks1, seatSpeedMS: len(cA.vel),
                deckTravelM: deckTravel, riderTravelM: riderTravel,
                localDriftM: localDrift, localDriftPerTickM: localDrift / ticks1,
