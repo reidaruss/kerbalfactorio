@@ -15,6 +15,14 @@
 *.umap filter=lfs diff=lfs merge=lfs -text
 # *.png filter=lfs diff=lfs merge=lfs -text   # RETIRED 2026-08-03, see the note below
 # *.jpg filter=lfs diff=lfs merge=lfs -text   # RETIRED 2026-08-03, see the note below
+# The two explicit path rules the retirement note below asks for (BT-60). The
+# blanket retirement also removed the SMUDGE filter from the .png files that
+# were ALREADY in LFS, so a fresh clone wrote 130-byte pointer TEXT into
+# assets/textures/dist/*.png and into the one LFS probe fixture. Those are
+# genuinely large binaries, they are still LFS objects in history, and without
+# these rules every clone silently ships the app 25 unreadable textures.
+assets/textures/dist/*.png filter=lfs diff=lfs merge=lfs -text
+web/tools/smoke/fixtures/RN958_ripple_frames.png filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
 *.fbx filter=lfs diff=lfs merge=lfs -text
 *.exr filter=lfs diff=lfs merge=lfs -text

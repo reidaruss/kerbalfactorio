@@ -17,9 +17,27 @@
 // The maps are NOT embedded in the .glb files and must not be: 48 assets share
 // two textures, and MachineBatch discards per-file materials anyway. See
 // tools/blender/surface_preview.py for the whole argument.
-import { copyFileSync, mkdirSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, statSync, existsSync, openSync, readSync, closeSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
+
+// THE POINTER GUARD (BT-60). Git LFS pointers are 130-byte ASCII files that
+// begin with this line. Without a smudge filter for their path they check out
+// as that TEXT, and this script cheerfully copied 25 of them into public/ and
+// reported `25 .png, 0.00 MB`. The app then fetched them with HTTP 200 and a
+// content-type of image/png, so the only symptom was a texture decode error
+// three layers away, which read like a GPU fault and was diagnosed as one for
+// a day. The size WAS printed and nobody read it; this makes it a hard stop.
+const LFS_MAGIC = 'version https://git-lfs.github.com/spec/v1';
+function lfsPointer(file) {
+  // A pointer is always well under 1 KB, so anything larger cannot be one and
+  // does not need to be opened.
+  if (statSync(file).size > 1024) return false;
+  const fd = openSync(file, 'r');
+  const buf = Buffer.alloc(LFS_MAGIC.length);
+  try { readSync(fd, buf, 0, buf.length, 0); } finally { closeSync(fd); }
+  return buf.toString('latin1') === LFS_MAGIC;
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..', 'assets');
@@ -43,6 +61,7 @@ for (const [src] of ROOTS) {
 }
 
 const tally = new Map();
+const pointers = [];
 function walk(from, to, exts) {
   mkdirSync(to, { recursive: true });
   for (const e of readdirSync(from)) {
@@ -50,6 +69,9 @@ function walk(from, to, exts) {
     if (statSync(p).isDirectory()) { walk(p, join(to, e), exts); continue; }
     const ext = exts.find((x) => e.endsWith(x));
     if (ext === undefined) continue;
+    // Collect every offender before reporting: "one file is a pointer" sends
+    // someone hunting one file, "all 25 are" names the real condition.
+    if (lfsPointer(p)) { pointers.push(relative(join(here, '..', '..'), p)); continue; }
     copyFileSync(p, join(to, e));
     const t = tally.get(ext) ?? { files: 0, bytes: 0 };
     t.files++;
@@ -58,6 +80,19 @@ function walk(from, to, exts) {
   }
 }
 for (const [src, to, exts] of ROOTS) walk(src, to, exts);
+
+if (pointers.length > 0) {
+  console.error(
+    `sync-assets: ${pointers.length} source asset(s) are Git LFS POINTER FILES, `
+    + `not content. They were NOT copied, because serving 130 bytes of ASCII as `
+    + `image/png fails at texture decode and blames the renderer.\n`
+    + pointers.map((f) => `  ${f}`).join('\n')
+    + `\n\nFix it with:  git lfs pull\n`
+    + `If that leaves them as pointers, this clone has no smudge filter for `
+    + `their path: check .gitattributes has an explicit filter=lfs rule for `
+    + `them (the blanket *.png rule was retired 2026-08-03).`);
+  process.exit(1);
+}
 
 // Report every extension separately. One combined "N files, M MB" would have
 // hidden the texture payload inside the model payload, which is exactly the
