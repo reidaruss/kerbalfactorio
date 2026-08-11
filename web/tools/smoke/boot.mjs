@@ -128,6 +128,29 @@ export async function bootOnce({ url, nonce, timeoutMs = 60000 }) {
     list() { return [...seen.entries()].map(([m, n]) => (n > 1 ? `${m}   (x${n})` : m)); },
   };
   const pageLog = [];
+  // GL CONTEXT LOSS (BT-63). Under SwiftShader on the Linux VM the context is
+  // lost at ~0.9 s and restored at ~2.6 s on roughly half of runs, always
+  // inside the ItemIcons bake (the app holds a SECOND WebGL context there).
+  // Measured: a lost-and-restored run differs from a clean one by 0.49% of
+  // pixels, against 0.31% between two clean runs, so the restore re-uploads
+  // correctly and the frame is sound. A blanket allowlist would then blind the
+  // harness to the losses that DO matter, so the rule is narrow instead: a
+  // loss is tolerated only when a restore answers it AND the pair completes
+  // before __of.ready. A loss after ready is a measurement running on a dead
+  // context, and an unanswered loss never comes back at all. Both still fail.
+  //
+  // Counted as EPISODES, not messages. One real loss emits TWO lines, Chrome's
+  // `CONTEXT_LOST_WEBGL` warning and three's `Context Lost.` log, ~10 ms apart,
+  // so counting messages would score one loss as two, exceed the restore count
+  // and fail every SwiftShader run for the wrong reason. `down` collapses both
+  // onto the one event they describe. Chrome's warning alone is not enough to
+  // key on: it is only printed when something afterwards TOUCHES the dead
+  // context, so a loss followed by silence never produces it.
+  let ready = false;
+  let down = false;
+  const ctx = { lost: 0, restored: 0, lateLoss: 0 };
+  const LOST_RE = /CONTEXT_LOST_WEBGL|WebGLRenderer: Context Lost/;
+  const RESTORED_RE = /WebGLRenderer: Context Restored/;
 
   const { chromium } = await import('playwright-core');
   const browser = await chromium.launch({
@@ -145,12 +168,22 @@ export async function bootOnce({ url, nonce, timeoutMs = 60000 }) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
     page.on('console', (m) => {
       const t = m.type();
+      // Counted, not pushed: judged together after ready. See the note above.
+      if (LOST_RE.test(m.text())) {
+        if (!down) { down = true; ctx.lost++; if (ready) ctx.lateLoss++; }
+        pageLog.push(m.text()); return;
+      }
+      if (RESTORED_RE.test(m.text())) {
+        if (down) { down = false; ctx.restored++; }
+        pageLog.push(m.text()); return;
+      }
       if (t === 'error') errors.push(`console.error: ${m.text()}`);
       else if (t === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())) {
         // The allowlist is run.mjs's, entry for entry, and names one ANGLE
-        // diagnostic each; see run.mjs for the attribution of both.
+        // diagnostic each; see run.mjs for the attribution of all three.
         if (!/warning X4122/.test(m.text())
-          && !/warning X4000: use of potentially uninitialized variable \(f_ApplyFXAA\)/.test(m.text())) {
+          && !/warning X4000: use of potentially uninitialized variable \(f_ApplyFXAA\)/.test(m.text())
+          && !/GPU stall due to ReadPixels/.test(m.text())) {
           errors.push(`console.warn: ${m.text()}`);
         }
       } else if (t === 'info' || t === 'log') pageLog.push(m.text());
@@ -170,6 +203,7 @@ export async function bootOnce({ url, nonce, timeoutMs = 60000 }) {
     }
     await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: timeoutMs });
     await page.evaluate(() => window.__of.ready);
+    ready = true;
     await page.evaluate((n) => window.__of.settle(n), 4);
     sane = await page.evaluate(() => ({
       tick: window.__of.world().tick,
@@ -177,13 +211,20 @@ export async function bootOnce({ url, nonce, timeoutMs = 60000 }) {
       gpu: window.__of.stats().gpu ?? null,
     }));
     if (!(sane.tick > 0)) errors.push(`boot: the loop is not ticking (tick ${sane.tick})`);
+    if (ctx.lateLoss > 0) {
+      errors.push(`boot: the GL context was lost ${ctx.lateLoss}x AFTER __of.ready. `
+        + `Everything measured past that point was drawn on a dead context.`);
+    } else if (ctx.lost > ctx.restored) {
+      errors.push(`boot: the GL context was lost ${ctx.lost}x but only ${ctx.restored} `
+        + `restore(s) arrived, so it never came back.`);
+    }
   } catch (e) {
     errors.push(`boot: ${e?.message ?? e}`);
   } finally {
     await browser.close();
   }
   return {
-    ok: errors.length === 0, errors: errors.list(), sane, pageLog,
+    ok: errors.length === 0, errors: errors.list(), sane, pageLog, ctx,
     ms: Math.round(performance.now() - t0),
   };
 }
@@ -266,6 +307,70 @@ async function selftest() {
     },
     (r) => (r.ok === true) || `a pass; got errors ${JSON.stringify(r.errors)}`);
 
+  // 5-7. THE CONTEXT-LOSS RULE (BT-63). SwiftShader loses and restores the
+  //    context inside the icon bake on about half of runs on the Linux VM, and
+  //    the harness tolerates exactly that shape and nothing else. These three
+  //    pin all three branches with a REAL WEBGL_lose_context call, so the
+  //    tolerance can never quietly widen into "context loss is fine". If WebGL
+  //    is unavailable altogether these fail, which is also correct.
+  //    The page reports the loss the way the real client does: three installs
+  //    `webglcontextlost` / `webglcontextrestored` listeners and logs those two
+  //    strings from them, so keying the test on the DOM events tests the same
+  //    path production takes, and does so deterministically.
+  const glPage = (body) => (req, res) => {
+    res.setHeader(NONCE_HEADER, nonce);
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<!doctype html><canvas id="c"></canvas><script>'
+      + 'var c=document.getElementById("c");'
+      + 'var gl=c.getContext("webgl");'
+      + 'var ext=gl&&gl.getExtension("WEBGL_lose_context");'
+      + 'c.addEventListener("webglcontextlost",function(e){e.preventDefault();'
+      + 'console.log("THREE.WebGLRenderer: Context Lost.");});'
+      + 'c.addEventListener("webglcontextrestored",function(){'
+      + 'console.log("THREE.WebGLRenderer: Context Restored.");});'
+      + 'var of={ready:Promise.resolve(),settle:function(){},'
+      + 'world:function(){return {tick:1,frames:1};},'
+      + 'stats:function(){return {gpu:"selftest"};}};'
+      + body + '</script>');
+  };
+
+  // 5. A loss AFTER ready. This page makes its context INSIDE settle and not at
+  //    load: a context that exists while the page is still coming up can be
+  //    taken by the browser first, which lands the loss before ready and tests
+  //    the wrong branch. settle() then holds 600 ms so the console event cannot
+  //    race the verdict.
+  await run('a context lost AFTER ready fails the boot',
+    (req, res) => {
+      res.setHeader(NONCE_HEADER, nonce);
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<!doctype html><script>window.__of={ready:Promise.resolve(),'
+        + 'world:function(){return {tick:1,frames:1};},'
+        + 'stats:function(){return {gpu:"selftest"};},'
+        + 'settle:function(){'
+        + 'var c=document.createElement("canvas");document.body.appendChild(c);'
+        + 'c.addEventListener("webglcontextlost",function(e){e.preventDefault();'
+        + 'console.log("THREE.WebGLRenderer: Context Lost.");});'
+        + 'var g=c.getContext("webgl");'
+        + 'g.getExtension("WEBGL_lose_context").loseContext();'
+        + 'return new Promise(function(r){setTimeout(r,600);});}};</script>');
+    },
+    (r) => (!r.ok && r.errors.some((e) => /AFTER __of\.ready/.test(e)))
+      || 'a failure naming a loss after __of.ready');
+
+  // 6. A loss BEFORE ready that is answered by a restore: the SwiftShader shape,
+  //    and the only one that passes.
+  await run('a context lost before ready and restored passes',
+    glPage('ext.loseContext();setTimeout(function(){ext.restoreContext();},100);'
+      + 'setTimeout(function(){window.__of=of;},600);'),
+    (r) => (r.ok === true) || `a pass; got errors ${JSON.stringify(r.errors)}`);
+
+  // 7. A loss BEFORE ready that is NEVER answered. Same timing as 6, one line
+  //    different, so the restore is provably the thing that makes 6 pass.
+  await run('a context lost before ready and never restored fails the boot',
+    glPage('ext.loseContext();setTimeout(function(){window.__of=of;},300);'),
+    (r) => (!r.ok && r.errors.some((e) => /never came back/.test(e)))
+      || 'a failure saying the context never came back');
+
   const failed = cases.filter((c) => !c.pass);
   console.error(`selftest: ${cases.length - failed.length}/${cases.length} green`);
   process.exit(failed.length === 0 ? 0 : 1);
@@ -297,7 +402,11 @@ async function gate() {
 
   if (r.ok) {
     rmSync(outDir, { recursive: true, force: true });
-    console.error(`boot: PASS  tick ${r.sane.tick}, ${r.sane.frames} frames, gpu ${r.sane.gpu}`
+    // A tolerated context loss is REPORTED, never silent: it is the difference
+    // between "SwiftShader did its usual thing" and "this box has a new fault".
+    const lostNote = r.ctx.lost > 0
+      ? `, ${r.ctx.lost} pre-ready context loss(es) restored ${r.ctx.restored}x` : '';
+    console.error(`boot: PASS  tick ${r.sane.tick}, ${r.sane.frames} frames, gpu ${r.sane.gpu}${lostNote}`
       + `  (total ${((performance.now() - t0) / 1000).toFixed(1)} s)`);
     process.exit(0);
   }
