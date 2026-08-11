@@ -9,6 +9,7 @@ import { windUpdate } from '../render/instancing/PropWind.js';
 import { dayAdvance } from '../sim/DayCycle.js';
 import { terrainNightAmbient } from '../render/materials/TerrainAmbient.js';
 import { bootCelestialBodies } from '../render/CelestialBoot.js';
+import { MILESTONE, grantMilestone } from '../game/Research.js';
 
 /** Sun elevation, as dot(sunDir, up), at which the stock lights are fully out. */
 const NIGHT_DOT = -0.12;
@@ -43,6 +44,18 @@ export function registerSystems(s: Services, loop: Loop): void {
   let recoverHeld = false;
   let mapHeld = false;
   let holdHeld = false;
+  // GP-530. THE MILESTONE EDGE. A rising edge only, read here beside the
+  // flight/map crossing above for the same reason: FlightSession owns no
+  // idea research exists and Gameplay owns no idea a vessel is flying, so
+  // Systems is where the two meet, exactly as it already is for the board/
+  // map/recover keys. Never re-fires spuriously across a rollout or a fresh
+  // boot: `FlightSession.status` resets to CLAMPED on both (its own field
+  // default and its own `rollOut`), and no save ever restores a LIVE flight
+  // mid-air (VesselRegistry's rails model has no such state, PS-40), so a
+  // load can only ever start this at CLAMPED too. `grantMilestone` is
+  // idempotent underneath this regardless (research.h's `setMilestone`), so
+  // even a wrongly-repeated edge would grant nothing a second time.
+  let lastFlightStatus: string | null = null;
   loop.onFixedStep.push((_dt, tick) => {
     // GP-57. THE PAD'S CLAMPS, ON THE FIXED TICK AND NOT ON THE FRAME.
     //
@@ -323,6 +336,25 @@ export function registerSystems(s: Services, loop: Loop): void {
     // agree. Placing it in onDrain instead put it a whole tick of travel out,
     // which is 38 m at orbital speed and reads as a rocket that has vanished.
     s.flight?.frame(loop.simSecs);
+    // GP-530. ReachedOrbit / LandedOffWorld, granted off the SAME status word
+    // ObjectiveList's "fly it to orbit" chip already trusts, so this cannot
+    // read a different "in orbit" than the panel does. `LandedOffWorld` asks
+    // `s.body.bodyId` rather than `s.body.name`, because bodyId is /core's
+    // own key (GP-268) and Forge is always 0.
+    const f = s.flight, rs = s.gameplay?.progress.research ?? null;
+    if (f !== null && f !== undefined && rs !== null && f.aboard) {
+      const status = f.session.status;
+      if (status !== lastFlightStatus) {
+        if (status === 'ORBIT' && lastFlightStatus !== 'ORBIT') {
+          grantMilestone(rs, MILESTONE.ReachedOrbit,
+            'reached a stable orbit under active flight');
+        }
+        if (status === 'DOWN' && lastFlightStatus !== 'DOWN' && s.body.bodyId !== 0) {
+          grantMilestone(rs, MILESTONE.LandedOffWorld, `landed on ${s.body.name}`);
+        }
+        lastFlightStatus = status;
+      }
+    }
     // AFTER flight: the node is re-planned off the state flight has just
     // sampled, so the ball's node marker and the map draw the same instant.
     // SIM seconds, not real ones: the map feeds the discovery field from here

@@ -29,7 +29,8 @@ import {
   discCoversCanvas, km1, nm, pen, place, scaleBar, sizeAlpha, text, toPx, toPxV, xy,
 } from './MapPaint.js';
 import {
-  drawOre, nodeGlyph, paintTerrain, playerGlyph, shipGlyph, terrainContrast,
+  drawMarkers, drawOre, nodeGlyph, paintTerrain, playerGlyph, shipGlyph,
+  terrainContrast,
 } from './MapLayers.js';
 
 // An ore patch is a couple of metres across: it earns its pixels between 1.5 and
@@ -72,6 +73,7 @@ export function drawMap(ctx: CanvasRenderingContext2D, cssW: number,
   };
   const marks: string[] = [], taken: Rect[] = [], t: Tally = { skipped: 0 };
   const rows: OreRow[] = [];
+  const markerRows: { key: string; xPx: number; yPx: number }[] = [];
   const alphas = ramp(s, pr.m2p);
   // The body is drawn WHERE IT PROJECTS TO, like everything else.
   const bc = xy(), onBody = toPx(pr, 0, 0, 0, bc);
@@ -94,6 +96,10 @@ export function drawMap(ctx: CanvasRenderingContext2D, cssW: number,
   apsides(ctx, pr, s.planned, true, ACCENT, marks, taken, cssW, cssH, bc);
   const ore = drawOre(ctx, pr, s, alphas.ore, cssW, cssH, taken, bc, rows);
   if (ore > 0) marks.push('ore');
+  // GP-520. NOT SCALE-GATED like ore or terrain: a marker is a fixed-size
+  // glyph exactly like the ship and player below, drawn or not by its own
+  // `known` flag rather than by how many pixels it would occupy.
+  drawMarkers(ctx, pr, s.markers, s.bodyRadiusM, cssW, cssH, taken, marks, markerRows);
   if (hasNode) { nodeGlyph(ctx, np); marks.push('node'); }
   if (hasShip) { shipGlyph(ctx, sp); marks.push('ship'); }
   if (hasYou) { playerGlyph(ctx, pp); marks.push('you'); }
@@ -109,6 +115,9 @@ export function drawMap(ctx: CanvasRenderingContext2D, cssW: number,
     sampleSizeM: g === null || g === undefined ? 0 : nm(g.sampleSizeM),
     bodyFilled: filled,
     contrast: terrainContrast(),
+    markerRows,
+    proj: { cx: pr.cx, cy: pr.cy, m2p: pr.m2p, ox: pr.ox, oy: pr.oy, oz: pr.oz,
+      u: pr.u, v: pr.v },
   };
 }
 

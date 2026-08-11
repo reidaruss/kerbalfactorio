@@ -22,13 +22,13 @@
 // from ITS OWN feature size, and paints at it (DW-36).
 // =============================================================================
 
-import type { MapScene, TerrainContrast } from './MapTypes.js';
+import type { MapMarker, MapScene, TerrainContrast } from './MapTypes.js';
 import { ZERO_CONTRAST, forgetLuma, measure } from './MapContrast.js';
 import { relief } from './MapRelief.js';
 import type { Proj, Rect, XY } from './MapPaint.js';
 import {
   ACCENT, BIOME_RGB, INK, SHADE, SURFACE_RGB, TAU, compact,
-  discCoversCanvas, nm, pen, place, terrainShade, toPx, xy,
+  discCoversCanvas, markerPosM, nm, pen, place, terrainShade, toPx, xy,
 } from './MapPaint.js';
 
 /** The raw numbers one ore marker drew, straight out of MapOre. Integers, not
@@ -242,6 +242,55 @@ export function drawOre(ctx: CanvasRenderingContext2D, pr: Proj, s: MapScene,
     drawn++;
   }
   ctx.restore();
+  return drawn;
+}
+
+const MARKER_TINT: Record<MapMarker['kind'], string> = {
+  ruin: '#d9a441', signal: '#59d3e8', deposit: '#b98cff',
+};
+
+/**
+ * THE GENERIC MARKERS (GP-520): whatever the registry holds, a small diamond
+ * tinted by kind with its label beside it, through the SAME `place` avoider
+ * every other label on this canvas uses.
+ *
+ * GATED BY `mk.known` ALONE. Deliberately NOT run through the terrain gate
+ * above (`show = b >= 0 && (reveal || g.seen[i] !== 0)`) or through discovery
+ * at all: a known marker draws even where the ground under it has never been
+ * surveyed, because a scan revealing a ruin on unwalked ground is the entire
+ * point of a scan (MapMarker's own header says the same). Returns the markers
+ * that reached the canvas; each one's tag is pushed into `marks` so a probe
+ * can assert its own marker landed rather than counting a total, and its
+ * RAW pixel is pushed into `rows` (the `MapDrawReport.markerRows`/`proj`
+ * pair), the same "compare the two ends of the one path" shape `drawOre`'s
+ * rows already use.
+ */
+export function drawMarkers(ctx: CanvasRenderingContext2D, pr: Proj,
+                            list: readonly MapMarker[], bodyRadiusM: number,
+                            w: number, h: number, taken: Rect[],
+                            marks: string[],
+                            rows: { key: string; xPx: number; yPx: number }[]): number {
+  let drawn = 0;
+  ctx.save();
+  for (const mk of list) {
+    if (!mk.known) continue;
+    const p = markerPosM(mk.dirBody, bodyRadiusM);
+    if (!toPx(pr, p[0], p[1], p[2], M)) continue;
+    if (M.x < -40 || M.x > w + 40 || M.y < -40 || M.y > h + 40) continue;
+    const tint = MARKER_TINT[mk.kind];
+    ctx.beginPath();
+    ctx.moveTo(M.x, M.y - 7); ctx.lineTo(M.x + 7, M.y);
+    ctx.lineTo(M.x, M.y + 7); ctx.lineTo(M.x - 7, M.y);
+    ctx.closePath();
+    ctx.fillStyle = tint; ctx.fill();
+    pen(ctx, 1.4, SHADE);
+    place(ctx, { x: M.x, y: M.y }, 0, -1, [mk.label, mk.kind], tint, taken, w, h);
+    marks.push(`marker:${mk.key}`);
+    rows.push({ key: mk.key, xPx: M.x, yPx: M.y });
+    drawn++;
+  }
+  ctx.restore();
+  if (drawn > 0) marks.push('marker');
   return drawn;
 }
 
