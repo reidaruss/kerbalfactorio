@@ -35,9 +35,11 @@
 import * as THREE from 'three';
 import { FAR_SCALE } from '../render/Scenes.js';
 import { registry, stateOf } from '../sim/VesselRegistry.js';
+import { markerRegistry } from '../game/MarkerRegistry.js';
 import { OrbitLines } from './MapOrbits.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { MapReadout, V3 } from '../ui/MapTypes.js';
+import { markerPosM } from '../ui/MapPaint.js';
 
 export interface Map3DDeps {
   core: OfCoreModule;
@@ -51,12 +53,20 @@ export interface Map3DDeps {
   pads(): readonly { pos: { x: number; y: number; z: number } }[];
   /** The world tick rails positions are asked at (FlightVessels' clock). */
   tick(): number;
+  /** GP-520. Real body-frame metres, so a registry marker's `dirBody` (a unit
+   *  vector) can be placed ON the sphere through `MapPaint.markerPosM` before
+   *  FAR_SCALE ever touches it — `globeR` below is already scaled and cannot
+   *  be reused for this. */
+  bodyRadiusM: number;
 }
 
 const MIN_DIST = 0.004;
 const MAX_DIST = 400;
 const MARKER_COLOURS = {
   player: 0x6de37b, pad: 0x8fb7ff, vessel: 0xffb166, flying: 0x59d3e8,
+  // GP-520. The generic registry's three kinds, colour-matched to MapLayers'
+  // MARKER_TINT so the two maps read as one instrument.
+  ruin: 0xd9a441, signal: 0x59d3e8, deposit: 0xb98cff,
 } as const;
 type MarkerKind = keyof typeof MARKER_COLOURS;
 
@@ -102,7 +112,7 @@ export class Map3D {
   /** What the last marker sync put up, BY KIND, so a probe asserts the exact
    *  census against published state instead of a >= over a mixed count. */
   private kinds: Record<MarkerKind, number> = {
-    player: 0, pad: 0, vessel: 0, flying: 0,
+    player: 0, pad: 0, vessel: 0, flying: 0, ruin: 0, signal: 0, deposit: 0,
   };
 
   constructor(private readonly d: Map3DDeps) {
@@ -193,13 +203,23 @@ export class Map3D {
 
   private syncMarkers(r: MapReadout, flying: boolean): void {
     for (const s of this.markers.values()) s.userData.live = false;
-    this.kinds = { player: 0, pad: 0, vessel: 0, flying: 0 };
+    this.kinds = {
+      player: 0, pad: 0, vessel: 0, flying: 0, ruin: 0, signal: 0, deposit: 0,
+    };
     const p = r.scene.playerPos;
     if (p !== null) this.putMarker('you', 'player', p, true);
     const pads = this.d.pads();
     for (let i = 0; i < pads.length; ++i) {
       const q = pads[i].pos;
       this.putMarker(`pad${i}`, 'pad', [q.x, q.y, q.z], true);
+    }
+    // GP-520. THE GENERIC SOURCE: whatever the registry holds, gated on ITS
+    // OWN `known` flag and nothing else — no discovery test here, same as the
+    // 2D map's `drawMarkers` (MapLayers.ts), and for the same reason: a scan
+    // that reveals a marker on unwalked ground is the point of a scan.
+    for (const mk of markerRegistry.list()) {
+      if (!mk.known) continue;
+      this.putMarker(mk.key, mk.kind, markerPosM(mk.dirBody, this.d.bodyRadiusM), true);
     }
     const tick = this.d.tick();
     for (const rec of registry.list()) {

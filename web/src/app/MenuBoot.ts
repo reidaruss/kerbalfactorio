@@ -28,6 +28,7 @@ import type { Services } from './Services.js';
 import { labelOf } from '../player/Bindings.js';
 import { CONTROL_GROUPS } from '../player/BindingText.js';
 import type { Loop } from './Loop.js';
+import { seatOnStationDeck } from './StationMount.js';
 
 export function installPauseMenu(s: Services, loop: Loop) {
   const g = s.gameplay;
@@ -104,6 +105,13 @@ export function installPauseMenu(s: Services, loop: Loop) {
       s.player.standAt(x, y, z);
       return true;
     },
+    // CE-41. THE THIRD DOOR, and it is a lambda here for the same reason the
+    // other two are: this is the one place that holds the walker, the ride and
+    // the mounts at once. The sequence itself is `seatOnStationDeck`'s, in
+    // core-engine's own file, so the shipped press and `__of.carrier` drive one
+    // function rather than two that have to agree.
+    rideStation: () => seatOnStationDeck(s.mounts, s.ride, s.player,
+      loop.tickIndex, loop.fixedDt),
   });
 
   const menu = new PauseMenu(g.host, g.modals, (id) => {

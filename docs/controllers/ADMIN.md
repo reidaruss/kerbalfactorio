@@ -110,7 +110,14 @@ Rulings this session: **D-016** (albedo fix approved), **D-017** (orchestrate on
 | VM bootstrap | build-tooling lane | Provision claude-dev: toolchain, clone, build, ctest, serve on :4200 bound to LAN | BT-30 to BT-59 | **DONE ✓** (7f66914, merged 1f60f8d; 41/41 ctest green, serve verified from LAN) |
 | Carrier-rider boarding | core-engine Opus lane on VM (`lane/carrier-rider`) | Merge ph357 first, membership predicate with hysteresis, decision after Loop syncAt, arrival via standLocal path, stationboard probe | CE-39 onward | **RUNNING** |
 | SwiftShader diagnosis | build-tooling Opus lane on VM (`lane/swiftshader`) | Root-cause the boot.mjs FAIL (PNG decode + CONTEXT_LOST) under SwiftShader on Linux; gates the 4-shard probe sweep | BT-60 to BT-79 | **RUNNING** |
-| Blender 5.0.1 install | infra lane (report-only) | Pinned pipeline version onto the VM as `blender501`; apt 4.0.2 must never author assets (BT-14) | none | **RUNNING** |
+| Blender 5.0.1 install | infra lane (report-only) | Pinned pipeline version onto the VM as `blender501`; apt 4.0.2 must never author assets (BT-14) | none | **DONE ✓** (`~/.local/bin/blender501`, sha-verified) |
+| Albedo fix, producer side | rendering Sonnet lane on VM (`lane/albedo`) | D-016: texgen linearisation, manifest v2, hardened fallbacks | RN-1400 to RN-1404 | **DONE ✓, MERGED** (2ea55c2 via 06b6685; fresh-context verifier 7/7 incl. negative control; browser-side verification + retunes gated on SwiftShader lane) |
+| Scanning spine scope | gameplay Opus lane (read-only, local) | Work-item graph for antenna/reveal/ruins/enemies/loose-stones/pickaxe per storyline + Reid's rulings | none | **DONE ✓** (5 independent lanes + 3 serial; premise corrections incl. no research station exists, no map-marker system, Research.earn inert) |
+| Loose stones + pickaxe gate | gameplay Sonnet lane on VM (`lane/stones-pickaxe`) | One design: stones as small Rock nodes, per-kind requiresTool gate, Stone+Wood pickaxe/axe recipes, anti-deadlock ctest | GP-506 to GP-519 | **RUNNING** |
+| Ruin mesh | asset Opus lane on VM (`lane/ruin-mesh`) | build_ruin.py, 18 m enterable derelict, 2.3 m plinth, LOD0-2, col_RuinN, procedural weathering per ART-DIRECTION | RN-1450 to RN-1499 | **RUNNING** |
+| SwiftShader fix verification | fresh-context Sonnet on VM | Verify lane/swiftshader (LFS pointer root cause, .gitattributes fix, boot tolerance) before merge | none | **RUNNING** |
+
+**Provisional ruling D-019 (Reid to confirm in the morning):** the research station is a REAL buildable machine and the J-key research panel gates on it, per the storyline's own text ("build a research station (where research will be conducted)"); at HEAD no research station exists in any form. Logged provisional in MASTER_PLAN §11.
 
 Scope reports banked (read-only lanes, done): probe-sweep plan (4 shards, gate design per BT-41), carrier-rider plan (mechanism + merge order settled), albedo plan (producer-side fix in texgen.py, manifest v2, only 7 families affected; terrain/sky immune).
 

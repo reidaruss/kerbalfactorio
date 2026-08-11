@@ -137,6 +137,28 @@ export interface MapTerrainGrid {
   readonly stepM: number;
 }
 
+/**
+ * GP-520. ONE generic map marker, drawn by BOTH maps off ONE registry
+ * (game/MarkerRegistry.ts): a source pushes a record in, neither map computes
+ * its own. `dirBody` is a unit vector off the body's own centre, placed ON the
+ * surface through `MapPaint.markerPosM` exactly as an ore patch's `dir` is
+ * (MapWorld.ore) — tonight's only producer is a debug/dev source, so there is
+ * no designed height to place it at yet; a real producer may carry one later.
+ *
+ * `known` GATES DRAWING, and it is the ONLY gate a marker is drawn behind: a
+ * known marker draws EVEN WHERE the survey layer under it is undiscovered
+ * (see MapLayers.ts's terrain gate, which this deliberately does not share),
+ * because a scan revealing a marker on ground nobody has walked is the entire
+ * point of a scan.
+ */
+export interface MapMarker {
+  readonly key: string;
+  readonly kind: 'ruin' | 'signal' | 'deposit';
+  readonly dirBody: V3;
+  readonly label: string;
+  readonly known: boolean;
+}
+
 /** Everything the canvas needs for one frame. */
 export interface MapScene {
   readonly bodyRadiusM: number;
@@ -177,6 +199,9 @@ export interface MapScene {
    *  patch is absent from this array rather than present-and-hidden, so there is
    *  no way for a drawing bug to leak one. */
   readonly ore: readonly MapOre[];
+  /** GP-520. Whatever the registry holds, drawn/gated exactly as documented on
+   *  `MapMarker` above. NOT gated here or upstream: `known` is the gate. */
+  readonly markers: readonly MapMarker[];
   /** True when the MODE says the whole world is visible (DW-31, asked of
    *  `ModeRules`, never of a raw sandbox boolean). Drawn as a badge, because a
    *  player who forgot they were in sandbox is the failure being guarded
@@ -444,6 +469,20 @@ export interface MapDrawReport {
   bodyFilled: boolean;
   /** HOW MUCH THE GROUND LAYER ACTUALLY SAYS (WG-33). See TerrainContrast. */
   contrast: TerrainContrast;
+  /** GP-520. Each drawn marker's OWN pixel, taken inside the paint pass that
+   *  placed it, same shape as `oreDrawnRows` above and for the same reason: a
+   *  probe compares this against an independent `toPx` over the marker's own
+   *  `dirBody` (through `proj` below) instead of trusting the paint pass a
+   *  second time with no way to check it. */
+  markerRows: { key: string; xPx: number; yPx: number }[];
+  /** GP-520. THE PROJECTION THIS FRAME USED, verbatim (`MapPaint.Proj`):
+   *  `pixelsPerMetre` above is `m2p` alone, published long before markers
+   *  existed; the rest completes it so a probe can call the exact function
+   *  `markerRows` was drawn with, rather than re-deriving the origin and the
+   *  basis (DW-36: the centre is a parameter, so there is no fixed formula a
+   *  probe could assume instead). */
+  proj: { cx: number; cy: number; m2p: number; ox: number; oy: number; oz: number;
+    u: V3; v: V3 };
 }
 
 /**

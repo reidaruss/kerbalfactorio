@@ -159,6 +159,19 @@ export function toPxV(pr: Proj, p: V3 | null | undefined, out: XY): boolean {
   return p !== null && p !== undefined && toPx(pr, p[0], p[1], p[2], out);
 }
 
+/** GP-520. A marker's world position: its own direction off the body, placed
+ *  ON the sphere. The ONE formula both maps place a marker with, so a marker's
+ *  pixel on the 2D canvas and its sprite in the 3D scene can never drift apart
+ *  the way two independent conversions would. A degenerate direction (zero or
+ *  non-finite) reads as the body's own centre rather than NaN-ing the marker
+ *  off the canvas silently. */
+export function markerPosM(dirBody: V3, bodyRadiusM: number): V3 {
+  const l = Math.hypot(dirBody[0], dirBody[1], dirBody[2]);
+  if (!Number.isFinite(l) || l < 1e-12) return [0, 0, 0];
+  const r = Math.max(0, bodyRadiusM);
+  return [dirBody[0] / l * r, dirBody[1] / l * r, dirBody[2] / l * r];
+}
+
 /**
  * How opaque a feature `sizeM` metres across is at `m2p` pixels per metre. ONE
  * function for every scale-dependent layer in the map. A layer is never
