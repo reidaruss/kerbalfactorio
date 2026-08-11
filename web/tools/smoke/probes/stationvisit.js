@@ -22,6 +22,19 @@
 // the caller is asking"), so footing is a fact one tick after the press. The
 // receipt claims the position and this file claims the footing.
 //
+// CE-41 (2026-08-11): THE PRESS NOW GOES THROUGH A DIFFERENT DOOR, AND EVERY
+// NUMBER BELOW IS UNCHANGED WHILE ANCHORAGE IS FROZEN. `pressStation` boards the
+// station's carrier frame and seats the player AT REST IN IT (`rideStation` ->
+// `seatOnStationDeck`) rather than calling `Controller.standAt` alone, which
+// zeroes the absolute velocity and on a moving station is a player left behind
+// at 31.32 m per tick. On the station as it ships (`stampedTick = -1`, conic
+// frozen) the frame's velocity at the hub is exactly zero and the destination is
+// bitwise the install's own `pos`, so this file's arrival assertions are the
+// SAME assertions about the SAME numbers. `probes/stationboard.js` is the one
+// that measures the difference, on a moving fixture. The day Anchorage is
+// unfrozen, the check that will need re-reading here is `grounded` after the
+// press, because the deck will be travelling under the feet while it lands.
+//
 // IT ENDS ON THE GROUND, deliberately, and phase D is both halves of that: the
 // return trip is a FEATURE (a one-way trip to orbit is a trap) and it is also
 // what lets run.mjs finish, since the runner settles on terrain convergence and

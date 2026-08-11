@@ -10,6 +10,20 @@
 // solid, its two gravity volumes and its drawn hull are re-posed every fixed
 // tick from the SAME `poseAt` the rider uses.
 //
+// ITS SIBLING IS `probes/stationboard.js` (CE-39 to CE-43), and the split is
+// worth knowing before reading either. THIS file measures the DECK: does the
+// geometry follow the frame. THAT one measures the RIDER: does the per-tick
+// membership decision put a walker on it and take them off it, and does the
+// `visit:station` arrival seat them at rest IN the frame. Section 6 below boards
+// by hand through `of.carrier('board')`, which is still the right thing here,
+// because a probe about geometry should not depend on the boarding rule.
+//
+// SECTION 3'S FIXTURE ASSERTION IS STILL TRUE AND STILL GREEN (checked
+// 2026-08-11). It was expected to go red when `ph357-station-stamp` merged;
+// that branch turns out to exist on no ref in this repository and on no remote,
+// so `mintStation` still ships `stampedTick = -1` and Anchorage is still frozen.
+// Nothing was rewritten here. The day it does merge, section 3 is the signal.
+//
 // ===========================================================================
 // THE FIXTURE PROBLEM, WHICH IS THE WHOLE REASON THIS PROBE IS SHAPED LIKE THIS
 // ===========================================================================
