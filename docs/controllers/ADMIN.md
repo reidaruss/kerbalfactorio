@@ -107,7 +107,14 @@ Rulings this session: **D-016** (albedo fix approved), **D-017** (orchestrate on
 
 | Task | To | Brief (goal) | Block | Status |
 |------|----|--------------|-------|--------|
-| VM bootstrap | build-tooling lane | Provision claude-dev: toolchain, GitHub deploy key, clone, wasm+web build, ctest, one smoke probe, serve on :4200 bound to LAN | BT-30 to BT-59 | **RUNNING** |
+| VM bootstrap | build-tooling lane | Provision claude-dev: toolchain, clone, build, ctest, serve on :4200 bound to LAN | BT-30 to BT-59 | **DONE ✓** (7f66914, merged 1f60f8d; 41/41 ctest green, serve verified from LAN) |
+| Carrier-rider boarding | core-engine Opus lane on VM (`lane/carrier-rider`) | Merge ph357 first, membership predicate with hysteresis, decision after Loop syncAt, arrival via standLocal path, stationboard probe | CE-39 onward | **RUNNING** |
+| SwiftShader diagnosis | build-tooling Opus lane on VM (`lane/swiftshader`) | Root-cause the boot.mjs FAIL (PNG decode + CONTEXT_LOST) under SwiftShader on Linux; gates the 4-shard probe sweep | BT-60 to BT-79 | **RUNNING** |
+| Blender 5.0.1 install | infra lane (report-only) | Pinned pipeline version onto the VM as `blender501`; apt 4.0.2 must never author assets (BT-14) | none | **RUNNING** |
+
+Scope reports banked (read-only lanes, done): probe-sweep plan (4 shards, gate design per BT-41), carrier-rider plan (mechanism + merge order settled), albedo plan (producer-side fix in texgen.py, manifest v2, only 7 families affected; terrain/sky immune).
+
+**Waiting on Reid (morning):** register the VM's deploy key so lanes can push (until then Admin relays commits over SSH): `gh repo deploy-key add --allow-write -R reidaruss/kerbalfactorio <keyfile>`; key is on the VM at `~/.ssh/id_ed25519.pub` (comment `claude-dev-vm-orbitalfoundry`).
 
 ### Phase R consolidation (the prior live work; plan of record [RETHINK.md](../review-2026-06-16/RETHINK.md) §4)
 
