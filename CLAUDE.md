@@ -5,11 +5,32 @@
 
 This project is **managed by an agentic development architecture**. Read this file first, then the linked docs, before doing any work.
 
+> ## PROJECT ROOT IS `D:\karbalfactorio`
+>
+> Moved 2026-08-03 from `C:\Users\reida\Nextcloud\Kerbal Factorio`, which is
+> **retired and must not be used**. A sync client was watching `.git` while up to
+> six agent lanes wrote to it concurrently, which is a corruption risk; directory
+> scans timed out at three minutes, and the drive filled and truncated a source
+> file to zero bytes mid-write. **Nothing in this project goes in a sync folder.**
+>
+> **Remote:** `https://github.com/reidaruss/kerbalfactorio.git`, branch `main`.
+> Git plus the remote is the backup now. A pre-rewrite copy of the old `.git`
+> sits at `D:\_backup_kerbalfactorio_git_2026-08-03`.
+>
+> The same move **rewrote history**: `ue/` (the abandoned Unreal attempt) and 132
+> pre-fortnight screenshots are stripped from all commits, 743 remain, and the
+> blanket `*.png filter=lfs` rule is retired. See §1 of the state-of-the-union.
+>
+> `node_modules` was not copied. Run `npm ci` in `web/` once.
+
 ## Start here (read in this order)
-1. [docs/MASTER_PLAN.md](docs/MASTER_PLAN.md) — vision, technical architecture, roadmap, scope guardrails. The design source of truth.
-2. [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md) — how development is delegated across agents; the protocol every agent follows.
-3. [docs/controllers/ADMIN.md](docs/controllers/ADMIN.md) — the admin controller's live project state, status dashboard & dependency map.
-4. Your domain's controller file in [docs/controllers/](docs/controllers/).
+1. **[docs/STATE_OF_THE_UNION.md](docs/STATE_OF_THE_UNION.md) — READ THIS FIRST.** Where everything is, what works, what is blocked and exactly how, the todo list, the lessons from running six parallel agent lanes, and **the orchestration architecture this project now follows**: the top-level session does no implementation, Sonnet lanes take work with a stated cause, Opus lanes take work whose first job is to diagnose.
+2. [story_line_outline_v1.txt](story_line_outline_v1.txt) — Reid's progression spine and the answer to "why would a player go anywhere".
+3. [docs/web/NUMBERS.md](docs/web/NUMBERS.md) — the process and instrument trap catalogue. Roughly twenty harness defects were found in one week against effectively none in the systems being measured; this file is why that ratio is known. **Binding, not advisory.**
+4. [docs/MASTER_PLAN.md](docs/MASTER_PLAN.md) — vision, technical architecture, roadmap, scope guardrails, and the D-00x global decision log.
+5. [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md) — the original delegation protocol. **Superseded on orchestration by §6 and §7 of the state-of-the-union where they differ.**
+6. [docs/controllers/ADMIN.md](docs/controllers/ADMIN.md) — the admin controller's live project state and dependency map.
+7. Your domain's controller file in [docs/controllers/](docs/controllers/).
 
 ## The agentic model in one paragraph
 Work is delegated across **three tiers** to keep any single context window focused. The **Admin Master Controller** (top-level Claude session) owns the global plan, cross-domain interfaces, and integration; it delegates high-level, fully-briefed tasks to **Domain Master Controllers** (one per engineering domain). Each Domain Controller owns a context file, makes decisions within its domain, and spawns **Subagents** for specific scoped tasks. **Detail flows down** (briefs), **summaries flow up** (reports). No agent holds more context than its role requires.
