@@ -42,7 +42,7 @@ function buildStamp(): string {
 export default defineConfig({
   define: { __OF_BUILD__: JSON.stringify(buildStamp()) },
   server: { host: '127.0.0.1', port: 5173, strictPort: true },
-  preview: { host: '127.0.0.1', port: 4173, strictPort: true },
+  preview: { host: '127.0.0.1', port: 4173, strictPort: true, allowedHosts: ['orbitalfoundry.lan'] },
   worker: { format: 'es' },
   build: {
     target: 'es2022',
