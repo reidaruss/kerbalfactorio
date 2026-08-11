@@ -25,9 +25,28 @@
 > work whose brief can only state *what to find out*. If a brief contains
 > "measure whether", "decide the shape", or "the premise may be wrong", it is Opus.
 >
-> **Cap at four concurrent lanes.** Six was past the point where reports arrived
-> faster than they could be read, and the orchestrator's own context became the
-> bottleneck.
+> **The shape is a graph, not a line, and that is the second change.** Reid chose
+> graph engineering on 2026-08-03; §7 of the state-of-the-union is the full
+> writeup. Four things bind here:
+>
+> 1. **Apply the "and then" test to every seam in a plan.** Does the next step
+>    actually read the previous step's output? If not it was never a dependency,
+>    so run them at once. Most of last week's edges were false, and the
+>    orchestrator waiting on each one *was* the critical path.
+> 2. **A worker never grades its own work.** Every finding is verified by a
+>    **separate agent on fresh context** that never touched the work and checks a
+>    real signal. Roughly twenty instrument failures in one week came from lanes
+>    checking themselves.
+> 3. **A verifier never implements.** Say so in the brief.
+> 4. **Concurrency is bounded by the box, not by the agent cap.** 16 cores: fine
+>    for a dozen readers, **3 to 4 headless-Chrome probes**, 2 to 3 Blender
+>    renders. §7.4 has the table.
+>
+> **Cap at four concurrent *briefed lanes* holding a conversation with this
+> session.** Six was past the point where reports arrived faster than they could
+> be read. That cap does not apply to a scripted fan-out where the orchestrator
+> reads one merged report at the end; there the limit is the hardware table in
+> §7.4.
 >
 > **Project root is `D:\karbalfactorio`**, remote
 > `https://github.com/reidaruss/kerbalfactorio.git`. The Nextcloud path is retired

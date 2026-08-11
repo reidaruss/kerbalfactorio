@@ -2,7 +2,11 @@
 
 **Written 2026-08-03 by the Admin session that ran the parallel-lane experiment.
 This file exists so a fresh Claude Code session can pick the project up cold and
-run it under the architecture in §6 without relearning anything expensive.**
+run it under the architecture in §7 without relearning anything expensive.**
+
+**§7 is the one Reid chose, on 2026-08-03: graph engineering. If you read only one
+section before starting work, read that one, then §7.4 before you fan anything
+out.**
 
 Read this file, then `CLAUDE.md`, then `story_line_outline_v1.txt`, then
 `docs/web/NUMBERS.md`. Everything else is reachable from those.
@@ -80,13 +84,18 @@ nothing that is currently being measured.
 - **On Reid's machine:** his browser, pointed at the VM over the LAN. **The game
   renders on his 4060 Ti.** His CPU stays free and his disk is not the constraint.
 
-**Sizing.** The workload is embarrassingly parallel: up to four lanes, each
-capable of running a headless Chrome with the frame limiter disabled, plus Cycles
-renders. Give it **as many cores as the cluster can spare, 32 GB RAM or more, and
-300 GB of disk.** The disk matters: this project hit **64 MB free** and truncated
-a source file to zero bytes mid-write, and lanes create isolated `git archive`
-scratch trees constantly. If the node has more cores than the desktop, Blender
-renders get *faster*.
+**Sizing, as provisioned by Reid on 2026-08-03: 16 cores, 48 GB RAM, 300 GB
+disk.** The workload is largely parallel: several lanes, each capable of running
+a headless Chrome with the frame limiter disabled, plus Cycles renders. The disk
+matters: this project hit **64 MB free** and truncated a source file to zero
+bytes mid-write, and lanes create isolated `git archive` scratch trees
+constantly. 300 GB also leaves room for four git worktrees (§7.4) at roughly 5 GB
+each.
+
+**16 cores is the real constraint on how wide a fan-out can be, and it is not the
+same number as the agent cap.** A headless Chrome probe on software rasterisation
+will take every core it is given. **§7.4 carries the per-worker concurrency
+budget; read it before fanning out anything that renders.**
 
 **One concrete change the next session must make.** Every freeze in this
 project's history served with `--host 127.0.0.1`, which is loopback only and
@@ -348,60 +357,214 @@ the brief as ground truth produces confident wrong work.
 
 ---
 
-## 7. The proposed architecture
+## 7. The architecture: graph engineering
 
-**Rule zero: the top-level session does not implement.** It may read files, read
-git history and read reports. It does not edit code, run builds, run probes,
-drive a browser, or commit anything except its own decision records.
+**Reid chose this on 2026-08-03 after reading Argona's "Graph Engineering" course
+(`https://x.com/Argona0x/status/2080626046903157126`, 24 Jul 2026). This section
+summarises it, then maps it onto this project. The summary is faithful to the
+source; the mapping and the hardware numbers are ours.**
 
-### Roles
+### 7.1 The idea, in the source's terms
 
-| role | model | does |
+Three words carry it:
+
+- A **node** is one unit of work: one agent, one input, one output.
+- An **edge** is a dependency: the output of one node is the input of the next.
+- A **graph** is the network where independent work runs at once.
+
+**"Your 'do A, then B, then C' is already a graph. Just the saddest one there is,
+one edge wide."**
+
+**Step 1, and it is the whole skill.** On every "and then", ask **whether the next
+step actually reads the previous step's output.** Yes means a real edge, so keep
+the order. No means it was never an edge, so run them at the same time. The
+example given is *"summarize this file, and then tell me the weather"*: two boxes,
+no arrow, because the weather never reads the summary.
+
+**Step 2.** Tag every seam, keep the real edges, stack the rest side by side. The
+longest surviving chain of real edges is the **critical path**, and it is the
+fastest the work can ever finish. **Sixteen agents do not shorten it and
+sixty-four do not either. To go faster, cut a false edge rather than add an
+agent.**
+
+**Step 3, the runnable shape.** Fan out one worker per item, workers sharing no
+state; **verify each finding with a separate agent on fresh context that checks a
+real signal**, not "did the worker say done"; merge into one report, with
+intermediate results living in script variables rather than being fed back as
+chat. Rules: **workers never review their own work, the verifier never
+implements, start at about twenty items.**
+
+In Claude Code this is the **Workflow** tool: `ultracode:` plus a description makes
+Claude draft an orchestrator script, print its phases, and wait for approval;
+`/workflows` watches it; pressing `s` saves it to `.claude/workflows/` as a
+reusable `/name` command. **Caps are sixteen agents at once and a thousand per
+run.** Coordination is free because it is plain code, **but every agent underneath
+is billed and a workflow burns more than a normal session.**
+
+**Step 4, the two moves that make it robust.**
+
+**A fresh verifier, because self-grading is measured bias.** The source cites
+GPT-4 recognising its own writing 73.5% of the time with that self-recognition
+causally driving preference (Panickssery, NeurIPS 2024), and self-scoring inflated
+by 10% for GPT-4 and 25% for Claude (Zheng, NeurIPS 2023). **We have not verified
+those citations.** The rule: the verifier is an outsider that never touched the
+work and checks a real signal; for subjective calls, a jury of three models from
+different families. *"A graph of agents on one shared context is just one loop
+with extra steps, agreeing with itself."*
+
+**Isolation, because parallel agents in one checkout clobber each other.** Freeze
+into every worker: **never `git stash`, never `git reset`, no git command except
+committing a specific file, no slow commands before the test phase.** Then shard
+across git worktrees, grouped, so four worktrees of sixteen replaces sixty-four
+checkouts.
+
+**Step 5, Amdahl's law, and check it before deploying.**
+
+```
+S = 1 / ((1 − p) + p/N)      p = independent share, N = agents
+
+p = 0.95, N = 16  →  ×9.14   (not ×16)
+p = 0.70, N = 16  →  ×2.91
+ceiling (N = ∞)   =  1 / (1 − p)
+```
+
+Even 256 agents at p = 0.95 reach only ×18.6. **The "and then" test from Step 1 is
+how you estimate p before a single agent runs.**
+
+The cited ceiling: Bun's Zig-to-Rust port, ~50 workflows, 64 agents at peak, four
+worktrees of sixteen, 535,496 lines to over a million across 6,502 commits in
+eleven days, with **the whole test suite as the merge gate**, 1.38 million
+assertions across six platforms.
+
+**Three lines hold it: fan out where the work is independent, gate the edges where
+confidence matters, freeze the nodes that hold the truth.**
+
+### 7.2 What this project already got right, and what it got wrong
+
+**Read this part before adopting anything, because the fit is not uniform.**
+
+**Already right, arrived at independently and expensively:**
+
+- **Isolation.** Lanes measure in a `git archive HEAD` tree plus their own files,
+  after one lane reported `main` broken when it was reading another lane's
+  half-finished refactor.
+- **The committing rule.** Our private-index protocol is the source's "no git
+  command except committing a specific file", discovered the hard way after a
+  commit landed containing **zero files** and a stale index was primed to delete
+  137 lines across two lanes.
+- **Real signals over self-report.** The `INSTRUMENTS.md` and `NUMBERS.md`
+  catalogue is exactly the source's "checks a real signal, not did the worker say
+  done", written from about twenty instrument failures in one week.
+
+**Wrong, and the source names both:**
+
+- **We ran a line, not a graph.** Brief a lane, wait, read the report, brief
+  again. **The orchestrator's own context was the critical path**, and it was
+  frequently the only edge. Most of those edges were false: the art lane never
+  read the physics lane's output.
+- **Verification was self-verification.** Each lane checked its own work. The
+  catalogue proves the source's point better than the source does: **a probe that
+  passed by construction, a control that would not go red, a gate that could not
+  see the case it was written for, an instrument that had the exact defect it was
+  built to find, and thirteen stages reporting PASS with no assertions at all.**
+  **Every one of those is a node grading its own exam.**
+
+### 7.3 The shape for this project
+
+**Rule zero, unchanged and now reinforced: the top-level session is the
+orchestrator and does not implement.** It reads reports, rules, routes, allocates
+number blocks, and talks to Reid. It may read files and git history. It does not
+edit code, build, probe, drive a browser, or commit anything but decision records.
+
+**The standing phases for any non-trivial job:**
+
+1. **Scope.** One agent, or the orchestrator reading, produces the work list.
+   **This is where you apply the "and then" test and count `p`.**
+2. **Fan out.** One worker per item, no shared state, worktree-isolated when they
+   write to the repo.
+3. **Verify on fresh context.** A **separate** agent per finding, which never
+   touched the work, checking a real signal. **This is the change from how we have
+   been working and it is the important one.**
+4. **Merge.** One report. Intermediate results stay in the orchestrator's
+   variables, not re-fed as conversation.
+
+**Model tiering** (Reid's requirement, and it maps onto the phases):
+
+| phase | model | why |
 |---|---|---|
-| **Orchestrator** (top session) | Opus | reads reports, makes rulings, routes findings, allocates number blocks, sequences conflicting lanes, talks to Reid. **Writes only `docs/` decision records.** |
-| **Domain lane** | Opus | anything whose first job is to *diagnose*, anything cross-domain, anything where the premise might be wrong |
-| **Task lane** | Sonnet | a named defect with a stated cause; wiring a published export to a UI; running an existing harness; asset re-authoring against a written spec; doc consolidation |
-| **Release lane** | Sonnet | the settled rebuild, the freeze to 4200, the smoke run. **The only lane that commits `web/wasm/dist/*` and `expected.json`.** |
+| scope, and any lane whose first job is to diagnose | **Opus** | the brief can only say *what to find out*; the premise may be wrong, and premise correction was this project's highest-value output all week |
+| fan-out workers with a stated cause and a named file | **Sonnet** | the brief can say *what to do* |
+| fresh-context verifiers | **Sonnet**, escalate to Opus for subjective calls | checking a real signal is mechanical; judging art or design is not |
+| merge and synthesis | **Opus** | it is a judgement about the whole |
+| Release lane (settled rebuild, freeze, smoke) | **Sonnet** | a written procedure, and it is the only lane that commits `web/wasm/dist/*` and `expected.json` |
 
-**Choosing the model.** Sonnet when the brief can state *what* to do and the
-answer is not in doubt. Opus when the brief can only state *what to find out*.
-If a brief contains the words "measure whether", "decide the shape", or "the
-premise may be wrong", it is Opus. If it contains a file path and a defect
-description, it is Sonnet.
+**The test for which model:** if the brief contains "measure whether", "decide the
+shape", or "the premise may be wrong", it is Opus. If it contains a file path and
+a defect description, it is Sonnet.
 
-### Concurrency rules
+### 7.4 The hardware, and why it changes the caps
 
-- **At most four lanes.** Six was past the point where the orchestrator could
-  read reports faster than they arrived.
-- **One lane per decision-number prefix**, and the block goes in the brief **and**
-  in `docs/web/NUMBERS.md` before the lane starts.
-- **Declare file ownership in the brief.** Shared wiring files (`Boot.ts`,
-  `Services.ts`, `run.mjs`, `package.json`) have **one named writer** per session
-  and everyone else publishes a request.
-- **While Reid is playing, do not touch the served build.** No rebuild, no
-  restart, no re-freeze of whatever is on 4200, because that is the thing he is
-  connected to. **Lanes may otherwise build, test and render freely**, which is
-  new: the old rule was "stop everything", and it existed only because lanes and
-  his game shared one CPU. On the Proxmox VM they do not. See §1.
-- **Wind down, never kill.** A stopped lane commits or explicitly names what is
-  unlanded.
+**Reid's VM: 16 cores, 48 GB RAM, 300 GB disk.**
 
-### Every brief must contain
+**The source's sixteen-agent cap is a scheduler limit, not a hardware one, and our
+workers are unusually heavy.** Budget by what a worker actually runs:
 
-1. The **goal**, and Reid's own words where they exist.
-2. **What already exists**, with numbers, so the lane does not rebuild it.
-3. **The premise, explicitly marked as a premise**, with an instruction to
-   measure it and report if it is wrong.
-4. **The decision-number block.**
-5. **File ownership**: what is yours, what is another lane's, what to publish
-   instead of reaching.
-6. **The commit protocol** (private index, one invocation, tree differs from
-   base, three-argument `update-ref`, `show --stat`, reset your paths).
-7. **The measurement standard**, and the two or three catalogued traps most
-   likely to bite this particular job.
-8. **The stop rule**: what to do when Reid starts playing.
+| worker kind | realistic concurrency on 16c/48G | why |
+|---|---|---|
+| reading, writing, doc work | **12 to 16** | cheap, and 16 is the tool's cap anyway |
+| `ctest` / `emcc` builds | **4 to 6** | each build already parallelises across cores |
+| headless Chrome probes | **3 to 4** | SwiftShader software rasterisation with the frame limiter off; each one will take every core it is given |
+| Blender Cycles renders | **2 to 3** | same, plus RAM |
 
-### Every report must contain
+**Do not fan out sixteen browser probes on this box.** A probe sweep is the one
+place where a wide fan-out will be slower than a narrow one, because they contend
+for the same cores. Shard it: the probe-sweep tool `web/tools/smoke/probeall.mjs`
+already supports shards and is resumable per results file.
+
+**Worktrees fit the disk.** The repo is roughly 5 GB with LFS materialised, so four
+worktrees is about 20 GB against 300 GB, comfortable. The Agent tool takes
+`isolation: "worktree"` directly.
+
+### 7.5 The first graph to run
+
+**Do this one first, because it is the highest `p` in the project and the result
+is already needed.**
+
+`web/tools/smoke/probeall.mjs` exists, is inert, and nothing invokes it. **284
+probes, none of which can currently fail the harness** (§4b). That is a near-pure
+fan-out: every probe is independent, so `p` is close to 1, and the merge is a
+single list.
+
+Scope, fan out across three or four shards, **verify each red serially on fresh
+context** because a red measured under contention may be contention, then merge
+into one list. **Only then decide the gate.** The estimated run is 60 to 70
+minutes at two shards.
+
+**Second graph: the playability sweep**, which is naturally one worker per screen
+with a fresh-context verifier per finding.
+
+**Not a graph: the carrier-rider work in §4a.3.** It is one node on the critical
+path, and Amdahl's law says agents will not help. **Give it one Opus lane.**
+
+### 7.6 What a brief must contain
+
+Unchanged from hard experience, plus the graph additions:
+
+1. The **goal**, in Reid's words where they exist.
+2. **What already exists**, with numbers, so the worker does not rebuild it.
+3. **The premise, marked as a premise**, with an instruction to measure it and
+   report if it is wrong.
+4. **The decision-number block**, recorded in `NUMBERS.md` before the lane starts.
+5. **File ownership**, and what to publish rather than reach for.
+6. **The commit protocol**, and for fan-out workers the frozen rule: **never
+   stash, never reset, no git command but committing a specific file.**
+7. **The measurement standard**, plus the two or three catalogued traps most
+   likely to bite this job.
+8. **Its position in the graph**: is this a worker, a verifier, or the merge? **A
+   verifier is told it must never implement. A worker is told it will not grade
+   its own work.**
+
+### 7.7 What a report must contain
 
 1. What **landed**, with commit SHAs.
 2. What was **measured**, with the control beside it.
@@ -410,7 +573,6 @@ description, it is Sonnet.
 5. What belongs to **another domain**.
 6. **Exports or counts changed**, so the Release lane can verify without reading
    the diff.
-
 ---
 
 ## 8. Rules that must not be relearned
