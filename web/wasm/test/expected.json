@@ -1,5 +1,5 @@
 {
-  "abi": 22,
+  "abi": 23,
   "seedLo": 200281345, "seedHi": 0,
   "forgeRadius": "41224f8000000000",
   "cinderRadius": "41086a0000000000",
@@ -25,16 +25,16 @@
     {"planet": 3, "moon": 8, "planetMat": 3, "moonMat": 8, "hardness": "3fe0000000000000", "temp": "3fe48303d9c883e5", "moist": "3fe21d751de72e17"},
     {"planet": 0, "moon": 8, "planetMat": 0, "moonMat": 8, "hardness": "3fb999999999999a", "temp": "3fe67ef4b2040f3f", "moist": "3fdd29e185e9d739"}
   ],
-  "quadmesh": {"gridDim": 33, "vertexCount": 1089, "contentHashLo": 542543859, "contentHashHi": 3699177917, "rawContentHashLo": 3210450286, "rawContentHashHi": 4142074147, "heightHash": 310702141, "posHash": 2912842418, "nrmHash": 1977832220, "centerX": "c10d158fcf541c4f", "centerY": "4120672b0a7667ee", "centerZ": "c0fd77e13453002e", "chunkRadius": "40d446728a621842", "h0": "40780b7907ee8d95", "h544": "4074122920dee253", "h1088": "4070fe352f91e637", "seamOk": 1},
+  "quadmesh": {"gridDim": 33, "vertexCount": 1089, "contentHashLo": 981254218, "contentHashHi": 1932422737, "rawContentHashLo": 1263055311, "rawContentHashHi": 1216137262, "heightHash": 1005884406, "posHash": 2912842418, "nrmHash": 1977832220, "centerX": "c10d158fcf541c4f", "centerY": "4120672b0a7667ee", "centerZ": "c0fd77e13453002e", "chunkRadius": "40d446728a621842", "h0": "40780b7907ee8d95", "h544": "4074122920dee253", "h1088": "4070fe352f91e637", "seamOk": 1},
   "indices": {"count": 6144, "hash": 2014026705},
   "digColumn": {"cells": 6, "before": "c078990a2c6618ed", "after": "c078f29fc940f800", "lowering": "4016656736b7c4c0", "removed": 29},
   "tunnel": {"removed": 82, "columns": 10, "noLoweringColumns": 10, "ceilingSolid": 1, "worstResidual": "3f3ece313cf00000", "hash": 666757432},
   "voxel": {"removed": 227, "dirtyValid": 1, "dirty": [186004,342010,456015,186011,342017,456022], "verts": 362, "indices": 1980, "vertHash": 1720006828, "faceHash": 3613046951, "saveBytes": 12622, "saveHash": 2194795008},
   "level": {"changed": 1216, "dug": 131, "filled": 139, "scanned": 10431, "removed": 614, "added": 602, "centreH": "40b50cb8bc1f7400", "saveBytes": 17032, "saveHash": 271306967},
   "streaming": {"obsX": "411bb577f7595baf", "obsY": "410669d450f138a5", "obsZ": "411756bf0693e714", "updates": [
-    {"ready": 16, "generated": 16, "converged": 0, "resident": 16, "evicted": 0, "keyHash": 2994706501, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [3594391697,1669954493,1909235049,2244000567,3339290182,3308888147,3077209095,1586980004,3306895972,140989727,1623843789,3589253858,1691574406,3324478723,3088231852,190773], "chunkBiomes": [3,5,0,0,0,0,0,0,2,2,5,0,0,3,4,2]},
-    {"ready": 16, "generated": 16, "converged": 0, "resident": 32, "evicted": 0, "keyHash": 505937014, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [3584158118,2796685695,1896654653,2508780005,1479687001,693845284,1558310636,2919542667,3753806470,2273969069,2803814168,771537663,2418979671,97087053,2934569144,1412310431], "chunkBiomes": [0,0,2,0,5,6,0,2,0,0,4,0,0,0,0,4]},
-    {"ready": 16, "generated": 16, "converged": 0, "resident": 48, "evicted": 0, "keyHash": 2189225573, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [758840265,3765957811,2757951770,619424670,1791160848,2818422705,3726925359,722628703,1442192722,2371987529,2464088275,569659021,3710524839,329790173,603022037,457875773], "chunkBiomes": [0,4,0,2,0,2,4,5,0,2,2,3,4,3,4,3]}
+    {"ready": 16, "generated": 16, "converged": 0, "resident": 16, "evicted": 0, "keyHash": 2994706501, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [2876689682,3676969830,2343474995,2244000567,3339290182,117672423,3092741582,360857274,3306895972,140989727,1623843789,178633929,939741907,1446672598,619147281,1205559302], "chunkBiomes": [3,5,0,0,0,0,0,0,2,2,5,0,0,3,4,2]},
+    {"ready": 16, "generated": 16, "converged": 0, "resident": 32, "evicted": 0, "keyHash": 505937014, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [1041235291,1688426127,3083064344,2293410032,3188708772,2550265214,1074380121,4247927144,104841537,3054143341,1474412312,771537663,2418979671,1569223314,3993432933,4033502730], "chunkBiomes": [0,0,2,0,5,6,0,2,0,0,4,0,0,0,0,4]},
+    {"ready": 16, "generated": 16, "converged": 0, "resident": 48, "evicted": 0, "keyHash": 2189225573, "gridDim": 33, "skirtVerts": 128, "chunkHashes": [18630902,1431743375,2757951770,3724767870,1791160848,2818422705,3726925359,2769180663,1442192722,2371987529,2464088275,2490327790,113974989,3658216324,1999360566,1036950967], "chunkBiomes": [0,4,0,2,0,2,4,5,0,2,2,3,4,3,4,3]}
   ]},
   "observer": {"latDeg": 48, "lonDeg": 18, "altM": 60, "raw": "40b127ed7c62ce69", "designed": "40b8e04b8df5ab4b", "surfaceR": "41228140971beb57", "obsX": "41178dfdd61cfa7a", "obsY": "411b81a032bde867", "obsZ": "40fe9d0d55afac74", "rawGapM": "409ee178464b7388", "lowering": "401893a19de92c00", "dugDropM": "401893a19dec0000"},
   "factory": {"ore": 665, "ingot": 248, "part": 197, "minerRemaining": 99335, "belt1Items": 1, "smelterOut": 0, "asmIn": 50, "tick": 5000, "stateRows": 9, "stateHash": 2719008851, "flows": 2, "flowHash": 1450565499, "lineItems": 1, "itemHash": 2350664982, "asmProgress": "3fe3333333333333", "smelterWorking": 1},
