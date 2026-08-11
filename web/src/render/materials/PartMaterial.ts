@@ -209,9 +209,9 @@ varying vec3 vPartMat;`, 'fragment:common');
   // ALBEDO. A bare part is its own authored colour and nothing else: not the
   // family's tiling albedo, and not the merged material's colour either. The
   // second half matters more than it looks. `Surfaces.apply` sets
-  // `material.color = palette / albedo_mean`, a 1/0.5954 brightening that
-  // exists to make the family map mean-neutral; a bare part that kept
-  // material.color would wear a 1.68x lift that belongs to a map it is not
+  // `material.color = palette / albedo_mean_linear`, a per-family brightening
+  // that exists to make the family map mean-neutral; a bare part that kept
+  // material.color would wear a lift that belongs to a map it is not
   // sampling. Taking the vertex colour raw drops the family tint AND the
   // per-type tint, which is the intended meaning of bare: this part is its
   // own material, not a member and not subject to the member's paint.

@@ -102,7 +102,7 @@ the shape. They are the stated exception to ALBEDO IS DELIBERATELY ABSENT,
 because a cutout cannot exist without its own texture, and they keep the
 palette-authority argument intact by being near-neutral VALUE textures: hue
 still comes from the client's colours, and the manifest publishes each card's
-measured albedo_mean so the client can divide it out via material.color and
+measured albedo_mean_linear so the client can divide it out via material.color and
 keep the modulation mean-neutral. See the ALBEDO CARD FAMILIES section.
 """
 
@@ -122,7 +122,7 @@ OUT_DIR = os.path.join(ROOT, "assets", "textures", "dist")
 # Manifest schema version. The client reads this and refuses a version it does
 # not know, rather than mis-reading a field that changed meaning. Same argument
 # as the WASM bridge's OF_ABI_VERSION (standing rule 9), one tier down.
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2
 
 SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 
@@ -824,7 +824,7 @@ def _panel_albedo(w, h, height, aux):
     direction only, because rust is not a colour that has an opposite.
 
     MEAN-NEUTRAL BY CONTRACT. `Surfaces.ts` sets
-    `material.color = palette / albedo_mean` and then multiplies the map back
+    `material.color = palette / albedo_mean_linear` and then multiplies the map back
     in, so only this map's VARIANCE and its HUE survive and its LEVEL cannot
     shift the palette. That is what lets one map serve Steel, SteelDark,
     Accent and Hazard without lightening the dark one and dirtying the bright
@@ -1478,7 +1478,7 @@ def _stone_albedo(w, h, height, aux):
     CENTRE one: `panel` shipped a first version at mean 0.9659 with the top of
     its variance flattened against the byte ceiling, and `check_maps` refuses
     a tiling albedo outside 0.15..0.85 for exactly that reason. The level is
-    free, because `Surfaces.ts` divides `albedo_mean` back out through
+    free, because `Surfaces.ts` divides `albedo_mean_linear` back out through
     material.color, so it costs nothing to sit in the middle of the range
     where both tails survive."""
     # Two octaves each, never three: the second octave of a period-3 field is
@@ -1562,7 +1562,7 @@ def _stone_albedo(w, h, height, aux):
 # material, so per-part roughness does not exist, and the screen-space AO
 # clamps bind inside 0.37 m (section 2.1 item 5). Value darkening into the
 # creases is in the map or it is nowhere. It is mean-neutral (the client
-# divides `albedo_mean` out through material.color), so it cannot shift the
+# divides `albedo_mean_linear` out through material.color), so it cannot shift the
 # palette: what survives is the spatial variance and the hue, which is exactly
 # the split section 2.1 item 4 states for the foliage cards.
 # ---------------------------------------------------------------------------
@@ -1873,7 +1873,7 @@ def _suitfab_albedo(w, h, height, aux):
     ART-DIRECTION.md asks for grounded, muted, layered colour and names flat
     vertex colour as the defect to unlearn. The palette gives the level (this
     map is mean-neutral by construction, so only its VARIANCE and its HUE
-    survive `Surfaces.ts`'s divide by `albedo_mean`); what is authored here is
+    survive `Surfaces.ts`'s divide by `albedo_mean_linear`); what is authored here is
     where a working suit is dirty and where it is not."""
     soil = _fbm(w, h, 3, 3, seed=6701)          # 16.7 cm: the grime patches
     stain = _fbm(w, h, 6, 2, seed=6803)         # 8.3 cm: within-patch mottle
@@ -2085,17 +2085,36 @@ def _suitplate_albedo(w, h, height, aux):
     return bytes(out)
 
 
+def _srgb_eotf(s):
+    """sRGB EOTF: a normalised (0..1) encoded sample to linear light."""
+    return s / 12.92 if s <= 0.04045 else ((s + 0.055) / 1.055) ** 2.4
+
+
+# 256-entry LUT, sRGB byte (0..255) to linear light (0..1): the two mean
+# functions below run this per-channel, per-texel, and a table beats
+# recomputing the EOTF's power curve at every one of them.
+_SRGB_TO_LINEAR = [_srgb_eotf(i / 255.0) for i in range(256)]
+
+
 def _albedo_mean_rgb(rgb):
-    """Mean RGB luma (0..1) over every texel: the opaque counterpart of
-    `_albedo_mean_rgba`. No alpha, so no coverage test and every texel counts."""
+    """Mean LINEAR Rec.709 luma (0..1) over every texel: the opaque
+    counterpart of `_albedo_mean_rgba`. Each channel is linearised with the
+    sRGB EOTF before the luma weights are applied, because the consumer
+    (`Surfaces.ts`) divides this out through `material.color` in three's
+    LINEAR working colour space; averaging the raw sRGB bytes instead
+    under-compensates by a family-dependent factor (measured 1.2x to 2.3x
+    across the shipped set). No alpha, so no coverage test and every texel
+    counts."""
     n = len(rgb) // 3
     if n == 0:
         return 0.0
+    lut = _SRGB_TO_LINEAR
     tot = 0.0
     for i in range(n):
         o = i * 3
-        tot += 0.2126 * rgb[o] + 0.7152 * rgb[o + 1] + 0.0722 * rgb[o + 2]
-    return tot / (n * 255.0)
+        tot += (0.2126 * lut[rgb[o]] + 0.7152 * lut[rgb[o + 1]]
+                + 0.0722 * lut[rgb[o + 2]])
+    return tot / n
 
 
 # ---------------------------------------------------------------------------
@@ -2830,18 +2849,24 @@ def _wrap_vs_interior_u(f, w, h):
 
 
 def _albedo_mean_rgba(rgba, alpha_test):
-    """Mean RGB luma (arithmetic (R+G+B)/3, normalised to 0..1) over texels
-    whose alpha clears alpha_test * 255, measured from the packed bytes the
-    file actually ships. The client divides this out via material.color, so
-    the albedo modulation is mean-neutral and cannot shift the palette."""
+    """Mean LINEAR Rec.709 luma (0..1, matching `_albedo_mean_rgb` and
+    FoliageTone.ts's weights) over texels whose alpha clears
+    alpha_test * 255, measured from the packed bytes the file actually
+    ships. Each channel is linearised with the sRGB EOTF before the luma
+    weights are applied: the consumer (`Surfaces.ts`) divides this out
+    through `material.color` in three's LINEAR working colour space, and
+    averaging the raw sRGB bytes instead under-compensates. The albedo
+    modulation is mean-neutral and cannot shift the palette."""
     thr = alpha_test * 255.0
-    tot = 0
+    lut = _SRGB_TO_LINEAR
+    tot = 0.0
     cnt = 0
     for o in range(0, len(rgba), 4):
         if rgba[o + 3] >= thr:
-            tot += rgba[o] + rgba[o + 1] + rgba[o + 2]
+            tot += (0.2126 * lut[rgba[o]] + 0.7152 * lut[rgba[o + 1]]
+                    + 0.0722 * lut[rgba[o + 2]])
             cnt += 1
-    return 0.0 if cnt == 0 else tot / (cnt * 3.0 * 255.0)
+    return 0.0 if cnt == 0 else tot / cnt
 
 
 # The two card families. UNREFERENCED BY ANY ROLE THIS COMMIT, deliberately:
@@ -2985,7 +3010,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
             "normal maps are OpenGL convention (+Y up), colorSpace NoColorSpace.",
             "A TILING family may also carry an `albedo` (chitin, RN-455).",
             "It is RGB with no alpha, uv_space is metres like its normal and",
-            "orm siblings, and it publishes albedo_mean for the same",
+            "orm siblings, and it publishes albedo_mean_linear for the same",
             "mean-neutral divide the card families use. A family carrying all",
             "three maps is the shape a body surface takes.",
             "albedo families (grass, leaf) are CARD textures: albedo+alpha,",
@@ -2998,9 +3023,13 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
             "below it. An albedo family whose alpha channel is in use MUST",
             "declare alpha_test; the validator refuses one that does not",
             "(that check lands in the validator, the rule is stated here).",
-            "albedo_mean is the mean RGB luma (0..1) over texels with",
-            "alpha >= alpha_test * 255, measured from the shipped bytes: the",
-            "client divides it out via material.color, so the modulation is",
+            "albedo_mean_linear (D-016, manifest v2; was albedo_mean, mean",
+            "RGB luma over raw sRGB bytes, which under-compensated by 1.2x",
+            "to 2.3x) is the mean Rec.709 luma (0.2126/0.7152/0.0722,",
+            "matching FoliageTone.ts) over texels with alpha >= alpha_test *",
+            "255, each channel linearised with the sRGB EOTF before the",
+            "weights are applied. The client divides it out via",
+            "material.color in LINEAR working space, so the modulation is",
             "mean-neutral and cannot shift the palette.",
         ],
         "version": MANIFEST_VERSION,
@@ -3021,7 +3050,7 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
             with open(p, "rb") as fh:
                 fam[k]["sha256"] = hashlib.sha256(fh.read()).hexdigest()
         if name in tiling_albedo:
-            fam["albedo_mean"] = round(_albedo_mean_rgb(tiling_albedo[name]), 4)
+            fam["albedo_mean_linear"] = round(_albedo_mean_rgb(tiling_albedo[name]), 4)
         manifest["families"][name] = fam
     for name in sorted(albedo_files):
         spec = ALBEDO_FAMILIES[name]
@@ -3036,8 +3065,8 @@ def generate(out_dir=OUT_DIR, size=None, quiet=False, only=None):
             "uv_space": "unit",
             "wrap": {"u": spec["wrap"][0], "v": spec["wrap"][1]},
             "alpha_test": spec["alpha_test"],
-            "albedo_mean": round(_albedo_mean_rgba(rec["rgba"],
-                                                   spec["alpha_test"]), 4),
+            "albedo_mean_linear": round(_albedo_mean_rgba(rec["rgba"],
+                                                           spec["alpha_test"]), 4),
         }
 
     m_path = os.path.join(out_dir, "surfaces.json")
@@ -3155,7 +3184,7 @@ def _channel_stats(rgb, n):
 def _check_albedo_family(fam, spec, out_dir, say):
     """The albedo-card half of check_maps: RGBA decode, sha, per-channel
     stats, alpha variation, coverage band, covered-region albedo variation,
-    albedo_mean recompute, the alpha_test guard, and the uv_space/wrap
+    albedo_mean_linear recompute, the alpha_test guard, and the uv_space/wrap
     contract fields. Returns the texel count examined."""
     code = ALBEDO_FAMILIES[fam]
     rec = spec.get("albedo") or {}
@@ -3211,8 +3240,8 @@ def _check_albedo_family(fam, spec, out_dir, say):
         % (lmax - lmin, MIN_SPREAD, lmin, lmax))
 
     measured = round(_albedo_mean_rgba(rgba, code["alpha_test"]), 4)
-    say(spec.get("albedo_mean") == measured, "%s.albedo_mean" % fam,
-        "manifest %r vs measured %.4f" % (spec.get("albedo_mean"), measured))
+    say(spec.get("albedo_mean_linear") == measured, "%s.albedo_mean_linear" % fam,
+        "manifest %r vs measured %.4f" % (spec.get("albedo_mean_linear"), measured))
 
     # THE GREY-WHITE / SILENT-DROP GUARD. A card whose alpha channel is in
     # use but whose manifest declares no alpha_test leaves the consumer two
@@ -3313,10 +3342,10 @@ def check_maps(out_dir=OUT_DIR, verbose=True):
                 say(hi - lo >= 40, "%s.albedo varies" % fam,
                     "luma spread %d (min 40), range %d..%d" % (hi - lo, lo, hi))
                 measured = _albedo_mean_rgb(rgb)
-                declared = spec.get("albedo_mean")
+                declared = spec.get("albedo_mean_linear")
                 say(declared is not None
                     and abs(declared - measured) < 5e-4,
-                    "%s.albedo_mean" % fam,
+                    "%s.albedo_mean_linear" % fam,
                     "manifest %s vs measured %.4f" % (declared, measured))
                 say(0.15 <= measured <= 0.85, "%s.albedo level" % fam,
                     "mean %.4f in 0.15..0.85 (the client divides by it)"

@@ -37,7 +37,7 @@
 //           entity's visual state and must not be modulated by paint wear.
 //
 // The mean-neutral divide holds across all of this because it lives in
-// `material.color` (x 1/albedo_mean) and three composes
+// `material.color` (x 1/albedo_mean_linear) and three composes
 // `material.color x map x vertexColour`, both of which land before the hook.
 // Normal, roughness, metalness and AO land earlier still (ASSET-SPECS 2.8).
 //
@@ -148,6 +148,12 @@ const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));
 
 const DIR = 'assets/textures/';
 
+// The manifest schema version this client knows how to read (D-016). Bumped
+// alongside a field's meaning changing (albedo_mean -> albedo_mean_linear,
+// v1 -> v2) so a stale build fails loudly in `ready` rather than dividing by
+// a raw-sRGB mean it was never written to expect.
+const SURFACES_MANIFEST_VERSION = 2;
+
 /**
  * RN-953. Override a family's `tile_m` from the URL, e.g.
  * `?tile=suitplate:0.12` or `?tile=suitplate:0.12,stone:0.5`.
@@ -212,7 +218,7 @@ interface ManifestFamily {
   tile_m?: number; size_px: number; texels_per_m?: number;
   uv_space?: 'unit' | 'metres';
   wrap?: { u: 'repeat' | 'clamp'; v: 'repeat' | 'clamp' };
-  alpha_test?: number; albedo_mean?: number;
+  alpha_test?: number; albedo_mean_linear?: number;
 }
 interface Manifest {
   version: number; zlib: string;
@@ -234,7 +240,7 @@ interface Surface {
 interface Reg {
   label: string; family: Family; mat: THREE.MeshStandardMaterial;
   /** The material's own colour as authored, captured on first albedo apply so
-   *  the mean-neutral compensation (x 1/albedo_mean) is idempotent and the
+   *  the mean-neutral compensation (x 1/albedo_mean_linear) is idempotent and the
    *  `albedo: false` toggle can restore the exact pre-texture colour. */
   baseColor: THREE.Color | null;
 }
@@ -437,6 +443,13 @@ const ready = (async (): Promise<void> => {
   const res = await fetch(`${DIR}surfaces.json`);
   if (!res.ok) throw new Error(`surfaces.json: HTTP ${res.status}`);
   const m = await res.json() as Manifest;
+  if (m.version !== SURFACES_MANIFEST_VERSION) {
+    throw new Error(`surfaces.json: manifest version ${m.version}, this client `
+      + `reads version ${SURFACES_MANIFEST_VERSION}. Run \`npm run sync-assets\` `
+      + 'or regenerate the manifest; a mismatch means a field changed meaning '
+      + '(e.g. albedo_mean -> albedo_mean_linear, D-016) and must not be read '
+      + 'as the old one.');
+  }
   manifest = m;
   verifyAgainstManifest(m);
   for (const [name, f] of Object.entries(m.families)) {
@@ -468,7 +481,7 @@ const ready = (async (): Promise<void> => {
         ? await makeAlbedoTexture(DIR + f.albedo.file, f.wrap)
         : await makeTilingAlbedo(DIR + f.albedo.file, tileM);
       surf.alphaTest = f.alpha_test;
-      surf.albedoMean = f.albedo_mean;
+      surf.albedoMean = f.albedo_mean_linear;
       surf.vramBytes += per;
     }
     if (f.normal !== undefined && f.orm !== undefined && tileM !== undefined) {
@@ -505,7 +518,7 @@ function apply(r: Reg): void {
     // The albedo card path (RN-181). Three composes
     //   diffuse = material.color x map x vertexColour x instanceTint
     // so the map is a FOURTH multiplier and would darken every card by its
-    // own mean. `albedo_mean` is measured into the manifest for exactly this:
+    // own mean. `albedo_mean_linear` is measured into the manifest for exactly this:
     // the material colour is scaled by 1/mean so the modulation is
     // mean-neutral and the card keeps its palette brightness. alphaTest is
     // the manifest's declared cutoff, and the depth material follows it
@@ -514,10 +527,19 @@ function apply(r: Reg): void {
     if (r.baseColor === null) r.baseColor = r.mat.color.clone();
     r.mat.map = on ? s.albedo : null;
     r.mat.alphaTest = (on && s.alphaTest !== undefined) ? s.alphaTest : 0;
-    const k = (on && s.albedoMean !== undefined && s.albedoMean > 0)
-      ? 1 / s.albedoMean : 1;
+    // NO k=1 FALLBACK (D-016). A family carrying an albedo map without a
+    // valid albedo_mean_linear is a manifest that failed to build correctly,
+    // not a family that happens to need no compensation: silently applying
+    // the map unscaled would darken the surface by its own mean and read as
+    // a lighting bug nobody could trace back here. Loud beats plausible.
+    if (on && (s.albedoMean === undefined || !(s.albedoMean > 0))) {
+      throw new Error(`[of] surfaces: ${r.family} has an albedo map but no `
+        + `valid albedo_mean_linear (got ${String(s.albedoMean)}). `
+        + 'Regenerate surfaces.json.');
+    }
+    const k = on ? 1 / (s.albedoMean as number) : 1;
     r.mat.color.copy(r.baseColor).multiplyScalar(k);
-    // AFTER the mean-neutral scale and never before it. `albedo_mean` is a
+    // AFTER the mean-neutral scale and never before it. `albedo_mean_linear` is a
     // SCALAR that undoes the map's own average darkening, so it commutes with a
     // value factor but not with a saturation one; putting the tone second means
     // the number in the manifest keeps meaning what it says and this term is a
