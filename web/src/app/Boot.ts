@@ -21,15 +21,13 @@ import { StatsProbe } from '../render/debug/StatsProbe.js';
 import { createViewModelPlaceholder, createGnomon } from '../render/debug/Placeholders.js';
 import { resumeWorld } from './ResumeBoot.js';
 import {
-  installStation, learnStationProxies, learnStationSockets, stationQuat,
-  STATION_ASSET,
+  learnStationProxies, learnStationSockets, STATION_ASSET,
 } from '../game/SpaceStation.js';
 import { StationView } from '../render/StationView.js';
 import { loadGlb } from '../assets/Loaders.js';
 import { volumes } from '../game/GravityVolumes.js';
-import { installStationGravity } from '../game/StationGravity.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
-import { PlanetBody } from '../world/PlanetBody.js';
+import { PlanetBody, type BodyId } from '../world/PlanetBody.js';
 import { SurfaceOracle } from '../world/SurfaceOracle.js';
 import { FloatingOrigin } from '../world/FloatingOrigin.js';
 import { PlanetProxy } from '../world/PlanetProxy.js';
@@ -40,7 +38,7 @@ import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
 import { CarrierRegistry } from '../world/CarrierFrame.js';
 import { CarrierRide } from '../world/CarrierRide.js';
 import { CarrierMounts } from '../world/CarrierGeometry.js';
-import { mountStation } from './StationMount.js';
+import { installAndMountStation } from './StationMount.js';
 import type { TerrainStream } from '../world/TerrainStream.js';
 import { VoxelWorld } from '../world/VoxelWorld.js';
 import { VoxelMesh } from '../world/VoxelMesh.js';
@@ -301,6 +299,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // CE-80. The consumer half of the same term, constructed beside it and for
   // the same reason: process-scoped object, body-scoped contents.
   const mounts = new CarrierMounts();
+  // CE-47. R17. THE ONE THING A REBUILD HAS TO PUT BACK. Full argument in
+  // `StationMount.installAndMountStation`; the ordering that forces a holder is
+  // that the station block 250 lines below needs `gameplay`, `router.up` and
+  // `resumeWorld`, none of which exist when the FIRST scope is built, while
+  // `mounts.bindTo(lt)` and `carriers.bindTo(lt)` live INSIDE that scope. Null
+  // on the first pass is the correct reading: there is no station yet.
+  const stationRebuild: { fn: ((bodyId: BodyId, tick: number) => void) | null } =
+    { fn: null };
   const buildBodyScope: BuildBodyScope = async (bodyId, lt) => {
     // CE-31 / CE-34. ONE registration site for every scope, boot's included. A
     // carrier is a position in THIS body's frame, so a carrier that survived a
@@ -393,6 +399,17 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // the props THIS scope placed, in the scope that placed them.
     lt.add('scatter.placed', () => { sc.clearPlaced(); });
     built.v = t;
+    // CE-47. R17. THE STATION COMES BACK WITH THE SCOPE.
+    //
+    // LAST, after the terrain, because a rebuild that threw halfway must not
+    // leave a mounted station in a world with no ground under it. A call and not
+    // an `lt.add`, because this is the BUILD half; `lt` already carries the
+    // teardown half above. `mounts.lastTick` is the live tick: `Loop` is
+    // constructed in `main.ts` AFTER `boot()` resolves, so this file has no
+    // `tickIndex`, and re-posing at tick 0 instead would put the deck where the
+    // conic was at boot. The body guard is CE-31's rule; see StationMount for
+    // both arguments and for the residue it does not fix.
+    stationRebuild.fn?.(bodyId, mounts.lastTick);
     return { body: oracle.body, terrain: t.stream, scatter: sc, workerHandles: t.workerHandles };
   };
 
@@ -595,26 +612,36 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       })
       .catch(() => { learnStationProxies(null); learnStationSockets(null); });
     const u = router.up;
-    const st = installStation(core, gameplay.structures.bodies,
-      [u.x, u.y, u.z], body.radiusM, body.muM3S2, 0);
-    // PH-98. WHAT YOU WEIGH IN IT, which the record and the interior cannot say
-    // between them. A station in orbit is in FREEFALL and its occupants have no
-    // weight; the deck holding you up is a fact about the deck, not about
-    // gravity. `carrierG` is read from the ONE gravity authority at the
-    // station's own radius, because a body on a free trajectory accelerates at
-    // exactly the local g. See StationGravity.ts.
+    // RN-821. THE MESH IS BUILT FIRST AND ONLY ONCE, because it is the one part
+    // of this block that is NOT idempotent: `scenes.near.add` on a rebuild would
+    // put a second hull in the scene. The install below poses it. Building it
+    // before the install report exists reverses the old order and is safe:
+    // `build(null)` is the no-asset case the `.catch` above already produces,
+    // and an unposed view draws nothing because `place` is what gives it a pose.
+    station = new StationView(origin);
+    station.build(stationRoot);
+    scenes.near.add(station.group);
+    // CE-47. THE ONE INSTALL PATH, called here exactly as the rebuild calls it:
+    // same function, same arguments, only the tick differs (0 here, the live
+    // tick there). The lines that used to be inline are in
+    // `StationMount.installAndMountStation`, because a copy of them in a reboot
+    // handler would be a second authority for where the station is.
+    const stationDeps = {
+      core, bodies: gameplay.structures.bodies, volumes, carriers, mounts,
+      view: station, up: [u.x, u.y, u.z] as [number, number, number],
+      bodyRadiusM: body.radiusM, muM3S2: body.muM3S2,
+      gravityAccel: (rM: number) => body.gravityAccel(rM),
+    };
+    const st = installAndMountStation(stationDeps, 0);
     if (st !== null) {
       player.body.gravity = volumes;
-      installStationGravity(volumes, st.pos, body.gravityAccel(st.deckR));
-      // RN-821. THE MESH, posed from the SAME `st.pos` the collision solid was
-      // built from a line above, with `stationQuat` read rather than rebuilt.
-      // Gated on the install report, so a station that refused (no proxies,
-      // which is also no mesh) draws nothing rather than a hull round nobody.
-      station = new StationView(origin);
-      station.build(stationRoot);
-      station.place(st.pos, stationQuat(st.pos));
-      scenes.near.add(station.group);
-      mountStation(core, carriers, mounts, station);
+      // CE-47. R17. AND THE SAME CALL, ON EVERY REBUILD FROM HERE ON. See the
+      // holder's declaration above for why this is a late assignment rather than
+      // a line inside `buildBodyScope`.
+      stationRebuild.fn = (rebuiltBodyId, tick) => {
+        if (rebuiltBodyId !== body.bodyId) return;
+        installAndMountStation(stationDeps, tick);
+      };
     }
   }
 
