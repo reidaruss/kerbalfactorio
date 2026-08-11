@@ -56,3 +56,11 @@ desktop.ini
 # Python bytecode from the headless Blender asset scripts (tools/blender/)
 __pycache__/
 *.pyc
+
+# Lane scratch build output. Never commit these: 35 of them accumulated to
+# 976 MB across 23,350 files before anyone noticed. Name your build output
+# something you will delete, and delete it.
+web/dist-*/
+
+# Agent worktrees are ephemeral checkouts, not project state.
+.claude/worktrees/
