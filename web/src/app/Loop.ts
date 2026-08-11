@@ -48,6 +48,25 @@ export class Loop {
    */
   get simSecs(): number { return this.tickIndex * FIXED_DT; }
 
+  /**
+   * CE-51. The render interpolation alpha the LAST frame was drawn with, 0..1.
+   *
+   * A REPORT FIELD. `frame()` already computes `this.acc / FIXED_DT` and hands
+   * it to `observer.interpolate`; this publishes the same number so anything
+   * drawing in the same frame can be placed at the SAME fractional tick rather
+   * than at the last integer one. Before it existed the camera was interpolated
+   * and the station's hull was not, which at 1879.26 m/s is up to 31.32 m of
+   * relative sawtooth per tick, on every frame, and is the stutter Reid filmed.
+   *
+   * The fractional tick a frame is drawn at is `tickIndex - 1 + alpha`: the
+   * interpolation runs from the PREVIOUS tick's pose to the current one.
+   */
+  alpha = 1;
+
+  /** CE-51. `tickIndex - 1 + alpha`: the exact instant the last frame drew.
+   *  One expression, here, so no consumer writes the off-by-one itself. */
+  get renderTick(): number { return this.tickIndex - 1 + this.alpha; }
+
   private raf = 0;
   private lastMs = 0;
   private acc = 0;
@@ -299,7 +318,22 @@ export class Loop {
     const { origin, observer, rig, frame, stats, renderer, jitter, zfight } = this.s;
     // of::SimClock alpha. Sampling a 60 Hz capsule at vsync WITHOUT this is a
     // staircase, and it is a far larger jitter source than float32 (JitterProbe).
-    observer.interpolate(this.acc / FIXED_DT);
+    // CE-51. ONE ALPHA, PUBLISHED BEFORE IT IS USED, so the hull and the eye can
+    // be placed at the same fractional tick. See `alpha` above.
+    this.alpha = this.acc / FIXED_DT;
+    observer.interpolate(this.alpha);
+    // CE-51. AND THE DRAWN CARRIER GEOMETRY AT THE SAME INSTANT, which is the
+    // whole of the stutter fix. The collider was already posed at the integer
+    // tick by `fixedTick` and must stay there (the walker's step was resolved
+    // against it); the HULL is drawn now, so it is posed now. Before this line
+    // the eye interpolated and the hull did not, and on Anchorage that is a
+    // measured 27.04 m of peak-to-peak sawtooth per tick, correlated with alpha
+    // at 0.9999999860.
+    //
+    // BEFORE `onPreRender`, because `StationView.sync` runs there and recomposes
+    // its engine transform from the f64 pose this writes. After it would draw
+    // last frame's pose, which is the same defect one frame later.
+    this.s.mounts.syncWatchersAt(this.renderTick);
     origin.toEngine(observer.position, this.eye);
     rig.setView(this.eye, observer.position, observer.orientation);
     jitter.sample(rig.nearCam, this.stakes, this.stakeCount(), this.lastH, origin.origin);
