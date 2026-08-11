@@ -136,9 +136,28 @@
   const row0 = rowOf();
   check('the button is drawn and enabled', row0 !== null && row0.disabled === false,
     JSON.stringify(row0));
-  check('the group is SEPARATE from the seven visit sites',
-    view.visits.length === 7 && !view.visits.some((v) => v.id === ROW),
+  // THE COUNT WAS 7 AND THE CLIENT SHIPS 8, AND THIS CHECK HAS BEEN SILENTLY RED
+  // SINCE `29d1935` (WG-214), WHICH ADDED "Hills: the spawn" AS AN EIGHTH ROW
+  // AND DEMOTED THE OLD ONE TO "the FORMER spawn". Found 2026-08-11 by the
+  // carrier-rider lane running this file as a regression, not by anything that
+  // was looking for it, which is state-of-the-union §4b exactly: `run.mjs`
+  // decides its exit code from console errors, so a red `fails` entry printed
+  // `smoke: PASS` and exited 0 for eight days.
+  //
+  // THE TWO HALVES ARE SPLIT, because they are different claims and only one of
+  // them was ever what this check was about. **The claim is that the station row
+  // is NOT one of the site rows**; the count is a separate fact about
+  // `VISIT_SITES`, and pinning it is still worth doing (a row silently
+  // disappearing is a real defect) but it must be pinned to the truth and it
+  // must say what to do when it moves.
+  check('the group is SEPARATE from the visit sites',
+    !view.visits.some((v) => v.id === ROW),
     view.visits.map((v) => v.id).join(','));
+  check('and the site group is the 8 rows VisitSites.VISIT_SITES ships',
+    view.visits.length === 8,
+    `${view.visits.length} rows: ${view.visits.map((v) => v.id).join(',')}. If a `
+    + 'site was deliberately added or removed, update this number and say so; if '
+    + 'not, a row has gone missing from the menu');
   const note = view.station[0]?.note ?? '';
   const kmSaid = `${(st.install.altM / 1000).toFixed(0)} km`;
   check('the row states THIS station\'s altitude', note.includes(kmSaid),
