@@ -84,13 +84,14 @@
 //   R93  DOCK-THEN-EVA. There is no `of_dk_*` symbol in the wasm at all, so no
 //        vessel can arrive at Anchorage and no occupant can step out onto this
 //        deck. Physics owns it. NOT MEASURED HERE.
-//   R17  `mountStation` is called OUTSIDE `buildBodyScope` (Boot.ts), while
-//        `mounts.clear()` is registered INSIDE it. So `of.reboot()` empties the
-//        mounts and nothing re-mounts: after a reboot the station has no frame,
-//        the membership decision finds nothing to board, and a player standing
-//        in the hub is silently never carried again. A Boot ordering fix, not
-//        this lane's file. NOT MEASURED HERE, and it is why nothing below
-//        reboots.
+//   R17  FIXED (CE-47) and measured by `probes/stationreboot.js`, which is a
+//        sibling because a reboot re-streams the world and would put these 28
+//        checks behind a timeout. Nothing below reboots, for that reason and no
+//        longer because it would break.
+//   CE-49 CLEARANCE AT THE SEAT POINT is `probes/stationvisit.js`'s, because that
+//        file owns the press. This one asserts the seat is on the deck's RADIUS
+//        and inside the hall; whether a capsule fits there is a different
+//        question and it has its own five-column, three-height check next door.
 //   R97  TIME WARP WHILE RIDING. Verified UNREACHABLE in this build rather than
 //        guarded: warp lives on `FlightControls` -> `FlightSession.setWarp`,
 //        which exists only while the active view source is a `VesselObserver`,
@@ -215,13 +216,46 @@
   check('THE SHIPPED PRESS BOARDS THE PLAYER (todo #1: this read 0 at HEAD)',
     cPress.ride.boards === 1 && cPress.ride.carrier === STATION,
     JSON.stringify(cPress.ride));
+  // 0.05 m/s AND NOT 1e-3, AND THE SLACK IS THE SEAT POINT'S OWN LEVER ARM.
+  // CE-49 moved the arrival off the frame origin to the asset's `socket_hall`,
+  // 4.045 m out, and `pointVelocity` is evaluated AT THE SEAT POINT: a rotating
+  // frame carries omega x r on top of its origin's velocity. omega is
+  // 3.132092e-5 rad/tick over 1/60 s, i.e. 1.8793e-3 rad/s, so 4.045 m of arm is
+  // up to 7.6e-3 m/s and the measured difference is 1.13e-3. That is the frame
+  // being right, not the seat being wrong. It still discriminates absolutely
+  // against F2, which reads ~0 rather than ~1879.
   check('F2 CONTROL: the press seats the player AT REST IN THE FRAME',
-    Math.abs(pressSpeed - PER_TICK_M * 60) < 1e-3,
+    Math.abs(pressSpeed - PER_TICK_M * 60) < 0.05,
     `|vel| ${pressSpeed} m/s, wanted ${PER_TICK_M * 60}. A standAt-only arrival `
     + 'reads ~0 here, and that ~0 is the defect');
-  check('and the feet are on the LIVE deck, to the millimetre',
-    d3(cPress.feet, deckAtPress) < 1e-3,
-    `${d3(cPress.feet, deckAtPress)} m from the hub centre`);
+  // CE-49. THE FEET ARE ON THE LIVE DECK, AND NO LONGER AT ITS CENTRE.
+  //
+  // This used to assert `< 1e-3` from the hub centre, and it passed on the frame
+  // Reid reported as a bug: the centre is inside `col_HallCore`, so the press
+  // was seating him inside a pillar and this check was confirming it. The
+  // arrival is the asset's own `socket_hall` now, 4 m off the core. What is
+  // still asserted is the pair that actually says "on the deck, in the hall":
+  // the same RADIUS as the hub to a millimetre, and inside the 12 m room.
+  // CLEARANCE itself is `probes/stationvisit.js`'s, because it owns the press.
+  const feetR = len(cPress.feet);
+  const hubR = len(deckAtPress);
+  const offHub = d3(cPress.feet, deckAtPress);
+  // THE 0.6 m IS THE SOCKET'S OWN FEET CLEARANCE AND IT IS DELIBERATE.
+  // `stationStandLocal` returns `socket_hall` with `+0.6` added to local Y,
+  // documented as "with the feet-clearance already added", and local +Y is the
+  // radial. So AT THE PRESS the feet are 0.6 m above the deck's radius and they
+  // land on it within the tick. Asserting `< 1e-3` here (which the first version
+  // did) is asserting that the socket has no clearance. That the landing
+  // actually happens is `probes/stationvisit.js`'s `feetMinusDeckM`, measured at
+  // 8e-06 m after settling.
+  const dR = feetR - hubR;
+  check('the feet are directly above the LIVE deck, by the socket\'s own clearance',
+    dR >= 0 && dR < 1.0, `${dR} m of radius difference: 0.6 is the socket's, `
+    + 'anything larger is a drop and anything negative is inside the deck');
+  check('...and inside the hall rather than at its centre, which is a pillar',
+    offHub > 0.5 && offHub < 6,
+    `${offHub} m from the hub centre (0 would be inside col_HallCore, which is `
+    + 'the defect Reid photographed)');
   // PH-357'S REGRESSION, ASSERTED AS A POSITIVE FACT. The install report's `pos`
   // is where the solid was FIRST posed, and it is a fact about the install for
   // ever. If the press still used it, the player would be exactly this far out,
@@ -424,14 +458,14 @@
   return {
     valid: true,
     fails,
-    checks: 28,
+    checks: 29,
     notes,
     deck: { boundRadiusM: deckR, depthM: DECK_M, depthScanHits: scan.length },
     fixture: { id: STATION, perTickM: surv.perTickM, wantedPerTickM: PER_TICK_M,
                turnPerTickRad: surv.turnPerTickRad, instrumentFrames: 0 },
     press: { boards: cPress.ride.boards, carrier: cPress.ride.carrier,
              seatSpeedMS: pressSpeed, wantedSeatSpeedMS: PER_TICK_M * 60,
-             feetToLiveHubM: d3(cPress.feet, deckAtPress),
+             feetToLiveHubM: offHub, feetRadiusMinusHubM: dR,
              installPosStaleM: installStale },
     boarded: { ticks: ticks1, seatSpeedMS: len(cA.vel),
                deckTravelM: deckTravel, riderTravelM: riderTravel,

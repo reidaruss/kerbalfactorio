@@ -178,8 +178,14 @@
   check('G4: the press boards the player again after a reboot',
     c3.ride.carrier === STATION && c3.ride.boards > boardsBefore,
     `carrier ${c3.ride.carrier}, boards ${boardsBefore} -> ${c3.ride.boards}`);
+  // 0.05 m/s, for the reason `stationboard.js` spells out at its own F2 check:
+  // CE-49 seats at the asset's `socket_hall`, 4.045 m off the frame origin, and
+  // `pointVelocity` is evaluated AT THE SEAT POINT, so a rotating frame adds up
+  // to omega x r = 7.6e-3 m/s on top of the origin's speed (measured difference
+  // 1.13e-3). That is the frame being right. It still discriminates absolutely
+  // against a body-frame arrival, which reads ~0 rather than ~1879.
   check('G5: seated at the station\'s own speed, not at rest in the body frame',
-    Math.abs(len(cPress.vel) - PER_TICK_M * 60) < 1e-3,
+    Math.abs(len(cPress.vel) - PER_TICK_M * 60) < 0.05,
     `|vel| ${len(cPress.vel)} against ${PER_TICK_M * 60}`);
   const scan = [];
   for (let dm = 0.05; dm <= 2.0; dm += 0.05) {

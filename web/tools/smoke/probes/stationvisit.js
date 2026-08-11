@@ -140,6 +140,50 @@
    *  number, and keeping it install-sourced means the radius check below stays a
    *  comparison between two independent things. */
   const hubNow = () => of.carrier?.('mounts')?.solid?.pos ?? null;
+  /**
+   * CE-49. IS THE WALKER'S CAPSULE CLEAR OF EVERY STATION SOLID HERE?
+   *
+   * `of.solidBuild` is the EXACT predicate `KinematicBody` resolves the walker
+   * against, and the sample heights are the walker's own `CAPSULE_SAMPLES_M`.
+   * Five columns and not one, because the capsule is 0.4 m in radius and its
+   * axis being clear says nothing about its shoulders. The horizontal offsets
+   * are taken in the plane perpendicular to the LOCAL RADIAL, which is the
+   * deck's plane, and derived from the point itself rather than from the
+   * station's axes so this needs no second opinion about which way the hull
+   * points.
+   */
+  /** The local radial at a body-frame point: this world's 'up' everywhere,
+   *  derived from the point rather than from a stored axis (`down` in this
+   *  codebase is p/|p| per tick from the feet, with no override anywhere). */
+  const up = (p) => { const l = Math.hypot(p[0], p[1], p[2]);
+    return [p[0] / l, p[1] / l, p[2] / l]; };
+  const CAP_SAMPLES_M = [0.15, 0.9, 1.65];
+  const CAP_RADIUS_M = 0.4;
+  const capsuleHits = (p) => {
+    const u = up(p);
+    // Any vector not parallel to u, made perpendicular: the standard trick, and
+    // which two perpendiculars we get does not matter because the offsets are
+    // symmetric about the axis.
+    const seed = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const k = seed[0] * u[0] + seed[1] * u[1] + seed[2] * u[2];
+    let e1 = [seed[0] - u[0] * k, seed[1] - u[1] * k, seed[2] - u[2] * k];
+    const e1l = Math.hypot(e1[0], e1[1], e1[2]);
+    e1 = [e1[0] / e1l, e1[1] / e1l, e1[2] / e1l];
+    const e2 = [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2],
+      u[0] * e1[1] - u[1] * e1[0]];
+    const cols = [[0, 0], [CAP_RADIUS_M, 0], [-CAP_RADIUS_M, 0],
+      [0, CAP_RADIUS_M], [0, -CAP_RADIUS_M]];
+    const hits = [];
+    for (const [a, b] of cols) {
+      for (const h of CAP_SAMPLES_M) {
+        const q = [p[0] + e1[0] * a + e2[0] * b + u[0] * h,
+          p[1] + e1[1] * a + e2[1] * b + u[1] * h,
+          p[2] + e1[2] * a + e2[2] * b + u[2] * h];
+        if (of.solidBuild(...q)) hits.push(`${a},${b}@${h}`);
+      }
+    }
+    return hits;
+  };
 
   // ======================================================================
   // A. THE ROW IS ON SCREEN, ENABLED, AND SAYS WHAT THE PLACE IS.
@@ -285,6 +329,65 @@
     arrived.installStaleM > 100,
     `${arrived.installStaleM} m: the station has not moved, so this probe cannot `
     + 'tell a live-deck arrival from a boot-position one and proves neither');
+
+  // ======================================================================
+  // B2. CE-49. CLEARANCE, WHICH IS THE ASSERTION THIS FILE DID NOT HAVE.
+  //
+  // Reid pressed this row on a real GPU and was seated INSIDE A WALL: grounded,
+  // 0.00 m/s, carried, and the left half of the frame solid black because the
+  // camera was inside interior geometry. EVERY CHECK ABOVE PASSED ON THAT
+  // FRAME, and they were all correct: he WAS grounded, he WAS on the deck, and
+  // he was ZERO metres off the hub centre, because the hub centre is exactly
+  // where `col_HallCore` is. A point can be precisely where you asked for it
+  // and still be inside a pillar.
+  //
+  // The negative control is the OLD seat point, computed and never seated at,
+  // so this probe discriminates rather than merely passing: if the two ever
+  // read the same, one of them has stopped meaning what it says.
+  // ======================================================================
+  const hitsAtFeet = capsuleHits(w.player.feet);
+  check('CE-49: the capsule is CLEAR of every station solid where the press put '
+    + 'the player', hitsAtFeet.length === 0,
+    `${hitsAtFeet.length} of 15 samples solid: ${hitsAtFeet.join(' ')}`);
+  const hubHits = capsuleHits(hubNow() ?? P);
+  check('NEGATIVE CONTROL: and the OLD seat point, the hub centre, DOES overlap',
+    hubHits.length > 0,
+    'the hub centre is clear too, so this probe cannot tell the fix from the '
+    + 'defect and proves neither. `col_HallCore` should be solid there');
+  // AND THE PLAYER CAN ACTUALLY MOVE. Clearance at a point is a fact about a
+  // point; being able to walk is the thing Reid could not do. The input is the
+  // real one (`__of.input`), and the assertion is that the POSITION CHANGED,
+  // not that a key was accepted.
+  //
+  // MEASURED DECK-RELATIVE, AND THE FIRST VERSION OF THIS WAS A VACUOUS PASS.
+  // It differenced the BODY-FRAME feet and read 4,666.83 m for a 2.5 s walk,
+  // which is not walking: it is the station carrying the player at 1879.26 m/s.
+  // The threshold was 1 m, so it would have gone green for a capsule welded
+  // inside a pillar, on a moving station, for ever. `of.carrier('local')` is the
+  // rider's position IN THE DECK'S OWN FRAME, which is the only frame the
+  // question "did he walk" has an answer in.
+  const localOf = () => of.carrier?.('local')?.local ?? null;
+  const beforeWalk = localOf();
+  const walked = await (async () => {
+    if (typeof of.input?.press !== 'function' || beforeWalk === null) return null;
+    // THE REAL BINDING, BY ACTION NAME AND NOT BY KEY CODE. `of.input.press`
+    // resolves through the one binding table, which is why roughly twenty probes
+    // that typed `KeyG` broke when placing moved off G (Bindings.ts).
+    of.input.press('forward', 120);
+    await sleep(2.5);
+    const a = localOf();
+    return a === null ? null : moved(beforeWalk, a);
+  })();
+  if (walked === null) {
+    log.push('no __of.input.press or no carrier local: the walk-forward '
+      + 'assertion was SKIPPED, not passed');
+  } else {
+    log.push(`walked ${r6(walked)} m across the deck`);
+    check('CE-49: and the player can walk ACROSS THE DECK, so it is a room and '
+      + 'not a pocket inside a box', walked > 1.0,
+      `${r6(walked)} m of deck-relative travel in 2.5 s: a capsule wedged in `
+      + 'geometry reports clear at its samples and still cannot move');
+  }
 
   // STANDING, NOT LANDING (GP-53's family). 1.5 s of nothing at all.
   await sleep(1.5);
