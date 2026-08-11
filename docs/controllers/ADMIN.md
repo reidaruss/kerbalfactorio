@@ -1,6 +1,6 @@
 # Admin Master Controller — Context
 
-> **Domain owner:** Admin (Tier 0) · **Last updated:** 2026-07-05 (R5 docs re-sync)
+> **Domain owner:** Admin (Tier 0) · **Last updated:** 2026-08-10 (fresh orchestrator session: D-016 to D-018 logged, [VISION.md](../VISION.md) written, VM bootstrap dispatched)
 > **Plan of record:** [review-2026-06-16/RETHINK.md](../review-2026-06-16/RETHINK.md): Phase **R** (consolidation) → **P** (progression) → **S** (seam), approved by Reid 2026-07-05.
 > Read alongside: [MASTER_PLAN](../MASTER_PLAN.md) · [AGENT_ARCHITECTURE](../AGENT_ARCHITECTURE.md)
 > This is the live nerve-center. It tracks *who is doing what*, cross-domain decisions, and integration. It does **not** hold domain implementation detail — that lives in each controller file.
@@ -101,7 +101,15 @@ Authoritative log is [MASTER_PLAN §11](../MASTER_PLAN.md#11-global-decision-log
 
 ## 6. Active delegations / in-flight briefs
 
-### Phase R consolidation (CURRENT, the live work; plan of record [RETHINK.md](../review-2026-06-16/RETHINK.md) §4)
+### 2026-08-10 session (CURRENT orchestrator, graph engineering per state-of-the-union §7)
+
+Rulings this session: **D-016** (albedo fix approved), **D-017** (orchestrate on desktop, implement on VM `claude-dev` 10.10.10.36), **D-018** (native Steam endgame, web through pre-alpha; Satisfactory art bar). North star: [VISION.md](../VISION.md).
+
+| Task | To | Brief (goal) | Block | Status |
+|------|----|--------------|-------|--------|
+| VM bootstrap | build-tooling lane | Provision claude-dev: toolchain, GitHub deploy key, clone, wasm+web build, ctest, one smoke probe, serve on :4200 bound to LAN | BT-30 to BT-59 | **RUNNING** |
+
+### Phase R consolidation (the prior live work; plan of record [RETHINK.md](../review-2026-06-16/RETHINK.md) §4)
 
 | R-task | To | Brief (goal) | Status |
 |--------|----|--------------|--------|
