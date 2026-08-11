@@ -17,11 +17,7 @@
 // CE-21's rule that naming a subsystem is not the same as naming its files.
 //
 // ---------------------------------------------------------------------------
-// WHAT WAS MISSING, IN ONE SENTENCE PER HALF.
-//
-// CE-30 to CE-38 built the frame term: `poseAt(tick)` answers where a moving
-// thing is, and `CarrierRide` keeps a walker standing on it to 0.000000 m over
-// 600 ticks. Nothing boarded it. `installStation` puts 57 `col_*` proxies into
+// WHAT WAS MISSING. `installStation` put 57 `col_*` proxies into
 // `StructureBodies` at the record's pose ONCE, at tick 0, and `KinematicBody`
 // resolves the walker against them in the body frame, so a station that started
 // travelling would carry the player and leave the deck behind. Admin ruled R13
@@ -38,31 +34,33 @@
 // consumer, and a parallel "posed things" registry beside them would be D-014's
 // second authority rebuilt by hand, three days after D-014 removed the first.
 //
-// That is also why this file mutates instead of rebuilding. A rebuilt `Solid`
-// per tick would be 57 boxes of allocation at 60 Hz AND would break identity
-// removal (`bodies.remove((s) => s === installed)`), which is how the station's
-// own teardown finds its solid.
+// That is also why this file mutates instead of rebuilding: a rebuilt `Solid`
+// per tick would be 57 boxes of allocation at 60 Hz AND would break the identity
+// removal the station's own teardown uses to find its solid.
 //
-// ---------------------------------------------------------------------------
-// NOTHING IS CACHED, WHICH IS THE RULE AND NOT AN OPTIMISATION.
-//
-// `syncAt(tick)` asks the frame once and writes what it got. It stores no pose
-// between calls, so there is no stale one to read, and a mount whose frame is
-// stationary writes the same numbers forever at a cost of one `poseAt`. Section
-// 7b's handback is explicit that "anything that caches a pose is D-014's defect
-// rebuilt"; `lastTick` and `applied` are counters for the census, never inputs.
+// NOTHING IS CACHED, WHICH IS THE RULE AND NOT AN OPTIMISATION. `syncAt(tick)`
+// asks the frame once and writes what it got, storing no pose between calls, so
+// there is no stale one to read. Section 7b: "anything that caches a pose is
+// D-014's defect rebuilt". `lastTick` and `applied` are census counters, never
+// inputs.
 //
 // ---------------------------------------------------------------------------
 // AND THE TRAP THIS FILE IS STANDING IN, SAID OUT LOUD.
 //
-// `mintStation` ships Anchorage with `stampedTick = -1`, so `clockAt` returns
-// the same clock for every tick and an `OrbitCarrier` over it is CONSTANT.
-// Every line below therefore runs correctly and writes identical numbers on the
-// station as it ships: the mount is the IDENTITY ELEMENT of its own operation
-// and a probe that only mounts Anchorage proves nothing (GP-142, and CE-32 says
-// the same thing about the ride). `probes/stationride.js` drives a moving frame
-// and asserts the frozen one separately, and the negative control is run
-// against the moving one for exactly this reason.
+// RETRACTED BY PH-357 AND KEPT FOR THE ARGUMENT. It used to say `mintStation`
+// ships Anchorage with `stampedTick = -1`, so an `OrbitCarrier` over it is
+// CONSTANT and the mount is the IDENTITY ELEMENT of its own operation, which
+// made every probe that only mounted Anchorage prove nothing (GP-142). The
+// record is stamped now and the station really travels. The rule the trap taught
+// still stands and `probes/stationride.js` still asserts the rate before it
+// asserts anything else.
+//
+// TWO CLOCKS, DELIBERATELY (CE-51). `syncAt` poses the COLLISION geometry at
+// INTEGER ticks, because that is what the walker's step was resolved against.
+// `syncWatchersAt` poses the DRAWN geometry at the FRACTIONAL tick being drawn,
+// because that is where the interpolated camera is. Giving both the same clock
+// IS the stutter: 27.04 m of peak-to-peak sawtooth per rendered frame, on a
+// player standing perfectly still.
 import type { CarrierFrame } from './CarrierFrame.js';
 import type { Lifetime } from '../app/Lifetime.js';
 import { composePose, copyPose, newPose, type FramePose } from './FramePose.js';
@@ -74,17 +72,14 @@ import {
  * Anything whose BODY-FRAME pose is a rigid function of a carrier's pose.
  *
  * STRUCTURAL ON PURPOSE, the same decision `CarriedBody` made for the rider
- * (CE-33): `Solid` (game/StructureBody.ts) and `GravityVolume`
- * (game/GravityVolumes.ts) both satisfy it already, this file imports neither,
- * and a player-built station, a docked ship's collision hull or a moving
- * platform satisfies it without knowing this exists.
+ * (CE-33): `Solid` and `GravityVolume` both satisfy it already, this file
+ * imports neither, and a player-built station or a moving platform satisfies it
+ * without knowing this exists.
  *
- * `cx/cy/cz` is the body-frame bounding-sphere CENTRE both registries use for
- * their O(1) reject. It is written because a bound that stayed at the boot pose
- * would reject every query the moment the thing moved further than its own
- * radius, which is a deck that silently stops existing rather than one that is
- * in the wrong place: `cr` is unchanged because a rigid motion does not change
- * a radius.
+ * `cx/cy/cz` is the bounding-sphere CENTRE both registries use for their O(1)
+ * reject, written because a bound left at the boot pose would reject every query
+ * the moment the thing moved further than its own radius: a deck that silently
+ * stops existing rather than one in the wrong place.
  */
 export interface PosedInFrame {
   pos: { x: number; y: number; z: number };
@@ -117,9 +112,8 @@ interface Attached {
 /**
  * One moving frame and everything rigidly attached to it.
  *
- * A mount is NOT a second frame. It holds a `CarrierFrame` and asks it; the
- * frame stays the one authority on where the thing is, which is what lets the
- * deck, the person standing on it and the docking port all be answers from one
+ * A mount is NOT a second frame: it holds a `CarrierFrame` and asks it, so the
+ * deck, the person standing on it and the docking port are all answers from one
  * `poseAt` rather than three things kept in agreement.
  */
 export class CarrierMount {
@@ -133,24 +127,30 @@ export class CarrierMount {
   applied = 0;
   /** The tick of the last sync, NaN before the first. A report field only. */
   lastTick = Number.NaN;
+  /** CE-51. Watcher-only syncs and the FRACTIONAL tick of the last. `drawn`
+   *  outgrowing `applied` is the evidence the hull is posed per FRAME and the
+   *  collider per TICK, which is the whole of the fix. */
+  drawn = 0;
+  lastDrawnTick = Number.NaN;
+  /** CE-51. Body-frame position of the last watcher `syncWatchersAt` posed:
+   *  where the DRAWN geometry is. NaN until a frame has drawn. */
+  readonly drawnPos = { x: Number.NaN, y: Number.NaN, z: Number.NaN };
 
   constructor(readonly frame: CarrierFrame) {}
 
   /**
-   * Attach something rigid.
-   *
-   * `local` is COPIED, not held, because a caller that kept a reference and
-   * mutated it would have made the attachment a second moving frame with no
-   * `poseAt` and no census, which is the shape this whole design refuses.
+   * Attach something rigid. `local` is COPIED, not held: a caller that kept a
+   * reference and mutated it would have made the attachment a second moving
+   * frame with no `poseAt` and no census, the shape this design refuses.
    *
    * CE-39. `bounds` (default true) is whether this attachment's bounding sphere
-   * is part of WHERE THE CARRIER IS, for `containsPoint`. True by default because
-   * the ordinary attachment is a collision body and a collision body IS the
-   * carrier's extent. It exists at all because Anchorage's freefall gravity
-   * volume is an attachment too, at 207.85 m against the interior's 28.64 m: a
-   * union over everything would board a player seven times further out than the
-   * station reaches, and would do it BY READING THE GRAVITY MODEL, which Admin
-   * ruled against. A field is not a floor.
+   * is part of WHERE THE CARRIER IS, for `containsPoint`. True by default: the
+   * ordinary attachment is a collision body and a collision body IS the extent.
+   * It exists because Anchorage's freefall gravity volume is an attachment too,
+   * at 207.85 m against the interior's 28.64 m, so a union over everything would
+   * board a player seven times further out than the station reaches AND would do
+   * it by reading the GRAVITY MODEL, which Admin ruled against. A field is not a
+   * floor.
    */
   attach(body: PosedInFrame, what: string, local?: FramePose,
          opts?: { readonly bounds?: boolean }): this {
@@ -160,9 +160,8 @@ export class CarrierMount {
   }
 
   /** The same attachment for a consumer whose pose fields are private and whose
-   *  setter is the published way in. It is handed the SAME composed pose an
-   *  attached body would have been written, so a watcher and an item can never
-   *  end up describing the station differently. */
+   *  setter is the published way in. Handed the SAME composed pose an attached
+   *  body would get, so the two can never describe the station differently. */
   watch(fn: PoseWatcher, what: string, local?: FramePose): this {
     this.watchers.push({ fn, what,
       local: local === undefined ? null : copyPose(local, newPose()) });
@@ -200,18 +199,15 @@ export class CarrierMount {
    * CE-39. IS THIS BODY-FRAME POINT ON THIS CARRIER, with `marginM` of slack.
    *
    * The union of the bounding spheres of every attachment marked `bounds`, READ
-   * WHERE THEY ARE RIGHT NOW: `syncAt` re-poses `cx/cy/cz` every tick, so this
-   * tests the deck's live position and never a remembered one.
+   * WHERE THEY ARE RIGHT NOW (`syncAt` re-poses `cx/cy/cz` every tick).
    *
-   * A SPHERE AND NOT THE BOXES, deliberately. `StructureBodies.blocks` already
-   * answers "is this point inside a wall", and it answers FALSE for the air a
-   * person standing on a deck occupies, so it is the wrong question. Membership
-   * is "am I with this thing", which is the O(1) reject the registries already
-   * hold. `marginM` is the caller's, so board and release are ONE predicate at
-   * two radii rather than two predicates that could disagree.
-   *
-   * False with nothing bounding attached, which is the right answer for a frame
-   * with no geometry on it: an instrument carrier is not a place.
+   * A SPHERE AND NOT THE BOXES, deliberately: `StructureBodies.blocks` answers
+   * "is this point inside a wall" and is FALSE for the air a person standing on
+   * a deck occupies, so it is the wrong question. Membership is "am I with this
+   * thing", which is the O(1) reject the registries already hold. `marginM` is
+   * the caller's, so board and release are ONE predicate at two radii rather
+   * than two that could disagree. False with nothing bounding attached: an
+   * instrument carrier is not a place.
    */
   containsPoint(x: number, y: number, z: number, marginM: number): boolean {
     for (const it of this.items) {
@@ -246,15 +242,53 @@ export class CarrierMount {
     return this.items.some((i) => i.body === body);
   }
 
+  /**
+   * CE-51. THE DRAWN half only, at a FRACTIONAL tick.
+   *
+   * `syncAt` above poses the COLLISION geometry once per fixed tick, which is
+   * right and must not change: `KinematicBody` resolves the walker against those
+   * boxes, and a collider that moved between ticks would be a floor that is in a
+   * different place from the one the step was computed against.
+   *
+   * The DRAWN geometry has the opposite requirement, and this is the split.
+   * `Loop` interpolates the camera between fixed ticks and drew the hull at the
+   * last INTEGER tick, so at 1879.26 m/s the eye slid smoothly through a tick's
+   * 31.32 m while the hull stood still and then jumped. MEASURED per rendered
+   * frame before the fix: 27.04 m peak to peak, 13.52 m within one tick at two
+   * frames per tick, correlation with alpha 0.9999999860. A pure clock
+   * disagreement: at alpha = 1, where the clocks coincide, it was already right.
+   *
+   * `poseAt` TAKES A FRACTIONAL TICK BY CONTRACT (CarrierFrame.ts), so this
+   * needs no new authority: the SAME function the collider, the rider and the
+   * census ask, asked at the instant the frame is actually drawn.
+   */
+  syncWatchersAt(tick: number): FramePose {
+    const f = this.frame.poseAt(tick, this.here);
+    for (const w of this.watchers) {
+      const p = w.local === null ? f : composePose(f, w.local, this.there);
+      w.fn(p);
+      // CE-51. THE POSE THE HULL WAS ACTUALLY DRAWN AT, published so an
+      // instrument can ask about what the PLAYER SEES rather than about the
+      // collider. They are on different clocks now, and the first frame trace
+      // measured the collider and reported the fix as having changed nothing.
+      this.drawnPos.x = p.px; this.drawnPos.y = p.py; this.drawnPos.z = p.pz;
+    }
+    this.drawn++;
+    this.lastDrawnTick = tick;
+    return f;
+  }
+
   report(): {
     id: string; what: string; items: string[]; watchers: string[];
-    applied: number; lastTick: number; offsets: number; bounding: number;
+    applied: number; lastTick: number; drawn: number; lastDrawnTick: number;
+    offsets: number; bounding: number;
   } {
     return {
       id: this.frame.id, what: this.frame.what,
       items: this.items.map((i) => i.what),
       watchers: this.watchers.map((w) => w.what),
       applied: this.applied, lastTick: this.lastTick,
+      drawn: this.drawn, lastDrawnTick: this.lastDrawnTick,
       offsets: this.items.filter((i) => i.local !== null).length,
       bounding: this.items.filter((i) => i.bounds).length,
     };
@@ -262,18 +296,16 @@ export class CarrierMount {
 }
 
 /**
- * Every mount the current body scope has. Driven once per fixed tick.
+ * Every mount the current body scope has. Driven once per fixed tick (the
+ * colliders) and once per rendered frame (the watchers, CE-51).
  *
  * PROCESS-SCOPED OBJECT, BODY-SCOPED CONTENTS, exactly as `CarrierRegistry` is
- * and for the identical reason (CE-31): a mount holds body-frame geometry and
- * a frame expressed in this body, so one that survived a switch would be posing
- * Forge's station against Cinder. `bindTo` registers the clear with the body
- * `Lifetime`, and it is registered AFTER the carrier registry's, so that
- * reverse-of-registration teardown drops the MOUNTS FIRST and the frames last:
- * a mount holding a frame the registry has already forgotten is the dead-handle
- * state clause 4 of the teardown contract exists to make impossible. That is
- * the same argument, in the same order, that puts `ride.bindTo` after
- * `carriers.bindTo` in Boot.
+ * and for the identical reason (CE-31): a mount holds body-frame geometry and a
+ * frame expressed in this body, so one that survived a switch would be posing
+ * Forge's station against Cinder. `bindTo` registers the clear AFTER the carrier
+ * registry's, so reverse-of-registration teardown drops the MOUNTS FIRST and the
+ * frames last: a mount holding a frame the registry has forgotten is the
+ * dead-handle state clause 4 of the teardown contract makes impossible.
  */
 export class CarrierMounts {
   private readonly list: CarrierMount[] = [];
@@ -297,14 +329,12 @@ export class CarrierMounts {
   /**
    * CE-47. The tick this set was last driven at, NaN before the first.
    *
-   * A REPORT FIELD, and the loop is still the one authority: this is written by
-   * `syncAt` and read by nobody who could act on a stale one. It exists because
-   * `Loop` is constructed in `main.ts`, AFTER `boot()` resolves, so the
-   * composition root has no `tickIndex` to hand a rebuild hook, and a rebuild
-   * that re-poses the station at the wrong tick puts the deck wherever the conic
-   * was at that other tick. `syncAt` runs unconditionally every fixed tick, even
-   * with an empty list, so this is live whether or not anything is mounted,
-   * which is exactly the state a rebuild reads it in.
+   * A REPORT FIELD; the loop is still the one authority. It exists because `Loop`
+   * is constructed in `main.ts` AFTER `boot()` resolves, so the composition root
+   * has no `tickIndex` to hand a rebuild hook, and a rebuild that re-poses the
+   * station at the wrong tick puts the deck wherever the conic was then. `syncAt`
+   * runs unconditionally every fixed tick even with an empty list, so this is
+   * live whether or not anything is mounted, which is how a rebuild reads it.
    *
    * `clear()` deliberately does NOT reset it: it is a fact about the loop, not
    * about the contents, and the same reasoning keeps `added` and `removed`.
@@ -329,6 +359,12 @@ export class CarrierMounts {
     return this.list.find((m) => m.frame === frame) ?? null;
   }
 
+  /** CE-51. Every mount's DRAWN half, at the fractional tick being drawn. From
+   *  `Loop.frame` and nowhere else; `syncAt` owns the collision half. */
+  syncWatchersAt(tick: number): void {
+    for (const m of this.list) m.syncWatchersAt(tick);
+  }
+
   /** The first mount whose bounding attachments contain this point, or null. */
   mountContaining(x: number, y: number, z: number,
                   marginM: number): CarrierMount | null {
@@ -346,7 +382,6 @@ export class CarrierMounts {
     this.removed += this.list.length;
     this.list.length = 0;
   }
-
   bindTo(lt: Lifetime): void {
     lt.add('mounts:clear', () => { this.clear(); });
   }
