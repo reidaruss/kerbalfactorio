@@ -102,7 +102,10 @@ import { HandleLedger } from './HandleLedger.js';
 // semantics, which is what buried half a strap-on booster inside a 1.25 m core.
 // Same bump: `of_vs_transforms` / `of_fl_transforms` are NINE doubles per part,
 // the ninth being `radialOffsetM`, appended so no existing index moves.
-export const OF_ABI_VERSION = 22;
+// ABI 23 (2026-08-11, GP-506): `of_gp_node_harvest`'s i32 scratch grows a 5th
+// word, `refusal` (a `HarvestRefusal` code), and `of_gp_node_harvest_gate(i)`
+// is a new pure query. Both additive.
+export const OF_ABI_VERSION = 23;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

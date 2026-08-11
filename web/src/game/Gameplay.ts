@@ -15,7 +15,7 @@
 // bug.
 
 import * as THREE from 'three';
-import { GameCore } from './GameCore.js';
+import { GameCore, harvestRefusalText } from './GameCore.js';
 import { bodyIsAirless } from './StarterContent.js';
 import { NodeField } from './NodeField.js';
 import { RockField } from './RockField.js';
@@ -501,6 +501,12 @@ export class Gameplay {
       this.fx.impact(this.interact.last, ray.origin, this.interact.swings);
       this.panel.invalidate();
     }
+    // GP-506. THE REFUSAL, SHOWN: a gated swing never reaches `interact.last`
+    // (it was turned away before it was ever attempted), so the reason has to
+    // be read off `lastRefusal` here instead of off a grant that never
+    // happened.
+    const lr = this.interact.lastRefusal;
+    if (lr !== null && lr.tick === tick) this.hud.flash(harvestRefusalText(lr.code), 1.2);
     // The kick runs on the FIXED tick and is applied through the same additive
     // Controller.look the mouse uses, so a driven tape kicks exactly as often as
     // a human does and the offsets still sum to zero.

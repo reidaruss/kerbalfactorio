@@ -580,7 +580,13 @@ export function gameplayApi(s: Services, loop: Loop) {
     harvest(index: number) {
       if (s.gameplay === null) return null;
       const ok = s.gameplay.interact.harvestNow(index, loop.tickIndex);
-      return { ok, node: s.gameplay.game.node(index), carried: s.gameplay.game.carried() };
+      // GP-506: `refusal` names WHY a false `ok` happened (tool gate) rather
+      // than leaving a probe to guess between that, an empty node and a full
+      // pack from `node`/`carried` alone.
+      return {
+        ok, node: s.gameplay.game.node(index), carried: s.gameplay.game.carried(),
+        refusal: s.gameplay.interact.lastRefusal,
+      };
     },
   };
 }

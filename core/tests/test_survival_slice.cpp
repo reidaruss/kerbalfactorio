@@ -45,9 +45,12 @@ using surv::HandCrafter;
 using surv::CraftBlock;
 using surv::CraftRecipe;
 using surv::HarvestResult;
+using surv::HarvestRefusal;
 using surv::ToolKind;
 using surv::harvestNode;
 using surv::assistingToolFor;
+using surv::requiresToolFor;
+using surv::harvestGate;
 using surv::fuelTicksPerUnit;
 using surv::ticksPerSmeltFor;
 using surv::RegisterSurvivalContent;
@@ -308,6 +311,12 @@ TEST(hand_harvest_finishes_a_sub_unit_remainder) {
 // The authored pacing: swings-to-clear is the constant, the per-swing yield is
 // derived from the node's own size. Every kind clears in the same handful of
 // swings, and the matching tool halves it.
+//
+// GP-506: Tree/Rock stay bare-hand reachable (requiresToolFor false) and are
+// paced exactly as before; CoalSeam/IronOre/CopperOre are now GATED, so their
+// withTool=false case is a REFUSAL rather than a slower pacing run — asserted
+// separately below rather than folded into the pacing loop, which only makes
+// sense for a kind the bare hand is allowed to touch at all.
 TEST(harvest_pacing_clears_every_node_in_a_handful_of_swings) {
   SliceRegistry reg = makeSurvivalRegistry();
   const wsv::NodeKind kinds[] = {wsv::NodeKind::Tree, wsv::NodeKind::Rock,
@@ -330,6 +339,16 @@ TEST(harvest_pacing_clears_every_node_in_a_handful_of_swings) {
         n.RemainingAmount = n.InitialAmount;
         const uint32_t want = static_cast<uint32_t>(n.InitialAmount);
 
+        if (surv::requiresToolFor(k) && !withTool) {
+          // The gate: a bare-hand swing on a gated kind is refused outright,
+          // the node is untouched, and the pack gains nothing.
+          HarvestResult r = harvestNode(n, k, inv);
+          CHECK(r.granted == 0);
+          CHECK(r.refusal == HarvestRefusal::ToolRequired);
+          CHECK(n.RemainingAmount == n.InitialAmount);
+          continue;
+        }
+
         int swings = 0;
         while (n.RemainingAmount > 0.0 && swings < 64) {
           HarvestResult r = harvestNode(n, k, inv);  // 0,0 = authored pacing
@@ -351,10 +370,158 @@ TEST(harvest_pacing_clears_every_node_in_a_handful_of_swings) {
       }
     }
   }
-  // Bare hands always work — the no-bootstrap-deadlock property.
+  // Bare hands always work for the two bootstrap kinds — the
+  // no-bootstrap-deadlock property, narrowed by GP-506's gate.
+  CHECK(!surv::requiresToolFor(wsv::NodeKind::Tree));
+  CHECK(!surv::requiresToolFor(wsv::NodeKind::Rock));
   CHECK(surv::kBareHandSwings > 0);
   CHECK(surv::kToolSwings > 0);
   CHECK(surv::kToolSwings < surv::kBareHandSwings);
+}
+
+// =============================================================================
+// 3b. THE GATE (GP-506) — a hard requiresToolFor rule, as data on the node
+//     kind, dedicated cases beside the pacing sweep above.
+// =============================================================================
+
+// Bare hand on the two bootstrap kinds always yields (storyline rung 2).
+TEST(bare_hand_harvest_tree_and_stone_always_yields) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+
+  worldgen::FDepositNode tree;
+  tree.Resource = sitems::Wood;
+  tree.InitialAmount = 40.0;
+  tree.RemainingAmount = 40.0;
+  HarvestResult tw = harvestNode(tree, wsv::NodeKind::Tree, inv);
+  CHECK(tw.granted > 0);
+  CHECK(tw.refusal == HarvestRefusal::None);
+
+  worldgen::FDepositNode rock;
+  rock.Resource = sitems::Stone;
+  rock.InitialAmount = 60.0;
+  rock.RemainingAmount = 60.0;
+  HarvestResult rw = harvestNode(rock, wsv::NodeKind::Rock, inv);
+  CHECK(rw.granted > 0);
+  CHECK(rw.refusal == HarvestRefusal::None);
+}
+
+// Bare hand on IronOre (any of the three ore kinds) is REFUSED, named, and
+// costs nothing: no grant, no cooldown-worthy state change on the node.
+TEST(bare_hand_harvest_iron_ore_is_refused_with_named_code_and_no_side_effect) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+
+  worldgen::FDepositNode ore;
+  ore.Resource = sitems::RawIron;
+  ore.InitialAmount = 250.0;
+  ore.RemainingAmount = 250.0;
+
+  HarvestResult r = harvestNode(ore, wsv::NodeKind::IronOre, inv);
+  CHECK(r.granted == 0);
+  CHECK(!r.usedTool);
+  CHECK(!r.nodeEmpty);
+  CHECK(r.refusal == HarvestRefusal::ToolRequired);
+  // Nothing burned: the node is exactly where it started, the pack is empty.
+  // (The swing's own cooldown lives client-side, in Interact.ts — this is the
+  // /core half of "a refusal burns nothing": no mutation for the client to
+  // observe and no reason to have committed a swing at all.)
+  CHECK(ore.RemainingAmount == 250.0);
+  CHECK(inv.count(sitems::RawIron) == 0);
+
+  // The pure query agrees before any swing is attempted, which is what lets a
+  // caller decide not to commit a swing's animation/cooldown in the first
+  // place (GP-51's "ask before" rule, applied to harvest).
+  CHECK(harvestGate(wsv::NodeKind::IronOre, inv) == HarvestRefusal::ToolRequired);
+
+  // Coal and copper ore are gated the same way (data, not a special case).
+  CHECK(requiresToolFor(wsv::NodeKind::CoalSeam));
+  CHECK(requiresToolFor(wsv::NodeKind::CopperOre));
+}
+
+// With the pickaxe in the pack, the SAME ore node now yields, tooled, with no
+// refusal — the gate is a function of what is carried, not of the node.
+TEST(pickaxe_in_pack_lets_ore_harvest_proceed) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+  inv.add(sitems::CrudePickaxe, 1);
+  CHECK(harvestGate(wsv::NodeKind::IronOre, inv) == HarvestRefusal::None);
+
+  worldgen::FDepositNode ore;
+  ore.Resource = sitems::RawIron;
+  ore.InitialAmount = 250.0;
+  ore.RemainingAmount = 250.0;
+  HarvestResult r = harvestNode(ore, wsv::NodeKind::IronOre, inv);
+  CHECK(r.granted > 0);
+  CHECK(r.usedTool);
+  CHECK(r.refusal == HarvestRefusal::None);
+}
+
+// The "kept" rule (gameplay.h harvestNode's inv.add/overflow accounting)
+// applies to stone exactly as it does to every other resource: a full pack
+// refuses to consume the node — the swing lands, nothing is lost, nothing is
+// gained, and the node is untouched for the next attempt.
+TEST(full_pack_keeps_the_stone_node_undrained) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, /*slots*/ 1);
+  const uint16_t cap = reg.stackMax(sitems::Stone);
+  CHECK(inv.add(sitems::Stone, cap) == 0);  // the one slot is now full
+  CHECK(inv.count(sitems::Stone) == cap);
+
+  worldgen::FDepositNode rock;
+  rock.Resource = sitems::Stone;
+  rock.InitialAmount = 60.0;
+  rock.RemainingAmount = 60.0;
+  HarvestResult r = harvestNode(rock, wsv::NodeKind::Rock, inv);
+  CHECK(r.granted == 0);                       // overflow ate the whole pull
+  CHECK(r.refusal == HarvestRefusal::None);     // NOT a tool refusal: a full pack
+  CHECK(!r.nodeEmpty);
+  CHECK(rock.RemainingAmount == 60.0);          // the node kept its stone
+  CHECK(inv.count(sitems::Stone) == cap);       // the pack gained nothing
+}
+
+// =============================================================================
+// THE ANTI-DEADLOCK GATE (GP-506) — the real point of this whole change.
+//
+// From an EMPTY inventory, a legal path to a crude pickaxe exists using ONLY
+// bare-hand-permitted nodes (Tree, Rock). This is the test that must go RED
+// if anyone ever re-tightens recipeCrudePickaxe() back toward an ore
+// ingredient: it asserts the reachability property directly, not merely the
+// current bill of materials.
+// =============================================================================
+TEST(bootstrap_pickaxe_reachable_from_empty_inventory_bare_hands_only) {
+  SliceRegistry reg = makeSurvivalRegistry();
+  Inventory inv(reg, 20);
+  CHECK(inv.count(sitems::CrudePickaxe) == 0);
+
+  const CraftRecipe pick = recipeCrudePickaxe();
+  // THE PROPERTY: every ingredient the pickaxe costs is a bare-hand-always
+  // node kind. If this ever fails, the recipe now needs a tool it is itself
+  // gating, which is exactly the deadlock this brief exists to prevent.
+  for (const ItemStack& in : pick.inputs) {
+    const bool boot = (in.item == sitems::Wood) || (in.item == sitems::Stone);
+    CHECK(boot);
+  }
+
+  // And the reachability is not just asserted, it is WALKED: harvest Tree and
+  // Rock nodes bare-handed, from nothing, until the bill is met, then craft.
+  worldgen::FDepositNode tree;
+  tree.Resource = sitems::Wood;
+  tree.InitialAmount = 40.0;
+  tree.RemainingAmount = 40.0;
+  worldgen::FDepositNode rock;
+  rock.Resource = sitems::Stone;
+  rock.InitialAmount = 60.0;
+  rock.RemainingAmount = 60.0;
+
+  int guard = 0;
+  while (!HandCrafter::canCraft(pick, inv) && guard++ < 200) {
+    harvestNode(tree, wsv::NodeKind::Tree, inv);
+    harvestNode(rock, wsv::NodeKind::Rock, inv);
+  }
+  CHECK(guard < 200);
+  CHECK(HandCrafter::craft(pick, inv));
+  CHECK(inv.has(sitems::CrudePickaxe, 1));
 }
 
 // =============================================================================
@@ -364,26 +531,26 @@ TEST(hand_craft_succeeds_only_with_all_inputs) {
   SliceRegistry reg = makeSurvivalRegistry();
   Inventory inv(reg, 20);
 
-  CraftRecipe pick = recipeCrudePickaxe();  // 1 raw_iron + 1 wood
+  CraftRecipe pick = recipeCrudePickaxe();  // GP-506: 2 stone + 1 wood, never ore
   CHECK(pick.output == sitems::CrudePickaxe);
 
   // Empty pack -> cannot craft, and craft() consumes nothing.
   CHECK(!HandCrafter::canCraft(pick, inv));
   CHECK(!HandCrafter::craft(pick, inv));
 
-  // Only wood (missing the raw_iron) -> still cannot craft.
+  // Only wood (missing the stone) -> still cannot craft.
   inv.add(sitems::Wood, 1);
   CHECK(!HandCrafter::canCraft(pick, inv));
   CHECK(!HandCrafter::craft(pick, inv));
   CHECK(inv.count(sitems::Wood) == 1);  // the lone wood is untouched
 
-  // Add the raw_iron -> now craftable; craft consumes both inputs, adds the tool.
-  inv.add(sitems::RawIron, 1);
+  // Add the stone -> now craftable; craft consumes both inputs, adds the tool.
+  inv.add(sitems::Stone, 2);
   CHECK(HandCrafter::canCraft(pick, inv));
   CHECK(HandCrafter::craft(pick, inv));
   CHECK(inv.count(sitems::CrudePickaxe) == 1);
-  CHECK(inv.count(sitems::Wood) == 0);     // consumed
-  CHECK(inv.count(sitems::RawIron) == 0);  // consumed
+  CHECK(inv.count(sitems::Wood) == 0);   // consumed
+  CHECK(inv.count(sitems::Stone) == 0);  // consumed
 
   // A second craft now fails (inputs spent) — all-or-nothing.
   CHECK(!HandCrafter::craft(pick, inv));
@@ -451,20 +618,20 @@ TEST(a_craft_into_a_full_pack_is_refused_and_spends_nothing) {
 TEST(a_full_pack_still_crafts_when_the_spend_frees_the_slot) {
   SliceRegistry reg = makeSurvivalRegistry();
   Inventory inv(reg, 20);
-  const CraftRecipe pick = recipeCrudePickaxe();  // 1 RawIron + 1 Wood
+  const CraftRecipe pick = recipeCrudePickaxe();  // GP-506: 2 Stone + 1 Wood
 
-  const uint16_t cap = reg.stackMax(sitems::Stone);
-  for (int s = 0; s < 18; ++s) CHECK(inv.add(sitems::Stone, cap) == 0);
+  const uint16_t cap = reg.stackMax(sitems::RawIron);
+  for (int s = 0; s < 18; ++s) CHECK(inv.add(sitems::RawIron, cap) == 0);
   // The last two slots hold EXACTLY the bill, so spending them empties both.
   CHECK(inv.add(sitems::Wood, 1) == 0);
-  CHECK(inv.add(sitems::RawIron, 1) == 0);
+  CHECK(inv.add(sitems::Stone, 2) == 0);
   CHECK(inv.add(sitems::Coal, 1) == 1);  // full, by the production path
 
   CHECK(HandCrafter::craftBlock(pick, inv) == CraftBlock::None);
   CHECK(HandCrafter::craft(pick, inv));
   CHECK(inv.count(sitems::CrudePickaxe) == 1);
   CHECK(inv.count(sitems::Wood) == 0);
-  CHECK(inv.count(sitems::RawIron) == 0);
+  CHECK(inv.count(sitems::Stone) == 0);
 
   // And the block code names the OTHER refusal correctly on the same pack.
   CHECK(HandCrafter::craftBlock(pick, inv) == CraftBlock::InputsShort);
@@ -655,33 +822,48 @@ TEST(layout_and_smelt_are_deterministic) {
 // End-to-end mini survival loop: hand-harvest -> hand-craft tools -> harvest
 // faster with the tool -> craft a furnace -> smelt ore into iron with fuel.
 // =============================================================================
+// GP-506: the legal order is now gather wood -> gather stone -> craft pickaxe
+// -> ONLY THEN mine ore. Rewritten from the pre-gate version, which bare-hand
+// harvested iron before ever crafting a tool — exactly the path the gate now
+// refuses.
 TEST(end_to_end_survival_bootstrap_loop) {
   SliceRegistry reg = makeSurvivalRegistry();
   worldgen::BodyParams forge = worldgen::makeForge(0xBEEFull);
   Inventory inv(reg, 20);
 
-  // Lay out a patch with a tree, an iron node, and a coal seam.
+  // Lay out a patch with a tree, a rock, an iron node, and a coal seam.
   using NK = wsv::NodeKind;
   const Vec3 centerDir = worldgen::latLonToDir(0.1, 0.4);
   std::vector<worldgen::FDepositNode> nodes = wsv::LayoutTestArea(
-      forge, forge.bodySeed, 1, centerDir, {NK::Tree, NK::IronOre, NK::CoalSeam});
+      forge, forge.bodySeed, 1, centerDir,
+      {NK::Tree, NK::Rock, NK::IronOre, NK::CoalSeam});
   worldgen::FDepositNode& tree = nodes[0];
-  worldgen::FDepositNode& iron = nodes[1];
-  worldgen::FDepositNode& coal = nodes[2];
+  worldgen::FDepositNode& rock = nodes[1];
+  worldgen::FDepositNode& iron = nodes[2];
+  worldgen::FDepositNode& coal = nodes[3];
 
-  // 1) Hand-harvest wood + raw_iron (bare hands — bootstrap with no tools yet).
+  // 0) Bare hands on ore, BEFORE any tool exists, is refused — not a silent
+  // zero: a named code, and the node is untouched.
+  HarvestResult refused = harvestNode(iron, NK::IronOre, inv, 1, 3);
+  CHECK(refused.granted == 0);
+  CHECK(refused.refusal == HarvestRefusal::ToolRequired);
+  CHECK(iron.RemainingAmount == iron.InitialAmount);
+
+  // 1) Hand-harvest wood + stone (bare hands — the only nodes an empty
+  // inventory can ever touch).
   while (inv.count(sitems::Wood) < 1) harvestNode(tree, NK::Tree, inv, 1, 3);
-  while (inv.count(sitems::RawIron) < 1) harvestNode(iron, NK::IronOre, inv, 1, 3);
+  while (inv.count(sitems::Stone) < 2) harvestNode(rock, NK::Rock, inv, 1, 3);
   CHECK(inv.has(sitems::Wood, 1));
-  CHECK(inv.has(sitems::RawIron, 1));
+  CHECK(inv.has(sitems::Stone, 2));
 
-  // 2) Hand-craft a crude pickaxe (1 raw_iron + 1 wood).
+  // 2) Hand-craft a crude pickaxe (2 stone + 1 wood) — the deadlock breaker.
   CHECK(HandCrafter::craft(recipeCrudePickaxe(), inv));
   CHECK(inv.has(sitems::CrudePickaxe, 1));
 
-  // 3) With the pickaxe, an iron pull now yields MORE than the bare-hand pull.
+  // 3) With the pickaxe, ore is now reachable — the gate passes, tool used.
   const uint32_t before = inv.count(sitems::RawIron);
   HarvestResult tooled = harvestNode(iron, NK::IronOre, inv, 1, 3);
+  CHECK(tooled.refusal == HarvestRefusal::None);
   CHECK(tooled.usedTool);
   CHECK(inv.count(sitems::RawIron) - before == 3);
 
@@ -710,15 +892,19 @@ TEST(end_to_end_survival_bootstrap_loop) {
 // 7. ORE PATCHES (deposits.h §P + gameplay.h §S.5): a deposit is GROUND, and
 //    an outcrop is a window onto it rather than a second reservoir.
 //
-//    The three things that must hold before a drill can exist:
-//      a. BOOTSTRAP : bare hands ALWAYS yield ore from a patch, so the player
-//                      can reach the iron a drill costs. The matching tool
-//                      raises the yield; it is never required.
-//      b. ONE POOL  : the units the player keeps come OUT of the patch, exactly,
-//                      and every outcrop of that patch reports the same number.
-//      c. FINISHABLE: the patch drains to zero and then grants nothing.
+//    The three things that must hold before a drill can exist, GP-506's gate
+//    applied:
+//      a. GATED, NOT DEADLOCKED: bare hands are REFUSED on an ore patch (a
+//                      named code, nothing taken from the pool); the pickaxe
+//                      the gate demands is reachable from Stone + Wood alone,
+//                      so the chain never actually deadlocks, it just moved
+//                      where the "always works" property lives.
+//      b. ONE POOL   : the units the player keeps come OUT of the patch,
+//                      exactly, and every outcrop of that patch reports the
+//                      same number.
+//      c. FINISHABLE : the patch drains to zero and then grants nothing.
 // =============================================================================
-TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
+TEST(patch_hand_mining_is_one_pool_and_gated_not_deadlocked) {
   using NK = worldgen::survival::NodeKind;
   namespace wp = worldgen::patches;
 
@@ -741,34 +927,38 @@ TEST(patch_hand_mining_is_one_pool_and_never_deadlocks) {
   a.Resource = patch.Resource;
   b.Resource = patch.Resource;
 
+  // (a) bare hands are REFUSED outright — a named code, and the pool is
+  //     untouched (the outcrop is a view, but the patch behind it is the
+  //     proof: nothing was taken to refund).
   HarvestResult r1 = survival::harvestPatch(patch, a, NK::IronOre, inv);
-  CHECK(r1.granted == wp::kHandYieldBare);   // (a) bare hands always work
-  CHECK(!r1.usedTool);
-  CHECK_NEAR(patch.RemainingAmount, initial - wp::kHandYieldBare, 1e-9);
+  CHECK(r1.granted == 0);
+  CHECK(r1.refusal == HarvestRefusal::ToolRequired);
+  CHECK_NEAR(patch.RemainingAmount, initial, 1e-9);
+  CHECK(inv.count(sitems::RawIron) == 0);
+
+  // With the pickaxe (itself reachable from Stone + Wood, never from this
+  // patch), the gate passes and the tool yield applies.
+  inv.add(sitems::CrudePickaxe, 1);
+  HarvestResult r2 = survival::harvestPatch(patch, a, NK::IronOre, inv);
+  CHECK(r2.refusal == HarvestRefusal::None);
+  CHECK(r2.usedTool);
+  CHECK(r2.granted == wp::kHandYieldTool);
+  CHECK_NEAR(patch.RemainingAmount, initial - wp::kHandYieldTool, 1e-9);
   // (b) the OTHER outcrop draws from the SAME pool: it is handed the patch's
   //     number on the way in, so it can neither refill it nor hold one of its
   //     own. `a` is deliberately not re-read here: an outcrop is a view that is
   //     re-derived when it is used, and asserting a stale copy would be
   //     asserting the bug this design exists to prevent.
-  HarvestResult r2 = survival::harvestPatch(patch, b, NK::IronOre, inv);
-  CHECK(r2.granted == wp::kHandYieldBare);
+  HarvestResult r3 = survival::harvestPatch(patch, b, NK::IronOre, inv);
+  CHECK(r3.granted == wp::kHandYieldTool);
   CHECK_NEAR(b.RemainingAmount, patch.RemainingAmount, 1e-9);
   CHECK_NEAR(b.InitialAmount, patch.InitialAmount, 1e-9);
-  CHECK(inv.count(sitems::RawIron) == 2 * wp::kHandYieldBare);
+  CHECK(inv.count(sitems::RawIron) == 2 * wp::kHandYieldTool);
   CHECK_NEAR(initial - patch.RemainingAmount,
              static_cast<double>(inv.count(sitems::RawIron)), 1e-9);
 
-  // The tool raises the pull and is still not required.
-  inv.add(sitems::CrudePickaxe, 1);
-  const double beforeTool = patch.RemainingAmount;
-  HarvestResult r3 = survival::harvestPatch(patch, a, NK::IronOre, inv);
-  CHECK(r3.usedTool);
-  CHECK(r3.granted == wp::kHandYieldTool);
-  CHECK(wp::kHandYieldTool > wp::kHandYieldBare);
-  CHECK_NEAR(beforeTool - patch.RemainingAmount,
-             static_cast<double>(wp::kHandYieldTool), 1e-9);
-
-  // (c) drain it flat and confirm it stays empty.
+  // (c) drain it flat and confirm it stays empty (tooled or not, empty is
+  // empty — nodeEmpty rather than the tool gate is what fires here).
   wp::extract(patch, patch.RemainingAmount);
   CHECK_NEAR(patch.RemainingAmount, 0.0, 1e-12);
   HarvestResult r4 = survival::harvestPatch(patch, a, NK::IronOre, inv);

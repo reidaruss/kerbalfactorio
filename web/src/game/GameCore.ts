@@ -51,6 +51,29 @@ export interface NodeState {
 }
 export interface HarvestResult {
   granted: number; usedTool: boolean; nodeEmpty: boolean; resource: number;
+  /** A `HarvestRefusal` code (GP-506): 0 unless the tool gate refused the
+   *  swing outright. `granted === 0` used to mean "empty node" or "pack full"
+   *  with no way to tell them apart from this event alone; this is the third
+   *  case, named. */
+  refusal: number;
+}
+/**
+ * WHY A HARVEST SWING IS REFUSED. gameplay.h's `HarvestRefusal`, in enum
+ * order (GP-506, mirrors `CRAFT_BLOCK`'s "ask before" shape).
+ *
+ * Only the TOOL gate is representable here: it is knowable in advance, from
+ * what the pack holds and what the node is, which is what makes asking before
+ * swinging possible at all. An empty node or a full pack are not — both
+ * depend on the pull actually being computed — so they stay `granted === 0`
+ * with `refusal === None`, read off `nodeEmpty` as before.
+ */
+export const HARVEST_REFUSAL = { None: 0, ToolRequired: 1 } as const;
+
+/** The refusal as a player reads it. One place, so a HUD flash cannot say
+ *  something different than the hint a hovering crosshair would give. */
+export function harvestRefusalText(refusal: number): string {
+  if (refusal === HARVEST_REFUSAL.ToolRequired) return 'need a pickaxe for this';
+  return '';
 }
 /** One structural part: its item id, its render TypeId and its build cost. */
 export interface StructureDef {
@@ -155,11 +178,16 @@ export class GameCore {
 
   harvest(i: number, baseYield: number, toolYield: number): HarvestResult {
     this.M._of_gp_node_harvest(i, baseYield, toolYield);
-    const p = scratchI32(this.M, 4);
+    const p = scratchI32(this.M, 5);
     return {
       granted: p[0], usedTool: p[1] !== 0, nodeEmpty: p[2] !== 0, resource: p[3],
+      refusal: p[4],
     };
   }
+
+  /** GP-506. Ask BEFORE swinging: would the tool gate refuse this node right
+   *  now? A pure query, no mutation, no cooldown paid to find out. */
+  harvestGate(i: number): number { return this.M._of_gp_node_harvest_gate(i); }
 
   // --- hand crafting -------------------------------------------------------
   recipes(): RecipeView[] {

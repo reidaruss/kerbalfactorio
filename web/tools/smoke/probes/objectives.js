@@ -34,10 +34,20 @@
   note('after 4 s of doing nothing');
 
   // --- 2. each thing, in order ----------------------------------------------
+  // GP-506: the checklist grew a 'stone' step (wood -> stone -> tool -> ore),
+  // and ore is now GATED behind the pickaxe (harvestGate), so a bare-hand
+  // pull on it before the tool exists grants nothing — the old "mine the ore
+  // early, before crafting the tool" setup for this probe is now exactly the
+  // refused path.
   const wood = of.nodes().find((n) => n.kind === 0);
   for (let k = 0; k < 3; ++k) of.harvest(wood.index);
   await settle(0.5);
   note('harvested a tree');
+
+  const rock = of.nodes().find((n) => n.kind === 1);
+  for (let k = 0; k < 3; ++k) of.harvest(rock.index);
+  await settle(0.5);
+  note('harvested a rock');
 
   const craftBy = async (name) => {
     const rs = of.game().recipes;
@@ -46,19 +56,19 @@
     await settle(0.5);
     return ok;
   };
-  // Iron first: the pickaxe needs it, and mining it also satisfies step three
-  // BEFORE the list reaches it, which is the property tested at the end.
-  const iron = of.nodes().find((n) => n.kind === 3);
-  for (let k = 0; k < 6; ++k) of.harvest(iron.index);
-  await settle(0.5);
   const beforeTool = goals().index;
   const madePick = await craftBy('Crude pickaxe');
-  note('crafted a pickaxe');
-  // Two steps in a row here: the pickaxe (step 2) and then the ore (step 3),
-  // which was already in the pack. The list has to catch up by itself.
+  note('crafted a pickaxe (stone + wood, never ore)');
+  // Ore first: mined the INSTANT the tool exists, so it is already in the
+  // pack (well past the 'ore' card's threshold) before the list has caught
+  // up past 'tool'. Two steps in a row here: 'tool' and then 'ore', which was
+  // satisfied in the same beat rather than waited out — the list has to catch
+  // up by itself, same property as before, replayed against the new order.
+  const iron = of.nodes().find((n) => n.kind === 3);
+  for (let k = 0; k < 6; ++k) of.harvest(iron.index);
   await settle(1.0);
   const afterCatchUp = goals().index;
-  note('list caught up on ore it already had');
+  note('list caught up on ore mined the moment the pickaxe existed');
 
   // --- 3. the H key ---------------------------------------------------------
   of.input.tape([{ hold: 4, keys: ['KeyH'] }, { hold: 6, keys: [] }]);
@@ -80,9 +90,9 @@
     // objective satisfied early is picked up the moment the list reaches it.
     advancesOnlyOnTheWorld:
       idle === start
-      && beforeTool === 1                 // the tree, and nothing else yet
-      && afterCatchUp === 3               // pickaxe, then the ore already held
-      && g.done.join(',') === 'wood,tool,ore',
+      && beforeTool === 2                 // GP-506: wood, stone done; tool next
+      && afterCatchUp === 4               // pickaxe, then the ore already held
+      && g.done.join(',') === 'wood,stone,tool,ore',
     hidesWithH: hidden === false && shownAgain === true,
     goals: g,
     steps,

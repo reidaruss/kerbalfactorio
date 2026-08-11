@@ -86,6 +86,11 @@ export class Interact {
   grants = 0;
   granted = 0;
   misses = 0;
+  /** GP-506. Swings the tool gate turned away BEFORE they were ever committed
+   *  — no cooldown paid, no animation played, for a probe to prove both. */
+  refusals = 0;
+  /** The most recent refusal, for the HUD toast and for a probe. */
+  lastRefusal: { index: number; code: number; tick: number } | null = null;
 
   private cooldown = 0;
   private pending = -1;
@@ -123,14 +128,26 @@ export class Interact {
     // mechanism, and a field kept "in case" is a field the next reader has to
     // work out the purpose of.
     if (held && this.cooldown === 0 && this.target !== null && !this.target.empty) {
-      const kind: SwingKind = this.target.kind === NODE_KIND.Tree ? 'axe' : 'pickaxe';
-      const t = swingTiming(kind);
-      this.cooldown = t.cooldown;
-      this.pending = t.impact;
-      this.pendingIndex = this.target.index;
-      this.swings++;
-      this.swingKinds[kind]++;
-      this.avatar?.swing(kind);
+      // GP-506. ASK BEFORE SWINGING (GP-51's rule, applied to harvest): the
+      // tool gate is knowable from the pack alone, so a refusal is caught
+      // HERE, before the cooldown or the animation ever commit. Refusing
+      // AFTER the swing (the old shape, still how an empty node or a full
+      // pack are found out) would burn the same cooldown a real swing pays,
+      // which is exactly what the brief forbids for a gated refusal.
+      const gate = this.core.harvestGate(this.target.index);
+      if (gate !== 0) {
+        this.refusals++;
+        this.lastRefusal = { index: this.target.index, code: gate, tick };
+      } else {
+        const kind: SwingKind = this.target.kind === NODE_KIND.Tree ? 'axe' : 'pickaxe';
+        const t = swingTiming(kind);
+        this.cooldown = t.cooldown;
+        this.pending = t.impact;
+        this.pendingIndex = this.target.index;
+        this.swings++;
+        this.swingKinds[kind]++;
+        this.avatar?.swing(kind);
+      }
     }
 
     if (this.pending < 0) return false;
@@ -143,6 +160,20 @@ export class Interact {
     const before = this.core.node(index);
     if (before === null || before.remaining <= 0) { this.misses++; return false; }
     const r = this.core.harvest(index, HARVEST.baseYield, HARVEST.toolYield);
+    // GP-506. THE GATE, AUTHORITATIVE HERE TOO, not only in step()'s pre-check.
+    // `step()` catches the common case before a swing ever commits, but this
+    // is the one path every entry point shares (the probe's harvestNow among
+    // them), so refusal has to be correct here on its own rather than assume
+    // the caller already asked. Cleared unconditionally first: `lastRefusal`
+    // describes THIS attempt, and a stale refusal object surviving a later
+    // successful swing would read as a refusal that never actually happened.
+    this.lastRefusal = null;
+    if (r.refusal !== 0) {
+      this.refusals++;
+      this.lastRefusal = { index, code: r.refusal, tick };
+      this.misses++;
+      return false;
+    }
     if (r.granted === 0) { this.misses++; return false; }
     this.field.punch(index);
     this.grants++;
@@ -183,6 +214,7 @@ export class Interact {
       swings: this.swings, swingKinds: this.swingKinds,
       grants: this.grants, granted: this.granted,
       misses: this.misses, target: this.target, last: this.last,
+      refusals: this.refusals, lastRefusal: this.lastRefusal,
     };
   }
 }

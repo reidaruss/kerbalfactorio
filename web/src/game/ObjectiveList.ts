@@ -188,13 +188,31 @@ export const OBJECTIVES: Objective[] = [
         + 'harvest and no wood on it at all.' : ''),
   },
   {
+    id: 'stone', text: 'Gather loose stone',
+    hint: () => `aim at a rock and hold ${labelOf('use')}`,
+    done: (g) => g.game.count(g.game.ids.stone) >= 2,
+    // GP-506. THE SAME DEFERRAL WOOD'S CARD ALREADY NAMES, one card later:
+    // RockTuning's moon densities are 0 (WG-67..72 deferred the moon pass),
+    // so an airless body has no rock nodes any more than it has trees. Spawn
+    // never actually lands there (StarterContent: Cinder is arrived at, not
+    // spawned on), but the card names the impossibility rather than parking
+    // silently, exactly like `wood` does, if that ever changes.
+    moot: (g) => (bodyIsAirless(g.core, g.starterBodyId)
+      ? 'nothing grows here: this body has no air, and no rock node has been '
+        + 'placed on it either.' : ''),
+  },
+  {
     id: 'tool', text: 'Craft a pickaxe',
-    hint: () => `${labelOf('pack')} opens the pack`,
+    // GP-506: the bill is Stone x2 + Wood x1, never ore — that is the whole
+    // point (ore is gated behind the tool this recipe makes).
+    hint: () => `2 stone + 1 wood, ${labelOf('pack')} opens the pack`,
     done: (g) => g.game.count(g.game.ids.pickaxe) >= 1,
   },
   {
     id: 'ore', text: 'Mine iron ore',
-    hint: () => 'the grey-blue patch of ground',
+    // GP-506: bare hands are refused on ore now (harvestGate), so the hint
+    // says what unlocks it rather than just where it is.
+    hint: () => 'the grey-blue patch of ground — needs the pickaxe in hand',
     done: (g) => g.game.count(g.game.ids.rawIron) >= 5,
   },
   {
