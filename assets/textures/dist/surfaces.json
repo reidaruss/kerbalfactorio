@@ -8,7 +8,7 @@
     "normal maps are OpenGL convention (+Y up), colorSpace NoColorSpace.",
     "A TILING family may also carry an `albedo` (chitin, RN-455).",
     "It is RGB with no alpha, uv_space is metres like its normal and",
-    "orm siblings, and it publishes albedo_mean for the same",
+    "orm siblings, and it publishes albedo_mean_linear for the same",
     "mean-neutral divide the card families use. A family carrying all",
     "three maps is the shape a body surface takes.",
     "albedo families (grass, leaf) are CARD textures: albedo+alpha,",
@@ -21,13 +21,17 @@
     "below it. An albedo family whose alpha channel is in use MUST",
     "declare alpha_test; the validator refuses one that does not",
     "(that check lands in the validator, the rule is stated here).",
-    "albedo_mean is the mean RGB luma (0..1) over texels with",
-    "alpha >= alpha_test * 255, measured from the shipped bytes: the",
-    "client divides it out via material.color, so the modulation is",
+    "albedo_mean_linear (D-016, manifest v2; was albedo_mean, mean",
+    "RGB luma over raw sRGB bytes, which under-compensated by 1.2x",
+    "to 2.3x) is the mean Rec.709 luma (0.2126/0.7152/0.0722,",
+    "matching FoliageTone.ts) over texels with alpha >= alpha_test *",
+    "255, each channel linearised with the sRGB EOTF before the",
+    "weights are applied. The client divides it out via",
+    "material.color in LINEAR working space, so the modulation is",
     "mean-neutral and cannot shift the palette."
   ],
-  "version": 1,
-  "zlib": "1.3.1",
+  "version": 2,
+  "zlib": "1.3",
   "families": {
     "bark": {
       "normal": {
@@ -78,7 +82,7 @@
       "tile_m": 0.3,
       "size_px": 384,
       "texels_per_m": 1280.0,
-      "albedo_mean": 0.5892
+      "albedo_mean_linear": 0.3183
     },
     "ore": {
       "normal": {
@@ -114,7 +118,7 @@
       "tile_m": 1.5,
       "size_px": 512,
       "texels_per_m": 341.3333333333333,
-      "albedo_mean": 0.5386
+      "albedo_mean_linear": 0.2526
     },
     "stone": {
       "normal": {
@@ -135,7 +139,7 @@
       "tile_m": 0.6,
       "size_px": 384,
       "texels_per_m": 640.0,
-      "albedo_mean": 0.4962
+      "albedo_mean_linear": 0.2124
     },
     "suitfab": {
       "normal": {
@@ -156,7 +160,7 @@
       "tile_m": 0.5,
       "size_px": 512,
       "texels_per_m": 1024.0,
-      "albedo_mean": 0.7726
+      "albedo_mean_linear": 0.5612
     },
     "suitplate": {
       "normal": {
@@ -177,7 +181,7 @@
       "tile_m": 0.4,
       "size_px": 384,
       "texels_per_m": 960.0,
-      "albedo_mean": 0.8361
+      "albedo_mean_linear": 0.685
     },
     "grass": {
       "albedo": {
@@ -192,7 +196,7 @@
         "v": "clamp"
       },
       "alpha_test": 0.35,
-      "albedo_mean": 0.734
+      "albedo_mean_linear": 0.5123
     },
     "leaf": {
       "albedo": {
@@ -207,7 +211,7 @@
         "v": "clamp"
       },
       "alpha_test": 0.35,
-      "albedo_mean": 0.7821
+      "albedo_mean_linear": 0.5891
     }
   },
   "roles": {

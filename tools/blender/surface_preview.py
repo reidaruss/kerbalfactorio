@@ -218,15 +218,22 @@ def apply_material(mat, manifest, role, merged=False, force=None):
     tint = node("ShaderNodeVectorMath", -200, 100)
     tint.operation = "MULTIPLY"
     # A TILING ALBEDO (RN-455), reproducing Surfaces.ts exactly:
-    #     material.color = palette / albedo_mean
+    #     material.color = palette / albedo_mean_linear
     #     diffuse        = material.color * albedoMap * aoMap.r
     # The divide is what makes the modulation mean-neutral, so the map decides
     # variance and hue and the palette role decides level. Without it the
-    # preview would show the creature darkened by the map's own 0.5954 mean
-    # and the render would disagree with the game by a factor nobody wrote
-    # down, which is the failure this whole module exists to prevent.
+    # preview would show the creature darkened by the map's own mean and the
+    # render would disagree with the game by a factor nobody wrote down,
+    # which is the failure this whole module exists to prevent.
     if "albedo" in fam:
-        mean = fam.get("albedo_mean") or 1.0
+        mean = fam.get("albedo_mean_linear")
+        if mean is None or mean <= 0:
+            raise ValueError(
+                "%s: albedo present but albedo_mean_linear is missing or "
+                "non-positive (%r). A silent 1.0 fallback would render this "
+                "preview mean-neutral against a mean that was never "
+                "measured; regenerate surfaces.json instead."
+                % (fam_name, mean))
         atex = node("ShaderNodeTexImage", -950, 550)
         atex.image = _image(os.path.join(TEX_DIR, fam["albedo"]["file"]))
         atex.image.colorspace_settings.name = "sRGB"
