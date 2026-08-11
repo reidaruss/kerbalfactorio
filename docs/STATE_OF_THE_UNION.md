@@ -166,18 +166,50 @@ missed by **1,228,348 m** against a 0.60 m capture radius, because **Anchorage
 moves 0 m while publishing 1879.255 m/s**: matching a fixed point means killing
 1879 m/s and `docking.h` refuses above 2.0 m/s. Impossible, not hard.
 
-1. **DONE.** The carrier frame (`79630e9`). Deck and rider agree to **1.7e-9 m**
-   over 600 ticks at 542 m/s.
-2. **ON A BRANCH, MEASURED, NOT MERGED.** `ph357-station-stamp` (`72d9f88`).
-   The station moves at exactly the predicted rate, `frozen` goes false, the
-   navball target block starts telling the truth, and the rendezvous is
-   bit-identical through the burn.
-3. **NOT STARTED, AND IT IS THE ONE REAL GAP.** With the record stamped, a
-   player who arrives on the deck is **left behind within six ticks with no
-   floor**: 188 m at +0.1 s, 3,476 m at +1.0 s. `of.carrier('census').ride`
-   reads `boards: 0`. `CarrierRide` is constructed at `Boot.ts:300` and **never
-   given a carrier by any shipped path**. *The mount got its consumer; the rider
-   did not.* Core-engine's.
+> **THREE SHAS IN THIS SECTION WERE DEAD AND ARE NOW REPLACED (2026-08-11,
+> CE-44).** `79630e9`, `72d9f88` and (in core-engine.md §5e) `870f3e4` do not
+> resolve in this repository: they were rewritten out on 2026-08-03 when `ue/`
+> and 132 screenshots were stripped from every commit. Current refs are named
+> inline below. **A SHA in a document that survived a history rewrite is not a
+> stale pointer, it is a pointer to nothing, and `git show` says so in one
+> second.** Worth a habit: after a rewrite, every SHA in every doc is suspect.
+
+1. **DONE.** The carrier frame (`da710a4`, CE-30 to CE-38) and its first
+   consumer, the station's geometry (`2cccbc6`, CE-80 to CE-86). Deck and rider
+   agree to **1.7e-9 m over 600 ticks** on a rotor frame carrying Anchorage's own
+   **31.320919525472796 m per tick**. (The old text said "at 542 m/s"; that is
+   Cinder's orbital speed from CE-30's separate measurement, not this one's.)
+2. **NOT ON THIS MACHINE AT ALL, AND THE "MEASURED" CLAIM CANNOT BE CHECKED.**
+   `ph357-station-stamp` **does not exist** in the clone at `~/kerbalfactorio`,
+   in any worktree, or on `origin` (`git ls-remote --heads origin` returns one
+   ref, `main`). Its tip `1e9a899` is not a valid object here; only the stated
+   merge-base `4b4fef4` resolves. So the branch was made somewhere that never
+   pushed it, it is not backed up by the remote, and **neither the "MEASURED"
+   claim in this document nor the "UNMEASURED, PARKED ON A BRANCH" claim in the
+   commit subject can be read from here.** Until somebody pushes it, **Anchorage
+   still ships frozen** (`mintStation` sets `stampedTick = -1`) and every moving
+   measurement in this project is taken on an instrument frame.
+3. **DONE 2026-08-11 (CE-39 to CE-43), on `lane/carrier-rider`.** The membership
+   predicate, the per-tick board/release decision sited immediately after
+   `mounts.syncAt`, and a `visit:station` arrival that seats the player AT REST
+   IN THE FRAME instead of at rest in the body frame. `of.carrier('census').ride`
+   now reads `boards: 1` after the press. **The old drift figures, restated in
+   TICKS because that is the client's only clock:** 6 ticks is 187.93 m and the
+   figure labelled "+1.0 s" is 3,476 m, which is **111 ticks, not 60**: at
+   31.320919525472796 m per tick, 1.0 s of being left behind is **1,879.26 m**,
+   and the label was off by 1.85x. Measured with controls in §5e of
+   [core-engine.md](controllers/core-engine.md).
+
+**R97 IS NOT REACHABLE ON FOOT, AND THE GUARD ADMIN ASKED FOR WOULD BE DEAD
+CODE (CE-44, 2026-08-11).** "Refuse warp while boarded" was ruled and then
+verified rather than built: warp lives on `player/FlightControls.ts` calling
+`FlightSession.setWarp`, and `FlightControls` is a field of `VesselObserver`, so
+it only samples input while the ACTIVE VIEW SOURCE is a vessel. A boarded rider
+is a walker: there is no warp key, no warp cheat, and `sim/DayCycle.ts` states
+the rule in as many words ("warp is flight-local by design"). The warp-to-orbit
+cheat needs a live flight session too. So there is nothing to refuse until R93
+opens dock-then-EVA; the requirement is written into `app/StationMount.ts` at
+the seam it will land on. R97's rendezvous half is untouched and still open.
 
 Also open on this path: **R93**, `of_fl_dock_*` has no client caller and needs
 `of_dk_port_at` so the world pose comes from `docking::portAt` rather than a
@@ -248,8 +280,13 @@ geometry it was never authored for. Retuning needs a machine-lit arm of
 
 **Ordered by what unblocks the most.**
 
-1. **Board the rider onto the carrier** (§4a.3), then merge `ph357-station-stamp`.
-   Unblocks the first mission, docking, and standing on anything that moves.
+1. ~~**Board the rider onto the carrier** (§4a.3)~~ **DONE 2026-08-11, CE-39 to
+   CE-43, on `lane/carrier-rider`.** What replaces it: **get
+   `ph357-station-stamp` onto a machine that can see it.** It is on no reachable
+   ref and on no remote (§4a.2), so "then merge it" is not an instruction
+   anybody here can follow. Anchorage stays frozen until it arrives or is
+   rebuilt, and while it is frozen every carrier fixture in this project is an
+   instrument frame.
 2. **Run the full probe sweep, then gate `run.mjs`** (§4b). Until this lands,
    "green" means nothing anywhere in the project.
 3. **Answer the albedo question** (§4d), then the machine palette pass, which is
