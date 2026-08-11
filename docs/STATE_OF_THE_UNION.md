@@ -31,8 +31,22 @@ was stripped from all 778 commits along with 132 pre-fortnight screenshots;
 743 commits remain. The blanket `*.png filter=lfs` rule was retired, because it
 was written for Unreal and had been quietly billing every screenshot a lane
 produced: 1,169 of them had reached 941 MB against GitHub's 1 GB free LFS
-allowance, 773 MB of it in one fortnight. Existing screenshots stay as pointers
-(813 MB, inside the allowance); new ones are ordinary blobs.
+allowance, 773 MB of it in one fortnight.
+
+**Where storage actually landed, including one unintended consequence.**
+Retiring that rule and then re-adding `docs/` rewrote every screenshot at HEAD as
+an ordinary git blob. That was **not** planned in that step, and it is the end
+state the plan wanted anyway: **LFS at HEAD fell from 1,065 files to 30.** The
+cost is that the remote now holds both, roughly **791 MB of git objects plus
+860 MB of LFS left over from history.** It is inside the free allowance and new
+screenshots no longer touch LFS, so it stops growing. **A third history rewrite
+to reclaim the orphaned LFS was judged not worth the risk.** If the quota ever
+matters, `git lfs migrate export --include="*.png,*.jpg" --everything` is the
+move, and it grows the object store by roughly what it frees.
+
+**The general lesson, and it is the one this project keeps relearning:** changing
+a `.gitattributes` filter changes what `git add` *means* for every file it
+matched. The rule change and the next `add -A` are one operation, not two.
 
 ### Running it
 
