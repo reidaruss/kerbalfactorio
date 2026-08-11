@@ -10,24 +10,49 @@
 // solid, its two gravity volumes and its drawn hull are re-posed every fixed
 // tick from the SAME `poseAt` the rider uses.
 //
+// ITS SIBLING IS `probes/stationboard.js` (CE-39 to CE-43), and the split is
+// worth knowing before reading either. THIS file measures the DECK: does the
+// geometry follow the frame. THAT one measures the RIDER: does the per-tick
+// membership decision put a walker on it and take them off it, and does the
+// `visit:station` arrival seat them at rest IN the frame. Section 6 below boards
+// by hand through `of.carrier('board')`, which is still the right thing here,
+// because a probe about geometry should not depend on the boarding rule.
+//
+// SECTION 3'S FIXTURE ASSERTION HAS BEEN INVERTED (2026-08-11). It said
+// "Anchorage is frozen as it ships" and existed to go red the day
+// `ph357-station-stamp` merged. It merged. See the next block.
+//
 // ===========================================================================
-// THE FIXTURE PROBLEM, WHICH IS THE WHOLE REASON THIS PROBE IS SHAPED LIKE THIS
+// THE FIXTURE PROBLEM, WHICH SHAPED THIS PROBE AND HAS NOW BEEN SOLVED
 // ===========================================================================
 //
-// `mintStation` ships Anchorage with `stampedTick = -1`, so its conic is frozen
-// and `OrbitCarrier` over it answers the SAME pose for every tick. The mount
-// therefore runs correctly 60 times a second and writes identical numbers, and
-// a probe that drove only the shipping station would be measuring the IDENTITY
-// ELEMENT of the operation under test (GP-142, and CE-32 says the same of the
-// ride). So:
+// `mintStation` used to ship Anchorage with `stampedTick = -1`, so its conic was
+// frozen and `OrbitCarrier` over it answered the SAME pose for every tick. The
+// mount ran correctly 60 times a second and wrote identical numbers, and a probe
+// that drove only the shipping station was measuring the IDENTITY ELEMENT of the
+// operation under test (GP-142, and CE-32 says the same of the ride). So this
+// file asserted the freeze OUT LOUD, took every moving measurement on a `rotor`
+// instrument DERIVED FROM THE STATION'S OWN `r x v`, and re-mounted the station
+// onto it through `mountStationOn`, the function `Boot` calls.
 //
-//   - the frozen carrier is asserted to be frozen, OUT LOUD, before anything
-//     else, so a future run in which physics has unfrozen it fails here and is
-//     re-read rather than silently measuring something different;
-//   - the moving fixture is a `rotor` frame DERIVED FROM THE STATION'S OWN
-//     `r x v`, so its axis and rate are the conic's and not invented;
-//   - and the station is re-mounted onto it through `mountStationOn`, the same
-//     function `Boot` calls, so what is measured is what ships.
+// PH-357 STAMPS THE RECORD, SO SECTION 3'S ASSERTION IS NOW INVERTED: the
+// shipped station MOVES, at 31.320919525472796 m per tick, and that rate is
+// pinned. The freeze assertion existed to be the handover signal on the day this
+// happened; the day happened, and this is it acted on rather than deleted.
+//
+// THE ROTOR STAYS, AND ITS JOB CHANGED RATHER THAN ENDED:
+//
+//   - it is the evidence that the mount is GENERAL, that the station's geometry
+//     follows ANY frame rather than only its own conic, which is what a
+//     player-built moving platform will need;
+//   - it is a SECOND, INDEPENDENT DERIVATION OF THE SAME RATE. It was computed
+//     from the record's `r x v` while the record was still frozen, and it agrees
+//     with the stamped conic to 2.4e-11 m per tick. Two ways of reaching one
+//     number is worth more than either of them alone;
+//   - and `remount` / `unmount` are still the reachable refusing cases.
+//
+// `probes/stationboard.js` is the one that measures the SHIPPED station end to
+// end, with no instrument frame anywhere in it.
 //
 // ===========================================================================
 // WHAT IS ASSERTED, AND WHY IT IS `solidBuild` AND NOT A DISTANCE
@@ -48,7 +73,15 @@
   if (!of) return { valid: false, why: 'no __of' };
   if (typeof of.carrier !== 'function') return { valid: false, why: 'no __of.carrier' };
   if (typeof of.solidBuild !== 'function') return { valid: false, why: 'no __of.solidBuild' };
-  const sleep = (n) => of.run(n);
+  // 15 Hz, NOT `of.run`'s default 144.3, AND IT CHANGES NOTHING ASSERTED HERE.
+  // The fixed tick comes from the accumulator inside `Loop.frame`, so the same
+  // seconds buy the same ticks at any render rate (1/15 s is 4 ticks against a
+  // `MAX_CATCHUP` of 5, so nothing is dumped), and every window below is read
+  // back as a tick delta off the census rather than assumed from the argument.
+  // What it changes is 9.6x fewer rendered frames, which on a software
+  // rasteriser is the difference between a measurement and a timeout. Nothing in
+  // this file reads a pixel. Pair it with `--width=320 --height=180`.
+  const sleep = (n) => of.run(n, 15);
   const fails = [];
   const check = (name, ok, detail) => {
     if (!ok) fails.push(detail === undefined ? name : `${name}: ${detail}`);
@@ -56,6 +89,10 @@
   };
   const d3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
   const STATION = 'station:anchorage';
+  /** Anchorage's own orbital rate, `sqrt(mu/r)/60` at Forge's 3.5316e12 and the
+   *  station's 1.0e6 m radius. Pinned rather than derived here, because a probe
+   *  that recomputed it would agree with itself whatever the record did. */
+  const PER_TICK_M = 31.320919525472796;
   const M = () => of.carrier('mounts');
   const C = () => of.carrier('census');
 
@@ -92,8 +129,14 @@
   // an interior a player has walked around inside, self-consistently.
   check('every attachment carries a measured local offset', mm0.offsets === 3,
         `${mm0.offsets}`);
+  // PH-357: THESE TWO ARE READ ADJACENTLY, WITH NO `await` BETWEEN THEM, AND
+  // THAT IS NEW. `m0` was captured 60 ticks earlier, and while Anchorage was
+  // frozen a 60-tick-old snapshot of the solid was the same numbers as a fresh
+  // one. It is now 1,879 m of travel, so comparing the old snapshot with a
+  // fresh survey would have measured this probe's own sleep and called it a
+  // translation offset.
   const surv0 = of.carrier('survey', { id: STATION, ticks: 600 });
-  const solid0 = m0.solid;
+  const solid0 = M().solid;
   check('the deck sits at the frame origin, so the offset is not a translation',
         d3(solid0.pos, surv0.originM) < 1e-6,
         `${d3(solid0.pos, surv0.originM)} m`);
@@ -102,11 +145,30 @@
   check('and the hull attitude is NOT the carrier basis, so the offset is real',
         qdot < 0.999, `|dot| ${qdot} (1.0 would mean the two agree already)`);
 
-  // --- 3. THE SHIPPED FIXTURE IS FROZEN. SAID OUT LOUD. -------------------
-  check('Anchorage is frozen as it ships, so it is the identity element',
-        surv0.perTickM === 0,
-        `perTickM ${surv0.perTickM}: physics has unfrozen the record, and every `
-        + 'claim below now has a different meaning. Re-read this probe.');
+  // --- 3. THE SHIPPED FIXTURE MOVES. SAID OUT LOUD. -----------------------
+  //
+  // THIS CHECK USED TO ASSERT THE OPPOSITE, and the flip is the whole of
+  // PH-357. It read "Anchorage is frozen as it ships, so it is the identity
+  // element", with a message telling whoever saw it go red to re-read this
+  // probe, because `mintStation` left `stampedTick = -1` and `clockAt` returned
+  // the same clock for every tick. `installStation` stamps the record now, so
+  // the conic runs and the shipped station IS the moving fixture. The handover
+  // signal fired; this is it acted on.
+  //
+  // THE NUMBER IS PINNED, not merely asserted non-zero. 31.320919525472796 m per
+  // tick is `sqrt(mu/r)/60` at Forge's 3.5316e12 and the station's 1.0e6 m orbit
+  // radius, and it is the SAME figure the rotor instrument derived independently
+  // from the record's own r x v before the record was stamped (they agree to
+  // 2.4e-11 m). A station that drifts off this rate has had its orbit changed by
+  // something, which is a different event from having been unfrozen.
+  check('ANCHORAGE MOVES AS IT SHIPS, at its own measured orbital rate',
+        Math.abs(surv0.perTickM - PER_TICK_M) < 1e-6,
+        `perTickM ${surv0.perTickM} against ${PER_TICK_M}. A reading of 0 means `
+        + 'the record is unstamped again (`stashVessels` drops `stampedTick`, so '
+        + 'a reload before the first stamp reads exactly that) and every claim '
+        + 'below is then the identity element of its own operation.');
+  check('...and it turns as it goes, so the quaternion path is exercised',
+        surv0.turnPerTickRad > 1e-9, `${surv0.turnPerTickRad} rad/tick`);
 
   // --- 4. STAND IN IT -----------------------------------------------------
   of.pause(true);
@@ -250,11 +312,13 @@
   return {
     valid: true,
     fails,
-    checks: 21,
+    checks: 22,
     boot: { mounts: cen0.size, items: mm0.items, watchers: mm0.watchers,
             offsets: mm0.offsets, applied0, appliedNow },
     offset: { deckToFrameOriginM: d3(solid0.pos, surv0.originM), attitudeDot: qdot },
-    frozen: { stationPerTickM: surv0.perTickM }, deckDepthM: DECK_M, deckScan: scan.length,
+    shipped: { stationPerTickM: surv0.perTickM, wantedPerTickM: PER_TICK_M,
+              stationTurnPerTickRad: surv0.turnPerTickRad },
+    deckDepthM: DECK_M, deckScan: scan.length,
     fixture: { rotorPerTickM: reg.perTickM, rotorTurnPerTickRad: reg.turnPerTickRad },
     mounted: { ticks: ticks1, deckMovedM: travelled,
                riderMovedM: d3(feetA, feetB),

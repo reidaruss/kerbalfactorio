@@ -1,5 +1,17 @@
-// CARRIER-LOCAL GEOMETRY (core-engine, CE-80 to CE-86). The CONSUMER half of
-// the carrier frame, and the first thing in this game that boards one.
+// CARRIER-LOCAL GEOMETRY (core-engine, CE-80 to CE-86, then CE-39 and CE-40).
+// The CONSUMER half of the carrier frame, and the first thing in this game that
+// boards one.
+//
+// ---------------------------------------------------------------------------
+// CE-39 / CE-40 ADDED THE MISSING HALF: WHO IS ON IT.
+//
+// Everything below CE-86 answers "where is the deck" and "carry this rider".
+// Nothing answered "is this rider ON the deck", so `CarrierRide` was constructed
+// at boot and never handed a frame by any shipped path: `of.carrier('census')
+// .ride` read `boards: 0` on a station a player was standing inside.
+// `containsPoint` here is the membership predicate; the DECISION built on it
+// lives in CarrierBoarding.ts, split off on the same seam CarrierFrame.ts and
+// CarrierRide.ts were split on, and `decideAt` below is one line of delegation.
 //
 // Owned by core-engine and listed by file in core-engine.md section 2, per
 // CE-21's rule that naming a subsystem is not the same as naming its files.
@@ -54,6 +66,9 @@
 import type { CarrierFrame } from './CarrierFrame.js';
 import type { Lifetime } from '../app/Lifetime.js';
 import { composePose, copyPose, newPose, type FramePose } from './FramePose.js';
+import {
+  BoardingRule, type RideDecision, type RideSeat,
+} from './CarrierBoarding.js';
 
 /**
  * Anything whose BODY-FRAME pose is a rigid function of a carrier's pose.
@@ -75,6 +90,12 @@ export interface PosedInFrame {
   pos: { x: number; y: number; z: number };
   quat: { set(x: number, y: number, z: number, w: number): unknown };
   cx: number; cy: number; cz: number;
+  /** The bounding-sphere RADIUS both registries reject against. Read and never
+   *  written: a rigid motion does not change a radius. CE-39 needs it because
+   *  the membership predicate below is a distance against exactly this bound,
+   *  and both existing implementors (`Solid`, `GravityVolume`) already carry it,
+   *  so requiring it here narrows nothing that is attached today. */
+  readonly cr: number;
 }
 
 /** A consumer with no writable pose fields of its own. `StationView.place` is
@@ -88,6 +109,9 @@ interface Attached {
    *  Null rather than an identity pose so the common case costs no compose. */
   readonly local: FramePose | null;
   readonly what: string;
+  /** CE-39. Whether this attachment's bound is part of what the carrier IS,
+   *  for the membership test. See `attach` for why it is not simply true. */
+  readonly bounds: boolean;
 }
 
 /**
@@ -118,9 +142,19 @@ export class CarrierMount {
    * `local` is COPIED, not held, because a caller that kept a reference and
    * mutated it would have made the attachment a second moving frame with no
    * `poseAt` and no census, which is the shape this whole design refuses.
+   *
+   * CE-39. `bounds` (default true) is whether this attachment's bounding sphere
+   * is part of WHERE THE CARRIER IS, for `containsPoint`. True by default because
+   * the ordinary attachment is a collision body and a collision body IS the
+   * carrier's extent. It exists at all because Anchorage's freefall gravity
+   * volume is an attachment too, at 207.85 m against the interior's 28.64 m: a
+   * union over everything would board a player seven times further out than the
+   * station reaches, and would do it BY READING THE GRAVITY MODEL, which Admin
+   * ruled against. A field is not a floor.
    */
-  attach(body: PosedInFrame, what: string, local?: FramePose): this {
-    this.items.push({ body, what,
+  attach(body: PosedInFrame, what: string, local?: FramePose,
+         opts?: { readonly bounds?: boolean }): this {
+    this.items.push({ body, what, bounds: opts?.bounds ?? true,
       local: local === undefined ? null : copyPose(local, newPose()) });
     return this;
   }
@@ -162,9 +196,59 @@ export class CarrierMount {
     return f;
   }
 
+  /**
+   * CE-39. IS THIS BODY-FRAME POINT ON THIS CARRIER, with `marginM` of slack.
+   *
+   * The union of the bounding spheres of every attachment marked `bounds`, READ
+   * WHERE THEY ARE RIGHT NOW: `syncAt` re-poses `cx/cy/cz` every tick, so this
+   * tests the deck's live position and never a remembered one.
+   *
+   * A SPHERE AND NOT THE BOXES, deliberately. `StructureBodies.blocks` already
+   * answers "is this point inside a wall", and it answers FALSE for the air a
+   * person standing on a deck occupies, so it is the wrong question. Membership
+   * is "am I with this thing", which is the O(1) reject the registries already
+   * hold. `marginM` is the caller's, so board and release are ONE predicate at
+   * two radii rather than two predicates that could disagree.
+   *
+   * False with nothing bounding attached, which is the right answer for a frame
+   * with no geometry on it: an instrument carrier is not a place.
+   */
+  containsPoint(x: number, y: number, z: number, marginM: number): boolean {
+    for (const it of this.items) {
+      if (!it.bounds) continue;
+      const b = it.body;
+      const dx = x - b.cx, dy = y - b.cy, dz = z - b.cz;
+      const reach = b.cr + marginM;
+      if (dx * dx + dy * dy + dz * dz <= reach * reach) return true;
+    }
+    return false;
+  }
+
+  /** Metres from this point to the nearest bounding attachment's SURFACE,
+   *  negative inside it, or NaN with nothing bounding attached. A report field
+   *  and the probe's continuous reading of the same predicate. */
+  depthAt(x: number, y: number, z: number): number {
+    let best = Number.NaN;
+    for (const it of this.items) {
+      if (!it.bounds) continue;
+      const b = it.body;
+      const d = Math.hypot(x - b.cx, y - b.cy, z - b.cz) - b.cr;
+      if (Number.isNaN(best) || d < best) best = d;
+    }
+    return best;
+  }
+
+  /** True when `body` is one of this mount's attachments, by IDENTITY. The same
+   *  identity test `StructureBodies.remove` uses to find the station's own
+   *  solid, and the reason a caller can ask "what frame is this deck on" without
+   *  a second registry of which mount owns what. */
+  carries(body: PosedInFrame): boolean {
+    return this.items.some((i) => i.body === body);
+  }
+
   report(): {
     id: string; what: string; items: string[]; watchers: string[];
-    applied: number; lastTick: number; offsets: number;
+    applied: number; lastTick: number; offsets: number; bounding: number;
   } {
     return {
       id: this.frame.id, what: this.frame.what,
@@ -172,6 +256,7 @@ export class CarrierMount {
       watchers: this.watchers.map((w) => w.what),
       applied: this.applied, lastTick: this.lastTick,
       offsets: this.items.filter((i) => i.local !== null).length,
+      bounding: this.items.filter((i) => i.bounds).length,
     };
   }
 }
@@ -194,6 +279,11 @@ export class CarrierMounts {
   private readonly list: CarrierMount[] = [];
   added = 0;
   removed = 0;
+  /** CE-40. The membership decision and its counters. A FIELD rather than a
+   *  constructor argument, because it holds no body-scoped state: it counts, and
+   *  `clear()` deliberately does not reset it, exactly as `added`/`removed` are
+   *  not reset. */
+  readonly boarding = new BoardingRule();
 
   get size(): number { return this.list.length; }
 
@@ -209,6 +299,31 @@ export class CarrierMounts {
     for (const m of this.list) m.syncAt(tick);
   }
 
+  /** The mount whose attachments include `body`, or null. */
+  mountCarrying(body: PosedInFrame | null): CarrierMount | null {
+    if (body === null) return null;
+    return this.list.find((m) => m.carries(body)) ?? null;
+  }
+
+  /** The mount driving `frame`, or null. */
+  mountOf(frame: CarrierFrame | null): CarrierMount | null {
+    if (frame === null) return null;
+    return this.list.find((m) => m.frame === frame) ?? null;
+  }
+
+  /** The first mount whose bounding attachments contain this point, or null. */
+  mountContaining(x: number, y: number, z: number,
+                  marginM: number): CarrierMount | null {
+    return this.list.find((m) => m.containsPoint(x, y, z, marginM)) ?? null;
+  }
+
+  /** CE-40. THE PER-TICK BOARD / RELEASE DECISION, delegated whole to
+   *  `CarrierBoarding.ts`. Called from `Loop.fixedTick` and nowhere else; the
+   *  argument for that site is in `BoardingRule.decide` and beside the call. */
+  decideAt(seat: RideSeat | null, x: number, y: number, z: number): RideDecision {
+    return this.boarding.decide(this, seat, x, y, z);
+  }
+
   clear(): void {
     this.removed += this.list.length;
     this.list.length = 0;
@@ -220,9 +335,11 @@ export class CarrierMounts {
 
   census(): {
     size: number; added: number; removed: number;
+    boarding: ReturnType<BoardingRule['census']>;
     mounts: ReturnType<CarrierMount['report']>[];
   } {
     return { size: this.list.length, added: this.added, removed: this.removed,
+      boarding: this.boarding.census(),
       mounts: this.list.map((m) => m.report()) };
   }
 }

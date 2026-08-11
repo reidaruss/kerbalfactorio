@@ -158,7 +158,7 @@ Landed and measured in the last week specifically:
 
 ## 4. What is blocked, and the exact shape of each block
 
-### 4a. Reid's first mission is not flyable. Three links, two done.
+### 4a. Reid's first mission: three links, ALL THREE DONE 2026-08-11 (was: not flyable, two done)
 
 His storyline gates the autopilot behind **docking with the station**, so the
 first orbital mission is **hand flown on purpose**. Flown by hand at HEAD it
@@ -166,18 +166,68 @@ missed by **1,228,348 m** against a 0.60 m capture radius, because **Anchorage
 moves 0 m while publishing 1879.255 m/s**: matching a fixed point means killing
 1879 m/s and `docking.h` refuses above 2.0 m/s. Impossible, not hard.
 
-1. **DONE.** The carrier frame (`79630e9`). Deck and rider agree to **1.7e-9 m**
-   over 600 ticks at 542 m/s.
-2. **ON A BRANCH, MEASURED, NOT MERGED.** `ph357-station-stamp` (`72d9f88`).
-   The station moves at exactly the predicted rate, `frozen` goes false, the
-   navball target block starts telling the truth, and the rendezvous is
-   bit-identical through the burn.
-3. **NOT STARTED, AND IT IS THE ONE REAL GAP.** With the record stamped, a
-   player who arrives on the deck is **left behind within six ticks with no
-   floor**: 188 m at +0.1 s, 3,476 m at +1.0 s. `of.carrier('census').ride`
-   reads `boards: 0`. `CarrierRide` is constructed at `Boot.ts:300` and **never
-   given a carrier by any shipped path**. *The mount got its consumer; the rider
-   did not.* Core-engine's.
+> **RESOLVED 2026-08-11 (CE-45): links 1, 2 AND 3 below are all done and in one
+> build on `lane/carrier-rider`.** This heading said "Three links, two done" and
+> the third was the one real gap. Read the three items for what was measured; the
+> mission itself has still not been flown, because R93 still has no docking.
+>
+> **THREE SHAS IN THIS SECTION WERE DEAD AND ARE NOW REPLACED (2026-08-11,
+> CE-44).** `79630e9`, `72d9f88` and (in core-engine.md §5e) `870f3e4` do not
+> resolve in this repository: they were rewritten out on 2026-08-03 when `ue/`
+> and 132 screenshots were stripped from every commit. Current refs are named
+> inline below. **A SHA in a document that survived a history rewrite is not a
+> stale pointer, it is a pointer to nothing, and `git show` says so in one
+> second.** Worth a habit: after a rewrite, every SHA in every doc is suspect.
+
+1. **DONE.** The carrier frame (`da710a4`, CE-30 to CE-38) and its first
+   consumer, the station's geometry (`2cccbc6`, CE-80 to CE-86). Deck and rider
+   agree to **1.7e-9 m over 600 ticks** on a rotor frame carrying Anchorage's own
+   **31.320919525472796 m per tick**. (The old text said "at 542 m/s"; that is
+   Cinder's orbital speed from CE-30's separate measurement, not this one's.)
+2. **DONE 2026-08-11: MERGED AND, FOR THE FIRST TIME, MEASURED.** `1e9a899`,
+   merged into `lane/carrier-rider`. **This document called it MEASURED and the
+   branch's own subject said "UNMEASURED, PARKED ON A BRANCH"; the branch was
+   right.** Its body says "nothing here has been driven in a browser", and for
+   most of a week it existed only on Reid's Windows machine and on no remote, so
+   neither claim was checkable from the VM at all. It is measured now:
+   **Anchorage travels at 31.32091952549093 m per tick**, which agrees to
+   **1.8e-11 m** with the rate the rotor instrument derived independently from
+   the same record while it was still frozen. `probes/stationride.js`'s
+   frozen-station assertion has fired and is inverted. **The freeze is over and
+   the fixture problem with it: no probe in this domain measures an instrument
+   frame for the board/release path any more.**
+3. **DONE 2026-08-11 (CE-39 to CE-46), on `lane/carrier-rider`, and re-measured
+   against link 2 above rather than against an instrument.** The membership
+   predicate, the per-tick board/release decision sited immediately after
+   `mounts.syncAt`, and a `visit:station` arrival that seats the player AT REST
+   IN THE FRAME instead of at rest in the body frame. On the real moving station:
+   **the press seats at 1879.2551715278214 m/s where a `standAt`-only arrival
+   reads ~0; the feet land 0 m from the LIVE hub while the boot position is
+   already 6,232.85 m behind; deck-relative drift is 1.5729040161257287e-9 m over
+   601 ticks against an un-boarded 3,747.31 m with no floor in the same run.**
+   `of.carrier('census').ride` reads `boards: 1` after the press where it read 0.
+   **The old drift figures, restated in TICKS because that is the client's only
+   clock:** 6 ticks is 187.93 m and the figure labelled "+1.0 s" is 3,476 m,
+   which is **111 ticks, not 60**: 1.0 s of being left behind is **1,879.26 m**,
+   and the label was off by 1.85x. Full table, with the frozen-fixture numbers
+   beside the moving-station ones, in §5g of
+   [core-engine.md](controllers/core-engine.md).
+
+**SO ALL THREE LINKS ARE IN ONE BUILD, ON ONE BRANCH, FOR THE FIRST TIME.** What
+that does NOT mean: the mission has not been flown. This is the floor it needs
+(a station that moves, and a player who is carried by it), not the mission. R93
+still has no `of_dk_*` symbol, so there is still no docking.
+
+**R97 IS NOT REACHABLE ON FOOT, AND THE GUARD ADMIN ASKED FOR WOULD BE DEAD
+CODE (CE-44, 2026-08-11).** "Refuse warp while boarded" was ruled and then
+verified rather than built: warp lives on `player/FlightControls.ts` calling
+`FlightSession.setWarp`, and `FlightControls` is a field of `VesselObserver`, so
+it only samples input while the ACTIVE VIEW SOURCE is a vessel. A boarded rider
+is a walker: there is no warp key, no warp cheat, and `sim/DayCycle.ts` states
+the rule in as many words ("warp is flight-local by design"). The warp-to-orbit
+cheat needs a live flight session too. So there is nothing to refuse until R93
+opens dock-then-EVA; the requirement is written into `app/StationMount.ts` at
+the seam it will land on. R97's rendezvous half is untouched and still open.
 
 Also open on this path: **R93**, `of_fl_dock_*` has no client caller and needs
 `of_dk_port_at` so the world pose comes from `docking::portAt` rather than a
@@ -248,8 +298,14 @@ geometry it was never authored for. Retuning needs a machine-lit arm of
 
 **Ordered by what unblocks the most.**
 
-1. **Board the rider onto the carrier** (§4a.3), then merge `ph357-station-stamp`.
-   Unblocks the first mission, docking, and standing on anything that moves.
+1. ~~**Board the rider onto the carrier** (§4a.3), then merge
+   `ph357-station-stamp`.~~ **BOTH DONE 2026-08-11, CE-39 to CE-46, on
+   `lane/carrier-rider`, and measured together** (§4a). What replaces it, and it
+   is smaller: **merge that branch to `main`, then take R17.** `mountStation`
+   runs outside `buildBodyScope` while `mounts.clear()` is registered inside it,
+   so `of.reboot()` leaves the station on no frame; with membership now live the
+   symptom is not a static deck, it is a player standing in the hub of a station
+   that IS moving being **silently left behind at 1879 m/s with no error**.
 2. **Run the full probe sweep, then gate `run.mjs`** (§4b). Until this lands,
    "green" means nothing anywhere in the project.
 3. **Answer the albedo question** (§4d), then the machine palette pass, which is

@@ -94,15 +94,16 @@ export interface NavTarget {
    *
    * An unstamped record (`stampedTick < 0`) has `clockAt` return its stored
    * clock unchanged, so its position does not advance while its published
-   * velocity does: Anchorage finite-differences to exactly 0 m of travel while
-   * reporting 1879.255 m/s off the same conic. `rangeM` above is therefore the
-   * range to where the target WAS. The record is deliberately not zeroed (that
-   * would break the armed rendezvous that works today) and the real fix is
-   * sequenced behind core-engine's carrier term: R79, then PH-305.
+   * velocity does. Anchorage was exactly that until PH-357: it
+   * finite-differenced to 0 m of travel over 60,000 ticks while reporting
+   * 1879.255 m/s off the same conic, and `rangeM` was the range to where the
+   * target had been at boot.
    *
-   * Until then the discrepancy is at least ATTRIBUTABLE, which is the whole
-   * difference between a wrong number and a wrong number nobody can see is
-   * wrong. See `MapPlanner.closing()` for the full argument.
+   * ANCHORAGE IS STAMPED NOW AND THIS FIELD STAYS, because the condition it
+   * reports has not gone away: `stashVessels` drops `stampedTick` on every
+   * save, and any rails record between a load and its first stamp is in the
+   * same state. `false` is the normal reading and `true` means the range above
+   * is a snapshot rather than a measurement. See `MapPlanner.closing()`.
    */
   frozen: boolean;
 }

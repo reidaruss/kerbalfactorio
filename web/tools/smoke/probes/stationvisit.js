@@ -22,6 +22,32 @@
 // the caller is asking"), so footing is a fact one tick after the press. The
 // receipt claims the position and this file claims the footing.
 //
+// CE-41 AND PH-357 (2026-08-11): THE PRESS GOES THROUGH A DIFFERENT DOOR, AND
+// THE DECK IS NOW MOVING UNDER IT AT 31.320919525472796 m PER TICK.
+//
+// `pressStation` boards the station's carrier frame and seats the player AT REST
+// IN IT (`rideStation` -> `seatOnStationDeck`) rather than calling
+// `Controller.standAt` alone, which zeroes the ABSOLUTE velocity and on a moving
+// station is a player left behind at full orbital speed. Two things in this file
+// had to change with it, and both were reading a boot-time fact as a live one:
+//
+//   1. `P`, the hub centre the off-centre projection is taken about, was
+//      `st.install.pos`. That is where the solid was FIRST posed. One minute of
+//      world time in it is 112 km behind the deck, so the projection would have
+//      read 112,000 m about a player standing dead centre in the hub. It is
+//      `hubNow()` now, the live solid, which is the same authority the press
+//      itself teleports to.
+//   2. The staleness is asserted as its own positive fact, so that a future run
+//      against a re-frozen station (`stashVessels` drops `stampedTick`, so a
+//      reload before the first stamp is exactly that) goes red here rather than
+//      quietly proving nothing.
+//
+// `grounded` after the press was the check flagged as the one that would need
+// re-reading. It did not: the arrival seats the rider at rest in the frame, so
+// the deck is not travelling under the feet, it is travelling WITH them, and the
+// first tick lands exactly as it always did. That is the whole of CE-41 stated
+// as a measurement rather than as a claim.
+//
 // IT ENDS ON THE GROUND, deliberately, and phase D is both halves of that: the
 // return trip is a FEATURE (a one-way trip to orbit is a trap) and it is also
 // what lets run.mjs finish, since the runner settles on terrain convergence and
@@ -107,6 +133,13 @@
   if (st.install === null) return { valid: false, why: 'the station was never installed' };
   const P = st.install.pos;
   const deckR = st.install.deckR;
+  /** PH-357. THE HUB'S LIVE BODY-FRAME CENTRE, or null with no mount. The solid
+   *  `CarrierMount.syncAt` re-poses every tick, read through the published
+   *  carrier surface. `deckR` is NOT re-read from it, deliberately: the orbit is
+   *  circular, so |pos| is constant and the install's radius is still the right
+   *  number, and keeping it install-sourced means the radius check below stays a
+   *  comparison between two independent things. */
+  const hubNow = () => of.carrier?.('mounts')?.solid?.pos ?? null;
 
   // ======================================================================
   // A. THE ROW IS ON SCREEN, ENABLED, AND SAYS WHAT THE PLACE IS.
@@ -123,9 +156,28 @@
   const row0 = rowOf();
   check('the button is drawn and enabled', row0 !== null && row0.disabled === false,
     JSON.stringify(row0));
-  check('the group is SEPARATE from the seven visit sites',
-    view.visits.length === 7 && !view.visits.some((v) => v.id === ROW),
+  // THE COUNT WAS 7 AND THE CLIENT SHIPS 8, AND THIS CHECK HAS BEEN SILENTLY RED
+  // SINCE `29d1935` (WG-214), WHICH ADDED "Hills: the spawn" AS AN EIGHTH ROW
+  // AND DEMOTED THE OLD ONE TO "the FORMER spawn". Found 2026-08-11 by the
+  // carrier-rider lane running this file as a regression, not by anything that
+  // was looking for it, which is state-of-the-union §4b exactly: `run.mjs`
+  // decides its exit code from console errors, so a red `fails` entry printed
+  // `smoke: PASS` and exited 0 for eight days.
+  //
+  // THE TWO HALVES ARE SPLIT, because they are different claims and only one of
+  // them was ever what this check was about. **The claim is that the station row
+  // is NOT one of the site rows**; the count is a separate fact about
+  // `VISIT_SITES`, and pinning it is still worth doing (a row silently
+  // disappearing is a real defect) but it must be pinned to the truth and it
+  // must say what to do when it moves.
+  check('the group is SEPARATE from the visit sites',
+    !view.visits.some((v) => v.id === ROW),
     view.visits.map((v) => v.id).join(','));
+  check('and the site group is the 8 rows VisitSites.VISIT_SITES ships',
+    view.visits.length === 8,
+    `${view.visits.length} rows: ${view.visits.map((v) => v.id).join(',')}. If a `
+    + 'site was deliberately added or removed, update this number and say so; if '
+    + 'not, a row has gone missing from the menu');
   const note = view.station[0]?.note ?? '';
   const kmSaid = `${(st.install.altM / 1000).toFixed(0)} km`;
   check('the row states THIS station\'s altitude', note.includes(kmSaid),
@@ -183,12 +235,31 @@
     // convincing 0.000 for a player 395 km below the station, which the nobbled
     // run measured, so it would have passed on exactly the failure it exists
     // to catch.
+    //
+    // PH-357: `P` IS THE LIVE HUB CENTRE AND NOT THE INSTALL REPORT'S ANY MORE.
+    // Anchorage's record is stamped, so the deck travels 31.320919525472796 m
+    // per tick and the boot position is a fact about the boot: one minute in it
+    // is 112 km behind, and this projection would have read 112,000 m about a
+    // player standing dead centre in the hub. `hubNow()` reads the solid
+    // `CarrierMount.syncAt` re-poses every tick, which is the object the feet
+    // are resolved against, and it is the SAME authority `pressStation` teleports
+    // to (`stationBodyPosNow`), so this is not a second opinion about where the
+    // station is.
     offCentreM: r6((() => {
-      const d = [w.player.feet[0] - P[0], w.player.feet[1] - P[1],
-        w.player.feet[2] - P[2]];
-      const u = [P[0] / deckR, P[1] / deckR, P[2] / deckR];
+      const p = hubNow() ?? P;
+      const d = [w.player.feet[0] - p[0], w.player.feet[1] - p[1],
+        w.player.feet[2] - p[2]];
+      const u = [p[0] / deckR, p[1] / deckR, p[2] / deckR];
       const k = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
       return Math.hypot(d[0] - u[0] * k, d[1] - u[1] * k, d[2] - u[2] * k);
+    })()),
+    /** PH-357. How far the boot position is now from the deck. It is not a
+     *  defect, it is the reason `P` could no longer be used: an install report
+     *  goes on being perfectly true about the install. */
+    installStaleM: r6((() => {
+      const p = hubNow();
+      return p === null ? 0
+        : Math.hypot(p[0] - P[0], p[1] - P[1], p[2] - P[2]);
     })()),
     grounded: w.player.grounded,
     onDeck: w.player.onDeck,
@@ -205,6 +276,15 @@
     `${arrived.offCentreM} m from the hub centre`);
   check('the trip was a real 400 km one', arrived.travelledM > 100000,
     `${arrived.travelledM} m`);
+  // PH-357'S REGRESSION, ASSERTED AS A POSITIVE FACT RATHER THAN AVOIDED.
+  // The install position IS stale by now, by a long way, and the check above
+  // passing while this one reports a large number is the two-sided evidence that
+  // the arrival is aimed at the live deck: if the press had used `st.install.pos`
+  // the player would be exactly this far out, in empty space, 400 km up.
+  check('the boot position is now demonstrably stale, which is why it is unused',
+    arrived.installStaleM > 100,
+    `${arrived.installStaleM} m: the station has not moved, so this probe cannot `
+    + 'tell a live-deck arrival from a boot-position one and proves neither');
 
   // STANDING, NOT LANDING (GP-53's family). 1.5 s of nothing at all.
   await sleep(1.5);

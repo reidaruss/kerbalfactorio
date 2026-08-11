@@ -218,7 +218,7 @@ export class Loop {
   }
 
   private fixedTick(): void {
-    const { input, observer, origin, ride, mounts } = this.s;
+    const { input, observer, origin, ride, mounts, player } = this.s;
     // CE-33. THE CARRIER SANDWICH, and the ordering is the whole of it: the
     // walker steps INSIDE the carrier's frame and is transformed out before
     // anything else in this tick reads its position. `ride.tick` takes the step
@@ -255,6 +255,28 @@ export class Loop {
     // `ride` has with nothing boarded: a world with no carrier runs the
     // instruction sequence it ran before any of this existed.
     mounts.syncAt(this.tickIndex);
+    // CE-40. AND THEN, IN THE SAME BREATH, WHO IS ON IT.
+    //
+    // THE SITE IS THE WHOLE CORRECTNESS ARGUMENT and it is one line long: this
+    // is the ONE instant in the tick at which the deck and the rider are both
+    // described at `tickIndex`. `syncAt` on the line above has just put the
+    // geometry at `poseAt(tickIndex)`, and `ride.tick` above left the walker at
+    // pose B = `poseAt(tickIndex)` as well (it ran with the PREVIOUS index and
+    // transports over [t, t+1]). So a distance measured here is a real one.
+    //
+    // In `onFixedStep` (the loop above, before the increment) it would not be:
+    // there the rider is already at `poseAt(t+1)` while the geometry is still at
+    // `poseAt(t)`, 31.32 m apart at Anchorage's own orbital speed, and the
+    // membership test would be answering about a deck that is a tick stale. It
+    // would read healthy in every frozen fixture and be wrong the day the
+    // station moves, which is failure mode F5 in `probes/stationboard.js`.
+    //
+    // With no walker, or with no mount, this is one null check and a `find` over
+    // an empty list.
+    if (ride !== null && player !== null) {
+      const f = player.body.feet;
+      mounts.decideAt(ride, f.x, f.y, f.z);
+    }
   }
 
   private frame(now: number): void {
