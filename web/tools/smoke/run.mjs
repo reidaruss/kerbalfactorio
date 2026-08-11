@@ -406,8 +406,24 @@ const browser = await chromium.launch({
   ],
 });
 const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+// GL CONTEXT LOSS (BT-63), identical rule to boot.mjs. Under SwiftShader the
+// context is lost at ~0.9 s and restored at ~2.6 s on roughly half of runs on
+// the Linux VM, always inside the ItemIcons bake (a SECOND WebGL context).
+// Measured: lost-and-restored differs from clean by 0.49% of pixels against
+// 0.31% between two clean runs, so the restore re-uploads correctly. Tolerated
+// ONLY when a restore answers it and the pair completes before __of.ready; a
+// loss after ready means the probe measured a dead context, and an unanswered
+// loss never came back. Both still fail the run.
+let ready = false;
+const ctx = { lost: 0, restored: 0, lateLoss: 0 };
 page.on('console', (m) => {
   const t = m.type();
+  if (/CONTEXT_LOST_WEBGL/.test(m.text())) {
+    ctx.lost++; if (ready) ctx.lateLoss++; console.error(`[page] ${m.text()}`); return;
+  }
+  if (/WebGLRenderer: Context Restored/.test(m.text())) {
+    ctx.restored++; console.error(`[page] ${m.text()}`); return;
+  }
   if (t === 'error') errors.push(`console.error: ${m.text()}`);
   else if (t === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())) {
     // TWO warnings are allowlisted, both on stock three.js source, both
@@ -425,8 +441,16 @@ page.on('console', (m) => {
     //   after flattening. Stock three warns here either way: with its own
     //   implicit-LOD fetch it emits X3595 instead, which is why `?fxaalod=0`
     //   exists and why probes/post.js checks the two produce the same pixels.
+    // "GPU stall due to ReadPixels": a KHR_debug PERFORMANCE note, severity
+    // High, emitted only by the SwiftShader/Vulkan backend (BT-62). It is not
+    // a fallback and not an app defect: it fires on the synchronous readback
+    // the ItemIcons baker deliberately performs, once per context, 3 to 4
+    // times per run, on 100% of runs on the Linux VM and never on Windows,
+    // where ANGLE runs on D3D. It is a driver telling us a readback is slow,
+    // which is exactly what a software rasteriser is. Named, not wildcarded.
     if (!/warning X4122/.test(m.text())
-      && !/warning X4000: use of potentially uninitialized variable \(f_ApplyFXAA\)/.test(m.text())) {
+      && !/warning X4000: use of potentially uninitialized variable \(f_ApplyFXAA\)/.test(m.text())
+      && !/GPU stall due to ReadPixels/.test(m.text())) {
       errors.push(`console.warn: ${m.text()}`);
     }
   }
@@ -443,6 +467,7 @@ try {
   // --eval runs against the live page and its return value lands in the report,
   // so a probe can drive the world (teleport, tapes) and hand back its own
   // measurements without the runner knowing anything about the scenario.
+  ready = true;
   let evalResult;
   if (evalScript) evalResult = await page.evaluate(evalScript);
   if (waitMs > 0) await page.waitForTimeout(waitMs);
@@ -481,11 +506,26 @@ try {
   await browser.close();
 }
 
+// Judged after the run, not at the moment the message arrived: whether a loss
+// is tolerable depends on the restore that answers it and on whether it landed
+// before ready, and neither is known yet when the console line appears.
+if (ctx.lateLoss > 0) {
+  errors.push(`smoke: the GL context was lost ${ctx.lateLoss}x AFTER __of.ready. `
+    + `Every number and pixel this run reports past that point was produced on a `
+    + `dead context and must not be trusted.`);
+} else if (ctx.lost > ctx.restored) {
+  errors.push(`smoke: the GL context was lost ${ctx.lost}x but only ${ctx.restored} `
+    + `restore(s) arrived, so it never came back.`);
+}
+
 if (errors.length) {
   console.error(`smoke: FAILURES (${errors.length} distinct)`);
   for (const e of errors.list()) console.error('  ' + e);
   exitCode = 1;
 } else {
-  console.error('smoke: PASS (no console errors, no failed requests)');
+  // A tolerated loss is REPORTED, never silent.
+  const lostNote = ctx.lost > 0
+    ? ` (${ctx.lost} pre-ready context loss(es), restored ${ctx.restored}x)` : '';
+  console.error(`smoke: PASS (no console errors, no failed requests)${lostNote}`);
 }
 process.exit(exitCode);
