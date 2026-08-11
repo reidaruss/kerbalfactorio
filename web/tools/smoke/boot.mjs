@@ -34,10 +34,15 @@ export const NONCE_HEADER = 'x-of-boot-nonce';
 
 /** The exact candidate list run.mjs uses. One list, or the two tools drift. */
 export const CHROME_CANDIDATES = [
+  ...(process.env.CHROME_PATH ? [process.env.CHROME_PATH] : []),
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
   `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
 ];
 
 /** Run both sync scripts. Their output is printed only on failure. */
