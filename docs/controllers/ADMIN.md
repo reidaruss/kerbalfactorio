@@ -7,6 +7,32 @@
 
 ---
 
+> ## STOP: THE ORCHESTRATION MODEL CHANGED, 2026-08-03
+>
+> **Read [../STATE_OF_THE_UNION.md](../STATE_OF_THE_UNION.md) before acting on
+> anything below it.** It carries the current state, the todo list ordered by what
+> unblocks the most, the lessons from running six concurrent agent lanes for a
+> week, and the architecture that replaces how this controller worked.
+>
+> **The headline change: the top-level session does no implementation.** It reads
+> reports, makes rulings, routes findings, allocates decision-number blocks,
+> sequences conflicting lanes, and talks to Reid. It does **not** edit code, run
+> builds, run probes, drive a browser, or commit anything but decision records. A
+> **Release lane** owns the settled rebuild and the freeze to port 4200 and is the
+> only lane that commits `web/wasm/dist/*` and `expected.json`.
+>
+> **Model tiering.** Sonnet for work whose brief can state *what to do*; Opus for
+> work whose brief can only state *what to find out*. If a brief contains
+> "measure whether", "decide the shape", or "the premise may be wrong", it is Opus.
+>
+> **Cap at four concurrent lanes.** Six was past the point where reports arrived
+> faster than they could be read, and the orchestrator's own context became the
+> bottleneck.
+>
+> **Project root is `D:\karbalfactorio`**, remote
+> `https://github.com/reidaruss/kerbalfactorio.git`. The Nextcloud path is retired
+> and deleted; §1 of the state-of-the-union says why.
+
 ## 1. Mission
 Own the global plan, the cross-domain interfaces, the dependency graph, and integration. Delegate fully-briefed high-level tasks to Domain Master Controllers; arbitrate interface disagreements; keep [MASTER_PLAN](../MASTER_PLAN.md) coherent. **Do not** absorb domain detail — delegate it.
 
