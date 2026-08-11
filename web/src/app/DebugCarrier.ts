@@ -1,24 +1,16 @@
 // `__of.carrier`: the driven surface for the carrier frame (CE-37).
 //
-// NO LONGER THE ONLY WAY IN (CE-39 to CE-41, and the paragraph that stood here
-// is retracted rather than deleted). It used to say the frame term was correct
-// and nothing was wired to it; `Loop.fixedTick` now decides membership every
-// tick and the `visit:station` row seats the player on the station's frame. What
-// remains debug-only is the INSTRUMENT half: the four fixture frames, `remount`,
-// `unmount`, and `standLocal`. Anchorage's own conic is still frozen
-// (`stampedTick = -1`), so a moving fixture is still the only way to measure a
-// moving station, and that is still not this file's ruling to take.
+// NO LONGER THE ONLY WAY IN (CE-39 to CE-41), and PH-357 retired the rest of the
+// paragraph that stood here: `Loop.fixedTick` decides membership every tick, the
+// `visit:station` row seats the player on the station's frame, and Anchorage's
+// conic is stamped so the shipped station really moves. What remains debug-only
+// is the INSTRUMENT half: the four fixture frames, `remount`, `unmount`,
+// `standLocal`, and CE-51's per-frame `frames` trace.
 //
 // HOUSE RULE, inherited from DebugFlight and DebugVab: every read is derived at
-// the tick it is asked for and nothing here caches a pose. A cached pose would
-// be the second copy of the carrier's position, which is the exact defect
-// D-014 settled.
-//
-// IT DRIVES THE SHIPPING PATH. `board` puts a frame on the SAME `CarrierRide`
-// the fixed tick calls, so a probe measures the code the feature will ship on
-// rather than a parallel one. There is no "simulate a carrier" entry point and
-// there must not be, because that is the fourth instrument this project would
-// then have to keep honest.
+// the tick it is asked for and nothing here caches a pose, which is D-014's
+// defect. IT DRIVES THE SHIPPING PATH: `board` puts a frame on the SAME
+// `CarrierRide` the fixed tick calls.
 
 import { FixedCarrier, LinearCarrier, type CarrierFrame } from '../world/CarrierFrame.js';
 import { EphemerisCarrier, OrbitCarrier, RotorCarrier } from '../world/CarrierSources.js';
@@ -32,6 +24,7 @@ import {
 import type { EphemerisModule } from '../render/CelestialEphemeris.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
+import { carrierFrameTrace } from './FrameTrace.js';
 
 export interface CarrierDebugApi {
   carrier(op?: string, a?: unknown): unknown;
@@ -50,6 +43,12 @@ function str(o: unknown, k: string, fallback: string): string {
 }
 
 export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
+  // CE-51. The per-frame trace and its one pre-render hook; see FrameTrace.ts.
+  const framesOp = carrierFrameTrace(loop, () => {
+    const solid = lastStationSolid();
+    return { origin: s.origin, eye: s.observer.position, collider: solid,
+      drawn: s.mounts.mountCarrying(solid)?.drawnPos ?? null };
+  });
   /**
    * The angle between two poses' rotations, in radians.
    *
@@ -91,16 +90,11 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
     };
   };
 
-  /**
-   * CE-42. THE MEMBERSHIP PREDICATE'S OWN READING, published beside the ride.
-   *
-   * `boards: 1` says a decision fired at some point. This says what the decision
-   * WOULD say right now, continuously, which is the only way a probe can tell
-   * "declined, the player is 40 m out" from "the decision is not running at
-   * all". `depthM` is signed, negative inside, so a walk-off can be watched
-   * crossing the two radii instead of only seen afterwards. Derived per read and
-   * cached nowhere, like every other op here.
-   */
+  /** CE-42. THE MEMBERSHIP PREDICATE'S OWN READING, beside the ride. `boards: 1`
+   *  says a decision fired at some point; this says what it WOULD say right now,
+   *  which is the only way to tell "declined, the player is 40 m out" from "the
+   *  decision is not running". `depthM` is signed, negative inside, so a walk-off
+   *  can be watched crossing the two radii instead of only seen afterwards. */
   const aboard = (): Record<string, unknown> | null => {
     const p = s.player;
     if (p === null) return null;
@@ -250,12 +244,11 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
          * CE-86. PUT THE STATION ON A DIFFERENT FRAME, keeping it exactly where
          * it is at this tick.
          *
-         * THE ONLY REASON THIS EXISTS: Anchorage's record ships frozen, so the
-         * shipping mount writes identical numbers forever and IS the identity
-         * element of the operation it performs (GP-142). Re-mounting onto a
-         * `rotor` or `linear` instrument frame is the moving fixture, through
-         * `mountStationOn`, the SAME function boot calls. Unfreezing the real
-         * conic is physics' half of D-014 and is not this file's to do.
+         * IT EXISTS BECAUSE THE STATION USED TO SHIP FROZEN, and re-mounting
+         * onto a `rotor` or `linear` instrument was then the only moving
+         * fixture. PH-357 stamped the record, so its job now is to show the
+         * mount is GENERAL: the geometry follows ANY frame, through
+         * `mountStationOn`, the SAME function boot calls.
          */
         case 'remount': {
           const f = s.carriers.get(str(a, 'id', ''));
@@ -339,6 +332,14 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
                    speedMS: Math.hypot(vel.x, vel.y, vel.z), tick };
         }
 
+        /** CE-51. THE PER-RENDERED-FRAME TRACE. `arm` starts a bounded ring;
+         *  a bare call returns the verdict. The ONLY instrument here that
+         *  samples BETWEEN fixed ticks, which is where the stutter lives:
+         *  every other carrier number is taken at the one instant per tick at
+         *  which the camera and the hull are corrected into agreement. */
+        case 'frames':
+          return framesOp(a);
+
         /** CE-41. THE SHIPPED ARRIVAL, driven directly: the SAME
          *  `seatOnStationDeck` the `visit:station` row now presses, so a probe
          *  can measure it without the pause menu and still be measuring what
@@ -388,7 +389,7 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
 
         default:
           return { error: `unknown op '${op}'. ops: census register survey remove `
-            + `board release local standLocal seat mounts remount unmount` };
+            + `board release local standLocal seat frames mounts remount unmount` };
       }
     },
   };
