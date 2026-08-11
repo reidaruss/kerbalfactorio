@@ -362,13 +362,24 @@ if (dropped.length > 0 && !args.has('allow-unknown-flags')) {
 
 const url = `${base}?${params.toString()}`;
 
+// CHROME_PATH overrides the search entirely (set it rather than adding a new
+// hardcoded path for a one-off machine). The Linux entries were added for the
+// Proxmox build-tooling VM (BT-30-series, 2026-08-10): a plain `apt install
+// google-chrome-stable` lands at /usr/bin/google-chrome-stable /
+// /usr/bin/google-chrome depending on release, and this list previously had
+// Windows paths only, so the probe harness could not run on Linux at all.
 const CHROME_CANDIDATES = [
+  ...(process.env.CHROME_PATH ? [process.env.CHROME_PATH] : []),
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
   `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
 ];
-const exe = CHROME_CANDIDATES.find((p) => existsSync(p));
+const exe = CHROME_CANDIDATES.find((p) => p && existsSync(p));
 if (!exe) { console.error('smoke: no Chrome or Edge found'); process.exit(2); }
 
 // Deduped: one bad shader emits hundreds of identical useProgram warnings, and
