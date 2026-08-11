@@ -24,6 +24,8 @@
 // has paid for repeatedly, and `Autopilot.ts` states the whole rule.
 // =============================================================================
 import { registry } from '../sim/VesselRegistry.js';
+import { bodyIdOf, orbitBody } from '../world/VesselBody.js';
+import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { RailElements } from '../sim/VesselRegistry.js';
 
 export type TargetKind = 'vessel' | 'body' | 'orbit';
@@ -108,6 +110,9 @@ export interface HomeBody {
   readonly name: string;
   readonly radiusM: number;
   readonly muM3S2: number;
+  /** GP-650. /core's own `BodyParams::bodyId` for this body, so a target list
+   *  can tell a record at THIS body from one at another. */
+  readonly bodyId: number;
 }
 
 function altOf(el: RailElements, radiusM: number, sign: number): number {
@@ -132,13 +137,36 @@ export function degOf(rad: number): number { return (rad * 180) / Math.PI; }
  * the list" is a bug report, and "it is on the ground, so there is nothing to
  * rendezvous with" is an answer.
  */
-export function registrySource(home: HomeBody, excludeId = 0): TargetSource {
+export function registrySource(home: HomeBody, excludeId = 0,
+                               M: OfCoreModule | null = null,
+                               hereBodyId = 0): TargetSource {
   return {
     id: 'registry',
     list(): AutopilotTarget[] {
       const out: AutopilotTarget[] = [];
       for (const rec of registry.list()) {
         if (rec.id === excludeId) continue;
+        // GP-650. A TARGET AT ANOTHER BODY IS A BLOCKED ROW THAT NAMES IT.
+        // The planner sizes a departure curve off `home`, so a row for a vessel
+        // in another body's frame would have offered a transfer whose every
+        // number was arithmetic about the wrong planet -- and whose AP / PE
+        // detail was `altOf(el, home.radiusM)`, i.e. Reid's 800 km, in the
+        // autopilot list as well as in the panel. Blocked and named rather than
+        // filtered out, for this function's own stated reason: "my station is
+        // not in the list" is a bug report.
+        const at = M === null ? hereBodyId : bodyIdOf(M, rec, hereBodyId);
+        if (at !== hereBodyId) {
+          const b = M === null ? null : orbitBody(M, at);
+          const where = b === null ? `body ${at}` : b.name;
+          out.push({
+            id: `v:${rec.id}`, kind: 'vessel', name: rec.name,
+            detail: `in orbit around ${where}`,
+            orbit: null, body: null,
+            blocked: `${rec.name} orbits ${where} and you are at ${home.name}: `
+              + 'there is no transfer between bodies yet',
+          });
+          continue;
+        }
         const el = rec.where.kind === 'conic' ? rec.where.el : null;
         if (el === null) {
           out.push({

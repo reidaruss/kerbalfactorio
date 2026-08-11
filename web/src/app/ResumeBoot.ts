@@ -75,6 +75,7 @@ import type { FlightMode } from './FlightMode.js';
 import type { Vab } from '../game/Vab.js';
 import type { ViewRouter } from '../player/ViewRouter.js';
 import type { FloatingOrigin } from '../world/FloatingOrigin.js';
+import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 /** PH-69. May control be handed away from this vessel, leaving it unattended?
  *  A record with no way to advance itself is a record nothing should be allowed
@@ -94,6 +95,13 @@ export interface ResumeDeps {
   vab: Vab | null;
   router: ViewRouter;
   origin: FloatingOrigin;
+  /** GP-650. For recovering a legacy record's body from its conic's own mu.
+   *  See `VesselSave.adoptSaved`. */
+  core: OfCoreModule;
+  /** The body this boot is on, as /core's own `BodyParams::bodyId`. The honest
+   *  answer for a legacy record that has no conic to recover a body from: it
+   *  was saved in the world being loaded. */
+  bodyId: number;
 }
 
 export interface ResumeReport {
@@ -120,7 +128,7 @@ export function resumeWorld(d: ResumeDeps): ResumeReport {
   installPlayerAnchor(d.router, () => fm?.aboard === true);
 
   const rows = takeStashedVessels();
-  const adopted = rows === null ? 0 : adoptSaved(rows);
+  const adopted = rows === null ? 0 : adoptSaved(rows, d.core, d.bodyId);
   const promoted = promoteOnBoot(fm, 0);
   const anchor = applyPlayerAnchor(d.router, d.origin);
   last = { adopted, promoted, anchored: anchor !== null };

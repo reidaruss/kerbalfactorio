@@ -44,6 +44,21 @@ export interface MapPlayerPort {
 /** Re-exported so Boot needs ONE import line for the map. Boot is at its cap. */
 export type { MapMode };
 
+/** The slice of `PlanetBody` the map is of, named structurally for the reason
+ *  `MapPlayerPort` is: the map wants a radius, a mu, an air ceiling and a name,
+ *  not a body handle. `PlanetBody` satisfies it as it stands, so `bootMap`
+ *  passes the live one straight through and there is no adapter to drift. */
+export interface MapBodyPort {
+  readonly bodyId: number;
+  readonly radiusM: number;
+  /** For `proxyRadiusUnits`: the map's globe is the same sphere the world's
+   *  scaled planet is, so it is sized by the same expression. */
+  readonly maxReliefM: number;
+  readonly muM3S2: number;
+  readonly atmosphereTopM: number;
+  readonly name: string;
+}
+
 /** The slice of Gameplay the map needs, named rather than imported whole. */
 export interface MapGameplayPorts {
   modals: ModalStack;
@@ -75,14 +90,32 @@ export interface MapGameplayPorts {
  *  belong beside where they are built, and MapMode is at its line cap. */
 export interface MapDeps {
   M: OfVesselModule;
+  /** GP-650. The core module, for `world/VesselBody.ts`: a record's own body is
+   *  a /core query and the vessel rows are built from it. */
+  core: OfCoreModule;
   host: HTMLElement;
   modals: ModalStack;
   flight: FlightMode;
-  bodyRadiusM: number;
-  /** GP-271. The body gravitational parameter, for the planner target list.
-   *  /core's own (DW-18), never a constant. */
-  muM3S2: number;
-  atmosphereCeilingM: number;
+  /**
+   * GP-650. THE BODY THE MAP IS OF, AS A THUNK, and the thunk is the fix.
+   *
+   * This was three captured numbers (`bodyRadiusM`, `muM3S2`,
+   * `atmosphereCeilingM`) plus a `'Forge'` string literal, all taken once in
+   * `bootMap`. `WorldSession.reboot` swaps the body under the whole client and
+   * rebuilds nothing here, so after a hop to Cinder the map drew a 600 km globe,
+   * offered a focus option called "Forge", framed against Forge's air ceiling
+   * and measured every altitude against Forge's radius, on a 200 km moon.
+   * Measured at HEAD through `of.reboot(1)`: `globeRadiusUnits` 5.937 before and
+   * 5.937 after, and `focus.options` still `["you","Forge"]`.
+   *
+   * The port is the SURFACE ORACLE'S OWN BODY, which is the client's live-body
+   * authority by construction: `SurfaceOracle` is documented as "the thing that
+   * answers about the current body" and `WorldSession.reboot` RE-SEATS it. So
+   * the map follows the world without a subscription, a copy or a rebuild, and
+   * a fourth body-name table (SaveSlots.ts counted the existing four and refused
+   * to write a fifth) is not needed to do it.
+   */
+  body(): MapBodyPort;
   setUiCapture(on: boolean): void;
   /** Where a refusal goes when there is no navball to put it on. Supplied by
    *  the app because the on-foot HUD is not this file's to reach into. */
@@ -163,6 +196,11 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
   });
   // The 3D picture (GP-208). Stock materials only, so it costs no DW-10
   // ledger slot; the globe is the proxy's own geometry, so it costs no VRAM.
+  // GP-650. ONE live-body port, built once and read by both the picture and the
+  // panel, so the globe the player sees and the numbers beside it cannot be
+  // about two different worlds. `a.oracle.body` and NOT `a.body`: the argument
+  // is the boot-time body and the oracle is re-seated on every reboot.
+  const liveBody = (): MapBodyPort => a.oracle.body;
   const three = new Map3D({
     core: a.core,
     cam: a.mapCam,
@@ -171,21 +209,20 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     revealAll: () => a.g.mode.fullMapRevealed,
     pads: () => a.flight.d.pads?.()?.list ?? [],
     tick: () => currentVesselTick(),
-    bodyRadiusM: a.body.radiusM,
+    body: liveBody,
   });
   const mode = new MapMode({
     M: V,
+    core: a.core,
     host: a.host,
     modals: a.g.modals,
     flight: a.flight,
-    bodyRadiusM: a.body.radiusM, muM3S2: a.body.muM3S2,
-    // bodyId 0 is Forge; anything else is airless (atmosphere.h section 2).
-    // GP-271: this passes the body's OWN `bodyId` rather than the old
-    // `kind === 'moon' ? 1 : 0`, which was a transcription that happened to be
-    // right for exactly the two bodies that exist. Two moons would both be
-    // kind 1 and would have shared one atmosphere; `of_atmo_*` is indexed by
-    // BodyParams::bodyId and PlanetBody now carries it (GP-268).
-    atmosphereCeilingM: V._of_atmo_space_altitude(a.body.bodyId),
+    // GP-650. The atmosphere ceiling and the name come off the SAME live body
+    // as the radius. `PlanetBody.atmosphereTopM` is `_of_atmo_space_altitude`
+    // indexed by the body's OWN `bodyId` (GP-271's fix, kept: two moons would
+    // both be `kind === 'moon'` and would have shared one atmosphere), so this
+    // is the same /core query it always was, asked of the body that is live.
+    body: liveBody,
     // MAP_ALLOWED and NOT the global UI_ALLOWED. A map over a live flight has
     // to keep every flight key working, and an inventory screen must not: that
     // difference is exactly what `setUiCapture`'s second argument is for, and

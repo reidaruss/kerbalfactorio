@@ -138,6 +138,12 @@ function makeRecord(m: FlightMode, id: number, design: DesignJson,
   const s = m.session;
   return {
     id, name: design.name || `vessel ${id}`, mode: 'parked', design,
+    // GP-650. THE BODY IT WAS ROLLED OUT ON, off the surface oracle, which is
+    // the client's live-body authority ("the thing that answers about the
+    // current body", SurfaceOracle.ts) and is RE-SEATED by `WorldSession.reboot`
+    // rather than copied at boot. A rocket rolled out on the moon is the moon's
+    // and the map must not draw it around Forge.
+    bodyId: m.d.oracle.body.bodyId,
     fired: 0, fuel: [],
     // `of_fl_create` deep-copies the design's tree, so at THIS instant the live
     // handles ARE the design's, in the same order. Capturing them here is the

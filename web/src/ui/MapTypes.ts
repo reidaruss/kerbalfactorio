@@ -276,9 +276,20 @@ export interface MapVesselRow {
   readonly mode: string;
   /** NaN when this row may not claim a number (the flying vessel). */
   readonly fuelKg: number;
-  /** From the record's own elements; NaN when it has none (parked, frozen). */
+  /**
+   * From the record's own elements AND AGAINST THE RECORD'S OWN BODY (GP-650),
+   * never the observer's. NaN when the record has none (parked, frozen) or when
+   * /core does not know its body.
+   */
   readonly apoapsisAltM: number;
   readonly periapsisAltM: number;
+  /** /core's `BodyParams::bodyId` for the body the numbers above are measured
+   *  against, or -1 when it could not be resolved. */
+  readonly bodyId: number;
+  /** The body's name when it is NOT the one the map is showing, '' when it is.
+   *  Empty is the common case and the panel prints nothing for it: a row that
+   *  said "at Forge" on every line while you stand on Forge is noise. */
+  readonly bodyName: string;
   readonly selected: boolean;
   readonly promoted: boolean;
 }

@@ -524,7 +524,8 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   let vab: Vab | null = null;
   if (gameplay !== null && cfg.vab) {
     vab = await bootVab({
-      core, bodyHandle: body.handle, host, canvas, scene: scenes.vab,
+      core, bodyHandle: body.handle, bodyId: body.bodyId, host, canvas,
+      scene: scenes.vab,
       camera: rig.vabCam, input, gameplay,
       setRenderMode: (on) => { frame.vabActive = on; },
     }, vabExits);
@@ -577,7 +578,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // PH-64 to PH-69. THE WORLD COMES BACK AS IT WAS LEFT (ResumeBoot argues the
   // order). After the flight block, so a vessel has somewhere to be promoted
   // into; outside it, because the body anchor is owed to `?flight=0` too.
-  resumeWorld({ flight, vab, router, origin });
+  resumeWorld({ flight, vab, router, origin, core, bodyId: body.bodyId });
 
   // RN-821. Outside the conditional block below because `Services` needs them
   // and the block is optional: `?station=0`, no gameplay and no character each
@@ -629,7 +630,7 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     const stationDeps = {
       core, bodies: gameplay.structures.bodies, volumes, carriers, mounts,
       view: station, up: [u.x, u.y, u.z] as [number, number, number],
-      bodyRadiusM: body.radiusM, muM3S2: body.muM3S2,
+      bodyRadiusM: body.radiusM, muM3S2: body.muM3S2, bodyId: body.bodyId,
       gravityAccel: (rM: number) => body.gravityAccel(rM),
     };
     const st = installAndMountStation(stationDeps, 0);

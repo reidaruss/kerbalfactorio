@@ -29,6 +29,8 @@
 // and it is why a vessel cannot be saved in a place it is not.
 import type { VesselRecord } from '../sim/VesselRegistry.js';
 import { registry } from '../sim/VesselRegistry.js';
+import { bodyIdOf } from '../world/VesselBody.js';
+import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 /** The record without its runtime tick stamp. Same fields, same names. */
 export type SaveVessel = Omit<VesselRecord, 'stampedTick'>;
@@ -111,7 +113,8 @@ export function takeStashedAnchor(): SavePlayerAnchor | null {
  * than thrown, the rule `SaveGame` and `VesselDesign.fromJson` both already
  * apply: a hand-edited or truncated slot must never stop a world booting.
  */
-export function adoptSaved(rows: readonly SaveVessel[]): number {
+export function adoptSaved(rows: readonly SaveVessel[], M: OfCoreModule,
+                           bootBodyId: number): number {
   let n = 0;
   for (const row of rows) {
     if (!row || typeof row.id !== 'number' || row.id <= 0) continue;
@@ -123,9 +126,17 @@ export function adoptSaved(rows: readonly SaveVessel[]): number {
     // be handle 3 is the silent wrong-but-plausible one this project keeps
     // paying for. Nothing writes such a row today; this is for a truncated slot.
     const ok = Array.isArray(row.handles) && Array.isArray(row.fuel);
-    registry.adopt({ ...(row as SaveVessel), stampedTick: -1,
-                     handles: ok ? row.handles : [],
-                     fuel: ok ? row.fuel : [] } as VesselRecord);
+    // GP-650. THE BODY IS RESOLVED ON THE WAY IN, ONCE, so nothing downstream
+    // has to keep asking and so the next write puts a real id in the slot.
+    // `SAVE_VERSION` deliberately does not move, under the rule `vessels`,
+    // `player` and `dayT` were added by: an absent field is not a mismatch, and
+    // `bodyIdOf` recovers it from the conic's own mu, which is the number
+    // `of_orb_park` was handed. See world/VesselBody.ts.
+    const rec = { ...(row as SaveVessel), stampedTick: -1,
+                  handles: ok ? row.handles : [],
+                  fuel: ok ? row.fuel : [] } as VesselRecord;
+    rec.bodyId = bodyIdOf(M, rec, bootBodyId);
+    registry.adopt(rec);
     n += 1;
   }
   return n;

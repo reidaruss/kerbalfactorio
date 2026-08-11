@@ -53,7 +53,10 @@ export interface FocusSources {
   player(): { x: number; y: number; z: number } | null;
   /** The live vessel: its position and its orbit normal, both from /core. */
   vessel(): { pos: V3; normal: V3; name: string } | null;
-  bodyName: string;
+  /** GP-650. A THUNK, because the body changes under a running client
+   *  (`WorldSession.reboot`) and this was the string literal `'Forge'`: the map
+   *  on Cinder offered a focus option called Forge that centred on Cinder. */
+  bodyName(): string;
 }
 
 function unit(a: V3, fallback: V3): V3 {
@@ -80,7 +83,7 @@ export class MapFocus {
     if (this.s.player() !== null) out.push('you');
     const v = this.s.vessel();
     if (v !== null) out.push(v.name);
-    out.push(this.s.bodyName);
+    out.push(this.s.bodyName());
     return out;
   }
 

@@ -22,6 +22,8 @@ export interface VabExits {
 export interface VabBootPorts {
   core: OfCoreModule;
   bodyHandle: number;
+  /** GP-650. And its `BodyParams::bodyId`, for the destination list. */
+  bodyId: number;
   host: HTMLElement;
   canvas: HTMLCanvasElement;
   scene: THREE.Scene;
@@ -37,7 +39,7 @@ export async function bootVab(p: VabBootPorts, exits: VabExits): Promise<Vab> {
   const { Vab: VabMode } = await import('../game/Vab.js');
   const g = p.gameplay;
   return VabMode.create({
-    M: p.core, body: p.bodyHandle, host: p.host, canvas: p.canvas,
+    M: p.core, body: p.bodyHandle, bodyId: p.bodyId, host: p.host, canvas: p.canvas,
     scene: p.scene, camera: p.camera, modals: g.modals, mode: g.mode,
     // GP-54: the bay's OWN launch key, live only while the bay holds the
     // pointer. Not on UI_ALLOWED, which is global and would give G to the

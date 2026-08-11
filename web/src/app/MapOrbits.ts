@@ -25,6 +25,7 @@ import { registry, stateOf, RAILS_DT } from '../sim/VesselRegistry.js';
 import type { VesselRecord } from '../sim/VesselRegistry.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { MapConic } from '../ui/MapTypes.js';
+import { bodyIdOf } from '../world/VesselBody.js';
 
 /** Samples per rails orbit. The flat map's own count, for the same picture. */
 const RAIL_SAMPLES = 192;
@@ -85,7 +86,8 @@ export class OrbitLines {
   private readonly planned = makeLine(FLIGHT_CAP, COLOUR_PLANNED, false);
   private readonly rails = new Map<number, { key: string; line: THREE.LineLoop }>();
   /** What the last sync drew, for the report. */
-  drawn = { currentPoints: 0, plannedPoints: 0, railsLines: 0, rebuilds: 0 };
+  drawn = { currentPoints: 0, plannedPoints: 0, railsLines: 0, rebuilds: 0,
+            skippedElsewhere: 0 };
 
   constructor(private readonly M: OfCoreModule) {
     this.group.name = 'mapOrbits';
@@ -101,13 +103,27 @@ export class OrbitLines {
       writePoints(this.planned, planned?.points ?? new Float64Array(0));
   }
 
-  /** One closed line per rails vessel, keyed on its frozen elements. `skipId`
-   *  is the promoted vessel, whose line is the flight line above. */
+  /**
+   * One closed line per rails vessel, keyed on its frozen elements. `skipId`
+   * is the promoted vessel, whose line is the flight line above.
+   *
+   * GP-650. `bodyId` IS THE FRAME THIS SCENE IS IN, and a record at any other
+   * body is skipped. `stateOf` answers in the record's OWN body-centred metres
+   * with no frame in the signature, so drawing a Forge conic here put a
+   * 1,000,000 m ellipse around a 200 km moon: the arithmetic was right and the
+   * frame was wrong, which is the quietest way for a picture to lie. Skipping
+   * also disposes the line, because `seen` no longer holds it.
+   */
   syncRails(list: readonly VesselRecord[], tick: number, skipId: number,
-            selectedId: number): void {
+            selectedId: number, M: OfCoreModule, bodyId: number): void {
     const seen = new Set<number>();
+    this.drawn.skippedElsewhere = 0;
     for (const rec of list) {
       if (rec.id === skipId || rec.where.kind !== 'conic') continue;
+      if (bodyIdOf(M, rec, bodyId) !== bodyId) {
+        this.drawn.skippedElsewhere += 1;
+        continue;
+      }
       const el = rec.where.el;
       const key = `${el.a}|${el.e}|${el.i}|${el.lan}|${el.argp}|${el.epoch}`;
       seen.add(rec.id);
@@ -139,7 +155,7 @@ export class OrbitLines {
   }
 
   dispose(): void {
-    this.syncRails([], 0, 0, 0);
+    this.syncRails([], 0, 0, 0, this.M, 0);
     for (const l of [this.current, this.planned]) {
       l.geometry.dispose();
       (l.material as THREE.Material).dispose();

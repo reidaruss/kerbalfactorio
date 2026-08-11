@@ -10,6 +10,21 @@ import { biomeColorArray } from '../render/materials/BiomePalette.js';
 import type { PlanetBody } from './PlanetBody.js';
 import type { SurfaceOracle } from './SurfaceOracle.js';
 
+/**
+ * GP-650. THE PROXY'S RADIUS, IN FAR-SCENE UNITS, as a function of the body.
+ *
+ * Exported because the 3D map draws the same sphere and must be able to ask
+ * "is the proxy I am borrowing the body I am of?" without transcribing this
+ * expression. It is one line and copying it would be harmless right up until
+ * somebody changed the relief margin on one side of the copy, at which point
+ * the map's globe and the world's planet would be two different planets and
+ * nothing would say so.
+ */
+export function proxyRadiusUnits(body: Pick<PlanetBody, 'radiusM' | 'maxReliefM'>)
+    : number {
+  return (body.radiusM - body.maxReliefM * 1.05) * FAR_SCALE;
+}
+
 export class PlanetProxy {
   readonly mesh: THREE.Mesh;
   /** Milliseconds spent sampling the oracle to colour the proxy. */
@@ -18,7 +33,7 @@ export class PlanetProxy {
 
   constructor(body: PlanetBody, oracle: SurfaceOracle, detail = 4) {
     const t0 = performance.now();
-    const rProxy = (body.radiusM - body.maxReliefM * 1.05) * FAR_SCALE;
+    const rProxy = proxyRadiusUnits(body);
     const geo = new THREE.IcosahedronGeometry(rProxy, detail);
     const pos = geo.getAttribute('position');
     const n = pos.count;

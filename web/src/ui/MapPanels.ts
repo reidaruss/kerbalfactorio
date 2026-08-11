@@ -140,6 +140,12 @@ function vesselsBlock(vessels: readonly MapVesselRow[]): string {
       + `<span class="vmode">${esc(v.mode)}</span></div>`);
     const fuel = Number.isFinite(v.fuelKg) ? `${Math.round(v.fuelKg)} kg` : 'live';
     out.push(row('AP / PE', `${km(v.apoapsisAltM)} / ${km(v.periapsisAltM)}`));
+    // GP-650. WHICH BODY THOSE TWO NUMBERS ARE ABOUT, said only when it is not
+    // the world being drawn. The map shows one globe, so a vessel at another
+    // body has no orbit line here and the row is the only thing that can say
+    // where it actually is; without this line a player on the moon reads an
+    // altitude and reasonably assumes it is an altitude above the moon.
+    if (v.bodyName !== '') out.push(row('orbits', esc(v.bodyName), 'warn'));
     out.push(row('fuel', fuel));
     if (v.mode === 'flying') {
       out.push('<button class="wide" disabled>you are flying it</button>');

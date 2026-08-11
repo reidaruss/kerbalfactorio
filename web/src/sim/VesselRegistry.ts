@@ -78,6 +78,26 @@ export interface VesselRecord {
   /** Stable for the life of the world, 1-based, NEVER reused. See `nextId`. */
   id: number;
   name: string;
+  /**
+   * GP-650. WHICH BODY THIS VESSEL IS AT, as /core's own `BodyParams::bodyId`.
+   *
+   * This field is the other half of a decision persistence had already made and
+   * this file had not answered for. `SaveWorlds.ts` classifies `vessels` as a
+   * GLOBAL save key on purpose ("the pack, the research, the milestones, the
+   * vessels and the time of day are ONE world's, not one body's"), so every
+   * record here crosses to the moon with the player. A record that crosses
+   * bodies and does not say which body it is at leaves every consumer to assume
+   * the observer's, and all of them did: the map drew Anchorage's 1000 km Forge
+   * conic around a 200 km moon and the panel reported its altitude as 800 km,
+   * because 1,000,000 - 200,000 is 800,000 and nothing had asked.
+   *
+   * A NUMBER RATHER THAN `world/PlanetBody`'s `BodyId` UNION, so this file keeps
+   * its one dependency direction (it reads /core and nothing else) and so a
+   * third body authored in `cubed_sphere.h` needs no edit here. It is /core's
+   * key either way; `world/VesselBody.ts` is what turns it into a radius, a mu
+   * and a name, and it is the only place that does.
+   */
+  bodyId: number;
   mode: VesselMode;
   /** The design AS ROLLED OUT, in `VesselDesign`'s own format. Snapshotted at
    *  roll-out because the bay's handle keeps being edited afterwards (PH-27). */

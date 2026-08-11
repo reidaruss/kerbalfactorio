@@ -357,7 +357,7 @@ export function findStation(): VesselRecord | null {
  * disagree the map draws one orbit and the propagator flies another.
  */
 export function mintStation(M: OfCoreModule, up: Vec3n, bodyRadiusM: number,
-                            muM3S2: number): VesselRecord | null {
+                            muM3S2: number, bodyId: number): VesselRecord | null {
   const r = bodyRadiusM + STATION_ALT_M;
   const u = new THREE.Vector3(up[0], up[1], up[2]).normalize();
   // The SAME east the walker uses (ViewSource.tangentFrame): Y x up. Sharing
@@ -374,6 +374,10 @@ export function mintStation(M: OfCoreModule, up: Vec3n, bodyRadiusM: number,
   return registry.adopt({
     id: registry.allocateId(),
     name: STATION_NAME,
+    // GP-650. The body whose radius and mu the conic above was fitted with, and
+    // therefore the body it orbits. Passed in rather than assumed 0: a station
+    // minted on a boot into `?body=cinder` really is Cinder's.
+    bodyId,
     mode: 'rails',
     design: emptyDesign(),
     fired: 0, fuel: [], handles: [],
@@ -554,14 +558,14 @@ export function stationBodyPosNow(): Vec3n | null {
  */
 export function installStation(M: OfCoreModule, bodies: StructureBodies,
                                up: Vec3n, bodyRadiusM: number, muM3S2: number,
-                               tick: number): StationReport | null {
+                               tick: number, bodyId: number): StationReport | null {
   if (installed !== null) {
     bodies.remove((s) => s === installed);
     installed = null;
   }
   if (learned.length === 0) return null;
   const existing = findStation();
-  const rec = existing ?? mintStation(M, up, bodyRadiusM, muM3S2);
+  const rec = existing ?? mintStation(M, up, bodyRadiusM, muM3S2, bodyId);
   if (rec === null) return null;
   // PH-357. THE STATION'S CLOCK STARTS HERE, and this one line is D-014's other
   // half: core-engine bound the collision solid, both gravity volumes and the

@@ -42,6 +42,10 @@ import * as store from './VabStore.js';
 export interface VabDeps {
   M: OfCoreModule;
   body: number;
+  /** GP-650. /core's `BodyParams::bodyId` beside the handle: no export reads
+   *  one back off the other (`PlanetBody`'s own note), and the destination list
+   *  needs it to tell a vessel at THIS body from one at another. */
+  bodyId: number;
   host: HTMLElement;
   canvas: HTMLCanvasElement;
   scene: THREE.Scene;
@@ -141,7 +145,7 @@ export class Vab {
     // and keeps its own state, because a chosen destination is not a property
     // of the design and must survive every rebuild of it.
     this.dest = new VabDest({
-      M: d.M, body: d.body,
+      M: d.M, body: d.body, bodyId: d.bodyId,
       designHandle: () => this.design.handle,
       parts: () => this.design.parts,
       catalogueIds: () => this.catalogue.map((p) => p.id),
