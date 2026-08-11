@@ -58,6 +58,16 @@
 // its id keeps the `visit:` prefix so GP-168's arrival-closes-the-menu applies
 // with nothing added to MenuBoot.
 //
+// ---------------------------------------------------------------------------
+// CE-41. AND THE STATION ROW NOW HANDS THE PLAYER TO THE STATION'S FRAME.
+//
+// The door above was `Controller.standAt`, which zeroes the ABSOLUTE velocity.
+// On a station that is actually travelling that is not an arrival, it is a
+// player put on the deck and immediately left behind at 31.32 m per tick, and
+// it is why `of.carrier('census').ride` read `boards: 0` on a world with a
+// person standing inside Anchorage. `rideStation` is the same arrival plus the
+// one missing number; see `StationMount.seatOnStationDeck`.
+//
 // THE RECEIPT DOES NOT CLAIM THE PLAYER IS GROUNDED, deliberately.
 // `Controller.standAt` writes the feet and leaves `grounded` FALSE, because
 // "whether there is a floor here is exactly what the caller is asking, so
@@ -73,6 +83,7 @@ import {
 } from '../game/SpaceStation.js';
 import type { CheatRow } from '../ui/PauseMenu.js';
 import type { FlightMode } from './FlightMode.js';
+import type { StationSeat } from './StationMount.js';
 
 export interface VisitSite {
   id: string;
@@ -143,6 +154,21 @@ export const STATION_ROW_ID = 'visit:station';
 export interface VisitPorts {
   teleport: (latDeg: number, lonDeg: number, altM: number) => void;
   standAt: (x: number, y: number, z: number) => boolean;
+  /**
+   * CE-41. THE THIRD DOOR, and it is the one this row should always have used:
+   * arrive on the station's deck AND ON ITS FRAME, at rest in it.
+   *
+   * `standAt` above zeroes the ABSOLUTE velocity, so on a moving station it
+   * seats a player who is instantly 31.32 m behind the deck per tick. That is
+   * the defect todo #1 names. This port boards the frame the station's geometry
+   * is currently mounted on and seats the rider at rest IN it; see
+   * `StationMount.seatOnStationDeck` for why the destination is the live solid.
+   *
+   * OPTIONAL, and null-returning, on purpose: a caller with no carrier services
+   * (a unit test, a future headless host) keeps the `standAt` behaviour that
+   * shipped, and the press below falls back to it rather than refusing.
+   */
+  rideStation?: () => StationSeat | null;
 }
 
 /** Just enough of `PlanetBody` to say what the gravity is up there. Structural
@@ -308,6 +334,25 @@ function pressStation(f: FlightMode | null, ports: VisitPorts): VisitOutcome {
   // kept because the compiler cannot know that and a thrown null here would be
   // a crash in a menu press.
   if (st === null) return { done: false, message: 'refused: no station' };
+  // CE-41. THE CARRIER DOOR FIRST, the bare teleport as the fallback.
+  //
+  // Both land the feet on the same face; they differ in one number, the
+  // velocity, and that number is the whole feature. `rideStation` returns null
+  // when there is no mount, no walker or no ride, and then this is exactly the
+  // press that shipped before, which is why the fallback is a fallback and not
+  // a refusal.
+  const seat = ports.rideStation?.() ?? null;
+  if (seat !== null) {
+    return {
+      done: true,
+      message: `standing in the hub of ${STATION_NAME}, `
+        + `${(st.altM / 1000).toFixed(0)} km up, riding it at `
+        + `${seat.speedMS.toFixed(0)} m/s`,
+      detail: { site: 'station', name: STATION_NAME, altM: st.altM,
+        deckR: st.deckR, feet: seat.feet, proxies: st.proxies,
+        carrier: seat.carrier, velMS: seat.speedMS, tick: seat.tick },
+    };
+  }
   const [x, y, z] = st.pos;
   if (!ports.standAt(x, y, z)) {
     return { done: false, message: 'refused: there is no walker to move' };
@@ -317,6 +362,6 @@ function pressStation(f: FlightMode | null, ports: VisitPorts): VisitOutcome {
     message: `standing in the hub of ${STATION_NAME}, `
       + `${(st.altM / 1000).toFixed(0)} km up`,
     detail: { site: 'station', name: STATION_NAME, altM: st.altM,
-      deckR: st.deckR, feet: [x, y, z], proxies: st.proxies },
+      deckR: st.deckR, feet: [x, y, z], proxies: st.proxies, carrier: null },
   };
 }

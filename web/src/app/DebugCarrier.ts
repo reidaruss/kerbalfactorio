@@ -1,13 +1,13 @@
 // `__of.carrier`: the driven surface for the carrier frame (CE-37).
 //
-// DEBUG-ONLY, and the reason is the same shape as `__of.reboot`'s: the frame
-// term is correct and the three features that need it are not wired to it yet.
-// Making Anchorage genuinely travel is a ruling with rendering, gameplay and
-// physics in it (the interior's 57 collision proxies would have to be re-posed
-// per tick, and the floating origin would rebase every 2.1 s at Anchorage's
-// measured 1879.26 m/s), and none of that is this file's to decide. What IS
-// this file's is that the term exists, is general, and is MEASURED rather than
-// argued about.
+// NO LONGER THE ONLY WAY IN (CE-39 to CE-41, and the paragraph that stood here
+// is retracted rather than deleted). It used to say the frame term was correct
+// and nothing was wired to it; `Loop.fixedTick` now decides membership every
+// tick and the `visit:station` row seats the player on the station's frame. What
+// remains debug-only is the INSTRUMENT half: the four fixture frames, `remount`,
+// `unmount`, and `standLocal`. Anchorage's own conic is still frozen
+// (`stampedTick = -1`), so a moving fixture is still the only way to measure a
+// moving station, and that is still not this file's ruling to take.
 //
 // HOUSE RULE, inherited from DebugFlight and DebugVab: every read is derived at
 // the tick it is asked for and nothing here caches a pose. A cached pose would
@@ -25,7 +25,10 @@ import { EphemerisCarrier, OrbitCarrier, RotorCarrier } from '../world/CarrierSo
 import { newPose, type FramePose, type V3 } from '../world/FramePose.js';
 import { findStation, lastStationSolid } from '../game/SpaceStation.js';
 import { lastStationVolumes } from '../game/StationGravity.js';
-import { mountStationOn } from './StationMount.js';
+import { mountStationOn, seatOnStationDeck } from './StationMount.js';
+import {
+  BOARD_MARGIN_M, RELEASE_HYSTERESIS_M,
+} from '../world/CarrierBoarding.js';
 import type { EphemerisModule } from '../render/CelestialEphemeris.js';
 import type { Services } from './Services.js';
 import type { Loop } from './Loop.js';
@@ -48,16 +51,6 @@ function str(o: unknown, k: string, fallback: string): string {
 
 export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
   /**
-   * WHAT A FRAME IS DOING ON ITS OWN, with no rider anywhere near it.
-   *
-   * THE FIXTURE ASSERTION, and it is the first thing a probe must read. GP-142:
-   * a carrier that is not moving is the identity element of the operation under
-   * test, and `mintStation` ships Anchorage with `stampedTick = -1`, which makes
-   * its conic answer the SAME position for every tick by design. A probe that
-   * boards it and measures zero drift has measured nothing at all. So the
-   * displacement per tick is published, in metres, before anything is boarded.
-   */
-  /**
    * The angle between two poses' rotations, in radians.
    *
    * `2*acos(|dot|)` and NOT `2*acos(dot)`: q and -q are the same rotation, so
@@ -70,6 +63,10 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
     return 2 * Math.acos(Math.min(1, Math.abs(dot)));
   };
 
+  /** WHAT A FRAME IS DOING ON ITS OWN, with no rider near it: THE FIXTURE
+   *  ASSERTION, and the first thing a probe must read. A carrier that is not
+   *  moving is the identity element of everything below (GP-142), and Anchorage
+   *  ships exactly that way, so `perTickM` is published before anything boards. */
   const survey = (f: CarrierFrame, ticks: number): Record<string, unknown> => {
     const t0 = loop.tickIndex;
     const a = newPose(); const b = newPose(); const c = newPose();
@@ -94,17 +91,52 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
     };
   };
 
+  /**
+   * CE-42. THE MEMBERSHIP PREDICATE'S OWN READING, published beside the ride.
+   *
+   * `boards: 1` says a decision fired at some point. This says what the decision
+   * WOULD say right now, continuously, which is the only way a probe can tell
+   * "declined, the player is 40 m out" from "the decision is not running at
+   * all". `depthM` is signed, negative inside, so a walk-off can be watched
+   * crossing the two radii instead of only seen afterwards. Derived per read and
+   * cached nowhere, like every other op here.
+   */
+  const aboard = (): Record<string, unknown> | null => {
+    const p = s.player;
+    if (p === null) return null;
+    const f = p.body.feet;
+    const on = s.mounts.mountOf(s.ride?.carrier ?? null);
+    const m = on ?? s.mounts.mountCarrying(lastStationSolid());
+    if (m === null) return { mount: null, ridingMounted: false };
+    return {
+      mount: m.frame.id,
+      // True when the frame the rider holds is the one this reading is of.
+      ridingMounted: on !== null,
+      depthM: m.depthAt(f.x, f.y, f.z),
+      insideBoard: m.containsPoint(f.x, f.y, f.z, BOARD_MARGIN_M),
+      insideRelease: m.containsPoint(f.x, f.y, f.z,
+        BOARD_MARGIN_M + RELEASE_HYSTERESIS_M),
+    };
+  };
+
   const census = (): Record<string, unknown> => {
     const t = loop.tickIndex;
     return {
       tick: t, fixedDt: loop.fixedDt,
       registry: s.carriers.census(),
       ride: s.ride === null ? null : s.ride.report(t),
+      // CE-42. The decision's own counters beside the ride's, because they
+      // differ exactly by the boards a caller performed by hand.
+      mounts: s.mounts.census(),
+      aboard: aboard(),
       /** Body-frame feet, so a probe can difference it itself. */
       feet: s.player === null ? null
         : [s.player.body.feet.x, s.player.body.feet.y, s.player.body.feet.z],
       vel: s.player === null ? null
         : [s.player.body.vel.x, s.player.body.vel.y, s.player.body.vel.z],
+      /** CE-43. A boarded rider at 1879.26 m/s crosses the 4 km rebase
+       *  threshold every 128 ticks, forever. This is the count. */
+      rebases: s.origin.rebases,
     };
   };
 
@@ -218,16 +250,12 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
          * CE-86. PUT THE STATION ON A DIFFERENT FRAME, keeping it exactly where
          * it is at this tick.
          *
-         * THE ONLY REASON THIS EXISTS: Anchorage's record ships frozen
-         * (`stampedTick = -1`), so the shipping mount writes identical numbers
-         * forever and IS the identity element of the operation it performs. A
-         * probe that drove only that would be GP-142 exactly, and the whole
-         * point of the mount is what happens when the frame MOVES. Re-mounting
-         * onto a `rotor` or `linear` instrument frame is the moving fixture,
-         * through `mountStationOn`, which is the SAME function boot calls.
-         *
-         * It is debug-only on the same terms as `board` and `reboot`: unfreezing
-         * the real conic is physics' half of D-014 and is not this file's to do.
+         * THE ONLY REASON THIS EXISTS: Anchorage's record ships frozen, so the
+         * shipping mount writes identical numbers forever and IS the identity
+         * element of the operation it performs (GP-142). Re-mounting onto a
+         * `rotor` or `linear` instrument frame is the moving fixture, through
+         * `mountStationOn`, the SAME function boot calls. Unfreezing the real
+         * conic is physics' half of D-014 and is not this file's to do.
          */
         case 'remount': {
           const f = s.carriers.get(str(a, 'id', ''));
@@ -311,6 +339,20 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
                    speedMS: Math.hypot(vel.x, vel.y, vel.z), tick };
         }
 
+        /** CE-41. THE SHIPPED ARRIVAL, driven directly: the SAME
+         *  `seatOnStationDeck` the `visit:station` row now presses, so a probe
+         *  can measure it without the pause menu and still be measuring what
+         *  ships (`remount`'s argument about `mountStationOn`, again). */
+        case 'seat': {
+          const r = seatOnStationDeck(s.mounts, s.ride, s.player,
+            tick, loop.fixedDt);
+          if (r === null) {
+            return { error: 'nothing to seat on: no walker, no ride, or the '
+              + 'station solid is on no mount' };
+          }
+          return { ...r, ride: s.ride?.report(tick) ?? null };
+        }
+
         /**
          * The rider's position in a carrier's local frame at a tick.
          *
@@ -346,7 +388,7 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
 
         default:
           return { error: `unknown op '${op}'. ops: census register survey remove `
-            + `board release local standLocal mounts remount unmount` };
+            + `board release local standLocal seat mounts remount unmount` };
       }
     },
   };

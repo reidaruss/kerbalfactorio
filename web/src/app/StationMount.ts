@@ -47,7 +47,9 @@
 // concept with two consumers.
 import type { CarrierMounts, CarrierMount } from '../world/CarrierGeometry.js';
 import { OrbitCarrier } from '../world/CarrierSources.js';
-import { composePose, invertPose, newPose } from '../world/FramePose.js';
+import {
+  applyInv, composePose, invertPose, newPose, type V3,
+} from '../world/FramePose.js';
 import * as THREE from 'three';
 import { findStation, lastStationSolid } from '../game/SpaceStation.js';
 import { lastStationVolumes } from '../game/StationGravity.js';
@@ -120,7 +122,14 @@ export function mountStationOn(mounts: CarrierMounts, frame: CarrierFrame,
   const m = mounts.mount(frame);
   m.attach(solid, 'station:solid', local);
   for (const v of lastStationVolumes()) {
-    m.attach(v, `station:gravity:${v.mode}`, local);
+    // CE-39. POSED BY THE FRAME, BUT NOT PART OF WHERE THE STATION IS.
+    // `bounds: false` keeps these two out of `containsPoint`. The freefall
+    // volume's radius is 207.85 m against the interior's 28.64 m, so including
+    // it would board a player 179 m outside anything they could stand on, and it
+    // would do so by reading the GRAVITY MODEL: resize the volume for a gravity
+    // reason and who is riding the station changes with it. Admin ruled against
+    // that coupling and this is where the ruling lives.
+    m.attach(v, `station:gravity:${v.mode}`, local, { bounds: false });
   }
   if (view !== null) {
     // The drawn hull, through its OWN published setter. `StationView.place`
@@ -134,4 +143,127 @@ export function mountStationOn(mounts: CarrierMounts, frame: CarrierFrame,
     }, 'station:view', local);
   }
   return m;
+}
+
+// ===========================================================================
+// CE-41. ARRIVING ON A MOVING DECK.
+// ===========================================================================
+//
+// `Controller.standAt` puts the feet at a body-frame point and ZEROES THE
+// VELOCITY, which on a moving carrier is not "at rest on the station", it is
+// "at rest in the body frame", i.e. a player left behind at the station's full
+// 1879.26 m/s. That is the defect, stated by `CarrierRide.restAt` in its own
+// words, and the two readings differ ONLY in this velocity.
+//
+// The fix is the sequence `__of.carrier('standLocal')` has been measuring since
+// CE-37, promoted out of the debug surface into the shipped press. It is
+// promoted rather than copied: a second spelling of it would be the two-
+// authority shape this project keeps paying for, and the debug op now shares
+// this function.
+//
+// NOTHING BELOW TOUCHES `Controller` OR `KinematicBody`. CE-33's boundary is
+// that `step()` never learns frames exist, and it still does not: `standAt` is
+// called exactly as it always was, and the velocity it zeroed is overwritten
+// afterwards through the body's own published field.
+//
+// DEFERRED, NAMED HERE BECAUSE THIS IS THE SEAM THEY LAND ON:
+//   R98  save/load while aboard. `VesselSave` drops `stampedTick` by design and
+//        `stashVessels` restores it as -1, so a save taken aboard a moving
+//        station reloads onto a frozen one and the rider is silently seated on
+//        a carrier that no longer moves. Persistence's choke point, not this
+//        file's, and not fixed here.
+//   R93  dock-then-EVA. There is no `of_dk_*` symbol in the wasm at all, so
+//        there is no path by which a vessel arrives at Anchorage and its
+//        occupant steps out onto this deck. Physics owns it.
+//   R97  time warp while riding. Verified unreachable in this build rather than
+//        guarded: warp lives on `FlightControls` -> `FlightSession.setWarp`,
+//        which only exists while the active view source is a `VesselObserver`,
+//        and `DayCycle` states the rule ("warp is flight-local by design"). A
+//        boarded rider is a walker and has no warp key and no warp cheat. The
+//        day R93 opens the door, the refusal belongs here.
+//   R17  `mountStation` is called OUTSIDE `buildBodyScope` (Boot.ts), so
+//        `__of.reboot()` runs `mounts.clear()` and nothing re-mounts: after a
+//        reboot the station has no frame, `decideAt` finds nothing to board and
+//        a player standing in the hub is silently never carried again. Named in
+//        `probes/stationboard.js` too. It is a Boot ordering fix and Boot is not
+//        this lane's file.
+
+/** The rider's seat, structurally: the two `CarrierRide` verbs this needs. */
+export interface DeckSeat {
+  readonly carrier: CarrierFrame | null;
+  board(f: CarrierFrame): void;
+  restAt(tick: number, dt: number, x: number, y: number, z: number,
+         outPos: V3, outVel: V3): boolean;
+}
+
+/** The walker, structurally: PH-90's door plus the body-frame velocity field. */
+export interface DeckWalker {
+  standAt(x: number, y: number, z: number): void;
+  readonly body: { readonly vel: V3 };
+}
+
+export interface StationSeat {
+  carrier: string;
+  /** Body-frame feet the player was actually put at. */
+  feet: [number, number, number];
+  /** The station's own velocity at that point, m/s, body frame. */
+  vel: [number, number, number];
+  speedMS: number;
+  tick: number;
+}
+
+/**
+ * Put the walker on the station's deck AND ON ITS FRAME, at rest in it.
+ *
+ * Returns null when there is nothing to board (no solid, no mount, no walker, no
+ * ride), and the CALLER then falls back to the plain `standAt` that shipped
+ * before this existed. A refusal here must never be a crash in a menu press.
+ *
+ * THE DESTINATION IS THE LIVE DECK AND NOT THE INSTALL RECORD. GP-234 argues
+ * that the hub centre is `lastStationInstall().pos` and never a re-derivation,
+ * and that is still the authority: the solid's own `pos` IS that authored point
+ * carried by the frame, written by the mount every tick, and it is the object
+ * `StructureBodies` queries. Reading the tick-0 value instead would put the
+ * player where the station was at boot, which on a moving frame is the arrival
+ * version of the defect this whole file fixes. On the station as it ships
+ * (frozen conic) the two are bitwise identical, and `probes/stationboard.js`
+ * asserts exactly that as its positive control.
+ *
+ * ONE `applyInv`, ONE `poseAt`. The destination is converted parent -> local
+ * once and handed to `restAt`, which is the same interval the ride's own tick
+ * uses, so seating and then ticking produces zero local drift by construction.
+ */
+export function seatOnStationDeck(
+  mounts: CarrierMounts, seat: DeckSeat | null, walker: DeckWalker | null,
+  tick: number, dt: number,
+): StationSeat | null {
+  if (seat === null || walker === null) return null;
+  const solid = lastStationSolid();
+  const mount = mounts.mountCarrying(solid);
+  if (solid === null || mount === null) return null;
+
+  const frame = mount.frame;
+  const dest: V3 = { x: 0, y: 0, z: 0 };
+  applyInv(frame.poseAt(tick, newPose()),
+    solid.pos.x, solid.pos.y, solid.pos.z, dest);
+
+  seat.board(frame);
+  const pos: V3 = { x: 0, y: 0, z: 0 };
+  const vel: V3 = { x: 0, y: 0, z: 0 };
+  if (!seat.restAt(tick, dt, dest.x, dest.y, dest.z, pos, vel)) return null;
+  // `standAt` FIRST: it re-seats the render interpolation's `prevFeet`, which is
+  // the one correct way in (PH-31 cost a whole pass on a 400 km streak). Then
+  // the velocity it zeroed is put back. Writing `feet` here instead would skip
+  // that re-seat, and writing the velocity first would have it zeroed again.
+  walker.standAt(pos.x, pos.y, pos.z);
+  walker.body.vel.x = vel.x;
+  walker.body.vel.y = vel.y;
+  walker.body.vel.z = vel.z;
+  return {
+    carrier: frame.id,
+    feet: [pos.x, pos.y, pos.z],
+    vel: [vel.x, vel.y, vel.z],
+    speedMS: Math.hypot(vel.x, vel.y, vel.z),
+    tick,
+  };
 }
