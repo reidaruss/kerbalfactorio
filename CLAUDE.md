@@ -22,6 +22,15 @@ This project is **managed by an agentic development architecture**. Read this fi
 > blanket `*.png filter=lfs` rule is retired. See §1 of the state-of-the-union.
 >
 > `node_modules` was not copied. Run `npm ci` in `web/` once.
+>
+> **DEVELOPMENT RUNS ON REID'S PROXMOX CLUSTER, decided 2026-08-03.** Claude Code,
+> every lane, every build, every headless probe and the served build all live on a
+> VM. **Reid's browser connects to it over the LAN, so the game renders on his
+> GPU** while his CPU stays free. No GPU is needed on the VM: the probe harness
+> already uses software rasterisation and Blender already renders on CPU. **The
+> served build must bind to the LAN, not `127.0.0.1`** as every previous freeze
+> did. See §1 of the state-of-the-union for sizing and for what this changes about
+> the "Reid is playing" rule.
 
 ## Start here (read in this order)
 1. **[docs/STATE_OF_THE_UNION.md](docs/STATE_OF_THE_UNION.md) — READ THIS FIRST.** Where everything is, what works, what is blocked and exactly how, the todo list, the lessons from running six parallel agent lanes, and **the orchestration architecture this project now follows**: the top-level session does no implementation, Sonnet lanes take work with a stated cause, Opus lanes take work whose first job is to diagnose.

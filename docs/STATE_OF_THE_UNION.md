@@ -60,6 +60,53 @@ npx vite preview --port 4200 --strictPort --host 127.0.0.1
 `emsdk` is expected at `C:\Users\reida\emsdk`. `node_modules` was deliberately
 not copied in the move; `npm ci` rebuilds it.
 
+### Where development runs: Reid's Proxmox cluster, decided 2026-08-03
+
+**Development moves off Reid's desktop and onto a Proxmox VM. The game keeps
+rendering on his machine.**
+
+**No GPU is required and that is a measured fact, not an assumption.** The
+headless browser harness already runs `--enable-unsafe-swiftshader`, which is
+software rasterisation on the CPU, and every Blender render this project has
+produced was Cycles on CPU. A rendering lane recorded that **frame cost through
+SwiftShader is not measurable**, because the current build's own run-to-run
+spread is wider than the difference between builds. So a GPU-less node costs
+nothing that is currently being measured.
+
+**The split, and it is the whole point:**
+
+- **On the VM:** Claude Code itself, every lane, `emcc`, `g++`, `ctest`, Blender,
+  every headless Chrome probe, and the served build.
+- **On Reid's machine:** his browser, pointed at the VM over the LAN. **The game
+  renders on his 4060 Ti.** His CPU stays free and his disk is not the constraint.
+
+**Sizing.** The workload is embarrassingly parallel: up to four lanes, each
+capable of running a headless Chrome with the frame limiter disabled, plus Cycles
+renders. Give it **as many cores as the cluster can spare, 32 GB RAM or more, and
+300 GB of disk.** The disk matters: this project hit **64 MB free** and truncated
+a source file to zero bytes mid-write, and lanes create isolated `git archive`
+scratch trees constantly. If the node has more cores than the desktop, Blender
+renders get *faster*.
+
+**One concrete change the next session must make.** Every freeze in this
+project's history served with `--host 127.0.0.1`, which is loopback only and
+unreachable from Reid's machine once the server lives on a VM. **The Release lane
+must bind to the LAN instead** and give Reid the VM's address.
+
+**What this changes about the rules.** The "stop everything while Reid is
+playing" rule existed because lanes and his game competed for one CPU: a headless
+browser at unlimited framerate pegged every core and his mouse stopped behaving,
+and separately a lane ran `taskkill /F /IM chrome.exe` and closed his browser.
+**Both failure modes become impossible.** What survives is narrower and still
+real: **do not rebuild, restart or re-freeze the served build while he is
+playing**, because that is now the thing he is connected to. Lanes may build,
+test and render freely.
+
+**What this does not change.** The harness still cannot measure frame cost, so
+**Reid actually playing on real hardware remains the only genuine performance
+signal this project has.** Treat a report of fps from a probe as a liveness check
+and nothing more.
+
 ---
 
 ## 2. What the game is
@@ -331,8 +378,11 @@ description, it is Sonnet.
 - **Declare file ownership in the brief.** Shared wiring files (`Boot.ts`,
   `Services.ts`, `run.mjs`, `package.json`) have **one named writer** per session
   and everyone else publishes a request.
-- **Zero lanes while Reid is playing.** Not reduced. Zero browser, zero renders,
-  zero builds. He will say when.
+- **While Reid is playing, do not touch the served build.** No rebuild, no
+  restart, no re-freeze of whatever is on 4200, because that is the thing he is
+  connected to. **Lanes may otherwise build, test and render freely**, which is
+  new: the old rule was "stop everything", and it existed only because lanes and
+  his game shared one CPU. On the Proxmox VM they do not. See §1.
 - **Wind down, never kill.** A stopped lane commits or explicitly names what is
   unlanded.
 
