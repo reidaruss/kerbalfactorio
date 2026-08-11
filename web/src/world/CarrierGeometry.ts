@@ -294,8 +294,26 @@ export class CarrierMounts {
     return m;
   }
 
+  /**
+   * CE-47. The tick this set was last driven at, NaN before the first.
+   *
+   * A REPORT FIELD, and the loop is still the one authority: this is written by
+   * `syncAt` and read by nobody who could act on a stale one. It exists because
+   * `Loop` is constructed in `main.ts`, AFTER `boot()` resolves, so the
+   * composition root has no `tickIndex` to hand a rebuild hook, and a rebuild
+   * that re-poses the station at the wrong tick puts the deck wherever the conic
+   * was at that other tick. `syncAt` runs unconditionally every fixed tick, even
+   * with an empty list, so this is live whether or not anything is mounted,
+   * which is exactly the state a rebuild reads it in.
+   *
+   * `clear()` deliberately does NOT reset it: it is a fact about the loop, not
+   * about the contents, and the same reasoning keeps `added` and `removed`.
+   */
+  lastTick = Number.NaN;
+
   /** One tick for every mount. Called from `Loop.fixedTick` and nowhere else. */
   syncAt(tick: number): void {
+    this.lastTick = tick;
     for (const m of this.list) m.syncAt(tick);
   }
 
@@ -334,11 +352,12 @@ export class CarrierMounts {
   }
 
   census(): {
-    size: number; added: number; removed: number;
+    size: number; added: number; removed: number; lastTick: number;
     boarding: ReturnType<BoardingRule['census']>;
     mounts: ReturnType<CarrierMount['report']>[];
   } {
     return { size: this.list.length, added: this.added, removed: this.removed,
+      lastTick: this.lastTick,
       boarding: this.boarding.census(),
       mounts: this.list.map((m) => m.report()) };
   }
