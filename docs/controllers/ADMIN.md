@@ -121,7 +121,16 @@ Rulings this session: **D-016** (albedo fix approved), **D-017** (orchestrate on
 
 Scope reports banked (read-only lanes, done): probe-sweep plan (4 shards, gate design per BT-41), carrier-rider plan (mechanism + merge order settled), albedo plan (producer-side fix in texgen.py, manifest v2, only 7 families affected; terrain/sky immune).
 
-**Waiting on Reid (morning):** register the VM's deploy key so lanes can push (until then Admin relays commits over SSH): `gh repo deploy-key add --allow-write -R reidaruss/kerbalfactorio <keyfile>`; key is on the VM at `~/.ssh/id_ed25519.pub` (comment `claude-dev-vm-orbitalfoundry`).
+**Deploy key:** registered by Reid 2026-08-11 (repo-scoped, `~/.ssh/of_deploy_key`); lanes push their own branches directly.
+
+### 2026-08-12 midday state (post desktop-reboot recovery)
+
+Everything in the table above is finished and merged except as noted here. Merged into main through this session: albedo (06b6685), SwiftShader/LFS (ae8ef10), ruin mesh (0765a61), carrier boarding + ph357 (cfeffad), R17 reboot re-mount (f0a7da0), markers/milestones (5c2c6b7), D-019 docs (2d90513), map-body identity (2cace22), stones + station arrival (ed24910), Release ABI-23 (205cef6), frame-render stutter fix (d54b003), **research station D-019 (623c81e, verified MERGE)**.
+
+**In flight:**
+- Fresh-context verifier (fable) over garrison (`lane/enemy-garrison` 068cb38) and POI bridge (`lane/poi-bridge` fed5729, C0 numbering alarm WG-200..212 vs briefed WG-151..165). Merge order: garrison then POI, then Release settled ABI-24 rebuild + serve refresh.
+
+**Sweep + gate (BT-80..83, `lane/sweep-gate` c72cad8, report banked):** gate mechanism DONE and proven both ways (6/6 negative controls) but **UNFLIPPED**. Census failed: 287/291 probes returned no verdict, 191 SIGKILLed at 240 s because the box was never quiet (load ~30 throughout). Real findings: `maneuver.js` the sole RED (unverified, seeded in known-red.json), `shadowk.js` cannot parse (genuine defect), `holes.js` asserts nothing (BT-40 class). **Flip prerequisites:** (1) serial quiet-box census, ceiling 2 concurrent probes, ~10 h for 200 probes, needs sole ownership of the box; (2) maneuver.js fresh-context verification; (3) owners for the three findings; (4) a ruling on the SwiftShader-vs-D3D gap: `apexec.js`/`post.js` complete on Reid's Windows D3D but exceed 600 s under SwiftShader, so the VM may be unable to host the gate for the full suite regardless of allowlist.
 
 ### Phase R consolidation (the prior live work; plan of record [RETHINK.md](../review-2026-06-16/RETHINK.md) §4)
 
