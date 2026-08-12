@@ -21,7 +21,7 @@
     "check:boot": "node tools/smoke/boot.mjs",
     "check:pose": "node tools/smoke/posecheck.mjs",
     "smoke": "node tools/smoke/run.mjs",
-    "check": "npm run check:roles && npm run check:proxies && npm run typecheck && npm run check:pose && npm run check:limits && npm run check:boot",
+    "check": "node scripts/check-all.mjs",
     "sync-assets": "node scripts/sync-assets.mjs"
   },
   "dependencies": {

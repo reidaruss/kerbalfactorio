@@ -5,7 +5,12 @@
 //
 // Each row carries its own DW-20 validity flag; an invalid row prints INVALID
 // instead of numbers, because a probe that did not drive the sim has none.
-import { execFileSync } from 'node:child_process';
+//
+// BT-8x blast radius (BT-41): run.mjs can now exit 3 (clean run, probe
+// reported failure) once GATE=1/--gate is set. `spawnSync`, not
+// `execFileSync`, because execFileSync THROWS on any non-zero status, and
+// exit 3 still carries the JSON report on stdout this sweep needs to read.
+import { spawnSync } from 'node:child_process';
 
 const configs = process.argv.slice(2);
 if (configs.length === 0) { console.error('usage: lodsweep.mjs <split>/<maxdepth> ...'); process.exit(2); }
@@ -17,8 +22,11 @@ for (const c of configs) {
   const args = ['tools/smoke/run.mjs', '--scenario=walk', `--split=${split}`, `--maxdepth=${md}`,
     '--evalfile=tools/smoke/probes/lodfeet.js', `--evalargs={"secs":${secs}}`];
   process.stderr.write(`sweep ${c} ... `);
-  const raw = execFileSync('node', args, { encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] });
-  const r = JSON.parse(raw).eval;
+  const res = spawnSync('node', args, { encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] });
+  if (res.status !== 0 && res.status !== 3) {
+    throw new Error(`lodsweep: run.mjs exited ${res.status} for ${c}, the run itself broke`);
+  }
+  const r = JSON.parse(res.stdout).eval;
   process.stderr.write(r.valid ? 'ok\n' : 'INVALID\n');
   rows.push({ split, md, r });
 }

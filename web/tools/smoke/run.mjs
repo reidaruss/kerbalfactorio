@@ -11,13 +11,34 @@
 //
 // Uses the locally installed Chrome via playwright-core (no browser download).
 // The dev server must already be listening; start it with `npm run dev`.
-
+//
+// EXIT CODES (BT-8x, the gate proposed at BT-41): 0 clean and green; 1 the RUN
+// broke (console error, pageerror, failed request, unanswered context loss,
+// runner exception); 2 caller error (bad flags, no Chrome); 3 the run was
+// CLEAN and the PROBE reported failure (`fails[]` non-empty, or `valid`/`ok`/
+// `pass` false — see `verdictOf` in probeall.mjs, imported rather than
+// reimplemented so the two tools cannot drift on what a probe's report means).
+// Exit 3 keeps "the game is wrong" and "the instrument is wrong" as different
+// signals with different owners, per BT-41 point 1.
+//
+// THE GATE IS OFF BY DEFAULT. Exit 3 only fires when the gate is ACTIVE, which
+// needs an explicit `--gate` flag or `GATE=1` in the environment. This is
+// deliberate and temporary: turning exit 3 on unconditionally today would take
+// every red probe in the project's ~284-probe set red on the SAME commit that
+// authors the check, before anyone has looked at which reds are known,
+// expected, and owned. The sweep (BT-8x) seeds `known-red.json` from the
+// current state of the tree; only after that seed is reviewed and owners are
+// assigned does flipping the default become a decision to make, not a side
+// effect of landing this file. See `loadKnownRed`/`judgeAgainstAllowlist`
+// below for the two-sided allowlist rule.
 import { chromium } from 'playwright-core';
 import { mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve, isAbsolute, relative } from 'node:path';
+import { dirname, resolve, isAbsolute, relative, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verdictOf } from './probeall.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const smokeDir = dirname(fileURLToPath(import.meta.url));
 
 const args = new Map();
 for (const a of process.argv.slice(2)) {
@@ -341,7 +362,8 @@ params.set('debug', args.get('debug') ?? '1');
 // hard exit before the browser is even launched. `--allow-unknown-flags` is the
 // door for a caller that means it, and it has to be typed, which is the point.
 const RUNNER_OWN = new Set(['url', 'out', 'width', 'height', 'settle', 'wait',
-  'evalfile', 'evalargs', 'eval', 'debug', 'allow-unknown-flags']);
+  'evalfile', 'evalargs', 'eval', 'debug', 'allow-unknown-flags',
+  'gate', 'known-red']);
 const dropped = [...args.keys()].filter((k) => !RUNNER_OWN.has(k) && !params.has(k));
 if (dropped.length > 0 && !args.has('allow-unknown-flags')) {
   const known = [...PAGE_PARAMS, ...RUNNER_OWN];
@@ -361,6 +383,55 @@ if (dropped.length > 0 && !args.has('allow-unknown-flags')) {
 }
 
 const url = `${base}?${params.toString()}`;
+
+// ---- THE GATE (BT-8x) -------------------------------------------------------
+// See the header comment for the exit-code table and why this defaults OFF.
+const gateActive = args.has('gate') || process.env.GATE === '1';
+const probeName = evalFile ? basename(evalFile) : null;
+
+// `known-red.json` is TWO-SIDED (BT-41 point 4): it can only suppress a red
+// that matches the recorded shape exactly, and it fails a listed probe that
+// comes back GREEN just as loudly as one that comes back redder than
+// recorded. An allowlist that can only suppress is a list nobody ever removes
+// an entry from; this one is a claim that gets checked on every run.
+function loadKnownRed() {
+  const p = args.get('known-red') ?? join(smokeDir, 'known-red.json');
+  if (!existsSync(p)) return new Map();
+  const doc = JSON.parse(readFileSync(p, 'utf8'));
+  const m = new Map();
+  for (const e of doc.entries ?? []) m.set(e.probe, e);
+  return m;
+}
+
+// Returns { exitCode, lines[] } given a RED verdict and the (possibly absent)
+// known-red entry for this probe. Only called when gateActive && v.cls==='RED'.
+function judgeAgainstAllowlist(v, entry) {
+  const n = v.fails.length;
+  if (!entry) {
+    return { exitCode: 3, lines: [`smoke: PROBE FAILED (${n}), not on known-red.json:`, ...v.fails.map((f) => `  ${f}`)] };
+  }
+  if (n === entry.count) {
+    return {
+      exitCode: 0,
+      lines: [`smoke: KNOWN RED (${n} of ${entry.count}, since ${entry.base}, owner ${entry.owner}): ${entry.reason}`],
+    };
+  }
+  if (n === 0) {
+    return {
+      exitCode: 3,
+      lines: [`smoke: known-red.json lists '${entry.probe}' as ${entry.count} expected failure(s) `
+        + `since ${entry.base} (${entry.reason}), but this run is GREEN. Expected red and came back `
+        + `green: DELIST IT in the commit that fixed it.`],
+    };
+  }
+  return {
+    exitCode: 3,
+    lines: [`smoke: '${entry.probe}' is listed at ${entry.count} known failure(s) since ${entry.base} `
+      + `(owner ${entry.owner}) but this run reports ${n}. The allowlist no longer matches: update the `
+      + `count (regression, ${n} > ${entry.count}) or investigate (improvement, ${n} < ${entry.count}).`,
+      ...v.fails.map((f) => `  ${f}`)],
+  };
+}
 
 // CHROME_PATH overrides the search entirely (set it rather than adding a new
 // hardcoded path for a one-off machine). The Linux entries were added for the
@@ -414,15 +485,27 @@ const page = await browser.newPage({ viewport: { width, height }, deviceScaleFac
 // ONLY when a restore answers it and the pair completes before __of.ready; a
 // loss after ready means the probe measured a dead context, and an unanswered
 // loss never came back. Both still fail the run.
+// Counted as EPISODES, not messages, identical to boot.mjs's `down` state
+// (BT-8x fixed the asymmetry: BT-63 framed this guard as general but only
+// applied it to boot.mjs, per the BT-33 one-list invariant). One real loss
+// emits TWO lines, Chrome's `CONTEXT_LOST_WEBGL` warning and three's own
+// `Context Lost.` log ~10 ms apart, so counting messages scores one loss as
+// two, exceeds the restore count and fails every SwiftShader run for the
+// wrong reason.
 let ready = false;
+let down = false;
 const ctx = { lost: 0, restored: 0, lateLoss: 0 };
+const LOST_RE = /CONTEXT_LOST_WEBGL|WebGLRenderer: Context Lost/;
+const RESTORED_RE = /WebGLRenderer: Context Restored/;
 page.on('console', (m) => {
   const t = m.type();
-  if (/CONTEXT_LOST_WEBGL/.test(m.text())) {
-    ctx.lost++; if (ready) ctx.lateLoss++; console.error(`[page] ${m.text()}`); return;
+  if (LOST_RE.test(m.text())) {
+    if (!down) { down = true; ctx.lost++; if (ready) ctx.lateLoss++; }
+    console.error(`[page] ${m.text()}`); return;
   }
-  if (/WebGLRenderer: Context Restored/.test(m.text())) {
-    ctx.restored++; console.error(`[page] ${m.text()}`); return;
+  if (RESTORED_RE.test(m.text())) {
+    if (down) { down = false; ctx.restored++; }
+    console.error(`[page] ${m.text()}`); return;
   }
   if (t === 'error') errors.push(`console.error: ${m.text()}`);
   else if (t === 'warning' && /WebGL|shader|GL_INVALID/i.test(m.text())) {
@@ -460,6 +543,7 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()} ${r.failure()?.errorText ?? ''}`));
 
 let exitCode = 0;
+let report = null;
 try {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => typeof window.__of !== 'undefined', null, { timeout: 60000 });
@@ -473,12 +557,19 @@ try {
   if (waitMs > 0) await page.waitForTimeout(waitMs);
   await page.evaluate((n) => window.__of.settle(n), settleFrames);
 
-  const report = await page.evaluate(() => ({
+  report = await page.evaluate(() => ({
     stats: window.__of.stats(),
     world: window.__of.world(),
     scene: window.__of.scene(),
   }));
   if (evalResult !== undefined) report.eval = evalResult;
+
+  // THE VERDICT IS CAPTURED AND PRINTED BEFORE ANY SCREENSHOT ATTEMPT (BT-8x).
+  // `page.screenshot()` reproducibly dies on this box AFTER game logic has
+  // already completed and the probe has already reported (three landings hit
+  // this during the sweep); printing the report first means a dying
+  // screenshot can never again cost the verdict that was already in hand.
+  console.log(JSON.stringify(report, null, 2));
 
   if (out) {
     const p = isAbsolute(out) ? out : resolve(repoRoot, out);
@@ -495,10 +586,16 @@ try {
         + `docs/screenshots/NAME.png (no leading '../').`);
     }
     mkdirSync(dirname(p), { recursive: true });
-    await page.screenshot({ path: p });
-    console.error(`smoke: wrote ${p}`);
+    try {
+      await page.screenshot({ path: p });
+      console.error(`smoke: wrote ${p}`);
+    } catch (e) {
+      // NON-FATAL (BT-8x). The verdict is already on stdout above, so a dead
+      // screenshot must never be conflated with a content failure: it is
+      // reported by name and does not touch errors[] or exitCode.
+      console.error(`smoke: SCREENSHOT FAILED, non-fatal, verdict above stands: ${e?.message ?? e}`);
+    }
   }
-  console.log(JSON.stringify(report, null, 2));
 } catch (e) {
   errors.push(`runner: ${e?.message ?? e}`);
   exitCode = 1;
@@ -527,5 +624,28 @@ if (errors.length) {
   const lostNote = ctx.lost > 0
     ? ` (${ctx.lost} pre-ready context loss(es), restored ${ctx.restored}x)` : '';
   console.error(`smoke: PASS (no console errors, no failed requests)${lostNote}`);
+}
+
+// THE GATE (BT-8x). Only reached when the RUN was clean (exitCode still 0):
+// a run that already broke has an untrustworthy verdict, so exit 1 stands and
+// the probe's report, if any, is not consulted. `verdictOf` is the same
+// function probeall.mjs uses to build the census this gate's allowlist was
+// seeded from.
+if (exitCode === 0 && report) {
+  const v = verdictOf(report.eval);
+  // `entry` is looked up whenever the gate is active, not only on RED: a
+  // probe listed with count > 0 that comes back GREEN (fails.length === 0)
+  // is verdictOf's GREEN, not RED, and the two-sided rule (BT-41 point 4)
+  // needs to see it anyway to fail it as "expected red, came back green".
+  const entry = gateActive && probeName ? loadKnownRed().get(probeName) : undefined;
+  if (v.cls === 'RED' && !gateActive) {
+    console.error(`smoke: PROBE FAILED (${v.fails.length}), but the gate is OFF `
+      + `(pass --gate or set GATE=1 to enforce). Not failing the run:`);
+    for (const f of v.fails) console.error('  ' + f);
+  } else if (gateActive && (v.cls === 'RED' || entry)) {
+    const { exitCode: gateExit, lines } = judgeAgainstAllowlist(v, entry);
+    for (const l of lines) console.error(l);
+    exitCode = gateExit;
+  }
 }
 process.exit(exitCode);

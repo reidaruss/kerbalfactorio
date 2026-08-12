@@ -13,10 +13,47 @@
 
 import { readFileSync, readdirSync, appendFileSync, existsSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// GATE (BT-8x). run.mjs imports `verdictOf` from this file so the two never
+// carry two different ideas of what a probe's own report means (BT-33's
+// one-list invariant, applied to a function instead of a Chrome-path array).
+// Importing this module must have ZERO side effects: everything below that
+// reads argv, walks the probe dir or spawns a child is gated behind
+// `invokedDirectly`, boot.mjs's own pattern, so `import { verdictOf } from
+// './probeall.mjs'` cannot accidentally kick off a sweep.
+const invokedDirectly = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+
+// ---- verdict ---------------------------------------------------------------
+// What a gate that honoured the probe's own report would say.
+// THERE ARE FOUR VERDICT CONVENTIONS, NOT TWO. `valid` and `fails[]` are the
+// common pair, but seven probes carry only a boolean `ok` (animgate, padflat,
+// zerog, ...) and some carry `pass`. A census that knew only two names would
+// have filed those under NO_VERDICT and missed any red among them, which is the
+// audit committing the defect it is auditing. The runtime `evalKeys` recorded
+// below is what makes that claim checkable rather than asserted.
+export function verdictOf(ev) {
+  if (ev === undefined || ev === null || typeof ev !== 'object') return { cls: 'NO_VERDICT', fails: [] };
+  const hasFails = Array.isArray(ev.fails);
+  const bools = ['valid', 'ok', 'pass'].filter((k) => typeof ev[k] === 'boolean');
+  if (!hasFails && bools.length === 0) return { cls: 'NO_VERDICT', fails: [] };
+  const fails = hasFails ? ev.fails.map(String) : [];
+  const falseOnes = bools.filter((k) => ev[k] !== true);
+  if (fails.length > 0 || falseOnes.length > 0) {
+    return {
+      cls: 'RED',
+      fails: [...fails, ...falseOnes.map((k) => `${k}: false${ev.why ? ` (why: ${ev.why})` : ''}`)],
+    };
+  }
+  return { cls: 'GREEN', fails: [] };
+}
+
+if (invokedDirectly) {
+
 const args = new Map();
 for (const a of process.argv.slice(2)) {
   const m = /^--([^=]+)(?:=(.*))?$/.exec(a);
@@ -80,30 +117,6 @@ function flagsOf(cmd) {
     out.push(v === undefined ? `--${k}` : `--${k}=${v}`);
   }
   return { flags: out, bad };
-}
-
-// ---- verdict ---------------------------------------------------------------
-// What a gate that honoured the probe's own report would say.
-// THERE ARE FOUR VERDICT CONVENTIONS, NOT TWO. `valid` and `fails[]` are the
-// common pair, but seven probes carry only a boolean `ok` (animgate, padflat,
-// zerog, ...) and some carry `pass`. A census that knew only two names would
-// have filed those under NO_VERDICT and missed any red among them, which is the
-// audit committing the defect it is auditing. The runtime `evalKeys` recorded
-// below is what makes that claim checkable rather than asserted.
-function verdictOf(ev) {
-  if (ev === undefined || ev === null || typeof ev !== 'object') return { cls: 'NO_VERDICT', fails: [] };
-  const hasFails = Array.isArray(ev.fails);
-  const bools = ['valid', 'ok', 'pass'].filter((k) => typeof ev[k] === 'boolean');
-  if (!hasFails && bools.length === 0) return { cls: 'NO_VERDICT', fails: [] };
-  const fails = hasFails ? ev.fails.map(String) : [];
-  const falseOnes = bools.filter((k) => ev[k] !== true);
-  if (fails.length > 0 || falseOnes.length > 0) {
-    return {
-      cls: 'RED',
-      fails: [...fails, ...falseOnes.map((k) => `${k}: false${ev.why ? ` (why: ${ev.why})` : ''}`)],
-    };
-  }
-  return { cls: 'GREEN', fails: [] };
 }
 
 function run(cmd, argv, cwd) {
@@ -195,3 +208,5 @@ for (const q of queue) {
   console.error(`[${n}/${queue.length}] ${q.f} exit=${r.code} runner=${rec.runnerSaysPass ? 'PASS' : 'FAIL'} verdict=${v.cls}${v.fails.length ? ` (${v.fails.length})` : ''} ${Math.round(r.ms / 1000)}s`);
 }
 console.error('probeall: done');
+
+}

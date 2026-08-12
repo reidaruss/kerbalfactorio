@@ -1,0 +1,4 @@
+{
+  "_readme": "BT-8x two-sided dated allowlist, consumed by run.mjs's gate (see run.mjs header; the gate is OFF by default and only enforced with --gate or GATE=1). Each entry: probe = basename of the probe file as passed to --evalfile; count = exact fails[] length a clean run against this probe is expected to report; base = the commit the count was measured at; owner = the domain controller who owns the fix (UNASSIGNED until triaged); reason = one line, from the sweep or a prior measurement, of what fails and why. A listed probe that reports MORE than count, FEWER than count (but nonzero), or ZERO fails all still fail the gate: only an EXACT match passes as KNOWN RED. Seeded 2026-08-12 from the BT-8x sweep with owner UNASSIGNED throughout; triage (fresh-context verification, real owners) happens after this lands, per the brief.",
+  "entries": []
+}

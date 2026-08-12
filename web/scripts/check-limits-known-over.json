@@ -1,0 +1,292 @@
+{
+  "_readme": "BT-8x two-sided dated baseline for check-limits.mjs (BT-41 point 7). A listed file must match its recorded LINES exactly to pass as KNOWN OVER CAP; growing, shrinking, or dropping below the cap all fail so the baseline is updated in the same commit that changes the file (no silent drift). A file violating the cap with no entry here is a NEW violation and fails outright. Seeded 2026-08-12 from the sweep; owner UNASSIGNED throughout pending triage.",
+  "entries": [
+    {
+      "file": "src/app/Boot.ts",
+      "lines": 694,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/Cheats.ts",
+      "lines": 437,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/Config.ts",
+      "lines": 497,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/Debug.ts",
+      "lines": 489,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/DebugGameplay.ts",
+      "lines": 599,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/FlightMode.ts",
+      "lines": 580,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/FlightVessels.ts",
+      "lines": 512,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/MapMode.ts",
+      "lines": 488,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/MapPlanner.ts",
+      "lines": 496,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/app/StationMount.ts",
+      "lines": 551,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/Autopilot.ts",
+      "lines": 581,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/AutopilotRun.ts",
+      "lines": 514,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/BuildMode.ts",
+      "lines": 410,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/Enemies.ts",
+      "lines": 417,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/Gameplay.ts",
+      "lines": 612,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/GameplayActions.ts",
+      "lines": 418,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/NodeBatch.ts",
+      "lines": 627,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/NodeField.ts",
+      "lines": 568,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/RockField.ts",
+      "lines": 407,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/SaveGame.ts",
+      "lines": 480,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/SpaceStation.ts",
+      "lines": 611,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/SpiderFlock.ts",
+      "lines": 479,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/StructurePlacement.ts",
+      "lines": 509,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/Vab.ts",
+      "lines": 523,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/VabView.ts",
+      "lines": 475,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/game/VesselNodes.ts",
+      "lines": 480,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/player/KinematicBody.ts",
+      "lines": 481,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/player/LevelAction.ts",
+      "lines": 416,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/render/instancing/PropLibrary.ts",
+      "lines": 415,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/render/instancing/Surfaces.ts",
+      "lines": 723,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/render/materials/TerrainArt.glsl.ts",
+      "lines": 838,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/render/materials/TerrainMaterial.ts",
+      "lines": 705,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/render/materials/TerrainShader.ts",
+      "lines": 565,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/sim/FlightSession.ts",
+      "lines": 488,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/ui/MapPlannerPanel.ts",
+      "lines": 445,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/ui/MapTypes.ts",
+      "lines": 539,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/ui/Navball.ts",
+      "lines": 587,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/ui/VabPanel.ts",
+      "lines": 401,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/world/Scatter.ts",
+      "lines": 715,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/world/ScatterTuning.ts",
+      "lines": 438,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    },
+    {
+      "file": "src/world/TerrainStream.ts",
+      "lines": 462,
+      "base": "2aff661",
+      "owner": "UNASSIGNED",
+      "reason": "seeded from BT-8x sweep baseline; predates the cap enforcement, not caused by this lane"
+    }
+  ]
+}

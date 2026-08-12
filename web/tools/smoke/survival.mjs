@@ -69,9 +69,19 @@ if (ev !== null && ev.valid === true) {
       + `  (sim ${ev.simS} s, wall ${wallS} s)`);
   }
 }
-if (code !== 0 || ev === null || ev.valid !== true) {
+// BT-8x blast radius (BT-41): run.mjs can now exit 3 (clean run, PROBE
+// reported failure) once GATE=1/--gate is set; this tool never passes
+// --gate, but a caller's environment might. Exit 3 still carries a real
+// report on stdout, parsed above, so it is judged by `ev` like exit 0 is and
+// is not folded into "the run itself failed".
+if (code !== 0 && code !== 3) {
   console.error(`survival: BROKEN (runner exit ${code}, wall ${wallS} s): the run itself `
     + `failed, which is a defect and not a verdict.`);
+  process.exit(1);
+}
+if (ev === null || ev.valid !== true) {
+  console.error(`survival: BROKEN (runner exit ${code}, wall ${wallS} s): no valid probe `
+    + `report, which is a defect and not a verdict.`);
   process.exit(1);
 }
 process.exit(0);
