@@ -20,6 +20,7 @@ import type { StructurePart, Structures } from './Structures.js';
 import type { StructureView } from './StructureView.js';
 import type { LaunchPads, PadPart } from './LaunchPad.js';
 import type { LaunchPadView } from './LaunchPadView.js';
+import type { ResearchStation, ResearchStations } from './ResearchStations.js';
 
 export interface DemolishResult {
   kind: string;
@@ -104,14 +105,24 @@ export function demolishAimed(g: { machines: Machines; game: GameCore;
                                    factory: Factory; factoryView: FactoryView;
                                    structures: Structures;
                                    structView: StructureView;
-                                   pads?: LaunchPads; padView?: LaunchPadView },
+                                   pads?: LaunchPads; padView?: LaunchPadView;
+                                   stations?: ResearchStations },
                               machine: Machine | null,
                               build: Placed | null,
                               part: StructurePart | null = null,
-                              pad: PadPart | null = null): DemolishResult | null {
+                              pad: PadPart | null = null,
+                              station: ResearchStation | null = null):
+DemolishResult | null {
   if (machine !== null) return demolishMachine(g.machines, g.game, machine);
   if (build !== null) return demolishBuild(g.factory, g.factoryView, g.game, build);
   if (part !== null) return demolishStructure(g.structures, g.structView, g.game, part);
+  // D-019. The station takes the same place in this order that it takes in
+  // `pickAim`: after the deck it may be standing on, before the 24 m pad. The
+  // two orders MUST agree or a player aims at one thing and removes another,
+  // which is the standing rule at the top of this file.
+  if (station !== null && g.stations !== undefined) {
+    return demolishStation(g.stations, g.game, station);
+  }
   // GP-57. THE PAD IS LAST AND THAT IS THE ORDER, not an afterthought: a pad is
   // 24 m across and a machine or a deck standing on it is inside its bound, so
   // a pad that won the tie would eat every press aimed at anything on it. It is
@@ -133,6 +144,25 @@ export function demolishAimed(g: { machines: Machines; game: GameCore;
  * smelting and the only recourse is to build a second platform beside the
  * first. A thing that expensive with no undo is not a difficulty setting.
  */
+/**
+ * D-019. Take a research station back up, with a FULL refund.
+ *
+ * Full, for `demolishStructure`'s own reason and not out of generosity: a
+ * station holds nothing, has no pool, no belt and no in-flight item, so there is
+ * nothing that COULD be lost and anything less would be a tax on changing your
+ * mind about where the bench goes. It has no view batch to release, because it
+ * draws through its own `THREE.Group` per station rather than through an
+ * instanced batch, so `remove` is the whole of the teardown.
+ */
+export function demolishStation(stations: ResearchStations, game: GameCore,
+                                st: ResearchStation): DemolishResult | null {
+  const r = stations.remove(st);
+  if (r === null) return null;
+  const refunded = r.refunded.map((x) => ({ name: game.itemName(x.item), count: x.count }));
+  return { kind: 'research station', refunded, lost: [],
+    message: describe('research station', refunded, []) };
+}
+
 export function demolishPad(pads: LaunchPads, view: LaunchPadView,
                             game: GameCore, p: PadPart): DemolishResult | null {
   const id = p.id;

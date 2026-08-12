@@ -632,6 +632,19 @@ target_link_libraries(survival_slice_tests PRIVATE of_core)
 target_include_directories(survival_slice_tests PRIVATE tests)
 add_test(NAME survival_slice_tests COMMAND survival_slice_tests)
 
+# --- D-019: the research station as a real buildable. Its own suite rather than
+#     more rows in survival_slice_tests, because the claim is a CROSS-HEADER one
+#     (gameplay.h's structural set AND research.h's tree, which is where the
+#     deadlock check lives: the station may not be gated by the screen it is the
+#     key to) and because several lanes edit test_survival_slice.cpp on any given
+#     night. Headless; consumes gameplay.h, research.h and progression.h.
+add_executable(research_station_tests
+  tests/test_main.cpp
+  tests/test_research_station.cpp)
+target_link_libraries(research_station_tests PRIVATE of_core)
+target_include_directories(research_station_tests PRIVATE tests)
+add_test(NAME research_station_tests COMMAND research_station_tests)
+
 # --- Research / tech tree (Phase 2, GP-1/GP-2): factory-produced science is
 #     spent to unlock recipes/entities, with OFF-WORLD gating — a mid/late tech
 #     (CinderiteRefining) costs a Cinderite-derived item, so it is unreachable

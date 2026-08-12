@@ -52,6 +52,18 @@ export type SlotContent =
    *  `tierToPlace(g, -1)` still answers. A saved slot never carries it either
    *  (`readSlot` drops it), so the bar keeps meaning exactly what it did. */
   | { kind: 'furnace'; tier?: number }
+  /** D-019: A RESEARCH STATION, from the build menu. Its own kind for the
+   *  `furnace` slot's reason one level along: it is placed by
+   *  `ResearchStations`, not by the factory plan or the structural grid, so it
+   *  is not a `PartKind` and making it one would add a member to
+   *  `STRUCTURE_KINDS` that `isDeck`, `addressAt` and `footprintOf` would all
+   *  have to say "not this one" about. IT HAS NO DEFAULT BAR SLOT, deliberately,
+   *  and that is not GP-56's failure repeated: GP-56's rule is that a placeable
+   *  thing NOTHING CAN HOLD must not ship, and the build menu (B) holds it
+   *  through `hold` below, the same override every menu pick uses. All eleven
+   *  slots are spoken for and a twelfth would cost a new binding and a wider bar
+   *  to buy a second route to a building placed once per world. */
+  | { kind: 'station' }
   /** GP-86: the gun. Its own kind rather than a `PartKind`, because it places
    *  nothing and ticks nothing: what it changes is what the LEFT BUTTON DOES,
    *  which is exactly the question this enum exists to answer (GP-26). */
@@ -377,6 +389,7 @@ function readSlot(v: unknown): SlotContent {
 function describe(s: SlotContent): string {
   if (s.kind === 'hand') return 'hands';
   if (s.kind === 'furnace') return 'furnace';
+  if (s.kind === 'station') return 'research station';
   if (s.kind === 'gun') return 'sidearm';
   if (s.kind === 'empty') return '';
   return PART_INFO[s.part].label;

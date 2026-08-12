@@ -127,6 +127,13 @@ export function attachProgress(g: Gameplay): ProgressUi {
     },
     flash: (msg, secs) => g.hud.flash(msg, secs),
     icon: (name) => g.icons.for(name),
+    // D-019. THE STATION GATE'S TWO FACTS, as thunks and not as values: both are
+    // read at the moment J is pressed, so a station built one second ago counts
+    // and a station demolished one second ago stops counting. A boolean captured
+    // here would be whatever was true when `Gameplay.create` ran, which is
+    // always "none built".
+    hasResearchStation: () => g.stations.built,
+    stationCost: () => g.stations.costText(),
     // H-4: the render half. Both halves have existed for a night and nothing
     // joined them, so armour was equipped, costed, saved and invisible. The
     // node name is /core's own (`progression.h armourNode`), handed through

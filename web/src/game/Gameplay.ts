@@ -42,6 +42,7 @@ import { StructureView } from './StructureView.js';
 import { LaunchPads, type PadPart } from './LaunchPad.js';
 import { LaunchPadView } from './LaunchPadView.js';
 import { padPrompt } from './LaunchPadPlacement.js';
+import { ResearchStations, type ResearchStation } from './ResearchStations.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
@@ -153,6 +154,9 @@ export class Gameplay {
    *  clamps. The space half of the game's entrance into the ground half. */
   readonly pads: LaunchPads;
   readonly padView: LaunchPadView;
+  /** D-019: the research stations. The machine the J key now asks about, and
+   *  the first building in this game whose whole purpose is a screen. */
+  readonly stations: ResearchStations;
   /** GP-65 / GP-79: what every placed thing can take, and what the PLAYER can.
    *  `Gameplay` is its own `HealthPopulations`, the four lists being fields
    *  already. Reasoning in Health.ts / PlayerHealth.ts. */
@@ -192,6 +196,8 @@ export class Gameplay {
   aimedMachine: Machine | null = null;
   aimedBuild: Placed | null = null;
   aimedPart: StructurePart | null = null;
+  /** D-019: the research station under the crosshair, or null. */
+  aimedStation: ResearchStation | null = null;
   /** GP-57: the launch pad under the crosshair, or null. Picked LAST. */
   aimedPad: PadPart | null = null;
   suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
@@ -314,6 +320,12 @@ export class Gameplay {
     this.structView = new StructureView(d.origin);
     this.pads = new LaunchPads(this.game, this.mode, this.structures.bodies);
     this.padView = new LaunchPadView(d.origin);
+    // D-019. The same argument list `machines` takes, and for the same reasons:
+    // the LIVE edits handle so a station put down in a pit belongs in the pit,
+    // and the site registry LAZILY so a station can stand on a foundation.
+    this.stations = new ResearchStations(d.core, this.game, d.origin,
+      d.bodyHandle, () => d.ports?.voxels?.handle ?? 0, this.mode,
+      () => this.structures);
     this.build = new BuildMode(this.factory, this.factoryView,
       this.structures, this.structView, this.pads, this.padView);
     // A hand furnace marks its ingots AT the furnace (GP-64: no roaming toast).
@@ -328,7 +340,7 @@ export class Gameplay {
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
-      g.structures.load(), g.pads.load(), g.icons.load()]);
+      g.structures.load(), g.pads.load(), g.stations.load(), g.icons.load()]);
     g.structView.build(g.structures);
     g.padView.build(g.pads);
     g.progress = attachProgress(g);
@@ -344,6 +356,7 @@ export class Gameplay {
     // "what is holding the player up".
     d.player.body.solids = g.structures.bodies;
     d.scene.add(g.machines.group);
+    d.scene.add(g.stations.group);
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
@@ -521,7 +534,8 @@ export class Gameplay {
    */
   get hasDemolishTarget(): boolean {
     return this.aimedMachine !== null || this.aimedBuild !== null
-      || this.aimedPart !== null || this.aimedPad !== null;
+      || this.aimedPart !== null || this.aimedStation !== null
+      || this.aimedPad !== null;
   }
 
   /** What that thing is CALLED, for the sentence. '' when there is none. */
@@ -531,14 +545,18 @@ export class Gameplay {
     }
     if (this.aimedBuild !== null) return this.aimedBuild.kind;
     if (this.aimedPart !== null) return this.aimedPart.kind;
+    if (this.aimedStation !== null) return 'research station';
     return this.aimedPad !== null ? 'launch pad' : '';
   }
 
   /** Remove whatever the crosshair is on. Returns true if something went. */
   demolish(): boolean {
     const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart,
-      this.aimedPad);
-    if (gone) { this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null; }
+      this.aimedPad, this.aimedStation);
+    if (gone) {
+      this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null;
+      this.aimedStation = null;
+    }
     return gone;
   }
 
@@ -556,6 +574,7 @@ export class Gameplay {
     this.oreField.update(dt, this.d.ports?.voxels?.handle ?? 0);
     this.machines.update();
     this.machines.updateFx(dt);
+    this.stations.update();
     this.structures.step(dt);
     this.structView.sync(this.structures);
     this.pads.step(dt);

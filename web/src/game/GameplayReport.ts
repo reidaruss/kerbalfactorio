@@ -71,6 +71,11 @@ export function gameplayReport(g: Gameplay): unknown {
         build: g.aimedBuild === null ? null
           : { id: g.aimedBuild.id, kind: g.aimedBuild.kind },
         part: g.aimedPart === null ? null : g.aimedPart.kind,
+        // D-019. Published for exactly the reason the three above are: "E did
+        // not open the tech tree" has two causes, and without this the probe
+        // cannot tell a crosshair that missed the station from an interact
+        // branch that never ran.
+        station: g.aimedStation === null ? null : g.aimedStation.id,
       },
       modals: g.modals.report(),
       controls: g.keys.report(),
@@ -100,6 +105,12 @@ export function gameplayReport(g: Gameplay): unknown {
       // has quietly run out.
       pads: g.pads.report(),
       padView: g.padView.stats(),
+      // D-019. The research stations. In the world report as well as on the
+      // debug surface, because "is there one" is now a fact about the world
+      // that changes what a KEY does, and a probe reading the gate in
+      // `progress.stationGate` should be able to read the world it is a gate
+      // over from the same snapshot.
+      stations: g.stations.report(),
       // GP-65. WHAT EVERY PLACED THING CAN TAKE, and what is currently wrong
       // with it. `audit.missing` is the number that matters most and it is the
       // reason this is a report rather than a private map: a live buildable with

@@ -879,8 +879,14 @@ static constexpr ItemId Door          = 0x0043;
 // The launch pad (§S.6, GP-57). Still inside the 0x0040 structural block and
 // deliberately NOT at 0x0050, which GP-31 spent on the vessel part items
 // (`ItemId = 0x0050 + (PartId - 0x0100)`, allocated in of_vessel_api.inc and due
-// to be promoted here). 0x0045..0x004F stay free for the next structural part.
+// to be promoted here). 0x0046..0x004F stay free for the next structural part.
 static constexpr ItemId LaunchPad     = 0x0044;
+// D-019 / GP-613. THE RESEARCH STATION, and it takes the next free id in the
+// structural block exactly as the pad's comment above said the next one would.
+// It is a STRUCTURE and not a machine for §S.6's own stated criterion: it never
+// ticks, holds no inventory, has no ports and draws no power. What it does is
+// exist, which is what the J key now asks about.
+static constexpr ItemId ResearchStation = 0x0045;
 }  // namespace items
 
 // --- Survival entity TypeId block (0x30+, for the placeable structures). -------
@@ -908,6 +914,12 @@ static constexpr TypeId Door       = 0x43;
 // infrastructure; the TypeId is still a structural one because what a TypeId
 // answers is "which mesh and which family", and the pad's family is this one.
 static constexpr TypeId LaunchPad  = 0x44;
+// D-019. The research station. 0x45 continues the structural TypeId block; the
+// art lane owes `structures/research_station.glb` against it (ASSET-SPECS §4 is
+// still the authority) and the client draws an existing machine mesh under this
+// id until it ships, which is a PLACEHOLDER and is said out loud in
+// ResearchStations.ts rather than left to be discovered.
+static constexpr TypeId ResearchStation = 0x45;
 }  // namespace types
 
 // --- Survival smelting RecipeId block (0x0130+, append-only). ------------------
@@ -1126,12 +1138,17 @@ inline bool RegisterSurvivalContent(SliceRegistry& reg) {
   // something does read it a 50 here would be a silent lie.
   reg.registerItem(mk(LaunchPad, "Launch pad", ItemCategory::Buildable, 1,
                       kFlagBuildable, types::LaunchPad));
+  // D-019. One per stack for the pad's own reason: you would never carry two,
+  // and nothing reads the cap today because a structure is paid for and placed
+  // rather than carried (§S.6). Set honestly anyway.
+  reg.registerItem(mk(ResearchStation, "Research station", ItemCategory::Buildable,
+                      1, kFlagBuildable, types::ResearchStation));
   // smelting recipes (fuel-driven; registered so the UE layer can list them)
   reg.registerRecipe(makeSmeltIronRecipe());
   reg.registerRecipe(makeSmeltCopperRecipe());
 
   return reg.item(Wood) && reg.item(Iron) && reg.item(SurvivalSmelter) &&
-         reg.item(Foundation) && reg.item(Door) &&
+         reg.item(Foundation) && reg.item(Door) && reg.item(ResearchStation) &&
          reg.recipe(recipes::SmeltIron) && reg.recipe(recipes::SmeltCopper);
 }
 
@@ -1618,8 +1635,22 @@ class Furnace {
 // `automation.h`'s `BuildKind`, one level down. So the pad has its own client
 // module and the two enums are joined by `StructureDef::kind` as a FIELD rather
 // than by array position.
+//
+// D-019 APPENDS THE RESEARCH STATION AS THE SIXTH MEMBER, on the identical
+// argument and with the identical reward. It ticks nothing, holds nothing, has
+// no ports and draws no power; it is a thing that STANDS somewhere, and the
+// whole of what the game asks of it is "does one exist". So it joins here, it
+// inherits count / info / can_afford / pay through `of_gp_structure_*` with NO
+// ABI CHANGE (every one of those is an indexed read over `structureDefs()`),
+// and its price has exactly one authority, which is the row below.
+//
+// AND IT IS NOT IN THE CLIENT'S `StructureKind` EITHER, for the pad's reason
+// verbatim: that enum is the 4 m tiling module and a research station answers
+// none of its questions. The client places it the way it places a hand furnace,
+// which is the closest existing simple machine and is the pattern this followed.
 enum class StructureKind : uint8_t {
   Foundation = 0, Floor = 1, Wall = 2, Door = 3, LaunchPad = 4,
+  ResearchStation = 5,
 };
 
 struct StructureDef {
@@ -1693,6 +1724,42 @@ inline std::vector<StructureDef> structureDefs() {
                                {ItemStack{items::Iron, 60},
                                 ItemStack{items::Stone, 120},
                                 ItemStack{items::Copper, 20}}}},
+      // D-019, THE RESEARCH STATION, and its price is set by WHERE IT SITS IN
+      // THE STORYLINE. `story_line_outline_v1.txt` puts building it after belts
+      // and smelting and before the scanning antenna, so the bill has to be
+      // payable by a player who has run a furnace and cannot be payable by one
+      // who has only swung an axe.
+      //
+      // IRON 20 IS THE GATE, and it is a third of the pad's 60 on purpose: 20
+      // smelts is 3,600 ticks on a primitive furnace, which is a minute of a
+      // furnace's life rather than the pad's three hours. This is the rung that
+      // teaches "smelt more", not the one that teaches "automate or give up".
+      //
+      // COPPER 10 IS WHY YOU EVER MINED THE OTHER ORE. Raw copper has until now
+      // been worth digging only for the power branch (pole / generator /
+      // electric smelter), so a first-hour player has a copper patch on their
+      // map and no reason to touch it. Ten ingots makes the station the first
+      // thing that wants BOTH metals, which is exactly what "after smelting"
+      // means as a bill of materials rather than as a lock.
+      //
+      // STONE 30 IS THE MASS, hand-harvested and cheap: less than one
+      // foundation (40), so it reads as a bench and a floor under it.
+      //
+      // AND THERE IS DELIBERATELY NO WOOD IN IT, which is the one judgement in
+      // this row worth defending. Wood is the obvious first-hour ingredient and
+      // it is the one ingredient this game has a body with NONE of:
+      // `StarterContent`'s own invariant refuses to place a tree on an airless
+      // body, and `OBJECTIVES`' `moot` clause exists because "Harvest a tree"
+      // was the first impossible line a player read on Cinder. A wood cost here
+      // would make the research station itself impossible there, which is a
+      // progression deadlock rather than a moot checklist row. Stone, iron and
+      // copper exist on every body in the game.
+      StructureDef{StructureKind::ResearchStation, items::ResearchStation,
+                   types::ResearchStation, "Research station",
+                   CraftRecipe{items::ResearchStation, 1,
+                               {ItemStack{items::Iron, 20},
+                                ItemStack{items::Stone, 30},
+                                ItemStack{items::Copper, 10}}}},
   };
 }
 

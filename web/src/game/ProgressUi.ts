@@ -31,7 +31,7 @@ import { equipView, powerView, researchView } from './ProgressViews.js';
 import type { GameCore } from './GameCore.js';
 import type { ModeRules } from './GameMode.js';
 import type { ModalStack } from '../ui/ModalStack.js';
-import type { Action } from '../player/Bindings.js';
+import { labelOf, type Action } from '../player/Bindings.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 /** Screen -> the ACTION that toggles it. Identity today, and deliberately kept
@@ -62,6 +62,13 @@ export interface ProgressDeps {
   setCapture: (open: boolean) => void;
   /** Say something to the player. */
   flash: (msg: string, secs?: number) => void;
+  /** D-019: is there a research station anywhere in the world? A PORT, so this
+   *  object learns nothing about meshes, placement or the site grid, exactly as
+   *  `setCapture` keeps the pointer transition out of here. */
+  hasResearchStation: () => boolean;
+  /** The station's price as a sentence, so the refusal can quote it. Empty
+   *  before /core's structural surface has been read. */
+  stationCost: () => string;
   icon: (name: string) => string;
   /**
    * H-4: PUT THE ARMOUR ON THE BODY. A port, so this object learns nothing
@@ -88,6 +95,10 @@ export class ProgressUi {
   readonly equipPanel: EquipPanel;
 
   private open: Which | null = null;
+  /** D-019: presses of the research key that the station gate turned away.
+   *  Published, because a gate that swallowed every press would otherwise look
+   *  exactly like a gate that was working (DW-20). */
+  refusedResearch = 0;
   private readonly down = new Set<string>();
 
   constructor(private readonly d: ProgressDeps) {
@@ -136,7 +147,75 @@ export class ProgressUi {
     this.invalidate();
   }
 
-  toggle(which: Which): void { this.show(this.open === which ? null : which); }
+  /**
+   * D-019. THE RESEARCH KEY NOW ASKS WHETHER A RESEARCH STATION EXISTS.
+   *
+   * Reid confirmed D-019 on 2026-08-11: research stops being a free-floating
+   * panel. Pressing J with no station built anywhere REFUSES, by name, through
+   * the same HUD line every other refusal in this game uses, rather than opening
+   * a screen the player has not earned the right to read.
+   *
+   * IT IS EXISTENCE-GATED AND NOT PROXIMITY-GATED, and that is a decision rather
+   * than an oversight. What the storyline asks for is that you BUILD the thing;
+   * once you have, J is a shortcut to the screen the building gave you, exactly
+   * as the map key is a shortcut to a map you do not have to be standing on. A
+   * proximity rule would make the shortcut useless the moment the player walked
+   * twenty metres and would put a second, harder-to-satisfy answer beside the
+   * one `ResearchStations.built` already gives. PROXIMITY CAN TIGHTEN LATER: it
+   * would be a change to this one condition and to the sentence below, and the
+   * probe that covers this asserts both halves (refused with none, opens with
+   * one) so a tightening would have somewhere to be measured.
+   *
+   * THE REFUSAL NAMES THE THING AND THE PRICE, which is CRAFT_BLOCK's rule
+   * (`craftBlockText`) applied here: a refusal that says nothing is
+   * indistinguishable from a key that does nothing, and that is the complaint
+   * that started W11.
+   */
+  /**
+   * WHAT THE REFUSAL WOULD SAY, computed WITHOUT asking the mode.
+   *
+   * Split from the enforcement below on GP-600's rule, and the split is the
+   * whole of "sandbox tells the truth": `Structures.costText` still QUOTES the
+   * survival price in sandbox rather than deleting the number Reid opened
+   * sandbox to read, and this is the same move for a gate. The sentence exists
+   * whenever there is no station, in EITHER mode; only whether it is ENFORCED
+   * is the mode's business. A run that opened every panel therefore cannot be
+   * mistaken for a gate that quietly broke.
+   *
+   * Empty means there is nothing to refuse, which is to say a station stands.
+   */
+  private stationRefusal(): string {
+    if (this.d.hasResearchStation()) return '';
+    const cost = this.d.stationCost();
+    return 'no research station: build one from the build menu'
+      + `  (${labelOf('build')})${cost === '' ? '' : `, ${cost}`}`;
+  }
+
+  /** THE gate, published whole: what the rule says, what the world says, and
+   *  whether the mode is enforcing it. One object, so a probe reads the rule
+   *  rather than inferring it from the absence of a panel (DW-20). */
+  get stationGate(): { required: boolean; built: boolean; refusal: string;
+                       enforced: boolean; liftedByMode: boolean } {
+    const refusal = this.stationRefusal();
+    const required = this.d.mode.researchStationGated;
+    return {
+      required,
+      built: refusal === '',
+      refusal,
+      enforced: required && refusal !== '',
+      liftedByMode: !required && refusal !== '',
+    };
+  }
+
+  toggle(which: Which): void {
+    const gate = this.stationGate;
+    if (which === 'research' && this.open !== 'research' && gate.enforced) {
+      this.d.flash(gate.refusal, 3);
+      this.refusedResearch++;
+      return;
+    }
+    this.show(this.open === which ? null : which);
+  }
 
   /** Edge-detected ACTION handling, so a held key acts once exactly as a human
    *  press does. Runs whether or not a panel is open, because a panel's own key
@@ -275,6 +354,10 @@ export class ProgressUi {
     return {
       open: this.open,
       keys: PROGRESS_ACTIONS,
+      // D-019. The gate, with its own refusal and its own counter, so a probe
+      // asserts about the rule rather than about the absence of a panel.
+      stationGate: this.stationGate,
+      refusedResearch: this.refusedResearch,
       research: this.research.report(),
       power: this.power.report(),
       progression: this.progression.report(),
