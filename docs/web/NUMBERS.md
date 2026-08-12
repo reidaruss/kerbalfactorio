@@ -53,7 +53,7 @@ is that the numbers are handed out by one writer before the work starts.
 | FS-33, FS-35 to FS-42 | corner cargo, pollution, typed items, belt corners | landed |
 | FS-43 to FS-57 | Satisfactory-style machine ports | allocated, not started |
 | GP-85, GP-86 | combat: enemy loop at ABI 15, the gun | landed |
-| GP-87 to GP-99 | combat remainder, enemies in the world | held |
+| GP-87 to GP-99 | combat remainder, enemies in the world | GP-87 to GP-94 landed (nest seeding, derived emitters/targets, the march, the instance pool, both-ways combat, sandbox-safe, rubble named not fixed); GP-95 to GP-98 USED (the garrison spawner and its `provenance` field, the hold/aggro/leash state machine, deterministic seed-owned composition, the one named debug-spawn exception); GP-99 abandoned, never used |
 | RN-1 to RN-14 | rendering, historic | landed |
 | RN-15 to RN-29 | ground vegetation, contact blending, aerial perspective | allocated |
 | FS-56 to FS-75 | assemblers, storage container, machine scale | allocated |
