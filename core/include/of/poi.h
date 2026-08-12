@@ -726,6 +726,7 @@ class SiteCatalog {
   static SiteCatalog ForBody(const BodyParams& body) {
     SiteCatalog c;
     c.sites_ = generateSites(body, &c.reports_);
+    c.known_.assign(c.sites_.size(), 0u);
     c.visited_.assign(c.sites_.size(), 0u);
     c.refusal_ = refusalFor(body.bodyId);
     return c;
@@ -800,7 +801,41 @@ class SiteCatalog {
     return false;
   }
 
-  // --- the one mutable bit -------------------------------------------------
+  // --- the two mutable bits -------------------------------------------------
+  //
+  // THE STATE MACHINE IS unknown -> known -> visited, AND IT IS MONOTONE.
+  // `known_` is the scan's bit (gameplay reveals a site without the player
+  // having set foot on it); `visited_` is the walk-up bit that already
+  // shipped. A site cannot be visited without also being known, so
+  // `markVisited` sets `known_` on its way through rather than trusting every
+  // caller to set both in the right order -- the same discipline `markVisited`
+  // already applies to itself (visited only ever goes 0 -> 1).
+  bool known(SiteId id) const {
+    for (size_t i = 0; i < sites_.size(); ++i)
+      if (sites_[i].id == id) return known_[i] != 0;
+    return false;
+  }
+
+  /**
+   * Record that a site has been revealed (the scan), without implying a visit.
+   * Returns TRUE only the first time, mirroring `markVisited`.
+   */
+  bool markKnown(SiteId id) {
+    for (size_t i = 0; i < sites_.size(); ++i) {
+      if (sites_[i].id != id) continue;
+      if (known_[i] != 0) return false;
+      known_[i] = 1;
+      return true;
+    }
+    return false;
+  }
+
+  size_t knownCount() const {
+    size_t n = 0;
+    for (uint8_t v : known_) if (v != 0) ++n;
+    return n;
+  }
+
   bool visited(SiteId id) const {
     for (size_t i = 0; i < sites_.size(); ++i)
       if (sites_[i].id == id) return visited_[i] != 0;
@@ -814,10 +849,17 @@ class SiteCatalog {
    * the first visit" from "again" without keeping a second copy of the bit.
    * WHAT investigating means, what it unlocks and when it fires are gameplay's
    * entirely; this is the durable half.
+   *
+   * ALSO SETS `known_`: a player standing on a ruin has, at minimum, seen it,
+   * so a visit that left `known` false would let the state machine run
+   * backwards (visited but not known) the moment a caller marked a visit
+   * without having scanned first, which is exactly the order a player who
+   * stumbles onto a ruin unscanned produces.
    */
   bool markVisited(SiteId id) {
     for (size_t i = 0; i < sites_.size(); ++i) {
       if (sites_[i].id != id) continue;
+      known_[i] = 1;
       if (visited_[i] != 0) return false;
       visited_[i] = 1;
       return true;
@@ -832,16 +874,38 @@ class SiteCatalog {
   }
 
   /**
-   * The whole save surface: the visited ids, sorted, delta-varint.
+   * The whole save surface: the known ids, then the visited ids, each sorted,
+   * each delta-varint, IDENTICAL shape twice rather than one merged encoding,
+   * so a reader never has to disentangle which list a row belongs to.
    *
    * Templated on the persistence cursor style so this header stays a leaf and
    * never includes persistence.h, exactly as `VoxelEdits` does.
    */
   template <typename Writer>
   void serialize(Writer& w) const {
+    writeIdList(w, known_);
+    writeIdList(w, visited_);
+  }
+
+  template <typename Reader>
+  bool deserialize(Reader& r) {
+    known_.assign(sites_.size(), 0u);
+    visited_.assign(sites_.size(), 0u);
+    readIdList(r, known_);
+    readIdList(r, visited_);
+    // Restore the invariant even against a stream that predates it or was
+    // otherwise cut without it holding: a visited site is known, always.
+    for (size_t i = 0; i < sites_.size(); ++i)
+      if (visited_[i] != 0) known_[i] = 1;
+    return true;
+  }
+
+ private:
+  template <typename Writer>
+  void writeIdList(Writer& w, const std::vector<uint8_t>& bits) const {
     std::vector<uint64_t> ids;
     for (size_t i = 0; i < sites_.size(); ++i)
-      if (visited_[i] != 0) ids.push_back(sites_[i].id);
+      if (bits[i] != 0) ids.push_back(sites_[i].id);
     for (size_t i = 1; i < ids.size(); ++i) {
       size_t j = i;
       while (j > 0 && ids[j - 1] > ids[j]) {
@@ -855,8 +919,7 @@ class SiteCatalog {
   }
 
   template <typename Reader>
-  bool deserialize(Reader& r) {
-    visited_.assign(sites_.size(), 0u);
+  void readIdList(Reader& r, std::vector<uint8_t>& bits) {
     const uint64_t n = r.varint();
     uint64_t prev = 0;
     for (uint64_t i = 0; i < n; ++i) {
@@ -865,14 +928,13 @@ class SiteCatalog {
       // because a spec changed must still load, and losing a bit for a site
       // that no longer exists costs nothing.
       for (size_t k = 0; k < sites_.size(); ++k)
-        if (sites_[k].id == prev) visited_[k] = 1;
+        if (sites_[k].id == prev) bits[k] = 1;
     }
-    return true;
   }
 
- private:
   std::vector<FSite> sites_;
   std::vector<PlacementReport> reports_;
+  std::vector<uint8_t> known_;
   std::vector<uint8_t> visited_;
   const char* refusal_ = "";
 };

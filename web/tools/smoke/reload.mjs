@@ -91,18 +91,35 @@ const ROCKSAVE = 'probes/rockreload.js';
 // majority of the node array at any forested site and are keyed by lattice cell
 // for the same reason the rocks are.
 const TREESAVE = 'probes/treereload.js';
+// WG-200 to WG-212. The POI/site bridge's two bits (known, visited), keyed by
+// SiteId rather than by index or lattice cell (a site does not move, so there
+// is no ROCKSAVE/TREESAVE-style regrowth question here) -- what only a real
+// reload can prove is that the bits actually crossed `Persist.snapshot`'s u8
+// arena and came back through boot order, which an in-page save/load cannot
+// ask for the same reason it cannot ask it of `discovery`.
+const POISITES = 'probes/poisites.js';
 const setup = args.get('setup') ?? FLYTO;
 // The default keeps `--phase` meaning exactly what it meant: the phase IS the
 // flyto probe's argument, so an untouched command line produces an untouched
 // phase-1 call.
 const setupArgs = args.get('setupargs') ?? JSON.stringify({ phase });
 
+// CHROME_PATH overrides the search entirely; the Linux entries mirror
+// run.mjs's fix (BT-30-series, 2026-08-10) -- this runner had Windows paths
+// only, so it could not launch at all on the Proxmox VM this project now
+// develops on. Duplicated rather than shared because these runners are
+// deliberately standalone (see the console-warning allowlist comment below).
 const CHROME = [
+  ...(process.env.CHROME_PATH ? [process.env.CHROME_PATH] : []),
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
   'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
   `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-].find((p) => existsSync(p));
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/google-chrome',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
+].find((p) => p && existsSync(p));
 if (!CHROME) { console.error('reload: no Chrome or Edge found'); process.exit(2); }
 
 const errors = new Map();
@@ -228,6 +245,10 @@ try {
           .map((n) => ({ x: n.x, y: n.y, z: n.z,
             remaining: n.remaining, initial: n.initial }))
         : [],
+      // WG-200 to WG-212: the POI/site table, re-read off the LIVE reloaded
+      // world exactly as the rock/tree rows above are, so a bit that came back
+      // is caught by the bridge's own query rather than trusted by count.
+      sites: typeof of.sites === 'function' ? of.sites() : null,
       // GP-137: the named-slot list AFTER the reload, read from the store the
       // reloaded page opened, so a slot that vanished with the session shows up
       // as missing rather than as remembered.
@@ -494,6 +515,54 @@ try {
           `${after.trees?.drainedOnRestore}`);
     check('the reloaded world regrew a real forest, not an empty ring',
           (after.trees?.live ?? 0) > 100, `${after.trees?.live}`);
+  }
+
+  // WG-200 to WG-212. THE POI/SITE HALF. Unlike the rock/tree diffs, a site
+  // does not move and is not keyed by a cell it might stream back into, so the
+  // fixture is named by SiteId (idLo/idHi) rather than by position, and there
+  // is no "grew back in the same place" question -- only "did the two bits
+  // survive boot order". The site is found by id, not by index, because
+  // `Sites.refresh()` rebuilds the row array fresh on every construction and
+  // nothing here promises row order is stable across it (poi.h never promises
+  // it either: only `siteIdFor`'s ordinal keying is a contract).
+  if (setup === POISITES) {
+    const before0 = before.ruin ?? null;
+    const rows = after.sites?.rows ?? [];
+    const hit = rows.find((r) => before0 !== null
+      && r.idLo === before0.idLo && r.idHi === before0.idHi) ?? null;
+    check('the shipped ruin is still in the reloaded table, by id',
+          hit !== null,
+          `looked for ${JSON.stringify(before0)} in ${rows.length} rows`);
+    check('THE KNOWN BIT SURVIVED THE RELOAD', hit !== null && hit.known === true,
+          `known ${hit?.known} after reload`);
+    check('THE VISITED BIT SURVIVED THE RELOAD', hit !== null && hit.visited === true,
+          `visited ${hit?.visited} after reload`);
+    // THE CONTROL: both bits were false before this probe touched them, so a
+    // restore that left everything at its regenerated default would trip the
+    // two checks above rather than pass them by accident.
+    check('and the bits were not already true before the probe set them '
+          + '(the checks above are not two defaults agreeing)',
+          before.knownBefore === false && before.visitedBefore === false,
+          JSON.stringify({ knownBefore: before.knownBefore,
+            visitedBefore: before.visitedBefore }));
+    // NEGATIVE CONTROL 1: exactly one site is known/visited after the reload,
+    // not the whole table -- an id-keyed bit that leaked onto every row would
+    // still pass the two checks above.
+    check('NO OTHER SITE CAME BACK KNOWN OR VISITED (id-keyed, not table-wide)',
+          (after.sites?.stats?.known ?? -1) === 1
+          && (after.sites?.stats?.visited ?? -1) === 1,
+          JSON.stringify(after.sites?.stats));
+    // NEGATIVE CONTROL 2: a corrupt/out-of-range row index is REFUSED by the
+    // bridge (null) rather than silently marking row 0 or throwing. Asserted
+    // on the PHASE-1 measurement, because that is where the probe drove it;
+    // the reload assertions above are the ones that matter for persistence.
+    check('a corrupt row index was refused, not silently mapped to a real site',
+          before.badIndexResult === null,
+          `siteMarkKnown(a bad index) returned ${JSON.stringify(before.badIndexResult)}`);
+    check('and the refused call had NO side effect on the real table',
+          before.statsAfterBadIndex?.known === 0
+          && before.statsAfterBadIndex?.visited === 0,
+          JSON.stringify(before.statsAfterBadIndex));
   }
 
   // GP-65. THE HEALTH HALF. Health is per-entity state no other field in the

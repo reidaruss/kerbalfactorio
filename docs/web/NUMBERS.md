@@ -1202,3 +1202,88 @@ columns**, which is git's own signal for "I am not counting lines here".
 before assuming the tooling is at fault.** And `--numstat`'s dashes are worth
 knowing as a tell: a file that never reports line counts is a file git has
 stopped reading as text.
+
+### A fix applied to one script in a family is not applied to the family
+
+BT-30 fixed the Windows-only Chrome-path defect in `run.mjs` and `boot.mjs`: a
+hardcoded `chrome.exe`/`msedge.exe` list meant neither could launch a browser on
+the Proxmox Linux VM this project moved development to. **Six siblings were not
+checked**: `reload.mjs`, `dayreload.mjs`, `stationreload.mjs`, `mtnreload.mjs`,
+`powerreload.mjs` and `vesselreload.mjs` all copy the identical Windows-only
+`CHROME` array (each runner is deliberately standalone rather than sharing a
+module, per their own comments), so every one of them still returned `no Chrome
+or Edge found` and exited 2 on this VM, silently, seven weeks after the family's
+first member was fixed.
+
+Found while proving the POI/site bridge's save round trip (WG-219): the setup
+probe (`probes/poisites.js`) needed a real `page.reload()`, which only
+`reload.mjs` provides, and `reload.mjs` would not launch at all.
+
+Fixed in `reload.mjs` only (this lane's actual dependency), mirroring `run.mjs`'s
+`CHROME_PATH` override plus the four Linux paths verbatim. **The other five
+siblings are UNFIXED and this is a known gap, not a silent one**: `dayreload.mjs`,
+`stationreload.mjs`, `mtnreload.mjs`, `powerreload.mjs` and `vesselreload.mjs`
+still cannot launch on Linux until the same four lines land in each.
+
+**A fix that lands in one file of a "deliberately standalone" family is a fix
+that has to be re-applied by hand in every other file, and nothing enforces
+that it was.** The standalone-ness that keeps each runner simple to read is
+exactly what lets a fix silently fail to propagate; grep the family for the
+defect's signature before declaring the class closed.
+
+### `of.run()` inside a real browser did not finish once, at any budget, and the cause was the box and not the code
+
+Proving the POI/site bridge's save round trip needed a REAL `page.reload()`
+(`probes/poisites.js`), which needs `of.run()` to advance simulated time. It
+never completed. Not "slow" in the sense a bigger number fixes: **180 s, 400 s,
+550 s and 590 s all timed out**, always the same way -- `page.evaluate` killed
+mid-call when the wrapping `timeout` closed the browser.
+
+**THE CONTROL THAT MATTERS: this is NOT the poi bridge's setup script.** The
+already-shipped, unrelated `probes/trees.js`, run through the ALREADY-FIXED
+`run.mjs` (BT-30) with no `page.reload()` in it at all, hung at the exact same
+call -- `of.run()` -- for the exact same reason, on the same VM, in the same
+session. Two independent probes, two independent runners, one shared failure
+point. That rules out a defect in `poisites.js` or in `reload.mjs`'s new
+Linux Chrome path (the entry above): the code that hangs is the SAME code
+`run.mjs` has been calling since BT-30 supposedly proved it out.
+
+**MEASURED, staged, rather than guessed at.** A hand-rolled diagnostic logged
+every step with a wall-clock stamp: `page.goto` returns in 0.3 s; `window.__of`
+exists at 25 to 30 s; `/core`'s own boot log prints "boot 22 to 28 s" (close to
+the number that log names); but `window.__of.ready` itself does not resolve
+until **127 to 156 s** -- a 100-second-plus gap between the engine's own claim
+that it finished booting and the promise a caller actually awaits resolving.
+`of.run(1.0)` was then called and never returned inside any budget tried, up to
+432 s alone. `boot.mjs`'s own harness (a DIFFERENT measurement path that never
+calls `of.run()`) reported a clean **101 s total boot** in the same session,
+which is the fact that pins the first gap to variance rather than to a second
+defect: it is slow, not broken, up to the point `of.run()` is called, and then
+it stops progressing entirely within any budget this session could afford.
+
+**THE LIKELY CAUSE, and it is a fact about THIS run, not a fact about the
+game:** `ps aux` at the time showed FOUR OTHER PROJECTS' `vite preview` servers
+and their own Chrome instances alive concurrently (`sweep-shards/shard0..3`,
+plus `research-station`, plus `enemies`), all on the same box, all software
+rendering under SwiftShader, which the project's own boot log measured at
+`gpu ANGLE ... SwiftShader Device`. CLAUDE.md's own §7.4 names exactly this
+risk for exactly this VM ("do not fan out sixteen browser probes") and this
+session did not cause the fan-out, it walked into one already running. A
+simulated second driven by real animation frames, competing for the same cores
+against several other lanes' full 3D boots, can plausibly take minutes rather
+than the fraction of a second a quiet box would need.
+
+**NOT FIXED, NOT WORKED AROUND, AND SAID SO RATHER THAN CLAIMED GREEN:** the
+poi bridge's save/known/visited round trip is proven at every layer a shared,
+contended VM cannot slow down to failure -- 41/41 ctest (deterministic,
+headless, no browser), `tsc --noEmit` clean, a hand-verified wasm build. The
+one layer that needs a real browser and a real reload is written
+(`probes/poisites.js`, wired into `reload.mjs`) and could not be run to
+completion in this session. Reporting "the probe exists" as "the probe passed"
+would be exactly the false-green this file exists to catch.
+
+**If `of.run()` (or any real-time-driven probe) ever again fails to progress
+past boot with no error and no crash, check `ps aux` for concurrent Chrome/vite
+processes from OTHER lanes before assuming the code under test is broken.** A
+hang with zero error output and a box under silent contention look identical
+from inside the failing process.

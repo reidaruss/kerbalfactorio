@@ -66,7 +66,7 @@ import type { SaveSlot } from './SaveGame.js';
  */
 export const WORLD_KEYS = [
   'depletion', 'patches', 'rocks', 'trees', 'buildings', 'machines', 'voxels',
-  'discovery', 'sites', 'structures', 'pads', 'health',
+  'discovery', 'poi', 'sites', 'structures', 'pads', 'health',
 ] as const;
 
 export type WorldKey = typeof WORLD_KEYS[number];

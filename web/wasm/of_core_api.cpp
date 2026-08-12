@@ -442,7 +442,16 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       new pure query `of_gp_node_harvest_gate(i)` answers the same question
 //       without swinging. Both are additive: every prior caller reading the
 //       first four words is unaffected.
-OF_API int of_abi_version(void) { return 23; }
+//   24: THE POI/SITE BRIDGE (WG-200 to WG-212), SPECIFIED at world-gen.md and
+//       BUILT for the first time — zero prior callers, so nothing here is
+//       additive because there was nothing to add to. `of_poi_api.inc` (§22):
+//       `of_poi_count`/`of_poi_row` (18 f64 words, id split into idLo/idHi
+//       halves)/`of_poi_near`/`of_poi_nearest`/`of_poi_inside` for WHERE, and
+//       `of_poi_known`+`of_poi_mark_known` beside the spec's `of_poi_visited`+
+//       `of_poi_mark_visited` for the unknown -> known -> visited state
+//       machine (Admin-approved addition alongside the spec, same pass), and
+//       `of_poi_save`/`of_poi_alloc_bytes`/`of_poi_load` over both bits.
+OF_API int of_abi_version(void) { return 24; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the
@@ -2895,3 +2904,4 @@ OF_API int of_gp_item_ids(void) {
 #include "of_map_api.inc"       // §19  ABI 14: the map samples the world (DW-37)
 #include "of_enemies_api.inc" // §20  ABI 15: the pollution/evolution/nest loop
 #include "of_ap_api.inc"      // §21  autopilot mission planning (additive at ABI 22)
+#include "of_poi_api.inc"     // §22  ABI 24: the POI/site bridge (WG-200..212)
