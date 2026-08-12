@@ -85,6 +85,32 @@ export class ModeRules {
   get researchGated(): boolean { return !this.sandbox; }
 
   /**
+   * D-019. Must a RESEARCH STATION have been built before the tech tree opens?
+   *
+   * THE SIXTH NAMED QUESTION, and it is the fourth time `freeBuild`'s comment
+   * has been right about what would happen: a branch written months later asks
+   * by name and gets the right answer, instead of somebody remembering to add
+   * `|| sandbox` to it.
+   *
+   * IT IS NOT A REUSE OF `researchGated`, though they agree today. That one is
+   * about AVAILABILITY: which techs and items the tree has unlocked. This one is
+   * about a BUILDING: whether the screen has a referent in the world at all. A
+   * mode that wanted "the whole tree unlocked but you still have to walk to the
+   * bench" (a scenario starting mid-tree, or a tutorial world) needs them apart,
+   * and that is exactly the kind of mode `researchGated`'s own comment predicts.
+   *
+   * SANDBOX LIFTS IT, matching every other gate in this file: DW-31 says sandbox
+   * is for playtesting without grind, and making Reid mine 20 iron before he can
+   * read the tech tree he opened sandbox to read is grind of the purest kind.
+   * The lift is TRUTH-TELLING rather than silent, which is GP-600's rule: the
+   * refusal `ProgressUi` would have shown is published in its report either way,
+   * so a probe can tell a lifted gate from a broken one.
+   *
+   * THE ONE GATE THAT ASKS THIS, so a reader can find it: `ProgressUi.toggle`.
+   */
+  get researchStationGated(): boolean { return !this.sandbox; }
+
+  /**
    * Is the WHOLE MAP visible, or only what has actually been seen?
    *
    * DW-36: the map is discoverable in survival ("you cannot see what you have
@@ -143,6 +169,7 @@ export class ModeRules {
     return {
       mode: this.mode, sandbox: this.sandbox, freeBuild: this.freeBuild,
       fullCatalogue: this.fullCatalogue, researchGated: this.researchGated,
+      researchStationGated: this.researchStationGated,
       fullMapRevealed: this.fullMapRevealed, hostile: this.hostile,
       sandboxCombat: this.sandboxCombat, badge: this.badge,
     };

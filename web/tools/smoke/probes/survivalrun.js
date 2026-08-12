@@ -333,6 +333,50 @@
     .map((e) => ({ tech: e.getAttribute('data-tech'), state: e.getAttribute('data-state'),
       why: (e.querySelector('.why')?.textContent ?? '').trim() }));
   const btnFor = (id) => document.querySelector(`#of-research button[data-tech="${id}"]`);
+
+  // D-019. THE STATION FIRST, because the screen now has a building.
+  //
+  // A REAL RULE CHANGE and a real rung of the survival economy, which is what
+  // this file measures: the research screen refuses to open until a research
+  // station has been built, so a fresh survival world's route to the tech tree
+  // now runs through 20 Iron + 30 Stone + 10 Copper. It is earned through the
+  // same `restock` loop everything else here is earned through, and a world
+  // that cannot pay for one STALLS with that named, which is the honest report
+  // for a run whose whole question is "where does a fresh survival world stop".
+  const STATION_TILE = '#of-build .of-btile[data-build="researchstation"]';
+  const stationCost = () => of.stations()?.cost ?? '';
+  for (let tries = 0; tries < 4 && (of.stations()?.canAfford ?? false) !== true; ++tries) {
+    if (!(await restock())) break;
+  }
+  if (!check('a research station is affordable', of.stations()?.canAfford === true,
+    `${stationCost()} vs ${JSON.stringify(pack())}`)) {
+    return stall('G5 research station',
+      'the hand economy cannot pay for a research station, so the tech tree is unreachable',
+      { cost: stationCost(), restockLog });
+  }
+  of.input.act(['build'], 4);
+  await sleep(0.45);
+  const stTile = document.querySelector(STATION_TILE);
+  if (!check('the build menu offers a research station', stTile !== null, STATION_TILE)) {
+    return broken('G5 research station', 'no research-station tile in the build menu');
+  }
+  stTile.dispatchEvent(new PointerEvent('pointerdown',
+    { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 }));
+  await sleep(0.11);
+  (document.querySelector(STATION_TILE) ?? stTile).click();
+  await sleep(0.4);
+  of.look(homeYaw, -18);
+  await sleep(0.2);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+  await sleep(0.5);
+  if (!check('the research station went down', (of.stations()?.count ?? 0) >= 1,
+    JSON.stringify(of.stations()))) {
+    return stall('G5 research station', 'the research station would not place',
+      { stations: of.stations(), restockLog });
+  }
+  gate('G5 research station', { stations: of.stations()?.count ?? 0,
+    cost: stationCost() });
+
   await press('KeyJ');
   await sleep(0.4);
   const panel = document.querySelector('#of-research');

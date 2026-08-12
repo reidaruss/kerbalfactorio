@@ -143,6 +143,20 @@ export function gameplayApi(s: Services, loop: Loop) {
     pads: () => s.gameplay?.pads ?? null,
 
     /**
+     * D-019. The research stations, as their own REPORT rather than as the live
+     * object the two above hand over.
+     *
+     * A report and not the object, because everything a probe needs to assert
+     * about a station is a fact rather than a measurement: how many stand, what
+     * one costs, whether /core says the pack can pay (with the mode taken back
+     * out, which is DW-31's in-page negative control), and which mesh is
+     * standing in for the art that has not shipped. There is no `module` to
+     * measure the way the pad has one, because the station borrows a mesh and
+     * measuring a placeholder would pin numbers that are about to change.
+     */
+    stations: () => s.gameplay?.stations.report() ?? null,
+
+    /**
      * DW-31. READ-ONLY on purpose: there is no `sandbox(true)`.
      *
      * A setter would be the single most useful thing here and the single most

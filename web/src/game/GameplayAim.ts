@@ -15,7 +15,12 @@
 //   2. A FACTORY BUILDING next, belts included, because a belt is demolishable
 //      even though it is not interactive.
 //   3. A STRUCTURAL PART next.
-//   4. A LAUNCH PAD LAST, and that is the order rather than an afterthought: a
+//   4. A RESEARCH STATION next (D-019). It is machine-scale and picked by the
+//      same centre-and-radius test a hand machine is, so it sits with the
+//      objects of its own size rather than with the 24 m pad; it is after the
+//      structural part because a station stands ON a deck exactly as a furnace
+//      does, and the deck is the larger, nearer surface.
+//   5. A LAUNCH PAD LAST, and that is the order rather than an afterthought: a
 //      pad is 24 m across, so a deck or a machine standing on it is INSIDE its
 //      bound, and a pad that won the tie would swallow every press aimed at
 //      anything on the launch site.
@@ -64,6 +69,9 @@ export function pickAim(g: Gameplay, ray: AimRayLike): void {
     : g.factory.pick(o, d, reach, true);
   g.aimedPart = g.aimedMachine !== null || g.aimedBuild !== null ? null
     : g.structures.pick(o, d, reach);
+  g.aimedStation = g.aimedMachine !== null || g.aimedBuild !== null
+    || g.aimedPart !== null ? null : g.stations.pick(o, d, reach);
   g.aimedPad = g.aimedMachine !== null || g.aimedBuild !== null
-    || g.aimedPart !== null ? null : g.pads.pick(o, d, reach);
+    || g.aimedPart !== null || g.aimedStation !== null
+    ? null : g.pads.pick(o, d, reach);
 }

@@ -17,11 +17,13 @@ import { recipeRows, slotRows } from './GameplayViews.js';
 import { urlForMode, type GameMode } from './GameMode.js';
 import { craftOnDemand, shortOfText, tierToPlace } from './Buildables.js';
 import { SKILL } from './Progression.js';
+import { labelOf } from '../player/Bindings.js';
 import type { PartKind, SlotContent } from './Hotbar.js';
 import type { Gameplay } from './Gameplay.js';
 import type { BuildRay } from './BuildMode.js';
 import type { Placed } from './Factory.js';
 import type { Machine } from './Machines.js';
+import type { ResearchStation } from './ResearchStations.js';
 import type { StructurePart } from './Structures.js';
 
 /** The two panel views, with the item pictures bound in one place. */
@@ -130,6 +132,42 @@ export function placeMachine(g: Gameplay,
 }
 
 /**
+ * D-019. Put a research station on the ground ahead of the eye.
+ *
+ * `ResearchStations.place` owns the RULE (can it be afforded, where does it
+ * snap, which way does it face) and this owns the SENTENCE, which is the split
+ * this whole file exists for. The refusal names what is short by reading /core's
+ * own bill rather than a copy, so a rebalance in `gameplay.h` §S.6 moves the
+ * message with the price.
+ */
+export function placeStation(g: Gameplay, ray: BuildRay): void {
+  const before = g.stations.list.length;
+  if (g.stations.place(ray.origin, ray.dir) === null) {
+    const d = g.stations.definition;
+    const short = (d?.cost ?? [])
+      .filter((c) => g.game.count(c.item) < c.count)
+      .map((c) => `${c.count - g.game.count(c.item)} more ${g.game.itemName(c.item)}`)
+      .join(' and ');
+    g.hud.flash(short === '' ? 'cannot place a research station there'
+      : `research station: you need ${short}`, 2.4);
+    return;
+  }
+  g.placements++;
+  g.progress.credit(SKILL.Building, 1);
+  g.sfx.confirm();
+  g.panel.invalidate();
+  // WHAT IT IS FOR, not merely that it went down: this is the first building in
+  // the game whose entire purpose is a screen, so the toast names the key. Same
+  // argument the launch pad's own message makes.
+  if (before === 0) {
+    g.hud.flash(`RESEARCH STATION BUILT: ${labelOf('interact')} at it opens the `
+      + `tech tree, and ${labelOf('research')} now works anywhere`, 5);
+  } else {
+    g.hud.flash('placed research station');
+  }
+}
+
+/**
  * THE LEFT BUTTON, whole. What it does is decided by the HOTBAR and by nothing
  * else: a player holding a wall who clicks means the wall, and guessing from
  * what happens to be under the crosshair is the sort of thing that makes a game
@@ -167,6 +205,17 @@ export function stepBuild(g: Gameplay, ray: BuildRay, use: boolean,
   if (g.hotbar.held.kind === 'furnace') {
     if (!pressed) return false;
     placeMachine(g, ray);
+    return true;
+  }
+  // D-019. THE RESEARCH STATION, on the hand furnace's own branch and for the
+  // hand furnace's own reason: it is placed by its own owner rather than by the
+  // factory plan or the structural grid, so it is its own slot kind and its own
+  // branch rather than a fake `PartKind`. NO DRAG: a run of research stations is
+  // not a thing anybody wants by accident, which is `stepPad`'s argument at a
+  // smaller scale.
+  if (g.hotbar.held.kind === 'station') {
+    if (!pressed) return false;
+    placeStation(g, ray);
     return true;
   }
   // GP-57 / DW-29. THE PAD'S GATE IS SET ON THE GHOST, NOT SPRUNG ON THE PRESS.
@@ -259,8 +308,9 @@ function announce(g: Gameplay, n: number, pressed: boolean): void {
  */
 export function raze(g: Gameplay, machine: Machine | null, build: Placed | null,
                      part: StructurePart | null,
-                     pad: PadPart | null = null): boolean {
-  const r = demolishAimed(g, machine, build, part, pad);
+                     pad: PadPart | null = null,
+                     station: ResearchStation | null = null): boolean {
+  const r = demolishAimed(g, machine, build, part, pad, station);
   if (r === null) { g.hud.flash('nothing to remove'); return false; }
   g.fx.forgetSmelters();
   g.hud.flash(r.message, 2.2);

@@ -109,33 +109,40 @@
     /need \d/.test(f0?.reason ?? '') || f0?.ok === true, f0?.reason);
 
   // ======================================================================
-  // 2. THE TECH ITSELF, in the panel, before anything is bought.
+  // 2. THE TECH TREE IS NOT EVEN REACHABLE YET (D-019).
+  //
+  //    This block used to open the research panel here and read Launch
+  //    Facilities out of it. It cannot any more, and that is a RULE CHANGE
+  //    rather than a probe defect: the research screen now refuses to open
+  //    until a research station has been BUILT, so the tree can only be read
+  //    after the smelting below has paid for one. The assertions themselves
+  //    have moved down to §3b verbatim, before any science exists and before
+  //    anything is bought, which is the condition they were always about.
+  //
+  //    What is left here is the one thing worth asserting at this point, and
+  //    it is a FREE EXTRA CONTROL for this file's own claim: the pad is
+  //    already refused by name, and that refusal is reachable to a player who
+  //    cannot yet open the screen it points at. The gate on the PAD and the
+  //    gate on the SCREEN are independent, and this is where that shows.
   // ======================================================================
-  await press('research');
-  await sleep(0.4);
-  const panel = document.querySelector('#of-research');
-  check('the research panel opened on J',
-    !!panel && panel.classList.contains('open'), panel?.className);
   const cardFor = (id) => document.querySelector(`#of-research [data-tech="${id}"]`);
   const btnFor = (id) => document.querySelector(`#of-research button[data-tech="${id}"]`);
   const stateOf = (id) => cardFor(id)?.getAttribute('data-state') ?? '';
   const whyOf = (id) => cardFor(id)?.querySelector('.why')?.textContent ?? '';
-
-  check('Launch Facilities is IN the tree', cardFor(T.LaunchFacilities) !== null);
-  check('C3: it starts BLOCKED', stateOf(T.LaunchFacilities) === 'blocked',
-    stateOf(T.LaunchFacilities));
-  const why0 = whyOf(T.LaunchFacilities);
-  log.push(`Launch Facilities before: "${why0.trim()}"`);
-  check('C3: and the reason names its PREREQ, Electrification',
-    /Electrification/.test(why0), `"${why0}"`);
+  await press('research');
+  await sleep(0.4);
+  check('D-019: with no research station built, the tree does not open',
+    document.querySelector('#of-research')?.classList.contains('open') !== true,
+    document.querySelector('#of-research')?.className);
+  check('and the refusal names the station',
+    /research station/i.test(of.game().progress.stationGate?.refusal ?? ''),
+    of.game().progress.stationGate?.refusal);
   check('the pad ITEM is unavailable', of.game().progress.research.gatesHeld > 0,
     of.game().progress.research.gatesHeld);
 
   // ======================================================================
   // 3. EARN TEN AUTOMATION SCIENCE AND BUY THE PREREQ, FOR REAL.
   // ======================================================================
-  await press('research');
-  await sleep(0.3);
   let harvests = 0;
   for (const n of of.nodes()) {
     if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
@@ -183,6 +190,48 @@
   of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
   await sleep(0.3);
   log.push(`smelted: ${JSON.stringify(pack())}`);
+
+  // ======================================================================
+  // 3b. D-019. THE RESEARCH STATION, AND THEN THE READING THAT USED TO BE §2.
+  //
+  //     Built through the same build menu a player uses, out of the metal the
+  //     smelting above produced. The tree is then read BEFORE any science is
+  //     crafted and BEFORE anything is bought, which is the condition the
+  //     assertions below were always making, moved rather than weakened.
+  // ======================================================================
+  const STATION_TILE = '#of-build .of-btile[data-build="researchstation"]';
+  of.input.act(['build'], 4);
+  await sleep(0.45);
+  const stTile = document.querySelector(STATION_TILE);
+  check('the build menu offers a research station', stTile !== null, STATION_TILE);
+  stTile?.dispatchEvent(new PointerEvent('pointerdown',
+    { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 }));
+  await sleep(0.11);
+  (document.querySelector(STATION_TILE) ?? stTile)?.click();
+  await sleep(0.4);
+  check('a research station is in hand', of.game().hotbar.kind === 'station',
+    JSON.stringify(of.game().hotbar));
+  of.look(of.world().observer.yawDeg, -18);
+  await sleep(0.2);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+  await sleep(0.5);
+  check('the research station went down', (of.stations()?.count ?? 0) >= 1,
+    JSON.stringify(of.stations()));
+
+  await press('research');
+  await sleep(0.4);
+  const panel = document.querySelector('#of-research');
+  check('the research panel opens on J once a station stands',
+    !!panel && panel.classList.contains('open'), panel?.className);
+  check('Launch Facilities is IN the tree', cardFor(T.LaunchFacilities) !== null);
+  check('C3: it starts BLOCKED', stateOf(T.LaunchFacilities) === 'blocked',
+    stateOf(T.LaunchFacilities));
+  const why0 = whyOf(T.LaunchFacilities);
+  log.push(`Launch Facilities before: "${why0.trim()}"`);
+  check('C3: and the reason names its PREREQ, Electrification',
+    /Electrification/.test(why0), `"${why0}"`);
+  await press('research');
+  await sleep(0.3);
 
   await press('pack');
   await sleep(0.4);

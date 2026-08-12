@@ -15,7 +15,7 @@
 
 import * as THREE from 'three';
 import { SAVE_VERSION, chestStore, type SaveMachine,
-  type SaveProgress, type SaveSlot } from './SaveGame.js';
+  type SaveProgress, type SaveSlot, type SaveStation } from './SaveGame.js';
 import type { GameMode } from './GameMode.js';
 import type { BuildKind, Factory } from './Factory.js';
 import type { GameCore } from './GameCore.js';
@@ -31,6 +31,7 @@ import type { Gameplay } from './Gameplay.js';
 import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
 import { restorePads, savePads } from './LaunchPadSave.js';
 import type { LaunchPads } from './LaunchPad.js';
+import type { ResearchStations } from './ResearchStations.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort } from './VoxelSave.js';
 import { keptWorlds } from './SaveWorlds.js';
@@ -66,6 +67,10 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          seed: number, bodyId: number, ports: WorldPorts,
                          ore: OreField, structures: Structures,
                          pads: LaunchPads,
+                         /** D-019. The research stations. Beside `pads` because
+                          *  it is the same kind of thing: a placed structure
+                          *  whose whole state is a transform. */
+                         stations: ResearchStations,
                          hotbar: Hotbar, mode: GameMode,
                          progress: SaveProgress | undefined,
                          health: HealthBook,
@@ -140,6 +145,11 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     sites: saveSites(structures),
     structures: saveParts(structures),
     pads: savePads(pads),
+    // D-019. A station holds nothing, so this is its whole state.
+    stations: stations.list.map((st): SaveStation => ({
+      pos: [st.pos.x, st.pos.y, st.pos.z],
+      quat: [st.quat.x, st.quat.y, st.quat.z, st.quat.w],
+    })),
     hotbar: hotbar.serialize(),
     progress,
     // GP-65. The WOUNDS, and only the wounds: the book is the one authority on
@@ -289,6 +299,22 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   for (const p of g.pads.list) g.padView.release(p.id);
   const restoredPads = restorePads(g.pads, slot.pads);
 
+  // 5b-ii. D-019, THE RESEARCH STATIONS, after the decks for the pads' own
+  //     reason: a station can stand on a foundation, and `restore` re-asks
+  //     `onDeck` against the base, so restoring one before its platform would
+  //     record it as standing on soil. The old set is thrown away FIRST, or a
+  //     load into a live world would double every station: `reset` takes each
+  //     one's solid back out of the walker's set as it goes, which is why it is
+  //     a method there rather than a `length = 0` here.
+  g.stations.reset();
+  let restoredStations = 0;
+  for (const s of slot.stations ?? []) {
+    const st = g.stations.restore(
+      { x: s.pos[0], y: s.pos[1], z: s.pos[2] },
+      new THREE.Quaternion(s.quat[0], s.quat[1], s.quat[2], s.quat[3]));
+    if (st !== null) restoredStations++;
+  }
+
   // 5c. WHAT IS BROKEN (GP-65). LAST of the world steps, because every
   //     population has to be standing before the book can be told what is wrong
   //     with it: a wound applied earlier would land on a key nothing answers to
@@ -315,6 +341,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
 
   return {
     buildings, structures: restoredParts, pads: restoredPads,
+    stations: restoredStations,
     machines: restoredMachines, nodesDepleted: depleted,
     rocks: rocksApplied,
     rocksPending: g.rocks.stats().pending,
