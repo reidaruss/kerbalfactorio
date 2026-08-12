@@ -193,12 +193,19 @@
     Math.abs(linePerTick - moonPerTick) < 1e-9, `${r6(linePerTick)} vs ${r6(moonPerTick)}`);
   check('C1 and it does not rotate either', cLine.turnPerTickRad === 0,
     `${cLine.turnPerTickRad}`);
-  // THE IDENTITY-ELEMENT ASSERTION. Anchorage ships frozen and this probe must
-  // never be read as having proved anything by boarding it. If this goes red,
-  // somebody stamped the record and the station is a real carrier now, which is
-  // good news and a different probe.
-  check('C1 Anchorage as it SHIPS does not move, so it cannot be the fixture',
-    stationPerTick === 0, `perTickM ${stationPerTick}, the record has been stamped`);
+  // THE STAMPED RECORD. This row used to assert the opposite: Anchorage
+  // shipped frozen, its perTickM was exactly 0, and the comment said a stamped
+  // record would be "good news and a different probe". ph357 stamped it, so
+  // the row now asserts the motion itself, as the RELATION rather than a
+  // pinned number: sqrt(mu/r) at the station's own registered radius, over 60
+  // ticks per second, which at the 1e6 m orbit is 31.320919525430636 m per
+  // tick. Asserting the relation is what survives somebody moving the orbit,
+  // exactly as the rotor row below already does.
+  const stationR = Math.hypot(...mustHave(cStation, 'originM', 'station survey'));
+  const stationExpect = Math.sqrt(3.5316e12 / stationR) / 60;
+  check('C1 Anchorage MOVES at its conic\'s own sqrt(mu/r) rate: the record is stamped',
+    Math.abs(stationPerTick - stationExpect) < 1e-6 * stationExpect,
+    `perTickM ${stationPerTick} vs sqrt(mu/r)/60 ${r6(stationExpect)} at r ${r6(stationR)}`);
   // sqrt(mu/r) on Forge at the 1e6 m orbit radius is 1879.2 m/s, i.e. 31.32 m
   // per tick. NOT the 7.5 km/s and 125 m per tick that R67 and SpaceStation.ts
   // both state: that is Earth's low orbit. The band is set from Forge's own mu.
@@ -542,7 +549,15 @@
     && lifeAfter.scope.indexOf('carrier:release') === 1
     && lifeAfter.scope.indexOf('mounts:clear') === 2,
     JSON.stringify(lifeAfter.scope));
-  check('C7 every carrier is gone', mustNum(censusAfter.registry, 'size', 'registry') === 0,
+  // NOT zero since CE-80: `Boot` registers `station:anchorage` for the
+  // station's own geometry mount, so the rebuilt world legitimately comes back
+  // with ONE carrier in it. What the teardown must have emptied is everything
+  // this probe registered, so the census is asserted exactly: size 1, and the
+  // survivor is the station by name. A `<= 1` would stop noticing a probe
+  // frame that leaked through the reboot.
+  check('C7 every probe carrier is gone and only station:anchorage remains',
+    mustNum(censusAfter.registry, 'size', 'registry') === 1
+    && censusAfter.registry.ids.includes('station:anchorage'),
     JSON.stringify(censusAfter.registry));
   check('C7 and the rider let go', censusAfter.ride.carrier === null,
     `${censusAfter.ride.carrier}`);
