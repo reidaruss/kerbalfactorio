@@ -1202,3 +1202,28 @@ columns**, which is git's own signal for "I am not counting lines here".
 before assuming the tooling is at fault.** And `--numstat`'s dashes are worth
 knowing as a tell: a file that never reports line counts is a file git has
 stopped reading as text.
+
+### Four concurrent shards can time out 98% of a probe census on a box where none of them are broken
+
+The BT-8x sweep (2026-08-12) ran the 190 documented probes across 4 shards,
+per the brief. **196 of 200 attempted probes (98%) came back `NO_OUTPUT`**:
+SIGKILLed at the 240s per-probe timeout, no parseable report. Read at face
+value this says the game is almost entirely broken. It does not.
+
+A single **isolated** retry of the first casualty (`aerialrange.js`, no other
+shard running) completed in **3m03s wall clock on 2.4s of CPU time** and
+produced a real result (one genuine `console.warn` failure — not a hang, not
+NO_OUTPUT). Re-running all 4 shards concurrently again, even after the box's
+own 1-minute load average had dropped to 0.6, reproduced the same near-total
+timeout. **The four shards contending with EACH OTHER, not other lanes, was
+enough**: this probe population's real per-probe runtime is often 2 to 4
+minutes under SwiftShader, and state-of-the-union §7.4 already names 2 as the
+calibrated concurrency for headless Chrome probes on this box ("60 to 70
+minutes at two shards"). Four was one contention step past the ceiling.
+
+**The tell was in the shard's OWN wall-clock, not in the verdict.** A 240s
+timeout that fires on 98% of a shard is not describing a population of 240s+
+hangs; the isolated control (same probe, zero contention, done) is what turns
+"probably fine, just slow" from a guess into a measurement. Before reading a
+NO_OUTPUT-dominated sweep as "the game is red," re-run one casualty alone and
+compare its wall clock to the timeout that killed it under load.
