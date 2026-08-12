@@ -93,9 +93,10 @@ TEST(survival_content_registers_additively) {
 
   CHECK(RegisterSurvivalContent(reg));
 
-  // 21 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
-  // + 5 structural, the fifth being GP-57's launch pad) appended.
-  CHECK(reg.allItems().size() == 12 + 21);
+  // 22 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
+  // + 6 structural, the fifth being GP-57's launch pad and the sixth D-019's
+  // research station) appended.
+  CHECK(reg.allItems().size() == 12 + 22);
   // 2 smelting recipes appended.
   CHECK(reg.allRecipes().size() == 5 + 2);
 
@@ -136,7 +137,7 @@ TEST(survival_content_registers_additively) {
 
   // Re-registering is idempotent (no duplicates added).
   RegisterSurvivalContent(reg);
-  CHECK(reg.allItems().size() == 12 + 21);
+  CHECK(reg.allItems().size() == 12 + 22);
   CHECK(reg.allRecipes().size() == 5 + 2);
 }
 
@@ -973,7 +974,10 @@ TEST(patch_hand_mining_is_one_pool_and_gated_not_deadlocked) {
 // =============================================================================
 TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
   const std::vector<StructureDef> defs = structureDefs();
-  CHECK(defs.size() == 5);
+  // D-019 appends the research station as the sixth row. Asserted as a count
+  // AND, below, by KIND at each index, because a count alone cannot tell an
+  // append from a renumbering and the ids in this block are pinned.
+  CHECK(defs.size() == 6);
 
   // Pinned ids: items 0x0040.. , entity TypeIds 0x40.. (ASSET-SPECS §4).
   CHECK(defs[0].kind == StructureKind::Foundation);
@@ -1064,9 +1068,17 @@ TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
   // to the factory. Asserted as "the pad needs more iron than every other
   // structural part put together", which stays true through a rebalance and
   // which a pad priced in stone alone could not satisfy by accident.
+  //
+  // SKIPPED BY KIND AND NOT BY POSITION (D-019). This loop used to run to
+  // `k + 1 < defs.size()`, which meant "everything but the last row" and was
+  // only ever right while the pad WAS the last row. Appending the research
+  // station moved the pad into the "elsewhere" total and the assertion then
+  // read `60 > 64`. The claim was never about the last row, it was about the
+  // pad, so it now says so.
   int ironElsewhere = 0;
-  for (size_t k = 0; k + 1 < defs.size(); ++k) {
-    for (const ItemStack& in : defs[k].cost.inputs) {
+  for (const StructureDef& d : defs) {
+    if (d.kind == StructureKind::LaunchPad) continue;
+    for (const ItemStack& in : d.cost.inputs) {
       if (in.item == sitems::Iron) ironElsewhere += in.count;
     }
   }

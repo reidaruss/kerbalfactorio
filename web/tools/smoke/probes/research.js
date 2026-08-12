@@ -41,7 +41,15 @@
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
-  const sleep = (n) => of.run(n);
+  // `hz` is the RENDER rate and not the sim rate. D-019 lengthened this file
+  // (it now earns a research station as well as its science), and `of.run`
+  // defaults to 144.3 Hz, which RENDERS `seconds * 144.3` frames on a software
+  // rasteriser: the thirteen smelting waits below are about 31,000 frames at
+  // the default and about 3,300 at 15. MEASURED: at the default this run was
+  // killed still computing at 1 h. `Loop.frame` accumulates over a 1/60 fixed
+  // step with `MAX_CATCHUP = 5`, so 15 Hz asks for 4 ticks a frame, inside the
+  // cap, and the sim advances identically. Nothing here is measured in pixels.
+  const sleep = (n, hz = 30) => of.run(n, hz);
   const fails = [];
   const log = [];
   const check = (name, ok, detail) => {
@@ -122,14 +130,28 @@
   // A node count is the wrong thing to budget against, because world-gen owns it
   // and will move it again. The budget is per RESOURCE, which is what the pack
   // actually holds, so this stays correct at any node density.
-  const WANT = { Wood: 60, Stone: 20, Coal: 40, 'Raw iron': 40, 'Raw copper': 30 };
+  // D-019 RAISED THIS BUDGET, and the reason is a real rule change rather than
+  // probe drift: the research screen now needs a RESEARCH STATION built before
+  // it will open, and that station costs 20 Iron + 30 Stone + 10 Copper on top
+  // of the 20 Iron + 10 Copper the ten Automation science below already cost.
+  // So the run mines and smelts for two bills instead of one.
+  const WANT = { Wood: 60, Stone: 45, Coal: 60, 'Raw iron': 55, 'Raw copper': 35 };
+  // D-019 ALSO READ THE BUDGET ONCE PER NODE INSTEAD OF ONCE PER SWING, and
+  // that is a harness finding rather than a tidy-up. `have()` goes through
+  // `pack()`, which goes through `of.game()`, which builds the ENTIRE world
+  // report on every call: nodes, ore patches, the factory plan, the base, the
+  // pads, the health census, progression. Asked inside the swing loop that is
+  // FIVE full reports per swing and up to ~22,000 for a clearing of ~749 nodes.
+  // GP-611 fixed this loop's arithmetic and left its cost, and raising the
+  // budget for the research station made the cost bite: `probes/researchstation.js`
+  // was killed still computing at 1 h 55 m before it was found. One read per
+  // node, and a `break` rather than a `continue` once the budget is met so the
+  // remaining nodes are not walked at all.
   for (const n of of.nodes()) {
     if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
-    for (let k = 0; k < 6; ++k) {
-      const short = Object.entries(WANT).some(([k2, v]) => have(k2) < v);
-      if (!short) break;
-      if (of.harvest(n.index).ok) harvests++;
-    }
+    const p = pack();
+    if (!Object.entries(WANT).some(([k2, v]) => (p[k2] ?? 0) < v)) break;
+    for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
   }
   // GP-611. A REAL SLOT COUNT. The old guard read `carried.length < 20`, and
   // `GameCore.carried()` collapses the pack to ONE LINE PER ITEM TYPE, so with
@@ -178,19 +200,50 @@
       if (!load('Coal')) load('Wood');
       await sleep(0.05);
       if (!load(ore)) return false;
-      await sleep(1000 / 60);
+      await sleep(1000 / 60, 15);
       take();
       await sleep(0.2);
     }
     return true;
   };
-  check('iron smelted', await smelt('Raw iron', 5), 'the load button vanished');
-  check('copper smelted', await smelt('Raw copper', 4), 'the load button vanished');
+  check('iron smelted', await smelt('Raw iron', 8), 'the load button vanished');
+  check('copper smelted', await smelt('Raw copper', 5), 'the load button vanished');
   of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
   await sleep(0.3);
   log.push(`smelted: ${JSON.stringify(pack())}`);
-  check('iron came out of the furnace', have('Iron') >= 20, have('Iron'));
-  check('copper came out of the furnace', have('Copper') >= 10, have('Copper'));
+  check('iron came out of the furnace', have('Iron') >= 40, have('Iron'));
+  check('copper came out of the furnace', have('Copper') >= 20, have('Copper'));
+
+  // ======================================================================
+  // 1b. D-019. BUILD THE RESEARCH STATION, BECAUSE THE SCREEN NOW HAS ONE.
+  //
+  //     This is a REAL RULE CHANGE and not a probe workaround: pressing J with
+  //     no research station built is refused by name, so this acceptance -
+  //     whose whole subject is the tech tree - has to earn the building the
+  //     tree lives in before it can look at it. The refusal itself, its
+  //     wording, its counter and its controls are `probes/researchstation.js`'s
+  //     job and are deliberately not duplicated here; what this needs is the
+  //     station, and it is built through the same build menu a player uses.
+  // ======================================================================
+  const STATION_TILE = '#of-build .of-btile[data-build="researchstation"]';
+  of.input.act(['build'], 4);
+  await sleep(0.45);
+  const stTile = document.querySelector(STATION_TILE);
+  check('the build menu offers a research station', stTile !== null, STATION_TILE);
+  stTile?.dispatchEvent(new PointerEvent('pointerdown',
+    { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 }));
+  await sleep(0.11);
+  (document.querySelector(STATION_TILE) ?? stTile)?.click();
+  await sleep(0.4);
+  check('a research station is in hand', of.game().hotbar.kind === 'station',
+    JSON.stringify(of.game().hotbar));
+  of.look(yaw, -18);
+  await sleep(0.2);
+  of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+  await sleep(0.5);
+  check('the research station went down', (of.stations()?.count ?? 0) >= 1,
+    JSON.stringify(of.stations()));
+  log.push(`station built: ${JSON.stringify(of.stations()?.list ?? null)}`);
 
   // ======================================================================
   // 2. THE REFUSAL, WITH THE MATERIALS IN HAND.

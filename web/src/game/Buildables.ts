@@ -63,6 +63,11 @@ export interface BuildRow {
   inHand: boolean;
 }
 
+/** D-019. The build-menu id the research station tile sends back. Its own
+ *  constant because `Buildables` and the probe both spell it and a literal in
+ *  two files is a second authority on a name. */
+export const STATION_ID = 'researchstation';
+
 const GROUP: Partial<Record<string, string>> = {
   foundation: 'Structures', floor: 'Structures', wall: 'Structures',
   door: 'Structures', launchpad: 'Launch',
@@ -90,6 +95,10 @@ export function buildRows(g: Gameplay): BuildRow[] {
   // ModalStack gives Escape and `PART_INFO` gives the HUD.
   for (const k of Object.keys(TYPE_ID)) rows.push(machineRow(g, k, heldPart === k));
   rows.push(padRow(g, heldPart === 'launchpad'));
+  // D-019. THE RESEARCH STATION, and this menu is its ONLY route into the hand
+  // (Hotbar.ts says why it has no bar slot), which is what makes the row a
+  // requirement rather than a convenience.
+  rows.push(stationRow(g, held.kind === 'station'));
   for (const tier of [0, 1]) rows.push(handRow(g, tier, held.kind === 'furnace'));
   return rows;
 }
@@ -99,6 +108,7 @@ export function contentFor(id: string): SlotContent | null {
   if (id.startsWith('furnace:')) {
     return { kind: 'furnace', tier: Number(id.slice(8)) };
   }
+  if (id === STATION_ID) return { kind: 'station' };
   return isBuildable(id) ? { kind: 'part', part: id } : null;
 }
 
@@ -134,6 +144,29 @@ function padRow(g: Gameplay, inHand: boolean): BuildRow {
     needs: (d?.cost ?? []).map((c) => ingredient(g, c.item, c.count)),
     affordable: g.pads.canAfford(),
     lockedBy: lockOf(g, item), inHand,
+  };
+}
+
+/**
+ * D-019. THE RESEARCH STATION.
+ *
+ * Shaped exactly like `padRow`, because it is the same kind of thing: a /core
+ * `StructureDef` whose price is paid at the placement rather than crafted into
+ * the pack. `lockedBy` is deliberately EMPTY and is not a lookup that happens to
+ * return '': the station may never be research-gated, because it is the thing
+ * that opens the research screen, and a gate on it would be a lock whose key is
+ * behind itself. `core/tests/test_research_station.cpp` asserts the tech tree
+ * agrees, so this is a statement of a tested fact rather than a hope.
+ */
+function stationRow(g: Gameplay, inHand: boolean): BuildRow {
+  const d = g.stations.definition;
+  return {
+    id: STATION_ID, label: 'research station',
+    icon: g.icons.forId(d?.item ?? 0), group: 'Production',
+    cost: g.stations.costText(),
+    needs: (d?.cost ?? []).map((c) => ingredient(g, c.item, c.count)),
+    affordable: g.stations.canAfford(),
+    lockedBy: '', inHand,
   };
 }
 

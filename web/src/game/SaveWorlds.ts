@@ -67,6 +67,15 @@ import type { SaveSlot } from './SaveGame.js';
 export const WORLD_KEYS = [
   'depletion', 'patches', 'rocks', 'trees', 'buildings', 'machines', 'voxels',
   'discovery', 'sites', 'structures', 'pads', 'health',
+  // D-019. BODY-SCOPED, and the compiler made this question be answered rather
+  // than defaulted, which is exactly what its header promises. A station's
+  // `pos` is body-frame metres on the body it was built on, so a station left
+  // global would follow the player to the moon and stand at the moon's centre.
+  // The player-facing consequence is the interesting one and it is deliberate:
+  // a station built on Forge does NOT open the research screen while the player
+  // is standing on Cinder, because it is not there. That is the same answer
+  // `pads` and `structures` already give about a launch site and a base.
+  'stations',
 ] as const;
 
 export type WorldKey = typeof WORLD_KEYS[number];

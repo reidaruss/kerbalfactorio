@@ -160,6 +160,14 @@ export interface SaveMachine {
   fuelTicks: number;
 }
 
+/** D-019. One placed research station. It holds NOTHING, so its whole state is
+ *  where it stands and which way it faces: no pool, no fuel, no tray, and
+ *  therefore nothing a reload could lose and nothing to count as lost. */
+export interface SaveStation {
+  pos: [number, number, number];
+  quat: [number, number, number, number];
+}
+
 export interface SaveSlot {
   version: number;
   seed: number;
@@ -209,6 +217,15 @@ export interface SaveSlot {
    *  world written before tonight actually was, so nothing MISREADS an old
    *  slot and a bump would refuse every world anybody is playing. */
   pads?: SavePad[];
+  /** D-019: the research stations. Additive and optional under exactly the rule
+   *  `pads` was added by, so SAVE_VERSION deliberately does NOT move: an absent
+   *  list is a world with no research station, which is what every world
+   *  written before tonight actually was, so nothing MISREADS an old slot and a
+   *  bump would refuse every world anybody is playing. Its consequence is worth
+   *  stating: a world saved before tonight reloads with the research key
+   *  refusing, which is not a regression but the new rule applied honestly to a
+   *  world that never built one. */
+  stations?: SaveStation[];
   /** The hotbar: which slot is in hand and what is in each of them (GP-26). */
   hotbar?: SaveHotbar;
   /** GP-65: what is BROKEN, as `[healthKey, hp]` for every placed thing below

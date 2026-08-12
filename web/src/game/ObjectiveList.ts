@@ -238,6 +238,36 @@ export const OBJECTIVES: Objective[] = [
     hint: () => `${labelOf('interact')} opens the smelter, click its output`,
     done: (g) => g.autoCollected >= AUTO_TARGET,
   },
+  // ==========================================================================
+  // D-019. THE RESEARCH STATION, AND IT IS A RUNG RATHER THAN A FOOTNOTE.
+  //
+  // `story_line_outline_v1.txt` puts BUILDING it after belts and smelting and
+  // before the scanning antenna, and that ORDER is the thing this card teaches:
+  // it sits immediately after `auto` (the belt-and-smelter rung that proves the
+  // factory runs without you) and before `pad`, so a player reads the chain in
+  // the order the storyline states it. Until tonight there was no research card
+  // here at all, which is the same failure GP-53 names about the space half:
+  // the tech tree has been in the build for months and NOTHING on screen led a
+  // player to it.
+  //
+  // THE ROW RETIRES ON THE STATION EXISTING, not on a tech being bought, for
+  // the pad row's own reason: what the player has to do is build the thing, and
+  // a checklist that ticks itself when you press a research button has taught
+  // them nothing about where the station goes.
+  //
+  // THE HINT NAMES THE BUILD MENU DIRECTLY, and not through `holdPhrase`. The
+  // station is not a `PartKind` and can never occupy a bar slot (Hotbar.ts says
+  // why), so `holdPhrase` would search the bar, find nothing and take its
+  // fallback branch every single time: the right sentence reached by a lookup
+  // that is guaranteed to miss, which reads as derivation and is not. GP-165's
+  // rule is that no KEY is ever typed, and none is: `labelOf('build')` is the
+  // one binding table, so a remap moves this hint exactly as it moves the rest.
+  {
+    id: 'station', text: 'Build a research station',
+    hint: () => `open the build menu (${labelOf('build')}), ${labelOf('use')} `
+      + `to place it, then ${labelOf('interact')} at it opens the tech tree`,
+    done: (g) => g.stations.list.length >= 1,
+  },
   // GP-53. THE SPACE HALF OF THE GAME HAD NO ENTRANCE. The assembly bay and
   // flight have been in the build since W8 and W9 and NOTHING on screen named
   // either of them: not the HUD, not the pack, not the hotbar, not this list.

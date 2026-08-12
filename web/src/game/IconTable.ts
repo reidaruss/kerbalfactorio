@@ -116,6 +116,14 @@ export const ICON_TABLE: readonly IconSpec[] = [
   // row naming it would bake the single authored arm sitting off to one side of
   // a 24 m deck, which reads as a crane rather than as a launch pad.
   R(0x0044, 'Launch pad', 'assets/rocket/launch_pad.glb', 'LaunchPad_LOD0'),
+  // D-019's research station, and its picture is the PLACEHOLDER MESH's, said
+  // here as plainly as it is said in `ResearchStations.ts`. /core pins
+  // `types::ResearchStation = 0x45` and the art lane owes
+  // `structures/research_station.glb` against it; until that lands, the tile
+  // shows the assembler, which is what the world shows too. A tile drawn from a
+  // DIFFERENT mesh than the world would be worse than a placeholder, because
+  // then the picture would be a lie rather than a stand-in.
+  R(0x0045, 'Research station', `${MACH}assembler.glb`, 'Assembler_LOD0'),
   // The four armour pieces reached the same craft menu in the same ABI bump and
   // had the same problem. `armour_set.glb` ships them SKINNED, which is why they
   // are baked from the bind pose (see `bake`) rather than posed.

@@ -207,7 +207,8 @@ export class GameplayInput {
     return got;
   }
 
-  /** What E does, in the order a player expects: machine, then output, then door. */
+  /** What E does, in the order a player expects: machine, then output, then
+   *  research station, then door. */
   private doInteract(g: Gameplay): boolean {
     if (g.aimedMachine !== null) { g.openFurnace(g.aimedMachine); return true; }
     if (g.aimedBuild !== null) {
@@ -230,6 +231,14 @@ export class GameplayInput {
       collectFrom(g, g.aimedBuild);
       return true;
     }
+    // D-019. E AT A RESEARCH STATION OPENS THE TECH TREE. This is the whole
+    // point of the building existing: research used to be a key with no referent
+    // in the world, and it is now a thing you walk up to. It is read BEFORE the
+    // door branch and AFTER the machine ones for the same reason `pickAim`
+    // orders them that way, and it goes through `ProgressUi.show` rather than
+    // `toggle` because an E at a station means OPEN: a player standing in front
+    // of it with the panel already up pressed E to open it, not to shut it.
+    if (g.aimedStation !== null) { g.progress.show('research'); return true; }
     if (g.aimedPart !== null) {
       const open = g.structures.toggle(g.aimedPart);
       if (open !== null) {
