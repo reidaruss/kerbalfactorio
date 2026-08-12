@@ -147,8 +147,16 @@
   check('the loop is ticking', w0.tick > 0, `tick ${w0.tick}`);
   const f0 = F();
   check('the flight lane loaded its meshes', f0.loaded === true);
-  check('the part catalogue crossed the bridge', f0.catalogue === 24,
-        `${f0.catalogue}`);
+  // 25 since the docking work landed EngineVernier (id 278 = 0x0116,
+  // core/include/of/vessel.h). A fixture pinned to a TOTAL re-reds every time
+  // content lands, and this line has now done so once; the bump is kept as an
+  // exact equality anyway, because the flight report publishes only the COUNT
+  // here (the ids are not on the bridge until the VAB catalogue is read in
+  // section 2), so equality is the strongest invariant this read can carry:
+  // a `>= 24` floor would stop noticing a part dropped off the bridge the
+  // same week another landed, which is the very thing the check protects.
+  check('the part catalogue crossed the bridge (25 since EngineVernier, 0x0116)',
+        f0.catalogue === 25, `${f0.catalogue}`);
   check('no vessel exists yet', f0.flight.live === false);
   check('nobody is aboard yet', f0.aboard === false);
   const m0 = MAP();
