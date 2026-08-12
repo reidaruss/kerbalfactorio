@@ -1227,3 +1227,17 @@ hangs; the isolated control (same probe, zero contention, done) is what turns
 "probably fine, just slow" from a guess into a measurement. Before reading a
 NO_OUTPUT-dominated sweep as "the game is red," re-run one casualty alone and
 compare its wall clock to the timeout that killed it under load.
+
+**Follow-up the same day, and it corrects the obvious fix.** Raising the
+timeout to 600s and dropping to a single serial `probeall` still lost 4 of 6
+probes to the timeout. The reason is the second half of the lesson: **the box
+was not quiet during that "serial" run either.** Another lane was running its
+own headless Chrome, two SwiftShader GPU processes sat at ~1053% and ~698%
+CPU, and the load average was ~20. So the sample was two concurrent probe
+processes, not one, and the real ceiling for this suite on this box is **2**,
+under the "3 to 4" §7.4 budgets. **Check what else is on the box before
+calling a run serial**, with `pgrep` against the process's own `cwd` rather
+than trusting a brief that says the machine is idle: this session was told
+the box was quiet with zero other Chromes, and neither was true. The whole
+effort ended with exactly one uncontended datapoint, so the uncontended cost
+of the suite is still unmeasured.

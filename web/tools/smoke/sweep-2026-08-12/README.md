@@ -35,3 +35,44 @@ and/or a higher `--timeout`, off-hours if possible, before trusting the
 NO_OUTPUT bucket as anything other than "not measured yet." The 4
 non-NO_OUTPUT documented results (1 RED, 2 GREEN, 1 NO_VERDICT) and the
 91 NO_DOCUMENTED_CMD records are real and need no re-run.
+
+## Addendum, same day 16:47-17:30: raising the timeout does not rescue the census
+
+After a desktop reboot severed the first session, a 6-probe sample was re-run
+**serially** (one probeall, no shards) with the per-probe timeout raised from
+240s to **600s**, against the same build. Probes chosen because BT-40 had
+already measured four of them on Reid's Windows desktop, so the results are
+comparable to a prior measurement rather than to nothing.
+
+**Four of six exceeded even the 600s timeout**: `animgate.js`, `apexec.js`,
+`assembler.js`, `post.js`, all `NO_OUTPUT`, all SIGKILLed at 600s. The run was
+stopped after the fourth.
+
+Two things follow, and the second is the one that matters.
+
+1. **Raising the timeout is not the fix.** 600s is 2.5x the original budget and
+   these four still did not finish.
+
+2. **The box was NOT quiet, and "serial" was not serial.** `verify/research`
+   was running its own `run.mjs` + headless Chrome throughout, and two
+   SwiftShader GPU processes were sitting at ~1053% and ~698% CPU with a load
+   average of ~20 on 30 cores. So this sample measured **two concurrent probe
+   processes box-wide**, not one. The ceiling is therefore reached at **2**
+   concurrent headless-Chrome probes on this box for this probe population,
+   not at the 4 the first round used, and not at the "3 to 4" that
+   state-of-the-union §7.4 budgets for headless Chrome probes generally.
+
+**There is still exactly one genuinely uncontended datapoint in this whole
+effort**: `aerialrange.js`, run alone at 06:03 with zero other Chrome
+processes and a 1-minute load average of 2.88, finished in **3m03s wall on
+2.4s of CPU** with a real verdict. Everything else was measured against a
+busy box. **The uncontended per-probe cost of this suite is still unknown**,
+and no scheduling decision should be made from these numbers until one lane
+has the box to itself.
+
+Worth flagging to whoever owns the probes rather than the harness: BT-40
+recorded `apexec.js` (6 failures) and `post.js` (4 failures) as probes that
+**completed** and returned verdicts on Reid's Windows desktop, where ANGLE
+runs on D3D. Here, on SwiftShader, neither finishes in 600s. That gap is a
+platform property, not a probe defect, and it decides whether this suite can
+ever be a gate on this VM.
