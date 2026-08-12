@@ -149,27 +149,44 @@
   // `standAt` rather than a scripted walk: the body-frame point is put down
   // directly, exactly as `standAt`'s own header describes it (PH-90), which
   // is what lets this probe control the geometry without a bearing solve.
-  // A point on the line through `from`/`to`, `distFromTo` metres from `to`
-  // (negative goes past `to`, away from `from`). The chord-vs-arc error at
-  // tens of metres on a 600 km sphere is negligible, and `standAt` settles
-  // the player onto the real ground at whatever direction this lands on.
-  const along = (from, to, distFromTo) => {
-    const d = dist(from, to) || 1;
-    const t = distFromTo / d;
-    return [to[0] + (from[0] - to[0]) * t, to[1] + (from[1] - to[1]) * t,
-      to[2] + (from[2] - to[2]) * t];
-  };
-  const near15 = along(spawnFeet, post, 15);
-  const approached = of.standAt(...near15);
+  // Both approach and retreat are measured DIRECTLY FROM THE POST, in the
+  // fixed direction from post through spawnFeet (unit vector, computed once):
+  // `post + awayFromPost * metres` is `metres` from the post, full stop,
+  // with no dependence on the player's current position or on any other
+  // point's distance from any other point. The previous version placed the
+  // retreat by extrapolating past `spawnFeet` on the post-spawnFeet line,
+  // which is algebraically the identical point, but a verifier run showed the
+  // player settling ~45 m from the post instead of ~145 m: the exact cause
+  // was not pinned down (this project's own standing lesson, INSTRUMENTS.md,
+  // is to prefer the harder-to-get-wrong formulation once a probe has
+  // demonstrably produced a wrong number), so this rewrite measures every
+  // distance from the ONE anchor the checks below actually care about and
+  // asserts the landed distance immediately rather than trusting the call.
+  const awayFromPost = (() => {
+    const d = dist(post, spawnFeet) || 1;
+    return [(spawnFeet[0] - post[0]) / d, (spawnFeet[1] - post[1]) / d,
+      (spawnFeet[2] - post[2]) / d];
+  })();
+  const fromPost = (metres) => [post[0] + awayFromPost[0] * metres,
+    post[1] + awayFromPost[1] * metres, post[2] + awayFromPost[2] * metres];
+  const approached = of.standAt(...fromPost(15));
   await sleep(0.3);
-  log.push(`approach: stood ${dist(approached.feet, post).toFixed(1)} m from post`);
+  const approachDistM = dist(approached.feet, post);
+  log.push(`approach: stood ${approachDistM.toFixed(1)} m from post`);
   check('the fixture stood within the aggro radius of the post',
-        dist(approached.feet, post) < 30, `${dist(approached.feet, post).toFixed(1)} m`);
+        approachDistM < 30, `${approachDistM.toFixed(1)} m`);
 
   // ---- TRACE: chase, leash, return. One loop, one log, one set of checks. ----
+  // LEASH_M_EXPECTED mirrors EnemyGarrison.ts's own `LEASH_M` (60): a literal
+  // here rather than a read off the report, because no debug surface
+  // publishes the constant itself and restating the NUMBER once, next to the
+  // check that depends on it, is cheaper than adding one for a single probe.
+  const LEASH_M_EXPECTED = 60;
+  const RETREAT_M = 90;
   const trace = [];
   let retreated = false;
   let retreatAtT = null;
+  let retreatLandedM = null;
   let engageCount = 0;
   for (let k = 0; k < 20; k++) {
     await march(2.0);
@@ -182,23 +199,36 @@
     if (chaser.garrisonState === 'engage') engageCount++;
     // Retreat only once it has been seen chasing a STATIONARY player for a
     // couple of samples, so the trace can show distance actually closing
-    // before the leash test begins; far enough past BOTH the leash (60 m
-    // from the post) and the aggro radius (30 m from wherever it ends up
-    // chasing) that neither can re-trigger on the walk home.
+    // before the leash test begins; RETREAT_M (90 m) is clearly past BOTH
+    // the leash (60 m from the post) and the aggro radius (30 m from
+    // wherever it ends up chasing), so neither can re-trigger on the walk
+    // home. Measured and asserted IMMEDIATELY, not trusted: a prior version
+    // of this probe computed a retreat point that landed only ~45 m from the
+    // post on a verifier's run, and the failure only surfaced several checks
+    // later as "no return sample ever appeared", which is a much harder
+    // thing to diagnose than a distance check failing by name right here.
     if (!retreated && engageCount >= 2) {
       retreated = true;
       retreatAtT = trace[trace.length - 1].t;
-      of.standAt(...along(post, spawnFeet, -100));
+      const landed = of.standAt(...fromPost(RETREAT_M));
+      retreatLandedM = dist(landed.feet, post);
+      await sleep(0.3);
     }
   }
-  log.push(`trace (retreated at t=${retreatAtT}) ${JSON.stringify(trace)}`);
+  log.push(`trace (retreated at t=${retreatAtT}, landed ${retreatLandedM === null
+    ? 'n/a' : retreatLandedM.toFixed(1)} m from post) ${JSON.stringify(trace)}`);
   check('the retreat actually ran (chasing a stationary player was observed '
         + 'first)', retreated, JSON.stringify(trace));
+  check('and it actually landed clear of the leash, not just intended to',
+        retreatLandedM !== null && retreatLandedM > LEASH_M_EXPECTED,
+        `landed ${retreatLandedM === null ? 'n/a' : retreatLandedM.toFixed(1)} m `
+        + `from post, wanted > ${LEASH_M_EXPECTED} m`);
 
   // "Engaged" splits at the retreat: BEFORE it, the player was stationary and
   // close, so the chaser should be visibly closing; AFTER it, the player has
-  // just jumped ~145 m away, so distance necessarily balloons right up until
-  // the leash fires, which is what the next check is about.
+  // just jumped RETREAT_M (90 m) from the post, so distance necessarily
+  // balloons right up until the leash fires, which is what the next checks
+  // are about.
   const engaged = trace.filter((t) => t.state === 'engage');
   const preEngaged = engaged.filter((t) => retreatAtT === null || t.t <= retreatAtT);
   const returned = trace.filter((t) => t.state === 'return');
@@ -211,11 +241,20 @@
         JSON.stringify(preEngaged));
   check('THE LEASH FIRED: at least one `return` sample, well past LEASH_M '
         + '(60 m) when it was last seen `engage`', returned.length > 0
-        && Math.max(...engaged.map((t) => t.distPostM), 0) > 45,
+        && Math.max(...engaged.map((t) => t.distPostM), 0) > LEASH_M_EXPECTED - 15,
         JSON.stringify({ returned, maxEngagedDistPostM:
           Math.max(...engaged.map((t) => t.distPostM), 0) }));
-  check('IT WENT HOME: the trace ends `hold`, close to the post again',
-        held.length > 0 && held[held.length - 1].distPostM < 10,
+  // THE ENGAGE-TO-RETURN TRANSITION, ITSELF, not just "a `return` sample
+  // existed somewhere": walk the trace and require at least one adjacent
+  // pair where the state actually FLIPS from `engage` to `return`.
+  let sawTransition = false;
+  for (let i = 1; i < trace.length; i++) {
+    if (trace[i - 1].state === 'engage' && trace[i].state === 'return') sawTransition = true;
+  }
+  check('THE TRANSITION ITSELF: an `engage` sample immediately followed by a '
+        + '`return` sample', sawTransition, JSON.stringify(trace));
+  check('IT WENT HOME: the trace ends `hold`, within ARRIVE_M (2 m) of the post',
+        held.length > 0 && held[held.length - 1].distPostM < 3,
         JSON.stringify(held.slice(-3)));
   const finalReport = E();
   check('and the report agrees: nobody left engaged or mid-return',
