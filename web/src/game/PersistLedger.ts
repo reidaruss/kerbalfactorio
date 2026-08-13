@@ -22,6 +22,11 @@ export interface RestoreLedger {
    *  because whether one came back is now the difference between a world whose
    *  research key works and one whose does not. */
   stations: number;
+  /** WG-168: ruin colliders put BACK after `Structures.reset()` wiped the
+   *  shared solid set. Not a restore: a ruin regenerates from the seed and is
+   *  never in a save. This is the one number that separates "the ruin is still
+   *  solid after a load" from "nobody checked". */
+  ruinsReseated: number;
   machines: number;
   nodesDepleted: number;
   patchesDepleted: number;

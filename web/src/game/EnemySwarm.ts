@@ -114,6 +114,12 @@ export class EnemySwarm {
   private nextId = 1;
   /** Ledger. Every one of these is a number a probe can hold this file to. */
   spawned = 0;
+  /** WG-171. The GARRISON half of `spawned`, so the wave half is derivable.
+   *  Same argument as `waveLive` in `report()`: `spawned` used to mean "how
+   *  many a wave produced" because nothing else produced any, and a probe
+   *  binding it to `lastWave.totalCount` was right until a ruin started
+   *  posting guards at world build. */
+  garrisonSpawned = 0;
   killed = 0;
   /** Spawns refused because the catalogue had no row for the type id. Must be
    *  0; see `EnemyTypes.byId` for why this is not a silent default. */
@@ -190,6 +196,7 @@ export class EnemySwarm {
         });
         made++;
         this.spawned++;
+        this.garrisonSpawned++;
       }
     }
     return made;
@@ -305,10 +312,27 @@ export class EnemySwarm {
       else if (c.garrisonState === 'engage') engaging++;
       else if (c.garrisonState === 'return') returning++;
     }
+    // WG-171. `live` STOPPED MEANING "creatures a wave produced" the day
+    // `RuinSites.garrison` started posting guards at world build, and every
+    // probe that had ever read it meant the wave one. Both are published, side
+    // by side, because a total that quietly changed subject is the worst kind
+    // of number: `probes/enemies.js` was asserting `live === 0` on a fresh
+    // world as its "nothing has attacked yet" control, and a garrison 753 m
+    // away holding station is not an attack. Derived rather than counted
+    // separately so the two can never disagree.
+    let garrisoned = 0;
+    for (const c of this.live) if (c.provenance === 'garrison') garrisoned++;
     return {
       live: this.live.length,
+      /** Creatures /core's wave loop dispatched. `live` minus the garrison. */
+      waveLive: this.live.length - garrisoned,
+      garrisonLive: garrisoned,
       byType: Object.fromEntries(byType),
-      spawned: this.spawned, killed: this.killed,
+      spawned: this.spawned,
+      /** The wave half of `spawned`, cumulative. See `garrisonSpawned`. */
+      waveSpawned: this.spawned - this.garrisonSpawned,
+      garrisonSpawned: this.garrisonSpawned,
+      killed: this.killed,
       spawnsRefused: this.spawnsRefused,
       garrison: { holding, engaging, returning },
       bitingBuildings: biting, bitingPlayer: onPlayer,

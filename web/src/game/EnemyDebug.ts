@@ -10,6 +10,15 @@
 // attack that was not caused by the player's own production. The one thing that
 // IS offered is TIME, through the same `of_en_step` the fixed tick calls, and a
 // world with nothing polluting advances through it and dispatches nothing.
+//
+// WG-169: THE REFUSAL IS BLANKET AGAIN. GP-98 carved one named exception into
+// it, `of.enemies('garrison', seed)`, on the stated condition that it lasted
+// only until the POI bridge could place a garrison from a real ruin site. That
+// lane has landed, so the exception is gone and this file has no spawn hook of
+// any kind. What replaces it is `of.ruins('garrison', seed?)` in
+// `app/DebugRuins.ts`, which is NOT a second exception: it re-runs the shipped
+// `RuinSites.garrison` at the shipped post, so it drives the production path
+// rather than standing in for one.
 
 import type { Enemies, EnemyHost } from './Enemies.js';
 
@@ -79,14 +88,6 @@ export function enemyDebug(e: Enemies, host: EnemyHost, ll: LatLonPort,
   }
   if (op === 'nests') return nestRows(e, ll);
   if (op === 'near') return nearest(e, host, ll, Number(a ?? 8));
-  // THE ONE NAMED EXCEPTION TO THE REFUSAL ABOVE. See `Enemies.spawnGarrisonDebug`
-  // for why: a garrison is not a WAVE, so this is not "a probe conjuring an
-  // attack that was not caused by the player's own production" — there is no
-  // cause to fake, because a garrison was never meant to have one. It exists
-  // only until the POI bridge lane can place one from a real ruin site.
-  if (op === 'garrison') {
-    return { spawned: e.spawnGarrisonDebug(host, Number(a ?? 1)), ...(e.report() as object) };
-  }
   return {
     ...(e.report() as object),
     nestRows: nestRows(e, ll),

@@ -43,6 +43,8 @@ import { LaunchPads, type PadPart } from './LaunchPad.js';
 import { LaunchPadView } from './LaunchPadView.js';
 import { padPrompt } from './LaunchPadPlacement.js';
 import { ResearchStations, type ResearchStation } from './ResearchStations.js';
+import { RuinSites } from './RuinSites.js';
+import { Sites } from '../world/Sites.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
@@ -157,6 +159,11 @@ export class Gameplay {
   /** D-019: the research stations. The machine the J key now asks about, and
    *  the first building in this game whose whole purpose is a screen. */
   readonly stations: ResearchStations;
+  /** WG-166: the ruins the world actually SHOWS. Drawn from the site table
+   *  `/core` generates from the seed, solid through the same `structures.bodies`
+   *  everything else is solid through, and garrisoned through the seam
+   *  `EnemyGarrison.ts` built for it. */
+  readonly ruins: RuinSites;
   /** GP-65 / GP-79: what every placed thing can take, and what the PLAYER can.
    *  `Gameplay` is its own `HealthPopulations`, the four lists being fields
    *  already. Reasoning in Health.ts / PlayerHealth.ts. */
@@ -332,6 +339,12 @@ export class Gameplay {
     this.stations = new ResearchStations(d.core, this.game, d.origin,
       d.bodyHandle, () => d.ports?.voxels?.handle ?? 0, this.mode,
       () => this.structures);
+    // WG-166. Its own `origin` port and nothing else from this composition: a
+    // ruin is world content, not a building, so it takes no `GameCore`, no mode
+    // and no site registry. The solid set and the enemy loop are handed to it
+    // at the two call sites that need them (`create` and `Persist.apply`),
+    // which is what keeps this class out of the placement's business.
+    this.ruins = new RuinSites(d.core, d.bodyHandle, d.origin);
     this.build = new BuildMode(this.factory, this.factoryView,
       this.structures, this.structView, this.pads, this.padView);
     // A hand furnace marks its ingots AT the furnace (GP-64: no roaming toast).
@@ -346,7 +359,8 @@ export class Gameplay {
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
-      g.structures.load(), g.pads.load(), g.stations.load(), g.icons.load()]);
+      g.structures.load(), g.pads.load(), g.stations.load(), g.ruins.load(),
+      g.icons.load()]);
     g.structView.build(g.structures);
     g.padView.build(g.pads);
     g.progress = attachProgress(g);
@@ -363,6 +377,7 @@ export class Gameplay {
     d.player.body.solids = g.structures.bodies;
     d.scene.add(g.machines.group);
     d.scene.add(g.stations.group);
+    d.scene.add(g.ruins.group);
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
@@ -374,6 +389,21 @@ export class Gameplay {
     g.sfx.attach();
     g.populate();
     g.enemies.init(g, g.walker.body.feet);
+    // WG-166 / WG-168. THE RUINS, AFTER `enemies.init` AND BEFORE `load`, AND
+    // BOTH HALVES OF THAT ORDER ARE LOAD-BEARING.
+    //
+    // After init, because `spawnGarrison` is gated by `Enemies.enabled` and a
+    // garrison posted before the loop came up would be silently refused with
+    // every counter still reading healthy.
+    //
+    // Before `load`, because `restoreStructures` calls `Structures.reset()`,
+    // which calls `bodies.clear()` and throws away every solid in the world
+    // including this one. `Persist.apply` puts it back through `ruins.reseat`
+    // the moment the restore is done. Placing AFTER the load would work today
+    // and would leave that reseat unexercised on the ordinary boot, so the
+    // first person to hit it would be a player loading a save.
+    g.ruins.build(new Sites(d.core, d.bodyHandle), g.structures.bodies);
+    g.ruins.garrison(g.enemies, g);
     // DW-17. The clearing is grown from the seed FIRST and then the diff is
     // applied on top, because the layout is regenerated and only what the
     // player changed is saved.
@@ -587,6 +617,9 @@ export class Gameplay {
     this.machines.update();
     this.machines.updateFx(dt);
     this.stations.update();
+    // WG-166 / WG-170. The floating-origin re-place AND the LOD rung, off the
+    // same feet the two rings above use, for the reason stated at line 612.
+    this.ruins.update(this.d.player.body.feet);
     this.structures.step(dt);
     this.structView.sync(this.structures);
     this.pads.step(dt);
