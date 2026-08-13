@@ -104,7 +104,10 @@ function rightOf(v: ViewSource): THREE.Vector3 {
 export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Booted> {
   const t0 = performance.now();
   const events = new Events();
-  const quality = qualityKnobs(cfg.quality);
+  const quality = qualityKnobs(cfg.quality, {
+    iblSize: cfg.iblSizeOverride ?? undefined,
+    shadowSoft: cfg.shadowSoftOverride ?? undefined,
+  });
 
   hud.banner('loading of-core.wasm ...');
   const tWasm = performance.now();

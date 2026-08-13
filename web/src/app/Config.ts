@@ -113,6 +113,22 @@ export interface Config {
   readonly fadeSecs: number;
   /** Cascaded shadows. ?shadows=0 disables the whole pass. */
   readonly shadows: boolean;
+  /**
+   * RN-1420, standing rule 7. `?shadowsoft=0` puts `THREE.PCFShadowMap` back on
+   * every tier and `?shadowsoft=1` forces `PCFSoftShadowMap` onto `low`, so the
+   * filter change has a control inside one binary. `null` is the tier default
+   * and is DELIBERATELY not `false`: `Number(null)` is 0 and a missing flag read
+   * as its own default is §2.6's fourth trap.
+   */
+  readonly shadowSoftOverride: boolean | null;
+  /**
+   * RN-1415, standing rule 7. `?iblsize=` overrides the PMREM cube side. 64
+   * restores what every tier shipped with before this pass. `null` is the tier
+   * default; a value is clamped to a power of two in [16, 512] because
+   * PMREMGenerator's mip chain is derived from it and a silly value is a
+   * silently degraded environment rather than an error.
+   */
+  readonly iblSizeOverride: number | null;
   /** Analytic atmospheric scattering. ?atmos=0 disables sky + aerial perspective. */
   readonly atmosphere: boolean;
   /** Star field. ?stars=0 disables it. */
@@ -359,6 +375,28 @@ function parseQuality(raw: string | null): QualityTier {
   return raw === 'low' || raw === 'med' || raw === 'high' ? raw : 'high';
 }
 
+/**
+ * A tri-state flag: absent is `null`, not `false`. §2.6's fourth trap in one
+ * function: "a flag's DEFAULT is a fixture. `Number(null)` is 0, so parse a
+ * missing parameter as MISSING and assert the boot default in its own named
+ * check." Every existing flag here is two-state on purpose; these two are
+ * OVERRIDES of a per-tier table and genuinely have three states.
+ */
+function boolOrNull(p: URLSearchParams, key: string): boolean | null {
+  const v = p.get(key);
+  return v === null || v === '' ? null : v !== '0';
+}
+
+/** As above, clamped to a power of two in [16, 512]. */
+function pow2OrNull(p: URLSearchParams, key: string): number | null {
+  const v = p.get(key);
+  if (v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const e = Math.round(Math.log2(n));
+  return 2 ** Math.min(9, Math.max(4, e));
+}
+
 function num(p: URLSearchParams, key: string, fallback: number): number {
   const v = p.get(key);
   if (v === null) return fallback;
@@ -428,6 +466,8 @@ export function parseConfig(search: string): Config {
     // W2 pop in the same build, so the fix has a measured BEFORE.
     fadeSecs: Math.max(0, num(p, 'fade', 0.25)),
     shadows: p.get('shadows') !== '0',
+    shadowSoftOverride: boolOrNull(p, 'shadowsoft'),
+    iblSizeOverride: pow2OrNull(p, 'iblsize'),
     atmosphere: p.get('atmos') !== '0',
     // RN-64. `?iblground=0` builds no ground shell, so the environment's lower
     // hemisphere goes back to the sky model marched through the planet, which

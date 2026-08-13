@@ -125,13 +125,16 @@ export class SkyIbl {
   }
 
   stats(): {
-    builds: number; lastMs: number; ready: boolean;
+    builds: number; lastMs: number; ready: boolean; size: number;
     groundBuilds: number; ground: boolean; biome: number;
   } {
     return {
       builds: this.builds,
       lastMs: Math.round(this.lastMs * 100) / 100,
       ready: this.texture !== null,
+      // RN-1415. WHICH environment these milliseconds belong to. `lastMs` alone
+      // cannot tell a cheap rebuild from a small one.
+      size: this.renderer.iblSize,
       // A COUNTER AND NOT A FLAG, on RN-58's `grabs` precedent: "the shell was
       // built once at boot" and "the shell is interposed on every rebuild" are
       // different claims and a boolean cannot tell them apart.

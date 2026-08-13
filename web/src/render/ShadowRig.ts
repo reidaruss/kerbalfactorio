@@ -37,12 +37,25 @@ export interface ShadowStats {
   /** Cascade far planes actually in use. */
   splits: number[];
   active: boolean;
+  /**
+   * RN-1420. `PCFSoftShadowMap` rather than `PCFShadowMap`. The rig does not
+   * SET it (the filter is a renderer-wide define, `Renderer.ts`) but it is the
+   * one place a probe already reads shadow state from, and a pair of frames
+   * that differ only in this needs the difference in the report.
+   */
+  soft: boolean;
+  /** Cascade 0's world metres per shadow texel. §2.1.5's own number, derived. */
+  texel0M: number;
 }
 
 export class ShadowRig {
   readonly lights: THREE.DirectionalLight[] = [];
   readonly splits: number[];
   readonly mapSize: number;
+  /** RN-1420. Reported, not applied: `Renderer.ts` owns the define. */
+  readonly soft: boolean;
+  /** Cascade 0's metres per texel, published rather than recomputed (RN-681). */
+  private texel0M = 0;
   private active = true;
   private readonly centre = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
@@ -51,6 +64,7 @@ export class ShadowRig {
     const n = enabled ? q.csmCascades : 0;
     this.splits = (n === 1 ? SPLITS_1 : SPLITS_3).slice(0, Math.max(0, n));
     this.mapSize = q.shadowMapSize;
+    this.soft = q.shadowSoft;
     for (let i = 0; i < this.splits.length; ++i) {
       // Cascade 0 IS the near scene's sun (W4). TerrainMaterial lights itself
       // from uSunDir, but the rigged player is a stock MeshStandardMaterial, and
@@ -62,6 +76,11 @@ export class ShadowRig {
       light.castShadow = true;
       light.shadow.mapSize.set(this.mapSize, this.mapSize);
       light.shadow.bias = -0.0006;
+      // RN-1420. VSM reads `radius` and `blurSamples`; the PCF path reads
+      // neither, so setting them unconditionally is inert on the PCF tier and
+      // there is no branch to keep in step.
+      light.shadow.radius = 3;
+      light.shadow.blurSamples = 8;
       light.shadow.camera.near = 1;
       light.shadow.camera.far = CASTER_BACKOFF_M * 2;
       // THIS BLOCK IS A NO-OP AND IS KEPT ONLY SO THAT THE NEXT READER DOES NOT
@@ -135,6 +154,7 @@ export class ShadowRig {
       // Texel snapping. Without it the ortho box slides continuously with the
       // walk and every shadow edge crawls, which reads as worse than no shadows.
       const texel = (2 * r) / this.mapSize;
+      if (i === 0) this.texel0M = Math.round(texel * 1e5) / 1e5;
       // THE SAME NUMBER, PUBLISHED (RN-681). A cascade's world metres per texel
       // is already computed here for the snap, and it is also the entire input
       // to the shadow-LOD rule in `ShadowLod.ts`. Publishing it rather than
@@ -175,6 +195,8 @@ export class ShadowRig {
       vramMB: Math.round((this.vramBytes() / 1048576) * 10) / 10,
       splits: [...this.splits],
       active: this.active,
+      soft: this.soft,
+      texel0M: this.texel0M,
     };
   }
 }
