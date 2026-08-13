@@ -442,7 +442,7 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       new pure query `of_gp_node_harvest_gate(i)` answers the same question
 //       without swinging. Both are additive: every prior caller reading the
 //       first four words is unaffected.
-//   24: THE POI/SITE BRIDGE (WG-200 to WG-212), SPECIFIED at world-gen.md and
+//   24: THE POI/SITE BRIDGE (WG-151), SPECIFIED at world-gen.md and
 //       BUILT for the first time — zero prior callers, so nothing here is
 //       additive because there was nothing to add to. `of_poi_api.inc` (§22):
 //       `of_poi_count`/`of_poi_row` (18 f64 words, id split into idLo/idHi
@@ -2904,4 +2904,4 @@ OF_API int of_gp_item_ids(void) {
 #include "of_map_api.inc"       // §19  ABI 14: the map samples the world (DW-37)
 #include "of_enemies_api.inc" // §20  ABI 15: the pollution/evolution/nest loop
 #include "of_ap_api.inc"      // §21  autopilot mission planning (additive at ABI 22)
-#include "of_poi_api.inc"     // §22  ABI 24: the POI/site bridge (WG-200..212)
+#include "of_poi_api.inc"     // §22  ABI 24: the POI/site bridge (WG-151)

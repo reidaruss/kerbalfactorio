@@ -105,7 +105,7 @@ import { HandleLedger } from './HandleLedger.js';
 // ABI 23 (2026-08-11, GP-506): `of_gp_node_harvest`'s i32 scratch grows a 5th
 // word, `refusal` (a `HarvestRefusal` code), and `of_gp_node_harvest_gate(i)`
 // is a new pure query. Both additive.
-// ABI 24 (2026-08-12, WG-200 to WG-212): the POI/site bridge, built for the
+// ABI 24 (2026-08-12, WG-151): the POI/site bridge, built for the
 // first time (`of_poi_api.inc`, `poiabi.ts`, `world/Sites.ts`) -- WHERE a site
 // is (`of_poi_count`/`of_poi_row`/`of_poi_near`/`of_poi_nearest`/`of_poi_inside`)
 // and the unknown -> known -> visited state machine

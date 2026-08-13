@@ -213,7 +213,7 @@ export class Gameplay {
    *  the save follows it. That residue is measured by `staleHolders()` and is
    *  core-engine's, not this getter's, to close. */
   get bodyId(): number { return this.d.bodyId; }
-  /** WG-200 to WG-212: the body HANDLE the POI/site bridge keys its per-body
+  /** WG-151: the body HANDLE the POI/site bridge keys its per-body
    *  catalog on (`of_poi_*`'s `body` argument) -- NOT `bodyId` above, which is
    *  `/core`'s `BodyParams::bodyId` and numbers a body KIND, not a live
    *  handle. `WaterOracle`/`RockField`/`TreeField` all take this same

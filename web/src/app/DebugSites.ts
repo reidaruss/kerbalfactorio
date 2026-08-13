@@ -1,4 +1,4 @@
-// The POI/site half of window.__of (WG-200 to WG-212, ABI 24), split out for
+// The POI/site half of window.__of (WG-151, ABI 24), split out for
 // the same reason `DebugGameplay.ts` and `DebugTerraform.ts` are their own
 // files rather than more of `Debug.ts`.
 //

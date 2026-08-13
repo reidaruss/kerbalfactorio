@@ -50,7 +50,7 @@ export interface RestoreLedger {
    *  stream** and what the player explored is gone. Three states and not two,
    *  because a silent zero would make a lost world look like a new one. */
   discovery: number;
-  /** WG-200 to WG-212: POI/site ids (known + visited) /core has back. 0 means
+  /** WG-151: POI/site ids (known + visited) /core has back. 0 means
    *  the slot carried none, which a pre-ABI-24 save legitimately does; **-1
    *  means /core REFUSED the stream** (no field for this body, or an empty
    *  arena) and what the player had scanned or visited is gone. Same

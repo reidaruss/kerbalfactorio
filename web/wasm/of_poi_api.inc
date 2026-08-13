@@ -1,5 +1,5 @@
 // =============================================================================
-// of_poi_api.inc — THE POI / SITE BRIDGE (poi.h, WG-200 to WG-212). ABI 24.
+// of_poi_api.inc — THE POI / SITE BRIDGE (poi.h, WG-151). ABI 24.
 //
 // #included into of_core_api.cpp at the foot, after of_ap_api.inc, exactly as
 // the files before it are, so the scratch arena, `resetF64`/`resetI32`, the

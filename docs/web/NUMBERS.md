@@ -90,7 +90,7 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-650 to GP-669 | gameplay, the map body-identity defect (Reid 2026-08-11: station drawn orbiting the moon, stale body visual after switch) | allocated 2026-08-11 |
 | BT-80 to BT-119 | build-tooling, the harness gate + the full 4-shard probe sweep (todo #2): verdict exit codes, known-red.json, screenshot-step hardening, sweep + merged triage | allocated 2026-08-11 |
 | RN-1300 to RN-1310 | UNRECORDED CLAIM: `tools/blender/of_lib.py:50` carries this range live in code, and this ledger never allocated it to anybody (found by the albedo scope lane 2026-08-10) | **burned for new allocation, treated as used by that code; Admin 2026-08-10** |
-| WG-151 to WG-165 | world-gen, the POI bridge (of_poi_api.inc per world-gen.md:167, known/visited bits, client Sites.ts); ABI 24 or current+1 at dispatch | allocated 2026-08-11, dispatched 21:10 |
+| WG-151 to WG-165 | world-gen, the POI bridge (of_poi_api.inc per world-gen.md:167, known/visited bits, client Sites.ts); ABI 24 or current+1 at dispatch | **WG-151 USED, 2026-08-12** (the whole bridge: `of_poi_api.inc` at ABI 24, the `known_` bit and its unknown -> known -> visited state machine, `poiabi.ts` + `Sites.ts` + `DebugSites.ts`, `SaveSlot.poi`, the Linux `CHROME_CANDIDATES` fix to `reload.mjs`, and `probes/poisites.js` proven live by real `page.reload()`). One number covers the whole lane rather than splitting sub-decisions across the block, matching how WG-70/WG-116/WG-119 are each cited singly across many files. **WG-152 to WG-165 free.** A first commit (`fed5729`) cited WG-200 to WG-212 and WG-219 by mistake, colliding with the pre-existing unledgered WG-200..218 usage; every code comment and doc citation was renumbered to WG-151 in a follow-up commit, but the first commit's MESSAGE was not rewritten and still names the wrong numbers -- see world-gen.md's WG-151 row |
 | GP-520 to GP-532 | gameplay, map marker substrate + milestone bus (grantMilestone; wires the inert Research.earn, ReachedOrbit grant) | GP-520 to GP-523 USED 2026-08-11 (the shared `MapMarker` type + `MarkerRegistry` singleton, `MapPaint.markerPosM` as the one dirBody-to-world conversion both maps call, `MapLayers.drawMarkers` for the 2D canvas with its own `known`-only gate, `Map3D.syncMarkers`'s generic registry source, and the `of.markers` debug source) — **verified green**, `tools/smoke/probes/markers.js`, `valid: true`. GP-530 to GP-532 USED (`grantMilestone` in `Research.ts`, the ReachedOrbit/LandedOffWorld rising-edge wiring in `Systems.ts`, and the `of.research()` debug op). **The mechanism is verified** (`research_tests`: two new ctest cases plus a pre-existing one that already proved `FlightAutopilot` becomes researchable on grant, 17 tests/288 checks green); **the live browser wiring is NOT verified** — `tools/smoke/probes/milestones.js` twice failed to complete in over 90 minutes each against this session's shared VM running at load average 33 to 38 the whole time (measured, not assumed: `uptime`/`ps` showed sibling lanes' own Chrome instances each at 350 to 630% CPU), against a ~29-minute quiet-VM baseline for one build-to-orbit cycle (`map3d.js`). Both attempts confirmed still actively computing when killed for time, not stalled. See `docs/controllers/gameplay.md`'s GP-520 log entry for the full account. GP-524 to GP-529 free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible |
 | GP-533 to GP-545 | gameplay, the reveal + scanning antenna content (item, recipe, tech row, one-shot mark_known at build) | allocated 2026-08-11, not yet dispatched |
 | RN-1400 to RN-1449 | rendering, D-016 the albedo colour-space fix and retune | RN-1400 to RN-1404 USED 2026-08-11 (the two `_albedo_mean_*` functions in `texgen.py` linearised via the sRGB EOTF and unified onto one Rec.709 weighting; the manifest key renamed `albedo_mean` -> `albedo_mean_linear` and `version` bumped 1 -> 2; the `Surfaces.ts` k=1 fallback and the `surface_preview.py` `or 1.0` fallback both retired for a hard error, and `Surfaces.ts` now checks the `manifest.version` it already read; `check_maps` observed RED against the old v1 manifest then GREEN against the regenerated v2 one; full clean regeneration measured byte-identical against the shipped PNGs, and the brief's premise that this needs `blender501` was found wrong, texgen.py is stdlib-only by design). RN-1405 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
@@ -1215,7 +1215,7 @@ module, per their own comments), so every one of them still returned `no Chrome
 or Edge found` and exited 2 on this VM, silently, seven weeks after the family's
 first member was fixed.
 
-Found while proving the POI/site bridge's save round trip (WG-219): the setup
+Found while proving the POI/site bridge's save round trip (WG-151): the setup
 probe (`probes/poisites.js`) needed a real `page.reload()`, which only
 `reload.mjs` provides, and `reload.mjs` would not launch at all.
 
@@ -1231,13 +1231,20 @@ that it was.** The standalone-ness that keeps each runner simple to read is
 exactly what lets a fix silently fail to propagate; grep the family for the
 defect's signature before declaring the class closed.
 
-### `of.run()` inside a real browser did not finish once, at any budget, and the cause was the box and not the code
+### `of.run()` looked hung under load and was not; a quiet box finished it, which is the correction as much as the finding
 
 Proving the POI/site bridge's save round trip needed a REAL `page.reload()`
-(`probes/poisites.js`), which needs `of.run()` to advance simulated time. It
-never completed. Not "slow" in the sense a bigger number fixes: **180 s, 400 s,
-550 s and 590 s all timed out**, always the same way -- `page.evaluate` killed
-mid-call when the wrapping `timeout` closed the browser.
+(`probes/poisites.js`), which needs `of.run()` to advance simulated time. In
+the session that wrote this entry it never completed: **180 s, 400 s, 550 s
+and 590 s all timed out**, always the same way -- `page.evaluate` killed
+mid-call when the wrapping `timeout` closed the browser. That was written up
+here AS a probable defect in `of.run()`. **IT WAS NOT ONE.** A later, quieter
+run of the exact same probe through the exact same runner completed cleanly:
+the ruin at 753.77 m, the id round trip, both bits surviving the reload, every
+negative control green. **The word "hung" in the first draft of this entry
+was wrong and is corrected here rather than quietly edited away**, because a
+finding that turns out to have the wrong verb is still worth keeping on
+record -- this file's own rule about a later entry fixing an earlier one.
 
 **THE CONTROL THAT MATTERS: this is NOT the poi bridge's setup script.** The
 already-shipped, unrelated `probes/trees.js`, run through the ALREADY-FIXED
@@ -1273,17 +1280,22 @@ simulated second driven by real animation frames, competing for the same cores
 against several other lanes' full 3D boots, can plausibly take minutes rather
 than the fraction of a second a quiet box would need.
 
-**NOT FIXED, NOT WORKED AROUND, AND SAID SO RATHER THAN CLAIMED GREEN:** the
-poi bridge's save/known/visited round trip is proven at every layer a shared,
-contended VM cannot slow down to failure -- 41/41 ctest (deterministic,
-headless, no browser), `tsc --noEmit` clean, a hand-verified wasm build. The
-one layer that needs a real browser and a real reload is written
-(`probes/poisites.js`, wired into `reload.mjs`) and could not be run to
-completion in this session. Reporting "the probe exists" as "the probe passed"
-would be exactly the false-green this file exists to catch.
+**WHAT STAYS TRUE FROM THE FIRST DRAFT: the diagnosis, not the diagnosis's
+verb.** `ps aux` at the time showed FOUR OTHER PROJECTS' `vite preview`
+servers and their own Chrome instances alive concurrently (`sweep-shards/
+shard0..3`, plus `research-station`, plus `enemies`), all software rendering
+under SwiftShader on the same box. CLAUDE.md's own §7.4 names exactly this
+risk for exactly this VM ("do not fan out sixteen browser probes"). A
+simulated second driven by real animation frames, competing for the same
+cores against several other lanes' full 3D boots, took minutes instead of
+the fraction of a second a quiet box needed -- SLOW, not BROKEN, and the two
+look identical from inside a process with zero error output and a fixed
+timeout, which is the actual lesson: **a probe that stops progressing with no
+error and no crash is not evidence of a hang until a quiet box has been tried
+and also failed.** This session's first attempt skipped that last step and
+wrote "hang" from three timeouts alone.
 
 **If `of.run()` (or any real-time-driven probe) ever again fails to progress
 past boot with no error and no crash, check `ps aux` for concurrent Chrome/vite
-processes from OTHER lanes before assuming the code under test is broken.** A
-hang with zero error output and a box under silent contention look identical
-from inside the failing process.
+processes from OTHER lanes, and if the box is busy, GET A QUIET ONE AND RETRY
+before writing the code under test up as broken.**

@@ -1,4 +1,4 @@
-// WG-200 to WG-212 setup probe for reload.mjs: enumerate the POI/site table
+// WG-151 setup probe for reload.mjs: enumerate the POI/site table
 // over the bridge (ABI 24), mark the shipped ruin known then visited through
 // the real debug path (`of.sites()` / `of.siteMarkKnown` / `of.siteMarkVisited`,
 // DebugSites.ts), save, and hand the runner the site's IDENTITY so phase 2 can

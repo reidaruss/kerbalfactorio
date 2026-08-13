@@ -90,7 +90,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   const dn = discAbi(M)._of_disc_serialize();
   const discovery = dn > 0 ? Array.from(scratchU8(M, dn)) : [];
 
-  // WG-200 to WG-212: the POI/site bridge's two bits (known, visited), read
+  // WG-151: the POI/site bridge's two bits (known, visited), read
   // straight off `/core`'s per-body catalog for the same reason `discovery`
   // is: it is world state that exists whether or not a panel is looking at
   // it. Same u8 arena, same rule: copy out before the next call.
@@ -219,7 +219,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     discovery = D._of_disc_deserialize();
   }
 
-  // 0c. WHAT THE PLAYER HAD SCANNED OR VISITED (WG-200 to WG-212). Same
+  // 0c. WHAT THE PLAYER HAD SCANNED OR VISITED (WG-151). Same
   //     three-state discipline as discovery above: 0 is "the slot carried
   //     none" (every save before ABI 24, honestly), -1 is `/core` REFUSING
   //     the stream, and anything else is ids actually restored.

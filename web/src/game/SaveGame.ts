@@ -200,7 +200,7 @@ export interface SaveSlot {
    *  Additive and optional, so SAVE_VERSION deliberately does NOT move: a bump
    *  refuses every existing world, and nothing here would MISREAD an old slot. */
   discovery?: number[];
-  /** WG-200 to WG-212: the POI/site table's two bits (known, visited), as
+  /** WG-151: the POI/site table's two bits (known, visited), as
    *  `SiteCatalog::serialize`'s delta-varint byte stream -- the known ids,
    *  then the visited ids. NAMED `poi` AND NOT `sites`: that key already means
    *  the base's spawn-spiral SITE FRAMES (`StructureSave.ts`'s `SaveSite`),
