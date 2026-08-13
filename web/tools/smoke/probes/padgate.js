@@ -1,5 +1,19 @@
 // DW-29's GATE ON THE LAUNCH PAD, WITH ITS CONTROLS. Survival.
 //
+//   npm --prefix web run build
+//   npx --prefix web vite preview --host --port 4318
+//   node web/tools/smoke/run.mjs --url=http://<lan>:4318/ --scenario=walk \
+//     --width=640 --height=360 \
+//     --evalfile=web/tools/smoke/probes/padgate.js
+//
+// THE INVOCATION IS DOCUMENTED HERE FOR THE FIRST TIME (GP-625), and that is a
+// harness repair rather than a comment. `probeall.mjs` derives every probe's
+// flags by parsing the first `run.mjs` line out of its header, so a file without
+// one was skipped by the gate audit entirely: this probe has never appeared in a
+// census, red or green. A small viewport and the default 144.3 Hz render rate on
+// a software rasteriser is the standing NUMBERS.md shape; nothing below is
+// measured in pixels.
+//
 // THE CLAIM: a launch pad may not be built until `Launch Facilities` has been
 // researched, the refusal NAMES that tech, and buying its prerequisite moves the
 // tech's own refusal from the prereq to the science cost.
@@ -27,7 +41,10 @@
 // Logistic science is 72 Iron, 54 Copper and 24 Stone, all of it mined, smelted
 // and crafted here through the same furnace screen and the same craft buttons a
 // player uses. NOTHING IS GRANTED: there is no `of.give` on the debug surface
-// and this file does not add one. What makes the last assertion mean something
+// and this file does not add one. NOR IS ANYTHING MINED OUT OF ORDER (GP-624):
+// GP-506 gated coal, iron and copper behind a crude pickaxe, so §3 gathers wood
+// and stone bare-handed, crafts the pickaxe from those two alone, and witnesses
+// the bare-hand refusal as one more negative control before it mines. What makes the last assertion mean something
 // is that the refusal does not merely VANISH, it MOVES to the next rule in the
 // chain (the platform), which is the same shape as C3 one level up and is a
 // claim that a gate which had simply been switched off could not satisfy: that
@@ -143,11 +160,94 @@
   // ======================================================================
   // 3. EARN TEN AUTOMATION SCIENCE AND BUY THE PREREQ, FOR REAL.
   // ======================================================================
+  // GP-624. WOOD AND STONE FIRST, THEN THE PICKAXE, THEN THE ORE. GP-506 made
+  // coal, iron and copper `requiresToolFor` (gameplay.h), so the single sweep
+  // over every kind this replaces refused every ore swing it took and left the
+  // pack with no raw iron at all: the smelting, the station and every reading
+  // after them cascaded off that. Wood and loose stone stay ungated exactly so
+  // the pickaxe (Stone x2 + Wood x1) has a bare-hand path. Same swing count,
+  // same one visit per node; only the ORDER changed, and one `of.nodes()` report
+  // is read once and walked twice rather than built twice.
+  //
+  // GP-672. AND THIS SWEEP NOW HAS A BUDGET, WHICH IT HAS NEVER HAD, because
+  // splitting it in two is what finally made the missing one fatal. The old
+  // loop took six swings at EVERY node of EVERY kind with no stopping rule at
+  // all: GP-611 gave `research.js` a per-resource budget for exactly this and
+  // this file never received it, and it went unnoticed because a mixed sweep
+  // spreads the haul over five item types while `probeall.mjs` had never run
+  // this probe at all (GP-671). Take the wood and stone kinds ALONE with no
+  // budget and the haul is one-sided: MEASURED 2026-08-13, `373 swings ->
+  // {Wood: 1400, Stone: 600}`, which at 100 to a stack is 14 slots plus 6, i.e.
+  // **20 of 20**, and the very next line -- crafting a pickaxe -- was refused
+  // `PackFull`, taking 24 assertions down behind it. The pack is 20 slots and a
+  // probe that fills it has disarmed itself.
+  //
+  // The budget is per RESOURCE (a node count is world-gen's to move, GP-611),
+  // read ONCE per node (a `pack()` is a whole world report, GP-622), and a node
+  // whose own resource is already satisfied is SKIPPED rather than merely
+  // counted, so a scarce copper vein cannot keep every tree on the way paying
+  // out. Sized off this file's own bill, corrected: the station's true cost is
+  // `StructureKind::ResearchStation` in gameplay.h, Iron 20 + Stone 30 +
+  // Copper 10, NOT Stone alone as an earlier pass here assumed. That miscount
+  // is why Logistic science measured 0 even with a click loop that verifies
+  // every one of its own clicks (see the craftByClick note below): the
+  // Automation Science want (32 x Iron 2) legally ran the pack's Iron to
+  // exactly zero, because the station had already spent 20 of it uncounted,
+  // and a refused button correctly refuses forever no matter how patiently it
+  // is clicked. 22 iron batches and 18 copper at five units a load is 110 raw
+  // iron and 90 raw copper, which after the station's Iron 20 / Copper 10
+  // still covers Automation's Iron 64 / Copper 32 AND Logistic's Iron 16 /
+  // Copper 32 with margin on both metals; Stone climbs with it so the
+  // station's 30 and Logistic's 32 do not eat the pickaxe's 2 alive.
+  const BARE = [0, 1];      // Tree, Rock — bare hands are allowed here
+  const GATED = [2, 3, 4];  // CoalSeam, IronOre, CopperOre — pickaxe or refusal
+  const WANT = { Wood: 120, Stone: 100, Coal: 260, 'Raw iron': 130, 'Raw copper': 100 };
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron', 4: 'Raw copper' };
+  const nodesOnce = of.nodes();
   let harvests = 0;
-  for (const n of of.nodes()) {
-    if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
-    for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
-  }
+  const sweep = (kinds) => {
+    // The wants this sweep can actually satisfy: only the kinds it takes.
+    const want = kinds.map((k) => KIND_ITEM[k]).filter((i) => i !== undefined);
+    for (const n of nodesOnce) {
+      if (!kinds.includes(n.kind)) continue;
+      const p = pack();
+      if (!want.some((i) => (p[i] ?? 0) < WANT[i])) break;
+      const item = KIND_ITEM[n.kind];
+      if ((p[item] ?? 0) >= WANT[item]) continue;
+      for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+  sweep(BARE);
+  check('the clearing gave up wood and stone to bare hands',
+    have('Wood') > 0 && have('Stone') > 0, JSON.stringify(pack()));
+
+  // The refusal kept as a NEGATIVE CONTROL. This file is entirely about gates
+  // that have to be caught refusing, so the one it now has to obey is witnessed
+  // rather than tiptoed around.
+  const oreNode = nodesOnce.find((n) => GATED.includes(n.kind));
+  check('the clearing has a tool-gated node in it', oreNode !== undefined,
+    JSON.stringify([...new Set(nodesOnce.map((n) => n.kind))]));
+  const bareTry = oreNode === undefined ? null : of.harvest(oreNode.index);
+  check('NEGATIVE CONTROL: bare hands are REFUSED at ore, by name (ToolRequired)',
+    bareTry !== null && bareTry.ok === false
+    && bareTry.refusal !== null && bareTry.refusal !== undefined
+    && bareTry.refusal.code === 1,
+    JSON.stringify(bareTry));
+
+  const rawIronBeforePick = have('Raw iron');
+  const pickIdx = of.game().recipes
+    .findIndex((r) => r.name === 'Crude pickaxe' && r.craftable);
+  check('the crude pickaxe is craftable from what bare hands gathered',
+    pickIdx >= 0, JSON.stringify(pack()));
+  check('and it crafts', pickIdx >= 0 && of.craft(pickIdx) === true);
+  await sleep(0.2);
+  check('a crude pickaxe is in the pack', have('Crude pickaxe') >= 1,
+    JSON.stringify(pack()));
+  check('and no ore was spent on it, because none had been mined',
+    rawIronBeforePick === 0 && have('Raw iron') === 0,
+    `${rawIronBeforePick} -> ${have('Raw iron')}`);
+
+  sweep(GATED);
   log.push(`stocked in ${harvests} swings: ${JSON.stringify(pack())}`);
   check('the clearing had raw iron and copper', have('Raw iron') > 0
     && have('Raw copper') > 0, JSON.stringify(pack()));
@@ -185,8 +285,8 @@
     }
     return true;
   };
-  check('iron smelted', await smelt('Raw iron', 16), 'the load button vanished');
-  check('copper smelted', await smelt('Raw copper', 12), 'the load button vanished');
+  check('iron smelted', await smelt('Raw iron', 22), 'the load button vanished');
+  check('copper smelted', await smelt('Raw copper', 18), 'the load button vanished');
   of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
   await sleep(0.3);
   log.push(`smelted: ${JSON.stringify(pack())}`);
@@ -238,20 +338,43 @@
   const rows = () => [...document.querySelectorAll('#of-panel .of-recipe')];
   const rowNamed = (t) => rows().find((e) =>
     (e.querySelector('.nm')?.textContent ?? '').includes(t));
-  let made = 0;
-  for (let i = 0; i < 32; ++i) {
-    if (click(rowNamed('Automation science')?.querySelector('button'))) made++;
-    await sleep(0.05);
-  }
-  let logi = 0;
-  for (let i = 0; i < 16; ++i) {
-    if (click(rowNamed('Logistic science')?.querySelector('button'))) logi++;
-    await sleep(0.05);
-  }
+  // GP-?? FIRE-AND-FORGET DOM CLICKS ARE NOT A CRAFT. The old loops fired a
+  // fixed count of `click()` calls 50ms apart and counted a click as a craft
+  // the instant `dispatchEvent` returned, which is the same "assume the
+  // click landed" mistake the standing measure-not-assume rule exists for
+  // (NUMBERS.md). A click that lands on a button whose `disabled` attribute
+  // has not yet caught up with the true game state dispatches fine and
+  // crafts nothing, and the panel only rebuilds its rows when `craftKey`
+  // changes (InventoryPanel.render), so a fast run of clicks can race that
+  // rebuild. `craftByClick` below is `survivalrun.js`'s `craftBy` shape
+  // (retry, check the real signal, respect a budget) adapted to a DOM
+  // button that has no return value of its own: the real signal is the
+  // pack count itself, differenced before and after each attempt, and a
+  // click that produced no progress is retried against a freshly re-queried
+  // button rather than counted as done.
+  const craftByClick = async (label, want, maxAttemptsPerUnit = 30) => {
+    let clicks = 0;
+    let landed = 0;
+    while (have(label) < want) {
+      const before = have(label);
+      let ok = false;
+      for (let attempt = 0; attempt < maxAttemptsPerUnit && !ok; ++attempt) {
+        if (click(rowNamed(label)?.querySelector('button'))) clicks++;
+        await sleep(0.05);
+        ok = have(label) > before;
+      }
+      if (!ok) break; // budget expired with no progress: report what landed
+      landed++;
+    }
+    return { made: have(label), clicks, landed };
+  };
+  const autoResult = await craftByClick('Automation science', 32);
+  const logiResult = await craftByClick('Logistic science', 16);
   const sci = have('Automation science');
   const lsci = have('Logistic science');
-  log.push(`science: ${sci} automation from ${made} clicks, `
-    + `${lsci} logistic from ${logi}`);
+  log.push(`science: ${sci} automation from ${autoResult.clicks} clicks `
+    + `(${autoResult.landed} landed), ${lsci} logistic from `
+    + `${logiResult.clicks} clicks (${logiResult.landed} landed)`);
   check('real DOM clicks made the science', sci >= 30 && lsci >= 12,
     `${sci} automation / ${lsci} logistic`);
   await press('pack');

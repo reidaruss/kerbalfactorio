@@ -18,6 +18,11 @@
 //     calls a player's clicks make; the bay charges for every part; the pilot
 //     flies with the input actions a keyboard drives. A refusal is therefore
 //     real economic data, not a probe bug.
+// (2b) AND NOTHING IS TAKEN OUT OF ORDER (GP-624). GP-506 gated coal, iron and
+//     copper behind a crude pickaxe, so the run gathers wood and stone
+//     bare-handed (G1), crafts the tool (G2), and only then mines (G2b). A
+//     refusal a probe earned by playing illegally is NOT economic data, and
+//     reporting one as a stall is the one way rule (3) can lie.
 // (3) A DEADLOCK IS THIS PROBE SUCCEEDING AT ITS JOB. It is reported with the
 //     gate, the pack, the refusing row and the research state, and NO game
 //     constant gets tuned from here. `completed: false` with a precise stall
@@ -150,13 +155,63 @@
   // G1. HAND HARVEST. Six swings a node (the pack overflow in HandCrafter is a
   //     recorded defect; a stuffed pack silently eats craft outputs, so the
   //     pack is kept roomy on purpose).
+  //
+  //     GP-624. THE ROUND TAKES THE KINDS IT IS ALLOWED TO TAKE, and the gate
+  //     decides which those are. GP-506 made coal, iron and copper
+  //     `requiresToolFor` (gameplay.h): a bare-hand swing at them is REFUSED by
+  //     name, so a first round over every kind refused every ore swing, left
+  //     the pack with no raw iron, and STALLED this run at G1 while reporting
+  //     it as an economic finding — a probe blaming the game for its own
+  //     illegal move, which is the exact failure class rule (1) is about.
+  //     Wood and loose stone stay ungated so the pickaxe (Stone x2 + Wood x1)
+  //     has a bare-hand path, so G1 is now the bare half, G2 crafts the tool it
+  //     pays for, and G2b takes the ore with the tool in hand. Both halves
+  //     together are the same one visit per node at six swings the single round
+  //     was; the assertions about iron and copper are MOVED to G2b, not dropped.
   // ==========================================================================
-  const harvestRound = async () => {
+  //     GP-672. AND THE PACK GUARD WAS STRUCTURALLY INCAPABLE OF FIRING, which
+  //     is the defect that made the split above dangerous rather than merely
+  //     necessary. `if (of.game().carried.length >= 19) break` reads the number
+  //     of ITEM TYPES, because `GameCore.carried()` collapses the pack to one
+  //     line per type: with five raw resources it reports `5` while the pack is
+  //     genuinely full, and taking wood and stone ALONE it reports `2` for ever.
+  //     GP-611 found and fixed exactly this line in `research.js`; this file
+  //     kept the original. MEASURED on the same split in `padgate.js`, which had
+  //     no budget either: `373 swings -> {Wood: 1400, Stone: 600}`, which at 100
+  //     to a stack is **20 of 20 slots**, and the next craft was refused
+  //     `PackFull`. Here that would have stalled G2 and reported "the crude
+  //     pickaxe refuses with its inputs in hand" -- a probe that filled its own
+  //     pack, blaming the game for the refusal it earned. A guard that cannot
+  //     fail is worse than no guard, because it reads as a guard.
+  //
+  //     So: a per-RESOURCE budget (a node count is world-gen's to move), read
+  //     ONCE per node (a `pack()` is a whole world report, GP-622), a node whose
+  //     own resource is already satisfied SKIPPED so a scarce vein cannot keep
+  //     every tree on the way paying out, and a REAL slot count as the backstop.
+  //     Sized to leave room for the crafts that follow rather than to hoard: the
+  //     `restock()` loop below is what the later gates lean on, and it works
+  //     because the pack has somewhere to put the next haul.
+  const BARE = [0, 1];         // Tree, Rock — bare hands are allowed here
+  const GATED = [2, 3, 4, 5];  // CoalSeam, IronOre, CopperOre, WaterPool
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron',
+    4: 'Raw copper', 5: 'Water' };
+  const WANT = { Wood: 200, Stone: 200, Coal: 300, 'Raw iron': 300,
+    'Raw copper': 200, Water: 100 };
+  // A REAL slot count (GP-611's own helper): raw resources stack to 100, and a
+  // tool or a machine item is a slot of its own. Taken from a pack ALREADY read
+  // this iteration, never by reading it again: one world report per node.
+  const slotsIn = (p) => Object.values(p).reduce((a, c) => a + Math.ceil(c / 100), 0);
+  const harvestRound = async (kinds = [...BARE, ...GATED]) => {
     let swings = 0, ok = 0;
+    const want = kinds.map((k) => KIND_ITEM[k]).filter((i) => i !== undefined);
     for (const n of of.nodes()) {
-      if (![0, 1, 2, 3, 4, 5].includes(n.kind)) continue;
+      if (!kinds.includes(n.kind)) continue;
+      const p = pack();
+      if (slotsIn(p) >= 18) break;
+      if (!want.some((i) => (p[i] ?? 0) < WANT[i])) break;
+      const item = KIND_ITEM[n.kind];
+      if ((p[item] ?? 0) >= WANT[item]) continue;
       for (let k = 0; k < 6; ++k) {
-        if (of.game().carried.length >= 19) break;
         swings++;
         if (of.harvest(n.index).ok) ok++;
       }
@@ -164,18 +219,29 @@
     await sleepEco(0.2);
     return { swings, ok };
   };
-  const h1 = await harvestRound();
-  log.push(`harvest round 1: ${h1.ok}/${h1.swings} swings landed, pack ${JSON.stringify(pack())}`);
+  const h1 = await harvestRound(BARE);
+  log.push(`harvest round 1 (bare hands, wood + stone): ${h1.ok}/${h1.swings} swings `
+    + `landed, pack ${JSON.stringify(pack())}`);
   if (!check('the clearing yielded wood', have('Wood') > 0)
-    || !check('the clearing yielded raw iron', have('Raw iron') > 0)
-    || !check('the clearing yielded raw copper', have('Raw copper') > 0)) {
+    || !check('the clearing yielded loose stone', have('Stone') > 0)) {
     return stall('G1 hand harvest', 'the spawn clearing does not yield the bootstrap raws by hand',
       { round: h1, nodeKinds: of.nodes().map((n) => n.kind) });
   }
-  gate('G1 hand harvest', { swings: h1.swings, landed: h1.ok });
+  // THE GATE, WITNESSED RATHER THAN ASSUMED. A negative control costs one swing
+  // and is what separates "the ore came later" from "the ore was never gated".
+  const oreNode = of.nodes().find((n) => [2, 3, 4].includes(n.kind));
+  const bareOre = oreNode === undefined ? null : of.harvest(oreNode.index);
+  check('bare hands are REFUSED at ore, by name (ToolRequired), not by silence',
+    bareOre !== null && bareOre.ok === false
+    && bareOre.refusal !== null && bareOre.refusal !== undefined
+    && bareOre.refusal.code === 1,
+    JSON.stringify(bareOre));
+  gate('G1 hand harvest', { swings: h1.swings, landed: h1.ok,
+    bareOreRefusal: bareOre?.refusal ?? null });
 
   // ==========================================================================
-  // G2. HAND TOOLS. The first craft of the game.
+  // G2. HAND TOOLS. The first craft of the game, and now also the thing that
+  //     unlocks the second half of the harvest.
   // ==========================================================================
   const pickaxe = await craftBy(/crude pickaxe/i, 1);
   if (pickaxe.made < 1) {
@@ -183,6 +249,22 @@
       pickaxe.refusal);
   }
   gate('G2 hand tools');
+
+  // ==========================================================================
+  // G2b. THE ORE THE TOOL UNLOCKS. The two assertions that used to sit in G1
+  //      and could not be met there any more, asked at the first point in the
+  //      run where a player could legally meet them.
+  // ==========================================================================
+  const h2 = await harvestRound(GATED);
+  log.push(`harvest round 2 (tooled, coal + ore): ${h2.ok}/${h2.swings} swings landed, `
+    + `pack ${JSON.stringify(pack())}`);
+  if (!check('the clearing yielded raw iron', have('Raw iron') > 0)
+    || !check('the clearing yielded raw copper', have('Raw copper') > 0)) {
+    return stall('G2b tooled harvest',
+      'the spawn clearing does not yield ore even with a pickaxe in hand',
+      { round: h2, pickaxes: have('Crude pickaxe'), nodeKinds: of.nodes().map((n) => n.kind) });
+  }
+  gate('G2b tooled harvest', { swings: h2.swings, landed: h2.ok });
 
   // ==========================================================================
   // G3. THE FURNACE: crafted, placed, loaded, and the first ingots out.

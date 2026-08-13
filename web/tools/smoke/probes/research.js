@@ -19,6 +19,11 @@
 // means the run FAILS if any earlier part of the game is broken, which is the
 // right dependency for an acceptance to have.
 //
+// AND IT MINES IN THE LEGAL ORDER (GP-624). GP-506 gated coal, iron and copper
+// behind a crude pickaxe, so §1 gathers wood and loose stone bare-handed, crafts
+// the pickaxe out of those two alone, and only then mines. The bare-hand refusal
+// is witnessed as a negative control on the way past rather than avoided.
+//
 // FOUR NEGATIVE CONTROLS, because "the thing became available after research"
 // is also true of a gate that always says yes:
 //
@@ -147,12 +152,81 @@
   // was killed still computing at 1 h 55 m before it was found. One read per
   // node, and a `break` rather than a `continue` once the budget is met so the
   // remaining nodes are not walked at all.
-  for (const n of of.nodes()) {
-    if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
-    const p = pack();
-    if (!Object.entries(WANT).some(([k2, v]) => (p[k2] ?? 0) < v)) break;
-    for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
-  }
+  // GP-624. TWO SWEEPS WITH THE PICKAXE CRAFTED BETWEEN THEM, because ONE sweep
+  // over every kind stopped being legal play. GP-506 made coal, iron and copper
+  // `requiresToolFor` (gameplay.h): bare-handed swings at them are REFUSED by
+  // name, so the single loop this replaces landed wood and stone, refused every
+  // ore swing, never met its budget and left `have('Raw iron')` at zero with the
+  // whole smelting half of the file cascading off it. Wood and loose stone stay
+  // ungated exactly so the pickaxe (Stone x2 + Wood x1) has a bare-hand path.
+  //
+  // The swing count is unchanged: every node is still visited once and paid six
+  // swings. The sweeps partition the kinds and each budgets only what its own
+  // kinds can yield, so a met wood budget no longer keeps the walk going in the
+  // hope of iron. `of.nodes()` is read ONCE and walked twice, because it is the
+  // same full-world build `pack()` is and two loop headers would have bought
+  // back half of what the per-node budget above saved.
+  const BARE = [0, 1];      // Tree, Rock — requiresToolFor false, bare hands OK
+  const GATED = [2, 3, 4];  // CoalSeam, IronOre, CopperOre — pickaxe or refusal
+  // GP-672. A NODE WHOSE OWN RESOURCE IS ALREADY AT BUDGET IS SKIPPED. The
+  // budget stops the sweep only when EVERY want is met, so while one scarce
+  // resource is short every other node on the way keeps paying out: MEASURED
+  // 2026-08-13, this file finished its sweep at `Wood 389, Coal 432, Raw iron
+  // 378` against wants of 60, 60 and 55, because raw copper is the scarce one.
+  // At 100 to a stack that is 12 slots where 3 would do, and this run reached
+  // the science craft with **19 of 20** slots used. It passed, and one slot of
+  // margin decided by world-gen's node density is not a margin: the same
+  // overshoot with no budget at all put `padgate.js` at 20 of 20 and its
+  // pickaxe craft was refused `PackFull`. Skipping a satisfied kind costs
+  // nothing, because the budget is still read ONCE per node (GP-622), and every
+  // assertion below still has to be met by the same numbers.
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron', 4: 'Raw copper' };
+  const nodesOnce = of.nodes();
+  const sweep = (kinds, want) => {
+    for (const n of nodesOnce) {
+      if (!kinds.includes(n.kind)) continue;
+      const p = pack();
+      if (!Object.entries(want).some(([k2, v]) => (p[k2] ?? 0) < v)) break;
+      const item = KIND_ITEM[n.kind];
+      if (item !== undefined && (p[item] ?? 0) >= (want[item] ?? 0)) continue;
+      for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+  sweep(BARE, { Wood: WANT.Wood, Stone: WANT.Stone });
+  check('the clearing gave up wood to bare hands', have('Wood') > 0, have('Wood'));
+  check('and loose stone to bare hands', have('Stone') > 0, have('Stone'));
+
+  // THE REFUSAL AS A NEGATIVE CONTROL, not merely stepped around: without it,
+  // "ore came out once a pickaxe existed" is equally true of a gate that never
+  // refused anything in this world.
+  const oreNode = nodesOnce.find((n) => GATED.includes(n.kind));
+  check('the clearing has a tool-gated node in it', oreNode !== undefined,
+    JSON.stringify([...new Set(nodesOnce.map((n) => n.kind))]));
+  const bareTry = oreNode === undefined ? null : of.harvest(oreNode.index);
+  check('NEGATIVE CONTROL: bare hands are REFUSED at ore, by name (ToolRequired)',
+    bareTry !== null && bareTry.ok === false
+    && bareTry.refusal !== null && bareTry.refusal !== undefined
+    && bareTry.refusal.code === 1,
+    JSON.stringify(bareTry));
+
+  // The pickaxe, out of wood and stone alone. Proven the way pickaxegate.js
+  // proves it: nothing gated has yielded yet, so a pack holding zero raw iron
+  // that still crafts a pickaxe cannot have paid for it in ore.
+  const rawIronBeforePick = have('Raw iron');
+  const pickIdx = of.game().recipes
+    .findIndex((r) => r.name === 'Crude pickaxe' && r.craftable);
+  check('the crude pickaxe is craftable from what bare hands gathered',
+    pickIdx >= 0, JSON.stringify(pack()));
+  check('and it crafts', pickIdx >= 0 && of.craft(pickIdx) === true);
+  await sleep(0.2);
+  check('a crude pickaxe is in the pack', have('Crude pickaxe') >= 1,
+    JSON.stringify(pack()));
+  check('and no ore was spent on it, because none had been mined',
+    rawIronBeforePick === 0 && have('Raw iron') === 0,
+    `${rawIronBeforePick} -> ${have('Raw iron')}`);
+
+  sweep(GATED, { Coal: WANT.Coal, 'Raw iron': WANT['Raw iron'],
+    'Raw copper': WANT['Raw copper'] });
   // GP-611. A REAL SLOT COUNT. The old guard read `carried.length < 20`, and
   // `GameCore.carried()` collapses the pack to ONE LINE PER ITEM TYPE, so with
   // five resource types it reported `5` while the pack was genuinely full. It
