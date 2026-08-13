@@ -18,13 +18,21 @@ native title, not a prototype.
 
 1. **Mechanics: Factorio and KSP.** Largely met in skeleton form. The remaining
    work is connection, not invention: making the pieces one game.
-2. **Look: Satisfactory.** That is the envisioned target. Skyrim and Elden Ring
-   remain the aim-high references (see [web/ART-DIRECTION.md](web/ART-DIRECTION.md)),
-   deliberately set above the goal because the current art is so far below the
-   playable bar that aiming high is the corrective. Realistic materials,
-   weathering and asymmetry, detail at every distance, grounded muted colour.
-   KSP and Factorio are explicitly not art references. Unlike Satisfactory, the
-   terrain itself is manipulable: minable, diggable, deformable.
+2. **Look: Space Engineers fidelity (Reid, 2026-08-13), with Satisfactory as
+   the earlier reference.** Space Engineers is the primary art-style target:
+   functional industrial realism, PBR metal and machined surfaces, believable
+   wear, forms that read as engineered objects rather than props. Skyrim and
+   Elden Ring remain the aim-high references (see
+   [web/ART-DIRECTION.md](web/ART-DIRECTION.md)), deliberately set above the
+   goal because the current art is so far below the playable bar that aiming
+   high is the corrective. Detail at every distance, grounded muted colour.
+   KSP and Factorio are explicitly not art references. The terrain itself is
+   manipulable: minable, diggable, deformable.
+   Reid also wants "a lot of the mechanics behind the world" from Space
+   Engineers: the world behaving like a physical, consequence-bearing place
+   (deformable voxel terrain is already ours; which further mechanics, such as
+   structural physics, damage states, or grid construction, is an open D-020
+   scoping question logged in MASTER_PLAN, not yet a commitment).
 3. **Feel: a game, not a tech demo.** Movement, player model, animations,
    collisions, camera, sound cues, UI legibility. A first-class workstream with
    its own passes and measurements, not polish deferred to the end.
