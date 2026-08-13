@@ -51,6 +51,7 @@
 import * as THREE from 'three';
 
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
+import { loadTexture } from '../../assets/Loaders.js';
 
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
   | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
@@ -215,10 +216,29 @@ interface ManifestFamily {
    *  ALL map fields are therefore optional, and a family is consumed by
    *  whichever fields it declares. */
   normal?: ManifestMap; orm?: ManifestMap; albedo?: ManifestMap;
+  /** RN-1462. Two ADDITIVE slots alongside the five DW-35 shipped (albedo,
+   *  normal, roughness, metalness, AO). Both are TILING like normal/orm, not
+   *  card-shaped like a leaf's `albedo`, so both require `tile_m` the same
+   *  way normal/orm do (`ready` refuses one that does not, rather than
+   *  silently discarding it). No shipped family declares either today: this
+   *  lane wires the slot, texgen produces nothing for it (own report). */
+  emissive?: ManifestMap;
+  /** A STANDALONE alpha mask, distinct from a card family's embedded RGBA
+   *  alpha channel. Reuses `alpha_test` below as its required companion
+   *  rather than adding a second field for the same idea: `ready` refuses an
+   *  `alpha` map with no valid `alpha_test`, mirroring D-016's
+   *  albedo_mean_linear refusal, because three.js ignores `alphaMap`
+   *  entirely on an opaque material with `alphaTest` at its 0 default. */
+  alpha?: ManifestMap;
   tile_m?: number; size_px: number; texels_per_m?: number;
   uv_space?: 'unit' | 'metres';
   wrap?: { u: 'repeat' | 'clamp'; v: 'repeat' | 'clamp' };
   alpha_test?: number; albedo_mean_linear?: number;
+  /** RN-1462. A per-family multiplier on the decoded tangent-space normal's
+   *  XY (three's `material.normalScale`, applied uniformly on both axes).
+   *  Absent means three's own default of 1.0: every family that ships
+   *  without this field must read exactly as it did before this lane. */
+  normal_scale?: number;
 }
 interface Manifest {
   version: number; zlib: string;
@@ -231,10 +251,12 @@ interface Surface {
   /** THREE shapes now (RN-455). A tiling PBR surface carries normal+orm; an
    *  albedo CARD family carries `albedo` in unit space with an alphaTest; and
    *  a tiling BODY family carries all three, metre UVs, no alpha. The union is
-   *  the same fields, so a consumer is still "whatever this family declares". */
+   *  the same fields, so a consumer is still "whatever this family declares".
+   *  `emissive`/`alphaMap` (RN-1462) join the union the same way. */
   normal?: THREE.Texture; orm?: THREE.Texture; albedo?: THREE.Texture;
+  emissive?: THREE.Texture; alphaMap?: THREE.Texture;
   tileM?: number; sizePx: number; vramBytes: number;
-  alphaTest?: number; albedoMean?: number;
+  alphaTest?: number; albedoMean?: number; normalScale?: number;
 }
 
 interface Reg {
@@ -247,10 +269,14 @@ interface Reg {
 
 /** Which maps are currently bound. All true is the shipped state.
  *  `?leaftex=0` boots with the albedo cards off (standing rule 7 isolation);
- *  `setMaps({albedo})` flips them inside one settled frame for matched pairs. */
+ *  `setMaps({albedo})` flips them inside one settled frame for matched pairs.
+ *  `emissive`/`alpha` (RN-1462) get the same isolation shape as normal/orm
+ *  even though no shipped family uses either yet, so a probe against a
+ *  future family does not also need a new toggle plumbed. */
 const state = {
   normal: true, orm: true,
   albedo: new URLSearchParams(self.location.search).get('leaftex') !== '0',
+  emissive: true, alpha: true,
 };
 
 const registered: Reg[] = [];
@@ -365,7 +391,7 @@ export function noteShaderOrder(tag: string, frag: string): void {
  */
 function makeAlbedoTexture(url: string,
                            wrap?: { u: string; v: string }): Promise<THREE.Texture> {
-  return new THREE.TextureLoader().loadAsync(url).then((t) => {
+  return loadTexture(url).then((t) => {
     t.wrapS = wrap?.u === 'clamp' ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
     t.wrapT = wrap?.v === 'repeat' ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
@@ -384,7 +410,7 @@ function makeAlbedoTexture(url: string,
  * belongs to what its UVs are, and those are independent.
  */
 function makeTilingAlbedo(url: string, tileM: number): Promise<THREE.Texture> {
-  return new THREE.TextureLoader().loadAsync(url).then((t) => {
+  return loadTexture(url).then((t) => {
     t.wrapS = THREE.RepeatWrapping;
     t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(1 / tileM, 1 / tileM);
@@ -396,7 +422,7 @@ function makeTilingAlbedo(url: string, tileM: number): Promise<THREE.Texture> {
 }
 
 function makeTexture(url: string, tileM: number): Promise<THREE.Texture> {
-  return new THREE.TextureLoader().loadAsync(url).then((t) => {
+  return loadTexture(url).then((t) => {
     t.wrapS = THREE.RepeatWrapping;
     t.wrapT = THREE.RepeatWrapping;
     // UVs are metres, so one repeat per tile_m metres.
@@ -412,6 +438,27 @@ function makeTexture(url: string, tileM: number): Promise<THREE.Texture> {
     // default is 0 in r185 (Texture.channel = 0), but the ORM image is one
     // object in three slots, so stating it here is what keeps the AO and the
     // roughness reading the same UV set if anyone ever adds a second one.
+    t.channel = 0;
+    return t;
+  });
+}
+
+/**
+ * RN-1462. Emissive is LIGHT COLOUR, unlike normal/orm/alpha which are DATA:
+ * sRGB-decoded like an albedo, but metre-tiled like normal/orm rather than
+ * card-shaped in unit space, because every family that could plausibly carry
+ * one (panel edge-lights, a machine indicator strip) is a tiling body family,
+ * not a card. No shipped family declares `emissive` yet; this exists so the
+ * day one does, `ready` below has somewhere to route it that already carries
+ * the anisotropy/channel conventions the other four slots settled on.
+ */
+function makeEmissiveTexture(url: string, tileM: number): Promise<THREE.Texture> {
+  return loadTexture(url).then((t) => {
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1 / tileM, 1 / tileM);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 16;
     t.channel = 0;
     return t;
   });
@@ -494,10 +541,50 @@ const ready = (async (): Promise<void> => {
       surf.tileM = tileM;
       surf.vramBytes += per * 2;
     }
-    // A family declaring NEITHER shape is tolerated and skipped, which is the
-    // bark precedent made structural: a family addition must not break an
-    // older client.
-    if (surf.albedo === undefined && surf.normal === undefined) continue;
+    // RN-1462. Both new slots are TILING, like normal/orm, so both need
+    // `tile_m`; a family that declares one WITHOUT a tile size is a manifest
+    // that failed to build correctly (card families have no use for either,
+    // since a card already carries its shape in its own albedo alpha), and
+    // gets the same loud refusal D-016 gave a missing albedo_mean_linear
+    // rather than being silently skipped like the untagged bark case above.
+    if (f.emissive !== undefined) {
+      if (tileM === undefined) {
+        throw new Error(`[of] surfaces: ${name} carries an emissive map with `
+          + 'no tile_m (card families use unit UVs and have no metre tile '
+          + 'size, so an emissive map on one is meaningless). Regenerate '
+          + 'surfaces.json.');
+      }
+      surf.emissive = await makeEmissiveTexture(DIR + f.emissive.file, tileM);
+      surf.vramBytes += per;
+    }
+    if (f.alpha !== undefined) {
+      if (tileM === undefined) {
+        throw new Error(`[of] surfaces: ${name} carries an alpha map with no `
+          + 'tile_m (card families use unit UVs and have no metre tile size). '
+          + 'Regenerate surfaces.json.');
+      }
+      if (f.alpha_test === undefined || !(f.alpha_test > 0)) {
+        // MeshStandardMaterial ignores `alphaMap` entirely on an opaque
+        // material once `alphaTest` sits at its 0 default: a map bound
+        // without a valid alpha_test is a silent no-op indistinguishable
+        // from the map never having loaded at all, exactly the shape D-016
+        // refused for a present albedo with no albedo_mean_linear.
+        throw new Error(`[of] surfaces: ${name} has an alpha map but no `
+          + `valid alpha_test (got ${String(f.alpha_test)}). Regenerate `
+          + 'surfaces.json.');
+      }
+      surf.alphaMap = await makeTexture(DIR + f.alpha.file, tileM);
+      surf.alphaTest = f.alpha_test;
+      surf.vramBytes += per;
+    }
+    surf.normalScale = f.normal_scale;
+    // A family declaring NONE of the four map shapes is tolerated and
+    // skipped, which is the bark precedent made structural: a family
+    // addition must not break an older client. `emissive`/`alphaMap` join the
+    // albedo/normal check (RN-1462) because both require `tile_m` above and
+    // so can appear on a family that declares neither of the original two.
+    if (surf.albedo === undefined && surf.normal === undefined
+      && surf.emissive === undefined && surf.alphaMap === undefined) continue;
     surfaces.set(name as Family, surf);
   }
   for (const r of registered) apply(r);
@@ -508,7 +595,7 @@ ready.catch((e: unknown) => {
     + ' Every batch draws untextured; run `npm run sync-assets`.');
 });
 
-/** Resolves when the manifest and all four maps are bound. */
+/** Resolves when the manifest and every map a family declares are bound. */
 export function surfacesReady(): Promise<void> { return ready.catch(() => undefined); }
 
 function apply(r: Reg): void {
@@ -552,10 +639,30 @@ function apply(r: Reg): void {
     // card path and the surface path could never be the same family.
   }
   r.mat.normalMap = state.normal ? (s.normal ?? null) : null;
+  // RN-1462. Three's own default is (1,1); `s.normalScale` is undefined for
+  // every family that ships without `normal_scale` (all of them, today), so
+  // this is a no-op there and every existing family reads exactly as before.
+  r.mat.normalScale.setScalar(state.normal && s.normalScale !== undefined ? s.normalScale : 1);
   r.mat.roughnessMap = state.orm ? (s.orm ?? null) : null;
   r.mat.metalnessMap = state.orm ? (s.orm ?? null) : null;
   r.mat.aoMap = state.orm ? (s.orm ?? null) : null;
   if (r.mat.aoMap !== null) r.mat.aoMap.channel = 0;
+  // RN-1462: emissiveMap and alphaMap, the two DW-35 slots ASSET-SPECS 2.8 /
+  // RN-560 left unwired. Both are optional per family exactly like
+  // normal/orm/albedo above: `s.emissive`/`s.alphaMap` are undefined for
+  // every family in the shipped manifest (this lane converts no texture), so
+  // this is inert until texgen ships one.
+  r.mat.emissiveMap = state.emissive ? (s.emissive ?? null) : null;
+  r.mat.alphaMap = state.alpha ? (s.alphaMap ?? null) : null;
+  if (r.mat.alphaMap !== null) {
+    // alphaTest is the alpha map's REQUIRED companion, checked hard in
+    // `ready` (mirroring D-016's albedo_mean_linear refusal): an alphaMap on
+    // an otherwise-opaque MeshStandardMaterial is a silent no-op unless
+    // alphaTest (or `transparent`) is set. Takes precedence over the albedo
+    // branch's own alphaTest above, on the (currently nonexistent) family
+    // that would carry both.
+    r.mat.alphaTest = s.alphaTest as number;
+  }
   r.mat.needsUpdate = true;
 }
 
@@ -574,7 +681,11 @@ export function attachSurface(mat: THREE.MeshStandardMaterial, family: Family,
   apply(r);
 }
 
-export interface MapState { normal: boolean; orm: boolean; albedo: boolean }
+export interface MapState {
+  normal: boolean; orm: boolean; albedo: boolean;
+  /** RN-1462. */
+  emissive: boolean; alpha: boolean;
+}
 
 /**
  * Bind or unbind the maps on every registered material, in place.
@@ -591,6 +702,8 @@ export function setMaps(next: Partial<MapState>): MapState {
   if (next.normal !== undefined) state.normal = next.normal;
   if (next.orm !== undefined) state.orm = next.orm;
   if (next.albedo !== undefined) state.albedo = next.albedo;
+  if (next.emissive !== undefined) state.emissive = next.emissive;
+  if (next.alpha !== undefined) state.alpha = next.alpha;
   for (const r of registered) apply(r);
   return { ...state };
 }
@@ -613,6 +726,8 @@ export interface SurfaceReport {
   families: {
     name: string; tileM: number | null; sizePx: number; repeat: number | null;
     albedo: boolean; alphaTest: number | null; albedoMean: number | null;
+    /** RN-1462. */
+    emissive: boolean; alpha: boolean; normalScale: number | null;
     /** RN-953. The manifest's own tile, and whether `?tile=` displaced it. A
      *  sweep whose flag was dropped reports the default and reads as a result,
      *  which is RN-698's failure; this makes the ask and the outcome separate
@@ -629,6 +744,8 @@ export interface SurfaceReport {
      *  from the grey-white silent-drop failure; mapSize catches the 1x1
      *  placeholder version of the same lie (RN-78's groundshot lesson). */
     hasMap: boolean; mapSize: number | null; alphaTest: number;
+    /** RN-1462. */
+    hasEmissive: boolean; hasAlpha: boolean; normalScale: number;
     colorR: number;
     /** RN-345. The material colour AFTER the mean-neutral scale and the foliage
      *  tone, so a probe can read the shipped palette rather than infer it, and
@@ -652,6 +769,8 @@ export function surfaceReport(): SurfaceReport {
       repeat: s.normal?.repeat.x ?? null,
       albedo: s.albedo !== undefined, alphaTest: s.alphaTest ?? null,
       albedoMean: s.albedoMean ?? null,
+      emissive: s.emissive !== undefined, alpha: s.alphaMap !== undefined,
+      normalScale: s.normalScale ?? null,
       manifestTileM: manifest?.families[name]?.tile_m ?? null,
       tileOverridden: TILE_OVERRIDE[name] !== undefined,
     });
@@ -700,6 +819,8 @@ export function surfaceReport(): SurfaceReport {
         mapSize: m.map === null ? null
           : (m.map.image as { width?: number } | undefined)?.width ?? null,
         alphaTest: m.alphaTest,
+        hasEmissive: m.emissiveMap !== null, hasAlpha: m.alphaMap !== null,
+        normalScale: m.normalScale.x,
         colorR: m.color.r, colorG: m.color.g, colorB: m.color.b,
         toned: FOLIAGE_TONE_FAMILIES.has(r.family),
       };

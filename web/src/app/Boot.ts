@@ -24,7 +24,7 @@ import {
   learnStationProxies, learnStationSockets, STATION_ASSET,
 } from '../game/SpaceStation.js';
 import { StationView } from '../render/StationView.js';
-import { loadGlb } from '../assets/Loaders.js';
+import { initKtx2, loadGlb } from '../assets/Loaders.js';
 import { volumes } from '../game/GravityVolumes.js';
 import { benchOracle, loadOfCore } from '../sim/wasm/OfCore.js';
 import { PlanetBody, type BodyId } from '../world/PlanetBody.js';
@@ -125,6 +125,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   canvas.id = 'of-canvas';
   host.insertBefore(canvas, host.firstChild);
   const renderer = createRenderer(canvas, cfg, quality);
+  // RN-1462. Must run before any KTX2 texture load; see Loaders.ts for why
+  // (`detectSupport` needs the GPU context to pick a transcode target).
+  // Every other asset load in `boot()` is below this line, and the first is
+  // several hundred lines down (`STATION_ASSET`), so this is not tight.
+  initKtx2(renderer);
 
   const scenes = new Scenes();
   const rig = new CameraRig(renderer.depth);
