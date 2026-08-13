@@ -320,6 +320,12 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   for (const p of structures.parts) structView.release(p.id);
   const restoredParts = restoreStructures(structures, slot.sites ?? [],
     slot.structures ?? []);
+  // 5a. WG-168. THE RUINS GO BACK INTO THE SOLID SET, IMMEDIATELY. The line
+  //     above calls `Structures.reset()` -> `bodies.clear()` on the ONE set the
+  //     walker reads, throwing away every solid in it including ones the base
+  //     layer never heard of. A ruin is not save state (it regenerates from the
+  //     seed; `Gameplay.create` placed it): nothing to restore, one to put back.
+  const reseatedRuins = g.ruins.reseat(structures.bodies);
   // 5b. THE LAUNCH PADS, after the decks and for the same reason the decks come
   //     after the tunnels: a pad's base plane IS a deck's top face (GP-58), so
   //     restoring one before its platform would anchor it against a site that
@@ -374,6 +380,9 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   return {
     buildings, structures: restoredParts, pads: restoredPads,
     stations: restoredStations, antennas: restoredAntennas,
+    // WG-168. Not a restore: ruin colliders the reset destroyed and this load
+    // put back. DW-20, a claim needs a number. See PersistLedger.ts.
+    ruinsReseated: reseatedRuins,
     machines: restoredMachines, nodesDepleted: depleted,
     rocks: rocksApplied,
     rocksPending: g.rocks.stats().pending,

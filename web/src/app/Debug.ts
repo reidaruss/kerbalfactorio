@@ -6,6 +6,7 @@ import { assetStats } from '../assets/Loaders.js';
 import { gameplayApi } from './DebugGameplay.js';
 import { terraformApi } from './DebugTerraform.js';
 import { sitesApi } from './DebugSites.js';
+import { ruinsApi } from './DebugRuins.js';
 import type { Services } from './Services.js';
 import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
@@ -484,6 +485,9 @@ export function installDebugApi(
     ...terraformApi(s),
     ...gameplayApi(s, loop),
     ...sitesApi(s),
+    // WG-166. The site TABLE is `sitesApi`; the drawn INSTANCES are this one.
+    // See DebugRuins.ts for why the two are separate surfaces.
+    ...ruinsApi(s),
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
   return api;

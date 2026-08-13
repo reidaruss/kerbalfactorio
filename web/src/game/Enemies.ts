@@ -30,7 +30,7 @@ import { EnemySwarm, type Creature, type SwarmContext } from './EnemySwarm.js';
 import { EnemyView, NEST_KEY } from './EnemyView.js';
 import { SpiderFlock } from './SpiderFlock.js';
 import { killAll, setPeaceful } from './EnemyCheats.js';
-import { spawnGarrison, spawnGarrisonDebug } from './EnemyGarrison.js';
+import { spawnGarrison } from './EnemyGarrison.js';
 import { emittersOf, targetsOf, type TargetPopulations, type TargetRow }
   from './EnemyTargets.js';
 import type { Hittable } from './Weapon.js';
@@ -106,9 +106,8 @@ export class Enemies {
   private targets: TargetRow[] = [];
   private emitters: EmitterRow[] = [];
   private sinceDerive = 0;
-  /** Not `private`: `EnemyGarrison.ts`'s debug spawn reads it to place the
-   *  post a fixed distance from the player, the same reason `context` is not
-   *  private either. */
+  /** Not `private`: the same reason `context` is not private either. It was
+   *  also read by `EnemyGarrison.ts`'s debug spawn, which WG-169 deleted. */
   bodyRadiusM = 600000;
   private readonly nestSlots = new Map<number, number>();
   private readonly creatureSlots = new Map<number, number>();
@@ -218,15 +217,14 @@ export class Enemies {
 
   /** A GARRISON: creatures posted at `postPos` rather than dispatched by
    *  /core's wave loop. In EnemyGarrison.ts, beside `EnemyCheats.ts`'s two for
-   *  the same reason: this file is already near its 400-line cap. */
+   *  the same reason: this file is already near its 400-line cap.
+   *
+   *  WG-169: `RuinSites.garrison` is now the caller, with a real site position
+   *  and the site id's low half as the seed. `spawnGarrisonDebug`, the synthetic
+   *  post 45 m east of the player that stood in for it, is DELETED, exactly as
+   *  its own header said it would be the day the POI bridge could place one. */
   spawnGarrison(host: EnemyHost, postPos: Vec3, seed: number): number {
     return spawnGarrison(this, host, postPos, seed);
-  }
-
-  /** DEBUG ONLY. See EnemyGarrison.ts for why this is the one named exception
-   *  to EnemyDebug.ts's refusal to offer a spawn hook. */
-  spawnGarrisonDebug(host: EnemyHost, seed: number): number {
-    return spawnGarrisonDebug(this, host, seed);
   }
 
   /**
@@ -262,9 +260,9 @@ export class Enemies {
     return this.swarm.spawn(w, this.types, ctx);
   }
 
-  /** Not `private`: `EnemyGarrison.ts`'s `spawnGarrison`/`spawnGarrisonDebug`
-   *  build the identical context a wave spawn does, for the identical reason
-   *  `EnemyCheats.ts` reaches `swarm`/`loop` rather than duplicating them. */
+  /** Not `private`: `EnemyGarrison.ts`'s `spawnGarrison` builds the identical
+   *  context a wave spawn does, for the identical reason `EnemyCheats.ts`
+   *  reaches `swarm`/`loop` rather than duplicating them. */
   context(host: EnemyHost): SwarmContext {
     const f = host.walker.body.feet;
     return {

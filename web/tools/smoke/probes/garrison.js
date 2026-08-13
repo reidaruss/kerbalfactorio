@@ -7,9 +7,24 @@
 //     --sandbox=1 --combat=1 --evalfile=web/tools/smoke/probes/garrison.js
 //
 // AND THE SAME FILE AGAIN WITHOUT --combat=1, which must pass with the
-// OPPOSITE outcome: the debug spawn itself refused, zero garrisoned. That is
+// OPPOSITE outcome: the spawn itself refused, zero garrisoned. That is
 // GP-93's own rule carried into this seam, and the negative control below is
 // what makes the positive numbers mean something.
+//
+// WG-169. THE POST IS NOW A REAL RUIN AND THE VERB IS `of.ruins('garrison')`.
+// Every spawn in this file used to go through the enemy surface's own
+// 'garrison' op, which posted a synthetic garrison 45 m east of the player
+// because the POI
+// bridge could not yet place one; GP-98 wrote that hook down as temporary and
+// named the day it would be deleted, and this is that day. `of.ruins(
+// 'garrison', seed)` re-runs the SHIPPED `RuinSites.garrison` at the SHIPPED
+// post, so this probe now drives the production path instead of a stand-in,
+// and the post it measures against is the ruin 753.8 m from spawn rather than
+// a fixture. Nothing else in the file changed shape: the post still comes off
+// `c.post` on the near list, and every distance is still measured from it.
+// A seed is still nameable, and that is the one thing the debug verb adds over
+// the production call, because composition determinism is only assertable by
+// spawning the same seed twice.
 //
 // GP-680, AND THE REASON THE LEASH SECTION LOOKS THE WAY IT DOES. For two
 // verifier runs this probe reported that the leash NEVER FIRED: the player was
@@ -46,6 +61,7 @@
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
   if (typeof of.enemies !== 'function') return { valid: false, why: 'no of.enemies' };
+  if (typeof of.ruins !== 'function') return { valid: false, why: 'no of.ruins' };
   const sleep = (n) => of.run(n);
   // renderHz 60 EXACTLY: see enemies.js's own note on why a lower render rate
   // silently drops fixed sim ticks under Loop's catch-up clamp.
@@ -73,7 +89,7 @@
   //    a "safe" world would be the one hole in that claim.
   // =====================================================================
   if (!hostile) {
-    const r = of.enemies('garrison', 777);
+    const r = of.ruins('garrison', 777);
     check('A SAFE WORLD REFUSES A GARRISON ENTIRELY',
           r.spawned === 0 && r.swarm.live === 0 && r.swarm.garrison.holding === 0
           && r.swarm.garrison.engaging === 0 && r.swarm.garrison.returning === 0,
@@ -95,7 +111,7 @@
   //    argument `EnemyCheats.ts` makes for killing a wave.
   // =====================================================================
   const spawnAndRead = async (seed) => {
-    const r = of.enemies('garrison', seed);
+    const r = of.ruins('garrison', seed);
     await sleep(0.2);
     return { spawned: r.spawned, byType: { ...r.swarm.byType } };
   };
@@ -128,7 +144,7 @@
   of.cheat('killall');
   await sleep(0.3);
   const spawnFeet = of.weight().at;
-  const r0 = of.enemies('garrison', 424242);
+  const r0 = of.ruins('garrison', 424242);
   check('the garrison spawned onto a clean world',
         r0.spawned === r0.swarm.live && r0.spawned >= 3 && r0.spawned <= 6,
         JSON.stringify({ spawned: r0.spawned, live: r0.swarm.live }));

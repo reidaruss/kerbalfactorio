@@ -74,8 +74,15 @@
           e0.types.rows[0].name === 'Skitterer' && e0.types.rows[0].health === 15
           && e0.types.rows[0].dps === 7 && e0.types.rows[0].reachM === 1.5,
           JSON.stringify(e0.types.rows[0]));
-    check('nothing has attacked yet', e0.wavesDispatched === 0 && e0.swarm.live === 0,
-          `${e0.wavesDispatched} waves, ${e0.swarm.live} live`);
+    // WG-171: `waveLive`, not `live`. A ruin garrison is posted at world build
+    // and holds 753 m away, so `live` is 3 on an untouched world and has been
+    // since the ruin was placed. "Nothing has attacked yet" was always a claim
+    // about the WAVE loop, and the report now publishes that number by name
+    // rather than leaving this probe to mean one thing and read another.
+    check('nothing has attacked yet',
+          e0.wavesDispatched === 0 && e0.swarm.waveLive === 0,
+          `${e0.wavesDispatched} waves, ${e0.swarm.waveLive} from waves `
+          + `(${e0.swarm.garrisonLive} garrisoned at the ruin)`);
   }
 
   // =====================================================================
@@ -111,7 +118,14 @@
     const em = afterBelts.emitters;
     check('every derived emitter reached /core, none refused',
           em.derived === em.inCore && em.refusals === 0, JSON.stringify(em));
-    check('and every rate is /core's own table, not a copy',
+    // WG-171: this apostrophe was UNESCAPED from the day the file was written
+    // (fb0723b), so `enemies.js` has never parsed and has therefore never run:
+    // `run.mjs` wraps a probe in `((OF_ARGS) => ( ... ))` and this line closed
+    // the string early, giving "missing ) after argument list" before a single
+    // assertion executed. Found by the ruin-placement lane running it as a
+    // regression check. GP-671's class exactly: a probe invisible to the
+    // instrument that exists to count probes.
+    check('and every rate is /core\'s own table, not a copy',
           em.rows.length > 0 && em.rows.every((r) => r.rate === 2),
           JSON.stringify(em.rows));
     // CONTROL 1.
@@ -180,9 +194,13 @@
              JSON.stringify({ waves: e2.wavesDispatched, nests: e2.nestRows }))) {
     return { valid: false, hostile, log, fails, curve, enemies: e2 };
   }
+  // WG-171: `waveSpawned`, for the same reason line 77 reads `waveLive`. The
+  // cumulative `spawned` now carries the ruin garrison too.
   check('and it fielded the roster /core costed',
-        e2.swarm.spawned === e2.lastWave.totalCount && e2.swarm.spawnsRefused === 0,
-        JSON.stringify({ spawned: e2.swarm.spawned, wave: e2.lastWave }));
+        e2.swarm.waveSpawned === e2.lastWave.totalCount
+        && e2.swarm.spawnsRefused === 0,
+        JSON.stringify({ waveSpawned: e2.swarm.waveSpawned,
+          garrisonSpawned: e2.swarm.garrisonSpawned, wave: e2.lastWave }));
   // CONTROL 3.
   check('THE WAVE IS AIMED AT AN EMITTER THE PLAYER BUILT',
         e2.lastWave.aimErrM < 1e-6 && e2.lastWave.aimedAtKey.startsWith('f:'),

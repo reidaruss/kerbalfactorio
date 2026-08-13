@@ -26,6 +26,11 @@ export interface RestoreLedger {
    *  one came back is the difference between a world with a coverage antenna
    *  standing and one with none. */
   antennas: number;
+  /** WG-168: ruin colliders put BACK after `Structures.reset()` wiped the
+   *  shared solid set. Not a restore: a ruin regenerates from the seed and is
+   *  never in a save. This is the one number that separates "the ruin is still
+   *  solid after a load" from "nobody checked". */
+  ruinsReseated: number;
   machines: number;
   nodesDepleted: number;
   patchesDepleted: number;

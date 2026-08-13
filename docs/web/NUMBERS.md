@@ -90,6 +90,7 @@ is that the numbers are handed out by one writer before the work starts.
 | GP-600 to GP-625 | gameplay, the research station machine (D-019 confirmed): entity, recipe, build tile, panel gate, objective rung | **THE HEAD OF THIS ROW WAS ALREADY SPENT WHEN IT WAS ALLOCATED, AND IS SURRENDERED.** GP-600 to GP-612 were used and committed by the QOL sweep on 2026-08-03 and their entries are in `docs/controllers/gameplay.md`'s decision table; the ledger row covering that lane says only "allocated 2026-08-03" against a wide band, so the used/free split was invisible to this allocation (the rule-5 failure is recorded as GP-620). **GP-613 to GP-620 USED** 2026-08-11 by the research-station lane (the station as the SIXTH `survival::StructureKind` with NO ABI CHANGE, items 0x0045 / TypeId 0x45, placed client-side on the hand-furnace pattern; the 20 Iron + 30 Stone + 10 Copper price and the ruling that there is NO WOOD in it because an airless body has none and a wood cost would make the research screen unreachable there; `ModeRules.researchStationGated` as the sixth named mode question with an existence-gated, named, price-quoting refusal and a `stationGate` report that tells the truth in sandbox too; no hotbar slot and the build menu as the route; the `station` objective rung between the belt card and the pad card; the ripple into `research.js` / `padgate.js` / `survivalrun.js` and its repair; the placeholder assembler mesh with `structures/research_station.glb` OWED BY THE ART LANE; and this collision). **GP-621 to GP-623 USED** 2026-08-12 (the green acceptance and what it measures; the three harness defects that cost five runs, all of them a probe assuming where it could have measured; and the pick-order finding that a station inside a machine's bound cannot be opened with the interact key). **GP-624 and GP-625 USED** 2026-08-12 by the probe-toolgate lane (the two-sweep legal-progression harvest that reconciles this row's own probes with the GP-506 pickaxe gate, and the GP-114 claim restated so it is narrower and better witnessed rather than weakened). **This row is now fully spent.** Recorded by the lane per rule 5 |
 | RN-1300 to RN-1310 | UNRECORDED CLAIM: `tools/blender/of_lib.py:50` carries this range live in code, and this ledger never allocated it to anybody (found by the albedo scope lane 2026-08-10) | **burned for new allocation, treated as used by that code; Admin 2026-08-10** |
 | WG-151 to WG-165 | world-gen, the POI bridge (of_poi_api.inc per world-gen.md:167, known/visited bits, client Sites.ts); ABI 24 or current+1 at dispatch | **WG-151 USED, 2026-08-12** (the whole bridge: `of_poi_api.inc` at ABI 24, the `known_` bit and its unknown -> known -> visited state machine, `poiabi.ts` + `Sites.ts` + `DebugSites.ts`, `SaveSlot.poi`, the Linux `CHROME_CANDIDATES` fix to `reload.mjs`, and `probes/poisites.js` proven live by real `page.reload()`). One number covers the whole lane rather than splitting sub-decisions across the block, matching how WG-70/WG-116/WG-119 are each cited singly across many files. **WG-152 to WG-165 free.** A first commit (`fed5729`) cited WG-200 to WG-212 and WG-219 by mistake, colliding with the pre-existing unledgered WG-200..218 usage; every code comment and doc citation was renumbered to WG-151 in a follow-up commit, but the first commit's MESSAGE was not rewritten and still names the wrong numbers -- see world-gen.md's WG-151 row |
+| WG-166 to WG-185 | world-gen, the ruin-placement lane: draw the SiteCatalog's ruin, make it solid, garrison it, delete the debug spawn hook | **WG-166, WG-168, WG-169, WG-170 and WG-171 USED, 2026-08-13.** The split, exactly: **WG-166** the draw itself and the rule that the placement READS the asset (`socket_grade` out of the .glb bytes as the grade datum, poi.h's own `yawRad` as the orientation, and a hard refusal with a published sentence if the socket ever goes missing rather than a silent 2.3 m burial); **WG-168** the collider joining the ONE `Structures.bodies` set, and the ordering rule `Structures.reset()` forced (place before `g.load()`, reseat in `Persist.apply` right after `restoreStructures`, `RestoreLedger.ruinsReseated` as the number that proves it, and the deliberate choice of the order that runs on EVERY boot rather than only on a load); **WG-169** the garrison wired to the real site (seed = the site id's low half) and `spawnGarrisonDebug` deleted with `EnemyDebug.ts`'s named exception, GP-98's own stated condition met, replaced by `of.ruins('garrison', seed?)` which drives the shipped path; **WG-170** the LOD ladder re-derived from `NodeBatch`'s measured 55/165 into 14.70 and 44.10 BOUNDING RADII against the conifer's measured 3.741 m, with the ruin's own 25.5345 m bound read off the loaded geometry; **WG-171** `probes/ruinplace.js`, its `--body=cinder` negative control, and the three traps logged below. **WG-167 IS DELIBERATELY SKIPPED AND NOT SPENT BY THIS LANE.** The grep this lane was told to run before claiming found `WG-167` live in three places -- `docs/controllers/world-gen.md:117`, `web/wasm/of_poi_api.inc:10` and `core/tests/test_poi.cpp:715` -- all of them citing it as the SPEC that described the poi bridge, and there is no `| WG-167 |` decision row anywhere for them to point at. Every other number in the grant (WG-166, and WG-168 to WG-185) came back with **zero hits** across `docs/`, `web/`, `core/` and `tools/`. Rather than mint a row for a number three files already use to mean something else, WG-167 is left alone: **treat it as spent by the poi spec.** **WG-172 to WG-185 free.** Recorded by the lane per rule 5. |
 | GP-520 to GP-532 | gameplay, map marker substrate + milestone bus (grantMilestone; wires the inert Research.earn, ReachedOrbit grant) | GP-520 to GP-523 USED 2026-08-11 (the shared `MapMarker` type + `MarkerRegistry` singleton, `MapPaint.markerPosM` as the one dirBody-to-world conversion both maps call, `MapLayers.drawMarkers` for the 2D canvas with its own `known`-only gate, `Map3D.syncMarkers`'s generic registry source, and the `of.markers` debug source) — **verified green**, `tools/smoke/probes/markers.js`, `valid: true`. GP-530 to GP-532 USED (`grantMilestone` in `Research.ts`, the ReachedOrbit/LandedOffWorld rising-edge wiring in `Systems.ts`, and the `of.research()` debug op). **The mechanism is verified** (`research_tests`: two new ctest cases plus a pre-existing one that already proved `FlightAutopilot` becomes researchable on grant, 17 tests/288 checks green); **the live browser wiring is NOT verified** — `tools/smoke/probes/milestones.js` twice failed to complete in over 90 minutes each against this session's shared VM running at load average 33 to 38 the whole time (measured, not assumed: `uptime`/`ps` showed sibling lanes' own Chrome instances each at 350 to 630% CPU), against a ~29-minute quiet-VM baseline for one build-to-orbit cycle (`map3d.js`). Both attempts confirmed still actively computing when killed for time, not stalled. See `docs/controllers/gameplay.md`'s GP-520 log entry for the full account. GP-524 to GP-529 free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible |
 | GP-533 to GP-545 | gameplay, the reveal + scanning antenna content (item, recipe, tech row, one-shot mark_known at build) | **GP-533 to GP-539 USED** 2026-08-13 (the antenna as the seventh `survival::StructureKind`, NO ABI CHANGE — confirmed `abi=24` on every driven run rather than assumed; the price, Iron 25 / Copper 20 / Stone 15, with copper deliberately matching the pad's own; the tech, no prereq and no milestone, on the electricity-cycle ruling; the one-shot reveal itself, `GameplayActions.revealNearbySites` calling the already-shipped ABI-24 `of_poi_near`/`of_poi_mark_known`, with `PoiMarkers.ts` as the one SiteRow-to-MapMarker function both the live reveal and the load-time rebuild share; the marker-registry-is-rebuilt-not-reloaded persistence design plus the `SaveWorlds.ts` compile-time gate catching `antennas` as body-scoped on the first build; the checklist row's `sites.knownCount() > 0` predicate; and `SiteCatalog::insideAnySite` recorded OWED rather than wired, the brief's own permitted fallback once the actual cost of the headline feature was known). GP-540 to GP-545 free. Recorded by the lane per rule 5. **`probes/antenna.js`, survival, 640x360: `valid: true, pass: true, fails: []`.** Sites known 0 -> 1, one `ruin` marker (`known: true`, real unit `dirBody`), the `antenna` checklist row `satisfied: false -> true`, the antenna's own bill (`25 Iron + 20 Copper + 15 Stone`) billed exactly, and a same-run idempotence check (`siteMarkKnown` on an already-known site returns `false`, marker count unchanged). **One harness defect found and fixed in the same lane, not left for the next one**: the first run of the probe under-budgeted its own harvest by measuring science SPENT (8, the tech's cost) rather than science MADE (up to 12, since the crafting loop clicked a fixed count) — Iron for science is 2 per pack, so the gap was 8 Iron, and the antenna's build-menu tile read `affordable: false` with the pack 4 Iron short. Fixed by capping the crafting loop at "stop once nine are held" instead of a fixed twelve clicks, and by raising the smelt targets with real margin; green on the very next run. |
 | RN-1400 to RN-1449 | rendering, D-016 the albedo colour-space fix and retune | RN-1400 to RN-1404 USED 2026-08-11 (the two `_albedo_mean_*` functions in `texgen.py` linearised via the sRGB EOTF and unified onto one Rec.709 weighting; the manifest key renamed `albedo_mean` -> `albedo_mean_linear` and `version` bumped 1 -> 2; the `Surfaces.ts` k=1 fallback and the `surface_preview.py` `or 1.0` fallback both retired for a hard error, and `Surfaces.ts` now checks the `manifest.version` it already read; `check_maps` observed RED against the old v1 manifest then GREEN against the regenerated v2 one; full clean regeneration measured byte-identical against the shipped PNGs, and the brief's premise that this needs `blender501` was found wrong, texgen.py is stdlib-only by design). RN-1405 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
@@ -1300,3 +1301,98 @@ wrote "hang" from three timeouts alone.
 past boot with no error and no crash, check `ps aux` for concurrent Chrome/vite
 processes from OTHER lanes, and if the box is busy, GET A QUIET ONE AND RETRY
 before writing the code under test up as broken.**
+
+
+### The CE-50 capsule and the walker's own predicate are not the same test
+
+`ruinplace.js` proved a ruin wall solid the way CE-50 taught: five columns at
+`CAPSULE_SAMPLES_M` (`[0.15, 0.9, 1.65]`) offset by `CAP_RADIUS_M` = 0.4 m,
+every sample through `of.solidBuild`, with a 100 m-away control proving the
+instrument can read clear. Then it reused the same helper to ask a DIFFERENT
+question -- "after walking into that wall, is the player wedged in stone?" --
+and the check went red on a sim that was behaving perfectly.
+
+`KinematicBody` calls `StructureBodies.free`, which samples **one column** at
+those three heights and nothing off-axis. The five-column form is therefore
+strictly MORE conservative than the walker's own rule, so a player who has been
+**correctly** stopped flush against a wall has a 0.4 m side column inside the
+stone and reads as embedded.
+
+**The conservative capsule is the right instrument for "would a body FIT here"
+-- a doorway, an arrival point, which is exactly what CE-50 built it for -- and
+the wrong instrument for "is this body inside something", which has to use the
+consumer's own predicate at the consumer's own dimensions.** Both live in the
+probe now, under two names (`capsuleHits`, `walkerHits`), with the distinction
+written beside them. The generalisation is CE-50's own sentence pointed the
+other way: an occupancy check has to match the consumer, and "stricter" is not
+the same as "safer" when the answer is used as a failure condition.
+
+### `probes/enemies.js` has never parsed, so it has never run, since the day it was written
+
+An unescaped apostrophe in
+
+    check('and every rate is /core's own table, not a copy', ...)
+
+closes the JS string early. `run.mjs` wraps every probe in
+`((OF_ARGS) => ( ... ))`, so the file dies with `SyntaxError: missing ) after
+argument list` before a single assertion executes, and the runner surfaces it
+as a page-evaluate failure rather than as a broken probe file. It was written
+in `fb0723b` with the enemy lane, it has never been green once, and no census
+has ever noticed.
+
+**This is GP-671's class with the volume turned up.** That finding was a probe
+with no documented invocation, so `probeall.mjs` skipped it; this one could not
+have run even if invoked. Found by the ruin-placement lane running it as a
+spawn-path regression check, which is the only reason anybody looked.
+
+Fixed (one character). It then showed **three reds**, and every one of them was
+reproduced identically on a HEAD-baseline build with the ruin lane's own sources
+stashed out, so attribution is settled and they belong to gameplay: 3 of 5
+smelter placements refused, 0 kills over 14 aimed rounds, and `pool.instances`
+exactly 4 below `live + nests` both before and after (`SpiderFlock` claiming
+creatures out of the batch). **Reported, not chased.**
+
+The lesson for the harness is narrow and cheap: **a probe file that cannot be
+parsed is indistinguishable, in the runner's output, from a page that failed to
+boot.** `run.mjs` already reads every probe off disk; parsing it with `new
+Function` before launching a browser would separate the two in one line and
+would have caught this on the day.
+
+### `swarm.live` changed subject the day something other than a wave produced a creature
+
+`probes/enemies.js` asserted `swarm.live === 0` on a fresh world as its "nothing
+has attacked yet" control, and `swarm.spawned === lastWave.totalCount` as its
+"it fielded the roster /core costed" check. Both were exactly right for as long
+as the wave loop was the only thing that made a creature. The ruin lane posts a
+garrison at world build, 753 m from spawn, holding station and attacking
+nobody -- and both numbers silently started meaning something else.
+
+**A total that quietly changes subject is worse than a missing one**: nothing
+fails, the control just stops controlling. `EnemySwarm.report` now publishes
+`waveLive`/`garrisonLive` and `waveSpawned`/`garrisonSpawned` beside the totals,
+derived from `provenance` rather than counted separately so the pair can never
+disagree, and the probe reads the wave ones where it always meant the wave ones.
+The rule worth carrying: when a second producer joins a counter that only ever
+had one, **split the counter in the same commit** -- every consumer of it was
+written against the old meaning, and none of them will fail loudly.
+
+### The committed wasm binary is a whole ABI behind the client, so a clean checkout cannot boot the browser
+
+`web/wasm/dist/of-core.wasm` is tracked, and at `d414c91` it reports
+`of_abi_version` **23** while `web/wasm/of_core_api.cpp` says **24**. The client
+refuses the mismatch, so every browser probe on a fresh worktree dies as:
+
+    console.error: [of] boot failed Error: of-core ABI mismatch:
+                   wasm reports 23, client expects 24
+    runner: page.waitForFunction: Timeout 60000ms exceeded.
+
+The visible symptom is a 60-second runner timeout, which names nothing. This is
+a known consequence of two earlier, deliberate decisions -- WG-141 regenerated
+the binary in the working tree and explicitly did not commit it, and BT-39 found
+this artefact is toolchain-dependent, so a hash from one machine is not
+authoritative for another -- and the fix is therefore not simply "commit one".
+
+**It is logged here because the cost is real and is paid silently by every lane
+that starts from a clean tree.** The workaround is two commands before any
+probe: `web/wasm/build.ps1` (emsdk at `C:\Users\reida\emsdk`), then
+`npm run sync-wasm` in `web/`.

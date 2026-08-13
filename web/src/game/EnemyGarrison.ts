@@ -28,15 +28,24 @@
 // seed the nest ring: not a physical quantity, so it owes nothing to the
 // determinism rules that bind an actual simulated value.
 //
-// SEAM LEFT NAMED FOR THE LANE THAT WIRES A REAL RUIN SITE: a per-site
-// "cleared" bit (so a garrison a player already killed does not simply
-// regenerate the moment they walk away and back) is NOT built here.
-// Regeneration-on-approach is the accepted model for now — a garrison is
-// re-spawned wherever `spawnGarrison` is called with no memory of an earlier
-// visit — and a cleared bit is later work that rides on the POI bridge's own
-// site records, not on anything this file owns.
+// THE SEAM IS WIRED (WG-169). `RuinSites.garrison` is the caller this file was
+// written for: it posts a garrison at each ruin's own `FSite.pos` with the site
+// id's low half as the seed, so "who lives here" is a property of the SITE in
+// fact and not only in intent. The synthetic post `spawnGarrisonDebug` offered
+// while that lane was outstanding is DELETED in the same commit, exactly as its
+// own header and GP-98 both said it would be, and `EnemyDebug.ts` gets its
+// blanket "no spawn, no wave, no kill" refusal back with no named exception in
+// it.
+//
+// STILL NOT BUILT, DELIBERATELY: a per-site "cleared" bit, so a garrison a
+// player already killed does not regenerate the moment they walk away and back.
+// Regeneration-on-approach remains the accepted model — a garrison is spawned
+// wherever `spawnGarrison` is called, once per world build, with no memory of
+// an earlier visit and no creature written to the save — and a cleared bit is
+// later work that rides on the POI bridge's own site records (`known_`/
+// `visited_`), not on anything this file owns.
 
-import { offsetDir, type Vec3 } from './EnemyLoop.js';
+import type { Vec3 } from './EnemyLoop.js';
 import type { Creature } from './EnemySwarm.js';
 import type { EnemyCatalogue } from './EnemyTypes.js';
 import type { Enemies, EnemyHost } from './Enemies.js';
@@ -47,12 +56,12 @@ export interface GarrisonMember { typeId: number; count: number }
 
 export interface GarrisonParams {
   /** Body-frame position (or bare direction — only its direction is used, see
-   *  `onGround` in EnemySwarm.ts) of the post. The ruin-placement lane wires
-   *  this from an FSite once the POI bridge lands; a plain fixture position is
-   *  what exists to pass until then. */
+   *  `onGround` in EnemySwarm.ts) of the post. WG-169: `RuinSites.garrison`
+   *  passes an `FSite.pos` straight through. */
   postPos: Vec3;
-  /** Deterministic composition. The POI bridge lane's site id is the natural
-   *  seed once it exists; a numeric seed is what is offered today. */
+  /** Deterministic composition. WG-169: the site id's LOW HALF, which is what
+   *  `of_poi_row` publishes and what `poiabi.ts` argues is all any JS caller
+   *  needs, since JS has no exact 64-bit integer. */
   seed: number;
 }
 
@@ -150,8 +159,9 @@ export function updateGarrisonState(c: Creature, playerPos: Vec3): void {
 }
 
 // ---------------------------------------------------------------------------
-// Wired into `Enemies` as two one-line methods, beside `EnemyCheats.ts`'s two
-// for the identical reason: `Enemies.ts` is already near its 400-line cap.
+// Wired into `Enemies` as one one-line method, beside `EnemyCheats.ts`'s two
+// for the identical reason: `Enemies.ts` is already near its 400-line cap. It
+// was two until WG-169 deleted the debug one.
 // ---------------------------------------------------------------------------
 
 /**
@@ -173,32 +183,4 @@ export function spawnGarrison(e: Enemies, host: EnemyHost, postPos: Vec3,
   const made = e.swarm.spawnGarrison({ postPos, seed }, e.types, ctx);
   e.publishShootables(ctx);
   return made;
-}
-
-/** Metres east of the player's own feet a debug garrison is posted: clear of
- *  `AGGRO_RADIUS_M` even for a guard scattered `GARRISON_SCATTER_M` towards
- *  the player (45 - 8 = 37 m > 30 m), so a probe controls exactly when a
- *  walk-in triggers it, and close enough to `LEASH_M` that a retreat of a
- *  hundred-odd metres clears both the aggro radius and the leash in one
- *  move. */
-const DEBUG_POST_OFFSET_M = 45;
-
-/**
- * DEBUG ONLY, AND NAMED AS SUCH. `EnemyDebug.ts`'s header states the rule
- * this breaks and why every OTHER entry on that surface refuses to: a probe
- * that could conjure a WAVE would be proving a path no player can take. A
- * garrison is not a wave — it credits nothing to evolution and is never
- * dispatched by /core, as this whole file's header argues — so there is no
- * "attack that was not caused by the player's own production" for this to
- * fake. It exists only because the POI bridge that will call `spawnGarrison`
- * with a real ruin site has not landed; the day it has, this function is
- * deleted exactly as `EnemyLoop.seedNests` says its own client-side nest
- * seeding will be.
- */
-export function spawnGarrisonDebug(e: Enemies, host: EnemyHost, seed: number): number {
-  const f = host.walker.body.feet;
-  const l = Math.hypot(f.x, f.y, f.z) || 1;
-  const dir = { x: f.x / l, y: f.y / l, z: f.z / l };
-  const postDir = offsetDir(dir, 0, DEBUG_POST_OFFSET_M, e.bodyRadiusM);
-  return spawnGarrison(e, host, postDir, seed);
 }

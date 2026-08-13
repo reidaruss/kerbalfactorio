@@ -117,6 +117,14 @@ export function gameplayReport(g: Gameplay): unknown {
       // one-shot reveal fired needs the world's own placement count in the
       // same snapshot as `sites`/`markers` below.
       antennas: g.antennas.report(),
+      // WG-166. THE RUINS THE WORLD SHOWS. In the world report and not only on
+      // `of.ruins()`, for the same reason the stations are: what the site table
+      // says and what is actually drawn and solid are two different facts, and
+      // a probe that reads the site row from `of.sites()` and the instance from
+      // here can catch the two disagreeing. `standoffM` is the pair that
+      // matters most: the site's own radius against the LIVE surface radius
+      // under it, so a ruin floating or buried shows up as a number.
+      ruins: g.ruins.report(),
       // GP-65. WHAT EVERY PLACED THING CAN TAKE, and what is currently wrong
       // with it. `audit.missing` is the number that matters most and it is the
       // reason this is a report rather than a private map: a live buildable with
