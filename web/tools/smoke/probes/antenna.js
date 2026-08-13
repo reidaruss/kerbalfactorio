@@ -26,6 +26,17 @@
 // exists, the near-spawn ruin must read UNKNOWN and NO marker may be drawn --
 // otherwise "the antenna revealed it" is equally true of a world that reveals
 // everything by default.
+//
+// THE SAVE/RELOAD GAP, closed at the end (§8): everything above never left
+// the live world, so `SaveSlot.antennas` restore (AntennaSave.ts, mirrors
+// `LaunchPadSave.ts`) and the load-time marker rebuild (`MarkerRegistry`
+// rebuilt from `Sites.known` via `rebuildRevealMarkers`, deliberately NOT
+// persisted) were unprobed. `of.save()` / `of.load()`, `ruinplace.js`'s own
+// technique, prove: the antenna instance comes back (count, position, the
+// restore ledger's `antennas` row reads 1); the site is still known and its
+// marker draws again, rebuilt rather than reloaded; the checklist row stays
+// satisfied; and the reveal does NOT re-fire across the reload (known count
+// unchanged, no double-grant -- a load must never grant).
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
@@ -390,6 +401,87 @@
   check('and the marker count did not change', of.markers().count === markersBeforeSecond,
     `${markersBeforeSecond} -> ${of.markers().count}`);
 
+  // ======================================================================
+  // 8. SAVE / RELOAD. Nothing above this point ever left the live world:
+  //    `SaveSlot.antennas` restore (AntennaSave.ts, `LaunchPadSave.ts`'s own
+  //    shape) and the load-time marker rebuild (`MarkerRegistry` rebuilt
+  //    from `Sites.known` via `rebuildRevealMarkers`, deliberately NOT
+  //    persisted -- AntennaSave.ts's own header says so) are unexercised
+  //    until now. `of.save()` / `of.load()`, `ruinplace.js`'s own §7
+  //    technique: a bare `of.load()` on a world that has never been saved
+  //    wipes nothing and would pass every check below for free, so the save
+  //    has to actually happen first (DW-20, a claim needs a number).
+  // ======================================================================
+  step('saving, then loading, to prove the restore path rather than the live world');
+  const knownBeforeSave = of.sites().stats.known;
+  const markersBeforeSave = of.markers().count;
+  const placementsBeforeSave = an1.placements;
+  const antennaPosBeforeSave = an1.list[0]?.pos;
+  const wrote = await of.save();
+  check('the save that makes the load meaningful actually wrote',
+    wrote !== null && wrote.refused === undefined, JSON.stringify(wrote));
+  const ledger = await of.load();
+  check('the load actually ran (a ledger came back)', ledger !== null, JSON.stringify(ledger));
+
+  // THE ANTENNA INSTANCE CAME BACK: count and position, off the RESTORE
+  // LEDGER's own `antennas` row (`AntennaSave.restoreAntennas`'s return
+  // count, surfaced by `Persist.ts` as `antennas: restoredAntennas`), not
+  // just the live count -- the ledger is the proof this exercised
+  // `SaveSlot.antennas` rather than a load that happened to leave the world
+  // untouched.
+  check('the restore ledger reports exactly one antenna restored',
+    ledger?.antennas === 1, JSON.stringify(ledger));
+  const an2 = antennas();
+  check('THE ANTENNA INSTANCE CAME BACK', an2.count === 1, JSON.stringify(an2));
+  check('at the position it was built at',
+    an2.list[0] !== undefined && antennaPosBeforeSave !== undefined
+    && Math.hypot(an2.list[0].pos[0] - antennaPosBeforeSave[0],
+                  an2.list[0].pos[1] - antennaPosBeforeSave[1],
+                  an2.list[0].pos[2] - antennaPosBeforeSave[2]) < 0.05,
+    JSON.stringify({ before: antennaPosBeforeSave, after: an2.list[0]?.pos }));
+  check('and it is solid again', an2.list[0]?.solid === true, JSON.stringify(an2.list[0]));
+
+  // THE SITE IS STILL KNOWN -- `poi.h`'s own state, saved and restored
+  // through `poiAbi` directly (AntennaSave.ts's header: the antenna's
+  // transform and the ruins it revealed are two different facts that happen
+  // to share a cause) -- AND ITS MARKER DRAWS AGAIN, rebuilt from
+  // `Sites.known` by `rebuildRevealMarkers`, which `Persist.ts` calls
+  // unconditionally right after the poi bytes load. Neither the
+  // `MarkerRegistry` singleton nor the site's known bit is itself
+  // serialized twice; this is the proof the deliberate non-persistence
+  // still produces the same drawable fact on the far side of a real load.
+  const s2 = of.sites();
+  check('THE SITE IS STILL KNOWN AFTER RELOAD', s2.stats.known === knownBeforeSave,
+    `${knownBeforeSave} -> ${s2.stats.known}`);
+  const m2 = of.markers();
+  check('AND ITS MARKER DRAWS AGAIN, REBUILT RATHER THAN RELOADED',
+    m2.count === markersBeforeSave, `${markersBeforeSave} -> ${m2.count}`);
+  const ruinMarker2 = m2.rows.find((r) => r.kind === 'ruin');
+  check('still a RUIN marker, KNOWN', ruinMarker2 !== undefined && ruinMarker2.known === true,
+    JSON.stringify(m2.rows));
+
+  // THE CHECKLIST ROW STAYS SATISFIED. It reads `sites.knownCount() > 0`
+  // with no store of its own (header line 20), so it has nothing to lose
+  // across a save/load that keeps the known count -- but a regression that
+  // cleared the row on load, or that rebuilt it off the wrong body handle,
+  // would only show up here.
+  const goalsAfterReload = of.goals();
+  const antennaRowAfterReload = goalsAfterReload.satisfied.find((r) => r.id === 'antenna');
+  check('THE CHECKLIST ROW STAYS SATISFIED AFTER RELOAD',
+    antennaRowAfterReload?.satisfied === true, JSON.stringify(antennaRowAfterReload));
+
+  // THE REVEAL DID NOT RE-FIRE. `restoreAntennas` (AntennaSave.ts) never
+  // calls `revealNearbySites` (GameplayActions.ts) -- only `placeAntenna`
+  // does, on a real build -- so a load must never grant: the known count is
+  // EXACTLY what it was going into the save, not merely "still >= 1", which
+  // a double-grant would also satisfy.
+  check('LOAD DID NOT RE-GRANT: known count is exactly what it was before the '
+        + 'save/load, not merely still positive',
+    s2.stats.known === knownBeforeSave && s2.stats.known === s1.stats.known,
+    `known ${s1.stats.known} -> save/load -> ${s2.stats.known}`);
+  check('and no antenna placement was replayed (the placements counter is unchanged)',
+    an2.placements === placementsBeforeSave, `${placementsBeforeSave} -> ${an2.placements}`);
+
   return {
     valid: true,
     pass: fails.length === 0,
@@ -397,9 +489,10 @@
     log,
     antennas: antennas(),
     stations: stations(),
-    sites: { before: s0.stats, after: s1.stats },
+    sites: { before: s0.stats, after: s1.stats, afterReload: s2.stats },
     markers: m1,
-    goals: { before: antennaRowBefore, after: antennaRowAfter },
+    goals: { before: antennaRowBefore, after: antennaRowAfter, afterReload: antennaRowAfterReload },
+    reload: { wrote, ledger, antennas: an2, markers: m2 },
     mode: G().mode,
     carried: G().carried,
   };
