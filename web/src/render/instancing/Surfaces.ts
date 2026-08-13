@@ -147,6 +147,29 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
 
 const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));
 
+/**
+ * RN-1476. Every family something in this build can actually ask for, derived
+ * from ROLE_FAMILY rather than listed, so it cannot drift out of step with it.
+ * `ready` skips loading any manifest family absent from this set; see the long
+ * note at the loop for why an unreferenced family is worth skipping at all.
+ *
+ * THE TWO LITERALS ARE UNIONED IN ON PURPOSE. `MachineBatch` attaches 'panel'
+ * and `SpiderFlock` attaches 'fur' as STRING LITERALS rather than through a
+ * role lookup, so neither reaches `familyForRole` and neither would be implied
+ * by the role table if the roles that happen to name them were ever moved off.
+ * Both are in ROLE_FAMILY's values today, which is exactly why leaving them
+ * implicit is a trap: the set would keep working right up until a role move
+ * silently un-referenced a family that a hard-coded call site still attaches,
+ * and the failure would be an untextured machine with no error anywhere.
+ * `familyForRole`'s own callers (PropLibrary, NodeBatch, PlayerRig) all resolve
+ * through the role table and need no entry here.
+ */
+const REFERENCED_FAMILIES: ReadonlySet<string> = new Set<string>([
+  ...Object.values(ROLE_FAMILY),
+  'panel',
+  'fur',
+]);
+
 const DIR = 'assets/textures/';
 
 // The manifest schema version this client knows how to read (D-016). Bumped
@@ -499,7 +522,40 @@ const ready = (async (): Promise<void> => {
   }
   manifest = m;
   verifyAgainstManifest(m);
+  const skipped: string[] = [];
   for (const [name, f] of Object.entries(m.families)) {
+    // RN-1476. A FAMILY NO ROLE WEARS IS NOT DOWNLOADED, NOT DECODED AND NOT
+    // RESIDENT, and this is a cost rule rather than a correctness one.
+    //
+    // The loop below is EAGER: every family the manifest declares is fetched
+    // and uploaded at boot, whether or not anything in the scene draws with
+    // it. That was free while the manifest only ever listed families in use.
+    // It stopped being free when `texgen.py` gained `paintchip` and `rust`
+    // (RN-1474, RN-1475), which are the D-020 vocabulary shipped AHEAD of the
+    // wiring, deliberately, following the `leaf`/`grass` precedent: a role
+    // move must land in the same commit as the client change that consumes it
+    // or `verifyAgainstManifest` turns a one-sided move into a failed smoke
+    // run. Those two are 512 px and carry three maps each, so loading them
+    // unreferenced costs about 3 MB of transfer and 8 MB of VRAM to draw
+    // exactly nothing, against a whole-game texture budget of 7.9 MB.
+    //
+    // THE RULE IS DERIVED, NOT LISTED, which is the point. A hand-maintained
+    // "not yet wired" list is a second table to drift out of step with
+    // ROLE_FAMILY, and this file already carries one copied table and a
+    // verifier whose whole existence (RN-951) is that copied tables drift.
+    // `REFERENCED_FAMILIES` is computed from ROLE_FAMILY's own values, so the
+    // moment a lane points a role at `rust` the family loads with no other
+    // edit, and a family cannot be skipped while something can name it.
+    //
+    // THE SKIP IS ANNOUNCED rather than silent. A texture that quietly fails
+    // to load and a texture nothing asked for look identical from here, and
+    // this project has repeatedly paid for the pair being indistinguishable;
+    // the one-line summary below is what tells a lane wiring `rust` why its
+    // brand new surface is not on screen.
+    if (!REFERENCED_FAMILIES.has(name)) {
+      skipped.push(name);
+      continue;
+    }
     // Two family shapes (RN-176/RN-181). A tiling surface carries normal+orm
     // in metres; an albedo card family carries `albedo` in unit card space.
     // A family declaring NEITHER shape is tolerated and skipped, which is the
@@ -586,6 +642,13 @@ const ready = (async (): Promise<void> => {
     if (surf.albedo === undefined && surf.normal === undefined
       && surf.emissive === undefined && surf.alphaMap === undefined) continue;
     surfaces.set(name as Family, surf);
+  }
+  if (skipped.length > 0) {
+    console.info(`[of] surfaces: ${skipped.length} manifest family(ies) not `
+      + `loaded because no role wears them: ${skipped.join(', ')}. This is `
+      + 'the expected state for a surface shipped ahead of its wiring; point '
+      + 'a role at one in ROLE_FAMILY (and in texgen.py\'s copy of the same '
+      + 'table, in the same commit) to bring it in.');
   }
   for (const r of registered) apply(r);
 })();

@@ -31,7 +31,7 @@
     "mean-neutral and cannot shift the palette."
   ],
   "version": 2,
-  "zlib": "1.3",
+  "zlib": "1.3.1",
   "families": {
     "bark": {
       "normal": {
@@ -44,9 +44,15 @@
         "bytes": 73510,
         "sha256": "4d1a984a3abd3b119abfb1b7a9d27e92ce02749eb98d3bf20c2a27b03ff30c3c"
       },
+      "albedo": {
+        "file": "of_bark_a.png",
+        "bytes": 34636,
+        "sha256": "4af6de924039be6b8cc2a9b4905eea84c27adec9ca6bf38b51d05cb510d0afb6"
+      },
       "tile_m": 0.6,
       "size_px": 384,
-      "texels_per_m": 640.0
+      "texels_per_m": 640.0,
+      "albedo_mean_linear": 0.207
     },
     "coarse": {
       "normal": {
@@ -56,12 +62,18 @@
       },
       "orm": {
         "file": "of_coarse_orm.png",
-        "bytes": 103120,
-        "sha256": "2cc059ff45192d4082e5ba765ece6a4cda32c9f15540a2312f11820309b37d3a"
+        "bytes": 104992,
+        "sha256": "a74290b037e279650e54f39d86a73aa9e17f454d3ec2022bfe89587a174f6b33"
+      },
+      "albedo": {
+        "file": "of_coarse_a.png",
+        "bytes": 34812,
+        "sha256": "13699cbeb45acafddc395fad32462e194db7016ee953c328c75b3fc824ba16e2"
       },
       "tile_m": 0.75,
       "size_px": 384,
-      "texels_per_m": 512.0
+      "texels_per_m": 512.0,
+      "albedo_mean_linear": 0.1806
     },
     "fur": {
       "normal": {
@@ -99,6 +111,27 @@
       "size_px": 384,
       "texels_per_m": 768.0
     },
+    "paintchip": {
+      "normal": {
+        "file": "of_paintchip_n.png",
+        "bytes": 158264,
+        "sha256": "71baf8fef879f7e6feaf0bd39b7ac876c7a4f209e3aa00867c455f4b21910cd5"
+      },
+      "orm": {
+        "file": "of_paintchip_orm.png",
+        "bytes": 144404,
+        "sha256": "7ca4f20fad82e66efcc1177538986adb440ab05df7be347306946a65520a2a58"
+      },
+      "albedo": {
+        "file": "of_paintchip_a.png",
+        "bytes": 157516,
+        "sha256": "5aacc3077206dfdec58e5fe4de89e8d5a6f4b535dc86cb63dd9e2bbf46a6523b"
+      },
+      "tile_m": 1.5,
+      "size_px": 512,
+      "texels_per_m": 341.3333333333333,
+      "albedo_mean_linear": 0.2567
+    },
     "panel": {
       "normal": {
         "file": "of_panel_n.png",
@@ -119,6 +152,27 @@
       "size_px": 512,
       "texels_per_m": 341.3333333333333,
       "albedo_mean_linear": 0.2526
+    },
+    "rust": {
+      "normal": {
+        "file": "of_rust_n.png",
+        "bytes": 464745,
+        "sha256": "0a2b797d4834c140e65b72e0f746ae82c46287395544218dd09d976f5602a3ad"
+      },
+      "orm": {
+        "file": "of_rust_orm.png",
+        "bytes": 323444,
+        "sha256": "2f6684448ab0d5d3be79e2b7286ad5ae321bfc24bb456f46ad447f2d6dacda8a"
+      },
+      "albedo": {
+        "file": "of_rust_a.png",
+        "bytes": 207754,
+        "sha256": "80d349c318b61036651bfa4ab75f8a9e0dc66fcb8da5350eeac5cd6fd45ced72"
+      },
+      "tile_m": 1.5,
+      "size_px": 512,
+      "texels_per_m": 341.3333333333333,
+      "albedo_mean_linear": 0.1986
     },
     "stone": {
       "normal": {
