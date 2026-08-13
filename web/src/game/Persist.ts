@@ -37,6 +37,7 @@ import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
 import { keptWorlds } from './SaveWorlds.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
+import { poiAbi } from '../sim/wasm/poiabi.js';
 import type { HealthBook } from './Health.js';
 import type { PlayerHealthSave } from './PlayerHealth.js';
 import { rebuildHealth } from './HealthCensus.js';
@@ -64,7 +65,8 @@ export type { RestoreLedger } from './PersistLedger.js';
 
 export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                          factory: Factory, machines: Machines,
-                         seed: number, bodyId: number, ports: WorldPorts,
+                         seed: number, bodyId: number, bodyHandle: number,
+                         ports: WorldPorts,
                          ore: OreField, structures: Structures,
                          pads: LaunchPads,
                          /** D-019. The research stations. Beside `pads` because
@@ -92,6 +94,13 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   // so same rule: copy out before the next call.
   const dn = discAbi(M)._of_disc_serialize();
   const discovery = dn > 0 ? Array.from(scratchU8(M, dn)) : [];
+
+  // WG-151: the POI/site bridge's two bits (known, visited), read
+  // straight off `/core`'s per-body catalog for the same reason `discovery`
+  // is: it is world state that exists whether or not a panel is looking at
+  // it. Same u8 arena, same rule: copy out before the next call.
+  const pn = poiAbi(M)._of_poi_save(bodyHandle);
+  const poi = pn > 0 ? Array.from(scratchU8(M, pn)) : [];
 
   // Nodes first, and NOT the outcrops. An outcrop reports its patch's pool, so
   // writing it here would record the same ore once per outcrop and drain it that
@@ -138,6 +147,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     pack,
     voxels,
     discovery,
+    poi,
     depletion,
     patches,
     rocks: rocks.serialize(),
@@ -217,6 +227,19 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     D._of_disc_alloc_bytes(dbytes.length);
     scratchU8(M, dbytes.length).set(dbytes);
     discovery = D._of_disc_deserialize();
+  }
+
+  // 0c. WHAT THE PLAYER HAD SCANNED OR VISITED (WG-151). Same
+  //     three-state discipline as discovery above: 0 is "the slot carried
+  //     none" (every save before ABI 24, honestly), -1 is `/core` REFUSING
+  //     the stream, and anything else is ids actually restored.
+  let poi = 0;
+  const poiBytes = slot.poi ?? [];
+  if (poiBytes.length > 0) {
+    const P = poiAbi(M);
+    P._of_poi_alloc_bytes(poiBytes.length);
+    scratchU8(M, poiBytes.length).set(poiBytes);
+    poi = P._of_poi_load(g.bodyHandle);
   }
 
   // 1. THE ORE PATCHES, and then the standalone nodes. Both go back through the
@@ -348,7 +371,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     trees: treesApplied,
     treesPending: g.trees.stats().pending,
     patchesDepleted, packUnits, fuelTicksLost, voxels, hotbarRestored,
-    progress, discovery, health, vitals,
+    progress, discovery, poi, health, vitals,
     // PS-40. Which body, whether the slot HELD one for it, and which others came
     // through. The middle one is the fact no count carries: a first visit and a
     // world restored to nothing are identical everywhere else on this receipt.

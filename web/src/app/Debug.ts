@@ -5,6 +5,7 @@
 import { assetStats } from '../assets/Loaders.js';
 import { gameplayApi } from './DebugGameplay.js';
 import { terraformApi } from './DebugTerraform.js';
+import { sitesApi } from './DebugSites.js';
 import type { Services } from './Services.js';
 import type { FrameHash, Loop } from './Loop.js';
 import type { FrameStats } from '../render/debug/StatsProbe.js';
@@ -482,6 +483,7 @@ export function installDebugApi(
 
     ...terraformApi(s),
     ...gameplayApi(s, loop),
+    ...sitesApi(s),
   };
   (window as unknown as { __of: OfDebugApi }).__of = api;
   return api;

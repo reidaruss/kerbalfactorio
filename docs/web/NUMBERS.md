@@ -89,7 +89,7 @@ is that the numbers are handed out by one writer before the work starts.
 | BT-80 to BT-119 | build-tooling, the harness gate + the full 4-shard probe sweep (todo #2): verdict exit codes, known-red.json, screenshot-step hardening, sweep + merged triage | allocated 2026-08-11 |
 | GP-600 to GP-625 | gameplay, the research station machine (D-019 confirmed): entity, recipe, build tile, panel gate, objective rung | **THE HEAD OF THIS ROW WAS ALREADY SPENT WHEN IT WAS ALLOCATED, AND IS SURRENDERED.** GP-600 to GP-612 were used and committed by the QOL sweep on 2026-08-03 and their entries are in `docs/controllers/gameplay.md`'s decision table; the ledger row covering that lane says only "allocated 2026-08-03" against a wide band, so the used/free split was invisible to this allocation (the rule-5 failure is recorded as GP-620). **GP-613 to GP-620 USED** 2026-08-11 by the research-station lane (the station as the SIXTH `survival::StructureKind` with NO ABI CHANGE, items 0x0045 / TypeId 0x45, placed client-side on the hand-furnace pattern; the 20 Iron + 30 Stone + 10 Copper price and the ruling that there is NO WOOD in it because an airless body has none and a wood cost would make the research screen unreachable there; `ModeRules.researchStationGated` as the sixth named mode question with an existence-gated, named, price-quoting refusal and a `stationGate` report that tells the truth in sandbox too; no hotbar slot and the build menu as the route; the `station` objective rung between the belt card and the pad card; the ripple into `research.js` / `padgate.js` / `survivalrun.js` and its repair; the placeholder assembler mesh with `structures/research_station.glb` OWED BY THE ART LANE; and this collision). **GP-621 to GP-623 USED** 2026-08-12 (the green acceptance and what it measures; the three harness defects that cost five runs, all of them a probe assuming where it could have measured; and the pick-order finding that a station inside a machine's bound cannot be opened with the interact key). **GP-624 and GP-625 free.** Recorded by the lane per rule 5 |
 | RN-1300 to RN-1310 | UNRECORDED CLAIM: `tools/blender/of_lib.py:50` carries this range live in code, and this ledger never allocated it to anybody (found by the albedo scope lane 2026-08-10) | **burned for new allocation, treated as used by that code; Admin 2026-08-10** |
-| WG-151 to WG-165 | world-gen, the POI bridge (of_poi_api.inc per world-gen.md:167, known/visited bits, client Sites.ts); ABI 24 or current+1 at dispatch | allocated 2026-08-11, dispatched 21:10 |
+| WG-151 to WG-165 | world-gen, the POI bridge (of_poi_api.inc per world-gen.md:167, known/visited bits, client Sites.ts); ABI 24 or current+1 at dispatch | **WG-151 USED, 2026-08-12** (the whole bridge: `of_poi_api.inc` at ABI 24, the `known_` bit and its unknown -> known -> visited state machine, `poiabi.ts` + `Sites.ts` + `DebugSites.ts`, `SaveSlot.poi`, the Linux `CHROME_CANDIDATES` fix to `reload.mjs`, and `probes/poisites.js` proven live by real `page.reload()`). One number covers the whole lane rather than splitting sub-decisions across the block, matching how WG-70/WG-116/WG-119 are each cited singly across many files. **WG-152 to WG-165 free.** A first commit (`fed5729`) cited WG-200 to WG-212 and WG-219 by mistake, colliding with the pre-existing unledgered WG-200..218 usage; every code comment and doc citation was renumbered to WG-151 in a follow-up commit, but the first commit's MESSAGE was not rewritten and still names the wrong numbers -- see world-gen.md's WG-151 row |
 | GP-520 to GP-532 | gameplay, map marker substrate + milestone bus (grantMilestone; wires the inert Research.earn, ReachedOrbit grant) | GP-520 to GP-523 USED 2026-08-11 (the shared `MapMarker` type + `MarkerRegistry` singleton, `MapPaint.markerPosM` as the one dirBody-to-world conversion both maps call, `MapLayers.drawMarkers` for the 2D canvas with its own `known`-only gate, `Map3D.syncMarkers`'s generic registry source, and the `of.markers` debug source) — **verified green**, `tools/smoke/probes/markers.js`, `valid: true`. GP-530 to GP-532 USED (`grantMilestone` in `Research.ts`, the ReachedOrbit/LandedOffWorld rising-edge wiring in `Systems.ts`, and the `of.research()` debug op). **The mechanism is verified** (`research_tests`: two new ctest cases plus a pre-existing one that already proved `FlightAutopilot` becomes researchable on grant, 17 tests/288 checks green); **the live browser wiring is NOT verified** — `tools/smoke/probes/milestones.js` twice failed to complete in over 90 minutes each against this session's shared VM running at load average 33 to 38 the whole time (measured, not assumed: `uptime`/`ps` showed sibling lanes' own Chrome instances each at 350 to 630% CPU), against a ~29-minute quiet-VM baseline for one build-to-orbit cycle (`map3d.js`). Both attempts confirmed still actively computing when killed for time, not stalled. See `docs/controllers/gameplay.md`'s GP-520 log entry for the full account. GP-524 to GP-529 free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible |
 | GP-533 to GP-545 | gameplay, the reveal + scanning antenna content (item, recipe, tech row, one-shot mark_known at build) | allocated 2026-08-11, not yet dispatched |
 | RN-1400 to RN-1449 | rendering, D-016 the albedo colour-space fix and retune | RN-1400 to RN-1404 USED 2026-08-11 (the two `_albedo_mean_*` functions in `texgen.py` linearised via the sRGB EOTF and unified onto one Rec.709 weighting; the manifest key renamed `albedo_mean` -> `albedo_mean_linear` and `version` bumped 1 -> 2; the `Surfaces.ts` k=1 fallback and the `surface_preview.py` `or 1.0` fallback both retired for a hard error, and `Surfaces.ts` now checks the `manifest.version` it already read; `check_maps` observed RED against the old v1 manifest then GREEN against the regenerated v2 one; full clean regeneration measured byte-identical against the shipped PNGs, and the brief's premise that this needs `blender501` was found wrong, texgen.py is stdlib-only by design). RN-1405 onward free. Allocated in the Admin brief; recorded here by the lane because rule 5 says an allocation that exists only in a brief is invisible to the next allocation |
@@ -1201,3 +1201,100 @@ columns**, which is git's own signal for "I am not counting lines here".
 before assuming the tooling is at fault.** And `--numstat`'s dashes are worth
 knowing as a tell: a file that never reports line counts is a file git has
 stopped reading as text.
+
+### A fix applied to one script in a family is not applied to the family
+
+BT-30 fixed the Windows-only Chrome-path defect in `run.mjs` and `boot.mjs`: a
+hardcoded `chrome.exe`/`msedge.exe` list meant neither could launch a browser on
+the Proxmox Linux VM this project moved development to. **Six siblings were not
+checked**: `reload.mjs`, `dayreload.mjs`, `stationreload.mjs`, `mtnreload.mjs`,
+`powerreload.mjs` and `vesselreload.mjs` all copy the identical Windows-only
+`CHROME` array (each runner is deliberately standalone rather than sharing a
+module, per their own comments), so every one of them still returned `no Chrome
+or Edge found` and exited 2 on this VM, silently, seven weeks after the family's
+first member was fixed.
+
+Found while proving the POI/site bridge's save round trip (WG-151): the setup
+probe (`probes/poisites.js`) needed a real `page.reload()`, which only
+`reload.mjs` provides, and `reload.mjs` would not launch at all.
+
+Fixed in `reload.mjs` only (this lane's actual dependency), mirroring `run.mjs`'s
+`CHROME_PATH` override plus the four Linux paths verbatim. **The other five
+siblings are UNFIXED and this is a known gap, not a silent one**: `dayreload.mjs`,
+`stationreload.mjs`, `mtnreload.mjs`, `powerreload.mjs` and `vesselreload.mjs`
+still cannot launch on Linux until the same four lines land in each.
+
+**A fix that lands in one file of a "deliberately standalone" family is a fix
+that has to be re-applied by hand in every other file, and nothing enforces
+that it was.** The standalone-ness that keeps each runner simple to read is
+exactly what lets a fix silently fail to propagate; grep the family for the
+defect's signature before declaring the class closed.
+
+### `of.run()` looked hung under load and was not; a quiet box finished it, which is the correction as much as the finding
+
+Proving the POI/site bridge's save round trip needed a REAL `page.reload()`
+(`probes/poisites.js`), which needs `of.run()` to advance simulated time. In
+the session that wrote this entry it never completed: **180 s, 400 s, 550 s
+and 590 s all timed out**, always the same way -- `page.evaluate` killed
+mid-call when the wrapping `timeout` closed the browser. That was written up
+here AS a probable defect in `of.run()`. **IT WAS NOT ONE.** A later, quieter
+run of the exact same probe through the exact same runner completed cleanly:
+the ruin at 753.77 m, the id round trip, both bits surviving the reload, every
+negative control green. **The word "hung" in the first draft of this entry
+was wrong and is corrected here rather than quietly edited away**, because a
+finding that turns out to have the wrong verb is still worth keeping on
+record -- this file's own rule about a later entry fixing an earlier one.
+
+**THE CONTROL THAT MATTERS: this is NOT the poi bridge's setup script.** The
+already-shipped, unrelated `probes/trees.js`, run through the ALREADY-FIXED
+`run.mjs` (BT-30) with no `page.reload()` in it at all, hung at the exact same
+call -- `of.run()` -- for the exact same reason, on the same VM, in the same
+session. Two independent probes, two independent runners, one shared failure
+point. That rules out a defect in `poisites.js` or in `reload.mjs`'s new
+Linux Chrome path (the entry above): the code that hangs is the SAME code
+`run.mjs` has been calling since BT-30 supposedly proved it out.
+
+**MEASURED, staged, rather than guessed at.** A hand-rolled diagnostic logged
+every step with a wall-clock stamp: `page.goto` returns in 0.3 s; `window.__of`
+exists at 25 to 30 s; `/core`'s own boot log prints "boot 22 to 28 s" (close to
+the number that log names); but `window.__of.ready` itself does not resolve
+until **127 to 156 s** -- a 100-second-plus gap between the engine's own claim
+that it finished booting and the promise a caller actually awaits resolving.
+`of.run(1.0)` was then called and never returned inside any budget tried, up to
+432 s alone. `boot.mjs`'s own harness (a DIFFERENT measurement path that never
+calls `of.run()`) reported a clean **101 s total boot** in the same session,
+which is the fact that pins the first gap to variance rather than to a second
+defect: it is slow, not broken, up to the point `of.run()` is called, and then
+it stops progressing entirely within any budget this session could afford.
+
+**THE LIKELY CAUSE, and it is a fact about THIS run, not a fact about the
+game:** `ps aux` at the time showed FOUR OTHER PROJECTS' `vite preview` servers
+and their own Chrome instances alive concurrently (`sweep-shards/shard0..3`,
+plus `research-station`, plus `enemies`), all on the same box, all software
+rendering under SwiftShader, which the project's own boot log measured at
+`gpu ANGLE ... SwiftShader Device`. CLAUDE.md's own §7.4 names exactly this
+risk for exactly this VM ("do not fan out sixteen browser probes") and this
+session did not cause the fan-out, it walked into one already running. A
+simulated second driven by real animation frames, competing for the same cores
+against several other lanes' full 3D boots, can plausibly take minutes rather
+than the fraction of a second a quiet box would need.
+
+**WHAT STAYS TRUE FROM THE FIRST DRAFT: the diagnosis, not the diagnosis's
+verb.** `ps aux` at the time showed FOUR OTHER PROJECTS' `vite preview`
+servers and their own Chrome instances alive concurrently (`sweep-shards/
+shard0..3`, plus `research-station`, plus `enemies`), all software rendering
+under SwiftShader on the same box. CLAUDE.md's own §7.4 names exactly this
+risk for exactly this VM ("do not fan out sixteen browser probes"). A
+simulated second driven by real animation frames, competing for the same
+cores against several other lanes' full 3D boots, took minutes instead of
+the fraction of a second a quiet box needed -- SLOW, not BROKEN, and the two
+look identical from inside a process with zero error output and a fixed
+timeout, which is the actual lesson: **a probe that stops progressing with no
+error and no crash is not evidence of a hang until a quiet box has been tried
+and also failed.** This session's first attempt skipped that last step and
+wrote "hang" from three timeouts alone.
+
+**If `of.run()` (or any real-time-driven probe) ever again fails to progress
+past boot with no error and no crash, check `ps aux` for concurrent Chrome/vite
+processes from OTHER lanes, and if the box is busy, GET A QUIET ONE AND RETRY
+before writing the code under test up as broken.**

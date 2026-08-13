@@ -530,7 +530,7 @@ TEST(the_site_id_is_stable_when_the_site_moves) {
   //
   // Two mechanisms were tried first and BOTH failed to move it, which is worth
   // recording because each looks like it should work. Growing the pad blend to
-  // 1100 m moves nothing, because the winner sits at 1394.6 m and was never
+  // 1100 m moves nothing, because the winner sits at 753.8 m and was never
   // inside it. Scaling `maxReliefM` moves nothing either, and that one is
   // instructive: `sampleHeightField` ends in `h *= body.maxReliefM`, so relief
   // is a UNIFORM scale on every height, which scales every candidate's tilt by
@@ -555,10 +555,46 @@ TEST(the_site_id_is_stable_when_the_site_moves) {
 }
 
 // =============================================================================
-// 15. Seed + diff. Regenerate from the seed, re-apply the visited set, get the
-//     same state. WG-3 / C-6, and the whole reason the world is cheap to save.
+// 14b. THE STATE MACHINE: unknown -> known -> visited, and it is MONOTONE.
+//      `markVisited` must not let a site end up visited-but-not-known, because
+//      that is a state a scan-then-investigate questline can never produce and
+//      a save that held it would be describing an impossible player.
 // =============================================================================
-TEST(only_the_visited_bit_is_saved_and_it_round_trips) {
+TEST(known_and_visited_are_a_monotone_state_machine) {
+  const BodyParams forge = makeForge(kSeed);
+  SiteCatalog cat = SiteCatalog::ForBody(forge);
+  CHECK(cat.size() == 1);
+  if (cat.size() == 0) return;
+  const SiteId id = cat.sites()[0].id;
+  CHECK(!cat.known(id));
+  CHECK(!cat.visited(id));
+  // The scan reaches it first: known without visited is a legal state.
+  CHECK(cat.markKnown(id));     // TRUE the first time
+  CHECK(!cat.markKnown(id));    // FALSE afterwards
+  CHECK(cat.known(id));
+  CHECK(!cat.visited(id));
+  CHECK(cat.knownCount() == 1);
+  // The walk-up. Visiting must not un-know it, obviously, and must not
+  // re-fire "first known" now that it already was.
+  CHECK(cat.markVisited(id));
+  CHECK(cat.known(id));
+  CHECK(cat.visited(id));
+
+  // AND THE ORDER THAT MATTERS: a player who stumbles onto an unscanned ruin
+  // visits it WITHOUT ever calling markKnown. `markVisited` alone must still
+  // leave `known` true, or the state machine runs backwards.
+  SiteCatalog stumbled = SiteCatalog::ForBody(forge);
+  CHECK(!stumbled.known(id));
+  CHECK(stumbled.markVisited(id));
+  CHECK(stumbled.known(id));
+  CHECK(stumbled.visited(id));
+}
+
+// =============================================================================
+// 15. Seed + diff. Regenerate from the seed, re-apply BOTH bits, get the same
+//     state. WG-3 / C-6, and the whole reason the world is cheap to save.
+// =============================================================================
+TEST(known_and_visited_are_both_saved_and_round_trip) {
   const BodyParams forge = makeForge(kSeed);
   SiteCatalog live = SiteCatalog::ForBody(forge);
   CHECK(live.size() == 1);
@@ -568,35 +604,56 @@ TEST(only_the_visited_bit_is_saved_and_it_round_trips) {
   CHECK(live.markVisited(id));    // TRUE the first time
   CHECK(!live.markVisited(id));   // and FALSE afterwards
   CHECK(live.visited(id));
+  CHECK(live.known(id));          // markVisited implies known
   CHECK(live.visitedCount() == 1);
+  CHECK(live.knownCount() == 1);
   Buf b;
   live.serialize(b);
-  std::printf("    one visited site serialises to %zu bytes\n", b.b.size());
+  std::printf("    one known+visited site serialises to %zu bytes\n",
+              b.b.size());
   SiteCatalog reloaded = SiteCatalog::ForBody(forge);
-  CHECK(!reloaded.visited(id));   // regenerated clean, as it must be
+  CHECK(!reloaded.known(id));     // regenerated clean, as it must be
+  CHECK(!reloaded.visited(id));
   CHECK(reloaded.deserialize(b));
+  CHECK(reloaded.known(id));
   CHECK(reloaded.visited(id));
+  CHECK(reloaded.knownCount() == 1);
   CHECK(reloaded.visitedCount() == 1);
   // And the regenerated table is the same table.
   CHECK(reloaded.sites()[0].id == live.sites()[0].id);
   CHECK(std::memcmp(&reloaded.sites()[0].dir, &live.sites()[0].dir,
                     sizeof(Vec3)) == 0);
-  // A save from a world with nothing visited is one byte, not zero: the count
-  // is always written, so an empty save and a truncated one are different.
+
+  // KNOWN WITHOUT VISITED round-trips too, and independently: the scan bit
+  // must survive a save on its own rather than only riding along with a visit.
+  SiteCatalog knownOnly = SiteCatalog::ForBody(forge);
+  CHECK(knownOnly.markKnown(id));
+  Buf kb;
+  knownOnly.serialize(kb);
+  SiteCatalog knownReloaded = SiteCatalog::ForBody(forge);
+  CHECK(knownReloaded.deserialize(kb));
+  CHECK(knownReloaded.known(id));
+  CHECK(!knownReloaded.visited(id));
+
+  // A save from a world with nothing known or visited is TWO bytes, not zero:
+  // each of the two lists always writes its count, so an empty save and a
+  // truncated one are distinguishable.
   SiteCatalog fresh = SiteCatalog::ForBody(forge);
   Buf e;
   fresh.serialize(e);
-  CHECK(e.b.size() == 1);
+  CHECK(e.b.size() == 2);
 }
 
 TEST(an_unknown_id_in_a_save_is_dropped_rather_than_refused) {
   const BodyParams forge = makeForge(kSeed);
   Buf b;
-  b.varint(2);
+  b.varint(2);                       // the KNOWN list
   b.varint(0x1234567890ABCDEFull);   // a site that does not exist
   b.varint(1);                       // and another
+  b.varint(0);                       // the VISITED list: empty
   SiteCatalog cat = SiteCatalog::ForBody(forge);
   CHECK(cat.deserialize(b));
+  CHECK(cat.knownCount() == 0);
   CHECK(cat.visitedCount() == 0);
 }
 
@@ -651,6 +708,46 @@ TEST(the_cone_query_finds_the_site_and_a_narrow_cone_elsewhere_does_not) {
   CHECK(cat.nearest(forge.homeDir, SiteKind::None) == 0);
   CHECK(cat.byId(s.id) != nullptr);
   CHECK(cat.byId(s.id ^ 1ull) == nullptr);
+}
+
+// =============================================================================
+// 18. THE BRIDGE'S ID SPLIT, ROUND-TRIPPED. `of_poi_api.inc` (web/wasm) cannot
+//     hand a 64-bit SiteId across the ABI as one f64 word (WG-167: "a uint64
+//     id does not survive a single f64"), so `of_poi_row` splits it into
+//     [idLo, idHi] and every visited/known/mark_* export takes the halves
+//     back and rejoins them. This is that arithmetic, exercised natively so
+//     the client's poiabi.ts driver has a pinned, non-JS proof that the split
+//     is lossless before it ever touches a browser: a 32-bit half is always
+//     exactly representable in an f64's 52-bit mantissa, so the only place
+//     this could go wrong is the split/join arithmetic itself.
+// =============================================================================
+TEST(the_id_split_into_two_32_bit_halves_round_trips_through_an_f64_exactly) {
+  const BodyParams forge = makeForge(kSeed);
+  SiteCatalog cat = SiteCatalog::ForBody(forge);
+  CHECK(cat.size() == 1);
+  std::vector<uint64_t> ids;
+  if (cat.size() > 0) ids.push_back(cat.sites()[0].id);
+  // Edge cases the shipped ruin's id cannot exercise on its own: both halves
+  // zero, both halves saturated, and each half saturated alone.
+  ids.push_back(0ull);
+  ids.push_back(~0ull);
+  ids.push_back(0x00000000FFFFFFFFull);
+  ids.push_back(0xFFFFFFFF00000000ull);
+  ids.push_back(0x9f051605d9480737ull);   // the shipped ruin's id, pinned
+  for (uint64_t id : ids) {
+    const uint32_t idLo = static_cast<uint32_t>(id);
+    const uint32_t idHi = static_cast<uint32_t>(id >> 32);
+    // THE F64 CROSSING: what actually crosses the bridge is a double in the
+    // scratch row, never the integer itself.
+    const double idLoF = static_cast<double>(idLo);
+    const double idHiF = static_cast<double>(idHi);
+    const uint32_t backLo = static_cast<uint32_t>(idLoF);
+    const uint32_t backHi = static_cast<uint32_t>(idHiF);
+    CHECK(backLo == idLo);
+    CHECK(backHi == idHi);
+    const uint64_t joined = (static_cast<uint64_t>(backHi) << 32) | backLo;
+    CHECK(joined == id);
+  }
 }
 
 

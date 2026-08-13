@@ -45,7 +45,8 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   if (inhibit !== '') { noteSave(true); return { refused: inhibit }; }
   noteSave(false);
   const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.bodyId, g.ports, g.oreField, g.structures, g.pads, g.stations,
+    g.seed, g.bodyId, g.bodyHandle, g.ports, g.oreField, g.structures, g.pads,
+    g.stations,
     g.hotbar, g.mode.mode,
     saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
   const ok = await writeSlot(slot);
@@ -58,6 +59,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
     machines: slot.machines.length, depletion: slot.depletion.length,
     patches: slot.patches.length, rocks: slot.rocks?.length ?? 0,
     trees: slot.trees?.length ?? 0,
+    poiBytes: slot.poi?.length ?? 0,
     health: slot.health?.length ?? 0,
     voxelBytes: slot.voxels.cells.length, voxelOps: slot.voxels.ops.length,
   } : null;

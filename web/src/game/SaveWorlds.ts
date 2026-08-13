@@ -66,7 +66,7 @@ import type { SaveSlot } from './SaveGame.js';
  */
 export const WORLD_KEYS = [
   'depletion', 'patches', 'rocks', 'trees', 'buildings', 'machines', 'voxels',
-  'discovery', 'sites', 'structures', 'pads', 'health',
+  'discovery', 'poi', 'sites', 'structures', 'pads', 'health',
   // D-019. BODY-SCOPED, and the compiler made this question be answered rather
   // than defaulted, which is exactly what its header promises. A station's
   // `pos` is body-frame metres on the body it was built on, so a station left
