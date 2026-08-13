@@ -211,6 +211,11 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // is the whole of that fix in one flag: with it off every stock material is
   // lit from below by the sky model marched through the planet, i.e. by nothing.
   'iblground', 'iblgroundamp',
+  // RN-1415 and RN-1420, standing rule 7 and both TRI-STATE. `iblsize=64`
+  // restores the PMREM cube side every tier shipped with before the art
+  // campaign; `shadowsoft=0` restores THREE.PCFShadowMap. Absent means "the
+  // quality tier decides", which is a third state and not `false`.
+  'iblsize', 'shadowsoft',
   'vab', 'flight',
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one

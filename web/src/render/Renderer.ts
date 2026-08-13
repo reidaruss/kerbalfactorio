@@ -66,6 +66,13 @@ export interface OFRenderer {
    * on the seam because PMREMGenerator is renderer-specific; SkyIbl owns WHEN.
    */
   environmentFrom(scene: THREE.Scene): THREE.Texture | null;
+  /**
+   * RN-1415. The cube side `environmentFrom` builds at, published so a probe
+   * can say WHICH environment it measured. Without it `?iblsize=64` and the
+   * `high` default are the same report with different pixels, which is the
+   * shape of every result this project has had to re-take.
+   */
+  readonly iblSize: number;
   dispose(): void;
 }
 
@@ -83,11 +90,14 @@ class WebGLSeam implements OFRenderer, PostHost {
   readonly post: PostStack;
   private pmrem: THREE.PMREMGenerator | null = null;
   private envTarget: THREE.WebGLRenderTarget | null = null;
+  /** RN-1415. The PMREM cube side, from the quality tier and `?iblsize=`. */
+  readonly iblSize: number;
   /** For the full-screen triangle. Never moves; the post VS ignores it anyway. */
   private readonly quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly sizeScratch = new THREE.Vector2();
 
   constructor(canvas: HTMLCanvasElement, cfg: Config, q: QualityKnobs) {
+    this.iblSize = q.iblSize;
     const dp = depthRendererParams(cfg, q.tier);
     this.r = new THREE.WebGLRenderer({
       canvas,
@@ -133,7 +143,18 @@ class WebGLSeam implements OFRenderer, PostHost {
     // lights, so WebGLShadowMap returns early for the sky, far and view-model
     // passes and the maps are rendered exactly once per frame, not four times.
     this.r.shadowMap.enabled = cfg.shadows;
-    this.r.shadowMap.type = THREE.PCFShadowMap;
+    // RN-1420. The filter is a SHADOWMAP_TYPE define, so it is a property of
+    // every program in the build and not of a light: terrain, water, props,
+    // machines and the stock materials all take it through their own
+    // `<shadowmap_pars_fragment>` include. `PCFShadowMap` is a ONE-TEXEL kernel,
+    // and §2.1.5 measures cascade 0 at 15.47 mm per texel over 0 to 22 m, so
+    // every contact edge inside a walking frame was a 15 mm hard step.
+    // `PCFSoftShadowMap` IS NOT AVAILABLE AND THAT IS MEASURED, NOT ASSUMED:
+    // three r185 answers it with "THREE.WebGLShadowMap: PCFSoftShadowMap has
+    // been deprecated. Using PCFShadowMap instead." on the console, which the
+    // smoke runner correctly fails the run on. Setting it would have been a
+    // silent no-op with a warning. VSM is the one remaining soft filter.
+    this.r.shadowMap.type = q.shadowSoft ? THREE.VSMShadowMap : THREE.PCFShadowMap;
     // Constructed LAST: PostStack asks the host for its buffer size, and the
     // size is not final until setPixelRatio and the clear colour are set.
     this.post = new PostStack(this, { ...cfg.post.flags }, { ...cfg.post.tune });
@@ -192,9 +213,17 @@ class WebGLSeam implements OFRenderer, PostHost {
     // one, so the previous target is disposed here rather than in SkyIbl:
     // disposing only the .texture leaks the target, and the leak is not subtle.
     // Measured before this line existed: renderer.info.memory.textures climbing
-    // past 50 and the near pass at 170 ms. 64 is section 7.1's size, and at
-    // 64^2 the whole rebuild is under the measurement floor.
-    const next = this.pmrem.fromScene(scene, 0, 0.1, 100, { size: 64 });
+    // past 50 and the near pass at 170 ms.
+    //
+    // RN-1415, THE SIZE IS NOW THE QUALITY TIER'S AND NOT A LITERAL 64. 64 was
+    // section 7.1's size and it is the specular resolution of every stock
+    // material in the game at once. A cube face 64 px across subtends 1.4
+    // degrees per texel, which is below the lobe width of anything rougher than
+    // about 0.35 and ABOVE it for everything smoother, so the machines' Steel
+    // role (effective roughness 0.45 x ormG) and every polished part in the
+    // ruin, the station and the suit were reading one blurred value across a
+    // whole plate. `?iblsize=64` restores it exactly, on any tier.
+    const next = this.pmrem.fromScene(scene, 0, 0.1, 100, { size: this.iblSize });
     this.envTarget?.dispose();
     this.envTarget = next;
     return next.texture;
