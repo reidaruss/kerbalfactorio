@@ -1,6 +1,6 @@
 // =============================================================================
-// Sites.ts - the client's driver for `/core`'s POI/site table (WG-200 to
-// WG-212, ABI 24).
+// Sites.ts - the client's driver for `/core`'s POI/site table (WG-151,
+// ABI 24).
 //
 // WHERE A SITE IS IS WORLD STATE, NOT UI STATE, so the authority is
 // `core/include/of/poi.h` and this file is a driver exactly as `Discovery.ts`
@@ -163,7 +163,7 @@ export class Sites {
   }
 
   /** Counts over the live table, for a HUD or a probe assertion. Costs one
-   *  known/visited query per row -- WG-210: the table is tiny (56 bytes a row
+   *  known/visited query per row -- WG-151: the table is tiny (56 bytes a row
    *  natively) and there is no query cost here worth caching against. */
   stats(): SitesStats {
     if (!this.ready) return { count: 0, known: 0, visited: 0 };

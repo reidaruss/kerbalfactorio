@@ -5,7 +5,7 @@
 // `Sites` (world/Sites.ts) is a STATELESS VIEW over `/core`'s per-body
 // catalog: the two mutable bits live in the wasm module's cache, keyed on the
 // body handle, not in any JS object. So a fresh `Sites` per call is correct
-// and cheap (WG-210: the table is tiny) rather than a shortcut -- there is no
+// and cheap (WG-151: the table is tiny) rather than a shortcut -- there is no
 // staleness to manage between calls.
 import { Sites } from '../world/Sites.js';
 import type { SiteRow } from '../world/Sites.js';

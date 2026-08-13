@@ -7,7 +7,7 @@
 // THE SITE IS NAMED BY ITS ID (idLo/idHi), NEVER BY ROW INDEX. `Sites.refresh()`
 // rebuilds the row array fresh every construction and poi.h makes no promise
 // that row order is stable across it -- only `siteIdFor`'s ordinal keying is a
-// contract (WG-204). If the id-keyed save (`SiteCatalog::serialize`) were
+// contract (WG-151). If the id-keyed save (`SiteCatalog::serialize`) were
 // broken, phase 2's by-id lookup would find a site with both bits still false
 // and the runner's assertions would go red by name.
 //
@@ -17,7 +17,7 @@
 // NO --params NEEDED, unlike treereload.js/rockreload.js: the site table is
 // read entirely through the debug bridge (no walking, no swinging), and it
 // exists at any spawn on Forge -- world-gen places the ruin from `homeDir`,
-// which moves with the spawn (WG-200's whole point).
+// which moves with the spawn (WG-151's whole point).
 (async () => {
   const of = window.__of;
   await of.run(1.0);
@@ -44,7 +44,7 @@
   // THE SHIPPED RUIN, MEASURED (WG-214): 753.8 m from spawn, footprint 18 m.
   // A few metres of slack rather than an exact bar, because a future terrain
   // pass that moves the winning candidate by a few metres without changing
-  // the id is the exact case WG-204 protects and this probe should not flag.
+  // the id is the exact case WG-151 protects and this probe should not flag.
   check('the known ruin appears at the measured distance from spawn',
         Math.abs(ruin.arcFromAnchorM - 753.8) < 10,
         `arcFromAnchorM ${ruin.arcFromAnchorM}, wanted ~753.8 m`);
