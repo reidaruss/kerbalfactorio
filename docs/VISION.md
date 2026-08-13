@@ -59,12 +59,17 @@ station, then autopilot and the moon scan unlocked by it.
 Teleporters, a moon colony, other planets, the major reskinning, alpha. Endgame
 is the dyson sphere and the interstellar voyage; launching it is the credits.
 
-## Priorities now, in order
+## Priorities now, in order (reordered by Reid 2026-08-13)
 
-1. **A flyable first mission.** The rider boards the carrier, the station-stamp
-   branch merges, docking gets a button.
-2. **Green means something.** Full probe sweep, then gate the harness so a
-   failing probe fails the build.
-3. **Look and feel.** The albedo fix (D-016) first, then look-dev, then asset,
-   movement and animation passes judged against the corrected light.
-4. **The scanning spine.** The reason a player goes anywhere.
+1. **THE MAJOR ART PASS.** Reid: "i want it looking close to done." Space
+   Engineers fidelity (D-020) across terrain, structures, machines, lighting,
+   atmosphere and post, judged against the corrected light (D-016 merged).
+   The Space Engineers world-mechanics (all four selected under D-020) are
+   deliberately deferred until the art pass lands: banked scope first, build
+   later.
+2. **A flyable first mission.** The rider boards the carrier (merged), docking
+   gets a button (R93 owed).
+3. **Green means something.** Gate mechanism built and proven; census owed a
+   quiet box and a Windows leg for the D3D-only probes.
+4. **The scanning spine.** Largely landed 2026-08-13: station, antenna,
+   reveal, ruin standing with garrison, investigation milestone.
