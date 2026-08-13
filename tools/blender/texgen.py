@@ -159,9 +159,15 @@ SIZE = 512                 # px, square. See docs/web/ASSET-SPECS.md 2.8.
 # than two, so 384 keeps the addition at 2.36 MB of VRAM instead of 4.19 MB at
 # 512, which is `fur`'s argument and literally the same arithmetic (RGBA8,
 # mip chain included).
+# `paintchip` and `rust` match `panel` at 512 and for `panel`'s reason exactly:
+# both are 1.5 m tiles on hard-surface industrial subjects, so 512 lands them
+# on panel's own 341 px/m, above ASSET-SPECS 2.8's 256 px/m machine target, and
+# the three families will regularly appear in one frame on one structure. A
+# family that sat at 384 beside two at 512 would resolve visibly softer than
+# its neighbours on the same wall, which is a defect no gate here measures.
 FAMILY_SIZE = {"panel": 512, "coarse": 384, "bark": 384, "ore": 384,
                "fur": 384, "suitfab": 512, "suitplate": 384,
-               "stone": 384}
+               "stone": 384, "paintchip": 512, "rust": 512}
 
 ZLIB_LEVEL = 9
 ZLIB_MEMLEVEL = 9
@@ -369,9 +375,16 @@ FLAT_ROLES = {
 # up. ore's 0.5 m gives 3 repeats, and three copies of a 20 cm pigment band
 # across one boulder is exactly the countable repetition the suitfab row
 # warns about.
+# `paintchip` and `rust` both take `panel`'s 1.5 m, and it is inherited rather
+# than rechosen: all three are the same subject at the same distance (a
+# manufactured steel surface on a machine, a wall or a hull), and panel's 1.5 m
+# was itself picked by RENDERING it, landing ~50 cm plates on a 4 m wall with
+# 1.0 m rejected as a mosaic and 2.0 m as battleship rivets. That work does not
+# need redoing for two families with the same consumers, and giving them a
+# different tile would put two plate rhythms at two scales on one structure.
 FAMILY_TILE_M = {"panel": 1.5, "coarse": 0.75, "bark": 0.6, "ore": 0.5,
                  "fur": 0.3, "suitfab": 0.5, "suitplate": 0.4,
-                 "stone": 0.6}
+                 "stone": 0.6, "paintchip": 1.5, "rust": 1.5}
 
 # Texel density that implies, for the record against ASSET-SPECS 2.8
 # (512 px/m for first-person, 256 px/m for machines):
@@ -897,7 +910,14 @@ def _coarse_height(w, h):
         z += 0.07 * (1.0 - chips2[i]) ** 2
         z += 0.035 * grit[i]
         out[i] = z
-    return out, {}
+    # `hn` is the heightfield normalised to this tile, and it is added WITHOUT
+    # touching `out`, so the normal map and the AO are byte-for-byte what they
+    # were: both are differential and rescaling what they read would silently
+    # retune normal_strength and ao_gain out from under the FAMILIES row, which
+    # is the reason `_stone_height` states for keeping its own raw. The masks
+    # need a normalised copy because "standing high" has to mean high relative
+    # to this tile, and the raw range moves with every amplitude above.
+    return out, {"hn": _normalise(out)}
 
 
 def _coarse_masks(w, h, height, aux):
@@ -908,15 +928,168 @@ def _coarse_masks(w, h, height, aux):
     in the game. DW-35's whole argument is that roughness variation is the main
     win and uniform roughness is what reads as plastic, so an 11% spread is a
     map that passed its own check while barely doing its job. Exposed facets are
-    weathered smooth and hollows hold dust, so relief drives it."""
+    weathered smooth and hollows hold dust, so relief drives it.
+
+    ------------------------------------------------------------------
+    RN-1471: WIDENED AGAIN, AND THIS TIME IT IS THE FAMILY THAT ACTUALLY
+    MEASURED NARROW RATHER THAN THE ONE THE DOCS NAMED
+    ------------------------------------------------------------------
+    Section 2.1 item 4 has said since 2026-08-01 that `panel` measures a
+    0.032 effective band and is THE plastic read in the game, and the whole
+    D-020 art campaign was scoped on that sentence. Measured off the shipped
+    bytes on 2026-08-13 it is stale by a factor of seven: RN-553 re-authored
+    `_panel_masks` the same day the bullet was written, four commits later,
+    and `panel` now measures 0.143 to 0.245 across its six roles. Nobody
+    edited the bullet back. The bullet also names `ore` as "the family to
+    copy" at 0.28..0.37; ore actually measures 0.175..0.319, so panel now
+    beats the family it was told to copy on five of its six roles.
+
+    THE NARROW FAMILY IS THIS ONE. Measured across all eight tiling families,
+    the two worst effective bands in the game are `coarse`'s own:
+
+        Copper  0.075        Iron  0.086
+        Rubber  0.183        Coal  0.194
+        Sand / Regolith  0.205        Soil  0.216
+
+    Copper and Iron are under section 2.1's 0.15 bar by half, and they are
+    under it for a compound reason that is worth stating because it is the
+    general case: the family's ormG span was only 0.2157 AND those two roles
+    carry the lowest palette roughness of the seven (0.40). A narrow map times
+    a low constant is how a band gets to 0.075, and neither factor alone looks
+    alarming.
+
+    WHAT WIDENS IT, AND IT IS A STORY RATHER THAN A GAIN. Multiplying the old
+    mottle by three would clear the gate and mean nothing; that is
+    `_panel_masks`'s own recorded lesson and it applies here unchanged. Loose
+    granular material has three states and they are genuinely far apart. A
+    surface that is DRY AND DUSTY is as matte as anything gets, and that is
+    the palette constant. Where fines have been washed or blown off and the
+    coarse fraction is exposed, the individual grains are water-worn and
+    catch light, so it goes markedly smoother. And in a hollow where fines
+    collect and pack down, it is matte again but for the opposite reason.
+    So the map runs about 0.46 to 1.00 instead of 0.79 to 0.98, and every
+    term below is a claim that can be checked against a gravel path.
+
+    THE HEIGHT TERM IS NOW KEYED ON A NORMALISED COPY, which is the actual
+    defect under the old 0.2157. The old line read
+    `_smoothstep(0.15, 0.85, _clamp01(height[i]))`, and `_coarse_height`
+    returns a raw field whose range is roughly 0.06..0.95 with almost all of
+    its mass between 0.3 and 0.7. A 0.15..0.85 smoothstep on that is nearly
+    linear over the occupied range and never reaches either rail, so the
+    0.26 coefficient was never actually spending 0.26. Keying on `hn` and
+    moving the knees inside the distribution is the same fix
+    `_panel_masks` records making ("THE THRESHOLDS ARE WHERE THE BAND LIVES,
+    NOT THE COEFFICIENTS"), and it is why the coefficient below is only
+    a little larger than the one it replaces while the band roughly doubles.
+
+    WHY IT STAYS AT OR UNDER 1.0: the ORM channels are byte multipliers on
+    the palette constant, so 1.0 is the ceiling by construction and the
+    palette decides the matte end. Widening downward is the only move
+    available without a palette edit."""
     mottle = _fbm(w, h, 16, 3, seed=9109)
+    # 19 cm at the 0.75 m tile: WHERE THE FINES HAVE GONE. An order of
+    # magnitude coarser than the mottle, so a 4 m deck carries three or four
+    # of these rather than a texture, which is `_panel_masks`'s `weather`
+    # term doing the same job for the same reason.
+    washed = _fbm(w, h, 4, 3, seed=9337)
+    # 6.3 cm: packed fines in the hollows, fine enough to break the washed
+    # zones up so they do not read as painted patches.
+    packed = _fbm(w, h, 12, 2, seed=9511)
+    hn = aux["hn"]
     rough = [0.0] * (w * h)
     metal = [1.0] * (w * h)      # identity: no coarse role is a polished metal
     for i in range(w * h):
-        r = (1.0 - 0.26 * _smoothstep(0.15, 0.85, _clamp01(height[i]))
-             + (mottle[i] - 0.5) * 0.18)
+        # Exposed high ground is water-worn and takes light.
+        r = 1.0 - 0.30 * _smoothstep(0.34, 0.86, hn[i])
+        # Where the fines have washed off, the coarse fraction is bare and
+        # smoother still. This is the term that carries the band.
+        r -= 0.26 * _clamp01((washed[i] - 0.30) / 0.36)
+        # Packed fines in a hollow go back to fully matte.
+        r += 0.10 * _clamp01((packed[i] - 0.52) / 0.40) * (1.0 - hn[i])
+        r += (mottle[i] - 0.5) * 0.14
         rough[i] = _clamp01(r)
     return rough, metal
+
+
+def _coarse_albedo(w, h, height, aux):
+    """A TILING ALBEDO for granular, dug-up material. RN-1472.
+
+    THE ROLE SPREAD IS THE WHOLE CONSTRAINT AND IT IS UNLIKE EVERY OTHER
+    ALBEDO IN THIS FILE. `panel` serves six painted-steel roles and `stone`
+    two host-rock ones, so each can afford a hue term: an oxide lean is true
+    of all six painted plates and an iron stain is true of both rocks. This
+    family serves SEVEN roles that share nothing but their grain size, and
+    the palette proves it: Sand F0 and Regolith pale grey against Coal 1C1C1F
+    and Rubber 23262B, with Iron and Copper metallic in between. There is no
+    hue that is true of all of them. A warm stain that reads as damp soil
+    reads as RUST on the iron chunk and as nothing at all on coal, because
+    the map is mean-neutral and a near-black role has no headroom to carry a
+    lean anyway.
+
+    SO THIS MAP IS ALMOST PURELY VALUE, and that is a decision rather than a
+    shortcut. `Surfaces.ts` divides `albedo_mean_linear` out through
+    material.color, so what survives is the spatial VARIANCE and the HUE; this
+    family authors the first and deliberately declines the second, keeping its
+    channel lean to a third of `panel`'s and applying it only to the damp
+    term, where every one of the seven roles genuinely does darken and warm
+    slightly when wet. Everything else is achromatic by construction.
+
+    IT READS NEITHER `height` NOR `aux`, following `_stone_albedo` exactly and
+    for a sharper version of that function's reason. The failure RN-454 names
+    is albedo, normal and ORM sharing one field, which rendered the creature as
+    cobblestone; here the subject is literally rubble, so a pigment field that
+    agreed with the chip field would read as a bag of identical pebbles and
+    nobody would look twice. The AO in the ORM's red channel already darkens
+    the hollows the normal dents, because it is the same heightfield read a
+    second time, and drawing them a third time here is what cobblestone is.
+
+    THE BAND IS ABOVE THE RELIEF, which is the other half of the same rule.
+    `_coarse_height`'s structure is lumps at period 4 (18.8 cm on the 0.75 m
+    tile), chips at 6 cells (12.5 cm) and 14 cells (5.4 cm), and a grit octave
+    at period 40. Every term below sits at 19 to 25 cm, at or above the
+    coarsest of those, so the two maps overlap nowhere.
+
+    CENTRED AT 0.50, which is RN-559's lesson taken as read: every term is a
+    multiplier about 1.0 because that is how a mean-neutral map is written,
+    and 1.0 is the wrong place to CENTRE one because the top of the variance
+    then clips against the byte ceiling. `check_maps` refuses a tiling albedo
+    outside 0.15..0.85 for exactly that reason."""
+    # Two octaves each. A third on a period-4 field lands at 9.4 cm, inside
+    # the 12.5 cm chip facet, which is the frequency overlap this map exists
+    # to avoid.
+    sort_ = _fbm(w, h, 3, 2, seed=17033)     # ~25 cm: fines against coarse
+    damp = _fbm(w, h, 4, 2, seed=17209)      # ~19 cm: where it holds water
+    fines = _fbm(w, h, 4, 2, seed=17393)     # ~19 cm: pale dust on the surface
+    LEVEL = 0.50
+    out = bytearray(3 * w * h)
+    for i in range(w * h):
+        # Value. GRAIN SEGREGATION is what loose material actually does and
+        # it is the term with the most amplitude: shake a heap of anything
+        # granular and the fines migrate, so a dug surface is patchy between
+        # a paler fine fraction and a darker coarse one at roughly the scale
+        # of the heap rather than of the grain.
+        v = 1.0 + (sort_[i] - 0.5) * 0.32
+        # Settled dust lightens, and only lightens, because dust does not
+        # darken anything it lands on.
+        v *= 1.0 + 0.13 * _clamp01((fines[i] - 0.58) / 0.34)
+        # Damp darkens, hard. This is the largest single move on the map and
+        # it is true of every role that wears it: wet sand, wet soil, wet
+        # regolith, wet rubber and a wet ore chunk are all markedly darker
+        # than their dry selves.
+        wet = _clamp01((damp[i] - 0.50) / 0.38)
+        v *= 1.0 - 0.24 * wet
+        v *= LEVEL
+        # THE ONLY HUE ON THE MAP, and it is a third of `panel`'s oxide lean
+        # for the reason the docstring states: damp material warms slightly,
+        # which is true of all seven roles, and nothing else here is true of
+        # all seven. Applied as a channel lean rather than as a colour,
+        # because a mean-neutral map cannot carry a colour.
+        warm = 0.045 * wet
+        o = 3 * i
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + warm))))
+        out[o + 1] = int(round(255.0 * _clamp01(v)))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - warm * 1.2))))
+    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
@@ -1064,6 +1237,86 @@ def _bark_masks(w, h, height, aux):
              + 0.04 * fiss[i])
         rough[i] = _clamp01(r)
     return rough, metal
+
+
+def _bark_albedo(w, h, height, aux):
+    """A TILING ALBEDO for tree trunks. RN-1472.
+
+    IT READS NEITHER `height` NOR `aux`, and on this family that restraint is
+    load-bearing rather than stylistic. `_bark_height`'s whole character is
+    seven deep near-vertical fissures, the ORM's red channel already darkens
+    them (AO is the same heightfield read a second time) and the normal
+    already dents them. A pigment field keyed on the fissures would draw them
+    a THIRD time, and the result is not subtle: dark stripes in albedo lining
+    up exactly with dark stripes in AO reads as a trunk someone has painted
+    with vertical stripes, which is RN-454's cobblestone failure in the one
+    family whose relief is strongly directional and therefore hardest to
+    forgive. So the pigment is authored independently and is allowed to
+    DISAGREE with the fissures, which is what real bark does: a lichen patch
+    crosses a fissure, it does not respect it.
+
+    THE BAND IS ABOVE THE RELIEF. The fissures sit at an 8.6 cm ridge pitch
+    (BARK_FISSURES = 7 over the 0.6 m tile) and the grain octave below that;
+    every term here is at 12 to 30 cm, at or above the coarsest relief
+    feature, so the two maps never overlap in frequency.
+
+    WHAT BARK PIGMENT ACTUALLY DOES, in the order the terms do it: it varies
+    in broad vertical zones, because a trunk weathers down its length rather
+    than in patches; it carries LICHEN and algae, which is the single most
+    recognisable thing on a real trunk and the only term here that both
+    lightens and shifts hue, toward a pale desaturated green-grey; and it
+    darkens where water runs and organic staining collects. Only the lichen
+    moves hue far, and unlike `panel`'s oxide and `stone`'s iron it moves it
+    COOL, because that is the direction lichen actually goes and this file
+    now has three warm-staining families and no cool one.
+
+    CENTRED AT 0.50 for RN-559's reason, taken as read: `check_maps` refuses a
+    tiling albedo outside 0.15..0.85 because a map centred at 1.0 clips its
+    own upper variance against the byte ceiling."""
+    # Vertically stretched zones: sampled with a v coordinate compressed 3x
+    # against u, so the field's features are three times taller than they are
+    # wide. Bark weathers DOWN a trunk, and an isotropic patch field on a
+    # vertical surface reads as camouflage. This is the cheapest honest way
+    # to get direction out of an isotropic generator without reaching for
+    # `_hair_layer`, and it costs one index arithmetic change.
+    zone = _fbm(w, h, 6, 2, seed=18041)      # ~10 cm across, ~30 cm down
+    lich = _fbm(w, h, 5, 2, seed=18211)      # ~12 cm: the lichen colonies
+    lich2 = _fbm(w, h, 9, 2, seed=18401)     # ~6.7 cm: colony break-up
+    stain = _fbm(w, h, 4, 2, seed=18587)     # ~15 cm: run-off and organics
+    LEVEL = 0.50
+    out = bytearray(3 * w * h)
+    for y in range(h):
+        # the 3x vertical stretch, wrapped so the field still tiles: sampling
+        # row y at row (y // 3) would not wrap, sampling modulo h does.
+        zy = ((y // 3) % h) * w
+        base = y * w
+        for x in range(w):
+            i = base + x
+            zi = zy + x
+            # Value. The broad vertical zoning carries most of the amplitude.
+            v = 1.0 + (zone[zi] - 0.5) * 0.30
+            # Organic staining darkens, and only darkens.
+            v -= 0.16 * _clamp01((stain[i] - 0.54) / 0.40)
+            # LICHEN. Two fields multiplied rather than summed, so a colony is
+            # a patch WITH HOLES in it rather than a smooth blob: summing two
+            # noises concentrates the result about its mean (the central limit
+            # theorem, which `_plate_wear` records paying for once already),
+            # and a lichen colony is a bimodal thing - present or absent.
+            lic = (_clamp01((lich[i] - 0.52) / 0.34)
+                   * _clamp01((lich2[i] - 0.38) / 0.44))
+            v *= 1.0 + 0.26 * lic
+            v *= LEVEL
+            o = 3 * i
+            # Lichen leans COOL and desaturates: green-grey against the warm
+            # brown of the bark under it. R drops most, G holds, B rises
+            # slightly, which is a green-grey lean written as a channel spread
+            # rather than as a colour, because a mean-neutral map cannot carry
+            # a colour and pretending otherwise ships a tint the divide then
+            # deletes.
+            out[o] = int(round(255.0 * _clamp01(v * (1.0 - 0.15 * lic))))
+            out[o + 1] = int(round(255.0 * _clamp01(v * (1.0 - 0.02 * lic))))
+            out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 + 0.09 * lic))))
+    return bytes(out)
 
 
 # ---------------------------------------------------------------------------
@@ -2085,6 +2338,470 @@ def _suitplate_albedo(w, h, height, aux):
     return bytes(out)
 
 
+# ---------------------------------------------------------------------------
+# paintchip - painted structural steel going to BARE METAL at the edges.
+# RN-1474. The first of the two families this pass adds to the Space Engineers
+# vocabulary D-020 sets as the bar, and the primary consumer of `_edge_wear`.
+#
+# WHY IT IS NOT `panel` WITH MORE WEAR. `panel` is painted industrial steel and
+# it is authored as a surface whose coating is INTACT and weathering: it
+# chalks, it washes, it rubs, and RN-553 gave it a real roughness band across
+# those three states. Every one of them is a change to the coating. This family
+# is the state `panel` deliberately does not reach, where the coating has GONE
+# and the substrate is doing the looking, and that is not a tuning distance
+# from `panel`, it is a different fact about the surface. The same argument
+# split `bark` off `coarse`, `stone` off `coarse` and `suitfab` off `panel`,
+# and it is the only argument this file accepts for a new family.
+#
+# THE THREE MAPS MUST AGREE TEXEL FOR TEXEL, which is `suitplate`'s recorded
+# lesson at machine scale. One wear mask drives all three:
+#
+#   coated   -> albedo sits at the paint value, metalness LOW (a coating is a
+#               dielectric), roughness HIGH
+#   bare     -> albedo lifts to alloy, metalness UP toward the substrate,
+#               roughness DOWN because the coating was the rough one
+#
+# A wear pass whose albedo and ORM disagree reads as dirt lying on metal rather
+# than as metal with its coating worn off, and that is the single most common
+# way this kind of map goes wrong.
+#
+# THE INTENDED PALETTE PAIRING, stated because the map cannot state it. The ORM
+# channels MULTIPLY the palette constants, so a role wearing this family wants
+# metallic near 0.75 and roughness near 0.55: at those constants the authored
+# bands land at an effective metalness 0.21 to 0.75 and an effective roughness
+# 0.24 to 0.55. Wired to a role at metallic 0.20 the bare metal cannot read as
+# metal at all, and the family's whole point is lost silently. See the FAMILIES
+# row and the NO ROLE WEARS THIS YET note there.
+# ---------------------------------------------------------------------------
+
+# A COARSER plate rhythm than `panel`'s, and deliberately not harmonic with it.
+# `panel` runs three columns at 0.00 / 0.34 / 0.71; this runs two at 0.00 /
+# 0.52 with its horizontal breaks on different fractions. Both families are at
+# a 1.5 m tile and both will appear in the same frame on the same base, so a
+# shared period would line their copies up, which is the countable-repeat
+# failure `_panel_height`'s rubs comment documents.
+_CHIP_U_SEAMS = (0.00, 0.52)
+_CHIP_COLUMNS = ((0.00, 0.52, (0.37,)), (0.52, 1.00, (0.19, 0.71)))
+_CHIP_HALF = 0.0030       # half groove width -> 9.0 mm gap at the 1.5 m tile
+# THE CHAMFER IS THREE TIMES `panel`'s BEVEL AND THAT IS THE POINT OF THE
+# FAMILY. `panel` falls away over 6.8 mm, which is a panel line. 21 mm is a
+# machined chamfer on a structural plate, and a chamfer is WHERE PAINT GOES
+# FIRST: it is the proud lip the brush thins over and the boot catches. Make it
+# `panel`'s width and `_edge_wear` has almost nothing to key on, because the
+# exposure peak is only as wide as the geometry that makes it.
+_CHIP_BEVEL = 0.0140
+_PAINT_T = 0.050          # paint film thickness in height units, where the
+                          # plate face is 1.0 and the groove floor 0.0. Between
+                          # `panel`'s 0.026 micro grain and its 0.30 rivet: a
+                          # chip edge has to be a visible STEP, because a chip
+                          # that ramps is a stain.
+
+
+def _paintchip_height(w, h):
+    """(height, aux). Plate substrate first, THEN the wear, THEN the paint
+    film on top of both, and the order is a dependency rather than a style.
+
+    THE CIRCULARITY IS REAL AND THIS IS HOW IT IS BROKEN. The paint film is
+    part of the height; the wear mask is keyed on exposure; exposure is
+    computed from the height. Left alone that is a loop, and the tempting
+    resolutions are both wrong: computing exposure from the finished height
+    makes the paint hide the very edges it is supposed to be worn off, and
+    computing it from a separate field breaks the one-authority rule
+    `_edge_wear` exists to keep. So the SUBSTRATE is built first and is the
+    only thing exposure ever reads, the chip mask is derived from that, and
+    the film is added afterwards where the coating survives. That is also the
+    physical order: the plate was chamfered and dinged at the fabricator, then
+    it was painted, then it was used."""
+    grain = _fbm(w, h, 20, 3, seed=21013)      # rolled plate grain
+    grain2 = _fbm(w, h, 56, 2, seed=21179)
+    ding = _worley(w, h, 7, seed=21347)        # ~21 cm: impact dishing
+
+    # Fasteners on the HORIZONTAL breaks only, and bigger and sparser than
+    # `panel`'s rivet rows: structural bolts through a splice plate rather
+    # than a riveted skin. Same reason as the seam rhythm above - two
+    # families in one frame must not share a feature pitch.
+    bolts = []
+    for (u0, u1, vs) in _CHIP_COLUMNS:
+        for v in vs:
+            for k in range(4):
+                u = u0 + (u1 - u0) * (k + 0.5) / 4.0
+                bolts.append((u % 1.0, v))
+
+    sub = [0.0] * (w * h)
+    for y in range(h):
+        v = (y + 0.5) / h
+        base = y * w
+        for x in range(w):
+            u = (x + 0.5) / w
+            i = base + x
+            du = min(_wrap_dist(u, s) for s in _CHIP_U_SEAMS)
+            col = _CHIP_COLUMNS[0]
+            for c in _CHIP_COLUMNS:
+                if c[0] <= u < c[1]:
+                    col = c
+                    break
+            dv = _wrap_dist(v, 0.0)
+            for vs in col[2]:
+                dv = min(dv, _wrap_dist(v, vs))
+            d = du if du < dv else dv
+            z = _smoothstep(_CHIP_HALF, _CHIP_HALF + _CHIP_BEVEL, d)
+            for (bu, bv) in bolts:
+                dd = math.sqrt(_wrap_delta(u, bu) ** 2
+                               + _wrap_delta(v, bv) ** 2)
+                if dd < 0.0210:
+                    z += 0.38 * (1.0 - _smoothstep(0.0110, 0.0210, dd))
+            # A ding is a broad shallow dish and not a hole, so it is cubed:
+            # only the cell centres dish and the plate between them stays
+            # flat. Taken from `_suitplate_height`, which states the same.
+            z -= 0.075 * (1.0 - ding[i]) ** 3
+            z += (grain[i] - 0.5) * 0.022
+            z += (grain2[i] - 0.5) * 0.006
+            sub[i] = z
+
+    # EXPOSURE OFF THE SUBSTRATE ONLY. radius 6 at 512 px on a 1.5 m tile is
+    # an 19 mm window, which is the chamfer's own width: the mask has to see
+    # across the feature it is keying on, and a window much wider than the
+    # chamfer averages the lip away into the plate face.
+    expo = _edge_wear(sub, w, h, 6, 2.6)
+
+    # THE TWO OPPORTUNITY FIELDS, and `_edge_wear`'s docstring requires them.
+    # Exposure is uniform over the tile, so keyed on it alone every chamfer in
+    # the game wears identically and the map reads as a pattern. `handled` is
+    # WHERE the machine gets touched at 56 cm, which is bigger than any
+    # feature on the plate and therefore reads as history rather than as
+    # texture; `flake` breaks the chip clusters up at 9 cm so an edge loses
+    # its paint in patches rather than along a ruled line.
+    handled = _fbm(w, h, 4, 3, seed=21521)
+    flake = _fbm(w, h, 17, 2, seed=21713)
+
+    chip = [0.0] * (w * h)
+    out = [0.0] * (w * h)
+    for i in range(w * h):
+        # `_plate_wear`'s shape, and its lesson: the terms are combined and
+        # then put through a SMOOTHSTEP, because summing independent fields
+        # concentrates the result about its mean (the central limit theorem,
+        # which that function records paying for once already) and paint does
+        # not thin, it chips. The physically right distribution is bimodal.
+        raw = (0.62 * expo[i] * (0.30 + 0.70 * handled[i])
+               + 0.26 * flake[i] * expo[i])
+        c = _smoothstep(0.24, 0.46, raw)
+        chip[i] = c
+        # The film sits on the substrate where the coating survives. Where it
+        # has chipped, the substrate IS the surface.
+        out[i] = sub[i] + _PAINT_T * (1.0 - c)
+    return out, {"chip": chip, "expo": expo, "grain": grain, "ding": ding,
+                 "sub": sub}
+
+
+def _paintchip_masks(w, h, height, aux):
+    """ONE wear mask, three channels, and the metalness is why the family is
+    worth its bytes.
+
+    Section 2.1 item 4 asks that metalness carry information or be honestly
+    constant, and records that almost every ORM in this file is 255 in blue.
+    `suitplate` answered that on a 5 cm knuckle plate; this answers it on the
+    surface a machine, a wall and a hull are made of, which is where the
+    player actually spends their looking. Painted steel worn to bare alloy is
+    the clearest case in the game of a surface whose metalness genuinely
+    varies across itself."""
+    chalk = _fbm(w, h, 5, 3, seed=21929)    # ~30 cm: where the coating chalked
+    dust = _fbm(w, h, 26, 2, seed=22093)    # ~5.8 cm: settled grime
+    chip = aux["chip"]
+    rough = [0.0] * (w * h)
+    metal = [0.0] * (w * h)
+    for i in range(w * h):
+        c = chip[i]
+        # The coating is the rough one and bare alloy is smooth: the SAME
+        # direction `_suitplate_masks` states, for the same physical reason.
+        r = 1.00 - 0.55 * c
+        # Chalked coating is rougher still, and it can only roughen where
+        # there is still a coating to chalk.
+        r += 0.10 * _clamp01((chalk[i] - 0.52) / 0.40) * (1.0 - c)
+        # Grime roughens whatever it lands on, and it lands everywhere.
+        r += 0.05 * (dust[i] - 0.5)
+        # The rolled grain shows only on bare metal, because a rolling mark
+        # under paint is invisible. Same gate `_suitplate_masks` puts on its
+        # brushed grain.
+        r -= 0.09 * (aux["grain"][i] - 0.5) * c
+        rough[i] = _clamp01(r)
+        # A dielectric coating reads near 0.28 of the palette constant; worn
+        # through, it is the substrate at full.
+        metal[i] = _clamp01(0.28 + 0.72 * c)
+    return rough, metal
+
+
+def _paintchip_albedo(w, h, height, aux):
+    """The same wear mask in value, plus the one thing a chip does that a
+    scratch does not: it BLEEDS.
+
+    THE RUST BLOOM IS THE FAMILY'S SIGNATURE and it is the reason this map is
+    not just `_suitplate_albedo` at a bigger tile. Where a coating has failed,
+    the exposed steel oxidises and the oxide creeps back UNDER the paint at the
+    edge of the chip, so a real chip is a bright metal centre inside a warm
+    brown halo inside intact paint. That halo is a band the wear mask already
+    knows about: it is the region where the chip mask is part-way, which the
+    interior and the intact paint both are not. Reading it off the existing
+    mask rather than authoring a third field is the one-authority rule again,
+    and it also guarantees the bloom cannot appear anywhere there is no chip.
+
+    MEAN-NEUTRAL BY CONTRACT, as every tiling albedo here is: `Surfaces.ts`
+    sets material.color = palette / albedo_mean_linear and multiplies this map
+    back in, so only its VARIANCE and its HUE survive and its level cannot
+    shift the palette."""
+    fade = _fbm(w, h, 4, 3, seed=22271)      # ~37 cm: uneven coating fade
+    grime = _fbm(w, h, 30, 2, seed=22447)    # ~5 cm: dirt speckle
+    chip = aux["chip"]
+    LEVEL = 0.52
+    out = bytearray(3 * w * h)
+    for i in range(w * h):
+        c = chip[i]
+        # Bare alloy is brighter than the coating over it, which is the
+        # single biggest value move on the map.
+        v = 1.0 + 0.34 * c
+        # Uneven fade on the coating only.
+        v += (fade[i] - 0.5) * 0.22 * (1.0 - c)
+        # Dirt darkens and never lightens.
+        v -= 0.12 * _clamp01((grime[i] - 0.54) / 0.46)
+        # A ding holds shadow even where the coating survived it.
+        v -= 0.09 * (1.0 - aux["ding"][i]) ** 3
+        v *= LEVEL
+        # THE BLOOM. A hat function on the chip mask: zero in intact paint,
+        # zero in the bright bare centre, maximum in the part-way band
+        # between them, which is exactly where oxide creeps under a failing
+        # edge. Multiplied by 4 so the peak reaches 1.0 at c = 0.5.
+        bloom = _clamp01(4.0 * c * (1.0 - c))
+        # Bare alloy also leans very slightly warm-neutral against the
+        # coating, an order of magnitude under the bloom.
+        warm = 0.020 * c
+        o = 3 * i
+        out[o] = int(round(255.0 * _clamp01(
+            v * (1.0 + 0.30 * bloom + warm))))
+        out[o + 1] = int(round(255.0 * _clamp01(
+            v * (1.0 - 0.04 * bloom))))
+        out[o + 2] = int(round(255.0 * _clamp01(
+            v * (1.0 - 0.27 * bloom - warm))))
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# rust - steel that has GONE. RN-1475.
+#
+# The second family this pass adds to the D-020 vocabulary, and the one the
+# storyline actually needs: the ruin is the player's first destination
+# (story_line_outline_v1.txt), it is the structure high-water mark, and it is
+# abandoned industrial steel. `panel` is a working machine and `paintchip` is a
+# used one; neither is a wreck.
+#
+# WHERE IT SITS AGAINST `paintchip`, since the two are neighbours and a reader
+# will ask. `paintchip` is a coating failing ON sound steel: the substrate is
+# intact, the relief is manufactured, and the interesting channel is metalness
+# going UP as paint leaves. `rust` is the steel ITSELF failing: the relief is
+# no longer manufactured at all, it is layered oxide scale that has lifted and
+# spalled, and the interesting channel is metalness going DOWN, because oxide
+# is a dielectric and there is progressively less metal left to read. They are
+# opposite ends of one story and they move the same channel in opposite
+# directions, which is the clearest possible evidence they are two facts and
+# not one family with a slider.
+#
+# THE SCALE IS BUILT WITH `_stone_planes`, WHICH IS DELIBERATE REUSE AND NOT
+# LAZINESS. Oxide scale lifts off steel in discrete plates that sit at slightly
+# different heights and meet at SHARP lifted edges. That is precisely the
+# piecewise-planar-cells-meeting-at-an-arris shape `_stone_planes` was written
+# for at RN-742, and its header states why the alternative form
+# `(1 - worley) ** 2` cannot do it: that form's derivative vanishes at the cell
+# boundary, so the one place a fracture has an edge is the one place the field
+# is smooth. A flake edge has the same requirement as a rock arris. What
+# changes here is the tilt, which is far lower: a rock facet is a fracture
+# plane and a scale flake is a sheet lying nearly flat on the plate it came off.
+#
+# THE INTENDED PALETTE PAIRING, stated for `paintchip`'s reason. The map is
+# mean-neutral, so it CANNOT supply the orange: `Surfaces.ts` divides
+# albedo_mean_linear back out through material.color and only variance and hue
+# survive. A role wearing this family therefore needs an oxide-coloured hex of
+# its own (roughly 7A4526 to 8C5A2E), metallic near 0.35 and roughness near
+# 0.92. Wired to `Steel`'s 8A9199 this family renders as grey rust, which is
+# the exact silent failure the FAMILIES row warns about.
+# ---------------------------------------------------------------------------
+
+_RUST_FLAKES = 10         # ~15 cm scale plates on the 1.5 m tile
+_RUST_CHIPS = 22          # ~6.8 cm flakes riding on them
+_RUST_ARRIS = 0.008       # the LIFTED EDGE of a flake. Narrower than stone's
+                          # 0.010 because a sheet of oxide is thinner than a
+                          # rock facet, and non-zero for FACET_ARRIS's stated
+                          # reason: a zero-width arris is a one-texel cliff
+                          # that aliases into a drawn black line.
+
+
+def _rust_height(w, h, sound=False):
+    """(height, aux). Layered oxide scale in lifted plates, spall pits where
+    the scale has come away, and a granular oxide grain over all of it.
+
+    AMPLITUDE, AND IT IS A HIERARCHY for `_stone_height`'s stated reason:
+    0.34 on the 15 cm scale plates, 0.16 on the 6.8 cm flakes, 0.20 on the
+    spall pits and 0.075 on the grain. The pits carry nearly as much as the
+    plates on purpose - a spall is the deepest thing on a rusted surface, and
+    a map where the scale layering outweighs the pitting reads as flagstones.
+
+    `sound` is selftest-only: it drops the scale layering AND the spall pits
+    entirely and leaves only the two grain octaves, which is what this surface
+    would be if the steel had never gone - a mildly grainy plate. That is the
+    defect the tilt check exists to catch (a `rust` retuned until it is smooth
+    is a rust that reads as brown paint), so the check gets a negative control
+    that fails honestly, exactly as `_stone_planes`'s `rounded` does for
+    `stone` at 7g."""
+    # THE GRAIN OCTAVES ARE DELIBERATELY NOT AT TEXEL FREQUENCY. At period
+    # 48 + 96 on a 512 map the second octave has a 5.3-texel period, and
+    # `_panel_height` records what that costs: "close to texel frequency, so it
+    # aliases under minification and is incompressible, costing real bytes for
+    # detail no camera resolves". 32 + 56 keeps the granular read that makes
+    # oxide look like oxide and drops the octave that was only feeding the PNG.
+    #
+    # AND THE MEASUREMENT SAYS IT IS A SMALL WIN, WHICH IS WORTH RECORDING
+    # BECAUSE THE FIRST GUESS WAS THAT IT WOULD BE A LARGE ONE. The change took
+    # this family's normal map from 510 KB to 465 KB: 9 per cent, not the third
+    # the reasoning above predicted. The bulk of the cost is not the grain at
+    # all, it is the FRACTURE FIELD - two `_stone_planes` layers whose arrises
+    # are sharp everywhere by construction - and that content is the family and
+    # cannot be compressed away without deleting it. For scale, `stone` encodes
+    # to 302 KB at 384 px, which is 537 KB scaled to this family's 512, so rust
+    # is CHEAPER per texel than the family it borrows its construction from and
+    # there is no anomaly here to chase. The honest lever on this number is
+    # resolution or KTX2, not octave tuning.
+    grain = _fbm(w, h, 32, 3, seed=24611)     # granular oxide, ~4.7 cm down
+    grit = _fbm(w, h, 56, 2, seed=24799)
+    if sound:
+        out = [(grain[i] - 0.5) * 0.075 + (grit[i] - 0.5) * 0.014
+               for i in range(w * h)]
+        return out, {"pit": [0.0] * (w * h), "lift": [0.0] * (w * h),
+                     "hn": _normalise(out)}
+    flake, e1 = _stone_planes(w, h, _RUST_FLAKES, 24019, 0.30, _RUST_ARRIS)
+    chip, e2 = _stone_planes(w, h, _RUST_CHIPS, 24229, 0.55, _RUST_ARRIS)
+    spall = _worley(w, h, 13, seed=24421)     # ~11.5 cm: where scale came away
+
+    out = [0.0] * (w * h)
+    pit = [0.0] * (w * h)
+    lift = [0.0] * (w * h)
+    for i in range(w * h):
+        z = 0.34 * flake[i] + 0.16 * chip[i]
+        # A spall is a crater where a plate of scale has come off, so it is
+        # the INVERSE of the distance field and it is squared to keep the
+        # surface between craters flat rather than wavy.
+        p = (1.0 - spall[i]) ** 2
+        z -= 0.20 * p
+        pit[i] = p
+        z += (grain[i] - 0.5) * 0.075
+        z += (grit[i] - 0.5) * 0.014
+        out[i] = z
+        # The lifted edge of either scale layer: this is where a flake stands
+        # away from the plate and is about to come off.
+        lift[i] = e1[i] if e1[i] > e2[i] else e2[i]
+    # `sound` normalises the same way so the control is comparable rather
+    # than merely different.
+    hn = _normalise(out)
+    return out, {"pit": pit, "lift": lift, "hn": hn}
+
+
+def _rust_masks(w, h, height, aux):
+    """Roughness HIGH and narrow-ish; metalness LOW and WIDE, which is the
+    inverse of `paintchip` and the point of having both.
+
+    ROUGHNESS. Oxide is matte and there is no reading of rust that is not.
+    Section 2.1 item 4 asks for an effective p05..p95 band at least ~0.15
+    wide and explicitly does NOT ask for it to sit in the middle of the
+    range; `_fur_masks` is the precedent for a family that clears the rule
+    while staying at one end of it, and rust is that case for the opposite
+    reason fur is. So the band lives high: burnished scale crowns, where
+    weather and handling have polished the oxide, take it down a little, and
+    a fresh spall floor is rougher than anything else on the map.
+
+    METALNESS IS THE INFORMATIVE CHANNEL AND IT RUNS THE OTHER WAY FROM
+    `paintchip`'s. Iron oxide is a dielectric. Where the scale is thick and
+    the plate has spalled repeatedly there is little metal left to read, and
+    where the oxide is still a thin film over sound steel the metal reads
+    through it. So metalness follows SOUNDNESS, and soundness is authored as
+    its own low-frequency field gated by the pitting: a texel cannot be sound
+    if a crater has just been taken out of it. That gate is what stops the
+    map putting bright metal in the bottom of a spall, which is the one place
+    on a rusted plate it certainly is not."""
+    burnish = _fbm(w, h, 7, 3, seed=24983)   # ~21 cm: weathered/handled scale
+    sound = _fbm(w, h, 4, 3, seed=25169)     # ~37 cm: where steel is still sound
+    mottle = _fbm(w, h, 15, 3, seed=25349)
+    pit = aux["pit"]
+    lift = aux["lift"]
+    rough = [0.0] * (w * h)
+    metal = [0.0] * (w * h)
+    for i in range(w * h):
+        r = 0.97
+        r -= 0.22 * _clamp01((burnish[i] - 0.46) / 0.40)
+        # A lifted flake edge catches light along its lip.
+        r -= 0.10 * lift[i]
+        # A fresh spall is raw oxide and is the roughest thing here.
+        r += 0.09 * pit[i]
+        r += (mottle[i] - 0.5) * 0.10
+        rough[i] = _clamp01(r)
+        # SOUNDNESS, gated by the pitting for the reason stated above.
+        snd = _clamp01((sound[i] - 0.40) / 0.44) * (1.0 - pit[i])
+        metal[i] = _clamp01(0.18 + 0.66 * snd)
+    return rough, metal
+
+
+def _rust_albedo(w, h, height, aux):
+    """Oxide, and this is the one map in the file whose HUE is its whole job.
+
+    WHY THE HUE MATTERS MORE HERE THAN ANYWHERE ELSE. Every other tiling
+    albedo in this file carries value with a lean on top: `panel`'s oxide term
+    and `stone`'s iron stain both move hue in patches against a body colour
+    the palette supplies. Rust has no body colour that is not oxide. But the
+    map is mean-neutral by contract - `Surfaces.ts` divides
+    albedo_mean_linear out through material.color - so this map STILL cannot
+    supply the orange, and the FAMILIES row and the section header both state
+    the palette pairing that has to come with it. What this map supplies is
+    the VARIATION WITHIN the oxide, which is large: fresh scale is a light
+    ochre, weathered scale is a mid red-brown, and the bottom of a spall
+    where water sits is nearly black. That is a value range of three to one
+    with a hue swing across it, and it is what makes rust read as rust rather
+    than as brown paint.
+
+    IT READS `aux` AND NOT A NEW FIELD, which is the opposite of what
+    `_stone_albedo` does, and the difference is worth stating because that
+    function argues hard for independence. Stone's albedo must not know about
+    stone's facets, because a pigment that agreed with the fracture would read
+    as cobblestone: pigment and fracture are genuinely independent in rock.
+    In oxide they are NOT independent - the colour of a patch of rust is
+    CAUSED by how deeply that patch has corroded, which is the same fact the
+    relief encodes. Authoring them independently here would be the error, not
+    the discipline: it would put light fresh scale inside deep craters. So
+    this map keys on `pit` and on the normalised height, and adds its own
+    fields only for the things depth does not determine."""
+    tone = _fbm(w, h, 5, 3, seed=25523)      # ~30 cm: patch-to-patch oxide age
+    streak = _fbm(w, h, 9, 2, seed=25717)    # ~17 cm: run-off staining
+    LEVEL = 0.50
+    pit = aux["pit"]
+    hn = aux["hn"]
+    out = bytearray(3 * w * h)
+    for i in range(w * h):
+        # DEPTH IS THE DOMINANT TERM, per the docstring: high ground is fresh
+        # light scale, low ground is old dark oxide.
+        v = 0.72 + 0.52 * hn[i]
+        # A spall crater holds water and goes darker than anything else.
+        v *= 1.0 - 0.34 * pit[i]
+        # Patch-to-patch variation in how long this bit has been going.
+        v *= 0.88 + 0.26 * tone[i]
+        # Run-off streaking darkens.
+        v -= 0.10 * _clamp01((streak[i] - 0.56) / 0.40)
+        v *= LEVEL
+        # THE HUE SWING, and it tracks the same depth axis the value does.
+        # Fresh high scale is the most saturated ochre; deep corroded ground
+        # desaturates toward black-brown, because what is down there is
+        # magnetite and water rather than fresh haematite.
+        warm = _clamp01(0.30 + 0.70 * hn[i]) * (1.0 - 0.60 * pit[i])
+        o = 3 * i
+        out[o] = int(round(255.0 * _clamp01(v * (1.0 + 0.34 * warm))))
+        out[o + 1] = int(round(255.0 * _clamp01(v * (1.0 - 0.02 * warm))))
+        out[o + 2] = int(round(255.0 * _clamp01(v * (1.0 - 0.40 * warm))))
+    return bytes(out)
+
+
 def _srgb_eotf(s):
     """sRGB EOTF: a normalised (0..1) encoded sample to linear light."""
     return s / 12.92 if s <= 0.04045 else ((s + 0.055) / 1.055) ** 2.4
@@ -2180,6 +2897,47 @@ def _ao(height, w, h, radius, floor_, gain):
         rel = height[i] - blur[i]
         out[i] = floor_ + (1.0 - floor_) * _clamp01(0.5 + rel * gain)
     return out
+
+
+def _edge_wear(height, w, h, radius, gain):
+    """EXPOSURE, 0..1: how far a texel stands PROUD of its own neighbourhood.
+    RN-1473. The curvature/edge-wear mask channel, and what it is NOT is the
+    first thing to state.
+
+    IT IS NOT CURVATURE, AND IT CANNOT BE. Real edge wear keys on the MESH's
+    curvature, and this project has no per-asset UVs: every surface in this
+    file is a shared tiling map applied by box projection
+    (of_lib.MeshBuilder._project_uvs), and the campaign plan's decision 5
+    refuses per-asset unwrap and AO baking for now, because both would end the
+    byte-identical rebuild gate DW-5 makes a gate. A tiling map therefore does
+    not know where the machine's corners are and cannot be made to know. What
+    it DOES know is where its own relief is proud, and a proud texel is
+    exactly the one a hand, a boot, a passing crate or a wire brush reaches
+    first. So the honest claim this mask makes is "this bolt head, this scale
+    flake, this plate lip is exposed", not "this is the corner of the smelter".
+    A family that used it as though it meant the second thing would be
+    asserting something the box projection deleted.
+
+    IT IS THE AO SIGNAL WITH ITS SIGN FLIPPED, on purpose and by construction.
+    `_ao` reads `height - blur` at the same radius and returns occlusion; this
+    reads the same difference and returns exposure. They are one number read
+    once each, so they cannot disagree about where a crevice is, which is the
+    module header's ONE HEIGHTFIELD PER FAMILY rule extended to a third
+    derived channel. The alternative - a separately authored wear field - is
+    how a map ends up with wear sitting in its own crevices.
+
+    NO FAMILY MAY SHIP THIS RAW, and both consumers below honour it. Exposure
+    alone says where wear COULD happen, and it says it uniformly over the
+    whole tile, so a mask keyed on it alone wears every rivet in the game to
+    exactly the same degree and reads as a pattern rather than as history.
+    Each consumer multiplies it by its own low-frequency "has this actually
+    been handled" field and puts a smoothstep on the PRODUCT. That is
+    `_plate_wear`'s recorded lesson reused rather than rediscovered: summing
+    independent fields concentrates the result about its mean, and paint does
+    not thin, it chips, so the physically right distribution is bimodal and
+    the smoothstep is what makes it so."""
+    blur = _box_blur(height, w, h, radius)
+    return [_clamp01(0.5 + (height[i] - blur[i]) * gain) for i in range(w * h)]
 
 
 def _pack_orm(ao, rough, metal, w, h):
@@ -2425,7 +3183,11 @@ FAMILIES = {
     # coarse normal_strength came down 13 -> 9 with the low-frequency rebalance:
     # bigger facets over a stronger base means the same slope angles from a
     # smaller gradient, and 13 on the new field reads as corrugated.
+    # coarse gained a TILING ALBEDO at RN-1472. The audit behind the D-020
+    # campaign lists it and `bark` as the families missing one; both now carry
+    # it, which leaves `ore` as the only tiling family with none.
     "coarse": dict(height=_coarse_height, masks=_coarse_masks,
+                   albedo=_coarse_albedo,
                    normal_strength=9.0, ao_radius=11, ao_floor=0.50,
                    ao_gain=7.0),
     # bark sits between the two: its fissure walls drop 0.55 over a ~1.4 cm
@@ -2434,7 +3196,9 @@ FAMILIES = {
     # on their gentler slopes. ao_gain likewise: the relief under the blur is
     # ~0.5 in a fissure where coarse's is ~0.1, so coarse's 7.0 here would
     # clamp every fissure to the floor and read as painted-on black stripes.
+    # bark gained a TILING ALBEDO at RN-1472; see the `coarse` row above.
     "bark": dict(height=_bark_height, masks=_bark_masks,
+                 albedo=_bark_albedo,
                  normal_strength=12.0, ao_radius=9, ao_floor=0.45,
                  ao_gain=3.0),
     # ore's crevice walls drop 0.45 over a ~1.6 cm bevel, just under bark's
@@ -2513,6 +3277,64 @@ FAMILIES = {
                       albedo=_suitplate_albedo,
                       normal_strength=5.5, ao_radius=5, ao_floor=0.40,
                       ao_gain=4.6),
+    # -------------------------------------------------------------------
+    # NO ROLE WEARS EITHER OF THESE YET, AND THAT IS DELIBERATE (RN-1474,
+    # RN-1475). The precedent is the card families' own note above
+    # ALBEDO_FAMILIES: `leaf` and `grass` shipped unreferenced too, because
+    # a role move has to land in the same commit as the client change that
+    # consumes it or the two ship half-wired and `verifyAgainstManifest`
+    # turns a one-sided move into a failed smoke run.
+    #
+    # THERE IS A SECOND, HARDER REASON HERE and it is worth stating where
+    # the next lane will read it. `MachineBatch.ts` calls
+    # `attachSurface(m, 'panel', ...)` UNCONDITIONALLY, so a machine's
+    # authored role never reaches `familyForRole` at all: today neither of
+    # these families could reach a machine even if a role pointed at it.
+    # That is the open half of RN-1203 and it is a client change with a
+    # DW-10 argument attached, not a texture one. What CAN consume them
+    # today is the path that does resolve per role - `PropLibrary` via
+    # `familyForRole`, and `NodeBatch` - which is props and structures, and
+    # the ruin is a structure. Wiring is A4/A6's job; the vocabulary is
+    # this lane's, and shipping the pixels first is what lets A4 wire a
+    # role in one commit instead of two.
+    #
+    # BOTH ROWS' PALETTE PAIRINGS ARE STATED IN THEIR SECTION HEADERS and a
+    # wiring lane must read them: the ORM channels multiply and the albedo
+    # is mean-neutral, so `rust` wired to a grey role renders grey rust and
+    # `paintchip` wired to a low-metallic role cannot show bare metal. Both
+    # are silent failures.
+    # -------------------------------------------------------------------
+    # paintchip's relief is `panel`'s in kind but shallower in the features
+    # that matter: no weld bead, no rivet rows, a 21 mm chamfer instead of a
+    # 6.8 mm bevel, and a 0.050 paint step. The chamfer is a GENTLER slope
+    # than panel's groove wall, so panel's 26 would over-shade it into a
+    # bevel that reads as a pipe; 21 lands the chamfer near panel's groove
+    # weight while leaving the 0.050 chip step as a crisp edge rather than
+    # as a cliff. ao_radius 6 matches the exposure window `_paintchip_height`
+    # keys its wear on, deliberately: the AO and the wear mask read the same
+    # heightfield at the same scale, so a chip cannot sit in a hollow the AO
+    # does not also darken.
+    "paintchip": dict(height=_paintchip_height, masks=_paintchip_masks,
+                      albedo=_paintchip_albedo,
+                      normal_strength=21.0, ao_radius=6, ao_floor=0.43,
+                      ao_gain=2.6),
+    # rust's field is `stone`'s construction at a third of the tilt, so its
+    # gradients are correspondingly gentler and the strength has to come UP
+    # rather than down to give a flake edge the same shading weight a rock
+    # arris gets from 10.0. 14.0 is chosen against the same measured tilt
+    # the selftest holds it to rather than against a wall of pixels.
+    # ao_radius 7 sits between stone's 9 and panel's 7: the occluder here is
+    # the neighbouring 6.8 cm flake, which is 23 texels at 512 px on a 1.5 m
+    # tile, so a 15-texel window sees one flake and its lifted edge.
+    # ao_gain 3.6 between ore's 3.2 and stone's 5.0, by the reasoning both of
+    # those state: the relief left under the blur is about 0.2 in a spall,
+    # over a bark fissure's and under a panel groove's, so coarse's 7.0 would
+    # clamp every crater to the floor and paint the pitting on as flat black
+    # dots, which is the read the relief exists to avoid.
+    "rust": dict(height=_rust_height, masks=_rust_masks,
+                 albedo=_rust_albedo,
+                 normal_strength=14.0, ao_radius=7, ao_floor=0.41,
+                 ao_gain=3.6),
 }
 
 
@@ -3661,6 +4483,108 @@ def selftest():
           "arrises rounded: mean %.2f, max %.2f, correctly outside the "
           "16.00 / 55.00 rule (the max clause is the one that refuses it)"
           % (r_mean, r_max))
+
+    # 7h. `rust`'s scale is ANGULAR, by `stone`'s measurement and against its
+    #     own threshold. The family's whole claim is layered oxide plates that
+    #     have LIFTED, and a lifted flake is an edge; a `rust` retuned until it
+    #     is smooth is a rust that reads as brown paint, which is the thing
+    #     this catches. The threshold is lower than `stone`'s 16/55 because the
+    #     tilt is a third of stone's by design (a sheet of oxide lies nearly
+    #     flat on the plate it came off, a fracture plane does not), and it is
+    #     measured at the SHIPPED size and normal_strength so retuning either
+    #     has to come past this check.
+    s = FAMILY_SIZE["rust"]
+    rust_k = FAMILIES["rust"]["normal_strength"]
+    ruh, _ = _rust_height(s, s)
+    ru_mean, ru_max = _tilt_stats(ruh, s, rust_k)
+    check("rust scale angular", ru_mean >= 9.0 and ru_max >= 45.0,
+          "mean %.2f deg (need 9.00), max %.2f deg (need 45.00)"
+          % (ru_mean, ru_max))
+
+    # 7i. NEGATIVE CONTROL, per DW-20: the same recipe with the scale layering
+    #     and the spall pits removed - the two grain octaves alone, which is
+    #     what this plate would be if the steel had never gone - must FAIL the
+    #     rule above. As at 7g, this is what catches a tilt check that has
+    #     quietly become a test of AMPLITUDE: the grain alone is not flat, it
+    #     is just not EDGED.
+    sndh, _ = _rust_height(s, s, sound=True)
+    sn_mean, sn_max = _tilt_stats(sndh, s, rust_k)
+    check("rust sound control fails", not (sn_mean >= 9.0 and sn_max >= 45.0),
+          "grain only: mean %.2f, max %.2f, correctly outside the 9.00 / "
+          "45.00 rule" % (sn_mean, sn_max))
+
+    # 7j. `_edge_wear` SEPARATES PROUD FROM RECESSED, which is the only claim
+    #     the mask makes and the one thing a consumer relies on. Measured on
+    #     `paintchip`'s own substrate: mean exposure on the bolt tops must beat
+    #     mean exposure in the groove floors by a real margin. What this
+    #     catches is a mask wired to the wrong sign, which is a one-character
+    #     defect that inverts every wear pass downstream and looks plausible in
+    #     a thumbnail (paint worn off in the crevices reads as grime).
+    def _pearson(a, b):
+        n = len(a)
+        ma = sum(a) / n
+        mb = sum(b) / n
+        num = sum((a[i] - ma) * (b[i] - mb) for i in range(n))
+        da = math.sqrt(sum((v - ma) ** 2 for v in a))
+        db = math.sqrt(sum((v - mb) ** 2 for v in b))
+        return 0.0 if da * db == 0.0 else num / (da * db)
+
+    s = 192
+    _, pc_aux = _paintchip_height(s, s)
+    sub = pc_aux["sub"]
+    expo = pc_aux["expo"]
+    hi = [expo[i] for i in range(s * s) if sub[i] > 1.10]
+    lo = [expo[i] for i in range(s * s) if sub[i] < 0.30]
+    hi_m = sum(hi) / len(hi) if hi else 0.0
+    lo_m = sum(lo) / len(lo) if lo else 0.0
+    check("edge wear finds proud", hi and lo and hi_m - lo_m >= 0.25,
+          "bolt tops %.3f vs groove floors %.3f, separation %.3f (need 0.25) "
+          "over %d / %d texels" % (hi_m, lo_m, hi_m - lo_m, len(hi), len(lo)))
+
+    # 7k. NEGATIVE CONTROL for 7j: a field with no relief at all has no proud
+    #     texels, so the mask must return a constant and the separation must
+    #     collapse. This is what catches an `_edge_wear` that has acquired a
+    #     noise term of its own and would report exposure on a flat plate.
+    flat = [0.5] * (s * s)
+    fexpo = _edge_wear(flat, s, s, 6, 2.6)
+    check("edge wear flat control fails",
+          max(fexpo) - min(fexpo) < 1e-9,
+          "flat field gives a constant %.4f, spread %.2e"
+          % (fexpo[0], max(fexpo) - min(fexpo)))
+
+    # 7l. `paintchip`'s THREE MAPS AGREE, which is the entire premise of the
+    #     family and the single most common way a wear pass goes wrong. Bare
+    #     metal must be simultaneously more metallic, less rough and brighter
+    #     than the coating beside it; if the three disagree the surface reads
+    #     as dirt lying on metal rather than as metal with its coating worn
+    #     off. Measured as correlations against the shipped construction.
+    pc_r, pc_m = _paintchip_masks(s, s, None, pc_aux)
+    pc_a = _paintchip_albedo(s, s, None, pc_aux)
+    luma = [(pc_a[3 * i] + pc_a[3 * i + 1] + pc_a[3 * i + 2]) / 3.0
+            for i in range(s * s)]
+    rm = _pearson(pc_r, pc_m)
+    am = _pearson(luma, pc_m)
+    check("paintchip maps agree", rm <= -0.80 and am >= 0.50,
+          "corr(rough, metal) %.3f (need <= -0.80), corr(albedo, metal) %.3f "
+          "(need >= 0.50)" % (rm, am))
+
+    # 7m. NEGATIVE CONTROL for 7l, per DW-20: drive the albedo from a
+    #     DIFFERENT wear field than the ORM - an independent fbm standing in
+    #     for the chip mask - and the agreement must collapse. This is exactly
+    #     the defect described: two passes that each look fine alone and
+    #     disagree texel for texel. Without this control 7l would be close to
+    #     unfalsifiable, because both maps reading one mask makes a high
+    #     correlation nearly automatic, and that is the point - the check has
+    #     to demonstrate it is measuring the SHARING and not the arithmetic.
+    bogus = dict(pc_aux)
+    bogus["chip"] = _fbm(s, s, 9, 3, seed=999331)
+    bad_a = _paintchip_albedo(s, s, None, bogus)
+    bad_luma = [(bad_a[3 * i] + bad_a[3 * i + 1] + bad_a[3 * i + 2]) / 3.0
+                for i in range(s * s)]
+    bad_am = _pearson(bad_luma, pc_m)
+    check("paintchip disagreement caught", not (bad_am >= 0.50),
+          "albedo off an unrelated wear field: corr(albedo, metal) %.3f, "
+          "correctly outside the >= 0.50 rule" % bad_am)
 
     # 8. Every palette role is either mapped or explicitly flat. Catches the
     #    standing-rule-11 failure of a check that passes on what it never
