@@ -200,12 +200,23 @@ static constexpr MilestoneId kNoMilestone = 0;
 namespace milestones {
 static constexpr MilestoneId ReachedOrbit = 0x0001;    // DW-29's own condition
 static constexpr MilestoneId LandedOffWorld = 0x0002;  // the GP-2 crossover, later
+// L7 (GP-546 to GP-549). `story_line_outline_v1.txt`'s ruins rung: "Investigate
+// ruins (upon searching the ruins you gain the ability to research ... as well
+// as research electricity)". Earned once, from live play, the SAME way
+// `ReachedOrbit` is (grantMilestone in the web client): walking into the ruin
+// and interacting at its `socket_investigate` point (WG-166/RN-1450 built the
+// place; this is the lane that reads it). Deliberately NOT per-ruin: a second
+// ruin's own "have I searched THIS one" bit is poi.h's existing `visited_`
+// (WG-151), kept separate, because two ruins sharing one flag would make the
+// second one's own visit un-rewardable and un-noticeable to the player.
+static constexpr MilestoneId RuinInvestigated = 0x0003;
 }  // namespace milestones
 
 inline const char* milestoneName(MilestoneId m) {
   switch (m) {
     case milestones::ReachedOrbit: return "reach orbit and come back";
     case milestones::LandedOffWorld: return "land on another world";
+    case milestones::RuinInvestigated: return "investigate a ruin";
     default: return "";
   }
 }
@@ -665,9 +676,31 @@ inline std::vector<TechDef> survivalTechs() {
   antenna.unlockEntities = {survival::types::ScanningAntenna};
   t.push_back(antenna);
 
+  // L7, SCOPED AND DELIBERATELY NOT ADDED HERE: `story_line_outline_v1.txt`
+  // also has investigating a ruin grant "the ability to research and build an
+  // antenna upgrade". `milestones::RuinInvestigated` above is minted so that
+  // tech CAN be gated on it the day it exists, but a `TechDef` with no
+  // `unlockItems`/`unlockEntities`/`unlockRecipes` would trip
+  // `survival_tree_shape_and_id_space`'s "every survival tech now grants
+  // something" invariant (GP-267) on a fake row invented just to satisfy this
+  // brief's wording, and the real upgrade (its item, its build cost, what it
+  // does) is content this lane does not own. OWED to whichever lane builds
+  // tier-2 scanning; the gate to use is `milestones::RuinInvestigated`.
+
+  // L7 (GP-546 to GP-549). THE CYCLE THE ANTENNA'S OWN COMMENT ABOVE PROMISED
+  // IS NOW CLOSED: the antenna is un-gated so it can be researched off the
+  // station alone, it reveals a ruin, and INVESTIGATING that ruin (the web
+  // client's `RuinInteract.ts`, at the asset's `socket_investigate` point) is
+  // what earns `milestones::RuinInvestigated` and opens electricity, exactly as
+  // `story_line_outline_v1.txt` orders it. This is not the launch-pad/autopilot
+  // cycle GP-267 refused, because the KEY (the antenna) and the LOCK
+  // (Electrification) are two different techs on two different gates
+  // (tech-cost vs. milestone) with a real-world action between them, not one
+  // tech gating itself.
   TechDef elec;
   elec.id = techs::Electrification;
   elec.name = "Electrification";
+  elec.requiresMilestone = milestones::RuinInvestigated;
   elec.cost = {ItemStack{items::AutomationScience, 10}};
   elec.unlockItems = {PowerPole, BurnerGenerator};
   elec.unlockEntities = {survival::types::PowerPole, survival::types::BurnerGenerator};

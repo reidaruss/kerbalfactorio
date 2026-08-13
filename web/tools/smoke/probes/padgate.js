@@ -79,6 +79,65 @@
     Object.fromEntries(of.game().carried.map((c) => [c.name, c.count]));
   const have = (n) => pack()[n] ?? 0;
 
+  // L7 RIPPLE (GP-546 to GP-549: `Electrification` now requires
+  // `milestones::RuinInvestigated`, verifier's own finding on fc48f51). This
+  // file buys Electrification for real on the way to `Launch Facilities`, so
+  // it must EARN that milestone for real too. `research.js`'s own copy of
+  // this helper carries the full reasoning; not repeated here.
+  const investigateRuin = async () => {
+    const R = of.ruins();
+    if (R === null || R.count === 0) return false;
+    const inst = R.list[0];
+    const P = inst.points;
+    const up = inst.up;
+    const subV = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const addV = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+    const dotV = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const lenV = (a) => Math.hypot(a[0], a[1], a[2]);
+    const normV = (a) => { const n = lenV(a) || 1; return [a[0] / n, a[1] / n, a[2] / n]; };
+    const missTo = (t) => {
+      const a = of.aim();
+      const v = subV(t, a.origin);
+      const u = dotV(v, a.dir);
+      if (u <= 0) return Infinity;
+      return Math.hypot(v[0] - a.dir[0] * u, v[1] - a.dir[1] * u, v[2] - a.dir[2] * u);
+    };
+    const aimAtPoint = (t) => {
+      let y = of.world().observer.yawDeg;
+      let p = -8;
+      for (const s of [60, 16, 4, 1, 0.3]) {
+        let bestM = Infinity; let by = y; let bp = p;
+        for (let a = -6; a <= 6; ++a) {
+          for (let b = -6; b <= 6; ++b) {
+            of.look(y + a * s, Math.max(-88, Math.min(20, p + b * s)));
+            const m = missTo(t);
+            if (m < bestM) { bestM = m; by = y + a * s; bp = p + b * s; }
+          }
+        }
+        y = by; p = Math.max(-88, Math.min(20, bp));
+      }
+      of.look(y, p);
+    };
+    of.cheat('peaceful');
+    await sleep(0.2);
+    const entryOut = normV(subV([P.entry[0], P.entry[1], P.entry[2]], inst.sitePos));
+    const entryOutFlat = normV(addV(entryOut, up, -dotV(entryOut, up)));
+    const startB = addV(P.entry, entryOutFlat, 6);
+    of.standAt(...addV(startB, up, -1.0));
+    await sleep(1.2);
+    aimAtPoint(P.cella);
+    of.input.tape([{ hold: 150, keys: ['KeyW'] }, { hold: 2, keys: [] }]);
+    await sleep(3.2);
+    of.standAt(...addV(P.investigate, entryOutFlat, 1.2));
+    await sleep(0.5);
+    aimAtPoint(P.investigate);
+    await sleep(0.2);
+    if (of.game().aimed.investigate === null) return false;
+    of.input.act(['interact'], 4);
+    await sleep(0.3);
+    return (of.game().progress.research.milestones ?? []).includes(3);
+  };
+
   // /core's own ids, named rather than derived, so a renumber in the header
   // fails this probe instead of quietly testing a different tech or item.
   const T = { Electrification: 0x0010, LaunchFacilities: 0x0016 };
@@ -379,6 +438,17 @@
     `${sci} automation / ${lsci} logistic`);
   await press('pack');
   await sleep(0.3);
+
+  // ======================================================================
+  // 3c. L7's PREREQUISITE, EARNED, NOT ASSUMED: Electrification is bought for
+  //     real just below, on the way to `Launch Facilities`, so the ruin
+  //     milestone it now requires is earned for real first.
+  // ======================================================================
+  const ruinOk = await investigateRuin();
+  check('L7: the ruin was investigated and the milestone earned before '
+    + 'Electrification is bought', ruinOk === true,
+    JSON.stringify({ aimed: of.game().aimed.investigate,
+      milestones: of.game().progress.research.milestones }));
 
   await press('research');
   await sleep(0.4);

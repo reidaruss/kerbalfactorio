@@ -75,6 +75,81 @@
     Object.fromEntries(of.game().carried.map((c) => [c.name, c.count]));
   const have = (n) => pack()[n] ?? 0;
 
+  // L7 RIPPLE (GP-546 to GP-549: `Electrification` now requires
+  // `milestones::RuinInvestigated`, verifier's own finding on fc48f51). This
+  // file buys Electrification for real, so it must EARN that milestone for
+  // real too, the way a player would: walk to the ruin, cross the doorway,
+  // interact at `socket_investigate`. Technique is `ruininvest.js`'s own
+  // (that file is this gate's dedicated acceptance, with every negative
+  // control this one does not need to repeat) trimmed to just the walk and
+  // the press, teleporting near via `of.standAt` rather than covering the
+  // full 753.8 m on foot -- this run is already long, and the doorway
+  // crossing is the only collision-meaningful leg. `of.cheat('peaceful')`
+  // first because survival is ALWAYS hostile (unlike `ruininvest.js`'s own
+  // sandbox), so the ruin has a live garrison here.
+  const investigateRuin = async () => {
+    const R = of.ruins();
+    if (R === null || R.count === 0) return false;
+    const inst = R.list[0];
+    const P = inst.points;
+    const up = inst.up;
+    const subV = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const addV = (a, b, k = 1) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+    const dotV = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const lenV = (a) => Math.hypot(a[0], a[1], a[2]);
+    const normV = (a) => { const n = lenV(a) || 1; return [a[0] / n, a[1] / n, a[2] / n]; };
+    const missTo = (t) => {
+      const a = of.aim();
+      const v = subV(t, a.origin);
+      const u = dotV(v, a.dir);
+      if (u <= 0) return Infinity;
+      return Math.hypot(v[0] - a.dir[0] * u, v[1] - a.dir[1] * u, v[2] - a.dir[2] * u);
+    };
+    // The ±96 degree local hill-climb this was copied from is `ruinplace.js`'s
+    // own and is correct THERE because its walker already faces the ruin. The
+    // first pass here is widened to 360 degrees (6*60) for the same reason
+    // `ruininvest.js` had to: this file's residual yaw before the first call
+    // is whatever section 1's harvesting left it at, not a guarantee.
+    const aimAtPoint = (t) => {
+      let y = of.world().observer.yawDeg;
+      let p = -8;
+      for (const s of [60, 16, 4, 1, 0.3]) {
+        let bestM = Infinity; let by = y; let bp = p;
+        for (let a = -6; a <= 6; ++a) {
+          for (let b = -6; b <= 6; ++b) {
+            of.look(y + a * s, Math.max(-88, Math.min(20, p + b * s)));
+            const m = missTo(t);
+            if (m < bestM) { bestM = m; by = y + a * s; bp = p + b * s; }
+          }
+        }
+        y = by; p = Math.max(-88, Math.min(20, bp));
+      }
+      of.look(y, p);
+    };
+    of.cheat('peaceful');
+    await sleep(0.2);
+    const entryOut = normV(subV([P.entry[0], P.entry[1], P.entry[2]], inst.sitePos));
+    const entryOutFlat = normV(addV(entryOut, up, -dotV(entryOut, up)));
+    const startB = addV(P.entry, entryOutFlat, 6);
+    of.standAt(...addV(startB, up, -1.0));
+    await sleep(1.2, 60);
+    aimAtPoint(P.cella);
+    of.input.tape([{ hold: 150, keys: ['KeyW'] }, { hold: 2, keys: [] }]);
+    await sleep(3.2, 60);
+    // The socket itself reads SOLID (the centre of an object, picked at range
+    // like a machine -- confirmed directly in `ruininvest.js`), so this stands
+    // back along the SAME axis the doorway crossing just proved open, exactly
+    // where a player interacting with it would actually be.
+    of.standAt(...addV(P.investigate, entryOutFlat, 1.2));
+    await sleep(0.5, 60);
+    aimAtPoint(P.investigate);
+    await sleep(0.2, 60);
+    if (of.game().aimed.investigate === null) return false;
+    of.input.act(['interact'], 4);
+    await sleep(0.3);
+    return (of.game().progress.research.milestones ?? []).includes(3);
+  };
+
   // /core's own TechIds (research.h §D), named rather than derived so a
   // renumbering in the header fails this probe instead of quietly testing some
   // other tech.
@@ -95,11 +170,12 @@
   if (!p0) return { valid: false, fails, why: 'no progress in the report' };
   check('this is survival, so the gate is live',
     of.game().mode.researchGated === true, JSON.stringify(of.game().mode));
-  // GP-611. SEVEN, NOT SIX. `research.h` gained `LaunchFacilities` (0x0016) with
-  // the launch pad at GP-57, and this line was last touched before that landed,
-  // so it has been the FIRST failure of a 24-failure run ever since. The tree is
-  // correct and the probe was stale about it.
-  check('seven techs in the tree', p0.research.techs === 7, p0.research.techs);
+  // GP-611, AND NOW GP-546 TO GP-549 REPEATING THE SAME LESSON. Seven became
+  // eight when GP-533 landed `ScanningAntenna` in `survivalTechs()`, and this
+  // line was stale about it (never re-run to completion since, per gameplay.md's
+  // own GP-618 entry) the identical way it was stale about `LaunchFacilities`
+  // before. The tree is correct; the probe's count was a snapshot.
+  check('eight techs in the tree', p0.research.techs === 8, p0.research.techs);
   check('nothing unlocked at boot', p0.research.unlocked === 0,
     p0.research.unlocked);
   // THE NUMBER THAT WAS ZERO: every unlock every locked tech is still holding.
@@ -359,6 +435,17 @@
   log.push(`science: ${sci} packs from ${made} clicks, pack ${JSON.stringify(pack())}`);
   await press('Tab');
   await sleep(0.3);
+
+  // ======================================================================
+  // 2b. L7's PREREQUISITE, EARNED, NOT ASSUMED: Electrification is bought for
+  //     real in section 3 below, so the ruin milestone it now requires is
+  //     earned for real here, by the same walk-and-press a player uses.
+  // ======================================================================
+  const ruinOk = await investigateRuin();
+  check('L7: the ruin was investigated and the milestone earned before '
+    + 'Electrification is bought', ruinOk === true,
+    JSON.stringify({ aimed: of.game().aimed.investigate,
+      milestones: of.game().progress.research.milestones }));
 
   // ======================================================================
   // 3. THE RESEARCH SCREEN, opened with a real key, bought with a real click.

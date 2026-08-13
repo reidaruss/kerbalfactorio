@@ -31,8 +31,12 @@ export const BLOCK = {
   PrereqMissing: 3, MilestoneMissing: 4, CostShort: 5,
 } as const;
 
-/** `research.h` milestones. DW-29's autopilot condition is ReachedOrbit. */
-export const MILESTONE = { ReachedOrbit: 0x0001, LandedOffWorld: 0x0002 } as const;
+/** `research.h` milestones. DW-29's autopilot condition is ReachedOrbit.
+ *  RuinInvestigated (L7, GP-546 to GP-549) is Electrification's: granted from
+ *  `RuinInteract.ts` when the player interacts at a ruin's investigate socket. */
+export const MILESTONE = {
+  ReachedOrbit: 0x0001, LandedOffWorld: 0x0002, RuinInvestigated: 0x0003,
+} as const;
 
 export interface TechCost { item: number; have: number; need: number }
 /** kind 0 = item, 1 = entity TypeId, 2 = RecipeId. */
