@@ -11,6 +11,25 @@
 // GP-93's own rule carried into this seam, and the negative control below is
 // what makes the positive numbers mean something.
 //
+// GP-680, AND THE REASON THE LEASH SECTION LOOKS THE WAY IT DOES. For two
+// verifier runs this probe reported that the leash NEVER FIRED: the player was
+// retreated to a measured 90 m from the post, the guards re-caught them at
+// 2.3 m, and all twenty samples stayed `engage`. The trace also carried an
+// impossible triangle — a creature 2.3 m from a player 90 m from the post, yet
+// only 42.9 m from that post. An instrumented run settled it, and NOTHING WAS
+// WRONG WITH THE LEASH OR WITH ANY POSITION IN THE SIM: `c.post` was identical
+// for every guard and never mutated, and creature-to-post, creature-to-player
+// and the published `distM` all agreed with each other to the centimetre when
+// recomputed from the raw body-frame vectors. What moved was THE PLAYER. Four
+// guards standing on a fixture at 15 m killed it in about four seconds, and
+// five seconds later `PlayerVitals.respawn` teleported the body to the landing
+// site, which in this fixture is 45.06 m from the post. The 90 m retreat was
+// undone before the guards had walked 27 m, so the leash was never handed a
+// distance past 60 m and correctly did nothing. The three numbers were all
+// true; they were just measured on two different sides of a respawn the probe
+// never looked for. Hence: stand at the aggro EDGE, retreat before contact,
+// re-measure the player every sample, and assert the death ledger.
+//
 // THIS IS THE "HEADLESS-STYLE STEP-LOOP" TEST FOR THIS LANE, RUN AT
 // PROBE LEVEL RATHER THAN AS A SEPARATE NODE UNIT TEST, and that choice is
 // deliberate rather than a shortcut: `EnemySwarm.ts` and `EnemyGarrison.ts`
@@ -156,12 +175,19 @@
   // point's distance from any other point. The previous version placed the
   // retreat by extrapolating past `spawnFeet` on the post-spawnFeet line,
   // which is algebraically the identical point, but a verifier run showed the
-  // player settling ~45 m from the post instead of ~145 m: the exact cause
-  // was not pinned down (this project's own standing lesson, INSTRUMENTS.md,
-  // is to prefer the harder-to-get-wrong formulation once a probe has
-  // demonstrably produced a wrong number), so this rewrite measures every
-  // distance from the ONE anchor the checks below actually care about and
-  // asserts the landed distance immediately rather than trusting the call.
+  // player settling ~45 m from the post instead of ~145 m: THE CAUSE IS NOW
+  // KNOWN AND IT WAS NEVER THE ARITHMETIC — see GP-680 in the header. The
+  // fixture was being EATEN: four guards at 7 to 45 dps against 150 hp kill a
+  // standing player in a couple of seconds, and `PlayerVitals.respawn`
+  // teleports the body back to the landing site five seconds later, which in
+  // this fixture is 45 m from the post. Every retreat this probe ever made was
+  // silently undone by a respawn, the player was parked INSIDE the 60 m leash,
+  // and the leash was therefore never given a distance that could fire it.
+  // Hence the two rules this rewrite adds and the checks that enforce them:
+  // STAND AT THE EDGE OF THE AGGRO RADIUS, not in the guards' jaws, so the
+  // chase is observed before contact rather than during a melee; and RE-MEASURE
+  // THE PLAYER EVERY SAMPLE rather than trusting the value `standAt` returned
+  // at the instant of the call.
   const awayFromPost = (() => {
     const d = dist(post, spawnFeet) || 1;
     return [(spawnFeet[0] - post[0]) / d, (spawnFeet[1] - post[1]) / d,
@@ -169,7 +195,16 @@
   })();
   const fromPost = (metres) => [post[0] + awayFromPost[0] * metres,
     post[1] + awayFromPost[1] * metres, post[2] + awayFromPost[2] * metres];
-  const approached = of.standAt(...fromPost(15));
+  // APPROACH_M is just INSIDE AGGRO_RADIUS_M (30 m) rather than the 15 m an
+  // earlier version used, and the difference is the whole reason this probe
+  // can now finish. A guard walks at 3.4 to 6 m/s and the ranged Lancer's
+  // reach is 12 m, so a fixture standing at 15 m is inside somebody's
+  // engagement range within a second of aggro and dead a couple of seconds
+  // after that. At 25 m the guards have to CROSS ~25 m of ground to touch
+  // anybody, which is the window this probe needs to watch a chase start and
+  // then get clear of it.
+  const APPROACH_M = 25;
+  const approached = of.standAt(...fromPost(APPROACH_M));
   await sleep(0.3);
   const approachDistM = dist(approached.feet, post);
   log.push(`approach: stood ${approachDistM.toFixed(1)} m from post`);
@@ -183,37 +218,101 @@
   // check that depends on it, is cheaper than adding one for a single probe.
   const LEASH_M_EXPECTED = 60;
   const RETREAT_M = 90;
+  // BEFORE the retreat the samples are half-second, because the thing being
+  // watched is a chase that has only a few seconds to run before contact;
+  // AFTER it they are one-second, because the thing being watched is a ~50 m
+  // walk out and a ~58 m walk home at 6 m/s. One trace, two cadences, and `t`
+  // is accumulated rather than derived from the index so the transition check
+  // below still reads adjacent samples.
+  const PRE_DT = 0.5;
+  const POST_DT = 1.0;
+  // Metres of clearance demanded between the nearest chaser and its own
+  // engagement range before this probe will let another sample pass. `reachM`
+  // is read off the creature rather than assumed, because the catalogue holds
+  // a 1.5 m Skitterer and a 12 m ranged Lancer and a fixture that survives one
+  // is eaten by the other.
+  const SAFE_GAP_M = 8;
   const trace = [];
   let retreated = false;
   let retreatAtT = null;
   let retreatLandedM = null;
   let engageCount = 0;
-  for (let k = 0; k < 20; k++) {
-    await march(2.0);
+  let firstEngageDistM = null;
+  let t = 0;
+  // Every sample carries the PLAYER's own measured distance to the post, and
+  // the death ledger. Both exist because their absence is exactly what let the
+  // GP-680 failure read as "the leash is broken": the probe put the player at
+  // 90 m, the player was killed and respawned back to 45 m, and nothing in the
+  // trace said so.
+  const vitals = () => of.hurt({ amount: 0 }) ?? {};
+  let sawDeath = false;
+  let maxRespawns = 0;
+  let minPlayerToPostAfterRetreatM = Infinity;
+  // ONE CREATURE, FOLLOWED BY ID, and not "whichever guard happens to be
+  // nearest this sample". A garrison holds a mixed roster and the catalogue's
+  // speeds run 3.4 to 6 m/s, so the nearest body changes identity partway
+  // through the chase: a trace built from the nearest row therefore shows a
+  // 6 m/s Skitterer flipping to `return` at 60 m and then a lagging 3.4 m/s
+  // Colossus still `engage` at 51 m in the very next sample, which reads as an
+  // impossible return-to-engage transition and, worse, would let the
+  // engage-to-return check below be satisfied by two DIFFERENT creatures. The
+  // id is latched on the first sample and every later sample is that same
+  // creature or the trace ends.
+  let chaserId = null;
+  for (let k = 0; k < 90; k++) {
+    await march(retreated ? POST_DT : PRE_DT);
+    t = +(t + (retreated ? POST_DT : PRE_DT)).toFixed(1);
     const rows = of.enemies('near', 8).filter((c) => c.provenance === 'garrison');
-    const chaser = rows.reduce((a, c) => (a === null || c.distM < a.distM ? c : a), null);
+    if (rows.length === 0) break;
+    if (chaserId === null) {
+      chaserId = rows.reduce((a, c) => (a === null || c.distM < a.distM ? c : a), null).id;
+    }
+    const chaser = rows.find((c) => c.id === chaserId) ?? null;
     if (chaser === null) break;
-    trace.push({ t: (k + 1) * 2, state: chaser.garrisonState,
+    const v = vitals();
+    if (v.dead === true) sawDeath = true;
+    maxRespawns = Math.max(maxRespawns, Number(v.respawns ?? 0));
+    const playerToPostM = dist(of.weight().at, post);
+    if (retreated) minPlayerToPostAfterRetreatM =
+      Math.min(minPlayerToPostAfterRetreatM, playerToPostM);
+    trace.push({ t, id: chaser.id, state: chaser.garrisonState,
       distPlayerM: +chaser.distM.toFixed(1),
-      distPostM: +dist(chaser.pos, chaser.post).toFixed(1) });
-    if (chaser.garrisonState === 'engage') engageCount++;
-    // Retreat only once it has been seen chasing a STATIONARY player for a
-    // couple of samples, so the trace can show distance actually closing
-    // before the leash test begins; RETREAT_M (90 m) is clearly past BOTH
-    // the leash (60 m from the post) and the aggro radius (30 m from
-    // wherever it ends up chasing), so neither can re-trigger on the walk
-    // home. Measured and asserted IMMEDIATELY, not trusted: a prior version
-    // of this probe computed a retreat point that landed only ~45 m from the
-    // post on a verifier's run, and the failure only surfaced several checks
-    // later as "no return sample ever appeared", which is a much harder
-    // thing to diagnose than a distance check failing by name right here.
-    if (!retreated && engageCount >= 2) {
+      distPostM: +dist(chaser.pos, chaser.post).toFixed(1),
+      playerToPostM: +playerToPostM.toFixed(1),
+      hp: +Number(v.hp ?? -1).toFixed(0), respawns: Number(v.respawns ?? -1) });
+    if (chaser.garrisonState === 'engage') {
+      engageCount++;
+      if (firstEngageDistM === null) firstEngageDistM = chaser.distM;
+    }
+    // Retreat once the chase has been SEEN closing on a stationary player, or
+    // immediately if the nearest chaser is about to come into its own reach,
+    // whichever happens first. The second clause is not a shortcut around the
+    // first: it is the rule that keeps the fixture alive, and being eaten is
+    // precisely how this probe failed before (GP-680). RETREAT_M (90 m) is
+    // clearly past BOTH the leash (60 m from the post) and the aggro radius
+    // (30 m from wherever it ends up chasing), so neither can re-trigger on
+    // the walk home. Measured and asserted IMMEDIATELY, not trusted.
+    const closing = engageCount >= 2 && firstEngageDistM !== null
+      && chaser.distM < firstEngageDistM - 1;
+    // Over EVERY guard, not just the tracked one: the fixture is eaten by
+    // whoever arrives first, and with a 12 m ranged Lancer in the catalogue
+    // that is not necessarily the creature this trace is following.
+    const aboutToBeInReach = rows.some((c) => c.distM <= c.reachM + SAFE_GAP_M);
+    if (!retreated && (closing || aboutToBeInReach)) {
       retreated = true;
-      retreatAtT = trace[trace.length - 1].t;
+      retreatAtT = t;
       const landed = of.standAt(...fromPost(RETREAT_M));
       retreatLandedM = dist(landed.feet, post);
       await sleep(0.3);
+      t = +(t + 0.3).toFixed(1);
     }
+    // Stop once the story is over: the tracked guard home again AND every
+    // other guard home too. Not just the tracked one, because the last check
+    // in this section demands the whole roster is back on `hold`, and the
+    // roster's slowest body (a 3.4 m/s Colossus) needs roughly twice as long
+    // to walk the same 60 m out and back as its fastest (a 6 m/s Skitterer).
+    if (retreated && chaser.garrisonState === 'hold'
+        && rows.every((c) => c.garrisonState === 'hold') && t > retreatAtT + 1) break;
   }
   log.push(`trace (retreated at t=${retreatAtT}, landed ${retreatLandedM === null
     ? 'n/a' : retreatLandedM.toFixed(1)} m from post) ${JSON.stringify(trace)}`);
@@ -223,6 +322,22 @@
         retreatLandedM !== null && retreatLandedM > LEASH_M_EXPECTED,
         `landed ${retreatLandedM === null ? 'n/a' : retreatLandedM.toFixed(1)} m `
         + `from post, wanted > ${LEASH_M_EXPECTED} m`);
+  // THE TWO CHECKS THAT WOULD HAVE NAMED GP-680 ON THE DAY. A fixture that is
+  // killed gets teleported to the landing site by `PlayerVitals.respawn`, and
+  // in this world the landing site is ~45 m from the post: inside the leash,
+  // so the leash cannot fire and the whole section below fails for a reason
+  // that has nothing to do with the leash. These two say so by name.
+  check('THE FIXTURE SURVIVED: nothing ate the player mid-trace (a death '
+        + 'respawns them at the landing site and silently undoes the retreat)',
+        !sawDeath && maxRespawns === 0,
+        JSON.stringify({ sawDeath, respawns: maxRespawns }));
+  check('and the player STAYED retreated, measured every sample rather than '
+        + 'trusted from the `standAt` return value',
+        minPlayerToPostAfterRetreatM > LEASH_M_EXPECTED,
+        `closest the player got back to the post after retreating was `
+        + `${minPlayerToPostAfterRetreatM === Infinity ? 'n/a'
+          : minPlayerToPostAfterRetreatM.toFixed(1)} m, wanted > `
+        + `${LEASH_M_EXPECTED} m`);
 
   // "Engaged" splits at the retreat: BEFORE it, the player was stationary and
   // close, so the chaser should be visibly closing; AFTER it, the player has
@@ -247,6 +362,10 @@
   // THE ENGAGE-TO-RETURN TRANSITION, ITSELF, not just "a `return` sample
   // existed somewhere": walk the trace and require at least one adjacent
   // pair where the state actually FLIPS from `engage` to `return`.
+  check('and the whole trace is ONE creature, so that transition cannot be two '
+        + 'guards of different speeds being mistaken for one changing its mind',
+        trace.length > 0 && trace.every((s) => s.id === trace[0].id),
+        JSON.stringify([...new Set(trace.map((s) => s.id))]));
   let sawTransition = false;
   for (let i = 1; i < trace.length; i++) {
     if (trace[i - 1].state === 'engage' && trace[i].state === 'return') sawTransition = true;
