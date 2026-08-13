@@ -186,12 +186,22 @@
   // read ONCE per node (a `pack()` is a whole world report, GP-622), and a node
   // whose own resource is already satisfied is SKIPPED rather than merely
   // counted, so a scarce copper vein cannot keep every tree on the way paying
-  // out. Sized off this file's own bill: 16 iron batches and 12 copper at five
-  // units a load is 80 raw iron and 60 raw copper, the fuel is one load a batch,
-  // and the station's 30 Stone sits on top of the pickaxe's 2.
+  // out. Sized off this file's own bill, corrected: the station's true cost is
+  // `StructureKind::ResearchStation` in gameplay.h, Iron 20 + Stone 30 +
+  // Copper 10, NOT Stone alone as an earlier pass here assumed. That miscount
+  // is why Logistic science measured 0 even with a click loop that verifies
+  // every one of its own clicks (see the craftByClick note below): the
+  // Automation Science want (32 x Iron 2) legally ran the pack's Iron to
+  // exactly zero, because the station had already spent 20 of it uncounted,
+  // and a refused button correctly refuses forever no matter how patiently it
+  // is clicked. 22 iron batches and 18 copper at five units a load is 110 raw
+  // iron and 90 raw copper, which after the station's Iron 20 / Copper 10
+  // still covers Automation's Iron 64 / Copper 32 AND Logistic's Iron 16 /
+  // Copper 32 with margin on both metals; Stone climbs with it so the
+  // station's 30 and Logistic's 32 do not eat the pickaxe's 2 alive.
   const BARE = [0, 1];      // Tree, Rock — bare hands are allowed here
   const GATED = [2, 3, 4];  // CoalSeam, IronOre, CopperOre — pickaxe or refusal
-  const WANT = { Wood: 120, Stone: 60, Coal: 200, 'Raw iron': 110, 'Raw copper': 90 };
+  const WANT = { Wood: 120, Stone: 100, Coal: 260, 'Raw iron': 130, 'Raw copper': 100 };
   const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron', 4: 'Raw copper' };
   const nodesOnce = of.nodes();
   let harvests = 0;
@@ -275,8 +285,8 @@
     }
     return true;
   };
-  check('iron smelted', await smelt('Raw iron', 16), 'the load button vanished');
-  check('copper smelted', await smelt('Raw copper', 12), 'the load button vanished');
+  check('iron smelted', await smelt('Raw iron', 22), 'the load button vanished');
+  check('copper smelted', await smelt('Raw copper', 18), 'the load button vanished');
   of.input.tape([{ hold: 4, actions: ['interact'] }, { hold: 8, keys: [] }]);
   await sleep(0.3);
   log.push(`smelted: ${JSON.stringify(pack())}`);
@@ -328,20 +338,43 @@
   const rows = () => [...document.querySelectorAll('#of-panel .of-recipe')];
   const rowNamed = (t) => rows().find((e) =>
     (e.querySelector('.nm')?.textContent ?? '').includes(t));
-  let made = 0;
-  for (let i = 0; i < 32; ++i) {
-    if (click(rowNamed('Automation science')?.querySelector('button'))) made++;
-    await sleep(0.05);
-  }
-  let logi = 0;
-  for (let i = 0; i < 16; ++i) {
-    if (click(rowNamed('Logistic science')?.querySelector('button'))) logi++;
-    await sleep(0.05);
-  }
+  // GP-?? FIRE-AND-FORGET DOM CLICKS ARE NOT A CRAFT. The old loops fired a
+  // fixed count of `click()` calls 50ms apart and counted a click as a craft
+  // the instant `dispatchEvent` returned, which is the same "assume the
+  // click landed" mistake the standing measure-not-assume rule exists for
+  // (NUMBERS.md). A click that lands on a button whose `disabled` attribute
+  // has not yet caught up with the true game state dispatches fine and
+  // crafts nothing, and the panel only rebuilds its rows when `craftKey`
+  // changes (InventoryPanel.render), so a fast run of clicks can race that
+  // rebuild. `craftByClick` below is `survivalrun.js`'s `craftBy` shape
+  // (retry, check the real signal, respect a budget) adapted to a DOM
+  // button that has no return value of its own: the real signal is the
+  // pack count itself, differenced before and after each attempt, and a
+  // click that produced no progress is retried against a freshly re-queried
+  // button rather than counted as done.
+  const craftByClick = async (label, want, maxAttemptsPerUnit = 30) => {
+    let clicks = 0;
+    let landed = 0;
+    while (have(label) < want) {
+      const before = have(label);
+      let ok = false;
+      for (let attempt = 0; attempt < maxAttemptsPerUnit && !ok; ++attempt) {
+        if (click(rowNamed(label)?.querySelector('button'))) clicks++;
+        await sleep(0.05);
+        ok = have(label) > before;
+      }
+      if (!ok) break; // budget expired with no progress: report what landed
+      landed++;
+    }
+    return { made: have(label), clicks, landed };
+  };
+  const autoResult = await craftByClick('Automation science', 32);
+  const logiResult = await craftByClick('Logistic science', 16);
   const sci = have('Automation science');
   const lsci = have('Logistic science');
-  log.push(`science: ${sci} automation from ${made} clicks, `
-    + `${lsci} logistic from ${logi}`);
+  log.push(`science: ${sci} automation from ${autoResult.clicks} clicks `
+    + `(${autoResult.landed} landed), ${lsci} logistic from `
+    + `${logiResult.clicks} clicks (${logiResult.landed} landed)`);
   check('real DOM clicks made the science', sci >= 30 && lsci >= 12,
     `${sci} automation / ${lsci} logistic`);
   await press('pack');
