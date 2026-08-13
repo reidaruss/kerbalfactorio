@@ -45,6 +45,11 @@ TEST(survival_electrification_gates_the_pole_and_the_generator) {
   TechTree tree = survivalTechTree();
   ResearchState rs(tree);
   Inventory science(reg, 20);
+  // L7 (GP-546 to GP-549): Electrification now ALSO requires
+  // `milestones::RuinInvestigated`. Granted up front so this test can stay
+  // about the COST gate in isolation; the milestone gate on this same tech
+  // has its own dedicated test below (D8), on D3's pattern.
+  CHECK(rs.setMilestone(milestones::RuinInvestigated));
 
   // THE REFUSAL FIRST. Nothing researched: the pole and the generator are
   // gated by the tree, so they are NOT available.
@@ -112,6 +117,9 @@ TEST(survival_status_distinguishes_prereq_from_cost) {
   // Rich enough for ElectricSmelting's whole cost (15 auto + 10 logistic).
   CHECK(science.add(items::AutomationScience, 100) == 0);
   CHECK(science.add(items::LogisticScience, 100) == 0);
+  // L7 (GP-546 to GP-549): Electrification's own milestone gate is not this
+  // test's subject (D8 below owns it), so it is granted up front.
+  CHECK(rs.setMilestone(milestones::RuinInvestigated));
 
   // Affordable, and STILL refused, because Electrification is not in.
   CHECK(rs.costAffordable(techs::ElectricSmelting, science));
@@ -154,6 +162,10 @@ TEST(survival_autopilot_needs_the_orbit_flown_by_hand) {
   Inventory science(reg, 20);
   CHECK(science.add(items::AutomationScience, 200) == 0);
   CHECK(science.add(items::LogisticScience, 200) == 0);
+  // L7 (GP-546 to GP-549): Electrification's own milestone gate is D8's
+  // subject, granted here only so THIS test can reach FlightAutopilot's
+  // prereq the way it always did.
+  CHECK(rs.setMilestone(milestones::RuinInvestigated));
   CHECK(rs.tryResearch(techs::Electrification, science));
 
   // Everything BUT the deed. Prereq in, cost on the shelf, still refused.
@@ -179,15 +191,21 @@ TEST(survival_autopilot_needs_the_orbit_flown_by_hand) {
   // The right one does, and it is monotonic and dedup-safe.
   CHECK(rs.setMilestone(milestones::ReachedOrbit));
   CHECK(!rs.setMilestone(milestones::ReachedOrbit));   // already earned
-  CHECK(rs.milestones().size() == 2);
+  // 3, not 2: RuinInvestigated (granted above for Electrification), then
+  // LandedOffWorld, then ReachedOrbit.
+  CHECK(rs.milestones().size() == 3);
   CHECK(rs.canResearch(techs::FlightAutopilot, science));
   CHECK(rs.tryResearch(techs::FlightAutopilot, science));
   CHECK(rs.isUnlocked(techs::FlightAutopilot));
   CHECK(science.count(items::AutomationScience) == before - 25);
 
-  // kNoMilestone means "no requirement", so every other tech is unaffected.
+  // kNoMilestone means "no requirement", so every tech that names none of
+  // the three earned milestones is unaffected. Electrification is
+  // DELIBERATELY not used here any more (L7 gated it on RuinInvestigated,
+  // which this test granted above, so it would no longer be a control) --
+  // LaunchFacilities is the genuinely milestone-free tech instead.
   CHECK(rs.hasMilestone(kNoMilestone));
-  CHECK(rs.milestoneMet(techs::Electrification));
+  CHECK(rs.milestoneMet(techs::LaunchFacilities));
   CHECK(rs.milestoneMet(techs::Metallurgy));
 }
 
@@ -202,6 +220,8 @@ TEST(survival_cinder_refining_cannot_be_bought_on_this_planet) {
   Inventory science(reg, 20);
   CHECK(science.add(items::AutomationScience, 500) == 0);
   CHECK(science.add(items::LogisticScience, 500) == 0);
+  // L7 (GP-546 to GP-549): needed to reach Electrification at all now.
+  CHECK(rs.setMilestone(milestones::RuinInvestigated));
   CHECK(rs.tryResearch(techs::Electrification, science));
   CHECK(rs.tryResearch(techs::ElectricSmelting, science));
 
@@ -366,6 +386,13 @@ TEST(survival_tree_shape_and_id_space) {
   CHECK(tree.tech(techs::LaunchFacilities)->requiresMilestone == kNoMilestone);
   CHECK(tree.tech(techs::FlightAutopilot)->requiresMilestone
         == milestones::ReachedOrbit);
+  // L7 (GP-546 to GP-549). Electrification carries its OWN milestone, distinct
+  // from the autopilot's, so a save with one earned and not the other is a
+  // real and reachable state rather than the two ids silently meaning the
+  // same requirement.
+  CHECK(tree.tech(techs::Electrification)->requiresMilestone
+        == milestones::RuinInvestigated);
+  CHECK(milestones::RuinInvestigated != milestones::ReachedOrbit);
   CHECK(tree.depthOf(kNoTech) == 0);           // an unknown id is a root, not a hang
 
   // The SLICE tree (§B.2) is untouched by all of this, and the two id blocks
@@ -415,5 +442,58 @@ TEST(survival_tree_shape_and_id_space) {
   CHECK(!rs.isItemAvailable(survival::items::ElectricSmelter));
   // Restoring does NOT restore milestones: they are their own saved list, and
   // silently granting one would hand out DW-29's autopilot on every reload.
+  // Electrification restored above via restoreUnlocked with NO milestone set
+  // proves the same: restore bypasses the gate rather than earning it.
   CHECK(!rs.hasMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.hasMilestone(milestones::RuinInvestigated));
+}
+
+// -----------------------------------------------------------------------------
+// D8. L7's MILESTONE (GP-546 to GP-549): ELECTRIFICATION IS EARNED BY
+//     INVESTIGATING A RUIN, NOT BOUGHT ON SCIENCE ALONE. The antenna reveals a
+//     ruin; walking in and interacting at its `socket_investigate` point is
+//     what `story_line_outline_v1.txt` says unlocks electricity research.
+//     D3's own shape, restated for a second, independent milestone gate.
+// -----------------------------------------------------------------------------
+TEST(survival_electrification_needs_the_ruin_investigated) {
+  SliceRegistry reg = makeSurvivalReg();
+  TechTree tree = survivalTechTree();
+  ResearchState rs(tree);
+  Inventory science(reg, 20);
+  CHECK(science.add(items::AutomationScience, 200) == 0);
+
+  // Full science, no deed: refused, and the refusal NAMES the deed.
+  CHECK(rs.costAffordable(techs::Electrification, science));
+  CHECK(!rs.canResearch(techs::Electrification, science));
+  ResearchStatus s = rs.status(techs::Electrification, science);
+  CHECK(s.block == ResearchBlock::MilestoneMissing);
+  CHECK(s.milestone == milestones::RuinInvestigated);
+  CHECK(!rs.milestoneMet(techs::Electrification));
+  CHECK(!rs.hasMilestone(milestones::RuinInvestigated));
+
+  const uint32_t before = science.count(items::AutomationScience);
+  CHECK(!rs.tryResearch(techs::Electrification, science));
+  CHECK(science.count(items::AutomationScience) == before);
+
+  // The WRONG milestone does not open it either.
+  CHECK(rs.setMilestone(milestones::ReachedOrbit));
+  CHECK(!rs.canResearch(techs::Electrification, science));
+  CHECK(rs.status(techs::Electrification, science).block
+        == ResearchBlock::MilestoneMissing);
+
+  // The right one does, and it is monotonic and dedup-safe (poi.h's own
+  // `visited_`, not this: RuinSites'/Sites' per-ruin bit is a SEPARATE
+  // concern from this single research-tree flag, see the header comment on
+  // `milestones::RuinInvestigated`).
+  CHECK(rs.setMilestone(milestones::RuinInvestigated));
+  CHECK(!rs.setMilestone(milestones::RuinInvestigated));   // already earned
+  CHECK(rs.canResearch(techs::Electrification, science));
+  CHECK(rs.tryResearch(techs::Electrification, science));
+  CHECK(rs.isUnlocked(techs::Electrification));
+  CHECK(science.count(items::AutomationScience) == before - 10);
+
+  // And the antenna's OWN tech (no prereq, no milestone) is unaffected: it
+  // was reachable before this and stays reachable, the ordering the story
+  // line and GP-535 both insist on (the antenna comes BEFORE electricity).
+  CHECK(tree.tech(techs::ScanningAntenna)->requiresMilestone == kNoMilestone);
 }

@@ -26,6 +26,8 @@ import { collectFrom, stepBuild } from './GameplayActions.js';
 import { openAimedMachine, openableMachine } from './MachineScreen.js';
 import { showGoals } from './Objectives.js';
 import { pullTrigger } from './Gunnery.js';
+import { investigate } from './RuinInteract.js';
+import { Sites } from '../world/Sites.js';
 import type { Gameplay } from './Gameplay.js';
 import { labelOf, type Action } from '../player/Bindings.js';
 
@@ -243,6 +245,27 @@ export class GameplayInput {
       const open = g.structures.toggle(g.aimedPart);
       if (open !== null) {
         g.hud.flash(open ? 'opened' : 'closed');
+        g.sfx.confirm();
+      }
+      return true;
+    }
+    // L7 (GP-546 to GP-549). E AT A RUIN'S INVESTIGATE SOCKET GRANTS THE
+    // MILESTONE THAT UNLOCKS ELECTRIFICATION RESEARCH, PER THE STORY LINE.
+    // Read last, after every player-placed thing above, for the reason
+    // `pickAim` orders it there (GameplayAim.ts): a ruin is world content,
+    // not something the player built, and must never steal a press aimed at
+    // a machine standing inside it.
+    if (g.aimedInvestigate !== null) {
+      const sites = new Sites(g.core, g.bodyHandle);
+      const result = investigate(sites, g.progress.research, g.aimedInvestigate.ruin);
+      if (result === 'already') {
+        g.hud.flash('already investigated');
+      } else {
+        // 'granted' and 'visited-no-grant' both mean THIS press is what
+        // marked the ruin visited (first === true); 'visited-no-grant' can
+        // only happen if the milestone was somehow already earned by another
+        // route, and the ruin itself is still honestly marked either way.
+        g.hud.flash('ruin investigated');
         g.sfx.confirm();
       }
       return true;

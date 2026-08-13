@@ -69,11 +69,10 @@
 // WHAT THIS FILE DELIBERATELY DOES NOT DO
 // -------------------------------------------------------------------------
 // No interact, no investigate, no reward, no reveal. World-gen's charter line
-// is "the world says WHERE a site is and never what is inside one" (Sites.ts),
-// and it holds here unbroken: `socket_investigate` is published in the report
-// for the lane that builds L7 and is not read for anything else. There is no
-// cleared bit and no creature is serialised: regeneration on approach is the
-// accepted model, exactly as `EnemyGarrison.ts`'s own seam note states.
+// ("the world says WHERE a site is and never what is inside one", Sites.ts)
+// holds here unbroken: `socket_investigate` is published in the report for
+// the lane that builds L7 and is not read for anything else. No cleared bit,
+// no serialised creature: regeneration on approach is the accepted model.
 
 import * as THREE from 'three';
 import { NODE_LOD_HYST } from './NodeBatch.js';
@@ -180,6 +179,7 @@ export class RuinSites {
   get count(): number { return this.list.length; }
   get lod1M(): number { return this.boundM * RUIN_LOD1_RADII; }
   get lod2M(): number { return this.boundM * RUIN_LOD2_RADII; }
+  investigateLocal(): THREE.Vector3 | null { return this.points.get('socket_investigate')?.clone() ?? null; }
 
   /**
    * Draw every ruin-kind site this body's `SiteCatalog` holds, and make each one

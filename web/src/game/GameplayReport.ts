@@ -78,6 +78,14 @@ export function gameplayReport(g: Gameplay): unknown {
         station: g.aimedStation === null ? null : g.aimedStation.id,
         // GP-533, same reasoning.
         antenna: g.aimedAntenna === null ? null : g.aimedAntenna.id,
+        // L7 (GP-546 to GP-549), same reasoning again: a probe asserting
+        // "E did not investigate" needs to tell a missed crosshair from a
+        // branch that never ran, and needs the SAME `alreadyVisited` the
+        // prompt and the press both read, in one snapshot.
+        investigate: g.aimedInvestigate === null ? null : {
+          idLo: g.aimedInvestigate.ruin.idLo, idHi: g.aimedInvestigate.ruin.idHi,
+          alreadyVisited: g.aimedInvestigate.alreadyVisited,
+        },
       },
       modals: g.modals.report(),
       controls: g.keys.report(),

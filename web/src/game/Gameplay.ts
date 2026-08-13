@@ -45,6 +45,7 @@ import { padPrompt } from './LaunchPadPlacement.js';
 import { ResearchStations, type ResearchStation } from './ResearchStations.js';
 import { Antennas, type ScanAntenna } from './Antennas.js';
 import { RuinSites } from './RuinSites.js';
+import { investigatePrompt, type AimedInvestigate } from './RuinInteract.js';
 import { Sites } from '../world/Sites.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
@@ -212,6 +213,9 @@ export class Gameplay {
   aimedStation: ResearchStation | null = null;
   /** GP-533: the scanning antenna under the crosshair, or null. */
   aimedAntenna: ScanAntenna | null = null;
+  /** L7 (GP-546 to GP-549): a ruin's investigate socket under the crosshair,
+   *  or null. Picked after every player-placed thing, before the pad. */
+  aimedInvestigate: AimedInvestigate | null = null;
   /** GP-57: the launch pad under the crosshair, or null. Picked LAST. */
   aimedPad: PadPart | null = null;
   suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
@@ -663,6 +667,7 @@ export class Gameplay {
     this.hud.render(dt, this.uiOpen ? null : padPrompt(this.build.padTarget)
       ?? ghostPrompt(this.build.structTarget)
       ?? ghostMachinePrompt(this.build.label, this.build.target)
+      ?? investigatePrompt(this.aimedInvestigate)
       ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
         this.interact.target), carried);
     this.hotbarBar.render(this.hotbar.rows((n) => this.icons.for(n)));
