@@ -58,6 +58,12 @@ function nearest(e: Enemies, host: EnemyHost, ll: LatLonPort,
       latDeg: +(p.lat * DEG).toFixed(6), lonDeg: +(p.lon * DEG).toFixed(6),
       distM: +Math.hypot(c.pos.x - f.x, c.pos.y - f.y, c.pos.z - f.z).toFixed(3),
       reachM: c.type.reachM, dps: c.type.damagePerSecond,
+      // `provenance`/`garrisonState`/`post` are the garrison state machine's
+      // own words (EnemyGarrison.ts), published raw rather than left for a
+      // probe to re-derive from position deltas alone.
+      provenance: c.provenance,
+      garrisonState: c.garrisonState,
+      post: c.post === null ? null : [c.post.x, c.post.y, c.post.z],
     };
   });
   rows.sort((a, b) => a.distM - b.distM);
@@ -73,6 +79,14 @@ export function enemyDebug(e: Enemies, host: EnemyHost, ll: LatLonPort,
   }
   if (op === 'nests') return nestRows(e, ll);
   if (op === 'near') return nearest(e, host, ll, Number(a ?? 8));
+  // THE ONE NAMED EXCEPTION TO THE REFUSAL ABOVE. See `Enemies.spawnGarrisonDebug`
+  // for why: a garrison is not a WAVE, so this is not "a probe conjuring an
+  // attack that was not caused by the player's own production" — there is no
+  // cause to fake, because a garrison was never meant to have one. It exists
+  // only until the POI bridge lane can place one from a real ruin site.
+  if (op === 'garrison') {
+    return { spawned: e.spawnGarrisonDebug(host, Number(a ?? 1)), ...(e.report() as object) };
+  }
   return {
     ...(e.report() as object),
     nestRows: nestRows(e, ll),

@@ -27,10 +27,14 @@
 // the nest its pollution; killing the NEST is what moves the number, and that is
 // why a nest is a shootable thing in the world (`Enemies.ts`).
 
-import type { EnemyType, EnemyTypes } from './EnemyTypes.js';
+import type { EnemyCatalogue, EnemyType, EnemyTypes } from './EnemyTypes.js';
 import type { Vec3, WaveRow } from './EnemyLoop.js';
 import type { TargetRow } from './EnemyTargets.js';
 import type { HurtSource } from './PlayerHealth.js';
+import {
+  garrisonRoster, updateGarrisonState, GARRISON_SCATTER_M,
+  type GarrisonParams, type GarrisonState,
+} from './EnemyGarrison.js';
 
 /** One creature. The view keys its instance slot off `id`, so nothing here
  *  knows a renderer exists. */
@@ -38,14 +42,28 @@ export interface Creature {
   id: number;
   typeId: number;
   type: EnemyType;
+  /** /core's own ids for a wave-spawned creature. -1 for a garrison creature:
+   *  /core's ids are 1-based, so -1 can never be mistaken for a real one. */
   nest: number;
   waveId: number;
+  /** 'wave' from an AttackWave, /core's own cause (GP-87). 'garrison' from a
+   *  fixed post, this file's own cause and never /core's (EnemyGarrison.ts).
+   *  Explicit rather than inferred from `nest`/`waveId` being -1, so a counter
+   *  keying off either has one field to check first rather than a sentinel to
+   *  remember. */
+  provenance: 'wave' | 'garrison';
+  /** The post this creature holds, chases from and returns to. `null` for a
+   *  wave creature: a wave has no post, only a `goal` it marches at once. */
+  post: Vec3 | null;
+  /** `null` for a wave creature. See EnemyGarrison.ts for the state machine. */
+  garrisonState: GarrisonState | null;
   pos: Vec3;
   /** Tangent heading, kept so a stopped creature still faces its meal. */
   facing: Vec3;
   hp: number;
   maxHp: number;
-  /** Body-frame point it is walking to: what the wave was aimed at. */
+  /** Body-frame point it is walking to: what the wave was aimed at, or (for a
+   *  garrison creature) the post it holds or the player it is chasing. */
   goal: Vec3;
   /** '' while marching, 'player', or the health key it is chewing. */
   biting: string;
@@ -124,9 +142,50 @@ export class EnemySwarm {
         const pos = scatter(w.originDir, a, r, ctx);
         this.live.push({
           id: this.nextId++, typeId: t.id, type: t, nest: w.sourceNest,
-          waveId: w.id, pos, facing: norm({ x: goal.x - pos.x, y: goal.y - pos.y,
+          waveId: w.id, provenance: 'wave', post: null, garrisonState: null,
+          pos, facing: norm({ x: goal.x - pos.x, y: goal.y - pos.y,
             z: goal.z - pos.z }),
           hp: t.health, maxHp: t.health, goal, biting: '',
+          scanIn: made % SCAN_TICKS,
+        });
+        made++;
+        this.spawned++;
+      }
+    }
+    return made;
+  }
+
+  /**
+   * A GARRISON: creatures posted at `p.postPos` rather than dispatched by
+   * /core's wave loop. See EnemyGarrison.ts's header for why the roster is
+   * this file's own, deterministic from `p.seed`, and never a read of
+   * /core's evolving threat curve; and for why this credits nothing to
+   * evolution or pollution — there is no AttackWave here for /core to have
+   * caused, so nothing about this call touches enemies.h at all.
+   *
+   * Every CREATURE it produces is still built from /core's own `EnemyType`
+   * row (health, dps, speed, reach are never re-authored here), and it shares
+   * `spawned`/`spawnsRefused` with `spawn` above, so a probe reading the
+   * swarm's ledger sees one truthful count rather than a second one it has to
+   * know to check.
+   */
+  spawnGarrison(p: GarrisonParams, catalogue: EnemyCatalogue, ctx: SwarmContext): number {
+    const post = onGround(p.postPos, ctx, 0.6);
+    const dir = norm(post);
+    let made = 0;
+    for (const m of garrisonRoster(p.seed, catalogue)) {
+      const t = catalogue.byId(m.typeId);
+      if (t === null) { this.spawnsRefused += m.count; continue; }
+      for (let k = 0; k < m.count; k++) {
+        const a = (made * 2.399963) % (Math.PI * 2);
+        const r = GARRISON_SCATTER_M * Math.sqrt(((made * 7 + 3) % 23) / 23);
+        const pos = scatter(dir, a, r, ctx);
+        this.live.push({
+          id: this.nextId++, typeId: t.id, type: t, nest: -1, waveId: -1,
+          provenance: 'garrison', post, garrisonState: 'hold',
+          pos, facing: norm({ x: post.x - pos.x, y: post.y - pos.y,
+            z: post.z - pos.z }),
+          hp: t.health, maxHp: t.health, goal: post, biting: '',
           scanIn: made % SCAN_TICKS,
         });
         made++;
@@ -150,6 +209,11 @@ export class EnemySwarm {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const c = this.live[i];
       if (c.hp <= 0) { this.live.splice(i, 1); this.killed++; continue; }
+      // Sets `c.goal` for a garrison creature (post while holding or
+      // returning, the player while engaged) BEFORE the shared bite-or-march
+      // logic below runs, so that logic does the actual moving and biting
+      // and nothing about combat is reimplemented in EnemyGarrison.ts.
+      if (c.provenance === 'garrison') updateGarrisonState(c, ctx.playerPos);
 
       const dPlayer = dist(c.pos, ctx.playerPos);
       if (dPlayer <= c.type.reachM + playerReach) {
@@ -232,11 +296,21 @@ export class EnemySwarm {
       if (c.biting === 'player') onPlayer++;
       else if (c.biting !== '') biting++;
     }
+    // COUNTED, NOT SILENT (GP-88's own argument applied here): a garrison
+    // that came up and never appeared in the report would look exactly like
+    // no garrison at all.
+    let holding = 0, engaging = 0, returning = 0;
+    for (const c of this.live) {
+      if (c.garrisonState === 'hold') holding++;
+      else if (c.garrisonState === 'engage') engaging++;
+      else if (c.garrisonState === 'return') returning++;
+    }
     return {
       live: this.live.length,
       byType: Object.fromEntries(byType),
       spawned: this.spawned, killed: this.killed,
       spawnsRefused: this.spawnsRefused,
+      garrison: { holding, engaging, returning },
       bitingBuildings: biting, bitingPlayer: onPlayer,
       damageToBuildings: +this.damageToBuildings.toFixed(2),
       buildingsDestroyed: this.buildingsDestroyed,

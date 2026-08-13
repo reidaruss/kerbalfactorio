@@ -81,7 +81,16 @@ export function bodyRadiusM(reachM: number): number {
   return Math.max(0.45, Math.min(2.2, melee));
 }
 
-export class EnemyTypes {
+/** The minimal shape a garrison composition needs off the catalogue: which
+ *  rows exist and a lookup by id. Split out so EnemyGarrison.ts's headless
+ *  check can hand it a plain fixture rather than a class only fillable from a
+ *  WASM bridge (`load` needs a live `OfCoreModule`). */
+export interface EnemyCatalogue {
+  readonly all: readonly EnemyType[];
+  byId(id: number): EnemyType | null;
+}
+
+export class EnemyTypes implements EnemyCatalogue {
   private rows: EnemyType[] = [];
   /** Ids the bridge published that this file has no label for. Must be 0. */
   unknownTypes = 0;

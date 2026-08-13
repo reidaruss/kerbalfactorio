@@ -30,6 +30,7 @@ import { EnemySwarm, type Creature, type SwarmContext } from './EnemySwarm.js';
 import { EnemyView, NEST_KEY } from './EnemyView.js';
 import { SpiderFlock } from './SpiderFlock.js';
 import { killAll, setPeaceful } from './EnemyCheats.js';
+import { spawnGarrison, spawnGarrisonDebug } from './EnemyGarrison.js';
 import { emittersOf, targetsOf, type TargetPopulations, type TargetRow }
   from './EnemyTargets.js';
 import type { Hittable } from './Weapon.js';
@@ -105,7 +106,10 @@ export class Enemies {
   private targets: TargetRow[] = [];
   private emitters: EmitterRow[] = [];
   private sinceDerive = 0;
-  private bodyRadiusM = 600000;
+  /** Not `private`: `EnemyGarrison.ts`'s debug spawn reads it to place the
+   *  post a fixed distance from the player, the same reason `context` is not
+   *  private either. */
+  bodyRadiusM = 600000;
   private readonly nestSlots = new Map<number, number>();
   private readonly creatureSlots = new Map<number, number>();
 
@@ -212,6 +216,19 @@ export class Enemies {
     return made;
   }
 
+  /** A GARRISON: creatures posted at `postPos` rather than dispatched by
+   *  /core's wave loop. In EnemyGarrison.ts, beside `EnemyCheats.ts`'s two for
+   *  the same reason: this file is already near its 400-line cap. */
+  spawnGarrison(host: EnemyHost, postPos: Vec3, seed: number): number {
+    return spawnGarrison(this, host, postPos, seed);
+  }
+
+  /** DEBUG ONLY. See EnemyGarrison.ts for why this is the one named exception
+   *  to EnemyDebug.ts's refusal to offer a spawn hook. */
+  spawnGarrisonDebug(host: EnemyHost, seed: number): number {
+    return spawnGarrisonDebug(this, host, seed);
+  }
+
   /**
    * What is standing AND still has health.
    *
@@ -245,7 +262,10 @@ export class Enemies {
     return this.swarm.spawn(w, this.types, ctx);
   }
 
-  private context(host: EnemyHost): SwarmContext {
+  /** Not `private`: `EnemyGarrison.ts`'s `spawnGarrison`/`spawnGarrisonDebug`
+   *  build the identical context a wave spawn does, for the identical reason
+   *  `EnemyCheats.ts` reaches `swarm`/`loop` rather than duplicating them. */
+  context(host: EnemyHost): SwarmContext {
     const f = host.walker.body.feet;
     return {
       groundRadius: (x, y, z) => host.structures.groundRadius(x, y, z),
@@ -264,7 +284,8 @@ export class Enemies {
    * the NEAREST hit rather than the first, so it does not matter for the shot,
    * and it does matter for a probe reading the list.
    */
-  private publishShootables(ctx: SwarmContext): void {
+  /** Not `private`, for the same reason `context` above is not. */
+  publishShootables(ctx: SwarmContext): void {
     this.shootables.length = 0;
     for (const c of this.swarm.live) {
       this.shootables.push({ pos: c.pos, radiusM: c.type.radiusM, ref: c });
