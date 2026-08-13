@@ -640,7 +640,12 @@ add_test(NAME survival_slice_tests COMMAND survival_slice_tests)
 #     night. Headless; consumes gameplay.h, research.h and progression.h.
 add_executable(research_station_tests
   tests/test_main.cpp
-  tests/test_research_station.cpp)
+  tests/test_research_station.cpp
+  # GP-533: the scanning antenna, appended to the SAME target rather than
+  # given its own for the identical reason test_research_survival.cpp shares
+  # research_tests below — it is the next row in the same structural set and
+  # the next tech in the same tree, and it is smaller than a suite of its own.
+  tests/test_scanning_antenna.cpp)
 target_link_libraries(research_station_tests PRIVATE of_core)
 target_include_directories(research_station_tests PRIVATE tests)
 add_test(NAME research_station_tests COMMAND research_station_tests)

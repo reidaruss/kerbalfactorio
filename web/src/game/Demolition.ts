@@ -21,6 +21,7 @@ import type { StructureView } from './StructureView.js';
 import type { LaunchPads, PadPart } from './LaunchPad.js';
 import type { LaunchPadView } from './LaunchPadView.js';
 import type { ResearchStation, ResearchStations } from './ResearchStations.js';
+import type { ScanAntenna, Antennas } from './Antennas.js';
 
 export interface DemolishResult {
   kind: string;
@@ -106,12 +107,14 @@ export function demolishAimed(g: { machines: Machines; game: GameCore;
                                    structures: Structures;
                                    structView: StructureView;
                                    pads?: LaunchPads; padView?: LaunchPadView;
-                                   stations?: ResearchStations },
+                                   stations?: ResearchStations;
+                                   antennas?: Antennas },
                               machine: Machine | null,
                               build: Placed | null,
                               part: StructurePart | null = null,
                               pad: PadPart | null = null,
-                              station: ResearchStation | null = null):
+                              station: ResearchStation | null = null,
+                              antenna: ScanAntenna | null = null):
 DemolishResult | null {
   if (machine !== null) return demolishMachine(g.machines, g.game, machine);
   if (build !== null) return demolishBuild(g.factory, g.factoryView, g.game, build);
@@ -122,6 +125,12 @@ DemolishResult | null {
   // which is the standing rule at the top of this file.
   if (station !== null && g.stations !== undefined) {
     return demolishStation(g.stations, g.game, station);
+  }
+  // GP-533. THE ANTENNA TAKES THE STATION'S OWN NEXT SLOT, for the identical
+  // reason: `pickAim` resolves it after the station and before the pad, and
+  // the two orders must agree.
+  if (antenna !== null && g.antennas !== undefined) {
+    return demolishAntenna(g.antennas, g.game, antenna);
   }
   // GP-57. THE PAD IS LAST AND THAT IS THE ORDER, not an afterthought: a pad is
   // 24 m across and a machine or a deck standing on it is inside its bound, so
@@ -161,6 +170,25 @@ export function demolishStation(stations: ResearchStations, game: GameCore,
   const refunded = r.refunded.map((x) => ({ name: game.itemName(x.item), count: x.count }));
   return { kind: 'research station', refunded, lost: [],
     message: describe('research station', refunded, []) };
+}
+
+/**
+ * GP-533. Take a scanning antenna back up, with a FULL refund, `demolishStation`
+ * verbatim: it holds nothing, has no pool, no belt and no in-flight item.
+ *
+ * DELIBERATELY DOES NOT UN-REVEAL ANYTHING. The reveal it triggered on
+ * placement (`of_poi_mark_known` through `Sites`) is a fact about what the
+ * PLAYER now knows, not a property of the antenna standing in the world — the
+ * research station's own screen stays unlocked after a demolition for the same
+ * reason (§S.6: "does one exist" gates the KEY, not a fact the key taught).
+ */
+export function demolishAntenna(antennas: Antennas, game: GameCore,
+                                at: ScanAntenna): DemolishResult | null {
+  const r = antennas.remove(at);
+  if (r === null) return null;
+  const refunded = r.refunded.map((x) => ({ name: game.itemName(x.item), count: x.count }));
+  return { kind: 'scanning antenna', refunded, lost: [],
+    message: describe('scanning antenna', refunded, []) };
 }
 
 export function demolishPad(pads: LaunchPads, view: LaunchPadView,

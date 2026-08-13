@@ -76,6 +76,8 @@ export function gameplayReport(g: Gameplay): unknown {
         // cannot tell a crosshair that missed the station from an interact
         // branch that never ran.
         station: g.aimedStation === null ? null : g.aimedStation.id,
+        // GP-533, same reasoning.
+        antenna: g.aimedAntenna === null ? null : g.aimedAntenna.id,
       },
       modals: g.modals.report(),
       controls: g.keys.report(),
@@ -111,6 +113,10 @@ export function gameplayReport(g: Gameplay): unknown {
       // `progress.stationGate` should be able to read the world it is a gate
       // over from the same snapshot.
       stations: g.stations.report(),
+      // GP-533. The scanning antennas, same reasoning: a probe asserting the
+      // one-shot reveal fired needs the world's own placement count in the
+      // same snapshot as `sites`/`markers` below.
+      antennas: g.antennas.report(),
       // GP-65. WHAT EVERY PLACED THING CAN TAKE, and what is currently wrong
       // with it. `audit.missing` is the number that matters most and it is the
       // reason this is a report rather than a private map: a live buildable with

@@ -20,7 +20,12 @@
 //      objects of its own size rather than with the 24 m pad; it is after the
 //      structural part because a station stands ON a deck exactly as a furnace
 //      does, and the deck is the larger, nearer surface.
-//   5. A LAUNCH PAD LAST, and that is the order rather than an afterthought: a
+//   5. A SCANNING ANTENNA next (GP-533), on the identical argument as the
+//      station immediately above it and picked by the identical test: it is
+//      machine-scale, it can stand on a deck, and it is a separate object from
+//      the station rather than a second kind the station's own pick tests, so
+//      a press cannot resolve to "whichever of the two is nearer" silently.
+//   6. A LAUNCH PAD LAST, and that is the order rather than an afterthought: a
 //      pad is 24 m across, so a deck or a machine standing on it is INSIDE its
 //      bound, and a pad that won the tie would swallow every press aimed at
 //      anything on the launch site.
@@ -71,7 +76,10 @@ export function pickAim(g: Gameplay, ray: AimRayLike): void {
     : g.structures.pick(o, d, reach);
   g.aimedStation = g.aimedMachine !== null || g.aimedBuild !== null
     || g.aimedPart !== null ? null : g.stations.pick(o, d, reach);
-  g.aimedPad = g.aimedMachine !== null || g.aimedBuild !== null
+  g.aimedAntenna = g.aimedMachine !== null || g.aimedBuild !== null
     || g.aimedPart !== null || g.aimedStation !== null
+    ? null : g.antennas.pick(o, d, reach);
+  g.aimedPad = g.aimedMachine !== null || g.aimedBuild !== null
+    || g.aimedPart !== null || g.aimedStation !== null || g.aimedAntenna !== null
     ? null : g.pads.pick(o, d, reach);
 }

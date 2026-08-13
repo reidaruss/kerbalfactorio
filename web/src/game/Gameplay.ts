@@ -43,6 +43,7 @@ import { LaunchPads, type PadPart } from './LaunchPad.js';
 import { LaunchPadView } from './LaunchPadView.js';
 import { padPrompt } from './LaunchPadPlacement.js';
 import { ResearchStations, type ResearchStation } from './ResearchStations.js';
+import { Antennas, type ScanAntenna } from './Antennas.js';
 import { aimPrompt, ghostMachinePrompt } from './FactoryReport.js';
 import { ghostPrompt } from './StructurePlacement.js';
 import { nodeDump } from './GameplayViews.js';
@@ -157,6 +158,10 @@ export class Gameplay {
   /** D-019: the research stations. The machine the J key now asks about, and
    *  the first building in this game whose whole purpose is a screen. */
   readonly stations: ResearchStations;
+  /** GP-533: the scanning antennas. Placement fires the one-shot POI reveal
+   *  (`placeAntenna` in GameplayActions.ts); this class owns only where and
+   *  how one stands. */
+  readonly antennas: Antennas;
   /** GP-65 / GP-79: what every placed thing can take, and what the PLAYER can.
    *  `Gameplay` is its own `HealthPopulations`, the four lists being fields
    *  already. Reasoning in Health.ts / PlayerHealth.ts. */
@@ -198,6 +203,8 @@ export class Gameplay {
   aimedPart: StructurePart | null = null;
   /** D-019: the research station under the crosshair, or null. */
   aimedStation: ResearchStation | null = null;
+  /** GP-533: the scanning antenna under the crosshair, or null. */
+  aimedAntenna: ScanAntenna | null = null;
   /** GP-57: the launch pad under the crosshair, or null. Picked LAST. */
   aimedPad: PadPart | null = null;
   suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
@@ -332,6 +339,11 @@ export class Gameplay {
     this.stations = new ResearchStations(d.core, this.game, d.origin,
       d.bodyHandle, () => d.ports?.voxels?.handle ?? 0, this.mode,
       () => this.structures);
+    // GP-533. The same argument list the station takes, and for the same
+    // reasons.
+    this.antennas = new Antennas(d.core, this.game, d.origin,
+      d.bodyHandle, () => d.ports?.voxels?.handle ?? 0, this.mode,
+      () => this.structures);
     this.build = new BuildMode(this.factory, this.factoryView,
       this.structures, this.structView, this.pads, this.padView);
     // A hand furnace marks its ingots AT the furnace (GP-64: no roaming toast).
@@ -346,7 +358,8 @@ export class Gameplay {
   static async create(d: GameplayDeps): Promise<Gameplay> {
     const g = new Gameplay(d);
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
-      g.structures.load(), g.pads.load(), g.stations.load(), g.icons.load()]);
+      g.structures.load(), g.pads.load(), g.stations.load(), g.antennas.load(),
+      g.icons.load()]);
     g.structView.build(g.structures);
     g.padView.build(g.pads);
     g.progress = attachProgress(g);
@@ -363,6 +376,7 @@ export class Gameplay {
     d.player.body.solids = g.structures.bodies;
     d.scene.add(g.machines.group);
     d.scene.add(g.stations.group);
+    d.scene.add(g.antennas.group);
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
@@ -547,7 +561,7 @@ export class Gameplay {
   get hasDemolishTarget(): boolean {
     return this.aimedMachine !== null || this.aimedBuild !== null
       || this.aimedPart !== null || this.aimedStation !== null
-      || this.aimedPad !== null;
+      || this.aimedAntenna !== null || this.aimedPad !== null;
   }
 
   /** What that thing is CALLED, for the sentence. '' when there is none. */
@@ -558,16 +572,17 @@ export class Gameplay {
     if (this.aimedBuild !== null) return this.aimedBuild.kind;
     if (this.aimedPart !== null) return this.aimedPart.kind;
     if (this.aimedStation !== null) return 'research station';
+    if (this.aimedAntenna !== null) return 'scanning antenna';
     return this.aimedPad !== null ? 'launch pad' : '';
   }
 
   /** Remove whatever the crosshair is on. Returns true if something went. */
   demolish(): boolean {
     const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart,
-      this.aimedPad, this.aimedStation);
+      this.aimedPad, this.aimedStation, this.aimedAntenna);
     if (gone) {
       this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null;
-      this.aimedStation = null;
+      this.aimedStation = null; this.aimedAntenna = null;
     }
     return gone;
   }
@@ -587,6 +602,7 @@ export class Gameplay {
     this.machines.update();
     this.machines.updateFx(dt);
     this.stations.update();
+    this.antennas.update();
     this.structures.step(dt);
     this.structView.sync(this.structures);
     this.pads.step(dt);

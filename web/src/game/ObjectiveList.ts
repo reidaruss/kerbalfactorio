@@ -16,6 +16,7 @@ import { labelOf } from '../player/Bindings.js';
 import type { Action } from '../player/Bindings.js';
 import type { Gameplay } from './Gameplay.js';
 import { bodyIsAirless } from './StarterContent.js';
+import { Sites } from '../world/Sites.js';
 
 /**
  * What the checklist is allowed to know about the assembly bay and flight.
@@ -267,6 +268,29 @@ export const OBJECTIVES: Objective[] = [
     hint: () => `open the build menu (${labelOf('build')}), ${labelOf('use')} `
       + `to place it, then ${labelOf('interact')} at it opens the tech tree`,
     done: (g) => g.stations.list.length >= 1,
+  },
+  // ==========================================================================
+  // GP-533. THE SCANNING ANTENNA, IMMEDIATELY AFTER THE STATION, exactly where
+  // `story_line_outline_v1.txt` puts it: "Research scanning antenna. Build
+  // scanning antenna (upon building the scanning antenna it shows the location
+  // of nearby ruins)."
+  //
+  // THE PREDICATE IS `sites.knownCount() > 0`, DELIBERATELY NOT "AN ANTENNA
+  // EXISTS". `Sites` (world/Sites.ts) is a stateless view over `/core`'s own
+  // POI catalog, so there is NO NEW STORE here: the row asks the same
+  // authority `Antennas.place`'s own reveal (`GameplayActions.revealNearbySites`)
+  // already wrote to, which is the state-machine's own `known_` bit
+  // (`poi.h`). Reading "did anything actually get revealed" rather than "did
+  // the structure go down" is the honest predicate for a card whose whole
+  // point is what the building DOES: a card that retired the moment the mast
+  // was placed would still be true on a body with nothing in range, which
+  // teaches a player the antenna worked when the only thing that happened is
+  // that it stood there.
+  {
+    id: 'antenna', text: 'Build a scanning antenna',
+    hint: (g) => `${gateClause(g, 'Scanning Antenna')}open the build menu `
+      + `(${labelOf('build')}), ${labelOf('use')} to place it near your base`,
+    done: (g) => new Sites(g.core, g.bodyHandle).knownCount() > 0,
   },
   // GP-53. THE SPACE HALF OF THE GAME HAD NO ENTRANCE. The assembly bay and
   // flight have been in the build since W8 and W9 and NOTHING on screen named

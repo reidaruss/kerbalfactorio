@@ -175,6 +175,14 @@ export class Sites {
     return { count: this.rows_.length, known, visited };
   }
 
+  /** GP-533. THE REVEAL LANE'S OBJECTIVE PREDICATE, named directly rather than
+   *  spelled out as `stats().known` at every call site: "has anything been
+   *  scanned yet" is a question ObjectiveList.ts's `antenna` card asks with no
+   *  store of its own (poi.h's `known_` bit is the one authority, exactly as
+   *  the state-machine header documents), and a named method reads as the
+   *  question rather than as a derivation a reader has to reconstruct. */
+  knownCount(): number { return this.stats().known; }
+
   /** The save's bytes: both bits, delta-varint, from `/core`. */
   serialize(): number[] {
     if (!this.ready) return [];

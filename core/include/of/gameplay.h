@@ -893,6 +893,12 @@ static constexpr ItemId LaunchPad     = 0x0044;
 // ticks, holds no inventory, has no ports and draws no power. What it does is
 // exist, which is what the J key now asks about.
 static constexpr ItemId ResearchStation = 0x0045;
+// GP-533. THE SCANNING ANTENNA. `story_line_outline_v1.txt`'s next rung after
+// the station: research it, build it, and the build reveals the nearby ruins.
+// Same criterion as the station and the pad settle: it never ticks, holds no
+// inventory, has no ports and draws no power, so it takes the next free id in
+// this same structural block rather than a machine one.
+static constexpr ItemId ScanningAntenna = 0x0046;
 }  // namespace items
 
 // --- Survival entity TypeId block (0x30+, for the placeable structures). -------
@@ -926,6 +932,10 @@ static constexpr TypeId LaunchPad  = 0x44;
 // id until it ships, which is a PLACEHOLDER and is said out loud in
 // ResearchStations.ts rather than left to be discovered.
 static constexpr TypeId ResearchStation = 0x45;
+// GP-533. The scanning antenna. 0x46 continues the block; the art lane owes a
+// real mesh (ASSET-SPECS §4) and the client borrows an existing machine mesh
+// under this id until it ships, said out loud in Antennas.ts.
+static constexpr TypeId ScanningAntenna = 0x46;
 }  // namespace types
 
 // --- Survival smelting RecipeId block (0x0130+, append-only). ------------------
@@ -1192,12 +1202,17 @@ inline bool RegisterSurvivalContent(SliceRegistry& reg) {
   // rather than carried (§S.6). Set honestly anyway.
   reg.registerItem(mk(ResearchStation, "Research station", ItemCategory::Buildable,
                       1, kFlagBuildable, types::ResearchStation));
+  // GP-533. Same reasoning as the station immediately above: one per stack,
+  // paid and placed rather than carried.
+  reg.registerItem(mk(ScanningAntenna, "Scanning antenna", ItemCategory::Buildable,
+                      1, kFlagBuildable, types::ScanningAntenna));
   // smelting recipes (fuel-driven; registered so the UE layer can list them)
   reg.registerRecipe(makeSmeltIronRecipe());
   reg.registerRecipe(makeSmeltCopperRecipe());
 
   return reg.item(Wood) && reg.item(Iron) && reg.item(SurvivalSmelter) &&
          reg.item(Foundation) && reg.item(Door) && reg.item(ResearchStation) &&
+         reg.item(ScanningAntenna) &&
          reg.recipe(recipes::SmeltIron) && reg.recipe(recipes::SmeltCopper);
 }
 
@@ -1725,9 +1740,21 @@ class Furnace {
 // verbatim: that enum is the 4 m tiling module and a research station answers
 // none of its questions. The client places it the way it places a hand furnace,
 // which is the closest existing simple machine and is the pattern this followed.
+//
+// GP-533 APPENDS THE SCANNING ANTENNA AS THE SEVENTH MEMBER, on the identical
+// argument: it ticks nothing, holds nothing, has no ports and draws no power,
+// it is a thing that STANDS somewhere, so it inherits the same bridge with NO
+// ABI CHANGE and is not in the client's tiling `StructureKind` either. The
+// client places it exactly as it places the research station (Antennas.ts is
+// ResearchStations.ts's shape); the ONE thing it does that the station never
+// did is that a successful placement fires gameplay's one-shot POI reveal
+// (`of_poi_near` + `of_poi_mark_known`, already-shipped ABI 24 exports, WG-151)
+// around the antenna's own position — that orchestration is entirely client
+// code and needs no new export, so this row alone is the whole of /core's
+// share of the feature.
 enum class StructureKind : uint8_t {
   Foundation = 0, Floor = 1, Wall = 2, Door = 3, LaunchPad = 4,
-  ResearchStation = 5,
+  ResearchStation = 5, ScanningAntenna = 6,
 };
 
 struct StructureDef {
@@ -1837,6 +1864,40 @@ inline std::vector<StructureDef> structureDefs() {
                                {ItemStack{items::Iron, 20},
                                 ItemStack{items::Stone, 30},
                                 ItemStack{items::Copper, 10}}}},
+      // GP-533, THE SCANNING ANTENNA, priced from where it SITS IN THE
+      // STORYLINE: after the research station and before the launch pad /
+      // the hand-flown station mission, `story_line_outline_v1.txt`'s next
+      // two rungs (research it, then build it — the build is what reveals
+      // the nearby ruins).
+      //
+      // IRON 25 IS A SMALL STEP PAST THE STATION'S 20, not a wall: the
+      // antenna is a slightly bigger structure than the bench that
+      // researched it, so it costs a handful more smelts, and it stays a
+      // fraction of the pad's 60 because it is still a rung and not the
+      // gate DW-29 put at the end of the ground game.
+      //
+      // COPPER 20 MATCHES THE LAUNCH PAD'S OWN COPPER EXACTLY, and that is
+      // the judgement in this row worth stating: a receiver mast is
+      // electronics before it is steel, so this is the first structure that
+      // asks for as much copper as the pad does, and it is what teaches a
+      // player who has only ever mined copper for the power branch that a
+      // real copper supply is coming before they ever see the pad's own
+      // bill.
+      //
+      // STONE 15 IS LESS THAN THE STATION'S 30: a mast footprint is smaller
+      // than a bench, so this is deliberately the cheapest ingredient here
+      // rather than the mass the station's own stone was.
+      //
+      // NO WOOD, for the identical reason the station has none: Cinder has
+      // no trees (`StarterContent`), and this structure must stay buildable
+      // there for the day the antenna's own progression reaches an airless
+      // body.
+      StructureDef{StructureKind::ScanningAntenna, items::ScanningAntenna,
+                   types::ScanningAntenna, "Scanning antenna",
+                   CraftRecipe{items::ScanningAntenna, 1,
+                               {ItemStack{items::Iron, 25},
+                                ItemStack{items::Copper, 20},
+                                ItemStack{items::Stone, 15}}}},
   };
 }
 

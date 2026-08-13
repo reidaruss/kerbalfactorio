@@ -238,6 +238,14 @@ export interface SaveSlot {
    *  refusing, which is not a regression but the new rule applied honestly to a
    *  world that never built one. */
   stations?: SaveStation[];
+  /** GP-533: the scanning antennas. `SaveStation`'s own shape and `SaveStation`'s
+   *  own type: an antenna holds nothing either, so its whole state is where it
+   *  stands and which way it faces. Additive and optional under the identical
+   *  rule `stations` was added by, so SAVE_VERSION deliberately does NOT move.
+   *  What it does NOT carry is the reveal itself: which sites are known is
+   *  `poi` above, /core's own state, so a world saved with an antenna standing
+   *  restores both facts independently and cannot have one without the other. */
+  antennas?: SaveStation[];
   /** The hotbar: which slot is in hand and what is in each of them (GP-26). */
   hotbar?: SaveHotbar;
   /** GP-65: what is BROKEN, as `[healthKey, hp]` for every placed thing below

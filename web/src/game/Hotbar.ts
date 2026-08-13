@@ -15,7 +15,6 @@
 
 import { STRUCTURE_KINDS, type StructureKind } from './StructureGrid.js';
 import type { BuildKind } from './Factory.js';
-
 /**
  * GP-57. The launch pad, as a hand-held part.
  *
@@ -64,6 +63,7 @@ export type SlotContent =
    *  slots are spoken for and a twelfth would cost a new binding and a wider bar
    *  to buy a second route to a building placed once per world. */
   | { kind: 'station' }
+  | { kind: 'antenna' }   // GP-533: a scanning antenna, `station`'s own reason.
   /** GP-86: the gun. Its own kind rather than a `PartKind`, because it places
    *  nothing and ticks nothing: what it changes is what the LEFT BUTTON DOES,
    *  which is exactly the question this enum exists to answer (GP-26). */
@@ -390,6 +390,7 @@ function describe(s: SlotContent): string {
   if (s.kind === 'hand') return 'hands';
   if (s.kind === 'furnace') return 'furnace';
   if (s.kind === 'station') return 'research station';
+  if (s.kind === 'antenna') return 'scanning antenna';
   if (s.kind === 'gun') return 'sidearm';
   if (s.kind === 'empty') return '';
   return PART_INFO[s.part].label;
