@@ -102,3 +102,34 @@ const parts = [...tally.entries()].sort()
 const total = [...tally.values()].reduce((a, t) => a + t.bytes, 0);
 console.log(`sync-assets: ${parts.join(' | ')} | total `
   + `${(total / 1048576).toFixed(2)} MB -> ${relative(join(here, '..'), dst)}`);
+
+// KTX2 TRANSCODER (RN-1462, A2a). The two Basis Universal transcoder files
+// (`basis_transcoder.js`/`.wasm`) ship INSIDE three's own npm package, not
+// under `assets/` and not from a CDN: the served build is LAN (CLAUDE.md), so
+// `KTX2Loader.setTranscoderPath` must point at a same-origin path, and npm
+// rather than git LFS is what delivers these bytes, so the pointer guard
+// above does not apply to them. Staged the same way every other served asset
+// is: `predev`/`prebuild` already run this script before `vite`.
+const basisSrc = join(here, '..', 'node_modules', 'three', 'examples', 'jsm', 'libs', 'basis');
+const basisDst = join(dst, 'basis');
+const BASIS_FILES = ['basis_transcoder.js', 'basis_transcoder.wasm'];
+if (!existsSync(basisSrc)) {
+  console.error(`sync-assets: ${basisSrc} is missing. Run \`npm ci\` in web/ `
+    + 'first; three ships the KTX2 transcoder inside its own package and '
+    + 'this script does not fetch it from anywhere else.');
+  process.exit(1);
+}
+mkdirSync(basisDst, { recursive: true });
+let basisBytes = 0;
+for (const f of BASIS_FILES) {
+  const p = join(basisSrc, f);
+  if (!existsSync(p)) {
+    console.error(`sync-assets: ${p} is missing from the installed three `
+      + `package. Expected both of ${BASIS_FILES.join(', ')}.`);
+    process.exit(1);
+  }
+  copyFileSync(p, join(basisDst, f));
+  basisBytes += statSync(p).size;
+}
+console.log(`sync-assets: ${BASIS_FILES.length} basis (KTX2 transcoder), `
+  + `${(basisBytes / 1048576).toFixed(2)} MB -> ${relative(join(here, '..'), basisDst)}`);

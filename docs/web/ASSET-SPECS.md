@@ -410,14 +410,66 @@ in the texture path at all**, so a Blender upgrade (BT-14) cannot rewrite a text
 byte. zlib is pinned to explicit parameters and its version is recorded in the
 manifest.
 
-**Still deferred:** KTX2 via `gltf-transform`, UASTC for both maps, loaded with
-`KTX2Loader`. Trigger unchanged at 1 MB of texture payload; current payload
-0.52 MB. This is now the largest single VRAM win available: the maps are 4.27 MiB
-of VRAM and UASTC would take most of it.
+**KTX2 LOADER LANDED (RN-1462, A2a, 2026-08-13); NO TEXTURE CONVERTED YET.**
+The payload figures above are stale (0.52 MB was the DW-35 launch state; the
+shipped set is 7.4 MB across 25 PNGs today, well past the old 1 MB trigger,
+which is exactly why this lane wired the consumer side ahead of any producer
+work). `web/src/assets/Loaders.ts` constructs one `KTX2Loader`, points
+`setTranscoderPath` at `assets/basis/` (the two Basis Universal transcoder
+files ship inside three's own npm package and `scripts/sync-assets.mjs`
+copies them into `public/assets/basis/` on every `predev`/`prebuild`, never
+from a CDN: the served build is LAN), wires it into the shared `GLTFLoader`
+via `setKTX2Loader`, and exposes `initKtx2(renderer)` — called once from
+`Boot.ts` right after `createRenderer`, because `KTX2Loader.detectSupport`
+needs the concrete GPU context and `OFRenderer` hides it everywhere else
+(`Renderer.ts`'s `detectKtx2Support` is the one seam crossing, mirroring
+`environmentFrom`'s PMREMGenerator precedent). `Loaders.ts` also exports
+`loadTexture(url)`, a single standalone-texture entry point Surfaces.ts's
+four `make*Texture` helpers now call instead of each owning a
+`THREE.TextureLoader()`: **`.ktx2` is opt-in purely by the file extension on
+a family's `file` field in `surfaces.json`**, so a `.png` entry decodes
+exactly as it did before this lane and a `.ktx2` entry routes through the
+transcoder, with no manifest version bump required (existing `.png` families
+are byte-for-byte unaffected; see the RN-1462 entry below for why converting
+one is a producer decision this lane did not make). `gltf-transform` /
+UASTC conversion of the shipped PNGs themselves remains **owed**, not done:
+whichever lane authors the first real `.ktx2` asset is A2b's or a follow-on's
+call, and it should re-measure the VRAM win rather than trust the 4.27 MiB
+figure this section used to cite, which predates the 7.4 MB payload above.
 
 **Texel density targets, unchanged and now met:** 512 px/m for hand-held and
 first-person assets, 256 px/m for machines, 128 px/m for terrain props. `panel` ships at 341 px/m,
 above its 256 px/m machine target, and `coarse` at 512 px/m. Maximum 1024 x 1024 per image.
+
+**RN-1462: two new OPTIONAL `surfaces.json` family fields, additive only.**
+`Surfaces.ts`'s wiring site (`apply()`/`ready()`) now also understands, per
+family:
+
+- `emissive: {file, bytes, sha256}` — a tiling, sRGB, metre-repeated map
+  (`material.emissiveMap`), loaded and configured exactly like `normal`/`orm`
+  above rather than card-shaped like a leaf's `albedo`. Requires `tile_m` on
+  the family; a manifest entry that carries `emissive` without one is refused
+  with a thrown error at load, not silently dropped.
+- `alpha: {file, bytes, sha256}` — a STANDALONE alpha mask
+  (`material.alphaMap`), distinct from a card family's embedded RGBA alpha
+  channel. Reuses the EXISTING `alpha_test` field as its required companion
+  rather than adding a second one: three.js ignores `alphaMap` entirely on an
+  otherwise-opaque material while `alphaTest` sits at its 0 default, so an
+  `alpha` map with no valid `alpha_test` is refused the same way a present
+  `albedo` with no `albedo_mean_linear` already is (D-016's precedent).
+  Requires `tile_m` for the same reason `emissive` does.
+- `normal_scale: number` — a per-family multiplier on the decoded
+  tangent-space normal's XY (three's `material.normalScale`, both axes
+  uniformly). Absent means three's own default of 1.0; every family that
+  ships without it reads exactly as it did before this lane.
+
+**No family in the shipped manifest declares any of the three today** (this
+lane converts no texture, per its own brief); all three are dead weight on
+the current build and exist so a future texgen pass or hand-authored family
+has somewhere to land without a second client-side wiring pass. `version`
+stays `2`: these are pure additions an old client would silently ignore, not
+a changed meaning for an existing field (contrast D-016's
+`albedo_mean -> albedo_mean_linear`, which DID need the bump).
 
 ### 2.9 What the CLIENT must do to consume the maps
 

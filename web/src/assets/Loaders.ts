@@ -1,11 +1,26 @@
 // THE glTF entry point, wired exactly once (ARCHITECTURE.md section 9.2).
 //
-// No KTX2Loader and no MeshoptDecoder yet, and that is a measurement rather than
-// an omission: every Tier 0 and Tier 1 asset is untextured PBR roles
-// (ASSET-SPECS section 2.8 defers a texture pipeline until the payload would
-// cross 1 MB), so there is nothing for a transcoder to transcode, and the whole
-// 42-file set is 2.43 MB against a 25 MB critical-preload budget. Both loaders
-// go in behind this one function the moment a texture or a meshopt pass ships.
+// KTX2Loader LANDED (RN-1462, A2a). The comment that used to sit here said
+// "no KTX2Loader yet, and that is a measurement rather than an omission"
+// because every Tier 0/1 asset was untextured. That premise died at DW-35:
+// the shared surface families in `assets/textures/dist` are 7.4 MB of raw
+// PNG (Surfaces.ts, ASSET-SPECS 2.8), which is well past the "revisit KTX2"
+// trigger. This lane wires the LOADER, not a conversion: every file the
+// manifest names today is still `.png` and still decodes exactly as before.
+// A `.ktx2` file becomes real the day texgen (or a hand-authored test asset)
+// ships one; see `loadTexture` below and Surfaces.ts's `makeTexture` family,
+// which now call it instead of owning a `THREE.TextureLoader()` each.
+//
+// MeshoptDecoder is still NOT wired: no mesh compression pass has shipped and
+// nothing in this lane's brief asked for one, so that half of the old
+// sentence stays true and stays out of scope.
+//
+// TRANSCODER ASSETS SHIP LOCALLY, NOT FROM A CDN. The served build is LAN
+// (CLAUDE.md), so `KTX2Loader.setTranscoderPath` points at a same-origin
+// path; `scripts/sync-assets.mjs` copies the two Basis Universal files out of
+// three's own npm package (`node_modules/three/examples/jsm/libs/basis/`)
+// into `public/assets/basis/` on every `predev`/`prebuild`, the same way it
+// already stages every other served asset.
 //
 // Loads are DEDUPED by path. Two systems asking for props_forest.glb get one
 // fetch and one parse, which is what stops the scatter pass from re-parsing an
@@ -14,9 +29,58 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import type { OFRenderer } from '../render/Renderer.js';
 
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<GLTF>>();
+
+const ktx2Loader = new KTX2Loader().setTranscoderPath('assets/basis/');
+loader.setKTX2Loader(ktx2Loader);
+
+/** True once `initKtx2` has run `detectSupport`, which three requires before
+ *  transcoding anything: it is how the loader learns which compressed GPU
+ *  format to target. Guards `loadTexture`'s `.ktx2` branch below. */
+let ktx2Ready = false;
+
+/**
+ * Call once, right after the renderer exists (`Boot.ts`, before any KTX2
+ * asset can load). `detectSupport` needs the concrete GPU context `OFRenderer`
+ * deliberately hides everywhere else (DW-10 / WR-1), which is why this
+ * crosses through `detectKtx2Support` rather than reaching for a renderer
+ * field here.
+ */
+export function initKtx2(renderer: OFRenderer): void {
+  renderer.detectKtx2Support(ktx2Loader);
+  ktx2Ready = true;
+}
+
+/**
+ * Load ONE standalone texture: the shared surface PNGs Surfaces.ts owns, not
+ * a texture embedded in a glTF (those go through `loadGlb`/`ktx2Loader`
+ * above via `KHR_texture_basisu`, automatically). `.ktx2` is opt-in PURELY by
+ * file extension, read off the manifest's own `file` field: `surfaces.json`
+ * names only `.png` files today (this lane converts none), so this function
+ * is behaviourally identical to a bare `new THREE.TextureLoader().loadAsync`
+ * until the day a family's manifest entry ends in `.ktx2`. Centralised here,
+ * rather than left as a `.ktx2` branch inside each of Surfaces.ts's four
+ * `make*Texture` helpers, so there is exactly one place that owns "how does a
+ * standalone texture get decoded" the same way `loadGlb` is exactly one place
+ * for glTF.
+ */
+export function loadTexture(url: string): Promise<THREE.Texture> {
+  if (url.endsWith('.ktx2')) {
+    if (!ktx2Ready) {
+      throw new Error(`[of] Loaders: ${url} is a KTX2 texture requested `
+        + 'before initKtx2(renderer) ran. detectSupport() needs the GPU '
+        + 'context to pick a transcode target, so a KTX2 load issued before '
+        + 'the renderer exists is a boot-order bug, not a texture that can '
+        + 'silently fall back to an untranscoded read.');
+    }
+    return ktx2Loader.loadAsync(url);
+  }
+  return new THREE.TextureLoader().loadAsync(url);
+}
 
 export interface AssetLoadStats {
   files: number;

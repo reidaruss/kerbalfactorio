@@ -3,6 +3,7 @@
 // OFRenderer interface, so a WebGPU swap at W6 is a milestone and not a rewrite.
 
 import * as THREE from 'three';
+import type { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import type { Config } from '../app/Config.js';
 import type { QualityKnobs } from './Quality.js';
 import { DepthPolicy, depthRendererParams, resolveDepthMode } from './DepthPolicy.js';
@@ -66,6 +67,15 @@ export interface OFRenderer {
    * on the seam because PMREMGenerator is renderer-specific; SkyIbl owns WHEN.
    */
   environmentFrom(scene: THREE.Scene): THREE.Texture | null;
+  /**
+   * RN-1462. Lets a `KTX2Loader` ask the GPU which compressed formats it
+   * supports (three's `detectSupport`, which needs the concrete renderer and
+   * must run before that loader transcodes anything). This is the one seam
+   * crossing for it, mirroring `environmentFrom`'s PMREMGenerator precedent:
+   * everything else takes `OFRenderer` so a WebGPU swap is a two-method edit
+   * here rather than a rewrite at every call site (DW-10 / WR-1).
+   */
+  detectKtx2Support(loader: KTX2Loader): void;
   dispose(): void;
 }
 
@@ -199,6 +209,8 @@ class WebGLSeam implements OFRenderer, PostHost {
     this.envTarget = next;
     return next.texture;
   }
+
+  detectKtx2Support(loader: KTX2Loader): void { loader.detectSupport(this.r); }
 
   readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void {
     const gl = this.gl;
