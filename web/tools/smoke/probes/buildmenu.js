@@ -21,9 +21,13 @@
 // THE ONE THING THAT IS NOT A UI ASSERTION is GP-114, and it is the point of
 // the whole exercise. Reid asked to stop crafting structures before building
 // them. A hand furnace was the one buildable that still demanded a finished
-// item in the pack, and this probe grants the RAW materials, never touches the
-// craft panel, and asserts a furnace goes down and the raw materials are what
-// got spent.
+// item in the pack, and this probe gathers the RAW materials, never crafts a
+// furnace, and asserts a furnace goes down and the raw materials are what got
+// spent. GP-624 added the one craft the storyline now demands before raw iron
+// can be held at all — a crude pickaxe out of wood and stone, because GP-506
+// gates ore behind it — and asserts the pack holds NO furnace item on either
+// side of the placement, so the claim is narrower and better witnessed rather
+// than weaker.
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
@@ -241,8 +245,10 @@
   // THE POINT OF THE WHOLE REQUEST, and survival only: sandbox lifts the pack
   // requirement anyway (DW-31) and so would prove nothing about the crafting
   // step. The materials are HARVESTED, through `Interact.harvestNow`, which is
-  // the same call the swing makes; the craft panel is never opened and no craft
-  // button is ever pressed. A furnace still goes down.
+  // the same call the swing makes; the FURNACE is never crafted, the craft panel
+  // is never opened and no furnace button is ever pressed. A furnace still goes
+  // down. (GP-624: a crude pickaxe IS crafted first, because GP-506 gates raw
+  // iron behind one and the furnace's bill contains 2 Raw iron. See the loop.)
   let onDemand = { ran: false };
   if (!sandbox) {
     await pressB();
@@ -252,19 +258,74 @@
     of.escape();
     await sleep(0.35);
 
-    // Chop and mine until the recipe is affordable. Nothing is crafted.
-    const nodes = of.nodes().slice(0, 60);
+    // Chop and mine until the recipe is affordable. THE FURNACE IS NEVER
+    // CRAFTED, which is the claim; a pickaxe is, and GP-624 is the reason.
+    //
+    // The hand furnace's bill is Wood x5 + Raw iron x2, and GP-506 made raw iron
+    // `requiresToolFor` (gameplay.h): a bare-hand swing at an ore node is
+    // REFUSED by name. So the loop this replaces — twelve swings at each of the
+    // first 60 nodes, every kind — could never buy the second half of that bill,
+    // and this section failed on a game that was working exactly as designed.
+    // Wood and loose stone stay ungated so the pickaxe (Stone x2 + Wood x1) has
+    // a bare-hand path, and mining ore with a pickaxe is not a shortcut past
+    // GP-114, it is the only legal way to hold raw iron at all.
+    //
+    // WHAT GP-114 ACTUALLY CLAIMS IS UNTOUCHED. The claim is that the FURNACE
+    // needs no crafted item in the pack: raw materials alone light its tile and
+    // `craftOnDemand` does the rest at placement. A tool is not the structure,
+    // the craft panel is still never opened, no furnace button is ever pressed,
+    // and the assertions below now also state that no furnace item exists in the
+    // pack before the tile is clicked, which the old version only checked after.
+    const nodes = of.nodes();
+    const countOf = (re) =>
+      (of.game().carried ?? []).find((c) => re.test(c.name))?.count ?? 0;
+    // Bare-handed: enough for the pickaxe (Stone x2 + Wood x1) and the furnace's
+    // own Wood x5, with margin. Bounded by the node list, and stopped as soon as
+    // the two counts are met so this stays the cheap section it was.
     for (const n of nodes) {
+      if (n.kind !== 0 && n.kind !== 1) continue;
+      if (countOf(/^wood$/i) >= 8 && countOf(/^stone$/i) >= 4) break;
+      for (let k = 0; k < 12; k++) of.harvest(n.index);
+      await sleep(0.05);
+    }
+    // The gate, witnessed rather than assumed: the tile is STILL greyed, and the
+    // ore that would light it is refused BY NAME while a bare hand holds nothing
+    // but wood and stone.
+    const oreNode = nodes.find((n) => [2, 3, 4].includes(n.kind));
+    const bareOre = oreNode === undefined ? null : of.harvest(oreNode.index);
+    check('bare hands are REFUSED at ore, by name (ToolRequired)',
+      bareOre !== null && bareOre.ok === false
+      && bareOre.refusal !== null && bareOre.refusal !== undefined
+      && bareOre.refusal.code === 1,
+      JSON.stringify(bareOre));
+    check('and the hand furnace is still greyed, because its raw iron is gated',
+      rowOf('furnace:0').affordable === false,
+      JSON.stringify(rowOf('furnace:0')));
+
+    const pickIdx = of.game().recipes
+      .findIndex((r) => r.name === 'Crude pickaxe' && r.craftable);
+    check('the crude pickaxe is craftable from wood and stone alone', pickIdx >= 0,
+      JSON.stringify(of.game().carried));
+    check('and it crafts', pickIdx >= 0 && of.craft(pickIdx) === true);
+    await sleep(0.2);
+    check('a crude pickaxe is in the pack', countOf(/crude pickaxe/i) >= 1,
+      JSON.stringify(of.game().carried));
+
+    // Tooled: the ore kinds only, so the wood already in hand is not re-chopped.
+    for (const n of nodes) {
+      if (![2, 3, 4].includes(n.kind)) continue;
       if (rowOf('furnace:0').affordable) break;
       for (let k = 0; k < 12; k++) of.harvest(n.index);
       await sleep(0.05);
     }
     await sleep(0.4);
+    check('NO furnace was crafted to get here: the pack holds none',
+      countOf(/furnace/i) === 0, JSON.stringify(of.game().carried));
     const carried = of.game().carried ?? [];
     const packBefore = JSON.parse(JSON.stringify(of.buildMenu().rows
       .find((r) => r.id === 'furnace:0')));
     onDemand = { ran: true, carried, packBefore };
-    check('harvesting alone made the hand furnace AFFORDABLE, with no craft',
+    check('harvesting made the hand furnace AFFORDABLE, with no furnace crafted',
       packBefore.affordable === true, JSON.stringify(packBefore));
 
     if (packBefore.affordable === true) {

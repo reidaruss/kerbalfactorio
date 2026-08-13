@@ -34,6 +34,12 @@
 // FAILS if any earlier rung of the chain is broken, which is the right
 // dependency for an acceptance of a progression step to have.
 //
+// AND NOTHING IS MINED OUT OF ORDER EITHER (GP-624). GP-506 gated coal, iron and
+// copper behind a crude pickaxe, so §2 below gathers wood and loose stone with
+// bare hands, crafts the pickaxe out of those two alone, and only then mines. The
+// bare-hand refusal is kept as a NEGATIVE CONTROL on the way past rather than
+// simply avoided, so this file also witnesses the gate it now has to obey.
+//
 // FIVE REFUSING CONTROLS, because "the panel opened after I built a station" is
 // also true of a gate that never refused anything:
 //
@@ -167,7 +173,8 @@
   check('and the research panel is still shut', panelOpen() === false);
 
   // ======================================================================
-  // 2. EARN IT. Harvest, craft a furnace, place it, smelt.
+  // 2. EARN IT. Harvest wood and stone bare-handed, craft the pickaxe, mine the
+  //    ore it unlocks, craft a furnace, place it, smelt.
   //
   //    The budget is per RESOURCE and not per node (GP-611: a node count is
   //    world-gen's to move and it has moved three times). Forty iron and twenty
@@ -190,14 +197,100 @@
   //    what cost the second run. One read per node, and a `break` rather than a
   //    `continue` once the budget is met so the remaining nodes are not walked
   //    at all.
-  step('harvesting');
+  //
+  // GP-624. TWO SWEEPS WITH A TOOL CRAFTED BETWEEN THEM, because ONE sweep over
+  // every kind is no longer legal play. GP-506 made coal, iron and copper
+  // `requiresToolFor` (gameplay.h): a bare-hand swing at them is REFUSED by
+  // name, so the single loop this replaces landed wood and stone, refused every
+  // ore swing it took, never met its per-resource budget, walked all ~749 nodes
+  // for nothing and cascaded roughly 33 failures out of the one line. Wood and
+  // loose stone stay ungated precisely so the pickaxe (Stone x2 + Wood x1) has a
+  // bare-hand path, and that is the order the storyline states: gather wood,
+  // gather stones, craft the pickaxe, THEN mine.
+  //
+  // The swing count is unchanged. Each node is still visited once and paid six
+  // swings; the sweeps merely partition the kinds, and each budgets only the
+  // resources its own kinds can yield, so a met wood budget no longer keeps the
+  // loop walking trees in the hope of iron.
+  const BARE = [0, 1];      // Tree, Rock — requiresToolFor false, bare hands OK
+  const GATED = [2, 3, 4];  // CoalSeam, IronOre, CopperOre — pickaxe or refusal
+  // ONE node report, walked twice. `of.nodes()` is as expensive as `of.game()`
+  // (it is the same full-world build), and the paragraph above is the whole
+  // reason this file cares: two `for (const n of of.nodes())` headers would have
+  // quietly bought back half of what the per-node budget saved.
+  const nodesOnce = of.nodes();
   let harvests = 0;
-  for (const n of of.nodes()) {
-    if (![0, 1, 2, 3, 4].includes(n.kind)) continue;
-    const p = pack();
-    if (!Object.entries(WANT).some(([k2, v]) => (p[k2] ?? 0) < v)) break;
-    for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
-  }
+  // GP-672. A NODE WHOSE OWN RESOURCE IS ALREADY AT BUDGET IS SKIPPED, and that
+  // is a pack-pressure fix rather than a tidy-up. The budget stops the sweep
+  // only when EVERY want is met, so while one scarce resource is still short
+  // every other node on the way keeps paying out: measured 2026-08-13, this run
+  // finished with `Wood 389, Coal 432, Raw iron 378` against wants of 60, 60 and
+  // 55, because raw copper is the scarce one and the walk continued for it. At
+  // 100 to a stack that overshoot is 12 slots where 3 would do, and the pack
+  // reached **19 of 20** by the time the science is crafted (four raws at four
+  // slots each, two ingots, the pickaxe, and the furnace and smelter items both
+  // demolish refunds). One slot of margin, decided by world-gen's node density,
+  // is not a margin. Skipping a satisfied kind costs nothing -- the budget is
+  // still read ONCE per node, which is GP-622's whole finding -- and it takes
+  // the pack to about ten slots while every downstream assertion still has to
+  // be met by the same numbers.
+  const KIND_ITEM = { 0: 'Wood', 1: 'Stone', 2: 'Coal', 3: 'Raw iron', 4: 'Raw copper' };
+  const sweep = (kinds, want) => {
+    for (const n of nodesOnce) {
+      if (!kinds.includes(n.kind)) continue;
+      const p = pack();
+      if (!Object.entries(want).some(([k2, v]) => (p[k2] ?? 0) < v)) break;
+      const item = KIND_ITEM[n.kind];
+      if (item !== undefined && (p[item] ?? 0) >= (want[item] ?? 0)) continue;
+      for (let k = 0; k < 6; ++k) if (of.harvest(n.index).ok) harvests++;
+    }
+  };
+
+  step('harvesting wood and stone, bare-handed');
+  sweep(BARE, { Wood: WANT.Wood, Stone: WANT.Stone });
+  check('the clearing gave up wood to bare hands', have('Wood') > 0, have('Wood'));
+  check('and loose stone to bare hands', have('Stone') > 0, have('Stone'));
+
+  // THE REFUSAL ITSELF, KEPT AS A NEGATIVE CONTROL rather than merely stepped
+  // around. Without it, "the ore came out after I crafted a pickaxe" is equally
+  // true of a gate that was never enforced in this world at all, and this file's
+  // whole subject is gates that have to be shown refusing.
+  const oreNode = nodesOnce.find((n) => GATED.includes(n.kind));
+  check('the clearing has a tool-gated node in it', oreNode !== undefined,
+    JSON.stringify([...new Set(nodesOnce.map((n) => n.kind))]));
+  const remainingOf = (i) => of.nodes().find((n) => n.index === i)?.remaining ?? null;
+  const oreRemaining0 = oreNode === undefined ? null : remainingOf(oreNode.index);
+  const bareTry = oreNode === undefined ? null : of.harvest(oreNode.index);
+  check('NEGATIVE CONTROL: bare hands are REFUSED at ore, by name, not by silence',
+    bareTry !== null && bareTry.ok === false
+    && bareTry.refusal !== null && bareTry.refusal !== undefined
+    && bareTry.refusal.code === 1,   // HarvestRefusal::ToolRequired
+    JSON.stringify(bareTry));
+  check('and the refused node was left untouched',
+    oreNode !== undefined
+    && Math.abs((remainingOf(oreNode.index) ?? -1) - (oreRemaining0 ?? -2)) < 1e-6,
+    `${oreRemaining0} -> ${oreNode === undefined ? 'n/a' : remainingOf(oreNode.index)}`);
+
+  // THE PICKAXE, out of wood and stone alone. Proven BEHAVIOURALLY, the way
+  // `probes/pickaxegate.js` proves it: nothing gated has yielded anything yet in
+  // this run, so a pack holding zero raw iron that still crafts a pickaxe cannot
+  // have paid for it in ore.
+  const rawIronBeforePick = have('Raw iron');
+  const pickIdx = of.game().recipes
+    .findIndex((r) => r.name === 'Crude pickaxe' && r.craftable);
+  check('the crude pickaxe is craftable from what bare hands gathered',
+    pickIdx >= 0, JSON.stringify(pack()));
+  check('and it crafts', pickIdx >= 0 && of.craft(pickIdx) === true);
+  await sleep(0.2);
+  check('a crude pickaxe is in the pack', have('Crude pickaxe') >= 1,
+    JSON.stringify(pack()));
+  check('and no ore was spent on it, because none had been mined',
+    rawIronBeforePick === 0 && have('Raw iron') === 0,
+    `${rawIronBeforePick} -> ${have('Raw iron')}`);
+
+  step('harvesting the gated kinds, tooled');
+  sweep(GATED, { Coal: WANT.Coal, 'Raw iron': WANT['Raw iron'],
+    'Raw copper': WANT['Raw copper'] });
   step(`harvested ${harvests} swings`);
   log.push(`stocked in ${harvests} swings: ${JSON.stringify(pack())}`);
   check('the clearing had raw iron in it', have('Raw iron') >= 40, have('Raw iron'));
@@ -508,13 +601,59 @@
   const rows = () => [...document.querySelectorAll('#of-panel .of-recipe')];
   const rowNamed = (t) => rows().find((e) =>
     (e.querySelector('.nm')?.textContent ?? '').includes(t));
+  // WHAT THE CRAFT PANEL AND /core BOTH SAY, CAPTURED BEFORE THE CLICKS.
+  //
+  // GP-672, and it is GP-622's own lesson turned on this file's last section.
+  // A run measured 2026-08-13 reported `real DOM clicks made science: 0 clicks,
+  // 0 packs` and NOTHING ELSE, which is compatible with at least five different
+  // causes: no rows rendered at all, the row rendered under another name, the
+  // button disabled by a research lock, the button disabled because /core
+  // refuses the craft (`InputsShort` or `PackFull`), or a live button whose
+  // click the client drops. Distinguishing those cost a full hour-long re-run,
+  // because the probe recorded a number instead of a state. It records the
+  // state now: the DOM's own count and classes beside /core's `block` code for
+  // the same recipe, so the next failure names its cause in the report.
+  const SCIENCE = 'Automation science';
+  const coreRow = () => (G().recipes ?? []).find((r) => r.name === SCIENCE) ?? null;
+  const slotsUsed = () => Object.values(pack())
+    .reduce((a, c) => a + Math.ceil(c / 100), 0);
+  const craftDiag = (when) => {
+    const el = rowNamed(SCIENCE);
+    const btn = el?.querySelector('button') ?? null;
+    return {
+      when,
+      panelOpen: G().panelOpen,
+      domRows: rows().length,
+      names: rows().map((e) => e.querySelector('.nm')?.textContent ?? '?').slice(0, 24),
+      scienceRowFound: el !== undefined && el !== null,
+      scienceRowClass: el?.className ?? null,
+      scienceLockText: el?.querySelector('.lock')?.textContent ?? null,
+      buttonFound: btn !== null,
+      buttonDisabled: btn?.disabled ?? null,
+      buttonText: btn?.textContent ?? null,
+      // /core's answer to the same question. `block` is a CraftBlock code:
+      // 0 none, 1 no recipe, 2 inputs short, 3 pack full.
+      core: coreRow(),
+      slotsUsed: slotsUsed(),
+      pack: pack(),
+    };
+  };
+  const diagBefore = craftDiag('before the science clicks');
+  log.push(`science panel before: ${JSON.stringify({
+    domRows: diagBefore.domRows, found: diagBefore.scienceRowFound,
+    cls: diagBefore.scienceRowClass, disabled: diagBefore.buttonDisabled,
+    coreBlock: diagBefore.core?.block, craftable: diagBefore.core?.craftable,
+    slotsUsed: diagBefore.slotsUsed })}`);
   let made = 0;
   for (let i = 0; i < 14; ++i) {
-    if (click(rowNamed('Automation science')?.querySelector('button'))) made++;
+    if (click(rowNamed(SCIENCE)?.querySelector('button'))) made++;
     await sleep(0.1);
   }
-  const sci = have('Automation science');
-  check('real DOM clicks made science', sci >= 10, `${made} clicks, ${sci} packs`);
+  const sci = have(SCIENCE);
+  const diagAfter = craftDiag('after the science clicks');
+  check('real DOM clicks made science', sci >= 10,
+    `${made} clicks, ${sci} packs; before=${JSON.stringify(diagBefore)}`
+    + ` after=${JSON.stringify(diagAfter)}`);
   await press('pack');
   await sleep(0.2);
 
@@ -577,5 +716,11 @@
     stations: stations(),
     gate: gate(),
     mode: G().mode,
+    // GP-672. The craft panel's state on both sides of §6's clicks, in the
+    // report rather than only inside a failure string, so it is readable on a
+    // GREEN run too. A diagnostic that only exists when something breaks cannot
+    // establish what "working" looked like the day before it broke.
+    science: { before: diagBefore, after: diagAfter, made, sci },
+    carried: G().carried,
   };
 })()
