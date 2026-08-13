@@ -80,6 +80,7 @@ import { SITE_KIND_RUIN, Sites, type SiteRow } from '../world/Sites.js';
 import { boundsOf } from './StructureBody.js';
 import { findNode, loadGlb, selectLod } from '../assets/Loaders.js';
 import { handSolid, learnProxies } from './FactorySolids.js';
+import { attachSurface, familyForMaterial } from '../render/instancing/Surfaces.js';
 import type { Enemies, EnemyHost } from './Enemies.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Solid, StructureBodies } from './StructureBody.js';
@@ -141,6 +142,11 @@ export class RuinSites {
   private points = new Map<string, THREE.Vector3>();
   private readonly p = new THREE.Vector3();
   private readonly yAxis = new THREE.Vector3(0, 1, 0);
+  /** Materials already registered with Surfaces, `PlayerRig.surfaced`'s own
+   *  reason: the template is cloned per site, `clone(true)` SHARES the
+   *  material rather than copying it (three's own contract), so a second
+   *  ruin would otherwise register and bind the same material a second time. */
+  private readonly surfaced = new Set<THREE.Material>();
 
   constructor(
     private readonly M: OfCoreModule,
@@ -234,6 +240,19 @@ export class RuinSites {
       if (m.isMesh !== true) return;
       m.castShadow = true;
       m.receiveShadow = true;
+      // WG-166's asset ships its own authored material roles (`OF_Rock`,
+      // `OF_Soil`, `OF_LeafDry`, ...) and, until this line, nothing ever asked
+      // Surfaces for the family they belong to: the ruin drew with none of
+      // the five shipped map slots wired, the one gap `PlayerRig.ts`'s own
+      // header names as "every batched path and no per-object one" left
+      // uncaught because this file is ALSO a per-object path. Same fix,
+      // same shape: register each unique material once, by its own role.
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        if (this.surfaced.has(mat)) continue;
+        this.surfaced.add(mat);
+        attachSurface(mat as THREE.MeshStandardMaterial,
+          familyForMaterial(mat), `ruin:${mat.name}`);
+      }
     });
     group.add(clone);
     this.group.add(group);
