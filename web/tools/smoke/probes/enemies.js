@@ -88,31 +88,83 @@
   // =====================================================================
   // 1. THE CAUSE. Six smelters and three belts, placed through the build
   //    path a player uses. The belts are control 1.
+  //
+  // GP-690. THE SWEEP PLACES UNTIL IT HAS THE COUNT rather than pressing `use`
+  // a fixed number of times, and the difference is the first of this file's
+  // three reds. It was written on 2026-07-27 against a 2.00 m smelter, where a
+  // 21-degree step around a 3.7 m ring cleared the housing. FS-73 took
+  // `smelter.glb` and `FOOTPRINT.smelter` to 4.00 m the NEXT DAY (aea0d2c), so
+  // ten presses landed THREE machines and seven came back
+  // `too close to #1 smelter`. Measured: successes at ring cells (1,2), (5,5)
+  // and (9,2), every attempt between them inside the 4-cell box
+  // `footprintsOverlap` refuses. THE REFUSAL WAS RIGHT AND THE FIXTURE WAS A
+  // DAY STALE, and nobody could see it because the unescaped apostrophe at
+  // line 128 meant this file had never parsed.
+  //
+  // A re-tuned angle would be stale again the next time a mesh changes, so the
+  // angle is only a starting point and the LOOP is the contract: press, widen
+  // the ring when one is full, and fail loudly if the count never arrives.
+  // Belts get their own ring because a 1-cell belt within two cells of a 4 m
+  // housing stands half inside it and is refused (FS-65's own arithmetic), so
+  // the two kinds cannot share one.
   // =====================================================================
   const yaw = of.world().observer.yawDeg;
-  const placeSome = async (index, n, from) => {
-    for (let i = 0; i < n; i++) {
-      of.build(index);
-      await sleep(0.08);
-      of.look(yaw + (from + i) * 21, -24);
-      await sleep(0.18);
-      of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
-      await sleep(0.32);
-    }
+  const countOf = (kind) => {
+    let n = 0;
+    for (const b of (G().factory.list ?? [])) if (b.kind === kind) n++;
+    return n;
   };
-  await placeSome(3, 10, 0);
+  /** Every refusal the sweep walked into, with the sentence the game gave for
+   *  it. A refusal that arrives with no sentence is the exact failure
+   *  `FactoryRefusal.ts` exists to stop, so they are collected rather than
+   *  counted: an occupancy rule working and a placement defect must not read
+   *  alike. */
+  const refused = [];
+  const placeUntil = async (index, kind, want, stepDeg, rings, budget) => {
+    let tried = 0;
+    for (const pitch of rings) {
+      for (let a = 0; a < 360 && countOf(kind) < want && tried < budget;
+        a += stepDeg) {
+        of.build(index);
+        await sleep(0.08);
+        of.look(yaw + a, pitch);
+        await sleep(0.18);
+        // The ghost's own verdict, read on the tick the button goes down, so
+        // the reason belongs to THIS press rather than to a later frame.
+        const ghost = G().build.ghost;
+        of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
+        await sleep(0.32);
+        tried++;
+        if (ghost !== null && ghost.ok !== true) {
+          refused.push({ kind, aDeg: a, pitch, why: ghost.reason });
+        }
+      }
+      if (countOf(kind) >= want) break;
+    }
+    return tried;
+  };
+  const smelterPresses = await placeUntil(3, 'smelter', 6, 62,
+    [-18, -24, -13, -30], 40);
   // A full derive window (SYNC_TICKS = 60) before reading, so what is compared
   // is two settled lists rather than one settled and one mid-window.
   await sleep(1.2);
   const afterSmelters = E();
-  await placeSome(2, 3, 11);
+  const beltPresses = await placeUntil(2, 'belt', 3, 31,
+    [-13, -30, -24, -18], 40);
   await sleep(1.2);
   const afterBelts = E();
   const kinds = {};
   for (const b of (G().factory.list ?? [])) kinds[b.kind] = (kinds[b.kind] ?? 0) + 1;
-  log.push(`placed ${JSON.stringify(kinds)}`);
-  check('smelters went down', (kinds.smelter ?? 0) >= 5, JSON.stringify(kinds));
-  check('belts went down too', (kinds.belt ?? 0) >= 1, JSON.stringify(kinds));
+  log.push(`placed ${JSON.stringify(kinds)} in ${smelterPresses}+${beltPresses} `
+    + `presses, ${refused.length} refused: `
+    + `${JSON.stringify(refused.map((r) => r.why))}`);
+  check('SIX smelters went down', (kinds.smelter ?? 0) === 6,
+        `${JSON.stringify(kinds)} after ${smelterPresses} presses`);
+  check('and three belts', (kinds.belt ?? 0) === 3,
+        `${JSON.stringify(kinds)} after ${beltPresses} presses`);
+  check('and every refusal on the way said WHY, in the player\'s own terms',
+        refused.every((r) => typeof r.why === 'string' && r.why.length > 0),
+        JSON.stringify(refused.slice(0, 6)));
 
   if (hostile) {
     const em = afterBelts.emitters;
@@ -228,10 +280,24 @@
     + `${Math.round(performance.now() - t0)} ms wall`);
   check('the swarm CLOSED on the base at the catalogue speed',
         speed > e2.types.rows[0].speedMps * 0.8, `${speed.toFixed(3)} m/s`);
+  // GP-692. THE POOL DRAWS live + STANDING NESTS - the ones a rig has claimed,
+  // and every term is needed. `enemies.nests` counts every nest /core holds
+  // including dead ones and only a standing one is drawn, and RN-123 (c96af0a,
+  // two days after this file was written) PROMOTES the nearest MAX_RIGS
+  // creatures into skinned rigs which release their batch slot on the frame
+  // they are claimed. Measured at the end of a fight: instances 36, live 40,
+  // nests 4, claimed 8. The pool was never lying and nothing was double
+  // counted; the identity simply gained a term and this file did not have it.
+  // Asserted as an EQUALITY rather than the old `>=`, because `>=` would have
+  // been just as green with the batch leaking a slot per corpse, which is the
+  // DW-28 ceiling this whole section is about.
+  const liveNests = () => E().nestRows.filter((n) => n.health > 0).length;
+  const drawn = () => E().swarm.live + liveNests() - E().spiders.claimed;
   const pool = E().ceilings.pool;
   check('and every body is drawn, with nothing refused',
-        pool.instances >= e2.swarm.live && pool.refused === 0,
-        JSON.stringify(pool));
+        pool.instances === drawn() && pool.refused === 0,
+        JSON.stringify({ pool, live: E().swarm.live, nests: liveNests(),
+          claimed: E().spiders.claimed }));
   // DW-28. The pool STARTS below one wave's roster on purpose (see
   // ENEMY_POOL_START), so a real fight exercises the doubling rather than
   // leaving it as code nobody has run.
@@ -328,37 +394,79 @@
   const k0 = E().swarm;
   const shots = [];
   for (let k = 0; k < 14; k++) {
-    const rows = of.enemies('near', 1);
-    if (rows.length === 0) break;
-    const at = await aimAt(rows[0].pos);
+    // THE WHOLE LIVE LIST, before and after, and not just the body this loop
+    // aimed at. See GP-691 below: the two are not always the same body, and a
+    // probe that only watches its own target cannot tell a round that killed
+    // something else from a round that killed nothing.
+    const all0 = of.enemies('near', 4000);
+    if (all0.length === 0) break;
+    const was = new Map(all0.map((c) => [c.id, c]));
+    const at = await aimAt(all0[0].pos);
     const b = G().gun;
     of.input.tape([{ hold: 6, actions: ['use'] }, { hold: 4, keys: [] }]);
     await march(0.5);
     const a = G().gun;
-    shots.push({ id: rows[0].id, distM: +at.distM.toFixed(2),
-      hit: a.shotsHit - b.shotsHit, gnd: a.groundHits - b.groundHits });
+    const all1 = of.enemies('near', 4000);
+    const still = new Set(all1.map((c) => c.id));
+    const hurt = all1.filter((c) => was.has(c.id) && was.get(c.id).hp !== c.hp)
+      .map((c) => ({ id: c.id, name: c.name, prov: c.provenance,
+        lost: +(was.get(c.id).hp - c.hp).toFixed(2), left: c.hp }));
+    const gone = all0.filter((c) => !still.has(c.id))
+      .map((c) => ({ id: c.id, name: c.name, prov: c.provenance, had: c.hp }));
+    shots.push({ aimed: all0[0].id, aimedName: all0[0].name,
+      distM: +at.distM.toFixed(2), fired: a.shotsFired - b.shotsFired,
+      hit: a.shotsHit - b.shotsHit, gnd: a.groundHits - b.groundHits,
+      dmg: +(a.damageDealt - b.damageDealt).toFixed(2), hurt, gone });
   }
   const g1 = G().gun;
   const k1 = E().swarm;
+  const fatal = shots.filter((r) => r.gone.length === 1);
   log.push(`gun ${g0.shotsFired}->${g1.shotsFired} fired, `
     + `${g0.shotsHit}->${g1.shotsHit} hit, killed ${k0.killed}->${k1.killed}, `
-    + `live ${k0.live}->${k1.live}`);
+    + `live ${k0.live}->${k1.live}, ${fatal.length}/${shots.length} rounds fatal`);
   log.push(`aimed shots ${JSON.stringify(shots)}`);
   check('the trigger fired', g1.shotsFired > g0.shotsFired,
         `${g0.shotsFired} -> ${g1.shotsFired}`);
-  check('THE GUN HIT WHAT IT WAS AIMED AT, every time',
-        shots.length > 6 && shots.every((r) => r.hit === 1),
-        JSON.stringify(shots));
-  check('AND KILLED THEM: 22 damage against 15 hp is one round, one Skitterer',
-        k1.killed - k0.killed === shots.filter((r) => r.hit === 1).length,
-        `${k0.killed} -> ${k1.killed} over ${shots.length} aimed rounds`);
+  check('EVERY ROUND LANDED IN A BODY, none in the dirt',
+        shots.length > 6
+        && shots.every((r) => r.fired === 1 && r.hit === 1 && r.gnd === 0),
+        JSON.stringify(shots.map((r) => [r.fired, r.hit, r.gnd])));
+  // GP-691, the second red, and it was never "0 kills": the detail string read
+  // `0 -> 11 over 14 aimed rounds` and the 0 in it is `k0.killed`, the counter
+  // BEFORE the volley. Fourteen rounds landed, eleven bodies died, and the
+  // three that did not are one body: `Weapon.fire` takes the NEAREST sphere the
+  // ray enters, not the creature this loop picked, and a 75 hp Ravager standing
+  // 0.25 m off the line at 4.12 m is 0.02 m nearer than the 15 hp Skitterer at
+  // 4.14 m that was aimed at. Traced: rounds 5, 6 and 7 all went into it,
+  // 75 -> 53 -> 31 -> 9, and round 8 finished it. So "one round, one Skitterer"
+  // was an assumption about the ROSTER, and the roster stopped being uniform.
+  //
+  // What replaces it is stronger, not weaker: the old line could not tell an
+  // overkilled Skitterer from a wounded Ravager because it never looked at a
+  // body. These three look at every body on every round.
+  check('and each round put its 22 points into EXACTLY ONE body',
+        shots.every((r) => r.dmg === 22 && r.hurt.length + r.gone.length === 1),
+        JSON.stringify(shots.filter((r) => r.dmg !== 22
+          || r.hurt.length + r.gone.length !== 1)));
+  check('a body that SURVIVED a round lost exactly that round and no more',
+        shots.filter((r) => r.hurt.length === 1)
+          .every((r) => r.hurt[0].lost === 22),
+        JSON.stringify(shots.filter((r) => r.hurt.length === 1)
+          .map((r) => r.hurt[0])));
+  check('AND THE KILLS ARE THE ROUNDS THAT EMPTIED A BODY, no more, no less',
+        k1.killed - k0.killed === fatal.length,
+        `${k0.killed} -> ${k1.killed} over ${shots.length} rounds, `
+        + `${fatal.length} of them fatal`);
+  check('and nothing died with hp left over',
+        fatal.every((r) => r.gone[0].had <= 22),
+        JSON.stringify(fatal.filter((r) => r.gone[0].had > 22).map((r) => r.gone[0])));
   check('a killed creature stops being shootable',
-        E().shootables === k1.live + E().nests,
-        `${E().shootables} shootable, ${k1.live} live + ${E().nests} nests`);
+        E().shootables === k1.live + liveNests(),
+        `${E().shootables} shootable, ${k1.live} live + ${liveNests()} nests`);
   check('and its instance slot went back to the pool',
-        E().ceilings.pool.instances === k1.live + E().nests,
+        E().ceilings.pool.instances === drawn(),
         JSON.stringify({ pool: E().ceilings.pool.instances, live: k1.live,
-          nests: E().nests }));
+          nests: liveNests(), claimed: E().spiders.claimed }));
 
   // =====================================================================
   // 5. THE NEST. The only thing whose death moves the difficulty curve
