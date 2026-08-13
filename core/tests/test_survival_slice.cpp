@@ -93,10 +93,10 @@ TEST(survival_content_registers_additively) {
 
   CHECK(RegisterSurvivalContent(reg));
 
-  // 22 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
-  // + 6 structural, the fifth being GP-57's launch pad and the sixth D-019's
-  // research station) appended.
-  CHECK(reg.allItems().size() == 12 + 22);
+  // 23 survival items (7 raw + 2 ingot + 2 tool + 2 machine + 3 electrification
+  // + 7 structural, the fifth being GP-57's launch pad, the sixth D-019's
+  // research station and the seventh GP-533's scanning antenna) appended.
+  CHECK(reg.allItems().size() == 12 + 23);
   // 2 smelting recipes appended.
   CHECK(reg.allRecipes().size() == 5 + 2);
 
@@ -137,7 +137,7 @@ TEST(survival_content_registers_additively) {
 
   // Re-registering is idempotent (no duplicates added).
   RegisterSurvivalContent(reg);
-  CHECK(reg.allItems().size() == 12 + 22);
+  CHECK(reg.allItems().size() == 12 + 23);
   CHECK(reg.allRecipes().size() == 5 + 2);
 }
 
@@ -974,10 +974,12 @@ TEST(patch_hand_mining_is_one_pool_and_gated_not_deadlocked) {
 // =============================================================================
 TEST(structure_defs_are_data_with_pinned_ids_and_costs) {
   const std::vector<StructureDef> defs = structureDefs();
-  // D-019 appends the research station as the sixth row. Asserted as a count
-  // AND, below, by KIND at each index, because a count alone cannot tell an
-  // append from a renumbering and the ids in this block are pinned.
-  CHECK(defs.size() == 6);
+  // D-019 appends the research station as the sixth row, and GP-533 appends
+  // the scanning antenna as the seventh (test_scanning_antenna.cpp carries
+  // that row's own dedicated assertions). Asserted as a count AND, below, by
+  // KIND at each index, because a count alone cannot tell an append from a
+  // renumbering and the ids in this block are pinned.
+  CHECK(defs.size() == 7);
 
   // Pinned ids: items 0x0040.. , entity TypeIds 0x40.. (ASSET-SPECS §4).
   CHECK(defs[0].kind == StructureKind::Foundation);

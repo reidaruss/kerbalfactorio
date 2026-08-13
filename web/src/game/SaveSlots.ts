@@ -238,7 +238,7 @@ export class SaveSlots {
   private snapshotOf(g: Gameplay): SaveSlot {
     return snapshot(g.core, g.game, g.field, g.factory, g.machines, g.seed,
       g.bodyId, g.bodyHandle, g.ports, g.oreField, g.structures, g.pads,
-      g.stations,
+      g.stations, g.antennas,
       g.hotbar, g.mode.mode,
       saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
   }

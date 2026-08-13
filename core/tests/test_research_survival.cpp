@@ -342,10 +342,16 @@ TEST(survival_armour_is_gated_and_its_costs_are_not_transcribed) {
 // -----------------------------------------------------------------------------
 TEST(survival_tree_shape_and_id_space) {
   TechTree tree = survivalTechTree();
-  CHECK(tree.allTechs().size() == 7);
+  // GP-533 appends the scanning antenna as the eighth tech
+  // (test_scanning_antenna.cpp carries its own dedicated assertions).
+  CHECK(tree.allTechs().size() == 8);
 
   CHECK(tree.depthOf(techs::Electrification) == 0);
   CHECK(tree.depthOf(techs::Metallurgy) == 0);
+  // GP-533. NO PREREQ, deliberately: the antenna is researched off the
+  // station alone, before Electrification even exists, because investigating
+  // the ruins it reveals is what the story line unlocks electricity FROM.
+  CHECK(tree.depthOf(techs::ScanningAntenna) == 0);
   CHECK(tree.depthOf(techs::ElectricSmelting) == 1);
   CHECK(tree.depthOf(techs::PlateArmour) == 1);
   CHECK(tree.depthOf(techs::FlightAutopilot) == 1);

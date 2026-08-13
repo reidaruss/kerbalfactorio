@@ -12,7 +12,6 @@
 // AND WHAT IS NOT SAVED IS SAID OUT LOUD. `apply` returns a ledger with every
 // unit it could not bring back, so "my fuel is gone" is a documented number
 // rather than a mystery.
-
 import * as THREE from 'three';
 import { SAVE_VERSION, chestStore, type SaveMachine,
   type SaveProgress, type SaveSlot, type SaveStation } from './SaveGame.js';
@@ -32,6 +31,8 @@ import { restoreStructures, saveParts, saveSites } from './StructureSave.js';
 import { restorePads, savePads } from './LaunchPadSave.js';
 import type { LaunchPads } from './LaunchPad.js';
 import type { ResearchStations } from './ResearchStations.js';
+import type { Antennas } from './Antennas.js';
+import { saveAntennas, restoreAntennas, rebuildRevealMarkers } from './AntennaSave.js';
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort } from './VoxelSave.js';
 import { keptWorlds } from './SaveWorlds.js';
@@ -73,6 +74,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
                           *  it is the same kind of thing: a placed structure
                           *  whose whole state is a transform. */
                          stations: ResearchStations,
+                         antennas: Antennas,   // GP-533: `stations`' own reason.
                          hotbar: Hotbar, mode: GameMode,
                          progress: SaveProgress | undefined,
                          health: HealthBook,
@@ -160,6 +162,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
       pos: [st.pos.x, st.pos.y, st.pos.z],
       quat: [st.quat.x, st.quat.y, st.quat.z, st.quat.w],
     })),
+    antennas: saveAntennas(antennas),   // GP-533: same shape, same reason.
     hotbar: hotbar.serialize(),
     progress,
     // GP-65. The WOUNDS, and only the wounds: the book is the one authority on
@@ -241,6 +244,9 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     scratchU8(M, poiBytes.length).set(poiBytes);
     poi = P._of_poi_load(g.bodyHandle);
   }
+  // GP-533. A drawable consequence of the poi bytes just loaded, not its own
+  // saved fact; see AntennaSave.ts's header.
+  rebuildRevealMarkers(M, g.bodyHandle);
 
   // 1. THE ORE PATCHES, and then the standalone nodes. Both go back through the
   //    SAME extraction call the live world uses (of_gp_patch_drain /
@@ -338,6 +344,9 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     if (st !== null) restoredStations++;
   }
 
+  // 5b-iii. GP-533, THE SCANNING ANTENNAS, `stations`' own order and reason.
+  const restoredAntennas = restoreAntennas(g.antennas, slot.antennas);
+
   // 5c. WHAT IS BROKEN (GP-65). LAST of the world steps, because every
   //     population has to be standing before the book can be told what is wrong
   //     with it: a wound applied earlier would land on a key nothing answers to
@@ -364,7 +373,7 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
 
   return {
     buildings, structures: restoredParts, pads: restoredPads,
-    stations: restoredStations,
+    stations: restoredStations, antennas: restoredAntennas,
     machines: restoredMachines, nodesDepleted: depleted,
     rocks: rocksApplied,
     rocksPending: g.rocks.stats().pending,

@@ -22,6 +22,10 @@ export interface RestoreLedger {
    *  because whether one came back is now the difference between a world whose
    *  research key works and one whose does not. */
   stations: number;
+  /** GP-533: scanning antennas brought back, `stations`' own reason: whether
+   *  one came back is the difference between a world with a coverage antenna
+   *  standing and one with none. */
+  antennas: number;
   machines: number;
   nodesDepleted: number;
   patchesDepleted: number;

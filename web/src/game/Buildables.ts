@@ -67,6 +67,8 @@ export interface BuildRow {
  *  constant because `Buildables` and the probe both spell it and a literal in
  *  two files is a second authority on a name. */
 export const STATION_ID = 'researchstation';
+/** GP-533. The scanning antenna's own id, the station's own reason. */
+export const ANTENNA_ID = 'scanningantenna';
 
 const GROUP: Partial<Record<string, string>> = {
   foundation: 'Structures', floor: 'Structures', wall: 'Structures',
@@ -99,6 +101,9 @@ export function buildRows(g: Gameplay): BuildRow[] {
   // (Hotbar.ts says why it has no bar slot), which is what makes the row a
   // requirement rather than a convenience.
   rows.push(stationRow(g, held.kind === 'station'));
+  // GP-533. THE SCANNING ANTENNA, the station's own reason: this menu is its
+  // only route into the hand (Hotbar.ts says why it has no bar slot).
+  rows.push(antennaRow(g, held.kind === 'antenna'));
   for (const tier of [0, 1]) rows.push(handRow(g, tier, held.kind === 'furnace'));
   return rows;
 }
@@ -109,6 +114,7 @@ export function contentFor(id: string): SlotContent | null {
     return { kind: 'furnace', tier: Number(id.slice(8)) };
   }
   if (id === STATION_ID) return { kind: 'station' };
+  if (id === ANTENNA_ID) return { kind: 'antenna' };
   return isBuildable(id) ? { kind: 'part', part: id } : null;
 }
 
@@ -167,6 +173,29 @@ function stationRow(g: Gameplay, inHand: boolean): BuildRow {
     needs: (d?.cost ?? []).map((c) => ingredient(g, c.item, c.count)),
     affordable: g.stations.canAfford(),
     lockedBy: '', inHand,
+  };
+}
+
+/**
+ * GP-533. THE SCANNING ANTENNA.
+ *
+ * Shaped exactly like `stationRow`, with the one difference the two
+ * `gameplay.h` comments already state: the station may never be
+ * research-gated (it is the key to the screen that gates everything else) and
+ * the antenna is an ORDINARY gated item, unlocked by its own tech
+ * (`techs::ScanningAntenna`). `lockedBy` therefore reads `lockOf`, exactly as
+ * `padRow` does, rather than the station's own hard-coded `''`.
+ */
+function antennaRow(g: Gameplay, inHand: boolean): BuildRow {
+  const d = g.antennas.definition;
+  const item = d?.item ?? 0;
+  return {
+    id: ANTENNA_ID, label: 'scanning antenna',
+    icon: g.icons.forId(item), group: 'Production',
+    cost: g.antennas.costText(),
+    needs: (d?.cost ?? []).map((c) => ingredient(g, c.item, c.count)),
+    affordable: g.antennas.canAfford(),
+    lockedBy: lockOf(g, item), inHand,
   };
 }
 

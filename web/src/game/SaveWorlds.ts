@@ -76,6 +76,12 @@ export const WORLD_KEYS = [
   // is standing on Cinder, because it is not there. That is the same answer
   // `pads` and `structures` already give about a launch site and a base.
   'stations',
+  // GP-533. BODY-SCOPED for `stations`' own reason, verbatim: an antenna's
+  // `pos` is body-frame metres on the body it was built on, and the ruins it
+  // revealed are `poi` (already on this list) on that same body -- an antenna
+  // left global would follow the player to the moon and stand at the moon's
+  // centre, exactly as an un-classified station would have.
+  'antennas',
 ] as const;
 
 export type WorldKey = typeof WORLD_KEYS[number];

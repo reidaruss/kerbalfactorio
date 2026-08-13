@@ -156,6 +156,9 @@ export function gameplayApi(s: Services, loop: Loop) {
      */
     stations: () => s.gameplay?.stations.report() ?? null,
 
+    /** GP-533. Same shape as `stations` above, and for the same reasons. */
+    antennas: () => s.gameplay?.antennas.report() ?? null,
+
     /**
      * DW-31. READ-ONLY on purpose: there is no `sandbox(true)`.
      *

@@ -82,7 +82,12 @@ const StructureDef* stationDef() {
 // -----------------------------------------------------------------------------
 TEST(research_station_is_appended_to_the_structural_set) {
   const std::vector<StructureDef> defs = structureDefs();
-  CHECK(defs.size() == 6);
+  // GP-533 appended a SEVENTH row (the scanning antenna) after this file was
+  // written; bumped here rather than left to rot, because "6" silently
+  // passing over an inserted row is exactly the ABI-change-with-no-compile-
+  // error hazard the comment below is naming. See test_scanning_antenna.cpp
+  // for that row's own assertions.
+  CHECK(defs.size() == 7);
 
   // NOTHING MOVED. This is the whole of the "no ABI change" claim: the browser
   // reads these by index through `of_gp_structure_info`, so an insert rather
@@ -94,6 +99,7 @@ TEST(research_station_is_appended_to_the_structural_set) {
   CHECK(defs[3].kind == StructureKind::Door);
   CHECK(defs[4].kind == StructureKind::LaunchPad);
   CHECK(defs[5].kind == StructureKind::ResearchStation);
+  CHECK(defs[6].kind == StructureKind::ScanningAntenna);
   CHECK(defs[4].item == sitems::LaunchPad);
   CHECK(defs[4].typeId == stypes::LaunchPad);
 

@@ -24,7 +24,11 @@ import type { BuildRay } from './BuildMode.js';
 import type { Placed } from './Factory.js';
 import type { Machine } from './Machines.js';
 import type { ResearchStation } from './ResearchStations.js';
+import type { ScanAntenna } from './Antennas.js';
 import type { StructurePart } from './Structures.js';
+import { Sites } from '../world/Sites.js';
+import { markerRegistry } from './MarkerRegistry.js';
+import { markerFor } from './PoiMarkers.js';
 
 /** The two panel views, with the item pictures bound in one place. */
 export function slots(g: Gameplay) {
@@ -168,6 +172,90 @@ export function placeStation(g: Gameplay, ray: BuildRay): void {
 }
 
 /**
+ * GP-533. TIER 1: how far from the antenna's own mast a build reveals ruins.
+ *
+ * `story_line_outline_v1.txt` says "upon building the scanning antenna it
+ * shows the location of nearby ruins" — the FORGE ruin sits 700 to 1400 m from
+ * SPAWN (`poi.h`'s `forgeSpecs` comment), so this radius has to clear that band
+ * from wherever the antenna actually stands, not from spawn itself. A player
+ * builds the antenna near the base they already have, which by the time they
+ * have run belts and smelting and raised a research station is not guaranteed
+ * to be AT spawn, so the margin is generous rather than exact: 2,500 m clears
+ * the ruin's own 1,400 m outer edge with 1,100 m of slack for how far the base
+ * has crept from the landing point. A later antenna UPGRADE
+ * (`story_line_outline_v1.txt`'s next rung, "the solar system map will be
+ * revealed") is a SECOND, larger tier and is deliberately not this constant.
+ */
+const ANTENNA_REVEAL_RADIUS_M = 2500;
+
+/** GP-533. THE ONE-SHOT REVEAL a successful antenna placement triggers:
+ *  `of_poi_near` at the tier radius around the antenna's OWN position, then
+ *  `of_poi_mark_known` on every hit -- both already-shipped ABI 24 exports
+ *  (WG-151), so this needs no core change of its own. Idempotent by
+ *  construction: `markKnown` returns false and `MarkerRegistry.add` simply
+ *  overwrites for a site a previous antenna (or this one, restored from a
+ *  save) already revealed, so calling this on every placement is safe and a
+ *  second antenna elsewhere legitimately extends coverage rather than
+ *  double-counting. Returns how many sites were NEWLY revealed, for the toast.
+ */
+function revealNearbySites(g: Gameplay, at: ScanAntenna): number {
+  const sites = new Sites(g.core, g.bodyHandle);
+  if (!sites.live) return 0;
+  const bodyRadiusM = g.core._of_body_radius(g.bodyHandle);
+  if (!(bodyRadiusM > 0)) return 0;
+  const r = Math.hypot(at.pos.x, at.pos.y, at.pos.z) || 1;
+  const dir = { x: at.pos.x / r, y: at.pos.y / r, z: at.pos.z / r };
+  const cosHalfAngle = Math.cos(ANTENNA_REVEAL_RADIUS_M / bodyRadiusM);
+  const hits = sites.near(dir, cosHalfAngle, 64);
+  let revealed = 0;
+  for (const i of hits) {
+    const row = sites.row(i);
+    if (row === null) continue;
+    if (!sites.markKnown(row)) continue;   // already known: not NEW
+    revealed++;
+    markerRegistry.add(markerFor(row));
+  }
+  return revealed;
+}
+
+/**
+ * GP-533. Put a scanning antenna on the ground ahead of the eye.
+ *
+ * `Antennas.place` owns the RULE, this owns the SENTENCE (`placeStation`'s own
+ * split), plus the one thing the station never had to do: fire the one-shot
+ * reveal and say what it found.
+ */
+export function placeAntenna(g: Gameplay, ray: BuildRay): void {
+  if (g.mode.researchGated && g.antennas.definition !== null
+      && !g.progress.research.itemAvailable(g.antennas.definition.item)) {
+    const tech = g.progress.research.techForItem(g.antennas.definition.item)?.name
+      ?? 'a technology';
+    g.hud.flash(`scanning antenna needs ${tech}  (${labelOf('research')} to research)`, 2.4);
+    return;
+  }
+  const at = g.antennas.place(ray.origin, ray.dir);
+  if (at === null) {
+    const d = g.antennas.definition;
+    const short = (d?.cost ?? [])
+      .filter((c) => g.game.count(c.item) < c.count)
+      .map((c) => `${c.count - g.game.count(c.item)} more ${g.game.itemName(c.item)}`)
+      .join(' and ');
+    g.hud.flash(short === '' ? 'cannot place a scanning antenna there'
+      : `scanning antenna: you need ${short}`, 2.4);
+    return;
+  }
+  g.placements++;
+  g.progress.credit(SKILL.Building, 1);
+  g.sfx.confirm();
+  g.panel.invalidate();
+  const revealed = revealNearbySites(g, at);
+  g.hud.flash(revealed > 0
+    ? `SCANNING ANTENNA BUILT: ${revealed} nearby ruin${revealed === 1 ? '' : 's'} `
+      + `revealed on the map  (${labelOf('map')} to view)`
+    : 'placed scanning antenna: nothing nearby to reveal yet', 5);
+}
+
+/**
  * THE LEFT BUTTON, whole. What it does is decided by the HOTBAR and by nothing
  * else: a player holding a wall who clicks means the wall, and guessing from
  * what happens to be under the crosshair is the sort of thing that makes a game
@@ -216,6 +304,16 @@ export function stepBuild(g: Gameplay, ray: BuildRay, use: boolean,
   if (g.hotbar.held.kind === 'station') {
     if (!pressed) return false;
     placeStation(g, ray);
+    return true;
+  }
+  // GP-533. THE SCANNING ANTENNA, the station's own branch and reason: placed
+  // by its own owner, NO DRAG. The research gate is unlike the station's
+  // (which is deliberately never gated): `placeAntenna` checks it itself,
+  // because a run one key press away must refuse before it ever asks
+  // `Antennas.place` to spend copper.
+  if (g.hotbar.held.kind === 'antenna') {
+    if (!pressed) return false;
+    placeAntenna(g, ray);
     return true;
   }
   // GP-57 / DW-29. THE PAD'S GATE IS SET ON THE GHOST, NOT SPRUNG ON THE PRESS.
@@ -309,8 +407,9 @@ function announce(g: Gameplay, n: number, pressed: boolean): void {
 export function raze(g: Gameplay, machine: Machine | null, build: Placed | null,
                      part: StructurePart | null,
                      pad: PadPart | null = null,
-                     station: ResearchStation | null = null): boolean {
-  const r = demolishAimed(g, machine, build, part, pad, station);
+                     station: ResearchStation | null = null,
+                     antenna: ScanAntenna | null = null): boolean {
+  const r = demolishAimed(g, machine, build, part, pad, station, antenna);
   if (r === null) { g.hud.flash('nothing to remove'); return false; }
   g.fx.forgetSmelters();
   g.hud.flash(r.message, 2.2);

@@ -161,6 +161,7 @@ static constexpr TechId PlateArmour = 0x0013;        // cuirass + greaves
 static constexpr TechId FlightAutopilot = 0x0014;    // DW-29: earned by flying, then researched
 static constexpr TechId CinderRefining = 0x0015;     // OFF-WORLD GATE over survival content
 static constexpr TechId LaunchFacilities = 0x0016;   // DW-29: the launch pad (GP-57)
+static constexpr TechId ScanningAntenna = 0x0017;    // GP-533: the ruin-reveal antenna
 }  // namespace techs
 
 // GP-267. THE ITEM `FlightAutopilot` UNLOCKS, and the one id in this file that
@@ -637,7 +638,7 @@ inline std::vector<ItemId> scienceItems() {
   return {items::AutomationScience, items::LogisticScience, items::CinderScience};
 }
 
-/** The survival tech tree as DATA (GP-12). Seven techs, three tiers deep. */
+/** The survival tech tree as DATA (GP-12). Eight techs, three tiers deep. */
 inline std::vector<TechDef> survivalTechs() {
   namespace pi = progression::items;
   using survival::items::BurnerGenerator;
@@ -645,6 +646,24 @@ inline std::vector<TechDef> survivalTechs() {
   using survival::items::PowerPole;
 
   std::vector<TechDef> t;
+
+  // GP-533. THE SCANNING ANTENNA, and it is deliberately the FIRST tech in
+  // this vector and the cheapest one payable straight off the research
+  // station. `story_line_outline_v1.txt` researches and builds it before
+  // Electrification: the ruins it reveals are what unlocks electricity
+  // research in the first place ("Investigate ruins ... researching
+  // electricity"), so gating this on Electrification would be the same
+  // kind of cycle GP-267 already refused for the launch pad and the
+  // autopilot. NO PREREQ AND NO MILESTONE: the station gate
+  // (`ModeRules.researchStationGated`) is what makes the whole tree
+  // reachable at all, and once it is, this is the first rung of it.
+  TechDef antenna;
+  antenna.id = techs::ScanningAntenna;
+  antenna.name = "Scanning Antenna";
+  antenna.cost = {ItemStack{items::AutomationScience, 8}};
+  antenna.unlockItems = {survival::items::ScanningAntenna};
+  antenna.unlockEntities = {survival::types::ScanningAntenna};
+  t.push_back(antenna);
 
   TechDef elec;
   elec.id = techs::Electrification;

@@ -124,6 +124,13 @@ export const ICON_TABLE: readonly IconSpec[] = [
   // DIFFERENT mesh than the world would be worse than a placeholder, because
   // then the picture would be a lie rather than a stand-in.
   R(0x0045, 'Research station', `${MACH}assembler.glb`, 'Assembler_LOD0'),
+  // GP-533's scanning antenna, the station's row above verbatim: the
+  // PLACEHOLDER MESH is said here plainly, matching `Antennas.ts`. /core pins
+  // `types::ScanningAntenna = 0x46` and the art lane owes
+  // `structures/scanning_antenna.glb` against it; until that lands, the tile
+  // shows the power pole (the tall, thin mast in the shipped set), which is
+  // what the world shows too, so the tile is a stand-in rather than a lie.
+  R(0x0046, 'Scanning antenna', `${MACH}power_pole.glb`, 'PowerPole_LOD0'),
   // The four armour pieces reached the same craft menu in the same ABI bump and
   // had the same problem. `armour_set.glb` ships them SKINNED, which is why they
   // are baked from the bind pose (see `bake`) rather than posed.
