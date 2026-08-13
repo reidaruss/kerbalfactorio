@@ -219,11 +219,28 @@
     && cFixed.turnPerTickRad === 0,
     `rotor ${rotorTurn} moon ${cMoon.turnPerTickRad} line ${cLine.turnPerTickRad}`);
   // A rotating frame's turn rate and its travel are not independent: the origin
-  // sweeps r*w per tick. Asserting the RELATION rather than either number is
-  // what survives somebody changing the orbit.
+  // sweeps a fixed radius round a fixed axis. Asserting the RELATION rather
+  // than either number is what survives somebody changing the orbit.
+  //
+  // CE-53. THE RELATION IS THE CHORD `2r sin(w/2)`, NOT THE ARC `r*w`, and the
+  // difference is not pedantry: `poseAt` is sampled at INTEGER TICKS, so
+  // `perTickM` is the straight-line distance between two points w apart on the
+  // circle, which is the chord by definition. The arc overstates it by
+  // `w^2/24` relative (expand 2 sin(w/2) = w - w^3/24 + ...), which at
+  // Anchorage's w = 3.132092e-5 rad per tick is 4.0875e-11 -- four orders of
+  // magnitude inside this gate, so the arc form is not what broke this row.
+  // What broke it was the INSTRUMENT: `turnBetween` was `2*acos(|dot|)`, whose
+  // conditioning multiplies a few-ulp dot error by 2/sin(w/2) = 1.2772e5 and
+  // handed back a w that was 1.72e-6 light. Fixed in `app/DebugCarrier.ts`;
+  // measured over 20,000 bases, the chord form against the stable angle is
+  // exact to 1.44e-11 relative, so the gate is 1e-9 and it means something
+  // again. It would have read 1.7240873e-6 against the old instrument.
+  const rotorChord = 2 * rotorR * Math.sin(rotorTurn / 2);
   check('C1 the rotor\'s turn and its travel agree through its own radius',
-    Math.abs(rotorPerTick - rotorR * rotorTurn) < 1e-6 * rotorPerTick,
-    `${r6(rotorPerTick)} vs r*w ${r6(rotorR * rotorTurn)}`);
+    Math.abs(rotorPerTick - rotorChord) < 1e-9 * rotorPerTick,
+    `${rotorPerTick} vs 2r sin(w/2) ${rotorChord} `
+    + `(rel ${(rotorPerTick - rotorChord) / rotorPerTick}, arc r*w `
+    + `${rotorR * rotorTurn})`);
   check('C1 the fixed carrier is the no-motion control',
     cFixed.perTickM === 0 && cFixed.turnPerTickRad === 0, `${cFixed.perTickM}`);
 

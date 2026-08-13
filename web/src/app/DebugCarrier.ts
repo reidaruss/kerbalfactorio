@@ -52,14 +52,50 @@ export function carrierApi(s: Services, loop: Loop): CarrierDebugApi {
   /**
    * The angle between two poses' rotations, in radians.
    *
-   * `2*acos(|dot|)` and NOT `2*acos(dot)`: q and -q are the same rotation, so
-   * the unsigned form is the only one that answers "how far has it turned"
-   * rather than "which representative did the source happen to hand back".
-   * The `min(1, .)` is the usual guard for a dot that rounds a hair above 1.
+   * THE UNSIGNED FORM IS MANDATORY: q and -q are the same rotation, so taking
+   * the sign of whichever representative a source happened to hand back would
+   * answer 2*pi minus the turn about half the time. `Math.abs` on the SCALAR
+   * part of the relative quaternion is that, here.
+   *
+   * CE-53. IT IS `2*atan2(|vec|, |w|)` AND NOT `2*acos(|dot|)`, AND THE
+   * DIFFERENCE IS THE WHOLE OF A DETERMINISTIC PROBE FAILURE.
+   *
+   * `acos` near 1 is the worst-conditioned call in the standard library:
+   * d(acos)/dx = -1/sqrt(1-x^2), which at x = cos(t/2) is -1/sin(t/2). For the
+   * one turn this project actually measures per tick, Anchorage's conic at
+   * t = 3.132092e-5 rad, that factor is 63,857, so the returned ANGLE carries
+   * 2/sin(t/2) = 1.2772e5 times whatever absolute error the dot has. The dot is
+   * four products and three sums of unit-quaternion components, so its error is
+   * a few ulps of 1.0; 4.228e-16 of it (under four ulps) is 5.4e-11 rad, which
+   * against t itself is 1.72e-6 RELATIVE. Measured over 20,000 LVLH bases round
+   * a 1e6 m circular conic: the acos form spans -2.350e-6 to +1.724e-6 and
+   * breaches a 1e-6 gate on 1.6% of them. `probes/carrier.js` row C1 read
+   * +1.7240873e-6, i.e. the top of that range to five significant figures.
+   *
+   * Two consequences worth naming, because both were live:
+   *  - the error lands on a QUANTISED LATTICE (1,055 distinct values over
+   *    20,000 samples), which is why the failure reproduced bit-stably on two
+   *    machines instead of jittering like the rounding noise it is;
+   *  - the acos form invents a turn for a frame that did not turn at all. Two
+   *    poses with IDENTICAL quaternions read 4.21e-8 rad, because |q|^2 comes
+   *    back a hair under 1 and `min(1, .)` only clamps the other side. The
+   *    `turnPerTickRad === 0` assertions passed only because every translating
+   *    carrier here happens to hold the exact identity quaternion.
+   *
+   * `atan2(|vec|, |w|)` is conditioned on sin near 0 instead of cos near 1, so
+   * it is accurate at both ends of the range. Same 20,000 bases: residual
+   * -5.28e-11 to -2.65e-11, which is no longer error at all but the arc-versus-
+   * chord term the caller is comparing against (see `probes/carrier.js` C1).
+   * Identical quaternions give exactly 0, because each vector component is a
+   * sum of two exactly-equal-and-opposite products.
    */
   const turnBetween = (a: FramePose, b: FramePose): number => {
-    const dot = a.qx * b.qx + a.qy * b.qy + a.qz * b.qz + a.qw * b.qw;
-    return 2 * Math.acos(Math.min(1, Math.abs(dot)));
+    // r = b (x) conj(a), the rotation that takes a's basis to b's.
+    const rw = b.qw * a.qw + b.qx * a.qx + b.qy * a.qy + b.qz * a.qz;
+    const rx = -b.qw * a.qx + b.qx * a.qw - b.qy * a.qz + b.qz * a.qy;
+    const ry = -b.qw * a.qy + b.qy * a.qw - b.qz * a.qx + b.qx * a.qz;
+    const rz = -b.qw * a.qz + b.qz * a.qw - b.qx * a.qy + b.qy * a.qx;
+    return 2 * Math.atan2(Math.hypot(rx, ry, rz), Math.abs(rw));
   };
 
   /** WHAT A FRAME IS DOING ON ITS OWN, with no rider near it: THE FIXTURE
