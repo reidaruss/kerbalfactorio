@@ -313,6 +313,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // dropped the flag, which is the `fur`/`partmat` failure a dozen lines up
   // happening again to the lane that had just finished writing it down.
   'shadowlod', 'shadowlodk', 'shadowlodpx',
+  // RN-1571 and RN-1572, standing rule 7 both times. `shadowbias=0` restores
+  // the raw -0.0006 depth-unit literal that shadowed every machine in the game
+  // (the sign is inverted for reversed depth on three's PCF path); `sundisc=0`
+  // restores the 3.15-degree LDR sun sprite. Registered in the same commit that
+  // introduces them, which is what this list's own guard asks for.
+  'shadowbias', 'sundisc',
   // Like `sandbox` above, not an isolation switch: it selects WHICH BODY the
   // client boots on. `body=cinder` (or `moon`, or `1`) boots the moon; absent
   // or anything else is Forge, which is every existing probe unchanged.

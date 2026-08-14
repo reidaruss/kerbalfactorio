@@ -14,6 +14,83 @@ import { createStarfield, type Starfield } from './materials/StarfieldMaterial.j
 import type { QualityTier } from '../app/Config.js';
 import { IBL_DISC_GAIN } from './IblDiag.js';
 
+// ===========================================================================
+// RN-1572. THE SUN DISC: ITS REAL ANGULAR SIZE, AT THE RADIANCE THAT KEEPS ITS
+// IRRADIANCE. This is a LOOK change and it is meant to be one.
+//
+// WHAT WAS WRONG, and it was two things that only make sense together.
+// RN-1525 measured the sprite at `scale 0.055` with `sizeAttenuation: false`,
+// which is angular-size preserving under any projection (the NDC extent and
+// `tan(halfFov)` cancel, checked against the 90-degree cube camera as well as
+// the presented one), and found the disc **3.15 degrees across against the real
+// sun's 0.53**. Its solid angle is 2.4e-3 sr, i.e. 1.9e-4 of the sphere, and
+// for a specular surface the set of normals that reflects it into the eye is
+// that same fraction: on the canonical machine pose there are none of them, so
+// no surface in the frame ever caught a highlight. Meanwhile RN-1523 found the
+// disc's peak radiance is its LDR colour, about 1.0 linear, while
+// `AtmosphereParams.sunIntensity` -- documented in `Atmosphere.glsl.ts` as
+// "radiance scale for the sun disc" -- is 15.0 and reaches only the scattering
+// integral. So the cube had no bright source in it at all: RN-1520 measured
+// `brightFrac` = 0.0000 of 393,216 texels and `peakRatio` 7.99, against a real
+// sky's sun-to-sky radiance ratio of 1e4 to 1e5.
+//
+// WHY EITHER HALF ALONE IS THE WRONG FIX, both measured rather than argued.
+// RN-1524 raised the radiance alone through `?ibldisc=` and priced it: at k=15
+// the canonical machine box moves 20.43 -> 20.44 and a verified MIRROR under a
+// 200x sun moves 24.54 -> 24.55, because a 3.15-degree source reflected off
+// nothing is still reflected off nothing. And narrowing alone would take an
+// already-too-dim disc and remove 97 per cent of its energy.
+//
+// SO THE TWO MOVE TOGETHER AND THE PRODUCT IS CONSERVED. Radiance times solid
+// angle is irradiance; taking the diameter from 3.15 to 0.53 degrees divides
+// the solid angle by (3.15/0.53)^2 = 35.3, so the radiance is multiplied by the
+// same 35.3. Same total energy arriving at every surface, 35x the peak, and a
+// highlight six times narrower -- which is the whole point, because that is
+// what a curved plate can actually catch.
+//
+// WHAT THIS DOES NOT DO. It does not touch `sunIntensity`, which still means
+// what its consumers use it for (the scattering integral and the aerial haze),
+// and it does not double-count the direct sun: the `ShadowRig` cascade-0
+// directional light still carries the direct term with its own GGX lobe, and
+// RN-1524 measured that double count at `meanRatio` 1.0051 for a 15x raise. The
+// conservation above is what keeps that number near 1.0 here too, and this lane
+// measures it rather than assuming it.
+//
+// THE INSTRUMENT'S OWN LIMIT, WHICH BITES HARDER AFTER THIS CHANGE THAN BEFORE.
+// RN-1522's rule: a cube-map capture cannot report a feature narrower than
+// about three of its own texels. At `iblSize` 256 a texel is 0.35 degrees, so a
+// 0.53-degree disc is 1.5 texels and any peak read there is a LOWER BOUND. The
+// peak must therefore be re-taken at a resolution the feature survives, and the
+// irradiance claim must be checked at the size the game actually captures at,
+// because energy that falls between texel centres is energy the PMREM never
+// integrates. Both are measured in RN-1573 rather than reasoned about.
+//
+// STANDING RULE 7'S NEGATIVE CONTROL: `?sundisc=0` restores the disc exactly as
+// it was before RN-1572 -- 0.055 scale, gain 1, the 3.15-degree LDR sprite --
+// so the before and after of a LOOK change are one flag apart on ONE binary.
+// Two builds would differ by everything and a reader could not tell the disc
+// from the weather. The boot default is a fixture and the raw string is
+// published beside the resolved value (rendering.md section 2.6).
+const SUN_DISC_RAW = new URLSearchParams(self.location.search).get('sundisc');
+const SUN_DISC_LEGACY = SUN_DISC_RAW === '0';
+
+const SUN_DISC = (() => {
+  /** RN-1525's measurement of what shipped, and the scale that produced it. */
+  const legacyAngularDeg = 3.15;
+  const legacySpriteScale = 0.055;
+  /** The real sun's angular diameter from a 1 AU orbit, degrees. */
+  const angularDeg = SUN_DISC_LEGACY ? legacyAngularDeg : 0.53;
+  const spriteScale = legacySpriteScale * (angularDeg / legacyAngularDeg);
+  /** Solid angle goes as the square of the diameter, so radiance does too. */
+  const radianceGain = (legacyAngularDeg / angularDeg) ** 2;
+  return { angularDeg, legacyAngularDeg, legacySpriteScale, spriteScale,
+    radianceGain, legacy: SUN_DISC_LEGACY, raw: SUN_DISC_RAW };
+})();
+
+/** RN-1572. Published so a probe reads the authored numbers rather than
+ *  re-deriving them, and so a frame pair can name which disc it was taken on. */
+export const SUN_DISC_STATE = SUN_DISC;
+
 export interface SkyOptions {
   readonly seedLo: number;
   readonly sunT: number;
@@ -156,12 +233,18 @@ export class SkyPass {
     // ENVIRONMENT CAPTURE it is the whole story: the brightest feature of the
     // cube is haze, so the cube has no high-frequency content and no PMREM size
     // can resolve structure that is not there. `setDiscBoost` is the arm.
+    //
+    // RN-1572. THE DISC IS NOW THE REAL SUN'S ANGULAR SIZE AT THE RADIANCE THAT
+    // KEEPS ITS IRRADIANCE. See `SUN_DISC` above for the derivation and for why
+    // narrowing WITHOUT brightening (or the reverse) is the wrong half.
     this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: SkyPass.discTexture(), color: 0xfff3d6, depthTest: false, depthWrite: false,
       blending: THREE.AdditiveBlending, sizeAttenuation: false,
     }));
+    (this.sunSprite.material as THREE.SpriteMaterial).color
+      .multiplyScalar(SUN_DISC.radianceGain);
     this.discBase.copy((this.sunSprite.material as THREE.SpriteMaterial).color);
-    this.sunSprite.scale.set(0.055, 0.055, 1);
+    this.sunSprite.scale.set(SUN_DISC.spriteScale, SUN_DISC.spriteScale, 1);
     this.sunSprite.renderOrder = 2;
     this.group.add(this.sunSprite);
 

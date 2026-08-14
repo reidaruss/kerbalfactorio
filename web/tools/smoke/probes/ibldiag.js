@@ -108,6 +108,10 @@
       meanRatio: round(boosted.mean / Math.max(shipped.mean, 1e-9)),
       brightFracShipped: round(shipped.brightFrac),
       brightFracBoosted: round(boosted.brightFrac),
+      // RN-1573. The counts, because the fractions above round a real sun to
+      // 0.0000: 2 texels of 393,216 is 5.1e-6. See `EnvStats.brightTexels`.
+      brightTexelsShipped: shipped.brightTexels,
+      brightTexelsBoosted: boosted.brightTexels,
     } : null,
     materials: mats,
     ibl: of.stats().ibl ?? null,
