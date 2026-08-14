@@ -161,97 +161,6 @@
       await settle(0.12);
     }
   };
-  // WHERE THE DRILL WILL LAND, DRY. The same sweep the placement runs, with the
-  // button never pressed, so the room on either side of the drill can be
-  // counted before a rotation is committed to.
-  of.build(1);
-  await rotateTo(2);
-  let drillGuess = null;
-  for (let p = -40; p <= -8 && drillGuess === null; p += 0.25) {
-    const g = await ghostAt(yaw0, p);
-    if (g === null || !g.ok || g.patch < 0) continue;
-    drillGuess = { pos: g.pos, pitch: p };
-  }
-  if (drillGuess === null) {
-    return { valid: false, why: 'no patch cell under the aim to stand a drill on', log };
-  }
-  // THE ROOM, counted with the BELT ghost, because a belt is what has to go
-  // there. Positions this early are PROSPECTIVE lattice cells rather than site
-  // cells (nothing has adopted a site yet, FS-19), which would be useless for
-  // choosing a waypoint and is entirely good enough for the coarse question
-  // being asked here: is there more placeable ground beyond the drill or
-  // between the drill and the player. Everything the sweep can see is in front
-  // of the player, so "behind the drill" means the couple of metres between his
-  // feet and the patch's near lobe.
-  of.look(yaw0, -8);
-  await settle(0.05);
-  const upP = norm(of.aim().origin);
-  const tang = (v) => norm(perp(v, upP));
-  const aheadDir = tang(of.aim().dir);
-  of.build(2);
-  await rotateTo(2);
-  const room = { ahead: 0, behind: 0 };
-  for (let dy = -6; dy <= 6; dy += 3) {
-    for (let p = -62; p <= -12; p += 2) {
-      const g = await ghostAt(yaw0 + dy, p);
-      if (g === null || !g.ok) continue;
-      const a = dot(sub(g.pos, drillGuess.pos), aheadDir);
-      if (len(sub(sub(g.pos, drillGuess.pos), mul(aheadDir, a))) > 1.2) continue;
-      if (a >= 1.8) room.ahead++;
-      else if (a <= -1.8) room.behind++;
-    }
-  }
-  const drillRot = room.ahead >= room.behind ? 0 : 2;
-  log.push(`room around the drill: ${room.ahead} ahead, ${room.behind} behind`
-    + ` -> drill rotation ${drillRot}`);
-
-  of.build(1);
-  await rotateTo(drillRot);
-  let drill = null;
-  for (let p = drillGuess.pitch; p <= -8 && drill === null; p += 0.25) {
-    const g = await ghostAt(yaw0, p);
-    if (g === null || !g.ok || g.patch < 0) continue;
-    const before1 = fac().buildings;
-    await placeHere();
-    if (fac().buildings > before1) {
-      const row = fac().list.find((b) => b.kind === 'miner');
-      drill = { id: row.id, cell: row.cell, pos: row.pos, fwd: row.fwd, pitch: p };
-    }
-  }
-  if (drill === null) return { valid: false, why: 'the drill would not go down on the patch', log };
-  log.push(`drill ${drill.cell} at pitch ${drill.pitch}, rotation ${drillRot},`
-    + ` outlet heading [${drill.fwd.map((v) => v.toFixed(3)).join(' ')}]`);
-
-  of.build(2);
-  // Back to rotation 2 for the belt ghost whatever the drill ended up at. It no
-  // longer decides anything (a dragged tile's heading is re-derived from the
-  // run's own positions), but the rotation is a mode-wide setting the drill may
-  // just have moved and the press that starts the drag reads it.
-  await rotateTo(2);
-  await settle(0.2);
-
-  // --- THE AXIS IS THE DRILL'S OUTLET, WHICH IS WHY THERE IS NO SWEEP HERE ---
-  //
-  // shortline.js's yaw sweep used to stand here, turning the crosshair until the
-  // belt ghost's reported heading came back anti-parallel to the aim, because
-  // "a cell row is a SITE-GRID fact and the yaw at the node is not on any axis".
-  // That was the right way to FIND an axis when any axis would do. Under FS-44's
-  // port model only one axis will do: the one the drill's `socket_item_out`
-  // faces, because the run has to leave along it or it is not fed (see the tail
-  // block below). The drill has been placed, so that axis is already known, and
-  // a sweep that might land on a different one of the four is now a liability
-  // rather than a service. Measured before it was removed: the sweep chose a yaw
-  // 22.8 degrees off the aim the drill was placed along, which tilted the
-  // corridor scan far enough off the drill's own row that the cells in front of
-  // its outlet fell outside the swath entirely.
-  const upD = norm(drill.pos);
-  const tangD = (v) => norm(perp(v, upD));
-  // The drill's heading IS its outlet's face. `Factory.orient` puts local +Z on
-  // `fwd` and `socket_item_out` is authored at local [0, 0.55, +1.0], which
-  // `FactoryPorts.faceOf` reduces to local +Z. Nothing here maps a socket's
-  // NAME to a direction in space; the shipped asset's own socket position does,
-  // which is the rule that file states about itself.
-  const outDir = tangD(drill.fwd);
   /**
    * Steer the crosshair until the GHOST's own proposed cell sits on `ideal`.
    *
@@ -285,131 +194,250 @@
       ok: cur.g === null ? false : cur.g.ok === true,
       snapped: cur.g === null ? '' : cur.g.snapped };
   };
-  // The yaw that looks four cells down the outlet, which is the row the run
-  // will occupy. The corridor scan is centred on it rather than on the player's
-  // own heading, so the swath follows the leg instead of crossing it.
-  const legAim = await aimGhost(add(drill.pos, mul(outDir, 4.008)));
-  const yawG = legAim.yaw;
-  log.push(`outlet row: yaw ${yaw0.toFixed(1)} -> ${yawG.toFixed(1)}`
-    + ` (four cells out, miss ${legAim.missM} m)`);
 
-  // --- a corridor scan around that row: every cell the ghost lands on, BY
-  // POSITION. The waypoints of the drag are chosen off this map, which is the
-  // probe watching the preview rather than assuming the grid. The swath is wide
-  // (plus or minus 18 degrees) because the CROSS leg has to find placeable
-  // ground three cells to one side of the row, which at six metres out is a
-  // long way off the centre line in degrees.
-  const scan = [];
-  for (let dy = -18; dy <= 18; dy += 2) {
-    for (let p = -62; p <= -12; p += 1.2) {
-      const g = await ghostAt(yawG + dy, p);
-      if (g === null || !g.ok) continue;
-      const s = { pos: g.pos, fwd: g.fwd, yaw: yawG + dy, pitch: p,
-        snapped: g.snapped !== '' };
-      const near = scan.find((q) => gdist(q.pos, s.pos) < 0.4);
-      if (near === undefined) scan.push(s);
-      else if (near.snapped && !s.snapped) Object.assign(near, s);
+  // GP-762 FIX: THE ROOM DRY-SCAN THIS BLOCK USED TO OPEN WITH IS GONE.
+  //
+  // It counted placeable cells ahead of and behind a PROSPECTIVE drill cell
+  // (nothing adopted yet, FS-19) on a coarse 2 degree by 3 degree grid, and
+  // picked whichever side scored higher as the rotation to commit to. MEASURED
+  // WRONG, at exactly the default site this probe stands on: the dry scan read
+  // 16 cells "ahead" against 49 "behind" and committed to the rotation that
+  // faces "behind" — and after the REAL drill went down there, the corridor
+  // scan below found `legRoom: 0` on that axis and only 2 cells free on the
+  // other (`roomBehindTheOutlet`). `assembler.js`'s own iron chain places a
+  // drill on this identical site and lays a real, exhaustive belt run the
+  // OPPOSITE way, which is direct proof the ground the coarse scan called
+  // "more room" was the wrong lobe: a prospective-cell sweep at a wide angular
+  // step cannot tell a patch's near rim from its far one when both stretch
+  // away from the same point, and this site is exactly that shape.
+  //
+  // So this no longer guesses a rotation from a cheap proxy and hopes: it
+  // PLACES the drill for real at rotation 0, runs the whole corridor scan and
+  // tail search against what actually went down, and only if THAT measures no
+  // straight leg does it tear the drill back up and try rotation 2. The same
+  // "try in turn, do not compute one more single guess a rescale falsifies
+  // again" shape GP-690's `placeUntil` and this lane's own `standCandidatesFor`
+  // (assembler.js, GP-760) already use for this exact class of stale
+  // assumption, applied here to a RUN, not a stand-point.
+  const attemptDrill = async (rot) => {
+    of.build(1);
+    await rotateTo(rot);
+    let drill = null;
+    for (let p = -40; p <= -8 && drill === null; p += 0.25) {
+      const g = await ghostAt(yaw0, p);
+      if (g === null || !g.ok || g.patch < 0) continue;
+      const before1 = fac().buildings;
+      await placeHere();
+      if (fac().buildings > before1) {
+        const row = fac().list.find((b) => b.kind === 'miner');
+        drill = { id: row.id, cell: row.cell, pos: row.pos, fwd: row.fwd, pitch: p };
+      }
     }
-  }
-  log.push(`corridor scan: ${scan.length} distinct placeable cells`);
+    if (drill === null) {
+      return { ok: false, rot, drill: null, why: 'the drill would not go down on the patch' };
+    }
+    log.push(`[rot ${rot}] drill ${drill.cell} at pitch ${drill.pitch}, `
+      + `outlet heading [${drill.fwd.map((v) => v.toFixed(3)).join(' ')}]`);
 
-  // --- THE TAIL AND THE LEG DIRECTION ARE ONE CHOICE, NOT TWO ---------------
-  //
-  // WHAT THIS USED TO BE, WHY IT WAS RIGHT THEN, AND WHY IT IS NOT NOW. The
-  // tail used to be "any placeable cell beside the drill": the corridor scan
-  // filtered by DISTANCE ALONE (0.7 m to 1.35 m of the drill's centre) and the
-  // first hit won. The leg's direction was decided separately and later, off
-  // whichever way the scan happened to hold a row of cells. Those two choices
-  // could not conflict under the wiring that existed when this probe was
-  // written, and that is the whole point: `FactoryWiring.wire` compared the two
-  // buildings' CENTRES against a reach derived from their footprints, 1.00 m
-  // was inside it, and orientation was never consulted at all. A tail beside
-  // the drill with the run heading off crosswise past its nose WAS fed, so
-  // taking the first cell in the band was a legitimate choice.
-  //
-  // FS-44 MADE THAT ARRANGEMENT ILLEGAL, ON PURPOSE. A connection is now an
-  // OUTLET socket meeting an INLET socket: within `FactoryPorts.PORT_MATE_M`
-  // (0.65 m) in the tangent plane and facing each other within
-  // `PORT_FACE_DOT` (-0.85). The drill presents `socket_item_out` on the face
-  // its own heading points at, a run's tail presents `socket_belt_in` on the
-  // face BEHIND it, and a dragged tile's heading is re-derived from the run's
-  // own positions on every commit (`FactoryCommit.pitchRuns`), so the tail
-  // faces wherever the leg goes. Measured here, twice, identically, with the
-  // old independent choice: drill on m1:2,2, tail on m1:2,1, leg running +x.
-  // The tail's inlet therefore faced -x while the drill's outlet faced along
-  // its own axis; the two ports were neither inside 0.65 m nor opposed, no link
-  // formed, and `drillFeedsTail` was false while every distance in the report
-  // still looked healthy. A belt running crosswise past a drill's output face
-  // SHOULD NOT be fed. So it is this probe's setup that was stale, not the
-  // wiring, and the fix belongs here.
-  //
-  // THE JOINT CHOICE IS THE ONE shortline.js AND demolish.js ALREADY LAY, by
-  // accident of placing their drill last: the drill sits directly BEHIND the
-  // tail on the run's own axis. One cell of separation puts the drill's outlet
-  // (authored 1.00 m ahead of its centre) 0.50 m from the tail's inlet
-  // (0.50 m behind its own), head on at a facing of -1, well inside both
-  // bounds. So the tail is asked for BY POSITION, along the drill's outlet
-  // heading, and the leg then runs the way the tail was reached.
-  //
-  // ONE CELL OUT OR TWO, WHICHEVER THE GROUND ALLOWS, AND BOTH MATE. The port
-  // gap for a drill and a belt on a common axis is |d - 1.5| m, where d is the
-  // distance between the two centres: the outlet stands 1.00 m ahead of the
-  // drill's centre and the inlet 0.50 m behind the tile's. One grid step
-  // (1.002 m) gives 0.498 m and two (2.004 m) give 0.504 m, and PORT_MATE_M is
-  // 0.65, so the model is indifferent between them. The probe is not quite: it
-  // asks for one step first, because that is the arrangement shortline.js and
-  // demolish.js already lay and the one a player builds, and takes two when the
-  // near cell is not offered (a machine with an even footprint covers ground its
-  // own centre is only one step from, which is the residual FactorySnap.stepsFor
-  // names).
-  const tries = [];
-  let tailAim = null;
-  for (const k of [1, 2]) {
-    const a = await aimGhost(add(drill.pos, mul(outDir, 1.002 * k)));
-    const v = sub(a.pos, drill.pos);
-    const t = { k, gapM: +len(v).toFixed(3), align: +dot(tangD(v), outDir).toFixed(3),
-      missM: a.missM, ok: a.ok, snapped: a.snapped };
-    tries.push(t);
-    // Both halves of the mate, restated as a test on the cell the ghost found.
-    // The DISTANCE band is the whole legal range with a margin; the ALIGNMENT is
-    // the half this probe never used to check, and it is the half that decides.
-    if (t.gapM > 0.9 && t.gapM < 2.1 && t.align > 0.9) { tailAim = a; break; }
+    of.build(2);
+    // Back to rotation 2 for the belt ghost whatever the drill ended up at. It
+    // no longer decides anything (a dragged tile's heading is re-derived from
+    // the run's own positions), but the rotation is a mode-wide setting the
+    // drill may just have moved and the press that starts the drag reads it.
+    await rotateTo(2);
+    await settle(0.2);
+
+    // --- THE AXIS IS THE DRILL'S OUTLET, WHICH IS WHY THERE IS NO SWEEP HERE
+    //
+    // shortline.js's yaw sweep used to stand here, turning the crosshair until
+    // the belt ghost's reported heading came back anti-parallel to the aim,
+    // because "a cell row is a SITE-GRID fact and the yaw at the node is not on
+    // any axis". That was the right way to FIND an axis when any axis would do.
+    // Under FS-44's port model only one axis will do: the one the drill's
+    // `socket_item_out` faces, because the run has to leave along it or it is
+    // not fed (see the tail block below). The drill has been placed, so that
+    // axis is already known, and a sweep that might land on a different one of
+    // the four is now a liability rather than a service.
+    const upD = norm(drill.pos);
+    const tangD = (v) => norm(perp(v, upD));
+    // The drill's heading IS its outlet's face. `Factory.orient` puts local +Z
+    // on `fwd` and `socket_item_out` is authored at local [0, 0.55, +1.0],
+    // which `FactoryPorts.faceOf` reduces to local +Z. Nothing here maps a
+    // socket's NAME to a direction in space; the shipped asset's own socket
+    // position does, which is the rule that file states about itself.
+    const outDir = tangD(drill.fwd);
+    // The yaw that looks four cells down the outlet, which is the row the run
+    // will occupy. The corridor scan is centred on it rather than on the
+    // player's own heading, so the swath follows the leg instead of crossing
+    // it.
+    const legAim = await aimGhost(add(drill.pos, mul(outDir, 4.008)));
+    const yawG = legAim.yaw;
+    log.push(`[rot ${rot}] outlet row: yaw ${yaw0.toFixed(1)} -> ${yawG.toFixed(1)}`
+      + ` (four cells out, miss ${legAim.missM} m)`);
+
+    // --- THE TAIL AND THE LEG DIRECTION ARE ONE CHOICE, NOT TWO -------------
+    //
+    // WHAT THIS USED TO BE, WHY IT WAS RIGHT THEN, AND WHY IT IS NOT NOW. The
+    // tail used to be "any placeable cell beside the drill": the corridor scan
+    // filtered by DISTANCE ALONE (0.7 m to 1.35 m of the drill's centre) and
+    // the first hit won. The leg's direction was decided separately and later,
+    // off whichever way the scan happened to hold a row of cells. Those two
+    // choices could not conflict under the wiring that existed when this probe
+    // was written, and that is the whole point: `FactoryWiring.wire` compared
+    // the two buildings' CENTRES against a reach derived from their
+    // footprints, 1.00 m was inside it, and orientation was never consulted at
+    // all. A tail beside the drill with the run heading off crosswise past its
+    // nose WAS fed, so taking the first cell in the band was a legitimate
+    // choice.
+    //
+    // FS-44 MADE THAT ARRANGEMENT ILLEGAL, ON PURPOSE. A connection is now an
+    // OUTLET socket meeting an INLET socket: within `FactoryPorts.PORT_MATE_M`
+    // (0.65 m) in the tangent plane and facing each other within
+    // `PORT_FACE_DOT` (-0.85). The drill presents `socket_item_out` on the
+    // face its own heading points at, a run's tail presents `socket_belt_in`
+    // on the face BEHIND it, and a dragged tile's heading is re-derived from
+    // the run's own positions on every commit (`FactoryCommit.pitchRuns`), so
+    // the tail faces wherever the leg goes. So the tail is asked for BY
+    // POSITION, along the drill's outlet heading, and the leg then runs the
+    // way the tail was reached.
+    //
+    // GP-762/GP-775: "ONE CELL OUT OR TWO" WAS FS-73's OWN CLASS OF STALE
+    // ASSUMPTION, one door down from the smelter's in `demolish.js` (GP-770)
+    // and the assembler's (GP-760). It was true when a miner was 2 m: a drill
+    // and a belt on a common axis then mated 0.498 m or 1.500 m apart
+    // (`FactorySnap.stepsFor(belt, miner)` was `ceil((1+2)/2)` = 1, plus the
+    // spare cell "when the near cell is not offered"), both comfortably inside
+    // `PORT_MATE_M` (0.65 m) of a literal `k` in `[1, 2]` grid steps. FS-73
+    // took `miner` to footprint 4, `stepsFor` is now `ceil((1+4)/2)` = 3, and a
+    // real 3-cell candidate measured `gapM: 3` here, `ok: true`, outside the
+    // `[1, 2]` steps this loop tried and the `0.9`-to-`2.1` m band it tested
+    // against. So both the steps tried and the band they are judged against
+    // are derived from `FOOTPRINT` (the same table `demolish.js`,
+    // `assembler.js` and `FactorySnap.ts` itself already read for this exact
+    // reason) instead of carrying the pre-FS-73 numbers forward.
+    const FPT = of.game().factory.footprint;
+    const CELL_M = 1.002;
+    const mateCells = Math.max(1, Math.ceil((FPT.belt + FPT.miner) / 2));
+    const tries = [];
+    let tailAim = null;
+    for (const k of [mateCells, mateCells + 1]) {
+      const a = await aimGhost(add(drill.pos, mul(outDir, CELL_M * k)));
+      const v = sub(a.pos, drill.pos);
+      const t = { k, gapM: +len(v).toFixed(3), align: +dot(tangD(v), outDir).toFixed(3),
+        missM: a.missM, ok: a.ok, snapped: a.snapped };
+      tries.push(t);
+      // Both halves of the mate, restated as a test on the cell the ghost
+      // found. The DISTANCE band is the whole legal range with a margin,
+      // centred on `mateCells` rather than a literal 1-to-2 steps; the
+      // ALIGNMENT is the half this probe never used to check, and it is the
+      // half that decides.
+      //
+      // GP-774: `t.ok` IS PART OF THE TEST TOO, and the gap this lane closed proves
+      // why that is not a formality: at rotation 0 on this site the k=1
+      // (pre-fix) candidate measured `gapM: 1, align: 1`, a geometrically
+      // perfect tail, with `ok: false` underneath it, and the old test
+      // accepted it anyway; the drag that followed laid ZERO tiles onto a
+      // cell that was never placeable to begin with. Geometry can be perfect
+      // and the cell can still be taken, sloped wrong, or off the patch; only
+      // `ok` says whether a press would actually land there.
+      if (t.ok && t.align > 0.9
+        && t.gapM > mateCells * CELL_M - 0.6 && t.gapM < (mateCells + 1) * CELL_M + 0.6) {
+        tailAim = a; break;
+      }
+    }
+    log.push(`[rot ${rot}] tail tries: ` + JSON.stringify(tries));
+    if (tailAim === null) {
+      return { ok: false, rot, drill,
+        why: 'no cell along the drill\'s outlet to start a run on', outDir, tries };
+    }
+    const tailC = { pos: tailAim.pos, yaw: tailAim.yaw, pitch: tailAim.pitch };
+    const drillToTail = sub(tailC.pos, drill.pos);
+    const tailGapM = len(drillToTail);
+    const tailAlign = dot(tangD(drillToTail), outDir);
+    // The leg is the direction the tail was actually reached in, measured on
+    // the ground rather than recomputed from the heading, so it is exactly one
+    // site grid step and the tiles after it chain by construction.
+    const legDir = tangD(drillToTail);
+
+    // GP-762/GP-774/GP-775. THE FOOTPRINT FIX ALONE IS NOT THE WHOLE STORY,
+    // AND THE REST IS RECORDED RATHER THAN FORCED. `mateCells` above (3, not
+    // the pre-FS-73 1-or-2) makes the tail land where a real mate actually
+    // forms, which is the mechanism GP-762 named. But the corridor scan below,
+    // unchanged since before FS-73, still measures its OWN reach from wherever
+    // the player already stands, and a tail one cell further from the drill
+    // than it used to be pushes the leg's own far cells past what that reach
+    // sees: measured, the scan's own along-axis range topped out at 2.00 cells
+    // past the tail, short of the `2.6` a straight leg needs by four tenths of
+    // a metre, on BOTH rotations. Walking the player closer first (the fix
+    // every other placement in this lane needed for the identical reason,
+    // demolish.js's GP-770/771 included) was tried here and hit something this
+    // lane could not root-cause: `KeyW` held for a full 9 seconds (500 frames)
+    // from this exact stand-point moved the player 0.000 m (feet bit-identical
+    // before and after), while `grounded: true`, `blockedByBuild: false`,
+    // `blockedByRock: false` and `slopeCos: 1` all read as an ordinary, clear
+    // stand. `KeyS`/`KeyA`/`KeyD` each moved the eye a suspiciously IDENTICAL
+    // 9.053 m in the same test, which does not read as three different
+    // directions of ordinary strafing either. That is a genuine, reproducible
+    // player-movement anomaly, distinct from anything FactoryGhost, FactorySnap
+    // or FactoryWiring owns, and it is out of this lane's scope to chase into
+    // the movement/physics code: recorded here as GP-775 rather than forced
+    // past with a workaround this lane cannot verify is honest.
+    const scan = [];
+    for (let dy = -18; dy <= 18; dy += 2) {
+      for (let p = -62; p <= -12; p += 1.2) {
+        const g = await ghostAt(yawG + dy, p);
+        if (g === null || !g.ok) continue;
+        const s = { pos: g.pos, fwd: g.fwd, yaw: yawG + dy, pitch: p,
+          snapped: g.snapped !== '' };
+        const near = scan.find((q) => gdist(q.pos, s.pos) < 0.4);
+        if (near === undefined) scan.push(s);
+        else if (near.snapped && !s.snapped) Object.assign(near, s);
+      }
+    }
+    log.push(`[rot ${rot}] corridor scan: ${scan.length} distinct placeable cells`);
+    const alongOf = (s) => dot(sub(s.pos, tailC.pos), legDir);
+    const acrossOf = (s) => len(sub(sub(s.pos, tailC.pos), mul(legDir, alongOf(s))));
+    const legRoom = scan.filter((s) => alongOf(s) >= 2.6 && acrossOf(s) < 0.35).length;
+    const maxAlong = scan.reduce((m, s) => Math.max(m, alongOf(s)), -Infinity);
+    const minAlong = scan.reduce((m, s) => Math.min(m, alongOf(s)), Infinity);
+    log.push(`[rot ${rot}] tail ${tailGapM.toFixed(2)} m along the drill's outlet `
+      + `(align ${tailAlign.toFixed(3)}, aim miss ${tailAim.missM} m), leg room ${legRoom}, `
+      + `scan along range [${minAlong.toFixed(2)}, ${maxAlong.toFixed(2)}]`);
+    if (legRoom === 0) {
+      // Reported WITH the room on the other hand, because that is what proves
+      // the OTHER rotation is the one worth trying next.
+      const behind = scan.filter((s) => alongOf(s) <= -2.6 && acrossOf(s) < 0.35).length;
+      return { ok: false, rot, drill,
+        why: 'no straight leg of three cells along the outlet',
+        tail: tailC, legDir, legRoom, roomBehindTheOutlet: behind,
+        cells: scan.map((s) => [+alongOf(s).toFixed(2), +acrossOf(s).toFixed(2)]) };
+    }
+    return { ok: true, rot, drill, outDir, tangD, scan, tailC, legDir };
+  };
+
+  let attempt = await attemptDrill(0);
+  if (!attempt.ok) {
+    log.push(`rotation 0 failed (${attempt.why}); trying rotation 2 before giving up`);
+    if (attempt.drill !== null) {
+      const demolished = of.demolish({ id: attempt.drill.id });
+      log.push(`demolished the rotation-0 drill: ${JSON.stringify(demolished)}`);
+      await settle(0.3);
+    }
+    const second = await attemptDrill(2);
+    if (!second.ok) {
+      return { valid: false, why: 'no straight leg of three cells along the outlet, '
+        + 'on EITHER drill rotation',
+        attempts: [{ rot: 0, why: attempt.why, legRoom: attempt.legRoom ?? null,
+          roomBehindTheOutlet: attempt.roomBehindTheOutlet ?? null },
+          { rot: 2, why: second.why, legRoom: second.legRoom ?? null,
+            roomBehindTheOutlet: second.roomBehindTheOutlet ?? null }],
+        second, log };
+    }
+    attempt = second;
   }
-  log.push('tail tries: ' + JSON.stringify(tries));
-  if (tailAim === null) {
-    return { valid: false, why: 'no cell along the drill\'s outlet to start a run on',
-      drill, outDir, tries,
-      // The scan in the DRILL's own frame, which is the one question worth
-      // asking of it here: how far along the outlet, and how far off the row.
-      cells: scan.map((s) => {
-        const v = sub(s.pos, drill.pos);
-        const a = dot(v, outDir);
-        return [+a.toFixed(2), +len(sub(v, mul(outDir, a))).toFixed(2)];
-      }), log };
-  }
-  const tailC = { pos: tailAim.pos, yaw: tailAim.yaw, pitch: tailAim.pitch };
-  const drillToTail = sub(tailC.pos, drill.pos);
-  const tailGapM = len(drillToTail);
-  const tailAlign = dot(tangD(drillToTail), outDir);
-  // The leg is the direction the tail was actually reached in, measured on the
-  // ground rather than recomputed from the heading, so it is exactly one site
-  // grid step and the tiles after it chain by construction.
-  const legDir = tangD(drillToTail);
-  const alongOf = (s) => dot(sub(s.pos, tailC.pos), legDir);
-  const acrossOf = (s) => len(sub(sub(s.pos, tailC.pos), mul(legDir, alongOf(s))));
-  const legRoom = scan.filter((s) => alongOf(s) >= 2.6 && acrossOf(s) < 0.35).length;
-  log.push(`tail ${tailGapM.toFixed(2)} m along the drill's outlet `
-    + `(align ${tailAlign.toFixed(3)}, aim miss ${tailAim.missM} m), leg room ${legRoom}`);
-  if (legRoom === 0) {
-    // Reported WITH the room on the other hand, because the one way this fires
-    // for a real reason is the drill's outlet facing down the axis that has no
-    // ground to lay on, which is the rotation choice above getting it wrong.
-    const behind = scan.filter((s) => alongOf(s) <= -2.6 && acrossOf(s) < 0.35).length;
-    return { valid: false, why: 'no straight leg of three cells along the outlet',
-      tail: tailC, legDir, legRoom, roomBehindTheOutlet: behind, room,
-      cells: scan.map((s) => [
-        +alongOf(s).toFixed(2), +acrossOf(s).toFixed(2)]), log };
-  }
+  const { drill, outDir, tangD, scan, tailC, legDir } = attempt;
+  log.push(`settled on rotation ${attempt.rot} after `
+    + `${attempt.rot === 0 ? 1 : 2} attempt(s)`);
   // ONE AIM PER CELL, precomputed before the drag, each anchored on the CELL
   // THE PREVIOUS AIM ACTUALLY RESOLVED so error cannot accumulate: a big
   // crosshair jump lets dragRun path through the diagonal and lay a staircase
