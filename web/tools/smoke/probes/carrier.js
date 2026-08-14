@@ -561,11 +561,23 @@
   // the mounts drop before the rider lets go and before the frames are cleared,
   // so no mount ever holds a frame the registry has already forgotten, which is
   // the dead-handle state clause 4 of the teardown contract refuses.
-  check('C7 the scope registers all three carrier steps, so teardown reverses them',
-    lifeAfter.scope.indexOf('carriers:clear') === 0
-    && lifeAfter.scope.indexOf('carrier:release') === 1
-    && lifeAfter.scope.indexOf('mounts:clear') === 2,
-    JSON.stringify(lifeAfter.scope));
+  // PS-49 REPAIRED THIS CHECK AND DID NOT WEAKEN IT. It asserted the three at
+  // absolute indices 0, 1 and 2, which was true while they were the first three
+  // steps a scope registered and is a POSITION rather than the claim. The claim
+  // is the RELATIVE order, and it is the relative order the reasoning above is
+  // entirely about; a persistence step (`world.capture`) is now registered
+  // ahead of them, so the absolute form went red for something that is not
+  // about carriers at all. Consecutive-and-in-order still fails on any reorder
+  // of the three, on a missing one, and on anything inserted BETWEEN them,
+  // which is every way the property above can actually be broken.
+  {
+    const at = (s) => lifeAfter.scope.indexOf(s);
+    const i = at('carriers:clear');
+    check('C7 the scope registers all three carrier steps consecutively and in '
+      + 'order, so teardown reverses them',
+      i >= 0 && at('carrier:release') === i + 1 && at('mounts:clear') === i + 2,
+      JSON.stringify(lifeAfter.scope));
+  }
   // NOT zero since CE-80: `Boot` registers `station:anchorage` for the
   // station's own geometry mount, so the rebuilt world legitimately comes back
   // with ONE carrier in it. What the teardown must have emptied is everything

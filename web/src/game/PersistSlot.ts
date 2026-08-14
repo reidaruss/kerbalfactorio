@@ -16,11 +16,12 @@ import { readSlot, slotKey, writeSlot } from './SaveGame.js';
 import { rescueBefore } from './FactoryRescue.js';
 import { noteSave, saveInhibit } from '../sim/SaveInhibit.js';
 import { adoptWorldFor, keepWorlds } from './SaveWorlds.js';
+import { worldScopeReport } from './WorldScope.js';
 import { apply, snapshot } from './Persist.js';
 import { saveProgress } from './PersistProgress.js';
 import type { Gameplay } from './Gameplay.js';
 import type { RestoreLedger } from './PersistLedger.js';
-import type { SlotRefusal } from './SaveGame.js';
+import type { SaveSlot, SlotRefusal } from './SaveGame.js';
 
 /**
  * Why the last load refused a slot that EXISTS, for the report.
@@ -34,6 +35,26 @@ import type { SlotRefusal } from './SaveGame.js';
 let lastRefusal: SlotRefusal = '';
 export function lastSlotRefusal(): SlotRefusal { return lastRefusal; }
 
+/**
+ * THE WHOLE WORLD AS A SLOT, from the one argument every caller has.
+ *
+ * PS-49 made this exported and it had THREE callers the day it did: this file,
+ * `SaveSlots`' named-save path, and the body-switch capture in `WorldScope`.
+ * Two of them were already here, spelling out the same twenty arguments
+ * independently, which is PS-13's defect in its dormant form -- the named path
+ * fell out of `writeSlot` exactly by being a second enumeration, and this was a
+ * second enumeration of the layer below it. A third copy for the capture would
+ * have made a body switch freeze a world missing whichever field the next lane
+ * adds, so the copies are one function now.
+ */
+export function snapshotOf(g: Gameplay): SaveSlot {
+  return snapshot(g.core, g.game, g.field, g.factory, g.machines,
+    g.seed, g.bodyId, g.bodyHandle, g.ports, g.oreField, g.structures, g.pads,
+    g.stations, g.antennas,
+    g.hotbar, g.mode.mode,
+    saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
+}
+
 export async function saveSlot(g: Gameplay): Promise<unknown> {
   // PH-30 / physics R11. A save that cannot describe the world is refused here
   // rather than written and hoped over: the slot has no field for a vessel, so
@@ -44,11 +65,7 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   const inhibit = saveInhibit();
   if (inhibit !== '') { noteSave(true); return { refused: inhibit }; }
   noteSave(false);
-  const slot = snapshot(g.core, g.game, g.field, g.factory, g.machines,
-    g.seed, g.bodyId, g.bodyHandle, g.ports, g.oreField, g.structures, g.pads,
-    g.stations, g.antennas,
-    g.hotbar, g.mode.mode,
-    saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
+  const slot = snapshotOf(g);
   const ok = await writeSlot(slot);
   if (ok) g.saves++;
   return ok ? {
@@ -61,6 +78,12 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
     // outright (SaveGame.ts), so "we did not need one" has to be checkable
     // rather than claimed in a commit message.
     version: slot.version,
+    // PS-49. WHETHER THIS WRITE IS THE LIVE WORLD OR A FROZEN READING OF IT,
+    // beside `version` and for the same reason: a probe has no other way to
+    // read it, and "the save stopped moving" has to be checkable rather than
+    // inferred from a count that happens not to have changed. `frozen` false is
+    // every shipped path. See WorldScope.ts.
+    world: worldScopeReport(),
     vessels: slot.vessels?.length ?? 0,
     dockedVessels: (slot.vessels ?? []).filter((v) => v.docked !== undefined)
       .length,

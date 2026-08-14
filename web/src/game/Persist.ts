@@ -36,6 +36,7 @@ import { saveAntennas, restoreAntennas, rebuildRevealMarkers } from './AntennaSa
 import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
   type VoxelPort, type TerrainDigPort } from './VoxelSave.js';
 import { keptWorlds } from './SaveWorlds.js';
+import { slotForBody } from './WorldScope.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
 import { discoveryBytesFor, noteDiscoveryBody } from '../world/DiscoveryScope.js';
@@ -139,7 +140,15 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
     if (p !== null && p.remaining < p.initial) patches.push([i, p.remaining]);
   }
 
-  return {
+  // PS-49. THE FIFTEEN BODY-SCOPED FIELDS BELOW ARE THE LIVE WORLD'S, AND THE
+  // LIVE WORLD IS NOT ALWAYS THE ONE THIS SLOT NAMES. `bodyId` is boot-captured
+  // (R-BODY-2), so after an in-page `WorldSession.reboot` this object describes
+  // the populations of the body the session LEFT plus whatever the player has
+  // done since on another one, under the name of the first. `slotForBody` puts
+  // the last attributable reading of the named body's world over that half and
+  // leaves the global half alone; before any switch it returns this object
+  // untouched, field for field. The whole argument is in `WorldScope.ts`.
+  return slotForBody({
     version: SAVE_VERSION,
     seed,
     // PS-40 / PS-41. WHICH BODY EVERYTHING BELOW IS ABOUT, and the worlds this
@@ -205,7 +214,7 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
         fuelTicks: st?.fuelTicks ?? 0,
       };
     }),
-  };
+  }, bodyId);
 }
 
 export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,

@@ -22,7 +22,7 @@
 // view never blocks and never throws, and a `busy` string says which operation
 // is in flight, so a slow store reads as "saving" rather than as a dead button.
 
-import { snapshot, saveProgress } from './Persist.js';
+import { snapshotOf } from './PersistSlot.js';
 import { writeSlot } from './SaveGame.js';
 import { allKeys, autoKeyFor, deleteKey, nameOk, namedKey, parseNamedKey,
   readKey, writeKey, NAME_MAX } from './SaveKeys.js';
@@ -174,7 +174,7 @@ export class SaveSlots {
       return false;
     }
     this.busy = `saving "${name.trim()}"`;
-    const ok = await writeSlot(this.snapshotOf(g), namedKey(g.mode.mode, name));
+    const ok = await writeSlot(snapshotOf(g), namedKey(g.mode.mode, name));
     this.busy = '';
     if (ok) { this.saved++; this.note = `saved "${name.trim()}"`; }
     else { this.refusals++; this.note = 'the store refused the write'; }
@@ -233,14 +233,6 @@ export class SaveSlots {
     else { this.refusals++; this.note = 'the store refused the delete'; }
     await this.refresh(g.mode.mode);
     return ok;
-  }
-
-  private snapshotOf(g: Gameplay): SaveSlot {
-    return snapshot(g.core, g.game, g.field, g.factory, g.machines, g.seed,
-      g.bodyId, g.bodyHandle, g.ports, g.oreField, g.structures, g.pads,
-      g.stations, g.antennas,
-      g.hotbar, g.mode.mode,
-      saveProgress(g), g.health, g.vitals.serialize(), g.rocks, g.trees);
   }
 
   report(): unknown {

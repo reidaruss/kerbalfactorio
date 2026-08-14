@@ -38,6 +38,7 @@ import { bootTerrain, type TerrainBootResult } from '../world/TerrainBoot.js';
 import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
 import { reseatDiscovery } from '../world/DiscoveryScope.js';
+import { arriveOnBody, captureLeavingWorld } from '../game/WorldScope.js';
 import { CarrierRegistry } from '../world/CarrierFrame.js';
 import { CarrierRide } from '../world/CarrierRide.js';
 import { CarrierMounts } from '../world/CarrierGeometry.js';
@@ -355,7 +356,26 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // pass is the correct reading: `new Discovery(core, bodyId)` cuts the boot
   // body's field a moment later and there is nothing yet to re-seat.
   const discReseat: { fn: ((bodyId: BodyId) => void) | null } = { fn: null };
+  // PS-49. THE THIRD, and the one whose half runs on the way OUT rather than on
+  // the way in: the fifteen body-scoped populations a save is built from are all
+  // constructed once in `Gameplay`, so a switch cannot re-cut them and the save
+  // has to take a reading of the outgoing world instead. Same holder shape and
+  // the same reason (gameplay is built 180 lines below this).
+  const worldCapture: { fn: (() => void) | null } = { fn: null };
   const buildBodyScope: BuildBodyScope = async (bodyId, lt) => {
+    // PS-49. THE READING OF THE OUTGOING WORLD, and it is registered FIRST so
+    // that it exists even if the terrain build below throws, and runs LAST in
+    // teardown, after the mounts, the ride and the frames. Nothing in that list
+    // touches a building, a node or an edit set, so last is safe and is the
+    // reading closest to the moment the world stopped being played.
+    //
+    // A TEARDOWN STEP AND NOT A CALL AT THE DOOR, for two reasons that are both
+    // load-bearing. It has to run before `WorldSession.reboot` frees the old
+    // body handle -- `lt.end()` is the only hook that does -- or `poi` is
+    // captured as the same zero the defect writes; and a capture the CALLER
+    // performs is a capture the next caller forgets, which is the half-operation
+    // PS-41 refuses to make expressible. See game/WorldScope.ts.
+    lt.add('world.capture', () => { worldCapture.fn?.(); });
     // CE-31 / CE-34. ONE registration site for every scope, boot's included. A
     // carrier is a position in THIS body's frame, so a carrier that survived a
     // switch would be CE-21's nonsense a second time: Anchorage's 1,000,000 m
@@ -389,6 +409,12 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // one. Immediately after the oracle assertion, so the body this cuts for is
     // the body the assertion has just agreed on. See world/DiscoveryScope.ts.
     discReseat.fn?.(bodyId);
+    // PS-49. AND THE SAVE FINDS OUT WHICH BODY IT IS NOW BEING ASKED ABOUT,
+    // beside the discovery re-seat and for its reason: this is the one place
+    // that knows the body changed. It needs no holder, because unlike the field
+    // and the station there is nothing in the new scope to put back -- the
+    // decision it makes is entirely about state this module already owns.
+    arriveOnBody(bodyId);
     const t = await bootTerrain({
       cfg, quality, depth: renderer.depth, events, scenes, origin, body: oracle.body,
       atmosphere: sky.atmos, cascadeSplits: shadows.splits,
@@ -531,6 +557,11 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     // that means to measure the renderer alone cannot actually get there.
     const { Gameplay } = await import('../game/Gameplay.js');
     const { digOrePort } = await import('../game/DigOre.js');
+    // PS-49. The save layer is reached from inside the dynamic block for
+    // standing rule 7's reason, exactly as `Gameplay` is: a static import here
+    // would pull the whole persistence graph into the main chunk and
+    // `?gameplay=0` would stop isolating anything.
+    const { snapshotOf } = await import('../game/PersistSlot.js');
     gameplay = await Gameplay.create({
       core, origin, player, avatar, input, host, scene: scenes.near,
       bodyHandle: body.handle, bodyId: body.bodyId, seed: cfg.seedLo,
@@ -553,6 +584,17 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
       // every level press posting to a terminated worker with no error anywhere.
       ports: { voxels, voxelMesh, get terrain() { return session.terrain; } },
     });
+    // PS-49. THE READING OF THE WORLD BEING LEFT, through the SAME function
+    // that writes a save, so the fifteen body-scoped fields are enumerated
+    // once and a field added later is frozen without anybody remembering to.
+    // Assigned here rather than beside `discReseat` because it is the only
+    // place `gameplay` is non-null by construction; a world with no gameplay
+    // leaves the holder null, which `captureLeavingWorld` reads as "nothing to
+    // freeze" rather than as an empty world.
+    {
+      const g = gameplay;
+      worldCapture.fn = () => { captureLeavingWorld(() => snapshotOf(g)); };
+    }
     // DIGGING INTO AN ORE BODY PAYS. The dig action lives in Services and the
     // ore pool lives in the gameplay layer, so this line is the seam between
     // them; without it a pickaxe swing at an outcrop grants ore and a dig strike
