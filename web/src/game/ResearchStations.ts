@@ -32,13 +32,21 @@
 // while the two enums agree member for member), and it means the price has one
 // authority, which is `gameplay.h` §S.6.
 //
-// THE MESH IS A PLACEHOLDER AND THIS IS THE NOTICE. `assets/machines/assembler.glb`
-// is borrowed because it is the machine in the shipped set that reads most like
-// a workbench under instruments, and because borrowing one costs nothing while
-// minting a TypeId with no art costs a silently invisible building. /core pins
-// `types::ResearchStation = 0x45` and ASSET-SPECS §4 owes
-// `structures/research_station.glb` against it. THE ART LANE OWES A REAL MESH;
-// when it lands, the only edit here is the URL and the root name.
+// THE MESH LANDED ON 2026-08-14 AND THE PLACEHOLDER IS GONE (RN-1530 to
+// RN-1549). `assets/structures/research_station.glb` is the real asset against
+// `types::ResearchStation = 0x45`: a 2.00 x 2.00 m skid-mounted field bench,
+// 2.44 m to the top of its sensor mast, built by
+// tools/blender/build_research_station.py and specced in ASSET-SPECS §4.26.
+//
+// ITS DIMENSIONS WERE DERIVED FROM THIS FILE, which is worth knowing before
+// anything here is changed. The footprint is two `MACHINE_TILE_M` tiles so two
+// benches on adjacent cells abut exactly, and the HEIGHT is solved from
+// `pick` below: that test refuses a ray more than `STATION_RADIUS_M + 0.5`
+// from a point `STATION_CENTRE_UP_M` above the pivot, so anything further than
+// 1.90 m from (0, 0.70, 0) draws and blocks but cannot be selected. The build
+// script asserts, off the shipped vertices, that no part of the asset is
+// outside that sphere - measured at 1.8894 m. Moving either constant here
+// silently un-picks the top of the mast.
 
 import * as THREE from 'three';
 import { addressIn, anchorIn, siteAt, type SiteHost } from './MachinePlacement.js';
@@ -51,8 +59,9 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Solid } from './StructureBody.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
-/** PLACEHOLDER ART. See the header. */
-const FILE = 'assets/machines/assembler.glb';
+/** The real asset (RN-1530..1549). See the header on why its size is derived
+ *  from `STATION_RADIUS_M` and `MACHINE_TILE_M`. */
+const FILE = 'assets/structures/research_station.glb';
 
 /** `survival::StructureKind::ResearchStation`. The def is found by THIS and
  *  never by array index, for the reason GP-57 gives in LaunchPad.ts. */
@@ -334,9 +343,11 @@ export class ResearchStations {
       canAfford: this.canAfford(), affordInCore: this.affordInCore(),
       cost: this.costText(),
       item: this.def?.item ?? 0, typeId: this.def?.typeId ?? 0,
-      /** PLACEHOLDER ART, said in the report as well as in the header, so a
-       *  screenshot review cannot mistake a borrowed mesh for the real one. */
-      placeholderMesh: FILE,
+      /** Which mesh the world actually drew. It was `placeholderMesh` while a
+       *  borrowed one shipped; the field survives the rename because a probe
+       *  that cannot name the asset it photographed is a probe that cannot
+       *  tell a re-pointed URL from a 404. */
+      mesh: FILE,
       list: this.list.map((st) => ({
         id: st.id, pos: [st.pos.x, st.pos.y, st.pos.z], onDeck: st.onDeck,
         solid: st.solid !== null,

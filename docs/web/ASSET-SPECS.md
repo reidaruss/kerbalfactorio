@@ -2472,6 +2472,125 @@ not include hands or arms.
 pose. An armoured player currently sees unarmoured arms. Either a second armour
 file authored against `FP_BONES`, or an explicit decision to accept it.
 
+### 4.26 Research station, `structures/research_station.glb` (TypeId 0x45). **Built 2026-08-14 (A6 / RN-1530..1549).**
+
+Footprint **2.00 x 2.00 m**, height **2.44 m**. A skid-mounted field research
+bench: an instrument cabinet with a hooded screen and a canted control fascia,
+a work surface with a grating insert and a sample clamp, a sensor mast, an
+equipment box and the cabling between them. D-019 minted the TypeId on
+2026-08-11 and `ResearchStations.ts` drew `machines/assembler.glb` until this
+landed.
+
+**Every dimension is derived from the client and none from the asset it
+replaced.** The assembler is 8.00 m square; the class that borrowed it snaps to
+`MachinePlacement.MACHINE_TILE_M` = 1.00 m, places 2.20 m ahead of the eye and
+picks with a 1.40 m sphere sitting 0.70 m up. **2.00 m is two tiles**, so two
+benches on adjacent cells abut exactly. **2.44 m is solved from the pick**:
+`ResearchStations.pick` refuses a ray more than `STATION_RADIUS_M + 0.5` =
+1.90 m from (0, 0.70, 0), the mast stands 0.721 m out in plan, so the sphere
+allows it `sqrt(1.90^2 - 0.721^2)` = 1.757 m of rise, i.e. z <= 2.4578.
+**Measured: the worst LOD0 vertex is 1.8894 m from that centre, so every part
+of the asset is selectable.** `build_research_station._assert_envelope` checks
+it off the accumulated vertices, because `contracts.json` measures a box and
+this is a sphere.
+
+**Key shapes.** Skid deck plate 2.00 x 2.00 x 0.06 with tread strips, two
+lashing points and four levelling feet (one packed up on a shim); channel
+runners and cross members standing clear of the ground so only the feet touch
+it; a bolted hazard-yellow corner angle on the +X / -Y corner with the kick
+plates dented at the same corner. Cabinet 0.92 x 0.48 x 1.48 in the +Y half,
+corner posts straddling the edges, plate courses, a five-blade louvre bank on
+the -X end, a bolted maintenance hatch with hinges, latch and placard on +Y, a
+junction box and cable tray, drip lips on three faces. **The console**: a
+coamed bezel, a `Glass` pane over an inset `EmissiveState` plate, a hood
+leaning 0.46 m out over it on two gussets (the lit plate is emitted at every
+tier as structure, so LOD2's `bracket` threshold cannot switch the screen off
+at the range a lit panel is most of what the asset says), a canted `Accent` control shelf with
+four switch bosses and two knobs, a two-dial cluster on the +X end. Work
+surface at 0.92 m on two gussets and two legs, end rims, grating, tray and
+clamp, a drawer below. Sensor mast at (0.60, 0.40) with a wind vane, a
+four-disc radiation-shield stack, a sky dome and a finial. Equipment box, two
+conduit runs, an earth spike and a hank of spare cable on a hook.
+
+**2,860 / 1,852 / 1,036 tris** (cap 3,200 / 6,400 total). Materials (8):
+`OF_Steel`, `OF_SteelDark`, `OF_SteelLight`, `OF_Accent`, `OF_Hazard`,
+`OF_Rubber`, `OF_Glass`, `OF_EmissiveState`. `OF_Glass` is double sided and
+declared.
+Sockets: `socket_screen` (-0.14, 1.36, -0.04) facing the player, role `ui`;
+`socket_status` (0.26, 1.62, -0.04), role `state_light`; `socket_sample`
+(-0.12, 0.92, 0.30) facing up, role `item_rest`.
+Collision: `col_Skid` 2.00 x 2.00 x 0.24 (steppable), `col_Cabinet`,
+`col_Bench` (solid to the ground, R48: the walker is a line with three samples
+0.75 m apart, so a 0.09 m slab at 0.92 m is missable), `col_Mast`.
+No clips.
+**Shadow LOD, measured** by `check_shadow_lod.py`: LOD1 52.80 mm (earns
+cascades 1 and 2), LOD2 443.73 mm (earns none, and is a screen-distance tier by
+construction: it drops the screen hood, which stands 0.46 m proud). Marginal
+multiplier **2.0x**. `check_coplanar.py`: **zero** same-facing pairs.
+
+### 4.27 Scanning antenna, `structures/scanning_antenna.glb` (TypeId 0x46). **Built 2026-08-14 (A6 / RN-1530..1549).**
+
+Footprint **3.00 x 3.00 m**, height **6.00 m**. A guyed four-chord lattice
+tower carrying a 2.10 m panelled parabolic reflector on an elevation trunnion,
+with a feed horn on a quadripod at the focus. GP-533 minted the TypeId on
+2026-08-13 and `Antennas.ts` drew `machines/power_pole.glb` until this landed.
+
+**The four guy anchors own the bounding box, and that is why there are four.**
+The `ground` pivot wants a centred AABB and ART-DIRECTION.md wants asymmetry;
+four identical anchor blocks at four corners is not a compromise with the
+validator, it is what a guyed mast is, and it buys everything else the freedom
+to be lopsided. Blocks are 0.44 square at (+-1.28, +-1.28) so their outer faces
+land on +-1.50 exactly; nothing else passes KEEP = 1.42. **Height is solved
+backwards**: the topmost point is the reflector rim, `(DISH_R + DEPTH) *
+sin(45)` above the vertex, so the trunnion sits at 5.0255. Both LOD sector
+counts (16 and 8) put a vertex at exactly theta = 90 degrees, which is what
+lets all three tiers share one `dims_xyz_m`.
+
+**Key shapes.** Four anchor blocks with a Hazard capping course, a lug, a pin
+and four holding-down bolts; a 0.94 m plinth with a kerb, a drain channel and a
+Copper bonding stud. Tower from z 0.34 to 4.30, four continuous chords tapering
+0.58 -> 0.31 across, ties at five levels, N-braced diagonals alternating up the
+mast, a guy collar at 2.90, climbing rungs on one face with a fall-arrest rail,
+and a feeder conduit clipped up one chord. Four guys, collar to anchor, each
+with a turnbuckle low down. Head: a finned azimuth rotator, a two-arm yoke to
+the trunnion, an elevation screw jack to a back rib, an obstruction light and a
+Copper waveguide. **The reflector is a closed solid** (front skin, back skin,
+outer rim, inner rim, 16 sectors x 3 rings) wound by `machine_form.oriented`
+off the signed volume, with eight radial panel straps on the face, four heavy
+ribs behind, a hub casting, a quadripod and a Copper feed horn. f/D 0.40, focal
+0.840 m, depth 0.3281 m, elevation 45 degrees, aimed at -Y i.e. at whoever
+placed it.
+
+`station_form.antenna` exists and was refused: it is a mast box plus a fan of
+eight **one-sided** triangles, correct for a 400 km hull silhouette and a hole
+in the world from behind, since `OF_SteelLight` is backface culled.
+
+**2,848 / 2,272 / 1,568 tris** (cap 3,200 / 7,400 total). Materials (8):
+`OF_Steel`, `OF_SteelDark`, `OF_SteelLight`, `OF_Accent`, `OF_Hazard`,
+`OF_Rubber`, `OF_Copper`, `OF_EmissiveState`. Nothing double sided.
+Sockets: `socket_scan` (0.0, 5.6195, 0.494) on the boresight at the feed, role
+`scan`; `socket_status` (-1.04, 1.00, 0.44), role `state_light`.
+Collision: `col_Plinth`, `col_Mast`, `col_Cabinet`, `col_Anchor1..4` (named
+without an underscore before the digit on purpose: `check-proxies.mjs`
+catalogues the three.js `Name_<digits>` trap).
+No clips, and that is a refusal: `Antennas.ts` never touches `AnimationMixer`,
+so a rotating dish would be dead bytes plus a contract row that reads like a
+feature. The elevation screw jack is the static version of the same statement.
+**Shadow LOD, measured**: LOD1 55.73 mm (cascades 1 and 2), LOD2 108.00 mm
+(cascade 2 - which is a coincidence and is relied on nowhere, since LOD2 drops
+the reflector to 8 sectors and an 8-gon sits `r(1 - cos(180/8))` = 80 mm inside
+a 16-gon). Marginal multiplier **2.0x**. `check_coplanar.py`: **zero**
+same-facing pairs.
+
+**One measured finding owed to the gameplay lane.** `Antennas.pick` is a 1.40 m
+sphere 0.70 m up plus 0.50 m of slack. On a 6 m mast that is not satisfiable:
+57.0 per cent of LOD0's vertices lie inside it and selection stops at z = 2.555
+on the mast axis, so **the tower is selectable and the dish is not**. A level
+crosshair at eye height 1.60 m scores 0.90 m at any range and meets the tower,
+so this is invisible in play; the borrowed `power_pole.glb` had the identical
+property at 4.0 m and nobody had measured it. Widening `ANTENNA_RADIUS_M` is a
+gameplay change and was not taken by an art lane.
+
 ---
 
 ## 5. Repository layout

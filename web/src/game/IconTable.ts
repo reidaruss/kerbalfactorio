@@ -116,21 +116,17 @@ export const ICON_TABLE: readonly IconSpec[] = [
   // row naming it would bake the single authored arm sitting off to one side of
   // a 24 m deck, which reads as a crane rather than as a launch pad.
   R(0x0044, 'Launch pad', 'assets/rocket/launch_pad.glb', 'LaunchPad_LOD0'),
-  // D-019's research station, and its picture is the PLACEHOLDER MESH's, said
-  // here as plainly as it is said in `ResearchStations.ts`. /core pins
-  // `types::ResearchStation = 0x45` and the art lane owes
-  // `structures/research_station.glb` against it; until that lands, the tile
-  // shows the assembler, which is what the world shows too. A tile drawn from a
-  // DIFFERENT mesh than the world would be worse than a placeholder, because
-  // then the picture would be a lie rather than a stand-in.
-  R(0x0045, 'Research station', `${MACH}assembler.glb`, 'Assembler_LOD0'),
-  // GP-533's scanning antenna, the station's row above verbatim: the
-  // PLACEHOLDER MESH is said here plainly, matching `Antennas.ts`. /core pins
-  // `types::ScanningAntenna = 0x46` and the art lane owes
-  // `structures/scanning_antenna.glb` against it; until that lands, the tile
-  // shows the power pole (the tall, thin mast in the shipped set), which is
-  // what the world shows too, so the tile is a stand-in rather than a lie.
-  R(0x0046, 'Scanning antenna', `${MACH}power_pole.glb`, 'PowerPole_LOD0'),
+  // D-019's research station and GP-533's scanning antenna, both drawing their
+  // OWN meshes since 2026-08-14 (RN-1530 to RN-1549). These two rows carried a
+  // paragraph each explaining which machine was borrowed and why; the rule that
+  // paragraph existed to protect still holds and is worth keeping in one line.
+  // THE TILE BAKES FROM THE SAME MESH THE WORLD DRAWS. A tile drawn from a
+  // different mesh would be a lie rather than a stand-in, which is why these
+  // moved in the same commit as `ResearchStations.FILE` and `Antennas.FILE`.
+  R(0x0045, 'Research station', `${STRU}research_station.glb`,
+    'ResearchStation_LOD0'),
+  R(0x0046, 'Scanning antenna', `${STRU}scanning_antenna.glb`,
+    'ScanningAntenna_LOD0'),
   // The four armour pieces reached the same craft menu in the same ABI bump and
   // had the same problem. `armour_set.glb` ships them SKINNED, which is why they
   // are baked from the bind pose (see `bake`) rather than posed.

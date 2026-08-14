@@ -128,7 +128,7 @@
     st0.item === 0x0045, st0.item.toString(16));
   check('and whose entity TypeId is 0x45', st0.typeId === 0x45,
     st0.typeId.toString(16));
-  log.push(`station cost: "${st0.cost}"  mesh: ${st0.placeholderMesh}`);
+  log.push(`station cost: "${st0.cost}"  mesh: ${st0.mesh}`);
   check('the price is quoted in SMELTED metal, which is the storyline slot',
     /Iron/i.test(st0.cost) && /Copper/i.test(st0.cost) && /Stone/i.test(st0.cost),
     st0.cost);

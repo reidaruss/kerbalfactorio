@@ -88,7 +88,7 @@
   check('the world starts with NO antenna', an0.count === 0, an0.count);
   check('/core handed over a definition (item 0x0046)', an0.item === 0x0046, an0.item?.toString(16));
   check('and entity TypeId 0x46', an0.typeId === 0x46, an0.typeId?.toString(16));
-  log.push(`antenna cost: "${an0.cost}"  mesh: ${an0.placeholderMesh}`);
+  log.push(`antenna cost: "${an0.cost}"  mesh: ${an0.mesh}`);
   check('the price is quoted in SMELTED metal', /Iron/i.test(an0.cost) && /Copper/i.test(an0.cost), an0.cost);
 
   const s0 = of.sites();

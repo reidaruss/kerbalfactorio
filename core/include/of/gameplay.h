@@ -926,15 +926,13 @@ static constexpr TypeId Door       = 0x43;
 // infrastructure; the TypeId is still a structural one because what a TypeId
 // answers is "which mesh and which family", and the pad's family is this one.
 static constexpr TypeId LaunchPad  = 0x44;
-// D-019. The research station. 0x45 continues the structural TypeId block; the
-// art lane owes `structures/research_station.glb` against it (ASSET-SPECS §4 is
-// still the authority) and the client draws an existing machine mesh under this
-// id until it ships, which is a PLACEHOLDER and is said out loud in
-// ResearchStations.ts rather than left to be discovered.
+// D-019. The research station. 0x45 continues the structural TypeId block, and
+// `structures/research_station.glb` shipped against it on 2026-08-14 (ASSET-
+// SPECS §4.26). The placeholder note that stood here from 2026-08-11 is gone.
 static constexpr TypeId ResearchStation = 0x45;
-// GP-533. The scanning antenna. 0x46 continues the block; the art lane owes a
-// real mesh (ASSET-SPECS §4) and the client borrows an existing machine mesh
-// under this id until it ships, said out loud in Antennas.ts.
+// GP-533. The scanning antenna. 0x46 continues the block, and
+// `structures/scanning_antenna.glb` shipped against it on 2026-08-14
+// (ASSET-SPECS §4.27). Placeholder note likewise retired.
 static constexpr TypeId ScanningAntenna = 0x46;
 }  // namespace types
 

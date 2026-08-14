@@ -98,7 +98,19 @@ import math
 # panel, a motor hangs off the machine.
 LAYER = {
     "scribe":   0.006,   # a shallow scribed panel line
+    # RN-1543. TWO ROWS FOR THE TWO HALVES OF A WEAR MARK, added here rather
+    # than borrowed, which is what the note above this table asks for. The
+    # ruin's contract records that a mark reads as SIGNAGE unless it is two
+    # overlapping boxes on two layers, and build_research_station.py reproduced
+    # that by parenting the mark on `scribe` and its satellite on the layer
+    # below - which is `scribe` itself, so both halves landed on one plane in
+    # two different roles. That is the exact failure property (b) above exists
+    # to make impossible, defeated by reusing a type that already had a role:
+    # check_coplanar.py measured 8 same-facing pairs from it. A mark now has
+    # its own two types and nothing else in the project mounts on them.
+    "grime":    0.009,   # the shallow, offset half of a two-part wear mark
     "seam":     0.013,   # the strap between two plates
+    "stain":    0.016,   # the main half of a wear mark; its satellite is grime
     "shim":     0.019,   # a packing plate under something else
     "plate":    0.024,   # a bolted-on plate: placards, patches, name plates
     "kick":     0.031,   # the rubbing strip at the foot of a machine

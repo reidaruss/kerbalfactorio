@@ -22,14 +22,23 @@
 // answers "did a structure go down", the action function answers "what does
 // that MEAN".
 //
-// THE MESH IS A PLACEHOLDER AND THIS IS THE NOTICE, D-019's own pattern.
-// `assets/machines/power_pole.glb` is borrowed because it is the tall, thin
-// mast shape in the shipped set that reads most like a receiver under
-// instruments, and because borrowing one costs nothing while minting a TypeId
-// with no art ships a silently invisible building. /core pins
-// `types::ScanningAntenna = 0x46` and ASSET-SPECS §4 owes
-// `structures/scanning_antenna.glb` against it. THE ART LANE OWES A REAL MESH;
-// when it lands, the only edit here is the URL and the root name.
+// THE MESH LANDED ON 2026-08-14 AND THE PLACEHOLDER IS GONE (RN-1530 to
+// RN-1549). `assets/structures/scanning_antenna.glb` is the real asset against
+// `types::ScanningAntenna = 0x46`: a 3.00 x 3.00 m footprint, 6.00 m to the
+// top of a 2.10 m panelled dish on a guyed four-chord lattice tower, built by
+// tools/blender/build_scanning_antenna.py and specced in ASSET-SPECS §4.27.
+//
+// ONE MEASURED CONSEQUENCE, AND IT IS OWED TO THIS FILE RATHER THAN TO THE
+// ART. `pick` below refuses a ray more than `ANTENNA_RADIUS_M + 0.5` = 1.90 m
+// from a point `ANTENNA_CENTRE_UP_M` above the pivot. On a 6 m mast that is
+// not satisfiable: 57.0 per cent of the asset's vertices lie inside that
+// sphere and selection stops at z = 2.555 on the mast axis, so the tower is
+// selectable and THE DISH IS NOT. In play this is invisible, because a level
+// crosshair at eye height 1.60 m scores |1.60 - 0.70| = 0.90 m at any range
+// and meets the tower; it only bites if somebody aims at the head. The
+// borrowed `power_pole.glb` had the identical property at 4.0 m and nobody had
+// measured it. Widening `ANTENNA_RADIUS_M` is a GAMEPLAY change and is left
+// here as a stated finding rather than taken by an art lane.
 
 import * as THREE from 'three';
 import { addressIn, anchorIn, siteAt, type SiteHost } from './MachinePlacement.js';
@@ -42,8 +51,9 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Solid } from './StructureBody.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
-/** PLACEHOLDER ART. See the header. */
-const FILE = 'assets/machines/power_pole.glb';
+/** The real asset (RN-1530..1549). See the header on what `pick` can and
+ *  cannot reach on a 6 m mast. */
+const FILE = 'assets/structures/scanning_antenna.glb';
 
 /** `survival::StructureKind::ScanningAntenna`. The def is found by THIS and
  *  never by array index, for the reason GP-57 gives in LaunchPad.ts and
@@ -248,8 +258,9 @@ export class Antennas {
       canAfford: this.canAfford(), affordInCore: this.affordInCore(),
       cost: this.costText(),
       item: this.def?.item ?? 0, typeId: this.def?.typeId ?? 0,
-      /** PLACEHOLDER ART, said in the report as well as in the header. */
-      placeholderMesh: FILE,
+      /** Which mesh the world actually drew; `ResearchStations.report`'s own
+       *  field, renamed off `placeholderMesh` in the same commit. */
+      mesh: FILE,
       list: this.list.map((at) => ({
         id: at.id, pos: [at.pos.x, at.pos.y, at.pos.z], onDeck: at.onDeck,
         solid: at.solid !== null,
