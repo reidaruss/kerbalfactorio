@@ -62,6 +62,13 @@ export const RCS_WORDS = 4;
  *  coneErrorRad, reason, tests, bestReason, bestClosingMS, bestConeErrorRad]`.
  *  Read as a MINIMUM and not an equality, for FLIGHT_STATE_WORDS's reason. */
 export const DOCK_STATUS_WORDS = 11;
+/** PH-362 (ABI 26). `[armed, available, verdict, separationM, closingMS,
+ *  coneErrorRad, captureRadiusM, captureConeRad, maxClosingMS]`. The three
+ *  LIMITS ride with the three measurements on purpose: they come off the part
+ *  and a client-side copy would go stale the day a second port class ships. */
+export const DOCK_CANDIDATE_WORDS = 9;
+/** PH-360 (ABI 26). `[posX,Y,Z, faceX,Y,Z, rollX,Y,Z]`. */
+export const PORT_POSE_WORDS = 9;
 export const ORBIT_META_WORDS = 18;
 export const NODE_PLAN_WORDS = 26;
 /** ABI 18: [a, e, i, lan, argp, nu, m0, epoch, mu]. */
@@ -350,6 +357,44 @@ export interface VesselAbi {
    *  words 3 and 8..10 are the BEST PASS, because every tick after a failed
    *  pass reports the vehicle flying away and its reason is always 1. */
   _of_fl_dock_status(f: number): number;
+
+  // --- §13.2b THE DOCKING COMMAND SURFACE (ABI 26, PH-360..366, D-015). -----
+  //
+  // R93: "there is no `of_dk_*` symbol in the wasm at all, so the client cannot
+  // even ask". The block above arms a MECHANISM that latches inside the step;
+  // these five are the CONTROL, and every one delegates its judgement to
+  // `of/docking.h`. Optional (`?`) on the readers so a client running against
+  // an older wasm degrades to "no dock available" instead of throwing, which is
+  // the same shape `_of_fl_dock_status` already uses.
+  /** PH-360. `docking::portAt`, pure. A port's LOCAL pose (vessel frame: +Y
+   *  forward, +X right) carried into world space by an origin and an attitude.
+   *  f64 scratch, PORT_POSE_WORDS. It exists so the composition happens ONCE,
+   *  in C++, rather than a second time in TypeScript with its own opinion about
+   *  which axis is forward. */
+  _of_dk_port_at?(px: number, py: number, pz: number,
+                  fx: number, fy: number, fz: number,
+                  rx: number, ry: number, rz: number,
+                  lpx: number, lpy: number, lpz: number,
+                  lfx: number, lfy: number, lfz: number,
+                  lrx: number, lry: number, lrz: number): number;
+  /** PH-364. 1: latch on contact inside the step (the shipped behaviour, and
+   *  what the auto-approach autopilot will want). 0: ADVISORY, which is what
+   *  makes a hand-flown dock possible at all -- under auto-latch the sim docks
+   *  itself the tick before a player could press anything. Reset to 1 by every
+   *  `_of_fl_dock_arm`. */
+  _of_dk_latch?(f: number, latchOnContact: number): number;
+  /** PH-362. Would a capture succeed RIGHT NOW, and if not which gate is shut.
+   *  f64 scratch, DOCK_CANDIDATE_WORDS. `selfId`/`targetId` are the client's
+   *  own registry ids and are compared only to refuse a self-dock; pass 0 for
+   *  both to skip that rule. */
+  _of_dk_candidate?(f: number, selfId: number, targetId: number): number;
+  /** PH-364. DOCK. -> 1 captured, 0 no rig, else MINUS the verdict code
+   *  (-1 out of range, -2 not facing, -3 too fast, -4 already docked,
+   *  -5 self-dock). */
+  _of_dk_capture?(f: number, selfId: number, targetId: number): number;
+  /** PH-363. UNDOCK, pushing straight out of the vessel's own port face at
+   *  `sepMS` (0 takes `docking::kReleaseSepMS`, 0.20 m/s). -> 1 or 0. */
+  _of_dk_release?(f: number, sepMS: number): number;
 
   // --- §13.3 ON RAILS (ABI 18). Pure, handle-free; nothing is stored. --------
   /** Fit a conic to a state vector. f64 scratch, ORBIT_ELEMENT_WORDS:

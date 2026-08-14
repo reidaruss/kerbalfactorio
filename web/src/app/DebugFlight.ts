@@ -18,6 +18,7 @@ import { mayLeave, resumeReport, whyNotLeave } from './ResumeBoot.js';
 import { playerAnchorReport } from './PlayerAnchor.js';
 import { vesselSaveReport } from '../game/VesselSave.js';
 import { registry, stateOf } from '../sim/VesselRegistry.js';
+import { vesselAbi } from '../sim/wasm/vesselabi.js';
 import { evaActive, lastVesselGravity } from '../game/VesselGravity.js';
 import type { Services } from './Services.js';
 
@@ -49,6 +50,14 @@ function vesselReport(tick: number): Record<string, unknown> {
               throttle: r.pose.throttle, sasMode: r.pose.sasMode },
       conic: r.where.kind === 'conic'
         ? { a: r.where.el.a, e: r.where.el.e, epoch: r.where.el.epoch } : null,
+      // PH-366. THE LATCH, published on the census rather than only on the
+      // flight report, because "is this vessel docked" has to be answerable
+      // about a record NOBODY IS FLYING -- which is exactly the state a
+      // save/reload leaves it in, and therefore the only state in which the
+      // save shape can be measured at all. `null` is not docked.
+      docked: r.docked === undefined ? null
+        : { hostId: r.docked.hostId, hostPort: r.docked.hostPort,
+            localPos: r.docked.localPos, localFwd: r.docked.localFwd },
     })),
   };
 }
@@ -93,6 +102,11 @@ export function flightApi(s: Services): FlightDebugApi {
         // on a key because a probe must be able to assert the REFUSALS too, and
         // a refusal is invisible from outside unless the call returns.
         case 'recover': return { ok: f.recover(), report: f.report() };
+        // PH-360. The same method the `dock` key calls, and like `recover` it
+        // returns `ok` because a REFUSAL is invisible from outside unless the
+        // call returns: `probes/docking.js` has to prove the out-of-range
+        // refusal fired rather than infer it from nothing having happened.
+        case 'dock': return { ok: f.dock(), report: f.report() };
         case 'counters': return counters(s);
         // PH-84. PER-TANK PROPELLANT, RE-READ FROM /core ON EVERY CALL.
         //
@@ -202,6 +216,37 @@ export function flightApi(s: Services): FlightDebugApi {
         // The navball's OWN account of what it drew. A navball that is present
         // but never fed has to be distinguishable from one that is live, so this
         // is deliberately the panel's report and not a re-derivation.
+        // PH-368. THE DOCK TARGET'S LIVE PORT POSE, published so a probe can
+        // put a vessel ON the port without a second copy of the socket
+        // composition. It is the exact object the capture test is armed with,
+        // so a probe that places against it and then reads a refusal has found
+        // a real disagreement rather than its own arithmetic.
+        case 'dockTarget': return f.dockTarget ?? { error: 'no dock target' };
+        // PH-368. DEBUG-PLACE: put the flown vessel at a state, exactly.
+        //
+        // A hand-flown rendezvous takes minutes of wall clock and a probe that
+        // flew one would be measuring the pilot, not the latch. This writes
+        // /core's state directly and RE-SAMPLES, because a cheat that left the
+        // instrument rows stale would have every readout describing a vessel
+        // that is not there (GP-105, which is why `sample` is public).
+        case 'place': {
+          const o = a as { pos?: number[]; vel?: number[];
+                           fwd?: number[]; right?: number[] } | undefined;
+          const h = f.session.handle;
+          if (h <= 0 || o === undefined) return { error: 'no live flight' };
+          const V = vesselAbi(s.core);
+          if (Array.isArray(o.pos) && Array.isArray(o.vel)) {
+            V._of_fl_set_pos_vel(h, o.pos[0] ?? 0, o.pos[1] ?? 0, o.pos[2] ?? 0,
+                                 o.vel[0] ?? 0, o.vel[1] ?? 0, o.vel[2] ?? 0);
+          }
+          if (Array.isArray(o.fwd) && Array.isArray(o.right)) {
+            V._of_fl_set_attitude(h, o.fwd[0] ?? 0, o.fwd[1] ?? 1, o.fwd[2] ?? 0,
+                                  o.right[0] ?? 1, o.right[1] ?? 0, o.right[2] ?? 0);
+          }
+          V._of_fl_set_ang_vel(h, 0, 0, 0);
+          f.session.sample();
+          return { ok: true, state: f.session.state };
+        }
         case 'navball': return f.navball.report();
         case 'readout': return f.readout();
         // Camera framing for a screenshot. It moves the EYE and nothing else:

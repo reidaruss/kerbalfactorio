@@ -470,7 +470,33 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       different authority from the survey grid — do not conflate them.
 //       Because this writes real cells it persists through the existing
 //       `of_disc_serialize` with everything else and no save field was added.
-OF_API int of_abi_version(void) { return 25; }
+// ABI 26 (2026-08-14): THE DOCKING COMMAND SURFACE (`of_dk_*`, PH-360..366,
+//       D-015's manual rung). R93's complaint was that no `of_dk_*` symbol
+//       existed at all, so a client could not even ask whether a dock was
+//       possible, let alone perform one: `of_fl_dock_arm/target/status/clear`
+//       arm a rig that LATCHES ON CONTACT INSIDE THE STEP and report what the
+//       last tick found, which is a mechanism and not a control. Five new
+//       exports, all in of_flight_api.inc, all delegating their judgement to
+//       of/docking.h:
+//         of_dk_port_at   `docking::portAt`, exported pure, so the world pose
+//                         of a port is built once in C++ rather than a second
+//                         time in TypeScript (R93 asked for this one by name)
+//         of_dk_latch     auto-latch on contact, or ADVISORY. Advisory is what
+//                         makes a hand-flown dock possible at all: under
+//                         auto-latch the game docks itself the tick before the
+//                         player could press anything
+//         of_dk_candidate would it latch RIGHT NOW, and if not which gate is
+//                         shut, with the three limits published beside the
+//                         three measurements
+//         of_dk_capture   the join, as a command. Shares `dkJoin` with the auto
+//                         path so a manual dock and an autopilot dock put the
+//                         vessel in the same place
+//         of_dk_release   undock, pushing out of the port's own face axis at
+//                         `docking::kReleaseSepMS`
+//       NOTHING EXISTING CHANGED SIGNATURE OR MEANING. `DockRig::latch`
+//       defaults true, so every ABI 25 caller of `of_fl_dock_*` gets the rig it
+//       already had. The bump is for the five new symbols only.
+OF_API int of_abi_version(void) { return 26; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the

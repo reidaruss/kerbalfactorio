@@ -31,6 +31,8 @@ import type { NavballReadout } from '../ui/Navball.js';
 import { allowSave } from '../sim/SaveInhibit.js';
 import { readout as computeReadout } from './FlightReadout.js';
 import type { NavPublication, NavTarget, NodeBurn } from './FlightNav.js';
+import { armDock, dockReport, dockTargetOf, toggleDock } from './FlightDock.js';
+import type { DockTarget } from './FlightDock.js';
 import { choosePad, padReport, rollOutOnPad, stepPadClamps as stepPad }
   from './FlightPad.js';
 import { recoverVessel } from './FlightRecover.js';
@@ -99,6 +101,22 @@ export class FlightMode {
    *  MapMode every frame whether the map is open or shut. null when nothing is
    *  selected, which is a different claim from "range 0". */
   navTarget: NavTarget | null = null;
+  /** PH-360. The port this vessel could latch to, recomputed every frame from
+   *  the host's LIVE pose. Written by `frame()` through `FlightDock.ts`, which
+   *  owns every docking decision; this field is the handle the readout and the
+   *  key press both read, on `nodeDir`'s own precedent. */
+  dockTarget: DockTarget | null = null;
+  /** The host id the /core rig is currently armed against, or 0. Held here and
+   *  not inside `armDock` because `of_fl_dock_arm` RESETS the running closest
+   *  approach, so it must fire once per target and not once per frame. */
+  dockArmedFor = 0;
+  /** The /core flight handle that memo was taken against. Both halves, or a
+   *  rebuilt FlightSim keeps a memo for a rig that no longer exists. */
+  dockArmedHandle = 0;
+  /** PH-366. Latches made and released, beside `boardings`/`evas` rather than
+   *  on a surface of their own, so the report can tell the doors apart. */
+  docks = 0;
+  undocks = 0;
   rollouts = 0;
   /** PH-110: spacewalks begun. Beside `boardings` and `disembarks`, so the
    *  report can tell the three doors apart. */
@@ -455,6 +473,16 @@ export class FlightMode {
   /** GP-74. Clear the pad / revert / recover: one op, in FlightRecover.ts. */
   recover(): boolean { return recoverVessel(this); }
 
+  /** PH-360. THE LATCH KEY: dock when the envelope is open, undock when
+   *  latched. One verb, two meanings decided by state, on `board`'s precedent.
+   *  Every decision behind it is in FlightDock.ts. */
+  dock(): boolean { return toggleDock(this); }
+
+  /** The catalogue row for a part id, or undefined. Published because
+   *  FlightDock.ts needs a port's class and height and must not build a second
+   *  catalogue index to get them. */
+  partRow(id: number): PartRow | undefined { return this.byId.get(id); }
+
   /** Public for FlightRecover.ts, which refuses in this mode's own voice. */
   refuse(why: string): void { this.refusals += 1; this.flash(why); }
   /** Six seconds on the LOOP's clock, the only clock `frame`'s expiry sees
@@ -529,6 +557,15 @@ export class FlightMode {
     // propellant, and drawing no flame there is the one moment the picture
     // disagrees with the propellant gauge.
     this.view.setPlume(this.session.throttleValue, firing);
+    // PH-360. THE DOCK RIG IS RE-AIMED EVERY FRAME, MAP OPEN OR SHUT, on
+    // `nodeDir`'s precedent. The target moves (the station really orbits, D-014
+    // / PH-357), so a pose written once would aim the capture test at where the
+    // port was, which is the exact staleness `stationArrivalBody` fixed one
+    // layer up. It is outside the `aboard` guard because the readout is
+    // composed whether or not the ball is being drawn, and a chip that only
+    // told the truth while visible would be a chip nothing could measure.
+    this.dockTarget = dockTargetOf(this, this.session.fixedTick);
+    armDock(this, this.dockTarget);
     if (this.aboard) this.navball.render(this.readout());
   }
 
@@ -564,6 +601,8 @@ export class FlightMode {
       // whether one is live right now, and whether one COULD be from here. The
       // last is what lets a probe prove the refusal fired rather than infer it.
       evas: this.evas, evaActive: evaActive(), canEva: this.canEva(),
+      // PH-368. The docking control's whole state, including WHY it is dark.
+      dock: dockReport(this),
       ...padReport(this),
       distanceToVesselM: this.session.live
         ? Math.round(this.distanceToVessel() * 100) / 100 : -1,

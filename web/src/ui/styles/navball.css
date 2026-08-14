@@ -45,6 +45,30 @@
 #of-navball .chip.st { border-color: var(--of-accent); color: var(--of-accent); }
 #of-navball .chip.sas { color: #6fc9ff; border-color: #35566b; }
 #of-navball .chip.sas.off { color: var(--of-dim); border-color: var(--of-edge); }
+/* PH-367. THE DOCK CHIP, THREE STATES AND THEY ARE VISUALLY DIFFERENT ON
+   PURPOSE. `off` is the dim outline every unavailable control in this project
+   wears, and it still carries its reason as text (GP-56). `ready` is the only
+   green on this row, because it is the only moment in a hand-flown docking when
+   there is exactly one thing to do. `on` is latched and steady, so a docked
+   player is not looking at a control that still reads like a prompt. */
+#of-navball .chip.dock {
+  letter-spacing: 0.1em;
+  text-transform: none;
+  color: var(--of-dim);
+  border-color: var(--of-edge);
+}
+#of-navball .chip.dock.ready {
+  color: #8fe08f;
+  background: rgba(14, 40, 18, 0.9);
+  border-color: #3f7a45;
+  border-left: 3px solid #8fe08f;
+}
+#of-navball .chip.dock.on {
+  color: #6fc9ff;
+  background: rgba(12, 30, 44, 0.9);
+  border-color: #35566b;
+  border-left: 3px solid #6fc9ff;
+}
 #of-navball .chip.msg {
   letter-spacing: 0;
   text-transform: none;

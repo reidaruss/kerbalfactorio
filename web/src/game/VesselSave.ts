@@ -139,11 +139,53 @@ export function adoptSaved(rows: readonly SaveVessel[], M: OfCoreModule,
     registry.adopt(rec);
     n += 1;
   }
+  dropOrphanLatches();
   return n;
 }
+
+/**
+ * PH-366. A LATCH WHOSE HOST IS NOT IN THE SAVE IS DROPPED, LOUDLY IN SHAPE IF
+ * NOT IN VOICE.
+ *
+ * This runs AFTER the adopt loop and not inside it, which is the whole reason
+ * it is a separate pass: `adoptSaved` walks rows in slot order, so a guest
+ * written before its host would find `registry.byId(hostId)` empty and a check
+ * inside the loop would unlatch a perfectly good pair for being in the wrong
+ * order. The only rows that survive the loop and still have no host are genuine
+ * orphans -- a truncated slot, or a hand edit.
+ *
+ * The record is kept and only the latch is removed, because the vessel itself
+ * is intact: `where` still carries the conic it was mated on, so it comes back
+ * floating exactly where it was docked rather than vanishing. What it loses is
+ * the claim to be attached to something that is not there, and that claim is
+ * the one that would have crashed a consumer.
+ */
+function dropOrphanLatches(): number {
+  let dropped = 0;
+  for (const rec of registry.list()) {
+    const d = rec.docked;
+    if (d === undefined) continue;
+    // Self-latch is refused here too, not only in /core: /core's rule guards the
+    // capture, and this guards the SAVE, which a capture never touched.
+    if (d.hostId === rec.id || registry.find(d.hostId) === null) {
+      delete rec.docked;
+      dropped += 1;
+    }
+  }
+  orphanLatches += dropped;
+  return dropped;
+}
+
+/** PH-366. Orphan latches dropped since boot. Published because a repair that
+ *  happens silently and a repair that never fires read the same from outside. */
+let orphanLatches = 0;
 
 export function vesselSaveReport(): Record<string, unknown> {
   return { reads, writes, pending: pending === null ? 0 : pending.length,
            records: registry.count, promotedId: registry.promotedId,
-           demotions: registry.demotions, promotions: registry.promotions };
+           demotions: registry.demotions, promotions: registry.promotions,
+           // PH-366. How many records came back latched, and how many latches
+           // were dropped for pointing at a host that is not in the slot.
+           docked: registry.list().filter((r) => r.docked !== undefined).length,
+           orphanLatches };
 }

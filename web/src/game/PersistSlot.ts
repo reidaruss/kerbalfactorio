@@ -53,6 +53,17 @@ export async function saveSlot(g: Gameplay): Promise<unknown> {
   if (ok) g.saves++;
   return ok ? {
     mode: slot.mode,
+    // PH-366. THE VERSION AND THE VESSELS, on the summary because a probe has
+    // no other way to read either. `writeSlot` fills `slot.vessels` on its way
+    // out, so these describe THE BYTES THAT WERE WRITTEN and not an intention.
+    // `version` is here specifically so a lane that adds an optional field can
+    // ASSERT that SAVE_VERSION did not move: a bump refuses every existing slot
+    // outright (SaveGame.ts), so "we did not need one" has to be checkable
+    // rather than claimed in a commit message.
+    version: slot.version,
+    vessels: slot.vessels?.length ?? 0,
+    dockedVessels: (slot.vessels ?? []).filter((v) => v.docked !== undefined)
+      .length,
     bytes: slot.pack.length, buildings: slot.buildings.length,
     structures: slot.structures?.length ?? 0, sites: slot.sites?.length ?? 0,
     pads: slot.pads?.length ?? 0,

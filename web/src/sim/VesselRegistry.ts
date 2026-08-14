@@ -74,6 +74,57 @@ export interface VesselPose {
   throttle: number; sasMode: number; command: Vec3n;
 }
 
+/**
+ * PH-366, D-015. THE LATCH, AND IT IS A RELATION RATHER THAN A MERGE.
+ *
+ * D-015 says "two vessels become one" and names persistence as the domain that
+ * must be told. This is the shape, and the choice inside it is the whole
+ * design: a docked vessel is NOT merged into its host's design, it is a record
+ * whose position is DERIVED from its host's.
+ *
+ * WHY NOT A MERGE. Merging would mean rebuilding one `DesignJson` out of two,
+ * re-deriving mass, thrust, staging and part handles, and then splitting it
+ * again on undock. Nothing in this project needs a combined vehicle yet: the
+ * one docking the storyline asks for is a capsule arriving at a station you
+ * walk into, and the station is not flyable (`emptyDesign`, and `promoteVessel`
+ * refuses it on purpose). A merge would be a large irreversible transform in
+ * service of a case that does not exist, and it would make undock a SPLIT,
+ * which is the hardest operation in the whole idea.
+ *
+ * WHY NOT JUST A FLAG. Because a docked vessel's own conic and its host's are
+ * two conics, and two conics 30 m apart have different semi-major axes and
+ * therefore different periods: left to propagate independently they walk apart,
+ * slowly and invisibly, and the vessel drifts out of the port it is welded to.
+ * So the latch carries the vessel's pose IN THE HOST'S LOCAL FRAME, and the
+ * host is the only authority on where the pair is. That is what "become one"
+ * means here, and it is exactly the relation `CarrierMount` already expresses
+ * for the station's own interior.
+ *
+ * THE SAVE VERSION IS NOT BUMPED, and that is a rule rather than a shortcut.
+ * `SaveGame.ts` states it: "`version` is refused on a MISMATCH, not on being
+ * older, so every bump DESTROYS every existing world; it must therefore be
+ * spent only when a reader would MISREAD an old slot." An absent `docked` reads
+ * as "not docked", which is exactly what every pre-PH-366 save meant. The field
+ * rides for free because `SaveVessel` is `Omit<VesselRecord, 'stampedTick'>`.
+ */
+export interface VesselDock {
+  /** The record this vessel is latched to. Resolved AFTER the whole save is
+   *  adopted, never during: `adoptSaved` walks rows in slot order and the host
+   *  may not exist yet when the guest is read. */
+  hostId: number;
+  /** The host's port, named when the host is the station (its asset socket) and
+   *  '' when it is a part instance on another vessel. Carried so a station with
+   *  a second port one day does not have to guess which one was used. */
+  hostPort: string;
+  /** The guest's origin and attitude IN THE HOST'S LOCAL FRAME. Written once,
+   *  at capture, from the pose `/core`'s own `docking::matedPose` produced --
+   *  never re-derived on this side, or it would be a second answer to where a
+   *  mated vessel sits. */
+  localPos: Vec3n;
+  localFwd: Vec3n;
+  localRight: Vec3n;
+}
+
 export interface VesselRecord {
   /** Stable for the life of the world, 1-based, NEVER reused. See `nextId`. */
   id: number;
@@ -137,6 +188,10 @@ export interface VesselRecord {
   onPad: boolean;
   padRadiusM: number;
   padUp: Vec3n;
+  /** PH-366. Latched to another record, or absent. ABSENT IS THE ONLY "not
+   *  docked" spelling: no `false`, no `hostId: 0`, so an old save and an
+   *  undocked vessel are the same thing and no reader has two cases. */
+  docked?: VesselDock;
 }
 
 /** How long one fixed tick is. Must match `Loop.FIXED_DT`; it is passed in

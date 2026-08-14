@@ -299,11 +299,34 @@ namespace {
 
 struct DockRig {
   bool armed = false;
+  // PH-364. WHETHER CONTACT LATCHES ON ITS OWN, and it is a mode rather than a
+  // policy because the two callers want opposite answers.
+  //
+  // The auto-approach autopilot (D-015's second layer) flies the last metre and
+  // must latch the instant it touches: it has no hand to press anything. A HAND
+  // FLOWN dock is the opposite. If contact latched on its own, the DOCK button
+  // this whole lane exists for would never once be pressable -- the game would
+  // dock itself the tick before the player could -- and D-015's manual rung
+  // would be a button that watches. So the client arms in ADVISORY mode
+  // (`latch = false`): every tick still runs the same swept test and publishes
+  // the same verdict, and the JOIN is a command.
+  //
+  // Defaults TRUE, so `of_fl_dock_arm` behaves exactly as it did before this
+  // existed and the 29 assertions in `dockrcs.mjs` describe the same rig.
+  bool latch = true;
   dk::Limits lim;
   dk::PortPose portLocal;        // the vessel's own port, in the vessel frame
   dk::PortPose target;           // the other port, body-centred inertial
   Vec3 targetVelMS{0, 0, 0};
   bool captured = false;
+  // PH-365. A LATCH THAT RE-ENGAGES THE TICK AFTER YOU RELEASE IT IS A LATCH
+  // YOU CANNOT ESCAPE. `of_dk_release` leaves the two ports 0.00 m apart inside
+  // a 0.60 m capture radius, so under `latch` the very next sub-step would
+  // re-capture and the undock key would be a no-op with a shove in it. This is
+  // set on release and cleared once the ports are clear of TWICE the capture
+  // radius, which is hysteresis rather than a timer: it cannot be outrun by a
+  // slow release and it cannot expire while the vessel is still inside.
+  bool justReleased = false;
   double separationM = 0.0;
   double closestApproachM = 1.0e308;   // over the whole approach, not one tick
   double closingMS = 0.0;
@@ -336,6 +359,34 @@ int reasonOf(const dk::CaptureResult& r, const dk::Limits& lim) {
   if (r.separationM > lim.captureRadiusM * (1.0 + 1e-9)) return 1;
   if (r.coneErrorRad > lim.captureConeRad) return 2;
   return 3;
+}
+
+// PH-364. THE JOIN, IN ONE PLACE, because there are now two doors to it: the
+// auto-latching step and the player's own DOCK command. Two copies of these
+// eight lines would be two answers to "where does a docked vessel end up", and
+// they would agree right up until one was edited.
+//
+// ON CAPTURE THE VEHICLE IS PINNED AND ITS VELOCITY BECOMES THE TARGET'S. That
+// is the honest end state and not a physical join: nothing in this project has
+// a constraint solver, so "latched" means the two are one rigid thing and the
+// arriving vessel adopts the other's motion. It stops stepping under thrust the
+// moment it latches, because a latched vehicle that kept integrating would fly
+// out of the port it just entered.
+void dkJoin(fl::FlightSim& s, DockRig& d) {
+  const dk::MatedPose m = dk::matedPose(d.target, d.portLocal);
+  s.state.posM = m.originM;
+  s.state.forward = m.forward;
+  s.state.right = m.right;
+  s.state.velMS = d.targetVelMS;
+  s.state.angVelRadS = Vec3{0, 0, 0};
+  s.state.throttle = 0.0;
+  s.rcsTranslate = Vec3{0, 0, 0};
+  s.captureHold();
+  d.captured = true;
+  d.separationM = 0.0;
+  d.closingMS = 0.0;
+  d.coneErrorRad = 0.0;
+  d.reason = 0;
 }
 
 // One sub-step's capture test. `p0`,`f0`,`r0` are the vessel's state BEFORE
@@ -371,19 +422,19 @@ void dkCaptureStep(int f, fl::FlightSim& s, double dt,
   // would be measured against where the target was on the first.
   d.target.posM = b1.posM;
 
+  // PH-365. The release hysteresis clears itself on the geometry, not a clock.
+  if (d.justReleased && r.closestApproachM > 2.0 * d.lim.captureRadiusM) {
+    d.justReleased = false;
+  }
+
   if (!r.captured) return;
-  const dk::MatedPose m = dk::matedPose(d.target, d.portLocal);
-  s.state.posM = m.originM;
-  s.state.forward = m.forward;
-  s.state.right = m.right;
-  s.state.velMS = d.targetVelMS;
-  s.state.angVelRadS = Vec3{0, 0, 0};
-  s.state.throttle = 0.0;
-  s.rcsTranslate = Vec3{0, 0, 0};
-  s.captureHold();
-  d.captured = true;
-  d.separationM = 0.0;
-  d.closingMS = 0.0;
+  // PH-364. ADVISORY: the verdict above is published and nothing joins. This is
+  // the manual mode, and it is checked AFTER the sweep rather than before it so
+  // an advisory rig still measures every tick -- a rig that skipped the test
+  // would report `tests` climbing and `reason` frozen, which is standing rule
+  // 11's shape exactly.
+  if (!d.latch || d.justReleased) return;
+  dkJoin(s, d);
 }
 
 }  // namespace
@@ -497,6 +548,196 @@ OF_API int of_fl_dock_clear(int f) {
 //   [8] bestReason       the reason AT the closest pass. THE ONE A SCREEN SHOWS
 //   [9] bestClosingMS    the closing rate at that pass
 //  [10] bestConeErrorRad the cone error at that pass
+// =============================================================================
+// PH-360 to PH-366. THE `of_dk_*` SURFACE: WHAT A DOCK BUTTON NEEDS.
+//
+// R93's complaint, in its own words: "there is no `of_dk_*` symbol in the wasm
+// at all, so the client cannot even ask". `of_fl_dock_*` above arms a rig that
+// tests inside the step and reports what the LAST TICK found. That is the right
+// shape for a mechanism and the wrong shape for a control:
+//
+//   * A BUTTON IS PRESSED BETWEEN TICKS, and may be looked at on a paused sim.
+//   * A BUTTON MUST BE ABLE TO REFUSE. `of_fl_dock_*` has no command at all --
+//     the only way to dock was to fly into the port and let the step do it.
+//   * A BUTTON MUST NAME WHAT IS WRONG BEFORE IT IS PRESSED, which is R89's
+//     lesson written as an interface: the chip says which mode is on, the
+//     numbers beside it say whether the mode is winning.
+//
+// These five are pure or near-pure and every one of them delegates its actual
+// judgement to `of/docking.h`. Nothing here is a second physics.
+// -----------------------------------------------------------------------------
+
+// PH-360. `docking::portAt`, exported. THE REASON IT EXISTS is that without it
+// the client has to place a port in world space itself, and R93 named that
+// precisely: "so the world pose is built by `docking::portAt` rather than by a
+// second copy of it in TypeScript". A second copy would be a second convention
+// for which local axis is forward, and it would agree with this one until the
+// day somebody rotated an asset.
+//
+// f64 scratch, EXACTLY 9: [posX,Y,Z, faceX,Y,Z, rollX,Y,Z].
+OF_API int of_dk_port_at(double px, double py, double pz,
+                         double fx, double fy, double fz,
+                         double rx, double ry, double rz,
+                         double lpx, double lpy, double lpz,
+                         double lfx, double lfy, double lfz,
+                         double lrx, double lry, double lrz) {
+  resetF64(9);
+  dk::PortPose local;
+  local.posM = vec(lpx, lpy, lpz);
+  local.faceAxis = vec(lfx, lfy, lfz);
+  local.rollAxis = vec(lrx, lry, lrz);
+  const dk::PortPose w =
+      dk::portAt(vec(px, py, pz), vec(fx, fy, fz), vec(rx, ry, rz), local);
+  const double a[9] = {w.posM.x, w.posM.y, w.posM.z,
+                       w.faceAxis.x, w.faceAxis.y, w.faceAxis.z,
+                       w.rollAxis.x, w.rollAxis.y, w.rollAxis.z};
+  for (double x : a) g_f64.push_back(x);
+  return 9;
+}
+
+// PH-364. Auto-latch on contact, or advisory. See `DockRig::latch`. Called
+// after `of_fl_dock_arm`, which resets the rig and therefore resets this too.
+// -> 1 on success, 0 for a handle with no rig.
+OF_API int of_dk_latch(int f, int latchOnContact) {
+  auto it = g_docks.find(f);
+  if (it == g_docks.end()) return 0;
+  it->second.latch = latchOnContact != 0;
+  return 1;
+}
+
+namespace {
+
+// The live candidate for a rig, or a refusal. `selfId` and `targetId` are the
+// CALLER'S identities (registry ids); what an identity is belongs to whoever
+// owns the registry, exactly as mu is passed rather than known. What the
+// self-dock RULE means belongs to `docking.h`, which is where it is.
+dk::Candidate dkCandidateOf(const fl::FlightSim& s, const DockRig& d,
+                            int selfId, int targetId) {
+  const dk::PortPose mine =
+      dk::portAt(s.state.posM, s.state.forward, s.state.right, d.portLocal);
+  const Vec3 relVel = s.state.velMS - d.targetVelMS;
+  return dk::candidate(mine, d.target, relVel, d.lim, d.captured,
+                       selfId != 0 && selfId == targetId);
+}
+
+}  // namespace
+
+// PH-362. WOULD IT LATCH RIGHT NOW, AND IF NOT WHY. f64 scratch, EXACTLY 9.
+//
+// The verdict names the gate that is shut; the numbers beside it are published
+// WHATEVER the verdict, so a screen can say "12.4 m out, closing 15.0 (limit
+// 2.0)" rather than only "out of range". Words 6 to 8 are the LIMITS the
+// verdict was judged against, carried here rather than mirrored in TypeScript
+// because they come off the PART and a client copy would go stale the day a
+// second port class ships.
+//   [0] armed        1 when a rig exists and is armed
+//   [1] available    1 when pressing DOCK right now would latch
+//   [2] verdict      0 available, 1 out of range, 2 not facing, 3 too fast,
+//                    4 already docked, 5 self-dock, 6 not armed
+//   [3] separationM  port to port, right now
+//   [4] closingMS    SIGNED, positive is closing. See docking.h: the swept
+//                    test's own figure is a magnitude and cannot tell
+//                    "arriving" from "drifting away"
+//   [5] coneErrorRad how far the faces are from antiparallel, right now
+//   [6] captureRadiusM  } the three limits, so the screen quotes ONE authority
+//   [7] captureConeRad  }
+//   [8] maxClosingMS    }
+OF_API int of_dk_candidate(int f, int selfId, int targetId) {
+  resetF64(9);
+  fl::FlightSim* s = g_flights.get(f);
+  auto it = g_docks.find(f);
+  const bool armed = s != nullptr && it != g_docks.end() && it->second.armed;
+  const dk::Limits fallback;
+  const dk::Limits& lim = armed ? it->second.lim : fallback;
+  dk::Candidate c;
+  // 6 is NOT one of `docking::Verdict`'s members on purpose: "there is no rig"
+  // is a fact about the bridge, not about two ports, and putting it in the
+  // header's enum would have made every pure caller handle a state that cannot
+  // reach it.
+  double verdict = 6.0;
+  if (armed) {
+    c = dkCandidateOf(*s, it->second, selfId, targetId);
+    verdict = static_cast<double>(static_cast<int>(c.verdict));
+  }
+  const double a[9] = {
+    armed ? 1.0 : 0.0,
+    armed && c.available ? 1.0 : 0.0,
+    verdict,
+    c.separationM, c.closingMS, c.coneErrorRad,
+    lim.captureRadiusM, lim.captureConeRad, lim.maxClosingMS,
+  };
+  for (double x : a) g_f64.push_back(x);
+  return 9;
+}
+
+// PH-364. DOCK. The command behind the button.
+//
+// It asks `of/docking.h` the same question `of_dk_candidate` does and joins
+// through the same `dkJoin` the auto path uses, so a manual dock and an
+// autopilot dock put the vessel in exactly the same place. It does NOT run a
+// swept test: a command is a point in time and there is no interval to sweep.
+//
+// -> 1 captured. 0 no rig or not armed. Otherwise MINUS the verdict code, so a
+// caller gets the refusal without a second call: -1 out of range, -2 not
+// facing, -3 too fast, -4 already docked, -5 self-dock.
+OF_API int of_dk_capture(int f, int selfId, int targetId) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  auto it = g_docks.find(f);
+  if (it == g_docks.end() || !it->second.armed) return 0;
+  DockRig& d = it->second;
+  const dk::Candidate c = dkCandidateOf(*s, d, selfId, targetId);
+  d.tests += 1;
+  d.separationM = c.separationM;
+  d.coneErrorRad = c.coneErrorRad;
+  if (!c.available) {
+    return -static_cast<int>(c.verdict);
+  }
+  // A DELIBERATE PRESS CLEARS THE RELEASE HYSTERESIS. PH-365 suppresses the
+  // AUTOMATIC re-latch after an undock, because a magnet that grabs you back is
+  // a trap. A player who presses DOCK while still inside the envelope has asked
+  // for exactly that and must get it.
+  d.justReleased = false;
+  dkJoin(*s, d);
+  return 1;
+}
+
+// PH-363. UNDOCK. -> 1 released, 0 no rig or not docked.
+//
+// `sepMS` is the push straight out of the vessel's own port; pass 0 to take
+// `docking::kReleaseSepMS` (0.20 m/s, derived beside it). The direction is the
+// port's face axis and nothing else, because that is the one direction along
+// which the two hulls cannot scrape.
+//
+// The velocity is built by `docking::releaseVelocity` from the TARGET'S
+// velocity, not from zero: a vessel released at 0.20 m/s in the body frame
+// would be 7.8 km/s adrift of the station it just left, which is
+// `CarrierRide.restAt`'s defect wearing a different hat.
+OF_API int of_dk_release(int f, double sepMS) {
+  fl::FlightSim* s = g_flights.get(f);
+  if (!s) return 0;
+  auto it = g_docks.find(f);
+  if (it == g_docks.end() || !it->second.captured) return 0;
+  DockRig& d = it->second;
+  const dk::PortPose mine =
+      dk::portAt(s->state.posM, s->state.forward, s->state.right, d.portLocal);
+  s->state.velMS = dk::releaseVelocity(mine, d.targetVelMS, sepMS);
+  s->state.angVelRadS = Vec3{0, 0, 0};
+  d.captured = false;
+  d.justReleased = true;
+  // THE RUNNING BEST IS RESET, for the same reason arming resets it: a closest
+  // approach of 0.00 m carried across a release describes a pass that is over,
+  // and the next approach's readout would be permanently pinned at "you have
+  // already touched it".
+  d.closestApproachM = 1.0e308;
+  d.bestReason = 0;
+  d.bestClosingMS = 0.0;
+  d.bestConeErrorRad = 0.0;
+  d.separationM = 0.0;
+  d.reason = 0;
+  return 1;
+}
+
 OF_API int of_fl_dock_status(int f) {
   resetF64(11);
   auto it = g_docks.find(f);

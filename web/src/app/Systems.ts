@@ -42,6 +42,7 @@ export function registerSystems(s: Services, loop: Loop): void {
   let assemblyHeld = false;
   let boardHeld = false;
   let recoverHeld = false;
+  let dockHeld = false;
   let mapHeld = false;
   let holdHeld = false;
   // GP-530. THE MILESTONE EDGE. A rising edge only, read here beside the
@@ -109,6 +110,14 @@ export function registerSystems(s: Services, loop: Loop): void {
     const rk = s.input.act('recover');
     if (rk && !recoverHeld) s.flight?.recover();
     recoverHeld = rk;
+    // PH-360. THE LATCH KEY, beside the other three flight verbs and for the
+    // same reason: it is flight's own door and not part of gameplay's on-foot
+    // tick. Like `recover` it is NOT gated on anything here -- `toggleDock`
+    // refuses in FlightMode's own voice and counts the refusal, so a press that
+    // cannot work says why instead of doing nothing.
+    const dk = s.input.act('dock');
+    if (dk && !dockHeld) s.flight?.dock();
+    dockHeld = dk;
     // W12. The MAP, on M. Same shape and same reason as the two above: it owns
     // its own pointer, and it refuses OUT LOUD off the vessel rather than doing
     // nothing, which is GP-54's lesson applied before it can bite again.

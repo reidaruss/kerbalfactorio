@@ -96,6 +96,7 @@ export const ACTION_TEXT: Record<Action, Desc> = {
 
   board: { group: 'Flying', label: 'Roll out, or climb in and out' },
   recover: { group: 'Flying', label: 'Recover the vessel and clear the pad' },
+  dock: { group: 'Flying', label: 'Dock with the target port, or undock' },
   stage: { group: 'Flying', label: 'Stage' },
   throttleUp: { group: 'Flying', label: 'Throttle up' },
   throttleDown: { group: 'Flying', label: 'Throttle down' },

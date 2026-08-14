@@ -375,6 +375,16 @@ Turn the simulation substrate into a *game*: research progression, an exploratio
 - [Phase 4] Questline, POIs/loot, exploration-science depth, structures.
 - [Phase 5] UX polish; consider splitting UI into its own controller.
 
+### Docking, from the physics lane (2026-08-14, PH-360 to PH-369, D-015)
+
+**Manual docking exists and a player can reach it.** `]` docks with the station when the envelope is open and undocks when latched, on `board`'s one-key-several-meanings precedent. Everything physics owns is done (the capture test, the join, the approach mechanism, the save shape). **Three things are gameplay's and are named here rather than assumed:**
+
+- **THE AVAILABILITY GATE AND THE RESEARCH GATE DO NOT EXIST.** D-015 gives gameplay "part availability, the research gate and the UI". Today the `Docking Port` part is in the catalogue and buildable with no gate at all, and the dock control lights for anyone who fits one. The storyline puts the station visit at the end of the pre-alpha chain, so whether the port is research-gated (and behind what) is a progression call this lane has not made and physics will not make for it.
+- **THE CONTROL IS A KEY AND A CHIP, NOT A CLICKABLE BUTTON** (physics R101). `#of-navball` is `pointer-events: none` by design and says so in its own header, and the pointer is locked in flight, so a mouse target needs an explicit opt-in. The shipped precedent is `#of-hotbar.live`'s `pointer-events: auto`. **The publication a button would bind to already exists and is already measured**: `FlightMode.readout().dock` is a `DockPublication` that is never null and always carries a `why` string, and `of.flight('report').dock` carries the same plus the counters. Drawing a button is a UI change in a file physics does not own.
+- **`mintStation` STILL SHIPS `emptyDesign()`** (physics PH-366), so D-015's uniform rule ("a vessel can dock if its design contains a port") is not yet true of Anchorage: its port is read off the asset socket `socket_dock` keyed on `isStation`, which is exactly the special case D-015 was written to avoid. Physics did not change it because giving the station parts changes what `promoteVessel` does with the record, and that record is gameplay's. The seam is one function in `app/FlightDock.ts`; the day the station has a real port part it stops branching.
+
+**What the chip already says, so nothing needs re-deriving:** the verdict (`out of range` / `not lined up` / `closing too fast` / `ready to dock` / `docked`), the separation against /core's own 0.60 m capture radius, and the SIGNED closing rate. Measured on a real GPU: `DOCK ]  0.20 / 0.60 m  +0.02`.
+
 ## 7. Open questions & risks
 - **R1 (Admin Q3) · SETTLED:** first-person on foot / third-person+IVA in craft, via **P1-D1 / GP-6**. Control mapping + camera + handoff designed in [gameplay-phase1.md §1](../phase1/gameplay-phase1.md). Closed.
 - **R2 (3D build legibility) · FIRST CUT DONE, playtest-validated:** recovered via **highlighted I/O ports + connection preview + a pulled-back in-world build-overlay camera + a flow/`VisualState` tint mode** (GP-7/GP-8, [§3.3](../phase1/gameplay-phase1.md)). Validate in playtest (P1-D6 / factory-sim R3); cheap escalation = stronger build camera before any flatten-pad feature.
