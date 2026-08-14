@@ -146,6 +146,40 @@ PALETTE = {
     "Accent":       ("FF8A1E", 0.00, 0.50, 1.0, None),
     "Hazard":       ("F2C531", 0.00, 0.60, 1.0, None),
     "Rubber":       ("23262B", 0.00, 0.85, 1.0, None),
+    # RN-1550. THE FIRST TWO ROLES THAT WEAR `paintchip` AND `rust`, which have
+    # shipped as pixels since RN-1474/RN-1475 and have been worn by NOTHING.
+    # A2b's own FAMILIES row says so in as many words ("NO ROLE WEARS THIS
+    # YET") and hands the wiring to A4, and RN-1478 is what makes the wiring
+    # possible at all: until machines wore their authored family, a role
+    # pointed at either of these would have drawn `panel` anyway.
+    #
+    # BOTH ROWS' CONSTANTS ARE DICTATED BY THE FAMILY, NOT CHOSEN HERE, and
+    # that is the whole reason they are separate roles rather than a texture
+    # swap on Steel. texgen.py states the required pairing in each family's
+    # section header because the map cannot state it: the ORM channels
+    # MULTIPLY the palette constants and the albedo is mean-neutral, so a
+    # wrong constant is a SILENT failure rather than a visible one.
+    #
+    #   SteelWorn  paintchip wants metallic ~0.75, roughness ~0.55, at which
+    #             the authored bands land at an effective metalness 0.21..0.75
+    #             and roughness 0.24..0.55: coated where the paint holds, bare
+    #             alloy where it has gone. Wired at Steel's 0.20 the bare metal
+    #             cannot read as metal and the family's whole point is lost.
+    #   SteelRust  rust wants an oxide-coloured hex of its OWN (7A4526..8C5A2E),
+    #             metallic ~0.35, roughness ~0.92. Wired to Steel's 8A9199 it
+    #             renders as GREY rust, which is texgen's named silent failure.
+    #
+    # THE COLOURS ARE DERIVED RATHER THAN PICKED. `SteelWorn` IS Steel - the
+    # same coated plate, further along in its service life - so it takes
+    # Steel's 8A9199 unchanged and differs from it only in the two constants
+    # its family demands and in the family itself. That is the smallest honest
+    # difference and it keeps a value decision out of a form pass. `SteelRust`
+    # cannot borrow a colour, because oxide is the one thing in this palette
+    # whose hue IS the material; 834F2A is the per-channel midpoint of the
+    # range texgen names (7A4526, 8C5A2E), so the number comes from the
+    # family's own header rather than from a render.
+    "SteelWorn":    ("8A9199", 0.75, 0.55, 1.0, None),
+    "SteelRust":    ("834F2A", 0.35, 0.92, 1.0, None),
     # RN-907. WAS 9FD8E8: LUMA 205 AND 73 COUNTS OF CHROMA, THE HIGHEST-VALUE
     # AND MOST SATURATED SURFACE ON THE PLAYER. Taken in a serialised window
     # (Admin, 2026-08-03) because this row is written into the bytes of SEVEN

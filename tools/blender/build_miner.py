@@ -277,6 +277,56 @@ GUIDE_Z0, GUIDE_Z1 = 0.37, 1.43  # top buried in the body, which starts at 1.40
 DUCT_Y = 0.90
 DUCT_W = 0.20
 
+# --- RN-1557 to RN-1559: the SE form pass ----------------------------------
+# RN-1103 gave this machine the vocabulary; this pass gives it the three things
+# D-020's bar asks for that a vocabulary pass did not: a GUARD over the moving
+# part, a surface that has actually FAILED where the machine works wet, and a
+# flexible run to the part that travels.
+#
+# THE GUARD IS THE HEADLINE AND IT IS NOT DECORATION. This machine's entire
+# stated read is "a motor pushing a column into the ground", and the column
+# turns 30 frames to the revolution one metre from where a player stands to
+# read the gauges, with nothing between them. Space Engineers' machines read as
+# serviceable because every moving part is behind something; this one's was
+# behind nothing at all.
+#
+# IT DOES NOT CLOSE THE GANTRY, WHICH IS THE ONE THING IT MUST NOT DO. The
+# module docstring's whole argument for having no plinth is that you can see
+# THROUGH this machine to the deposit it is bound to. A cage is uprights on a
+# circle: the sky and the ore show between the bars from every bearing, the
+# same way `machine_form.railing` beats a parapet. A shroud would have closed
+# exactly the gap the design is made of, and that is why this is a cage.
+#
+# THE RADIUS IS DERIVED FROM WHAT IT HAS TO MISS, not chosen. Inboard it must
+# clear the guide collar's outer face at 0.72 and the guide posts' outer
+# corners at 0.74; outboard it must clear the chute housing, whose rear face is
+# at y = -1.06, and the four legs, whose inner faces are at 1.48. 0.95 leaves
+# 0.21 m inboard and 0.11 m to the chute, which is the tightest of the two and
+# therefore the number that binds.
+GUARD_R = 0.95
+GUARD_Z0, GUARD_Z1 = 0.34, 1.36     # top 40 mm clear of the body underside, so
+                                    # the cage is a free-standing guard and not
+                                    # a bracket hung off the body
+GUARD_BARS = 8
+
+# The dust hose. It runs from the body underside down and forward INTO the
+# chute housing, which is where a real drill's water or dust suppression goes:
+# to the point the spoil is handed over, not to the bit. Both ends land ON a
+# surface rather than in mid-air, which is `_duct`'s recorded rule ("a duct
+# whose lower end stops in mid-air is a shape"), and the clamp bands straddle
+# those two surfaces so both are visible rather than buried.
+HOSE_W = 0.09
+HOSE = [(1.42, -0.50, 1.38), (1.42, -0.50, 1.24),
+        (1.42, -1.30, 1.24), (1.16, -1.30, 1.24)]
+
+# The vent bank, in the west face's CENTRE RIB LANE. The ribs occupy
+# RIB_YS +/- 0.13, so the clear lanes are -1.07..-0.75, -0.49..0.49 and
+# 0.75..1.07; only the middle one is wide enough for a bank worth looking at.
+# Its coaming stands 0.108 proud against the ribs' 0.07, so the vent is proud
+# of the ribs it sits between rather than sunk behind them.
+VENT_V = 1.90
+VENT_DU, VENT_DV = 0.80, 0.44
+
 
 def _mouth(mb, z_c, open_w, open_h, jamb, head_h, sill_h, band_role):
     """The recessed outlet slot in the -Y face of the chute housing.
@@ -302,7 +352,25 @@ def _mouth(mb, z_c, open_w, open_h, jamb, head_h, sill_h, band_role):
                "Steel")
     mb.box((outer_w, FRAME_D, head_h), (0, y_frame, z1 + head_h * 0.5), "Steel")
     mb.box((outer_w, FRAME_D, sill_h), (0, y_frame, z0 - sill_h * 0.5), "Steel")
-    mb.box((open_w, 0.10, open_h), (0, y_throat, z_c), "SteelDark")
+    # RN-1558: the throat is the wet-ore face and it wears `rust`. LOD1's own
+    # inset stays SteelDark on purpose - see build_lod1 - so the rust family
+    # exists in tier 0 only and costs the shadow cascades no extra layer.
+    #
+    # ITS BOX GREW IN TWO DIRECTIONS AND THE ROLE CHANGE IS WHY. The throat was
+    # 0.10 deep and exactly `open_h` tall, which put its BACK face on y = -1.74
+    # and its BOTTOM on z = 0.22 - the same two planes the chute shelf below it
+    # already occupied, both facing the same way. That was invisible for as
+    # long as both parts were SteelDark, because check_coplanar deliberately
+    # does not count a same-material overlap: it is unresolvable by a depth
+    # test and unnoticeable by an eye. Painting one of them a different
+    # material does not CREATE the defect, it reveals one that was always in
+    # the file, and the fix is at the cause rather than at the paint. The plate
+    # now runs 0.10 lower, so its underside is buried in the sill, and 0.04
+    # further back, so its rear face is buried in the chute housing. A throat
+    # plate is the bottom of a hole and both of its hidden edges should be
+    # inside the thing the hole is cut in.
+    mb.box((open_w, 0.14, open_h + 0.10), (0, -(CHUTE_Y + 0.03), z_c - 0.05),
+           "SteelRust")
     mb.box((outer_w, BAND_D, head_h * 0.5), (0, y_band, z1 + head_h * 0.5),
            band_role)
     mb.box((outer_w, BAND_D, sill_h * 0.5), (0, y_band, z0 - sill_h * 0.5),
@@ -486,7 +554,108 @@ def _drill_guide(mb):
     for s in (-1, 1):
         mb.box((GUIDE_POST, GUIDE_POST, GUIDE_Z1 - GUIDE_Z0),
                (s * GUIDE_R, 0.0, (GUIDE_Z0 + GUIDE_Z1) * 0.5), "Steel")
-    mf.arc_ring(mb, GUIDE_R, GUIDE_T, GUIDE_Z, 12, "SteelDark")
+    # RN-1558. The collar the column turns inside is the third wet-ore face and
+    # the one a player looks straight at through the guard: a bearing surface
+    # with spoil running past it is where steel actually goes.
+    mf.arc_ring(mb, GUIDE_R, GUIDE_T, GUIDE_Z, 12, "SteelRust")
+
+
+def _drill_guard(mb):
+    """RN-1557. The rotating column acquires the one thing that lets a person
+    stand next to it.
+
+    See the GUARD_R block above for why it is a cage rather than a shroud and
+    where the radius comes from. The hazard role on the hoops is earned here in
+    a way it is not on most of the paint in this game: a hoop at shin and chest
+    height around a turning drill is EXACTLY what gets striped on a real
+    machine, and `machine_form.guard_cage` refuses a hoop no wider than its
+    bars, so the paint cannot end up on a plane the steel is also on."""
+    mf.guard_cage(mb, GUARD_R, GUARD_Z0, GUARD_Z1, GUARD_BARS,
+                  "Steel", "Hazard", bar=0.06, hoop=0.09, segs=8)
+
+
+def _wet_steel(mb):
+    """RN-1558. THE FIRST CONSUMER OF `rust` IN THE GAME, and the argument for
+    why it is this machine and only these parts.
+
+    texgen's family header is precise about what `rust` depicts: not a used
+    machine (that is `paintchip`) but steel that has GONE, oxide scale lifted
+    and spalled, metalness falling because there is progressively less metal
+    left. In a working factory exactly one path has that surface, and it is the
+    one where wet ore is in contact with steel all day: this machine's throat,
+    the lip its spoil crosses, and the collar its column turns inside.
+
+    WHAT IS DELIBERATELY NOT RUSTED. The body, the motor housing, the legs and
+    every painted band stay as they were. A machine rusted all over is a wreck,
+    and this one is running: the story puts it at the head of the player's
+    first production chain. Applying a family to a whole asset because the
+    family is new is how `panel` came to be on the suit.
+
+    THE PALETTE PAIRING IS WHY THIS IS A ROLE AND NOT A TINT. The family's
+    albedo is mean-neutral, so the map cannot supply the orange; `SteelRust`
+    carries its own oxide hex, metallic 0.35 and roughness 0.92, and wired to
+    Steel's grey instead it would render as grey rust. of_lib.PALETTE has the
+    numbers and the derivation."""
+    # The spoil lip under the chute: the plate every item this machine produces
+    # crosses on its way out. It replaces nothing; the chute's shelf and its
+    # painted edge strip are still steel and paint, and this is the wear face
+    # laid on top of the shelf with its underside buried in it.
+    mb.box((1.16, 0.16, 0.05), (0, -1.83, 0.315), "SteelRust")
+
+
+def _fasteners(mb):
+    """RN-1559. The machine is BOLTED TOGETHER, which it had never said.
+
+    RN-1103 bought this machine seams, a ladder, a hatch and an eave and left
+    every joint between its five stacked solids unmarked, so at close range the
+    flange sat on the body the way one box sits on another. Two places earn the
+    triangles, and both are places a real machine is unmistakably bolted:
+
+      THE CAP FLANGE, whose whole job is to be the bolted joint between the
+      body and the drill motor deck. Its side faces are at 1.80 with 0.20 m to
+      the hard edge, which a 0.044 bolt clears easily and nothing deeper does.
+
+      THE FOOT PADS, because this machine has no plinth and stands on four
+      pads that are the only thing holding it down. `requiresDeposit` means it
+      is placed on ore and left there, and an anchor bolt at each pad is the
+      cheapest possible statement that somebody installed it."""
+    for sign, name in ((-1, "flange front"), (1, "flange rear")):
+        f = mf.Face("Y", sign, sign * 1.80, limit=sign * HALF, name=name)
+        mf.bolt_run(mb, f, -1.44, 1.44, 2.57, 5, 0.055, "SteelDark")
+    # Two anchor bolts per pad, on the pad's own top face, set diagonally
+    # outboard of the leg that stands on it. The pad top is at FOOT_H and the
+    # leg occupies +/- 0.22 of the pad centre, so 0.24 is just clear of it.
+    pad = mf.Face("Z", 1, FOOT_H, limit=H, name="foot pad")
+    for cx, cy in CORNERS:
+        for s in (-1, 1):
+            pad.part(mb, 0.07, 0.07, cx + (0.24 if cx > 0 else -0.24),
+                     cy + s * 0.18, "bolt", "Steel")
+
+
+def _vent(mb):
+    """RN-1559. A drill motor under load is the hottest thing on this machine,
+    and until now the only air it moved was through one bank on the motor
+    housing 2.9 m up.
+
+    The body carries the gear the motor drives and it vented nowhere. This bank
+    sits in the west face's centre rib lane at 1.90, which is the one place on
+    a body face that is neither ribbed, laddered, hatched, trayed nor under the
+    eave, and it is at the height a person standing beside the machine looks
+    at. `louvre` gives it a coaming, a dark backing sheet and three blades, so
+    it reads as a hole rather than as stripes."""
+    mf.louvre(mb, SERV, 0.0, VENT_V, VENT_DU, VENT_DV, 3, "Steel", "SteelDark",
+              role_back="SteelDark")
+
+
+def _hose(mb):
+    """RN-1559. The dust line, and this machine's one `coarse` part.
+
+    See the HOSE block above for the route and why both ends land on a
+    surface. The point of it being a HOSE rather than another `pipe_run` is
+    that this machine's head TRAVELS: Drill_Bob sinks the whole assembly 120 mm
+    every cycle, and a rigid duct to a part that moves is the kind of detail
+    that is invisible until somebody who has serviced machinery looks at it."""
+    mf.hose(mb, HOSE, HOSE_W, "Rubber", clamp_role="Steel")
 
 
 def build_lod0(root):
@@ -546,6 +715,12 @@ def build_lod0(root):
     _canopy(mb)
     _standing_detail(mb)
     _drill_guide(mb)
+    # --- RN-1557 to RN-1559, the SE pass -----------------------------------
+    _drill_guard(mb)
+    _wet_steel(mb)
+    _fasteners(mb)
+    _vent(mb)
+    _hose(mb)
 
     mb.box((0.05, 0.44, 0.16), (1.845, 0.0, STATUS_Z), "EmissiveState")
     # The footprint is sim-load-bearing (FactorySnap.stepsFor derives the

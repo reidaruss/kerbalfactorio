@@ -82,6 +82,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine_form as mf  # noqa: E402
 import of_lib as of  # noqa: E402
 
 NAME = "Box"
@@ -156,6 +157,73 @@ POST_TOP = 2.62                 # inside the collar, NOT on the body's top face.
                                 # up-facing SteelDark face on the up-facing
                                 # Steel one it stands on.
 POST_C = COLLAR * 0.5 - POST * 0.5 - 0.02
+# --- RN-1553 to RN-1556: the machine_form pass -----------------------------
+# THIS FILE IS THE LAST 4 m MACHINE THAT HAD NEVER HAD ONE. machine_form.py's
+# own docstring has listed the box as a client since the day it was written and
+# the import did not exist until now, which is the same defect RN-1103 found on
+# the miner and fixed in the same commit as the sentence. Measured before this
+# pass: box 564 tris on a 4 x 4 x 3 footprint, against miner 1,384 and smelter
+# 2,276 on the SAME 4 x 4 cell. A boulder the player walks past is 556.
+#
+# THE FACES ARE THE BODY's AT 1.70 AND THERE IS 0.30 m TO THE EDGE, which is
+# the miner's clearance exactly and it rules the layout the same way: LAYER
+# tops out at "housing" (0.281) and `junction` stacks a "plate" on that for
+# 0.305, so a junction box CANNOT go on a body face here and the module says so
+# by raising rather than by growing the footprint. Every deep fitting on this
+# machine is therefore something else, and the electrics are a tray and a
+# bolted cover plate instead.
+FRONT = mf.Face("Y", -1, -BODY_HALF, limit=-HALF, name="front (outlet)")
+REAR = mf.Face("Y", 1, BODY_HALF, limit=HALF, name="rear (intake)")
+SERV = mf.Face("X", -1, -BODY_HALF, limit=-HALF, name="west (the climb)")
+PLANT = mf.Face("X", 1, BODY_HALF, limit=HALF, name="east (electrics)")
+
+# |u| beyond this on a body face is INSIDE a corner post. The posts are 0.32
+# square centred on 1.67, so they occupy 1.51 to 1.83 and stand 0.13 proud of
+# the body. DERIVED from the post's own numbers, because the post is what
+# decides it, and 0.05 of margin so a greeble's edge is not against one.
+CLEAR = POST_C - POST * 0.5 - 0.05                      # 1.46
+
+# The rib lanes on the +/-X faces. The four ribs are 0.26 deep on RIB_YS and
+# stand 0.07 proud of the body, so anything mounted between them has to fit a
+# lane and anything crossing one is swallowed for the width of the rib. Both
+# facts are used deliberately below: the ladder and the vents sit IN lanes, the
+# rubbing strip crosses them on purpose.
+RIB_YS = (-1.20, -0.40, 0.40, 1.20)
+RIB_HALF = 0.13
+LANE_MID = 0.0                                          # the centre lane, 0.54
+LANE_OUT = 0.80                                         # between ribs 2 and 3
+
+# The rubbing strip. Its TOP is derived from the painted skirt it stands on and
+# its height is 40 mm more than the exposed part, so its underside is BURIED in
+# the skirt rather than resting on the skirt's top plane. Assembler's KICK_TOP
+# construction exactly; the numbers differ because the plinth does.
+KICK_TOP = PLINTH_H + SKIRT_H + 0.40                    # 0.76
+KICK_H = 0.40 + 0.04                                    # 0.44
+
+# The plate courses. Straps SPAN the body on Y, so one box shows on the front
+# AND the rear and the two can never drift apart. x = 1.42 is the only lane
+# that clears everything on BOTH faces at once, and it is derived rather than
+# tried: the window surround reaches 1.30, the outlet and intake frames reach
+# 1.20, the status rail reaches 1.40, and the corner post's inner face is at
+# 1.51. A 0.10 strap centred on 1.42 spans 1.37 to 1.47 and touches none of
+# them. Anything wider than 0.11 does not fit and the number says so.
+SEAM_XS = (-1.42, 1.42)
+SEAM_Z0, SEAM_Z1 = 0.42, 2.02
+# The rear's horizontal course, between the intake head at 1.60 and the placard
+# at 1.88. Not run on the front: there the outlet head tops out at 1.00 and the
+# window surround starts at 1.05, and a 0.09 course does not fit in 50 mm.
+REAR_COURSE_Z = 1.74
+
+# The climb, on the west face's centre lane. The ladder stops at 2.40 and NOT
+# at the roof, and that is arithmetic rather than taste: the collar stands
+# 0.15 proud of the body from 2.55 to 2.75 and a stringer stands 0.139 proud,
+# so a ladder taken any higher disappears INSIDE the collar for 200 mm and
+# comes back as a stub. It arrives at a bracketed landing, which is what a real
+# fixed ladder to a service level does.
+LADDER_V0, LADDER_V1 = 1.02, 2.40
+LANDING_V = 2.50                # plate 2.465 to 2.535, UNDER the collar's foot
+                                # at 2.55. A landing at the collar's own height
+                                # is a landing inside a 0.15 m overhang.
 # 1.67. DERIVED FROM THE COLLAR, not from the body. The post has to be proud of
 # the body face (or it is not a post) and covered by the collar (or its top face
 # is exposed and coplanar with something), and only the second of those is a
@@ -258,6 +326,163 @@ def _posts(mb):
                (cx, cy, (POST_Z0 + POST_TOP) * 0.5), "SteelDark")
 
 
+def _plating(mb):
+    """RN-1553. The 3.40 m body stops being four blank sheets.
+
+    `through_seam` spanning Y shows the SAME box on the front and the rear, so
+    two straps buy four visible plate joints and the front and rear courses can
+    never drift out of line with each other, because they are one box. The
+    straps pass through the ribs inside the body, where both are invisible, and
+    emerge only past |y| = 1.70 where no rib reaches."""
+    mf.through_seam(mb, "Y", BODY_HALF, SEAM_XS, SEAM_Z0, SEAM_Z1, 0.10,
+                    "SteelDark")
+    mf.seam_h(mb, REAR, (REAR_COURSE_Z,), -CLEAR, CLEAR, 0.09, "SteelDark")
+
+
+def _wear(mb):
+    """RN-1554. THE FIRST CONSUMER OF `paintchip` IN THE GAME, and the reason
+    it is a rubbing strip rather than a body panel.
+
+    `SteelWorn` is a coating that has failed where the machine gets HIT
+    (of_lib.PALETTE says so beside the constants). On a container that is one
+    band of steel and one only: the strip at shin height that a loader, a
+    crate corner and a boot arrive at. Painting the whole body with it would
+    claim the machine is derelict, which is `rust`'s fact and not this one.
+
+    THE WEST STRIP IS KICKED IN AT ITS SOUTH END. `kick_plate`'s dent is this
+    lane's only honest form of wear, because a dent is a fact about the SHAPE:
+    paint chips off a dent because something hit it, and the dent is the cause
+    the chip is the effect of. It is on the corner nearest the outlet, which is
+    the corner anything working the output side swings past.
+
+    THE STRIPS CROSS THE RIBS AND THAT IS DELIBERATE. A rib stands 0.07 proud
+    and a kick plate 0.031, so each strip is swallowed for the 0.26 m width of
+    every rib it passes, and what is left reads as four ribs standing ON a
+    rubbing strip. One box per face rather than five per face for the lanes,
+    which on a machine this size is 48 triangles against 240."""
+    mf.kick_plate(mb, SERV, -CLEAR, CLEAR, KICK_TOP, KICK_H, "SteelWorn",
+                  dent=0.66, dent_at=-1)
+    mf.kick_plate(mb, PLANT, -CLEAR, CLEAR, KICK_TOP, KICK_H, "SteelWorn")
+    # Front and rear take theirs in the width the port frames leave: the
+    # outlet's frame reaches 1.20 and the intake's does too, so the runs are
+    # 1.24 to CLEAR on both sides of both faces. Short strips, and correct:
+    # a doorway is exactly where a rubbing strip stops.
+    for face in (FRONT, REAR):
+        for s in (-1, 1):
+            mf.kick_plate(mb, face, s * 1.24, s * CLEAR, KICK_TOP, KICK_H,
+                          "SteelWorn")
+
+
+def _service_side(mb):
+    """RN-1555. The west face: the climb, and what a person needs to reach it.
+
+    THE CENTRE LANE IS THE ONLY PLACE A LADDER FITS AND THE RIBS DECIDE IT.
+    RIB_YS puts a rib every 0.80 m with a 0.26 m width, so the clear lanes are
+    0.54 m across; the ladder is 0.40 m wide with 0.055 stringers, which spans
+    0.1725 to 0.2275 either side of centre and clears the rib faces at 0.27 by
+    42 mm. A wider ladder is not a taste question here, it is a lane that does
+    not exist.
+
+    THE STEP IS WHAT MAKES THE LADDER REACHABLE. machine_form.step_tread takes
+    the surface it stands on as a parameter rather than assuming the ground,
+    and on this machine that surface is the painted skirt at 0.36; assume zero
+    and the risers hang in the air by exactly the plinth height."""
+    mf.ladder(mb, SERV, LANE_MID, LADDER_V0, LADDER_V1, 0.40, 5, "Steel")
+    mf.step_tread(mb, SERV, LANE_MID, 0.74, 0.50, "SteelWorn",
+                  base=PLINTH_H + SKIRT_H)
+    # The landing the ladder arrives at: a plate on two gussets, under the
+    # collar's foot. Same construction the assembler's climb uses.
+    SERV.part(mb, 0.84, 0.07, LANE_MID, LANDING_V, "duct", "SteelDark")
+    for s in (-1, 1):
+        SERV.wedge(mb, LANE_MID + s * 0.30, 0.07, LANDING_V - 0.035, 0.22,
+                   0.28, "bracket", "SteelDark")
+    # Level gauges, at the height somebody standing at the foot of the ladder
+    # reads them, in the lane outboard of the climb. A storage container is the
+    # one machine in this set where an instrument is unambiguously honest:
+    # the thing a person wants to know about it is how full it is.
+    mf.gauge_cluster(mb, SERV, -LANE_OUT, 1.52, 2, "SteelDark", "Steel")
+    mf.placard(mb, SERV, LANE_OUT, 1.52, 0.30, 0.16, "Accent")
+
+
+def _plant_side(mb):
+    """RN-1555. The east face: the electrics and the drip lip.
+
+    NO JUNCTION BOX, AND THE LAYER TABLE IS WHY. `junction` puts a "plate"
+    (0.024) on top of a "housing" (0.281) for 0.305 of stand-off and this face
+    has 0.30, so the call RAISES with the overshoot in metres. That refusal is
+    the module working: the alternative is a fitting that grows a footprint
+    FactorySnap derives every machine's mating distance from. A bolted cover
+    plate over the terminals is what a 0.30 m clearance can carry, and it is
+    what a container's electrics would actually be.
+
+    THE EAVE IS BOUGHT FOR THE OUTLINE and it is the only thing on this machine
+    that is. From every bearing the box was a stack of four boxes with a rim on
+    top; a lip standing 0.28 m out at 2.44 with three gussets falling away
+    under it breaks the vertical at one height and drops a hard shadow across
+    the whole face below it. Its brackets land at u = 0 and +/- 0.973 by
+    `eave`'s own (i + 0.5) / n spacing over -1.46 to 1.46, which is the centre
+    lane and the two outer lanes: clear of all four ribs by arithmetic."""
+    mf.tray(mb, PLANT, LANE_OUT, 0.80, 2.30, 0.13, 4, "SteelDark", "Steel")
+    mf.bolted_plate(mb, PLANT, -LANE_OUT, 1.72, 0.52, 0.44, "Steel",
+                    "SteelDark")
+    mf.eave(mb, PLANT, -CLEAR, CLEAR, 2.44, 0.28, 3, "Steel", "SteelDark")
+
+
+def _front_detail(mb):
+    """RN-1556. The face a player stands at, and the one that already had the
+    most on it: the outlet, the inspection window and the status rail.
+
+    WHAT IT DID NOT HAVE WAS A SINGLE FASTENER. A 2.60 x 1.00 window surround
+    was a plain box lying on a plain panel, which is the "extruded and
+    pristine" ART-DIRECTION.md names; a pane that size is bolted through a
+    frame and the bolts are the entire difference between a window and a
+    rectangle. They go on the SURROUND's own outer plane at -1.77, which has
+    0.23 m of clearance, rather than on the body.
+
+    The chute gets a rubber liner and a worn lip, which is the other half of
+    the same argument: the shelf items slide down is the one surface on a
+    container that is guaranteed to be abraded, and a real chute is lined for
+    exactly that reason. It is also this machine's only `coarse` part."""
+    surround = mf.Face("Y", -1, -1.77, limit=-HALF, name="window surround")
+    for v in (1.12, 1.98):
+        mf.bolt_run(mb, surround, -1.18, 1.18, v, 4, 0.05, "SteelDark")
+
+
+def _rear_detail(mb):
+    """RN-1556. The +Y face gets the thing that makes a machine a machine
+    somebody services: ONE hatch, hinged on ONE side.
+
+    `hatch`'s own docstring makes the argument and this file is the case it was
+    written for. Four identical sides with an intake cut in one of them is a
+    symmetric solid however many straps are on it; a hatch with knuckles on the
+    left, a latch on the right, a placard over it and three bolts along its
+    sill gives the machine a service side, and therefore a front and a back.
+
+    IT GOES ABOVE THE COURSE AND OUTBOARD OF THE PLACARD, in the one rectangle
+    this face has left: the intake frame owns everything below 1.60 and inside
+    |u| = 1.20, the horizontal course owns 1.70 to 1.79, the rating placard
+    owns |u| < 0.60 at 1.88 to 2.12, and the corner post starts at 1.51."""
+    mf.hatch(mb, REAR, 1.08, 2.14, 0.66, 0.46, "SteelDark", "Steel", "Accent",
+             hinge_side=-1)
+
+
+def _roof_detail(mb):
+    """RN-1556. The pan is BOLTED to the collar, and that is all this roof can
+    say.
+
+    THE ROOF HAS 0.05 m OF CLEARANCE AND THAT RULES OUT EVERYTHING ELSE. The
+    pan's top is 2.95 and the declared height is 3.00, which is a hard edge
+    FactorySnap and validate_glb both read; of the whole LAYER table only
+    scribe, seam, shim, plate, kick, boss and bolt fit under it. So there is no
+    railing here (the assembler's roof detail is 0.44 m tall), no blower and no
+    plumbing: the rim already owns the machine's full height, and a machine
+    whose roof furniture would have to be flattened to fit should not have
+    roof furniture. Two bolt courses either side of the lid, and stop."""
+    roof = mf.Face("Z", 1, DECK_TOP, limit=H, name="roof pan")
+    for u in (-1.45, 1.45):
+        mf.bolt_run(mb, roof, -1.30, 1.30, u, 4, 0.055, "SteelDark")
+
+
 def build_lod0(root):
     mb = of.MeshBuilder()
     _shell(mb)
@@ -283,7 +508,7 @@ def build_lod0(root):
     # pointing down, which was 32 of this asset's 82 same-facing pairs and the
     # single largest cause. Sharing POST_Z0 with the corner posts is free: same
     # material, so the two are indistinguishable where they coincide.
-    for y in (-1.20, -0.40, 0.40, 1.20):
+    for y in RIB_YS:
         mb.box((BODY + 0.14, 0.26, 2.45 - POST_Z0),
                (0, y, (POST_Z0 + 2.45) * 0.5), "SteelDark")
 
@@ -311,6 +536,13 @@ def build_lod0(root):
     # output chute: a shelf inside the recess and a lip flush with the cell
     # edge, so the outlet hands items DOWN rather than merely being a hole.
     mb.box((1.30, 0.22, 0.08), (0, -1.85, 0.24), "SteelDark")
+    # RN-1554. THE CHUTE IS LINED, and it is this machine's one `coarse` part.
+    # A chute a container hands its whole output down is the surface most
+    # certain to be abraded on the whole machine, and a real one is lined for
+    # that reason rather than left as bare plate. The liner's underside is
+    # BURIED in the shelf (0.26 against the shelf's 0.20 to 0.28) rather than
+    # laid on its top face, so the two share no plane in either direction.
+    mb.box((1.20, 0.20, 0.05), (0, -1.85, 0.285), "Rubber")
     mb.box((1.40, 0.08, 0.06), (0, -1.96, 0.27), "Accent")
     # placard over the intake, so the back face is not a blank panel
     mb.box((1.20, 0.06, 0.24), (0, 1.75, 2.00), "Accent")
@@ -321,11 +553,32 @@ def build_lod0(root):
     for sx in (-1, 1):
         mb.box((0.10, 0.12, 1.00), (sx * 0.78, -1.79, 1.55), "SteelDark")
 
+    # --- RN-1553 to RN-1556, the machine_form pass -------------------------
+    # Placed HERE, before the status rail, for the reason the comment below
+    # already gives: OF_EmissiveState has to be the last material slot on the
+    # mesh because the renderer indexes it by position, and a detail function
+    # appended after it would silently move the state light's slot and break
+    # every machine's status colour. That is invisible in Blender and obvious
+    # in the game, which is the worst combination a build order can have.
+    _plating(mb)
+    _wear(mb)
+    _service_side(mb)
+    _plant_side(mb)
+    _front_detail(mb)
+    _rear_detail(mb)
+    _roof_detail(mb)
+
     # front status rail. Bezel and inlay before the chip: OF_EmissiveState has
     # to stay the LAST material slot on every mesh.
     mb.box((2.80, 0.12, 0.34), (0, -1.74, STATUS_Z), "Steel")
     mb.box((2.50, 0.06, 0.22), (0, -1.79, STATUS_Z), "SteelDark")
     mb.box((2.20, 0.05, 0.16), (0, -1.815, STATUS_Z), "EmissiveState")
+    # THE DECLARED BOX IS ASSERTED WHERE IT IS CAUSED. contracts.json says
+    # 4.00 x 4.00 x 3.00 and validate_glb measures the shipped bytes against
+    # it, but by then the geometry is written and the failure is a post-mortem.
+    # This file had no such assertion before RN-1553, which was survivable
+    # while it had no greebles and is not now.
+    mf.assert_inside(mb, HALF, HALF, H, "Box_LOD0")
     return mb, mb.build(NAME + "_LOD0", root)
 
 
@@ -335,6 +588,19 @@ def build_lod1(root):
     _posts(mb)
     _mouth_block(mb, 1, IN_Z, IN_W, IN_H, IN_JAMB, IN_HEAD, IN_SILL)
     _mouth_block(mb, -1, OUT_Z, OUT_W, OUT_H, OUT_JAMB, OUT_HEAD, OUT_SILL)
+    # ONE BOX FOR THE STEP, AND check_shadow_lod IS WHAT ASKED FOR IT RATHER
+    # THAN TASTE. Every greeble RN-1553 added stands within 0.20 m of a face
+    # this tier already draws except the step's two risers, which are on the
+    # "bracket" layer at 0.232 and hang in open air 1.35 m outboard of the
+    # nearest thing here. Measured, that ONE detail took this asset's LOD1
+    # deviation from 126.49 mm to 232.00 mm and pushed it past cascade 2's
+    # 210.94 mm texel, so cascade 2 stopped being allowed to draw a 192
+    # triangle proxy and started drawing the 1,384 triangle mesh instead: the
+    # marginal multiplier went 3.0x to 4.0x on the whole asset to pay for two
+    # risers. Twelve triangles here buy it straight back. The box is sized to
+    # the step's own outer and inner planes so the LOD0 vertices land ON its
+    # surface rather than inside it.
+    mb.box((0.34, 0.56, 0.41), (-1.762, 0.0, 0.565), "SteelDark")
     mb.box((2.30, 0.06, 0.76), (0, -1.78, 1.55), "Glass")
     mb.box((2.20, 0.05, 0.16), (0, -1.815, STATUS_Z), "EmissiveState")
     return mb, mb.build(NAME + "_LOD1", root)

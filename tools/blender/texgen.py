@@ -188,6 +188,20 @@ ROLE_FAMILY = {
     # --- panel: anything manufactured ---
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
     "Accent": "panel", "Hazard": "panel",
+    # --- paintchip / rust: the two families that shipped unworn (RN-1550) ---
+    # A4 wiring the vocabulary A2b authored. Both FAMILIES rows below say "NO
+    # ROLE WEARS THIS YET" and name the palette pairing a consumer has to
+    # honour; `of_lib.PALETTE` honours it, and the reasoning for each constant
+    # is written there beside the numbers rather than duplicated here.
+    #
+    # WHAT EACH ROLE IS FOR, because a family is a FACT about a surface and
+    # these two facts are narrow. `SteelWorn` is a coating that has failed
+    # where the machine gets HIT: rubbing strips, kick plates, the lip an item
+    # slides over, the tread a boot lands on. `SteelRust` is steel that has
+    # gone, and in a working factory that is the wet-ore path and nothing
+    # else: the miner's throat, its spoil lip and the collar its column turns
+    # in. Neither is applied to a whole body, because neither describes one.
+    "SteelWorn": "paintchip", "SteelRust": "rust",
     # SuitAccent stays on `panel` although it is a suit colour, and this is
     # deliberate rather than an oversight: rocket_common.py and
     # build_lander_landed.py both paint stripes and fittings with it, so it is

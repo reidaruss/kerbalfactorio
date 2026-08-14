@@ -53,7 +53,16 @@ import * as THREE from 'three';
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
 import { loadTexture } from '../../assets/Loaders.js';
 
+// RN-1550: `paintchip` and `rust` join the union. Both have been IN the shipped
+// manifest since RN-1474/RN-1475 and neither was ever nameable here, because
+// this type is written against the roles the client can encounter and no role
+// pointed at either one. That is the correct state for a family with no
+// consumer and the wrong one the moment a role does: `familyForRole` returns
+// this type, so an unlisted family is a compile error at the table rather than
+// an untextured surface in the game, which is the failure mode this file's
+// three-way manifest check exists to make loud.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
+  | 'paintchip' | 'rust'
   | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
@@ -75,6 +84,18 @@ const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   // so it is NOT a player-only role and moving it would re-surface another
   // lane's assets.
   SuitAccent: 'panel',
+  // RN-1550: `paintchip` and `rust` acquire their first consumers. Both
+  // families have shipped as pixels since RN-1474/RN-1475 with no role
+  // pointing at them, and until RN-1478 no role COULD have: `MachineBatch`
+  // pinned `panel` onto every machine part, so an authored family never
+  // reached `familyForRole` here at all. The layer split is what makes this
+  // row do anything, and it charges DRAW CALLS for it (one BatchedMesh per
+  // family per pass), which is why exactly two roles are added and not six.
+  // The palette constants each family requires are in `of_lib.PALETTE`, and
+  // getting them wrong is a silent failure rather than a visible one: `rust`
+  // on a grey role renders grey rust, `paintchip` on a low-metallic role
+  // cannot show bare metal.
+  SteelWorn: 'paintchip', SteelRust: 'rust',
   // RN-643 / RN-644: the pressure garment. `Suit`, `SuitDark` and `Plate` are
   // used by build_player_body.py, build_player_fp_arms.py and
   // build_armour_set.py and by NOTHING else in the repo, which is what makes

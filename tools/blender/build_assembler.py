@@ -177,6 +177,51 @@ KICK_H = 0.44 + 0.04                                    # 0.48
 SEAM_US = (-2.44, -1.68, 1.68, 2.44)
 SEAM_Z0, SEAM_Z1 = 0.52, 2.76
 
+# --- RN-1560 to RN-1562: the SE pass ---------------------------------------
+# RN-372 gave this machine the vocabulary and it is the densest asset in the
+# set. What it did NOT have is the thing D-020's bar is actually about: the
+# arm is a 2.6 m boom that sweeps 57 degrees over a deck a player can climb a
+# ladder onto, and there was nothing between a person on that deck and the
+# rotating joint that drives it. A machine reads as serviceable when the parts
+# that move are behind something.
+#
+# THE CAGE RADIUS IS DERIVED FROM THE PEDESTAL IT SURROUNDS AND THE FURNITURE
+# IT MUST MISS. The turret pedestal is 1.40 square, so its corners are 0.99
+# from the centre; the roof railing's centreline is at 3.60 and the cage's far
+# side reaches 3.35; the extract blower's fins start at x = -0.83 and the cage
+# reaches -1.05. 1.15 clears the pedestal corner by 0.16 and the blower by
+# 0.22, and the blower is the binding one.
+#
+# ITS FEET START ABOVE THE POWER RUN, at 3.62 against a feed at 3.455 to 3.585,
+# so the hose passes UNDER the guard rather than through it. A conduit
+# threaded between the bars of a guard is the sort of thing that looks fine in
+# a wireframe and wrong to anyone who has stood next to a machine.
+GUARD_R = 1.15
+GUARD_Z0, GUARD_Z1 = 3.62, 3.96
+GUARD_BARS = 8
+
+# The power feed to the turret, as a HOSE. It was a rigid pipe_run, and a rigid
+# conduit is the one thing that cannot serve a rotating joint: the assembler's
+# whole silhouette claim is that its arm turns, and the thing feeding the arm
+# was drawn as steel tube bolted at both ends. Both clamp bands straddle a
+# face rather than sitting inside a solid - the first on the power nub's own
+# +Y face at -2.95, the last on the pedestal's at -1.50 - so the fittings are
+# visible and the run reads as attached at both ends.
+# NAMED `TURRET_FEED` AND NOT `FEED`, because `FEED` is already the +X side
+# intake Face 20 lines above and a second binding would shadow it silently:
+# `_feed_detail` would then hang a ladder off a list of tuples. Caught by the
+# build refusing, which is the cheap way to find it.
+FEED_Z = 3.52
+TURRET_FEED = [(PWR_X, -2.98, FEED_Z), (PWR_X, -1.60, FEED_Z),
+               (-1.50, -1.60, FEED_Z)]
+# THE RUN STOPS ON THE PEDESTAL'S FACE AND DOES NOT CROSS IT. Taken 0.63 m
+# further, to the turret's centre line, the last segment's own end face lands
+# on y = -1.50 pointing the same way the pedestal's face already points, which
+# is three same-facing pairs of Rubber against Steel and is exactly what
+# check_coplanar refuses. Stopping ON the face makes the contact back-to-back
+# instead, which no depth test has to arbitrate, and the clamp band straddling
+# it is what says the hose is attached there.
+
 
 def _put(mb, axis, across, along, zs, c_across, c_along, z, role):
     """Place a box on a face whose OUTWARD normal runs along `axis`.
@@ -394,6 +439,16 @@ def _front_detail(mb):
     butt = mf.Face("Y", -1, BUTT_Y, limit=-HALF, name="front buttress")
     for cx in (-3.40, 3.40):
         mf.bolts(mb, butt, (cx,), (0.72, 1.62, 2.52), 0.055, "Steel")
+    # RN-1562. THE CORNERS ARE WHERE THE PAINT ACTUALLY GOES, and they are this
+    # machine's `paintchip` consumer. The four faces already carry Hazard kick
+    # plates, which are a keep-out MARKING and are meant to still be legible;
+    # a buttress corner is different - it is the part of an 8 m machine a
+    # loader clips, and steel that has been clipped is steel whose coating has
+    # gone. Two strips, one dented, on the two front corners a player walks
+    # between on the way to the outlet.
+    for cx, dent in ((-3.40, 0.70), (3.40, 0.0)):
+        mf.kick_plate(mb, butt, cx - 0.28, cx + 0.28, KICK_TOP, KICK_H,
+                      "SteelWorn", dent=dent, dent_at=-1)
 
 
 def _rear_detail(mb):
@@ -433,7 +488,10 @@ def _feed_detail(mb):
     mf.kick_plate(mb, FEED, -CLEAR, -1.44, KICK_TOP, KICK_H, "Hazard")
     mf.kick_plate(mb, FEED, 1.44, CLEAR, KICK_TOP, KICK_H, "Hazard",
                   dent=0.45, dent_at=1)
-    mf.step_tread(mb, FEED, -2.58, 0.74, 0.62, "SteelDark",
+    # RN-1562: the tread wears `paintchip`. It is the one surface on this
+    # machine a boot lands on, which is the family's subject exactly, and it
+    # costs no triangle to say so.
+    mf.step_tread(mb, FEED, -2.58, 0.74, 0.62, "SteelWorn",
                   base=PLINTH_H + SKIRT_H)
     mf.ladder(mb, FEED, -2.58, 1.04, 2.42, 0.46, 6, "Steel")
     FEED.part(mb, 0.92, 0.07, -2.58, 2.62, "duct", "SteelDark")
@@ -487,8 +545,13 @@ def _roof_detail(mb):
     # somewhere, and both of these do.
     mf.pipe_run(mb, [(-0.40, -1.80, 3.70), (-0.40, 1.30, 3.70),
                      (1.40, 1.30, 3.70)], 0.20, "SteelDark", "Steel")
-    mf.pipe_run(mb, [(PWR_X, PWR_Y, 3.52), (PWR_X, -1.60, 3.52),
-                     (ARM_X, -1.60, 3.52)], 0.13, "SteelDark", "Steel")
+    # RN-1561. The turret feed is FLEXIBLE, and this machine's one `coarse`
+    # part. See the FEED block for the route and why a rigid duct to a rotating
+    # joint was the wrong claim.
+    mf.hose(mb, TURRET_FEED, 0.13, "Rubber", clamp_role="Steel")
+    # RN-1560. The guard over the one part of this machine that moves.
+    mf.guard_cage(mb, GUARD_R, GUARD_Z0, GUARD_Z1, GUARD_BARS, "Steel",
+                  "Hazard", cx=ARM_X, cy=ARM_Y, bar=0.07, hoop=0.10, segs=8)
 
 
 def build_lod0(root):
@@ -522,6 +585,18 @@ def build_lod0(root):
     # status rail (1.98 to 2.42)
     for z in (1.80, 2.80):
         mb.box((BODY + 0.10, BODY + 0.10, 0.16), (0, 0, z), "SteelDark")
+    # RN-1562. The UPPER jacket band is bolted, and only the upper one. A band
+    # is a strap around the housing and a strap is fastened; the machine had
+    # two of them running unbroken round all four faces with nothing holding
+    # either on. The lower band at 1.80 is deliberately left alone because the
+    # front's cable tray already crosses it at 1.82 and the rear's fittings sit
+    # on it, so bolts there would be fighting for the same 0.05 m of stand-off
+    # that the tray already occupies. The band's own face is at 3.65 with
+    # 0.35 m to the hard edge, which a 0.044 bolt clears and nothing deeper.
+    for face, sign in (("Y", -1), ("Y", 1)):
+        band = mf.Face(face, sign, sign * (BODY * 0.5 + 0.05), limit=sign * HALF,
+                       name="jacket band %s%s" % ("+-"[sign < 0], face))
+        mf.bolt_run(mb, band, -2.60, 2.60, 2.80, 5, 0.055, "Steel")
     mb.box((COLLAR + 0.06, COLLAR + 0.06, 0.10), (0, 0, 3.05), "Accent")
 
     # the three item slots. Inputs on +Y and +X at the smelter's inlet height,
