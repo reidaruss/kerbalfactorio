@@ -153,16 +153,19 @@ const FOLIAGE_TONE_FAMILIES = new Set(Object.keys(FOLIAGE_TONE));
  * `ready` skips loading any manifest family absent from this set; see the long
  * note at the loop for why an unreferenced family is worth skipping at all.
  *
- * THE TWO LITERALS ARE UNIONED IN ON PURPOSE. `MachineBatch` attaches 'panel'
- * and `SpiderFlock` attaches 'fur' as STRING LITERALS rather than through a
- * role lookup, so neither reaches `familyForRole` and neither would be implied
- * by the role table if the roles that happen to name them were ever moved off.
- * Both are in ROLE_FAMILY's values today, which is exactly why leaving them
- * implicit is a trap: the set would keep working right up until a role move
- * silently un-referenced a family that a hard-coded call site still attaches,
- * and the failure would be an untextured machine with no error anywhere.
- * `familyForRole`'s own callers (PropLibrary, NodeBatch, PlayerRig) all resolve
- * through the role table and need no entry here.
+ * THE TWO LITERALS ARE UNIONED IN ON PURPOSE. `SpiderFlock` attaches 'fur' as
+ * a STRING LITERAL rather than through a role lookup, so it does not reach
+ * `familyForRole` and would not be implied by the role table if the chitin
+ * roles were ever moved off it. 'panel' is here for the same reason and stays
+ * even though RN-1478 made `MachineBatch` resolve through the role table like
+ * everything else: it is that path's declared FALLBACK for a `flat` or card
+ * role, so a machine can still ask for it with no role naming it. Both are in
+ * ROLE_FAMILY's values today, which is exactly why leaving them implicit is a
+ * trap: the set would keep working right up until a role move silently
+ * un-referenced a family a call site still attaches, and the failure would be
+ * an untextured machine with no error anywhere. `familyForRole`'s other callers
+ * (PropLibrary, NodeBatch, PlayerRig, MachineGeometry) all resolve through the
+ * role table and need no entry here.
  */
 const REFERENCED_FAMILIES: ReadonlySet<string> = new Set<string>([
   ...Object.values(ROLE_FAMILY),
@@ -203,14 +206,14 @@ const SURFACES_MANIFEST_VERSION = 2;
  * concrete" read, and it is the opposite failure to the one the generator was
  * defending against.
  *
- * THE BLAST RADIUS IS THE PLAYER KIT AND NOTHING ELSE, and that is a fact
- * about the CLIENT rather than about the bytes. `space_station.glb` carries
- * 99.7 per cent of all `OF_Plate` surface area on 3.3 to 9.2 m hull panels,
- * which looks like a shared-family blocker until you read `MachineBatch.ts`:
- * it calls `attachSurface(m, 'panel', ...)` unconditionally, so a machine's
- * authored role NEVER reaches `familyForRole` and the station's plate draws on
- * `panel` at 1.5 m. Measuring the bytes alone would have refused a safe change
- * for a reason that does not exist.
+ * THE BLAST RADIUS WAS THE PLAYER KIT AND NOTHING ELSE WHEN THIS WAS WRITTEN,
+ * AND RN-1478 ENDED THAT. `space_station.glb` carries 99.7 per cent of all
+ * `OF_Plate` surface area on 3.3 to 9.2 m hull panels, and it used to be
+ * unreachable because `MachineBatch` called `attachSurface(m, 'panel', ...)`
+ * unconditionally, so a machine's authored role never reached `familyForRole`.
+ * **That is no longer true**: the station deck now draws on a real `suitplate`
+ * layer, so a `tile_m` move on this family reaches the hull as well as the
+ * suit and the sweep has to be judged on both.
  */
 const TILE_OVERRIDE: Readonly<Record<string, number>> = ((): Record<string, number> => {
   const out: Record<string, number> = {};
@@ -346,6 +349,39 @@ export function familyForRole(role: string): Family {
 /** Family for a three material, by its authored name. The batch paths' entry. */
 export function familyForMaterial(m: THREE.Material): Family {
   return familyForRole(roleOfMaterialName(m.name));
+}
+
+/**
+ * The two CARD families, named here so a METRE-UV consumer can refuse them
+ * (RN-1478).
+ *
+ * A card family carries an albedo in UNIT card space whose ALPHA is the shape,
+ * cut at `alpha_test`. Every batch path that box-projects its UVs in metres
+ * (`copyUv` plus `repeat = 1 / tile_m`) would sample that card at a scale it
+ * was never authored for AND alpha-test the result, so a solid object wearing
+ * one comes back with leaf-shaped holes punched through it. That is worse than
+ * the wrong map, and it is the one case where the machine path's `panel`
+ * fallback is the honest answer rather than the defect: `items_atlas.glb`'s
+ * `Item_LeafDry` is a 16-vertex quad authored `OF_LeafDry`, whose family is
+ * `leaf`, and it stays on the base family for this reason.
+ *
+ * SECOND TABLE, VERIFIED RATHER THAN REMEMBERED, exactly like `ROLE_FAMILY`
+ * above: `verifyAgainstManifest` checks this set against the shipped
+ * manifest's own `uv_space`, so a family that becomes a card (or stops being
+ * one) is a mismatch on the next boot rather than a silent hole.
+ */
+const CARD_FAMILIES: ReadonlySet<string> = new Set<string>(['grass', 'leaf']);
+
+/**
+ * Whether `f` is a family a metre-UV batch path can actually wear: it tiles,
+ * and it is a map at all.
+ *
+ * `flat` is excluded because it is the recorded decision NOT to map a role, and
+ * a consumer asking "which surface do I bind" must be told "none" rather than
+ * handed an empty one.
+ */
+export function isTilingFamily(f: Family): boolean {
+  return f !== 'flat' && !CARD_FAMILIES.has(f);
 }
 
 /**
@@ -501,6 +537,18 @@ function verifyAgainstManifest(m: Manifest): void {
   for (const role of Object.keys(ROLE_FAMILY)) {
     if (m.roles[role] === undefined && m.flat_roles[role] === undefined) {
       mismatches.push(`${role}: client-only, absent from surfaces.json`);
+    }
+  }
+  // RN-1478. `CARD_FAMILIES` against the manifest's own `uv_space`, on the same
+  // terms as the role table above: the client's copy is checked, not trusted.
+  // A card is a family whose UVs are unit card space, which is exactly the set
+  // that ships no `tile_m`, so either field would do and `uv_space` is the one
+  // that says what it means.
+  for (const [name, f] of Object.entries(m.families)) {
+    const card = f.uv_space === 'unit';
+    if (card !== CARD_FAMILIES.has(name)) {
+      mismatches.push(`${name}: manifest ${card ? 'card' : 'tiling'}, client `
+        + `${CARD_FAMILIES.has(name) ? 'card' : 'tiling'}`);
     }
   }
   if (mismatches.length > 0) {

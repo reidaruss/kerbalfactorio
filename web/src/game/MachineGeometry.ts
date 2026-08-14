@@ -9,7 +9,8 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { copyUv, roleOfMaterialName } from '../render/instancing/Surfaces.js';
+import { copyUv, familyForRole, isTilingFamily, roleOfMaterialName, type Family }
+  from '../render/instancing/Surfaces.js';
 import { bakeMachineMat } from '../render/materials/MachineMat.js';
 import { type LodRow } from '../render/ShadowLod.js';
 import { surfaceDeviation, triCount } from '../render/ShadowLodMeasure.js';
@@ -53,8 +54,26 @@ export const LOD0 = /_LOD0(?:_\d+)?$/;
 export const LOD_MATCH = [LOD0, /_LOD1(?:_\d+)?$/, /_LOD2(?:_\d+)?$/] as const;
 
 /**
- * A template's geometry per tier, world-baked and merged, `null` for a tier the
- * asset does not ship.
+ * A template's geometry per tier, SPLIT BY AUTHORED FAMILY, world-baked and
+ * merged, `null` for a tier a family does not appear in (which includes every
+ * tier the asset does not ship).
+ *
+ * RN-1478 IS THE SPLIT AND THE SPLIT IS THE WHOLE FIX. `MachineBatch` used to
+ * take one merged geometry per tier and draw it with one material pinned to
+ * `panel`, so a smelter's `Rock` hearth and a belt's `Rubber` deck wore plate
+ * seams and rivet rows. A `BatchedMesh` carries ONE material (three r185:
+ * `Material|Array<Material>` with no per-geometry index, and the internal
+ * geometry has no groups), so the family cannot be resolved per instance and it
+ * cannot be resolved per fragment without spending sampler units the machine
+ * program does not have. It CAN be resolved per authored MATERIAL, which is
+ * what this does: bucket the primitives by `familyForRole` of their own
+ * material name, dedupe, and hand `MachineBatch` one geometry per family so it
+ * can hand each one the surface the asset actually asked for.
+ *
+ * A CARD FAMILY IS FOLDED BACK INTO `base`, and `Surfaces.isTilingFamily`
+ * carries the argument: these UVs are metres and a card is unit space. So is
+ * `flat`, which is not a map at all and whose parts are already handled by
+ * `MachineMat`'s bare flag (RN-1203).
  *
  * A template with an explicit `nodeMatch` has NO ladder by construction and gets
  * tier 0 only. That is not a limitation to fix later: `nodeMatch` exists exactly
@@ -62,28 +81,58 @@ export const LOD_MATCH = [LOD0, /_LOD1(?:_\d+)?$/, /_LOD2(?:_\d+)?$/] as const;
  * `Item_Log`, the pad's `LaunchClamp_Arm`), so inventing tiers 1 and 2 for them
  * would either match nothing or, worse, match a sibling's mesh.
  */
-export function gatherTiers(def: MachineTemplate,
-                            scene: THREE.Object3D): (THREE.BufferGeometry | null)[] {
+export interface FamilyTiers {
+  /** Family -> its three tiers. Only families the asset actually authors. */
+  byFamily: Map<Family, (THREE.BufferGeometry | null)[]>;
+  /** Tier 0 with every family merged back together, for the ghost preview,
+   *  which is one translucent copy of the whole machine and not a material
+   *  study. Built here rather than by the caller so the ghost cannot drift
+   *  from what the batch drew. */
+  lod0: THREE.BufferGeometry | null;
+}
+
+/** Merge a bucket, keeping the single-element case allocation free exactly as
+ *  the pre-split code did. */
+function mergeAll(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const g = list.length === 1 ? list[0] : (mergeGeometries(list, false) ?? list[0]);
+  g.computeBoundingSphere();
+  return g;
+}
+
+export function gatherTiers(def: MachineTemplate, scene: THREE.Object3D,
+                            base: Family): FamilyTiers {
   scene.updateWorldMatrix(true, true);
-  const out: (THREE.BufferGeometry | null)[] = [null, null, null];
+  const byFamily = new Map<Family, (THREE.BufferGeometry | null)[]>();
+  let lod0: THREE.BufferGeometry | null = null;
   const tiers = def.nodeMatch !== undefined ? 1 : LOD_MATCH.length;
   for (let t = 0; t < tiers; ++t) {
     const re = def.nodeMatch ?? LOD_MATCH[t];
-    const list: THREE.BufferGeometry[] = [];
+    const per = new Map<Family, THREE.BufferGeometry[]>();
+    const all: THREE.BufferGeometry[] = [];
     scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh !== true || m.name.startsWith('col_')) return;
       if (!re.test(m.name)) return;
       const src = m.material as THREE.MeshStandardMaterial;
-      list.push(normalize(m.geometry, m.matrixWorld,
-        src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, def), src));
+      const g = normalize(m.geometry, m.matrixWorld,
+        src.color ?? new THREE.Color(1, 1, 1), roleOf(src.name, def), src);
+      const role = roleOfMaterialName(src.name);
+      const authored = familyForRole(role);
+      const fam = isTilingFamily(authored) ? authored : base;
+      const bucket = per.get(fam);
+      if (bucket === undefined) per.set(fam, [g]);
+      else bucket.push(g);
+      all.push(g);
     });
-    if (list.length === 0) continue;
-    const g = list.length === 1 ? list[0] : (mergeGeometries(list, false) ?? list[0]);
-    g.computeBoundingSphere();
-    out[t] = g;
+    if (all.length === 0) continue;
+    for (const [fam, list] of per) {
+      let arr = byFamily.get(fam);
+      if (arr === undefined) { arr = [null, null, null]; byFamily.set(fam, arr); }
+      arr[t] = mergeAll(list);
+    }
+    if (t === 0) lod0 = mergeAll(all);
   }
-  return out;
+  return { byFamily, lod0 };
 }
 
 /** Vertices and indices a ladder needs, which a `BatchedMesh` must know before
