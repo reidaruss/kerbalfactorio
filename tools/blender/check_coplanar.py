@@ -153,9 +153,25 @@ AREA_EPS = 1e-9
 #                   lobes on the ground plane. Buried under terrain in practice,
 #                   which is a claim about placement that nothing enforces, so
 #                   it is counted rather than excused.
+#
+# RN-1595, RN-1597, RN-1601, RN-1603, RN-1605 CLEARED FIVE ROWS AND ALL FIVE
+# HAD ONE CAUSE. `machines/generator: 35`, `machines/inserter: 14`,
+# `structures/wall: 40`, `structures/foundation: 20` and `structures/door: 120`
+# - 229 pairs, the whole machine-and-structure half of the FS-75 baseline -
+# were every one of them a part DIMENSIONED TO END exactly where the part it is
+# mounted on ends. A hopper's accent band flush with the hopper face, a status
+# lens flush with its own bezel, a mullion running rail-face to rail-face, a
+# kerb founded on the stone field's own underside, a door leaf's field cut to
+# its own frame's extent. None of them was a paint decision and none needed a
+# palette change to fix; in every case the part now runs INTO the thing it
+# frames, or is inset from it, which is also what the real assembly does.
+#
+# The 120 on `structures/door` was the largest entry in this table, and 56 of
+# those were on `Door_Leaf`, i.e. on the one part of the structural kit that
+# MOVES - so the pixels were not merely undecided, they changed as the door
+# swung. That is the case this checker's own header describes and it had been
+# baselined rather than fixed for two weeks.
 ALLOWED = {
-    "machines/generator": 35,
-    "machines/inserter": 14,
     "nodes/boulder_coal": 26,
     "nodes/boulder_copper": 23,
     "nodes/boulder_iron": 27,
@@ -172,9 +188,6 @@ ALLOWED = {
     "props/props_hills": 12,
     "props/props_ocean": 8,
     "props/props_plains": 7,
-    "structures/door": 120,
-    "structures/foundation": 20,
-    "structures/wall": 40,
 }
 
 CTYPE = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),

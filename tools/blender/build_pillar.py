@@ -1,7 +1,7 @@
 """
 build_pillar.py - Tier-0 structural support pillar. FOUR PARTS, NOT ONE ASSET.
 
-    blender --background --python tools/blender/build_pillar.py
+    ~/.local/bin/blender501 --background --python tools/blender/build_pillar.py
 
 Produces assets/models/dist/structures/pillar.glb.
 
@@ -57,6 +57,36 @@ shaft is 28 triangles and the collar 56; a decimator does not start saving
 anything until well above that, and it would eat the octagon's silhouette first.
 detail_cards.glb makes the same call for the same reason.
 
+--------------------------------------------------------------------------
+RN-1606, THE SE FORM PASS, AND WHAT IT IS NOT ALLOWED TO TOUCH
+--------------------------------------------------------------------------
+THE SHAFT GETS NOTHING. Not a bolt, not a rib, not a band. Everything above
+about the prismatic section is a CONSTRAINT on this pass and not a description
+of a past one: the shaft is the only part that is scaled, it is scaled by up to
+a factor of ten, and any feature on it is a feature stretched by ten. A single
+bolt head on this part would be a 0.5 m lozenge on a tall pillar. The whole
+reason the other three parts exist as separate, never-scaled meshes is so that
+structural detail has somewhere to live, and RN-1606 spends it there.
+
+  - THE FOOT is what a column standing under a deck is JUDGED on, because it is
+    at eye level and it is the only part of a pillar a player walks into. It
+    had a hazard plate, a pad and four corner blocks that fastened nothing. It
+    now has a hold-down bolt through each of those blocks and four gusset webs
+    carrying the splay into the pad, which is the load path a real base plate
+    has and which reads as one.
+  - THE COLLAR became a BOLTED SPLICE rather than a band. It is the part that
+    repeats every 2 m, so it is what a player reads a long pillar's length
+    off; a plain sleeve says "moulding" and four heads on its own flats say
+    "this column is made of sections and here is a joint".
+  - THE HEAD got four webs into its flare and four bolts through the bearing
+    plate's exposed edge. Nothing may stand above z = 0.30 there, because that
+    face IS the deck underside it meets, so the fasteners are on the ONE band
+    of that part that is visible and unspoken for.
+
+check_coplanar has never listed this asset and the pass keeps it at zero: every
+head is sunk INTO the block it fastens and every web's foot is buried in the
+plate below it, so nothing added here ends on a plane anything else owns.
+
 FILE LAYOUT is the rocket_parts.glb pattern: one group Empty per part, each
 sitting on the file origin holding its own mesh, sockets and proxy. The runtime
 rule is the same one: clone the PART node and query sockets on the clone, never
@@ -67,6 +97,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import machine_form as mf  # noqa: E402
 import of_lib as of  # noqa: E402
 import structure_common as sc  # noqa: E402
 
@@ -110,16 +141,26 @@ def _part(root, name, build, socket=None, collide=None):
 
 
 def foot(mb):
-    """A hazard-painted ground plate, a bolted pad and a splay up to the shaft.
+    """A hazard-painted ground plate, a bolted pad, four hold-downs and the
+    gusset webs that carry the splay into the pad.
 
     The hazard yellow is here and nowhere else on the pillar: the foot is the
     only part of a pillar a player ever walks into, and a 0.5 m column standing
-    in shadow under a deck is exactly the thing to trip over."""
+    in shadow under a deck is exactly the thing to trip over.
+
+    THE BOLT IS SUNK 20 mm INTO ITS BLOCK, which is what a hold-down through a
+    base plate is and is also what keeps its underside off the block's own top
+    plane. Same for the webs: their feet are 10 mm inside the pad."""
     mb.box((FOOT_W, FOOT_W, 0.08), (0, 0, 0.04), "Hazard")
     mb.box((1.04, 1.04, 0.10), (0, 0, 0.11), "SteelDark")
     for sx in (-1, 1):
         for sy in (-1, 1):
             mb.box((0.18, 0.18, 0.06), (sx * 0.42, sy * 0.42, 0.19), "SteelDark")
+            mb.box((0.085, 0.085, 0.07), (sx * 0.42, sy * 0.42, 0.235),
+                   "SteelLight")
+    for sx, sy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        mb.box((0.07 if sx else 0.30, 0.07 if sy else 0.30, 0.16),
+               (sx * 0.29, sy * 0.29, 0.23), "SteelDark")
     mb.frustum(0.46, 0.26, 0.26, (0, 0, 0.27), segments=SEG, role="SteelDark",
                smooth_sides=False)
 
@@ -132,21 +173,46 @@ def shaft(mb):
 
 
 def collar(mb):
-    """A sleeve with a proud band. Two octagons, so it belongs to the shaft's
-    section rather than sitting on it as a separate idea."""
+    """A BOLTED SPLICE: a sleeve, a proud band, and four heads on the band's own
+    flats. Two octagons, so it belongs to the shaft's section rather than
+    sitting on it as a separate idea.
+
+    THE HEADS ARE PHASED TO 22.5 DEGREES, WHICH IS NOT COSMETIC. An 8-gon's
+    vertices are on the multiples of 45 and its FLATS are centred on 22.5, so a
+    head at 0 degrees would straddle a corner and read as a lump; on a flat it
+    reads as a fastener through a face. And the radius is 0.31 rather than a
+    rounder number because the band's own inradius is 0.3234 and its
+    circumradius is COLLAR_W/2 = 0.35: at 0.31 the head stands 14 mm proud of
+    the flat it is on and its outermost corner is at 0.3375, still 12 mm inside
+    the part's declared 0.70 width."""
     mb.cylinder(0.29, COLLAR_H, (0, 0, COLLAR_H * 0.5), segments=SEG,
                 role="SteelDark", smooth_sides=False)
     mb.cylinder(COLLAR_W * 0.5, 0.16, (0, 0, 0.12), segments=SEG,
                 role="SteelDark", smooth_sides=False)
+    mf.bolt_circle(mb, (0.0, 0.0, 0.12), 0.31, 4, 0.055, "Z", "SteelLight",
+                   phase_deg=22.5, depth=0.055)
 
 
 def head(mb):
-    """A flare off the shaft into a square bearing plate. The plate is square
-    and 1.00 m because what it meets is a square deck on a 4 m module, and a
-    round bracket under a square slab reads as a mismatch of two systems."""
+    """A flare off the shaft into a square bearing plate, four webs into the
+    flare and four bolts through the bearing plate's exposed edge. The plate is
+    square and 1.00 m because what it meets is a square deck on a 4 m module,
+    and a round bracket under a square slab reads as a mismatch of two systems.
+
+    NOTHING MAY STAND ABOVE z = 0.30 ON THIS PART, because that face IS the
+    deck underside it carries: a fastener on top is a fastener holding the deck
+    off its own bracket. So the bolts go through the 0.90 m plate's side, in the
+    80 mm band between the flare and the 1.00 m plate above it, which is the one
+    surface here that is visible from underneath and spoken for by nothing."""
     mb.frustum(0.30, 0.44, 0.14, (0, 0, 0.07), segments=SEG, role="SteelDark",
                smooth_sides=False)
+    for sx, sy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        mb.box((0.06 if sx else 0.26, 0.06 if sy else 0.26, 0.11),
+               (sx * 0.22, sy * 0.22, 0.065), "SteelDark")
     mb.box((0.90, 0.90, 0.08), (0, 0, 0.18), "Steel")
+    for sx, sy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        mb.box((0.05 if sx else 0.09, 0.05 if sy else 0.09, 0.05),
+               (sx * 0.465, sy * 0.465, 0.18), "SteelLight")
     mb.box((HEAD_W, HEAD_W, 0.08), (0, 0, 0.26), "SteelDark")
 
 

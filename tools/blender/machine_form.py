@@ -2,7 +2,41 @@
 machine_form.py - the vocabulary a factory MACHINE is detailed with.
 
 Not a build script. Imported by build_assembler.py, build_smelter.py,
-build_miner.py and build_box.py, plus station_form.py which extends it.
+build_miner.py, build_box.py and build_generator.py, by the structural set
+(build_wall.py, build_door.py, build_floor.py, build_foundation.py and
+build_pillar.py), plus station_form.py which extends it.
+
+RN-1591 PUT THE STRUCTURAL SET ON THAT LIST, AND THE ARGUMENT IS THE SAME ONE
+THE BELT LOSES. What this vocabulary is safe on is a PLATE ASSEMBLY AT
+MACHINE-TO-BUILDING SCALE, because every height in the LAYER table below is an
+absolute metre count derived against a 4 m to 8 m machine. A wall panel is
+4.00 x 3.50 m and a deck is 4.00 x 4.00 m, so a 13 mm strap and a 44 mm bolt
+head are the same fraction of those faces that they are of a smelter's, which
+is exactly what a belt tile could not say. The generator is 3.00 x 2.00 x
+2.60 m: smaller than the four machines this file was written for, and the one
+consequence is written into build_generator.py at the two places it bites (a
+`housing` is 281 mm against a 650 mm boiler radius, so no housing is mounted
+on the boiler, and the firebox had to move 100 mm inboard to buy a coaming the
+room to stand in).
+
+THE STRUCTURAL SET BRINGS ITS OWN HARD EDGE AND IT IS TIGHTER THAN A MACHINE'S.
+A machine's `limit` is its footprint half-width, which is metres away from most
+of its faces. A wall's declared thickness is 0.25 m TOTAL and the placement
+system is built on it: collinear panels share the plane x = 4k exactly and
+perpendicular ones interpenetrate a 0.125 m square (structure_common.py). So a
+greeble on a wall face has 0 mm of room, and the detail lives on the RECESSED
+FIELD instead, which stands 45 mm back from the frame. `Face(limit=)` is what
+enforces that: a `bolt` at 44 mm passes with 1 mm to spare and a `hinge` at
+52 mm is a build failure by name. The module refuses precisely the greebles
+that would have broken the module.
+
+RN-1591 DELIBERATELY DID NOT ADD THE INSERTER OR THE POWER POLE, for the
+belt's reason and not for a smaller version of it. An inserter is 0.70 m across
+and 0.90 m tall, so a `housing` is a third of the whole machine and a `tray`
+stands off its mast by three quarters of the mast's radius. A power pole is a
+lattice of 0.08 m legs: a 74 mm cable tray on an 80 mm leg is not a tray, it is
+a second leg. Both are detailed with hand-authored boxes in their own files and
+say so there.
 
 RN-1551 ADDED build_box.py TO THAT SENTENCE AND DELIBERATELY DID NOT ADD THE
 BELT, and the belt is the more interesting half. The layer table below is in
@@ -23,10 +57,17 @@ rest of the machine set" from the day this module was written, when only the
 first two imported it: it described the intent and was read as a description
 of the code, which is how a vocabulary comes to be built for thirteen machines
 and applied to two. RN-1103 took the miner and corrected the sentence in the
-same commit. **The eight machines still not on this list are box, generator,
-power pole, inserter, primitive furnace, survival smelter, belt tile and belt
-curve, and none of them has had a pass under docs/web/ART-DIRECTION.md.**
-Anyone adding a name here: add it after the import exists, not before.
+same commit. **RN-1591 FOUND THAT SENTENCE STALE IN THE SAFE DIRECTION AND
+CORRECTED IT TOO**: it still named `box` as absent three commits after RN-1551
+imported it, which is the same defect as the original with the sign flipped,
+and it is why the list is worth re-reading rather than trusting. **The five
+machines still not on this list are power pole, inserter, primitive furnace,
+survival smelter and the belt pair.** Three of those are a DELIBERATE
+exclusion with the reason stated where it is made (the belt at RN-1551, the
+inserter and the pole at RN-1591, all three for the scale argument above); the
+two simply OWED are the primitive furnace and the survival smelter, neither of
+which has had a pass under docs/web/ART-DIRECTION.md. Anyone adding a name
+here: add it after the import exists, not before.
 
 WHY IT IS A NEW MODULE AND NOT AN EXTENSION OF of_lib.py. `of_lib` is shared
 with every Blender lane in this project and every one of the 51 shipped assets
@@ -123,6 +164,17 @@ LAYER = {
     # its own two types and nothing else in the project mounts on them.
     "grime":    0.009,   # the shallow, offset half of a two-part wear mark
     "seam":     0.013,   # the strap between two plates
+    # RN-1591. A DRIVEN RIVET HEAD, AND THE HEIGHT IS A MEASURED CONSTANT
+    # RATHER THAN A CHOSEN ONE. `bolt` is 44 mm, which is a hex head on a
+    # machine and is the right number there; on the STRUCTURAL set it is the
+    # number that costs cascade 0. The wall is the only part in this game at a
+    # marginal shadow multiplier of 1.0x - LOD1 deviates 0.00 mm from LOD0 -
+    # and cascade 0 is 15.47 mm per texel, so any greeble over that height
+    # takes every wall in every base from 1.0x to 2.0x. This is RN-1565's belt
+    # pocket argument exactly, on the same 15.47 mm: 15 mm is the largest
+    # fastener the structural set can wear for free, it is 2 mm proud of the
+    # `seam` strap it fastens, and that is what a driven rivet looks like.
+    "rivet":    0.015,   # a driven rivet head, on a strap, under cascade 0
     "stain":    0.016,   # the main half of a wear mark; its satellite is grime
     "shim":     0.019,   # a packing plate under something else
     "plate":    0.024,   # a bolted-on plate: placards, patches, name plates
@@ -772,6 +824,115 @@ def guard_cage(mb, radius, z0, z1, bars, role_bar, role_hoop, cx=0.0, cy=0.0,
                          "hoop's own planes" % (hoop, bar))
     for z in (z0 + h * 0.14, z1 - h * 0.14):
         arc_ring(mb, radius, hoop, z, segs, role_hoop, cx=cx, cy=cy)
+
+
+_PERP = {"X": (1, 2), "Y": (0, 2), "Z": (0, 1)}
+
+
+def bolt_circle(mb, centre, radius, count, size, axis, role, phase_deg=0.0,
+                depth=None):
+    """Bolt heads on a circle lying PERPENDICULAR to `axis`: a bolted flange.
+
+    RN-1591. `of_lib.MeshBuilder.ring_boxes` already does this and does it for
+    a Z circle ONLY, which is correct for everything that came before it: a
+    drill flute, a flywheel spoke and a rivet row on a plinth are all about a
+    vertical axis. A boiler is not. The generator's pressure vessel lies on its
+    side, its two end plates are discs in the YZ plane, and a bolted end plate
+    with no bolts in it is a lid resting on a tube.
+
+    The bolt heads are square boxes, for `pipe_run`'s reason: at the size a
+    fastener is actually drawn a 6-gon head is 20 triangles against a box's 12
+    and the difference is a pixel. `depth` is how far the head stands along the
+    axis and defaults to the head size, which is what a bolt head is.
+
+    WHY THIS CANNOT MAKE A COPLANAR PAIR. Every head on one call shares one
+    role, and check_coplanar deliberately does not count a same-material
+    overlap; two heads on the same circle are disjoint in the plane anyway. A
+    caller stacking a SECOND circle at the same station has to change the
+    radius or the axis coordinate, because both are arguments."""
+    if axis not in _PERP:
+        raise ValueError("bolt_circle axis must be X, Y or Z (got %r)" % axis)
+    iu, iv = _PERP[axis]
+    ia = {"X": 0, "Y": 1, "Z": 2}[axis]
+    d = size if depth is None else depth
+    for i in range(max(0, count)):
+        a = math.radians(phase_deg) + 2.0 * math.pi * i / max(1, count)
+        loc, sz = [0.0, 0.0, 0.0], [size, size, size]
+        loc[ia], sz[ia] = centre[ia], d
+        loc[iu] = centre[iu] + radius * math.cos(a)
+        loc[iv] = centre[iv] + radius * math.sin(a)
+        mb.box(tuple(sz), tuple(loc), role)
+
+
+def guard_arc(mb, centre, radius, axis, half_len, bars, role_bar, role_edge,
+              spread_deg=96.0, bar=0.055, edge=0.075, foot_z=None,
+              role_foot=None):
+    """A bar guard over a part that rotates about a HORIZONTAL axis: `bars`
+    rails spanning the part's width, hung on an arc over the top of it.
+
+    RN-1591, AND IT IS `guard_cage`'S ARGUMENT WITH THE AXIS TURNED OVER.
+    RN-1552 added a cage because D-020's bar is about machines that read as
+    serviceable, and a serviceable machine has something between a person and
+    everything that turns. That cage is a circle of UPRIGHTS around a vertical
+    column and it cannot guard a flywheel: a wheel on a horizontal shaft is a
+    disc standing in a vertical plane, and a ring of posts around it either
+    misses it entirely or is a fence around the whole machine.
+
+    THE BARS RUN ALONG THE SHAFT, WHICH IS WHAT A REAL WHEEL GUARD IS, and it
+    is also what keeps the guard honest about the one thing the generator's own
+    docstring says must survive: "is my power on" is read at range off a
+    turning wheel, so a guard that HIDES the wheel breaks the machine's most
+    important signal. Bars are the answer for the miner's exact reason - the
+    sky, and the spokes, show between them - and a sheet cowl is not.
+
+    `role_edge` paints the two outermost bars, which are the ones a person
+    walking past actually meets, so a caller can put the keep-out colour on the
+    contact edge and leave the rest structural. `foot_z`, when given, drops a
+    leg from each outer bar to that height: a guard bolted to something is a
+    guard, and a guard floating in the air is a decal.
+
+    NO TWO PARTS OF IT CAN SHARE A PLANE. The bars are placed at mirrored
+    angles, so a pair does share the two planes perpendicular to the arc's
+    vertical axis - and it is disjoint in the other in-plane coordinate, so
+    there is no area to fight over, and both bars carry one role in any case.
+    The legs are made WIDER than the bars they carry for `guard_cage`'s hoop
+    reason: a bar's side faces at the crossing are buried inside the leg."""
+    if axis not in ("X", "Y"):
+        raise ValueError("guard_arc guards a horizontal axis, X or Y, not %r"
+                         % axis)
+    if bars < 3:
+        raise ValueError("a guard of %d bars is not a guard" % bars)
+    if edge <= bar:
+        raise ValueError("the outer bars (%.3f) carry the contact edge and "
+                         "must be heavier than the field bars (%.3f)"
+                         % (edge, bar))
+    iu = 1 if axis == "X" else 0          # the in-plane horizontal axis
+    ia = 0 if axis == "X" else 1
+    out = []
+    for i in range(bars):
+        t = -1.0 + 2.0 * i / float(bars - 1)
+        a = math.radians(spread_deg) * t
+        rim = i in (0, bars - 1)
+        w = edge if rim else bar
+        loc, sz = [0.0, 0.0, 0.0], [w, w, w]
+        loc[ia], sz[ia] = centre[ia], half_len * 2.0
+        loc[iu] = centre[iu] + radius * math.sin(a)
+        loc[2] = centre[2] + radius * math.cos(a)
+        mb.box(tuple(sz), tuple(loc), role_edge if rim else role_bar)
+        if rim:
+            out.append((loc[iu], loc[2], w))
+    if foot_z is None:
+        return
+    role_foot = role_foot or role_bar
+    for (u, v, w) in out:
+        top = v + w                        # above the bar, so its top face is
+        h = top - foot_z                   # in open air at a height of its own
+        if h <= 0.0:
+            continue
+        loc, sz = [0.0, 0.0, foot_z + h * 0.5], [w * 1.30, w * 1.30, h]
+        loc[ia], sz[ia] = centre[ia], half_len * 1.35
+        loc[iu] = u
+        mb.box(tuple(sz), tuple(loc), role_foot)
 
 
 def bolted_plate(mb, face, u, v, du, dv, role_plate, role_bolt, inset=0.07,
