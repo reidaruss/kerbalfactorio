@@ -390,7 +390,22 @@
   const u = [P[0] / dR, P[1] / dR, P[2] / dR];
   const at = (h) => [u[0] * (dR + h), u[1] * (dR + h), u[2] * (dR + h)];
   const hub = at(0.5);
-  of.standAt(hub[0], hub[1], hub[2]);
+  // CE-54. `frame: 'body'` IS REQUIRED HERE AND IT IS NOT A FORMALITY.
+  // `standAt` refuses inside a carrier's bound now, because on a station
+  // travelling at 1879.2552 m/s it seats a walker the deck leaves behind
+  // (RN-1412). THIS PROBE WANTS EXACTLY THAT, because every speed it reports is
+  // a FINITE DIFFERENCE OF BODY-FRAME POSITION (see the header): a rider
+  // boarded onto the frame would read 1879 m/s standing still and Z1 to Z8
+  // would all be measuring the station's orbit. So the body frame is asked for
+  // by name, and the behaviour below is byte for byte what it always was.
+  //
+  // WHAT THAT COSTS IS WRITTEN DOWN RATHER THAN HIDDEN: the station is leaving
+  // at 31.32 m per tick while these legs run, so Z4's gravity is sampled at a
+  // point the station is receding from and `restoredExactly` may be true
+  // because the volume has GONE rather than because it cancelled. That is this
+  // probe's own open question (routed to Admin with CE-54), not something the
+  // frame argument fixes.
+  of.standAt(hub[0], hub[1], hub[2], { frame: 'body' });
   await settle(2.5);
   const w4 = of.weight();
   const Z4 = {
@@ -522,7 +537,8 @@
   //     Drift into the hub wall and require the speed to be taken, radial
   //     included. No grab key, no authored handrail.
   // =====================================================================
-  of.standAt(hub[0], hub[1], hub[2]);
+  // CE-54. The body frame by name again; the argument is at Z4's own call.
+  of.standAt(hub[0], hub[1], hub[2], { frame: 'body' });
   await settle(1.0);
   const A = st.axes;
   const dotv = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
