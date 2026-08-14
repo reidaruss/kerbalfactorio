@@ -469,12 +469,19 @@ export function parseConfig(search: string): Config {
     // box gains 25.1% of iqr at 1.0% of luma. The airbrushed ground gets grain.
     //
     // THE ONE CONSEQUENCE THAT LEAVES THIS DOMAIN: with the scatter ON the same
-    // box reads 26.54 -> 30.58 luma, which is OUT of §2.1's band. That is a
+    // box reads 26.54 -> 28.22 luma, which is OUT of §2.1's band. That is a
     // RE-SEED and not a loss, proved rather than argued: scatter density is per
     // CELL, so a finer lattice is a different hash, and `placedPerM2` holds at
     // 0.46431 -> 0.46466 with `deliveredFraction` 1.0002 in BOTH arms and zero
     // cells or chunks capped. The §2.1 luminance table has to be re-taken at
     // this LOD; it cannot be carried across.
+    // RN-1642 (2026-08-14): this comment previously read 30.58 for the
+    // scatter-ON figure, which no re-take (headless or on real D3D11) has ever
+    // reproduced; every measurement, then and since, reads 28.22. Corrected
+    // rather than left, because a stray digit in a comment beside the constant
+    // it explains is exactly the kind of citation this file warns readers to
+    // trust. The §2.1 and §2b tables were re-taken at this LOD in the same
+    // lane; see rendering.md §2.1b and §2c.
     maxDepth: Math.min(16, Math.max(4, num(p, 'maxdepth', 15) | 0)),
     // DW-19: 1.4 is the highest ratio that still refines on a MOUNTAIN. The
     // split metric measures the observer to the quad CENTRE, so a coarse quad
