@@ -439,7 +439,43 @@ export function parseConfig(search: string): Config {
     // DW-19: maxDepth 14 gives a measured 1.80 m cell at the feet on a plain
     // and 1.65 m on a mountain, finer than the 2 m the 1 m voxel layer needs.
     // The ceiling is 16 so the probe can sweep past the shipping value.
-    maxDepth: Math.min(16, Math.max(4, num(p, 'maxdepth', 14) | 0)),
+    //
+    // WG-186 to WG-193: 14 -> 15, measured cell 1.799 -> 0.899 m at the feet.
+    // PRICED ON A REAL D3D11 BOOT with 4 INTERLEAVED repeats per arm, because
+    // the first two sweeps disagreed on the SIGN (+2.10 ms on one, -0.80 on the
+    // next) and a non-interleaved sweep lets thermal drift land on one arm:
+    // high tier p50 8.00 -> 9.40 ms against a 16.6 ms budget, +112,243
+    // triangles (+15.1%), near chunks 169 -> 184, pool never exhausted (133 of
+    // 384 still free), VRAM unchanged. The delta is 2.3x md14's own 0.60 ms
+    // within-arm spread, so it is real; md15's own spread is 2.60 ms, so this
+    // also buys a slightly LUMPIER frame, and that is the honest half.
+    //
+    // WHAT IT BUYS, AND WHAT IT DOES NOT, because the flag that asked for this
+    // named a cause the measurement does not support. `lodstep.js` measures the
+    // ANGLE BETWEEN ADJACENT FACETS, which is what a "polygon step" IS:
+    //   - On the ground a player walks (the forestfloor art pose, the ruin
+    //     walk), the crease at the SHIPPED depth 14 is already p50 0.014-0.30
+    //     and max 0.39-0.73 DEGREES. There was no visible step there to remove.
+    //   - On a 9.5 degree mountain flank the upper percentiles DO NOT IMPROVE
+    //     AT ALL from depth 13 to depth 16: p90 stays ~5 deg and max ~19 deg
+    //     across an 8x change in tessellation, because the height field is
+    //     fractal and its worst creases are scale-invariant.
+    // So this does NOT fix silhouette stepping on steep ground and no depth
+    // will. What it does buy is measured too: the normals resolve 0.9 m relief
+    // instead of 1.8 m, so sub-1.8 m surface shape reaches the SHADING. With
+    // the scatter held off (`?props=0`, one flag apart) the `forestfloor` frame
+    // moves 48.91% of its pixels, both ways (289,923 darker / 267,530 lighter)
+    // against a same-config control that moves 0.78%, and the §2.1 groundNear
+    // box gains 25.1% of iqr at 1.0% of luma. The airbrushed ground gets grain.
+    //
+    // THE ONE CONSEQUENCE THAT LEAVES THIS DOMAIN: with the scatter ON the same
+    // box reads 26.54 -> 30.58 luma, which is OUT of §2.1's band. That is a
+    // RE-SEED and not a loss, proved rather than argued: scatter density is per
+    // CELL, so a finer lattice is a different hash, and `placedPerM2` holds at
+    // 0.46431 -> 0.46466 with `deliveredFraction` 1.0002 in BOTH arms and zero
+    // cells or chunks capped. The §2.1 luminance table has to be re-taken at
+    // this LOD; it cannot be carried across.
+    maxDepth: Math.min(16, Math.max(4, num(p, 'maxdepth', 15) | 0)),
     // DW-19: 1.4 is the highest ratio that still refines on a MOUNTAIN. The
     // split metric measures the observer to the quad CENTRE, so a coarse quad
     // the observer stands inside reports up to a half-diagonal of distance and

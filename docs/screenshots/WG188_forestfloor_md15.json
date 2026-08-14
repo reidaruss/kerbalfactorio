@@ -1,0 +1,144 @@
+{
+ "valid": true,
+ "shot": "forestfloor",
+ "why": "the RN-352 forest site, standing eye, the §2.1 calibration pose",
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  660,
+  524,
+  940,
+  664
+ ],
+ "box": {
+  "px": 39200,
+  "luma": 28.22,
+  "rgb": [
+   33.42,
+   27.71,
+   17.93
+  ],
+  "warm": 15.49,
+  "sat": 0.477,
+  "p05": 3.35,
+  "p50": 28.63,
+  "p95": 48.46,
+  "iqr": 19.77,
+  "loFrac": 0.418,
+  "hiFrac": 0
+ },
+ "extraPx": {},
+ "extra": {},
+ "world": {
+  "px": 1440000,
+  "luma": 30.31,
+  "rgb": [
+   32.76,
+   30.5,
+   21.26
+  ],
+  "warm": 11.5,
+  "sat": 0.453,
+  "p05": 1.93,
+  "p50": 20.34,
+  "p95": 109.51,
+  "iqr": 27.95,
+  "loFrac": 0.589,
+  "hiFrac": 0.006
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": 0.7,
+  "sunT": 0.843,
+  "elevDot": 0.701,
+  "err": 0.001,
+  "tol": 0.06,
+  "solve": {
+   "wantDot": 0.7,
+   "gotDot": 0.7009,
+   "err": 0.0009,
+   "t": 0.8430555555555556
+  }
+ },
+ "pose": {
+  "yawDeg": 300,
+  "pitchDeg": -26,
+  "latDeg": -19.85,
+  "lonDeg": -72.785,
+  "altM": 1.62
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": -1e+30,
+  "sun": [
+   -0.14690455846162287,
+   0.3872324843550918,
+   0.9102033035335452
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": true,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null
+ },
+ "ibl": {
+  "builds": 9,
+  "lastMs": 0.9,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 9,
+  "ground": true,
+  "biome": 3
+ },
+ "render": {
+  "triangles": 1429028,
+  "calls": 72,
+  "programs": 56,
+  "vramMB": 104.2,
+  "frameMs": {
+   "p50": 8,
+   "p95": 12.2,
+   "p99": 14.6
+  },
+  "passMs": {
+   "near": 7.1,
+   "post": 0.3,
+   "total": 8
+  }
+ },
+ "setup": {
+  "teleported": true,
+  "converged": true,
+  "biome": 3,
+  "tickAdvanced": true
+ },
+ "log": []
+}

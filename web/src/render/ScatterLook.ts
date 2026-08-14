@@ -328,11 +328,24 @@ export function scaleFor(
  */
 export const CLUSTER_BIAS = 0.55;
 /**
- * Patch size, in CELLS, as a power-of-two shift. 3 is an 8x8 cell patch, which
- * at DW-19's shipped 1.808 m near cell is about 14 m across: roughly the scale
- * the eye reads as "a stand of something" at walking distance, and comfortably
- * inside the 30 m full-density band so a patch is never split by the density
- * falloff.
+ * Patch size, in CELLS, as a power-of-two shift. The scale that matters is the
+ * one in METRES: about 14 m across, roughly what the eye reads as "a stand of
+ * something" at walking distance, and comfortably inside the 30 m full-density
+ * band so a patch is never split by the density falloff.
+ *
+ * WG-186: THIS CONSTANT IS IN CELLS AND THE CELL JUST HALVED, so it moved on its
+ * own and had to be moved back. At DW-19's 1.808 m cell, shift 3 (8x8 cells) was
+ * 14.46 m. At maxDepth 15's measured 0.899 m cell it would be 7.19 m, i.e. the
+ * authored stand scale silently halving as a side effect of a tessellation
+ * change. Shift 4 (16x16 cells) is 14.38 m at the new cell, within 0.6% of the
+ * scale that was authored. This is the ONE knob a near-LOD change could not
+ * leave alone while still honestly claiming to change tessellation density only.
+ *
+ * The general trap, worth more than the constant: any tuning value expressed in
+ * CELLS rather than in metres is silently a function of `maxDepth`. This was the
+ * only one found (`MAX_CELL_M`, `LOD2_M`, `RADIUS_M` and the density figures are
+ * all in metres or per-m2 and are unaffected; per-cell COUNTS are area-scaled by
+ * `Scatter`'s fair quantiser and measured to hold `deliveredFraction` at 1.0002).
  *
  * KNOWN AND ACCEPTED: the patch lattice is CHUNK-LOCAL, so it restarts at every
  * chunk boundary. That is not a seam, because the pattern is random per patch
@@ -341,7 +354,7 @@ export const CLUSTER_BIAS = 0.55;
  * high-precision phase the terrain detail bump needs and is blocked on the same
  * world-gen chunk-format work.
  */
-export const CLUSTER_SHIFT = 3;
+export const CLUSTER_SHIFT = 4;
 export const CONTACT_CARDS = 5;
 /** Fraction of a cell the skirt is spread over, in the cell's own uv. */
 export const CONTACT_SPREAD = 0.30;

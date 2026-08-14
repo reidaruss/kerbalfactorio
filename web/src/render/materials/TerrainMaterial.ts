@@ -305,9 +305,15 @@ export interface TerrainWaterBand {
 /**
  * The height in metres over which ground above the waterline dries out. 0.55 m
  * is capillary rise plus the ripple's own reach, and it is generous rather than
- * physical: the shipped terrain LOD is 1.8 m under the player, so a band much
- * tighter than half a metre would be thinner than the triangles carrying it and
- * would read as a jagged outline of the mesh rather than as a wet margin.
+ * physical: the terrain LOD under the player was 1.8 m when this was chosen, so
+ * a band much tighter than half a metre would be thinner than the triangles
+ * carrying it and would read as a jagged outline of the mesh rather than as a
+ * wet margin.
+ *
+ * WG-186: that LOD is now 0.899 m, which only makes this constant SAFER (the
+ * argument is a floor, and the floor moved down). Left at 0.55 m deliberately:
+ * re-tuning it would be a look change riding on an LOD change, and the two
+ * would then be inseparable.
  */
 const WET_HEIGHT_M = 0.55;
 

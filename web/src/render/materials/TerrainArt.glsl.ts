@@ -155,9 +155,11 @@ export const TERRAIN_ART_MACRO = /* glsl */`
  *     "layered" at 100 m where the tonal difference has already washed out.
  *
  * The bed thickness is 2.35 m. It is the one number here that is a judgement
- * rather than a derivation: thick enough that the near LOD's 1.8 m vertex
- * spacing samples it without aliasing, thin enough that a 12 m cut bank shows
- * five beds rather than two.
+ * rather than a derivation: thick enough that the near LOD's vertex spacing
+ * samples it without aliasing, thin enough that a 12 m cut bank shows five beds
+ * rather than two. That spacing was 1.8 m when the number was chosen and is
+ * 0.899 m since WG-186, so the aliasing half of the argument has more margin
+ * than it was given, not less.
  *
  * SELF-CONFINING: this only ever multiplies the `rock` term, and `rock` is
  * mixed in by the slope smoothstep, so flat ground receives exactly nothing and
