@@ -38,6 +38,7 @@ import { NO_VOXELS, restoreEdits, snapshotEdits, type VoxelMeshPort,
 import { keptWorlds } from './SaveWorlds.js';
 import { scratchU8, type OfCoreModule } from '../sim/wasm/heap.js';
 import { discAbi } from '../sim/wasm/discabi.js';
+import { discoveryBytesFor, noteDiscoveryBody } from '../world/DiscoveryScope.js';
 import { poiAbi } from '../sim/wasm/poiabi.js';
 import type { HealthBook } from './Health.js';
 import type { PlayerHealthSave } from './PlayerHealth.js';
@@ -94,8 +95,14 @@ export function snapshot(M: OfCoreModule, game: GameCore, field: NodeField,
   // the map is only one of its readers - a save that had to wait for a panel to
   // exist would be a save that is wrong whenever `?flight=0`. Same u8 scratch,
   // so same rule: copy out before the next call.
-  const dn = discAbi(M)._of_disc_serialize();
-  const discovery = dn > 0 ? Array.from(scratchU8(M, dn)) : [];
+  // PS-47: the stream for the body THIS SLOT NAMES, which is the live field on
+  // every shipped path and is not after an in-page body switch, because
+  // `bodyId` here is boot-captured (R-BODY-2). The full argument is in
+  // `DiscoveryScope.discoveryBytesFor`; the short version is that writing
+  // another body's lattice under this body destroys the world on the next load
+  // rather than merely polluting it, since `deserialize` adopts the stream's
+  // radius and the following `of_disc_ensure` then wipes the mismatch.
+  const discovery = discoveryBytesFor(M, bodyId);
 
   // WG-151: the POI/site bridge's two bits (known, visited), read
   // straight off `/core`'s per-body catalog for the same reason `discovery`
@@ -231,6 +238,13 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
     scratchU8(M, dbytes.length).set(dbytes);
     discovery = D._of_disc_deserialize();
   }
+  // PS-46. The field now describes the body whose world was just applied, and
+  // `viewForBody` is what guarantees that: the slot handed to `apply` is
+  // ALREADY this body's. Said unconditionally, including when the slot carried
+  // no stream, because "this body's discovery, which is none" is still a fact
+  // about which body the field belongs to and is what a later re-seat must
+  // stash under.
+  noteDiscoveryBody(g.bodyId);
 
   // 0c. WHAT THE PLAYER HAD SCANNED OR VISITED (WG-151). Same
   //     three-state discipline as discovery above: 0 is "the slot carried

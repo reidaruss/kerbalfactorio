@@ -37,6 +37,7 @@ import { Regime } from '../world/Regime.js';
 import { bootTerrain, type TerrainBootResult } from '../world/TerrainBoot.js';
 import { Lifetime } from './Lifetime.js';
 import { WorldSession, type BuildBodyScope } from '../world/WorldSession.js';
+import { reseatDiscovery } from '../world/DiscoveryScope.js';
 import { CarrierRegistry } from '../world/CarrierFrame.js';
 import { CarrierRide } from '../world/CarrierRide.js';
 import { CarrierMounts } from '../world/CarrierGeometry.js';
@@ -346,6 +347,14 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // on the first pass is the correct reading: there is no station yet.
   const stationRebuild: { fn: ((bodyId: BodyId, tick: number) => void) | null } =
     { fn: null };
+  // PS-46 / GP-725. THE SECOND THING A REBUILD HAS TO PUT BACK, and it is a
+  // holder for exactly the reason the station above is one: the discovery field
+  // is cut when the MAP is built, and the map is built 250 lines below because
+  // it needs gameplay, the bay and flight. So the scope cannot construct it, and
+  // the scope is the only place that knows the body changed. Null on the first
+  // pass is the correct reading: `new Discovery(core, bodyId)` cuts the boot
+  // body's field a moment later and there is nothing yet to re-seat.
+  const discReseat: { fn: ((bodyId: BodyId) => void) | null } = { fn: null };
   const buildBodyScope: BuildBodyScope = async (bodyId, lt) => {
     // CE-31 / CE-34. ONE registration site for every scope, boot's included. A
     // carrier is a position in THIS body's frame, so a carrier that survived a
@@ -373,6 +382,13 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     if (oracle.body.bodyId !== bodyId) {
       throw new Error(`body scope: asked for ${bodyId}, oracle holds ${oracle.body.bodyId}`);
     }
+    // PS-46. THE DISCOVERY FIELD BELONGS TO THIS BODY BEFORE ANYTHING IN THE
+    // SCOPE CAN WRITE TO IT. First, and above the terrain, because /core holds
+    // ONE field and an observation taken against the outgoing lattice is a cell
+    // on the wrong planet that nothing afterwards can tell apart from a real
+    // one. Immediately after the oracle assertion, so the body this cuts for is
+    // the body the assertion has just agreed on. See world/DiscoveryScope.ts.
+    discReseat.fn?.(bodyId);
     const t = await bootTerrain({
       cfg, quality, depth: renderer.depth, events, scenes, origin, body: oracle.body,
       atmosphere: sky.atmos, cascadeSplits: shadows.splits,
@@ -614,6 +630,15 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     map = await bootMap({ core, host, g, flight: theFlight, body, input, player, oracle,
       frame, mapCam: rig.mapCam, sky, proxy });
   }
+  // PS-46. AND THE SAME CALL ON EVERY REBUILD FROM HERE ON (the station's own
+  // shape, 60 lines below). OUTSIDE the flight block on purpose: `?flight=0`
+  // has no map and therefore no `Discovery` driver, but it still has a field in
+  // /core and still autosaves it, so the field must follow the body there too.
+  // `map` is read through the closure rather than captured, so this is the live
+  // driver or null, whichever it is at the moment a rebuild happens.
+  discReseat.fn = (rebuiltBodyId) => {
+    reseatDiscovery(core, rebuiltBodyId, map?.discovery ?? null);
+  };
   // PH-64 to PH-69. THE WORLD COMES BACK AS IT WAS LEFT (ResumeBoot argues the
   // order). After the flight block, so a vessel has somewhere to be promoted
   // into; outside it, because the body anchor is owed to `?flight=0` too.

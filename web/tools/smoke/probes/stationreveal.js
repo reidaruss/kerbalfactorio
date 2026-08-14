@@ -450,32 +450,30 @@
   // §8 — HOME BODY ONLY, MEASURED. And a defect that is not this lane's.
   // ===========================================================================
   //
-  // GP-725. THE DISCOVERY FIELD IS NOT RE-CUT WHEN THE WORLD CHANGES BODY, and
-  // that is PRE-EXISTING, in another file, and visible here only because a full
-  // reveal makes it obvious. `Boot.ts:583` calls `bootMap` OUTSIDE
-  // `buildBodyScope` (declared at :318, first run at :427), so the `Discovery`
-  // driver is constructed once with the BOOT body's id and `WorldSession.reboot`
-  // never rebuilds it. It is the same shape as R17's station mount, one domain
-  // over.
+  // GP-725, CLOSED 2026-08-14 by PS-46 (lane/disc-body). What this section
+  // recorded was that the discovery field was NOT re-cut when the world changed
+  // body: `Boot.ts` calls `bootMap` outside `buildBodyScope`, so the `Discovery`
+  // driver was constructed once with the BOOT body's id and `WorldSession
+  // .reboot` never re-cut the field under it. Measured then, through
+  // `of.reboot(1)`: the world moved to Cinder correctly while the field still
+  // reported `bodyRadiusM` 600,000, a 9,375 m cell and Forge's 98,304 cells,
+  // and kept taking observations, so a player walking on Cinder wrote Cinder
+  // positions into Forge's lattice.
   //
-  // Measured through `of.reboot(1)` with the save slot wiped first, so nothing
-  // could be re-applied behind the measurement: the world moves to Cinder
-  // correctly (`of.world().bodyRadiusM` 200,000, `of.map('report').body` says
-  // `{bodyId:1, name:'Cinder', radiusM:200000}`), while the discovery field
-  // still reports `bodyRadiusM` 600,000, a 9,375 m cell and Forge's 98,304
-  // cells, AND it keeps taking observations — so a player walking on Cinder is
-  // writing Cinder positions into Forge's lattice.
+  // The fix is a re-seat holder in the body scope, the same shape as R17's
+  // station mount one domain over, plus a per-body stash of /core's own stream
+  // (`world/DiscoveryScope.ts`). THE GATE FOR IT IS `probes/discbody.js`, which
+  // brackets a switch with two byte-level marks; this section keeps its
+  // MEASUREMENT because it is the reading that found the defect, and a second
+  // copy of the assertion here would be a second gate to keep honest.
   //
-  // SO "HOME BODY ONLY" IS CURRENTLY NOT A CHOICE, IT IS THE ONLY THING THE DATA
-  // MODEL CAN EXPRESS: there is one field, for the boot body, and one blob for
-  // it in the save. The recommendation stands (the moon's map belongs to the
-  // moon scan, per story_line_outline_v1.txt) but it is not this reveal that
-  // enforces it, and saying otherwise here would be the comment lying.
+  // "HOME BODY ONLY" IS NOW A CHOICE RATHER THAN THE ONLY EXPRESSIBLE THING.
+  // Each body has its own lattice and its own blob in its own world, and the
+  // milestone latch below is what keeps the reveal to one body. The moon's map
+  // still belongs to the moon scan (story_line_outline_v1.txt).
   //
-  // THIS IS MEASURED AND NOT ASSERTED. Turning another lane's defect into this
-  // probe's red would make the sweep's verdict about somebody else's file. The
-  // one thing §8 DOES assert is this feature's own claim: a spent milestone
-  // cannot fire a second reveal, wherever the player goes.
+  // What §8 ASSERTS is unchanged and is this feature's own claim: a spent
+  // milestone cannot fire a second reveal, wherever the player goes.
   const milesBeforeReboot = countOf(STATION_BOARDED);
   let moon = null;
   let rebootErr = null;
@@ -489,9 +487,11 @@
     const worldR = of.world().bodyRadiusM ?? null;
     const mapBody = of.map('report')?.body ?? null;
     log.push(`§8 after reboot(1): world radius ${worldR} m, map body `
-      + `${mapBody === null ? 'null' : mapBody.name}, but the discovery field is `
-      + `still cut for ${moon.bodyRadiusM} m with a ${moon.surveyCellSizeM} m `
-      + `cell and ${moon.surveyCells} cells [GP-725, pre-existing, Boot.ts:583]`);
+      + `${mapBody === null ? 'null' : mapBody.name}, discovery field cut for `
+      + `${moon.bodyRadiusM} m with a ${moon.surveyCellSizeM} m cell and `
+      + `${moon.surveyCells} cells [GP-725 closed by PS-46; gate is discbody.js]`);
+    check('§8 the field follows the body (GP-725, closed by PS-46)',
+      moon.bodyRadiusM === worldR, `field ${moon.bodyRadiusM}, world ${worldR}`);
     check('§8 the milestone is still spent exactly once after a body change',
       countOf(STATION_BOARDED) === milesBeforeReboot
       && countOf(STATION_BOARDED) === 1, JSON.stringify(MILES()));
@@ -505,9 +505,10 @@
     fails,
     log,
     findings: [
-      'GP-725 (NOT this lane, pre-existing): the discovery field is not re-cut '
-      + 'on a body change. Boot.ts:583 calls bootMap outside buildBodyScope, so '
-      + 'the Discovery driver keeps the boot body\'s lattice for ever. See §8.',
+      'GP-725 (found here, CLOSED 2026-08-14 by PS-46): the discovery field was '
+      + 'not re-cut on a body change, because Boot.ts calls bootMap outside '
+      + 'buildBodyScope. It is re-seated in the scope now and each body\'s '
+      + 'stream is kept; §8 still measures it, probes/discbody.js gates it.',
       'GP-726 (harness): of.run(s, renderHz) delivers min(1, renderHz*5/60) of '
       + 'the sim time asked for, because Loop.MAX_CATCHUP is 5 and the backlog '
       + 'is discarded. 83.3% at 10 Hz. Assert against of.world().tick.',

@@ -11,6 +11,7 @@
 
 import type { Services } from './Services.js';
 import type { BodyId } from '../world/PlanetBody.js';
+import { discoveryScopeReport } from '../world/DiscoveryScope.js';
 
 /** What still believes in the previous body after a switch. */
 export interface StaleHolder {
@@ -42,6 +43,11 @@ export function lifecycleApi(s: Services): Record<string, unknown> {
           rebases: s.origin.rebases,
           x: s.origin.origin.x, y: s.origin.origin.y, z: s.origin.origin.z,
         },
+        // PS-46. Which body /core's one discovery field is cut for, and the
+        // streams this session is holding for the bodies it is not standing on.
+        // Beside `stale` because it is the same kind of fact: what survived the
+        // switch, measured off the thing that owns it rather than inferred.
+        discovery: discoveryScopeReport(),
         stale: staleHolders(s),
       };
     },
@@ -90,6 +96,15 @@ export function staleHolders(s: Services): StaleHolder[] {
   };
 
   row('oracle', 'body.radiusM', s.oracle.body.radiusM, live.radiusM);
+  // PS-46 / GP-725. THE DISCOVERY FIELD WAS NOT ON THIS LIST, which is a large
+  // part of why it went unnoticed: /core keeps ONE `g_disc` whose lattice
+  // resolution is a function of the body radius, so a field left cut for the
+  // previous body silently records the new body's walking at the old body's cell
+  // size. It is asked the same question everything else here is asked, and the
+  // answer comes off `_of_disc_report[15]` rather than from anything the client
+  // wrote down. `map` is null under `?flight=0`, where there is no driver to ask.
+  const disc = s.map?.discovery ?? null;
+  if (disc !== null) row('discovery', 'bodyRadiusM', disc.stats().bodyRadiusM, live.radiusM);
   row('oracle.water', 'body.radiusM', s.oracle.water.body.radiusM, live.radiusM);
   row('proxy', 'bodyName', s.proxy.mesh.name, `${live.name}Proxy`);
   row('sky', 'uPlanetR', s.sky.atmos.uPlanetR.value, live.radiusM);
