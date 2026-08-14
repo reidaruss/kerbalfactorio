@@ -58,6 +58,7 @@ import { Ambience } from './Ambience.js';
 import { Objectives, showGoals, stepGoals } from './Objectives.js';
 import { ObjectivePanel } from '../ui/ObjectivePanel.js';
 import { gameplayReport } from './GameplayReport.js';
+import { computeCompass } from './Compass.js';
 import { HealthBook } from './Health.js';
 import { reconcile } from './HealthCensus.js';
 import { PlayerVitals } from './PlayerVitals.js';
@@ -664,12 +665,16 @@ export class Gameplay {
     }));
     // ONE prompt decision, made in one place. It used to be four early returns
     // here, and every one of them had to remember the two panel conditions.
+    // GP-700. `computeCompass` runs every frame regardless of mode (Gameplay
+    // holds no `aboard`/map-open fact to gate it on); `GameHud.render` is the
+    // one place that decides whether it draws, off the SAME `setVisible` the
+    // crosshair already hides behind.
     this.hud.render(dt, this.uiOpen ? null : padPrompt(this.build.padTarget)
       ?? ghostPrompt(this.build.structTarget)
       ?? ghostMachinePrompt(this.build.label, this.build.target)
       ?? investigatePrompt(this.aimedInvestigate)
       ?? aimPrompt(this.factory, this.game, this.aimedBuild, this.aimedMachine,
-        this.interact.target), carried);
+        this.interact.target), carried, computeCompass(this));
     this.hotbarBar.render(this.hotbar.rows((n) => this.icons.for(n)));
     this.progress.frame();
     stepGoals(this, dt);

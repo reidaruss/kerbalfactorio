@@ -11,6 +11,8 @@
 // loop, so the diff is the whole point.
 
 import './styles/game.css';
+import { CompassStrip, type CompassReadout } from './CompassHud.js';
+export type { CompassChip, CompassReadout } from './CompassHud.js';
 
 export interface HudTarget {
   name: string;
@@ -34,6 +36,13 @@ export class GameHud {
   private readonly toast: HTMLElement;
   private readonly gainEl: HTMLElement;
   private readonly bannerEl: HTMLElement;
+  /** GP-700. The on-foot compass strip (ui/CompassHud.ts). Hidden with
+   *  `cross`/`carry` in `setVisible`, not with `health`/`mode`: unlike those
+   *  two, a bearing to a marker on THIS body means nothing while flying or
+   *  inside the map's own 3D scene, so it hides on exactly the two facts
+   *  `setWorldUi` already gates the crosshair on (FlightMode's `aboard`,
+   *  MapMode's `open`) rather than a third mode check invented here. */
+  private readonly compass: CompassStrip;
   /** DW-31: the mode badge. Never hidden by `setVisible`; see the constructor. */
   private readonly mode: HTMLElement;
   /** GP-79: the player's own health. NOT hidden by `setVisible`, for the same
@@ -93,6 +102,7 @@ export class GameHud {
     this.toast = this.div(parent, 'of-toast', 'of-ui');
     this.gainEl = this.div(parent, 'of-gain', 'of-ui');
     this.bannerEl = this.div(parent, 'of-banner', 'of-ui');
+    this.compass = new CompassStrip(parent);
     this.health = this.div(parent, 'of-health', 'of-ui');
     this.mode = this.div(parent, 'of-mode', 'of-ui');
     this.mode.textContent = badge;
@@ -114,6 +124,7 @@ export class GameHud {
     this.carry.style.display = d;
     this.gainEl.style.display = d;
     this.bannerEl.style.display = d;
+    this.compass.setVisible(v);
     if (!v) this.prompt.style.display = 'none';
   }
 
@@ -199,8 +210,19 @@ export class GameHud {
       + `<div id="of-hpbar"><i style="width:${pct}%;background:${colour}"></i></div>`;
   }
 
-  /** Called every frame. `dt` only ages the toast; the rest is diffed. */
-  render(dt: number, target: HudTarget | null, carried: HudCarry[]): void {
+  /**
+   * Called every frame. `dt` only ages the toast; the rest is diffed.
+   *
+   * `compass` arrives COMPUTED EVERY FRAME regardless of mode (game/Compass.ts
+   * has no idea whether the player is aboard a vessel or the map is up -- see
+   * its own header), so the `!this.visible` branch below is the ONE place that
+   * decides whether it draws, the same gate `setWorldUi` already puts the
+   * crosshair and the carry panel behind. A second mode check here would be a
+   * second authority on "is this the on-foot HUD" agreeing with `setVisible`
+   * by construction rather than by rule.
+   */
+  render(dt: number, target: HudTarget | null, carried: HudCarry[],
+         compass: CompassReadout | null = null): void {
     if (this.toastLeft > 0) {
       this.toastLeft -= dt;
       if (this.toastLeft <= 0) this.toast.classList.remove('show');
@@ -208,7 +230,13 @@ export class GameHud {
     if (!this.visible) return;
     this.renderPrompt(target);
     this.renderCarry(carried);
+    this.compass.render(compass);
   }
+
+  /** GP-700. `__of.game()`'s own `compass` block: what the strip drew last,
+   *  the `progress`/`stations` precedent (GameplayReport.ts) applied to this
+   *  feature -- a probe reads this rather than pixels. `null` while hidden. */
+  compassReport(): unknown { return this.compass.report(); }
 
   private renderPrompt(t: HudTarget | null): void {
     const on = t !== null && !t.empty;

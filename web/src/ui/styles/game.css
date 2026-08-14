@@ -181,6 +181,72 @@
   100% { transform: scale(1); opacity: 0.75; }
 }
 
+/* --- the compass (GP-700) ------------------------------------------------
+   Top centre, below where the sandbox badge (#of-mode) sits when it is on:
+   the badge is rare (survival never shows it) and the two are allowed to
+   overlap in that one mode rather than this file inventing a second layout
+   for it. Hidden by GameHud.setVisible with the crosshair, never drawn
+   in-place -- see GameHud.ts's own comment on why that is the ONE gate. */
+#of-compass {
+  left: 50%;
+  top: 40px;
+  transform: translateX(-50%);
+  width: 460px;
+  height: 34px;
+  pointer-events: none;
+  display: none;
+}
+#of-compass-strip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+/* Falling off the strip's edge is CSS clipping a percentage the bearing math
+   already refused to keep in range (COMPASS_HALF_FOV_DEG), not a second rule
+   drawn here: nothing is ever positioned outside 0%..100% on purpose. */
+#of-compass .tick, #of-compass .chip {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000;
+}
+#of-compass .tick {
+  top: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--of-dim);
+  letter-spacing: 0.06em;
+}
+#of-compass .tick.major { color: var(--of-ink); font-weight: 600; }
+#of-compass .chip {
+  top: 16px;
+  padding: 1px 6px;
+  font-size: 11px;
+  background: var(--of-panel);
+  border: 1px solid var(--of-edge);
+  color: var(--of-ink);
+}
+/* One colour per MapMarker kind (GP-520) plus `pad`, matching nothing else's
+   palette on purpose: this is the strip's own legend and not a second copy of
+   the map's marker colours, which src/ui/MapDraw.ts owns and this file does
+   not import. */
+#of-compass .chip.ruin { border-color: var(--of-accent); color: var(--of-accent); }
+#of-compass .chip.signal { border-color: #6fd3ff; color: #6fd3ff; }
+#of-compass .chip.deposit { border-color: #d7b25a; color: #d7b25a; }
+#of-compass .chip.pad { border-color: var(--of-good); color: var(--of-good); }
+#of-compass-caret {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--of-accent);
+  transform: translateX(-50%);
+}
+
 /* --- the Tab panel ------------------------------------------------------ */
 #of-panel {
   inset: 0;
