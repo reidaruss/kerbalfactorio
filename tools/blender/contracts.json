@@ -8,9 +8,118 @@
     "Blender +Z-up -> glTF +Y-up conversion, so a Blender footprint of",
     "(X=1.0, Y=1.0 flow, Z=0.30 tall) is written here as [1.0, 0.30, 1.0].",
     "Checking it in three.js axes is what proves export_yup actually fired.",
-    "Run: python tools/blender/validate_glb.py --all"
+    "Run: python tools/blender/validate_glb.py --all",
+    "",
+    "RN-1620: THE `max_px` CEILING ON THE TWO CARD FAMILIES, 256 -> 1024, AND",
+    "WHY THE BUDGET ROW IS THE FIX RATHER THAN THE MESH. Ten assets failed",
+    "validate_glb (bush_scrub, detail_cards, props_beach/canopy/forest/hills/",
+    "ocean/plains, tree_broadleaf, tree_conifer) on 28 identical rows, and the",
+    "message was the same one every time: `family 'leaf' size_px 1024 > max_px",
+    "256`. Not ten defects. ONE, with ten symptoms, and it is in this file.",
+    "RN-1500 (commit b8d3a2f, 2026-08-13) raised `leaf` and `grass` from 256 px",
+    "to 1024 px under D-020 decision 4's general raise, edited texgen.py's",
+    "ALBEDO_FAMILIES, RE-MEASURED both coverage bands against the new output",
+    "rather than carrying the 256 px numbers over, and regenerated",
+    "surfaces.json. It did not revisit these declarations, which were written",
+    "by RN-179/RN-180 (commit 1122f47) back when 256 was the truth. So this",
+    "file has been asserting a ceiling that a decided, argued, shipped raise",
+    "deliberately exceeded, and it went red the moment that raise landed.",
+    "THE DIRECTION OF THE FIX IS THE WHOLE QUESTION and it has one answer.",
+    "Lowering the families back to 256 would revert a logged decision on the",
+    "strength of a stale number, and it would revert it BADLY: the RN-1500",
+    "shape edits (grass's narrowed blades, leaf's root flare) were authored",
+    "and their alpha-coverage re-bracketed against 1024 px output, so the old",
+    "256 px bands no longer describe the cards that exist. The families are",
+    "right and the ceiling is old, so the ceiling moves.",
+    "WHAT IT COSTS, STATED. Two cards, 1024^2 RGBA, ~5.3 MiB each with mips,",
+    "~10.7 MiB for the pair, against 0.4 MiB at 256. That is the price D-020",
+    "decision 4 already accepted; this row is not re-deciding it, it is",
+    "stopping the gate from disagreeing with it. The ladder these ceilings now",
+    "describe is texgen's own: 384/512 for the tiling families, 1024 for the",
+    "two alpha cards, and 2048 reserved for `panel` alone.",
+    "NOT A BLANKET RAISE. Every `max_px` in this file is a leaf or grass row;",
+    "no tiling family's ceiling moved, and a future 2048 card would fail here",
+    "again, which is the ratchet doing its job."
   ],
   "assets": {
+    "rubble_pile": {
+      "glb": "assets/models/dist/props/rubble_pile.glb",
+      "_comment": [
+        "RN-1624. WHAT IS LEFT WHERE A BUILDING USED TO STAND, and it pays a",
+        "debt that was booked with its own placeholder flag. D1 shipped",
+        "destruction with `assets/nodes/boulder_stone.glb` squashed to 0.45 and",
+        "scaled to whatever fell, and `Wreckage.report()` published",
+        "`meshIsPlaceholder: true` so nobody had to guess. That flag is now",
+        "false and this is why.",
+        "THREE AUTHORED SIZES, NOT ONE MESH SCALED. Wreckage.SPAN_M runs 0.70 m",
+        "(power pole) to 8.00 m (launch pad); one asset across that is stretched",
+        "by ELEVEN, which destroys every authored proportion in it - plate gauge,",
+        "shard size, how far a beam protrudes. Small 0.90 / Med 2.20 / Large 3.40",
+        "bracket the table so every kind but the launch pad lands inside 1.45x of",
+        "an authored size, and the client picks the nearest rather than either",
+        "side re-deriving the other's numbers.",
+        "THE THREE ARE DIFFERENT WRECKS, not one arrangement at three scales:",
+        "a bent deck and frame (belt), plate and studs (wall), broken slab with",
+        "reinforcement standing out of it (foundation). A player who has",
+        "demolished twenty things must not be able to see they were one model.",
+        "NO `collision` KEY, AND IT IS LOAD-BEARING. Wreckage.ts gives the",
+        "reason: 'the part is gone' is only a real claim if the walker can now",
+        "cross where it stood, and a rubble collider would make that claim",
+        "untestable and the feature indistinguishable from the bug.",
+        "probes/destruction.js inverts the CE-50 occupancy technique on exactly",
+        "this. So the asset ships NO col_ node - the same shape detail_cards,",
+        "vfx_engine_plume and body_sphere_lod already have - and a proxy added",
+        "here would break a shipped probe's assertion rather than add weight.",
+        "THE DECLARED BOX IS OWNED BY NAMED PARTS, the discipline the miner's",
+        "foot pads and the belt's rail ends already follow: two unyawed mounds",
+        "own X and Y exactly and the CREST plate owns the height, so the pivot",
+        "is centred by construction rather than by subtracting a measured",
+        "offset back out. mf.assert_inside refuses the build if anything else",
+        "reaches the box, so a failure is caught where it is caused.",
+        "max_materials 5: SteelDark intact plate, Steel members, SteelRust the",
+        "TORN faces and cut ends (texgen's `rust` is steel that has GONE, and",
+        "wreckage is the one place in this game where that is literal), Rock",
+        "the concrete spall on the slab pile only, and ONE Hazard fragment per",
+        "pile - a scrap of keep-out band that outlived the building, which is",
+        "the cheapest part of the asset and the loudest, because paint is",
+        "manufactured and nothing in nature is that colour.",
+        "THE SHADOW LADDER EARNS ALMOST NOTHING AND THAT IS RECORDED RATHER",
+        "THAN QUIETLY LEFT. check_shadow_lod: Small LOD1 109.62 mm (c2, 3.0x),",
+        "Med 317.59 and Large 514.43 (no cascade, 4.0x). The cause was measured,",
+        "not guessed: LOD1 drops the debris field, and the shards scatter into",
+        "the footprint DIAGONALS where the four axis-aligned apron sheets have",
+        "nothing. Deepening the sheets was tried and moved Med 317.59 -> 216.55",
+        "and Large not at all, so it was reverted.",
+        "IT IS RN-1599's POWER-POLE LESSON IN PROP FORM, and that is why no",
+        "further iteration was spent: a machine's detail is CONCENTRATED, so one",
+        "stand-in box catches it (the miner's guard cage, RN-1623); a pile of",
+        "twenty-five scattered small solids has no large-scale mass to",
+        "approximate at all - it IS its details - so a proxy that earns a",
+        "cascade would have to reproduce the debris field, which is LOD0 again.",
+        "The bill is 4 x 372 = 1,488 triangles for the worst pile, and piles",
+        "exist only where a building was destroyed, which is a handful and not",
+        "the fifty-seven belts a raise on the belt tile is priced against.",
+        "LOD1 is still worth shipping on SCREEN distance alone: it is 32 per",
+        "cent cheaper than LOD0 and it is what a pile looks like at range."
+      ],
+      "lod0_node": "RubblePile_Large_LOD0",
+      "lod_nodes": ["RubblePile_Small_LOD0", "RubblePile_Small_LOD1", "RubblePile_Small_LOD2",
+                    "RubblePile_Med_LOD0", "RubblePile_Med_LOD1", "RubblePile_Med_LOD2",
+                    "RubblePile_Large_LOD0", "RubblePile_Large_LOD1", "RubblePile_Large_LOD2"],
+      "dims_xyz_m": [3.4, 0.952, 3.4],
+      "tolerance_m": 0.005,
+      "max_tris_lod0": 400,
+      "max_tris_total": 1950,
+      "max_materials": 5,
+      "sockets": [],
+      "clips": [],
+      "parts": [
+        {"node": "RubblePile_Small_LOD0", "dims_xyz_m": [0.90, 0.252, 0.90], "max_tris": 330, "pivot": "ground"},
+        {"node": "RubblePile_Med_LOD0", "dims_xyz_m": [2.20, 0.616, 2.20], "max_tris": 320, "pivot": "ground"},
+        {"node": "RubblePile_Large_LOD0", "dims_xyz_m": [3.40, 0.952, 3.40], "max_tris": 400, "pivot": "ground"}
+      ]
+    },
+
     "belt_segment": {
       "glb": "assets/models/dist/machines/belt_segment.glb",
       "type_id": "0x11",
@@ -107,7 +216,45 @@
         "FIRST CONSUMER OF THE `rust` FAMILY in the game (shipped unworn since",
         "RN-1475), on the three wet-ore faces and nothing else: the throat, the",
         "spoil lip and the collar the column turns in. Not the body, because a",
-        "machine rusted all over is a wreck and this one is running."
+        "machine rusted all over is a wreck and this one is running.",
+        "RN-1623, THE LOD1 SHADOW PROXY, AND THE BUDGET LINE THAT MATTERS IS",
+        "NOT THE TRIANGLE COUNT. total 2580 to 2820 (actual 2796); lod0 stays",
+        "at 2140 and is byte-identical, and no palette role moves.",
+        "THIS MACHINE WAS THE ONLY ASSET IN THE GAME AT THE FULL 4.0x. LOD1",
+        "measured 623.57 mm against cascade 2's 210.94, so all three CSM",
+        "cascades fell back to LOD0 and every miner cost 4 x 2032 = 8,128",
+        "triangles a frame. RN-1103's own LOD1 docstring predicted this and",
+        "asked for it: 'the day somebody re-authors this proxy to get under",
+        "210 they need to know what is in the way'.",
+        "623.57 mm TO 52.80 mm, WHICH IS UNDER CASCADE 1 (56.25) AND NOT ONLY",
+        "CASCADE 2. Cascades now draw tiers 0,1,1 and the marginal multiplier",
+        "is 2.0x. Per miner: 2032 + 2 x 576 = 3,184 against 8,128, a 61 per",
+        "cent cut. The 348 triangles this tier gains are the cheapest in the",
+        "file by a wide margin, exactly as RN-561 argued for the smelter's",
+        "192 to 524: a cascade draws this tier ONCE where it was drawing 2,032.",
+        "It also beats the smelter, which stopped at 127.60 mm and 3.0x and",
+        "named 56.25 as two or three more iterations away; this is that loop",
+        "run to the end on a machine with more hanging off it.",
+        "THE METHOD, because it is reusable and the smelter is still owed it.",
+        "Every LOD0 feature standing over one shadow texel from the tier is",
+        "blocked in at its ENVELOPE, one box per feature, and the envelopes are",
+        "MEASURED - traced out of of_lib.MeshBuilder._add over this file's own",
+        "LOD0 build - rather than eyeballed. The metric is distance to the",
+        "NEAREST surface point, so a part only needs one coordinate on a face",
+        "of the box containing it, which is why a flat ring like the drill",
+        "collar is answered honestly by a slab of its own thickness. The one",
+        "case that breaks is a part interior in all three axes: the junction",
+        "box's four lid bolts, which needed a second thin plate at their own",
+        "layer and were the last 63.20 mm in the way.",
+        "THE GUARD CAGE WAS THE HEADLINE AT 622 mm AND ITS RING IS 8-SEGMENT",
+        "ON PURPOSE. `guard_cage` lays bars with ring_boxes at 2*pi*i/8 and",
+        "rolls hoops from arc_ring at segs=8, so both sit on an 8-fold lattice;",
+        "a proxy ring on that same lattice puts every bar and hoop vertex on a",
+        "facet CORNER at full radius instead of at a midpoint where a coarse",
+        "ring sags away. 72 triangles where an unaligned ring needed 136.",
+        "WHAT IS STILL OWED, NAMED: LOD2 measures 619.07 mm and earns nothing,",
+        "so cascade 2 draws LOD1 rather than the 36-triangle tier. Closing",
+        "that is worth another 540 triangles per miner and is the same loop"
       ],
       "footprint_cells": [4, 4],
       "lod0_node": "Miner_LOD0",
@@ -115,7 +262,7 @@
       "dims_xyz_m": [4.0, 3.20, 4.0],
       "tolerance_m": 0.005,
       "max_tris_lod0": 2140,
-      "max_tris_total": 2580,
+      "max_tris_total": 2820,
       "max_materials": 7,
       "sockets": [
         "socket_item_out",
@@ -129,14 +276,43 @@
     "belt_curve_l": {
       "glb": "assets/models/dist/machines/belt_curve_l.glb",
       "type_id": "0x11",
+      "_comment": [
+        "RN-1622, THE CURVE JOINS THE STRAIGHT TILE'S SECTION. lod0 200 to 260",
+        "(actual 252), total 500 to 560 (actual 452), max_materials 4 to 5.",
+        "WHY THIS RAISE IS SMALLER THAN IT LOOKS. RN-1563 raised the STRAIGHT",
+        "tile 200 to 360 for the same section and defended it against 57 belts",
+        "in portcost's reference base. A corner is a small minority of any belt",
+        "run - a line of belt is mostly line - so the same +80 lands on far",
+        "fewer instances than the +192 did, and it lands on the ONE tile whose",
+        "outer rail is the silhouette a player reads a factory's shape from:",
+        "r = 1.00 is tangent to both far cell edges, so this band IS the",
+        "corner. It was the only extruded bar left butting against a",
+        "fabricated section, which read as two products bolted together.",
+        "THE SEAM DID NOT MOVE AND THAT IS THE BINDING CONSTRAINT, not the",
+        "budget. belt_common.rail_arc ends SOLID FULL-SECTION at both boundary",
+        "planes, so a straight tile butted against this one meets the same",
+        "solid 0.10 x 0.30 rectangle it always met. Proven on the shipped",
+        "bytes: every triangle lying on each of the two cell-boundary planes",
+        "was extracted from the .glb before and after and hashed, and the two",
+        "hashes match on all four planes across the pair.",
+        "THE SHADOW LADDER DOES NOT MOVE EITHER. LOD1 keeps its solid arc",
+        "band; cascade 0 is 15.47 mm per texel and the pocket is 15.0 mm, so",
+        "every vertex the section adds is inside one texel of the proxy that",
+        "already ships. Measured 50.00 mm before and after, multiplier 2.0x.",
+        "max_materials 4 to 5 is `SteelWorn` on the top flange, the same role",
+        "and the same argument as the straight tile: the flange is the edge",
+        "cargo is dropped onto and the one painted surface on a belt certain",
+        "to be worn. OF_EmissiveState is still the LAST slot on the mesh,",
+        "which the renderer indexes by position."
+      ],
       "footprint_cells": [1, 1],
       "lod0_node": "BeltCurveL_LOD0",
       "lod_nodes": ["BeltCurveL_LOD0", "BeltCurveL_LOD1", "BeltCurveL_LOD2"],
       "dims_xyz_m": [1.0, 0.30, 1.0],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 200,
-      "max_tris_total": 500,
-      "max_materials": 4,
+      "max_tris_lod0": 260,
+      "max_tris_total": 560,
+      "max_materials": 5,
       "sockets": [
         "socket_belt_in",
         "socket_belt_out",
@@ -151,14 +327,43 @@
     "belt_curve_r": {
       "glb": "assets/models/dist/machines/belt_curve_r.glb",
       "type_id": "0x11",
+      "_comment": [
+        "RN-1622, THE CURVE JOINS THE STRAIGHT TILE'S SECTION. lod0 200 to 260",
+        "(actual 252), total 500 to 560 (actual 452), max_materials 4 to 5.",
+        "WHY THIS RAISE IS SMALLER THAN IT LOOKS. RN-1563 raised the STRAIGHT",
+        "tile 200 to 360 for the same section and defended it against 57 belts",
+        "in portcost's reference base. A corner is a small minority of any belt",
+        "run - a line of belt is mostly line - so the same +80 lands on far",
+        "fewer instances than the +192 did, and it lands on the ONE tile whose",
+        "outer rail is the silhouette a player reads a factory's shape from:",
+        "r = 1.00 is tangent to both far cell edges, so this band IS the",
+        "corner. It was the only extruded bar left butting against a",
+        "fabricated section, which read as two products bolted together.",
+        "THE SEAM DID NOT MOVE AND THAT IS THE BINDING CONSTRAINT, not the",
+        "budget. belt_common.rail_arc ends SOLID FULL-SECTION at both boundary",
+        "planes, so a straight tile butted against this one meets the same",
+        "solid 0.10 x 0.30 rectangle it always met. Proven on the shipped",
+        "bytes: every triangle lying on each of the two cell-boundary planes",
+        "was extracted from the .glb before and after and hashed, and the two",
+        "hashes match on all four planes across the pair.",
+        "THE SHADOW LADDER DOES NOT MOVE EITHER. LOD1 keeps its solid arc",
+        "band; cascade 0 is 15.47 mm per texel and the pocket is 15.0 mm, so",
+        "every vertex the section adds is inside one texel of the proxy that",
+        "already ships. Measured 50.00 mm before and after, multiplier 2.0x.",
+        "max_materials 4 to 5 is `SteelWorn` on the top flange, the same role",
+        "and the same argument as the straight tile: the flange is the edge",
+        "cargo is dropped onto and the one painted surface on a belt certain",
+        "to be worn. OF_EmissiveState is still the LAST slot on the mesh,",
+        "which the renderer indexes by position."
+      ],
       "footprint_cells": [1, 1],
       "lod0_node": "BeltCurveR_LOD0",
       "lod_nodes": ["BeltCurveR_LOD0", "BeltCurveR_LOD1", "BeltCurveR_LOD2"],
       "dims_xyz_m": [1.0, 0.30, 1.0],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 200,
-      "max_tris_total": 500,
-      "max_materials": 4,
+      "max_tris_lod0": 260,
+      "max_tris_total": 560,
+      "max_materials": 5,
       "sockets": [
         "socket_belt_in",
         "socket_belt_out",
@@ -173,14 +378,42 @@
     "belt_end_cap": {
       "glb": "assets/models/dist/machines/belt_end_cap.glb",
       "type_id": "0x11",
+      "_comment": [
+        "RN-1622, THE TERMINATOR JOINS THE STRAIGHT TILE'S SECTION. lod0 120",
+        "to 250 (actual 236), total 260 to 390 (actual 368), max_materials 3",
+        "to 4. This is the largest PROPORTIONAL raise in the belt set and the",
+        "smallest ABSOLUTE one: +120 triangles against the straight tile's",
+        "+192, on a tile that appears twice per belt run against the",
+        "straight tile's fifty-seven in portcost's reference base.",
+        "WHAT IT BUYS. This asset was still wearing the extruded bar RN-1563",
+        "replaced on the straight tile, which is the defect a modular kit",
+        "cannot have: a line of belt that changes section at its own end. It",
+        "changes it at the END, too, which is where a run visibly stops and",
+        "therefore where an eye already is. The cap now gets the identical",
+        "fabricated frame - from the identical function, belt_common's",
+        "rail_straight, so the two cannot drift the way the transcribed",
+        "constants above them had already drifted into three copies.",
+        "THE SEAM IS UNCHANGED, PROVEN ON THE SHIPPED BYTES. The section ends",
+        "solid full-section at the boundary plane, so the inlet edge presents",
+        "the same solid 0.10 x 0.30 rectangle it always did; every triangle",
+        "on that plane was extracted from the .glb before and after and the",
+        "two hashes match.",
+        "LOD1 KEEPS THE PLAIN BOX RAIL, which is what makes the pocket free:",
+        "cascade 0 is 15.47 mm per texel and the pocket is 15.0 mm, so every",
+        "vertex the section adds is inside one texel of the proxy. Measured",
+        "30.00 mm before and after, multiplier 2.0x, unmoved.",
+        "max_materials 3 to 4 is `SteelWorn` on the top flange. This asset has",
+        "no state chip and no clip, so unlike the other three tiles there is",
+        "no OF_EmissiveState slot that has to stay last."
+      ],
       "footprint_cells": [1, 1],
       "lod0_node": "BeltEndCap_LOD0",
       "lod_nodes": ["BeltEndCap_LOD0", "BeltEndCap_LOD1", "BeltEndCap_LOD2"],
       "dims_xyz_m": [1.0, 0.30, 1.0],
       "tolerance_m": 0.005,
-      "max_tris_lod0": 120,
-      "max_tris_total": 260,
-      "max_materials": 3,
+      "max_tris_lod0": 250,
+      "max_tris_total": 390,
+      "max_materials": 4,
       "sockets": ["socket_belt_in", "socket_item", "socket_item_a", "socket_item_b"],
       "clips": [],
       "collision": "col_BeltEndCap"
@@ -760,10 +993,10 @@
       "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafDry", "OF_LeafLight"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
     "tree_broadleaf": {
@@ -791,10 +1024,10 @@
       "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafDry", "OF_LeafLight"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
     "bush_scrub": {
@@ -838,9 +1071,9 @@
       "double_sided_ok": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight", "OF_LeafDry"],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDry", "OF_LeafLight"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1339,7 +1572,7 @@
       ],
       "uv_authored_materials": ["OF_LeafDry"],
       "textures": {
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1383,10 +1616,10 @@
       ],
       "uv_authored_materials": ["OF_Grass", "OF_Leaf", "OF_LeafDry", "OF_LeafLight"],
       "textures": {
-        "OF_Grass": {"family": "grass", "alpha": true, "max_px": 256},
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Grass": {"family": "grass", "alpha": true, "max_px": 1024},
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1458,10 +1691,10 @@
       ],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafDry", "OF_LeafLight"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1505,7 +1738,7 @@
       ],
       "uv_authored_materials": ["OF_Leaf"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1617,7 +1850,7 @@
       ],
       "uv_authored_materials": ["OF_Leaf"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1785,9 +2018,9 @@
       ],
       "uv_authored_materials": ["OF_Leaf", "OF_LeafDeep", "OF_LeafLight"],
       "textures": {
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDeep": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafLight": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 
@@ -1863,9 +2096,9 @@
       ],
       "uv_authored_materials": ["OF_Grass", "OF_Leaf", "OF_LeafDry"],
       "textures": {
-        "OF_Grass": {"family": "grass", "alpha": true, "max_px": 256},
-        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 256},
-        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 256}
+        "OF_Grass": {"family": "grass", "alpha": true, "max_px": 1024},
+        "OF_Leaf": {"family": "leaf", "alpha": true, "max_px": 1024},
+        "OF_LeafDry": {"family": "leaf", "alpha": true, "max_px": 1024}
       }
     },
 

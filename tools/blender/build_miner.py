@@ -730,31 +730,173 @@ def build_lod0(root):
     return mb, mb.build(NAME + "_LOD0", root)
 
 
+def _proxy_bulk(mb):
+    """RN-1623. EVERY LOD0 FEATURE THAT STANDS FURTHER THAN ONE SHADOW TEXEL
+    FROM THE PROXY, BLOCKED IN AT ITS OWN ENVELOPE. One box per feature, which
+    is the technique RN-561 authored for the smelter and the same reason.
+
+    THESE ARE NOT DECORATIONS AND NOTHING HERE IS EVER SEEN. This mesh is a
+    shadow caster and a distant silhouette; every box below exists because
+    `check_shadow_lod` measured a LOD0 vertex too far from this tier's SURFACE
+    and a cascade therefore had to fall back to drawing all 2,032 triangles.
+
+    THE ENVELOPES ARE MEASURED, NOT EYEBALLED. Each one was read off a trace of
+    of_lib.MeshBuilder._add over this file's own LOD0 build, so a box here is
+    the true bounding volume of the part it answers for, and every expression
+    below is written in the SAME constants the LOD0 feature is written in. A
+    greeble that moves takes its proxy with it.
+
+    WHY A BOX IS ENOUGH, and it is worth stating because it is not obvious.
+    The metric is the distance from a LOD0 vertex to the NEAREST POINT of this
+    mesh's surface, so a vertex needs only ONE of its three coordinates to lie
+    on a face of the box that contains it. A part's extreme vertices always do,
+    by construction, which is why a flat ring like the drill collar is answered
+    honestly by a slab of exactly its own thickness: every vertex it has is on
+    the slab's top or bottom face, at zero."""
+    # THE GUARD CAGE, AND ITS 8 SEGMENTS ARE THE CAGE'S OWN LATTICE. This was
+    # the worst single number on the machine at 622 mm for the bars and 641 mm
+    # for the hoops: LOD1 had two guide posts on the X axis and two stubs on
+    # the Y axis, and the four bars at 45 degrees stood in open air 0.62 m from
+    # anything. A band at the cage's own radius answers bars and hoops at once.
+    # `guard_cage` places its bars with `ring_boxes` at 2*pi*i/8 and rolls its
+    # hoops from `arc_ring` at segs=8, i.e. BOTH sit on vertices of an 8-fold
+    # lattice; a proxy ring on that same lattice therefore puts every bar and
+    # every hoop vertex on a facet CORNER, where the band is at its full
+    # radius, instead of at a facet midpoint where a coarse ring sags away from
+    # it. That is what buys a 72-triangle ring where an aligned-by-luck one
+    # would have needed 136 to hold the same tolerance.
+    for a0 in (0.0, 180.0):
+        mb.arc_band(GUARD_R - 0.05, GUARD_R + 0.05, GUARD_Z1 - GUARD_Z0,
+                    (0.0, 0.0, (GUARD_Z0 + GUARD_Z1) * 0.5),
+                    a0, a0 + 180.0, GUARD_BARS // 2, "Steel")
+    # The drill guide collar (640 mm): a flat ring, so a slab of its own
+    # thickness holds every vertex it has at zero. See the docstring.
+    mb.box((2.0 * GUIDE_R + GUIDE_T, 2.0 * GUIDE_R + GUIDE_T, GUIDE_T),
+           (0.0, 0.0, GUIDE_Z), "SteelDark")
+    # The hazard collar where the column enters the body underside (100 mm).
+    # Same argument: a 12-gon disc, and its two flat faces are the whole job.
+    mb.box((1.40, 1.40, 0.20), (0.0, 0.0, BODY_Z0), "SteelDark")
+
+    # THE POWER DUCT (449 mm at its top elbow, 385 along the run). Three boxes
+    # for the three legs `_duct` routes, at the elbow width rather than the
+    # pipe width, because `pipe_run`'s elbows are the parts that reach.
+    elb = DUCT_W * 1.28
+    mb.box((1.86 + elb * 0.5 - HOUSE_HALF, elb, elb),
+           ((HOUSE_HALF + 1.86 + elb * 0.5) * 0.5, DUCT_Y, 2.92), "SteelDark")
+    mb.box((elb, elb, 2.92 - (1.70 - elb * 0.5)),
+           (1.86, DUCT_Y, (1.70 - elb * 0.5 + 2.92) * 0.5), "SteelDark")
+    mb.box((1.86 - (1.55 - DUCT_W * 0.5), DUCT_W, DUCT_W),
+           ((1.55 - DUCT_W * 0.5 + 1.86) * 0.5, DUCT_Y, 1.70), "SteelDark")
+
+    # THE LADDER (331 mm at the stringers, 222 at the rungs). `mf.ladder` runs
+    # its stringers 0.22 past each end of the rung run and stands them a
+    # `stringer` layer proud of the face, so the envelope is derived from the
+    # same three constants the call uses.
+    lad_out = mf.layer("stringer")
+    mb.box((0.34 + 0.055, lad_out * (1.0 + mf.EMBED),
+            LADDER_V1 - LADDER_V0 + 0.44),
+           (LADDER_U, BODY_HALF + lad_out * (1.0 - mf.EMBED) * 0.5,
+            (LADDER_V0 + LADDER_V1) * 0.5 + 0.22), "Steel")
+
+    # The motor housing's junction box and its lid and bolts (281 to 325 mm).
+    # ITS FOUR LID BOLTS ARE WHAT SET THE FRONT PLANE, not the housing: they
+    # stand on a `plate` above it and reach y = 1.27, and a proxy stopping at
+    # the housing's own 1.231 leaves each bolt 69 mm inside with no face near
+    # it. Read off the trace rather than re-derived through three of
+    # `mf.junction`'s internal layers.
+    mb.box((0.34, 1.231 - 0.795, 0.30), (-0.42, (0.795 + 1.231) * 0.5, 2.86),
+           "SteelDark")
+    # ...and a second, thin box AT the bolt layer rather than a taller single
+    # one, because a bolt sitting INSIDE a box in all three axes is exactly the
+    # case the box technique does not cover: it needs one of its coordinates on
+    # a face. This plate puts both of its y faces there, at zero.
+    mb.box((0.34, 1.27 - 1.21, 0.30), (-0.42, (1.21 + 1.27) * 0.5, 2.86),
+           "SteelDark")
+
+    # The power inlet bracket (280 mm). The LOD0 box, unchanged: it is already
+    # a plain box and there is nothing to simplify.
+    mb.box((0.28, 0.40, 0.40), (PWR_X - 0.14, PWR_Y, PWR_Z - 0.20), "Steel")
+
+    # THE TWO CANOPY EAVES (222 mm at the lips, 132 at the gussets). A lip and
+    # a gusset band per face: the lip reaches the footprint edge and the
+    # gussets hang under it, and they are far enough apart in Z that one box
+    # over both would leave the gusset's own faces stranded in its middle.
+    for face, u0, u1 in ((FRONT, -1.50, 0.34), (SERV, -1.45, 1.45)):
+        face.part(mb, u1 - u0, 0.10, (u0 + u1) * 0.5, 2.42, "housing", "Steel")
+        face.part(mb, (u1 - u0) - 0.27, 0.34, (u0 + u1) * 0.5, 2.42 - 0.17 - 0.03,
+                  "bracket", "SteelDark")
+
+    # The dust hose and its two clamp bands (218 mm, 205 mm). Two boxes for the
+    # long run and the last leg, at the clamp width, since the clamps reach.
+    cl = HOSE_W * 1.44
+    mb.box((cl, abs(HOSE[2][1] - HOSE[0][1]) + cl, cl),
+           (HOSE[1][0], (HOSE[0][1] + HOSE[2][1]) * 0.5,
+            (HOSE[1][2] + HOSE[2][2]) * 0.5 + 0.02), "SteelDark")
+    mb.box((abs(HOSE[3][0] - HOSE[2][0]) + cl, cl, cl),
+           ((HOSE[2][0] + HOSE[3][0]) * 0.5, HOSE[2][1], HOSE[2][2]),
+           "SteelDark")
+
+    # The chute front's gauge cluster (200 mm), at eye height where a reader
+    # stands: the one part of this machine a player is ever close to.
+    gau = mf.layer("gauge")
+    mb.box((0.46, gau * (1.0 + mf.EMBED), 0.20),
+           (-0.78, -(CHUTE_Y + gau * (1.0 - mf.EMBED) * 0.5), 1.24),
+           "SteelDark")
+
+    # THE THREE PANEL ASSEMBLIES, at their traced envelopes. Each is a coaming
+    # or a frame around a recess with several parts inside it, so the envelope
+    # is a property of the ASSEMBLY and not of any one call's arguments; it is
+    # read off a trace of this file's own LOD0 build rather than re-derived
+    # through `mf.hatch`/`mf.louvre`/`mf.tray` internals, which would be three
+    # more transcriptions of numbers that already exist. `check_shadow_lod` is
+    # the gate that catches the day one of them moves, and it runs.
+    mb.box((1.44, 0.17, 0.59), (0.0, -0.975, 2.895), "SteelDark")   # louvre
+    mb.box((0.17, 0.94, 0.59), (-1.725, 0.0, 1.895), "SteelDark")   # vent bank
+    mb.box((1.00, 0.17, 0.90), (0.62, 1.725, 1.94), "SteelDark")    # hatch
+    mb.box((0.19, 0.115, 0.88), (-0.60, 1.7167, 1.96), "SteelDark")  # tray
+    # The four body ribs (70 mm) as ONE band. They are 0.07 proud of a 3.40 m
+    # body and every rib's outer and top and bottom faces are the band's, so
+    # the gaps between them cost nothing the metric can see.
+    mb.box((BODY + 0.14, 2.0 * (max(RIB_YS) + 0.13), 0.90), (0, 0, 1.97),
+           "SteelDark")
+    # The status rail's bezel (100 mm) with the inlay standing 40 mm off it.
+    mb.box((0.10, 0.72, 0.36), (1.75, 0.0, STATUS_Z), "SteelDark")
+    # The outlet's dark throat plate (100 mm), proud of the chute face.
+    mb.box((OUT_W, 0.14, OUT_H + 0.10), (0, -(CHUTE_Y + 0.03), OUT_Z - 0.05),
+           "SteelDark")
+
+
 def build_lod1(root):
-    """Hand-built. The read that must survive is the open gantry, so the legs
-    stay and the surface detail goes; the slot survives as a block because a
-    decimator would close it.
+    """THE SHADOW PROXY. Hand-built, and re-authored as a proxy by RN-1623.
 
-    RN-1108: THE GUIDE POSTS SURVIVE TO THIS TIER AND THE COLLAR DOES NOT, and
-    `check_shadow_lod` is what says so rather than taste. Every other greeble
-    this pass adds stands within 0.30 m of a face LOD1 already has, so none of
-    them costs this tier anything. The guide posts are the one new part in
-    OPEN SPACE, 1.06 m from the nearest LOD1 surface, and leaving them out
-    took the measured deviation from 280 mm to 1030 mm on its own. Two boxes
-    buy most of it back and a measurement says how much: 1030 to 864, with the
-    residual traced to the COLLAR's north and south quadrants, which stand
-    0.864 m from the nearest post corner and which this tier had nothing at
-    all standing for. Two 0.16 stub brackets there rather than the ring
-    itself: the ring is an arc band and costs about 96 triangles on a proxy
-    whose whole job is to be cheap, and a shadow does not need the hole in
-    the middle of it.
+    WHAT THIS TIER IS FOR, stated first, because it decides everything below.
+    `MachineBatch` casts into three CSM cascades, and a cascade may only be
+    given a cruder tier if that tier's deviation from LOD0 is under the
+    cascade's own texel size (15.47 / 56.25 / 210.94 mm). This mesh measured
+    623.57 mm, so ALL THREE cascades fell back to LOD0 and every miner in the
+    game cost 4 x 2,032 = 8,128 triangles a frame. That multiplier, not the
+    triangle count, is the number worth moving: RN-1103's own note said "the
+    day somebody re-authors this proxy to get under 210 they need to know what
+    is in the way", and this is that day.
 
-    WHAT THIS TIER STILL DOES NOT EARN, said plainly. LOD1 has never earned a
-    cascade on this machine: the c2 texel is 210.94 mm and the pre-pass tier
-    already measured 280. This pass does not make that worse in VERDICT, and
-    the number moving at all is worth recording, because the day somebody
-    re-authors this proxy to get under 210 they need to know what is in the
-    way."""
+    THE READ IS STILL THE OPEN GANTRY, unchanged: the legs stay, the surface
+    detail stays out, and the slot survives as a block because a decimator
+    would close it. What is added is `_proxy_bulk`, which is not detail - it is
+    the envelope of every feature a cascade could otherwise see hanging in open
+    air. Nothing here is drawn where a player can resolve it.
+
+    WHAT THE MEASUREMENT SAID, in the order the boxes answer it: the guard
+    cage's off-axis bars and its hoops at 622 and 641 mm (this tier had two
+    posts and two stubs on the axes and nothing at 45 degrees), the drill
+    collar at 640, the power duct's top elbow at 449, the ladder at 331, the
+    motor housing's junction box at 325, the power bracket at 280, the two
+    canopy eaves at 222, the dust hose at 218, the gauge cluster at 200, the
+    eave gussets at 132, and a 100 mm tail of collar, throat and status bezel.
+
+    THE GUIDE POSTS AND STUBS STAY even though the guard ring now stands
+    outboard of them: they answer for `_drill_guide`'s posts, which are at
+    r = 0.66 and which the ring at 0.95 says nothing about. RN-1108 bought
+    them with a measurement and they are still earning it."""
     mb = of.MeshBuilder()
     _gantry(mb)
     _chute(mb)
@@ -765,6 +907,9 @@ def build_lod1(root):
         mb.box((GUIDE_POST, GUIDE_POST, GUIDE_T), (0.0, s * GUIDE_R, GUIDE_Z),
                "SteelDark")
     _mouth_block(mb, OUT_Z, OUT_W, OUT_H, OUT_JAMB, OUT_HEAD, OUT_SILL)
+    _proxy_bulk(mb)
+    # LAST, ALWAYS: the renderer indexes OF_EmissiveState by slot position, so
+    # a part appended after it silently moves every machine's status colour.
     mb.box((0.05, 0.44, 0.16), (1.845, 0.0, STATUS_Z), "EmissiveState")
     return mb, mb.build(NAME + "_LOD1", root)
 

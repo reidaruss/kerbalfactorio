@@ -92,15 +92,33 @@
 // anyway.
 //
 // ---------------------------------------------------------------------------
-// THE MESH IS BORROWED AND THE ART WAVE OWES A REAL ONE.
+// THE MESH WAS BORROWED AND IS NOT ANY MORE (RN-1624).
 //
-// `assets/nodes/boulder_stone.glb` is a shipped, honest asset (NodeArt.ts, 1.0 m
-// nominal radius) squashed to 0.45 of its height and scaled to the footprint of
-// whatever fell. It reads as a low pile of broken material at the right size,
-// which is what a rubble prop has to do; it does not read as a broken SMELTER.
-// `report().mesh` publishes the file so nobody has to guess whether the art
-// landed, exactly as `Antennas.report` did while it was borrowing the power
-// pole. ASSET-SPECS owes `rubble_pile.glb` in three footprint sizes.
+// What shipped here first was `assets/nodes/boulder_stone.glb`, squashed to 0.45
+// of its height and scaled to the footprint of whatever fell. It read as a low
+// pile of broken material at the right size, which is what a rubble prop has to
+// do; it did not read as a broken SMELTER. `report().mesh` published the file
+// and `meshIsPlaceholder` published the fact, exactly as `Antennas.report` did
+// while it was borrowing the power pole, so the debt was visible rather than
+// quietly outstanding.
+//
+// `assets/props/rubble_pile.glb` is now authored, in the three footprint sizes
+// ASSET-SPECS asked for, and it is wreckage rather than a rock: twisted plate,
+// broken structural members with torn ends, `rust` on the faces where the steel
+// is genuinely open, and one surviving fragment of painted keep-out band per
+// pile. `build_rubble_pile.py` has the argument for each of those four.
+//
+// THREE SIZES ARE THE POINT AND NOT A CONVENIENCE. `SPAN_M` below runs 0.70 m to
+// 8.00 m, and stretching one mesh across that is a factor of eleven, which
+// destroys every proportion the asset authored. The client picks the nearest
+// authored size (`sizeFor`) and applies the small residual, so a belt tile's
+// rubble is made of belt-gauge plate and a foundation's is made of slab. The
+// scale is now UNIFORM: the old squash existed only because the mesh was a
+// boulder, and squashing an authored pile would undo the authoring.
+//
+// `meshIsPlaceholder` is therefore false, and `probes/destruction.js` asserts
+// the false rather than having its check deleted: the flag still has a job,
+// which is to be the thing that goes red the day somebody borrows again.
 //
 // RUBBLE HAS NO `Solid`, DELIBERATELY. A pile of broken wall is ankle height and
 // a walker steps over it; more to the point, "the part is gone" is only a real
@@ -112,15 +130,51 @@ import * as THREE from 'three';
 import { loadGlb, selectLod } from '../assets/Loaders.js';
 import type { Vec3d } from '../world/PlanetBody.js';
 
-/** The borrowed prop. See the header: the art wave owes `rubble_pile.glb`. */
-const FILE = 'assets/nodes/boulder_stone.glb';
+/** The authored prop. RN-1624 landed it; see THE MESH below for what changed. */
+const FILE = 'assets/props/rubble_pile.glb';
 
-/** The nominal radius `NodeArt.ts` authors this asset at, so the scale below is
- *  a ratio against the asset's own number rather than a guess. */
-const ASSET_RADIUS_M = 1.0;
+/**
+ * THE THREE AUTHORED SIZES, transcribed from `tools/blender/build_rubble_pile.py`
+ * (its `SPANS`), which authored them against the `SPAN_M` table below.
+ *
+ * WHY THREE, AND WHY THE CLIENT PICKS RATHER THAN STRETCHES. `SPAN_M` runs from
+ * 0.70 m to 8.00 m, so one mesh covering it is stretched by a factor of eleven,
+ * and everything the asset authored -- plate gauge, shard size, how far a broken
+ * beam protrudes -- is destroyed by that. Picking the nearest authored size and
+ * applying the small residual keeps a belt tile's rubble made of belt-gauge
+ * plate and a foundation's made of slab.
+ *
+ * The pick is NEAREST BY RATIO and not by difference, because the error a scale
+ * introduces is multiplicative: at 1.60 m the difference to 0.90 is 0.70 and to 2.20 is
+ * 0.60, which is nearly a tie, while the RATIOS are 1.78x and 1.38x, which is
+ * not. `Math.abs(Math.log(...))` is that comparison written once.
+ */
+const SIZES: ReadonlyArray<{ node: string; spanM: number }> = [
+  { node: 'RubblePile_Small', spanM: 0.90 },
+  { node: 'RubblePile_Med', spanM: 2.20 },
+  { node: 'RubblePile_Large', spanM: 3.40 },
+];
 
-/** How flat a pile is, as a fraction of its own span. Wreckage is wide and low. */
-const SQUASH = 0.45;
+/**
+ * How tall a pile is as a fraction of its own span, authored in
+ * `build_rubble_pile.py` as `HEIGHT_RATIO`. It REPLACES the old `SQUASH`, which
+ * was a boulder-squash factor that existed only because the mesh was a boulder:
+ * the scale below is now UNIFORM, because the asset is already wide and low and
+ * squashing an authored pile would undo the thing that was authored. This
+ * constant survives only for `pick`, which needs the pile's half height.
+ */
+const HEIGHT_RATIO = 0.28;
+
+/** The authored size a pile of `spanM` metres is built from. See SIZES. */
+export function sizeFor(spanM: number): { node: string; spanM: number } {
+  let best = SIZES[0];
+  let bestErr = Infinity;
+  for (const s of SIZES) {
+    const err = Math.abs(Math.log(spanM / s.spanM));
+    if (err < bestErr) { best = s; bestErr = err; }
+  }
+  return best;
+}
 
 /** THE SCAVENGE FRACTION. One third, rounded down. Header has the defence. */
 export const SCAVENGE_NUM = 1;
@@ -228,8 +282,8 @@ export class Wreckage {
    * Put a pile down where something fell.
    *
    * The YAW IS DERIVED FROM THE KEY, not random and not fixed: a row of five
-   * destroyed walls all wearing the same boulder at the same angle reads as a
-   * bug, and a random one cannot be reproduced by a probe or a replay.
+   * destroyed walls all wearing the same pile at the same angle reads as a bug,
+   * and a random one cannot be reproduced by a probe or a replay.
    */
   pile(wasKey: string, kind: string, pos: Vec3d,
        ledger: { item: number; count: number }[],
@@ -241,11 +295,18 @@ export class Wreckage {
     const quat = new THREE.Quaternion().setFromAxisAngle(up, yaw).multiply(stand);
     const spanM = spanOf(kind);
     const g = new THREE.Group();
+    const size = sizeFor(spanM);
     if (this.template !== null) {
       const clone = this.template.clone(true);
       selectLod(clone, '_LOD0');
-      const s = (spanM * 0.5) / ASSET_RADIUS_M;
-      clone.scale.set(s, s * SQUASH, s);
+      // The file carries all three sizes, so the two this pile is not are DROPPED
+      // rather than hidden: a destroyed base leaves piles by the dozen and eight
+      // invisible meshes each is scene graph nobody ever draws or wants to walk.
+      dropOtherSizes(clone, size.node);
+      // UNIFORM, and small: the residual against an authored size rather than a
+      // stretch off a boulder. See SIZES and HEIGHT_RATIO.
+      const s = spanM / size.spanM;
+      clone.scale.setScalar(s);
       clone.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh !== true) return;
@@ -302,7 +363,7 @@ export class Wreckage {
     let bestT = Infinity;
     for (const r of this.list) {
       const rad = r.spanM * 0.5;
-      const u = rad * SQUASH * 0.5;
+      const u = r.spanM * HEIGHT_RATIO * 0.5;
       const ox = r.pos.x + r.up.x * u - eye.x;
       const oy = r.pos.y + r.up.y * u - eye.y;
       const oz = r.pos.z + r.up.z * u - eye.z;
@@ -324,12 +385,22 @@ export class Wreckage {
       /** Both MUST be 0. See the fields for what a non-zero one means. */
       unrecovered: this.unrecovered, unresolved: this.unresolved,
       scavengeFraction: `${SCAVENGE_NUM}/${SCAVENGE_DEN}`,
-      /** Which mesh the world actually drew, `Antennas.report`'s own field and
-       *  its own reason: this one is BORROWED and the art wave owes a real one. */
-      mesh: FILE, meshIsPlaceholder: true,
+      /** Which mesh the world actually drew, `Antennas.report`'s own field.
+       *  RN-1624 replaced the borrowed squashed boulder with an authored prop in
+       *  three sizes, so this is no longer a placeholder and no longer says it
+       *  is. `sizes` publishes the authored spans a probe can hold the pick to
+       *  without retyping them (standing rule 11). */
+      mesh: FILE, meshIsPlaceholder: false,
+      sizes: SIZES.map((z) => ({ node: z.node, spanM: z.spanM })),
+      heightRatio: HEIGHT_RATIO,
       list: this.list.map((r) => ({
         id: r.id, wasKey: r.wasKey, kind: r.kind,
         pos: [r.pos.x, r.pos.y, r.pos.z], spanM: r.spanM,
+        /** Which authored size this pile was built from, and the residual scale
+         *  applied to it. Published so a probe can check the pick rather than
+         *  re-run it. */
+        size: sizeFor(r.spanM).node,
+        sizeScale: r.spanM / sizeFor(r.spanM).spanM,
         ledger: r.ledger.map((c) => ({ item: c.item, count: c.count })),
         salvage: r.salvage.map((c) => ({ item: c.item, count: c.count })),
         lost: r.lost,
@@ -338,7 +409,25 @@ export class Wreckage {
   }
 }
 
-/** FNV-1a over the key. Deterministic, so a replay puts the same boulder at the
+/**
+ * Keep one authored size's subtree and drop the other two.
+ *
+ * `selectLod` has already decided which TIER is visible; this decides which
+ * SIZE, and it removes rather than hides for the reason `pile` gives. Removal
+ * is by node name prefix because that is what the .glb publishes
+ * (`RubblePile_Med_LOD0` and its eight siblings), the same way `NodeField`
+ * addresses `boulder_stone`'s `_Full`/`_Half`/`_Low` variants.
+ */
+function dropOtherSizes(root: THREE.Object3D, keep: string): void {
+  const doomed: THREE.Object3D[] = [];
+  root.traverse((o) => {
+    if (!o.name.startsWith('RubblePile_')) return;
+    if (!o.name.startsWith(`${keep}_`)) doomed.push(o);
+  });
+  for (const o of doomed) o.parent?.remove(o);
+}
+
+/** FNV-1a over the key. Deterministic, so a replay puts the same pile at the
  *  same angle. */
 function hash(s: string): number {
   let h = 0x811c9dc5;

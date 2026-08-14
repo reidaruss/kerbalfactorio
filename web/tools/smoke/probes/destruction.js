@@ -636,9 +636,26 @@
   check('the health book still matches the world exactly',
         hEnd.audit.missing === 0 && hEnd.audit.stale === 0,
         JSON.stringify(hEnd.audit));
-  check('the rubble mesh is declared a placeholder rather than passed off as '
-        + 'art', wEnd.meshIsPlaceholder === true && typeof wEnd.mesh === 'string',
+  // RN-1624. THIS CHECK IS INVERTED RATHER THAN DELETED, and that is the point
+  // of it. It read `=== true` while the prop was a squashed boulder, which was
+  // the honest assertion then; the authored `rubble_pile.glb` has landed, so the
+  // honest assertion now is `=== false`. Keeping the flag under test is what
+  // makes it go red the day somebody borrows a mesh again, which a deleted check
+  // could not do.
+  check('the rubble mesh is the authored prop and no longer a placeholder',
+        wEnd.meshIsPlaceholder === false
+        && wEnd.mesh === 'assets/props/rubble_pile.glb',
         JSON.stringify({ mesh: wEnd.mesh, placeholder: wEnd.meshIsPlaceholder }));
+  // ...and the pile that fell picked an authored size rather than stretching
+  // one. The three spans come out of `report()` so this cannot agree with
+  // itself by retyping them (standing rule 11); what is checked is that the
+  // residual scale is SMALL, which is the whole reason three sizes exist.
+  check('every pile picked an authored size and the residual scale is under 2x',
+        Array.isArray(wEnd.sizes) && wEnd.sizes.length === 3
+        && wEnd.list.every((r) => wEnd.sizes.some((z) => z.node === r.size)
+          && r.sizeScale > 0.5 && r.sizeScale < 2.0),
+        JSON.stringify({ sizes: wEnd.sizes,
+          picked: wEnd.list.map((r) => [r.kind, r.spanM, r.size, r.sizeScale]) }));
 
   return { valid: fails.length === 0, hostile, log, fails,
     beltCheckRan, guards: guardStory, wreckage: wEnd, health: hEnd.audit,

@@ -39,18 +39,22 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import belt_common as bc  # noqa: E402
 import of_lib as of  # noqa: E402
 
 # --- dimensions (metres), all shared with build_belt_segment.py -------------
-W = L = 1.00
-H = 0.30
-DECK_TOP = 0.25
+# RN-1622: "shared with build_belt_segment.py" is now true. It used to mean
+# "transcribed from", which is the thing belt_common exists to end.
+W = L = bc.W
+H = bc.H
+DECK_TOP = bc.DECK_TOP
 R_DECK_IN, R_DECK_OUT = 0.10, 0.90     # 0.80 m deck, centre line at r = 0.5
 R_RAIL_OUT = 1.00                      # tangent to the cell edge, never past
+RAIL_SEGS = 6                          # the deck's subdivision; see rail_arc
 SLAT_COUNT = 9                         # 8 on the tile + 1 entering the inlet
 SLAT_HALF_DEG = 4.5
-SLAT_T = 0.030                         # matches build_belt_segment exactly
-RIDE_TOP = DECK_TOP + SLAT_T           # 0.28, the surface cargo rests on
+SLAT_T = bc.SLAT_T
+RIDE_TOP = bc.RIDE_TOP                 # 0.28, the surface cargo rests on
 R_PATH = 0.50                          # centre-line radius, == the shader's
 R_UNDER_IN = 0.14                      # under-frame inner radius
 
@@ -107,13 +111,31 @@ def build(name, out, cx, a_entry, a_exit, exit_x):
 
     # --- LOD0 ---
     mb0 = of.MeshBuilder()
-    mb0.arc_band(0.90, R_RAIL_OUT, H, (cx, cy, H * 0.5), a_entry, a_exit, 6,
-                 "Steel")
+    # RN-1622. THE OUTER RAIL STOPS BEING ONE SOLID ARC BAND. It is the same
+    # fabricated section the straight tile has worn since RN-1563 - flanges top
+    # and bottom, a 15 mm lightening pocket between them, a `SteelWorn` top
+    # flange - swept along the turn instead of extruded along the flow, and it
+    # comes from the same function so the two cannot drift.
+    #
+    # THE CURVE'S OUTER RAIL IS THE MOST-SEEN STEEL FACE ON THE TILE, for the
+    # straight tile's own reason: r = 1.00 is tangent to the two far cell
+    # edges, so this band IS the belt's silhouette through a corner, and a
+    # corner is where a player's eye already goes. It was a plain extrusion
+    # butting against a fabricated one, which read as two different products
+    # bolted together.
+    #
+    # THE 15 mm POCKET COSTS THIS TILE'S SHADOW LADDER NOTHING, by the same
+    # measurement that justified it on the straight tile: LOD1 keeps its solid
+    # arc band, and cascade 0 is 15.47 mm per texel, so every vertex the
+    # pocket adds is inside one texel of the proxy that already ships. The
+    # tile's measured deviation is unchanged and so is its multiplier.
+    bc.rail_arc(mb0, 0.90, R_RAIL_OUT, (cx, cy, 0.0), a_entry, a_exit,
+                RAIL_SEGS, "Steel", "SteelWorn")
     mb0.box((POST_W, POST_W, H), (post[0], post[1], H * 0.5), "Steel")
     mb0.arc_band(R_UNDER_IN, 0.86, 0.12, (cx, cy, 0.06), a_entry, a_exit, 5,
                  "SteelDark")
     mb0.arc_band(R_DECK_IN, R_DECK_OUT, 0.06, (cx, cy, DECK_TOP - 0.03),
-                 a_entry, a_exit, 6, "Rubber")
+                 a_entry, a_exit, RAIL_SEGS, "Rubber")
     mb0.box((0.08, 0.08, 0.011), (lamp[0], lamp[1], CHIP_Z), "EmissiveState")
     mb0.build(name + "_LOD0", root)
 

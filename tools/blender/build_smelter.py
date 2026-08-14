@@ -230,6 +230,33 @@ ROOF = mf.Face("Z", 1, DECK_TOP, limit=H, name="roof pan")
 # post's own numbers rather than typed, because the post is what decides it.
 CLEAR = POST_C - POST * 0.5 - 0.04                      # 1.50
 
+# RN-1621: THE CHARGE HOOD'S HALF-WIDTH, NAMED, AND THE CABLE TRAY DERIVED
+# FROM IT. The other 3 of this asset's 6 pre-existing same-facing pairs were
+# the hood and the rear cable tray, and the cause is a property of
+# `machine_form` rather than a typo: every part on a face is buried by
+# `EMBED` x its own LAYER height, so ANY two parts of the SAME layer on the
+# SAME face share a back plane exactly. The hood is a `warped` "tray" and the
+# run is a `tray`, both 0.074, so both backs sat on y = 1.6593 and the tray
+# overlapped the hood in plan.
+#
+# THAT IS NOT FIXED IN machine_form. Changing EMBED or making the burial
+# layer-unique would move geometry on every machine in the game to close two
+# buried faces on one of them, which is a far larger change than the defect.
+# It is fixed HERE, where the actual mistake is: the tray was at u = 1.14, so
+# 85 mm of a 130 mm conduit ran INSIDE the hopper, and from v = 1.34 up it was
+# swallowed by the hood's own flare entirely. Half a metre of authored cable
+# tray nobody could ever see, which is the same defect class as the miner's
+# kick plate that was authored inside its outlet frame.
+#
+# THE RUN IS CENTRED IN THE CLEAR LANE, so moving either neighbour moves it
+# and the pair cannot recur (the miner's PLACARD_U rule). The lane runs from
+# the hood's edge to the brick post's, and the widest part of the run is the
+# P-CLIP, not the conduit: `mf.tray` makes its clips `width + 0.05`, so the
+# clip is what has to fit and it clears each neighbour by 80 mm.
+HOOD_U = 1.16
+TRAY_W = 0.13
+TRAY_U = (HOOD_U + CLEAR) * 0.5                         # 1.33
+
 # The rubbing strip at the foot of every face. Its TOP is derived from the
 # painted skirt it stands on and its height is 40 mm more than the exposed
 # part, so its underside is BURIED in the skirt rather than resting on the
@@ -502,7 +529,33 @@ def _front_detail(mb):
     # RN-1493: the channel the MELT runs down takes the oxide too, for the same
     # reason the stack does. The Accent lip below it does not, because a painted
     # lip is repainted and that is what a keep-out marking is for.
-    mb.box((1.30, 0.24, 0.10), (0, -1.86, 0.25), "SteelRust")
+    # RN-1621. THE FLOOR IS BURIED IN THE SILL RATHER THAN RESTING ON ITS OWN
+    # BOTTOM PLANE, and this is 3 of the 6 same-facing pairs this asset shipped
+    # with (`check_coplanar`, pre-existing, older than RN-1493's oxide pass).
+    # The slab was 0.10 thick centred on 0.25, so its UNDERSIDE landed on
+    # z = 0.20 - which is the outlet mouth's own sill top and therefore the
+    # throat plate's underside too (see `_mouth`: the opening runs 0.20 to
+    # 0.70). Two down-facing surfaces of different materials on one plane, and
+    # the file's catalogued cause verbatim: a part dimensioned to END exactly
+    # where the part it is mounted on ends.
+    #
+    # THE FIX IS THE CRUST'S OWN RULE ONE LEVEL UP. Slag does not sit on the
+    # launder floor, it welds itself into it; a launder does not sit on the
+    # sill's bottom plane either, it is welded to the shell and its slab passes
+    # BEHIND the sill. So the top stays exactly where it was (0.30, which the
+    # two crust blocks are sunk into) and the underside drops out of the
+    # crowded plane into solid steel.
+    #
+    # THE DEPTH IS `machine_form.EMBED` AND NOT A NUDGE. That constant is this
+    # project's published burial rule - a part's back sits inside its host by
+    # 0.55 of how far its front stands proud - and it is exactly the number a
+    # `Face.part` would have used had the launder been authored as one. The
+    # slab stands LAUNDER_T proud of the sill top, so it is buried 0.55 of
+    # that, and the only face that moves is the one that was in the fight.
+    LAUNDER_TOP, LAUNDER_T = 0.30, 0.10
+    launder_h = LAUNDER_T * (1.0 + mf.EMBED)                # 0.155
+    mb.box((1.30, 0.24, launder_h), (0, -1.86, LAUNDER_TOP - launder_h * 0.5),
+           "SteelRust")
     for s in (-1, 1):
         mb.box((0.09, 0.26, 0.20), (s * 0.66, -1.85, 0.34), "SteelRust")
     mb.box((1.44, 0.08, 0.06), (0, -1.96, 0.25), "Accent")
@@ -546,8 +599,8 @@ def _rear_detail(mb):
     # RN-1493: hot ore goes down this, so the hood is on the oxide path with
     # the stack, the door and the launder. Its brackets are structure bolted to
     # the shell rather than part of the throat, so they stay SteelDark.
-    REAR.warped(mb, [(-1.16, 1.34, 1.00), (1.16, 1.34, 1.00),
-                     (1.16, 1.86, 3.60), (-1.16, 1.86, 3.60)],
+    REAR.warped(mb, [(-HOOD_U, 1.34, 1.00), (HOOD_U, 1.34, 1.00),
+                     (HOOD_U, 1.86, 3.60), (-HOOD_U, 1.86, 3.60)],
                 "tray", "SteelRust")
     for s in (-1, 1):
         REAR.wedge(mb, s * 1.06, 0.07, 1.34, 0.22, 0.30, "bracket",
@@ -567,7 +620,7 @@ def _rear_detail(mb):
     # 0.17 + 1.82 puts the drum at 1.99 and the fins at 1.973.
     mf.finned_drum(mb, 0.17, 0.52, (-1.06, 1.82, 2.16), "X", 3, "SteelDark",
                    "Steel", segments=8, fin_span=1.80)
-    mf.tray(mb, REAR, 1.14, 0.95, 2.34, 0.13, 4, "SteelDark", "Steel")
+    mf.tray(mb, REAR, TRAY_U, 0.95, 2.34, TRAY_W, 4, "SteelDark", "Steel")
 
 
 def _service_detail(mb):

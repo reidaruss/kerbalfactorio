@@ -40,21 +40,30 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import belt_common as bc  # noqa: E402
 import of_lib as of  # noqa: E402
 
 NAME = "BeltSegment"
 OUT = of.dist_path("machines", "belt_segment.glb")
 
 # --- dimensions (metres) ---------------------------------------------------
-W, L, H = 1.00, 1.00, 0.30      # footprint X, flow Y, height Z
-RAIL_W = 0.10
-DECK_W = W - 2 * RAIL_W         # 0.80
-DECK_TOP = 0.25
+# RN-1622: THE SEAM DIMENSIONS AND THE RAIL SECTION NOW COME FROM
+# `belt_common`, WHICH ALL FOUR BELT TILES IMPORT. They used to be typed out
+# here, again in belt_curve_common.py and again in build_belt_end_cap.py, each
+# copy carrying a comment asserting it matched the others; that module's
+# docstring has the argument for why three agreeing copies of one number is a
+# defect waiting for its first edit. Nothing about this asset's geometry
+# moves: these names bind to the same values they held before, which is
+# proven by the exported .glb being byte-identical across the change.
+W, L, H = bc.W, bc.L, bc.H      # footprint X, flow Y, height Z
+RAIL_W = bc.RAIL_W
+DECK_W = bc.DECK_W              # 0.80
+DECK_TOP = bc.DECK_TOP
 SLAT_PITCH = 0.125              # 8 slats per metre -> a whole-number loop
 SLAT_COUNT = 9                  # 8 on the tile + 1 entering from the inlet
-SLAT_T = 0.030                  # slat thickness: DECK_TOP + SLAT_T == RIDE_TOP
-RIDE_TOP = DECK_TOP + SLAT_T    # 0.28, the surface cargo rests on
-ROLLER_R = 0.055
+SLAT_T = bc.SLAT_T              # slat thickness: DECK_TOP + SLAT_T == RIDE_TOP
+RIDE_TOP = bc.RIDE_TOP          # 0.28, the surface cargo rests on
+ROLLER_R = bc.ROLLER_R
 ROLLER_Y = L * 0.5 - ROLLER_R   # tangent to the cell edge, never outside it
 
 # FS-88. The roller used to be exactly DECK_W long, so its two end caps landed
@@ -122,8 +131,8 @@ CHIP_Z = H - 0.0125                     # top at 0.293, under the 0.30 rail top
 # tier instead of promoting the 340-triangle one. A 25 mm pocket would look
 # barely different and would cost cascade 0 the whole LOD0 mesh on every belt
 # in the base. The number is the instrument's, not taste.
-RECESS = 0.015
-RAIL_X = (W - RAIL_W) * 0.5             # 0.45, the rail's centre line
+RECESS = bc.RECESS
+RAIL_X = bc.RAIL_X                      # 0.45, the rail's centre line
 
 # THE TILE ENDS STAY SOLID FULL-SECTION AND THAT IS FOR THE CURVES. Rails, deck
 # width and deck height are shared with belt_curve_common.py so that a curve
@@ -134,11 +143,11 @@ RAIL_X = (W - RAIL_W) * 0.5             # 0.45, the rail's centre line
 # boundary planes, so the seam is exactly what it was, and what a reader sees
 # mid-tile is a lightening pocket between two end stiffeners - which is what a
 # fabricated conveyor frame looks like anyway.
-RAIL_END = 0.09                         # solid block at each end of each rail
-RAIL_MID = 0.07                         # the mid-span stiffener between pockets
-CHORD_T = 0.07                          # top flange thickness
-CHORD_B = 0.06                          # bottom flange thickness
-WEB_Y = L * 0.5 - RAIL_END              # 0.41, where the pockets stop
+RAIL_END = bc.RAIL_END                  # solid block at each end of each rail
+RAIL_MID = bc.RAIL_MID                  # the mid-span stiffener between pockets
+CHORD_T = bc.CHORD_T                    # top flange thickness
+CHORD_B = bc.CHORD_B                    # bottom flange thickness
+WEB_Y = bc.WEB_Y                        # 0.41, where the pockets stop
 
 # The splice plates. A modular tile BOLTS to the one in front of it, and the
 # under-frame's end faces are the one part of this asset a player can see into
@@ -151,37 +160,9 @@ SPLICE_T = 0.015
 SPLICE_W = 0.86
 
 
-def _rail(mb, sx):
-    """One fabricated frame rail: two end blocks, a top and bottom flange, a
-    recessed web between them and a mid-span stiffener.
-
-    THE TOP FLANGE IS THE ONE PART OF THIS GAME'S PAINTED STEEL THAT IS
-    CERTAIN TO BE WORN, which is why it is this asset's `paintchip` consumer
-    and why the family is worth a draw call at all. It is the edge cargo is
-    dropped onto, the edge a player walks along, and the edge every transfer
-    scuffs, and there are 57 of these in the reference base against one
-    smelter's worth of any other painted surface. `SteelWorn` carries Steel's
-    own hex, so the flange is the SAME COLOUR as the rail under it and differs
-    only in how it takes light: chipped to bare alloy along the top arris,
-    coated everywhere the plate is flat. A different colour here would have
-    read as a stripe, which is the opposite of wear.
-
-    EVERY PART OF THIS RAIL IS EITHER ON x = +/-0.50 OR RECESSED EXACTLY
-    `RECESS` FROM IT, so the cell edge is held by four separate solids and the
-    proxy stays a plain box. Nothing here may stand PROUD: a belt that
-    overhangs its footprint z-fights the tile beside it on the grid."""
-    x = sx * RAIL_X
-    for sy in (-1, 1):
-        mb.box((RAIL_W, RAIL_END, H),
-               (x, sy * (L * 0.5 - RAIL_END * 0.5), H * 0.5), "Steel")
-    mb.box((RAIL_W, RAIL_MID, H - CHORD_T - CHORD_B),
-           (x, 0.0, (CHORD_B + H - CHORD_T) * 0.5), "Steel")
-    mb.box((RAIL_W, 2.0 * WEB_Y, CHORD_B), (x, 0.0, CHORD_B * 0.5), "Steel")
-    mb.box((RAIL_W - RECESS, 2.0 * WEB_Y, H - CHORD_T - CHORD_B),
-           (x - sx * RECESS * 0.5, 0.0, (CHORD_B + H - CHORD_T) * 0.5),
-           "Steel")
-    mb.box((RAIL_W, 2.0 * WEB_Y, CHORD_T), (x, 0.0, H - CHORD_T * 0.5),
-           "SteelWorn")
+# The rail section itself now lives in belt_common.rail_straight, so the end
+# cap wears the identical one and the curves wear its swept twin. The
+# docstring that used to be here moved with it verbatim.
 
 
 def _splice(mb, bolts=True):
@@ -209,7 +190,7 @@ def build_lod0(root):
     mb = of.MeshBuilder()
     # side rails, now a fabricated section rather than a bar. See _rail.
     for sx in (-1, 1):
-        _rail(mb, sx)
+        bc.rail_straight(mb, sx)
     # under-frame (reads as the machine's dark base, ties it to the ground)
     mb.box((DECK_W, L * 0.9, 0.12), (0.0, 0.0, 0.06), "SteelDark")
     _splice(mb)

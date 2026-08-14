@@ -35,20 +35,24 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import belt_common as bc  # noqa: E402
 import of_lib as of  # noqa: E402
 
 NAME = "BeltEndCap"
 OUT = of.dist_path("machines", "belt_end_cap.glb")
 
-W, L, H = 1.00, 1.00, 0.30
-RAIL_W = 0.10
-DECK_W = W - 2 * RAIL_W
-DECK_TOP = 0.25
-SLAT_T = 0.030                         # matches build_belt_segment exactly
+# RN-1622: the seam dimensions come from `belt_common` rather than being typed
+# here under a comment claiming they "match build_belt_segment exactly". They
+# now match it because there is one copy.
+W, L, H = bc.W, bc.L, bc.H
+RAIL_W = bc.RAIL_W
+DECK_W = bc.DECK_W
+DECK_TOP = bc.DECK_TOP
+SLAT_T = bc.SLAT_T
 SLAT_PITCH = 0.125
 SLAT_COUNT = 6                         # covers the deck, nose to inlet edge
-RIDE_TOP = DECK_TOP + SLAT_T           # 0.28, the surface cargo rests on
-ROLLER_R = 0.055
+RIDE_TOP = bc.RIDE_TOP                 # 0.28, the surface cargo rests on
+ROLLER_R = bc.ROLLER_R
 ROLLER_Y = L * 0.5 - ROLLER_R          # tangent to the inlet edge
 NOSE_Y = -0.20                         # where the deck stops and the nose
                                        # begins: also socket_item_b
@@ -88,8 +92,21 @@ NOSE_CY = (NOSE_Y - L * 0.5 + PLATE_T) * 0.5
 
 def build_lod0(root):
     mb = of.MeshBuilder()
+    # RN-1622. THE SAME FABRICATED SECTION THE STRAIGHT TILE WEARS, from the
+    # same function, so a cap terminating a line is the same frame as the line.
+    # It was still the extruded bar RN-1563 replaced everywhere else, which is
+    # the defect: a modular kit whose terminator changes section is not modular,
+    # and the cap is at the END of every belt run in the game, i.e. exactly
+    # where a player's eye stops.
+    #
+    # THE SEAM IS UNTOUCHED AND THAT IS CHECKED RATHER THAN ASSERTED. The
+    # section ends SOLID FULL-SECTION at both boundary planes (see
+    # belt_common's docstring), so what the inlet edge at y = +0.50 presents to
+    # the straight tile butted against it is the same solid 0.10 x 0.30
+    # rectangle the plain bar presented; the exported bytes on that plane are
+    # compared against the pre-change build rather than argued about.
     for sx in (-1, 1):
-        mb.box((RAIL_W, L, H), (sx * (W - RAIL_W) * 0.5, 0.0, H * 0.5), "Steel")
+        bc.rail_straight(mb, sx)
     mb.box((DECK_W, L * 0.9, 0.12), (0.0, 0.0, 0.06), "SteelDark")
     # deck runs from the inlet to the nose, then the housing closes it off
     mb.box((DECK_W, DECK_LEN, 0.06),

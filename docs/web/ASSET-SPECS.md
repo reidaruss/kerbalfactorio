@@ -580,7 +580,7 @@ files, Tier 1 is 41 meshes in 10 files, Tier 2 is 18 parts in 5 files. All 42
 are built and green; counting LOD bands and depletion variants, those 42 files
 hold **262 render mesh nodes** (measured, excluding `col_*` proxies).
 
-### 3.1 Tier 0: blocks the playable loop (27 files, 40 meshes)
+### 3.1 Tier 0: blocks the playable loop (28 files, 49 meshes)
 
 Poly budgets are LOD0 triangles. Dimensions are metres, given as
 `X (width) x Y (depth/flow) x Z (height)` in Blender axes.
@@ -696,6 +696,49 @@ did, so leaving the price alone silently divides the cost of a base by 16.
 **There is no `ceiling.glb`, deliberately.** Storey N's ceiling is storey N+1's
 floor: the same part, the same origin, placed at `y = 4(N+1)`. Shipping a second
 flipped file would double the payload to make the same picture.
+
+#### Destruction (1 file, 3 sizes). **Built 2026-08-14 (RN-1624).**
+
+| # | Asset | File | Size | Dims (m) | Tris (LOD0) | LODs | Col | Anim |
+|---|---|---|---|---|---|---|---|---|
+| 32 | Rubble pile, small | `props/rubble_pile.glb` | `RubblePile_Small` | 0.90 x 0.90 x 0.25 | 300 | 3 | **none** | none |
+| 32 | Rubble pile, medium | `props/rubble_pile.glb` | `RubblePile_Med` | 2.20 x 2.20 x 0.62 | 288 | 3 | **none** | none |
+| 32 | Rubble pile, large | `props/rubble_pile.glb` | `RubblePile_Large` | 3.40 x 3.40 x 0.95 | 372 | 3 | **none** | none |
+
+What a destroyed building leaves behind (D1, `web/src/game/Wreckage.ts`). Five
+materials: `SteelDark` intact plate, `Steel` members, `SteelRust` the torn faces
+and cut ends, `Rock` concrete spall on the large pile only, and one `Hazard`
+fragment per pile.
+
+**Three authored sizes and not one mesh scaled**, which is the whole reason this
+is one file with nine nodes rather than one with three. `Wreckage.SPAN_M` runs
+from 0.70 m (a power pole) to 8.00 m (a launch pad); stretching one mesh across
+that is a factor of eleven, and every proportion the asset authored - plate
+gauge, shard size, how far a broken beam protrudes - is destroyed by it. The
+three spans bracket the table so that every building kind except the launch pad
+lands inside **1.45x** of an authored size, and the client (`Wreckage.sizeFor`)
+picks the nearest **by ratio**, because the error a scale introduces is
+multiplicative rather than additive.
+
+The three are also **three different wrecks** rather than one arrangement at
+three scales: a bent deck and frame, plate and studs, and broken slab with
+reinforcement standing out of it. A player who has demolished twenty things must
+not be able to see that they were all the same model.
+
+**`Col` is `none` on purpose and it is load-bearing.** `Wreckage.ts` gives the
+argument: "the part is gone" is only a real claim if the walker can now cross
+where it stood, and a rubble collider would make that claim untestable and the
+feature indistinguishable from the bug. `probes/destruction.js` inverts the
+CE-50 occupancy technique on exactly this, so the missing proxy is under test.
+`contracts.json` therefore carries no `collision` key for this file, the same
+shape `detail_cards`, `vfx_engine_plume` and `body_sphere_lod` already have.
+
+This retires the placeholder D1 shipped with: `nodes/boulder_stone.glb` squashed
+to 0.45 of its height and scaled to whatever fell, which read as a low pile of
+broken material at the right size but did not read as a broken *smelter*.
+`Wreckage.report().meshIsPlaceholder` is now `false`, and the probe asserts the
+`false` rather than having its check deleted, so the flag still goes red the day
+somebody borrows a mesh again.
 
 ### 3.2 Tier 1: richness (10 files, 41 props). **Built 2026-07-25.**
 
