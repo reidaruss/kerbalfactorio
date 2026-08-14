@@ -269,7 +269,7 @@
     }
   },
   "roles": {
-    "Accent": "panel",
+    "Accent": "paintchip",
     "Bark": "bark",
     "BarkLight": "bark",
     "Chitin": "fur",
@@ -298,6 +298,7 @@
     "Steel": "panel",
     "SteelDark": "panel",
     "SteelLight": "panel",
+    "SteelRust": "rust",
     "Suit": "suitfab",
     "SuitAccent": "panel",
     "SuitDark": "suitfab",

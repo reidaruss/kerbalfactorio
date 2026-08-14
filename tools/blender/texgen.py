@@ -187,7 +187,33 @@ ZLIB_WBITS = 15
 ROLE_FAMILY = {
     # --- panel: anything manufactured ---
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
-    "Accent": "panel", "Hazard": "panel",
+    "Hazard": "panel",
+    # RN-1493, RN-1494: THE FIRST TWO CONSUMERS OF THE D-020 VOCABULARY.
+    # `paintchip` and `rust` shipped UNREFERENCED at RN-1474/RN-1475, following
+    # the `leaf`/`grass` precedent, and an unreferenced family is a claim no
+    # frame has ever tested. These two rows are what test it.
+    #
+    # `Accent` LEAVES `panel` on the exact argument that moved `Bark` out of
+    # `coarse`, `Suit` out of `panel` and `Rock` out of `coarse`: the family
+    # encoded the wrong FACT about the surface. `panel` is MANUFACTURE OUT OF
+    # PLATE (seams, rivet rows, a weld bead), and `Accent` is not plate at all,
+    # it is PAINT ON plate: every one of its 17 consumers uses it for a painted
+    # band, a keep-out ring, a chute lip or a placard. `paintchip` is authored
+    # as exactly that thing failing - a coating on sound steel, metalness going
+    # UP as the paint leaves - so the role and the family now describe the same
+    # object. Measured on the shipped frames before this move, the accent bands
+    # were the only large areas on a machine carrying no surface variation at
+    # all: flat orange, no wear, no edge, at the two places on a smelter a
+    # player's eye is told to look.
+    #
+    # `SteelRust` is a NEW role and deliberately not a re-pointing, because no
+    # existing steel role could take `rust` honestly: `SteelDark` is worn by 26
+    # build scripts including the rockets and the station, and a rusted orbital
+    # hull is a worse claim than an unweathered smelter. A new role costs one
+    # palette row and is scoped to whatever paints it, which today is the
+    # smelter's hot path and nothing else.
+    "Accent": "paintchip",
+    "SteelRust": "rust",
     # SuitAccent stays on `panel` although it is a suit colour, and this is
     # deliberate rather than an oversight: rocket_common.py and
     # build_lander_landed.py both paint stripes and fittings with it, so it is

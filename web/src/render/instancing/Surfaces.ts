@@ -54,7 +54,7 @@ import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from
 import { loadTexture } from '../../assets/Loaders.js';
 
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
-  | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
+  | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'paintchip' | 'rust' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -68,8 +68,22 @@ export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
  * role, one reason per entry in the manifest's `flat_roles`.
  */
 const ROLE_FAMILY: Readonly<Record<string, Family>> = {
-  Accent: 'panel', Hazard: 'panel', Steel: 'panel',
+  Hazard: 'panel', Steel: 'panel',
   SteelDark: 'panel', SteelLight: 'panel',
+  // RN-1493 / RN-1494. The first two consumers of the D-020 vocabulary that
+  // RN-1474 and RN-1475 shipped unreferenced. The full argument is in texgen's
+  // copy of this table, which is the authority; in one line each: `Accent` is
+  // PAINT ON plate and never plate, and `paintchip` is authored as exactly
+  // that coating failing, so the role and the family finally describe one
+  // object; `SteelRust` is a new role rather than a re-pointing because every
+  // existing steel role is worn by the rockets and the station too, and a
+  // rusted orbital hull is a worse claim than an unweathered smelter.
+  //
+  // Moves in the same commit as texgen's table (RN-100's rule:
+  // verifyAgainstManifest makes a one-sided move a failed smoke run, and
+  // check-roles.mjs makes it a failed build).
+  Accent: 'paintchip',
+  SteelRust: 'rust',
   // SuitAccent stays on `panel` and that is deliberate rather than an
   // oversight: rocket_common.py and build_lander_landed.py both paint with it,
   // so it is NOT a player-only role and moving it would re-surface another

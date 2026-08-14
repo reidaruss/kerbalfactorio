@@ -143,6 +143,19 @@ PALETTE = {
     "Steel":        ("8A9199", 0.20, 0.45, 1.0, None),
     "SteelDark":    ("666D75", 0.20, 0.55, 1.0, None),
     "SteelLight":   ("B9C0C7", 0.18, 0.35, 1.0, None),
+    # RN-1493. THE HOT PATH. Steel that has been to temperature and come back
+    # is not steel with a brown tint on it, and the three constants here say
+    # the same thing the `rust` surface family says in its maps: the oxide is
+    # a DIELECTRIC, so metalness collapses (0.20 -> 0.04, not to zero, because
+    # the scale is thin and sound plate shows through wherever it has spalled),
+    # and mill scale is matte, so roughness goes to the top of the industrial
+    # band (0.55 -> 0.86, between SteelDark and Rubber). The hue is deliberately
+    # DARK and desaturated (luma 78 against Steel's 145): a bright orange rust
+    # is a fresh-water rust on thin sheet, and this is a furnace shell, whose
+    # oxide is close to black with a red cast. Wearing `rust` rather than
+    # `panel` is the whole point of the role existing, so the family it maps to
+    # is named in texgen's ROLE_FAMILY and nowhere else.
+    "SteelRust":    ("5C4238", 0.04, 0.86, 1.0, None),
     "Accent":       ("FF8A1E", 0.00, 0.50, 1.0, None),
     "Hazard":       ("F2C531", 0.00, 0.60, 1.0, None),
     "Rubber":       ("23262B", 0.00, 0.85, 1.0, None),
