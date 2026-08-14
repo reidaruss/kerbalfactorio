@@ -39,6 +39,7 @@ import { DISC_EXPLORE, DISC_SURVEY, DISC_REPORT_WORDS, DiscReport, discAbi }
   from '../sim/wasm/discabi.js';
 import type { OfDiscoveryModule } from '../sim/wasm/discabi.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
+import { noteDiscoveryBody } from './DiscoveryScope.js';
 
 export { DISC_SURVEY, DISC_EXPLORE };
 
@@ -105,6 +106,36 @@ export class Discovery {
   constructor(core: OfCoreModule, bodyId: number) {
     this.M = discAbi(core);
     this.ready = this.M._of_disc_ensure(bodyId) === 1;
+    // PS-46. The field in /core is this body's now, and `DiscoveryScope` is the
+    // one place that fact is written down. Only on success: a refused body left
+    // whatever was there, and claiming it would be a lie the re-seat would then
+    // act on.
+    if (this.ready) noteDiscoveryBody(bodyId);
+  }
+
+  /**
+   * PS-46 / GP-725. THE FIELD UNDER THIS DRIVER HAS BEEN RE-CUT FOR ANOTHER
+   * BODY. Called by `DiscoveryScope.reseatDiscovery`, which owns the /core side.
+   *
+   * The driver holds no cells, so there is nothing here to move. What it does
+   * hold is DERIVED state about a field that no longer exists: the last
+   * observation point and the gap ratio describe a pass on the body being left,
+   * and `forget()` already argues that keeping those would be reporting a live
+   * number about a field that is gone. The generation bump is what makes
+   * `MapTerrain` repaint instead of leaving the previous planet's survey mask on
+   * screen.
+   *
+   * `observePasses` and `observeMsTotal` deliberately survive: they are the
+   * driver's own cost counters over the session, not facts about the field, and
+   * a probe timing the observe call wants them to span the whole run.
+   */
+  reseated(): void {
+    this.generation_ += 1;
+    this.haveLast = false;
+    this.gapRatio = 0;
+    // The next observation lands on the NEXT step, so a caller that switches
+    // body and then runs one second gets exactly one pass on the new world.
+    this.sinceS = SAMPLE_S;
   }
 
   get live(): boolean { return this.ready; }
@@ -295,8 +326,38 @@ export class Discovery {
     return cells;
   }
 
+  /**
+   * THE SAVED SET'S OWN BYTES, as a length and a hash. Debug read only.
+   *
+   * PS-46 needed "the field came back EXACTLY as it was left" to be a claim
+   * about the bytes rather than about two summary counts, because two different
+   * lattices can hold the same number of cells and a count would call that a
+   * round trip. FNV-1a over the serialized stream is the cheapest thing that
+   * distinguishes them, and it is taken from the SAME `_of_disc_serialize` call
+   * that produces the length so the two cannot describe different moments.
+   *
+   * Not a checksum in the save: nothing verifies this on load and it must not
+   * start to. `/core` already refuses a foreign stream by its lattice, which is
+   * a stronger test than a hash of the bytes it is refusing.
+   */
+  private bytesDigest(): { bytes: number; hash: number } {
+    if (!this.ready) return { bytes: 0, hash: 0 };
+    const n = this.M._of_disc_serialize();
+    if (n <= 0) return { bytes: 0, hash: 0 };
+    // Pointer AND view after the call, never before (standing rule 5).
+    const p = this.M._of_scratch_u8();
+    const a = this.M.HEAPU8.subarray(p, p + n);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < n; ++i) {
+      h ^= a[i];
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return { bytes: n, hash: h >>> 0 };
+  }
+
   report(): unknown {
     const s = this.stats();
+    const d = this.bytesDigest();
     return {
       ...s,
       gapRatio: Number(this.gapRatio.toFixed(4)),
@@ -304,7 +365,8 @@ export class Discovery {
       observeUsPerPass: this.observePasses === 0 ? 0
         : Math.round((this.observeMsTotal / this.observePasses) * 1000),
       passes: this.observePasses,
-      saveBytes: this.ready ? Math.max(0, this.M._of_disc_serialize()) : 0,
+      saveBytes: d.bytes,
+      saveHash: d.hash,
     };
   }
 }
