@@ -1320,9 +1320,24 @@ def _bark_albedo(w, h, height, aux):
             i = base + x
             zi = zy + x
             # Value. The broad vertical zoning carries most of the amplitude.
-            v = 1.0 + (zone[zi] - 0.5) * 0.30
+            # RN-1500: this term and the two below it were 0.30 / 0.16 / 0.26,
+            # measured (whole-map luma) at spread 45.7, stdev 7.62, in family
+            # with `coarse` (47.3 / 9.49) and `panel` (54.0 / 7.71) so
+            # `check_maps`'s MIN_SPREAD=16 gate never had anything to say
+            # about it, but on an actual trunk render (`RN1500_bark_canopy_
+            # pine_a.png`) the fissures (normal+AO) carried the whole read and
+            # the albedo looked airbrushed beside them: every term here is a
+            # broad, 2-octave `_fbm`, which is smooth by construction, and the
+            # deliberate "stay above the relief frequency" rule (this
+            # function's own docstring) rules out fixing that by adding a
+            # finer noise octave. Raising the same three amplitudes instead
+            # (spread 45.7 -> 62.0, stdev 7.62 -> 10.2, mean unmoved at 0.49)
+            # keeps every frequency exactly where the docstring puts it and
+            # makes the existing zones and lichen colonies read as patches
+            # rather than as a gradient.
+            v = 1.0 + (zone[zi] - 0.5) * 0.42
             # Organic staining darkens, and only darkens.
-            v -= 0.16 * _clamp01((stain[i] - 0.54) / 0.40)
+            v -= 0.20 * _clamp01((stain[i] - 0.54) / 0.40)
             # LICHEN. Two fields multiplied rather than summed, so a colony is
             # a patch WITH HOLES in it rather than a smooth blob: summing two
             # noises concentrates the result about its mean (the central limit
@@ -1330,7 +1345,7 @@ def _bark_albedo(w, h, height, aux):
             # and a lichen colony is a bimodal thing - present or absent.
             lic = (_clamp01((lich[i] - 0.52) / 0.34)
                    * _clamp01((lich2[i] - 0.38) / 0.44))
-            v *= 1.0 + 0.26 * lic
+            v *= 1.0 + 0.34 * lic
             v *= LEVEL
             o = 3 * i
             # Lichen leans COOL and desaturates: green-grey against the warm
@@ -3407,9 +3422,22 @@ def build_family(name, size=None):
 # dilation and is deliberately the one-line fix.
 ALBEDO_V_FLIP = False
 
-ALBEDO_EDGE = 0.006     # alpha edge ramp in tile units, ~1.5 px at 256:
-                        # anti-aliased enough not to stairstep, steep enough
-                        # that the mip chain does not go mushy
+# RN-1500: was a fixed 0.006 UV-fraction constant ("~1.5 px at 256"), and the
+# name told the truth about only ONE resolution. Held as a tile-unit fraction,
+# the 1024 raise would have stretched it to ~6.1 texels, four times as many
+# world-space pixels of ramp for the SAME shape: not sharper at higher
+# resolution but softer, backwards from what the raise is for. It also broke
+# `_halo_worst`'s own instrument, which examines alpha==0 texels bordering an
+# alpha>=128 one: with a 6-texel-wide linear ramp no alpha==0 texel is ever
+# one step from alpha>=128 (roughly 3 steps are, at ~42 counts/texel), so the
+# undilated negative control measured 0 texels examined instead of failing
+# loud. Defined in TEXELS now, so the ramp is a constant number of pixels of
+# anti-aliasing at any card resolution and the halo instrument keeps working
+# at every size it is asked to.
+ALBEDO_EDGE_PX = 1.5   # anti-aliased enough not to stairstep, steep enough
+                        # that the mip chain does not go mushy, ONE-TEXEL-SCALE
+                        # narrow enough that _halo_worst's 8-neighbour test
+                        # still finds an alpha==0 texel beside an opaque one
 
 ALBEDO_TIP_ROWS = 4     # top rows that MUST be fully transparent. v clamps,
                         # so any alpha in the top row would smear upward
@@ -3446,11 +3474,28 @@ def _grass_strips():
     measured with the u wrap, so a blade crossing the seam continues on the
     other side and the tile has no u seam by construction.
 
-    Widths: roots ~26-37 px full width, tips 0.012 half-width, which keeps
-    the tip's 50%-alpha contour at ~4.6 px: wide enough that mip averaging
-    erodes the tip gracefully instead of deleting it.
+    RN-1500 (was RN-311's own finding): the pitch here is 1/11 = 0.0909 (half
+    pitch 0.04545) and the root half-width used to be 0.058 to 0.082, i.e. up
+    to 0.164 FULL width against a 0.0909 pitch, so two neighbours ALWAYS
+    overlapped and every u column decoded opaque: a "bundle of 11 blades" was
+    actually a bottom-anchored mat with a serrated top edge, and no crop of
+    any width could show a lateral gap because none existed. Root half-width
+    is now 0.026 to 0.040 (full width 0.052 to 0.080 against the same 0.0909
+    pitch), which leaves a real gap at the nominal spacing and only closes
+    under the jitter's own tail, the way real tufted blades sometimes touch
+    and sometimes do not: measured at the root row, 31.4 percent of columns
+    are now transparent where 0 percent were before. A narrower band (0.020
+    to 0.032) was tried first and measured coverage 0.3138, UNDER the 0.35
+    alpha_test cutoff RN-177/178 fixed on purpose so distant mips converge
+    toward solid rather than dissolving; 0.026 to 0.040 measures 0.3764,
+    which keeps that floor while still opening a real silhouette. Tip
+    half-width 0.012, unchanged: it keeps the tip's 50%-alpha contour at
+    ~4.6 px at 256 (now ~18 px at the 1024 raise), wide enough that mip
+    averaging erodes the tip gracefully instead of deleting it.
 
-    Values: per-blade base drawn from [0.60, 1.0], slightly darker at the
+    Values: per-blade base drawn from [0.55, 1.0] (widened from [0.60, 1.0]
+    for more value structure now a gap can show a darker blade beside a
+    lighter one instead of one wall of near-white), slightly darker at the
     root rising ~10% toward the tip, faint per-texel noise on top, and a
     per-blade warm/cool split of at most +/-6 counts between R and B."""
     strips = []
@@ -3463,10 +3508,10 @@ def _grass_strips():
         y_mid = y_root - (y_root - y_tip) * 0.5
         u_mid = u0 + lean * 0.38
         u_tip = u0 + lean
-        w_root = 0.058 + 0.024 * _hash01(k, 13, 6011)
+        w_root = 0.026 + 0.014 * _hash01(k, 13, 6011)
         w_tip = 0.012
         w_mid = (w_root + w_tip) * 0.5
-        bk = 0.60 + 0.40 * _hash01(k, 17, 6011)
+        bk = 0.55 + 0.45 * _hash01(k, 17, 6011)
         tint = (_hash01(k, 19, 6011) - 0.5) * (6.0 / 255.0)
         strips.append((u0 % 1.0, y_root, u_mid % 1.0, y_mid,
                        w_root, w_mid, bk * 0.90, bk * 0.95, tint))
@@ -3486,7 +3531,21 @@ def _leaf_strips():
 
     The 30-55 degree angle is built from sin values (0.50..0.82) and
     cos = sqrt(1 - sin^2), because this module bans transcendentals (see the
-    determinism note at the top): sqrt is bit-portable, sin/cos are not."""
+    determinism note at the top): sqrt is bit-portable, sin/cos are not.
+
+    RN-1500 (was RN-311's own finding): the card's bottom rows (mesh v=0,
+    where a planted stem meets the ground) measured only 22.7 percent opaque,
+    because the only thing that reached them was the bare 0.020*scale stem,
+    four of them at four fixed u positions. Every strip planted on the ground
+    therefore alpha-cut into thin air right at its base. Each frond now opens
+    with a short, wide ROOT FLARE (0.095*scale half-width tapering to the
+    stem's own 0.020*scale over the bottom ~10 percent of the card) before
+    the stem continues exactly as before: a real frond splays where it meets
+    its attachment rather than emerging from a wire. `_render_card` resolves
+    overlap by deepest clearance, not by list order, so this is not a
+    z-order claim: the flare only wins a texel where it is genuinely the
+    widest thing covering it, which near the very base is every texel a
+    needle does not already reach."""
     strips = []
 
     def frond(cx, y_base, y_tip, needles, scale, seed):
@@ -3495,6 +3554,9 @@ def _leaf_strips():
         sx1, sy1 = cx + lean, y_tip
         bs = 0.62 + 0.38 * _hash01(1, 2, seed)
         stint = (_hash01(2, 3, seed) - 0.5) * (6.0 / 255.0)
+        y_flare = y_base - 0.10 * scale
+        strips.append((sx0 % 1.0, min(y_base + 0.02, 1.05), sx0 % 1.0, y_flare,
+                       0.095 * scale, 0.020 * scale, bs * 0.78, bs * 0.90, stint))
         strips.append((sx0 % 1.0, sy0, sx1 % 1.0, sy1,
                        0.020 * scale, 0.009, bs * 0.93, bs, stint))
         for j in range(needles):
@@ -3526,18 +3588,20 @@ def _leaf_strips():
 def _render_card(s, strips, noise_seed):
     """Compose tapered strips into (rgb, alpha) byte buffers, PRE-dilation.
 
-    Alpha: 1 inside a strip, 0 outside, an ALBEDO_EDGE smoothstep ramp at the
-    boundary. Albedo: the winning strip's value gradient (winner = deepest
+    Alpha: 1 inside a strip, 0 outside, an ALBEDO_EDGE_PX-wide smoothstep ramp
+    at the boundary. Albedo: the winning strip's value gradient (winner = deepest
     signed clearance, so overlaps resolve to whichever strip the texel is
     most inside of) plus faint per-texel noise. Background texels are left
     BLACK on purpose: _dilate_albedo must fill them, and a compose that
     pre-filled them would make the dilation selftest unfalsifiable."""
+    edge = ALBEDO_EDGE_PX / s     # RN-1500: texels, not tile fraction (see
+                                   # ALBEDO_EDGE_PX's own comment)
     noise = _fbm(s, s, 16, 3, seed=noise_seed)
     rgb = bytearray(3 * s * s)
     alpha = bytearray(s * s)
     bounds = []
     for st in strips:
-        wmax = max(st[4], st[5]) + ALBEDO_EDGE
+        wmax = max(st[4], st[5]) + edge
         bounds.append((min(st[1], st[3]) - wmax, max(st[1], st[3]) + wmax))
     for y in range(s):
         py = (y + 0.5) / s
@@ -3552,7 +3616,7 @@ def _render_card(s, strips, noise_seed):
             for st in act:
                 d, t = _strip_pt(px, py, st[0], st[1], st[2], st[3])
                 hw = st[4] + (st[5] - st[4]) * t
-                a = 1.0 - _smoothstep(hw - ALBEDO_EDGE, hw, d)
+                a = 1.0 - _smoothstep(hw - edge, hw, d)
                 if a > a_best:
                     a_best = a
                 if hw - d > cov_best:
@@ -3730,12 +3794,30 @@ def _albedo_mean_rgba(rgba, alpha_test):
 # alpha_test (0.35) DISSOLVES at range. Coverage well above 0.35 makes the
 # far mips converge toward solid instead of toward nothing; the ceiling
 # keeps the card reading as foliage rather than as a curtain.
+# RN-1500: 256 -> 1024 (D-020 decision 4's general raise; 2048 is reserved
+# for `panel` alone). The strip geometry above is defined in UV/tile-fraction
+# units throughout (widths, edge ramp, noise field), so nothing here needed a
+# unit change: the same shapes simply decode into 16x the texels, which is
+# what actually buys the sharper root/tip and blade-edge read at close range.
+# `coverage` bands below are MEASURED against the shipped 1024 output (not
+# assumed from the old 256 numbers), because the RN-1500 shape edits (the
+# narrower grass width, the leaf root flare) both move the true alpha->=128
+# fraction: leaf measures 0.6699 (the root flare adds coverage; the old
+# 0.60..0.80 band still brackets it, so it is unchanged). grass measures
+# 0.3764 (the narrowed blades trade coverage for a real lateral silhouette on
+# purpose: an 0.020..0.032 half-width first tried measured 0.3138, UNDER the
+# 0.35 alpha_test floor RN-177/178 fixed so distant mips converge toward
+# solid rather than dissolving, so the width was widened to 0.026..0.040
+# specifically to clear that floor with margin). The band moves to
+# 0.35..0.45, the honest bracket around 0.3764 that still keeps every build
+# on this side of the alpha_test cutoff, replacing the old 0.55..0.75, which
+# described a card with no gaps in it at all.
 ALBEDO_FAMILIES = {
-    "leaf": dict(strips=_leaf_strips, size=256, alpha_test=0.35,
+    "leaf": dict(strips=_leaf_strips, size=1024, alpha_test=0.35,
                  wrap=("repeat", "clamp"), coverage=(0.60, 0.80),
                  noise_seed=15013),
-    "grass": dict(strips=_grass_strips, size=256, alpha_test=0.35,
-                  wrap=("repeat", "clamp"), coverage=(0.55, 0.75),
+    "grass": dict(strips=_grass_strips, size=1024, alpha_test=0.35,
+                  wrap=("repeat", "clamp"), coverage=(0.35, 0.45),
                   noise_seed=15101),
 }
 

@@ -230,9 +230,12 @@ export class PropLibrary {
     // without the attribute this renders every prop black.
     (material as THREE.MeshStandardMaterial).vertexColors = true;
     // The one path that keeps a material per role NAME, so it is the one that
-    // gets the per-role family. `flat_roles` (Leaf, Grass, Water, Ice, Glass,
-    // Skin, Oil, EmissiveState) register and take NOTHING, which is a recorded
-    // decision rather than an omission: see surfaces.json's reason per role.
+    // gets the per-role family. `flat_roles` (Water, Ice, Glass, Skin, Oil,
+    // EmissiveState) register and take NOTHING, a recorded decision rather
+    // than an omission (surfaces.json's reason per role). Leaf/Grass are NOT
+    // in that set since RN-181 (RN-1500: this comment still said they were):
+    // they wear the `leaf`/`grass` albedo CARD families, unit-UV alpha-tested
+    // textures, same `attachSurface` call as any other family.
     attachSurface(material as THREE.MeshStandardMaterial,
       familyForRole(roleOfMaterialName(role)), `props:${key}`);
     // WIND (RN-97): plants only, the same imported predicate the bake uses,
