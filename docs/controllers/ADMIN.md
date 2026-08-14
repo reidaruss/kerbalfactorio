@@ -135,6 +135,8 @@ Everything in the table above is finished and merged except as noted here. Merge
 
 **Open rulings for Reid:** (1) garrison guards keep chasing a dead player's respawn point until the leash fires, unwritten behaviour, needs a yes or no; (2) GP-670: the Chrome-guard pgrep pattern mandated in VM briefs matches the briefs themselves and cannot read zero; tools/lane/probeguard.sh (untracked, probe-toolgate worktree on VM) resolves /proc/pid/exe and should be promoted by build-tooling.
 
+**Reid rulings 2026-08-13 evening (map and navigation):** a COMPASS HUD showing marked locations while on foot; on-foot survey discovery keeps working alongside the antenna reveal; and the FULL map reveals when the player explores the space station for the first time. Two lanes dispatched: lane/compass (GP-700..714) and lane/station-reveal (GP-715..729).
+
 **Prior day's dispatch record (2026-08-12 ~16:30), superseded by the above:**
 - Research station (merged at 623c81e, source stands): acceptance cascades ~33 fails at tip because the GP-506 pickaxe gate refuses the probes' bare-hand ore harvests. Instrument, not game. Fix lane `lane/probe-toolgate` (opus): probes follow the legal progression (wood/stones bare-handed, craft pickaxe, then ore); C5 demolish-relock must finally be exercised for real. buildmenu survival's one red is the same gate.
 - Garrison 068cb38: determinism, hold (drift 0.000 m), 30 m acquisition, and the sandbox negative control all green; leash UNPROVEN because the scripted retreat stopped 45 m from the post, inside the 60 m leash, and creatures engaged forever. Lane resumed to retreat past 90 m and prove engage-return-hold.
