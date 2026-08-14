@@ -115,6 +115,8 @@ is that the numbers are handed out by one writer before the work starts.
 | RN-1610 to RN-1619 | rendering, the low-tier sun disc loss (the 64 IBL cube misses the 0.53 deg disc entirely; low and medium tiers get no specular sun) | allocated by Admin 2026-08-14 overnight at dispatch |
 | PH-380 to PH-394 | physics/core, mintStation still ships emptyDesign() (PH-366's finding: the station's dock port comes off its asset socket, not a real design; D-015 not uniform for Anchorage; PS-43 fixture stale) | allocated by Admin 2026-08-14 evening at dispatch; lane greps PH ledger first. **PH-380 USED, 2026-08-14 (lane/mintstation), one number for one finding: `mintStation` mints a real one-part `DockingPort` design closing D-015's decidability half of PH-366, and `promoteVessel` gained an explicit `isStation` refusal because that half of PH-366 turned out to be an accident (un-flyability riding on the design happening to be empty) rather than a design gap. Port POSE deliberately still comes off `socket_dock`, named as the right call rather than a residue. No `/core` change, no ABI move. See PH-380 in `physics.md` for the full finding. PH-381 to PH-394 FREE, and the next lane in this block starts at 381.** Recorded here by the lane per rule 5. |
 | GP-790 to GP-804 | gameplay, the KeyW 500-frame player-movement freeze (reproducible; diagnosis first, fix at the cause) | allocated by Admin 2026-08-14 evening at dispatch |
+| PH-380 to PH-394 | physics/core, mintStation still ships emptyDesign() (PH-366's finding: the station's dock port comes off its asset socket, not a real design; D-015 not uniform for Anchorage; PS-43 fixture stale) | allocated by Admin 2026-08-14 evening at dispatch; lane greps PH ledger first |
+| GP-790 to GP-804 | gameplay, the KeyW 500-frame player-movement freeze (reproducible; diagnosis first, fix at the cause) | allocated by Admin 2026-08-14 evening at dispatch; GP-790 to GP-796 USED (the three-signature instrument, the mute audit, the NOT-REPRODUCED verdict, the rebase refuted, the `playTape` replace trap, `uiHeld` has no reference count, the PowerShell string-evalarg trap); **GP-797 to GP-804 abandoned, never used** |
 | GP-805 to GP-819 | gameplay/probes, instrument bundle: zerog Z4 vacuous-pass risk, stationwalk.js aiming at the stale install.standPos, the antenna dish unselectable to the pick | allocated by Admin 2026-08-14 evening at dispatch |
 | RN-1570 to RN-1589 | rendering, THE LIGHT LANE (sun disc 0.53 deg at 35x irradiance-conserving per RN-1524's recommendation; the smelter shade discriminator, shot geometry vs machine self-shadowing; the sunlit-face machine box RN-1527 and RN-1479 both demand; frame re-takes) | allocated by Admin 2026-08-13 night at dispatch |
 | GP-533 to GP-545 | gameplay, the reveal + scanning antenna content (item, recipe, tech row, one-shot mark_known at build) | **GP-533 to GP-539 USED** 2026-08-13 (the antenna as the seventh `survival::StructureKind`, NO ABI CHANGE — confirmed `abi=24` on every driven run rather than assumed; the price, Iron 25 / Copper 20 / Stone 15, with copper deliberately matching the pad's own; the tech, no prereq and no milestone, on the electricity-cycle ruling; the one-shot reveal itself, `GameplayActions.revealNearbySites` calling the already-shipped ABI-24 `of_poi_near`/`of_poi_mark_known`, with `PoiMarkers.ts` as the one SiteRow-to-MapMarker function both the live reveal and the load-time rebuild share; the marker-registry-is-rebuilt-not-reloaded persistence design plus the `SaveWorlds.ts` compile-time gate catching `antennas` as body-scoped on the first build; the checklist row's `sites.knownCount() > 0` predicate; and `SiteCatalog::insideAnySite` recorded OWED rather than wired, the brief's own permitted fallback once the actual cost of the headline feature was known). GP-540 to GP-545 free. Recorded by the lane per rule 5. **`probes/antenna.js`, survival, 640x360: `valid: true, pass: true, fails: []`.** Sites known 0 -> 1, one `ruin` marker (`known: true`, real unit `dirBody`), the `antenna` checklist row `satisfied: false -> true`, the antenna's own bill (`25 Iron + 20 Copper + 15 Stone`) billed exactly, and a same-run idempotence check (`siteMarkKnown` on an already-known site returns `false`, marker count unchanged). **One harness defect found and fixed in the same lane, not left for the next one**: the first run of the probe under-budgeted its own harvest by measuring science SPENT (8, the tech's cost) rather than science MADE (up to 12, since the crafting loop clicked a fixed count) — Iron for science is 2 per pack, so the gap was 8 Iron, and the antenna's build-menu tile read `affordable: false` with the pack 4 Iron short. Fixed by capping the crafting loop at "stop once nine are held" instead of a fixed twelve clicks, and by raising the smelt targets with real margin; green on the very next run. |
@@ -1550,3 +1552,74 @@ from asserting on an instrument whose semantics it had not established, which
 would have produced a red on a feature that worked and a day spent looking in
 the wrong file. **If a boolean disagrees with a distance you also measured,
 believe the distance until you have read the line that sets the boolean.**
+
+
+### `playTape` REPLACES, so a settle helper that writes a tape eats the key you just pressed
+
+GP-794. `probes/keywmute.js` opened a panel, called `of.escape()`, and reported
+that Escape closed **nothing**: `openCount` went 1 to 1, then 2 to 2, then 3 to
+3 as the panels stacked up, and a held KeyW moved **0.000 m** against a 4.284 m
+baseline. Read at face value that is the reported symptom exactly, a
+player-movement freeze with a healthy frame rate and a live tick.
+
+**It was the probe.** `of.escape()` does not press anything; it QUEUES a tape
+(`[{hold:2, actions:['cancel']}, {hold:2, keys:[]}]`) that no fixed tick has
+consumed at the moment it returns. The probe's own `settle()` helper begins with
+`of.input.tape([{hold: ..., keys: []}])`, and `Input.playTape` says what it does
+in one line: **"Replaces anything still playing."** The Escape was overwritten
+before a single tick could read it. Advancing with a bare `of.run()` instead,
+touching no tape, the same run goes green on every case: every panel closes on
+its own verb and on Escape, and every post-close walk covers 4.09 to 4.27 m.
+
+**The shipped suite does not have this bug, and that is worth stating rather
+than assuming.** `probes/controls.js` and `probes/buildmenu.js`, the two probes
+that lean hardest on `of.escape()`, both define `sleep = (n) => of.run(n)`,
+which writes no tape. The trap is available to anyone who writes a `settle` that
+zeroes the keys "to be safe", which is the natural thing to write.
+
+**The general form: an input helper that QUEUES rather than presses is a helper
+whose effect the next line you write can cancel.** If a probe drives a
+tape-backed action, the next call must not be one that writes a tape. The
+failure is silent and flattering in the usual direction: the key appears dead,
+which reads as a finding about the game.
+
+### `uiHeld` is one boolean with eight owners, so one Escape unmutes a screen that is still up
+
+GP-795. Measured with `probes/keywmute.js` on HEAD: open the pack panel, then
+open the pause menu over it, then press Escape ONCE. `ModalStack.closeTop()`
+closes the pause menu only and correctly leaves `pack` open (`openCount` 1,
+`open: ["pack"]`), but the pause menu's own transition then calls
+`Input.setUiCapture(false)` unconditionally. A held KeyW from that state walks
+**4.173 m** in 60 ticks, against a 4.250 m baseline with no panel ever opened.
+The same happens in the other order: pause under pack, one Escape, **4.097 m**
+with the pause menu still on screen.
+
+`Input.uiHeld` is a single boolean and `setUiCapture` has eight independent
+callers (`MapMode` twice, `MenuBoot` twice, `VabBoot`, `GameplayChrome` three
+times, `ProgressUi`), each pairing its own `true` with its own `false` and none
+of them counting. Whoever calls `false` last wins, whatever else is open.
+
+**This is the harmless sign of the fault and it is recorded because the harmful
+sign is the same missing count.** Unmuting early gives a player who is looking
+at a menu a character that walks; the mirror case would leave the walk axis
+muted with nothing on screen, which is indistinguishable from the
+player-movement freeze this lane was sent to find. Nothing structural prevents
+the second; only the fact that every current opener happens to be balanced
+does. A reference count, or a capture derived from `modals.open().length`
+rather than asserted by each caller, is the fix. It crosses five files and four
+owners, so it is written down here rather than taken by this lane.
+
+### A string in `--evalargs` does not survive PowerShell, and it fails as a ReferenceError
+
+GP-796, small and cheap to hit. `--evalargs='{"secs":25,"view":"first"}'` run
+through PowerShell on Windows arrives at `page.evaluate` with the inner double
+quotes stripped, so the probe body reads `{secs:25,view:first}` and dies with
+`ReferenceError: first is not defined` at a line inside the runner's wrapper.
+Numeric fields are unaffected, which is why this only shows up the first time an
+argument stops being a number.
+
+It failed LOUDLY, which is the only reason this is a footnote and not a wrong
+result: the run exited non-zero and printed the name it could not resolve. The
+cheap habit is to keep `--evalargs` numeric (`{"fp":1}` rather than
+`{"view":"first"}`), which is what `probes/keywfreeze.js` does and says so at
+the call site.
