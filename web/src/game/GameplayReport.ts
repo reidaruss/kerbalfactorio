@@ -143,6 +143,11 @@ export function gameplayReport(g: Gameplay): unknown {
       // GP-79. The PLAYER's health, separate from the buildings' book because
       // they are different subjects: one is the base and one is you.
       vitals: g.vitals.report(),
+      // GP-700. The on-foot compass strip: what `GameHud` drew last, `null`
+      // exactly when it is hidden (flight, map, or a panel over the world),
+      // the `stationGate`/`progress` precedent -- a probe reads this rather
+      // than pixels.
+      compass: g.hud.compassReport(),
       // GP-86. THE GUN, with the four tells a shot has to produce counted
       // SEPARATELY: a weapon that fires correctly and shows nothing is the
       // failure the whole effects layer exists to prevent, and one combined
