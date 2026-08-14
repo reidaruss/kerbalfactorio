@@ -1,22 +1,36 @@
-// Every placed machine, belt tile and inserter in ONE BatchedMesh (DW-11), and
-// ONE material, whose emissive is driven per instance from the section 6 stream.
+// Every placed machine, belt tile and inserter in ONE POOL, drawn by one
+// BatchedMesh PER AUTHORED SURFACE FAMILY (DW-11, RN-1478), whose emissive is
+// driven per instance from the section 6 stream.
 //
 // WHY ONE BATCH AND NOT ONE PER MATERIAL. A shadow cascade redraws every batch,
 // so eight materials times the main pass plus three cascades gives the whole
-// instancing saving back (NodeBatch measured it on the clearing). The five roles
-// bake their COLOUR into a vertex attribute and now share ONE `panel` surface,
-// so the whole factory is still one draw plus its cascades.
+// instancing saving back (NodeBatch measured it on the clearing). The five
+// aRole values bake their COLOUR into a vertex attribute and share one draw.
 //
-// DW-8 IS THIS FILE'S REASON TO EXIST. There is no AnimationMixer anywhere: a
-// belt's motion is a per-INSTANCE flow value, uploaded as one texel, that
-// scrolls a procedural band along the deck's own local axis. A thousand belt
-// tiles cost one texture update and one draw, not a thousand mixers. The same
-// texel carries the machine's VisualState, so idle / working / blocked / no
-// power is the emissive chip the asset already ships and not a second system.
+// AND WHY ONE PER FAMILY IS NOT THAT, WHICH IS RN-1478. `attachSurface(m,
+// 'panel', ...)` was called UNCONDITIONALLY here, so a machine's authored role
+// never reached `familyForRole` and every part wore `panel`: manufacture out of
+// plate, seams, rivet rows, a weld bead. Measured off the shipped .glb, the
+// batches this class serves author FOUR tiling families between them, not eight
+// (`panel`; `stone` on the smelter hearth, the foundation body and the pad's
+// blast slab; `coarse` on every belt deck and the station's torn structure;
+// `suitplate` on the station deck), and no single batch authors more than
+// three. So the split is 5 meshes to 14, it is bounded by what the assets
+// declare, and `MachineLayers.ts` carries the sampler arithmetic that rules out
+// doing it on one material instead.
 //
-// The per-instance channel is a DataTexture indexed by three's own batching id
-// (`getIndirectIndex(gl_DrawID)`), exactly the mechanism three uses for
-// per-instance colour, so it cannot fall out of step with the matrix texture.
+// DW-8 IS STILL THIS FILE'S REASON TO EXIST. There is no AnimationMixer
+// anywhere: a belt's motion is a per-INSTANCE flow value, uploaded as one texel,
+// that scrolls a procedural band along the deck's own local axis. The same texel
+// carries the machine's VisualState. The GLSL moved to
+// `render/materials/MachineFx.ts` when the split pushed this file past the cap;
+// ONE hook object is shared by every layer, or three compiles one program per
+// layer for a shader that is character-for-character identical.
+//
+// THE POOL IS STILL ONE POOL, and that is what keeps every caller unchanged. A
+// slot is acquired in every layer at once and therefore means the same machine
+// in all of them; a layer with nothing to draw for that template points at three
+// degenerate vertices and stays invisible. See `MachineLayers.ts`.
 //
 // FS-16: THE POOL GROWS, AND WHEN IT CANNOT IT SAYS SO. This class shipped with
 // `CAPACITY = 256` and no growth path, and past it a machine existed in the
@@ -26,12 +40,13 @@
 import * as THREE from 'three';
 import { CAPACITY, MAX_CAPACITY, registerPool, type PoolReport }
   from './InstancePools.js';
-import { attachSurface, noteShaderOrder } from '../render/instancing/Surfaces.js';
+import { noteShaderOrder, type Family } from '../render/instancing/Surfaces.js';
 import { injectPartMat } from '../render/materials/PartMaterial.js';
+import { injectMachineFx } from '../render/materials/MachineFx.js';
 import { assertMachineBase, machineMatEnabled } from '../render/materials/MachineMat.js';
-import { attachShadowLod, emptyIndex, indexRow, publishLadders, SHADOW_LOD_ON }
-  from '../render/ShadowLod.js';
-import { addLadder, gatherTiers, tierSize, type MachineTemplate }
+import { SHADOW_LOD_ON } from '../render/ShadowLod.js';
+import { buildLayers, type Layer } from './MachineLayers.js';
+import { gatherTiers, type FamilyTiers, type MachineTemplate }
   from './MachineGeometry.js';
 
 export type { MachineTemplate };
@@ -39,23 +54,54 @@ export type { MachineTemplate };
 /** Per-instance fx channels, in the order the shader reads them. */
 export interface Fx { flow: number; density: number; state: number; level: number }
 
+/**
+ * The family a role falls back to when its authored one cannot be worn here:
+ * `flat` (the recorded decision not to map a role, already handled by
+ * `MachineMat`'s bare flag) and the two CARD families (`Surfaces.isTilingFamily`
+ * carries the argument). It is `panel` because that is what every machine wore
+ * before this pass, so a fallback is a role that did not move.
+ */
+const BASE: Family = 'panel';
+
 export class MachineBatch {
   readonly group = new THREE.Group();
-  readonly material: THREE.MeshStandardMaterial;
-  /** One merged geometry per file, for the ghost preview to reuse. */
+  /** One merged geometry per file, for the ghost preview to reuse. The WHOLE
+   *  machine, every family, because a ghost is one translucent copy and not a
+   *  material study. */
   readonly merged = new Map<string, THREE.BufferGeometry>();
-  private mesh: THREE.BatchedMesh | null = null;
-  private readonly geomId = new Map<string, number>();
-  /** The same map reversed, for the read-back below and for nothing else. */
-  private readonly geomKey = new Map<number, string>();
-  /** Geometry id -> which tier ladder it is a rung of (RN-681). */
-  private readonly lod = emptyIndex();
+  private readonly layers: Layer[] = [];
+  /** Templates that produced geometry, i.e. what `acquire` will answer to. */
+  private readonly keys = new Set<string>();
+  /** Slot -> the template it is currently pointed at, which is what decides
+   *  WHICH layers may show it. */
+  private readonly slotKey: string[] = [];
+  /** Slot -> whether the caller has placed it. Visibility is this AND the
+   *  layer carrying geometry for `slotKey`, so `place` cannot un-hide a layer
+   *  that has nothing to draw. */
+  private readonly shown: boolean[] = [];
   private fxData!: Float32Array;
   private fxTex!: THREE.DataTexture;
   private readonly uniforms = {
     uFx: { value: null as THREE.DataTexture | null },
     uFxW: { value: 1 },
     uTime: { value: 0 },
+  };
+  /** ONE hook object for every layer's material: three's program cache key
+   *  stringifies it, so a per-material closure would be a per-material
+   *  program. */
+  private readonly hook = (shader: {
+    vertexShader: string; fragmentShader: string; uniforms: Record<string, unknown>;
+  }): void => {
+    noteShaderOrder(this.name, shader.fragmentShader);
+    // RN-1200. The per-part channel, spliced into the hook DW-8 already spent.
+    // It lands BEFORE the fx edits and that is safe rather than lucky: it
+    // anchors on the roughness, metalness, normal and AO chunks, all of which
+    // `noteShaderOrder` asserts sit either side of `<emissivemap_fragment>`
+    // and none of which IS `<emissivemap_fragment>`. Both add to
+    // `#include <common>` and both keep the needle, so the two declaration
+    // blocks stack rather than displace each other.
+    if (machineMatEnabled()) injectPartMat(shader);
+    injectMachineFx(shader, this.uniforms);
   };
   /** Slots released by demolition, reused before any new one is added. */
   private readonly free: number[] = [];
@@ -74,8 +120,14 @@ export class MachineBatch {
     this.group.name = name;
     this.cap = Math.max(1, Math.min(capacity, ceiling));
     this.allocFx(this.cap);
-    this.material = this.makeMaterial();
     registerPool(this);
+  }
+
+  /** The DOMINANT family's material, or null before `build`. Kept because it
+   *  is this class's published handle on "the machine material"; every layer's
+   *  is in `surfaceReport()` under `machines:<pool>:<family>`. */
+  get material(): THREE.MeshStandardMaterial | null {
+    return this.layers.length === 0 ? null : this.layers[0].material;
   }
 
   /** Instances this pool can currently hold. Grows; never shrinks. */
@@ -105,95 +157,23 @@ export class MachineBatch {
     this.uniforms.uFxW.value = w;
   }
 
-  private makeMaterial(): THREE.MeshStandardMaterial {
-    // THESE TWO STAY NUMERIC LITERALS. `tools/blender/render_machines.py`
-    // regex-reads them out of this file to state what the game draws, and
-    // raises rather than guess. RN-1200: they are also the BASE the per-part
+  /** The stock material every layer starts from. `family` decides only which
+   *  shared surface `MachineLayers` then attaches to it. */
+  private makeMaterial(family: Family): THREE.MeshStandardMaterial {
+    // THESE TWO STAY NUMERIC LITERALS, AND IN THIS FILE.
+    // `tools/blender/render_machines.py` regex-reads them out of the FIRST
+    // `new THREE.MeshStandardMaterial({...})` here to state what the game draws,
+    // and raises rather than guess. RN-1200: they are also the BASE the per-part
     // channel divides back out, so `assertMachineBase` checks them against
-    // `MachineMat`'s copy at boot instead of a comment claiming they agree.
+    // `MachineMat`'s copy at boot. RN-1478 does not move them: a family changes
+    // which MAPS a material wears, never the base the maps modulate.
     const m = new THREE.MeshStandardMaterial({
       color: 0xffffff, vertexColors: true, metalness: 0.45, roughness: 0.55,
     });
-    m.name = 'factory:machines';
+    m.name = `factory:machines:${family}`;
     assertMachineBase(m);
-    // ASSET-SPECS 2.9 option (a): `panel` on the whole batch. `Rubber` decks
-    // and the furnace's `Rock` are `coarse` and take plate seams they should
-    // not; option (b) selects per family off aRole for one extra fetch.
-    attachSurface(m, 'panel', `machines:${this.name}`);
-    const uniforms = this.uniforms;
-    m.userData.uniforms = uniforms;
-    m.onBeforeCompile = (shader) => {
-      noteShaderOrder(this.name, shader.fragmentShader);
-      // RN-1200. The per-part channel, spliced into the hook DW-8 already
-      // spent. It lands BEFORE the role edits below and that is safe rather
-      // than lucky: it anchors on the roughness, metalness, normal and AO
-      // chunks, all of which `noteShaderOrder` asserts sit either side of
-      // `<emissivemap_fragment>` and none of which is `<emissivemap_fragment>`.
-      // Both add to `#include <common>` and both keep the needle, so the two
-      // declaration blocks stack rather than displace each other.
-      if (machineMatEnabled()) injectPartMat(shader);
-      shader.uniforms.uFx = uniforms.uFx;
-      shader.uniforms.uFxW = uniforms.uFxW;
-      shader.uniforms.uTime = uniforms.uTime;
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>
-uniform sampler2D uFx;
-uniform int uFxW;
-attribute float aRole;
-varying float vRole;
-varying vec4 vFx;
-varying vec3 vLocalPos;`)
-        .replace('#include <batching_vertex>', `#include <batching_vertex>
-vRole = aRole;
-vLocalPos = position;
-#ifdef USE_BATCHING
-int fxId = int( getIndirectIndex( gl_DrawID ) );
-vFx = texelFetch( uFx, ivec2( fxId % uFxW, fxId / uFxW ), 0 );
-#else
-vFx = vec4( 0.0 );
-#endif`);
-      shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', `#include <common>
-uniform float uTime;
-varying float vRole;
-varying vec4 vFx;
-varying vec3 vLocalPos;`)
-        // AFTER the emissive map, which is where totalEmissiveRadiance is set.
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-if ( vRole > 2.5 ) {
-  // A BELT CURVE (W7). Same flow row, same band, but the deck is a quarter
-  // annulus about a cell CORNER, so the phase is arc length and not local z.
-  // The corner is (-0.5,-0.5) for a left turn and (0.5,-0.5) for a right one,
-  // which is the only thing the role has to carry; the centre-line radius is
-  // 0.5 m, matching the straight tile's inlet and outlet exactly.
-  vec2 c = vec2( vRole > 3.5 ? 0.5 : -0.5, -0.5 );
-  vec2 d = vec2( vLocalPos.x, vLocalPos.z ) - c;
-  float ang = atan( d.y, d.x );
-  float s = 0.5 * ( vRole > 3.5 ? ( 3.14159265 - ang ) : ang );
-  float f = fract( s * 2.0 - uTime * vFx.x );
-  float blob = smoothstep( 0.38, 0.14, abs( f - 0.5 ) ) * step( 0.004, vFx.y );
-  float lit = 0.30 + 0.70 * vFx.y;
-  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.66, 0.47, 0.21 ), blob * 0.95 );
-  totalEmissiveRadiance += vec3( 0.44, 0.25, 0.06 ) * blob * lit;
-} else if ( vRole > 1.5 ) {
-  // THE BELT, straight off FFactoryBeltFlowState. vFx.x is the quantized flow
-  // speed turned into bands per second, vFx.y the line's fill fraction: an
-  // empty line shows a bare deck and a saturated one is solid with cargo.
-  float f = fract( vLocalPos.z * 2.0 - uTime * vFx.x );
-  float blob = smoothstep( 0.38, 0.14, abs( f - 0.5 ) ) * step( 0.004, vFx.y );
-  float lit = 0.30 + 0.70 * vFx.y;
-  diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.66, 0.47, 0.21 ), blob * 0.95 );
-  totalEmissiveRadiance += vec3( 0.44, 0.25, 0.06 ) * blob * lit;
-} else if ( vRole > 0.5 ) {
-  // THE STATUS CHIP: entityVisualState, and nothing invented on top of it.
-  vec3 c = vec3( 0.14, 0.55, 0.24 );
-  if ( vFx.z > 2.5 )      c = vec3( 0.32, 0.32, 0.38 );
-  else if ( vFx.z > 1.5 ) c = vec3( 0.90, 0.18, 0.08 );
-  else if ( vFx.z > 0.5 ) c = vec3( 0.18, 0.74, 1.00 );
-  diffuseColor.rgb = c * 0.22;
-  totalEmissiveRadiance += c * ( 0.22 + 0.95 * vFx.w );
-}`);
-    };
+    m.userData.uniforms = this.uniforms;
+    m.onBeforeCompile = this.hook;
     return m;
   }
 
@@ -202,51 +182,36 @@ if ( vRole > 2.5 ) {
    * documents: a BatchedMesh sizes its vertex and index pools at construction,
    * so the totals must be known before the first one exists.
    *
-   * RN-681: the totals are now the WHOLE LADDER, not tier 0. Every machine file
-   * ships `_LOD1` and `_LOD2` and this class read neither, so the three shadow
-   * cascades each rasterised the eye's mesh. `render/ShadowLod.ts` carries the
-   * rule that admits a tier to a cascade and the reason it is measured rather
-   * than picked. `?shadowlod=0` keeps tiers 1 and 2 out of the pools entirely,
-   * so the negative control restores the previous geometry count and the
-   * previous vertex-buffer size, not merely the previous draw.
+   * RN-681: the totals are the WHOLE LADDER, not tier 0, because every machine
+   * file ships `_LOD1`/`_LOD2` and the cascades used to rasterise the eye's
+   * mesh. `render/ShadowLod.ts` carries the rule that admits a tier to a
+   * cascade; `?shadowlod=0` keeps tiers 1 and 2 out of the pools entirely, so
+   * the negative control restores the previous geometry count and vertex-buffer
+   * size, not merely the previous draw.
+   *
+   * RN-1478: and the totals are now per FAMILY, because each family is its own
+   * mesh with its own pools. A family in tier 0 and not in tier 2 (the
+   * smelter's hearth is exactly that) has no rung there, and `idAt` hands the
+   * cascade the coarsest rung that exists.
    */
   build(templates: ReadonlyMap<string, { def: MachineTemplate; scene: THREE.Object3D }>): void {
-    const per = new Map<string, (THREE.BufferGeometry | null)[]>();
-    let verts = 0, idx = 0;
+    const per = new Map<string, FamilyTiers>();
     for (const [key, t] of templates) {
-      const tiers = gatherTiers(t.def, t.scene);
-      if (tiers[0] === null) continue;
-      if (!SHADOW_LOD_ON) { tiers[1] = null; tiers[2] = null; }
-      per.set(key, tiers);
-      this.merged.set(key, tiers[0]);
-      const s = tierSize(tiers);
-      verts += s.verts;
-      idx += s.idx;
+      const ft = gatherTiers(t.def, t.scene, BASE);
+      if (ft.lod0 === null) continue;
+      if (!SHADOW_LOD_ON) {
+        for (const tiers of ft.byFamily.values()) { tiers[1] = null; tiers[2] = null; }
+      }
+      per.set(key, ft);
+      this.merged.set(key, ft.lod0);
     }
     if (per.size === 0) return;
-    const mesh = new THREE.BatchedMesh(this.capacity, verts, idx, this.material);
-    mesh.name = this.group.name;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    // The factory is always within a few tens of metres of the player, so a
-    // whole-batch cull is only ever a false negative (NodeBatch measured it).
-    mesh.frustumCulled = false;
-    mesh.sortObjects = false;
-    mesh.perObjectFrustumCulled = false;
-    const rows = [];
-    for (const [key, tiers] of per) {
-      const row = addLadder(mesh, `${this.name}:${key}`, tiers);
-      rows.push(row);
-      indexRow(this.lod, row);
-      this.geomId.set(key, row.ids[0]);
-      // EVERY tier maps back to the key, so FS-40's `drawnKeyAt` read-back still
-      // answers during a cascade rather than returning null for a swapped slot.
-      for (const id of row.ids) if (id >= 0) this.geomKey.set(id, key);
+    for (const L of buildLayers(this.name, this.cap,
+                                (f) => this.makeMaterial(f), per)) {
+      this.layers.push(L);
+      this.group.add(L.mesh);
     }
-    attachShadowLod(mesh, this.lod);
-    publishLadders(this.name, rows);
-    this.mesh = mesh;
-    this.group.add(mesh);
+    for (const key of per.keys()) this.keys.add(key);
   }
 
   /**
@@ -257,23 +222,50 @@ if ( vRole > 2.5 ) {
    * unknown or the hard ceiling is exhausted, and the second is counted.
    */
   acquire(key: string): number {
-    const g = this.geomId.get(key);
-    if (this.mesh === null || g === undefined) return -1;
+    if (this.layers.length === 0 || !this.keys.has(key)) return -1;
     // A FREED SLOT IS REUSED rather than a new one added. Demolition made this
     // load bearing: addInstance only ever grows, so a player who put down and
     // pulled up belts would exhaust the pool with invisible slots.
     const reuse = this.free.pop();
     if (reuse !== undefined) {
       this.live++;
-      this.mesh.setGeometryIdAt(reuse, g);
+      this.point(reuse, key);
       return reuse;
     }
     if (this.live >= this.cap && !this.grow()) return -1;
     this.live++;
-    const slot = this.mesh.addInstance(g);
-    this.mesh.setGeometryIdAt(slot, g);
+    // EVERY LAYER ADDS, INCLUDING THE ONES WITH NOTHING TO DRAW. three hands
+    // back a monotonic id per mesh, so a layer that skipped an add would be off
+    // by one for the rest of the session and would draw a different machine's
+    // parts at this machine's matrix. Checked rather than assumed, because the
+    // symptom is a wrong picture and not a crash.
+    let slot = -1;
+    for (const L of this.layers) {
+      const s = L.mesh.addInstance(L.geomId.get(key) ?? L.absent);
+      if (slot < 0) slot = s;
+      else if (s !== slot) {
+        console.error(`[of] ${this.name}: layer '${L.family}' returned slot ${s}`
+          + ` where layer '${this.layers[0].family}' returned ${slot}. The`
+          + ' machine layers are out of step and parts will draw on the wrong'
+          + ' machines.');
+      }
+    }
+    this.shown[slot] = false;
+    this.point(slot, key);
     this.added = Math.max(this.added, slot + 1);
     return slot;
+  }
+
+  /** Point one slot at `key` in every layer, and set each layer's visibility
+   *  to "the caller placed it AND I have something to draw for it". */
+  private point(slot: number, key: string): void {
+    this.slotKey[slot] = key;
+    const on = this.shown[slot] === true;
+    for (const L of this.layers) {
+      const g = L.geomId.get(key);
+      L.mesh.setGeometryIdAt(slot, g ?? L.absent);
+      L.mesh.setVisibleAt(slot, on && g !== undefined);
+    }
   }
 
   /**
@@ -285,18 +277,25 @@ if ( vRole > 2.5 ) {
    * client decided. The defect FS-40 exists for is "the view worked out the tile
    * is a corner and the batch drew the straight mesh anyway", and a read-back
    * that reports the decision instead of the state cannot see that class at all.
-   * These two are the last writable state before the GPU.
+   *
+   * RN-1478 keeps that property across the split by asking the LAYERS and not
+   * `slotKey`: a layer standing in for a template it does not carry points at
+   * its `absent` geometry, which is in no `geomKey`, so it answers `undefined`.
    */
   drawnKeyAt(slot: number): string | null {
-    if (this.mesh === null || slot < 0 || slot >= this.added) return null;
-    return this.geomKey.get(this.mesh.getGeometryIdAt(slot)) ?? null;
+    if (this.layers.length === 0 || slot < 0 || slot >= this.added) return null;
+    for (const L of this.layers) {
+      const k = L.geomKey.get(L.mesh.getGeometryIdAt(slot));
+      if (k !== undefined) return k;
+    }
+    return null;
   }
 
   /** The 16 elements of the matrix `slot` will be drawn with, column-major. */
   matrixAt(slot: number): number[] | null {
-    if (this.mesh === null || slot < 0 || slot >= this.added) return null;
+    if (this.layers.length === 0 || slot < 0 || slot >= this.added) return null;
     const m = new THREE.Matrix4();
-    this.mesh.getMatrixAt(slot, m);
+    this.layers[0].mesh.getMatrixAt(slot, m);
     return [...m.elements];
   }
 
@@ -309,7 +308,7 @@ if ( vRole > 2.5 ) {
    * geometry that is already resident.
    */
   private grow(): boolean {
-    if (this.mesh === null) return false;
+    if (this.layers.length === 0) return false;
     const next = Math.min(this.ceiling, this.cap * 2);
     if (next <= this.cap) {
       this.refused++;
@@ -320,7 +319,7 @@ if ( vRole > 2.5 ) {
       }
       return false;
     }
-    this.mesh.setInstanceCount(next);
+    for (const L of this.layers) L.mesh.setInstanceCount(next);
     this.cap = next;
     this.allocFx(next);
     this.grows++;
@@ -336,31 +335,35 @@ if ( vRole > 2.5 ) {
    * would churn the batch and lose the transform for a frame.
    */
   setGeometry(slot: number, key: string): boolean {
-    const g = this.geomId.get(key);
-    if (this.mesh === null || g === undefined || slot < 0) return false;
-    this.mesh.setGeometryIdAt(slot, g);
+    if (this.layers.length === 0 || slot < 0 || !this.keys.has(key)) return false;
+    this.point(slot, key);
     return true;
   }
 
   /** Hide a slot and give it back to the pool. Idempotent. */
   release(slot: number): void {
-    if (this.mesh === null || slot < 0 || this.free.includes(slot)) return;
-    this.mesh.setVisibleAt(slot, false);
+    if (this.layers.length === 0 || slot < 0 || this.free.includes(slot)) return;
+    this.hide(slot);
     this.setFx(slot, { flow: 0, density: 0, state: 0, level: 0 });
     this.free.push(slot);
     this.live = Math.max(0, this.live - 1);
   }
 
   place(slot: number, m: THREE.Matrix4): void {
-    if (this.mesh === null || slot < 0) return;
-    this.mesh.setMatrixAt(slot, m);
-    this.mesh.setVisibleAt(slot, true);
+    if (this.layers.length === 0 || slot < 0) return;
+    this.shown[slot] = true;
+    const key = this.slotKey[slot];
+    for (const L of this.layers) {
+      L.mesh.setMatrixAt(slot, m);
+      L.mesh.setVisibleAt(slot, key !== undefined && L.geomId.has(key));
+    }
   }
 
   /** Stop drawing a slot without giving it back. For churny link instances. */
   hide(slot: number): void {
-    if (this.mesh === null || slot < 0) return;
-    this.mesh.setVisibleAt(slot, false);
+    if (this.layers.length === 0 || slot < 0) return;
+    this.shown[slot] = false;
+    for (const L of this.layers) L.mesh.setVisibleAt(slot, false);
   }
 
   /** ONE texel per instance. This is the whole of DW-8's per-instance channel. */
@@ -387,7 +390,7 @@ if ( vRole > 2.5 ) {
    */
   stats(): PoolReport {
     return {
-      name: this.name, batches: this.mesh === null ? 0 : 1,
+      name: this.name, batches: this.layers.length,
       instances: this.live, capacity: this.cap, ceiling: this.ceiling,
       grows: this.grows, refused: this.refused,
     };

@@ -164,21 +164,30 @@ export function machineMatEnabled(): boolean { return enabled; }
 /**
  * THE SECOND DEFECT, AND THIS IS THE HALF OF IT THAT COSTS NOTHING.
  *
- * `MachineBatch` calls `attachSurface(m, 'panel', ...)` UNCONDITIONALLY, so a
- * machine's authored role never reaches `familyForRole` and every part wears
+ * `MachineBatch` CALLED `attachSurface(m, 'panel', ...)` UNCONDITIONALLY, so a
+ * machine's authored role never reached `familyForRole` and every part wore
  * `panel`, which encodes MANUFACTURE OUT OF PLATE: seams, rivet rows, a weld
  * bead. The smelter's `Rock` hearth, the launch pad's `RockDark` trench and
- * every belt deck's `Rubber` therefore wear rivets they should not.
+ * every belt deck's `Rubber` therefore wore rivets they should not.
  *
  * THE GENERAL FIX IS NOT ONE EXTRA FETCH, and measuring the assets is what
- * says so. `MachineBatch.ts`'s own comment proposes "option (b): select per
+ * said so. `MachineBatch.ts`'s own comment proposed "option (b): select per
  * family off aRole for one extra fetch", which was true of the two roles that
  * comment had in mind. The shipped machine, structure, pad, station and item
  * assets between them authorise **six** non-`panel` families: `coarse`
  * (Rubber, Iron, Coal, Copper), `stone` (Rock, RockDark), `suitplate` (the
  * station deck's Plate), `bark`, `leaf` and `flat`. Carrying all of them is
  * five extra tiling surfaces and ten extra samplers on the one material the
- * whole factory draws with, which is a real piece of work and is NOT this.
+ * whole factory draws with, which is a real piece of work and was NOT this.
+ *
+ * IT LANDED AS RN-1478 (2026-08-13) AND NOT AS OPTION (b): the sampler budget
+ * refuses one material carrying every family (`MAX_TEXTURE_IMAGE_UNITS` is 16
+ * on the real D3D11 path and one machine program already spends 9 of them), so
+ * the batch now builds one `BatchedMesh` PER FAMILY, each with its own ordinary
+ * `attachSurface`. `leaf` alone stays folded into `panel`, structurally rather
+ * than as an omission: it is a unit-UV card family and this path's UVs are
+ * metres. What follows is untouched by that and still load bearing, because
+ * `flat` is not a family any layer can wear.
  *
  * WHAT IS DONE HERE IS THE `flat` FAMILY, AND ONLY IT, BECAUSE `flat` IS NOT A
  * MAP. `Surfaces.ts` says it out loud: "`flat` is not a third texture set. It

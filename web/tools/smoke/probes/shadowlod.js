@@ -142,7 +142,15 @@
   };
 
   // --- THE RULE'S INPUTS, so the tier assignment can be audited and not taken --
-  const machines = r.pools.find((p) => p.pool === 'factoryMachines') ?? { rows: [] };
+  // RN-1478: the machine pool publishes one ladder set PER AUTHORED FAMILY
+  // (`factoryMachines:panel`, `factoryMachines:stone`, ...), so the control
+  // below has to read all of them or it silently reads none and passes
+  // vacuously. The bare name is still matched, for the pools that carry one
+  // family and for any build predating the split.
+  const machines = {
+    rows: r.pools.filter((p) => p.pool === 'factoryMachines'
+      || p.pool.startsWith('factoryMachines:')).flatMap((p) => p.rows),
+  };
   const ladders = r.pools.flatMap((p) => p.rows.map((x) => ({
     pool: p.pool, label: x.label, tris: x.tris, devMM: x.devMM,
     tier: x.tierPerCascade, tierK2: x.tierPerCascadeK2,
