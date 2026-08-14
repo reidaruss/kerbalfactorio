@@ -14,6 +14,7 @@ import { SkyPass } from '../render/SkyPass.js';
 import { ShadowRig } from '../render/ShadowRig.js';
 import { SkyIbl } from '../render/SkyIbl.js';
 import { installIblDiag } from '../render/IblDiag.js';
+import { installShadeDiag } from '../render/ShadeDiag.js';
 import { Headlamp } from '../render/Headlamp.js';
 import { atmosphereForBody } from '../render/materials/Atmosphere.glsl.js';
 import { measureHorizonOcclusion, type HorizonOcclusion }
@@ -175,7 +176,12 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // lights you are one question. Built here so the SpotLight is present in the
   // first compiled program and turning it on mid-tunnel costs no recompile.
   const headlamp = new Headlamp(scenes.near, scenes.viewModel);
-  const shadows = new ShadowRig(scenes.near, quality, cfg.shadows);
+  // RN-1571. The rig needs the DEPTH CONVENTION, because three r185's PCF
+  // branch does not flip the shadow bias for reversed depth the way its VSM and
+  // BASIC branches do, and the shipped negative bias was therefore pushing
+  // every receiver 4.8 m deeper into shadow instead of 4.8 m out of it.
+  const shadows = new ShadowRig(scenes.near, quality, cfg.shadows,
+    renderer.depth.mode === 'reversed');
   // Stock PBR materials (the player, the tools, the biome props) have no
   // scattering integral of their own, so they need an environment or they
   // render as black silhouettes on a lit hillside. Section 7.1, due at W4.
@@ -190,6 +196,21 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
     setGroundMode: (on) => sky.setGroundMode(on),
     hasIblGround: sky.hasIblGround,
     setDiscBoost: (on) => sky.setDiscBoost(on),
+  });
+  // RN-1570. The shade discriminator's handle, same publish-only discipline:
+  // it separates "the sun never reaches this face" from "the machine shadows
+  // itself" by removing exactly the machine's own contribution to the cascades.
+  // `feet` is resolved lazily through `observer`, which is declared below: the
+  // closure is only ever CALLED by a probe, tens of seconds after boot, and the
+  // observer's radial is the same tangent frame the walker's feet give to 1e-6
+  // (the eye is 1.62 m up that same radial).
+  installShadeDiag({
+    nearScene: scenes.near,
+    sunDirection: sky.sunDirection,
+    feet: () => {
+      const p = observer.position;
+      return new THREE.Vector3(p.x, p.y, p.z);
+    },
   });
   // The view-model pass has NO lights of its own beyond the sun and Headlamp's
   // hemisphere: the arms are 0.35 m from the eye, always front-lit, and a

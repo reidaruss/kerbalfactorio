@@ -204,6 +204,20 @@ export interface EnvStats {
    *  set; a bright horizon band is a large one, and the ratio alone cannot tell
    *  them apart. */
   brightFrac: number;
+  /**
+   * RN-1573. THE SAME SET, AS A COUNT, AND IT IS NOT REDUNDANT: `brightFrac` IS
+   * UNABLE TO REPRESENT A PHYSICALLY CORRECT SUN.
+   *
+   * `probes/ibldiag.js` rounds every field to 4 decimal places. A 0.53-degree
+   * disc subtends 6.7e-5 sr, i.e. 5.3e-6 of the sphere, which at a 256 cube is
+   * about 2 texels of 393,216 and rounds to `brightFrac` 0.0000. So the
+   * acceptance "brightFrac must become nonzero" is unmeetable by the real sun
+   * and meetable only by a sun six times too wide -- which is exactly the
+   * defect RN-1525 asked to remove. Reporting the integer removes the
+   * ambiguity: 0 texels means no bright source, 2 texels means a sun, and the
+   * two are no longer the same printed number.
+   */
+  brightTexels: number;
   /** Luminance of the texel nearest the sun direction, and the direction used. */
   atSun: number;
   sunDir: [number, number, number];
@@ -239,6 +253,7 @@ function stats(data: Float32Array | null, size: number, sun: THREE.Vector3,
   const base: EnvStats = {
     ok: false, size, nonZero: 0, texels: 6 * size * size,
     mean: 0, max: 0, p50: 0, p95: 0, p99: 0, peakRatio: 0, brightFrac: 0,
+    brightTexels: 0,
     atSun: 0, sunDir: [sun.x, sun.y, sun.z], groundRaised,
   };
   if (data === null) return base;
@@ -280,7 +295,7 @@ function stats(data: Float32Array | null, size: number, sun: THREE.Vector3,
     ok: true, size, nonZero, texels: 6 * n,
     mean, max, p50: at(0.5), p95: at(0.95), p99: at(0.99),
     peakRatio: mean > 0 ? max / mean : 0,
-    brightFrac: bright / (6 * n),
+    brightFrac: bright / (6 * n), brightTexels: bright,
     atSun, sunDir: [sun.x, sun.y, sun.z], groundRaised,
   };
 }

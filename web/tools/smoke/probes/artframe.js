@@ -151,6 +151,29 @@
       // and responsive to a material change (`?tile=stone:0.12` moves the left
       // one's iqr 11.50 -> 10.11 and leaves `box` bit-identical), which is what
       // makes them a guardrail rather than a second opinion.
+      // RN-1574. THIS SHOT CANNOT CARRY A SUNLIT-FACE BOX, AND THAT IS A
+      // MEASUREMENT RATHER THAN AN OMISSION.
+      //
+      // RN-1527 asked every machine frame for a rectangle on a face the sun
+      // reaches, because RN-1200's `box` above is 99.7 per cent IBL-lit and is
+      // therefore blind to every direct-light change by construction. The
+      // search was run here properly: a 6x4 lattice of candidate rectangles
+      // over the whole subject, each read twice one variable apart (the
+      // shipped bias against RN-1571's pre-fix sign, which is exactly the
+      // direct-sun term switching on and off). **The largest direct-sun delta
+      // anywhere in this frame is 1.4 counts**, on a 6x4 grid plus `box` plus
+      // both hearth columns; the same lattice on `smelterhero` reaches 50.2.
+      // A full 16-rung day sweep at this pose agrees: `box` peaks at 24.11 at
+      // near-zenith against 18.87 at the pinned hour, and the two solutions at
+      // the pinned elevation dot (azimuth 207.5 and 330.1) read 18.27 and
+      // 20.16. The camera walks in on the default yaw and lands on the side
+      // facing AWAY from the sun, at every hour.
+      //
+      // The bearing is what would have to move, and the bearing is frozen:
+      // `machine` keeps its exact solve so RN-1200's numbers stay comparable
+      // to the digit. So the sunlit-face box lives on `smelterhero`, which was
+      // built with a `sunSide` bearing for this exact purpose, and this note
+      // exists so the next lane does not spend a night re-deriving it.
       extra: {
         hearthL: [0.1875, 0.0000, 0.2938, 0.6667],
         hearthR: [0.7656, 0.0000, 0.8250, 0.6222],
@@ -228,6 +251,28 @@
       // `plate` and both columns are the NEGATIVE CONTROLS and must hold while
       // `firebox` and `band` move.
       extra: {
+        // RN-1574. THE SUNLIT-FACE BOX RN-1479 AND RN-1527 BOTH ASKED FOR, and
+        // it is on this shot rather than on `machine` because this is the shot
+        // that HAS a sunlit face (see `machine`'s own note above, which carries
+        // the 26-rectangle search that found none there).
+        //
+        // NOT CHOSEN BY EYE. A 6x4 lattice was laid over the whole subject and
+        // every cell read twice one variable apart -- the shipped bias against
+        // RN-1571's pre-fix sign, i.e. the direct-sun term switching off and on
+        // -- and this rectangle carried the largest such delta of any cell that
+        // is plate rather than fire or oxide: **luma 21.7 -> 71.9, a delta of
+        // 50.2 counts and 3.3x**, at `sat` 0.175, which is what says steel and
+        // not the `rust` family (the launder band beside it runs sat 0.857).
+        // `iqr` 53.6 and `p95` 127.7 on the lit arm.
+        //
+        // WHAT IT FRAMES: clean `panel` plate on the pour-face wall, left of
+        // the hearth surround and below the charging hood, with a rivet run,
+        // a downpipe and the pipe's own cast shadow inside it. So it moves on
+        // a direct-light change, on a `panel` family change, AND on a contact
+        // or shadow change, which is three of the four things the campaign
+        // measures; it deliberately contains no fire and no oxide so it cannot
+        // be moved by the emissive.
+        sunface: [0.2600, 0.4200, 0.3500, 0.5700],
         firebox: [0.3875, 0.3444, 0.6375, 0.4167],
         band: [0.2938, 0.7611, 0.7313, 0.8200],
         plate: [0.6781, 0.2833, 0.7469, 0.6833],
@@ -784,18 +829,23 @@
       sun, elevDot };
   }
 
-  const blob = await of.screenshot();
-  const bmp = await createImageBitmap(blob);
-  const cv = new OffscreenCanvas(bmp.width, bmp.height);
-  const cx = cv.getContext('2d', { willReadFrequently: true });
-  cx.drawImage(bmp, 0, 0);
-  const W = bmp.width;
-  const H = bmp.height;
+  // RN-1570. ONE capture, decoded many times, hoisted into `grab()` so the
+  // shade discriminator below can take a MATCHED PAIR in this same page load
+  // rather than across two scene builds. The single-capture path below calls it
+  // exactly once and is unchanged to the digit.
+  const grab = async () => {
+    const blob = await of.screenshot();
+    const bmp = await createImageBitmap(blob);
+    const cv = new OffscreenCanvas(bmp.width, bmp.height);
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(bmp, 0, 0);
+    return { blob, W: bmp.width, H: bmp.height, cx };
+  };
 
   /** The §2.1 idiom, on one rectangle. RGB is decoded rather than luma alone:
    *  a luma-only instrument reads ~0 on a hue-only change and a grade moves
    *  both (§2.6). `warm` is meanR - meanB in counts, POSITIVE IS WARM. */
-  const stat = (x0, y0, x1, y1) => {
+  const statOn = (cx, x0, y0, x1, y1) => {
     const w = Math.max(1, Math.round(x1 - x0));
     const h = Math.max(1, Math.round(y1 - y0));
     const d = cx.getImageData(Math.round(x0), Math.round(y0), w, h).data;
@@ -827,13 +877,152 @@
     };
   };
 
+  /**
+   * The shot's named rectangles, plus any the INVOCATION adds. A candidate
+   * rectangle has to be measured before it is worth committing to `SHOTS`, and
+   * editing the manifest to try one makes every trial a source change; this
+   * way a grid of candidates is one `--evalargs`. Shot-declared keys lose to
+   * invocation-declared ones of the same name, so a candidate can be A/B'd
+   * against the committed rectangle it wants to replace.
+   */
+  const EXTRA = { ...(S.extra ?? {}), ...(A.extra ?? {}) };
+
+  /** Every named rectangle this shot declares, decoded off ONE capture. */
+  const readAll = (g) => {
+    const b = [S.box[0] * g.W, S.box[1] * g.H, S.box[2] * g.W, S.box[3] * g.H];
+    const ex = {};
+    for (const [k, f] of Object.entries(EXTRA)) {
+      ex[k] = statOn(g.cx, f[0] * g.W, f[1] * g.H, f[2] * g.W, f[3] * g.H);
+    }
+    return { box: statOn(g.cx, b[0], b[1], b[2], b[3]), extra: ex,
+      world: statOn(g.cx, 0, 0, g.W, g.H) };
+  };
+
+  // ==================================================================
+  // RN-1570. THE SHADE DISCRIMINATOR. Opt-in with {"shade":true}; absent,
+  // not one line below runs and the frame is the shipped one.
+  //
+  // RN-1492 found the smelter's vertical faces in shade in all six of its
+  // camera bearings while the ground and the roof in the same frame were lit,
+  // and named two candidate causes without claiming either: the SHOT's sun
+  // placement, or the machine SHADOWING ITSELF. Each arm below removes exactly
+  // one term and re-reads the same rectangles on the same pose.
+  //
+  //   nocast   the machine stops casting into the cascades; it still receives,
+  //            the terrain still casts. A face that lights here was in the
+  //            machine's OWN umbra.
+  //   norig    no cascade casts anything. Separates "the machine shadows
+  //            itself" from "the terrain/belt/tree beside it does".
+  //   sweep    the sun walked right round the day at a FIXED camera. A face
+  //            that no phase ever lights is a face the sun cannot reach, which
+  //            is the shot-geometry cause in its measurable form.
+  //
+  // N.L is read analytically beside every rung, because that is what makes the
+  // sweep a discriminator rather than a table: a wall whose N.L EXCEEDS the
+  // roof's while the roof is lit and the wall is not cannot be explained by
+  // geometry, whatever the picture looks like.
+  let shade = null;
+  if (A.shade === true) {
+    const SH = window.__ofShade;
+    if (SH === undefined) return { valid: false, shot: name, why: 'no __ofShade' };
+    const bearings = A.shadeBearings ?? [0, 90, 180, 270];
+    const arm = async (label) => {
+      await of.run(0.5, 20);
+      const g = await grab();
+      const st = of.stats();
+      return { arm: label, ...readAll(g),
+        sun: SH.sun(), ndotl: SH.faceNdotL(bearings),
+        shadow: st.shadow,
+        draw: { calls: st.draw.calls, triangles: st.draw.triangles } };
+    };
+
+    // BASELINE FIRST, so no arm can leak into it.
+    const base = await arm('baseline');
+
+    const offMachine = SH.machineCast(false);
+    if (offMachine.changed === 0) {
+      return { valid: false, shot: name,
+        why: 'the nocast arm changed NOTHING, so it is a silent identity and '
+          + 'any conclusion from it would be about no machine at all. '
+          + 'Failure mode 1 in ShadeDiag.ts.',
+        shadeState: SH.state(), offMachine };
+    }
+    const nocast = await arm('nocast');
+    const onMachine = SH.machineCast(true);
+
+    // THE `norig` ARM IS A KNOWN NO-OP AND IS KEPT AS A NAMED ONE.
+    // `ShadowRig.update` re-asserts `light.castShadow = this.active` EVERY
+    // FRAME (ShadowRig.ts:142), so clearing it here is undone before the next
+    // capture. It is run anyway, and its restore count is published, because a
+    // no-op that reports itself is worth more than an arm quietly dropped: the
+    // `onRig.changed === 0` below IS the evidence that the write never
+    // survived, and it is the same shape as RN-1526's half-armed mirror.
+    const offRig = SH.rigCast(false);
+    const norig = await arm('norig');
+    const onRig = SH.rigCast(true);
+    const rigArmed = onRig.changed === offRig.changed && offRig.changed > 0;
+
+    // THE BIAS SWEEP. `shadow.bias` is a depth-buffer-unit offset over a
+    // 7999 m ortho range, so 6e-4 is 4.8 WORLD METRES on a 4 m machine. Three
+    // r185's PCF branch adds it without the `USE_REVERSED_DEPTH_BUFFER` guard
+    // that its VSM and BASIC branches carry, and this build runs PCF on
+    // reversed depth. If the sign is the defect, flipping it must light the
+    // face and zeroing it must land between the two.
+    //
+    // THE RESTORE IS READ, NOT REMEMBERED AS A LITERAL, and the first version
+    // of this block got that wrong in the way that matters. It ended
+    // `SH.bias(-0.0006)`, the pre-fix constant, UNCONDITIONALLY -- so every
+    // `shade` run, including ones that asked for no bias arms at all, put the
+    // defect back before the shot's own capture and returned a frame from the
+    // build being replaced. It was caught because the headline box on
+    // `smelterhero` read 19.55 under `--shade` against 45.65 on the identical
+    // binary without it. A restore that names a value instead of reading one
+    // is a restore that goes stale the moment the shipped value moves.
+    const shippedBias = of.stats().shadow.biasUnits;
+    const biasArms = [];
+    for (const b of (A.shadeBias ?? [-0.0006, 0, 0.0006])) {
+      const set = SH.bias(b);
+      const a = await arm(`bias${b}`);
+      biasArms.push({ ...a, set });
+    }
+    const biasRestored = SH.bias(shippedBias);
+
+    // The sun sweep, at the SHIPPED caster setup, camera untouched.
+    const steps = A.shadeSweep ?? 12;
+    const sweep = [];
+    for (let i = 0; i < steps; ++i) {
+      const t = i / steps;
+      of.setTime(t);
+      await of.run(0.4, 16);
+      const g = await grab();
+      const r = readAll(g);
+      sweep.push({ t: r3(t), sun: SH.sun(), ndotl: SH.faceNdotL(bearings),
+        box: r.box, extra: r.extra, world: r.world });
+    }
+    // Put the shot's own sun back and re-settle, so the frame this probe
+    // returns below is still the shot's frame and not the sweep's last rung.
+    sun = pin();
+    await of.settle(A.settle ?? 24);
+    sun = pin();
+    await sleep(0.2);
+
+    shade = { base, nocast, norig, rigArmed, biasArms, shippedBias, biasRestored, sweep,
+      counts: { offMachine, onMachine, offRig, onRig },
+      state: SH.state(), bearings };
+  }
+
+  const g0 = await grab();
+  const { W, H, cx } = g0;
+  const blob = g0.blob;
+  const stat = (x0, y0, x1, y1) => statOn(cx, x0, y0, x1, y1);
+
   const bx = [S.box[0] * W, S.box[1] * H, S.box[2] * W, S.box[3] * H];
   /** RN-1490. The shot's further named rectangles, decoded from the SAME
    *  capture, so an extra box costs a `getImageData` and never a second frame
    *  that would differ from the first by the wind clock and the foliage. */
   const extraPx = {};
   const extraStat = {};
-  for (const [k, f] of Object.entries(S.extra ?? {})) {
+  for (const [k, f] of Object.entries(EXTRA)) {
     const e = [f[0] * W, f[1] * H, f[2] * W, f[3] * H];
     extraPx[k] = e.map((v) => Math.round(v));
     extraStat[k] = stat(e[0], e[1], e[2], e[3]);
@@ -870,6 +1059,7 @@
     // THE PIPELINE THE FRAME CAME THROUGH, published so a pair can be shown to
     // be one variable apart rather than asserted to be.
     postState: post,
+    shade,
     shadow: s.shadow, ibl: s.ibl,
     render: { triangles: s.draw.triangles, calls: s.draw.calls,
       programs: s.draw.programs, vramMB: s.vramEstimateMB,

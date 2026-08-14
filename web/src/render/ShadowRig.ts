@@ -30,6 +30,93 @@ const SPLITS_1 = [90];
 /** How far behind the fitted centre the light sits. Must clear the tallest relief. */
 const CASTER_BACKOFF_M = 4000;
 
+// ===========================================================================
+// RN-1571. THE DEPTH BIAS, AND THE SIGN ERROR THAT PUT EVERY MACHINE IN ITS
+// OWN SHADOW FOR THE WHOLE OF THE ART CAMPAIGN.
+//
+// `light.shadow.bias` is an offset in DEPTH-BUFFER UNITS, added to the
+// receiver's projected z before the shadow comparison. Two things about this
+// rig make the shipped `-0.0006` wrong, and they are independent:
+//
+// (1) THE SIGN IS INVERTED UNDER REVERSED DEPTH ON THE PCF PATH, AND THAT IS A
+//     GAP IN THREE ITSELF, not in this file. In `shadowmap_pars_fragment.glsl`
+//     (r185) the VSM branch (line 161) and the BASIC branch (line 228) both
+//     read
+//
+//         #ifdef USE_REVERSED_DEPTH_BUFFER
+//           shadowCoord.z -= shadowBias;
+//         #else
+//           shadowCoord.z += shadowBias;
+//         #endif
+//
+//     while the `SHADOWMAP_TYPE_PCF` branch (line 122) has NO such guard and
+//     adds unconditionally. `Renderer.ts` selects `PCFShadowMap` on every tier
+//     that is not `shadowSoft`, and this project runs reversed depth wherever
+//     the capability exists, so the shipped configuration is precisely the one
+//     branch three does not correct. Under reversed depth a LARGER z is NEARER
+//     the light, so a negative bias pushes the receiver AWAY from the light,
+//     i.e. deeper into shadow. The conventional acne-reducing sign becomes an
+//     acne-CREATING one.
+//
+// (2) THE MAGNITUDE WAS NEVER SCALED BY THIS RIG'S DEPTH RANGE. `-0.0006` is
+//     the number every three.js example carries, and those examples use a
+//     shadow camera a few tens of metres deep. This one is `near = 1` to
+//     `far = 2 * CASTER_BACKOFF_M`, i.e. 7999 m, because the light has to stand
+//     back far enough to clear the tallest relief on a planet. 0.0006 of 7999 m
+//     is 4.8 WORLD METRES. A smelter is about 4 m tall, so the error was larger
+//     than the entire object: every vertical face tested as though it sat 4.8 m
+//     behind where it is, which is behind its own back wall's entry in the
+//     shadow map.
+//
+// MEASURED, RN-1570, matched arms one variable apart on the `smelterhero` pose
+// at sun elevation dot 0.443, machine casting throughout, camera untouched:
+// bias -0.0006 (shipped) box luma 19.36 / firebox 4.08; bias -0.0001 box 22.02;
+// bias 0 box 39.56 / firebox 23.07; bias +0.0001 box 40.62; bias +0.0006 box
+// 40.30. The curve is flat either side of zero and steps across it, which is
+// the signature of a SIGN defect rather than a magnitude one. The independent
+// arm agrees: clearing `castShadow` on the machine alone (it still receives,
+// the terrain still casts) takes the same box 19.52 -> 45.05, so the umbra was
+// the machine's own. `?shadowlod=0` reads 19.52, bit-identical, which refutes
+// the shadow-proxy explanation.
+//
+// THE FIX EXPRESSES THE BIAS IN METRES AND DERIVES BOTH THE SIGN AND THE SCALE.
+// A world-space constant survives a change to the splits, to `CASTER_BACKOFF_M`
+// or to the quality tier, none of which the raw depth-unit number did.
+/**
+ * Depth bias in WORLD METRES, converted per cascade against that cascade's own
+ * depth range. Deliberately far smaller than one texel of normal bias: three's
+ * `normalBias` already offsets along the surface normal in world units and is
+ * sign-safe under either depth convention, so this term only has to cover the
+ * residual on faces nearly parallel to the light.
+ */
+const SHADOW_BIAS_M = 0.02;
+
+/**
+ * STANDING RULE 7'S NEGATIVE CONTROL: `?shadowbias=0` restores the behaviour
+ * immediately before RN-1571, i.e. the raw `-0.0006` depth-unit literal with no
+ * sign derivation and no range scaling. It is what makes the fix a one-flag
+ * pair on ONE binary instead of two builds that differ by everything.
+ *
+ * The boot default is a FIXTURE, not an inference (rendering.md section 2.6):
+ * a missing parameter is parsed as missing and the raw string is published
+ * beside the resolved value, because `Number(null)` is 0 and this project has
+ * shipped features switched off because every probe passed an explicit flag.
+ */
+const SHADOW_BIAS_RAW = new URLSearchParams(self.location.search).get('shadowbias');
+export const SHADOW_BIAS_LEGACY = SHADOW_BIAS_RAW === '0';
+/** Exactly the constant this rig carried from its first commit to RN-1571. */
+const LEGACY_BIAS_UNITS = -0.0006;
+
+/**
+ * Does THIS renderer configuration need the bias sign flipped? True only for
+ * reversed depth on the PCF path, which is the one combination three r185 does
+ * not correct for itself. Passed in rather than read from a global so the rule
+ * is testable and so a tier that switches to VSM stops flipping automatically.
+ */
+export function shadowBiasSign(reversedDepth: boolean, soft: boolean): number {
+  return reversedDepth && !soft ? +1 : -1;
+}
+
 export interface ShadowStats {
   cascades: number;
   mapSize: number;
@@ -46,6 +133,16 @@ export interface ShadowStats {
   soft: boolean;
   /** Cascade 0's world metres per shadow texel. §2.1.5's own number, derived. */
   texel0M: number;
+  /** RN-1571. The depth bias, in the three forms a reader needs: the world
+   *  metres it was authored as, the sign the depth convention forced, and the
+   *  depth-buffer units that actually reach `light.shadow.bias`. */
+  biasM: number;
+  biasSign: number;
+  biasUnits: number;
+  reversedDepth: boolean;
+  /** RN-1571's negative control: `?shadowbias=0` and the raw string behind it. */
+  biasLegacy: boolean;
+  biasRaw: string | null;
 }
 
 export class ShadowRig {
@@ -59,8 +156,16 @@ export class ShadowRig {
   private active = true;
   private readonly centre = new THREE.Vector3();
   private readonly fwd = new THREE.Vector3();
+  /** RN-1571. +1 where three's own shader does not flip for reversed depth. */
+  private readonly biasSign: number;
+  private readonly reversedDepth: boolean;
+  /** The depth-unit bias every cascade carries, published for the report. */
+  private biasUnits = 0;
 
-  constructor(scene: THREE.Scene, q: QualityKnobs, enabled: boolean) {
+  constructor(scene: THREE.Scene, q: QualityKnobs, enabled: boolean,
+              reversedDepth = false) {
+    this.biasSign = shadowBiasSign(reversedDepth, q.shadowSoft);
+    this.reversedDepth = reversedDepth;
     const n = enabled ? q.csmCascades : 0;
     this.splits = (n === 1 ? SPLITS_1 : SPLITS_3).slice(0, Math.max(0, n));
     this.mapSize = q.shadowMapSize;
@@ -75,7 +180,13 @@ export class ShadowRig {
       const light = new THREE.DirectionalLight(0xffffff, 0);
       light.castShadow = true;
       light.shadow.mapSize.set(this.mapSize, this.mapSize);
-      light.shadow.bias = -0.0006;
+      // RN-1571. Derived, not a literal. See the block above `SHADOW_BIAS_M`:
+      // the sign follows the depth convention and the scale follows this rig's
+      // own 7999 m ortho range, because the shipped `-0.0006` was 4.8 world
+      // metres pointing the wrong way and it shadowed every machine in the game.
+      this.biasUnits = SHADOW_BIAS_LEGACY ? LEGACY_BIAS_UNITS
+        : (this.biasSign * SHADOW_BIAS_M) / (CASTER_BACKOFF_M * 2 - 1);
+      light.shadow.bias = this.biasUnits;
       // RN-1420. VSM reads `radius` and `blurSamples`; the PCF path reads
       // neither, so setting them unconditionally is inert on the PCF tier and
       // there is no branch to keep in step.
@@ -197,6 +308,13 @@ export class ShadowRig {
       active: this.active,
       soft: this.soft,
       texel0M: this.texel0M,
+      // RN-1571. Published because a frame taken either side of the sign fix
+      // is otherwise indistinguishable in the report from a frame taken at a
+      // different hour, and the whole of RN-1492's null was a shadow term
+      // nobody could read out of a capture.
+      biasM: SHADOW_BIAS_M, biasSign: this.biasSign,
+      biasUnits: this.biasUnits, reversedDepth: this.reversedDepth,
+      biasLegacy: SHADOW_BIAS_LEGACY, biasRaw: SHADOW_BIAS_RAW,
     };
   }
 }
