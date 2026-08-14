@@ -86,10 +86,11 @@ export interface VesselPose {
  * re-deriving mass, thrust, staging and part handles, and then splitting it
  * again on undock. Nothing in this project needs a combined vehicle yet: the
  * one docking the storyline asks for is a capsule arriving at a station you
- * walk into, and the station is not flyable (`emptyDesign`, and `promoteVessel`
- * refuses it on purpose). A merge would be a large irreversible transform in
- * service of a case that does not exist, and it would make undock a SPLIT,
- * which is the hardest operation in the whole idea.
+ * walk into, and the station is not flyable (`SpaceStation.stationDesign`
+ * gives it one part, no crew and no engine, and `FlightVessels.promoteVessel`
+ * refuses any `isStation` record by name, PH-380). A merge would be a large
+ * irreversible transform in service of a case that does not exist, and it
+ * would make undock a SPLIT, which is the hardest operation in the whole idea.
  *
  * WHY NOT JUST A FLAG. Because a docked vessel's own conic and its host's are
  * two conics, and two conics 30 m apart have different semi-major axes and

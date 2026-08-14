@@ -329,12 +329,50 @@ export function stationStandLocal(): [number, number, number] {
 /** Forget the asset. For a teardown; a fresh boot re-learns it. */
 export function resetStationProxies(): void { learned = []; spawns = new Map(); }
 
-/** A design with no parts. `adoptSaved` requires `design.parts` to be an array
- *  and nothing else, and a station has no parts because it is not built in the
- *  bay. `promoteVessel` refuses a record it cannot rebuild, which is the
- *  correct answer for a place: you walk into it, you do not fly it. */
-function emptyDesign(): VesselRecord['design'] {
-  return { v: 1, name: STATION_NAME, parts: [], stages: [] };
+/**
+ * PH-380. `vessel.h`'s `parts::DockingPort`, and it is a raw id for the same
+ * reason `Autopilot.ts`'s `AUTOPILOT_PART_ID` is: it is a copy of a fact /core
+ * owns, not a derivation, and `core/tests/test_docking.cpp`'s
+ * `a_vessel_with_no_port_can_never_be_offered_a_dock` pins it as the ONLY part
+ * in the whole catalogue carrying a non-zero `dockCaptureRadiusM`, so this
+ * literal and D-015's "a vessel can dock if its design contains a port" are
+ * checked against one fact rather than two.
+ */
+const DOCKING_PORT_PART_ID = 0x0115;
+
+/**
+ * D-015, PH-380. A DESIGN WITH ONE PART: A DOCKING PORT, ROOTED, so
+ * "does this record's design contain a port" is true of Anchorage the same
+ * way it is true of anything built in the bay, closing the half of PH-366
+ * that was actually a defect.
+ *
+ * WHAT THIS DOES NOT CLAIM, said out loud because the other half of PH-366
+ * is a decision and not a defect. This part's origin is (0,0,0) on the
+ * design's own stack axis, and NOTHING reads it: `FlightDock.ts`'s
+ * `stationPort` still derives the port's body-frame POSE from the shipped
+ * asset's `socket_dock` empty, which is the physically true source (checked
+ * against `contracts.json` by both `validate_glb` and `probes/stationdock.js`)
+ * and has no natural correspondence to a rocket-stack's local frame. Making
+ * this part's origin ALSO carry a claimed pose would be a second, competing
+ * authority over one physical fact -- exactly the failure this project keeps
+ * finding and fixing elsewhere -- so it is refused here too. The design exists
+ * to make "has a port" decidable; the geometry still comes from the geometry.
+ *
+ * `adoptSaved` requires `design.parts` to be an array and nothing else, which
+ * one part satisfies as well as zero did. What USED to sit here (`emptyDesign`)
+ * also doubled, by accident, as the reason `promoteVessel` refused to fly the
+ * station: `VesselDesign.fromJson([])` returns 0 and `promoteVessel` refused
+ * anything `<= 0`. That accident is retired along with the empty array --
+ * `promoteVessel` now refuses a station record BY NAME (`isStation`), so
+ * "you walk into it, you do not fly it" is a stated rule again rather than a
+ * side effect of what this function used to return.
+ */
+function stationDesign(): VesselRecord['design'] {
+  return {
+    v: 1, name: STATION_NAME,
+    parts: [{ p: DOCKING_PORT_PART_ID, parent: -1, a: 0, ang: 0, off: 0, st: 0 }],
+    stages: [],
+  };
 }
 
 /** Is this record the station rather than a vehicle? */
@@ -379,7 +417,7 @@ export function mintStation(M: OfCoreModule, up: Vec3n, bodyRadiusM: number,
     // minted on a boot into `?body=cinder` really is Cinder's.
     bodyId,
     mode: 'rails',
-    design: emptyDesign(),
+    design: stationDesign(),
     fired: 0, fuel: [], handles: [],
     where: { kind: 'conic', el },
     pose: {

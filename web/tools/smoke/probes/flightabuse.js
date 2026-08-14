@@ -210,7 +210,8 @@
   //
   // This read `list[0]` and `records === 1`. D-015 made Anchorage a real vessel
   // record and `installStation` adopts it at BOOT, so slot 0 is now a station
-  // with `parts: 0` and `fuelKg: 0` from `emptyDesign()`, and the rocket the
+  // (`parts: 1` as of PH-380's `stationDesign`, `fuelKg: 0` throughout: the
+  // one part is a DockingPort, which burns nothing), and the rocket the
   // player just flew is slot 1. Nothing was broken: a decision in another
   // domain silently disarmed an assertion in this one, which is exactly what
   // happened to `namedvessel.mjs` the same night.
