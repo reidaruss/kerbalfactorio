@@ -27,6 +27,25 @@
 // and pressing interact opens the same screen; and a technology is researched
 // end to end through it.
 //
+// §6 BUYS THE SCANNING ANTENNA, NOT ELECTRIFICATION, AND THAT IS A DELIBERATE,
+// NAMED CHOICE rather than the fix drifting to whatever was cheapest. This
+// section's whole subject is the STATION working as research furniture -- the
+// panel opens on it, a real DOM click spends real science through it, a gate
+// comes off -- and that claim never depended on WHICH tech was bought.
+// Electrification moved behind `milestones::RuinInvestigated` (L7, GP-546 to
+// GP-549) once `ruininvest.js` closed the ruin-reveal cycle, and this file
+// never walks to a ruin, so it has no legal way to earn that milestone. The
+// Scanning Antenna is `research.h`'s own first, cheapest, deliberately UNGATED
+// rung (no prereq, no milestone, GP-535's ruling) precisely so a bare station
+// can reach it, which is exactly what this file is proving. This is the
+// opposite call from `research.js` and `padgate.js` (gameplay.md's GP-549
+// addendum): those files EARN the milestone for real because Electrification
+// IS their subject (the locked-tech-becomes-available chain, and Launch
+// Facilities' real prereq); here it is not, so retargeting the purchase is the
+// honest fix rather than a dodge. §6 keeps Electrification in the file anyway,
+// as a NEGATIVE CONTROL: read from the tree report as still milestone-gated,
+// and a real DOM click on its (disabled) button changes nothing.
+//
 // NOTHING IS GRANTED. There is no `of.give` on the debug surface and this file
 // does not add one: every ingot in the station and in the science that buys the
 // tech is mined by hand, smelted in a furnace this probe crafted and placed, and
@@ -61,6 +80,7 @@
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
   if (typeof of.buildMenu !== 'function') return { valid: false, why: 'no of.buildMenu' };
+  if (typeof of.research !== 'function') return { valid: false, why: 'no of.research' };
   // `hz` is the RENDER rate, not the sim rate. See the header: 30 Hz is ample
   // for a UI interaction (a 0.35 s wait is 10 frames and 21 fixed ticks, and an
   // input tape holds for 6 of the latter), and the long smelting waits drop to
@@ -103,8 +123,14 @@
     const p = document.querySelector('#of-research');
     return !!p && p.classList.contains('open');
   };
-  /** /core's TechId, named rather than derived, so a renumber fails here. */
-  const T_ELECTRIFICATION = 0x0010;
+  /** /core's TechIds, named rather than derived, so a renumber fails here. */
+  const T_SCANNING_ANTENNA = 0x0017;   // ungated: §6 buys this one, for real
+  const T_ELECTRIFICATION = 0x0010;    // milestone-gated: §6's negative control
+  const M_RUIN_INVESTIGATED = 0x0003;
+  const BLOCK_MILESTONE_MISSING = 4;
+  /** /core's item id for the science pack §6 spends, named for the same
+   *  reason the TechIds above are. */
+  const ITEM_AUTOMATION_SCIENCE = 0x0020;
   const STATION_ID = 'researchstation';
 
   await of.run(1.0);
@@ -591,7 +617,31 @@
 
   // ======================================================================
   // 6. RESEARCH SOMETHING, END TO END, THROUGH IT.
+  //
+  // READ FROM THE TREE REPORT FIRST, NOT ASSUMED, so this fixture cannot rot
+  // the same way twice: the header explains why the Scanning Antenna is the
+  // tech bought below, and this is that claim checked against `of.research()`
+  // (the same read-only debug op `ruininvest.js` uses) rather than merely
+  // asserted in a comment. If a future lane ever gates the antenna too, this
+  // fails LOUDLY here instead of the purchase silently refusing three steps
+  // down, which is exactly the defect the A6 verifier found in this file.
   // ======================================================================
+  step('reading the tree report before spending anything');
+  const tree0 = of.research() ?? [];
+  const antennaRow0 = tree0.find((t) => t.id === T_SCANNING_ANTENNA);
+  const elecRow0 = tree0.find((t) => t.id === T_ELECTRIFICATION);
+  check('the Scanning Antenna exists in the tree', antennaRow0 !== undefined,
+    JSON.stringify(tree0.map((t) => t.id)));
+  check('and it is UNGATED: no prereq and no milestone, straight off the '
+    + 'station',
+    (antennaRow0?.prereqs?.length ?? -1) === 0 && antennaRow0?.milestone === 0,
+    JSON.stringify(antennaRow0));
+  check('NEGATIVE CONTROL: Electrification exists and IS milestone-gated, '
+    + 'refused by name, naming RuinInvestigated',
+    elecRow0?.block === BLOCK_MILESTONE_MISSING
+    && elecRow0?.milestone === M_RUIN_INVESTIGATED && elecRow0?.canResearch === false,
+    JSON.stringify(elecRow0));
+
   step('crafting science');
   await press('research');
   await sleep(0.2);
@@ -661,17 +711,48 @@
   await sleep(0.3);
   check('the tech tree is up', panelOpen() === true);
   const btnFor = (id) => document.querySelector(`#of-research button[data-tech="${id}"]`);
+
+  // THE NEGATIVE CONTROL, ATTEMPTED FOR REAL, BEFORE THE PURCHASE THAT WORKS
+  // (GP-624's pattern: a refusal witnessed as a real attempted action, not
+  // merely read off a report). Electrification's button is clicked exactly
+  // as a player would click it, and `click()` itself is what proves the
+  // refusal: it checks `el.disabled` and dispatches nothing if it is, so a
+  // milestone-gated tech that had stopped gating would show up here as a
+  // click that actually fires.
+  const rBeforeElec = G().progress.research;
+  const packBeforeElec = pack();
+  const elecClicked = click(btnFor(T_ELECTRIFICATION));
+  await sleep(0.3);
+  const rAfterElec = G().progress.research;
+  check('NEGATIVE CONTROL: the Electrification click is REFUSED (its button '
+    + 'is disabled, so the click never dispatches)', elecClicked === false,
+    `clicked=${elecClicked}`);
+  check('and nothing unlocked from the refused attempt',
+    rAfterElec.unlocked === rBeforeElec.unlocked,
+    `${rBeforeElec.unlocked} -> ${rAfterElec.unlocked}`);
+  check('and nothing was spent on the refused attempt',
+    JSON.stringify(pack()) === JSON.stringify(packBeforeElec),
+    `${JSON.stringify(packBeforeElec)} -> ${JSON.stringify(pack())}`);
+
   const rBefore = G().progress.research;
-  const bought = click(btnFor(T_ELECTRIFICATION));
+  const bought = click(btnFor(T_SCANNING_ANTENNA));
   await sleep(0.5);
   const rAfter = G().progress.research;
   check('the Research button took a real DOM click', bought === true);
   check('A TECHNOLOGY WAS RESEARCHED, END TO END, THROUGH A BUILT STATION',
     rAfter.unlocked === rBefore.unlocked + 1,
     `${rBefore.unlocked} -> ${rAfter.unlocked}`);
-  check('and the science was SPENT, exactly ten',
-    have('Automation science') === sci - 10,
-    `${sci} -> ${have('Automation science')}`);
+  // THE COST IS THE TREE REPORT'S OWN QUOTE, READ BEFORE ANY SCIENCE WAS
+  // CRAFTED (`antennaRow0`), NOT RETYPED AS A DIGIT: the same discipline C3
+  // uses for the station's own bill above, so a rebalance moves this
+  // assertion with the price instead of breaking it.
+  const antennaSciCost = antennaRow0?.cost
+    ?.find((c) => c.item === ITEM_AUTOMATION_SCIENCE)?.need ?? -1;
+  check('the Scanning Antenna quotes an Automation science cost',
+    antennaSciCost > 0, JSON.stringify(antennaRow0?.cost));
+  check('and the science was SPENT, exactly what the tree quoted',
+    have('Automation science') === sci - antennaSciCost,
+    `${sci} -> ${have('Automation science')}, quoted ${antennaSciCost}`);
   check('and a gate the tech held came off',
     rAfter.gatesHeld < rBefore.gatesHeld,
     `${rBefore.gatesHeld} -> ${rAfter.gatesHeld}`);
