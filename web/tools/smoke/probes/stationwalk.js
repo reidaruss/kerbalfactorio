@@ -51,6 +51,12 @@
   await of.run(0.8, 60);
   if (typeof of.station !== 'function') return { fail: 'no __of.station: rebuild' };
   if (typeof of.standAt !== 'function') return { fail: 'no __of.standAt: rebuild' };
+  // GP-805 (CE-54). The verb P1 now arrives through instead of a stale
+  // `install.standPos`; a build without it is a build in which the station
+  // frame cannot be boarded at all, so saying so beats running P1 blind.
+  if (typeof of.standAboard !== 'function') {
+    return { fail: 'no __of.standAboard: rebuild (CE-54)' };
+  }
   const home0 = of.world().player.feet.slice();
 
   const back = async () => {
@@ -85,9 +91,39 @@
   const jambFwdR = byName.get('col_JambHallFwdR');
   const lintelFwd = byName.get('col_LintelHallFwd');
 
-  const P = st.pos;
-  const A = st.axes;
-  const u = [P[0] / st.deckR, P[1] / st.deckR, P[2] / st.deckR];
+  // GP-805. `P`/`A`/`u` ARE REFRESHED, NOT CAPTURED ONCE, because this file's
+  // own header already made the rule: "if someone ever caches a position,
+  // this goes red." A single up-front snapshot IS a cache, and on a station
+  // moving at 1879.2552 m/s it goes stale inside a handful of driven seconds
+  // (P1's own settle already spends several); `refresh()` is called at the
+  // start of every phase below (and once per P6 heading) so `at`/`loc` always
+  // resolve against the CURRENT pose rather than the one this file happened
+  // to read first. `deckR` is left a one-time read: the conic is
+  // near-circular (e ~5e-16, logged above) so it does not move worth chasing,
+  // and every predicted-bulge formula below is written against it by name.
+  let P = st.pos;
+  let A = st.axes;
+  let u = [P[0] / st.deckR, P[1] / st.deckR, P[2] / st.deckR];
+  // `east`/`north` (P4's own local compass basis, built off `u`) refresh
+  // alongside it: `yawOf` feeds `of.look`, which the game interprets against
+  // the LIVE tangent frame at the player's CURRENT position, so a stale
+  // `east`/`north` would aim the walker at a heading that made sense for an
+  // orbital position the station has already left.
+  let east = [1, 0, 0];
+  let north = [0, 0, 1];
+  const refresh = () => {
+    const live = of.station();
+    if (live === null) return null;
+    P = live.pos; A = live.axes;
+    u = [P[0] / st.deckR, P[1] / st.deckR, P[2] / st.deckR];
+    const e = [u[2], 0, -u[0]];
+    const l = len(e);
+    east = l < 1e-9 ? [1, 0, 0] : [e[0] / l, e[1] / l, e[2] / l];
+    north = [u[1] * east[2] - u[2] * east[1], u[2] * east[0] - u[0] * east[2],
+      u[0] * east[1] - u[1] * east[0]];
+    return live;
+  };
+  refresh();
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   /** Station-local (x, y, z) metres to a body-frame point. */
   const at = (lx, ly, lz) => [
@@ -128,18 +164,40 @@
   const deckRAt = (l) => Math.hypot(st.deckR, Math.hypot(l[0], l[2]));
 
   // ======================================================================
-  // P1. STAND WHERE THE STATION SAYS TO STAND. `install.standPos` is the body
-  //     frame point derived from the asset's `socket_hall` empty with the feet
-  //     clearance already added; the station's own position is now INSIDE
-  //     `col_HallCore` and is not a place a player can be.
+  // P1. STAND WHERE THE STATION SAYS TO STAND, ABOARD ITS FRAME (GP-805,
+  //     CE-54). `install.standPos` is a BOOT record: `StationMount.ts`'s own
+  //     header measures it 5,352 m off the live deck by the time anything
+  //     reads it, OUTSIDE the 28.64 m carrier bound, which is exactly why
+  //     `standAt` never refused here -- the point had drifted clear of the
+  //     membership check that would have caught it, and the walker was seated
+  //     in the empty space the station used to occupy while every downstream
+  //     assertion measured that instead. `of.standAboard()` is the fix the
+  //     `standAt` refusal message itself names: it drives the SHIPPED
+  //     `seatOnStationDeck`, the same function the `visit:station` press
+  //     calls, resolved against the LIVE pose at the tick it runs, and it
+  //     BOARDS the carrier frame rather than merely standing near it.
   // ======================================================================
-  const sp = st.install?.standPos ?? null;
-  if (sp === null) return fail('no install record: nothing published a stand point');
-  const spL = loc(sp);
+  const aboard = of.standAboard();
+  if (aboard.error !== undefined) {
+    return fail('P1: standAboard refused to seat the walker', aboard);
+  }
+  const spL = loc(aboard.feet);
   const insideCore = spL[0] > hallCore.min[0] && spL[0] < hallCore.max[0]
     && spL[2] > hallCore.min[2] && spL[2] < hallCore.max[2];
   const P0 = {
     standLocal: spL.map(r6),
+    // THE DISCRIMINATING QUANTITIES, ASSERTED BELOW RATHER THAN LOGGED.
+    // `carrier` proves the walker actually BOARDED the station's own frame --
+    // `stationboard.js`'s own "tested>50 && boarded===0" lesson, that a rule
+    // declining and a rule never running read identically unless the boarded
+    // state is named -- and `clear` is the LIVE clearance scan
+    // `seatOnStationDeck` ran at the arrival socket, which a boot-time
+    // coordinate could never re-check because it never asked the live asset
+    // anything.
+    carrier: aboard.carrier,
+    boarded: aboard.carrier !== null,
+    clear: aboard.clear,
+    scannedM: aboard.scannedM,
     sockets: st.install?.sockets ?? null,
     coreSpanX: [r6(hallCore.min[0]), r6(hallCore.max[0])],
     coreSpanZ: [r6(hallCore.min[2]), r6(hallCore.max[2])],
@@ -153,10 +211,15 @@
     dropM: r6(spL[1]),
   };
   log.push({ P0 });
-  if (insideCore) return fail('P1: the published spawn is inside col_HallCore', P0);
-  if (!P0.overHallFloor) return fail('P1: the published spawn is off the hall floor', P0);
+  if (!P0.boarded) {
+    return fail('P1: standAboard did not board the station frame, so the walk '
+      + 'below would measure the carrier receding rather than standing on it',
+      P0);
+  }
+  if (P0.clear === false) return fail('P1: the live arrival socket is not clear', P0);
+  if (insideCore) return fail('P1: the live spawn is inside col_HallCore', P0);
+  if (!P0.overHallFloor) return fail('P1: the live spawn is off the hall floor', P0);
 
-  of.standAt(sp[0], sp[1], sp[2]);
   const s1 = await drive(4.0, []);
   const g0 = s1.findIndex((q) => q.grounded);
   if (g0 < 0) {
@@ -166,6 +229,9 @@
     });
   }
   const stand = s1.slice(g0 + 5);
+  // GP-805. `drive(4.0, [])` just spent 4 real seconds, 7,517 m of orbital
+  // travel at this station's speed: refresh before reading anything local.
+  refresh();
   const P1 = {
     landedAfterTicks: g0,
     feetR: stats(stand.map((q) => q.feetR)),
@@ -248,13 +314,10 @@
   //     The doorway is a GAP between two wall boxes; if it were hulled shut
   //     this is the assertion that catches it, and nothing else would.
   // ======================================================================
-  const east = (() => {
-    let e = [u[2], 0, -u[0]];
-    const l = len(e);
-    return l < 1e-9 ? [1, 0, 0] : [e[0] / l, e[1] / l, e[2] / l];
-  })();
-  const north = [u[1] * east[2] - u[2] * east[1], u[2] * east[0] - u[0] * east[2],
-    u[0] * east[1] - u[1] * east[0]];
+  // GP-805. P3's own `drive(3.0, [])` just spent another 5,638 m of orbital
+  // travel; refresh before this phase builds its own heading basis (`east`/
+  // `north` refresh alongside `u`, see the top of the file).
+  refresh();
   const yawOf = (d) => (Math.atan2(dot(d, east), dot(d, north)) * 180) / Math.PI;
   // The spine's heading, read off the STATION's own published axes and not
   // rebuilt here. The axes must be horizontal or every distance below is
@@ -275,15 +338,27 @@
   // that exists rather than against the one that used to.
   const halfW = spineFwd.max[2];
   const WALK_S = 3.0;
-  const q0 = at(startX, 0.6, 0);
-  of.standAt(q0[0], q0[1], q0[2]);
+  // GP-805. `standAboard(lx, ly, lz)`, NOT `standAt`: this point is INSIDE the
+  // carrier's bound (it is on the spine deck), so a plain `standAt` here is
+  // refused outright (CE-54/RN-1412) and would leave the walker wherever P3's
+  // fall left them, 200 m away and off the deck -- a refusal this file never
+  // used to have to think about because `install.standPos` and its own stale
+  // `at()` used to land it OUTSIDE every carrier's bound by construction.
+  const q0board = of.standAboard(startX, 0.6, 0);
+  if (q0board.error !== undefined) return fail('P4: standAboard refused', q0board);
   await drive(1.0, []);
+  // GP-805. Refresh again: the 1 s settle just spent another ~1,879 m, and
+  // `of.look` must aim along the CURRENT spine, not the one from before the
+  // settle.
+  refresh();
   of.look(yawOf(A.along), 0);
   const before = of.world().player.feet.slice();
+  const lb = loc(before);
   const s4 = await drive(WALK_S, ['KeyW']);
+  // And once more before reading where the walk ended: 3 s is 5,638 m more.
+  refresh();
   const after = of.world().player.feet.slice();
   const gg = s4.filter((q) => q.grounded);
-  const lb = loc(before);
   const la = loc(after);
   const P4 = {
     startLocalXM: r6(lb[0]),
@@ -369,12 +444,20 @@
   for (let x = hallFloor.max[0]; x <= spineMouthX + 1e-9; x += 0.05) {
     if (!floored(x)) unfloored += 0.05;
   }
-  const q1 = at(hallFloor.max[0] - 2.5, 0.6, 0);
-  of.standAt(q1[0], q1[1], q1[2]);
+  // GP-805. Fresh frame (P4's own walk just spent another ~4 s of orbital
+  // travel) and `standAboard`, not `standAt`, for the same on-the-deck reason
+  // as P4's own q0.
+  refresh();
+  const q1board = of.standAboard(hallFloor.max[0] - 2.5, 0.6, 0);
+  if (q1board.error !== undefined) return fail('P5: standAboard refused', q1board);
   await drive(0.8, []);
+  // GP-805. Refresh again after the settle, same reason as P4's own pair.
+  refresh();
   of.look(yawOf(A.along), 0);
   const hb = of.world().player.feet.slice();
+  const hbLocal = loc(hb);
   const s5 = await drive(3.0, ['KeyW']);
+  refresh();
   const he = loc(of.world().player.feet.slice());
   const P5 = {
     hallFloorEndsAtXM: r6(hallFloor.max[0]),
@@ -389,7 +472,7 @@
     wallsAcrossTheSpineMouth: blockers.map((b) => ({ name: b.name,
       x: [r6(b.min[0]), r6(b.max[0])], y: [r6(b.min[1]), r6(b.max[1])],
       z: [r6(b.min[2]), r6(b.max[2])] })),
-    startLocalXM: r6(loc(hb)[0]),
+    startLocalXM: r6(hbLocal[0]),
     endLocalXM: r6(he[0]),
     endLocalYM: r6(he[1]),
     fellThroughTheGap: s5.some((q) => !q.grounded),
@@ -481,15 +564,24 @@
    * so the refusing control runs the identical code.
    */
   const leg = async (label, startLocal, aimDir) => {
-    const q = at(startLocal[0], 0.6, startLocal[2]);
-    of.standAt(q[0], q[1], q[2]);
+    // GP-805. `standAboard`, not `standAt` (on-deck, refused otherwise), and
+    // `refresh()` at every point this function reads a local coordinate: a
+    // single heading's own four legs (SETTLE+OUT+HOP+RUNHOP) run 8.8 s, which
+    // is 16,536 m of this station's own orbital travel, so even ONE leg is
+    // enough to make a frame captured only once at the top read wrong by the
+    // time it ends.
+    const aboardLeg = of.standAboard(startLocal[0], 0.6, startLocal[2]);
+    if (aboardLeg.error !== undefined) return { label, error: aboardLeg.error };
     const s0 = await drive(SETTLE_S, []);
+    refresh();
     of.look(yawOf(aimDir), 0);
     const b0 = loc(of.world().player.feet.slice());
     const s1 = await drive(OUT_S, ['KeyW']);
+    refresh();
     const wallStop = loc(of.world().player.feet.slice());
     const s2 = await driveTape(HOP_S, jumpTape(HOP_S, []));
     const s3 = await driveTape(RUNHOP_S, jumpTape(RUNHOP_S, ['KeyW']));
+    refresh();
     const end = loc(of.world().player.feet.slice());
     const all = [...s0, ...s1, ...s2, ...s3];
     const minR = Math.min(...all.map((p) => p.feetR));
@@ -528,6 +620,10 @@
 
   const legs = [];
   for (let k = 0; k < AZ_N; ++k) {
+    // GP-805. Fresh `A` for THIS heading's own direction vector: the previous
+    // leg spent 8.8 s of orbital travel, and `dir` below is meaningful only
+    // relative to the station's CURRENT orientation.
+    refresh();
     const th = (2 * Math.PI * k) / AZ_N;
     const c = Math.cos(th), sn = Math.sin(th);
     const dir = [
