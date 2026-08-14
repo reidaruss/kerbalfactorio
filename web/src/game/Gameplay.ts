@@ -61,6 +61,8 @@ import { gameplayReport } from './GameplayReport.js';
 import { computeCompass } from './Compass.js';
 import { HealthBook } from './Health.js';
 import { reconcile } from './HealthCensus.js';
+import { Wreckage, type RubbleRow } from './Wreckage.js';
+import { fell } from './Collapse.js';
 import { PlayerVitals } from './PlayerVitals.js';
 import { Gunnery } from './Gunnery.js';
 import { Enemies } from './Enemies.js';
@@ -175,6 +177,9 @@ export class Gameplay {
    *  `Gameplay` is its own `HealthPopulations`, the four lists being fields
    *  already. Reasoning in Health.ts / PlayerHealth.ts. */
   readonly health = new HealthBook();
+  /** D1 (GP-745 to GP-759): what is left where a building fell. Not a save row,
+   *  not a target, no `Solid`; Wreckage.ts's header says why for all three. */
+  readonly wreckage: Wreckage;
   readonly vitals = new PlayerVitals(() => this.mode.hostile);
   /** GP-86: the gun. Its rule, its pictures and its sound, composed in
    *  Gunnery.ts so this file grows by lines rather than by responsibilities. */
@@ -217,6 +222,9 @@ export class Gameplay {
   /** L7 (GP-546 to GP-549): a ruin's investigate socket under the crosshair,
    *  or null. Picked after every player-placed thing, before the pad. */
   aimedInvestigate: AimedInvestigate | null = null;
+  /** D1: the pile of rubble under the crosshair, or null. Picked after every
+   *  live player-placed thing, before the ruin socket. */
+  aimedRubble: RubbleRow | null = null;
   /** GP-57: the launch pad under the crosshair, or null. Picked LAST. */
   aimedPad: PadPart | null = null;
   suspended = false;   // W9: strapped in. Gates fixedStep's ON-FOOT tail ONLY.
@@ -362,6 +370,11 @@ export class Gameplay {
     // at the two call sites that need them (`create` and `Persist.apply`),
     // which is what keeps this class out of the placement's business.
     this.ruins = new RuinSites(d.core, d.bodyHandle, d.origin);
+    // D1. Its own `origin` port and nothing else, for the ruin's own reason:
+    // rubble is a prop, not a building, so it takes no `GameCore`, no mode and
+    // no site registry. The four populations it removes FROM are handed to
+    // `fell` at the one call site that needs them (`damage` below).
+    this.wreckage = new Wreckage(d.origin);
     this.build = new BuildMode(this.factory, this.factoryView,
       this.structures, this.structView, this.pads, this.padView);
     // A hand furnace marks its ingots AT the furnace (GP-64: no roaming toast).
@@ -378,7 +391,7 @@ export class Gameplay {
     await Promise.all([g.field.load(), g.machines.load(), g.factoryView.load(),
       g.structures.load(), g.pads.load(), g.stations.load(), g.antennas.load(),
       g.structures.load(), g.pads.load(), g.stations.load(), g.ruins.load(),
-      g.icons.load()]);
+      g.wreckage.load(), g.icons.load()]);
     g.structView.build(g.structures);
     g.padView.build(g.pads);
     g.progress = attachProgress(g);
@@ -397,6 +410,7 @@ export class Gameplay {
     d.scene.add(g.stations.group);
     d.scene.add(g.antennas.group);
     d.scene.add(g.ruins.group);
+    d.scene.add(g.wreckage.group);
     d.scene.add(g.field.group);
     d.scene.add(g.oreField.group);
     d.scene.add(g.fx.debris.mesh);
@@ -596,7 +610,8 @@ export class Gameplay {
   get hasDemolishTarget(): boolean {
     return this.aimedMachine !== null || this.aimedBuild !== null
       || this.aimedPart !== null || this.aimedStation !== null
-      || this.aimedAntenna !== null || this.aimedPad !== null;
+      || this.aimedAntenna !== null || this.aimedRubble !== null
+      || this.aimedPad !== null;
   }
 
   /** What that thing is CALLED, for the sentence. '' when there is none. */
@@ -608,18 +623,42 @@ export class Gameplay {
     if (this.aimedPart !== null) return this.aimedPart.kind;
     if (this.aimedStation !== null) return 'research station';
     if (this.aimedAntenna !== null) return 'scanning antenna';
+    if (this.aimedRubble !== null) return `${this.aimedRubble.kind} rubble`;
     return this.aimedPad !== null ? 'launch pad' : '';
   }
 
   /** Remove whatever the crosshair is on. Returns true if something went. */
   demolish(): boolean {
     const gone = raze(this, this.aimedMachine, this.aimedBuild, this.aimedPart,
-      this.aimedPad, this.aimedStation, this.aimedAntenna);
+      this.aimedPad, this.aimedStation, this.aimedAntenna, this.aimedRubble);
     if (gone) {
       this.aimedMachine = null; this.aimedBuild = null; this.aimedPart = null;
-      this.aimedStation = null; this.aimedAntenna = null;
+      this.aimedStation = null; this.aimedAntenna = null; this.aimedRubble = null;
     }
     return gone;
+  }
+
+  /**
+   * D1. THE ONE DOOR INTO A BUILDING'S HEALTH, and therefore the one place a
+   * building can fall down.
+   *
+   * `HealthBook.damage` is still the only thing that moves the number; what this
+   * adds is the CONSEQUENCE, and it is here rather than in `Enemies.context`
+   * deliberately. The swarm is the only damage source today, but it is not the
+   * only CALLER: `__of.damage` drives the identical path from a probe, a weapon
+   * that can hit a building would be a third, and D5's collapse cascade will be
+   * a fourth. A hook living in the swarm would mean a wall taken to 0 by any of
+   * the others went on standing, which is exactly the incoherence D1 exists to
+   * close, reintroduced through a side door. One door, one consequence.
+   *
+   * The health ROW is not forgotten here: `reconcile` runs on the next fixed
+   * tick and drops every key whose population no longer holds it, which is the
+   * path that already exists. See Collapse.ts.
+   */
+  damage(key: string, amount: number): { applied: number; destroyed: boolean } {
+    const r = this.health.damage(key, amount);
+    if (r.destroyed && fell(this, key) === null) this.wreckage.unresolved++;
+    return { applied: r.applied, destroyed: r.destroyed };
   }
 
   /** Per frame: node transforms, depletion variants, effects, HUD, panels. */
@@ -638,6 +677,7 @@ export class Gameplay {
     this.machines.updateFx(dt);
     this.stations.update();
     this.antennas.update();
+    this.wreckage.update();
     // WG-166 / WG-170. The floating-origin re-place AND the LOD rung, off the
     // same feet the two rings above use, for the reason stated at line 612.
     this.ruins.update(this.d.player.body.feet);

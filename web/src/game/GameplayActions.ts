@@ -25,6 +25,7 @@ import type { Placed } from './Factory.js';
 import type { Machine } from './Machines.js';
 import type { ResearchStation } from './ResearchStations.js';
 import type { ScanAntenna } from './Antennas.js';
+import type { RubbleRow } from './Wreckage.js';
 import type { StructurePart } from './Structures.js';
 import { Sites } from '../world/Sites.js';
 import { markerRegistry } from './MarkerRegistry.js';
@@ -408,8 +409,9 @@ export function raze(g: Gameplay, machine: Machine | null, build: Placed | null,
                      part: StructurePart | null,
                      pad: PadPart | null = null,
                      station: ResearchStation | null = null,
-                     antenna: ScanAntenna | null = null): boolean {
-  const r = demolishAimed(g, machine, build, part, pad, station, antenna);
+                     antenna: ScanAntenna | null = null,
+                     rubble: RubbleRow | null = null): boolean {
+  const r = demolishAimed(g, machine, build, part, pad, station, antenna, rubble);
   if (r === null) { g.hud.flash('nothing to remove'); return false; }
   g.fx.forgetSmelters();
   g.hud.flash(r.message, 2.2);

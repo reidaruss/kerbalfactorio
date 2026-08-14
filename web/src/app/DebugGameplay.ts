@@ -7,7 +7,8 @@
 // take, which is the quiet way an acceptance test stops meaning anything.
 
 import { PLANT_KINDS, STARTER, starterPlanFor } from '../game/StarterContent.js';
-import { demolishBuild, demolishMachine, demolishStructure } from '../game/Demolition.js';
+import { demolishBuild, demolishMachine, demolishStructure, scavengeRubble }
+  from '../game/Demolition.js';
 import { renderVoices } from '../audio/Sfx.js';
 import { renderBeds } from '../audio/Beds.js';
 import { clearSlot } from '../game/SaveGame.js';
@@ -431,9 +432,27 @@ export function gameplayApi(s: Services, loop: Loop) {
       return f === undefined || b === undefined ? 0 : f.collect(b);
     },
 
-    demolish(sel: { id?: number; machine?: number; part?: number }) {
+    /**
+     * D1. WHAT FELL AND WHAT IS LEFT OF IT, as a report, `stations`' own shape
+     * and its own reason: everything a probe needs to assert about a pile is a
+     * fact rather than a measurement. `unresolved` and `unrecovered` are the two
+     * that must be 0. Also in `game().wreckage`, so a probe reading the health
+     * book and the wreckage in one snapshot can catch them disagreeing.
+     */
+    wreckage: () => s.gameplay?.wreckage.report() ?? null,
+
+    demolish(sel: { id?: number; machine?: number; part?: number;
+                    rubble?: number }) {
       const g = s.gameplay;
       if (g === null) return null;
+      // D1. The rubble selector takes the same shape the other three do and
+      // reaches the SAME function the X key reaches (`scavengeRubble`), so a
+      // probe driving it is driving the player's path with the aim left off.
+      // The aim itself is asserted separately, through `game().aimed.rubble`.
+      if (sel.rubble !== undefined) {
+        const r = g.wreckage.list.find((q) => q.id === sel.rubble);
+        return r === undefined ? null : scavengeRubble(g.wreckage, g.game, r);
+      }
       if (sel.part !== undefined) {
         const p = g.structures.parts.find((q) => q.id === sel.part);
         return p === undefined ? null
@@ -467,8 +486,16 @@ export function gameplayApi(s: Services, loop: Loop) {
       const g = s.gameplay;
       if (g === null || typeof sel?.key !== 'string') return null;
       if (!g.health.has(sel.key)) return null;
-      const r = g.health.damage(sel.key, sel.amount);
-      return { key: sel.key, ...r };
+      // D1. `Gameplay.damage`, NOT `health.damage`. The book is still the only
+      // thing that moves the number, but the CONSEQUENCE of the number hitting
+      // zero lives one level up, and a debug door that skipped it would let a
+      // probe take a wall to 0 and watch it go on standing -- the exact bug D1
+      // closed, reachable only from the surface that is meant to prove it fixed.
+      // `hp`/`maxHp` are read back off the book because the host's return is
+      // deliberately just `{applied, destroyed}`.
+      const r = g.damage(sel.key, sel.amount);
+      return { key: sel.key, ...r, hp: g.health.hpOf(sel.key),
+        maxHp: g.health.maxOf(sel.key), wreckage: g.wreckage.report() };
     },
 
     /**

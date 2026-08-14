@@ -78,6 +78,11 @@ export function gameplayReport(g: Gameplay): unknown {
         station: g.aimedStation === null ? null : g.aimedStation.id,
         // GP-533, same reasoning.
         antenna: g.aimedAntenna === null ? null : g.aimedAntenna.id,
+        // D1, same reasoning a fourth time: "X did not clear the rubble" is a
+        // missed crosshair or a demolish branch that never ran, and the two
+        // are one field apart.
+        rubble: g.aimedRubble === null ? null
+          : { id: g.aimedRubble.id, kind: g.aimedRubble.kind },
         // L7 (GP-546 to GP-549), same reasoning again: a probe asserting
         // "E did not investigate" needs to tell a missed crosshair from a
         // branch that never ran, and needs the SAME `alreadyVisited` the
@@ -140,6 +145,13 @@ export function gameplayReport(g: Gameplay): unknown {
       // healthy unless somebody publishes the difference (DW-28). A probe holds
       // both `missing` and `stale` at zero.
       health: g.health.report(censusOf(g)),
+      // D1 (GP-745 to GP-759). WHAT FELL AND WHAT IS LEFT OF IT. Beside the
+      // health book and never inside it, because they are two subjects: one is
+      // what is standing and how hurt it is, the other is what is no longer
+      // standing. `unresolved` and `unrecovered` are the two that must be 0 --
+      // a 0-hp key nothing could fell, and a refund the take-back could not
+      // find -- and both are published for `audit.missing`'s own reason.
+      wreckage: g.wreckage.report(),
       // GP-79. The PLAYER's health, separate from the buildings' book because
       // they are different subjects: one is the base and one is you.
       vitals: g.vitals.report(),
