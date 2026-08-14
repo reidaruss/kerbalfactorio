@@ -451,7 +451,26 @@ OF_API uint8_t* of_scratch_u8(void)  { return g_u8.empty()  ? nullptr : g_u8.dat
 //       `of_poi_mark_visited` for the unknown -> known -> visited state
 //       machine (Admin-approved addition alongside the spec, same pass), and
 //       `of_poi_save`/`of_poi_alloc_bytes`/`of_poi_load` over both bits.
-OF_API int of_abi_version(void) { return 24; }
+//   25: THE FULL-MAP REVEAL (GP-715 to GP-729). Reid, 2026-08-13: "the full map
+//       should reveal whenever you explore the space station". ONE new export,
+//       §18's `of_disc_reveal(layer)`, which fills a whole discovery layer at
+//       once and returns the cells it added. PURELY ADDITIVE: not one existing
+//       export changed name, signature or scratch layout, so every ABI 24
+//       caller is unaffected and the bump exists only so the handshake can say
+//       the new call is there.
+//       IT IS A SECOND AUTHORITY OVER THE SAME SET, ON PURPOSE, AND THE THIRD
+//       ONE IS NOT IT. `of_disc_observe` is the rule about SEEING (a cell was
+//       above your horizon); this is a survey HANDED OVER, which is a different
+//       thing that happens to write the same cells, and discovery.h's `fillAll`
+//       carries the argument for why it is not spelled as six impossible
+//       observations. Distinct again from `MapMode`'s `fullMapRevealed`
+//       (MapBoot.ts `revealAll`), which is a SANDBOX MODE override that paints
+//       everything and persists nothing, and from poi.h's `known` bits
+//       (`of_poi_mark_known`, ABI 24 above), which are the SITE reveal and a
+//       different authority from the survey grid — do not conflate them.
+//       Because this writes real cells it persists through the existing
+//       `of_disc_serialize` with everything else and no save field was added.
+OF_API int of_abi_version(void) { return 25; }
 
 // Defined in of_research_api.inc at the foot of this file. Forward-declared so
 // of_gp_init can bring the research layer up in the same call that builds the

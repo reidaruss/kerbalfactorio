@@ -44,6 +44,7 @@ import { currentVesselTick, leaveVessel, resumeControl } from './FlightVessels.j
 // is no runtime cycle even though MapBoot imports this file for its value.
 import type { MapDeps } from './MapBoot.js';
 import type { MapWorld } from './MapWorld.js';
+import type { Discovery } from '../world/Discovery.js';
 
 const SAMPLES = 192;
 /** What the map frames when it opens on foot, metres across the short axis. A
@@ -86,6 +87,17 @@ export class MapMode {
   /** Exposed so `__of.map` reads the rows the painter is handed, in `/core`'s
    *  own numbers, rather than parsing them back off the panel's text. */
   get world(): MapWorld | null { return this.d.world; }
+
+  /** GP-717. The discovery field this mode already FEEDS (see `frame` below),
+   *  exposed so `Systems.ts` can reveal it on the station milestone.
+   *
+   *  IT IS THIS OBJECT AND NOT A SECOND ONE, which is the only reason the getter
+   *  is here rather than a `Discovery` handed separately to `Services`: the
+   *  driver is constructed in `MapBoot` and holding a second reference to it on
+   *  the composition root would be two paths to one field, and the day one of
+   *  them was rebuilt on a `WorldSession.reboot` and the other was not, the
+   *  reveal would land in a field nothing draws from. */
+  get discovery(): Discovery | null { return this.d.disc; }
 
   constructor(private readonly d: MapDeps) {
     this.nodeCtl = new MapNode(d.M, d.flight, (m) => d.say(m));

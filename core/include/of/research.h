@@ -210,6 +210,24 @@ static constexpr MilestoneId LandedOffWorld = 0x0002;  // the GP-2 crossover, la
 // (WG-151), kept separate, because two ruins sharing one flag would make the
 // second one's own visit un-rewardable and un-noticeable to the player.
 static constexpr MilestoneId RuinInvestigated = 0x0003;
+// GP-718. `story_line_outline_v1.txt`'s station rung, and the ONE-SHOT LATCH for
+// the full-map reveal Reid ruled on 2026-08-13: "the full map should reveal
+// whenever you explore the space station".
+//
+// IT IS A MILESTONE RATHER THAN A BOOLEAN IN THE CLIENT FOR ONE REASON, and it
+// is the reason this whole namespace exists: a milestone is the only flag in
+// this project that a LOAD restores without counting as something the player
+// DID. `Research::setMilestone` no-ops on one already held, and the web client's
+// restore path feeds `earn` directly rather than `grantMilestone`, so the reveal
+// fires exactly once in a save's life and a reload cannot re-fire it. A `let
+// revealed = false` next to the trigger would have to be persisted, migrated and
+// kept honest by hand, and would be a second answer to "has this happened yet".
+//
+// NO TECH READS IT TODAY, which the note above says is normally a smell. It is
+// declared anyway because what it gates is not a tech: it gates a world-state
+// mutation (discovery.h's survey layer), and the append-only set is where a
+// "thing the player did" belongs regardless of who reads it.
+static constexpr MilestoneId StationBoarded = 0x0004;
 }  // namespace milestones
 
 inline const char* milestoneName(MilestoneId m) {
@@ -217,6 +235,7 @@ inline const char* milestoneName(MilestoneId m) {
     case milestones::ReachedOrbit: return "reach orbit and come back";
     case milestones::LandedOffWorld: return "land on another world";
     case milestones::RuinInvestigated: return "investigate a ruin";
+    case milestones::StationBoarded: return "board the space station";
     default: return "";
   }
 }

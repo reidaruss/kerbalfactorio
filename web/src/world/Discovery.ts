@@ -142,6 +142,39 @@ export class Discovery {
     this.sinceS = SAMPLE_S;
   }
 
+  /**
+   * GP-716. THE WHOLE SURVEY LAYER, AT ONCE. Returns the cells it added.
+   *
+   * Reid's ruling of 2026-08-13: "the full map should reveal whenever you
+   * explore the space station." The station hands over its survey of the world;
+   * the map stops being a hole with your own footprints in it.
+   *
+   * SURVEY ONLY, AND THE EXPLORE LAYER IS DELIBERATELY LEFT ALONE. Survey is
+   * the shape of the world and is what the map SHADES, which is the thing the
+   * ruling is about. Explore is the detail, and it is the layer that gates an
+   * ore patch: revealing it would hand the player every deposit on the planet
+   * from a single lift, which is the opposite of the storyline's "the ore in the
+   * next valley stays yours to find". `/core` takes the layer as an argument
+   * precisely so this file states which one it means.
+   *
+   * IT IS WORLD STATE AND IT PERSISTS BY ITSELF. The cells go into the same
+   * sorted set walking fills, so `serialize` carries them with everything else
+   * and there is no "was it revealed" flag anywhere. THE ONCE-ONLY-NESS IS NOT
+   * HERE EITHER: this method is idempotent (a second call adds 0) but it is not
+   * the latch. The latch is `milestones::StationBoarded`, because a milestone is
+   * the one flag a LOAD restores without counting as something the player did.
+   *
+   * The generation bump is what makes the map repaint: `MapTerrain` caches its
+   * picture against it, so a reveal that did not move it would leave the player
+   * looking at the old holes until they walked far enough to add a cell.
+   */
+  revealSurvey(): number {
+    if (!this.ready) return 0;
+    const added = this.M._of_disc_reveal(DISC_SURVEY);
+    if (added > 0) this.generation_ += 1;
+    return added;
+  }
+
   /** Move the rule's dials. Everything is data (GP-12); a non-positive field
    *  keeps `/core`'s default for that field. Clears the field, so it is a
    *  new-world call and not a mid-game one. */

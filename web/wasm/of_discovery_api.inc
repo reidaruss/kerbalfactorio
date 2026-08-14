@@ -79,6 +79,15 @@ const disc::DiscoveryGrid* discLayer(int layer) {
   return nullptr;
 }
 
+// GP-716. The same 0/1 spelling as `discLayer`, as discovery.h's own enum, so
+// `of_disc_reveal` validates the layer through ONE mapping rather than a second
+// `if (layer == 0)` chain that could drift from the one above.
+bool discLayerId(int layer, disc::Layer& out) {
+  if (layer == 0) { out = disc::Layer::Survey; return true; }
+  if (layer == 1) { out = disc::Layer::Explore; return true; }
+  return false;
+}
+
 // A window ceiling, in the same spirit as §17's kMnMaxSamples: it bounds one
 // mistyped argument from asking for hundreds of megabytes of corners. It is NOT
 // a silent ceiling — hitting it sets the SAME truncation flag a small maxRows
@@ -201,6 +210,30 @@ OF_API int of_disc_observe(double dx, double dy, double dz, double altM) {
   if (!g_disc) return -1;
   g_disc->observe(vec(dx, dy, dz), altM, g_discLastSurvey, g_discLastExplore);
   return static_cast<int>(g_discLastSurvey.added + g_discLastExplore.added);
+}
+
+// GP-716. ABI 25. REVEAL A WHOLE LAYER AT ONCE. layer 0 = SURVEY (the shape of
+// the world, what the map shades), 1 = EXPLORE (the detail, what gates an ore
+// patch). Returns the cells ADDED, or -1 for a bad layer or no field — a
+// REFUSAL and not an answer, on exactly of_disc_has's precedent, because a
+// caller must not read "nothing to add" out of "I have no field".
+//
+// WHY THIS IS AN EXPORT AND NOT SIX of_disc_observe CALLS FROM JS: discovery.h's
+// `fillAll` carries the argument in full. The short version is that one observe
+// tops out at a hemisphere, six of them would drag the EXPLORE layer's capped
+// disc along to six places nobody has walked, and a hemispherical flood is ~49k
+// cells against a 65,536 budget, so the trick reveals PART of a body bigger than
+// Forge and sets a flag about it. This is a different authority from `observe`
+// and it is exported as one.
+//
+// IT IS NOT A CHEAT AND IT IS NOT `MapMode`'s SANDBOX FLAG. `fullMapRevealed`
+// (MapBoot.ts `revealAll`) is a MODE override that paints everything and saves
+// nothing; this MUTATES THE WORLD, so it persists through of_disc_serialize with
+// every other discovered cell and the map has nothing new to learn.
+OF_API int of_disc_reveal(int layer) {
+  disc::Layer which;
+  if (!g_disc || !discLayerId(layer, which)) return -1;
+  return static_cast<int>(g_disc->reveal(which));
 }
 
 // f64 scratch, EXACTLY 16. Returns 16, or 0 if there is no field.

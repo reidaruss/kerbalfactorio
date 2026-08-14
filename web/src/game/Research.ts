@@ -36,6 +36,10 @@ export const BLOCK = {
  *  `RuinInteract.ts` when the player interacts at a ruin's investigate socket. */
 export const MILESTONE = {
   ReachedOrbit: 0x0001, LandedOffWorld: 0x0002, RuinInvestigated: 0x0003,
+  // GP-718. The station rung, and the one-shot latch for the full-map reveal.
+  // `research.h`'s `milestones::StationBoarded` — this map mirrors that
+  // namespace and the values must not drift from it.
+  StationBoarded: 0x0004,
 } as const;
 
 export interface TechCost { item: number; have: number; need: number }

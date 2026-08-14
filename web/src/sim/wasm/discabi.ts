@@ -116,6 +116,20 @@ export interface DiscoveryAbi {
    * called. Cost is O(area swept), never O(entities).
    */
   _of_disc_observe(dx: number, dy: number, dz: number, altM: number): number;
+  /**
+   * GP-716, ABI 25. REVEAL A WHOLE LAYER AT ONCE: `DISC_SURVEY` (the shape of
+   * the world, what the map shades) or `DISC_EXPLORE` (the detail, what gates an
+   * ore patch). -> cells ADDED, or -1 for a bad layer or no field, which is a
+   * REFUSAL and not an answer on `_of_disc_has`'s precedent.
+   *
+   * NOT AN OBSERVATION. `_of_disc_observe` is the rule about SEEING and this is
+   * a survey handed over, so it does not move `observations`. It DOES write real
+   * cells, so it persists through `_of_disc_serialize` with every other
+   * discovered cell and needs no save field of its own — which is exactly what
+   * makes it different from `MapMode`'s sandbox `fullMapRevealed`, a mode
+   * override that paints everything and saves nothing.
+   */
+  _of_disc_reveal(layer: number): number;
   /** f64 scratch, DISC_REPORT_WORDS, indexed by `DiscReport`. -> 16, or 0 if
    *  there is no field. Every figure was counted inside the call that made it. */
   _of_disc_report(): number;
