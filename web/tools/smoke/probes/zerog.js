@@ -402,14 +402,59 @@
   // WHAT THAT COSTS IS WRITTEN DOWN RATHER THAN HIDDEN: the station is leaving
   // at 31.32 m per tick while these legs run, so Z4's gravity is sampled at a
   // point the station is receding from and `restoredExactly` may be true
-  // because the volume has GONE rather than because it cancelled. That is this
-  // probe's own open question (routed to Admin with CE-54), not something the
-  // frame argument fixes.
+  // because the volume has GONE rather than because it cancelled.
+  //
+  // GP-805 FINDING, MEASURED RATHER THAN SPECULATED: THE VOLUME IS GONE, AND
+  // Z4 IS HONESTLY RED ON MAIN FOR THAT REASON, BEFORE THIS PASS'S OWN FIX
+  // EVEN RUNS. `standAt(..., { frame: 'body' })` resolves the given point to
+  // an ABSOLUTE body-frame position ONCE and does not board the walker onto
+  // the mount at all -- a diagnostic run off `of.carrier('mounts')` read
+  // `boarding: { tested: 137, boarded: 0, released: 0 }` across the whole
+  // leg. The walker therefore sits at a FIXED point while the station (and
+  // the gravity volumes `installStationGravity` re-poses every tick to the
+  // station's LIVE position) travels on at 1879.2552 m/s: over this leg's own
+  // 2.5 s settle that is 4,698 m of separation, dwarfing both the freefall
+  // volume's 207.85 m bound and the generator volume's 28.52 m one. Measured
+  // end state: `grounded: false, onDeck: false, inVolumes: []`, the walker
+  // radially 11.11 m LOWER than where it was seated (ordinary gravity acting
+  // on a body no volume reaches and no deck holds), reproduced identically on
+  // an unmodified checkout of this file -- so it is inherited, not introduced
+  // by the carrierG check below. `!Z4.grounded` (pre-existing) is what turns
+  // this red rather than a silent pass, which is correct behaviour and is
+  // left standing: the fix owed here is `restoredExactly`'s OWN vacuous-pass
+  // risk (below), not a redesign of how this probe rides a station moving
+  // this fast, which is `CE-54`'s own open question and belongs to Admin/
+  // physics, not to a rewrite smuggled into an unrelated fix.
+  //
+  // GP-805. CLOSED, NOT JUST FLAGGED. `restoredExactly` is `apparentG === trueG`,
+  // and `apparentAt` (GravityVolumes.ts) returns exactly that whenever delta
+  // sums to zero -- which is true both when the generator genuinely cancels
+  // trueG AND when `carrierG` is silently zero (or installed from a stale
+  // radius) and nothing is happening at all. `inVolumes.length !== 2` below
+  // catches the volumes being ABSENT, but a `carrierG` of 0.0 installed into
+  // two present, correctly-shaped volumes sails through every check that used
+  // to live here: two volumes present, apparentG === trueG exactly, grounded
+  // and onDeck both true. That is the CE-54 litFrac lesson landing on this
+  // file's own ground: the assertion was a proxy that stays green (a boolean
+  // equality) rather than the discriminating quantity (a real, nonzero,
+  // physically-derived magnitude actually doing the cancelling). Closed below
+  // by comparing the INSTALLED `carrierG` against an independently fetched
+  // `of.gravity(deckR)` -- the same pure function, `PlanetBody.gravityAccel`,
+  // that `StationMount.ts` feeds `installStationGravity` from -- read fresh
+  // rather than trusted, so a broken wiring moves THIS assertion and nothing
+  // upstream of it.
   of.standAt(hub[0], hub[1], hub[2], { frame: 'body' });
   await settle(2.5);
   const w4 = of.weight();
+  // Fetched AFTER the settle, not reused from `st` above: `deckR` is a live
+  // Kepler solve and the point is to catch `installStationGravity` aiming at a
+  // radius that has drifted from the one this tick's field was built with, not
+  // to compare against a snapshot that is itself now stale.
+  const stAtSample = of.station();
+  const predictedCarrierG = stAtSample === null ? NaN : of.gravity(stAtSample.deckR);
   const Z4 = {
     carrierG: r6(w4.station?.carrierG ?? NaN),
+    predictedCarrierG: r6(predictedCarrierG),
     trueG: w4.trueG, apparentG: w4.apparentG,
     restoredExactly: w4.restoredExactly,
     floating: w4.floating, grounded: w4.grounded, onDeck: w4.onDeck,
@@ -424,6 +469,22 @@
     return fail('Z4: the player is not standing on the powered deck', Z4);
   }
   if (Z4.inVolumes.length !== 2) return fail('Z4: expected both volumes at the hub', Z4);
+  // THE DISCRIMINATING QUANTITY (GP-805). `restoredExactly` alone cannot tell
+  // "the generator cancelled trueG" from "carrierG is 0 and neither term did
+  // anything", because both leave delta at exactly 0.0. `carrierG` itself is
+  // the one number that is different between those two worlds, so it is
+  // compared against an independently fetched ground truth rather than merely
+  // logged.
+  if (!(w4.station?.carrierG > 0)) {
+    return fail('Z4: carrierG is not a positive magnitude, so restoredExactly '
+      + 'is true because nothing is being cancelled rather than because it '
+      + 'cancelled', Z4);
+  }
+  if (w4.station.carrierG !== predictedCarrierG) {
+    return fail('Z4: carrierG does not match of.gravity(deckR), so the '
+      + 'generator is not cancelling the station\'s own freefall '
+      + 'acceleration', Z4);
+  }
 
   // =====================================================================
   // Z5. THE STATION, UNPOWERED: weightless, and the RESIDUAL IS THE TIDAL

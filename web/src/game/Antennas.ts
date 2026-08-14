@@ -28,17 +28,47 @@
 // top of a 2.10 m panelled dish on a guyed four-chord lattice tower, built by
 // tools/blender/build_scanning_antenna.py and specced in ASSET-SPECS §4.27.
 //
-// ONE MEASURED CONSEQUENCE, AND IT IS OWED TO THIS FILE RATHER THAN TO THE
-// ART. `pick` below refuses a ray more than `ANTENNA_RADIUS_M + 0.5` = 1.90 m
-// from a point `ANTENNA_CENTRE_UP_M` above the pivot. On a 6 m mast that is
-// not satisfiable: 57.0 per cent of the asset's vertices lie inside that
-// sphere and selection stops at z = 2.555 on the mast axis, so the tower is
-// selectable and THE DISH IS NOT. In play this is invisible, because a level
-// crosshair at eye height 1.60 m scores |1.60 - 0.70| = 0.90 m at any range
-// and meets the tower; it only bites if somebody aims at the head. The
-// borrowed `power_pole.glb` had the identical property at 4.0 m and nobody had
-// measured it. Widening `ANTENNA_RADIUS_M` is a GAMEPLAY change and is left
-// here as a stated finding rather than taken by an art lane.
+// GP-805. CLOSED: THE DISH WAS UNSELECTABLE, AND THE CAUSE WAS NEITHER A
+// MISSING COLLIDER NOR A PICK MASK NOR A `col_` NAMING DEFECT. `col_Plinth`,
+// `col_Mast`, `col_Cabinet` and `col_Anchor1..4` all ship and all read solid
+// (ASSET-SPECS.md §4.27); the walker's own `solidBuild` predicate meets the
+// mast exactly where it should. THE PICK NEVER CONSULTS COLLISION AT ALL --
+// `pick` below is a hand-rolled sphere test against `ScanAntenna.pos`, copied
+// verbatim from `ResearchStations.pick` (a 2.44 m bench) onto a 6.00 m mast
+// without resizing. `ANTENNA_RADIUS_M + 0.5` = 1.90 m from a point
+// `ANTENNA_CENTRE_UP_M` above the pivot reached only 57 per cent of the
+// asset's vertices and stopped at z = 2.555 on the mast axis: the tower was
+// selectable and the dish, at z 5.0 to 6.0, was 3.4+ m outside the sphere no
+// matter the aim. In play this was invisible, because a level crosshair at
+// eye height 1.60 m scored |1.60 - 0.70| = 0.90 m at any range and met the
+// tower; it only bit if somebody aimed at the head. The borrowed
+// `power_pole.glb` had the identical property at 4.0 m and nobody had
+// measured it (ASSET-SPECS.md, RN-1530..1549).
+//
+// FIXED BY RECENTRING AND ENLARGING THE SAME SPHERE TEST, MEASURED AGAINST
+// THE SHIPPED LOD0 MESH RATHER THAN GUESSED: a script walking every LOD0
+// vertex of the real `scanning_antenna.glb` (5,672 verts, 8 meshes) found the
+// enclosing-sphere optimum at `ANTENNA_CENTRE_UP_M = 2.7`, where the worst
+// vertex sits 3.4337 m out -- so `ANTENNA_RADIUS_M = 3.0` (a 3.50 m budget
+// with the same `+ 0.5` slack `ResearchStations.pick` uses) covers 100.00 per
+// cent of the mesh with 0.066 m to spare, and a level crosshair at 1.60 m
+// still scores only 1.10 m against that budget, so nothing that worked before
+// stopped working. No socket or `col_*` byte moved; this is a client-side
+// pick constant, not a published asset interface.
+//
+// ONE MEASURED SIDE EFFECT OF THE SAME NUMBER, STATED RATHER THAN HIDDEN.
+// `pick`'s near clip is `t < -ANTENNA_RADIUS_M`, i.e. the sphere's own centre
+// may sit up to `ANTENNA_RADIUS_M` BEHIND the ray origin and still count; this
+// was 1.4 m before and is 3.0 m now. At the ~2.2 m the eye stands from a
+// freshly placed antenna (`PLACE_AHEAD_M`), that is enough for the antenna to
+// still resolve while looking 180 degrees away from it (`probes/
+// antennapick.js` measured this directly and moved its own negative control
+// to a genuine distance rather than a heading, once two heading-based drafts
+// both still hit). Unlikely to be felt in play -- it needs standing almost on
+// top of a just-placed antenna and looking away on purpose -- and not fixed
+// here: the near clip and the lateral radius are the same constant on
+// purpose, matching `ResearchStations.pick`'s own shape, and decoupling them
+// is a second number this file does not currently need.
 
 import * as THREE from 'three';
 import { addressIn, anchorIn, siteAt, type SiteHost } from './MachinePlacement.js';
@@ -60,12 +90,17 @@ const FILE = 'assets/structures/scanning_antenna.glb';
  *  ResearchStations.ts repeats. */
 export const ANTENNA_KIND = 6;
 
-/** Machines.ts's own numbers, copied verbatim so an antenna and a station
- *  placed side by side land the same distance from the eye (`ResearchStations`
- *  §header). */
+/** Machines.ts's own placement distance, copied verbatim so an antenna and a
+ *  station placed side by side land the same distance from the eye
+ *  (`ResearchStations` §header). */
 const PLACE_AHEAD_M = 2.2;
-const ANTENNA_RADIUS_M = 1.4;
-const ANTENNA_CENTRE_UP_M = 0.7;
+/** GP-805. NOT `ResearchStations`' 1.4/0.7 -- those size a sphere for a 2.44 m
+ *  bench and left the 6.00 m mast's dish 3.4+ m outside it (see the header).
+ *  These are measured against the shipped LOD0 mesh: centred at 2.7 m up, the
+ *  worst vertex is 3.4337 m out, so a 3.0 m radius (3.50 m with the same
+ *  `+ 0.5` slack below) covers all of it with 0.066 m to spare. */
+const ANTENNA_RADIUS_M = 3.0;
+const ANTENNA_CENTRE_UP_M = 2.7;
 
 export interface ScanAntenna {
   id: number;
@@ -231,8 +266,9 @@ export class Antennas {
     }
   }
 
-  /** `ResearchStations.pick`'s test verbatim, including FS-93's half-extent
-   *  correction. */
+  /** `ResearchStations.pick`'s SHAPE verbatim, including FS-93's half-extent
+   *  correction; the SIZE is this file's own (GP-805, see `ANTENNA_RADIUS_M`
+   *  and `ANTENNA_CENTRE_UP_M` above) rather than the station's. */
   pick(eye: Vec3d, dir: Vec3d, reachM: number): ScanAntenna | null {
     let best: ScanAntenna | null = null;
     let bestT = Infinity;

@@ -287,11 +287,29 @@ export function gameplayApi(s: Services, loop: Loop) {
      * local y = 0. A probe wanting the floor the walker will stand on should
      * bisect `solidBuild` instead, which is the walker's own predicate; this is
      * the ORBIT's answer and the two agreeing is a real assertion (PH-96).
+     *
+     * GP-805 FIX: `stateOf`'s FOURTH ARGUMENT IS A TICK, NOT A CONSTANT, AND
+     * EVERY OTHER CALLER PASSES THE LIVE ONE. This one passed a literal `0`.
+     * `VesselRegistry.clockAt` returns `rec.clockS` UNCHANGED whenever the
+     * given tick is less than `rec.stampedTick` -- true of `0` on any run past
+     * its first fixed tick -- so this op has been reporting the station FROZEN
+     * at its last STAMP rather than at the live tick, silently, since nothing
+     * about the return shape says so. Measured on a running station (1000 km,
+     * 1879.2552 m/s): `of.standAboard()`'s live arrival point (which boards
+     * through `StationMount.ts`'s own `mount.frame.poseAt(tick, ...)`, a
+     * different and live-ticked path) read 4,667 m from what this op reported
+     * as the station's position AT THE SAME INSTANT, non-decreasing on a
+     * second immediate call -- not lag, a FIXED WRONG ANSWER. This is the
+     * "frame mismatch" half of RN-1412's diagnosis (ADMIN.md), still live in
+     * this debug surface after the "stale aim" half (`install.standPos`) was
+     * fixed elsewhere: every probe that builds a local frame off `of.station
+     * ().pos`/`.axes` (`stationwalk.js` among them) was measuring against a
+     * stale snapshot no matter how fresh its own aim was.
      */
     station() {
       const rec = findStation();
       if (rec === null) return null;
-      const st = stateOf(s.core, registry, rec, 0);
+      const st = stateOf(s.core, registry, rec, loop.tickIndex);
       const r = Math.hypot(st.pos[0], st.pos[1], st.pos[2]);
       const el = rec.where.kind === 'conic' ? rec.where.el : null;
       return {
