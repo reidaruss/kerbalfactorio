@@ -183,21 +183,35 @@ export function worldsExcept(slot: SaveSlot, bodyId: number): SaveWorld[] {
 }
 
 /**
+ * `slot` with its global half untouched and its body-scoped half replaced by
+ * `w`, EVERY key assigned including the absent ones.
+ *
+ * THE ONE ASSIGNMENT LOOP IN THIS FILE, and both callers need it to be one: a
+ * spread of an object that lacks a key leaves the previous value in place, and
+ * the previous value here is another planet's, so the loop over `WORLD_KEYS`
+ * (which sets a missing key to an explicit `undefined`) is the correctness and
+ * not the style. `viewForBody` reads a world OUT of the slot; PS-49's
+ * `WorldScope.slotForBody` puts a world in that the slot never held. Same
+ * assignment, so it is written once.
+ */
+export function slotWithWorld(slot: SaveSlot, w: SaveWorld): SaveSlot {
+  const src = w as unknown as Record<string, unknown>;
+  const out = { ...slot } as unknown as Record<string, unknown>;
+  out['body'] = w.body;
+  for (const k of WORLD_KEYS) out[k] = src[k];
+  return out as unknown as SaveSlot;
+}
+
+/**
  * The slot as `bodyId` should read it: the global half untouched, the
  * body-scoped half replaced by that body's world (or by an empty one), and
  * `others` removed so nothing downstream can read a world that is not this
  * body's.
- *
- * Built by looping `WORLD_KEYS` rather than by spreading, for the reason
- * `worldOf` states: a spread of an object that lacks a key leaves the previous
- * value in place, and the previous value here is another planet's.
  */
 export function viewForBody(slot: SaveSlot, bodyId: number): SaveSlot {
   const w = worldIn(slot, bodyId) ?? emptyWorld(bodyId);
-  const src = w as unknown as Record<string, unknown>;
-  const view = { ...slot } as unknown as Record<string, unknown>;
+  const view = slotWithWorld(slot, w) as unknown as Record<string, unknown>;
   view['body'] = bodyId;
-  for (const k of WORLD_KEYS) view[k] = src[k];
   delete view['others'];
   return view as unknown as SaveSlot;
 }

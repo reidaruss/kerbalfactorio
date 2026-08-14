@@ -12,6 +12,7 @@
 import type { Services } from './Services.js';
 import type { BodyId } from '../world/PlanetBody.js';
 import { discoveryScopeReport } from '../world/DiscoveryScope.js';
+import { worldScopeReport } from '../game/WorldScope.js';
 
 /** What still believes in the previous body after a switch. */
 export interface StaleHolder {
@@ -48,6 +49,13 @@ export function lifecycleApi(s: Services): Record<string, unknown> {
         // Beside `stale` because it is the same kind of fact: what survived the
         // switch, measured off the thing that owns it rather than inferred.
         discovery: discoveryScopeReport(),
+        // PS-49. Whether the body-scoped half of the save is still the live
+        // world or a frozen reading of it, beside `discovery` and `stale` for
+        // their reason: what survived the switch, measured off the thing that
+        // owns it. `frozen` true is the state in which nothing built, dug or
+        // mined is being saved, so it is the first thing to look at when a
+        // rebooted session's world stops changing on disk.
+        world: worldScopeReport(),
         stale: staleHolders(s),
       };
     },
