@@ -348,3 +348,258 @@ TEST(the_stations_dock_socket_points_away_from_the_station_and_not_into_it) {
   // points and a docking approach is flown NOSE FIRST.
   CHECK_NEAR(v.faceAxis.dot(orbital::normalized(Vec3{0, 1, 0})), 1.0, 1e-12);
 }
+
+// =============================================================================
+// PH-362. THE LIVE ENVELOPE VERDICT: WHAT THE DOCK BUTTON IS ALLOWED TO SAY.
+//
+// D-015's manual rung. `sweptCapture` answers a question about a tick that has
+// already happened; a button has to answer one about the instant it is pressed,
+// on a sim that may be paused, and it has to name the gate that is shut rather
+// than return a boolean. These are the edges: exactly at the radius, one
+// micrometre outside it, over the speed limit, pointing away, already latched,
+// and asked about a vessel's own port.
+//
+// WHAT WOULD MAKE THIS VACUOUS, named first: a `candidate` that returned
+// `OutOfRange` for everything would pass a suite that only ever checked
+// refusals. So every refusal below is paired with the arrangement that DOES
+// latch, differing in exactly the one quantity under test.
+// -----------------------------------------------------------------------------
+
+// Two ports face to face, `gapM` apart along X, closing at `closeMS`.
+// `mine` faces +X and sits at the origin; `theirs` faces -X, which is the
+// antiparallel pair `coneErrorRad` returns 0 for.
+struct Pair {
+  dk::PortPose mine, theirs;
+  Vec3 relVel{0, 0, 0};
+};
+static Pair facing(double gapM, double closeMS) {
+  Pair p;
+  p.mine = at(Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+  p.theirs = at(Vec3{gapM, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 1, 0});
+  p.relVel = Vec3{closeMS, 0, 0};   // toward `theirs`, i.e. closing
+  return p;
+}
+
+TEST(the_button_is_offered_inside_the_envelope_and_the_numbers_read_true) {
+  const dk::Limits lim;
+  const Pair p = facing(0.40, 0.25);
+  const dk::Candidate c =
+      dk::candidate(p.mine, p.theirs, p.relVel, lim, false, false);
+  CHECK(c.available);
+  CHECK(c.verdict == dk::Verdict::Available);
+  CHECK_NEAR(c.separationM, 0.40, 1e-12);
+  // POSITIVE IS CLOSING, and that sign is the whole reason this exists beside
+  // `CaptureResult::closingMS`, which is a magnitude.
+  CHECK_NEAR(c.closingMS, 0.25, 1e-12);
+  CHECK_NEAR(c.coneErrorRad, 0.0, 1e-12);
+}
+
+TEST(drifting_away_reads_as_a_negative_rate_and_still_latches) {
+  const dk::Limits lim;
+  // Inside the envelope but LEAVING. It is still a legal capture -- a magnet
+  // does not ask which way you are going, only how fast -- and the screen gets
+  // the minus sign it needs to say "drifting away".
+  const Pair p = facing(0.40, -0.25);
+  const dk::Candidate c =
+      dk::candidate(p.mine, p.theirs, p.relVel, lim, false, false);
+  CHECK(c.available);
+  CHECK(c.closingMS < 0.0);
+  CHECK_NEAR(c.closingMS, -0.25, 1e-12);
+}
+
+TEST(the_capture_radius_is_the_edge_and_the_edge_is_inclusive) {
+  const dk::Limits lim;
+  // EXACTLY at the radius: offered. The gate is `>`, so the boundary belongs to
+  // the capture, which is the same convention `sweptCapture` uses (it solves
+  // for the crossing of |d| == R and treats that crossing as contact).
+  const Pair edge = facing(lim.captureRadiusM, 0.1);
+  const dk::Candidate on =
+      dk::candidate(edge.mine, edge.theirs, edge.relVel, lim, false, false);
+  CHECK(on.available);
+  CHECK_NEAR(on.separationM, 0.60, 1e-12);
+
+  // One micrometre outside it: refused, and it says RANGE rather than a
+  // boolean, because "it did not dock" is not a sentence a player can act on.
+  const Pair off = facing(lim.captureRadiusM + 1e-6, 0.1);
+  const dk::Candidate out =
+      dk::candidate(off.mine, off.theirs, off.relVel, lim, false, false);
+  CHECK(!out.available);
+  CHECK(out.verdict == dk::Verdict::OutOfRange);
+  // AND THE NUMBERS ARE STILL PUBLISHED. A refusal that reported nothing would
+  // leave a screen unable to say how much closer to fly.
+  CHECK_NEAR(out.separationM, 0.600001, 1e-9);
+  CHECK_NEAR(out.closingMS, 0.1, 1e-12);
+}
+
+TEST(over_the_closing_limit_says_too_fast_and_not_out_of_range) {
+  const dk::Limits lim;
+  CHECK_NEAR(lim.maxClosingMS, 2.0, 1e-12);
+  // Just under: latches.
+  const Pair slow = facing(0.30, lim.maxClosingMS - 1e-9);
+  CHECK(dk::candidate(slow.mine, slow.theirs, slow.relVel, lim, false, false)
+            .available);
+  // Just over: the ONE sentence that made this worth building. The bug this
+  // guards is the bridge's own (`reasonOf`): a too-fast arrival reported at the
+  // sphere boundary and got classified as a range miss.
+  const Pair fast = facing(0.30, lim.maxClosingMS + 1e-6);
+  const dk::Candidate c =
+      dk::candidate(fast.mine, fast.theirs, fast.relVel, lim, false, false);
+  CHECK(!c.available);
+  CHECK(c.verdict == dk::Verdict::TooFast);
+  CHECK(c.separationM < lim.captureRadiusM);   // it is NOT a range miss
+
+  // AND THE GATE IS ON THE MAGNITUDE, NOT THE PROJECTION. A port sliding
+  // sideways through the envelope at 8 m/s has a signed closing rate of zero
+  // and must not latch; gating on the projection would have latched it.
+  const Pair sideways = facing(0.30, 0.0);
+  const dk::Candidate s = dk::candidate(sideways.mine, sideways.theirs,
+                                        Vec3{0, 8.0, 0}, lim, false, false);
+  CHECK(!s.available);
+  CHECK(s.verdict == dk::Verdict::TooFast);
+  CHECK_NEAR(s.closingMS, 0.0, 1e-12);
+}
+
+TEST(a_port_pointing_the_wrong_way_is_told_about_the_pointing) {
+  const dk::Limits lim;
+  // Both faces +X: the target's port points the same way as ours, which is
+  // 180 degrees from mated. Inside the radius and dead slow, so the ONLY thing
+  // wrong is the attitude.
+  const dk::PortPose mine = at(Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+  dk::PortPose theirs = at(Vec3{0.20, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+  const dk::Candidate c =
+      dk::candidate(mine, theirs, Vec3{0.05, 0, 0}, lim, false, false);
+  CHECK(!c.available);
+  CHECK(c.verdict == dk::Verdict::NotFacing);
+  CHECK_NEAR(c.coneErrorRad * kDeg, 180.0, 1e-9);
+
+  // The cone edge, both sides of it, so the 30 degrees is measured rather than
+  // assumed. `coneErrorRad` is the angle from ANTIPARALLEL, so a face rotated
+  // by 29 degrees off -X is 29 degrees of error.
+  const double edges[2] = {29.0, 31.0};
+  for (const double deg : edges) {
+    const double a = orbital::kPi - deg / kDeg;
+    theirs = at(Vec3{0.20, 0, 0}, Vec3{std::cos(a), std::sin(a), 0},
+                Vec3{0, 0, 1});
+    const dk::Candidate e =
+        dk::candidate(mine, theirs, Vec3{0.05, 0, 0}, lim, false, false);
+    CHECK_NEAR(e.coneErrorRad * kDeg, deg, 1e-9);
+    CHECK(e.available == (deg < 30.0));
+    if (!e.available) CHECK(e.verdict == dk::Verdict::NotFacing);
+  }
+}
+
+TEST(a_vessel_may_not_dock_to_itself_and_that_beats_every_other_verdict) {
+  const dk::Limits lim;
+  // A vessel's own port against itself: perfectly in range, perfectly still.
+  // Geometry alone would call this an ideal capture, which is exactly why the
+  // identity rule cannot be left to geometry.
+  const dk::PortPose p = at(Vec3{0, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+  const dk::Candidate self =
+      dk::candidate(p, p, Vec3{0, 0, 0}, lim, false, true);
+  CHECK(!self.available);
+  CHECK(self.verdict == dk::Verdict::SelfDock);
+  // And it wins over the range refusal too, so a client cannot be told "fly
+  // closer" about a vessel it is already inside.
+  const Pair far = facing(500.0, 0.0);
+  const dk::Candidate farSelf =
+      dk::candidate(far.mine, far.theirs, far.relVel, lim, false, true);
+  CHECK(farSelf.verdict == dk::Verdict::SelfDock);
+
+  // THE CONTROL: the identical geometry with two different vessels latches.
+  CHECK(dk::candidate(p, at(Vec3{0, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 1, 0}),
+                      Vec3{0, 0, 0}, lim, false, false)
+            .available);
+}
+
+TEST(an_already_latched_vessel_is_refused_rather_than_latched_twice) {
+  const dk::Limits lim;
+  const Pair p = facing(0.0, 0.0);          // mated: 0 m, 0 m/s
+  const dk::Candidate again =
+      dk::candidate(p.mine, p.theirs, p.relVel, lim, true, false);
+  CHECK(!again.available);
+  CHECK(again.verdict == dk::Verdict::AlreadyDocked);
+  // The control, one bool apart.
+  CHECK(dk::candidate(p.mine, p.theirs, p.relVel, lim, false, false).available);
+}
+
+TEST(a_vessel_with_no_port_can_never_be_offered_a_dock) {
+  // "No port" is not a pose, so it cannot be a geometric refusal: it is the
+  // ABSENCE of the part, and the authority on that is the catalogue. This is
+  // the assertion the client's own gate is built on -- a design whose parts
+  // contain no `DockingPort` never reaches `candidate` at all -- and it is here
+  // so the two halves of D-015's uniform rule ("a vessel can dock if its design
+  // contains a port") are checked against one fact.
+  const vessel::PartDef* port =
+      vessel::catalogue().get(vessel::parts::DockingPort);
+  CHECK(port != nullptr);
+  CHECK(port->dockCaptureRadiusM > 0.0);
+  // and EVERY other part in the catalogue carries a zero radius, so "has a
+  // port" is decidable off the part table with no second list to maintain.
+  int withPort = 0;
+  for (const vessel::PartDef& d : vessel::catalogue().all()) {
+    if (d.dockCaptureRadiusM > 0.0) withPort += 1;
+  }
+  CHECK(withPort == 1);
+}
+
+// =============================================================================
+// PH-363. LETTING GO.
+// =============================================================================
+TEST(a_release_pushes_straight_out_of_the_port_and_clears_the_envelope) {
+  const dk::Limits lim;
+  // Latched to a host travelling at orbital speed. The release must be relative
+  // to the HOST: a vessel that came off at 0.20 m/s in the BODY frame would be
+  // 7.8 km/s adrift, which is the same class of defect `CarrierRide.restAt`
+  // exists for.
+  const Vec3 hostVel{0.0, 7800.0, 0.0};
+  const dk::PortPose myPort = at(Vec3{10, 0, 0}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+  const Vec3 v = dk::releaseVelocity(myPort, hostVel, 0.0);   // 0 -> the default
+  CHECK_NEAR(v.x - hostVel.x, dk::kReleaseSepMS, 1e-12);
+  CHECK_NEAR(v.y, hostVel.y, 1e-12);
+  CHECK_NEAR(v.z, hostVel.z, 1e-12);
+  CHECK_NEAR(dk::kReleaseSepMS, 0.20, 1e-12);
+
+  // AND IT ACTUALLY GETS OUT. Coasting at the release rate, the separation
+  // passes the capture radius in 3.0 s, which is the derivation in the header
+  // checked rather than restated.
+  const double tClearS = lim.captureRadiusM / dk::kReleaseSepMS;
+  CHECK_NEAR(tClearS, 3.0, 1e-12);
+  CHECK(dk::kReleaseSepMS * 10.0 <= lim.maxClosingMS);  // an order below the limit
+
+  // A caller may ask for its own rate, and the direction is still the port's.
+  const dk::PortPose sideways = at(Vec3{0, 0, 3}, Vec3{0, 0, -1}, Vec3{1, 0, 0});
+  const Vec3 w = dk::releaseVelocity(sideways, Vec3{0, 0, 0}, 0.5);
+  CHECK_NEAR(w.z, -0.5, 1e-12);
+  CHECK_NEAR(w.x, 0.0, 1e-12);
+}
+
+TEST(the_manual_dwell_is_why_two_metres_per_second_is_the_limit) {
+  // The number `Limits::maxClosingMS` carries is a POLICY, and this is the
+  // physical fact that makes it the right policy for a HAND FLOWN dock rather
+  // than an arbitrary round number.
+  //
+  // A head-on pass spends 2R/v inside the capture sphere. At the limit that is
+  // 0.60 s, which is about twice a deliberate reaction (250 ms) and therefore
+  // a window a player can actually hit. At 10 m/s it is 0.12 s, which is UNDER
+  // one reaction time: the button would light and go out before a hand could
+  // answer it. The limit is the speed at which manual docking stops being a
+  // thing a human can do, and it is also the speed above which `sweptCapture`
+  // refuses. One number, two arguments, no drift.
+  //
+  // THE FIRST DRAFT OF THIS TEST CLAIMED 0.12 s WAS "SHORTER THAN A FRAME AT
+  // 30 FPS" AND THE ASSERTION FAILED, which is the reason the arithmetic is
+  // asserted rather than only written in the comment: 0.12 s is 3.6 frames.
+  // The conclusion survived; the justification did not, and only the check
+  // knew.
+  const dk::Limits lim;
+  const double kReactionS = 0.25;
+  const double dwellAtLimitS = 2.0 * lim.captureRadiusM / lim.maxClosingMS;
+  CHECK_NEAR(dwellAtLimitS, 0.60, 1e-12);
+  CHECK(dwellAtLimitS > 2.0 * kReactionS);
+  const double dwellAtTenS = 2.0 * lim.captureRadiusM / 10.0;
+  CHECK_NEAR(dwellAtTenS, 0.12, 1e-12);
+  CHECK(dwellAtTenS < kReactionS);
+  // And the rendezvous this project actually flew clears the limit by nearly an
+  // order of magnitude, so the gate refuses mistakes and not the flight plan.
+  CHECK(0.23133 * 8.0 < lim.maxClosingMS);
+}

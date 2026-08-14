@@ -17,6 +17,7 @@
 import './styles/navball.css';
 import { esc } from './GameHud.js';
 import type { NavPublication } from '../app/FlightNav.js';
+import { labelOf } from '../player/Bindings.js';
 import {
   dirOf, viewOf, frontMarks, drawBall, drawMarks, type Mark,
 } from './NavballDraw.js';
@@ -208,7 +209,7 @@ export class Navball {
     // The warp and SAS terms join the diff key, or the chip row would keep
     // drawing a stale warp factor until the status happened to change.
     const key = `${r.status}|${r.sas}|${r.message}|${warn}|${step}`
-      + `|${sasErr(r)}|${warpChip(r)}`;
+      + `|${sasErr(r)}|${warpChip(r)}|${dockChip(r)}`;
     if (key === this.last[4]) return;
     this.last[4] = key;
     this.chipsEl.innerHTML = `<span class="chip st">${esc(r.status)}</span>`
@@ -232,6 +233,7 @@ export class Navball {
       // The standing warning comes BEFORE the transient message, so a flash
       // cannot push it off the end of the row on a narrow window.
       + (warn === '' ? '' : `<span class="chip warn">${esc(warn)}</span>`)
+      + dockChip(r)
       + (r.message === '' ? '' : `<span class="chip msg">${esc(r.message)}</span>`);
   }
 
@@ -497,6 +499,50 @@ function clock(secs: number): string {
  * measurement of nothing, and the mode chip is the one thing on this row a
  * player reads at a glance.
  */
+/**
+ * PH-367. THE DOCK CHIP, ON THE SAS CHIP'S OWN ARGUMENT.
+ *
+ * The SAS chip says which mode is on and `sasErr` says whether the mode is
+ * WINNING, and R89's whole lesson is that the second half is the one a pilot
+ * needs. A docking control has exactly that shape: `DOCK` alone would say a
+ * verb is available and nothing about whether it can be used, which for a
+ * control whose window is 0.60 m wide is no information at all.
+ *
+ * SO IT IS VISIBLE WHENEVER THERE IS A TARGET, AND IT ALWAYS SAYS WHY. Out of
+ * range, not lined up, closing too fast: each names the gate that is shut, and
+ * the numbers beside it are the measurement against /core's own limit, so a
+ * player 0.9 m out reads `0.90 / 0.60 m` rather than a dark button. GP-56's
+ * rule, and `PauseRootHtml`'s `blocked` row is the shipped precedent for a
+ * disabled control that carries its reason as visible text rather than a
+ * tooltip.
+ *
+ * It draws NOTHING when there is no target at all, which is the one case where
+ * silence is honest: a rocket on the pad has no business being told it cannot
+ * dock.
+ */
+function dockChip(r: NavballFullReadout): string {
+  const d = r.dock;
+  if (d === undefined || !d.hasTarget) return '';
+  if (d.docked) {
+    return `<span class="chip dock on">DOCKED ${esc(d.targetName)}`
+      + `  ${esc(labelOf('dock'))} to release</span>`;
+  }
+  // THE MEASUREMENT AND THE LIMIT, both, always. A separation on its own is a
+  // number; a separation against the radius it is judged by is an instruction.
+  const near = d.separationM < 1000;
+  const range = near
+    ? `${fix(d.separationM, 2)} / ${fix(d.captureRadiusM, 2)} m`
+    : `${fix(d.separationM / 1000, 2)} km`;
+  // The sign of the closing rate is the whole information at close range.
+  const rate = near ? `  ${d.closingMS >= 0 ? '+' : ''}${fix(d.closingMS, 2)}` : '';
+  if (d.available) {
+    return `<span class="chip dock ready">DOCK ${esc(labelOf('dock'))}`
+      + `  ${range}${rate}</span>`;
+  }
+  return `<span class="chip dock off">DOCK  ${esc(d.why)}`
+    + `  ${range}${rate}</span>`;
+}
+
 function sasErr(r: NavballFullReadout): string {
   if (r.sas === 'OFF' || !Number.isFinite(r.sasErrDeg)) return '';
   return `  ${fix(r.sasErrDeg, 1)}\u00b0${r.sasSaturated ? '  SAT' : ''}`;

@@ -34,6 +34,8 @@ import { len } from '../sim/FlightAbi.js';
 import type { Vec3 } from '../sim/FlightAbi.js';
 import { EMPTY_META, orbitMeta } from '../sim/ManeuverAbi.js';
 import type { FlightMode } from './FlightMode.js';
+import { dockPublication } from './FlightDock.js';
+import type { DockPublication } from './FlightDock.js';
 
 /**
  * THE MANEUVER NODE AS A CLOCK AND A COUNTDOWN, which is what a hand pilot
@@ -172,6 +174,17 @@ export interface NavPublication {
   burn: NodeBurn | null;
   /** The selected target, relative, or null when nothing is selected. */
   target: NavTarget | null;
+  /**
+   * PH-367. THE DOCKING CONTROL'S STATE, INCLUDING WHY IT IS DARK.
+   *
+   * It is never null, which is the point: `hasTarget: false` with `why: 'no
+   * docking target'` is a claim, and a null would have been an absence that
+   * every consumer had to invent a sentence for. The chip draws `why`
+   * unconditionally, so a control that cannot be used always says what would
+   * make it usable -- GP-56's rule ("a disabled control that names its reason
+   * is a promise; a missing one is a feature nobody can find").
+   */
+  dock: DockPublication;
 }
 
 const DEG = 180 / Math.PI;
@@ -210,5 +223,6 @@ export function navPublication(m: FlightMode): NavPublication {
     sasSaturated: tm.sasSaturated,
     burn: m.nodeBurn,
     target: m.navTarget,
+    dock: dockPublication(m),
   };
 }

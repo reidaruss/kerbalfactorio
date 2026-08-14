@@ -33,6 +33,11 @@ export type Action =
   // disembark); everything else means exactly one thing and only while flying.
   // GP-74. `recover` is the way OUT: it takes the vessel off the world and
   // gives the pad back, from on foot or from the cockpit.
+  // PH-360. `dock` is ONE verb with two meanings decided by state: latch when
+  // the envelope is open, release when latched, on `board`'s own precedent
+  // (one key, several meanings, decided by where you are). Two keys would
+  // have been two things to learn for a control that is never ambiguous.
+  | 'dock'
   | 'board' | 'recover' | 'stage' | 'throttleUp' | 'throttleDown' | 'throttleFull'
   | 'throttleCut' | 'pitchUp' | 'pitchDown' | 'yawLeft' | 'yawRight'
   | 'rollLeft' | 'rollRight' | 'sasToggle' | 'sasMode' | 'warpUp' | 'warpDown'
@@ -179,6 +184,11 @@ export const BINDINGS: Record<Action, readonly string[]> = {
   // Backspace inside it means something else, and a key with two meanings one
   // of which eats your typing is worse than a key some keyboards make awkward.
   recover: ['Delete'],
+  // PH-360. `]` because every letter on the board is taken (see the note
+  // above `recover`, which had to take Delete for the same reason) and the
+  // bracket pair is free, adjacent to nothing destructive, and reachable
+  // without leaving the right hand's home position on the translation keys.
+  dock: ['BracketRight'],
   stage: ['Space', 'KeyN'],
   throttleUp: ['ShiftLeft', 'ShiftRight', 'KeyI'],
   throttleDown: ['KeyK'],
@@ -307,7 +317,7 @@ export const UI_ALLOWED: readonly Action[] =
  * would change nothing except to imply they might work.
  */
 export const MAP_ALLOWED: readonly Action[] = [
-  'map', 'board', 'recover', 'stage',
+  'map', 'board', 'recover', 'stage', 'dock',
   'throttleUp', 'throttleDown', 'throttleFull', 'throttleCut',
   'pitchUp', 'pitchDown', 'yawLeft', 'yawRight', 'rollLeft', 'rollRight',
   'sasToggle', 'sasMode', 'warpUp', 'warpDown',
@@ -371,6 +381,12 @@ export function prettyCode(code: string): string {
     // "Numpad8" reads as an identifier; "Numpad 8" reads as a key. PH-301.
     .replace(/^Numpad(?=[0-9])/, 'Numpad ')
     .replace('Backquote', '`')
+    // PH-360. The bracket pair, because the dock key had to take one: every
+    // letter is bound (see `recover`, which took Delete for the same reason)
+    // and a chip reading `DOCK BracketRight` tells a player to press a key
+    // that is not written on any keyboard.
+    .replace('BracketRight', ']')
+    .replace('BracketLeft', '[')
     .replace('Backslash', '\\');
 }
 

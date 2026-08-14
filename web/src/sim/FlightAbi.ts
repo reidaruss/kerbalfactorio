@@ -12,6 +12,7 @@ import type { OfCoreModule } from './wasm/heap.js';
 import {
   vesselAbi, FLIGHT_STATE_WORDS, SAS_MODE_UNKNOWN, TELEMETRY_WORDS, ORBIT_WORDS,
   PART_ROW_WORDS, TRANSFORM_WORDS, RCS_WORDS, DOCK_STATUS_WORDS,
+  DOCK_CANDIDATE_WORDS, PORT_POSE_WORDS,
 } from './wasm/vesselabi.js';
 import type { OfVesselModule } from './wasm/vesselabi.js';
 
@@ -271,6 +272,108 @@ export function dockStatus(M: OfCoreModule, f: number): DockStatusRow {
     bestReason: a[8] ?? 0, bestClosingMS: a[9] ?? 0,
     bestConeErrorRad: a[10] ?? 0,
   };
+}
+
+/**
+ * PH-362 (ABI 26). WOULD A DOCK SUCCEED RIGHT NOW, AND IF NOT WHY.
+ *
+ * Distinct from `DockStatusRow` and the two are not interchangeable.
+ * `dockStatus` reports what the LAST TICK's swept test found, which is the
+ * right answer for a mechanism and the wrong one for a button: a button is
+ * pressed between ticks, may be looked at on a paused sim, and has to name its
+ * refusal BEFORE it is pressed.
+ */
+export interface DockCandidateRow {
+  /** A rig exists and is armed. False means nothing is selected to dock to,
+   *  which is a different claim from "you cannot dock". */
+  armed: boolean;
+  available: boolean;
+  /** 0 available, 1 out of range, 2 not facing, 3 too fast, 4 already docked,
+   *  5 self-dock, 6 not armed. */
+  verdict: number;
+  separationM: number;
+  /** POSITIVE IS CLOSING. `DockStatusRow.closingMS` is a magnitude and cannot
+   *  tell "arriving" from "drifting away"; this can, and the sign is what a
+   *  pilot 4 m out actually needs. */
+  closingMS: number;
+  coneErrorRad: number;
+  /** The three limits the verdict was judged against, straight from /core.
+   *  Published so a screen quotes ONE authority: they come off the part
+   *  (`vessel.h`) and a copy on this side would go stale the day a second port
+   *  class ships. */
+  captureRadiusM: number;
+  captureConeRad: number;
+  maxClosingMS: number;
+}
+
+const NO_CANDIDATE: DockCandidateRow = {
+  armed: false, available: false, verdict: 6, separationM: 0, closingMS: 0,
+  coneErrorRad: 0, captureRadiusM: 0, captureConeRad: 0, maxClosingMS: 0,
+};
+
+export function dockCandidate(M: OfCoreModule, f: number,
+                              selfId = 0, targetId = 0): DockCandidateRow {
+  const n = vesselAbi(M)._of_dk_candidate?.(f, selfId, targetId) ?? 0;
+  if (n < DOCK_CANDIDATE_WORDS) return NO_CANDIDATE;
+  const a = scratchF64(M, DOCK_CANDIDATE_WORDS);
+  return {
+    armed: (a[0] ?? 0) !== 0, available: (a[1] ?? 0) !== 0,
+    verdict: a[2] ?? 6, separationM: a[3] ?? 0, closingMS: a[4] ?? 0,
+    coneErrorRad: a[5] ?? 0, captureRadiusM: a[6] ?? 0,
+    captureConeRad: a[7] ?? 0, maxClosingMS: a[8] ?? 0,
+  };
+}
+
+/**
+ * PH-360 (ABI 26). A port's world pose: `docking::portAt`, reached rather than
+ * reimplemented. R93 asked for this export by name so that "the world pose is
+ * built by `docking::portAt` rather than by a second copy of it in TypeScript",
+ * and a second copy would be a second opinion about which local axis is
+ * forward. Returns null when the export is absent (an older wasm).
+ */
+export interface PortPose { posM: Vec3; faceAxis: Vec3; rollAxis: Vec3 }
+
+export function portAt(M: OfCoreModule, originM: Vec3, forward: Vec3,
+                       right: Vec3, local: PortPose): PortPose | null {
+  const n = vesselAbi(M)._of_dk_port_at?.(
+    originM[0], originM[1], originM[2], forward[0], forward[1], forward[2],
+    right[0], right[1], right[2],
+    local.posM[0], local.posM[1], local.posM[2],
+    local.faceAxis[0], local.faceAxis[1], local.faceAxis[2],
+    local.rollAxis[0], local.rollAxis[1], local.rollAxis[2]) ?? 0;
+  if (n < PORT_POSE_WORDS) return null;
+  const a = scratchF64(M, PORT_POSE_WORDS);
+  return {
+    posM: [a[0] ?? 0, a[1] ?? 0, a[2] ?? 0],
+    faceAxis: [a[3] ?? 0, a[4] ?? 1, a[5] ?? 0],
+    rollAxis: [a[6] ?? 1, a[7] ?? 0, a[8] ?? 0],
+  };
+}
+
+/**
+ * PH-362. The sentence for a live verdict. Beside `dockReasonText` rather than
+ * merged into it because the two vocabularies answer different questions and
+ * merging them would have forced one of the two to lie: `dockReasonText`
+ * explains a PASS THAT IS OVER ("the ports never came within the capture
+ * radius"), this explains the STATE RIGHT NOW ("out of range"). Same file, so
+ * they cannot drift into two dialects.
+ */
+export function dockVerdictText(verdict: number): string {
+  if (verdict === 0) return 'ready to dock';
+  if (verdict === 1) return 'out of range';
+  if (verdict === 2) return 'not lined up';
+  if (verdict === 3) return 'closing too fast';
+  if (verdict === 4) return 'already docked';
+  if (verdict === 5) return 'that is your own vessel';
+  return 'no docking target';
+}
+
+/** PH-364. The refusal a `_of_dk_capture` return code carries. It returns MINUS
+ *  the verdict, so a press gets its sentence without a second call. */
+export function dockCaptureText(code: number): string {
+  if (code === 1) return 'docked';
+  if (code === 0) return 'no docking target';
+  return dockVerdictText(-code);
 }
 
 /** PH-303. The sentence for a refusal code. It lives here rather than in a

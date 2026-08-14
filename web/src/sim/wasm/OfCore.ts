@@ -111,7 +111,19 @@ import { HandleLedger } from './HandleLedger.js';
 // and the unknown -> known -> visited state machine
 // (`of_poi_known`/`of_poi_mark_known`/`of_poi_visited`/`of_poi_mark_visited`)
 // plus its own save surface (`of_poi_save`/`of_poi_alloc_bytes`/`of_poi_load`).
-export const OF_ABI_VERSION = 25;
+// ABI 26 (2026-08-14, PH-360..366, D-015's manual rung): THE DOCKING COMMAND
+// SURFACE, `of_dk_*`. R93 found that no `of_dk_*` symbol existed at all, so a
+// client could not ask whether a dock was possible let alone perform one:
+// `of_fl_dock_*` arms a rig that latches inside the step and reports the last
+// tick, which is a mechanism and not a control. Five additive exports, every
+// one delegating to `of/docking.h`: `of_dk_port_at` (portAt, exported pure so
+// the world pose of a port is never built twice), `of_dk_latch` (auto-latch on
+// contact, or ADVISORY -- advisory is what makes a hand-flown dock possible at
+// all), `of_dk_candidate` (would it latch RIGHT NOW and if not which gate is
+// shut, with the three limits published beside the three measurements),
+// `of_dk_capture` and `of_dk_release`. NOTHING EXISTING CHANGED: `DockRig`'s
+// latch flag defaults on, so every ABI 25 caller gets the rig it had.
+export const OF_ABI_VERSION = 26;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 
