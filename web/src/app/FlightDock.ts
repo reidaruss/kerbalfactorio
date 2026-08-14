@@ -18,27 +18,32 @@
 // forward, which is the failure R93 named in advance.
 //
 // -----------------------------------------------------------------------------
-// WHY THE STATION'S PORT COMES OFF ITS SOCKET AND NOT OFF A `DockingPort` PART,
-// SAID OUT LOUD BECAUSE D-015 ASKS FOR THE OTHER THING.
+// WHY THE STATION'S PORT STILL COMES OFF ITS SOCKET AND NOT OFF THE DESIGN'S
+// `DockingPort` PART, UPDATED FOR PH-380 (D-015).
 //
 // D-015's rule is uniform: "a vessel can dock if its design contains a port",
-// and it says `mintStation` should give Anchorage a real design containing a
-// `DockingPort` rather than `emptyDesign()`. AT HEAD THAT HAS NOT LANDED --
-// `SpaceStation.mintStation` still calls `emptyDesign()` and the string
-// `DockingPort` appears nowhere in `web/src`. The station's port exists only as
-// authored geometry, `socket_dock`, measured at station-local (30.40, 2.20, 0)
-// with face +X and roll +Y, and checked against `contracts.json` by both
-// `validate_glb` and `probes/stationdock.js`.
+// and it said `mintStation` should give Anchorage a real design containing a
+// `DockingPort` rather than `emptyDesign()`. THAT HALF HAS NOW LANDED --
+// `SpaceStation.mintStation` mints a one-part design (`stationDesign`, PH-380)
+// and `promoteVessel` refuses the station BY NAME rather than by its part
+// count being zero, so "has a port" is decidable off Anchorage's design the
+// same way it is off a flown vessel's.
 //
-// So this file reads the socket, keyed off `isStation`, and that IS the special
-// case D-015 was written to avoid. It is done anyway, and flagged here rather
-// than quietly, for one reason: giving the station a design with a part in it
-// changes what `promoteVessel` does with the record (`emptyDesign`'s own
-// comment: "a station has no parts because it is not built in the bay ...
-// `promoteVessel` refuses a record it cannot rebuild"), and that is a station
-// change owned by gameplay, not a docking change owned by physics. The seam is
-// `hostPortOf` below: the day the station has a real port part, that one
-// function stops branching and nothing else in this file moves.
+// WHAT HAS NOT CHANGED, AND WHY THAT IS THE RIGHT ANSWER RATHER THAN THE REST
+// OF THE FIX. The design's `DockingPort` part sits at the design's own origin
+// (0, 0, 0) with no attachment to anything, and this file still reads
+// `socket_dock`, authored geometry measured at station-local (30.40, 2.20, 0)
+// with face +X and roll +Y, checked against `contracts.json` by both
+// `validate_glb` and `probes/stationdock.js`. Those two positions have no
+// natural correspondence -- a design's coordinates are a rocket-stack's own
+// local frame and the station's are the shipped mesh's -- and inventing a
+// mapping between them would manufacture a SECOND authority for one physical
+// fact (where the port really is), which is the exact failure this project
+// keeps finding under a different name (D-014, CE-83, GP-284's own header).
+// The asset is measured and gated; the design part is not. So this file keeps
+// reading the socket, keyed off `isStation`, and that special case is now
+// about WHERE THE POSE COMES FROM, not about WHETHER THE STATION HAS A PORT
+// AT ALL -- the design settles that question uniformly, same as D-015 asked.
 //
 // THE JOIN IS A RELATION, NOT A MERGE. See `VesselDock` in VesselRegistry.ts
 // for the argument and the save shape. `SAVE_VERSION` does not move.

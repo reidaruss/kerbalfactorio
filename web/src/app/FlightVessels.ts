@@ -29,6 +29,10 @@ import type { FlightMode } from './FlightMode.js';
 // would have made §5's contract have two authors, which is the failure the
 // contract exists to prevent.
 import { mayLeave, whyNotLeave } from './ResumeBoot.js';
+// PH-380. See `promoteVessel`: the station's un-flyability used to be a side
+// effect of `SpaceStation.emptyDesign()` and is a stated rule now that the
+// station carries a real design.
+import { isStation } from '../game/SpaceStation.js';
 
 /** The scratch designs promoted vessels are flying, one per promoted record.
  *  Held here because `FlightSession.refreshParts` reads the per-stage table off
@@ -311,6 +315,19 @@ export function demoteVessel(m: FlightMode, tick: number): number {
 export function promoteVessel(m: FlightMode, id: number, tick: number): boolean {
   const rec = registry.find(id);
   if (rec === null) return false;
+  // PH-380. A PLACE, NOT A VEHICLE, REFUSED BY NAME.
+  //
+  // This used to be a side effect: `SpaceStation.emptyDesign()` gave the
+  // station zero parts, `VesselDesign.fromJson([])` returns 0, and the refusal
+  // three lines below caught it by accident. Now that `mintStation` gives
+  // Anchorage a real design (PH-380, D-015), that accident is gone and would
+  // otherwise take the "you walk into it, you do not fly it" rule with it: a
+  // one-part design with no crew and no engine would build a live `FlightSim`
+  // for anyone who reached `promoteVessel` by id, which both
+  // `MapMode.takeControl` (the map's "take control" gesture) and the debug
+  // `flight('promote', id)` surface can already do with no station guard of
+  // their own. The rule is stated here instead, once, for both callers.
+  if (isStation(rec)) return false;
   if (registry.promotedId === id && m.session.live) return true;
   if (registry.promotedId !== 0) demoteVessel(m, tick);
 
