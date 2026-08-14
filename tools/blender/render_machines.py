@@ -323,6 +323,23 @@ def client_machine_material():
                          "machine material from %s" % MACHINE_BATCH_TS)
     src = io.open(MACHINE_BATCH_TS, encoding="utf-8").read()
     has_partmat = ("PartMaterial" in src) or ("partMat" in src)
+    # RN-1566: WHOLE-LINE COMMENTS COME OUT BEFORE THE SEARCH, and the reason
+    # is that this parser had already been defeated by one. RN-1478 added a
+    # comment to `makeMaterial` saying "render_machines.py regex-reads them out
+    # of the FIRST `new THREE.MeshStandardMaterial({...})` here", which is
+    # true, correct, well meant - and is itself the first literal occurrence of
+    # that text in the file. The non-greedy search matched the SENTENCE, found
+    # no `roughness:` inside it, and every machine render in this repo failed
+    # with "MachineBatch's material declares no roughness" while the constants
+    # sat four lines below, unmoved and exactly as documented.
+    #
+    # The instrument was right to stop rather than guess; it was reading the
+    # wrong thing. Stripping lines whose first non-space characters are `//`
+    # leaves the parser looking only at code, which is what it always meant to
+    # read. Line comments only: a `/* */` block or a `//` inside a string
+    # would need a tokeniser, and neither exists in the region this reads.
+    src = "\n".join("" if ln.lstrip().startswith("//") else ln
+                    for ln in src.splitlines())
     m = re.search(r"new\s+THREE\.MeshStandardMaterial\(\{(.*?)\}\)", src,
                   re.S)
     if m is None:

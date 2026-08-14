@@ -53,8 +53,17 @@ import * as THREE from 'three';
 import { applyFoliageTone, FOLIAGE_TONE, foliageToneState, setFoliageTone } from './FoliageTone.js';
 import { loadTexture } from '../../assets/Loaders.js';
 
+// RN-1550: `paintchip` and `rust` join the union. Both have been IN the shipped
+// manifest since RN-1474/RN-1475 and neither was ever nameable here, because
+// this type is written against the roles the client can encounter and no role
+// pointed at either one. That is the correct state for a family with no
+// consumer and the wrong one the moment a role does: `familyForRole` returns
+// this type, so an unlisted family is a compile error at the table rather than
+// an untextured surface in the game, which is the failure mode this file's
+// three-way manifest check exists to make loud.
 export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
-  | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'paintchip' | 'rust' | 'flat';
+  | 'paintchip' | 'rust'
+  | 'leaf' | 'grass' | 'suitfab' | 'suitplate' | 'flat';
 
 /**
  * Role -> family. This is a COPY of `surfaces.json`'s two tables and it is
@@ -70,20 +79,30 @@ export type Family = 'panel' | 'coarse' | 'bark' | 'ore' | 'stone' | 'fur'
 const ROLE_FAMILY: Readonly<Record<string, Family>> = {
   Hazard: 'panel', Steel: 'panel',
   SteelDark: 'panel', SteelLight: 'panel',
-  // RN-1493 / RN-1494. The first two consumers of the D-020 vocabulary that
+  // RN-1493 / RN-1494 / RN-1550. The consumers of the D-020 vocabulary that
   // RN-1474 and RN-1475 shipped unreferenced. The full argument is in texgen's
   // copy of this table, which is the authority; in one line each: `Accent` is
   // PAINT ON plate and never plate, and `paintchip` is authored as exactly
   // that coating failing, so the role and the family finally describe one
-  // object; `SteelRust` is a new role rather than a re-pointing because every
-  // existing steel role is worn by the rockets and the station too, and a
-  // rusted orbital hull is a worse claim than an unweathered smelter.
+  // object; `SteelWorn` is a separate `paintchip` consumer for paint failing
+  // where the machine gets HIT rather than a painted band, so it does not
+  // collide with `Accent`; `SteelRust` is a new role rather than a
+  // re-pointing because every existing steel role is worn by the rockets and
+  // the station too, and a rusted orbital hull is a worse claim than an
+  // unweathered smelter or miner.
+  //
+  // INTEGRATION NOTE (art-forms merge, 2026-08-13): `SteelRust` was minted
+  // once per lane (smelter hot path, then independently the miner's wet-ore
+  // path) with two different constants. `of_lib.PALETTE`'s copy of this
+  // decision has the full resolution: ONE `SteelRust` role, carrying the
+  // art-forms constants (834F2A, 0.35, 0.92) everywhere, because that value
+  // is what the smelter lane's own report already asked for.
   //
   // Moves in the same commit as texgen's table (RN-100's rule:
   // verifyAgainstManifest makes a one-sided move a failed smoke run, and
   // check-roles.mjs makes it a failed build).
   Accent: 'paintchip',
-  SteelRust: 'rust',
+  SteelWorn: 'paintchip', SteelRust: 'rust',
   // SuitAccent stays on `panel` and that is deliberate rather than an
   // oversight: rocket_common.py and build_lander_landed.py both paint with it,
   // so it is NOT a player-only role and moving it would re-surface another

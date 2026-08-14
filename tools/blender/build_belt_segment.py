@@ -90,14 +90,129 @@ ROLLER_FLAT = ROLLER_R * 2.0 * math.cos(math.pi / 12.0)     # 0.1063
 CHIP_X = (W - RAIL_W) * 0.5 - 0.03      # 0.42, straddling the rail inner face
 CHIP_Z = H - 0.0125                     # top at 0.293, under the 0.30 rail top
 
+# ---------------------------------------------------------------------------
+# RN-1563 to RN-1565: THE SE FORM PASS, AND WHY IT IS ALL IN THE RAIL
+# ---------------------------------------------------------------------------
+# WHAT IS ACTUALLY VISIBLE ON A BELT, listed before anything was authored,
+# because on a 1.00 x 1.00 x 0.30 tile the answer is short and it decides the
+# whole pass. The rails' OUTER faces at x = +/-0.50, the deck and slats from
+# above, the state lamp, and the 0.10 m gap between one tile's under-frame and
+# the next one's. That is all. Everything else on this asset is buried in a
+# neighbour, in the ground, or under the deck.
+#
+# So the two 1.00 x 0.30 steel faces ARE the belt, they are 57 of them in
+# portcost's reference base (the most numerous object in a factory by a wide
+# margin), and they were one extruded box each. A machine that reads as
+# engineered has a frame with a SECTION - flanges at the edge, a lightened web
+# between them, stiffeners where the load goes - and that is what these become.
+#
+# MACHINE_FORM IS DELIBERATELY NOT IMPORTED HERE. Its layer table is in
+# absolute metres and was derived against 4 m to 8 m machines: a `tray` stands
+# 74 mm proud and a `housing` 281 mm, against a rail that is 100 mm wide and a
+# tile that is 300 mm tall. The module's docstring now says so at the top,
+# because "add the name to the list" was how the vocabulary came to be claimed
+# for thirteen machines and applied to two.
+#
+# THE POCKET DEPTH IS DERIVED FROM THE SHADOW CASCADE AND THAT IS THE WHOLE
+# TRICK. check_shadow_lod.py measures LOD0's VERTICES against LOD1's SURFACE,
+# and cascade 0 is 15.47 mm per texel. A web recessed 15.0 mm therefore puts
+# every new vertex 15.0 mm from the plain box LOD1 already draws, which is
+# inside cascade 0's own texel: the proxy needs no edit, its deviation stays
+# under the finest cascade, and all three cascades keep drawing the 84-triangle
+# tier instead of promoting the 340-triangle one. A 25 mm pocket would look
+# barely different and would cost cascade 0 the whole LOD0 mesh on every belt
+# in the base. The number is the instrument's, not taste.
+RECESS = 0.015
+RAIL_X = (W - RAIL_W) * 0.5             # 0.45, the rail's centre line
+
+# THE TILE ENDS STAY SOLID FULL-SECTION AND THAT IS FOR THE CURVES. Rails, deck
+# width and deck height are shared with belt_curve_common.py so that a curve
+# butted against a straight tile has no seam, and a curve's rail is one solid
+# arc band 0.10 m thick. Recess the straight tile's rail over its whole length
+# and every straight-to-curve junction in the game grows a 15 mm step. Ending
+# each tile with a full-section block puts a solid 0.10 x 0.30 face on both
+# boundary planes, so the seam is exactly what it was, and what a reader sees
+# mid-tile is a lightening pocket between two end stiffeners - which is what a
+# fabricated conveyor frame looks like anyway.
+RAIL_END = 0.09                         # solid block at each end of each rail
+RAIL_MID = 0.07                         # the mid-span stiffener between pockets
+CHORD_T = 0.07                          # top flange thickness
+CHORD_B = 0.06                          # bottom flange thickness
+WEB_Y = L * 0.5 - RAIL_END              # 0.41, where the pockets stop
+
+# The splice plates. A modular tile BOLTS to the one in front of it, and the
+# under-frame's end faces are the one part of this asset a player can see into
+# through the 0.10 m gap the 0.90 m under-frame leaves at each boundary. The
+# plate stands 15 mm proud of that face for RECESS's reason exactly, and the
+# bolts stand 12 mm proud of the PLATE, so both are within cascade 0's texel of
+# a surface LOD1 draws - which is why LOD1 gains the plate and not the bolts.
+SPLICE_Y = L * 0.45                     # 0.45, the under-frame's own end plane
+SPLICE_T = 0.015
+SPLICE_W = 0.86
+
+
+def _rail(mb, sx):
+    """One fabricated frame rail: two end blocks, a top and bottom flange, a
+    recessed web between them and a mid-span stiffener.
+
+    THE TOP FLANGE IS THE ONE PART OF THIS GAME'S PAINTED STEEL THAT IS
+    CERTAIN TO BE WORN, which is why it is this asset's `paintchip` consumer
+    and why the family is worth a draw call at all. It is the edge cargo is
+    dropped onto, the edge a player walks along, and the edge every transfer
+    scuffs, and there are 57 of these in the reference base against one
+    smelter's worth of any other painted surface. `SteelWorn` carries Steel's
+    own hex, so the flange is the SAME COLOUR as the rail under it and differs
+    only in how it takes light: chipped to bare alloy along the top arris,
+    coated everywhere the plate is flat. A different colour here would have
+    read as a stripe, which is the opposite of wear.
+
+    EVERY PART OF THIS RAIL IS EITHER ON x = +/-0.50 OR RECESSED EXACTLY
+    `RECESS` FROM IT, so the cell edge is held by four separate solids and the
+    proxy stays a plain box. Nothing here may stand PROUD: a belt that
+    overhangs its footprint z-fights the tile beside it on the grid."""
+    x = sx * RAIL_X
+    for sy in (-1, 1):
+        mb.box((RAIL_W, RAIL_END, H),
+               (x, sy * (L * 0.5 - RAIL_END * 0.5), H * 0.5), "Steel")
+    mb.box((RAIL_W, RAIL_MID, H - CHORD_T - CHORD_B),
+           (x, 0.0, (CHORD_B + H - CHORD_T) * 0.5), "Steel")
+    mb.box((RAIL_W, 2.0 * WEB_Y, CHORD_B), (x, 0.0, CHORD_B * 0.5), "Steel")
+    mb.box((RAIL_W - RECESS, 2.0 * WEB_Y, H - CHORD_T - CHORD_B),
+           (x - sx * RECESS * 0.5, 0.0, (CHORD_B + H - CHORD_T) * 0.5),
+           "Steel")
+    mb.box((RAIL_W, 2.0 * WEB_Y, CHORD_T), (x, 0.0, H - CHORD_T * 0.5),
+           "SteelWorn")
+
+
+def _splice(mb, bolts=True):
+    """The plate a tile bolts to its neighbour through, on the under-frame's
+    two end faces, plus four bolts when the tier can afford them.
+
+    THE ONLY THING A PLAYER CAN SEE OF THIS MACHINE'S STRUCTURE. The
+    under-frame is 0.90 m long in a 1.00 m cell, so a line of belts leaves a
+    0.10 m slot at every joint with the two frame ends looking at each other
+    across it, and until now what was in that slot was two blank dark faces.
+    A modular conveyor is BOLTED together there, and the joint is the one place
+    on this asset where saying so costs nothing that is visible from anywhere
+    else."""
+    for sy in (-1, 1):
+        mb.box((SPLICE_W, SPLICE_T, 0.11),
+               (0.0, sy * (SPLICE_Y + SPLICE_T * 0.5), 0.065), "SteelDark")
+        if not bolts:
+            continue
+        for bx in (-0.30, 0.30):
+            mb.box((0.035, 0.012, 0.035),
+                   (bx, sy * (SPLICE_Y + SPLICE_T + 0.006), 0.065), "Steel")
+
 
 def build_lod0(root):
     mb = of.MeshBuilder()
-    # side rails
+    # side rails, now a fabricated section rather than a bar. See _rail.
     for sx in (-1, 1):
-        mb.box((RAIL_W, L, H), (sx * (W - RAIL_W) * 0.5, 0.0, H * 0.5), "Steel")
+        _rail(mb, sx)
     # under-frame (reads as the machine's dark base, ties it to the ground)
     mb.box((DECK_W, L * 0.9, 0.12), (0.0, 0.0, 0.06), "SteelDark")
+    _splice(mb)
     # belt deck
     mb.box((DECK_W, L, 0.06), (0.0, 0.0, DECK_TOP - 0.03), "Rubber")
     # end rollers, axis across the flow. Tangent to the cell edge, NOT past it:
@@ -114,9 +229,22 @@ def build_lod1(root):
     """Hand-built, not decimated: a collapse decimator destroys a box
     silhouette before it saves anything worth having."""
     mb = of.MeshBuilder()
+    # THE RAIL STAYS ONE SOLID BOX AT THIS TIER, AND THAT IS THE POINT OF THE
+    # 15 mm POCKET (see RECESS). Every vertex the fabricated LOD0 rail adds is
+    # either ON this box's surface or exactly 15.0 mm inside it, which is under
+    # cascade 0's 15.47 mm texel, so this proxy still answers for LOD0 in every
+    # cascade. Reproducing the section here would cost 120 triangles on the
+    # tier that is drawn three times per frame to buy a pocket no shadow map
+    # can resolve.
     for sx in (-1, 1):
         mb.box((RAIL_W, L, H), (sx * (W - RAIL_W) * 0.5, 0.0, H * 0.5), "Steel")
     mb.box((DECK_W, L * 0.9, 0.12), (0.0, 0.0, 0.06), "SteelDark")
+    # The splice plates DO come to this tier, and the bolts do not, for the
+    # same measured reason: the plate stands 15 mm off the under-frame's end
+    # face and the bolts stand 12 mm off the PLATE, so without the plate here
+    # the bolts would be 27 mm from anything this mesh draws and would cost the
+    # asset cascade 0. Two boxes buy it back; eight would not be worth it.
+    _splice(mb, bolts=False)
     mb.box((DECK_W, L, 0.06), (0.0, 0.0, DECK_TOP - 0.03), "Rubber")
     for sy in (-1, 1):
         mb.box((ROLLER_L, ROLLER_FLAT, ROLLER_FLAT),
