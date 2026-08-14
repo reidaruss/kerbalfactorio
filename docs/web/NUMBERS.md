@@ -114,7 +114,7 @@ is that the numbers are handed out by one writer before the work starts.
 | RN-1590 to RN-1609 | rendering/art, A4 wave two on the VM (generator, inserter, power pole, wall/floor/door/pillar/foundation at the SE bar; sockets and colliders immutable) | allocated by Admin 2026-08-14 overnight at dispatch. **RN-1591 to RN-1606 USED 2026-08-14 by the A4 wave-two lane (`lane/art-forms2`); RN-1590 and RN-1607 to RN-1609 free, surrendered unused.** **THE HEADLINE IS NOT THE GEOMETRY, IT IS THAT THE COPLANAR ALLOWANCE TABLE LOST ITS MACHINE AND STRUCTURE HALF.** `check_coplanar.ALLOWED` carried `machines/generator: 35`, `machines/inserter: 14`, `structures/wall: 40`, `structures/foundation: 20` and `structures/door: 120` from the FS-75 baseline, **229 pairs, all five now measured at 0 and all five rows deleted**, per that table's own rule that an allowance larger than the measurement has stopped ratcheting. Every one of the 229 had ONE cause: a part dimensioned to END exactly where the part it is mounted on ends. 56 of the door's were on `Door_Leaf`, the only part of the structural kit that MOVES. **RN-1591, `machine_form` gains the structural set and a `rivet` layer, and refuses two machines by name.** The importer list was ALSO found stale in the safe direction (it still named `box` as absent three commits after RN-1551 imported it) and is corrected in the same commit, RN-1103's rule both ways. Wall/door/floor/foundation/pillar join it because they are plate assemblies at 4 m, the scale the LAYER table was derived against; **inserter (0.70 m across) and power pole (0.08 m members) are excluded with the belt's stated reason** - a `tray` stands 74 mm proud of an 80 mm leg. `rivet` at 0.015 exists because `bolt` at 0.044 would have cost the WALL its 1.0x marginal shadow multiplier: cascade 0 is 15.47 mm per texel, which is RN-1565's belt-pocket argument on the same number. **RN-1592, two new greebles**: `guard_arc` (a bar guard over a HORIZONTAL-axis rotating part - `guard_cage` is a ring of uprights and cannot guard a flywheel) and `bolt_circle` (`ring_boxes` only ever did a Z circle and a boiler lies on its side). **RN-1592 to RN-1595, THE GENERATOR**, lod0 532 -> 1412: a seven-bar guard over the 1.2 m flywheel with the outer two in Hazard, a bolted boiler end plate, a coamed fire door whose WINDOW is the emissive grate (a `hatch` would have bolted a plate over the one surface the sim drives), an ash lip in `SteelRust`, a control cabinet with the machine's first instrument, and `machine_form.stack`. **LOD1 559.02 -> 180.00 mm for 96 triangles, marginal 4.0x -> 3.0x**, and the 559.02 was pre-existing (the power take-off mast is a 1.90 m column LOD1 never had). **RN-1596, RN-1597, THE INSERTER, and the best number in the wave: LOD1 115.82 -> 46.09 mm, marginal 3.0x -> 2.0x on the most numerous machine after the belt.** The deciding constant is 0.75 mm of cable: at a 0.10 m offset the clamp bands measured 57.0 mm against cascade 1's 56.25, so `CABLE_A` is 0.09. lod0 244 -> 464. `validate_glb` also caught the bearing cap standing 20 mm out of `col_Inserter`, which is a published proxy; the cap got shorter. **RN-1598, RN-1599, THE POWER POLE, lod0 332 -> 672, and an HONEST NEGATIVE RESULT**: the same LOD1 trade was built, measured and reverted. Three-segment legs plus braces and steps took the tier to 376 triangles and 170.90 mm against the shipped 196 and 179.31 - the SAME single cascade, so the multiplier stayed at 3.0x and the cost per pole went UP 2212 -> 2392. **The general lesson is written down**: a machine's detail is CONCENTRATED so one stand-in box catches it (RN-1556, RN-1594); a lattice pole's is DISTRIBUTED over four metres and catching it is LOD0 again. What DID pay was the drop lead marching in three segments like the legs (302 mm clear of the mast as one straight box, 270.64 mm on the tier). **RN-1600 to RN-1606, THE STRUCTURAL SET.** Wall lod0 108 -> 444 **with its 1.0x multiplier intact** (LOD1 15.00 mm; nothing on the field is over 15 mm, which is the whole reason `rivet` exists). Floor lod0 132 -> 636 and **marginal 2.0x -> 1.0x for a 5 mm move** of the rib tops, 0.400 -> 0.395, closing a 20.00 mm deviation that predates every pass. Foundation lod0 108 -> 276, **3.0x -> 2.0x**, LOD1 carrying the footing step. Door lod0 216 -> 540 with an overhead closer in the head recess, a leaf kick plate and vision port, and sill chevrons. Pillar +240 triangles across foot, collar and head **and exactly zero on the shaft**, which is scaled by up to ten. **A SIXTH DEFECT CLASS THE CHECKER STRUCTURALLY CANNOT SEE, found by a Cycles receipt rather than by a gate**: two SAME-material parts at the same thickness on the same plane. `check_coplanar` gates on different-material pairs by design and says so, so it is right about the COLOUR and silent about the DEPTH; the wall's corner post and its rails were both 0.25 thick and both reached x = +/-2.00, and the render shows a hard black square at the foot of every corner post on every wall in the game. Pre-existing, fixed at the cause (rails 10 mm thinner, stopping 30 mm inside the posts), and it is the first thing this project has ever caught this way. **PRE-EXISTING FAILURES RECORDED, NOT INHERITED**: `structures/ruin` (632 coplanar) and `machines/smelter` (6) fail on this base with every change of this lane stashed, in assets it never touched. **OWED: the Windows D3D browser probes**, named in the lane report; SwiftShader cannot judge look. |
 | RN-1610 to RN-1619 | rendering, the low-tier sun disc loss (the 64 IBL cube misses the 0.53 deg disc entirely; low and medium tiers get no specular sun) | allocated by Admin 2026-08-14 overnight at dispatch |
 | PH-380 to PH-394 | physics/core, mintStation still ships emptyDesign() (PH-366's finding: the station's dock port comes off its asset socket, not a real design; D-015 not uniform for Anchorage; PS-43 fixture stale) | allocated by Admin 2026-08-14 evening at dispatch; lane greps PH ledger first |
-| GP-790 to GP-804 | gameplay, the KeyW 500-frame player-movement freeze (reproducible; diagnosis first, fix at the cause) | allocated by Admin 2026-08-14 evening at dispatch |
+| GP-790 to GP-804 | gameplay, the KeyW 500-frame player-movement freeze (reproducible; diagnosis first, fix at the cause) | allocated by Admin 2026-08-14 evening at dispatch; GP-790 to GP-796 USED (the three-signature instrument, the mute audit, the NOT-REPRODUCED verdict, the rebase refuted, the `playTape` replace trap, `uiHeld` has no reference count, the PowerShell string-evalarg trap); **GP-797 to GP-804 abandoned, never used** |
 | GP-805 to GP-819 | gameplay/probes, instrument bundle: zerog Z4 vacuous-pass risk, stationwalk.js aiming at the stale install.standPos, the antenna dish unselectable to the pick | allocated by Admin 2026-08-14 evening at dispatch |
 | RN-1570 to RN-1589 | rendering, THE LIGHT LANE (sun disc 0.53 deg at 35x irradiance-conserving per RN-1524's recommendation; the smelter shade discriminator, shot geometry vs machine self-shadowing; the sunlit-face machine box RN-1527 and RN-1479 both demand; frame re-takes) | allocated by Admin 2026-08-13 night at dispatch |
 | GP-533 to GP-545 | gameplay, the reveal + scanning antenna content (item, recipe, tech row, one-shot mark_known at build) | **GP-533 to GP-539 USED** 2026-08-13 (the antenna as the seventh `survival::StructureKind`, NO ABI CHANGE — confirmed `abi=24` on every driven run rather than assumed; the price, Iron 25 / Copper 20 / Stone 15, with copper deliberately matching the pad's own; the tech, no prereq and no milestone, on the electricity-cycle ruling; the one-shot reveal itself, `GameplayActions.revealNearbySites` calling the already-shipped ABI-24 `of_poi_near`/`of_poi_mark_known`, with `PoiMarkers.ts` as the one SiteRow-to-MapMarker function both the live reveal and the load-time rebuild share; the marker-registry-is-rebuilt-not-reloaded persistence design plus the `SaveWorlds.ts` compile-time gate catching `antennas` as body-scoped on the first build; the checklist row's `sites.knownCount() > 0` predicate; and `SiteCatalog::insideAnySite` recorded OWED rather than wired, the brief's own permitted fallback once the actual cost of the headline feature was known). GP-540 to GP-545 free. Recorded by the lane per rule 5. **`probes/antenna.js`, survival, 640x360: `valid: true, pass: true, fails: []`.** Sites known 0 -> 1, one `ruin` marker (`known: true`, real unit `dirBody`), the `antenna` checklist row `satisfied: false -> true`, the antenna's own bill (`25 Iron + 20 Copper + 15 Stone`) billed exactly, and a same-run idempotence check (`siteMarkKnown` on an already-known site returns `false`, marker count unchanged). **One harness defect found and fixed in the same lane, not left for the next one**: the first run of the probe under-budgeted its own harvest by measuring science SPENT (8, the tech's cost) rather than science MADE (up to 12, since the crafting loop clicked a fixed count) — Iron for science is 2 per pack, so the gap was 8 Iron, and the antenna's build-menu tile read `affordable: false` with the pack 4 Iron short. Fixed by capping the crafting loop at "stop once nine are held" instead of a fixed twelve clicks, and by raising the smelt targets with real margin; green on the very next run. |
@@ -1550,3 +1550,74 @@ from asserting on an instrument whose semantics it had not established, which
 would have produced a red on a feature that worked and a day spent looking in
 the wrong file. **If a boolean disagrees with a distance you also measured,
 believe the distance until you have read the line that sets the boolean.**
+
+
+### `playTape` REPLACES, so a settle helper that writes a tape eats the key you just pressed
+
+GP-794. `probes/keywmute.js` opened a panel, called `of.escape()`, and reported
+that Escape closed **nothing**: `openCount` went 1 to 1, then 2 to 2, then 3 to
+3 as the panels stacked up, and a held KeyW moved **0.000 m** against a 4.284 m
+baseline. Read at face value that is the reported symptom exactly, a
+player-movement freeze with a healthy frame rate and a live tick.
+
+**It was the probe.** `of.escape()` does not press anything; it QUEUES a tape
+(`[{hold:2, actions:['cancel']}, {hold:2, keys:[]}]`) that no fixed tick has
+consumed at the moment it returns. The probe's own `settle()` helper begins with
+`of.input.tape([{hold: ..., keys: []}])`, and `Input.playTape` says what it does
+in one line: **"Replaces anything still playing."** The Escape was overwritten
+before a single tick could read it. Advancing with a bare `of.run()` instead,
+touching no tape, the same run goes green on every case: every panel closes on
+its own verb and on Escape, and every post-close walk covers 4.09 to 4.27 m.
+
+**The shipped suite does not have this bug, and that is worth stating rather
+than assuming.** `probes/controls.js` and `probes/buildmenu.js`, the two probes
+that lean hardest on `of.escape()`, both define `sleep = (n) => of.run(n)`,
+which writes no tape. The trap is available to anyone who writes a `settle` that
+zeroes the keys "to be safe", which is the natural thing to write.
+
+**The general form: an input helper that QUEUES rather than presses is a helper
+whose effect the next line you write can cancel.** If a probe drives a
+tape-backed action, the next call must not be one that writes a tape. The
+failure is silent and flattering in the usual direction: the key appears dead,
+which reads as a finding about the game.
+
+### `uiHeld` is one boolean with eight owners, so one Escape unmutes a screen that is still up
+
+GP-795. Measured with `probes/keywmute.js` on HEAD: open the pack panel, then
+open the pause menu over it, then press Escape ONCE. `ModalStack.closeTop()`
+closes the pause menu only and correctly leaves `pack` open (`openCount` 1,
+`open: ["pack"]`), but the pause menu's own transition then calls
+`Input.setUiCapture(false)` unconditionally. A held KeyW from that state walks
+**4.173 m** in 60 ticks, against a 4.250 m baseline with no panel ever opened.
+The same happens in the other order: pause under pack, one Escape, **4.097 m**
+with the pause menu still on screen.
+
+`Input.uiHeld` is a single boolean and `setUiCapture` has eight independent
+callers (`MapMode` twice, `MenuBoot` twice, `VabBoot`, `GameplayChrome` three
+times, `ProgressUi`), each pairing its own `true` with its own `false` and none
+of them counting. Whoever calls `false` last wins, whatever else is open.
+
+**This is the harmless sign of the fault and it is recorded because the harmful
+sign is the same missing count.** Unmuting early gives a player who is looking
+at a menu a character that walks; the mirror case would leave the walk axis
+muted with nothing on screen, which is indistinguishable from the
+player-movement freeze this lane was sent to find. Nothing structural prevents
+the second; only the fact that every current opener happens to be balanced
+does. A reference count, or a capture derived from `modals.open().length`
+rather than asserted by each caller, is the fix. It crosses five files and four
+owners, so it is written down here rather than taken by this lane.
+
+### A string in `--evalargs` does not survive PowerShell, and it fails as a ReferenceError
+
+GP-796, small and cheap to hit. `--evalargs='{"secs":25,"view":"first"}'` run
+through PowerShell on Windows arrives at `page.evaluate` with the inner double
+quotes stripped, so the probe body reads `{secs:25,view:first}` and dies with
+`ReferenceError: first is not defined` at a line inside the runner's wrapper.
+Numeric fields are unaffected, which is why this only shows up the first time an
+argument stops being a number.
+
+It failed LOUDLY, which is the only reason this is a footnote and not a wrong
+result: the run exited non-zero and printed the name it could not resolve. The
+cheap habit is to keep `--evalargs` numeric (`{"fp":1}` rather than
+`{"view":"first"}`), which is what `probes/keywfreeze.js` does and says so at
+the call site.
