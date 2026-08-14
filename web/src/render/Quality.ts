@@ -44,6 +44,25 @@ export interface QualityKnobs {
    * measured on this same GPU, and the rebuild is amortised over 240 frames
    * plus an elevation trigger, so the honest question is what a rebuild HITCH
    * costs and not what it costs per frame.
+   *
+   * RN-1610. FLOORED AT 256 ON EVERY TIER. RN-1572/1573 authored the sun disc
+   * at its real 0.53 deg, ~2.25 texels at a 256 cube, and it is MISSED
+   * ENTIRELY at 64 (low) and lands only partially at 128 (med): `ibldiag.js`
+   * at those sizes reads `brightTexels` 0 and `peakRatio` ~1.0, i.e. no
+   * specular sun on two of three tiers -- the night's headline improvement
+   * absent on low and medium. Candidates were (a) floor the cube on every
+   * tier, (b) widen the disc only inside the capture pass at small cube
+   * sizes, (c) tier-dependent disc width. Chosen: (a), on RN-1415's OWN
+   * measured number rather than a new one -- that row already priced a
+   * 64->256 raise on this exact GPU at 0.6 to 1.0 ms a rebuild, CHEAPER than
+   * the 10.5 ms this docstring records at 64, so flooring low/med to 256 is
+   * not a new cost, it is reusing a cost already measured and settled. (b)
+   * and (c) both add a capture-time branch for a saving this repo already
+   * knows is negative (the floor is free, not merely affordable); rejected
+   * for more moving parts buying nothing the floor doesn't already buy. The
+   * disc's own radiance/solid-angle product (RN-1572) is untouched -- this is
+   * a resolution floor, not a re-author of the sun, and the presented sky
+   * (the atmosphere pass, not this cube) never reads `iblSize` at all.
    */
   readonly iblSize: number;
   /** TerrainStreamer genBudget: meshes built per streaming update. */
@@ -55,12 +74,12 @@ export interface QualityKnobs {
 const TABLE: Record<QualityTier, Omit<QualityKnobs, 'tier'>> = {
   low: {
     maxPixelRatio: 1, antialias: false, shadowMapSize: 1024, shadowSoft: false,
-    csmCascades: 1, iblSize: 64,
+    csmCascades: 1, iblSize: 256, // RN-1610: floored, was 64
     genBudget: 8, maxResidentChunks: 160, postfx: false,
   },
   med: {
     maxPixelRatio: 1.5, antialias: true, shadowMapSize: 1024, shadowSoft: false,
-    csmCascades: 3, iblSize: 128,
+    csmCascades: 3, iblSize: 256, // RN-1610: floored, was 128
     genBudget: 12, maxResidentChunks: 256, postfx: false,
   },
   high: {
