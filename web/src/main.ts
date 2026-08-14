@@ -5,6 +5,7 @@ import { parseConfig } from './app/Config.js';
 import { boot } from './app/Boot.js';
 import { Loop } from './app/Loop.js';
 import { registerSystems } from './app/Systems.js';
+import { installStationReveal } from './app/StationReveal.js';
 import { installDebugApi } from './app/Debug.js';
 import { vabApi } from './app/DebugVab.js';
 import { flightApi } from './app/DebugFlight.js';
@@ -33,6 +34,10 @@ const ready = new Promise<void>((r) => { resolveReady = r; });
 boot(cfg, host, hud).then(({ services }) => {
   const loop = new Loop(services);
   registerSystems(services, loop);
+  // GP-717. The station's full-map reveal registers its own frame hook. Here
+  // rather than inside `registerSystems` only because `Systems.ts` sits one line
+  // under ARCHITECTURE.md §2.2's 400-line cap; the reasoning is in the file.
+  installStationReveal(services, loop);
   const api = installDebugApi(
     services, loop, ready,
     () => services.terrain.report(),

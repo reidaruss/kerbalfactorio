@@ -481,6 +481,49 @@ class DiscoveryGrid {
     return rep;
   }
 
+  // GP-716. EVERY CELL AT ONCE. Returns how many were NEW.
+  //
+  // THIS IS NOT AN OBSERVATION AND IT DOES NOT PRETEND TO BE ONE. `observe` is
+  // the rule about SEEING and every cell it accepts was above somebody's
+  // horizon. This is a different authority: a survey handed over, the whole
+  // shape of the world arriving at once because of something that happened in
+  // the fiction rather than because of where an eye was. Modelling it as a
+  // flood from an impossible altitude was the alternative and it is worse in
+  // three measurable ways, all of which are why this exists instead: one
+  // `observe` can never exceed a HEMISPHERE (cosMin bottoms out at R/(R+h) -> 0),
+  // so it would take six of them; six passes at a face centre each drag the
+  // EXPLORE layer's capped 10 km disc along with them, handing out six patches
+  // of ore detail on ground nobody has walked; and a hemispherical flood on this
+  // lattice visits ~49k cells against a 65,536 budget, so on any body bigger
+  // than Forge at the same cell target it would trip `budgetHit` and reveal
+  // PART of the world with nothing but a flag to say so.
+  //
+  // THE KEYS COME OUT ASCENDING FOR FREE, which is the whole reason this is four
+  // lines rather than a fill-then-sort. `packKey` lays face in bits 56..58, i in
+  // 28..55 and j in 0..27, and `resolveBits` caps bits at 24, so side <= 2^24
+  // and both indices fit their fields with room to spare. Iterating face, then
+  // i, then j therefore emits keys in strictly increasing order by construction,
+  // which is exactly the invariant `cells_` is required to hold and every
+  // `binary_search` here depends on.
+  //
+  // IT REPLACES RATHER THAN MERGES, and that is not a shortcut: the full set is
+  // a superset of every possible prior set, so `set_union` could only ever
+  // produce this same vector at the cost of building it twice.
+  uint32_t fillAll() {
+    const uint64_t total = grid_.totalCells();
+    const uint32_t before = static_cast<uint32_t>(cells_.size());
+    if (static_cast<uint64_t>(before) >= total) return 0;
+    const uint32_t side = grid_.cellsPerFaceSide();
+    std::vector<CellKey> all;
+    all.reserve(static_cast<size_t>(total));
+    for (int f = 0; f < 6; ++f)
+      for (uint32_t i = 0; i < side; ++i)
+        for (uint32_t j = 0; j < side; ++j)
+          all.push_back(SurfaceCellGrid::packKey(f, i, j));
+    cells_.swap(all);
+    return static_cast<uint32_t>(cells_.size()) - before;
+  }
+
   // ---- persistence ----------------------------------------------------------
   //
   //   [varint kMagic][varint kVersion][varint bits][varint count]
@@ -654,6 +697,27 @@ class WorldDiscovery {
     outSurvey = survey_.observe(dir, h, tuning_.horizonFraction);
     outExplore = explore_.observe(dir, h, tuning_.horizonFraction);
     observations_ += 1;
+  }
+
+  /**
+   * GP-716. REVEAL ONE LAYER ENTIRELY. Returns the cells it added.
+   *
+   * ONE LAYER AND NOT BOTH, taken as an argument rather than assumed, because
+   * the two layers answer different questions and a caller that wanted "the
+   * whole map" almost certainly did not mean "and every ore patch on the
+   * planet". The SURVEY layer is the shape of the world and is what a handed-
+   * over survey would contain; the EXPLORE layer is the detail you get by
+   * walking there, and it is the one that gates a patch. `observe` feeds both
+   * from one call because one RULE covers both; this is not that rule, so it
+   * does not inherit that coupling.
+   *
+   * `observations_` IS DELIBERATELY NOT BUMPED. It counts `observe` calls, and
+   * `of_disc_report[12]` publishes it as such; incrementing it here would make
+   * a reveal indistinguishable from somebody having looked, in the one counter
+   * that exists to say how much looking has happened.
+   */
+  uint32_t reveal(Layer layer) {
+    return layer == Layer::Explore ? explore_.fillAll() : survey_.fillAll();
   }
 
   // ---- persistence ---------------------------------------------------------

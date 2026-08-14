@@ -111,7 +111,7 @@ import { HandleLedger } from './HandleLedger.js';
 // and the unknown -> known -> visited state machine
 // (`of_poi_known`/`of_poi_mark_known`/`of_poi_visited`/`of_poi_mark_visited`)
 // plus its own save surface (`of_poi_save`/`of_poi_alloc_bytes`/`of_poi_load`).
-export const OF_ABI_VERSION = 24;
+export const OF_ABI_VERSION = 25;
 
 type Factory = (opts?: Record<string, unknown>) => Promise<OfCoreModule>;
 

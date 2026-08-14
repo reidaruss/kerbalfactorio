@@ -1447,3 +1447,167 @@ TEST(a_place_you_have_never_been_is_never_discovered) {
   // (9.4 km) being far bigger than the horizon.
   CHECK(wd.explore().fraction() < 0.0005);
 }
+
+// =============================================================================
+// §6 — GP-716: THE FULL REVEAL (`fillAll` / `WorldDiscovery::reveal`).
+//
+// Reid, 2026-08-13: "the full map should reveal whenever you explore the space
+// station." That is a SECOND authority over the same cell set, a survey handed
+// over rather than a horizon looked across, so the things worth proving are not
+// the geometry (there is none) but the four ways a bulk write can quietly
+// corrupt a structure every other query here binary-searches:
+//
+//   * the set must be COMPLETE (a fill that misses a face is a map with a hole
+//     in it that nothing will ever fill, because `observe` only ever adds);
+//   * the keys must stay STRICTLY ASCENDING, because `has()` is a binary search
+//     and an unsorted vector answers wrongly rather than loudly. That is exactly
+//     what `corrupt_stream_cannot_leave_an_unsorted_vector` was written for,
+//     arriving through a different door;
+//   * it must touch ONE LAYER, because revealing EXPLORE would hand the player
+//     every ore patch on the planet;
+//   * and the number it returns must be what it ADDED, not what it holds, or a
+//     caller cannot tell a reveal from a re-reveal.
+// =============================================================================
+
+TEST(reveal_fills_the_layer_completely_and_in_order) {
+  dsc::WorldDiscovery wd(kForgeR);
+  const uint64_t total = wd.survey().grid().totalCells();
+  const uint32_t added = wd.reveal(dsc::Layer::Survey);
+
+  // COMPLETE, against the lattice's OWN count rather than a number typed here:
+  // 6*side^2 is what `fraction()` divides by, so anything else would be a test
+  // agreeing with itself.
+  CHECK(static_cast<uint64_t>(added) == total);
+  CHECK(wd.survey().size() == static_cast<size_t>(total));
+  // EXACTLY 1.0, bit-equal. `fraction()` is size/total and both are now the same
+  // integer, so this is the one place a CHECK_NEAR would be hiding something.
+  CHECK(bitEqual(wd.survey().fraction(), 1.0));
+
+  // STRICTLY ASCENDING. Every key rather than a sample: the fill is O(total)
+  // already so a full scan costs nothing beside it, and a sampled scan could
+  // step straight over the face seams, which are the only places the ordering
+  // could plausibly break.
+  const std::vector<CellKey>& c = wd.survey().cells();
+  bool ascending = true;
+  for (size_t i = 1; i < c.size(); ++i) if (c[i] <= c[i - 1]) ascending = false;
+  CHECK(ascending);
+
+  // AND THE SET IS THE ONE THE LATTICE WOULD NAME. A complete, sorted, unique
+  // vector of the right LENGTH could still hold the wrong keys, so this asks the
+  // grid itself: every direction on the body must now be surveyed, swept with
+  // the same generator §1 uses for the lattice cross-check.
+  bool everywhere = true;
+  for (uint64_t i = 0; i < 20000; ++i)
+    if (!wd.surveyed(sweepDir(i))) everywhere = false;
+  CHECK(everywhere);
+  std::printf("    [reveal] Forge survey: %u cells, fraction %.6f\n",
+              added, wd.survey().fraction());
+}
+
+TEST(reveal_touches_one_layer_and_leaves_the_other_alone) {
+  // THE ORE IN THE NEXT VALLEY STAYS YOURS TO FIND. The design argument in this
+  // header is that height buys extent and costs resolution; a reveal that filled
+  // both layers would throw that away in one call, and would do it SILENTLY,
+  // because the map shades SURVEY and would look exactly right.
+  dsc::WorldDiscovery wd(kForgeR);
+  wd.reveal(dsc::Layer::Survey);
+  CHECK(wd.survey().size() > 0);
+  CHECK(wd.explore().empty());
+  CHECK(bitEqual(wd.explore().fraction(), 0.0));
+  CHECK(!wd.explored(Vec3(0, 0, 1)));   // even underfoot: nothing was walked
+
+  // The mirror, so the claim is not one-directional: asking for EXPLORE fills
+  // explore and leaves survey alone. The tuning is coarsened first and that is
+  // not a convenience -- Cinder's stock explore lattice is 2,048 per face, 25.2
+  // million cells, 201 MB of keys, and a suite that allocated that to prove
+  // which layer moved would be measuring the allocator.
+  dsc::DiscoveryTuning coarse;
+  coarse.exploreCellTargetM = 20000.0;
+  dsc::WorldDiscovery moon(kCinderR, coarse);
+  const uint32_t got = moon.reveal(dsc::Layer::Explore);
+  CHECK(got == static_cast<uint32_t>(moon.explore().grid().totalCells()));
+  CHECK(moon.survey().empty());
+  CHECK(moon.explored(Vec3(0, 0, 1)));
+  CHECK(!moon.surveyed(Vec3(0, 0, 1)));
+}
+
+TEST(reveal_returns_what_it_added_not_what_it_holds) {
+  // The distinction a caller acts on: `Systems.ts` prints this number and the
+  // station probe asserts a SECOND boarding reveals nothing. If `reveal`
+  // returned the SIZE, a re-reveal would read as 98,304 cells of fresh
+  // discovery every single time and nothing downstream could tell.
+  dsc::WorldDiscovery wd = walkedWorld(400, 0.0, 200.0);
+  const uint64_t total = wd.survey().grid().totalCells();
+  const size_t walked = wd.survey().size();
+  CHECK(walked > 0);            // the walk really did discover something
+  CHECK(static_cast<uint64_t>(walked) < total);   // and really did not finish
+
+  const uint32_t first = wd.reveal(dsc::Layer::Survey);
+  CHECK(static_cast<uint64_t>(first) == total - walked);
+  // IDEMPOTENT, and 0 rather than merely "no crash": a second boarding, a
+  // reboot's automatic re-board and a load that somehow re-ran the grant must
+  // all add nothing.
+  const uint32_t second = wd.reveal(dsc::Layer::Survey);
+  CHECK(second == 0);
+  CHECK(wd.survey().size() == static_cast<size_t>(total));
+
+  // THE WALKED GROUND SURVIVED. `fillAll` REPLACES the vector rather than
+  // merging, deliberately, so "the result is still a superset" is a claim and
+  // not a tautology -- this is the check that catches a future fill built
+  // against a different lattice.
+  CHECK(wd.surveyed(Vec3(0, 0, 1)));
+  // And a SURVEY reveal did not disturb what the walk explored.
+  CHECK(wd.explored(Vec3(0, 0, 1)));
+}
+
+TEST(reveal_is_not_an_observation) {
+  // `of_disc_report[12]` publishes `observations` as "how much looking has
+  // happened". A reveal is not looking, and a counter that could not tell the
+  // two apart would make the one instrument for that question useless.
+  dsc::WorldDiscovery wd(kForgeR);
+  CHECK(wd.observations() == 0);
+  wd.reveal(dsc::Layer::Survey);
+  CHECK(wd.observations() == 0);
+  dsc::ObservePass s, e;
+  wd.observe(Vec3(0, 0, 1), 0.0, s, e);
+  CHECK(wd.observations() == 1);
+  // An observation over already-revealed survey ground adds nothing there and
+  // still does its job on the layer that was empty. This is the shipped
+  // sequence: board the station, get the map, then keep walking for the detail.
+  CHECK(s.added == 0);
+  CHECK(e.added > 0);
+}
+
+TEST(a_revealed_world_round_trips_through_the_save) {
+  // DW-17. The reveal writes REAL CELLS rather than a flag, which is the whole
+  // reason it needs no save field of its own -- so "it persists" is this suite's
+  // claim to prove, not the client's. A full Forge survey is also the largest
+  // legal set this format will ever be handed, so the printout below is the
+  // number to quote when somebody asks what the reveal costs a save.
+  dsc::WorldDiscovery src(kForgeR);
+  src.reveal(dsc::Layer::Survey);
+  of::persist::SaveWriter w;
+  src.serialize(w);
+  const size_t bytes = w.bytes().size();
+
+  dsc::WorldDiscovery dst(kForgeR);
+  of::persist::SaveReader r(w.bytes());
+  CHECK(dst.deserialize(r));
+  CHECK(dst.survey().size() == src.survey().size());
+  CHECK(dst.survey().cells() == src.survey().cells());
+  CHECK(bitEqual(dst.survey().fraction(), 1.0));
+  CHECK(dst.explore().empty());
+
+  // A PURE FUNCTION OF THE SET: re-serializing the restored field reproduces the
+  // stream byte for byte. §5 asserts that for a walked world; a bulk fill is the
+  // one thing that could break it by leaving duplicates behind, and duplicates
+  // would survive every length and fraction check above.
+  of::persist::SaveWriter w2;
+  dst.serialize(w2);
+  CHECK(w2.bytes() == w.bytes());
+  std::printf("    [reveal] fully revealed Forge survey serialises to %zu bytes "
+              "(%zu cells, %.3f bytes/cell)\n",
+              bytes, src.survey().size(),
+              static_cast<double>(bytes) /
+                  static_cast<double>(src.survey().size()));
+}
