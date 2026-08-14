@@ -25,14 +25,22 @@
 //      machine-scale, it can stand on a deck, and it is a separate object from
 //      the station rather than a second kind the station's own pick tests, so
 //      a press cannot resolve to "whichever of the two is nearer" silently.
-//   6. A RUIN'S INVESTIGATE SOCKET next (L7, GP-546 to GP-549), on the same
+//   6. A PILE OF RUBBLE next (D1, GP-745 to GP-759), and it is AFTER every
+//      live player-placed thing for a sharper version of the same argument: a
+//      wreck is left exactly where a building stood, so it is routinely under a
+//      deck, beside a machine or inside a pad's bound, and a press aimed at
+//      something that still WORKS must never clear the wreck behind it. It is
+//      before the ruin socket because it is the player's own wreckage rather
+//      than world content. Picked by the identical centre-and-radius test the
+//      station and the antenna use, at the pile's own half-span.
+//   7. A RUIN'S INVESTIGATE SOCKET next (L7, GP-546 to GP-549), on the same
 //      argument as the station and the antenna immediately above it: it is a
 //      small, point-scale target picked by the identical centre-and-radius
 //      test. It goes AFTER every player-placed thing rather than before,
 //      because a ruin is world content, not something the player built, and
 //      it must never steal a press aimed at a machine standing inside it
 //      (GP-623's own finding, generalised).
-//   7. A LAUNCH PAD LAST, and that is the order rather than an afterthought: a
+//   8. A LAUNCH PAD LAST, and that is the order rather than an afterthought: a
 //      pad is 24 m across, so a deck or a machine standing on it is INSIDE its
 //      bound, and a pad that won the tie would swallow every press aimed at
 //      anything on the launch site.
@@ -88,11 +96,15 @@ export function pickAim(g: Gameplay, ray: AimRayLike): void {
   g.aimedAntenna = g.aimedMachine !== null || g.aimedBuild !== null
     || g.aimedPart !== null || g.aimedStation !== null
     ? null : g.antennas.pick(o, d, reach);
+  g.aimedRubble = g.aimedMachine !== null || g.aimedBuild !== null
+    || g.aimedPart !== null || g.aimedStation !== null || g.aimedAntenna !== null
+    ? null : g.wreckage.pick(o, d, reach);
   g.aimedInvestigate = g.aimedMachine !== null || g.aimedBuild !== null
     || g.aimedPart !== null || g.aimedStation !== null || g.aimedAntenna !== null
+    || g.aimedRubble !== null
     ? null : pickInvestigate(g.ruins, new Sites(g.core, g.bodyHandle), o, d, reach);
   g.aimedPad = g.aimedMachine !== null || g.aimedBuild !== null
     || g.aimedPart !== null || g.aimedStation !== null || g.aimedAntenna !== null
-    || g.aimedInvestigate !== null
+    || g.aimedRubble !== null || g.aimedInvestigate !== null
     ? null : g.pads.pick(o, d, reach);
 }

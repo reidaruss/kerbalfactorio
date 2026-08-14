@@ -367,6 +367,17 @@ export function apply(g: Gameplay, M: OfCoreModule, game: GameCore,
   // 5b-iii. GP-533, THE SCANNING ANTENNAS, `stations`' own order and reason.
   const restoredAntennas = restoreAntennas(g.antennas, slot.antennas);
 
+  // 5b-iv. D1, THE RUBBLE. THROWN AWAY AND NEVER RESTORED, which is the whole
+  //     of its save story and is stated here rather than left as an absence.
+  //     A restore REPLACES a world (`Structures.reset`'s rule), so last world's
+  //     piles must not survive into this one; and there is nothing to put back,
+  //     because rubble has no save row. The building it replaced is already
+  //     absent from the populations above, so a reload gives a CLEAN SITE and
+  //     any salvage still sitting in a pile is lost. Wreckage.ts's header
+  //     defends that choice against the alternative, which is a save row that
+  //     could bring a destroyed wall back standing.
+  g.wreckage.reset();
+
   // 5c. WHAT IS BROKEN (GP-65). LAST of the world steps, because every
   //     population has to be standing before the book can be told what is wrong
   //     with it: a wound applied earlier would land on a key nothing answers to

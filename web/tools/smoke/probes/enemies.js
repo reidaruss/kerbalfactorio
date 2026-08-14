@@ -330,12 +330,41 @@
   // =====================================================================
   await march(6);
   const h1 = G().health;
-  check('THE BASE TOOK DAMAGE', h1.wounded > 0 && h1.totalDamage > 0,
-        JSON.stringify({ wounded: h1.wounded, total: h1.totalDamage }));
+  // D1 (GP-745 to GP-759) CHANGED WHAT "THE BASE TOOK DAMAGE" CAN LOOK LIKE,
+  // and this pair of checks was widened deliberately rather than relaxed.
+  //
+  // Until D1 a building that reached 0 hp STAYED IN THE BOOK at 0, so
+  // `wounded > 0` was a complete test: every hit thing was either partly hurt
+  // or a permanent 0-hp row, and both showed up in `wounded`. A destroyed
+  // building is now REMOVED from its population and its health row goes with it
+  // on the next tick, so a wave that finishes what it bites leaves `wounded` at
+  // zero against several hundred points of `totalDamage`. That is the feature
+  // working, and this probe measured it on the first run after D1 landed:
+  // `{"wounded":0,"total":400}`.
+  //
+  // The honest claim is therefore "damage landed AND something of the player's
+  // shows for it", where "shows for it" is now two states rather than one:
+  // still standing and hurt, or gone and leaving a pile. `totalDamage > 0` is
+  // NOT enough on its own -- it is the swarm's own bookkeeping, and a hole
+  // between the book and the world is exactly what these two lines exist to
+  // catch -- so the evidence has to come off the WORLD either way.
+  const wreck = of.wreckage();
+  check('THE BASE TOOK DAMAGE', h1.totalDamage > 0
+        && (h1.wounded > 0 || wreck.piles > 0),
+        JSON.stringify({ wounded: h1.wounded, total: h1.totalDamage,
+          piles: wreck.piles }));
   const wounds = h1.sample;
-  check('and the wounded thing is something the player placed',
-        wounds.length > 0 && wounds.every((w) => /^[sfmp]:/.test(w.key)),
-        JSON.stringify(wounds.slice(0, 4)));
+  const felled = wreck.list;
+  check('and what took it is something the player placed, whether it is still '
+        + 'standing (a wounded row) or came down (a pile keyed to what fell)',
+        (wounds.length > 0 || felled.length > 0)
+        && wounds.every((w) => /^[sfmp]:/.test(w.key))
+        && felled.every((p) => /^[sfmp]:/.test(p.wasKey)),
+        JSON.stringify({ wounds: wounds.slice(0, 4),
+          felled: felled.slice(0, 4).map((p) => p.wasKey) }));
+  check('nothing at 0 hp was left standing, and no refund went missing felling '
+        + 'it (D1: both counters must be zero)',
+        wreck.unresolved === 0 && wreck.unrecovered === 0, JSON.stringify(wreck));
   check('the health book is still complete under attack',
         h1.audit.missing === 0 && h1.audit.stale === 0 && h1.unknownKinds === 0,
         JSON.stringify(h1.audit));

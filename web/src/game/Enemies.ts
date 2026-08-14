@@ -44,6 +44,17 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 export interface EnemyHost extends TargetPopulations {
   seed: number;
   health: HealthBook;
+  /**
+   * D1. SPEND DAMAGE ON A BUILDING, through the host's own one door.
+   *
+   * This used to be `host.health.damage(...)` inlined in `context()` below, and
+   * the reason it is a port now is the whole of D1: a building that reaches 0
+   * has to actually FALL, and the removal needs four populations, two view
+   * batches and a `GameCore` that this file has no business holding. The host
+   * owns the consequence (`Gameplay.damage`); the swarm still only knows that
+   * biting a key returns how much landed and whether that finished it.
+   */
+  damage(key: string, amount: number): { applied: number; destroyed: boolean };
   hud: { flash(text: string, secs?: number): void };
   /** GP-28: the LIVE surface, through the one call site that was always right. */
   structures: TargetPopulations['structures'] & {
@@ -235,9 +246,14 @@ export class Enemies {
    * nothing about the health book. Without it a creature that finished a
    * building goes on chewing the corpse for ever: `HealthBook.damage` on a
    * zero-hp key returns `applied: 0`, so the swarm would stall at the first
-   * thing it broke and every counter would read healthy. See GP-94 in the
-   * controller file for the half of this that is NOT done, which is that the
-   * rubble is still drawn and still stands.
+   * thing it broke and every counter would read healthy.
+   *
+   * D1 (GP-745 to GP-759) CLOSED THE OTHER HALF, and this filter is now a
+   * belt-and-braces rather than the whole answer: a building that reaches 0 is
+   * removed from its population the same tick (`Gameplay.damage` -> `fell`), so
+   * it leaves `targetsOf` on the next derive anyway. The filter stays because
+   * the derive is only every `SYNC_TICKS`, so for a few ticks the snapshot still
+   * holds a row whose building is gone.
    */
   private biteable(host: EnemyHost): TargetRow[] {
     return targetsOf(host).filter((t) => host.health.hpOf(t.key) > 0);
@@ -269,10 +285,11 @@ export class Enemies {
       groundRadius: (x, y, z) => host.structures.groundRadius(x, y, z),
       playerPos: { x: f.x, y: f.y, z: f.z },
       targets: this.targets,
-      damageBuilding: (key, amount) => {
-        const r = host.health.damage(key, amount);
-        return { applied: r.applied, destroyed: r.destroyed };
-      },
+      // D1. THE HOST'S DOOR, not the book's. `Gameplay.damage` moves the number
+      // AND fells what the number finished; a call straight into the book here
+      // would leave a "destroyed" wall standing, which is precisely the state
+      // this file's own header spent two paragraphs apologising for.
+      damageBuilding: (key, amount) => host.damage(key, amount),
       bodyRadiusM: this.bodyRadiusM,
     };
   }

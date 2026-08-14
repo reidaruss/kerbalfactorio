@@ -14,10 +14,11 @@
 // is that it does not need to, because a creature STOPS AND ATTACKS the first
 // thing of the player's within its reach, so a wall in the way is chewed rather
 // than walked past, which is Factorio's own behaviour and is why a wall is worth
-// building. What is honestly missing is that a wall which is already RUBBLE
-// (0 hp) is no longer a target and the creature walks through where it stands;
-// see GP-94 in the controller file, where removal is named as the next step
-// rather than half-done here.
+// building. A wall that has been chewed to 0 hp is no longer a target and the
+// creature walks through where it stood, which used to be a hole (the wall was
+// still there, still solid, still drawn) and is now simply true: D1
+// (GP-745 to GP-759) removes the part, its `Solid`, its factory row and its
+// mesh the tick it dies, and leaves a rubble prop. See Wreckage.ts.
 //
 // GP-92. A CREATURE KILL CREDITS NOTHING. `enemies.h` evolves on three inputs
 // and one of them is NESTS destroyed, not creatures, so crediting a creature

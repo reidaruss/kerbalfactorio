@@ -22,6 +22,7 @@ import type { LaunchPads, PadPart } from './LaunchPad.js';
 import type { LaunchPadView } from './LaunchPadView.js';
 import type { ResearchStation, ResearchStations } from './ResearchStations.js';
 import type { ScanAntenna, Antennas } from './Antennas.js';
+import type { RubbleRow, Wreckage } from './Wreckage.js';
 
 export interface DemolishResult {
   kind: string;
@@ -108,13 +109,15 @@ export function demolishAimed(g: { machines: Machines; game: GameCore;
                                    structView: StructureView;
                                    pads?: LaunchPads; padView?: LaunchPadView;
                                    stations?: ResearchStations;
-                                   antennas?: Antennas },
+                                   antennas?: Antennas;
+                                   wreckage?: Wreckage },
                               machine: Machine | null,
                               build: Placed | null,
                               part: StructurePart | null = null,
                               pad: PadPart | null = null,
                               station: ResearchStation | null = null,
-                              antenna: ScanAntenna | null = null):
+                              antenna: ScanAntenna | null = null,
+                              rubble: RubbleRow | null = null):
 DemolishResult | null {
   if (machine !== null) return demolishMachine(g.machines, g.game, machine);
   if (build !== null) return demolishBuild(g.factory, g.factoryView, g.game, build);
@@ -131,6 +134,17 @@ DemolishResult | null {
   // the two orders must agree.
   if (antenna !== null && g.antennas !== undefined) {
     return demolishAntenna(g.antennas, g.game, antenna);
+  }
+  // D1. RUBBLE TAKES THE DEMOLISH KEY, not the interact key, and it takes it
+  // HERE, in the same slot `pickAim` gives it. Clearing a wreck is "remove a
+  // thing from the world and tell me what came back", which is precisely what
+  // this key already means and what `DemolishResult` already has the shape for;
+  // `interact` is the key that OPENS things (a machine screen, a door) and a
+  // pile of broken wall opens nothing. It sits after every LIVE player-placed
+  // thing because a pile can lie under a deck or beside a machine, and a press
+  // aimed at something that still works must never clear the wreck behind it.
+  if (rubble !== null && g.wreckage !== undefined) {
+    return scavengeRubble(g.wreckage, g.game, rubble);
   }
   // GP-57. THE PAD IS LAST AND THAT IS THE ORDER, not an afterthought: a pad is
   // 24 m across and a machine or a deck standing on it is inside its bound, so
@@ -189,6 +203,37 @@ export function demolishAntenna(antennas: Antennas, game: GameCore,
   const refunded = r.refunded.map((x) => ({ name: game.itemName(x.item), count: x.count }));
   return { kind: 'scanning antenna', refunded, lost: [],
     message: describe('scanning antenna', refunded, []) };
+}
+
+/**
+ * D1. CLEAR A PILE OF RUBBLE, for a FRACTION and not a refund.
+ *
+ * The fraction is `Wreckage.SCAVENGE_NUM/DEN` (one third, rounded down) and it
+ * was decided when the thing FELL, not now: `RubbleRow.salvage` is already the
+ * answer, computed once off the ledger the population's own removal reported,
+ * so a rebalance cannot retroactively change what a pile that has been sitting
+ * there since the last raid is worth. What the collapse ate rides along in
+ * `lost` and is said out loud in the same toast, unsoftened, exactly as a
+ * demolished furnace's dead ore is.
+ *
+ * This is the ONLY thing in the game that ever pays out of a wreck, so it is
+ * also the only place the credit happens: `Wreckage` deliberately holds no
+ * `GameCore` (its header says why), which is the same split `Antennas` keeps
+ * from `demolishAntenna` in the other direction.
+ */
+export function scavengeRubble(wreckage: Wreckage, game: GameCore,
+                               r: RubbleRow): DemolishResult | null {
+  const got = wreckage.remove(r);
+  if (got === null) return null;
+  const refunded: { name: string; count: number }[] = [];
+  for (const c of got.salvage) {
+    const over = game.add(c.item, c.count);
+    if (c.count - over > 0) {
+      refunded.push({ name: game.itemName(c.item), count: c.count - over });
+    }
+  }
+  const kind = `${r.kind} rubble`;
+  return { kind, refunded, lost: got.lost, message: describe(kind, refunded, got.lost) };
 }
 
 export function demolishPad(pads: LaunchPads, view: LaunchPadView,
