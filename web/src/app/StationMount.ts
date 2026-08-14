@@ -368,16 +368,36 @@ function capsuleClearAt(q: SolidQuery, pose: FramePose,
  * against the walker's own collision query, and scanned outward along the deck
  * only if that point is occupied. Returns null when there is no station.
  */
-export function stationArrivalBody(q: SolidQuery): StationArrival | null {
+/**
+ * CE-54. THE LIVE POSE OF THE STATION'S COLLISION SOLID, or null with no
+ * station. The one local -> body transform for the ASSET'S OWN authored frame,
+ * which is the frame `stationStandLocal` and every socket in the glb are
+ * written in.
+ *
+ * Extracted from `stationArrivalBody` rather than written a second time,
+ * because CE-54 gave it a second caller (`seatOnStationDeck`'s `localAt`) and
+ * two spellings of "where is the station right now" is the two-authority shape
+ * this file already argues against twice.
+ *
+ * NOT the carrier frame's pose. The frame's basis is LVLH from the record's own
+ * r x v; the asset's is nadir-pointing from +Y, and the constant between them is
+ * MEASURED at install (see this file's header). A caller that wants the spine
+ * wants this one.
+ */
+export function stationSolidPose(out: FramePose): FramePose | null {
   const solid = lastStationSolid();
   if (solid === null) return null;
-  // The live pose of the object the feet are resolved against. Not a second
-  // derivation of where the station is: it IS the collision body, re-posed every
-  // fixed tick by `CarrierMount.syncAt`.
-  const pose = newPose();
-  pose.px = solid.pos.x; pose.py = solid.pos.y; pose.pz = solid.pos.z;
-  pose.qx = solid.quat.x; pose.qy = solid.quat.y;
-  pose.qz = solid.quat.z; pose.qw = solid.quat.w;
+  // Not a second derivation of where the station is: it IS the collision body,
+  // re-posed every fixed tick by `CarrierMount.syncAt`.
+  out.px = solid.pos.x; out.py = solid.pos.y; out.pz = solid.pos.z;
+  out.qx = solid.quat.x; out.qy = solid.quat.y;
+  out.qz = solid.quat.z; out.qw = solid.quat.w;
+  return out;
+}
+
+export function stationArrivalBody(q: SolidQuery): StationArrival | null {
+  const pose = stationSolidPose(newPose());
+  if (pose === null) return null;
   const [lx, ly, lz] = stationStandLocal();
   const out: V3 = { x: 0, y: 0, z: 0 };
 
@@ -470,6 +490,11 @@ export interface StationSeat {
    *  FALSE is the loud reading a re-authored asset produces. */
   clear: boolean | null;
   carrier: string;
+  /** CE-54. The point in the STATION'S OWN authored local frame, when the
+   *  caller named one; null for the shipped arrival, which names a socket
+   *  rather than a coordinate. Published because a caller that asked in local
+   *  metres has to be able to check it got them. */
+  local: [number, number, number] | null;
   /** Body-frame feet the player was actually put at. */
   feet: [number, number, number];
   /** The station's own velocity at that point, m/s, body frame. */
@@ -508,6 +533,24 @@ export function seatOnStationDeck(
    *  refusing: a menu press that silently does nothing is worse than one that
    *  lands on the socket unverified. */
   solids: SolidQuery | null = null,
+  /**
+   * CE-54. A point in the STATION'S OWN authored local frame to seat at, or
+   * null for the shipped arrival socket.
+   *
+   * IT EXISTS SO THAT A CALLER NAMING A SPOT ON THE DECK NEVER HAS TO NAME IT
+   * IN THE BODY FRAME. `StationReport.standPos` and `install.pos` are both
+   * computed at install and the station has travelled kilometres by the time
+   * anything reads them (RN-1412: `stationdraw.js` aimed at `install.standPos`
+   * and arrived 5,352 m off the live deck, outside the 28.64 m bound, so no
+   * membership rule could catch it). A LOCAL point cannot go stale, because it
+   * is resolved against the live pose here, at the tick it is used.
+   *
+   * THE CE-49 SCAN IS DELIBERATELY NOT RUN for this branch: the caller named an
+   * exact coordinate, and walking them somewhere else would be the silent
+   * relocation the scan's own comment refuses for the socket case. Clearance is
+   * still MEASURED and reported, so a probe can assert it.
+   */
+  localAt: readonly [number, number, number] | null = null,
 ): StationSeat | null {
   if (seat === null || walker === null) return null;
   const solid = lastStationSolid();
@@ -520,8 +563,22 @@ export function seatOnStationDeck(
   // column through it: measured, `solidBuild` reads TRUE at the feet and at all
   // three walker sample heights there. `stationArrivalBody` is the asset's own
   // spawn socket on the LIVE pose, verified against the walker's own predicate.
-  const arrival = solids === null ? null : stationArrivalBody(solids);
-  const target = arrival?.pos
+  const arrival = localAt !== null || solids === null
+    ? null : stationArrivalBody(solids);
+  // CE-54. The named local point on the LIVE pose, by the same one transform
+  // the socket takes.
+  let named: [number, number, number] | null = null;
+  let namedClear: boolean | null = null;
+  if (localAt !== null) {
+    const pose = stationSolidPose(newPose());
+    if (pose === null) return null;
+    const at: V3 = { x: 0, y: 0, z: 0 };
+    apply(pose, localAt[0], localAt[1], localAt[2], at);
+    named = [at.x, at.y, at.z];
+    namedClear = solids === null
+      ? null : capsuleClearAt(solids, pose, localAt[0], localAt[1], localAt[2]);
+  }
+  const target = named ?? arrival?.pos
     ?? [solid.pos.x, solid.pos.y, solid.pos.z] as [number, number, number];
   const dest: V3 = { x: 0, y: 0, z: 0 };
   applyInv(frame.poseAt(tick, newPose()), target[0], target[1], target[2], dest);
@@ -540,8 +597,9 @@ export function seatOnStationDeck(
   walker.body.vel.z = vel.z;
   return {
     scannedM: arrival?.scannedM ?? null,
-    clear: arrival?.clear ?? null,
+    clear: arrival?.clear ?? namedClear,
     carrier: frame.id,
+    local: localAt === null ? null : [localAt[0], localAt[1], localAt[2]],
     feet: [pos.x, pos.y, pos.z],
     vel: [vel.x, vel.y, vel.z],
     speedMS: Math.hypot(vel.x, vel.y, vel.z),
