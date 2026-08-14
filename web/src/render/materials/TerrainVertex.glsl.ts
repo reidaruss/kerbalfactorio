@@ -23,11 +23,18 @@ export function terrainVertexShader(depth: DepthPolicy): string {
     uniform vec3 uBiomeColor[${BIOME_COUNT}];
     uniform vec4 uBiomeMat[${BIOME_COUNT}];
     uniform vec4 uBiomeRelief[${BIOME_COUNT}];
+    // RN-1257. The per-biome MATERIAL record. See TerrainShader's varying note
+    // for the packing; it is two vec4 rather than four vectors because the
+    // fragment budget is varyings and the tables are naturally paired.
+    uniform vec4 uBiomeGrain[${BIOME_COUNT}];
+    uniform vec4 uBiomeTint[${BIOME_COUNT}];
     uniform float uTime;
     uniform float uFadeDur;
     varying vec3 vBiomeColor;
     varying vec4 vMatW;
     varying vec4 vRelW;
+    varying vec4 vGrain;
+    varying vec4 vTint;
     varying vec3 vNormalW;
     varying vec3 vWorld;
     varying float vRelief;
@@ -54,6 +61,13 @@ export function terrainVertexShader(depth: DepthPolicy): string {
       vMatW = uBiomeMat[bi];
       // RN-148: relief weights ride the same interpolation, same argument.
       vRelW = uBiomeRelief[bi];
+      // RN-1257: the material record rides it too. Interpolating the SCALE
+      // partition is the one that needed thinking about and it is safe: the
+      // rows sum to 1, and a convex combination of vectors that each sum to 1
+      // also sums to 1, so a fragment on a biome edge blends the two
+      // frequencies rather than losing or gaining amplitude on the way across.
+      vGrain = uBiomeGrain[bi];
+      vTint = uBiomeTint[bi];
       vNormalW = normalize(ofNormalRot * normal);
       vec4 worldPosition = ofModel * vec4(position, 1.0);
       vWorld = worldPosition.xyz;

@@ -163,37 +163,151 @@ def _field_grass(s):
     return out
 
 
-def _field_rock(s):
+def _field_rock(s, terrace=True):
+    """Fractured rock and scree grain.
+
+    RN-1256. THE FACET TERM IS NOW TERRACED, and the reason is that this
+    channel is what every cliff, crater rim and scree slope in the game grains
+    up with. `(1 - worley)^2` is a smooth dome per cell: rendered, that is
+    lumpy putty, not fracture. Real broken rock is FLAT FACETS AT DIFFERENT
+    VALUES MEETING AT HARD EDGES, which is the same signature `_relief_scree`
+    authors into the height field, and until now the albedo contradicted it:
+    the relief said facet, the colour said dome, and the two are sampled at the
+    same coordinate.
+
+    A SHARP EDGE IS SAFE IN THIS TEXTURE AND IS NOT SAFE IN THE RELIEF ONE, and
+    the asymmetry is the whole reason this could not be done by copying
+    `_relief_scree`'s constants. Nothing differentiates `of_ground`: it
+    modulates an albedo that is never fed to a bump (TerrainShader's
+    "ALBEDO ONLY" note). `of_ground_relief` IS differentiated, which is what
+    made a sharp authored crest print as RN-741's etched squiggles and forced
+    the band-limited gradient. So the value texture can afford exactly the
+    hardness the height texture has to pay for.
+
+    `terrace=False` is the negative control for selftest's step claim: the same
+    construction with the domes back, which must fail the tail ratio.
+    """
     facets = texgen._worley(s, s, 9, seed=4409)
+    wob = texgen._fbm(s, s, 17, 2, seed=4427)   # wiggles the facet contours
     chips = texgen._worley(s, s, 24, seed=4415)
     grit = texgen._fbm(s, s, 40, 2, seed=4421)
     out = [0.0] * (s * s)
     for i in range(s * s):
         a = 1.0 - facets[i]
         b = 1.0 - chips[i]
-        out[i] = 0.55 * a * a + 0.30 * b * b + 0.15 * grit[i]
+        if terrace:
+            a = _terrace(texgen._clamp01(a + 0.18 * (wob[i] - 0.5)), 7, 0.93)
+        else:
+            a = a * a
+        out[i] = 0.56 * a + 0.26 * b * b + 0.18 * grit[i]
     return out
 
 
-def _field_granular(s):
+def _field_granular(s, pebbles=True):
+    """Fine dust and sand grain, plus RN-1256's PEBBLE population.
+
+    This channel carries Beach and all three airless biomes, and it was
+    `0.62 * fbm + 0.38 * ripple`: two smooth fields, so the strongest read
+    available to regolith was soft mottle. Space Engineers regolith is dust
+    with HARD LITTLE THINGS IN IT, and the hard little things are most of what
+    says "loose broken surface" rather than "painted plane". There was no
+    channel in this texture with a hard edge anywhere in it.
+
+    Pebbles are stamped, not noised, because that is the only construction that
+    gives a SPARSE population with a controlled size and a one-texel rim; a
+    noise threshold gives blobs whose edges are as smooth as the noise. Signed
+    values (some stones catch light, some are dark) so the population does not
+    push the mean, which `_centre` would then have to take back out of the
+    whole field.
+
+    NO IDENTIFIABLE FEATURE, per this module's header: the stones are round,
+    two sizes, no shape anyone can remember and therefore no cue that the tile
+    repeats. Two jittered layers, fixed stamp order, torus wrap on the write
+    index, hash jitter only, so the field is deterministic and tiles.
+
+    `pebbles=False` is the negative control for selftest's speck claim.
+    """
     grain = texgen._fbm(s, s, 52, 2, seed=5501)
     ripple = _noise_aniso(s, s, 36, 9, seed=5507)
+    fines = texgen._fbm(s, s, 96, 2, seed=5519)   # the dust under the stones
     out = [0.0] * (s * s)
     for i in range(s * s):
-        out[i] = 0.62 * grain[i] + 0.38 * ripple[i]
+        out[i] = 0.50 * grain[i] + 0.32 * ripple[i] + 0.18 * fines[i]
+    if not pebbles:
+        return out
+    for layer in range(2):
+        grid = 44 + 26 * layer          # coarse stones, then grit
+        cell = s / grid
+        seed = 5531 + 101 * layer
+        # A one-texel rim at the shipped raster, floored so a 256 selftest
+        # raster still has an edge rather than a single aliased texel.
+        e = max(0.6, 1.1 * s / 1024.0)
+        for cy in range(grid):
+            for cx in range(grid):
+                keep = texgen._hash01(cx, cy, seed + 6)
+                if keep > 0.46:         # sparse: most cells hold no stone
+                    continue
+                jx = texgen._hash01(cx, cy, seed)
+                jy = texgen._hash01(cx, cy, seed + 1)
+                hr = texgen._hash01(cx, cy, seed + 2)
+                hv = texgen._hash01(cx, cy, seed + 3)
+                ha = texgen._hash01(cx, cy, seed + 4)
+                cxt = (cx + jx) * cell
+                cyt = (cy + jy) * cell
+                r = cell * (0.13 + 0.17 * hr) * (1.0 - 0.35 * layer)
+                if r <= e:
+                    continue
+                # Signed and zero-mean by construction over the population.
+                amp = (0.34 - 0.20 * layer) * (2.0 * hv - 1.0)
+                ays = 0.82 + 0.36 * ha       # squash, so stones are not discs
+                reach = int(r / min(1.0, ays) + e) + 2
+                ix, iy = int(cxt), int(cyt)
+                for yy in range(iy - reach, iy + reach + 1):
+                    row = (yy % s) * s
+                    dy = (yy - cyt) * ays
+                    for xx in range(ix - reach, ix + reach + 1):
+                        dx = xx - cxt
+                        d = math.sqrt(dx * dx + dy * dy)
+                        if d >= r:
+                            continue
+                        cov = 1.0 - texgen._smoothstep(r - e, r, d)
+                        out[row + (xx % s)] += amp * cov
     return out
 
 
-def _field_clod(s):
+def _field_clod(s, cracks=True):
     """Soil clods. The worley term is GATED by the fbm so clods cluster into
     banks instead of tiling the plane with one dot per cell, which is the same
-    polka-dot signature the grass channel had to lose."""
+    polka-dot signature the grass channel had to lose.
+
+    RN-1256 adds the CRACK NETWORK. Packed dry soil is the one substrate whose
+    signature is a thin dark LINE rather than a blob, and Plains, Hills and
+    Forest all lean on this channel while none of them had a line anywhere in
+    their material. The cracks are the level sets of a wiggled fbm, i.e. the
+    same connected-network construction `_relief_clod` uses for the height, so
+    the colour and the relief now agree about where a crack is: they are built
+    from the same lobe and wiggle seeds on purpose, and a crack that darkens in
+    the albedo also recesses in the bump.
+
+    `cracks=False` is the negative control for selftest's dark-tail claim.
+    """
     lumps = texgen._fbm(s, s, 11, 3, seed=6607)
     clods = texgen._worley(s, s, 13, seed=6613)
     out = [0.0] * (s * s)
     for i in range(s * s):
         c = 1.0 - clods[i]
         out[i] = 0.60 * lumps[i] + 0.40 * c * c * (0.45 + 0.55 * lumps[i])
+    if not cracks:
+        return out
+    # THE SAME SEEDS `_relief_clod` USES, deliberately: one crack network,
+    # two consumers. Different seeds would put the dark line and the recess in
+    # different places, which at the near boost reads as two overlaid dirts.
+    lobe = texgen._fbm(s, s, 9, 3, seed=7801)
+    wig = texgen._fbm(s, s, 6, 2, seed=7807)
+    for i in range(s * s):
+        t = ((lobe[i] + 0.3 * (wig[i] - 0.5)) * 3.0) % 1.0
+        b = 2.0 * t if t < 0.5 else 2.0 * (1.0 - t)   # 0 at crack, 1 mid-clod
+        out[i] -= 0.30 * (1.0 - texgen._smoothstep(0.0, 0.17, b))
     return out
 
 
@@ -616,6 +730,41 @@ def _grad_mags(f, s):
     return out
 
 
+def _tail_ratio(grads):
+    """RN-1256. p99.9 of |grad| over its median: how much harder the hardest
+    edges in a field are than its typical texture.
+
+    This is the VALUE texture's anti-mush instrument and it is deliberately a
+    different statistic from `_facet_stats`. The relief channels claim to be
+    mostly flat with sparse steps, which is a claim about the BULK (hence a
+    flat FRACTION). An albedo channel is allowed to be busy everywhere; what it
+    must not be is uniformly soft. So the claim is about the extreme tail only,
+    and smooth noise fails it because a band-limited field's largest gradient
+    is within a small factor of its typical one however busy it looks.
+    """
+    srt = sorted(grads)
+    n = len(srt)
+    med = srt[n // 2]
+    return (srt[min(n - 1, int(n * 0.999))] / med) if med > 0.0 else 0.0
+
+
+def _lower_tail(vals):
+    """RN-1256. How far the 0.5th percentile sits below the median, in units of
+    the p2..p98 span: the signature of a THIN DARK LINE drawn over a field.
+
+    Skewness is the wrong instrument for the crack claim and it is worth saying
+    why, because the obvious move is to reuse `_skewness` from the relief
+    section. A crack network covers a few per cent of the tile, so its third
+    moment is swamped by the clod body it is drawn on; the same few per cent
+    moves a low percentile a long way. The relief G channel's claim really is
+    about the whole histogram's shape, so it really does want a skew.
+    """
+    srt = sorted(vals)
+    n = len(srt)
+    span = srt[int(n * 0.98) - 1] - srt[int(n * 0.02)]
+    return (srt[n // 2] - srt[int(n * 0.005)]) / span if span > 0.0 else 0.0
+
+
 def _facet_stats(grads):
     """The flat-facet signature: (flat fraction, median, p99) of |grad|.
     Faceted ground is mostly flat with sparse big steps; smooth noise is
@@ -821,6 +970,45 @@ def selftest():
     flat, med, p99 = _facet_stats(_grad_mags(ctl, s))
     check("fbm facets rejected", not (flat >= 0.5 and p99 >= 4.0 * med),
           "fbm flat %.2f, p99 %.4f vs 4*median %.4f" % (flat, p99, 4.0 * med))
+
+    # 9b. RN-1256. THE VALUE CHANNELS' HARD EDGES. The relief channels have
+    #     carried an anti-water claim since RN-147; the value channels carried
+    #     none, and shipped four smooth fields. Smooth albedo is the ALBEDO's
+    #     own version of the same failure: at the near boost it is mottle, and
+    #     mottle is what a painted plane looks like. Each claim's negative
+    #     control is THE SAME CONSTRUCTION WITH THE NEW TERM SWITCHED OFF, which
+    #     is a stronger control than an unrelated fbm: it holds the field's own
+    #     busyness fixed and varies only the thing being claimed.
+    #
+    #     These run at `sv`, not `s`. The stamped features have a size in
+    #     TEXELS that scales with the raster (unlike every lattice period in
+    #     this module, which does not), so at 256 the fine pebble layer is
+    #     below one texel and the claim would be measuring a raster, not a
+    #     field. 512 resolves both layers and still runs in seconds.
+    sv = 512
+    gB = _centre(_field_granular(sv))
+    gBc = _centre(_field_granular(sv, pebbles=False))
+    rB, rBc = _tail_ratio(_grad_mags(gB, sv)), _tail_ratio(_grad_mags(gBc, sv))
+    check("B pebbles are hard-edged", rB >= 6.0,
+          "p99.9/median grad %.2f (need >= 6.0)" % rB)
+    check("smooth-granular rejected", rBc < 6.0,
+          "same field without pebbles %.2f, correctly under the bar" % rBc)
+
+    gG = _centre(_field_rock(sv))
+    gGc = _centre(_field_rock(sv, terrace=False))
+    rG, rGc = _tail_ratio(_grad_mags(gG, sv)), _tail_ratio(_grad_mags(gGc, sv))
+    check("G facets step", rG >= 6.0,
+          "p99.9/median grad %.2f (need >= 6.0)" % rG)
+    check("worley domes rejected", rGc < 6.0,
+          "same field un-terraced %.2f, correctly under the bar" % rGc)
+
+    gA = _centre(_field_clod(sv))
+    gAc = _centre(_field_clod(sv, cracks=False))
+    tA, tAc = _lower_tail(gA), _lower_tail(gAc)
+    check("A carries a crack tail", tA >= 0.62,
+          "p50-p0.5 over p2..p98 span %.3f (need >= 0.62)" % tA)
+    check("crackless clod rejected", tAc < 0.62,
+          "same field without cracks %.3f, correctly under the bar" % tAc)
 
     # 10. This module does not touch texgen's shipped set. Catches an OUT_DIR
     #    mixup before it costs a byte-identity argument: every file texgen

@@ -1,5 +1,6 @@
-// artframe.js: THE FIVE CANONICAL ART FRAMES (RN-1405). One file, five named
-// shots, each reproducible to the pose, the sun and the scene.
+// artframe.js: THE CANONICAL ART FRAMES (RN-1405, sixth added at RN-1258).
+// One file, six named shots, each reproducible to the pose, the sun and the
+// scene.
 //
 //   node tools/smoke/run.mjs --url=http://127.0.0.1:<port>/ --scenario=walk \
 //     --sandbox=1 --width=1600 --height=900 \
@@ -16,6 +17,9 @@
 //   basedusk     a built base under a low sun, which is the half of the cycle
 //                §2b measured and no picture had ever been taken in.
 //   station      the station's own hall, 400 km up, lit by nothing local.
+//   voxelface    RN-1258's sixth shot: a dug pit's cut face at arm's length,
+//                the one surface in the game the world does not draw until
+//                the player has struck it.
 //
 // ==========================================================================
 // WHY THIS FILE EXISTS AT ALL, given `artshot.js` and the `*shot.js` family
@@ -87,6 +91,37 @@
       sunDot: 0.70, sunTol: 0.06,
       box: [0.4125, 0.5822, 0.5875, 0.7378],   // §2.1's groundNear, 140 px at 0.5/0.66
       why: 'the RN-352 forest site, standing eye, the §2.1 calibration pose',
+    },
+    // RN-1258. THE SIXTH SHOT, and the one the other five could not take: the
+    // DUG FACE. Every frame above photographs a surface the world already
+    // draws; this one has to CREATE its subject first, because the near voxel
+    // mesh holds nothing at all until the player has struck the ground.
+    //
+    // THE SUN IS PINNED HIGH (0.88) AND THAT IS THE ONE CHOICE HERE THAT WAS
+    // MADE BY LOOKING RATHER THAN BY ARGUMENT, so it is recorded with its two
+    // rejects. Dot 0.28 was tried first, on the reasoning that a cut bank is a
+    // shaded, mostly ambient-lit surface and should be judged as one: the pit
+    // interior came back at luma 18 and read as a BLACK HOLE, and a frame with
+    // no signal in the subject cannot settle a material question. Dot 0.55 was
+    // better and still lost most of the box to long understorey shadows. At
+    // 0.88 the shadows are short, the near wall of the cut is lit, and the
+    // frame is about the material rather than about the weather. The shaded
+    // and lamp-lit cases are real and are owed their own frames; they are not
+    // this one, and pretending one frame covers all three is how a pass ends
+    // up judging nothing.
+    //
+    // PROP SHADOWS SURVIVE `propsVisible(false)`, measured here and worth
+    // knowing before the next lane loses an hour to it: hiding the scatter
+    // removes the CARDS and leaves their shadows on the ground. `--props=0`
+    // changed nothing either (box luma 29.76 against 29.78). The high sun is
+    // what actually shrinks them.
+    voxelface: {
+      scenario: 'walk', needsSandbox: false,
+      lat: 12, lon: 150, yaw: 300, pitch: -38,
+      sunDot: 0.88, sunTol: 0.06,
+      strikes: 26, props: false,
+      box: [0.3200, 0.4400, 0.6800, 0.8600],
+      why: 'the dug voxel face at arm\'s length, RN-1258\'s subject',
     },
     machine: {
       scenario: 'walk', needsSandbox: false,
@@ -250,6 +285,64 @@
     of.look(S.yaw, S.pitch);         // the observer's own up, which just moved
     setup = { teleported: true, converged: of.world().chunks.converged,
       biome: of.world().biome, tickAdvanced: of.world().tick > w0.tick };
+  }
+
+  if (name === 'voxelface') {
+    const w0 = of.world();
+    of.teleport(S.lat, S.lon, 2.0);
+    await sleep(2.0);
+    let spin = 0;
+    while (!of.world().chunks.converged && spin++ < 240) await sleep(0.5);
+    await sleep(1.0);
+    sun = pin();                     // AFTER the teleport, forestfloor's reason
+    // THE SCATTER IS HIDDEN, artshot.js's precedent and its exact reason: at a
+    // standing eye pitched into the ground the understorey covers most of the
+    // box, and the understorey is pass A5's subject, not this one. A frame in
+    // which the claim is 60 per cent occluded by a different lane's work
+    // cannot settle either lane's question.
+    if ((A.props ?? S.props) === false) of.propsVisible(false);
+    of.look(S.yaw, S.pitch);
+    await sleep(0.5);
+    // `of.dig()` is zero-argument and drives the PLAYER'S OWN aim ray
+    // (DebugTerraform.ts), which is why the look above has to come first and
+    // why ARCHITECTURE.md's `dig(lat, lon, depth)` signature is stale. Each
+    // strike is one sphere; sixteen at this pitch cuts a pit deep enough to
+    // reach the subsoil stop of RN-80's profile, which is the point: a frame
+    // of pure topsoil would judge one third of the material.
+    //
+    // THE AIM SWEEPS, and that is the difference between a frame of a hole and
+    // a frame of a FACE. Sixteen strikes down one ray deepens a shaft whose
+    // walls are all edge-on to the eye; fanning the yaw a few degrees either
+    // side cuts a short trench, whose near wall is the large, well-lit,
+    // camera-facing surface this shot exists to judge.
+    const n = A.strikes ?? S.strikes;
+    let struck = 0;
+    for (let i = 0; i < n; ++i) {
+      const t = n <= 1 ? 0 : (i / (n - 1)) * 2 - 1;   // -1 .. +1
+      of.look(S.yaw + t * 7, S.pitch + Math.abs(t) * 6);
+      await sleep(0.06);
+      if (of.dig() !== null) struck++;
+      await of.run(0.25, 60);
+    }
+    // Look INTO the cut for the photograph, steeper than the digging pose, so
+    // the near wall fills the box rather than the untouched ground beyond it.
+    of.look(S.yaw, A.shotPitch ?? -44);
+    await sleep(0.4);
+    const vox = of.voxels();
+    // ASSERT THE SUBJECT EXISTS BEFORE PHOTOGRAPHING IT. A dig that silently
+    // did nothing yields an ordinary ground frame, and an ordinary ground
+    // frame filed under this name is worse than no frame: it would be read as
+    // "the dug face looks exactly like the terrain", which is the claim.
+    if (!(vox && vox.mesh && vox.mesh.triangles > 0)) {
+      return { valid: false, shot: name, struck,
+        why: 'the near voxel mesh holds no triangles, so there is no dug face '
+          + 'in this frame to photograph', voxels: vox };
+    }
+    setup = { teleported: true, struck, converged: of.world().chunks.converged,
+      biome: of.world().biome, tickAdvanced: of.world().tick > w0.tick,
+      voxTriangles: vox.mesh.triangles, voxVertices: vox.mesh.vertices,
+      voxBricks: vox.mesh.bricks, voxVisible: vox.meshVisible,
+      removedCells: vox.removedCells };
   }
 
   if (name === 'machine') {
