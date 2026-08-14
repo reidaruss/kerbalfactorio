@@ -60,13 +60,32 @@ outlet's width, which also means a belt deck at 0.25 m can run right up to the
 face instead of butting into 0.30 m of skirt. The plinth still alone sets the
 4 x 4 footprint: its two outer strips hold all four corners.
 
-MATERIALS ARE FIVE AND THAT DECIDED THE BAND COLOUR. The set is SteelDark,
-Steel, Accent, Rock and EmissiveState. Rock is the refractory brick at the
-corners, which is this machine's one non-steel read and the thing that tells
-it apart from the box at 40 m, so it keeps its slot; the painted bands are
+MATERIALS ARE SIX AND THAT DECIDED THE BAND COLOUR. The set is SteelDark,
+Steel, SteelRust, Accent, Rock and EmissiveState. Rock is the refractory brick
+at the corners, which is this machine's one non-steel read and the thing that
+tells it apart from the box at 40 m, so it keeps its slot; the painted bands are
 therefore Accent rather than the Hazard yellow the box and the assembler use.
 Accent also carries the keep-out ring above the plinth and the chute lip, so
 one colour means one thing here: this is where the machine hands you something.
+
+RN-1493: THE SIXTH IS THE HOT PATH, AND IT IS A SURFACE AND NOT A TINT. Every
+role above resolves to ONE tiling family, `panel`, so before this pass the whole
+machine outside the brick was a single texture with five colours multiplied over
+it: manufacture out of plate, everywhere, including on a furnace door and a
+flue. `SteelRust` maps to the `rust` family (layered oxide plates that have
+lifted, spall pits where the scale came away, metalness going DOWN because oxide
+is a dielectric), and it is painted by ONE RULE with no exceptions taken for
+looks: whatever the fire, the flue gas or the melt touches. That is the stack
+foot, tube, arrestor and cap; the firebox coaming and door leaf; the launder
+floor and cheeks; and the charging hood's throat. Everything a HAND touches
+stays bright - the cleanout dog, the door hinges and latch, the bolt run, the
+peep boss, the hood brackets - which is what makes the two read as different
+metals rather than as a machine someone recoloured.
+
+LOD1 AND LOD2 DELIBERATELY DO NOT GET IT. RN-561 re-authored LOD1 as a SHADOW
+PROXY and LOD2 is a screen-distance tier; a shadow carries no surface, and
+adding a sixth material to a tier drawn at range buys a family bucket per
+cascade in `MachineBatch` for a difference no camera resolves.
 
 Combustion machine (ASSET-SPECS 2.3): VisualState 1 "working" overrides to
 fire orange #FF7A1E at intensity 2.2 rather than the standard green. Idle,
@@ -444,8 +463,17 @@ def _front_detail(mb):
     # and the only light that gets out gets out through a PEEP HOLE. So the
     # emissive area drops to a 0.30 x 0.22 port and a thin sight strip, and the
     # rest of what used to glow is now iron.
-    FRONT.coaming(mb, 1.34, 0.94, 0.0, DOOR_Z, "SteelDark", rail=0.085)
-    FRONT.part(mb, 1.34, 0.94, 0.0, DOOR_Z, "plate", "Steel")
+    #
+    # AND THE CASTING IS THE ONE THING ON THIS MACHINE THAT LIVES AT FLAME
+    # TEMPERATURE, so RN-1493 gives the coaming and the door leaf `SteelRust`
+    # while every piece of HARDWARE bolted to them stays bright: the hinges,
+    # the dog, the lever, the bolt run and the peep boss are all still
+    # SteelDark and Steel. That contrast is the whole reason to spend a role
+    # here rather than a tint - dark matte oxide with sound metal fittings on
+    # it is what a furnace door looks like, and neither half reads as either
+    # while both wear `panel`.
+    FRONT.coaming(mb, 1.34, 0.94, 0.0, DOOR_Z, "SteelRust", rail=0.085)
+    FRONT.part(mb, 1.34, 0.94, 0.0, DOOR_Z, "plate", "SteelRust")
     door = mf.Face("Y", -1, FRONT.out(mf.layer("plate")), limit=-HALF,
                    name="firebox door")
     for s in (-1, 1):
@@ -471,9 +499,12 @@ def _front_detail(mb):
     # A pour that runs off the side of a flat shelf is a pour on the floor, so
     # a real one has CHEEKS. They are taller than the floor of the channel and
     # narrower than the lip, so the three parts stack without sharing a plane.
-    mb.box((1.30, 0.24, 0.10), (0, -1.86, 0.25), "SteelDark")
+    # RN-1493: the channel the MELT runs down takes the oxide too, for the same
+    # reason the stack does. The Accent lip below it does not, because a painted
+    # lip is repainted and that is what a keep-out marking is for.
+    mb.box((1.30, 0.24, 0.10), (0, -1.86, 0.25), "SteelRust")
     for s in (-1, 1):
-        mb.box((0.09, 0.26, 0.20), (s * 0.66, -1.85, 0.34), "SteelDark")
+        mb.box((0.09, 0.26, 0.20), (s * 0.66, -1.85, 0.34), "SteelRust")
     mb.box((1.44, 0.08, 0.06), (0, -1.96, 0.25), "Accent")
     # The crust. A launder that has poured is a launder with slag frozen on its
     # lip, and that is a fact about the SHAPE, not only about the colour: two
@@ -512,9 +543,12 @@ def _rear_detail(mb):
     # so the mouth is wider than its throat. It leans the OPPOSITE way to the
     # front's launder lip, which is what makes the intake and the outlet
     # distinguishable by SHAPE from across the base rather than by colour.
+    # RN-1493: hot ore goes down this, so the hood is on the oxide path with
+    # the stack, the door and the launder. Its brackets are structure bolted to
+    # the shell rather than part of the throat, so they stay SteelDark.
     REAR.warped(mb, [(-1.16, 1.34, 1.00), (1.16, 1.34, 1.00),
                      (1.16, 1.86, 3.60), (-1.16, 1.86, 3.60)],
-                "tray", "SteelDark")
+                "tray", "SteelRust")
     for s in (-1, 1):
         REAR.wedge(mb, s * 1.06, 0.07, 1.34, 0.22, 0.30, "bracket",
                    "SteelDark")
@@ -603,22 +637,28 @@ def _stack(mb):
     the tube rather than beside it, so neither costs a silhouette that the
     0.34 m radius has not already paid for."""
     mb.cylinder(CHIM_R + 0.12, 0.14, (0, CHIM_Y, DECK_TOP + 0.07), axis="Z",
-                segments=8, role="SteelDark")
+                segments=8, role="SteelRust")
     mb.cylinder(CHIM_R, (CAP_Z0 + 0.04) - CHIM_Z0,
                 (0, CHIM_Y, (CHIM_Z0 + CAP_Z0 + 0.04) * 0.5), axis="Z",
-                segments=12, role="Steel")
+                segments=12, role="SteelRust")
     # The cleanout, on the -Y quadrant so it faces the player who is already
     # looking at the firebox. It is a door with a hinge and a dog, at a quarter
     # the size of the firebox's, because it is the same idea one scale down.
-    mb.box((0.26, 0.06, 0.24), (0, CHIM_Y - CHIM_R - 0.02, 3.16), "SteelDark")
+    #
+    # THE DOG STAYS BRIGHT STEEL AND THAT IS THE POINT OF LEAVING IT (RN-1493).
+    # Everything a hand turns is wiped clean by the turning; everything the flue
+    # gas touches is not. So the tube, the foot, the arrestor and the cap take
+    # the oxide and this one 90 mm block does not, which is the cheapest true
+    # detail on the stack and costs no triangles at all.
+    mb.box((0.26, 0.06, 0.24), (0, CHIM_Y - CHIM_R - 0.02, 3.16), "SteelRust")
     mb.box((0.09, 0.05, 0.09), (0.10, CHIM_Y - CHIM_R - 0.05, 3.16), "Steel")
     # The spark arrestor: a band of a third diameter between the tube and the
     # cap, so the stack now has FOUR diameters over its length instead of
     # three, and the eye reads a fitting rather than a taper.
     mb.cylinder(CHIM_R + 0.05, 0.10, (0, CHIM_Y, CAP_Z0 - 0.09), axis="Z",
-                segments=8, role="SteelDark")
+                segments=8, role="SteelRust")
     mb.cylinder(CHIM_R + 0.10, H - CAP_Z0, (0, CHIM_Y, (CAP_Z0 + H) * 0.5),
-                axis="Z", segments=8, role="SteelDark")
+                axis="Z", segments=8, role="SteelRust")
 
 
 def build_lod0(root):

@@ -55,6 +55,24 @@
 // meanR - meanB in counts, `sat`, `p05/p50/p95`, `loFrac`, `hiFrac`). The box
 // is a property of the shot, listed in `SHOTS` below, and for `machine` it is
 // RN-1200's own 505,20,1160,430 so the readings are comparable with that pass.
+//
+// AND FOR `machine` IT IS NOW MORE THAN ONE BOX, WHICH RN-1479 PROVED IT OWED
+// (RN-1490). That pass routed machine materials through their authored roles
+// and found RN-1200's rectangle BIT-IDENTICAL either side of the change, to the
+// digit, in both arms: not a null result but a true reading of what the
+// rectangle frames. 505,20,1160,430 is the smelter's plate BODY, every role on
+// it is `panel`, and the `Rock` hearth columns that DID move are in frame and
+// outside it. A gateway measurement that cannot see a material change by
+// construction is an instrument, not a guardrail, so the manifest now carries an
+// `extra` map of further named rectangles decoded from the same capture and
+// published beside the canonical one. `machine`'s two are the column rectangles
+// RN-1479 measured and separately showed to be deterministic under a re-run
+// (0.01 luma, 0.00 iqr) while the foliage in the same frame moves 3.32 per cent
+// of pixels: the columns can carry a claim and the leaves cannot.
+//
+// `box` KEEPS ITS NAME, ITS RECTANGLE AND ITS PLACE IN THE REPORT so every
+// number any earlier pass published against it stays comparable. The extras are
+// additive.
 (async (A) => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
@@ -92,7 +110,96 @@
       scenario: 'walk', needsSandbox: false,
       sunDot: 0.45, sunTol: 0.02,
       box: [0.3156, 0.0222, 0.7250, 0.4778],   // RN-1200's 505,20,1160,430 at 1600x900
+      // RN-1490. The two hearth-column rectangles, RN-1479's own
+      // 300,0,470,600 and 1225,0,1320,560 at 1600x900. These are the ONLY
+      // rectangles in this frame shown to be both deterministic across runs
+      // and responsive to a material change (`?tile=stone:0.12` moves the left
+      // one's iqr 11.50 -> 10.11 and leaves `box` bit-identical), which is what
+      // makes them a guardrail rather than a second opinion.
+      extra: {
+        hearthL: [0.1875, 0.0000, 0.2938, 0.6667],
+        hearthR: [0.7656, 0.0000, 0.8250, 0.6222],
+      },
       why: 'the RN-1200 machine close-up: Steel, Accent and Rubber in one frame',
+    },
+    smelterhero: {
+      // RN-1491. THE SIXTH SHOT, AND IT IS THE SAME SCENE, WHICH IS THE ONLY
+      // REASON IT CAN BE ADDED HONESTLY. It runs `machine`'s own placement
+      // block verbatim (same build menus, same ghost-and-press path, same
+      // assertion that the smelter actually went down) and differs in exactly
+      // two published fields: the standoff and the aim height. So the pair
+      // `machine` / `smelterhero` is one camera move apart and not one scene
+      // apart, and anything that fails in one fails identically in the other.
+      //
+      // 3.2 m AND +1.7 m OF AIM, both chosen against the asset rather than by
+      // eye: the smelter is 4 x 4 m and 3.60 m tall (build_smelter.py's header),
+      // so 3.2 m of standoff puts its 3.40 m body across most of the frame
+      // width at this FOV and aiming at the socket instead of at mid-height
+      // would photograph the plinth with the stack cropped off, which is the
+      // mistake the `ruin` shot already recorded and fixed with `aimUpM`.
+      //
+      // THE BEARING WAS SWEPT AND ALL FOUR ARMS ARE RECORDED, because the one
+      // thing that came out of the sweep is bigger than the framing choice.
+      // Matched runs, standoff 4.6, sun pinned to the same dot 0.448 in every
+      // one, box luma / warm / loFrac:
+      //
+      //     bearing   0   24.23  -17.68  0.673   square on the pour face
+      //     bearing  90   18.02  -11.26  0.799   the service side, worst
+      //     sun tangent  27.50  -17.81  0.672   a corner, per `__ofPost` sun
+      //     its negation 26.41  -17.30  0.722   the opposite corner
+      //
+      // NONE OF THE FOUR IS LIT. Every arm puts the machine's vertical faces in
+      // shade with the GROUND fully lit in the same frame (world p95 155 to
+      // 197), and no bearing exists that turns a lit face toward the eye. That
+      // is not a framing problem and it is reported up rather than tuned away:
+      // at the campaign's own dot-0.45 pin, the smelter is read entirely by the
+      // sky IBL and never by the sun, so every A0 machine frame to date is a
+      // photograph of ambient. `warm` between -11 and -18 counts in all four
+      // arms is the same fact in the other instrument: the subject is BLUE
+      // because the sky is the only light on it.
+      //
+      // BEARING 90 IS CHOSEN, AND BEARING 0 IS THE INSTRUCTIVE REJECT. 0 is the
+      // prettiest arm by some distance: it stands square on a face with both
+      // hearth columns, the whole plate field, the collar and the roof line in
+      // one frame. It is also the +X SERVICE side, which carries neither of the
+      // two roles this pass moved, and it was photographed either side of the
+      // change before that was noticed: canonical box 24.23 -> 24.22, the
+      // `plate` rectangle 24.30 -> 24.30, both hearth columns identical to the
+      // digit. A beautiful frame that cannot see the change is RN-1479's defect
+      // a second time, one shot later, and it is recorded here so the next lane
+      // reads the reject rather than re-running the sweep. 90 is the +Y CHARGE
+      // face, which is the one the `machine` shot itself frames; it carries the
+      // hood and the intake band and it was shot as a full matched pair, but it
+      // shows the hood edge-on and the band at a grazing angle.
+      //
+      // 270 IS THE SHIPPED BEARING: the -Y POUR face, the face build_smelter.py
+      // names as the one a player stands at. It is the only arm that puts the
+      // firebox casting square to the camera at 0.6 m2 of screen, and the
+      // casting is where the whole question is decided - a large oxide surface
+      // with bright hardware bolted to it, set into a plate shell, is either
+      // the Space Engineers read or it is not. It also holds the launder, the
+      // keep-out ring, the placard and both hearth columns in the same frame.
+      scenario: 'walk', needsSandbox: false,
+      sunDot: 0.45, sunTol: 0.02,
+      standoff: 4.6, aimUpM: 1.7, sunSide: true, bearingDeg: 270,
+      box: [0.2500, 0.1000, 0.7500, 0.8500],
+      // FIVE RECTANGLES, EACH FRAMING ONE FAMILY, so a change is attributed and
+      // never inferred. `firebox` is the coaming and door leaf above the peep,
+      // chosen to EXCLUDE both emissive parts: an emissive is unaffected by any
+      // surface change and would only dilute the rectangle it sits in. `band`
+      // is the painted keep-out ring. `plate` is clear shell to the right of
+      // the casting and away from every fitting, and the two columns are the
+      // refractory brick. `panel` and `stone` are untouched by this pass, so
+      // `plate` and both columns are the NEGATIVE CONTROLS and must hold while
+      // `firebox` and `band` move.
+      extra: {
+        firebox: [0.3875, 0.3444, 0.6375, 0.4167],
+        band: [0.2938, 0.7611, 0.7313, 0.8200],
+        plate: [0.6781, 0.2833, 0.7469, 0.6833],
+        hearthL: [0.1719, 0.2222, 0.2188, 0.9111],
+        hearthR: [0.8094, 0.2222, 0.8438, 0.9111],
+      },
+      why: 'the smelter at arm-reach: the proof-shot framing, plate and brick',
     },
     ruin: {
       scenario: 'walk', needsSandbox: false,
@@ -252,7 +359,7 @@
       biome: of.world().biome, tickAdvanced: of.world().tick > w0.tick };
   }
 
-  if (name === 'machine') {
+  if (name === 'machine' || name === 'smelterhero') {
     // machinemat.js's scene, and deliberately the same one: a smelter for the
     // Steel and Accent roles and a belt for Rubber, so one frame contains roles
     // whose roughness must move in DIFFERENT directions. A frame with only
@@ -286,17 +393,80 @@
     // Walk in to the standoff, re-checked each burst against the machine's own
     // reported position rather than after a fixed number of bursts.
     const target = smelter.pos;
-    for (let i = 0; i < 24; ++i) {
-      if (gd(eye(), target) < (A.standoff ?? 6.0)) break;
-      of.look(yaw0, -6);
-      of.input.tape([{ hold: 30, keys: ['KeyW'] }]);
-      await sleep(0.6);
+    const want = A.standoff ?? S.standoff ?? 6.0;
+    let sunSide = null;
+    if (A.sunSide ?? S.sunSide) {
+      // THE SUN VECTOR COMES FROM THE POST STACK'S OWN UNIFORM, not from a
+      // second solve: `__ofPost.state().sun` is the direction the renderer is
+      // actually lighting with this frame, so a camera placed against it
+      // cannot disagree with the shading the way an independently recomputed
+      // sun could. Projected into the machine's tangent plane and walked out
+      // along, so the eye ends up between the sun and the subject.
+      //
+      // THE BEARING IS A CALIBRATED CONSTANT AND NOT A DERIVATION, AND THE
+      // DERIVATION IS RECORDED BECAUSE IT FAILED (RN-1492). The obvious build
+      // is to read `__ofPost.state().sun`, project it into the machine's
+      // tangent plane and stand on it: `Frame.ts:92` sets that vector to
+      // `light.position - light.target.position`, which reads as TOWARD the
+      // sun. Measured on this build it does NOT put the eye on the lit side,
+      // and neither does its negation. Matched pair at 4.6 m, one sign apart:
+      // +tangent box luma 27.50 / warm -17.81 / loFrac 0.672, -tangent 26.41 /
+      // -17.30 / 0.722, and the frames show a corner of the machine in shadow
+      // with the GROUND fully lit in both. Two opposite bearings both landing
+      // shaded means the sun's azimuth is near-perpendicular to the projected
+      // vector, i.e. that vector and these positions are not in the same frame,
+      // whatever the assignment line reads like. That is a real finding about
+      // `__ofPost.state().sun` as an instrument and it is reported rather than
+      // worked around silently; what is worked around is only this shot's need
+      // for a lit subject.
+      //
+      // So the bearing is built the way `ruin` and `basedusk` build theirs, in
+      // the tangent frame off the PLAYER'S OWN FEET that both of those shots
+      // already stand on, and its value is a measured constant with the
+      // rejected bearings recorded beside it in `SHOTS`.
+      const f0 = of.world().player.feet;
+      const up = norm(f0);
+      const e0 = norm(cross(up, [0, 1, 0]));
+      const e1 = norm(cross(up, e0));
+      const th = ((A.bearingDeg ?? S.bearingDeg) * Math.PI) / 180;
+      const tan = norm(addk(addk([0, 0, 0], e0, Math.cos(th)),
+        e1, Math.sin(th)));
+      const stand = addk(addk(target, tan, want), up, A.dropM ?? 4);
+      const at = of.standAt(stand[0], stand[1], stand[2]);
+      if (at === null) return { valid: false, shot: name, why: 'standAt refused', stand };
+      await sleep(1.2);
+      sun = pin();                   // the observer moved, so the solve moved
+      sunSide = { bearingDeg: A.bearingDeg ?? S.bearingDeg,
+        postSun: window.__ofPost.state().sun.map(r3),
+        tangent: tan.map(r3), dropM: A.dropM ?? 4 };
+    } else {
+      for (let i = 0; i < 24; ++i) {
+        if (gd(eye(), target) < want) break;
+        of.look(yaw0, -6);
+        of.input.tape([{ hold: 30, keys: ['KeyW'] }]);
+        await sleep(0.6);
+      }
+      of.input.tape([{ hold: 2, keys: [] }]);
+      await sleep(0.3);
     }
-    of.input.tape([{ hold: 2, keys: [] }]);
-    await sleep(0.3);
-    const framed = aimAt(target, [2, -2, -6, -10, -16], yaw0, [16, 4, 1]);
+    // AIM AT MID-HEIGHT, NOT AT THE SOCKET, once the eye is close enough for
+    // the difference to matter. `machine` keeps 0 so its pose is unchanged to
+    // the digit; `smelterhero` lifts the aim by the asset's own half-height.
+    // The up used is the radial through the machine's own position, which is a
+    // real surface normal on a curved body and not a world axis.
+    const lift = A.aimUpM ?? S.aimUpM ?? 0;
+    const aimPt = lift === 0 ? target : addk(target, norm(target), lift);
+    // `machine` KEEPS ITS EXACT SOLVE, seed yaw and spans included, so its pose
+    // and therefore RN-1200's rectangle stay comparable to the digit. The hero
+    // gets a coarse 90-degree pass first because `standAt` drops the walker on
+    // a bearing nothing chose, so the subject can start behind him.
+    const framed = sunSide === null
+      ? aimAt(aimPt, [2, -2, -6, -10, -16], yaw0, [16, 4, 1])
+      : aimAt(aimPt, [10, 6, 2, -2, -6], of.world().observer.yawDeg,
+        [90, 16, 4, 1]);
     setup = { placed: fac().buildings, kinds: fac().list.map((b) => b.kind),
-      standoffM: r2(gd(eye(), target)), belt: belt !== null, framed };
+      standoffM: r2(gd(eye(), target)), wantStandoffM: want, aimUpM: lift,
+      belt: belt !== null, sunSide, framed };
   }
 
   if (name === 'ruin') {
@@ -565,6 +735,16 @@
   };
 
   const bx = [S.box[0] * W, S.box[1] * H, S.box[2] * W, S.box[3] * H];
+  /** RN-1490. The shot's further named rectangles, decoded from the SAME
+   *  capture, so an extra box costs a `getImageData` and never a second frame
+   *  that would differ from the first by the wind clock and the foliage. */
+  const extraPx = {};
+  const extraStat = {};
+  for (const [k, f] of Object.entries(S.extra ?? {})) {
+    const e = [f[0] * W, f[1] * H, f[2] * W, f[3] * H];
+    extraPx[k] = e.map((v) => Math.round(v));
+    extraStat[k] = stat(e[0], e[1], e[2], e[3]);
+  }
   const png = await new Promise((res) => {
     const fr = new FileReader();
     fr.onload = () => res(fr.result);
@@ -588,6 +768,7 @@
     frame: { w: W, h: H },
     boxPx: bx.map((v) => Math.round(v)),
     box: stat(bx[0], bx[1], bx[2], bx[3]),
+    extraPx, extra: extraStat,
     world: stat(0, 0, W, H),
     sun: { mode, wantDot: mode === 'time' ? null : (A.sunDot ?? S.sunDot),
       sunT: r3(of.stats().sky.sunT), elevDot: r3(elevDot),
