@@ -390,15 +390,86 @@
   log.push(`iron drill #${ironDrill.id} on patch ${ironDrill.patch}, mines item `
     + `${ironDrill.outputItem}, heading dot ${dot(F, wantFwd).toFixed(3)}`);
 
-  /** The outward socket of whatever is currently the end of the chain. */
-  const tailOut = (b) => add(b.pos, b.fwd, b.kind === 'belt' ? 0.5 : 1.0);
+  /**
+   * The outward socket of whatever is currently the end of the chain.
+   *
+   * GP-760: THIS WAS A STALE CONSTANT, machineports.js's exact class. The
+   * ternary used to read `b.kind === 'belt' ? 0.5 : 1.0`, which is the belt's
+   * own outlet offset (still right, belts never moved) against a HARDCODED 1.0
+   * for every machine, which was right for a 2 m smelter and a 2 m drill and
+   * has been wrong since FS-73 took both to 4 m. `of.game().factory.footprint`
+   * is the client's own table (FS-73's, the same one machineports.js,
+   * autoline.js and shortline.js already read for the identical reason), and
+   * every socket in the shipped set sits at exactly half its housing's
+   * footprint from centre: measured here from the port GAP this probe's own
+   * runs report, `#1 miner socket_item_out -> socket_belt_in (0.50 m)` and
+   * `#3 belt socket_belt_out -> socket_item_in (0.50 m)` at a 3-cell (3.006 m)
+   * mating distance both solve to an outlet 2.006 m out, not 1 m, matching
+   * `footprint.miner / 2` and `footprint.smelter / 2` (both 4 / 2 = 2) and not
+   * the literal this used to be.
+   *
+   * THE FAILURE THIS PRODUCED WAS NOT A NARROW MISS. `chainStep`'s aim point
+   * for the belt off the smelter's outlet was 1 m short of the real socket,
+   * so its `standBack` (the aim point minus 3.2 m along the run's own axis)
+   * landed on the INPUT side of the housing instead of past the outlet, and a
+   * 21x21 degree ghost sweep centred there (this lane's own diagnostic) found
+   * not one `ok: true` candidate anywhere in it: every cell it reached read
+   * `too close to #1 miner`, `too close to #4 smelter` or `cell taken`, because
+   * the true output cell (the first one clear of `MachinePlacement.
+   * footprintsOverlap`'s reach, three cells out) was never inside the swept
+   * cone at all. `belt #2 off the drill's own outlet mated anyway on the same
+   * build, purely because a drill has no input side for the wrong standoff to
+   * collide with; that asymmetry is why this probe's first two belts (off the
+   * miner) went down clean while the third (off the smelter) could not, and it
+   * is why "some placements still work" is not evidence the constant was fine.
+   */
+  const FPT = of.game().factory.footprint;
+  const tailOut = (b) => add(b.pos, b.fwd, FPT[b.kind] / 2);
   let tip = ironDrill;
+  /**
+   * GP-760, SECOND HALF OF THE SAME DEFECT. `standBack` used to be a flat
+   * `add(at, F, -3.2)`, 3.2 m BEHIND THE OUTLET POINT: fine for a belt tip,
+   * where "behind" is empty ground in the middle of a run, and silently not
+   * fine for a MACHINE tip, where "behind" is its own INPUT face, which on a
+   * short chain is occupied by the very belts and the drill that feed it.
+   * Measured here, with the corrected 4 m footprint: standing behind the
+   * smelter put the player within about a metre of the drill's own housing,
+   * seven cells up the same short chain, and `walkTo`'s 30-iteration budget
+   * logged the identical eye position step after step, wedged against it.
+   * Standing PAST the outlet instead (continuing the direction of travel the
+   * whole chain was already laid in) measured no better: that point is a
+   * further 3.6 m PAST the housing beyond where the player already stands on
+   * the input side, so the walk is longer, not shorter, and it wedged the
+   * same way.
+   *
+   * enemies.js's `placeUntil` named this exact class first (GP-690: a
+   * one-shot angle tuned against a 2 m housing went stale the day FS-73 made
+   * it 4 m) and its fix was to WIDEN BY TRYING rather than to compute one
+   * more single "correct" offset that the next rescale falsifies again. This
+   * is that fix applied to a walk instead of a placement ring: several
+   * honestly different candidate standoffs, GEOMETRICALLY DISTINCT (behind,
+   * past, and off to either side along `R`, the chain's own measured right
+   * axis), tried in turn until one lands a `snapPlace`. A belt tip keeps its
+   * single, always-working candidate (behind it was never the problem there:
+   * `0.5 - 3.2 = -2.7` from its outlet is `-2.2` from its own centre).
+   */
+  const standCandidatesFor = (b) => {
+    const half = FPT[b.kind] / 2;
+    if (b.kind === 'belt') return [add(b.pos, b.fwd, -(half + 2.2))];
+    return [
+      add(add(b.pos, b.fwd, half + 1.6), R, 0),
+      add(add(b.pos, b.fwd, 0), R, half + 3.4),
+      add(add(b.pos, b.fwd, 0), R, -(half + 3.4)),
+      add(b.pos, b.fwd, -(half + 2.2)),
+    ];
+  };
   const chainStep = async (kind, socket) => {
     const at = tailOut(tip);
-    const made = await snapPlace(kind, at, socket, add(at, F, -3.2));
-    if (made === null) return false;
-    tip = made;
-    return true;
+    for (const standBack of standCandidatesFor(tip)) {
+      const made = await snapPlace(kind, at, socket, standBack);
+      if (made !== null) { tip = made; return true; }
+    }
+    return false;
   };
   if (!await chainStep('belt', 'socket_item_out')) {
     return { valid: false, why: 'no belt would take the iron drill outlet', log };
@@ -650,6 +721,17 @@
     .reduce((a, b) => (b.id > a.id ? b : a));
   const shortOfPortB = (p) => dot(sub(p, pbPoint), R);
   let closed = 0;
+  // GP-760 NOTE (not fixed in this lane, see the probe's own report below):
+  // once the smelter-outlet defect this lane fixes stopped blocking the run,
+  // this loop measured the stone haul's second leg stopping far short of
+  // `endT` on the FS-73-scale world (this lane's run: 14 closes exhausted
+  // the budget with the run still ~43 m short, an order of magnitude beyond
+  // what 14 one-cell presses was ever sized for). That is the drag's own
+  // route undershooting, not this budget; raising the cap alone was tried
+  // and cost several unbounded minutes per run without reliably finishing,
+  // which is not a safe trade this lane has time to validate. Left at its
+  // original value and reported honestly as GP-761 (recorded below) for the
+  // factory-sim/gameplay lane that owns the stone-haul route.
   for (let k = 0; k < 14; ++k) {
     const t = lastBelt();
     if (shortOfPortB(t.pos) < 0.5) break;
