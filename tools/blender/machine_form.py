@@ -1,8 +1,21 @@
 """
 machine_form.py - the vocabulary a factory MACHINE is detailed with.
 
-Not a build script. Imported by build_assembler.py, build_smelter.py and
-build_miner.py, plus station_form.py which extends it.
+Not a build script. Imported by build_assembler.py, build_smelter.py,
+build_miner.py and build_box.py, plus station_form.py which extends it.
+
+RN-1551 ADDED build_box.py TO THAT SENTENCE AND DELIBERATELY DID NOT ADD THE
+BELT, and the belt is the more interesting half. The layer table below is in
+ABSOLUTE METRES and every height in it was derived against a 4 m to 8 m
+machine: a cable tray stands 74 mm proud and a housing 281 mm. A belt tile is
+1.00 x 1.00 x 0.30 with a 0.10 m rail, so a `tray` on its rail inner face
+stands three quarters of the rail's own width off it and a `housing` is
+approaching the tile's full height. The vocabulary does not scale down, its
+heights are properties of the TYPE rather than parameters (see (b) below), and
+that is exactly what makes it safe on the big machines; the honest consequence
+is that the belt is detailed with hand-authored boxes in its own file and says
+so there. Adding the name here without the import is the defect the paragraph
+below this one is about, and so is adding the import to make a name true.
 
 **THAT LIST IS THE SHIPPED TRUTH AND IT IS DELIBERATELY SHORT.** It read
 "build_assembler.py, build_smelter.py, build_miner.py, build_box.py and the
@@ -710,6 +723,88 @@ def arc_ring(mb, radius, thickness, z, segs, role, cx=0.0, cy=0.0):
                     radius + thickness * 0.5, thickness, (cx, cy, z),
                     a0_deg=a0, a1_deg=a0 + 180.0, segments=max(2, segs // 2),
                     role=role)
+
+
+def guard_cage(mb, radius, z0, z1, bars, role_bar, role_hoop, cx=0.0, cy=0.0,
+               bar=0.06, hoop=0.085, segs=12):
+    """A bar guard around a rotating part: `bars` uprights on a circle, held by
+    two hoops.
+
+    RN-1552. THE ONE THING IN THIS VOCABULARY THAT IS ABOUT SAFETY RATHER THAN
+    ABOUT ASSEMBLY, and D-020's bar is what asks for it. Space Engineers'
+    machines read as serviceable because every part that MOVES is behind
+    something: a rotor has a cage, a belt nip has a plate over it, a fan has a
+    grille. This project's machines had exposed rotating columns and an
+    unguarded turret, and a guard is the single cheapest thing that says a
+    person works near this and somebody thought about it.
+
+    IT IS ALSO THE BEST SILHOUETTE VALUE IN THE FILE AFTER THE RAILING, and
+    for the railing's exact reason: the sky shows THROUGH it. A cage is a
+    circle of thin verticals, so at range it is a soft vertical band that
+    breaks a solid outline without adding a solid, and up close it is the
+    thing that makes the column behind it read as dangerous.
+
+    THE HOOPS ARE WIDER THAN THE BARS AND INSET FROM THE BAR ENDS, which is
+    both what a real guard is (rolled hoops, bars welded inside them) and what
+    keeps this out of check_coplanar: a bar's side faces are buried in the
+    hoop that crosses it, and a bar's END faces are in open air above and
+    below the hoops rather than on a hoop's own plane."""
+    h = z1 - z0
+    if h <= 0.0 or bars < 1:
+        return
+    mb.ring_boxes((bar, bar, h), radius, bars, (cx, cy, (z0 + z1) * 0.5),
+                  role_bar)
+    if hoop <= bar:
+        raise ValueError("a guard hoop (%.3f) must be wider than the bars it "
+                         "holds (%.3f), or the bar's side faces land on the "
+                         "hoop's own planes" % (hoop, bar))
+    for z in (z0 + h * 0.14, z1 - h * 0.14):
+        arc_ring(mb, radius, hoop, z, segs, role_hoop, cx=cx, cy=cy)
+
+
+def bolted_plate(mb, face, u, v, du, dv, role_plate, role_bolt, inset=0.07,
+                 size=0.05, kind="plate"):
+    """A plate that is BOLTED ON rather than drawn on: the plate, and a bolt at
+    each of its four corners standing off the plate's own outer surface.
+
+    `plate` + `bolts` was already the commonest two-line idiom in the machine
+    scripts and it was written out by hand every time, which is how the miner's
+    rating plate came to be dimensioned off a copied width (see build_miner's
+    PLACARD_U note). Here the bolt positions are DERIVED from the plate's own
+    size and inset, so the two cannot be retuned apart, and the bolts sit on a
+    face at the plate's outer plane rather than on the panel, which is what a
+    bolt through a plate actually does."""
+    face.part(mb, du, dv, u, v, kind, role_plate)
+    top = Face(face.axis, face.sign, face.out(layer(kind)), limit=face.limit,
+               name=face.name + " bolted plate")
+    bolts(mb, top, (u - du * 0.5 + inset, u + du * 0.5 - inset),
+          (v - dv * 0.5 + inset, v + dv * 0.5 - inset), size, role_bolt)
+
+
+def hose(mb, points, width, role, clamp_role=None, clamp=1.45):
+    """A FLEXIBLE run: `pipe_run`'s geometry with the two things that make a
+    hose read as a hose instead of as a thinner duct.
+
+    (1) NO ELBOW FITTINGS. `pipe_run` puts a cube at every corner because a
+        rigid duct turns with a fitting; a hose BENDS, so the corner cube is
+        the hose's own material and reads as the outside of a bend.
+    (2) A CLAMP BAND AT EACH FIXED END. That is where a hose is actually
+        attached, it is the only hard part of the assembly, and it is what
+        tells the eye which end is the machine and which is the hose.
+
+    WHY A MACHINE WANTS ONE AT ALL, since it already has ducts. A rigid duct
+    cannot cross a joint that moves, so a machine whose plumbing is entirely
+    rigid is a machine whose moving parts are not connected to anything. The
+    assembler's turret rotates and the miner's head travels; both had rigid
+    conduit running to them, which is the sort of detail that is invisible
+    until somebody who services machinery looks at it. It is also this set's
+    one honest MACHINE consumer of the `coarse` family, whose Rubber role has
+    otherwise only ever been a belt deck."""
+    pipe_run(mb, points, width, role, elbow_role=role)
+    if clamp_role is None:
+        return
+    for p in (points[0], points[-1]):
+        mb.box((width * clamp,) * 3, tuple(p), clamp_role)
 
 
 def assert_inside(mb, half_x, half_y, height, what, eps=1e-6):

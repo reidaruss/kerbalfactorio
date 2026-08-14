@@ -188,10 +188,10 @@ ROLE_FAMILY = {
     # --- panel: anything manufactured ---
     "Steel": "panel", "SteelDark": "panel", "SteelLight": "panel",
     "Hazard": "panel",
-    # RN-1493, RN-1494: THE FIRST TWO CONSUMERS OF THE D-020 VOCABULARY.
+    # RN-1493, RN-1494, RN-1550: THE CONSUMERS OF THE D-020 VOCABULARY.
     # `paintchip` and `rust` shipped UNREFERENCED at RN-1474/RN-1475, following
     # the `leaf`/`grass` precedent, and an unreferenced family is a claim no
-    # frame has ever tested. These two rows are what test it.
+    # frame has ever tested. These rows are what test it.
     #
     # `Accent` LEAVES `panel` on the exact argument that moved `Bark` out of
     # `coarse`, `Suit` out of `panel` and `Rock` out of `coarse`: the family
@@ -206,13 +206,25 @@ ROLE_FAMILY = {
     # all: flat orange, no wear, no edge, at the two places on a smelter a
     # player's eye is told to look.
     #
+    # `SteelWorn` is a SEPARATE new role on the same `paintchip` family, and it
+    # does not conflict with `Accent`: it is a coating that has failed where
+    # the machine gets HIT (rubbing strips, kick plates, the lip an item slides
+    # over, the tread a boot lands on), which is a different surface fact than
+    # a painted band even though both wear thinning paint.
+    #
     # `SteelRust` is a NEW role and deliberately not a re-pointing, because no
     # existing steel role could take `rust` honestly: `SteelDark` is worn by 26
     # build scripts including the rockets and the station, and a rusted orbital
     # hull is a worse claim than an unweathered smelter. A new role costs one
-    # palette row and is scoped to whatever paints it, which today is the
-    # smelter's hot path and nothing else.
-    "Accent": "paintchip",
+    # palette row and is scoped to whatever paints it. Two lanes independently
+    # reached for it: the smelter's hot path (RN-1493/1494) and the miner's
+    # wet-ore path (RN-1550, the throat, spoil lip and column collar). Integration
+    # merged these into the ONE role below rather than splitting it, because the
+    # smelter lane's own report on RN-1493/1494 recorded its 5C4238 constant as
+    # a numeric hole (luma 4.12) and asked for the hex lifted 30 to 40 percent
+    # before a later pass copied the role; the miner lane's 834F2A independently
+    # is that lift. `of_lib.PALETTE` carries the single resulting constant.
+    "Accent": "paintchip", "SteelWorn": "paintchip",
     "SteelRust": "rust",
     # SuitAccent stays on `panel` although it is a suit colour, and this is
     # deliberate rather than an oversight: rocket_common.py and
