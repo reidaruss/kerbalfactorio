@@ -1,0 +1,150 @@
+{
+ "valid": true,
+ "shot": "voxelface",
+ "why": "the dug voxel face at arm's length, RN-1258's subject",
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  512,
+  396,
+  1088,
+  774
+ ],
+ "box": {
+  "px": 217728,
+  "luma": 90.7,
+  "rgb": [
+   99.38,
+   91.02,
+   62.02
+  ],
+  "warm": 37.36,
+  "sat": 0.374,
+  "p05": 54.19,
+  "p50": 90.32,
+  "p95": 123.66,
+  "iqr": 24.27,
+  "loFrac": 0.01,
+  "hiFrac": 0
+ },
+ "extraPx": {},
+ "extra": {},
+ "world": {
+  "px": 1440000,
+  "luma": 94.9,
+  "rgb": [
+   104.87,
+   94.88,
+   65.7
+  ],
+  "warm": 39.17,
+  "sat": 0.37,
+  "p05": 44.41,
+  "p50": 97.53,
+  "p95": 132.37,
+  "iqr": 34.28,
+  "loFrac": 0.011,
+  "hiFrac": 0
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": 0.88,
+  "sunT": 0.341,
+  "elevDot": 0.881,
+  "err": 0.001,
+  "tol": 0.06,
+  "solve": {
+   "wantDot": 0.88,
+   "gotDot": 0.8804,
+   "err": 0.0004,
+   "t": 0.3402777777777778
+  }
+ },
+ "pose": {
+  "yawDeg": 300,
+  "pitchDeg": -44,
+  "latDeg": 12,
+  "lonDeg": 150,
+  "altM": 1.62
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": -1e+30,
+  "sun": [
+   -0.14671921823149686,
+   0.3872324843550918,
+   0.9102331976266972
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": true,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null
+ },
+ "ibl": {
+  "builds": 13,
+  "lastMs": 0.7,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 13,
+  "ground": true,
+  "biome": 4
+ },
+ "render": {
+  "triangles": 441046,
+  "calls": 47,
+  "programs": 47,
+  "vramMB": 104.2,
+  "frameMs": {
+   "p50": 4.6,
+   "p95": 5.6,
+   "p99": 6.3
+  },
+  "passMs": {
+   "near": 3.2,
+   "post": 0.4,
+   "total": 4
+  }
+ },
+ "setup": {
+  "teleported": true,
+  "struck": 26,
+  "converged": true,
+  "biome": 4,
+  "tickAdvanced": true,
+  "voxTriangles": 142,
+  "voxVertices": 124,
+  "voxBricks": 4,
+  "voxVisible": true,
+  "removedCells": 12
+ },
+ "log": []
+}

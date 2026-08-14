@@ -1,0 +1,144 @@
+{
+ "valid": true,
+ "shot": "forestfloor",
+ "why": "the RN-352 forest site, standing eye, the §2.1 calibration pose",
+ "frame": {
+  "w": 1600,
+  "h": 900
+ },
+ "boxPx": [
+  660,
+  524,
+  940,
+  664
+ ],
+ "box": {
+  "px": 39200,
+  "luma": 26.54,
+  "rgb": [
+   30.45,
+   26.43,
+   16.1
+  ],
+  "warm": 14.35,
+  "sat": 0.504,
+  "p05": 4.07,
+  "p50": 24.27,
+  "p95": 68.35,
+  "iqr": 17.7,
+  "loFrac": 0.542,
+  "hiFrac": 0
+ },
+ "extraPx": {},
+ "extra": {},
+ "world": {
+  "px": 1440000,
+  "luma": 32.87,
+  "rgb": [
+   35.21,
+   33.18,
+   22.92
+  ],
+  "warm": 12.29,
+  "sat": 0.444,
+  "p05": 3.07,
+  "p50": 26,
+  "p95": 103.78,
+  "iqr": 25.42,
+  "loFrac": 0.492,
+  "hiFrac": 0.006
+ },
+ "sun": {
+  "mode": "elev",
+  "wantDot": 0.7,
+  "sunT": 0.843,
+  "elevDot": 0.701,
+  "err": 0.001,
+  "tol": 0.06,
+  "solve": {
+   "wantDot": 0.7,
+   "gotDot": 0.7009,
+   "err": 0.0009,
+   "t": 0.8430555555555556
+  }
+ },
+ "pose": {
+  "yawDeg": 300,
+  "pitchDeg": -26,
+  "latDeg": -19.85,
+  "lonDeg": -72.785,
+  "altM": 1.62
+ },
+ "postState": {
+  "post": true,
+  "ao": true,
+  "contact": true,
+  "underwater": true,
+  "bloom": true,
+  "grade": true,
+  "aa": true,
+  "contactRan": true,
+  "underwaterRan": false,
+  "headUnderM": -1e+30,
+  "sun": [
+   -0.1464544359235105,
+   0.3872324843550918,
+   0.9102758380065407
+  ],
+  "csLengthM": 0.45,
+  "csSteps": 8,
+  "csStrength": 0.72
+ },
+ "shade": null,
+ "shadow": {
+  "cascades": 3,
+  "mapSize": 2048,
+  "vramMB": 48,
+  "splits": [
+   22,
+   80,
+   300
+  ],
+  "active": true,
+  "soft": false,
+  "texel0M": 0.01547,
+  "biasM": 0.02,
+  "biasSign": 1,
+  "biasUnits": 0.0000025003125390673835,
+  "reversedDepth": true,
+  "biasLegacy": false,
+  "biasRaw": null
+ },
+ "ibl": {
+  "builds": 10,
+  "lastMs": 0.9,
+  "ready": true,
+  "size": 256,
+  "groundBuilds": 10,
+  "ground": true,
+  "biome": 3
+ },
+ "render": {
+  "triangles": 1370650,
+  "calls": 72,
+  "programs": 56,
+  "vramMB": 104.2,
+  "frameMs": {
+   "p50": 7.9,
+   "p95": 11.9,
+   "p99": 14.8
+  },
+  "passMs": {
+   "near": 8,
+   "post": 0.2,
+   "total": 8.7
+  }
+ },
+ "setup": {
+  "teleported": true,
+  "converged": true,
+  "biome": 3,
+  "tickAdvanced": true
+ },
+ "log": []
+}
