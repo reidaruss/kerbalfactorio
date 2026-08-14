@@ -1,8 +1,14 @@
-// The per-biome MATERIAL record (RN-1257): detail frequency, grain tint and
-// roughness. Split out of BiomePalette.ts on the CascadeShadow / TerrainVertex
-// precedent, purely for the 400-line cap (2.2 rule 1); the tables are unchanged
-// to the digit and BiomePalette re-exports every published symbol, so no import
-// site moved.
+// The per-biome MATERIAL record (RN-1257): channel amplitudes, relief weights,
+// detail frequency, grain tint and roughness. Split out of BiomePalette.ts on
+// the CascadeShadow / TerrainVertex precedent, purely for the 400-line cap
+// (2.2 rule 1).
+//
+// BiomePalette does NOT re-export these, which is where that precedent stops
+// and it cost one page load to learn: this file imports BIOME_COUNT from
+// BiomePalette to assert its own row count, so a re-export closes the cycle and
+// the assertion runs while BIOME_COUNT is still undefined. It threw on the
+// first frame, which is the guard at the bottom of this file doing its job.
+// The three consumers import from here directly.
 //
 // WHY IT IS A SEPARATE FILE AND NOT SEPARATE TABLES IN THE OLD ONE:
 // BiomePalette answers "what colour is this biome", which is a question about
@@ -26,9 +32,10 @@ import { BIOME_COUNT } from './BiomePalette.js';
  * These are AMPLITUDES, not a partition. Each channel arrives at the shader
  * centred on 0.5 with an equal, known spread (groundtex.py's _centre), so a
  * weight vector's absolute sum is that biome's total modulation amplitude and
- * the ratios are its material character. Sums sit near 0.3, except Polar,
- * deliberately subdued because drifted snow is smooth and the altitude snow
- * band above it ships clean on purpose. THE 0.3 WAS MEASURED DOWN FROM 0.6:
+ * the ratios are its material character. The sums sat near 0.3 for every biome
+ * until RN-1257 and now run 0.17 (Polar) to 0.99 (Forest), set by the
+ * luminance rule in the section below rather than chosen. THE OLD 0.3 WAS
+ * MEASURED DOWN FROM 0.6:
  * with both sample scales stacked the 0.6 table produced a +/-45% modulation
  * that photographed as dark speckle soup at the RN-15 camera (89% of moved
  * pixels darker, the tone curve compressing the bright half), and 0.35 of it
@@ -60,26 +67,76 @@ import { BIOME_COUNT } from './BiomePalette.js';
  * once rather than by rounding: Regolith is granular-dominant and the FINEST
  * grain in the game, MoonHighland is grain-dominant and blocky, CraterFloor is
  * ponded dust over coarse broken rock. Same palette family, three reads.
+ *
+ * ---------------------------------------------------------------------------
+ * THE ROW SUMS ARE NOT A TASTE SETTING, AND THE FOREST FRAME IS WHY
+ * ---------------------------------------------------------------------------
+ * This modulation is MULTIPLICATIVE (albedo *= 1 + texW * grain * tint), so the
+ * CONTRAST IT PRODUCES IN COUNTS SCALES WITH THE BIOME'S OWN ALBEDO. That reads
+ * as obvious written down and it had never been accounted for, and it is why
+ * the first RN-1257 pair moved the section 2.1 Forest box by 0.07 counts of
+ * luma while the same code visibly re-textured the ground at the RN-15 site.
+ *
+ * Forest's linear luminance is 0.042 and Beach's is 0.367, a factor of NINE.
+ * Under one shared weight scale the brightest biome got nine times the visible
+ * texture of the darkest, and the darkest is the forest floor: the exact frame
+ * Reid called "plato-y smooth pastel", and the one RN-347 deliberately made
+ * darker still. A uniform table therefore guaranteed that the site most in need
+ * of texture received the least of it.
+ *
+ * The sums are now set by
+ *
+ *     sum(b) = k / luminance(b)^0.6
+ *
+ * anchored so Forest lands at 0.99, which is where the frame stops being a
+ * sheet and does not yet read as speckle. That anchor is a PHOTOGRAPH, not a
+ * preference: at the Forest site with the scatter hidden, ?groundtexamp=1 is
+ * invisible, 6 reads as dark worms, and 2.6 reads as leaf litter with a crack
+ * network. 2.6 times the old row sum of 0.38 is 0.99. The RATIOS inside each
+ * row are untouched by the rescale, so a biome's material character and the
+ * strength of its texture stay two decisions in two places.
+ *
+ * THE EXPONENT IS 0.6 AND NOT 1.0 on purpose. At 1.0 the compensation is exact
+ * and every biome receives identical absolute contrast, which is wrong: bright
+ * dry ground genuinely does show more absolute variation than dark wet humus,
+ * and full equalisation flattens sand. 0.6 removes most of a nine-fold error
+ * and leaves the part of it that is physical.
+ *
+ * TWO DELIBERATE DEVIATIONS FROM THE RULE, named so they are not read as
+ * arithmetic slips. Ocean is clamped from the rule's 0.90 to 0.60, because the
+ * bed is seen through the wet film, which darkens and desaturates it a second
+ * time, and a rule that does not know about the film over-drives it. Polar
+ * takes the rule's 0.17 and that happens to preserve its RN-78 intent of being
+ * the quietest row in the table, because snow is the brightest biome.
+ *
+ * RN-78's SPECKLE-SOUP BOUND IS NOT VIOLATED BY THIS, and the distinction is
+ * the whole defence of a sum near 1. That failure was a sum near 0.6 applied to
+ * EVERY biome with both scales stacked, i.e. 0.6 on BRIGHT ground, and its
+ * symptom was 89 per cent of moved pixels going darker. Here 0.99 lands on the
+ * darkest ground in the game and 0.28 on the brightest, which is the opposite
+ * distribution, and the fields being driven now carry authored structure
+ * (RN-1256) instead of being smooth noise, so the amplitude buys litter and
+ * cracks rather than speckle. ?groundtexamp= remains the one-flag sweep if that
+ * judgement is ever contested.
  */
 const MAT_W: [number, number, number, number][] = [
-  [0.00, 0.04, 0.20, 0.06], // Ocean: the visible part is the sandy bed
-  [0.00, 0.02, 0.30, 0.04], // Beach: sand, granular dominant
+  [0.00, 0.08, 0.40, 0.12], // Ocean: the visible part is the sandy bed
+  [0.00, 0.02, 0.23, 0.03], // Beach: sand, granular dominant
   // RN-149: Plains up 0.19 -> 0.24 (denser grass clumping was the second
   // pass's brief) and Forest clod up 0.14 -> 0.18 (the litter read), both
   // still inside the calibrated regime: the RN-78 speckle-soup failure was a
   // table SUM near 0.6 with both scales stacked; these sums move 0.32 -> 0.37
   // and 0.32 -> 0.36, nowhere near it, and the pairs are re-photographed.
-  // RN-1257 moves eight of the ten rows, and the sums stay in 0.14..0.39,
-  // still nowhere near 0.6. See the header note above for the measurement
-  // that forced it.
-  [0.26, 0.00, 0.05, 0.07], // Plains: turf clumping, the purest grass read
-  [0.13, 0.00, 0.03, 0.22], // Forest: litter and crack, turf subordinate
-  [0.16, 0.06, 0.03, 0.13], // Hills: thin turf over STONY ground, as named
-  [0.02, 0.24, 0.04, 0.03], // Mountains: scree; rock grain and nothing else
-  [0.00, 0.03, 0.09, 0.02], // Polar: subdued; snow is smooth
-  [0.00, 0.05, 0.26, 0.05], // Regolith: dust and pebbles, granular dominant
-  [0.00, 0.15, 0.13, 0.04], // MoonHighland: blocky, grain over dust
-  [0.00, 0.10, 0.20, 0.09], // CraterFloor: ponded dust over broken rock
+  // RN-1257 moves every row: the RATIOS by the clustering measurement above,
+  // the SUMS by the luminance rule below it. Both notes are in this docstring.
+  [0.33, 0.00, 0.06, 0.09], // Plains: turf clumping, the purest grass read
+  [0.34, 0.00, 0.08, 0.57], // Forest: litter and crack, turf subordinate
+  [0.21, 0.08, 0.04, 0.17], // Hills: thin turf over STONY ground, as named
+  [0.02, 0.29, 0.05, 0.04], // Mountains: scree; rock grain and nothing else
+  [0.00, 0.04, 0.11, 0.02], // Polar: subdued; snow is smooth
+  [0.00, 0.05, 0.25, 0.05], // Regolith: dust and pebbles, granular dominant
+  [0.00, 0.13, 0.11, 0.03], // MoonHighland: blocky, grain over dust
+  [0.00, 0.15, 0.31, 0.14], // CraterFloor: ponded dust over broken rock
 ];
 
 /**
@@ -115,14 +172,14 @@ const MAT_W: [number, number, number, number][] = [
 const SCALE_W: [number, number, number][] = [
   [0.30, 0.50, 0.20], // Ocean: grainy bed
   [0.46, 0.42, 0.12], // Beach: sand is nearly all fine grain
-  [0.14, 0.50, 0.36], // Plains: tuft-scale, plus broad dry/lush patches
-  [0.30, 0.46, 0.24], // Forest: a leaf is finer than a tuft
-  [0.16, 0.46, 0.38], // Hills: the broadest patchiness; hillsides differ
+  [0.22, 0.53, 0.25], // Plains: tuft-scale, plus broad dry/lush patches
+  [0.38, 0.50, 0.12], // Forest: a leaf is finer than a tuft
+  [0.28, 0.48, 0.24], // Hills: the broadest patchiness of the turf biomes
   [0.42, 0.44, 0.14], // Mountains: chip-scale scree, little broad variation
   [0.10, 0.34, 0.56], // Polar: drifts are BROAD; almost no fine grain
   [0.52, 0.36, 0.12], // Regolith: the finest read in the game, dust and grit
   [0.38, 0.44, 0.18], // MoonHighland: coarser, blockier regolith
-  [0.26, 0.40, 0.34], // CraterFloor: coarse blocks in broad ponds of dust
+  [0.32, 0.48, 0.20], // CraterFloor: coarse blocks in broad ponds of dust
 ];
 
 /** Vector3 array for the uBiomeScale uniform, index == the /core Biome enum. */
@@ -217,11 +274,11 @@ const TINT_W: [number, number, number][] = [
  * express one state and the pair could disagree (RN-1005's argument).
  */
 const ROUGH_W: [number, number][] = [
-  [0.80, 0.06], // Ocean: wet bed, uniform
-  [0.78, 0.10], // Beach: packed fine sand can take a slight sheen
-  [0.93, 0.10], // Plains
-  [0.96, 0.12], // Forest: leaf litter, the roughest ground in the game
-  [0.92, 0.10], // Hills
+  [0.86, 0.04], // Ocean: wet bed, uniform
+  [0.84, 0.07], // Beach: packed fine sand can take a slight sheen
+  [0.96, 0.05], // Plains: turf, and turf does not glint
+  [0.97, 0.05], // Forest: leaf litter, the roughest ground in the game
+  [0.95, 0.06], // Hills: turf over stone, so a shade under Plains
   [0.70, 0.26], // Mountains: fresh fracture is smooth, and it GLITTERS
   [0.55, 0.05], // Polar: drifted snow, smooth and uniform
   [0.97, 0.14], // Regolith: must not glint at any sun angle

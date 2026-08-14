@@ -247,13 +247,36 @@ export function createVoxelFaceMaterial(o: VoxelFaceOptions): VoxelFaceMaterial 
         //
         // Rock breaks COARSER and HARDER than soil, so vRock leans the stack:
         // topsoil gets the fine crumb, bedrock gets the ridges.
+        //
+        // THE WEIGHTS WERE MEASURED DOWN AND THE FAILURE IS RN-78's, ARRIVING
+        // AT A NEW SURFACE. The first version put 0.85 on the 0.62 m octave,
+        // and a smooth metre-scale undulation IS liquid's visual signature
+        // whatever it is drawn on: the frame came back with the whole cut
+        // reading as WET OIL. It took four negative controls to attribute,
+        // because ?terrainspec=0, ?groundrelief=0, ?terrainbump=0 and
+        // ?groundtex=0 all left it untouched, which is what finally named the
+        // voxel mesh rather than the ground as its owner. The stack is now
+        // weighted toward 0.19 m and 0.075 m, the ridge share is up, and the
+        // total amplitude is down from 0.55 to 0.20. The lesson transfers
+        // exactly: the fix for a liquid read is FINER and MORE ASYMMETRIC, not
+        // merely SMALLER, because scaling an undulation leaves an undulation.
+        //
+        // THE AMPLITUDE HAD TO COME DOWN BY MORE THAN IT LOOKS, and the reason
+        // is arithmetic rather than taste: a derivative bump's strength is the
+        // sum of weight/wavelength, not the sum of weights. Moving energy from
+        // a 0.62 m octave to a 0.075 m one multiplies that sum even while every
+        // weight falls, and the first retune came back as a black-and-tan
+        // leopard pattern because the sum had nearly doubled. It is now about
+        // 0.87 of the original, which is the number to reason with if this is
+        // ever swept again.
         float ofVoxHeight(vec3 p) {
           float o1 = ofArtVnoise(p * (1.0 / 0.62)) - 0.5;
-          float o2 = ofArtVnoise(p * (1.0 / 0.21) + 11.3) - 0.5;
-          float v = ofArtVnoise(p * (1.0 / 0.38) + 3.7) * 2.0 - 1.0;
-          float ridge = 0.55 - sqrt(v * v + 0.03);
-          return o1 * 0.85 + o2 * mix(0.62, 0.30, vRock)
-               + ridge * mix(0.20, 0.95, vRock);
+          float o2 = ofArtVnoise(p * (1.0 / 0.19) + 11.3) - 0.5;
+          float o3 = ofArtVnoise(p * (1.0 / 0.075) + 29.4) - 0.5;
+          float v = ofArtVnoise(p * (1.0 / 0.34) + 3.7) * 2.0 - 1.0;
+          float ridge = 0.52 - sqrt(v * v + 0.012);
+          return o1 * 0.26 + o2 * 0.80 + o3 * mix(0.24, 0.15, vRock)
+               + ridge * mix(0.40, 0.95, vRock);
         }
       `)
       // AFTER <color_fragment>, which is where three has just multiplied the
@@ -273,6 +296,12 @@ export function createVoxelFaceMaterial(o: VoxelFaceOptions): VoxelFaceMaterial 
         // and would read as the flatter of the two surfaces at the seam where
         // they meet.
         float ofVoxGrain = 1.55 * dot(ofVoxG, uVoxMat);
+        // The same normalisation the terrain applies before roughness reads
+        // the grain, and for the same reason: MAT_W's sums are
+        // luminance-compensated across a factor of six, so an un-normalised
+        // grain would make the specular's variation a function of the albedo
+        // table's amplitude rather than of the biome's roughness row.
+        float ofVoxGrainN = ofVoxGrain / max(dot(uVoxMat, vec4(1.0)), 1e-3);
         diffuseColor.rgb *= vec3(1.0) + uVoxAmp.x * ofVoxGrain * uVoxTint;
       `)
       // AFTER <normal_fragment_begin>, so `normal` exists and is the
@@ -285,7 +314,7 @@ export function createVoxelFaceMaterial(o: VoxelFaceOptions): VoxelFaceMaterial 
         #include <normal_fragment_begin>
         if (uVoxAmp.y > 0.0) {
           normal = ofArtBump(normal, vVoxPos, ofVoxHeight(vVoxPos),
-                             uVoxAmp.y * 0.55, 0.21);
+                             uVoxAmp.y * 0.20, 0.075);
         }
       `)
       // AFTER <specularmap_fragment>, which is where three sets
@@ -298,7 +327,7 @@ export function createVoxelFaceMaterial(o: VoxelFaceOptions): VoxelFaceMaterial 
         material.specularColor = vec3(0.055 + 0.075 * vRock)
           * uVoxAmp.z
           * (1.0 - uVoxBiome.w * 0.5
-             + uVoxBiome.w * clamp(ofVoxGrain * 8.0, -1.0, 1.0) * 0.5)
+             + uVoxBiome.w * clamp(ofVoxGrainN * 3.2, -1.0, 1.0) * 0.5)
           * (2.0 - uVoxBiome.z);
       `);
   };

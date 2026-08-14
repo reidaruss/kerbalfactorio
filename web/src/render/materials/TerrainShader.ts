@@ -563,7 +563,18 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
           // modulated by, so a facet that catches the light is the facet that
           // reads bright. Under the old derived rule this argument list was
           // (vMatW, ...) and every fragment of a biome got one number.
-          float rough = ofArtRough(vGrain.w, vTint.w, grain, coverSel, snow, wetF);
+          // NORMALISED BY THE BIOME'S OWN WEIGHT SUM, and that is a correction
+          // the row-sum rescale forced rather than a refinement. MAT_W's sums
+          // now span 0.17 to 0.99 (they are luminance-compensated; see
+          // BiomeMaterial), so the raw grain's amplitude varies by a factor of
+          // six between biomes. Feeding that straight to a saturating
+          // roughness term would make roughVar mean "a gentle sway" on Polar
+          // and "a hard square wave" on Forest, i.e. the roughness table would
+          // secretly be reading the albedo table's amplitude. Dividing by the
+          // sum makes the driver a pure SHAPE in about [-0.25, 0.25] whatever
+          // the biome, so roughVar means one thing everywhere.
+          float grainN = grain / max(dot(vMatW, vec4(1.0)), 1e-3);
+          float rough = ofArtRough(vGrain.w, vTint.w, grainN, coverSel, snow, wetF);
           vec3 vd = -rd;                  // rd runs camera -> fragment
           lit += uSpecAmp.x
                * sunT * (${SUN_IRR} * ofArtSpec(n, vd, sd, rough) * shadow);

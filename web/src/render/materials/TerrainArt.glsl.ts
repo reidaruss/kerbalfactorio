@@ -800,11 +800,13 @@ export const TERRAIN_ART_SPEC = /* glsl */`
   // roughness under a moving sun, and an unclamped multiply of a field with a
   // sparse hard-edged pebble population (RN-1256) is exactly how one arrives.
   //
-  // OF_ROUGH_GRAIN maps the grain's own amplitude onto that [-1, 1]. It is 8.0
-  // because the blended, biome-dotted grain runs about +/-0.09 at a typical
-  // biome (SPREAD 0.36 per channel, times OF_TEX_SCALE_GAIN, times a scale
-  // partition, dotted with a MAT_W row summing near 0.36), so 8.0 puts the
-  // ordinary range just inside saturation and leaves the pebbles to clip.
+  // The grain ARRIVES NORMALISED by the biome's own MAT_W sum, so it is a pure
+  // shape in about [-0.25, 0.25] whatever the biome's texture amplitude is.
+  // That division is the caller's and it is load-bearing: MAT_W's sums are
+  // luminance-compensated and span 0.17 to 0.99, so without it this table
+  // would be reading the albedo table's amplitude by the back door.
+  // OF_ROUGH_GRAIN (3.2) then puts the ordinary range just inside saturation
+  // and leaves the pebbles to clip.
   //
   // The rock, snow and wet mixes below are UNCHANGED to the character. Only
   // the number they start from moved.
@@ -881,14 +883,18 @@ export const TERRAIN_ART_SPEC = /* glsl */`
 export const TEX_SCALE_GAIN = 1.55;
 
 /**
- * RN-1257. Maps the biome-dotted grain field onto the [-1, 1] the per-biome
- * roughness variation saturates over. See `ofArtRough`'s note for the
- * arithmetic that gives 8.0; the short version is that the grain runs about
- * +/-0.09 at a typical biome, so 8.0 puts ordinary ground just inside
- * saturation and leaves RN-1256's sparse pebbles to clip rather than to make
- * fireflies.
+ * RN-1257. Maps the NORMALISED grain field onto the [-1, 1] that the per-biome
+ * roughness variation saturates over.
+ *
+ * The caller divides the biome-dotted grain by that biome's own MAT_W sum
+ * before it arrives here, so what this scales is a pure shape running about
+ * +/-0.25 for every biome in the game rather than a number six times larger on
+ * Forest than on Polar. 3.2 therefore puts ordinary ground just inside
+ * saturation and leaves RN-1256's sparse pebbles to clip, which is what keeps
+ * a hot texel from driving roughness to the floor and firing a firefly under a
+ * moving sun.
  */
-export const ROUGH_GRAIN = 8.0;
+export const ROUGH_GRAIN = 3.2;
 
 /**
  * RN-1257. The FINE ground-texture tap, in repeats per quad. INTEGER, for
