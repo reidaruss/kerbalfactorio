@@ -57,6 +57,22 @@
   if (state.discGain === 1 && state.discFlagPresent) {
     fails.push('ibldisc=1 is the identity; pass a gain to arm the arm');
   }
+  // RN-1526, AND THIS IS THE ASSERTION THAT WOULD HAVE CAUGHT THE ONE DEFECT
+  // THIS LANE SHIPPED. Under `?ibldiag=mirror` the per-part channel must be
+  // OFF, because its injected GLSL assigns `roughnessFactor` outright and would
+  // otherwise leave the override writing uniforms no fragment reads, with
+  // `overrides` still cheerfully reporting 14. A counter that counts a CPU-side
+  // write is not evidence that anything downstream read it.
+  if (state.mode === 'mirror') {
+    const mm = window.__ofMachineMat ? window.__ofMachineMat.state() : null;
+    if (mm === null) fails.push('mirror arm with no __ofMachineMat to check the channel against');
+    else if (mm.enabled) {
+      fails.push('mirror arm is a NO-OP: the per-part channel is live and assigns roughnessFactor');
+    } else if (!mm.mirrorForcedOff) {
+      fails.push(`the channel is off for some other reason (mode ${mm.mode}), so the arm is not self-arming`);
+    }
+    if (state.overrides === 0) fails.push('mirror arm requested but no material was overridden');
+  }
   // Suspect (1): the environment must be REACHING the machine materials, or
   // every reading about the environment's content is about a chain that is cut
   // upstream of the subject.

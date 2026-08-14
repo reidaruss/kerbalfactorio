@@ -37,6 +37,7 @@
 
 import * as THREE from 'three';
 import type { OFRenderer } from './Renderer.js';
+import { iblEnvSuppressed } from './IblDiag.js';
 import { biomeColorArray } from './materials/BiomePalette.js';
 
 /**
@@ -123,7 +124,13 @@ export class SkyIbl {
         // NOT disposed here: the renderer seam owns the render target the
         // texture belongs to, and disposing the texture alone leaks the target.
         this.texture = next;
-        for (const t of this.targets) t.environment = next;
+        // RN-1526. `?ibldiag=noenv` assigns NULL here and changes nothing else:
+        // the capture still ran, the ground half was still raised, the rebuild
+        // still counted, and only the assignment differs. That is what makes
+        // "the environment is worth N counts on this subject" one subtraction
+        // rather than an inference from a two-variable pair.
+        const env = iblEnvSuppressed() ? null : next;
+        for (const t of this.targets) t.environment = env;
         this.builds++;
         this.lastMs = performance.now() - t0;
       }

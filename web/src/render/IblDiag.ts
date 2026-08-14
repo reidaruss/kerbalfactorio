@@ -27,6 +27,11 @@
 //                    nothing on this path runs until a probe calls it. That is
 //                    what makes the readings attributable to the shipped build
 //                    rather than to the measurement.
+//   ?ibldiag=noenv   THE CONTROL THAT SETTLES SUSPECT (1) OUTRIGHT, and the one
+//                    this file shipped without. `SkyIbl` assigns `null` instead
+//                    of the PMREM texture and changes nothing else, so "what is
+//                    the environment worth on this subject" is one subtraction.
+//                    Combines: `?ibldiag=mirror,noenv`.
 //   ?ibldiag=mirror  THE SPECULAR-TARGETED ARM. Every machine material becomes
 //                    metalness 1.0 / roughness 0.02, i.e. a mirror. A mirror IS
 //                    the environment map, displayed. If the machine box barely
@@ -36,10 +41,12 @@
 //                    lobe, the chain is fine and the shipped roughness is the
 //                    story. Those three are indistinguishable in the shipped
 //                    frame and trivially distinct here.
-//                    PAIR IT WITH `?machinemat=0`. The per-part channel divides
-//                    the authored response back out against the batch's base,
-//                    so with it on the override is rescaled per role and the arm
-//                    is no longer one variable wide.
+//                    IT FORCES `machinemat` OFF ITSELF (RN-1526). This comment
+//                    used to say "pair it with `?machinemat=0`", which is how
+//                    the arm shipped for one commit as a SILENT NO-OP for
+//                    anyone who read the registered flag list rather than this
+//                    paragraph. See `iblDiagMirrorOn` below for the mechanism
+//                    and for the measurement that found it.
 //
 //   ?ibldisc=<k>     THE FOURTH ARM AND THE CANDIDATE FIX, isolable on its own.
 //                    Multiplies the sun sprite's radiance BY k FOR THE DURATION
@@ -86,8 +93,58 @@ const params = new URLSearchParams(self.location.search);
 const rawMode = params.get('ibldiag');
 /** RN-150: whether the flag was present AT ALL, distinct from its value. */
 export const IBL_DIAG_PRESENT = rawMode !== null;
-const mode: 'off' | 'on' | 'mirror' = rawMode === 'mirror' ? 'mirror'
+/**
+ * A COMMA-SEPARATED SET, not one of three words, because RN-1526 needs two arms
+ * ON AT ONCE (`mirror,noenv`) and a mode enum would have forced a fourth name
+ * for every combination. Unknown words are ignored rather than refused: this is
+ * a diagnosis flag and a typo here must not become a boot failure in a lane
+ * measuring something else.
+ */
+const words = new Set((rawMode ?? '').split(',').map((s) => s.trim()));
+const mode: 'off' | 'on' | 'mirror' = words.has('mirror') ? 'mirror'
   : rawMode !== null && rawMode !== '0' ? 'on' : 'off';
+/**
+ * RN-1526, AND IT IS THE ONE CONTROL THIS FILE SHIPPED WITHOUT.
+ *
+ * `?ibldiag=noenv` makes `SkyIbl` assign `null` instead of the PMREM texture,
+ * so the near and view-model scenes have NO environment at all. Everything else
+ * is untouched: the capture still runs, the ground half is still raised, the
+ * timing and the rebuild count are unchanged, and only the assignment differs.
+ *
+ * WHY IT HAD TO EXIST. The first pass measured a mirror arm against the SHIPPED
+ * frame and attributed the whole difference to the mirror, but that pair is TWO
+ * variables wide (`?ibldiag=mirror` was run with `?machinemat=0` beside it, so
+ * the per-part channel was off in one arm and on in the other). A verifier
+ * running the mirror WITHOUT `machinemat=0` reproduced almost nothing and
+ * correctly asked whether the environment reaches these materials at all. That
+ * question deserves a direct answer and not an inference from a two-variable
+ * pair: with this flag, "the environment contributes N counts to a machine" is
+ * one subtraction on one binary at one pose.
+ */
+const NO_ENV = words.has('noenv');
+export function iblEnvSuppressed(): boolean { return NO_ENV; }
+
+/**
+ * RN-1526. THE MIRROR ARM FORCES THE PER-PART CHANNEL OFF, AND THIS EXPORT IS
+ * HOW, because the alternative shipped for one commit and cost a verifier a
+ * whole run.
+ *
+ * `PartMaterial`'s injected GLSL ASSIGNS `roughnessFactor` and
+ * `metalnessFactor` from the per-vertex channel; it does not scale what the
+ * material carries. So with the channel on, `MeshStandardMaterial.roughness`
+ * and `.metalness` are dead uniforms and `iblDiagOverride` writes values no
+ * fragment ever reads. MEASURED, not reasoned: `?ibldiag=mirror` alone renders
+ * the canonical machine box at luma 20.43 / p95 39.12 / iqr 15.30, **bit-identical
+ * to the shipped frame**, while `overrides` cheerfully reported 14.
+ *
+ * That is this repo's oldest failure shape (MachineMat's own failure mode (a),
+ * "the injection is a silent no-op") wearing a green light: the counter counted
+ * the CPU-side write and there was nothing downstream that read it. The fix is
+ * not documentation. An arm that needs a second flag beside it to mean anything
+ * is an arm that will be run without it, so the arm now carries its own
+ * precondition and `machineMatState().mirrorForcedOff` says so out loud.
+ */
+export function iblDiagMirrorOn(): boolean { return mode === 'mirror'; }
 
 /** The mirror arm's response. Not 0.0: three clamps roughness off zero anyway
  *  and a literal that the shader silently rewrites is not a reading. */
@@ -260,7 +317,7 @@ export function installIblDiag(host: IblDiagHost): void {
   };
   (self as unknown as Record<string, unknown>).__ofIblDiag = {
     state: (): unknown => ({
-      mode, flagPresent: IBL_DIAG_PRESENT, overrides,
+      mode, flagPresent: IBL_DIAG_PRESENT, overrides, noEnv: NO_ENV,
       mirrorRoughness: MIRROR_ROUGHNESS, mirrorMetalness: MIRROR_METALNESS,
       discGain: IBL_DISC_GAIN, discFlagPresent: IBL_DISC_PRESENT,
       iblSize: host.renderer.iblSize,
