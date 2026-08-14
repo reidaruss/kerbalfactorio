@@ -12,6 +12,7 @@ import { createAtmosphereUniforms, daylightFactor } from './materials/Atmosphere
 import { createSkyAtmosphere, type SkyAtmosphere } from './materials/SkyAtmosphere.js';
 import { createStarfield, type Starfield } from './materials/StarfieldMaterial.js';
 import type { QualityTier } from '../app/Config.js';
+import { IBL_DISC_GAIN } from './IblDiag.js';
 
 export interface SkyOptions {
   readonly seedLo: number;
@@ -71,6 +72,9 @@ export class SkyPass {
   private readonly iblGroundOn: boolean;
   private readonly stars: Starfield | null;
   private readonly sunSprite: THREE.Sprite;
+  /** RN-1524. The shipped disc colour, so `setDiscBoost` is idempotent and
+   *  `false` restores the literal rather than an accumulated product. */
+  private readonly discBase = new THREE.Color();
 
   constructor(params: AtmosphereParams, o: SkyOptions) {
     this.params = params;
@@ -143,10 +147,20 @@ export class SkyPass {
     this.stars = o.stars ? createStarfield(o.seedLo, o.pixelRatio) : null;
     if (this.stars !== null) this.group.add(this.stars.points);
 
+    // RN-1520. THE SUN'S RADIANCE IN THIS SPRITE IS ITS LDR COLOUR, ~1.0
+    // LINEAR, WHILE THE SKY AROUND IT IS THE SCATTERING INTEGRAL TIMES
+    // `sunIntensity` (15.0 on Forge). `sunIntensity` is documented in
+    // Atmosphere.glsl.ts as "radiance scale for the sun disc" and reaches
+    // `uSunColor` and nothing else; the disc has never read it. On the presented
+    // frame that is invisible, because ACES clips both to white. In the
+    // ENVIRONMENT CAPTURE it is the whole story: the brightest feature of the
+    // cube is haze, so the cube has no high-frequency content and no PMREM size
+    // can resolve structure that is not there. `setDiscBoost` is the arm.
     this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: SkyPass.discTexture(), color: 0xfff3d6, depthTest: false, depthWrite: false,
       blending: THREE.AdditiveBlending, sizeAttenuation: false,
     }));
+    this.discBase.copy((this.sunSprite.material as THREE.SpriteMaterial).color);
     this.sunSprite.scale.set(0.055, 0.055, 1);
     this.sunSprite.renderOrder = 2;
     this.group.add(this.sunSprite);
@@ -203,6 +217,22 @@ export class SkyPass {
    */
   setGroundMode(on: boolean): void {
     if (this.iblGroundOn) this.sky?.setGroundMode(on);
+  }
+
+  /**
+   * RN-1524. Raise the sun disc's radiance for the duration of ONE environment
+   * capture, on `setGroundMode`'s precedent and for the same reason: SkyIbl
+   * sets it, `environmentFrom` renders all six cube faces inside the same call
+   * stack, and SkyIbl clears it, so no presented frame can observe it.
+   *
+   * `IBL_DISC_GAIN` is 1 unless `?ibldisc=` says otherwise, so with the flag
+   * absent this multiplies by one and the capture is bit-identical to the one
+   * before this method existed. Off is the identity, not a second code path.
+   */
+  setDiscBoost(on: boolean): void {
+    const m = this.sunSprite.material as THREE.SpriteMaterial;
+    m.color.copy(this.discBase);
+    if (on) m.color.multiplyScalar(IBL_DISC_GAIN);
   }
 
   static dirForT(t: number, out: THREE.Vector3): THREE.Vector3 {

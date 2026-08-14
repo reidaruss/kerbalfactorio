@@ -59,6 +59,10 @@ export interface SkyIblGround {
   readonly hasIblGround: boolean;
   setGroundAlbedo(c: THREE.Color): void;
   setGroundMode(on: boolean): void;
+  /** RN-1524. The sun disc's capture-only radiance boost; see SkyPass. Called
+   *  with the same raise/lower discipline as `setGroundMode`, and a no-op with
+   *  `?ibldisc=` absent. */
+  setDiscBoost(on: boolean): void;
 }
 
 export class SkyIbl {
@@ -108,7 +112,12 @@ export class SkyIbl {
       // the one failure this ordering has to make impossible.
       const g = this.ground;
       if (g !== null && g.hasIblGround) { g.setGroundMode(true); this.groundBuilds++; }
+      // RN-1524, on exactly the line above's discipline and inside the same
+      // synchronous stack. `?ibldisc=` absent multiplies the disc by one, so
+      // this pair is the identity on the shipped build.
+      g?.setDiscBoost(true);
       const next = this.renderer.environmentFrom(skyScene);
+      g?.setDiscBoost(false);
       g?.setGroundMode(false);
       if (next !== null) {
         // NOT disposed here: the renderer seam owns the render target the

@@ -216,6 +216,12 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // campaign; `shadowsoft=0` restores THREE.PCFShadowMap. Absent means "the
   // quality tier decides", which is a third state and not `false`.
   'iblsize', 'shadowsoft',
+  // RN-1520 to RN-1524, standing rule 7, both TRI-STATE. `ibldiag=1` publishes
+  // the environment-radiance instrument and changes no pixel; `ibldiag=mirror`
+  // makes every machine a mirror so the environment is displayed rather than
+  // inferred. `ibldisc=` multiplies the sun disc's radiance FOR THE IBL CAPTURE
+  // ONLY. Absent means "the shipped build", which is a third state and not 0.
+  'ibldiag', 'ibldisc',
   'vab', 'flight',
   // The post-processing stack (render/post/PostConfig.ts). `post` is the master
   // switch and restores the pre-stack path exactly; the other four isolate one

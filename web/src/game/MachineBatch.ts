@@ -45,6 +45,7 @@ import { injectPartMat } from '../render/materials/PartMaterial.js';
 import { injectMachineFx } from '../render/materials/MachineFx.js';
 import { assertMachineBase, machineMatEnabled } from '../render/materials/MachineMat.js';
 import { SHADOW_LOD_ON } from '../render/ShadowLod.js';
+import { iblDiagOverride } from '../render/IblDiag.js'; // RN-1521, see IblDiag.ts
 import { buildLayers, type Layer } from './MachineLayers.js';
 import { gatherTiers, type FamilyTiers, type MachineTemplate }
   from './MachineGeometry.js';
@@ -171,7 +172,7 @@ export class MachineBatch {
       color: 0xffffff, vertexColors: true, metalness: 0.45, roughness: 0.55,
     });
     m.name = `factory:machines:${family}`;
-    assertMachineBase(m);
+    assertMachineBase(m); iblDiagOverride(m);
     m.userData.uniforms = this.uniforms;
     m.onBeforeCompile = this.hook;
     return m;
