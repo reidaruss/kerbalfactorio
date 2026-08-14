@@ -58,15 +58,40 @@ function mottle01(x: number, y: number, z: number): number {
  * this exists to remove. One oracle call per vertex, paid only on a dig
  * rebuild, never per frame.
  */
-export function faceColours(
+export interface FaceAttributes {
+  /** Per-vertex RGB, the RN-80 depth profile. */
+  readonly color: Float32Array;
+  /**
+   * RN-1258. Per-vertex ROCKNESS in [0,1]: how far the depth profile has
+   * arrived at bedrock, i.e. exactly the weight `dugAlbedo` gives its rock
+   * stop. One float per vertex, and it earns the buffer.
+   *
+   * The colour alone cannot carry this. `dugAlbedo`'s topsoil (0.27, 0.21,
+   * 0.145) and its bedrock (0.30, 0.28, 0.26) are both mid-value browns, so a
+   * shader trying to recover "is this soil or stone" from RGB would be reading
+   * a 0.1 difference in saturation that the per-vertex mottle already moves by
+   * more than that. And the distinction is the WHOLE POINT of digging: soil is
+   * matte, crumbly and finely broken; rock is harder, glints, and breaks at a
+   * coarser scale. Without it the face is one substance painted three browns,
+   * which is what shipped.
+   *
+   * The stops match `BiomePalette.dugAlbedo`'s rock lerp exactly, 2.3 m to
+   * 4.5 m, because two authorities on where bedrock starts is how the colour
+   * ends up saying stone while the relief says loam.
+   */
+  readonly rock: Float32Array;
+}
+
+export function faceAttributes(
   positions: Float32Array, normals: Float32Array,
   anchorAbs: readonly [number, number, number],
   bodyRadiusM: number, maxReliefM: number, biomeId: number,
   baseHeightAt: SurfaceRadiusFn,
-): Float32Array {
+): FaceAttributes {
   const palette = biomeColorArray();
   const biome = palette[Math.min(palette.length - 1, Math.max(0, biomeId))];
   const out = new Float32Array(positions.length);
+  const rock = new Float32Array(positions.length / 3);
   const c = new THREE.Color();
   const [ax, ay, az] = anchorAbs;
   for (let i = 0; i < positions.length; i += 3) {
@@ -78,6 +103,8 @@ export function faceColours(
     dugAlbedo(biome, Math.max(0, flat), relief / Math.max(1, maxReliefM),
       depth, mottle01(x, y, z), c);
     out[i] = c.r; out[i + 1] = c.g; out[i + 2] = c.b;
+    const t = Math.min(1, Math.max(0, (depth - 2.3) / (4.5 - 2.3)));
+    rock[i / 3] = t * t * (3 - 2 * t);
   }
-  return out;
+  return { color: out, rock };
 }

@@ -531,8 +531,25 @@ export const TERRAIN_ART_WET = /* glsl */`
  * higher-contrast than any biome's cover because a rock face is all edges.
  */
 export const TERRAIN_ART_TEX = /* glsl */`
-  float ofArtTexMix(vec4 g1, vec4 g2, vec4 matW, float coverSel) {
-    vec4 g = (g1 - vec4(0.5)) + 0.55 * (g2 - vec4(0.5));
+  // RN-1257. THE THREE-TAP BLEND. Split out of ofArtTexMix so the per-biome
+  // FREQUENCY partition and the per-biome CHANNEL amplitude stay two separate
+  // questions with two separate tables, which is the whole reorganisation:
+  // MAT_W says how much, SCALE_W says at what size.
+  //
+  // OF_TEX_SCALE_GAIN carries the total gain the shipped two-tap blend had
+  // (1 + 0.55), so a scale row of (0, 1/1.55, 0.55/1.55) reproduces it to the
+  // last bit and ?biomescale=0 is an EXACT control rather than a near one.
+  vec4 ofArtTexBlend(vec4 gF, vec4 gM, vec4 gC, vec3 sw) {
+    return OF_TEX_SCALE_GAIN * (sw.x * (gF - vec4(0.5))
+                              + sw.y * (gM - vec4(0.5))
+                              + sw.z * (gC - vec4(0.5)));
+  }
+
+  // Unchanged in meaning; it now takes the BLENDED signed field rather than
+  // two raw samples, so the published shape of the mix (rock grain on the
+  // steep branch, the biome dot on cover, one shared coverSel gate) is
+  // untouched by RN-1257 and only its input widened.
+  float ofArtTexMix(vec4 g, vec4 matW, float coverSel) {
     return mix(g.g * 0.34, dot(g, matW), coverSel);
   }
 `;
@@ -757,20 +774,49 @@ export const TERRAIN_ART_RELIEF = /* glsl */`
  * nothing. That is RN-45's confinement by the call graph and it is free.
  */
 export const TERRAIN_ART_SPEC = /* glsl */`
-  float ofArtRough(vec4 matW, float coverSel, float snow, float wet) {
-    // Amplitudes, not a partition: normalise, and floor the divisor so a
-    // zero-weight biome falls back to cover rather than to a mirror.
-    float wsum = dot(matW, vec4(1.0));
-    vec4 wn = matW / max(wsum, 1e-4);
-    // x grass clump, y rock grain, z granular, w clod. Organic cover and soil
-    // clods are the roughest things on a planet; rock grain is the only
-    // channel that has any business approaching a sheen.
-    float cover = wn.x * 0.95 + wn.y * 0.72 + wn.z * 0.86 + wn.w * 0.97;
-    cover = mix(0.93, cover, step(1e-4, wsum));
+  // RN-1257. THE ROUGHNESS IS AUTHORED PER BIOME AND VARIES PER PIXEL.
+  //
+  // What this replaces, and why replacing it was not a preference: the old
+  // body derived roughness as dot(normalise(matW), (0.95, 0.72, 0.86, 0.97)),
+  // a weighted average of four constants spanning 0.25 taken over weight
+  // vectors that were themselves clustered. Evaluated over the shipped table
+  // it produced a band 0.131 wide across EVERY BIOME IN THE GAME and 0.027
+  // wide across the five rock and airless ones (the numbers are in
+  // BiomePalette's ROUGH_W note). Section 2.1 item 4 requires 0.15 of a mesh
+  // family; the terrain is more screen area than every mesh family combined
+  // and it was under half of that.
+  //
+  // AND IT WAS CONSTANT WITHIN A BIOME, which is the half that no widening of
+  // the old expression could have fixed. A specular lobe over a constant
+  // roughness produces one highlight shape across a whole hillside; what makes
+  // scree read as scree is that SOME facets catch the sun and most do not. So
+  // the second term here is per-pixel and rides the biome's own grain field,
+  // which the caller has already computed for the albedo and passes in free.
+  //
+  // ROUGH_W.x is the base and ROUGH_W.y is var, which and is the PEAK swing in roughness
+  // units: the grain is clamped to [-1, 1] before it is scaled, so a hot texel
+  // cannot drive roughness to the floor. That clamp is load-bearing rather than
+  // defensive: named failure mode of the specular is a firefly at low
+  // roughness under a moving sun, and an unclamped multiply of a field with a
+  // sparse hard-edged pebble population (RN-1256) is exactly how one arrives.
+  //
+  // The grain ARRIVES NORMALISED by the biome's own MAT_W sum, so it is a pure
+  // shape in about [-0.25, 0.25] whatever the biome's texture amplitude is.
+  // That division is the caller's and it is load-bearing: MAT_W's sums are
+  // luminance-compensated and span 0.17 to 0.99, so without it this table
+  // would be reading the albedo table's amplitude by the back door.
+  // OF_ROUGH_GRAIN (3.2) then puts the ordinary range just inside saturation
+  // and leaves the pebbles to clip.
+  //
+  // The rock, snow and wet mixes below are UNCHANGED to the character. Only
+  // the number they start from moved.
+  float ofArtRough(float base, float var, float grain,
+                   float coverSel, float snow, float wet) {
+    float r = base + var * clamp(grain * OF_ROUGH_GRAIN, -1.0, 1.0);
     // Steep ground is bare rock: smoother than the cover that would otherwise
     // sit on it, because what makes a cliff a cliff is that nothing soft stays
     // on it. Same gate as the albedo, so the two cannot disagree.
-    float r = mix(0.62, cover, coverSel);
+    r = mix(0.62, r, coverSel);
     // Snow is smoother than dirt and nowhere near a mirror.
     r = mix(r, 0.50, snow);
     // The water film. This is the term the wet band always implied and never
@@ -825,9 +871,47 @@ export const TERRAIN_ART_SPEC = /* glsl */`
   }
 `;
 
+/**
+ * RN-1257. The total gain the shipped two-tap ground-texture blend carried
+ * (1.0 on the 16-repeat tap plus 0.55 on the 5-repeat one). It is a CONSTANT
+ * here, not a tuning knob, and its whole job is to let `SCALE_W`'s rows sum to
+ * 1: with it, a row of (0, 1/1.55, 0.55/1.55) reproduces the pre-RN-1257 blend
+ * exactly, which is what makes `?biomescale=0` an exact negative control and
+ * not an approximate one. Change this and every biome's texture amplitude
+ * moves, which is `MAT_W`'s job and not this constant's.
+ */
+export const TEX_SCALE_GAIN = 1.55;
+
+/**
+ * RN-1257. Maps the NORMALISED grain field onto the [-1, 1] that the per-biome
+ * roughness variation saturates over.
+ *
+ * The caller divides the biome-dotted grain by that biome's own MAT_W sum
+ * before it arrives here, so what this scales is a pure shape running about
+ * +/-0.25 for every biome in the game rather than a number six times larger on
+ * Forest than on Polar. 3.2 therefore puts ordinary ground just inside
+ * saturation and leaves RN-1256's sparse pebbles to clip, which is what keeps
+ * a hot texel from driving roughness to the floor and firing a firefly under a
+ * moving sun.
+ */
+export const ROUGH_GRAIN = 3.2;
+
+/**
+ * RN-1257. The FINE ground-texture tap, in repeats per quad. INTEGER, for
+ * RN-78's seam argument (a shared chunk edge must meet at fract == 0), and 47
+ * rather than 48 so the fine lattice shares no cell boundary with the
+ * 16-repeat one. At a depth-14 chunk of 57.856 m this is a 1.231 m tile and a
+ * 1.2 mm texel, which is what finally puts RN-1256's authored hard edges under
+ * a ground pixel instead of inside a mip average.
+ */
+export const TEX_FINE_REPEATS = 47.0;
+
 export const TERRAIN_ART_PARS = `#define OF_ART_FINE_M ${ART_FINE_M.toFixed(1)}\n`
   + `#define OF_RELIEF_FINE_M ${RELIEF_FINE_M.toFixed(2)}\n`
   + `#define OF_RELIEF_GRAD_UV ${RELIEF_GRAD_UV.toFixed(4)}\n`
+  + `#define OF_TEX_SCALE_GAIN ${TEX_SCALE_GAIN.toFixed(2)}\n`
+  + `#define OF_TEX_FINE ${TEX_FINE_REPEATS.toFixed(1)}\n`
+  + `#define OF_ROUGH_GRAIN ${ROUGH_GRAIN.toFixed(1)}\n`
   // RN-1005. OF_REL_CELL and OF_REL_CELL_NOISE are GONE rather than left
   // behind: they are uniforms now (uReliefCell, uReliefCellNoise), and a dead
   // define that still compiles is exactly how a lane ends up sweeping one

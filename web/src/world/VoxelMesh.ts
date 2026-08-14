@@ -24,9 +24,18 @@
 // from surface heights in the client.
 //
 // Its COLOUR comes from the terrain's own biome palette and slope-to-rock rule
-// (VoxelSkin.faceColours), so a tunnel mouth and the hillside it is cut into
+// (VoxelSkin.faceAttributes), so a tunnel mouth and the hillside it is cut into
 // read as one substance; its LIGHT stays Headlamp's, which is why the material
-// is still a Lambert and not the terrain's own program.
+// reads three's light list and is not the terrain's own program.
+//
+// RN-1258 gave that material MAPS. It was `vertexColors: true` and nothing
+// else, i.e. an interpolated gradient on the one surface a player puts their
+// face against every time they dig. It now projects `of_ground.png` triplanarly
+// and carries an analytic sub-metre relief bump, both keyed on a coordinate
+// that survives this file's own anchor rebase. The whole argument, including
+// why the bump is analytic while the albedo is sampled, is in
+// VoxelFaceMaterial's header; the only thing THIS file owes it is the anchor,
+// the biome and the rockness attribute, all pushed from `rebuild`.
 //
 // One responsibility: geometry + placement. It does not dig (VoxelWorld), does
 // not decide the box, and does not collide (KinematicBody resolves against the
@@ -37,7 +46,9 @@ import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FloatingOrigin } from './FloatingOrigin.js';
 import type { Vec3d } from './PlanetBody.js';
 import type { CellBox } from './VoxelWorld.js';
-import { faceColours } from './VoxelSkin.js';
+import { faceAttributes } from './VoxelSkin.js';
+import type { VoxelFaceMaterial } from './VoxelFaceMaterial.js';
+import { createVoxelFaceMaterial, voxelFaceOptionsFromQuery } from './VoxelFaceMaterial.js';
 import type { SurfaceRadiusFn } from './VoxelSkin.js';
 
 /**
@@ -109,6 +120,8 @@ export interface VoxelMeshOptions {
 
 export class VoxelMesh {
   readonly mesh: THREE.Mesh;
+  /** RN-1258. Null on the `?voxelskin=0` diagnostic path. */
+  private readonly face: VoxelFaceMaterial | null;
   private readonly ownMaterial: THREE.Material;
   private readonly geo = new THREE.BufferGeometry();
   /** Body-frame anchor the f32 vertices are relative to (standing rule 6). */
@@ -139,9 +152,18 @@ export class VoxelMesh {
     // normal per vertex, and flat shading would have thrown it away and drawn
     // the smooth surface as facets, which is the artifact this whole change
     // exists to remove.
-    this.ownMaterial = new THREE.MeshLambertMaterial(opts.editFacesOnly
-      ? { vertexColors: true }
-      : { color: 0x8a7a63 });
+    //
+    // RN-1258: `vertexColors: true` and NOTHING ELSE is what this was. The
+    // face now wears a projected material (VoxelFaceMaterial), which keeps the
+    // Lambert diffuse term bit-for-bit and adds the maps the surface never
+    // had. `?voxelskin=0`'s diagnostic path is deliberately left as the flat
+    // brown it was: it is the layer under accusation whenever the near field
+    // looks wrong, and a diagnostic that has been art-directed is no longer a
+    // diagnostic.
+    this.face = opts.editFacesOnly
+      ? createVoxelFaceMaterial(voxelFaceOptionsFromQuery()) : null;
+    this.ownMaterial = this.face?.material
+      ?? new THREE.MeshLambertMaterial({ color: 0x8a7a63 });
     this.mesh = new THREE.Mesh(this.geo, this.ownMaterial);
     this.stats.editFacesOnly = opts.editFacesOnly;
     this.mesh.name = 'voxelNear';
@@ -271,10 +293,19 @@ export class VoxelMesh {
       // The DESIGNED relief, not opts.surfaceRadiusAt: the skin colours by
       // depth below the ORIGINAL ground (RN-80, VoxelSkin's note), and the
       // edited surface would report a pit floor at depth zero.
-      this.geo.setAttribute('color', new THREE.BufferAttribute(faceColours(
+      const attr = faceAttributes(
         positions, normals, [this.anchor.x, this.anchor.y, this.anchor.z],
         this.opts.bodyRadiusM, this.opts.maxReliefM, biomeId,
-        (dx, dy, dz) => this.M._of_base_height(this.bodyHandle, dx, dy, dz)), 3));
+        (dx, dy, dz) => this.M._of_base_height(this.bodyHandle, dx, dy, dz));
+      this.geo.setAttribute('color', new THREE.BufferAttribute(attr.color, 3));
+      // RN-1258. One float per vertex, filled in the same loop the colour was.
+      this.geo.setAttribute('aRock', new THREE.BufferAttribute(attr.rock, 1));
+      // The projection's two live inputs, both pushed HERE rather than on a
+      // frame tick, because both can only change on a rebuild: the biome is
+      // read one line above and the anchor was just recomputed. See
+      // VoxelFaceMaterial's coordinate note for why the anchor matters at all.
+      this.face?.setBiome(biomeId);
+      this.face?.setAnchor(aCell, cellM);
     }
     this.geo.setIndex(new THREE.BufferAttribute(indices, 1));
     this.geo.computeBoundingSphere();

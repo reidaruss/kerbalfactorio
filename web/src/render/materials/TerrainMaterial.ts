@@ -12,7 +12,10 @@
 import * as THREE from 'three';
 import type { DepthPolicy } from '../DepthPolicy.js';
 import type { AtmosphereUniforms } from './Atmosphere.glsl.js';
-import { biomeColorArray, biomeMatWeights, biomeReliefWeights } from './BiomePalette.js';
+import { biomeGrain, biomeMatWeights, biomeReliefWeights, biomeTint }
+  from './BiomeMaterial.js';
+import { biomeColorArray } from './BiomePalette.js';
+import { GROUND_RELIEF_MAP, GROUND_VALUE_MAP, groundTexture } from './GroundTextures.js';
 import { TERRAIN_AMBIENT, TERRAIN_SKY_AMBIENT } from './TerrainAmbient.js';
 import { terrainFragmentShader, terrainVertexShader } from './TerrainShader.js';
 // RN-843. The shipped support for the relief slope, now a uniform's DEFAULT
@@ -283,58 +286,6 @@ function specAmpFromQuery(): THREE.Vector2 {
   );
 }
 
-function makeGroundTexture(file: string): THREE.IUniform<THREE.Texture> {
-  const ph = new THREE.DataTexture(new Uint8Array([128, 128, 128, 128]), 1, 1,
-    THREE.RGBAFormat);
-  ph.needsUpdate = true;
-  // ONE IUniform object handed to BOTH materials, so the swap-on-load below
-  // reaches the near and the far material in one assignment and the two
-  // cannot disagree about which texture the ground wears.
-  //
-  // NOT TextureLoader, and the reason was MEASURED (RN-78): the HTMLImage
-  // decode path PREMULTIPLIES RGB by alpha, and this texture's alpha is a
-  // DATA channel sitting near 0.5, so every colour channel arrived halved,
-  // every field read below its 0.5 identity, and the "modulation" darkened
-  // the whole planet 89% one-way (257,065 darker against 31,457 lighter at
-  // the RN-15 camera, meanDelta 47). createImageBitmap with premultiplyAlpha
-  // 'none' and colorSpaceConversion 'none' is the load path that hands the
-  // sampler the file's actual bytes.
-  const u: THREE.IUniform<THREE.Texture> = { value: ph };
-  fetch(`assets/textures/${file}`)
-    .then(async (r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const bmp = await createImageBitmap(await r.blob(), {
-        premultiplyAlpha: 'none', colorSpaceConversion: 'none',
-      });
-      const t = new THREE.Texture(bmp);
-      t.wrapS = THREE.RepeatWrapping;
-      t.wrapT = THREE.RepeatWrapping;
-      // A data texture: the channels are modulation fields, not colours.
-      t.colorSpace = THREE.NoColorSpace;
-      // 16, and the number is load-bearing, not a luxury: the walking camera
-      // sees ground at 8 degrees of grazing by 12 m, where the anisotropy
-      // ratio is already past 6, and any pixel past the budget UNDER-FILTERS
-      // into per-pixel texture deltas that the bump's derivative amplifies
-      // into black speckle. 16 holds proper filtering out to ~28 m, which is
-      // past where the bump's own footprint fade has retired that term.
-      // (An earlier sweep of this setting "did nothing" because the samples
-      // then sat in non-uniform control flow with UNDEFINED LOD; see
-      // TerrainShader's note. Filtering settings only mean anything once the
-      // LOD is defined.) three clamps to the device maximum at upload.
-      t.anisotropy = 16;
-      t.flipY = false;           // an ImageBitmap upload ignores UNPACK_FLIP_Y
-      t.generateMipmaps = true;  // the 0.5-centred channels NEED the mip chain
-      t.needsUpdate = true;
-      u.value = t;
-      ph.dispose();
-    })
-    .catch((e: unknown) => {
-      console.error(`[of] terrain: ${file} did NOT load (${String(e)}).`
-        + ' The ground draws untextured; run `npm run sync-assets`.');
-    });
-  return u;
-}
-
 /**
  * WHAT THE GROUND NEEDS TO KNOW ABOUT WATER, and it is deliberately the least
  * that will do (RN-57): a direction, two radii and a height. It is NOT a
@@ -397,14 +348,29 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
   // The ground texture (RN-78): one shared IUniform for the map, one shared
   // holder for the amplitude, the biome weight table built once. All shared
   // by reference between the two materials for the reason artAmp is.
-  const groundTex = makeGroundTexture('of_ground.png');
+  const groundTex = groundTexture(GROUND_VALUE_MAP);
   const groundAmp: THREE.IUniform<number> = { value: groundTexAmpFromQuery() };
   const biomeMat = biomeMatWeights();
   // RN-148: the asymmetric relief pair, shared by reference exactly as the
   // value texture is and for the same one-authority reason.
-  const reliefTex = makeGroundTexture('of_ground_relief.png');
+  const reliefTex = groundTexture(GROUND_RELIEF_MAP);
   const reliefAmp: THREE.IUniform<number> = { value: groundReliefAmpFromQuery() };
   const biomeRelief = biomeReliefWeights();
+  // RN-1257. The per-biome material record and its two EXACT controls.
+  // `?biomescale=0` writes the pre-RN-1257 frequency partition into every
+  // biome, so the three-tap blend reproduces the old two-tap one to the bit;
+  // `?biometint=0` writes (1,1,1) into every tint, so the modulation goes back
+  // to being pure value. Both are hard 0-or-1 on reliefGrad's precedent rather
+  // than amplitudes, because what they restore is a PREVIOUS STATE and an
+  // intermediate value would be neither state (RN-741's argument).
+  //
+  // There is deliberately no third flag for the roughness table: roughness has
+  // exactly one consumer, so `?terrainspec=0` already removes every effect it
+  // can have, and a second control over one term is two ways to express one
+  // state that can disagree (RN-1005's argument).
+  const qp = new URLSearchParams(self.location.search);
+  const biomeGrainW = biomeGrain(qp.get('biomescale') === '0');
+  const biomeTintW = biomeTint(qp.get('biometint') === '0');
   // The wet band, likewise ONE object shared by both materials by reference so
   // a runtime tweak cannot reach one and not the other. The amplitude is zero on
   // a dry body, which is what makes `ofArtWet` return on its first line and cost
@@ -483,6 +449,8 @@ export function createTerrainMaterials(o: TerrainMaterialOptions): TerrainMateri
       uGroundReliefAmp: reliefAmp,
       uBiomeMat: { value: biomeMat },
       uBiomeRelief: { value: biomeRelief },
+      uBiomeGrain: { value: biomeGrainW },
+      uBiomeTint: { value: biomeTintW },
       uWetBand: { value: wetBand },
       uWetDir: { value: wetDir },
       uSpecAmp: { value: specAmp },

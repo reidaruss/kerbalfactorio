@@ -109,6 +109,18 @@ const PAGE_PARAMS = ['seed', 'scenario', 'lat', 'lon', 'alt', 'quality', 'depth'
   // RN-78, the ground texture (albedo modulation). `groundtex=0` removes the
   // term; `groundtexamp=` sweeps it.
   'groundtex', 'groundtexamp',
+  // RN-1257, the per-biome material record. `biomescale=0` writes the
+  // pre-RN-1257 frequency partition into every biome (so the three-tap ground
+  // blend reproduces the old two-tap one exactly) and `biometint=0` writes a
+  // white tint into every biome (so the modulation goes back to pure value).
+  // The roughness table has no flag of its own on purpose: `terrainspec=0` is
+  // already the exact control for its only consumer.
+  'biomescale', 'biometint',
+  // RN-1258, the dug voxel face. Three amplitudes, each isolating one half of
+  // what the face gained: `voxelgrain=0` the triplanar albedo detail,
+  // `voxelbump=0` the analytic relief, `voxelspec=0` the Blinn lobe (at which
+  // point the material is diffuse-identical to the Lambert it replaced).
+  'voxelgrain', 'voxelbump', 'voxelspec',
   // RN-148, the asymmetric relief bump. `groundrelief=0` removes the term;
   // `groundreliefamp=` sweeps it.
   'groundrelief', 'groundreliefamp',

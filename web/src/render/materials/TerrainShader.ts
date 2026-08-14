@@ -116,6 +116,13 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
     varying vec3 vBiomeColor;
     varying vec4 vMatW;
     varying vec4 vRelW;
+    // RN-1257. The per-biome MATERIAL record, packed into two vec4 so the
+    // whole of it costs two varyings: vGrain is (scaleFine, scaleMid,
+    // scaleCoarse, roughBase) and vTint is (tintR, tintG, tintB, roughVar).
+    // Interpolated across biome edges exactly as vMatW and vRelW are, which is
+    // what makes a biome boundary a material gradient rather than a line.
+    varying vec4 vGrain;
+    varying vec4 vTint;
     varying vec3 vNormalW;
     varying vec3 vWorld;
     varying float vRelief;
@@ -229,9 +236,28 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       #ifndef OF_SCALED
         float texW = uGroundTexAmp * (1.0 - smoothstep(35.0, 75.0, dist))
                    * (1.0 + 0.6 * (1.0 - smoothstep(10.0, 22.0, dist)));
+        // RN-1257. A THIRD, FINE TAP, and the per-biome partition across the
+        // three. UNCONDITIONAL like the other two and for RN-78's measured
+        // reason (a fetch in non-uniform control flow has UNDEFINED LOD): the
+        // scale weights select by BLENDING, never by branching, which is also
+        // what lets them interpolate across a biome edge the way vMatW does.
+        // The repeat is an integer, so the chunk-edge phase argument holds
+        // for it exactly as it does for 16 and 5.
+        vec4 gF = texture2D(uGroundTex, vChunkUv * OF_TEX_FINE);
         vec4 g1 = texture2D(uGroundTex, vChunkUv * 16.0);
         vec4 g2 = texture2D(uGroundTex, vChunkUv * 5.0);
-        albedo *= 1.0 + texW * ofArtTexMix(g1, g2, vMatW, coverSel);
+        vec4 gB = ofArtTexBlend(gF, g1, g2, vGrain.xyz);
+        // Kept as its own named scalar because the roughness below reads the
+        // SAME number. Deriving "how grainy is this fragment" twice is the
+        // shape of bug where a pebble darkens in the albedo and polishes in
+        // the specular half a metre away (RN-731's ofArtWetness argument,
+        // applied to the term that came after it).
+        float grain = ofArtTexMix(gB, vMatW, coverSel);
+        // TINTED, not scalar. vTint.xyz is mean-preserving by construction
+        // because the grain scalar is centred on zero, so this moves the SPREAD of each
+        // channel and leaves every channel's level alone. That distinction is
+        // the macro tint's own scar, forty lines up.
+        albedo *= vec3(1.0) + texW * grain * vTint.xyz;
         // RN-148: the relief sample. UNCONDITIONAL like g1/g2 and for the same
         // measured reason (a fetch inside non-uniform control flow has
         // UNDEFINED LOD; RN-78 paid a full hunt for it). One scale, the 16
@@ -532,7 +558,23 @@ export function terrainFragmentShader(depth: DepthPolicy): string {
       // than assumed away.
       #ifndef OF_SCALED
         if (uSpecAmp.x > 0.0 || uSpecAmp.y > 0.0) {
-          float rough = ofArtRough(vMatW, coverSel, snow, wetF);
+          // RN-1257. vGrain.w is the biome's base roughness and vTint.w its
+          // per-pixel swing; the grain scalar is the SAME field the albedo above was
+          // modulated by, so a facet that catches the light is the facet that
+          // reads bright. Under the old derived rule this argument list was
+          // (vMatW, ...) and every fragment of a biome got one number.
+          // NORMALISED BY THE BIOME'S OWN WEIGHT SUM, and that is a correction
+          // the row-sum rescale forced rather than a refinement. MAT_W's sums
+          // now span 0.17 to 0.99 (they are luminance-compensated; see
+          // BiomeMaterial), so the raw grain's amplitude varies by a factor of
+          // six between biomes. Feeding that straight to a saturating
+          // roughness term would make roughVar mean "a gentle sway" on Polar
+          // and "a hard square wave" on Forest, i.e. the roughness table would
+          // secretly be reading the albedo table's amplitude. Dividing by the
+          // sum makes the driver a pure SHAPE in about [-0.25, 0.25] whatever
+          // the biome, so roughVar means one thing everywhere.
+          float grainN = grain / max(dot(vMatW, vec4(1.0)), 1e-3);
+          float rough = ofArtRough(vGrain.w, vTint.w, grainN, coverSel, snow, wetF);
           vec3 vd = -rd;                  // rd runs camera -> fragment
           lit += uSpecAmp.x
                * sunT * (${SUN_IRR} * ofArtSpec(n, vd, sd, rough) * shadow);
