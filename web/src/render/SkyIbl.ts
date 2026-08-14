@@ -37,6 +37,7 @@
 
 import * as THREE from 'three';
 import type { OFRenderer } from './Renderer.js';
+import { iblEnvSuppressed } from './IblDiag.js';
 import { biomeColorArray } from './materials/BiomePalette.js';
 
 /**
@@ -59,6 +60,10 @@ export interface SkyIblGround {
   readonly hasIblGround: boolean;
   setGroundAlbedo(c: THREE.Color): void;
   setGroundMode(on: boolean): void;
+  /** RN-1524. The sun disc's capture-only radiance boost; see SkyPass. Called
+   *  with the same raise/lower discipline as `setGroundMode`, and a no-op with
+   *  `?ibldisc=` absent. */
+  setDiscBoost(on: boolean): void;
 }
 
 export class SkyIbl {
@@ -108,13 +113,24 @@ export class SkyIbl {
       // the one failure this ordering has to make impossible.
       const g = this.ground;
       if (g !== null && g.hasIblGround) { g.setGroundMode(true); this.groundBuilds++; }
+      // RN-1524, on exactly the line above's discipline and inside the same
+      // synchronous stack. `?ibldisc=` absent multiplies the disc by one, so
+      // this pair is the identity on the shipped build.
+      g?.setDiscBoost(true);
       const next = this.renderer.environmentFrom(skyScene);
+      g?.setDiscBoost(false);
       g?.setGroundMode(false);
       if (next !== null) {
         // NOT disposed here: the renderer seam owns the render target the
         // texture belongs to, and disposing the texture alone leaks the target.
         this.texture = next;
-        for (const t of this.targets) t.environment = next;
+        // RN-1526. `?ibldiag=noenv` assigns NULL here and changes nothing else:
+        // the capture still ran, the ground half was still raised, the rebuild
+        // still counted, and only the assignment differs. That is what makes
+        // "the environment is worth N counts on this subject" one subtraction
+        // rather than an inference from a two-variable pair.
+        const env = iblEnvSuppressed() ? null : next;
+        for (const t of this.targets) t.environment = env;
         this.builds++;
         this.lastMs = performance.now() - t0;
       }

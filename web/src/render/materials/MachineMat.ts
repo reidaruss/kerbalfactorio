@@ -87,6 +87,7 @@
 import * as THREE from 'three';
 import { bakePartMat, partMatEnabled, partMatState } from './PartMaterial.js';
 import { familyForRole } from '../instancing/Surfaces.js';
+import { iblDiagMirrorOn } from '../IblDiag.js';
 
 /**
  * THE BASE THE PER-PART ATTRIBUTE DIVIDES AGAINST, and the batch's fallback
@@ -156,8 +157,17 @@ const bareOn = bareRaw !== '0';
  * out and the base must stay at its literal value. Folding it in here is what
  * stops the bake gate and the injection gate disagreeing about it mid-build,
  * which is `RockShader` failure mode (b).
+ *
+ * RN-1526 ADDS A THIRD TERM AND IT IS THE SAME ARGUMENT. `?ibldiag=mirror`
+ * overrides this material's `roughness`/`metalness` to diagnose the IBL, and
+ * the injected GLSL ASSIGNS both from the per-vertex channel rather than
+ * scaling them, so with the channel live the override is a silent no-op: the
+ * frame came back bit-identical to the shipped one while the diagnosis
+ * reported itself armed. The arm therefore carries its own precondition here,
+ * in the one predicate both the bake and the injection already ask, rather than
+ * in a sentence telling the next lane to remember a second flag.
  */
-const enabled = mode !== 'off' && partMatEnabled();
+const enabled = mode !== 'off' && partMatEnabled() && !iblDiagMirrorOn();
 
 export function machineMatEnabled(): boolean { return enabled; }
 
@@ -256,10 +266,14 @@ export function machineMatState(): {
   enabled: boolean; flagPresent: boolean; mode: string;
   bareOn: boolean; bareFlagPresent: boolean; bare: number;
   baseRoughness: number; baseMetalness: number;
-  baked: number; roles: string[];
+  baked: number; roles: string[]; mirrorForcedOff: boolean;
 } {
   return {
     enabled, flagPresent, mode, bareOn, bareFlagPresent, bare: bareCount,
+    // RN-1526. WHY the channel is off, when it is off for this reason: a probe
+    // reading `enabled: false` under a `machinemat` flag it never passed would
+    // otherwise have to guess.
+    mirrorForcedOff: iblDiagMirrorOn(),
     baseRoughness: MACHINE_BASE_ROUGHNESS,
     baseMetalness: MACHINE_BASE_METALNESS,
     baked: baked.length,

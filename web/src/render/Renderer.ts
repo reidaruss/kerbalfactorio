@@ -77,6 +77,23 @@ export interface OFRenderer {
    */
   detectKtx2Support(loader: KTX2Loader): void;
   /**
+   * RN-1520. THE RADIANCE `environmentFrom` IS BUILT FROM, before PMREM, before
+   * the tone curve and before the 8-bit frame, as six cube faces of RGBA
+   * half-float decoded to `Float32Array` (length `6*size*size*4`, face order
+   * +X -X +Y -Y +Z -Z, row order bottom-up per `readRenderTargetPixels`).
+   *
+   * It exists because "the PMREM raise bought nothing" has two explanations
+   * that no screenshot can tell apart: a filter that is losing structure, and
+   * an environment that never had any. Only the linear radiance separates
+   * them, and every other read of this quantity in the repo is downstream of
+   * ACES. Null when the readback is refused rather than silently zeroed.
+   *
+   * It is on the seam for `environmentFrom`'s reason and mirrors its ordering
+   * exactly: `NoToneMapping` + linear output for the duration, restored after,
+   * so this measures WHAT THE PMREM SEES and not a second, kinder scene.
+   */
+  cubeRadiance(scene: THREE.Scene, size: number): Float32Array | null;
+  /**
    * RN-1415. The cube side `environmentFrom` builds at, published so a probe
    * can say WHICH environment it measured. Without it `?iblsize=64` and the
    * `high` default are the same report with different pixels, which is the
@@ -84,6 +101,16 @@ export interface OFRenderer {
    */
   readonly iblSize: number;
   dispose(): void;
+}
+
+/** IEEE 754 binary16 -> binary32. RN-1520; see `cubeRadiance`. */
+function halfToFloat(h: number): number {
+  const s = (h & 0x8000) !== 0 ? -1 : 1;
+  const e = (h >> 10) & 0x1f;
+  const m = h & 0x3ff;
+  if (e === 0) return s * m * 2 ** -24;
+  if (e === 31) return m === 0 ? s * Infinity : NaN;
+  return s * (1 + m / 1024) * 2 ** (e - 15);
 }
 
 function gpuName(gl: WebGL2RenderingContext): string {
@@ -240,6 +267,48 @@ class WebGLSeam implements OFRenderer, PostHost {
   }
 
   detectKtx2Support(loader: KTX2Loader): void { loader.detectSupport(this.r); }
+
+  /**
+   * RN-1520. See the interface note. HALF float and not FLOAT: RGBA16F is
+   * colour-renderable in core WebGL2 while RGBA32F needs
+   * `EXT_color_buffer_float`, and RGBA16F is also the format PMREM itself
+   * works in, so this measures the same numbers with the same precision rather
+   * than a more generous copy of them. The 11-line decoder below is the price
+   * and it is cheaper than an availability branch that could silently pick the
+   * kinder path on one machine and not another.
+   */
+  cubeRadiance(scene: THREE.Scene, size: number): Float32Array | null {
+    const rt = new THREE.WebGLCubeRenderTarget(size, {
+      type: THREE.HalfFloatType,
+      colorSpace: THREE.LinearSRGBColorSpace,
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      generateMipmaps: false,
+    });
+    const cam = new THREE.CubeCamera(0.1, 100, rt);
+    const tm = this.r.toneMapping;
+    const cs = this.r.outputColorSpace;
+    const ac = this.r.autoClear;
+    this.r.toneMapping = THREE.NoToneMapping;
+    this.r.outputColorSpace = THREE.LinearSRGBColorSpace;
+    this.r.autoClear = true;
+    const n = size * size * 4;
+    let out: Float32Array | null = new Float32Array(6 * n);
+    try {
+      cam.update(this.r, scene);
+      const raw = new Uint16Array(n);
+      for (let f = 0; f < 6; ++f) {
+        this.r.readRenderTargetPixels(rt, 0, 0, size, size, raw, f);
+        for (let i = 0; i < n; ++i) out[f * n + i] = halfToFloat(raw[i]);
+      }
+    } catch { out = null; }
+    this.r.toneMapping = tm;
+    this.r.outputColorSpace = cs;
+    this.r.autoClear = ac;
+    this.r.setRenderTarget(null);
+    rt.dispose();
+    return out;
+  }
 
   readPixels(x: number, y: number, w: number, h: number, out: Uint8Array): void {
     const gl = this.gl;

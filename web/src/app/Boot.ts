@@ -13,6 +13,7 @@ import { Frame } from '../render/Frame.js';
 import { SkyPass } from '../render/SkyPass.js';
 import { ShadowRig } from '../render/ShadowRig.js';
 import { SkyIbl } from '../render/SkyIbl.js';
+import { installIblDiag } from '../render/IblDiag.js';
 import { Headlamp } from '../render/Headlamp.js';
 import { atmosphereForBody } from '../render/materials/Atmosphere.glsl.js';
 import { measureHorizonOcclusion, type HorizonOcclusion }
@@ -181,6 +182,15 @@ export async function boot(cfg: Config, host: HTMLElement, hud: Hud): Promise<Bo
   // RN-64: and the GROUND half, which is what stops them crushing to black at
   // dawn while the terrain they stand on stays lit.
   const ibl = new SkyIbl(renderer, [scenes.near, scenes.viewModel], sky);
+  // RN-1520. The IBL/specular diagnosis handle. It publishes only; nothing on
+  // that path runs until a probe calls it, so the frame is unchanged.
+  installIblDiag({
+    renderer, skyScene: scenes.sky, nearScene: scenes.near,
+    sunDirection: sky.sunDirection,
+    setGroundMode: (on) => sky.setGroundMode(on),
+    hasIblGround: sky.hasIblGround,
+    setDiscBoost: (on) => sky.setDiscBoost(on),
+  });
   // The view-model pass has NO lights of its own beyond the sun and Headlamp's
   // hemisphere: the arms are 0.35 m from the eye, always front-lit, and a
   // cascade fitted to a 22 m box would be wasted on them.
