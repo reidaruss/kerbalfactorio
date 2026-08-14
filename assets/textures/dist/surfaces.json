@@ -46,13 +46,13 @@
       },
       "albedo": {
         "file": "of_bark_a.png",
-        "bytes": 34636,
-        "sha256": "4af6de924039be6b8cc2a9b4905eea84c27adec9ca6bf38b51d05cb510d0afb6"
+        "bytes": 38466,
+        "sha256": "b1b3ff311bc85c5486f1fb8b6565649fc09e8be3048b10c3bacd661e0463313e"
       },
       "tile_m": 0.6,
       "size_px": 384,
       "texels_per_m": 640.0,
-      "albedo_mean_linear": 0.207
+      "albedo_mean_linear": 0.2062
     },
     "coarse": {
       "normal": {
@@ -240,32 +240,32 @@
     "grass": {
       "albedo": {
         "file": "of_grass_a.png",
-        "bytes": 36398,
-        "sha256": "d199c2caaedcf0c66cb940c6e4a7f896c20d5bc40884eb7118e64f6a8f1a21be"
+        "bytes": 190117,
+        "sha256": "ce2b7dc63d3702091d4ecaa26538564976d34b811404898f22d7605da2716407"
       },
-      "size_px": 256,
+      "size_px": 1024,
       "uv_space": "unit",
       "wrap": {
         "u": "repeat",
         "v": "clamp"
       },
       "alpha_test": 0.35,
-      "albedo_mean_linear": 0.5123
+      "albedo_mean_linear": 0.4757
     },
     "leaf": {
       "albedo": {
         "file": "of_leaf_a.png",
-        "bytes": 47739,
-        "sha256": "0fad3e1d1806234a08b95e03dd0fed77537d86323941544c6a64d715789c1c9d"
+        "bytes": 256130,
+        "sha256": "f0d582707c9100ed3d7b7c922f4e7c53cb317001bc76709a796cd371e5a74237"
       },
-      "size_px": 256,
+      "size_px": 1024,
       "uv_space": "unit",
       "wrap": {
         "u": "repeat",
         "v": "clamp"
       },
       "alpha_test": 0.35,
-      "albedo_mean_linear": 0.5891
+      "albedo_mean_linear": 0.5869
     }
   },
   "roles": {

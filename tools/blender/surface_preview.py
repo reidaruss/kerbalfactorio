@@ -161,6 +161,21 @@ def apply_material(mat, manifest, role, merged=False, force=None):
         return None
 
     fam = manifest["families"][fam_name]
+    # RN-1500: an ALBEDO CARD family (leaf, grass; RN-181) has no `tile_m` at
+    # all, because it is unit-UV, not metres (see the manifest comment this
+    # module's own docstring quotes none of). Before this branch existed,
+    # `apply_material` on a Leaf/Grass role read `fam["tile_m"]` two lines
+    # below and threw KeyError, which is presumably why `render_flora.py`
+    # never calls `apply_all()` and instead wrote its own `alpha_cards()` for
+    # just those two families: this module silently could not be used on a
+    # scene containing foliage. Skipping here (treated as flat, the same
+    # return this function already uses for a role with no family at all)
+    # lets a caller run `alpha_cards()` for the two card families and
+    # `apply_all()` for every tiling one in the SAME scene without a crash,
+    # which is what a tree (bark trunk + leaf/grass cards, both in one file)
+    # actually needs.
+    if fam.get("uv_space") == "unit":
+        return None
     tile = fam["tile_m"]
 
     def node(kind, x, y):

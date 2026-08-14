@@ -380,20 +380,29 @@ def group(cam, stems, count, seed, out_prefix, tag="group"):
 # Instances per square kilometre, DENSITY_SCALE already applied. See the
 # transcription note in the module docstring: this is a COPY of three lists in
 # web/src/assets/Registry.ts and is stated as one.
+#
+# RN-1500: this table was still GROUND_DETAIL (the shared meadow table RN-311
+# named), 12 days after WG-91 (bdee2b5, 2026-08-01) gave Forest its own
+# FOREST_DETAIL and switched BIOME_PROPS_MUT[3] to it by default. The doc
+# comment above still says "a COPY of three lists" and only two of the three
+# were ever repointed; nobody had run `floor:forest` since WG-91 landed, so
+# nothing caught it. Every number below the Forest-props block is now
+# FOREST_DETAIL's own pre-scale figure x6, matching how every other row here
+# is built.
 FOREST_FLOOR = (
-    # BIOME_PROPS[3], the Forest biome props.
+    # BIOME_PROPS[3], the Forest biome props (FOREST_BASE, unchanged by WG-91).
     ("Forest_Fern", 25200.0),
     ("Forest_MushroomCluster", 9000.0),
     ("Forest_DeadTree", 2520.0),
     ("Forest_FallenLog", 1560.0),
-    # GROUND_DETAIL, the understorey stamped by the square metre.
-    ("Detail_GrassCardA", 1080000.0),
-    ("Detail_GrassCardB", 630000.0),
-    ("Detail_GrassCardC", 420000.0),
-    ("Detail_BroadleafForb", 450000.0),
-    ("Detail_SedgeRosette", 360000.0),
+    # FOREST_DETAIL (WG-91), the understorey Forest no longer shares with Plains.
+    ("Detail_GrassCardA", 540000.0),
+    ("Detail_GrassCardB", 180000.0),
+    ("Detail_GrassCardC", 720000.0),
+    ("Detail_BroadleafForb", 900000.0),
+    ("Detail_SedgeRosette", 660000.0),
     ("Detail_PebbleScatter", 144000.0),
-    ("Detail_FlowerSprig", 144000.0),
+    ("Detail_FlowerSprig", 84000.0),
     # CANOPY_FOREST. In frame only as trunks, which is what a player standing
     # in a forest sees of a canopy tree, and they are in the shot because the
     # floor is what it is BECAUSE they are there.
@@ -493,6 +502,14 @@ def main():
         bpy.ops.import_scene.gltf(
             filepath=one if os.path.isabs(one) else os.path.join(ROOT, one))
     alpha_cards()
+    # RN-1500: trunks (Bark/BarkLight) wore no texture in this tool at all
+    # before this line, flat vertex colour whatever `_bark_albedo` (RN-1472)
+    # actually looks like. `surface_preview.apply_all()` wires every TILING
+    # family (bark included); the two CARD families it cannot handle
+    # (`alpha_cards()`'s own job, just above) are now a documented no-op
+    # inside it rather than a crash, see that module's own RN-1500 note.
+    import surface_preview
+    surface_preview.apply_all(quiet=True)
     add_ground()
     os.makedirs(os.path.join(ROOT, os.path.dirname(out_prefix)), exist_ok=True)
     for shot in shots:
