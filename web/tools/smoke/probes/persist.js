@@ -117,10 +117,59 @@
 
   // --- 4. load ---------------------------------------------------------------
   const ledger = await of.load();
-  await sleep(0.4);
+  // GP-773, FIRST MECHANISM. DW-17 RED, DIAGNOSED IN THIS LANE:
+  // `ledger.treesPending` (and `rocksPending`) are not a failure, they are
+  // PersistLedger.ts's own documented deferral, restated in its own comment:
+  // "Rocks outside the streamed ring restore later, at the moment they
+  // materialise". `TreeField.
+  // restore` (TreeField.ts) sets a `pending` entry for exactly this reason
+  // when a saved depletion names a cell TreeField has not (yet) rebuilt into
+  // its own `known` registry, and drains it the moment `buildTree` next
+  // constructs that cell. The bug this probe had was not in that mechanism:
+  // it was reading `back.depleted` a flat 0.4 s after `load()` returned,
+  // which is not remotely long enough for the world's own per-frame,
+  // throttled tree/rock rebuild to reach every cell a save's depletion diff
+  // named, even standing still at the exact spot they grow. Measured here
+  // before the fix: `saved.depleted` carried 4 nodes, `back.depleted` carried
+  // 1, and `ledger.treesPending` was 3, i.e. every missing node was sitting
+  // in TreeField's own pending queue, not lost. So this polls for the queue
+  // to actually drain (bounded, the same shape `demolish.js`'s residue wait
+  // uses) instead of reading one snapshot too early.
+  const drainCap = 20;
+  let drainSecs = 0;
+  while (drainSecs < drainCap && depleted() !== saved.depleted) {
+    await sleep(0.5);
+    drainSecs += 0.5;
+  }
   const back = { pack: pack(), cells: cells(), depleted: depleted(),
                  buildings: fac().buildings, machines: of.game().machines.length };
   log.push(`restored ${JSON.stringify(ledger)}`);
+  log.push(`waited ${drainSecs}s for the depletion diff to drain `
+    + `(cap ${drainCap}s), back.depleted now "${back.depleted}"`);
+
+  // GP-773, SECOND MECHANISM. `ledger.nodesDepleted` IS NOT THE WHOLE RECEIPT,
+  // AND COMPARING IT ALONE TO `saved.depleted` WAS THE SECOND DEFECT IN THIS
+  // PROBE. `nodesDepleted` is `Persist.ts`'s generic, index-keyed diff ONLY:
+  // it deliberately excludes
+  // outcrops, world rocks and world trees (`Persist.ts`'s own comment: "an
+  // outcrop reports its patch's pool... writing it here would drain it that
+  // many times"), which are counted separately as `trees`/`rocks` (applied
+  // immediately) and `treesPending`/`rocksPending` (named, promised for the
+  // moment they materialise, per `PersistLedger.ts`'s own contract). This
+  // probe's harvest loop hits kind 0 and 1 nodes, which on this world are
+  // WORLD TREES, so `saved.depleted` (every depleted node, all kinds) was
+  // always going to outnumber `nodesDepleted` (core-only) by exactly the tree
+  // count, and the old assertion could never pass once a probe run actually
+  // depleted a tree. The honest receipt sums every category the ledger
+  // itself names, applied now or pending for later, against the same total.
+  const ledgerTotal = ledger === null ? -1
+    : ledger.nodesDepleted + ledger.trees + ledger.rocks
+      + ledger.treesPending + ledger.rocksPending;
+  const savedDepletedCount = saved.depleted === '' ? 0 : saved.depleted.split(' ').length;
+  log.push(`ledger total ${ledgerTotal} (nodesDepleted ${ledger?.nodesDepleted} + `
+    + `trees ${ledger?.trees} + rocks ${ledger?.rocks} + treesPending `
+    + `${ledger?.treesPending} + rocksPending ${ledger?.rocksPending}) vs `
+    + `saved.depleted count ${savedDepletedCount}`);
 
   return {
     advanced: { swings, tick: of.world().tick, saves: of.game().persist.saves },
@@ -130,14 +179,15 @@
       saved.buildings >= 3 && razed === saved.buildings
       && wrecked.buildings === 0 && wrecked.cells === ''
       && wrecked.pack !== saved.pack && wrecked.depleted === ''
-      // and every part of it came back exactly
+      // and every part of it came back exactly, once the pending queue (see
+      // the wait above) actually drains
       && back.buildings === saved.buildings
       && back.cells === saved.cells
       && back.pack === saved.pack
       && back.depleted === saved.depleted
       && back.machines === saved.machines
       && ledger !== null && ledger.buildings === saved.buildings
-      && ledger.nodesDepleted === saved.depleted.split(' ').length,
+      && ledgerTotal === savedDepletedCount,
     persist: of.game().persist,
     log,
   };

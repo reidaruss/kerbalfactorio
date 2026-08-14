@@ -125,8 +125,31 @@
   // The band a genuine grid neighbour lands in, in metres of ground. The
   // floor rejects a re-reading of the cell already dealt with; the ceiling
   // rejects a skipped cell, which is the failure that shatters a run.
+  // ONLY VALID BELT-TO-BELT: both tiles are footprint 1, so FactorySnap's own
+  // `stepsFor(belt, belt)` is `ceil((1+1)/2)` = 1 cell, i.e. a face neighbour.
   const NEAR = 0.5;
   const FAR = 1.25;
+  // GP-770: A MACHINE IS NOT A BELT, and the band above silently assumed every
+  // neighbour was one. `stepsFor(from, to)` (FactorySnap.ts) is
+  // `Math.ceil((FOOTPRINT[from] + FOOTPRINT[to]) / 2)` cells, and FS-73 took
+  // `smelter` and `miner` from footprint 2 to 4 (`FactoryKinds.FOOTPRINT`): a
+  // belt-to-smelter or belt-to-miner mating is `ceil((1+4)/2)` = 3 cells, not
+  // the 1-cell neighbour NEAR/FAR was built for. Measured directly on this
+  // world (matching assembler.js's own GP-760 measurement of the identical
+  // pair): a belt is 1.002 m per cell, so 3 cells is a real centre-to-centre
+  // gap of ~3.006 m, not the ~1.25 m ceiling this probe used to enforce before
+  // the ghost sweep below ever got there, which is why the smelter step broke
+  // out of its loop (`d > 2.2`) on every candidate the real ghost offered.
+  const FPT = of.game().factory.footprint;
+  const CELL_M = 1.002;
+  const machineBand = (kind) => {
+    const cells = Math.max(1, Math.ceil((FPT.belt + FPT[kind]) / 2));
+    const centre = cells * CELL_M;
+    // Wide enough to absorb the sweep's own 0.25-degree pitch granularity and
+    // ground curvature, narrow enough that an unrelated ghost several cells
+    // further out cannot be mistaken for the mate.
+    return { near: Math.max(NEAR, centre - 0.6), far: centre + 0.6 };
+  };
 
   // 1: which yaw is a tangent axis, measured off the ghost's own flow direction.
   of.build(2);
@@ -255,18 +278,21 @@
     return { fail: 'the drag did not carry four belts', steps, tailAim, headAim, log };
   }
 
-  // 3: the smelter, on the cell in front of the run's HEAD. Reach for a belt and
-  // a smelter is (1 + 2) / 2 + 0.75 m (FactoryWiring.touch), so it has to be the
-  // very next cell, not merely somewhere down the line.
+  // 3: the smelter, on the cell in front of the run's HEAD. GP-770: the mating
+  // distance is `machineBand('smelter')`, not the belt-to-belt band, because a
+  // smelter is footprint 4 and a belt is footprint 1 (see the note above NEAR).
   of.build(3);
   let smelterAt = null;
   const headBelt = laid[laid.length - 1];
+  const smelterBand = machineBand('smelter');
+  log.push(`smelter mating band: ${smelterBand.near.toFixed(2)}-`
+    + `${smelterBand.far.toFixed(2)} m`);
   for (let p = headAim.pitch - 0.2; p >= -62 && smelterAt === null; p -= 0.25) {
     const g = await ghostAt(yaw, p);
     if (g === null || !g.ok) continue;
     const d = gdist(g.pos, headBelt.pos);
-    if (d < NEAR) continue;
-    if (d > 2.2) break;                     // beyond the belt head's reach
+    if (d < smelterBand.near) continue;
+    if (d > smelterBand.far) break;         // beyond the belt head's reach
     const before = fac().buildings;
     await placeHere();
     if (fac().buildings > before) smelterAt = { cell: g.cell, pitch: p, pos: g.pos };
@@ -276,26 +302,191 @@
   // 4: the drill, on the cell just BEYOND the run's tail, which is ore-bearing
   // ground the belts deliberately stopped short of. THE ORE STARTS FLOWING HERE
   // and nowhere earlier.
+  //
+  // GP-770 fixed the smelter above; GP-771 is the drill, and it took THREE
+  // measured attempts to land, all surfacing as the same "would not go down"
+  // failure.
+  //
+  // FIRST: a blind pitch sweep, one fixed angular step at a time, is what this
+  // loop used to be, and it does not survive out here: pitch is nowhere near
+  // linear in ground distance approaching the horizon (the belt drag's own
+  // header says as much for exactly this reason). MEASURED:
+  // stepping the old 0.25-degree sweep from pitch -10.5 to -10.25 jumped the
+  // aimed cell from "m1:1,3" straight to "m1:1,-3", five cells out in the WRONG
+  // direction, past the smelter, skipping every cell between.
+  //
+  // SECOND, TRIED AND MEASURED WRONG: aiming precisely AT the tail belt's own
+  // socket point (0.5 m behind its centre, `FPT.belt / 2`), the way
+  // `assembler.js`'s `tailOut`/`chainStep` catches a socket for every OTHER
+  // kind. `findGroundGhost` converged there exactly (missM 0.019) and found not
+  // one `ok: true` ghost anywhere in a 9x9-degree spiral around it: a 4 m
+  // footprint centred 0.5 m from an existing belt clashes with it every time,
+  // "too close to #4 belt". `FactoryGhost.resolveGhost`'s own comment names the
+  // reason this file's PREVIOUS pass missed: "A DRILL NEVER SNAPS... its
+  // position is decided by the GROUND... Belts and smelters have no such
+  // constraint, so they snap freely" (`kind === 'miner' && caught !== null`
+  // moves ONLY the heading, never `s`, i.e. never the position). Every other
+  // kind in this file (belt, smelter) gets teleported to the correct
+  // `stepsFor`-computed cell by aiming near a socket; a miner never does. The
+  // very defect this comment names ("the belt's tail socket proposed a cell
+  // 2.000 m back that had no ore under it") is `probes/demolish.js` by name.
+  //
+  // THIRD, THE ACTUAL FIX: aim the raw ground point directly at the
+  // intended CELL (three beyond the tail, `stepsFor(belt, miner)`), which is
+  // what the SECOND attempt already did, but AT A FIXED YAW rather than one
+  // `aimAtGround`'s coarse-to-fine search was free to wander. That freedom is
+  // what broke the wiring the first time: this scene's whole flow axis was
+  // measured once, early in this file, as the one yaw that lies along the
+  // site's own tangent grid ("flow axis: yaw ... -> ..."), and every other
+  // placement in this probe (the belt drag, the smelter) holds that exact
+  // `yaw` fixed for exactly this reason. `FactoryGhost`'s default heading
+  // (`headingIn`, taken when no socket is close enough to catch) resolves off
+  // the AIM RAY's own direction; letting yaw drift a few degrees while chasing
+  // a 3D point can converge on the position while resolving to the WRONG one
+  // of the site's four cardinal headings, which is exactly what happened:
+  // the SECOND attempt's placement measured `ok: true` at the right ground
+  // cell and still produced a miner with `fac().links` carrying no entry,
+  // because its outlet ended up facing away from the belt rather than at it.
+  // So this hill-climbs PITCH ONLY, at the same fixed `yaw` the rest of the
+  // scene already trusts, which keeps the resolved heading on the same axis
+  // the smelter already proved works.
   of.build(1);
   let drill = null;
   const tailBelt = laid[0];
-  for (let p = tailAim.pitch + 0.2; p <= -8 && drill === null; p += 0.25) {
-    const g = await ghostAt(yaw, p);
-    if (g === null || !g.ok || g.patch < 0) continue;
-    const d = gdist(g.pos, tailBelt.pos);
-    if (d < NEAR || d > FAR) continue;      // it has to TOUCH the tail, not merely be near it
+  const missToPoint = (t) => {
+    const a = of.aim();
+    const v = [t[0] - a.origin[0], t[1] - a.origin[1], t[2] - a.origin[2]];
+    const u = v[0] * a.dir[0] + v[1] * a.dir[1] + v[2] * a.dir[2];
+    if (u <= 0) return Infinity;
+    return Math.hypot(v[0] - a.dir[0] * u, v[1] - a.dir[1] * u, v[2] - a.dir[2] * u);
+  };
+  /** Hill-climb PITCH ONLY, `yaw` held at the scene's own flow axis. */
+  const aimPitchTo = (t) => {
+    let p = of.world().observer.pitchDeg;
+    for (const step of [12, 4, 1, 0.25, 0.06]) {
+      let bestM = Infinity, bp = p;
+      for (let b = -6; b <= 6; ++b) {
+        const pp = Math.max(-88, Math.min(20, p + b * step));
+        of.look(yaw, pp);
+        const m = missToPoint(t);
+        if (m < bestM) { bestM = m; bp = pp; }
+      }
+      p = bp;
+    }
+    of.look(yaw, p);
+    return p;
+  };
+  const findGroundGhost = async (t, pred, diag) => {
+    const p0 = aimPitchTo(t);
+    const missM = +missToPoint(t).toFixed(3);
+    let bestOk = null;
+    for (let k = 0; k <= 16; ++k) {
+      const off = (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * 0.3;
+      const pp = Math.max(-88, Math.min(20, p0 + off));
+      const g = await ghostAt(yaw, pp);
+      if (g === null) continue;
+      if (g.ok && bestOk === null) {
+        bestOk = { cell: g.cell, patch: g.patch, snapped: g.snapped, fwd: g.fwd };
+      }
+      if (pred(g)) return { g, pitch: pp };
+    }
+    if (diag) diag.push({ p0: +p0.toFixed(2), missM, bestOk });
+    return null;
+  };
+  // GP-771, CONTINUED. `FactoryGhost.march`'s ray gives up at `REACH_M` =
+  // 9 m, and the belt tail already stands up to `tailAim`'s own 7.7 m out from
+  // where the player is still standing (nothing has walked since the drag).
+  // Three more cells beyond it is past 9 m from the player, so the march
+  // cannot reach the true target AT ALL: the fixed-yaw pitch sweep above
+  // measured this directly, bouncing between only two reachable site cells
+  // ("m1:1,-3" and "m1:1,3", both already occupied) and never once landing on
+  // "m1:1,4" or "m1:1,5", because the ray simply runs out before it gets
+  // there. So the player walks toward the target FIRST, the same distance
+  // `walkTo` covers everywhere else in this file, using a free-yaw aim only
+  // for STEERING (never for the placement itself, which stays on the scene's
+  // fixed flow axis once the walk is done).
+  const aimFreeToWalk = (t) => {
+    let y = of.world().observer.yawDeg;
+    let p = of.world().observer.pitchDeg;
+    for (const step of [16, 4, 1]) {
+      let bestM = Infinity, by = y, bp = p;
+      for (let a = -6; a <= 6; ++a) {
+        for (let b = -6; b <= 6; ++b) {
+          of.look(y + a * step, Math.max(-88, Math.min(20, p + b * step)));
+          const m = missToPoint(t);
+          if (m < bestM) { bestM = m; by = y + a * step; bp = p + b * step; }
+        }
+      }
+      y = by; p = Math.max(-88, Math.min(20, bp));
+    }
+    of.look(y, p);
+  };
+  const walkToPoint = async (t, stopM) => {
+    aimFreeToWalk(t);
+    const d0 = () => { const e = eye(); return Math.hypot(e.x - t[0], e.y - t[1], e.z - t[2]); };
+    let d = d0();
+    for (let i = 0; i < 20 && d > stopM; ++i) {
+      const frames = Math.max(5, Math.min(60, Math.round(((d - stopM * 0.7) / 4.6) * 60)));
+      of.input.tape([{ hold: frames, keys: ['KeyW'] }, { hold: 2, keys: [] }]);
+      await sleep(1.1);
+      aimFreeToWalk(t);
+      d = d0();
+    }
+    of.input.tape([{ hold: 2, keys: [] }]);
+    await sleep(0.2);
+    return +d.toFixed(2);
+  };
+  const drillCells = Math.max(1, Math.ceil((FPT.belt + FPT.miner) / 2));
+  const tailDir = (() => {
+    const prev = laid[1] ?? tailBelt;
+    const v = [tailBelt.pos[0] - prev.pos[0], tailBelt.pos[1] - prev.pos[1],
+      tailBelt.pos[2] - prev.pos[2]];
+    const n = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / n, v[1] / n, v[2] / n];
+  })();
+  const drillTries = [];
+  let drillFound = null;
+  // GROWN OUTWARD FROM THE MATING DISTANCE, not fixed there: the ore-bearing
+  // ground the belts stopped short of does not necessarily start exactly 3
+  // cells out. The same "try in turn, do not compute one more single guess a
+  // rescale falsifies again" shape GP-690's `placeUntil` and this lane's own
+  // `standCandidatesFor` (assembler.js, GP-760) already use.
+  for (let n = drillCells; n <= drillCells + 6 && drillFound === null; ++n) {
+    const target = [tailBelt.pos[0] + tailDir[0] * n * CELL_M,
+      tailBelt.pos[1] + tailDir[1] * n * CELL_M, tailBelt.pos[2] + tailDir[2] * n * CELL_M];
+    const standAt = [target[0] - tailDir[0] * 3.2, target[1] - tailDir[1] * 3.2,
+      target[2] - tailDir[2] * 3.2];
+    const walkedTo = await walkToPoint(standAt, 1.0);
+    const diag = [];
+    const r = await findGroundGhost(target, (g) => g.ok && g.patch >= 0, diag);
+    drillTries.push({ n, cell: r?.g.cell ?? null, found: r !== null, walkedTo, ...diag[0] });
+    if (r !== null) drillFound = r;
+  }
+  log.push(`drill target search: ${JSON.stringify(drillTries)}`);
+  if (drillFound !== null) {
+    of.look(yaw, drillFound.pitch);
+    await sleep(0.2);
     const before = fac().buildings;
     await placeHere();
     if (fac().buildings > before) {
-      drill = { cell: g.cell, pitch: p, pos: g.pos, rate: g.ratePerSec,
-                reachM: +fromEye(g).toFixed(2) };
+      const row = fac().list.find((b) => b.kind === 'miner');
+      drill = { id: row.id, cell: drillFound.g.cell, pitch: drillFound.pitch,
+                pos: drillFound.g.pos, fwd: drillFound.g.fwd, rate: drillFound.g.ratePerSec,
+                reachM: +fromEye(drillFound.g).toFixed(2) };
     }
   }
   of.build(0);
   if (drill === null) {
     return { fail: 'the drill would not go down on the cell beyond the tail',
-             build: of.build(), tailBelt, log };
+             build: of.build(), tailBelt, drillTries, log };
   }
+  // THE WIRING IS CHECKED HERE, RIGHT AWAY, BECAUSE GP-771 PLACED A "VALID"
+  // GHOST THAT NEVER FED ANYTHING. `fac().links` naming an entry FROM the
+  // drill's own id is the only claim that actually matters; a `g.ok: true`
+  // ghost proves no clash, not a connection.
+  const drillLinked = fac().links.some((l) => l.from === drill.id);
+  log.push(`drill outlet [${drill.fwd.map((v) => v.toFixed(3)).join(' ')}], `
+    + `linked to a run: ${drillLinked}`);
   log.push(`drill at pitch ${drill.pitch.toFixed(1)} cell ${drill.cell}, `
     + `${drill.rate.toFixed(2)} ore/s, ${drill.reachM} m out`);
   log.push(`line: ${fac().buildings} buildings, ${laid.length} belts, `
@@ -425,16 +616,27 @@
   const stalled = await measure('stalled');
 
   // --- put it back -----------------------------------------------------------
-  // The player has not moved since the tiles went down, so the pitch that
-  // placed that cell still looks at it, and it is tried first. The band around
-  // it is swept anyway, finely, because the belt being replaced is identified
-  // by CELL and only that cell will do.
+  // GP-772: THE PLAYER HAS MOVED, AND THIS USED TO ASSUME OTHERWISE. That was
+  // true before GP-771: the drill went down from wherever the belts were laid,
+  // no walk involved. It no longer is: placing the drill beyond the tail (see
+  // above) walks the player out along the run, so the ORIGINAL `pitch` a belt
+  // was placed at, from a stand-point the player has since left, no longer
+  // looks anywhere near `midCell`. So this walks back near the removed tile's
+  // own recorded 3D position first (`midBuild.pos`, known regardless of where
+  // the player ended up), then aims by that position with a free yaw AND pitch
+  // search rather than trusting a remembered angle, and only then narrows to
+  // the exact cell with a fine spiral, the same shape `tryAt`'s old fine sweep
+  // used, widened from one axis to two because the coarse aim may not land
+  // exactly square either.
   of.build(2);
   await rotateTo(2);
-  const wantPitch = (laid.find((b) => b.cell === midCell) ?? { pitch: -26 }).pitch;
+  await walkToPoint(midBuild.pos, 3.0);
+  aimFreeToWalk(midBuild.pos);
+  const y1 = of.world().observer.yawDeg;
+  const p1 = of.world().observer.pitchDeg;
   let rebuiltCell = null;
-  const tryAt = async (p) => {
-    const g = await ghostAt(yaw, p);
+  const tryAt = async (yy, pp) => {
+    const g = await ghostAt(yy, pp);
     if (g === null || !g.ok || g.cell !== midCell) return false;
     const n0 = fac().buildings;
     await placeHere();
@@ -442,14 +644,19 @@
     rebuiltCell = g.cell;
     return true;
   };
-  for (let k = 0; k <= 12 && rebuiltCell === null; ++k) {
-    const off = (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * 0.1;
-    await tryAt(wantPitch + off);
+  const REBUILD_SPIRAL = (() => {
+    const out = [];
+    for (let a = -5; a <= 5; ++a) for (let b = -5; b <= 5; ++b) out.push([a, b]);
+    out.sort((x, z) => (Math.abs(x[0]) + Math.abs(x[1])) - (Math.abs(z[0]) + Math.abs(z[1])));
+    return out;
+  })();
+  for (const [dy, dp] of REBUILD_SPIRAL) {
+    if (rebuiltCell !== null) break;
+    await tryAt(y1 + dy * 0.5, Math.max(-88, Math.min(20, p1 + dp * 0.5)));
   }
-  for (let p = -11; p >= -50 && rebuiltCell === null; p -= 0.15) await tryAt(p);
   of.build(0);
-  log.push(`rebuilt ${rebuiltCell ?? 'NOTHING'} (wanted ${midCell} near pitch `
-    + `${wantPitch.toFixed(1)})`);
+  log.push(`rebuilt ${rebuiltCell ?? 'NOTHING'} (wanted ${midCell} near `
+    + `yaw ${y1.toFixed(1)} pitch ${p1.toFixed(1)})`);
 
   const rebuilt = await measure('rebuilt');
 
