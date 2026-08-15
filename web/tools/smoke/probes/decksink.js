@@ -1,5 +1,8 @@
 // "YOU CONSTANTLY SINK INTO THE FOUNDATION", measured as a number per TICK.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/decksink.js
+//
 // Reid, verbatim: "constantly snapping back up to the surface then sinking".
 // Two stills moments apart on the same platform, player stationary, read
 // alt 2.2 m and alt 2.1 m, both GROUNDED and both 0.00 m/s. So the thing to

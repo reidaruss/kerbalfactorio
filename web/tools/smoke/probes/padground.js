@@ -2,6 +2,13 @@
 // footprint, so the launch pad's placement rule is a number read off the shipped
 // terrain rather than a tolerance widened until the pad went down.
 //
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/padground.js
+//
+// OF_ARGS.padM defaults to 24 (the shipped pad's plan size), so no --evalargs
+// is required to run this.
+//
 // The question is DW-24's, at six times the scale it was last measured at.
 // GP-36 measured a 4 m deck and got 58.0% of 81 sampled origins buildable under
 // DW-33's fitted plane. A pad is 24 x 24 m, which is 36 times the area, and a

@@ -3,6 +3,10 @@
 // edge stitching must snap), finer, or nothing. Reports the depth histogram and
 // the stitch metrics, so "are there even any LOD boundaries in this view" is a
 // measurement rather than a guess.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/seams.js
+//
 (() => {
   const of = window.__of;
   const c = of.chunks(4000);

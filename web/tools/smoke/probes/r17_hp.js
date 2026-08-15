@@ -9,6 +9,9 @@
 // So the statistic reported is the TAIL: p99, p99.9, max, and the count over a
 // threshold, never the mean.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/r17_hp.js
+//
 // EVERY ARM IS ONE PAGE, ONE CAMERA, ONE SETTLED CHUNK SET AND ONE PINNED SUN,
 // toggled through __ofTerrainArt's runtime handles rather than through page
 // reloads, which is RN-30's settled-frame pair: the streamed chunks, the

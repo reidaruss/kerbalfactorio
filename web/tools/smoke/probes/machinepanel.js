@@ -3,6 +3,9 @@
 // the SIM'S OWN counter, and routine production no longer throws a toast across
 // the whole planet.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/machinepanel.js
+//
 // EVERY CLICK BELOW IS A REAL PointerEvent WITH A HUMAN PRESS DURATION (110 ms),
 // never `act('use')`. That is not belt and braces: an inert left button survived
 // twenty green probes on the action path (probes/realclick.js was written to

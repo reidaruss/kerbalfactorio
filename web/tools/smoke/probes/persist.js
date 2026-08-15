@@ -1,5 +1,11 @@
 // DW-17 PERSISTENCE probe: a save slot that actually round-trips.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/persist.js
+//
+// SANDBOX so the belt/smelter/hand-furnace placements below are not blocked
+// on inventory (DW-31): this probe is about the save bytes, not the economy.
+//
 // WHAT IS AND IS NOT PROVED HERE, said up front. This drives save -> destroy ->
 // load inside ONE page, through the real IndexedDB (an async open, a real
 // transaction, a real read back), which is the whole of the container and the

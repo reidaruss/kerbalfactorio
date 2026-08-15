@@ -1,6 +1,9 @@
 // water.js - the pond's LOOK, term by term, measured where it is supposed to
 // work rather than where it is supposed to do nothing (RN-58).
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/water.js
+//
 // OF_ARGS: { distM, altM, pitchDeg, bearingDeg, sunT, endWith }
 //
 // THE INSTRUMENT IS `of.framehash()` AND IT COULD NOT BE A SCREENSHOT. The water

@@ -1,6 +1,9 @@
 // W6 DEMOLITION probe: a line runs, a belt is pulled out of the MIDDLE of it,
 // the line stops, the belt goes back, and the line runs again.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/demolish.js
+//
 // WHY THE MIDDLE TILE. Removing the end of a run proves almost nothing: the
 // topology barely changes and the smelter keeps whatever was already in it.
 // Removing a tile from the middle splits ONE transport line into TWO, and the

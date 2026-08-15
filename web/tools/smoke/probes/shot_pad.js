@@ -1,5 +1,10 @@
 // shot_pad.js: the launch guide on the pad (GP-139). Not an acceptance;
 // probes/launchguide.js is.
+//
+//   npx vite --config vite.probe.config.ts
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/ --sandbox=1 --settle=6 \
+//        --evalfile=tools/smoke/probes/shot_pad.js \
+//        --out=docs/screenshots/GP139_padguide.png
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

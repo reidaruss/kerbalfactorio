@@ -1,5 +1,10 @@
 // RN-954. Pose a Beach frame for the ripple-direction measurement.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/reliefrot.js \
+//        --evalargs='{"lat":-35.6028,"lon":53.30131}' \
+//        --out=docs/screenshots/RN954_ripple_pose.png
+//
 // THE PICTURE IS THE MEASUREMENT HERE, so the pose has to remove every way the
 // frame could move for a reason that is not the change:
 //

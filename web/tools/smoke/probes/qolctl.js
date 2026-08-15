@@ -1,5 +1,9 @@
 // qolctl.js: the Options / Controls page, which is the only in-game place a
 // player can read the controls when the debug HUD is off.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/qolctl.js
+//
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

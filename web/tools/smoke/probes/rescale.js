@@ -1,6 +1,9 @@
 // FS-78 / FS-80: A FACTORY BUILT WHEN THE MACHINES WERE SMALLER SURVIVES THE
 // LOAD, AND THE THING THAT MAKES IT SURVIVE IS LOAD BEARING.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/rescale.js
+//
 // WHAT THIS IS ACTUALLY PROTECTING. Reid has a roughly 140-structure base he has
 // been playing for days. FS-73 took the smelter, the electric smelter and the
 // drill from 2 m to 4 m, and a `SaveBuilding` records `pos` and `cell` and

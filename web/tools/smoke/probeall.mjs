@@ -41,6 +41,31 @@ const probeDir = join(tree, 'web', 'tools', 'smoke', 'probes');
 const runner = join(tree, 'web', 'tools', 'smoke', 'run.mjs');
 const webDir = join(tree, 'web');
 
+// ---- BT-115 to BT-129: the extractCmd-null audit ---------------------------
+// CE-86 found that a probe documenting no invocation returns `null` from
+// extractCmd and drops SILENTLY into NO_DOCUMENTED_CMD, off by default, so
+// "not on the red list" and "green" were different claims for 91 probes with
+// no way to tell which from this file's own output. Two of those 91 are not
+// oversights: a HELPER/FIXTURE that is genuinely not meant to run standalone
+// through THIS runner (a two-phase setup probe driven by reload.mjs or
+// twobody.mjs, for instance) will never carry a `run.mjs` line and should not
+// be made to invent one. The fix is not to force an invocation onto every
+// file; it is to make "excluded on purpose" a DIFFERENT, visible verdict from
+// "nobody wrote a line yet". A probe is EXCLUDED when its header carries
+//   // PROBEALL-EXCLUDE: <reason>
+// anywhere in its first 60 lines. That census bucket is checked before
+// extractCmd runs at all, and an excluded probe is skipped even under
+// --nodocs, because running it at the runner's defaults would not be running
+// the thing it was written to do either.
+function excludedReason(src) {
+  const lines = src.split(/\r?\n/).slice(0, 60);
+  for (const l of lines) {
+    const m = /^\s*\/\/\s*PROBEALL-EXCLUDE:\s*(.+?)\s*$/.exec(l);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 // ---- extract the documented invocation from the header comment -------------
 // The command sits in a `//` block, one flag per token, with `\` continuations.
 function extractCmd(src) {
@@ -141,6 +166,11 @@ let idx = -1;
 for (const f of files) {
   if (done.has(f)) continue;
   const src = readFileSync(join(probeDir, f), 'utf8');
+  const excluded = excludedReason(src);
+  if (excluded) {
+    if (shard === 0) appendFileSync(outFile, JSON.stringify({ probe: f, cls: 'EXCLUDED', reason: excluded }) + '\n');
+    continue;
+  }
   const cmd = extractCmd(src);
   if (!cmd) {
     // --nodocs runs the probes that document NO invocation, at the runner's

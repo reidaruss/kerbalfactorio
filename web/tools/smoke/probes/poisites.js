@@ -14,6 +14,8 @@
 //   node tools/smoke/reload.mjs --url=http://127.0.0.1:5211/ \
 //     --setup=probes/poisites.js
 //
+// PROBEALL-EXCLUDE: setup probe driven by tools/smoke/reload.mjs (see the invocation above), not run.mjs standalone
+//
 // NO --params NEEDED, unlike treereload.js/rockreload.js: the site table is
 // read entirely through the debug bridge (no walking, no swinging), and it
 // exists at any spawn on Forge -- world-gen places the ruin from `homeDir`,

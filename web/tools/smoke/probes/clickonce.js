@@ -1,6 +1,17 @@
 // ONE CLICK, ONE FOUNDATION. Reid: "when i click to place a foundation, it
 // typically places multiple."
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/clickonce.js
+//
+// BT-11x SWEEP CORRECTION: the first documented header for this probe left
+// sandbox off. The probe never harvests, so under survival it failed at its
+// own opening fixture check ("the ghost is valid before the first click:
+// need 40 Stone") before a single click was measured -- an instrument gap in
+// the invocation, not a claim about the click mechanics this file exists to
+// test. Same reasoning as basesnap.js's own header: this is a GEOMETRY/INPUT
+// measurement, not a cost one, and DW-31 exists for exactly this case.
+//
 // WHY THE ACTION TAPE CANNOT CATCH THIS AND A REAL POINTER EVENT CAN. Every
 // other build probe in this suite drives placement with `of.input.act(['use'],
 // n)`, which holds the button for exactly n frames chosen by the probe. That is

@@ -1,5 +1,8 @@
 // W6 AUTO-LINE probe: the acceptance for the whole milestone.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/autoline.js
+//
 // Place a miner on an ore deposit, run a belt from it to a smelter, THEN STOP
 // TOUCHING ANYTHING, and check that iron accumulated. Every placement goes
 // through the real build mode (number key, R, and a left click) driven by an

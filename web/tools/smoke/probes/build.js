@@ -2,6 +2,9 @@
 // controls and the player's own aim; nothing reaches past the handlers a person
 // can reach.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/build.js
+//
 // THE CONTROLS ARE ASKED FOR BY ACTION and never by key (Bindings.ts): `use` is
 // the left mouse button and places whatever the hotbar holds, `interact` is E
 // and opens the furnace without ever harvesting. `of.build(n)` still means the

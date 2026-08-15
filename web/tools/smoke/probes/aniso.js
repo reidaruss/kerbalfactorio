@@ -5,6 +5,9 @@
 // a fine ripple that reads as REAL WET SAND and a contrast counter scores that
 // ripple as artefact.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/aniso.js
+//
 // THE PHYSICAL CLAIM BEING TURNED INTO A NUMBER. A corduroy/contour artefact
 // stamped by a fixed-length finite-difference support has a PREFERRED
 // DIRECTION and a PREFERRED WAVELENGTH. An isotropic mottle (real ground

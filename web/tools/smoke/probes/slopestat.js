@@ -1,5 +1,8 @@
 // RN-842. THE RMS SLOPE OF A BODY'S SURFACE, measured through the oracle.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/slopestat.js
+//
 // WHAT IT IS FOR. TerrainShader splits a facet's ambient between sky and ground
 // with `skyView = 0.5 + 0.5 * dot(n, up)`, which is the sky-view factor of a
 // facet on an INFINITE TANGENT PLANE. On a real cratered surface the local

@@ -1,6 +1,10 @@
 // qolflight2.js: QOL SURVEY part 2. LAUNCH, THE NAVBALL, TIME WARP, R89.
 //
-//   --evalargs='{"stop":"ignite"|"ascent"|"coast"|"warp"|"r89"}'
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/qolflight2.js
+//
+//   --evalargs='{"stop":"ignite"|"ascent"|"coast"|"warp"|"r89"}' aims the
+//   stop point; default (no evalargs) runs the full survey through R89.
 //
 // Records DRAWN text, never model state alone. The stop point exists so the
 // runner's single --out screenshot can be aimed at a chosen moment.

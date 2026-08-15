@@ -16,6 +16,9 @@
 //   depletion  the node's RemainingAmount FELL by exactly what the pack GAINED
 // If any of those is zero the probe fails loudly, because the W4 scatter that
 // rejected every chunk on the planet also reported success.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/harvest.js
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

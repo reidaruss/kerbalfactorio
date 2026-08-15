@@ -1,5 +1,9 @@
 // A picture of sandbox mode, framing only. `sandbox.js` is the acceptance.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/sandboxshot.js \
+//        --out=docs/screenshots/W9_sandbox_base.png
+//
 // The whole point of the image is what is NOT in it: the pack readout bottom
 // right says "empty" while a base stands in front of the player and a SANDBOX
 // badge sits over the crosshair. Nothing was mined, nothing was crafted, and

@@ -1,5 +1,9 @@
 // GP-73 / GP-74. THE STAGE KEY ON THE PAD, AND THE WAY OUT.
 //
+//   npx vite --config vite.probe.config.ts
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/ --sandbox=1 --settle=6 \
+//        --evalfile=tools/smoke/probes/stagelock.js
+//
 // ONE PROBE, TWO REQUIREMENTS THAT PULL IN OPPOSITE DIRECTIONS, which is the
 // whole reason it is one file. PH-29 refuses a second stage press while the
 // clamp holds, because the first press lights the engine and the second throws

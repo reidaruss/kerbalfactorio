@@ -1,5 +1,8 @@
 // GP-38 acceptance: DW-32's cantilever, which did not exist.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/cantilever.js
+//
 // `supported()` returned true unconditionally for every level-0 deck, so there
 // was no neighbour concept at all and "a foundation may attach to an existing
 // foundation's edge and hang over a drop, supported by its neighbour" was a

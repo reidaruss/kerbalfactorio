@@ -1,6 +1,10 @@
 // vabstrap.js: the bay as a player sees it after GP-115 to GP-122.
 // A large stack through the adapter, a strap-on booster on a radial decoupler,
 // the tabbed rail and the pre-flight verdict, all in one frame.
+//
+//   npx vite --config vite.probe.config.ts
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/ --sandbox=1 --settle=6 \
+//        --evalfile=tools/smoke/probes/vabstrap.js
 (async () => {
   const of = window.__of;
   if (!of || typeof of.vab !== 'function') return { valid: false, why: 'no __of.vab' };

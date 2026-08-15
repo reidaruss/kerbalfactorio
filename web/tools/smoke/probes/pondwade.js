@@ -1,6 +1,9 @@
 // pondwade.js - the pond is a BASIN, and a player wades into it, swims, and
 // gets out. WG-43.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/pondwade.js
+//
 // R8, which this project has now paid for twice: a geometric probe that only
 // runs on the flat spawn clearing proves nothing. A 10.1 degree belt
 // misalignment measured EXACTLY ZERO on flat ground across 39 driven

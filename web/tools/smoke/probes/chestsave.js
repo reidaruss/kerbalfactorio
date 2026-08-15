@@ -4,6 +4,9 @@
 //   node tools/smoke/reload.mjs --url=http://127.0.0.1:5477/ \
 //     --setup=probes/chestsave.js
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/reload.mjs,
+// not meant to run standalone through run.mjs.
+//
 // WHAT IT IS FOR. A chest is the first buildable whose whole value is the state
 // it holds. A drill that came back empty is annoying; a chest that came back
 // empty has DESTROYED inventory the player deliberately put somewhere safe,

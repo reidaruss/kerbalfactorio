@@ -14,6 +14,9 @@
 //              in the total the same way the driver sees them.
 //   pools      instances, batches and refusals per pool, so the split is shown
 //              not to have cost a drawn machine.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/machinefam.js
 (async (A) => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

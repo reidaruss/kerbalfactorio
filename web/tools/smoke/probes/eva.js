@@ -11,6 +11,8 @@
 // `evaorbit.mjs` is the runner: it drives `flyto.js --phase=orbit` and then
 // hands the page to this file.
 //
+// PROBEALL-EXCLUDE: setup probe for a vessel already in orbit; run via tools/smoke/evaorbit.mjs, not standalone through run.mjs.
+//
 // THE ASSERTION THAT MATTERS IS E4, and it is the one that would have been easy
 // to leave out. Floating beside a rocket looks right in a screenshot whether or
 // not the rocket is still there a moment later, and the reason this feature was

@@ -1,6 +1,10 @@
 // RN-840 / RN-842: does an airless body render as an airless body, and is
 // anything filling its shadows?
 //
+//   node tools/smoke/run.mjs --scenario=walk --body=cinder --clear=ff00ff \
+//        --evalfile=tools/smoke/probes/airless.js \
+//        --evalargs='{"clear":"ff00ff"}'
+//
 // THE NAMED FAILURE MODES, written before the instrument was chosen, because a
 // probe that measures "is the frame good" measures nothing:
 //

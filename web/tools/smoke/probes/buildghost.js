@@ -1,5 +1,9 @@
 // W6 BUILD-MODE probe: the ghost, the grid and the refusal.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/buildghost.js \
+//        --out=docs/screenshots/W6_build_ghost.png
+//
 // The claim under test is not "a preview object exists". It is that the preview
 // tells the truth: that it snaps to the METRIC site grid, that R turns it in
 // exact quarter turns, and that it goes RED for the same reasons a placement

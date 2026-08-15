@@ -60,6 +60,10 @@
 // smelter down, and the smelter inside belt reach of the tail. A probe that laid
 // one belt, or that put the smelter 3 m out, would produce iron and prove
 // nothing.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/factoryshot.js \
+//        --out=docs/screenshots/FS84_set.png
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

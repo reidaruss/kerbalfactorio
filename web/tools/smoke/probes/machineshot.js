@@ -5,6 +5,10 @@
 // It is the same path probes/machinepanel.js asserts, without the assertions:
 // a screenshot proves what a thing LOOKS like and a probe proves what it DOES,
 // and neither substitutes for the other.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/machineshot.js \
+//        --out=docs/screenshots/GP61_machine_screen.png
 (async () => {
   const of = window.__of;
   const el = document.querySelector('canvas');

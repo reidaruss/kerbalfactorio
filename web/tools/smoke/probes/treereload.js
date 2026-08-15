@@ -8,6 +8,8 @@
 // diff (TreeField.serialize) is broken, the position lookup after reload finds
 // a FULL tree and the runner's exact-remaining assertion goes red by name.
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/reload.mjs, not run.mjs standalone
+//
 // THE FIXTURE MUST BE A STREAMED TREE AND NOT ONE OF THE CLEARING'S. The spawn
 // clearing's 14 trees are laid by NodeField.populate on a golden-angle spiral
 // out to about 57 m and are saved by /core INDEX, so chopping one would prove

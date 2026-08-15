@@ -3,6 +3,13 @@
 // Not a pass/fail probe. It records WHAT THE SCREEN SAYS at each step of the
 // walk -> bay -> build -> roll out -> board journey, so the friction can be
 // read off drawn text rather than off model state.
+//
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/qolflight1.js
+//
+// Sandbox, per probes/rollout.js's rationale: the full part catalogue is
+// needed to place the CommandPod/Tank/Engine stack this probe builds.
+//
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

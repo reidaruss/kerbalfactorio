@@ -3,6 +3,8 @@
 //
 // Driven by tools/smoke/mtnreload.mjs. It returns the site and the facing so
 // phase 2, after a real browser reload, can walk back into the same tunnel.
+//
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/mtnreload.mjs, not run.mjs standalone
 (async () => {
   const of = window.__of;
   const A = OF_ARGS ?? {};

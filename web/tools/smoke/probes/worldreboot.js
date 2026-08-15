@@ -1,6 +1,9 @@
 // CE-19 / CE-20: the world can be taken apart while the loop is running, and
 // put back, and NOTHING SURVIVES that should not.
 //
+//   node tools/smoke/run.mjs --scenario=walk --settle=25 \
+//        --evalfile=tools/smoke/probes/worldreboot.js
+//
 // This is a LEAK probe, and a leak is the hardest thing on this project to
 // assert honestly, because its symptom is a hitch or a phantom hours later
 // rather than a red gate now. So every claim here is a two-sided one against a

@@ -13,6 +13,9 @@
 //
 // It also proves the sim advanced (DW-20): fuel burned equals ticks run, and
 // the ingot appears on the tick gameplay.h says it does, not on load.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/furnacelit.js
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

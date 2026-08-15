@@ -1,6 +1,12 @@
 // pondshot.js - frame the pond for a capture, and report what is in the frame
 // so the picture is never the only evidence (WG-44).
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/pondshot.js
+//
+// Every OF_ARGS field below carries a safe default, so no --evalargs is
+// required to run this.
+//
 // OF_ARGS: { distM, altM, pitchDeg, bearingDeg, swim }
 //   distM/bearingDeg place the camera relative to the POND CENTRE, not the
 //   spawn, so a moved pond moves the shot. `swim: true` drives the player into

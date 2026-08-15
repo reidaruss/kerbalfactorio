@@ -1,5 +1,8 @@
 // "I BUILT A ROCKET BUT PRESSING G IN THE VAB DOESNT DO ANYTHING." (GP-53/GP-54)
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/rollout.js
+//
 // Reid, twice, and the two halves are one defect seen from two distances:
 //   "How do i build a launchpad and rocket, i cant find it in the menu"
 //   "I built a rocket but pressing G in the VAB doesnt do anything"

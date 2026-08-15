@@ -2,6 +2,9 @@
 // page was booted on, and hand the runner the numbers that identify this body's
 // work so the other body's boot can be checked for it.
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/twobody.mjs,
+// not meant to run standalone through run.mjs.
+//
 // DRIVEN. `of.dig()` is the player's own strike through the same action the
 // pick uses; nothing here writes an edit set directly. The strikes go straight
 // down, which is the one aim that always finds ground on either body, because

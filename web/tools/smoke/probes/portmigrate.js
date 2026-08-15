@@ -1,5 +1,11 @@
 // FS-46: A FACTORY BUILT BEFORE PORTS EXISTED SURVIVES THE LOAD.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/portmigrate.js
+//
+// SANDBOX so the belt/drill/smelter line below is not blocked on inventory
+// (DW-31): this probe is about the migration on load, not the economy.
+//
 // THE THING THIS IS ACTUALLY PROTECTING. Reid has a base he has been playing for
 // days. Every machine in it was wired by PROXIMITY: whatever was near enough was
 // connected, and nothing ever constrained which way a smelter faced, because

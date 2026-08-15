@@ -9,6 +9,9 @@
 // Ground truth is independent of yaw's sign convention: after dragging right,
 // the aim ray must rotate toward the EAST basis vector, because east is what
 // lies to your right when you face north with up overhead.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/look.js
 (async () => {
   const of = window.__of;
   if (!of || !of.aim) return { valid: false, why: 'no __of.aim' };

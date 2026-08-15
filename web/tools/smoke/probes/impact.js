@@ -19,6 +19,9 @@
 //   conserved   the node lost exactly what the pack gained
 //   feedback    debris spawned, the gain read out, the camera kicked
 //   aimRestored the camera kick summed to zero: the aim ended where it started
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/impact.js
 (async (A) => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

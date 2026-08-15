@@ -6,6 +6,9 @@
 //    was placed."
 //   "Items like smelters dont sit ontop of the foundation"
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/basesnap.js
+//
 // RUN IN SANDBOX (`--sandbox=1`). The costs are asserted by probes/build.js in
 // survival, where they mean something; this file is about GEOMETRY, and forty
 // stone per foundation would turn a five-part measurement into a ten-minute

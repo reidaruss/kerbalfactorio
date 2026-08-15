@@ -31,6 +31,10 @@
 // run says both what was drawn and what the shader was given: `distinct` is 0
 // under `?machinemat=0`, exactly 1 under `?machinemat=flat` and many under the
 // shipped default, which is three states told apart by one number.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/machinemat.js \
+//        --out=docs/screenshots/RN1200_machine_material.png
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

@@ -2,6 +2,9 @@
 // actually does, so DW-24's tolerance is a number that was read off the shipped
 // terrain rather than a number somebody liked the look of.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/buildtol.js
+//
 // RE-AIMED FOR DW-32 (GP-30). The footprint is not typed here at all: it is
 // `st.module.cellM`, measured off the shipped foundation's own edge socket, so
 // this file follows the art lane's module wherever it goes. Everything below is

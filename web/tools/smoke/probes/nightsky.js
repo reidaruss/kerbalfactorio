@@ -5,6 +5,14 @@
 // produced was a ground p50 wearing a label. Pitch is +45 here and the band is
 // the top 30 per cent, so every measured pixel is above the horizon by
 // construction rather than by hope.
+//
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 --body=cinder \
+//        --evalfile=tools/smoke/probes/nightsky.js \
+//        --evalargs='{"lat":2,"lon":144,"sunDot":-0.45}'
+//
+// OF_ARGS.lat/lon/sunDot have NO defaults in this file (unlike its nightfloor.js
+// sibling), so --evalargs is required or `of.teleport`/`of.setSunElev` are
+// asked for NaN.
 (async () => {
   const of = window.__of;
   let node = document.querySelector('canvas');

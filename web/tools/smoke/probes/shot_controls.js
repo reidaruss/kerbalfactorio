@@ -1,6 +1,10 @@
 // shot_controls.js: a screenshot of the Options / Controls screen (GP-131).
 // Not an acceptance; `probes/cheats.js` section B2 is. This exists so the
 // controller report can show the screen rather than describe it.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/shot_controls.js \
+//        --out=docs/screenshots/GP131_controls.png
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

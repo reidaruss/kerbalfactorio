@@ -3,6 +3,9 @@
 // passes while the actual button does nothing. Reid reported exactly that:
 // "left click to harvest and place doesnt work".
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/realclick.js
+//
 // This is the same trap the inverted mouse-look fix had. Assert through the
 // event the player generates, or the probe measures the abstraction instead of
 // the game. It is the more important half of standing rule 3.

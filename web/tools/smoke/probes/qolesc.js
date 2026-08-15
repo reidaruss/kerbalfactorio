@@ -1,5 +1,9 @@
 // qolesc.js: Escape is three verbs, and one of them fires when the player means
 // another. With a building in hand, does Escape open the menu or drop it?
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/qolesc.js
+//
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);
