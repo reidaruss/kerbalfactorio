@@ -860,7 +860,7 @@ nothing.
 | File | Parts | Tris (render) | Mats | KB |
 |---|---|---|---|---|
 | `rocket/rocket_parts.glb` | **24 parts, 26 meshes** | see 3.3 | 7 | see 3.3 |
-| `rocket/launch_pad.glb` | pad + clamp, 6 meshes | 1000 | 6 | 65 |
+| `rocket/launch_pad.glb` | pad + clamp, 6 meshes | 6856 | 10 | 498 |
 | `rocket/lander_landed.glb` | 1 assembly, 3 meshes | 2580 | 7 | 119 |
 | `rocket/vfx_engine_plume.glb` | 1 mesh | 142 | 1 | 5 |
 | `world/body_sphere_lod.glb` | 1 sphere, 3 meshes | 1680 | 1 | 32 |
@@ -1047,29 +1047,85 @@ degrees: 2.13 m down, 1.18 m out.
 
 #### `rocket/launch_pad.glb`
 
+> **This section described the retired 8 x 8 m pad until RN-1690 and was wrong
+> in almost every number.** The DW-35 pass rebuilt the asset at 24 x 24 m on
+> Reid's "make it big and make it look good" and moved the clamps from three
+> on a 1.25 m circle to four on a 1.90 m one; GP-76 added the eight stair-tread
+> proxies. None of that reached this page, so a reader checking the doc against
+> the code would have found a 12 m tower, a 1.60 m `socket_vessel` and three
+> clamps, all of which the shipped bytes contradict. `contracts.json` was
+> current throughout, which is why nothing broke; a stale doc is still a bug.
+
 A **placed structure**, so section 2.2 applies exactly as it does to a smelter:
-an **8 x 8 m whole-metre footprint**, pivot at the footprint centre, base on
-`y = 0`, nothing overhanging. 8 is even, so it snaps to a cell **corner**.
-12.00 m tall at the tower crown. 572 tris LOD0, full LOD chain.
+a **24 x 24 m whole-metre footprint**, pivot at the footprint centre, base on
+`y = 0`, nothing overhanging. 24 is even, so it snaps to a cell **corner**, and
+it is 6 structural cells of the DW-32 4 m module. **28.00 m** tall at the tower
+crown. 4256 tris LOD0, 6856 render across the full LOD chain, 10 materials.
 
-Deck at 0.40 m, built as four concrete slabs around a 2.4 m square flame
-opening with a deflector cone entirely below the deck top. Tower at
-`(-3.2, +3.2)` in Blender, a four-leg lattice with ties every 2 m, a lift
-shaft, an umbilical swing arm at 8 m reaching to 1.35 m from the stack axis,
-and a state beacon at the crown on the standard four-colour `OF_EmissiveState`.
+**The deck is raised 2.00 m and that is the whole shape of the thing:** it
+gives the **flame trench** somewhere to go. The trench is a 7.2 m channel
+running the full 24 m of Y, open at both ends, with a tent-ridge blast
+deflector under the vehicle splitting the flow to +Y and -Y. Straddling it is
+a **launch mount**, a steel table flush with the deck carrying the four
+hold-down clamps on the 1.90 m circle and a 3 x 3 m flame hole in the middle.
+Tower at `(-8.0, 0.0)` in Blender, a four-leg lattice on a 2.60 m bay pitch
+with a lift shaft, two service platforms, an umbilical swing arm at 13.60 m
+reaching to 1.30 m from the stack axis, and a state beacon at the crown on the
+standard four-colour `OF_EmissiveState`.
 
-`socket_vessel` is at `(0, 1.60, 0)`: the vessel mates **1.20 m above the
-deck**, held there by the clamps so the engine bell fires into the flame
-opening rather than onto the concrete. Place a vessel by putting its
+`socket_vessel` is at `(0, 2.00, 0)`, **on the deck top**, so the engine bell
+fires straight into the flame hole. Place a vessel by putting its
 `socket_stack_bottom` on that point, which is the same rule the parts publish.
 
 `LaunchClamp` is a **separate ground-pivoted part on the file origin**,
 following the Tier-1 atlas convention: the renderer clones the one mesh and
-places three of them at 120 degree intervals on the circle `socket_clamp`
-marks (radius 1.25 m on the deck top), each rotated to face the axis. Its arm
-reaches exactly to 0.63 m from the axis, touching a 1.25 m hull.
-`Clamp_Release` (frames 1 to 25) swings the arm 70 degrees up and back and is
-**authored holding**, because a pad at rest is a pad holding a rocket.
+places **four** of them at 90 degree intervals on the circle `socket_clamp`
+marks (**radius 1.90 m** on the deck top), each rotated to face the axis. Its
+grip pad's inner face lands at 1.25 m from the axis, which is the DW-29a class
+L hull radius, **by construction rather than by tuning**: local +Y is radially
+outboard, so a point at clamp-local `y` lands at radius `1.90 + y` and the pad
+sits at `y = -0.65`. `Clamp_Release` (frames 1 to 25) swings the arm 70 degrees
+up and back, retracting 0.06 m radially as it goes, and is **authored
+holding**, because a pad at rest is a pad holding a rocket.
+
+**RN-1690, the form pass.** A4's asset list ends "then pad" and neither wave
+took it, so this was the last structure still wearing the arrangement it was
+blocked out with. Six things were added, and each answers a question the asset
+already raised and did not answer:
+
+- **The deck was poured in bays and edged in steel.** Sealant beads on a
+  4.6625 m pitch (the west cap's 23.30 m in five, and the east cap takes the
+  same pitch from the same south end so the two banks line up across the
+  trench), a steel edge angle overhanging the concrete arris around the whole
+  outline, and four tie-down pockets with shackle pins.
+- **The trench has services in it.** A deluge header on each wall in the two
+  clear zones outboard of the deflector, with nozzles, risers, and a caged
+  ladder out on the west wall at the north end.
+- **The clamps read as mechanisms.** A hydraulic barrel with a rod through a
+  gland, a flexible hose to the base plate, four holding-down bolts and two
+  gussets under the hinge head.
+- **A T-0 umbilical mast** on the +X axis at `(4.65, 0.0)`, 5.40 m above the
+  deck, whose boom reaches in to `HULL_R + 0.06` and carries the propellant
+  and electrical umbilicals that drop away at T-0. It is what the propellant
+  tank, the deluge header and the cable run are all *for*; nothing connected
+  the tank to the vehicle before it.
+- **A cable network that terminates**: a tray up the lift shaft, a junction
+  box at the tower base, and an east-bank run to the bunker and the T-0 mast.
+- **Scorch where the plume lands.** `SteelRust` on the flame hole's throat
+  plates, the deflector's cladding and the trench liner's lower band; soot on
+  the concrete outboard of the two trench lips; `SteelWorn` on the launch
+  table's walking plates and the clamp arms' contact strips.
+
+**The shadow ladder is the reason the budget moved.** This pad was the only
+asset in the project at the full 4.0x marginal multiplier: `LOD1` measured
+14090.06 mm and `LOD2` 14100.00 mm against a cascade-2 texel of 210.94, because
+`LOD1` dropped `furniture()` and that is where the three 15.9 m lightning masts
+are. `LOD1` now blocks in every `LOD0` feature standing over one cascade-1
+texel proud of it, at its measured envelope (RN-1623's method), and lands at
+**53.85 mm** against 56.25: cascades draw tiers **0, 1, 1** instead of 0, 0, 0
+and the multiplier is **2.0x**. `LOD2` stays a screen-distance tier at 3030 mm
+and earns nothing, which is recorded rather than fixed; it gained the five
+masts, the tank and the bunker for the 150 m landmark read only.
 
 **Thirteen proxies, not one.** Five are the structure: `col_LaunchPad` and
 `col_LaunchTrench` are the two deck BANKS either side of the flame trench,

@@ -2,7 +2,17 @@
 render_launch_pad.py - assemble the shipped launch pad the way the renderer
 will, stand a class L rocket and a person on it, and photograph it.
 
-    blender --background --python tools/blender/render_launch_pad.py
+    ~/.local/bin/blender501 --background --python tools/blender/render_launch_pad.py
+    "C:/Program Files/Blender Foundation/Blender 5.0/blender.exe" \
+        --background --python tools/blender/render_launch_pad.py
+
+PIN THE VERSION (RN-1690). This tool wrote `blender` bare, which is the hazard
+docs/scope/ART-CAMPAIGN-2026-08-13.md names in its pipeline row: only
+build_ruin and render_ruin pinned 5.0.1 and 79 other invocations did not, so a
+machine with a different Blender on PATH silently renders a different picture
+into the same receipt filename. Both spellings of the pinned 5.0.1 are given
+above because the campaign now runs on Reid's Windows desktop as well as on
+the VM.
 
 Writes docs/screenshots/W12_pad_*.png. Tile them with
 
