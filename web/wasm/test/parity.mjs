@@ -320,14 +320,33 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   const n = M._of_quadmesh_vertex_count(m);
   eq('quadmesh.gridDim', G, e.gridDim);
   eq('quadmesh.vertexCount', n, e.vertexCount);
+  // TIER B, not A: cubed_sphere.h's own contentHash is `hashCombine(ch,
+  // bitsOf(h))` over each vertex's RAW DOUBLE height (see core/include/of/
+  // cubed_sphere.h ~L1027), and heightHash below hashes the identical f64
+  // array in JS. Both were sitting at the eq() default (Tier A, hard-gating)
+  // before this fix, which mistagged them: they are exactly the "continuous
+  // terrain field" this file's own Tier B doc-comment (top of file) already
+  // carves out, and exactly the class BT-101 (docs/web/NUMBERS.md) already
+  // characterised -- a 1-ULP libm difference in a transcendental (there:
+  // Windows mingw-w64 vs Linux g++; here: emscripten/musl vs mingw-w64,
+  // same root cause, cubed_sphere.h warp()=tan(s*pi/4) is the sole producer
+  // of every sampled direction) that WG-6's position-hash design AMPLIFIES
+  // on purpose into an unrelated-looking height, invisible in float32 and
+  // only visible because the hash is taken over raw double bits. The proof
+  // this is that mechanism and not a real port defect lives two lines below:
+  // posHash/nrmHash hash the SAME mesh's f32 positions/normals and PASS,
+  // because f32 quantizes the 1-ULP wobble away -- and quadmesh.h0/h544/
+  // h1088 (below) already sit at Tier B for pulling individual raw doubles
+  // out of this exact array. Gating hard on a hash of an array whose own
+  // members are informational-only was the inconsistency; retiered to match.
   const hlo = M._of_quadmesh_content_hash_lo(m) >>> 0;
   const hhi = M._of_last_hi() >>> 0;
-  eq('quadmesh.contentHashLo', hlo, e.contentHashLo);
-  eq('quadmesh.contentHashHi', hhi, e.contentHashHi);
+  eq('quadmesh.contentHashLo', hlo, e.contentHashLo, TIER.B);
+  eq('quadmesh.contentHashHi', hhi, e.contentHashHi, TIER.B);
 
   const hs = viewF64(M, M._of_quadmesh_heights_f64(m), n);
   let h = fnv(); for (let i = 0; i < n; ++i) h.f64(hs[i]);
-  eq('quadmesh.heightHash', h.end(), e.heightHash);
+  eq('quadmesh.heightHash', h.end(), e.heightHash, TIER.B);
   const ps = viewF32(M, M._of_quadmesh_positions_f32(m), n * 3);
   h = fnv(); for (let i = 0; i < n * 3; ++i) h.f32(ps[i]);
   eq('quadmesh.posHash', h.end(), e.posHash);
@@ -348,8 +367,9 @@ for (let i = 0; i < SAMPLES.length; ++i) {
   const mr = M._of_quadmesh_generate(forge, 2, 5, 7, 11, 0, 1);  // rawBase 1 = the RAW baseline
   const rlo = M._of_quadmesh_content_hash_lo(mr) >>> 0;
   const rhi = M._of_last_hi() >>> 0;
-  eq('quadmesh.rawContentHashLo', rlo, e.rawContentHashLo);
-  eq('quadmesh.rawContentHashHi', rhi, e.rawContentHashHi);
+  // Same contentHash mechanism as above (raw double height bits), same TIER.B.
+  eq('quadmesh.rawContentHashLo', rlo, e.rawContentHashLo, TIER.B);
+  eq('quadmesh.rawContentHashHi', rhi, e.rawContentHashHi, TIER.B);
 
   // CRACK-FREE: the shared edge with the east neighbour must be bit-identical
   // IN WASM TOO (this is the property the whole streaming design rests on).
@@ -897,19 +917,38 @@ function buildChain(deposit) {
     // derives the per-swing pull from the node's own size so every node is the
     // same handful of swings. Node 2 is an iron-ore node, roughly ten times a
     // tree, and it must still clear in the same few swings.
+    //
+    // GP-506 gates ore nodes (coal/iron/copper) behind their matching tool
+    // (requiresToolFor): a bare-hand swing on IronOre is now REFUSED, not
+    // merely paid less. Read the real gate via of_gp_node_harvest_gate rather
+    // than assuming iron ore is bare-hand (0 = HarvestRefusal::None), so a
+    // future gate change on any node kind fails loudly here instead of
+    // silently draining nothing -- which is exactly how this fixture rotted
+    // the first time. Equip the tool the gate itself asks for, matching the
+    // storyline bootstrap order (gather wood/stone, craft a pickaxe, THEN
+    // mine ore) rather than hand-waving a workaround.
     const p0 = nodeState(2);
     const ironBefore = invOf(I.rawIron);
+    const gated = M._of_gp_node_harvest_gate(2) !== 0;
+    if (gated) M._of_gp_add(I.pickaxe, 1);
     let paced = 0;
     while (nodeState(2).remaining > 0 && paced++ < 64) harvest(2, 0, 0);
     eq('gp.pacedNodeDrains', nodeState(2).remaining, 0, TIER.SELF);
-    eq('gp.pacedIsAHandfulOfSwings', paced >= 4 && paced <= 6, true, TIER.SELF);
+    // gameplay.h's kBareHandSwings/kToolSwings (6 / 3, source of truth:
+    // core/include/of/gameplay.h ~L1254 sS.2a) are not exported across the
+    // ABI, so this band is the "write it down, point at the source, fail
+    // loudly when it moves" case NUMBERS.md's PH-101/BT-101 lineage asks for.
+    const swingBand = gated ? [2, 3] : [4, 6];
+    eq('gp.pacedIsAHandfulOfSwings',
+       paced >= swingBand[0] && paced <= swingBand[1], true, TIER.SELF);
     eq('gp.pacedPackHoldsTheNode',
        invOf(I.rawIron) - ironBefore >= Math.floor(p0.initial), true, TIER.SELF);
-    // Put the pack back exactly as it was: the crafting assertions below count
-    // raw iron, and a probe that quietly changes shared state is a probe that
-    // fails somewhere else.
+    // Put the pack back exactly as it was: the crafting assertions below read
+    // the recipe's own bill, and a probe that quietly changes shared state is
+    // a probe that fails somewhere else.
     M._of_gp_remove(I.rawIron, invOf(I.rawIron) - ironBefore);
     eq('gp.pacedPackRestored', invOf(I.rawIron), ironBefore, TIER.SELF);
+    if (gated) M._of_gp_remove(I.pickaxe, 1);
   }
 
   // --- hand crafting: all-or-nothing, and it consumes ----------------------
@@ -937,22 +976,53 @@ function buildChain(deposit) {
       eq(`gp.recipeAt${k}`, scratchI32(M, 4).slice()[0], pinnedOutputs[k],
          TIER.SELF);
     }
-    M._of_gp_recipe_info(0);
-    let r = scratchI32(M, 13).slice();
-    eq('gp.recipeOutput', r[0], I.pickaxe, TIER.SELF);
-    eq('gp.recipeInputs', r[3], 2, TIER.SELF);
-    eq('gp.recipeNotCraftable', r[2], 0, TIER.SELF);      // no raw iron yet
-    M._of_gp_add(I.rawIron, 1);
-    M._of_gp_recipe_info(0);
-    r = scratchI32(M, 13).slice();
-    eq('gp.recipeCraftable', r[2], 1, TIER.SELF);
-    const woodBefore = invOf(I.wood);
+    // GP-506 moved the pickaxe recipe's INPUTS to Stone x2 + Wood x1 (never
+    // RawIron -- RawIron is itself tool-gated, so a pickaxe priced in ore was
+    // a bootstrap deadlock no fresh spawn could ever break). Rather than
+    // retype whichever items it costs today, read of_gp_recipe_info(0)'s own
+    // bill -- [output, outputCount, canCraft, inputCount, (item,have,need)*N]
+    // -- and drive every craftable/consumed assertion off THAT. This is the
+    // GP-624/GP-890 lesson applied to the recipe table: read the game's own
+    // bill, do not transcribe it, so the NEXT recipe change breaks a real
+    // property (does craft consume exactly what it says it costs) instead of
+    // a stale literal.
+    const recipeInfo = (i) => {
+      const n = M._of_gp_recipe_info(i);
+      const p = scratchI32(M, n).slice();
+      const inputs = [];
+      for (let k = 0; k < p[3]; ++k) {
+        inputs.push({ item: p[4 + k * 3], need: p[4 + k * 3 + 2] });
+      }
+      return { output: p[0], canCraft: p[2] === 1, inputs };
+    };
+
+    let info = recipeInfo(0);
+    eq('gp.recipeOutput', info.output, I.pickaxe, TIER.SELF);
+    ok('gp.recipeHasInputs', info.inputs.length >= 1,
+       `${info.inputs.length} inputs`, TIER.SELF);
+
+    // Empty the pack of exactly what the recipe's own bill names, so
+    // "not craftable" tests the real gate instead of assuming which item is
+    // short (Wood in particular is already in the pack from the harvest
+    // assertions above).
+    for (const inp of info.inputs) M._of_gp_remove(inp.item, invOf(inp.item));
+    info = recipeInfo(0);
+    eq('gp.recipeNotCraftable', info.canCraft, false, TIER.SELF);
+
+    // Stock exactly the recipe's own bill, no more.
+    for (const inp of info.inputs) M._of_gp_add(inp.item, inp.need);
+    info = recipeInfo(0);
+    eq('gp.recipeCraftable', info.canCraft, true, TIER.SELF);
+
     eq('gp.craft', M._of_gp_craft(0), 1, TIER.SELF);
     eq('gp.craftMadeTool', invOf(I.pickaxe), 1, TIER.SELF);
-    eq('gp.craftConsumedIron', invOf(I.rawIron), 0, TIER.SELF);
-    eq('gp.craftConsumedWood', woodBefore - invOf(I.wood), 1, TIER.SELF);
+    // Every input the bill named is now gone -- exactly what it said it cost,
+    // no more (the pack held exactly `need` of each going in).
+    eq('gp.craftConsumedInputs',
+       info.inputs.every((inp) => invOf(inp.item) === 0), true, TIER.SELF);
     eq('gp.craftAgainFails', M._of_gp_craft(0), 0, TIER.SELF);
-    eq('gp.craftFailConsumedNothing', invOf(I.wood), woodBefore - 1, TIER.SELF);
+    eq('gp.craftFailConsumedNothing',
+       info.inputs.every((inp) => invOf(inp.item) === 0), true, TIER.SELF);
   }
 
   // --- the furnace: completes on the tick it should, stalls when starved ---
