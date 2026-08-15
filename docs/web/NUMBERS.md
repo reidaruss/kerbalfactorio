@@ -1769,3 +1769,12 @@ Three transferable parts:
   nobody had cause to cross them until the red was triaged. Prefer the
   conserved, downstream quantity (what the player is HOLDING) over any record of
   what was meant to be handed over.
+
+### A LOOPBACK BIND SILENTLY SHADOWS A WILDCARD BIND ON THE SAME PORT, AND IT CROSSES LANES (found 2026-08-16 by the gameplay-design verifier, recorded by Admin)
+
+Two agents on this box served their own builds on the same port number: one bound `0.0.0.0:4972`, the other `127.0.0.1:4972`. Windows resolves a loopback connection to the MOST SPECIFIC binding, so the `127.0.0.1` socket answered every `http://127.0.0.1:4972` request for as long as both were up, and the wildcard server sat there serving nobody. Neither side saw an error: `--strictPort` does not protect against this, because it only checks whether the specific address being bound is free. Any probe the first lane ran in that window was measuring the SECOND lane's tree.
+
+This is the worst class of instrument defect this file exists to catch, because every reading looks normal and the contamination is invisible from both sides. It is also not hypothetical: it happened during a verification whose verdict was load bearing, and the verifier only rescued its own result by noticing that a deliberate source edit changed the probe's output, which proves the page was loading ITS bundle and nothing else could have.
+
+**BINDING RULES FOR EVERY LANE AND VERIFIER FROM NOW ON.** (1) Bind `127.0.0.1` explicitly, never `0.0.0.0`, unless the run genuinely needs LAN access. (2) Choose a port unlikely to collide and do not reuse a port another lane is known to be on. (3) **PROVE THE SERVER IS YOURS BEFORE TRUSTING ONE NUMBER**: write a unique sentinel into your own `dist` (a file whose name or contents nobody else would produce), fetch it over the port you are about to use, and refuse to proceed if it does not come back. A port that answers is not evidence that it answers for YOU. (4) Kill your server by PID when done, which the project already requires for a different reason.
+
