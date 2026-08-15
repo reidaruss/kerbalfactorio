@@ -384,18 +384,100 @@
   log.push(`pad #${pad.id} site ${pad.siteId} cell ${pad.i},${pad.j},${pad.level}`);
 
   await sleep(0.2);
-  // GP-920 to GP-934, RECORDED NOT CHASED FURTHER: re-aiming here (the same
-  // `aimAtPadBlock` used above) does not help, and neither does leaving the
-  // crosshair exactly where it was for the successful placement above --
-  // both land on `[-3,-2,0]` rather than the pad's own `[i0,j0,0]`, missing
-  // 6 of 36. The one difference from the placement this check follows is
-  // that a 28 m pad now stands where a flat, walkable deck used to be, so
-  // this is most likely the SAME march-tolerance class of issue as the fix
-  // above, just triggered by the pad's own (much taller, non-flat) collision
-  // geometry instead of a flat deck plane, and not one this lane's effort
-  // budget covers. See the residual note in `docs/controllers/gameplay.md`.
+  // GP-935 to GP-949, RE-DIAGNOSED: GP-924's "march-tolerance class" GUESS
+  // DOES NOT HOLD. Instrumented (`padBlockAt` only ever reads the aim hit
+  // point's EAST/NORTH local coordinates, never its height, so elevation was
+  // never the mechanism): re-aiming at `padC` right after pad #1 goes down
+  // resolves the SAME wrong block on every run (`[-3,-2,0]`, one row off),
+  // and it is wrong because `aimHit` marches against solids as well as
+  // ground (StructurePlacement.ts), and pad #1's own 28 m body is now
+  // registered in that SAME solid set (`LaunchPad.ts` shares `Structures`'
+  // one `StructureBodies` deliberately, GP-58's own design). Every vantage
+  // tried that still looks AT pad #1's own footprint -- a bigger standoff,
+  // straight down the flame trench, even the block's own bare corner --
+  // hits pad #1's tall, non-flat body before the ray would reach the flat
+  // registry-truth ground the ORIGINAL platform pass read, and an earlier
+  // hit point is a NEARER (l.x, l.y), which is a real, un-aimed-at cell,
+  // not noise. A player standing where this probe stands would misresolve
+  // the same way, for the same reason: you cannot aim THROUGH the pad you
+  // are trying to overlap.
+  //
+  // So the negative control is honestly re-aimed rather than re-tried at the
+  // same spot: a SECOND, fully-decked 6 x 6 block, offset three cells north
+  // of the first (`overlapping()` in LaunchPadPlacement.ts counts any offset
+  // under `cells` as "too close", so three is comfortably inside the rule
+  // and its own footprint is far enough from pad #1's tower and launch
+  // table for an unobstructed aim). This does not weaken the control: it
+  // still proves a pad is refused BY OVERLAP against an existing one, on a
+  // target the aim can be trusted to have actually resolved, rather than
+  // asserting a reason string against a block nobody aimed at.
+  await hold(fSlot);
+  const i1 = i0, j1 = j0 + 3;
+  let filled2 = 0;
+  const layAt = async (ci, cj) => {
+    if (laidAt(ci, cj)) return false;
+    const c = cellPoint(ci, cj);
+    const STANDOFF_M = 3;
+    const standAt = { x: c.x - site.north.x * STANDOFF_M,
+      y: c.y - site.north.y * STANDOFF_M, z: c.z - site.north.z * STANDOFF_M };
+    const cr = Math.hypot(standAt.x, standAt.y, standAt.z) || 1;
+    of.teleport(latDeg(standAt.y, cr), Math.atan2(standAt.z, standAt.x) * D, 0);
+    await sleep(0.25);
+    await aimAt(c);
+    const before = of.game().structures.parts.length;
+    of.input.act(['use'], 3);
+    await sleep(1 / 20);
+    return of.game().structures.parts.length > before;
+  };
+  for (let di = 0; di < CELLS; ++di) {
+    for (let dj = 0; dj < CELLS; ++dj) {
+      if (await layAt(i1 + di, j1 + dj)) filled2++;
+    }
+  }
+  // The same repair pass as section 2's, for the same reason: a crosshair
+  // swung across ground already tiled edge to edge stops on the nearest
+  // deck's own top face rather than the bare ground beyond it.
+  for (let pass = 0; pass < 40; ++pass) {
+    let gap = null;
+    for (let di = 0; di < CELLS && gap === null; ++di) {
+      for (let dj = 0; dj < CELLS && gap === null; ++dj) {
+        if (!laidAt(i1 + di, j1 + dj)) gap = [i1 + di, j1 + dj];
+      }
+    }
+    if (gap === null) break;
+    if (await layAt(gap[0], gap[1])) { filled2++; continue; }
+    log.push(`second block repair: cell ${gap} would not take a foundation`);
+    break;
+  }
+  log.push(`second block [${i1},${j1}]: ${filled2} foundations laid`);
+
+  await hold(padSlot);
+  const c2 = cellPoint(i1 + Math.floor(CELLS / 2), j1 + Math.floor(CELLS / 2));
+  const wantsBlock2 = (g) => g !== null && g.addr !== null
+    && g.addr[0] === i1 && g.addr[1] === j1 && g.addr[2] === 0;
+  {
+    const STANDOFF_M = 3;
+    const standAt = { x: c2.x - site.north.x * STANDOFF_M,
+      y: c2.y - site.north.y * STANDOFF_M, z: c2.z - site.north.z * STANDOFF_M };
+    const cr = Math.hypot(standAt.x, standAt.y, standAt.z) || 1;
+    of.teleport(latDeg(standAt.y, cr), Math.atan2(standAt.z, standAt.x) * D, 3);
+    await sleep(0.5);
+    await aimAt(c2);
+    if (!wantsBlock2(ghost())) {
+      const y0 = of.world().observer.yawDeg, p0 = of.world().observer.pitchDeg;
+      outer2:
+      for (const dp of [0, -2, 2, -4, 4, -6, 6]) {
+        for (const dy of [0, -3, 3, -6, 6]) {
+          of.look(y0 + dy, Math.max(-85, Math.min(85, p0 + dp)));
+          await sleep(1 / 30);
+          if (wantsBlock2(ghost())) break outer2;
+        }
+      }
+    }
+  }
   const g2 = ghost();
-  check('a second pad on the same platform is refused BY OVERLAP',
+  log.push(`second-block ghost, aimed unobstructed: ${JSON.stringify(g2)}`);
+  check('a second pad, offset onto the same platform, is refused BY OVERLAP',
     g2 !== null && g2.ok === false && /too close/.test(g2.reason), g2?.reason);
 
   // ======================================================================
