@@ -32,18 +32,35 @@
 //      housing. The connection must vanish, a refusal must appear naming the
 //      port and the fix, and the smelter must STOP BEING FED.
 //
-//      IT IS THE HOPPER THAT IS ASSERTED, NOT THE OUTPUT, and the first draft
+//      IT IS THE FEED THAT IS ASSERTED, NOT THE OUTPUT, and the first draft
 //      of this probe got that wrong in a way worth recording. It asserted
 //      `ironMade === 0` across window B, and measured 20: MORE than the 18 the
 //      connected window made. Nothing was broken. A smelter that loses its feed
 //      keeps smelting what it already holds, which is what a real furnace does
 //      and what /core has always done, and 27 units of buffered ore is 27 more
 //      units of iron whatever the belt is doing. The assertion was a guess about
-//      a symptom rather than a statement of the claim. The claim is that the
-//      BELT STOPPED FEEDING IT, so the number that says so is the input buffer:
-//      it must fall while the port is turned away and rise again when it is
-//      turned back. Standing rule 11's own lesson, paid for cheaply this time:
-//      assert the property the code actually claims.
+//      a symptom rather than a statement of the claim. Standing rule 11's own
+//      lesson, paid for cheaply that time: assert the property the code claims.
+//
+//      THE SECOND DRAFT ASSERTED THE BUFFER LEVEL AND THAT WAS WRONG TOO, for
+//      the opposite reason, and this one cost a red (FS-114, 2026-08-16). It
+//      required the hopper to FALL across window B and to RISE across window C,
+//      which is only measurable while the hopper HOLDS something. Measured on
+//      this scene by polling the hopper 40 times a window instead of twice:
+//      window A `input` was 0 in 39 of 40 samples and 1 in one, window C the
+//      same, and window B 0 in 40 of 40. THE PEAK HOPPER DEPTH ON A CONNECTED
+//      MACHINE IS ONE UNIT. The 27 units the paragraph above describes are
+//      gone: `SMELT_TICKS` is 60, so the smelter can eat 60 ore a 20 s window
+//      while the drill on this patch delivers 17 to 19, and a machine that
+//      outruns its supply by three to one never accumulates anything to drain.
+//      So `inputFell` was a 1-in-40 coin flip standing in for the claim, which
+//      is the "metric that is flat in its own independent variable" trap in
+//      NUMBERS.md: it read the same, false, whether the belt was feeding or not.
+//
+//      WHAT IS ASSERTED NOW IS WHAT ARRIVED (FS-115), which is conserved and
+//      does not care how deep the buffer is: ore in = ore smelted + change in
+//      the hopper. Window A 17, window B 0, window C 17, on the same machine
+//      and the same 20 s. A and C are the on-scene positive control for B.
 //   C  IT IS RECOVERABLE. Three more presses bring the smelter back round. The
 //      connection returns and production resumes. That is the whole answer to
 //      "is a refusal a deadlock": the player turns the machine and it works.
@@ -92,7 +109,7 @@
 // this file exists rather than a rerun of shortline.js:
 //   portMated          proximity has no ports and no gap to report
 //   refusedAfterTurn   proximity does not care which way a housing faces
-//   inputFell          so the hopper kept filling through the turn
+//   oreArrived 0 in B  proximity goes on feeding through the turn
 //   recovered          nothing to recover from
 //   insertersDrawn 0   proximity draws one arm per connection
 //
@@ -341,8 +358,28 @@
       label,
       coreTicks: a.coreTicks - b.coreTicks,
       ironMade: (s1?.output ?? 0) - (s0?.output ?? 0) + (ironIn() - i0),
-      // BOTH ENDS OF THE HOPPER, because the delta is the measurement and one
-      // reading cannot be one. See the header for why this and not `ironMade`.
+      // ORE THAT ARRIVED AT THE MACHINE THIS WINDOW, which is FS-115: the one
+      // number phase B is actually about, and a conserved one. Every unit that
+      // reaches the hopper is either still in it at the end of the window or
+      // was smelted, so `consumed + (hopperEnd - hopperStart)` is what came in
+      // whatever the buffer happens to be doing. `placeSmelter` (automation.h
+      // line 151) authors the recipe as inputCount 1 -> outputCount 1, so one
+      // ingot produced IS one ore consumed and no ratio is transcribed here.
+      //
+      // Production is read from `producedOfOutput`, /core's own tally, and NOT
+      // from the output buffer: phase D hangs a belt on the output face and
+      // carries ingots off, so the buffer delta undercounts there (measured: 12
+      // against 17). The tally is zeroed by a network REBUILD, so `rebuilt`
+      // below is published and asserted -- a rebuild inside a window would zero
+      // the tally and read exactly like a machine that was never fed.
+      produced: (s1?.producedOfOutput ?? 0) - (s0?.producedOfOutput ?? 0),
+      oreArrived: (s1?.producedOfOutput ?? 0) - (s0?.producedOfOutput ?? 0)
+        + ((s1?.input ?? 0) - (s0?.input ?? 0)),
+      rebuilt: a.rebuilds - b.rebuilds,
+      // BOTH ENDS OF THE HOPPER. REPORTED AND NO LONGER ASSERTED (FS-114): see
+      // the header. The hopper's measured peak on this scene is ONE unit, so a
+      // strict fall between two end samples was a 1-in-40 coin flip and could
+      // not distinguish a fed machine from a starved one.
       inputBefore: s0?.input ?? null,
       smelterInput: s1?.input ?? null,
       inputFell: (s1?.input ?? 0) < (s0?.input ?? 0),
@@ -757,11 +794,18 @@
       && turned.refusal.reason.length > 20
       && typeof turned.refusal.fix === 'string'
       && turned.refusal.fix.length > 10
-      // The hopper DRAINED with nothing refilling it, and refilled once the
-      // port came back. See the header: this is the claim, and `ironMade` is
-      // not, because a smelter with 27 ore in it keeps working for a while.
-      && phaseB.inputFell === true                              // FAILS-OLD
-      && phaseC.inputRose === true
+      // NOTHING ARRIVED AT THE MACHINE while the port faced away, and ore
+      // arrived again once it came back. FS-115: this is the claim, measured as
+      // a conserved quantity rather than as the buffer level (see `measure`,
+      // and FS-114 in NUMBERS.md for what the buffer reading could not do).
+      // A and C are the on-scene positive control: the same expression has to
+      // go non-zero on the same machine in the same window length, or the zero
+      // in B says nothing at all.
+      && phaseA.oreArrived > 0
+      && phaseB.oreArrived === 0                                // FAILS-OLD
+      && phaseC.oreArrived > 0
+      // ... and no window silently zeroed the tally underneath the reading.
+      && phaseA.rebuilt === 0 && phaseB.rebuilt === 0 && phaseC.rebuilt === 0
       // C: and turning it back fixes it. A refusal is recoverable.
       && relinked !== null                                      // FAILS-OLD
       && phaseC.ironMade > 0
