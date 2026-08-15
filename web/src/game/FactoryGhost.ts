@@ -122,6 +122,36 @@ function march(ground: (x: number, y: number, z: number) => number,
   // The cure is the same and it is a POINT ON THE GROUND rather than a point
   // along the ray: take the aim direction's component in the local tangent
   // plane, step the fallback along that, and put it on the surface.
+  //
+  // FS-129: THE 2.6 m IS A DISCONTINUITY AND IT WAS BUILT, MEASURED AND
+  // REJECTED ON ITS NUMBERS. Recorded here so the next reader does not spend
+  // the afternoon this one did.
+  //
+  // The objection is real. An aim that grazes the ground at 8.9 m and one that
+  // misses it by a hair are the same gesture, and they resolve 6.3 m apart,
+  // because the first is a point 8.9 m out and the second is a point 2.6 m
+  // from the player's own feet. The obvious cure is to answer a failed march
+  // with the aim's own GROUND SHADOW AT THE REACH LIMIT: the tangent component
+  // of the unit direction, scaled by `REACH_M` and left unnormalised, which is
+  // where the ray stands at `t = REACH_M` dropped onto the surface. It carries
+  // no new constant, it is continuous with the aimed case, and it degrades to
+  // zero as the aim goes vertical because `|tangent|` is `cos(pitch)`.
+  //
+  // IT IS WRONG FOR THE CONSUMER THAT MATTERS, WHICH IS THE HELD DRAG, and the
+  // reason is that a held drag walks its run all the way to the target. Leading
+  // by the full 9 m means a run commits nine metres of belt in the direction
+  // the player was looking a second ago, and a drag is steered by a WALK as
+  // much as by a look: the moment the route turns, those nine metres are past
+  // the corner and pointing the wrong way. Measured on `assembler.js`'s stone
+  // haul with this in place and nothing else changed: the run overshot the
+  // haul's single 90 degree corner by SEVEN CELLS, ending its tip at `m1:-37,24`
+  // while the route turned east at `j` 17, and the tiles laid fell from 63 to
+  // 34 over the identical 915 ticks and 47.8 m of walk.
+  //
+  // The short lead is what makes the gesture track the player, and tracking the
+  // player is most of what it is for. So the discontinuity stays here and the
+  // drag is taught to know about it instead: see `DRAG_FILL_UNAIMED_MAX` and
+  // FS-131 in `BuildDrag.dragRun`.
   if (hitT >= 0) {
     return { x: o.x + d.x * hitT, y: o.y + d.y * hitT, z: o.z + d.z * hitT,
              found: true };
