@@ -12,7 +12,7 @@ ART-DIRECTION.md survives almost intact. Two amendments D-020 forces: (a) refere
 - Voxel dug walls: vertexColors, zero maps. Furthest from bar, and under the player's nose whenever they dig.
 - panel family (all machines, plates, suit): roughness p05..p95 spread 0.032 = the plastic read on everything. THE headline defect.
 - bark, coarse, ore missing albedo maps in places; ore is the closest family to the bar.
-- Ruin is the structure high-water mark (Ruin_LOD1 fails check_shadow_lod.py, 1134.94 mm vs 52 mm).
+- ~~Ruin is the structure high-water mark (Ruin_LOD1 fails check_shadow_lod.py, 1134.94 mm vs 52 mm).~~ **STRUCK 2026-08-15 (RN-1718): re-measured off the shipped bytes, `Ruin_LOD1` is 50.76 mm, inside cascade 1's 56.25 mm. The ruin form pass fixed it. The ruin is still the structure high-water mark.**
 - Placeholders owed: research_station.glb (borrows assembler), scanning_antenna.glb (borrows power_pole), plus their ASSET-SPECS §4 and contracts.json rows.
 - Sky/atmosphere genuinely good; IBL PMREM at 64² (Renderer.ts:197) mushes all specular. Shadows PCFShadowMap (Renderer.ts:136).
 - Post has GTAO, contact shadows, bloom, ACES+grade, FXAA; lacks LUT, TAA, auto-exposure, sharpening. QualityKnobs.postfx is dead.
@@ -59,6 +59,47 @@ A0 look-dev target frames -> A1 light/post foundation -> A2a render map capabili
 3. Player model: out; feel workstream.
 4. Texture budget: KTX2 + 1024 raise (~15-20 MB compressed), 2048 for panel alone.
 5. Tiling families + a decal layer; per-asset UV unwrap and AO baking REFUSED for now (preserves the byte-identical determinism gate); revisit only if the smelter proof shot says tiling is the binding constraint.
+
+## THE LOOK AUDIT, 2026-08-15 (RN-1710 to RN-1726, `lane/look-audit`). THE POST-A6 QUEUE
+
+A0 to A6 have all landed. All seven canonical shots were re-captured at current
+`main` on real Windows D3D11 (1600x900, HUD-free, post asserted on) and judged
+against the SE bar. **The full ranked list, with the measurement, the frame
+share and the costed fix for each item, is §2.8 of
+[rendering.md](../controllers/rendering.md); it is the source of truth and this
+is the index into it.** Ranked by impression-per-unit-work, not by severity:
+
+| # | What still reads unfinished | The measurement | Cost |
+|---|---|---|---|
+| R1 | Ground material at walking distance | terrain `iqr` 22.13 / 16.06 vs the smelter plate's 53.66 in the same light; largest element in 5 of 7 shots | LARGE, and A3 already refused tangent-frame terrain with a reason |
+| R2 | The understorey is flat cards, and the near-shadow budget is spent on them | 46 subtrees at the full 4.0x multiplier; `tree_conifer` LOD1 1250.89 mm vs a 56.25 mm cascade texel | MEDIUM-LARGE; geometry, not resolution (A5 already did 1024 px) |
+| R3 | Masonry tiles at 0.6 m on a 35.2 m ruin | ~59 repeats across the cella; `?tile=stone:1.8` fixes it with bit-identical `panel` controls | MEDIUM: a `masonry` family split. **The global knob is REFUSED**, see below |
+| R4 | The first-person view model | in 5 of 5 ground frames, ~7.8 per cent of the frame as an upper bound | MEDIUM, and **A7 put it out of scope**, so it needs Reid's ruling first |
+| R5 | The station shot is not reproducible | box luma 21.78 / 3.73 / 5.69 at an identical pin, a 5.8x spread | SMALL-MEDIUM, and it is a harness item: needs an orbital-position pin |
+| R6 | The two brightest surfaces on the hero machine are untextured | peep `iqr` 0.93, sight strip 4.15, against 40.54 and 72.68 beside them | SMALL-MEDIUM: one `ember` emissive tile; the client slot already exists |
+| R7 | The dusk frame reads as midday | sky `warm` -87.69 high, -20.09 low; **§2b's own target sanctions this** | SMALL, but frozen by Early Decision 1 (hold the grade) |
+
+**This lane landed no art change, and that is the finding rather than a
+shortfall.** Two items looked cheap enough to land inside the block and each was
+measured false. The `stone` `tile_m` raise fixes the ruin but the family's
+consumers span 0.18 m to 35.2 m, a factor of 195, and at 1.8 a 1.4 m boulder
+carries 0.78 repeats — RN-953's own "spattered concrete" failure, so the family
+has to be split rather than retuned. The station's `timeOfDay` constant looked
+like a one-character fix until the confirming re-take came back 5.8x darker,
+which exposed a real non-determinism: `setTime` moves the sun and not the
+7.67 km/s station. Both changes were reverted and `web/` is byte-identical to
+`HEAD`.
+
+**Honest greens, so the next wave does not re-audit them:** `validate_glb --all`
+56/56, `check_coplanar` 0 over allowance, `forestfloor` on §2.1's own number to
+the digit, and **the machines' plate work is at the bar** (`sunface` iqr 53.66 /
+p95 127.73 / sat 0.175) — A2b and A4 stood up under a hostile look and nothing
+on the queue is about them.
+
+**One process debt.** A0 was to deliver five canonical shots **and a written
+target grade each**. The shots exist; the target grades were never written
+anywhere. Write them before the next wave, or the next audit has no baseline
+either.
 
 ## Dispatch order
 1. A0+A1 as one opus lane (RN-1405+), Windows D3D for all judged frames. Deliverable: five before/after pairs.
