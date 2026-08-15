@@ -684,17 +684,48 @@
   // still holds `use` keeps the button down, which is how the walk is steered.
   of.input.tape([{ hold: 5000, actions: ['use'], keys: ['KeyW'] }]);
   await sleep(0.2);
+  // GP-761 INSTRUMENTATION. `sleep` is `of.run` (Loop.run): it stops the real
+  // rAF loop and drives a SYNTHETIC clock for the requested seconds, which its
+  // own header says exists BECAUSE headless Chrome's rAF pump is bursty and
+  // otherwise "a 20 second scripted walk advanced 90 fixed ticks". So the tick
+  // count this gesture consumes should be a deterministic function of how many
+  // waypoint iterations run below, not of real wall-clock load; logged (not
+  // asserted) per waypoint so a stall can be told apart from "ran out of route"
+  // and a tick-count variance can be told apart from a same-ticks/different-
+  // position variance (the latter would point at async terrain/collision, not
+  // at the tape or the of.run() clock).
+  let routeM = 0;
+  { let prev = stoneBelt0.pos; for (const wp of way) { routeM += gd(prev, wp); prev = wp; } }
+  const dragHaul = [];
+  const tick0 = of.world().tick;
+  const wall0 = Date.now();
+  let prevEye = eye();
+  let coveredM = 0;
   for (const wp of way) {
     for (let k = 0; k < 16 && gd(eye(), wp) > 5.0; ++k) {
+      const tBefore = of.world().tick;
       await sleep(0.35);
       aimAtPoint(wp);
+      const e = eye();
+      coveredM += gd(prevEye, e);
+      prevEye = e;
+      dragHaul.push({ k, ticks: of.world().tick - tBefore,
+        distToWp: +gd(e, wp).toFixed(2), longestDrag: of.build().longestDrag });
     }
   }
   of.input.tape([{ hold: 6, keys: [] }]);
   await sleep(0.4);
   const draggedTiles = of.build().longestDrag;
+  const dragTicks = of.world().tick - tick0;
+  const dragWallMs = Date.now() - wall0;
   log.push(`the drag laid ${draggedTiles} tiles in one hold; `
     + `${fac().list.filter((b) => b.kind === 'belt').length} belts standing`);
+  log.push(`GP-761: drag consumed ${dragTicks} ticks over ${dragWallMs} ms real `
+    + `time (${(dragTicks / Math.max(1, dragWallMs / 1000)).toFixed(1)} ticks/s `
+    + `effective), eye travelled ${coveredM.toFixed(1)} m against a `
+    + `${routeM.toFixed(1)} m waypoint route (${way.length} waypoints, `
+    + `${dragHaul.length} of.run(0.35) calls, last call k=${dragHaul.at(-1)?.k ?? -1} `
+    + `stopped ${dragHaul.at(-1)?.distToWp ?? -1} m from its waypoint)`);
 
   // THE LAST FEW CELLS, ONE SNAPPED PRESS EACH. A drag ends wherever the
   // crosshair is and the crosshair is no more accurate than the 9 m aim march,
@@ -721,28 +752,74 @@
     .reduce((a, b) => (b.id > a.id ? b : a));
   const shortOfPortB = (p) => dot(sub(p, pbPoint), R);
   let closed = 0;
-  // GP-760 NOTE (not fixed in this lane, see the probe's own report below):
-  // once the smelter-outlet defect this lane fixes stopped blocking the run,
-  // this loop measured the stone haul's second leg stopping far short of
-  // `endT` on the FS-73-scale world (this lane's run: 14 closes exhausted
-  // the budget with the run still ~43 m short, an order of magnitude beyond
-  // what 14 one-cell presses was ever sized for). That is the drag's own
-  // route undershooting, not this budget; raising the cap alone was tried
-  // and cost several unbounded minutes per run without reliably finishing,
-  // which is not a safe trade this lane has time to validate. Left at its
-  // original value and reported honestly as GP-761 (recorded below) for the
-  // factory-sim/gameplay lane that owns the stone-haul route.
-  for (let k = 0; k < 14; ++k) {
+  // GP-761 DIAGNOSED HERE, AND HALF FIXED (probe-side); the other half is a
+  // game-side finding recorded below rather than worked around.
+  //
+  // THE OLD LOOP always extended from `lastBelt()`'s OWN `fwd` (`tailOut`,
+  // the same helper every OTHER chain step in this file uses correctly), on
+  // the assumption that the drag's tip is oriented toward the port. Measured
+  // across TWO runs on the identical seed, it is not: `dot(t.fwd, R)` at the
+  // tip read 0.9975 to 1.0 -- pointing AWAY from port B, not toward it -- so
+  // EVERY press in both runs made `shortOfPortB` WORSE by exactly one cell
+  // (`closedThisPressM: -1`, 14 of 14 presses, both runs, bit-for-bit the
+  // same shape). That is why raising the budget alone (tried by the prior
+  // lane) cost "several unbounded minutes ... without reliably finishing": a
+  // loop that diverges by a fixed amount every press never converges no
+  // matter how large its budget, it only spends longer getting further away,
+  // and each press is not cheap (a `findGhost` spiral plus a walk).
+  //
+  // THREE WAYS OF ASKING FOR THE NEXT TILE WERE TRIED, NOT ONE, before this
+  // was accepted as a game-side finding: (1) the tip's own `fwd`, the
+  // original; (2) aiming straight down `-R` at the port axis while still
+  // asking for the TIP'S `socket_belt_out`; (3) aiming the same way but
+  // asking for the tip's `socket_belt_in` instead, on the theory that a new
+  // tile feeding INTO the tip would itself point the right way and hand the
+  // NEXT press a correctly-oriented tip. All three found a valid snap and all
+  // three still moved AWAY from the port by one cell (see NUMBERS.md GP-761:
+  // 'out(fwd)' -1, 'out(-R)' -1, 'in(-R)' -1). `FactorySnap` is resolving the
+  // next cell from the belt's actual authored geometry, not from the aim
+  // point or which named socket the probe asked to match, so no aim strategy
+  // available through this probe's placement API can route around it. That
+  // rules out "the probe is aiming badly" as the cause; what remains is the
+  // drag's own belt topology at its stop point, which is factory-sim's, not
+  // this probe's, to fix (see the routed finding below).
+  //
+  // THE FIX ON THIS SIDE is therefore not a cleverer aim, it is refusing to
+  // trust an untested one: MEASURE every press rather than assume it helped.
+  // The instant a press fails to reduce `shortOfPortB`, stop -- report the
+  // divergence by name and leave the rest of the budget unspent, rather than
+  // burning it moving backward. That bounds the loop's worst case to O(1)
+  // presses instead of O(budget) whenever the tip is oriented the wrong way,
+  // while leaving it free to close a genuinely-reachable gap in one pass
+  // should a future world's drag stop with its tip correctly oriented.
+  const pressLog = [];
+  for (let k = 0; k < 50; ++k) {
     const t = lastBelt();
-    if (shortOfPortB(t.pos) < 0.5) break;
+    const shortBefore = shortOfPortB(t.pos);
+    if (shortBefore < 0.5) break;
     const made = await snapPlace('belt', tailOut(t), 'socket_belt_out',
       add(t.pos, t.fwd, -3.4));
-    if (made === null) break;
+    if (made === null) {
+      pressLog.push({ k, shortBefore: +shortBefore.toFixed(2), made: false });
+      break;
+    }
+    const shortAfter = shortOfPortB(made.pos);
+    const closedThisPressM = +(shortBefore - shortAfter).toFixed(2);
+    pressLog.push({ k, shortBefore: +shortBefore.toFixed(2),
+      shortAfter: +shortAfter.toFixed(2), closedThisPressM });
+    if (closedThisPressM <= 0) {
+      log.push(`GP-761: press ${k} moved the run AWAY from port B `
+        + `(${shortBefore.toFixed(2)} -> ${shortAfter.toFixed(2)} m short); `
+        + 'stopping honestly rather than spending the rest of the budget '
+        + 'diverging further');
+      break;
+    }
     closed++;
   }
   const tipShortM = +shortOfPortB(lastBelt().pos).toFixed(2);
   log.push(`closed the last ${closed} cells by snapping; the run tip is `
     + `${tipShortM} m short of the port-B cell (negative means past it)`);
+  log.push(`GP-761 press-by-press: ${JSON.stringify(pressLog)}`);
 
   // ==========================================================================
   // 7. THE TWO LINKS
@@ -1085,6 +1162,10 @@
       stoneRunItems: stoneRun?.items ?? -1,
       handLoadPresses: loads, stoneInPack,
       patchesApartM: +apartM.toFixed(1),
+      // GP-761 diagnosis numbers, see the two GP-761 log lines above for prose.
+      dragTicks, dragWallMs, dragCoveredM: +coveredM.toFixed(2),
+      dragRouteM: +routeM.toFixed(2), dragCalls: dragHaul.length,
+      dragHaul, pressLog,
     },
     starved,
     control,
