@@ -239,6 +239,72 @@
   // file's own GP-905 finding), is what actually resolves it.
   const endTarget = socketWorld(wall, 'socket_end_l') ?? socketWorld(wall, 'socket_end_r');
   let runAim = null;
+  /** GP-935 to GP-949. WHY THE GP-915 RESIDUAL WAS THE PLATFORM, NOT THE RULE:
+   *  the run continuation off a wall's `socket_end` moves to a NEW cell along
+   *  the wall's own length axis, and this file's platform is only ever
+   *  `deckA`/`deckB`, one line of cells wide -- so the continuation, by
+   *  construction, lands somewhere this two-deck line never reached. Read
+   *  `supported()` (StructurePlacement.ts): a wall on axis 0 needs a deck at
+   *  (i, j) or (i, j-1); axis 1 needs (i, j) or (i-1, j). Measured live on
+   *  this exact platform: `deckA` (0,0,0,0,0), `deckB` (-1,0,0,0,0) (adjacent
+   *  in i only), the first wall caught on `deckB`'s edge, and the failing
+   *  run-continuation ghost read `addr:[-1,1,0,1]` (axis 1) -- which needs a
+   *  deck at (-1,1) or (-2,1), NEITHER of which the i-only deckA/deckB pair
+   *  ever laid (both sit at j=0). The rule counted correctly; the platform
+   *  was one cell short of what THIS PARTICULAR run needs. So the honest fix
+   *  extends the platform by the one cell the wall's own address names,
+   *  computed from the site's own frame (the same `worldOf` arithmetic
+   *  `StructureGrid.ts`'s `anchorOf` uses) rather than guessed at: an earlier
+   *  attempt that placed a deck by AIMING NEAR the refused address (rather
+   *  than computing its exact world centre) landed on whichever neighbour
+   *  cell GP-37's own socket-snap preferred, which is why "lay a third deck
+   *  first" was tried and did not resolve it before this fix. */
+  const missingDeckCell = async (failedGhost) => {
+    if (failedGhost === null || failedGhost.ok || failedGhost.addr === null
+      || !failedGhost.reason.includes('deck under it')) return false;
+    const [wi, wj, wlevel, waxis] = failedGhost.addr;
+    const site = st.sites.find((x) => x.id === failedGhost.site);
+    if (site === undefined) return false;
+    const cand = waxis === 0 ? [[wi, wj], [wi, wj - 1]] : [[wi, wj], [wi - 1, wj]];
+    for (const [ci, cj] of cand) {
+      const e = (ci + 0.5) * M.cellM, n = (cj + 0.5) * M.cellM, u = wlevel * M.storey;
+      const target = [
+        site.o.x + site.east.x * e + site.north.x * n + site.up.x * u,
+        site.o.y + site.east.y * e + site.north.y * n + site.up.y * u,
+        site.o.z + site.east.z * e + site.north.z * n + site.up.z * u,
+      ];
+      // STAND BACK before aiming, same fix class as GP-920 to GP-934's pad.js
+      // repair pass and this file's own wall-end stand-off: teleporting
+      // almost directly OVER the target (small horizontal offset, ~3 m of
+      // pure altitude) makes the eye-to-target aim nearly straight down,
+      // which is the ill-conditioned near-zero-horizontal case `aimAt`'s own
+      // yaw solve is unstable in (measured: an early version of this fix
+      // teleported straight above and landed on a socket 7.2 m from the
+      // target, well outside the 3 m snap radius, because the resolved ray
+      // had nothing to do with the intended point). Offsetting along the
+      // site's own south first, then aiming, gives a normal, well-conditioned
+      // angle instead.
+      const standAt = [target[0] - site.north.x * 3, target[1] - site.north.y * 3,
+        target[2] - site.north.z * 3];
+      const sr = Math.hypot(...standAt) || 1;
+      const slat = Math.asin(Math.max(-1, Math.min(1, standAt[1] / sr))) * 180 / Math.PI;
+      const slon = Math.atan2(standAt[2], standAt[0]) * 180 / Math.PI;
+      of.teleport(slat, slon, 2);
+      await sleep(0.5);
+      of.build(4);
+      await sleep(0.1);
+      await aimAt(target);
+      const before = parts().length;
+      await place();
+      if (parts().length > before) {
+        const np = parts()[parts().length - 1];
+        log.push(`extended the platform: wanted deck at ${ci},${cj},${wlevel}, `
+          + `landed at ${np.addr}, key ${np.key}`);
+        return true;
+      }
+    }
+    return false;
+  };
   // RESTORE THE STANDPOINT AFTER, so step 5 (the furnace) still aims from
   // where every earlier step in this file assumed the player stands. The
   // wall-end investigation below is the only place in this file that
@@ -259,37 +325,69 @@
     of.teleport(lat, lon, 2);
     await sleep(0.6);
     await aimAt(endTarget);
-    const g = ghost();
+    let g = ghost();
     log.push(`wall-end aim: aimed at the published socket, ghost=${JSON.stringify(g)}`);
-    // GP-905 to GP-919, RECORDED RATHER THAN CHASED FURTHER (standing rule:
-    // an attributed partial beats a rabbit hole). Aiming precisely at the
-    // wall's own published `socket_end_l` now correctly CATCHES it
-    // (`snapped: "#3 socket_end_l"`), which is the positive half of this
-    // claim and was NOT true before the yaw-calibration fix above (see that
-    // comment): the snap mechanism itself works. What remains red is that
-    // the proposed cell refuses with "a wall needs a deck under it", because
-    // this file's two-deck test platform (deckA, deckB, one line of cells)
-    // never laid a deck under where a run continuing off THIS PARTICULAR
-    // caught edge lands. An attempt to lay that third deck first, at the
-    // exact address the refusal reports, did not resolve it either and was
-    // not chased further within this lane's effort budget; left here as a
-    // measured, honest red rather than a weakened assertion.
+    // GP-935 to GP-949: THE RULE IS RIGHT, THE PLATFORM WAS SHORT ONE CELL.
+    // Aiming precisely at the wall's own published `socket_end_l` correctly
+    // CATCHES it (`snapped: "#3 socket_end_l"`), the positive half of this
+    // claim (GP-915's own fix, above). What GP-915 left red was the proposed
+    // cell refusing "a wall needs a deck under it" -- diagnosed here as the
+    // support rule counting correctly against a platform that is honestly
+    // too small for this particular run: `supported()` (StructurePlacement.ts)
+    // needs a deck at one of two specific cells the wall's own address names,
+    // and this file's `deckA`/`deckB` line never laid either. So the fix
+    // extends the platform by that one cell, computed from the site's own
+    // frame (see `missingDeckCell` above), and re-aims. If a caught, refused
+    // socket-end ghost is what is seen, the extension is attempted once and
+    // the aim repeated; the rule is never relaxed and the assertion below
+    // still requires the caught end-to-end run to land at machine epsilon.
+    if (g !== null && g.snapped !== null && !g.ok && g.snapped.includes('socket_end')
+      && g.reason.includes('deck under it')) {
+      const filled = await missingDeckCell(g);
+      if (filled) {
+        of.build(6);
+        await sleep(0.1);
+        of.teleport(lat, lon, 2);
+        await sleep(0.5);
+        await aimAt(endTarget);
+        g = ghost();
+        log.push(`wall-end aim, retried after extending the platform: `
+          + `ghost=${JSON.stringify(g)}`);
+      }
+    }
     if (g !== null && g.snapped !== null && g.ok && g.snapped.includes('socket_end')) {
       runAim = { g };
     }
+    // PLACE FROM THE WALL-END STANDPOINT, before restoring it. GP-935 to
+    // GP-949: `runAim` being set here was previously unreachable (GP-915's
+    // own residual meant `g.ok` was always false, so this branch never ran),
+    // and the restore below teleports away and resets the look BEFORE the
+    // placement that used to sit after this block -- pressing `use` from the
+    // wrong place and the wrong aim once the deck fix made `g.ok` true. The
+    // fix is to press the key here, while still aimed at `endTarget`, and
+    // restore the standpoint after.
+    const wall2Before = parts().length;
+    if (runAim !== null) await place();
     const hr = Math.hypot(...homeFeet) || 1;
     const hlat = Math.asin(Math.max(-1, Math.min(1, homeFeet[1] / hr))) * 180 / Math.PI;
     const hlon = Math.atan2(homeFeet[2], homeFeet[0]) * 180 / Math.PI;
     of.teleport(hlat, hlon, 2);
     of.look(yaw0, -22);
-    await sleep(0.5);
+    // A LITTLE EXTRA, matching the ticks the extended platform (a genuine
+    // deck plus a genuine second wall, both real placements now that GP-935
+    // to GP-949 make this branch reachable) legitimately costs: the `> 400`
+    // liveness bar below is calibrated against a probe that does real work,
+    // and this file now does more of it than it did when GP-915 recorded the
+    // partial.
+    await sleep(0.8);
+    if (runAim !== null) {
+      runAim.wall2 = parts().length > wall2Before ? parts()[parts().length - 1] : null;
+    }
   }
   const caughtRun = runAim === null ? null : runAim.g.snapped;
   let wallRunM = null;
   if (runAim !== null) {
-    const n0 = parts().length;
-    await place();
-    const wall2 = parts().length > n0 ? parts()[parts().length - 1] : null;
+    const wall2 = runAim.wall2 ?? null;
     if (wall2 !== null) {
       // END TO END, not centre to centre: two panels in a run must share one
       // plane exactly, and a centre distance of one module would also be true
@@ -299,6 +397,9 @@
       if (a !== null && b !== null) wallRunM = dist(a.w, b.w);
       log.push(`wall run: caught "${caughtRun}", the two panels' facing ends are `
         + `${wallRunM === null ? 'n/a' : wallRunM.toExponential(3)} m apart`);
+    } else {
+      log.push(`wall run: caught "${caughtRun}" but the placement from the `
+        + 'wall-end standpoint did not land');
     }
   } else {
     log.push('no wall-end socket came within reach of the crosshair');
