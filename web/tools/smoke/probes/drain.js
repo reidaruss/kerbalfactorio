@@ -10,6 +10,9 @@
 // swing anywhere, the authored swing count, the node at exactly 0, the empty
 // flag, the field's own empty count going up, and a further swing on the corpse
 // granting nothing.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/drain.js
 (async () => {
   const of = window.__of;
   await of.run(0.5);

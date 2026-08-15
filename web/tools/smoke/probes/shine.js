@@ -1,4 +1,12 @@
 // RN-846. The planetshine budget, from BOTH surfaces, at three phases.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/shine.js \
+//        --evalargs='{"lat":2.0,"lon":144.0}'
+//
+// OF_ARGS: { lat, lon } are REQUIRED. `of.teleport(OF_ARGS.lat, OF_ARGS.lon, 2.0)`
+// reads them with no fallback, so an empty --evalargs teleports to (undefined,
+// undefined) rather than to a sensible default site.
 (async () => {
   const of = window.__of; const B = window.__ofBodies;
   of.teleport(OF_ARGS.lat, OF_ARGS.lon, 2.0);

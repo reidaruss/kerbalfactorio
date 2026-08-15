@@ -8,6 +8,9 @@
 // OF_ARGS.stop selects where the run parks for the capture:
 //   "inventory" leaves the panel open on a stocked pack
 //   "crafting"  leaves it open having just crafted through the real DOM button
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/inventory.js
 (async (A) => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

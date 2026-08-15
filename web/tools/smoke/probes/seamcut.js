@@ -1,5 +1,8 @@
 // Near/far horizon agreement (ARCHITECTURE.md 3.2, W3c requirement).
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/seamcut.js
+//
 // The same ground is drawn two ways: fine chunks in the near 1:1 scene and
 // coarse chunks in the scaled far scene, with the split at nearDepthCutoff. If
 // the two disagree, the boundary is a visible arc across the landscape. This

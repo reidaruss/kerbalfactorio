@@ -1,5 +1,8 @@
 // FS-17: THE SHORT LINE, which used to deadlock for ever on ingot number one.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/shortline.js
+//
 // THE DEFECT. `FactoryWiring.wire` treats a smelter as a SOURCE as well as a
 // SINK, because a smelter's ingots may legitimately ride a belt away. It wired
 // any source that touched a run's TAIL onto that run, and belt-to-smelter reach

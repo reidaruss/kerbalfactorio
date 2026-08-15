@@ -82,6 +82,9 @@
 //   inputFell          so the hopper kept filling through the turn
 //   recovered          nothing to recover from
 //   insertersDrawn 0   proximity draws one arm per connection
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/machineports.js
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

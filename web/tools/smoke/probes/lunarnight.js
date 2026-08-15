@@ -1,6 +1,10 @@
 // RN-846. What is the ground actually lit BY, on Cinder, at night?
 // Planetshine is only worth wiring into the ground ambient if the ground has
 // somewhere to go. This measures the headroom rather than assuming it.
+//
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 --body=cinder \
+//        --evalfile=tools/smoke/probes/lunarnight.js \
+//        --evalargs='{"lat":2,"lon":144,"sunDot":-0.45}'
 (async () => {
   const of = window.__of; const B = window.__ofBodies;
   let node = document.querySelector('canvas');

@@ -1,5 +1,8 @@
 // W6 MOMENTS probe: the two anticlimaxes, and the sound.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/moments.js
+//
 // THE FELLED MOMENT has to be driven by real swings. `of.harvest(i)` reaches
 // gameplay.h directly and deliberately skips the swing, the impact frame and
 // therefore the whole reaction, so a probe that used it would prove the NUMBER

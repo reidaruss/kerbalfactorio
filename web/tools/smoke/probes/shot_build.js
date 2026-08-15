@@ -1,6 +1,10 @@
 // shot_build.js: a screenshot of the build menu with its icons (GP-111/GP-130).
 // Not an acceptance; `probes/buildmenu.js` is. This exists so the controller
 // report can show the menu rather than describe it.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/shot_build.js \
+//        --out=docs/screenshots/GP130_buildmenu.png
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

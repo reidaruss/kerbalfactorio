@@ -1,5 +1,12 @@
 // R33: THE PLAYER WALKS STRAIGHT THROUGH EVERY FACTORY BUILDING.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/machinesolid.js
+//
+// SANDBOX (DW-31), because this places a smelter and a belt through the real
+// build menu and a hand furnace through the hotbar, and sandbox is what lifts
+// the crafted-item gate so the placements are not blocked on inventory.
+//
 // `Machines` and `Factory` never put anything into a solid set, so a smelter, a
 // drill, an assembler and a chest were scenery. The physics lane measured the
 // symptom as a count that did not move (5 to 5 across a placed machine), and a

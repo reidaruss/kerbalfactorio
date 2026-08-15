@@ -1,5 +1,8 @@
 // RN-731. THE TERRAIN SPECULAR LOBE, measured as a settled-frame pair.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/terrainspec.js
+//
 // WHAT IS BEING MEASURED. Until this pass the terrain's whole lighting model
 // was `lit = albedo * irradiance`: pure Lambert, no specular term, no roughness
 // input anywhere in the material. So this probe is not asking "is the highlight

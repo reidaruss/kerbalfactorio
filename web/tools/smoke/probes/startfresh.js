@@ -2,6 +2,8 @@
 //
 //   node tools/smoke/reload.mjs --url=http://127.0.0.1:PORT/ --setup=probes/startfresh.js
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/reload.mjs (see the invocation above), not run.mjs standalone
+//
 // It builds a world worth destroying, forces the autosave, presses the REAL
 // Start Fresh button in the REAL menu, proves the confirm cannot be skipped,
 // confirms, and reports what it left behind. `reload.mjs` then reloads the

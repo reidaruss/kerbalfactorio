@@ -6,6 +6,10 @@
 // so it never overflowed sideways at any window width down to 760 px (measured
 // with the fix removed: worst 0 px at 1600, 900 and 760). What it DID do was
 // scroll vertically past the bottom of a 330 px rail with 24 rows in it.
+//
+//   npx vite --config vite.probe.config.ts
+//   node tools/smoke/run.mjs --url=http://127.0.0.1:5199/ --sandbox=1 --settle=6 \
+//        --evalfile=tools/smoke/probes/vabwidth.js
 (async () => {
   const of = window.__of;
   if (!of || typeof of.vab !== 'function') return { valid: false, why: 'no __of.vab' };

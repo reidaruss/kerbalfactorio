@@ -20,6 +20,9 @@
 //
 // DW-20: the probe proves the world advanced and proves it aimed at ground
 // before it claims a ground hit.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/gun.js
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

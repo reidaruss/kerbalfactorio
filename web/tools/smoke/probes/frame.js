@@ -2,7 +2,8 @@
 // reliable headless), and report what was actually settled. Every W3 golden goes
 // through this, so a screenshot cannot race streaming or a cross-dissolve.
 //
-//   --evalfile=tools/smoke/probes/frame.js --evalargs='{"yaw":30,"pitch":-18}'
+//   node tools/smoke/run.mjs --scenario=space \
+//        --evalfile=tools/smoke/probes/frame.js --evalargs='{"yaw":30,"pitch":-18}'
 (async () => {
   const of = window.__of;
   if (OF_ARGS.teleport) of.teleport(OF_ARGS.teleport[0], OF_ARGS.teleport[1], OF_ARGS.teleport[2]);

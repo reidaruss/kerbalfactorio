@@ -2,6 +2,9 @@
 // swing path, save, and hand the runner the rock's identity so phase 2 can
 // prove the depletion survived a real reload.
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/reload.mjs,
+// not run.mjs standalone.
+//
 // The rock is named by its bit-exact body-frame POSITION, never by its /core
 // index: a streamed rock's index is its visit order, and visit order across a
 // reload is precisely the thing this proof must not assume. If the cell-keyed

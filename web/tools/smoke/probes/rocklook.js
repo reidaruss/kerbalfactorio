@@ -1,5 +1,9 @@
 // WG-69: stand next to a WORLD ROCK with the harvest prompt up.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/rocklook.js \
+//        --out=docs/screenshots/WG69_rock_prompt.png
+//
 // The whole feature in one frame: a rock that is an actual object, the accent
 // crosshair on it, and the prompt naming Stone with its percentage. The ladder
 // frames cannot show this (27 rocks over 90,000 m2 is a few per cent of any

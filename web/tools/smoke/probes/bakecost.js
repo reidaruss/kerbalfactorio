@@ -1,5 +1,9 @@
 // RN-849. What the bake costs, per body and per resolution. A number that is
 // paid at boot has to be published at boot, not estimated afterwards.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/bakecost.js
+//
 (async () => {
   const B = window.__ofBodies;
   const r = B.report();

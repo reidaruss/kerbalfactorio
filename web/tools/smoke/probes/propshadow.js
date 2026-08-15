@@ -52,6 +52,14 @@
 // `?props=0` at the same pose, and diff the two `png` fields. A REAL
 // regression would show the shadow persisting under the URL flag where this
 // probe's own toggle does not.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/propshadow.js
+//   ... and again with --props=0, the URL-flag control the comment above
+//   describes; diff the run's `png` against `pngPropsOff` in each.
+//
+// OF_ARGS.lat/lon/yaw/pitch/sunDot all carry safe defaults, so no --evalargs
+// is required for the first invocation.
 (async (A) => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

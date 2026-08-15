@@ -3,6 +3,9 @@
 // dead; see the caller's brief), and reports what the frame is made of so the
 // measuring probe's band mask can be chosen rather than guessed.
 //
+//   node tools/smoke/run.mjs --scenario=walk --body=cinder \
+//        --evalfile=tools/smoke/probes/r17_scout.js
+//
 // Diagnosis only. Writes nothing, toggles nothing that it does not put back.
 (async () => {
   const of = window.__of;

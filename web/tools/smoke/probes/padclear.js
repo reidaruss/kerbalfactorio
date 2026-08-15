@@ -11,6 +11,8 @@
 //   node tools/smoke/reload.mjs --url=http://127.0.0.1:5433/ \
 //     --setup=probes/padclear.js --setupargs='{"mode":"recover"}'
 //
+// PROBEALL-EXCLUDE: setup probe driven by tools/smoke/reload.mjs (see the invocation above), not run.mjs standalone
+//
 // TWO MODES, ONE SCRIPT, AND THAT IS THE WHOLE POINT.
 //   mode "recover": build a pad, roll a rocket out onto it, press the recover
 //     key, let an autosave land, stop.

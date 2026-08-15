@@ -8,6 +8,12 @@
 //      crater curvature the /core ladder is supposed to have put there.
 //
 // Sites are passed in so the same probe serves every capture of the night.
+//
+//   node tools/smoke/run.mjs --scenario=walk --body=cinder \
+//        --evalfile=tools/smoke/probes/moonsite.js
+//
+// `body=cinder` boots on the moon; OF_ARGS.sites defaults to the spawn site
+// (lat 2, lon 144) when omitted, so no --evalargs is required to run this.
 (async () => {
   const of = window.__of;
   const args = (typeof OF_ARGS === 'object' && OF_ARGS !== null) ? OF_ARGS : {};

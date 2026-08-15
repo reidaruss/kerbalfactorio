@@ -1,4 +1,14 @@
 // Pose only. Used to photograph the SAME camera with and without a feature.
+//
+//   node tools/smoke/run.mjs --scenario=walk --skybodies=1 \
+//        --evalfile=tools/smoke/probes/plainshot.js \
+//        --evalargs='{"lat":2,"lon":144,"yawDeg":0,"pitchDeg":0,"sunT":0.3}'
+//   ... and again with --skybodies=0, the control arm this probe reports
+//   `hasFeature`/`present`/`reason` against (RN-845; window.__ofBodies).
+//
+// Every OF_ARGS field this file reads (lat, lon, yawDeg, pitchDeg, sunT) has
+// NO default, so --evalargs is required or `of.teleport`/`of.look`/`of.setTime`
+// are asked for undefined.
 (async () => {
   const of = window.__of;
   let node = document.querySelector('canvas');

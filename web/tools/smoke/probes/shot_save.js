@@ -1,5 +1,9 @@
 // shot_save.js: a screenshot of the Save Game page (GP-136/GP-137).
 // Not an acceptance; probes/savenamed.js under reload.mjs is.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/shot_save.js \
+//        --out=docs/screenshots/GP137_savegame.png
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

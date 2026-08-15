@@ -1,6 +1,9 @@
 // WG-67/WG-69/WG-72: the world rocks are real, delivered at the asked density,
 // deterministic from seed, and their refusals are reachable.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/rocks.js
+//
 // DRIVEN (standing rule 3, DW-20): it proves the sim advanced, walks a real
 // KeyW tape so the streaming ring is exercised by the one locomotion the suite
 // historically never used (WG-64's lesson), and proves determinism by leaving

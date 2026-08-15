@@ -1,5 +1,11 @@
 // RN-952. WHAT IS THE CONSTANT ON CINDER'S NIGHT GROUND MADE OF?
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 --body=cinder \
+//        --evalfile=tools/smoke/probes/nightfloor.js
+//
+// OF_ARGS { lat, lon, sunDot } all carry safe defaults (2, 144, -0.35), so no
+// --evalargs is required to run this.
+//
 // RN-846 measured planetshine honestly (full Forge delivers 1.837e-4 of the
 // sun's irradiance to Cinder's ground, about 0.9 of an 8-bit count at the
 // shipped exposure) and then REFUSED to wire it, because the night it was

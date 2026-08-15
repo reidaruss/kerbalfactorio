@@ -12,6 +12,9 @@
 // fuel present, progress and the fuel pool must have moved by exactly N, and
 // the first ingot must appear on tick 180 and not before. "The number went up"
 // would pass against a furnace that simply granted an ingot on load.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/furnace.js
 (async (A) => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

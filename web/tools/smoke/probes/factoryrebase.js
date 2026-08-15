@@ -70,6 +70,10 @@
 // inside a walk of a few hundred metres. The DEFECT does not care what the
 // threshold is: the scatter failure was the full delta whatever the delta was,
 // because the mechanism is a cached transform and not a magnitude.
+//
+//   node tools/smoke/run.mjs --scenario=walk --rebase=200 \
+//        --evalfile=tools/smoke/probes/factoryrebase.js \
+//        --evalargs='{"rebaseM":200}'
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };

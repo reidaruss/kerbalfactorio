@@ -1,6 +1,9 @@
 // RN-741. THE ETCHED SQUIGGLES: is the artefact gone, and is the RELIEF STILL
 // THERE afterwards.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/reliefgrad.js
+//
 // The second half is the whole point and is named failure mode 1 from
 // TerrainArt.glsl. Band-limiting a gradient lowers it wherever the field is
 // sharp, so this change makes the term smoother AND weaker at the same time.

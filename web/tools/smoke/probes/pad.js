@@ -1,6 +1,9 @@
 // THE LAUNCH PAD, ACCEPTANCE. Placed, saved, reloaded, launched from, and the
 // clamps let go at the same instant the launch clamp does.
 //
+//   node tools/smoke/run.mjs --scenario=walk --sandbox=1 \
+//        --evalfile=tools/smoke/probes/pad.js
+//
 // WHAT THIS ASSERTS AND WHY EACH ONE IS A PROPERTY RATHER THAN A NUMBER
 // SOMEBODY LIKED (standing rule 11):
 //

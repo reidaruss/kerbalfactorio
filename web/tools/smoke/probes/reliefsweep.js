@@ -1,5 +1,8 @@
 // RN-843. THE SUPPORT SWEEP for the ground-relief slope.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/reliefsweep.js
+//
 // WHAT IS BEING MEASURED AND WHY IT IS A HIGH-PASS. The artefact is a field of
 // contour-following etched lines, dark on Forge's pale substrates and bright on
 // Cinder's regolith. It is HIGH SPATIAL FREQUENCY and it covers a modest share

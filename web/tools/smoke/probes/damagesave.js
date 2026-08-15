@@ -1,5 +1,8 @@
 // damagesave.js: BREAK SOMETHING, THEN SAVE (GP-65, lane combat).
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/reload.mjs,
+// not meant to run standalone through run.mjs.
+//
 // Phase 1 of the reload proof. It builds a small world, damages one member of
 // each population it can reach through the player's own build path, forces the
 // autosave slot to be written, and reports the exact health it left behind.

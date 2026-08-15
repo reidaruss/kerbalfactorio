@@ -3,6 +3,8 @@
 //
 // Driven by tools/smoke/mtnreload.mjs with the site phase 1 returned. Nothing
 // here digs: every metre of this tunnel was restored, not cut.
+//
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/mtnreload.mjs, not run.mjs standalone
 (async () => {
   const of = window.__of;
   const A = OF_ARGS ?? {};

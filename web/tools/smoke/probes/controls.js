@@ -1,5 +1,8 @@
 // THE CONTROLS ACCEPTANCE (GP-25 to GP-27), and the belt alignment measurement.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/controls.js
+//
 // Five claims, and every one of them is asserted as a NEGATIVE as well as a
 // positive, because each of these changes is easy to fake:
 //

@@ -12,6 +12,9 @@
 //   3. the yield does not obsolete the tools it sits beside. Measured against
 //      the same world's own numbers: a bare-handed swing at an outcrop, a
 //      pickaxe swing, and a drill's units per second.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/digore.js
 (async () => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

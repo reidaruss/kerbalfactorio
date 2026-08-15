@@ -1,5 +1,8 @@
 // savenamed.js: PHASE 1 OF THE NAMED-SAVE PROOF (GP-136, GP-137).
 //
+// PROBEALL-EXCLUDE: two-phase setup probe driven by tools/smoke/reload.mjs
+// (see the reload.mjs invocations documented below), not run.mjs standalone.
+//
 //   node tools/smoke/reload.mjs --url=... --setup=probes/savenamed.js
 //   node tools/smoke/reload.mjs --url=... --setup=probes/savenamed.js \
 //     --setupargs='{"load":false}'

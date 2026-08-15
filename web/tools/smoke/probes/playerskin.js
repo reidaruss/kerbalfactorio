@@ -1,5 +1,8 @@
 // RN-648. Is the PLAYER actually wearing its surface maps in the running game?
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/playerskin.js
+//
 // WHY THIS PROBE EXISTS, and the answer is the finding rather than the fix.
 // `surfaces.json` has mapped `Suit`, `SuitDark` and `Plate` to a family since
 // DW-35, and `surface_preview.py` honours that mapping, so every Blender render

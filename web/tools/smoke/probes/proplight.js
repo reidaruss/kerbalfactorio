@@ -1,6 +1,11 @@
 // proplight.js - do a PROP and the GROUND agree about the sun? (RN-60)
 //
-// OF_ARGS: { lat, lon, yaw, pitch, sweep }
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/proplight.js
+//
+// OF_ARGS: { lat, lon, yaw, pitch, sweep }, every one of which carries a safe
+// default (see DEFAULT_PITCH below in particular), so no --evalargs is
+// required to run this.
 //
 // WHY THIS IS MEASURED BEFORE ANY ASSET WORK. The boulders photograph nearly
 // black, and there are two completely different reasons that could be true:

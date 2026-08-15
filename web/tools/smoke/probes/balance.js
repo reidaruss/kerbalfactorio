@@ -13,6 +13,9 @@
 //   deposit is not something you clear by hand; it is somewhere you come back to
 //   with a drill, and the hand is the bootstrap rather than the method.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/balance.js
+//
 // THE BOOTSTRAP IS THE POINT OF BOTH. Each tool costs 1 raw iron + 1 wood, so
 // ONE bare swing at a tree and ONE at an outcrop buys the whole toolset. That is
 // tested here rather than asserted, because a drill is the thing you cannot

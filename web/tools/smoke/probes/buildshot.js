@@ -1,6 +1,11 @@
 // A picture of a small base on a levelled pad: level with Q, lay a block of
 // foundations, wall three sides, hang a door on the fourth, then back off and
 // look at it. Framing only; `build.js` is the acceptance.
+//
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/buildshot.js \
+//        --out=docs/screenshots/W6_buildshot_pad.png
+//
 (async (A) => {
   const of = window.__of;
   const sleep = (n) => of.run(n);

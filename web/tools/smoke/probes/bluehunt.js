@@ -10,6 +10,9 @@
 // their kinds and ranges, and reads the presented framebuffer back to count
 // how many pixels are actually blue and where they sit on screen.
 //
+//   node tools/smoke/run.mjs --scenario=walk \
+//        --evalfile=tools/smoke/probes/bluehunt.js
+//
 // OF_ARGS: { yawDeg, pitchDeg, altM }
 (async () => {
   const of = window.__of;
