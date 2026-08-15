@@ -401,10 +401,20 @@ export function gameplayApi(s: Services, loop: Loop) {
         rec.stampedTick = loop.tickIndex;
       }
       const st = stateOf(s.core, registry, rec, loop.tickIndex);
+      // RN-1810 DIAGNOSTIC. `renderTick` (`Loop.ts`, CE-51) is `tickIndex - 1 +
+      // alpha`, the FRACTIONAL tick the drawn hull is actually posed at
+      // (`CarrierMounts.syncWatchersAt`), which can differ from the INTEGER
+      // tick this method's own `stateOf` reads above. Both published so a
+      // capture-time comparison can show whether that gap is where the
+      // station shot's variance actually lives.
+      const rst = stateOf(s.core, registry, rec, loop.renderTick);
       return {
         clockS: rec.clockS, stampedTick: rec.stampedTick, tick: loop.tickIndex,
         pos: st.pos, vel: st.vel,
         speedMps: Math.hypot(st.vel[0], st.vel[1], st.vel[2]),
+        alpha: loop.alpha, renderTick: loop.renderTick,
+        renderPos: rst.pos, renderPosVsIntegerM: Math.hypot(
+          rst.pos[0] - st.pos[0], rst.pos[1] - st.pos[1], rst.pos[2] - st.pos[2]),
       };
     },
 

@@ -87,6 +87,7 @@
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const len = (a) => Math.hypot(a[0], a[1], a[2]);
   const norm = (a) => { const n = len(a) || 1; return [a[0] / n, a[1] / n, a[2] / n]; };
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
     a[0] * b[1] - a[1] * b[0]];
   const addk = (a, b, k) => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
@@ -380,28 +381,53 @@
       // `stationClockS` is applied ONCE, before `of.settle(20)` and the
       // boarding press below (see that block's own note for why not later
       // and not right before the press either -- both were tried and both
-      // broke something a naive reading would have missed). -100 is not a
-      // round number by design: a coarse sweep of this orbit at this sun
-      // phase found most of it reading near-black from this aft framing (a
-      // dark arc roughly 100 to 800 seconds wide out of an ~818 s period,
-      // matching the campaign's other finding that direct light on a
-      // convex hull is the exception, not the rule, at this build's grade);
-      // -100 sits in the lit arc rather than on it.
+      // broke something a naive reading would have missed).
       //
-      // NOT BIT-IDENTICAL, AND THAT IS REPORTED RATHER THAN HIDDEN: three
-      // consecutive captures at this pin read box luma 3.68, 4.42, 6.21 (RGB
-      // ratios and `iqr` scale together across the three, which is the
-      // signature of one smooth gradient sampled at slightly different
-      // points, not of three unrelated frames). The residual mover is the
-      // handful of ticks `of.settle(20)` and the pause-menu transition are
-      // not tick-counted to spend before boarding reads the clock
-      // (`stationClock().stampedTick` measured 10 ticks apart between two
-      // otherwise-identical runs) landing on a moderate local slope rather
-      // than a flat one. That is a bounded, understood few-count band, not
-      // the original defect's 6x/18-count swing with no known cause; tightening
-      // it further means finding a flatter stretch of the lit arc or making
-      // `settle`/the menu transition tick-exact, and is left to the next lane
-      // as a stated follow-up rather than blocking this fix on it.
+      // RN-1810, A FRESH-CONTEXT VERIFIER'S FINDING, AND IT IS RIGHT: THE PIN
+      // ABOVE IS CORRECT AND NECESSARY AND IT IS NOT SUFFICIENT. Four verifier
+      // captures on the merged tree read box luma 2.46, 40.29, 30.98, 2.89 --
+      // WORSE than the defect this pin set out to fix -- with `stationClock`'s
+      // own `elapsed-since-stamp` at only 240-247 ticks (0.117 s on an ~818 s
+      // orbit) every time: the pin LANDS, every run, to the digit. So the
+      // mover is not the orbital phase.
+      //
+      // TRACED FURTHER, NOT JUST RE-ASSERTED: two captures were pulled where
+      // `captureDiag` -- read at the ACTUAL capture instant, see below --
+      // showed `stationClock.pos`, `captureDiag.originF` (the eye) and
+      // `captureDiag.dirF` (the look direction) ALL EQUAL TO FULL FLOAT
+      // PRECISION between them (a `tick`/`stampedTick` pair 66 apart in both
+      // captures, which cancels in `clockAt`'s own formula, so every quantity
+      // that formula feeds -- position, velocity, the LVLH basis `OrbitCarrier
+      // .poseAt` builds from them -- is provably identical). One capture shows
+      // the exterior hull against the star field; the other shows the STATION
+      // INTERIOR, a corridor of riveted wall panels, no stars anywhere in
+      // frame. Same camera, same eye, same direction, two different SCENES.
+      // That is not a lighting gradient and no clock pin can fix it: the geometry
+      // actually drawn is not a pure function of anything this shot's own
+      // debug surface can read.
+      //
+      // THE LEADING SUSPECT, NAMED SO THE NEXT LANE DOES NOT RE-DERIVE IT:
+      // `StationMount.ts`'s own header says the drawn hull is posed once at
+      // install with `stationQuat` (position-only, nadir-locked, an ARBITRARY
+      // roll picked by `THREE.Quaternion.setFromUnitVectors`'s shortest-path
+      // convention) and "the mount re-poses it every tick after this" via
+      // `OrbitCarrier.poseAt`'s `lvlh` basis (position AND velocity, roll tied
+      // to the along-track direction) -- two DIFFERENT roll conventions with no
+      // reason to agree, and PH-357's own history names this exact class of bug
+      // once already ("the two-authority trap that put orbitdeck.js's corridor
+      // upside down while every assertion passed"). Whether the per-tick
+      // re-pose is actually firing every run in this scripted/driven execution
+      // path, or the drawn hull can be left on its install-time `stationQuat`
+      // pose under some condition this probe triggers, is exactly what
+      // `StationView.sync`/`StationMount.ts`'s watcher registration needs
+      // instrumented next -- core-engine or rendering territory, not a probe
+      // fix, and named rather than worked around.
+      //
+      // THE PIN STAYS, because it is still correct for what it targets (the
+      // sun-relative attitude question RN-1800 opened with) and removing it
+      // would silently re-introduce that half of the defect. THE SHOT'S TARGET
+      // GRADE IS MARKED UNMEASURED (rendering.md 2.1.7) rather than published
+      // on a number four fresh captures showed is not reproducible.
       stationClockS: -100,
       why: 'the station exterior, 400 km up, no terrain bounce and no local fill',
     },
@@ -867,7 +893,7 @@
       of.stationClock(stationClockTarget);
     }
     pin();
-    await of.settle(20);
+    await of.run(0.5, 30);
     of.pause(true);
     await of.run(0.35, 15);
     const row = document.querySelector('#of-pause button[data-cheat="visit:station"]');
@@ -900,17 +926,38 @@
     const al = of.station().axes.along;
     const fwd = (Math.atan2(dot(al, east), dot(al, north)) * 180) / Math.PI;
     const base = A.back ?? S.back ? fwd + 180 : fwd;
-    of.look(A.yaw ?? (base + (A.yawOff ?? S.yawOff ?? 0)), A.pitch ?? S.pitch ?? -2);
+    const finalYawDeg = A.yaw ?? (base + (A.yawOff ?? S.yawOff ?? 0));
+    const finalPitchDeg = A.pitch ?? S.pitch ?? -2;
+    of.look(finalYawDeg, finalPitchDeg);
     await of.run(1.0, 30);
     const d = of.stats().stationDraw;
     if (d === null || d.visible !== true) {
       return { valid: false, shot: name, why: 'the station is not drawing',
         stationDraw: d };
     }
+    // RN-1810 DIAGNOSTIC. Everything the yaw solve above depends on, plus the
+    // ACTUAL final camera direction and its bearing to the sun, published so a
+    // run-to-run comparison can find which of these varies. `setup.yawDeg`
+    // previously reported `fwd` (the raw spine bearing before `back`/`yawOff`
+    // are applied), never the angle actually passed to `of.look`; that is
+    // fixed here to `finalYawDeg` and the raw solve is kept alongside it under
+    // its own name rather than silently dropped.
+    const aim = of.aim();
+    const postSun = window.__ofPost ? window.__ofPost.state().sun : null;
+    const sunBearingDeg = postSun === null ? null
+      : (Math.acos(Math.max(-1, Math.min(1,
+        dot(norm(aim.dir), norm(postSun))))) * 180) / Math.PI;
     setup = { grounded: w.grounded, onDeck: w.onDeck,
-      yawDeg: r2(A.yaw ?? fwd), ride,
+      yawDeg: r2(finalYawDeg), ride,
       drawnParts: d.drawnParts, staleMaxM: d.staleMaxM,
-      eyeDistM: r2(d.eyeDistM), altM: r2(st.deckR - 600000) };
+      eyeDistM: r2(d.eyeDistM), altM: r2(st.deckR - 600000),
+      diag: {
+        feet: f.map(r2), u: u.map(r3), east: east.map(r3), north: north.map(r3),
+        al: al.map ? al.map(r3) : al, fwdDeg: r2(fwd), baseDeg: r2(base),
+        finalYawDeg: r2(finalYawDeg), finalPitchDeg,
+        aimDir: aim ? aim.dir.map(r3) : null, postSun: postSun ? postSun.map(r3) : null,
+        sunBearingDeg: r2(sunBearingDeg),
+      } };
   }
 
   // ------------------------------------------------------------- the capture
@@ -927,6 +974,24 @@
   else await of.settle(A.settle ?? 24);
   sun = pin();
   await sleep(0.2);
+  // RN-1810 DIAGNOSTIC. WAIT FOR THE IBL BUILD COUNT TO STOP MOVING.
+  // `ibl.builds` was observed to differ by exactly one between a dim and a
+  // bright station capture at otherwise-matched camera/sun diagnostics, which
+  // is a candidate for a REFLECTIVE hull reading a cubemap that has not
+  // finished rebuilding for the space environment by the time of capture.
+  // Bounded so a genuinely stuck build cannot hang the shot; the loop's own
+  // iteration count is published so a probe can see whether it ever needed to.
+  let iblSettleIters = 0;
+  if (name === 'station') {
+    let last = of.stats().ibl.builds;
+    for (let i = 0; i < 20; ++i) {
+      await of.run(0.3, 30);
+      const now = of.stats().ibl.builds;
+      iblSettleIters = i + 1;
+      if (now === last) break;
+      last = now;
+    }
+  }
   // RN-1800. READ (NEVER RE-WRITE) THE STATION'S OWN CLOCK HERE.
   //
   // The obvious move is to re-pin it again right before the capture, the same
@@ -944,6 +1009,24 @@
   // the whole fix; this call only PUBLISHES what it landed on.
   const stationClock = name === 'station' && typeof of.stationClock === 'function'
     ? of.stationClock() : null;
+  // RN-1810 DIAGNOSTIC. THE CAMERA POSE AT THE ACTUAL CAPTURE INSTANT, not at
+  // the moment `of.look` was called: `setup.diag` above is read right after
+  // aiming and BEFORE the settle windows that follow it (two more `of.run`
+  // calls' worth of sim time), so if anything drifts between aiming and
+  // photographing, this is the field that would show it and that one would not.
+  const captureAim = name === 'station' ? of.aim() : null;
+  const capturePostSun = name === 'station' && window.__ofPost
+    ? window.__ofPost.state().sun : null;
+  const captureSunBearingDeg = captureAim && capturePostSun
+    ? (Math.acos(Math.max(-1, Math.min(1,
+      dot(norm(captureAim.dir), norm(capturePostSun))))) * 180) / Math.PI
+    : null;
+  const captureDiag = name === 'station' ? {
+    originF: captureAim ? captureAim.origin : null,
+    dirF: captureAim ? captureAim.dir : null,
+    postSunF: capturePostSun,
+    sunBearingDeg: r2(captureSunBearingDeg),
+  } : null;
   const elevDot = of.stats().sky.elevationDot;
   const sunErr = mode === 'time' ? 0 : Math.abs(elevDot - (A.sunDot ?? S.sunDot));
   if (sunErr > (A.sunTol ?? S.sunTol) && A.anySun !== true) {
@@ -1183,7 +1266,7 @@
     // RN-1800. The station's own orbital clock as pinned for THIS capture, so
     // a probe can verify the pin landed rather than assume it: `null` on
     // every shot but `station`.
-    stationClock,
+    stationClock, captureDiag, iblSettleIters,
     pose,
     // THE PIPELINE THE FRAME CAME THROUGH, published so a pair can be shown to
     // be one variable apart rather than asserted to be.
