@@ -21,8 +21,9 @@
 // =============================================================================
 import * as THREE from 'three';
 import { FAR_SCALE } from '../render/Scenes.js';
-import { registry, stateOf, RAILS_DT } from '../sim/VesselRegistry.js';
+import { registry, RAILS_DT } from '../sim/VesselRegistry.js';
 import type { VesselRecord } from '../sim/VesselRegistry.js';
+import { stateOfDocked } from '../game/SpaceStation.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { MapConic } from '../ui/MapTypes.js';
 import { bodyIdOf } from '../world/VesselBody.js';
@@ -51,7 +52,11 @@ export function railsPathM(M: OfCoreModule, rec: VesselRecord,
   for (let k = 0; k < RAIL_SAMPLES; ++k) {
     // Fractional ticks are fine: clockAt is linear in the tick.
     const t = tick + (k / RAIL_SAMPLES) * (periodS / RAILS_DT);
-    const st = stateOf(M, registry, rec, t);
+    // PH-381, GP-866. A docked record has no independent orbit any more (it
+    // rides its host); `stateOfDocked` says so by collapsing every sample to
+    // the host-derived point rather than sweeping the guest's own stale,
+    // captured-at-mating conic. A no-op for an undocked record.
+    const st = stateOfDocked(M, registry, rec, t);
     out[k * 3] = st.pos[0]; out[k * 3 + 1] = st.pos[1]; out[k * 3 + 2] = st.pos[2];
   }
   return out;

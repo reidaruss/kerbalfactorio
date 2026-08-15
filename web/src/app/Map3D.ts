@@ -34,8 +34,9 @@
 // =============================================================================
 import * as THREE from 'three';
 import { FAR_SCALE } from '../render/Scenes.js';
-import { registry, stateOf } from '../sim/VesselRegistry.js';
+import { registry } from '../sim/VesselRegistry.js';
 import { markerRegistry } from '../game/MarkerRegistry.js';
+import { stateOfDocked } from '../game/SpaceStation.js';
 import { OrbitLines } from './MapOrbits.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { MapReadout, V3 } from '../ui/MapTypes.js';
@@ -309,9 +310,12 @@ export class Map3D {
         continue;
       }
       const isFlying = flying && rec.id === registry.promotedId;
+      // PH-381, GP-866. `stateOfDocked`: a docked, non-flying record (a guest
+      // parked at the station) is drawn at its HOST's pose, not its own stale
+      // conic. A no-op for every other record. See its header, SpaceStation.ts.
       const pos: V3 | null = isFlying ? r.scene.shipPos
         : rec.where.kind === 'fixed' ? rec.where.pos
-          : (stateOf(this.d.core, registry, rec, tick).pos as V3);
+          : (stateOfDocked(this.d.core, registry, rec, tick).pos as V3);
       if (pos === null) continue;
       this.putMarker(`v${rec.id}`, isFlying ? 'flying' : 'vessel', pos,
                      rec.where.kind === 'fixed', rec.id);

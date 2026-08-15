@@ -40,7 +40,8 @@ import {
   bodySource, collect, findTarget, registrySource, requestedOrbit,
 } from '../game/AutopilotTargets.js';
 import type { AutopilotTarget, HomeBody } from '../game/AutopilotTargets.js';
-import { registry, stateOf } from '../sim/VesselRegistry.js';
+import { registry } from '../sim/VesselRegistry.js';
+import { stateOfDocked } from '../game/SpaceStation.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 
 /** How far ahead the chart looks, and how finely. One orbit of the target is
@@ -243,7 +244,10 @@ export class MapPlanner {
     // rather than silent. An implausible magnitude is caught by anybody; a
     // plausible one is checked by nobody, and 1606.4 km is entirely plausible.
     const frozen = rec.stampedTick < 0;
-    const them = stateOf(this.p.M, registry, rec, this.p.tick());
+    // PH-381, GP-866. A DOCKED TARGET IS AT ITS HOST'S POSE, not its own stale
+    // conic; see `stateOfDocked`'s header. A no-op for any target that is not
+    // docked (the common case, and every case before this record existed).
+    const them = stateOfDocked(this.p.M, registry, rec, this.p.tick());
     const dx = (them.pos[0] ?? 0) - (me.pos[0] ?? 0);
     const dy = (them.pos[1] ?? 0) - (me.pos[1] ?? 0);
     const dz = (them.pos[2] ?? 0) - (me.pos[2] ?? 0);

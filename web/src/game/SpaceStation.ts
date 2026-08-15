@@ -62,7 +62,7 @@ import { boundOf, type LocalBox, type Solid, type StructureBodies }
   from './StructureBody.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import {
-  fitConic, registry, stateOf, type VesselRecord, type Vec3n,
+  fitConic, registry, stateOf, type VesselRecord, type VesselRegistry, type Vec3n,
 } from '../sim/VesselRegistry.js';
 
 /** Where it flies. 400 km circular, which is the altitude PH-90 measured at. */
@@ -461,6 +461,98 @@ export function mintStation(M: OfCoreModule, up: Vec3n, bodyRadiusM: number,
 export function stationQuat(pos: Vec3n): THREE.Quaternion {
   const up = new THREE.Vector3(pos[0], pos[1], pos[2]).normalize();
   return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+}
+
+/**
+ * PH-381, GP-866. THE ONE ANSWER TO "WHERE IS A DOCKED VESSEL", layered ON TOP
+ * of `stateOf` rather than folded into it.
+ *
+ * `VesselRegistry.stateOf` stays exactly what its own header claims: the on-
+ * rails/frozen/parked answer for ONE record, with no notion of "docked"
+ * anywhere in it, because resolving a docked relation means asking what
+ * ATTITUDE the host has, and for the only host that exists today that is a
+ * GAME rule (`stationQuat`'s nadir-pointing convention, PH-91) rather than an
+ * orbital-mechanics fact. `sim/VesselRegistry.ts`'s own header says it "keeps
+ * its one dependency direction (it reads /core and nothing else)"; giving it
+ * an import of this file for one rule that belongs here would be the same
+ * shortcut GP-284's failure class keeps naming. So every reader of a
+ * POSSIBLY-DOCKED record's live position takes one extra hop through this
+ * function instead of calling `stateOf` directly.
+ *
+ * THE FORMULA IS THE INVERSE OF `FlightDock.ts`'s `latchFrom`, ON PURPOSE:
+ * capture wrote `docked.localPos/localFwd/localRight` in the host's own frame
+ * at the instant of the join (`guest_world = host_pos + hostQuat . local`);
+ * this undoes exactly that, and nothing else.
+ *
+ * THE HOST POSE COMES OFF THE LIVE SOLID WHEN ONE IS MOUNTED, and this is a
+ * correction of this function's own first draft, which read `stationQuat` of
+ * a freshly-solved `stateOf(host)` instead and measured ~31 m of avoidable
+ * error (`dockingreload.mjs`, `originToPortM` 30.98 against a <30 m bound).
+ * TRACED, not guessed: Anchorage's record IS stamped once `installStation`
+ * runs (this file's own header names the day that changed, PH-357), so its
+ * conic is not frozen the way the mint-time comment still describes -- it
+ * really orbits at ~1879 m/s. `Loop.fixedTick` reads every `onFixedStep`
+ * callback (which is what sets `currentVesselTick()`) BEFORE incrementing
+ * `tickIndex`, then calls `mounts.syncAt(tickIndex)` AFTER -- CE-85's own
+ * comment states the reason ("the deck has to be at `poseAt(t)` when tick t
+ * steps".) So the live solid is always posed ONE TICK ahead of
+ * `currentVesselTick()`, which is 31.32 m at Anchorage's speed -- the exact
+ * number measured. `FlightDock.ts`'s `stationPort()` (which computes
+ * `dockTarget.posM`, what a probe's `originToPortM` is measured against) reads
+ * the SOLID for exactly this reason, not `stateOf(host, tick)`; matching it
+ * needs the same source, not a fresher one.
+ *
+ * `stationQuat(stateOf(host).pos)` REMAINS THE FALLBACK for the one case the
+ * live solid cannot cover: `ResumeBoot.resumeWorld` promotes a parked vessel
+ * before `Boot.ts` installs and mounts the station, so nothing has posed a
+ * solid yet. A docked guest is never PARKED (it arrived by flying, so its own
+ * `mode` is `rails`), so `promoteOnBoot`'s "promote at most the parked one"
+ * never actually reaches this function before the station is mounted -- but
+ * the fallback is kept rather than assumed unreachable, because a debug or
+ * autopilot caller reaching `promoteVessel` some other way is exactly the
+ * PH-380 lesson (un-flyability was an accident of one code path, not a rule
+ * enforced at every door).
+ *
+ * RECURSES THROUGH `stateOf` FOR THE HOST'S VELOCITY (and, on the fallback
+ * path, its position) rather than requiring the host to be resolved first.
+ * That is `adoptSaved`'s "a guest can precede its host in slot order" problem
+ * again, solved a different way: because this is asked ON DEMAND rather than
+ * walked in one sequential pass, "resolve the host first" falls out of the
+ * recursion for free and there is no order to get right.
+ *
+ * ONLY THE STATION IS A DOCKABLE HOST TODAY (`FlightDock.dockTargetOf`'s own
+ * comment: "today that is the station and only the station"). A host that is
+ * a flown vessel rather than the station has no attitude rule here yet and
+ * falls back to the record's own `where`, honestly wrong in the same way
+ * `stateOf` alone is -- but it is a case that cannot occur yet, so it is named
+ * rather than guessed at, same as `FlightDock.ts`'s own `hostPort: ''` comment
+ * names it.
+ */
+export function stateOfDocked(M: OfCoreModule, reg: VesselRegistry,
+                              rec: VesselRecord, tick: number)
+    : { pos: Vec3n; vel: Vec3n } {
+  const dock = rec.docked;
+  if (dock === undefined) return stateOf(M, reg, rec, tick);
+  const host = reg.find(dock.hostId);
+  // Orphan latch (should not happen: `adoptSaved`'s second pass drops these
+  // and counts them) or a host that is not the station (cannot happen yet,
+  // see header): fall back to the record's own answer rather than invent one.
+  if (host === null || !isStation(host)) return stateOf(M, reg, rec, tick);
+  const hostSt = stateOf(M, reg, host, tick);
+  const solid = lastStationSolid();
+  const pos: Vec3n = solid !== null
+    ? [solid.pos.x, solid.pos.y, solid.pos.z] : hostSt.pos;
+  const q = solid !== null ? solid.quat : stationQuat(hostSt.pos);
+  const p = new THREE.Vector3(dock.localPos[0], dock.localPos[1], dock.localPos[2])
+    .applyQuaternion(q);
+  return {
+    pos: [pos[0] + p.x, pos[1] + p.y, pos[2] + p.z],
+    // WELDED: the guest's velocity IS the host's, off `stateOf` either way
+    // (the solid publishes no velocity) -- the alternative (the guest's own
+    // frozen-at-capture conic velocity) is exactly the two-conics-walking-
+    // apart failure `VesselDock`'s own header describes.
+    vel: hostSt.vel,
+  };
 }
 
 /**
