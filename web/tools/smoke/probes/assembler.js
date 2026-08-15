@@ -121,6 +121,23 @@
 // would fail the first and third windows; a build that had simply stopped
 // working would fail the second; and the first window is also the evidence for
 // the delivery defect above, since the iron hopper is full throughout it.
+//
+// GP-950 UPDATE. The delivery defect described above (lines 90 to 107) is
+// FIXED: FS-115 proved `Automation::inferItem`'s binding clean and FS-129 to
+// FS-133 made the drag deterministic, so the stone haul now completes and
+// `stoneArrivesByBelt` genuinely passes rather than being "expected RED". That
+// left the negative control in this file (starvedMakesNothing, exhaustionStops)
+// measuring a window that could no longer be starved by accident, so it read
+// FALSE on every run for the wrong reason: not because the machine was broken,
+// but because the belt it used to depend on failing now works. Both controls
+// are re-established in section 10 below on a DELIBERATE starved condition
+// instead of an inherited one: `of.demolish` (the same call the X key uses)
+// removes the rock drill AFTER the belt has already proved delivery, and the
+// two claims are read from the one drain that follows: a transition window
+// (exhaustionStops) and the durable low it settles into (starvedMakesNothing).
+// An earlier draft measured the second claim in a window BEFORE the stone
+// chain existed instead, and that turned out to be unsafe: see section 10's
+// own comment for the measured reason it moved.
 (async () => {
   const of = window.__of;
   if (!of) return { valid: false, why: 'no __of' };
@@ -867,113 +884,24 @@
   const beltMatedBothInlets = linkA() !== null && linkB() !== null;
 
   // ==========================================================================
-  // 8. THE STARVED WINDOW: BOTH PORTS MATED, THE STONE BELT SATURATED, AND NOT
-  //    ONE UNIT OF STONE DELIVERED.
+  // 8. THE HEADLINE WINDOW: BOTH PORTS MATED, THE HAUL COMPLETE, NOBODY
+  //    TOUCHES ANYTHING. THIS IS WHERE GENUINE BELT DELIVERY IS MEASURED.
   // ==========================================================================
-  // THIS IS THE DEFECT THE PROBE FOUND AND IT IS THE MOST IMPORTANT THING IN
-  // THIS FILE, so the window that measures it comes BEFORE anything is put in by
-  // hand and the result is a NAMED ASSERTION rather than a note.
+  // FS-129 to FS-133 made the drag deterministic and the haul complete, and
+  // FS-115 already proved `Automation::inferItem`'s binding fixed, so this
+  // window is not expected to starve: it is the positive half of the claim,
+  // `stoneArrivesByBelt`, measured while the machine runs unattended exactly
+  // the way a player would leave it. See section 10 below for why NOTHING
+  // before this point spends any extra `of.run()` time: the drag is sensitive
+  // to it.
   //
-  // WHAT IS MEASURED: the run's head mates `socket_item_in_b` at 0.50 m, facing
-  // -1, and the line saturates to its own ceiling (4 items a tile,
-  // `kUnitsPerTile / kItemSpacing`), and `input2` stays at ZERO for the whole
-  // window, and nothing is manufactured, while `input` sits full of iron that
-  // arrived on the OTHER belt through the identical mechanism.
-  //
-  // WHY, traced to the line: `Automation::inferItem` decides an inserter's item
-  // type at CONNECT time, and for a belt feeding a machine it reads
-  // `sim_.lineHeadItem(from)` and falls back to the SLOT-1 ingredient when the
-  // belt is empty. `FactorySim` has no re-recipe and no entity removal, so every
-  // commit calls `recreate()`, which throws away everything riding every belt;
-  // therefore every belt is empty at the moment it is connected, therefore every
-  // belt-to-assembler inserter in the client is bound to ingredient A. The stone
-  // line's inserter is looking for Iron on a belt carrying Stone, and
-  // `inserterSystem`'s pickup gate is `sl.headItem() == insItem_[i]`, so it never
-  // picks anything up. The iron line works only because ingredient A is what it
-  // happens to carry.
-  //
-  // The consequence is not "sometimes slow": an assembler's SECOND ingredient
-  // cannot be delivered by belt at all on this build, which is the one thing a
-  // two-input machine exists for. The fix belongs in /core or in the wiring
-  // layer, not here: either `connect` takes the item from the DESTINATION's
-  // slots against what the source can produce, or the client passes the item
-  // explicitly through `AutoLine.connect` instead of letting it be inferred.
-  const panelOpen = await openPanel();
-  check('the machine screen re-opened for the window', panelOpen,
-    JSON.stringify(of.game().screen?.open));
-  of.input.tape([{ hold: 2, keys: [] }]);
-  // Long enough that belt transit cannot be the explanation: `factory_sim.h`
-  // runs a basic belt at `speedUnitsPerTick = 8` of `kUnitsPerTile = 256`, which
-  // is 32 ticks a tile, so even a 73 tile haul delivers its first unit in about
-  // 39 s from a standing start. Every snapped press that closed the last cells
-  // re-committed and emptied the line, so the stone starts from the far end.
-  const STARVE_S = 100;
-  const st0 = { made: rowOf(ASM).producedOfOutput, ticks: fac().coreTicks,
-    iron: hopA(), stone: hopB() };
-  let starvePeakStone = 0;
-  let starveMinIron = Infinity;
-  for (let i = 0; i < 200; ++i) {
-    await sleep(STARVE_S / 200);
-    starvePeakStone = Math.max(starvePeakStone, hopB());
-    starveMinIron = Math.min(starveMinIron, hopA());
-  }
-  const st1 = { made: rowOf(ASM).producedOfOutput, ticks: fac().coreTicks,
-    iron: hopA(), stone: hopB() };
-  const stoneRun = fac().runs.find((r) => r.tiles > 10) ?? null;
-  const starved = {
-    coreTicks: st1.ticks - st0.ticks,
-    made: st1.made - st0.made,
-    stonePeak: starvePeakStone,
-    ironHopper: [st0.iron, st1.iron],
-    minIron: starveMinIron === Infinity ? -1 : starveMinIron,
-    runTiles: stoneRun?.tiles ?? -1,
-    runItems: stoneRun?.items ?? -1,
-    // Four items a tile is `kUnitsPerTile / kItemSpacing`: the line's own
-    // ceiling, so "saturated" is measured against /core's number and not a guess.
-    runSaturated: stoneRun !== null && stoneRun.items >= stoneRun.tiles * 4,
-  };
-  log.push(`starved window: ${JSON.stringify(starved)}`);
-
-  // ==========================================================================
-  // 9. THE SAME MACHINE, ONE VARIABLE CHANGED: PUT THE STONE IN BY HAND
-  // ==========================================================================
-  // The A/B this probe is built on. Nothing moves, nothing is placed, nothing is
-  // re-wired and no belt is touched; the only difference between the window
-  // above and the window below is that the second hopper has stone in it. That
-  // makes "a machine can be correctly configured, correctly connected and
-  // stalled because ONE of two hoppers is empty" a measurement rather than a
-  // sentence, and it is also the FS-56 hand-load path in its own right:
-  // `feedAssembler` routes by item id into `of_net_feed_machine2` (ABI 18).
-  await closePanel();
-  let stoneInPack = 0;
-  for (const n of of.nodes()) {
-    if (n.kind !== 1) continue;
-    for (let k = 0; k < 40; ++k) of.harvest(n.index);
-  }
-  stoneInPack = (of.game().carried.find((c) => c.name === 'Stone')
-    ?? { count: 0 }).count;
-  const reopened = await openPanel();
-  let loads = 0;
-  for (let k = 0; k < 20; ++k) {
-    const loadBtn = [...document.querySelectorAll('#of-furnace [data-load]')]
-      .find((e) => (e.textContent ?? '').includes('Stone'));
-    if (!click(loadBtn)) break;
-    loads++;
-    await sleep(0.25);
-  }
-  log.push(`hand-load: ${stoneInPack} stone in the pack, ${loads} presses of the `
-    + `Load button, panel ${reopened}, hopper now ${hopB()}`);
-  check('the panel offered a Load button for the stone', loads > 0,
-    [...document.querySelectorAll('#of-furnace [data-load]')]
-      .map((e) => e.textContent).join(' | '));
-
-  // ==========================================================================
-  // 10. THE HEADLINE WINDOW. NOBODY TOUCHES ANYTHING.
-  // ==========================================================================
   // POLLED IN SMALL STEPS rather than slept through, autoline.js's lesson: a
   // hopper that is emptied the instant it is filled is at zero in every sample a
   // coarse window takes, and "both hoppers filled" would then read false on a
   // line that is visibly working. The peaks are what the claim is about.
+  const deliveryPanel = await openPanel();
+  check('the machine screen opened for the headline window', deliveryPanel,
+    JSON.stringify(of.game().screen?.open));
   const before = { tick: of.world().tick, coreTicks: fac().coreTicks,
     mined: fac().minedFromNodes, made: rowOf(ASM).producedOfOutput };
   const WINDOW = 70;
@@ -997,38 +925,174 @@
   const madeInWindow = after.made - before.made;
   const endHopA = hopA();
   const endHopB = hopB();
-  await closePanel();
+  // Snapshot the mated ports and the rock drill's own report HERE, while both
+  // still stand: section 11 demolishes the rock drill to cut the feed for
+  // real, and `rowOf` returns null once it is gone.
+  const finalA = linkA();
+  const finalB = linkB();
+  const rockRow = rowOf(rockDrill.id);
+  const stoneRun = fac().runs.find((r) => r.tiles > 10) ?? null;
+  const delivery = {
+    stonePeak: peakIn2,
+    runTiles: stoneRun?.tiles ?? -1,
+    runItems: stoneRun?.items ?? -1,
+    // Four items a tile is `kUnitsPerTile / kItemSpacing`: the line's own
+    // ceiling, so "saturated" is measured against /core's number and not a guess.
+    runSaturated: stoneRun !== null && stoneRun.items >= stoneRun.tiles * 4,
+  };
   log.push(`window: ${after.coreTicks - before.coreTicks} core ticks, mined `
     + `${(after.mined - before.mined).toFixed(0)}, hoppers ${endHopA}/`
     + `${endHopB} (peaks ${peakIn}/${peakIn2}), row.input `
     + `${JSON.stringify(asmRun.input)} row.input2 ${asmRun.input2}, output `
     + `buffer ${asmRun.output}, made ${madeInWindow} of item ${asmRun.outputItem}`);
+  log.push(`delivery: ${JSON.stringify(delivery)}`);
 
   // ==========================================================================
-  // 11. THE SECOND HALF OF THE CONTROL: LET THE HAND-LOADED STONE RUN OUT
+  // 9. A TOP-UP THROUGH THE LOAD BUTTON. FS-56's hand-load path in its own
+  //    right (`feedAssembler` routes by item id into `of_net_feed_machine2`,
+  //    ABI 18), no longer load-bearing for the negative control below (the
+  //    belt already proved delivery in section 8).
   // ==========================================================================
-  // The A/B closes here. The hand-load put a FINITE amount of stone in, so the
-  // machine works until that is gone and then stops, on the same scene, with the
-  // same belts, with the iron hopper still full. Three windows on one machine,
-  // one variable moving: no stone (nothing), stone (buildables), stone gone
-  // again (nothing). A build where `producedOfOutput` merely counted up would
-  // fail the first and third; a build that had simply stopped working would fail
-  // the second.
+  // THE ASSERTION IS CONDITIONAL ON THERE BEING ROOM, and that is new here for
+  // the same reason section 8 exists: the belt now genuinely fills this hopper,
+  // so by the time this section runs it is frequently already at or near /core's
+  // cap, and the panel only offers a Load button for an ingredient that is
+  // actually short. Measured: with the belt working, this run's own panel
+  // offered `Load Iron` and nothing for Stone, because iron (consumed a recipe
+  // at a time alongside stone) happened to be the shorter hopper at that
+  // instant. Requiring a Stone button unconditionally would make this check
+  // fail on exactly the good state FS-115/FS-129 to FS-133 created, which is
+  // the same shape of stale control this whole file is being fixed for, so the
+  // room check comes first and the assertion is skipped, not failed, when the
+  // belt has already done the job.
+  const hopperHadRoom = hopB() < bill[3];
+  let stoneInPack = 0;
+  for (const n of of.nodes()) {
+    if (n.kind !== 1) continue;
+    for (let k = 0; k < 40; ++k) of.harvest(n.index);
+  }
+  stoneInPack = (of.game().carried.find((c) => c.name === 'Stone')
+    ?? { count: 0 }).count;
+  let loads = 0;
+  for (let k = 0; k < 20; ++k) {
+    const loadBtn = [...document.querySelectorAll('#of-furnace [data-load]')]
+      .find((e) => (e.textContent ?? '').includes('Stone'));
+    if (!click(loadBtn)) break;
+    loads++;
+    await sleep(0.25);
+  }
+  log.push(`hand-load top-up: hopper had room ${hopperHadRoom}, ${stoneInPack} `
+    + `stone in the pack, ${loads} presses of the Load button, hopper now `
+    + `${hopB()}`);
+  check('the panel offered a Load button for the stone whenever the hopper had '
+    + 'room for one',
+    !hopperHadRoom || loads > 0,
+    JSON.stringify({ hopperHadRoom, hopB: hopB(), loads,
+      buttons: [...document.querySelectorAll('#of-furnace [data-load]')]
+        .map((e) => e.textContent) }));
+  await closePanel();
+
+  // ==========================================================================
+  // 10. BOTH HALVES OF THE NEGATIVE CONTROL, FROM ONE DELIBERATE DEMOLITION
+  //     WITH of.demolish (GP-950)
+  // ==========================================================================
+  // GP-837/GP-950: this control used to hand-load a finite amount of stone and
+  // wait for it to run out, which worked only because nothing else was feeding
+  // the hopper. Now that the belt genuinely delivers (section 8), hand-loading
+  // on top of a live belt does not create exhaustion, it creates a hopper the
+  // belt keeps refilling, and the old "wait for zero" loop would just run out
+  // its own budget: the control would fail for a THIRD accidental reason
+  // instead of testing the claim it is named for.
+  //
+  // THE FIX CUTS THE FEED AT ITS SOURCE, THE SAME WAY A PLAYER WOULD:
+  // `of.demolish`, the exact call `demolish.js` proves the X key reaches.
+  // Demolishing the rock drill removes the one thing supplying new stone.
+  // `FactoryCommit`'s rebuild (`commitPlan`) re-feeds every surviving
+  // machine's hopper from what it held a moment before (`carry[i].input2`,
+  // then `f.line.feed2`), so the assembler's own buffered stone and the
+  // hand-loaded top-up both survive the removal intact, and only items still
+  // riding a belt at that instant are lost (counted, not hidden, in the
+  // removal's own ledger). What is left is a real residue that drains to
+  // genuinely zero and then genuinely stays there, while the untouched iron
+  // chain keeps feeding the first hopper the whole time.
+  //
+  // WHY THIS RUNS HERE AND NOT BEFORE THE STONE CHAIN. An earlier version of
+  // this fix ran a genuine no-belt window BEFORE the drag (section 6), on the
+  // theory that "no link into socket_item_in_b" is the plainest read of "an
+  // assembler with no inputs". Measured directly, that broke something else:
+  // `Loop.run`'s driven accumulator (FS-101) carries its residue across EVERY
+  // `of.run()` call in the session, by design, for alpha continuity across
+  // sliced runs, and the ~60 s that window spent before the drag shifted that
+  // residue enough to flip THIS BUILD'S drag outcome on this seed from
+  // converging (`draggedTiles: 64`, `portsMated: true`, matching FS-115's own
+  // report) to diverging (46 tiles, one press further from the port,
+  // `portsMated: false`) -- reproduced by running the untouched probe and this
+  // one back to back against the identical served build: the untouched one
+  // converges every time, the pre-drag-window one did not. So NOTHING between
+  // placing the assembler and finishing the haul spends any extra `of.run()`
+  // time; both halves of the control are proven AFTER the belt already
+  // delivered (section 8), by taking its source away rather than by never
+  // giving it one.
+  //
+  // EXHAUSTIONSTOPS is the transition: demolish, wait for the residue to
+  // SETTLE (bounded), then measure the FIRST window after that and assert
+  // nothing was made in it. "Settle" is a hopper that has stopped moving for
+  // several consecutive samples, not a literal zero: `placeAssembler`'s recipe
+  // consumes stone five at a time (`bill[3]`), so a residue that is not an
+  // exact multiple of five plateaus on the remainder forever and would never
+  // satisfy a strict `=== 0` wait, which is not a bug, it is conservation --
+  // measured on this exact build, a demolition landing on a 6-unit residue
+  // settled at 1 and stayed there. STARVEDMAKESNOTHING is the steady state the
+  // transition lands in: a SECOND, longer window, measured once the hopper has
+  // stopped moving and `socket_item_in_b` is still mated (so the absence of
+  // production is about SUPPLY, not about the link vanishing), proving the
+  // machine does not go on producing from a hopper with less than one craft's
+  // worth in it. Both read `made` from `producedOfOutput`, /core's own
+  // lifetime tally, FS-115's exact discipline: never a downstream buffer a
+  // belt could be draining or refilling out from under the read.
   const control = { ran: false };
+  const starved = { measured: false };
   {
     control.panel = await openPanel();
-    let drained = false;
-    for (let k = 0; k < 200 && !drained; ++k) {
+    const residueStone = hopB();
+    control.removal = of.demolish({ id: rockDrill.id });
+    control.rockDrillRemoved = fac().list.every((b) => b.id !== rockDrill.id);
+    log.push(`demolished the rock drill (residue in hopper ${residueStone}): `
+      + `${JSON.stringify(control.removal)}`);
+    // SETTLED, NOT ZERO: quiet for several consecutive craft cycles, or truly
+    // empty, whichever comes first. A hopper stuck below `bill[3]` (one
+    // craft's worth) can never move again on its own, so waiting on a literal
+    // zero here would spend the whole budget on a value that was never coming.
+    //
+    // THE QUIET WINDOW IS DERIVED FROM THE RECIPE'S OWN CRAFT TIME, `bill[5]`
+    // ticks at /core's fixed 60 Hz, not a guessed constant: a hopper that has
+    // not moved for under one craft cycle proves nothing, because the machine
+    // could simply be mid-craft on the units it already had. Measured on this
+    // build: a 5 s quiet window (10 samples) sits under two craft cycles at
+    // 3 s each, and a settle declared there was premature -- the hopper was
+    // still 46, dropped to 26 over the very next window, four more items made.
+    // Four full craft cycles of quiet is comfortably past any single pause.
+    const quietSamplesNeeded = Math.max(10,
+      Math.ceil((bill[5] / 60) * 4 / 0.5));
+    let settled = false;
+    let lastStone = hopB();
+    let quiet = 0;
+    for (let k = 0; k < 400 && !settled; ++k) {
       await sleep(0.5);
-      drained = hopB() === 0;
+      const s = hopB();
+      if (s === lastStone) ++quiet; else { quiet = 0; lastStone = s; }
+      settled = s === 0 || quiet >= quietSamplesNeeded;
     }
-    control.drained = drained;
+    control.drained = settled;
+    control.settledStone = hopB();
+    control.quietSamplesNeeded = quietSamplesNeeded;
+
+    // PHASE 1, exhaustionStops: the window right after settling.
     const c0 = { made: rowOf(ASM).producedOfOutput, iron: hopA(), stone: hopB(),
       ticks: fac().coreTicks };
     await sleep(20);
     const c1 = { made: rowOf(ASM).producedOfOutput, iron: hopA(), stone: hopB(),
       ticks: fac().coreTicks };
-    await closePanel();
     control.ran = true;
     control.starvedCoreTicks = c1.ticks - c0.ticks;
     control.madeWhileStarved = c1.made - c0.made;
@@ -1039,17 +1103,52 @@
     // so its first hopper fills to /core's cap and then stops moving; "it went
     // on rising" would be false on a CORRECT build. The claim is that ingredient
     // A was there the whole time and nothing was made anyway, because ingredient
-    // B was not.
+    // B genuinely ran out and has no source left to refill it.
     control.ironHeldWhileStarved = Math.min(c0.iron, c1.iron) > 0;
     control.ironDelta = c1.iron - c0.iron;
     log.push(`exhaustion control: ${JSON.stringify(control)}`);
+
+    // PHASE 2, starvedMakesNothing: a longer window in the steady state the
+    // settle just reached. The stone hopper is tracked as a MIN/MAX RANGE
+    // rather than a peak against zero, for the same reason section 10's own
+    // wait is a settle and not a literal-zero check: a residue under one
+    // craft's worth (`bill[3]`) is a legitimate durable starved state, and the
+    // claim this phase makes is that the hopper stays put and stays short,
+    // not that it stays at the specific number zero.
+    const NOFEED_S = 60;
+    const nf0 = { made: rowOf(ASM).producedOfOutput, ticks: fac().coreTicks };
+    let noFeedStoneMin = Infinity;
+    let noFeedStoneMax = 0;
+    let noFeedIronPeak = 0;
+    for (let i = 0; i < 120; ++i) {
+      await sleep(NOFEED_S / 120);
+      const s = hopB();
+      noFeedStoneMin = Math.min(noFeedStoneMin, s);
+      noFeedStoneMax = Math.max(noFeedStoneMax, s);
+      noFeedIronPeak = Math.max(noFeedIronPeak, hopA());
+    }
+    const nf1 = { made: rowOf(ASM).producedOfOutput, ticks: fac().coreTicks };
+    await closePanel();
+    starved.measured = true;
+    starved.coreTicks = nf1.ticks - nf0.ticks;
+    starved.made = nf1.made - nf0.made;
+    starved.stoneHopperRange = [noFeedStoneMin === Infinity ? -1 : noFeedStoneMin,
+      noFeedStoneMax];
+    starved.stoneHopperBelowOneCraft = noFeedStoneMax < bill[3];
+    starved.ironHopperPeak = noFeedIronPeak;
+    starved.linkBStillMated = linkB() !== null;
+    log.push(`deliberate starved window (rock drill demolished, hopper `
+      + `settled short of one craft's worth): ${JSON.stringify(starved)}`);
   }
 
   // ==========================================================================
   // THE ACCEPTANCE
   // ==========================================================================
-  const finalA = linkA();
-  const finalB = linkB();
+  // `finalA`/`finalB`/`rockRow` are captured in section 8, before section 10
+  // demolishes the rock drill: `linkA()`/`rowOf(rockDrill.id)` would read
+  // differently, or null, once that removal has happened. `linkB()` is asked
+  // again live, inside `starved` above, because staying mated is part of what
+  // that phase asserts.
   const port = (l) => (l === null ? null : { from: l.from, fromPort: l.fromPort,
     toPort: l.toPort, gapM: l.gapM, riseM: l.riseM, facing: l.facing });
   const advancedTicks = after.tick - before.tick;
@@ -1072,7 +1171,6 @@
   // `rockDrill.outputItem` is the resource /core's own patch carries, so they tie
   // the assembler's bill to the world through code that has never heard of it.
   const smelterRow = rowOf(smelter.id);
-  const rockRow = rowOf(rockDrill.id);
   const billMatchesCoreHandRecipe = check(
     'billMatchesCoreHandRecipe: the machine was built from /core\'s own row',
     Array.isArray(bill) && bill.length === 6
@@ -1124,25 +1222,35 @@
       && finalA.facing <= -0.85 && finalB.facing <= -0.85,
     JSON.stringify({ a: port(finalA), b: port(finalB) }));
 
-  // 8. THE BELTED DELIVERY, WHICH IS THE DEFECT. Expected RED on this build.
+  // 8. THE BELTED DELIVERY. FS-115/FS-129 to FS-133 fixed it; genuinely GREEN.
   const stoneArrivesByBelt = check(
-    'stoneArrivesByBelt: a saturated belt mated to socket_item_in_b actually '
-    + 'delivers stone into the second hopper',
-    starved.stonePeak > 0, JSON.stringify(starved));
-  // 9. THE NEGATIVE CONTROL, both halves, and neither is a threshold.
-  const starvedMakesNothing = check(
-    'starvedMakesNothing: with the second hopper at zero and the first full of '
-    + 'iron, nothing at all is manufactured',
-    starved.made === 0 && starved.minIron > 0 && starved.coreTicks > 3000,
-    JSON.stringify(starved));
+    'stoneArrivesByBelt: a belt mated to socket_item_in_b actually delivers '
+    + 'stone into the second hopper during ordinary, unattended operation',
+    delivery.stonePeak > 0, JSON.stringify(delivery));
+  // 9. THE NEGATIVE CONTROL, both halves, and neither is a threshold. GP-950:
+  // both are now measured on a starved condition this probe BUILT (the rock
+  // drill demolished, section 10) rather than one it happened to inherit from
+  // a chain that used to fail by accident.
   const exhaustionStops = check(
-    'exhaustionStops: when the hand-loaded stone runs out, production stops '
-    + 'again while the iron hopper is still not empty',
-    control.ran === true && control.drained === true
+    'exhaustionStops: when the rock drill is demolished and the stone it fed '
+    + 'genuinely runs out, production stops again while the iron hopper is '
+    + 'still not empty',
+    control.ran === true && control.rockDrillRemoved === true
+      && control.drained === true
       && control.madeWhileStarved === 0
       && control.ironHeldWhileStarved === true
       && control.starvedCoreTicks > 600,
     JSON.stringify(control));
+  const starvedMakesNothing = check(
+    'starvedMakesNothing: in the steady state that settling reaches, with '
+    + 'socket_item_in_b still mated but its source gone, the second hopper '
+    + 'unmoving and short of one craft, and the first hopper genuinely fed, '
+    + 'nothing at all is manufactured',
+    starved.measured === true && starved.made === 0
+      && starved.stoneHopperRange[0] === starved.stoneHopperRange[1]
+      && starved.stoneHopperBelowOneCraft === true && starved.ironHopperPeak > 0
+      && starved.linkBStillMated === true && starved.coreTicks > 3000,
+    JSON.stringify(starved));
 
   return {
     valid,
@@ -1154,7 +1262,7 @@
     // against a mated port and never hands a unit over, so the headline window
     // is measured with the stone put in by hand and says so.
     bothIngredientsBeltedGeometry: beltMatedBothInlets,
-    bothIngredientsBeltedDelivery: starved.stonePeak > 0,
+    bothIngredientsBeltedDelivery: delivery.stonePeak > 0,
     billMatchesCoreHandRecipe,
     ingredientsAreTheWorldsOwnItems,
     unsetMakesNothing,
@@ -1208,19 +1316,23 @@
     // the claim FS-56 exists to make; the rest are reported and not asserted,
     // since a probe that asserted them would be pinning the bug in place.
     //
-    //   stoneNeverArrivesOnTheSecondBelt   ASSERTED as `stoneArrivesByBelt`
-    //     `Automation::inferItem` binds an inserter's item type at CONNECT time,
-    //     and for a belt feeding a machine it reads `lineHeadItem(from)` with a
-    //     documented fallback to the SLOT-1 ingredient for an empty belt. Every
-    //     commit calls `FactorySim::recreate`, which throws away everything
-    //     riding every belt, so every belt is empty when it is connected, so
-    //     EVERY belt-to-assembler inserter in this client is bound to ingredient
-    //     A. `inserterSystem`'s pickup gate is `sl.headItem() == insItem_[i]`,
-    //     so the stone line's inserter waits for iron for ever. Measured here:
-    //     the line saturated at four items a tile against a port mated at
-    //     0.50 m, facing -1, and delivered nothing across a hundred seconds.
-    //     An assembler's SECOND ingredient therefore cannot be belted at all on
-    //     this build, which is the one thing a two-input machine is for.
+    //   stoneNeverArrivesOnTheSecondBelt   FIXED (FS-115/FS-129 to FS-133),
+    //                                      kept as a guard, ASSERTED POSITIVELY
+    //                                      as `stoneArrivesByBelt` in section 9
+    //     `Automation::inferItem` used to bind an inserter's item type at
+    //     CONNECT time by reading `lineHeadItem(from)` with a fallback to the
+    //     SLOT-1 ingredient for an empty belt, and every commit called
+    //     `FactorySim::recreate`, which empties every belt, so every
+    //     belt-to-assembler inserter in this client was bound to ingredient A
+    //     and the stone line's inserter waited for iron forever. FS-115 traced
+    //     this to `automation.h`'s two-input branch and found it ALREADY FIXED:
+    //     a multi-input machine gets `kNoItem` (no filter) at connect time, not
+    //     a slot-1 fallback, and `inserterSystem`'s typed-acceptance gate
+    //     decides per item instead. GP-836's separate BuildDrag non-determinism
+    //     then stopped the drag from mating the port at all on 4 of 5 runs;
+    //     FS-129 to FS-133 fixed that too. The field below now reads FALSE on
+    //     every run, which is itself the guard: a TRUE here means one of those
+    //     two fixes regressed.
     //
     //   rowInputIsNullForAnAssembler                       FIXED, kept as a guard
     //     `FactoryReport.row` gates `input` on `Factory.inputItemOf(p) > 0` and
@@ -1252,8 +1364,10 @@
     defects: {
       // The port is mated, the line is carrying items right up to it, and not
       // one of them crossed. `runItems` is /core's own count for that line.
-      stoneNeverArrivesOnTheSecondBelt: starved.stonePeak === 0
-        && starved.runItems > 0 && finalB !== null,
+      // Measured in section 9's genuine delivery window, not section 6's
+      // deliberate no-belt window, which has no run to measure at all.
+      stoneNeverArrivesOnTheSecondBelt: delivery.stonePeak === 0
+        && delivery.runItems > 0 && finalB !== null,
       rowInputIsNullForAnAssembler: rowInputWasAlwaysNull
         && asmRun.input === null,
       ghostNeverPreviewsAnAssemblerPort: assemblerGhostPorts === '',
