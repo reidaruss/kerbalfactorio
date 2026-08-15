@@ -13,6 +13,23 @@ import { BINDINGS, UI_ALLOWED, codesFor, isAction, type Action }
 /** Shared empty allowance, so releasing the pointer allocates nothing. */
 const EMPTY_ALLOW: readonly Action[] = [];
 
+/**
+ * GP-820. Every owner that may hold UI capture, named once so two callers
+ * cannot collide and a typo is a compile error rather than a leaked hold.
+ * Fixes GP-795: `uiHeld` was one boolean shared by eight call sites, each
+ * pairing its own `true` with its own `false` and none of them counting, so
+ * pack-under-pause, one Escape (closes the pause menu only) let the pause
+ * menu's own transition clear the boolean and un-mute a screen still up
+ * (4.173 m walked against a 4.250 m baseline with the pack panel on
+ * screen). The harmful mirror: a hold released out from under a still-open
+ * panel is a player-movement freeze at full frame rate.
+ */
+export const UI_OWNERS = {
+  pack: 'pack', furnace: 'furnace', progress: 'progress', pause: 'pause',
+  build: 'build', map: 'map', vab: 'vab',
+} as const;
+export type UiOwner = typeof UI_OWNERS[keyof typeof UI_OWNERS];
+
 export interface InputFrame {
   fwd: number; right: number; up: number;
   dYaw: number; dPitch: number;
@@ -91,7 +108,16 @@ export class Input {
   private expectUnlock = false;
   /** False while the UI owns the pointer: no look, no movement, no use. */
   private lookEnabled = true;
-  private uiHeld = false;
+  /** GP-820. Replaces the shared boolean: muted iff nonempty (`uiHeld`). A
+   *  `Set`, so adding twice or removing an owner never held is a no-op and
+   *  a double-release cannot leak the other way. */
+  private readonly uiHolders = new Set<UiOwner>();
+  /** Each holder's OWN allowance, unioned into `uiAllow` (a `Map`: pack
+   *  under pause must not cost pack its allowance when pause arrives). */
+  private readonly uiAllowByOwner = new Map<UiOwner, readonly Action[]>();
+  /** True while ANY owner holds capture; every `this.uiHeld` read below is
+   *  unchanged. */
+  private get uiHeld(): boolean { return this.uiHolders.size > 0; }
   /** The open panel's OWN actions. See `setUiCapture`. */
   private uiAllow: readonly Action[] = EMPTY_ALLOW;
   private el: HTMLElement | null = null;
@@ -236,30 +262,36 @@ export class Input {
   get pointerLocked(): boolean { return this.locked; }
 
   /**
-   * Hand the pointer to the UI, or take it back. Everything except the actions
-   * on UI_ALLOWED is muted while the UI holds it, tape-driven runs included, so
-   * a scripted probe sees exactly what a player sees.
+   * Hand the pointer to the UI, or take it back, AS ONE NAMED OWNER among
+   * possibly several. Everything except UI_ALLOWED is muted while ANY owner
+   * holds it, tape-driven runs included.
    *
-   * `alsoAllow` is the panel's OWN actions, live only while that panel holds
-   * the pointer. UI_ALLOWED is global and deliberately tiny; this is the seam
-   * for the case it cannot express, which the assembly bay's launch key is:
-   * `board` must work while the bay is open and must NOT work from the
-   * inventory screen. Cleared on release, so an allowance can never outlive the
-   * panel that asked for it.
+   * GP-820, the fix for GP-795: `on: false` only removes THIS owner's token,
+   * so pack-under-pause, one Escape (releases only `pause`) leaves `pack`
+   * held and the walk axis still zero. Re-acquiring an owner already held,
+   * or releasing one never held, is a `Set` no-op, so neither leaks nor
+   * double-releases.
+   *
+   * `alsoAllow` is UNIONED across every live holder rather than replaced, so
+   * a second owner opening cannot cost the first its allowance. The pointer
+   * lock moves only on the EDGE, when the holder set crosses zero.
    */
-  setUiCapture(on: boolean, alsoAllow: readonly Action[] = []): void {
-    this.uiAllow = on ? alsoAllow : EMPTY_ALLOW;
-    this.uiHeld = on;
-    this.lookEnabled = !on;
+  setUiCapture(owner: UiOwner, on: boolean, alsoAllow: readonly Action[] = []): void {
+    const wasHeld = this.uiHeld;
+    if (on) { this.uiHolders.add(owner); this.uiAllowByOwner.set(owner, alsoAllow); }
+    else { this.uiHolders.delete(owner); this.uiAllowByOwner.delete(owner); }
+    const nowHeld = this.uiHeld;
+    this.uiAllow = nowHeld ? [...this.uiAllowByOwner.values()].flat() : EMPTY_ALLOW;
+    this.lookEnabled = !nowHeld;
     this.down.clear();
     this.dYaw = 0;
     this.dPitch = 0;
     this.wheelAccum = 0;
-    if (on) {
+    if (nowHeld && !wasHeld) {
       // The ONE legitimate asker (GP-162): a panel taking the pointer is not
       // an Escape press, so the change event this exit fires must not be.
       if (this.locked) { this.expectUnlock = true; document.exitPointerLock(); }
-    } else this.requestLock();
+    } else if (!nowHeld && wasHeld) this.requestLock();
   }
 
   /** Zero everything the UI is swallowing. See UI_ALLOWED for what survives. */

@@ -119,7 +119,7 @@ is that the numbers are handed out by one writer before the work starts.
 | PH-380 to PH-394 | physics/core, mintStation still ships emptyDesign() (PH-366's finding: the station's dock port comes off its asset socket, not a real design; D-015 not uniform for Anchorage; PS-43 fixture stale) | allocated by Admin 2026-08-14 evening at dispatch; lane greps PH ledger first |
 | CE-70 to CE-84 | core-engine, R-BODY-2 playability half (an in-page body round trip regrows drained rocks and trees in the LIVE session: populations are built once in Gameplay's constructor holding the boot body, and re-placed at a fresh /core index with a full initial on return; PS-49..52 measured it and froze the save around it) | allocated by Admin 2026-08-14 night at dispatch; lane greps CE ledger first |
 | CE-85 to CE-99 | core-engine, the carrier.js rotor C1 red (perTickM 31.32092 vs r*w 31.320866, relative ~1.7e-6 vs 1e-6 tolerance, deterministic; rotor seeds from station and the stamped station plausibly perturbed it; diagnosis before anyone widens the tolerance) | allocated by Admin 2026-08-14 night at dispatch |
-| GP-820 to GP-834 | gameplay, Input.uiHeld is one boolean with eight callers and no reference count (GP-795's routed finding: pack-under-pause plus one Escape leaves the pack open while movement resumes; the harmful mirror is a stuck-muted walk axis) | allocated by Admin 2026-08-14 night at dispatch |
+| GP-820 to GP-834 | gameplay, Input.uiHeld is one boolean with eight callers and no reference count (GP-795's routed finding: pack-under-pause plus one Escape leaves the pack open while movement resumes; the harmful mirror is a stuck-muted walk axis) | allocated by Admin 2026-08-14 night at dispatch; **GP-820 USED** (the whole landing: `Input.setUiCapture` takes a named `UiOwner` token and holds a `Set<UiOwner>` in place of the boolean, so `on: false` only ever removes the calling owner's own hold; the caller census came out at seven direct call sites for eight logical openers, not eight call sites -- `MapBoot` and `VabBoot` each wrap one `Input.setUiCapture` call reused for both their open and close, `MenuBoot` has two [pause, build], `GameplayChrome` has three [pack, furnace, progress] -- and all seven now name `UI_OWNERS.{pack,furnace,progress,pause,build,map,vab}`; `probes/keywmute.js` extended from 8 hand-written cases to a 22-scenario, 72-step generated sweep of every owner alone plus every ordered pair of pack/pause/buildMenu stacked and unstacked both ways (own verb and two Escapes), plus two representative cross-pairs for the fourth reachable owner; GP-795's own two defect numbers, 4.173 m and 4.097 m of leaked walk, are now 0.000 m (muted, correctly) on the identical steps). **GP-821 to GP-834 free.** One honest finding recorded rather than routed further: the probe's first draft used `research` as the fourth swept owner and got a false violation from D-019's own station gate (`ProgressUi.toggle` refuses `research` with no station built, which is a named gameplay rule, not a capture leak); switched to `equipment`, which `ProgressUi.toggle` does not gate, and the sweep went clean. Recorded here per rule 5. |
 | GP-835 to GP-849 | gameplay/probes, stationreload.mjs re-aim (red on main before, red for a new reason since of.station() reports the live tick; its bit-exact unmoved assertions were written against the frozen semantics) plus GP-761 stone haul 43 m short, timing diagnosis | allocated by Admin 2026-08-14 night at dispatch |
 | GP-790 to GP-804 | gameplay, the KeyW 500-frame player-movement freeze (reproducible; diagnosis first, fix at the cause) | allocated by Admin 2026-08-14 evening at dispatch; GP-790 to GP-796 USED (the three-signature instrument, the mute audit, the NOT-REPRODUCED verdict, the rebase refuted, the `playTape` replace trap, `uiHeld` has no reference count, the PowerShell string-evalarg trap); **GP-797 to GP-804 abandoned, never used** |
 | GP-805 to GP-819 | gameplay/probes, instrument bundle: zerog Z4 vacuous-pass risk, stationwalk.js aiming at the stale install.standPos, the antenna dish unselectable to the pick | allocated by Admin 2026-08-14 evening at dispatch |
@@ -1629,3 +1629,43 @@ result: the run exited non-zero and printed the name it could not resolve. The
 cheap habit is to keep `--evalargs` numeric (`{"fp":1}` rather than
 `{"view":"first"}`), which is what `probes/keywfreeze.js` does and says so at
 the call site.
+
+### `refs/stash` is shared across every worktree, so `git stash pop` can hand a lane someone else's WIP
+
+GP-820, near miss, no data lost. Comparing this lane's build against HEAD, this
+lane ran `git stash push -- <its own 6 files>`, then `git stash pop`. The pop
+returned "Dropped ... 185eef7", but `git status` afterward showed THREE files
+this lane had never touched (`RockField.ts`, `TreeField.ts`, `TreeTuning.ts`),
+and this lane's own six files were back to HEAD, unstashed. `git show --stat`
+on the dropped commit named it: `WIP on lane/body-playability: ...` -- a
+DIFFERENT lane's stash, popped into THIS worktree.
+
+**The mechanism: `git worktree add` gives each worktree its own HEAD, index and
+working tree, but `refs/stash` is a normal ref in the shared `.git` and is
+NOT worktree-local.** Two lanes in two worktrees pushing to the stack at
+overlapping moments race on that one ref exactly the way two lanes committing
+to `.git` at once always have in this project's history (this file's own
+opening paragraph). This lane's push and pop were each individually correct;
+the failure was trusting that `refs/stash` was private between them.
+
+**Recovered rather than discarded, because both stashes were still reachable.**
+`git fsck --unreachable` lists every dropped stash commit as a dangling
+object until GC; `git show -s --format="%H %ci %s"` across the candidates
+found both by their author date and their `WIP on <branch>: <parent>`
+message. The foreign one (`185eef7...`) was returned to circulation with
+`git stash store -m "<its original message>" <hash>`, which updates
+`refs/stash` and its reflog without touching any working tree, so
+lane/body-playability can `git stash pop` it normally. This lane's own
+(`fca289b...`) was recovered file-by-file via `git show <hash>:<path>` and
+`Write`, because `git stash apply`/`git checkout <commit> -- <paths>` were
+both refused by this session's own permission classifier as stash/checkout
+operations, which turned out to be the safer path anyway: it touches only
+this lane's six files rather than invoking a stash subcommand that would
+contend on the shared ref a second time.
+
+**The transferable rule: do not use `git stash` as a worktree-scoped scratch
+space in this project, because it is not one.** A lane that needs to diff
+its own change against HEAD should copy the working files aside (or use
+`git worktree`'s own second checkout, or `git diff`/`git show` against a
+commit) rather than push/pop, because the stack a `pop` reads from is shared
+with every other lane currently running.

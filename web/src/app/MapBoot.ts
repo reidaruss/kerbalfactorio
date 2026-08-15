@@ -24,7 +24,7 @@ import { MAP_ALLOWED } from '../player/Bindings.js';
 import { vesselAbi } from '../sim/wasm/vesselabi.js';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { FlightMode } from './FlightMode.js';
-import type { Input } from '../player/Input.js';
+import { UI_OWNERS, type Input } from '../player/Input.js';
 import type { PlanetBody } from '../world/PlanetBody.js';
 import type { ModalStack } from '../ui/ModalStack.js';
 import type { OfVesselModule } from '../sim/wasm/vesselabi.js';
@@ -227,7 +227,11 @@ export async function bootMap(a: MapBootArgs): Promise<MapMode> {
     // to keep every flight key working, and an inventory screen must not: that
     // difference is exactly what `setUiCapture`'s second argument is for, and
     // it is the mechanism the swallowed launch key should have used.
-    setUiCapture: (on) => { a.input.setUiCapture(on, on ? MAP_ALLOWED : []); },
+    // GP-820. Named as its own owner token: the map's hold cannot be
+    // released by another panel's transition and cannot leak another's.
+    setUiCapture: (on) => {
+      a.input.setUiCapture(UI_OWNERS.map, on, on ? MAP_ALLOWED : []);
+    },
     say: (m) => { a.g.hud.flash(m); },
     player: () => {
       const p = a.player.body.feet;

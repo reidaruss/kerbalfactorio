@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import type { OfCoreModule } from '../sim/wasm/heap.js';
 import type { Gameplay } from '../game/Gameplay.js';
-import type { Input } from '../player/Input.js';
+import { UI_OWNERS, type Input } from '../player/Input.js';
 import type { Vab } from '../game/Vab.js';
 
 export interface VabExits {
@@ -47,7 +47,11 @@ export async function bootVab(p: VabBootPorts, exits: VabExits): Promise<Vab> {
     // GP-121 / R11: `recover` joins it, or the key is swallowed exactly as
     // `board` was before GP-54, and the bay's new Clear pad button would be the
     // only way to reach a verb that has had a binding since GP-74.
-    setUiCapture: (on) => { p.input.setUiCapture(on, ['board', 'recover']); },
+    // GP-820. Its own owner token, for the same reason MapBoot's is: the bay
+    // releasing on exit must never touch a hold some other panel still has.
+    setUiCapture: (on) => {
+      p.input.setUiCapture(UI_OWNERS.vab, on, ['board', 'recover']);
+    },
     setRenderMode: (on) => { p.setRenderMode(on); },
     rollOut: () => {
       if (exits.rollOut === null) {

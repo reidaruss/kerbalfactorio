@@ -29,6 +29,10 @@ import { labelOf } from '../player/Bindings.js';
 import { CONTROL_GROUPS } from '../player/BindingText.js';
 import type { Loop } from './Loop.js';
 import { seatOnStationDeck, stationArrivalBody } from './StationMount.js';
+// GP-820. Both transitions in this file name their OWN owner token now, so
+// the pause menu releasing its hold can never un-mute a build menu still up
+// (or vice versa) -- see Input.ts's UI_OWNERS for the full argument.
+import { UI_OWNERS } from '../player/Input.js';
 
 export function installPauseMenu(s: Services, loop: Loop) {
   const g = s.gameplay;
@@ -138,7 +142,7 @@ export function installPauseMenu(s: Services, loop: Loop) {
   const setPause = (open: boolean): void => {
     menu.setOpen(open);
     if (open) { cheats.press('page:'); g.modals.touch(menu); menu.invalidate(); }
-    s.input.setUiCapture(open);
+    s.input.setUiCapture(UI_OWNERS.pause, open);
     g.hud.setVisible(!open);
     g.hotbarBar.setVisible(!open);
   };
@@ -204,7 +208,7 @@ export function installPauseMenu(s: Services, loop: Loop) {
     buildMenuOpen = open;
     build.setOpen(open);
     if (open) { g.modals.touch(build); build.invalidate(); }
-    s.input.setUiCapture(open);
+    s.input.setUiCapture(UI_OWNERS.build, open);
     g.hud.setVisible(!open);
     g.hotbarBar.setVisible(!open);
   };
