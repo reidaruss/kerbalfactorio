@@ -1903,3 +1903,41 @@ correctly with it and correctly without it.** `sleep(n)` in these probes is
 one call that did not pass one. Two sibling probes, one line apart in intent,
 differing 9.6x in cost, and nothing in either file said so until the run was
 timed step by step.
+
+### `Stop-Process` filtered by COMMAND LINE kills every lane's server, not yours
+
+GP-984, 2026-08-15, done by this lane, to other lanes, while cleaning up after
+itself. Written down the same day because the whole point of this file is that
+a process failure recorded is cheaper than a process failure repeated.
+
+The brief says kill by PID and never by image name, and this lane obeyed the
+letter of that and broke the intent. The teardown was:
+
+```
+Get-CimInstance Win32_Process -Filter "Name='node.exe'"
+  | Where-Object { $_.CommandLine -match 'vite' -and $_.CommandLine -match 'preview' }
+  | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+Every process it killed was killed BY PID, so it passes the rule as written.
+It still killed **eleven** processes and took down at least two other lanes'
+`vite preview` servers (ports 4972 and 4973 were listening before it ran and
+nothing was listening on any 4xxx port after), because **the selector was a
+command-line pattern and every lane's server matches it.** This is GP-670's
+finding wearing different clothes: there, `pgrep -f "headless_shell|chrome"`
+matched the briefs and guards that merely CONTAINED the pattern; here,
+`-match 'vite.*preview'` matches every lane that is doing the same job.
+
+**A PID is only yours if you learned it from something that is yours.** Two
+selectors are safe and neither is more work:
+
+- **Own the port.** `Get-NetTCPConnection -LocalPort <your port> -State Listen`
+  gives `OwningProcess`, and the port is a fact about your own server.
+- **Own the handle.** Keep the PID the spawn returned and kill that.
+
+A pattern that describes what the process IS ("a vite preview") can never
+distinguish yours from a sibling's, and on this box a sibling is the normal
+case. The blast radius is silent from inside the killing lane: nothing errors,
+the port frees, and the report reads like a clean teardown. It was noticed here
+only because a `netstat` for the lane's own port also returned every other
+port empty.
