@@ -79,21 +79,61 @@
     pick0?.block === BLOCK.InputsShort, JSON.stringify(pick0));
 
   // ======================================================================
-  // 1. MINE. Generously, so the refusal below cannot be about materials.
-  // ======================================================================
-  let wood = 0;
-  let iron = 0;
-  for (const n of of.nodes()) {
-    if (n.kind === 0) for (let k = 0; k < 30; ++k) {
-      if (of.harvest(n.index).ok) wood++;
+  // 1. MINE. GP-905 to GP-919, GP-624's OWN PATTERN APPLIED HERE: this loop
+  // mined kind 0 (Wood) and kind 3 (Raw iron) at up to 30 swings a node
+  // across every node in the world, which is TWO stale things at once.
+  //
+  // FIRST, the recipe moved: GP-506 priced "Crude pickaxe" at Stone x2 +
+  // Wood x1, never Raw iron, and iron is now `requiresToolFor`-gated
+  // (`HarvestRefusal::ToolRequired`) with no pickaxe yet to swing it with,
+  // so the iron half of this loop mined nothing, silently, every run.
+  // Fixed the way GP-624 fixed the same class in researchstation.js /
+  // buildmenu.js / research.js / padgate.js / survivalrun.js: sweep the
+  // BARE kinds the recipe actually needs (Tree, Rock -- ungated precisely
+  // so this has a bare-hand path at all) rather than a kind this recipe was
+  // never priced in.
+  //
+  // SECOND, "every node in the world at 30 swings each" is not "generously"
+  // against a 20-slot pack, it is unconditionally full: on this scenario's
+  // clearing that mined 2000 Wood alone (20 slots x 100/stack) before the
+  // craft loop below ever ran, so `slotsUsed()` read 20/20 on press i=0 and
+  // "the pack really is full" was true for the wrong reason -- overmining,
+  // not the GP-51 defect under test. Capped per kind at comfortably more
+  // than the ~20 pickaxes this file crafts consume (20 Wood, 40 Stone),
+  // leaving slots for the craft loop to fill for real.
+  const sweep = (kind, cap) => {
+    let got = 0;
+    for (const n of of.nodes()) {
+      if (n.kind !== kind) continue;
+      for (let k = 0; k < 30 && got < cap; ++k) {
+        if (of.harvest(n.index).ok) got++;
+      }
+      if (got >= cap) break;
     }
-    if (n.kind === 3) for (let k = 0; k < 30; ++k) {
-      if (of.harvest(n.index).ok) iron++;
-    }
-  }
+    return got;
+  };
+  const wood = sweep(0, 25);
+  const stone = sweep(1, 45);
   log.push(`mined: ${JSON.stringify(pack())}`);
   check('there is wood', (pack()['Wood'] ?? 0) > 20, pack()['Wood']);
-  check('there is raw iron', (pack()['Raw iron'] ?? 0) > 20, pack()['Raw iron']);
+  check('there is stone', (pack()['Stone'] ?? 0) > 20, pack()['Stone']);
+
+  // GP-624's NEGATIVE CONTROL, the same swing bare hands would earn: a
+  // gated kind (Raw iron) refuses with `HarvestRefusal.ToolRequired` (code
+  // 1) and leaves the node's `remaining` untouched, so "the pickaxe was
+  // built without ever mining iron" is a measured fact and not merely the
+  // absence of a line that used to mine it.
+  const ironNode = of.nodes().find((n) => n.kind === 3);
+  const ironBeforeRemaining = ironNode?.remaining ?? null;
+  const ironSwing = ironNode !== undefined ? of.harvest(ironNode.index) : null;
+  check('bare hands are refused on a gated kind (Raw iron) before any tool exists',
+    ironSwing !== null && ironSwing.ok === false && ironSwing.refusal?.code === 1,
+    JSON.stringify(ironSwing));
+  check('and the refusal took nothing from the node',
+    ironNode !== undefined
+      && Math.abs((of.nodes().find((n) => n.index === ironNode.index)?.remaining ?? -1)
+        - ironBeforeRemaining) < 1e-6,
+    `${ironBeforeRemaining} -> ${of.nodes().find((n) => n.index === ironNode.index)?.remaining}`);
 
   await press('Tab');
   await sleep(0.5);
@@ -158,18 +198,18 @@
     row?.querySelector('.lock')?.textContent ?? '(no reason shown)');
 
   // A DISABLED BUTTON IS A SUGGESTION. Force it and prove the guard behind it
-  // holds: this is the path that used to spend 1 Wood and 1 Raw iron and
-  // produce nothing at all.
+  // holds: this is the path that used to spend GP-506's Stone x2 + Wood x1
+  // and produce nothing at all.
   const woodBefore = pack()['Wood'] ?? 0;
-  const ironBefore = pack()['Raw iron'] ?? 0;
+  const stoneBefore = pack()['Stone'] ?? 0;
   if (button !== null) button.disabled = false;
   const forced = click(button);
   await sleep(0.35);
   check('a forced click was delivered', forced === true);
   check('and NOTHING was paid for it',
     (pack()['Wood'] ?? 0) === woodBefore
-      && (pack()['Raw iron'] ?? 0) === ironBefore,
-    `${woodBefore}/${ironBefore} -> ${pack()['Wood']}/${pack()['Raw iron']}`);
+      && (pack()['Stone'] ?? 0) === stoneBefore,
+    `${woodBefore}/${stoneBefore} -> ${pack()['Wood']}/${pack()['Stone']}`);
   check('and no pickaxe appeared',
     (pack()['Crude pickaxe'] ?? 0) === madeTotal,
     `${madeTotal} -> ${pack()['Crude pickaxe']}`);

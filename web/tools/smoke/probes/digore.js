@@ -32,10 +32,31 @@
   const name = item?.name ?? 'Raw iron';
   const pool = (i) => of.game().ore.list.find((p) => p.index === i).remaining;
 
+  // GP-905 to GP-919: A PICKAXE FIRST, MEASURED NECESSARY. GP-506 gates
+  // CoalSeam/IronOre/CopperOre behind `requiresToolFor` (gameplay.h), so a
+  // bare-hand swing at one of them is refused outright now, not merely paid
+  // less: swinging at the un-crafted `crop` below returned
+  // `{ok:false, refusal:{code:1}}` (tool required) and granted 0, which
+  // failed the `gained/paid <= bareSwing` comparison for the wrong reason
+  // (an impossible baseline, not a real yield regression). `Rock` and `Tree`
+  // stay ungated by design (gameplay.h's own comment: "or the pickaxe recipe
+  // ... has no bare-hand path and every fresh spawn deadlocks"), so this
+  // bootstraps a Crude pickaxe from those exactly as story rung 2 does
+  // before measuring what a tooled swing at the ore is worth beside a dig.
+  const rockNode = of.nodes().find((n) => n.kind === 1 && n.remaining > 20);
+  const treeNode = of.nodes().find((n) => n.kind === 0 && n.remaining === n.initial);
+  if (rockNode !== undefined) of.harvest(rockNode.index);
+  if (rockNode !== undefined) of.harvest(rockNode.index);
+  if (treeNode !== undefined) of.harvest(treeNode.index);
+  of.craft(0);
+
   // What the neighbours are worth, from this same world rather than a comment.
   const crop = of.nodes().find((n) => n.kind === patch.kind && n.remaining > 20);
   const packWas = held(name);
   if (crop !== undefined) of.harvest(crop.index);
+  // GP-506: "bare" in name only, for kinds gameplay.h gates a bare hand
+  // swing entirely refuses (see the pickaxe bootstrap above); it is the
+  // required-tool swing for those, matching what a player can actually do.
   const bareSwing = held(name) - packWas;
 
   // Stand ON the deposit. lat/lon from the body-frame centre, which is the same

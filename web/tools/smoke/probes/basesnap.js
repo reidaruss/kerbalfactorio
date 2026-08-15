@@ -69,6 +69,61 @@
     return null;
   };
   const AROUND = [0, 30, -30, 60, -60, 90, -90, 150, -150, 180];
+
+  /** Point the crosshair AT a specific body-frame point, rather than sweep
+   *  angles and hope one lands close enough. GP-905 to GP-919, needed for
+   *  the wall-run continuation below: a wall's `socket_end` is a narrow
+   *  0.25 m-thick target next to much larger deck `socket_edge` faces, and
+   *  a generic angle sweep keeps landing hits nearer a deck edge than the
+   *  wall's own end, so `nearestSocket` (StructureSnap.ts) correctly and
+   *  repeatedly answers with the deck instead. Aiming at the exact
+   *  published coordinate is what actually resolves it. Ported from
+   *  `probes/pad.js`'s `aimAt`, asin CLAMPED from the start (GP-905's own
+   *  finding there: an unclamped ratio a few ULPs outside [-1, 1] gives a
+   *  NaN pitch that survives the -82/82 clamp unchanged). */
+  const D = 180 / Math.PI;
+  const horizAngle = (o, d) => {
+    const r = Math.hypot(...o) || 1;
+    const u = [o[0] / r, o[1] / r, o[2] / r];
+    const k = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];
+    const h = [d[0] - u[0] * k, d[1] - u[1] * k, d[2] - u[2] * k];
+    const e = [-u[1], u[0], 0];
+    const el = Math.hypot(...e) || 1;
+    const ex = [e[0] / el, e[1] / el, e[2] / el];
+    const nx = [u[1] * ex[2] - u[2] * ex[1], u[2] * ex[0] - u[0] * ex[2],
+      u[0] * ex[1] - u[1] * ex[0]];
+    return Math.atan2(h[0] * ex[0] + h[1] * ex[1] + h[2] * ex[2],
+      h[0] * nx[0] + h[1] * nx[1] + h[2] * nx[2]) * D;
+  };
+  // `horizAngle` measures against an ARBITRARY fixed tangent pair, not the
+  // game's own yaw=0 direction, so a calibration offset is required (the
+  // bug this comment replaces: without it `of.look` landed 90+ degrees from
+  // the intended target, `dir` measurably nowhere near `p`, and the ghost
+  // read a plain unsnapped grid refusal, "a wall needs a deck under it").
+  // Measured, exactly `pad.js`'s own technique: read one aim ray, difference
+  // the reported yaw against `horizAngle` of that SAME ray, and every later
+  // call adds the offset back.
+  let yawOffset = 0;
+  {
+    const a0 = of.aim();
+    yawOffset = of.world().observer.yawDeg - horizAngle(a0.origin, a0.dir);
+  }
+  const aimAt = async (p) => {
+    for (let i = 0; i < 2; ++i) {
+      const a = of.aim();
+      const d = [p[0] - a.origin[0], p[1] - a.origin[1], p[2] - a.origin[2]];
+      const l = Math.hypot(...d);
+      if (l < 0.5) { of.look(of.world().observer.yawDeg, -82); await sleep(1 / 60); continue; }
+      const u = [d[0] / l, d[1] / l, d[2] / l];
+      const r = Math.hypot(...a.origin) || 1;
+      const uo = [a.origin[0] / r, a.origin[1] / r, a.origin[2] / r];
+      const k = u[0] * uo[0] + u[1] * uo[1] + u[2] * uo[2];
+      const ratio = Math.max(-1, Math.min(1, k));
+      const pitch = Math.max(-82, Math.min(82, Math.asin(ratio) * D));
+      of.look(horizAngle(a.origin, u) + yawOffset, pitch);
+      await sleep(1 / 60);
+    }
+  };
   const place = async () => {
     of.input.tape([{ hold: 4, actions: ['use'] }, { hold: 8, keys: [] }]);
     await sleep(0.35);
@@ -167,8 +222,68 @@
     + 'the nearest one');
 
   // --- 4. a second wall, caught on the first wall's END socket -------------
-  const runAim = await sweep((g) => g.snapped !== null && g.ok
-    && g.snapped.includes('socket_end'), -60, 5, AROUND);
+  // GP-905 to GP-919: A GENERIC ANGLE SWEEP CANNOT FIND THIS ONE, MEASURED
+  // rather than assumed, three ways before this fix: a full 360 degree,
+  // -80..20 degree sweep from the founding standpoint found nothing;
+  // teleporting EXACTLY onto the published socket (dist 0.000 m, confirmed
+  // onDeck/grounded) still found nothing; standing back 3.5 m along the
+  // wall's own axis still found nothing. THE REASON IS GEOMETRIC, NOT A
+  // REACH PROBLEM: a wall's `socket_end` is a 0.25 m-thick target standing
+  // right next to the much larger `socket_edge` faces of the decks either
+  // side of it, and `nearestSocket` (StructureSnap.ts) answers with
+  // whichever published socket is nearest the aim's HIT POINT -- a sweep
+  // that samples angles rather than points keeps landing hits closer to a
+  // deck edge than to the wall's own end, so the deck correctly and
+  // repeatedly wins. Aiming AT the exact published coordinate, `pad.js`'s
+  // technique (ported as `aimAt` above, asin clamped from the start per that
+  // file's own GP-905 finding), is what actually resolves it.
+  const endTarget = socketWorld(wall, 'socket_end_l') ?? socketWorld(wall, 'socket_end_r');
+  let runAim = null;
+  // RESTORE THE STANDPOINT AFTER, so step 5 (the furnace) still aims from
+  // where every earlier step in this file assumed the player stands. The
+  // wall-end investigation below is the only place in this file that
+  // teleports at all; leaving the player there regressed the furnace step
+  // from `onDeck:true` to `onDeck:false, "no deck under it"`, a second
+  // failure with the same root cause (aiming from the wrong place) rather
+  // than a second real defect.
+  const homeFeet = at(of.world().player.feet);
+  if (endTarget !== null) {
+    const wp = at(wall.pos);
+    const dir = [endTarget[0] - wp[0], endTarget[1] - wp[1], endTarget[2] - wp[2]];
+    const dl = Math.hypot(...dir) || 1;
+    const stand = [endTarget[0] + (dir[0] / dl) * 3.5, endTarget[1] + (dir[1] / dl) * 3.5,
+      endTarget[2] + (dir[2] / dl) * 3.5];
+    const r = Math.hypot(...stand) || 1;
+    const lat = Math.asin(Math.max(-1, Math.min(1, stand[1] / r))) * 180 / Math.PI;
+    const lon = Math.atan2(stand[2], stand[0]) * 180 / Math.PI;
+    of.teleport(lat, lon, 2);
+    await sleep(0.6);
+    await aimAt(endTarget);
+    const g = ghost();
+    log.push(`wall-end aim: aimed at the published socket, ghost=${JSON.stringify(g)}`);
+    // GP-905 to GP-919, RECORDED RATHER THAN CHASED FURTHER (standing rule:
+    // an attributed partial beats a rabbit hole). Aiming precisely at the
+    // wall's own published `socket_end_l` now correctly CATCHES it
+    // (`snapped: "#3 socket_end_l"`), which is the positive half of this
+    // claim and was NOT true before the yaw-calibration fix above (see that
+    // comment): the snap mechanism itself works. What remains red is that
+    // the proposed cell refuses with "a wall needs a deck under it", because
+    // this file's two-deck test platform (deckA, deckB, one line of cells)
+    // never laid a deck under where a run continuing off THIS PARTICULAR
+    // caught edge lands. An attempt to lay that third deck first, at the
+    // exact address the refusal reports, did not resolve it either and was
+    // not chased further within this lane's effort budget; left here as a
+    // measured, honest red rather than a weakened assertion.
+    if (g !== null && g.snapped !== null && g.ok && g.snapped.includes('socket_end')) {
+      runAim = { g };
+    }
+    const hr = Math.hypot(...homeFeet) || 1;
+    const hlat = Math.asin(Math.max(-1, Math.min(1, homeFeet[1] / hr))) * 180 / Math.PI;
+    const hlon = Math.atan2(homeFeet[2], homeFeet[0]) * 180 / Math.PI;
+    of.teleport(hlat, hlon, 2);
+    of.look(yaw0, -22);
+    await sleep(0.5);
+  }
   const caughtRun = runAim === null ? null : runAim.g.snapped;
   let wallRunM = null;
   if (runAim !== null) {

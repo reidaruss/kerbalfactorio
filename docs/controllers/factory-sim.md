@@ -460,6 +460,8 @@ plus the joined save: the pack's save/load must call `serializePollution`/`deser
 - **R3:** 3D placement ergonomics vs Factorio's 2D grid clarity (overlaps with gameplay UI). *(unchanged)*
 - **R4 (new, from Spike 3 §9):** **Mass Entity binding overhead**: the *algorithm* passes headless (G1); whether UE Mass Entity's processor/fragment dispatch regresses 100k below 60 UPS is a D-001 stress point (G8). Isolated by headless-first plan; if it fails, fix is a thinner SoA path under UE, not a re-scope. The real limiting factor at 100k is **memory bandwidth / cache misses, not arithmetic** (boids reference: 100k in ~2.4 ms tight-SoA).
 
+- **R10 (new, 2026-08-15, GP-908 in gameplay.md's decision log): a bare-hand outcrop swing at coal/iron/copper grants ore without depleting the patch it came from.** Found while triaging `probes/balance.js` (reds-triage lane, gameplay-controller's block): `rock` (Stone) conserves correctly, three consecutive coal/iron/copper swings did not, `patchFell` reading 0 while `perSwing` still granted 3, on 2 consecutive runs. Traced to `of_gp_node_harvest` (`web/wasm/of_core_api.cpp`): when `patchOfNode`/`g_gpNodePatch` has no link for the swung node's index it falls through to the node-only `harvestNode` path, which grants ore but touches no `OrePatch`. Not fixed by the triage lane (core C++ content, out of charter); full account is in gameplay.md's GP-905 to GP-919 row. Whoever owns `g_gpNodePatch` population (`of_gp_node_add_outcrop` and callers) should check why only the rock outcrop's node index links correctly.
+
 ## 8. Subagent delegation log
 | Date | Subagent task | Status | Outcome |
 |------|---------------|--------|---------|
