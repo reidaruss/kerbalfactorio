@@ -366,6 +366,59 @@ export function gameplayApi(s: Services, loop: Loop) {
     },
 
     /**
+     * RN-1800. PIN THE STATION'S OWN ORBITAL CLOCK -- the quantity that
+     * actually decides which side of the hull the sun is on, and the one the
+     * look audit found nothing else pins.
+     *
+     * `setTime`/`setSunElev` move the SUN. The station is a conic 400 km up
+     * doing 7.67 km/s, and `stateOf` (`VesselRegistry.ts`) derives its
+     * position from `clockAt(rec, tick)`, which is `rec.clockS` folded
+     * forward by `(tick - rec.stampedTick) * RAILS_DT` -- a function of how
+     * many FIXED TICKS have elapsed since the record was last stamped, not of
+     * the day-night phase at all. `artframe.js`'s `station` shot boards
+     * through the pause menu, settles, looks and re-pins the sun before
+     * capture, and every one of those steps runs a different number of ticks
+     * from run to run (menu settle timing, `standAt` convergence and the
+     * carrier-boarding wait are none of them frame-counted), so two captures
+     * with an IDENTICAL sun phase still land the station at two different
+     * points on its own orbit. That is what RN-1800's non-reproducible box
+     * luma (21.78, then 3.73, then 5.69 at "the same" pin) was actually
+     * measuring: not the sun moving, the hull.
+     *
+     * Overwrites `clockS`/`stampedTick` directly -- the same two fields
+     * `FlightMode.ts`'s `mintStation` and `VesselRegistry.stamp` already
+     * write outside this file, so nothing about the record's shape changes,
+     * only which instant it reports. Undefined leaves the clock untouched and
+     * only reads it, so a probe can check the live value before deciding
+     * whether to pin. Returns the resulting position and speed so a probe can
+     * verify the pin actually landed rather than assume it did.
+     */
+    stationClock(clockS?: number) {
+      const rec = findStation();
+      if (rec === null) return null;
+      if (clockS !== undefined) {
+        rec.clockS = clockS;
+        rec.stampedTick = loop.tickIndex;
+      }
+      const st = stateOf(s.core, registry, rec, loop.tickIndex);
+      // RN-1810 DIAGNOSTIC. `renderTick` (`Loop.ts`, CE-51) is `tickIndex - 1 +
+      // alpha`, the FRACTIONAL tick the drawn hull is actually posed at
+      // (`CarrierMounts.syncWatchersAt`), which can differ from the INTEGER
+      // tick this method's own `stateOf` reads above. Both published so a
+      // capture-time comparison can show whether that gap is where the
+      // station shot's variance actually lives.
+      const rst = stateOf(s.core, registry, rec, loop.renderTick);
+      return {
+        clockS: rec.clockS, stampedTick: rec.stampedTick, tick: loop.tickIndex,
+        pos: st.pos, vel: st.vel,
+        speedMps: Math.hypot(st.vel[0], st.vel[1], st.vel[2]),
+        alpha: loop.alpha, renderTick: loop.renderTick,
+        renderPos: rst.pos, renderPosVsIntegerM: Math.hypot(
+          rst.pos[0] - st.pos[0], rst.pos[1] - st.pos[1], rst.pos[2] - st.pos[2]),
+      };
+    },
+
+    /**
      * PH-90. Put the walker's feet at a BODY-FRAME point and report where they
      * ended up. The companion to `stand()`: that one asks WHICH authority held
      * the player up, this one puts the player somewhere there is no terrain
