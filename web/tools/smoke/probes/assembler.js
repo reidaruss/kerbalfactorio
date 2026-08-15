@@ -684,6 +684,16 @@
   // still holds `use` keeps the button down, which is how the walk is steered.
   of.input.tape([{ hold: 5000, actions: ['use'], keys: ['KeyW'] }]);
   await sleep(0.2);
+  // FS-99 INSTRUMENTATION, OFF BY DEFAULT (`--evalargs={"dragtrace":1}`).
+  //
+  // GP-836 measured this same gesture laying 46, 53, 53, 46 and 64 tiles over a
+  // deterministic 915 ticks and a deterministic 47.8 m of eye travel, and no
+  // reading available HERE can say which of those 915 per-tick decisions first
+  // differed: the probe layer sees a tile count, which is their sum. Arming the
+  // client's own per-tick trace is what makes two runs diffable line by line.
+  // Armed at the last possible moment so the walk in and the aim search are not
+  // in the buffer, and disarmed the moment the haul is dumped.
+  if (OF_ARGS.dragtrace) of.dragTrace(true);
   // GP-761 INSTRUMENTATION. `sleep` is `of.run` (Loop.run): it stops the real
   // rAF loop and drives a SYNTHETIC clock for the requested seconds, which its
   // own header says exists BECAUSE headless Chrome's rAF pump is bursty and
@@ -715,6 +725,8 @@
   }
   of.input.tape([{ hold: 6, keys: [] }]);
   await sleep(0.4);
+  const dragTraceLines = OF_ARGS.dragtrace ? of.dragTrace().lines : [];
+  if (OF_ARGS.dragtrace) of.dragTrace(false);
   const draggedTiles = of.build().longestDrag;
   const dragTicks = of.world().tick - tick0;
   const dragWallMs = Date.now() - wall0;
@@ -726,6 +738,27 @@
     + `${routeM.toFixed(1)} m waypoint route (${way.length} waypoints, `
     + `${dragHaul.length} of.run(0.35) calls, last call k=${dragHaul.at(-1)?.k ?? -1} `
     + `stopped ${dragHaul.at(-1)?.distToWp ?? -1} m from its waypoint)`);
+
+  // FS-99. THE DETERMINISM RUN STOPS HERE (`--evalargs={"dragonly":1}`), and it
+  // is off by default so the probe's own verdict is untouched. Everything below
+  // is the assembler's recipe, ports and starvation windows, which take several
+  // minutes of core ticks and answer a question this mode is not asking. NO
+  // `valid`, `ok` or `pass` key: this mode MEASURES a drag and judges nothing,
+  // and a verdict key would invite a gate to read a green out of it.
+  if (OF_ARGS.dragonly) {
+    return {
+      dragOnly: true, draggedTiles: of.build().longestDrag, dragTicks,
+      dragCoveredM: +coveredM.toFixed(2), dragCalls: dragHaul.length,
+      belts: fac().list.filter((b) => b.kind === 'belt').length,
+      // The laid line itself, in id order, so two runs differ visibly in their
+      // cells and not only in a count. `fwd` is dotted against the assembler's
+      // own R axis, which is the direction port B faces: 1.0 is a tile pointing
+      // dead AWAY from the port, -1.0 is dead at it.
+      tiles: fac().list.filter((b) => b.kind === 'belt')
+        .map((b) => `${b.id}@${b.cell}:${dot(b.fwd, R).toFixed(2)}`),
+      dragHaul, dragTraceLines, log,
+    };
+  }
 
   // THE LAST FEW CELLS, ONE SNAPPED PRESS EACH. A drag ends wherever the
   // crosshair is and the crosshair is no more accurate than the 9 m aim march,
@@ -1165,7 +1198,7 @@
       // GP-761 diagnosis numbers, see the two GP-761 log lines above for prose.
       dragTicks, dragWallMs, dragCoveredM: +coveredM.toFixed(2),
       dragRouteM: +routeM.toFixed(2), dragCalls: dragHaul.length,
-      dragHaul, pressLog,
+      dragHaul, pressLog, dragTraceLines,
     },
     starved,
     control,

@@ -34,6 +34,7 @@
 import { headingIn, stepToward, type MachineAddr } from './MachinePlacement.js';
 import { resolveGhost, type BuildRay, type BuildTarget } from './FactoryGhost.js';
 import { axisStepOf, snapGapM, mateFor } from './FactorySnap.js';
+import type { DragStep, DragTrace } from './DragTrace.js';
 import type { BuildKind, Factory, Placed } from './Factory.js';
 import type { StructureTarget } from './StructurePlacement.js';
 import type { PadTarget } from './LaunchPadPlacement.js';
@@ -87,6 +88,17 @@ export class MachineDrag {
   /** GP-59: set on the tick a PRESS lays a machine, cleared on the next held
    *  tick. See `stepMachine` for why that one tick has to be skipped. */
   private dragFresh = false;
+  /**
+   * FS-99. The per-tick decision trace, OFF unless a probe armed it. See
+   * DragTrace.ts: it exists because a tile count taken from outside cannot say
+   * which of several hundred per-tick choices differed between two runs.
+   */
+  trace: DragTrace | null = null;
+  /** Cells the fill loop looked at THIS tick, collected by `dragRun` and
+   *  written out by `stepMachine`. Reused rather than reallocated. */
+  private steps: DragStep[] = [];
+  /** Which of `machineTick`'s returns the last tick took. FS-99. */
+  private gate = 'idle';
 
   constructor(private readonly factory: Factory,
               private readonly view: FactoryView,
@@ -118,9 +130,39 @@ export class MachineDrag {
     this.host.lastTurn = { id: b.id, kind: b.kind };
   }
 
-  /** Machines and belts: the ghost, the press, and the hold that lays a run. */
+  /**
+   * Machines and belts: the ghost, the press, and the hold that lays a run.
+   *
+   * FS-99: with no trace armed this is one null test and a direct call, so the
+   * shipped path is the one that was always here.
+   */
   stepMachine(kind: BuildKind, ray: BuildRay, rotation: number, pressed: boolean,
               held: boolean, moved: boolean): number {
+    if (this.trace === null) {
+      return this.machineTick(kind, ray, rotation, pressed, held, moved);
+    }
+    this.steps = [];
+    const tip = this.dragLast;
+    const n = this.machineTick(kind, ray, rotation, pressed, held, moved);
+    const t = this.host.target;
+    this.trace.push({
+      seq: this.trace.total,
+      ox: ray.origin.x, oy: ray.origin.y, oz: ray.origin.z,
+      dx: ray.dir.x, dy: ray.dir.y, dz: ray.dir.z,
+      cell: t?.cell ?? '', ci: t?.addr.i ?? 0, cj: t?.addr.j ?? 0,
+      aimed: t?.aimed ?? false, ok: t?.ok ?? false, reason: t?.reason ?? '',
+      pressed, held, moved,
+      ti: tip?.addr.i ?? null, tj: tip?.addr.j ?? null,
+      si: tip?.step?.di ?? null, sj: tip?.step?.dj ?? null,
+      steps: this.steps, gate: this.gate,
+    });
+    return n;
+  }
+
+  /** The tick itself. `gate` names which of its returns was taken (FS-99). */
+  private machineTick(kind: BuildKind, ray: BuildRay, rotation: number,
+                      pressed: boolean, held: boolean, moved: boolean): number {
+    this.gate = 'idle';
     this.host.structTarget = null;
     this.host.padTarget = null;
     this.structView.hideGhost();
@@ -139,7 +181,7 @@ export class MachineDrag {
     // than by a second report.
     if (t !== null) this.view.showGhost(kind, t.pos, t.up, t.fwd, t.ok);
     else this.view.hideGhost();
-    if (t === null) return 0;
+    if (t === null) { this.gate = 'ghost'; return 0; }
 
     if (pressed) {
       // PRESSING ON A TILE THAT IS ALREADY THERE STARTS A DRAG FROM IT rather
@@ -149,11 +191,12 @@ export class MachineDrag {
       const standing = this.factory.at(t.cell);
       if (standing !== null && standing.kind === kind) {
         this.dragLast = { addr: t.addr, placed: standing, step: null };
+        this.gate = 'standing';
         return 0;
       }
-      if (!t.ok) { this.host.refusals++; return 0; }
+      if (!t.ok) { this.host.refusals++; this.gate = 'refused'; return 0; }
       const made = this.factory.add(kind, t, t.fwd);
-      if (made === null) { this.host.refusals++; return 0; }
+      if (made === null) { this.host.refusals++; this.gate = 'refused'; return 0; }
       // The site is founded by `Factory.stage` (FS-19), so this is now only a
       // belt and braces: `adoptSite` is idempotent by id.
       this.factory.adoptSite(t.addr);
@@ -193,9 +236,12 @@ export class MachineDrag {
       this.dragLast = { addr: { ...t.addr, prospective: false }, placed: made,
         step };
       this.dragFresh = true;
+      this.gate = 'placed';
       return 1;
     }
-    if (!held || this.dragLast === null || t.addr.site.id !== this.dragLast.addr.site.id) {
+    if (!held || this.dragLast === null) { this.gate = 'idle'; return 0; }
+    if (t.addr.site.id !== this.dragLast.addr.site.id) {
+      this.gate = 'site';
       return 0;
     }
     // GP-59, the machine half, and it needs a second guard the structural half
@@ -215,8 +261,12 @@ export class MachineDrag {
     // So the tick immediately after a pressed placement is skipped, once. That
     // is not a tuned settle: it is exactly the one tick on which the snap is
     // known to change under the drag, and it costs a run 16 ms of its start.
-    if (this.dragFresh) { this.dragFresh = false; this.host.dragSettles++; return 0; }
-    if (!moved) { this.host.dragSettles++; return 0; }
+    if (this.dragFresh) {
+      this.dragFresh = false; this.host.dragSettles++; this.gate = 'fresh';
+      return 0;
+    }
+    if (!moved) { this.host.dragSettles++; this.gate = 'still'; return 0; }
+    this.gate = 'run';
     return this.dragRun(kind, t);
   }
 
@@ -234,6 +284,27 @@ export class MachineDrag {
    * Then ONE commit for the whole tick, because a commit rebuilds the /core
    * network and loses whatever is riding the belts.
    */
+  /**
+   * FS-99: record one cell the fill loop considered, with the heading it was
+   * about to be given, reduced to the site's own tangent axes.
+   *
+   * THE HEADING IS RECORDED HERE AND NOT READ BACK OFF THE PLACEMENT because
+   * `reface` turns the previous tile on the very next iteration. A run read
+   * after the fact therefore reports every tile's SECOND heading, and the only
+   * tile that keeps its first one is the tip, which is precisely the tile the
+   * reported symptom is about.
+   */
+  private mark(next: MachineAddr, how: DragStep['how'],
+               fwd: { x: number; y: number; z: number } | null): void {
+    if (this.trace === null) return;
+    const s = next.site;
+    const e = fwd === null ? 0
+      : Math.round(fwd.x * s.east.x + fwd.y * s.east.y + fwd.z * s.east.z);
+    const n = fwd === null ? 0
+      : Math.round(fwd.x * s.north.x + fwd.y * s.north.y + fwd.z * s.north.z);
+    this.steps.push({ i: next.i, j: next.j, how, e, n });
+  }
+
   private dragRun(kind: BuildKind, t: BuildTarget): number {
     const start = this.dragLast;
     if (start === null) return 0;
@@ -250,7 +321,10 @@ export class MachineDrag {
       // a tile pointing at its own predecessor is exactly the break that makes
       // one visible line into two transport lines. A ninety-degree turn is
       // fine and is what a corner is.
-      if (step !== null && now.di === -step.di && now.dj === -step.dj) break;
+      if (step !== null && now.di === -step.di && now.dj === -step.dj) {
+        this.mark(next, 'reversal', null);
+        break;
+      }
       const anchor = this.factory.snapAddr(next);
       const dir = { x: anchor.pos.x - last.pos.x, y: anchor.pos.y - last.pos.y,
         z: anchor.pos.z - last.pos.z };
@@ -259,7 +333,8 @@ export class MachineDrag {
       // A refused cell ENDS the drag rather than being stepped over: a run with
       // a hole in it is not a run, and jumping the hole would leave two tiles
       // 2 m apart claiming to be neighbours.
-      if (made === null) break;
+      if (made === null) { this.mark(next, 'refused', fwd); break; }
+      this.mark(next, 'laid', fwd);
       this.factory.reface(last, fwd);
       from = next;
       step = now;

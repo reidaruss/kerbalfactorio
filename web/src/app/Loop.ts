@@ -70,6 +70,32 @@ export class Loop {
   private raf = 0;
   private lastMs = 0;
   private acc = 0;
+  /**
+   * FS-101. THE ACCUMULATOR A DRIVEN RUN CARRIES, kept apart from the live one.
+   *
+   * `run()` used to advance the LIVE accumulator, and its own comment explains
+   * why it refused to zero it first: zeroing snaps alpha to 0, which is a
+   * one-tick discontinuity in the interpolated eye, and a probe calling run()
+   * in slices would then measure its own slicing as jitter. That reasoning is
+   * correct and this change keeps every bit of it. What it missed is where the
+   * inherited value COMES FROM: the live accumulator is the residue of real
+   * rAF frames whose dt is `performance.now()`, so a scripted run inherited a
+   * uniformly random offset in [0, FIXED_DT) and yielded a wall-clock-dependent
+   * number of fixed ticks.
+   *
+   * MEASURED (`probes/walkdet.js`, three runs of one fixed tape on one seed):
+   * `of.run(4)` advanced 480, 480 and 479 ticks, and the walker's f64 feet were
+   * bit-identical at equal tick counts and 0.0765 m apart at unequal ones,
+   * which is exactly one tick of a 4.6 m/s walk. Downstream (FS-99) that one
+   * tick moved the build ghost's aim point across 1.000 m cell boundaries at
+   * different moments and `probes/assembler.js` laid 46 to 64 belt tiles for
+   * one gesture over one deterministic 47.8 m walk.
+   *
+   * A driven accumulator that starts at zero and is CARRIED from one driven run
+   * to the next keeps the slicing continuity the old comment protected, and
+   * makes a scripted run a function of its own arguments and nothing else.
+   */
+  private drivenAcc = 0;
   private running = false;
   private readonly eye = new THREE.Vector3();
   private lastW = 0;
@@ -118,6 +144,11 @@ export class Loop {
    *
    * renderHz is deliberately NOT a multiple of 60, so of::SimClock's alpha
    * sweeps its whole range and the interpolation is exercised, not bypassed.
+   *
+   * 3. FS-101. A SCRIPTED RUN IS A FUNCTION OF ITS OWN ARGUMENTS. Every dt here
+   *    is synthetic already; the one wall-clock quantity left was the
+   *    accumulator this inherited from the live loop, and that alone decided
+   *    whether `run(4)` advanced 479 fixed ticks or 480. See `drivenAcc`.
    */
   async run(seconds: number, renderHz = 144.3): Promise<void> {
     const wasRunning = this.running;
@@ -126,9 +157,14 @@ export class Loop {
     const total = Math.max(1, Math.round(seconds * renderHz));
     let now = performance.now();
     this.lastMs = now;
-    // The accumulator is NOT reset. Zeroing it snaps alpha to 0, which is a
-    // one-tick discontinuity in the interpolated eye, and a probe that calls
-    // run() in slices would then measure its own slicing as jitter.
+    // The accumulator is NOT reset, for the reason `drivenAcc` restates:
+    // zeroing it snaps alpha to 0, which is a one-tick discontinuity in the
+    // interpolated eye, and a probe that calls run() in slices would then
+    // measure its own slicing as jitter. It is SWAPPED instead, so the value
+    // carried between driven runs is the previous driven run's own residue and
+    // never the live loop's wall clock.
+    const liveAcc = this.acc;
+    this.acc = this.drivenAcc;
     for (let i = 0; i < total; ++i) {
       now += dtMs;
       this.frame(now);
@@ -137,6 +173,8 @@ export class Loop {
       // driven walk look like it streams nothing.
       if ((i & 7) === 7) await new Promise<void>((r) => { setTimeout(r, 0); });
     }
+    this.drivenAcc = this.acc;
+    this.acc = liveAcc;
     if (wasRunning) { this.lastMs = performance.now(); this.start(); }
   }
 
